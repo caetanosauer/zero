@@ -1,0 +1,16 @@
+CMakeCache.txt
+config.log
+config.status
+makeflags
+*_gen.cpp
+*_gen.h
+*.log
+Makefile
+Makefile.in
+.deps
+cmake_install.cmake
+CMakeFiles
+configure
+autom4te.cache
+aclocal.m4
+CTestTestfile.cmake

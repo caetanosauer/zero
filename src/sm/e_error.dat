@@ -1,0 +1,129 @@
+# <std-header style='data' orig-src='shore'>
+#
+#  $Id: e_error.dat,v 1.60 2010/12/08 17:37:42 nhall Exp $
+#
+# SHORE -- Scalable Heterogeneous Object REpository
+#
+# Copyright (c) 1994-99 Computer Sciences Department, University of
+#                       Wisconsin -- Madison
+# All Rights Reserved.
+#
+# Permission to use, copy, modify and distribute this software and its
+# documentation is hereby granted, provided that both the copyright
+# notice and this permission notice appear in all copies of the
+# software, derivative works or modified versions, and any portions
+# thereof, and that both notices appear in supporting documentation.
+#
+# THE AUTHORS AND THE COMPUTER SCIENCES DEPARTMENT OF THE UNIVERSITY
+# OF WISCONSIN - MADISON ALLOW FREE USE OF THIS SOFTWARE IN ITS
+# "AS IS" CONDITION, AND THEY DISCLAIM ANY LIABILITY OF ANY KIND
+# FOR ANY DAMAGES WHATSOEVER RESULTING FROM THE USE OF THIS SOFTWARE.
+#
+# This software was developed with support by the Advanced Research
+# Project Agency, ARPA order number 018 (formerly 8230), monitored by
+# the U.S. Army Research Laboratory under contract DAAB07-91-C-Q518.
+# Further funding for this work was provided by DARPA through
+# Rome Research Laboratory Contract No. F30602-97-2-0247.
+#
+#   -- do not edit anything above this line --   </std-header>
+
+e = 0x00080000 "Storage Manager" smlevel_0 {
+
+USERABORT		User initiated abort
+CRASH			Server told to crash or shutdown immediately
+
+#
+# SSM errors
+#
+OUTOFSPACE		Out of disk space
+ALIGNPARM		Parameter is not aligned
+BADSTID			Malformed or invalid store id
+FRAMENOTFOUND	Frame not found in buffer pool 
+SPACENOTFOUND	No page with space in store
+BADPID			invalid page id
+BADVOL			invalid volume id
+VOLTOOLARGE		volume is too large for device
+DEVTOOLARGE		device is too large for OS file interface
+DEVICEVOLFULL		device cannot hold anymore volumes
+DEVNOTMOUNTED		device is not mounted
+ALREADYMOUNTED		device already mounted
+VOLEXISTS		volume already exists
+BADFORMAT		volume has bad format
+NVOL			too many volumes
+EOF			end of scan/record reached
+DUPLICATE		duplicate entries found
+BADSTORETYPE		bad store type
+BADSTOREFLAGS		bad store flags
+BADNDXTYPE		bad index type
+BADSCAN			bad scan arguments
+WRONGKEYTYPE		key type unsupported for current index
+NDXNOTEMPTY		index is not empty
+BADKEYTYPESTR		bad key type descriptor
+BADKEY			bad key value
+BADCMPOP		bad compare operators
+OUTOFLOGSPACE		out of log space 
+RECWONTFIT		record will not fit
+BADSLOTNUMBER		record ID slot number is bad
+RECUPDATESIZE		record update request is too large
+BADSTART		start parameter larger than record size
+BADAPPEND		append size too large for the record
+BADLENGTH		bad length parameter
+BADSAVEPOINT		bad save point 
+PAGECHANGED		page has changed
+BADCHECKSUM             page checksum does not match
+
+INSUFFICIENTMEM		memory limit imposed on function was insufficient
+BADARGUMENT		bad argument or combination of arguments to function
+
+TWOTRANS		transaction already attached to thread
+TWOTHREAD		multiple threads not allowed for this operation
+TWOUTHREAD		multiple update threads not allowed for this operation
+NOTRANS			no active transaction
+INTRANS			in active transaction (not allowed for this operation)
+NOABORT			logging is turned off -- cannot roll back
+NOTPREPARED		transaction thread is not prepared -- cannot commit or abort
+ISPREPARED		transaction thread is prepared  -- cannot do this operaton
+EXTERN2PCTHREAD		transaction is (already) participating in external 2-phase commit 
+NOTEXTERN2PC		transaction is not participating in external 2-phase commit 
+NOSUCHPTRANS		could not find a prepared transaction with given global transaction id
+
+THREADMAPFULL		No more bits for thread maps
+NOTPARENTLOCK		invalid parent lock type for lockid_t::truncate
+BADLOCKMODE		invalid lock mode
+LOCKTIMEOUT		lock timeout
+NOTBLOCKED		smthread is not blocked
+DEADLOCK		deadlock detected
+BADCCLEVEL		unsupported concurrency control level
+RETRY			retry the request (used internally)
+GOODRETRY               retry, but had some progress (used internally)
+LOCKRETRY		retry related to locks (used internally)
+TOOMANYRETRY            this IS an error and can be thrown to user
+
+CANTWHILEACTIVEXCTS	can't do to volume while there are active transactions
+LISTTOOLONG    	too many items in list
+
+NOHANDLE		Missing coordinator handle
+
+LOGVERSIONTOONEW	Log created with newer incompatible server
+LOGVERSIONTOOOLD	Log created with older incompatible server
+BADMASTERCHKPTFORMAT	Bad format for master checkpoint
+
+ABORTED			Transaction aborted by another thread
+LOGSPACEWARN		log space warning (not necessarily out)
+BADCOMPENSATION		log could not apply requested compensation
+APPENDFILEINOSCAN		append_file_i does not support scanning
+
+INVALIDHINT      Invalid cluster hint 
+DUAUDITFAILED      Audit failed for du statistics
+PINACTIVE        Thread has something pinned
+HOTPAGE          Another thread pinned this page in the buffer pool
+BPFORCEFAILED   Could not force all the necessary pages from the buffer pool
+BRKKEYCMPNOTIMPL      Sort key is broken across pages - case not implemented
+
+WRITEORDERLOOP        Causes a loop in write order dependency
+
+# LIL related
+LIL_TOOMANYVOL_XCT    Accessing too many volumes in one transaction
+LIL_TOOMANYST_XCT    Accessing too many stores in one transaction
+}
+

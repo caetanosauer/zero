@@ -1,0 +1,47 @@
+/*
+ * Define this if you want to use a different location for a
+ * Linux-based huge tlb filesystem.
+ */
+#define HUGETLBFS_PATH "/mnt/huge/SSM-BUFPOOL"
+
+/*
+ * Define this if you want to include crash test hooks in your
+ * executable.  (For use with ssh, really).
+ * A release executable should not be built with this unless you
+ * are a maintainer and want to test it.
+ */
+#undef USE_SSMTEST
+
+
+/*
+ * Define these if you do not like the default lengths (in tid_t.h)
+ */
+#undef COMMON_GTID_LENGTH
+#undef COMMON_SERVER_HANDLE_LENGTH
+
+/* 
+ * Define this if you want to override the default number of
+ * log partitions that can be open at any one time.
+ */
+#undef SM_LOG_PARTITIONS
+
+/*
+ * Enforce acceptable page size. Set with configure.
+ * Users should not touch this here.   Use argument to configure instead.
+ */
+#if SM_PAGESIZE==1024
+#elif SM_PAGESIZE==2048
+#elif SM_PAGESIZE==4096
+#elif SM_PAGESIZE==8192
+#elif SM_PAGESIZE==1024*16
+#elif SM_PAGESIZE==1024*32
+#else
+#error configured with illegitimate page size.  Must be (1,2,4,8,16 or 32) * 1024
+#endif
+
+/*
+ * Experimental expensive latch stats.
+ * Turn this on to get a better idea (approx) of latch waits
+ * (split out for different page types).
+ */
+#define EXPENSIVE_LATCH_COUNTS 0

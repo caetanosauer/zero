@@ -1,0 +1,105 @@
+#include "btree_test_env.h"
+#include "gtest/gtest.h"
+#include "sm_vas.h"
+#include "btree.h"
+#include "btcursor.h"
+#include "page_s.h"
+#include "bf.h"
+#include "btree_p.h"
+
+btree_test_env *test_env;
+
+/**
+ * Unit tests for btree_p.
+ * It's an internal class thus indirectly tested by other testcases.
+ * However, it also does a lot to be tested, so this testcase
+ * specifically and directly tests its functions.
+ */
+
+w_rc_t test_search_leaf(ss_m* ssm, test_volume_t *test_volume) {
+    stid_t stid;
+    lpid_t root_pid;
+    W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
+    
+    W_DO(x_btree_insert_and_commit (ssm, stid, "a1", "data1"));
+    W_DO(x_btree_insert_and_commit (ssm, stid, "b3", "data3"));
+    W_DO(x_btree_insert_and_commit (ssm, stid, "c2", "data2"));
+    
+    btree_p root;
+    W_DO(root.fix(root_pid, LATCH_SH));
+    w_keystr_t key;
+    bool found;
+    slotid_t slot;
+
+    // "slot" will tell
+    // - if found: the slot
+    // - if not found: slot to place the key
+    
+    // a0 is smaller than all,
+    key.construct_regularkey("a0", 2);
+    root.search_leaf(key, found, slot);
+    EXPECT_FALSE(found);
+    EXPECT_EQ (0, slot); // so a0 should go here
+
+    // a1 is there
+    key.construct_regularkey("a1", 2);
+    root.search_leaf(key, found, slot);
+    EXPECT_TRUE(found);
+    EXPECT_EQ (0, slot);
+    
+    // same as a0
+    key.construct_regularkey("a", 1);
+    root.search_leaf(key, found, slot);
+    EXPECT_FALSE(found);
+    EXPECT_EQ (0, slot);
+
+    // larger than a1, thus
+    key.construct_regularkey("b", 1);
+    root.search_leaf(key, found, slot);
+    EXPECT_FALSE(found);
+    EXPECT_EQ (1, slot);
+
+    // same as above
+    key.construct_regularkey("b2", 2);
+    root.search_leaf(key, found, slot);
+    EXPECT_FALSE(found);
+    EXPECT_EQ (1, slot);
+
+    // it's there
+    key.construct_regularkey("b3", 2);
+    root.search_leaf(key, found, slot);
+    EXPECT_TRUE(found);
+    EXPECT_EQ (1, slot);
+
+    key.construct_regularkey("c", 1);
+    root.search_leaf(key, found, slot);
+    EXPECT_FALSE(found);
+    EXPECT_EQ (2, slot);
+
+    key.construct_regularkey("c2", 2);
+    root.search_leaf(key, found, slot);
+    EXPECT_TRUE(found);
+    EXPECT_EQ (2, slot);
+
+    key.construct_regularkey("d", 1);
+    root.search_leaf(key, found, slot);
+    EXPECT_FALSE(found);
+    EXPECT_EQ (3, slot);
+
+    return RCOK;
+}
+
+
+TEST (BtreePTest, SearchLeaf) {
+    test_env->empty_logdata_dir();
+    EXPECT_EQ(test_env->runBtreeTest(test_search_leaf), 0);
+}
+
+// TODO more and more testcases here
+
+int main(int argc, char **argv) {
+    ::testing::InitGoogleTest(&argc, argv);
+    test_env = new btree_test_env();
+    ::testing::AddGlobalTestEnvironment(test_env);
+    return RUN_ALL_TESTS();
+}

@@ -1,0 +1,136 @@
+#ifndef STNODE_P_H
+#define STNODE_P_H
+
+#include "w_defines.h"
+
+#ifdef __GNUG__
+#pragma interface
+#endif
+
+#include "page.h"
+#include "srwlock.h"
+#include "sthread.h"
+
+/**
+ * \brief Persistent structure representing the head of a store's extent list.
+ * \details These structures sit on stnode_p pages and point to the
+ * start of the extent list.
+ * The stnode_t structures are indexed by store number.
+ */
+struct stnode_t {
+    stnode_t() {
+      root = 0;
+      flags = 0;
+      deleting = 0;
+    }
+    /**\brief First extent of the store */
+    shpid_t         root; // +4 -> 4
+    /**\brief store flags  */
+    uint16_t        flags; // +2 -> 6
+    /**\brief non-zero if deleting or deleted */
+    uint16_t        deleting;  // +2 -> 8
+};
+
+class stnode_cache_t;
+
+/**
+ * \brief Extent map page that contains store nodes (stnode_t).
+ * \details These are the pages that contain the starting points of 
+ * a store's root page.
+ */
+class stnode_p : public page_p {
+    friend class stnode_cache_t;
+public:
+    stnode_p()  {}
+    stnode_p(page_s* s, uint32_t store_flags) : page_p(s, store_flags) {}
+    stnode_p(const stnode_p&p) : page_p(p) {} 
+    ~stnode_p()  {}
+    stnode_p& operator=(const stnode_p& p)    { page_p::operator=(p); return *this; }
+
+    tag_t get_page_tag () const { return t_stnode_p; }
+    void inc_fix_cnt_stat () const { INC_TSTAT(stnode_p_fix_cnt);}
+    rc_t format(const lpid_t& pid, tag_t tag, uint32_t page_flags, store_flag_t store_flags);
+
+    // max # store nodes on a page
+    enum { max = page_p::data_sz / sizeof(stnode_t) };
+
+    stnode_t&       get(size_t idx);
+};
+
+/**
+ * \brief Store creation/destroy/query interface.
+ * \details
+ * This object handles store create/destroy/query requests for one volume.
+ * 99.99% of the requests are of course querying the root page id of indexes.
+ * This object does a light weight synchronization (latch) to protect
+ * them from MT accesses. However, this doesn't use locks because
+ * we don't need them. If the store is being destroyed, ss_m will check
+ * intent locks before calling this object, so we are safe.
+ * This object and vol_t replace the "directory" thingies in original Shore-MT
+ * with more efficiency and simplicity.
+ * @See stnode_p
+ */
+class stnode_cache_t {
+public:
+    /** Creates an empty cache.*/
+    stnode_cache_t (vid_t vid): _vid(vid), _stpid(0) {}
+
+    /** Initialize this object by reading stnode_p page of the volume. */
+    rc_t load (int unix_fd, shpid_t stpid);
+    
+    /**
+     * Returns the root page Id of the store.
+     * If the store isn't created yet, returns 0.
+     * @param[in] store Store ID.
+     */
+    shpid_t get_root_pid (snum_t store) const;
+    
+    /**
+     * Returns the entire stnode_t of the store.
+     */
+    void get_stnode (snum_t store, stnode_t &stnode) const;
+
+    /**
+    *  Fix the storenode page and perform the store operation 
+    *     AND 
+    *  log it.
+    *
+    *  param type is in sm_io.h.
+    *
+    *  It contains:
+        typedef smlevel_0::store_operation_t        store_operation_t;
+        in sm_base.h
+        Operations:
+            t_delete_store, <---- when really deleted after space freed
+            t_create_store,  <--- store is allocated (snum_t is in use)
+            t_set_deleting,  <---- when transaction deletes store (t_deleting_store)
+                            <---- end of xct (t_store_freeing_exts)
+            t_set_store_flags, 
+
+        typedef smlevel_0::store_flag_t             store_flag_t;
+            in sm_base.h:
+            logging attribute: regular, tmp, load, insert
+
+        typedef smlevel_0::store_deleting_t         store_deleting_t;
+                t_not_deleting_store = 0,  // must be 0: code assumes it
+                t_deleting_store, 
+                t_unknown_deleting // for error handling
+    *
+    */
+    rc_t  store_operation(const store_operation_param & op);
+
+    /** Returns the first snum_t that can be used for a new store. */
+    snum_t get_min_unused_store_id () const;
+
+private:
+    vid_t _vid;
+    /** page id of stnode_p in this volume. */
+    shpid_t _stpid;
+
+    stnode_t _stnodes[stnode_p::max];
+    
+    /** all operations in this object are protected by this lock. */
+    mutable queue_based_lock_t _spin_lock;
+};
+
+#endif //STNODE_P_H

@@ -1,0 +1,29 @@
+
+# if tcl.h is not in your /usr/include, put its path here.
+# I haven't found a way to locate it with autoconf yet.
+#
+# deathstar:
+# Built-from-sources, with symbols:
+# note: not on chianti:
+# TCL_INCLUDE = /scratch/s/tcl/include
+# TCL_LIB = -L/scratch/s/tcl/lib -ltcl8.5
+
+# dewitt-gw, chianti, deathstar
+# ActiveTcl no-symbols installed:
+TCL_DIR = /scratch/nhall/tcl
+TCL_INCLUDE = $(TCL_DIR)/include
+TCL_LIB = -L$(TCL_DIR)/lib -ltcl8.5
+
+# d-12, dewitt-gw:
+# ActiveTcl no-symbols installed:
+# TCL_INCLUDE = /u/n/h/nhall/tcl/include
+# TCL_LIB = -L/u/n/h/nhall/tcl/lib -ltcl8.5
+
+# PURE_DIR = /s/purifyplus-7.0/@sys/
+# PURE_DIR = /s/purifyplus/@sys/
+PURE_DIR = /s/purifyplus/amd64_rhel5
+# PURE_CACHE_DIR = /scratch/nhall/pure
+# d-12:
+PURE_CACHE_DIR = /tmp/nhall/pure
+
+VTUNE_DIR = /opt/intel/vtune

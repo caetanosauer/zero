@@ -1,0 +1,493 @@
+# rules, macros generic to all Makefile.am
+AUTOMAKE_OPTIONS = check-news dist-bzip2 readme-alpha
+
+# --------------------------------------------------------
+#
+# Local non-standard paths to things are in Makefile.local
+#
+# --------------------------------------------------------
+include $(top_srcdir)/Makefile.local
+
+DISTCLEANFILES = Makefile $(GENFILES)
+BUILT_SOURCES = $(GENFILES)
+# installdir = $(top_srcdir)/installdir
+# docdir = $(installdir)/doc
+## libdir               = $(installdir)/lib
+## bindir               = $(installdir)/bin
+## includedir           = $(installdir)/include
+
+# --------------------------------------------------------
+#
+# Initialize  
+#
+# --------------------------------------------------------
+
+## _REENTRANT and _POSIX_PTHREAD_SEMANTICS are needed on Solaris to ensure 
+# that the posix-compliant clib interfaces are there (e.g., ctime_r)
+# (Actually, you're supposed to get them both with _POSIX_C_SOURCE > 199506L
+# but I'm not that trusting.)
+
+ALWAYS_FLAGS = \
+	 -D_REENTRANT -D_POSIX_PTHREAD_SEMANTICS
+
+if COMPILER_IS_SUNCC
+ALWAYS_FLAGS +=  -features=extensions,zla -xdebugformat=stabs
+ALWAYS_FLAGS += -DSOLARIS2 -library=stlport4  -mt -lpthread
+#  CC turns on inlining based on optimization level.  at O0 it should
+#  do no inlining at less than O3.  There is no way to force inlining to
+#  be off (well, +d does except when the optimization level overrides it); 
+#  but you can force it to be on.
+NO_INLINE_FLAGS = +d
+YES_INLINE_FLAGS = 
+else
+if COMPILER_IS_GCC
+if COMPILER_IS_ICC
+ALWAYS_FLAGS += -Wall -Werror-all -pthread -Wno-unknown-pragmas -Wcheck  \
+				-wd981 -wd444  -wd383 \
+				-wd1599 -wd1418 -wd1419 -wd1572 -wd181 -wd2259 -wd128 
+## intel compiler "remarks"
+# 981 : operands are evaluated in unspecified order -- so what? OK
+# 444 : destructor for base class is not virtual: we have a lot of these
+# for base classes that have only static or const/enum members: smlevel*,
+# X_base_t, etc.  OK.
+# 383 : value copied to a temp, ref to temp used. OK 
+# 1599: declaration hides variable X (declared at line Z) ... OK
+# These are unavoidable due to the use of the W_DO and similar idioms.
+# 193 : zero used for undefined preprocessing variable  - fix
+# 1418: external function def with no prior decl
+#  and
+# 1419: external declaration in primary source file
+# used to generate un-mangled names for calling in debugger. OK.
+# 1572: floating point equality and inequality comparisons are unreliable 
+# in rtree and btree code; OK.
+# 181 : argument is incompat with corresponding format : in
+# debugger-callable routines  : fix
+# 2259: non-pointer converssion from X to Y may lose sig bits : TODO: track
+# these down
+# 128 : not reachable (CC complains about not returning values, icc complains
+# about not reachable)
+else
+# -pedantic requires -Wno-long-long
+# 
+# Let's avoid use of int64_t if possible, and require
+# explicit C++ types based on data model of compiler.  There
+# might be some cases where the underlying library function
+# or system include file uses int64_t, in which case we will have to.
+#
+#
+ALWAYS_FLAGS += -Wextra -Wall -Wno-long-long -Werror -pthread
+# NO_INLINE_FLAGS =  -fno-inline
+NO_INLINE_FLAGS =  
+YES_INLINE_FLAGS =  -finline-functions
+endif
+else
+ALWAYS_FLAGS += UNKNOWN COMPILER
+endif
+endif
+
+## Include shore-config.h in the cpp/assembly of
+## atomic_ops.S
+AM_CCASFLAGS = -I$(top_srcdir)/config -I$(top_srcdir)/src/atomic_ops
+
+## The code we have assumes the cpp is going to
+## define these for a .S file, but ours seems to define
+## ___ASSEMBLER__ instead
+if COMPILER_IS_GCC
+AM_CCASFLAGS += -D__GNUC_AS__ -D_ASM
+endif
+
+
+if ENABLE_ARCH_LP64
+## enabled by config option (default) 
+## Now try to find out the compiler arguments needed
+
+if COMPILER_IS_SUNCC
+## SUN CC/64
+## getconf doesn't necessarily keep up with the times...
+## and in any case, it might target generic
+TARGET_FLAGS = -m64 -DARCH_LP64
+ALWAYS_FLAGS += $(TARGET_FLAGS)
+## Assembler flags... for atomic_ops
+AM_LDFLAGS =  -m64
+TUNE_FLAGS = -xtarget=native
+
+else
+if COMPILER_IS_ICC
+## ICC/64
+TUNE_FLAGS = 
+else
+## GCC/64
+TUNE_FLAGS = -mtune=nocona
+endif
+# TUNE_FLAGS = -mtune=generic
+TARGET_FLAGS = -m64 -DARCH_LP64 
+ALWAYS_FLAGS += $(TARGET_FLAGS) 
+## Assembler flags... for atomic_ops
+AM_LDFLAGS =  -m64
+
+endif
+
+
+else 
+## Not ENABLE_ARCH_LP64
+
+if COMPILER_IS_SUNCC
+# SUN CC/32
+TARGET_FLAGS = -m32 -UARCH_LP64
+TUNE_FLAGS = -xtarget=native
+else
+# GCC/32
+TARGET_FLAGS = -m32 -UARCH_LP64
+TUNE_FLAGS = -mtune=generic
+endif
+
+ALWAYS_FLAGS += $(TARGET_FLAGS) -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64 
+AM_LDFLAGS =  -m32
+endif
+
+AM_CCASFLAGS += $(TARGET_FLAGS)
+
+##  Include atomic_ops.h from our directory. 
+##  That will include <atomic.h> if it exists.
+ALWAYS_FLAGS += -I$(top_srcdir)/src/atomic_ops
+
+if USE_IOS_COMPAT
+ALWAYS_FLAGS += -I$(top_srcdir)/src/compat
+else
+endif
+
+if COMPILER_IS_GCC
+## TODO: pedantic for SUNCC?
+if NOPEDANTIC
+PEDANTIC =
+else
+PEDANTIC = -pedantic-errors  
+endif
+endif
+
+# create macro for things to be removed with 'make clean'
+LOCALCLEAN = 
+# create macro for dirs to be removed recursively with 'make clean'
+LOCALCLEANDIRS = 
+
+# CXX flags that go on the compiles for pure products
+PURE_CXXFLAGS =
+# This clearing of CXXFLAGS is necessary to override the
+# annoying -g -O2 that autoconf stuffs in there, and which
+# I cannot find any other way to control.
+CXXFLAGS =
+CFLAGS =
+GCC_WARN_FLAGS =
+AM_CXXFLAGS = $(PEDANTIC)  $(TUNE_FLAGS)
+AM_CXXFLAGS += $(DEBUGFLAGS) $(W_WARNINGS) $(OPTFLAGS) $(PURE_CXXFLAGS) 
+AM_CXXFLAGS += $(ALWAYS_FLAGS) $(TEMPLATEFLAGS) 
+AM_CFLAGS = $(PEDANTIC) $(ALWAYS_FLAGS) $(DEBUG_FLAGS) $(OPTFLAGS)
+
+ALLCLEANFILES = $(DISTCLEANFILES) \
+	       	$(MOSTLYCLEANFILES) \
+	       	$(MAINTAINERCLEANFILES) \
+	       	$(CLEANFILES) 
+
+# --------------------------------------------------------
+#
+# add target to create .cvsignore file
+#
+# --------------------------------------------------------
+.cvsignore:  Makefile 
+	touch $@
+	$(RM) $@
+	echo $(ALLCLEANFILES) >& $@
+
+# --------------------------------------------------------
+#
+# add target to get rid of additional built objects,
+#    in particular this is for the PURE targets
+#
+# --------------------------------------------------------
+clean-local-dirs:  
+	$(RM) -r $(LOCALCLEANDIRS) 
+
+clean-local: clean-local-dirs
+	$(RM) $(LOCALCLEAN) 
+
+if COMPILER_IS_GCC
+# --------------------------------------------------------
+#
+# Determine which gcc warnings to use, based on which 
+# compiler version we are using.
+#
+# -Wno-deprecated # TODO:remove
+#
+# Note: gcc seems to issue a false positive warning about strict aliasing
+# in the new override code, so we have to add -fno-strict-aliasing.
+# --------------------------------------------------------
+if COMPILER_IS_ICC
+GCC_WARN_FLAGS += -Wall -fno-strict-aliasing  -Wpointer-arith -Wwrite-strings
+else
+GCC_WARN_FLAGS += -Wall -fno-strict-aliasing -Wextra -Wpointer-arith -Wwrite-strings
+endif
+
+if GCC_VER_34_WARNINGS
+# /* In adition to the 3.2 warnings, prototype errors for c/objc only */
+GCC_WARN_FLAGS += 
+else
+if GCC_VER_3_WARNINGS
+# /* GCC 3.2 doesn't like -Wmissing-declarations and -Wnested-externs */
+GCC_WARN_FLAGS += -Wstrict-prototypes -Wmissing-prototypes 
+# /* Need this to stop warnings of normal (old) standard c++ facilities use. */
+else
+GCC_WARN_FLAGS += -Wstrict-prototypes -Wmissing-prototypes 
+GCC_WARN_FLAGS += -Wmissing-declarations -Wnested-externs
+endif
+endif
+
+GCC_WARN_FLAGS += -Woverloaded-virtual 
+W_WARNINGS= $(GCC_WARN_FLAGS) -Wno-deprecated 
+
+else
+## TODO: warn flags for SUNCC?
+endif
+
+GENERIC_NODEBUG_FLAGS = -DNDEBUG -UDEBUG 
+GENERIC_YESDEBUG_FLAGS = -UNDEBUG -DDEBUG 
+
+# --------------------------------------------------------
+#
+# handle --enable-dbgsymbols config option
+#
+# --------------------------------------------------------
+if COMPILER_IS_SUNCC
+#----------------- SUN CC -----------------------------------
+# SYMBOLSFLAGS = -g -xs -xinstrument=datarace -DTHA_RACE
+SYMBOLSFLAGS = -g -xs 
+# -g0 turns off inlining
+NOSYMBOLSFLAGS = -g0 
+NOOPTFLAGS = -O0 $(NO_INLINE_FLAGS)
+MIDOPTFLAGS = -O2 $(YES_INLINE_FLAGS)
+# FULLOPTFLAGS = -xO4 -xinline=%auto,no%__1cKtatas_lockEspin6M_v_,no%__1cImcs_lockPspin_on_waiting6Mpon0AFqnode__v_,no%__1cImcs_lockMspin_on_next6Mpon0AFqnode__3_,no%__1cLhybrid_lockF_spin6Fpon0AFqnode__l_,no%__1cHmcs_logSspin_while_waiting6Mpn0AFqnode__v_,no%__1cKmcs_rwlockO_spin_on_writer6M_v_,no%__1cKmcs_rwlockP_spin_on_readers6M_v_,no%lock_mutex_acquire,no%returning_eINTRANS,no%__1cKtpmcs_lockMspin_on_next6Mpon0AFqnode__v_,no%__1cKtpmcs_lockPspin_on_waiting6Mpon0AFqnode__v_
+FULLOPTFLAGS = -xO4 -xinline=%auto
+
+else
+#----------------- GCC  -----------------------------------
+# -fstack-check removed because sthread does its own, and sthread/tests/
+# thread1 test won't build with this turned on: -fstack-check
+SYMBOLSFLAGS = -ggdb
+NOSYMBOLSFLAGS = 
+NOOPTFLAGS = -O0 $(NO_INLINE_FLAGS) 
+MIDOPTFLAGS = -O2 $(YES_INLINE_FLAGS)
+if COMPILER_IS_ICC
+FULLOPTFLAGS = -O3 $(YES_INLINE_FLAGS)
+else
+FULLOPTFLAGS = -O3 -fexpensive-optimizations $(YES_INLINE_FLAGS)
+endif
+
+endif
+
+if DEBUGLEVEL3
+## shore-config.h #defines W_DEBUG_LEVEL 3 
+## This includes w_assert3 and w_assert2 and w_assert1 and
+## possibly lots of other code.
+DEBUGFLAGS  = $(GENERIC_YESDEBUG_FLAGS)
+OPTFLAGS    = $(NOOPTFLAGS)
+
+else
+
+if DEBUGLEVEL2
+## shore-config.h #defines W_DEBUG_LEVEL 2 
+## This includes w_assert2 and w_assert1 and
+## possibly other code.
+DEBUGFLAGS  = $(GENERIC_NODEBUG_FLAGS)
+OPTFLAGS    = $(NOOPTFLAGS)
+
+else
+
+if DEBUGLEVEL1
+## shore-config.h #defines W_DEBUG_LEVEL 1 
+## This includes w_assert1 and
+## possibly other code.  Not-so-aggressive optimization.
+## Allows us to use Vtune.
+DEBUGFLAGS  = $(GENERIC_NODEBUG_FLAGS)
+OPTFLAGS    = $(MIDOPTFLAGS)
+
+else
+
+## not level 3 or level 2 or level 1
+## shore-config.h #undefs W_DEBUG_LEVEL 
+## This does not include any assert
+DEBUGFLAGS  = $(GENERIC_NODEBUG_FLAGS)
+OPTFLAGS    = $(FULLOPTFLAGS)
+endif
+endif
+endif
+
+if DEBUGGERSYMBOLS
+DEBUGFLAGS  += $(SYMBOLSFLAGS)
+# override optimization flags for debugger symbols because with gcc, optimization level trumps.
+OPTFLAGS    = $(MIDOPTFLAGS)
+else
+DEBUGFLAGS  += $(NOSYMBOLSFLAGS)
+endif
+
+
+# --------------------------------------------------------
+#
+# handle --enable-explicit config option
+#
+# --------------------------------------------------------
+if EXPLICIT_TEMPLATE
+TEMPLATEFLAGS = -fno-implicit-templates -DEXPLICIT_TEMPLATE
+else
+TEMPLATEFLAGS=
+endif
+
+# --------------------------------------------------------
+
+# Initialize LOCALLDADD 
+# Note: on solaris -lnsl may be needed for gethostbyname()
+LOCALLDADD = $(top_srcdir)/src/atomic_ops/libatomic_ops.a -lnsl
+
+# --------------------------------------------------------
+#
+# handle --enable-purify config option
+#
+# --------------------------------------------------------
+
+if PURIFY
+# PURIFY_INCLUDE = $(PURE_DIR)/include
+# no proper installation here, so hack all three of these paths ...
+# PURIFY_LIBS = $(PURE_DIR)/lib/libpurify_stubs.a
+# PURIFY_BIN = $(PURE_DIR)/bin
+# PURIFY_INCLUDE = $(PURE_DIR)/releases/purify.i386_linux2.7.0
+PURIFY_INCLUDE = $(PURE_DIR)/releases/purify.i386_linux2.7.0.0.0-014
+# yes, libs are in the same place as is the header file
+PURIFY_LIBS = $(PURIFY_INCLUDE)/lib64/libpurify_stubs.a
+PURIFY_BIN = $(PURE_DIR)/bin
+# PURIFY_COLLECTOR = -collector=/usr/bin/ld
+LOCALLDADD += $(PURIFY_LIBS)
+PURIFY_FLAGS = -g++=yes -cache-dir=$(PURE_CACHE_DIR) -threads=yes -pointer-mask-64=0xfffffffffffffffe
+
+SUFFIXES =    .pure
+.$(OBJEXT).pure:  
+	$(PURIFY_BIN)/purify $(PURIFY_FLAGS)  $(PURIFY_COLLECTOR) $(CXX) -o $@ $< $(LDADD) $(LIBS)
+
+LOCALCLEAN += $(check_PROGRAMS:%=%.pure)
+PURE_CXXFLAGS += -DPURIFY -DPURIFY_ZERO -I$(PURIFY_INCLUDE) 
+
+endif
+
+# --------------------------------------------------------
+#
+# handle --enable-quantify config option
+#
+# --------------------------------------------------------
+
+if QUANTIFY
+# QUANTIFY_INCLUDE = $(PURE_DIR)/include
+# no proper installation here, so hack all three of these paths ...
+# QUANTIFY_LIBS = 
+# QUANTIFY_BIN = $(PURE_DIR)/bin
+QUANTIFY_INCLUDE = $(PURE_DIR)/releases/quantify.i386_linux2.7.0
+# yes, libs are in the same place as is the header file
+QUANTIFY_LIBS = $(QUANTIFY_INCLUDE)/lib64/libquantify_stubs.a
+QUANTIFY_BIN = $(PURE_DIR)/bin
+# QUANTIFY_COLLECTOR = -collector=/usr/bin/ld
+LOCALLDADD += $(QUANTIFY_LIBS)
+QUANTIFY_FLAGS = -g++=yes \
+	     -copy-fd-output-to-logfile=1,2 \
+	     -ignore-signals=SIGUSR1 \
+	     -threads -thread-stack-change=0x3000 -max_threads=64 \
+	     -cache-dir=$(PURE_CACHE_DIR)
+
+SUFFIXES =    .quant
+.$(OBJEXT).quant:  
+	$(QUANTIFY_BIN)/quantify $(QUANTIFY_FLAGS) $(QUANTIFY_COLLECTOR)  $(CXX) -o $@ $< $(LDADD) $(LIBS)
+
+LOCALCLEAN += $(check_PROGRAMS:%=%.quant)
+PURE_CXXFLAGS += -DQUANTIFY -I$(QUANTIFY_INCLUDE) 
+
+endif
+
+
+SUFFIXES: .tex .fc .common .sthread .ssm .html .ps .dvi .pdf 
+
+GROFF_OPTIONS = -s -m man -U
+
+.fc.ps: 
+	groff $(GROFF_OPTIONS) -Tps $< > $@
+
+.common.ps: 
+	groff $(GROFF_OPTIONS) -Tps $< > $@
+
+.sthread.ps: 
+	groff $(GROFF_OPTIONS) -Tps $< > $@
+
+.ssm.ps: 
+	groff $(GROFF_OPTIONS) -Tps $< > $@
+
+.fc.html: 
+	groff $(GROFF_OPTIONS) -Thtml $< > $@
+
+.common.html: 
+	groff $(GROFF_OPTIONS) -Thtml $< > $@
+
+.sthread.html: 
+	groff $(GROFF_OPTIONS) -Thtml $< > $@
+
+.ssm.html: 
+	groff $(GROFF_OPTIONS) -Thtml $< > $@
+
+.fc.dvi: 
+	groff $(GROFF_OPTIONS) -Tdvi $< > $@
+
+.common.dvi: 
+	groff $(GROFF_OPTIONS) -Tdvi $< > $@
+
+.sthread.dvi: 
+	groff $(GROFF_OPTIONS) -Tdvi $< > $@
+
+.ssm.dvi:
+	groff $(GROFF_OPTIONS) -Tdvi $< > $@
+
+.dvi.pdf:
+	dvipdfm $<
+
+.tex.dvi:
+	latex $<
+# second time to get the x-refs
+	latex $<
+
+# html-local: $(HTML_TARGETS)
+
+pdf-local: $(PDF_TARGETS)
+
+# --------------------------------------------------------
+#
+# handle --enable-purecov config option
+#
+# --------------------------------------------------------
+
+if PURECOV
+# PURECOV_INCLUDE = $(PURE_DIR)/include
+# no proper installation here, so hack all three of these paths ...
+# PURECOV_LIBS = $(PURE_DIR)/lib/libpurecov_stubs.a
+# PURECOV_BIN = $(PURE_DIR)/bin
+PURECOV_INCLUDE = $(PURE_DIR)/releases/purecov.i386_linux2.7.0
+# yes, libs are in the same place as is the header file
+PURECOV_LIBS = $(PURECOV_INCLUDE)/libpurecov_stubs.a
+PURECOV_BIN = $(PURE_DIR)/bin
+# PURECOV_COLLECTOR = -collector=/usr/bin/ld
+LOCALLDADD += $(PURECOV_LIBS)
+PURECOV_FLAGS = -g++=yes -chain-length=10  -inuse-at-exit \
+	     -first-only -leaks-at-exit -copy-fd-output-to-logfile=1,2 \
+	     -ignore-signals=SIGUSR1 -pointer-mask=0xfffffffe \
+	     -threads -thread-stack-change=0x3000 -max_threads=64 \
+	     -cache-dir=$(PURE_CACHE_DIR)
+
+SUFFIXES =    .purecov
+.$(OBJEXT).purecov:  
+	$(PURECOV_BIN)/purecov $(PURECOV_FLAGS)  $(PURECOV_COLLECTOR) $(CXX) -o $@ $< $(LDADD) $(LIBS)
+
+LOCALCLEAN += $(check_PROGRAMS:%=%.purecov)
+PURE_CXXFLAGS += -DPURECOV -I$(PURECOV_INCLUDE) 
+
+endif
