@@ -5,7 +5,13 @@ INCLUDE_DIRECTORIES (
   ${CMAKE_SOURCE_DIR}/src/common
   ${CMAKE_SOURCE_DIR}/src/sthread
   ${CMAKE_SOURCE_DIR}/src/sm
+
   ${CMAKE_SOURCE_DIR}/gtest-1.6.0/include
+  # For auto-generated files
+  ${CMAKE_BINARY_DIR}/src/fc
+  ${CMAKE_BINARY_DIR}/src/common
+  ${CMAKE_BINARY_DIR}/src/sthread
+  ${CMAKE_BINARY_DIR}/src/sm
 ) 
 
 IF (COMPILER_IS_GCC)

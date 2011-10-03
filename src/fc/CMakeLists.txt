@@ -25,12 +25,6 @@ set(fc_STAT_SRCS
 add_library(fc STATIC ${fc_STAT_SRCS})
 #target_link_libraries (fc atomic_ops)
 
-IF(${CMAKE_CURRENT_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_BINARY_DIR})
-    SET (COPY_GENERATED_FILES)
-ELSE(${CMAKE_CURRENT_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_BINARY_DIR})
-    SET (COPY_GENERATED_FILES && cp -f *_gen.* ${CMAKE_CURRENT_SOURCE_DIR})
-ENDIF(${CMAKE_CURRENT_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_BINARY_DIR})
-
 # generate error header files with tools/errors.pl
 # some help here : http://stackoverflow.com/questions/2354473/cmake-add-custom-command
 # note: these generated files have to be a part of source, so we copy them into
@@ -41,17 +35,14 @@ set (FC_ERROR_GENFILES_H
     fc_error_def_gen.h
     fc_error_enum_gen.h
     fc_einfo_bakw_gen.h)
-foreach(_file ${FC_ERROR_GENFILES_H})
-    add_custom_command(OUTPUT ${_file}
-        COMMAND perl ${CMAKE_SOURCE_DIR}/tools/errors.pl -d -e ${CMAKE_CURRENT_SOURCE_DIR}/fc_error.dat ${COPY_GENERATED_FILES}
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/fc_error.dat
-    )
-endforeach()
+add_custom_command(OUTPUT ${FC_ERROR_GENFILES_H}
+  COMMAND perl ${CMAKE_SOURCE_DIR}/tools/errors.pl -d -e ${CMAKE_CURRENT_SOURCE_DIR}/fc_error.dat ${COPY_GENERATED_FILES}
+  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/fc_error.dat
+)
 add_custom_target(FC_ERROR_GENFILES DEPENDS ${FC_ERROR_GENFILES_H})
 add_dependencies(fc FC_ERROR_GENFILES)
 
 
-SET (GENFILES ${FC_ERROR_GENFILES})
 ########### install files ###############
 
 install(FILES
@@ -91,9 +82,9 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/w_strstream.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_stat.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_workaround.h
-  ${GENFILES}
   DESTINATION include)
 
+INSTALL_GENERATED_H(${FC_ERROR_GENFILES_H})
 
 
 #original Makefile.am contents follow:

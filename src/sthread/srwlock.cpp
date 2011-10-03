@@ -76,7 +76,7 @@ int mcs_rwlock::_spin_on_writer()
 // private
 void mcs_rwlock::_spin_on_readers() 
 {
-    while(has_reader());
+    while(has_reader()) { };
     // callers do membar_enter
 }
 

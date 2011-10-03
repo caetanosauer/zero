@@ -1,3 +1,10 @@
+macro(INSTALL_GENERATED_H)
+  set(ig_tmp)
+  foreach(tmp ${ARGV})
+    list(APPEND ig_tmp ${CMAKE_CURRENT_BINARY_DIR}/${tmp})
+  endforeach(tmp)
+  install(FILES ${ig_tmp} DESTINATION include)
+endmacro(INSTALL_GENERATED_H)
 
 INCLUDE_DIRECTORIES (
   ${CMAKE_SOURCE_DIR}/config
@@ -6,8 +13,13 @@ INCLUDE_DIRECTORIES (
   ${CMAKE_SOURCE_DIR}/src/common
   ${CMAKE_SOURCE_DIR}/src/sthread
   ${CMAKE_SOURCE_DIR}/src/sm
-) 
 
+  # For auto-generated files
+  ${CMAKE_BINARY_DIR}/src/fc
+  ${CMAKE_BINARY_DIR}/src/common
+  ${CMAKE_BINARY_DIR}/src/sthread
+  ${CMAKE_BINARY_DIR}/src/sm
+) 
 
 add_subdirectory(atomic_ops)
 add_subdirectory(fc)

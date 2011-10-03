@@ -1,3 +1,4 @@
+INCLUDE_DIRECTORIES(${CMAKE_CURRENT_BINARY_DIR})
 
 set(sthread_STAT_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/errlog.cpp
@@ -14,21 +15,11 @@ set(sthread_STAT_SRCS
 add_library(sthread STATIC ${sthread_STAT_SRCS})
 target_link_libraries (sthread fc pthread rt)
 
-IF(${CMAKE_CURRENT_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_BINARY_DIR})
-    SET (COPY_GENERATED_FILES)
-ELSE(${CMAKE_CURRENT_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_BINARY_DIR})
-    SET (COPY_GENERATED_FILES && cp -f *_gen.* ${CMAKE_CURRENT_SOURCE_DIR})
-ENDIF(${CMAKE_CURRENT_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_BINARY_DIR})
-
-# generate error header files with tools/errors.pl
-# again, this has to be a part of source tree.
 set (ST_ERROR_GENFILES_H st_errmsg_gen.h st_einfo_gen.h st_error_def_gen.h st_error_enum_gen.h st_einfo_bakw_gen.h)
-foreach(_file ${ST_ERROR_GENFILES_H})
-    add_custom_command(OUTPUT ${_file}
-        COMMAND perl ${CMAKE_SOURCE_DIR}/tools/errors.pl -d -e ${CMAKE_CURRENT_SOURCE_DIR}/st_error.dat ${COPY_GENERATED_FILES}
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/st_error.dat
-    )
-endforeach()
+add_custom_command(OUTPUT ${ST_ERROR_GENFILES_H}
+  COMMAND perl ${CMAKE_SOURCE_DIR}/tools/errors.pl -d -e ${CMAKE_CURRENT_SOURCE_DIR}/st_error.dat ${COPY_GENERATED_FILES}
+  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/st_error.dat
+)
 add_custom_target(ST_ERROR_GENFILES DEPENDS ${ST_ERROR_GENFILES_H})
 add_dependencies(sthread ST_ERROR_GENFILES)
 
@@ -37,12 +28,10 @@ add_dependencies(sthread ST_ERROR_GENFILES)
 set(STHREAD_GENFILES_H sthread_stats_collect_enum_gen.h sthread_stats_msg_gen.h sthread_stats_struct_gen.h)
 set(STHREAD_GENFILES_CPP sthread_stats_collect_gen.cpp sthread_stats_dec_gen.cpp sthread_stats_inc_gen.cpp sthread_stats_out_gen.cpp)
 set(STHREAD_GENFILES_FILES ${STHREAD_GENFILES_H} ${STHREAD_GENFILES_CPP})
-foreach(_file ${STHREAD_GENFILES_FILES})
-    add_custom_command(OUTPUT ${_file}
-        COMMAND perl ${CMAKE_SOURCE_DIR}/tools/stats.pl ${CMAKE_CURRENT_SOURCE_DIR}/sthread_stats.dat ${COPY_GENERATED_FILES}
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/sthread_stats.dat
-    )
-endforeach()
+add_custom_command(OUTPUT ${STHREAD_GENFILES_FILES}
+  COMMAND perl ${CMAKE_SOURCE_DIR}/tools/stats.pl ${CMAKE_CURRENT_SOURCE_DIR}/sthread_stats.dat ${COPY_GENERATED_FILES}
+  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/sthread_stats.dat
+)
 add_custom_target(STHREAD_GENFILES DEPENDS ${STHREAD_GENFILES_FILES})
 add_dependencies(sthread STHREAD_GENFILES)
 
@@ -50,7 +39,7 @@ SET (GENFILES_H ${ST_ERROR_GENFILES_H} ${STHREAD_GENFILES_H})
 
 ########### install files ###############
 
-install(FILES ${GENFILES_H}
+install(FILES 
   ${CMAKE_CURRENT_SOURCE_DIR}/auto_release.h
   ${CMAKE_CURRENT_SOURCE_DIR}/errlog.h
   ${CMAKE_CURRENT_SOURCE_DIR}/critical_section.h
@@ -68,7 +57,7 @@ install(FILES ${GENFILES_H}
   ${CMAKE_CURRENT_SOURCE_DIR}/w_debug.h
   DESTINATION include)
 
-
+INSTALL_GENERATED_H(${GENFILES_H})
 
 #original Makefile.am contents follow:
 

@@ -6,6 +6,12 @@ INCLUDE_DIRECTORIES (
   ${CMAKE_SOURCE_DIR}/src/common
   ${CMAKE_SOURCE_DIR}/src/sthread
   ${CMAKE_SOURCE_DIR}/src/sm
+
+  # For auto-generated files
+  ${CMAKE_BINARY_DIR}/src/fc
+  ${CMAKE_BINARY_DIR}/src/common
+  ${CMAKE_BINARY_DIR}/src/sthread
+  ${CMAKE_BINARY_DIR}/src/sm
 ) 
 
 add_executable(example1 ${CMAKE_CURRENT_SOURCE_DIR}/example1.cpp)
