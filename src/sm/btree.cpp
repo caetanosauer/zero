@@ -106,6 +106,18 @@ rc_t btree_m::update(
     return RCOK;
 }
 
+rc_t btree_m::put(
+    const lpid_t&                     root,
+    const w_keystr_t&                 key,
+    const cvec_t&                     elem)
+{
+    if(key.get_length_as_keystr() + elem.size() > btree_p::max_entry_size) {
+        return RC(eRECWONTFIT);
+    }
+    W_DO(btree_impl::_ux_put(root, key, elem));
+    return RCOK;
+}
+
 rc_t btree_m::overwrite(
     const lpid_t&                     root,
     const w_keystr_t&                 key,
