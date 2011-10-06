@@ -8,6 +8,11 @@ cmake_minimum_required(VERSION 2.6)
 
 PROJECT(fbtree) # Foster B-Trees
 
+SET(CMAKE_MODULE_PATH "${CMAKE_INSTALL_PREFIX}/share/cmake-modules" ${CMAKE_MODULE_PATH})
+
+SET(LINTEL_FIND_REQUIRED ON)
+INCLUDE(FindLintel)
+
 # Note, we can't change compiler based on CMAKE_SYSTEM.
 # Before PROJECT(), CMAKE_SYSTEM is empty, so we have no clue.
 # After PROJECT(), we can't change CMAKE_C_COMPILER.
