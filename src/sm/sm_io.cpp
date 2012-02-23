@@ -17,6 +17,7 @@
 #include "logdef_gen.cpp"
 #include "crash.h"
 #include "vol.h"
+#include "bf_fixed.h"
 #include <auto_release.h>
 
 #include <new>
@@ -1146,6 +1147,24 @@ io_m::store_operation(vid_t volid, const store_operation_param& param)
 
     W_DO( v->store_operation(param) );
 
+    return RCOK;
+}
+
+rc_t io_m::flush_all_fixed_buffer ()
+{
+    for (uint32_t i = 0; i < max_vols; i++)  {
+        if (vol[i]) {
+            W_DO(vol[i]->get_fixed_bf()->flush());
+        }
+    }
+    return RCOK;
+}
+rc_t io_m::flush_vol_fixed_buffer (vid_t vid)
+{
+    int i = _find(vid);
+    if (i < 0) return RC(eBADVOL);
+    vol_t *v = vol[i];
+    W_DO(v->get_fixed_bf()->flush());
     return RCOK;
 }
 

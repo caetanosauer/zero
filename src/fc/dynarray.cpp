@@ -70,7 +70,7 @@ static size_t align_up(size_t bytes, size_t align) {
     return (bytes+mask) &~ mask;
 }
 
-#if HAVE_DECL_MAP_ALIGN 
+#ifdef HAVE_DECL_MAP_ALIGN 
 #define USE_MAP_ALIGN 1
 #endif
 

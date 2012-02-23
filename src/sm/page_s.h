@@ -1,67 +1,65 @@
-/* -*- mode:C++; c-basic-offset:4 -*-
-     Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
-                       Copyright (c) 2007-2009
-      Data Intensive Applications and Systems Labaratory (DIAS)
-               Ecole Polytechnique Federale de Lausanne
-   
-                         All Rights Reserved.
-   
-   Permission to use, copy, modify and distribute this software and
-   its documentation is hereby granted, provided that both the
-   copyright notice and this permission notice appear in all copies of
-   the software, derivative works or modified versions, and any
-   portions thereof, and that both notices appear in supporting
-   documentation.
-   
-   This code is distributed in the hope that it will be useful, but
-   WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
-   DISCLAIM ANY LIABILITY OF ANY KIND FOR ANY DAMAGES WHATSOEVER
-   RESULTING FROM THE USE OF THIS SOFTWARE.
-*/
-
-/*<std-header orig-src='shore' incl-file-exclusion='PAGE_S_H'>
-
- $Id: page_s.h,v 1.34 2010/07/26 23:37:12 nhall Exp $
-
-SHORE -- Scalable Heterogeneous Object REpository
-
-Copyright (c) 1994-99 Computer Sciences Department, University of
-                      Wisconsin -- Madison
-All Rights Reserved.
-
-Permission to use, copy, modify and distribute this software and its
-documentation is hereby granted, provided that both the copyright
-notice and this permission notice appear in all copies of the
-software, derivative works or modified versions, and any portions
-thereof, and that both notices appear in supporting documentation.
-
-THE AUTHORS AND THE COMPUTER SCIENCES DEPARTMENT OF THE UNIVERSITY
-OF WISCONSIN - MADISON ALLOW FREE USE OF THIS SOFTWARE IN ITS
-"AS IS" CONDITION, AND THEY DISCLAIM ANY LIABILITY OF ANY KIND
-FOR ANY DAMAGES WHATSOEVER RESULTING FROM THE USE OF THIS SOFTWARE.
-
-This software was developed with support by the Advanced Research
-Project Agency, ARPA order number 018 (formerly 8230), monitored by
-the U.S. Army Research Laboratory under contract DAAB07-91-C-Q518.
-Further funding for this work was provided by DARPA through
-Rome Research Laboratory Contract No. F30602-97-2-0247.
-
-*/
-
 #ifndef PAGE_S_H
 #define PAGE_S_H
 
 #include "w_defines.h"
-
-/*  -- do not edit anything above this line --   </std-header>*/
+#include "w_endian.h"
 
 #ifdef __GNUG__
 #pragma interface
 #endif
 
 class xct_t;
+
+/**
+* offset divided by 8 (all records are 8-byte aligned).
+* negative value means ghost records.
+*/
+typedef int16_t  slot_offset8_t;
+typedef uint16_t slot_length_t;
+typedef int16_t  slot_index_t; // to avoid explicit sized-types below
+/** convert a byte offset to 8-byte-divided offset. */
+inline slot_offset8_t to_offset8(int32_t byte_offset) {
+    w_assert1(byte_offset % 8 == 0);
+    w_assert1(byte_offset < (1 << 18));
+    w_assert1(byte_offset >= -(1 << 18));
+    return byte_offset / 8;
+}
+/** convert a byte offset to 8-byte-divided offset with alignment (if %8!=0, put padding bytes). */
+inline slot_offset8_t to_aligned_offset8(int32_t byte_offset) {
+    w_assert1(byte_offset >= 0); // as we are aligning the offset, it should be positive
+    w_assert1(byte_offset < (1 << 18));
+    if (byte_offset % 8 == 0) {
+        return byte_offset / 8;
+    } else {
+        return (byte_offset / 8) + 1;
+    }
+}
+/** convert a 8-byte-divided offset to a byte offset. */
+inline int32_t to_byte_offset(slot_offset8_t offset8) {
+    return offset8 * 8;
+}
+
+
+/** Poor man's normalized key type. to speed up comparison this should be an integer type, not char[]. */
+typedef uint16_t poor_man_key;
+
+/** Returns the value of poor-man's normalized key for the given key string WITHOUT prefix.*/
+inline poor_man_key extract_poor_man_key (const void* key, size_t key_len) {
+    if (key_len == 0) {
+        return 0;
+    } else if (key_len == 1) {
+        return *reinterpret_cast<const unsigned char*>(key) << 8;
+    } else {
+        return deserialize16_ho(key);
+    }
+}
+/** Returns the value of poor-man's normalized key for the given key string WITH prefix.*/
+inline poor_man_key extract_poor_man_key (const void* key_with_prefix, size_t key_len_with_prefix, size_t prefix_len) {
+    w_assert3(prefix_len <= key_len_with_prefix);
+    return extract_poor_man_key (((const char*)key_with_prefix) + prefix_len, key_len_with_prefix - prefix_len);
+}
+
+
 /**\brief Basic page structure for all pages.
  * \details
  * These are persistent things. There is no hierarchy here
@@ -78,16 +76,12 @@ class xct_t;
  */
 class page_s {
 public:
-    typedef int16_t  slot_offset_t; // negative value means ghost records.
-    typedef uint16_t slot_length_t;
-    typedef slot_offset_t  slot_index_t; // to avoid explicit sized-types below
-    
     enum {
         hdr_sz = 64, // NOTICE always sync with the offsets below
         data_sz = smlevel_0::page_sz - hdr_sz,
-        slot_sz = sizeof(slot_offset_t) + sizeof(slot_length_t),
         /** Poor man's normalized key length. */
-        poormkey_sz = 2 
+        poormkey_sz = sizeof (poor_man_key),
+        slot_sz = sizeof(slot_offset8_t) + poormkey_sz
     };
 
  
@@ -104,10 +98,11 @@ public:
     slot_index_t  nslots;   // +2 -> 24
     
     /** number of ghost records. */
-    slot_offset_t  nghosts; // +2 -> 26
+    slot_index_t  nghosts; // +2 -> 26
     
     /** offset to beginning of record area (location of record that is located left-most). */
-    slot_offset_t  record_head;     // +2 -> 28
+    slot_offset8_t  record_head8;     // +2 -> 28
+    int32_t     get_record_head_byte() const {return to_byte_offset(record_head8);}
 
     /** page_p::store_flag_t. */
     uint32_t    _private_store_flags; // +4 -> 32
@@ -200,8 +195,16 @@ public:
      */
     void       update_checksum () const {checksum = calculate_checksum();}
 
+    char*      data_addr8(slot_offset8_t offset8) {
+        return data + to_byte_offset(offset8);
+    }
+    const char* data_addr8(slot_offset8_t offset8) const {
+        return data + to_byte_offset(offset8);
+    }
+
     /* MUST BE 8-BYTE ALIGNED HERE */
     char     data[data_sz];        // must be aligned
+
 
     page_s() {
         w_assert1(data - (const char *) this == hdr_sz);
@@ -229,6 +232,4 @@ inline uint32_t page_s::calculate_checksum () const
     return ((uint32_t) (value >> 32)) ^ ((uint32_t) (value & 0xFFFFFFFF));
 }
 
-/*<std-footer incl-file-exclusion='PAGE_S_H'>  -- do not edit anything below this line -- */
-
-#endif          /*</std-footer>*/
+#endif

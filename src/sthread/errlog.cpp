@@ -451,7 +451,7 @@ ErrLog::log(enum LogPriority prio, const char *format, ...)
         case log_to_open_file:
         case log_to_stderr:
 
-#if HAVE_VPRINTF
+#ifdef HAVE_VPRINTF
             (void) vfprintf(_file,format, ap);
 #else
 #error need vfprintf

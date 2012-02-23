@@ -6,6 +6,7 @@
 #include <string>
 #include <ostream>
 #include <stdint.h>
+#include "w_endian.h"
 
 class w_keystr_t_test;
 class cvec_t;
@@ -94,6 +95,18 @@ str1.construct_regularkey ("your_key", 8);\endverbatim
         const void *keystr_suffix, w_keystr_len_t suffix_length);
 
     /**
+     * Used when the key string consists of prefix, poor-man's key and suffix.
+     * @param total_suffix_length key length including poorman's key and suffix.
+     * Note that this might be smaller than sizeof(poormkey)!
+     * E.g., total_suffix_length=1: returns prefix and only the first byte of poormkey.
+     */
+    bool construct_from_keystr_poormkey_16(
+        const void *keystr_prefix, w_keystr_len_t prefix_length,
+        w_keystr_len_t total_suffix_length, uint16_t poormkey,
+        const void *keystr_suffix);
+    // add 32 version if needed
+
+    /**
      * Construct from cvec_t. This is implemented in vec_t.cpp.
      * So, link to libcommon if you want to use this method.
      */
@@ -115,6 +128,9 @@ str1.construct_regularkey ("your_key", 8);\endverbatim
 
     /** Returns the count of common leading bytes with the given key string. */
     w_keystr_len_t common_leading_bytes (const w_keystr_t &r) const;
+
+    /** Returns the count of common leading bytes with the given key string. */
+    w_keystr_len_t common_leading_bytes (const unsigned char*str, w_keystr_len_t len) const;
 
     /** Returns the count of common leading bytes in the two given strings. */
     static  w_keystr_len_t common_leading_bytes (const unsigned char*str1, w_keystr_len_t len1, const unsigned char*str2, w_keystr_len_t len2);
@@ -283,6 +299,33 @@ inline bool w_keystr_t::construct_from_keystr(const void *keystr_prefix, w_keyst
     return true;
 }
 
+inline bool w_keystr_t::construct_from_keystr_poormkey_16(
+    const void *keystr_prefix, w_keystr_len_t prefix_length,
+    w_keystr_len_t total_suffix_length, uint16_t poormkey,
+    const void *keystr_suffix) {
+    assert (keystr_prefix != NULL);
+    _strlen = prefix_length + total_suffix_length;
+    _assure(_strlen);
+    if (_data == NULL) return false;
+    ::memcpy (_data, keystr_prefix, prefix_length);
+    if (total_suffix_length > 0) {
+        if (total_suffix_length < sizeof(poormkey)) {
+            uint16_t tmp;
+            serialize16_be(&tmp, poormkey);
+            _data[prefix_length] = *reinterpret_cast<unsigned char*>(&tmp);
+            assert (reinterpret_cast<unsigned char*>(&tmp)[1] == 0);
+        } else {
+            serialize16_be(_data + prefix_length, poormkey);
+            if (total_suffix_length > sizeof(poormkey)) {
+                assert (keystr_suffix != NULL);
+                ::memcpy (_data + prefix_length + sizeof(poormkey), keystr_suffix, total_suffix_length - sizeof(poormkey));
+            }
+        }
+    }
+    assert (_valid_signbyte(_data));
+    return true;
+}
+
 inline w_keystr_t::~w_keystr_t() {
     clear();
 }
@@ -308,6 +351,13 @@ inline w_keystr_len_t w_keystr_t::common_leading_bytes (const w_keystr_t &r) con
     assert (_valid_signbyte(_data));
     assert (_valid_signbyte(r._data));
     return common_leading_bytes (_data, _strlen, r._data, r._strlen);
+}
+inline w_keystr_len_t w_keystr_t::common_leading_bytes (const unsigned char*str, w_keystr_len_t len) const {
+    assert (_data != NULL);
+    assert (str != NULL);
+    assert (_valid_signbyte(_data));
+    assert (_valid_signbyte(str));
+    return common_leading_bytes (_data, _strlen, str, len);
 }
 
 inline w_keystr_len_t w_keystr_t::common_leading_bytes (const unsigned char*str1, w_keystr_len_t len1, const unsigned char* str2, w_keystr_len_t len2)

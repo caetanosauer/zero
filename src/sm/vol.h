@@ -14,6 +14,7 @@
 struct volume_hdr_stats_t;
 class alloc_cache_t;
 class stnode_cache_t;
+class bf_fixed_m;
 
 class volhdr_t {
     // For compatibility checking, we record a version number
@@ -96,14 +97,13 @@ public:
     uint32_t            num_pages() const;
     uint32_t            num_used_pages() const;
 
-public:
     int                 fill_factor(snum_t fnum);
  
     bool                is_valid_page_num(const lpid_t& p) const;
     bool                is_valid_store(snum_t f) const;
 
     bool                is_allocated_page(shpid_t pid) const;
-public:
+
     /**  Return true if the store "store" is allocated. false otherwise. */
     bool                is_alloc_store(snum_t f) const;
     
@@ -176,6 +176,7 @@ public:
     static rc_t            format_vol(
         const char*          devname,
         lvid_t               lvid,
+        vid_t                vid,
         shpid_t              num_pages,
         bool                 skip_raw_init);
 
@@ -236,7 +237,9 @@ private:
     int              _fake_disk_latency;     
     
     alloc_cache_t*   _alloc_cache;
-    stnode_cache_t*   _stnode_cache;
+    stnode_cache_t*  _stnode_cache;
+    /** buffer manager for special pages. */
+    bf_fixed_m*      _fixed_bf;
     
     /** releases _alloc_cache and _stnode_cache. */
     void clear_caches();
@@ -247,6 +250,7 @@ private:
     /** USED ONLY FROM TESTCASES!. */
     alloc_cache_t*           get_alloc_cache() {return _alloc_cache;}
     stnode_cache_t*          get_stnode_cache() {return _stnode_cache;}
+    bf_fixed_m*              get_fixed_bf() {return _fixed_bf;}
 
     static const char*       prolog[]; // string array for volume hdr
 

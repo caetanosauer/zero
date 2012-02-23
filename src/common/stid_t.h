@@ -121,6 +121,9 @@ inline bool stid_t::operator!=(const stid_t& s) const
     return ! (*this == s);
 }
 
+/** maximum number of stores that can exist in one volume. 1 to 65536. */
+#define MAX_STORE_COUNT 65536
+
 /*<std-footer incl-file-exclusion='STID_T_H'>  -- do not edit anything below this line -- */
 
 #endif          /*</std-footer>*/

@@ -242,7 +242,7 @@ public:
     static 
     rc_t                      group_commit(const xct_t *list[], int number);
     
-    rc_t                      commit_free_locks(bool read_lock_only = false);
+    rc_t                      commit_free_locks(bool read_lock_only = false, lsn_t commit_lsn = lsn_t::null);
     rc_t                      early_lock_release();
 
 #if defined(USE_BLOCK_ALLOC_FOR_XCT_IMPL) && (USE_BLOCK_ALLOC_FOR_XCT_IMPL==1)
@@ -471,7 +471,7 @@ protected:
                                         int nlks, const lockid_t *l); 
     rc_t                         obtain_one_lock(lock_mode_t mode, 
                                         const lockid_t &l); 
-
+public: // not quite public thing.. but convenient for experiments
     xct_lock_info_t*             lock_info() const;
     lil_private_table*           lil_lock_info() const;
 
@@ -765,10 +765,10 @@ private: // all data members private
     lsn_t                        _undo_nxt;
 
     /**
-     * Whenever a transaction latches some page,
-     * this value is updated as _read_watermark=max(_read_watermark, page_lsn)
-     * so that we maintain a maximum LSN observed by the transaction.
-     * This value is used to commit a read-only transaction to block
+     * Whenever a transaction acquires some lock,
+     * this value is updated as _read_watermark=max(_read_watermark, lock_bucket.tag)
+     * so that we maintain a maximum commit LSN of transactions it depends on.
+     * This value is used to commit a read-only transaction with Safe SX-ELR to block
      * until the log manager flushed the log buffer at least to this value.
      * Assuming this protocol, we can do ELR for x-locks.
      * see ticket:101
@@ -846,14 +846,14 @@ public:
     bool                        error_encountered() const {  return false; }
 #endif
     tid_t                       tid() const { 
-                                    w_assert1(_tid == _core->_tid);
+                                    w_assert1(_core == NULL || _tid == _core->_tid);
                                     return _tid; }
     uint32_t                    get_xct_chain_len() const { return _xct_chain_len;}
                                     
     const lsn_t&                get_read_watermark() const { return _read_watermark; }
-    void                        update_read_watermark(const lsn_t &page_lsn) {
-        if (_read_watermark < page_lsn) {
-            _read_watermark = page_lsn;
+    void                        update_read_watermark(const lsn_t &tag) {
+        if (_read_watermark < tag) {
+            _read_watermark = tag;
         }
     }
     elr_mode_t                  get_elr_mode() const { return _elr_mode; }
@@ -1230,6 +1230,9 @@ xct_t::gtid() const
 
 /**\endcond skip */
 
+// TODO. this should accept store id/volume id.
+// it should say 'does not need' if we have absolute locks in LIL.
+// same thing can be manually achieved by user code, though.
 inline bool
 g_xct_does_need_lock()
 {

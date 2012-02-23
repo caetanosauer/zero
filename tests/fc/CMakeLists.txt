@@ -12,6 +12,7 @@ X_ADD_TESTCASE(test_bitvector "${the_libraries}")
 X_ADD_TESTCASE(test_container "${the_libraries}")
 X_ADD_TESTCASE(test_cuckoo "${the_libraries}")
 X_ADD_TESTCASE(test_darray "${the_libraries}")
+X_ADD_TESTCASE(test_endian "${the_libraries}")
 X_ADD_TESTCASE(test_hash "${the_libraries}")
 X_ADD_TESTCASE(test_heap "${the_libraries}")
 X_ADD_TESTCASE(test_key_t gtest_main)
@@ -23,6 +24,7 @@ X_ADD_TESTCASE(test_random "${the_libraries}")
 X_ADD_TESTCASE(test_rc "${the_libraries}")
 X_ADD_TESTCASE(test_ss "${the_libraries}")
 
+INCLUDE_DIRECTORIES (${CMAKE_CURRENT_BINARY_DIR}) 
 set(TEST_STAT_GENFILES_FILES
   test_stat_collect_enum_gen.h
   test_stat_dec_gen.cpp

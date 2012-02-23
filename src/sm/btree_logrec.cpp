@@ -6,9 +6,6 @@
 
 #define SM_SOURCE
 #define LOGREC_C
-#ifdef __GNUG__
-#   pragma implementation
-#endif
 #include "sm_int_2.h"
 #include "logdef_gen.cpp"
 
@@ -366,7 +363,7 @@ btree_ghost_t::btree_ghost_t(const btree_p& p, const vector<slotid_t>& slots)
      for (size_t i = 0; i < slots.size(); ++i) {
         size_t len;
         w_assert3(p.is_leaf()); // ghost exists only in leaf
-        const char* key = p._leaf_key_noprefix(slots[i] - 1, len); // -1 because this is btree_p method
+        const char* key = p._leaf_key_noprefix(slots[i], len);
         offsets[i] = (current - slot_data);
         // *reinterpret_cast<uint16_t*>(current) = len; this causes Bus Error on solaris! so, instead:
         uint16_t len_u16 = (uint16_t) len;
@@ -438,7 +435,7 @@ btree_ghost_mark_log::redo(page_p *page)
             cerr << " key=" << key << endl << " not found in btree_ghost_mark_log::redo" << endl;
             w_assert1(false); // something unexpected, but can go on.
         }
-        page->mark_ghost(slot + 1); // +1 because this is page_p
+        bp->mark_ghost(slot);
     }
 }
 

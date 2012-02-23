@@ -114,8 +114,8 @@ public:
 
 
 /**\cond skip */
-enum { FINGER_BITS=3 };
-typedef w_bitvector_t<256>    sm_thread_map_t;
+enum { FINGER_BITS=SM_DREADLOCK_FINGERS };
+typedef w_bitvector_t<SM_DREADLOCK_BITCOUNT>    sm_thread_map_t;
 /**\endcond skip */
 
 /**\brief Fingerprint for this smthread.
@@ -138,10 +138,18 @@ typedef w_bitvector_t<256>    sm_thread_map_t;
  * we'd use 1 bit per... -- but if you are debugging something you might
  * want to ensure or detect uniqueness for that purpose.)
  */
+typedef sm_thread_map_t atomic_thread_map_t;
+/*
+    We do NOT need synchronization for Dreadlock bitmap.
+    We freshly re-compute bitmaps at each spin (no false-negatives in long run),
+    and we tolerate occasional false positives.
+    So, atomic_thread_map_t is no longer needed.
+
 class  atomic_thread_map_t : public sm_thread_map_t {
 private:
-    mutable srwlock_t   _map_lock;
+    // mutable srwlock_t   _map_lock;
 public:
+    
     bool has_reader() const {
         return _map_lock.has_reader();
     }
@@ -186,7 +194,7 @@ public:
         return *this;
     }
 }; 
-
+*/
 
 /**\cond skip */
 typedef void st_proc_t(void*);
@@ -236,9 +244,7 @@ class smthread_t : public sthread_t {
 
         // for lock_head_t::my_lock::get_me
         queue_based_lock_t::ext_qnode _me1;
-        // for DEF_LOCK_X_TYPE(2)
         queue_based_lock_t::ext_qnode _me2;
-        // for DEF_LOCK_X_TYPE(3)
         queue_based_lock_t::ext_qnode _me3;
 
         /**\var queue_based_lock_t::ext_qnode _1thread_xct_me;
@@ -246,11 +252,6 @@ class smthread_t : public sthread_t {
          * structure.  Used in xct_impl.cpp
          */
         queue_based_lock_t::ext_qnode _1thread_xct_me;
-        /**\var static __thread queue_based_lock_t::ext_qnode _xct_t_me_node;
-         * \brief Queue node for holding mutex to prevent 
-         * mutiple-thread/transaction where disallowed. Used in xct.cpp
-         */
-        queue_based_lock_t::ext_qnode _xct_t_me_node;
         /**\var static __thread queue_based_lock_t::ext_qnode _xlist_mutex_node;
          * \brief Queue node for holding mutex to serialize 
          * access transaction list. Used in xct.cpp
@@ -287,7 +288,6 @@ class smthread_t : public sthread_t {
             QUEUE_EXT_QNODE_INITIALIZE(_me2);
             QUEUE_EXT_QNODE_INITIALIZE(_me3);
             QUEUE_EXT_QNODE_INITIALIZE(_1thread_xct_me);
-            QUEUE_EXT_QNODE_INITIALIZE(_xct_t_me_node);
             QUEUE_EXT_QNODE_INITIALIZE(_xlist_mutex_node);
 
             QUEUE_BLOCK_EXT_QNODE_INITIALIZE(_log_me_node);
@@ -586,8 +586,6 @@ public:
                                                return tcb()._xlist_mutex_node;}
     queue_based_lock_t::ext_qnode& get_1thread_xct_me() {
                                                return tcb()._1thread_xct_me;}
-    queue_based_lock_t::ext_qnode& get_xct_t_me_node() {
-                                               return tcb()._xct_t_me_node;}
 private:
 
     /* sm-specif block / unblock implementation */

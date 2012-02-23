@@ -1,0 +1,513 @@
+/* config/shore-config-h.in.  Generated from configure.ac by autoheader.  */
+
+/* Define if building universal (internal helper macro) */
+#undef AC_APPLE_UNIVERSAL_BUILD
+
+/* operating system */
+#undef AIX32
+
+/* operating system */
+#undef AIX41
+
+/* architecture */
+#undef Alpha
+
+/* old debug code included */
+#undef DEBUG
+
+/*if is gcc2.96*/
+#if defined(__GNUC__) && __GNUC__==2
+# if defined(__GNUC_MINOR__) && __GNUC_MINOR__==96
+# define GCC_BROKEN_WARNINGS
+#endif
+#endif
+    
+
+/* hack for gcc3.4 and later */
+#undef GCC_VER_34_WARNINGS
+
+/*if is gcc3.x, x < 4*/
+#if defined(__GNUC__) && (__GNUC__==3) 
+# define GCC_VER_3_WARNINGS
+#endif
+    
+
+/* Define to 1 if you have the <atomic.h> header file. */
+#undef HAVE_ATOMIC_H
+
+/* Define to 1 if the system has the type `char_t'. */
+#undef HAVE_CHAR_T
+
+/* Define to 1 if you have the `clock_gettime' function. */
+#undef HAVE_CLOCK_GETTIME
+
+/* Define to 1 if you have the declaration of `MAP_ALIGN', and to 0 if you
+   don't. */
+#undef HAVE_DECL_MAP_ALIGN
+
+/* Define to 1 if you have the declaration of `MAP_ANON', and to 0 if you
+   don't. */
+#undef HAVE_DECL_MAP_ANON
+
+/* Define to 1 if you have the declaration of `MAP_ANONYMOUS', and to 0 if you
+   don't. */
+#undef HAVE_DECL_MAP_ANONYMOUS
+
+/* Define to 1 if you have the declaration of `MAP_FIXED', and to 0 if you
+   don't. */
+#undef HAVE_DECL_MAP_FIXED
+
+/* Define to 1 if you have the declaration of `MAP_NORESERVE', and to 0 if you
+   don't. */
+#undef HAVE_DECL_MAP_NORESERVE
+
+/* Define to 1 if you have the <dirent.h> header file, and it defines `DIR'.
+   */
+#undef HAVE_DIRENT_H
+
+/* Define to 1 if you don't have `vprintf' but do have `_doprnt.' */
+#undef HAVE_DOPRNT
+
+/* Define to 1 if you have the <fcntl.h> header file. */
+#undef HAVE_FCNTL_H
+
+/* Define to 1 if you have the `gethrtime' function. */
+#undef HAVE_GETHRTIME
+
+/* Define to 1 if you have the `getopt' function. */
+#undef HAVE_GETOPT
+
+/* Define to 1 if you have the `getpagesizes' function. */
+#undef HAVE_GETPAGESIZES
+
+/* Define to 1 if you have the `gettimeofday' function. */
+#undef HAVE_GETTIMEOFDAY
+
+/* Define to 1 if you have the <inttypes.h> header file. */
+#undef HAVE_INTTYPES_H
+
+/* Define to 1 if you have the `rt' library (-lrt). */
+#undef HAVE_LIBRT
+
+/* Define to 1 if the system has the type `long_t'. */
+#undef HAVE_LONG_T
+
+/* Define to 1 if you have the `memalign' function. */
+#undef HAVE_MEMALIGN
+
+/* Define to 1 if you have the `membar_enter' function. */
+#undef HAVE_MEMBAR_ENTER
+
+/* Define to 1 if you have the `memcntl' function. */
+#undef HAVE_MEMCNTL
+
+/* Define to 1 if you have the <memory.h> header file. */
+#undef HAVE_MEMORY_H
+
+/* Define to 1 if you have the <ndir.h> header file, and it defines `DIR'. */
+#undef HAVE_NDIR_H
+
+/* Define to 1 if you have the <netdb.h> header file. */
+#undef HAVE_NETDB_H
+
+/* Define to 1 if you have the <netinet/in.h> header file. */
+#undef HAVE_NETINET_IN_H
+
+/* Define to 1 if you have the `posix_memalign' function. */
+#undef HAVE_POSIX_MEMALIGN
+
+/* Define to 1 if you have the `posix_spawn' function. */
+#undef HAVE_POSIX_SPAWN
+
+/* have pthread_attr_getstack? */
+#undef HAVE_PTHREAD_ATTR_GETSTACK
+
+/* have pthread_attr_getstacksize? */
+#undef HAVE_PTHREAD_ATTR_GETSTACKSIZE
+
+/* have pthreads barriers? */
+#undef HAVE_PTHREAD_BARRIERS
+
+/* Define to 1 if the system has the type `ptrdiff_t'. */
+#undef HAVE_PTRDIFF_T
+
+/* Define to 1 if you have the <semaphore.h> header file. */
+#undef HAVE_SEMAPHORE_H
+
+/* Define to 1 if the system has the type `short_t'. */
+#undef HAVE_SHORT_T
+
+/* Define to 1 if you have the <stdint.h> header file. */
+#undef HAVE_STDINT_H
+
+/* Define to 1 if you have the <stdlib.h> header file. */
+#undef HAVE_STDLIB_H
+
+/* Define to 1 if you have the `strerror' function. */
+#undef HAVE_STRERROR
+
+/* Define to 1 if you have the <strings.h> header file. */
+#undef HAVE_STRINGS_H
+
+/* Define to 1 if you have the <string.h> header file. */
+#undef HAVE_STRING_H
+
+/* Define to 1 if `st_blksize' is a member of `struct stat'. */
+#undef HAVE_STRUCT_STAT_ST_BLKSIZE
+
+/* Define to 1 if you have the <sys/dir.h> header file, and it defines `DIR'.
+   */
+#undef HAVE_SYS_DIR_H
+
+/* Define to 1 if you have the <sys/ioctl.h> header file. */
+#undef HAVE_SYS_IOCTL_H
+
+/* Define to 1 if you have the <sys/ndir.h> header file, and it defines `DIR'.
+   */
+#undef HAVE_SYS_NDIR_H
+
+/* Define to 1 if you have the <sys/param.h> header file. */
+#undef HAVE_SYS_PARAM_H
+
+/* Define to 1 if you have the <sys/socket.h> header file. */
+#undef HAVE_SYS_SOCKET_H
+
+/* Define to 1 if you have the <sys/stat.h> header file. */
+#undef HAVE_SYS_STAT_H
+
+/* Define to 1 if you have the <sys/types.h> header file. */
+#undef HAVE_SYS_TYPES_H
+
+/* Define to 1 if you have the <time.h> header file. */
+#undef HAVE_TIME_H
+
+/* Define to 1 if the system has the type `uchar_t'. */
+#undef HAVE_UCHAR_T
+
+/* Define to 1 if the system has the type `ulong_t'. */
+#undef HAVE_ULONG_T
+
+/* Define to 1 if you have the `uname' function. */
+#undef HAVE_UNAME
+
+/* Define to 1 if you have the <unistd.h> header file. */
+#undef HAVE_UNISTD_H
+
+/* Define to 1 if the system has the type `ushort_t'. */
+#undef HAVE_USHORT_T
+
+/* Define to 1 if you have the <valgrind.h> header file. */
+#undef HAVE_VALGRIND_H
+
+/* Define to 1 if you have the <valgrind/valgrind.h> header file. */
+#undef HAVE_VALGRIND_VALGRIND_H
+
+/* Define to 1 if you have the `valloc' function. */
+#undef HAVE_VALLOC
+
+/* Define to 1 if you have the `vprintf' function. */
+#undef HAVE_VPRINTF
+
+/* operating system */
+#undef HPUX8
+
+/* huge page size */
+#undef HUGEPAGESIZE
+
+/* architecture */
+#undef I386
+
+/* architecture */
+#undef I860
+
+/* architecture */
+#undef IA64
+
+/* aix */
+#undef IS_AIX
+
+/* aix3 */
+#undef IS_AIX3
+
+/* aix41 */
+#undef IS_AIX4
+
+/* osf1 alpha */
+#undef IS_ALPHA_OSF1
+
+/* combo */
+#undef IS_AMD64
+
+/* amd64 linux */
+#undef IS_AMD64_LINUX
+
+/* nt cygwin */
+#undef IS_CYGWIN
+
+/* dos-based */
+#undef IS_DOSDEV
+
+/* hp unix */
+#undef IS_HPUX8
+
+/* x86 nt cygwin */
+#undef IS_I386_CYGWIN
+
+/* i386 linux */
+#undef IS_I386_LINUX
+
+/* i386 macosx */
+#undef IS_I386_MACOSX
+
+/* i386 netbsd */
+#undef IS_I386_NETBSD
+
+/* combo */
+#undef IS_I386_SOLARIS2
+
+/* osf1 paragon */
+#undef IS_I860_OSF1AD
+
+/* ia64 linux */
+#undef IS_IA64_LINUX
+
+/* irix */
+#undef IS_IRIX
+
+/* x86 nt */
+#undef IS_IX86_NT
+
+/* linux */
+#undef IS_LINUX
+
+/* apple mac osx */
+#undef IS_MACOSX
+
+/* sgi mips irix */
+#undef IS_MIPS_IRIX
+
+/* mips ultrix */
+#undef IS_MIPS_ULTRIX42
+
+/* netbsd */
+#undef IS_NETBSD
+
+/* is nt */
+#undef IS_NT
+
+/* osf1 */
+#undef IS_OSF1
+
+/* osf1 */
+#undef IS_OSF1AD
+
+/* powerpc macosx */
+#undef IS_POWERPC_MACOSX
+
+/* Rs6000 aix32 */
+#undef IS_RS6000_AIX32
+
+/* Rs6000 aix41 */
+#undef IS_RS6000_AIX41
+
+/* hp unix */
+#undef IS_SNAKE_HPUX8
+
+/* is solaris */
+#undef IS_SOLARIS2
+
+/* is sparc solaris */
+#undef IS_SPARC_SOLARIS2
+
+/* combo */
+#undef IS_SPARC_SUNOS41
+
+/* operating system */
+#undef IS_SUNOS41
+
+/* ultrix */
+#undef IS_ULTRIX42
+
+/*simply !IS_NT*/
+#ifndef IS_NT 
+#define IS_UNIX 1
+#endif
+
+
+/* combo */
+#undef IS_X86_64
+
+/* x86_64 linux */
+#undef IS_X86_64_LINUX
+
+/* operating system */
+#undef Irix
+
+/* operating system */
+#undef Linux
+
+/* operating system */
+#undef MacOSX
+
+/* architecture */
+#undef Mips
+
+/* no debug code included */
+#undef NDEBUG
+
+/* operating system */
+#undef OSF1
+
+/* operating system */
+#undef OSF1AD
+
+/* Name of package */
+#undef PACKAGE
+
+/* Define to the address where bug reports for this package should be sent. */
+#undef PACKAGE_BUGREPORT
+
+/* Define to the full name of this package. */
+#undef PACKAGE_NAME
+
+/* Define to the full name and version of this package. */
+#undef PACKAGE_STRING
+
+/* Define to the one symbol short name of this package. */
+#undef PACKAGE_TARNAME
+
+/* Define to the home page for this package. */
+#undef PACKAGE_URL
+
+/* Define to the version of this package. */
+#undef PACKAGE_VERSION
+
+/* architecture */
+#undef PowerPC
+
+/* architecture */
+#undef Rs6000
+
+/* The size of `pthread_t', as computed by sizeof. */
+#undef SIZEOF_PTHREAD_T
+
+/* DORA-related code included */
+#undef SM_DORA
+
+/* configured page size */
+#undef SM_PAGESIZE
+
+/* operating system */
+#undef SOLARIS2
+
+/* Define to 1 if you have the ANSI C header files. */
+#undef STDC_HEADERS
+
+/* operating system */
+#undef SUNOS41
+
+/* architecture */
+#undef Snake
+
+/* architecture */
+#undef Sparc
+
+/* include tracing code? */
+#undef TRACECODE
+
+/* enable-pthread-mutex ? */
+#undef USE_PTHREAD_MUTEX
+
+/* operating system */
+#undef Ultrix42
+
+/* Version number of package */
+#undef VERSION
+
+/* Define WORDS_BIGENDIAN to 1 if your processor stores words with the most
+   significant byte first (like Motorola and SPARC, unlike Intel). */
+#if defined AC_APPLE_UNIVERSAL_BUILD
+# if defined __BIG_ENDIAN__
+#  define WORDS_BIGENDIAN 1
+# endif
+#else
+# ifndef WORDS_BIGENDIAN
+#  undef WORDS_BIGENDIAN
+# endif
+#endif
+
+/* Use debug level 0, optimized */
+// #undef W_DEBUG_LEVEL // no longer needed. set in CMakeLists.txt
+
+/* track return-code checking */
+#undef W_DEBUG_RC
+
+#if (defined(_LARGEFILE_SOURCE) && defined(_FILE_OFFSET_BITS)) || defined(ARCH_LP64)
+#define LARGEFILE_AWARE
+#endif
+
+
+#if TRACECODE==1
+#define W_TRACE
+#endif
+
+
+/*for in-memory str streams*/
+#define W_USE_COMPAT_STRSTREAM
+
+
+/* operating system */
+#undef __MacOSX__
+
+/* architecture */
+#undef amd64
+
+/* Define to `int' if <sys/types.h> doesn't define. */
+#undef gid_t
+
+/*turn off hpux and hp9000s800*/
+#if defined(hpux) && defined(hp9000s800)
+#undef hpux
+#undef hp9000s800
+#endif
+
+
+/* architecture - not always defined by compiler */
+#undef i386
+
+/*turn off mips and ultrix*/
+#if defined(mips) && defined(ultrix)
+#undef mips
+#undef ultrix
+#endif
+
+
+/* Define to `int' if <sys/types.h> does not define. */
+#undef mode_t
+
+/* Define to `long int' if <sys/types.h> does not define. */
+#undef off_t
+
+/* Define to `int' if <sys/types.h> does not define. */
+#undef pid_t
+
+/*turn off sgi */
+#if defined(sgi) 
+#undef sgi
+#endif
+
+
+/* Define to `unsigned int' if <sys/types.h> does not define. */
+#undef size_t
+
+/* Define to `int' if <sys/types.h> doesn't define. */
+#undef uid_t
+
+/* ultrix */
+#undef w_NetBSD
+
+/* operating system */
+#undef win32
+
+/* architecture */
+#undef x86_64

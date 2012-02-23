@@ -1,4 +1,4 @@
-
+# global include directories
 INCLUDE_DIRECTORIES (
   ${CMAKE_SOURCE_DIR}/config
   ${CMAKE_SOURCE_DIR}/src/atomic_ops
@@ -13,6 +13,16 @@ INCLUDE_DIRECTORIES (
   ${CMAKE_BINARY_DIR}/src/sthread
   ${CMAKE_BINARY_DIR}/src/sm
 ) 
+
+# to look for generated headers
+INCLUDE_DIRECTORIES (
+  ${CMAKE_BINARY_DIR}/config
+  ${CMAKE_BINARY_DIR}/src/atomic_ops
+  ${CMAKE_BINARY_DIR}/src/fc
+  ${CMAKE_BINARY_DIR}/src/common
+  ${CMAKE_BINARY_DIR}/src/sthread
+  ${CMAKE_BINARY_DIR}/src/sm
+)
 
 add_executable(example1 ${CMAKE_CURRENT_SOURCE_DIR}/example1.cpp)
 target_link_libraries(example1 common fc sthread sm atomic_ops)

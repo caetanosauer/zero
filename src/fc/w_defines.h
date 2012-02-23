@@ -154,7 +154,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #endif
 
 
-#if SM_PAGESIZE > 32768 
+#if SM_PAGESIZE > 32768 * 8
 #error SM does not support pages this large.
 #endif
 

@@ -52,7 +52,6 @@ typedef uint32_t    shpid_t;
 #ifndef SM_SOURCE
 // This is for servers. SM_SOURCE is defined in the SM sources.
 namespace locking {
-    typedef w_base_t::lock_duration_t  lock_duration_t; 
     typedef w_base_t::lock_mode_t  lock_mode_t; 
     static const lock_mode_t NL = w_base_t::NL;
     static const lock_mode_t IS = w_base_t::IS;

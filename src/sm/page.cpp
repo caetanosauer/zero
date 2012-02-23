@@ -10,7 +10,6 @@
 #include "page.h"
 #include "btree_p.h"
 #include "w_key.h"
-#include <algorithm>
 
 uint32_t
 page_p::get_store_flags() const
@@ -138,28 +137,29 @@ page_p::_format(lpid_t pid, tag_t tag,
     memset(_pp, '\017', sizeof(*_pp)); // trash the whole page
 #endif //ZERO_INIT
 
-    // _pp->set_page_storeflags(sf); // restore flag
-    this->set_store_flags(sf); // changed to do it through the page_p, bfcb_t
-    // TODO: any assertions on store_flags?
+    if (tag != t_alloc_p && tag != t_stnode_p) {
+        // _pp->set_page_storeflags(sf); // restore flag
+        this->set_store_flags(sf); // changed to do it through the page_p, bfcb_t
+        // TODO: any assertions on store_flags?
 
 #if W_DEBUG_LEVEL > 2
-    if(
-     (smlevel_0::operating_mode == smlevel_0::t_in_undo)
-     ||
-     (smlevel_0::operating_mode == smlevel_0::t_forward_processing)
-    )  // do the assert below
-    w_assert3(sf != st_bad);
+        if(
+        (smlevel_0::operating_mode == smlevel_0::t_in_undo)
+        ||
+        (smlevel_0::operating_mode == smlevel_0::t_forward_processing)
+        )  // do the assert below
+        w_assert3(sf != st_bad);
 #endif 
+    }
 
     _pp->lsn= lsn_t(0, 1);
     _pp->pid = pid;
     _pp->page_flags = page_flags;
      w_assert3(tag != t_bad_p);
     _pp->tag = tag;  // must be set before rsvd_mode() is called
-    _pp->record_head = data_sz;
+    _pp->record_head8 = to_offset8(data_sz);
     _pp->nslots = _pp->nghosts = _pp->btree_consecutive_skewed_insertions = 0;
 
-    w_assert3 (is_consistent_space());
     return RCOK;
 }
 
@@ -192,6 +192,7 @@ page_p::_fix_core(
     bool                 ignore_store_id, 
     int                  refbit)
 {
+    w_assert1(pid.vol() != vid_t::null);
     w_assert3(!_pp || bf->is_bf_page(_pp, false));
     store_flag_t        ret_store_flags = store_flags;
 
@@ -283,12 +284,6 @@ page_p::_fix_core(
     INC_TSTAT(page_fix_cnt);  
     DBGTHRD(<<"page fix: tag " << ptag << " pid " << pid);
     
-    // update the read-watermark for read-only xct
-    xct_t *x = xct();
-    if (x) {
-        x->update_read_watermark(_pp->lsn);
-    }
-    
     return RCOK;
 }
 
@@ -310,237 +305,9 @@ page_p::is_mine() const
     return _pp ? bf->is_mine(_pp) : false;
 }
 
-rc_t page_p::insert_expand_nolog(slotid_t idx, const cvec_t &vec)
-{
-    w_assert1(idx >= 0 && idx <= _pp->nslots);
-    w_assert3 (is_consistent_space());
-    // this shouldn't happen. the caller should have checked with check_space_for_insert()
-    if (!check_space_for_insert(vec.size())) {
-        return RC(smlevel_0::eRECWONTFIT);
-    }
-
-     //  Log has already been generated ... the following actions must succeed!
-     // shift slot array. if we are inserting to the end (idx == nslots), do nothing
-    if (idx != _pp->nslots)    {
-        ::memmove(_pp->data + slot_sz * (idx + 1),
-                _pp->data + slot_sz * (idx),
-                (_pp->nslots - idx) * slot_sz);
-    }
-
-    //  Fill up the slots and data
-    slot_offset_t new_record_head = _pp->record_head - align(vec.size());
-    overwrite_slot(idx, new_record_head, vec.size());
-    vec.copy_to(_pp->data + new_record_head);
-    _pp->record_head = new_record_head;
-    ++_pp->nslots;
-
-    w_assert3 (is_consistent_space());
-    return RCOK;
-}
-
-void page_p::append_nolog(const cvec_t &vec, bool ghost)
-{
-    w_assert3 (check_space_for_insert(vec.size()));
-    w_assert5 (is_consistent_space());
-    
-    //  Fill up the slots and data
-    slot_offset_t new_record_head = _pp->record_head - align(vec.size());
-    overwrite_slot(_pp->nslots, ghost ? -new_record_head : new_record_head, vec.size());
-    vec.copy_to(_pp->data + new_record_head);
-    _pp->record_head = new_record_head;
-    if (ghost) {
-        ++_pp->nghosts;
-    }
-    ++_pp->nslots;
-
-    w_assert5 (is_consistent_space());
-}
-void page_p::expand_rec(slotid_t idx, slot_length_t rec_len)
-{
-    w_assert1(idx >= 0 && idx < _pp->nslots);
-    w_assert1(usable_space() >= align(rec_len));
-    w_assert3(is_consistent_space());
-
-    bool ghost = is_ghost_record(idx);
-    smsize_t old_rec_len = tuple_size(idx);
-    void* old_rec = tuple_addr(idx);
-    slot_offset_t new_record_head = _pp->record_head - align(rec_len);
-    overwrite_slot(idx, ghost ? -new_record_head : new_record_head, rec_len);
-    _pp->record_head = new_record_head;
-    ::memcpy (tuple_addr(idx), old_rec, old_rec_len); // copy the original data
-#if W_DEBUG_LEVEL>0
-    ::memset (old_rec, 0, old_rec_len); // clear old slot
-#endif // W_DEBUG_LEVEL>0
-    
-    w_assert3 (is_consistent_space());
-}
-rc_t page_p::replace_expand_nolog(slotid_t idx, const cvec_t &tp)
-{
-    w_assert1(idx >= 0 && idx < _pp->nslots);
-    slot_offset_t current_offset = tuple_offset(idx);
-    smsize_t current_size = tuple_size(idx);
-    if (align(tp.size()) <= align(current_size)) {
-        // then simply overwrite
-        overwrite_slot(idx, current_offset, tp.size());
-        void* addr = tuple_addr(idx);
-        tp.copy_to(addr);
-        return RCOK;
-    }
-    // otherwise, have to expand
-    if (usable_space() < align(tp.size())) {
-        return RC(smlevel_0::eRECWONTFIT);
-    }
-    
-    w_assert3(is_consistent_space());
-    slot_offset_t new_record_head = _pp->record_head - align(tp.size());
-    slot_offset_t new_offset = current_offset < 0 ? -new_record_head : new_record_head; // for ghost records
-    overwrite_slot(idx, new_offset, tp.size());
-    void* addr = tuple_addr(idx);
-    tp.copy_to(addr);
-    _pp->record_head = new_record_head;
-    w_assert3 (is_consistent_space());    
-    return RCOK;
-}
-
 bool page_p::check_space_for_insert(size_t rec_size) {
     size_t contiguous_free_space = usable_space();
     return contiguous_free_space >= align(rec_size) + slot_sz;
-}
-
-rc_t page_p::remove_shift_nolog(slotid_t idx)
-{
-    w_assert1(idx >= 0 && idx < _pp->nslots);
-    w_assert3 (is_consistent_space());
-    
-    slot_offset_t removed_offset = tuple_offset(idx);
-    slot_length_t removed_length = tuple_size(idx);
-
-    // Shift slot array. if we are removing last (idx==nslots - 1), do nothing.
-    if (idx < _pp->nslots - 1) {
-        ::memmove(_pp->data + slot_sz * (idx),
-            _pp->data + slot_sz * (idx + 1),
-            (_pp->nslots - 1 - idx) * slot_sz);
-    }
-    --_pp->nslots;
-
-    bool ghost = false;
-    if (removed_offset < 0) {
-        removed_offset = -removed_offset; // ghost record
-        ghost = true;
-    }
-    if (_pp->record_head == removed_offset) {
-        // then, we are pushing down the record_head. lucky!
-        w_assert3 (is_consistent_space());
-        _pp->record_head += removed_length;
-    }
-    
-    if (ghost) {
-        --_pp->nghosts;
-    }
-
-    w_assert3 (is_consistent_space());
-    return RCOK;
-}
-
-rc_t page_p::defrag(slotid_t popped)
-{
-    w_assert1(popped >= -1 && popped < _pp->nslots);
-    w_assert1 (xct()->is_sys_xct());
-    w_assert1 (is_fixed());
-    w_assert1 (latch_mode() == LATCH_EX);
-    w_assert3 (is_consistent_space());
-    
-    //  Copy headers to scratch area.
-    page_s scratch;
-    char *scratch_raw = reinterpret_cast<char*>(&scratch);
-    ::memcpy(scratch_raw, _pp, hdr_sz);
-#ifdef ZERO_INIT
-    ::memset(scratch.data, 0, data_sz);
-#endif // ZERO_INIT
-    
-    //  Move data back without leaving holes
-    slot_offset_t new_offset = data_sz;
-    const slotid_t org_slots = _pp->nslots;
-    vector<slotid_t> ghost_slots;
-    slotid_t new_slots = 0;
-    for (slotid_t i = 0; i < org_slots + 1; i++) {//+1 for popping
-        if (i == popped)  continue;         // ignore this slot for now
-        slotid_t slot = i;
-        if (i == org_slots) {
-            //  Move specified slot last
-            if (popped < 0) {
-                break;
-            }
-            slot = popped;
-        }
-
-        slot_offset_t offset = tuple_offset(slot);
-        if (offset < 0) {
-            // ghost record. reclaim it
-            ghost_slots.push_back (slot);
-            continue;
-        }
-        w_assert1(offset != 0);
-        smsize_t len = tuple_size(slot);
-        new_offset -= align(len);
-        ::memcpy(scratch.data + new_offset, _pp->data + offset, len);
-
-        slot_offset_t* offset_p = reinterpret_cast<slot_offset_t*>(scratch.data + slot_sz * new_slots);
-        slot_length_t* length_p = reinterpret_cast<slot_length_t*>(scratch.data + slot_sz * new_slots + sizeof(slot_offset_t));
-        *offset_p = new_offset;
-        *length_p = len;
-
-        ++new_slots;
-    }
-
-    scratch.nslots = new_slots;
-    scratch.nghosts = 0;
-    scratch.record_head = new_offset;
-
-    // defrag doesn't need log if there were no ghost records
-    if (ghost_slots.size() > 0) {
-        // ghost records are not supported in other types.
-        // REDO/UNDO of ghosting relies on BTree
-        w_assert0(tag() == page_p::t_btree_p);
-        W_DO (log_btree_ghost_reclaim(*this, ghost_slots));
-    }
-    
-    // okay, apply the change!
-    ::memcpy(_pp, scratch_raw, sizeof(page_s));
-    set_dirty();
-
-    w_assert3 (is_consistent_space());
-    return RCOK;
-}
-
-void page_p::mark_ghost(slotid_t slot)
-{
-    w_assert0(tag() == page_p::t_btree_p);
-    w_assert1(slot >= 0 && slot < nslots());
-    slot_offset_t *offset = reinterpret_cast<slot_offset_t*>(_pp->data + slot_sz * slot);
-    if (*offset < 0) {
-        return; // already ghost. do nothing
-    }
-    w_assert1(*offset > 0);
-    // reverse the sign to make it a ghost
-    *offset = -(*offset);
-    ++_pp->nghosts;
-    set_dirty();
-}
-
-void page_p::unmark_ghost(slotid_t slot)
-{
-    w_assert0(tag() == page_p::t_btree_p);
-    w_assert1(slot >= 0 && slot < nslots());
-    slot_offset_t *offset = reinterpret_cast<slot_offset_t*>(_pp->data + slot_sz * slot);
-    if (*offset > 0) {
-        return; // already non-ghost. do nothing
-    }
-    w_assert1(*offset < 0);
-    // reverse the sign to make it a non-ghost
-    *offset = -(*offset);
-    --_pp->nghosts;
-    set_dirty();
 }
 
 bool page_p::pinned_by_me() const
@@ -600,92 +367,6 @@ page_p::upgrade_latch_if_not_block(bool& would_block)
     bf->upgrade_latch_if_not_block(_pp, would_block);
     if (!would_block) _mode = LATCH_EX;
     return RCOK;
-}
-
-void
-page_p::page_usage(int& data_size, int& header_size, int& unused,
-                   int& alignment, page_p::tag_t& t, slotid_t& no_slots)
-{
-    // returns space allocated for headers in this page
-    // returns unused space in this page
-    data_size = unused = alignment = 0;
-
-    // space used for headers
-    header_size = page_sz - data_sz;
-    
-    // calculate space wasted in data alignment
-    for (int i=0 ; i<_pp->nslots; i++) {
-        // if slot is not no-record slot
-        if ( tuple_offset(i) != 0 ) {
-            smsize_t len = tuple_size(i);
-            data_size += len;
-            alignment += int(align(len) - len);
-        }
-    }
-    // unused space
-    unused = page_sz - header_size - data_size - alignment;
-
-    t        = tag();        // the type of page 
-    no_slots = _pp->nslots;  // nu of slots in this page
-
-    w_assert1(data_size + header_size + unused + alignment == page_sz);
-}
-
-bool page_p::is_consistent_space () const
-{
-    // this is not a part of check. should be always true.
-    w_assert1((size_t) slot_sz * nslots() <= (size_t) _pp->record_head);
-    
-    // check overlapping records.
-    // rather than using std::map, use array and std::sort for efficiency.
-    // high-16bits=offset, low-16bits=len
-    const slotid_t slot_cnt = nslots();
-    int32_t *sorted_slots = new int32_t[slot_cnt];
-    w_auto_delete_array_t<int32_t> sorted_slots_autodel (sorted_slots);
-    for (slotid_t slot = 0; slot < slot_cnt; ++slot) {
-        slot_offset_t offset = page_p::tuple_offset(slot);
-        smsize_t len = page_p::tuple_size(slot);
-        if (offset < 0) {
-            sorted_slots[slot] = ((-offset) << 16) + len;// this means ghost slot. reverse the sign
-        } else if (offset == 0) {
-            // this means no-record slot. ignore it.
-            sorted_slots[slot] = 0;
-        } else {
-            sorted_slots[slot] = (offset << 16) + len;
-        }
-    }
-    std::sort(sorted_slots, sorted_slots + slot_cnt);
-
-    bool first = true;
-    size_t prev_end = 0;
-    for (slotid_t slot = 0; slot < slot_cnt; ++slot) {
-        if (sorted_slots[slot] == 0) {
-            continue;
-        }
-        size_t offset = sorted_slots[slot] >> 16;
-        size_t len = sorted_slots[slot] & 0xFFFF;
-        if (offset < (size_t) _pp->record_head) {
-            DBG(<<"the slot starting at offset " << offset <<  " is located before record_head " << _pp->record_head);
-            w_assert1(false);
-            return false;
-        }
-        if (offset + len > data_sz) {
-            DBG(<<"the slot starting at offset " << offset <<  " goes beyond the the end of data area!");
-            w_assert1(false);
-            return false;
-        }
-        if (first) {
-            first = false;
-        } else {
-            if (prev_end > offset) {
-                DBG(<<"the slot starting at offset " << offset <<  " overlaps with another slot ending at " << prev_end);
-                w_assert3(false);
-                return false;
-            }
-        }
-        prev_end = offset + len;
-    }
-    return true;
 }
 
 rc_t page_p::set_tobedeleted (bool log_it) {

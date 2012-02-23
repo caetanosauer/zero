@@ -417,19 +417,6 @@ public:
         XX = EX
     };
 
-    /**\enum lock_duration_t
-     * \brief Duration for locks
-     * \ref SSMLOCK
-     */
-    enum lock_duration_t {
-        t_instant     = 0,    /* released as soon as the lock is acquired */
-        t_short     = 1,    /* held until end of some operation         */
-        t_medium     = 2,    /* held until explicitly released           */
-        t_long     = 3,    /* held until xct commits                   */
-        t_very_long = 4,    /* held across xct boundaries               */
-        t_num_durations = 5 /* not a duration -- used for typed comparisons */
-    };
-
     /**\enum vote_t
      * \brief Votes for two-phase commit.
      * - vote_readonly : storage manager will return this from 
@@ -521,40 +508,7 @@ public:
     virtual NORET        ~w_vbase_t()    {};
 };
 
-/*
- * These types are auto-initialized filler space for alignment
- * in structures.  The auto init helps with purify.
- *
- * XXX Some of the users of these structures DEPEND on zero
- * fill (sm keys, etc). Eventually this will be seperated into
- * zero fill and plain fill (zeroed with ZERO_INIT).  Until then
- * these must always be initialized to 0.
- */
-/**\brief Auto-initialized 1-byte filler for alignment of structures*/
-struct fill1 {
-    uint8_t u1;
-    fill1() : u1(0) {}
-};
-
-/**\brief Auto-initialized 2-byte filler for alignment of structures*/
-struct fill2 {
-    uint16_t u2;
-    fill2() : u2(0) {}
-};
-
-/**\brief Auto-initialized 3-byte filler for alignment of structures*/
-struct fill3 {
-    uint8_t    u1[3];
-    fill3() { u1[0] = u1[1] = u1[2] = 0; }
-};
-
-/**\brief Auto-initialized 4-byte filler for alignment of structures*/
-struct fill4 {
-    uint32_t u4;
-    fill4() : u4(0) {}
-};
-
-
+#include "w_fill.h"
 #include <w_autodel.h>
 #include <w_error.h>
 #include <w_rc.h>

@@ -2117,26 +2117,13 @@ public:
      * conversions from record ids, volume ids, store ids, and page ids to
      * lockid_t.
      * @param[in]  m  Desired lock mode.  Values: EX, SH.
-     * @param[in]  d  Desired duration.  Values: 
-     * - t_very_long : Held across transaction boundaries; 
-     *             cannot be released by unlock()
-     * - t_long : Released at commit; cannot be released by unlock()
-     * - t_medium : May be released early by explicit unlock()
-     * - t_short  : May be released early by explicit unlock()
-     * - t_instant : Not held: acquired and released immediately.  Useful
-     *             to see if any other transaction holds an incompatible lock.
+     * @param[in]  check_only  if true, the lock goes away right after grant. default false.
      * @param[in]  timeout  Milliseconds willing to block.  See timeout_in_ms.
-     *
-     * The lock manager is written with these durations in mind, but the
-     * only durations used by the storage manager are t_instant and t_long.
-     * Medium-duration locks are used internally in a one place.  
-     *
-     * Durations other than long and instant are not well-tested.
      */
     static rc_t            lock(
         const lockid_t&         n, 
         lock_mode_t             m,
-        lock_duration_t         d = t_long,
+        bool                    check_only = false,
         timeout_in_ms           timeout = WAIT_SPECIFIED_BY_XCT
     );
     
@@ -2146,7 +2133,7 @@ public:
      * conversions from record ids, volume ids, store ids, and page ids to
      * lockid_t.
      */
-    static rc_t            unlock(const lockid_t& n);
+    //static rc_t            unlock(const lockid_t& n);
 
     /**\brief  Find out if the attached transaction has an entity locked.
      * \ingroup SSMLOCK
@@ -2155,10 +2142,12 @@ public:
      * lockid_t.
      * @param[out]  m  Mode of lock held. NL if none.
      */
+    /* this is tentatively disabled. not used anyway.
     static rc_t            query_lock(
         const lockid_t&        n, 
         lock_mode_t&           m
     );
+    */
 
 private:
 
