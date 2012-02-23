@@ -9,13 +9,9 @@
 #define BTREE_C
 
 #include "sm_int_2.h"
-#ifdef __GNUG__
-#   pragma implementation "btree_impl.h"
-#endif
 #include "sm_base.h"
 #include "btree_p.h"
 #include "btree_impl.h"
-#include "btree_impl_debug.h"
 #include "crash.h"
 #include "w_key.h"
 #include "xct.h"

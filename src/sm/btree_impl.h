@@ -3,17 +3,8 @@
 
 #include "w_defines.h"
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
-#ifndef BTREE_H
 #include "btree.h"
-#endif
-#ifndef KVL_T_H
 #include "kvl_t.h"
-#endif
-
 #include "btree_verify.h"
 
 /**
@@ -77,24 +68,6 @@ public:
 #endif // DOXYGEN_HIDE
 
     /**
-     * \brief Function finds the leaf page for a key, locks the key if it exists, and determines if
-     * it was found and if it was a ghost.
-     * \details
-     *  Context: User transaction
-     * @param[in] root id of root page
-     * @param[in] key key of the tuple
-     * @param[out] need_lock if locking is needed
-     * @param[out] slot where in the page the key was found
-     * @param[out] found if the key was found
-     * @param[out] took_XN if we took an XN latch on the key
-     * @param[out] is_ghost if the slot was a ghost
-     * @param[out] leaf the leaf the key should be in (if it exists or if it did exist)     
-     */
-    static rc_t _ux_get_page_and_status
-    (const lpid_t & root, const w_keystr_t& key,
-     bool& need_lock, slotid_t& slot, bool& found, bool& took_XN, bool& is_ghost, btree_p& leaf);
-
-    /**
     *  \brief This function finds the leaf page to insert the given tuple,
     *  inserts it to the page and, if needed, splits the page.
     * \details
@@ -112,11 +85,6 @@ public:
         const lpid_t&                     root,
         const w_keystr_t&                 key,
         const cvec_t&                     elem);
-    /** Last half of _ux_insert, after traversing, finding (or not) and ghost determination.*/
-    static rc_t _ux_insert_core_tail
-    (const lpid_t & root, const w_keystr_t& key,const cvec_t& el,
-     bool& need_lock, slotid_t& slot, bool& found, bool& alreay_took_XN, 
-     bool& is_ghost, btree_p& leaf);
 
     /**
     *  \brief This function finds the given key, updates the element if found.
@@ -136,33 +104,6 @@ public:
         const lpid_t&                     root,
         const w_keystr_t&                 key,
         const cvec_t&                     elem);
-    /** Last half of _ux_update, after traversing, finding (or not) and ghost determination.*/
-    static rc_t _ux_update_core_tail
-    (const lpid_t& root, const w_keystr_t& key, const cvec_t& elem,
-     bool& need_lock, slotid_t& slot, bool& found, bool& is_ghost,
-     btree_p& leaf);
-
-   /**
-    *  \brief This function finds the given key, updates the element if found and inserts it if
-    * not.  If needed, this method also splits the page.  Could also be called "insert or update"
-    *
-    * \details
-    *  Context: User transaction.
-    * @param[in] root id of root page
-    * @param[in] key key of the existing tuple
-    * @param[in] elem new data of the tuple
-    */
-    static rc_t                        _ux_put(
-        const lpid_t&                     root,
-        const w_keystr_t&                 key,
-        const cvec_t&                     elem);
-    /** _ux_put()'s internal function without retry by itself.  Uses _ux_insert_core_tail and
-        _ux_update_core_tail for the heavy lifting*/
-    static rc_t                        _ux_put_core(
-        const lpid_t&                     root,
-        const w_keystr_t&                 key,
-        const cvec_t&                     elem);
-
 
     /**
     *  \brief This function finds the given key, updates the specific part of element if found.
@@ -570,14 +511,14 @@ public:
      * @param[in] key the key to lock
      * @param[in] latch_mode if this has to un-latch/re-latch, this mode is used.
      * @param[in] lock_mode the lock mode to be acquired
-     * @param[in] lock_duration the lock duration to be acquired
+     * @param[in] check_only whether the lock goes away right after grant
      */
     static rc_t _ux_lock_key(
         btree_p&      leaf,
         const w_keystr_t&   key,
         latch_mode_t        latch_mode,
         lock_mode_t         lock_mode,
-        lock_duration_t     lock_duration
+        bool                check_only
     );
 
     /** raw string and length version. */
@@ -587,7 +528,7 @@ public:
         size_t              keylen,
         latch_mode_t        latch_mode,
         lock_mode_t         lock_mode,
-        lock_duration_t     lock_duration
+        bool                check_only
     );
 
     /**
@@ -604,7 +545,7 @@ public:
         latch_mode_t        latch_mode,
         lock_mode_t         lock_key_mode,
         lock_mode_t         lock_range_mode,
-        lock_duration_t     lock_duration
+        bool                check_only
     );
 
     /** raw string version. */
@@ -616,7 +557,7 @@ public:
         latch_mode_t        latch_mode,
         lock_mode_t         lock_key_mode,
         lock_mode_t         lock_range_mode,
-        lock_duration_t     lock_duration
+        bool                check_only
     );
 
     /**

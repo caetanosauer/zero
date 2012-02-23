@@ -50,7 +50,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 */
 
 /**\cond skip */
-#include <stdio.h>
 #include "dynarray.h"
 #include "shore-config.h"
 #include <errno.h>
@@ -70,7 +69,7 @@ static size_t align_up(size_t bytes, size_t align) {
     return (bytes+mask) &~ mask;
 }
 
-#if HAVE_DECL_MAP_ALIGN 
+#ifdef HAVE_DECL_MAP_ALIGN 
 #define USE_MAP_ALIGN 1
 #endif
 
@@ -112,18 +111,13 @@ int dynarray::init(size_t max_size, size_t align) {
     flags |= MAP_ALIGN;
 #else
     char* align_arg = 0;
-    size_t align_extra = align; // - MM_PAGE_SIZE;
-    // fprintf(stderr, "%zx = %zx - %d\n", align_extra, align, MM_PAGE_SIZE);
+    size_t align_extra = align - MM_PAGE_SIZE;
 #endif
     union { void* v; uintptr_t n; char* c; }
-    u={mmap(align_arg, max_size+align_extra, PROTS, flags, -1, 0)};
+    	u={mmap(align_arg, max_size+align_extra, PROTS, flags, -1, 0)};
 
-    if(u.v == MAP_FAILED) {
-        fprintf(stderr, "mmap failed: %s", strerror(errno));
-        abort();
-    }
-
-    // fprintf(stderr, "mmap(%zx) -> %p\n", max_size + align_extra, u.v);
+    if(u.v == MAP_FAILED)
+	return errno;
 
 #if !USE_MAP_ALIGN
     /* Verify alignment...
@@ -146,17 +140,17 @@ int dynarray::init(size_t max_size, size_t align) {
 #endif
     long aligned_base = align_up(u.n, align);
     if(long extra=aligned_base-u.n) {
-#if 0
-	fprintf(stderr, "chopping off %zx bytes of prefix for start: %zx ; %zx/%zx\n",
-		extra, aligned_base, extra, align_extra);
+#ifdef TEST_ME
+	std::fprintf(stderr, "chopping off %zx bytes of prefix for start: %zx\n",
+		extra, aligned_base);
 #endif
 	munmap(u.c, extra);
 	u.n = aligned_base;
 	align_extra -= extra;
     }
     if(align_extra > 0) {
-#if 0
-	fprintf(stderr, "chopping %zx bytes of postfix for end: %p\n", align_extra, u.c+max_size);
+#ifdef TEST_ME
+	std::fprintf(stderr, "chopping %zx bytes of postfix for end: %p\n", align_extra, u.c+max_size);
 #endif
 	munmap(u.c+max_size, align_extra);
     }
@@ -178,14 +172,9 @@ int dynarray::init(dynarray const &to_copy, size_t max_size) {
 }
 
 int dynarray::fini() {
-    //    int stack_tmp;
-    // fprintf(stderr, "munmap %p %d (%p)...", _base, _capacity, &stack_tmp);
-    if(int err=munmap(_base, _capacity)) {
-        fprintf(stderr, "munmap failed: %s", strerror(errno));
-        abort();
+    if(int err=munmap(_base, _capacity))
 	return err;
-    }
-    // fprintf(stderr, "done.\n");
+        
     _base = 0;
     _size = 0;
     _capacity = 0;
@@ -205,10 +194,6 @@ int dynarray::resize(size_t new_size) {
 
     // remap the new range as RW. Don't mess w/ the existing region!!
     void* result = mmap(_base+_size, new_size-_size, PROTS, FLAGS, -1, 0);
-    if (result == MAP_FAILED) {
-        fprintf(stderr, "mmap failed: %s", strerror(errno));
-        abort();
-    }
     if(result == MAP_FAILED)
 	return errno;
 

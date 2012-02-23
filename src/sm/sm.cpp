@@ -153,13 +153,7 @@ uint32_t        smlevel_0::volume_format_version = VOLUME_FORMAT;
  * start-up/shut-down operations for a server.
  */
 
-
-typedef occ_rwlock sm_vol_rwlock_t;
-typedef occ_rwlock::occ_rlock sm_vol_rlock_t;
-typedef occ_rwlock::occ_wlock sm_vol_wlock_t;
-#define SM_VOL_WLOCK(base) (base).write_lock()
-#define SM_VOL_RLOCK(base) (base).read_lock()
-
+typedef srwlock_t sm_vol_rwlock_t;
 // Certain operations have to exclude xcts
 static sm_vol_rwlock_t          _begin_xct_mutex;
 
@@ -1324,7 +1318,7 @@ rc_t
 ss_m::force_buffers(bool flush)
 {
     W_DO( bf->force_all(flush) );
-
+    W_DO (io_m::flush_all_fixed_buffer());
     return RCOK;
 }
 
@@ -1336,6 +1330,7 @@ ss_m::force_vol_hdr_buffers(const vid_t& vid)
     // volume header is store 0
     stid_t stid(vid, 0);
     W_DO( bf->force_store(stid, true/*invalidate*/) );
+    W_DO (io_m::flush_vol_fixed_buffer(vid));
     return RCOK;
 }
 
@@ -1507,7 +1502,7 @@ ss_m::mount_dev(const char* device, u_int& vol_cnt, devid_t& devid, vid_t local_
 {
     SM_PROLOGUE_RC(ss_m::mount_dev, not_in_xct, read_only, 0);
 
-    CRITICAL_SECTION(cs, SM_VOL_WLOCK(_begin_xct_mutex));
+    spinlock_write_critical_section cs(&_begin_xct_mutex);
 
     // do the real work of the mount
     W_DO(_mount_dev(device, vol_cnt, local_vid));
@@ -1529,7 +1524,7 @@ ss_m::dismount_dev(const char* device)
 {
     SM_PROLOGUE_RC(ss_m::dismount_dev, not_in_xct, read_only, 0);
 
-    CRITICAL_SECTION(cs, SM_VOL_WLOCK(_begin_xct_mutex));
+    spinlock_write_critical_section cs(&_begin_xct_mutex);
 
     if (xct_t::num_active_xcts())  {
         fprintf(stderr, "Active transactions: %d : cannot dismount %s\n", 
@@ -1557,7 +1552,7 @@ ss_m::dismount_all()
 {
     SM_PROLOGUE_RC(ss_m::dismount_all, not_in_xct, read_only, 0);
     
-    CRITICAL_SECTION(cs, SM_VOL_WLOCK(_begin_xct_mutex));
+    spinlock_write_critical_section cs(&_begin_xct_mutex);
 
     // of course a transaction could start immediately after this...
     // we don't protect against that.
@@ -1639,7 +1634,7 @@ ss_m::create_vol(const char* dev_name, const lvid_t& lvid,
 {
     SM_PROLOGUE_RC(ss_m::create_vol, not_in_xct, read_only, 0);
 
-    CRITICAL_SECTION(cs, SM_VOL_WLOCK(_begin_xct_mutex));
+    spinlock_write_critical_section cs(&_begin_xct_mutex);
 
     // make sure device is already mounted
     if (!io->is_mounted(dev_name)) return RC(eDEVNOTMOUNTED);
@@ -1666,7 +1661,7 @@ ss_m::destroy_vol(const lvid_t& lvid)
 {
     SM_PROLOGUE_RC(ss_m::destroy_vol, not_in_xct, read_only, 0);
 
-    CRITICAL_SECTION(cs, SM_VOL_WLOCK(_begin_xct_mutex));
+    spinlock_write_critical_section cs(&_begin_xct_mutex);
 
     if (xct_t::num_active_xcts())  {
         fprintf(stderr, 
@@ -1834,27 +1829,26 @@ lil_global_table* ss_m::get_lil_global_table() {
  *--------------------------------------------------------------*/
 rc_t
 ss_m::lock(const lockid_t& n, lock_mode_t m,
-           lock_duration_t d, timeout_in_ms timeout)
+           bool check_only, timeout_in_ms timeout)
 {
     SM_PROLOGUE_RC(ss_m::lock, in_xct, read_only, 0);
-    W_DO( lm->lock(n, m, d, timeout) );
+    W_DO( lm->lock(n, m, check_only, timeout) );
     return RCOK;
 }
 
 /*--------------------------------------------------------------*
  *  ss_m::unlock()                                *
  *--------------------------------------------------------------*/
-rc_t
+/*rc_t
 ss_m::unlock(const lockid_t& n)
 {
     SM_PROLOGUE_RC(ss_m::unlock, in_xct, read_only, 0);
     W_DO( lm->unlock(n) );
     return RCOK;
 }
+*/
 
-/*--------------------------------------------------------------*
- *  ss_m::query_lock()                                *
- *--------------------------------------------------------------*/
+/*
 rc_t
 ss_m::query_lock(const lockid_t& n, lock_mode_t& m)
 {
@@ -1863,6 +1857,7 @@ ss_m::query_lock(const lockid_t& n, lock_mode_t& m)
 
     return RCOK;
 }
+*/
 
 /*****************************************************************
  * Internal/physical-ID version of all the storage operations
@@ -1905,7 +1900,7 @@ ss_m::_begin_xct(sm_stats_info_t *_stats, tid_t& tid, timeout_in_ms timeout, boo
         // TODO might need to reconsider. but really needs this change now
         x = xct_t::new_xct(_stats, timeout, sys_xct, single_log_sys_xct, deferred_ssx);
     } else {
-        CRITICAL_SECTION(cs, SM_VOL_RLOCK(_begin_xct_mutex));
+        spinlock_read_critical_section cs(&_begin_xct_mutex);
         x = xct_t::new_xct(_stats, timeout, sys_xct);
     }
 
@@ -2334,14 +2329,16 @@ ss_m::_create_vol(const char* dev_name, const lvid_t& lvid,
                   const bool apply_fake_io_latency, 
                   const int fake_disk_latency)
 {
-    W_DO(vol_t::format_vol(dev_name, lvid, 
-        /* XXX possible loss of bits */
-       shpid_t(quota_KB/(page_sz/1024)), skip_raw_init));
-
     vid_t tmp_vid;
     W_DO(io->get_new_vid(tmp_vid));
     DBG(<<"got new vid " << tmp_vid 
-        << " mounting " << dev_name);
+        << " formatting " << dev_name);
+
+    W_DO(vol_t::format_vol(dev_name, lvid, tmp_vid,
+        /* XXX possible loss of bits */
+       shpid_t(quota_KB/(page_sz/1024)), skip_raw_init));
+
+    DBG(<<"vid " << tmp_vid  << " mounting " << dev_name);
     W_DO(io->mount(dev_name, tmp_vid, apply_fake_io_latency, fake_disk_latency));
     DBG(<<" mount done " << dev_name << " tmp_vid " << tmp_vid);
     DBG(<<" dismounting volume");

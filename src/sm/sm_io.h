@@ -209,6 +209,11 @@ public:
     static rc_t                 dismount(vid_t vid, bool flush = true);
     static rc_t                 dismount_all(bool flush = true);
     static rc_t                 sync_all_disks();
+    
+    /** flushes bf_fixed of all volumes currently mounted. */
+    static rc_t                 flush_all_fixed_buffer ();
+    /** flushes bf_fixed of the specified volume. */
+    static rc_t                 flush_vol_fixed_buffer (vid_t vid);
 
 
     // fake_disk_latency

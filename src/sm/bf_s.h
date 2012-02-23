@@ -207,7 +207,7 @@ public:
 
     void        update_rec_lsn(latch_mode_t, bool check);
 
-    void        initialize(const char *const _name,
+    void        initialize(
                         page_s*           _bufpool,
                         uint32_t           hashfunc
                         );

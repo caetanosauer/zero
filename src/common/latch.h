@@ -136,7 +136,7 @@ public:
  * Each of these individual locks must be released.
  * \sa latch_holder_t
  */
-class latch_t : public sthread_named_base_t {
+class latch_t /*: public sthread_named_base_t*/ {
 
 public:
     /**\cond skip */
@@ -240,14 +240,6 @@ private:
 
     uint32_t            _total_count;
 };
-
-
-
-inline void
-latch_t::setname(const char* const desc)
-{
-    rename("l:", desc);
-}
 
 inline bool
 latch_t::is_latched() const

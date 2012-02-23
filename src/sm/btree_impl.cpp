@@ -9,12 +9,8 @@
 #define BTREE_C
 
 #include "sm_int_2.h"
-#ifdef __GNUG__
-#   pragma implementation "btree_impl.h"
-#endif
 #include "btree_p.h"
 #include "btree_impl.h"
-#include "btree_impl_debug.h"
 #include "btcursor.h"
 #include "crash.h"
 #include "xct.h"
@@ -43,90 +39,29 @@ btree_impl::_ux_insert_core(
     const w_keystr_t&    key,
     const cvec_t&        el)
 {
-    bool need_lock;
-    slotid_t slot;
-    bool found;
-    bool took_XN;
-    bool is_ghost;
-    btree_p leaf;
-    W_DO(_ux_get_page_and_status(root, key, need_lock, slot, found, took_XN, is_ghost, leaf));
-    return _ux_insert_core_tail(root, key, el, need_lock, slot, found, took_XN, is_ghost, leaf);
-}
 
-
-rc_t
-btree_impl::_ux_put(
-    const lpid_t&        root,
-    const w_keystr_t&    key,
-    const cvec_t&        el)
-{
-    while (true) {
-        rc_t rc = _ux_put_core (root, key, el);
-        if (rc.is_error() && rc.err_num() == eLOCKRETRY) {
-            continue;
-        }
-        return rc;
-    }
-    return RCOK;
-}
-rc_t
-btree_impl::_ux_put_core(
-    const lpid_t&        root,
-    const w_keystr_t&    key,
-    const cvec_t&        el)
-{
-    bool need_lock;
-    slotid_t slot;
-    bool found;
-    bool took_XN;
-    bool is_ghost;
-    btree_p leaf;
-    W_DO(_ux_get_page_and_status(root, key, need_lock, slot, found, took_XN, is_ghost, leaf));
-    if (!found || is_ghost) {
-        return _ux_insert_core_tail(root, key, el, need_lock, slot, 
-                                    found, took_XN, is_ghost, leaf);
-    } else {    
-        return _ux_update_core_tail(root, key, el, need_lock, slot, found, is_ghost, leaf);
-    }
-}
-
-
-rc_t
-btree_impl::_ux_get_page_and_status(const lpid_t & root, const w_keystr_t& key,
-                                    bool& need_lock, slotid_t& slot, bool& found, bool& took_XN, 
-                                    bool& is_ghost, btree_p& leaf) {
-                        
     // find the leaf (potentially) containing the key
-    // passed in...btree_p       leaf;
+    btree_p       leaf;
     W_DO( _ux_traverse(root, key, t_fence_contain, LATCH_EX, leaf));
     w_assert1( leaf.is_fixed());
     w_assert1( leaf.is_leaf());
     w_assert1( leaf.latch_mode() == LATCH_EX);
     
-    // passed in...bool need_lock 
-    need_lock = g_xct_does_need_lock();
+    bool need_lock = g_xct_does_need_lock();
     
     // check if the same key already exists
-    // passed in...slotid_t slot;
-    // passed in...bool found;
+    slotid_t slot;
+    bool found;
     leaf.search_leaf(key, found, slot);
-    // passed in...bool alreay_took_XN 
-    took_XN = false;
+    bool alreay_took_XN = false;
     if (found) {
         // found! then we just lock the key (XN)
         if (need_lock) {
-            W_DO (_ux_lock_key(leaf, key, LATCH_EX, XN, t_long));
-            took_XN = true;
+            W_DO (_ux_lock_key(leaf, key, LATCH_EX, XN, false));
+            alreay_took_XN = true;
         }
 
-        is_ghost = leaf.is_ghost_record(slot + 1); // +1 because page_p
-    }
-    return RCOK;
-}
-rc_t btree_impl::_ux_insert_core_tail(const lpid_t & root, const w_keystr_t& key,const cvec_t& el,
-                        bool& need_lock, slotid_t& slot, bool& found, bool& alreay_took_XN, 
-                                      bool& is_ghost, btree_p& leaf) {
-    if (found) {
+        bool is_ghost = leaf.is_ghost(slot);
         
         //If the same key exists and non-ghost, exit with error (duplicate).
         if (!is_ghost) {
@@ -172,7 +107,7 @@ rc_t btree_impl::_ux_insert_core_tail(const lpid_t & root, const w_keystr_t& key
         
         if (need_lock) {
             W_DO(_ux_lock_range(leaf, key, -1, // search again because it might be split
-                LATCH_EX, XN, NX, t_instant)); // this lock "goes away" once it's taken
+                LATCH_EX, XN, NX, true)); // this lock "goes away" once it's taken
         }
         
         // so far deferring is disabled
@@ -181,7 +116,7 @@ rc_t btree_impl::_ux_insert_core_tail(const lpid_t & root, const w_keystr_t& key
     
     // now we know the page has the desired ghost record. let's just replace it.
     if (need_lock && !alreay_took_XN) { // if "expand" case, do not need to get XN again
-        W_DO (_ux_lock_key(leaf, key, LATCH_EX, XN, t_long));
+        W_DO (_ux_lock_key(leaf, key, LATCH_EX, XN, false));
     }
     W_DO(leaf.replace_ghost(key, el));
 
@@ -233,36 +168,44 @@ btree_impl::_ux_update(const lpid_t &root, const w_keystr_t &key, const cvec_t &
 rc_t
 btree_impl::_ux_update_core(const lpid_t &root, const w_keystr_t &key, const cvec_t &el)
 {
-    bool need_lock;
-    btree_p leaf;
-    slotid_t slot;
-    bool found;
-    bool is_ghost;
-    bool took_XN;
-    W_DO(_ux_get_page_and_status(root, key, need_lock, slot, found, took_XN, is_ghost, leaf));
-    return _ux_update_core_tail(root, key, el, need_lock, slot, found, is_ghost, leaf);
-}
-rc_t
-btree_impl::_ux_update_core_tail(const lpid_t &root, const w_keystr_t &key, const cvec_t &el,
-                                 bool& need_lock, slotid_t& slot, bool& found, bool& is_ghost,
-                                 btree_p& leaf) {
+    bool need_lock = g_xct_does_need_lock();
+    btree_p         leaf;
+
+    // find the leaf (potentially) containing the key
+    W_DO( _ux_traverse(root, key, t_fence_contain, LATCH_EX, leaf));
+
+    w_assert3(leaf.is_fixed());
+    w_assert3(leaf.is_leaf());
+
+    slotid_t       slot = -1;
+    bool            found = false;
+    leaf.search(key, found, slot);
 
     if(!found) {
         if (need_lock) {
             // re-latch mode is SH because this is "not-found" case.
             W_DO(_ux_lock_range(leaf, key, slot,
-                        LATCH_SH, XN, NS, t_long));
+                        LATCH_SH, XN, NS, false));
         }
         return RC(eNOTFOUND);
     }
     
-    // it might be ghost..
-    if (is_ghost) {
-        return RC(eNOTFOUND);
+    // it's found (whether it's ghost or not)! so, let's just
+    // lock the key.
+    if (need_lock) {
+        // only the key is locked (XN)
+        W_DO (_ux_lock_key(leaf, key, LATCH_EX, XN, false));
     }
+
+    // get the old data and log
+    bool ghost;
     const char *old_el;
     smsize_t old_elen;
-    leaf.dat_leaf_ref(slot, old_el, old_elen, is_ghost);
+    leaf.dat_leaf_ref(slot, old_el, old_elen, ghost);
+    // it might be ghost..
+    if (ghost) {
+        return RC(eNOTFOUND);
+    }
     
     // are we expanding?
     if (old_elen < el.size()) {
@@ -317,13 +260,13 @@ rc_t btree_impl::_ux_overwrite_core(
     if(!found) {
         if (need_lock) {
             W_DO(_ux_lock_range(leaf, key, slot,
-                        LATCH_SH, XN, NS, t_long));
+                        LATCH_SH, XN, NS, false));
         }
         return RC(eNOTFOUND);
     }
     
     if (need_lock) {
-        W_DO (_ux_lock_key(leaf, key, LATCH_EX, XN, t_long));
+        W_DO (_ux_lock_key(leaf, key, LATCH_EX, XN, false));
     }
 
     // get the old data and log
@@ -378,7 +321,7 @@ btree_impl::_ux_remove_core(const lpid_t &root, const w_keystr_t &key)
         if (need_lock) {
             // re-latch mode is SH because this is "not-found" case.
             W_DO(_ux_lock_range(leaf, key, slot,
-                        LATCH_SH, XN, NS, t_long));
+                        LATCH_SH, XN, NS, false));
         }
         return RC(eNOTFOUND);
     }
@@ -387,21 +330,21 @@ btree_impl::_ux_remove_core(const lpid_t &root, const w_keystr_t &key)
     // lock the key.
     if (need_lock) {
         // only the key is locked (XN)
-        W_DO (_ux_lock_key(leaf, key, LATCH_EX, XN, t_long));
+        W_DO (_ux_lock_key(leaf, key, LATCH_EX, XN, false));
     }
     
     // it might be already ghost..
-    if (leaf.is_ghost_record(slot + 1)) { // +1 because page_p
+    if (leaf.is_ghost(slot)) {
         return RC(eNOTFOUND);
     }
 
     // log first
     vector<slotid_t> slots;
-    slots.push_back(slot + 1); // +1 because this is page_p slot
+    slots.push_back(slot);
     W_DO(log_btree_ghost_mark (leaf, slots));
     
     // then mark it as ghost
-    leaf.mark_ghost (slot + 1); // +1 because this is page_p slot
+    leaf.mark_ghost (slot);
     return RCOK;
 }
 
@@ -422,7 +365,7 @@ btree_impl::_ux_undo_ghost_mark(const lpid_t &root, const w_keystr_t &key)
     if(!found) {
         return RC(eNOTFOUND);
     }
-    leaf.unmark_ghost (slot + 1); // +1 because this is page_p slot
+    leaf.unmark_ghost (slot);
     return RCOK;
 }
 

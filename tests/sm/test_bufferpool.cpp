@@ -8,13 +8,13 @@
 #include "page.h"
 #include "log.h"
 #include "w_error.h"
+
 #include <vector>
 
 btree_test_env *test_env;
 /**
  * Unit test for bufferpool (bf_m).
  */
-
 class bf_m_test { // friend of bf_m
 public:
     static bf_core_m* get_core() {
@@ -43,6 +43,7 @@ w_rc_t bf_get_empty(ss_m* ssm, test_volume_t *test_volume) {
     
     return RCOK;
 }
+
 
 TEST (BufferpoolTest, GetEmpty) {
     test_env->empty_logdata_dir();

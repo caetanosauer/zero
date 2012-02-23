@@ -542,11 +542,11 @@ w_rc_t inquery_verify(ss_m* ssm, test_volume_t *test_volume) {
 
 TEST (BtreeVerificationTest, InQueryVerify) {
     test_env->empty_logdata_dir();
-    EXPECT_EQ(test_env->runBtreeTest(inquery_verify), 0);
+    EXPECT_EQ(test_env->runBtreeTest(inquery_verify, false, default_locktable_size, 512, 64), 0);
 }
 TEST (BtreeVerificationTest, InQueryVerifyLock) {
     test_env->empty_logdata_dir();
-    EXPECT_EQ(test_env->runBtreeTest(inquery_verify, true), 0);
+    EXPECT_EQ(test_env->runBtreeTest(inquery_verify, true, default_locktable_size, 512, 64), 0);
 }
 
 int main(int argc, char **argv) {

@@ -20,6 +20,7 @@
 #include "sm_vtable_enum.h"
 #include "st_error_enum_gen.h"
 
+#include "bf_fixed.h"
 #include "alloc_cache.h"
 
 #ifdef EXPLICIT_TEMPLATE
@@ -60,7 +61,7 @@ vol_t::vol_t(const bool apply_fake_io_latency, const int fake_disk_latency)
                _apply_fake_disk_latency(apply_fake_io_latency), 
                _fake_disk_latency(fake_disk_latency),
                // IP: default fake io values
-               _alloc_cache(NULL), _stnode_cache(NULL)
+               _alloc_cache(NULL), _stnode_cache(NULL), _fixed_bf(NULL)
 {}
 
 vol_t::~vol_t() { 
@@ -76,6 +77,10 @@ void vol_t::clear_caches() {
     if (_stnode_cache) {
         delete _stnode_cache;
         _stnode_cache = NULL;
+    }
+    if (_fixed_bf) {
+        delete _fixed_bf;
+        _fixed_bf = NULL;
     }
 }
 
@@ -166,13 +171,16 @@ rc_t vol_t::mount(const char* devname, vid_t vid)
     _hdr_pages = vhdr.hdr_pages(); // 0 if no volumes formatted yet
     
     clear_caches();
-    _alloc_cache = new alloc_cache_t(_vid);
-    w_assert1(_alloc_cache);
-    W_DO(_alloc_cache->load_by_scan(_unix_fd, _num_pages));
+    _fixed_bf = new bf_fixed_m();
+    w_assert1(_fixed_bf);
+    W_DO(_fixed_bf->init(this, _unix_fd, _num_pages));
 
-    _stnode_cache = new stnode_cache_t(_vid);
+    _alloc_cache = new alloc_cache_t(_vid, _fixed_bf);
+    w_assert1(_alloc_cache);
+    W_DO(_alloc_cache->load_by_scan(_num_pages));
+
+    _stnode_cache = new stnode_cache_t(_vid, _fixed_bf);
     w_assert1(_stnode_cache);
-    W_DO(_stnode_cache->load(_unix_fd, _spid.page));
 
     W_DO( bf->enable_background_flushing(_vid));
 
@@ -190,6 +198,7 @@ vol_t::dismount(bool flush)
      *  Flush or force all pages of the volume cached in bf.
      */
     w_assert1(_unix_fd >= 0);
+    _fixed_bf->flush();
     W_DO_MSG( flush ? 
             bf->force_volume(_vid, true /* and invalidate */) : 
             bf->discard_volume(_vid), << "volume id=" << vid() );
@@ -802,6 +811,7 @@ rc_t
 vol_t::format_vol(
     const char*         devname,
     lvid_t              lvid,
+    vid_t               vid,
     shpid_t             num_pages,
     bool                skip_raw_init)
 {
@@ -852,16 +862,8 @@ vol_t::format_vol(
     shpid_t alloc_pages = num_pages / alloc_p::alloc_max + 1; // # alloc_p pages
     shpid_t hdr_pages = alloc_pages + 1 + 1; // +1 for stnode_p, +1 for volume header
 
-    /*
-     *  Compute:
-     *                apid:                first page of alloc_pages
-     *                spid:                only stnode_p page
-     */
-    lpid_t pid;
-    lpid_t apid, spid;
-    apid = spid = pid;
-    apid.page = 1;
-    spid.page = apid.page + alloc_pages;
+    lpid_t apid (vid, 0 , 1);
+    lpid_t spid (vid, 0 , 1 + alloc_pages);
 
     /*
      *  Set up the volume header
@@ -907,7 +909,7 @@ vol_t::format_vol(
         //  Format alloc_p pages
         {
             for (apid.page = 1; apid.page < alloc_pages + 1; ++apid.page)  {
-                alloc_p ap(&buf, st_regular);
+                alloc_p ap(&buf);
                 W_COERCE( ap.format(apid, 
                                     alloc_p::t_alloc_p,
                                     alloc_p::t_virgin,  st_regular
@@ -920,6 +922,7 @@ vol_t::format_vol(
                 }
                 page_s& page = ap.persistent_part();
                 w_assert9(&buf == &page);
+                w_assert1(page.pid.vol() == vid);
 
                 rc = me()->write(fd, &page, sizeof(page));
                 if (rc.is_error()) {
@@ -932,13 +935,14 @@ vol_t::format_vol(
 
         // Format stnode_p
         { 
-            stnode_p fp(&buf, st_regular);
+            stnode_p fp(&buf);
             DBG(<<" formatting stnode_p");
             DBGTHRD(<<"stnode_p page " << spid.page);
             W_COERCE( fp.format(spid, 
                                 stnode_p::t_stnode_p, 
                                 stnode_p::t_virgin, st_regular));
             page_s& page = fp.persistent_part();
+            w_assert1(page.pid.vol() == vid);
             rc = me()->write(fd, &page, sizeof(page));
             if (rc.is_error()) {
                 W_IGNORE(me()->close(fd));

@@ -116,6 +116,27 @@ public:
         }
         return matches;
     }
+    /**
+     * Returns if all ON-bits in subset are also ON in this bitmap.
+     */
+    bool contains (const w_bitvector_t &subset) const
+    {
+        for(int i = 0; i < WORDS; ++i) {
+            if ((data[i] & subset.data[i]) != subset.data[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+    /**
+     * Updates this bitmap by taking OR with the given bitmap.
+     */
+    void merge (const w_bitvector_t &added)
+    {
+        for(int i = 0; i < WORDS; ++i) {
+            data[i] |= added.data[i];
+        }
+    }
 
     ostream &print(ostream &o) const 
     {
@@ -203,3 +224,15 @@ public:
     }
 #undef BIT_VECTOR_PROLOGUE
 };
+
+template <int BIT_COUNT> ostream &operator<<(ostream &o, const w_bitvector_t <BIT_COUNT> &t)
+{
+    const char *sep="";
+    o << "{";
+    for(int i=0; i < BIT_COUNT; i++) 
+    {
+        if(t.is_set(i)) { o << sep << i; sep="."; }
+    }
+    o << "}";
+    return o;
+}

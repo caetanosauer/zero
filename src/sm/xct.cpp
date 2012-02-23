@@ -615,7 +615,7 @@ check_compensated_op_nesting::compensated_op_depth(xct_t* xd, int dflt)
 void
 xct_t::force_nonblocking()
 {
-    lock_info()->set_nonblocking();
+//    lock_info()->set_nonblocking();
 }
 
 rc_t
@@ -715,7 +715,7 @@ xct_t::obtain_locks(lock_mode_t mode, int num, const lockid_t *locks)
     for (i=0; i<num; i++) {
         DBG(<<"Obtaining lock : " << locks[i] << " in mode " << int(mode));
 
-        rc =lm->lock(locks[i], mode, t_long, WAIT_IMMEDIATE);
+        rc =lm->lock(locks[i], mode, false, WAIT_IMMEDIATE);
         if(rc.is_error()) {
             lm->dump(smlevel_0::errlog->clog);
             smlevel_0::errlog->clog << fatal_prio
@@ -733,7 +733,7 @@ xct_t::obtain_one_lock(lock_mode_t mode, const lockid_t &lock)
     DBG(<<"Obtaining 1 lock : " << lock << " in mode " << int(mode));
 
     rc_t rc;
-    rc = lm->lock(lock, mode, t_long, WAIT_IMMEDIATE);
+    rc = lm->lock(lock, mode, false, WAIT_IMMEDIATE);
     if(rc.is_error()) {
         lm->dump(smlevel_0::errlog->clog);
         smlevel_0::errlog->clog << fatal_prio
@@ -1711,6 +1711,14 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
             );
     // W_DO(check_one_thread_attached()); // now checked in prologue
     w_assert1(one_thread_attached());
+
+    // first, empty the wait map because no chance this xct can cause deadlock any more.
+    {
+        xct_lock_info_t *linfo = lock_info();
+        if (linfo) {
+            linfo->clear_wait_map();
+        }
+    }
     
     if (_log_buf_for_piggybacked_ssx_used > 0) {
         W_DO(_flush_piggyback_ssx_logbuf());
@@ -1732,11 +1740,11 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
 
 //    W_DO( ConvertAllLoadStoresToRegularStores() );
 
-    SSMTEST("commit.1");
-    
     change_state(flags & xct_t::t_chain ? xct_chaining : xct_committing);
 
-    SSMTEST("commit.2");
+    // when chaining, we inherit the read_watermark from the previous xct
+    // in case the next transaction are read-only.    
+    lsn_t inherited_read_watermark;
 
     if (_last_lsn.valid() || !smlevel_1::log)  {
         /*
@@ -1773,14 +1781,6 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
             rc = log_xct_freeing_space();
         }
         chkpt_serial_m::trx_release();
-#if defined(USE_SSMTEST)
-        // SSMTEST("commit.3"); 
-        // cannot abort here with simple return Need some special
-        // handling to restore the state.
-        if( !rc.is_error()) {
-            rc = ssmtest(smlevel_0::log,"commit.3",__FILE__,__LINE__);
-        }
-#endif
         if(rc.is_error()) {
             // Log insert failed.
             // restore the state.
@@ -1799,7 +1799,7 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
         // let's do ELR
         W_DO(early_lock_release());
 
-        if (!(flags & xct_t::t_lazy) /* && !_read_only */)  {
+        if (!(flags & xct_t::t_lazy))  {
             _sync_logbuf();
         }
         else { // IP: If lazy, wake up the flusher but do not block
@@ -1814,6 +1814,11 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
         // Free all locks. Do not free locks if chaining.
         if(individual && ! (flags & xct_t::t_chain) && _elr_mode != elr_sx)  {
             W_DO(commit_free_locks());
+        }
+
+        if(flags & xct_t::t_chain)  {
+            // in this case the dependency is the previous xct itself, so take the commit LSN.
+            inherited_read_watermark = _last_lsn;
         }
     }  else  {
         // Nothing logged; no need to write a log record.
@@ -1854,14 +1859,20 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
                 }
                 
                 if (!flushed) {
-                    // now we suspect that we might saw a dirty page updated by an aborted xct (or long running xct).
+                    // now we suspect that we might saw a bogus tag for some reason.
                     // so, let's output a real xct_end log and flush it. see ticket:101
+                    // NOTE this should not be needed now that our algorithm is based
+                    // on lock bucket tag, which is always exact, not too conservative.
+                    // should consider removing this later, but for now keep it.
                     W_COERCE(log_xct_end());
                     _sync_logbuf();
                 }
                 _read_watermark = lsn_t::null;
             }
         } else {
+            if(flags & xct_t::t_chain)  {
+                inherited_read_watermark = _read_watermark;
+            }
             // even if chaining or grouped xct, we can do ELR
             W_DO(early_lock_release());
         }
@@ -1880,19 +1891,15 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
 
         w_assert1(individual==true);
 
-#if X_LOG_COMMENT_ON
-        {
-            w_ostrstream s;
-            s << "chaining... ";
-            W_DO(log_comment(s.c_str()));
-        }
-#endif
         ++_xct_chain_len;
         /*
          *  Start a new xct in place
          */
         _teardown(true);
         _first_lsn = _last_lsn = _undo_nxt = lsn_t::null;
+        if (inherited_read_watermark.valid()) {
+            _read_watermark = inherited_read_watermark;
+        }
         // we do NOT reset _read_watermark here. the last xct of the chain
         // is responsible to flush if it's read-only. (if read-write, it anyway flushes)
         _core->_xct_ended = 0;
@@ -1916,11 +1923,11 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
 }
 
 rc_t
-xct_t::commit_free_locks(bool read_lock_only)
+xct_t::commit_free_locks(bool read_lock_only, lsn_t commit_lsn)
 {
     // system transaction doesn't acquire locks
     if (!is_sys_xct()) {
-        W_COERCE( lm->unlock_duration(t_long, read_lock_only) );
+        W_COERCE( lm->unlock_duration(read_lock_only, commit_lsn) );
     }
     return RCOK;
 }
@@ -1935,7 +1942,9 @@ rc_t xct_t::early_lock_release() {
                 break;
             case elr_sx:
                 // simply release all locks
-                W_DO(commit_free_locks());
+                // update tag for safe SX-ELR with _last_lsn which should be the commit lsn
+                // (we should have called log_xct_end right before this)
+                W_DO(commit_free_locks(false, _last_lsn));
                 break;
             default:
                 w_assert1(false); // wtf??
@@ -1967,6 +1976,14 @@ xct_t::_abort()
             );
     if(_core->_state != xct_committing && _core->_state != xct_freeing_space) {
         w_assert1(1 == atomic_inc_nv(_core->_xct_ended));
+    }
+
+    // first, empty the wait map because no chance this xct can cause deadlock any more.
+    {
+        xct_lock_info_t *linfo = lock_info();
+        if (linfo) {
+            linfo->clear_wait_map();
+        }
     }
 
     if (_log_buf_for_piggybacked_ssx_used > 0) {
@@ -2729,39 +2746,45 @@ xct_t::give_logbuf(logrec_t* l, const page_p *page)
     // ALREADY PROTECTED from get_logbuf() call
 
     w_assert1(l == _last_log);
+    
+    // allocation page and store pages are in its own special buffer (bf_fixed_m) which doesn't have cleaner.
+    // so, no need to worry about last_mod_page
+    bool separated_buffer = page == NULL || (page->tag() == page_p::t_alloc_p || page->tag() == page_p::t_stnode_p);
 
-    // WAL: hang onto last mod page so we can
-    // keep it from being flushed before the log
-    // is written.  The log isn't synced here, but the buffer
-    // manager does a log flush to the lsn of the page before
-    // it writes the page, which makes the log record durable
-    // before the page gets written.   Our job here is to
-    // get the lsn into the page before we unfix the page.
     page_p last_mod_page;
+    if (!separated_buffer) {
+        // WAL: hang onto last mod page so we can
+        // keep it from being flushed before the log
+        // is written.  The log isn't synced here, but the buffer
+        // manager does a log flush to the lsn of the page before
+        // it writes the page, which makes the log record durable
+        // before the page gets written.   Our job here is to
+        // get the lsn into the page before we unfix the page.
 
-    if(page != (page_p *)0) {
-        // Should already be EX-latched since it's the last modified page!
-        w_assert1(page->latch_mode() == LATCH_EX);
+        if(page != (page_p *)0) {
+            // Should already be EX-latched since it's the last modified page!
+            w_assert1(page->latch_mode() == LATCH_EX);
 
-        last_mod_page = *page; // refixes
-    } 
-    else if (l->shpid())  
-    {
-        // Those records with page ids stuffed in with fill() 
-        // should match those whose 2nd argument (page) is non-null,
-        // so those should hit the above case.
-        W_FATAL(eINTERNAL); // we shouldn't get here.
-    } else {
-        // This log record doesn't use a page.
-        w_assert1(l->tag() == 0);
-    }
+            last_mod_page = *page; // refixes
+        } 
+        else if (l->shpid())  
+        {
+            // Those records with page ids stuffed in with fill() 
+            // should match those whose 2nd argument (page) is non-null,
+            // so those should hit the above case.
+            W_FATAL(eINTERNAL); // we shouldn't get here.
+        } else {
+            // This log record doesn't use a page.
+            w_assert1(l->tag() == 0);
+        }
 
-    if(last_mod_page.is_fixed()) { // i.e., is  fixed
-        w_assert2(l->tag()!=0);
-        w_assert2(last_mod_page.latch_mode() == LATCH_EX);
-    } else {
-        w_assert2(l->tag()==0);
-        w_assert3(last_mod_page.latch_mode() == LATCH_NL);
+        if(last_mod_page.is_fixed()) { // i.e., is  fixed
+            w_assert2(l->tag()!=0);
+            w_assert2(last_mod_page.latch_mode() == LATCH_EX);
+        } else {
+            w_assert2(l->tag()==0);
+            w_assert3(last_mod_page.latch_mode() == LATCH_NL);
+        }
     }
 
     rc_t rc = _flush_logbuf(); 
@@ -2770,13 +2793,17 @@ xct_t::give_logbuf(logrec_t* l, const page_p *page)
     if(rc.is_error())
     goto done;
     
-    if(last_mod_page.is_fixed() ) {
-        w_assert2(last_mod_page.latch_mode() == LATCH_EX);
-        // WAL: stuff the lsn into the page so the buffer manager
-        // can force the log to that lsn before writing the page.
-        last_mod_page.set_lsns(_last_lsn);
-        last_mod_page.unfix_dirty();
-        w_assert1(last_mod_page.check_lsn_invariant());
+    if (!separated_buffer) {
+        if(last_mod_page.is_fixed() ) {
+            w_assert2(last_mod_page.latch_mode() == LATCH_EX);
+            // WAL: stuff the lsn into the page so the buffer manager
+            // can force the log to that lsn before writing the page.
+            last_mod_page.set_lsns(_last_lsn);
+            last_mod_page.unfix_dirty();
+            w_assert1(last_mod_page.check_lsn_invariant());
+        }
+    } else if (page != NULL) {
+        const_cast<page_p*>(page)->set_lsns(_last_lsn);
     }
 
  done:
@@ -3507,6 +3534,7 @@ void
 xct_t::attach_thread() 
 {
     FUNC(xct_t::attach_thread);
+    smthread_t *thr = g_me();
     CRITICAL_SECTION(xctstructure, *this);
 
     w_assert2(is_1thread_xct_mutex_mine());
@@ -3516,8 +3544,13 @@ xct_t::attach_thread()
     }
     w_assert2(_core->_threads_attached >=0);
     w_assert2(is_1thread_xct_mutex_mine());
-    me()->new_xct(this);
+    thr->new_xct(this);
     w_assert2(is_1thread_xct_mutex_mine());
+    // set the fingerprint of this thread to the xct's wait-bitmap
+    xct_lock_info_t *linfo = lock_info();
+    if (linfo) {
+        linfo->init_wait_map(thr);
+    }
 }
 
 
@@ -3536,6 +3569,7 @@ xct_t::detach_thread()
 w_rc_t
 xct_t::lockblock(timeout_in_ms timeout)
 {
+    /*
 // Used by lock manager. (lock_core_m)
 // Another thread in our xct is blocking. We're going to have to
 // wait on another resource, until our partner thread unblocks,
@@ -3570,6 +3604,8 @@ xct_t::lockblock(timeout_in_ms timeout)
         return RC_AUGMENT(rc);
     } 
     return rc;
+    */
+    return RCOK;
 }
 
 void

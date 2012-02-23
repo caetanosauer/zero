@@ -28,13 +28,21 @@ public:
     int _pages_inconsistent;
 
     /** flips a bit corresponding to the specified fact. */
-    void add_fact (shpid_t pid, int16_t level, bool high, size_t key_len, const char* key);
+    void add_fact (shpid_t pid, int16_t level, bool high, size_t key_len, const char* key) {
+        add_fact (pid, level, high, key_len, key, 0, NULL);
+    }
+    /** for the case the string consists of two parts (prefix and suffix). */
+    void add_fact (shpid_t pid, int16_t level, bool high, size_t prefix_len, const char* prefix, size_t suffix_len, const char* suffix);
     /** overload for w_keystr_t. */
     void add_fact (shpid_t pid, int16_t level, bool high, const w_keystr_t &key) {
         add_fact (pid, level, high, key.get_length_as_keystr(), (const char*) key.buffer_as_keystr());
     }
     /** same as add_fact(), but has different function name to make the code more readable. */
-    void add_expectation (shpid_t pid, int16_t level, bool high, size_t key_len, const char* key);
+    void add_expectation (shpid_t pid, int16_t level, bool high, size_t key_len, const char* key) {
+        add_expectation (pid, level, high, key_len, key, 0, NULL);
+    }
+    /** for the case the string consists of two parts (prefix and suffix). */
+    void add_expectation (shpid_t pid, int16_t level, bool high, size_t prefix_len, const char* prefix, size_t suffix_len, const char* suffix);
     /** overload for w_keystr_t. */
     void add_expectation (shpid_t pid, int16_t level, bool high, const w_keystr_t &key) {
         add_expectation (pid, level, high, key.get_length_as_keystr(), (const char*) key.buffer_as_keystr());

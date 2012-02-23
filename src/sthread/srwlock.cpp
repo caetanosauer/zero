@@ -76,7 +76,7 @@ int mcs_rwlock::_spin_on_writer()
 // private
 void mcs_rwlock::_spin_on_readers() 
 {
-    while(has_reader()) { };
+    while(has_reader());
     // callers do membar_enter
 }
 
@@ -149,7 +149,7 @@ bool mcs_rwlock::_attempt_write(unsigned int expected)
 
 // USE_PTHREAD_MUTEX is determined by configure option and
 // thus defined in config/shore-config.h
-#if defined(USE_PTHREAD_MUTEX) && USE_PTHREAD_MUTEX==1
+#ifdef USE_PTHREAD_MUTEX
     ext_qnode me = QUEUE_EXT_QNODE_INITIALIZER;
 #else
     ext_qnode me;

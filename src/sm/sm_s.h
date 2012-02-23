@@ -69,6 +69,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #pragma interface
 #endif
 
+#include "basics.h"
+
 /**\brief Long page ID.
  * \details
  * Store ID (volume number + store number) + page number.

@@ -788,7 +788,7 @@ void dismount_vol_log::redo(page_p* W_IFDEBUG9(page))
  * New page creation is usually a page split, so the new page has many
  * records in it. To simplify and to avoid many log entries in that case,
  * we log ALL bytes from the beginning to the end of slot vector,
- * and from the record_head to the end of page.
+ * and from the record_head8 to the end of page.
  * We can assume totally defragmented page image because this is page creation.
  * We don't need UNDO (again, this is page creation!), REDO is just two memcpy().
  */
@@ -802,10 +802,10 @@ struct page_img_format_t {
 page_img_format_t::page_img_format_t (const page_p& page)
 {
     beginning_bytes = page_p::hdr_sz + page.nslots() * page_p::slot_sz;
-    ending_bytes = page_p::page_sz - page._pp->record_head - page_p::hdr_sz;
+    ending_bytes = page_p::page_sz - page._pp->get_record_head_byte() - page_p::hdr_sz;
     const char *pp_bin = (const char *) page._pp;
     ::memcpy (data, pp_bin, beginning_bytes);
-    ::memcpy (data + beginning_bytes, pp_bin + page_p::hdr_sz + page._pp->record_head, ending_bytes);
+    ::memcpy (data + beginning_bytes, pp_bin + page_p::hdr_sz + page._pp->get_record_head_byte(), ending_bytes);
 }
 
 page_img_format_log::page_img_format_log(const page_p &page)
@@ -840,7 +840,7 @@ void page_img_format_log::redo(page_p* page)
  *
  *********************************************************************/
 
-store_operation_log::store_operation_log(const page_p& page, const store_operation_param& param)
+store_operation_log::store_operation_log(const stnode_p& page, const store_operation_param& param)
 {
     fill(&page.pid(), page.tag(), (new (_data) store_operation_param(param))->size());
 }
@@ -989,7 +989,7 @@ void page_set_tobedeleted_log::undo(page_p* page)
 
 
  
-alloc_a_page_log::alloc_a_page_log (const page_p& p, shpid_t pid)
+alloc_a_page_log::alloc_a_page_log (const alloc_p& p, shpid_t pid)
 {
     w_assert0(p.tag() == page_p::t_alloc_p);
     // page alloation is single-log system transaction. so, use data_ssx()
@@ -1014,7 +1014,7 @@ void alloc_a_page_log::redo(page_p*)
     }
 }
 
-alloc_consecutive_pages_log::alloc_consecutive_pages_log (const page_p& p, shpid_t pid_begin, uint32_t page_count)
+alloc_consecutive_pages_log::alloc_consecutive_pages_log (const alloc_p& p, shpid_t pid_begin, uint32_t page_count)
 {
     w_assert0(p.tag() == page_p::t_alloc_p);
     // page alloation is single-log system transaction. so, use data_ssx()
@@ -1041,7 +1041,7 @@ void alloc_consecutive_pages_log::redo(page_p*)
 }
 
  
-dealloc_a_page_log::dealloc_a_page_log (const page_p& p, shpid_t pid)
+dealloc_a_page_log::dealloc_a_page_log (const alloc_p& p, shpid_t pid)
 {
     w_assert0(p.tag() == page_p::t_alloc_p);
     // page dealloation is single-log system transaction. so, use data_ssx()
