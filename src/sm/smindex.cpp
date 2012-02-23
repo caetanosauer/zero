@@ -98,7 +98,9 @@ rc_t ss_m::defrag_index_page(const lpid_t &pid)
 rc_t ss_m::open_store (const stid_t &stid, lpid_t &root_pid, bool for_update)
 {
     // take intent lock
-    W_DO(lm->intent_vol_store_lock(stid, for_update ? IX : IS));
+    if (g_xct_does_need_lock()) {
+        W_DO(lm->intent_vol_store_lock(stid, for_update ? IX : IS));
+    }
     return open_store_nolock (stid, root_pid);
 }
 rc_t ss_m::open_store_nolock (const stid_t &stid, lpid_t &root_pid)

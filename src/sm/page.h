@@ -1,61 +1,7 @@
-/* -*- mode:C++; c-basic-offset:4 -*-
-     Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
-                       Copyright (c) 2007-2009
-      Data Intensive Applications and Systems Labaratory (DIAS)
-               Ecole Polytechnique Federale de Lausanne
-   
-                         All Rights Reserved.
-   
-   Permission to use, copy, modify and distribute this software and
-   its documentation is hereby granted, provided that both the
-   copyright notice and this permission notice appear in all copies of
-   the software, derivative works or modified versions, and any
-   portions thereof, and that both notices appear in supporting
-   documentation.
-   
-   This code is distributed in the hope that it will be useful, but
-   WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
-   DISCLAIM ANY LIABILITY OF ANY KIND FOR ANY DAMAGES WHATSOEVER
-   RESULTING FROM THE USE OF THIS SOFTWARE.
-*/
-
-/*<std-header orig-src='shore' incl-file-exclusion='PAGE_H'>
-
- $Id: page.h,v 1.122 2010/11/08 15:06:55 nhall Exp $
-
-SHORE -- Scalable Heterogeneous Object REpository
-
-Copyright (c) 1994-99 Computer Sciences Department, University of
-                      Wisconsin -- Madison
-All Rights Reserved.
-
-Permission to use, copy, modify and distribute this software and its
-documentation is hereby granted, provided that both the copyright
-notice and this permission notice appear in all copies of the
-software, derivative works or modified versions, and any portions
-thereof, and that both notices appear in supporting documentation.
-
-THE AUTHORS AND THE COMPUTER SCIENCES DEPARTMENT OF THE UNIVERSITY
-OF WISCONSIN - MADISON ALLOW FREE USE OF THIS SOFTWARE IN ITS
-"AS IS" CONDITION, AND THEY DISCLAIM ANY LIABILITY OF ANY KIND
-FOR ANY DAMAGES WHATSOEVER RESULTING FROM THE USE OF THIS SOFTWARE.
-
-This software was developed with support by the Advanced Research
-Project Agency, ARPA order number 018 (formerly 8230), monitored by
-the U.S. Army Research Laboratory under contract DAAB07-91-C-Q518.
-Further funding for this work was provided by DARPA through
-Rome Research Laboratory Contract No. F30602-97-2-0247.
-
-*/
-
 #ifndef PAGE_H
 #define PAGE_H
 
 #include "w_defines.h"
-
-/*  -- do not edit anything above this line --   </std-header>*/
 
 class stnode_p;
 class alloc_p;
@@ -63,6 +9,9 @@ class alloc_p;
 #ifdef __GNUG__
 #pragma interface
 #endif
+
+#include "page_s.h"
+#include <string.h>
 
 /**
  *  Basic page handle class. This class is used to fix a page
@@ -72,10 +21,6 @@ class page_p : public smlevel_0
 {
 
 friend class dir_vol_m;  // for access to page_p::splice();
-
-protected:
-    typedef page_s::slot_offset_t slot_offset_t;
-    typedef page_s::slot_length_t slot_length_t;
 
 public:
     enum {
@@ -182,49 +127,27 @@ public:
     rc_t                         set_tobedeleted (bool log_it);
     /** Unset the deletion flag. This is only used by UNDO, so no logging. and no failure possible. */
     void                         unset_tobedeleted ();
-
-    slotid_t                     nslots() const;
-    smsize_t                     tuple_size(slotid_t idx) const;
-    slot_offset_t                tuple_offset(slotid_t idx) const;
-    void*                        tuple_addr(slotid_t idx) const;
-    void                         overwrite_slot (slotid_t idx, slot_offset_t offset, slot_length_t length);
-    bool                         is_ghost_record(slotid_t idx) const;
-
-    /**
-     * Expands an existing record for given size.
-     * Caller should make sure there is enough space to expand.
-     */
-    void                         expand_rec(slotid_t idx, slot_length_t rec_len);
     
-    /**
-     * Mark the given slot to be a ghost record.
-     * If the record is already a ghost, does nothing.
-     * This is used by delete and insert (UNDO).
-     * This function itself does NOT log, so the caller is responsible for it.
-     * @see defrag()
-     */
-    void                        mark_ghost(slotid_t slot);
+    char*                        data_addr8(slot_offset8_t offset8);
+    const char*                  data_addr8(slot_offset8_t offset8) const;
+    slotid_t                     nslots() const;
+    slot_offset8_t               tuple_offset8(slotid_t idx) const;
+    poor_man_key                 tuple_poormkey (slotid_t idx) const;
+    void                         tuple_both (slotid_t idx, slot_offset8_t &offset8, poor_man_key &poormkey) const;
+    void*                        tuple_addr(slotid_t idx) const;
 
+    char*                        slot_addr(slotid_t idx) const;
     /**
-     * Un-Mark the given slot to be a regular record.
-     * If the record is already a non-ghost, does nothing.
-     * This is only used by delete (UNDO).
-     * This function itself does NOT log, so the caller is responsible for it.
+     * Add a new slot to the given position.
+     * If idx == nrecs(), this is an 'append' and more efficient because we don't have to move
+     * existing slots.
      */
-    void                        unmark_ghost(slotid_t slot);
-
+    void                         insert_slot (slotid_t idx, slot_offset8_t offset8, poor_man_key poormkey);
     /**
-     * \brief Defrags thispage to remove holes and ghost records in the page.
-     * \details
-     * A page can have unused holes between records and ghost records as a result
-     * of inserts and deletes. This method removes those dead spaces to compress
-     * the page. The best thing of this is that we have to log only
-     * the slot numbers of ghost records that are removed because there are
-     * 'logically' no changes.
-     * Context: System transaction.
-     * @param[in] popped the record to be popped out to the head. -1 to not specify.
+     * Changes only the offset part of the specified slot.
+     * Used to turn a ghost record into a usual record, or to expand a record.
      */
-    rc_t                         defrag(slotid_t popped = -1);
+    void                         change_slot_offset (slotid_t idx, slot_offset8_t offset8);
 
     uint32_t            page_flags() const;
     uint32_t            get_store_flags() const;
@@ -301,19 +224,7 @@ public:
     latch_mode_t                 latch_mode() const;
     bool                         check_lsn_invariant() const;
 
-    /** this is used by du/df to get page statistics DU DF. */
-    void                        page_usage(
-        int&                            data_sz,
-        int&                            hdr_sz,
-        int&                            unused,
-        int&                             alignmt,
-        tag_t&                             t,
-        slotid_t&                     no_used_slots);
-
     tag_t                       tag() const;
-
-    /** checks space correctness. */
-    bool             is_consistent_space () const;
     
     /** Returns the stored value of checksum of this page. */
     uint32_t          get_checksum () const {return _pp->checksum;}
@@ -340,33 +251,6 @@ protected:
         uint32_t                 page_flags,
         store_flag_t                      store_flags
         );
-    
-    /**
-    *  Insert a record at slot idx. Slots on the left of idx
-    *  are pushed further to the left to make space. 
-    *  By this it's meant that the slot table entries are moved; the
-    *  data themselves are NOT moved.
-    *  Vec[] contains the data for these new slots. 
-    */
-    rc_t                        insert_expand_nolog(
-        slotid_t idx, const cvec_t &tp);
-
-    /**
-     * Replaces the record of specified slot with the given data,
-     * expanding the slot length if needed.
-     */
-    rc_t                        replace_expand_nolog(
-        slotid_t                     idx,
-        const cvec_t                &tp);
-
-    /**
-     * This is used when it's known that we are adding the new record
-     * to the end, and the page is like a brand-new page; no holes,
-     * and enough spacious. Basically only for page-format case.
-     * This is much more efficient!
-     * This doesn't log, so the caller is responsible for it.
-     */
-    void                        append_nolog(const cvec_t &tp, bool ghost);
 
     /**
      * Returns if there is enough free space to accomodate the
@@ -374,12 +258,6 @@ protected:
      * @return true if there is free space
      */
     bool check_space_for_insert(size_t rec_size);    
-
-    /**
-    *  Remove the slot and up-shift slots after the hole to fill it up.
-    * @param idx  the slot to remove.
-    */
-    rc_t                        remove_shift_nolog(slotid_t idx);
 
     /*  
      * DATA 
@@ -410,50 +288,57 @@ page_p::set_vid(vid_t vid)
 inline smsize_t 
 page_p::used_space() const
 {
-    return (data_sz - _pp->record_head + nslots() * slot_sz); 
+    return (data_sz - _pp->get_record_head_byte() + nslots() * slot_sz); 
 }
 
 inline smsize_t
 page_p::usable_space() const
 {
-    size_t contiguous_free_space = _pp->record_head - slot_sz * nslots();
+    size_t contiguous_free_space = _pp->get_record_head_byte() - slot_sz * nslots();
     return contiguous_free_space; 
 }
 
-inline smsize_t
-page_p::tuple_size(slotid_t idx) const
+inline char* page_p::data_addr8(slot_offset8_t offset8)
 {
-    w_assert3(idx >= 0 && idx < _pp->nslots);
-    return *reinterpret_cast<const slot_length_t*>(_pp->data + slot_sz * idx + sizeof(slot_offset_t));
+    return _pp->data_addr8(offset8);
+}
+inline const char* page_p::data_addr8(slot_offset8_t offset8) const
+{
+    return _pp->data_addr8(offset8);
+}
+inline char* page_p::slot_addr(slotid_t idx) const
+{
+    w_assert3(idx >= 0 && idx <= _pp->nslots);
+    return _pp->data + (slot_sz * idx);
 }
 
-inline page_s::slot_offset_t
-page_p::tuple_offset(slotid_t idx) const
+inline slot_offset8_t
+page_p::tuple_offset8(slotid_t idx) const
 {
-    w_assert3(idx >= 0 && idx < _pp->nslots);
-    slot_offset_t offset = *reinterpret_cast<const slot_offset_t*>(_pp->data + slot_sz * idx);
-    return offset;
+    return *reinterpret_cast<const slot_offset8_t*>(slot_addr(idx));
+}
+inline poor_man_key page_p::tuple_poormkey (slotid_t idx) const
+{
+    return *reinterpret_cast<const poor_man_key*>(slot_addr(idx) + sizeof(slot_offset8_t));
+}
+inline void page_p::tuple_both (slotid_t idx, slot_offset8_t &offset8, poor_man_key &poormkey) const
+{
+    const char* slot = slot_addr(idx);
+    offset8 = *reinterpret_cast<const slot_offset8_t*>(slot);
+    poormkey = *reinterpret_cast<const poor_man_key*>(slot + sizeof(slot_offset8_t));
 }
 
 inline void*
 page_p::tuple_addr(slotid_t idx) const
 {
-    slot_offset_t offset = tuple_offset(idx);
-    if (offset < 0) offset = -offset; // ghost record.
-    return _pp->data + offset;
-}
-inline bool
-page_p::is_ghost_record(slotid_t idx) const
-{
-    slot_offset_t offset = tuple_offset(idx);
-    return (offset < 0);
+    slot_offset8_t offset8 = tuple_offset8(idx);
+    if (offset8 < 0) offset8 = -offset8; // ghost record.
+    return _pp->data_addr8(offset8);
 }
 
-inline void page_p::overwrite_slot (slotid_t idx, slot_offset_t offset, slot_length_t length) {
-    slot_offset_t* offset_p = reinterpret_cast<slot_offset_t*>(_pp->data + slot_sz * idx);
-    slot_length_t* length_p = reinterpret_cast<slot_length_t*>(_pp->data + slot_sz * idx + sizeof(slot_offset_t));
-    *offset_p = offset;
-    *length_p = length;
+inline void page_p::change_slot_offset (slotid_t idx, slot_offset8_t offset) {
+    char* slot = slot_addr(idx);
+    *reinterpret_cast<slot_offset8_t*>(slot) = offset;
 }
 
 inline uint32_t
@@ -578,7 +463,10 @@ page_p::unfix_dirty()
 inline void
 page_p::set_dirty() const
 {
-    if (bf->is_bf_page(_pp))  W_COERCE(bf->set_dirty(_pp));
+    //alloc_p/stnode_p doesn't use the main bufferpool.
+    if (_pp->tag != t_alloc_p && _pp->tag != t_stnode_p) {
+        if (bf->is_bf_page(_pp))  W_COERCE(bf->set_dirty(_pp));
+    }
     if(smlevel_0::logging_enabled == false) {
         // fake the lsn on the page. This is an attempt to
         // trick the btree code into being able to tell if
@@ -597,6 +485,4 @@ page_p::is_dirty() const
     return false;
 }
 
-/*<std-footer incl-file-exclusion='PAGE_H'>  -- do not edit anything below this line -- */
-
-#endif          /*</std-footer>*/
+#endif

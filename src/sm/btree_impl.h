@@ -3,17 +3,8 @@
 
 #include "w_defines.h"
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
-#ifndef BTREE_H
 #include "btree.h"
-#endif
-#ifndef KVL_T_H
 #include "kvl_t.h"
-#endif
-
 #include "btree_verify.h"
 
 /**
@@ -520,14 +511,14 @@ public:
      * @param[in] key the key to lock
      * @param[in] latch_mode if this has to un-latch/re-latch, this mode is used.
      * @param[in] lock_mode the lock mode to be acquired
-     * @param[in] lock_duration the lock duration to be acquired
+     * @param[in] check_only whether the lock goes away right after grant
      */
     static rc_t _ux_lock_key(
         btree_p&      leaf,
         const w_keystr_t&   key,
         latch_mode_t        latch_mode,
         lock_mode_t         lock_mode,
-        lock_duration_t     lock_duration
+        bool                check_only
     );
 
     /** raw string and length version. */
@@ -537,7 +528,7 @@ public:
         size_t              keylen,
         latch_mode_t        latch_mode,
         lock_mode_t         lock_mode,
-        lock_duration_t     lock_duration
+        bool                check_only
     );
 
     /**
@@ -554,7 +545,7 @@ public:
         latch_mode_t        latch_mode,
         lock_mode_t         lock_key_mode,
         lock_mode_t         lock_range_mode,
-        lock_duration_t     lock_duration
+        bool                check_only
     );
 
     /** raw string version. */
@@ -566,7 +557,7 @@ public:
         latch_mode_t        latch_mode,
         lock_mode_t         lock_key_mode,
         lock_mode_t         lock_range_mode,
-        lock_duration_t     lock_duration
+        bool                check_only
     );
 
     /**

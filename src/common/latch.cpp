@@ -75,7 +75,6 @@ const char* const  latch_t::latch_mode_str[3] = { "NL", "SH", "EX" };
 latch_t::latch_t(const char* const desc) :
     _total_count(0) 
 {
-    setname(desc);
 }
 
 latch_t::~latch_t()
@@ -367,7 +366,7 @@ latch_t::upgrade_if_not_block(bool& would_block)
         return RCOK;
     }
     
-    w_rc_t rc = _acquire(LATCH_EX, WAIT_IMMEDIATE, me.value());
+    w_rc_t rc = _acquire(LATCH_EX, sthread_base_t::WAIT_IMMEDIATE, me.value());
     if(rc.is_error()) {
         // it never should have tried to block
         w_assert3(rc.err_num() != sthread_t::stTIMEOUT);
@@ -469,7 +468,7 @@ w_rc_t latch_t::_acquire(latch_mode_t new_mode,
         INC_STH_STATS(latch_uncondl_nowait);
 #endif
     } else {
-        if(timeout == WAIT_IMMEDIATE) {
+        if(timeout == sthread_base_t::WAIT_IMMEDIATE) {
             INC_STH_STATS(needs_latch_condl);
             bool success = (new_mode == LATCH_SH)? 
                 _lock.attempt_read() : _lock.attempt_write();
@@ -601,7 +600,7 @@ latch_t::is_mine() const {
 #include <w_stream.h>
 ostream &latch_t::print(ostream &out) const
 {
-    out <<    "latch(" << this << "): " << name();
+    out <<    "latch(" << this << ") ";
     out << " held in " << latch_mode_str[int(mode())] << " mode ";
     out << "by " << num_holders() << " threads " ;
     out << "total " << latch_cnt() << " times " ;

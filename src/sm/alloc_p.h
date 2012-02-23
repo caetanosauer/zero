@@ -21,7 +21,7 @@
 class alloc_p : public page_p {
 public:
     alloc_p() : page_p() {}
-    alloc_p(page_s* s, uint32_t store_flags) : page_p(s, store_flags) {}
+    alloc_p(page_s* s) : page_p() { _pp = s; }
     ~alloc_p()  {}
     
     tag_t get_page_tag () const { return t_alloc_p; }
@@ -29,7 +29,6 @@ public:
     void inc_fix_cnt_stat () const { INC_TSTAT(alloc_p_fix_cnt);}
     rc_t format(const lpid_t& pid, tag_t tag, uint32_t page_flags, store_flag_t store_flags);
 
-    
     /** Returns the smallest page ID bitmaps in this page represent. */
     shpid_t get_pid_offset() const;
 

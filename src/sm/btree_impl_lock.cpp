@@ -23,11 +23,11 @@ btree_impl::_ux_lock_key(
     const w_keystr_t&   key,
     latch_mode_t        latch_mode,
     lock_mode_t         lock_mode,
-    lock_duration_t     lock_duration
+    bool                check_only
     )        
 {
     return _ux_lock_key(leaf, key.buffer_as_keystr(), key.get_length_as_keystr(),
-                         latch_mode, lock_mode, lock_duration);
+                         latch_mode, lock_mode, check_only);
 }
 
 rc_t
@@ -37,12 +37,12 @@ btree_impl::_ux_lock_key(
     size_t              keylen,
     latch_mode_t        latch_mode,
     lock_mode_t         lock_mode,
-    lock_duration_t     lock_duration
+    bool                check_only
     )        
 {
     lockid_t lid (leaf.pid().stid(), (const unsigned char*) keystr, keylen);
     // first, try conditionally
-    rc_t lock_rc = lm->lock(lid, lock_mode, lock_duration, WAIT_IMMEDIATE);
+    rc_t lock_rc = lm->lock(lid, lock_mode, check_only, WAIT_IMMEDIATE);
     if (!lock_rc.is_error()) {
         // lucky! we got it immediately. just return.
         return RCOK;
@@ -57,7 +57,7 @@ btree_impl::_ux_lock_key(
         lpid_t leaf_pid = leaf.pid();
         leaf.unfix();
         // then, we try it unconditionally (this will block)
-        W_DO(lm->lock(lid, lock_mode, lock_duration));
+        W_DO(lm->lock(lid, lock_mode, check_only));
         // now we got the lock.. but it might be changed because we unlatched.
         W_DO(leaf.fix(leaf_pid, latch_mode) );
         if (leaf.lsn() != prelsn) { // unluckily, it's the case
@@ -75,11 +75,11 @@ btree_impl::_ux_lock_range(
     latch_mode_t        latch_mode,
     lock_mode_t         lock_key_mode,
     lock_mode_t         lock_range_mode,
-    lock_duration_t     lock_duration
+    bool                check_only
     )        
 {
     return _ux_lock_range(leaf, key.buffer_as_keystr(), key.get_length_as_keystr(),
-                slot, latch_mode, lock_key_mode, lock_range_mode, lock_duration);    
+                slot, latch_mode, lock_key_mode, lock_range_mode, check_only);    
 }
 rc_t
 btree_impl::_ux_lock_range(
@@ -90,7 +90,7 @@ btree_impl::_ux_lock_range(
     latch_mode_t        latch_mode,
     lock_mode_t         lock_key_mode,
     lock_mode_t         lock_range_mode,
-    lock_duration_t     lock_duration
+    bool                check_only
     )        
 {
     // the interval from previous key is locked
@@ -117,7 +117,7 @@ btree_impl::_ux_lock_range(
         // the low-fence as ghost record to be aware of the lock
         W_DO (_ux_lock_key(leaf,
             leaf.get_fence_low_key(), leaf.get_fence_low_length(),
-            latch_mode, lock_key_mode, lock_duration));
+            latch_mode, lock_key_mode, check_only));
     } else {
         // range lock from previous key
         w_keystr_t prevkey;
@@ -128,7 +128,7 @@ btree_impl::_ux_lock_range(
         } else {
           leaf.leaf_key(slot, prevkey);
         }
-        W_DO (_ux_lock_key(leaf, prevkey, latch_mode, lock_range_mode, lock_duration));
+        W_DO (_ux_lock_key(leaf, prevkey, latch_mode, lock_range_mode, check_only));
     }
     return RCOK;
 }

@@ -1,3 +1,4 @@
+# global include directories
 INCLUDE_DIRECTORIES (
   ${CMAKE_SOURCE_DIR}/config
   ${CMAKE_SOURCE_DIR}/src/atomic_ops
@@ -5,8 +6,19 @@ INCLUDE_DIRECTORIES (
   ${CMAKE_SOURCE_DIR}/src/common
   ${CMAKE_SOURCE_DIR}/src/sthread
   ${CMAKE_SOURCE_DIR}/src/sm
-  ${CMAKE_SOURCE_DIR}/gtest-1.6.0/include
 ) 
+
+# to look for generated headers
+INCLUDE_DIRECTORIES (
+  ${CMAKE_BINARY_DIR}/config
+  ${CMAKE_BINARY_DIR}/src/atomic_ops
+  ${CMAKE_BINARY_DIR}/src/fc
+  ${CMAKE_BINARY_DIR}/src/common
+  ${CMAKE_BINARY_DIR}/src/sthread
+  ${CMAKE_BINARY_DIR}/src/sm
+)
+
+INCLUDE_DIRECTORIES (${CMAKE_SOURCE_DIR}/gtest-1.6.0/include) 
 
 IF (COMPILER_IS_GCC)
     # strip out unused data/function. this also removes -rdynamic

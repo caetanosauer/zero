@@ -3,10 +3,6 @@
 #define SM_SOURCE
 #define BTREE_C
 
-#ifdef __GNUG__
-#           pragma implementation "btree.h"
-#endif
-
 #include "sm_int_2.h"
 #include "btree_p.h"
 #include "btree_impl.h"
@@ -15,12 +11,6 @@
 #include "w_key.h"
 #include "vec_t.h"
 #include <crash.h>
-
-#if W_DEBUG_LEVEL > 4
-#define  BTREE_LOG_COMMENT_ON 1
-#else
-#define  BTREE_LOG_COMMENT_ON 0
-#endif
 
 void btree_m::construct_once()
 {
@@ -52,14 +42,7 @@ btree_m::create(
     )                // O-  root of new btree
 {
     FUNC(btree_m::create);
-    DBGTHRD(<<"stid " << stid);
-#if BTREE_LOG_COMMENT_ON
-    {
-        w_ostrstream s;
-        s << "btree create " << stid;
-        W_DO(log_comment(s.c_str()));
-    }
-#endif
+    DBGTHRD(<<"btree create: stid " << stid);
 
     W_DO( io_m::sx_alloc_a_page(stid, root)); // allocate a root page as separate ssx
     W_DO(btree_impl::_ux_create_tree_core(stid, root));
