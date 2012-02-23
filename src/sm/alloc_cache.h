@@ -11,8 +11,6 @@
 #include "latch.h"
 #include <vector>
 
-class bf_fixed_m;
-
 /**
  * \brief Free-Page allocation/deallocation interface.
  * \details
@@ -26,11 +24,10 @@ class bf_fixed_m;
 class alloc_cache_t {
 public:
     /** Creates an empty cache.*/
-    alloc_cache_t (vid_t vid, bf_fixed_m* fixed_pages) :
-        _vid(vid), _fixed_pages(fixed_pages), _contiguous_free_pages_begin(0), _contiguous_free_pages_end(0) {}
+    alloc_cache_t (vid_t vid) : _vid(vid), _contiguous_free_pages_begin(0), _contiguous_free_pages_end(0) {}
 
     /** Initialize this object by scanning alloc_p pages of the volume. */
-    rc_t load_by_scan (shpid_t max_pid);
+    rc_t load_by_scan (int unix_fd, shpid_t max_pid);
     
     /**
      * Allocates one new page from the free-page pool.
@@ -69,8 +66,7 @@ public:
 
 private:
     vid_t _vid;
-    bf_fixed_m* _fixed_pages;
-    
+
     /** the first page in this volume from which all pages are unallocated. */
     shpid_t _contiguous_free_pages_begin;
     /** usually just the number of pages in this volume. */
@@ -80,7 +76,7 @@ private:
     std::vector<shpid_t> _non_contiguous_free_pages;
 
     /** all operations in this object are protected by this lock. */
-    mutable srwlock_t _queue_lock;
+    mutable occ_rwlock _queue_lock;
 
     // these do logging (if logit=true) and applying to alloc_p.
     // they assume _contiguous_free_pages_begin/_non_contiguous_free_pages are already modified

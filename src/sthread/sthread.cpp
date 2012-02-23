@@ -629,7 +629,7 @@ void    sthread_t::__start(void *arg)
     size_t PTHREAD_STACK_MIN = get_pthread_stack_min();
 #endif
 
-#ifdef HAVE_PTHREAD_ATTR_GETSTACKSIZE
+#if HAVE_PTHREAD_ATTR_GETSTACKSIZE
     pthread_attr_t attr;
     size_t         sz=0;
     int e = pthread_attr_init(&attr);
@@ -641,7 +641,7 @@ void    sthread_t::__start(void *arg)
     {
         e = pthread_attr_getstacksize( &attr, &sz);
         if(e || sz==0) {
-#ifdef HAVE_PTHREAD_ATTR_GETSTACK
+#if HAVE_PTHREAD_ATTR_GETSTACK
             void *voidp(NULL);
             e = pthread_attr_getstack( &attr, &voidp, &sz);
             if(e || sz == 0) 
@@ -869,10 +869,16 @@ void sthread_t::timeout_to_timespec(timeout_in_ms timeout, struct timespec &when
     w_assert1(timeout != WAIT_IMMEDIATE); 
     w_assert1(timeout != sthread_t::WAIT_FOREVER);
     if(timeout > 0) {
-        ::clock_gettime(CLOCK_REALTIME, &when);
-        when.tv_nsec += (uint64_t) timeout * 1000000;
-        when.tv_sec += when.tv_nsec / 1000000000;
-        when.tv_nsec = when.tv_nsec % 1000000000;    
+        struct timeval now;
+
+        // find out how long we're supposed to wait...
+        gettimeofday(&now, NULL);
+        when.tv_sec = now.tv_sec + timeout/1000;
+        when.tv_nsec = now.tv_usec*1000 + 100000*(timeout%1000);
+        if(when.tv_nsec >= 1000*1000*1000) {
+            when.tv_sec++;
+            when.tv_nsec -= 1000*1000*1000;
+        }
     }
 }
 
@@ -913,13 +919,6 @@ sthread_t::_block(
             w_assert1(error == ETIMEDOUT || error == 0);
             // Break out if we were signalled
             if(!error) break;
-            // did we timeout? (TODO tentative fix. not sure what the original code did. should overhaul this function)
-            timespec now;
-            ::clock_gettime(CLOCK_REALTIME, &now);
-            if (now.tv_sec > when.tv_sec || (now.tv_sec == when.tv_sec && now.tv_nsec >= when.tv_nsec)) {
-                error = ETIMEDOUT;
-                break;
-            }
         }
     }
     else {

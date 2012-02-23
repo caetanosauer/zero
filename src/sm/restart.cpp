@@ -629,7 +629,9 @@ restart_m::analysis_pass(
                          * were acquired.  have to free them
                          */
                         me()->attach_xct(xd);        
-                        W_COERCE( lm->unlock_duration() );
+                        // release all locks (1st true) and don't 
+                        // free extents which hold locks (2nd true)
+                        W_COERCE( lm->unlock_duration(t_long) );
                         me()->detach_xct(xd);        
                     }
                     xd->change_state(xct_t::xct_ended);
@@ -652,7 +654,9 @@ restart_m::analysis_pass(
                  * were acquired.  have to free them
                  */
                 me()->attach_xct(xd);        
-                W_COERCE( lm->unlock_duration() );
+                // release all locks (1st true) and don't 
+                // free extents which hold locks (2nd true)
+                W_COERCE( lm->unlock_duration(t_long) );
                 me()->detach_xct(xd);        
             }
             xd->change_state(xct_t::xct_ended);
@@ -975,17 +979,13 @@ restart_m::redo_pass(
                      */
                     store_flag_t store_flags = st_bad;
                     DBGOUT5(<< "TRUST_PAGE_LSN");
-                    // TODO TODO ! this should use the special bufferpool for alloc_p and stnode_p
-                    //if (r.tag() == page_p::t_alloc_p || r.tag() == page_p::t_stnode_p) {
-                    //} else {
-                        W_COERCE( page.fix(page_updated,
+                    W_COERCE( page.fix(page_updated,
                                     page_p::t_any_p, 
                                     LATCH_EX, 
                                     0,  // page_flags
                                     store_flags,
                                     true // ignore store_id
                                     ) );
-                    //}
 
 #if W_DEBUG_LEVEL > 2
                     if(page_updated != page.pid()) {

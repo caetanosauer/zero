@@ -176,8 +176,6 @@ typedef int64_t sm_diskaddr_t;
  *
  */
 
-typedef uint64_t lsndata_t;
-
 /*\bug GNATS 136: TODO make thread-safe for 32-bit platform */
 /**\brief Log Sequence Number. See \ref LSNS.
  *
@@ -254,8 +252,6 @@ public:
     // copy operator
     lsn_t(const lsn_t & other) : _data(other._data) { }
 
-    lsndata_t data()         const { return _data; }
-
     bool valid()             const { 
                                     // valid is essentially iff file != 0
 #if W_DEBUG_LEVEL > 1
@@ -310,7 +306,7 @@ public:
     static const lsn_t max;
     
 private:
-    lsndata_t        _data;
+    uint64_t        _data;
 
     static uint32_t to_file(uint64_t f) { 
                 return (uint32_t) (f >> PARTITION_SHIFT); }

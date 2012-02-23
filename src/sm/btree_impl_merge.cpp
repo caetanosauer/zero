@@ -8,9 +8,13 @@
 #define BTREE_C
 
 #include "sm_int_2.h"
+#ifdef __GNUG__
+#   pragma implementation "btree_impl.h"
+#endif
 #include "sm_base.h"
 #include "btree_p.h"
 #include "btree_impl.h"
+#include "btree_impl_debug.h"
 #include "w_key.h"
 #include "xct.h"
 #include "bf.h"
@@ -55,7 +59,7 @@ rc_t btree_impl::_ux_rebalance_blink_core(btree_p &page)
     smsize_t move_size = 0;
     while (used - move_size > balanced_size && -move_count < page.nrecs() - 1) {
         ++move_count;
-        move_size += align(page.get_rec_size(page.nslots() - move_count - 1)) + page_p::slot_sz;
+        move_size += align(page.tuple_size(page.nslots() - move_count)) + page_p::slot_sz;
     }
     
     if (move_count == 0) {
@@ -174,8 +178,8 @@ smsize_t estimate_required_space_to_merge (btree_p &page, btree_p &merged)
     
     // prefix length might be shorter, resulting in larger record size
     size_t prefix_len_after_merge = w_keystr_t::common_leading_bytes(
-        (const unsigned char*) page.get_prefix_key(), page.get_prefix_length(),
-        (const unsigned char*) merged.get_prefix_key(), merged.get_prefix_length()
+        (const unsigned char*) page.get_fence_low_key(), page.get_fence_low_length(),
+        (const unsigned char*) merged.get_fence_high_key(), merged.get_fence_high_length()
     );
     ret += page.nrecs() * (page.get_prefix_length() - prefix_len_after_merge);
     ret += merged.nrecs() * (merged.get_prefix_length() - prefix_len_after_merge);
@@ -269,7 +273,7 @@ void btree_impl::_ux_deadopt_blink_apply_real_parent(btree_p &real_parent,
     btrec_t rec (real_parent, foster_parent_slot + 1);
     w_assert1(rec.child() == foster_child_id);
 #endif // W_DEBUG_LEVEL>0
-    real_parent.remove_shift_nolog (foster_parent_slot + 1);
+    real_parent.remove_shift_nolog (foster_parent_slot + 1 + 1); // additional +1 because page_p
 }
 void btree_impl::_ux_deadopt_blink_apply_foster_parent(btree_p &foster_parent,
     shpid_t foster_child_id, const w_keystr_t & W_IFDEBUG1(low_key), const w_keystr_t &high_key)
@@ -286,26 +290,15 @@ void btree_impl::_ux_deadopt_blink_apply_foster_parent(btree_p &foster_parent,
     w_keystr_t org_low_key, org_high_key;
     foster_parent.copy_fence_low_key(org_low_key);
     foster_parent.copy_fence_high_key(org_high_key);
-    int16_t prefix_len = foster_parent.get_prefix_length();
-    w_assert1 ((size_t)prefix_len == org_low_key.common_leading_bytes(org_high_key));
-
     cvec_t fences;
-    uint16_t fence_total_len = sizeof(uint16_t)
-        + org_low_key.get_length_as_keystr()
-        + org_high_key.get_length_as_keystr() - prefix_len
-        + high_key.get_length_as_keystr();
-    fences.put (&fence_total_len, sizeof(fence_total_len));
-    fences.put (org_low_key);
-    // eliminate prefix part from fence_high
-    fences.put ((const char*)org_high_key.buffer_as_keystr() + prefix_len, org_high_key.get_length_as_keystr() - prefix_len);
-    fences.put (high_key); // high_key of adoped child is now chain-fence-high
-    rc_t rc = foster_parent.replace_expand_fence_rec_nolog (fences);
+    fences.put (org_low_key).put(org_high_key).put(high_key); // high_key of adoped child is now chain-fence-high
+    rc_t rc = foster_parent.replace_expand_nolog (0, fences);
     if (rc.is_error()) {
         //eRECWONTFIT is very slighly possible...
         w_assert1(rc.err_num() == eRECWONTFIT);
         rc = foster_parent.defrag();
         w_assert1(!rc.is_error());
-        rc = foster_parent.replace_expand_fence_rec_nolog (fences);
+        rc = foster_parent.replace_expand_nolog (0, fences);
         if (rc.is_error()) {
             w_assert1(false);        
             W_FATAL(eINTERNAL); 

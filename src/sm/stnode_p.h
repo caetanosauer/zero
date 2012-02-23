@@ -32,7 +32,6 @@ struct stnode_t {
 };
 
 class stnode_cache_t;
-class bf_fixed_m;
 
 /**
  * \brief Extent map page that contains store nodes (stnode_t).
@@ -43,7 +42,7 @@ class stnode_p : public page_p {
     friend class stnode_cache_t;
 public:
     stnode_p()  {}
-    stnode_p(page_s* s) : page_p() { _pp = s; }
+    stnode_p(page_s* s, uint32_t store_flags) : page_p(s, store_flags) {}
     stnode_p(const stnode_p&p) : page_p(p) {} 
     ~stnode_p()  {}
     stnode_p& operator=(const stnode_p& p)    { page_p::operator=(p); return *this; }
@@ -73,8 +72,11 @@ public:
  */
 class stnode_cache_t {
 public:
-    /** Creates the cache.*/
-    stnode_cache_t (vid_t vid, bf_fixed_m* fixed_pages);
+    /** Creates an empty cache.*/
+    stnode_cache_t (vid_t vid): _vid(vid), _stpid(0) {}
+
+    /** Initialize this object by reading stnode_p page of the volume. */
+    rc_t load (int unix_fd, shpid_t stpid);
     
     /**
      * Returns the root page Id of the store.
@@ -122,11 +124,11 @@ public:
 
 private:
     vid_t _vid;
-    bf_fixed_m* _fixed_pages;
+    /** page id of stnode_p in this volume. */
+    shpid_t _stpid;
 
-    /** this merely points to the stnode_p data in bf_fixed_m. */
-    stnode_t *_stnodes;
-
+    stnode_t _stnodes[stnode_p::max];
+    
     /** all operations in this object are protected by this lock. */
     mutable queue_based_lock_t _spin_lock;
 };

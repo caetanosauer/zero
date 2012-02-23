@@ -33,17 +33,17 @@ w_rc_t ghost_mark(ss_m* ssm, test_volume_t *test_volume) {
     W_DO (root_p.fix (root_pid, LATCH_SH));
     EXPECT_EQ (2, root_p.nslots());
     EXPECT_EQ (1, root_p.nrecs());
-    EXPECT_TRUE (root_p.is_ghost(0));
+    EXPECT_TRUE (root_p.is_ghost_record(1));
     root_p.unfix();
 
     W_DO(x_btree_insert_and_commit (ssm, stid, "key2", "data2", test_env->get_use_locks()));
     W_DO (root_p.fix (root_pid, LATCH_SH));
     EXPECT_EQ (3, root_p.nslots());
     EXPECT_EQ (2, root_p.nrecs());
-    EXPECT_TRUE (root_p.is_ghost(0));
-    EXPECT_FALSE (root_p.is_ghost(1));
-    root_p.mark_ghost (1);
-    EXPECT_TRUE (root_p.is_ghost(1));
+    EXPECT_TRUE (root_p.is_ghost_record(1));
+    EXPECT_FALSE (root_p.is_ghost_record(2));
+    root_p.mark_ghost (2);
+    EXPECT_TRUE (root_p.is_ghost_record(2));
     return RCOK;
 }
 
@@ -70,14 +70,14 @@ w_rc_t ghost_reclaim(ss_m* ssm, test_volume_t *test_volume) {
     btree_p root_p;
     W_DO (root_p.fix (root_pid, LATCH_SH));
     EXPECT_EQ (3, root_p.nrecs());
-    EXPECT_TRUE (root_p.is_ghost(0));
-    EXPECT_FALSE (root_p.is_ghost(1));
-    EXPECT_TRUE (root_p.is_ghost(2));
+    EXPECT_TRUE (root_p.is_ghost_record(1));
+    EXPECT_FALSE (root_p.is_ghost_record(2));
+    EXPECT_TRUE (root_p.is_ghost_record(3));
 
-    root_p.unmark_ghost (0);
-    EXPECT_FALSE (root_p.is_ghost(0));
-    EXPECT_FALSE (root_p.is_ghost(1));
-    EXPECT_TRUE (root_p.is_ghost(2));
+    root_p.unmark_ghost (1);
+    EXPECT_FALSE (root_p.is_ghost_record(1));
+    EXPECT_FALSE (root_p.is_ghost_record(2));
+    EXPECT_TRUE (root_p.is_ghost_record(3));
     return RCOK;
 }
 
@@ -101,16 +101,16 @@ w_rc_t ghost_reserve(ss_m* ssm, test_volume_t *test_volume) {
     btree_p root_p;
     W_DO (root_p.fix (root_pid, LATCH_EX));
     EXPECT_EQ (2, root_p.nrecs());
-    EXPECT_FALSE (root_p.is_ghost(0));
-    EXPECT_FALSE (root_p.is_ghost(1));
+    EXPECT_FALSE (root_p.is_ghost_record(1));
+    EXPECT_FALSE (root_p.is_ghost_record(2));
 
     EXPECT_TRUE (root_p.is_consistent(true, true));
     w_keystr_t key;
     key.construct_regularkey("key2", 4);
     root_p.reserve_ghost (key, 10);
-    EXPECT_FALSE (root_p.is_ghost(0));
-    EXPECT_TRUE (root_p.is_ghost(1));
-    EXPECT_FALSE (root_p.is_ghost(2));
+    EXPECT_FALSE (root_p.is_ghost_record(1));
+    EXPECT_TRUE (root_p.is_ghost_record(2));
+    EXPECT_FALSE (root_p.is_ghost_record(3));
     EXPECT_TRUE (root_p.is_consistent(true, true));
     
     btrec_t rec (root_p, 1);
@@ -147,8 +147,8 @@ w_rc_t ghost_reserve_xct(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->commit_sys_xct());
     W_DO(ssm->commit_xct());
     EXPECT_EQ (2, root_p.nrecs()); // we don't applied yet!
-    EXPECT_FALSE (root_p.is_ghost(0));
-    EXPECT_FALSE (root_p.is_ghost(1)); 
+    EXPECT_FALSE (root_p.is_ghost_record(1));
+    EXPECT_FALSE (root_p.is_ghost_record(2)); 
     root_p.unfix();
     
     W_DO(ssm->begin_xct());
@@ -159,9 +159,9 @@ w_rc_t ghost_reserve_xct(ss_m* ssm, test_volume_t *test_volume) {
     btree_ghost_reserve_log logs (root_p, key, 10);
     logs.redo (&root_p);
     EXPECT_EQ (3, root_p.nrecs());
-    EXPECT_FALSE (root_p.is_ghost(0));
-    EXPECT_TRUE (root_p.is_ghost(1));
-    EXPECT_FALSE (root_p.is_ghost(2));
+    EXPECT_FALSE (root_p.is_ghost_record(1));
+    EXPECT_TRUE (root_p.is_ghost_record(2));
+    EXPECT_FALSE (root_p.is_ghost_record(3));
     W_DO(ssm->commit_sys_xct());
     W_DO(ssm->commit_xct());
 

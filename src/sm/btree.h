@@ -119,6 +119,15 @@ public:
         const cvec_t&                     elem);
 
     /**
+    * Put <key, el> into the btree; if key didn't exist, inserts it, otherwise updates el of key
+    * with the new data.
+    */
+    static rc_t                        put(
+        const lpid_t&                     root,
+        const w_keystr_t&                 key,
+        const cvec_t&                     elem);
+
+    /**
     * Update specific part of el of key with the new data.
     */
     static rc_t                        overwrite(

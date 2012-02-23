@@ -556,11 +556,6 @@ void your_server_thread_t::run()
  * \ingroup MISC
  */
 
-/**
- * \defgroup SSMBUFPOOL Bufferpool
- * \ingroup SSMAPI
- * The buffer-pool management code.
- */
 
 /**\defgroup OPT Configuring and Building the Storage Manager
  */

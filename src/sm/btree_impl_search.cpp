@@ -9,8 +9,12 @@
 #define BTREE_C
 
 #include "sm_int_2.h"
+#ifdef __GNUG__
+#   pragma implementation "btree_impl.h"
+#endif
 #include "btree_p.h"
 #include "btree_impl.h"
+#include "btree_impl_debug.h"
 #include "btcursor.h"
 #include "sm_base.h"
 #include "vec_t.h"
@@ -66,7 +70,7 @@ btree_impl::_ux_lookup_core(
             W_DO(_ux_lock_range(leaf, key, slot, LATCH_SH,
                 ex_for_select ? XN : SN,
                 ex_for_select ? NX : NS,
-                false));
+                t_long));
         }
         return RCOK;
     }
@@ -75,7 +79,7 @@ btree_impl::_ux_lookup_core(
     if (need_lock) {
         // only the key is locked (SN)
         W_DO (_ux_lock_key(leaf, key, LATCH_SH,
-            ex_for_select ? XN : SN, false));
+            ex_for_select ? XN : SN, t_long));
     }
 
     // Copy the element 

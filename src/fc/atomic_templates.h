@@ -83,16 +83,8 @@ template<class T>
 void atomic_dec(T volatile &val);
 
 template<>
-inline void atomic_inc(short volatile &val)
-{ atomic_add_short( (unsigned short volatile *)&val, 1); }
-
-template<>
 inline void atomic_inc(int volatile &val)
 { atomic_add_int( (unsigned int volatile *)&val, 1); }
-
-template<>
-inline void atomic_inc(unsigned short volatile &val)
-{ atomic_add_short(&val, 1); }
 
 template<>
 inline void atomic_inc(unsigned int volatile &val)

@@ -127,7 +127,7 @@ typedef    struct dirent    os_dirent_t;
 #undef    HAVE_OS_DIRENT_T
 #endif
 
-#ifdef HAVE_DIRENT_H
+#if HAVE_DIRENT_H
     /* XXX something wacked with gcc 3.2 and solaris headers */
 #include <dirent.h>        /* XXX unconventional dirent */
 #else

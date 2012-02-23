@@ -172,8 +172,8 @@ w_rc_t merge_simple(ss_m* ssm, test_volume_t *test_volume) {
         // (directly uses mark_ghost to not trigger automatic merge/rebalance)
         vector<slotid_t> slots;
         for (slotid_t i = 1; i < child_p.nrecs(); ++i) {
-            slots.push_back(i);
-            child_p.mark_ghost (i);
+            slots.push_back(i + 1); // +1 because this is page_p slot
+            child_p.mark_ghost (i + 1); // +1 because this is page_p slot
         }
         W_DO(log_btree_ghost_mark (child_p, slots));
         cout << "now it is " << (child_p.used_space() * 100 / SM_PAGESIZE)
@@ -324,8 +324,8 @@ w_rc_t rebalance_simple(ss_m* ssm, test_volume_t *test_volume) {
 
         vector<slotid_t> slots;
         for (slotid_t i = 1; i < foster_child_p.nrecs(); ++i) {
-            slots.push_back(i);
-            foster_child_p.mark_ghost (i);
+            slots.push_back(i + 1); // +1 because this is page_p slot
+            foster_child_p.mark_ghost (i + 1); // +1 because this is page_p slot
         }
         W_DO(log_btree_ghost_mark (foster_child_p, slots));
         W_DO(ssm->commit_xct());// commit the deletions

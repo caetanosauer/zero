@@ -42,7 +42,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 /*
  * fcntl.h:
  */
-#ifdef HAVE_FCNTL_H
+#if HAVE_FCNTL_H
 #include <fcntl.h>
 #else
 #include <sys/fcntl.h>

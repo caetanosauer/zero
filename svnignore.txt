@@ -14,9 +14,3 @@ configure
 autom4te.cache
 aclocal.m4
 CTestTestfile.cmake
-debug_build
-release_build
-trace_build
-relwithdebinfo_build
-.kdev4
-*.kdev4

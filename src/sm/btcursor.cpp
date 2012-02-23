@@ -159,7 +159,7 @@ rc_t bt_cursor_t::_locate_first() {
             }
         }
         if (_needs_lock && mode != NL) {
-            rc_t rc = btree_impl::_ux_lock_key (leaf, _key, LATCH_SH, mode, false);
+            rc_t rc = btree_impl::_ux_lock_key (leaf, _key, LATCH_SH, mode, smlevel_0::t_long);
             if (rc.is_error()) {
                 if (rc.err_num() == smlevel_0::eLOCKRETRY) {
                     continue;
@@ -251,7 +251,7 @@ rc_t bt_cursor_t::_find_next(btree_p &p, bool &eof)
         }
 
         // skip ghost entries
-        if (p.is_ghost(_slot)) {
+        if (p.is_ghost_record(_slot + 1)) { // +1 because this is page_p
             continue;
         }
         break;
@@ -328,7 +328,7 @@ rc_t bt_cursor_t::_advance_one_slot(btree_p &p, bool &eof)
                     lock_mode = _ex_lock ? XX : SS;
                 }
                 // we can unconditionally request lock because we already released latch
-                W_DO(ss_m::lm->lock(lid, lock_mode, false));
+                W_DO(ss_m::lm->lock(lid, lock_mode, smlevel_0::t_long));
             }
             
             // TODO this part should check if we find an exact match of fence keys.
@@ -370,7 +370,7 @@ rc_t bt_cursor_t::_advance_one_slot(btree_p &p, bool &eof)
             }
         }
         if (_needs_lock && mode != NL) {
-            rc_t rc = btree_impl::_ux_lock_key (p, _tmp_next_key_buf, LATCH_SH, mode, false);
+            rc_t rc = btree_impl::_ux_lock_key (p, _tmp_next_key_buf, LATCH_SH, mode, smlevel_0::t_long);
             if (rc.is_error()) {
                 if (rc.err_num() == smlevel_0::eLOCKRETRY) {
                     W_DO(_check_page_update(p));

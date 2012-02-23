@@ -86,54 +86,22 @@ class btree_ghost_reclaim_log;
     [slot data which is growing forward]
     [(contiguous) free area]
     [record data which is growing forward]
+      [first-slot's record (somewhere in here)] [low-fence-key data + high-fence-key data]
  )\endverbatim
- * The first record contains fence keys:
- * [record-len + low-fence-key data (including prefix) + high-fence-key data (without prefix)
- * + chain-fence-high-key data (complete string. chain-fence-high doesn't share prefix!)]
- * 
- * \section SLOTLAYOUT BTree Slot Layout
- * btree_p is the only slotted subclass of page_p. All the other classes
- * use _pp.data just as a chunk of char. (Slot-related functions and typedefs
- * should be moved from page_p to btree_p, but I haven't done the surgery yet.)
- * 
- * The Btree slot uses poor-man's normalized key to speed up searches.
- * Each slot stores the first few bytes of the key as an unsigned
- * integer (PoorMKey) so that comparison with most records are done without
- * going to the record itself, avoiding L1 cache misses. The whole point of
- * poormkey is cachemiss! So, we minimize the size of slots. Only poormkey and
- * offset (not tuple length or key length. it's at the beginning of the record).
- * 
- * NOTE So far, poor-man's normalied key is 2 byte integer (uint16_t) and
- * the corresponding bytes are NOT eliminated from the key string in the record.
- * This is to speed up the retrieval of the complete key at the cost of additional
- * 2 bytes to store it. I admit this is arguable, but deserilizing the part
- * everytime (it's likely little-endian, so we need to flip it) will slow down retrieval.
- * 
- * Each slot also stores the offset (divided by 8 to enable larger page sizes)
- * to the record. If the offset is negative, it means a ghost record and
- * the offset of reversed-sign gives the actual offset.
  * 
  * \section RECORDLAYOUT Record Layout
  * Internally, record data is stored as follows:
- * 
  * (If the page is leaf page)
- * - physical record length (uint16_t) of the entire record (including everything
- * AFTER prefix trunction; it's physical length!).
- * - key length (uint16_t) BEFORE prefix truncation
+ * - length (int16_t) of key BEFORE prefix truncation
+ * - length (int16_t) of el (el part gets no prefix truncation)
  * - key + el (contiguous char[]) AFTER prefix truncation
- * NOTE el length can be calculated from record length and key length
- * (el length = record length - 4 - key length + prefix length).
+ * - [0-7] bytes of unused space (record is 8 bytes aligned).
  * 
  * (If the page is node page)
- * - pid (shpid_t; 4 bytes.)
- * - physical record length (uint16_t) of the entire record.
+ * - length (int16_t) of key BEFORE prefix truncation
+ * - pid (shpid_t; 4 bytes)
  * - key AFTER prefix truncation
- * NOTE key length is calculated from record length (record length - 6 + prefix_len).
- * pid is placed first to make it 4-byte aligned (causes a trouble in SPARC otherwise).
- * 
- * Finally,
- * - [0-7] bytes of unused space (record is 8 bytes aligned). This is just a padding,
- * so not included in the record length.
+ * - [0-7] bytes of unused space (record is 8 bytes aligned).
  */
 class btree_p : public page_p {
     friend class btree_impl;
@@ -202,26 +170,14 @@ public:
     void                copy_fence_low_key(w_keystr_t &buffer) const {buffer.construct_from_keystr(get_fence_low_key(), get_fence_low_length());}
     /** Returns if the low-fence key is infimum. */
     bool              is_fence_low_infimum() const { return get_fence_low_key()[0] == SIGN_NEGINF;}
-
-    /**
-     * Returns the high fence key (without prefix), which is larger than all entries in this page and its descendants.
-     * NOTE we don't provide get_fence_high_key() with prefix because the page eliminates prefix from fence-high.
-     */
-    const char*       get_fence_high_key_noprefix() const;
-    /** Returns the length of high fence key with prefix. */
+    /** Returns the high fence key, which is larger than all entries in this page and its descendants. */
+    const char*  get_fence_high_key() const;
+    /** Returns the length of high fence key. */
     int16_t           get_fence_high_length() const;
-    /** Returns the length of high fence key without prefix. */
-    int16_t           get_fence_high_length_noprefix() const {
-        return get_fence_high_length() - get_prefix_length();
-    }
     /** Constructs w_keystr_t object containing the low-fence key of this page. */
-    void                copy_fence_high_key(w_keystr_t &buffer) const {
-        buffer.construct_from_keystr(get_prefix_key(), get_prefix_length(),
-            get_fence_high_key_noprefix(), get_fence_high_length_noprefix());
-    }
+    void                copy_fence_high_key(w_keystr_t &buffer) const {buffer.construct_from_keystr(get_fence_high_key(), get_fence_high_length());}
     /** Returns if the high-fence key is supremum. */
-    bool              is_fence_high_supremum() const { return get_prefix_length() == 0 && get_fence_high_key_noprefix()[0] == SIGN_POSINF;}
-
+    bool              is_fence_high_supremum() const { return get_fence_high_key()[0] == SIGN_POSINF;}
     /** Returns the high fence key of Blink chain. */
     const char*  get_chain_fence_high_key() const;
     /** Returns the length of high fence key of Blink chain. */
@@ -239,29 +195,18 @@ public:
      * : >0 if key > fence-low.
      */
     int                 compare_with_fence_low (const w_keystr_t &key) const;
-    /** overload for char*. */
-    int                 compare_with_fence_low (const char* key, size_t key_len) const;
-    /** used when the prefix part is already checked key/key_len must be WITHOUT prefix. */
-    int                 compare_with_fence_low_noprefix (const char* key, size_t key_len) const;
     /**
      * Return value : 0 if equal.
      * : <0 if key < fence-high.
      * : >0 if key > fence-high.
      */
     int                 compare_with_fence_high (const w_keystr_t &key) const;
-    /** overload for char*. */
-    int                 compare_with_fence_high (const char* key, size_t key_len) const;
-    /** used when the prefix part is already checked key/key_len must be WITHOUT prefix. */
-    int                 compare_with_fence_high_noprefix (const char* key, size_t key_len) const;
     /**
      * Return value : 0 if equal.
      * : <0 if key < fence-high.
      * : >0 if key > fence-high.
      */
     int                 compare_with_chain_fence_high (const w_keystr_t &key) const;
-    /** overload for char*. */
-    int                 compare_with_chain_fence_high (const char* key, size_t key_len) const;
-    // no 'noprefix' version because chain_fence_high might not share the prefix!
 
     /**
      * When allocating a new BTree page, use this instead of fix().
@@ -427,19 +372,6 @@ public:
         }
     }
 
-    /** Retrieves only the length of key (before prefix compression).*/
-    slot_length_t       get_key_len(slotid_t idx) const;
-
-    /** Retrieves only the physical record length.*/
-    slot_length_t       get_rec_size(slotid_t idx) const;
-    /** Retrieves only the physical record length (use this if you already know it's a leaf page).*/
-    slot_length_t       get_rec_size_leaf(slotid_t idx) const;
-    /** Retrieves only the physical record length (use this if you already know it's a node page).*/
-    slot_length_t       get_rec_size_node(slotid_t idx) const;
-
-    /** for the special record which stores fence keys. */
-    slot_length_t       get_fence_rec_size() const;
-
     /**
     *  Return the child pointer of tuple at "slot".
     *  equivalent to rec_node(), but doesn't return key (thus faster).
@@ -462,26 +394,6 @@ public:
                         slotid_t            slot, 
                         shpid_t             child);
     /**
-     * Mark the given slot to be a ghost record.
-     * If the record is already a ghost, does nothing.
-     * This is used by delete and insert (UNDO).
-     * This function itself does NOT log, so the caller is responsible for it.
-     * @see defrag()
-     */
-    void                        mark_ghost(slotid_t slot);
-
-    /** Returns if the specified record is a ghost record. */
-    bool                        is_ghost(slotid_t slot) const;
-    
-    /**
-     * Un-Mark the given slot to be a regular record.
-     * If the record is already a non-ghost, does nothing.
-     * This is only used by delete (UNDO).
-     * This function itself does NOT log, so the caller is responsible for it.
-     */
-    void                        unmark_ghost(slotid_t slot);
-
-    /**
     * Replace an existing ghost record to insert the given tuple.
     * This assumes the ghost record is enough spacious.
     * @param[in] key inserted key
@@ -489,18 +401,6 @@ public:
     */
     rc_t            replace_ghost(
         const w_keystr_t &key, const cvec_t &elem);
-
-    /**
-     * Replaces the special fence record with the given new data,
-     * expanding the slot length if needed.
-     */
-    rc_t            replace_expand_fence_rec_nolog(const cvec_t &fences);
-
-    /**
-    *  Remove the slot and up-shift slots after the hole to fill it up.
-    * @param slot the slot to remove.
-    */
-    rc_t            remove_shift_nolog(slotid_t slot);
 
     /**
      * Replaces the given slot with the new data. key is not changed.
@@ -574,32 +474,10 @@ public:
 ///==========================================
 #endif // DOXYGEN_HIDE
 
-    /**
-     * \brief Defrags this page to remove holes and ghost records in the page.
-     * \details
-     * A page can have unused holes between records and ghost records as a result
-     * of inserts and deletes. This method removes those dead spaces to compress
-     * the page. The best thing of this is that we have to log only
-     * the slot numbers of ghost records that are removed because there are
-     * 'logically' no changes.
-     * Context: System transaction.
-     * @param[in] popped the record to be popped out to the head. -1 to not specify.
-     */
-    rc_t                         defrag(slotid_t popped = -1);
-
     /** stats for leaf nodes. */
     rc_t             leaf_stats(btree_lf_stats_t& btree_lf);
     /** stats for interior nodes. */
     rc_t             int_stats(btree_int_stats_t& btree_int);
-
-    /** this is used by du/df to get page statistics DU DF. */
-    void                        page_usage(
-        int&                            data_sz,
-        int&                            hdr_sz,
-        int&                            unused,
-        int&                             alignmt,
-        tag_t&                             t,
-        slotid_t&                     no_used_slots);
 
     /** Debugs out the contents of this page. */
     void             print(bool print_elem=false);
@@ -621,63 +499,20 @@ public:
      */
     bool             is_consistent (bool check_keyorder = false, bool check_space = false) const;
 
-
     static smsize_t         max_entry_size;
     static smsize_t         overhead_requirement_per_entry;
 
 private:
-    /** checks space correctness. */
-    bool             _is_consistent_space () const;
-
     /** internal method used from is_consistent() to check keyorder correctness. */
     bool             _is_consistent_keyorder () const;
 
-    /** checks if the poor-man's normalized keys are valid. */
-    bool             _is_consistent_poormankey () const;
-
     /** Given the place to insert, update btree_consecutive_skewed_insertions. */
     void             _update_btree_consecutive_skewed_insertions(slotid_t slot);
-
+    
     /** Retrieves the key of specified slot WITHOUT prefix in a leaf page.*/
     const char*     _leaf_key_noprefix(slotid_t idx,  size_t &len) const;
     /** Retrieves only the key of specified slot WITHOUT prefix in an intermediate node page.*/
     const char*     _node_key_noprefix(slotid_t idx,  size_t &len) const;
-
-    /** returns compare(specified-key, key_noprefix) for lead page. */
-    int             _compare_leaf_key_noprefix(slotid_t idx, const void *key_noprefix, size_t key_len) const;
-    /** returns compare(specified-key, key_noprefix) for node page. */
-    int             _compare_node_key_noprefix(slotid_t idx, const void *key_noprefix, size_t key_len) const;
-
-    /** skips comparing the first sizeof(poormankey) bytes. */
-    int             _compare_leaf_key_noprefix_remain(slot_offset8_t slot_offset8, const void *key_noprefix_remain, int key_len_remain) const;
-    /** skips comparing the first sizeof(poormankey) bytes. */
-    int             _compare_node_key_noprefix_remain(slot_offset8_t slot_offset8, const void *key_noprefix_remain, int key_len_remain) const;
-
-    /**
-    *  Insert a record at slot idx. Slots on the left of idx
-    *  are pushed further to the left to make space. 
-    *  By this it's meant that the slot table entries are moved; the
-    *  data themselves are NOT moved.
-    *  Vec[] contains the data for these new slots. 
-    */
-    rc_t             _insert_expand_nolog(slotid_t slot, const cvec_t &tp, poor_man_key poormkey);
-
-
-    /**
-     * This is used when it's known that we are adding the new record
-     * to the end, and the page is like a brand-new page; no holes,
-     * and enough spacious. Basically only for page-format case.
-     * This is much more efficient!
-     * This doesn't log, so the caller is responsible for it.
-     */
-    void             _append_nolog(const cvec_t &tp, poor_man_key poormkey, bool ghost);
-
-
-    /**
-     * Expands an existing record for given size.
-     * Caller should make sure there is enough space to expand.
-     */
-    void             _expand_rec(slotid_t slot, slot_length_t rec_len);
 };
 
 #ifdef DOXYGEN_HIDE
@@ -742,20 +577,20 @@ inline int16_t btree_p::get_chain_fence_high_length() const
 inline const char* btree_p::get_fence_low_key() const
 {
     const char*s = (const char*) page_p::tuple_addr(0);
-    return s + sizeof(slot_length_t);
+    return s;
 }
-inline const char* btree_p::get_fence_high_key_noprefix() const
+inline const char* btree_p::get_fence_high_key() const
 {
     int16_t fence_low_length = get_fence_low_length();
     const char*s = (const char*) page_p::tuple_addr(0);
-    return s + sizeof(slot_length_t) + fence_low_length;
+    return s + fence_low_length;
 }
 inline const char* btree_p::get_chain_fence_high_key() const
 {
     int16_t fence_low_length = get_fence_low_length();
-    int16_t fence_high_length_noprefix = get_fence_high_length_noprefix();
+    int16_t fence_high_length = get_fence_high_length();
     const char*s = (const char*) page_p::tuple_addr(0);
-    return s + sizeof(slot_length_t) + fence_low_length + fence_high_length_noprefix;
+    return s + fence_low_length + fence_high_length;
 }
 inline const char* btree_p::get_prefix_key() const
 {
@@ -770,47 +605,13 @@ inline int btree_p::compare_with_fence_low (const w_keystr_t &key) const
 {
     return key.compare_keystr(get_fence_low_key(), get_fence_low_length());
 }
-inline int btree_p::compare_with_fence_low (const char* key, size_t key_len) const
-{
-    return w_keystr_t::compare_bin_str (key, key_len, get_fence_low_key(), get_fence_low_length());
-}
-inline int btree_p::compare_with_fence_low_noprefix (const char* key, size_t key_len) const
-{
-    return w_keystr_t::compare_bin_str (key, key_len, get_fence_low_key() + get_prefix_length(), get_fence_low_length() - get_prefix_length());
-}
-
 inline int btree_p::compare_with_fence_high (const w_keystr_t &key) const
 {
-    return compare_with_fence_high ((const char*) key.buffer_as_keystr(), key.get_length_as_keystr());
+    return key.compare_keystr(get_fence_high_key(), get_fence_high_length());
 }
-inline int btree_p::compare_with_fence_high (const char* key, size_t key_len) const
-{
-    size_t prefix_len = get_prefix_length();
-    if (prefix_len >= key_len) {
-        return w_keystr_t::compare_bin_str (key, key_len, get_prefix_key(), key_len);
-    } else {
-        // first, compare with prefix part
-        int ret = w_keystr_t::compare_bin_str (key, prefix_len, get_prefix_key(), prefix_len);
-        if (ret != 0) {
-            return ret;
-        }
-        // then, compare with suffix part
-        return w_keystr_t::compare_bin_str (key + prefix_len, key_len - prefix_len,
-            get_fence_high_key_noprefix(), get_fence_high_length_noprefix());
-    }
-}
-inline int btree_p::compare_with_fence_high_noprefix (const char* key, size_t key_len) const
-{
-    return w_keystr_t::compare_bin_str (key, key_len, get_fence_high_key_noprefix(), get_fence_high_length_noprefix());
-}
-
 inline int btree_p::compare_with_chain_fence_high (const w_keystr_t &key) const
 {
     return key.compare_keystr(get_chain_fence_high_key(), get_chain_fence_high_length());
-}
-inline int btree_p::compare_with_chain_fence_high (const char* key, size_t key_len) const
-{
-    return w_keystr_t::compare_bin_str (key, key_len, get_chain_fence_high_key(), get_chain_fence_high_length());
 }
 inline bool btree_p::fence_contains(const w_keystr_t &key) const
 {
@@ -827,13 +628,8 @@ inline bool btree_p::fence_contains(const w_keystr_t &key) const
 
 inline size_t btree_p::calculate_rec_size (const w_keystr_t &key, const cvec_t &el) const
 {
-    if (is_leaf()) {
-        return key.get_length_as_keystr() - get_prefix_length()
-            + el.size() + sizeof(slot_length_t) * 2;
-    } else {
-        return key.get_length_as_keystr() - get_prefix_length()
-            + sizeof(shpid_t) + sizeof(slot_length_t);
-    }
+    return key.get_length_as_keystr() - get_prefix_length()
+        + el.size() + sizeof(int16_t) * 2;
 }
 
 inline bool btree_p::is_insertion_extremely_skewed_right() const
@@ -859,105 +655,17 @@ inline shpid_t btree_p::child(slotid_t slot) const
     w_assert1(is_node());
     w_assert1(slot >= 0);
     w_assert1(slot < nrecs());
-    const void* p = page_p::tuple_addr(slot + 1);
-    return *reinterpret_cast<const shpid_t*>(p);
+    FUNC(btree_p::child);
+    const char* p = (const char*) page_p::tuple_addr(slot + 1);
+    // to avoid mis-aligned access on solaris, we can't do this!
+    //// return *((const shpid_t*) (p + sizeof(int16_t)));
+    // we have to do following
+    shpid_t child;
+    ::memcpy(&child, p + sizeof(int16_t), sizeof(shpid_t));
+    // TODO, but on linux, this might cause unwanted overhead..
+    // maybe ifdef? let's try that when this turns out to be bottleneck.
+    return child;
 }
 
-inline slot_length_t btree_p::get_key_len(slotid_t idx) const {
-    if (is_leaf()) {
-        return ((const slot_length_t*) page_p::tuple_addr(idx + 1))[1];
-    } else {
-        // node page doesn't keep key_len. It's calculated from rec_len
-        const char *p = ((const char*) page_p::tuple_addr(idx + 1)) + sizeof(shpid_t);
-        slot_length_t rec_len = *((const slot_length_t*) p);
-        return rec_len - sizeof(shpid_t) - sizeof(slot_length_t) + get_prefix_length();
-    }
-}
-inline slot_length_t btree_p::get_rec_size_leaf(slotid_t slot) const {
-    w_assert1(is_leaf());
-    w_assert1(slot >= 0);
-    w_assert1(slot < nrecs());
-    const char *base = (const char *) page_p::tuple_addr(slot + 1);
-    return *((const slot_length_t*) base);
-}
-inline slot_length_t btree_p::get_rec_size_node(slotid_t slot) const {
-    w_assert1(is_node());
-    w_assert1(slot >= 0);
-    w_assert1(slot < nrecs());
-    const char *base = (const char *) page_p::tuple_addr(slot + 1);
-    const char *p = base + sizeof(shpid_t);
-    return *((const slot_length_t*) p);
-}
-inline slot_length_t btree_p::get_rec_size(slotid_t idx) const {
-    if (is_leaf()) {
-        return get_rec_size_leaf(idx);
-    } else {
-        return get_rec_size_node(idx);
-    }
-}
-inline slot_length_t btree_p::get_fence_rec_size() const {
-    const char *base = (const char *) page_p::tuple_addr(0);
-    return *((const slot_length_t*) base);
-}
 
-inline const char* btree_p::_leaf_key_noprefix(slotid_t idx,  size_t &len) const {
-    w_assert1(is_leaf());
-    const char* base = (char*) page_p::tuple_addr(idx + 1);
-    slot_length_t key_len = ((slot_length_t*) base)[1];
-    len = key_len - get_prefix_length();
-    return base + sizeof(slot_length_t) * 2;    
-}
-inline const char* btree_p::_node_key_noprefix(slotid_t idx,  size_t &len) const {
-    w_assert1(is_node());
-    const char *p = ((const char*) page_p::tuple_addr(idx + 1)) + sizeof(shpid_t);
-    slot_length_t rec_len = *((const slot_length_t*) p);
-    w_assert1(rec_len >= sizeof(shpid_t) + sizeof(slot_length_t));
-    len = rec_len - sizeof(shpid_t) - sizeof(slot_length_t);
-    return p + sizeof(slot_length_t);
-}
-inline int btree_p::_compare_leaf_key_noprefix(slotid_t idx, const void *key_noprefix, size_t key_len) const {
-    size_t curkey_len;
-    const char *curkey = _leaf_key_noprefix(idx, curkey_len);
-    return w_keystr_t::compare_bin_str(curkey, curkey_len, key_noprefix, key_len);
-}
-inline int btree_p::_compare_node_key_noprefix(slotid_t idx, const void *key_noprefix, size_t key_len) const {
-    size_t curkey_len;
-    const char *curkey = _node_key_noprefix(idx, curkey_len);
-    return w_keystr_t::compare_bin_str(curkey, curkey_len, key_noprefix, key_len);
-}
-inline int btree_p::_compare_leaf_key_noprefix_remain(slot_offset8_t slot_offset8, const void *key_noprefix_remain, int key_len_remain) const {
-    w_assert1(is_leaf());
-    const char* base = page_p::data_addr8(slot_offset8 < 0 ? -slot_offset8 : slot_offset8);
-    int curkey_len_remain = ((slot_length_t*) base)[1] - get_prefix_length() - sizeof(poor_man_key);
-    // because this function was called, the poor man's key part was equal.
-    // now we just compare the remaining part
-    if (key_len_remain > 0 && curkey_len_remain > 0) {
-        const char *curkey_remain = base + sizeof(slot_length_t) * 2 + sizeof(poor_man_key);
-        return w_keystr_t::compare_bin_str(curkey_remain, curkey_len_remain, key_noprefix_remain, key_len_remain);
-    } else {
-        // the key was so short that poorman's key was everything.
-        // then, compare the key length.
-        return curkey_len_remain - key_len_remain;
-    }
-}
-
-inline int btree_p::_compare_node_key_noprefix_remain(slot_offset8_t slot_offset8, const void *key_noprefix_remain, int key_len_remain) const {
-    w_assert1(is_node());
-    const char* base = page_p::data_addr8(slot_offset8 < 0 ? -slot_offset8 : slot_offset8);
-    const char *p = ((const char*) base) + sizeof(shpid_t);
-    slot_length_t rec_len = *((const slot_length_t*) p);
-    w_assert1(rec_len >= sizeof(shpid_t) + sizeof(slot_length_t));
-    int curkey_len_remain = rec_len - sizeof(shpid_t) - sizeof(slot_length_t) - sizeof(poor_man_key);
-    const char *curkey_remain = p + sizeof(slot_length_t) + sizeof(poor_man_key);
-    if (key_len_remain > 0 && curkey_len_remain > 0) {
-        return w_keystr_t::compare_bin_str(curkey_remain, curkey_len_remain, key_noprefix_remain, key_len_remain);
-    } else {
-        return curkey_len_remain - key_len_remain;
-    }
-}
-inline bool btree_p::is_ghost(slotid_t slot) const
-{
-    slot_offset8_t offset8 = page_p::tuple_offset8(slot + 1);
-    return (offset8 < 0);
-}
 #endif //BTREE_P_H

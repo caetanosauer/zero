@@ -12,7 +12,6 @@
 #include "stnode_p.h"
 #include "crash.h"
 #include "sm_s.h"
-#include "bf_fixed.h"
 
 rc_t
 stnode_p::format(const lpid_t& pid, tag_t tag, 
@@ -29,11 +28,30 @@ stnode_t& stnode_p::get(size_t idx)
     return reinterpret_cast<stnode_t*>(_pp->data)[idx];
 }
 
-stnode_cache_t::stnode_cache_t (vid_t vid, bf_fixed_m* fixed_pages): _vid(vid), _fixed_pages(fixed_pages) {
-    page_s* page = _fixed_pages->get_pages() + _fixed_pages->get_page_cnt() - 1;
-    w_assert1(page->tag == page_p::t_stnode_p);
-    w_assert1(page->pid.vol() == _vid);
-    _stnodes = (stnode_t*) page->data;
+rc_t stnode_cache_t::load (int unix_fd, shpid_t stpid) {
+    w_assert1(unix_fd >= 0);
+    _stpid = stpid;
+    
+    page_s buf;
+    smthread_t* st = me();
+    w_assert1(st);
+    // for why we do this, see comments in alloc_cache::load().
+    W_DO(st->lseek(unix_fd, sizeof(page_s) * stpid, sthread_t::SEEK_AT_SET));
+    W_DO(st->read(unix_fd, &buf, sizeof(buf)));
+    w_assert1(buf.pid.page == stpid);
+    w_assert1(buf.tag == stnode_p::t_stnode_p);
+    
+    // just copy what the page has.
+    w_assert1(sizeof(stnode_t) * stnode_p::max == sizeof(buf.data));
+    {
+        CRITICAL_SECTION (cs, _spin_lock);
+        ::memcpy (_stnodes, buf.data, sizeof(buf.data));
+    }
+        
+#if W_DEBUG_LEVEL > 1
+    cout << "init stnode_cache_t: min_unused_store_id=" << get_min_unused_store_id() << endl;
+#endif // W_DEBUG_LEVEL > 1
+    return RCOK;
 }
 
 shpid_t stnode_cache_t::get_root_pid (snum_t store) const
@@ -42,13 +60,7 @@ shpid_t stnode_cache_t::get_root_pid (snum_t store) const
         w_assert1(false);
         return 0;
     }
-
-    // CRITICAL_SECTION (cs, _spin_lock);
-    // commented out to improve scalability, as this is called for EVERY operation.
-    // NOTE this protection is not needed because this is unsafe
-    // only when there is a concurrent DROP INDEX (or DROP TABLE).
-    // It should be protected by intent locks
-    // (if it's no-lock mode... it's user's responsibility)
+    CRITICAL_SECTION (cs, _spin_lock);
     return _stnodes[store].root;
 }
 void stnode_cache_t::get_stnode (snum_t store, stnode_t &stnode) const
@@ -155,11 +167,17 @@ stnode_cache_t::store_operation(const store_operation_param& param)
     }
 
     // log it and apply the change to the stnode_p
-    CRITICAL_SECTION (cs, _spin_lock);
-    spinlock_read_critical_section cs2(&_fixed_pages->get_checkpoint_lock()); // protect against checkpoint. see bf_fixed_m comment.
-    stnode_p page (_fixed_pages->get_pages() + _fixed_pages->get_page_cnt() - 1);
+    stnode_p page;
+    w_assert1(_stpid);
+    lpid_t pid (_vid, 0, _stpid);
+    W_DO(page.fix(pid, LATCH_EX));
     W_DO( log_store_operation(page, new_param) );
+    stnode_t* page_array = reinterpret_cast<stnode_t*>(page.persistent_part().data);
+    page_array[param.snum()] = stnode;
+    page.unfix_dirty();
+    
+    // then latch this object and apply the change to this
+    CRITICAL_SECTION (cs, _spin_lock);
     _stnodes[param.snum()] = stnode;
-    _fixed_pages->get_dirty_flags()[_fixed_pages->get_page_cnt() - 1] = true;
     return RCOK;
 }

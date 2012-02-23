@@ -107,9 +107,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
-#include "btree_p.h"
-#include "alloc_p.h"
-#include "stnode_p.h"
 
 EOF
 

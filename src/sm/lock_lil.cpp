@@ -6,271 +6,171 @@
 
 #include "sm_int_2.h"
 #include "lock_lil.h"
-#include "w_gettimeofday.h"
+
 
 /**
- * maximum time to wait after failed lock acquisition for intent locks.
- * if timeout happens, the xct is rolled back to prevent deadlocks.
+ * millisec to sleep after each failed lock acquisition for intent locks.
+ * okay to be large like 100ms because absolute locks are rare.
  */
-const int INTENT_LOCK_TIMEOUT_MICROSEC = 10000;
+const int INTENT_LOCK_SLEEP_MS = 10;
+const int INTENT_LOCK_MAX_TRIES = 10000;
 
 /**
- * For absolute lock requests.
- * Longer than intent locks to avoid starvation of absolute lock requests.
+ * Absolute lock requests are waken up with mutex.
+ * However, only one waiter is waken up at each time to simplify lil_global_table_base.
+ * So, it still has timeout to periodically re-check the request for unlucky case.
  */
-const int ABSOLUTE_LOCK_TIMEOUT_MICROSEC = 100000;
+const int ABSOLUTE_LOCK_SLEEP_MS = 10;
+const int ABSOLUTE_LOCK_MAX_TRIES = 10000;
 
-w_rc_t lil_global_table_base::request_lock(lil_lock_modes_t mode)
+w_rc_t lil_global_table_base::request_lock(lil_lock_modes_t mode, bool immediate)
 {
-    lsn_t observed_tag;
-    w_rc_t ret;
     switch (mode) {
-        case LIL_IS: ret = _request_lock_IS(observed_tag); break;
-        case LIL_IX: ret = _request_lock_IX(observed_tag); break;
-        case LIL_S: ret = _request_lock_S(observed_tag); break;
-        case LIL_X: ret =  _request_lock_X(observed_tag); break;
+        case LIL_IS: return _request_lock_IS(immediate);
+        case LIL_IX: return _request_lock_IX(immediate);
+        case LIL_S: return _request_lock_S(immediate);
+        case LIL_X: return _request_lock_X(immediate);
         default: w_assert1(false); //wtf?
     }
-    g_xct()->update_read_watermark(observed_tag);
-    return ret;
+    return RCOK;
 }
 
-void lil_global_table_base::release_locks(bool *lock_taken, bool read_lock_only, lsn_t commit_lsn)
+void lil_global_table_base::release_locks(bool *lock_taken, bool read_lock_only)
 {
-    bool broadcast = false;
-    {
-        tataslock_critical_section cs (&_spin_lock);
-        // CRITICAL_SECTION(cs, _spin_lock);
-        ++_release_version; // to let waiting threads that something really happened
-        if (lock_taken[LIL_IS]) {
-            w_assert1(_IS_count > 0);
-            --_IS_count;
-            if (_IS_count == 0 && _waiting_X != 0) {
-                broadcast = true;
-            }
-        }
-        if (lock_taken[LIL_IX] && !read_lock_only) {
-            w_assert1(_IX_count > 0);
-            --_IX_count;
-            if (_IX_count == 0 && (_waiting_S != 0 || _waiting_X != 0)) {
-                broadcast = true;
-            }
-        }
-        if (lock_taken[LIL_S]) {
-            w_assert1(_S_count > 0);
-            --_S_count;
-            broadcast = true;
-        }
-        if (lock_taken[LIL_X] && !read_lock_only) {
-            w_assert1(_X_taken);
-            _X_taken = false;
-            broadcast = true;
-            // only when we release X lock, we update the tag for safe SX-ELR.
-            // IX doesn't matter because the lower level will do the job.
-            if (commit_lsn.valid() && commit_lsn > _x_lock_tag) {
-                DBGOUT1(<<"LIL: tag for Safe SX-ELR updated to " << commit_lsn);
-                _x_lock_tag = commit_lsn;
-            }
-        }
+    CRITICAL_SECTION(cs, _spin_lock);
+    // spinlock_write_critical_section cs (&_spin_lock);
+    // tataslock_critical_section cs (&_spin_lock);
+    if (lock_taken[LIL_IS]) {
+        w_assert1(_IS_count > 0);
+        --_IS_count;
     }
-    if (broadcast) {
-        W_IFDEBUG1(int rc_mutex_lock = )
-            ::pthread_mutex_lock (&_waiter_mutex);
-        w_assert1(rc_mutex_lock == 0);
-
-        W_IFDEBUG1(int rc_broadcast = )
-            ::pthread_cond_broadcast(&_waiter_cond);
-        w_assert1(rc_broadcast == 0);
-
-        W_IFDEBUG1(int rc_mutex_unlock = )
-            ::pthread_mutex_unlock (&_waiter_mutex);
-        w_assert1(rc_mutex_unlock == 0);
+    if (lock_taken[LIL_IX] && !read_lock_only) {
+        w_assert1(_IX_count > 0);
+        --_IX_count;
+    }
+    if (lock_taken[LIL_S]) {
+        w_assert1(_S_count > 0);
+        --_S_count;
+    }
+    if (lock_taken[LIL_X] && !read_lock_only) {
+        w_assert1(_X_taken);
+        _X_taken = false;
+    }
+    // if absolute lock is requested and can be granted, wake them up
+    // this is rare event, so using mutex here doesn't have too much overhead
+    if (_IX_count == 0 && !_X_taken && _waiting_S && _S_waiter) {
+        _S_waiter->smthread_unblock(smlevel_0::eOK);
+    }
+    if (_IS_count == 0 && _IX_count == 0 && _S_count == 0 && !_X_taken && _waiting_X && _X_waiter) {
+        _X_waiter->smthread_unblock(smlevel_0::eOK);
     }
 }
 
-const clockid_t CLOCK_FOR_LIL = CLOCK_REALTIME; // CLOCK_MONOTONIC;
-    
-bool lil_global_table_base::_cond_timedwait (uint32_t base_version, uint32_t timeout_microsec) {
-    W_IFDEBUG1(int rc_mutex_lock = )
-        ::pthread_mutex_lock (&_waiter_mutex);
-    w_assert1(rc_mutex_lock == 0);
-
-    timespec   ts;
-    ::clock_gettime(CLOCK_FOR_LIL, &ts);
-    ts.tv_nsec += (uint64_t) timeout_microsec * 1000;
-    ts.tv_sec += ts.tv_nsec / 1000000000;
-    ts.tv_nsec = ts.tv_nsec % 1000000000;    
-
-#if W_DEBUG_LEVEL>=2
-    timespec   ts_init;
-    ::clock_gettime(CLOCK_FOR_LIL, &ts_init);
-    cout << "LIL: waiting for " << timeout_microsec << " us.." << endl;
-#endif // W_DEBUG_LEVEL>=2
-    
-    
-    bool timeouted = false;
-    while (true) {
-        uint32_t version;
+w_rc_t lil_global_table_base::_request_lock_IS(bool immediate)
+{
+    for (int i = 0; i < INTENT_LOCK_MAX_TRIES; ++i) {
         {
             CRITICAL_SECTION(cs, _spin_lock);
-            version = _release_version;
-        }
-        if (version != base_version) {
-            break;
-        }
-        
-        int rc_wait =
-            //::pthread_cond_wait(&_waiter_cond, &_waiter_mutex);
-            ::pthread_cond_timedwait(&_waiter_cond, &_waiter_mutex, &ts);
-
-#if W_DEBUG_LEVEL>=2
-    timespec   ts_end;
-    ::clock_gettime(CLOCK_FOR_LIL, &ts_end);
-    double ts_diff = (ts_end.tv_sec - ts_init.tv_sec) * 1000000 + (ts_end.tv_nsec - ts_init.tv_nsec) / 1000.0;
-    cout << "LIL: waked up after " << ts_diff << " usec. wait-ret="
-        << rc_wait << (rc_wait == ETIMEDOUT ? "(ETIMEDOUT)" : "") << endl;
-#endif // W_DEBUG_LEVEL>=2
-
-        if (rc_wait == ETIMEDOUT) {
-#if W_DEBUG_LEVEL>=2
-            timespec   ts_now;
-            ::clock_gettime(CLOCK_FOR_LIL, &ts_now);
-            if (ts_now.tv_sec > ts.tv_sec || (ts_now.tv_sec == ts.tv_sec && ts_now.tv_nsec >= ts.tv_nsec)) {
-            } else {
-                cout << "Seems a fake ETIMEDOUT?? Trying again" << endl;
-                // ah, CLOCK_MONOTONIC caused this. CLOCK_REALTIME doesn't have this issue.
-            }
-#endif // W_DEBUG_LEVEL>=2
-            timeouted = true;
-            break;
-        }
-    }
-
-    W_IFDEBUG1(int rc_mutex_unlock = )
-        ::pthread_mutex_unlock (&_waiter_mutex);
-    w_assert1(rc_mutex_unlock == 0);
-    
-    return timeouted;
-}
-
-w_rc_t lil_global_table_base::_request_lock_IS(lsn_t &observed_tag)
-{
-    while (true) {
-        uint32_t version;
-        {
-            // CRITICAL_SECTION(cs, _spin_lock);
             // spinlock_write_critical_section cs (&_spin_lock);
-            tataslock_critical_section cs (&_spin_lock);
+            // tataslock_critical_section cs (&_spin_lock);
             if (_IS_count < 65535) { // overflow check. shouldn't happen though
-                if (_waiting_X != 0) {
+                if (_waiting_X) {
                     // there is waiting X requests. let's give a way to him
                 } else {
                     if (!_X_taken) {
                         ++_IS_count;
-                        observed_tag = _x_lock_tag;
                         return RCOK;
                     }
                 }
             }
-            version = _release_version;
         }
-        bool timeouted = _cond_timedwait (version, INTENT_LOCK_TIMEOUT_MICROSEC);
-        if (timeouted) {
-            break;
+        // we are here because we failed to get locks immediately
+        if (immediate) {
+            return RC(smlevel_0::eLOCKTIMEOUT);
         }
+        ::usleep (INTENT_LOCK_SLEEP_MS * 1000);
     }
     return RC(smlevel_0::eLOCKTIMEOUT); // give up
 }
 
-w_rc_t lil_global_table_base::_request_lock_IX(lsn_t &observed_tag)
+w_rc_t lil_global_table_base::_request_lock_IX(bool immediate)
 {
-    while (true) {
-        uint32_t version;
+    for (int i = 0; i < INTENT_LOCK_MAX_TRIES; ++i) {
         {
-            // CRITICAL_SECTION(cs, _spin_lock);
+            CRITICAL_SECTION(cs, _spin_lock);
             // spinlock_write_critical_section cs (&_spin_lock);
-            tataslock_critical_section cs (&_spin_lock);
+            // tataslock_critical_section cs (&_spin_lock);
             if (_IX_count < 65535) {
-                if (_waiting_X != 0 || _waiting_S != 0) {
+                if (_waiting_X || _waiting_S) {
                     // let's give a way to absolute locks
                 } else {
                     if (!_X_taken && _S_count == 0) {
                         ++_IX_count;
-                        observed_tag = _x_lock_tag;
                         return RCOK;
                     }
                 }
             }
-            version = _release_version;
         }
-        bool timeouted = _cond_timedwait (version, INTENT_LOCK_TIMEOUT_MICROSEC);
-        if (timeouted) {
-            break;
+        if (immediate) {
+            return RC(smlevel_0::eLOCKTIMEOUT);
         }
+        ::usleep (INTENT_LOCK_SLEEP_MS * 1000);
     }
     return RC(smlevel_0::eLOCKTIMEOUT);
 }
 
-w_rc_t lil_global_table_base::_request_lock_S(lsn_t &observed_tag)
+w_rc_t lil_global_table_base::_request_lock_S(bool immediate)
 {
-    bool set_waiting = false;
-    while (true) {
-        uint32_t version;
+    for (int i = 0; i < ABSOLUTE_LOCK_MAX_TRIES; ++i) {
         {
-            // CRITICAL_SECTION(cs, _spin_lock);
+            CRITICAL_SECTION(cs, _spin_lock);
             // spinlock_write_critical_section cs (&_spin_lock);
-            tataslock_critical_section cs (&_spin_lock);
-            if (!set_waiting) {
-                ++_waiting_S;
-                set_waiting = true;
-            }
-            if (_S_count < 65535) {
-                if (_waiting_X != 0) {
+            // tataslock_critical_section cs (&_spin_lock);
+            if (_S_count < 255) {
+                _waiting_S = true; // this avoids starvation. we set it each time
+                _S_waiter = g_me();
+                if (_waiting_X) {
                     // let's allow X first.
                 } else {
                     if (!_X_taken && _IX_count == 0) {
                         ++_S_count;
-                        --_waiting_S;
-                        observed_tag = _x_lock_tag;
+                        _waiting_S = false; // okay even if there is another S request.
+                        _S_waiter = NULL;
                         return RCOK;
                     }
                 }
             }
-            version = _release_version;
         }
-        bool timeouted = _cond_timedwait (version, ABSOLUTE_LOCK_TIMEOUT_MICROSEC);
-        if (timeouted) {
-            break;
+        if (immediate) {
+            return RC(smlevel_0::eLOCKTIMEOUT);
         }
+        // even if my S_waiter is overwritten, I will wake up after some time, so it's fine
+        g_me()->smthread_block(ABSOLUTE_LOCK_SLEEP_MS, 0);
     }
     return RC(smlevel_0::eLOCKTIMEOUT); // give up
 }
-w_rc_t lil_global_table_base::_request_lock_X(lsn_t &observed_tag)
+w_rc_t lil_global_table_base::_request_lock_X(bool immediate)
 {
-    bool set_waiting = false;
-    while (true) {
-        uint32_t version;
+    for (int i = 0; i < ABSOLUTE_LOCK_MAX_TRIES; ++i) {
         {
-            // CRITICAL_SECTION(cs, _spin_lock);
+            CRITICAL_SECTION(cs, _spin_lock);
             // spinlock_write_critical_section cs (&_spin_lock);
-            tataslock_critical_section cs (&_spin_lock);
-            if (!set_waiting) {
-                ++_waiting_X;
-                set_waiting = true;
-            }
+            // tataslock_critical_section cs (&_spin_lock);
+            _waiting_X = true;
+            _X_waiter = g_me();
             if (!_X_taken && _S_count == 0 && _IX_count == 0 && _IS_count == 0) {
                 _X_taken = true;
-                --_waiting_X;
-                observed_tag = _x_lock_tag;
+                _waiting_X = false;
+                _X_waiter = NULL;
                 return RCOK;
             }
-            version = _release_version;
+        }
+        if (immediate) {
+            return RC(smlevel_0::eLOCKTIMEOUT);
         }
         
-        bool timeouted = _cond_timedwait (version, ABSOLUTE_LOCK_TIMEOUT_MICROSEC);
-        if (timeouted) {
-            break;
-        }
+        // even if my X_waiter is overwritten, I will wake up after some time, so it's fine
+        g_me()->smthread_block(ABSOLUTE_LOCK_SLEEP_MS, 0);
     }
     return RC(smlevel_0::eLOCKTIMEOUT); // give up
 }
@@ -317,8 +217,9 @@ w_rc_t lil_private_vol_table::acquire_store_lock(lil_global_table *global_table,
     
     // then, we need to request a lock to global table
     w_assert1(stid.vol < MAX_VOL_GLOBAL);
+    bool immediate = has_any_lock(table->_lock_taken);
     // if it's timeout, it's deadlock
-    rc_t rc = global_table->_vol_tables[stid.vol]._store_tables[store].request_lock(mode);
+    rc_t rc = global_table->_vol_tables[stid.vol]._store_tables[store].request_lock(mode, immediate);
     if (rc.is_error()) {
         // this might be a bit too conservative, but doesn't matter for intent locks
         if (rc.err_num() == smlevel_0::eLOCKTIMEOUT) {
@@ -340,12 +241,12 @@ inline void clear_lock_flags(bool *lock_taken, bool read_lock_only) {
     }
 }
 
-void lil_private_vol_table::release_vol_locks(lil_global_table *global_table, bool read_lock_only, lsn_t commit_lsn)
+void lil_private_vol_table::release_vol_locks(lil_global_table *global_table, bool read_lock_only)
 {
     w_assert1(_vid);
     // release the volume lock
     if (has_any_lock(_lock_taken, read_lock_only)) {
-        global_table->_vol_tables[_vid].release_locks(_lock_taken, read_lock_only, commit_lsn);
+        global_table->_vol_tables[_vid].release_locks(_lock_taken, read_lock_only);
         clear_lock_flags (_lock_taken, read_lock_only);
     }
     // release store locks under this
@@ -353,7 +254,7 @@ void lil_private_vol_table::release_vol_locks(lil_global_table *global_table, bo
         snum_t store = _store_tables[i]._store;
         w_assert1(store);
         if (has_any_lock(_store_tables[i]._lock_taken, read_lock_only)) {
-            global_table->_vol_tables[_vid]._store_tables[store].release_locks(_store_tables[i]._lock_taken, read_lock_only, commit_lsn);
+            global_table->_vol_tables[_vid]._store_tables[store].release_locks(_store_tables[i]._lock_taken, read_lock_only);
             clear_lock_flags (_store_tables[i]._lock_taken, read_lock_only);
         }
     }
@@ -393,8 +294,9 @@ w_rc_t lil_private_table::acquire_vol_table(lil_global_table *global_table,
     
     // then, we need to request a lock to global table
     w_assert1(vid < MAX_VOL_GLOBAL);
+    bool immediate = has_any_lock(table->_lock_taken);
     // if it's timeout, it's deadlock
-    rc_t rc = global_table->_vol_tables[vid].request_lock(mode);
+    rc_t rc = global_table->_vol_tables[vid].request_lock(mode, immediate);
     if (rc.is_error()) {
         if (rc.err_num() == smlevel_0::eLOCKTIMEOUT) {
             return RC (smlevel_0::eDEADLOCK);
@@ -415,10 +317,10 @@ w_rc_t lil_private_table::acquire_vol_store_lock(lil_global_table *global_table,
     return RCOK;
 }
 
-void lil_private_table::release_all_locks(lil_global_table *global_table, bool read_lock_only, lsn_t commit_lsn)
+void lil_private_table::release_all_locks(lil_global_table *global_table, bool read_lock_only)
 {
     for (uint16_t i = 0; i < _volumes; ++i) {
-        _vol_tables[i].release_vol_locks(global_table, read_lock_only, commit_lsn);
+        _vol_tables[i].release_vol_locks(global_table, read_lock_only);
     }
     if (!read_lock_only) {
         clear();

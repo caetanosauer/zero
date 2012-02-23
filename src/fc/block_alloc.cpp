@@ -77,7 +77,6 @@ dynpool::~dynpool() {
     
 dynpool::mblock* dynpool::_acquire_block() {
     mblock* rval;
-    //tataslock_critical_section cs (&_lock);
     pthread_mutex_lock(&_lock);
     if(_free_list.empty()) {
         size_t block_size = size_t(1) << _log2_block_size;
@@ -97,7 +96,6 @@ dynpool::mblock* dynpool::_acquire_block() {
 }
 
 void dynpool::_release_block(mblock* b) {
-    //tataslock_critical_section cs (&_lock);
     pthread_mutex_lock(&_lock);
     _free_list.push_back(b);
     pthread_mutex_unlock(&_lock);

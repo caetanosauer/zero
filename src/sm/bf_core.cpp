@@ -342,7 +342,7 @@ bf_core_m::my_latch(const bfcb_t* p) const
     return &p->latch;
 }
 
-void bfcb_t::initialize(
+void bfcb_t::initialize(const char *const name,
                         page_s*           bufpoolframe,
                         uint32_t           hfunc
                         )
@@ -357,6 +357,7 @@ void bfcb_t::initialize(
     _pid = lpid_t::null;
     _rec_lsn = lsn_t::null;
 
+    latch.setname(name);
     zero_pin_cnt();
 
     _refbit = 0;
@@ -402,8 +403,9 @@ struct bf_core_m::init_thread_t : public smthread_t
     }
     
     virtual void run() {
+        const char *nayme = name();
         for(long i=_begin; i < _end; i++) {
-            _bfc->_buftab[i].initialize(_bfc->_bufpool+i,
+            _bfc->_buftab[i].initialize(nayme, _bfc->_bufpool+i,
                                    htab::HASH_COUNT
                                    );
             _bfc->_unused.release(_bfc->_buftab+i);

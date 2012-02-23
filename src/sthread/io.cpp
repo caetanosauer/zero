@@ -299,23 +299,23 @@ w_rc_t sthread_t::set_bufsize_normal(
     int flags1 = MAP_PRIVATE;
     int flags2 = MAP_PRIVATE;
 
-#ifdef HAVE_DECL_MAP_ANONYMOUS
+#if HAVE_DECL_MAP_ANONYMOUS==1
     flags1  |= MAP_ANONYMOUS;
     flags2  |= MAP_ANONYMOUS;
-#elif defined (HAVE_DECL_MAP_ANON)
+#elif HAVE_DECL_MAP_ANON==1
     flags1  |= MAP_ANON;
     flags2  |= MAP_ANON;
 #else
 #endif
 
-#ifdef HAVE_DECL_MAP_NORESERVE
+#if HAVE_DECL_MAP_NORESERVE==1
     flags1  |= MAP_NORESERVE;
 #endif
-#ifdef HAVE_DECL_MAP_FIXED
+#if HAVE_DECL_MAP_FIXED==1
     flags2  |= MAP_FIXED;
 #endif
 
-#ifdef HAVE_DECL_MAP_ALIGN
+#if HAVE_DECL_MAP_ALIGN==1
     flags1 |= MAP_ALIGN;
 #endif
     // add one SM_PAGESIZE to the size requested before alignment,
@@ -580,7 +580,7 @@ sthread_t::set_bufsize_huge(
 
     /* NOTE: cannot use ANONYMOUS for hugetlbfs*/
 
-#ifdef HAVE_DECL_MAP_ALIGN
+#if HAVE_DECL_MAP_ALIGN==1
     flags |=  MAP_ALIGN;
     fprintf(stderr, "%d: adding flag 0x%x %s\n", __LINE__,
             MAP_ALIGN, "MAP_ALIGN");

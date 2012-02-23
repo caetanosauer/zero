@@ -9,9 +9,13 @@
 #define BTREE_C
 
 #include "sm_int_2.h"
+#ifdef __GNUG__
+#   pragma implementation "btree_impl.h"
+#endif
 #include "sm_base.h"
 #include "btree_p.h"
 #include "btree_impl.h"
+#include "btree_impl_debug.h"
 #include "crash.h"
 #include "w_key.h"
 #include "xct.h"
@@ -174,11 +178,9 @@ btree_impl::_ux_grow_tree_core(btree_p& rp, const lpid_t &cp_pid)
         infimum, supremum, dummy_chain_high // empty fence keys=infimum-supremum
         ) ); // nothing to steal
     
-    w_assert3(cp.is_consistent(true, true));
     cp.unfix();
     
     // that's it. then, we adopt keys to the new root page later
-    w_assert3(rp.is_consistent(true, true));
 
     return RCOK;
 }

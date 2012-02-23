@@ -23,12 +23,15 @@ public:
 
     typedef smlevel_0::lock_mode_t lmode_t;
 
+    typedef smlevel_0::lock_duration_t duration_t;
+
     enum {
         MIN_MODE = NL, MAX_MODE = XU,
         NUM_MODES = MAX_MODE - MIN_MODE + 1
     };
 
     static const char* const         mode_str[NUM_MODES];
+    static const char* const         duration_str[t_num_durations];
     static const bool                compat[NUM_MODES][NUM_MODES];
     static const lmode_t             supr[NUM_MODES][NUM_MODES];
 };

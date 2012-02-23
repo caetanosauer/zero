@@ -8,6 +8,11 @@ cmake_minimum_required(VERSION 2.6)
 
 PROJECT(fbtree) # Foster B-Trees
 
+SET(CMAKE_MODULE_PATH "${CMAKE_INSTALL_PREFIX}/share/cmake-modules" ${CMAKE_MODULE_PATH})
+
+SET(LINTEL_FIND_REQUIRED ON)
+INCLUDE(FindLintel)
+
 # Note, we can't change compiler based on CMAKE_SYSTEM.
 # Before PROJECT(), CMAKE_SYSTEM is empty, so we have no clue.
 # After PROJECT(), we can't change CMAKE_C_COMPILER.
@@ -32,7 +37,6 @@ MESSAGE (STATUS)
 MESSAGE (STATUS "========================================")
 MESSAGE (STATUS "CMAKE_SYSTEM=${CMAKE_SYSTEM}")
 MESSAGE (STATUS "CMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}")
-MESSAGE (STATUS "CMAKE_SYSTEM_PROCESSOR=${CMAKE_SYSTEM_PROCESSOR}")
 MESSAGE (STATUS "CMAKE_C_COMPILER=${CMAKE_C_COMPILER}")
 MESSAGE (STATUS "CMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}")
 MESSAGE (STATUS "COMPILER_IS_SUNCC=${COMPILER_IS_SUNCC}")
@@ -40,18 +44,6 @@ MESSAGE (STATUS "COMPILER_IS_GCC=${COMPILER_IS_GCC}")
 MESSAGE (STATUS "COMPILER_IS_ICC=${COMPILER_IS_ICC}")
 MESSAGE (STATUS "========================================")
 MESSAGE (STATUS)
-
-IF(${CMAKE_SYSTEM_PROCESSOR} MATCHES ".*64.*")
-  MESSAGE (STATUS "Yes, you are on 64bit OS/CPU!")
-ELSE()
-  IF(${CMAKE_SYSTEM_PROCESSOR} MATCHES ".*sparc*")
-    MESSAGE (STATUS "Your system is Sparc ('${CMAKE_SYSTEM_PROCESSOR}'), which doesn't contain '64', but we assume it's 64 bits.")
-  ELSE()
-    MESSAGE (FATAL_ERROR "Foster B-tree can only be built on 64bit OS/CPU. Your system seems '${CMAKE_SYSTEM_PROCESSOR}'")
-    RETURN()
-  ENDIF()
-ENDIF()
-
 
 #if you don't want the full compiler output, remove the following line
 SET(CMAKE_VERBOSE_MAKEFILE ON)
@@ -66,11 +58,13 @@ ENDIF(NOT CMAKE_BUILD_TYPE)
 find_package(Threads REQUIRED) # find pthread library
 
 # libprofiler x86_64 has some issue on libunwind.
-# it's so ugly and hard to fix. Just give up using libprofiler on some platform.
+# it's so ugly and hard to fix. Just give up using libprofiler on some 
 # http://code.google.com/p/google-perftools/issues/detail?id=66&can=1&q=libunwind
 find_package(GooglePerftools) # google-perftools / google-perftools-devel
 IF(GOOGLEPERFTOOLS_FOUND)
-  SET (LINK_GOOGLEPROFILER " -lprofiler") #  -ltcmalloc ?
+  SET (LINK_GOOGLEPROFILER " -lprofiler")
+ELSE(GOOGLEPERFTOOLS_FOUND)
+  SET (LINK_GOOGLEPROFILER " -DNO_LIBPROFILER")
 ENDIF(GOOGLEPERFTOOLS_FOUND)
 
 
@@ -98,7 +92,7 @@ ENDIF (COMPILER_IS_SUNCC)
 SET (MANDATORY_FLAGS "-D_REENTRANT -D_POSIX_PTHREAD_SEMANTICS")
 
 IF (COMPILER_IS_SUNCC)
-  SET (ALWAYS_FLAGS "-features=extensions,zla -xdebugformat=stabs -library=stlport4  -mt -lpthread -lmtmalloc")
+  SET (ALWAYS_FLAGS "-features=extensions,zla -xdebugformat=stabs -DSOLARIS2 -library=stlport4  -mt -lpthread")
   #  CC turns on inlining based on optimization level.  at O0 it should
   #  do no inlining at less than O3.  There is no way to force inlining to
   #  be off (well, +d does except when the optimization level overrides it); 
@@ -143,29 +137,46 @@ ELSE (COMPILER_IS_SUNCC)
   ENDIF (COMPILER_IS_GCC)
 ENDIF (COMPILER_IS_SUNCC)
 
-## enabled by config option (default) 
-## Now try to find out the compiler arguments needed
-IF (COMPILER_IS_SUNCC)
-  ## SUN CC/64
-  ## getconf doesn't necessarily keep up with the times...
-  ## and in any case, it might target generic
-  SET(TARGET_FLAGS "-m64")
-  ## Assembler flags... for atomic_ops
-  SET(AM_LDFLAGS "-m64")
-  SET(TUNE_FLAGS "-xtarget=native")
-ELSE (COMPILER_IS_SUNCC)
-  IF (COMPILER_IS_ICC)
+SET (ENABLE_ARCH_LP64 true)  # TODO : should port from configure.ac
+
+IF (ENABLE_ARCH_LP64)
+  ## enabled by config option (default) 
+  ## Now try to find out the compiler arguments needed
+  IF (COMPILER_IS_SUNCC)
+    ## SUN CC/64
+    ## getconf doesn't necessarily keep up with the times...
+    ## and in any case, it might target generic
+    SET(TARGET_FLAGS "-m64 -DARCH_LP64")
+    ## Assembler flags... for atomic_ops
+    SET(AM_LDFLAGS "-m64")
+    SET(TUNE_FLAGS "-xtarget=native")
+  ELSE (COMPILER_IS_SUNCC)
+    IF (COMPILER_IS_ICC)
       ## ICC/64
-    SET(TUNE_FLAGS "")
-  ELSE (COMPILER_IS_ICC)
-    ## GCC/64
-    SET(TUNE_FLAGS "-mtune=nocona")
-  ENDIF (COMPILER_IS_ICC)
-  # TUNE_FLAGS = -mtune=generic
-  SET(TARGET_FLAGS "-m64")
-  ## Assembler flags... for atomic_ops
-  SET(AM_LDFLAGS "-m64")
-ENDIF (COMPILER_IS_SUNCC)
+      SET(TUNE_FLAGS "")
+    ELSE (COMPILER_IS_ICC)
+      ## GCC/64
+      SET(TUNE_FLAGS "-mtune=nocona")
+    ENDIF (COMPILER_IS_ICC)
+    # TUNE_FLAGS = -mtune=generic
+    SET(TARGET_FLAGS "-m64 -DARCH_LP64")
+    ## Assembler flags... for atomic_ops
+    SET(AM_LDFLAGS "-m64")
+  ENDIF (COMPILER_IS_SUNCC)
+  SET(LARGEFILE_FLAG "")
+ELSE (ENABLE_ARCH_LP64)
+  IF (COMPILER_IS_SUNCC)
+    # SUN CC/32
+    SET(TARGET_FLAGS "-m32 -UARCH_LP64")
+    SET(TUNE_FLAGS "-xtarget=native")
+  ELSE (COMPILER_IS_SUNCC)
+    # GCC/32
+    SET(TARGET_FLAGS "-m32 -UARCH_LP64")
+    SET(TUNE_FLAGS "-mtune=generic")
+  ENDIF (COMPILER_IS_SUNCC)
+  SET(LARGEFILE_FLAG "-D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64")
+  SET(AM_LDFLAGS "-m32")
+ENDIF (ENABLE_ARCH_LP64)
 
 IF (COMPILER_IS_GCC)
   ## TODO: pedantic for SUNCC?
@@ -177,7 +188,7 @@ IF (COMPILER_IS_GCC)
   ENDIF (NOPEDANTIC)
 ENDIF (COMPILER_IS_GCC)
 
-SET(ALL_FLAGS "${PEDANTIC} ${TUNE_FLAGS} ${DEBUGFLAGS} ${W_WARNINGS} ${OPTFLAGS} ${MANDATORY_FLAGS} ${ALWAYS_FLAGS} ${TARGET_FLAGS} ${TEMPLATEFLAGS}")
+SET(ALL_FLAGS "${PEDANTIC} ${TUNE_FLAGS} ${DEBUGFLAGS} ${W_WARNINGS} ${OPTFLAGS} ${MANDATORY_FLAGS} ${ALWAYS_FLAGS} ${TARGET_FLAGS} ${TEMPLATEFLAGS} ${LARGEFILE_FLAG}")
 IF (COMPILER_IS_SUNCC)
   SET(ALL_FLAGS "${ALL_FLAGS} -lnsl") # on solaris, gethostbyname needs -lnsl
   # linker ignores ADD_DEFINITIONS, and it causes a linker problem on solaris.
@@ -193,128 +204,15 @@ ENDIF (COMPILER_IS_SUNCC)
 
 ## end of compiler options
 
-# define a bunch of environment specific macros.
-# this replaces the old autoconf/autoheader stuffs
-INCLUDE (CheckIncludeFiles)
-INCLUDE (CheckFunctionExists)
-INCLUDE (CheckSymbolExists)
-INCLUDE (CheckLibraryExists)
-INCLUDE (CheckPrototypeExists)
-INCLUDE (CheckTypeSize)
-##########   header files and symbols #####################
-CHECK_SYMBOL_EXISTS(char_t "" HAVE_CHAR_T)
-CHECK_SYMBOL_EXISTS(long_t "" HAVE_LONG_T)
-CHECK_SYMBOL_EXISTS(short_t "" HAVE_SHORT_T)
-CHECK_SYMBOL_EXISTS(uchar_t "" HAVE_UCHAR_T)
-CHECK_SYMBOL_EXISTS(ulong_t "" HAVE_ULONG_T)
-CHECK_SYMBOL_EXISTS(ushort_t "" HAVE_USHORT_T)
-
-CHECK_INCLUDE_FILES(atomic.h HAVE_ATOMIC_H)
-
-CHECK_INCLUDE_FILES(sys/mman.h HAVE_SYS_MMAN_H)
-CHECK_SYMBOL_EXISTS(MAP_ALIGN "sys/mman.h" HAVE_DECL_MAP_ALIGN)
-CHECK_SYMBOL_EXISTS(MAP_ANON "sys/mman.h" HAVE_DECL_MAP_ANON)
-CHECK_SYMBOL_EXISTS(MAP_ANONYMOUS "sys/mman.h" HAVE_DECL_MAP_ANONYMOUS)
-CHECK_SYMBOL_EXISTS(MAP_FIXED "sys/mman.h" HAVE_DECL_MAP_FIXED)
-CHECK_SYMBOL_EXISTS(MAP_NORESERVE "sys/mman.h" HAVE_DECL_MAP_NORESERVE)
-
-CHECK_INCLUDE_FILES(dirent.h HAVE_DIRENT_H)
-CHECK_INCLUDE_FILES(fcntl.h HAVE_FCNTL_H)
-CHECK_INCLUDE_FILES(inttypes.h HAVE_INTTYPES_H)
-CHECK_INCLUDE_FILES(memory.h HAVE_MEMORY_H)
-CHECK_INCLUDE_FILES(ndir.h HAVE_NDIR_H)
-CHECK_INCLUDE_FILES(netdb.h HAVE_NETDB_H)
-CHECK_INCLUDE_FILES(netinet/in.h HAVE_NETINET_IN_H)
-CHECK_INCLUDE_FILES(semaphore.h HAVE_SEMAPHORE_H)
-CHECK_INCLUDE_FILES(stdint.h HAVE_STDINT_H)
-CHECK_INCLUDE_FILES(stdlib.h HAVE_STDLIB_H)
-CHECK_INCLUDE_FILES(sys/ioctl.h HAVE_SYS_IOCTL_H)
-CHECK_INCLUDE_FILES(sys/param.h HAVE_SYS_PARAM_H)
-CHECK_INCLUDE_FILES(sys/stat.h HAVE_SYS_STAT_H)
-CHECK_INCLUDE_FILES(sys/types.h HAVE_SYS_TYPES_H)
-CHECK_INCLUDE_FILES(valgrind.h HAVE_VALGRIND_H)
-CHECK_INCLUDE_FILES(valgrind/valgrind.h HAVE_VALGRIND_VALGRIND_H)
-CHECK_INCLUDE_FILES(google/profiler.h HAVE_GOOGLE_PROFILER_H)
-
-####################   std functions #####################
-CHECK_FUNCTION_EXISTS(vprintf HAVE_VPRINTF)
-CHECK_FUNCTION_EXISTS(getopt HAVE_GETOPT)
-CHECK_FUNCTION_EXISTS(memalign HAVE_MEMALIGN)
-CHECK_FUNCTION_EXISTS(membar_enter HAVE_MEMBAR_ENTER)
-CHECK_FUNCTION_EXISTS(memcntl HAVE_MEMCNTL)
-CHECK_FUNCTION_EXISTS(posix_memalign HAVE_POSIX_MEMALIGN)
-CHECK_FUNCTION_EXISTS(posix_spawn HAVE_POSIX_SPAWN)
-CHECK_FUNCTION_EXISTS(valloc HAVE_VALLOC)
-CHECK_FUNCTION_EXISTS(strerror HAVE_STRERROR)
-
-################   non-std functions #####################
-# these need CHECK_SYMBOL_EXISTS or CHECK_PROTOTYPE_EXISTS, not CHECK_FUNCTION_EXISTS
-CHECK_PROTOTYPE_EXISTS(clock_gettime "sys/time.h;time.h" HAVE_CLOCK_GETTIME)
-CHECK_PROTOTYPE_EXISTS(gethrtime "sys/time.h;time.h" HAVE_GETHRTIME)
-CHECK_PROTOTYPE_EXISTS(gettimeofday "sys/time.h;time.h" HAVE_GETTIMEOFDAY)
-
-CHECK_PROTOTYPE_EXISTS(pthread_attr_getstack "pthread.h" HAVE_PTHREAD_ATTR_GETSTACK)
-CHECK_PROTOTYPE_EXISTS(pthread_attr_getstacksize "pthread.h" HAVE_PTHREAD_ATTR_GETSTACKSIZE)
-
-CHECK_PROTOTYPE_EXISTS(getpagesizes "sys/mman.h" HAVE_GETPAGESIZES)
-
-################   OS-dependent sizes       ###################
-SET(CMAKE_EXTRA_INCLUDE_FILES "pthread.h")
-CHECK_TYPE_SIZE(pthread_t SIZEOF_PTHREAD_T)
-SET(CMAKE_EXTRA_INCLUDE_FILES)
-
-SET (HUGEPAGESIZE 2048) # so far hard-coded.
-
-####################   parameters #####################
-
-# so far hard-coded...
-
-# Page size in bytes. Has to be powers of 2. 1kb-256kb
-SET (SM_PAGESIZE 8192)
-
-# # of bits used for dreadlock.
-IF (CMAKE_SYSTEM_PROCESSOR STREQUAL "sparc" )
-  SET (SM_DREADLOCK_BITCOUNT 512) # Sparc has many more #cores
-ELSE ()
-  SET (SM_DREADLOCK_BITCOUNT 256)
-ENDIF ()
-# # of bits used as identity.
-SET (SM_DREADLOCK_FINGERS 3)
-
-SET (W_USE_COMPAT_STRSTREAM "true")
-SET (USE_PTHREAD_MUTEX "true")
-
-####################   OS/architecture #####################
-SET (ARCH_LP64  "true") # so far, always assume 64 bits
-IF(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  SET (Linux "true")
-ENDIF()
-IF (CMAKE_SYSTEM_NAME MATCHES "(Solaris|SunOS)" )
-  SET (SOLARIS2  "true")
-ENDIF ()
-IF(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-  SET (MacOSX "true")
-ENDIF ()
-IF (CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64" )
-  SET (x86_64 "true")
-  SET (amd64 "true") # maybe additional check needed. but now they are almost synonyms
-ENDIF ()
-IF (CMAKE_SYSTEM_PROCESSOR STREQUAL "sparc" )
-  SET (Sparc "true")
-ENDIF ()
-INCLUDE (TestBigEndian)
-TEST_BIG_ENDIAN(WORDS_BIGENDIAN)
-
-# then finally call CONFIGURE_FILE to generate shore-config-env.h
-CONFIGURE_FILE( ${CMAKE_SOURCE_DIR}/config/shore-config-env.h.cmake ${CMAKE_BINARY_DIR}/config/shore-config-env.h )
 
 add_subdirectory(src) # main source codes
 add_subdirectory(config) # to be eliminated
 add_subdirectory(gtest-1.6.0) # google-test library
 add_subdirectory(tests) # unit testcases
-# TODO: experiments should be compiled only when the user wants... maybe optional cmake argument?
-add_subdirectory(experiments) # benchmarks and other performance tests
-# add_subdirectory(examples) # examples to show how to use Foster B-tree. enabled only while demonstration or learning
+#IF(GOOGLEPERFTOOLS_FOUND) #experiments folder is compiled only when libprofiler is available
+    add_subdirectory(experiments) # benchmarks and other performance tests
+#ENDIF(GOOGLEPERFTOOLS_FOUND)
+add_subdirectory(examples) # examples to show how to use Foster B-tree. enabled only while demonstration or learning
 
 # not needed so far, and causes a warning
 # add_library(shore)

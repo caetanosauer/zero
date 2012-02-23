@@ -52,51 +52,57 @@ enum lil_lock_modes_t {
  */
 class lil_global_table_base {
 public:
-    uint16_t  _IS_count;  // +2 -> 2 
-    uint16_t  _IX_count;  // +2 -> 4
-    uint16_t  _S_count;   // +2 -> 6     
-    bool      _X_taken;   // +1 -> 7
-    bool      _dummy1;    // +1 -> 8
-    uint16_t  _waiting_S; // +2 -> 10
-    uint16_t  _waiting_X; // +2 -> 12
-    uint32_t            _release_version; // +4 -> 16
-    lsn_t               _x_lock_tag; // +8 -> 24. this is for Safe SX-ELR
-    pthread_mutex_t     _waiter_mutex;
-    pthread_cond_t      _waiter_cond;
+    uint16_t _IS_count;  // +2 -> 2
+    uint16_t _IX_count;  // +2 -> 4
+    uint8_t  _S_count;   // +1 -> 5
+    bool     _X_taken;   // +1 -> 6
+    bool     _waiting_S; // +1 -> 7
+    bool     _waiting_X; // +1 -> 8
 
     /** all operations in this object are protected by this spin lock. */
-    // queue_based_lock_t _spin_lock;
+    queue_based_lock_t _spin_lock;
     // srwlock_t _spin_lock;
-    tatas_lock _spin_lock;
-    // mmm, scalability and overhead is the trade-off here.
+    // tatas_lock _spin_lock;
+    // mmm, scalability and overhead is the trade-off here. for now pick scalability.
+    
+    /**
+     * absolute lock requesters. when these locks can be granted, the waiters
+     * are waked up. Note that these objects and mutexes are used only when
+     * there are absolute lock requesters, which isn't frequent.
+     * there is only one S/X waiter per object, so if there is more than one
+     * absolute lock requester, only one of them are waken up.
+     * So, each waiter also re-sets the S/X waiter after some sleep for the
+     * unlucky case. Anyways, the waiting is safe.
+     */
+    smthread_t* _S_waiter;
+    smthread_t* _X_waiter;
+
+    lil_global_table_base() : _IS_count(0), _IX_count(0), _S_count(0), _X_taken(false), _waiting_S(false), _waiting_X(false), _S_waiter(NULL), _X_waiter(NULL) {}
+    ~lil_global_table_base(){}
 
     /**
      * Requests the given mode in the lock table.
      * @param[in] mode the lock mode to acquire
+     * @param[in] immediate if this is true, this immediately returns with eLOCKTIMEOUT
+     * when the lock is not immediately available. Otherwise, this method blocks forever.
      */
-    w_rc_t      request_lock(lil_lock_modes_t mode);
+    w_rc_t      request_lock(lil_lock_modes_t mode, bool immediate = false);
     
     /**
      * Decreases the corresponding counters. This never sees an error or long blocking.
      * @param[in] read_lock_only if true, releases only read locks. default false.
      */
-    void        release_locks(bool *lock_taken, bool read_lock_only = false, lsn_t commit_lsn = lsn_t::null);
+    void        release_locks(bool *lock_taken, bool read_lock_only = false);
 
 private:
-    w_rc_t      _request_lock_IS(lsn_t &observed_tag);
-    w_rc_t      _request_lock_IX(lsn_t &observed_tag);
-    w_rc_t      _request_lock_S(lsn_t &observed_tag);
-    w_rc_t      _request_lock_X(lsn_t &observed_tag);
-    /** @return whether timeout happened .*/
-    bool        _cond_timedwait (uint32_t base_version, uint32_t timeout_microsec);
+    w_rc_t      _request_lock_IS(bool immediate);
+    w_rc_t      _request_lock_IX(bool immediate);
+    w_rc_t      _request_lock_S(bool immediate);
+    w_rc_t      _request_lock_X(bool immediate);
 };
 
 /** lock table for store. */
-class lil_global_store_table : public lil_global_table_base {
-public:
-    lil_global_store_table() {}
-    ~lil_global_store_table() {}
-};
+typedef lil_global_table_base lil_global_store_table;
 
 /** lock table for volume. also contains lock tables for stores in it. */
 class lil_global_vol_table : public lil_global_table_base {
@@ -105,21 +111,8 @@ public:
 
     lil_global_vol_table() {
         ::memset (this, 0, sizeof(*this));
-        ::pthread_mutex_init(&_waiter_mutex, NULL);
-        ::pthread_cond_init(&_waiter_cond, NULL);
-        for (size_t i = 0; i < stnode_p::max; ++i) {
-            ::pthread_mutex_init(&(_store_tables[i]._waiter_mutex), NULL);
-            ::pthread_cond_init(&(_store_tables[i]._waiter_cond), NULL);
-        }
     }
-    ~lil_global_vol_table(){
-        ::pthread_mutex_destroy(&_waiter_mutex);
-        ::pthread_cond_destroy(&_waiter_cond);
-        for (size_t i = 0; i < stnode_p::max; ++i) {
-            ::pthread_mutex_destroy(&(_store_tables[i]._waiter_mutex));
-            ::pthread_cond_destroy(&(_store_tables[i]._waiter_cond));
-        }
-    }
+    ~lil_global_vol_table(){}
 };
 
 /** For all volumes. This object is retained in lock manager. */
@@ -185,7 +178,7 @@ public:
      * Release all locks acquired for this volume. This never fails or takes long time.
      * @param[in] read_lock_only if true, releases only read locks. default false.
      */
-    void   release_vol_locks(lil_global_table *global_table, bool read_lock_only = false, lsn_t commit_lsn = lsn_t::null);
+    void   release_vol_locks(lil_global_table *global_table, bool read_lock_only = false);
 private:
     lil_private_store_table* _find_store_table(uint32_t store);
 };
@@ -237,7 +230,7 @@ public:
      * This never fails or takes long time.
      * @param[in] read_lock_only if true, releases only read locks. default false.
      */
-    void   release_all_locks(lil_global_table *global_table, bool read_lock_only = false, lsn_t commit_lsn = lsn_t::null);
+    void   release_all_locks(lil_global_table *global_table, bool read_lock_only = false);
 
     /**
      * Returns a volume lock table for the given volume id.

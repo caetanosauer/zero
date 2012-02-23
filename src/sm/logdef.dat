@@ -118,11 +118,11 @@ xct_prepare_fi     1010000 0.0 (int numex, int numix, int numsix, const lsn_t& f
 # type             XSRUFAL  fudge    arg                                #
 #########################################################################
 # new page allocation logs. No notion of extent. no undo in any case.
-alloc_a_page       1110010  1.0  (const alloc_p& page, shpid_t pid);
-alloc_consecutive_pages 1110010  1.0  (const alloc_p& page, shpid_t pid_begin, uint32_t page_count);
-dealloc_a_page     1110010  1.0  (const alloc_p& page, shpid_t pid);
+alloc_a_page       1110010  1.0  (const page_p& page, shpid_t pid);
+alloc_consecutive_pages 1110010  1.0  (const page_p& page, shpid_t pid_begin, uint32_t page_count);
+dealloc_a_page     1110010  1.0  (const page_p& page, shpid_t pid);
 
-store_operation    1011011 1.0 (const stnode_p& page, 
+store_operation    1011011 1.0 (const page_p& page, 
                             const store_operation_param& op);
 #########################################################################
 # type             XSRUFAL  fudge    arg                                #

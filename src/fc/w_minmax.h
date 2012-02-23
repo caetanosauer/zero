@@ -55,7 +55,7 @@ min(const T x, const T y)
 }
 #endif /* !__GNUC__ */
 
-#ifdef HAVE_SYS_PARAM_H
+#if HAVE_SYS_PARAM_H
 #include <sys/param.h>
 #endif
 

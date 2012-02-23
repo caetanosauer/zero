@@ -8,8 +8,12 @@
 #define BTREE_C
 
 #include "sm_int_2.h"
+#ifdef __GNUG__
+#   pragma implementation "btree_impl.h"
+#endif
 #include "btree_p.h"
 #include "btree_impl.h"
+#include "btree_impl_debug.h"
 
 // these are for volume-wide verifications
 #include "sm.h"
@@ -108,8 +112,7 @@ rc_t btree_impl::_ux_verify_feed_page(
     } else {
         // if this is right-most, the high-fence key is actually the high-fence
         context.add_fact(page.pid().page, fact_level, true,
-            page.get_prefix_length(), page.get_prefix_key(),
-            page.get_fence_high_length_noprefix(), page.get_fence_high_key_noprefix());
+            page.get_fence_high_length(), page.get_fence_high_key());
     }
 
     // add expectation on children
@@ -127,8 +130,7 @@ rc_t btree_impl::_ux_verify_feed_page(
                 page.get_fence_low_length(), page.get_fence_low_key());
         if (page.nrecs() == 0) {
             context.add_expectation (page.pid0(), child_level, true,
-                page.get_prefix_length(), page.get_prefix_key(),
-                page.get_fence_high_length_noprefix(), page.get_fence_high_key_noprefix());
+                page.get_fence_high_length(), page.get_fence_high_key());
         } else {
             // the first separator key will be high of pid0, low of child(0)
             page.node_key(0, key);
@@ -146,8 +148,7 @@ rc_t btree_impl::_ux_verify_feed_page(
             } else {
                 //last child's high = parent's high
                 context.add_expectation (pid_next.page, child_level, true,
-                    page.get_prefix_length(), page.get_prefix_key(),
-                    page.get_fence_high_length_noprefix(), page.get_fence_high_key_noprefix());
+                    page.get_fence_high_length(), page.get_fence_high_key());
             }
         }
     }
@@ -156,8 +157,7 @@ rc_t btree_impl::_ux_verify_feed_page(
     if (page.get_blink()) {
         // low-fence of next page should be high-fence of this page
         context.add_expectation (page.get_blink(), page.level(), false,
-                page.get_prefix_length(), page.get_prefix_key(),
-                page.get_fence_high_length_noprefix(), page.get_fence_high_key_noprefix());
+                page.get_fence_high_length(), page.get_fence_high_key());
         context.add_expectation (page.get_blink(), page.level(), true,
                 page.get_chain_fence_high_length(), page.get_chain_fence_high_key());
     }
@@ -283,19 +283,23 @@ verification_context::~verification_context ()
     _bitmap = NULL;
 }
 
-void verification_context::add_fact (shpid_t pid, int16_t level, bool high,
-    size_t prefix_len, const char* prefix, size_t suffix_len, const char* suffix)
+void verification_context::add_fact (
+    shpid_t pid, int16_t level, bool high, size_t key_len, const char* key)
 {
     w_assert1(pid);
     w_assert1(level >= 0 || level == NOCHECK_ROOT_LEVEL);
+
+#if W_DEBUG_LEVEL > 5
+    cvec_t v (key, key_len);
+    cout << "add_fact pid=" << pid << ", level=" << level
+            << ", high=" << high << ", key=" << v << endl;
+#endif // W_DEBUG_LEVEL
+    
     uint32_t hash_value = 0;
     hash_value = _modify_hash(pid, hash_value);
     hash_value = _modify_hash(level, hash_value);
     hash_value = _modify_hash(high, hash_value);
-    hash_value = _modify_hash(prefix, prefix_len, hash_value);
-    if (suffix != NULL) {
-        hash_value = _modify_hash(suffix, suffix_len, hash_value);
-    }
+    hash_value = _modify_hash(key, key_len, hash_value);
     uint byte_place = (hash_value >> 3) % (1 << (_hash_bits - 3));
     w_assert1(byte_place < (uint) _bitmap_size);
     uint bit_place = hash_value & 0x7;
@@ -303,11 +307,9 @@ void verification_context::add_fact (shpid_t pid, int16_t level, bool high,
     uint8_t* byte = reinterpret_cast<uint8_t*> (_bitmap + byte_place);
     *byte ^= (1 << bit_place);
 }
-
-
 void verification_context::add_expectation (
-    shpid_t pid, int16_t level, bool high, size_t prefix_len, const char* prefix, size_t suffix_len, const char* suffix) {
-    add_fact (pid, level, high, prefix_len, prefix, suffix_len, suffix);
+    shpid_t pid, int16_t level, bool high, size_t key_len, const char* key) {
+    add_fact (pid, level, high, key_len, key);
 }
 
 uint32_t verification_context::_modify_hash (

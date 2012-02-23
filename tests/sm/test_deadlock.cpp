@@ -1,7 +1,3 @@
-#define SM_SOURCE
-
-#define SM_LEVEL 0
-#include "sm_int_1.h"
 #include "btree_test_env.h"
 #include "gtest/gtest.h"
 #include "sm_vas.h"
@@ -13,13 +9,6 @@
 #include "xct.h"
 #include "w_gettimeofday.h"
 
-#include "smthread.h"
-#include "sthread.h"
-#include "lock_x.h"
-#include "lock.h"
-#include "lock_core.h"
-
-
 btree_test_env *test_env;
 
 /**
@@ -30,8 +19,6 @@ int locktable_size = 1 << 12;
 const int LONGTIME_USEC = 20000; // like forever in the tests.
 
 rc_t _prep(ss_m* ssm, test_volume_t *test_volume, stid_t &stid) {
-//g_deadlock_use_waitmap_obsolete = false;
-//g_deadlock_dreadlock_interval_ms = 0;
     EXPECT_TRUE(test_env->_use_locks);
     lpid_t root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
@@ -87,7 +74,7 @@ public:
             EXPECT_FALSE(_rc.is_error()) << _rc;
             g_xct()->set_query_concurrency(smlevel_0::t_cc_keyrange);            
             report_time();
-            std::cout << ":T" << _thid << " begins. fingerprint=" << get_fingerprint_map() << std::endl;
+            std::cout << ":T" << _thid << " begins." << std::endl;
         }
         void _commit() {
             _rc = ss_m::commit_xct();

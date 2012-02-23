@@ -1347,7 +1347,7 @@ bf_m::_fix(
         DBGTHRD( << "get_page " << pid << " returns " << rc );
         if (rc.is_error()) {
             // At this writing, the only error could be eBADVOL
-            w_assert1(rc.err_num() == eBADVOL);
+            w_assert0(rc.err_num() == eBADVOL);
 
             // publish will leave us with the given latch mode 
             // LATCH_NL means it'll be released.
