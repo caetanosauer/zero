@@ -8,6 +8,7 @@
 #include "w_defines.h"
 #include "w_base.h"
 #include "sm_vas.h"
+#include "page_bf_inline.h"
 #include "gtest/gtest.h"
 
 #if W_DEBUG_LEVEL > 3
@@ -32,8 +33,9 @@ struct test_volume_t {
 };
 
 const int default_quota_in_pages = 64;
-const int default_bufferpool_size_in_pages = 32;
+const int default_bufferpool_size_in_pages = 64;
 const int default_locktable_size = 1 << 6;
+const bool default_enable_swizzling = false;
 
 // a few convenient functions for testcases
 w_rc_t x_begin_xct(ss_m* ssm, bool use_locks);
@@ -150,7 +152,6 @@ public:
     crash_test_base *_context;
 };
 
-
 /**
  * Sets up log and volume for BTree testcases.
  * Register this environment to gtest in your main() function.
@@ -173,7 +174,14 @@ public:
                       bool use_locks = false,
                       int32_t lock_table_size = default_locktable_size,
                       int disk_quota_in_pages = default_quota_in_pages,
-                      int bufferpool_size_in_pages = default_bufferpool_size_in_pages);
+                      int bufferpool_size_in_pages = default_bufferpool_size_in_pages,
+                      uint32_t cleaner_threads = 1,
+                      uint32_t cleaner_interval_millisec_min       =   1000,
+                      uint32_t cleaner_interval_millisec_max       = 256000,
+                      uint32_t cleaner_write_buffer_pages          =     64,
+                      bool initially_enable_cleaners = true,
+                      bool enable_swizzling = default_enable_swizzling
+                     );
     /**
      * Overload to set additional parameters.
      * @param use_locks whether to use locks
@@ -187,6 +195,12 @@ public:
     int runBtreeTest (w_rc_t (*functor)(ss_m*, test_volume_t*),
                       bool use_locks, int32_t lock_table_size,
                       int disk_quota_in_pages, int bufferpool_size_in_pages,
+                      uint32_t cleaner_threads,
+                      uint32_t cleaner_interval_millisec_min,
+                      uint32_t cleaner_interval_millisec_max,
+                      uint32_t cleaner_write_buffer_pages,
+                      bool initially_enable_cleaners,
+                      bool enable_swizzling,
                       const std::vector<std::pair<const char*, const char*> > &additional_params);
 
     /**
@@ -198,7 +212,14 @@ public:
                       bool use_locks = false,
                       int32_t lock_table_size = default_locktable_size,
                       int disk_quota_in_pages = default_quota_in_pages,
-                      int bufferpool_size_in_pages = default_bufferpool_size_in_pages);
+                      int bufferpool_size_in_pages = default_bufferpool_size_in_pages,
+                      uint32_t cleaner_threads = 1,
+                      uint32_t cleaner_interval_millisec_min       =   1000,
+                      uint32_t cleaner_interval_millisec_max       = 256000,
+                      uint32_t cleaner_write_buffer_pages          =     64,
+                      bool initially_enable_cleaners = true,
+                      bool enable_swizzling = default_enable_swizzling
+                     );
     
     /**
      * Overload for additional params.
@@ -206,6 +227,12 @@ public:
     int runCrashTest (crash_test_base *context,
                       bool use_locks, int32_t lock_table_size,
                       int disk_quota_in_pages, int bufferpool_size_in_pages,
+                      uint32_t cleaner_threads,
+                      uint32_t cleaner_interval_millisec_min,
+                      uint32_t cleaner_interval_millisec_max,
+                      uint32_t cleaner_write_buffer_pages,
+                      bool initially_enable_cleaners,
+                      bool enable_swizzling,
                       const std::vector<std::pair<const char*, const char*> > &additional_params);
 
     void empty_logdata_dir();

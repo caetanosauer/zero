@@ -15,6 +15,7 @@
 #include "crash.h"
 #include "w_key.h"
 #include "xct.h"
+#include "page_bf_inline.h"
 
 rc_t btree_impl::_sx_create_tree(const stid_t &stid, lpid_t &root_pid)
 {
@@ -36,7 +37,7 @@ rc_t btree_impl::_ux_create_tree_core(const stid_t &stid, const lpid_t &root_pid
     w_assert1(infimum.is_constructed());
     supremum.construct_posinfkey();
     w_assert1(supremum.is_constructed());
-    W_DO(page.init_fix_steal(root_pid, root_pid.page,
+    W_DO(page.init_fix_steal(NULL, root_pid, root_pid.page,
         1, // level=1. initial tree has only one level
         0, // no child
         0, // no b-link page
@@ -72,7 +73,7 @@ btree_impl::_ux_shrink_tree_core(btree_p& rp)
     
     if( rp.nrecs() > 0 || rp.get_blink() != 0) {
         // then still not the time for shrink
-        W_DO (_ux_adopt_blink_all_core (rp_pid, rp, false));
+        W_DO (_ux_adopt_blink_all_core (rp, true, false));
         return RCOK;
     }
     w_assert1( rp.nrecs() == 0 && rp.get_blink() == 0);
@@ -80,10 +81,8 @@ btree_impl::_ux_shrink_tree_core(btree_p& rp)
     if (rp.pid0() != 0)  {
         //  The root has pid0. Copy child page over parent,
         //  and free child page.
-        lpid_t cp_pid = rp.pid();
-        cp_pid.page = rp.pid0();
         btree_p cp;
-        W_DO( cp.fix(cp_pid, LATCH_EX) );
+        W_DO( cp.fix_nonroot(rp, rp.vol(), rp.pid0(), LATCH_EX));
 
         // steal all from child
         w_keystr_t fence_low, fence_high, dummy_chain_high;
@@ -146,9 +145,6 @@ btree_impl::_ux_grow_tree_core(btree_p& rp, const lpid_t &cp_pid)
     cout << "TREE grow" <<endl;
 #endif 
 
-    lpid_t nxtblink = rp.pid();
-    nxtblink.page = rp.get_blink();
-    
     // create a new page that will take over all entries currently in the root.
     // this page will be the left-most child (pid0) of the root
     w_keystr_t cp_fence_low, cp_fence_high, cp_chain_high;
@@ -157,7 +153,7 @@ btree_impl::_ux_grow_tree_core(btree_p& rp, const lpid_t &cp_pid)
     rp.copy_chain_fence_high_key(cp_chain_high);
 
     btree_p cp;
-    W_DO (cp.init_fix_steal(cp_pid, rp.pid().page, rp.level(), rp.pid0(), // copy pid0 of root too
+    W_DO (cp.init_fix_steal(&rp, cp_pid, rp.pid().page, rp.level(), rp.pid0(), // copy pid0 of root too
         rp.get_blink(),
         cp_fence_low, cp_fence_high, cp_chain_high, // use current root's fence keys
         &rp, 0, rp.nrecs() // steal everything from root

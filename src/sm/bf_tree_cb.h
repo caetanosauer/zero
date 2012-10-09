@@ -8,9 +8,6 @@
 #include "sm_s.h"
 #include <string.h>
 
-/** a swizzled pointer (page ID) has this bit ON. */
-const uint32_t SWIZZLED_PID_BIT = 0x80000000;
-
 /**
  * \Brief Control block in the new buffer pool class.
  * \ingroup SSMBUFPOOL
@@ -88,18 +85,29 @@ struct bf_tree_cb_t {
     /** ref count (for clock algorithm). approximate, so not protected by locks. */
     uint16_t                    _refbit_approximate;// +2  -> 14
 
+#ifdef BP_MAINTAIN_PARNET_PTR
     /**
      * Used to trigger LRU-update 'about' once in 100 or 1000, and so on. approximate, so not protected by locks.
      */
     uint16_t                    _counter_approximate;// +2  -> 16
+#else // BP_MAINTAIN_PARNET_PTR
+    fill16                      _fill_counter_approximate;
+#endif // BP_MAINTAIN_PARNET_PTR
 
     /** recovery lsn. */
     lsndata_t volatile          _rec_lsn;       // +8 -> 24
 
+#ifdef BP_MAINTAIN_PARNET_PTR
     /** Pointer to the parent page. zero for root pages. */
     bf_idx volatile             _parent;        // +4 -> 28
+#else // BP_MAINTAIN_PARNET_PTR
+    fill32                      _fill_par;
+#endif // BP_MAINTAIN_PARNET_PTR
     
-    fill32                      _fill32;        // +4 -> 32
+    /** Whether this page is swizzled from the parent. */
+    bool                        _swizzled;      // +1 -> 29
+    fill8                       _fill8;         // +1 -> 30
+    fill16                      _fill16;        // +2 -> 32
 
     /** if not zero, this page must be written out after this dependency page. */
     bf_idx volatile             _dependency_idx;// +4 -> 36
@@ -125,4 +133,5 @@ struct bf_tree_cb_t {
     bf_tree_cb_t(const bf_tree_cb_t&);
     bf_tree_cb_t& operator=(const bf_tree_cb_t&);
 };
+
 #endif // BF_TREE_CB_H

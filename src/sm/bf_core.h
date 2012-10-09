@@ -1,3 +1,4 @@
+#ifdef COMMENTED_OUT
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
    
@@ -263,3 +264,4 @@ extern "C" void dump_page_mutexes() ;
 /*<std-footer incl-file-exclusion='BF_CORE_H'>  -- do not edit anything below this line -- */
 
 #endif          /*</std-footer>*/
+#endif // COMMENTED_OUT

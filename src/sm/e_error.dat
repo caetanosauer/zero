@@ -125,5 +125,8 @@ WRITEORDERLOOP        Causes a loop in write order dependency
 # LIL related
 LIL_TOOMANYVOL_XCT    Accessing too many volumes in one transaction
 LIL_TOOMANYST_XCT    Accessing too many stores in one transaction
+
+# buffer pointer swizzling related
+BF_DIRECTFIX_SWIZZLED_PTR   Requested a direct page fix with swizzled pointer.
 }
 

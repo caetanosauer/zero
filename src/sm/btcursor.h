@@ -3,8 +3,7 @@
 
 #include "w_defines.h"
 #include "w_key.h"
-
-/*  -- do not edit anything above this line --   </std-header>*/
+#include "bf_tree.h"
 
 #ifdef __GNUG__
 #pragma interface
@@ -20,7 +19,7 @@ class btrec_t;
  * This class is used as follows.
  * \verbatim
     // constructs a cursor with search conditions.
-    bt_cursor_t cursor (root_pid,
+    bt_cursor_t cursor (volid, storeid,
         lower_bound, lower_inclusive,
         upper_bound, upper_inclusive,
         is_forward_direction);    
@@ -64,20 +63,21 @@ class btrec_t;
  * concurrency. See ticket:91 for more details.
  * \ingroup SSMBTREE
  */
-class bt_cursor_t : private smlevel_2 
-{
+class bt_cursor_t : private smlevel_2 {
 public:
     /**
      * Constructs a full scan cursor.
-     * @param[in] root_pid root page id of the BTree
+     * @param[in] vol Volume ID
+     * @param[in] store Store ID
      * @param[in] forward true if this cursor goes forward from lower bound, false if
      * this cursor goes backwards from upper bound.
      */
-    bt_cursor_t(const lpid_t& root_pid, bool forward);
+    bt_cursor_t(volid_t vol, snum_t store, bool forward);
 
     /**
      * Creates a BTree cursor object for the given search conditions.
-     * @param[in] root_pid root page id of the BTree
+     * @param[in] vol Volume ID
+     * @param[in] store Store ID
      * @param[in] lower lower bound of the search range
      * @param[in] lower_inclusive true if returning a tuple exactly matching the lower bound
      * @param[in] upper upper bound of the search range
@@ -86,12 +86,12 @@ public:
      * this cursor goes backwards from upper bound.
      */
     bt_cursor_t(
-        const lpid_t&     root_pid,
+        volid_t vol, snum_t store,
         const w_keystr_t& lower, bool lower_inclusive,
         const w_keystr_t& upper, bool upper_inclusive,
         bool              forward);
 
-    ~bt_cursor_t() {}
+    ~bt_cursor_t() {close();}
 
     /**
      * Moves the BTree cursor to next slot.
@@ -114,13 +114,15 @@ public:
 
 private:
     void        _init(
-        const lpid_t&     root_pid,
+        volid_t vol, snum_t store,
         const w_keystr_t& lower,  bool lower_inclusive,
         const w_keystr_t& upper,  bool upper_inclusive,
         bool              forward);
     rc_t        _locate_first();
     rc_t        _check_page_update(btree_p &p);
     rc_t        _find_next(btree_p &p, bool &eof);
+    void        _release_current_page();
+    void        _set_current_page(btree_p &page);
 
     /**
      * \brief Chooses next slot and potentially next page for cursor access.
@@ -140,7 +142,8 @@ private:
     */
     rc_t         _make_rec(const btree_p& page);
 
-    lpid_t      _root_pid;
+    volid_t     _vol;
+    snum_t      _store;
     w_keystr_t  _lower;
     w_keystr_t  _upper;
     bool        _lower_inclusive;
@@ -162,8 +165,10 @@ private:
     /** true if no element left. */
     bool        _eof;
 
-    /** id of current page. */
+    /** id of current page. current page has additional pin_count for refix(). */
     shpid_t     _pid;
+    /** current page's corresponding slot index in the bufferpool. */
+    pin_for_refix_holder _pid_bfidx;
     /** current slot in the current page. */
     slotid_t    _slot;
     /** lsn of the current page AS OF last access. */

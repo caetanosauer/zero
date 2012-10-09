@@ -21,6 +21,7 @@ foreach(_file ${ST_ERROR_GENFILES_H})
         COMMAND perl ${CMAKE_SOURCE_DIR}/tools/errors.pl -d -e ${CMAKE_CURRENT_SOURCE_DIR}/st_error.dat
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/st_error.dat
     )
+    set(GENFILES_B_H ${GENFILES_B_H} ${CMAKE_CURRENT_BINARY_DIR}/${_file})
 endforeach()
 add_custom_target(ST_ERROR_GENFILES DEPENDS ${ST_ERROR_GENFILES_H})
 add_dependencies(sthread ST_ERROR_GENFILES)
@@ -35,6 +36,7 @@ foreach(_file ${STHREAD_GENFILES_FILES})
         COMMAND perl ${CMAKE_SOURCE_DIR}/tools/stats.pl ${CMAKE_CURRENT_SOURCE_DIR}/sthread_stats.dat
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/sthread_stats.dat
     )
+    set(GENFILES_B_H ${GENFILES_B_H} ${CMAKE_CURRENT_BINARY_DIR}/${_file})
 endforeach()
 add_custom_target(STHREAD_GENFILES DEPENDS ${STHREAD_GENFILES_FILES})
 add_dependencies(sthread STHREAD_GENFILES)
@@ -43,7 +45,7 @@ SET (GENFILES_H ${ST_ERROR_GENFILES_H} ${STHREAD_GENFILES_H})
 
 ########### install files ###############
 
-install(FILES ${GENFILES_H}
+install(FILES ${GENFILES_B_H}
   ${CMAKE_CURRENT_SOURCE_DIR}/auto_release.h
   ${CMAKE_CURRENT_SOURCE_DIR}/errlog.h
   ${CMAKE_CURRENT_SOURCE_DIR}/critical_section.h

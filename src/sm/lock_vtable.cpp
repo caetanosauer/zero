@@ -46,7 +46,7 @@ const char *lock_vtable_attr_names[] =
 static vtable_names_init_t names_init(lock_last, lock_vtable_attr_names);
 
 int
-lock_core_m::collect( vtable_t& v, bool names_too)
+lock_core_m::collect( vtable_t& /*v*/, bool /*names_too*/)
 {
     /*
     // NOTE: This does not have to be atomic or thread-safe.

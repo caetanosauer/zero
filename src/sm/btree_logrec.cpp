@@ -12,6 +12,7 @@
 #include "btree_p.h"
 #include "btree_impl.h"
 #include "vec_t.h"
+#include "page_bf_inline.h"
 
 struct btree_insert_t {
     shpid_t        root_shpid;
@@ -57,7 +58,7 @@ btree_insert_log::undo(page_p* W_IFDEBUG9(page))
     key.construct_from_keystr(dp->data, dp->klen);
 
     // ***LOGICAL*** don't grab locks during undo
-    rc_t rc = smlevel_2::bt->remove_as_undo(root_pid, key); 
+    rc_t rc = smlevel_2::bt->remove_as_undo(_vid.vol, _snum, key); 
     if(rc.is_error()) {
         W_FATAL(rc.err_num());
     }
@@ -130,7 +131,7 @@ btree_update_log::undo(page_p*)
     old_el.put(dp->_data + dp->_klen, dp->_old_elen);
 
     // ***LOGICAL*** don't grab locks during undo
-    rc_t rc = smlevel_2::bt->update_as_undo(root_pid, key, old_el); 
+    rc_t rc = smlevel_2::bt->update_as_undo(_vid.vol, _snum, key, old_el); 
     if(rc.is_error()) {
         W_FATAL(rc.err_num());
     }
@@ -204,7 +205,7 @@ void btree_overwrite_log::undo(page_p*)
     const char* old_el = dp->_data + dp->_klen;
 
     // ***LOGICAL*** don't grab locks during undo
-    rc_t rc = smlevel_2::bt->overwrite_as_undo(root_pid, key, old_el, offset, elen); 
+    rc_t rc = smlevel_2::bt->overwrite_as_undo(_vid.vol, _snum, key, old_el, offset, elen); 
     if(rc.is_error()) {
         W_FATAL(rc.err_num());
     }
@@ -307,7 +308,7 @@ btree_header_log::btree_header_log(const page_p& p,
     int16_t btree_chain_fence_high_length
 )
 {
-    w_assert3(p.tag() == page_p::t_btree_p);
+    w_assert3(p.tag() == t_btree_p);
     fill(&p.pid(), p.tag(), (new (data()) btree_header_change_t(
         p, btree_pid0, btree_level, btree_blink,
                 btree_chain_fence_high_length))->size());
@@ -396,7 +397,7 @@ w_keystr_t btree_ghost_t::get_key (size_t i) const {
 btree_ghost_mark_log::btree_ghost_mark_log(const page_p& p,
     const vector<slotid_t>& slots)
 {
-    w_assert0(p.tag() == page_p::t_btree_p);
+    w_assert0(p.tag() == t_btree_p);
     const btree_p& bp = * (btree_p*) &p;
     fill(&p.pid(), p.tag(), (new (data()) btree_ghost_t(bp, slots))->size());
 }
@@ -409,7 +410,7 @@ btree_ghost_mark_log::undo(page_p*)
     lpid_t root_pid (_vid, _snum, dp->root_shpid);
     for (size_t i = 0; i < dp->cnt; ++i) {
         w_keystr_t key (dp->get_key(i));
-        rc_t rc = smlevel_2::bt->undo_ghost_mark(root_pid, key);
+        rc_t rc = smlevel_2::bt->undo_ghost_mark(_vid.vol, _snum, key);
         if(rc.is_error()) {
             cerr << " key=" << key << endl << " rc =" << rc << endl;
             W_FATAL(rc.err_num());
@@ -442,7 +443,7 @@ btree_ghost_mark_log::redo(page_p *page)
 btree_ghost_reclaim_log::btree_ghost_reclaim_log(const page_p& p,
     const vector<slotid_t>& slots)
 {
-    w_assert0(p.tag() == page_p::t_btree_p);
+    w_assert0(p.tag() == t_btree_p);
     const btree_p& bp = * (btree_p*) &p;
     // ghost reclaim is single-log system transaction. so, use data_ssx()
     fill(&p.pid(), p.tag(), (new (data_ssx()) btree_ghost_t(bp, slots))->size());
@@ -483,7 +484,7 @@ btree_ghost_reserve_t::btree_ghost_reserve_t(const w_keystr_t& key, int rec_len)
 btree_ghost_reserve_log::btree_ghost_reserve_log (
     const page_p& p, const w_keystr_t& key, int record_size)
 {
-    w_assert0(p.tag() == page_p::t_btree_p);
+    w_assert0(p.tag() == t_btree_p);
     // ghost creation is single-log system transaction. so, use data_ssx()
     fill(&p.pid(), p.tag(), (new (data_ssx()) btree_ghost_reserve_t(key, record_size))->size());
     w_assert0(is_single_sys_xct());
@@ -528,7 +529,7 @@ btree_blink_split_log::btree_blink_split_log (const page_p& p,
     shpid_t new_pid, int32_t right_begins_from,
     const w_keystr_t* new_child_key, shpid_t new_child_pid)
 {
-    w_assert0(p.tag() == page_p::t_btree_p);
+    w_assert0(p.tag() == t_btree_p);
     fill(&p.pid(), p.tag(), (new (_data) btree_blink_split_t(new_pid, right_begins_from, new_child_key, new_child_pid))->size());
 }
 void btree_blink_split_log::redo(page_p* page)
@@ -578,7 +579,7 @@ struct btree_blink_norecord_split_t {
 btree_blink_norecord_split_log::btree_blink_norecord_split_log(const page_p& p, shpid_t blink,
     const w_keystr_t& fence_high, const w_keystr_t& chain_fence_high)
 {
-    w_assert0(p.tag() == page_p::t_btree_p);
+    w_assert0(p.tag() == t_btree_p);
     fill(&p.pid(), p.tag(), (new (_data) btree_blink_norecord_split_t(blink, fence_high, chain_fence_high))->size());
 }
 void btree_blink_norecord_split_log::redo(page_p* page)
@@ -611,7 +612,7 @@ struct btree_blink_adopt_parent_t {
 btree_blink_adopt_parent_log::btree_blink_adopt_parent_log (const page_p& p,
     shpid_t new_child_pid, const w_keystr_t& new_child_key)
 {
-    w_assert0(p.tag() == page_p::t_btree_p);
+    w_assert0(p.tag() == t_btree_p);
     fill(&p.pid(), p.tag(), (new (_data) btree_blink_adopt_parent_t(new_child_pid, new_child_key))->size());
 }
 void btree_blink_adopt_parent_log::redo(page_p* page)
@@ -628,7 +629,7 @@ void btree_blink_adopt_parent_log::redo(page_p* page)
 }
 btree_blink_adopt_child_log::btree_blink_adopt_child_log (const page_p& p)
 {
-    w_assert0(p.tag() == page_p::t_btree_p);
+    w_assert0(p.tag() == t_btree_p);
     fill(&p.pid(), p.tag(), 0);
 }
 void btree_blink_adopt_child_log::redo(page_p* page)
@@ -642,7 +643,7 @@ void btree_blink_adopt_child_log::redo(page_p* page)
 // see ticket:39 for detailed spec
 btree_blink_merge_log::btree_blink_merge_log (const page_p& p)
 {
-    w_assert0(p.tag() == page_p::t_btree_p);
+    w_assert0(p.tag() == t_btree_p);
     const btree_p& bp = * (btree_p*) &p;
     // we just need merged page's id. that's it.
     *reinterpret_cast<shpid_t*> (_data) = bp.get_blink();
@@ -672,7 +673,7 @@ struct btree_blink_rebalance_t {
 
 btree_blink_rebalance_log::btree_blink_rebalance_log (const page_p& p,
         shpid_t parent_pid, int32_t move_count) {
-    w_assert0(p.tag() == page_p::t_btree_p);
+    w_assert0(p.tag() == t_btree_p);
     fill(&p.pid(), p.tag(), (new (_data) btree_blink_rebalance_t(parent_pid, move_count))->size());
 }
 
@@ -688,9 +689,7 @@ void btree_blink_rebalance_log::redo(page_p* page)
     // where "this" is already written out but parent isn't yet.
     // so, "this" must be the child, stealing things from parent. oh lame kid.
     btree_p foster_parent_p;
-    lpid_t foster_parent_pid = bp->pid();
-    foster_parent_pid.page = dp->_foster_parent_pid;
-    rc_t rc = foster_parent_p.fix(foster_parent_pid, LATCH_EX);
+    rc_t rc = foster_parent_p.fix_direct(bp->vol(), dp->_foster_parent_pid, LATCH_EX); // in REDO, so fix_direct should be safe
     w_assert1(!rc.is_error());
     rc_t rc_rb = btree_impl::_ux_rebalance_blink_core(foster_parent_p, *bp, dp->_move_count);
     w_assert1(!rc_rb.is_error());
@@ -708,7 +707,7 @@ struct btree_blink_deadopt_real_parent_t {
 
 btree_blink_deadopt_real_parent_log::btree_blink_deadopt_real_parent_log (
     const page_p& p, shpid_t deadopted_pid, int32_t foster_slot) {
-    w_assert0(p.tag() == page_p::t_btree_p);
+    w_assert0(p.tag() == t_btree_p);
 #if W_DEBUG_LEVEL>0
     const btree_p& bp = * (btree_p*) &p;
     w_assert1(bp.is_node());
@@ -742,7 +741,7 @@ struct btree_blink_deadopt_foster_parent_t {
 };
 btree_blink_deadopt_foster_parent_log::btree_blink_deadopt_foster_parent_log (const page_p& p,
     shpid_t deadopted_pid, const w_keystr_t& low_key, const w_keystr_t& high_key) {
-    w_assert0(p.tag() == page_p::t_btree_p);
+    w_assert0(p.tag() == t_btree_p);
     fill(&p.pid(), p.tag(), (new (_data) btree_blink_deadopt_foster_parent_t(deadopted_pid, low_key, high_key))->size());
 }
 

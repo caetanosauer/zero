@@ -241,15 +241,19 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *      Must be set to "yes" for sm_num_page_writers to have any effect.
  *      - default: yes
  *      - required?: no
+ * 
+ * -sm_bufferpool_swizzle
+ *      - type: Boolean
+ *      - description: Enables pointer swizzling in buffer pool.
+ *      - default: no
+ *      - required?: no
+ * 
  *
  * -sm_num_page_writers
  *      - type: number
- *      - description: greater than or equal to 0; this is the number of
- *      background-flushing threads for each volume. If you have 
- *      lots of threads, 
- *      a huge buffer pool, and few volumes, you should increase this.
- *      If sm_backgroundflush is "no", this value is ignored.
- *      - default: 2
+ *      - description: greater than or equal to 1; this is the number of
+ *      background-flushing threads.
+ *      - default: 1
  *      - required?: no
  *
  * -sm_prefetch
@@ -394,6 +398,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 /********************************************************************/
 
 class page_p;
+class btree_p;
 class xct_t;
 class device_m;
 class vec_t;
@@ -1223,23 +1228,6 @@ public:
      */
     static rc_t            xct_collect(vtable_t&v, bool names_too=true);
 
-    /**\brief Collect buffer pool information in a virtual table.
-     * \ingroup SSMVTABLE
-     * \details
-     * @param[out] v  The virtual table to populate.
-     * @param[in] names_too  If true, make the 
-     *            first row of the table a list of the attribute names.
-     *
-     * \attention Be wary of using this with a large buffer pool.
-     *
-     * All attribute values will be strings.
-     * The virtual table v can be printed with its output operator
-     * operator<< for ostreams.
-     *
-     * \attention Not atomic. Can yield stale data. 
-     */
-    static rc_t            bp_collect(vtable_t&v, bool names_too=true);
-
     /**\brief Collect lock table information in a virtual table.
      * \ingroup SSMVTABLE
      * \details
@@ -1285,10 +1273,9 @@ public:
      */
     static rc_t            checkpoint();
 
-    /**\brief Force the buffer pool to flush its pages to disk.
-     * \ingroup SSMAPIDEBUG
-     * @param[in] invalidate   True means discard pages after flush.
-     * \note For debugging only!
+    /**
+     * \brief Force the buffer pool to flush its pages to disk.
+     * \ingroup SSMBUFPOOL
      * \attention Do not call force_buffers with anything pinned.
      * You may cause latch-latch deadlocks, as this method has
      * to scan the entire buffer pool and possibly EX-latch pages to prevent
@@ -1296,37 +1283,14 @@ public:
      * Since the page-order is essentially random, we cannot
      * preclude latch-latch deadlocks with other threads.
      */
-    static rc_t            force_buffers(bool invalidate = false);
+    static rc_t            force_buffers();
 
-    /**\brief Force the buffer pool to flush the volume header page(s)
-     * to disk.
-     * \ingroup SSMAPIDEBUG
-     * @param[in] vid   ID of the volume of interest
-     * \note For debugging only!
-     * \attention Do not call force_vol_hdr_buffers with anything pinned.
-     * You could cause latch-latch deadlocks, as this method has
-     * to scan the entire buffer pool and possibly EX-latch some pages.
-     * Since the page-order is essentially random, we cannot
-     * preclude latch-latch deadlocks with other threads.
+    /**
+     * \brief Force the buffer pool to flush to disk all pages for the given volume.
+     * \ingroup SSMBUFPOOL
+     * @param[in] vol Volume whose pages are to be flushed.
      */
-    static rc_t            force_vol_hdr_buffers( const vid_t&   vid);
-
-    /**\brief Force the buffer pool to flush to disk all pages
-     * for the given store.
-     * \ingroup SSMAPIDEBUG
-     * @param[in] stid   Store whose pages are to be flushed.
-     * @param[in] invalidate   True means discard the pages after flushing.
-     * \note For debugging only!
-     * \attention Do not call force_store_buffers with anything pinned.
-     * You may cause latch-latch deadlocks, as this method has
-     * to scan the entire buffer pool and, if invalide==true,
-     * EX-latch pages to prevent others from updating 
-     * while it forces to disk.
-     * Since the page-order is essentially random, we cannot
-     * preclude latch-latch deadlocks with other threads.
-     */
-    static rc_t            force_store_buffers(const stid_t & stid,
-                                               bool invalidate);
+    static rc_t            force_volume(volid_t vol);
 
     /**\cond skip 
      * Do not document. Very un-thread-safe.
@@ -1335,11 +1299,6 @@ public:
     static rc_t            dump_locks(ostream &o);
     static rc_t            dump_locks(); // defaults to std::cout
 
-    static rc_t            snapshot_buffers(
-        u_int&                 ndirty, 
-        u_int&                 nclean, 
-        u_int&                 nfree,
-        u_int&                 nfixed);
     /**\endcond skip */
 
     /**\brief Get a copy of the statistics from an attached instrumented transaction.
@@ -1745,11 +1704,6 @@ public:
         smksize_t&                quota_KB, 
         smksize_t&                quota_used_KB);
 
-    /**\cond skip */
-    // check_volume_page_types: strictly for debugging/testing
-    static rc_t             check_volume_page_types(vid_t vid);
-    /**\endcond skip */
-
 
     /**\brief Analyze a volume and report statistics regarding disk usage.
      * \ingroup SSMVOL
@@ -2046,7 +2000,7 @@ public:
      * \ingroup SSMBTREE
      * @copydetails btree_impl::_sx_defrag_page
     */
-    static rc_t           defrag_index_page(const lpid_t &pid);
+    static rc_t           defrag_index_page(btree_p &page);
 
     /**
     *  Verifies the integrity of B-Tree index using the fence-key bitmap technique.
@@ -2165,6 +2119,9 @@ private:
     static option_t* _error_loglevel;
     static option_t* _log_warn_percent;
     static option_t* _num_page_writers;
+    static option_t* _bufferpool_swizzle;
+    static option_t* _cleaner_interval_millisec_min;
+    static option_t* _cleaner_interval_millisec_max;
     static option_t* _logging;
 
 

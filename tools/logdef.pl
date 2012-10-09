@@ -235,9 +235,9 @@ CLASSDEF
 	print STUB "    xct_t* xd = xct();\n";
         print STUB "    bool should_log = smlevel_1::log && smlevel_0::logging_enabled";
 	if($aflag==0) {
-	    if ($page eq "page") {
-		print STUB "\n\t\t\t&& (page.get_store_flags() & page.st_tmp) == 0";
-	    }
+#	    if ($page eq "page") {
+#		print STUB "\n\t\t\t&& (page.get_store_flags() & page.st_tmp) == 0";
+#	    }
 	    print STUB "\n\t\t\t&& xd && xd->is_log_on()";
 	}
 	print STUB ";\n";

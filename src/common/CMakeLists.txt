@@ -29,12 +29,13 @@ foreach(_file ${OPT_ERROR_GENFILES_H})
         COMMAND perl ${CMAKE_SOURCE_DIR}/tools/errors.pl -d ${CMAKE_CURRENT_SOURCE_DIR}/opt_error.dat
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/opt_error.dat
     )
+    set (OPT_ERROR_GENFILES_B_H ${OPT_ERROR_GENFILES_B_H} ${CMAKE_CURRENT_BINARY_DIR}/${_file})
 endforeach()
 add_custom_target(OPT_ERROR_GENFILES DEPENDS ${OPT_ERROR_GENFILES_H})
 add_dependencies(common OPT_ERROR_GENFILES)
 
 
-set (GENFILES ${OPT_ERROR_GENFILES_H})
+set (GENFILES ${OPT_ERROR_GENFILES_B_H})
 ########### install files ###############
 
 install(FILES

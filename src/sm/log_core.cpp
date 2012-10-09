@@ -77,6 +77,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 // chkpt.h needed to kick checkpoint thread
 #include "chkpt.h"
+#include "bf_tree.h"
 
 #include <sstream>
 #include <w_strstream.h>
@@ -322,7 +323,7 @@ log_core::_flushX(lsn_t start_lsn,
             DO_PTHREAD(pthread_mutex_lock(&_scavenge_lock));
         retry:
             // need predicates, lest we be in shutdown()
-            if(bf) bf->activate_background_flushing();
+            if(bf) bf->wakeup_cleaners();
             if(smlevel_1::chkpt != NULL) smlevel_1::chkpt->wakeup_and_take();
             u_int oldest = global_min_lsn().hi();
             if(oldest + PARTITION_COUNT == start_lsn.file()) {
@@ -659,7 +660,7 @@ partition_t        *
 log_core::_close_min(partition_number_t n)
 {
     // kick the cleaner thread(s)
-    if(bf) bf->activate_background_flushing();
+    if(bf) bf->wakeup_cleaners();
     
     FUNC(log_core::close_min);
     
@@ -710,7 +711,7 @@ log_core::_close_min(partition_number_t n)
         }
         
         if(tries++ > 8) W_FATAL(smlevel_0::eOUTOFLOGSPACE);
-        if(bf) bf->activate_background_flushing();
+        if(bf) bf->wakeup_cleaners();
         me()->sleep(1000);
         goto again;
     }

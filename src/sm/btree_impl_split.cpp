@@ -9,6 +9,7 @@
 #define BTREE_C
 
 #include "sm_int_2.h"
+#include "page_bf_inline.h"
 #include "btree_p.h"
 #include "btree_impl.h"
 #include "crash.h"
@@ -17,6 +18,8 @@
 #include "sm.h"
 #include "xct.h"
 #include "bf.h"
+#include "bf_tree.h"
+#include "sm_int_0.h"
 
 rc_t btree_impl::_sx_split_blink(btree_p &page, lpid_t &new_page_id, const w_keystr_t &triggering_key)
 {
@@ -61,7 +64,7 @@ rc_t btree_impl::_ux_split_blink_core(btree_p &page, const lpid_t &new_page_id, 
         // these both log and apply
         // child is just making an empty page
         btree_p new_page;
-        W_DO(new_page.init_fix_steal(new_page_id, page.btree_root(), page.level(), new_child_pid,
+        W_DO(new_page.init_fix_steal(&page, new_page_id, page.btree_root(), page.level(), new_child_pid,
             page.get_blink(), mid_key, old_high, new_chain_high)); // nothing to steal
         // page is just setting new fence key and blink pointer
         w_assert1 (new_page.lsn().valid());
@@ -116,7 +119,7 @@ rc_t btree_impl::_ux_split_blink_apply(btree_p &page,
     // not fix(), but a special fix() for initial allocation of BTree page.
     btree_p new_page;
     w_keystr_t empty_key;
-    W_DO(new_page.init_fix_steal(new_pid, page.btree_root(), page.level(), new_pid0,
+    W_DO(new_page.init_fix_steal(&page, new_pid, page.btree_root(), page.level(), new_pid0,
         page.get_blink(), // the new page jumps b/w old and its b-link (if exists)
         mid_key, high_key, // [mid - high]
         was_right_most ? empty_key : chain_high_key, // if the left page was right-most, the new-page is the new right-most. so no chain-high
@@ -127,7 +130,13 @@ rc_t btree_impl::_ux_split_blink_apply(btree_p &page,
     // foster-parent should be written later because it's the data source
     page.set_dirty();
     new_page.set_dirty();
-    W_DO (bf_m::register_write_order_dependency(page._pp, new_page._pp));
+    bool registered = smlevel_0::bf->register_write_order_dependency(page._pp, new_page._pp);
+    // this MIGHT cause a cycle in bufferpool, so we should check it.
+    if (!registered) {
+        // TODO this should be an additional 'super-dirty' flag in the bufferpool.
+        // so that the cleaner will write them out before anything else.
+        DBGOUT1 (<< "oops, couldn't force write order dependency. this should be treated with care");
+    }
 
     w_assert3(new_page.is_consistent(true, false));
     w_assert1(new_page.is_fixed());
@@ -137,7 +146,7 @@ rc_t btree_impl::_ux_split_blink_apply(btree_p &page,
     // However, we can't use the "page" itself to construct "page".
     page_s scratch;
     ::memcpy (&scratch, page._pp, sizeof(scratch)); // thus get a copy
-    btree_p scratch_p (&scratch, 0);
+    btree_p scratch_p (&scratch);
     W_DO(page.format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(), scratch_p.pid0(),
         new_page.pid().page,  // also set blink pointer to new page
         low_key, mid_key, chain_high_key, // mid_key is the new high key
@@ -161,18 +170,17 @@ rc_t btree_impl::_ux_split_blink_apply(btree_p &page,
     return RCOK;
 }
 
-rc_t btree_impl::_sx_adopt_blink_all (
-    const lpid_t &root_pid, btree_p &parent, bool recursive)
+rc_t btree_impl::_sx_adopt_blink_all (btree_p &root, bool recursive)
 {
     FUNC(btree_impl::_sx_adopt_blink_all);
     sys_xct_section_t sxs;
     W_DO(sxs.check_error_on_start());
-    rc_t ret = _ux_adopt_blink_all_core(root_pid, parent, recursive);
+    rc_t ret = _ux_adopt_blink_all_core(root, true, recursive);
     W_DO (sxs.end_sys_xct (ret));
     return ret;
 }
 rc_t btree_impl::_ux_adopt_blink_all_core (
-    const lpid_t &root_pid, btree_p &parent, bool recursive)
+    btree_p &parent, bool is_root, bool recursive)
 {
     // TODO this should use the improved tree-walk-through ticket:62
     w_assert1 (xct()->is_sys_xct());
@@ -185,17 +193,16 @@ rc_t btree_impl::_ux_adopt_blink_all_core (
             // also adopt at all children recursively
             for (int i = -1; i < parent.nrecs(); ++i) {
                 btree_p child;
-                lpid_t pid = parent.pid();
-                pid.page = i == -1 ? parent.pid0() : parent.child(i);
-                W_DO(child.fix(pid, LATCH_EX));
-                W_DO(_ux_adopt_blink_all_core(root_pid, child, true));
+                shpid_t shpid = i == -1 ? parent.get_blink() : parent.child(i);
+                W_DO(child.fix_nonroot(parent, parent.vol(), shpid, LATCH_EX));
+                W_DO(_ux_adopt_blink_all_core(child, false, true));
             }
         }
 
     }
     // after all adopts, if this parent is the root and has blink,
     // let's grow the tree
-    if  (parent.pid() == root_pid && parent.get_blink()) {
+    if  (is_root && parent.get_blink()) {
         W_DO(_sx_grow_tree(parent));
         W_DO(_ux_adopt_blink_sweep(parent));
     }
@@ -249,9 +256,7 @@ rc_t btree_impl::_sx_opportunistic_adopt_blink (btree_p &parent, btree_p &child,
     // let's try upgrading parent to EX latch. This highly likely fails in high-load situation,
     // so let's do it here to avoid system transaction creation cost.
     // we start from parent because EX latch on child is assured to be available in this order
-    bool would_block = false;
-    W_DO(parent.upgrade_latch_if_not_block(would_block));
-    if (would_block) {
+    if (!parent.upgrade_latch_conditional()) {
 #if W_DEBUG_LEVEL>1
         cout << "opportunistic_adopt gave it up because of parent. " << parent.pid() << ". do nothing." << endl;
 #endif
@@ -304,13 +309,12 @@ rc_t btree_impl::_ux_adopt_blink_sweep_approximate (btree_p &parent, shpid_t sur
     while (true) {
         clear_ex_need(parent.pid().page); // after these adopts, we don't need to be eager on this page.
         for (slotid_t i = -1; i < parent.nrecs(); ++i) {
-            lpid_t pid = parent.pid();
-            pid.page = i == -1 ? parent.pid0() : parent.child(i);
-            if (pid.page != surely_need_child_pid && get_expected_childrens(pid.page) == 0) {
+            shpid_t shpid = i == -1 ? parent.pid0() : parent.child(i);
+            if (shpid != surely_need_child_pid && get_expected_childrens(shpid) == 0) {
                 continue; // then doesn't matter (this could be false in low probability, but it's fine)
             }
             btree_p child;
-            rc_t rc = child.conditional_fix(pid, LATCH_EX);
+            rc_t rc = child.fix_nonroot(parent, parent.vol(), shpid, LATCH_EX, true);
             // if we can't instantly get latch, just skip it. we can defer it arbitrary
             if (rc.is_error()) {
                 continue;
@@ -324,10 +328,8 @@ rc_t btree_impl::_ux_adopt_blink_sweep_approximate (btree_p &parent, shpid_t sur
         if (parent.get_blink() == 0) {
             break;
         }
-        lpid_t pid = parent.pid();
-        pid.page = parent.get_blink();
         btree_p blink_p;
-        W_DO(blink_p.fix(pid, LATCH_EX)); // latch coupling
+        W_DO(blink_p.fix_nonroot(parent, parent.vol(), parent.get_blink(), LATCH_EX));// latch coupling
         parent.unfix();
         parent = blink_p;
     }
@@ -345,17 +347,14 @@ rc_t btree_impl::_ux_adopt_blink_sweep (btree_p &parent_arg)
     w_assert1 (parent.is_node());
     while (true) {
         for (slotid_t i = -1; i < parent.nrecs(); ++i) {
-            lpid_t pid = parent.pid();
-            pid.page = i == -1 ? parent.pid0() : parent.child(i);
+            shpid_t pid = i == -1 ? parent.pid0() : parent.child(i);
             btree_p child;
-            W_DO(child.fix(pid, LATCH_SH));
+            W_DO(child.fix_nonroot(parent, parent.vol(), pid, LATCH_SH));
             if (child.get_blink() == 0) {
                 continue; // no blink. just ignore
             }
             // we need to push this up. so, let's re-get EX latch
-            bool would_block = false;
-            W_DO(child.upgrade_latch_if_not_block(would_block));
-            if (would_block) {
+            if (!child.upgrade_latch_conditional()) {
                 continue; // then give up. no hurry.
             }
             W_DO(_ux_adopt_blink_core (parent, child));
@@ -364,10 +363,8 @@ rc_t btree_impl::_ux_adopt_blink_sweep (btree_p &parent_arg)
         if (parent.get_blink() == 0) {
             break;
         }
-        lpid_t pid = parent.pid();
-        pid.page = parent.get_blink();
         btree_p blink_p;
-        W_DO(blink_p.fix(pid, LATCH_EX)); // latch coupling
+        W_DO(blink_p.fix_nonroot(parent, parent.vol(), parent.get_blink(), LATCH_EX)); // latch coupling
         parent = blink_p;
     }
     return RCOK;

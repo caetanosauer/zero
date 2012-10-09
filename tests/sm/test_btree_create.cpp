@@ -56,26 +56,26 @@ w_rc_t create_check(ss_m* ssm, test_volume_t *test_volume) {
 
     W_DO(ssm->force_buffers());
     page_s buf;
-    for (shpid_t shpid = 1; shpid < 16; ++shpid) {
+    for (shpid_t shpid = 1; shpid < 5; ++shpid) {
         lpid_t pid (stid, shpid);
 
         cout << "checking pid " << shpid << ":";
         W_DO(io_m::read_page(pid, buf));
         cout << "full-pid=" << buf.pid << ",";
         switch (buf.tag) {
-            case page_p::t_bad_p: cout << "t_bad_p"; break;
-            case page_p::t_alloc_p: cout << "t_alloc_p"; break;
-            case page_p::t_stnode_p: cout << "t_stnode_p"; break;
-            case page_p::t_btree_p: cout << "t_btree_p"; break;
-            case page_p::t_any_p: cout << "t_any_p"; break;
+            case t_bad_p: cout << "t_bad_p"; break;
+            case t_alloc_p: cout << "t_alloc_p"; break;
+            case t_stnode_p: cout << "t_stnode_p"; break;
+            case t_btree_p: cout << "t_btree_p"; break;
+            case t_any_p: cout << "t_any_p"; break;
             default:
                 cout << "wtf?? " << buf.tag; break;
         }
-        if (buf.tag == page_p::t_btree_p) {
+        if (buf.tag == t_btree_p) {
             cout << "(level=" << buf.btree_level << ")";
         }
         
-        buf.tag = page_p::t_any_p; // hack.
+        buf.tag = t_any_p; // hack.
         cout << endl;
     }
 

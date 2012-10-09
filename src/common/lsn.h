@@ -177,6 +177,8 @@ typedef int64_t sm_diskaddr_t;
  */
 
 typedef uint64_t lsndata_t;
+const lsndata_t lsndata_null = 0;
+const lsndata_t lsndata_max = 0xFFFFFFFFFFFFFFFF;
 
 /*\bug GNATS 136: TODO make thread-safe for 32-bit platform */
 /**\brief Log Sequence Number. See \ref LSNS.
@@ -247,6 +249,7 @@ public:
     }
     
     lsn_t() : _data(0) { }
+    lsn_t(lsndata_t data) : _data(data) { }
 
     lsn_t(uint32_t f, sm_diskaddr_t r) : 
                 _data(from_file(f) | from_rba(r)) { }
@@ -255,6 +258,7 @@ public:
     lsn_t(const lsn_t & other) : _data(other._data) { }
 
     lsndata_t data()         const { return _data; }
+    void set (lsndata_t data) {_data = data;}
 
     bool valid()             const { 
                                     // valid is essentially iff file != 0

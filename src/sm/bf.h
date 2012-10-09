@@ -1,3 +1,4 @@
+#ifdef COMMENTED_OUT
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
    
@@ -339,3 +340,5 @@ bf_m::conditional_fix(
 /*<std-footer incl-file-exclusion='BF_H'>  -- do not edit anything below this line -- */
 
 #endif          /*</std-footer>*/
+
+#endif // COMMENTED_OUT

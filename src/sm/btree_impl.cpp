@@ -15,17 +15,18 @@
 #include "crash.h"
 #include "xct.h"
 #include <vector>
+#include "page_bf_inline.h"
 
 rc_t
 btree_impl::_ux_insert(
-    const lpid_t&        root,
+    volid_t vol, snum_t store,
     const w_keystr_t&    key,
     const cvec_t&        el)
 {
     FUNC(btree_impl::_ux_insert);
     INC_TSTAT(bt_insert_cnt);
     while (true) {
-        rc_t rc = _ux_insert_core (root, key, el);
+        rc_t rc = _ux_insert_core (vol, store, key, el);
         if (rc.is_error() && rc.err_num() == eLOCKRETRY) {
             continue;
         }
@@ -35,14 +36,14 @@ btree_impl::_ux_insert(
 }
 rc_t
 btree_impl::_ux_insert_core(
-    const lpid_t&        root,
+    volid_t vol, snum_t store,
     const w_keystr_t&    key,
     const cvec_t&        el)
 {
 
     // find the leaf (potentially) containing the key
     btree_p       leaf;
-    W_DO( _ux_traverse(root, key, t_fence_contain, LATCH_EX, leaf));
+    W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf));
     w_assert1( leaf.is_fixed());
     w_assert1( leaf.is_leaf());
     w_assert1( leaf.latch_mode() == LATCH_EX);
@@ -90,7 +91,8 @@ btree_impl::_ux_insert_core(
             // because "leaf" is EX locked beforehand, no one
             // can have any latch on the new page, so we can always get this latch
             btree_p another_leaf; // latch coupling
-            W_DO( another_leaf.fix(new_page_id, LATCH_EX) );
+            w_assert1(leaf.get_blink() == new_page_id.page);
+            W_DO( another_leaf.fix_nonroot(leaf, leaf.vol(), new_page_id.page, LATCH_EX));
             w_assert1(another_leaf.is_fixed());                        
             w_assert2(another_leaf.fence_contains(key));
             leaf.unfix();
@@ -153,10 +155,10 @@ rc_t btree_impl::_ux_reserve_ghost_core(btree_p &leaf, const w_keystr_t &key, in
 }
 
 rc_t
-btree_impl::_ux_update(const lpid_t &root, const w_keystr_t &key, const cvec_t &el)
+btree_impl::_ux_update(volid_t vol, snum_t store, const w_keystr_t &key, const cvec_t &el)
 {
     while (true) {
-        rc_t rc = _ux_update_core (root, key, el);
+        rc_t rc = _ux_update_core (vol, store, key, el);
         if (rc.is_error() && rc.err_num() == eLOCKRETRY) {
             continue;
         }
@@ -166,13 +168,13 @@ btree_impl::_ux_update(const lpid_t &root, const w_keystr_t &key, const cvec_t &
 }
 
 rc_t
-btree_impl::_ux_update_core(const lpid_t &root, const w_keystr_t &key, const cvec_t &el)
+btree_impl::_ux_update_core(volid_t vol, snum_t store, const w_keystr_t &key, const cvec_t &el)
 {
     bool need_lock = g_xct_does_need_lock();
     btree_p         leaf;
 
     // find the leaf (potentially) containing the key
-    W_DO( _ux_traverse(root, key, t_fence_contain, LATCH_EX, leaf));
+    W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf));
 
     w_assert3(leaf.is_fixed());
     w_assert3(leaf.is_leaf());
@@ -212,8 +214,8 @@ btree_impl::_ux_update_core(const lpid_t &root, const w_keystr_t &key, const cve
         if (!leaf.check_space_for_insert_leaf(key, el)) {
             // this page needs split. As this is a rare case,
             // we just call remove and then insert to simplify the code
-            W_DO(_ux_remove(root, key));
-            W_DO(_ux_insert(root, key, el));
+            W_DO(_ux_remove(vol, store, key));
+            W_DO(_ux_insert(vol, store, key, el));
             return RCOK;
         }
     }
@@ -225,12 +227,12 @@ btree_impl::_ux_update_core(const lpid_t &root, const w_keystr_t &key, const cve
 }
 
 rc_t btree_impl::_ux_overwrite(
-        const lpid_t&                     root,
+        volid_t vol, snum_t store, 
         const w_keystr_t&                 key,
         const char *el, smsize_t offset, smsize_t elen)
 {
     while (true) {
-        rc_t rc = _ux_overwrite_core (root, key, el, offset, elen);
+        rc_t rc = _ux_overwrite_core (vol, store, key, el, offset, elen);
         if (rc.is_error() && rc.err_num() == eLOCKRETRY) {
             continue;
         }
@@ -240,7 +242,7 @@ rc_t btree_impl::_ux_overwrite(
 }
 
 rc_t btree_impl::_ux_overwrite_core(
-        const lpid_t&                     root,
+        volid_t vol, snum_t store, 
         const w_keystr_t&                 key,
         const char *el, smsize_t offset, smsize_t elen)
 {
@@ -248,7 +250,7 @@ rc_t btree_impl::_ux_overwrite_core(
     bool need_lock = g_xct_does_need_lock();
     btree_p         leaf;
 
-    W_DO( _ux_traverse(root, key, t_fence_contain, LATCH_EX, leaf));
+    W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf));
 
     w_assert3(leaf.is_fixed());
     w_assert3(leaf.is_leaf());
@@ -287,12 +289,12 @@ rc_t btree_impl::_ux_overwrite_core(
 }
 
 rc_t
-btree_impl::_ux_remove(const lpid_t &root, const w_keystr_t &key)
+btree_impl::_ux_remove(volid_t vol, snum_t store, const w_keystr_t &key)
 {
     FUNC(btree_impl::_ux_remove);
     INC_TSTAT(bt_remove_cnt);
     while (true) {
-        rc_t rc = _ux_remove_core (root, key);
+        rc_t rc = _ux_remove_core (vol, store, key);
         if (rc.is_error() && rc.err_num() == eLOCKRETRY) {
             continue;
         }
@@ -302,13 +304,13 @@ btree_impl::_ux_remove(const lpid_t &root, const w_keystr_t &key)
 }
 
 rc_t
-btree_impl::_ux_remove_core(const lpid_t &root, const w_keystr_t &key)
+btree_impl::_ux_remove_core(volid_t vol, snum_t store, const w_keystr_t &key)
 {
     bool need_lock = g_xct_does_need_lock();
     btree_p         leaf;
 
     // find the leaf (potentially) containing the key
-    W_DO( _ux_traverse(root, key, t_fence_contain, LATCH_EX, leaf));
+    W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf));
 
     w_assert3(leaf.is_fixed());
     w_assert3(leaf.is_leaf());
@@ -349,12 +351,12 @@ btree_impl::_ux_remove_core(const lpid_t &root, const w_keystr_t &key)
 }
 
 rc_t
-btree_impl::_ux_undo_ghost_mark(const lpid_t &root, const w_keystr_t &key)
+btree_impl::_ux_undo_ghost_mark(volid_t vol, snum_t store, const w_keystr_t &key)
 {
     FUNC(btree_impl::_ux_undo_ghost_mark);
     w_assert1(key.is_regular());
     btree_p         leaf;
-    W_DO( _ux_traverse(root, key, t_fence_contain, LATCH_EX, leaf));
+    W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf));
     w_assert3(leaf.is_fixed());
     w_assert3(leaf.is_leaf());
 

@@ -52,29 +52,6 @@ const char *sm_stats_t ::stat_names[] = {
 
 void bf_htab_stats_t::compute()
 {
-    // Because the hash table collects some of its own statistics,
-    // we have to gather them from the htab here.
-    smlevel_0::bf->htab_stats(*this);
-    {
-        w_base_t::base_float_t *avg = &bf_htab_insert_avg_tries;
-        w_base_t::base_stat_t *a = &bf_htab_insertions;
-        w_base_t::base_stat_t *b = &bf_htab_slots_tried;
-        if(*a > 0) {
-           *avg = *b /(w_base_t::base_float_t) (*a);
-        } else {
-           *avg = 0.0;
-        }
-    }
-    {
-        w_base_t::base_float_t *avg = &bf_htab_lookup_avg_probes;
-        w_base_t::base_stat_t *a = &bf_htab_lookups;
-        w_base_t::base_stat_t *b = &bf_htab_probes;
-        if(*a > 0) {
-           *avg = *b /(w_base_t::base_float_t) (*a);
-        } else {
-           *avg = 0.0;
-        }
-    }
 }
 
 void sm_stats_t::compute()

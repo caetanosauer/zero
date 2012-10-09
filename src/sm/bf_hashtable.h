@@ -5,7 +5,6 @@
 #include "bf_idx.h"
 
 class bf_hashbucket;
-class lpid_t;
 
 /**
  * \Brief Hash table for the buffer pool manager.
@@ -42,22 +41,22 @@ public:
     ~bf_hashtable();
 
     /**
-     * Returns the bf_idx linked to the given page ID. If the page ID
-     * doesn't exist in this bufferpool, returns 0 (invalid bf_idx).
+     * Returns the bf_idx linked to the given key (volume and page ID, see bf_key() in bf_tree.cpp).
+     * If the key doesn't exist in this bufferpool, returns 0 (invalid bf_idx).
      */
-    bf_idx      lookup(const lpid_t &key) const;
+    bf_idx      lookup(uint64_t key) const;
 
     /**
-    * Insert the page ID in the _table and link it with the given bf_idx.
+    * Insert the key in the _table and link it with the given bf_idx.
     * if the given key already exists, this method doesn't change anything and returns false.
     */
-    bool        insert_if_not_exists(const lpid_t &key, bf_idx value);
+    bool        insert_if_not_exists(uint64_t key, bf_idx value);
     
     /**
-     * Removes the pageID from the _table.
+     * Removes the key from the _table.
      * Returns if the pageID existed or not.
      */
-    bool        remove(const lpid_t &key);
+    bool        remove(uint64_t key);
 
 private:
     uint32_t            _size;

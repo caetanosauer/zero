@@ -60,7 +60,15 @@ public:
     uint16_t  _waiting_S; // +2 -> 10
     uint16_t  _waiting_X; // +2 -> 12
     uint32_t            _release_version; // +4 -> 16
-    lsn_t               _x_lock_tag; // +8 -> 24. this is for Safe SX-ELR
+    /**
+     * These are for Safe SX-ELR.
+     * Self-tag is updated only when X lock is ELR-ed.
+     * Descendant tag is updated when IX lock is ELR-ed.
+     * Transactions that take intent read locks (IS) will check self-tag only.
+     * Transactions that take absolute read locks (S) will check both.
+     */
+    lsn_t               _x_lock_self_tag; // +8 -> 24. 
+    lsn_t               _x_lock_descendant_tag; // +8 -> 32.
     pthread_mutex_t     _waiter_mutex;
     pthread_cond_t      _waiter_cond;
 

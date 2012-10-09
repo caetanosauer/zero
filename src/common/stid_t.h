@@ -85,6 +85,7 @@ struct stid_t {
     stid_t();
     stid_t(const stid_t& s);
     stid_t(vid_t vid, snum_t snum);
+    stid_t(volid_t vid, snum_t snum);
 
     bool operator==(const stid_t& s) const;
     bool operator!=(const stid_t& s) const;
@@ -103,6 +104,8 @@ inline stid_t::stid_t() : vol(0), store(0)
 {}
 
 inline stid_t::stid_t(vid_t v, snum_t s) : vol(v), store(s)
+{}
+inline stid_t::stid_t(volid_t v, snum_t s) : vol(vid_t(v)), store(s)
 {}
 
 inline stid_t::operator const void*() const

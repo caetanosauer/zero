@@ -23,8 +23,7 @@ rc_t alloc_cache_t::load_by_scan (shpid_t max_pid) {
     page_s *pages = _fixed_pages->get_pages();
     for (uint32_t i = 0; i < alloc_pages_cnt; ++i) {
         alloc_p al (pages + i);
-        w_assert1(al.tag() == page_p::t_alloc_p);
-        w_assert1(al.pid().vol() == _vid);
+        w_assert1(al._pp->pid.vol() == _vid);
 
         shpid_t hwm = al.get_pid_highwatermark();
         shpid_t offset = al.get_pid_offset();
@@ -169,7 +168,11 @@ rc_t alloc_cache_t::apply_allocate_one_page (shpid_t pid, bool logit)
     page_s* pages = _fixed_pages->get_pages();
     alloc_p al (pages + buf_index);
     if (logit) {
-        W_DO(log_alloc_a_page (al, pid));
+        if (smlevel_0::log != NULL) {
+            W_DO(log_alloc_a_page (_vid, pid));
+        } else {
+            ERROUT(<< "WARNING! apply_allocate_one_page: logging is disabled. skipped logging");
+        }
     }
     al.set_bit(pid);
     _fixed_pages->get_dirty_flags()[buf_index] = true;
@@ -200,7 +203,11 @@ rc_t alloc_cache_t::apply_allocate_consecutive_pages (shpid_t pid_begin, size_t 
         w_assert1(this_page_count > 0);
 
         if (logit) {
-            W_DO(log_alloc_consecutive_pages (al, cur_pid, this_page_count));
+            if (smlevel_0::log != NULL) {
+                W_DO(log_alloc_consecutive_pages (_vid, cur_pid, this_page_count));
+            } else {
+                ERROUT(<< "WARNING! apply_allocate_consecutive_pages: logging is disabled. skipped logging");
+            }
         }
         al.set_consecutive_bits(cur_pid, cur_pid + this_page_count);
         _fixed_pages->get_dirty_flags()[buf_index] = true;
@@ -224,7 +231,11 @@ rc_t alloc_cache_t::apply_deallocate_one_page (shpid_t pid, bool logit)
     alloc_p al (pages + buf_index);
     // log it
     if (logit) {
-        W_DO(log_dealloc_a_page (al, pid));
+        if (smlevel_0::log != NULL) {
+            W_DO(log_dealloc_a_page (_vid, pid));
+        } else {
+            ERROUT(<< "WARNING! apply_deallocate_one_page: logging is disabled. skipped logging");
+        }
     }
     // then update the bitmap
     al.unset_bit(pid);

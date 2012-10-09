@@ -12,6 +12,7 @@
 #include "page_s.h"
 #include "bf.h"
 #include "smthread.h"
+#include "page_bf_inline.h"
 #include "btree.h"
 #include "btcursor.h"
 #include "btree_impl.h"
@@ -36,6 +37,12 @@ public:
             int32_t locktable_size,
             int disk_quota_in_pages,
             int bufferpool_size_in_pages,
+            uint32_t cleaner_threads,
+            uint32_t cleaner_interval_millisec_min,
+            uint32_t cleaner_interval_millisec_max,
+            uint32_t cleaner_write_buffer_pages,
+            bool initially_enable_cleaners,
+            bool enable_swizzling,
             const std::vector<std::pair<const char*, const char*> > &additional_params
         ) 
                 : smthread_t(t_regular, "testdriver_thread_t"),
@@ -45,6 +52,12 @@ public:
                 _locktable_size (locktable_size),
                 _disk_quota_in_pages(disk_quota_in_pages),
                 _bufferpool_size_in_pages(bufferpool_size_in_pages),
+                _cleaner_threads(cleaner_threads),
+                _cleaner_interval_millisec_min(cleaner_interval_millisec_min),
+                _cleaner_interval_millisec_max(cleaner_interval_millisec_max),
+                _cleaner_write_buffer_pages(cleaner_write_buffer_pages),
+                _initially_enable_cleaners(initially_enable_cleaners),
+                _enable_swizzling(enable_swizzling),
                 _retval(0),
                 _functor(functor){}
 
@@ -64,6 +77,12 @@ private:
         int32_t         _locktable_size;
         int             _disk_quota_in_pages;
         int             _bufferpool_size_in_pages;
+        uint32_t        _cleaner_threads;
+        uint32_t        _cleaner_interval_millisec_min;
+        uint32_t        _cleaner_interval_millisec_max;
+        uint32_t        _cleaner_write_buffer_pages;
+        bool            _initially_enable_cleaners;
+        bool            _enable_swizzling;
         int             _retval; // return value from run()
         test_functor*   _functor;// test functor object
 };
@@ -98,7 +117,27 @@ testdriver_thread_t::handle_options()
         W_DO(options.set_value("sm_locktablesize", true, str.str().c_str(), true, &err_stream));
     }
     W_DO(options.set_value("sm_logdir", true, "./log", true, &err_stream));
+
+    {
+        std::stringstream str;
+        str << _cleaner_threads;
+        W_DO(options.set_value("sm_num_page_writers", true, str.str().c_str(), true, &err_stream));
+    }
+    {
+        std::stringstream str;
+        str << _cleaner_interval_millisec_min;
+        W_DO(options.set_value("sm_cleaner_interval_millisec_min", true, str.str().c_str(), true, &err_stream));
+    }
+    {
+        std::stringstream str;
+        str << _cleaner_interval_millisec_max;
+        W_DO(options.set_value("sm_cleaner_interval_millisec_max", true, str.str().c_str(), true, &err_stream));
+    }
+    // TODO cleaner_write_buffer_pages isn't an option in option_t
     
+    W_DO(options.set_value("sm_backgroundflush", true, _initially_enable_cleaners ? "yes" : "no", true, &err_stream));
+    W_DO(options.set_value("sm_bufferpool_swizzle", true, _enable_swizzling ? "yes" : "no", true, &err_stream));
+
     // set additional values given by each test case
     for (std::vector<std::pair<const char*, const char*> >::const_iterator iter = _additional_params.begin();
             iter != _additional_params.end(); ++iter) {
@@ -276,17 +315,37 @@ void btree_test_env::TearDown()
 int btree_test_env::runBtreeTest (w_rc_t (*functor)(ss_m*, test_volume_t*),
                     bool use_locks, int32_t lock_table_size,
                     int disk_quota_in_pages,
-                    int bufferpool_size_in_pages)
+                    int bufferpool_size_in_pages,
+                    uint32_t cleaner_threads,
+                    uint32_t cleaner_interval_millisec_min,
+                    uint32_t cleaner_interval_millisec_max,
+                    uint32_t cleaner_write_buffer_pages,
+                    bool initially_enable_cleaners,
+                    bool enable_swizzling
+                                 )
 {
     std::vector<std::pair<const char*, const char*> > dummy;
     return runBtreeTest(functor, use_locks, lock_table_size,
-            disk_quota_in_pages, bufferpool_size_in_pages, dummy);
+            disk_quota_in_pages, bufferpool_size_in_pages,
+            cleaner_threads,
+            cleaner_interval_millisec_min,
+            cleaner_interval_millisec_max,
+            cleaner_write_buffer_pages,
+            initially_enable_cleaners,
+            enable_swizzling,
+            dummy);
 }
 
 int btree_test_env::runBtreeTest (w_rc_t (*func)(ss_m*, test_volume_t*),
         bool use_locks, int32_t lock_table_size,
         int disk_quota_in_pages,
         int bufferpool_size_in_pages,
+        uint32_t cleaner_threads,
+        uint32_t cleaner_interval_millisec_min,
+        uint32_t cleaner_interval_millisec_max,
+        uint32_t cleaner_write_buffer_pages,
+        bool initially_enable_cleaners,
+        bool enable_swizzling,
         const std::vector<std::pair<const char*, const char*> > &additional_params
 )
 {
@@ -296,7 +355,14 @@ int btree_test_env::runBtreeTest (w_rc_t (*func)(ss_m*, test_volume_t*),
         default_test_functor functor(func);
         testdriver_thread_t smtu(
             &functor, this, lock_table_size,
-            disk_quota_in_pages, bufferpool_size_in_pages, additional_params);
+            disk_quota_in_pages, bufferpool_size_in_pages,
+            cleaner_threads,
+            cleaner_interval_millisec_min,
+            cleaner_interval_millisec_max,
+            cleaner_write_buffer_pages,
+            initially_enable_cleaners,
+            enable_swizzling,
+            additional_params);
 
         /* cause the thread's run() method to start */
         w_rc_t e = smtu.fork();
@@ -319,15 +385,34 @@ int btree_test_env::runBtreeTest (w_rc_t (*func)(ss_m*, test_volume_t*),
 
 int btree_test_env::runCrashTest (crash_test_base *context,
     bool use_locks, int32_t lock_table_size,
-    int disk_quota_in_pages, int bufferpool_size_in_pages) {
+    int disk_quota_in_pages, int bufferpool_size_in_pages,
+    uint32_t cleaner_threads,
+    uint32_t cleaner_interval_millisec_min,
+    uint32_t cleaner_interval_millisec_max,
+    uint32_t cleaner_write_buffer_pages,
+    bool initially_enable_cleaners,
+    bool enable_swizzling) {
     std::vector<std::pair<const char*, const char*> > dummy;
     return runCrashTest(context, use_locks, lock_table_size,
-            disk_quota_in_pages, bufferpool_size_in_pages, dummy);
+            disk_quota_in_pages, bufferpool_size_in_pages,
+            cleaner_threads,
+            cleaner_interval_millisec_min,
+            cleaner_interval_millisec_max,
+            cleaner_write_buffer_pages,
+            initially_enable_cleaners,
+            enable_swizzling,
+            dummy);
 }
 
 int btree_test_env::runCrashTest (crash_test_base *context,
     bool use_locks, int32_t lock_table_size,
     int disk_quota_in_pages, int bufferpool_size_in_pages,
+    uint32_t cleaner_threads,
+    uint32_t cleaner_interval_millisec_min,
+    uint32_t cleaner_interval_millisec_max,
+    uint32_t cleaner_write_buffer_pages,
+    bool initially_enable_cleaners,
+    bool enable_swizzling,
     const std::vector<std::pair<const char*, const char*> > &additional_params) {
         
     _use_locks = use_locks;
@@ -338,7 +423,14 @@ int btree_test_env::runCrashTest (crash_test_base *context,
         crash_test_pre_functor functor(context);
         testdriver_thread_t smtu(
             &functor, this, lock_table_size,
-            disk_quota_in_pages, bufferpool_size_in_pages, additional_params);
+            disk_quota_in_pages, bufferpool_size_in_pages,
+            cleaner_threads,
+            cleaner_interval_millisec_min,
+            cleaner_interval_millisec_max,
+            cleaner_write_buffer_pages,
+            initially_enable_cleaners,
+            enable_swizzling,
+            additional_params);
 
         w_rc_t e = smtu.fork();
         if(e.is_error()) {
@@ -363,7 +455,14 @@ int btree_test_env::runCrashTest (crash_test_base *context,
         crash_test_post_functor functor(context);
         testdriver_thread_t smtu(
             &functor, this, lock_table_size,
-            disk_quota_in_pages, bufferpool_size_in_pages, additional_params);
+            disk_quota_in_pages, bufferpool_size_in_pages,
+            cleaner_threads,
+            cleaner_interval_millisec_min,
+            cleaner_interval_millisec_max,
+            cleaner_write_buffer_pages,
+            initially_enable_cleaners,
+            enable_swizzling,
+            additional_params);
 
         w_rc_t e = smtu.fork();
         if(e.is_error()) {
@@ -428,8 +527,8 @@ w_rc_t x_btree_adopt_blink_all(ss_m* ssm, const stid_t &stid)
     W_DO(ssm->begin_xct());
     {
         btree_p root_p;
-        W_DO(root_p.fix(root_pid, LATCH_EX));
-        W_DO(btree_impl::_sx_adopt_blink_all(root_pid, root_p, true));
+        W_DO(root_p.fix_root(stid.vol.vol, stid.store, LATCH_EX));
+        W_DO(btree_impl::_sx_adopt_blink_all(root_p, true));
     }
     W_DO(ssm->commit_xct());
     return RCOK;
@@ -571,10 +670,8 @@ w_rc_t x_btree_scan(ss_m* ssm, const stid_t &stid, x_btree_scan_result &result, 
     if (use_locks) {
         xct()->set_query_concurrency(smlevel_0::t_cc_keyrange);
     }
-    lpid_t root_pid;
-    W_DO(x_btree_get_root_pid(ssm, stid, root_pid));
     // fully scan the BTree
-    bt_cursor_t cursor (root_pid, true);
+    bt_cursor_t cursor (stid.vol.vol, stid.store, true);
     
     result.rownum = 0;
     bool first_key = true;

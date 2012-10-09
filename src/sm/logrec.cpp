@@ -1,55 +1,3 @@
-/* -*- mode:C++; c-basic-offset:4 -*-
-     Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
-                       Copyright (c) 2007-2009
-      Data Intensive Applications and Systems Labaratory (DIAS)
-               Ecole Polytechnique Federale de Lausanne
-   
-                         All Rights Reserved.
-   
-   Permission to use, copy, modify and distribute this software and
-   its documentation is hereby granted, provided that both the
-   copyright notice and this permission notice appear in all copies of
-   the software, derivative works or modified versions, and any
-   portions thereof, and that both notices appear in supporting
-   documentation.
-   
-   This code is distributed in the hope that it will be useful, but
-   WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
-   DISCLAIM ANY LIABILITY OF ANY KIND FOR ANY DAMAGES WHATSOEVER
-   RESULTING FROM THE USE OF THIS SOFTWARE.
-*/
-
-/*<std-header orig-src='shore'>
-
-     $Id: logrec.cpp,v 1.162 2010/10/27 17:04:23 nhall Exp $
-
-    SHORE -- Scalable Heterogeneous Object REpository
-
-    Copyright (c) 1994-99 Computer Sciences Department, University of
-                          Wisconsin -- Madison
-    All Rights Reserved.
-
-    Permission to use, copy, modify and distribute this software and its
-    documentation is hereby granted, provided that both the copyright
-    notice and this permission notice appear in all copies of the
-    software, derivative works or modified versions, and any portions
-    thereof, and that both notices appear in supporting documentation.
-
-    THE AUTHORS AND THE COMPUTER SCIENCES DEPARTMENT OF THE UNIVERSITY
-    OF WISCONSIN - MADISON ALLOW FREE USE OF THIS SOFTWARE IN ITS
-    "AS IS" CONDITION, AND THEY DISCLAIM ANY LIABILITY OF ANY KIND
-    FOR ANY DAMAGES WHATSOEVER RESULTING FROM THE USE OF THIS SOFTWARE.
-
-    This software was developed with support by the Advanced Research
-    Project Agency, ARPA order number 018 (formerly 8230), monitored by
-    the U.S. Army Research Laboratory under contract DAAB07-91-C-Q518.
-    Further funding for this work was provided by DARPA through
-    Rome Research Laboratory Contract No. F30602-97-2-0247.
-
-*/
-
 #include "w_defines.h"
 
 /*  -- do not edit anything above this line --   </std-header>*/
@@ -66,6 +14,7 @@
 
 #include "vec_t.h"
 #include "alloc_cache.h"
+#include "page_bf_inline.h"
 
 #include <iomanip>
 typedef        ios::fmtflags        ios_fmtflags;
@@ -801,11 +750,11 @@ struct page_img_format_t {
 };
 page_img_format_t::page_img_format_t (const page_p& page)
 {
-    beginning_bytes = page_p::hdr_sz + page.nslots() * page_p::slot_sz;
-    ending_bytes = page_p::page_sz - page._pp->get_record_head_byte() - page_p::hdr_sz;
+    beginning_bytes = page_s::hdr_sz + page.nslots() * page_s::slot_sz;
+    ending_bytes = page_s::page_sz - page._pp->get_record_head_byte() - page_s::hdr_sz;
     const char *pp_bin = (const char *) page._pp;
     ::memcpy (data, pp_bin, beginning_bytes);
-    ::memcpy (data + beginning_bytes, pp_bin + page_p::hdr_sz + page._pp->get_record_head_byte(), ending_bytes);
+    ::memcpy (data + beginning_bytes, pp_bin + page_s::hdr_sz + page._pp->get_record_head_byte(), ending_bytes);
 }
 
 page_img_format_log::page_img_format_log(const page_p &page)
@@ -823,90 +772,13 @@ void page_img_format_log::redo(page_p* page)
 {
     // REDO is simply applying the image
     page_img_format_t* dp = (page_img_format_t*) _data;
-    w_assert1(dp->beginning_bytes >= page_p::hdr_sz);
-    w_assert1(dp->beginning_bytes + dp->ending_bytes <= page_p::page_sz);
+    w_assert1(dp->beginning_bytes >= page_s::hdr_sz);
+    w_assert1(dp->beginning_bytes + dp->ending_bytes <= page_s::page_sz);
     char *pp_bin = (char *) page->_pp;
     ::memcpy (pp_bin, dp->data, dp->beginning_bytes);
-    ::memcpy (pp_bin + page_p::page_sz - dp->ending_bytes, dp->data + dp->beginning_bytes, dp->ending_bytes);
+    ::memcpy (pp_bin + page_s::page_sz - dp->ending_bytes, dp->data + dp->beginning_bytes, dp->ending_bytes);
     page->set_dirty();
 }
-
-
-/*********************************************************************
- *
- *  store_operation_log
- *
- *  Log of setting the deleting flag in the stnode
- *
- *********************************************************************/
-
-store_operation_log::store_operation_log(const stnode_p& page, const store_operation_param& param)
-{
-    fill(&page.pid(), page.tag(), (new (_data) store_operation_param(param))->size());
-}
-
-void store_operation_log::redo(page_p* /*page*/)
-{
-    store_operation_param& param = *(store_operation_param*)_data;
-    DBG( << "store_operation_log::redo(page=" << pid() 
-        << ", param=" << param << ")" );
-    W_COERCE( smlevel_0::io->store_operation(vid(), param) );
-}
-
-void store_operation_log::undo(page_p* /*page*/)
-{
-    store_operation_param& param = *(store_operation_param*)_data;
-    DBG( << "store_operation_log::undo(page=" << shpid() << ", param=" << param << ")" );
-
-    switch (param.op())  {
-        case smlevel_0::t_delete_store:
-            /* do nothing, not undoable */
-            break;
-        case smlevel_0::t_create_store:
-            // TODO implement destroy_store
-            /*
-            {
-                stid_t stid(vid(), param.snum());
-                W_COERCE( smlevel_0::io->destroy_store(stid) );
-            }
-            */
-            break;
-        case smlevel_0::t_set_deleting:
-            switch (param.new_deleting_value())  {
-                case smlevel_0::t_not_deleting_store:
-                case smlevel_0::t_deleting_store:
-                    {
-                        store_operation_param new_param(param.snum(), 
-                                smlevel_0::t_set_deleting,
-                                param.old_deleting_value(), 
-                                param.new_deleting_value());
-                        W_COERCE( smlevel_0::io->store_operation(vid(), 
-                                new_param) );
-                    }
-                    break;
-                case smlevel_0::t_store_freeing_exts:
-                    /* do nothing, not undoable */
-                    break;
-                case smlevel_0::t_unknown_deleting:
-                    W_FATAL(smlevel_0::eINTERNAL);
-                    break;
-            }
-            break;
-        case smlevel_0::t_set_store_flags:
-            {
-                store_operation_param new_param(param.snum(), 
-                        smlevel_0::t_set_store_flags,
-                        param.old_store_flags(), param.new_store_flags());
-                W_COERCE( smlevel_0::io->store_operation(vid(), 
-                        new_param) );
-            }
-            break;
-        case smlevel_0::t_set_root:
-            /* do nothing, not undoable */
-            break;
-    }
-}
-
 
 
 
@@ -989,13 +861,13 @@ void page_set_tobedeleted_log::undo(page_p* page)
 
 
  
-alloc_a_page_log::alloc_a_page_log (const alloc_p& p, shpid_t pid)
+alloc_a_page_log::alloc_a_page_log (vid_t vid, shpid_t pid)
 {
-    w_assert0(p.tag() == page_p::t_alloc_p);
     // page alloation is single-log system transaction. so, use data_ssx()
     char *buf = data_ssx();
     *reinterpret_cast<shpid_t*>(buf) = pid; // only data is the page ID
-    fill(&p.pid(), p.tag(), sizeof(shpid_t));
+    lpid_t dummy (vid, 0, 0);
+    fill(&dummy, 0, sizeof(shpid_t));
     w_assert0(is_single_sys_xct());
 }
 
@@ -1007,21 +879,20 @@ void alloc_a_page_log::redo(page_p*)
     shpid_t pid = *((shpid_t*) data_ssx());
 
     // actually this is logical REDO    
-    stid_t stid(_vid, _snum);
-    rc_t rc = io_m::redo_alloc_a_page(stid, pid);
+    rc_t rc = io_m::redo_alloc_a_page(_vid, pid);
     if (rc.is_error()) {
         W_FATAL(rc.err_num());
     }
 }
 
-alloc_consecutive_pages_log::alloc_consecutive_pages_log (const alloc_p& p, shpid_t pid_begin, uint32_t page_count)
+alloc_consecutive_pages_log::alloc_consecutive_pages_log (vid_t vid, shpid_t pid_begin, uint32_t page_count)
 {
-    w_assert0(p.tag() == page_p::t_alloc_p);
     // page alloation is single-log system transaction. so, use data_ssx()
     uint32_t *buf = reinterpret_cast<uint32_t*>(data_ssx());
     buf[0] = pid_begin;
     buf[1] = page_count;
-    fill(&p.pid(), p.tag(), sizeof(uint32_t) * 2);
+    lpid_t dummy (vid, 0, 0);
+    fill(&dummy, 0, sizeof(uint32_t) * 2);
     w_assert0(is_single_sys_xct());
 }
 
@@ -1033,21 +904,20 @@ void alloc_consecutive_pages_log::redo(page_p*)
     uint32_t page_count = buf[1];
 
     // logical redo.
-    stid_t stid(_vid, _snum);
-    rc_t rc = io_m::redo_alloc_consecutive_pages(stid, page_count, pid_begin);
+    rc_t rc = io_m::redo_alloc_consecutive_pages(_vid, page_count, pid_begin);
     if (rc.is_error()) {
         W_FATAL(rc.err_num());
     }
 }
 
  
-dealloc_a_page_log::dealloc_a_page_log (const alloc_p& p, shpid_t pid)
+dealloc_a_page_log::dealloc_a_page_log (vid_t vid, shpid_t pid)
 {
-    w_assert0(p.tag() == page_p::t_alloc_p);
     // page dealloation is single-log system transaction. so, use data_ssx()
     char *buf = data_ssx();
     *reinterpret_cast<shpid_t*>(buf) = pid; // only data is the page ID
-    fill(&p.pid(), p.tag(), sizeof(shpid_t));
+    lpid_t dummy (vid, 0, 0);
+    fill(&dummy, 0, sizeof(shpid_t));
     w_assert0(is_single_sys_xct());
 }
 
@@ -1057,10 +927,76 @@ void dealloc_a_page_log::redo(page_p*)
     shpid_t pid = *((shpid_t*) data_ssx());
 
     // logical redo.
-    stid_t stid(_vid, _snum);
-    rc_t rc = io_m::redo_dealloc_a_page(stid, pid);
+    rc_t rc = io_m::redo_dealloc_a_page(_vid, pid);
     if (rc.is_error()) {
         W_FATAL(rc.err_num());
+    }
+}
+
+store_operation_log::store_operation_log(const store_operation_param& param)
+{
+    fill(0, 0, (new (_data) store_operation_param(param))->size());
+}
+
+void store_operation_log::redo(page_p* /*page*/)
+{
+    store_operation_param& param = *(store_operation_param*)_data;
+    DBG( << "store_operation_log::redo(page=" << pid() 
+        << ", param=" << param << ")" );
+    W_COERCE( smlevel_0::io->store_operation(vid(), param) );
+}
+
+void store_operation_log::undo(page_p* /*page*/)
+{
+    store_operation_param& param = *(store_operation_param*)_data;
+    DBG( << "store_operation_log::undo(page=" << shpid() << ", param=" << param << ")" );
+
+    switch (param.op())  {
+        case smlevel_0::t_delete_store:
+            /* do nothing, not undoable */
+            break;
+        case smlevel_0::t_create_store:
+            // TODO implement destroy_store
+            /*
+            {
+                stid_t stid(vid(), param.snum());
+                W_COERCE( smlevel_0::io->destroy_store(stid) );
+            }
+            */
+            break;
+        case smlevel_0::t_set_deleting:
+            switch (param.new_deleting_value())  {
+                case smlevel_0::t_not_deleting_store:
+                case smlevel_0::t_deleting_store:
+                    {
+                        store_operation_param new_param(param.snum(), 
+                                smlevel_0::t_set_deleting,
+                                param.old_deleting_value(), 
+                                param.new_deleting_value());
+                        W_COERCE( smlevel_0::io->store_operation(vid(), 
+                                new_param) );
+                    }
+                    break;
+                case smlevel_0::t_store_freeing_exts:
+                    /* do nothing, not undoable */
+                    break;
+                case smlevel_0::t_unknown_deleting:
+                    W_FATAL(smlevel_0::eINTERNAL);
+                    break;
+            }
+            break;
+        case smlevel_0::t_set_store_flags:
+            {
+                store_operation_param new_param(param.snum(), 
+                        smlevel_0::t_set_store_flags,
+                        param.old_store_flags(), param.new_store_flags());
+                W_COERCE( smlevel_0::io->store_operation(vid(), 
+                        new_param) );
+            }
+            break;
+        case smlevel_0::t_set_root:
+            /* do nothing, not undoable */
+            break;
     }
 }
 
