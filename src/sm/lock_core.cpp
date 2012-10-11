@@ -151,7 +151,7 @@ lock_core_m::_acquire_lock(
     if (req == NULL) {
 #if W_DEBUG_LEVEL>=3
         {
-            spinlock_read_critical_section cs(&_requests_latch);
+            spinlock_read_critical_section cs(&lock->_requests_latch);
             for (lock_queue_entry_t* p = lock->_head; p != NULL; p = p->_next) {
                 w_assert3(p->_xct != xd);
                 w_assert3(p->_thr != thr);
@@ -184,7 +184,8 @@ lock_core_m::_acquire_lock(
         if (req->_granted_mode != NL) {  // UNSAFE
             // We deny the upgrade but leave the 
             // lock request in place with its former status.
-            req->_requested_mode = req->_granted_mode;  // UNSAFE
+            spinlock_write_critical_section cs(&lock->_requests_latch);
+            req->_requested_mode = req->_granted_mode;
         } else {
             // Remove the request
             release_lock (lock, req, lsn_t::null);
@@ -420,6 +421,8 @@ void lock_queue_t::append_request (lock_queue_entry_t* myreq) {
 }
 
 void lock_queue_t::detach_request (lock_queue_entry_t* myreq) {
+    spinlock_write_critical_section cs(&_requests_latch);
+    // CRITICAL_SECTION(cs, _requests_latch.write_lock());
 #if W_DEBUG_LEVEL>=3
     bool found = false;
     for (lock_queue_entry_t *p = _head; p != NULL; p = p->_next) {
@@ -431,8 +434,6 @@ void lock_queue_t::detach_request (lock_queue_entry_t* myreq) {
     w_assert3(found);
 #endif //W_DEBUG_LEVEL>=3
 
-    spinlock_write_critical_section cs(&_requests_latch);
-    // CRITICAL_SECTION(cs, _requests_latch.write_lock());
     if (myreq->_prev == NULL) {
         w_assert1(_head == myreq);
         _head = myreq->_next;
@@ -484,13 +485,17 @@ bool lock_queue_t::grant_request (lock_queue_entry_t* myreq) {
 
     
 void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_result &result) {
-    const atomic_thread_map_t &myfingerprint = myreq->_thr.get_fingerprint_map();  // UNSAFE
-    result.init(myfingerprint);
-    xct_t* myxd = &myreq->_xct;  // UNSAFE
-    bool precedes_me = true;
-    lmode_t m = myreq->_requested_mode;  // UNSAFE
     spinlock_read_critical_section cs(&_requests_latch);
     // CRITICAL_SECTION(cs, _requests_latch.read_lock()); // read lock suffices
+
+    // assume here myreq is a member of our queue and hence covered by
+    // _request_latch
+    const atomic_thread_map_t &myfingerprint = myreq->_thr.get_fingerprint_map();
+    result.init(myfingerprint);
+    xct_t* myxd = &myreq->_xct;
+    bool precedes_me = true;
+    lmode_t m = myreq->_requested_mode;
+
     for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
         if (p == myreq) {
             precedes_me = false;
@@ -558,6 +563,7 @@ void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_resul
             }
         }
     }
+    w_assert1(!precedes_me);
 }
 
 
