@@ -157,8 +157,11 @@ public:
 
     bucket_t() : _queue(NULL) {}
     ~bucket_t() {
-        for (lock_queue_t* p = _queue; p != NULL; p = p->next()) {
+        lock_queue_t* p = _queue;
+        while (p != NULL) {
+            lock_queue_t* q = p->next();
             lock_queue_t::deallocate_lock_queue(p);
+            p = q;
         }
     }
 
