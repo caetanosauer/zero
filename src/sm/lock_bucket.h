@@ -19,27 +19,29 @@ class lock_core_m;
  * A lock request entry in lock queue.
  */
 class lock_queue_entry_t {
-    friend class lock_core_m; // for debug dump
 public:
+    xct_t&           _xct;  ///< owning xct.
+    smthread_t&      _thr;  ///< owning thread.
+    xct_lock_info_t& _li;
+
+private:
+    friend class lock_queue_t;
+    friend class lock_core_m;  // for debug dump
+    friend ostream& operator<<(ostream& o, const lock_queue_entry_t& r);
+
     typedef lock_base_t::lmode_t lmode_t;
-    lock_queue_entry_t (xct_t* xct, smthread_t* thr, xct_lock_info_t* li,
-                        lock_queue_entry_t* prev, lock_queue_entry_t* next,
+    lock_queue_entry_t (xct_t& xct, smthread_t& thr, xct_lock_info_t& li,
                         lmode_t granted_mode, lmode_t requested_mode)
-        : _xct(xct), _thr(thr), _li(li), _xct_entry(NULL), _prev(prev), _next(next),
+        : _xct(xct), _thr(thr), _li(li), _xct_entry(NULL), _prev(NULL), _next(NULL),
             _granted_mode(granted_mode), _requested_mode(requested_mode) {
     }
 
-    /** owning xct. */
-    xct_t*              _xct;
-    /** owning thread. */
-    smthread_t*         _thr;
-    xct_lock_info_t*    _li;
     xct_lock_entry_t*   _xct_entry;
     lock_queue_entry_t* _prev;
     lock_queue_entry_t* _next;
     lmode_t             _granted_mode;
     lmode_t             _requested_mode;
-    srwlock_t           _entry_lock;
+    //srwlock_t           _entry_lock;
 };
 ostream&  operator<<(ostream& o, const lock_queue_entry_t& r);
 

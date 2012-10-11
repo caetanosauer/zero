@@ -155,15 +155,15 @@ lock_core_m::_acquire_lock(
             w_assert3(p->_li != the_xlinfo);
         }
 #endif // W_DEBUG_LEVEL>=3
-        req = new (*lockEntryPool) lock_queue_entry_t(xd, thr, the_xlinfo, NULL, NULL, NL, mode);
+        req = new (*lockEntryPool) lock_queue_entry_t(*xd, *thr, *the_xlinfo, NL, mode);
         if (!check_only) {
             req->_xct_entry = the_xlinfo->link_to_new_request(lock, req);
         }
         lock->append_request(req);
     } else {
-        w_assert1(req->_xct == xd);
-        w_assert1(req->_thr == thr);
-        w_assert1(req->_li == the_xlinfo);
+        w_assert1(&req->_xct == xd);
+        w_assert1(&req->_thr == thr);
+        w_assert1(&req->_li == the_xlinfo);
         w_assert1(req->_xct_entry != NULL);
         prev_mode = req->_granted_mode;
         req->_requested_mode = supr[mode][req->_granted_mode];
@@ -293,7 +293,7 @@ void lock_core_m::release_lock(
     lock->detach_request(req);
     //copy these before destroying
     xct_lock_entry_t *xct_entry = req->_xct_entry;
-    xct_lock_info_t *li = req->_li;
+    xct_lock_info_t *li = &req->_li;
     lmode_t released_granted = req->_granted_mode;
     lmode_t released_requested = req->_requested_mode;
     lockEntryPool->destroy_object(req);
@@ -322,7 +322,7 @@ void lock_queue_t::wakeup_waiters(lmode_t released_granted, lmode_t released_req
         for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
             if (p->_granted_mode != p->_requested_mode
                 && !lock_base_t::compat[p->_requested_mode][released_granted]) {
-                p->_li->set_wait_map_obsolete(true);
+                p->_li.set_wait_map_obsolete(true);
             }
         }
     }
@@ -337,7 +337,7 @@ void lock_queue_t::wakeup_waiters(lmode_t released_granted, lmode_t released_req
         for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
             if (p->_granted_mode != p->_requested_mode
                 && !lock_base_t::compat[p->_requested_mode][released_requested]) {
-                targets[target_count] = p->_thr;
+                targets[target_count] = &p->_thr;
                 ++target_count;
                 if (target_count >= MAX_WAKEUP) {
                     break;
@@ -394,7 +394,7 @@ lock_queue_entry_t* lock_queue_t::find_request (const xct_lock_info_t* myli) {
     spinlock_read_critical_section cs(&_requests_lock);
     // CRITICAL_SECTION(cs, _requests_lock.read_lock()); // read lock suffices
     for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
-        if (p->_li == myli) {
+        if (&p->_li == myli) {
             return p;
         }
     }
@@ -479,9 +479,9 @@ bool lock_queue_t::grant_request (lock_queue_entry_t* myreq) {
 
     
 void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_result &result) {
-    const atomic_thread_map_t &myfingerprint = myreq->_thr->get_fingerprint_map();
+    const atomic_thread_map_t &myfingerprint = myreq->_thr.get_fingerprint_map();
     result.init(myfingerprint);
-    xct_t* myxd = myreq->_xct;
+    xct_t* myxd = &myreq->_xct;
     bool precedes_me = true;
     lmode_t m = myreq->_requested_mode;
     spinlock_read_critical_section cs(&_requests_lock);
@@ -491,8 +491,8 @@ void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_resul
             precedes_me = false;
             continue;
         }
-        w_assert1(p->_li != myreq->_li);
-        w_assert1(p->_thr != myreq->_thr);
+        w_assert1(&p->_li != &myreq->_li);
+        w_assert1(&p->_thr != &myreq->_thr);
         bool compatible;
         if (precedes_me) {
             compatible = lock_base_t::compat[p->_requested_mode][m];
@@ -507,8 +507,8 @@ void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_resul
                 << ", his:gr=" << lock_base_t::mode_str[p->_granted_mode]
                 << "(req=" << lock_base_t::mode_str[p->_requested_mode] << ")");
             result.can_be_granted = false;
-            xct_t *theirxd = p->_xct;
-            xct_lock_info_t *theirli = p->_li;
+            xct_t *theirxd = &p->_xct;
+            xct_lock_info_t *theirli = &p->_li;
             if (!theirli->is_wait_map_obsolete()) {
                 const atomic_thread_map_t &other = theirli->get_wait_map();
                 bool deadlock_detected = other.contains(myfingerprint);
@@ -541,7 +541,7 @@ void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_resul
 
                     if (killhim) {
                         DBGOUT3(<<"kill him");
-                        result.deadlock_other_victim = p->_thr;
+                        result.deadlock_other_victim = &p->_thr;
                     } else {
                         DBGOUT3(<<"kill myself");
                         result.deadlock_myself_should_die = true;
