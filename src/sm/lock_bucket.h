@@ -160,6 +160,7 @@ private:
         any. */
     lock_queue_t*  _next;
 
+
     /** R/W latch to protect remaining fields as well as our
         lock_queue_entry_t's fields. */
     srwlock_t     _requests_latch;
@@ -180,22 +181,13 @@ private:
 
 /**
  * Lock table hash table bucket.
- * Lock table's hash table is _htab, a list of bucket_t's,
- * each bucket contains a mutex that protects the list
- * connected through the lock_head_t's "chain" links.
+ *
+ * Lock table's hash table is lock_core_m::_htab, which is an array of
+ * bucket_t's.  Each bucket contains a linked list of lock_queue_t's
+ * and a latch that protects that list's _next pointers.
  */
 class bucket_t {
 public:
-
-    /** pointer to the first lock queue. you need to check the  */ 
-    lock_queue_t                  *_queue;
-    /**
-     * protects accesses to _queue, not the contents of _queue.
-     * the critical section is only until returning a lock_queue_t* or adds new lock_queue_t*.
-     */
-    srwlock_t                      _queue_latch;
-    //tatas_lock                     _queue_latch;
-
     bucket_t() : _queue(NULL) {}
     ~bucket_t() {
         // assume done only at shutdown so no locks needed:
@@ -208,17 +200,37 @@ public:
     }
 
     /** Finds or creates a lock queue for the given hash value. */
-    lock_queue_t*                 find_lock_queue(uint32_t hash);
+    lock_queue_t* find_lock_queue(uint32_t hash);
+
+
+private:
+    friend void lock_core_m::assert_empty() const;
 
     /**
-     * Tries to find a lock queue for the given hash without creating a new lock queue.
-     * As this is a readonly access, much faster!
-     * @return returns NULL if not found. In that case, call find_lock_queue_create().
+     * Protects accesses to _queue and the _next pointers of the
+     * lock_queue_t's on that list only.  We only keep this latch
+     * until we find or create the right lock_queue_t.
      */
-    lock_queue_t*                 find_lock_queue_nocreate(uint32_t hash);
-    /** This one really creates if not found. */
-    lock_queue_t*                 find_lock_queue_create(uint32_t hash);
-    //lock_queue_t*                 _find_lock_queue(uint32_t hash);
+    srwlock_t     _queue_latch;
+    //tatas_lock  _queue_latch;
+
+    /** Pointer to the first lock_queue_ of our list; protected by _queue_latch. */ 
+    lock_queue_t* _queue;
+
+
+    /**
+     * Tries to find a lock queue for the given hash without creating
+     * a new lock queue.  As this is a readonly access, much faster!
+     * @return returns NULL if not found.  In that case, call find_lock_queue_create().
+     */
+    lock_queue_t* find_lock_queue_nocreate(uint32_t hash);
+    /**
+     * Find a lock queue for the given hash, creating a new lock queue
+     * if needed.
+     * @return never returns NULL.
+     */
+    lock_queue_t* find_lock_queue_create(uint32_t hash);
+    //lock_queue_t* _find_lock_queue(uint32_t hash);
 };
 
 inline lock_queue_t* bucket_t::find_lock_queue(uint32_t hash) {
@@ -240,6 +252,7 @@ inline lock_queue_t* bucket_t::find_lock_queue(uint32_t hash) {
     p->increase_hit_count();
     return p;
 }
+
 /*
 inline lock_queue_t* bucket_t::_find_lock_queue(uint32_t hash) {
     tataslock_critical_section cs (&_queue_latch);
@@ -254,6 +267,7 @@ inline lock_queue_t* bucket_t::_find_lock_queue(uint32_t hash) {
     return new_p;
 }
 */
+
 inline lock_queue_t* bucket_t::find_lock_queue_nocreate(uint32_t hash) {
     spinlock_read_critical_section cs(&_queue_latch);
     for (lock_queue_t* p = _queue; p != NULL; p = p->next()) {
@@ -278,4 +292,5 @@ inline lock_queue_t* bucket_t::find_lock_queue_create(uint32_t hash) {
     _queue = new_p;
     return new_p;
 }
+
 #endif // LOCK_BUCKET_H
