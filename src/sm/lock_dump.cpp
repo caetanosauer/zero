@@ -135,6 +135,8 @@ lock_core_m::assert_empty() const
 }
 
 
+#if 0
+//* This code is unused and UNSAFE
 void
 lock_core_m::_dump(ostream &o)
 {
@@ -148,6 +150,7 @@ lock_core_m::_dump(ostream &o)
     }
     o << "--end of lock table--" << endl;
 }
+#endif
 
 ostream& 
 operator<<(ostream& o, const lock_queue_entry_t& r)

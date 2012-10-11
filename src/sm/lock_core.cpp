@@ -123,7 +123,7 @@ lock_core_m::acquire_lock(
     w_rc_t::errcode_t funcret;
     if (acquire_ret == RET_SUCCESS) {
         // store the lock queue tag we observed. this is for Safe SX-ELR
-        xd->update_read_watermark (lock->x_lock_tag());
+        xd->update_read_watermark (lock->x_lock_tag());  // UNSAFE
         funcret = eOK;
     } else if (acquire_ret == RET_TIMEOUT) {
         funcret = eLOCKTIMEOUT;
@@ -287,7 +287,7 @@ void lock_core_m::release_lock(
     // update bucket tag if this is a part of SX-ELR.
     if (commit_lsn.valid()) {
         if (req->_granted_mode == EX || req->_granted_mode == XN || req->_granted_mode == XS) {  // UNSAFE
-            lock->update_x_lock_tag(commit_lsn);
+            lock->update_x_lock_tag(commit_lsn);  // UNSAFE
         }
     }
     lock->detach_request(req);
@@ -317,8 +317,8 @@ void lock_queue_t::wakeup_waiters(lmode_t released_granted, lmode_t released_req
         // spins will suspect this waiter's bitmap might cause false positives.
         // this is only to reduce false positives. not required for consistency.
         // @see xct_lock_info_t::_wait_map_obsolete
-        spinlock_read_critical_section cs(&_requests_lock);
-        // CRITICAL_SECTION(cs, _requests_lock.read_lock());
+        spinlock_read_critical_section cs(&_requests_latch);
+        // CRITICAL_SECTION(cs, _requests_latch.read_lock());
         for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
             if (p->_granted_mode != p->_requested_mode
                 && !lock_base_t::compat[p->_requested_mode][released_granted]) {
@@ -332,8 +332,8 @@ void lock_queue_t::wakeup_waiters(lmode_t released_granted, lmode_t released_req
     smthread_t *targets[MAX_WAKEUP];
     int target_count = 0;
     {
-        spinlock_read_critical_section cs(&_requests_lock);
-        // CRITICAL_SECTION(cs, _requests_lock.read_lock());
+        spinlock_read_critical_section cs(&_requests_latch);
+        // CRITICAL_SECTION(cs, _requests_latch.read_lock());
         for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
             if (p->_granted_mode != p->_requested_mode
                 && !lock_base_t::compat[p->_requested_mode][released_requested]) {
@@ -391,8 +391,8 @@ void lock_queue_t::deallocate_lock_queue(lock_queue_t* obj) {
 }
 
 lock_queue_entry_t* lock_queue_t::find_request (const xct_lock_info_t* myli) {
-    spinlock_read_critical_section cs(&_requests_lock);
-    // CRITICAL_SECTION(cs, _requests_lock.read_lock()); // read lock suffices
+    spinlock_read_critical_section cs(&_requests_latch);
+    // CRITICAL_SECTION(cs, _requests_latch.read_lock()); // read lock suffices
     for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
         if (&p->_li == myli) {
             return p;
@@ -401,8 +401,8 @@ lock_queue_entry_t* lock_queue_t::find_request (const xct_lock_info_t* myli) {
     return NULL;
 }
 void lock_queue_t::append_request (lock_queue_entry_t* myreq) {
-    spinlock_write_critical_section cs(&_requests_lock);
-    // CRITICAL_SECTION(cs, _requests_lock.write_lock());
+    spinlock_write_critical_section cs(&_requests_latch);
+    // CRITICAL_SECTION(cs, _requests_latch.write_lock());
     w_assert1(myreq->_granted_mode == smlevel_0::NL);
     if (_head == NULL) {
         _head = myreq;
@@ -426,8 +426,8 @@ void lock_queue_t::detach_request (lock_queue_entry_t* myreq) {
     w_assert3(found);
 #endif //W_DEBUG_LEVEL>=3
 
-    spinlock_write_critical_section cs(&_requests_lock);
-    // CRITICAL_SECTION(cs, _requests_lock.write_lock());
+    spinlock_write_critical_section cs(&_requests_latch);
+    // CRITICAL_SECTION(cs, _requests_latch.write_lock());
     if (myreq->_prev == NULL) {
         w_assert1(_head == myreq);
         _head = myreq->_next;
@@ -452,8 +452,8 @@ void lock_queue_t::detach_request (lock_queue_entry_t* myreq) {
 }
 
 bool lock_queue_t::grant_request (lock_queue_entry_t* myreq) {
-    spinlock_write_critical_section cs(&_requests_lock);
-    // CRITICAL_SECTION(cs, _requests_lock.write_lock());
+    spinlock_write_critical_section cs(&_requests_latch);
+    // CRITICAL_SECTION(cs, _requests_latch.write_lock());
     bool precedes_me = true;
     lmode_t m = myreq->_requested_mode;
     // check it again.
@@ -484,8 +484,8 @@ void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_resul
     xct_t* myxd = &myreq->_xct;  // UNSAFE
     bool precedes_me = true;
     lmode_t m = myreq->_requested_mode;  // UNSAFE
-    spinlock_read_critical_section cs(&_requests_lock);
-    // CRITICAL_SECTION(cs, _requests_lock.read_lock()); // read lock suffices
+    spinlock_read_critical_section cs(&_requests_latch);
+    // CRITICAL_SECTION(cs, _requests_latch.read_lock()); // read lock suffices
     for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
         if (p == myreq) {
             precedes_me = false;

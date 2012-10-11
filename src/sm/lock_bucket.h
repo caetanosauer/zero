@@ -20,7 +20,7 @@ class lock_core_m;
  * A lock request entry in a lock queue.
  *
  * Accessing any field of this class requires holding the appropriate
- * mode of the _requests_lock lock of the lock_queue_t we belong to if
+ * mode of the _requests_latch latch of the lock_queue_t we belong to if
  * any.  (Even immutable-once-created fields like _xct because we can
  * be deleted out from under a thread.)
  */
@@ -48,40 +48,67 @@ private:
     lmode_t             _requested_mode;
 };
 /** 
- * Requires holding a read lock for queue._requests_lock where queue
+ * Requires holding a read latch for queue._requests_latch where queue
  * is the lock_queue_t that r belongs to.
  */
 ostream&  operator<<(ostream& o, const lock_queue_entry_t& r);
 
 
 /**
- * \brief A lock queue to hold granted and waiting lock requests.
- * NOTE this class's constructor/destructor does nothing. The container
- * of this object (bucket_t) calls allocate_lock_queue/deallocate_lock_queue.
+ * \brief A lock queue to hold granted and waiting lock requests
+ * (lock_queue_entry_t's) for a given lock.
+ *
+ * NOTE objects of this class are created via the container of this
+ * object (bucket_t) calling allocate_lock_queue /
+ * deallocate_lock_queue.
+ *
+ * WARNING: lock_queue_t's are currently only deleted at shutdown.
+ * There is no mechanism presently to prevent one thread from deleting
+ * a lock_queue_t out from under another thread.  FIXME?
  */
 class lock_queue_t {
-    friend class lock_core_m; // for debug dump
 public:
     typedef lock_base_t::lmode_t lmode_t;
-    lock_queue_t(uint32_t hash) : _next (NULL), _hit_counts(0), _hash(hash), _x_lock_tag(lsn_t::null),
-        _head (NULL), _tail (NULL) {
+    lock_queue_t(uint32_t hash) : _hash(hash), _hit_counts(0), _next (NULL),
+        _x_lock_tag(lsn_t::null), _head (NULL), _tail (NULL) {
     }
     ~lock_queue_t() {}
 
-    inline lock_queue_t* next () { return _next; }
-    inline void set_next (lock_queue_t *new_next) { _next = new_next; }
+    inline uint32_t hash()       const { return _hash;}
+    inline uint32_t hit_count () const { return _hit_counts;}
 
-    inline uint32_t hash() const { return _hash;}
+
+private:
+    friend class bucket_t;
+    friend class lock_core_m;  // TODO: narrow this down later <<<>>>
 
     inline void increase_hit_count () {++_hit_counts;}
-    inline uint32_t hit_count () const { return _hit_counts;}
-    
+
+
+    /** Requires read access for the bucket containing us if any's
+        _queue_latch. */
+    inline lock_queue_t* next () { return _next; }
+    /** Requires write access for the bucket containing us if any's
+        _queue_latch. */
+    inline void set_next (lock_queue_t *new_next) { _next = new_next; }
+
+    /** Allocate a new queue object.  Uses TLS cache in lock_core.cpp. */
+    static lock_queue_t* allocate_lock_queue(uint32_t hash);
+    /** Deallocate a new queue object.  Uses TLS cache in
+        lock_core.cpp.  Shutdown time only. */
+    static void deallocate_lock_queue(lock_queue_t *obj);
+
+
+    /** Requires read access for _request_latch. */
+    inline const lsn_t& x_lock_tag () const {return _x_lock_tag;}
+    /** Requires write access for _request_latch, new_tag may be
+        lsn_t::null. */
     inline void update_x_lock_tag (const lsn_t &new_tag) {
         if (!_x_lock_tag.valid() || _x_lock_tag < new_tag) {
             _x_lock_tag = new_tag;
         }
     }
-    inline const lsn_t& x_lock_tag () const {return _x_lock_tag;}
+
 
     lock_queue_entry_t* find_request (const xct_lock_info_t* li);
 
@@ -112,42 +139,42 @@ public:
      */
     void check_can_grant (lock_queue_entry_t* myreq, check_grant_result &result);
     
-    /** opportunistically wake up waiters. called when some lock is released. */
+    /** opportunistically wake up waiters.  called when some lock is released. */
     void wakeup_waiters(lmode_t released_granted, lmode_t released_requested);
 
-    /** allocate a new queue object. uses TLS cache in lock_core.cpp. */
-    static lock_queue_t* allocate_lock_queue(uint32_t hash);
-    /** deallocate a new queue object. uses TLS cache in lock_core.cpp. */
-    static void deallocate_lock_queue(lock_queue_t *obj);
     
-private:
-    /** forms a singly linked list for other queues in the same bucket. */
-    lock_queue_t*  _next;
+    const uint32_t _hash;  ///< precise hash for this lock queue.
+
     /** 
-     * how popular it is (approximately, so, no protection).
-     * for background cleanup to save memory.
-     * NOTE this is NOT a pin-count that is precisely incremented/decremented to immediately revoke.
-     * the queue is revoked only in background cleanup.
+     * How popular this lock is (approximately, so, no protection).
+     * Intended for background cleanup to save memory, but not currently used.
+     * Someday, the queue may be revoked in background cleanup.  FIXME
+     *
+     * NOTE this is NOT a pin-count that is precisely
+     * incremented/decremented to control when deletion could occur.
      */
     uint32_t       _hit_counts;
-    /** precise hash for this lock queue. */
-    const uint32_t _hash;
-    /** Stores the commit timestamp of latest transaction that released an X lock on this queue. */
+
+    /** Forms a singly-linked list for other queues in the same bucket
+        as us; protected by the bucket containing us's _queue_latch if
+        any. */
+    lock_queue_t*  _next;
+
+    /** R/W latch to protect remaining fields as well as our
+        lock_queue_entry_t's fields. */
+    srwlock_t     _requests_latch;
+
+    /** Stores the commit timestamp of the latest transaction that
+        released an X lock on this queue; holds lsn_t::null if no such
+        transaction exists; protected by _requests_latch. */
     lsn_t          _x_lock_tag;
 
-    /** the first entry in this queue. */
+    /** The first entry in this queue or NULL if queue empty;
+        protected by _requests_latch. */
     lock_queue_entry_t* _head;
-    /** the last entry in this queue. */
+    /** The last entry in this queue or NULL if queue empty; protected
+        by _requests_latch. */
     lock_queue_entry_t* _tail;
-
-    /**
-     * protects accesses to _requests.
-     *   read access: find_request, check_can_grant, wakeup_waiters
-     *   write access: grant_request, append_request, detach_request
-     *
-     * Also protects access to _head, _tail, lock_queue_entry_t's in our queue.
-     */
-    srwlock_t     _requests_lock;
 };
 
 
@@ -166,11 +193,12 @@ public:
      * protects accesses to _queue, not the contents of _queue.
      * the critical section is only until returning a lock_queue_t* or adds new lock_queue_t*.
      */
-    srwlock_t                      _queue_lock;
-    //tatas_lock                     _queue_lock;
+    srwlock_t                      _queue_latch;
+    //tatas_lock                     _queue_latch;
 
     bucket_t() : _queue(NULL) {}
     ~bucket_t() {
+        // assume done only at shutdown so no locks needed:
         lock_queue_t* p = _queue;
         while (p != NULL) {
             lock_queue_t* q = p->next();
@@ -214,7 +242,7 @@ inline lock_queue_t* bucket_t::find_lock_queue(uint32_t hash) {
 }
 /*
 inline lock_queue_t* bucket_t::_find_lock_queue(uint32_t hash) {
-    tataslock_critical_section cs (&_queue_lock);
+    tataslock_critical_section cs (&_queue_latch);
     for (lock_queue_t* p = _queue; p != NULL; p = p->next()) {
         if (p->hash() == hash) {
             return p;
@@ -227,7 +255,7 @@ inline lock_queue_t* bucket_t::_find_lock_queue(uint32_t hash) {
 }
 */
 inline lock_queue_t* bucket_t::find_lock_queue_nocreate(uint32_t hash) {
-    spinlock_read_critical_section cs(&_queue_lock);
+    spinlock_read_critical_section cs(&_queue_latch);
     for (lock_queue_t* p = _queue; p != NULL; p = p->next()) {
         if (p->hash() == hash) {
             return p; // most cases should be here...
@@ -237,7 +265,7 @@ inline lock_queue_t* bucket_t::find_lock_queue_nocreate(uint32_t hash) {
 }
 
 inline lock_queue_t* bucket_t::find_lock_queue_create(uint32_t hash) {
-    spinlock_write_critical_section cs(&_queue_lock);
+    spinlock_write_critical_section cs(&_queue_latch);
     // note that we need to scan the linked list again to make sure
     // it wasn't inserted before this call.
     for (lock_queue_t* p = _queue; p != NULL; p = p->next()) {
