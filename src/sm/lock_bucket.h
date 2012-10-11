@@ -15,18 +15,19 @@ class xct_lock_entry_t;
 
 class lock_core_m;
 
+
 /**
- * A lock request entry in lock queue.
+ * A lock request entry in a lock queue.
+ *
+ * Accessing any field of this class requires holding the appropriate
+ * mode of the _requests_lock lock of the lock_queue_t we belong to if
+ * any.  (Even immutable-once-created fields like _xct because we can
+ * be deleted out from under a thread.)
  */
 class lock_queue_entry_t {
-public:
-    xct_t&           _xct;  ///< owning xct.
-    smthread_t&      _thr;  ///< owning thread.
-    xct_lock_info_t& _li;
-
 private:
     friend class lock_queue_t;
-    friend class lock_core_m;  // for debug dump
+    friend class lock_core_m;  // TODO: narrow this down later <<<>>>
     friend ostream& operator<<(ostream& o, const lock_queue_entry_t& r);
 
     typedef lock_base_t::lmode_t lmode_t;
@@ -36,14 +37,22 @@ private:
             _granted_mode(granted_mode), _requested_mode(requested_mode) {
     }
 
+    xct_t&              _xct;  ///< owning xct.
+    smthread_t&         _thr;  ///< owning thread.
+    xct_lock_info_t&    _li;
+
     xct_lock_entry_t*   _xct_entry;
     lock_queue_entry_t* _prev;
     lock_queue_entry_t* _next;
     lmode_t             _granted_mode;
     lmode_t             _requested_mode;
-    //srwlock_t           _entry_lock;
 };
+/** 
+ * Requires holding a read lock for queue._requests_lock where queue
+ * is the lock_queue_t that r belongs to.
+ */
 ostream&  operator<<(ostream& o, const lock_queue_entry_t& r);
+
 
 /**
  * \brief A lock queue to hold granted and waiting lock requests.
@@ -135,9 +144,12 @@ private:
      * protects accesses to _requests.
      *   read access: find_request, check_can_grant, wakeup_waiters
      *   write access: grant_request, append_request, detach_request
+     *
+     * Also protects access to _head, _tail, lock_queue_entry_t's in our queue.
      */
     srwlock_t     _requests_lock;
 };
+
 
 /**
  * Lock table hash table bucket.

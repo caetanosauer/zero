@@ -149,10 +149,10 @@ lock_core_m::_acquire_lock(
     smthread_t *thr = g_me();
     if (req == NULL) {
 #if W_DEBUG_LEVEL>=3
-        for (lock_queue_entry_t* p = lock->_head; p != NULL; p = p->_next) {
-            w_assert3(p->_xct != xd);
-            w_assert3(p->_thr != thr);
-            w_assert3(p->_li != the_xlinfo);
+        for (lock_queue_entry_t* p = lock->_head; p != NULL; p = p->_next) {  // UNSAFE
+            w_assert3(p->_xct != xd);  // UNSAFE
+            w_assert3(p->_thr != thr);  // UNSAFE
+            w_assert3(p->_li != the_xlinfo);  // UNSAFE
         }
 #endif // W_DEBUG_LEVEL>=3
         req = new (*lockEntryPool) lock_queue_entry_t(*xd, *thr, *the_xlinfo, NL, mode);
@@ -161,14 +161,14 @@ lock_core_m::_acquire_lock(
         }
         lock->append_request(req);
     } else {
-        w_assert1(&req->_xct == xd);
-        w_assert1(&req->_thr == thr);
-        w_assert1(&req->_li == the_xlinfo);
-        w_assert1(req->_xct_entry != NULL);
-        prev_mode = req->_granted_mode;
-        req->_requested_mode = supr[mode][req->_granted_mode];
-        w_assert1(req->_requested_mode != LL);
-        if (req->_requested_mode == req->_granted_mode) {
+        w_assert1(&req->_xct == xd);  // UNSAFE
+        w_assert1(&req->_thr == thr);  // UNSAFE
+        w_assert1(&req->_li == the_xlinfo);  // UNSAFE
+        w_assert1(req->_xct_entry != NULL);  // UNSAFE
+        prev_mode = req->_granted_mode;  // UNSAFE
+        req->_requested_mode = supr[mode][req->_granted_mode];  // UNSAFE
+        w_assert1(req->_requested_mode != LL);  // UNSAFE
+        if (req->_requested_mode == req->_granted_mode) {  // UNSAFE
             return RET_SUCCESS; // already had the desired lock mode!
         }
     }
@@ -177,10 +177,10 @@ lock_core_m::_acquire_lock(
     the_xlinfo->init_wait_map(thr);
     // discard (or downgrade) the failed request. check_only does it even on success.
     if (loop_ret != RET_SUCCESS || check_only) {
-        if (req->_granted_mode != NL) {
+        if (req->_granted_mode != NL) {  // UNSAFE
             // We deny the upgrade but leave the 
             // lock request in place with its former status.
-            req->_requested_mode = req->_granted_mode;
+            req->_requested_mode = req->_granted_mode;  // UNSAFE
         } else {
             // Remove the request
             release_lock (lock, req, lsn_t::null);
@@ -286,7 +286,7 @@ void lock_core_m::release_lock(
     
     // update bucket tag if this is a part of SX-ELR.
     if (commit_lsn.valid()) {
-        if (req->_granted_mode == EX || req->_granted_mode == XN || req->_granted_mode == XS) {
+        if (req->_granted_mode == EX || req->_granted_mode == XN || req->_granted_mode == XS) {  // UNSAFE
             lock->update_x_lock_tag(commit_lsn);
         }
     }
@@ -366,7 +366,7 @@ lock_core_m::release_duration(
         // releases only read locks
         for (xct_lock_entry_t* p = the_xlinfo->_tail; p != NULL;) {
             xct_lock_entry_t *prev = p->prev; // get this first. release_lock will remove current p
-            lmode_t m = p->entry->_granted_mode;
+            lmode_t m = p->entry->_granted_mode;  // UNSAFE
             if (m == IS || m == SH || m == SN || m == NS) {
                 release_lock(p->queue, p->entry, commit_lsn);
             }
@@ -401,9 +401,9 @@ lock_queue_entry_t* lock_queue_t::find_request (const xct_lock_info_t* myli) {
     return NULL;
 }
 void lock_queue_t::append_request (lock_queue_entry_t* myreq) {
-    w_assert1(myreq->_granted_mode == smlevel_0::NL);
     spinlock_write_critical_section cs(&_requests_lock);
     // CRITICAL_SECTION(cs, _requests_lock.write_lock());
+    w_assert1(myreq->_granted_mode == smlevel_0::NL);
     if (_head == NULL) {
         _head = myreq;
         _tail = myreq;
@@ -479,11 +479,11 @@ bool lock_queue_t::grant_request (lock_queue_entry_t* myreq) {
 
     
 void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_result &result) {
-    const atomic_thread_map_t &myfingerprint = myreq->_thr.get_fingerprint_map();
+    const atomic_thread_map_t &myfingerprint = myreq->_thr.get_fingerprint_map();  // UNSAFE
     result.init(myfingerprint);
-    xct_t* myxd = &myreq->_xct;
+    xct_t* myxd = &myreq->_xct;  // UNSAFE
     bool precedes_me = true;
-    lmode_t m = myreq->_requested_mode;
+    lmode_t m = myreq->_requested_mode;  // UNSAFE
     spinlock_read_critical_section cs(&_requests_lock);
     // CRITICAL_SECTION(cs, _requests_lock.read_lock()); // read lock suffices
     for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
