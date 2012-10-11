@@ -123,6 +123,7 @@ lock_core_m::acquire_lock(
     w_rc_t::errcode_t funcret;
     if (acquire_ret == RET_SUCCESS) {
         // store the lock queue tag we observed. this is for Safe SX-ELR
+        spinlock_read_critical_section cs(&lock->_requests_latch);
         xd->update_read_watermark (lock->x_lock_tag());  // UNSAFE
         funcret = eOK;
     } else if (acquire_ret == RET_TIMEOUT) {
@@ -149,10 +150,13 @@ lock_core_m::_acquire_lock(
     smthread_t *thr = g_me();
     if (req == NULL) {
 #if W_DEBUG_LEVEL>=3
-        for (lock_queue_entry_t* p = lock->_head; p != NULL; p = p->_next) {  // UNSAFE
-            w_assert3(p->_xct != xd);  // UNSAFE
-            w_assert3(p->_thr != thr);  // UNSAFE
-            w_assert3(p->_li != the_xlinfo);  // UNSAFE
+        {
+            spinlock_read_critical_section cs(&_requests_latch);
+            for (lock_queue_entry_t* p = lock->_head; p != NULL; p = p->_next) {
+                w_assert3(p->_xct != xd);
+                w_assert3(p->_thr != thr);
+                w_assert3(p->_li != the_xlinfo);
+            }
         }
 #endif // W_DEBUG_LEVEL>=3
         req = new (*lockEntryPool) lock_queue_entry_t(*xd, *thr, *the_xlinfo, NL, mode);
@@ -286,8 +290,9 @@ void lock_core_m::release_lock(
     
     // update bucket tag if this is a part of SX-ELR.
     if (commit_lsn.valid()) {
-        if (req->_granted_mode == EX || req->_granted_mode == XN || req->_granted_mode == XS) {  // UNSAFE
-            lock->update_x_lock_tag(commit_lsn);  // UNSAFE
+        spinlock_write_critical_section cs(&lock->_requests_latch);
+        if (req->_granted_mode == EX || req->_granted_mode == XN || req->_granted_mode == XS) {
+            lock->update_x_lock_tag(commit_lsn);
         }
     }
     lock->detach_request(req);
