@@ -291,9 +291,11 @@ void lock_core_m::release_lock(
     w_assert1(req);
     w_assert1(&req->_thr == g_me());  // safe if true
     
-    // update bucket tag if this is a part of SX-ELR.
+    // update lock tag if this is a part of SX-ELR.
     if (commit_lsn.valid()) {
-        if (req->_granted_mode == EX || req->_granted_mode == XN || req->_granted_mode == XS) {
+        lmode_t m = req->_granted_mode;
+        if (m == XN || m == XS || m == XU || m == XX
+            || m == NX || m == SX || m == UX) {
             spinlock_write_critical_section cs(&lock->_requests_latch);
             lock->update_x_lock_tag(commit_lsn);
         }
