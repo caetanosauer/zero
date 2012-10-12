@@ -19,10 +19,26 @@ class lock_core_m;
 /**
  * A lock request entry in a lock queue.
  *
- * Accessing any field of this class requires holding the appropriate
- * mode of the _requests_latch latch of the lock_queue_t we belong to if
- * any.  (Even immutable-once-created fields like _xct because we can
- * be deleted out from under a thread.)
+ * All fields except _prev and _next, which are protected by L in the
+ * usual way, of this class have unusual access protections:
+ *
+ * For any thread but this->_thr:
+ *
+ *   read a field:  must have read access to L
+ *   write a field: forbidden
+ *
+ * For the thread this->_thr:
+ *
+ *   read a field:  always legal
+ *   write a field: must have write access to L
+ *
+ * where L is the _requests_latch latch of the lock_queue_t we belong
+ * to if any.  It is believed that this provides complete protection
+ * (e.g., no stale reads).
+ *
+ * The primary reason for these relaxed rules is to allow
+ * release_duration to avoid needing to find and take L in read mode
+ * just to see if a lock needs to be released.
  */
 class lock_queue_entry_t {
 private:
@@ -40,10 +56,11 @@ private:
     xct_t&              _xct;  ///< owning xct.
     smthread_t&         _thr;  ///< owning thread.
     xct_lock_info_t&    _li;
-
     xct_lock_entry_t*   _xct_entry;
+
     lock_queue_entry_t* _prev;
     lock_queue_entry_t* _next;
+
     lmode_t             _granted_mode;
     lmode_t             _requested_mode;
 };
@@ -117,6 +134,7 @@ private:
     /**
      * try getting a lock.
      * @return if it really succeeded to get the lock.
+     * Requires current thread is myreq->_thr
      */
     bool grant_request (lock_queue_entry_t* myreq);
 

@@ -124,7 +124,7 @@ lock_core_m::acquire_lock(
     if (acquire_ret == RET_SUCCESS) {
         // store the lock queue tag we observed. this is for Safe SX-ELR
         spinlock_read_critical_section cs(&lock->_requests_latch);
-        xd->update_read_watermark (lock->x_lock_tag());  // UNSAFE
+        xd->update_read_watermark (lock->x_lock_tag());
         funcret = eOK;
     } else if (acquire_ret == RET_TIMEOUT) {
         funcret = eLOCKTIMEOUT;
@@ -146,8 +146,8 @@ lock_core_m::_acquire_lock(
     xct_lock_info_t*       the_xlinfo)
 {
     // is there already my request?
-    lock_queue_entry_t* req = lock->find_request(the_xlinfo);
     smthread_t *thr = g_me();
+    lock_queue_entry_t* req = lock->find_request(the_xlinfo);
     if (req == NULL) {
 #if W_DEBUG_LEVEL>=3
         {
@@ -165,14 +165,14 @@ lock_core_m::_acquire_lock(
         }
         lock->append_request(req);
     } else {
-        w_assert1(&req->_xct == xd);  // UNSAFE
-        w_assert1(&req->_thr == thr);  // UNSAFE
-        w_assert1(&req->_li == the_xlinfo);  // UNSAFE
-        w_assert1(req->_xct_entry != NULL);  // UNSAFE
-        prev_mode = req->_granted_mode;  // UNSAFE
+        w_assert1(&req->_thr == thr);  // safe if true
+        w_assert1(&req->_xct == xd);
+        w_assert1(&req->_li == the_xlinfo);
+        w_assert1(req->_xct_entry != NULL);
+        prev_mode = req->_granted_mode;
         req->_requested_mode = supr[mode][req->_granted_mode];  // UNSAFE
-        w_assert1(req->_requested_mode != LL);  // UNSAFE
-        if (req->_requested_mode == req->_granted_mode) {  // UNSAFE
+        w_assert1(req->_requested_mode != LL);
+        if (req->_requested_mode == req->_granted_mode) {
             return RET_SUCCESS; // already had the desired lock mode!
         }
     }
@@ -181,7 +181,7 @@ lock_core_m::_acquire_lock(
     the_xlinfo->init_wait_map(thr);
     // discard (or downgrade) the failed request. check_only does it even on success.
     if (loop_ret != RET_SUCCESS || check_only) {
-        if (req->_granted_mode != NL) {  // UNSAFE
+        if (req->_granted_mode != NL) {
             // We deny the upgrade but leave the 
             // lock request in place with its former status.
             spinlock_write_critical_section cs(&lock->_requests_latch);
@@ -288,11 +288,12 @@ void lock_core_m::release_lock(
 {
     w_assert1(lock);
     w_assert1(req);
+    w_assert1(&req->_thr == g_me());  // safe if true
     
     // update bucket tag if this is a part of SX-ELR.
     if (commit_lsn.valid()) {
-        spinlock_write_critical_section cs(&lock->_requests_latch);
         if (req->_granted_mode == EX || req->_granted_mode == XN || req->_granted_mode == XS) {
+            spinlock_write_critical_section cs(&lock->_requests_latch);
             lock->update_x_lock_tag(commit_lsn);
         }
     }
@@ -372,7 +373,8 @@ lock_core_m::release_duration(
         // releases only read locks
         for (xct_lock_entry_t* p = the_xlinfo->_tail; p != NULL;) {
             xct_lock_entry_t *prev = p->prev; // get this first. release_lock will remove current p
-            lmode_t m = p->entry->_granted_mode;  // UNSAFE
+            w_assert1(&p->entry->_thr == g_me());  // safe if true
+            lmode_t m = p->entry->_granted_mode;
             if (m == IS || m == SH || m == SN || m == NS) {
                 release_lock(p->queue, p->entry, commit_lsn);
             }
@@ -460,6 +462,7 @@ void lock_queue_t::detach_request (lock_queue_entry_t* myreq) {
 bool lock_queue_t::grant_request (lock_queue_entry_t* myreq) {
     spinlock_write_critical_section cs(&_requests_latch);
     // CRITICAL_SECTION(cs, _requests_latch.write_lock());
+    w_assert1(&myreq->_thr == g_me());
     bool precedes_me = true;
     lmode_t m = myreq->_requested_mode;
     // check it again.

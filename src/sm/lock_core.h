@@ -121,6 +121,7 @@ public:
                 bool              check_only,
                 timeout_in_ms     timeout);
 
+    //* Requires request->_thr is the current thread
     void        release_lock(
                 lock_queue_t*      lock,
                 lock_queue_entry_t*   request,
