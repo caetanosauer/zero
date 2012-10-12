@@ -370,7 +370,7 @@ lock_core_m::release_duration(
     FUNC(lock_core_m::release_duration);
     DBGOUT4(<<"lock_core_m::release_duration "
             << " tid=" << the_xlinfo->tid()
-                << " read_lock_only=" << read_lock_only);
+            << " read_lock_only=" << read_lock_only);
 
     if (read_lock_only) {
         // releases only read locks
@@ -378,12 +378,14 @@ lock_core_m::release_duration(
             xct_lock_entry_t *prev = p->prev; // get this first. release_lock will remove current p
             w_assert1(&p->entry->_thr == g_me());  // safe if true
             lmode_t m = p->entry->_granted_mode;
-            if (m == IS || m == SH || m == SN || m == NS) {
+            if (m == IS || m == SN || m == NS || m == SS
+                || m == UN || m == NU || m == UU
+                || m == SU || m == US) {
                 release_lock(p->queue, p->entry, commit_lsn);
             }
             p = prev;
         }
-        // we don't "downgrade" SX/XS to SN/NS for laziness. see ticket:101
+        // we don't "downgrade" [SU]X/X[SU] to NX/XN for laziness. see ticket:101
     } else {
         //backwards:
         while (the_xlinfo->_tail != NULL)  {
