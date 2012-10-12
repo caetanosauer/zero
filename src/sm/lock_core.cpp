@@ -170,7 +170,8 @@ lock_core_m::_acquire_lock(
         w_assert1(&req->_li == the_xlinfo);
         w_assert1(req->_xct_entry != NULL);
         prev_mode = req->_granted_mode;
-        req->_requested_mode = supr[mode][req->_granted_mode];  // UNSAFE
+        spinlock_write_critical_section cs(&lock->_requests_latch);
+        req->_requested_mode = supr[mode][req->_granted_mode];
         w_assert1(req->_requested_mode != LL);
         if (req->_requested_mode == req->_granted_mode) {
             return RET_SUCCESS; // already had the desired lock mode!
