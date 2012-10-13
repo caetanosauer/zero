@@ -151,6 +151,7 @@ private:
         timeout_in_ms          timeout,
         xct_lock_info_t*       the_xlinfo);
     int _acquire_lock_loop(
+        xct_t*                 xd,
         smthread_t*            thr,
         lock_queue_t*          lock,
         lock_queue_entry_t*    req,

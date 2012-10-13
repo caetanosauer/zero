@@ -136,7 +136,7 @@ private:
      * @return if it really succeeded to get the lock.
      * Requires current thread is myreq->_thr
      */
-    bool grant_request (lock_queue_entry_t* myreq);
+    bool grant_request (lock_queue_entry_t* myreq, lsn_t& observed);
 
     struct check_grant_result {
         void init (const atomic_thread_map_t &fingerprint) {
@@ -151,6 +151,7 @@ private:
         bool deadlock_myself_should_die;
         smthread_t* deadlock_other_victim;
         atomic_thread_map_t  refreshed_wait_map;
+        lsn_t observed;
     };
     /**
      * Checkif my request can be granted, and also check deadlocks.
@@ -158,7 +159,7 @@ private:
     void check_can_grant (lock_queue_entry_t* myreq, check_grant_result &result);
 
     //* Requires read access to _requests_latch of queue other_request belongs to
-    bool _check_compatible(lmode_t requested_mode, lock_queue_entry_t* other_request, bool proceeds_me);
+    bool _check_compatible(lmode_t requested_mode, lock_queue_entry_t* other_request, bool proceeds_me, lsn_t& observed);
 
     /** opportunistically wake up waiters.  called when some lock is released. */
     void wakeup_waiters(lmode_t released_granted, lmode_t released_requested);
@@ -199,7 +200,7 @@ private:
     lock_queue_entry_t* _tail;
 };
 
-inline bool lock_queue_t::_check_compatible(lmode_t requested_mode, lock_queue_entry_t* other_request, bool precedes_me) {
+inline bool lock_queue_t::_check_compatible(lmode_t requested_mode, lock_queue_entry_t* other_request, bool precedes_me, lsn_t& observed) {
     bool compatible;
     if (precedes_me) {
         compatible = lock_base_t::compat[other_request->_requested_mode][requested_mode];

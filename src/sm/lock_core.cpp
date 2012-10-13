@@ -177,7 +177,7 @@ lock_core_m::_acquire_lock(
             return RET_SUCCESS; // already had the desired lock mode!
         }
     }
-    int loop_ret = _acquire_lock_loop(thr, lock, req, check_only, timeout, the_xlinfo);
+    int loop_ret = _acquire_lock_loop(xd, thr, lock, req, check_only, timeout, the_xlinfo);
     
     the_xlinfo->init_wait_map(thr);
     // discard (or downgrade) the failed request. check_only does it even on success.
@@ -198,6 +198,7 @@ lock_core_m::_acquire_lock(
 
 int
 lock_core_m::_acquire_lock_loop(
+    xct_t*                 xd,
     smthread_t*            thr,
     lock_queue_t*          lock,
     lock_queue_entry_t*    req,
@@ -218,6 +219,7 @@ lock_core_m::_acquire_lock_loop(
     // loop again and again until decisive failure or success
     lock_queue_t::check_grant_result chk_result;
     while (true) {
+        chk_result.observed = lsn_t::null;
         lock->check_can_grant(req, chk_result);
         DBGOUT5(<<"check done:" << chk_result.can_be_granted << ","
             << chk_result.deadlock_detected << ","
@@ -228,10 +230,17 @@ lock_core_m::_acquire_lock_loop(
         
         if (chk_result.can_be_granted) {
             if (check_only) {
+                if (chk_result.observed.valid())
+                    // for controlled lock violation mode:
+                    xd->update_read_watermark (chk_result.observed);
                 return RET_SUCCESS;
             }
-            bool granted = lock->grant_request(req);
+            lsn_t observed;
+            bool granted = lock->grant_request(req, observed);
             if (granted) {
+                if (observed.valid())
+                    // for controlled lock violation mode:
+                    xd->update_read_watermark (observed);
                 return RET_SUCCESS;
             } else {
                 // must be an extremely unlucky case. try again
@@ -465,7 +474,7 @@ void lock_queue_t::detach_request (lock_queue_entry_t* myreq) {
     }
 }
 
-bool lock_queue_t::grant_request (lock_queue_entry_t* myreq) {
+bool lock_queue_t::grant_request (lock_queue_entry_t* myreq, lsn_t& observed) {
     spinlock_write_critical_section cs(&_requests_latch);
     // CRITICAL_SECTION(cs, _requests_latch.write_lock());
 
@@ -480,7 +489,7 @@ bool lock_queue_t::grant_request (lock_queue_entry_t* myreq) {
             precedes_me = false;
             continue;
         }
-        bool compatible = _check_compatible(m, p, precedes_me);
+        bool compatible = _check_compatible(m, p, precedes_me, observed);
         if (!compatible) {
             return false;
         }
@@ -510,7 +519,7 @@ void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_resul
         }
         w_assert1(&p->_li != &myreq->_li);
         w_assert1(&p->_thr != &myreq->_thr);
-        bool compatible = _check_compatible(m, p, precedes_me);
+        bool compatible = _check_compatible(m, p, precedes_me, result.observed);
         if (!compatible) {
             DBGOUT5(<<"incompatible! (pre=" << precedes_me << ")."
                 << ", I=" << myfingerprint
