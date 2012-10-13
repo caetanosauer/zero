@@ -468,6 +468,9 @@ void lock_queue_t::detach_request (lock_queue_entry_t* myreq) {
 bool lock_queue_t::grant_request (lock_queue_entry_t* myreq) {
     spinlock_write_critical_section cs(&_requests_latch);
     // CRITICAL_SECTION(cs, _requests_latch.write_lock());
+
+    // assume here myreq is a member of our queue and hence covered by
+    // _request_latch
     w_assert1(&myreq->_thr == g_me());
     bool precedes_me = true;
     lmode_t m = myreq->_requested_mode;
@@ -477,12 +480,7 @@ bool lock_queue_t::grant_request (lock_queue_entry_t* myreq) {
             precedes_me = false;
             continue;
         }
-        bool compatible;
-        if (precedes_me) {
-            compatible = lock_base_t::compat[p->_requested_mode][m];
-        } else {
-            compatible = lock_base_t::compat[p->_granted_mode][m];
-        }
+        bool compatible = _check_compatible(m, p, precedes_me);
         if (!compatible) {
             return false;
         }
@@ -512,12 +510,7 @@ void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_resul
         }
         w_assert1(&p->_li != &myreq->_li);
         w_assert1(&p->_thr != &myreq->_thr);
-        bool compatible;
-        if (precedes_me) {
-            compatible = lock_base_t::compat[p->_requested_mode][m];
-        } else {
-            compatible = lock_base_t::compat[p->_granted_mode][m];
-        }
+        bool compatible = _check_compatible(m, p, precedes_me);
         if (!compatible) {
             DBGOUT5(<<"incompatible! (pre=" << precedes_me << ")."
                 << ", I=" << myfingerprint

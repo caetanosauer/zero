@@ -156,7 +156,10 @@ private:
      * Checkif my request can be granted, and also check deadlocks.
      */
     void check_can_grant (lock_queue_entry_t* myreq, check_grant_result &result);
-    
+
+    //* Requires read access to _requests_latch of queue other_request belongs to
+    bool _check_compatible(lmode_t requested_mode, lock_queue_entry_t* other_request, bool proceeds_me);
+
     /** opportunistically wake up waiters.  called when some lock is released. */
     void wakeup_waiters(lmode_t released_granted, lmode_t released_requested);
 
@@ -195,6 +198,17 @@ private:
         by _requests_latch. */
     lock_queue_entry_t* _tail;
 };
+
+inline bool lock_queue_t::_check_compatible(lmode_t requested_mode, lock_queue_entry_t* other_request, bool precedes_me) {
+    bool compatible;
+    if (precedes_me) {
+        compatible = lock_base_t::compat[other_request->_requested_mode][requested_mode];
+    } else {
+        compatible = lock_base_t::compat[other_request->_granted_mode][requested_mode];
+    }
+
+    return compatible;
+}
 
 
 /**
