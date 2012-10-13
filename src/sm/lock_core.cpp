@@ -385,7 +385,8 @@ lock_core_m::release_duration(
             }
             p = prev;
         }
-        // we don't "downgrade" [SU]X/X[SU] to NX/XN for laziness. see ticket:101
+        // we don't "downgrade" [SU]X/X[SU] to NX/XN for laziness.  see ticket:101
+        // likewise, we don't "downgrade" SIX to IX for laziness
     } else {
         //backwards:
         while (the_xlinfo->_tail != NULL)  {
