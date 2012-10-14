@@ -82,8 +82,12 @@ public:
      */
     xct_lock_entry_t *_head;
     xct_lock_entry_t *_tail;
-private:
 
+    srwlock_t _shared_latch;
+    bool      _permission_to_violate;
+    lsn_t     _commit_lsn;
+
+private:
     // tid of the most recent transaction using this lock_info; monotonically 
     // increasing.
     tid_t           _tid;     

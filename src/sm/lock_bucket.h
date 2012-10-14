@@ -208,7 +208,18 @@ inline bool lock_queue_t::_check_compatible(lmode_t requested_mode, lock_queue_e
         compatible = lock_base_t::compat[other_request->_granted_mode][requested_mode];
     }
 
-    return compatible;
+    if (compatible)
+        return true;
+
+    // Can we violate the lock?
+    xct_lock_info_t& li = other_request->_li;
+    spinlock_read_critical_section cs(&li._shared_latch);
+    if (!li._permission_to_violate)
+        return false;
+
+    if (!observed.valid() || observed < li._commit_lsn)
+        observed = li._commit_lsn;
+    return true;
 }
 
 

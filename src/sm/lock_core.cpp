@@ -35,7 +35,7 @@ int g_deadlock_dreadlock_interval_ms = 10;
 w_rc_t::errcode_t (*g_check_deadlock_impl)(xct_t* xd, lock_request_t *myreq);
 #endif // SWITCH_DEADLOCK_IMPL
 
-xct_lock_info_t::xct_lock_info_t() : _head (NULL), _tail (NULL)
+xct_lock_info_t::xct_lock_info_t() : _head (NULL), _tail (NULL), _permission_to_violate (false)
 {
     _wait_map_obsolete = false;
     init_wait_map(g_me());
