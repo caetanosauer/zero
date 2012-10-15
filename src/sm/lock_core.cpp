@@ -153,9 +153,9 @@ lock_core_m::_acquire_lock(
         {
             spinlock_read_critical_section cs(&lock->_requests_latch);
             for (lock_queue_entry_t* p = lock->_head; p != NULL; p = p->_next) {
-                w_assert3(p->_xct != xd);
-                w_assert3(p->_thr != thr);
-                w_assert3(p->_li != the_xlinfo);
+                w_assert3(&p->_xct != xd);
+                w_assert3(&p->_thr != thr);
+                w_assert3(&p->_li != the_xlinfo);
             }
         }
 #endif // W_DEBUG_LEVEL>=3
