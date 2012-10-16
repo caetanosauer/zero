@@ -222,7 +222,7 @@ rc_t lock_m::unlock_duration(
     bool read_lock_only, lsn_t commit_lsn)
 {
     FUNC(lock_m::unlock_duration);
-    xct_t*         xd = xct();
+    xct_t*        xd = xct();
     w_rc_t        rc;        // == RCOK
     
     if (xd)  {
@@ -239,4 +239,14 @@ rc_t lock_m::unlock_duration(
         w_assert1(read_lock_only || theLockInfo->_tail == NULL);
     }
     return rc;
+}
+
+void lock_m::give_permission_to_violate(lsn_t commit_lsn) {
+    xct_t* xd = xct();
+    if (xd)  {
+        xct_lock_info_t* theLockInfo = xd->lock_info();
+        spinlock_write_critical_section cs(&theLockInfo->_shared_latch);
+        theLockInfo->_permission_to_violate = true;
+        theLockInfo->_commit_lsn = commit_lsn;
+    }
 }

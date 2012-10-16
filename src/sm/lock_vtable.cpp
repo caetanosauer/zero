@@ -45,12 +45,16 @@ const char *lock_vtable_attr_names[] =
 
 static vtable_names_init_t names_init(lock_last, lock_vtable_attr_names);
 
+#if 1
+int lock_core_m::collect( vtable_t&, bool) { return 0; }
+#else
+/**
+ * NOTE: This does not have to be atomic or thread-safe.
+ * It yields approximate statistics and is used by ss_m.
+ */
 int
 lock_core_m::collect( vtable_t& v, bool names_too)
 {
-    /*
-    // NOTE: This does not have to be atomic or thread-safe.
-    // It yields approximate statistics and is used by ss_m.
     int n = _requests_allocated;
     w_assert1(n>=0);
     int found = 0;
@@ -109,7 +113,6 @@ lock_core_m::collect( vtable_t& v, bool names_too)
         }
     }
     w_assert9(found <= n);
-    */
     return 0;
 }
-
+#endif

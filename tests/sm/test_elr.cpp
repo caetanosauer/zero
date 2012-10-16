@@ -39,12 +39,18 @@ w_rc_t read_single(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(test_env->btree_insert(stid, "a3", "data"));
     W_DO(test_env->commit_xct());
 
+    W_DO(test_env->begin_xct());
+    g_xct()->set_elr_mode(xct_t::elr_clv);
+    EXPECT_EQ (xct_t::elr_clv, g_xct()->get_elr_mode());
+    W_DO(test_env->btree_insert(stid, "a4", "data"));
+    W_DO(test_env->commit_xct());
+
     {
         x_btree_scan_result s;
         W_DO(test_env->btree_scan(stid, s));
-        EXPECT_EQ (3, s.rownum);
+        EXPECT_EQ (4, s.rownum);
         EXPECT_EQ (std::string("a1"), s.minkey);
-        EXPECT_EQ (std::string("a3"), s.maxkey);
+        EXPECT_EQ (std::string("a4"), s.maxkey);
     }
     
     std::string data;
@@ -64,13 +70,18 @@ w_rc_t read_single(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(test_env->btree_lookup(stid, "a3", data));
     W_DO(test_env->commit_xct());
 
+    W_DO(test_env->begin_xct());
+    g_xct()->set_elr_mode(xct_t::elr_clv);
+    W_DO(test_env->btree_lookup(stid, "a4", data));
+    W_DO(test_env->commit_xct());
+
 
     {
         x_btree_scan_result s;
         W_DO(test_env->btree_scan(stid, s));
-        EXPECT_EQ (3, s.rownum);
+        EXPECT_EQ (4, s.rownum);
         EXPECT_EQ (std::string("a1"), s.minkey);
-        EXPECT_EQ (std::string("a3"), s.maxkey);
+        EXPECT_EQ (std::string("a4"), s.maxkey);
     }
     
     return RCOK;
@@ -100,8 +111,8 @@ w_rc_t read_write_single(ss_m* ssm, test_volume_t *test_volume) {
     // testcases below do more than this. (but longer code)
     
     std::string data;
-    const xct_t::elr_mode_t modes[3] = {xct_t::elr_none, xct_t::elr_s, xct_t::elr_sx};
-    for (int i = 0; i < 3; ++i) {
+    const xct_t::elr_mode_t modes[4] = {xct_t::elr_none, xct_t::elr_s, xct_t::elr_sx, xct_t::elr_clv};
+    for (int i = 0; i < 4; ++i) {
         xct_t::elr_mode_t mode = modes[i];
         
         W_DO(test_env->begin_xct());
@@ -250,7 +261,7 @@ TEST (ElrTest, ReadWriteMultiSOnlyELRSame) {
     EXPECT_EQ(test_env->runBtreeTest(read_write_multi_no_elr_same, true), 0);
 }
 
-// Both S/X ELR, same-tuple case. this behaves differently
+// SX and CLV ELR, same-tuple case. this behaves differently
 w_rc_t read_write_multi_sx_elr_same(ss_m* ssm, test_volume_t *test_volume) {
     stid_t stid;
     W_DO(_prep (ssm, test_volume, stid));
@@ -271,18 +282,21 @@ w_rc_t read_write_multi_sx_elr_same(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_FALSE(lookup_thread._read);
     EXPECT_FALSE(lookup_thread._exitted);
 
-    // now, let's commit xct1. because of ELR on the X lock,
+    // now, let's commit xct1. because of ELR on the X lock or CLV,
     // xct2 should read the tuple soon.
     W_DO(ss_m::chain_xct(true)); // here, we asynchronously commit by chaining
-    //// spin_sleep(ELR_READONLY_WAIT_MAX_COUNT * ELR_READONLY_WAIT_USEC / 10);
-    //// EXPECT_TRUE(lookup_thread._read);
-    //// however, on committing the xct, xct2 should be waiting
-    //// for watermark, so they are not yet done
-    //// EXPECT_FALSE(lookup_thread._exitted);
-    // THIS DOESN'T WORK
-    // this test sometimes fails because background flushing might luckily (unluckily)
+
+    // THIS DOESN'T WORK RELIABLY
+    // this test (below) sometimes fails because background flushing might luckily (unluckily)
     // flushed it right after chain_xct()!
     // very annoying, but we can't test the exact behavior in that detail.
+#if 0
+    spin_sleep(ELR_READONLY_WAIT_MAX_COUNT * ELR_READONLY_WAIT_USEC / 10);
+    EXPECT_TRUE(lookup_thread._read);
+    //// however, on committing the xct, xct2 should be waiting
+    //// for watermark, so they are not yet done
+    EXPECT_FALSE(lookup_thread._exitted);
+#endif
 
     // by waiting a bit, xct2 will give up and writes its own
     // xct_end record and flush, so they will be done.
@@ -301,14 +315,17 @@ TEST (ElrTest, ReadWriteMultiSXELRSame) {
     test_env->empty_logdata_dir();
     EXPECT_EQ(test_env->runBtreeTest(read_write_multi_sx_elr_same, true), 0);
 }
+TEST (ElrTest, ReadWriteMultiCLVELRSame) {
+    s_elr_mode = xct_t::elr_clv;
+    test_env->empty_logdata_dir();
+    EXPECT_EQ(test_env->runBtreeTest(read_write_multi_sx_elr_same, true), 0);
+}
 
 // no ELR, different-tuple case
 w_rc_t read_write_multi_no_elr_different(ss_m* ssm, test_volume_t *test_volume) {
     stid_t stid;
     W_DO(_prep (ssm, test_volume, stid));
     
-    // const xct_t::elr_mode_t modes[3] = {xct_t::elr_none, xct_t::elr_s, xct_t::elr_sx};
-
     // xct1: insert a tuple to root page
     W_DO(test_env->begin_xct());
     g_xct()->set_elr_mode(s_elr_mode);
@@ -319,9 +336,10 @@ w_rc_t read_write_multi_no_elr_different(ss_m* ssm, test_volume_t *test_volume) 
     EXPECT_FALSE(lookup_thread._read);
     EXPECT_FALSE(lookup_thread._exitted);
     W_DO(lookup_thread.fork());
-    spin_sleep(ELR_READONLY_WAIT_MAX_COUNT * ELR_READONLY_WAIT_USEC * 10);
+
+    spin_sleep(ELR_READONLY_WAIT_MAX_COUNT * ELR_READONLY_WAIT_USEC / 10);
     
-    // It should be already over
+    // It should be already over -- no waiting for watermarks
     EXPECT_TRUE(lookup_thread._read);
     EXPECT_TRUE(lookup_thread._exitted);
             
@@ -345,7 +363,7 @@ TEST (ElrTest, ReadWriteMultiSOnlyELRDifferent) {
     EXPECT_EQ(test_env->runBtreeTest(read_write_multi_no_elr_different, true), 0);
 }
 
-// Both S/X ELR, different-tuple case. VERY different from others
+// SX & CLV ELR, different-tuple case. VERY different from others
 w_rc_t read_write_multi_sx_elr_different(ss_m* ssm, test_volume_t *test_volume) {
     stid_t stid;
     W_DO(_prep (ssm, test_volume, stid));
@@ -361,14 +379,17 @@ w_rc_t read_write_multi_sx_elr_different(ss_m* ssm, test_volume_t *test_volume) 
     EXPECT_FALSE(lookup_thread._exitted);
     W_DO(lookup_thread.fork());
 
-    //// spin_sleep(ELR_READONLY_WAIT_MAX_COUNT * ELR_READONLY_WAIT_USEC / 10);
-    //// EXPECT_TRUE(lookup_thread._read);
-    //// unlike others, the readonly xct should be waiting for watermark
-    //// EXPECT_FALSE(lookup_thread._exitted);
-    // THIS DOESN'T WORK:
-    // this test sometimes fails because background flushing might luckily (unluckily)
+    // THIS DOESN'T WORK RELIABLY
+    // this test (below) sometimes fails because background flushing might luckily (unluckily)
     // flushed it right after chain_xct()!
     // very annoying, but we can't test the exact behavior in that detail.
+#if 0
+//    spin_sleep(ELR_READONLY_WAIT_MAX_COUNT * ELR_READONLY_WAIT_USEC / 10);
+    spin_sleep(ELR_READONLY_WAIT_MAX_COUNT * ELR_READONLY_WAIT_USEC / 2);
+    EXPECT_TRUE(lookup_thread._read);
+    //// unlike others, the readonly xct should be waiting for watermark
+    EXPECT_FALSE(lookup_thread._exitted);
+#endif
 
     // after waiting long enough, they will give up and logs its own one
     spin_sleep(ELR_READONLY_WAIT_MAX_COUNT * ELR_READONLY_WAIT_USEC * 10);
@@ -384,7 +405,16 @@ w_rc_t read_write_multi_sx_elr_different(ss_m* ssm, test_volume_t *test_volume) 
 TEST (ElrTest, ReadWriteMultiSXELRDifferent) {
     s_elr_mode = xct_t::elr_sx;
     test_env->empty_logdata_dir();
-    EXPECT_EQ(test_env->runBtreeTest(read_write_multi_sx_elr_different, true), 0);
+    // EXPECT_EQ(test_env->runBtreeTest(read_write_multi_sx_elr_different, true), 0);
+    // 2 different couples in same page do not cause lock conflict!
+    EXPECT_EQ(test_env->runBtreeTest(read_write_multi_no_elr_different, true), 0);
+}
+TEST (ElrTest, ReadWriteMultiCLVELRDifferent) {
+    s_elr_mode = xct_t::elr_clv;
+    test_env->empty_logdata_dir();
+    // EXPECT_EQ(test_env->runBtreeTest(read_write_multi_sx_elr_different, true), 0);
+    // 2 different couples in same page do not cause lock conflict!
+    EXPECT_EQ(test_env->runBtreeTest(read_write_multi_no_elr_different, true), 0);
 }
 
 int main(int argc, char **argv) {

@@ -739,16 +739,26 @@ public:
         /** ELR is disabled. */
         elr_none,
 
-        /** ELR releases only S and intent locks (same as Quarks). */
+        /** ELR releases only S, U, and intent locks (same as Quarks?). */
         elr_s,
         
         /**
-         * ELR releases all locks. When this mode is on, even read-only transaction
-         * does additional check to maintain serializability. So, do NOT forget to
+         * ELR releases all locks. When this mode is on, even read-only transactions
+         * do an additional check to maintain serializability. So, do NOT forget to
          * set this mode to ALL transactions if you are using it for any of
          * your transactions.
          */
-        elr_sx
+        elr_sx,
+
+        /**
+         * ELR releases no locks but gives permissions for its locks
+         * to be violated.  When this mode is on, even read-only
+         * transactions do an additional check to maintain
+         * serializability.  So, do NOT forget to set this mode to ALL
+         * transactions if you are using it for any of your
+         * transactions.
+         */
+        elr_clv
     };
 
 private: // all data members private
