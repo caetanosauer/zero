@@ -1288,7 +1288,9 @@ log_core::log_core(
         if (!parse_ok && ! (strcmp(name, ".") == 0 || 
                                 strcmp(name, "..") == 0)) {
             smlevel_0::errlog->clog << fatal_prio
-                << "log_core: cannot parse " << name << flushl;
+                                    << "log_core: cannot parse filename \"" 
+                                    << name << "\".  Maybe a data volume in the logging directory?"
+                                    << flushl;
             W_FATAL(fcINTERNAL);
         }
     }
