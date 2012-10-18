@@ -8,7 +8,6 @@ PROJECT_NUMBER         = "Release 1.0"
 OUTPUT_DIRECTORY       = dox
 CREATE_SUBDIRS         = YES
 OUTPUT_LANGUAGE        = English
-USE_WINDOWS_ENCODING   = NO
 BRIEF_MEMBER_DESC      = YES
 REPEAT_BRIEF           = YES
 ABBREVIATE_BRIEF       = "The $name class" \
@@ -25,12 +24,11 @@ ABBREVIATE_BRIEF       = "The $name class" \
 ALWAYS_DETAILED_SEC    = NO
 INLINE_INHERITED_MEMB  = NO
 FULL_PATH_NAMES        = YES
-STRIP_FROM_PATH        = 
+STRIP_FROM_PATH        = @PROJECT_SOURCE_DIR@
 STRIP_FROM_INC_PATH    = 
 SHORT_NAMES            = NO
 JAVADOC_AUTOBRIEF      = YES
 MULTILINE_CPP_IS_BRIEF = NO
-DETAILS_AT_TOP         = YES
 INHERIT_DOCS           = YES
 SEPARATE_MEMBER_PAGES  = NO
 TAB_SIZE               = 1
@@ -81,32 +79,32 @@ WARN_LOGFILE           = ./warnings
 #---------------------------------------------------------------------------
 # configuration options related to the input files
 #---------------------------------------------------------------------------
-INPUT                  = src/mainpage.h \
-                         src/api.h \
-                         src/internal.h \
-                         src/references.h \
-                         src/fc \
-                         src/common \
-                         src/sthread \
-                         tools \
-                         src/sm/bf_hashtable.h \
-                         src/sm/bf_tree.h \
-                         src/sm/bf_fixed.h \
-                         src/sm/btcursor.h \
-                         src/sm/btree.h \
-                         src/sm/btree_impl.h \
-                         src/sm/btree_p.h \
-                         src/sm/page.h \
-                         src/sm/page_s.h \
-                         src/sm/smthread.h \
-                         src/sm/smstats.h \
-                         src/sm/sm_base.h \
-                         src/sm/sm_int_3.h \
-                         src/sm/lock_s.h \
-                         src/sm/sm.h \
-                         src/sm/xct.h \
-                         src/sm/sm_s.h \
-                         src/sm/stnode_p.h
+INPUT                  = @CMAKE_CURRENT_SOURCE_DIR@/src/mainpage.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/api.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/internal.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/references.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/fc \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/common \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/sthread \
+                         @CMAKE_CURRENT_SOURCE_DIR@/tools \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/sm/bf_hashtable.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/sm/bf_tree.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/sm/bf_fixed.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/sm/btcursor.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/sm/btree.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/sm/btree_impl.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/sm/btree_p.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/sm/page.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/sm/page_s.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/sm/smthread.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/sm/smstats.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/sm/sm_base.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/sm/sm_int_3.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/sm/lock_s.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/sm/sm.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/sm/xct.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/sm/sm_s.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/sm/stnode_p.h
 FILE_PATTERNS          = *.c \
                          *.cpp \
                          *.h \
@@ -115,30 +113,30 @@ FILE_PATTERNS          = *.c \
                          *.LICENSE \
                          *.h
 RECURSIVE              = YES
-EXCLUDE                = src/common/regcomp.cpp \
-                         src/common/regcomp_i.h \
-                         src/common/regerror.cpp \
-                         src/common/regerror_i.h \
-                         src/common/regex_cclass.h \
-                         src/common/regex_cname.h \
-                         src/common/regexec.cpp \
-                         src/common/regex_engine.cpp \
-                         src/common/regex_engine_i.h \
-                         src/common/regex.h \
-                         src/common/regex_posix.cpp \
-                         src/common/regex_posix.h \
-                         src/common/regex_utils.h \
-                         src/common/regfree.cpp \
-                         src/fc/rusage.cpp
+EXCLUDE                = @CMAKE_CURRENT_SOURCE_DIR@/src/common/regcomp.cpp \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/common/regcomp_i.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/common/regerror.cpp \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/common/regerror_i.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/common/regex_cclass.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/common/regex_cname.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/common/regexec.cpp \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/common/regex_engine.cpp \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/common/regex_engine_i.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/common/regex.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/common/regex_posix.cpp \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/common/regex_posix.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/common/regex_utils.h \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/common/regfree.cpp \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/fc/rusage.cpp
 EXCLUDE_SYMLINKS       = YES
 EXCLUDE_PATTERNS       = */tests/* \
                          */smsh/* \
                          *_gen.h \
                          *_gen.cpp \
                          *.i \
-                         src/sm/*.cpp
-EXAMPLE_PATH           = src/sm/tests \
-                         src/sm/logdef.dat
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/sm/*.cpp
+EXAMPLE_PATH           = @CMAKE_CURRENT_SOURCE_DIR@/src/sm/tests \
+                         @CMAKE_CURRENT_SOURCE_DIR@/src/sm/logdef.dat
 EXAMPLE_PATTERNS       = *
 EXAMPLE_RECURSIVE      = NO
 IMAGE_PATH             = 
@@ -270,10 +268,8 @@ CALLER_GRAPH           = YES
 GRAPHICAL_HIERARCHY    = YES
 DIRECTORY_GRAPH        = YES
 DOT_IMAGE_FORMAT       = png
-DOT_PATH               = 
+DOT_PATH               = @DOXYGEN_DOT_PATH@
 DOTFILE_DIRS           = 
-MAX_DOT_GRAPH_WIDTH    = 1024
-MAX_DOT_GRAPH_HEIGHT   = 1024
 MAX_DOT_GRAPH_DEPTH    = 1000
 DOT_TRANSPARENT        = NO
 DOT_MULTI_TARGETS      = NO
