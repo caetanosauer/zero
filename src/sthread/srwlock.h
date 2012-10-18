@@ -60,7 +60,7 @@ class mcs_rwlock; // forward
 typedef mcs_rwlock srwlock_t;
 
 
-/**\brief "Shore read-write lock:: many-reader/one-writer spin lock 
+/**\brief Shore read-write lock:: many-reader/one-writer spin lock 
  *
  * This read-write lock is implemented around a queue-based lock. It is
  * the basis for latches in the storage manager.
