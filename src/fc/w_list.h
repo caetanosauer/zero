@@ -705,7 +705,7 @@ w_ascend_list_t<T,LOCK, K>::search(const K& k)
 {
     w_link_t    *p;
     for (p = _tail.next();
-     p != &_tail && (key_of(*base_of(p)) < k);
+     p != &_tail && (this->key_of(*base_of(p)) < k);
      p = p->next()) ;
 
     return p ? base_of(p) : 0;
@@ -717,13 +717,13 @@ w_ascend_list_t<T,LOCK, K>::put_in_order(T* t)
 {
     w_link_t    *p;
     for (p = _tail.next();
-     p != &_tail && (key_of(*base_of(p)) <= key_of(*t));
+     p != &_tail && (this->key_of(*base_of(p)) <= this->key_of(*t));
      p = p->next()) ;
 
     if (p)  {
-    link_of(t)->attach(p->prev());
+    this->link_of(t)->attach(p->prev());
     } else {
-        link_of(t)->attach(_tail.prev());
+        this->link_of(t)->attach(_tail.prev());
     }
 }
 
@@ -733,7 +733,7 @@ w_descend_list_t<T,LOCK, K>::search(const K& k)
 {
     w_link_t    *p;
     for (p = _tail.next();
-     p != &_tail && (key_of(*base_of(p)) > k);
+     p != &_tail && (this->key_of(*base_of(p)) > k);
      p = p->next()) ;
 
     return p ? base_of(p) : 0;
@@ -745,13 +745,13 @@ w_descend_list_t<T,LOCK, K>::put_in_order(T* t)
 {
     w_link_t    *p;
     for (p = _tail.next();
-     p != &_tail && (key_of(*base_of(p)) >= key_of(*t));
+     p != &_tail && (this->key_of(*base_of(p)) >= this->key_of(*t));
      p = p->next()) ;
 
     if (p)  {
-        link_of(t)->attach(p->prev());
+        this->link_of(t)->attach(p->prev());
     } else {
-        link_of(t)->attach(_tail.prev());
+        this->link_of(t)->attach(_tail.prev());
     }
 }
 /*<std-footer incl-file-exclusion='W_LIST_H'>  -- do not edit anything below this line -- */

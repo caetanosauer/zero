@@ -59,13 +59,14 @@ Slackware 32-bit:
 *****************************************************************************
 
 Documentation is created by Doxygen (http://www.doxygen.org/index.html)
-from the sources.  The configuration file for Doxygen is Doxyfile.
+from the sources.  The configuration file for Doxygen is Doxyfile.cmake.
 
-If you have Doxygen on your system, you can use "make dox".
+If you have Doxygen on your system, you can use "make doc" from the
+top-level build directory.
 This will create a directory dox/, with subdirectories html/.
 The directory html/ is the direct output of doxygen.
-To re-make the files, simply invoke doxygen thus: "doxygen Doxyfile" 
-or just "doxygen". 
+[untested] To re-make the files, simply invoke doxygen thus: "doxygen Doxyfile" 
+or just "doxygen" from the top build directory. 
 
 The starting point for a browser will be:
    dox/html/index.html

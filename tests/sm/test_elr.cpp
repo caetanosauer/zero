@@ -337,7 +337,7 @@ w_rc_t read_write_multi_no_elr_different(ss_m* ssm, test_volume_t *test_volume) 
     EXPECT_FALSE(lookup_thread._exitted);
     W_DO(lookup_thread.fork());
 
-    spin_sleep(ELR_READONLY_WAIT_MAX_COUNT * ELR_READONLY_WAIT_USEC / 10);
+    spin_sleep(ELR_READONLY_WAIT_MAX_COUNT * ELR_READONLY_WAIT_USEC * 5); // before SX/CLV-ELR times out...
     
     // It should be already over -- no waiting for watermarks
     EXPECT_TRUE(lookup_thread._read);
