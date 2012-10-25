@@ -66,7 +66,7 @@ public:
     
     enum {
         /** Number of pages one alloc_p can cover. */
-        alloc_max = page_p::data_sz * 8
+        alloc_max = (page_p::data_sz - 2 * sizeof(shpid_t)) * 8
     };
     
     /** determines the pid_offset for the given alloc page. */
@@ -110,6 +110,7 @@ inline void _set_bit (uint8_t *bitmap, uint32_t index) {
     w_assert1((*byte & (1 << bit_place)) == 0);
     *byte |= (1 << bit_place);
 }
+
 inline void _unset_bit (uint8_t *bitmap, uint32_t index) {
     uint32_t byte_place = (index >> 3);
     uint32_t bit_place = index & 0x7;
@@ -121,7 +122,6 @@ inline void _unset_bit (uint8_t *bitmap, uint32_t index) {
 inline void alloc_p::set_bit(shpid_t pid) {
     w_assert1(pid >= get_pid_offset());
     w_assert1(pid < get_pid_offset() + alloc_max);
-
     _set_bit (get_bitmap(), pid - get_pid_offset());    
     update_pid_highwatermark(pid);
 }
