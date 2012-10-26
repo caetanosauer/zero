@@ -17,7 +17,7 @@ X_ADD_TESTCASE(test_hash "${the_libraries}")
 X_ADD_TESTCASE(test_heap "${the_libraries}")
 X_ADD_TESTCASE(test_key_t gtest_main)
 X_ADD_TESTCASE(test_list "${the_libraries}")
-X_ADD_TESTCASE(test_memblock "${the_libraries}")
+#X_ADD_TESTCASE(test_memblock "${the_libraries}") #FIXME
 X_ADD_TESTCASE(test_ntime "${the_libraries}")
 X_ADD_TESTCASE(test_rand "${the_libraries}")
 X_ADD_TESTCASE(test_random "${the_libraries}")
