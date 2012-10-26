@@ -92,6 +92,7 @@ public:
 
 
     /////////////////// DATA
+    static int            _artificial_flush_delay;  // in microseconds
 private: 
     fileoff_t             _start;
     partition_index_t     _index; 

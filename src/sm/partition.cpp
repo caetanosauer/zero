@@ -1073,7 +1073,21 @@ partition_t::flush(int fd)
             << "cannot sync after skip block " << flushl;
         W_COERCE(e);
     }
+
+    if (_artificial_flush_delay > 0) {
+        w_assert1(_artificial_flush_delay < 99999999/1000);
+        struct timespec req, rem;
+        req.tv_sec = 0;
+        req.tv_nsec = _artificial_flush_delay * 1000;
+
+        while(nanosleep(&req, &rem) != 0) {
+            if (errno != EINTR)  return;
+            req = rem;
+        }
+    }
 }
+int partition_t::_artificial_flush_delay = 0;
+
 
 void 
 partition_t::close_for_append()
