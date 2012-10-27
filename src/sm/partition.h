@@ -67,7 +67,9 @@ typedef enum    {  /* partition_t::_mask values */
 class log_core; // forward
 class partition_t {
 public:
-    typedef smlevel_0::fileoff_t fileoff_t;
+    typedef smlevel_0::fileoff_t          fileoff_t;
+    typedef int                           partition_index_t;
+    typedef smlevel_0::partition_number_t partition_number_t; 
 #if SM_PAGESIZE < 8192
     enum { XFERSIZE = 8192 };
 #else
@@ -92,6 +94,7 @@ public:
 
 
     /////////////////// DATA
+    static int            _artificial_flush_delay;  // in microseconds
 private: 
     fileoff_t             _start;
     partition_index_t     _index; 
