@@ -1,6 +1,7 @@
 include(../testutil.cmake)
 
-set (the_libraries gtest_main common fc sthread atomic_ops)
+#set (the_libraries gtest_main common fc sthread atomic_ops)
+set (the_libraries gtest_main common fc sthread)
 
 ENABLE_TESTING()
 

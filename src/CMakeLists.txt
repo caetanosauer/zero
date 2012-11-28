@@ -25,7 +25,7 @@ INCLUDE_DIRECTORIES (
 )
 
 
-add_subdirectory(atomic_ops)
+#add_subdirectory(atomic_ops)
 add_subdirectory(fc)
 add_subdirectory(sthread)
 add_subdirectory(common)

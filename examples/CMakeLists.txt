@@ -25,7 +25,7 @@ INCLUDE_DIRECTORIES (
 )
 
 add_executable(example1 ${CMAKE_CURRENT_SOURCE_DIR}/example1.cpp)
-target_link_libraries(example1 common fc sthread sm atomic_ops)
+target_link_libraries(example1 common fc sthread sm)
 
 add_executable(example2 ${CMAKE_CURRENT_SOURCE_DIR}/example2.cpp)
-target_link_libraries(example2 common fc sthread sm atomic_ops)
+target_link_libraries(example2 common fc sthread sm)

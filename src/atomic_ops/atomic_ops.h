@@ -49,7 +49,12 @@ typedef long   long_t;
 
 #endif
 
+#define USE_LINTEL_ATOMICS 1
+#ifdef USE_LINTEL_ATOMICS
+#include "atomic_ops_lintel.h"
+#else
 #include "atomic_ops_impl.h"
+#endif
 
 // Clean up after defining these
 #ifdef _INT64_TYPE_DEFINED

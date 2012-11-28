@@ -344,7 +344,7 @@ endif
 
 # Initialize LOCALLDADD 
 # Note: on solaris -lnsl may be needed for gethostbyname()
-LOCALLDADD = $(top_srcdir)/src/atomic_ops/libatomic_ops.a -lnsl
+#LOCALLDADD = $(top_srcdir)/src/atomic_ops/libatomic_ops.a -lnsl
 
 # --------------------------------------------------------
 #
