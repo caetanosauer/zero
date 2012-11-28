@@ -2105,7 +2105,7 @@ void  bfcb_t::mark_clean() {
     // need a write barrier as well to force the buffers.
     _dirty =  false;
     _rec_lsn = lsn_t::null;
-    membar_producer();
+    lintel::atomic_thread_fence(lintel::memory_order_release);
     mark_clean_dependencies();
 }
 void  bfcb_t::mark_clean_dependencies() {

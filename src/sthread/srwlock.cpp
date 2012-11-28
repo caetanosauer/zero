@@ -69,7 +69,7 @@ int mcs_rwlock::_spin_on_writer()
 {
     int cnt=0;
     while(has_writer()) cnt=1;
-    // callers do membar_enter
+    // callers do lintel::atomic_thread_fence(lintel::memory_order_acquire);
     return cnt;
 }
 // CC mangles this as __1cKmcs_rwlockPspin_on_readers6M_v_
@@ -77,7 +77,7 @@ int mcs_rwlock::_spin_on_writer()
 void mcs_rwlock::_spin_on_readers() 
 {
     while(has_reader()) { };
-    // callers do membar_enter
+    // callers do lintel::atomic_thread_fence(lintel::memory_order_acquire);
 }
 
 // private
@@ -86,7 +86,7 @@ void mcs_rwlock::_add_when_writer_leaves(int delta)
     // we always have the parent lock to do this
     int cnt = _spin_on_writer();
     atomic_add_32(&_holders, delta);
-    // callers do membar_enter
+    // callers do lintel::atomic_thread_fence(lintel::memory_order_acquire);
     if(cnt  && (delta == WRITER)) {
         INC_STH_STATS(rwlock_w_wait);
     }
@@ -99,7 +99,7 @@ bool mcs_rwlock::attempt_read()
         old_value != atomic_cas_32(&_holders, old_value, old_value+READER))
         return false;
 
-    membar_enter();
+    lintel::atomic_thread_fence(lintel::memory_order_acquire);
     return true;
 }
 
@@ -118,14 +118,14 @@ void mcs_rwlock::acquire_read()
             CRITICAL_SECTION(cs, (parent_lock*) this);
             _add_when_writer_leaves(READER);
         }
-        membar_enter();
+        lintel::atomic_thread_fence(lintel::memory_order_acquire);
     }
 }
 
 void mcs_rwlock::release_read() 
 {
     w_assert2(has_reader());
-    membar_exit(); // flush protected modified data before releasing lock;
+    lintel::atomic_thread_fence(lintel::memory_order_release); // flush protected modified data before releasing lock;
     // update and complete any loads by others before I do this write 
     atomic_add_32(&_holders, -READER);
 }
@@ -144,7 +144,7 @@ bool mcs_rwlock::_attempt_write(unsigned int expected)
      *
      * If there is a writer waiting we have to get in line 
      * like everyone else.
-     * No need for a membar because we already hold the latch
+     * No need for a memfence because we already hold the latch
      */
 
 // USE_PTHREAD_MUTEX is determined by configure option and
@@ -163,7 +163,7 @@ bool mcs_rwlock::_attempt_write(unsigned int expected)
     // The following line replaces our reader bit with a writer bit.
     bool result = (expected == atomic_cas_32(&_holders, expected, WRITER));
     release(me); // parent/mcs lock
-    membar_enter();
+    lintel::atomic_thread_fence(lintel::memory_order_acquire);
     return result;
 }
 
@@ -172,7 +172,7 @@ bool mcs_rwlock::attempt_write()
     if(!_attempt_write(0))
         return false;
     
-    // moved to end of _attempt_write() membar_enter();
+    // moved to end of _attempt_write() lintel::atomic_thread_fence(lintel::memory_order_acquire);
     return true;
 }
 
@@ -196,11 +196,11 @@ void mcs_rwlock::acquire_write()
     }
 
     // done!
-    membar_enter();
+    lintel::atomic_thread_fence(lintel::memory_order_acquire);
 }
 
 void mcs_rwlock::release_write() {
-    membar_exit(); // flush protected modified data before releasing lock;
+    lintel::atomic_thread_fence(lintel::memory_order_release);
     w_assert1(*&_holders == WRITER);
     *&_holders = 0;
 }
@@ -213,8 +213,8 @@ bool mcs_rwlock::attempt_upgrade()
 
 void mcs_rwlock::downgrade() 
 {
-    membar_exit();  // this is for all intents and purposes, a release
+    lintel::atomic_thread_fence(lintel::memory_order_release);
     w_assert1(*&_holders == WRITER);
     *&_holders = READER;
-    membar_enter(); // but it's also an acquire
+    lintel::atomic_thread_fence(lintel::memory_order_acquire);
 }

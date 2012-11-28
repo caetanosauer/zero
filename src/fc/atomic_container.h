@@ -128,7 +128,7 @@ public:
         pvn old_value = { _backup };
         while(1) {
             u.p->next = old_value.p;
-            membar_producer();
+            lintel::atomic_thread_fence(lintel::memory_order_release);
             void* cur_value = atomic_cas_ptr(&_backup, old_value.v, u.v);
             if(old_value.v == cur_value)
                 break;
@@ -207,7 +207,7 @@ private:
             mine = !atomic_swap_32(&_locked, true);
         }
         if(mine) {
-            membar_enter();
+            lintel::atomic_thread_fence(lintel::memory_order_acquire);
             active.p = *&_active;
             if(!pointer(active))
                 return true;
@@ -218,7 +218,7 @@ private:
     }
     ///Release the lock.
     void release_lock() {
-        membar_exit();
+        lintel::atomic_thread_fence(lintel::memory_order_release);
         _locked = false;
     }
     

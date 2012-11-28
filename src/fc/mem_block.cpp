@@ -162,7 +162,7 @@ bool block_bits::release_contiguous(size_t index, size_t chip_count) {
     assert (index < chip_count);
     bitmap to_free = bitmap(1) << index;
     assert(! (to_free & *usable_chips()));
-    membar_exit();
+    lintel::atomic_thread_fence(lintel::memory_order_release);
     bitmap volatile* ptr = &_zombie_chips;
     bitmap ov = *ptr;
     while(1) {
@@ -194,7 +194,7 @@ void block_bits::recycle() {
     */
     bitmap newly_usable = *&_zombie_chips;
     _usable_chips |= newly_usable;
-    membar_exit();
+    lintel::atomic_thread_fence(lintel::memory_order_release);
     bitmap volatile* ptr = &_zombie_chips;
     bitmap ov = *ptr;
     while(1) {

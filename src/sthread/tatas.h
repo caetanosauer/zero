@@ -55,7 +55,7 @@ public:
         unsigned int old_holder = 
                         CASFUNC(&_holder.bits, NOBODY, tid.bits);
         if(old_holder == NOBODY) {
-            membar_enter();
+            lintel::atomic_thread_fence(lintel::memory_order_acquire);
             success = true;
         }
         
@@ -70,18 +70,18 @@ public:
             spin();
         }
         while(CASFUNC(&_holder.bits, NOBODY, tid.bits));
-        membar_enter();
+        lintel::atomic_thread_fence(lintel::memory_order_acquire);
         w_assert1(is_mine());
     }
 
     /// Release the lock
     void release() {
-        membar_exit();
-        w_assert1(is_mine()); // moved after the membar
+        lintel::atomic_thread_fence(lintel::memory_order_release);
+        w_assert1(is_mine()); // moved after the fence
         _holder.bits= NOBODY;
 #if W_DEBUG_LEVEL > 0
         {
-            membar_enter(); // needed for the assert?
+            lintel::atomic_thread_fence(lintel::memory_order_acquire); // needed for the assert?
             w_assert1(!is_mine());
         }
 #endif

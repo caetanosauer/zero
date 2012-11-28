@@ -1885,7 +1885,7 @@ rc_t log_core::insert(logrec_t &rec, lsn_t* rlsn)
             {
                 *&_waiting_for_space = true;
                 // SDM 3A says this drains the buffer:
-                membar_exit();
+                lintel::atomic_thread_fence(lintel::memory_order_release);
 
                 // The only thread that should be waiting 
                 // on the _flush_cond is the log flush daemon.
@@ -1921,7 +1921,7 @@ rc_t log_core::insert_multiple(size_t count, logrec_t** rs, lsn_t** ret_lsns)
             {
                 *&_waiting_for_space = true;
                 // SDM 3A says this drains the buffer:
-                membar_exit();
+                lintel::atomic_thread_fence(lintel::memory_order_release);
 
                 // The only thread that should be waiting 
                 // on the _flush_cond is the log flush daemon.
@@ -2245,7 +2245,7 @@ rc_t log_core::flush(const lsn_t &to_lsn, bool block, bool signal, bool *ret_flu
         if (!block) {
             *&_waiting_for_flush = true;
             // SDM 3A says this drains the buffer:
-            membar_exit();
+            lintel::atomic_thread_fence(lintel::memory_order_release);
             if (signal) {
                 DO_PTHREAD(pthread_cond_signal(&_flush_cond));
             }
@@ -2255,7 +2255,7 @@ rc_t log_core::flush(const lsn_t &to_lsn, bool block, bool signal, bool *ret_flu
             while(lsn >= *&_durable_lsn) {
                 *&_waiting_for_flush = true;
                 // SDM 3A says this drains the buffer:
-                membar_exit();
+                lintel::atomic_thread_fence(lintel::memory_order_release);
                 // The only thread that should be waiting 
                 // on the _flush_cond is the log flush daemon.
                 DO_PTHREAD(pthread_cond_signal(&_flush_cond));
@@ -2301,7 +2301,7 @@ void log_core::flush_daemon()
 
                 // SDM 3A says this drains the buffer:
                 // so it means we won't read from our write buffer (below.)
-                membar_exit(); 
+                 lintel::atomic_thread_fence(lintel::memory_order_release);
                 DO_PTHREAD(pthread_cond_broadcast(&_space_cond)); 
                 // wake up anyone waiting on log flush
                 
@@ -2447,7 +2447,7 @@ lsn_t log_core::flush_daemon_work(lsn_t old_mark)
     _start = new_start;
 
     // SDM 3A says this drains the buffer:
-    membar_exit();
+    lintel::atomic_thread_fence(lintel::memory_order_release);
 
     return end_lsn;
 }

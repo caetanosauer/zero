@@ -993,7 +993,7 @@ sthread_t::_unblock(w_rc_t::errcode_t e)
      *  Thread is again ready.
      */
     _unblock_flag = true;
-    membar_producer(); // make sure the unblock_flag is visible
+    lintel::atomic_thread_fence(lintel::memory_order_release); // make sure the unblock_flag is visible
     DO_PTHREAD(pthread_cond_signal(&_wait_cond));
     _status = t_running;
 
@@ -1253,7 +1253,7 @@ occ_rwlock::~occ_rwlock()
 
 void occ_rwlock::release_read()
 {
-    membar_exit();
+    lintel::atomic_thread_fence(lintel::memory_order_release);
     w_assert1(READER <= (int) _active_count);
     unsigned count = atomic_add_32_nv(&_active_count, -READER);
     if(count == WRITER) {
@@ -1282,7 +1282,7 @@ void occ_rwlock::acquire_read()
         }
         count = atomic_add_32_nv(&_active_count, READER);
     }
-    membar_enter();
+    lintel::atomic_thread_fence(lintel::memory_order_acquire);
 }
 
 void occ_rwlock::release_write()

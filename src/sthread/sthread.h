@@ -377,7 +377,7 @@ public:
         _holder = this;
 #if W_DEBUG_LEVEL > 0
         {
-            membar_enter(); // needed for the assert
+            lintel::atomic_thread_fence(lintel::memory_order_acquire); // needed for the assert
             w_assert1(is_mine(me)); // TODO: change to assert2
         }
 #endif
@@ -400,7 +400,7 @@ public:
         // have been freed by the time we do this check.  Thus,
         // we'll remove it.
         {
-            membar_enter(); // needed for the assertions?
+            lintel::atomic_thread_fence(lintel::memory_order_acquire);// needed for the assertions?
             w_pthread_lock_t *h =  _holder;
             w_pthread_lock_t *m =  me->_held;
             w_assert1( (h==NULL && m==NULL)
