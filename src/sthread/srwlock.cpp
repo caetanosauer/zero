@@ -85,7 +85,7 @@ void mcs_rwlock::_add_when_writer_leaves(int delta)
 {
     // we always have the parent lock to do this
     int cnt = _spin_on_writer();
-    atomic_add_32(&_holders, delta);
+    lintel::unsafe::atomic_fetch_add(const_cast<uint_t*>(&_holders), delta);
     // callers do lintel::atomic_thread_fence(lintel::memory_order_acquire);
     if(cnt  && (delta == WRITER)) {
         INC_STH_STATS(rwlock_w_wait);
@@ -127,7 +127,7 @@ void mcs_rwlock::release_read()
     w_assert2(has_reader());
     lintel::atomic_thread_fence(lintel::memory_order_release); // flush protected modified data before releasing lock;
     // update and complete any loads by others before I do this write 
-    atomic_add_32(&_holders, -READER);
+    lintel::unsafe::atomic_fetch_sub(const_cast<uint_t*>(&_holders), READER);
 }
 
 bool mcs_rwlock::_attempt_write(unsigned int expected) 

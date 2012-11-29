@@ -386,7 +386,7 @@ void bf_tree_m::_decrement_pin_cnt_assume_positive(bf_idx idx) {
     w_assert1 (_is_active_idx(idx));
     bf_tree_cb_t &cb(_control_blocks[idx]);
     w_assert1 (cb._pin_cnt >= 1);
-    atomic_dec_32((uint32_t*) &(cb._pin_cnt));
+    lintel::unsafe::atomic_fetch_sub(const_cast<int32_t*>(&cb._pin_cnt), 1);
 }
 
 ///////////////////////////////////   WRITE-ORDER-DEPENDENCY BEGIN ///////////////////////////////////  

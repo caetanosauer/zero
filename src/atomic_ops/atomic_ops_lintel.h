@@ -5,6 +5,7 @@
 #include <inttypes.h>
 #include <../../Lintel/include/Lintel/AtomicCounter.hpp>
 
+// For reference of mapping legacy atomic to lintel::Atomic
 /*
 inline void membar_enter(void) //Aquire
 { lintel::atomic_thread_fence(lintel::memory_order_acquire); }
@@ -30,7 +31,7 @@ inline uint64_t atomic_cas_64(volatile uint64_t * object, uint64_t expected, uin
   lintel::unsafe::atomic_compare_exchange_strong((uint64_t*)object, &expected, desired);
   return expected;
 }
-*/
+
 inline void atomic_inc_uint(volatile uint_t * object)
 { lintel::unsafe::atomic_fetch_add((uint_t*)object, 1U); }
 
@@ -74,5 +75,5 @@ inline void *atomic_cas_ptr(volatile void *object, void *expected, void *desired
 
 inline void *atomic_swap_ptr(volatile void *object, void *desired)
 { return lintel::unsafe::atomic_exchange((void**)object, desired); }
-
+*/
 #endif	/* _ATOMIC_OPS_LINTEL_H */
