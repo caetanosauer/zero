@@ -96,7 +96,7 @@ bool mcs_rwlock::attempt_read()
 {
     unsigned int old_value = *&_holders;
     if(old_value & WRITER || 
-       old_value != lintel::unsafe::atomic_compare_exchange_strong(const_cast<unsigned int*>(&_holders), &old_value, old_value+READER))
+       !lintel::unsafe::atomic_compare_exchange_strong(const_cast<unsigned int*>(&_holders), &old_value, old_value+READER))
         return false;
 
     lintel::atomic_thread_fence(lintel::memory_order_acquire);
