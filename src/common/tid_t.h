@@ -102,20 +102,29 @@ public:
         return atomic_inc_nv(_data);
     }
     tid_t &atomic_assign_max(const tid_t &tid) {
+	const datum_t new_value = tid._data;
         datum_t old_value = _data;
-        while(tid._data > old_value) {
-            datum_t cur_value = atomic_cas_64(&_data, old_value, tid._data);
-            old_value = cur_value;
-        }
+	do {
+	    if(new_value > old_value) {
+		// do nothing
+	    } else {
+		break;
+	    }
+	} while (!lintel::unsafe::atomic_compare_exchange_strong(static_cast<uint64_t*>(&_data), &old_value, new_value));
+	
         return *this;
     }
     tid_t &atomic_assign_min(const tid_t &tid) {
+	const datum_t new_value = tid._data;
         datum_t old_value = _data;
-        while(tid._data < old_value) {
-            datum_t cur_value = atomic_cas_64(&_data, old_value, tid._data);
-            old_value = cur_value;
-        }
-        return *this;
+	do {
+	    if(new_value < old_value) {
+		// do nothing
+	    } else {
+		break;
+	    }
+	} while (!lintel::unsafe::atomic_compare_exchange_strong(static_cast<uint64_t*>(&_data), &old_value, new_value));
+	return *this;
     }
 
     inline bool operator==(const tid_t& tid) const  {

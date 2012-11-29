@@ -25,10 +25,10 @@ struct tatas_lock {
         pthread_t         handle;
 #undef CASFUNC 
 #if SIZEOF_PTHREAD_T==4
-#define CASFUNC atomic_cas_32
+#define CASFUNC(object, expected, desired) lintel::unsafe::atomic_compare_exchange_strong(const_cast<unsigned int*>(object), expected, desired)
         unsigned int       bits;
 #elif SIZEOF_PTHREAD_T==8
-# define CASFUNC atomic_cas_64
+#define CASFUNC(object, expected, desired) lintel::unsafe::atomic_compare_exchange_strong(const_cast<uint64_t*>(object), expected, desired)
         uint64_t           bits;
 #elif SIZEOF_PTHREAD_T==0
 #error  Configuration could not determine size of pthread_t. Fix configure.ac.
@@ -52,9 +52,8 @@ public:
     {
         holder_type_t tid = { pthread_self() };
         bool success = false;
-        unsigned int old_holder = 
-                        CASFUNC(&_holder.bits, NOBODY, tid.bits);
-        if(old_holder == NOBODY) {
+        uint64_t old_holder = NOBODY;
+	if(CASFUNC(&_holder.bits, &old_holder, tid.bits)) {
             lintel::atomic_thread_fence(lintel::memory_order_acquire);
             success = true;
         }
@@ -66,10 +65,11 @@ public:
     void acquire() {
         w_assert1(!is_mine());
         holder_type_t tid = { pthread_self() };
+        uint64_t old_holder = NOBODY;
         do {
             spin();
         }
-        while(CASFUNC(&_holder.bits, NOBODY, tid.bits));
+        while(CASFUNC(&_holder.bits, &old_holder, tid.bits));
         lintel::atomic_thread_fence(lintel::memory_order_acquire);
         w_assert1(is_mine());
     }

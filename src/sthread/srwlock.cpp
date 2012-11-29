@@ -96,7 +96,7 @@ bool mcs_rwlock::attempt_read()
 {
     unsigned int old_value = *&_holders;
     if(old_value & WRITER || 
-        old_value != atomic_cas_32(&_holders, old_value, old_value+READER))
+       old_value != lintel::unsafe::atomic_compare_exchange_strong(const_cast<unsigned int*>(&_holders), &old_value, old_value+READER))
         return false;
 
     lintel::atomic_thread_fence(lintel::memory_order_acquire);
@@ -161,7 +161,7 @@ bool mcs_rwlock::_attempt_write(unsigned int expected)
     // at this point, we've called mcs_lock::attempt(&me), and
     // have acquired the parent/mcs lock
     // The following line replaces our reader bit with a writer bit.
-    bool result = (expected == atomic_cas_32(&_holders, expected, WRITER));
+    bool result = lintel::unsafe::atomic_compare_exchange_strong(const_cast<unsigned int*>(&_holders), &expected, WRITER);
     release(me); // parent/mcs lock
     lintel::atomic_thread_fence(lintel::memory_order_acquire);
     return result;

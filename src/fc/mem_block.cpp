@@ -163,18 +163,7 @@ bool block_bits::release_contiguous(size_t index, size_t chip_count) {
     bitmap to_free = bitmap(1) << index;
     assert(! (to_free & *usable_chips()));
     lintel::atomic_thread_fence(lintel::memory_order_release);
-    bitmap volatile* ptr = &_zombie_chips;
-    bitmap ov = *ptr;
-    while(1) {
-        bitmap nv = ov | to_free;
-        bitmap cv = atomic_cas_64(ptr, ov, nv);
-        if(cv == ov)
-            break;
-        ov = cv;
-    }
-    bitmap was_free = ov;
-    (void) was_free; // keep gcc happy
-
+    const bitmap was_free = lintel::unsafe::atomic_fetch_or(const_cast<bitmap*>(&_zombie_chips), to_free);
     return ( ! (was_free & to_free));
 }
 
@@ -195,15 +184,7 @@ void block_bits::recycle() {
     bitmap newly_usable = *&_zombie_chips;
     _usable_chips |= newly_usable;
     lintel::atomic_thread_fence(lintel::memory_order_release);
-    bitmap volatile* ptr = &_zombie_chips;
-    bitmap ov = *ptr;
-    while(1) {
-        bitmap nv = ov ^ newly_usable;
-        bitmap cv = atomic_cas_64(ptr, ov, nv);
-        if(cv == ov)
-            break;
-        ov = cv;
-    }
+    lintel::unsafe::atomic_fetch_xor(const_cast<bitmap*>(&_zombie_chips), newly_usable);
 }
 
 void* block::acquire_chip(size_t chip_size, size_t chip_count, size_t /*block_size*/) {
