@@ -77,6 +77,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * specializations.
  */
 
+/*
 template<class T> void atomic_inc(T volatile &val)
 { lintel::unsafe::atomic_fetch_add<T>(const_cast<T*>(&val), 1); }
 template<class T> void atomic_dec(T volatile &val)
@@ -89,9 +90,6 @@ template<class T> void atomic_add_int_delta(T volatile &val, int delta)
 { lintel::unsafe::atomic_fetch_add<T>(const_cast<T*>(&val), delta); }
 template<class T> void atomic_add_long_delta(T volatile &val, long delta)
 { lintel::unsafe::atomic_fetch_add<T>(const_cast<T*>(&val), delta); }
-template<class T> T atomic_add_nv_int_delta(T volatile &val, int delta)
-{ return lintel::unsafe::atomic_fetch_add<T>(const_cast<T*>(&val), delta)+delta; }
-template<class T> T atomic_add_nv_long_delta(T volatile &val, long delta)
-{ return lintel::unsafe::atomic_fetch_add<T>(const_cast<T*>(&val), delta)+delta; }
+*/
 
 #endif          /*</std-footer>*/

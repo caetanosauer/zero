@@ -99,7 +99,7 @@ public:
     bool invalid() const { return _data == 0; }
 
     datum_t atomic_incr() {
-        return atomic_inc_nv(_data);
+        return lintel::unsafe::atomic_fetch_add(&_data, 1)+1;
     }
     tid_t &atomic_assign_max(const tid_t &tid) {
 	const datum_t new_value = tid._data;

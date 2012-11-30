@@ -273,7 +273,7 @@ log_core::scavenge(const lsn_t &min_rec_lsn, const lsn_t& min_xct_lsn)
         fileoff_t max_chkpt = max_chkpt_size();
         while(!verify_chkpt_reservation() && reclaimed > 0) {
             long skimmed = std::min(max_chkpt, reclaimed);
-            atomic_add_long_delta(_space_rsvd_for_chkpt, skimmed); // use templated function
+            lintel::unsafe::atomic_fetch_add(const_cast<int64_t*>(&_space_rsvd_for_chkpt), skimmed);
             reclaimed -= skimmed;
         }
         release_space(reclaimed);
@@ -2639,7 +2639,7 @@ void log_core::release_space(fileoff_t amt)
         DO_PTHREAD(pthread_mutex_unlock(&_space_lock));
     }
     
-    atomic_add_long_delta(_space_available, amt); // use templated function
+    lintel::unsafe::atomic_fetch_add(const_cast<int64_t*>(&_space_available), amt);
 }
 
 void 

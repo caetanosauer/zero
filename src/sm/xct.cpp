@@ -1369,7 +1369,7 @@ int
 xct_t::attach_update_thread()
 {
     w_assert2(_core->_updating_operations >= 0);
-    int res = atomic_inc_nv(_core->_updating_operations);
+    int res = lintel::unsafe::atomic_fetch_add(const_cast<int*>(&_core->_updating_operations),1)+1;
     me()->set_is_update_thread(true); 
     return res;
 }
@@ -1377,7 +1377,7 @@ void
 xct_t::detach_update_thread()
 {
     me()->set_is_update_thread(false); 
-    atomic_dec(_core->_updating_operations);
+    lintel::unsafe::atomic_fetch_sub(const_cast<int*>(&_core->_updating_operations), 1);
     w_assert2(_core->_updating_operations >= 0);
 }
 
@@ -1736,7 +1736,7 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
         w_assert1(_core->_state == xct_active || _core->_state == xct_prepared);
     };
 
-    w_assert1(1 == atomic_inc_nv(_core->_xct_ended));
+    w_assert1(0 == lintel::unsafe::atomic_fetch_add(const_cast<int*>(&_core->_xct_ended),1));
 
 //    W_DO( ConvertAllLoadStoresToRegularStores() );
 
@@ -1981,7 +1981,7 @@ xct_t::_abort()
             || _core->_state == xct_freeing_space /* if it got an error in commit*/
             );
     if(_core->_state != xct_committing && _core->_state != xct_freeing_space) {
-        w_assert1(1 == atomic_inc_nv(_core->_xct_ended));
+        w_assert1(0 == lintel::unsafe::atomic_fetch_add(const_cast<int*>(&_core->_xct_ended),1));
     }
 
     // first, empty the wait map because no chance this xct can cause deadlock any more.
@@ -3544,8 +3544,8 @@ xct_t::attach_thread()
     CRITICAL_SECTION(xctstructure, *this);
 
     w_assert2(is_1thread_xct_mutex_mine());
-    int nt=atomic_inc_nv(_core->_threads_attached);
-    if(nt > 1) {
+    int nt=lintel::unsafe::atomic_fetch_add(const_cast<int*>(&_core->_threads_attached),1);
+    if(nt > 0) {
         INC_TSTAT(mpl_attach_cnt);
     }
     w_assert2(_core->_threads_attached >=0);
@@ -3567,7 +3567,7 @@ xct_t::detach_thread()
     CRITICAL_SECTION(xctstructure, *this);
     w_assert3(is_1thread_xct_mutex_mine());
 
-    atomic_dec(_core->_threads_attached);
+    lintel::unsafe::atomic_fetch_sub(const_cast<int*>(&_core->_threads_attached), 1);
     w_assert2(_core->_threads_attached >=0);
     me()->no_xct(this);
 }
