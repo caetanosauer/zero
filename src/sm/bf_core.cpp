@@ -73,7 +73,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "page_s.h"
 #include "log.h"
 #include <w_strstream.h>
-#include "atomic_templates.h"
+#include "Lintel/AtomicCounter.hpp"
 #include <vector>
 #include <algorithm>
 #include <sstream>

@@ -79,8 +79,6 @@ db_pretty_print(lsn_t const* lsn, int /*i=0*/, char const* /* s=0 */)
 }
 #endif // SUN4V
 
-#include <atomic_templates.h>
-
 /* This function makes an atomic copy of the lsn passed to it.
 
    To prove correctness, we need to show that all possible

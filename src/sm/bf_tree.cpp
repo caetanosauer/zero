@@ -11,7 +11,7 @@
 #include <string.h>
 #include "w_findprime.h"
 
-#include "atomic_templates.h"
+#include "Lintel/AtomicCounter.hpp"
 
 
 // tiny macro to help swizzled-LRU and freelist access
