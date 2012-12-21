@@ -58,7 +58,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
-#include "atomic_templates.h"
+#include "Lintel/AtomicCounter.hpp"
 
 #ifdef __GNUG__
 #pragma interface

@@ -155,7 +155,7 @@ IF (COMPILER_IS_SUNCC)
   ## getconf doesn't necessarily keep up with the times...
   ## and in any case, it might target generic
   SET(TARGET_FLAGS "-m64")
-  ## Assembler flags... for atomic_ops
+  ## Assembler flags
   SET(AM_LDFLAGS "-m64")
   SET(TUNE_FLAGS "-xtarget=native")
 ELSE (COMPILER_IS_SUNCC)
@@ -168,7 +168,7 @@ ELSE (COMPILER_IS_SUNCC)
   ENDIF (COMPILER_IS_ICC)
   # TUNE_FLAGS = -mtune=generic
   SET(TARGET_FLAGS "-m64")
-  ## Assembler flags... for atomic_ops
+  ## Assembler flags
   SET(AM_LDFLAGS "-m64")
 ENDIF (COMPILER_IS_SUNCC)
 
@@ -323,7 +323,7 @@ add_subdirectory(experiments) # benchmarks and other performance tests
 
 # not needed so far, and causes a warning
 # add_library(shore)
-# target_link_libraries(shore fc sthread common sm atomic_ops)
+# target_link_libraries(shore fc sthread common sm)
 
 
 # add a target to generate API documentation with Doxygen

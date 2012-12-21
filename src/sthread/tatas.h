@@ -1,7 +1,7 @@
 #ifndef TATAS_H
 #define TATAS_H
 
-#include "atomic_templates.h"
+#include "Lintel/AtomicCounter.hpp"
 #include "os_interface.h"
 
 /**\brief A test-and-test-and-set spinlock. 

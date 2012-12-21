@@ -52,7 +52,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #ifndef ATOMIC_CONTAINER_H
 #define ATOMIC_CONTAINER_H
 
-#include "atomic_templates.h"
+#include "Lintel/AtomicCounter.hpp"
 
 // for placement new support, which users need
 #include <new>
@@ -198,7 +198,7 @@ private:
         while(!mine) {
             while(*&_locked && !pointer(active)) active.p = *&_active;
             if(pointer(active)) return false;
-            mine = !lintel::unsafe::atomic_exchange(const_cast<uint_t*>(&_locked), true);
+            mine = !lintel::unsafe::atomic_exchange(const_cast<unsigned*>(&_locked), true);
         }
         if(mine) {
             lintel::atomic_thread_fence(lintel::memory_order_acquire);

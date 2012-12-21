@@ -53,7 +53,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include "w.h"
 #include "mem_block.h"
-#include "atomic_ops.h"
+#include "Lintel/AtomicCounter.hpp"
 #include <cstdlib>
 #include <stdio.h>
 #include <algorithm>
