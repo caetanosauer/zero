@@ -1062,6 +1062,7 @@ partition_t::peek(
 void                        
 partition_t::flush(int fd)
 {
+    static int64_t attempt_flush_delay = 0;
     // We only cound the fsyncs called as
     // a result of flush(), not from peek
     // or start-up
@@ -1073,7 +1074,36 @@ partition_t::flush(int fd)
             << "cannot sync after skip block " << flushl;
         W_COERCE(e);
     }
+
+    if (_artificial_flush_delay > 0) {
+        if (attempt_flush_delay==0) {
+            w_assert1(_artificial_flush_delay < 99999999/1000);
+            attempt_flush_delay = _artificial_flush_delay * 1000;
+        }
+        struct timespec req, rem;
+        req.tv_sec = 0;
+        req.tv_nsec = attempt_flush_delay;
+        
+        struct timeval start;
+        gettimeofday(&start,0);
+
+        while(nanosleep(&req, &rem) != 0) {
+            if (errno != EINTR)  break;
+            req = rem;
+        }
+
+        struct timeval stop;
+        gettimeofday(&stop,0);
+        int64_t diff = stop.tv_sec * 1000000 + stop.tv_usec;
+        diff -= start.tv_sec *       1000000 + start.tv_usec;
+        //diff is in micros.
+        diff *= 1000; // now it is nanos
+        attempt_flush_delay += ((_artificial_flush_delay * 1000) - diff)/8;
+
+    }
 }
+int partition_t::_artificial_flush_delay = 0;
+
 
 void 
 partition_t::close_for_append()

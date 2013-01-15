@@ -45,7 +45,6 @@ add_dependencies(fc FC_ERROR_GENFILES)
 
 install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/atomic_container.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/atomic_templates.h
   ${CMAKE_CURRENT_SOURCE_DIR}/block_alloc.h
   ${CMAKE_CURRENT_SOURCE_DIR}/dynarray.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mem_block.h

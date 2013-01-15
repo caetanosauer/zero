@@ -993,7 +993,7 @@ sthread_t::_unblock(w_rc_t::errcode_t e)
      *  Thread is again ready.
      */
     _unblock_flag = true;
-    membar_producer(); // make sure the unblock_flag is visible
+    lintel::atomic_thread_fence(lintel::memory_order_release); // make sure the unblock_flag is visible
     DO_PTHREAD(pthread_cond_signal(&_wait_cond));
     _status = t_running;
 
@@ -1253,9 +1253,9 @@ occ_rwlock::~occ_rwlock()
 
 void occ_rwlock::release_read()
 {
-    membar_exit();
+    lintel::atomic_thread_fence(lintel::memory_order_release);
     w_assert1(READER <= (int) _active_count);
-    unsigned count = atomic_add_32_nv(&_active_count, -READER);
+    unsigned count = lintel::unsafe::atomic_fetch_sub(const_cast<unsigned*>(&_active_count), (unsigned)READER) - READER;
     if(count == WRITER) {
         // wake it up
         CRITICAL_SECTION(cs, _read_write_mutex);
@@ -1265,10 +1265,10 @@ void occ_rwlock::release_read()
 
 void occ_rwlock::acquire_read()
 {
-    int count = atomic_add_32_nv(&_active_count, READER);
+    unsigned count = lintel::unsafe::atomic_fetch_add(const_cast<unsigned*>(&_active_count), (unsigned)READER) + READER;
     while(count & WRITER) {
         // block
-        count = atomic_add_32_nv(&_active_count, -READER);
+        count = lintel::unsafe::atomic_fetch_sub(const_cast<unsigned*>(&_active_count), (unsigned)READER) - READER;
         {
             CRITICAL_SECTION(cs, _read_write_mutex);
             
@@ -1280,16 +1280,16 @@ void occ_rwlock::acquire_read()
                 DO_PTHREAD(pthread_cond_wait(&_read_cond, &_read_write_mutex));
             }
         }
-        count = atomic_add_32_nv(&_active_count, READER);
+        lintel::unsafe::atomic_fetch_add(const_cast<unsigned*>(&_active_count), (unsigned)READER) - READER;
     }
-    membar_enter();
+    lintel::atomic_thread_fence(lintel::memory_order_acquire);
 }
 
 void occ_rwlock::release_write()
 {
     w_assert9(_active_count & WRITER);
     CRITICAL_SECTION(cs, _read_write_mutex);
-    atomic_add_32(&_active_count, -WRITER);
+    lintel::unsafe::atomic_fetch_sub(const_cast<unsigned*>(&_active_count), (unsigned)WRITER);
     DO_PTHREAD(pthread_cond_broadcast(&_read_cond));
 }
 
@@ -1302,7 +1302,7 @@ void occ_rwlock::acquire_write()
     }
     
     // any lurking writers are waiting on the cond var
-    int count = atomic_add_32_nv(&_active_count, WRITER);
+    unsigned count = lintel::unsafe::atomic_fetch_add(const_cast<unsigned*>(&_active_count), (unsigned)WRITER) + WRITER;
     w_assert1(count & WRITER);
 
     // drain readers

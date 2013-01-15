@@ -73,7 +73,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "page_s.h"
 #include "log.h"
 #include <w_strstream.h>
-#include "atomic_templates.h"
+#include "Lintel/AtomicCounter.hpp"
 #include <vector>
 #include <algorithm>
 #include <sstream>
@@ -140,7 +140,7 @@ void bfcb_t::check() const
 #endif
 
 void bfcb_t::pin_frame() { 
-    atomic_inc(_pin_cnt);
+    lintel::unsafe::atomic_fetch_add(const_cast<int32_t*>(&_pin_cnt), 1);
     w_assert1(_pin_cnt > 0); // should never go below 0
 }
 
@@ -148,7 +148,7 @@ void bfcb_t::unpin_frame() {
 #if W_DEBUG_LEVEL > 1
     w_assert2(_pin_cnt > 0); // should NEVER go below 0
 #endif
-    atomic_dec(_pin_cnt); 
+    lintel::unsafe::atomic_fetch_sub(const_cast<int32_t*>(&_pin_cnt), 1);
     w_assert1(_pin_cnt >= 0); // should NEVER go below 0
 }
 
@@ -174,16 +174,11 @@ bool bfcb_t::pin_frame_if_pinned() {
     while(1) {
         if(old_pin_cnt == 0)
             return false;
-        // if pin_cnt == old_pin_cnt increment pin_cnt and return
-        // the original value of pin_cnt, whether or not we incremented it.
-        int orig_pin_cnt = atomic_cas_32((unsigned*) &_pin_cnt, 
-                                old_pin_cnt, old_pin_cnt+1);
-        if(orig_pin_cnt == old_pin_cnt) // increment occurred
-            return true;
-
-        // if we get here it's because another thread raced in here,
-        // and updated the pin count before we could.
-        old_pin_cnt = orig_pin_cnt;
+	
+        // if pin_cnt == old_pin_cnt increment pin_cnt
+	if(lintel::unsafe::atomic_compare_exchange_strong(const_cast<int*>(&_pin_cnt), &old_pin_cnt, old_pin_cnt+1)) {
+	    return true;
+	}
     }
 }
 
@@ -563,7 +558,7 @@ bfcb_t* bfcb_unused_list::take() {
     if(u.b) {
         w_assert1(u.b->pin_cnt() == 0);
         u.b->zero_pin_cnt();
-        atomic_dec(_count);
+        lintel::unsafe::atomic_fetch_sub(&_count, 1);
     }
     return u.b;
 }
@@ -574,7 +569,7 @@ void bfcb_unused_list::release(bfcb_t* frame)
     w_assert9(!frame->latch.is_latched());
 
     push(frame);
-    atomic_inc(_count);
+    lintel::unsafe::atomic_fetch_add(&_count, 1);
 }
 
 

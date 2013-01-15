@@ -37,11 +37,6 @@ copyright (given below) and most of it is also subject to
 the SHORE-MT/DIAS copyright (also given below).
 Both copyrights are hereby extended to the date of this release, 2010.
 
-The atomic operations library is taken from the OPENSOLARIS release and
-is subject to Sun Microsystems copyright, and to the OPENSOLARIS license,
-found in src/atomic_ops/OPENSOLARIS.LICENSE.
-It is lengthy and so it is not included here.
-
 The strstream compatibility code found in src/fc/w_compat_strstream.h and
 src/fc/w_compat_strstream.cpp
 is subject to the Silicon Graphics copyright, below.

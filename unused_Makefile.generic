@@ -85,9 +85,8 @@ ALWAYS_FLAGS += UNKNOWN COMPILER
 endif
 endif
 
-## Include shore-config.h in the cpp/assembly of
-## atomic_ops.S
-AM_CCASFLAGS = -I$(top_srcdir)/config -I$(top_srcdir)/src/atomic_ops
+## Include shore-config.h
+#AM_CCASFLAGS = -I$(top_srcdir)/config
 
 ## The code we have assumes the cpp is going to
 ## define these for a .S file, but ours seems to define
@@ -344,7 +343,7 @@ endif
 
 # Initialize LOCALLDADD 
 # Note: on solaris -lnsl may be needed for gethostbyname()
-LOCALLDADD = $(top_srcdir)/src/atomic_ops/libatomic_ops.a -lnsl
+#LOCALLDADD = $(top_srcdir)/src/atomic_ops/libatomic_ops.a -lnsl
 
 # --------------------------------------------------------
 #

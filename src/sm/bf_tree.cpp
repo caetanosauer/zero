@@ -11,7 +11,7 @@
 #include <string.h>
 #include "w_findprime.h"
 
-#include "atomic_templates.h"
+#include "Lintel/AtomicCounter.hpp"
 
 
 // tiny macro to help swizzled-LRU and freelist access
@@ -374,15 +374,10 @@ bool bf_tree_m::_increment_pin_cnt_no_assumption(bf_idx idx) {
         if (cur == -1) {
             break; // being evicted! fail
         }
-        
-        int32_t org_value = atomic_cas_32((uint32_t*) &(cb._pin_cnt), cur, cur + 1);
-        if (org_value == cur) {
-            return true; // increment occurred
-        }
-
-        // if we get here it's because another thread raced in here,
-        // and updated the pin count before we could.
-        cur = org_value;
+    
+	if(lintel::unsafe::atomic_compare_exchange_strong(const_cast<int32_t*>(&cb._pin_cnt), &cur, cur + 1)) {
+	  return true;
+	}    
     }
     return false;
 }
@@ -391,7 +386,7 @@ void bf_tree_m::_decrement_pin_cnt_assume_positive(bf_idx idx) {
     w_assert1 (_is_active_idx(idx));
     bf_tree_cb_t &cb(_control_blocks[idx]);
     w_assert1 (cb._pin_cnt >= 1);
-    atomic_dec_32((uint32_t*) &(cb._pin_cnt));
+    lintel::unsafe::atomic_fetch_sub(const_cast<int32_t*>(&cb._pin_cnt), 1);
 }
 
 ///////////////////////////////////   WRITE-ORDER-DEPENDENCY BEGIN ///////////////////////////////////  

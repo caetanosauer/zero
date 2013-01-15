@@ -37,7 +37,11 @@ public:
         virtual void run() {
             _begin();
             std::cout << ":T" << _thid << ": req vol=" << _vol << ", mode=" << _vol_mode << ".." << std::endl;
-            _rc = ss_m::lm->intent_vol_lock(_vol, _vol_mode);
+            for (int retries = 100; retries>0; retries--) {
+                _rc = ss_m::lm->intent_vol_lock(_vol, _vol_mode);
+                if (_rc.is_error() && _rc.err_num() != smlevel_0::eDEADLOCK)
+                    break;
+            }
             if (_rc.is_error()) {
                 report_time();
                 std::cout << ":T" << _thid << ":" << "received an error " << _rc << ". abort." << std::endl;

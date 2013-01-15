@@ -377,7 +377,7 @@ latch_t::upgrade_if_not_block(bool& would_block)
     }
     else {
         // upgrade should not increase the lock count
-        atomic_dec_uint(&_total_count); 
+        lintel::unsafe::atomic_fetch_sub(&_total_count, 1);
         me->_count--;
         would_block = false;
     }
@@ -419,7 +419,7 @@ w_rc_t latch_t::_acquire(latch_mode_t new_mode,
         }
         if(me->_mode == new_mode) {
             DBGTHRD(<< "we already held latch in desired mode " << *this);
-            atomic_inc_uint(&_total_count);// BUG_SEMANTICS_FIX
+            lintel::unsafe::atomic_fetch_add(&_total_count, 1);// BUG_SEMANTICS_FIX
             me->_count++; // thread-local
             // fprintf(stderr, "acquire latch %p %dx in mode %s\n", 
             //        this, me->_count, latch_mode_str[new_mode]);
@@ -508,7 +508,7 @@ w_rc_t latch_t::_acquire(latch_mode_t new_mode,
         w_assert2(me->_count == 0);
         me->_mode = new_mode;
     }
-    atomic_inc_uint(&_total_count);// BUG_SEMANTICS_FIX
+    lintel::unsafe::atomic_fetch_add(&_total_count, 1);// BUG_SEMANTICS_FIX
     me->_count++;// BUG_SEMANTICS_FIX
     DBGTHRD(<< "acquired " << *this );
     return RCOK;  
@@ -525,7 +525,7 @@ latch_t::_release(latch_holder_t* me)
     w_assert2(me->_mode != LATCH_NL);
     w_assert2(me->_count > 0);
 
-    atomic_dec_uint(&_total_count); 
+    lintel::unsafe::atomic_fetch_sub(&_total_count, 1);
     if(--me->_count) {
         DBGTHRD(<< "was held multiple times -- still " << me->_count << " " << *this );
         return me->_count;

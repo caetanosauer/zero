@@ -1,7 +1,7 @@
 #ifndef TATAS_H
 #define TATAS_H
 
-#include "atomic_templates.h"
+#include "Lintel/AtomicCounter.hpp"
 #include "os_interface.h"
 
 /**\brief A test-and-test-and-set spinlock. 
@@ -23,12 +23,7 @@ struct tatas_lock {
     enum { NOBODY=0 };
     typedef union  {
         pthread_t         handle;
-#undef CASFUNC 
-#if SIZEOF_PTHREAD_T==4
-#define CASFUNC atomic_cas_32
-        unsigned int       bits;
-#elif SIZEOF_PTHREAD_T==8
-# define CASFUNC atomic_cas_64
+#if SIZEOF_PTHREAD_T==8
         uint64_t           bits;
 #elif SIZEOF_PTHREAD_T==0
 #error  Configuration could not determine size of pthread_t. Fix configure.ac.
@@ -52,13 +47,11 @@ public:
     {
         holder_type_t tid = { pthread_self() };
         bool success = false;
-        unsigned int old_holder = 
-                        CASFUNC(&_holder.bits, NOBODY, tid.bits);
-        if(old_holder == NOBODY) {
-            membar_enter();
+	uint64_t old_holder = NOBODY;
+	if(lintel::unsafe::atomic_compare_exchange_strong(const_cast<uint64_t*>(&_holder.bits), &old_holder, tid.bits)) {
+            lintel::atomic_thread_fence(lintel::memory_order_acquire);
             success = true;
-        }
-        
+	}
         return success;
     }
 
@@ -66,22 +59,23 @@ public:
     void acquire() {
         w_assert1(!is_mine());
         holder_type_t tid = { pthread_self() };
+	uint64_t old_holder = NOBODY;
         do {
             spin();
         }
-        while(CASFUNC(&_holder.bits, NOBODY, tid.bits));
-        membar_enter();
+	while(!lintel::unsafe::atomic_compare_exchange_strong(const_cast<uint64_t*>(&_holder.bits), &old_holder, tid.bits));
+        lintel::atomic_thread_fence(lintel::memory_order_acquire);
         w_assert1(is_mine());
     }
 
     /// Release the lock
     void release() {
-        membar_exit();
-        w_assert1(is_mine()); // moved after the membar
+        lintel::atomic_thread_fence(lintel::memory_order_release);
+        w_assert1(is_mine()); // moved after the fence
         _holder.bits= NOBODY;
 #if W_DEBUG_LEVEL > 0
         {
-            membar_enter(); // needed for the assert?
+            lintel::atomic_thread_fence(lintel::memory_order_acquire); // needed for the assert?
             w_assert1(!is_mine());
         }
 #endif

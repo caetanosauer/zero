@@ -20,7 +20,7 @@ set(common_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/vid_t.cpp)
 
 add_library(common STATIC ${common_STAT_SRCS})
-#target_link_libraries (common atomic_ops)
+#target_link_libraries (common)
 
 set (OPT_ERROR_GENFILES_H opt_errmsg_gen.h opt_einfo_gen.h opt_error_def_gen.h opt_einfo_bakw_gen.h)
 add_custom_command(OUTPUT ${OPT_ERROR_GENFILES_H}

@@ -798,7 +798,7 @@ bf_cleaner_thread_t::run()
                 fprintf(stderr, "%s\n", trouble.c_str());
                 W_COERCE(rc);
             }
-            atomic_add_int_delta(_ndirty, -bufidxes.size());
+            lintel::unsafe::atomic_fetch_sub(&_ndirty, bufidxes.size());
         }
         
     } // while !_retire
@@ -2105,7 +2105,7 @@ void  bfcb_t::mark_clean() {
     // need a write barrier as well to force the buffers.
     _dirty =  false;
     _rec_lsn = lsn_t::null;
-    membar_producer();
+    lintel::atomic_thread_fence(lintel::memory_order_release);
     mark_clean_dependencies();
 }
 void  bfcb_t::mark_clean_dependencies() {
@@ -3239,7 +3239,7 @@ bf_m::_scan(const bf_filter_t& filter, bool write_dirty, bool discard)
         // clean all the buffers
         W_DO(_clean_buf(NULL,
                     bufidxes, WAIT_FOREVER, 0) );
-        atomic_add_int_delta(bf_cleaner_thread_t::_ndirty, - bufidxes.size());
+        lintel::unsafe::atomic_fetch_sub(&bf_cleaner_thread_t::_ndirty, bufidxes.size());
         if (! discard)   {
             return RCOK;        // done 
         }
@@ -3441,7 +3441,7 @@ bf_m::_set_dirty(bfcb_t* b)
             w_assert3(b->dirty()); // we just set it so it's now dirty
         }
 #endif 
-        int ndirty = atomic_inc_nv(bf_cleaner_thread_t::_ndirty);
+        int ndirty = lintel::unsafe::atomic_fetch_add(&bf_cleaner_thread_t::_ndirty,1)+1;
         if(ndirty > bf_cleaner_thread_t::_dirty_threshold) {
             if(ndirty % (bf_cleaner_thread_t::_dirty_threshold/4) == 0) {
                 INC_TSTAT(bf_kick_threshold);
