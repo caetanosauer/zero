@@ -32,7 +32,8 @@ DECLARE_TLS(block_alloc<xct_lock_entry_t>, xctLockEntryPool);
 #ifdef SWITCH_DEADLOCK_IMPL
 bool g_deadlock_use_waitmap_obsolete = true;
 int g_deadlock_dreadlock_interval_ms = 10;
-w_rc_t::errcode_t (*g_check_deadlock_impl)(xct_t* xd, lock_request_t *myreq);
+void (*g_check_deadlock_impl)(lock_queue_t *queue, lock_queue_entry_t *myreq, check_grant_result &result);
+int g_deadlock_resolution_policy = 0;
 #endif // SWITCH_DEADLOCK_IMPL
 
 xct_lock_info_t::xct_lock_info_t() : _head (NULL), _tail (NULL)
@@ -210,9 +211,18 @@ lock_core_m::_acquire_lock_loop(
     }
 
     // loop again and again until decisive failure or success
-    lock_queue_t::check_grant_result chk_result;
+    check_grant_result chk_result;
     while (true) {
+#ifdef SWITCH_DEADLOCK_IMPL
+        //switch deadlock detection logic for a few experiments
+        if (g_check_deadlock_impl) {
+            g_check_deadlock_impl(lock, req, chk_result);
+        } else {
+            lock->check_can_grant(req, chk_result);
+        }
+#else // SWITCH_DEADLOCK_IMPL
         lock->check_can_grant(req, chk_result);
+#endif // SWITCH_DEADLOCK_IMPL
         DBGOUT5(<<"check done:" << chk_result.can_be_granted << ","
             << chk_result.deadlock_detected << ","
             << chk_result.deadlock_myself_should_die << ","
@@ -530,12 +540,27 @@ void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_resul
                     // If one of them is chained transaction, let's victimize
                     // shorter chain because it will quickly converge in dominated lock table.
                     // See ticket:102
-                    if (their_chain_len < my_chain_len) {
-                        killhim = true;
-                    } else if (their_chain_len > my_chain_len) {
-                        killhim = false;
+                    if (g_deadlock_resolution_policy == 0) {
+                        // kill short. this is the default implementation
+                        if (their_chain_len < my_chain_len) {
+                            killhim = true;
+                        } else if (their_chain_len > my_chain_len) {
+                            killhim = false;
+                        } else {
+                            // if chain length is same, kill younger xct (larger tid)
+                            killhim = myxd->tid() < theirxd->tid();
+                        }
+                    } else  if (g_deadlock_resolution_policy == 1) {
+                        // kill long. only used in experiments
+                        if (their_chain_len < my_chain_len) {
+                            killhim = false;
+                        } else if (their_chain_len > my_chain_len) {
+                            killhim = true;
+                        } else {
+                            killhim = myxd->tid() < theirxd->tid();
+                        }
                     } else {
-                        // if chain length is same, kill younger xct (larger tid)
+                        // kill young. only used in experiments
                         killhim = myxd->tid() < theirxd->tid();
                     }
 

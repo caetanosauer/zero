@@ -1,61 +1,7 @@
-/* -*- mode:C++; c-basic-offset:4 -*-
-     Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
-                       Copyright (c) 2007-2009
-      Data Intensive Applications and Systems Labaratory (DIAS)
-               Ecole Polytechnique Federale de Lausanne
-   
-                         All Rights Reserved.
-   
-   Permission to use, copy, modify and distribute this software and
-   its documentation is hereby granted, provided that both the
-   copyright notice and this permission notice appear in all copies of
-   the software, derivative works or modified versions, and any
-   portions thereof, and that both notices appear in supporting
-   documentation.
-   
-   This code is distributed in the hope that it will be useful, but
-   WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
-   DISCLAIM ANY LIABILITY OF ANY KIND FOR ANY DAMAGES WHATSOEVER
-   RESULTING FROM THE USE OF THIS SOFTWARE.
-*/
-
-/*<std-header orig-src='shore' incl-file-exclusion='BTREE_H'>
-
- $Id: btree.h,v 1.132 2010/05/26 01:20:36 nhall Exp $
-
-SHORE -- Scalable Heterogeneous Object REpository
-
-Copyright (c) 1994-99 Computer Sciences Department, University of
-                      Wisconsin -- Madison
-All Rights Reserved.
-
-Permission to use, copy, modify and distribute this software and its
-documentation is hereby granted, provided that both the copyright
-notice and this permission notice appear in all copies of the
-software, derivative works or modified versions, and any portions
-thereof, and that both notices appear in supporting documentation.
-
-THE AUTHORS AND THE COMPUTER SCIENCES DEPARTMENT OF THE UNIVERSITY
-OF WISCONSIN - MADISON ALLOW FREE USE OF THIS SOFTWARE IN ITS
-"AS IS" CONDITION, AND THEY DISCLAIM ANY LIABILITY OF ANY KIND
-FOR ANY DAMAGES WHATSOEVER RESULTING FROM THE USE OF THIS SOFTWARE.
-
-This software was developed with support by the Advanced Research
-Project Agency, ARPA order number 018 (formerly 8230), monitored by
-the U.S. Army Research Laboratory under contract DAAB07-91-C-Q518.
-Further funding for this work was provided by DARPA through
-Rome Research Laboratory Contract No. F30602-97-2-0247.
-
-*/
-
 #ifndef BTREE_H
 #define BTREE_H
 
 #include "w_defines.h"
-
-/*  -- do not edit anything above this line --   </std-header>*/
 
 /*
  *  Interface to btree manager.  
@@ -65,6 +11,9 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #ifdef __GNUG__
 #pragma interface
 #endif
+
+#include "vid_t.h"
+#include "stid_t.h"
 
 class btree_p;
 struct btree_stats_t;
@@ -106,7 +55,7 @@ public:
     * Insert <key, el> into the btree.
     */
     static rc_t                        insert(
-        const lpid_t&                     root,
+        volid_t vol, snum_t store,
         const w_keystr_t&                 key,
         const cvec_t&                     elem);
 
@@ -114,7 +63,7 @@ public:
     * Update el of key with the new data.
     */
     static rc_t                        update(
-        const lpid_t&                     root,
+        volid_t vol, snum_t store,
         const w_keystr_t&                 key,
         const cvec_t&                     elem);
 
@@ -131,7 +80,7 @@ public:
     * Update specific part of el of key with the new data.
     */
     static rc_t                        overwrite(
-        const lpid_t&                     root,
+        volid_t vol, snum_t store,
         const w_keystr_t&                 key,
         const char*                       el,
         smsize_t                          offset,
@@ -139,7 +88,7 @@ public:
 
     /** Remove key from the btree. */
     static rc_t                        remove(
-        const lpid_t&                    root,
+        volid_t vol, snum_t store,
         const w_keystr_t&                    key);
 
     /** Print the btree (for debugging only). */
@@ -150,21 +99,21 @@ public:
      * \ingroup SSMBTREE
      * @copydetails btree_impl::_sx_defrag_page
     */
-    static rc_t                 defrag_page(const lpid_t &pid);
+    static rc_t                 defrag_page(btree_p &page);
 
     /**
     * Find key in btree. If found, copy up to elen bytes of the 
     *  entry element into el. 
     */
     static rc_t                        lookup(
-        const lpid_t&                  root, 
+        volid_t vol, snum_t store,
         const w_keystr_t&              key_to_find, 
         void*                          el, 
         smsize_t&                      elen,
         bool&                          found);
 
     static rc_t                 get_du_statistics(
-        const lpid_t&                    root, 
+        const lpid_t &root_pid,
         btree_stats_t&                btree_stats,
         bool                            audit);
 
@@ -173,7 +122,7 @@ public:
      * @copydetails btree_impl::_ux_verify_tree(const lpid_t&,int,bool&)
     */
     static rc_t                        verify_tree(
-        const lpid_t &root_pid, int hash_bits, bool &consistent);
+        volid_t vol, snum_t store, int hash_bits, bool &consistent);
     
     /**
      * \brief Verifies consistency of all BTree indexes in the volume.
@@ -185,14 +134,14 @@ protected:
     /* 
      * for use by logrecs for undo
      */
-    static rc_t remove_as_undo(const lpid_t &root, const w_keystr_t &key);
-    static rc_t update_as_undo(const lpid_t &root, const w_keystr_t &key, const cvec_t &elem);
-    static rc_t overwrite_as_undo(const lpid_t &root, const w_keystr_t &key,
+    static rc_t remove_as_undo(volid_t vol, snum_t store,const w_keystr_t &key);
+    static rc_t update_as_undo(volid_t vol, snum_t store,const w_keystr_t &key, const cvec_t &elem);
+    static rc_t overwrite_as_undo(volid_t vol, snum_t store,const w_keystr_t &key,
                                   const char *el, smsize_t offset, smsize_t elen);
-    static rc_t undo_ghost_mark(const lpid_t &root, const w_keystr_t &key);
+    static rc_t undo_ghost_mark(volid_t vol, snum_t store,const w_keystr_t &key);
 private:
     /** Return true in ret if btree at root is empty. false otherwise. */
-    static rc_t                        is_empty(const lpid_t& root, bool& ret);
+    static rc_t                        is_empty(volid_t vol, snum_t store, bool& ret);
 
     /** Used by get_du_statistics internally to collect all nodes' statistics. */
     static rc_t _get_du_statistics_recurse(

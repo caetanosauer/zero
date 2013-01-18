@@ -66,7 +66,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "chkpt_serial.h"
 #include "chkpt.h"
 #include "logdef_gen.cpp"
-#include "bf_core.h"
+#include "bf_tree.h"
 #include "xct_dependent.h"
 #include <new>
 
@@ -385,7 +385,7 @@ void chkpt_m::take()
 
     
     // clear out all too-old pages
-    W_COERCE(bf->force_until_lsn(oldest_valid_lsn, false));
+    W_COERCE(bf->force_until_lsn(oldest_valid_lsn.data()));
 
     /* hopefully the page cleaning took long enough that the old
        transactions all ended...
@@ -423,24 +423,24 @@ void chkpt_m::take()
      *  opened, and it might be that a checkpoint is spanning a 
      *  partition.
      */
-    lsn_t min_rec_lsn = lsn_t::max;
+    lsn_t min_rec_lsn = lsndata_max;
     {
-        int     bfsz = bf->npages();
-        const     int chunk = chkpt_bf_tab_t::max;
+        bf_idx     bfsz = bf->get_block_cnt();
+        const     uint32_t chunk = chkpt_bf_tab_t::max;
 
         w_auto_delete_array_t<lpid_t> pid(new lpid_t[chunk]);
         w_auto_delete_array_t<lsn_t> rec_lsn(new lsn_t[chunk]);
         w_assert1(pid && rec_lsn);
 
         int total_count = 0;
-        for (int i = 0; i < bfsz; )  {
+        for (bf_idx i = 1; i < bfsz; )  {
             /*
              *  Loop over all buffer pages
              */
-            int count = chunk;
+            uint32_t count = chunk;
             // Have the minimum rec_lsn of the bunch
             // returned iff it's less than the value passed in
-            W_COERCE( bf->get_rec_lsn(i, count, pid, rec_lsn, min_rec_lsn) );
+            bf->get_rec_lsn(i, count, pid.get(), rec_lsn.get(), min_rec_lsn);
             if (count)  {
                 total_count+= count;
 

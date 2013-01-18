@@ -82,6 +82,7 @@ class xct_i;
 class device_m;
 class io_m;
 class bf_m;
+class bf_tree_m;
 class comm_m;
 class log_m;
 class lock_m;
@@ -190,7 +191,7 @@ public:
         /* XXX I want to propogate sthread_t::iovec_max here, but
            it doesn't work because of sm_app.h not including
            the thread package. */
-        max_many_pages = 32,
+        max_many_pages = 64,
 
         srvid_map_sz = (max_servers - 1) / 8 + 1,
         ext_map_sz_in_bytes = ((ext_sz + 7) / 8),
@@ -354,7 +355,7 @@ public:
 
     static device_m* dev;
     static io_m* io;
-    static bf_m* bf;
+    static bf_tree_m* bf;
     static lock_m* lm;
 
     static log_m* log;

@@ -9,6 +9,7 @@
 #define BTREE_C
 
 #include "sm_int_2.h"
+#include "page_bf_inline.h"
 #include "btree_p.h"
 #include "btree_impl.h"
 #include "btcursor.h"
@@ -19,7 +20,7 @@
 
 rc_t
 btree_impl::_ux_lookup(
-    const lpid_t&       root,
+    volid_t vol, snum_t store,
     const w_keystr_t&       key,
     bool&               found,
     void*               el,
@@ -29,7 +30,7 @@ btree_impl::_ux_lookup(
     FUNC(btree_impl::_ux_lookup);
     INC_TSTAT(bt_find_cnt);
     while (true) {
-        rc_t rc = _ux_lookup_core (root, key, found, el, elen);
+        rc_t rc = _ux_lookup_core (vol, store, key, found, el, elen);
         if (rc.is_error() && rc.err_num() == eLOCKRETRY) {
             continue;
         }
@@ -40,7 +41,7 @@ btree_impl::_ux_lookup(
 
 rc_t
 btree_impl::_ux_lookup_core(
-    const lpid_t&       root,
+    volid_t vol, snum_t store,
     const w_keystr_t&   key,
     bool&               found,
     void*               el,
@@ -53,7 +54,7 @@ btree_impl::_ux_lookup_core(
     btree_p                leaf; // first-leaf
 
     // find the leaf (potentially) containing the key
-    W_DO( _ux_traverse(root, key, t_fence_contain, LATCH_SH, leaf));
+    W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_SH, leaf));
 
     w_assert1(leaf.is_fixed());
     w_assert1(leaf.is_leaf());
@@ -96,7 +97,7 @@ btree_impl::_ux_lookup_core(
 
 rc_t
 btree_impl::_ux_traverse(
-    const lpid_t &root_pid,
+    volid_t vol, snum_t store,
     const w_keystr_t &key,
     traverse_mode_t traverse_mode,
     latch_mode_t leaf_latch_mode,
@@ -117,19 +118,19 @@ btree_impl::_ux_traverse(
 
     shpid_t leaf_pid_causing_failed_upgrade = 0;
     for (int times = 0; times < 20; ++times) { // arbitrary number
-        inquery_verify_init(root_pid); // initialize in-query verification
+        inquery_verify_init(vol, store); // initialize in-query verification
         btree_p root_p;
         w_assert1(!root_p.is_fixed());
         bool should_try_ex = (leaf_latch_mode == LATCH_EX &&
-            leaf_pid_causing_failed_upgrade == root_pid.page);
-        W_DO( root_p.fix(root_pid, should_try_ex ? LATCH_EX : LATCH_SH) );
+            leaf_pid_causing_failed_upgrade == smlevel_0::bf->get_root_page_id(vol, store));
+        W_DO( root_p.fix_root(vol, store, should_try_ex ? LATCH_EX : LATCH_SH));
         w_assert1(root_p.is_fixed());
         
         if (root_p.get_blink() != 0) {
             // root page has foster-child! let's grow the tree.
             if (root_p.latch_mode() != LATCH_EX) {
                 root_p.unfix(); // don't upgrade. re-fix.
-                W_DO(root_p.fix(root_pid, LATCH_EX));
+                W_DO( root_p.fix_root(vol, store, LATCH_EX));
             }
             W_DO(_sx_grow_tree(root_p));
             --times; // we don't penalize this. do it again.
@@ -184,8 +185,6 @@ btree_impl::_ux_traverse_recurse(
         leaf.unfix();
     }
 
-    lpid_t pid_to_follow = start.pid(); // copy store/volume id
-    pid_to_follow.page = 0;
     // this part is now loop, not recursion to prevent the stack from growing too long
     btree_p *current = &start;
     btree_p followed_p; // for latch coupling
@@ -289,9 +288,7 @@ btree_impl::_ux_traverse_recurse(
             leaf = *current;
             // re-fix to apply the given latch mode
             if (leaf_latch_mode != LATCH_SH && leaf.latch_mode() != LATCH_EX) {
-                bool would_block = false;
-                W_DO(leaf.upgrade_latch_if_not_block(would_block));
-                if (would_block) {
+                if (!leaf.upgrade_latch_conditional()) {
                     // can't get EX latch, so restart from the root
 #if W_DEBUG_LEVEL>3
                     cout << "latch update conflict at " << leaf.pid() << ". need restart from root!" << endl;
@@ -305,27 +302,27 @@ btree_impl::_ux_traverse_recurse(
         }
         
         if (do_inquery_verify) inquery_verify_expect(*current, slot_to_follow); // adds expectation
+        shpid_t pid_to_follow;
         if (slot_to_follow == t_follow_blink) {
-            pid_to_follow.page = current->get_blink();
+            pid_to_follow = current->get_blink();
         } else if (slot_to_follow == t_follow_pid0) {
-            pid_to_follow.page = current->pid0();
+            pid_to_follow = current->pid0();
         } else {
-            pid_to_follow.page = current->child(slot_to_follow);
+            pid_to_follow = current->child(slot_to_follow);
         }    
-        w_assert1(pid_to_follow.page);
+        w_assert1(pid_to_follow);
 
         // if worth it, do eager adoption. If it actually did something, it returns eGOODRETRY so that we will exit and retry
         if ((current->level() >= 3 || (current->level() == 2 && slot_to_follow == t_follow_blink)) // next will be non-leaf
-            && is_ex_recommended(pid_to_follow.page)) { // next is VERY hot
-            W_DO (_ux_traverse_try_eager_adopt(*current, pid_to_follow.page));
+            && is_ex_recommended(pid_to_follow)) { // next is VERY hot
+            W_DO (_ux_traverse_try_eager_adopt(*current, pid_to_follow));
         }
 
         bool should_try_ex = leaf_latch_mode == LATCH_EX && (
-            pid_to_follow.page == leaf_pid_causing_failed_upgrade
+            pid_to_follow == leaf_pid_causing_failed_upgrade
             || current->latch_mode() == LATCH_EX // once we got an EX latch, we shouldn't get SH latch
         );
-        
-        W_DO(next->fix(pid_to_follow, should_try_ex ? LATCH_EX : LATCH_SH));
+        W_DO(next->fix_nonroot(*current, current->vol(), pid_to_follow, should_try_ex ? LATCH_EX : LATCH_SH));
 
         // we followed a real-child pointer and found that it has blink..
         // let's adopt it! (but opportunistically).
@@ -355,9 +352,7 @@ rc_t btree_impl::_ux_traverse_try_eager_adopt(btree_p &current, shpid_t next_pid
             return RCOK;
         }
         btree_p next;
-        lpid_t pid = current.pid();
-        pid.page = next_pid;
-        W_DO(next.fix(pid, LATCH_EX));
+        W_DO(next.fix_nonroot(current, current.vol(), next_pid, LATCH_EX));
         
         // okay, now we got EX latch, but..
         if (!is_ex_recommended(next_pid)) {

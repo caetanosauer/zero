@@ -1,3 +1,4 @@
+#ifdef COMMENTED_OUT
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
    
@@ -219,3 +220,4 @@ public:
 };
 
 #endif /* BF_HTAB_H */
+#endif // COMMENTED_OUT

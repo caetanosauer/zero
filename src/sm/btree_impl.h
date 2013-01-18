@@ -90,17 +90,18 @@ public:
     *  inserts it to the page and, if needed, splits the page.
     * \details
     *  Context: User transaction.
-    * @param[in] root id of root page
+    * @param[in] vol Volume ID
+    * @param[in] store Store ID
     * @param[in] key key of the inserted tuple
     * @param[in] elem data of the inserted tuple
     */
     static rc_t                        _ux_insert(
-        const lpid_t&                     root,
+        volid_t vol, snum_t store,
         const w_keystr_t&                 key,
         const cvec_t&                     elem);
     /** _ux_insert()'s internal function without retry by itself.*/
     static rc_t                        _ux_insert_core(
-        const lpid_t&                     root,
+        volid_t vol, snum_t store,
         const w_keystr_t&                 key,
         const cvec_t&                     elem);
     /** Last half of _ux_insert, after traversing, finding (or not) and ghost determination.*/
@@ -114,17 +115,18 @@ public:
     * If needed, this method also splits the page.
     * \details
     *  Context: User transaction.
-    * @param[in] root id of root page
+    * @param[in] vol Volume ID
+    * @param[in] store Store ID
     * @param[in] key key of the existing tuple
     * @param[in] elem new data of the tuple
     */
     static rc_t                        _ux_update(
-        const lpid_t&                     root,
+        volid_t vol, snum_t store,
         const w_keystr_t&                 key,
         const cvec_t&                     elem);
     /** _ux_update()'s internal function without retry by itself.*/
     static rc_t                        _ux_update_core(
-        const lpid_t&                     root,
+        volid_t vol, snum_t store,
         const w_keystr_t&                 key,
         const cvec_t&                     elem);
     /** Last half of _ux_update, after traversing, finding (or not) and ghost determination.*/
@@ -159,19 +161,20 @@ public:
     *  \brief This function finds the given key, updates the specific part of element if found.
     * \details
     *  Context: User transaction.
-    * @param[in] root id of root page
+    * @param[in] vol Volume ID
+    * @param[in] store Store ID
     * @param[in] key key of the existing tuple
     * @param[in] el new data of the tuple
     * @param[in] offset overwrites to this position of the record
     * @param[in] elen number of bytes to overwrite
     */
     static rc_t                        _ux_overwrite(
-        const lpid_t&                     root,
+        volid_t vol, snum_t store,
         const w_keystr_t&                 key,
         const char *el, smsize_t offset, smsize_t elen);
     /** _ux_overwrite()'s internal function without retry by itself.*/
     static rc_t                        _ux_overwrite_core(
-        const lpid_t&                     root,
+        volid_t vol, snum_t store,
         const w_keystr_t&                 key,
         const char *el, smsize_t offset, smsize_t elen);
 
@@ -194,15 +197,16 @@ public:
     * \details
     *  If the key doesn't exist, returns eNOTFOUND.
     *  Context: User transaction.
-    * @param[in] root id of root page
+    * @param[in] vol Volume ID
+    * @param[in] store Store ID
     * @param[in] key key of the removed tuple
     */
     static rc_t                        _ux_remove(
-        const lpid_t&                    root,
+        volid_t vol, snum_t store,
         const w_keystr_t&                key);
     
     /** _ux_remove()'s internal function without retry by itself.*/
-    static rc_t _ux_remove_core(const lpid_t &root, const w_keystr_t &key);
+    static rc_t _ux_remove_core(volid_t vol, snum_t store, const w_keystr_t &key);
 
     /**
     *  \brief Reverses the ghost record of specified key to regular state.
@@ -212,12 +216,13 @@ public:
     *  This method removes the ghost mark from the record.
     *  If the key doesn't exist, returns eNOTFOUND (shouldn't happen).
     *  Context: User transaction (UNDO of delete).
-    * @param[in] root id of root page
+    * @param[in] vol Volume ID
+    * @param[in] store Store ID
     * @param[in] key key of the removed tuple
     * @see btree_ghost_mark_log::undo()
     */
     static rc_t                        _ux_undo_ghost_mark(
-        const lpid_t&                    root,
+        volid_t vol, snum_t store,
         const w_keystr_t&                key);
 
 #ifdef DOXYGEN_HIDE
@@ -271,7 +276,8 @@ public:
     * 
     *  Context: Both user and system transaction.
     * @see traverse_mode_t
-    * @param[in] root_pid root of BTree 
+    * @param[in] vol Volume ID
+    * @param[in] store Store ID
     * @param[in] key  target key
     * @param[in] traverse_mode search mode
     * @param[in] leaf_latch_mode EX for insert/remove, SH for lookup
@@ -279,7 +285,7 @@ public:
     * @param[in] allow_retry only when leaf_latch_mode=EX. whether to retry from root if latch upgrade fails
     */
     static rc_t                 _ux_traverse(
-        const lpid_t&              root_pid,
+        volid_t vol, snum_t store,
         const w_keystr_t&          key,
         traverse_mode_t            traverse_mode,
         latch_mode_t               leaf_latch_mode,
@@ -334,14 +340,15 @@ public:
     *  Find key in btree. If found, copy up to elen bytes of the 
     *  entry element into el. 
     *  Context: user transaction.
-    * @param[in] root root of btree
+    * @param[in] vol Volume ID
+    * @param[in] store Store ID
     * @param[in] key key we want to find
     * @param[out] found true if key is found
     * @param[out] el buffer to put el if !cursor
     * @param[out] elen size of el if !cursor
     */
     static rc_t                 _ux_lookup(
-        const lpid_t&              root,
+        volid_t vol, snum_t store,
         const w_keystr_t&          key,
         bool&                      found,
         void*                      el,
@@ -349,7 +356,7 @@ public:
         );        
     /** _ux_lookup()'s internal function which doesn't rety for locks by itself. */
     static rc_t                 _ux_lookup_core(
-        const lpid_t&              root,
+        volid_t vol, snum_t store,
         const w_keystr_t&          key,
         bool&                      found,
         void*                      el,
@@ -369,18 +376,17 @@ public:
      * If you already know which child has blink, you can use
      * _sx_adopt_blink instead.
      * Context: only in system transaction.
-     * @param[in] root_pid page ID of root node.
-     * @param[in] parent the interior node to store new children.
+     * @param[in] root root node.
      * @param[in] recursive whether we recursively check all descendants and blinks.
      */
     static rc_t                 _sx_adopt_blink_all(
-        const lpid_t &root_pid, btree_p &parent, bool recursive=false);
+        btree_p &root, bool recursive=false);
     /**
      * this version assumes system transaction as the active transaction on current thread.
      * @see _sx_adopt_blink_all()
      */
     static rc_t                 _ux_adopt_blink_all_core(
-        const lpid_t &root_pid, btree_p &parent, bool recursive);
+        btree_p &parent, bool is_root, bool recursive);
 
     /**
      * \brief Pushes up a blink pointer of child to the parent.
@@ -689,21 +695,22 @@ public:
     * For more details of this algorithm, check out TODS'11 paper.
     * Context: in both user and system transaction.
     * \note This method holds a tree-wide read latch/lock. No concurrent update is allowed.
-    * @param[in] root_pid id of root page
+    * @param[in] vol Volume ID
+    * @param[in] store Store ID
     * @param[in] hash_bits the number of bits we use for hashing, at most 31.
     * @param[out] consistent whether the BTree is consistent
     */
     static rc_t                        _ux_verify_tree(
-        const lpid_t &root_pid, int hash_bits, bool &consistent);
+        volid_t vol, snum_t store, int hash_bits, bool &consistent);
     
 
     /**
     * Internal method to be called from _ux_verify_tree() for recursively check blink and children.
-    * @param[in] pid ID of page to check
+    * @param[in] parent page to check
     * @param[in] context context object to maintain
     */
     static rc_t                        _ux_verify_tree_recurse(
-        const lpid_t &pid, verification_context &context);
+        btree_p &parent, verification_context &context);
 
     /**
     * Internal method to check each page. Called both from tree-recurse type and
@@ -730,7 +737,7 @@ public:
         vid_t vid, int hash_bits, verify_volume_result &result);
 
     /** initialize context for in-query verification.*/
-    static void inquery_verify_init(const lpid_t &root_pid);
+    static void inquery_verify_init(volid_t vol, snum_t store);
     /** checks one page against the given expectation. */
     static void inquery_verify_fact(btree_p &page);
     /** adds expectation for next page. */
@@ -750,14 +757,15 @@ public:
     * This method is completely opportunistic, meaning it doesn't require a global latch or lock.
     * If there is some page this method can't get EX latch immediately, it skips the page.
     * Context: in system transaction.
-    * @param[in] root_pid id of root page
+    * @param[in] vol Volume ID
+    * @param[in] store Store ID
     * @param[in] inpage_defrag_ghost_threshold 0 to 100 (percent). if page has this many ghosts, and:
     * @param[in] inpage_defrag_usage_threshold 0 to 100 (percent). and it has this many used space, it does defrag.
     * @param[in] does_adopt whether we do adopts
     * @param[in] does_merge whether we do merge/rebalance (which might trigger de-adopt as well)
     */
     static rc_t                        _sx_defrag_tree(
-        const lpid_t &root_pid,
+        volid_t vol, snum_t store,
         uint16_t inpage_defrag_ghost_threshold = 10,
         uint16_t inpage_defrag_usage_threshold = 50,
         bool does_adopt = true,
@@ -767,7 +775,7 @@ public:
      * @see _sx_defrag_tree()
      */
     static rc_t                        _ux_defrag_tree_core(
-        const lpid_t &root_pid,
+        volid_t vol, snum_t store,
         uint16_t inpage_defrag_ghost_threshold,
         uint16_t inpage_defrag_usage_threshold,
         bool does_adopt,
@@ -783,12 +791,6 @@ public:
      * 'logically' no changes.
      * Context: System transaction.
      * @param[in] pid the page to be defraged
-     */
-    static rc_t _sx_defrag_page(const lpid_t &pid);
-
-    /**
-     * Use this version if alreafy have an EX-latched page.
-     * @see _sx_defrag_page()
      */
     static rc_t _sx_defrag_page(btree_p &page);
 

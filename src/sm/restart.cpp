@@ -1,80 +1,25 @@
-/* -*- mode:C++; c-basic-offset:4 -*-
-     Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
-                       Copyright (c) 2007-2009
-      Data Intensive Applications and Systems Labaratory (DIAS)
-               Ecole Polytechnique Federale de Lausanne
-   
-                         All Rights Reserved.
-   
-   Permission to use, copy, modify and distribute this software and
-   its documentation is hereby granted, provided that both the
-   copyright notice and this permission notice appear in all copies of
-   the software, derivative works or modified versions, and any
-   portions thereof, and that both notices appear in supporting
-   documentation.
-   
-   This code is distributed in the hope that it will be useful, but
-   WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
-   DISCLAIM ANY LIABILITY OF ANY KIND FOR ANY DAMAGES WHATSOEVER
-   RESULTING FROM THE USE OF THIS SOFTWARE.
-*/
-
-/*<std-header orig-src='shore'>
-
- $Id: restart.cpp,v 1.145 2010/12/08 17:37:43 nhall Exp $
-
-SHORE -- Scalable Heterogeneous Object REpository
-
-Copyright (c) 1994-99 Computer Sciences Department, University of
-                      Wisconsin -- Madison
-All Rights Reserved.
-
-Permission to use, copy, modify and distribute this software and its
-documentation is hereby granted, provided that both the copyright
-notice and this permission notice appear in all copies of the
-software, derivative works or modified versions, and any portions
-thereof, and that both notices appear in supporting documentation.
-
-THE AUTHORS AND THE COMPUTER SCIENCES DEPARTMENT OF THE UNIVERSITY
-OF WISCONSIN - MADISON ALLOW FREE USE OF THIS SOFTWARE IN ITS
-"AS IS" CONDITION, AND THEY DISCLAIM ANY LIABILITY OF ANY KIND
-FOR ANY DAMAGES WHATSOEVER RESULTING FROM THE USE OF THIS SOFTWARE.
-
-This software was developed with support by the Advanced Research
-Project Agency, ARPA order number 018 (formerly 8230), monitored by
-the U.S. Army Research Laboratory under contract DAAB07-91-C-Q518.
-Further funding for this work was provided by DARPA through
-Rome Research Laboratory Contract No. F30602-97-2-0247.
-
-*/
-
 #include "w_defines.h"
-
-/*  -- do not edit anything above this line --   </std-header>*/
 
 #define SM_SOURCE
 #define RESTART_C
 
 #ifdef __GNUG__
 #pragma implementation "restart.h"
-#pragma implementation "restart_s.h"
 #endif
 
-#include <sm_int_1.h>
+#include "sm_int_1.h"
 #include "restart.h"
-#include "restart_s.h"
 #include "w_heap.h"
 // include crash.h for definition of LOGTRACE1
 #include "crash.h"
+#include "bf_tree.h"
+#include "sm_int_0.h"
+#include "bf_tree_inline.h"
+#include "page_bf_inline.h"
+#include <map>
 
 
 #ifdef EXPLICIT_TEMPLATE
-template class w_hash_t<dp_entry_t, unsafe_list_dummy_lock_t, bfpid_t>;
-template class w_hash_i<dp_entry_t, unsafe_list_dummy_lock_t, bfpid_t>;
-template class w_list_t<dp_entry_t, unsafe_list_dummy_lock_t>;
-template class w_list_i<dp_entry_t, unsafe_list_dummy_lock_t>;
 template class Heap<xct_t*, CmpXctUndoLsns>;
 #endif
 
@@ -82,42 +27,74 @@ typedef class Heap<xct_t*, CmpXctUndoLsns> XctPtrHeap;
 
 tid_t                restart_m::_redo_tid;
 
-/*********************************************************************
- *
- *  class dirty_pages_tab_t
- *
+typedef uint64_t dp_key_t;
+
+inline dp_key_t dp_key(volid_t vid, shpid_t shpid) {
+    return ((dp_key_t) vid << 32) + shpid;
+}
+inline dp_key_t dp_key(const lpid_t &pid) {
+    return dp_key(pid.vol().vol, pid.page);
+}
+inline volid_t  dp_vid (dp_key_t key) {
+    return key >> 32;
+}
+inline shpid_t  dp_shpid (dp_key_t key) {
+    return key & 0xFFFFFFFF;
+}
+
+typedef std::map<dp_key_t, lsndata_t> dp_lsn_map;
+typedef std::map<dp_key_t, lsndata_t>::iterator dp_lsn_iterator;
+typedef std::map<dp_key_t, lsndata_t>::const_iterator dp_lsn_const_iterator;
+
+/**
  *  In-memory dirty pages table -- a dictionary of of pid and 
  *  its recovery lsn.  Used only in recovery, which is to say,
  *  only 1 thread is active here, so the hash table isn't 
  *  protected.
- *
- *********************************************************************/
+ */
 class dirty_pages_tab_t {
 public:
-    NORET                        dirty_pages_tab_t(int sz);
-    NORET                        ~dirty_pages_tab_t();
+    dirty_pages_tab_t() : _cachedMinRecLSN(lsndata_null), _validCachedMinRecLSN (false) {}
+    ~dirty_pages_tab_t() {}
     
-    dirty_pages_tab_t&           insert(const lpid_t&  pid, const lsn_t& lsn);
-    dirty_pages_tab_t&           remove(const lpid_t& pid);
+    /** Insert an association (pid, lsn) into the table. */
+    void                         insert(const lpid_t& pid, lsndata_t lsn) {
+        if (_validCachedMinRecLSN && lsn < _cachedMinRecLSN && lsn != lsndata_null)  {
+            _cachedMinRecLSN = lsn;
+        }
+        w_assert1(_dp_lsns.find(dp_key(pid)) == _dp_lsns.end());
+        _dp_lsns.insert(std::pair<dp_key_t, lsndata_t>(dp_key(pid), lsn));
+    }
 
-    bool                         look_up(const lpid_t& pid, lsn_t** lsn = 0); 
+    /** Returns if the page already exists in the table. */
+    bool                         exists(const lpid_t& pid) const {
+        return _dp_lsns.find(dp_key(pid)) != _dp_lsns.end();
+    }
+    /** Returns iterator (pointer) to the page in the table. */
+    dp_lsn_iterator              find (const lpid_t& pid) {
+        return _dp_lsns.find(dp_key(pid));
+    }
 
+    dp_lsn_map&                  dp_lsns() {return _dp_lsns;} 
+    const dp_lsn_map&            dp_lsns() const {return _dp_lsns;} 
+
+    /** Compute and return the minimum of the recovery lsn of all entries in the table. */
     lsn_t                        min_rec_lsn();
 
-    int                          size() const { return tab.num_members(); }
-    void                         check(ostream &) const;
+    size_t                       size() const { return _dp_lsns.size(); }
     
     friend ostream& operator<<(ostream&, const dirty_pages_tab_t& s);
     
 private:
-    w_hash_t<dp_entry_t, unsafe_list_dummy_lock_t, bfpid_t> tab; // hash table for dictionary
+    /** rec_lsn of dirty pages.*/
+    dp_lsn_map _dp_lsns;
 
     // disabled
-    NORET                        dirty_pages_tab_t(const dirty_pages_tab_t&);
+    dirty_pages_tab_t(const dirty_pages_tab_t&);
     dirty_pages_tab_t&           operator=(const dirty_pages_tab_t&);
 
-    lsn_t                        cachedMinRecLSN;
-    bool                         validCachedMinRecLSN;
+    lsndata_t                    _cachedMinRecLSN;
+    bool                         _validCachedMinRecLSN;
 };
 
 
@@ -133,7 +110,7 @@ void
 restart_m::recover(lsn_t master)
 {
     FUNC(restart_m::recover);
-    dirty_pages_tab_t dptab(2 * bf->npages());
+    dirty_pages_tab_t dptab;
     lsn_t redo_lsn;
 
     // set so mount and dismount redo can tell that they should log stuff.
@@ -153,6 +130,12 @@ restart_m::recover(lsn_t master)
         DBGOUT5(<<"END TX TABLE before analysis:");
     }
 #endif 
+
+    // during REDO, we need to turn off pointer swizzling
+    bool org_swizzling_enabled = smlevel_0::bf->is_swizzling_enabled();
+    if (org_swizzling_enabled) {
+        W_COERCE(smlevel_0::bf->set_swizzling_enabled(false));
+    }
 
     /*
      *  Phase 1: ANALYSIS.
@@ -198,8 +181,6 @@ restart_m::recover(lsn_t master)
         smlevel_0::errlog->clog << info_prio  
             << "Database is clean" << flushl;
     }
-
-    // For recovery debugging: dptab.check(cerr);
     
     /*
      *  Phase 2: REDO -- use dirty page table and redo lsn of phase 1
@@ -239,7 +220,7 @@ restart_m::recover(lsn_t master)
      * do this flush, slow though it might be, because if we have a crash
      * and have to re-recover, we would have less to do at that time.
      */
-    W_COERCE(bf->force_all(true));
+    W_COERCE(bf->force_all());
 
     /*
      *  Phase 3: UNDO -- abort all active transactions
@@ -303,6 +284,11 @@ restart_m::recover(lsn_t master)
         DBG(<<"END TX TABLE at end of recovery:");
     }
 #endif 
+
+    // turn pointer swizzling on again
+    if (org_swizzling_enabled) {
+        W_COERCE(smlevel_0::bf->set_swizzling_enabled(true));
+    }
 
     smlevel_0::errlog->clog << info_prio << "Restart successful." << flushl;
 }
@@ -396,8 +382,8 @@ restart_m::analysis_pass(
                     << " page of interest " << page_of_interest);
             w_assert1(!r.is_undo()); // no UNDO for ssx
             w_assert0(r.is_redo());
-            if (!(dptab.look_up(page_of_interest))) {
-                dptab.insert( page_of_interest, lsn );
+            if (!(dptab.exists(page_of_interest))) {
+                dptab.insert( page_of_interest, lsn.data() );
             }
             
             xd->change_state(xct_t::xct_ended);
@@ -461,15 +447,15 @@ restart_m::analysis_pass(
                  */
                 const chkpt_bf_tab_t* dp = (chkpt_bf_tab_t*) r.data();
                 for (uint i = 0; i < dp->count; i++)  {
-                    lsn_t* rec_lsn;
-                    if (! dptab.look_up(dp->brec[i].pid, &rec_lsn))  {
+                    dp_lsn_iterator it = dptab.find(dp->brec[i].pid);
+                    if (it == dptab.dp_lsns().end())  {
                         DBGOUT5(<<"dptab.insert dirty pg " 
                         << dp->brec[i].pid << " " << dp->brec[i].rec_lsn);
-                        dptab.insert(dp->brec[i].pid, dp->brec[i].rec_lsn);
+                        dptab.insert(dp->brec[i].pid, dp->brec[i].rec_lsn.data());
                     } else {
                         DBGOUT5(<<"dptab.update dirty pg " 
                         << dp->brec[i].pid << " " << dp->brec[i].rec_lsn);
-                        *rec_lsn = dp->brec[i].rec_lsn;
+                        it->second = dp->brec[i].rec_lsn.data();
                     }
                 }
             }
@@ -680,7 +666,7 @@ restart_m::analysis_pass(
                 w_assert0(r.is_redo());
                 // TODO: remove the predicate is_redo below. It's
                 // superfluous
-                if (r.is_redo() && !(dptab.look_up(page_of_interest))) {
+                if (r.is_redo() && !(dptab.exists(page_of_interest))) {
                     /*
                      *  r is redoable and not in dptab ...
                      *  Register a new dirty page.
@@ -690,7 +676,7 @@ restart_m::analysis_pass(
                     DBGOUT5( << setiosflags(ios::right) << lsn
                             << resetiosflags(ios::right) << " A: " 
                             << "insert in dirty page table " << page_of_interest );
-                    dptab.insert( page_of_interest, lsn );
+                    dptab.insert( page_of_interest, lsn.data() );
                 }
 
             } else if (r.is_cpsn()) {
@@ -708,7 +694,7 @@ restart_m::analysis_pass(
                     DBGOUT5(<<"is cpsn, not undo " << " undo_next<--lsn " << r.undo_nxt() );
                     xd->set_undo_nxt(r.undo_nxt());
                 }
-                if (r.is_redo() && !(dptab.look_up(page_of_interest))) {
+                if (r.is_redo() && !(dptab.exists(page_of_interest))) {
                     /*
                      *  r is redoable and not in dptab ...
                      *  Register a new dirty page.
@@ -718,11 +704,12 @@ restart_m::analysis_pass(
                     DBGOUT5( << setiosflags(ios::right) << lsn
                           << resetiosflags(ios::right) << " A: " 
                           << "insert in dirty page table " << page_of_interest );
-                    dptab.insert( page_of_interest, lsn );
+                    dptab.insert( page_of_interest, lsn.data() );
                 }
             } else if (
                     r.type()!=logrec_t::t_comment
                     && r.type()!=logrec_t::t_btree_noop
+                    && r.type()!=logrec_t::t_store_operation
                     ) {
                 W_FATAL(eINTERNAL);
             }
@@ -856,8 +843,6 @@ restart_m::redo_pass(
         /*
          *  For each log record ...
          */
-        lsn_t* rec_lsn = 0;                // points to rec_lsn in dptab entry
-
         if (!r.valid_header(lsn)) {
             smlevel_0::errlog->clog << error_prio 
             << "Internal error during redo recovery." << flushl;
@@ -885,7 +870,7 @@ restart_m::redo_pass(
                  * If it's in the table, its state is prepared or active.
                  * Nothing in the table should now be in aborting state.
                  */
-                if (r.tid() != tid_t::null)  {
+                if (!r.is_single_sys_xct() && r.tid() != tid_t::null)  {
                     xct_t *xd = xct_t::look_up(r.tid());
                     if (xd) {
                         if (xd->state() == xct_t::xct_active)  {
@@ -913,18 +898,32 @@ restart_m::redo_pass(
                         // volume.  this temporary
                     // volume id can be reused, which is why this must be done.
 
-                    w_assert9(r.type() == logrec_t::t_dismount_vol || 
-                                r.type() == logrec_t::t_mount_vol);
-                    DBGOUT5(<<"redo - no page, no xct ");
-                    r.redo(0);
-                    io_m::SetLastMountLSN(lsn);
-                    redone = true;
+                    if (!r.is_single_sys_xct()) {
+                        w_assert9(r.type() == logrec_t::t_dismount_vol || 
+                                    r.type() == logrec_t::t_mount_vol);
+                        DBGOUT5(<<"redo - no page, no xct ");
+                        r.redo(0);
+                        io_m::SetLastMountLSN(lsn);
+                        redone = true;
+                    } else {
+                        // single-log-sys-xct doesn't have tid (because it's not needed!).
+                        // we simply creates a new ssx and runs it.
+                        DBGOUT5(<<"redo - no page, ssx");
+                        sys_xct_section_t sxs (true); // single log!
+                        w_assert1(!sxs.check_error_on_start().is_error());
+                        r.redo(0);
+                        io_m::SetLastMountLSN(lsn);
+                        redone = true;
+                        W_IFDEBUG1(rc_t sxs_rc =) sxs.end_sys_xct (RCOK);
+                        w_assert1(!sxs_rc.is_error());
+                    }
+
                 }
 
             } else {
                 lpid_t        page_updated = r.construct_pid();
-                bool found = dptab.look_up(page_updated, &rec_lsn);
-                if(found && (lsn >= *rec_lsn))  {
+                dp_lsn_iterator it = dptab.find(page_updated);
+                if (it != dptab.dp_lsns().end() && lsn.data() >= it->second)  {
                     /*
                      *  We are only concerned about log records that involve
                      *  page updates.
@@ -932,7 +931,7 @@ restart_m::redo_pass(
                     DBGOUT5(<<"redo page update, pid " 
                             << r.shpid() 
                             << "(" << page_updated << ")"
-                            << " rec_lsn: "  << *rec_lsn
+                            << " rec_lsn: "  << lsn_t(it->second)
                             << " log record: "  << lsn
                             );
                     w_assert1(r.shpid()); 
@@ -973,19 +972,14 @@ restart_m::redo_pass(
                      *   DONT_TRUST_PAGE_LSN defined . In any case, I
                      *   removed the code for its defined case.
                      */
-                    store_flag_t store_flags = st_bad;
-                    DBGOUT5(<< "TRUST_PAGE_LSN");
-                    // TODO TODO ! this should use the special bufferpool for alloc_p and stnode_p
-                    //if (r.tag() == page_p::t_alloc_p || r.tag() == page_p::t_stnode_p) {
-                    //} else {
-                        W_COERCE( page.fix(page_updated,
-                                    page_p::t_any_p, 
-                                    LATCH_EX, 
-                                    0,  // page_flags
-                                    store_flags,
-                                    true // ignore store_id
-                                    ) );
-                    //}
+                    
+                    // this direct page fix requires the pointer swizzling to be off.
+                    w_assert1(!smlevel_0::bf->is_swizzling_enabled());
+                    bool virgin_page = false;
+                    if (r.type() == logrec_t::t_page_img_format) {
+                        virgin_page = true;
+                    }
+                    W_COERCE(page.fix_direct(page_updated.vol().vol, page_updated.page, LATCH_EX, false, virgin_page));
 
 #if W_DEBUG_LEVEL > 2
                     if(page_updated != page.pid()) {
@@ -1074,7 +1068,7 @@ restart_m::redo_pass(
                                 page_lsn (as if it had just been logged
                                 the first time, back in the past)
                                 */
-                                page.repair_rec_lsn(was_dirty, lsn);
+                                smlevel_0::bf->repair_rec_lsn(&page.persistent_part(), was_dirty, lsn);
                             }
                                 
                             if (xd) me()->detach_xct(xd);
@@ -1087,7 +1081,7 @@ restart_m::redo_pass(
                             r.redo(page.is_fixed() ? &page : 0);
                             redone = true;
                             page.set_lsns(lsn);
-                            page.repair_rec_lsn(was_dirty, lsn);
+                            smlevel_0::bf->repair_rec_lsn(&page.persistent_part(), was_dirty, lsn);
                             W_IFDEBUG1(rc_t sxs_rc =) sxs.end_sys_xct (RCOK);
                             w_assert1(!sxs_rc.is_error());
                         }
@@ -1114,18 +1108,17 @@ restart_m::redo_pass(
                          *  NOTE: rec_lsn points INTO the dirty page table so
                          *  this changes the rec_lsn in the dptab.
                          */
-                        *rec_lsn = page_lsn.advance(1); // non-const method
+                        it->second = page_lsn.advance(1).data(); // non-const method
                     }
 
                     // page.destructor is supposed to do this:
                     // page.unfix();
                 } else {
-                    if(found) {
+                    if (it != dptab.dp_lsns().end())  {
                         DBGOUT5( << setiosflags(ios::right) << lsn
                           << resetiosflags(ios::right) << " R: page " 
                           << page_updated << " found in dptab but lsn " << lsn
-                           << " < page rec_lsn=" << 
-                        (lsn_t)(rec_lsn?(*rec_lsn):(lsn_t::null))
+                           << " < page rec_lsn=" <<  lsn_t(it->second)
                             << " will skip ");
                     } else {
                         DBGOUT5( << setiosflags(ios::right) << lsn
@@ -1135,9 +1128,7 @@ restart_m::redo_pass(
                     DBGOUT5(<<"not found in dptab: log record/lsn= " << lsn 
                         << " page_updated=" << page_updated
                         << " page=" << r.shpid()
-                        << " page rec_lsn=" << 
-                        (lsn_t)(rec_lsn?(*rec_lsn):(lsn_t::null))
-                        );
+                        << " page rec_lsn=" << lsn_t(it->second));
                 }
             }
         }
@@ -1283,172 +1274,36 @@ restart_m::undo_pass()
     }
 }
 
-
-
-/*********************************************************************
- *
- *  dirty_pages_tab_t::dirty_pages_tab_t(sz)
- *
- *  Construct a dirty page table with hash table of sz slots.
- *
- *********************************************************************/
-NORET 
-dirty_pages_tab_t::dirty_pages_tab_t(int sz) 
-: tab(sz, W_HASH_ARG(dp_entry_t, pid, link), unsafe_nolock),
-  cachedMinRecLSN(lsn_t::null),
-  validCachedMinRecLSN(false)
-{ 
-}
-
-/*********************************************************************
- *
- *  dirty_pages_tab_t::~dirty_pages_tab_t(sz)
- *
- *  Destroy the dirty page table.
- *
- *********************************************************************/
-NORET
-dirty_pages_tab_t::~dirty_pages_tab_t()
-{
-    /*
-     *  Pop all remaining entries and delete them.
-     */
-    while(1) {
-        w_hash_i<dp_entry_t, unsafe_list_dummy_lock_t, bfpid_t> iter(tab);
-        dp_entry_t* p = iter.next();
-        if( !p) break;
-        tab.remove(p);
-        delete p;
-    }
-}
-
-void
-dirty_pages_tab_t::check(ostream &o) const
-{
-    w_hash_i<dp_entry_t, unsafe_list_dummy_lock_t, bfpid_t> iter(tab);
-    const dp_entry_t* p;
-    lpid_t            pid;
-    o << " Dirty page table: " <<endl;
-    while ((p = iter.next()))  {
-        pid = p->pid;
-        dp_entry_t* p2 = tab.lookup(pid);
-        w_assert3(p2);
-        w_assert3(p2==p);
-        o << " Page " << p->pid
-        << " lsn " << p->rec_lsn
-        << " ok " << int((p2 == p)?1:0)
-        << endl;
-    }
-}
-
 /*********************************************************************
  *
  *  friend operator<< for dirty page table
  *
  *********************************************************************/
-NORET
 ostream& operator<<(ostream& o, const dirty_pages_tab_t& s)
 {
     o << " Dirty page table: " <<endl;
-
-    w_hash_i<dp_entry_t, unsafe_list_dummy_lock_t, bfpid_t> iter(s.tab);
-    const dp_entry_t* p;
-    while ((p = iter.next()))  {
-        o << " Page " << p->pid
-        << " lsn " << p->rec_lsn
-        << endl;
+    for (dp_lsn_const_iterator it = s.dp_lsns().begin(); it != s.dp_lsns().end(); ++it) {
+        dp_key_t key = it->first;
+        lsndata_t rec_lsn = it->second;
+        o << " Vol:" << dp_vid(key) << " Shpid:" << dp_shpid(key) << " lsn " << lsn_t(rec_lsn) << endl;
     }
     return o;
 }
 
-/*********************************************************************
- *
- *  dirty_pages_tab_t::min_rec_lsn()
- *
- *  Compute and return the minimum of the recovery lsn of all
- *  entries in the table.
- *
- *********************************************************************/
-lsn_t
-dirty_pages_tab_t::min_rec_lsn()
+lsn_t dirty_pages_tab_t::min_rec_lsn()
 {
-    lsn_t l = lsn_t::max;
-    if (validCachedMinRecLSN)  {
-        l = cachedMinRecLSN;
+    if (_validCachedMinRecLSN)  {
+        return _cachedMinRecLSN;
     }  else  {
-        w_hash_i<dp_entry_t, unsafe_list_dummy_lock_t, bfpid_t> iter(tab);
-        dp_entry_t* p;
-        while ((p = iter.next())) {
-            if (l > p->rec_lsn && p->rec_lsn != lsn_t::null) {
-                l = p->rec_lsn;
+        lsndata_t l = lsndata_max;
+        for (std::map<dp_key_t, lsndata_t>::const_iterator it = _dp_lsns.begin(); it != _dp_lsns.end(); ++it) {
+            lsndata_t rec_lsn = it->second;
+            if (l > rec_lsn && rec_lsn != lsndata_null) {
+                l = rec_lsn;
             }
         }
-        cachedMinRecLSN = l;
-        validCachedMinRecLSN = true;
+        _cachedMinRecLSN = l;
+        _validCachedMinRecLSN = true;
+        return l;
     }
-
-    return l;
-}
-
-
-/*********************************************************************
- *
- *  dirty_pages_tab_t::insert(pid, lsn)
- *
- *  Insert an association (pid, lsn) into the table.
- *
- *********************************************************************/
-dirty_pages_tab_t&
-dirty_pages_tab_t::insert( 
-    const lpid_t&       pid,
-    const lsn_t&        lsn)
-{
-    if (validCachedMinRecLSN && lsn < cachedMinRecLSN)  {
-        cachedMinRecLSN = lsn;
-    }
-    w_assert1(! tab.lookup(pid) );
-    dp_entry_t* p = new dp_entry_t(pid, lsn);
-    w_assert1(p);
-    tab.push(p);
-    w_assert3(tab.lookup(pid));
-    return *this;
-}
-
-
-
-/*********************************************************************
- *
- *  dirty_pages_tab_t::look_up(pid, lsn)
- *
- *  Look up pid in the table and return a pointer to its lsn
- *  (so caller may update it in place) in "lsn".
- *
- *********************************************************************/
-
-bool
-dirty_pages_tab_t::look_up(const lpid_t& pid, lsn_t** lsn)
-{
-    if (lsn) *lsn = 0;
-
-    dp_entry_t* p = tab.lookup(pid);
-    if (p && lsn) *lsn = &p->rec_lsn;
-    return (p != 0);
-}
-
-
-/*********************************************************************
- *
- *  dirty_pages_tab_t::remove(pid)
- *
- *  Remove entry of pid from the table.
- *
- *********************************************************************/
-dirty_pages_tab_t& 
-dirty_pages_tab_t::remove(const lpid_t& pid)
-{
-    validCachedMinRecLSN = false;
-    dp_entry_t* p = tab.remove(pid);
-    w_assert1(p);
-    delete p;
-    return *this;
 }

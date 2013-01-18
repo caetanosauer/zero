@@ -160,6 +160,7 @@ public:
     T* operator->() { return obj; }
     T &operator*() { return *obj; }
     operator T*() { return obj; }
+    T*         get() {return obj;}
     //    T &operator[](int idx) { return obj[idx]; }
 private:
     T*                obj;

@@ -14,6 +14,9 @@ class lock_queue_t;
 class xct_lock_entry_t;
 
 class lock_core_m;
+class ww_deadlock_wait_die; // just for experiments
+class ww_deadlock_wound_wait; // just for experiments
+class ww_deadlock_timeout; // just for experiments
 
 /**
  * A lock request entry in lock queue.
@@ -43,6 +46,27 @@ public:
 };
 ostream&  operator<<(ostream& o, const lock_queue_entry_t& r);
 
+struct check_grant_result {
+    void empty_init () {
+        can_be_granted = false;
+        deadlock_detected = false;
+        deadlock_myself_should_die = false;
+        deadlock_other_victim = NULL;
+    }
+    void init (const atomic_thread_map_t &fingerprint) {
+        can_be_granted = true;
+        deadlock_detected = false;
+        deadlock_myself_should_die = false;
+        deadlock_other_victim = NULL;
+        refreshed_wait_map.copy(fingerprint);
+    }
+    bool can_be_granted;
+    bool deadlock_detected;
+    bool deadlock_myself_should_die;
+    smthread_t* deadlock_other_victim;
+    atomic_thread_map_t  refreshed_wait_map;
+};
+
 /**
  * \brief A lock queue to hold granted and waiting lock requests.
  * NOTE this class's constructor/destructor does nothing. The container
@@ -50,6 +74,9 @@ ostream&  operator<<(ostream& o, const lock_queue_entry_t& r);
  */
 class lock_queue_t {
     friend class lock_core_m; // for debug dump
+    friend class ww_deadlock_wait_die; // just for experiments
+    friend class ww_deadlock_wound_wait; // just for experiments
+    friend class ww_deadlock_timeout; // just for experiments
 public:
     typedef lock_base_t::lmode_t lmode_t;
     lock_queue_t(uint32_t hash) : _next (NULL), _hit_counts(0), _hash(hash), _x_lock_tag(lsn_t::null),
@@ -82,20 +109,6 @@ public:
      */
     bool grant_request (lock_queue_entry_t* myreq);
 
-    struct check_grant_result {
-        void init (const atomic_thread_map_t &fingerprint) {
-            can_be_granted = true;
-            deadlock_detected = false;
-            deadlock_myself_should_die = false;
-            deadlock_other_victim = NULL;
-            refreshed_wait_map.copy(fingerprint);
-        }
-        bool can_be_granted;
-        bool deadlock_detected;
-        bool deadlock_myself_should_die;
-        smthread_t* deadlock_other_victim;
-        atomic_thread_map_t  refreshed_wait_map;
-    };
     /**
      * Checkif my request can be granted, and also check deadlocks.
      */

@@ -58,6 +58,7 @@ w_rc_t bf_fixed_m::flush()
         for (; next < _page_cnt && _dirty_flags[next]; ++next);
 
         shpid_t begin_pid = cur + 1; // +1 for volume header
+        
         W_DO(_parent->write_many_pages(begin_pid, _pages + cur, next - cur));
         cur = next;
     }

@@ -1,3 +1,4 @@
+#ifdef COMMENTED_OUT
 #define SM_SOURCE
 #define HTAB_UNIT_TEST_C
 
@@ -505,3 +506,4 @@ int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
+#endif // COMMENTED_OUT

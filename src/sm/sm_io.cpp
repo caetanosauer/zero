@@ -151,6 +151,16 @@ io_m::_find_and_grab(vid_t vid, lock_state* _me,
     }
 }
 
+vol_t* io_m::get_volume(vid_t vid)
+{
+    if (!vid) return NULL;
+    for (uint32_t i = 0; i < max_vols; i++)  {
+        if (vol[i] && vol[i]->vid() == vid) {
+            return vol[i];
+        }
+    }
+    return NULL;
+}
 
 
 /*********************************************************************
@@ -724,55 +734,12 @@ io_m::get_vid(const lvid_t& lvid)
  *  Read the page "pid" on disk into "buf".
  *
  *********************************************************************/
-rc_t
-io_m::read_page(const lpid_t& pid, page_s& buf)
-{
-    FUNC(io_m::read_page);
-
-    /*
-     *  NO enter() *********************
-     *  NEVER acquire mutex to read page
-     */
-
-    if (_msec_disk_delay > 0)
-            me()->sleep(_msec_disk_delay, "io_m::read_page");
-
+rc_t io_m::read_page(const lpid_t& pid, page_s& buf) {
     int i = _find(pid.vol());
     if (i < 0) {
         return RC(eBADVOL);
     }
-    DBG( << "reading page: " << pid );
-
     W_DO( vol[i]->read_page(pid.page, buf) );
-
-    INC_TSTAT(vol_reads);
-    // read_page set the volume number and the page id.
-    // Format (re-)does the latter.  This is set here
-    // so that we can simplify assertions in bf.cpp
-    w_assert1(buf.pid._stid.vol == pid.vol());
-
-    /*  Verify that we read in the correct page.
-     *
-     *  w_assert9(buf.pid == pid);
-     *
-     *  NOTE: that the store ID may not be correct during redo-recovery
-     *  in the case where a page has been deallocated and reused.
-     *  This can arise because the page will have a new store ID.
-     *  If the page LSN is 0 then the page is
-     *  new and should have a page ID of 0.
-     */
-#if W_DEBUG_LEVEL > 2
-    if (buf.lsn == lsn_t::null)  {
-        if(smlevel_1::log && smlevel_0::logging_enabled) {
-            w_assert3(buf.pid.page == 0);
-        }
-    } else {
-        w_assert3(buf.pid.page == pid.page && buf.pid.vol() == pid.vol());
-    }
-#endif 
-    DBG(<<"read_page:buf.pid.page=" << buf.pid.page 
-            << " buf.lsn=" << buf.lsn << " OK");
-    
     return RCOK;
 }
 
@@ -891,27 +858,24 @@ alloc_cache_t* io_m::get_vol_alloc_cache(vid_t vid)
     return v->get_alloc_cache();
 }
 
-rc_t io_m::redo_alloc_a_page(const stid_t &stid, shpid_t pid)
+rc_t io_m::redo_alloc_a_page(vid_t volid, shpid_t pid)
 {
-    vid_t volid = stid.vol;
     int i = _find(volid);
     if (i < 0) return RC(eBADVOL);
     vol_t *v = vol[i];
     W_DO(v->redo_alloc_a_page(pid));
     return RCOK;
 }
-rc_t io_m::redo_alloc_consecutive_pages(const stid_t &stid, size_t page_count, shpid_t pid_begin)
+rc_t io_m::redo_alloc_consecutive_pages(vid_t volid, size_t page_count, shpid_t pid_begin)
 {
-    vid_t volid = stid.vol;
     int i = _find(volid);
     if (i < 0) return RC(eBADVOL);
     vol_t *v = vol[i];
     W_DO(v->redo_alloc_consecutive_pages(pid_begin, page_count));
     return RCOK;
 }
-rc_t io_m::redo_dealloc_a_page(const stid_t &stid, shpid_t pid)
+rc_t io_m::redo_dealloc_a_page(vid_t volid, shpid_t pid)
 {
-    vid_t volid = stid.vol;
     int i = _find(volid);
     if (i < 0) return RC(eBADVOL);
     vol_t *v = vol[i];
@@ -1106,19 +1070,6 @@ io_m::get_store_meta_stats(stid_t stid, SmStoreMetaStats& mapping)
     GRAB_R;
     W_DO( v->get_store_meta_stats(stid.store, mapping) );
     return RCOK;
-}
-
-
-rc_t                 
-io_m::check_store_pages(const stid_t &stid, page_p::tag_t tag)
-{
-    int i = _find(stid.vol);
-    if (i < 0) return RC(eBADVOL);
-
-    vol_t *v = vol[i];
-    w_assert9(v->vid() == stid.vol);
-
-    return  v->check_store_pages(stid.store, tag);
 }
 
 /*********************************************************************

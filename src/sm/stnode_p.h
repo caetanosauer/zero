@@ -7,9 +7,10 @@
 #pragma interface
 #endif
 
-#include "page.h"
+#include "page_s.h"
 #include "srwlock.h"
 #include "sthread.h"
+#include <vector>
 
 /**
  * \brief Persistent structure representing the head of a store's extent list.
@@ -39,23 +40,20 @@ class bf_fixed_m;
  * \details These are the pages that contain the starting points of 
  * a store's root page.
  */
-class stnode_p : public page_p {
+class stnode_p {
     friend class stnode_cache_t;
 public:
-    stnode_p()  {}
-    stnode_p(page_s* s) : page_p() { _pp = s; }
-    stnode_p(const stnode_p&p) : page_p(p) {} 
+    stnode_p(page_s* s) : _pp (s) {}
     ~stnode_p()  {}
-    stnode_p& operator=(const stnode_p& p)    { page_p::operator=(p); return *this; }
 
-    tag_t get_page_tag () const { return t_stnode_p; }
-    void inc_fix_cnt_stat () const { INC_TSTAT(stnode_p_fix_cnt);}
-    rc_t format(const lpid_t& pid, tag_t tag, uint32_t page_flags, store_flag_t store_flags);
+    rc_t format(const lpid_t& pid);
 
     // max # store nodes on a page
-    enum { max = page_p::data_sz / sizeof(stnode_t) };
+    enum { max = page_s::data_sz / sizeof(stnode_t) };
 
     stnode_t&       get(size_t idx);
+
+    page_s *_pp;
 };
 
 /**
@@ -119,6 +117,9 @@ public:
 
     /** Returns the first snum_t that can be used for a new store. */
     snum_t get_min_unused_store_id () const;
+
+    /** Returns the snum_t of all stores that exist in the volume. */
+    std::vector<snum_t> get_all_used_store_id () const;
 
 private:
     vid_t _vid;

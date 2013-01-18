@@ -12,6 +12,7 @@
 class bucket_t;
 class lock_queue_t;
 class lock_queue_entry_t;
+struct check_grant_result;
 
 /**
 * \brief Lock table implementation class.
@@ -172,7 +173,9 @@ extern bool g_deadlock_use_waitmap_obsolete;
 /** How long to sleep between each dreadlock spin? */ 
 extern int g_deadlock_dreadlock_interval_ms;
 /** function pointer for the implementation of arbitrary _check_deadlock impl. */ 
-extern w_rc_t::errcode_t (*g_check_deadlock_impl)(xct_t* xd, lock_request_t *myreq);
+extern void (*g_check_deadlock_impl)(lock_queue_t *queue, lock_queue_entry_t *myreq, check_grant_result &result);
+/** which thread to kill when a deadlock is detected. 0=kill short(default), 1=kill long, 2=kill young.*/
+extern int g_deadlock_resolution_policy;
 #endif // SWITCH_DEADLOCK_IMPL
 
 #endif          /*</std-footer>*/

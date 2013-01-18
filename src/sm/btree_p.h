@@ -148,19 +148,10 @@ public:
 #endif // DOXYGEN_HIDE
 
     btree_p() {}
-    btree_p(page_s* s, uint32_t store_flags) : page_p(s, store_flags) {}
+    btree_p(page_s* s) : page_p(s) {}
     btree_p(const btree_p&p) : page_p(p) {} 
     ~btree_p() {}
-    btree_p& operator=(const btree_p& p)    { page_p::operator=(p); return *this; }
-
-    tag_t get_page_tag () const { return t_btree_p; }
-    void inc_fix_cnt_stat () const { INC_TSTAT(btree_p_fix_cnt);}
-    rc_t format(const lpid_t &, tag_t, uint32_t, store_flag_t)
-    {
-        DBG(<< "This shouldn't be called! For initial allocation of Btree page, use init_fix_steal() instead of fix()");
-        return RC(fcINTERNAL);
-    }
-
+    btree_p& operator=(btree_p& p)    { page_p::operator=(p); return *this; }
 
 #ifdef DOXYGEN_HIDE
 ///==========================================
@@ -272,6 +263,7 @@ public:
      * Also, this outputs just a single record for everything, so much more efficient.
      */
     rc_t init_fix_steal(
+        btree_p*             parent,
         const lpid_t&        pid,
         shpid_t              root, 
         int                  level,

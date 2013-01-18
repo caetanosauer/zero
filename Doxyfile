@@ -89,9 +89,12 @@ INPUT                  = src/mainpage.h \
                          src/common \
                          src/sthread \
                          tools \
+                         src/sm/bf_fixed.h \
                          src/sm/bf_hashtable.h \
                          src/sm/bf_tree.h \
-                         src/sm/bf_fixed.h \
+                         src/sm/bf_tree_cb.h \
+                         src/sm/bf_tree_cleaner.h \
+                         src/sm/bf_tree_vol.h \
                          src/sm/btcursor.h \
                          src/sm/btree.h \
                          src/sm/btree_impl.h \

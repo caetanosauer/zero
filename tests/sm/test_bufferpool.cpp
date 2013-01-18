@@ -14,7 +14,11 @@
 btree_test_env *test_env;
 /**
  * Unit test for bufferpool (bf_m).
+ * NOTE the old bufferpool has been eliminated. these testcases will be
+ * also removed, or integrated into the new testcases (test_bf_tree.cpp).
  */
+/*
+
 class bf_m_test { // friend of bf_m
 public:
     static bf_core_m* get_core() {
@@ -326,7 +330,7 @@ TEST (BufferpoolTest, CarefulWriteOrderCycle) {
     test_env->empty_logdata_dir();
     EXPECT_EQ(test_env->runBtreeTest(bf_careful_write_order_cycle), 0);
 }
-
+*/
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     test_env = new btree_test_env();

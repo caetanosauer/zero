@@ -10,20 +10,21 @@ class alloc_p;
 #pragma interface
 #endif
 
+#include "bf_idx.h"
+#include "stid_t.h"
+#include "vid_t.h"
 #include "page_s.h"
+#include "latch.h"
 #include <string.h>
 
 /**
- *  Basic page handle class. This class is used to fix a page
- *  and operate on it.
+ *  Basic page handle class.
  */
-class page_p : public smlevel_0 
+class page_p
 {
-
-friend class dir_vol_m;  // for access to page_p::splice();
-
 public:
     enum {
+        page_sz = sizeof(page_s),
         data_sz = page_s::data_sz,
         hdr_sz = page_s::hdr_sz,
         slot_sz = page_s::slot_sz
@@ -36,81 +37,106 @@ public:
         l_xor,
         l_not
     };
-    enum tag_t {
-        t_bad_p            = 0,        // not used
-        t_alloc_p        = 1,        // free-page allocation page 
-        t_stnode_p         = 2,        // store node page
-        t_btree_p          = 5,        // btree page 
-        t_any_p            = 11        // indifferent
-    };
-    enum page_flag_t {
-        t_tobedeleted    = 0x01,        // this page will be deleted as soon as the page is evicted from bufferpool
-        t_virgin         = 0x02,        // newly allocated page
-        t_written        = 0x08        // read in from disk
-    };
 
-    // override these in derived classes.
-    virtual tag_t get_page_tag () const { return t_any_p; }
-    virtual int get_default_refbit () const { return 1; }
-    virtual void inc_fix_cnt_stat () const { INC_TSTAT(any_p_fix_cnt);}
-
-    // initialization functions
-    rc_t fix(const lpid_t& pid, latch_mode_t mode,
-        uint32_t page_flags = 0, store_flag_t store_flags = st_bad,
-        bool ignore_store_id = false){
-        return _fix(false, pid, mode, page_flags, store_flags, ignore_store_id, get_default_refbit());
+    page_p() : _pp(NULL), _mode(LATCH_NL) {}
+    /**
+     * Imaginery 'fix' for a non-bufferpool-managed page.
+     */
+    page_p(page_s* s) : _pp(s), _mode(LATCH_NL) {
+        w_assert1(s != NULL);
     }
-    rc_t conditional_fix(const lpid_t& pid, latch_mode_t mode,
-        uint32_t page_flags = 0, store_flag_t store_flags = st_bad, bool ignore_store_id = false){
-        return _fix(true, pid, mode, page_flags, store_flags, ignore_store_id, get_default_refbit());
+    ~page_p() {
+        unfix();
     }
-    rc_t _fix(bool condl, const lpid_t& pid, latch_mode_t mode,
-        uint32_t page_flags, store_flag_t store_flags,
-        bool ignore_store_id, int refbit)
-    {
-        inc_fix_cnt_stat();
-        store_flag_t store_flags_save = store_flags;
-        w_assert2((page_flags & ~t_virgin) == 0);
-        W_DO( _fix_core(condl, pid, get_page_tag(), mode, page_flags, store_flags,
-                                                        ignore_store_id,refbit));
-        if (page_flags & t_virgin)   W_DO(format(pid, get_page_tag(), page_flags,
-                                                        store_flags_save));
-        w_assert3(tag() == get_page_tag());
-        return RCOK;
-    } 
-    virtual rc_t format(const lpid_t& pid, tag_t tag, uint32_t page_flags,
-             store_flag_t store_flags) {
-        return _format(pid, tag, page_flags, store_flags);
+    page_p& operator=(page_p& p) {
+        // this steals the ownership of the page/latch
+        steal_ownership(p);
+        return *this;
     }
-
-
-    /** Return the tag name of enum tag. For debugging purposes. */
-    static const char*          tag_name(tag_t t);
+    void steal_ownership (page_p& p) {
+        unfix();
+        _pp = p._pp;
+        _mode = p._mode;
+        p._pp = NULL;
+        p._mode = LATCH_NL;
+    }
     
+    /**
+     * Fixes a non-root page in the bufferpool. This method receives the parent page and efficiently
+     * fixes the page if the shpid (pointer) is already swizzled by the parent page.
+     * The optimization is transparent for most of the code because the shpid stored in the parent
+     * page is automatically (and atomically) changed to a swizzled pointer by the bufferpool.
+     * @param[in] parent parent of the page to be fixed. has to be already latched. if you can't provide this,
+     * use fix_direct() though it can't exploit pointer swizzling and thus will be slower.
+     * @param[in] vol volume ID.
+     * @param[in] shpid ID of the page to fix (or bufferpool index when swizzled)
+     * @param[in] mode latch mode. has to be SH or EX.
+     * @param[in] conditional whether the fix is conditional (returns immediately even if failed).
+     * @param[in] virgin_page whether the page is a new page thus doesn't have to be read from disk.
+     * To use this method, you need to include page_bf_inline.h.
+     */
+    w_rc_t                      fix_nonroot (const page_p &parent, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional = false, bool virgin_page = false);
+
+    /**
+     * Fixes any page (root or non-root) in the bufferpool without pointer swizzling.
+     * In some places, we need to fix a page without fixing the parent, e.g., recovery or re-fix in cursor.
+     * For such code, this method allows fixing without parent. However, this method can be used only when
+     * the pointer swizzling is off.
+     * @see bf_tree_m::fix_direct()
+     * @param[in] vol volume ID.
+     * @param[in] shpid ID of the page to fix. If the shpid looks like a swizzled pointer, this method returns an error (see above).
+     * @param[in] mode latch mode. has to be SH or EX.
+     * @param[in] conditional whether the fix is conditional (returns immediately even if failed).
+     * @param[in] virgin_page whether the page is a new page thus doesn't have to be read from disk.
+     * To use this method, you need to include page_bf_inline.h.
+     */
+    w_rc_t                      fix_direct (volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional = false, bool virgin_page = false);
+
+    /**
+     * Adds an additional pin count for the given page (which must be already latched).
+     * This is used to re-fix the page later without parent pointer. See fix_direct() why we need this feature.
+     * Never forget to call a corresponding unpin_for_refix() for this page. Otherwise, the page will be in the bufferpool forever.
+     * @return slot index of the page in this bufferpool. Use this value to the subsequent refix_direct() and unpin_for_refix() call.
+     * To use this method, you need to include page_bf_inline.h.
+     */
+    bf_idx                      pin_for_refix();
+
+    /**
+     * Fixes a page with the already known slot index, assuming the slot has at least one pin count.
+     * Used with pin_for_refix() and unpin_for_refix().
+     * To use this method, you need to include page_bf_inline.h.
+     */
+    w_rc_t                      refix_direct (bf_idx idx, latch_mode_t mode, bool conditional = false);
+
+    /**
+     * Fixes a new (virgin) root page for a new store with the specified page ID.
+     * Implicitly, the latch will be EX and non-conditional.
+     * To use this method, you need to include page_bf_inline.h.
+     */
+    w_rc_t                      fix_virgin_root (volid_t vol, snum_t store, shpid_t shpid);
+
+    /**
+     * Fixes an existing (not virgin) root page for the given store.
+     * This method doesn't receive page ID because it's already known by bufferpool.
+     * To use this method, you need to include page_bf_inline.h.
+     */
+    w_rc_t                      fix_root (volid_t vol, snum_t store, latch_mode_t mode, bool conditional = false);
+
+    /** release the page from bufferpool. */
+    void                        unfix ();
+
+    /** Marks this page in the bufferpool dirty. If this page is not a bufferpool-managed page, does nothing. */
+    void                        set_dirty() const;
+    /** Returns if this page in the bufferpool is marked dirty. If this page is not a bufferpool-managed page, returns false. */
+    bool                        is_dirty() const;
+
     const lsn_t&                lsn() const;
     void                        set_lsns(const lsn_t& lsn);
 
-    /**
-    *  Ensures the buffer pool's rec_lsn for this page is no larger than
-    *  the page lsn. If not repaired, the faulty rec_lsn can lead to
-    *  recovery errors. Invalid rec_lsn can occur when
-    *  1) there are unlogged updates to a page -- log redo, for instance, or updates to a tmp page.
-    *  2) when a clean page is fixed in EX mode but an update is never
-    *  made and the page is unfixed.  Now the rec_lsn reflects the tail
-    *  end of the log but the lsn on the page reflects something earlier.
-    *  At least in this case, we should expect the bfcb_t to say the
-    *  page isn't dirty.
-    *  3) when a st_tmp page is fixed in EX mode and an update is 
-    *  made and the page is unfixed.  Now the rec_lsn reflects the tail
-    *  end of the log but the lsn on the page reflects something earlier.
-    *  In this case, the page IS dirty.
-    *
-    *  FRJ: I don't see any evidence that this function is actually
-    *  called because of (3) above...
-    */
-    void  repair_rec_lsn(bool was_dirty,  lsn_t const &new_rlsn);
-
     const lpid_t&               pid() const;
+    volid_t                     vol() const;
+    snum_t                      store() const;
+    tag_t                       tag() const { return (tag_t) _pp->tag;}
     shpid_t                     btree_root() const { return _pp->btree_root;}
 
     // used when page is first read from disk
@@ -119,9 +145,6 @@ public:
     smsize_t                    used_space()  const;
     // Total usable space on page
     smsize_t                     usable_space()  const;
-    
-    /** Return true if the page is pinned by this thread (me()). */
-    bool                         pinned_by_me() const;
     
     /** Reserve this page to be deleted when bufferpool evicts this page. */
     rc_t                         set_tobedeleted (bool log_it);
@@ -149,82 +172,14 @@ public:
      */
     void                         change_slot_offset (slotid_t idx, slot_offset8_t offset8);
 
-    uint32_t            page_flags() const;
-    uint32_t            get_store_flags() const;
-    void                         set_store_flags(uint32_t);
+    uint32_t                     page_flags() const;
     page_s&                      persistent_part();
     const page_s&                persistent_part_const() const;
     bool                         is_fixed() const;
-    bool                         is_latched_by_me() const;
-    bool                         is_mine() const;
-    const latch_t*               my_latch() const; // for debugging
-    void                         set_dirty() const;
-    bool                         is_dirty() const;
-
-    NORET                        page_p() : _pp(0), _mode(LATCH_NL), _refbit(0) {};
-    NORET                        page_p(page_s* s, 
-                                        uint32_t store_flags,
-                                        int refbit = 1) 
-                                 : _pp(s), _mode(LATCH_NL), _refbit(refbit)  {
-                                     // _pp->set_page_storeflags(store_flags); 
-                                     // If we aren't fixed yet, we'll get an error here
-                                     set_store_flags (store_flags);
-                                 }
-    NORET                        page_p(const page_p& p) { W_COERCE(_copy(p)); }
-    /** Destructor. Unfix the page. */
-    virtual NORET                ~page_p() {
-        if (bf->is_bf_page(_pp))  unfix();
-        _pp = 0;
-    }
-    /** Unfix my page and fix the page of p. */
-    page_p&                      operator=(const page_p& p);
-
-    rc_t                         fix(
-        const lpid_t&                    pid, 
-        tag_t                            tag,
-        latch_mode_t                     mode, 
-        uint32_t                page_flags,
-        store_flag_t&                    store_flags, // only used if virgin
-        bool                             ignore_store_id = false,
-        int                              refbit = 1) {
-        return _fix_core(false, pid, tag, mode, page_flags, store_flags,
-                ignore_store_id, refbit); 
-
-    }
-    rc_t                         _fix_core(
-        bool                             conditional,
-        const lpid_t&                    pid, 
-        tag_t                            tag,
-        latch_mode_t                     mode, 
-        uint32_t                page_flags,
-        store_flag_t&                    store_flags, // only used if virgin
-        bool                             ignore_store_id,
-        int                              refbit);
-    void                         unfix();
-    void                         discard();
-    void                         unfix_dirty();
-    // set_ref_bit sets the value to use for the buffer page reference
-    // bit when the page is unfixed. 
-    void                        set_ref_bit(int value) {_refbit = value;}
-
-    // get EX latch if acquiring it will not block (otherwise set
-    // would_block to true.
-    /** Upgrade latch, even if you have to block. */
-    void                         upgrade_latch(latch_mode_t m);
-
-    /** Downgrade latch, from EX to SH. */
-    void                         downgrade_latch();
-
-    /**
-     * Upgrade latch to EX if possible w/o blocking.
-     * @param[out] would_block set to be true if it would block (and exit instantaneously)
-     */
-    rc_t                         upgrade_latch_if_not_block(bool &would_block); 
-
-    latch_mode_t                 latch_mode() const;
-    bool                         check_lsn_invariant() const;
-
-    tag_t                       tag() const;
+    latch_mode_t                 latch_mode() const { return _mode; }
+    bool                         is_latched() const { return _mode != LATCH_NL; }
+    /** conditionally upgrade the latch to EX. returns if successfully upgraded. */
+    bool                         upgrade_latch_conditional();
     
     /** Returns the stored value of checksum of this page. */
     uint32_t          get_checksum () const {return _pp->checksum;}
@@ -232,25 +187,8 @@ public:
     uint32_t          calculate_checksum () const {return _pp->calculate_checksum();}
     /** Renew the stored value of checksum of this page. */
     void             update_checksum () const {_pp->update_checksum();}
-
-private:
-    w_rc_t                      _copy(const page_p& p) ;
-
-protected:
-    // If a page type doesn't define its 4-argument format(), this
-    // method is used by default.  Nice C++ trick, but it's a bit
-    // obfuscating, and since the MAKEPAGE macro forces a declaration,
-    // if not definition, of the page-type-specific format(), I'm going
-    // to rename this _format.
-    // Update: I'm removing the log_it argument because it's never used,
-    // that is, is always false. 
     
-    rc_t                         _format(
-        lpid_t                     pid, // receive as entity, not reference or pointer. because this function might nuke the pointed object!
-        tag_t                             tag,
-        uint32_t                 page_flags,
-        store_flag_t                      store_flags
-        );
+protected:
 
     /**
      * Returns if there is enough free space to accomodate the
@@ -259,12 +197,8 @@ protected:
      */
     bool check_space_for_insert(size_t rec_size);    
 
-    /*  
-     * DATA 
-     */
     page_s*                     _pp;
     latch_mode_t                _mode;
-    int                         _refbit;
 
     friend class page_img_format_t;
     friend class page_img_format_log;
@@ -278,6 +212,16 @@ inline const lpid_t&
 page_p::pid() const
 {
     return _pp->pid;
+}
+inline volid_t
+page_p::vol() const
+{
+    return _pp->pid.vol().vol;
+}
+inline snum_t
+page_p::store() const
+{
+    return _pp->pid.store();
 }
 
 inline void
@@ -362,47 +306,7 @@ page_p::persistent_part_const() const
 inline bool
 page_p::is_fixed() const
 {
-#if W_DEBUG_LEVEL > 1
-    // The problem here is that _pp might be a
-    // heap-based page_s, not a buffer-pool frame.
-    // Let's call this iff it's a known frame:
-    if(_pp && bf_m::get_cb(_pp)) w_assert1(is_latched_by_me());
-#endif
     return _pp != 0;
-}
-
-inline latch_mode_t
-page_p::latch_mode() const
-{
-#if W_DEBUG_LEVEL > 1
-    // The problem here is that I might have more than one
-    // holding of the latch at some point, starting out with
-    // SH and then upgrading (possibly via double-acquire) it.  
-    // The latch itself doesn't hold the mode.
-    // of the identities of the holders. But now the page_p thinks
-    // its mode is not what the actual latch's mode is.
-    // Rather than try to update the page_p's mode, we'll
-    // just relax the assert here.
-    // if(_pp) w_assert2( ((_mode == LATCH_EX) == mine) || times>1);
-    if(_pp) {
-        bool mine = is_mine();
-        if(_mode == LATCH_EX) w_assert2(mine); 
-    }
-#endif
-    return _pp ? _mode : LATCH_NL;
-}
-
-inline bool 
-page_p::check_lsn_invariant() const
-{
-    if(_pp) return bf_m::check_lsn_invariant(_pp);
-    return true;
-}
-
-inline page_p::tag_t
-page_p::tag() const
-{
-    return (tag_t) _pp->tag;
 }
 
 inline slotid_t
@@ -421,68 +325,6 @@ inline void
 page_p::set_lsns(const lsn_t& lsn)
 {
     _pp->lsn = lsn;
-}
-
-inline void 
-page_p::discard()
-{
-    w_assert3(!_pp || bf->is_bf_page(_pp));
-    if (_pp)  bf->discard_pinned_page(_pp);
-    _pp = 0;
-}
-
-inline void 
-page_p::unfix()
-{
-    w_assert2(!_pp || bf->is_bf_page(_pp, true));
-    if(_pp) {
-        bf->unfix(_pp, false, _refbit);
-        DBGTHRD(<<"page fix " << " pid " << _pp->pid);
-    } 
-    _pp = 0;
-}
-
-inline void
-page_p::unfix_dirty()
-{
-    w_assert2(!_pp || bf->is_bf_page(_pp));
-    if (_pp)  {
-        if(smlevel_0::logging_enabled == false) {
-            // fake the lsn on the page. This is an attempt to
-            // trick the btree code into being able to tell if
-            // an mt scenario changed the page between fixes.
-            lsn_t mylsn = lsn();
-            mylsn.advance(1);
-            const_cast<page_p*>(this)->set_lsns(mylsn);
-        }
-        bf->unfix(_pp, true, _refbit);
-    }
-    _pp = 0;
-}
-
-inline void
-page_p::set_dirty() const
-{
-    //alloc_p/stnode_p doesn't use the main bufferpool.
-    if (_pp->tag != t_alloc_p && _pp->tag != t_stnode_p) {
-        if (bf->is_bf_page(_pp))  W_COERCE(bf->set_dirty(_pp));
-    }
-    if(smlevel_0::logging_enabled == false) {
-        // fake the lsn on the page. This is an attempt to
-        // trick the btree code into being able to tell if
-        // an mt scenario changed the page between fixes.
-        lsn_t mylsn = lsn();
-        mylsn.advance(1);
-        const_cast<page_p*>(this)->set_lsns(mylsn);
-    }
-}
-
-/** for debugging. */
-inline bool
-page_p::is_dirty() const
-{
-    if (bf->is_bf_page(_pp))  return bf->is_dirty(_pp);
-    return false;
 }
 
 #endif

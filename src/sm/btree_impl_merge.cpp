@@ -9,11 +9,13 @@
 
 #include "sm_int_2.h"
 #include "sm_base.h"
+#include "page_bf_inline.h"
 #include "btree_p.h"
 #include "btree_impl.h"
 #include "w_key.h"
 #include "xct.h"
 #include "bf.h"
+#include "bf_tree.h"
 
 rc_t btree_impl::_sx_rebalance_blink(btree_p &page)
 {
@@ -29,14 +31,12 @@ rc_t btree_impl::_ux_rebalance_blink_core(btree_p &page)
 {
     w_assert1 (xct()->is_sys_xct());
     w_assert1 (page.latch_mode() == LATCH_EX);
-    lpid_t blink_pid = page.pid();
-    blink_pid.page = page.get_blink();
-    if (blink_pid.page == 0) {
+    if (page.get_blink() == 0) {
         return RCOK; // nothing to rebalance
     }
 
     btree_p blink_p;
-    W_DO(blink_p.fix(blink_pid, LATCH_EX));
+    W_DO(blink_p.fix_nonroot(page, page.vol(), page.get_blink(), LATCH_EX));
 
     smsize_t used = page.used_space();
     smsize_t blink_used = blink_p.used_space();
@@ -55,7 +55,7 @@ rc_t btree_impl::_ux_rebalance_blink_core(btree_p &page)
     smsize_t move_size = 0;
     while (used - move_size > balanced_size && -move_count < page.nrecs() - 1) {
         ++move_count;
-        move_size += align(page.get_rec_size(page.nslots() - move_count - 1)) + page_p::slot_sz;
+        move_size += align(page.get_rec_size(page.nslots() - move_count - 1)) + page_s::slot_sz;
     }
     
     if (move_count == 0) {
@@ -80,7 +80,11 @@ rc_t btree_impl::_ux_rebalance_blink_core(btree_p &page, btree_p &blink_p, int32
     // first, mark both dirty.
     page.set_dirty();
     blink_p.set_dirty();
-    W_DO (bf_m::register_write_order_dependency(page._pp, blink_p._pp));
+    bool registered = smlevel_0::bf->register_write_order_dependency(page._pp, blink_p._pp);
+    if (!registered) {
+        // TODO in this case we should do full logging.
+        DBGOUT1 (<< "oops, couldn't force write order dependency in rebalance. this should be treated with care");
+    }
     // this can't cause cycle as it's always right-to-left depdencency.
 
     // this is the only log we need
@@ -94,7 +98,7 @@ rc_t btree_impl::_ux_rebalance_blink_core(btree_p &page, btree_p &blink_p, int32
     // scratch block of blink_p
     page_s scratch;
     ::memcpy (&scratch, blink_p._pp, sizeof(scratch));
-    btree_p scratch_p (&scratch, 0);
+    btree_p scratch_p (&scratch);
     
     w_keystr_t new_low_key, high_key, chain_high_key;
     scratch_p.copy_fence_high_key(high_key);
@@ -188,14 +192,12 @@ rc_t btree_impl::_ux_merge_blink_core(btree_p &page)
 {
     w_assert1 (xct()->is_sys_xct());
     w_assert1 (page.latch_mode() == LATCH_EX);
-    lpid_t blink_pid = page.pid();
-    blink_pid.page = page.get_blink();
-    if (blink_pid.page == 0) {
+    if (page.get_blink() == 0) {
         return RCOK; // nothing to rebalance
     }
 
     btree_p blink_p;
-    W_DO(blink_p.fix(blink_pid, LATCH_EX));
+    W_DO(blink_p.fix_nonroot(page, page.vol(), page.get_blink(), LATCH_EX));
     
     // assure foster-child page has an entry same as fence-low for locking correctness. see ticket:86
     W_DO(_ux_assure_fence_low_entry(blink_p));
@@ -210,16 +212,12 @@ rc_t btree_impl::_ux_merge_blink_core(btree_p &page)
     // first, mark them dirty.
     page.set_dirty();
     blink_p.set_dirty();
-    rc_t reg_rc = bf_m::register_write_order_dependency(blink_p._pp, page._pp);
-    if (reg_rc.is_error()) {
-        if (reg_rc.err_num() == eWRITEORDERLOOP) {
-            // this means the merging will cause a cycle in write-order.
-            // so, let's not do the merging now.
-            // see ticket:39 for more details
-            return RCOK;
-        } else {
-            return reg_rc; // unexpected error
-        }
+    bool registered = smlevel_0::bf->register_write_order_dependency(blink_p._pp, page._pp);
+    if (!registered) {
+        // this means the merging will cause a cycle in write-order.
+        // so, let's not do the merging now.
+        // see ticket:39 for more details
+        return RCOK;
     }
     
     // log for foster-parent.
@@ -236,7 +234,7 @@ rc_t btree_impl::_ux_merge_blink_core(btree_p &page)
     }
     page_s scratch;
     ::memcpy (&scratch, page._pp, sizeof(scratch));
-    btree_p scratch_p (&scratch, 0);
+    btree_p scratch_p (&scratch);
     W_DO(page.format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(), scratch_p.pid0(),
         blink_p.get_blink(), // foster-child's blink will be the next one after merge
         low_key, high_key, chain_high_key,
@@ -321,15 +319,15 @@ rc_t btree_impl::_ux_deadopt_blink_core(btree_p &real_parent, slotid_t foster_pa
     w_assert1 (real_parent.is_node());
     w_assert1 (real_parent.latch_mode() == LATCH_EX);
     w_assert1 (foster_parent_slot + 1 < real_parent.nrecs());
-    lpid_t foster_parent_pid = real_parent.pid();
+    shpid_t foster_parent_pid;
     if (foster_parent_slot < 0) {
         w_assert1 (foster_parent_slot == -1);
-        foster_parent_pid.page = real_parent.pid0();
+        foster_parent_pid = real_parent.pid0();
     } else {
-        foster_parent_pid.page = real_parent.child(foster_parent_slot);
+        foster_parent_pid = real_parent.child(foster_parent_slot);
     }
     btree_p foster_parent;
-    W_DO(foster_parent.fix(foster_parent_pid, LATCH_EX));
+    W_DO(foster_parent.fix_nonroot(real_parent, real_parent.vol(), foster_parent_pid, LATCH_EX));
     
     if (foster_parent.get_blink() != 0) {
         // De-Adopt can't be processed when foster-parent already has foster-child. Do nothing

@@ -64,25 +64,25 @@ w_rc_t full_scan(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(test_env->begin_xct());
     {
         SCOPED_TRACE("from here!");
-        bt_cursor_t cursor (root_pid, true);
+        bt_cursor_t cursor (root_pid.vol().vol, root_pid.store(), true);
         W_DO(check_result(cursor, 1, 5, true));
-        bt_cursor_t cursor_back (root_pid, false);
+        bt_cursor_t cursor_back (root_pid.vol().vol, root_pid.store(), false);
         W_DO(check_result(cursor_back, 1, 5, false));
     }
 
     {
         SCOPED_TRACE("from here!");
-        bt_cursor_t cursor (root_pid, neginf_key(), true, posinf_key(), true, true);
+        bt_cursor_t cursor (root_pid.vol().vol, root_pid.store(), neginf_key(), true, posinf_key(), true, true);
         W_DO(check_result(cursor, 1, 5, true));
-        bt_cursor_t cursor_back (root_pid, neginf_key(), true, posinf_key(), true, false);
+        bt_cursor_t cursor_back (root_pid.vol().vol, root_pid.store(), neginf_key(), true, posinf_key(), true, false);
         W_DO(check_result(cursor_back, 1, 5, false));
     }
 
     {
         SCOPED_TRACE("from here!");
-        bt_cursor_t cursor (root_pid, neginf_key(), false, posinf_key(), false, true);
+        bt_cursor_t cursor (root_pid.vol().vol, root_pid.store(), neginf_key(), false, posinf_key(), false, true);
         W_DO(check_result(cursor, 1, 5, true));
-        bt_cursor_t cursor_back (root_pid, neginf_key(), false, posinf_key(), false, false);
+        bt_cursor_t cursor_back (root_pid.vol().vol, root_pid.store(), neginf_key(), false, posinf_key(), false, false);
         W_DO(check_result(cursor_back, 1, 5, false));
     }
     W_DO(test_env->commit_xct());
@@ -106,49 +106,49 @@ w_rc_t low_cond(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(test_env->begin_xct());
     {
         SCOPED_TRACE("from here!");
-        bt_cursor_t cursor (root_pid, reg_key("30"), true, posinf_key(), true, true);
+        bt_cursor_t cursor (root_pid.vol().vol, root_pid.store(), reg_key("30"), true, posinf_key(), true, true);
         W_DO(check_result(cursor, 3, 5, true));
-        bt_cursor_t cursor_back (root_pid, reg_key("30"), true, posinf_key(), true, false);
+        bt_cursor_t cursor_back (root_pid.vol().vol, root_pid.store(), reg_key("30"), true, posinf_key(), true, false);
         W_DO(check_result(cursor_back, 3, 5, false));
     }
 
     {
         SCOPED_TRACE("from here!");
-        bt_cursor_t cursor (root_pid, reg_key("30"), false, posinf_key(), true, true);
+        bt_cursor_t cursor (root_pid.vol().vol, root_pid.store(), reg_key("30"), false, posinf_key(), true, true);
         W_DO(check_result(cursor, 4, 5, true));
-        bt_cursor_t cursor_back (root_pid, reg_key("30"), false, posinf_key(), true, false);
+        bt_cursor_t cursor_back (root_pid.vol().vol, root_pid.store(), reg_key("30"), false, posinf_key(), true, false);
         W_DO(check_result(cursor_back, 4, 5, false));
     }
 
     {
         SCOPED_TRACE("from here!");
-        bt_cursor_t cursor (root_pid, reg_key("25"), true, posinf_key(), true, true);
+        bt_cursor_t cursor (root_pid.vol().vol, root_pid.store(), reg_key("25"), true, posinf_key(), true, true);
         W_DO(check_result(cursor, 3, 5, true));
-        bt_cursor_t cursor_back (root_pid, reg_key("25"), true, posinf_key(), true, false);
+        bt_cursor_t cursor_back (root_pid.vol().vol, root_pid.store(), reg_key("25"), true, posinf_key(), true, false);
         W_DO(check_result(cursor_back, 3, 5, false));
     }
 
     {
         SCOPED_TRACE("from here!");
-        bt_cursor_t cursor (root_pid, reg_key("25"), false, posinf_key(), true, true);
+        bt_cursor_t cursor (root_pid.vol().vol, root_pid.store(), reg_key("25"), false, posinf_key(), true, true);
         W_DO(check_result(cursor, 3, 5, true));
-        bt_cursor_t cursor_back (root_pid, reg_key("25"), false, posinf_key(), true, false);
+        bt_cursor_t cursor_back (root_pid.vol().vol, root_pid.store(), reg_key("25"), false, posinf_key(), true, false);
         W_DO(check_result(cursor_back, 3, 5, false));
     }
 
 
     {
         SCOPED_TRACE("from here!");
-        bt_cursor_t cursor (root_pid, reg_key("00"), false, posinf_key(), true, true);
+        bt_cursor_t cursor (root_pid.vol().vol, root_pid.store(), reg_key("00"), false, posinf_key(), true, true);
         W_DO(check_result(cursor, 1, 5, true));
-        bt_cursor_t cursor_back (root_pid, reg_key("00"), false, posinf_key(), true, false);
+        bt_cursor_t cursor_back (root_pid.vol().vol, root_pid.store(), reg_key("00"), false, posinf_key(), true, false);
         W_DO(check_result(cursor_back, 1, 5, false));
     }
     {
         SCOPED_TRACE("from here!");
-        bt_cursor_t cursor (root_pid, reg_key("00"), true, posinf_key(), true, true);
+        bt_cursor_t cursor (root_pid.vol().vol, root_pid.store(), reg_key("00"), true, posinf_key(), true, true);
         W_DO(check_result(cursor, 1, 5, true));
-        bt_cursor_t cursor_back (root_pid, reg_key("00"), true, posinf_key(), true, false);
+        bt_cursor_t cursor_back (root_pid.vol().vol, root_pid.store(), reg_key("00"), true, posinf_key(), true, false);
         W_DO(check_result(cursor_back, 1, 5, false));
     }
     W_DO(test_env->commit_xct());
@@ -172,49 +172,49 @@ w_rc_t upp_cond(ss_m* ssm, test_volume_t *test_volume) {
 
     {
         SCOPED_TRACE("from here!");
-        bt_cursor_t cursor (root_pid, neginf_key(), true, reg_key("40"), true, true);
+        bt_cursor_t cursor (root_pid.vol().vol, root_pid.store(), neginf_key(), true, reg_key("40"), true, true);
         W_DO(check_result(cursor, 1, 4, true));
-        bt_cursor_t cursor_back (root_pid, neginf_key(), true, reg_key("40"), true, false);
+        bt_cursor_t cursor_back (root_pid.vol().vol, root_pid.store(), neginf_key(), true, reg_key("40"), true, false);
         W_DO(check_result(cursor_back, 1, 4, false));
     }
 
     {
         SCOPED_TRACE("from here!");
-        bt_cursor_t cursor (root_pid, neginf_key(), true, reg_key("40"), false, true);
+        bt_cursor_t cursor (root_pid.vol().vol, root_pid.store(), neginf_key(), true, reg_key("40"), false, true);
         W_DO(check_result(cursor, 1, 3, true));
-        bt_cursor_t cursor_back (root_pid, neginf_key(), true, reg_key("40"), false, false);
+        bt_cursor_t cursor_back (root_pid.vol().vol, root_pid.store(), neginf_key(), true, reg_key("40"), false, false);
         W_DO(check_result(cursor_back, 1, 3, false));
     }
 
     {
         SCOPED_TRACE("from here!");
-        bt_cursor_t cursor (root_pid, neginf_key(), true, reg_key("45"), true, true);
+        bt_cursor_t cursor (root_pid.vol().vol, root_pid.store(), neginf_key(), true, reg_key("45"), true, true);
         W_DO(check_result(cursor, 1, 4, true));
-        bt_cursor_t cursor_back (root_pid, neginf_key(), true, reg_key("45"), true, false);
+        bt_cursor_t cursor_back (root_pid.vol().vol, root_pid.store(), neginf_key(), true, reg_key("45"), true, false);
         W_DO(check_result(cursor_back, 1, 4, false));
     }
 
     {
         SCOPED_TRACE("from here!");
-        bt_cursor_t cursor (root_pid, neginf_key(), true, reg_key("45"), false, true);
+        bt_cursor_t cursor (root_pid.vol().vol, root_pid.store(), neginf_key(), true, reg_key("45"), false, true);
         W_DO(check_result(cursor, 1, 4, true));
-        bt_cursor_t cursor_back (root_pid, neginf_key(), true, reg_key("45"), false, false);
+        bt_cursor_t cursor_back (root_pid.vol().vol, root_pid.store(), neginf_key(), true, reg_key("45"), false, false);
         W_DO(check_result(cursor_back, 1, 4, false));
     }
 
     {
         SCOPED_TRACE("from here!");
-        bt_cursor_t cursor (root_pid, neginf_key(), true, reg_key("65"), false, true);
+        bt_cursor_t cursor (root_pid.vol().vol, root_pid.store(), neginf_key(), true, reg_key("65"), false, true);
         W_DO(check_result(cursor, 1, 5, true));
-        bt_cursor_t cursor_back (root_pid, neginf_key(), true, reg_key("65"), false, false);
+        bt_cursor_t cursor_back (root_pid.vol().vol, root_pid.store(), neginf_key(), true, reg_key("65"), false, false);
         W_DO(check_result(cursor_back, 1, 5, false));
     }
 
     {
         SCOPED_TRACE("from here!");
-        bt_cursor_t cursor (root_pid, neginf_key(), true, reg_key("65"), true, true);
+        bt_cursor_t cursor (root_pid.vol().vol, root_pid.store(), neginf_key(), true, reg_key("65"), true, true);
         W_DO(check_result(cursor, 1, 5, true));
-        bt_cursor_t cursor_back (root_pid, neginf_key(), true, reg_key("65"), true, false);
+        bt_cursor_t cursor_back (root_pid.vol().vol, root_pid.store(), neginf_key(), true, reg_key("65"), true, false);
         W_DO(check_result(cursor_back, 1, 5, false));
     }
     W_DO(test_env->commit_xct());
@@ -238,55 +238,55 @@ w_rc_t both_cond(ss_m* ssm, test_volume_t *test_volume) {
 
     {
         SCOPED_TRACE("from here!");
-        bt_cursor_t cursor (root_pid, reg_key("15"), true, reg_key("40"), true, true);
+        bt_cursor_t cursor (root_pid.vol().vol, root_pid.store(), reg_key("15"), true, reg_key("40"), true, true);
         W_DO(check_result(cursor, 2, 4, true));
-        bt_cursor_t cursor_back (root_pid, reg_key("15"), true, reg_key("40"), true, false);
+        bt_cursor_t cursor_back (root_pid.vol().vol, root_pid.store(), reg_key("15"), true, reg_key("40"), true, false);
         W_DO(check_result(cursor_back, 2, 4, false));
     }
     {
         SCOPED_TRACE("from here!");
-        bt_cursor_t cursor (root_pid, reg_key("15"), false, reg_key("40"), true, true);
+        bt_cursor_t cursor (root_pid.vol().vol, root_pid.store(), reg_key("15"), false, reg_key("40"), true, true);
         W_DO(check_result(cursor, 2, 4, true));
-        bt_cursor_t cursor_back (root_pid, reg_key("15"), false, reg_key("40"), true, false);
+        bt_cursor_t cursor_back (root_pid.vol().vol, root_pid.store(), reg_key("15"), false, reg_key("40"), true, false);
         W_DO(check_result(cursor_back, 2, 4, false));
     }
 
     {
         SCOPED_TRACE("from here!");
-        bt_cursor_t cursor (root_pid, reg_key("15"), true, reg_key("40"), false, true);
+        bt_cursor_t cursor (root_pid.vol().vol, root_pid.store(), reg_key("15"), true, reg_key("40"), false, true);
         W_DO(check_result(cursor, 2, 3, true));
-        bt_cursor_t cursor_back (root_pid, reg_key("15"), true, reg_key("40"), false, false);
+        bt_cursor_t cursor_back (root_pid.vol().vol, root_pid.store(), reg_key("15"), true, reg_key("40"), false, false);
         W_DO(check_result(cursor_back, 2, 3, false));
     }
     {
         SCOPED_TRACE("from here!");
-        bt_cursor_t cursor (root_pid, reg_key("15"), false, reg_key("40"), false, true);
+        bt_cursor_t cursor (root_pid.vol().vol, root_pid.store(), reg_key("15"), false, reg_key("40"), false, true);
         W_DO(check_result(cursor, 2, 3, true));
-        bt_cursor_t cursor_back (root_pid, reg_key("15"), false, reg_key("40"), false, false);
+        bt_cursor_t cursor_back (root_pid.vol().vol, root_pid.store(), reg_key("15"), false, reg_key("40"), false, false);
         W_DO(check_result(cursor_back, 2, 3, false));
     }
 
     {
         SCOPED_TRACE("from here!");
-        bt_cursor_t cursor (root_pid, reg_key("30"), true, reg_key("30"), true, true);
+        bt_cursor_t cursor (root_pid.vol().vol, root_pid.store(), reg_key("30"), true, reg_key("30"), true, true);
         W_DO(check_result(cursor, 3, 3, true));
-        bt_cursor_t cursor_back (root_pid, reg_key("30"), true, reg_key("30"), true, false);
+        bt_cursor_t cursor_back (root_pid.vol().vol, root_pid.store(), reg_key("30"), true, reg_key("30"), true, false);
         W_DO(check_result(cursor_back, 3, 3, false));
     }
 
     {
         SCOPED_TRACE("from here!");
-        bt_cursor_t cursor (root_pid, reg_key("30"), false, reg_key("30"), true, true);
+        bt_cursor_t cursor (root_pid.vol().vol, root_pid.store(), reg_key("30"), false, reg_key("30"), true, true);
         W_DO(check_result(cursor, 4, 3, true));
-        bt_cursor_t cursor_back (root_pid, reg_key("30"), false, reg_key("30"), true, false);
+        bt_cursor_t cursor_back (root_pid.vol().vol, root_pid.store(), reg_key("30"), false, reg_key("30"), true, false);
         W_DO(check_result(cursor_back, 4, 3, false));
     }
 
     {
         SCOPED_TRACE("from here!");
-        bt_cursor_t cursor (root_pid, reg_key("35"), true, reg_key("30"), true, true);
+        bt_cursor_t cursor (root_pid.vol().vol, root_pid.store(), reg_key("35"), true, reg_key("30"), true, true);
         W_DO(check_result(cursor, 4, 3, true));
-        bt_cursor_t cursor_back (root_pid, reg_key("35"), true, reg_key("30"), true, false);
+        bt_cursor_t cursor_back (root_pid.vol().vol, root_pid.store(), reg_key("35"), true, reg_key("30"), true, false);
         W_DO(check_result(cursor_back, 4, 3, false));
     }
     W_DO(test_env->commit_xct());
@@ -339,33 +339,33 @@ w_rc_t span_pages(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(test_env->begin_xct());
     {
         SCOPED_TRACE("from here!");
-        bt_cursor_t cursor (root_pid, true);
+        bt_cursor_t cursor (root_pid.vol().vol, root_pid.store(), true);
         W_DO(check_result2(cursor, 10, 89, true));
-        bt_cursor_t cursor_back (root_pid, false);
+        bt_cursor_t cursor_back (root_pid.vol().vol, root_pid.store(), false);
         W_DO(check_result2(cursor_back, 10, 89, false));
     }
 
     {
         SCOPED_TRACE("from here!");
-        bt_cursor_t cursor (root_pid, reg_key("343"), true, reg_key("80"), true, true);
+        bt_cursor_t cursor (root_pid.vol().vol, root_pid.store(), reg_key("343"), true, reg_key("80"), true, true);
         W_DO(check_result2(cursor, 35, 80, true));
-        bt_cursor_t cursor_back (root_pid, reg_key("343"), true, reg_key("80"), true, false);
+        bt_cursor_t cursor_back (root_pid.vol().vol, root_pid.store(), reg_key("343"), true, reg_key("80"), true, false);
         W_DO(check_result2(cursor_back, 35, 80, false));
     }
 
     {
         SCOPED_TRACE("from here!");
-        bt_cursor_t cursor (root_pid, reg_key("36"), false, reg_key("798"), true, true);
+        bt_cursor_t cursor (root_pid.vol().vol, root_pid.store(), reg_key("36"), false, reg_key("798"), true, true);
         W_DO(check_result2(cursor, 37, 79, true));
-        bt_cursor_t cursor_back (root_pid, reg_key("36"), false, reg_key("798"), true, false);
+        bt_cursor_t cursor_back (root_pid.vol().vol, root_pid.store(), reg_key("36"), false, reg_key("798"), true, false);
         W_DO(check_result2(cursor_back, 37, 79, false));
     }
 
     {
         SCOPED_TRACE("from here!");
-        bt_cursor_t cursor (root_pid, reg_key("378"), false, reg_key("812"), true, true);
+        bt_cursor_t cursor (root_pid.vol().vol, root_pid.store(), reg_key("378"), false, reg_key("812"), true, true);
         W_DO(check_result2(cursor, 38, 81, true));
-        bt_cursor_t cursor_back (root_pid, reg_key("378"), false, reg_key("812"), true, false);
+        bt_cursor_t cursor_back (root_pid.vol().vol, root_pid.store(), reg_key("378"), false, reg_key("812"), true, false);
         W_DO(check_result2(cursor_back, 38, 81, false));
     }
     

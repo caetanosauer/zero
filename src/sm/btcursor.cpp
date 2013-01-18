@@ -7,34 +7,40 @@
 #   pragma implementation "btcursor.h"
 #endif
 
+#include "sm_int_0.h"
 #include "sm_int_2.h"
+#include "page_bf_inline.h"
 #include "btree_p.h"
 #include "btcursor.h"
 #include "btree_impl.h"
+#include "bf_tree.h"
+#include "bf_tree_inline.h"
 #include "vec_t.h"
 #include "xct.h"
+#include "lock.h"
 #include "sm.h"
+#include "stid_t.h"
 
-bt_cursor_t::bt_cursor_t(const lpid_t& root_pid, bool forward)
+bt_cursor_t::bt_cursor_t(volid_t vol, snum_t store, bool forward)
 {
     w_keystr_t infimum, supremum;
     infimum.construct_neginfkey();
     supremum.construct_posinfkey();
-    _init (root_pid, infimum, true, supremum,  true, forward);
+    _init (vol, store, infimum, true, supremum,  true, forward);
 }
 
 bt_cursor_t::bt_cursor_t(
-    const lpid_t&     root_pid,
+    volid_t vol, snum_t store,
     const w_keystr_t& lower, bool lower_inclusive,
     const w_keystr_t& upper, bool upper_inclusive,
     bool              forward)
 {
-    _init (root_pid, lower, lower_inclusive,
+    _init (vol, store, lower, lower_inclusive,
         upper,  upper_inclusive, forward);
 }
 
 void bt_cursor_t::_init(
-    const lpid_t&     root_pid,
+    volid_t vol, snum_t store,
     const w_keystr_t& lower, bool lower_inclusive,
     const w_keystr_t& upper, bool upper_inclusive,
     bool              forward)
@@ -42,7 +48,8 @@ void bt_cursor_t::_init(
     _lower = lower;
     _upper = upper;
     
-    _root_pid = root_pid;
+    _vol = vol;
+    _store = store;
     _lower_inclusive = lower_inclusive;
     _upper_inclusive = upper_inclusive;
     _forward = forward;
@@ -66,14 +73,34 @@ void bt_cursor_t::close()
     _elen = 0;
     _slot = -1;
     _key.clear();
-    _pid = 0;
+    _release_current_page();
     _lsn = lsn_t::null;
+}
+
+void bt_cursor_t::_release_current_page() {
+    if (_pid != 0) {
+        w_assert1(_pid_bfidx.idx() != 0);
+        _pid_bfidx.release();
+        _pid = 0;
+    }
+}
+
+void bt_cursor_t::_set_current_page(btree_p &page) {
+    if (_pid != 0) {
+        _release_current_page();
+    }
+    w_assert1(_pid == 0);
+    w_assert1(_pid_bfidx.idx() == 0);
+    _pid = page.pid().page;
+    // pin this page for subsequent refix()
+    _pid_bfidx.set(page.pin_for_refix());
+    _lsn = page.lsn();
 }
 
 rc_t bt_cursor_t::_locate_first() {
     // at the first access, we get an intent lock on store/volume
     if (_needs_lock) {
-        W_DO(ss_m::lm->intent_vol_store_lock(_root_pid.stid(), _ex_lock ? IX : IS));
+        W_DO(smlevel_0::lm->intent_vol_store_lock(stid_t(_vol, _store), _ex_lock ? IX : IS));
     }
     
     if (_lower > _upper || (_lower == _upper && (!_lower_inclusive || !_upper_inclusive))) {
@@ -87,10 +114,9 @@ rc_t bt_cursor_t::_locate_first() {
         const w_keystr_t &key = _forward ? _lower : _upper;
         btree_p leaf;
         bool found = false;
-        W_DO( btree_impl::_ux_traverse(_root_pid, key, btree_impl::t_fence_contain, LATCH_SH, leaf));
+        W_DO( btree_impl::_ux_traverse(_vol, _store, key, btree_impl::t_fence_contain, LATCH_SH, leaf));
         w_assert3 (leaf.fence_contains(key));
-        _pid = leaf.pid().page;
-        _lsn = leaf.lsn();
+        _set_current_page(leaf);
 
         w_assert1(leaf.is_fixed());
         w_assert1(leaf.is_leaf());
@@ -184,13 +210,12 @@ rc_t bt_cursor_t::_check_page_update(btree_p &p)
             p.search_leaf(_key, found, _slot);
         } else {
             // we have to re-locate the page
-            W_DO( btree_impl::_ux_traverse(_root_pid, _key, btree_impl::t_fence_contain, LATCH_SH, p));
+            W_DO( btree_impl::_ux_traverse(_vol, _store, _key, btree_impl::t_fence_contain, LATCH_SH, p));
             p.search_leaf(_key, found, _slot);
         }
         w_assert1(found || !_needs_lock
             || (!_forward && !_upper_inclusive && !_dont_move_next)); // see _locate_first
-        _pid = p.pid().page;
-        _lsn = p.lsn();
+        _set_current_page(p);
     }
     return RCOK;
 }
@@ -211,7 +236,7 @@ rc_t bt_cursor_t::next()
 
     w_assert3(_pid);
     btree_p p;
-    W_DO( p.fix(lpid_t(_root_pid.stid(), _pid), LATCH_SH) );
+    W_DO(p.refix_direct(_pid_bfidx.idx(), LATCH_SH));
     w_assert3(p.is_fixed());
     w_assert3(p.pid().page == _pid);
 
@@ -320,7 +345,7 @@ rc_t bt_cursor_t::_advance_one_slot(btree_p &p, bool &eof)
             
             // take lock for the fence key
             if (_needs_lock) {
-                lockid_t lid (_root_pid.stid(), (const unsigned char*) neighboring_fence.buffer_as_keystr(), neighboring_fence.get_length_as_keystr());
+                lockid_t lid (stid_t(_vol, _store), (const unsigned char*) neighboring_fence.buffer_as_keystr(), neighboring_fence.get_length_as_keystr());
                 lock_mode_t lock_mode;
                 if (only_low_fence_exact_match) {
                     lock_mode = _ex_lock ? XN : SN;
@@ -334,10 +359,9 @@ rc_t bt_cursor_t::_advance_one_slot(btree_p &p, bool &eof)
             // TODO this part should check if we find an exact match of fence keys.
             // because we unlatch above, it's possible to not find exact match.
             // in that case, we should change the traverse_mode to fence_contains and continue
-            W_DO(btree_impl::_ux_traverse(_root_pid, neighboring_fence, traverse_mode, LATCH_SH, p));
+            W_DO(btree_impl::_ux_traverse(_vol, _store, neighboring_fence, traverse_mode, LATCH_SH, p));
             _slot = _forward ? 0 : p.nrecs() - 1;
-            _pid = p.pid().page;
-            _lsn = p.lsn();
+            _set_current_page(p);
             continue;
         }
 

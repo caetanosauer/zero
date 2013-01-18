@@ -7,8 +7,9 @@
 #pragma interface
 #endif
 
-#include "page.h"
+#include "page_s.h"
 #include "w_key.h"
+#include "sm_base.h"
 
 /**
  * \brief Free-Page allocation/deallocation page.
@@ -18,16 +19,12 @@
  * They are drastically simpler and more efficient than prior extent management.
  * See ticket:74 for more details.
  */
-class alloc_p : public page_p {
+class alloc_p {
 public:
-    alloc_p() : page_p() {}
-    alloc_p(page_s* s) : page_p() { _pp = s; }
+    alloc_p(page_s* s) : _pp(s) {}
     ~alloc_p()  {}
     
-    tag_t get_page_tag () const { return t_alloc_p; }
-    int get_default_refbit () const { return 20; } // allocate page should be very hot
-    void inc_fix_cnt_stat () const { INC_TSTAT(alloc_p_fix_cnt);}
-    rc_t format(const lpid_t& pid, tag_t tag, uint32_t page_flags, store_flag_t store_flags);
+    rc_t format(const lpid_t& pid);
 
     /** Returns the smallest page ID bitmaps in this page represent. */
     shpid_t get_pid_offset() const;
@@ -66,7 +63,7 @@ public:
     
     enum {
         /** Number of pages one alloc_p can cover. */
-        alloc_max = page_p::data_sz * 8
+        alloc_max = page_s::data_sz * 8
     };
     
     /** determines the pid_offset for the given alloc page. */
@@ -80,6 +77,7 @@ public:
         uint32_t alloc_p_seq = pid / alloc_max;
         return alloc_p_seq + 1; // +1 for volume header
     }
+    page_s *_pp;
 };
 inline shpid_t alloc_p::get_pid_offset() const {
     return reinterpret_cast<const shpid_t*>(_pp->data)[0];
@@ -107,14 +105,17 @@ inline void _set_bit (uint8_t *bitmap, uint32_t index) {
     uint32_t byte_place = (index >> 3);
     uint32_t bit_place = index & 0x7;
     uint8_t* byte = bitmap + byte_place;
-    w_assert1((*byte & (1 << bit_place)) == 0);
+    
+    w_assert1(smlevel_0::operating_mode == smlevel_0::t_in_redo ||
+        (*byte & (1 << bit_place)) == 0); // during redo, it's possible that the page is already allocated. it's fine. allocation is idempotent
     *byte |= (1 << bit_place);
 }
 inline void _unset_bit (uint8_t *bitmap, uint32_t index) {
     uint32_t byte_place = (index >> 3);
     uint32_t bit_place = index & 0x7;
     uint8_t* byte = bitmap + byte_place;
-    w_assert1((*byte & (1 << bit_place)) != 0);
+    w_assert1(smlevel_0::operating_mode == smlevel_0::t_in_redo ||
+        (*byte & (1 << bit_place)) != 0); // during redo, it's possible that the page is already deallocated. it's fine. deallocation is idempotent
     *byte &= ~(1 << bit_place);
 }
 
@@ -173,15 +174,17 @@ inline bool alloc_p::is_set_bit(shpid_t pid) const {
     uint32_t index = pid - get_pid_offset();
     
     uint32_t byte_place = (index >> 3);
-    w_assert1(byte_place < (uint) page_p::data_sz);
+    w_assert1(byte_place < (uint) page_s::data_sz);
     uint32_t bit_place = index & 0x7;
     const uint8_t* byte = bitmap + byte_place;
     return ((*byte & (1 << bit_place)) != 0);
 }
 
-inline rc_t alloc_p::format(const lpid_t& pid, tag_t tag, uint32_t flags, store_flag_t store_flags)
+inline rc_t alloc_p::format(const lpid_t& pid)
 {
-    W_DO(page_p::_format(pid, tag, flags, store_flags) );
+    ::memset (_pp, 0, sizeof(page_s));
+    _pp->pid = pid;
+    _pp->tag = t_alloc_p;
 
     // no records or whatever. this is just a huge bitmap
     shpid_t *headers = reinterpret_cast<shpid_t*>(_pp->data);

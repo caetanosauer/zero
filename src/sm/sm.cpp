@@ -73,6 +73,7 @@ class prologue_rc_t;
 #include "prologue.h"
 #include "device.h"
 #include "vol.h"
+#include "bf_tree.h"
 #include "crash.h"
 #include "restart.h"
 
@@ -159,7 +160,7 @@ static sm_vol_rwlock_t          _begin_xct_mutex;
 
 device_m* smlevel_0::dev = 0;
 io_m* smlevel_0::io = 0;
-bf_m* smlevel_0::bf = 0;
+bf_tree_m* smlevel_0::bf = 0;
 log_m* smlevel_0::log = 0;
 tid_t *smlevel_0::redo_tid = 0;
 
@@ -200,6 +201,9 @@ option_t* ss_m::_error_log = NULL;
 option_t* ss_m::_error_loglevel = NULL;
 option_t* ss_m::_log_warn_percent = NULL;
 option_t* ss_m::_num_page_writers = NULL;
+option_t* ss_m::_bufferpool_swizzle = NULL;
+option_t* ss_m::_cleaner_interval_millisec_min = NULL;
+option_t* ss_m::_cleaner_interval_millisec_max = NULL;
 option_t* ss_m::_logging = NULL;
 
 
@@ -262,6 +266,10 @@ rc_t ss_m::setup_options(option_group_t* options)
             "yes indicates background buffer pool flushing thread is enabled",
             false, option_t::set_value_bool, _backgroundflush));
 
+    W_DO(options->add_option("sm_bufferpool_swizzle", "yes/no", "no",
+            "yes enables pointer swizzling in buffer pool",
+            false, option_t::set_value_bool, _bufferpool_swizzle));
+
     W_DO(options->add_option("sm_logbufsize", "(>=4 and <=128)*(page size)", 
                 // Too bad we can't compute a string here:
              four_pages_min(128), // function above
@@ -296,9 +304,16 @@ rc_t ss_m::setup_options(option_group_t* options)
             "% of log in use that triggers callback to server (0 means no trigger)",
             false, option_t::set_value_long, _log_warn_percent));
 
-    W_DO(options->add_option("sm_num_page_writers", ">=0", "2",
+    W_DO(options->add_option("sm_num_page_writers", ">=0", "1",
             "the number of page writers in the bpool cleaner",
             false, option_t::set_value_long, _num_page_writers));
+
+    W_DO(options->add_option("sm_cleaner_interval_millisec_min", ">0", "1000",
+            "as the name suggests",
+            false, option_t::set_value_int4, _cleaner_interval_millisec_min));
+    W_DO(options->add_option("sm_cleaner_interval_millisec_max", ">0", "256000",
+            "as the name suggests",
+            false, option_t::set_value_int4, _cleaner_interval_millisec_max));
 
     W_DO(options->add_option("sm_logging", "yes/no", "yes",
             "no will turn off logging; Rollback, restart not possible.",
@@ -540,7 +555,6 @@ ss_m::_construct_once(
              << "-KB is needed" << flushl;
         W_FATAL(eCRASH);
     }
-    long  space_needed = bf_m::mem_needed(nbufpages);
 
     // number of page writers
     int32_t  npgwriters = int32_t(strtoul(_num_page_writers->value(), NULL, 0)); 
@@ -550,7 +564,18 @@ ss_m::_construct_once(
              << flushl;
         W_FATAL(eCRASH);
     }
+    if (npgwriters == 0) {
+        npgwriters = 1;
+    }
+    int32_t cleaner_interval_millisec_min = int32_t(strtoul(_cleaner_interval_millisec_min->value(), NULL, 0)); 
+    if (cleaner_interval_millisec_min <= 0) {
+        cleaner_interval_millisec_min = 1000;
+    }
 
+    int32_t cleaner_interval_millisec_max = int32_t(strtoul(_cleaner_interval_millisec_max->value(), NULL, 0)); 
+    if (cleaner_interval_millisec_max <= 0) {
+        cleaner_interval_millisec_max = 256000;
+    }
 
     uint64_t logbufsize = (uint64_t) strtoul(_logbufsize->value(), NULL, 0) * 1024;
     // pretty big limit -- really, the limit is imposed by the OS's
@@ -574,41 +599,18 @@ ss_m::_construct_once(
         << flushl; 
         W_FATAL(OPT_BadValue);
     }
-    DBG(<<"SHM Need " << space_needed << " for buffer pool" );
-
-    /*
-     * Allocate the buffer-pool memory
-     */ 
-    char        *shmbase;
-    w_rc_t        e;
-#ifdef HAVE_HUGETLBFS
-    // fprintf(stderr, "setting path to  %s\n", _hugetlbfs_path->value());
-     e = smthread_t::set_hugetlbfs_path(_hugetlbfs_path->value());
-#else
-     if(_hugetlbfs_path->is_set() /* by user, as opposed to default value */) {
-         cerr << "Warning: sm_hugetlbfs_path option " <<
-             _hugetlbfs_path->value() 
-             << " ignored: not configured --with-hugetlbfs"
-             << endl;
-     }
-#endif
-    e = smthread_t::set_bufsize(space_needed, shmbase);
-    if (e.is_error()) {
-        W_COERCE(e);
-    }
-    w_assert1(is_aligned(shmbase));
-    DBG(<<"SHM at address" << W_ADDR(shmbase));
-
 
     /*
      * Now we can create the buffer manager
      */ 
+    bool default_true = true, default_false = false;
+    bool initially_enable_cleaners = option_t::str_to_bool(_backgroundflush->value(), default_true);
+    bool bufferpool_swizzle = option_t::str_to_bool(_bufferpool_swizzle->value(), default_false);
 
-    bf = new bf_m(nbufpages, shmbase, npgwriters);
+    bf = new bf_tree_m(nbufpages, npgwriters, cleaner_interval_millisec_min, cleaner_interval_millisec_max, 64, initially_enable_cleaners, bufferpool_swizzle);
     if (! bf) {
         W_FATAL(eOUTOFMEMORY);
     }
-    shmbase +=  bf_m::mem_needed(nbufpages);
     /* just hang onto this until we create thelog manager...*/
 
     bool badVal = false;
@@ -646,7 +648,7 @@ ss_m::_construct_once(
             "WARNING: Log buffer is bigger than 1/8 partition (probably safe to make it smaller)."
                    << flushl;
         }
-        e = log_m::new_log_m(log, 
+        w_rc_t e = log_m::new_log_m(log, 
                      _logdir->value(), 
                      logbufsize, 
                      reformat_log);
@@ -673,6 +675,13 @@ ss_m::_construct_once(
         "WARNING: Running without logging! Do so at YOUR OWN RISK. " 
         << flushl;
     }
+    
+    // start buffer pool cleaner when the log module is ready
+    {
+        w_rc_t e = bf->init();
+        W_COERCE(e);
+    }
+
     DBG(<<"Level 2");
     
     /*
@@ -788,7 +797,7 @@ ss_m::_construct_once(
     // But to avoid interference with their control structure, 
     // we will do this directly.  Take a checkpoint as well.
     if(log) {
-        bf->force_until_lsn(log->curr_lsn());
+        bf->force_until_lsn(log->curr_lsn().data());
         chkpt->wakeup_and_take();
     }    
 
@@ -834,10 +843,6 @@ ss_m::_destruct_once()
     // Set shutting_down so that when we disable bg flushing, if the
     // log flush daemon is running, it won't just try to re-activate it.
     shutting_down = true;
-
-    // We will flush if needed, serially -- not relying on b/g flushing
-    W_COERCE(bf->disable_background_flushing());
-
     
     // get rid of all non-prepared transactions
     // First... disassociate me from any tx
@@ -854,7 +859,7 @@ ss_m::_destruct_once()
         // w/o logging turned on.
         // That happens below.
 
-        W_COERCE( bf->force_all(true) );
+        W_COERCE( bf->force_all() );
         me()->check_actual_pin_count(0);
 
         // take a clean checkpoints with the volumes which need 
@@ -921,6 +926,10 @@ ss_m::_destruct_once()
 
     delete io; io = 0; // io manager
     delete dev; dev = 0; // device manager
+    {
+        w_rc_t e = bf->destroy();
+        W_COERCE (e);
+    }
     delete bf; bf = 0; // destroy buffer manager last because io/dev are flushing them!
     /*
      *  Level 0
@@ -1310,39 +1319,12 @@ ss_m::checkpoint()
     return RCOK;
 }
 
-/*--------------------------------------------------------------*
- *  ss_m::force_buffers()
- *  For debugging, smsh
- *--------------------------------------------------------------*/
-rc_t
-ss_m::force_buffers(bool flush)
-{
-    W_DO( bf->force_all(flush) );
-    W_DO (io_m::flush_all_fixed_buffer());
-    return RCOK;
+rc_t ss_m::force_buffers() {
+    return bf->force_all();
 }
 
-rc_t
-ss_m::force_vol_hdr_buffers(const vid_t& vid)
-{
-    if (vid == vid_t::null) return RC(eBADVOL);
-    
-    // volume header is store 0
-    stid_t stid(vid, 0);
-    W_DO( bf->force_store(stid, true/*invalidate*/) );
-    W_DO (io_m::flush_vol_fixed_buffer(vid));
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::force_store_buffers(const stid_t& stid)                            *
- *  For debugging, smsh
- *--------------------------------------------------------------*/
-rc_t
-ss_m::force_store_buffers(const stid_t& stid, bool invalidate)
-{
-    W_DO( bf->force_store(stid, invalidate) );
-    return RCOK;
+rc_t ss_m::force_volume(volid_t vol) {
+    return bf->force_volume(vol);
 }
 
 /*--------------------------------------------------------------*
@@ -1352,24 +1334,9 @@ ss_m::force_store_buffers(const stid_t& stid, bool invalidate)
 rc_t
 ss_m::dump_buffers(ostream &o)
 {
-    bf->dump(o);
+    bf->debug_dump(o);
     return RCOK;
 }
-
-/*--------------------------------------------------------------*
- *  ss_m::snapshot_buffers()                            *
- *  For debugging, smsh
- *--------------------------------------------------------------*/
-rc_t
-ss_m::snapshot_buffers(u_int& ndirty, 
-                       u_int& nclean, 
-                       u_int& nfree,
-                       u_int& nfixed)
-{
-    bf_m::snapshot(ndirty, nclean, nfree, nfixed);
-    return RCOK;
-}
-
 
 /*--------------------------------------------------------------*
  *  ss_m::config_info()                                *
@@ -1386,7 +1353,7 @@ ss_m::config_info(sm_config_info_t& info)
     // OK, now that _data is already aligned, we don't have to
     // lose those 4 bytes.
     info.lg_rec_page_space = page_s::data_sz;
-    info.buffer_pool_size = bf_m::npages() * ss_m::page_sz / 1024;
+    info.buffer_pool_size = bf->get_block_cnt() * ss_m::page_sz / 1024;
     info.max_btree_entry_size  = btree_m::max_entry_size();
     info.exts_on_page  = 0;
     info.pages_per_ext = smlevel_0::ext_sz;
@@ -2387,41 +2354,6 @@ ss_m::_get_du_statistics( const stid_t& stpgid, sm_du_stats_t& du, bool audit)
     }
     du.btree.add(btree_stats);
     du.btree_cnt++;
-    return RCOK;
-}
-
-/*
- * check_volume_page_types
- * For each store in the volume, check that each allocated page in the
- * store has a reasonable page tag.
- * Slow, involves linear search of each store.
- */
-rc_t
-ss_m::check_volume_page_types(vid_t vid)
-{
-    SM_PROLOGUE_RC(ss_m::check_volume_page_types, in_xct, read_only, 0);
-    /*
-     * Cannot call this during recovery, even for 
-     * debugging purposes
-     */
-    if(smlevel_0::in_recovery()) {
-        return RCOK;
-    }
-
-    if(!io) {
-        W_FATAL_MSG(eINTERNAL, << "io manager not insantiated");
-    }
-
-    W_DO(lm->intent_vol_lock(vid, SH));
-
-    // every other store
-    lpid_t root_pid;
-    for (stid_t stid(vid, 0); stid.store < stnode_p::max; stid.store++) {
-        W_DO(open_store_nolock(stid, root_pid));
-        if (root_pid.page) {
-            W_DO( io->check_store_pages(stid,  page_p::t_btree_p));
-        }
-    }
     return RCOK;
 }
 
