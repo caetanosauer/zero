@@ -60,13 +60,14 @@ add_library(sm STATIC ${sm_STAT_SRCS})
 target_link_libraries(sm fc sthread common atomic_ops)
 
 set (E_ERROR_GENFILES_H e_errmsg_gen.h e_einfo_gen.h e_error_def_gen.h e_error_enum_gen.h e_einfo_bakw_gen.h)
-add_custom_command(OUTPUT ${E_ERROR_GENFILES_H}
-  COMMAND perl ${CMAKE_SOURCE_DIR}/tools/errors.pl --d --e ${CMAKE_CURRENT_SOURCE_DIR}/e_error.dat ${COPY_GENERATED_FILES}
-  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/e_error.dat
+foreach(_file ${E_ERROR_GENFILES_H})
+  add_custom_command(OUTPUT ${_file}
+     COMMAND perl ${CMAKE_SOURCE_DIR}/tools/errors.pl --d --e ${CMAKE_CURRENT_SOURCE_DIR}/e_error.dat ${COPY_GENERATED_FILES}
+     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/e_error.dat
 )
-    set (E_ERROR_GENFILES_B_H ${E_ERROR_GENFILES_B_H} ${CMAKE_CURRENT_BINARY_DIR}/${_file})
+  set (E_ERROR_GENFILES_B_H ${E_ERROR_GENFILES_B_H} ${CMAKE_CURRENT_BINARY_DIR}/${_file})
 endforeach()
-add_custom_target(E_ERROR_GENFILES DEPENDS ${E_ERROR_GENFILES_B_H})
+add_custom_target(E_ERROR_GENFILES DEPENDS ${E_ERROR_GENFILES_H})
 add_dependencies(sm E_ERROR_GENFILES)
 
 # generate stat header files with tools/stats.pl (sm_stat)
@@ -79,6 +80,7 @@ foreach(_file ${SM_STATS_GENFILES_FILES})
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/sm_stats.dat
     )
     set(SM_STATS_GENFILES_B_H ${SM_STATS_GENFILES_B_H} ${CMAKE_CURRENT_BINARY_DIR}/${_file})
+endforeach()
 add_custom_target(SM_STATS_GENFILES DEPENDS ${SM_STATS_GENFILES_FILES})
 add_dependencies(sm SM_STATS_GENFILES)
 
@@ -106,6 +108,7 @@ foreach(_file ${LOGDEF_GENFILES_FILES})
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/logdef.dat
     )
     set (LOGDEF_GENFILES_B_H ${LOGDEF_GENFILES_B_H} ${CMAKE_CURRENT_BINARY_DIR}/${_file})
+endforeach()
 add_custom_target(LOGDEF_GENFILES DEPENDS ${LOGDEF_GENFILES_FILES})
 add_dependencies(sm LOGDEF_GENFILES)
 

@@ -22,12 +22,15 @@ set(common_STAT_SRCS
 add_library(common STATIC ${common_STAT_SRCS})
 #target_link_libraries (common atomic_ops)
 
+# generate error header files with tools/errors.pl
 set (OPT_ERROR_GENFILES_H opt_errmsg_gen.h opt_einfo_gen.h opt_error_def_gen.h opt_einfo_bakw_gen.h)
-add_custom_command(OUTPUT ${OPT_ERROR_GENFILES_H}
-  COMMAND perl ${CMAKE_SOURCE_DIR}/tools/errors.pl -d ${CMAKE_CURRENT_SOURCE_DIR}/opt_error.dat ${COPY_GENERATED_FILES}
-  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/opt_error.dat
-  )
-    set (OPT_ERROR_GENFILES_B_H ${OPT_ERROR_GENFILES_B_H} ${CMAKE_CURRENT_BINARY_DIR}/${_file})
+foreach(_file ${OPT_ERROR_GENFILES_H})
+    add_custom_command(OUTPUT ${_file}
+        COMMAND perl ${CMAKE_SOURCE_DIR}/tools/errors.pl -d ${CMAKE_CURRENT_SOURCE_DIR}/opt_error.dat
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/opt_error.dat
+    )
+   set (OPT_ERROR_GENFILES_B_H ${OPT_ERROR_GENFILES_B_H} ${CMAKE_CURRENT_BINARY_DIR}/${_file})
+endforeach()
 add_custom_target(OPT_ERROR_GENFILES DEPENDS ${OPT_ERROR_GENFILES_H})
 add_dependencies(common OPT_ERROR_GENFILES)
 
@@ -61,6 +64,4 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/vec_t.h
   ${CMAKE_CURRENT_SOURCE_DIR}/vid_t.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_opaque.h
-  DESTINATION include)
-
-INSTALL_GENERATED_H(${GENFILES})
+  ${GENFILES} DESTINATION include)

@@ -41,7 +41,7 @@ xct_lock_info_t::dump_locks(ostream &out) const
  *
  *********************************************************************/
 ostream &            
-operator<<(ostream &o, const xct_lock_info_t &/*x*/)
+operator<<(ostream &o, const xct_lock_info_t &x)
 {
     /*
         lock_request_t *waiting = x.waiting_request();
@@ -60,7 +60,7 @@ operator<<(ostream &o, const xct_lock_info_t &/*x*/)
  *
  *********************************************************************/
 void
-lock_core_m::dump(ostream & /*o*/)
+lock_core_m::dump(ostream & o)
 {
     /*
     // disabled because there's no safe way to iterate over the lock table

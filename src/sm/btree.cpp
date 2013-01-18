@@ -94,14 +94,14 @@ rc_t btree_m::update(
 }
 
 rc_t btree_m::put(
-    const lpid_t&                     root,
+    volid_t vol, snum_t store,
     const w_keystr_t&                 key,
     const cvec_t&                     elem)
 {
     if(key.get_length_as_keystr() + elem.size() > btree_p::max_entry_size) {
         return RC(eRECWONTFIT);
     }
-    W_DO(btree_impl::_ux_put(root, key, elem));
+    W_DO(btree_impl::_ux_put(vol, store, key, elem));
     return RCOK;
 }
 

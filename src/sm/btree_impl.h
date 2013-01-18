@@ -72,7 +72,8 @@ public:
      * it was found and if it was a ghost.
      * \details
      *  Context: User transaction
-     * @param[in] root id of root page
+     * @param[in] vol Volume ID
+     * @param[in] store Store ID
      * @param[in] key key of the tuple
      * @param[out] need_lock if locking is needed
      * @param[out] slot where in the page the key was found
@@ -82,7 +83,8 @@ public:
      * @param[out] leaf the leaf the key should be in (if it exists or if it did exist)     
      */
     static rc_t _ux_get_page_and_status
-    (const lpid_t & root, const w_keystr_t& key,
+    (volid_t vol, snum_t store,
+     const w_keystr_t& key,
      bool& need_lock, slotid_t& slot, bool& found, bool& took_XN, bool& is_ghost, btree_p& leaf);
 
     /**
@@ -106,7 +108,8 @@ public:
         const cvec_t&                     elem);
     /** Last half of _ux_insert, after traversing, finding (or not) and ghost determination.*/
     static rc_t _ux_insert_core_tail
-    (const lpid_t & root, const w_keystr_t& key,const cvec_t& el,
+    (volid_t vol, snum_t store,
+     const w_keystr_t& key,const cvec_t& el,
      bool& need_lock, slotid_t& slot, bool& found, bool& alreay_took_XN, 
      bool& is_ghost, btree_p& leaf);
 
@@ -130,8 +133,9 @@ public:
         const w_keystr_t&                 key,
         const cvec_t&                     elem);
     /** Last half of _ux_update, after traversing, finding (or not) and ghost determination.*/
-    static rc_t _ux_update_core_tail
-    (const lpid_t& root, const w_keystr_t& key, const cvec_t& elem,
+    static rc_t _ux_update_core_tail(
+     volid_t vol, snum_t store,
+     const w_keystr_t& key, const cvec_t& elem,
      bool& need_lock, slotid_t& slot, bool& found, bool& is_ghost,
      btree_p& leaf);
 
@@ -141,18 +145,19 @@ public:
     *
     * \details
     *  Context: User transaction.
-    * @param[in] root id of root page
+    * @param[in] vol Volume ID
+    * @param[in] store Store ID
     * @param[in] key key of the existing tuple
     * @param[in] elem new data of the tuple
     */
     static rc_t                        _ux_put(
-        const lpid_t&                     root,
+        volid_t vol, snum_t store,
         const w_keystr_t&                 key,
         const cvec_t&                     elem);
     /** _ux_put()'s internal function without retry by itself.  Uses _ux_insert_core_tail and
         _ux_update_core_tail for the heavy lifting*/
     static rc_t                        _ux_put_core(
-        const lpid_t&                     root,
+        volid_t vol, snum_t store,
         const w_keystr_t&                 key,
         const cvec_t&                     elem);
 

@@ -72,7 +72,7 @@ public:
     * with the new data.
     */
     static rc_t                        put(
-        const lpid_t&                     root,
+        volid_t vol, snum_t store,
         const w_keystr_t&                 key,
         const cvec_t&                     elem);
 

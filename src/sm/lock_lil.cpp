@@ -55,13 +55,6 @@ void lil_global_table_base::release_locks(bool *lock_taken, bool read_lock_only,
             if (_IX_count == 0 && (_waiting_S != 0 || _waiting_X != 0)) {
                 broadcast = true;
             }
-            // SX-ELR: updates only descendant tag
-            if (commit_lsn.valid()) {
-                if (commit_lsn > _x_lock_descendant_tag) {
-                    DBGOUT1(<<"LIL: descendant tag for Safe SX-ELR updated to " << commit_lsn);
-                    _x_lock_descendant_tag = commit_lsn;
-                }
-            }
         }
         if (lock_taken[LIL_S]) {
             w_assert1(_S_count > 0);
@@ -72,16 +65,11 @@ void lil_global_table_base::release_locks(bool *lock_taken, bool read_lock_only,
             w_assert1(_X_taken);
             _X_taken = false;
             broadcast = true;
-            // SX-ELR: updates both descendant and self tag
-            if (commit_lsn.valid()) {
-                if (commit_lsn > _x_lock_self_tag) {
-                    DBGOUT1(<<"LIL: self tag for Safe SX-ELR updated to " << commit_lsn);
-                    _x_lock_descendant_tag = commit_lsn;
-                }
-                if (commit_lsn > _x_lock_descendant_tag) {
-                    DBGOUT1(<<"LIL: descendant tag for Safe SX-ELR updated to " << commit_lsn);
-                    _x_lock_descendant_tag = commit_lsn;
-                }
+            // only when we release X lock, we update the tag for safe SX-ELR.
+            // IX doesn't matter because the lower level will do the job.
+            if (commit_lsn.valid() && commit_lsn > _x_lock_tag) {
+                DBGOUT1(<<"LIL: tag for Safe SX-ELR updated to " << commit_lsn);
+                _x_lock_tag = commit_lsn;
             }
         }
     }
@@ -179,7 +167,7 @@ w_rc_t lil_global_table_base::_request_lock_IS(lsn_t &observed_tag)
                 } else {
                     if (!_X_taken) {
                         ++_IS_count;
-                        observed_tag = _x_lock_self_tag; // SX-ELR: check only self tag
+                        observed_tag = _x_lock_tag;
                         return RCOK;
                     }
                 }
@@ -208,7 +196,7 @@ w_rc_t lil_global_table_base::_request_lock_IX(lsn_t &observed_tag)
                 } else {
                     if (!_X_taken && _S_count == 0) {
                         ++_IX_count;
-                        observed_tag = _x_lock_self_tag; // SX-ELR: check only self tag
+                        observed_tag = _x_lock_tag;
                         return RCOK;
                     }
                 }
@@ -243,7 +231,7 @@ w_rc_t lil_global_table_base::_request_lock_S(lsn_t &observed_tag)
                     if (!_X_taken && _IX_count == 0) {
                         ++_S_count;
                         --_waiting_S;
-                        observed_tag = _x_lock_self_tag > _x_lock_descendant_tag ? _x_lock_self_tag : _x_lock_descendant_tag; // SX-ELR: check both
+                        observed_tag = _x_lock_tag;
                         return RCOK;
                     }
                 }
@@ -273,7 +261,7 @@ w_rc_t lil_global_table_base::_request_lock_X(lsn_t &observed_tag)
             if (!_X_taken && _S_count == 0 && _IX_count == 0 && _IS_count == 0) {
                 _X_taken = true;
                 --_waiting_X;
-                        observed_tag = _x_lock_self_tag > _x_lock_descendant_tag ? _x_lock_self_tag : _x_lock_descendant_tag; // SX-ELR: check both
+                observed_tag = _x_lock_tag;
                 return RCOK;
             }
             version = _release_version;

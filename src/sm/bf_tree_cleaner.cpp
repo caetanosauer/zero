@@ -10,22 +10,15 @@
 #include "page_s.h"
 #include "bf.h"
 #include "page.h"
-#include "sm.h"
 #include "sm_io.h"
 #include "log.h"
 #include "vol.h"
-#include "xct.h"
 #include <string.h>
 #include <vector>
 #include <algorithm>
 #include <stdlib.h>
 
 typedef bf_tree_cleaner_slave_thread_t* slave_ptr;
-
-bool _dirty_shutdown_happening() {
-    return (ss_m::shutting_down && !ss_m::shutdown_clean);
-}
-
 
 bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, uint32_t cleaner_threads,
     uint32_t cleaner_interval_millisec_min,
@@ -59,8 +52,6 @@ bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, uint32_t cleaner_threads
     for (bf_cleaner_slave_id_t id = 1; id < _slave_threads_size; ++id) {
         _slave_threads[id] = new bf_tree_cleaner_slave_thread_t (this, id);
     }
-    
-    _error_happened = false;
 }
 
 bf_tree_cleaner::~bf_tree_cleaner()
@@ -167,7 +158,7 @@ w_rc_t bf_tree_cleaner::force_all()
     ::memset(_requested_volumes, 1, sizeof(bool) * MAX_VOL_COUNT);
     W_DO(wakeup_cleaners());
     uint32_t interval = FORCE_SLEEP_MS_MIN;
-    while (!_dirty_shutdown_happening() && !_error_happened) {
+    while (true) {
         DBGOUT2(<< "waiting in force_all...");
         g_me()->sleep(interval);
         interval *= 2;
@@ -184,10 +175,6 @@ w_rc_t bf_tree_cleaner::force_all()
         if (!remains) {
             break;
         }
-    }
-    if (_dirty_shutdown_happening()) {
-        DBGOUT1(<< "joining all cleaner threads up to 100ms...");
-        W_DO(join_cleaners(100));
     }
     DBGOUT2(<< "done force_all!");
     return RCOK;
@@ -212,7 +199,7 @@ w_rc_t bf_tree_cleaner::force_until_lsn(lsndata_t lsn)
     _requested_lsn = lsn;
     W_DO(wakeup_cleaners());
     uint32_t interval = FORCE_SLEEP_MS_MIN;
-    while (!_dirty_shutdown_happening() && !_error_happened) {
+    while (true) {
         DBGOUT2(<< "waiting in force_until_lsn...");
         if (lsn > _requested_lsn) {
             // make it sure because a concurrent thread might have overwritten it
@@ -226,10 +213,6 @@ w_rc_t bf_tree_cleaner::force_until_lsn(lsndata_t lsn)
         if (_is_force_until_lsn_done(lsn)) {
             break;
         }
-    }
-    if (_dirty_shutdown_happening()) {
-        DBGOUT1(<< "joining all cleaner threads up to 100ms...");
-        W_DO(join_cleaners(100));
     }
     DBGOUT2(<< "done force_until_lsn!");
     return RCOK;
@@ -245,17 +228,13 @@ w_rc_t bf_tree_cleaner::force_volume(volid_t vol)
     _requested_volumes[vol] = true;
     W_DO(wakeup_cleaner_for_volume(vol));
     uint32_t interval = FORCE_SLEEP_MS_MIN;
-    while (_requested_volumes[vol] && !_dirty_shutdown_happening() && !_error_happened) {
+    while (_requested_volumes[vol]) {
         DBGOUT2(<< "waiting in force_volume...");
         g_me()->sleep(interval);
         interval *= 2;
         if (interval >= FORCE_SLEEP_MS_MAX) {
             interval = FORCE_SLEEP_MS_MAX;
         }
-    }
-    if (_dirty_shutdown_happening()) {
-        DBGOUT1(<< "joining all cleaner threads up to 100ms...");
-        W_DO(join_cleaners(100));
     }
     DBGOUT2(<< "done force_volume!");
     return RCOK;
@@ -300,9 +279,6 @@ bf_tree_cleaner_slave_thread_t::~bf_tree_cleaner_slave_thread_t()
 
 void bf_tree_cleaner_slave_thread_t::_take_interval()
 {
-    if (_dirty_shutdown_happening()) {
-        return;
-    }
     bool timeouted = _cond_timedwait((uint64_t) _interval_millisec * 1000);
     if (timeouted) {
         // exponentially grow the interval
@@ -394,18 +370,12 @@ void bf_tree_cleaner_slave_thread_t::run()
     }
 
     DBGOUT1(<<"bf_tree_cleaner_slave_thread_t: cleaner- " << _id << " starts up");    
-    while (!_stop_requested && !_parent->_error_happened) {
-        if (_dirty_shutdown_happening()) {
-            ERROUT (<<"the system is going to shutdown dirtily. this cleaner will shutdown without flushing!");
-            break;
-        }
+    while (!_stop_requested) {
         w_rc_t rc = _do_work();
         if (rc.is_error()) {
-            ERROUT (<<"cleaner thread error:" << rc);
-            _parent->_error_happened = true;
-            break;
+            
         }
-        if (!_stop_requested && !_exists_requested_work() && !_parent->_error_happened) {
+        if (!_stop_requested && !_exists_requested_work()) {
             _take_interval();
         }
     }
@@ -436,7 +406,6 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
     volid_t vol, const std::vector<bf_idx> &candidates,
     bool requested_volume, lsndata_t requested_lsn)
 {
-    if (_dirty_shutdown_happening()) return RCOK;
     // TODO this method should separate dirty pages that have dependency and flush them after others.
     DBGOUT1(<<"_clean_volume(cleaner=" << _id << "): volume " << vol);
     if (_sort_buffer_size < candidates.size()) {
@@ -520,22 +489,11 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 w_assert1(_write_buffer[write_buffer_cur].pid.page > 0);
             }
             cb._latch.latch_release();
-            
-            // then, re-calculate the checksum.
-            _write_buffer[write_buffer_cur].update_checksum();
-            // also copy the new checksum to make the original (bufferpool) page consistent.
-            // we can do this out of latch scope because it's never used in race condition.
-            // this is mainly for testcases and such.
-            page_buffer[idx].checksum = _write_buffer[write_buffer_cur].checksum;
 
             if (tobedeleted) {
                 // as it's deleted, no one should be accessing it now. we can do everything without latch
                 DBGOUT2(<< "physically delete a page by buffer pool:" << page_buffer[idx].pid);
-                // this operation requires a xct for logging. we create a ssx for this reason.
-                sys_xct_section_t sxs(true); // ssx to call free_page
-                W_DO (sxs.check_error_on_start());
-                W_DO (_parent->_bufferpool->_volumes[vol]->_volume->free_page(page_buffer[idx].pid));
-                W_DO (sxs.end_sys_xct (RCOK));
+                W_DO(_parent->_bufferpool->_volumes[vol]->_volume->free_page(page_buffer[idx].pid));
                 // drop the page from bufferpool too
                 _parent->_bufferpool->_delete_block(idx);
             } else {
@@ -570,16 +528,12 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
             ++rounds;
             if (rounds > 2) {
                 DBGOUT1(<<"some dirty page seems to have a persistent EX latch. waiting... rounds=" << rounds);
-                if (rounds > 50) {
-                    ERROUT(<<"FATAL! some dirty page keeps EX latch for long time! failed to flush out the bufferpool");
-                    return RC(smlevel_0::eINTERNAL);
-                }
                 g_me()->sleep(rounds > 5 ? 100 : 20);
             }
         }
     }
     if (write_buffer_cur > write_buffer_from) {
-        W_DO(_flush_write_buffer (vol, write_buffer_from, write_buffer_cur - write_buffer_from));
+        _flush_write_buffer (vol, write_buffer_from, write_buffer_cur - write_buffer_from);
         write_buffer_from = 0; // not required, but to make sure
         write_buffer_cur = 0;
     }
@@ -590,7 +544,6 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
 
 w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(volid_t vol, size_t from, size_t consecutive)
 {
-    if (_dirty_shutdown_happening()) return RCOK;
     if (consecutive == 0) {
         return RCOK;
     }
@@ -602,6 +555,9 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(volid_t vol, size_t f
         if (i > from) {
             w_assert1(_write_buffer[i].pid.page == _write_buffer[i - 1].pid.page + 1);
         }
+        // then, calculate checksum
+        _write_buffer[i].update_checksum();
+        
         if (_write_buffer[i].lsn.data() > max_page_lsn) {
             max_page_lsn = _write_buffer[i].lsn.data();
         }
@@ -609,13 +565,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(volid_t vol, size_t f
 
 
     // WAL: ensure that the log is durable to this lsn
-    if (max_page_lsn != lsndata_null) {
-        if (smlevel_0::log == NULL) {
-            ERROUT (<<"cannot flush logs before flushing data. probably dirty shutdown?");
-            return RC(smlevel_0::eINTERNAL);
-        }
-        W_COERCE( smlevel_0::log->flush(lsn_t(max_page_lsn)) );
-    }
+    W_COERCE( smlevel_0::log->flush(lsn_t(max_page_lsn)) );
 
     // then, write them out in one batch
     W_COERCE(_parent->_bufferpool->_volumes[vol]->_volume->write_many_pages(_write_buffer[from].pid.page, _write_buffer + from, consecutive));
@@ -638,7 +588,6 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(volid_t vol, size_t f
 
 w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
 {
-    if (_dirty_shutdown_happening()) return RCOK;
     // copies parent's _requested_lsn and _requested_volumes first.
     lsndata_t requested_lsn = _parent->_requested_lsn; // this is an atomic copy
     if (requested_lsn <= _completed_lsn) {
@@ -664,7 +613,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
     if (_parent->_bufferpool->_dirty_page_count_approximate < 0) {// so, even this can happen.
         _parent->_bufferpool->_dirty_page_count_approximate = 0;
     }
-    bool in_hurry = _parent->_bufferpool->_dirty_page_count_approximate > (block_cnt / 3 * 2);
+   bool in_hurry = _parent->_bufferpool->_dirty_page_count_approximate > (block_cnt / 3 * 2);
     bool in_real_hurry = _parent->_bufferpool->_dirty_page_count_approximate > (block_cnt / 4 * 3);
 
     // list up dirty pages
@@ -699,7 +648,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
             if (didx != 0) {
                 bf_tree_cb_t &dcb(control_blocks[didx]);
                 if (dcb._dirty && dcb._used && dcb._rec_lsn <= cb._dependency_lsn) {
-                    DBGOUT2(<<"_do_work(cleaner=" << _id << "): added dependent dirty page: idx=" << didx << ": pid=" << dcb._pid_vol << "." << dcb._pid_shpid);
+                    DBGOUT2(<<"_do_work(cleaner=" << _id << "): added dependent dirty page:" << didx);
                     _candidates_buffer[vol].push_back (didx);
                 }
             }
