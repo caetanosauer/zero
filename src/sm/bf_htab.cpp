@@ -294,15 +294,17 @@ bfcb_t* bf_core_m::htab::insert(bfcb_t* t)
  */
 static void atomic_max_32(volatile int *target, int arg)
 {
-    int orig=0;
+    int orig = 0;
     int larger = 0;
+    bool cas_success = false;
     do {
-        orig = *target;
+	orig = *target;
         larger = (arg > orig) ? arg : orig;
         // Atomically replace with larger if it hasn't
         // changed in the meantime.
-        orig = (int) atomic_cas_32((volatile uint32_t *)target, orig,  larger);
-    } while (orig != larger);
+
+	cas_success = lintel::unsafe::atomic_compare_exchange_strong(const_cast<int*>(target), &orig,  larger);
+    } while (cas_success);
 }
 
 /*

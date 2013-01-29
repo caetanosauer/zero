@@ -174,6 +174,16 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
     if (!(x)) w_base_t::assert_failed(#x, __FILE__, __LINE__);    \
 } while(0)
 
+#define w_assert0_msg(x, msg)                                           \
+do {                                                                    \
+    if(!(x)) {                                                          \
+        stringstream s;                                                 \
+        s << #x ;                                                       \
+        s << " (detail: " << msg << ")";                                \
+        w_base_t::assert_failed(s.str().c_str(), __FILE__, __LINE__);   \
+ }                                                                      \
+}while(0)                                                               \
+     
 #ifndef W_DEBUG_LEVEL
 #define W_DEBUG_LEVEL 0
 #endif

@@ -1,5 +1,5 @@
 #include "mem_block.h"
-#include "atomic_ops.h"
+#include "Lintel/AtomicCounter.hpp"
 #include <cstdlib>
 #include <algorithm>
 #ifdef __linux

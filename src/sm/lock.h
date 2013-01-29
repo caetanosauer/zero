@@ -77,6 +77,8 @@ public:
 
     rc_t                        unlock_duration(bool read_lock_only = false, lsn_t commit_lsn = lsn_t::null);
 
+    void                        give_permission_to_violate(lsn_t commit_lsn = lsn_t::null);
+
     /*rc_t                        query(
         const lockid_t&              n, 
         lmode_t&                     m, 

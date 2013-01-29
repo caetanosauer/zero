@@ -8,7 +8,6 @@ endmacro(INSTALL_GENERATED_H)
 
 INCLUDE_DIRECTORIES (
   ${CMAKE_SOURCE_DIR}/config
-  ${CMAKE_SOURCE_DIR}/src/atomic_ops
   ${CMAKE_SOURCE_DIR}/src/fc
   ${CMAKE_SOURCE_DIR}/src/common
   ${CMAKE_SOURCE_DIR}/src/sthread
@@ -17,15 +16,15 @@ INCLUDE_DIRECTORIES (
 # to look for generated headers
 INCLUDE_DIRECTORIES (
   ${CMAKE_BINARY_DIR}/config
-  ${CMAKE_BINARY_DIR}/src/atomic_ops
   ${CMAKE_BINARY_DIR}/src/fc
   ${CMAKE_BINARY_DIR}/src/common
   ${CMAKE_BINARY_DIR}/src/sthread
   ${CMAKE_BINARY_DIR}/src/sm
+
+  ${LINTEL_INCLUDE_DIR}
 )
 
 
-add_subdirectory(atomic_ops)
 add_subdirectory(fc)
 add_subdirectory(sthread)
 add_subdirectory(common)

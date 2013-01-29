@@ -35,7 +35,7 @@ int g_deadlock_dreadlock_interval_ms = 10;
 w_rc_t::errcode_t (*g_check_deadlock_impl)(xct_t* xd, lock_request_t *myreq);
 #endif // SWITCH_DEADLOCK_IMPL
 
-xct_lock_info_t::xct_lock_info_t() : _head (NULL), _tail (NULL)
+xct_lock_info_t::xct_lock_info_t() : _head (NULL), _tail (NULL), _permission_to_violate (false)
 {
     _wait_map_obsolete = false;
     init_wait_map(g_me());
@@ -123,6 +123,7 @@ lock_core_m::acquire_lock(
     w_rc_t::errcode_t funcret;
     if (acquire_ret == RET_SUCCESS) {
         // store the lock queue tag we observed. this is for Safe SX-ELR
+        spinlock_read_critical_section cs(&lock->_requests_latch);
         xd->update_read_watermark (lock->x_lock_tag());
         funcret = eOK;
     } else if (acquire_ret == RET_TIMEOUT) {
@@ -145,34 +146,38 @@ lock_core_m::_acquire_lock(
     xct_lock_info_t*       the_xlinfo)
 {
     // is there already my request?
-    lock_queue_entry_t* req = lock->find_request(the_xlinfo);
     smthread_t *thr = g_me();
+    lock_queue_entry_t* req = lock->find_request(the_xlinfo);
     if (req == NULL) {
 #if W_DEBUG_LEVEL>=3
-        for (lock_queue_entry_t* p = lock->_head; p != NULL; p = p->_next) {
-            w_assert3(p->_xct != xd);
-            w_assert3(p->_thr != thr);
-            w_assert3(p->_li != the_xlinfo);
+        {
+            spinlock_read_critical_section cs(&lock->_requests_latch);
+            for (lock_queue_entry_t* p = lock->_head; p != NULL; p = p->_next) {
+                w_assert3(&p->_xct != xd);
+                w_assert3(&p->_thr != thr);
+                w_assert3(&p->_li != the_xlinfo);
+            }
         }
 #endif // W_DEBUG_LEVEL>=3
-        req = new (*lockEntryPool) lock_queue_entry_t(xd, thr, the_xlinfo, NULL, NULL, NL, mode);
+        req = new (*lockEntryPool) lock_queue_entry_t(*xd, *thr, *the_xlinfo, NL, mode);
         if (!check_only) {
             req->_xct_entry = the_xlinfo->link_to_new_request(lock, req);
         }
         lock->append_request(req);
     } else {
-        w_assert1(req->_xct == xd);
-        w_assert1(req->_thr == thr);
-        w_assert1(req->_li == the_xlinfo);
+        w_assert1(&req->_thr == thr);  // safe if true
+        w_assert1(&req->_xct == xd);
+        w_assert1(&req->_li == the_xlinfo);
         w_assert1(req->_xct_entry != NULL);
         prev_mode = req->_granted_mode;
+        spinlock_write_critical_section cs(&lock->_requests_latch);
         req->_requested_mode = supr[mode][req->_granted_mode];
         w_assert1(req->_requested_mode != LL);
         if (req->_requested_mode == req->_granted_mode) {
             return RET_SUCCESS; // already had the desired lock mode!
         }
     }
-    int loop_ret = _acquire_lock_loop(thr, lock, req, check_only, timeout, the_xlinfo);
+    int loop_ret = _acquire_lock_loop(xd, thr, lock, req, check_only, timeout, the_xlinfo);
     
     the_xlinfo->init_wait_map(thr);
     // discard (or downgrade) the failed request. check_only does it even on success.
@@ -180,6 +185,7 @@ lock_core_m::_acquire_lock(
         if (req->_granted_mode != NL) {
             // We deny the upgrade but leave the 
             // lock request in place with its former status.
+            spinlock_write_critical_section cs(&lock->_requests_latch);
             req->_requested_mode = req->_granted_mode;
         } else {
             // Remove the request
@@ -192,6 +198,7 @@ lock_core_m::_acquire_lock(
 
 int
 lock_core_m::_acquire_lock_loop(
+    xct_t*                 xd,
     smthread_t*            thr,
     lock_queue_t*          lock,
     lock_queue_entry_t*    req,
@@ -212,6 +219,7 @@ lock_core_m::_acquire_lock_loop(
     // loop again and again until decisive failure or success
     lock_queue_t::check_grant_result chk_result;
     while (true) {
+        chk_result.observed = lsn_t::null;
         lock->check_can_grant(req, chk_result);
         DBGOUT5(<<"check done:" << chk_result.can_be_granted << ","
             << chk_result.deadlock_detected << ","
@@ -222,10 +230,17 @@ lock_core_m::_acquire_lock_loop(
         
         if (chk_result.can_be_granted) {
             if (check_only) {
+                if (chk_result.observed.valid())
+                    // for controlled lock violation mode:
+                    xd->update_read_watermark (chk_result.observed);
                 return RET_SUCCESS;
             }
-            bool granted = lock->grant_request(req);
+            lsn_t observed;
+            bool granted = lock->grant_request(req, observed);
             if (granted) {
+                if (observed.valid())
+                    // for controlled lock violation mode:
+                    xd->update_read_watermark (observed);
                 return RET_SUCCESS;
             } else {
                 // must be an extremely unlucky case. try again
@@ -283,17 +298,21 @@ void lock_core_m::release_lock(
 {
     w_assert1(lock);
     w_assert1(req);
+    w_assert1(&req->_thr == g_me());  // safe if true
     
-    // update bucket tag if this is a part of SX-ELR.
+    // update lock tag if this is a part of SX-ELR.
     if (commit_lsn.valid()) {
-        if (req->_granted_mode == EX || req->_granted_mode == XN || req->_granted_mode == XS) {
+        lmode_t m = req->_granted_mode;
+        if (m == XN || m == XS || m == XU || m == XX
+            || m == NX || m == SX || m == UX) {
+            spinlock_write_critical_section cs(&lock->_requests_latch);
             lock->update_x_lock_tag(commit_lsn);
         }
     }
     lock->detach_request(req);
     //copy these before destroying
     xct_lock_entry_t *xct_entry = req->_xct_entry;
-    xct_lock_info_t *li = req->_li;
+    xct_lock_info_t *li = &req->_li;
     lmode_t released_granted = req->_granted_mode;
     lmode_t released_requested = req->_requested_mode;
     lockEntryPool->destroy_object(req);
@@ -317,12 +336,12 @@ void lock_queue_t::wakeup_waiters(lmode_t released_granted, lmode_t released_req
         // spins will suspect this waiter's bitmap might cause false positives.
         // this is only to reduce false positives. not required for consistency.
         // @see xct_lock_info_t::_wait_map_obsolete
-        spinlock_read_critical_section cs(&_requests_lock);
-        // CRITICAL_SECTION(cs, _requests_lock.read_lock());
+        spinlock_read_critical_section cs(&_requests_latch);
+        // CRITICAL_SECTION(cs, _requests_latch.read_lock());
         for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
             if (p->_granted_mode != p->_requested_mode
                 && !lock_base_t::compat[p->_requested_mode][released_granted]) {
-                p->_li->set_wait_map_obsolete(true);
+                p->_li.set_wait_map_obsolete(true);
             }
         }
     }
@@ -332,12 +351,12 @@ void lock_queue_t::wakeup_waiters(lmode_t released_granted, lmode_t released_req
     smthread_t *targets[MAX_WAKEUP];
     int target_count = 0;
     {
-        spinlock_read_critical_section cs(&_requests_lock);
-        // CRITICAL_SECTION(cs, _requests_lock.read_lock());
+        spinlock_read_critical_section cs(&_requests_latch);
+        // CRITICAL_SECTION(cs, _requests_latch.read_lock());
         for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
             if (p->_granted_mode != p->_requested_mode
                 && !lock_base_t::compat[p->_requested_mode][released_requested]) {
-                targets[target_count] = p->_thr;
+                targets[target_count] = &p->_thr;
                 ++target_count;
                 if (target_count >= MAX_WAKEUP) {
                     break;
@@ -360,19 +379,23 @@ lock_core_m::release_duration(
     FUNC(lock_core_m::release_duration);
     DBGOUT4(<<"lock_core_m::release_duration "
             << " tid=" << the_xlinfo->tid()
-                << " read_lock_only=" << read_lock_only);
+            << " read_lock_only=" << read_lock_only);
 
     if (read_lock_only) {
         // releases only read locks
         for (xct_lock_entry_t* p = the_xlinfo->_tail; p != NULL;) {
             xct_lock_entry_t *prev = p->prev; // get this first. release_lock will remove current p
+            w_assert1(&p->entry->_thr == g_me());  // safe if true
             lmode_t m = p->entry->_granted_mode;
-            if (m == IS || m == SH || m == SN || m == NS) {
+            if (m == IS || m == SN || m == NS || m == SS
+                || m == UN || m == NU || m == UU
+                || m == SU || m == US) {
                 release_lock(p->queue, p->entry, commit_lsn);
             }
             p = prev;
         }
-        // we don't "downgrade" SX/XS to SN/NS for laziness. see ticket:101
+        // we don't "downgrade" [SU]X/X[SU] to NX/XN for laziness.  see ticket:101
+        // likewise, we don't "downgrade" SIX to IX for laziness
     } else {
         //backwards:
         while (the_xlinfo->_tail != NULL)  {
@@ -391,19 +414,19 @@ void lock_queue_t::deallocate_lock_queue(lock_queue_t* obj) {
 }
 
 lock_queue_entry_t* lock_queue_t::find_request (const xct_lock_info_t* myli) {
-    spinlock_read_critical_section cs(&_requests_lock);
-    // CRITICAL_SECTION(cs, _requests_lock.read_lock()); // read lock suffices
+    spinlock_read_critical_section cs(&_requests_latch);
+    // CRITICAL_SECTION(cs, _requests_latch.read_lock()); // read lock suffices
     for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
-        if (p->_li == myli) {
+        if (&p->_li == myli) {
             return p;
         }
     }
     return NULL;
 }
 void lock_queue_t::append_request (lock_queue_entry_t* myreq) {
+    spinlock_write_critical_section cs(&_requests_latch);
+    // CRITICAL_SECTION(cs, _requests_latch.write_lock());
     w_assert1(myreq->_granted_mode == smlevel_0::NL);
-    spinlock_write_critical_section cs(&_requests_lock);
-    // CRITICAL_SECTION(cs, _requests_lock.write_lock());
     if (_head == NULL) {
         _head = myreq;
         _tail = myreq;
@@ -415,6 +438,8 @@ void lock_queue_t::append_request (lock_queue_entry_t* myreq) {
 }
 
 void lock_queue_t::detach_request (lock_queue_entry_t* myreq) {
+    spinlock_write_critical_section cs(&_requests_latch);
+    // CRITICAL_SECTION(cs, _requests_latch.write_lock());
 #if W_DEBUG_LEVEL>=3
     bool found = false;
     for (lock_queue_entry_t *p = _head; p != NULL; p = p->_next) {
@@ -426,8 +451,6 @@ void lock_queue_t::detach_request (lock_queue_entry_t* myreq) {
     w_assert3(found);
 #endif //W_DEBUG_LEVEL>=3
 
-    spinlock_write_critical_section cs(&_requests_lock);
-    // CRITICAL_SECTION(cs, _requests_lock.write_lock());
     if (myreq->_prev == NULL) {
         w_assert1(_head == myreq);
         _head = myreq->_next;
@@ -451,9 +474,13 @@ void lock_queue_t::detach_request (lock_queue_entry_t* myreq) {
     }
 }
 
-bool lock_queue_t::grant_request (lock_queue_entry_t* myreq) {
-    spinlock_write_critical_section cs(&_requests_lock);
-    // CRITICAL_SECTION(cs, _requests_lock.write_lock());
+bool lock_queue_t::grant_request (lock_queue_entry_t* myreq, lsn_t& observed) {
+    spinlock_write_critical_section cs(&_requests_latch);
+    // CRITICAL_SECTION(cs, _requests_latch.write_lock());
+
+    // assume here myreq is a member of our queue and hence covered by
+    // _request_latch
+    w_assert1(&myreq->_thr == g_me());
     bool precedes_me = true;
     lmode_t m = myreq->_requested_mode;
     // check it again.
@@ -462,12 +489,7 @@ bool lock_queue_t::grant_request (lock_queue_entry_t* myreq) {
             precedes_me = false;
             continue;
         }
-        bool compatible;
-        if (precedes_me) {
-            compatible = lock_base_t::compat[p->_requested_mode][m];
-        } else {
-            compatible = lock_base_t::compat[p->_granted_mode][m];
-        }
+        bool compatible = _check_compatible(m, p, precedes_me, observed);
         if (!compatible) {
             return false;
         }
@@ -479,26 +501,25 @@ bool lock_queue_t::grant_request (lock_queue_entry_t* myreq) {
 
     
 void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_result &result) {
-    const atomic_thread_map_t &myfingerprint = myreq->_thr->get_fingerprint_map();
+    spinlock_read_critical_section cs(&_requests_latch);
+    // CRITICAL_SECTION(cs, _requests_latch.read_lock()); // read lock suffices
+
+    // assume here myreq is a member of our queue and hence covered by
+    // _request_latch
+    const atomic_thread_map_t &myfingerprint = myreq->_thr.get_fingerprint_map();
     result.init(myfingerprint);
-    xct_t* myxd = myreq->_xct;
+    xct_t* myxd = &myreq->_xct;
     bool precedes_me = true;
     lmode_t m = myreq->_requested_mode;
-    spinlock_read_critical_section cs(&_requests_lock);
-    // CRITICAL_SECTION(cs, _requests_lock.read_lock()); // read lock suffices
+
     for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
         if (p == myreq) {
             precedes_me = false;
             continue;
         }
-        w_assert1(p->_li != myreq->_li);
-        w_assert1(p->_thr != myreq->_thr);
-        bool compatible;
-        if (precedes_me) {
-            compatible = lock_base_t::compat[p->_requested_mode][m];
-        } else {
-            compatible = lock_base_t::compat[p->_granted_mode][m];
-        }
+        w_assert1(&p->_li != &myreq->_li);
+        w_assert1(&p->_thr != &myreq->_thr);
+        bool compatible = _check_compatible(m, p, precedes_me, result.observed);
         if (!compatible) {
             DBGOUT5(<<"incompatible! (pre=" << precedes_me << ")."
                 << ", I=" << myfingerprint
@@ -507,8 +528,8 @@ void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_resul
                 << ", his:gr=" << lock_base_t::mode_str[p->_granted_mode]
                 << "(req=" << lock_base_t::mode_str[p->_requested_mode] << ")");
             result.can_be_granted = false;
-            xct_t *theirxd = p->_xct;
-            xct_lock_info_t *theirli = p->_li;
+            xct_t *theirxd = &p->_xct;
+            xct_lock_info_t *theirli = &p->_li;
             if (!theirli->is_wait_map_obsolete()) {
                 const atomic_thread_map_t &other = theirli->get_wait_map();
                 bool deadlock_detected = other.contains(myfingerprint);
@@ -541,7 +562,7 @@ void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_resul
 
                     if (killhim) {
                         DBGOUT3(<<"kill him");
-                        result.deadlock_other_victim = p->_thr;
+                        result.deadlock_other_victim = &p->_thr;
                     } else {
                         DBGOUT3(<<"kill myself");
                         result.deadlock_myself_should_die = true;
@@ -553,6 +574,7 @@ void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_resul
             }
         }
     }
+    w_assert1(!precedes_me);
 }
 
 

@@ -4,7 +4,7 @@ INCLUDE_DIRECTORIES (
 
 include(../testutil.cmake)
 
-set (the_libraries fc atomic_ops gtest_main)
+set (the_libraries fc gtest_main)
 
 ENABLE_TESTING()
 
@@ -17,7 +17,7 @@ X_ADD_TESTCASE(test_hash "${the_libraries}")
 X_ADD_TESTCASE(test_heap "${the_libraries}")
 X_ADD_TESTCASE(test_key_t gtest_main)
 X_ADD_TESTCASE(test_list "${the_libraries}")
-X_ADD_TESTCASE(test_memblock "${the_libraries}")
+X_ADD_TESTCASE(test_memblock "${the_libraries}") #FIXME fails on ubuntu 12 due to limitations of gtest with expected crashes in MT environment
 X_ADD_TESTCASE(test_ntime "${the_libraries}")
 X_ADD_TESTCASE(test_rand "${the_libraries}")
 X_ADD_TESTCASE(test_random "${the_libraries}")

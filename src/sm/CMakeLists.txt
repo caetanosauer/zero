@@ -57,7 +57,7 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/vtable_xct.cpp)
 
 add_library(sm STATIC ${sm_STAT_SRCS})
-target_link_libraries(sm fc sthread common atomic_ops)
+target_link_libraries(sm fc sthread common)
 
 set (E_ERROR_GENFILES_H e_errmsg_gen.h e_einfo_gen.h e_error_def_gen.h e_error_enum_gen.h e_einfo_bakw_gen.h)
 foreach(_file ${E_ERROR_GENFILES_H})

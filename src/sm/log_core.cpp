@@ -274,7 +274,7 @@ log_core::scavenge(const lsn_t &min_rec_lsn, const lsn_t& min_xct_lsn)
         fileoff_t max_chkpt = max_chkpt_size();
         while(!verify_chkpt_reservation() && reclaimed > 0) {
             long skimmed = std::min(max_chkpt, reclaimed);
-            atomic_add_long_delta(_space_rsvd_for_chkpt, skimmed); // use templated function
+            lintel::unsafe::atomic_fetch_add(const_cast<int64_t*>(&_space_rsvd_for_chkpt), skimmed);
             reclaimed -= skimmed;
         }
         release_space(reclaimed);
@@ -1289,7 +1289,9 @@ log_core::log_core(
         if (!parse_ok && ! (strcmp(name, ".") == 0 || 
                                 strcmp(name, "..") == 0)) {
             smlevel_0::errlog->clog << fatal_prio
-                << "log_core: cannot parse " << name << flushl;
+                                    << "log_core: cannot parse filename \"" 
+                                    << name << "\".  Maybe a data volume in the logging directory?"
+                                    << flushl;
             W_FATAL(fcINTERNAL);
         }
     }
@@ -1884,7 +1886,7 @@ rc_t log_core::insert(logrec_t &rec, lsn_t* rlsn)
             {
                 *&_waiting_for_space = true;
                 // SDM 3A says this drains the buffer:
-                membar_exit();
+                lintel::atomic_thread_fence(lintel::memory_order_release);
 
                 // The only thread that should be waiting 
                 // on the _flush_cond is the log flush daemon.
@@ -1920,7 +1922,7 @@ rc_t log_core::insert_multiple(size_t count, logrec_t** rs, lsn_t** ret_lsns)
             {
                 *&_waiting_for_space = true;
                 // SDM 3A says this drains the buffer:
-                membar_exit();
+                lintel::atomic_thread_fence(lintel::memory_order_release);
 
                 // The only thread that should be waiting 
                 // on the _flush_cond is the log flush daemon.
@@ -2244,7 +2246,7 @@ rc_t log_core::flush(const lsn_t &to_lsn, bool block, bool signal, bool *ret_flu
         if (!block) {
             *&_waiting_for_flush = true;
             // SDM 3A says this drains the buffer:
-            membar_exit();
+            lintel::atomic_thread_fence(lintel::memory_order_release);
             if (signal) {
                 DO_PTHREAD(pthread_cond_signal(&_flush_cond));
             }
@@ -2254,7 +2256,7 @@ rc_t log_core::flush(const lsn_t &to_lsn, bool block, bool signal, bool *ret_flu
             while(lsn >= *&_durable_lsn) {
                 *&_waiting_for_flush = true;
                 // SDM 3A says this drains the buffer:
-                membar_exit();
+                lintel::atomic_thread_fence(lintel::memory_order_release);
                 // The only thread that should be waiting 
                 // on the _flush_cond is the log flush daemon.
                 DO_PTHREAD(pthread_cond_signal(&_flush_cond));
@@ -2300,7 +2302,7 @@ void log_core::flush_daemon()
 
                 // SDM 3A says this drains the buffer:
                 // so it means we won't read from our write buffer (below.)
-                membar_exit(); 
+                 lintel::atomic_thread_fence(lintel::memory_order_release);
                 DO_PTHREAD(pthread_cond_broadcast(&_space_cond)); 
                 // wake up anyone waiting on log flush
                 
@@ -2446,7 +2448,7 @@ lsn_t log_core::flush_daemon_work(lsn_t old_mark)
     _start = new_start;
 
     // SDM 3A says this drains the buffer:
-    membar_exit();
+    lintel::atomic_thread_fence(lintel::memory_order_release);
 
     return end_lsn;
 }
@@ -2638,7 +2640,7 @@ void log_core::release_space(fileoff_t amt)
         DO_PTHREAD(pthread_mutex_unlock(&_space_lock));
     }
     
-    atomic_add_long_delta(_space_available, amt); // use templated function
+    lintel::unsafe::atomic_fetch_add(const_cast<int64_t*>(&_space_available), amt);
 }
 
 void 

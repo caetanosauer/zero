@@ -52,7 +52,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #ifndef ATOMIC_CONTAINER_H
 #define ATOMIC_CONTAINER_H
 
-#include "atomic_templates.h"
+#include "Lintel/AtomicCounter.hpp"
 
 // for placement new support, which users need
 #include <new>
@@ -106,12 +106,9 @@ public:
         while(pointer(old_value)) {
             // swap if the head's pointer and version are unchanged
             pvn new_value = next_pointer(old_value);
-            void* cur_value = atomic_cas_ptr(&_active, old_value.v, new_value.v);
-            if(old_value.v == cur_value)
-                break;
-
-            // try again...
-            old_value.v = cur_value;
+	    if (lintel::unsafe::atomic_compare_exchange_strong((void**)&_active, &old_value.v, new_value.v)) {
+		break;
+	    }
         }
 
         // slow alloc?
@@ -128,14 +125,11 @@ public:
         pvn old_value = { _backup };
         while(1) {
             u.p->next = old_value.p;
-            membar_producer();
-            void* cur_value = atomic_cas_ptr(&_backup, old_value.v, u.v);
-            if(old_value.v == cur_value)
-                break;
-
-            // try again...
-            old_value.v = cur_value;
-        }
+            lintel::atomic_thread_fence(lintel::memory_order_release);
+	    if (lintel::unsafe::atomic_compare_exchange_strong((void**)&_backup, &old_value.v, u.v)) {
+		break;
+	    }
+	}
     }
     /// Only for debugging.
     offset_typ offset() const { return  _offset; } 
@@ -204,10 +198,10 @@ private:
         while(!mine) {
             while(*&_locked && !pointer(active)) active.p = *&_active;
             if(pointer(active)) return false;
-            mine = !atomic_swap_32(&_locked, true);
+            mine = !lintel::unsafe::atomic_exchange(const_cast<unsigned*>(&_locked), true);
         }
         if(mine) {
-            membar_enter();
+            lintel::atomic_thread_fence(lintel::memory_order_acquire);
             active.p = *&_active;
             if(!pointer(active))
                 return true;
@@ -218,7 +212,7 @@ private:
     }
     ///Release the lock.
     void release_lock() {
-        membar_exit();
+        lintel::atomic_thread_fence(lintel::memory_order_release);
         _locked = false;
     }
     
@@ -232,7 +226,7 @@ private:
            not change to non-null on us. The _backup list may
            continue to grow so we atomically cut it loose
         */
-        vpn rval = { atomic_swap_ptr(&_backup, NULL) };
+        vpn rval = { lintel::unsafe::atomic_exchange(const_cast<ptr**>(&_backup), (ptr*)NULL) };
         if(rval.p) {
             // keep head for ourselves, rest becomes new _active
             pvn old_list = { _active };

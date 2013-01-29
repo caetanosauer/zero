@@ -1315,7 +1315,7 @@ int
 xct_t::attach_update_thread()
 {
     w_assert2(_core->_updating_operations >= 0);
-    int res = atomic_inc_nv(_core->_updating_operations);
+    int res = lintel::unsafe::atomic_fetch_add(const_cast<int*>(&_core->_updating_operations),1)+1;
     me()->set_is_update_thread(true); 
     return res;
 }
@@ -1323,7 +1323,7 @@ void
 xct_t::detach_update_thread()
 {
     me()->set_is_update_thread(false); 
-    atomic_dec(_core->_updating_operations);
+    lintel::unsafe::atomic_fetch_sub(const_cast<int*>(&_core->_updating_operations), 1);
     w_assert2(_core->_updating_operations >= 0);
 }
 
@@ -1682,7 +1682,7 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
         w_assert1(_core->_state == xct_active || _core->_state == xct_prepared);
     };
 
-    w_assert1(1 == atomic_inc_nv(_core->_xct_ended));
+    w_assert1(0 == lintel::unsafe::atomic_fetch_add(const_cast<int*>(&_core->_xct_ended),1));
 
 //    W_DO( ConvertAllLoadStoresToRegularStores() );
 
@@ -1773,10 +1773,12 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
         if(individual && !is_sys_xct() && ! (flags & xct_t::t_chain)) {
             W_DO(commit_free_locks());
 
-            // however, to make sure the ELR for X-lock is okay (ELR for S-lock is anyway okay)
-            // we need to make sure this read-only xct (no-log=read-only) didn't read anything
-            // not yet durable. Thus,
-            if (_elr_mode == elr_sx && _query_concurrency != t_cc_none && _query_concurrency != t_cc_bad && _read_watermark.valid()) {
+            // however, to make sure the ELR for X-lock and CLV is
+            // okay (ELR for S-lock is anyway okay) we need to make
+            // sure this read-only xct (no-log=read-only) didn't read
+            // anything not yet durable. Thus,
+            if ((_elr_mode==elr_sx || _elr_mode==elr_clv) && 
+                _query_concurrency != t_cc_none && _query_concurrency != t_cc_bad && _read_watermark.valid()) {
                 // to avoid infinite sleep because of dirty pages changed by aborted xct,
                 // we really output a log and flush it
                 bool flushed = false;
@@ -1883,7 +1885,7 @@ rc_t xct_t::early_lock_release() {
         switch (_elr_mode) {
             case elr_none: break;
             case elr_s:
-                // only S locks
+                // release only S and U locks
                 W_DO(commit_free_locks(true));
                 break;
             case elr_sx:
@@ -1891,6 +1893,10 @@ rc_t xct_t::early_lock_release() {
                 // update tag for safe SX-ELR with _last_lsn which should be the commit lsn
                 // (we should have called log_xct_end right before this)
                 W_DO(commit_free_locks(false, _last_lsn));
+                break;
+            case elr_clv:
+                // release no locks, but give permission to violate ours:
+                lm->give_permission_to_violate(_last_lsn);
                 break;
             default:
                 w_assert1(false); // wtf??
@@ -1921,7 +1927,7 @@ xct_t::_abort()
             || _core->_state == xct_freeing_space /* if it got an error in commit*/
             );
     if(_core->_state != xct_committing && _core->_state != xct_freeing_space) {
-        w_assert1(1 == atomic_inc_nv(_core->_xct_ended));
+        w_assert1(0 == lintel::unsafe::atomic_fetch_add(const_cast<int*>(&_core->_xct_ended),1));
     }
 
     // first, empty the wait map because no chance this xct can cause deadlock any more.
@@ -3332,9 +3338,11 @@ xct_t::ConvertAllLoadStoresToRegularStores()
 
 #if X_LOG_COMMENT_ON
     {
-        static int volatile uniq=0;
-        static int volatile last_uniq=0;
-        int    nv =  atomic_inc_nv(uniq);
+        static int uniq=0;
+        static int last_uniq=0;
+	
+        // int    nv =  atomic_inc_nv(uniq);
+        int nv =  lintel::unsafe::atomic_fetch_add(&uniq, 1);
         //Even if someone else slips in here, the
         //values should never match. 
         w_assert1(last_uniq != nv);
@@ -3405,8 +3413,8 @@ xct_t::attach_thread()
     CRITICAL_SECTION(xctstructure, *this);
 
     w_assert2(is_1thread_xct_mutex_mine());
-    int nt=atomic_inc_nv(_core->_threads_attached);
-    if(nt > 1) {
+    int nt=lintel::unsafe::atomic_fetch_add(const_cast<int*>(&_core->_threads_attached),1);
+    if(nt > 0) {
         INC_TSTAT(mpl_attach_cnt);
     }
     w_assert2(_core->_threads_attached >=0);
@@ -3428,7 +3436,7 @@ xct_t::detach_thread()
     CRITICAL_SECTION(xctstructure, *this);
     w_assert3(is_1thread_xct_mutex_mine());
 
-    atomic_dec(_core->_threads_attached);
+    lintel::unsafe::atomic_fetch_sub(const_cast<int*>(&_core->_threads_attached), 1);
     w_assert2(_core->_threads_attached >=0);
     me()->no_xct(this);
 }

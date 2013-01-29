@@ -40,17 +40,19 @@ xct_lock_info_t::dump_locks(ostream &out) const
  *  xct_lock_info_t output operator
  *
  *********************************************************************/
+#if 1
+ostream& operator<<(ostream &o, const xct_lock_info_t &) { return o; }
+#else
 ostream &            
 operator<<(ostream &o, const xct_lock_info_t &x)
 {
-    /*
         lock_request_t *waiting = x.waiting_request();
         if (waiting) {
                 o << " wait: " << *waiting;
         }
-        */
         return o;
 }
+#endif
 
 /*********************************************************************
  *
@@ -59,13 +61,17 @@ operator<<(ostream &o, const xct_lock_info_t &x)
  *  Dump the lock hash table (for debugging).
  *
  *********************************************************************/
+#if 1
+void lock_core_m::dump(ostream &) {}
+#else
+/*
+// disabled because there's no safe way to iterate over the lock table
+// but you can use it in a debugger.  It is used by smsh in
+// single-thread cases.
+*/
 void
 lock_core_m::dump(ostream & o)
 {
-    /*
-    // disabled because there's no safe way to iterate over the lock table
-    // but you can use it in a debugger.  It is used by smsh in
-    // single-thread cases.
     o << "WARNING: lock_core_m::dump is not thread-safe:" << endl;
     o << "lock_core_m:"
       << " _htabsz=" << _htabsz
@@ -101,8 +107,8 @@ lock_core_m::dump(ostream & o)
         }
         RELEASE_BUCKET_MUTEX(h);
     }
-    */
 }
+#endif
 
 
 void lock_core_m::dump()
@@ -129,6 +135,8 @@ lock_core_m::assert_empty() const
 }
 
 
+#if 0
+//* This code is unused and UNSAFE
 void
 lock_core_m::_dump(ostream &o)
 {
@@ -142,15 +150,16 @@ lock_core_m::_dump(ostream &o)
     }
     o << "--end of lock table--" << endl;
 }
+#endif
 
 ostream& 
 operator<<(ostream& o, const lock_queue_entry_t& r)
 {
-    o << "xct:" << r._li->tid()
+    o << "xct:" << r._li.tid()
       << " granted-mode:" << lock_base_t::mode_str[r._granted_mode]
       << " req-mode:" << lock_base_t::mode_str[r._requested_mode]
-      << " thr:" << r._thr->get_fingerprint_map()
-      << " wait-map:" << r._li->get_wait_map();
+      << " thr:" << r._thr.get_fingerprint_map()
+      << " wait-map:" << r._li.get_wait_map();
 
     return o;
 }

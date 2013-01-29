@@ -112,6 +112,9 @@ private:
      */
     bool                        _requested_volumes[MAX_VOL_COUNT];
 
+    /** whether any unexpected error happened in some cleaner. */
+    bool                        _error_happened;
+
     /**
      * The LSN up to which all cleaners are requested to flush out all dirty pages.
      * Used while checkpointing.

@@ -662,7 +662,7 @@ log_m::_read_master(
     return RCOK;
 }
 
-fileoff_t log_m::take_space(fileoff_t volatile* ptr, int amt) 
+fileoff_t log_m::take_space(fileoff_t * ptr, int amt) 
 {
     fileoff_t ov = *ptr;
 #if W_DEBUG_LEVEL > 0
@@ -671,11 +671,9 @@ fileoff_t log_m::take_space(fileoff_t volatile* ptr, int amt)
     while(1) {
         if(ov < amt)
             return 0;
-        fileoff_t nv = ov - amt;
-        fileoff_t cv = atomic_cas_64((uint64_t*)ptr, ov, nv);
-        if(ov == cv)
-            return amt;
-        ov = cv;
+	fileoff_t nv = ov - amt;
+	if (lintel::unsafe::atomic_compare_exchange_strong(const_cast<int64_t*>(ptr), &ov, nv))
+	    return amt;
     }
 }
 

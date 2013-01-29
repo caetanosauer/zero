@@ -98,6 +98,11 @@ struct bf_tree_cb_t {
     
     fill32                      _fill32;        // +4 -> 32
 
+    /** Whether this page is swizzled from the parent. */
+    bool                        _swizzled;      // +1 -> 29
+    fill8                       _fill8;         // +1 -> 30
+    fill16                      _fill16;        // +2 -> 32
+
     /** if not zero, this page must be written out after this dependency page. */
     bf_idx volatile             _dependency_idx;// +4 -> 36
     

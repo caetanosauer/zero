@@ -450,6 +450,13 @@ private:
     bool   _compare_dependency_lsn(const bf_tree_cb_t& cb, const bf_tree_cb_t &dependency_cb) const;
 
     void _swizzle_child_pointer(page_s* parent, shpid_t* pointer_addr);
+
+
+    // these are used only in the mainmemory-db experiment
+    w_rc_t _install_volume_mainmemorydb(vol_t* volume);
+    w_rc_t _fix_nonswizzled_mainmemorydb(page_s* parent, page_s*& page, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page);
+
+
 private:
     /** count of blocks (pages) in this bufferpool. */
     bf_idx              _block_cnt;
