@@ -662,7 +662,7 @@ log_m::_read_master(
     return RCOK;
 }
 
-fileoff_t log_m::take_space(fileoff_t * ptr, int amt) 
+fileoff_t log_m::take_space(fileoff_t volatile* ptr, int amt) 
 {
     fileoff_t ov = *ptr;
 #if W_DEBUG_LEVEL > 0

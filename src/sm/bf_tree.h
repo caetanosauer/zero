@@ -36,7 +36,7 @@ inline uint64_t bf_key(const lpid_t &pid) {
 
 
 // A flag for the experiment to simulate a bufferpool without swizzling.
-// "_enable_swizzling" in bf_tree_m merely only turns on/off swizzling of non-root pages.
+// "_enable_swizzling" in bf_tree_m merely turns on/off swizzling of non-root pages.
 // to make it completely off, define this flag.
 // this's a compile-time flag because this simulation is just a redundant code (except the experiment)
 // which should go away for best performance.
@@ -51,10 +51,34 @@ inline uint64_t bf_key(const lpid_t &pid) {
 // allow avoiding swizzling. this is also just for an experiment.
 // #define PAUSE_SWIZZLING_ON
 
+// A flag for the experiment to simulate a bufferpool without eviction.
+// All pages are fixed and never evicted, assuming a bufferpool larger than data.
+// Also, this flag assumes there is only one volume.
+// #define SIMULATE_MAINMEMORYDB
+
+// A flag whether the bufferpool maintains a parent pointer in each buffer frame.
+// Maintaining a parent pointer is tricky especially when several pages change
+// their parent at the same time (e.g., page split/merge/rebalance in a node page).
+// Without this flag, we simply don't have parent pointer, thus do a hierarchical
+// walking to find a pge to evict.
+// #define BP_MAINTAIN_PARNET_PTR
+
 #ifndef PAUSE_SWIZZLING_ON
 const bool _bf_pause_swizzling = false; // compiler will strip this out from if clauses. so, no overhead.
 #endif // PAUSE_SWIZZLING_ON    
 
+/**
+ * recursive clockhand's maximum depth used while choosing a page to unswizzle.
+ * To make this depth reasonably short, we never swizzle foster-child pointer.
+ * Foster relationship is tentative and short-lived, so it doesn't need the performance boost in BP.
+ */
+const uint16_t MAX_SWIZZLE_CLOCKHAND_DEPTH = 10;
+
+/**
+ * When unswizzling is triggered, _about_ this number of frames will be unswizzled at once.
+ * The smaller this number, the more frequent you need to trigger unswizzling.
+ */
+const uint32_t UNSWIZZLE_BATCH_SIZE = 1000;
 
 /**
  * \Brief The new buffer manager that exploits the tree structure of indexes.
@@ -245,6 +269,7 @@ public:
      */
     w_rc_t uninstall_volume (volid_t vid);
 
+#ifdef BP_MAINTAIN_PARNET_PTR
     /**
      * Whenever the parent of a page is changed (adoption or de-adoption),
      * this method must be called to switch it in bufferpool.
@@ -252,6 +277,7 @@ public:
      * don't go away while this switch (i.e., latch them).
      */
     void switch_parent (page_s* page, page_s* new_parent);
+#endif // BP_MAINTAIN_PARNET_PTR
     
     /**
      * Swizzle a child pointer in the parent page to speed-up accesses on the child.
@@ -382,6 +408,7 @@ private:
     /** if the shpid is a swizzled pointer, convert it to the original page id. */
     void   _convert_to_pageid (shpid_t* shpid) const;
     
+#ifdef BP_MAINTAIN_PARNET_PTR
     /**
      * Newly adds the speficied block to the head of swizzled-pages LRU.
      * This page must be a swizzled page that can be unswizzled.
@@ -400,6 +427,7 @@ private:
      * If the page is worth swizzling, even once in 100 would be very frequent.
      */
     void   _update_swizzled_lru (bf_idx idx);
+#endif // BP_MAINTAIN_PARNET_PTR
 
     /** finds a free block and returns its index. if free list is empty, it evicts some page. */
     w_rc_t _grab_free_block(bf_idx& ret);
@@ -414,6 +442,51 @@ private:
     
     /** returns if the idx is in the valid range and also the block is used. for assertion. */
     bool   _is_active_idx (bf_idx idx) const;
+
+    /**
+     * \brief Looks for some buffered frames that are swizzled and can be unswizzled, then
+     * unswizzles UNSWIZZLE_BATCH_SIZE frames to make room for eviction.
+     * \details
+     * Below are the contracts of this method. In short, it's supposed to be very safe but not that precise.
+     * 
+     * 1. Restarts tree traversal from the clockhand place to make sure it's _LARGELY_ fair.
+     *   It might have some hiccups like skipping or double-visiting a few pages, but it's not that often.
+     * 2. It's very highly likely that this method unswizzles at least a bunch of frames.
+     *   But, there is a slight chance that you need to call this again to make room for eviction.
+     * 3. Absolutely no deadlocks nor waits. If this method finds that a frame is being write-locked
+     *   by someone, it simply skips that frame. All locks by this method is conditional and for very short-time.
+     * 4. Absolutely multi-thread safe. Again, it might have some hiccups on fairness because of
+     *   multi-threading, but concurrent threads calling this method at the same time will cause no severe problems.
+     * 5. Lastly, this method isn't supposed to be super-fast (if it has to be, something about unswizzling policy is wrong..),
+     *   but should be okay to call it for every millisec or so.
+     * 
+     * @param[in] urgent whether this method thoroughly traverses even if there seems few swizzled pages.
+     * @see UNSWIZZLE_BATCH_SIZE
+     */
+    void   _trigger_unswizzling(bool urgent = false);
+
+    void   _dump_swizzle_clockhand() const;
+
+    /** called from _trigger_unswizzling(). traverses the given volume. */
+    void   _unswizzle_traverse_volume(uint32_t &unswizzled_frames, volid_t vol);
+    /** called from _trigger_unswizzling(). traverses the given store. */
+    void   _unswizzle_traverse_store(uint32_t &unswizzled_frames, volid_t vol, snum_t store);
+    /** called from _trigger_unswizzling(). traverses the given interemediate node. */
+    void   _unswizzle_traverse_node(uint32_t &unswizzled_frames, volid_t vol, snum_t store, bf_idx node_idx, uint16_t cur_clockhand_depth);
+
+#ifdef BP_MAINTAIN_PARNET_PTR
+    /** implementation of _trigger_unswizzling assuming parent pointer in each bufferpool frame. */
+    void   _unswizzle_with_parent_pointer();
+#endif // BP_MAINTAIN_PARNET_PTR
+
+    /**
+     * Tries to unswizzle the given child page from the parent page.
+     * If, for some reason, unswizzling was impossible or troublesome, gives up and returns false.
+     * @return whether the child page has been unswizzled
+     */
+    bool   _unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot);
+
+    bool   _are_there_many_swizzled_pages() const;
     
     /**
      * Increases the pin_cnt of the given block and makes sure the block is not being evicted or invalid.
@@ -449,13 +522,11 @@ private:
 
     bool   _compare_dependency_lsn(const bf_tree_cb_t& cb, const bf_tree_cb_t &dependency_cb) const;
 
-    void _swizzle_child_pointer(page_s* parent, shpid_t* pointer_addr);
-
+    void   _swizzle_child_pointer(page_s* parent, shpid_t* pointer_addr);
 
     // these are used only in the mainmemory-db experiment
     w_rc_t _install_volume_mainmemorydb(vol_t* volume);
     w_rc_t _fix_nonswizzled_mainmemorydb(page_s* parent, page_s*& page, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page);
-
 
 private:
     /** count of blocks (pages) in this bufferpool. */
@@ -488,6 +559,22 @@ private:
     bf_hashtable*       _hashtable;
     
     /**
+     * singly-linked freelist. index is same as _buffer/_control_blocks. zero means no link.
+     * This logically belongs to _control_blocks, but is an array by itself for efficiency.
+     * index 0 is always the head of the list (points to the first free block, or 0 if no free block).
+     */
+    bf_idx*             _freelist;
+
+    /** count of free blocks. */
+    uint32_t volatile   _freelist_len;
+
+// Be VERY careful on deadlock to use the following.
+    
+    /** spin lock to protect all freelist related stuff. */
+    tatas_lock          _freelist_lock;
+
+#ifdef BP_MAINTAIN_PARNET_PTR
+    /**
      * doubly-linked LRU list for swizzled pages THAT CAN BE UNSWIZZLED.
      * (in other words, root pages aren't included in this counter and the linked list)
      * The array size is 2 * _block_cnt. [block i's prev][block i's next][block i+1's prev]...
@@ -495,27 +582,36 @@ private:
      * [0] and [1] are special, meaning list head and tail.
      */
     bf_idx*             _swizzled_lru;
-
-    /**
-     * singly-linked freelist. index is same as _buffer/_control_blocks. zero means no link.
-     * This logically belongs to _control_blocks, but is an array by itself for efficiency.
-     * index 0 is always the head of the list (points to the first free block, or 0 if no free block).
-     */
-    bf_idx*             _freelist;
-
     /** count of swizzled pages that can be unswizzled. */
     uint32_t volatile   _swizzled_lru_len;
-
-    /** count of free blocks. */
-    uint32_t volatile   _freelist_len;
-
-// Be VERY careful on deadlock to use the following.
-    
     /** spin lock to protect swizzled page LRU list. */
     tatas_lock          _swizzled_lru_lock;
-    /** spin lock to protect all freelist related stuff. */
-    tatas_lock          _freelist_lock;
-    
+#endif // BP_MAINTAIN_PARNET_PTR
+
+    /**
+     * Hierarchical clockhand to maintain where we lastly visited
+     * to choose a victim page for unswizzling.
+     * The first element is the volume to check,
+     * the second element is the store to check,
+     * the third element is the ordinal in the root page (0=first child,1=second child),...
+     * 
+     * We need this hierarchical clockhand because we must
+     * go _back_ to the parent page to unswizzle the child.
+     * The swizzled pointer is stored in the parent page, we need to
+     * modify it back to a usual page ID. The hierarchical clockhand
+     * tells what is the parent page without parent pointers.
+     * 
+     * Like the usual clockhand, this is an imprecise data structure
+     * that doesn't use locks or other heavy-weight methods to maintain.
+     *   If we skip over some node, that's fine. We will visit it later anyways.
+     *   If we visit some node twice, that's fine. Not much overhead.
+     *   If any other inconsistency occured, that's fine. We just restart the search.
+     * We are just going to find a few pages to unswizzle, nothing more.
+     */
+    uint32_t            _swizzle_clockhand_pathway[MAX_SWIZZLE_CLOCKHAND_DEPTH];
+    /** the lastly visited element in _swizzle_clockhand_pathway that might have some remaining descendants to visit. */
+    uint16_t            _swizzle_clockhand_current_depth;
+
     // queue_based_lock_t   _eviction_mutex;
     
     /** the dirty page cleaner. */
@@ -527,6 +623,12 @@ private:
      * So, this should be only used as statistics.
      */
     int32_t             _dirty_page_count_approximate;
+    /**
+     * Unreliable count of swizzled pages in this bufferpool.
+     * The value is incremented and decremented without atomic operations.
+     * So, this should be only used as statistics.
+     */
+    int32_t             _swizzled_page_count_approximate;
     
     /** whether to swizzle non-root pages. */
     bool                _enable_swizzling;
@@ -539,7 +641,6 @@ private:
  */
 class pin_for_refix_holder {
 public:
-    void release ();
     pin_for_refix_holder() : _idx(0) {}
     pin_for_refix_holder(bf_idx idx) : _idx(idx) {}
     pin_for_refix_holder(pin_for_refix_holder &h) {
@@ -569,6 +670,7 @@ public:
         _idx = idx;
     }
     bf_idx idx() const { return _idx;}
+    void release ();
     
 private:
     bf_idx _idx;

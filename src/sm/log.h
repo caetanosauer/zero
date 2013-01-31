@@ -310,7 +310,7 @@ public:
     fileoff_t           reserve_space(fileoff_t howmuch);
     void                release_space(fileoff_t howmuch);
     rc_t                wait_for_space(fileoff_t &amt, timeout_in_ms timeout);
-    static fileoff_t    take_space(fileoff_t * ptr, int amt) ;
+    static fileoff_t    take_space(fileoff_t volatile* ptr, int amt) ;
 
     long                max_chkpt_size() const;
     bool                verify_chkpt_reservation();

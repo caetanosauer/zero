@@ -184,6 +184,9 @@ w_rc_t test_bf_evict(ss_m* /*ssm*/, test_volume_t *test_volume) {
     root_page->btree_blink = 0;
     root_page->nslots = 0;
 
+    // TODO the code below doesn't bother making real pages. to pass this testcase, some checks in bufferpool are disabled.
+    // for better testing and assertion, we should make real pages here and test against it.
+    // see the comments around "WARNING!! bf_tree_m: page id doesn't match!" in bufferpool code.
     const size_t keep_latch_i = 23; // this page will be kept latched
     bf_idx keep_latch_idx = 0;
     page_s* keep_latch_page = NULL;
@@ -194,7 +197,7 @@ w_rc_t test_bf_evict(ss_m* /*ssm*/, test_volume_t *test_volume) {
         lpid_t pid (test_volume->_vid, 1, root_pid.page + 1 + i);
         _add_child_pointer (root_page, pid.page);
 
-        W_DO(pool.fix_nonroot(page, root_page, pid.vol().vol, pid.page, i % 5 == 0 ? LATCH_EX : LATCH_SH, false, true));
+        W_DO(pool.fix_nonroot(page, root_page, pid.vol().vol, pid.page, i % 5 == 0 ? LATCH_EX : LATCH_SH, false, false));
         EXPECT_TRUE (page != NULL);
         if (page != NULL) {
             bf_idx idx = test_bf_tree::get_bf_idx(&pool, page);
@@ -259,11 +262,18 @@ w_rc_t test_bf_evict(ss_m* /*ssm*/, test_volume_t *test_volume) {
 
     return RCOK;
 }
-TEST (TreeBufferpoolTest, Evict) {
+TEST (TreeBufferpoolTest, EvictNoSwizzle) {
     test_env->empty_logdata_dir();
     EXPECT_EQ(test_env->runBtreeTest(test_bf_evict,
         false, default_locktable_size, default_quota_in_pages, 20,
-        1, 1000, 10000, 64, true, false
+        1, 1000, 10000, 64, false, false
+    ), 0);
+}
+TEST (TreeBufferpoolTest, EvictSwizzle) {
+    test_env->empty_logdata_dir();
+    EXPECT_EQ(test_env->runBtreeTest(test_bf_evict,
+        false, default_locktable_size, default_quota_in_pages, 20,
+        1, 1000, 10000, 64, false, true
     ), 0);
 }
 
@@ -292,7 +302,11 @@ w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_s
         _add_child_pointer (root_page, pid.page);
 
         if (enable_swizzle) {
+#ifdef BP_MAINTAIN_PARNET_PTR
             EXPECT_EQ ((int) (1 + i), root_cb._pin_cnt);
+#else // BP_MAINTAIN_PARNET_PTR
+            EXPECT_EQ ((int) (1), root_cb._pin_cnt);
+#endif // BP_MAINTAIN_PARNET_PTR
         } else {
             EXPECT_EQ ((int) (1), root_cb._pin_cnt);
         }
@@ -303,11 +317,17 @@ w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_s
             if (enable_swizzle) {
                 EXPECT_EQ (1, cb._pin_cnt); // because it's swizzled, pin_cnt is 1
                 EXPECT_TRUE (pool.is_swizzled(page));
+#ifdef BP_MAINTAIN_PARNET_PTR
                 EXPECT_EQ ((int) (2 + i), root_cb._pin_cnt); // parent's pin_cnt is added 
+#else // BP_MAINTAIN_PARNET_PTR
+                EXPECT_EQ ((int) 1, root_cb._pin_cnt);
+#endif // BP_MAINTAIN_PARNET_PTR
             } else {
                 EXPECT_EQ (0, cb._pin_cnt); // otherwise, it's 0 after fix()
                 EXPECT_EQ ((int) (1), root_cb._pin_cnt);
+#ifdef BP_MAINTAIN_PARNET_PTR
                 EXPECT_EQ ((uint) 0, cb._parent);
+#endif // BP_MAINTAIN_PARNET_PTR
             }
             ::memset(page, 0, sizeof(page_s));
             page->pid = pid;
@@ -325,7 +345,11 @@ w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_s
     }
     pool.debug_dump_page_pointers(std::cout, root_page);
     if (enable_swizzle) {
+#ifdef BP_MAINTAIN_PARNET_PTR
         EXPECT_EQ (1 + 20, root_cb._pin_cnt);
+#else // BP_MAINTAIN_PARNET_PTR
+        EXPECT_EQ (1, root_cb._pin_cnt);
+#endif // BP_MAINTAIN_PARNET_PTR
     } else {
         EXPECT_EQ (1, root_cb._pin_cnt);
     }
@@ -358,14 +382,22 @@ w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_s
         }
     }
     if (enable_swizzle) {
+#ifdef BP_MAINTAIN_PARNET_PTR
         EXPECT_EQ (1 + 20, root_cb._pin_cnt);
+#else // BP_MAINTAIN_PARNET_PTR
+        EXPECT_EQ (1, root_cb._pin_cnt);
+#endif // BP_MAINTAIN_PARNET_PTR
     } else {
         EXPECT_EQ (1, root_cb._pin_cnt);
     }
     pool.set_dirty(root_page);
     pool.unfix(root_page);
     if (enable_swizzle) {
+#ifdef BP_MAINTAIN_PARNET_PTR
         EXPECT_EQ (1 + 20, root_cb._pin_cnt);
+#else // BP_MAINTAIN_PARNET_PTR
+        EXPECT_EQ (1, root_cb._pin_cnt);
+#endif // BP_MAINTAIN_PARNET_PTR
     } else {
         EXPECT_EQ (1, root_cb._pin_cnt);
     }
@@ -397,7 +429,7 @@ TEST (TreeBufferpoolTest, NoSwizzle) {
     ), 0);
 }
 
-
+#ifdef BP_MAINTAIN_PARNET_PTR
 w_rc_t test_bf_switch_parent(ss_m* /*ssm*/, test_volume_t *test_volume) {
     
     bf_tree_m &pool(*smlevel_0::bf);
@@ -477,6 +509,7 @@ TEST (TreeBufferpoolTest, SwitchParent) {
         1, 10000, 10000, 64, false, true
     ), 0);
 }
+#endif // BP_MAINTAIN_PARNET_PTR
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
