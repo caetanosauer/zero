@@ -65,6 +65,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "log.h"
 #include "log_core.h"
 #include "crash.h"
+#include "bf_tree.h"
 #include <algorithm> // for std::swap
 #include <stdio.h> // snprintf
 
@@ -157,20 +158,6 @@ fileoff_t log_m::max_partition_size() {
 }
 
 #ifdef SUN4V
-// like page_p::tag_name, but doesn't W_FATAL on garbage
-static char const* page_tag_to_str(int page_tag) {
-    switch (page_tag) {
-    case page_p::t_alloc_p: 
-        return "t_alloc_p";
-    case page_p::t_stnode_p:
-        return "t_stnode_p";
-    case page_p::t_btree_p:
-        return "t_btree_p";
-    default:
-        return "<garbage>";
-    }
-}
-
 // make dbx print log records at all, and in a readable way
 char const* 
 db_pretty_print(logrec_t const* rec, int /*i=0*/, char const* /*s=0*/) 
@@ -205,7 +192,7 @@ db_pretty_print(logrec_t const* rec, int /*i=0*/, char const* /*s=0*/)
              "    _cat = %s%s%s%s\n"
              "    _tid = %d.%d\n"
              "    _pid = %d.%d.%d\n"
-             "    _page_tag = %s\n"
+             "    _page_tag = %d\n"
              "    _prev = %d.%lld\n"
              "    _ck_lsn = %d.%lld\n"
              "%s"
@@ -217,7 +204,7 @@ db_pretty_print(logrec_t const* rec, int /*i=0*/, char const* /*s=0*/)
              rec->construct_pid().vol().vol, 
                      rec->construct_pid().store(), 
                      rec->construct_pid().page,
-             page_tag_to_str(rec->tag()),
+             rec->tag(),
              (rec->prev().hi()), (int64_t)(rec->prev().lo()),
              (rec->get_lsn_ck().hi()), (int64_t)(rec->get_lsn_ck().lo()),
              extra
@@ -587,7 +574,7 @@ long log_m::max_chkpt_size() const
      */
     static long const GUESS_MAX_XCT_COUNT = 10000;
     static long const FUDGE = sizeof(logrec_t);
-    long bf_tab_size = bf->npages()*sizeof(chkpt_bf_tab_t::brec_t);
+    long bf_tab_size = bf->get_block_cnt()*sizeof(chkpt_bf_tab_t::brec_t);
     long xct_tab_size = GUESS_MAX_XCT_COUNT*sizeof(chkpt_xct_tab_t::xrec_t);
     return FUDGE + bf_tab_size + xct_tab_size;
 }
@@ -684,9 +671,9 @@ fileoff_t log_m::take_space(fileoff_t volatile* ptr, int amt)
     while(1) {
         if(ov < amt)
             return 0;
-	if(lintel::unsafe::atomic_compare_exchange_strong(const_cast<fileoff_t*>(ptr), &ov, ov-amt)) {
+	fileoff_t nv = ov - amt;
+	if (lintel::unsafe::atomic_compare_exchange_strong(const_cast<int64_t*>(ptr), &ov, nv))
 	    return amt;
-	}
     }
 }
 

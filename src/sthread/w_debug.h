@@ -217,7 +217,10 @@ extern w_debug _w_debug;
 
 // I wanted to use google-logging (glog), but changing all of the existing code
 // takes time. So, currently it's just std::cout.
+#define ERROUT(a) std::cerr << __FILE__ << " (" << __LINE__ << ") " a << flushl;
 #define DBGOUT(a) std::cout << __FILE__ << " (" << __LINE__ << ") " a << flushl;
+
+#define DBGOUT0(a) DBGOUT(a)
 
 #if W_DEBUG_LEVEL >= 1
 #define DBGOUT1(a) DBGOUT(a)

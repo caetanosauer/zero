@@ -185,11 +185,10 @@ public:
         vid_t                         vid[],
         int&                          return_cnt);
     static rc_t                 check_disk(const vid_t &vid);
-    static rc_t                 check_store_pages(const stid_t &stid, 
-                                                  page_p::tag_t);
     // return an unused vid_t
     static rc_t                 get_new_vid(vid_t& vid);
     static bool                 is_mounted(vid_t vid);
+    static vol_t*               get_volume(vid_t vid); // so far only for testing and debugging
     static vid_t                get_vid(const lvid_t& lvid);
     static lvid_t               get_lvid(const vid_t vid);
     static const char*          dev_name(vid_t vid);
@@ -260,9 +259,9 @@ public:
     static rc_t sx_dealloc_a_page(const lpid_t &pid);
 
     // for REDO. these don't log
-    static rc_t redo_alloc_a_page(const stid_t &stid, shpid_t pid);
-    static rc_t redo_alloc_consecutive_pages(const stid_t &stid, size_t page_count, shpid_t pid_begin);
-    static rc_t redo_dealloc_a_page(const stid_t &stid, shpid_t pid);
+    static rc_t redo_alloc_a_page(vid_t vid, shpid_t pid);
+    static rc_t redo_alloc_consecutive_pages(vid_t vid, size_t page_count, shpid_t pid_begin);
+    static rc_t redo_dealloc_a_page(vid_t vid, shpid_t pid);
 
     static rc_t                 create_store(
         vid_t                          vid, 

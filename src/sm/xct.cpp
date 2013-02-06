@@ -1,60 +1,4 @@
-/* -*- mode:C++; c-basic-offset:4 -*-
-     Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
-                       Copyright (c) 2007-2009
-      Data Intensive Applications and Systems Labaratory (DIAS)
-               Ecole Polytechnique Federale de Lausanne
-   
-                         All Rights Reserved.
-   
-   Permission to use, copy, modify and distribute this software and
-   its documentation is hereby granted, provided that both the
-   copyright notice and this permission notice appear in all copies of
-   the software, derivative works or modified versions, and any
-   portions thereof, and that both notices appear in supporting
-   documentation.
-   
-   This code is distributed in the hope that it will be useful, but
-   WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
-   DISCLAIM ANY LIABILITY OF ANY KIND FOR ANY DAMAGES WHATSOEVER
-   RESULTING FROM THE USE OF THIS SOFTWARE.
-*/
-
-// -*- mode:c++; c-basic-offset:4 -*-
-/*<std-header orig-src='shore'>
-
- $Id: xct.cpp,v 1.229 2010/12/08 17:37:43 nhall Exp $
-
-SHORE -- Scalable Heterogeneous Object REpository
-
-Copyright (c) 1994-99 Computer Sciences Department, University of
-                      Wisconsin -- Madison
-All Rights Reserved.
-
-Permission to use, copy, modify and distribute this software and its
-documentation is hereby granted, provided that both the copyright
-notice and this permission notice appear in all copies of the
-software, derivative works or modified versions, and any portions
-thereof, and that both notices appear in supporting documentation.
-
-THE AUTHORS AND THE COMPUTER SCIENCES DEPARTMENT OF THE UNIVERSITY
-OF WISCONSIN - MADISON ALLOW FREE USE OF THIS SOFTWARE IN ITS
-"AS IS" CONDITION, AND THEY DISCLAIM ANY LIABILITY OF ANY KIND
-FOR ANY DAMAGES WHATSOEVER RESULTING FROM THE USE OF THIS SOFTWARE.
-
-This software was developed with support by the Advanced Research
-Project Agency, ARPA order number 018 (formerly 8230), monitored by
-the U.S. Army Research Laboratory under contract DAAB07-91-C-Q518.
-Further funding for this work was provided by DARPA through
-Rome Research Laboratory Contract No. F30602-97-2-0247.
-
-*/
-
 #include "w_defines.h"
-
-/*  -- do not edit anything above this line --   </std-header>*/
-/**\cond skip */
 
 #define SM_SOURCE
 #define XCT_C
@@ -92,6 +36,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <sstream>
 #include "crash.h"
 #include "chkpt.h"
+#include "bf_tree.h"
+#include "page_bf_inline.h"
 
 #ifdef EXPLICIT_TEMPLATE
 template class w_list_t<xct_t, queue_based_lock_t>;
@@ -2450,39 +2396,6 @@ xct_t::get_logbuf(logrec_t*& ret, int t, page_p const* p)
 
             DBGX(<<" no luck: forcing my dirty pages " 
                     << " badnews " << badnews);
-            lpid_t const* pid = p? &p->pid() : 0;
-            if(!badnews && !bf->force_my_dirty_old_pages(pid)) {
-                /* Dirty pages which I hold EX latches on pose a
-                   significantly thornier question. On the face of it,
-                   the WAL protocol suggests that we can write out any
-                   such page without fear of data corruption in the
-                   event of a crash.
-
-                   However, the page_lsn is set by the WAL operation,
-                   so pages not the subject of this log record are out
-                   right off the bat (we have no way to know if
-                   they've been changed yet).
-
-                   If it's the current page that's the problem, the
-                   only time we'd need to worry is if this and some
-                   previous WAL are somehow intertwined, in the sense
-                   that it's not actually safe to unlatch the page
-                   before the second WAL sticks. This seems like a
-                   supremely Bad Idea that (hopefully) none of our
-                   code relies on...
-                   
-                   So, in the end, we assume we can flush page we're
-                   about to WAL, if it happens to be old-dirty, but
-                   any other old-dirty-EX page we hold will force us
-                   to abort.
-
-                   If we decide to play it safe, we just have to send
-                   0 insetead of p to the buffer pool query.
-                 */
-                INC_TSTAT(log_full_old_page);
-                badnews = true;
-            }
-
             if(!badnews) {
                 /* Now it's safe to wait for more log space to open up
                    But before we do anything, let's try to grab the
@@ -2499,7 +2412,7 @@ xct_t::get_logbuf(logrec_t*& ret, int t, page_p const* p)
                     if(tries_left == 1) {
                     // the checkpoint should also do this, but just in case...
                     lsn_t target = log_m::first_lsn(log->global_min_lsn().hi()+1);
-                    w_rc_t rc = bf->force_until_lsn(target, false);
+                    w_rc_t rc = bf->force_until_lsn(target);
                     // did the force succeed?
                     if(rc.is_error()) {
                         INC_TSTAT(log_full_giveup);
@@ -2723,9 +2636,9 @@ xct_t::give_logbuf(logrec_t* l, const page_p *page)
     // then, buffer it internally. (can be defered until next log of the _outer_ transaction)
     if (is_piggy_backed_single_log_sys_xct()) {
         w_assert1(l->is_single_sys_xct());
-        w_assert1(page != NULL);
         if (_deferred_ssx) {
             // in this case, we don't push it to log manager for now.
+            w_assert1(page != NULL);
             W_DO(_append_piggyback_ssx_logbuf (l, const_cast<page_p*>(page)));
             w_assert1(_log_buf_for_piggybacked_ssx_used != 0);
             w_assert1(_log_buf_for_piggybacked_ssx_target != NULL);
@@ -2733,7 +2646,9 @@ xct_t::give_logbuf(logrec_t* l, const page_p *page)
             // otherwise we do it right now.
             lsn_t lsn;
             W_DO( log->insert(*l, &lsn) );
-            (const_cast<page_p*> (page))->set_lsns(lsn);
+            if (page != NULL) {
+                (const_cast<page_p*> (page))->set_lsns(lsn);
+            }
             w_assert1(_log_buf_for_piggybacked_ssx_used == 0);
             w_assert1(_log_buf_for_piggybacked_ssx_target == NULL);
         }
@@ -2752,46 +2667,6 @@ xct_t::give_logbuf(logrec_t* l, const page_p *page)
     // ALREADY PROTECTED from get_logbuf() call
 
     w_assert1(l == _last_log);
-    
-    // allocation page and store pages are in its own special buffer (bf_fixed_m) which doesn't have cleaner.
-    // so, no need to worry about last_mod_page
-    bool separated_buffer = page == NULL || (page->tag() == page_p::t_alloc_p || page->tag() == page_p::t_stnode_p);
-
-    page_p last_mod_page;
-    if (!separated_buffer) {
-        // WAL: hang onto last mod page so we can
-        // keep it from being flushed before the log
-        // is written.  The log isn't synced here, but the buffer
-        // manager does a log flush to the lsn of the page before
-        // it writes the page, which makes the log record durable
-        // before the page gets written.   Our job here is to
-        // get the lsn into the page before we unfix the page.
-
-        if(page != (page_p *)0) {
-            // Should already be EX-latched since it's the last modified page!
-            w_assert1(page->latch_mode() == LATCH_EX);
-
-            last_mod_page = *page; // refixes
-        } 
-        else if (l->shpid())  
-        {
-            // Those records with page ids stuffed in with fill() 
-            // should match those whose 2nd argument (page) is non-null,
-            // so those should hit the above case.
-            W_FATAL(eINTERNAL); // we shouldn't get here.
-        } else {
-            // This log record doesn't use a page.
-            w_assert1(l->tag() == 0);
-        }
-
-        if(last_mod_page.is_fixed()) { // i.e., is  fixed
-            w_assert2(l->tag()!=0);
-            w_assert2(last_mod_page.latch_mode() == LATCH_EX);
-        } else {
-            w_assert2(l->tag()==0);
-            w_assert3(last_mod_page.latch_mode() == LATCH_NL);
-        }
-    }
 
     rc_t rc = _flush_logbuf(); 
                       // stuffs tid, _last_lsn into our record,
@@ -2799,17 +2674,10 @@ xct_t::give_logbuf(logrec_t* l, const page_p *page)
     if(rc.is_error())
     goto done;
     
-    if (!separated_buffer) {
-        if(last_mod_page.is_fixed() ) {
-            w_assert2(last_mod_page.latch_mode() == LATCH_EX);
-            // WAL: stuff the lsn into the page so the buffer manager
-            // can force the log to that lsn before writing the page.
-            last_mod_page.set_lsns(_last_lsn);
-            last_mod_page.unfix_dirty();
-            w_assert1(last_mod_page.check_lsn_invariant());
-        }
-    } else if (page != NULL) {
+    if (page != NULL) {
+        w_assert2(page->latch_mode() == LATCH_EX);
         const_cast<page_p*>(page)->set_lsns(_last_lsn);
+        const_cast<page_p*>(page)->set_dirty();
     }
 
  done:
@@ -3278,10 +3146,9 @@ xct_t::rollback(const lsn_t &save_pt)
             page_p page;
 
             if (! r.is_logical()) {
-                store_flag_t store_flags = st_bad;
-                const int TMP_NOFLAG=0;
-                rc = page.fix(pid, page_p::t_any_p, LATCH_EX, 
-                    TMP_NOFLAG, store_flags);
+                DBGOUT3 (<<"physical UNDO.. which is not quite good");
+                // tentatively use fix_direct for this. eventually all physical UNDOs should go away
+                rc = page.fix_direct(pid.vol().vol, pid.page, LATCH_EX);
                 if(rc.is_error()) {
                     goto done;
                 }
@@ -3471,9 +3338,11 @@ xct_t::ConvertAllLoadStoresToRegularStores()
 
 #if X_LOG_COMMENT_ON
     {
-        static int volatile uniq=0;
-        static int volatile last_uniq=0;
-        int    nv =  atomic_inc_nv(uniq);
+        static int uniq=0;
+        static int last_uniq=0;
+	
+        // int    nv =  atomic_inc_nv(uniq);
+        int nv =  lintel::unsafe::atomic_fetch_add(&uniq, 1);
         //Even if someone else slips in here, the
         //values should never match. 
         w_assert1(last_uniq != nv);
@@ -3573,7 +3442,7 @@ xct_t::detach_thread()
 }
 
 w_rc_t
-xct_t::lockblock(timeout_in_ms timeout)
+xct_t::lockblock(timeout_in_ms /*timeout*/)
 {
     /*
 // Used by lock manager. (lock_core_m)

@@ -97,8 +97,8 @@ protected:
     lsn_t                   _durable_lsn;
     lsn_t                   _master_lsn;
     lsn_t                   _min_chkpt_rec_lsn;
-    fileoff_t volatile      _space_available; // how many unreserved bytes left
-    fileoff_t volatile      _space_rsvd_for_chkpt; // cat we run a chkpt now?
+    fileoff_t       _space_available; // how many unreserved bytes left
+    fileoff_t       _space_rsvd_for_chkpt; // cat we run a chkpt now?
     fileoff_t               _partition_size;
     fileoff_t               _partition_data_size;
     bool                    _log_corruption;

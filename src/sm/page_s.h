@@ -8,6 +8,19 @@
 #pragma interface
 #endif
 
+enum tag_t {
+    t_bad_p            = 0,        // not used
+    t_alloc_p        = 1,        // free-page allocation page 
+    t_stnode_p         = 2,        // store node page
+    t_btree_p          = 5,        // btree page 
+    t_any_p            = 11        // indifferent
+};
+enum page_flag_t {
+    t_tobedeleted    = 0x01,        // this page will be deleted as soon as the page is evicted from bufferpool
+    t_virgin         = 0x02,        // newly allocated page
+    t_written        = 0x08        // read in from disk
+};
+
 class xct_t;
 
 /**
@@ -77,8 +90,9 @@ inline poor_man_key extract_poor_man_key (const void* key_with_prefix, size_t ke
 class page_s {
 public:
     enum {
+        page_sz = SM_PAGESIZE,
         hdr_sz = 64, // NOTICE always sync with the offsets below
-        data_sz = smlevel_0::page_sz - hdr_sz,
+        data_sz = page_sz - hdr_sz,
         /** Poor man's normalized key length. */
         poormkey_sz = sizeof (poor_man_key),
         slot_sz = sizeof(slot_offset8_t) + poormkey_sz
@@ -91,7 +105,7 @@ public:
     /** id of the page.*/
     lpid_t    pid;      // +12 -> 20
     
-    /** page_p::tag_t. */
+    /** tag_t. */
     uint16_t    tag;     // +2 -> 22
     
     /** total number of slots including every type of slot. */
@@ -104,13 +118,13 @@ public:
     slot_offset8_t  record_head8;     // +2 -> 28
     int32_t     get_record_head_byte() const {return to_byte_offset(record_head8);}
 
-    /** page_p::store_flag_t. */
+    /** unused. */
     uint32_t    _private_store_flags; // +4 -> 32
 
     uint32_t    get_page_storeflags() const { return _private_store_flags;}
     uint32_t    set_page_storeflags(uint32_t f) { 
                          return (_private_store_flags=f);}
-    /** page_p::page_flag_t. */
+    /** page_flag_t. */
     uint32_t    page_flags;        //  +4 -> 36
 
 #ifdef DOXYGEN_HIDE

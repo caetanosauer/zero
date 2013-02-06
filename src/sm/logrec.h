@@ -174,7 +174,7 @@ protected:
 
 
     vid_t               _vid;   // 2 bytes
-    uint16_t             _page_tag; // page_p::tag_t 2 bytes
+    uint16_t             _page_tag; // tag_t 2 bytes
     /* 8 + 4= 12 */
     snum_t              _snum; // 4 bytes
     /* 12 + 4= 16*/

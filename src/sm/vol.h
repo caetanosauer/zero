@@ -88,12 +88,12 @@ public:
     *  and is not called from anywhere w/in the ss_m
     */
     rc_t                check_disk();
-    rc_t                check_store_pages(snum_t snum, page_p::tag_t tag);
-    rc_t                check_store_page(const lpid_t &pid, page_p::tag_t tag);
 
     const char*         devname() const;
     vid_t               vid() const ;
     lvid_t              lvid() const ;
+    /** returns the page ID of the first non-fixed pages (after stnode_p and alloc_p).*/
+    shpid_t             first_data_pageid() const { return _first_data_pageid;}
     uint32_t            num_pages() const;
     uint32_t            num_used_pages() const;
 
@@ -223,6 +223,7 @@ private:
     int              _unix_fd;
     vid_t            _vid;
     lvid_t           _lvid;
+    shpid_t          _first_data_pageid;
     uint             _num_pages;
     uint             _hdr_pages;
     lpid_t           _apid;

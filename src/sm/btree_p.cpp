@@ -12,6 +12,7 @@
 #include "vec_t.h"
 #include "btree_p.h"
 #include "btree_impl.h"
+#include "page_bf_inline.h"
 #include "sm_du_stats.h"
 #include "crash.h"
 #include "w_key.h"
@@ -19,6 +20,7 @@
 #include <algorithm>
 
 rc_t btree_p::init_fix_steal(
+    btree_p*             parent,
     const lpid_t& pid,
     shpid_t                root, 
     int                       l,
@@ -34,8 +36,11 @@ rc_t btree_p::init_fix_steal(
 {
     FUNC(btree_p::init_fix_steal);
     INC_TSTAT(btree_p_fix_cnt);
-    store_flag_t store_flags = st_regular;
-    W_DO(_fix_core(false, pid, t_btree_p, LATCH_EX, t_virgin, store_flags, false, _refbit));
+    if (parent == NULL) {
+        W_DO(fix_virgin_root(pid.vol().vol, pid.store(), pid.page));
+    } else {
+        W_DO(fix_nonroot(*parent, parent->vol(), pid.page, LATCH_EX, false, true));
+    }
     W_DO(format_steal(pid, root, l, pid0, blink, fence_low, fence_high, chain_fence_high, log_it, steal_src, steal_from, steal_to));
     return RCOK;
 }
@@ -61,8 +66,23 @@ rc_t btree_p::format_steal(
 {
     w_assert1 (l == 1 || pid0 != 0); // all interemediate node should have pid0 at least initially
 
-    //first, call page_p::_format to nuke the page
-    W_DO( page_p::_format(pid, t_btree_p, t_virgin, st_regular) ); // this doesn't log
+    //first, nuke the page
+    lpid_t pid_copy = pid; // take a copy first, because pid might point to a part of this page itself!
+#ifdef ZERO_INIT
+    /* NB -- NOTE -------- NOTE BENE
+    *  Note this is not exactly zero-init, but it doesn't matter
+    * WHAT we use to init each byte for the purpose of purify or valgrind
+    */
+    // because we do this, note that we shouldn't receive any arguments
+    // as reference or pointer. It might be also nuked!
+    memset(_pp, '\017', sizeof(page_s)); // trash the whole page
+#endif //ZERO_INIT
+    _pp->lsn = lsn_t(0, 1);
+    _pp->pid = pid_copy;
+    _pp->tag = t_btree_p;
+    _pp->page_flags = 0;
+    _pp->record_head8 = to_offset8(data_sz);
+    _pp->nslots = _pp->nghosts = _pp->btree_consecutive_skewed_insertions = 0;
 
     _pp->btree_root = root;
     _pp->btree_pid0 = pid0;
@@ -119,6 +139,7 @@ rc_t btree_p::format_steal(
     // log as one record
     if (log_it) {
         W_DO(log_page_img_format(*this));
+        w_assert1(lsn().valid());
     }
     
     return RCOK;
@@ -217,7 +238,7 @@ rc_t btree_p::norecord_split (shpid_t blink,
         // then, let's defrag this page to compress keys
         page_s scratch;
         ::memcpy (&scratch, _pp, sizeof(scratch));
-        btree_p scratch_p (&scratch, 0);
+        btree_p scratch_p (&scratch);
         W_DO(format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(), scratch_p.pid0(),
             blink,
             fence_low, fence_high, chain_fence_high,
@@ -239,7 +260,7 @@ rc_t btree_p::norecord_split (shpid_t blink,
         fences.put ((const char*) fence_high.buffer_as_keystr() + new_prefix_len, fence_high.get_length_as_keystr() - new_prefix_len);
         fences.put(chain_fence_high);
         rc_t rc = replace_expand_fence_rec_nolog(fences);
-        w_assert1(rc.err_num() != eRECWONTFIT);// then why it passed check_chance_for_norecord_split()?
+        w_assert1(rc.err_num() != smlevel_0::eRECWONTFIT);// then why it passed check_chance_for_norecord_split()?
         w_assert1(!rc.is_error());
 
         //updates headers
@@ -897,7 +918,7 @@ rc_t btree_p::replace_el_nolog(slotid_t slot, const cvec_t &elem)
     slot_length_t rec_size = sizeof(slot_length_t) * 2 + klen - prefix_length + elem.size();
     if (align(rec_size) > align(org_rec_size)) {
         if (!check_space_for_insert(rec_size)) {
-            return RC(eRECWONTFIT);
+            return RC(smlevel_0::eRECWONTFIT);
         }
         _expand_rec (slot, rec_size);
         w_assert1(page_p::tuple_addr(slot + 1) != buf);
@@ -1002,7 +1023,7 @@ void btree_p::reserve_ghost(const char *key_raw, size_t key_raw_len, int record_
 void btree_p::mark_ghost(slotid_t slot)
 {
     slotid_t idx = slot + 1; // slot index in page_p
-    w_assert0(tag() == page_p::t_btree_p);
+    w_assert0(tag() == t_btree_p);
     w_assert1(idx >= 0 && idx < nslots());
     w_assert1(slot >= 0); // fence record cannot be a ghost
     slot_offset8_t *offset8 = reinterpret_cast<slot_offset8_t*>(_pp->data + slot_sz * idx);
@@ -1019,7 +1040,7 @@ void btree_p::mark_ghost(slotid_t slot)
 void btree_p::unmark_ghost(slotid_t slot)
 {
     slotid_t idx = slot + 1; // slot index in page_p
-    w_assert0(tag() == page_p::t_btree_p);
+    w_assert0(tag() == t_btree_p);
     w_assert1(idx >= 0 && idx < nslots());
     w_assert1(slot >= 0); // fence record cannot be a ghost
     slot_offset8_t *offset8 = reinterpret_cast<slot_offset8_t*>(_pp->data + slot_sz * idx);
@@ -1091,7 +1112,11 @@ bool btree_p::check_chance_for_norecord_split(const w_keystr_t& key_to_insert) c
 void btree_p::suggest_fence_for_split(
     w_keystr_t &mid,
     slotid_t& right_begins_from,
-    const w_keystr_t &triggering_key) const
+    const w_keystr_t &
+#ifdef NORECORD_SPLIT_ENABLE
+        triggering_key
+#endif // NORECORD_SPLIT_ENABLE
+    ) const
 {
 // TODO for fair comparison with shore-mt, let's disable no-record-split for now
 #ifdef NORECORD_SPLIT_ENABLE
@@ -1347,14 +1372,14 @@ btree_p::int_stats(btree_int_stats_t& _stats)
 
 void
 btree_p::page_usage(int& data_size, int& header_size, int& unused,
-                   int& alignment, page_p::tag_t& t, slotid_t& no_slots)
+                   int& alignment, tag_t& t, slotid_t& no_slots)
 {
     // returns space allocated for headers in this page
     // returns unused space in this page
     data_size = unused = alignment = 0;
 
     // space used for headers
-    header_size = page_p::page_sz - data_sz;
+    header_size = sizeof(page_s) - data_sz;
     
     // calculate space wasted in data alignment
     for (int i=0 ; i<_pp->nslots; i++) {
@@ -1366,12 +1391,12 @@ btree_p::page_usage(int& data_size, int& header_size, int& unused,
         }
     }
     // unused space
-    unused = page_p::page_sz - header_size - data_size - alignment;
+    unused = sizeof(page_s) - header_size - data_size - alignment;
 
     t        = tag();        // the type of page 
     no_slots = _pp->nslots;  // nu of slots in this page
 
-    w_assert1(data_size + header_size + unused + alignment == page_sz);
+    w_assert1(data_size + header_size + unused + alignment == sizeof(page_s));
 }
 btrec_t& 
 btrec_t::set(const btree_p& page, slotid_t slot)
@@ -1687,7 +1712,7 @@ rc_t btree_p::defrag(slotid_t popped)
     if (ghost_slots.size() > 0) {
         // ghost records are not supported in other types.
         // REDO/UNDO of ghosting relies on BTree
-        w_assert0(tag() == page_p::t_btree_p);
+        w_assert0(tag() == t_btree_p);
         W_DO (log_btree_ghost_reclaim(*this, ghost_slots));
     }
     

@@ -56,7 +56,6 @@ class prologue_rc_t;
 
 /*--------------------------------------------------------------*
  *  ss_m::lock_collect()                            *
- *  ss_m::bp_collect()                                    *
  *  ss_m::thread_collect()                            *
  *  ss_m::xct_collect()                                    *
  *  ss_m::stats_collect()                                *
@@ -77,12 +76,6 @@ rc_t
 ss_m::lock_collect( vtable_t& res, bool names_too) 
 {
     if(lm->collect(res, names_too)==0) return RCOK;
-    return RC(eOUTOFMEMORY);
-}
-rc_t
-ss_m::bp_collect( vtable_t & res, bool names_too) 
-{
-    if(bf->collect(res, names_too)==0) return RCOK;
     return RC(eOUTOFMEMORY);
 }
 

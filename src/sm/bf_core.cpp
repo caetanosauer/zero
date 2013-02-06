@@ -175,10 +175,13 @@ bool bfcb_t::pin_frame_if_pinned() {
         if(old_pin_cnt == 0)
             return false;
 	
-        // if pin_cnt == old_pin_cnt increment pin_cnt
-	if(lintel::unsafe::atomic_compare_exchange_strong(const_cast<int*>(&_pin_cnt), &old_pin_cnt, old_pin_cnt+1)) {
-	    return true;
-	}
+        // if pin_cnt == old_pin_cnt increment pin_cnt and return
+ 	// the original value of pin_cnt, whether or not we incremented it.
+	if (lintel::unsafe::atomic_compare_exchange_strong(const_cast<int*>(&_pin_cnt), &old_pin_cnt, old_pin_cnt+1))
+	  return true;
+
+        // if we get here it's because another thread raced in and updated the pin count before we could.
+	//old_pin_cnt = _pin_cnt;
     }
 }
 

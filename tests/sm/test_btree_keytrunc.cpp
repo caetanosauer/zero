@@ -44,7 +44,7 @@ w_rc_t suffix_test(ss_m* ssm, test_volume_t *test_volume) {
     
     // and let's check the root node's entries
     btree_p root_p;
-    W_DO(root_p.fix(root_pid, LATCH_EX));
+    W_DO (root_p.fix_root (root_pid.vol().vol, root_pid.store(), LATCH_EX));
     EXPECT_TRUE (root_p.is_node());
     EXPECT_GT (root_p.nrecs(), 0);
     int minlen = keysize, maxlen = -1;
@@ -95,7 +95,7 @@ w_rc_t suffix_test_shortest(ss_m* ssm, test_volume_t *test_volume) {
         W_DO(x_btree_insert (ssm, stid, keystr, datastr));
 
         btree_p root_p;
-        W_DO (root_p.fix (root_pid, LATCH_SH));
+        W_DO (root_p.fix_root (root_pid.vol().vol, root_pid.store(), LATCH_SH));
         if (root_p.nrecs() <= prev_recs) {
             EXPECT_TRUE (root_p.is_fence_low_infimum());
             EXPECT_FALSE (root_p.is_fence_high_supremum());
@@ -145,7 +145,7 @@ w_rc_t suffix_test_posskew(ss_m* ssm, test_volume_t *test_volume) {
         W_DO(x_btree_insert (ssm, stid, keystr, datastr));
 
         btree_p root_p;
-        W_DO (root_p.fix (root_pid, LATCH_SH));
+        W_DO (root_p.fix_root (root_pid.vol().vol, root_pid.store(), LATCH_SH));
         if (root_p.nrecs() <= prev_recs) {
             EXPECT_TRUE (root_p.is_fence_low_infimum());
             EXPECT_FALSE (root_p.is_fence_high_supremum());
@@ -197,7 +197,7 @@ w_rc_t suffix_test_negskew(ss_m* ssm, test_volume_t *test_volume) {
         W_DO(x_btree_insert (ssm, stid, keystr, datastr));
 
         btree_p root_p;
-        W_DO (root_p.fix (root_pid, LATCH_SH));
+        W_DO (root_p.fix_root (root_pid.vol().vol, root_pid.store(), LATCH_SH));
         if (root_p.nrecs() <= prev_recs) {
             EXPECT_TRUE (root_p.is_fence_low_infimum());
             EXPECT_FALSE (root_p.is_fence_high_supremum());
@@ -261,7 +261,7 @@ w_rc_t prefix_test(ss_m* ssm, test_volume_t *test_volume) {
     memcpy(keystr + keysize - 3, "500", 3); // middle key
     key.construct_regularkey(keystr, keysize);
     btree_p leaf;
-    W_DO (btree_impl::_ux_traverse(root_pid, key, btree_impl::t_fence_contain, LATCH_SH, leaf));
+    W_DO (btree_impl::_ux_traverse(root_pid.vol().vol, root_pid.store(), key, btree_impl::t_fence_contain, LATCH_SH, leaf));
     EXPECT_TRUE (leaf.is_fixed());
     EXPECT_TRUE (leaf.is_leaf());
 

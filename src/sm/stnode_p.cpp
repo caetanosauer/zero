@@ -15,11 +15,11 @@
 #include "bf_fixed.h"
 
 rc_t
-stnode_p::format(const lpid_t& pid, tag_t tag, 
-        uint32_t flags, store_flag_t store_flags) {
-    W_DO(page_p::_format(pid, tag, flags, store_flags) );
+stnode_p::format(const lpid_t& pid) {
     // no records/slots. just array of stnode_t.
-    ::memset(_pp->data, 0, sizeof(_pp->data));
+    ::memset(_pp, 0, sizeof(page_s));
+    _pp->pid = pid;
+    _pp->tag = t_stnode_p;
     return RCOK;
 }    
 
@@ -31,7 +31,6 @@ stnode_t& stnode_p::get(size_t idx)
 
 stnode_cache_t::stnode_cache_t (vid_t vid, bf_fixed_m* fixed_pages): _vid(vid), _fixed_pages(fixed_pages) {
     page_s* page = _fixed_pages->get_pages() + _fixed_pages->get_page_cnt() - 1;
-    w_assert1(page->tag == page_p::t_stnode_p);
     w_assert1(page->pid.vol() == _vid);
     _stnodes = (stnode_t*) page->data;
 }
@@ -75,6 +74,19 @@ snum_t stnode_cache_t::get_min_unused_store_id () const
     }
     return stnode_p::max;
 }
+
+std::vector<snum_t> stnode_cache_t::get_all_used_store_id() const
+{
+    std::vector<snum_t> ret;
+    CRITICAL_SECTION (cs, _spin_lock);
+    for (int i = 1; i < stnode_p::max; ++i) {
+        if (_stnodes[i].root != 0) {
+            ret.push_back((snum_t) i);
+        }
+    }
+    return ret;
+}
+
 
 rc_t
 stnode_cache_t::store_operation(const store_operation_param& param)
@@ -157,8 +169,7 @@ stnode_cache_t::store_operation(const store_operation_param& param)
     // log it and apply the change to the stnode_p
     CRITICAL_SECTION (cs, _spin_lock);
     spinlock_read_critical_section cs2(&_fixed_pages->get_checkpoint_lock()); // protect against checkpoint. see bf_fixed_m comment.
-    stnode_p page (_fixed_pages->get_pages() + _fixed_pages->get_page_cnt() - 1);
-    W_DO( log_store_operation(page, new_param) );
+    W_DO( log_store_operation(new_param) );
     _stnodes[param.snum()] = stnode;
     _fixed_pages->get_dirty_flags()[_fixed_pages->get_page_cnt() - 1] = true;
     return RCOK;

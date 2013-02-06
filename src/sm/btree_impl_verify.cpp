@@ -17,13 +17,15 @@
 #include "sm_io.h"
 #include "vol.h"
 #include "xct.h"
-    
+#include "sm_int_0.h"
+#include "bf_tree.h"
+#include "page_bf_inline.h"
 
 // NOTE we don't know the level of root until we start, so just give "-1" as magic value for root level
 const int16_t NOCHECK_ROOT_LEVEL = -1;
 
 rc_t  btree_impl::_ux_verify_tree(
-        const lpid_t &root_pid, int hash_bits, bool &consistent)
+        volid_t vol, snum_t store, int hash_bits, bool &consistent)
 {
     verification_context context (hash_bits);
     
@@ -32,10 +34,12 @@ rc_t  btree_impl::_ux_verify_tree(
     w_keystr_t infimum, supremum;
     infimum.construct_neginfkey();
     supremum.construct_posinfkey();
-    context.add_expectation(root_pid.page, NOCHECK_ROOT_LEVEL, false, infimum);
-    context.add_expectation(root_pid.page, NOCHECK_ROOT_LEVEL, true, supremum);
-    
-    W_DO (_ux_verify_tree_recurse(root_pid, context));
+    btree_p rp;
+    W_DO( rp.fix_root(vol, store, LATCH_SH));
+    context.add_expectation(rp.pid().page, NOCHECK_ROOT_LEVEL, false, infimum);
+    context.add_expectation(rp.pid().page, NOCHECK_ROOT_LEVEL, true, supremum);
+    W_DO (_ux_verify_tree_recurse(rp, context));
+    rp.unfix();
     consistent = context.is_bitmap_clean();
     if (context._pages_inconsistent != 0) {
         consistent = false;
@@ -43,32 +47,37 @@ rc_t  btree_impl::_ux_verify_tree(
     return RCOK;
 }
 rc_t btree_impl::_ux_verify_tree_recurse(
-        const lpid_t &pid, verification_context &context)
+        btree_p &parent, verification_context &context)
 {
-    btree_p next_page;
-    btree_p page;
-    lpid_t pid_next = pid;
+    W_IFDEBUG1(lpid_t org_pid = parent.pid();)
+
+    w_assert1(parent.is_latched());
+    // feed this page itself
+    _ux_verify_feed_page (parent, context);
+    
+    // recurse on real children first.
+    if (parent.is_node()) {
+        for (slotid_t slot = -1; slot < parent.nrecs(); ++slot) {
+            btree_p child;
+            shpid_t child_pid = slot == -1 ? parent.pid0() : parent.child(slot);
+            W_DO(child.fix_nonroot(parent, parent.vol(), child_pid, LATCH_SH));
+            W_DO(_ux_verify_tree_recurse (child, context));
+        }
+    }
+
+    // recursing on real children shouldn't change the current page
+    w_assert1(parent.is_fixed());
+    w_assert1(parent.pid() == org_pid);
     
     // also check right blink sibling.
-    // this part is now (partially) loop, not recursion to prevent the stack from growing too long
-    while (pid_next.page != 0) {
-        W_DO( next_page.fix(pid_next, LATCH_SH) );
-        page = next_page;// at this point (after latching next) we don't need to keep the "previous" fixed.
-        // feed this page itself
-        _ux_verify_feed_page (page, context);
+    // unfix the current page after latch coupling
+    // to prevent the stack from growing too long if there is a long blink chain
 
-        // then, recurse on children
-        if (page.is_node()) {
-            w_assert1(page.pid0());
-            pid_next.page = page.pid0();
-            W_DO(_ux_verify_tree_recurse (pid_next, context));
-
-            for (slotid_t slot = 0; slot < page.nrecs(); ++slot) {
-                pid_next.page = page.child(slot);
-                W_DO(_ux_verify_tree_recurse (pid_next, context));
-            }
-        }
-        pid_next.page = page.get_blink();
+    if (parent.get_blink() != 0) {
+        btree_p child;
+        W_DO(child.fix_nonroot(parent, parent.vol(), parent.get_blink(), LATCH_SH));
+        parent.unfix();
+        W_DO(_ux_verify_tree_recurse (child, context));
     }
     
     return RCOK;
@@ -165,7 +174,7 @@ rc_t btree_impl::_ux_verify_feed_page(
 }
 
 
-void btree_impl::inquery_verify_init(const lpid_t &root_pid)
+void btree_impl::inquery_verify_init(volid_t vol, snum_t store)
 {
     xct_t *x = xct();
     if (x == NULL || !x->is_inquery_verify())
@@ -174,7 +183,7 @@ void btree_impl::inquery_verify_init(const lpid_t &root_pid)
     context.next_level = -1; // don't check level of root page
     context.next_low_key.construct_neginfkey();
     context.next_high_key.construct_posinfkey();
-    context.next_pid = root_pid.page;
+    context.next_pid = smlevel_0::bf->get_root_page_id(vol, store);
 }
 
 void btree_impl::inquery_verify_fact(btree_p &page)
@@ -360,15 +369,15 @@ rc_t btree_impl::_ux_verify_volume(
     w_assert1(vol);
     page_s buf;
     shpid_t endpid = (shpid_t) (vol->num_pages());
-    for (shpid_t pid = 1; pid < endpid; ++pid) {
+    for (shpid_t pid = vol->first_data_pageid(); pid < endpid; ++pid) {
         // TODO we should skip large chunks of unused areas to speedup.
         // TODO we should scan more than one page at a time to speedup.
         if (!vol->is_allocated_page(pid)) {
             continue;
         }
         W_DO (vol->read_page(pid, buf));
-        btree_p page (&buf, 0);
-        if (page.tag() == page_p::t_btree_p && (page.page_flags() & page_p::t_tobedeleted) == 0) {
+        btree_p page (&buf);
+        if (page.tag() == t_btree_p && (page.page_flags() & t_tobedeleted) == 0) {
             verification_context *context = result.get_or_create_context(page.pid().store(), hash_bits);
             W_DO (_ux_verify_feed_page (page, *context));
 

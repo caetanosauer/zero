@@ -22,6 +22,7 @@
 
 #include "bf_fixed.h"
 #include "alloc_cache.h"
+#include "bf_tree.h"
 
 #ifdef EXPLICIT_TEMPLATE
 template class w_auto_delete_t<page_s>;
@@ -60,7 +61,6 @@ vol_t::vol_t(const bool apply_fake_io_latency, const int fake_disk_latency)
              : _unix_fd(-1),
                _apply_fake_disk_latency(apply_fake_io_latency), 
                _fake_disk_latency(fake_disk_latency),
-               // IP: default fake io values
                _alloc_cache(NULL), _stnode_cache(NULL), _fixed_bf(NULL)
 {}
 
@@ -174,6 +174,7 @@ rc_t vol_t::mount(const char* devname, vid_t vid)
     _fixed_bf = new bf_fixed_m();
     w_assert1(_fixed_bf);
     W_DO(_fixed_bf->init(this, _unix_fd, _num_pages));
+    _first_data_pageid = _fixed_bf->get_page_cnt() + 1; // +1 for volume header
 
     _alloc_cache = new alloc_cache_t(_vid, _fixed_bf);
     w_assert1(_alloc_cache);
@@ -182,7 +183,7 @@ rc_t vol_t::mount(const char* devname, vid_t vid)
     _stnode_cache = new stnode_cache_t(_vid, _fixed_bf);
     w_assert1(_stnode_cache);
 
-    W_DO( bf->enable_background_flushing(_vid));
+    W_DO( bf->install_volume(this));
 
     return RCOK;
 }
@@ -194,15 +195,8 @@ vol_t::dismount(bool flush)
 
     INC_TSTAT(vol_cache_clears);
 
-    /*
-     *  Flush or force all pages of the volume cached in bf.
-     */
     w_assert1(_unix_fd >= 0);
-    _fixed_bf->flush();
-    W_DO_MSG( flush ? 
-            bf->force_volume(_vid, true /* and invalidate */) : 
-            bf->discard_volume(_vid), << "volume id=" << vid() );
-    W_DO_MSG( bf->disable_background_flushing(_vid), << "volume id=" << vid());
+    W_DO(bf->uninstall_volume(_vid.vol));
 
     /*
      *  Close the device
@@ -342,21 +336,6 @@ vol_t::set_store_flags(snum_t snum, store_flag_t flags, bool sync_volume)
 
     store_operation_param param(snum, t_set_store_flags, flags);
     W_DO( store_operation(param) );
-
-    if (flags & st_regular)  {
-
-        /* GNATS 117 : (performance) The proper thing to do here
-         * is to set the store flags on the clean & dirty pages,
-         * write the dirty ones, keep the clean ones, and don't 
-         * discard them from the BP.  Until we do that, we must
-         * discard them because their store flags are wrong and
-         * are corrected only on read.
-         */
-        W_DO( bf->force_store(stid_t(vid(), snum), /*discard*/true) ); 
-        if (sync_volume )  {
-            W_DO( sync() );
-        }
-    }
 
     return RCOK;
 }
@@ -499,60 +478,6 @@ vol_t::get_store_meta_stats(snum_t, SmStoreMetaStats&)
     return RCOK;
 }
 
-/*********************************************************************
- *
- *  vol_t::check_store_pages(snum, tag)
- *  vol_t::check_store_page(pid, tag) (helper)
- *
- *  Linear search of store: checks each allocated page in the
- *  store and verifies that the tag_t on the page is
- *  apropos to the store type.
- *
- * For debugging
- *********************************************************************/
-
-rc_t
-vol_t::check_store_page(const lpid_t &pid, page_p::tag_t tag)
-{
-    FUNC(check_store_page);
-    page_p page;
-    store_flag_t sf=st_empty;
-    W_DO( page.fix(pid, page_p::t_any_p, LATCH_SH, 0, sf));
-    page_p::tag_t t = page.tag();
-    page.unfix();
-
-    int error=0;
-    switch(t)
-    {
-        case page_p::t_alloc_p:
-        case page_p::t_stnode_p:
-        case page_p::t_btree_p:
-            if (t != tag) error++;
-            break;
-        default:
-            error++;
-            break;
-
-    }
-    if(error) {
-        W_FATAL_MSG(eINTERNAL, 
-            << " unexpected page tag " << t
-            << " expected " << tag
-            << " on page " << pid
-            );
-    }
-    return RCOK;
-}
-
-// for debugging - called by check_volume_page_types
-rc_t
-vol_t::check_store_pages(snum_t, page_p::tag_t)
-{
-    FUNC(check_store_pages);
-    // TODO this should traverse the index
-    return RCOK;
-}
-
 bool vol_t::is_alloc_store(snum_t f) const
 {
     FUNC(is_alloc_store);
@@ -653,10 +578,6 @@ vol_t::read_page(shpid_t pnum, page_s& page)
      */
     memset(&page, '\0', sizeof(page));
 #endif
-    long start = 0;
-    if(_apply_fake_disk_latency) start = gethrtime();
-
-        /* XXX return errors to caller */
     w_rc_t err = t->pread(_unix_fd, (char *) &page, sizeof(page), offset);
     if(err.err_num() == sthread_t::stSHORTIO && err.sys_err_num() == 0) {
         // read past end of OS file. return all zeros
@@ -667,19 +588,6 @@ vol_t::read_page(shpid_t pnum, page_s& page)
               << " sys_err_num " << err.sys_err_num()
               );
     }
-
-    fake_disk_latency(start);
-    
-    /*
-     *  place the vid and the page # on the page 
-     */
-    page.pid._stid.vol = vid();
-    // Leave it 0 so we can later make assertions
-    // based on knowing that the page is new.
-    // page.pid.page = pnum;
-
-    INC_TSTAT(vol_reads);
-
     return RCOK;
 }
 
@@ -712,7 +620,7 @@ rc_t
 vol_t::write_many_pages(shpid_t pnum, const page_s* const pages, int cnt)
 {
     w_assert1(pnum > 0 && pnum < (shpid_t)(_num_pages));
-    w_assert1(cnt > 0 && cnt <= max_many_pages);
+    w_assert1(cnt > 0);
     fileoff_t offset = fileoff_t(pnum) * sizeof(page_s);
 
     smthread_t* t = me();
@@ -910,17 +818,14 @@ vol_t::format_vol(
         {
             for (apid.page = 1; apid.page < alloc_pages + 1; ++apid.page)  {
                 alloc_p ap(&buf);
-                W_COERCE( ap.format(apid, 
-                                    alloc_p::t_alloc_p,
-                                    alloc_p::t_virgin,  st_regular
-                                    ));
+                W_COERCE( ap.format(apid));
                 // set bits for the header pages
                 if (apid.page == 1) {
                     for (shpid_t hdr_pid = 0; hdr_pid < hdr_pages; ++hdr_pid) {
                         ap.set_bit(hdr_pid);
                     }
                 }
-                page_s& page = ap.persistent_part();
+                page_s& page (*ap._pp);
                 w_assert9(&buf == &page);
                 w_assert1(page.pid.vol() == vid);
 
@@ -938,10 +843,8 @@ vol_t::format_vol(
             stnode_p fp(&buf);
             DBG(<<" formatting stnode_p");
             DBGTHRD(<<"stnode_p page " << spid.page);
-            W_COERCE( fp.format(spid, 
-                                stnode_p::t_stnode_p, 
-                                stnode_p::t_virgin, st_regular));
-            page_s& page = fp.persistent_part();
+            W_COERCE( fp.format(spid));
+            page_s& page (*fp._pp);
             w_assert1(page.pid.vol() == vid);
             rc = me()->write(fd, &page, sizeof(page));
             if (rc.is_error()) {

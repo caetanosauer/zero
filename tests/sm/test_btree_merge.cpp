@@ -26,15 +26,15 @@ btree_test_env *test_env;
  * Unit test for BTree Merge/Rebalance/De-Adopt.
  */
 
-/** Used to hold a latch on a page by another thread. */
+/** Used to hold a latch on a root page by another thread. */
 class page_holding_thread_t : public smthread_t {
 public:
-        page_holding_thread_t(const lpid_t &pid) 
+        page_holding_thread_t(volid_t vol, snum_t store) 
                 : smthread_t(t_regular, "page_holding_thread_t"),
                 page_held_flag(false),
                 release_request_flag(false),
                 released_flag(false),
-                _pid(pid), _retval(0) {}
+                _vol(vol), _store(store), _retval(0) {}
         ~page_holding_thread_t()  {_page.unfix();}
         void run();
         int  return_value() const { return _retval; }
@@ -48,7 +48,8 @@ public:
     /** true when this released the latch. ONLY THIS THREAD UPDATES IT. */
     bool volatile released_flag;
 
-    lpid_t _pid;
+    volid_t _vol;
+    snum_t _store;
     int _retval;
     btree_p _page;
 };
@@ -56,7 +57,7 @@ public:
 void page_holding_thread_t::run()
 {
     {
-        rc_t rc = _page.fix(_pid, LATCH_SH);
+        rc_t rc = _page.fix_root(_vol, _store, LATCH_SH);
         if (rc.is_error()) {
             cerr << "Could not latch page: " << rc << endl; 
             _retval = 1;
@@ -110,7 +111,7 @@ w_rc_t prepare_test(ss_m* ssm, test_volume_t *test_volume, stid_t &stid, lpid_t 
     if (second_insert) {
         // let's keep SH latch on root (parent) to prevent automatic adoption.
         // in these test cases, we want foster relationships to start from
-        page_holding_thread_t holder (root_pid);
+        page_holding_thread_t holder (root_pid.vol().vol, root_pid.store());
         W_DO(holder.fork());
         while (!holder.page_held_flag) {
             ::usleep (5000);
@@ -150,17 +151,15 @@ w_rc_t merge_simple(ss_m* ssm, test_volume_t *test_volume) {
     
     W_DO(ssm->begin_xct());
     test_env->set_xct_query_lock();
-    lpid_t child_pid;
+    btree_p root_p;
+    W_DO(root_p.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_EX));
+    EXPECT_TRUE (root_p.is_node());
+
+    shpid_t pid0 = root_p.pid0();
     shpid_t blink;
     {
-        btree_p root_p;
-        W_DO(root_p.fix(root_pid, LATCH_EX));
-        EXPECT_TRUE (root_p.is_node());
-        child_pid = root_pid;
-        child_pid.page = root_p.pid0();
-        root_p.unfix();
         btree_p child_p;
-        W_DO(child_p.fix(child_pid, LATCH_EX));
+        W_DO(child_p.fix_nonroot(root_p, root_p.vol(), pid0, LATCH_EX));
         EXPECT_TRUE (child_p.is_leaf());
         
         blink = child_p.get_blink();
@@ -181,13 +180,17 @@ w_rc_t merge_simple(ss_m* ssm, test_volume_t *test_volume) {
     }
     W_DO(ssm->commit_xct());// commit the deletions
 
-    W_DO(btree_impl::_sx_defrag_page(child_pid));
+    {
+        btree_p child_p;
+        W_DO(child_p.fix_nonroot(root_p, root_p.vol(), pid0, LATCH_EX));
+        W_DO(btree_impl::_sx_defrag_page(child_p));
+    }
     W_DO(x_btree_verify(ssm, stid));
     W_DO(ssm->begin_xct());
     test_env->set_xct_query_lock();
     {
         btree_p child_p;
-        W_DO(child_p.fix(child_pid, LATCH_EX));
+        W_DO(child_p.fix_nonroot(root_p, root_p.vol(), pid0, LATCH_EX));
         EXPECT_TRUE (child_p.is_leaf());
         
         cout << "now it is " << (child_p.used_space() * 100 / SM_PAGESIZE)
@@ -224,18 +227,16 @@ w_rc_t merge_cycle_fail(ss_m* ssm, test_volume_t *test_volume) {
     // let's test the write-order cycle
     W_DO(ssm->begin_xct());
     test_env->set_xct_query_lock();
-    lpid_t child_pid;
+
+    btree_p root_p;
+    W_DO(root_p.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_EX));
+    EXPECT_TRUE (root_p.is_node());
+
+    shpid_t pid0 = root_p.pid0();
     shpid_t blink;
     {
-        btree_p root_p;
-        W_DO(root_p.fix(root_pid, LATCH_EX));
-        EXPECT_TRUE (root_p.is_node());
-        child_pid = root_pid;
-        child_pid.page = root_p.pid0();
-        root_p.unfix();
-
         btree_p child_p;
-        W_DO(child_p.fix(child_pid, LATCH_EX));
+        W_DO(child_p.fix_nonroot(root_p, root_p.vol(), pid0, LATCH_EX));
         EXPECT_TRUE (child_p.is_leaf());
         lpid_t new_page_id;
         w_keystr_t dummy_key;
@@ -263,7 +264,7 @@ w_rc_t merge_cycle_fail(ss_m* ssm, test_volume_t *test_volume) {
 
         // check that it's still there
         btree_p new_p;
-        W_DO(new_p.fix(new_page_id, LATCH_EX));
+        W_DO(new_p.fix_nonroot(child_p, child_p.vol(), new_page_id.page, LATCH_EX));
         EXPECT_TRUE (child_p.is_dirty());
         EXPECT_TRUE (new_p.is_dirty());
     }
@@ -288,16 +289,15 @@ w_rc_t rebalance_simple(ss_m* ssm, test_volume_t *test_volume) {
     
     W_DO(ssm->begin_xct());
     test_env->set_xct_query_lock();
+    btree_p root_p;
+    W_DO(root_p.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_EX));
+    EXPECT_TRUE (root_p.is_node());
     {
-        btree_p root_p;
-        W_DO(root_p.fix(root_pid, LATCH_EX));
-        EXPECT_TRUE (root_p.is_node());
         lpid_t child_pid = root_pid;
         child_pid.page = root_p.pid0();
-        root_p.unfix();
 
         btree_p child_p;
-        W_DO(child_p.fix(child_pid, LATCH_EX));
+        W_DO(child_p.fix_nonroot(root_p, root_p.vol(), child_pid.page, LATCH_EX));
         EXPECT_TRUE (child_p.is_leaf());
         EXPECT_NE (child_p.get_blink(), (uint) 0);        
         int original_recs = child_p.nrecs();
@@ -314,10 +314,9 @@ w_rc_t rebalance_simple(ss_m* ssm, test_volume_t *test_volume) {
 
         // so, let's remove almost all entries from right page
         // (directly uses mark_ghost to not trigger automatic merge/rebalance)
-        lpid_t foster_child_pid = child_pid;
-        foster_child_pid.page = child_p.get_blink();
+        shpid_t foster_child_pid = child_p.get_blink();
         btree_p foster_child_p;
-        W_DO(foster_child_p.fix(foster_child_pid, LATCH_EX));
+        W_DO(foster_child_p.fix_nonroot(child_p, root_p.vol(), foster_child_pid, LATCH_EX));
 
         cout << "foster-child is " << (foster_child_p.used_space() * 100 / SM_PAGESIZE)
             << "% full. blink=" << foster_child_p.get_blink() << endl;
@@ -331,7 +330,7 @@ w_rc_t rebalance_simple(ss_m* ssm, test_volume_t *test_volume) {
         W_DO(ssm->commit_xct());// commit the deletions
         W_DO(ssm->begin_xct());
         test_env->set_xct_query_lock();
-        W_DO(btree_impl::_sx_defrag_page(foster_child_pid)); // reclaim ghosts
+        W_DO(btree_impl::_sx_defrag_page(foster_child_p)); // reclaim ghosts
 
         cout << "after deletion, foster-child is " << (foster_child_p.used_space() * 100 / SM_PAGESIZE)
             << "% full. blink=" << foster_child_p.get_blink() << endl;
@@ -347,7 +346,7 @@ w_rc_t rebalance_simple(ss_m* ssm, test_volume_t *test_volume) {
             << "% full. blink=" << child_p.get_blink() << endl;
         EXPECT_LT (child_p.nrecs(), original_recs);
             
-        W_DO(foster_child_p.fix(foster_child_pid, LATCH_EX));
+        W_DO(foster_child_p.fix_nonroot(child_p, child_p.vol(), foster_child_pid, LATCH_EX));
         cout << "after rebalance " << foster_child_p.nrecs() << " in foster-child" << endl;
         cout << "after rebalance, foster-child is " << (foster_child_p.used_space() * 100 / SM_PAGESIZE)
             << "% full. blink=" << foster_child_p.get_blink() << endl;
@@ -381,17 +380,16 @@ w_rc_t deadopt_simple(ss_m* ssm, test_volume_t *test_volume) {
     test_env->set_xct_query_lock();
     {
         btree_p root_p;
-        W_DO(root_p.fix(root_pid, LATCH_EX));
+        W_DO(root_p.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_EX));
         EXPECT_TRUE (root_p.is_node());
         int original_nrecs = root_p.nrecs();
         cout << "originally " << original_nrecs  << " pages under root" << endl;
         {
             EXPECT_GE (root_p.nrecs(), 3);
-            lpid_t child_pid = root_pid;
-            child_pid.page = root_p.child(0);
+            shpid_t child_pid = root_p.child(0);
             shpid_t right_pid = root_p.child(1);
             btree_p child_p;
-            W_DO(child_p.fix(child_pid, LATCH_EX));
+            W_DO(child_p.fix_nonroot(root_p, root_p.vol(), child_pid, LATCH_EX));
             EXPECT_TRUE (child_p.is_leaf());
             EXPECT_EQ (child_p.get_blink(), (uint) 0);        
             child_p.unfix();
@@ -399,16 +397,15 @@ w_rc_t deadopt_simple(ss_m* ssm, test_volume_t *test_volume) {
             // make him deadopt right sibling
             W_DO(btree_impl::_sx_deadopt_blink(root_p, 0));
             
-            W_DO(child_p.fix(child_pid, LATCH_EX));
+            W_DO(child_p.fix_nonroot(root_p, root_p.vol(), child_pid, LATCH_EX));
             EXPECT_EQ (child_p.get_blink(), right_pid);
         }
         {
             // then pid0 de-adopts him
-            lpid_t child_pid = root_pid;
-            child_pid.page = root_p.pid0();
+            shpid_t child_pid = root_p.pid0();
             shpid_t right_pid = root_p.child(0);
             btree_p child_p;
-            W_DO(child_p.fix(child_pid, LATCH_EX));
+            W_DO(child_p.fix_nonroot(root_p, root_p.vol(), child_pid, LATCH_EX));
             EXPECT_TRUE (child_p.is_leaf());
             EXPECT_EQ (child_p.get_blink(), (uint) 0);
             
@@ -417,7 +414,7 @@ w_rc_t deadopt_simple(ss_m* ssm, test_volume_t *test_volume) {
             // make him de-adopt right sibling
             W_DO(btree_impl::_sx_deadopt_blink(root_p, -1));
             
-            W_DO(child_p.fix(child_pid, LATCH_EX));
+            W_DO(child_p.fix_nonroot(root_p, root_p.vol(), child_pid, LATCH_EX));
             EXPECT_EQ (child_p.get_blink(), right_pid);
         }
         EXPECT_EQ (root_p.nrecs(), original_nrecs - 2);

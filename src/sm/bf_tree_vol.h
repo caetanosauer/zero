@@ -16,8 +16,8 @@ class vol_t;
  * revoked when the volume is unmounted.
  */
 struct bf_tree_vol_t {
-    bf_tree_vol_t () {
-        ::memset(this, 0, sizeof(bf_tree_vol_t));
+    bf_tree_vol_t (vol_t* volume) : _volume (volume) {
+        ::memset(_root_pages, 0, sizeof(bf_idx) * MAX_STORE_COUNT);
     }
     /**
      * Array of pointers to control block for root pages in this volume.

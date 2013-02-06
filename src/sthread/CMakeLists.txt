@@ -16,10 +16,13 @@ add_library(sthread STATIC ${sthread_STAT_SRCS})
 target_link_libraries (sthread fc pthread rt)
 
 set (ST_ERROR_GENFILES_H st_errmsg_gen.h st_einfo_gen.h st_error_def_gen.h st_error_enum_gen.h st_einfo_bakw_gen.h)
-add_custom_command(OUTPUT ${ST_ERROR_GENFILES_H}
-  COMMAND perl ${CMAKE_SOURCE_DIR}/tools/errors.pl -d -e ${CMAKE_CURRENT_SOURCE_DIR}/st_error.dat ${COPY_GENERATED_FILES}
-  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/st_error.dat
-)
+foreach(_file ${ST_ERROR_GENFILES_H})
+    add_custom_command(OUTPUT ${_file}
+      COMMAND perl ${CMAKE_SOURCE_DIR}/tools/errors.pl -d -e ${CMAKE_CURRENT_SOURCE_DIR}/st_error.dat ${COPY_GENERATED_FILES}
+      DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/st_error.dat
+    )
+    set(ST_ERROR_GENFILES_B_H ${ST_ERROR_GENFILES_B_H} ${CMAKE_CURRENT_BINARY_DIR}/${_file})
+endforeach()
 add_custom_target(ST_ERROR_GENFILES DEPENDS ${ST_ERROR_GENFILES_H})
 add_dependencies(sthread ST_ERROR_GENFILES)
 
@@ -28,18 +31,24 @@ add_dependencies(sthread ST_ERROR_GENFILES)
 set(STHREAD_GENFILES_H sthread_stats_collect_enum_gen.h sthread_stats_msg_gen.h sthread_stats_struct_gen.h)
 set(STHREAD_GENFILES_CPP sthread_stats_collect_gen.cpp sthread_stats_dec_gen.cpp sthread_stats_inc_gen.cpp sthread_stats_out_gen.cpp)
 set(STHREAD_GENFILES_FILES ${STHREAD_GENFILES_H} ${STHREAD_GENFILES_CPP})
-add_custom_command(OUTPUT ${STHREAD_GENFILES_FILES}
-  COMMAND perl ${CMAKE_SOURCE_DIR}/tools/stats.pl ${CMAKE_CURRENT_SOURCE_DIR}/sthread_stats.dat ${COPY_GENERATED_FILES}
-  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/sthread_stats.dat
-)
+foreach(_file ${STHREAD_GENFILES_FILES})
+    add_custom_command(OUTPUT ${_file}
+       COMMAND perl ${CMAKE_SOURCE_DIR}/tools/stats.pl ${CMAKE_CURRENT_SOURCE_DIR}/sthread_stats.dat 
+       DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/sthread_stats.dat
+    )
+    set(STHREAD_GENFILES_FILES_B ${STHREAD_GENFILES_FILES_B} ${CMAKE_CURRENT_BINARY_DIR}/${_file})
+endforeach()
 add_custom_target(STHREAD_GENFILES DEPENDS ${STHREAD_GENFILES_FILES})
 add_dependencies(sthread STHREAD_GENFILES)
 
 SET (GENFILES_H ${ST_ERROR_GENFILES_H} ${STHREAD_GENFILES_H})
+foreach(_file ${GENFILES_H})
+    set(GENFILES_B_H ${GENFILES_B_H} ${CMAKE_CURRENT_BINARY_DIR}/${_file})
+endforeach()
 
 ########### install files ###############
 
-install(FILES 
+install(FILES ${GENFILES_B_H}
   ${CMAKE_CURRENT_SOURCE_DIR}/auto_release.h
   ${CMAKE_CURRENT_SOURCE_DIR}/errlog.h
   ${CMAKE_CURRENT_SOURCE_DIR}/critical_section.h
@@ -57,4 +66,3 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/w_debug.h
   DESTINATION include)
 
-INSTALL_GENERATED_H(${GENFILES_H})
