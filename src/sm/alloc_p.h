@@ -63,7 +63,7 @@ public:
     
     enum {
         /** Number of pages one alloc_p can cover. */
-        alloc_max = page_s::data_sz * 8
+	alloc_max = (page_p::data_sz - 2 * sizeof(shpid_t)) * 8
     };
     
     /** determines the pid_offset for the given alloc page. */
