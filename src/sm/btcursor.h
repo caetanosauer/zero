@@ -60,7 +60,7 @@ class btrec_t;
  * 
  * Also, there's a trade-off between concurrency and overhead.
  * In this class, we try to minimize overhead rather than
- * concurrency. See ticket:91 for more details.
+ * concurrency. See jira ticket:89 "Cursor case: overhead-concurrency trade-off" (originally trac ticket:91) for more details.
  * \ingroup SSMBTREE
  */
 class bt_cursor_t : private smlevel_2 {

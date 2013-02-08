@@ -95,7 +95,8 @@ private:
     /**
      * \brief Means if this _wait_map seems old and unreliable.
      * \details
-     * This flag was added to avoid too many false deadlocks. see ticket:97
+     * This flag was added to avoid too many false deadlocks. 
+     * See jira ticket:95 "Modifying Shore-MT: Dreadlock implementation" (originally trac ticket:97).
      * 
      * If this flag is ON, the wait map is suspected to be based on 
      * outdated information as a result of other threads' lock release etc.

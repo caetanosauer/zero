@@ -781,7 +781,7 @@ private: // all data members private
      * This value is used to commit a read-only transaction with Safe SX-ELR to block
      * until the log manager flushed the log buffer at least to this value.
      * Assuming this protocol, we can do ELR for x-locks.
-     * see ticket:101
+     * See jira ticket:99 "ELR for X-lock" (originally trac ticket:101).
      */
     lsn_t                        _read_watermark;
     
@@ -1301,7 +1301,7 @@ private:
 /**
  * \brief Used to automatically record/apply deferred single-log-system-transaction log record.
  * \details
- * See ticket:77
+ * See jira ticket:75 "Log-centric model (in single-log system transaction)" (originally trac ticket:77).
  * log of single-log-system-transaction (ssx) has to be pushed to log manager AND
  * applied to the bufferpool-page in question before both of following
  * 1. Next outer user transaction's log is written
