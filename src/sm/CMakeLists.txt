@@ -72,7 +72,7 @@ add_library(sm_mainmemory STATIC ${sm_STAT_SRCS})
 target_link_libraries(sm_mainmemory fc sthread common)
 # make sure we don't override any previous value of COMPILE_DEFINITIONS
 get_target_property (SM_MAINMEMORY_COMPILEDEF sm_mainmemory COMPILE_DEFINITIONS)
-set(SM_MAINMEMORY_COMPILEDEF "SIMULATE_MAINMEMORY")
+set(SM_MAINMEMORY_COMPILEDEF "SIMULATE_MAINMEMORYDB")
 set_target_properties (sm_mainmemory PROPERTIES COMPILE_DEFINITIONS "${SM_MAINMEMORY_COMPILEDEF}")
 
 
