@@ -305,10 +305,10 @@ struct env_stats_t
 
     void print_env_stats() const;
 
-    inline uint_t inc_trx_att() { return (atomic_inc_uint_nv(&_ntrx_att)); }
+    inline uint_t inc_trx_att() { return lintel::unsafe::atomic_fetch_add(const_cast<uint_t*>(&_ntrx_att),1)+1; }
     inline uint_t inc_trx_com() {
-        atomic_inc_uint(&_ntrx_att);
-        return (atomic_inc_uint_nv(&_ntrx_com)); 
+        lintel::unsafe::atomic_fetch_add(const_cast<uint_t*>(&_ntrx_att),1);
+        return lintel::unsafe::atomic_fetch_add(const_cast<uint_t*>(&_ntrx_com),1)+1; 
     }
 
 }; // EOF env_stats_t
@@ -365,7 +365,7 @@ public:
     void set_dbc(const eDBControl adbc) {
         assert (adbc!=DBC_UNDEF);
         unsigned int tmp = adbc;
-        atomic_swap_uint(&_dbc, tmp);
+        lintel::unsafe::atomic_exchange(const_cast<uint_t*>(&_dbc), tmp);
     }
     
 
@@ -588,7 +588,7 @@ public:
     void set_measure(const MeasurementState aMeasurementState) {
         //assert (aMeasurementState != MST_UNDEF);
         unsigned int tmp = aMeasurementState;
-        atomic_swap_uint(&_measure, tmp);
+        lintel::unsafe::atomic_exchange(const_cast<uint_t*>(&_measure), tmp);
     }
     inline MeasurementState get_measure() { return (MeasurementState(*&_measure)); }
 

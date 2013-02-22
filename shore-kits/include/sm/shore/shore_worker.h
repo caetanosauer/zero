@@ -271,16 +271,12 @@ public:
         //  LOOP so there is no need to sleep).
         uint_t old_ws = *&_ws;
         while (old_ws==WS_LOOP) {
-            uint_t cur_ws = atomic_cas_uint(&_ws,old_ws,(uint_t)WS_SLEEP);
-            if (cur_ws == old_ws) {
+            if(lintel::unsafe::atomic_compare_exchange_strong(static_cast<uint_t*>(&_ws),old_ws,(uint_t)WS_SLEEP) {
                 // If cas successful, then sleep
                 _notify.wait();
                 ++_stats._condex_sleep;
                 return (1);
             }
-
-            // Keep on trying
-            old_ws = cur_ws;
         }
         ++_stats._failed_sleep;
         return (0);

@@ -40,7 +40,12 @@
 #ifdef CFG_SHORE_6
 
 #include <w_defines.h>
-#include <atomic_templates.h>
+//#include <atomic_templates.h>
+typedef unsigned  int     uint_t; 
+typedef           int32_t  int4_t; 
+typedef          uint32_t uint4_t; 
+typedef unsigned long     ulong_t; 
+typedef unsigned short    ushort_t;
 
 #include "sm_vas.h"
 typedef queue_based_lock_t mcs_lock;
