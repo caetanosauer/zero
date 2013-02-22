@@ -1,0 +1,20 @@
+echo TPC-B run
+sli
+log cd
+echo 2
+measure 32 1 2 20 31 1
+echo 4
+measure 32 1 4 20 31 1
+echo 6
+measure 32 1 6 20 31 1
+echo 8
+measure 32 1 8 20 31 1
+echo 10
+measure 32 1 10 20 31 1
+echo 12
+measure 32 1 12 20 31 1
+echo 14
+measure 32 1 14 20 31 1
+echo 16
+measure 32 1 16 20 31 1
+quit
