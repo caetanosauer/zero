@@ -1,0 +1,40 @@
+-Prepare Zero build dir
+
+Link ~/apps/shore to the build dir for Zero
+
+#> ln -s <zero-build-dir> ~/apps/shore 
+
+<zero-build-dir> should be the build dir because Shore-Kits relies on 
+files that are created by the build process, such as shore-config-env.h, etc.
+Shore-Kits though also looks into <zero-build-dir> for Shore header files. 
+The quick and dirty solution is to copy the following Zero source directories 
+over to the build directory <zero-build-dir>.
+
+eval `$DEPTOOL cdopt $PWD` 
+cp -r ~/projects/Zero/src/fc src
+cp -r ~/projects/Zero/src/common src
+cp -r ~/projects/Zero/src/sthread src
+cp -r ~/projects/Zero/src/sm src
+cp -r ~/projects/Zero/config .
+
+
+-Prepare shore-kits source directory
+
+We don't want to build shore-kits under the projects/Zero/shore-kits because
+this will pollute the git tree with files created by automake and binary files
+create by the build process. So instead we suggest to make a local copy of the 
+shore-kits tree. 
+
+cp -r ~/projects/Zero/shore-kits <local-shore-kits>
+cd <local-shore-kits>
+cd include
+ln -s /home/`whoami`/projects/Lintel/include/Lintel Lintel
+
+-Build shore-kits
+
+cd <local-shore-kits>
+./autogen.sh
+./configure --enable-shore6 --enable-debug(optional) 
+make -j
+
+
