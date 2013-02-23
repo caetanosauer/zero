@@ -22,7 +22,6 @@
 #include "vol.h"
 #include "alloc_cache.h"
 
-#include "atomic_templates.h"
 #include <ostream>
 
 ///////////////////////////////////   Initialization and Release BEGIN ///////////////////////////////////  

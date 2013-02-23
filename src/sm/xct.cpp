@@ -1808,7 +1808,8 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
                 
                 if (!flushed) {
                     // now we suspect that we might saw a bogus tag for some reason.
-                    // so, let's output a real xct_end log and flush it. see ticket:101
+                    // so, let's output a real xct_end log and flush it. 
+                    // See jira ticket:99 "ELR for X-lock" (originally trac ticket:101).
                     // NOTE this should not be needed now that our algorithm is based
                     // on lock bucket tag, which is always exact, not too conservative.
                     // should consider removing this later, but for now keep it.
@@ -2775,7 +2776,7 @@ w_rc_t xct_t::_flush_user_logbuf (logrec_t *l, lsn_t *ret_lsn) {
     w_assert1(_log_buf_for_piggybacked_ssx_target);
 
     // there IS a deferred ssx log. so, let's record it together and also apply.
-    // see ticket:77 for why we can do this
+    // See jira ticket:75 "Log-centric model (in single-log system transaction)" (originally trac ticket:77) for why we can do this
     // so far we allow only one ssx log. could be multiple in future.
     logrec_t* ssx_log = reinterpret_cast<logrec_t*>(_log_buf_for_piggybacked_ssx);
     _tmp_array_for_rs[0] = ssx_log;

@@ -59,6 +59,23 @@ set(sm_STAT_SRCS
 add_library(sm STATIC ${sm_STAT_SRCS})
 target_link_libraries(sm fc sthread common)
 
+# generate a library that simulates no swizzling
+add_library(sm_noswizzling STATIC ${sm_STAT_SRCS})
+target_link_libraries(sm_noswizzling fc sthread common)
+# make sure we don't override any previous value of COMPILE_DEFINITIONS
+get_target_property (SM_NOSWIZZLING_COMPILEDEF sm_noswizzling COMPILE_DEFINITIONS)
+set(SM_NOSWIZZLING_COMPILEDEF "SIMULATE_NO_SWIZZLING")
+set_target_properties (sm_noswizzling PROPERTIES COMPILE_DEFINITIONS "${SM_NOSWIZZLING_COMPILEDEF}")
+
+# generate a library that simulates an in-memory DB
+add_library(sm_mainmemory STATIC ${sm_STAT_SRCS})
+target_link_libraries(sm_mainmemory fc sthread common)
+# make sure we don't override any previous value of COMPILE_DEFINITIONS
+get_target_property (SM_MAINMEMORY_COMPILEDEF sm_mainmemory COMPILE_DEFINITIONS)
+set(SM_MAINMEMORY_COMPILEDEF "SIMULATE_MAINMEMORYDB")
+set_target_properties (sm_mainmemory PROPERTIES COMPILE_DEFINITIONS "${SM_MAINMEMORY_COMPILEDEF}")
+
+
 set (E_ERROR_GENFILES_H e_errmsg_gen.h e_einfo_gen.h e_error_def_gen.h e_error_enum_gen.h e_einfo_bakw_gen.h)
 foreach(_file ${E_ERROR_GENFILES_H})
   add_custom_command(OUTPUT ${_file}

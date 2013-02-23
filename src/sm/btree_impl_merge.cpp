@@ -73,7 +73,8 @@ rc_t btree_impl::_ux_rebalance_blink_core(btree_p &page, btree_p &blink_p, int32
         return RCOK;
     }
     
-    // assure foster-child page has an entry same as fence-low for locking correctness. see ticket:86
+    // assure foster-child page has an entry same as fence-low for locking correctness. 
+    // See jira ticket:84 "Key Range Locking" (originally trac ticket:86).
     W_DO(_ux_assure_fence_low_entry(blink_p));
 
     // foster-parent should be written later because it's the data source
@@ -199,7 +200,8 @@ rc_t btree_impl::_ux_merge_blink_core(btree_p &page)
     btree_p blink_p;
     W_DO(blink_p.fix_nonroot(page, page.vol(), page.get_blink(), LATCH_EX));
     
-    // assure foster-child page has an entry same as fence-low for locking correctness. see ticket:86
+    // assure foster-child page has an entry same as fence-low for locking correctness. 
+    // See jira ticket:84 "Key Range Locking" (originally trac ticket:86).
     W_DO(_ux_assure_fence_low_entry(blink_p));
 
     // can we fully absorb it?
@@ -216,7 +218,7 @@ rc_t btree_impl::_ux_merge_blink_core(btree_p &page)
     if (!registered) {
         // this means the merging will cause a cycle in write-order.
         // so, let's not do the merging now.
-        // see ticket:39 for more details
+        // see ticket:39 for more details (jira ticket:39 "Node removal and rebalancing" (originally trac ticket:39))
         return RCOK;
     }
     
@@ -331,7 +333,7 @@ rc_t btree_impl::_ux_deadopt_blink_core(btree_p &real_parent, slotid_t foster_pa
     
     if (foster_parent.get_blink() != 0) {
         // De-Adopt can't be processed when foster-parent already has foster-child. Do nothing
-        // see ticket:39
+        // see ticket:39 (jira ticket:39 "Node removal and rebalancing" (originally trac ticket:39))
         return RCOK; // maybe error?
     }
     

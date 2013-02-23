@@ -171,6 +171,12 @@ inline w_rc_t bf_tree_m::fix_root (page_s*& page, volid_t vol, snum_t store, lat
     bf_idx idx_dummy = _hashtable->lookup(bf_key(vol, _control_blocks[volume->_root_pages[store]]._pid_shpid));
     w_assert1(idx == idx_dummy);
     idx = idx_dummy;
+#else // SIMULATE_NO_SWIZZLING
+    if (!is_swizzling_enabled()) {
+        bf_idx idx_dummy = _hashtable->lookup(bf_key(vol, _control_blocks[volume->_root_pages[store]]._pid_shpid));
+        w_assert1(idx == idx_dummy);
+        idx = idx_dummy;
+    }
 #endif // SIMULATE_NO_SWIZZLING
 
     w_assert1 (_is_active_idx(idx));
@@ -184,6 +190,10 @@ inline w_rc_t bf_tree_m::_latch_root_page(page_s*& page, bf_idx idx, latch_mode_
     
 #ifdef SIMULATE_NO_SWIZZLING
     _increment_pin_cnt_no_assumption(idx);
+#else // SIMULATE_NO_SWIZZLING
+    if (!is_swizzling_enabled()) {
+        _increment_pin_cnt_no_assumption(idx);
+    }
 #endif // SIMULATE_NO_SWIZZLING
 
     // root page is always swizzled. thus we don't need to increase pin. just take latch.
@@ -193,6 +203,10 @@ inline w_rc_t bf_tree_m::_latch_root_page(page_s*& page, bf_idx idx, latch_mode_
 
 #ifdef SIMULATE_NO_SWIZZLING
     _decrement_pin_cnt_assume_positive(idx);
+#else // SIMULATE_NO_SWIZZLING
+    if (!is_swizzling_enabled()) {
+        _decrement_pin_cnt_assume_positive(idx);
+    }
 #endif // SIMULATE_NO_SWIZZLING
     return RCOK;
 }

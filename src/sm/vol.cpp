@@ -42,7 +42,7 @@ Volume layout:
    alloc_p pages are bitmaps indicating which of its pages are allocated.
    alloc_p pages are read and modified without any locks in any time.
    It's supposed to be extremely fast to allocate/deallocate pages
-   unlike the original Shore-MT code. See ticket:74 for more details.
+   unlike the original Shore-MT code. See jira ticket:72 "fix extent management" (originally trac ticket:74) for more details.
 */
 
 /*

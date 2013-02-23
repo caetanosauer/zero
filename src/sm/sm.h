@@ -699,7 +699,8 @@ public:
      * @param[in] deferred_ssx whether to defer the logging and applying of the change made
      * by single-log system transaxction (SSX). This is experimental and so far always false.
      * If this is true, the "outer" transaction outputs the deferred log and also applies it.
-     * Let's revisit this when we go into "REDO-only" model. ticket:77
+     * Let's revisit this when we go into "REDO-only" model. 
+     * See jira ticket:75 "Log-centric model (in single-log system transaction)" (originally trac ticket:77).
      * @param[in] stats   Pointer to an allocated statistics-holding structure.
      * @param[in] timeout   Optional, controls blocking behavior.
      */

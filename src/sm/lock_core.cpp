@@ -394,7 +394,8 @@ lock_core_m::release_duration(
             }
             p = prev;
         }
-        // we don't "downgrade" [SU]X/X[SU] to NX/XN for laziness.  see ticket:101
+        // we don't "downgrade" [SU]X/X[SU] to NX/XN for laziness.  
+	// See jira ticket:99 "ELR for X-lock" (originally trac ticket:101).
         // likewise, we don't "downgrade" SIX to IX for laziness
     } else {
         //backwards:
@@ -550,7 +551,7 @@ void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_resul
                     bool killhim;
                     // If one of them is chained transaction, let's victimize
                     // shorter chain because it will quickly converge in dominated lock table.
-                    // See ticket:102
+                    // See jira ticket:100 "Deadlock victim: who should be killed" (originally trac ticket:102).
                     if (their_chain_len < my_chain_len) {
                         killhim = true;
                     } else if (their_chain_len > my_chain_len) {

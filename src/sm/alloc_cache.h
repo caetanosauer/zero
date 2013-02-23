@@ -20,7 +20,7 @@ class bf_fixed_m;
  * All allocation/deallocation are logged and done in a critical section.
  * To make it scalable, this object is designed to be as fast as possible.
  * Actually, in original Shore-MT, page allocation was a huge bottleneck in high contention.
- * See ticket:74 for more details.
+ * See jira ticket:72 "fix extent management" (originally trac ticket:74) for more details.
  * @See alloc_p
  */
 class alloc_cache_t {
