@@ -1,10 +1,11 @@
 # -*- makefile -*-
 
 # Shore related 
+SHORE_HOME=$(PROJECTS)/Zero
 SHORE_SRC = $(SHORE_HOME)/src
 SHORE_CXXFLAGS = -DSOLARIS2 -DSTHREAD_CORE_PTHREAD -DARCH_LP64 -DNO_FASTNEW -DW_LARGEFILE -D_POSIX_PTHREAD_SEMANTICS -D__STDC_FORMAT_MACROS -D__STDC_CONSTANT_MACROS -w
 
-SHORE_INCLUDES = -I$(SHORE_SRC)/fc -I$(SHORE_SRC)/sm -I$(SHORE_SRC)/common -I$(SHORE_SRC)/sthread -I$(SHORE_SRC)/../config $(SHORE_CXXFLAGS)
+SHORE_INCLUDES = -I$(SHORE_SRC)/fc -I$(SHORE_SRC)/sm -I$(SHORE_SRC)/common -I$(SHORE_SRC)/sthread -I$(SHORE_SRC)/../config $(SHORE_CXXFLAGS) -I$(BUILD_OPT)/Zero/config -I$(BUILD_OPT)/Zero/src/fc -I$(BUILD_OPT)/Zero/src/sm -I$(BUILD_OPT)/Zero/src/sthread -I$(BUILD_OPT)/Zero/src/common -I$(BUILD_OPT)/include
 
 if USE_SHORE_6
 SHORE_INCLUDES += -I$(SHORE_SRC)/atomic_ops
@@ -13,10 +14,10 @@ SHORE_INCLUDES += -I$(SHORE_HOME)/../ppmcs
 endif
 
 SHORE_LDADD = \
-	$(SHORE_SRC)/sm/libsm.a \
-	$(SHORE_SRC)/common/libcommon.a \
-	$(SHORE_SRC)/sthread/libsthread.a \
-	$(SHORE_SRC)/fc/libfc.a
+	$(BUILD_OPT)/Zero/sm/libsm.a \
+	$(BUILD_OPT)/Zero/common/libcommon.a \
+	$(BUILD_OPT)/Zero/sthread/libsthread.a \
+	$(BUILD_OPT)/Zero/fc/libfc.a
 
 ### -lmtmalloc <-- which malloc library will be included is responsibility of configure
 

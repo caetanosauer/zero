@@ -144,7 +144,7 @@ AC_MSG_RESULT($READLINE_HOME)
 
 # ----------- Shore-SM target dir -------------
 # $target is typically processor-vendor-os
-SHORE_HOME_DEFAULT="$HOME/apps/shore"
+SHORE_HOME_DEFAULT="$HOME/projects/Zero"
 
 # check user input
 AC_ARG_VAR(SHORE_HOME, Location of Shore Installation; default is $SHORE_HOME_DEFAULT)
