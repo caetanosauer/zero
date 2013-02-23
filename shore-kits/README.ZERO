@@ -1,17 +1,18 @@
--Prepare shore-kits source directory
+-Deploy shore-kits source tree into Zero build directory
 
 We don't want to build shore-kits under the projects/Zero/shore-kits as
-this will pollute the git tree with files created by automake.
-Instead we suggest to create a local copy of the shore-kits tree and build 
-that. 
+this will pollute the git tree with files created by automake. Instead we 
+suggest to deploy the source tree into Zero's build directory.
 
-cp -r ~/projects/Zero/shore-kits <local-shore-kits>
+% ./zero.sh deploy
 
 -Build shore-kits
 
-cd <local-shore-kits>
-./autogen.sh
-./configure --enable-shore6 --enable-debug(optional) 
-make -j
+% cd ${BUILD_OPT}/Zero/shore-kits
+% ./autogen.sh
+% ./configure --enable-shore6 --enable-debug(optional) 
+% make -j
 
+-Edits you do in ${BUILD_OPT}/Zero/shore-kits can be synced back to the git tree:
 
+% ./zero.sh sync
