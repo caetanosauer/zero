@@ -2,17 +2,18 @@
 
 We don't want to build shore-kits under the projects/Zero/shore-kits as
 this will pollute the git tree with files created by automake. Instead we 
-suggest to deploy the source tree into Zero's build directory.
+suggest to deploy the source tree into a temporary directory.
 
-% ./zero.sh deploy
+% ./rsync.sh [DST_DIR]
+
+If DST_DIR is omitted then the script defaults to Zero's built directory: 
+
+DST_DIR=${BUILD_OPT}/Zero
 
 -Build shore-kits
 
-% cd ${BUILD_OPT}/Zero/shore-kits
+% cd [DST_DIR]/shore-kits
+% ${DST_DIR}
 % ./autogen.sh
 % ./configure --enable-shore6 --enable-debug(optional) 
 % make -j
-
--Edits you do in ${BUILD_OPT}/Zero/shore-kits can be synced back to the git tree:
-
-% ./zero.sh sync
