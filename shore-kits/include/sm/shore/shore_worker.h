@@ -271,12 +271,17 @@ public:
         //  LOOP so there is no need to sleep).
         uint_t old_ws = *&_ws;
         while (old_ws==WS_LOOP) {
-            if(lintel::unsafe::atomic_compare_exchange_strong(static_cast<uint_t*>(&_ws),old_ws,(uint_t)WS_SLEEP) {
+            //FIXME: SHORE-KITS-API: LINTEL ATOMIC
+            //invalid static_cast from type volatile uint_t* to type uint_t*
+            assert(0);
+            #if 0
+            if(lintel::unsafe::atomic_compare_exchange_strong(static_cast<uint_t*>(&_ws),old_ws,(uint_t)WS_SLEEP)) {
                 // If cas successful, then sleep
                 _notify.wait();
                 ++_stats._condex_sleep;
                 return (1);
             }
+            #endif
         }
         ++_stats._failed_sleep;
         return (0);

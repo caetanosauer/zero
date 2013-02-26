@@ -169,6 +169,9 @@ struct block {
     // @return: whether successfully released
     static
     bool         release_chip(void* ptr, size_t chip_size, size_t chip_count, size_t block_size);
+    // WARNING: the caller must ensure that ptr is in a valid memory range
+    static
+    void         release(void* ptr, size_t chip_size, size_t chip_count, size_t block_size);
 
     void         recycle() { _bits.recycle(); }
 

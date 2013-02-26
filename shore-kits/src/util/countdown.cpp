@@ -48,7 +48,9 @@ countdown_t::post(bool is_error)
     int old_value = *&_state;
     while (old_value >= 2*CD_NUMBER) {
         int new_value = (is_error? CD_ERROR : old_value-CD_NUMBER);
-        int cur_value = atomic_cas_32(&_state, old_value, new_value);
+        int cur_value = 0; //FIXME: LINTEL ATOMIC: atomic_cas_32(&_state, old_value, new_value);
+        //int cur_value = atomic_cas_32(&_state, old_value, new_value);
+        assert(0);
         if (cur_value == old_value) {
             assert(is_error || new_value >= CD_NUMBER);
             return (is_error);

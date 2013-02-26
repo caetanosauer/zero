@@ -39,8 +39,10 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/partition.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log_core.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/page.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/pin.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/pmap.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/restart.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/scan.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/sm.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/sm_du_stats.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/sm_io.cpp

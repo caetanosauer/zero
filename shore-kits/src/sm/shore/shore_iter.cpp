@@ -58,9 +58,12 @@ w_rc_t simple_table_iter_t::open_scan()
     if (!_opened) {
         assert (_db);
         W_DO(_file->check_fid(_db));
-        _scanner = new scan_file_i(_file->fid(), 
-                                   ss_m::t_cc_record, 
-                                   false, _lm);
+        //TODO: SHORE-KITS-API
+        //FIXME: ss_m:t_cc_record below causes problem; what to pass??? 
+        //_scanner = new scan_file_i(_file->fid(), 
+        //                           ss_m::t_cc_record, 
+        //                           false, _lm);
+        assert(0);
         _opened = true;
     }
     return (RCOK);
@@ -130,7 +133,11 @@ w_rc_t simple_index_iter_t::open_scan(uint pnum,
         // !! according to shore-mt/src/scan.h:82 
         //    t_cc_kvl  - IS lock on the index and SH key-value locks on every entry encountered
         //    t_cc_none - IS lock on the index and no other locks
-        ss_m::concurrency_t cc = ss_m::t_cc_im;
+        //TODO: SHORE-KITS-API
+        //FIXME: SHORE-KITS-API: what to pass for concurrency control???
+        ss_m::concurrency_t cc = ss_m::t_cc_none; // ss_m::t_cc_im is not defined 
+        //ss_m::concurrency_t cc = ss_m::t_cc_im; 
+        assert(0);
         if (_lm==NL) cc = ss_m::t_cc_none;
 
         // 2. open the cursor

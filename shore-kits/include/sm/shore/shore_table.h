@@ -678,7 +678,7 @@ inline uint_t table_desc_t::maxsize()
     // In other words, the maxsize should be either 0 or equal to the size.
     assert ((*&_maxsize==0) || (*&_maxsize==size));
 
-    atomic_swap_uint(&_maxsize, size);
+    lintel::unsafe::atomic_store(const_cast<uint_t*>(&_maxsize), size);
     return (*&_maxsize);
 }
 

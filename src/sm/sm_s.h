@@ -110,6 +110,71 @@ public:
 };
 
 
+
+class rid_t;
+
+/**\brief Short Record ID
+ *\ingroup IDS
+ * \details
+ * This class represents a short record identifier, which is
+ * used when the volume id is implied somehow.
+ *
+ * A short record id contains a slot, a (short) page id, and a store number.
+ * A short page id is just a page number (in basics.h).
+ *
+ * See \ref IDS.
+ */
+class shrid_t {
+public:
+    shpid_t        page;
+    snum_t        store;
+    slotid_t        slot;
+    fill2        filler; // because page, snum_t are 4 bytes, slotid_t is 2
+
+    shrid_t();
+    shrid_t(const rid_t& r);
+    shrid_t(shpid_t p, snum_t st, slotid_t sl) : page(p), store(st), slot(sl) {}
+    friend ostream& operator<<(ostream&, const shrid_t& s);
+    friend istream& operator>>(istream&, shrid_t& s);
+};
+
+
+#define RID_T
+
+/**\brief Record ID
+ *\ingroup IDS
+ * \details
+ * This class represents a long record identifier, used in the
+ * Storage Manager API, but not stored persistently.
+ *
+ * A record id contains a slot and a (long) page id.
+ * A long page id contains a store id and a volume id.
+ *
+ * See \ref IDS.
+ */
+class rid_t {
+public:
+    lpid_t        pid;
+    slotid_t        slot;
+    fill2        filler;  // for initialization of last 2 unused bytes
+
+    rid_t();
+    rid_t(vid_t vid, const shrid_t& shrid);
+    rid_t(const lpid_t& p, slotid_t s) : pid(p), slot(s) {};
+
+    stid_t stid() const;
+
+    bool operator==(const rid_t& r) const;
+    bool operator!=(const rid_t& r) const;
+    bool operator<(const rid_t& r) const;
+    
+    friend ostream& operator<<(ostream&, const rid_t& s);
+    friend istream& operator>>(istream&, rid_t& s);
+
+    static const rid_t null;
+};
+
+
 #include <lsn.h>
 
 inline ostream& operator<<(ostream& o, const lsn_t& l)
@@ -136,6 +201,12 @@ inline lpid_t::lpid_t(vid_t v, snum_t s, shpid_t p) :
         _stid(v, s), page(p)
 {}
 
+inline rid_t::rid_t() : slot(0)
+{}
+
+inline rid_t::rid_t(vid_t vid, const shrid_t& shrid) :
+        pid(vid, shrid.store, shrid.page), slot(shrid.slot)
+{}
 
 inline bool lpid_t::operator==(const lpid_t& p) const
 {
@@ -155,6 +226,16 @@ inline bool lpid_t::operator<=(const lpid_t& p) const
 inline bool lpid_t::operator>=(const lpid_t& p) const
 {
     return _stid == p._stid && page >= p.page;
+}
+
+inline bool rid_t::operator==(const rid_t& r) const
+{
+    return (pid == r.pid && slot == r.slot);
+}
+
+inline bool rid_t::operator!=(const rid_t& r) const
+{
+    return !(*this == r);
 }
 
 /*<std-footer incl-file-exclusion='SM_S_H'>  -- do not edit anything below this line -- */

@@ -23,7 +23,7 @@ cd ${DST_DIR}/shore-kits
 if [ ! -f "${DST_DIR}/shore-kits/configure" ]
 then
   ./autogen.sh
-  ./configure --enable-shore6 --enable-debug
+  ./configure --enable-shore6 --enable-debug SHORE_HOME=${BUILD_OPT}/Zero
 fi
 
 echo "Building shore-kits at ${DST_DIR}"

@@ -14,15 +14,15 @@ SHORE_INCLUDES += -I$(SHORE_HOME)/../ppmcs
 endif
 
 SHORE_LDADD = \
-	$(BUILD_OPT)/Zero/sm/libsm.a \
-	$(BUILD_OPT)/Zero/common/libcommon.a \
-	$(BUILD_OPT)/Zero/sthread/libsthread.a \
-	$(BUILD_OPT)/Zero/fc/libfc.a
+	$(BUILD_OPT)/Zero/src/sm/libsm.a \
+	$(BUILD_OPT)/Zero/src/common/libcommon.a \
+	$(BUILD_OPT)/Zero/src/sthread/libsthread.a \
+	$(BUILD_OPT)/Zero/src/fc/libfc.a
 
 ### -lmtmalloc <-- which malloc library will be included is responsibility of configure
 
 if USE_SHORE_6
-SHORE_LDADD += $(SHORE_SRC)/atomic_ops/libatomic_ops.a
+#SHORE_LDADD += $(SHORE_SRC)/atomic_ops/libatomic_ops.a
 else
 SHORE_LDADD += $(SHORE_HOME)/../ppmcs/libppmcs.a
 endif
@@ -363,17 +363,20 @@ WL_TPCE_SHORE_EGEN = \
    $(SW)/tpce/egen/progressmeterinterface.cpp \
    $(SW)/tpce/egen/bucketsimulator.cpp
 
+#lib_libworkload_a_SOURCES = \
+#   $(WL_SG_TPCC_SHORE) \
+#   $(WL_TPCC_SHORE) \
+#   $(WL_TM1_SHORE) \
+#   $(WL_TPCB_SHORE) \
+#   $(WL_TPCH_DBGEN_SHORE) \
+#   $(WL_TPCH_SHORE) \
+#   $(WL_TPCE_SHORE_EGEN) \
+#   $(WL_TPCE_SHORE) \
+#   $(WL_TPCE_SHORE_XCTS)
 
 lib_libworkload_a_SOURCES = \
    $(WL_SG_TPCC_SHORE) \
-   $(WL_TPCC_SHORE) \
-   $(WL_TM1_SHORE) \
-   $(WL_TPCB_SHORE) \
-   $(WL_TPCH_DBGEN_SHORE) \
-   $(WL_TPCH_SHORE) \
-   $(WL_TPCE_SHORE_EGEN) \
-   $(WL_TPCE_SHORE) \
-   $(WL_TPCE_SHORE_XCTS)
+   $(WL_TPCC_SHORE)
 
 
 if USE_QPIPE

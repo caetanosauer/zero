@@ -260,7 +260,7 @@ public:
             W_DO(table_iter::_file->check_fid(db));
             bool bIgnoreLatches = (table_iter::_file->get_pd() & (PD_MRBT_LEAF | PD_MRBT_PART) ? true : false);
             table_iter::_scan = new scan_file_i(table_iter::_file->fid(), 
-                                                ss_m::t_cc_record, 
+                                                ss_m::t_cc_none, //TODO: SHORE-KITS-API : was t_cc_record
                                                 false, 
                                                 table_iter::_lm,
                                                 bIgnoreLatches);
@@ -358,7 +358,7 @@ public:
             // !! according to shore-mt/src/scan.h:82 
             //    t_cc_kvl  - IS lock on the index and SH key-value locks on every entry encountered
             //    t_cc_none - IS lock on the index and no other locks
-            ss_m::concurrency_t cc = ss_m::t_cc_im;
+            ss_m::concurrency_t cc = ss_m::t_cc_none; //TODO: SHORE-KITS-API : In Shore-sm 6.0.1, it was t_cc_im
             if (index_iter::_lm==NL) cc = ss_m::t_cc_none;
 
             // 2. open the cursor

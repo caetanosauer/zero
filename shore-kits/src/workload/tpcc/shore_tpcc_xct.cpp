@@ -1447,7 +1447,9 @@ w_rc_t ShoreTPCCEnv::xct_delivery(const int xct_id,
     while(SPLIT_TRX && e.is_error() && e.err_num() == smlevel_0::eDEADLOCK) {
 	W_COERCE(_pssm->abort_xct());
 	W_DO(_pssm->begin_xct());
-	atomic_inc_32(&delivery_abort_ctr);
+    //FIXME: LINTEL ATOMIC
+	//atomic_inc_32(&delivery_abort_ctr);
+    assert(0);
 	dlist.push_back(d_id); // retry the failed trx
 	e = _xct_delivery_helper(xct_id, pdin, dlist, d_id, SPLIT_TRX);
     }

@@ -168,7 +168,8 @@ w_rc_t table_desc_t::create_physical_index(ss_m* db, index_desc_t* index)
     // Create all the indexes of the table
     stid_t iid = stid_t::null;
     ss_m::ndx_t smidx_type = ss_m::t_uni_btree;
-    ss_m::concurrency_t smidx_cc = ss_m::t_cc_im;
+    ss_m::concurrency_t smidx_cc = ss_m::t_cc_none; //FIXME: SHORE-KITS-API what concurrency control to use??? It was using ss_m::t_cc_im;
+    assert(0);
 
     // Update the type of index to create
     
@@ -208,7 +209,9 @@ w_rc_t table_desc_t::create_physical_index(ss_m* db, index_desc_t* index)
 
 
     // what kind of CC will be used
-    smidx_cc = index->is_relaxed() ? ss_m::t_cc_none : ss_m::t_cc_im;
+    //smidx_cc = index->is_relaxed() ? ss_m::t_cc_none : ss_m::t_cc_im;
+    smidx_cc = index->is_relaxed() ? ss_m::t_cc_none : ss_m::t_cc_none; //FIXME: SHORE-KITS-API what concurrency control to use??? See commented statement: it was using ss_m::t_cc_im;
+    assert(0);
 
 
     // if it is the primary, update file flag
@@ -1706,7 +1709,11 @@ w_rc_t table_man_t::fetch_table(ss_m* db, lock_mode_t alm)
     // 1. scan the table
     W_DO(_ptable->check_fid(db));
     bool bIgnoreLatches = (_ptable->get_pd() & (PD_MRBT_LEAF | PD_MRBT_PART) ? true : false);
-    scan_file_i t_scan(_ptable->fid(), ss_m::t_cc_record, false, alm, bIgnoreLatches);
+    //FIXME: SHORE-KITS-API: conccurcy control is t_cc_record
+    scan_file_i t_scan(_ptable->fid(), ss_m::t_cc_none, false, alm, bIgnoreLatches);
+    //scan_file_i t_scan(_ptable->fid(), ss_m::t_cc_record, false, alm, bIgnoreLatches);
+    assert(0);
+
     while(!eof) {
 	W_DO(t_scan.next_page(handle, 0, eof));
 	counter++;
@@ -1719,7 +1726,10 @@ w_rc_t table_man_t::fetch_table(ss_m* db, lock_mode_t alm)
     while (index) {
 	W_DO(index->check_fid(db));
 	for(int pnum = 0; pnum < index->get_partition_count(); pnum++) {
-	    scan_file_i if_scan(index->fid(pnum), ss_m::t_cc_record, false, alm, bIgnoreLatches);
+        //FIXME: SHORE-KITS-API: conccurcy control is t_cc_record
+	    scan_file_i if_scan(index->fid(pnum), ss_m::t_cc_none, false, alm, bIgnoreLatches);
+	    //scan_file_i if_scan(index->fid(pnum), ss_m::t_cc_record, false, alm, bIgnoreLatches);
+        assert(0);
 	    eof = false;
 	    counter = -1;
 	    while(!eof) {

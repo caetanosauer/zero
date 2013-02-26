@@ -90,6 +90,8 @@ class lock_m;
 class tid_t;
 class option_t;
 
+class rid_t;
+
 #ifndef        SM_EXTENTSIZE
 #define        SM_EXTENTSIZE        8
 #endif
@@ -297,6 +299,12 @@ public:
             partition_number_t num
         );
 
+    typedef w_rc_t (*RELOCATE_RECORD_CALLBACK_FUNC) (
+	   vector<rid_t>&    old_rids, 
+           vector<rid_t>&    new_rids
+       );
+
+
 /**\cond skip */
     enum switch_t {
         ON = 1,
@@ -310,6 +318,23 @@ public:
      */
     enum cmp_t { bad_cmp_t=badOp, eq=eqOp,
                  gt=gtOp, ge=geOp, lt=ltOp, le=leOp };
+
+    //TODO: SHORE-KITS-API
+    //Define the right types (include foster btree type?)
+    /**\brief Index types */
+    enum ndx_t {
+        t_bad_ndx_t,             // illegal value
+        t_btree,                 // B+tree with duplicates
+        t_uni_btree,             // Unique-key btree
+        t_rtree,                  // R*tree
+    	t_mrbtree,       // Multi-rooted B+tree with regular heap files   
+    	t_uni_mrbtree,          
+    	t_mrbtree_l,          // Multi-rooted B+tree where a heap file is pointed by only one leaf page 
+    	t_uni_mrbtree_l,               
+    	t_mrbtree_p,     // Multi-rooted B+tree where a heap file belongs to only one partition
+    	t_uni_mrbtree_p
+    };
+
 
 
     /**\enum concurrency_t 
@@ -327,8 +352,35 @@ public:
         t_cc_none,                // no locking
         t_cc_vol,
         t_cc_store,
-        t_cc_keyrange
+        t_cc_keyrange,
+        t_cc_append
     };
+
+    /**\enum pg_policy_t 
+     * \brief 
+     * File-compaction policy for creating records.
+     * \details
+     * - t_append : append new record to file (preserve order)
+     * - t_cache  : look in cache for pages with space for new record (does
+     *              not preserve order)
+     * - t_compact: keep file compact even if it means searching the file
+     *              for space in which to create the file (does not preserve
+     *              order)
+     *
+     * These are masks - the following combinations are sensible:
+     *
+     * - t_append                        -- preserve sort order
+     * - t_cache | t_append              -- check the cache first, 
+     *                                      append if no luck
+     * - t_cache | t_compact | t_append  -- append to file as a last resort
+     */
+    enum pg_policy_t {
+        t_append        = 0x01, // retain sort order (cache 0 pages)
+        t_cache        = 0x02, // look in n cached pgs 
+        t_compact        = 0x04 // scan file for space in pages 
+        
+    };
+
 
 /**\cond skip */
 

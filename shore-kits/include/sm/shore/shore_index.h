@@ -158,7 +158,11 @@ public:
 
     inline int  get_partition_count() const { return _partition_count; }
     inline int  get_keysize() { return (*&_maxkeysize); }
-    inline void set_keysize(const uint_t sz) { atomic_swap_uint(&_maxkeysize, sz); }
+    inline void set_keysize(const uint_t sz) { 
+        //FIXME: LINTEL ATOMIC : volatile cast
+    //    lintel::unsafe::atomic_store(static_cast<uint_t*>(&_maxkeysize), sz); 
+        assert(0);
+    }
 
 
     /* ---------------------------------- */
