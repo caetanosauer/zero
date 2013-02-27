@@ -328,7 +328,8 @@ public:
      * to avoid excessive latch contention, we use mutex only in this case
      * This mutex doesn't assure correctness. latch does it.
      * it just gives us chance to avoid wasting CPU for latch contention.
-     * and, false positive is fine. it's just one mutex call overhead.  see ticket:80.
+     * and, false positive is fine. it's just one mutex call overhead.  
+     * See jira ticket:78 "Eager-Opportunistic Hybrid Latching" (originally trac ticket:80).
      */
     static rc_t _ux_traverse_try_eager_adopt(btree_p &current, shpid_t next_pid);
 
@@ -337,7 +338,8 @@ public:
      * This tries opportunistic adoption by upgrading latches to EX.
      * This has a very low cost, though might do nothing in high contention.
      * If such a writer-starvation frequently happens, the above eager_adopt function
-     * will be called to do it. see ticket:80.
+     * will be called to do it. 
+     * See jira ticket:78 "Eager-Opportunistic Hybrid Latching" (originally trac ticket:80).
      */
     static rc_t _ux_traverse_try_opportunistic_adopt(btree_p &current, btree_p &next);
 
@@ -633,7 +635,7 @@ public:
      * Therefore, this method creates a ghost entry with fence-low key
      * if the given leaf page does not have a desired entry.
      * This method is called for foster-child when Merge/Rebalance happens.
-     * See ticket:86 for more details.
+     * See jira ticket:84 "Key Range Locking" (originally trac ticket:86) for more details.
      */
     static rc_t _ux_assure_fence_low_entry(btree_p &leaf);
 
@@ -810,7 +812,7 @@ public:
 ///   BEGIN: Global Approximate (non-protected) Counters to guide opportunistic/eager latching.
 ///==========================================    
 #endif // DOXYGEN_HIDE
-    // see ticket:80
+    // see jira ticket:78 "Eager-Opportunistic Hybrid Latching" (originally trac ticket:80)
     // these are used to help determine when we should do eager EX latching.
     // these don't have to be exact or transactionally protected, so just static variables.
     enum {

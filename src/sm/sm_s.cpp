@@ -1,19 +1,19 @@
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -64,14 +64,15 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <w_strstream.h>
 #include <stdio.h>
 
+const rid_t  rid_t::null;
 const lpid_t lpid_t::bof;
 const lpid_t lpid_t::eof;
 const lpid_t lpid_t::null;
 
 #ifdef SUN4V
 // debug pretty-print of an lsn -- used in debugger
-char const* 
-db_pretty_print(lsn_t const* lsn, int /*i=0*/, char const* /* s=0 */) 
+char const*
+db_pretty_print(lsn_t const* lsn, int /*i=0*/, char const* /* s=0 */)
 {
   char *tmp = (char *) ::valloc(100);
   snprintf(tmp, sizeof(tmp), "%d.%lld", lsn->hi(), (int64_t)(lsn->lo()));
@@ -93,43 +94,43 @@ db_pretty_print(lsn_t const* lsn, int /*i=0*/, char const* /* s=0 */)
     !            HL
     *                    HL
     .                            HL
-    .    H        L                
-    *            H        L        
+    .    H        L
+    *            H        L
     *                    H        L
-    .    H                L        
+    .    H                L
     *            H                L
     x    H                        L
-                                
-                                
+
+
    If we only write each value once there is one corner case that
    sneaks through. So, we need to add a step in the protocol: the
    writer will always set H to a sentinel value before changing L,
    then set H to its new proper value afterward.
-   
-   Read            H        L        H    
+
+   Read            H        L        H
    ==================================================================
    Write:
     .    HLH
-    s    HL        H                
-    s    HL                H        
+    s    HL        H
+    s    HL                H
     s    HL                        H
-    s    H        LH                
-    s    H        L        H        
+    s    H        LH
+    s    H        L        H
     s    H        L                H
-    s    H                LH        
+    s    H                LH
     s    H                L        H
     s    H                        LH
-    !            HLH                
-    !            HL        H        
+    !            HLH
+    !            HL        H
     !            HL                H
-    !            H        LH        
+    !            H        LH
     !            H        L        H
     !            H                LH
-    !                    HLH        
+    !                    HLH
     !                    HL        H
     !                    H        LH
     .                            HLH
-                        
+
  */
 
 
@@ -139,7 +140,8 @@ bool lpid_t::valid() const
 #if W_DEBUG_LEVEL > 2
     // try to stomp out uses of this function
     if(_stid.vol.vol && ! page) w_assert3(0);
-#endif 
+#endif
     return _stid.vol.vol != 0;
 }
+
 

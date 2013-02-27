@@ -182,7 +182,8 @@ rc_t btree_impl::_sx_adopt_blink_all (btree_p &root, bool recursive)
 rc_t btree_impl::_ux_adopt_blink_all_core (
     btree_p &parent, bool is_root, bool recursive)
 {
-    // TODO this should use the improved tree-walk-through ticket:62
+    // TODO this should use the improved tree-walk-through 
+    // See jira ticket:60 "Tree walk-through without more than 2 pages latched" (originally trac ticket:62)
     w_assert1 (xct()->is_sys_xct());
     w_assert1 (parent.is_fixed());
     w_assert1 (parent.latch_mode() == LATCH_EX);

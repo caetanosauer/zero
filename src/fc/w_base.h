@@ -427,6 +427,19 @@ public:
         XX = EX
     };
 
+    /**\enum lock_duration_t
+     * \brief Duration for locks
+     * \ref SSMLOCK
+     */
+    enum lock_duration_t {
+        t_instant     = 0,    /* released as soon as the lock is acquired */
+        t_short     = 1,    /* held until end of some operation         */
+        t_medium     = 2,    /* held until explicitly released           */
+        t_long     = 3,    /* held until xct commits                   */
+        t_very_long = 4,    /* held across xct boundaries               */
+        t_num_durations = 5 /* not a duration -- used for typed comparisons */
+    };
+
     /**\enum vote_t
      * \brief Votes for two-phase commit.
      * - vote_readonly : storage manager will return this from 

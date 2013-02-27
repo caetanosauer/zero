@@ -183,6 +183,12 @@ struct sm_config_info_t {
      */
     u_long page_size;         // bytes in page, including all headers
     /**\brief Data space available on a page of a large record */
+    //TODO: SHORE-KITS-API
+    // shore-kits needs max_small_rec; shore-sm-6.0.1 initializes this field at 
+    // several places. Make sure Zero similarly initializes max_small_rec
+    u_long max_small_rec;      // maximum number of bytes in a "small"
+                // (ie. on one page) record.  This is
+                // align(header_len)+align(body_len).
     u_long lg_rec_page_space;    
     /**\brief Size in KB of buffer pool */
     u_long buffer_pool_size;    // buffer pool size in kilo-bytes

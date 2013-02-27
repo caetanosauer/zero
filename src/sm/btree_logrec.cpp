@@ -640,7 +640,7 @@ void btree_blink_adopt_child_log::redo(page_p* page)
 }
 
 // logs for Merge/Rebalance/De-Adopt
-// see ticket:39 for detailed spec
+// see jira ticket:39 "Node removal and rebalancing" (originally trac ticket:39) for detailed spec
 btree_blink_merge_log::btree_blink_merge_log (const page_p& p)
 {
     w_assert0(p.tag() == t_btree_p);

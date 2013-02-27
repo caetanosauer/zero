@@ -544,6 +544,17 @@ public:
     inline
     xct_log_t*       xct_log() { return tcb()._xct_log; }
 
+    void	     alloc_sdesc_cache() {
+        //TODO: SHORE-KITS-API
+        //Why do need this??? Shore-MT defines it only when DORA is built
+        assert(0);
+    }
+    void	     free_sdesc_cache() {
+        //TODO: SHORE-KITS-API
+        //Why do need this??? Shore-MT defines it only when DORA is built
+        assert(0);
+    }
+
     virtual void     _dump(ostream &) const; // to be over-ridden
     static int       collect(vtable_t&, bool names_too);
     virtual void     vtable_collect(vtable_row_t& t);

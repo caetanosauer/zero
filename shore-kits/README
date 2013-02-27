@@ -1,0 +1,156 @@
+Please refer to the on-line wiki at https://bitbucket.org/shoremt/shore-kits/wiki/Home for more detailed setup information.
+
+-----------------------
+Shore Kits Readme
+-----------------------
+
+TOC:
+
+1. Installing
+2. Running
+3. Notes
+4. Known bugs
+5. Contact
+
+
+
+-----------------------
+1. Installing
+-----------------------
+
+a. Prerequisites
+-----------------------
+
+- Download and compile Shore-mt. 
+
+- Link ~/apps/shore to the base dir for shore-mt
+
+#> ln -s <shore-mt-dir> ~/apps/shore 
+
+b. Compiling
+-----------------------
+
+#> ./autogen.sh
+#> ./configure --enable-dora --enable-shore6 --enable-debug(optional) [in SPARC/Solaris: CXX=CC ./configure ...]
+#> make -j
+
+NOTE: It is also possible to configure shore-kits to use an arbitrary
+      copy of shore-mt by configuring SHORE_HOME as an argument to the
+      configure
+
+#> ./configure SHORE_HOME=<shore-mt-dir> ...
+
+
+-----------------------
+2. Running
+-----------------------
+
+a. Edit shore.conf
+-----------------------
+
+In order to populate a new database set run shore-kits with "-r" parameter.
+If opening an already populated database set, then remove "-r".
+
+
+
+b. Run shore_kits
+-----------------------
+
+#> ./shore_kits
+
+
+
+c. List of commands
+-----------------------
+
+i. The three basic commands for running experiments:
+
+measure - Executes a specific workload for a specific duration.
+          The user can set the number of clients, whether the requests will be spread, the
+          number of iterations, and the scaling factor.
+
+
+test    - For a specific workload each client executes a specific number of transactions.
+          The user can set the number of clients, whether the requests will be spread, the
+          number of iterations, and the scaling factor.
+          WARNING: The 'test' command is innacurate in terms of the reported throughput.
+
+trxs    - Lists the transactions supported by the current workload.
+
+
+
+ii. Additional commands:
+
+break   - Breaks into a debugger by raising ^C (terminates program if no debugger is active)
+cpu     - Process cpu usage/statitics
+echo    - Echoes its input arguments to the screen
+help    - Prints help
+iodelay - Sets the fake I/O disk delay
+quit    - Quits
+stats   - Print statistics
+trace   - Sets tracing level
+
+
+iii. Help:
+
+help     - Prints the list of additional commands 
+help cmd - Prints cmd-specific information 
+
+
+
+c. Usage example:
+-----------------------
+
+Assuming a 10wh TPC-C database.
+
+- Execute 5 iterations of 1min runs of 20 clients running the TPC-C Mix.
+
+(tpcc-base) measure 10 0 20 60 0 5 0
+
+
+- Run 2 iterations of 30secs runs of 10 clients submitting only TPC-C NewOrder 
+  transactions, and each client uses a different warehouse.
+
+(tpcc-base) measure 10 1 10 30 2 1 
+
+
+
+
+-----------------------
+3. Notes
+-----------------------
+
+a. Re-populate a database:
+-----------------------
+
+In case of errors during powerruns, it is faster to re-populate a new database 
+than wait for recovery to finish. Shore when it starts always first tries
+to recover. Therefore, before the re-population of a benchmark database the log 
+files should be deleted.
+
+- Delete any log files at the corresponding log directory (files at <db-config>-log dir)
+- Run shore_kits with "-r" paremeter
+- Remove "-r" re-running shore_kits with the already populated database
+
+
+
+-----------------------
+4. Known Bugs
+-----------------------
+
+BUG-1: Cannot update fields included at indexes - delete and insert again.
+
+BUG-2: Only the last field of an index can be of variable length
+
+
+
+
+-----------------------
+5. Contact
+-----------------------
+
+For any issues, reporting bugs etc. please send visit:
+
+groups.google.com/group/shore-mt
+
+Note that support is provided on a best-effort basis only.

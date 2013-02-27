@@ -401,6 +401,26 @@ private:
     zvec_t(const vec_t& v, size_t offset, size_t limit); // {}
 };
 
+/**\brief Helper struct for create_mr_assoc.
+ * \ingroup SSMBTREE
+ *
+ */
+class lpid_t;
+
+struct el_filler {
+    size_t _el_size; // the size of the element
+    vec_t _el; // to give the element if it's already determined (for the 1st design)
+    
+    /* to be used as a callback function during btree insert (for the 2nd and 3rd designs)
+     * @param[out] el  the element, contents to be determined after leaf page is found
+     * @param[in] leaf  leaf page that the insertion will take place for the el  
+     */
+    virtual w_rc_t fill_el(vec_t& /* el */, const lpid_t& /* leaf */) { return RCOK; }
+	 
+    // destructor
+    virtual ~el_filler() {}
+};
+
 /*<std-footer incl-file-exclusion='VEC_T_H'>  -- do not edit anything below this line -- */
 
 #endif          /*</std-footer>*/

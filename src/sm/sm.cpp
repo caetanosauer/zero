@@ -1751,7 +1751,7 @@ ss_m::dump_locks() {
 
 
 
-#ifdef SLI_HOOKS
+//#ifdef SLI_HOOKS
 /*--------------------------------------------------------------*
  *  Enable/Disable Shore-SM features                            *
  *--------------------------------------------------------------*/
@@ -1760,12 +1760,16 @@ void ss_m::set_sli_enabled(bool /* enable */)
 {
     fprintf(stdout, "SLI not supported\n");
     //lm->set_sli_enabled(enable);
+    //TODO: SHORE-KITS-API
+    assert(0);
 }
 
 void ss_m::set_elr_enabled(bool /* enable */) 
 {
     fprintf(stdout, "ELR not supported\n");
     //xct_t::set_elr_enabled(enable);
+    //TODO: SHORE-KITS-API
+    assert(0);
 }
 
 rc_t ss_m::set_log_features(char const* /* features */) 
@@ -1773,6 +1777,8 @@ rc_t ss_m::set_log_features(char const* /* features */)
     fprintf(stdout, "Aether not integrated\n");
     return (RCOK);
     //return log->set_log_features(features);
+    //TODO: SHORE-KITS-API
+    assert(0);
 }
 
 char const* ss_m::get_log_features() 
@@ -1780,8 +1786,10 @@ char const* ss_m::get_log_features()
     fprintf(stdout, "Aether not integrated\n");
     return ("NOT-IMPL");
     //return log->get_log_features();
+    //TODO: SHORE-KITS-API
+    assert(0);
 }
-#endif
+//#endif
 
 lil_global_table* ss_m::get_lil_global_table() {
     if (lm) {
@@ -1802,6 +1810,16 @@ ss_m::lock(const lockid_t& n, lock_mode_t m,
     W_DO( lm->lock(n, m, check_only, timeout) );
     return RCOK;
 }
+
+rc_t
+ss_m::lock(const stid_t& n, lock_mode_t m,
+           bool check_only, timeout_in_ms timeout)
+{
+    //TODO: SHORE-KITS-API
+    //Why stid_t??? Shore-MT doesn't support this function signature 
+    assert(0);
+}
+
 
 /*--------------------------------------------------------------*
  *  ss_m::unlock()                                *

@@ -66,6 +66,7 @@ void check_valgrind_errors(int /*line*/, const char * /*file*/) {
 class dummyfile {
     int _fd;
 public:
+    // FIXME - tucekj joe TODO --- this should be per user, and overall more robust anyway
     // I'm using /tmp for the benefit of tmpfs
     dummyfile() { _fd = open("/tmp/vgdummy", O_CREAT|O_TRUNC|O_RDWR, S_IRWXU);
                    assert(_fd>0);

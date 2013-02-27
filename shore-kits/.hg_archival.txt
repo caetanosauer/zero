@@ -1,0 +1,5 @@
+repo: 18a223fde9708887bee165d3aeaea2cec0b40feb
+node: d9db175c4f89803ee5f42512127c2806bbb283cb
+branch: default
+latesttag: shore-kits-r2163-tpce
+latesttagdistance: 305

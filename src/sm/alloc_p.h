@@ -17,7 +17,7 @@
  * These pages contain bitmaps to represent which page is already
  * allocated. They replace extlink_p and related classes in original Shore-MT.
  * They are drastically simpler and more efficient than prior extent management.
- * See ticket:74 for more details.
+ * See jira ticket:72 "fix extent management" (originally trac ticket:74) for more details.
  */
 class alloc_p {
 public:
@@ -63,7 +63,7 @@ public:
     
     enum {
         /** Number of pages one alloc_p can cover. */
-        alloc_max = page_s::data_sz * 8
+	alloc_max = (page_p::data_sz - 2 * sizeof(shpid_t)) * 8
     };
     
     /** determines the pid_offset for the given alloc page. */

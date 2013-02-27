@@ -44,7 +44,7 @@ rc_t btree_impl::_ux_defrag_tree_core(
     bool /*does_merge*/)
 {
     // TODO implement
-    // this should use the improved tree-walk-through ticket:62
+    // this should use the improved tree-walk-through jira ticket:60 "Tree walk-through without more than 2 pages latched" (originally trac ticket:62)
     btree_p page;
     W_DO (page.fix_root(vol, store, LATCH_SH));
     

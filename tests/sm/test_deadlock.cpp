@@ -437,7 +437,7 @@ TEST (DeadlockTest, ConversionDeadlock) {
 // this one is motivated by a bug that existed before.
 // the problem is that when the waiting happens only because of conversion of other xct,
 // previous dreadlock code didn't consider it as "waiting for it".
-// see ticket:105
+// see jira ticket:103 "[Experiment] ELR" (originally trac ticket:105)
 w_rc_t indirect_conversion_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(test_env->_use_locks);
     stid_t stid;

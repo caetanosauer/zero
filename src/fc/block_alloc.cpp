@@ -123,3 +123,116 @@ bool dynpool::validate_pointer(void* ptr) {
 }
 /**\endcond skip */
 
+#include <map>
+struct blob_pool::helper {
+    struct BLBlob : tls_tricks::tls_blob<BlockList> {
+	long initialized;
+	BLBlob() : initialized(false) { }
+    };
+    typedef std::map<void*, BLBlob> BLMap;
+    
+    enum { OVERHEAD=sizeof(memory_block::block) };
+    enum { MAX_CHIPS=memory_block::block_bits::MAX_CHIPS };
+    
+    static size_t log2(long n) {
+	if(n <= 0)
+	    return 0;
+	return 1 + log2(n/2);
+    }
+
+    static size_t compute_bytes_log2(long chip_size) {
+	long min_chips = MAX_CHIPS/2+1;
+	long bytes_needed = min_chips*chip_size + OVERHEAD;
+	return log2(2*bytes_needed - 1);
+    }
+    
+    static size_t compute_bytes(long chip_size) {
+	return 1 << compute_bytes_log2(chip_size);
+    }
+    
+    static size_t compute_count(long chip_size) {
+	long bytes = compute_bytes(chip_size);
+	long real_count = (bytes - OVERHEAD)/chip_size;
+	return std::min<long>(MAX_CHIPS, real_count);
+    }
+
+    // these are for the tls manager
+    static void init_blmap() { /* no-op */ }
+    static void fini_blmap() {
+	BLMap* blm = blmap(false);
+	if(!blm) 
+	    return;
+	
+	for(BLMap::iterator it=blm->begin(); it != blm->end(); ++it) {
+	    assert(it->second.initialized);
+	    it->second.get()->~BlockList();
+	}
+	blm->~BLMap();
+    }
+    static bool initialize() {
+	tls_tricks::tls_manager::register_tls(&init_blmap, &fini_blmap);
+	return true;
+    }
+    static BLMap* blmap(bool force=true) {
+	// first time we're called, register with the tls_manager. It
+	// doesn't matter if many threads exist already because our
+	// init function is empty and any thread which already exited
+	// can't have created a blist that needs tearing down.
+	static __thread bool blmap_initialized = false;
+	static __thread tls_tricks::tls_blob<BLMap> tls_blmap;
+	if(!blmap_initialized) {
+	    if(!force)
+		return NULL;
+	    
+	    tls_blmap.init();
+	    blmap_initialized = true;
+	}
+
+	return tls_blmap.get();
+    }
+    static bool get_blist(BlockList** rbl, void* owner) {
+	BLMap &blm = *blmap();
+	BLBlob &bl = blm[owner];
+	*rbl = bl.get();
+	if(bl.initialized)
+	    return true;
+	bl.initialized = true;
+	return false;
+    }
+};
+
+    // gets old typing this over and over...
+#define BLOB_POOL_TEMPLATE_ARGS _chip_size, _chip_count, _block_size
+
+blob_pool::blob_pool(size_t size)
+    : _chip_size((size + sizeof(long) - 1) & -sizeof(long))
+    , _block_size(helper::compute_bytes(_chip_size))
+    , _chip_count(helper::compute_count(_chip_size))
+    , _pool(_chip_size, _chip_count,
+	    helper::compute_bytes_log2(_chip_size),
+	    1024*1024*1024)
+{
+    assert(size >= sizeof(long));
+}
+
+    
+
+/* Acquire one blob from the pool.
+ */
+void* blob_pool::acquire() {
+    BlockList* blist;
+    if(! helper::get_blist(&blist, &_pool))
+	new (blist) BlockList(&_pool, BLOB_POOL_TEMPLATE_ARGS);
+    void* ptr = blist->acquire(BLOB_POOL_TEMPLATE_ARGS);
+    assert(_pool.validate_pointer(ptr));
+    return ptr;
+}
+    
+/* Verify that we own the object then find its block and report it
+   as released. If \e destruct is \e true then call the object's
+   desctructor also.
+*/
+void blob_pool::destroy(void* ptr) {
+    assert(_pool.validate_pointer(ptr));
+    memory_block::block::release(ptr, BLOB_POOL_TEMPLATE_ARGS);
+}

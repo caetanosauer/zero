@@ -5,7 +5,7 @@
  * Classes implementing Light-weight Intent Lock (LIL).
  * These are super-fast and scalable lock tables for
  * volume/store.
- * For more details, see ticket:96.
+ * For more details, see jira ticket:94 "Lightweight Intent Lock (LIL)" (originally trac ticket:96).
  */
 
 #include "w_defines.h"
@@ -48,7 +48,7 @@ enum lil_lock_modes_t {
  * way faster than usual lock tables which uses mutex and
  * forms lock-chains to do inter-thread communications.
  * This class only uses spinlocks, counters and sleeps.
- * For more details, see ticket:96.
+ * For more details, see jira ticket:94 "Lightweight Intent Lock (LIL)" (originally trac ticket:96).
  */
 class lil_global_table_base {
 public:

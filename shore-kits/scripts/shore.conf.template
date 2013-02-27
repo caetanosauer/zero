@@ -1,0 +1,400 @@
+#
+#     Shore-kits -- Benchmark implementations for Shore-MT
+#   
+#                       Copyright (c) 2007-2009
+#      Data Intensive Applications and Systems Labaratory (DIAS)
+#               Ecole Polytechnique Federale de Lausanne
+#   
+#                         All Rights Reserved.
+#   
+#   Permission to use, copy, modify and distribute this software and
+#   its documentation is hereby granted, provided that both the
+#   copyright notice and this permission notice appear in all copies of
+#   the software, derivative works or modified versions, and any
+#   portions thereof, and that both notices appear in supporting
+#   documentation.
+#   
+#   This code is distributed in the hope that it will be useful, but
+#   WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
+#   DISCLAIM ANY LIABILITY OF ANY KIND FOR ANY DAMAGES WHATSOEVER
+#   RESULTING FROM THE USE OF THIS SOFTWARE.
+#
+
+
+#
+# @file:  shore.conf
+#
+# @brief: Shore-kits configuration file
+#                                                                          
+
+############################################################################
+#                                                                          #
+# Clobber device                                                           #
+#                                                                          #
+# Clobber the existing device file (if any) and populate a new             #
+# database (1=yes,0=no).                                                   #
+#                                                                          #
+# Notes:                                                                   #
+# - Log recovery happens before Shore checks this option, so delete        #
+#   the log for a completely fresh start.                                  #
+# - For disk-based data and a large buffer pool, it is *significantly*     #
+#   faster to load a new database than warm up an existing one.            #
+#                                                                          #
+############################################################################
+
+db-clobberdev = 1    ### It will populate a new database
+#db-clobberdev = 0     ### It will open an existing database
+
+
+
+############################################################################
+#                                                                          #
+# Enable Physical Hacks                                                    #
+#                                                                          #
+# Some workloads get higher performance if some hacking is done in their   #
+# physical layout. For example, TPC-B's performance increases a lot if     #
+# the Branches and Tellers records are padded so that only one record      #
+# resides at each heap page. This flag enables those hacks. They can also  #
+# be enabled by the command line with the -x option.                       #
+#                                                                          #
+############################################################################
+
+physical-hacks-enable = 0
+#physical-hacks-enable = 1
+
+
+
+############################################################################
+#                                                                          #
+# Fake I/O delay                                                           #
+#                                                                          #
+# Impose an artificial delay whenever there is an I/O operation. This      #
+# mechanism allows to decouple the I/O subsystem performance from the      #
+# measurements by storing the database on an in-memory file system. The    #
+# artificial delay simulates a high-end I/O subsystem, such that all I/O   #
+# requests can proceed in parallel but must each still pay the cost of an  #
+# I/O. This is asomewhat pessimistic because it assumes every   #
+# access requires the same latency. But, it ensures that all aspects of    #
+# the storage manager are exercised.                                       #
+#                                                                          #
+# shore-fakeiodelay-enable: Enable/Disable the fake I/O delay mechanism    #
+# shore-fakeiodelay       : The imposed delay, in usec                     #
+#                                                                          #
+############################################################################
+
+##### Enable/Disable fake I/O delay (0/1);
+#shore-fakeiodelay-enable = 0
+shore-fakeiodelay-enable = 1
+
+##### The imposed delay (in usec) #####
+#shore-fakeiodelay = 5
+shore-fakeiodelay = 0
+
+
+
+############################################################################
+#                                                                          #
+# Logging                                                                  #
+#                                                                          #
+############################################################################
+
+##### Enable/Disable logging (yes/no) #####
+#shore-logging = no
+shore-logging = yes
+
+##### Misc #####
+shore-errlog = info # one of {none emerg fatal alert internal error warning info debug}
+shore-diskrw = /export/home/ipandis/DEV/shore-lomond/installed/bin/diskrw
+
+
+
+############################################################################
+#                                                                          #
+# Number of page cleaners                                                  #
+#                                                                          #
+# Number of asynchronous page cleaners to use.                             #
+# Generally one per physical disk is good.                                 #
+#                                                                          #
+############################################################################
+
+#shore-pagecleaners = 8
+shore-pagecleaners = 4
+#shore-pagecleaners = 1
+
+
+
+############################################################################
+#                                                                          #
+# Loading parameters                                                       #
+#                                                                          #
+# db-loaders:                                                              #
+# Number of loader threads. More gives higher parallelism but deadlocks    #
+# are more likely as well. 10-20 usually gives the shortest overall load   #
+# time.                                                                    # 
+#                                                                          #
+# db-record-preloads:                                                      #
+# Number of (single-threaded) preloads per worker to do before firing up   #
+# the threads. Buffers loader threads so they deadlock less, but at the    #
+# cost of increased serial execution (reduced parallelism).                #
+#                                                                          #
+############################################################################
+
+##### Number of loader threads #####
+#db-loaders = 8
+#db-loaders = 30
+#db-loaders = 20
+#db-loaders = 10 
+#db-loaders = 4
+#db-loaders = 2
+#db-loaders = 1
+# Note: this is set automatically by the wrapper script
+
+##### Number of preloads per worker #####
+#db-record-preloads = 1000
+db-record-preloads = 1
+
+
+
+############################################################################
+#                                                                          #
+# Worker parameters                                                        #
+#                                                                          #
+############################################################################
+
+##### Number of worker threads #####
+#db-workers = 100
+#db-workers = 1
+#db-workers = 10
+#db-workers = 20
+#db-workers = 84
+#db-workers = 64
+# Note: this is set automatically by the wrapper script
+
+##### srmw-queue spin #####
+db-worker-queueloops = 1
+#db-worker-queueloops = 2000
+#db-worker-queueloops = 10000
+
+###### worker queue batch sz #####
+# look also client batch sz
+db-worker-inp-queue-sz = 15
+db-worker-com-queue-sz = 0
+
+
+
+############################################################################
+#                                                                          #
+# Client parameters                                                        #
+#                                                                          #
+############################################################################
+
+##### Think time  #####
+# note: it should be combined with batchsz=1
+db-cl-thinktime = 0
+
+##### Client batch sz #####
+#db-cl-batchsz = 1
+db-cl-batchsz = 30
+
+
+
+############################################################################
+#                                                                          #
+# StagedFlusher parameters (staged group commit)                           #
+#                                                                          #
+############################################################################
+
+##### Group size threshold #####
+flusher-group-size = 100
+
+##### Log size threshold #####
+flusher-log-size = 200000
+
+##### Time interval threshold (in usec) #####
+flusher-timeout = 10000
+
+##### Flusher binding policy - 0=NoBinding,1=Adjacent,2=SpreadToCores
+flusher-binding = 0
+
+
+
+############################################################################
+#                                                                          #
+# Platform-specific parameters                                             #
+#                                                                          #
+############################################################################
+
+##### The default partitioning factor for Baseline MRBTrees  #####
+
+# pulling this number out of thin air
+mrbt-partitions = 10
+
+##### CPU Counts  #####
+
+# Note: this is now set automatically?
+
+# hard-limit (machine dependent)
+sys-maxcpucount = 64
+# soft-limit
+sys-activecpucount = 64
+
+
+
+############################################################################
+#                                                                          #
+# Default values for the (measure) and (test) commands                     #
+#                                                                          #
+############################################################################
+
+# MEASURE
+measure-num-queried = 32    # no of whs queried
+measure-spread      = 1     # 0=No,1=Yes
+measure-num-threads = 32
+measure-duration    = 30    # duration of each iteration (in secs.)
+measure-trx-id      = 102   # 2=Base-Pay
+measure-iterations  = 2
+measure-sli         = 0
+measure-cl-binding  = 0     # client binding policy - 0=NoBinding,1=Adjacent,2=SpreadToCores
+
+# TEST
+# WARNING: the test command is innacurate. Use MEASURE instead
+test-num-queried = 32       # no of whs queried
+test-spread      = 1        # 0=No,1=Yes
+test-num-threads = 32
+test-num-trxs    = 10       # no of trxs per thread
+test-trx-id      = 111      # e.g. 2=Base-Pay
+test-iterations  = 2 
+test-sli         = 0        # 0=No,1=Yes
+test-cl-binding  = 0        # client binding policy - 0=NoBinding,1=Adjacent,2=SpreadToCores
+
+
+
+################################################
+#                                              #
+# Default benchmark values                     #
+#                                              #
+################################################
+
+# Used in the benchmarks for the Secondary indexes
+records-to-access = 1
+#records-to-access = 10
+#records-to-access = 100
+#records-to-access = 1000
+#records-to-access = 10000
+#records-to-access = 100000
+
+
+
+############################################################################
+#                                                                          #
+#                                                                          #
+# DORA Parameters                                                          #
+#                                                                          #
+#                                                                          #
+############################################################################
+
+
+
+############################################################################
+#                                                                          #
+# EOF Predefined configurations                                            #
+#                                                                          #
+############################################################################
+
+
+
+##### DORA parameters
+
+# dora worker thread binding policy
+# 0=NoBinding,1=Other
+dora-cpu-binding = 0
+
+# starting cpu - the initial cpu of the dora tables
+dora-cpu-starting = 1
+
+# table-step - the number of cpus between two tables
+dora-cpu-table-step = 1
+
+# partition-step - the number of cpus between two partitions of the same table
+dora-cpu-partition-step = 1
+
+# Thresholds for the sizes of the input and committed queues of the DORA workers
+dora-worker-inp-q-sz = 1
+dora-worker-com-q-sz = 0
+
+
+#####
+##### Updating the ratio of DORA partitions. 
+#####
+##### Now, the number of partitions for each table is declared as fraction of
+##### the number of active CPUs in the system (sys-activecpucount or 
+##### ShoreEnv::get_active_cpu_count()).
+##### For example, a ratio of 1 for a table, will make DORA to create 1
+##### partition per core. If the ratio is non-positive (<=0), then a single such
+##### partition will be created.
+#####
+
+
+##### Configure the number of Partitions per Table per Workload #####
+
+
+##### DORA TPC-C setup #####
+
+dora-ratio-tpcc-whs = 1
+dora-ratio-tpcc-dis = 1
+dora-ratio-tpcc-cus = 1
+dora-ratio-tpcc-his = 1
+dora-ratio-tpcc-nor = 1
+dora-ratio-tpcc-ord = 1
+dora-ratio-tpcc-ite = 1
+dora-ratio-tpcc-oli = 1
+dora-ratio-tpcc-sto = 1
+
+# IP: The optimal for PAY
+#dora-tpcc-wh-per-part-wh    = 12
+#dora-tpcc-wh-per-part-dist  = 12
+#dora-tpcc-wh-per-part-cust  = 8
+#dora-tpcc-wh-per-part-hist  = 3
+
+# # near optimal
+# dora-tpcc-wh-per-part-wh    = 9
+# dora-tpcc-wh-per-part-dist  = 9
+# dora-tpcc-wh-per-part-cust  = 6
+# dora-tpcc-wh-per-part-hist  = 3
+# dora-tpcc-wh-per-part-nord  = 1
+# dora-tpcc-wh-per-part-ord   = 1
+# dora-tpcc-wh-per-part-item  = 1
+# dora-tpcc-wh-per-part-oline = 1
+# dora-tpcc-wh-per-part-stock = 1
+
+
+
+##### DORA TPCB setup #####
+
+dora-ratio-tpcb-br = 1
+dora-ratio-tpcb-te = 1
+dora-ratio-tpcb-ac = 1
+dora-ratio-tpcb-hi = 1
+
+# # 1 - 2.2.2 -> 20CL - 63% - 37Ktps
+# dora-tpcb-sf-per-part-br = 1
+# dora-tpcb-sf-per-part-te = 2
+# dora-tpcb-sf-per-part-ac = 2
+# dora-tpcb-sf-per-part-hi = 2
+
+# 1 - 3.3.3 -> 40CL - 30Ktps
+# dora-tpcb-sf-per-part-br = 1
+# dora-tpcb-sf-per-part-te = 3
+# dora-tpcb-sf-per-part-ac = 3
+# dora-tpcb-sf-per-part-hi = 3
+
+
+
+##### DORA TM1 setup #####
+
+dora-ratio-tm1-sub = 1
+dora-ratio-tm1-ai  = 1
+dora-ratio-tm1-sf  = 1
+dora-ratio-tm1-cf  = 1
+

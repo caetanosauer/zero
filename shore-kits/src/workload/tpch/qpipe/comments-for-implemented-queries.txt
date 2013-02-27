@@ -1,0 +1,26 @@
+The following queries have been verified with at least two different random inputs against a MySQL or PostgreSQL database created from the flat files, which is therefore the same as for QPipe. These queries are supposed to be finished and running.
+
+- Q1
+- Q3
+- Q4 (date inconsistency)
+- Q5
+- Q6
+- Q7 (date inconsistency)
+- Q8 (date inconsistency)
+- Q9 (date inconsistency)
+- Q10 (date inconsistency)
+- Q11
+- Q12 (date inconsistency)
+- Q13
+- Q14 (date inconsistency)
+- Q15
+- Q16
+- Q17 (takes extremely long in PostgreSQL and MySQL)
+- Q18
+- Q19
+- Q22 (without 'not exists' part)
+
+Missing queries:
+- Q2 (does not terminate in QPipe)
+- Q20 (does not terminate in MySQL / PostgreSQL)
+- Q21 (does not terminate in QPipe; bugous data)

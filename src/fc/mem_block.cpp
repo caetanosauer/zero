@@ -210,6 +210,12 @@ bool block::release_chip(void* ptr, size_t chip_size, size_t chip_count, size_t 
     return u.b->_bits.release_contiguous(idx, chip_count);
 }
 
+void block::release(void* ptr, size_t chip_size, size_t chip_count, size_t block_size)
+{
+    assert(release_chip(ptr, chip_size, chip_count, block_size) == true);
+}
+
+
 char* block::_get(size_t index, size_t chip_size) {
     return _data + index*chip_size;
 }
