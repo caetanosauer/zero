@@ -62,31 +62,39 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #endif
 
 #include <pin.h>
+#include "suppress_unused.h"
 
 const char* pin_i::body()
 {
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(char*);
 }
 
 rc_t pin_i::pin(const rid_t& rid, smsize_t start, lock_mode_t lmode,
                 const bool bIgnoreLatches)
 {
+    SUPPRESS_UNUSED_4(rid, start, lmode, bIgnoreLatches);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 rc_t pin_i::pin(const rid_t& rid, smsize_t start, 
         lock_mode_t lmode, latch_mode_t latch_mode)
 {
+    SUPPRESS_UNUSED_4(rid, start, lmode, latch_mode);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 rc_t pin_i::repin(lock_mode_t lmode)
 {
+    SUPPRESS_UNUSED(lmode);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 void pin_i::unpin()
@@ -100,8 +108,10 @@ rc_t pin_i::update_rec(smsize_t start, const vec_t& data,
                        , const bool bIgnoreLocks
                        )
 {
+    SUPPRESS_UNUSED_4(start, data, old_value, bIgnoreLocks);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 rc_t pin_i::update_mrbt_rec(smsize_t start, const vec_t& data,
@@ -109,26 +119,34 @@ rc_t pin_i::update_mrbt_rec(smsize_t start, const vec_t& data,
 			    const bool bIgnoreLocks,
 			    const bool bIgnoreLatches)
 {
+    SUPPRESS_UNUSED_5(start, data, old_value, bIgnoreLocks, bIgnoreLatches);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 rc_t pin_i::append_rec(const vec_t& data)
 {
+    SUPPRESS_UNUSED(data);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 rc_t pin_i::append_mrbt_rec(const vec_t& data,
 			    const bool bIgnoreLocks,
 			    const bool bIgnoreLatches)
 {
+    SUPPRESS_UNUSED_3(data, bIgnoreLocks, bIgnoreLatches);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 rc_t pin_i::truncate_rec(smsize_t amount)
 {
+    SUPPRESS_UNUSED(amount);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }

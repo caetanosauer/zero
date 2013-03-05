@@ -76,6 +76,7 @@ class prologue_rc_t;
 #include "bf_tree.h"
 #include "crash.h"
 #include "restart.h"
+#include "suppress_unused.h"
 
 #ifdef EXPLICIT_TEMPLATE
 template class w_auto_delete_t<SmStoreMetaStats*>;
@@ -1815,9 +1816,11 @@ rc_t
 ss_m::lock(const stid_t& n, lock_mode_t m,
            bool check_only, timeout_in_ms timeout)
 {
+    SUPPRESS_UNUSED_4(n, m, check_only, timeout);
     //TODO: SHORE-KITS-API
     //Why stid_t??? Shore-MT doesn't support this function signature 
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 

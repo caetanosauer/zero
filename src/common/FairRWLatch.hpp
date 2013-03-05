@@ -3,13 +3,13 @@
 #include <cassert>
 #include <iostream>
 
-class UnmanagedRWSpinLatch {
+class FairRWLatch {
   std::atomic<uint64_t> state;
 
-  UnmanagedRWSpinLatch(const UnmanagedRWSpinLatch&); //=delete
-  void operator = (const UnmanagedRWSpinLatch&); //=delete
+  FairRWLatch(const FairRWLatch&); //=delete
+  void operator = (const FairRWLatch&); //=delete
 public:
-  UnmanagedRWSpinLatch() : state(0ull) {}
+  FairRWLatch() : state(0ull) {}
   
   enum LatchType { //internal state of the RW latch
     latch_invalid = 0,

@@ -94,7 +94,7 @@ inline void         pin_i::_set_lsn_for_scan() {
             return RC(_error_occurred.err_num());       \
     } while(0)
 
-
+rc_t non_return_r;
 
 /*********************************************************************
  *
@@ -125,6 +125,13 @@ scan_index_i::scan_index_i(
   _skip_nulls( ! include_nulls ),
   _cc(cc)
 {
+    //Avoid unused parameter warning
+    (void) c1;
+    (void) bound1_;
+    (void) c2;
+    (void) bound2_;
+    (void) mode;
+    (void) bIgnoreLatches;
     //TODO: SHORE-KITS-API
     assert(0);
 }
@@ -154,6 +161,12 @@ scan_index_i::_init(
     const cvec_t&         b2,
     lock_mode_t           mode)
 {
+    //Avoid unused parameter warning
+    (void) cond;
+    (void) bound;
+    (void) c2;
+    (void) b2;
+    (void) mode;
     //TODO: SHORE-KITS-API
     assert(0);
 }
@@ -175,6 +188,8 @@ scan_index_i::xct_state_changed(
     xct_state_t                /*old_state*/,
     xct_state_t                new_state)
 {
+    //Avoid unused parameter warning
+    (void) new_state;
     //TODO: SHORE-KITS-API
     assert(0);
 }
@@ -211,8 +226,16 @@ scan_index_i::_fetch(
     smsize_t*         elen,
     bool         skip)
 {
+    //Avoid unused parameter warnings
+    (void) key;
+    (void) klen;
+    (void) el;
+    (void) elen;
+    (void) skip;
     //TODO: SHORE-KITS-API
     assert(0);
+    //Avoid non-return warning
+    return non_return_r;
 }
     
 
@@ -229,6 +252,8 @@ scan_file_i::scan_file_i(
   _do_prefetch(pre),
   _prefetch(0)
 {
+    //Avoid unused parameter warning
+    (void) bIgnoreLatches;
     //TODO: SHORE-KITS-API
     assert(0);
 }
@@ -243,6 +268,8 @@ scan_file_i::scan_file_i(const stid_t& stid_, concurrency_t cc,
   _do_prefetch(pre),
   _prefetch(0)
 {
+    //Avoid unused parameter warning
+    (void) bIgnoreLatches;
     //TODO: SHORE-KITS-API
     assert(0);
 }
@@ -258,29 +285,51 @@ scan_file_i::~scan_file_i()
 
 rc_t scan_file_i::_init(bool for_append) 
 {
+    //Avoid unused parameter warning
+    (void) for_append;
     //TODO: SHORE-KITS-API
     assert(0);
+    //Avoid non-return warning
+    return non_return_r;
 }
 
 rc_t
 scan_file_i::next(pin_i*& pin_ptr, smsize_t start, bool& eof)
 {
+    //Avoid unused parameter warnings
+    (void) pin_ptr;
+    (void) start;
+    (void) eof;
     //TODO: SHORE-KITS-API
     assert(0);
+    //Avoid non-return warning
+    return non_return_r;
 }
 
 rc_t
 scan_file_i::_next(pin_i*& pin_ptr, smsize_t start, bool& eof)
 {
+    //Avoid unused parameter warnings
+    (void) pin_ptr;
+    (void) start;
+    (void) eof;
     //TODO: SHORE-KITS-API
     assert(0);
+    //Avoid non-return warning
+    return non_return_r;
 }
 
 rc_t
 scan_file_i::next_page(pin_i*& pin_ptr, smsize_t start, bool& eof)
 {
+    //Avoid unused parameter warnings
+    (void) pin_ptr;
+    (void) start;
+    (void) eof;
     //TODO: SHORE-KITS-API
     assert(0);
+    //Avoid non-return warning
+    return non_return_r;
 }
 
 void scan_file_i::finish()
@@ -304,6 +353,8 @@ scan_file_i::xct_state_changed(
     xct_state_t                /*old_state*/,
     xct_state_t                new_state)
 {
+    //Avoid unused parameter warning
+    (void) new_state;
     //TODO: SHORE-KITS-API
     assert(0);
 }
