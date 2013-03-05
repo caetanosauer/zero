@@ -1625,6 +1625,7 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, lsn_t *
     count = i;
 }
 
+//FIXME: use Shore's profiling support to collect these statistics
 static int swizzles = 0;
 
 void swizzling_stat_swizzle()
