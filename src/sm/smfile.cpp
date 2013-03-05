@@ -290,6 +290,12 @@ ss_m::create_rec(const stid_t& fid, const vec_t& hdr,
                  uint4_t  policy
                  )
 {
+    //Avoid unused parameter warning.
+    (void) fid;
+    (void) hdr;
+    (void) len_hint;
+    (void) data;
+    (void) new_rid;
     //TODO: SHORE-KITS-API
     assert(0);
 }
@@ -304,6 +310,8 @@ ss_m::destroy_rec(const rid_t& rid
 #endif
                   )
 {
+    //Avoid unused parameter warning.
+    (void) rid;
      //TODO: SHORE-KITS-API
     assert(0);
 }

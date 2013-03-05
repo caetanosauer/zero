@@ -102,7 +102,7 @@ inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol
 #ifdef BP_MAINTAIN_PARNET_PTR
         ++cb._counter_approximate;
 #endif // BP_MAINTAIN_PARNET_PTR
-        ++cb._refbit_approximate;
+        //++cb._refbit_approximate;
         // also, doesn't have to unpin whether there happens an error or not. easy!
         page = &(_buffer[idx]);
         
