@@ -8,6 +8,8 @@
 #include "sm_s.h"
 #include <string.h>
 
+#include <assert.h>
+
 /**
  * \Brief Control block in the new buffer pool class.
  * \ingroup SSMBUFPOOL
@@ -80,8 +82,8 @@ struct bf_tree_cb_t {
     shpid_t volatile            _pid_shpid;     // +4  -> 8
 
     /** Count of pins on this block. See class comments. */
-    int32_t volatile            _pin_cnt;       // +4 -> 12
 
+    int32_t volatile            _pin_cnt;       // +4 -> 12
     /** ref count (for clock algorithm). approximate, so not protected by locks. */
     uint16_t                    _refbit_approximate;// +2  -> 14
 
@@ -126,6 +128,54 @@ struct bf_tree_cb_t {
     bf_tree_cb_t();
     bf_tree_cb_t(const bf_tree_cb_t&);
     bf_tree_cb_t& operator=(const bf_tree_cb_t&);
+
+    int32_t pin_cnt() const {
+#ifdef NO_PINCNT_INC_DEC
+        return _pin_cnt + _latch.latch_cnt();
+#else
+        return _pin_cnt;
+#endif
+    }
+
+    void pin_cnt_set(int32_t val) {
+        _pin_cnt = val;
+    }
+
+    void pin_cnt_atomic_inc(int32_t val) {
+#ifndef NO_PINCNT_INC_DEC
+        lintel::unsafe::atomic_fetch_add((uint32_t*) &(_pin_cnt), 1);
+#endif
+        return;
+    }
+
+    void pin_cnt_atomic_dec(int32_t val) {
+#ifndef NO_PINCNT_INC_DEC
+        lintel::unsafe::atomic_fetch_sub((uint32_t*) &(_pin_cnt), 1);
+#endif
+        return;
+    }
+
+    bool pin_cnt_atomic_inc_no_assumption(int32_t val) {
+#ifdef NO_PINCNT_INC_DEC
+        return true;
+#else
+        int32_t cur = _pin_cnt;
+        while (true) {
+            w_assert1(cur >= -1);
+            if (cur == -1) {
+                break; // being evicted! fail
+            }
+            
+            if(lintel::unsafe::atomic_compare_exchange_strong(const_cast<int32_t*>(&_pin_cnt), &cur , cur + val)) {
+                return true; // increment occurred
+            }
+
+            // if we get here it's because another thread raced in here,
+            // and updated the pin count before we could.
+        }
+        return false;
+#endif
+    }
 };
 
 #endif // BF_TREE_CB_H

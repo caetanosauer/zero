@@ -61,6 +61,15 @@ set(sm_STAT_SRCS
 add_library(sm STATIC ${sm_STAT_SRCS})
 target_link_libraries(sm fc sthread common)
 
+# generate a library that performs swizzling but no pin_cnt increments/decrements
+add_library(sm_swizzling_nopincntincdec STATIC ${sm_STAT_SRCS})
+target_link_libraries(sm_swizzling_nopincntincdec fc sthread common)
+# make sure we don't override any previous value of COMPILE_DEFINITIONS
+get_target_property (SM_SWIZZLING_NOPINCNTINCDEC_COMPILEDEF sm_swizzling_nopincntincdec COMPILE_DEFINITIONS)
+set(SM_SWIZZLING_NOPINCNTINCDEC_COMPILEDEF "NO_PINCNT_INC_DEC")
+set_target_properties (sm_swizzling_nopincntincdec PROPERTIES COMPILE_DEFINITIONS "${SM_SWIZZLING_NOPINCNTINCDEC_COMPILEDEF}")
+
+
 # generate a library that simulates no swizzling
 add_library(sm_noswizzling STATIC ${sm_STAT_SRCS})
 target_link_libraries(sm_noswizzling fc sthread common)

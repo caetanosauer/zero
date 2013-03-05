@@ -9,6 +9,10 @@
 #include "bf_tree_vol.h"
 #include "bf_hashtable.h"
 
+void swizzling_stat_swizzle();
+void swizzling_stat_print(const char* prefix);
+void swizzling_stat_reset();
+
 inline bf_tree_cb_t* bf_tree_m::get_cb(const page_s *page) {
     bf_idx idx = page - _buffer;
     w_assert1(idx > 0 && idx < _block_cnt);
@@ -35,7 +39,7 @@ const uint32_t SWIZZLED_LRU_UPDATE_INTERVAL = 1000;
 
 inline w_rc_t bf_tree_m::refix_direct (page_s*& page, bf_idx idx, latch_mode_t mode, bool conditional) {
     bf_tree_cb_t &cb(_control_blocks[idx]);
-    w_assert1(cb._pin_cnt > 0);
+    w_assert1(cb.pin_cnt() > 0);
     W_DO(cb._latch.latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
 #ifdef BP_MAINTAIN_PARNET_PTR
     ++cb._counter_approximate;
@@ -67,6 +71,7 @@ inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol
         // non-swizzled page. or even worse it might not exist in bufferpool yet!
         W_DO (_fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page));
 
+        swizzling_stat_swizzle();
         // also try to swizzle this page
         // TODO so far we swizzle all pages as soon as we load them to bufferpool
         // but, we might want to consider more advanced policy.
@@ -95,7 +100,7 @@ inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol
         bf_idx idx = shpid ^ SWIZZLED_PID_BIT;
         w_assert1 (_is_active_idx(idx));
         bf_tree_cb_t &cb(_control_blocks[idx]);
-        w_assert1(cb._pin_cnt > 0);
+        w_assert1(cb.pin_cnt() > 0);
         w_assert1(cb._pid_vol == vol);
         w_assert1(cb._pid_shpid == _buffer[idx].pid.page);
         W_DO(cb._latch.latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
@@ -133,7 +138,7 @@ inline w_rc_t bf_tree_m::fix_virgin_root (page_s*& page, volid_t vol, snum_t sto
     cb.clear();
     cb._pid_vol = vol;
     cb._pid_shpid = shpid;
-    cb._pin_cnt = 1; // root page's pin count is always positive
+    cb.pin_cnt_set(1); // root page's pin count is always positive
     cb._used = true;
     if (true) return _latch_root_page(page, idx, LATCH_EX, false);
 #endif // SIMULATE_MAINMEMORYDB
@@ -145,7 +150,7 @@ inline w_rc_t bf_tree_m::fix_virgin_root (page_s*& page, volid_t vol, snum_t sto
     _control_blocks[idx].clear();
     _control_blocks[idx]._pid_vol = vol;
     _control_blocks[idx]._pid_shpid = shpid;
-    _control_blocks[idx]._pin_cnt = 1; // root page's pin count is always positive
+    _control_blocks[idx].pin_cnt_set(1); // root page's pin count is always positive
     _control_blocks[idx]._used = true;
     _control_blocks[idx]._dirty = true;
     ++_dirty_page_count_approximate;
