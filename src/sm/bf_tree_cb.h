@@ -130,7 +130,7 @@ struct bf_tree_cb_t {
     bf_tree_cb_t& operator=(const bf_tree_cb_t&);
 
     int32_t pin_cnt() const {
-#ifdef NO_PINCNT_INC_DEC
+#ifdef NO_PINCNT_INCDEC
         return _pin_cnt + _latch.latch_cnt();
 #else
         return _pin_cnt;
@@ -142,21 +142,21 @@ struct bf_tree_cb_t {
     }
 
     void pin_cnt_atomic_inc(int32_t val) {
-#ifndef NO_PINCNT_INC_DEC
+#ifndef NO_PINCNT_INCDEC
         lintel::unsafe::atomic_fetch_add((uint32_t*) &(_pin_cnt), 1);
 #endif
         return;
     }
 
     void pin_cnt_atomic_dec(int32_t val) {
-#ifndef NO_PINCNT_INC_DEC
+#ifndef NO_PINCNT_INCDEC
         lintel::unsafe::atomic_fetch_sub((uint32_t*) &(_pin_cnt), 1);
 #endif
         return;
     }
 
     bool pin_cnt_atomic_inc_no_assumption(int32_t val) {
-#ifdef NO_PINCNT_INC_DEC
+#ifdef NO_PINCNT_INCDEC
         return true;
 #else
         int32_t cur = _pin_cnt;

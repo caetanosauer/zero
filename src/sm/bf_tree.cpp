@@ -479,7 +479,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(page_s* parent, page_s*& page, volid_t vol, s
                 DBGOUT1(<<"bf_tree_m: very unlucky! buffer frame " << idx << " has been just evicted. retrying..");
                 continue;
             }
-#ifndef NO_PINCNT_INC_DEC
+#ifndef NO_PINCNT_INCDEC
             int32_t cur_ucnt = cur_cnt;
             if (lintel::unsafe::atomic_compare_exchange_strong(const_cast<int32_t*>(&cb._pin_cnt), &cur_ucnt, cur_ucnt + 1))
             {
@@ -493,7 +493,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(page_s* parent, page_s*& page, volid_t vol, s
                 w_assert1(cb.pin_cnt() > 0);
                 w_assert1(cb._pid_vol == vol);
                 w_assert1(cb._pid_shpid == shpid);
-#ifndef NO_PINCNT_INC_DEC
+#ifndef NO_PINCNT_INCDEC
                 lintel::unsafe::atomic_fetch_sub((uint32_t*)(&cb._pin_cnt), 1);
 #endif
                 if (rc.is_error()) {
@@ -502,7 +502,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(page_s* parent, page_s*& page, volid_t vol, s
                     page = &(_buffer[idx]);
                 }
                 return rc;
-#ifndef NO_PINCNT_INC_DEC
+#ifndef NO_PINCNT_INCDEC
             } else {
                 // another thread is doing something. keep trying.
                 DBGOUT1(<<"bf_tree_m: a bit unlucky! buffer frame " << idx << " has contention. cb._pin_cnt=" << cb._pin_cnt <<", expected=" << cur_ucnt);
@@ -797,7 +797,7 @@ w_rc_t bf_tree_m::_get_replacement_block(bf_idx& ret) {
         // first, we have to make sure the page's pin_cnt is exactly 0.
         // we atomically change it to -1.
         int zero = 0;
-#ifndef NO_PINCNT_INC_DEC
+#ifndef NO_PINCNT_INCDEC
         if (lintel::unsafe::atomic_compare_exchange_strong(const_cast<int32_t     *>(&cb._pin_cnt), (int32_t * ) &zero , (int32_t) -1))
         {
             // CAS did it job. the current thread has an exclusive access to this block
@@ -834,7 +834,7 @@ w_rc_t bf_tree_m::_get_replacement_block(bf_idx& ret) {
 #endif // BP_MAINTAIN_PARNET_PTR
             ret = idx;
             return RCOK;
-#ifndef NO_PINCNT_INC_DEC
+#ifndef NO_PINCNT_INCDEC
         } else {
             // it can happen. we just give up this block
             continue;
