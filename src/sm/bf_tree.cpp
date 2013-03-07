@@ -231,7 +231,7 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
     // as the page is read from disk, at least it's sure that
     // the page is flushed as of the page LSN (otherwise why we can read it!)
     cb._rec_lsn = _buffer[idx].lsn.data();
-    cb._pin_cnt = 1; // root page's pin count is always positive
+    cb.pin_cnt_set(1); // root page's pin count is always positive
     cb._swizzled = true;
     cb._used = true; // turn on _used at last
     bool inserted = _hashtable->insert_if_not_exists(bf_key(vid, shpid), idx); // for some type of caller (e.g., redo) we still need hashtable entry for root
@@ -268,7 +268,7 @@ w_rc_t bf_tree_m::_install_volume_mainmemorydb(vol_t* volume) {
             cb._pid_vol = vid;
             cb._pid_shpid = idx;
             cb._rec_lsn = _buffer[idx].lsn.data();
-            cb._pin_cnt = 1;
+            cb.pin_cnt_set(1);
             cb._used = true;
             cb._swizzled = true;
         }
@@ -473,37 +473,42 @@ w_rc_t bf_tree_m::_fix_nonswizzled(page_s* parent, page_s*& page, volid_t vol, s
         } else {
             // unlike swizzled case, we have to atomically pin it while verifying it's still there.
             bf_tree_cb_t &cb(_control_blocks[idx]);
-            int32_t cur_cnt = cb._pin_cnt;
+            int32_t cur_cnt = cb.pin_cnt();
             if (cur_cnt < 0) {
                 w_assert1(cur_cnt == -1);
                 DBGOUT1(<<"bf_tree_m: very unlucky! buffer frame " << idx << " has been just evicted. retrying..");
                 continue;
             }
+#ifndef NO_PINCNT_INCDEC
             int32_t cur_ucnt = cur_cnt;
-	    if (lintel::unsafe::atomic_compare_exchange_strong(const_cast<     int32_t*>(&cb._pin_cnt), &cur_ucnt, cur_ucnt + 1))
-	    {
+            if (lintel::unsafe::atomic_compare_exchange_strong(const_cast<int32_t*>(&cb._pin_cnt), &cur_ucnt, cur_ucnt + 1))
+            {
+#endif
                 // okay, CAS went through
                 ++cb._refbit_approximate;
                 w_rc_t rc = cb._latch.latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER);
                 // either successfully or unsuccessfully, we latched the page.
                 // we don't need the pin any more.
                 // here we can simply use atomic_dec because it must be positive now.
-                w_assert1(cb._pin_cnt > 0);
+                w_assert1(cb.pin_cnt() > 0);
                 w_assert1(cb._pid_vol == vol);
                 w_assert1(cb._pid_shpid == shpid);
-		lintel::unsafe::atomic_fetch_sub((uint32_t*)(&cb._pin_cnt)     ,1);
-
+#ifndef NO_PINCNT_INCDEC
+                lintel::unsafe::atomic_fetch_sub((uint32_t*)(&cb._pin_cnt), 1);
+#endif
                 if (rc.is_error()) {
                     DBGOUT2(<<"bf_tree_m: latch_acquire failed in buffer frame " << idx << " rc=" << rc);
                 } else {
                     page = &(_buffer[idx]);
                 }
                 return rc;
+#ifndef NO_PINCNT_INCDEC
             } else {
                 // another thread is doing something. keep trying.
                 DBGOUT1(<<"bf_tree_m: a bit unlucky! buffer frame " << idx << " has contention. cb._pin_cnt=" << cb._pin_cnt <<", expected=" << cur_ucnt);
                 continue;
             }
+#endif
         }
     }
 }
@@ -518,19 +523,18 @@ bf_idx bf_tree_m::pin_for_refix(const page_s* page) {
 #endif // SIMULATE_MAINMEMORYDB
     // this is just atomic increment, not a CAS, because we know
     // the page is latched and eviction thread wouldn't consider this block.
-    w_assert1(_control_blocks[idx]._pin_cnt >= 0);
-    lintel::unsafe::atomic_fetch_add((uint32_t*) &(_control_blocks[idx]._pin_cnt),1);
+    w_assert1(_control_blocks[idx].pin_cnt() >= 0);
+    _control_blocks[idx].pin_cnt_atomic_inc(1);
     return idx;
 }
 
 void bf_tree_m::unpin_for_refix(bf_idx idx) {
     w_assert1(_is_active_idx(idx));
-    w_assert1(_control_blocks[idx]._pin_cnt > 0);
+    w_assert1(_control_blocks[idx].pin_cnt() > 0);
 #ifdef SIMULATE_MAINMEMORYDB
     if (true) return;
 #endif // SIMULATE_MAINMEMORYDB
-    //atomic_dec_32((uint32_t*)(&_control_blocks[idx]._pin_cnt));
-    lintel::unsafe::atomic_fetch_sub((uint32_t*) &(_control_blocks[idx]._pin_cnt)     ,1);
+    _control_blocks[idx].pin_cnt_atomic_dec(1);
 }
 
 ///////////////////////////////////   Page fix/unfix END         ///////////////////////////////////  
@@ -780,7 +784,7 @@ w_rc_t bf_tree_m::_get_replacement_block(bf_idx& ret) {
         // find a block that has no pinning (or not being evicted by others).
         // this check is approximate as it's without lock.
         // false positives are fine, and we do the real check later
-        if (cb._pin_cnt != 0) {
+        if (cb.pin_cnt() != 0) {
             continue;
         }
         
@@ -792,17 +796,19 @@ w_rc_t bf_tree_m::_get_replacement_block(bf_idx& ret) {
         // okay, let's try evicting this page.
         // first, we have to make sure the page's pin_cnt is exactly 0.
         // we atomically change it to -1.
-	int zero = 0;
-	if (lintel::unsafe::atomic_compare_exchange_strong(const_cast<int32_t     *>(&cb._pin_cnt), (int32_t * ) &zero , (int32_t) -1))
-	{
+        int zero = 0;
+#ifndef NO_PINCNT_INCDEC
+        if (lintel::unsafe::atomic_compare_exchange_strong(const_cast<int32_t     *>(&cb._pin_cnt), (int32_t * ) &zero , (int32_t) -1))
+        {
             // CAS did it job. the current thread has an exclusive access to this block
-            w_assert1(cb._pin_cnt == -1);
+            w_assert1(cb.pin_cnt() == -1);
+#endif
             
             // let's do a real check.
             if (cb._dirty || !cb._used) {
                 DBGOUT1(<<"very unlucky, this block has just become dirty.");
                 // oops, then put this back and give up this block
-                cb._pin_cnt = 0;
+                cb.pin_cnt_set(0);
                 continue;
             }
             
@@ -810,7 +816,7 @@ w_rc_t bf_tree_m::_get_replacement_block(bf_idx& ret) {
             w_rc_t latch_rc = cb._latch.latch_acquire(LATCH_EX, WAIT_IMMEDIATE);
             if (latch_rc.is_error()) {
                 DBGOUT1(<<"very unlucky, someone has just latched this block.");
-                cb._pin_cnt = 0;
+                cb.pin_cnt_set(0);
                 continue;
             }
             // we can immediately release EX latch because no one will newly take latch as _pin_cnt==-1
@@ -828,10 +834,12 @@ w_rc_t bf_tree_m::_get_replacement_block(bf_idx& ret) {
 #endif // BP_MAINTAIN_PARNET_PTR
             ret = idx;
             return RCOK;
+#ifndef NO_PINCNT_INCDEC
         } else {
             // it can happen. we just give up this block
             continue;
         }
+#endif
     }
     return RCOK;
 }
@@ -852,7 +860,7 @@ void bf_tree_m::_delete_block(bf_idx idx) {
     w_assert1(_is_active_idx(idx));
     bf_tree_cb_t &cb(_control_blocks[idx]);
     w_assert1(cb._dirty);
-    w_assert1(cb._pin_cnt == 0);
+    w_assert1(cb.pin_cnt() == 0);
     w_assert1(!cb._latch.is_latched());
     cb._used = false; // clear _used BEFORE _dirty so that eviction thread will ignore this block.
     cb._dirty = false;
@@ -875,6 +883,7 @@ void bf_tree_m::_delete_block(bf_idx idx) {
 bool bf_tree_m::_increment_pin_cnt_no_assumption(bf_idx idx) {
     w_assert1(idx > 0 && idx < _block_cnt);
     bf_tree_cb_t &cb(_control_blocks[idx]);
+#if 0
     int32_t cur = cb._pin_cnt;
     while (true) {
         w_assert1(cur >= -1);
@@ -882,7 +891,7 @@ bool bf_tree_m::_increment_pin_cnt_no_assumption(bf_idx idx) {
             break; // being evicted! fail
         }
         
-	if(lintel::unsafe::atomic_compare_exchange_strong(const_cast<int32_t*>(&cb._pin_cnt), &cur , cur + 1)) {
+        if(lintel::unsafe::atomic_compare_exchange_strong(const_cast<int32_t*>(&cb._pin_cnt), &cur , cur + 1)) {
             return true; // increment occurred
         }
 
@@ -890,13 +899,16 @@ bool bf_tree_m::_increment_pin_cnt_no_assumption(bf_idx idx) {
         // and updated the pin count before we could.
     }
     return false;
+#endif
+    return cb.pin_cnt_atomic_inc_no_assumption(1);
 }
 
 void bf_tree_m::_decrement_pin_cnt_assume_positive(bf_idx idx) {
     w_assert1 (_is_active_idx(idx));
     bf_tree_cb_t &cb(_control_blocks[idx]);
-    w_assert1 (cb._pin_cnt >= 1);
-    lintel::unsafe::atomic_fetch_sub((uint32_t*) &(cb._pin_cnt),1);
+    w_assert1 (cb.pin_cnt() >= 1);
+    //lintel::unsafe::atomic_fetch_sub((uint32_t*) &(cb._pin_cnt),1);
+    cb.pin_cnt_atomic_dec(1);
 }
 
 ///////////////////////////////////   WRITE-ORDER-DEPENDENCY BEGIN ///////////////////////////////////  
@@ -971,7 +983,7 @@ bool bf_tree_m::_check_dependency_cycle(bf_idx source, bf_idx start_idx) {
             break;
         }
         bf_tree_cb_t &dependency_cb(_control_blocks[dependency_idx]);
-        w_assert1(dependency_cb._pin_cnt >= 0);
+        w_assert1(dependency_cb.pin_cnt() >= 0);
         bf_idx next_dependency_idx = dependency_cb._dependency_idx;
         if (next_dependency_idx == 0) {
             break;
@@ -1002,17 +1014,17 @@ bool bf_tree_m::_check_dependency_cycle(bf_idx source, bf_idx start_idx) {
 }
 
 bool bf_tree_m::_compare_dependency_lsn(const bf_tree_cb_t& cb, const bf_tree_cb_t &dependency_cb) const {
-    w_assert1(cb._pin_cnt >= 0);
+    w_assert1(cb.pin_cnt() >= 0);
     w_assert1(cb._dependency_idx != 0);
     w_assert1(cb._dependency_shpid != 0);
-    w_assert1(dependency_cb._pin_cnt >= 0);
+    w_assert1(dependency_cb.pin_cnt() >= 0);
     return dependency_cb._used && dependency_cb._dirty // it's still dirty
         && dependency_cb._pid_vol == cb._pid_vol // it's still the vol and 
         && dependency_cb._pid_shpid == cb._dependency_shpid // page it was referring..
         && dependency_cb._rec_lsn <= cb._dependency_lsn; // and not flushed after the registration
 }
 bool bf_tree_m::_check_dependency_still_active(bf_tree_cb_t& cb) {
-    w_assert1(cb._pin_cnt >= 0);
+    w_assert1(cb.pin_cnt() >= 0);
     bf_idx next_idx = cb._dependency_idx;
     if (next_idx == 0) {
         return false;
@@ -1409,7 +1421,7 @@ bool bf_tree_m::_unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot) {
     // w_assert1(child_cb._pid_shpid == _buffer[child_idx].pid.page);
     // w_assert1(_buffer[child_idx].btree_level == 1);
     w_assert1(child_cb._pid_vol == parent_cb._pid_vol);
-    w_assert1(child_cb._pin_cnt >= 1); // because it's swizzled
+    w_assert1(child_cb.pin_cnt() >= 1); // because it's swizzled
     w_assert1(child_idx == _hashtable->lookup(bf_key (child_cb._pid_vol, child_cb._pid_shpid)));
     child_cb._swizzled = false;
     // because it was swizzled, the current pin count is >= 1, so we can simply do atomic decrement.
@@ -1461,7 +1473,7 @@ void bf_tree_m::debug_dump(std::ostream &o) const
             o << ", _parent=" << cb._parent;
 #endif // BP_MAINTAIN_PARNET_PTR
             o << ", _swizzled=" << cb._swizzled;
-            o << ", _pin_cnt=" << cb._pin_cnt;
+            o << ", _pin_cnt=" << cb.pin_cnt();
             o << ", _rec_lsn=" << cb._rec_lsn;
             o << ", _dependency_idx=" << cb._dependency_idx;
             o << ", _dependency_shpid=" << cb._dependency_shpid;
@@ -1611,4 +1623,22 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, lsn_t *
         }
     }
     count = i;
+}
+
+//FIXME: use Shore's profiling support to collect these statistics
+static int swizzles = 0;
+
+void swizzling_stat_swizzle()
+{
+    swizzles++; // approximate - don't care about races
+}
+
+void swizzling_stat_print(const char* prefix)
+{
+    printf("%s: Swizzlings: %d\n", prefix, swizzles);
+}
+
+void swizzling_stat_reset()
+{
+    swizzles = 0;
 }
