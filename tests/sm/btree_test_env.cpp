@@ -25,9 +25,11 @@
 nullbuf null_obj;
 std::ostream vout (&null_obj);
 #endif // W_DEBUG_LEVEL
+namespace {
+    char device_name[MAXPATHLEN] = "./volumes/dev_test";
+    char global_log_dir[MAXPATHLEN] = "./log";
 
-const char* device_name = "./volumes/dev_test";
-
+}
 /** thread object to host Btree test functors. */
 class testdriver_thread_t : public smthread_t {
 public:
@@ -116,7 +118,7 @@ testdriver_thread_t::handle_options()
         str << _locktable_size;
         W_DO(options.set_value("sm_locktablesize", true, str.str().c_str(), true, &err_stream));
     }
-    W_DO(options.set_value("sm_logdir", true, "./log", true, &err_stream));
+    W_DO(options.set_value("sm_logdir", true, global_log_dir, true, &err_stream));
 
     {
         std::stringstream str;
@@ -263,7 +265,13 @@ btree_test_env::~btree_test_env()
 {
 }
 
+
 void btree_test_env::assure_empty_dir(const char *folder_name)
+{
+    assure_dir(folder_name);
+    empty_dir(folder_name);
+}
+void btree_test_env::assure_dir(const char *folder_name)
 {
     vout << "creating folder '" << folder_name << "' if not exists..." << endl;
     if (mkdir(folder_name, S_IRWXU) == 0) {
@@ -276,8 +284,8 @@ void btree_test_env::assure_empty_dir(const char *folder_name)
             ASSERT_TRUE(false);
         }
     }
-    empty_dir(folder_name);
 }
+
 void btree_test_env::empty_dir(const char *folder_name)
 {
     // want to use boost::filesystem... but let's keep this project boost-free.
@@ -297,14 +305,26 @@ void btree_test_env::empty_dir(const char *folder_name)
 }
 void btree_test_env::SetUp()
 {
-    assure_empty_dir("./log");
-    assure_empty_dir("./volumes");
+    char tests_dir[MAXPATHLEN] = "/dev/shm/";
+    strcat(tests_dir, getenv("USER"));
+    assure_dir(tests_dir);
+    strcat(tests_dir, "/btree_test_env");
+    assure_dir(tests_dir);
+    strcpy(log_dir, tests_dir);
+    strcpy(vol_dir, tests_dir);
+    strcat(log_dir, "/log");
+    strcat(vol_dir, "/volumes");
+    assure_empty_dir(log_dir);
+    assure_empty_dir(vol_dir);
+    strcpy(device_name, vol_dir);
+    strcat(device_name, "/dev_test");
+    strcpy(global_log_dir, log_dir);
     _use_locks = false;
 }
 void btree_test_env::empty_logdata_dir()
 {
-    empty_dir("./log");
-    empty_dir("./volumes");
+    empty_dir(log_dir);
+    empty_dir(vol_dir);
 }
 
 void btree_test_env::TearDown()
