@@ -321,6 +321,11 @@ public:
      * The end of the record need not be pinned before this is called.
      */
     rc_t    truncate_rec(smsize_t amount);
+
+#if W_DEBUG_LEVEL > 1
+    inline void _set_lsn_for_scan();
+#endif
+
 };
 
 
