@@ -50,6 +50,15 @@ inline w_rc_t bf_tree_m::refix_direct (page_s*& page, bf_idx idx, latch_mode_t m
 }
 
 inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
+    INC_TSTAT(bf_fix_nonroot_count);
+/*
+    static uint64_t fix_count = 0;
+
+    if ((++fix_count % 10000000) == 0) {
+        cout << "fix_nonroot             = " << fix_count << endl;
+    }
+*/
+
 #ifdef SIMULATE_MAINMEMORYDB
     w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
     bf_idx idx = shpid;
@@ -70,7 +79,6 @@ inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol
     if((shpid & SWIZZLED_PID_BIT) == 0) {
         // non-swizzled page. or even worse it might not exist in bufferpool yet!
         W_DO (_fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page));
-
         //swizzling_stat_swizzle();
         // also try to swizzle this page
         // TODO so far we swizzle all pages as soon as we load them to bufferpool
@@ -79,7 +87,25 @@ inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol
                 && parent->btree_blink != shpid // don't swizzle foster child
             ) {
             slotid_t slot = find_page_id_slot (parent, shpid);
-            w_assert1(slot >= -1);
+#if 0
+            if (slot < -1 && ) {
+                if (is_swizzled(page)) {
+                    // benign race: some other thread swizzled it already 
+                }
+/*
+                DBGOUT(<<"is swizzled " << is_swizzled(page));
+                DBGOUT (<< "ASSERTION failure shpid = " << shpid
+                           << " parent.pid = " << parent->pid
+                           << " page.pid = " << page->pid);
+                DBGOUT (<< "mode = " << mode);
+                print_slots(parent);
+*/
+            }
+#endif
+            // benign race: some other thread swizzled it already 
+            // this can happen when two threads that have the page 
+            // latched as shared need to swizzle it
+            w_assert1(slot >= -1 || is_swizzled(page));
             
 #ifdef EX_LATCH_ON_SWIZZLING
             if (latch_mode(parent) != LATCH_EX) {
@@ -92,7 +118,9 @@ inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol
                 }
             }
 #endif //EX_LATCH_ON_SWIZZLING
-            swizzle_child(parent, slot);
+            if (!is_swizzled(page)) {
+                swizzle_child(parent, slot);
+            }
         }
     } else {
         w_assert1(!virgin_page); // virgin page can't be swizzled
@@ -107,7 +135,7 @@ inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol
 #ifdef BP_MAINTAIN_PARNET_PTR
         ++cb._counter_approximate;
 #endif // BP_MAINTAIN_PARNET_PTR
-        //++cb._refbit_approximate;
+        ++cb._refbit_approximate; // FIXME: This causes a scalability bottleneck
         // also, doesn't have to unpin whether there happens an error or not. easy!
         page = &(_buffer[idx]);
         

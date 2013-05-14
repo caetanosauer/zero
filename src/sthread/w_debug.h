@@ -126,6 +126,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * They don't do a lot unless configured with --enable-trace
 */
 #include <cassert>
+#include <pthread.h>
+#include <sstream>
 
 #undef USE_REGEX
 
@@ -217,11 +219,18 @@ extern w_debug _w_debug;
 
 // I wanted to use google-logging (glog), but changing all of the existing code
 // takes time. So, currently it's just std::cout.
-#define ERROUT(a) std::cerr << __FILE__ << " (" << __LINE__ << ") " a << flushl;
-#define DBGOUT(a) std::cout << __FILE__ << " (" << __LINE__ << ") " a << flushl;
+#define ERROUT(a) std::cerr << "[" << pthread_self() << "] " << __FILE__ << " (" << __LINE__ << ") " a << flushl;
+//#define DBGOUT(a) std::cout << "[" << pthread_self() << "] " << __FILE__ << " (" << __LINE__ << ") " a << flushl;
+#define DBGOUT(a)  \
+ do { \
+   std::stringstream ss; \
+   ss << "[" << pthread_self() << "] " << __FILE__ << " (" << __LINE__ << ") " a; \
+   std::cout << ss.str() << flushl; \
+ } while (0);
 
 #define DBGOUT0(a) DBGOUT(a)
 
+#if 0
 #if W_DEBUG_LEVEL >= 1
 #define DBGOUT1(a) DBGOUT(a)
 #else
@@ -283,7 +292,19 @@ extern w_debug _w_debug;
 #define DBGOUT9(a)
 #endif
 
+#else 
 
+#define DBGOUT1(a)
+#define DBGOUT2(a)
+#define DBGOUT3(a)
+#define DBGOUT4(a)
+#define DBGOUT5(a)
+#define DBGOUT6(a)
+#define DBGOUT7(a)
+#define DBGOUT8(a)
+#define DBGOUT9(a)
+
+#endif
 
 // the old "DBG" idiom is level=5
 #define DBG(a) DBGOUT5(a)

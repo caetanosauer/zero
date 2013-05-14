@@ -104,6 +104,7 @@ class bf_tree_m {
     friend class bf_tree_cleaner_slave_thread_t; // for page cleaning
 
 public:
+    void print_slots(page_s* page) const;
 #ifdef PAUSE_SWIZZLING_ON
     static bool _bf_pause_swizzling; // this can be turned on/off from any place. ugly, but it's just for an experiment.
     static uint64_t _bf_swizzle_ex; // approximate statistics. how many times ex-latch were taken on page swizzling
@@ -611,6 +612,9 @@ private:
     uint32_t            _swizzle_clockhand_pathway[MAX_SWIZZLE_CLOCKHAND_DEPTH];
     /** the lastly visited element in _swizzle_clockhand_pathway that might have some remaining descendants to visit. */
     uint16_t            _swizzle_clockhand_current_depth;
+
+    /** threshold temperature above which to not unswizzle a frame */
+    uint32_t            _swizzle_clockhand_threshold;
 
     // queue_based_lock_t   _eviction_mutex;
     

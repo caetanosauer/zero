@@ -318,5 +318,11 @@ SM Storage manager = 0x00060000 sm_stats_t {
     u_long lk_vol_wait        Volume locks waited
     u_long lk_store_wait      Store locks waited
     u_long lk_key_wait        Key locks waited
+
+    //
+    // Swizzling stats
+    // 
+    u_long bf_fix_nonroot_count       Fix a non-root page
+    u_long bf_fix_nonroot_miss_count  Cache miss when fixing a non-root page
 };
 
