@@ -313,6 +313,8 @@ public:
      */
     bool is_swizzled (const page_s* page) const;
     
+    shpid_t shpid(const page_s* page) const;
+    
     /** Immediately writes out all dirty pages in the given volume.*/
     w_rc_t force_volume (volid_t vol);
     /** Immediately writes out all dirty pages.*/
@@ -528,6 +530,7 @@ private:
     // these are used only in the mainmemory-db experiment
     w_rc_t _install_volume_mainmemorydb(vol_t* volume);
     w_rc_t _fix_nonswizzled_mainmemorydb(page_s* parent, page_s*& page, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page);
+
 
 private:
     /** count of blocks (pages) in this bufferpool. */

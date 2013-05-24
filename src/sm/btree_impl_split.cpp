@@ -280,7 +280,7 @@ rc_t btree_impl::_ux_opportunistic_adopt_blink_core (btree_p &parent, btree_p &c
     w_assert1 (child.is_fixed());
     // okay, got EX latch on parent. So, we can eventually get EX latch on child always.
     // do EX-acquire, not upgrade. As we have Ex latch on parent. this is assured to work eventually
-    shpid_t surely_need_child_pid = child.pid().page;
+    shpid_t surely_need_child_pid = child.shpid();
     child.unfix(); // he will be also done in the following loop. okay to unfix here because:
     pushedup = true; // this assures the caller will immediatelly restart any access from root
 

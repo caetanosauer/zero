@@ -31,7 +31,8 @@ inline shpid_t bf_tree_m::get_root_page_id(volid_t vol, snum_t store) {
     if (idx == 0 || idx >= _block_cnt) {
         return 0;
     }
-    return _control_blocks[idx]._pid_shpid;
+    page_s* page = _buffer + idx;
+    return shpid(page);
 }
 
 ///////////////////////////////////   Page fix/unfix BEGIN         ///////////////////////////////////  
@@ -60,12 +61,16 @@ inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol
 */
 
 #ifdef SIMULATE_MAINMEMORYDB
-    w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
-    bf_idx idx = shpid;
-    w_assert1 (_is_active_idx(idx));
-    bf_tree_cb_t &cb(_control_blocks[idx]);
-    W_DO(cb._latch.latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
-    page = &(_buffer[idx]);
+    if (virgin_page) {
+        W_DO (_fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page));
+    } else {
+        w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
+        bf_idx idx = shpid;
+        w_assert1 (_is_active_idx(idx));
+        bf_tree_cb_t &cb(_control_blocks[idx]);
+        W_DO(cb._latch.latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
+        page = &(_buffer[idx]);
+    }
     if (true) return RCOK;
 #endif // SIMULATE_MAINMEMORYDB
 
@@ -102,10 +107,16 @@ inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol
 */
             }
 #endif
+            // this is a new (virgin) page which has not been linked yet. 
+            // skip swizzling this page
+//            if (slot == -2 && virgin_page) {
+//                return RCOK;
+//            }
+
             // benign race: some other thread swizzled it already 
             // this can happen when two threads that have the page 
             // latched as shared need to swizzle it
-            w_assert1(slot >= -1 || is_swizzled(page));
+            w_assert1(slot >= -1 || is_swizzled(page) || (slot == -2 && virgin_page));
             
 #ifdef EX_LATCH_ON_SWIZZLING
             if (latch_mode(parent) != LATCH_EX) {
@@ -299,6 +310,9 @@ inline bool bf_tree_m::upgrade_latch_conditional(const page_s* p) {
     }
 }
 
+void print_latch_holders(latch_t* latch);
+
+
 ///////////////////////////////////   Page fix/unfix END         ///////////////////////////////////  
 
 ///////////////////////////////////   LRU/Freelist BEGIN ///////////////////////////////////  
@@ -330,6 +344,17 @@ inline void pin_for_refix_holder::release() {
         smlevel_0::bf->unpin_for_refix(_idx);
         _idx = 0;
     }
+}
+
+
+inline shpid_t bf_tree_m::shpid(const page_s* page) const {
+    if (is_swizzled(page)) {
+        //bf_idx idx = _hashtable->lookup(bf_key (page->pid.vol, page->pid.page));
+        //uint32_t idx = page - _buffer;
+        bf_idx idx = page - _buffer;
+        return idx | SWIZZLED_PID_BIT;
+    }
+    return page->pid.page;
 }
 
 #endif // BF_TREE_INLINE_H

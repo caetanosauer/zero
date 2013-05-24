@@ -349,7 +349,11 @@ w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(page_s* parent, page_s*& page, s
         cb._rec_lsn = 0;
         cb._dirty = true;
         ++_dirty_page_count_approximate;
+        bf_idx parent_idx = parent - _buffer;
+        cb._pid_vol = _control_blocks[parent_idx]._pid_vol;
+        cb._pid_shpid = idx;
     }
+    cb._used = true;
     w_rc_t rc = cb._latch.latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER);
     if (rc.is_error()) {
         DBGOUT2(<<"bf_tree_m: latch_acquire failed in buffer frame " << idx << " rc=" << rc);

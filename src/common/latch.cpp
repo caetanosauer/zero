@@ -666,3 +666,23 @@ void print_all_latches()
     }
     cerr <<  "}" << endl << flush ;
 }
+
+
+void print_latch_holders(latch_t* latch) 
+{
+    holder_list_list_t::iterator  iter;
+    for(iter= holder_list_list.begin(); 
+         iter != holder_list_list.end(); iter ++)
+    {
+        sthread_t* who = iter->first;
+        latch_holder_t **whoslist = iter->second;
+        holder_list holders(*iter->second);
+        holder_list::iterator it=holders.begin();
+        for(; it!=holders.end() && it->_latch;  ++it) 
+        {
+            if (it->_latch == latch) {
+                (*whoslist)->print(cout);
+            }
+        }
+    }
+}

@@ -139,6 +139,7 @@ public:
     const lpid_t&               pid() const;
     volid_t                     vol() const;
     snum_t                      store() const;
+    shpid_t                     shpid() const;
     tag_t                       tag() const { return (tag_t) _pp->tag;}
     shpid_t                     btree_root() const { return _pp->btree_root;}
 
@@ -190,7 +191,7 @@ public:
     uint32_t          calculate_checksum () const {return _pp->calculate_checksum();}
     /** Renew the stored value of checksum of this page. */
     void             update_checksum () const {_pp->update_checksum();}
-    
+
 protected:
 
     /**

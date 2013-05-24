@@ -219,18 +219,18 @@ extern w_debug _w_debug;
 
 // I wanted to use google-logging (glog), but changing all of the existing code
 // takes time. So, currently it's just std::cout.
-#define ERROUT(a) std::cerr << "[" << pthread_self() << "] " << __FILE__ << " (" << __LINE__ << ") " a << flushl;
+#define ERROUT(a) std::cerr << "[" << hex << pthread_self() << dec << "] " << __FILE__ << " (" << __LINE__ << ") " a << flushl;
 //#define DBGOUT(a) std::cout << "[" << pthread_self() << "] " << __FILE__ << " (" << __LINE__ << ") " a << flushl;
 #define DBGOUT(a)  \
  do { \
    std::stringstream ss; \
-   ss << "[" << pthread_self() << "] " << __FILE__ << " (" << __LINE__ << ") " a; \
+   ss << "[" << hex << pthread_self() << dec << "] " << __FILE__ << " (" << __LINE__ << ") " a; \
    std::cout << ss.str() << flushl; \
  } while (0);
 
 #define DBGOUT0(a) DBGOUT(a)
 
-#if 0
+#if 1
 #if W_DEBUG_LEVEL >= 1
 #define DBGOUT1(a) DBGOUT(a)
 #else
