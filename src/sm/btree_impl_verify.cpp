@@ -203,7 +203,7 @@ void btree_impl::inquery_verify_fact(btree_p &page)
     if (context.next_level != -1 && context.next_level != page.level()) {
         inconsistent = true;
     }
-    if (context.next_pid != page.pid().page) {
+    if (context.next_pid != page.shpid()) {
         inconsistent = true;
     }
 
