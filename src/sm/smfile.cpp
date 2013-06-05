@@ -63,7 +63,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "btcursor.h"
 #include "device.h"
 #include "sm.h"
-
+#include "suppress_unused.h"
 
 #if W_DEBUG_LEVEL > 2
 #define  FILE_LOG_COMMENT_ON 1
@@ -238,8 +238,10 @@ ss_m::_create_file(vid_t vid, stid_t& fid,
                    shpid_t        cluster_hint // = 0
                    )
 {
+    SUPPRESS_UNUSED_4(vid, fid, property, cluster_hint);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 /*--------------------------------------------------------------*
@@ -248,8 +250,10 @@ ss_m::_create_file(vid_t vid, stid_t& fid,
 rc_t
 ss_m::_destroy_file(const stid_t& fid)
 {
+    SUPPRESS_UNUSED(fid);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 
@@ -264,8 +268,10 @@ ss_m::create_mrbt_file(
     shpid_t                        cluster_hint // = 0
 )
 {
+    SUPPRESS_UNUSED_4(vid, fid, property, cluster_hint);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 /*--------------------------------------------------------------*
@@ -274,8 +280,10 @@ ss_m::create_mrbt_file(
 rc_t
 ss_m::destroy_mrbt_file(const stid_t& fid)
 {
+    SUPPRESS_UNUSED(fid);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 /*--------------------------------------------------------------*
@@ -290,8 +298,11 @@ ss_m::create_rec(const stid_t& fid, const vec_t& hdr,
                  uint4_t  policy
                  )
 {
+    SUPPRESS_UNUSED_5(fid, hdr, len_hint, data, new_rid);
+    SUPPRESS_UNUSED(policy);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 /*--------------------------------------------------------------*
@@ -304,8 +315,10 @@ ss_m::destroy_rec(const rid_t& rid
 #endif
                   )
 {
+    SUPPRESS_UNUSED(rid);
      //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 
@@ -317,8 +330,11 @@ ss_m::find_page_and_create_mrbt_rec(const stid_t& fid, const lpid_t& leaf, const
 				    smsize_t len_hint, const vec_t& data, rid_t& new_rid,
 				    const bool bIgnoreLocks, const bool bIgnoreLatches)
 {
+    SUPPRESS_UNUSED_5(fid, leaf, hdr, len_hint, data);
+    SUPPRESS_UNUSED_3(new_rid, bIgnoreLocks, bIgnoreLatches);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 /*--------------------------------------------------------------*
@@ -329,6 +345,8 @@ ss_m::destroy_mrbt_rec(const rid_t& rid
 		       , const bool bIgnoreLocks, const bool bIgnoreLatches
                   )
 {
+    SUPPRESS_UNUSED_3(rid, bIgnoreLocks, bIgnoreLatches);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }

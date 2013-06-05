@@ -7,6 +7,7 @@
 #include "sm.h"
 #include "xct.h"
 #include "btree.h"
+#include "suppress_unused.h"
 
 /*==============================================================*
  *  Physical ID version of all the index operations                *
@@ -55,8 +56,11 @@ ss_m::create_index(
     stid_t&               stid
     )
 {
+    SUPPRESS_UNUSED_5(vid, ntype, property, key_desc, cc);
+    SUPPRESS_UNUSED(stid);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 
@@ -89,8 +93,11 @@ rc_t ss_m::create_mr_index(vid_t                 vid,
 			   const bool            bIgnoreLatches
 			   )
 {
+    SUPPRESS_UNUSED_5(vid, ntype, property, key_desc, cc);
+    SUPPRESS_UNUSED_2(stid, bIgnoreLatches);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 /*****************************************************************************
@@ -106,8 +113,11 @@ rc_t ss_m::create_mr_index(vid_t                 vid,
 			   const bool            bIgnoreLatches
 			   )
 {
+    SUPPRESS_UNUSED_5(vid, ntype, property, key_desc, cc);
+    SUPPRESS_UNUSED_3(stid, ranges, bIgnoreLatches);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 /*--------------------------------------------------------------*
@@ -115,8 +125,10 @@ rc_t ss_m::create_mr_index(vid_t                 vid,
  *--------------------------------------------------------------*/
 rc_t ss_m::destroy_mr_index(const stid_t& iid)
 {
+    SUPPRESS_UNUSED(iid);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 /*--------------------------------------------------------------*
@@ -125,8 +137,10 @@ rc_t ss_m::destroy_mr_index(const stid_t& iid)
 rc_t ss_m::make_equal_partitions(stid_t stid, const vec_t& minKey,
 				 const vec_t& maxKey, uint numParts)
 {
+    SUPPRESS_UNUSED_4(stid, minKey, maxKey, numParts);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 
@@ -140,8 +154,10 @@ rc_t ss_m::create_assoc(stid_t stid, const w_keystr_t& key, const vec_t& el)
 
 rc_t ss_m::create_assoc(stid_t stid, const vec_t& key, const vec_t& el)
 {
+    SUPPRESS_UNUSED_3(stid, key, el);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 rc_t ss_m::update_assoc(stid_t stid, const w_keystr_t& key, const vec_t& el)
@@ -170,8 +186,10 @@ rc_t ss_m::destroy_assoc(stid_t stid, const w_keystr_t& key)
 
 rc_t ss_m::destroy_assoc(stid_t stid, const vec_t& key, const vec_t& el)
 {
+    SUPPRESS_UNUSED_3(stid, key, el);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 rc_t ss_m::find_assoc(stid_t stid, const w_keystr_t& key, 
@@ -187,8 +205,10 @@ rc_t ss_m::find_assoc(stid_t stid, const w_keystr_t& key,
 rc_t ss_m::find_assoc(stid_t stid, const vec_t& key, 
                  void* el, smsize_t& elen, bool& found)
 {
+    SUPPRESS_UNUSED_5(stid, key, el, elen, found);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 rc_t ss_m::verify_index(stid_t stid, int hash_bits, bool &consistent)
@@ -248,8 +268,11 @@ rc_t ss_m::create_mr_assoc(stid_t stid, const vec_t& key, el_filler& ef,
 			   RELOCATE_RECORD_CALLBACK_FUNC relocate_callback,  // = NULL 
 			   const lpid_t& root) // lpid_t::null
 {
+    SUPPRESS_UNUSED_5(stid, key, ef, bIgnoreLocks, bIgnoreLatches);
+    SUPPRESS_UNUSED_2(relocate_callback, root);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 /*--------------------------------------------------------------*
@@ -259,8 +282,11 @@ rc_t ss_m::destroy_mr_assoc(stid_t stid, const vec_t& key, const vec_t& el,
 			    const bool bIgnoreLocks, const bool bIgnoreLatches,
 			    const lpid_t& root)
 {
+    SUPPRESS_UNUSED_5(stid, key, el, bIgnoreLocks, bIgnoreLatches);
+    SUPPRESS_UNUSED(root);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 /*--------------------------------------------------------------*
@@ -268,8 +294,10 @@ rc_t ss_m::destroy_mr_assoc(stid_t stid, const vec_t& key, const vec_t& el,
  *--------------------------------------------------------------*/
 rc_t ss_m::get_range_map(stid_t stid, key_ranges_map*& rangemap)
 {
+    SUPPRESS_UNUSED_2(stid, rangemap);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 /*--------------------------------------------------------------*
@@ -280,8 +308,11 @@ rc_t ss_m::find_mr_assoc(stid_t stid, const vec_t& key,
 			 const bool bIgnoreLocks, const bool bIgnoreLatches,
 			 const lpid_t& root)
 {
+    SUPPRESS_UNUSED_5(stid, key, el, elen, found);
+    SUPPRESS_UNUSED_3(bIgnoreLocks, bIgnoreLatches, root);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }
 
 /*--------------------------------------------------------------*
@@ -292,6 +323,9 @@ rc_t ss_m::update_mr_assoc(stid_t stid, const vec_t& key,
 			   const bool bIgnoreLocks, const bool bIgnoreLatches,
 			   const lpid_t& root)
 {
+    SUPPRESS_UNUSED_5(stid, key, old_el, new_el, found);
+    SUPPRESS_UNUSED_3(bIgnoreLocks, bIgnoreLatches, root);
     //TODO: SHORE-KITS-API
     assert(0);
+    SUPPRESS_NON_RETURN(rc_t);
 }

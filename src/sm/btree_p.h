@@ -778,7 +778,7 @@ inline int btree_p::compare_with_fence_high (const w_keystr_t &key) const
 inline int btree_p::compare_with_fence_high (const char* key, size_t key_len) const
 {
     size_t prefix_len = get_prefix_length();
-    if (prefix_len >= key_len) {
+    if (prefix_len > key_len) {
         return w_keystr_t::compare_bin_str (key, key_len, get_prefix_key(), key_len);
     } else {
         // first, compare with prefix part

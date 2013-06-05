@@ -4,6 +4,7 @@
 #include <vector>
 #include <utility>
 #include <string>
+#include <sys/param.h>
 
 #include "w_defines.h"
 #include "w_base.h"
@@ -287,8 +288,10 @@ public:
     
     ss_m* _ssm;
     bool _use_locks;
-
+    char log_dir[MAXPATHLEN];
+    char vol_dir[MAXPATHLEN];
 private:
+    void assure_dir(const char *folder_name);
     void assure_empty_dir(const char *folder_name);
     void empty_dir(const char *folder_name);
 

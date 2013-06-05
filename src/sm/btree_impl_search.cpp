@@ -290,10 +290,8 @@ btree_impl::_ux_traverse_recurse(
             if (leaf_latch_mode != LATCH_SH && leaf.latch_mode() != LATCH_EX) {
                 if (!leaf.upgrade_latch_conditional()) {
                     // can't get EX latch, so restart from the root
-#if W_DEBUG_LEVEL>3
-                    cout << "latch update conflict at " << leaf.pid() << ". need restart from root!" << endl;
-#endif
-                    leaf_pid_causing_failed_upgrade = leaf.pid().page;
+                    DBGOUT2(<< ": latch update conflict at " << leaf.pid() << ". need restart from root!");
+                    leaf_pid_causing_failed_upgrade = leaf.shpid();
                     leaf.unfix();
                     return RC(eRETRY);
                 }
@@ -330,6 +328,7 @@ btree_impl::_ux_traverse_recurse(
         if (slot_to_follow != t_follow_blink && next->get_blink() != 0) {
             W_DO(_ux_traverse_try_opportunistic_adopt(*current, *next));
         }
+
         current->unfix();
         std::swap(current, next);
     }

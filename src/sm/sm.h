@@ -1797,8 +1797,12 @@ public:
         stid_t&             iid
     )    
     { 
+        //Supress unused variable variable warnings.
+        (void) v;
+        (void) iid;
         //TODO: SHORE-KITS-API
         assert(0);
+        return rc_t();
     }
 
 

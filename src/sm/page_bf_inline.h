@@ -116,5 +116,10 @@ inline bool page_p::upgrade_latch_conditional() {
     }
     return success;
 }
+
+inline shpid_t page_p::shpid() const {
+    return smlevel_0::bf->shpid(_pp);
+}
+
 #endif // PAGE_BF_INLINE_H
 

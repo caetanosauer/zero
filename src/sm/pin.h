@@ -192,6 +192,9 @@ public:
     const rid_t&     rid() const { 
         //TODO: SHORE-KITS-API
         assert(0);
+        //Avoid no-return warning
+        static rid_t r;
+        return r;
     }
 
     // These methods pin portions of a record beginning at start
@@ -238,9 +241,10 @@ public:
     void       unpin();
 
     const char*      hdr() const
-                        { 
+    { 
         //TODO: SHORE-KITS-API
         assert(0); 
+        return 0;
     }
 
     /**\brief Efficiently repin a record after is size has changed or
@@ -259,18 +263,21 @@ public:
     bool       up_to_date() const
                     { 
         //TODO: SHORE-KITS-API
-        assert(0); 
+        assert(0);
+        return 0;
     }
 
     /**\brief Return the size of the pinned record's header */
     smsize_t   hdr_size() const   {
         //TODO: SHORE-KITS-API
-        assert(0); 
+        assert(0);
+        return 0;
     }
     /**\brief Return the size of the pinned record's body */
     smsize_t   body_size() const  { 
         //TODO: SHORE-KITS-API
         assert(0); 
+        return 0;
     }
 
     // These record update functions duplicate those in class ss_m
@@ -314,6 +321,11 @@ public:
      * The end of the record need not be pinned before this is called.
      */
     rc_t    truncate_rec(smsize_t amount);
+
+#if W_DEBUG_LEVEL > 1
+    inline void _set_lsn_for_scan();
+#endif
+
 };
 
 

@@ -45,6 +45,11 @@ public:
     page_p(page_s* s) : _pp(s), _mode(LATCH_NL) {
         w_assert1(s != NULL);
     }
+
+    /** release the page from bufferpool. */
+    void                        unfix ();
+
+
     ~page_p() {
         unfix();
     }
@@ -122,8 +127,6 @@ public:
      */
     w_rc_t                      fix_root (volid_t vol, snum_t store, latch_mode_t mode, bool conditional = false);
 
-    /** release the page from bufferpool. */
-    void                        unfix ();
 
     /** Marks this page in the bufferpool dirty. If this page is not a bufferpool-managed page, does nothing. */
     void                        set_dirty() const;
@@ -136,6 +139,7 @@ public:
     const lpid_t&               pid() const;
     volid_t                     vol() const;
     snum_t                      store() const;
+    shpid_t                     shpid() const;
     tag_t                       tag() const { return (tag_t) _pp->tag;}
     shpid_t                     btree_root() const { return _pp->btree_root;}
 
@@ -187,7 +191,7 @@ public:
     uint32_t          calculate_checksum () const {return _pp->calculate_checksum();}
     /** Renew the stored value of checksum of this page. */
     void             update_checksum () const {_pp->update_checksum();}
-    
+
 protected:
 
     /**
@@ -326,5 +330,7 @@ page_p::set_lsns(const lsn_t& lsn)
 {
     _pp->lsn = lsn;
 }
+
+#include "page_bf_inline.h"
 
 #endif

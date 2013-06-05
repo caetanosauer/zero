@@ -9,6 +9,10 @@
 #include "bf_tree_vol.h"
 #include "bf_hashtable.h"
 
+void swizzling_stat_swizzle();
+void swizzling_stat_print(const char* prefix);
+void swizzling_stat_reset();
+
 inline bf_tree_cb_t* bf_tree_m::get_cb(const page_s *page) {
     bf_idx idx = page - _buffer;
     w_assert1(idx > 0 && idx < _block_cnt);
@@ -27,7 +31,8 @@ inline shpid_t bf_tree_m::get_root_page_id(volid_t vol, snum_t store) {
     if (idx == 0 || idx >= _block_cnt) {
         return 0;
     }
-    return _control_blocks[idx]._pid_shpid;
+    page_s* page = _buffer + idx;
+    return shpid(page);
 }
 
 ///////////////////////////////////   Page fix/unfix BEGIN         ///////////////////////////////////  
@@ -35,7 +40,7 @@ const uint32_t SWIZZLED_LRU_UPDATE_INTERVAL = 1000;
 
 inline w_rc_t bf_tree_m::refix_direct (page_s*& page, bf_idx idx, latch_mode_t mode, bool conditional) {
     bf_tree_cb_t &cb(_control_blocks[idx]);
-    w_assert1(cb._pin_cnt > 0);
+    w_assert1(cb.pin_cnt() > 0);
     W_DO(cb._latch.latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
 #ifdef BP_MAINTAIN_PARNET_PTR
     ++cb._counter_approximate;
@@ -46,13 +51,26 @@ inline w_rc_t bf_tree_m::refix_direct (page_s*& page, bf_idx idx, latch_mode_t m
 }
 
 inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
+    INC_TSTAT(bf_fix_nonroot_count);
+/*
+    static uint64_t fix_count = 0;
+
+    if ((++fix_count % 10000000) == 0) {
+        cout << "fix_nonroot             = " << fix_count << endl;
+    }
+*/
+
 #ifdef SIMULATE_MAINMEMORYDB
-    w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
-    bf_idx idx = shpid;
-    w_assert1 (_is_active_idx(idx));
-    bf_tree_cb_t &cb(_control_blocks[idx]);
-    W_DO(cb._latch.latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
-    page = &(_buffer[idx]);
+    if (virgin_page) {
+        W_DO (_fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page));
+    } else {
+        w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
+        bf_idx idx = shpid;
+        w_assert1 (_is_active_idx(idx));
+        bf_tree_cb_t &cb(_control_blocks[idx]);
+        W_DO(cb._latch.latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
+        page = &(_buffer[idx]);
+    }
     if (true) return RCOK;
 #endif // SIMULATE_MAINMEMORYDB
 
@@ -66,7 +84,7 @@ inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol
     if((shpid & SWIZZLED_PID_BIT) == 0) {
         // non-swizzled page. or even worse it might not exist in bufferpool yet!
         W_DO (_fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page));
-
+        //swizzling_stat_swizzle();
         // also try to swizzle this page
         // TODO so far we swizzle all pages as soon as we load them to bufferpool
         // but, we might want to consider more advanced policy.
@@ -74,7 +92,31 @@ inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol
                 && parent->btree_blink != shpid // don't swizzle foster child
             ) {
             slotid_t slot = find_page_id_slot (parent, shpid);
-            w_assert1(slot >= -1);
+#if 0
+            if (slot < -1 && ) {
+                if (is_swizzled(page)) {
+                    // benign race: some other thread swizzled it already 
+                }
+/*
+                DBGOUT(<<"is swizzled " << is_swizzled(page));
+                DBGOUT (<< "ASSERTION failure shpid = " << shpid
+                           << " parent.pid = " << parent->pid
+                           << " page.pid = " << page->pid);
+                DBGOUT (<< "mode = " << mode);
+                print_slots(parent);
+*/
+            }
+#endif
+            // this is a new (virgin) page which has not been linked yet. 
+            // skip swizzling this page
+//            if (slot == -2 && virgin_page) {
+//                return RCOK;
+//            }
+
+            // benign race: some other thread swizzled it already 
+            // this can happen when two threads that have the page 
+            // latched as shared need to swizzle it
+            w_assert1(slot >= -1 || is_swizzled(page) || (slot == -2 && virgin_page));
             
 #ifdef EX_LATCH_ON_SWIZZLING
             if (latch_mode(parent) != LATCH_EX) {
@@ -87,7 +129,9 @@ inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol
                 }
             }
 #endif //EX_LATCH_ON_SWIZZLING
-            swizzle_child(parent, slot);
+            if (!is_swizzled(page)) {
+                swizzle_child(parent, slot);
+            }
         }
     } else {
         w_assert1(!virgin_page); // virgin page can't be swizzled
@@ -95,14 +139,14 @@ inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol
         bf_idx idx = shpid ^ SWIZZLED_PID_BIT;
         w_assert1 (_is_active_idx(idx));
         bf_tree_cb_t &cb(_control_blocks[idx]);
-        w_assert1(cb._pin_cnt > 0);
+        w_assert1(cb.pin_cnt() > 0);
         w_assert1(cb._pid_vol == vol);
         w_assert1(cb._pid_shpid == _buffer[idx].pid.page);
         W_DO(cb._latch.latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
 #ifdef BP_MAINTAIN_PARNET_PTR
         ++cb._counter_approximate;
 #endif // BP_MAINTAIN_PARNET_PTR
-        ++cb._refbit_approximate;
+        ++cb._refbit_approximate; // FIXME: This causes a scalability bottleneck
         // also, doesn't have to unpin whether there happens an error or not. easy!
         page = &(_buffer[idx]);
         
@@ -133,7 +177,7 @@ inline w_rc_t bf_tree_m::fix_virgin_root (page_s*& page, volid_t vol, snum_t sto
     cb.clear();
     cb._pid_vol = vol;
     cb._pid_shpid = shpid;
-    cb._pin_cnt = 1; // root page's pin count is always positive
+    cb.pin_cnt_set(1); // root page's pin count is always positive
     cb._used = true;
     if (true) return _latch_root_page(page, idx, LATCH_EX, false);
 #endif // SIMULATE_MAINMEMORYDB
@@ -145,7 +189,7 @@ inline w_rc_t bf_tree_m::fix_virgin_root (page_s*& page, volid_t vol, snum_t sto
     _control_blocks[idx].clear();
     _control_blocks[idx]._pid_vol = vol;
     _control_blocks[idx]._pid_shpid = shpid;
-    _control_blocks[idx]._pin_cnt = 1; // root page's pin count is always positive
+    _control_blocks[idx].pin_cnt_set(1); // root page's pin count is always positive
     _control_blocks[idx]._used = true;
     _control_blocks[idx]._dirty = true;
     ++_dirty_page_count_approximate;
@@ -266,6 +310,9 @@ inline bool bf_tree_m::upgrade_latch_conditional(const page_s* p) {
     }
 }
 
+void print_latch_holders(latch_t* latch);
+
+
 ///////////////////////////////////   Page fix/unfix END         ///////////////////////////////////  
 
 ///////////////////////////////////   LRU/Freelist BEGIN ///////////////////////////////////  
@@ -297,6 +344,17 @@ inline void pin_for_refix_holder::release() {
         smlevel_0::bf->unpin_for_refix(_idx);
         _idx = 0;
     }
+}
+
+
+inline shpid_t bf_tree_m::shpid(const page_s* page) const {
+    if (is_swizzled(page)) {
+        //bf_idx idx = _hashtable->lookup(bf_key (page->pid.vol, page->pid.page));
+        //uint32_t idx = page - _buffer;
+        bf_idx idx = page - _buffer;
+        return idx | SWIZZLED_PID_BIT;
+    }
+    return page->pid.page;
 }
 
 #endif // BF_TREE_INLINE_H
