@@ -352,6 +352,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(page_s* parent, page_s*& page, s
         bf_idx parent_idx = parent - _buffer;
         cb._pid_vol = _control_blocks[parent_idx]._pid_vol;
         cb._pid_shpid = idx;
+        cb.pin_cnt_set(1);
     }
     cb._used = true;
     w_rc_t rc = cb._latch.latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER);
@@ -432,23 +433,10 @@ w_rc_t bf_tree_m::_fix_nonswizzled(page_s* parent, page_s*& page, volid_t vol, s
             // we don't have to atomically pin it because it's not referenced by any other yet
 
             // latch the page. (not conditional because this thread will be the only thread touching it)
-            // HARIS: Previous revision of the code was buggy: it cleared the pincnt 
-            // first (cb.clear) and then grabbed the latch. 
-            // Details:
-            // Latch the page before we reset the pincnt (cb.clear below). If we reset
-            // the pincnt before we grab the latch then we open ourselves to a race 
-            // where a competing thread could successfully perform a CAS on the pincnt 
-            // and grab the free block (_grab_free_block).
-            // Warning: this fix is not bullet-proof. It just shrinks the 
-            // vulnerability window. It is still possible that this thread later releases
-            // the latch, and the competing thread perform a CAS, grab the latch, and 
-            // allocate the block. I feel we need to reexamine the correctness of the 
-            // whole protocol.  
             memset(&cb._latch, 0, sizeof(cb._latch));
             w_rc_t rc_latch = cb._latch.latch_acquire(mode, sthread_t::WAIT_IMMEDIATE);
             w_assert1(!rc_latch.is_error());
 
-            //cb.clear();
             cb.clear_except_latch();
             cb._pid_vol = vol;
             cb._pid_shpid = shpid;
@@ -469,14 +457,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(page_s* parent, page_s*& page, volid_t vol, s
                 ++_dirty_page_count_approximate;
             }
             cb._used = true;
-/*
-            // latch the page. (not conditional because this thread will be the only thread touching it)
-            w_rc_t rc_latch = cb._latch.latch_acquire(mode, sthread_t::WAIT_IMMEDIATE);
-            if (rc_latch.is_error()) {
-                DBGOUT0 (<< "DIE idx = " << idx << ", shpid = " << cb._pid_shpid);
-            }
-            w_assert1(!rc_latch.is_error());
-*/            
+
             // finally, register the page to the hashtable.
             bool registered = _hashtable->insert_if_not_exists(key, idx);
             if (!registered) {
@@ -517,15 +498,6 @@ w_rc_t bf_tree_m::_fix_nonswizzled(page_s* parent, page_s*& page, volid_t vol, s
             if (lintel::unsafe::atomic_compare_exchange_strong(const_cast<int32_t*>(&cb._pin_cnt), &cur_ucnt, cur_ucnt + 1))
             {
 #endif
-                // HARIS: this if-statement does not solve the race. it could be that shpid is swizzled by another thread
-                /*
-                if (cb._pid_shpid != shpid) {
-                    DBGOUT1(<<"bf_tree_m: very unlucky! buffer frame " << idx << " has been reloaded with another page cb._pid_shpid = " << cb._pid_shpid <<", expected=" << shpid);
-                    lintel::unsafe::atomic_fetch_sub((uint32_t*)(&cb._pin_cnt), 1);
-                    continue;
-                }
-                */
-
                 // okay, CAS went through
                 ++cb._refbit_approximate;
                 //cout << "Bump RefCnt: " << idx << ", " << cb._refbit_approximate << endl;
