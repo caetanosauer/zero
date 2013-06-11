@@ -122,7 +122,7 @@ btree_impl::_ux_traverse(
         btree_p root_p;
         w_assert1(!root_p.is_fixed());
         bool should_try_ex = (leaf_latch_mode == LATCH_EX &&
-            leaf_pid_causing_failed_upgrade == smlevel_0::bf->get_root_page_id(vol, store));
+            leaf_pid_causing_failed_upgrade == smlevel_0::bf->get_root_page_id_normalized(vol, store));
         W_DO( root_p.fix_root(vol, store, should_try_ex ? LATCH_EX : LATCH_SH));
         w_assert1(root_p.is_fixed());
         
@@ -172,7 +172,7 @@ btree_impl::_ux_traverse_recurse(
     btree_impl::traverse_mode_t     traverse_mode,
     latch_mode_t                    leaf_latch_mode,
     btree_p&                        leaf,
-    shpid_t&                        leaf_pid_causing_failed_upgrade
+    shpid_t&                         leaf_pid_causing_failed_upgrade
     )
 {
     FUNC(btree_impl::_ux_traverse_recurse);
@@ -291,7 +291,7 @@ btree_impl::_ux_traverse_recurse(
                 if (!leaf.upgrade_latch_conditional()) {
                     // can't get EX latch, so restart from the root
                     DBGOUT2(<< ": latch update conflict at " << leaf.pid() << ". need restart from root!");
-                    leaf_pid_causing_failed_upgrade = leaf.shpid();
+                    leaf_pid_causing_failed_upgrade = leaf.pid().page;
                     leaf.unfix();
                     return RC(eRETRY);
                 }
@@ -301,12 +301,16 @@ btree_impl::_ux_traverse_recurse(
         
         if (do_inquery_verify) inquery_verify_expect(*current, slot_to_follow); // adds expectation
         shpid_t pid_to_follow;
+        shpid_t pid_to_follow_normalized;
         if (slot_to_follow == t_follow_blink) {
             pid_to_follow = current->get_blink();
+            pid_to_follow_normalized = current->get_blink_normalized();
         } else if (slot_to_follow == t_follow_pid0) {
             pid_to_follow = current->pid0();
+            pid_to_follow_normalized = current->pid0_normalized();
         } else {
             pid_to_follow = current->child(slot_to_follow);
+            pid_to_follow_normalized = current->child_normalized(slot_to_follow);
         }    
         w_assert1(pid_to_follow);
 
@@ -317,7 +321,7 @@ btree_impl::_ux_traverse_recurse(
         }
 
         bool should_try_ex = leaf_latch_mode == LATCH_EX && (
-            pid_to_follow == leaf_pid_causing_failed_upgrade
+            pid_to_follow_normalized == leaf_pid_causing_failed_upgrade
             || current->latch_mode() == LATCH_EX // once we got an EX latch, we shouldn't get SH latch
         );
         W_DO(next->fix_nonroot(*current, current->vol(), pid_to_follow, should_try_ex ? LATCH_EX : LATCH_SH));

@@ -163,6 +163,8 @@ public:
     int               level() const;
     /** Returns left-most ptr (used only in non-leaf nodes). */
     shpid_t        pid0() const;
+    /** Returns left-most normalized page-id ptr (used only in non-leaf nodes). */
+    shpid_t        pid0_normalized() const;
     /** Returns root page used for recovery. */
     lpid_t           root() const;
 
@@ -178,9 +180,11 @@ public:
     bool             is_leaf_parent() const;
     
     /** Returns ID of B-link page (0 if not linked). */
-   shpid_t         get_blink() const;
+    shpid_t         get_blink() const;
+    /** Returns normalized ID of B-link page (0 if not linked). */
+    shpid_t         get_blink_normalized() const;
     /** Clears the blink page and also clears the chain high fence key. */
-   rc_t               clear_blink();
+    rc_t               clear_blink();
     /** Returns the prefix which are removed from all entries in this page. */
     const char* get_prefix_key() const;
     /** Returns the length of prefix key (0 means no prefix compression). */
@@ -437,6 +441,10 @@ public:
     *  equivalent to rec_node(), but doesn't return key (thus faster).
     */
     shpid_t       child(slotid_t slot) const;
+    /**
+    *  Return the child normalized pointer of tuple at "slot".
+    */
+    shpid_t       child_normalized(slotid_t slot) const;
 
 #ifdef DOXYGEN_HIDE
 ///==========================================
@@ -695,6 +703,15 @@ inline shpid_t btree_p::pid0() const
     return _pp->btree_pid0;
 }
 
+inline shpid_t btree_p::pid0_normalized() const
+{
+    shpid_t shpid = _pp->btree_pid0;
+    if (shpid) {
+        return smlevel_0::bf->normalize_shpid(shpid);
+    }
+    return shpid;
+}
+
 inline bool btree_p::is_leaf() const
 {
     return level() == 1;
@@ -714,6 +731,16 @@ inline shpid_t btree_p::get_blink() const
 {
     return _pp->btree_blink;
 }
+
+inline shpid_t btree_p::get_blink_normalized() const
+{
+    shpid_t shpid = _pp->btree_blink;
+    if (shpid) {
+        return smlevel_0::bf->normalize_shpid(shpid);
+    }
+    return shpid;
+}
+
 inline int16_t btree_p::get_prefix_length() const
 {
     return _pp->btree_prefix_length;
@@ -853,6 +880,15 @@ inline shpid_t btree_p::child(slotid_t slot) const
     w_assert1(slot < nrecs());
     const void* p = page_p::tuple_addr(slot + 1);
     return *reinterpret_cast<const shpid_t*>(p);
+}
+
+inline shpid_t btree_p::child_normalized(slotid_t slot) const
+{
+    shpid_t shpid = child(slot);
+    if (shpid) {
+        return smlevel_0::bf->normalize_shpid(shpid);
+    }
+    return shpid;
 }
 
 inline slot_length_t btree_p::get_key_len(slotid_t idx) const {

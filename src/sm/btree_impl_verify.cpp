@@ -183,7 +183,7 @@ void btree_impl::inquery_verify_init(volid_t vol, snum_t store)
     context.next_level = -1; // don't check level of root page
     context.next_low_key.construct_neginfkey();
     context.next_high_key.construct_posinfkey();
-    context.next_pid = smlevel_0::bf->get_root_page_id(vol, store);
+    context.next_pid = smlevel_0::bf->get_root_page_id_normalized(vol, store);
 }
 
 void btree_impl::inquery_verify_fact(btree_p &page)
@@ -203,7 +203,7 @@ void btree_impl::inquery_verify_fact(btree_p &page)
     if (context.next_level != -1 && context.next_level != page.level()) {
         inconsistent = true;
     }
-    if (context.next_pid != page.shpid()) {
+    if (context.next_pid != page.pid().page) {
         inconsistent = true;
     }
 
@@ -242,12 +242,12 @@ void btree_impl::inquery_verify_expect(btree_p &page, slot_follow_t next_follow)
     w_assert1(next_follow > t_follow_invalid && next_follow < page.nrecs());
     if (next_follow == t_follow_blink) {
         context.next_level = page.level();
-        context.next_pid = page.get_blink();
+        context.next_pid = page.get_blink_normalized();
         page.copy_fence_high_key(context.next_low_key);
         page.copy_chain_fence_high_key(context.next_high_key);
     } else if (next_follow == t_follow_pid0) {
         context.next_level = page.level() - 1;
-        context.next_pid = page.pid0();
+        context.next_pid = page.pid0_normalized();
         page.copy_fence_low_key(context.next_low_key);
         if (page.nrecs() == 0) {
             page.copy_fence_high_key(context.next_high_key);
@@ -256,7 +256,7 @@ void btree_impl::inquery_verify_expect(btree_p &page, slot_follow_t next_follow)
         }
     } else {
         context.next_level = page.level() - 1;
-        context.next_pid = page.child(next_follow);
+        context.next_pid = page.child_normalized(next_follow);
         page.get_key(next_follow, context.next_low_key);
         if (next_follow + 1 == page.nrecs()) {
             page.copy_fence_high_key(context.next_high_key);

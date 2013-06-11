@@ -319,7 +319,7 @@ public:
         traverse_mode_t            traverse_mode,
         latch_mode_t               leaf_latch_mode,
         btree_p&                   leaf,
-        shpid_t&                   leaf_pid_causing_failed_upgrade
+        shpid_t&                    leaf_pid_causing_failed_upgrade
         ); 
     
     /**

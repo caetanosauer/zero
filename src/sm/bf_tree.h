@@ -147,7 +147,7 @@ public:
     /** returns the bufferpool page corresponding to the given control block. mainly for debugging. */
     page_s* get_page(const bf_tree_cb_t *cb);
     /** returns the page ID of the root page (which is already loaded in this bufferpool) in given store. mainly for debugging or approximate purpose. */
-    shpid_t get_root_page_id(volid_t vol, snum_t store);
+    shpid_t get_root_page_id_normalized(volid_t vol, snum_t store);
 
     /**
      * Fixes a non-root page in the bufferpool. This method receives the parent page and efficiently
@@ -313,8 +313,14 @@ public:
      */
     bool is_swizzled (const page_s* page) const;
     
-    shpid_t shpid(const page_s* page) const;
-    
+    /** Normalizes the page identifier to a disk page identifier. 
+      * If the page identifier is a memory frame index (in case of swizzling) 
+      * then it returns the disk page index, otherwise it returns the page 
+      * identifier as it is. 
+      * Do NOT call this method without a latch.
+      */
+    shpid_t normalize_shpid(shpid_t shpid) const;
+
     /** Immediately writes out all dirty pages in the given volume.*/
     w_rc_t force_volume (volid_t vol);
     /** Immediately writes out all dirty pages.*/
