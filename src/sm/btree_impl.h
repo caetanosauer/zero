@@ -323,6 +323,22 @@ public:
         ); 
     
     /**
+     * \brief Internal helper function to actually search for the correct slot and test fence
+     * assumptions.
+     * \details
+     * Called only from _ux_traverse_recurse.
+     * @param[in] key  target key
+     * @param[in] traverse_mode search mode
+     * @param[in] current The page we are currently searching.
+     * @param[out] this_is_the_leaf_page True if we have found the actually target page.
+     * @param[out] slot_to_follow The slot that we will to go down (or sideways) next.
+     */
+    static inline void _ux_traverse_search(btree_impl::traverse_mode_t traverse_mode,
+                                    btree_p *current,
+                                    const w_keystr_t& key,
+                                    bool &this_is_the_leaf_page, slot_follow_t &slot_to_follow);
+    
+    /**
      * Call this function when it seems like the next page will have VERY high contention
      * and the page should adopt childrens.
      * to avoid excessive latch contention, we use mutex only in this case
