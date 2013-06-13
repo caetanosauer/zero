@@ -245,6 +245,14 @@ btree_impl::_ux_traverse_recurse(
             || current->latch_mode() == LATCH_EX // we have EX latch; don't SH latch
             );
         
+        if(current->level()==2 && slot_to_follow!=t_follow_blink && leaf_latch_mode==LATCH_EX) {
+            //We're likely going to find the target next, so go ahead and EX if we need to.
+            //The other possibility is a long adoption chain; if that is the case this is
+            //a performance oops, but we're also messed up anyway, so fix the bad chain and
+            //still do this.
+            should_try_ex = true;
+        }
+        
         W_DO(next->fix_nonroot(*current, current->vol(), pid_to_follow, 
                                should_try_ex ? LATCH_EX : LATCH_SH));
         
