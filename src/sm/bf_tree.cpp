@@ -37,12 +37,18 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
     uint32_t cleaner_interval_millisec_min,
     uint32_t cleaner_interval_millisec_max,
     uint32_t cleaner_write_buffer_pages,
+    const char* replacement_policy,
     bool initially_enable_cleaners,
     bool enable_swizzling) {
     ::memset (this, 0, sizeof(bf_tree_m));
 
     _block_cnt = block_cnt;
     _enable_swizzling = enable_swizzling;
+    if (strcmp(replacement_policy, "clock") == 0) {
+        _replacement_policy = POLICY_CLOCK;
+    } else if (strcmp(replacement_policy, "random") == 0) {
+        _replacement_policy = POLICY_RANDOM;
+    }
 
 #ifdef SIMULATE_NO_SWIZZLING
     _enable_swizzling = false;
@@ -457,6 +463,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(page_s* parent, page_s*& page, volid_t vol, s
                 ++_dirty_page_count_approximate;
             }
             cb._used = true;
+            cb._workload_id = me()->get_workload_id();
 
             // finally, register the page to the hashtable.
             bool registered = _hashtable->insert_if_not_exists(key, idx);
@@ -748,10 +755,27 @@ w_rc_t bf_tree_m::_get_replacement_block(bf_idx& ret) {
     }
 #endif // SIMULATE_MAINMEMORYDB
     DBGOUT3(<<"trying to evict some page...");
+
+    switch (_replacement_policy) {
+        case POLICY_CLOCK:
+            return _get_replacement_block_clock(ret);
+        case POLICY_RANDOM:
+            return _get_replacement_block_random(ret);
+    }
+    return _get_replacement_block_clock(ret);
+}
+
+w_rc_t bf_tree_m::_get_replacement_block_clock(bf_idx& ret) {
+    DBGOUT3(<<"trying to evict some page using the CLOCK replacement policy...");
+    int blocks_replaced_count = 0;
     uint32_t rounds = 0; // how many times the clock hand looped in this function
     while (true) {
         bf_idx idx = ++_clock_hand;
         if (idx >= _block_cnt) {
+            if (blocks_replaced_count > 0) {
+                // we found at least one so we are essentially done
+                return RCOK;
+            }
             ++rounds;
             DBGOUT1(<<"clock hand looped! rounds=" << rounds);
             _clock_hand = 1;
@@ -784,17 +808,35 @@ w_rc_t bf_tree_m::_get_replacement_block(bf_idx& ret) {
         w_assert1(idx > 0);
 
         bf_tree_cb_t &cb(_control_blocks[idx]);
-        // do not consider dirty pages (at this point)
-        // we check this again later because we don't take locks as of this.
-        // we also avoid grabbing unused block because it has to be grabbed via freelist
-        bool tmp = cb._dirty;
 
-        if (cb._dirty || !cb._used) {
+        // do not evict young workload 
+        //if (cb._phase_id > 1) {
+        //    continue;
+        //}
+
+        // do not evict interior nodes
+        if (_buffer[idx].btree_level > 1) {
             continue;
         }
 
         // do not evict hot page
         if (cb._refbit_approximate > 0) {
+            //const uint32_t refbit_threshold = 3;
+            const uint32_t refbit_threshold = 4;
+            if (cb._refbit_approximate > refbit_threshold) {
+                //cb._refbit_approximate /= (rounds >= 5 ? 8 : 2);
+                cb._refbit_approximate /= 4;
+                //cb._refbit_approximate=0;
+            } else {
+                cb._refbit_approximate--;
+            }
+            continue;
+        }
+/*
+        // do not evict hot page
+        if (cb._refbit_approximate > 0) {
+            cb._refbit_approximate = 0;
+            continue;
             const uint32_t refbit_threshold = 3;
             if (cb._refbit_approximate > refbit_threshold) {
                 cb._refbit_approximate /= (rounds >= 5 ? 8 : 2);
@@ -803,61 +845,18 @@ w_rc_t bf_tree_m::_get_replacement_block(bf_idx& ret) {
             }
             continue;
         }
-
-        // find a block that has no pinning (or not being evicted by others).
-        // this check is approximate as it's without lock.
-        // false positives are fine, and we do the real check later
-        if (cb.pin_cnt() != 0) {
-            continue;
-        }
-        
-        // if it seems someone latches it, give up.
-        if (cb._latch.latch_cnt() != 0) { // again, we check for real later
-            continue;
-        }
-        
-        // okay, let's try evicting this page.
-        // first, we have to make sure the page's pin_cnt is exactly 0.
-        // we atomically change it to -1.
-        int zero = 0;
-        if (lintel::unsafe::atomic_compare_exchange_strong(const_cast<int32_t     *>(&cb._pin_cnt), (int32_t * ) &zero , (int32_t) -1))
-        {
-            // CAS did it job. the current thread has an exclusive access to this block
-            w_assert1(cb.pin_cnt() == -1);
-            
-            // let's do a real check.
-            if (cb._dirty || !cb._used) {
-                DBGOUT1(<<"very unlucky, this block has just become dirty.");
-                // oops, then put this back and give up this block
-                cb.pin_cnt_set(0);
+*/
+        if (_try_evict_block(idx) == 0) {
+            // return the first block found back to the caller and try to find more 
+            // blocks to free
+            if (blocks_replaced_count++ > 0) {
+                _add_free_block(idx);
+            } else {
+                ret = idx;
+            }
+            if (blocks_replaced_count < (1024)) {
                 continue;
             }
-            
-            // check latches too. just conditionally test it to avoid long waits.
-            w_rc_t latch_rc = cb._latch.latch_acquire(LATCH_EX, WAIT_IMMEDIATE);
-            if (latch_rc.is_error()) {
-                DBGOUT1(<<"very unlucky, someone has just latched this block.");
-                cb.pin_cnt_set(0);
-                continue;
-            }
-            // we can immediately release EX latch because no one will newly take latch as _pin_cnt==-1
-            cb._latch.latch_release();
-            DBGOUT1(<<"evicting page shpid = " << cb._pid_shpid);
-
-//            DBGOUT0(<<"evicting page idx = " << idx << " shpid = " << cb._pid_shpid 
-//                    << " pincnt = " << cb.pin_cnt());
-            
-            // remove it from hashtable.
-            W_IFDEBUG1(bool removed =) _hashtable->remove(bf_key(cb._pid_vol, cb._pid_shpid));
-            w_assert1(removed);
-#ifdef BP_MAINTAIN_PARNET_PTR
-            w_assert1(!_is_in_swizzled_lru(idx));
-            if (is_swizzling_enabled()) {
-                w_assert1(cb._parent != 0);
-                _decrement_pin_cnt_assume_positive(cb._parent);
-            }
-#endif // BP_MAINTAIN_PARNET_PTR
-            ret = idx;
             return RCOK;
         } else {
             // it can happen. we just give up this block
@@ -865,6 +864,126 @@ w_rc_t bf_tree_m::_get_replacement_block(bf_idx& ret) {
         }
     }
     return RCOK;
+}
+
+w_rc_t bf_tree_m::_get_replacement_block_random(bf_idx& ret) {
+    DBGOUT3(<<"trying to evict some page using the RANDOM replacement policy...");
+    int blocks_replaced_count = 0;
+    int tries = 0;
+/*
+    for (bf_idx idx = 0; idx < _block_cnt; idx++) {
+        if (_buffer[idx].btree_level == 1) {
+            if (_try_evict_block(idx) == 0) {
+                // return the first block found back to the caller and try to find more to free
+                if (blocks_replaced_count++ > 0) {
+                    _add_free_block(idx);
+                } else {
+                    ret = idx;
+                }
+            }
+        }
+    }
+
+    if (blocks_replaced_count>0) {
+        return RCOK;
+    }
+*/
+    while (true) {
+        bf_idx idx = me()->randn(_block_cnt-1) + 1;
+        if (++tries < _block_cnt) {
+            if (blocks_replaced_count > 0) {
+                return RCOK;
+            }
+            W_DO(wakeup_cleaners());
+            g_me()->sleep(100);
+            DBGOUT1(<<"woke up. now there should be some page to evict");
+            tries = 0;
+        }
+    
+        if (_try_evict_block(idx) == 0) {
+            // return the first block found back to the caller and try to find more to free
+            if (blocks_replaced_count++ > 0) {
+                _add_free_block(idx);
+            } else {
+                ret = idx;
+            }
+            if (blocks_replaced_count < 1024) {
+                continue;
+            }
+            return RCOK;
+        } else {
+            // it can happen. we just give up this block
+            continue;
+        }
+    }
+    return RCOK;
+}
+
+int bf_tree_m::_try_evict_block(bf_idx idx) {
+    bf_tree_cb_t &cb(_control_blocks[idx]);
+
+    // do not consider dirty pages (at this point)
+    // we check this again later because we don't take locks as of this.
+    // we also avoid grabbing unused block because it has to be grabbed via freelist
+    if (cb._dirty || !cb._used) {
+        return -1;
+    }
+
+    // find a block that has no pinning (or not being evicted by others).
+    // this check is approximate as it's without lock.
+    // false positives are fine, and we do the real check later
+    if (cb.pin_cnt() != 0) {
+        return -1;
+    }
+    
+    // if it seems someone latches it, give up.
+    if (cb._latch.latch_cnt() != 0) { // again, we check for real later
+        return -1;
+    }
+    
+    // okay, let's try evicting this page.
+    // first, we have to make sure the page's pin_cnt is exactly 0.
+    // we atomically change it to -1.
+    int zero = 0;
+    if (lintel::unsafe::atomic_compare_exchange_strong(const_cast<int32_t     *>(&cb._pin_cnt), (int32_t * ) &zero , (int32_t) -1))
+    {
+        // CAS did it job. the current thread has an exclusive access to this block
+        w_assert1(cb.pin_cnt() == -1);
+        
+        // let's do a real check.
+        if (cb._dirty || !cb._used) {
+            DBGOUT1(<<"very unlucky, this block has just become dirty.");
+            // oops, then put this back and give up this block
+            cb.pin_cnt_set(0);
+            return -1;
+        }
+        
+        // check latches too. just conditionally test it to avoid long waits.
+        w_rc_t latch_rc = cb._latch.latch_acquire(LATCH_EX, WAIT_IMMEDIATE);
+        if (latch_rc.is_error()) {
+            DBGOUT1(<<"very unlucky, someone has just latched this block.");
+            cb.pin_cnt_set(0);
+            return -1;
+        }
+        // we can immediately release EX latch because no one will newly take latch as _pin_cnt==-1
+        cb._latch.latch_release();
+        DBGOUT1(<<"evicting page idx = " << idx << " shpid = " << cb._pid_shpid 
+                << " pincnt = " << cb.pin_cnt());
+        
+        // remove it from hashtable.
+        W_IFDEBUG1(bool removed =) _hashtable->remove(bf_key(cb._pid_vol, cb._pid_shpid));
+        w_assert1(removed);
+#ifdef BP_MAINTAIN_PARNET_PTR
+        w_assert1(!_is_in_swizzled_lru(idx));
+        if (is_swizzling_enabled()) {
+            w_assert1(cb._parent != 0);
+            _decrement_pin_cnt_assume_positive(cb._parent);
+        }
+#endif // BP_MAINTAIN_PARNET_PTR
+        return 0; // success
+    } 
+    // it can happen. we just give up this block
+    return -1;
 }
 
 void bf_tree_m::_add_free_block(bf_idx idx) {

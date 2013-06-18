@@ -315,6 +315,8 @@ class smthread_t : public sthread_t {
     short              _fingerprint[FINGER_BITS]; // dreadlocks
     atomic_thread_map_t  _fingerprint_map; // map containing only fingerprint
 
+    int _workload_id; // identify workload running by this thread
+
 public:
     const atomic_thread_map_t&  get_fingerprint_map() const
                             {   return _fingerprint_map; } 
@@ -572,6 +574,9 @@ public:
                       const void * id = 0);
     w_rc_t            smthread_unblock(w_rc_t::errcode_t e);
 
+    int get_workload_id() { return _workload_id; }
+    void set_workload_id(int id) { _workload_id=id; }
+    
 private:
     w_rc_t::errcode_t _smthread_block( timeout_in_ms WAIT_FOREVER,
                               const char * const why =0);
