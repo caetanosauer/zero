@@ -195,94 +195,12 @@ btree_impl::_ux_traverse_recurse(
         // use fence key to tell if this is the page
         bool this_is_the_leaf_page = false;
         slot_follow_t slot_to_follow = t_follow_invalid;
-        if (traverse_mode == t_fence_contain) {
-            if (current->compare_with_fence_high(key) < 0) {
-                w_assert1(current->fence_contains(key));
-                // this page can contain the key, but..
-                if (current->is_leaf()) {
-                    this_is_the_leaf_page = true;
-                } else {
-                    // this is an interior node. find a child to follow
-                    slotid_t slot;
-                    current->search_node(key, slot);
-                    if (slot < 0) {
-                        slot_to_follow = t_follow_pid0;
-                    } else {
-                        slot_to_follow = (slot_follow_t) slot;
-                    }
-                }
-            } else {
-                // this page can't contain the key.
-                // If search key is higher than high-fence of "start", which occurs
-                // only when "start" has b-link buddies, then follows blink pointers.
-                // Note, because the search path has chosen to read "start",
-                // this page or one of its blinks have fence keys containing the search key.
-                w_assert2(current->get_blink());
-                w_assert2(current->compare_with_fence_high(key) >= 0);
-                
-                // let's follow blink
-                slot_to_follow = t_follow_blink;
-            }
-        } else if (traverse_mode == t_fence_low_match) {
-            int d = current->compare_with_fence_low(key);
-            if (d == 0) {
-                if (current->is_leaf()) {
-                    this_is_the_leaf_page = true;
-                } else {
-                    // follow left-most child.
-                    slot_to_follow = t_follow_pid0;
-                }
-            } else {
-                w_assert2(d > 0); // if d<0 (key<fence-low), we failed something
-                if (current->compare_with_fence_high(key) >= 0) {
-                    // key is even higher than fence-high, then there must be blinked page
-                    // let's follow blink
-                    slot_to_follow = t_follow_blink;
-                } else {
-                    // otherwise, one of the children must have the fence-low
-                    w_assert2(!current->is_leaf()); // otherwise we should have seen an exact match
-                    slotid_t slot;
-                    current->search_node(key, slot);
-                    // unlike fence-high key match, we can simply use the search result
-                    slot_to_follow = (slot_follow_t) slot;
-                }
-            }
-        } else {
-            w_assert2(traverse_mode == t_fence_high_match);
-            int d = current->compare_with_fence_high(key);
-            if (d == 0) {
-                if (current->is_leaf()) {
-                    this_is_the_leaf_page = true;
-                } else {
-                    // must be the last child.
-                    slot_to_follow = (slot_follow_t) (current->nrecs() - 1);
-                }
-            } else if (d > 0) {
-                // key is higher than fence-high, then there must be blinked page
-                // let's follow blink
-                slot_to_follow = t_follow_blink;
-            } else {
-                // key is lower than fence-high. then one of the children must have it.
-                w_assert2(!current->is_leaf()); // otherwise we should have seen an exact match
-                slotid_t slot;
-                current->search_node(key, slot);
-                // search_node returns the slot in which key resides or should go.
-                // For example, a separator key "AB"
-                // sends "AA" to left, "AAZ" to left, "AB" to right,
-                // "ABA" to right, "AC" to right.
-                
-                // However, now we are looking for fence-high key match,
-                // so we want to send "AB" to left.
-                w_keystr_t slot_key;
-                current->node_key(slot, slot_key);
-                if (key.compare(slot_key) == 0) {
-                    --slot; // if exact match, try the previous slot
-                    w_assert2(slot < current->nrecs() && slot >= -1);
-                }
-                
-                slot_to_follow = (slot_follow_t) slot;
-            }
-        }
+        _ux_traverse_search(traverse_mode, current, key,
+                            this_is_the_leaf_page, slot_to_follow);
+        
+        //Should be able to search that:
+        // (this_is_the_leaf_page && slot_to_follow==t_follow_invalid) ||
+        // (!this_is_the_leaf_page && slot_to_follow=!=t_follow_invalid)
         
         if (this_is_the_leaf_page) {
             leaf = *current;
@@ -290,7 +208,8 @@ btree_impl::_ux_traverse_recurse(
             if (leaf_latch_mode != LATCH_SH && leaf.latch_mode() != LATCH_EX) {
                 if (!leaf.upgrade_latch_conditional()) {
                     // can't get EX latch, so restart from the root
-                    DBGOUT2(<< ": latch update conflict at " << leaf.pid() << ". need restart from root!");
+                    DBGOUT2(<< ": latch update conflict at " << leaf.pid() 
+                            << ". need restart from root!");
                     leaf_pid_causing_failed_upgrade = leaf.pid().page;
                     leaf.unfix();
                     return RC(eRETRY);
@@ -299,7 +218,10 @@ btree_impl::_ux_traverse_recurse(
             break; // done!
         }
         
-        if (do_inquery_verify) inquery_verify_expect(*current, slot_to_follow); // adds expectation
+        if (do_inquery_verify) {
+            inquery_verify_expect(*current, slot_to_follow); // adds expectation
+        }
+
         shpid_t pid_to_follow;
         shpid_t pid_to_follow_normalized;
         if (slot_to_follow == t_follow_blink) {
@@ -314,22 +236,34 @@ btree_impl::_ux_traverse_recurse(
         }    
         w_assert1(pid_to_follow);
 
-        // if worth it, do eager adoption. If it actually did something, it returns eGOODRETRY so that we will exit and retry
-        if ((current->level() >= 3 || (current->level() == 2 && slot_to_follow == t_follow_blink)) // next will be non-leaf
+        // if worth it, do eager adoption. If it actually did something, it returns 
+        // eGOODRETRY so that we will exit and retry
+        if ((current->level() >= 3 || 
+             (current->level() == 2 && slot_to_follow == t_follow_blink)) // next will be non-leaf
             && is_ex_recommended(pid_to_follow)) { // next is VERY hot
             W_DO (_ux_traverse_try_eager_adopt(*current, pid_to_follow));
         }
-
+        
         bool should_try_ex = leaf_latch_mode == LATCH_EX && (
             pid_to_follow_normalized == leaf_pid_causing_failed_upgrade
-            || current->latch_mode() == LATCH_EX // once we got an EX latch, we shouldn't get SH latch
-        );
-        W_DO(next->fix_nonroot(*current, current->vol(), pid_to_follow, should_try_ex ? LATCH_EX : LATCH_SH));
-
-        // we followed a real-child pointer and found that it has blink..
-        // let's adopt it! (but opportunistically).
-        // just like eager adoption, it returns eGOODRETRY and we will retry if it succeeded. otherwise, go on.
+            || current->latch_mode() == LATCH_EX // we have EX latch; don't SH latch
+            );
+        
+        if(current->level()==2 && slot_to_follow!=t_follow_blink && leaf_latch_mode==LATCH_EX) {
+            //We're likely going to find the target next, so go ahead and EX if we need to.
+            //The other possibility is a long adoption chain; if that is the case this is
+            //a performance oops, but we're also messed up anyway, so fix the bad chain and
+            //still do this.
+            should_try_ex = true;
+        }
+        
+        W_DO(next->fix_nonroot(*current, current->vol(), pid_to_follow, 
+                               should_try_ex ? LATCH_EX : LATCH_SH));
+        
         if (slot_to_follow != t_follow_blink && next->get_blink() != 0) {
+            // we followed a real-child pointer and found that it has blink..  let's adopt it! (but
+            // opportunistically).  just like eager adoption, it returns eGOODRETRY and we will
+            // retry if it succeeded. otherwise, go on.
             W_DO(_ux_traverse_try_opportunistic_adopt(*current, *next));
         }
 
@@ -340,6 +274,99 @@ btree_impl::_ux_traverse_recurse(
     return RCOK;
 }
 
+void btree_impl::_ux_traverse_search(btree_impl::traverse_mode_t traverse_mode,
+                                     btree_p *current,
+                                     const w_keystr_t& key,
+                                     bool &this_is_the_leaf_page, slot_follow_t &slot_to_follow) {
+    if (traverse_mode == t_fence_contain) {
+        if (current->compare_with_fence_high(key) < 0) {
+            w_assert1(current->fence_contains(key));
+            // this page can contain the key, but..
+            if (current->is_leaf()) {
+                this_is_the_leaf_page = true;
+            } else {
+                // this is an interior node. find a child to follow
+                slotid_t slot;
+                current->search_node(key, slot);
+                if (slot < 0) {
+                    slot_to_follow = t_follow_pid0;
+                } else {
+                    slot_to_follow = (slot_follow_t) slot;
+                }
+            }
+        } else {
+            // this page can't contain the key.
+            // If search key is higher than high-fence of "start", which occurs
+            // only when "start" has b-link buddies, then follows blink pointers.
+            // Note, because the search path has chosen to read "start",
+            // this page or one of its blinks have fence keys containing the search key.
+            w_assert2(current->get_blink());
+            w_assert2(current->compare_with_fence_high(key) >= 0);
+            
+            // let's follow blink
+            slot_to_follow = t_follow_blink;
+        }
+    } else if (traverse_mode == t_fence_low_match) {
+        int d = current->compare_with_fence_low(key);
+        if (d == 0) {
+            if (current->is_leaf()) {
+                this_is_the_leaf_page = true;
+            } else {
+                // follow left-most child.
+                slot_to_follow = t_follow_pid0;
+            }
+        } else {
+            w_assert2(d > 0); // if d<0 (key<fence-low), we failed something
+            if (current->compare_with_fence_high(key) >= 0) {
+                // key is even higher than fence-high, then there must be blinked page
+                // let's follow blink
+                slot_to_follow = t_follow_blink;
+            } else {
+                // otherwise, one of the children must have the fence-low
+                w_assert2(!current->is_leaf()); // otherwise we should have seen an exact match
+                slotid_t slot;
+                current->search_node(key, slot);
+                // unlike fence-high key match, we can simply use the search result
+                slot_to_follow = (slot_follow_t) slot;
+            }
+        }
+    } else {
+        w_assert2(traverse_mode == t_fence_high_match);
+        int d = current->compare_with_fence_high(key);
+        if (d == 0) {
+            if (current->is_leaf()) {
+                this_is_the_leaf_page = true;
+            } else {
+                // must be the last child.
+                slot_to_follow = (slot_follow_t) (current->nrecs() - 1);
+            }
+        } else if (d > 0) {
+            // key is higher than fence-high, then there must be blinked page
+            // let's follow blink
+            slot_to_follow = t_follow_blink;
+        } else {
+            // key is lower than fence-high. then one of the children must have it.
+            w_assert2(!current->is_leaf()); // otherwise we should have seen an exact match
+            slotid_t slot;
+            current->search_node(key, slot);
+            // search_node returns the slot in which key resides or should go.
+            // For example, a separator key "AB"
+            // sends "AA" to left, "AAZ" to left, "AB" to right,
+            // "ABA" to right, "AC" to right.
+            
+            // However, now we are looking for fence-high key match,
+            // so we want to send "AB" to left.
+            w_keystr_t slot_key;
+            current->node_key(slot, slot_key);
+            if (key.compare(slot_key) == 0) {
+                --slot; // if exact match, try the previous slot
+                w_assert2(slot < current->nrecs() && slot >= -1);
+            }
+            
+            slot_to_follow = (slot_follow_t) slot;
+        }
+    }
+} 
 rc_t btree_impl::_ux_traverse_try_eager_adopt(btree_p &current, shpid_t next_pid)
 {
     w_assert1(current.is_fixed());
