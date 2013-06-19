@@ -23,7 +23,7 @@ inline page_s* bf_tree_m::get_page(const bf_tree_cb_t *cb) {
     w_assert1(idx > 0 && idx < _block_cnt);
     return _buffer + idx;
 }
-inline shpid_t bf_tree_m::get_root_page_id(volid_t vol, snum_t store) {
+inline shpid_t bf_tree_m::get_root_page_id_normalized(volid_t vol, snum_t store) {
     if (_volumes[vol] == NULL) {
         return 0;
     }
@@ -32,7 +32,7 @@ inline shpid_t bf_tree_m::get_root_page_id(volid_t vol, snum_t store) {
         return 0;
     }
     page_s* page = _buffer + idx;
-    return shpid(page);
+    return page->pid.page;
 }
 
 ///////////////////////////////////   Page fix/unfix BEGIN         ///////////////////////////////////  
@@ -350,16 +350,23 @@ inline void pin_for_refix_holder::release() {
 }
 
 
-inline shpid_t bf_tree_m::shpid(const page_s* page) const {
-    if (is_swizzled(page)) {
-        bf_idx idx = page - _buffer;
+inline shpid_t bf_tree_m::normalize_shpid(shpid_t shpid) const {
+    page_s* page;
 #ifdef SIMULATE_MAINMEMORYDB
-        return idx;
-#else
-        return idx | SWIZZLED_PID_BIT;
-#endif
-    }
+    bf_idx idx = shpid;
+    page = &_buffer[idx];
     return page->pid.page;
+#else
+    if (is_swizzling_enabled()) {
+        if (is_swizzled_pointer(shpid)) {
+            bf_idx idx = shpid ^ SWIZZLED_PID_BIT;
+            page = &_buffer[idx];
+            return page->pid.page;
+        }
+    }
+    return shpid;
+#endif
 }
+
 
 #endif // BF_TREE_INLINE_H
