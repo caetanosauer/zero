@@ -280,7 +280,7 @@ rc_t btree_impl::_ux_opportunistic_adopt_blink_core (btree_p &parent, btree_p &c
     w_assert1 (child.is_fixed());
     // okay, got EX latch on parent. So, we can eventually get EX latch on child always.
     // do EX-acquire, not upgrade. As we have Ex latch on parent. this is assured to work eventually
-    shpid_t surely_need_child_pid = child.shpid();
+    shpid_t surely_need_child_pid = child.pid().page;
     child.unfix(); // he will be also done in the following loop. okay to unfix here because:
     pushedup = true; // this assures the caller will immediatelly restart any access from root
 
@@ -311,7 +311,8 @@ rc_t btree_impl::_ux_adopt_blink_sweep_approximate (btree_p &parent, shpid_t sur
         clear_ex_need(parent.pid().page); // after these adopts, we don't need to be eager on this page.
         for (slotid_t i = -1; i < parent.nrecs(); ++i) {
             shpid_t shpid = i == -1 ? parent.pid0() : parent.child(i);
-            if (shpid != surely_need_child_pid && get_expected_childrens(shpid) == 0) {
+            shpid_t shpid_normalized = i == -1 ? parent.pid0_normalized() : parent.child_normalized(i);
+            if (shpid_normalized != surely_need_child_pid && get_expected_childrens(shpid) == 0) {
                 continue; // then doesn't matter (this could be false in low probability, but it's fine)
             }
             btree_p child;

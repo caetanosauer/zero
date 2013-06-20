@@ -79,11 +79,12 @@ struct bf_tree_cb_t {
         ::memset((void*)(&this->_counter_approximate), 0, sizeof(this->_counter_approximate));
         ::memset((void*)(&this->_rec_lsn), 0, sizeof(this->_rec_lsn));
         ::memset((void*)(&this->_parent), 0, sizeof(this->_parent));
-        ::memset((void*)(&this->_fill32), 0, sizeof(this->_fill32));
+        //::memset((void*)(&this->_fill32), 0, sizeof(this->_fill32));
         ::memset((void*)(&this->_swizzled), 0, sizeof(this->_swizzled));
         ::memset((void*)(&this->_concurrent_swizzling), 0, sizeof(this->_concurrent_swizzling));
-        //::memset((void*)(&this->_fill8), 0, sizeof(this->_fill8));
-        ::memset((void*)(&this->_fill16), 0, sizeof(this->_fill16));
+        ::memset((void*)(&this->_workload_id), 0, sizeof(this->_workload_id));
+        ::memset((void*)(&this->_fill8), 0, sizeof(this->_fill8));
+        //::memset((void*)(&this->_fill16), 0, sizeof(this->_fill16));
         ::memset((void*)(&this->_dependency_idx), 0, sizeof(this->_dependency_idx));
         ::memset((void*)(&this->_dependency_shpid), 0, sizeof(this->_dependency_shpid));
         ::memset((void*)(&this->_dependency_lsn), 0, sizeof(this->_dependency_lsn));
@@ -120,14 +121,16 @@ struct bf_tree_cb_t {
     /** Pointer to the parent page. zero for root pages. */
     bf_idx volatile             _parent;        // +4 -> 28
     
-    fill32                      _fill32;        // +4 -> 32
+    //fill32                      _fill32;        // +4 -> 32
 
     /** Whether this page is swizzled from the parent. */
     bool                        _swizzled;      // +1 -> 29
     /** Whether this page is concurrently being swizzled by another thread. */
-    bool                        _concurrent_swizzling;      // +1 -> 29
-    //fill8                       _fill8;         // +1 -> 30
-    fill16                      _fill16;        // +2 -> 32
+    bool                        _concurrent_swizzling;      // +1 -> 30
+    /** identify the last workload that referenced the page */
+    char                        _workload_id;       // +1 -> 31
+    fill8                       _fill8;        // +1 -> 32
+    //fill16                      _fill16;        // +2 -> 32
 
     /** if not zero, this page must be written out after this dependency page. */
     bf_idx volatile             _dependency_idx;// +4 -> 36

@@ -139,7 +139,6 @@ public:
     const lpid_t&               pid() const;
     volid_t                     vol() const;
     snum_t                      store() const;
-    shpid_t                     shpid() const;
     tag_t                       tag() const { return (tag_t) _pp->tag;}
     shpid_t                     btree_root() const { return _pp->btree_root;}
 

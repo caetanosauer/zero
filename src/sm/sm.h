@@ -241,13 +241,18 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *      Must be set to "yes" for sm_num_page_writers to have any effect.
  *      - default: yes
  *      - required?: no
+ *
+ * -sm_bufferpool_replacement_policy
+ *      - type: string (one of clock|random)
+ *      - description: Sets the page replacement policy of the buffer pool.
+ *      - default: clock
+ *      - required?: no
  * 
  * -sm_bufferpool_swizzle
  *      - type: Boolean
  *      - description: Enables pointer swizzling in buffer pool.
  *      - default: no
  *      - required?: no
- * 
  *
  * -sm_num_page_writers
  *      - type: number
@@ -2557,6 +2562,7 @@ private:
     static option_t* _log_warn_percent;
     static option_t* _num_page_writers;
     static option_t* _bufferpool_swizzle;
+    static option_t* _bufferpool_replacement_policy;
     static option_t* _cleaner_interval_millisec_min;
     static option_t* _cleaner_interval_millisec_max;
     static option_t* _logging;

@@ -202,6 +202,7 @@ option_t* ss_m::_error_log = NULL;
 option_t* ss_m::_error_loglevel = NULL;
 option_t* ss_m::_log_warn_percent = NULL;
 option_t* ss_m::_num_page_writers = NULL;
+option_t* ss_m::_bufferpool_replacement_policy = NULL;
 option_t* ss_m::_bufferpool_swizzle = NULL;
 option_t* ss_m::_cleaner_interval_millisec_min = NULL;
 option_t* ss_m::_cleaner_interval_millisec_max = NULL;
@@ -266,6 +267,10 @@ rc_t ss_m::setup_options(option_group_t* options)
     W_DO(options->add_option("sm_backgroundflush", "yes/no", "yes",
             "yes indicates background buffer pool flushing thread is enabled",
             false, option_t::set_value_bool, _backgroundflush));
+
+    W_DO(options->add_option("sm_bufferpool_replacement_policy", "clock|random", "clock",
+            "sets the page replacement policy of the buffer pool",
+            false, option_t::set_value_charstr, _bufferpool_replacement_policy));
 
     W_DO(options->add_option("sm_bufferpool_swizzle", "yes/no", "no",
             "yes enables pointer swizzling in buffer pool",
@@ -607,8 +612,9 @@ ss_m::_construct_once(
     bool default_true = true, default_false = false;
     bool initially_enable_cleaners = option_t::str_to_bool(_backgroundflush->value(), default_true);
     bool bufferpool_swizzle = option_t::str_to_bool(_bufferpool_swizzle->value(), default_false);
+    const char* bufferpool_replacement_policy = _bufferpool_replacement_policy->value();
 
-    bf = new bf_tree_m(nbufpages, npgwriters, cleaner_interval_millisec_min, cleaner_interval_millisec_max, 64, initially_enable_cleaners, bufferpool_swizzle);
+    bf = new bf_tree_m(nbufpages, npgwriters, cleaner_interval_millisec_min, cleaner_interval_millisec_max, 64, bufferpool_replacement_policy, initially_enable_cleaners, bufferpool_swizzle);
     if (! bf) {
         W_FATAL(eOUTOFMEMORY);
     }
