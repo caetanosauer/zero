@@ -2117,6 +2117,18 @@ public:
         const vec_t&             el
     );
     /**
+     * \brief Put record data of an entry in a B+-Tree index.
+     * \ingroup SSMBTREE
+     * @param[in] stid  ID of the index. 
+     * @param[in] key  Key for the association to be created or replaced.
+     * @param[in] el  New element for the association.
+     */
+    static rc_t            put_assoc(
+        stid_t                   stid, 
+        const w_keystr_t&        key, 
+        const vec_t&             el
+    );
+    /**
     *  \brief This function finds the given key, updates the specific part of element if found.
      * \ingroup SSMBTREE
     * @param[in] root id of root page
