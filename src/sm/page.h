@@ -190,7 +190,7 @@ public:
     uint32_t          calculate_checksum () const {return _pp->calculate_checksum();}
     /** Renew the stored value of checksum of this page. */
     void             update_checksum () const {_pp->update_checksum();}
-    
+
 protected:
 
     /**

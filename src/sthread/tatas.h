@@ -47,11 +47,11 @@ public:
     {
         holder_type_t tid = { pthread_self() };
         bool success = false;
-	uint64_t old_holder = NOBODY;
-	if(lintel::unsafe::atomic_compare_exchange_strong(const_cast<uint64_t*>(&_holder.bits), &old_holder, tid.bits)) {
+        uint64_t old_holder = NOBODY;
+        if(lintel::unsafe::atomic_compare_exchange_strong(const_cast<uint64_t*>(&_holder.bits), &old_holder, tid.bits)) {
             lintel::atomic_thread_fence(lintel::memory_order_acquire);
             success = true;
-	}
+        }
         return success;
     }
 
@@ -59,11 +59,12 @@ public:
     void acquire() {
         w_assert1(!is_mine());
         holder_type_t tid = { pthread_self() };
-	uint64_t old_holder = NOBODY;
+        uint64_t old_holder = NOBODY;
         do {
             spin();
+	        old_holder = NOBODY; // a CAS that fails overwrites old_holder with the current holder
         }
-	while(!lintel::unsafe::atomic_compare_exchange_strong(const_cast<uint64_t*>(&_holder.bits), &old_holder, tid.bits));
+        while(!lintel::unsafe::atomic_compare_exchange_strong(const_cast<uint64_t*>(&_holder.bits), &old_holder, tid.bits));
         lintel::atomic_thread_fence(lintel::memory_order_acquire);
         w_assert1(is_mine());
     }

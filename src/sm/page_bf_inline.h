@@ -116,5 +116,6 @@ inline bool page_p::upgrade_latch_conditional() {
     }
     return success;
 }
+
 #endif // PAGE_BF_INLINE_H
 

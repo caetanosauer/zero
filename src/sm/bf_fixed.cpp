@@ -12,9 +12,12 @@ bf_fixed_m::bf_fixed_m()
 }
 bf_fixed_m::~bf_fixed_m() {
     if (_pages != NULL) {
-        delete[] _pages;
+        void *buf = reinterpret_cast<void*>(_pages);
+        // note we use free(), not delete[], which corresponds to posix_memalign
+        ::free (buf);
         _pages = NULL;
     }
+ 
     if (_dirty_flags != NULL) {
         delete[] _dirty_flags;
         _dirty_flags = NULL;
@@ -29,7 +32,14 @@ w_rc_t bf_fixed_m::init(vol_t* parent, int unix_fd, uint32_t max_pid) {
     // then 1 stnode_p and then data pages.
     shpid_t alloc_pages = (max_pid / alloc_p::alloc_max) + 1;
     _page_cnt = alloc_pages + 1; // +1 for stnode_p
-    _pages = new page_s[_page_cnt];
+    // use posix_memalign to allow unbuffered disk I/O
+    void *buf = NULL;
+    ::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * _page_cnt);
+    if (buf == NULL) {
+        ERROUT (<< "failed to reserve " << _page_cnt << " blocks of " << SM_PAGESIZE << "-bytes pages. ");
+        W_FATAL(smlevel_0::eOUTOFMEMORY);
+    }
+    _pages = reinterpret_cast<page_s*>(buf);
     _dirty_flags = new bool[_page_cnt];
     ::memset (_dirty_flags, 0, sizeof(bool) * _page_cnt);
 

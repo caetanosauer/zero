@@ -80,6 +80,14 @@ const uint16_t MAX_SWIZZLE_CLOCKHAND_DEPTH = 10;
  */
 const uint32_t UNSWIZZLE_BATCH_SIZE = 1000;
 
+/**\enum replacement_policy_t 
+ * \brief Page replacement policy.
+ */
+enum replacement_policy_t { 
+    POLICY_CLOCK = 0,
+    POLICY_RANDOM
+};
+
 /**
  * \Brief The new buffer manager that exploits the tree structure of indexes.
  * \ingroup SSMBUFPOOL
@@ -104,6 +112,7 @@ class bf_tree_m {
     friend class bf_tree_cleaner_slave_thread_t; // for page cleaning
 
 public:
+    void print_slots(page_s* page) const;
 #ifdef PAUSE_SWIZZLING_ON
     static bool _bf_pause_swizzling; // this can be turned on/off from any place. ugly, but it's just for an experiment.
     static uint64_t _bf_swizzle_ex; // approximate statistics. how many times ex-latch were taken on page swizzling
@@ -115,6 +124,7 @@ public:
                uint32_t cleaner_interval_millisec_min       =   1000,
                uint32_t cleaner_interval_millisec_max       = 256000,
                uint32_t cleaner_write_buffer_pages          =     64,
+               const char* replacement_policy = "clock",
                bool initially_enable_cleaners = true,
                bool enable_swizzling = false
               );
@@ -146,7 +156,7 @@ public:
     /** returns the bufferpool page corresponding to the given control block. mainly for debugging. */
     page_s* get_page(const bf_tree_cb_t *cb);
     /** returns the page ID of the root page (which is already loaded in this bufferpool) in given store. mainly for debugging or approximate purpose. */
-    shpid_t get_root_page_id(volid_t vol, snum_t store);
+    shpid_t get_root_page_id_normalized(volid_t vol, snum_t store);
 
     /**
      * Fixes a non-root page in the bufferpool. This method receives the parent page and efficiently
@@ -312,6 +322,14 @@ public:
      */
     bool is_swizzled (const page_s* page) const;
     
+    /** Normalizes the page identifier to a disk page identifier. 
+      * If the page identifier is a memory frame index (in case of swizzling) 
+      * then it returns the disk page index, otherwise it returns the page 
+      * identifier as it is. 
+      * Do NOT call this method without a latch.
+      */
+    shpid_t normalize_shpid(shpid_t shpid) const;
+
     /** Immediately writes out all dirty pages in the given volume.*/
     w_rc_t force_volume (volid_t vol);
     /** Immediately writes out all dirty pages.*/
@@ -437,6 +455,19 @@ private:
      */
     w_rc_t _get_replacement_block(bf_idx& ret);
 
+    /**
+     * evict a block using a CLOCK replacement policy and get its exclusive ownership.
+     */
+    w_rc_t _get_replacement_block_clock(bf_idx& ret);
+
+    /**
+     * evict a block using a RANDOM replacement policy and get its exclusive ownership.
+     */
+    w_rc_t _get_replacement_block_random(bf_idx& ret);
+
+    /** try to evict a given block. */
+    int _try_evict_block(bf_idx idx);
+
     /** Adds a free block to the freelist. */
     void   _add_free_block(bf_idx idx);
     
@@ -528,12 +559,13 @@ private:
     w_rc_t _install_volume_mainmemorydb(vol_t* volume);
     w_rc_t _fix_nonswizzled_mainmemorydb(page_s* parent, page_s*& page, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page);
 
+
 private:
     /** count of blocks (pages) in this bufferpool. */
-    bf_idx              _block_cnt;
+    bf_idx               _block_cnt;
     
     /** current clock hand for eviction. */
-    bf_idx volatile     _clock_hand;
+    bf_idx volatile      _clock_hand;
     
     /**
      * Array of pointers to root page descriptors of all currently mounted volumes.
@@ -547,31 +579,31 @@ private:
      * Because there is no race condition in loading a volume,
      * this array does not have to be protected by mutex or spinlocks.
      */
-    bf_tree_vol_t*      _volumes[MAX_VOL_COUNT];
+    bf_tree_vol_t*       _volumes[MAX_VOL_COUNT];
     
     /** Array of control blocks. array size is _block_cnt. index 0 is never used (means NULL). */
-    bf_tree_cb_t*       _control_blocks;
+    bf_tree_cb_t*        _control_blocks;
 
     /** Array of page contents. array size is _block_cnt. index 0 is never used (means NULL). */
-    page_s*             _buffer;
+    page_s*              _buffer;
     
     /** hashtable to locate a page in this bufferpool. swizzled pages are removed from bufferpool. */
-    bf_hashtable*       _hashtable;
+    bf_hashtable*        _hashtable;
     
     /**
      * singly-linked freelist. index is same as _buffer/_control_blocks. zero means no link.
      * This logically belongs to _control_blocks, but is an array by itself for efficiency.
      * index 0 is always the head of the list (points to the first free block, or 0 if no free block).
      */
-    bf_idx*             _freelist;
+    bf_idx*              _freelist;
 
     /** count of free blocks. */
-    uint32_t volatile   _freelist_len;
+    uint32_t volatile    _freelist_len;
 
 // Be VERY careful on deadlock to use the following.
     
     /** spin lock to protect all freelist related stuff. */
-    tatas_lock          _freelist_lock;
+    tatas_lock           _freelist_lock;
 
 #ifdef BP_MAINTAIN_PARNET_PTR
     /**
@@ -581,11 +613,11 @@ private:
      * This logically belongs to _control_blocks, but is an array by itself for efficiency.
      * [0] and [1] are special, meaning list head and tail.
      */
-    bf_idx*             _swizzled_lru;
+    bf_idx*              _swizzled_lru;
     /** count of swizzled pages that can be unswizzled. */
-    uint32_t volatile   _swizzled_lru_len;
+    uint32_t volatile    _swizzled_lru_len;
     /** spin lock to protect swizzled page LRU list. */
-    tatas_lock          _swizzled_lru_lock;
+    tatas_lock           _swizzled_lru_lock;
 #endif // BP_MAINTAIN_PARNET_PTR
 
     /**
@@ -608,30 +640,35 @@ private:
      *   If any other inconsistency occured, that's fine. We just restart the search.
      * We are just going to find a few pages to unswizzle, nothing more.
      */
-    uint32_t            _swizzle_clockhand_pathway[MAX_SWIZZLE_CLOCKHAND_DEPTH];
+    uint32_t             _swizzle_clockhand_pathway[MAX_SWIZZLE_CLOCKHAND_DEPTH];
     /** the lastly visited element in _swizzle_clockhand_pathway that might have some remaining descendants to visit. */
-    uint16_t            _swizzle_clockhand_current_depth;
+    uint16_t             _swizzle_clockhand_current_depth;
+
+    /** threshold temperature above which to not unswizzle a frame */
+    uint32_t             _swizzle_clockhand_threshold;
 
     // queue_based_lock_t   _eviction_mutex;
     
     /** the dirty page cleaner. */
-    bf_tree_cleaner*    _cleaner;
+    bf_tree_cleaner*     _cleaner;
     
     /**
      * Unreliable count of dirty pages in this bufferpool.
      * The value is incremented and decremented without atomic operations.
      * So, this should be only used as statistics.
      */
-    int32_t             _dirty_page_count_approximate;
+    int32_t              _dirty_page_count_approximate;
     /**
      * Unreliable count of swizzled pages in this bufferpool.
      * The value is incremented and decremented without atomic operations.
      * So, this should be only used as statistics.
      */
-    int32_t             _swizzled_page_count_approximate;
+    int32_t              _swizzled_page_count_approximate;
     
+    /** page replacement policy */
+    replacement_policy_t _replacement_policy;
     /** whether to swizzle non-root pages. */
-    bool                _enable_swizzling;
+    bool                 _enable_swizzling;
 };
 
 /**
