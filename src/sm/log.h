@@ -358,8 +358,8 @@ public:
     NORET                        log_i(log_m& l, const lsn_t& lsn) ;
     NORET                        ~log_i();
 
-    /// Get the next log record, put its sequence number in argument \a lsn
-    bool                         next(lsn_t& lsn, logrec_t*& r);
+    /// Get the next log record for transaction, put its sequence number in argument \a lsn
+    bool                         xct_next(lsn_t& lsn, logrec_t*& r);
     /// Get the return code from the last next() call.
     w_rc_t&                      get_last_rc();
 private:

@@ -117,8 +117,8 @@ public:
     uint16_t              tag() const;
     smsize_t             length() const;
     const lsn_t&         undo_nxt() const;
-    const lsn_t&         prev() const;
-    void                 set_prev(const lsn_t &lsn);
+    const lsn_t&         xct_prev() const;
+    void                 set_xct_prev(const lsn_t &lsn);
     void                 set_clr(const lsn_t& c);
     void                 set_undoable_clr(const lsn_t& c);
     kind_t               type() const;
@@ -186,18 +186,18 @@ protected:
     
     tid_t               _xid;      // NOT IN SINGLE-LOG SYSTEM TRANSACTION!  (xct)tid of this xct
     /* 16+8=24 */
-    lsn_t               _prv;     // NOT IN SINGLE-LOG SYSTEM TRANSACTION! (xct)previous logrec of this xct
+    lsn_t               _xct_prv;     // NOT IN SINGLE-LOG SYSTEM TRANSACTION! (xct)previous logrec of this xct
     /* 24+8 = 32 */
 
     
     // lsn_t            _undo_nxt; // (xct) used in CLR only
     /*
      * originally: you might think it would be nice to use one lsn_t for 
-     * both _prev and for _undo_lsn, but for the moment we need both because
+     * both _xct_prev and for _undo_lsn, but for the moment we need both because
      * at the last minute, fill_xct_attr() is called and that fills in 
-     * _prev, clobbering its value with the prior generated log record's lsn.
+     * _xct_prev, clobbering its value with the prior generated log record's lsn.
      * It so happens that set_clr() is called prior to fill_xct_attr().
-     * It might do to set _prev iff it's not already set, in fill_xct_attr().
+     * It might do to set _xct_prev iff it's not already set, in fill_xct_attr().
      * NB: this latter suggestion is what we have now done.
      */
 
@@ -223,7 +223,7 @@ protected:
         return reinterpret_cast<const lsn_t*>(this_ptr + _len - sizeof(lsn_t));
     }
 };
-// for single-log system transaction, we use tid/prev as data area!
+// for single-log system transaction, we use tid/_xct_prev as data area!
 inline const char*  logrec_t::data() const
 {
     return _data;
@@ -532,9 +532,9 @@ logrec_t::undo_nxt() const
 {
     // To shrink log records,
     // we've taken out _undo_nxt and 
-    // overloaded _prev.
+    // overloaded _xct_prev.
     // return _undo_nxt;
-    return prev();
+    return xct_prev();
 }
 
 inline const tid_t&
@@ -545,16 +545,16 @@ logrec_t::tid() const
 }
 
 inline const lsn_t&
-logrec_t::prev() const
+logrec_t::xct_prev() const
 {
     w_assert1(!is_single_sys_xct()); // otherwise this part is in data area!
-    return _prv;
+    return _xct_prv;
 }
 inline void
-logrec_t::set_prev(const lsn_t &lsn)
+logrec_t::set_xct_prev(const lsn_t &lsn)
 {
     w_assert1(!is_single_sys_xct()); // otherwise this part is in data area!
-    _prv = lsn;
+    _xct_prv = lsn;
 }
 
 inline logrec_t::kind_t
@@ -598,7 +598,7 @@ logrec_t::set_clr(const lsn_t& c)
     // we've taken out _undo_nxt and 
     // overloaded _prev.
     // _undo_nxt = c;
-    _prv = c; // and _prv is data area if is_single_sys_xct
+    _xct_prv = c; // and _xct_prv is data area if is_single_sys_xct
 }
 
 inline bool 

@@ -132,7 +132,7 @@ logrec_t::fill(const lpid_t* p, uint16_t tag, smsize_t l)
     }
     set_pid(lpid_t::null);
     if (!is_single_sys_xct()) { // prv does not exist in single-log system transaction
-        set_prev(lsn_t::null);
+        set_xct_prev(lsn_t::null);
     }
     _page_tag = tag;
     if (p) set_pid(*p);
@@ -147,7 +147,7 @@ logrec_t::fill(const lpid_t* p, uint16_t tag, smsize_t l)
     _len = tmp;
     if(type() != t_skip) {
         DBG( << "Creat log rec: " << *this 
-                << " size: " << _len << " prevlsn: " << (is_single_sys_xct() ? lsn_t::null : prev()) );
+                << " size: " << _len << " xct_prevlsn: " << (is_single_sys_xct() ? lsn_t::null : xct_prev()) );
     }
 }
 
@@ -155,7 +155,7 @@ logrec_t::fill(const lpid_t* p, uint16_t tag, smsize_t l)
 
 /*********************************************************************
  *
- *  logrec_t::fill_xct_attr(tid, prev_lsn)
+ *  logrec_t::fill_xct_attr(tid, xct_prev_lsn)
  *
  *  Fill the transaction related fields of the log record.
  *
@@ -165,10 +165,10 @@ logrec_t::fill_xct_attr(const tid_t& tid, const lsn_t& last)
 {
     w_assert0(!is_single_sys_xct()); // prv/xid doesn't exist in single-log system transaction!
     _xid = tid;
-    if(prev().valid()) {
+    if(xct_prev().valid()) {
         w_assert2(is_cpsn());
     } else {
-        set_prev (last);
+        set_xct_prev (last);
     }
 }
 
@@ -198,7 +198,7 @@ void logrec_t::redo(page_p* page)
 {
     FUNC(logrec_t::redo);
     DBG( << "Redo  log rec: " << *this 
-        << " size: " << _len << " prevlsn: " << (is_single_sys_xct() ? lsn_t::null : prev()) );
+        << " size: " << _len << " xct_prevlsn: " << (is_single_sys_xct() ? lsn_t::null : xct_prev()) );
 
     switch (_type)  {
 #include "redo_gen.cpp"
@@ -235,11 +235,11 @@ logrec_t::undo(page_p* page)
     undoing_context = logrec_t::kind_t(_type);
     FUNC(logrec_t::undo);
     DBG( << "Undo  log rec: " << *this 
-        << " size: " << _len  << " prevlsn: " << prev());
+        << " size: " << _len  << " xct_prevlsn: " << xct_prev());
     switch (_type) {
 #include "undo_gen.cpp"
     }
-    xct()->compensate_undo(prev());
+    xct()->compensate_undo(xct_prev());
     undoing_context = logrec_t::t_max_logrec;
 }
 
@@ -824,7 +824,7 @@ operator<<(ostream& o, const logrec_t& l)
 
     if (!l.is_single_sys_xct()) {
         if (l.is_cpsn())  o << " (" << l.undo_nxt() << ')';
-        else  o << " [" << l.prev() << "]";
+        else  o << " [" << l.xct_prev() << "]";
     }
 
     o.flags(f);

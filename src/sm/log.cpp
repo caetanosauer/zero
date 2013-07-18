@@ -73,13 +73,13 @@ typedef smlevel_0::fileoff_t fileoff_t;
 
 /*********************************************************************
  *
- *  log_i::next(lsn, r)
+ *  log_i::xct_next(lsn, r)
  *
  *  Read the next record into r and return its lsn in lsn.
  *  Return false if EOF reached. true otherwise.
  *
  *********************************************************************/
-bool log_i::next(lsn_t& lsn, logrec_t*& r)  
+bool log_i::xct_next(lsn_t& lsn, logrec_t*& r)  
 {
     bool eof = (cursor == lsn_t::null);
     if (! eof) {
@@ -193,7 +193,7 @@ db_pretty_print(logrec_t const* rec, int /*i=0*/, char const* /*s=0*/)
              "    _tid = %d.%d\n"
              "    _pid = %d.%d.%d\n"
              "    _page_tag = %d\n"
-             "    _prev = %d.%lld\n"
+             "    _xct_prev = %d.%lld\n"
              "    _ck_lsn = %d.%lld\n"
              "%s"
              "}",
@@ -205,7 +205,7 @@ db_pretty_print(logrec_t const* rec, int /*i=0*/, char const* /*s=0*/)
                      rec->construct_pid().store(), 
                      rec->construct_pid().page,
              rec->tag(),
-             (rec->prev().hi()), (int64_t)(rec->prev().lo()),
+             (rec->xct_prev().hi()), (int64_t)(rec->xct_prev().lo()),
              (rec->get_lsn_ck().hi()), (int64_t)(rec->get_lsn_ck().lo()),
              extra
              );
