@@ -251,7 +251,7 @@ void btree_overwrite_log::redo(page_p* page)
 class btree_header_t {
 public:
     shpid_t btree_pid0; // +4 -> 4
-    shpid_t btree_blink; // +4 -> 8
+    shpid_t btree_foster; // +4 -> 8
     int16_t btree_level; // +2 -> 10
     int16_t btree_chain_fence_high_length; // +2 -> 12
     fill4          _fill; // +4 -> 16
@@ -259,13 +259,13 @@ public:
     btree_header_t(
         shpid_t pid0,
         int16_t level,
-        shpid_t blink,
+        shpid_t foster,
         int16_t chain_fence_high_length
-    ) : btree_pid0(pid0), btree_blink(blink), btree_level(level),
+    ) : btree_pid0(pid0), btree_foster(foster), btree_level(level),
     btree_chain_fence_high_length(chain_fence_high_length)
          {};
     btree_header_t(const page_p &p)
-    : btree_pid0(p._pp->btree_pid0), btree_blink(p._pp->btree_blink), btree_level(p._pp->btree_level),
+    : btree_pid0(p._pp->btree_pid0), btree_foster(p._pp->btree_foster), btree_level(p._pp->btree_level),
     btree_chain_fence_high_length(p._pp->btree_chain_fence_high_length)
          {};
     
@@ -277,7 +277,7 @@ void btree_header_t::apply(page_p* page)
 {
     page->_pp->btree_pid0 = btree_pid0;
     page->_pp->btree_level = btree_level;
-    page->_pp->btree_blink = btree_blink;
+    page->_pp->btree_foster = btree_foster;
     page->_pp->btree_chain_fence_high_length = btree_chain_fence_high_length;
 }
 
@@ -290,11 +290,11 @@ public:
     btree_header_change_t(const page_p &p,
         shpid_t btree_pid0,
         int16_t btree_level,
-        shpid_t btree_blink,
+        shpid_t btree_foster,
         int16_t btree_chain_fence_high_length
                     ) : 
            before (p),
-           after (btree_pid0, btree_level, btree_blink, btree_chain_fence_high_length)
+           after (btree_pid0, btree_level, btree_foster, btree_chain_fence_high_length)
        {
        }
 
@@ -304,13 +304,13 @@ public:
 btree_header_log::btree_header_log(const page_p& p,
     shpid_t btree_pid0,
     int16_t btree_level,
-    shpid_t btree_blink,
+    shpid_t btree_foster,
     int16_t btree_chain_fence_high_length
 )
 {
     w_assert3(p.tag() == t_btree_p);
     fill(&p.pid(), p.tag(), (new (data()) btree_header_change_t(
-        p, btree_pid0, btree_level, btree_blink,
+        p, btree_pid0, btree_level, btree_foster,
                 btree_chain_fence_high_length))->size());
 }
 
@@ -504,14 +504,14 @@ void btree_ghost_reserve_log::redo(page_p* page)
 }
 
 // log for Split (+adopt if intermediate node)
-struct btree_blink_split_t {
+struct btree_foster_split_t {
     shpid_t       _foster_child_pid; // +4 -> 4
     int32_t       _right_begins_from; // +4 -> 8
     shpid_t       _new_child_pid; // +4 -> 12
     int32_t       _new_child_key_len; // +4 -> 16
     char          data[logrec_t::max_data_sz - 16];
 
-    btree_blink_split_t(shpid_t foster_child_pid, int32_t right_begins_from,
+    btree_foster_split_t(shpid_t foster_child_pid, int32_t right_begins_from,
         const w_keystr_t* new_child_key, shpid_t new_child_pid)
         : _foster_child_pid (foster_child_pid), _right_begins_from(right_begins_from) {
         _new_child_pid = new_child_pid;
@@ -525,19 +525,19 @@ struct btree_blink_split_t {
     int size() { return 16 + _new_child_key_len; }
 };
 
-btree_blink_split_log::btree_blink_split_log (const page_p& p,
+btree_foster_split_log::btree_foster_split_log (const page_p& p,
     shpid_t new_pid, int32_t right_begins_from,
     const w_keystr_t* new_child_key, shpid_t new_child_pid)
 {
     w_assert0(p.tag() == t_btree_p);
-    fill(&p.pid(), p.tag(), (new (_data) btree_blink_split_t(new_pid, right_begins_from, new_child_key, new_child_pid))->size());
+    fill(&p.pid(), p.tag(), (new (_data) btree_foster_split_t(new_pid, right_begins_from, new_child_key, new_child_pid))->size());
 }
-void btree_blink_split_log::redo(page_p* page)
+void btree_foster_split_log::redo(page_p* page)
 {
     // by careful-write-ordering, foster-parent can't be written out before foster-child
     // so, foster-parent still holds all data to recover
     btree_p* foster_parent = (btree_p*) page;
-    btree_blink_split_t *dp = (btree_blink_split_t*) _data;
+    btree_foster_split_t *dp = (btree_foster_split_t*) _data;
     w_keystr_t mid_key = foster_parent->recalculate_fence_for_split(dp->_right_begins_from);
     lpid_t new_pid = page->pid();
     new_pid.page = dp->_foster_child_pid;
@@ -550,7 +550,7 @@ void btree_blink_split_log::redo(page_p* page)
         new_child_key.construct_from_keystr(dp->data, dp->_new_child_key_len);
         new_child_key_ptr = &new_child_key;
     }
-    rc_t rc = btree_impl::_ux_split_blink_apply(*foster_parent,
+    rc_t rc = btree_impl::_ux_split_foster_apply(*foster_parent,
         dp->_right_begins_from, mid_key, new_pid, new_child_key_ptr, dp->_new_child_pid);
     if (rc.is_error()) {
         W_FATAL(rc.err_num());
@@ -559,15 +559,15 @@ void btree_blink_split_log::redo(page_p* page)
 
 // log for special split moving nothing
 // this log is for foster-parent node.
-struct btree_blink_norecord_split_t {
-    shpid_t       _blink; // +4 -> 4
+struct btree_foster_norecord_split_t {
+    shpid_t       _foster; // +4 -> 4
     int16_t       _fence_high_len; // +2 -> 6
     int16_t       _chain_fence_high_len; // +2 -> 8
     char          data[logrec_t::max_data_sz - 8];
 
-    btree_blink_norecord_split_t(shpid_t blink,
+    btree_foster_norecord_split_t(shpid_t foster,
         const w_keystr_t& fence_high, const w_keystr_t& chain_fence_high)
-        : _blink(blink) {
+        : _foster(foster) {
         _fence_high_len = fence_high.get_length_as_keystr();
         _chain_fence_high_len = chain_fence_high.get_length_as_keystr();
         fence_high.serialize_as_keystr(data);
@@ -576,32 +576,32 @@ struct btree_blink_norecord_split_t {
     int size() { return 8 + _fence_high_len + _chain_fence_high_len; }
 };
 
-btree_blink_norecord_split_log::btree_blink_norecord_split_log(const page_p& p, shpid_t blink,
+btree_foster_norecord_split_log::btree_foster_norecord_split_log(const page_p& p, shpid_t foster,
     const w_keystr_t& fence_high, const w_keystr_t& chain_fence_high)
 {
     w_assert0(p.tag() == t_btree_p);
-    fill(&p.pid(), p.tag(), (new (_data) btree_blink_norecord_split_t(blink, fence_high, chain_fence_high))->size());
+    fill(&p.pid(), p.tag(), (new (_data) btree_foster_norecord_split_t(foster, fence_high, chain_fence_high))->size());
 }
-void btree_blink_norecord_split_log::redo(page_p* page)
+void btree_foster_norecord_split_log::redo(page_p* page)
 {
     btree_p* foster_parent = (btree_p*) page;
-    btree_blink_norecord_split_t *dp = (btree_blink_norecord_split_t*) _data;
+    btree_foster_norecord_split_t *dp = (btree_foster_norecord_split_t*) _data;
     w_keystr_t fence_high, chain_fence_high;
     fence_high.construct_from_keystr(dp->data, dp->_fence_high_len);
     chain_fence_high.construct_from_keystr(dp->data + dp->_fence_high_len, dp->_chain_fence_high_len);
-    rc_t rc = foster_parent->norecord_split(dp->_blink, fence_high, chain_fence_high);
+    rc_t rc = foster_parent->norecord_split(dp->_foster, fence_high, chain_fence_high);
     if (rc.is_error()) {
         W_FATAL(rc.err_num());
     }
 }
 
 // logs for Adopt
-struct btree_blink_adopt_parent_t {
+struct btree_foster_adopt_parent_t {
     shpid_t _new_child_pid;
     int32_t _new_child_key_len;
     char    data[logrec_t::max_data_sz - sizeof(shpid_t) - sizeof(int32_t)];
 
-    btree_blink_adopt_parent_t(shpid_t new_child_pid, const w_keystr_t& new_child_key)
+    btree_foster_adopt_parent_t(shpid_t new_child_pid, const w_keystr_t& new_child_key)
         : _new_child_pid (new_child_pid) {
         _new_child_key_len = new_child_key.get_length_as_keystr();
         new_child_key.serialize_as_keystr(data);
@@ -609,80 +609,80 @@ struct btree_blink_adopt_parent_t {
     int size() { return sizeof(shpid_t) + sizeof(int32_t) + _new_child_key_len; }
 };
 
-btree_blink_adopt_parent_log::btree_blink_adopt_parent_log (const page_p& p,
+btree_foster_adopt_parent_log::btree_foster_adopt_parent_log (const page_p& p,
     shpid_t new_child_pid, const w_keystr_t& new_child_key)
 {
     w_assert0(p.tag() == t_btree_p);
-    fill(&p.pid(), p.tag(), (new (_data) btree_blink_adopt_parent_t(new_child_pid, new_child_key))->size());
+    fill(&p.pid(), p.tag(), (new (_data) btree_foster_adopt_parent_t(new_child_pid, new_child_key))->size());
 }
-void btree_blink_adopt_parent_log::redo(page_p* page)
+void btree_foster_adopt_parent_log::redo(page_p* page)
 {
     // just call apply() function
     btree_p* foster_parent = (btree_p*) page;
-    btree_blink_adopt_parent_t *dp = (btree_blink_adopt_parent_t*) _data;
+    btree_foster_adopt_parent_t *dp = (btree_foster_adopt_parent_t*) _data;
     w_keystr_t new_child_key;
     new_child_key.construct_from_keystr(dp->data, dp->_new_child_key_len);
-    rc_t rc = btree_impl::_ux_adopt_blink_apply_parent(*foster_parent, dp->_new_child_pid, new_child_key);
+    rc_t rc = btree_impl::_ux_adopt_foster_apply_parent(*foster_parent, dp->_new_child_pid, new_child_key);
     if (rc.is_error()) {
         W_FATAL(rc.err_num());
     }
 }
-btree_blink_adopt_child_log::btree_blink_adopt_child_log (const page_p& p)
+btree_foster_adopt_child_log::btree_foster_adopt_child_log (const page_p& p)
 {
     w_assert0(p.tag() == t_btree_p);
     fill(&p.pid(), p.tag(), 0);
 }
-void btree_blink_adopt_child_log::redo(page_p* page)
+void btree_foster_adopt_child_log::redo(page_p* page)
 {
     // just call apply() function
     btree_p* foster_child = (btree_p*) page;
-    btree_impl::_ux_adopt_blink_apply_child(*foster_child);
+    btree_impl::_ux_adopt_foster_apply_child(*foster_child);
 }
 
 // logs for Merge/Rebalance/De-Adopt
 // see jira ticket:39 "Node removal and rebalancing" (originally trac ticket:39) for detailed spec
-btree_blink_merge_log::btree_blink_merge_log (const page_p& p)
+btree_foster_merge_log::btree_foster_merge_log (const page_p& p)
 {
     w_assert0(p.tag() == t_btree_p);
     const btree_p& bp = * (btree_p*) &p;
     // we just need merged page's id. that's it.
-    *reinterpret_cast<shpid_t*> (_data) = bp.get_blink();
+    *reinterpret_cast<shpid_t*> (_data) = bp.get_foster();
     fill(&p.pid(), p.tag(), sizeof(shpid_t));
 }
 
-void btree_blink_merge_log::redo(page_p* page)
+void btree_foster_merge_log::redo(page_p* page)
 {
     // REDO is to merge it again.
     // Because of careful-write-order, the merged page must still exist.
     // Otherwise, this page's REDO shouldn't have been called.
     btree_p* bp = (btree_p*) page;
     W_IFDEBUG1(shpid_t merged_pid = *((shpid_t*) _data));
-    w_assert1(bp->get_blink() == merged_pid); // otherwise, already merged!
-    rc_t rc = btree_impl::_ux_merge_blink_core(*bp);
+    w_assert1(bp->get_foster() == merged_pid); // otherwise, already merged!
+    rc_t rc = btree_impl::_ux_merge_foster_core(*bp);
     w_assert1(!rc.is_error());
 }
 
-struct btree_blink_rebalance_t {
+struct btree_foster_rebalance_t {
     shpid_t       _foster_parent_pid; // +4 -> 4
     int32_t       _move_count; // +4 -> 8
 
-    btree_blink_rebalance_t(shpid_t parent_pid, int32_t move_count)
+    btree_foster_rebalance_t(shpid_t parent_pid, int32_t move_count)
         : _foster_parent_pid (parent_pid), _move_count(move_count) {}
     int size() { return sizeof(*this); }
 };
 
-btree_blink_rebalance_log::btree_blink_rebalance_log (const page_p& p,
+btree_foster_rebalance_log::btree_foster_rebalance_log (const page_p& p,
         shpid_t parent_pid, int32_t move_count) {
     w_assert0(p.tag() == t_btree_p);
-    fill(&p.pid(), p.tag(), (new (_data) btree_blink_rebalance_t(parent_pid, move_count))->size());
+    fill(&p.pid(), p.tag(), (new (_data) btree_foster_rebalance_t(parent_pid, move_count))->size());
 }
 
-void btree_blink_rebalance_log::redo(page_p* page)
+void btree_foster_rebalance_log::redo(page_p* page)
 {
     // REDO is to rebalance it again.
     // "This" page must be foster-child which received entries.
     btree_p* bp = (btree_p*) page;
-    btree_blink_rebalance_t *dp = (btree_blink_rebalance_t*) _data;
+    btree_foster_rebalance_t *dp = (btree_foster_rebalance_t*) _data;
     
     // TODO we should have two logs; one for receiver, one for sender.
     // moving from foster-parent to child. below code doesn't consider the case
@@ -691,45 +691,45 @@ void btree_blink_rebalance_log::redo(page_p* page)
     btree_p foster_parent_p;
     rc_t rc = foster_parent_p.fix_direct(bp->vol(), dp->_foster_parent_pid, LATCH_EX); // in REDO, so fix_direct should be safe
     w_assert1(!rc.is_error());
-    rc_t rc_rb = btree_impl::_ux_rebalance_blink_core(foster_parent_p, *bp, dp->_move_count);
+    rc_t rc_rb = btree_impl::_ux_rebalance_foster_core(foster_parent_p, *bp, dp->_move_count);
     w_assert1(!rc_rb.is_error());
 }
 
-struct btree_blink_deadopt_real_parent_t {
+struct btree_foster_deadopt_real_parent_t {
     shpid_t     _deadopted_pid; // +4 -> 4
     int32_t     _foster_slot; // +4 -> 8
 
-    btree_blink_deadopt_real_parent_t(shpid_t deadopted_pid,
+    btree_foster_deadopt_real_parent_t(shpid_t deadopted_pid,
     int32_t foster_slot) : _deadopted_pid (deadopted_pid), _foster_slot(foster_slot) {
     }
     int size() { return sizeof(*this); }
 };
 
-btree_blink_deadopt_real_parent_log::btree_blink_deadopt_real_parent_log (
+btree_foster_deadopt_real_parent_log::btree_foster_deadopt_real_parent_log (
     const page_p& p, shpid_t deadopted_pid, int32_t foster_slot) {
     w_assert0(p.tag() == t_btree_p);
 #if W_DEBUG_LEVEL>0
     const btree_p& bp = * (btree_p*) &p;
     w_assert1(bp.is_node());
 #endif // W_DEBUG_LEVEL>0
-    fill(&p.pid(), p.tag(), (new (_data) btree_blink_deadopt_real_parent_t(deadopted_pid, foster_slot))->size());
+    fill(&p.pid(), p.tag(), (new (_data) btree_foster_deadopt_real_parent_t(deadopted_pid, foster_slot))->size());
 }
 
-void btree_blink_deadopt_real_parent_log::redo(page_p* page)
+void btree_foster_deadopt_real_parent_log::redo(page_p* page)
 {
     // apply changes on real-parent again. no write-order dependency with foster-parent
     btree_p* bp = (btree_p*) page;
-    btree_blink_deadopt_real_parent_t *dp = (btree_blink_deadopt_real_parent_t*) _data;
+    btree_foster_deadopt_real_parent_t *dp = (btree_foster_deadopt_real_parent_t*) _data;
     w_assert1(dp->_foster_slot >= 0 && dp->_foster_slot < page->nslots());
-    btree_impl::_ux_deadopt_blink_apply_real_parent(*bp, dp->_deadopted_pid, dp->_foster_slot);
+    btree_impl::_ux_deadopt_foster_apply_real_parent(*bp, dp->_deadopted_pid, dp->_foster_slot);
 }
 
-struct btree_blink_deadopt_foster_parent_t {
+struct btree_foster_deadopt_foster_parent_t {
     shpid_t     _deadopted_pid;
     int32_t     _low_key_len, _high_key_len;
     char        data[logrec_t::max_data_sz - sizeof(shpid_t) - sizeof(int32_t) * 2];
 
-    btree_blink_deadopt_foster_parent_t(shpid_t deadopted_pid,
+    btree_foster_deadopt_foster_parent_t(shpid_t deadopted_pid,
     const w_keystr_t& low_key, const w_keystr_t& high_key) :
         _deadopted_pid (deadopted_pid),
         _low_key_len(low_key.get_length_as_keystr()),
@@ -739,22 +739,22 @@ struct btree_blink_deadopt_foster_parent_t {
     }
     int size() { return sizeof(shpid_t) + sizeof(int32_t) * 2 + _low_key_len + _high_key_len; }
 };
-btree_blink_deadopt_foster_parent_log::btree_blink_deadopt_foster_parent_log (const page_p& p,
+btree_foster_deadopt_foster_parent_log::btree_foster_deadopt_foster_parent_log (const page_p& p,
     shpid_t deadopted_pid, const w_keystr_t& low_key, const w_keystr_t& high_key) {
     w_assert0(p.tag() == t_btree_p);
-    fill(&p.pid(), p.tag(), (new (_data) btree_blink_deadopt_foster_parent_t(deadopted_pid, low_key, high_key))->size());
+    fill(&p.pid(), p.tag(), (new (_data) btree_foster_deadopt_foster_parent_t(deadopted_pid, low_key, high_key))->size());
 }
 
-void btree_blink_deadopt_foster_parent_log::redo(page_p* page)
+void btree_foster_deadopt_foster_parent_log::redo(page_p* page)
 {
     // apply changes on foster-parent again. no write-order dependency with real-parent
     btree_p* bp = (btree_p*) page;
-    btree_blink_deadopt_foster_parent_t *dp = (btree_blink_deadopt_foster_parent_t*) _data;
+    btree_foster_deadopt_foster_parent_t *dp = (btree_foster_deadopt_foster_parent_t*) _data;
     
     w_keystr_t low_key, high_key;
     low_key.construct_from_keystr(dp->data, dp->_low_key_len);
     high_key.construct_from_keystr(dp->data + dp->_low_key_len, dp->_high_key_len);
-    btree_impl::_ux_deadopt_blink_apply_foster_parent(*bp, dp->_deadopted_pid, low_key, high_key);
+    btree_impl::_ux_deadopt_foster_apply_foster_parent(*bp, dp->_deadopted_pid, low_key, high_key);
 }
 
 btree_noop_log::btree_noop_log (const page_p& p) {

@@ -180,11 +180,11 @@ public:
     bool             is_leaf_parent() const;
     
     /** Returns ID of B-link page (0 if not linked). */
-    shpid_t         get_blink() const;
+    shpid_t         get_foster() const;
     /** Returns normalized ID of B-link page (0 if not linked). */
-    shpid_t         get_blink_normalized() const;
-    /** Clears the blink page and also clears the chain high fence key. */
-    rc_t               clear_blink();
+    shpid_t         get_foster_normalized() const;
+    /** Clears the foster page and also clears the chain high fence key. */
+    rc_t               clear_foster();
     /** Returns the prefix which are removed from all entries in this page. */
     const char* get_prefix_key() const;
     /** Returns the length of prefix key (0 means no prefix compression). */
@@ -217,9 +217,9 @@ public:
     /** Returns if the high-fence key is supremum. */
     bool              is_fence_high_supremum() const { return get_prefix_length() == 0 && get_fence_high_key_noprefix()[0] == SIGN_POSINF;}
 
-    /** Returns the high fence key of Blink chain. */
+    /** Returns the high fence key of foster chain. */
     const char*  get_chain_fence_high_key() const;
-    /** Returns the length of high fence key of Blink chain. */
+    /** Returns the length of high fence key of foster chain. */
     int16_t           get_chain_fence_high_length() const;
     /** Constructs w_keystr_t object containing the low-fence key of this page. */
     void                copy_chain_fence_high_key(w_keystr_t &buffer) const {buffer.construct_from_keystr(get_chain_fence_high_key(), get_chain_fence_high_length());}
@@ -272,7 +272,7 @@ public:
         shpid_t              root, 
         int                  level,
         shpid_t              pid0,
-        shpid_t              blink,
+        shpid_t              foster,
         const w_keystr_t&    fence_low,
         const w_keystr_t&    fence_high,
         const w_keystr_t&    chain_fence_high,
@@ -292,7 +292,7 @@ public:
         shpid_t              root, 
         int                  level,
         shpid_t              pid0,
-        shpid_t              blink,
+        shpid_t              foster,
         const w_keystr_t&    fence_low,
         const w_keystr_t&    fence_high,
         const w_keystr_t&    chain_fence_high,
@@ -316,7 +316,7 @@ public:
      * Called when we did a split from this page but didn't move any record to new page.
      * This method can't be undone. Use this only for REDO-only system transactions.
      */
-    rc_t norecord_split (shpid_t blink,
+    rc_t norecord_split (shpid_t foster,
         const w_keystr_t& fence_high, const w_keystr_t& chain_fence_high,
         bool log_it = true);
 
@@ -727,14 +727,14 @@ inline bool btree_p::is_node() const
     return ! is_leaf();
 }
    
-inline shpid_t btree_p::get_blink() const
+inline shpid_t btree_p::get_foster() const
 {
-    return _pp->btree_blink;
+    return _pp->btree_foster;
 }
 
-inline shpid_t btree_p::get_blink_normalized() const
+inline shpid_t btree_p::get_foster_normalized() const
 {
-    shpid_t shpid = _pp->btree_blink;
+    shpid_t shpid = _pp->btree_foster;
     if (shpid) {
         return smlevel_0::bf->normalize_shpid(shpid);
     }

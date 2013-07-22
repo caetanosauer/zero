@@ -83,7 +83,7 @@ btree_impl::_ux_insert_core(
         // See if there's room for the insert.
         // here, we start system transaction to split page
         lpid_t new_page_id;
-        W_DO( _sx_split_blink(leaf, new_page_id, key) );
+        W_DO( _sx_split_foster(leaf, new_page_id, key) );
         
         // after split, should the old page contain the new tuple?
         if (!leaf.fence_contains(key)) {
@@ -91,7 +91,7 @@ btree_impl::_ux_insert_core(
             // because "leaf" is EX locked beforehand, no one
             // can have any latch on the new page, so we can always get this latch
             btree_p another_leaf; // latch coupling
-            w_assert1(leaf.get_blink() == new_page_id.page);
+            w_assert1(leaf.get_foster() == new_page_id.page);
             W_DO( another_leaf.fix_nonroot(leaf, leaf.vol(), new_page_id.page, LATCH_EX));
             w_assert1(another_leaf.is_fixed());                        
             w_assert2(another_leaf.fence_contains(key));
@@ -220,7 +220,7 @@ rc_t btree_impl::_ux_insert_core_tail(volid_t vol, snum_t store,
         // See if there's room for the insert.
         // here, we start system transaction to split page
         lpid_t new_page_id;
-        W_DO( _sx_split_blink(leaf, new_page_id, key) );
+        W_DO( _sx_split_foster(leaf, new_page_id, key) );
         
         // after split, should the old page contain the new tuple?
         if (!leaf.fence_contains(key)) {

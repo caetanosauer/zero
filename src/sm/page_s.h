@@ -145,7 +145,7 @@ public:
     * B-link page (0 if not linked).
     * kind of "next", but other nodes don't know about it yet.
     */
-    shpid_t    btree_blink;  // +4 -> 48
+    shpid_t    btree_foster;  // +4 -> 48
     /** 1 if leaf, >1 if non-leaf. */
     int16_t    btree_level; // +2 -> 50
     /**
@@ -159,9 +159,9 @@ public:
     */
     int16_t    btree_fence_high_length;  // +2 -> 54
     /**
-     * length of high-fence key of the Blink chain. 0 if not in a Blink chain or right-most of a chain.
+     * length of high-fence key of the foster chain. 0 if not in a foster chain or right-most of a chain.
      * Corresponding data is stored in the first slot after high fence key.
-     * When this page belongs to a Blink chain,
+     * When this page belongs to a foster chain,
      * we need to store high-fence of right-most sibling in every sibling
      * to do batch-verification with bitmaps.
      * @see btree_impl::_ux_verify_volume()

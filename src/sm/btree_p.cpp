@@ -25,7 +25,7 @@ rc_t btree_p::init_fix_steal(
     shpid_t                root, 
     int                       l,
     shpid_t                pid0,
-    shpid_t                blink,
+    shpid_t                foster,
     const w_keystr_t&    fence_low,
     const w_keystr_t&    fence_high,
     const w_keystr_t&    chain_fence_high,
@@ -41,7 +41,7 @@ rc_t btree_p::init_fix_steal(
     } else {
         W_DO(fix_nonroot(*parent, parent->vol(), pid.page, LATCH_EX, false, true));
     }
-    W_DO(format_steal(pid, root, l, pid0, blink, fence_low, fence_high, chain_fence_high, log_it, steal_src, steal_from, steal_to));
+    W_DO(format_steal(pid, root, l, pid0, foster, fence_low, fence_high, chain_fence_high, log_it, steal_src, steal_from, steal_to));
     return RCOK;
 }
 
@@ -50,7 +50,7 @@ rc_t btree_p::format_steal(
     shpid_t                root, 
     int                       l,
     shpid_t                pid0,
-    shpid_t                blink,
+    shpid_t                foster,
     const w_keystr_t&    fence_low,
     const w_keystr_t&    fence_high,
     const w_keystr_t&    chain_fence_high,
@@ -87,7 +87,7 @@ rc_t btree_p::format_steal(
     _pp->btree_root = root;
     _pp->btree_pid0 = pid0;
     _pp->btree_level = l;
-    _pp->btree_blink = blink;
+    _pp->btree_foster = foster;
     _pp->btree_fence_low_length = (int16_t) fence_low.get_length_as_keystr();
     _pp->btree_fence_high_length = (int16_t) fence_high.get_length_as_keystr();
     _pp->btree_chain_fence_high_length = (int16_t) chain_fence_high.get_length_as_keystr();
@@ -220,14 +220,14 @@ void btree_p::_steal_records(
         w_assert5(_is_consistent_keyorder());
     }
 }
-rc_t btree_p::norecord_split (shpid_t blink,
+rc_t btree_p::norecord_split (shpid_t foster,
     const w_keystr_t& fence_high, const w_keystr_t& chain_fence_high,
     bool log_it)
 {
     w_assert1(compare_with_fence_low(fence_high) > 0);
     w_assert1(compare_with_fence_low(chain_fence_high) > 0);
     if (log_it) {
-        W_DO(log_btree_blink_norecord_split (*this, blink, fence_high, chain_fence_high));
+        W_DO(log_btree_foster_norecord_split (*this, foster, fence_high, chain_fence_high));
     }
 
     w_keystr_t fence_low;
@@ -240,7 +240,7 @@ rc_t btree_p::norecord_split (shpid_t blink,
         ::memcpy (&scratch, _pp, sizeof(scratch));
         btree_p scratch_p (&scratch);
         W_DO(format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(), scratch_p.pid0(),
-            blink,
+            foster,
             fence_low, fence_high, chain_fence_high,
             false, // don't log it
             &scratch_p, 0, scratch_p.nrecs()
@@ -264,7 +264,7 @@ rc_t btree_p::norecord_split (shpid_t blink,
         w_assert1(!rc.is_error());
 
         //updates headers
-        _pp->btree_blink = blink;
+        _pp->btree_foster = foster;
         _pp->btree_fence_high_length = (int16_t) fence_high.get_length_as_keystr();
         _pp->btree_chain_fence_high_length = (int16_t) chain_fence_high.get_length_as_keystr();
         _pp->btree_consecutive_skewed_insertions = 0; // reset this value too.
@@ -272,15 +272,15 @@ rc_t btree_p::norecord_split (shpid_t blink,
     return RCOK;
 }
 
-rc_t btree_p::clear_blink()
+rc_t btree_p::clear_foster()
 {
     // note that we don't have to change the chain-high fence key.
     // we just leave it there, and update the length only.
     // chain-high-fence key is placed after low/high, so it doesn't matter.
-    W_DO(log_btree_header(*this, pid0(), level(), 0, // blink=0
+    W_DO(log_btree_header(*this, pid0(), level(), 0, // foster=0
             0 // chain-high fence key is disabled
             )); // log first
-    _pp->btree_blink = 0;
+    _pp->btree_foster = 0;
     _pp->btree_chain_fence_high_length = 0;
     return RCOK;
 }

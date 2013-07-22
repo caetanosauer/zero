@@ -386,7 +386,7 @@ w_rc_t volume_many(ss_m* ssm, test_volume_t *test_volume) {
         }
     }
 
-    // add even more blink pages (this time no adopt)
+    // add even more foster pages (this time no adopt)
     for (int store = 0; store < 2; ++store) {
         stid_t stid = stids[store];
         
