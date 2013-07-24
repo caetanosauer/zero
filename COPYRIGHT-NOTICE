@@ -7,7 +7,7 @@ the SHORE-MT/DIAS copyright (also given below).
 Both copyrights are hereby extended to the date of this release, 2010.
 
 Large parts of the code are developed internally by HP, and are subject
-to HPDC copyright. This is included in all the relevant source files.
+to HPDC copyright, below
 
 The strstream compatibility code (src/fc/w_compat_strstream.h, .cpp) 
 is subject to the Silicon Graphics copyright, below.
