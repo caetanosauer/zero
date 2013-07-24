@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /*<std-header orig-src='shore' incl-file-exclusion='XCT_DEPENDENT_H'>
 
  $Id: xct_dependent.h,v 1.9 2010/06/21 20:39:39 nhall Exp $

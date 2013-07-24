@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #ifndef PAGE_BF_INLINE_H
 #define PAGE_BF_INLINE_H
 // bufferpool-related inline methods for page_p.

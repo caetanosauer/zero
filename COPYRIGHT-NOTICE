@@ -6,10 +6,8 @@ copyright (given below) and most of it is also subject to
 the SHORE-MT/DIAS copyright (also given below).
 Both copyrights are hereby extended to the date of this release, 2010.
 
-The atomic operations library is taken from the OPENSOLARIS release and
-is subject to Sun Microsystems copyright, and to the OPENSOLARIS license,
-found in src/atomic_ops/OPENSOLARIS.LICENSE, which is lengthy and
-so not included here.
+Large parts of the code are developed internally by HP, and are subject
+to HPDC copyright. This is included in all the relevant source files.
 
 The strstream compatibility code (src/fc/w_compat_strstream.h, .cpp) 
 is subject to the Silicon Graphics copyright, below.
@@ -21,6 +19,12 @@ included below.
 What little remains of the old SHORE sthreads library is subject to
 copyright given in those source files as well as to the SHORE/UW and
 SHORE-MT/DIAS copyrights.
+
+-------------------------------------------------------------------
+HPDC copyright
+-------------------------------------------------------------------
+
+(c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
 
 
 -------------------------------------------------------------------

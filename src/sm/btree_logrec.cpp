@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /**
  * Logging and its UNDO/REDO code for BTrees.
  * Separated from logrec.cpp.

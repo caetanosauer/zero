@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /*<std-header orig-src='shore' incl-file-exclusion='SMSTATS_H'>
 
  $Id: smstats.h,v 1.36 2010/09/21 14:26:20 nhall Exp $
