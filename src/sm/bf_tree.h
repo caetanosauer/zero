@@ -63,6 +63,13 @@ inline uint64_t bf_key(const lpid_t &pid) {
 // walking to find a pge to evict.
 // #define BP_MAINTAIN_PARNET_PTR
 
+// A flag whether the bufferpool maintains per-frame latches in a separate table from 
+// per-frame control blocks. 
+//#define BP_MAINTAIN_SEPARATE_LATCH_TABLE
+
+// A flag whether the bufferpool maintains replacement priority per page.
+#define BP_MAINTAIN_REPLACEMENT_PRIORITY
+
 #ifndef PAUSE_SWIZZLING_ON
 const bool _bf_pause_swizzling = false; // compiler will strip this out from if clauses. so, no overhead.
 #endif // PAUSE_SWIZZLING_ON    
@@ -85,6 +92,7 @@ const uint32_t UNSWIZZLE_BATCH_SIZE = 1000;
  */
 enum replacement_policy_t { 
     POLICY_CLOCK = 0,
+    POLICY_CLOCK_PRIORITY,
     POLICY_RANDOM
 };
 
@@ -458,7 +466,7 @@ private:
     /**
      * evict a block using a CLOCK replacement policy and get its exclusive ownership.
      */
-    w_rc_t _get_replacement_block_clock(bf_idx& ret);
+    w_rc_t _get_replacement_block_clock(bf_idx& ret, bool use_priority);
 
     /**
      * evict a block using a RANDOM replacement policy and get its exclusive ownership.
