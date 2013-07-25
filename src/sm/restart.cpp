@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #include "w_defines.h"
 
 #define SM_SOURCE
@@ -155,7 +159,7 @@ restart_m::recover(lsn_t master)
         << " STT" 
         << " lsn"
         << " A/R/I/U"
-        << "LOGREC(TID, TYPE, FLAGS:F/U PAGE <INFO> (prev)|[prev]";
+        << "LOGREC(TID, TYPE, FLAGS:F/U PAGE <INFO> (xct_prev)|[xct_prev]";
         fprintf(stderr, "%s\n", s.c_str()); 
         fprintf(stderr, " #: thread id\n");
         fprintf(stderr, " STT: xct state or ??? if unknown\n");
@@ -165,7 +169,7 @@ restart_m::recover(lsn_t master)
         fprintf(stderr, " I: inserted (undo pass or after recovery)\n");
         fprintf(stderr, " F: inserted by xct in forward processing\n");
         fprintf(stderr, " U: inserted by xct while rolling back\n");
-        fprintf(stderr, " [prev-lsn] for non-compensation records\n");
+        fprintf(stderr, " [xct_prev-lsn] for non-compensation records\n");
         fprintf(stderr, " (undo-lsn) for compensation records\n");
         fprintf(stderr, "\n\n");
     }
@@ -332,7 +336,7 @@ restart_m::analysis_pass(
      *  and get last mount/dismount lsn from it
      */
     {
-        if (! scan.next(lsn, log_rec_buf)) {
+        if (! scan.xct_next(lsn, log_rec_buf)) {
             W_COERCE(scan.get_last_rc());
         }
         logrec_t&        r = *log_rec_buf;
@@ -352,7 +356,7 @@ restart_m::analysis_pass(
      */
     int num_chkpt_end_handled = 0;
 
-    while (scan.next(lsn, log_rec_buf)) {
+    while (scan.xct_next(lsn, log_rec_buf)) {
         logrec_t&        r = *log_rec_buf;
 
         /*
@@ -401,7 +405,7 @@ restart_m::analysis_pass(
                 // comments can be after xct has ended
                     && r.type()!=logrec_t::t_comment ) {
             DBGOUT5(<<"analysis: inserting tx " << r.tid() << " active ");
-            xd = xct_t::new_xct(r.tid(), xct_t::xct_active, lsn, r.prev());
+            xd = xct_t::new_xct(r.tid(), xct_t::xct_active, lsn, r.xct_prev());
             w_assert1(xd);
             xct_t::update_youngest_tid(r.tid());
         }
@@ -773,7 +777,7 @@ restart_m::analysis_pass(
             W_IGNORE(io_m::dismount(dp->devrec[0].vid));
         }
 
-        theLastMountLSNBeforeChkpt = copy.prev();
+        theLastMountLSNBeforeChkpt = copy.xct_prev();
     }
     // close scope so the
     // auto-release will free the log rec copy buffer, __copy__buf
@@ -835,7 +839,7 @@ restart_m::redo_pass(
 
     lsn_t lsn;
     lsn_t expected_lsn = redo_lsn;
-    while (scan.next(lsn, log_rec_buf))  {
+    while (scan.xct_next(lsn, log_rec_buf))  {
         DBGOUT5(<<"redo scan returned lsn " << lsn
                 << " expected " << expected_lsn);
 

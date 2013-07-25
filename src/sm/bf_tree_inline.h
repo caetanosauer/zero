@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #ifndef BF_TREE_INLINE_H
 #define BF_TREE_INLINE_H
 // inline methods for bf_tree_m
@@ -78,7 +82,7 @@ inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol
         // TODO so far we swizzle all pages as soon as we load them to bufferpool
         // but, we might want to consider more advanced policy.
         if (!_bf_pause_swizzling && is_swizzled(parent) && !is_swizzled(page)
-                && parent->btree_blink != shpid // don't swizzle foster child
+                && parent->btree_foster != shpid // don't swizzle foster child
             ) {
             slotid_t slot = find_page_id_slot (parent, shpid);
 #if 0

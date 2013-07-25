@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
    
@@ -2112,6 +2116,18 @@ public:
      * @param[in] el  New element for the association.
      */
     static rc_t            update_assoc(
+        stid_t                   stid, 
+        const w_keystr_t&        key, 
+        const vec_t&             el
+    );
+    /**
+     * \brief Put record data of an entry in a B+-Tree index.
+     * \ingroup SSMBTREE
+     * @param[in] stid  ID of the index. 
+     * @param[in] key  Key for the association to be created or replaced.
+     * @param[in] el  New element for the association.
+     */
+    static rc_t            put_assoc(
         stid_t                   stid, 
         const w_keystr_t&        key, 
         const vec_t&             el

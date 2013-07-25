@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /*<std-header orig-src='shore' incl-file-exclusion='SYSDEFS_H'>
 
  $Id: sysdefs.h,v 1.42 2010/12/08 17:37:43 nhall Exp $

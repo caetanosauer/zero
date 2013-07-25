@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #ifndef BF_TREE_H
 #define BF_TREE_H
 
@@ -300,7 +304,7 @@ public:
     /**
      * Swizzle a child pointer in the parent page to speed-up accesses on the child.
      * @param[in] parent parent of the requested page. this has to be latched (but SH latch is enough).
-     * @param[in] slot identifier of the slot to swizzle. 0 is pid0, -1 is blink.
+     * @param[in] slot identifier of the slot to swizzle. 0 is pid0, -1 is foster.
      * If these child pages aren't in bufferpool yet, this method ignores the child.
      * It should be loaded beforehand.
      */
@@ -309,7 +313,7 @@ public:
     /**
      * Swizzle a bunch of child pointers in the parent page to speed-up accesses on them.
      * @param[in] parent parent of the requested page. this has to be latched (but SH latch is enough).
-     * @param[in] slots identifiers of the slots to swizzle. 0 is pid0, -1 is blink.
+     * @param[in] slots identifiers of the slots to swizzle. 0 is pid0, -1 is foster.
      * If these child pages aren't in bufferpool yet, this method ignores the child.
      * They should be loaded beforehand.
      * @param[in] slots_size length of slots.
@@ -318,7 +322,7 @@ public:
 
     /**
      * Search in the given page to find the slot that contains the page id as a child.
-     * Returns >0 if a normal slot, 0 if pid0, -1 if blink, -2 if not found.
+     * Returns >0 if a normal slot, 0 if pid0, -1 if foster, -2 if not found.
      */
     slotid_t find_page_id_slot (page_s* page, shpid_t shpid) const;
 

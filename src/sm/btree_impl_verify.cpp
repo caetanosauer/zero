@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #include "w_defines.h"
 
 /**
@@ -30,7 +34,7 @@ rc_t  btree_impl::_ux_verify_tree(
     verification_context context (hash_bits);
     
     // add expectation for root node which is always infimum-supremum
-    // though the supremum might appear in its blink page
+    // though the supremum might appear in its foster page
     w_keystr_t infimum, supremum;
     infimum.construct_neginfkey();
     supremum.construct_posinfkey();
@@ -69,13 +73,13 @@ rc_t btree_impl::_ux_verify_tree_recurse(
     w_assert1(parent.is_fixed());
     w_assert1(parent.pid() == org_pid);
     
-    // also check right blink sibling.
+    // also check right foster sibling.
     // unfix the current page after latch coupling
-    // to prevent the stack from growing too long if there is a long blink chain
+    // to prevent the stack from growing too long if there is a long foster chain
 
-    if (parent.get_blink() != 0) {
+    if (parent.get_foster() != 0) {
         btree_p child;
-        W_DO(child.fix_nonroot(parent, parent.vol(), parent.get_blink(), LATCH_SH));
+        W_DO(child.fix_nonroot(parent, parent.vol(), parent.get_foster(), LATCH_SH));
         parent.unfix();
         W_DO(_ux_verify_tree_recurse (child, context));
     }
@@ -110,7 +114,7 @@ rc_t btree_impl::_ux_verify_feed_page(
             page.get_fence_low_length(), page.get_fence_low_key());
 
     // then submit high-fence fact of this page, but
-    if (page.get_blink()) {
+    if (page.get_foster()) {
         // in this case, we should submit chain-high-fence
         context.add_fact(page.pid().page, fact_level, true,
             page.get_chain_fence_high_length(), page.get_chain_fence_high_key());
@@ -161,13 +165,13 @@ rc_t btree_impl::_ux_verify_feed_page(
         }
     }
 
-    // add expectation on blink right sibling ("next" page).
-    if (page.get_blink()) {
+    // add expectation on foster right sibling ("next" page).
+    if (page.get_foster()) {
         // low-fence of next page should be high-fence of this page
-        context.add_expectation (page.get_blink(), page.level(), false,
+        context.add_expectation (page.get_foster(), page.level(), false,
                 page.get_prefix_length(), page.get_prefix_key(),
                 page.get_fence_high_length_noprefix(), page.get_fence_high_key_noprefix());
-        context.add_expectation (page.get_blink(), page.level(), true,
+        context.add_expectation (page.get_foster(), page.level(), true,
                 page.get_chain_fence_high_length(), page.get_chain_fence_high_key());
     }
     return RCOK;
@@ -213,7 +217,7 @@ void btree_impl::inquery_verify_fact(btree_p &page)
     }
 
     // check high-fence fact of this page, but
-    if (page.get_blink()) {
+    if (page.get_foster()) {
         // in this case, we should check chain-high-fence
         if (page.compare_with_chain_fence_high(context.next_high_key) != 0) {
             inconsistent = true;
@@ -240,9 +244,9 @@ void btree_impl::inquery_verify_expect(btree_p &page, slot_follow_t next_follow)
     inquery_verify_context_t &context = x->inquery_verify_context();
 
     w_assert1(next_follow > t_follow_invalid && next_follow < page.nrecs());
-    if (next_follow == t_follow_blink) {
+    if (next_follow == t_follow_foster) {
         context.next_level = page.level();
-        context.next_pid = page.get_blink_normalized();
+        context.next_pid = page.get_foster_normalized();
         page.copy_fence_high_key(context.next_low_key);
         page.copy_chain_fence_high_key(context.next_high_key);
     } else if (next_follow == t_follow_pid0) {

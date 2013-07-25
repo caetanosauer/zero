@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #include "w_defines.h"
 
 #define SM_SOURCE
@@ -160,7 +164,7 @@ btree_m::_get_du_statistics_recurse(
     btree_p next_page;
     btree_p current;
     lpid_t nextpid = currentpid;
-    // also check right blink sibling.
+    // also check right foster sibling.
     // this part is now (partially) loop, not recursion to prevent the stack from growing too long
     while (nextpid.page != 0) {
         shpid_t original_pid = smlevel_0::bf->debug_get_original_pageid(nextpid.page);
@@ -195,7 +199,7 @@ btree_m::_get_du_statistics_recurse(
             }
             _stats.leaf_pg.add(lf_stats);
         }
-        nextpid.page = current.get_blink();
+        nextpid.page = current.get_foster();
     }
     return RCOK;
 }
@@ -254,7 +258,7 @@ btree_m::print(const lpid_t& current,
              << "LEVEL " << page.level() 
              << ", page " << page.pid().page 
              << ", pid0 " << page.pid0()
-             << ", blink " << page.get_blink()
+             << ", foster " << page.get_foster()
              << ", nrec " << page.nrecs()
              << ", fence-low " << fence_low
              << ", fence-high " << fence_high
@@ -264,9 +268,9 @@ btree_m::print(const lpid_t& current,
         page.print(print_elem);
         cout << flush;
         //recursively print all descendants and siblings
-        if (page.get_blink()) {
+        if (page.get_foster()) {
             lpid_t child = current;
-            child.page = page.get_blink();
+            child.page = page.get_foster();
             print(child, print_elem);
         }
         if (page.is_node()) {

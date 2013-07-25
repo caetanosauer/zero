@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /*<std-header orig-src='shore'>
 
  $Id: logstub.cpp,v 1.20 2010/08/23 14:28:18 nhall Exp $

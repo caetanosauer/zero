@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #include "w_defines.h"
 
 #define SM_SOURCE
@@ -167,6 +171,15 @@ rc_t ss_m::update_assoc(stid_t stid, const w_keystr_t& key, const vec_t& el)
     W_DO( bt->update(stid.vol.vol, stid.store, key, el) );
     return RCOK;
 }
+
+rc_t ss_m::put_assoc(stid_t stid, const w_keystr_t& key, const vec_t& el)
+{
+    lpid_t root_pid;
+    W_DO( open_store (stid, root_pid, true));
+    W_DO( bt->put(stid.vol.vol, stid.store, key, el) );
+    return RCOK;
+}
+
 rc_t ss_m::overwrite_assoc(stid_t stid, const w_keystr_t &key,
     const char *el, smsize_t offset, smsize_t elen)
 {

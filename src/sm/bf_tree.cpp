@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #include "w_defines.h"
 
 #include "bf_hashtable.h"
@@ -1289,8 +1293,8 @@ void bf_tree_m::switch_parent(page_s* page, page_s* new_parent)
 void bf_tree_m::_convert_to_disk_page(page_s* page) const {
     DBGOUT3 (<< "converting the page " << page->pid << "... ");
     
-    // if the page is a leaf page, blink is the only pointer
-    _convert_to_pageid(&(page->btree_blink));
+    // if the page is a leaf page, foster is the only pointer
+    _convert_to_pageid(&(page->btree_foster));
     w_assert1(page->btree_level >= 1);
     
     //otherwise, we have to check all children
@@ -1319,11 +1323,11 @@ inline void bf_tree_m::_convert_to_pageid (shpid_t* shpid) const {
 slotid_t bf_tree_m::find_page_id_slot(page_s* page, shpid_t shpid) const
 {
     w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
-    // w_assert1(page->btree_blink != (shpid | SWIZZLED_PID_BIT));
-    // if (page->btree_blink == shpid) {
+    // w_assert1(page->btree_foster != (shpid | SWIZZLED_PID_BIT));
+    // if (page->btree_foster == shpid) {
     //     return -1;
     // }
-    w_assert1(page->btree_blink != shpid); // don't swizzle foster-child
+    w_assert1(page->btree_foster != shpid); // don't swizzle foster-child
     if (page->btree_level > 1) {
         if (page->btree_pid0 == shpid) {
             return 0;
@@ -1365,8 +1369,8 @@ void bf_tree_m::swizzle_children(page_s* parent, const slotid_t* slots, uint32_t
         // To simplify the tree traversal while unswizzling,
         // we never swizzle foster-child pointers.
         // if (slot == -1) {
-        //    if ((parent->btree_blink & SWIZZLED_PID_BIT) == 0) {
-        //        _swizzle_child_pointer (parent, &(parent->btree_blink));
+        //    if ((parent->btree_foster & SWIZZLED_PID_BIT) == 0) {
+        //        _swizzle_child_pointer (parent, &(parent->btree_foster));
         //    }
         //} else
         if (slot == 0) {
@@ -1733,8 +1737,8 @@ void bf_tree_m::debug_dump_page_pointers(std::ostream& o, page_s* page) const
     w_assert1(idx > 0);
     w_assert1(idx < _block_cnt);
     o << "dumping page:" << page->pid << ", bf_idx=" << idx << std::endl;
-    o << "  blink=";
-    debug_dump_pointer (o, page->btree_blink);
+    o << "  foster=";
+    debug_dump_pointer (o, page->btree_foster);
     o << std::endl;
 
     if (page->btree_level > 1) {
