@@ -86,7 +86,7 @@ struct bf_tree_cb_t {
         //::memset((void*)(&this->_fill32), 0, sizeof(this->_fill32));
         ::memset((void*)(&this->_swizzled), 0, sizeof(this->_swizzled));
         ::memset((void*)(&this->_concurrent_swizzling), 0, sizeof(this->_concurrent_swizzling));
-        ::memset((void*)(&this->_workload_id), 0, sizeof(this->_workload_id));
+        ::memset((void*)(&this->_replacement_priority), 0, sizeof(this->_replacement_priority));
         ::memset((void*)(&this->_fill8), 0, sizeof(this->_fill8));
         //::memset((void*)(&this->_fill16), 0, sizeof(this->_fill16));
         ::memset((void*)(&this->_dependency_idx), 0, sizeof(this->_dependency_idx));
@@ -131,8 +131,8 @@ struct bf_tree_cb_t {
     bool                        _swizzled;      // +1 -> 29
     /** Whether this page is concurrently being swizzled by another thread. */
     bool                        _concurrent_swizzling;      // +1 -> 30
-    /** identify the last workload that referenced the page */
-    char                        _workload_id;       // +1 -> 31
+    /** replacement priority */
+    char                        _replacement_priority;      // +1 -> 31
     fill8                       _fill8;        // +1 -> 32
     //fill16                      _fill16;        // +2 -> 32
 
@@ -151,10 +151,16 @@ struct bf_tree_cb_t {
      * so the dependency is resolved.
      */
     lsndata_t _dependency_lsn;// +8 -> 48
+    fill32                      _fill32a;        // +4 -> 52
+    fill32                      _fill32b;        // +4 -> 56
+    fill32                      _fill32c;        // +4 -> 60
+    fill32                      _fill32d;        // +4 -> 64
 
+    //uint64_t                    _padding64B0[8];
     /** the latch to protect this page. */
     latch_t                     _latch;         // +16(?) -> 64
-    
+    //uint64_t                    _padding64B1[8];
+
     // disabled (no implementation)
     bf_tree_cb_t();
     bf_tree_cb_t(const bf_tree_cb_t&);

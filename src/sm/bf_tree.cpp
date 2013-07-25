@@ -50,6 +50,8 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
     _enable_swizzling = enable_swizzling;
     if (strcmp(replacement_policy, "clock") == 0) {
         _replacement_policy = POLICY_CLOCK;
+    } else if (strcmp(replacement_policy, "clock+priority") == 0) {
+        _replacement_policy = POLICY_CLOCK_PRIORITY;
     } else if (strcmp(replacement_policy, "random") == 0) {
         _replacement_policy = POLICY_RANDOM;
     }
@@ -64,8 +66,7 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
     
     // use posix_memalign to allow unbuffered disk I/O
     void *buf = NULL;
-    ::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * block_cnt);
-    if (buf == NULL) {
+    if (::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * ((uint64_t) block_cnt)) != 0) {
         ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << SM_PAGESIZE << "-bytes pages. ");
         W_FATAL(smlevel_0::eOUTOFMEMORY);
     }
@@ -73,12 +74,16 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
     
     // the index 0 is never used. to make sure no one can successfully use it,
     // fill the block-0 with garbages
-    ::memset (_buffer, 0x27, sizeof(page_s));
+    ::memset (&_buffer[0], 0x27, sizeof(page_s));
     
-    _control_blocks = reinterpret_cast<bf_tree_cb_t*>(new char[sizeof(bf_tree_cb_t) * block_cnt]);
+    if (::posix_memalign(&buf, sizeof(bf_tree_cb_t), sizeof(bf_tree_cb_t) * ((uint64_t) block_cnt)) != 0) {
+        ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << sizeof(bf_tree_cb_t) << "-bytes blocks. ");
+        W_FATAL(smlevel_0::eOUTOFMEMORY);
+    }
+    _control_blocks = reinterpret_cast<bf_tree_cb_t*>(buf);
     w_assert0(_control_blocks != NULL);
     ::memset (_control_blocks, 0, sizeof(bf_tree_cb_t) * block_cnt);
-
+ 
 #ifdef BP_MAINTAIN_PARNET_PTR
     // swizzled-LRU is initially empty
     _swizzled_lru = new bf_idx[block_cnt * 2];
@@ -467,8 +472,9 @@ w_rc_t bf_tree_m::_fix_nonswizzled(page_s* parent, page_s*& page, volid_t vol, s
                 ++_dirty_page_count_approximate;
             }
             cb._used = true;
-            cb._workload_id = me()->get_workload_id();
-
+#ifdef BP_MAINTAIN_REPLACEMENT_PRIORITY
+            cb._replacement_priority = me()->get_workload_priority();
+#endif
             // finally, register the page to the hashtable.
             bool registered = _hashtable->insert_if_not_exists(key, idx);
             if (!registered) {
@@ -510,7 +516,9 @@ w_rc_t bf_tree_m::_fix_nonswizzled(page_s* parent, page_s*& page, volid_t vol, s
             {
 #endif
                 // okay, CAS went through
-                ++cb._refbit_approximate;
+                if (cb._refbit_approximate < 2) {
+                    ++cb._refbit_approximate;
+                }
                 //cout << "Bump RefCnt: " << idx << ", " << cb._refbit_approximate << endl;
                 w_rc_t rc = cb._latch.latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER);
                 // either successfully or unsuccessfully, we latched the page.
@@ -762,17 +770,21 @@ w_rc_t bf_tree_m::_get_replacement_block(bf_idx& ret) {
 
     switch (_replacement_policy) {
         case POLICY_CLOCK:
-            return _get_replacement_block_clock(ret);
+            return _get_replacement_block_clock(ret, false);
+        case POLICY_CLOCK_PRIORITY:
+            return _get_replacement_block_clock(ret, true);
         case POLICY_RANDOM:
             return _get_replacement_block_random(ret);
     }
-    return _get_replacement_block_clock(ret);
+    ERROUT (<<"Unknown replacement policy");
+    return RC(smlevel_0::eINTERNAL);
 }
 
-w_rc_t bf_tree_m::_get_replacement_block_clock(bf_idx& ret) {
+w_rc_t bf_tree_m::_get_replacement_block_clock(bf_idx& ret, bool use_priority) {
     DBGOUT3(<<"trying to evict some page using the CLOCK replacement policy...");
     int blocks_replaced_count = 0;
     uint32_t rounds = 0; // how many times the clock hand looped in this function
+    char priority_threshold = 0;
     while (true) {
         bf_idx idx = ++_clock_hand;
         if (idx >= _block_cnt) {
@@ -784,10 +796,9 @@ w_rc_t bf_tree_m::_get_replacement_block_clock(bf_idx& ret) {
             DBGOUT1(<<"clock hand looped! rounds=" << rounds);
             _clock_hand = 1;
             idx = 1;
+            priority_threshold++;
             if (_swizzled_page_count_approximate >= (int) (_block_cnt * 95 / 100)) {
-                //cout << "Urgent" << endl;
-                //_trigger_unswizzling(rounds >= 10);
-                _trigger_unswizzling(rounds >= 1);
+                _trigger_unswizzling(rounds >= 10);
             } else {
                 if (rounds == 2) {
                     // most likely we have too many dirty pages
@@ -813,43 +824,37 @@ w_rc_t bf_tree_m::_get_replacement_block_clock(bf_idx& ret) {
 
         bf_tree_cb_t &cb(_control_blocks[idx]);
 
-        // do not evict young workload 
-        //if (cb._phase_id > 1) {
-        //    continue;
-        //}
+        // do not evict a page used by a high priority workload
+        if (use_priority && (cb._replacement_priority > priority_threshold)) {
+            continue;
+        }
 
-        // do not evict interior nodes
+        //do not evict interior nodes
         if (_buffer[idx].btree_level > 1) {
             continue;
         }
 
         // do not evict hot page
+
+#if 0 /* aggressive refcount decrement -- for use when we don't cap refcount */
         if (cb._refbit_approximate > 0) {
-            //const uint32_t refbit_threshold = 3;
-            const uint32_t refbit_threshold = 4;
-            if (cb._refbit_approximate > refbit_threshold) {
-                //cb._refbit_approximate /= (rounds >= 5 ? 8 : 2);
-                cb._refbit_approximate /= 4;
-                //cb._refbit_approximate=0;
-            } else {
-                cb._refbit_approximate--;
-            }
-            continue;
-        }
-/*
-        // do not evict hot page
-        if (cb._refbit_approximate > 0) {
-            cb._refbit_approximate = 0;
-            continue;
             const uint32_t refbit_threshold = 3;
             if (cb._refbit_approximate > refbit_threshold) {
                 cb._refbit_approximate /= (rounds >= 5 ? 8 : 2);
+                //cb._refbit_approximate=0;
             } else {
-                cb._refbit_approximate = 0;
+                cb._refbit_approximate--;
+                //cb._refbit_approximate=0;
             }
             continue;
         }
-*/
+#else 
+        if (cb._refbit_approximate > 0) {
+            cb._refbit_approximate--;
+            continue;
+        }
+#endif
+
         if (_try_evict_block(idx) == 0) {
             // return the first block found back to the caller and try to find more 
             // blocks to free
@@ -874,24 +879,7 @@ w_rc_t bf_tree_m::_get_replacement_block_random(bf_idx& ret) {
     DBGOUT3(<<"trying to evict some page using the RANDOM replacement policy...");
     int blocks_replaced_count = 0;
     int tries = 0;
-/*
-    for (bf_idx idx = 0; idx < _block_cnt; idx++) {
-        if (_buffer[idx].btree_level == 1) {
-            if (_try_evict_block(idx) == 0) {
-                // return the first block found back to the caller and try to find more to free
-                if (blocks_replaced_count++ > 0) {
-                    _add_free_block(idx);
-                } else {
-                    ret = idx;
-                }
-            }
-        }
-    }
 
-    if (blocks_replaced_count>0) {
-        return RCOK;
-    }
-*/
     while (true) {
         bf_idx idx = me()->randn(_block_cnt-1) + 1;
         if (++tries < _block_cnt) {
@@ -1473,7 +1461,7 @@ void bf_tree_m::_unswizzle_traverse_store(uint32_t &unswizzled_frames, volid_t v
     _swizzle_clockhand_threshold = 0;
     _unswizzle_traverse_node (unswizzled_frames, vol, store, parent_idx, 2);
     if (unswizzled_frames < UNSWIZZLE_BATCH_SIZE) {
-        _swizzle_clockhand_threshold = (uint32_t) -1;
+        _swizzle_clockhand_threshold = (uint32_t) -1; // set to maximum
         _unswizzle_traverse_node (unswizzled_frames, vol, store, parent_idx, 2);
     }
 }
