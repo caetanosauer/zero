@@ -65,10 +65,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include "atomic_container.h"
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 #ifndef SM_INT_0_H
 #include <sm_int_0.h>
 #endif
@@ -214,8 +210,8 @@ private:
     static bfcb_t*              _buftab; // array of size _num_bufs
 
     static htab*                _htab;
-    static void* volatile*      _htab_markers;
-    static bfcb_t* volatile*    _htab_cache;
+    static void**               _htab_markers;
+    static bfcb_t**             _htab_cache;
     static bfcb_unused_list     _unused; // NOTE: this cache IS USED; it
                                 // holds the unused control blocks
 

@@ -609,7 +609,7 @@ public:
 private:
 
     /* sm-specif block / unblock implementation */
-    volatile bool   _unblocked;
+    bool _unblocked;
     bool            _waiting;
 
     bool            _gen_log_warnings;

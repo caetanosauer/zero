@@ -112,7 +112,7 @@ bfpid_t::operator==(const bfpid_t& p) const
 class bfcb_t {
     friend class bfcb_unused_list;
 private:
-    int32_t volatile     _pin_cnt;        // count of pins on the page
+    int32_t _pin_cnt;        // count of pins on the page
     uint32_t _store_flags; // a copy of what's in the page, alas
     bfpid_t     _pid;            // page currently stored in the frame
     bfpid_t     _old_pid;        // previous page in the frame
@@ -128,18 +128,16 @@ private:
     std::list<int32_t> *_write_order_dependencies; // used to check write order dependency
     std::list<int32_t> *_wod_back_pointers; // doubly linked list to remove _write_order_dependencies when this block is written out
 
-    int32_t      volatile _refbit;// ref count (for strict clock algorithm)
+    int32_t _refbit;// ref count (for strict clock algorithm)
                 // for replacement policy only
 
-    int32_t volatile      _hotbit;// copy of refbit 
+    int32_t _hotbit;// copy of refbit 
                 // for use by the cleaner algorithm
                 // without interfering with clock (replacement)
                 // algorithm.
-                // Volatile just to keep the compiler's optimizations from
-                // making things even more racy than we are allowing for... 
 
     int32_t       _hash_func; // which hash function was this frame placed with?
-    int32_t       volatile    _hash;        // and what was the hash value?
+    int32_t _hash;        // and what was the hash value?
 public:
     latch_t     latch;          // latch on the frame
 
