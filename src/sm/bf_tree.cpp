@@ -780,96 +780,6 @@ w_rc_t bf_tree_m::_get_replacement_block(bf_idx& ret) {
     return RC(smlevel_0::eINTERNAL);
 }
 
-#if 0
-w_rc_t bf_tree_m::_get_replacement_block_clock(bf_idx& ret, bool use_priority) {
-    DBGOUT3(<<"trying to evict some page using the CLOCK replacement policy...");
-    int blocks_replaced_count = 0;
-    uint32_t rounds = 0; // how many times the clock hand looped in this function
-    char priority_threshold = 0;
-    while (true) {
-        bf_idx idx = ++_clock_hand;
-        if (idx >= _block_cnt) {
-            if (blocks_replaced_count > 0) {
-                // we found at least one so we are essentially done
-                return RCOK;
-            }
-            ++rounds;
-            DBGOUT1(<<"clock hand looped! rounds=" << rounds);
-            _clock_hand = 1;
-            idx = 1;
-            priority_threshold++;
-            if (_swizzled_page_count_approximate >= (int) (_block_cnt * 95 / 100)) {
-                _trigger_unswizzling(rounds >= 10);
-            } else {
-                if (rounds == 2) {
-                    // most likely we have too many dirty pages
-                    // let's try writing out dirty pages
-                    W_DO(wakeup_cleaners());
-                } else if (rounds >= 4 && rounds <= 100) {
-                    // seems like we are still having troubles to find evictable page.
-                    // this must be because of too many pages swizzled and cannot be evicted
-                    // so, let's trigger unswizzling
-                    _trigger_unswizzling(rounds >= 10); // in "urgent" mode if taking very long
-                } else if (rounds > 100) {
-                    ERROUT(<<"woooo, couldn't find an evictable page for long time. gave up!");
-                    debug_dump(std::cerr);
-                    return RC(smlevel_0::eFRAMENOTFOUND);
-                }
-            }
-            if (rounds >= 2) {
-                g_me()->sleep(100);
-                DBGOUT1(<<"woke up. now there should be some page to evict");
-            }
-        }
-        w_assert1(idx > 0);
-
-        bf_tree_cb_t &cb(_control_blocks[idx]);
-
-        // do not evict a page used by a high priority workload
-        if (use_priority && (cb._replacement_priority > priority_threshold)) {
-            continue;
-        }
-
-        // do not evict interior nodes
-        //if (_buffer[idx].btree_level > 1) {
-        //    continue;
-        //}
-
-        // do not evict hot page
-        if (cb._refbit_approximate > 0) {
-            const uint32_t refbit_threshold = 3;
-            if (cb._refbit_approximate > refbit_threshold) {
-                cb._refbit_approximate /= (rounds >= 5 ? 8 : 2);
-                //cb._refbit_approximate=0;
-            } else {
-                cb._refbit_approximate--;
-                //cb._refbit_approximate=0;
-            }
-            continue;
-        }
-
-        if (_try_evict_block(idx) == 0) {
-            // return the first block found back to the caller and try to find more 
-            // blocks to free
-            if (blocks_replaced_count++ > 0) {
-                _add_free_block(idx);
-            } else {
-                ret = idx;
-            }
-            if (blocks_replaced_count < (1024)) {
-                continue;
-            }
-            return RCOK;
-        } else {
-            // it can happen. we just give up this block
-            continue;
-        }
-    }
-    return RCOK;
-}
-
-#else
-
 w_rc_t bf_tree_m::_get_replacement_block_clock(bf_idx& ret, bool use_priority) {
     DBGOUT3(<<"trying to evict some page using the CLOCK replacement policy...");
     int blocks_replaced_count = 0;
@@ -925,10 +835,25 @@ w_rc_t bf_tree_m::_get_replacement_block_clock(bf_idx& ret, bool use_priority) {
         }
 
         // do not evict hot page
+
+#if 0 /* aggressive refcount decrement -- for use when we don't cap refcount */
+        if (cb._refbit_approximate > 0) {
+            const uint32_t refbit_threshold = 3;
+            if (cb._refbit_approximate > refbit_threshold) {
+                cb._refbit_approximate /= (rounds >= 5 ? 8 : 2);
+                //cb._refbit_approximate=0;
+            } else {
+                cb._refbit_approximate--;
+                //cb._refbit_approximate=0;
+            }
+            continue;
+        }
+#else 
         if (cb._refbit_approximate > 0) {
             cb._refbit_approximate--;
             continue;
         }
+#endif
 
         if (_try_evict_block(idx) == 0) {
             // return the first block found back to the caller and try to find more 
@@ -949,8 +874,6 @@ w_rc_t bf_tree_m::_get_replacement_block_clock(bf_idx& ret, bool use_priority) {
     }
     return RCOK;
 }
-
-#endif
 
 w_rc_t bf_tree_m::_get_replacement_block_random(bf_idx& ret) {
     DBGOUT3(<<"trying to evict some page using the RANDOM replacement policy...");

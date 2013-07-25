@@ -63,8 +63,7 @@ void
 smthread_t::tcb_t::destroy_TL_stats() {
     if(_TL_stats) {
         // Global stats are protected by a mutex
-        //HARIS
-        //smlevel_0::add_to_global_stats(TL_stats()); // before detaching them
+        smlevel_0::add_to_global_stats(TL_stats()); // before detaching them
         delete _TL_stats;
         _TL_stats = NULL;
     }
@@ -99,8 +98,7 @@ void
 smthread_t::tcb_t::clear_TL_stats()
 {
     // Global stats are protected by a mutex 
-    //HARIS
-    //smlevel_0::add_to_global_stats(TL_stats()); // before clearing them
+    smlevel_0::add_to_global_stats(TL_stats()); // before clearing them
     memset(&TL_stats(),0, sizeof(sm_stats_info_t)); 
 }
 
