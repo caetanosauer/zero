@@ -168,7 +168,7 @@ public:
     /** returns the bufferpool page corresponding to the given control block. mainly for debugging. */
     page_s* get_page(const bf_tree_cb_t *cb);
     /** returns the page ID of the root page (which is already loaded in this bufferpool) in given store. mainly for debugging or approximate purpose. */
-    shpid_t get_root_page_id_normalized(volid_t vol, snum_t store);
+    shpid_t get_root_page_id(volid_t vol, snum_t store);
 
     /**
      * Fixes a non-root page in the bufferpool. This method receives the parent page and efficiently

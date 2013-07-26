@@ -40,7 +40,7 @@ rc_t btree_impl::_ux_rebalance_foster_core(btree_p &page)
     }
 
     btree_p foster_p;
-    W_DO(foster_p.fix_nonroot(page, page.vol(), page.get_foster(), LATCH_EX));
+    W_DO(foster_p.fix_nonroot(page, page.vol(), page.get_foster_opaqueptr(), LATCH_EX));
 
     smsize_t used = page.used_space();
     smsize_t foster_used = foster_p.used_space();
@@ -202,7 +202,7 @@ rc_t btree_impl::_ux_merge_foster_core(btree_p &page)
     }
 
     btree_p foster_p;
-    W_DO(foster_p.fix_nonroot(page, page.vol(), page.get_foster(), LATCH_EX));
+    W_DO(foster_p.fix_nonroot(page, page.vol(), page.get_foster_opaqueptr(), LATCH_EX));
     
     // assure foster-child page has an entry same as fence-low for locking correctness. 
     // See jira ticket:84 "Key Range Locking" (originally trac ticket:86).
@@ -328,9 +328,9 @@ rc_t btree_impl::_ux_deadopt_foster_core(btree_p &real_parent, slotid_t foster_p
     shpid_t foster_parent_pid;
     if (foster_parent_slot < 0) {
         w_assert1 (foster_parent_slot == -1);
-        foster_parent_pid = real_parent.pid0();
+        foster_parent_pid = real_parent.pid0_opaqueptr();
     } else {
-        foster_parent_pid = real_parent.child(foster_parent_slot);
+        foster_parent_pid = real_parent.child_opaqueptr(foster_parent_slot);
     }
     btree_p foster_parent;
     W_DO(foster_parent.fix_nonroot(real_parent, real_parent.vol(), foster_parent_pid, LATCH_EX));
