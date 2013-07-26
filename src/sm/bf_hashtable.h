@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #ifndef BF_HASHTABLE_H
 #define BF_HASHTABLE_H
 

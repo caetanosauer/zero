@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /*<std-header orig-src='shore'>
 
  $Id: sm_du_stats.cpp,v 1.32 2010/12/08 17:37:43 nhall Exp $

@@ -123,7 +123,7 @@ w_rc_t test_bf_fix_virgin_child(ss_m* /*ssm*/, test_volume_t *test_volume) {
     root_page->pid = root_pid;
     root_page->lsn = thelsn;
     root_page->btree_level = 2;
-    root_page->btree_blink = 0;
+    root_page->btree_foster = 0;
     root_page->nslots = 0;
 
     for (size_t i = 0; i < 3; ++i) {
@@ -181,7 +181,7 @@ w_rc_t test_bf_evict(ss_m* /*ssm*/, test_volume_t *test_volume) {
     root_page->pid = root_pid;
     root_page->lsn = thelsn;
     root_page->btree_level = 2;
-    root_page->btree_blink = 0;
+    root_page->btree_foster = 0;
     root_page->nslots = 0;
 
     // TODO the code below doesn't bother making real pages. to pass this testcase, some checks in bufferpool are disabled.
@@ -287,7 +287,7 @@ w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_s
     ::memset(root_page, 0, sizeof(page_s));
     root_page->pid = root_pid;
     root_page->btree_level = 2;
-    root_page->btree_blink = 0;
+    root_page->btree_foster = 0;
     root_page->nslots = 0;
     bf_tree_cb_t &root_cb (*test_bf_tree::get_bf_control_block(&pool, root_page));
     EXPECT_EQ(1, root_cb._pin_cnt); // root page is always swizzled by volume descriptor, so pin_cnt is 1.
@@ -441,7 +441,7 @@ w_rc_t test_bf_switch_parent(ss_m* /*ssm*/, test_volume_t *test_volume) {
     ::memset(root_page, 0, sizeof(page_s));
     root_page->pid = root_pid;
     root_page->btree_level = 2;
-    root_page->btree_blink = 0;
+    root_page->btree_foster = 0;
     root_page->nslots = 0;
     bf_tree_cb_t &root_cb (*test_bf_tree::get_bf_control_block(&pool, root_page));
     EXPECT_EQ(1, root_cb._pin_cnt); // root page is always swizzled, so pin_cnt is 1.
@@ -455,7 +455,7 @@ w_rc_t test_bf_switch_parent(ss_m* /*ssm*/, test_volume_t *test_volume) {
     ::memset(child_page, 0, sizeof(page_s));
     child_page->pid = child_pid;
     child_page->btree_level = 1;
-    child_page->btree_blink = 0;
+    child_page->btree_foster = 0;
     child_page->nslots = 0;
     bf_tree_cb_t &child_cb (*test_bf_tree::get_bf_control_block(&pool, child_page));
     EXPECT_EQ(1, child_cb._pin_cnt);
@@ -464,14 +464,14 @@ w_rc_t test_bf_switch_parent(ss_m* /*ssm*/, test_volume_t *test_volume) {
     EXPECT_TRUE (pool.is_swizzled(child_page));
 
     lpid_t sibling_pid(test_volume->_vid, 1, root_pid.page + 2);
-    child_page->btree_blink = sibling_pid.page; // add as a foster child
+    child_page->btree_foster = sibling_pid.page; // add as a foster child
     page_s *sibling_page = NULL;
     W_DO(pool.fix_nonroot(sibling_page, child_page, sibling_pid.vol().vol, sibling_pid.page, LATCH_EX, true, true));
     EXPECT_TRUE (sibling_page != NULL);
     ::memset(sibling_page, 0, sizeof(page_s));
     sibling_page->pid = sibling_pid;
     sibling_page->btree_level = 1;
-    sibling_page->btree_blink = 0;
+    sibling_page->btree_foster = 0;
     sibling_page->nslots = 0;
     bf_tree_cb_t &sibling_cb (*test_bf_tree::get_bf_control_block(&pool, sibling_page));
     EXPECT_EQ(1, sibling_cb._pin_cnt);
@@ -484,7 +484,7 @@ w_rc_t test_bf_switch_parent(ss_m* /*ssm*/, test_volume_t *test_volume) {
 
     // then, adopt the sibling to real parent
     _add_child_pointer (root_page, sibling_pid.page);
-    child_page->btree_blink = 0;
+    child_page->btree_foster = 0;
     pool.switch_parent(sibling_page, root_page);
 
     // moved the pin count to real parent

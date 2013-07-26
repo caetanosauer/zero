@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #include "w_defines.h"
 
 /**
@@ -126,7 +130,7 @@ btree_impl::_ux_traverse(
         W_DO( root_p.fix_root(vol, store, should_try_ex ? LATCH_EX : LATCH_SH));
         w_assert1(root_p.is_fixed());
         
-        if (root_p.get_blink() != 0) {
+        if (root_p.get_foster() != 0) {
             // root page has foster-child! let's grow the tree.
             if (root_p.latch_mode() != LATCH_EX) {
                 root_p.unfix(); // don't upgrade. re-fix.
@@ -224,9 +228,9 @@ btree_impl::_ux_traverse_recurse(
 
         shpid_t pid_to_follow;
         shpid_t pid_to_follow_normalized;
-        if (slot_to_follow == t_follow_blink) {
-            pid_to_follow = current->get_blink();
-            pid_to_follow_normalized = current->get_blink_normalized();
+        if (slot_to_follow == t_follow_foster) {
+            pid_to_follow = current->get_foster();
+            pid_to_follow_normalized = current->get_foster_normalized();
         } else if (slot_to_follow == t_follow_pid0) {
             pid_to_follow = current->pid0();
             pid_to_follow_normalized = current->pid0_normalized();
@@ -239,7 +243,7 @@ btree_impl::_ux_traverse_recurse(
         // if worth it, do eager adoption. If it actually did something, it returns 
         // eGOODRETRY so that we will exit and retry
         if ((current->level() >= 3 || 
-             (current->level() == 2 && slot_to_follow == t_follow_blink)) // next will be non-leaf
+             (current->level() == 2 && slot_to_follow == t_follow_foster)) // next will be non-leaf
             && is_ex_recommended(pid_to_follow)) { // next is VERY hot
             W_DO (_ux_traverse_try_eager_adopt(*current, pid_to_follow));
         }
@@ -249,7 +253,7 @@ btree_impl::_ux_traverse_recurse(
             || current->latch_mode() == LATCH_EX // we have EX latch; don't SH latch
             );
         
-        if(current->level()==2 && slot_to_follow!=t_follow_blink && leaf_latch_mode==LATCH_EX) {
+        if(current->level()==2 && slot_to_follow!=t_follow_foster && leaf_latch_mode==LATCH_EX) {
             //We're likely going to find the target next, so go ahead and EX if we need to.
             //The other possibility is a long adoption chain; if that is the case this is
             //a performance oops, but we're also messed up anyway, so fix the bad chain and
@@ -260,8 +264,8 @@ btree_impl::_ux_traverse_recurse(
         W_DO(next->fix_nonroot(*current, current->vol(), pid_to_follow, 
                                should_try_ex ? LATCH_EX : LATCH_SH));
         
-        if (slot_to_follow != t_follow_blink && next->get_blink() != 0) {
-            // we followed a real-child pointer and found that it has blink..  let's adopt it! (but
+        if (slot_to_follow != t_follow_foster && next->get_foster() != 0) {
+            // we followed a real-child pointer and found that it has foster..  let's adopt it! (but
             // opportunistically).  just like eager adoption, it returns eGOODRETRY and we will
             // retry if it succeeded. otherwise, go on.
             W_DO(_ux_traverse_try_opportunistic_adopt(*current, *next));
@@ -297,14 +301,14 @@ void btree_impl::_ux_traverse_search(btree_impl::traverse_mode_t traverse_mode,
         } else {
             // this page can't contain the key.
             // If search key is higher than high-fence of "start", which occurs
-            // only when "start" has b-link buddies, then follows blink pointers.
+            // only when "start" has b-link buddies, then follows foster pointers.
             // Note, because the search path has chosen to read "start",
-            // this page or one of its blinks have fence keys containing the search key.
-            w_assert2(current->get_blink());
+            // this page or one of its fosters have fence keys containing the search key.
+            w_assert2(current->get_foster());
             w_assert2(current->compare_with_fence_high(key) >= 0);
             
-            // let's follow blink
-            slot_to_follow = t_follow_blink;
+            // let's follow foster
+            slot_to_follow = t_follow_foster;
         }
     } else if (traverse_mode == t_fence_low_match) {
         int d = current->compare_with_fence_low(key);
@@ -318,9 +322,9 @@ void btree_impl::_ux_traverse_search(btree_impl::traverse_mode_t traverse_mode,
         } else {
             w_assert2(d > 0); // if d<0 (key<fence-low), we failed something
             if (current->compare_with_fence_high(key) >= 0) {
-                // key is even higher than fence-high, then there must be blinked page
-                // let's follow blink
-                slot_to_follow = t_follow_blink;
+                // key is even higher than fence-high, then there must be fostered page
+                // let's follow foster
+                slot_to_follow = t_follow_foster;
             } else {
                 // otherwise, one of the children must have the fence-low
                 w_assert2(!current->is_leaf()); // otherwise we should have seen an exact match
@@ -341,9 +345,9 @@ void btree_impl::_ux_traverse_search(btree_impl::traverse_mode_t traverse_mode,
                 slot_to_follow = (slot_follow_t) (current->nrecs() - 1);
             }
         } else if (d > 0) {
-            // key is higher than fence-high, then there must be blinked page
-            // let's follow blink
-            slot_to_follow = t_follow_blink;
+            // key is higher than fence-high, then there must be fostered page
+            // let's follow foster
+            slot_to_follow = t_follow_foster;
         } else {
             // key is lower than fence-high. then one of the children must have it.
             w_assert2(!current->is_leaf()); // otherwise we should have seen an exact match
@@ -390,7 +394,7 @@ rc_t btree_impl::_ux_traverse_try_eager_adopt(btree_p &current, shpid_t next_pid
             return RCOK;
         } else {
             // this page has been requested for adoption many times. Let's do it!
-            W_DO(_sx_adopt_blink_sweep_approximate(next, 0));
+            W_DO(_sx_adopt_foster_sweep_approximate(next, 0));
         }
     }
     return RC(eGOODRETRY); // to be safe, let's restart. this is anyway rare event
@@ -400,7 +404,7 @@ rc_t btree_impl::_ux_traverse_try_opportunistic_adopt(btree_p &current, btree_p 
     w_assert1(current.is_fixed());
     w_assert1(next.is_fixed());
     bool pushedup;
-    W_DO(_sx_opportunistic_adopt_blink(current, next, pushedup));
+    W_DO(_sx_opportunistic_adopt_foster(current, next, pushedup));
     // if it's pushed up, we restart the search from root
     // (we can keep searching with a bit complicated code.. but wouldn't worth it)
     if (pushedup) {

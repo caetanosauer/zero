@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #include "bf_tree_cleaner.h"
 #include "w_gettimeofday.h"
 #include "sm_int_0.h"

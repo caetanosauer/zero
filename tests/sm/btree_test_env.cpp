@@ -540,7 +540,7 @@ w_rc_t x_btree_get_root_pid(ss_m* ssm, const stid_t &stid, lpid_t &root_pid)
     W_DO(ssm->open_store_nolock(stid, root_pid));
     return RCOK;
 }
-w_rc_t x_btree_adopt_blink_all(ss_m* ssm, const stid_t &stid)
+w_rc_t x_btree_adopt_foster_all(ss_m* ssm, const stid_t &stid)
 {
     lpid_t root_pid;
     W_DO (x_btree_get_root_pid (ssm, stid, root_pid));
@@ -548,7 +548,7 @@ w_rc_t x_btree_adopt_blink_all(ss_m* ssm, const stid_t &stid)
     {
         btree_p root_p;
         W_DO(root_p.fix_root(stid.vol.vol, stid.store, LATCH_EX));
-        W_DO(btree_impl::_sx_adopt_blink_all(root_p, true));
+        W_DO(btree_impl::_sx_adopt_foster_all(root_p, true));
     }
     W_DO(ssm->commit_xct());
     return RCOK;

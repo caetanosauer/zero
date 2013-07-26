@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /*<std-header orig-src='shore' incl-file-exclusion='CRASH_H'>
 
  $Id: crash.h,v 1.21 2010/10/27 17:04:23 nhall Exp $

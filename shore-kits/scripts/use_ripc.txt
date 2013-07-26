@@ -1,4 +1,0 @@
-# command to run ripc
-
-ripc -r -c -o ripc.output.txt -p $(pidof tpcc_kit) -t 30 -x
-
