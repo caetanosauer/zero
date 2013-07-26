@@ -170,14 +170,14 @@ struct bf_tree_cb_t {
 
     void pin_cnt_atomic_inc(int32_t val) {
 #ifndef NO_PINCNT_INCDEC
-        lintel::unsafe::atomic_fetch_add((uint32_t*) &(_pin_cnt), 1);
+        lintel::unsafe::atomic_fetch_add((uint32_t*) &(_pin_cnt), val);
 #endif
         return;
     }
 
     void pin_cnt_atomic_dec(int32_t val) {
 #ifndef NO_PINCNT_INCDEC
-        lintel::unsafe::atomic_fetch_sub((uint32_t*) &(_pin_cnt), 1);
+        lintel::unsafe::atomic_fetch_sub((uint32_t*) &(_pin_cnt), val);
 #endif
         return;
     }
