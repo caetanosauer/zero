@@ -178,21 +178,22 @@ struct bf_tree_cb_t {
         _pin_cnt = val;
     }
 
-    void pin_cnt_atomic_inc(int32_t val) {
+/// @todo NO_PINCNT_INCDEC is possibly unnecessary and should be cleaned up/removed (Haris)
+    void pin_cnt_atomic_inc(int32_t by_val) {
 #ifndef NO_PINCNT_INCDEC
-        lintel::unsafe::atomic_fetch_add((uint32_t*) &(_pin_cnt), val);
+        lintel::unsafe::atomic_fetch_add((uint32_t*) &(_pin_cnt), by_val);
 #endif
         return;
     }
 
-    void pin_cnt_atomic_dec(int32_t val) {
+    void pin_cnt_atomic_dec(int32_t by_val) {
 #ifndef NO_PINCNT_INCDEC
-        lintel::unsafe::atomic_fetch_sub((uint32_t*) &(_pin_cnt), val);
+        lintel::unsafe::atomic_fetch_sub((uint32_t*) &(_pin_cnt), by_val);
 #endif
         return;
     }
 
-    bool pin_cnt_atomic_inc_no_assumption(int32_t val) {
+    bool pin_cnt_atomic_inc_no_assumption(int32_t by_val) {
 #ifdef NO_PINCNT_INCDEC
         return true;
 #else
@@ -203,7 +204,7 @@ struct bf_tree_cb_t {
                 break; // being evicted! fail
             }
             
-            if(lintel::unsafe::atomic_compare_exchange_strong(const_cast<int32_t*>(&_pin_cnt), &cur , cur + val)) {
+            if(lintel::unsafe::atomic_compare_exchange_strong(const_cast<int32_t*>(&_pin_cnt), &cur , cur + by_val)) {
                 return true; // increment occurred
             }
 
