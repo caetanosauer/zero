@@ -27,7 +27,7 @@ inline page_s* bf_tree_m::get_page(const bf_tree_cb_t *cb) {
     w_assert1(idx > 0 && idx < _block_cnt);
     return _buffer + idx;
 }
-inline shpid_t bf_tree_m::get_root_page_id_normalized(volid_t vol, snum_t store) {
+inline shpid_t bf_tree_m::get_root_page_id(volid_t vol, snum_t store) {
     if (_volumes[vol] == NULL) {
         return 0;
     }

@@ -63,8 +63,8 @@ rc_t btree_impl::_ux_verify_tree_recurse(
     if (parent.is_node()) {
         for (slotid_t slot = -1; slot < parent.nrecs(); ++slot) {
             btree_p child;
-            shpid_t child_pid = slot == -1 ? parent.pid0() : parent.child(slot);
-            W_DO(child.fix_nonroot(parent, parent.vol(), child_pid, LATCH_SH));
+            shpid_t child_pid_opaqueptr = slot == -1 ? parent.pid0_opaqueptr() : parent.child_opaqueptr(slot);
+            W_DO(child.fix_nonroot(parent, parent.vol(), child_pid_opaqueptr, LATCH_SH));
             W_DO(_ux_verify_tree_recurse (child, context));
         }
     }
@@ -79,7 +79,7 @@ rc_t btree_impl::_ux_verify_tree_recurse(
 
     if (parent.get_foster() != 0) {
         btree_p child;
-        W_DO(child.fix_nonroot(parent, parent.vol(), parent.get_foster(), LATCH_SH));
+        W_DO(child.fix_nonroot(parent, parent.vol(), parent.get_foster_opaqueptr(), LATCH_SH));
         parent.unfix();
         W_DO(_ux_verify_tree_recurse (child, context));
     }
@@ -187,7 +187,7 @@ void btree_impl::inquery_verify_init(volid_t vol, snum_t store)
     context.next_level = -1; // don't check level of root page
     context.next_low_key.construct_neginfkey();
     context.next_high_key.construct_posinfkey();
-    context.next_pid = smlevel_0::bf->get_root_page_id_normalized(vol, store);
+    context.next_pid = smlevel_0::bf->get_root_page_id(vol, store);
 }
 
 void btree_impl::inquery_verify_fact(btree_p &page)
@@ -246,12 +246,12 @@ void btree_impl::inquery_verify_expect(btree_p &page, slot_follow_t next_follow)
     w_assert1(next_follow > t_follow_invalid && next_follow < page.nrecs());
     if (next_follow == t_follow_foster) {
         context.next_level = page.level();
-        context.next_pid = page.get_foster_normalized();
+        context.next_pid = page.get_foster();
         page.copy_fence_high_key(context.next_low_key);
         page.copy_chain_fence_high_key(context.next_high_key);
     } else if (next_follow == t_follow_pid0) {
         context.next_level = page.level() - 1;
-        context.next_pid = page.pid0_normalized();
+        context.next_pid = page.pid0();
         page.copy_fence_low_key(context.next_low_key);
         if (page.nrecs() == 0) {
             page.copy_fence_high_key(context.next_high_key);
@@ -260,7 +260,7 @@ void btree_impl::inquery_verify_expect(btree_p &page, slot_follow_t next_follow)
         }
     } else {
         context.next_level = page.level() - 1;
-        context.next_pid = page.child_normalized(next_follow);
+        context.next_pid = page.child(next_follow);
         page.get_key(next_follow, context.next_low_key);
         if (next_follow + 1 == page.nrecs()) {
             page.copy_fence_high_key(context.next_high_key);

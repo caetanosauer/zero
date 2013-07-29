@@ -198,8 +198,8 @@ rc_t btree_impl::_ux_adopt_foster_all_core (
             // also adopt at all children recursively
             for (int i = -1; i < parent.nrecs(); ++i) {
                 btree_p child;
-                shpid_t shpid = i == -1 ? parent.get_foster() : parent.child(i);
-                W_DO(child.fix_nonroot(parent, parent.vol(), shpid, LATCH_EX));
+                shpid_t shpid_opaqueptr = i == -1 ? parent.get_foster_opaqueptr() : parent.child_opaqueptr(i);
+                W_DO(child.fix_nonroot(parent, parent.vol(), shpid_opaqueptr, LATCH_EX));
                 W_DO(_ux_adopt_foster_all_core(child, false, true));
             }
         }
@@ -315,12 +315,12 @@ rc_t btree_impl::_ux_adopt_foster_sweep_approximate (btree_p &parent, shpid_t su
         clear_ex_need(parent.pid().page); // after these adopts, we don't need to be eager on this page.
         for (slotid_t i = -1; i < parent.nrecs(); ++i) {
             shpid_t shpid = i == -1 ? parent.pid0() : parent.child(i);
-            shpid_t shpid_normalized = i == -1 ? parent.pid0_normalized() : parent.child_normalized(i);
-            if (shpid_normalized != surely_need_child_pid && get_expected_childrens(shpid) == 0) {
+            shpid_t shpid_opaqueptr = i == -1 ? parent.pid0_opaqueptr() : parent.child_opaqueptr(i);
+            if (shpid != surely_need_child_pid && get_expected_childrens(shpid) == 0) {
                 continue; // then doesn't matter (this could be false in low probability, but it's fine)
             }
             btree_p child;
-            rc_t rc = child.fix_nonroot(parent, parent.vol(), shpid, LATCH_EX, true);
+            rc_t rc = child.fix_nonroot(parent, parent.vol(), shpid_opaqueptr, LATCH_EX, true);
             // if we can't instantly get latch, just skip it. we can defer it arbitrary
             if (rc.is_error()) {
                 continue;
@@ -335,7 +335,7 @@ rc_t btree_impl::_ux_adopt_foster_sweep_approximate (btree_p &parent, shpid_t su
             break;
         }
         btree_p foster_p;
-        W_DO(foster_p.fix_nonroot(parent, parent.vol(), parent.get_foster(), LATCH_EX));// latch coupling
+        W_DO(foster_p.fix_nonroot(parent, parent.vol(), parent.get_foster_opaqueptr(), LATCH_EX));// latch coupling
         parent.unfix();
         parent = foster_p;
     }
@@ -353,9 +353,9 @@ rc_t btree_impl::_ux_adopt_foster_sweep (btree_p &parent_arg)
     w_assert1 (parent.is_node());
     while (true) {
         for (slotid_t i = -1; i < parent.nrecs(); ++i) {
-            shpid_t pid = i == -1 ? parent.pid0() : parent.child(i);
+            shpid_t pid_opaqueptr = i == -1 ? parent.pid0_opaqueptr() : parent.child_opaqueptr(i);
             btree_p child;
-            W_DO(child.fix_nonroot(parent, parent.vol(), pid, LATCH_SH));
+            W_DO(child.fix_nonroot(parent, parent.vol(), pid_opaqueptr, LATCH_SH));
             if (child.get_foster() == 0) {
                 continue; // no foster. just ignore
             }
@@ -370,7 +370,7 @@ rc_t btree_impl::_ux_adopt_foster_sweep (btree_p &parent_arg)
             break;
         }
         btree_p foster_p;
-        W_DO(foster_p.fix_nonroot(parent, parent.vol(), parent.get_foster(), LATCH_EX)); // latch coupling
+        W_DO(foster_p.fix_nonroot(parent, parent.vol(), parent.get_foster_opaqueptr(), LATCH_EX)); // latch coupling
         parent = foster_p;
     }
     return RCOK;
