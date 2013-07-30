@@ -13,3 +13,16 @@ FUNCTION (X_ADD_TESTCASE targetname the_libraries)
     target_link_libraries(${targetname} ${the_libraries})
     X_ADD_GTEST(${targetname})
 ENDFUNCTION()
+
+# CMake function to add both swizzled and non-swizzled targets, linking, ADD_TEST directives.
+FUNCTION (X_ADD_SM_TESTCASE targetname the_libraries special_compile_def)
+    add_executable(${targetname} ${CMAKE_CURRENT_SOURCE_DIR}/${targetname}.cpp)
+    target_link_libraries(${targetname} ${the_libraries})
+    X_ADD_GTEST(${targetname})
+    set_property(TARGET ${targetname}  PROPERTY COMPILE_DEFINITIONS ${special_compile_def})
+
+    add_executable(${targetname}_${special_compile_def} ${CMAKE_CURRENT_SOURCE_DIR}/${targetname}.cpp)
+    target_link_libraries(${targetname}_${special_compile_def} ${the_libraries})
+    X_ADD_GTEST(${targetname}_${special_compile_def})
+ENDFUNCTION()
+

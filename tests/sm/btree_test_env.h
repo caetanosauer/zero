@@ -36,7 +36,13 @@ struct test_volume_t {
 const int default_quota_in_pages = 64;
 const int default_bufferpool_size_in_pages = 64;
 const int default_locktable_size = 1 << 6;
+
+#ifdef DEFAULT_SWIZZLING_OFF
 const bool default_enable_swizzling = false;
+#else // DEFAULT_SWIZZLING_OFF
+const bool default_enable_swizzling = true;
+#endif //DEFAULT_SWIZZLING_OFF
+
 
 // a few convenient functions for testcases
 w_rc_t x_begin_xct(ss_m* ssm, bool use_locks);
