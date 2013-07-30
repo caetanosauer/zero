@@ -74,6 +74,9 @@ inline uint64_t bf_key(const lpid_t &pid) {
 // A flag whether the bufferpool maintains replacement priority per page.
 #define BP_MAINTAIN_REPLACEMENT_PRIORITY
 
+// A flag whether the bufferpool can evict pages of btree inner nodes
+//#define BP_CAN_EVICT_INNER_NODE
+
 #ifndef PAUSE_SWIZZLING_ON
 const bool _bf_pause_swizzling = false; // compiler will strip this out from if clauses. so, no overhead.
 #endif // PAUSE_SWIZZLING_ON    

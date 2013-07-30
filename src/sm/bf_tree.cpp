@@ -829,10 +829,12 @@ w_rc_t bf_tree_m::_get_replacement_block_clock(bf_idx& ret, bool use_priority) {
             continue;
         }
 
+#ifndef BP_CAN_EVICT_INNER_NODE
         //do not evict interior nodes
         if (_buffer[idx].btree_level > 1) {
             continue;
         }
+#endif
 
         // do not evict hot page
 

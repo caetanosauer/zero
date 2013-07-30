@@ -139,29 +139,19 @@ inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol
 #ifdef BP_MAINTAIN_PARNET_PTR
         ++cb._counter_approximate;
 #endif // BP_MAINTAIN_PARNET_PTR
-        //++cb._refbit_approximate; // FIXME: This causes a scalability bottleneck
-        // Limit the maximum value of the refcount to avoid expensive cache coherence 
-        // requests that cause a scalability bottleneck. Still it should be good enough
-        // to separate cold pages from hot pages. 
-#if 0
-        {
-            int local;
-            asm volatile ("movl %0, %%eax" 
-             :        /* output */
-             :"r"((int) cb._refbit_approximate)         /* input */
-             :"%eax"         /* clobbered register */
-             );
+#ifndef BP_CAN_EVICT_INNER_NODE
+        if (_buffer[idx].btree_level == 1) {
+#endif // BP_CAN_EVICT_INNER_NODE
+            // If we keep incrementing the cb._refbit_approximate then we cause a scalability 
+            // bottleneck (as the associated cacheline ping-pongs between sockets).
+            // Intead we limit the maximum value of the refcount. The refcount still has
+            // enough granularity to separate cold from hot pages. 
+            if (_control_blocks[idx]._refbit_approximate < 2) {
+                ++cb._refbit_approximate;
+            }
+#ifndef BP_CAN_EVICT_INNER_NODE
         }
-#endif
-        //if ((me()->sampling++ % 1000) == 0) {
-        //    ++cb._refbit_approximate;
-        //}
-        //if (_control_blocks[1+reinterpret_cast<uintptr_t>(me())%1024+idx]._refbit_approximate<2) {
-        if (_control_blocks[idx]._refbit_approximate < 2) {
-        //++cb._refbit_approximate;
-        //if (__builtin_expect((cb._refbit_approximate < 2), 0)) {
-            ++cb._refbit_approximate;
-        }
+#endif // BP_CAN_EVICT_INNER_NODE
         // also, doesn't have to unpin whether there happens an error or not. easy!
         page = &(_buffer[idx]);
         

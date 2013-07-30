@@ -156,10 +156,8 @@ struct bf_tree_cb_t {
     fill32                      _fill32c;        // +4 -> 60
     fill32                      _fill32d;        // +4 -> 64
 
-    //uint64_t                    _padding64B0[8];
     /** the latch to protect this page. */
     latch_t                     _latch;         // +16(?) -> 64
-    //uint64_t                    _padding64B1[8];
 
     // disabled (no implementation)
     bf_tree_cb_t();
