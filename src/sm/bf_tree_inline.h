@@ -20,11 +20,7 @@ void swizzling_stat_reset();
 inline bf_tree_cb_t* bf_tree_m::get_cbp(bf_idx idx) const {
 #ifdef BP_ALTERNATE_CB_LATCH    
     bf_idx real_idx;
-    if (idx & 0x1) { /* odd */
-        real_idx = idx*2+1;
-    } else {
-        real_idx = idx*2;
-    }
+    real_idx = (idx << 1) + (idx & 0x1); // more efficient version of: real_idx = (idx % 2) ? idx*2+1 : idx*2
     return &_control_blocks[real_idx];
 #else
     return &_control_blocks[idx];

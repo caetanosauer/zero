@@ -26,6 +26,7 @@
 #include "vol.h"
 #include "alloc_cache.h"
 
+#include <boost/static_assert.hpp>
 #include <ostream>
 
 ///////////////////////////////////   Initialization and Release BEGIN ///////////////////////////////////  
@@ -76,7 +77,10 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
     // fill the block-0 with garbages
     ::memset (&_buffer[0], 0x27, sizeof(page_s));
 
-#ifdef BP_ALTERNATE_CB_LATCH    
+#ifdef BP_ALTERNATE_CB_LATCH
+    // this allocation scheme is sensible only for control block and latch sizes of 64B (cacheline size)
+    BOOST_STATIC_ASSERT(sizeof(bf_tree_cb_t) == 64);
+    BOOST_STATIC_ASSERT(sizeof(latch_t) == 64);
     if (::posix_memalign(&buf, sizeof(bf_tree_cb_t) + sizeof(latch_t), (sizeof(bf_tree_cb_t) + sizeof(latch_t)) * ((uint64_t) block_cnt) + 1) != 0) {
         ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << sizeof(bf_tree_cb_t) << "-bytes blocks. ");
         W_FATAL(smlevel_0::eOUTOFMEMORY);
@@ -86,9 +90,9 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
     ::memset (_control_blocks, 0, (sizeof(bf_tree_cb_t) + sizeof(latch_t)) * block_cnt + sizeof(latch_t));
     for (bf_idx i = 0; i < block_cnt; i++) {
         if (i & 0x1) { /* odd */
-            get_cb(i)._latch_offset = -64;
-        } else {
-            get_cb(i)._latch_offset = 64;
+            get_cb(i)._latch_offset = -sizeof(bf_tree_cb_t); // place the latch before the control block
+        } else { /* even */
+            get_cb(i)._latch_offset = sizeof(bf_tree_cb_t); // place the latch after the control block
         }
     }
 #else  
