@@ -19,6 +19,10 @@ extern std::ostream vout;
 #endif // W_DEBUG_LEVEL
 
 
+#ifdef ALTERNATIVE_FEATURES
+#define DEFAULT_SWIZZLING_OFF
+#endif //ALTERNATIVE_FEATURES
+
 class ss_m;
 
 /**
