@@ -37,6 +37,10 @@ const int default_quota_in_pages = 64;
 const int default_bufferpool_size_in_pages = 64;
 const int default_locktable_size = 1 << 6;
 
+#ifdef FOOBAR
+#warning ------------------FOOBAR
+#endif
+
 #ifdef DEFAULT_SWIZZLING_OFF
 const bool default_enable_swizzling = false;
 #else // DEFAULT_SWIZZLING_OFF
