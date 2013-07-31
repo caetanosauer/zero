@@ -77,6 +77,11 @@ inline uint64_t bf_key(const lpid_t &pid) {
 // A flag whether the bufferpool can evict pages of btree inner nodes
 //#define BP_CAN_EVICT_INNER_NODE
 
+// A flag whether the bufferpool should alternate location of latches and control blocks
+// starting at an odd multiple of 64B as follows: |CB0|L0|L1|CB1|CB2|L2|L3|CB3|...
+//#define BP_ALTERNATE_CB_LATCH
+
+
 #ifndef PAUSE_SWIZZLING_ON
 const bool _bf_pause_swizzling = false; // compiler will strip this out from if clauses. so, no overhead.
 #endif // PAUSE_SWIZZLING_ON    
@@ -166,10 +171,21 @@ public:
     /** does additional clean-up that might return error codes (thus can't be done in destructor). */
     w_rc_t destroy ();
 
+    /** returns the control block corresponding to the given memory frame index */
+    bf_tree_cb_t& get_cb(bf_idx idx) const;
+
+    /** returns a pointer to the control block corresponding to the given memory frame index */
+    bf_tree_cb_t* get_cbp(bf_idx idx) const;
+
     /** returns the control block corresponding to the given bufferpool page. mainly for debugging. */
     bf_tree_cb_t* get_cb(const page_s *page);
+
+    /** returns the memory-frame index corresponding to the given control block */
+    bf_idx get_idx(const bf_tree_cb_t* cb) const;
+
     /** returns the bufferpool page corresponding to the given control block. mainly for debugging. */
     page_s* get_page(const bf_tree_cb_t *cb);
+
     /** returns the page ID of the root page (which is already loaded in this bufferpool) in given store. mainly for debugging or approximate purpose. */
     shpid_t get_root_page_id(volid_t vol, snum_t store);
 

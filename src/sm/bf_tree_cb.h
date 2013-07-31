@@ -10,6 +10,7 @@
 #include "vid_t.h"
 #include "latch.h"
 #include "sm_s.h"
+#include "bf_tree.h"
 #include <string.h>
 
 #include <assert.h>
@@ -69,29 +70,24 @@
 struct bf_tree_cb_t {
     /** clears all properties . */
     inline void clear () {
-        ::memset(this, 0, sizeof(bf_tree_cb_t));
+        clear_latch();
+        clear_except_latch();
     }
 
     /** clears all properties but latch. */
     inline void clear_except_latch () {
-        ::memset((void*)(&this->_dirty), 0, sizeof(this->_dirty));
-        ::memset((void*)(&this->_used), 0, sizeof(this->_used));
-        ::memset((void*)(&this->_pid_vol), 0, sizeof(this->_pid_vol));
-        ::memset((void*)(&this->_pid_shpid), 0, sizeof(this->_pid_shpid));
-        ::memset((void*)(&this->_pin_cnt), 0, sizeof(this->_pin_cnt));
-        ::memset((void*)(&this->_refbit_approximate), 0, sizeof(this->_refbit_approximate));
-        ::memset((void*)(&this->_counter_approximate), 0, sizeof(this->_counter_approximate));
-        ::memset((void*)(&this->_rec_lsn), 0, sizeof(this->_rec_lsn));
-        ::memset((void*)(&this->_parent), 0, sizeof(this->_parent));
-        //::memset((void*)(&this->_fill32), 0, sizeof(this->_fill32));
-        ::memset((void*)(&this->_swizzled), 0, sizeof(this->_swizzled));
-        ::memset((void*)(&this->_concurrent_swizzling), 0, sizeof(this->_concurrent_swizzling));
-        ::memset((void*)(&this->_replacement_priority), 0, sizeof(this->_replacement_priority));
-        ::memset((void*)(&this->_fill8), 0, sizeof(this->_fill8));
-        //::memset((void*)(&this->_fill16), 0, sizeof(this->_fill16));
-        ::memset((void*)(&this->_dependency_idx), 0, sizeof(this->_dependency_idx));
-        ::memset((void*)(&this->_dependency_shpid), 0, sizeof(this->_dependency_shpid));
-        ::memset((void*)(&this->_dependency_lsn), 0, sizeof(this->_dependency_lsn));
+#ifdef BP_ALTERNATE_CB_LATCH    
+        signed char latch_offset = _latch_offset;
+        ::memset(this, 0, sizeof(bf_tree_cb_t));
+        _latch_offset = latch_offset;
+#else
+        ::memset(this, 0, sizeof(bf_tree_cb_t)-sizeof(latch_t));
+#endif
+    }
+
+    /** clears latch */
+    inline void clear_latch() {
+        ::memset(latchp(), 0, sizeof(latch_t));
     }
 
     // control block is bulk-initialized by malloc and memset. It has to be aligned.
@@ -151,22 +147,41 @@ struct bf_tree_cb_t {
      * so the dependency is resolved.
      */
     lsndata_t volatile          _dependency_lsn;// +8 -> 48
-    fill32                      _fill32a;        // +4 -> 52
-    fill32                      _fill32b;        // +4 -> 56
-    fill32                      _fill32c;        // +4 -> 60
-    fill32                      _fill32d;        // +4 -> 64
+    fill32                      _fill32_52;     // +4 -> 52
+    fill32                      _fill32_56;     // +4 -> 56
+    fill32                      _fill32_60;     // +4 -> 60
+    fill8                       _fill8_61;      // +1 -> 61
+    fill8                       _fill8_62;      // +1 -> 62
+    fill8                       _fill8_63;      // +1 -> 63
 
-    /** the latch to protect this page. */
-    latch_t                     _latch;         // +16(?) -> 64
-
+#ifdef BP_ALTERNATE_CB_LATCH    
+    /** offset to the latch to protect this page. */
+    signed char                 _latch_offset;  // +1 -> 64
+#else
+    fill8                       _fill8_64;      // +1 -> 64
+    latch_t                     _latch;         // +64 ->128
+#endif
     // disabled (no implementation)
     bf_tree_cb_t();
     bf_tree_cb_t(const bf_tree_cb_t&);
     bf_tree_cb_t& operator=(const bf_tree_cb_t&);
 
+    latch_t* latchp() const {
+#ifdef BP_ALTERNATE_CB_LATCH    
+        uintptr_t p = reinterpret_cast<uintptr_t>(this) + _latch_offset;
+        return reinterpret_cast<latch_t*>(p);
+#else
+        return const_cast<latch_t*>(&_latch);
+#endif
+    }
+
+    latch_t &latch() {
+        return *latchp();
+    }
+
     int32_t pin_cnt() const {
 #ifdef NO_PINCNT_INCDEC
-        return _pin_cnt + _latch.latch_cnt();
+        return _pin_cnt + latchp()->latch_cnt();
 #else
         return _pin_cnt;
 #endif
