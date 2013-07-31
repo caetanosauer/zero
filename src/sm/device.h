@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /*<std-header orig-src='shore' incl-file-exclusion='DEVICE_H'>
 
  $Id: device.h,v 1.20 2010/06/08 22:28:55 nhall Exp $

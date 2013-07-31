@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #ifndef BTREE_P_H
 #define BTREE_P_H
 
@@ -134,6 +138,13 @@ class btree_ghost_reclaim_log;
  * Finally,
  * - [0-7] bytes of unused space (record is 8 bytes aligned). This is just a padding,
  * so not included in the record length.
+ * 
+ * Opaque pointers:
+ * - Default is to return page id.
+ * - When a page is swizzled though we can avoid hash table lookup to map page id 
+ *   to frame id by using frame id directly. Opaque pointers server this purpose by 
+ *   hiding from the user whether a pointer is a frame id or page id. 
+ *
  */
 class btree_p : public page_p {
     friend class btree_impl;
@@ -163,8 +174,8 @@ public:
     int               level() const;
     /** Returns left-most ptr (used only in non-leaf nodes). */
     shpid_t        pid0() const;
-    /** Returns left-most normalized page-id ptr (used only in non-leaf nodes). */
-    shpid_t        pid0_normalized() const;
+    /** Returns left-most opaque pointer (used only in non-leaf nodes). */
+    shpid_t        pid0_opaqueptr() const;
     /** Returns root page used for recovery. */
     lpid_t           root() const;
 
@@ -180,11 +191,11 @@ public:
     bool             is_leaf_parent() const;
     
     /** Returns ID of B-link page (0 if not linked). */
-    shpid_t         get_blink() const;
-    /** Returns normalized ID of B-link page (0 if not linked). */
-    shpid_t         get_blink_normalized() const;
-    /** Clears the blink page and also clears the chain high fence key. */
-    rc_t               clear_blink();
+    shpid_t         get_foster() const;
+    /** Returns opaque pointer of B-link page (0 if not linked). */
+    shpid_t         get_foster_opaqueptr() const;
+    /** Clears the foster page and also clears the chain high fence key. */
+    rc_t               clear_foster();
     /** Returns the prefix which are removed from all entries in this page. */
     const char* get_prefix_key() const;
     /** Returns the length of prefix key (0 means no prefix compression). */
@@ -217,9 +228,9 @@ public:
     /** Returns if the high-fence key is supremum. */
     bool              is_fence_high_supremum() const { return get_prefix_length() == 0 && get_fence_high_key_noprefix()[0] == SIGN_POSINF;}
 
-    /** Returns the high fence key of Blink chain. */
+    /** Returns the high fence key of foster chain. */
     const char*  get_chain_fence_high_key() const;
-    /** Returns the length of high fence key of Blink chain. */
+    /** Returns the length of high fence key of foster chain. */
     int16_t           get_chain_fence_high_length() const;
     /** Constructs w_keystr_t object containing the low-fence key of this page. */
     void                copy_chain_fence_high_key(w_keystr_t &buffer) const {buffer.construct_from_keystr(get_chain_fence_high_key(), get_chain_fence_high_length());}
@@ -272,7 +283,7 @@ public:
         shpid_t              root, 
         int                  level,
         shpid_t              pid0,
-        shpid_t              blink,
+        shpid_t              foster,
         const w_keystr_t&    fence_low,
         const w_keystr_t&    fence_high,
         const w_keystr_t&    chain_fence_high,
@@ -292,7 +303,7 @@ public:
         shpid_t              root, 
         int                  level,
         shpid_t              pid0,
-        shpid_t              blink,
+        shpid_t              foster,
         const w_keystr_t&    fence_low,
         const w_keystr_t&    fence_high,
         const w_keystr_t&    chain_fence_high,
@@ -316,7 +327,7 @@ public:
      * Called when we did a split from this page but didn't move any record to new page.
      * This method can't be undone. Use this only for REDO-only system transactions.
      */
-    rc_t norecord_split (shpid_t blink,
+    rc_t norecord_split (shpid_t foster,
         const w_keystr_t& fence_high, const w_keystr_t& chain_fence_high,
         bool log_it = true);
 
@@ -442,9 +453,9 @@ public:
     */
     shpid_t       child(slotid_t slot) const;
     /**
-    *  Return the child normalized pointer of tuple at "slot".
+    *  Return the child opaque pointer of tuple at "slot".
     */
-    shpid_t       child_normalized(slotid_t slot) const;
+    shpid_t       child_opaqueptr(slotid_t slot) const;
 
 #ifdef DOXYGEN_HIDE
 ///==========================================
@@ -698,12 +709,12 @@ inline int btree_p::level() const
     return _pp->btree_level;
 }
 
-inline shpid_t btree_p::pid0() const
+inline shpid_t btree_p::pid0_opaqueptr() const
 {
     return _pp->btree_pid0;
 }
 
-inline shpid_t btree_p::pid0_normalized() const
+inline shpid_t btree_p::pid0() const
 {
     shpid_t shpid = _pp->btree_pid0;
     if (shpid) {
@@ -727,14 +738,14 @@ inline bool btree_p::is_node() const
     return ! is_leaf();
 }
    
-inline shpid_t btree_p::get_blink() const
+inline shpid_t btree_p::get_foster_opaqueptr() const
 {
-    return _pp->btree_blink;
+    return _pp->btree_foster;
 }
 
-inline shpid_t btree_p::get_blink_normalized() const
+inline shpid_t btree_p::get_foster() const
 {
-    shpid_t shpid = _pp->btree_blink;
+    shpid_t shpid = _pp->btree_foster;
     if (shpid) {
         return smlevel_0::bf->normalize_shpid(shpid);
     }
@@ -872,7 +883,7 @@ inline bool btree_p::is_insertion_skewed_left() const
 {
     return _pp->btree_consecutive_skewed_insertions < -5;
 }
-inline shpid_t btree_p::child(slotid_t slot) const
+inline shpid_t btree_p::child_opaqueptr(slotid_t slot) const
 {
     // same as rec_node except we don't need to read key
     w_assert1(is_node());
@@ -882,9 +893,9 @@ inline shpid_t btree_p::child(slotid_t slot) const
     return *reinterpret_cast<const shpid_t*>(p);
 }
 
-inline shpid_t btree_p::child_normalized(slotid_t slot) const
+inline shpid_t btree_p::child(slotid_t slot) const
 {
-    shpid_t shpid = child(slot);
+    shpid_t shpid = child_opaqueptr(slot);
     if (shpid) {
         return smlevel_0::bf->normalize_shpid(shpid);
     }

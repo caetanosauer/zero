@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /*<std-header orig-src='shore'>
 
  $Id: vtable_xct.cpp,v 1.3 2010/06/21 20:39:39 nhall Exp $

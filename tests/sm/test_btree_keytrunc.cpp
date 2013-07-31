@@ -99,7 +99,7 @@ w_rc_t suffix_test_shortest(ss_m* ssm, test_volume_t *test_volume) {
         if (root_p.nrecs() <= prev_recs) {
             EXPECT_TRUE (root_p.is_fence_low_infimum());
             EXPECT_FALSE (root_p.is_fence_high_supremum());
-            EXPECT_NE (root_p.get_blink(), (uint) 0);
+            EXPECT_NE (root_p.get_foster(), (uint) 0);
             w_keystr_t fence;
             root_p.copy_fence_high_key(fence);
             cout << "shortest-test: split happend at " << i << "-th insertion!"
@@ -149,7 +149,7 @@ w_rc_t suffix_test_posskew(ss_m* ssm, test_volume_t *test_volume) {
         if (root_p.nrecs() <= prev_recs) {
             EXPECT_TRUE (root_p.is_fence_low_infimum());
             EXPECT_FALSE (root_p.is_fence_high_supremum());
-            EXPECT_NE (root_p.get_blink(), (uint) 0);
+            EXPECT_NE (root_p.get_foster(), (uint) 0);
             w_keystr_t fence;
             root_p.copy_fence_high_key(fence);
             int percent = root_p.nrecs() * 100 / prev_recs;
@@ -201,7 +201,7 @@ w_rc_t suffix_test_negskew(ss_m* ssm, test_volume_t *test_volume) {
         if (root_p.nrecs() <= prev_recs) {
             EXPECT_TRUE (root_p.is_fence_low_infimum());
             EXPECT_FALSE (root_p.is_fence_high_supremum());
-            EXPECT_NE (root_p.get_blink(), (uint) 0);
+            EXPECT_NE (root_p.get_foster(), (uint) 0);
             w_keystr_t fence;
             root_p.copy_fence_high_key(fence);
             int percent = root_p.nrecs() * 100 / prev_recs;

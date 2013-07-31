@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #ifndef PAGE_H
 #define PAGE_H
 
@@ -163,12 +167,6 @@ public:
     void*                        tuple_addr(slotid_t idx) const;
 
     char*                        slot_addr(slotid_t idx) const;
-    /**
-     * Add a new slot to the given position.
-     * If idx == nrecs(), this is an 'append' and more efficient because we don't have to move
-     * existing slots.
-     */
-    void                         insert_slot (slotid_t idx, slot_offset8_t offset8, poor_man_key poormkey);
     /**
      * Changes only the offset part of the specified slot.
      * Used to turn a ghost record into a usual record, or to expand a record.

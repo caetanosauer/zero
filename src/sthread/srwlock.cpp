@@ -109,11 +109,6 @@ void mcs_rwlock::acquire_read()
      * add'l readers, we're done
      */
     if(!attempt_read()) {
-        // spinning-retrying for a while before giving up helps a lot in 
-        // case of contention
-        // for (int i=0; i<1024; i++) {
-        //  if (attempt_read()) return;
-        // }
         INC_STH_STATS(rwlock_r_wait);
         /* There seem to be writers around, or other readers intervened in our
          * attempt_read() above.

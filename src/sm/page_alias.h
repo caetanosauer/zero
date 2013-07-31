@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /*<std-header orig-src='shore' incl-file-exclusion='PAGE_ALIAS_H'>
 
  $Id: page_alias.h,v 1.3 2010/05/26 01:20:40 nhall Exp $

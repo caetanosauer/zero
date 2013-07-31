@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #include "w_defines.h"
 
 /*  -- do not edit anything above this line --   </std-header>*/
@@ -139,7 +143,7 @@ smthread_t::smthread_t(
 : sthread_t(priority, name, stack_size),
   _proc(f),
   _arg(arg),
-  _workload_id(0),
+  _replacement_priority(0),
   _gen_log_warnings(true)
 {
     tcb_t *empty_tcb = new tcb_t(NULL);
@@ -166,7 +170,7 @@ smthread_t::smthread_t(
 : sthread_t(priority, name, stack_size),
   _proc(0),
   _arg(0),
-  _workload_id(0),
+  _replacement_priority(0),
   _gen_log_warnings(true)
 {
     tcb_t *empty_tcb = new tcb_t(NULL);

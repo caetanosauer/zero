@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /*<std-header orig-src='shore' incl-file-exclusion='PMAP_H'>
 
  $Id: pmap.h,v 1.12 2010/06/08 22:28:55 nhall Exp $

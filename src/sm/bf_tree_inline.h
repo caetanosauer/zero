@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #ifndef BF_TREE_INLINE_H
 #define BF_TREE_INLINE_H
 // inline methods for bf_tree_m
@@ -23,7 +27,7 @@ inline page_s* bf_tree_m::get_page(const bf_tree_cb_t *cb) {
     w_assert1(idx > 0 && idx < _block_cnt);
     return _buffer + idx;
 }
-inline shpid_t bf_tree_m::get_root_page_id_normalized(volid_t vol, snum_t store) {
+inline shpid_t bf_tree_m::get_root_page_id(volid_t vol, snum_t store) {
     if (_volumes[vol] == NULL) {
         return 0;
     }
@@ -51,7 +55,6 @@ inline w_rc_t bf_tree_m::refix_direct (page_s*& page, bf_idx idx, latch_mode_t m
 }
 
 inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
-    INC_TSTAT(bf_fix_nonroot_count);
 #ifdef SIMULATE_MAINMEMORYDB
     if (virgin_page) {
         W_DO (_fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page));
@@ -65,7 +68,6 @@ inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol
     }
     if (true) return RCOK;
 #endif // SIMULATE_MAINMEMORYDB
-
     w_assert1(parent !=  NULL);
     if (!is_swizzling_enabled()) {
         return _fix_nonswizzled(NULL, page, vol, shpid, mode, conditional, virgin_page);
@@ -76,12 +78,11 @@ inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol
     if((shpid & SWIZZLED_PID_BIT) == 0) {
         // non-swizzled page. or even worse it might not exist in bufferpool yet!
         W_DO (_fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page));
-        //swizzling_stat_swizzle();
         // also try to swizzle this page
         // TODO so far we swizzle all pages as soon as we load them to bufferpool
         // but, we might want to consider more advanced policy.
         if (!_bf_pause_swizzling && is_swizzled(parent) && !is_swizzled(page)
-                && parent->btree_blink != shpid // don't swizzle foster child
+                && parent->btree_foster != shpid // don't swizzle foster child
             ) {
             slotid_t slot = find_page_id_slot (parent, shpid);
 #if 0
@@ -126,7 +127,6 @@ inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol
             }
         }
     } else {
-        INC_TSTAT(bf_fix_nonroot_swizzled_count);
         w_assert1(!virgin_page); // virgin page can't be swizzled
         // the pointer is swizzled! we can bypass pinning
         bf_idx idx = shpid ^ SWIZZLED_PID_BIT;
@@ -139,7 +139,29 @@ inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol
 #ifdef BP_MAINTAIN_PARNET_PTR
         ++cb._counter_approximate;
 #endif // BP_MAINTAIN_PARNET_PTR
-        ++cb._refbit_approximate; // FIXME: This causes a scalability bottleneck
+        //++cb._refbit_approximate; // FIXME: This causes a scalability bottleneck
+        // Limit the maximum value of the refcount to avoid expensive cache coherence 
+        // requests that cause a scalability bottleneck. Still it should be good enough
+        // to separate cold pages from hot pages. 
+#if 0
+        {
+            int local;
+            asm volatile ("movl %0, %%eax" 
+             :        /* output */
+             :"r"((int) cb._refbit_approximate)         /* input */
+             :"%eax"         /* clobbered register */
+             );
+        }
+#endif
+        //if ((me()->sampling++ % 1000) == 0) {
+        //    ++cb._refbit_approximate;
+        //}
+        //if (_control_blocks[1+reinterpret_cast<uintptr_t>(me())%1024+idx]._refbit_approximate<2) {
+        if (_control_blocks[idx]._refbit_approximate < 2) {
+        //++cb._refbit_approximate;
+        //if (__builtin_expect((cb._refbit_approximate < 2), 0)) {
+            ++cb._refbit_approximate;
+        }
         // also, doesn't have to unpin whether there happens an error or not. easy!
         page = &(_buffer[idx]);
         

@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #ifndef BF_TREE_H
 #define BF_TREE_H
 
@@ -63,6 +67,13 @@ inline uint64_t bf_key(const lpid_t &pid) {
 // walking to find a pge to evict.
 // #define BP_MAINTAIN_PARNET_PTR
 
+// A flag whether the bufferpool maintains per-frame latches in a separate table from 
+// per-frame control blocks. 
+//#define BP_MAINTAIN_SEPARATE_LATCH_TABLE
+
+// A flag whether the bufferpool maintains replacement priority per page.
+#define BP_MAINTAIN_REPLACEMENT_PRIORITY
+
 #ifndef PAUSE_SWIZZLING_ON
 const bool _bf_pause_swizzling = false; // compiler will strip this out from if clauses. so, no overhead.
 #endif // PAUSE_SWIZZLING_ON    
@@ -85,6 +96,7 @@ const uint32_t UNSWIZZLE_BATCH_SIZE = 1000;
  */
 enum replacement_policy_t { 
     POLICY_CLOCK = 0,
+    POLICY_CLOCK_PRIORITY,
     POLICY_RANDOM
 };
 
@@ -156,7 +168,7 @@ public:
     /** returns the bufferpool page corresponding to the given control block. mainly for debugging. */
     page_s* get_page(const bf_tree_cb_t *cb);
     /** returns the page ID of the root page (which is already loaded in this bufferpool) in given store. mainly for debugging or approximate purpose. */
-    shpid_t get_root_page_id_normalized(volid_t vol, snum_t store);
+    shpid_t get_root_page_id(volid_t vol, snum_t store);
 
     /**
      * Fixes a non-root page in the bufferpool. This method receives the parent page and efficiently
@@ -292,7 +304,7 @@ public:
     /**
      * Swizzle a child pointer in the parent page to speed-up accesses on the child.
      * @param[in] parent parent of the requested page. this has to be latched (but SH latch is enough).
-     * @param[in] slot identifier of the slot to swizzle. 0 is pid0, -1 is blink.
+     * @param[in] slot identifier of the slot to swizzle. 0 is pid0, -1 is foster.
      * If these child pages aren't in bufferpool yet, this method ignores the child.
      * It should be loaded beforehand.
      */
@@ -301,7 +313,7 @@ public:
     /**
      * Swizzle a bunch of child pointers in the parent page to speed-up accesses on them.
      * @param[in] parent parent of the requested page. this has to be latched (but SH latch is enough).
-     * @param[in] slots identifiers of the slots to swizzle. 0 is pid0, -1 is blink.
+     * @param[in] slots identifiers of the slots to swizzle. 0 is pid0, -1 is foster.
      * If these child pages aren't in bufferpool yet, this method ignores the child.
      * They should be loaded beforehand.
      * @param[in] slots_size length of slots.
@@ -310,7 +322,7 @@ public:
 
     /**
      * Search in the given page to find the slot that contains the page id as a child.
-     * Returns >0 if a normal slot, 0 if pid0, -1 if blink, -2 if not found.
+     * Returns >0 if a normal slot, 0 if pid0, -1 if foster, -2 if not found.
      */
     slotid_t find_page_id_slot (page_s* page, shpid_t shpid) const;
 
@@ -458,7 +470,7 @@ private:
     /**
      * evict a block using a CLOCK replacement policy and get its exclusive ownership.
      */
-    w_rc_t _get_replacement_block_clock(bf_idx& ret);
+    w_rc_t _get_replacement_block_clock(bf_idx& ret, bool use_priority);
 
     /**
      * evict a block using a RANDOM replacement policy and get its exclusive ownership.

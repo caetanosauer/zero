@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /*<std-header orig-src='shore'>
 
  $Id: lid.cpp,v 1.155 2010/06/23 23:44:29 nhall Exp $

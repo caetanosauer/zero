@@ -43,7 +43,7 @@ w_rc_t x_begin_xct(ss_m* ssm, bool use_locks);
 w_rc_t x_commit_xct(ss_m* ssm);
 w_rc_t x_btree_create_index(ss_m* ssm, test_volume_t *test_volume, stid_t &stid, lpid_t &root_pid);
 w_rc_t x_btree_get_root_pid(ss_m* ssm, const stid_t &stid, lpid_t &root_pid);
-w_rc_t x_btree_adopt_blink_all(ss_m* ssm, const stid_t &stid);
+w_rc_t x_btree_adopt_foster_all(ss_m* ssm, const stid_t &stid);
 w_rc_t x_btree_verify(ss_m* ssm, const stid_t &stid);
 w_rc_t x_btree_lookup_and_commit(ss_m* ssm, const stid_t &stid, const char *keystr, std::string &data, bool use_locks = false);
 w_rc_t x_btree_lookup(ss_m* ssm, const stid_t &stid, const char *keystr, std::string &data);
