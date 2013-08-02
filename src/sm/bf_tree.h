@@ -79,7 +79,19 @@ inline uint64_t bf_key(const lpid_t &pid) {
 
 // A flag whether the bufferpool should alternate location of latches and control blocks
 // starting at an odd multiple of 64B as follows: |CB0|L0|L1|CB1|CB2|L2|L3|CB3|...
+// This layout addresses a pathology that we attribute to the hardware spatial prefetcher. 
+// The default layout allocates a latch right after a control block so that 
+// the control block and latch live in adjacent cache lines (in the same 128B sector). 
+// The pathology happens because when we write-access the latch, the processor prefetches 
+// the control block in read-exclusive mode even if we late really only read-access the 
+// control block. This causes unnecessary coherence traffic. With the new layout, we avoid 
+// having a control block and latch in the same 128B sector.
 //#define BP_ALTERNATE_CB_LATCH
+
+// Use the new layout with swizzling
+#if !defined SIMULATE_MAINMEMORYDB && !defined SIMULATE_NO_SWIZZLING
+# define BP_ALTERNATE_CB_LATCH
+#endif
 
 
 #ifndef PAUSE_SWIZZLING_ON
@@ -99,6 +111,16 @@ const uint16_t MAX_SWIZZLE_CLOCKHAND_DEPTH = 10;
  */
 const uint32_t UNSWIZZLE_BATCH_SIZE = 1000;
 
+
+/** 
+ * Maximum value of the per-frame refcount (reference counter).
+ * We cap the refcount to avoid contention on the cacheline of the frame's control 
+ * block (due to ping-pongs between sockets) when multiple sockets read-access the same frame. 
+ * The refcount max value should have enough granularity to separate cold from hot pages. 
+ */
+const uint16_t BP_MAX_REFCOUNT = 3;
+
+ 
 /**\enum replacement_policy_t 
  * \brief Page replacement policy.
  */

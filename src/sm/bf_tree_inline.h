@@ -104,35 +104,20 @@ inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol
         W_DO (_fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page));
         // also try to swizzle this page
         // TODO so far we swizzle all pages as soon as we load them to bufferpool
-        // but, we might want to consider more advanced policy.
+        // but, we might want to consider a more advanced policy.
         if (!_bf_pause_swizzling && is_swizzled(parent) && !is_swizzled(page)
                 && parent->btree_foster != shpid // don't swizzle foster child
             ) {
             slotid_t slot = find_page_id_slot (parent, shpid);
-#if 0
-            if (slot < -1 && ) {
-                if (is_swizzled(page)) {
-                    // benign race: some other thread swizzled it already 
-                }
-/*
-                DBGOUT(<<"is swizzled " << is_swizzled(page));
-                DBGOUT (<< "ASSERTION failure shpid = " << shpid
-                           << " parent.pid = " << parent->pid
-                           << " page.pid = " << page->pid);
-                DBGOUT (<< "mode = " << mode);
-                print_slots(parent);
-*/
-            }
-#endif
             // this is a new (virgin) page which has not been linked yet. 
             // skip swizzling this page
             if (slot == -2 && virgin_page) {
                 return RCOK;
             }
 
-            // benign race: some other thread swizzled it already 
-            // this can happen when two threads that have the page 
-            // latched as shared need to swizzle it
+            // benign race: if (slot < -1 && is_swizzled(page)) then some other 
+            // thread swizzled it already. This can happen when two threads that 
+            // have the page latched as shared need to swizzle it
             w_assert1(slot >= -1 || is_swizzled(page) || (slot == -2 && virgin_page));
             
 #ifdef EX_LATCH_ON_SWIZZLING
@@ -163,25 +148,14 @@ inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol
 #ifdef BP_MAINTAIN_PARNET_PTR
         ++cb._counter_approximate;
 #endif // BP_MAINTAIN_PARNET_PTR
-#if 0
-#ifndef BP_CAN_EVICT_INNER_NODE
-        if (_buffer[idx].btree_level == 1) {
-#endif // BP_CAN_EVICT_INNER_NODE
-            // If we keep incrementing the cb._refbit_approximate then we cause a scalability 
-            // bottleneck (as the associated cacheline ping-pongs between sockets).
-            // Intead we limit the maximum value of the refcount. The refcount still has
-            // enough granularity to separate cold from hot pages. 
-            if (get_cb(idx)._refbit_approximate < 2) {
-                ++cb._refbit_approximate;
-            }
-#ifndef BP_CAN_EVICT_INNER_NODE
-        }
-#endif // BP_CAN_EVICT_INNER_NODE
-#else 
-        if (get_cb(idx)._refbit_approximate < 2) {
+
+        // If we keep incrementing the cb._refbit_approximate then we cause a scalability 
+        // bottleneck (as the associated cacheline ping-pongs between sockets).
+        // Intead we limit the maximum value of the refcount. The refcount still has
+        // enough granularity to separate cold from hot pages. 
+        if (get_cb(idx)._refbit_approximate < BP_MAX_REFCOUNT) {
             ++cb._refbit_approximate;
         }
-#endif
         // also, doesn't have to unpin whether there happens an error or not. easy!
         page = &(_buffer[idx]);
         

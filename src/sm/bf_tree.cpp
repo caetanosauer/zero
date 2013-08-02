@@ -81,13 +81,15 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
     // this allocation scheme is sensible only for control block and latch sizes of 64B (cacheline size)
     BOOST_STATIC_ASSERT(sizeof(bf_tree_cb_t) == 64);
     BOOST_STATIC_ASSERT(sizeof(latch_t) == 64);
-    if (::posix_memalign(&buf, sizeof(bf_tree_cb_t) + sizeof(latch_t), (sizeof(bf_tree_cb_t) + sizeof(latch_t)) * ((uint64_t) block_cnt) + 1) != 0) {
+    // allocate one more pair of <control block, latch> as we want to align the table at an odd 
+    // multiple of cacheline (64B)
+    if (::posix_memalign(&buf, sizeof(bf_tree_cb_t) + sizeof(latch_t), (sizeof(bf_tree_cb_t) + sizeof(latch_t)) * (((uint64_t) block_cnt) + 1LLU)) != 0) {
         ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << sizeof(bf_tree_cb_t) << "-bytes blocks. ");
         W_FATAL(smlevel_0::eOUTOFMEMORY);
     }
+    ::memset (buf, 0, (sizeof(bf_tree_cb_t) + sizeof(latch_t)) * (((uint64_t) block_cnt) + 1LLU));
     _control_blocks = reinterpret_cast<bf_tree_cb_t*>(buf + sizeof(bf_tree_cb_t));
     w_assert0(_control_blocks != NULL);
-    ::memset (_control_blocks, 0, (sizeof(bf_tree_cb_t) + sizeof(latch_t)) * block_cnt + sizeof(latch_t));
     for (bf_idx i = 0; i < block_cnt; i++) {
         if (i & 0x1) { /* odd */
             get_cb(i)._latch_offset = -sizeof(bf_tree_cb_t); // place the latch before the control block
@@ -542,7 +544,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(page_s* parent, page_s*& page, volid_t vol, s
             {
 #endif
                 // okay, CAS went through
-                if (cb._refbit_approximate < 2) {
+                if (cb._refbit_approximate < BP_MAX_REFCOUNT) {
                     ++cb._refbit_approximate;
                 }
                 //cout << "Bump RefCnt: " << idx << ", " << cb._refbit_approximate << endl;
