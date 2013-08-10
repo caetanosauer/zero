@@ -666,14 +666,14 @@ log_m::_read_master(
     return RCOK;
 }
 
-fileoff_t log_m::take_space(fileoff_t volatile* ptr, int amt) 
+fileoff_t log_m::take_space(fileoff_t *ptr, int amt) 
 {
     fileoff_t ov = *ptr;
 #if W_DEBUG_LEVEL > 0
     DBGTHRD("take_space " << amt << " old value of ? " << ov);
 #endif
     while(1) {
-        if(ov < amt)
+        if (ov < amt)
             return 0;
 	fileoff_t nv = ov - amt;
 	if (lintel::unsafe::atomic_compare_exchange_strong(const_cast<int64_t*>(ptr), &ov, nv))
@@ -684,6 +684,7 @@ fileoff_t log_m::take_space(fileoff_t volatile* ptr, int amt)
 extern "C" void log_stop()
 {
 }
+
 fileoff_t log_m::reserve_space(fileoff_t amt) 
 {
     return (amt > 0)? take_space(&_space_available, amt) : 0;

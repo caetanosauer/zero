@@ -401,11 +401,6 @@ smthread_t::~smthread_t()
     }
 }
 
-void smthread_t::prepare_to_block()
-{
-    _unblocked = false;
-}
-
 // There's something to be said for having the smthread_unblock 
 // unblock only those threads that blocked with smthread_block.
 // This is to deal with races in the deadlock detection.

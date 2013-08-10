@@ -273,7 +273,7 @@ class PrintSmthreadById : public SmthreadFunc
 void PrintSmthreadById::operator()(const smthread_t& smthread)
 {
     if (smthread.id == _i)  {
-        o << "--------------------" << endl << smthread;
+        o << "--------------------" << "\n" << smthread;
     }
 }
 
@@ -807,7 +807,7 @@ xct_t::dump(ostream &out)
     w_list_i<xct_t, queue_based_lock_t> i(_xlist);
     xct_t* xd;
     while ((xd = i.next()))  {
-        out << "********************" << endl;
+        out << "********************" << "\n";
         out << *xd << endl;
     }
     release_xlist_mutex();
@@ -960,14 +960,14 @@ operator<<(ostream& o, const xct_t& x)
         o << "<NONE>";
     }
 
-    o << endl << " state=" << x.state() << " num_threads=" << x._core->_threads_attached << endl << "   ";
+    o << "\n" << " state=" << x.state() << " num_threads=" << x._core->_threads_attached << "\n" << "   ";
 
     o << " defaultTimeout=";
     print_timeout(o, x.timeout_c());
-    o << " first_lsn=" << x._first_lsn << " last_lsn=" << x._last_lsn << endl << "   ";
+    o << " first_lsn=" << x._first_lsn << " last_lsn=" << x._last_lsn << "\n" << "   ";
 
     o << " num_storesToFree=" << x._core->_storesToFree.num_members()
-      << " num_loadStores=" << x._core->_loadStores.num_members() << endl << "   ";
+      << " num_loadStores=" << x._core->_loadStores.num_members() << "\n" << "   ";
 
     o << " in_compensated_op=" << x._in_compensated_op << " anchor=" << x._anchor;
 
@@ -1319,15 +1319,16 @@ int
 xct_t::attach_update_thread()
 {
     w_assert2(_core->_updating_operations >= 0);
-    int res = lintel::unsafe::atomic_fetch_add(const_cast<int*>(&_core->_updating_operations),1)+1;
+    int res = _core->_updating_operations++ + 1;
     me()->set_is_update_thread(true); 
     return res;
 }
+
 void
 xct_t::detach_update_thread()
 {
     me()->set_is_update_thread(false); 
-    lintel::unsafe::atomic_fetch_sub(const_cast<int*>(&_core->_updating_operations), 1);
+    _core->_updating_operations--;
     w_assert2(_core->_updating_operations >= 0);
 }
 
@@ -1449,7 +1450,7 @@ xct_t::prepare()
                    << "WARNING: " << total_EX 
                    << " write locks held by a read-only transaction thread. "
                    << " ****** voting read-only ***** "
-                   << endl;
+                   << "\n";
              }
             // w_assert9(total_EX == 0);
         }
@@ -1615,8 +1616,8 @@ xct_t::prepare_restore_log_resv(int rsvd, int ready, int used,
     fileoff_t needed = rsvd;
     needed += prepare_fi_size;
     if(!log->reserve_space(needed)) {
-        cerr<< "Could not reserve space for prepared xct!" << endl
-            << "Need "<<needed<<" (rsvd "<<rsvd<<",ready "<<ready<<" ,used "<<used<<")" <<endl;
+        cerr<< "Could not reserve space for prepared xct!" << "\n"
+            << "Need "<<needed<<" (rsvd "<<rsvd<<",ready "<<ready<<" ,used "<<used<<")" <<"\n";
         W_FATAL(eOUTOFLOGSPACE);
     }
     _log_bytes_reserved_space = needed;
@@ -1686,7 +1687,7 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
         w_assert1(_core->_state == xct_active || _core->_state == xct_prepared);
     };
 
-    w_assert1(0 == lintel::unsafe::atomic_fetch_add(const_cast<int*>(&_core->_xct_ended),1));
+    w_assert1(_core->_xct_ended++ == 0);
 
 //    W_DO( ConvertAllLoadStoresToRegularStores() );
 
@@ -1932,7 +1933,7 @@ xct_t::_abort()
             || _core->_state == xct_freeing_space /* if it got an error in commit*/
             );
     if(_core->_state != xct_committing && _core->_state != xct_freeing_space) {
-        w_assert1(0 == lintel::unsafe::atomic_fetch_add(const_cast<int*>(&_core->_xct_ended),1));
+        w_assert1(_core->_xct_ended++ == 0)
     }
 
     // first, empty the wait map because no chance this xct can cause deadlock any more.
@@ -2209,7 +2210,7 @@ xct_t::_flush_logbuf()
                         << " bytes_used " << bytes_used
                         << " _rolling_back " << _rolling_back
                         << " consuming " << consuming
-                        << endl
+                        << "\n"
                         << " xct state " << state()
                         << " fudge factor is " 
                         << UNDO_FUDGE_FACTOR(l->type(),1)
@@ -2370,7 +2371,7 @@ xct_t::get_logbuf(logrec_t*& ret, int t, page_p const* p)
                                          UNDO_FUDGE_FACTOR(t,sizeof(logrec_t));
     static u_int const MIN_BYTES_RSVD =  sizeof(logrec_t);
     DBGX(<<" get_logbuf: START reserved for rollback " << _log_bytes_reserved_space
-            << endl
+            << "\n"
             << " need ready " << MIN_BYTES_READY
             << " have " << _log_bytes_ready
             );
@@ -2463,7 +2464,7 @@ xct_t::get_logbuf(logrec_t*& ret, int t, page_p const* p)
                     // also print info that shows why we didn't croak
                     // on the first check
                     << "; space left " << log->space_left()
-                    << endl;
+                    << "\n";
                     fprintf(stderr, "%s\n", tmp.str().c_str());
                     INC_TSTAT(log_full_giveup);
                     badnews = true;
@@ -2476,10 +2477,10 @@ xct_t::get_logbuf(logrec_t*& ret, int t, page_p const* p)
                 // Dump relevant information
                 stringstream tmp;
                 tmp << "Log too full. " << __LINE__ << " " << __FILE__
-                << endl;
+                << "\n";
                 tmp << "Thread: me=" << me()->id
                 << " pthread=" << pthread_self()  
-                << endl;
+                << "\n";
                 tmp
                 << " xct() " << tid() 
                 << " _rolling_back " << _rolling_back
@@ -2487,7 +2488,7 @@ xct_t::get_logbuf(logrec_t*& ret, int t, page_p const* p)
                 << " _state " << _core->_state
                 << " _log_bytes_ready " << _log_bytes_ready
                 << " log bytes needed " << needed
-                << endl;
+                << "\n";
 
                 tmp 
                 << " _log_bytes_used for fwd " << _log_bytes_used
@@ -2495,21 +2496,21 @@ xct_t::get_logbuf(logrec_t*& ret, int t, page_p const* p)
                 << " rollback/used= " << double(_log_bytes_rsvd)/
                 double(_log_bytes_used)
                 << " fudge factor is " << UNDO_FUDGE_FACTOR(t, 1)
-                << endl;
+                << "\n";
 
                 tmp 
                     << " first_lsn="  << _first_lsn
-                << endl;
+                << "\n";
                 tmp 
                 << "Log: min_chkpt_rec_lsn=" << log->min_chkpt_rec_lsn()
-                << ", curr_lsn=" << log->curr_lsn() << endl;
+                << ", curr_lsn=" << log->curr_lsn() << "\n";
 
                 tmp 
                 << "; master_lsn " << log->master_lsn() 
                 << "; durable_lsn " << log->durable_lsn() 
                 << "; curr_lsn " << log->curr_lsn() 
                 << ", global_min_lsn=" << log->global_min_lsn()
-                << endl;
+                << "\n";
 
                 tmp
                 // also print info that shows why we didn't croak
@@ -2517,12 +2518,12 @@ xct_t::get_logbuf(logrec_t*& ret, int t, page_p const* p)
                 << "; space left " << log->space_left()
                 << "; rsvd for checkpoint " << log->space_for_chkpt() 
                 << "; max checkpoint size " << log->max_chkpt_size() 
-                << endl;
+                << "\n";
 
                 tmp
                 << " MIN_BYTES_READY " << MIN_BYTES_READY
                 << " MIN_BYTES_RSVD " << MIN_BYTES_RSVD
-                << endl;
+                << "\n";
 
                 if(errlog) {
                     errlog->clog << error_prio 
@@ -2584,13 +2585,13 @@ xct_t::get_logbuf(logrec_t*& ret, int t, page_p const* p)
             << " _core->_xct_aborting " << _core->_xct_aborting
             << " should_reserve_for_rollback( " << t
             << ") = " << should_reserve_for_rollback(t)
-            << endl
+            << "\n"
             << " _log_bytes_rsvd " << _log_bytes_rsvd
                 << " orig rsvd " << rsvd
-            << endl
+            << "\n"
                 << " _log_bytes_used " << _log_bytes_used
                 << " orig used " << used
-            << endl
+            << "\n"
                 << " _log_bytes_ready " << _log_bytes_ready
                 << " orig ready " << ready
                 << " _log_bytes_reserved_space " << _log_bytes_reserved_space
@@ -2693,13 +2694,13 @@ xct_t::give_logbuf(logrec_t* l, const page_p *page)
             << " _core->_xct_aborting " << _core->_xct_aborting
             << " should_reserve_for_rollback( " << l->type()
             << ") = " << should_reserve_for_rollback(l->type())
-            << endl
+            << "\n"
             << " _log_bytes_rsvd " << _log_bytes_rsvd
                 << " orig rsvd " << rsvd
-            << endl
+            << "\n"
                 << " _log_bytes_used " << _log_bytes_used
                 << " orig used " << used
-            << endl
+            << "\n"
                 << " _log_bytes_ready " << _log_bytes_ready
                 << " orig ready " << ready
                 << " _log_bytes_reserved_space " << _log_bytes_reserved_space
@@ -3418,8 +3419,8 @@ xct_t::attach_thread()
     CRITICAL_SECTION(xctstructure, *this);
 
     w_assert2(is_1thread_xct_mutex_mine());
-    int nt=lintel::unsafe::atomic_fetch_add(const_cast<int*>(&_core->_threads_attached),1);
-    if(nt > 0) {
+    
+    if (_core->_threads_attached++ > 0) {
         INC_TSTAT(mpl_attach_cnt);
     }
     w_assert2(_core->_threads_attached >=0);
@@ -3440,8 +3441,7 @@ xct_t::detach_thread()
     FUNC(xct_t::detach_thread);
     CRITICAL_SECTION(xctstructure, *this);
     w_assert3(is_1thread_xct_mutex_mine());
-
-    lintel::unsafe::atomic_fetch_sub(const_cast<int*>(&_core->_threads_attached), 1);
+    _core->_threads_attached--;
     w_assert2(_core->_threads_attached >=0);
     me()->no_xct(this);
 }
@@ -3645,7 +3645,7 @@ sys_xct_section_t::~sys_xct_section_t()
         rc_t result = ss_m::abort_xct();
         if (result.is_error()) {
 #if W_DEBUG_LEVEL>0
-            cerr << "system transaction automatic abort failed: " << result.err_num() << endl;
+            cerr << "system transaction automatic abort failed: " << result.err_num() << "\n";
 #endif // W_DEBUG_LEVEL>0
         }
     }

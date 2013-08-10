@@ -61,10 +61,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 #if W_DEBUG_LEVEL > 2
 // You can rebuild with this turned on 
 // if you want comment log records inserted into the log
@@ -84,6 +80,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #endif
 
 #include <set>
+#include <Lintel/AtomicCounter.hpp>
 #include "w_key.h"
 
 class xct_dependent_t;
@@ -700,10 +697,10 @@ private:
         
         // Count of number of threads are doing update operations.
         // Used by start_crit and stop_crit.
-        volatile int           _updating_operations; 
+        lintel::Atomic<int> _updating_operations; 
 
         // to be manipulated only by smthread funcs
-        volatile int           _threads_attached; 
+        lintel::Atomic<int> _threads_attached; 
 
         // used in lockblock, lockunblock, by lock_core 
         pthread_cond_t            _waiters_cond;  // paired with _waiters_mutex
@@ -728,7 +725,7 @@ private:
          */
         w_list_t<stid_list_elem_t,queue_based_lock_t>    _loadStores;
 
-        volatile int      _xct_ended; // used for self-checking (assertions) only
+        lintel::Atomic<int> _xct_ended; // used for self-checking (assertions) only
         bool              _xct_aborting; // distinguish abort()ing xct from
         // commit()ing xct when they are in state xct_freeing_space
     };
@@ -836,13 +833,10 @@ private: // all data members private
                                     return  ! should_consume_rollback_resv(t);
                                  }
 private:
-     volatile int                _in_compensated_op; 
-        // in the midst of a compensated operation
-        // use an int because they can be nested.
-     lsn_t                       _anchor;
-        // the anchor for the outermost compensated op
-
-     xct_core*                   _core;
+    lintel::Atomic<int> _in_compensated_op; // in the midst of a compensated operation
+                                            // use an int because they can be nested.
+    lsn_t                       _anchor; // the anchor for the outermost compensated op
+    xct_core*                   _core;
 
 public:
     bool                        rolling_back() const { return _rolling_back; }

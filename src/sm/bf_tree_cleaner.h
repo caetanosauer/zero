@@ -11,6 +11,7 @@
 #include "vid_t.h"
 #include "bf_idx.h"
 #include "lsn.h"
+#include <Lintel/AtomicCounter.hpp>
 #include <vector>
 
 /** ID of cleaner worker thread. zero means no corresponding worker thread. */
@@ -128,7 +129,7 @@ private:
      * This simplification assumes the read/write of lsndata_t is atomic or at least regular,
      * which should be true as it's a 64-bits integer.
      */
-    volatile lsndata_t          _requested_lsn;
+    lsndata_t _requested_lsn;
 
     /**
      * An array of slave threads indexed by the slave-id.
@@ -160,10 +161,10 @@ private:
  * On the other hand, every volume is assigned to a single cleaner worker
  * so that it can efficiently write out contiguous dirty pages.
  * 
- * No volume (thus no page) is assigned to more than one cleaners to simplify synchronization,
- * which causes no harm because more than one threads for a single physical disk
- * are useless anyway. This also means that it's useless to have cleaner threads
- * more than the count of volumes.
+ * No volume (thus no page) is assigned to more than one cleaner to simplify synchronization,
+ * which causes no harm because more than one thread for a single physical disk
+ * are useless anyway. This also means that it's useless to have more cleaner threads
+ * than the count of volumes.
  */
 class bf_tree_cleaner_slave_thread_t : public smthread_t {
     friend class bf_tree_cleaner;
@@ -190,14 +191,18 @@ private:
     /** ID of this thread. */
     const bf_cleaner_slave_id_t _id;
     
+    /** @todo at some point the flags below should probably become std::atomic_flag's (or lintel
+        should be updated to include that type). I also think memory_order_consume would
+        be OK for the accesses, instead of the default memory_order_seq_cst, but thats an
+        exercise for another day, and a non-x86 architecture. */
     /** whether this thread has been requested to start. */
-    volatile bool               _start_requested;
+    lintel::Atomic<bool> _start_requested;
     /** whether this thread is currently running. */
-    volatile bool               _running;
+    lintel::Atomic<bool> _running;
     /** whether this thread has been requested to stop. */
-    volatile bool               _stop_requested;
+    lintel::Atomic<bool> _stop_requested;
     /** whether this thread has been requested to wakeup. */
-    volatile bool               _wakeup_requested;
+    lintel::Atomic<bool> _wakeup_requested;
     
     /**
      * milliseconds to sleep when finding no dirty pages.
@@ -212,7 +217,7 @@ private:
      * Used while checkpointing.
      * Only one thread (this) is writing and access to lsndata_t (64 bits integer) is atomic, so always safe.
      */
-    volatile lsndata_t          _completed_lsn;
+    lsndata_t _completed_lsn;
 
     /** reused buffer of dirty page's indexes for each volume. */
     std::vector<std::vector<bf_idx> >         _candidates_buffer;

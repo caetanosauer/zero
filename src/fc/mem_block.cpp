@@ -161,8 +161,8 @@ bool block_bits::release_contiguous(size_t index, size_t chip_count) {
     (void) chip_count; // keep gcc happy
     assert (index < chip_count);
     bitmap to_free = bitmap(1) << index;
-    assert(! (to_free & *usable_chips()));
     lintel::atomic_thread_fence(lintel::memory_order_release);
+    assert(! (to_free & _usable_chips));
     const bitmap was_free = lintel::unsafe::atomic_fetch_or(const_cast<bitmap*>(&_zombie_chips), to_free);
     return ( ! (was_free & to_free));
 }
@@ -181,7 +181,8 @@ void block_bits::recycle() {
        leak bits if a releasing thread races us and adds more bits to the
        zombie set after we read it.
     */
-    bitmap newly_usable = *&_zombie_chips;
+    lintel::atomic_thread_fence(lintel::memory_order_acquire);
+    bitmap newly_usable = _zombie_chips;
     _usable_chips |= newly_usable;
     lintel::atomic_thread_fence(lintel::memory_order_release);
     lintel::unsafe::atomic_fetch_xor(const_cast<bitmap*>(&_zombie_chips), newly_usable);

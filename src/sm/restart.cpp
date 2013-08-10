@@ -548,10 +548,11 @@ restart_m::analysis_pass(
 #if W_DEBUG_LEVEL > 4
             {
                 lsn_t l, l2;
-                volatile unsigned long i = sizeof(lsn_t); 
+                unsigned long i = sizeof(lsn_t); 
                         // GROT: stop gcc from 
                         // optimizing memcpy into something that 
                         // chokes on sparc due to misalignment
+                        /// @todo: this is almost certainly obsolete?
 
                 memcpy(&l, (lsn_t*) r.data(), i);
                 memcpy(&l2, ((lsn_t*) r.data())+1, i);

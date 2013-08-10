@@ -577,7 +577,7 @@ private:
     bf_idx               _block_cnt;
     
     /** current clock hand for eviction. */
-    bf_idx volatile      _clock_hand;
+    lintel::Atomic<bf_idx> _clock_hand;
     
     /**
      * Array of pointers to root page descriptors of all currently mounted volumes.
@@ -610,7 +610,7 @@ private:
     bf_idx*              _freelist;
 
     /** count of free blocks. */
-    uint32_t volatile    _freelist_len;
+    uint32_t _freelist_len;
 
 // Be VERY careful on deadlock to use the following.
     
@@ -627,7 +627,7 @@ private:
      */
     bf_idx*              _swizzled_lru;
     /** count of swizzled pages that can be unswizzled. */
-    uint32_t volatile    _swizzled_lru_len;
+    uint32_t _swizzled_lru_len;
     /** spin lock to protect swizzled page LRU list. */
     tatas_lock           _swizzled_lru_lock;
 #endif // BP_MAINTAIN_PARNET_PTR
