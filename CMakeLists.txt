@@ -81,10 +81,8 @@ ENDIF(GOOGLEPERFTOOLS_FOUND)
 # MUTrace profiles user-mode mutex locks 
 # SET(ENABLE_MUTRACE_PROFILER 'ON')
 IF(ENABLE_MUTRACE_PROFILER) 
-  LINTEL_WITH_HEADER(MUTRACE MUTrace/mutrace.h)
-  IF(MUTRACE_ENABLED)
-    SET (COMPILE_MUTRACE "-fPIC -fno-omit-frame-pointer -DHAVE_MUTRACE_PROFILER_H")
-  ENDIF(MUTRACE_ENABLED)
+  LINTEL_REQUIRED_HEADER(MUTRACE MUTrace/mutrace.h)
+  SET (COMPILE_MUTRACE "-fPIC -fno-omit-frame-pointer -DMUTRACE_ENABLED_H")
 ENDIF(ENABLE_MUTRACE_PROFILER)
 
 ENABLE_TESTING() # we use CTest all over the project. run "make test" after cmake

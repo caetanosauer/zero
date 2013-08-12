@@ -5,9 +5,9 @@
 #include "os_interface.h"
 
 //#define INSTRUMENT_MUTEX
-#if HAVE_MUTRACE_PROFILER_H
+#if MUTRACE_ENABLED_H
 #include <MUTrace/mutrace.h>
-#endif // HAVE_MUTRACE_PROFILER_H
+#endif // MUTRACE_ENABLED_H
 
 /**\brief A test-and-test-and-set spinlock. 
  *
@@ -39,7 +39,7 @@ struct tatas_lock {
     volatile holder_type_t _holder;
     /**\endcond skip */
 
-#ifdef HAVE_MUTRACE_PROFILER_H
+#ifdef MUTRACE_ENABLED_H
     MUTRACE_PROFILE_MUTEX_CONSTRUCTOR(tatas_lock) { _holder.bits=NOBODY; }
 #else
     tatas_lock() { _holder.bits=NOBODY; }
@@ -65,7 +65,7 @@ public:
     }
 
     /// Acquire the lock, spinning as long as necessary. 
-#ifdef HAVE_MUTRACE_PROFILER_H
+#ifdef MUTRACE_ENABLED_H
     MUTRACE_PROFILE_MUTEX_LOCK_VOID(tatas_lock, void, acquire, try_lock)
 #else
     void acquire()
@@ -83,7 +83,7 @@ public:
     }
 
     /// Release the lock
-#ifdef HAVE_MUTRACE_PROFILER_H
+#ifdef MUTRACE_ENABLED_H
     MUTRACE_PROFILE_MUTEX_UNLOCK_VOID(tatas_lock, void, release)
 #else
     void release()
