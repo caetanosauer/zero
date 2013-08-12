@@ -4,7 +4,6 @@
 #include "Lintel/AtomicCounter.hpp"
 #include "os_interface.h"
 
-//#define INSTRUMENT_MUTEX
 #if MUTRACE_ENABLED_H
 #include <MUTrace/mutrace.h>
 #endif // MUTRACE_ENABLED_H
