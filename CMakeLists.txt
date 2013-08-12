@@ -78,11 +78,14 @@ IF(GOOGLEPERFTOOLS_FOUND)
   SET (LINK_GOOGLEPROFILER " -lprofiler") #  -ltcmalloc ?
 ENDIF(GOOGLEPERFTOOLS_FOUND)
 
-# mutrace profiles user-mode mutex locks
-LINTEL_FIND_HEADER(MUTRACE MUTrace/mutrace.h)
-IF(NOT LINTEL_FIND_ALL_NOTFOUND)
-  SET (COMPILE_MUTRACE "-fPIC -fno-omit-frame-pointer -DHAVE_MUTRACE_PROFILER_H")
-ENDIF(MUTRACE_FOUND)
+# MUTrace profiles user-mode mutex locks 
+# SET(ENABLE_MUTRACE_PROFILER 'ON')
+IF(ENABLE_MUTRACE_PROFILER) 
+  LINTEL_WITH_HEADER(MUTRACE MUTrace/mutrace.h)
+  IF(MUTRACE_ENABLED)
+    SET (COMPILE_MUTRACE "-fPIC -fno-omit-frame-pointer -DHAVE_MUTRACE_PROFILER_H")
+  ENDIF(MUTRACE_ENABLED)
+ENDIF(ENABLE_MUTRACE_PROFILER)
 
 ENABLE_TESTING() # we use CTest all over the project. run "make test" after cmake
 
