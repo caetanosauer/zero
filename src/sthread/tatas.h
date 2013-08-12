@@ -4,6 +4,11 @@
 #include "Lintel/AtomicCounter.hpp"
 #include "os_interface.h"
 
+//#define INSTRUMENT_MUTEX
+#if HAVE_MUTRACE_PROFILER_H
+#include <MUTrace/mutrace.h>
+#endif // HAVE_MUTRACE_PROFILER_H
+
 /**\brief A test-and-test-and-set spinlock. 
  *
  * This lock is good for short, uncontended critical sections. 
@@ -34,7 +39,11 @@ struct tatas_lock {
     volatile holder_type_t _holder;
     /**\endcond skip */
 
+#ifdef HAVE_MUTRACE_PROFILER_H
+    MUTRACE_PROFILE_MUTEX_CONSTRUCTOR(tatas_lock) { _holder.bits=NOBODY; }
+#else
     tatas_lock() { _holder.bits=NOBODY; }
+#endif
 
 private:
     // CC mangles this as __1cKtatas_lockEspin6M_v_
@@ -43,7 +52,7 @@ private:
 
 public:
     /// Try to acquire the lock immediately.
-    bool try_lock() 
+    bool try_lock()
     {
         holder_type_t tid = { pthread_self() };
         bool success = false;
@@ -56,7 +65,12 @@ public:
     }
 
     /// Acquire the lock, spinning as long as necessary. 
-    void acquire() {
+#ifdef HAVE_MUTRACE_PROFILER_H
+    MUTRACE_PROFILE_MUTEX_LOCK_VOID(tatas_lock, void, acquire, try_lock)
+#else
+    void acquire()
+#endif
+    {
         w_assert1(!is_mine());
         holder_type_t tid = { pthread_self() };
         uint64_t old_holder = NOBODY;
@@ -69,7 +83,12 @@ public:
     }
 
     /// Release the lock
-    void release() {
+#ifdef HAVE_MUTRACE_PROFILER_H
+    MUTRACE_PROFILE_MUTEX_UNLOCK_VOID(tatas_lock, void, release)
+#else
+    void release()
+#endif
+    {
         lintel::atomic_thread_fence(lintel::memory_order_release);
         w_assert1(is_mine()); // moved after the fence
         _holder.bits= NOBODY;
