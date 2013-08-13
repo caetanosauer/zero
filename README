@@ -1,14 +1,5 @@
 NOTE: This file is currently out of date. 
 
-/** @mainpage
-    @section Getting Started
-    1. Initialize your local revision control. deptool init simpl/Zero
-    2. Check out Zero. deptool co Zero
-    3. Go to the Zero directory. cd ~/projects/Zero
-    4. Build it. depbuild
-    5. Test it (note this currently (19 Sep 2012) fails on debian). depbuild -t 
-**/
-
 *****************************************************************************
 *****************************************************************************
 *                                                                           *
