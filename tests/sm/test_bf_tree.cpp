@@ -31,7 +31,7 @@ public:
     }
     static bf_tree_cb_t* get_bf_control_block (bf_tree_m *bf, page_s* page) {
         bf_idx idx = get_bf_idx(bf, page);
-        return bf->_control_blocks + idx;
+        return bf->get_cbp(idx);
     }
 };
 
