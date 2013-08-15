@@ -97,6 +97,8 @@ bool        smlevel_0::lock_caching_default = true;
 bool        smlevel_0::logging_enabled = true;
 bool        smlevel_0::do_prefetch = false;
 
+bool        smlevel_0::statistics_enabled = true;
+
 #ifndef SM_LOG_WARN_EXCEED_PERCENT
 #define SM_LOG_WARN_EXCEED_PERCENT 40
 #endif
@@ -211,6 +213,7 @@ option_t* ss_m::_bufferpool_swizzle = NULL;
 option_t* ss_m::_cleaner_interval_millisec_min = NULL;
 option_t* ss_m::_cleaner_interval_millisec_max = NULL;
 option_t* ss_m::_logging = NULL;
+option_t* ss_m::_statistics = NULL;
 
 
 /*
@@ -328,6 +331,10 @@ rc_t ss_m::setup_options(option_group_t* options)
     W_DO(options->add_option("sm_logging", "yes/no", "yes",
             "no will turn off logging; Rollback, restart not possible.",
             false, option_t::set_value_bool, _logging));
+
+    W_DO(options->add_option("sm_statistics", "yes/no", "yes",
+            "yes enables collecting statistics",
+            false, option_t::set_value_bool, _statistics));
 
     _options = options;
     return RCOK;
@@ -687,6 +694,11 @@ ss_m::_construct_once(
         << flushl;
     }
     
+    badVal = true;
+
+    smlevel_0::statistics_enabled = 
+        option_t::str_to_bool(_statistics->value(), badVal);
+
     // start buffer pool cleaner when the log module is ready
     {
         w_rc_t e = bf->init();
