@@ -71,7 +71,7 @@ inline uint64_t bf_key(const lpid_t &pid) {
 #define BP_MAINTAIN_REPLACEMENT_PRIORITY
 
 // A flag whether the bufferpool can evict pages of btree inner nodes
-//#define BP_CAN_EVICT_INNER_NODE
+#define BP_CAN_EVICT_INNER_NODE
 
 // A flag whether the bufferpool should alternate location of latches and control blocks
 // starting at an odd multiple of 64B as follows: |CB0|L0|L1|CB1|CB2|L2|L3|CB3|...
@@ -83,6 +83,12 @@ inline uint64_t bf_key(const lpid_t &pid) {
 // control block. This causes unnecessary coherence traffic. With the new layout, we avoid 
 // having a control block and latch in the same 128B sector.
 //#define BP_ALTERNATE_CB_LATCH
+
+// A flag whether the bufferpool maintains a per-frame counter that tracks how many 
+// swizzled pointers are in each frame. This counter is a conservative hint rather than 
+// an accurate counter as the bufferpool does not track removals of pointers from a page
+// which can happen during merges. 
+#define BP_TRACK_SWIZZLED_PTR_CNT
 
 // Use the new layout with swizzling
 #if !defined SIMULATE_MAINMEMORYDB && !defined SIMULATE_NO_SWIZZLING
@@ -114,7 +120,12 @@ const uint32_t UNSWIZZLE_BATCH_SIZE = 1000;
  * block (due to ping-pongs between sockets) when multiple sockets read-access the same frame. 
  * The refcount max value should have enough granularity to separate cold from hot pages. 
  */
-const uint16_t BP_MAX_REFCOUNT = 3;
+const uint16_t BP_MAX_REFCOUNT = 16;
+
+/** 
+ * Initial value of the per-frame refcount (reference counter).
+ */
+const uint16_t BP_INITIAL_REFCOUNT = 0;
 
  
 /**\enum replacement_policy_t 
@@ -451,6 +462,13 @@ public:
     */
     void repair_rec_lsn (page_s *page, bool was_dirty, const lsn_t &new_rlsn);
 
+    /**
+     * Returns true if the node has any swizzled pointers to its children.
+     * In constrast to the swizzled_ptr_cnt_hint counter, which is just a
+     * a hint, this method is accurate as it scans the node * and counts 
+     * its swizzled pointers. It requires the caller to have the node latched.
+     */ 
+    bool has_swizzled_child(bf_idx node_idx);
 private:
 
     /** called when a volume is mounted. */
