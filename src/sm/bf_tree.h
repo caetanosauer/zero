@@ -82,7 +82,7 @@ inline uint64_t bf_key(const lpid_t &pid) {
 // the control block in read-exclusive mode even if we late really only read-access the 
 // control block. This causes unnecessary coherence traffic. With the new layout, we avoid 
 // having a control block and latch in the same 128B sector.
-//#define BP_ALTERNATE_CB_LATCH
+#define BP_ALTERNATE_CB_LATCH
 
 // A flag whether the bufferpool maintains a per-frame counter that tracks how many 
 // swizzled pointers are in each frame. This counter is a conservative hint rather than 
