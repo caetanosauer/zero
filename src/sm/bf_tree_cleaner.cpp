@@ -461,11 +461,10 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
     }
 
     // again, we don't take latch at this point because this sorting is just for efficiency.
-    bf_tree_cb_t* control_blocks = _parent->_bufferpool->_control_blocks;
     size_t sort_buf_used = 0;
     for (size_t i = 0; i < candidates.size(); ++i) {
         bf_idx idx = candidates[i];
-        bf_tree_cb_t &cb(control_blocks[idx]);
+        bf_tree_cb_t &cb = _parent->_bufferpool->get_cb(idx);
         if (cb._pid_vol != vol) {
             DBGOUT1(<<"_clean_volume(cleaner=" << _id << "): volume " << vol << ". this candidate has changed its volume? idx=" << idx << ". current vol=" << cb._pid_vol);
             continue;
@@ -504,7 +503,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
             if (idx == prev_idx) {
                 continue;
             }
-            bf_tree_cb_t &cb(control_blocks[idx]);
+            bf_tree_cb_t &cb = _parent->_bufferpool->get_cb(idx);
             if (!cb._dirty || !cb._used) {
                 continue;
             }
@@ -512,7 +511,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
             // also tentatively skip an EX-latched page to avoid being interrepted by
             // a single EX latch for too long time.
             bool tobedeleted = false;
-            w_rc_t latch_rc = cb._latch.latch_acquire(LATCH_SH, WAIT_IMMEDIATE);
+            w_rc_t latch_rc = cb.latch().latch_acquire(LATCH_SH, WAIT_IMMEDIATE);
             if (latch_rc.is_error()) {
                 DBGOUT2 (<< "tentatively skipped an EX-latched page. " << i << "=" << page_buffer[idx].pid << ". rc=" << latch_rc);
                 skipped_something = true;
@@ -528,7 +527,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 w_assert1(_write_buffer[write_buffer_cur].pid.vol().vol > 0);
                 w_assert1(_write_buffer[write_buffer_cur].pid.page > 0);
             }
-            cb._latch.latch_release();
+            cb.latch().latch_release();
             
             // then, re-calculate the checksum.
             _write_buffer[write_buffer_cur].update_checksum();
@@ -631,10 +630,9 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(volid_t vol, size_t f
     W_COERCE(_parent->_bufferpool->_volumes[vol]->_volume->write_many_pages(_write_buffer[from].pid.page, _write_buffer + from, consecutive));
 
     // after writing them out, update rec_lsn in bufferpool
-    bf_tree_cb_t* control_blocks = _parent->_bufferpool->_control_blocks;
     for (size_t i = from; i < from + consecutive; ++i) {
         bf_idx idx = _write_buffer_indexes[i];
-        bf_tree_cb_t &cb(control_blocks[idx]);
+        bf_tree_cb_t &cb = _parent->_bufferpool->get_cb(idx);
         cb._dirty = false;
         --_parent->_bufferpool->_dirty_page_count_approximate;
         cb._rec_lsn = _write_buffer[i].lsn.data();
@@ -679,9 +677,8 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
 
     // list up dirty pages
     page_s* pages = _parent->_bufferpool->_buffer;
-    bf_tree_cb_t* control_blocks = _parent->_bufferpool->_control_blocks;
     for (bf_idx idx = 1; idx < block_cnt; ++idx) {
-        bf_tree_cb_t &cb(control_blocks[idx]);
+        bf_tree_cb_t &cb = _parent->_bufferpool->get_cb(idx);
         if (!cb._dirty || !cb._used) {
             continue;
         }
@@ -707,7 +704,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
             // also add dependent pages. note that this might cause a duplicate. we deal with duplicates in _clean_volume()
             bf_idx didx = cb._dependency_idx;
             if (didx != 0) {
-                bf_tree_cb_t &dcb(control_blocks[didx]);
+                bf_tree_cb_t &dcb = _parent->_bufferpool->get_cb(didx);
                 if (dcb._dirty && dcb._used && dcb._rec_lsn <= cb._dependency_lsn) {
                     DBGOUT2(<<"_do_work(cleaner=" << _id << "): added dependent dirty page: idx=" << didx << ": pid=" << dcb._pid_vol << "." << dcb._pid_shpid);
                     _candidates_buffer[vol].push_back (didx);
