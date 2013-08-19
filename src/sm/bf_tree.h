@@ -67,10 +67,6 @@ inline uint64_t bf_key(const lpid_t &pid) {
 // walking to find a pge to evict.
 // #define BP_MAINTAIN_PARNET_PTR
 
-// A flag whether the bufferpool maintains per-frame latches in a separate table from 
-// per-frame control blocks. 
-//#define BP_MAINTAIN_SEPARATE_LATCH_TABLE
-
 // A flag whether the bufferpool maintains replacement priority per page.
 #define BP_MAINTAIN_REPLACEMENT_PRIORITY
 

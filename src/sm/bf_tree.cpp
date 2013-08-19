@@ -893,7 +893,7 @@ w_rc_t bf_tree_m::_get_replacement_block_clock(bf_idx& ret, bool use_priority) {
             } else {
                 ret = idx;
             }
-            if (blocks_replaced_count < (1024)) {
+            if (blocks_replaced_count < (1)) {
                 continue;
             }
             return RCOK;
