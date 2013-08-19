@@ -17,17 +17,41 @@ void swizzling_stat_swizzle();
 void swizzling_stat_print(const char* prefix);
 void swizzling_stat_reset();
 
+inline bf_tree_cb_t* bf_tree_m::get_cbp(bf_idx idx) const {
+#ifdef BP_ALTERNATE_CB_LATCH    
+    bf_idx real_idx;
+    real_idx = (idx << 1) + (idx & 0x1); // more efficient version of: real_idx = (idx % 2) ? idx*2+1 : idx*2
+    return &_control_blocks[real_idx];
+#else
+    return &_control_blocks[idx];
+#endif
+}
+
+inline bf_tree_cb_t& bf_tree_m::get_cb(bf_idx idx) const {
+    return *get_cbp(idx);
+}
+
+inline bf_idx bf_tree_m::get_idx(const bf_tree_cb_t* cb) const {
+    bf_idx real_idx = cb - _control_blocks;
+#ifdef BP_ALTERNATE_CB_LATCH    
+    return real_idx / 2;   
+#else
+    return real_idx;   
+#endif
+}
+
 inline bf_tree_cb_t* bf_tree_m::get_cb(const page_s *page) {
     bf_idx idx = page - _buffer;
     w_assert1(idx > 0 && idx < _block_cnt);
-    return _control_blocks + idx;
+    return get_cbp(idx);
 }
+
 inline page_s* bf_tree_m::get_page(const bf_tree_cb_t *cb) {
-    bf_idx idx = cb - _control_blocks;
+    bf_idx idx = get_idx(cb);
     w_assert1(idx > 0 && idx < _block_cnt);
     return _buffer + idx;
 }
-inline shpid_t bf_tree_m::get_root_page_id_normalized(volid_t vol, snum_t store) {
+inline shpid_t bf_tree_m::get_root_page_id(volid_t vol, snum_t store) {
     if (_volumes[vol] == NULL) {
         return 0;
     }
@@ -43,9 +67,9 @@ inline shpid_t bf_tree_m::get_root_page_id_normalized(volid_t vol, snum_t store)
 const uint32_t SWIZZLED_LRU_UPDATE_INTERVAL = 1000;
 
 inline w_rc_t bf_tree_m::refix_direct (page_s*& page, bf_idx idx, latch_mode_t mode, bool conditional) {
-    bf_tree_cb_t &cb(_control_blocks[idx]);
+    bf_tree_cb_t &cb = get_cb(idx);
     w_assert1(cb.pin_cnt() > 0);
-    W_DO(cb._latch.latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
+    W_DO(cb.latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
 #ifdef BP_MAINTAIN_PARNET_PTR
     ++cb._counter_approximate;
 #endif // BP_MAINTAIN_PARNET_PTR
@@ -62,8 +86,8 @@ inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol
         w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
         bf_idx idx = shpid;
         w_assert1 (_is_active_idx(idx));
-        bf_tree_cb_t &cb(_control_blocks[idx]);
-        W_DO(cb._latch.latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
+        bf_tree_cb_t &cb = get_cb(idx);
+        W_DO(cb.latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
         page = &(_buffer[idx]);
     }
     if (true) return RCOK;
@@ -80,35 +104,20 @@ inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol
         W_DO (_fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page));
         // also try to swizzle this page
         // TODO so far we swizzle all pages as soon as we load them to bufferpool
-        // but, we might want to consider more advanced policy.
+        // but, we might want to consider a more advanced policy.
         if (!_bf_pause_swizzling && is_swizzled(parent) && !is_swizzled(page)
                 && parent->btree_foster != shpid // don't swizzle foster child
             ) {
             slotid_t slot = find_page_id_slot (parent, shpid);
-#if 0
-            if (slot < -1 && ) {
-                if (is_swizzled(page)) {
-                    // benign race: some other thread swizzled it already 
-                }
-/*
-                DBGOUT(<<"is swizzled " << is_swizzled(page));
-                DBGOUT (<< "ASSERTION failure shpid = " << shpid
-                           << " parent.pid = " << parent->pid
-                           << " page.pid = " << page->pid);
-                DBGOUT (<< "mode = " << mode);
-                print_slots(parent);
-*/
-            }
-#endif
             // this is a new (virgin) page which has not been linked yet. 
             // skip swizzling this page
             if (slot == -2 && virgin_page) {
                 return RCOK;
             }
 
-            // benign race: some other thread swizzled it already 
-            // this can happen when two threads that have the page 
-            // latched as shared need to swizzle it
+            // benign race: if (slot < -1 && is_swizzled(page)) then some other 
+            // thread swizzled it already. This can happen when two threads that 
+            // have the page latched as shared need to swizzle it
             w_assert1(slot >= -1 || is_swizzled(page) || (slot == -2 && virgin_page));
             
 #ifdef EX_LATCH_ON_SWIZZLING
@@ -131,35 +140,20 @@ inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol
         // the pointer is swizzled! we can bypass pinning
         bf_idx idx = shpid ^ SWIZZLED_PID_BIT;
         w_assert1 (_is_active_idx(idx));
-        bf_tree_cb_t &cb(_control_blocks[idx]);
-        W_DO(cb._latch.latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
+        bf_tree_cb_t &cb = get_cb(idx);
+        W_DO(cb.latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
         w_assert1(cb.pin_cnt() > 0);
         w_assert1(cb._pid_vol == vol);
         w_assert1(cb._pid_shpid == _buffer[idx].pid.page);
 #ifdef BP_MAINTAIN_PARNET_PTR
         ++cb._counter_approximate;
 #endif // BP_MAINTAIN_PARNET_PTR
-        //++cb._refbit_approximate; // FIXME: This causes a scalability bottleneck
-        // Limit the maximum value of the refcount to avoid expensive cache coherence 
-        // requests that cause a scalability bottleneck. Still it should be good enough
-        // to separate cold pages from hot pages. 
-#if 0
-        {
-            int local;
-            asm volatile ("movl %0, %%eax" 
-             :        /* output */
-             :"r"((int) cb._refbit_approximate)         /* input */
-             :"%eax"         /* clobbered register */
-             );
-        }
-#endif
-        //if ((me()->sampling++ % 1000) == 0) {
-        //    ++cb._refbit_approximate;
-        //}
-        //if (_control_blocks[1+reinterpret_cast<uintptr_t>(me())%1024+idx]._refbit_approximate<2) {
-        if (_control_blocks[idx]._refbit_approximate < 2) {
-        //++cb._refbit_approximate;
-        //if (__builtin_expect((cb._refbit_approximate < 2), 0)) {
+
+        // If we keep incrementing the cb._refbit_approximate then we cause a scalability 
+        // bottleneck (as the associated cacheline ping-pongs between sockets).
+        // Intead we limit the maximum value of the refcount. The refcount still has
+        // enough granularity to separate cold from hot pages. 
+        if (get_cb(idx)._refbit_approximate < BP_MAX_REFCOUNT) {
             ++cb._refbit_approximate;
         }
         // also, doesn't have to unpin whether there happens an error or not. easy!
@@ -189,7 +183,7 @@ inline w_rc_t bf_tree_m::fix_virgin_root (page_s*& page, volid_t vol, snum_t sto
 #ifdef SIMULATE_MAINMEMORYDB
     idx = shpid;
     volume->_root_pages[store] = idx;
-    bf_tree_cb_t &cb(_control_blocks[idx]);
+    bf_tree_cb_t &cb = get_cb(idx);
     cb.clear();
     cb._pid_vol = vol;
     cb._pid_shpid = shpid;
@@ -204,14 +198,14 @@ inline w_rc_t bf_tree_m::fix_virgin_root (page_s*& page, volid_t vol, snum_t sto
     w_assert1 (idx > 0 && idx < _block_cnt);
     volume->_root_pages[store] = idx;
 
-    _control_blocks[idx].clear();
-    _control_blocks[idx]._pid_vol = vol;
-    _control_blocks[idx]._pid_shpid = shpid;
-    _control_blocks[idx].pin_cnt_set(1); // root page's pin count is always positive
-    _control_blocks[idx]._used = true;
-    _control_blocks[idx]._dirty = true;
+    get_cb(idx).clear();
+    get_cb(idx)._pid_vol = vol;
+    get_cb(idx)._pid_shpid = shpid;
+    get_cb(idx).pin_cnt_set(1); // root page's pin count is always positive
+    get_cb(idx)._used = true;
+    get_cb(idx)._dirty = true;
     ++_dirty_page_count_approximate;
-    _control_blocks[idx]._swizzled = true;
+    get_cb(idx)._swizzled = true;
     bool inserted = _hashtable->insert_if_not_exists(bf_key(vol, shpid), idx); // for some type of caller (e.g., redo) we still need hashtable entry for root
     if (!inserted) {
         ERROUT (<<"failed to insert a virgin root page to hashtable. this must not have happened because there shouldn't be any race. wtf");
@@ -230,26 +224,26 @@ inline w_rc_t bf_tree_m::fix_root (page_s*& page, volid_t vol, snum_t store, lat
     bf_idx idx = volume->_root_pages[store];
 
 #ifdef SIMULATE_MAINMEMORYDB
-    w_assert1(_control_blocks[idx]._pid_vol == vol);
+    w_assert1(get_cb(idx)._pid_vol == vol);
     w_assert1(_buffer[idx].pid.store() == store);
     if (true) return _latch_root_page(page, idx, mode, conditional);
 #endif
 
     // root page is always kept in the volume descriptor
 #ifdef SIMULATE_NO_SWIZZLING
-    bf_idx idx_dummy = _hashtable->lookup(bf_key(vol, _control_blocks[volume->_root_pages[store]]._pid_shpid));
+    bf_idx idx_dummy = _hashtable->lookup(bf_key(vol, get_cb(volume->_root_pages[store])._pid_shpid));
     w_assert1(idx == idx_dummy);
     idx = idx_dummy;
 #else // SIMULATE_NO_SWIZZLING
     if (!is_swizzling_enabled()) {
-        bf_idx idx_dummy = _hashtable->lookup(bf_key(vol, _control_blocks[volume->_root_pages[store]]._pid_shpid));
+        bf_idx idx_dummy = _hashtable->lookup(bf_key(vol, get_cb(volume->_root_pages[store])._pid_shpid));
         w_assert1(idx == idx_dummy);
         idx = idx_dummy;
     }
 #endif // SIMULATE_NO_SWIZZLING
 
     w_assert1 (_is_active_idx(idx));
-    w_assert1(_control_blocks[idx]._pid_vol == vol);
+    w_assert1(get_cb(idx)._pid_vol == vol);
     w_assert1(_buffer[idx].pid.store() == store);
 
     return _latch_root_page(page, idx, mode, conditional);
@@ -266,7 +260,7 @@ inline w_rc_t bf_tree_m::_latch_root_page(page_s*& page, bf_idx idx, latch_mode_
 #endif // SIMULATE_NO_SWIZZLING
 
     // root page is always swizzled. thus we don't need to increase pin. just take latch.
-    W_DO(_control_blocks[idx]._latch.latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
+    W_DO(get_cb(idx).latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
     // also, doesn't have to unpin whether there happens an error or not. easy!
     page = &(_buffer[idx]);
 
@@ -283,15 +277,15 @@ inline w_rc_t bf_tree_m::_latch_root_page(page_s*& page, bf_idx idx, latch_mode_
 inline void bf_tree_m::unfix(const page_s* p) {
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
-    bf_tree_cb_t &cb(_control_blocks[idx]);
-    w_assert1(cb._latch.held_by_me()); 
-    cb._latch.latch_release();
+    bf_tree_cb_t &cb = get_cb(idx);
+    w_assert1(cb.latch().held_by_me()); 
+    cb.latch().latch_release();
 }
 
 inline void bf_tree_m::set_dirty(const page_s* p) {
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
-    bf_tree_cb_t &cb(_control_blocks[idx]);
+    bf_tree_cb_t &cb = get_cb(idx);
     if (!cb._dirty) {
         cb._dirty = true;
         ++_dirty_page_count_approximate;
@@ -300,35 +294,35 @@ inline void bf_tree_m::set_dirty(const page_s* p) {
 inline bool bf_tree_m::is_dirty(const page_s* p) const {
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
-    return _control_blocks[idx]._dirty;
+    return get_cb(idx)._dirty;
 }
 
 inline latch_mode_t bf_tree_m::latch_mode(const page_s* p) {
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
-    return _control_blocks[idx]._latch.mode();
+    return get_cb(idx).latch().mode();
 }
 
 inline void bf_tree_m::downgrade_latch(const page_s* p) {
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
-    bf_tree_cb_t &cb(_control_blocks[idx]);
-    w_assert1(cb._latch.held_by_me()); 
-    cb._latch.downgrade();
+    bf_tree_cb_t &cb = get_cb(idx);
+    w_assert1(cb.latch().held_by_me()); 
+    cb.latch().downgrade();
 }
 
 inline bool bf_tree_m::upgrade_latch_conditional(const page_s* p) {
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
-    bf_tree_cb_t &cb(_control_blocks[idx]);
-    w_assert1(cb._latch.held_by_me()); 
-    if (cb._latch.mode() == LATCH_EX) {
+    bf_tree_cb_t &cb = get_cb(idx);
+    w_assert1(cb.latch().held_by_me()); 
+    if (cb.latch().mode() == LATCH_EX) {
         return true;
     }
     bool would_block = false;
-    cb._latch.upgrade_if_not_block(would_block);
+    cb.latch().upgrade_if_not_block(would_block);
     if (!would_block) {
-        w_assert1 (cb._latch.mode() == LATCH_EX);
+        w_assert1 (cb.latch().mode() == LATCH_EX);
         return true;
     } else {
         return false;
@@ -351,7 +345,7 @@ inline bool bf_tree_m::is_swizzled(const page_s* page) const
 {
     bf_idx idx = page - _buffer;
     w_assert1 (_is_active_idx(idx));
-    return _control_blocks[idx]._swizzled;
+    return get_cb(idx)._swizzled;
 }
 
 ///////////////////////////////////   LRU/Freelist END ///////////////////////////////////  
@@ -360,7 +354,7 @@ inline bool bf_tree_m::_is_active_idx (bf_idx idx) const {
     if (idx <= 0 || idx > _block_cnt) {
         return false;
     }
-    return _control_blocks[idx]._used;
+    return get_cb(idx)._used;
 }
 
 

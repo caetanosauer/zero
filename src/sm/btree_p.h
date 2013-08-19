@@ -138,6 +138,13 @@ class btree_ghost_reclaim_log;
  * Finally,
  * - [0-7] bytes of unused space (record is 8 bytes aligned). This is just a padding,
  * so not included in the record length.
+ * 
+ * Opaque pointers:
+ * - Default is to return page id.
+ * - When a page is swizzled though we can avoid hash table lookup to map page id 
+ *   to frame id by using frame id directly. Opaque pointers server this purpose by 
+ *   hiding from the user whether a pointer is a frame id or page id. 
+ *
  */
 class btree_p : public page_p {
     friend class btree_impl;
@@ -167,8 +174,8 @@ public:
     int               level() const;
     /** Returns left-most ptr (used only in non-leaf nodes). */
     shpid_t        pid0() const;
-    /** Returns left-most normalized page-id ptr (used only in non-leaf nodes). */
-    shpid_t        pid0_normalized() const;
+    /** Returns left-most opaque pointer (used only in non-leaf nodes). */
+    shpid_t        pid0_opaqueptr() const;
     /** Returns root page used for recovery. */
     lpid_t           root() const;
 
@@ -185,8 +192,8 @@ public:
     
     /** Returns ID of B-link page (0 if not linked). */
     shpid_t         get_foster() const;
-    /** Returns normalized ID of B-link page (0 if not linked). */
-    shpid_t         get_foster_normalized() const;
+    /** Returns opaque pointer of B-link page (0 if not linked). */
+    shpid_t         get_foster_opaqueptr() const;
     /** Clears the foster page and also clears the chain high fence key. */
     rc_t               clear_foster();
     /** Returns the prefix which are removed from all entries in this page. */
@@ -446,9 +453,9 @@ public:
     */
     shpid_t       child(slotid_t slot) const;
     /**
-    *  Return the child normalized pointer of tuple at "slot".
+    *  Return the child opaque pointer of tuple at "slot".
     */
-    shpid_t       child_normalized(slotid_t slot) const;
+    shpid_t       child_opaqueptr(slotid_t slot) const;
 
 #ifdef DOXYGEN_HIDE
 ///==========================================
@@ -702,12 +709,12 @@ inline int btree_p::level() const
     return _pp->btree_level;
 }
 
-inline shpid_t btree_p::pid0() const
+inline shpid_t btree_p::pid0_opaqueptr() const
 {
     return _pp->btree_pid0;
 }
 
-inline shpid_t btree_p::pid0_normalized() const
+inline shpid_t btree_p::pid0() const
 {
     shpid_t shpid = _pp->btree_pid0;
     if (shpid) {
@@ -731,12 +738,12 @@ inline bool btree_p::is_node() const
     return ! is_leaf();
 }
    
-inline shpid_t btree_p::get_foster() const
+inline shpid_t btree_p::get_foster_opaqueptr() const
 {
     return _pp->btree_foster;
 }
 
-inline shpid_t btree_p::get_foster_normalized() const
+inline shpid_t btree_p::get_foster() const
 {
     shpid_t shpid = _pp->btree_foster;
     if (shpid) {
@@ -876,7 +883,7 @@ inline bool btree_p::is_insertion_skewed_left() const
 {
     return _pp->btree_consecutive_skewed_insertions < -5;
 }
-inline shpid_t btree_p::child(slotid_t slot) const
+inline shpid_t btree_p::child_opaqueptr(slotid_t slot) const
 {
     // same as rec_node except we don't need to read key
     w_assert1(is_node());
@@ -886,9 +893,9 @@ inline shpid_t btree_p::child(slotid_t slot) const
     return *reinterpret_cast<const shpid_t*>(p);
 }
 
-inline shpid_t btree_p::child_normalized(slotid_t slot) const
+inline shpid_t btree_p::child(slotid_t slot) const
 {
-    shpid_t shpid = child(slot);
+    shpid_t shpid = child_opaqueptr(slot);
     if (shpid) {
         return smlevel_0::bf->normalize_shpid(shpid);
     }
