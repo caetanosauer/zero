@@ -13,16 +13,16 @@
 #endif
 
 enum tag_t {
-    t_bad_p            = 0,        // not used
-    t_alloc_p        = 1,        // free-page allocation page 
-    t_stnode_p         = 2,        // store node page
-    t_btree_p          = 5,        // btree page 
-    t_any_p            = 11        // indifferent
+    t_bad_p        = 0,        // not used
+    t_alloc_p      = 1,        // free-page allocation page 
+    t_stnode_p     = 2,        // store node page
+    t_btree_p      = 5,        // btree page 
+    t_any_p        = 11        // indifferent
 };
 enum page_flag_t {
-    t_tobedeleted    = 0x01,        // this page will be deleted as soon as the page is evicted from bufferpool
-    t_virgin         = 0x02,        // newly allocated page
-    t_written        = 0x08        // read in from disk
+    t_tobedeleted  = 0x01,     // this page will be deleted as soon as the page is evicted from bufferpool
+    t_virgin       = 0x02,     // newly allocated page
+    t_written      = 0x08      // read in from disk
 };
 
 class xct_t;
@@ -77,32 +77,8 @@ inline poor_man_key extract_poor_man_key (const void* key_with_prefix, size_t ke
 }
 
 
-/**\brief Basic page structure for all pages.
- * \details
- * These are persistent things. There is no hierarchy here
- * for the different page types. All the differences between
- * page types are handled by the handle classes, page_p and its
- * derived classes.
- * 
- * \section BTree-specific page headers
- * This page layout also contains the headers just for BTree to optimize on
- * the performance of BTree.
- * Anyways, remaining page-types other than BTree are only stnode and extlink.
- * For those page types, this header part is unused but not a big issue.
- * @see btree_p
- */
-class page_s {
+class generic_page_header {
 public:
-    enum {
-        page_sz = SM_PAGESIZE,
-        hdr_sz = 64, // NOTICE always sync with the offsets below
-        data_sz = page_sz - hdr_sz,
-        /** Poor man's normalized key length. */
-        poormkey_sz = sizeof (poor_man_key),
-        slot_sz = sizeof(slot_offset8_t) + poormkey_sz
-    };
-
- 
     /** LSN (Log Sequence Number) of the last write to this page. */
     lsn_t    lsn;      // +8 -> 8
     
@@ -212,28 +188,14 @@ public:
      * Note that this is a const function. checksum is mutable property.
      */
     void       update_checksum () const {checksum = calculate_checksum();}
-
-    char*      data_addr8(slot_offset8_t offset8) {
-        return data + to_byte_offset(offset8);
-    }
-    const char* data_addr8(slot_offset8_t offset8) const {
-        return data + to_byte_offset(offset8);
-    }
-
-    /* MUST BE 8-BYTE ALIGNED HERE */
-    char     data[data_sz];        // must be aligned
-
-
-    page_s() {
-        w_assert1(data - (const char *) this == hdr_sz);
-    }
-    ~page_s() { }
 };
 
 const uint32_t PAGE_S_CHECKSUM_MULT = 0x35D0B891;
 
-inline uint32_t page_s::calculate_checksum () const
+inline uint32_t generic_page_header::calculate_checksum () const
 {
+    const char *data = (char*)this + sizeof(*this);  // <<<>>>
+
     const unsigned char *end_p = (const unsigned char *) (data + SM_PAGESIZE - sizeof(uint32_t));
     uint64_t value = 0;
     // these values(23/511) are arbitrary, but make sure it doesn't touch
@@ -249,5 +211,50 @@ inline uint32_t page_s::calculate_checksum () const
     }
     return ((uint32_t) (value >> 32)) ^ ((uint32_t) (value & 0xFFFFFFFF));
 }
+
+
+
+/**\brief Basic page structure for all pages.
+ * \details
+ * These are persistent things. There is no hierarchy here
+ * for the different page types. All the differences between
+ * page types are handled by the handle classes, page_p and its
+ * derived classes.
+ * 
+ * \section BTree-specific page headers
+ * This page layout also contains the headers just for BTree to optimize on
+ * the performance of BTree.
+ * Anyways, remaining page-types other than BTree are only stnode and extlink.
+ * For those page types, this header part is unused but not a big issue.
+ * @see btree_p
+ */
+class page_s : public generic_page_header {
+public:
+    enum {
+        page_sz = SM_PAGESIZE,
+        hdr_sz = 64, // NOTICE always sync with the offsets below
+        data_sz = page_sz - hdr_sz,
+        /** Poor man's normalized key length. */
+        poormkey_sz = sizeof (poor_man_key),
+        slot_sz = sizeof(slot_offset8_t) + poormkey_sz
+    };
+
+ 
+    /* MUST BE 8-BYTE ALIGNED HERE */
+    char     data[data_sz];        // must be aligned
+
+    char*      data_addr8(slot_offset8_t offset8) {
+        return data + to_byte_offset(offset8);
+    }
+    const char* data_addr8(slot_offset8_t offset8) const {
+        return data + to_byte_offset(offset8);
+    }
+
+
+    page_s() {
+        w_assert1(data - (const char *) this == hdr_sz);
+    }
+    ~page_s() { }
+};
 
 #endif
