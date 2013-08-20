@@ -829,7 +829,7 @@ vol_t::format_vol(
                         ap.set_bit(hdr_pid);
                     }
                 }
-                page_s& page (*ap._pp);
+                alloc_page& page (*ap._pp);
                 w_assert9(&buf == &page);
                 w_assert1(page.pid.vol() == vid);
 

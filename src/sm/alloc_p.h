@@ -15,6 +15,7 @@
 #include "w_key.h"
 #include "sm_base.h"
 
+
 /**
  * \brief Free-Page allocation/deallocation page.
  * \details
@@ -23,9 +24,19 @@
  * They are drastically simpler and more efficient than prior extent management.
  * See jira ticket:72 "fix extent management" (originally trac ticket:74) for more details.
  */
+class alloc_page : public generic_page_header {
+public:
+    char     data[data_sz];        // must be aligned
+    
+};
+
+
+/**
+ ** \brief Handler class for a free-page allocation/deallocation page.
+ **/
 class alloc_p {
 public:
-    alloc_p(page_s* s) : _pp(s) {}
+alloc_p(page_s* s) : _pp(reinterpret_cast<alloc_page*>(s)) {}
     ~alloc_p()  {}
     
     rc_t format(const lpid_t& pid);
@@ -81,7 +92,7 @@ public:
         uint32_t alloc_p_seq = pid / alloc_max;
         return alloc_p_seq + 1; // +1 for volume header
     }
-    page_s *_pp;
+    alloc_page *_pp;
 };
 inline shpid_t alloc_p::get_pid_offset() const {
     return reinterpret_cast<const shpid_t*>(_pp->data)[0];
