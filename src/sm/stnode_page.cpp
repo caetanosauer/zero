@@ -7,13 +7,13 @@
 #define SM_SOURCE
 
 #ifdef __GNUG__
-#   pragma implementation "stnode_p.h"
+#   pragma implementation "stnode_page.h"
 #endif
 
 #include "sm_int_2.h"
 
 #include "page_s.h"
-#include "stnode_p.h"
+#include "stnode_page.h"
 #include "crash.h"
 #include "sm_s.h"
 #include "bf_fixed.h"

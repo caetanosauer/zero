@@ -2,8 +2,8 @@
  * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
  */
 
-#ifndef STNODE_P_H
-#define STNODE_P_H
+#ifndef STNODE_PAGE_H
+#define STNODE_PAGE_H
 
 #include "w_defines.h"
 
@@ -175,4 +175,4 @@ private:
     mutable queue_based_lock_t _spin_lock;
 };
 
-#endif //STNODE_P_H
+#endif // STNODE_PAGE_H

@@ -22,7 +22,7 @@
 #include "w_rc.h"
 #include "srwlock.h"
 #include "sthread.h"
-#include "stnode_p.h" // only for stnode_page_h::max
+#include "stnode_page.h" // only for stnode_page_h::max
 
 /** max number of volumes overall. */
 const uint16_t MAX_VOL_GLOBAL = 8;

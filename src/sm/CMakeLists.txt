@@ -52,7 +52,7 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/smindex.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/smstats.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/smthread.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/stnode_p.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/stnode_page.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/vol.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/xct.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/vtable_sm.cpp
@@ -201,7 +201,7 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/sm_vtable_enum.h
   ${CMAKE_CURRENT_SOURCE_DIR}/smstats.h
   ${CMAKE_CURRENT_SOURCE_DIR}/smthread.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/stnode_p.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/stnode_page.h
   ${CMAKE_CURRENT_SOURCE_DIR}/sysdefs.h
   ${CMAKE_CURRENT_SOURCE_DIR}/vol.h
   ${CMAKE_CURRENT_SOURCE_DIR}/xct.h

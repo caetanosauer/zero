@@ -12,7 +12,7 @@
 #endif
 
 #include <list>
-#include "stnode_p.h"
+#include "stnode_page.h"
 
 
 struct volume_hdr_stats_t;

@@ -16,7 +16,7 @@
 #include "w_stream.h"
 #include <sys/types.h>
 #include "sm_int_1.h"
-#include "stnode_p.h"
+#include "stnode_page.h"
 #include "vol.h"
 #include "sm_du_stats.h"
 #include "crash.h"

@@ -109,7 +109,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include "btree_p.h"
 #include "alloc_page.h"
-#include "stnode_p.h"
+#include "stnode_page.h"
 
 EOF
 
