@@ -72,13 +72,17 @@ class alloc_page : public generic_page_header {
  ** \brief Handler class for a free-page allocation/deallocation page.
  **/
 class alloc_p {
+    alloc_page *_page;
 
 public:
     alloc_p(page_s* s) : _page(reinterpret_cast<alloc_page*>(s)) {
         w_assert1(sizeof(alloc_page) == generic_page_header::page_sz);
     }
     ~alloc_p()  {}
-    
+
+    page_s* generic_page() const { return reinterpret_cast<page_s*>(_page); }
+
+
     rc_t format(const lpid_t& pid);
 
     /// Number of pages one alloc_page can cover
@@ -126,8 +130,6 @@ public:
         uint32_t alloc_p_seq = pid / alloc_page::bits_held;
         return alloc_p_seq + 1; // +1 for volume header
     }
-
-    alloc_page *_page;
 };
 
 
