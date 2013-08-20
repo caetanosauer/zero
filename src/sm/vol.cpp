@@ -843,11 +843,10 @@ vol_t::format_vol(
 
         // Format stnode_p
         { 
-            stnode_p fp(&buf);
             DBG(<<" formatting stnode_p");
             DBGTHRD(<<"stnode_p page " << spid.page);
-            W_COERCE( fp.format(spid));
-            page_s& page (*fp._pp);
+            stnode_p fp(&buf, spid);  // formatting...
+            page_s& page (*fp.generic_page());
             w_assert1(page.pid.vol() == vid);
             rc = me()->write(fd, &page, sizeof(page));
             if (rc.is_error()) {

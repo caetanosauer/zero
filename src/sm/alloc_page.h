@@ -79,7 +79,7 @@ public:
     alloc_page_h(page_s* s) : _page(reinterpret_cast<alloc_page*>(s)) {
         w_assert1(s->tag == t_alloc_p);
     }
-    ~alloc_page_h()  {}
+    ~alloc_page_h() {}
 
     /// return pointer to underlying page
     page_s* generic_page() const { return reinterpret_cast<page_s*>(_page); }

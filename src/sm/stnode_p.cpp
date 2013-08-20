@@ -18,20 +18,18 @@
 #include "sm_s.h"
 #include "bf_fixed.h"
 
-rc_t
-stnode_p::format(const lpid_t& pid) {
-    // no records/slots. just array of stnode_t.
-    ::memset(_pp, 0, sizeof(page_s));
-    _pp->pid = pid;
-    _pp->tag = t_stnode_p;
-    return RCOK;
+
+stnode_p::stnode_p(page_s* s, const lpid_t& pid):
+    _page(reinterpret_cast<stnode_page*>(s)) 
+{
+    w_assert1(sizeof(stnode_page) == generic_page_header::page_sz);
+
+    ::memset(_page, 0, sizeof(*_page));
+
+    _page->pid = pid;
+    _page->tag = t_stnode_p;
 }    
 
-stnode_t& stnode_p::get(size_t idx)
-{
-    w_assert1(idx < max);
-    return reinterpret_cast<stnode_t*>(_pp->data)[idx];
-}
 
 stnode_cache_t::stnode_cache_t (vid_t vid, bf_fixed_m* fixed_pages): _vid(vid), _fixed_pages(fixed_pages) {
     page_s* page = _fixed_pages->get_pages() + _fixed_pages->get_page_cnt() - 1;

@@ -16,52 +16,91 @@
 #include "sthread.h"
 #include <vector>
 
+class bf_fixed_m;
+
+
+
 /**
  * \brief Persistent structure representing the head of a store's extent list.
- * \details These structures sit on stnode_p pages and point to the
- * start of the extent list.
- * The stnode_t structures are indexed by store number.
+ *
+ * \details
+ * These structures sit on stnode_page pages and point to the start of
+ * the extent list.  The stnode_t structures are indexed by store
+ * number.
  */
 struct stnode_t {
     stnode_t() {
-      root = 0;
-      flags = 0;
+      root     = 0;
+      flags    = 0;
       deleting = 0;
     }
-    /**\brief First extent of the store */
-    shpid_t         root; // +4 -> 4
-    /**\brief store flags  */
-    uint16_t        flags; // +2 -> 6
-    /**\brief non-zero if deleting or deleted */
+
+    /// First extent of the store
+    shpid_t         root;      // +4 -> 4
+    /// store flags 
+    uint16_t        flags;     // +2 -> 6
+    /// non-zero if deleting or deleted
     uint16_t        deleting;  // +2 -> 8
 };
 
-class stnode_cache_t;
-class bf_fixed_m;
 
 /**
- * \brief Extent map page that contains store nodes (stnode_t).
- * \details These are the pages that contain the starting points of 
- * a store's root page.
+ * \brief Extent map page that contains store nodes (stnode_t's).
+ *
+ * \details
+ * These are the pages that contain the starting points of a store's
+ * root page.
+ */
+class stnode_page : public generic_page_header {
+    friend class stnode_p;
+
+    /// max # store nodes on a page
+    static const int max = data_sz / sizeof(stnode_t);
+
+    stnode_t stnode[max];
+    /// unused space (ideally of zero size)
+    char*    padding[data_sz - sizeof(stnode)];
+};
+
+
+
+
+/**
+ * \brief Handle for an extent map page (stnode_page).
  */
 class stnode_p {
+    stnode_page *_page;
+
     friend class stnode_cache_t;
+
 public:
-    stnode_p(page_s* s) : _pp (s) {}
-    ~stnode_p()  {}
+    /// format given page with page-ID pid as an stnode_page page then
+    /// return a handle to it
+    stnode_p(page_s* s, const lpid_t& pid);
+    /// construct handle from an existing stnode_page page
+    stnode_p(page_s* s) : _page(reinterpret_cast<stnode_page*>(s)) {
+        w_assert1(s->tag == t_stnode_p);
+    }
+    ~stnode_p() {}
 
-    rc_t format(const lpid_t& pid);
+    /// return pointer to underlying page
+    page_s* generic_page() const { return reinterpret_cast<page_s*>(_page); }
 
-    // max # store nodes on a page
-    enum { max = page_s::data_sz / sizeof(stnode_t) };
 
-    stnode_t&       get(size_t idx);
+    /// max # store nodes on a page
+    static const int max = stnode_page::max;
 
-    page_s *_pp;
+    stnode_t& get(size_t index) {
+        w_assert1(index < max);
+        return _page->stnode[index];
+    }
 };
+
+
 
 /**
  * \brief Store creation/destroy/query interface.
+ *
  * \details
  * This object handles store create/destroy/query requests for one volume.
  * 99.99% of the requests are of course querying the root page id of indexes.
