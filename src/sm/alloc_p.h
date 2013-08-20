@@ -16,6 +16,7 @@
 #include "sm_base.h"
 
 
+
 /**
  * \brief Free-page allocation/deallocation page.
  *
@@ -32,9 +33,14 @@
  * is contained in the handler class.
  */
 class alloc_page : public generic_page_header {
-public:
-    shpid_t pid_offset;        ///< the smallest page-ID that the bitmap in this page represents
-    shpid_t pid_highwatermark; ///< smallest pid in this page such that all higher pid's represented have their bits OFF
+    friend class alloc_p;
+
+
+    /// the smallest page-ID that the bitmap in this page represents
+    shpid_t pid_offset;        
+    /// smallest pid in this page such that all higher pid's
+    /// represented have their bits OFF
+    shpid_t pid_highwatermark; 
 
 
     /**
@@ -46,7 +52,7 @@ public:
      */
     uint8_t bitmap[data_sz - sizeof(shpid_t)*2]; 
 
-    /** Number of pages one alloc_page can cover. */
+    /// Number of pages one alloc_page can cover
     static const int bits_held = (sizeof(alloc_page::bitmap)) * 8;
     
     uint32_t byte_place(uint32_t index) { return index >> 3; }
@@ -74,6 +80,9 @@ public:
     ~alloc_p()  {}
     
     rc_t format(const lpid_t& pid);
+
+    /// Number of pages one alloc_page can cover
+    static const int bits_held = alloc_page::bits_held;
 
     /** Returns the smallest page ID bitmaps in this page represent. */
     shpid_t get_pid_offset() const { return _page->pid_offset; }

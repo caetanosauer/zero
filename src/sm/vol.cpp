@@ -771,7 +771,7 @@ vol_t::format_vol(
         return rc;
     }
     
-    shpid_t alloc_pages = num_pages / alloc_page::bits_held + 1; // # alloc_p pages
+    shpid_t alloc_pages = num_pages / alloc_p::bits_held + 1; // # alloc_p pages
     shpid_t hdr_pages = alloc_pages + 1 + 1; // +1 for stnode_p, +1 for volume header
 
     lpid_t apid (vid, 0 , 1);

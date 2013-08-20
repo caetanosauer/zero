@@ -37,7 +37,7 @@ rc_t alloc_cache_t::load_by_scan (shpid_t max_pid) {
             }
         }
 
-        if (hwm < offset + alloc_page::bits_held) {
+        if (hwm < offset + alloc_p::bits_held) {
             // from this pid, no pages are allocated yet
             _contiguous_free_pages_begin = hwm;
             // if this whole page is not entirely used (at least once),
@@ -199,8 +199,8 @@ rc_t alloc_cache_t::apply_allocate_consecutive_pages (shpid_t pid_begin, size_t 
 
         // log it
         size_t this_page_count;
-        if (pid_to_end > al.get_pid_offset() + alloc_page::bits_held) {
-            this_page_count = al.get_pid_offset() + alloc_page::bits_held - cur_pid;
+        if (pid_to_end > al.get_pid_offset() + alloc_p::bits_held) {
+            this_page_count = al.get_pid_offset() + alloc_p::bits_held - cur_pid;
         } else {
             this_page_count = pid_to_end - cur_pid;
         }
