@@ -1,6 +1,7 @@
 
 set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/alloc_cache.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/alloc_page.cpp
 #    ${CMAKE_CURRENT_SOURCE_DIR}/bf.cpp
 #    ${CMAKE_CURRENT_SOURCE_DIR}/bf_core.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bf_fixed.cpp

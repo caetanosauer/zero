@@ -7,6 +7,7 @@
 
 #include "w_defines.h"
 #include "w_endian.h"
+#include "sm_s.h"
 
 #ifdef __GNUG__
 #pragma interface
