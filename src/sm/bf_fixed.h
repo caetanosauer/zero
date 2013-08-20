@@ -18,11 +18,11 @@ class vol_t;
  * \ingroup SSMBUFPOOL
  * \Details
  * This buffer manager deals with only allocation pages (alloc_page) and
- * store pages (stnode_p). All pages are always pinned as there are
+ * store pages (stnode_page). All pages are always pinned as there are
  * only a fixed and small number of such pages. Therefore, this buffer manager
  * is much simpler and more efficient than the main buffer manager.
  * 
- * How simpler it is? MUCH.
+ * How simpler it is?  MUCH.
  * No pinning, no synchronization (alloc_cache does it on behalf),
  * no hash table, no background cleaner, no eviction, no write-order-dependency.
  * 
@@ -36,7 +36,7 @@ public:
     
     /**
      * This constructor is called when a volume is mounted and
-     * reads/pinns all special pages in it.
+     * reads/pins all special pages in it.
      */
     w_rc_t init(vol_t* parent, int unix_fd, uint32_t max_pid);
 

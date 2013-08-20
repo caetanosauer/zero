@@ -52,7 +52,7 @@ struct stnode_t {
  * root page.
  */
 class stnode_page : public generic_page_header {
-    friend class stnode_p;
+    friend class stnode_page_h;
 
     /// max # store nodes on a page
     static const int max = data_sz / sizeof(stnode_t);
@@ -68,7 +68,7 @@ class stnode_page : public generic_page_header {
 /**
  * \brief Handle for an extent map page (stnode_page).
  */
-class stnode_p {
+class stnode_page_h {
     stnode_page *_page;
 
     friend class stnode_cache_t;
@@ -76,12 +76,12 @@ class stnode_p {
 public:
     /// format given page with page-ID pid as an stnode_page page then
     /// return a handle to it
-    stnode_p(page_s* s, const lpid_t& pid);
+    stnode_page_h(page_s* s, const lpid_t& pid);
     /// construct handle from an existing stnode_page page
-    stnode_p(page_s* s) : _page(reinterpret_cast<stnode_page*>(s)) {
+    stnode_page_h(page_s* s) : _page(reinterpret_cast<stnode_page*>(s)) {
         w_assert1(s->tag == t_stnode_p);
     }
-    ~stnode_p() {}
+    ~stnode_page_h() {}
 
     /// return pointer to underlying page
     page_s* generic_page() const { return reinterpret_cast<page_s*>(_page); }
@@ -105,12 +105,12 @@ public:
  * This object handles store create/destroy/query requests for one volume.
  * 99.99% of the requests are of course querying the root page id of indexes.
  * This object does a light weight synchronization (latch) to protect
- * them from MT accesses. However, this doesn't use locks because
- * we don't need them. If the store is being destroyed, ss_m will check
+ * them from MT accesses.  However, this doesn't use locks because
+ * we don't need them.  If the store is being destroyed, ss_m will check
  * intent locks before calling this object, so we are safe.
  * This object and vol_t replace the "directory" thingies in original Shore-MT
  * with more efficiency and simplicity.
- * @See stnode_p
+ * @See stnode_page_h
  */
 class stnode_cache_t {
 public:
@@ -168,7 +168,7 @@ private:
     vid_t _vid;
     bf_fixed_m* _fixed_pages;
 
-    /** this merely points to the stnode_p data in bf_fixed_m. */
+    /** this merely points to the stnode_page data in bf_fixed_m. */
     stnode_t *_stnodes;
 
     /** all operations in this object are protected by this lock. */

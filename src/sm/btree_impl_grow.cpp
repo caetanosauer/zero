@@ -48,7 +48,7 @@ rc_t btree_impl::_ux_create_tree_core(const stid_t &stid, const lpid_t &root_pid
         infimum, supremum, dummy_chain_high // start from infimum/supremum fence keys
     ));
 
-    // also register it in stnode_p
+    // also register it in stnode_page
     W_DO(io->set_root(stid, root_pid.page));
 
     return RCOK;

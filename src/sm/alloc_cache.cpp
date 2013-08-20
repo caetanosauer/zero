@@ -19,7 +19,7 @@ rc_t alloc_cache_t::load_by_scan (shpid_t max_pid) {
     _contiguous_free_pages_end = max_pid;
     
     // at this point, no other threads are accessing the volume. we don't need any synchronization.
-    uint32_t alloc_pages_cnt = _fixed_pages->get_page_cnt() - 1; // -1 for stnode_p
+    uint32_t alloc_pages_cnt = _fixed_pages->get_page_cnt() - 1; // -1 for stnode_page
     page_s *pages = _fixed_pages->get_pages();
     for (uint32_t i = 0; i < alloc_pages_cnt; ++i) {
         alloc_page_h al (pages + i);
@@ -164,7 +164,7 @@ rc_t alloc_cache_t::apply_allocate_one_page (shpid_t pid, bool logit)
     spinlock_read_critical_section cs(&_fixed_pages->get_checkpoint_lock()); // protect against checkpoint. see bf_fixed_m comment.
     shpid_t alloc_pid = alloc_page_h::pid_to_alloc_pid(pid);
     uint32_t buf_index = alloc_pid - 1; // -1 for volume header
-    w_assert1(buf_index < _fixed_pages->get_page_cnt() - 1); // -1 for stnode_p
+    w_assert1(buf_index < _fixed_pages->get_page_cnt() - 1); // -1 for stnode_page
     page_s* pages = _fixed_pages->get_pages();
     alloc_page_h al (pages + buf_index);
     if (logit) {
@@ -190,7 +190,7 @@ rc_t alloc_cache_t::apply_allocate_consecutive_pages (shpid_t pid_begin, size_t 
     // log and apply per each alloc_page
     while (cur_pid < pid_to_end) {    
         uint32_t buf_index = alloc_pid - 1; // -1 for volume header
-        w_assert1(buf_index < _fixed_pages->get_page_cnt() - 1); // -1 for stnode_p
+        w_assert1(buf_index < _fixed_pages->get_page_cnt() - 1); // -1 for stnode_page
         alloc_page_h al (pages + buf_index);
 
         // log it
@@ -226,7 +226,7 @@ rc_t alloc_cache_t::apply_deallocate_one_page (shpid_t pid, bool logit)
     spinlock_read_critical_section cs(&_fixed_pages->get_checkpoint_lock()); // protect against checkpoint. see bf_fixed_m comment.
     shpid_t alloc_pid = alloc_page_h::pid_to_alloc_pid(pid);
     uint32_t buf_index = alloc_pid - 1; // -1 for volume header
-    w_assert1(buf_index < _fixed_pages->get_page_cnt() - 1); // -1 for stnode_p
+    w_assert1(buf_index < _fixed_pages->get_page_cnt() - 1); // -1 for stnode_page
     page_s* pages = _fixed_pages->get_pages();
     alloc_page_h al (pages + buf_index);
     // log it

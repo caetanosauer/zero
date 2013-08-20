@@ -2417,7 +2417,7 @@ ss_m::_get_du_statistics(vid_t vid, sm_du_stats_t& du, bool audit)
 
     rc_t rc;
     // get du stats on every store
-    for (stid_t s(vid, 0); s.store < stnode_p::max; s.store++) {
+    for (stid_t s(vid, 0); s.store < stnode_page_h::max; s.store++) {
         DBG(<<"look at store " << s);
         
         store_flag_t flags;

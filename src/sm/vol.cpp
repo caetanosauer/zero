@@ -40,7 +40,7 @@ static const int sector_size = 512;
 Volume layout:
    volume header 
    alloc_page pages -- Starts on page 1.
-   stnode_p -- only one page
+   stnode_page -- only one page
    data pages -- rest of volume
 
    alloc_page pages are bitmaps indicating which of its pages are allocated.
@@ -232,7 +232,7 @@ rc_t vol_t::check_disk()
 
     smlevel_0::errlog->clog << info_prio 
         << "\tstore  #   flags   status: [ extent-list ]" << "." << endl;
-    for (shpid_t i = 1; i < stnode_p::max; i++)  {
+    for (shpid_t i = 1; i < stnode_page_h::max; i++)  {
         stnode_t stnode;
         _stnode_cache->get_stnode(i, stnode);
         if (stnode.root)  {
@@ -274,7 +274,7 @@ rc_t vol_t::alloc_consecutive_pages(const stid_t &stid, size_t page_count, lpid_
 
 rc_t vol_t::store_operation(const store_operation_param& param)
 {
-    w_assert1(param.snum() < stnode_p::max);
+    w_assert1(param.snum() < stnode_page_h::max);
     w_assert1(_stnode_cache);
     W_DO(_stnode_cache->store_operation(param));
     return RCOK;
@@ -293,7 +293,7 @@ rc_t vol_t::find_free_store(snum_t& snum)
     FUNC(find_free_store);
     w_assert1(_stnode_cache);
     snum = _stnode_cache->get_min_unused_store_id();
-    if (snum >= stnode_p::max) {
+    if (snum >= stnode_page_h::max) {
         W_RETURN_RC_MSG(eOUTOFSPACE, << "volume id = " << _vid);
     }
     return RCOK;
@@ -447,17 +447,17 @@ rc_t vol_t::set_store_root(snum_t snum, shpid_t root)
 rc_t
 vol_t::get_volume_meta_stats(SmVolumeMetaStats& volume_stats)
 {
-    volume_stats.numStores = stnode_p::max;
+    volume_stats.numStores = stnode_page_h::max;
 
     {
         volume_stats.numAllocStores = 0;
-        for (slotid_t i = 1; i < stnode_p::max; ++i) {
+        for (slotid_t i = 1; i < stnode_page_h::max; ++i) {
             
             if (_stnode_cache->get_root_pid(i) != 0) {
                 ++volume_stats.numAllocStores;
             }
         }
-    } // unpins stnode_p
+    } // unpins stnode_page
 
     volume_stats.numPages = _num_pages;
     volume_stats.numSystemPages = _hdr_pages;
@@ -772,7 +772,7 @@ vol_t::format_vol(
     }
     
     shpid_t alloc_pages = num_pages / alloc_page_h::bits_held + 1; // # alloc_page_h pages
-    shpid_t hdr_pages = alloc_pages + 1 + 1; // +1 for stnode_p, +1 for volume header
+    shpid_t hdr_pages = alloc_pages + 1 + 1; // +1 for stnode_page, +1 for volume header
 
     lpid_t apid (vid, 0 , 1);
     lpid_t spid (vid, 0 , 1 + alloc_pages);
@@ -841,11 +841,11 @@ vol_t::format_vol(
         }
         DBG(<<" done formatting extent region");
 
-        // Format stnode_p
+        // Format stnode_page
         { 
-            DBG(<<" formatting stnode_p");
-            DBGTHRD(<<"stnode_p page " << spid.page);
-            stnode_p fp(&buf, spid);  // formatting...
+            DBG(<<" formatting stnode_page");
+            DBGTHRD(<<"stnode_page page " << spid.page);
+            stnode_page_h fp(&buf, spid);  // formatting...
             page_s& page (*fp.generic_page());
             w_assert1(page.pid.vol() == vid);
             rc = me()->write(fd, &page, sizeof(page));

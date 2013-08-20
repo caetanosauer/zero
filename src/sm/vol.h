@@ -28,7 +28,7 @@ class volhdr_t {
     sm_diskaddr_t       _device_quota_KB;
     lvid_t              _lvid;
     shpid_t             _apid;        // first alloc_page pid
-    shpid_t             _spid;        // the only stnode_p pid
+    shpid_t             _spid;        // the only stnode_page pid
     uint32_t            _num_pages;
     shpid_t             _hdr_pages;   // # pages in hdr includes entire store 0
     uint32_t            _page_sz;    // page size in bytes
@@ -96,7 +96,7 @@ public:
     const char*         devname() const;
     vid_t               vid() const ;
     lvid_t              lvid() const ;
-    /** returns the page ID of the first non-fixed pages (after stnode_p and alloc_page).*/
+    /** returns the page ID of the first non-fixed pages (after stnode_page and alloc_page).*/
     shpid_t             first_data_pageid() const { return _first_data_pageid;}
     uint32_t            num_pages() const;
     uint32_t            num_used_pages() const;
@@ -288,7 +288,7 @@ inline bool vol_t::is_valid_page_num(const lpid_t& p) const
 
 inline bool vol_t::is_valid_store(snum_t f) const
 {
-    return (f < stnode_p::max);
+    return (f < stnode_page_h::max);
 }
     
 /*<std-footer incl-file-exclusion='VOL_H'>  -- do not edit anything below this line -- */

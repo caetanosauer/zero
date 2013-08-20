@@ -13,7 +13,7 @@
 #endif
 #include "sm_int_2.h"
 #include "logdef_gen.cpp"
-// include stnode_p.h JUST to get stnode_p::max
+// include stnode_p.h JUST to get stnode_page_h::max
 #include "stnode_p.h" 
 
 #include "vec_t.h"

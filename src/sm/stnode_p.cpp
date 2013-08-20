@@ -19,7 +19,7 @@
 #include "bf_fixed.h"
 
 
-stnode_p::stnode_p(page_s* s, const lpid_t& pid):
+stnode_page_h::stnode_page_h(page_s* s, const lpid_t& pid):
     _page(reinterpret_cast<stnode_page*>(s)) 
 {
     w_assert1(sizeof(stnode_page) == generic_page_header::page_sz);
@@ -31,6 +31,7 @@ stnode_p::stnode_p(page_s* s, const lpid_t& pid):
 }    
 
 
+
 stnode_cache_t::stnode_cache_t (vid_t vid, bf_fixed_m* fixed_pages): _vid(vid), _fixed_pages(fixed_pages) {
     page_s* page = _fixed_pages->get_pages() + _fixed_pages->get_page_cnt() - 1;
     w_assert1(page->pid.vol() == _vid);
@@ -39,7 +40,7 @@ stnode_cache_t::stnode_cache_t (vid_t vid, bf_fixed_m* fixed_pages): _vid(vid), 
 
 shpid_t stnode_cache_t::get_root_pid (snum_t store) const
 {
-    if (store >= stnode_p::max) {
+    if (store >= stnode_page_h::max) {
         w_assert1(false);
         return 0;
     }
@@ -54,7 +55,7 @@ shpid_t stnode_cache_t::get_root_pid (snum_t store) const
 }
 void stnode_cache_t::get_stnode (snum_t store, stnode_t &stnode) const
 {
-    if (store >= stnode_p::max) {
+    if (store >= stnode_page_h::max) {
         w_assert1(false);
         stnode = stnode_t();
         return;
@@ -68,20 +69,20 @@ snum_t stnode_cache_t::get_min_unused_store_id () const
     // this method is not so efficient, but this is rarely called.
     CRITICAL_SECTION (cs, _spin_lock);
     // let's start from 1, not 0. All user store ID will begin with 1.
-    // store-id 0 will be a special store-id for stnode_p/alloc_page
-    for (int i = 1; i < stnode_p::max; ++i) {
+    // store-id 0 will be a special store-id for stnode_page_h/alloc_page
+    for (int i = 1; i < stnode_page_h::max; ++i) {
         if (_stnodes[i].root == 0) {
             return i;
         }
     }
-    return stnode_p::max;
+    return stnode_page_h::max;
 }
 
 std::vector<snum_t> stnode_cache_t::get_all_used_store_id() const
 {
     std::vector<snum_t> ret;
     CRITICAL_SECTION (cs, _spin_lock);
-    for (int i = 1; i < stnode_p::max; ++i) {
+    for (int i = 1; i < stnode_page_h::max; ++i) {
         if (_stnodes[i].root != 0) {
             ret.push_back((snum_t) i);
         }
@@ -93,7 +94,7 @@ std::vector<snum_t> stnode_cache_t::get_all_used_store_id() const
 rc_t
 stnode_cache_t::store_operation(const store_operation_param& param)
 {
-    w_assert1(param.snum() < stnode_p::max);
+    w_assert1(param.snum() < stnode_page_h::max);
 
     store_operation_param new_param(param);
     stnode_t stnode;
@@ -168,7 +169,7 @@ stnode_cache_t::store_operation(const store_operation_param& param)
             w_assert0(false);
     }
 
-    // log it and apply the change to the stnode_p
+    // log it and apply the change to the stnode_page
     CRITICAL_SECTION (cs, _spin_lock);
     spinlock_read_critical_section cs2(&_fixed_pages->get_checkpoint_lock()); // protect against checkpoint. see bf_fixed_m comment.
     W_DO( log_store_operation(new_param) );

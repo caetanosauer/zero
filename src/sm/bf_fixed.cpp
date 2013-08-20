@@ -33,9 +33,9 @@ w_rc_t bf_fixed_m::init(vol_t* parent, int unix_fd, uint32_t max_pid) {
     _parent = parent;
     _unix_fd = unix_fd;
     // volume has 1 volume header (pid=0), then a few allocation pages first,
-    // then 1 stnode_p and then data pages.
+    // then 1 stnode_page and then data pages.
     shpid_t alloc_pages = (max_pid / alloc_page_h::bits_held) + 1;
-    _page_cnt = alloc_pages + 1; // +1 for stnode_p
+    _page_cnt = alloc_pages + 1; // +1 for stnode_page
     // use posix_memalign to allow unbuffered disk I/O
     void *buf = NULL;
     ::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * _page_cnt);

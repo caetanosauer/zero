@@ -7,7 +7,7 @@
 
 #include "w_defines.h"
 
-class stnode_p;
+class stnode_page_h;
 class alloc_page_h;
 
 #ifdef __GNUG__
