@@ -36,7 +36,7 @@ class alloc_page : public generic_page_header {
     friend class alloc_p;
 
 
-    /// the smallest page-ID that the bitmap in this page represents
+    /// the smallest page ID that the bitmap in this page represents
     shpid_t pid_offset;        
     /// smallest pid in this page such that all higher pid's
     /// represented have their bits OFF
@@ -75,15 +75,16 @@ class alloc_p {
     alloc_page *_page;
 
 public:
+    /// new page; format with ID pid
+    alloc_p(page_s* s, const lpid_t& pid);
+    /// existing page
     alloc_p(page_s* s) : _page(reinterpret_cast<alloc_page*>(s)) {
-        w_assert1(sizeof(alloc_page) == generic_page_header::page_sz);
+        w_assert1(s->tag == t_alloc_p);
     }
     ~alloc_p()  {}
 
     page_s* generic_page() const { return reinterpret_cast<page_s*>(_page); }
 
-
-    rc_t format(const lpid_t& pid);
 
     /// Number of pages one alloc_page can cover
     static const int bits_held = alloc_page::bits_held;
@@ -134,6 +135,13 @@ public:
 
 
 
+inline void alloc_p::update_pid_highwatermark(shpid_t pid_touched) {
+    if (pid_touched + 1 > _page->pid_highwatermark) {
+        _page->pid_highwatermark = pid_touched + 1;
+    }
+}
+
+
 inline bool alloc_p::is_set_bit(shpid_t pid) const {
     w_assert1(pid >= get_pid_offset());
     w_assert1(pid < get_pid_offset() + alloc_page::bits_held);
@@ -175,32 +183,4 @@ inline void alloc_p::set_consecutive_bits(shpid_t pid_begin, shpid_t pid_end) {
     update_pid_highwatermark(pid_end - 1); // -1 because "end" itself is not touched
 }
 
-
-
-
-
-
-
-
-inline void alloc_p::update_pid_highwatermark(shpid_t pid_touched) {
-    if (pid_touched + 1 > _page->pid_highwatermark) {
-        _page->pid_highwatermark = pid_touched + 1;
-    }
-}
-
-inline rc_t alloc_p::format(const lpid_t& pid) {
-    ::memset (_page, 0, sizeof(alloc_page));
-    _page->pid = pid;
-    _page->tag = t_alloc_p;
-
-    // no records or whatever.  this is just a huge bitmap
-    shpid_t pid_offset = alloc_pid_to_pid_offset(pid.page);
-
-    _page->pid_offset        = pid_offset;
-    _page->pid_highwatermark = pid_offset;
-    // _page->bitmap initialized to all OFF's by memset above
-
-    return RCOK;
-}
-    
 #endif // ALLOC_P_H

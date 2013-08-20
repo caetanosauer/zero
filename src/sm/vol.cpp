@@ -821,8 +821,7 @@ vol_t::format_vol(
         //  Format alloc_p pages
         {
             for (apid.page = 1; apid.page < alloc_pages + 1; ++apid.page)  {
-                alloc_p ap(&buf);
-                W_COERCE( ap.format(apid));
+                alloc_p ap(&buf, apid);  // format page
                 // set bits for the header pages
                 if (apid.page == 1) {
                     for (shpid_t hdr_pid = 0; hdr_pid < hdr_pages; ++hdr_pid) {

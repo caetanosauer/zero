@@ -28,3 +28,19 @@ void alloc_page::set_bits(uint32_t from, uint32_t to) {
         set_bit(i);
     }
 }
+
+
+alloc_p::alloc_p(page_s* s, const lpid_t& pid):
+    _page(reinterpret_cast<alloc_page*>(s)) 
+{
+    w_assert1(sizeof(alloc_page) == generic_page_header::page_sz);
+
+    ::memset (_page, 0, sizeof(alloc_page));
+    _page->pid = pid;
+    _page->tag = t_alloc_p;
+
+    shpid_t pid_offset = alloc_pid_to_pid_offset(pid.page);
+    _page->pid_offset        = pid_offset;
+    _page->pid_highwatermark = pid_offset;
+    // _page->bitmap initialized to all OFF's by memset above
+}
