@@ -2,8 +2,8 @@
  * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
  */
 
-#ifndef ALLOC_P_H
-#define ALLOC_P_H
+#ifndef ALLOC_PAGE_H
+#define ALLOC_PAGE_H
 
 #include "w_defines.h"
 #include "page_s.h"
@@ -27,7 +27,7 @@
  * is contained in the handler class.
  */
 class alloc_page : public generic_page_header {
-    friend class alloc_p;
+    friend class alloc_page_h;
 
 
     /// the smallest page ID that the bitmap in this page represents
@@ -69,17 +69,17 @@ class alloc_page : public generic_page_header {
  * None of these methods log; logging should be done in alloc_cache
  * when necessary before calling these methods.
  */
-class alloc_p {
+class alloc_page_h {
     alloc_page *_page;
 
 public:
     /// format given page with page-ID pid as an alloc page then return a handle to it
-    alloc_p(page_s* s, const lpid_t& pid);
+    alloc_page_h(page_s* s, const lpid_t& pid);
     /// construct handle from an existing alloc page
-    alloc_p(page_s* s) : _page(reinterpret_cast<alloc_page*>(s)) {
+    alloc_page_h(page_s* s) : _page(reinterpret_cast<alloc_page*>(s)) {
         w_assert1(s->tag == t_alloc_p);
     }
-    ~alloc_p()  {}
+    ~alloc_page_h()  {}
 
     /// return pointer to underlying page
     page_s* generic_page() const { return reinterpret_cast<page_s*>(_page); }
@@ -114,14 +114,14 @@ public:
     
     /// determines the pid_offset for the given alloc page
     inline static shpid_t alloc_pid_to_pid_offset(shpid_t alloc_pid) {
-        uint32_t alloc_p_seq = alloc_pid - 1; // -1 for volume header
-        return alloc_page::bits_held * alloc_p_seq;
+        uint32_t alloc_page_h_seq = alloc_pid - 1; // -1 for volume header
+        return alloc_page::bits_held * alloc_page_h_seq;
     }
 
     /// determines the alloc page the given page should belong to
    inline static shpid_t pid_to_alloc_pid (shpid_t pid) {
-        uint32_t alloc_p_seq = pid / alloc_page::bits_held;
-        return alloc_p_seq + 1; // +1 for volume header
+        uint32_t alloc_page_h_seq = pid / alloc_page::bits_held;
+        return alloc_page_h_seq + 1; // +1 for volume header
     }
 
 private:
@@ -130,14 +130,14 @@ private:
 
 
 
-inline bool alloc_p::is_set_bit(shpid_t pid) const {
+inline bool alloc_page_h::is_set_bit(shpid_t pid) const {
     w_assert1(pid >= get_pid_offset());
     w_assert1(pid < get_pid_offset() + alloc_page::bits_held);
 
     return _page->get_bit(pid - _page->pid_offset);
 }
 
-inline void alloc_p::unset_bit(shpid_t pid) {
+inline void alloc_page_h::unset_bit(shpid_t pid) {
     w_assert1(pid >= get_pid_offset());
     w_assert1(pid < get_pid_offset() + alloc_page::bits_held);
 
@@ -148,7 +148,7 @@ inline void alloc_p::unset_bit(shpid_t pid) {
     _page->unset_bit(pid - _page->pid_offset);
 }
 
-inline void alloc_p::set_bit(shpid_t pid) {
+inline void alloc_page_h::set_bit(shpid_t pid) {
     w_assert1(pid >= get_pid_offset());
     w_assert1(pid < get_pid_offset() + alloc_page::bits_held);
 
@@ -160,7 +160,7 @@ inline void alloc_p::set_bit(shpid_t pid) {
     update_pid_highwatermark(pid);
 }
 
-inline void alloc_p::set_consecutive_bits(shpid_t pid_begin, shpid_t pid_end) {
+inline void alloc_page_h::set_consecutive_bits(shpid_t pid_begin, shpid_t pid_end) {
     w_assert1(pid_begin >= get_pid_offset());
     w_assert1(pid_begin <= pid_end);
     w_assert1(pid_end <= get_pid_offset() + alloc_page::bits_held);
@@ -171,10 +171,10 @@ inline void alloc_p::set_consecutive_bits(shpid_t pid_begin, shpid_t pid_end) {
 }
 
 
-inline void alloc_p::update_pid_highwatermark(shpid_t pid_touched) {
+inline void alloc_page_h::update_pid_highwatermark(shpid_t pid_touched) {
     if (pid_touched + 1 > _page->pid_highwatermark) {
         _page->pid_highwatermark = pid_touched + 1;
     }
 }
 
-#endif // ALLOC_P_H
+#endif // ALLOC_PAGE_H

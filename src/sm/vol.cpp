@@ -39,12 +39,12 @@ static const int sector_size = 512;
 /*
 Volume layout:
    volume header 
-   alloc_p pages -- Starts on page 1.
+   alloc_page pages -- Starts on page 1.
    stnode_p -- only one page
    data pages -- rest of volume
 
-   alloc_p pages are bitmaps indicating which of its pages are allocated.
-   alloc_p pages are read and modified without any locks in any time.
+   alloc_page pages are bitmaps indicating which of its pages are allocated.
+   alloc_page pages are read and modified without any locks in any time.
    It's supposed to be extremely fast to allocate/deallocate pages
    unlike the original Shore-MT code. See jira ticket:72 "fix extent management" (originally trac ticket:74) for more details.
 */
@@ -771,7 +771,7 @@ vol_t::format_vol(
         return rc;
     }
     
-    shpid_t alloc_pages = num_pages / alloc_p::bits_held + 1; // # alloc_p pages
+    shpid_t alloc_pages = num_pages / alloc_page_h::bits_held + 1; // # alloc_page_h pages
     shpid_t hdr_pages = alloc_pages + 1 + 1; // +1 for stnode_p, +1 for volume header
 
     lpid_t apid (vid, 0 , 1);
@@ -818,10 +818,10 @@ vol_t::format_vol(
         memset(&buf, '\0', sizeof(buf));
 #endif
 
-        //  Format alloc_p pages
+        //  Format alloc_page pages
         {
             for (apid.page = 1; apid.page < alloc_pages + 1; ++apid.page)  {
-                alloc_p ap(&buf, apid);  // format page
+                alloc_page_h ap(&buf, apid);  // format page
                 // set bits for the header pages
                 if (apid.page == 1) {
                     for (shpid_t hdr_pid = 0; hdr_pid < hdr_pages; ++hdr_pid) {

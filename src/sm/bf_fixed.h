@@ -17,7 +17,7 @@ class vol_t;
  * \Brief Buffer manager for a small number of special pages in each volume.
  * \ingroup SSMBUFPOOL
  * \Details
- * This buffer manager deals with only allocation pages (alloc_p) and
+ * This buffer manager deals with only allocation pages (alloc_page) and
  * store pages (stnode_p). All pages are always pinned as there are
  * only a fixed and small number of such pages. Therefore, this buffer manager
  * is much simpler and more efficient than the main buffer manager.

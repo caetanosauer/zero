@@ -22,7 +22,7 @@ rc_t alloc_cache_t::load_by_scan (shpid_t max_pid) {
     uint32_t alloc_pages_cnt = _fixed_pages->get_page_cnt() - 1; // -1 for stnode_p
     page_s *pages = _fixed_pages->get_pages();
     for (uint32_t i = 0; i < alloc_pages_cnt; ++i) {
-        alloc_p al (pages + i);
+        alloc_page_h al (pages + i);
         w_assert1(al.generic_page()->pid.vol() == _vid);
 
         shpid_t hwm = al.get_pid_highwatermark();
@@ -33,7 +33,7 @@ rc_t alloc_cache_t::load_by_scan (shpid_t max_pid) {
             }
         }
 
-        if (hwm < offset + alloc_p::bits_held) {
+        if (hwm < offset + alloc_page_h::bits_held) {
             // from this pid, no pages are allocated yet
             _contiguous_free_pages_begin = hwm;
             // if this whole page is not entirely used (at least once),
@@ -162,11 +162,11 @@ rc_t alloc_cache_t::redo_deallocate_one_page (shpid_t pid)
 rc_t alloc_cache_t::apply_allocate_one_page (shpid_t pid, bool logit)
 {
     spinlock_read_critical_section cs(&_fixed_pages->get_checkpoint_lock()); // protect against checkpoint. see bf_fixed_m comment.
-    shpid_t alloc_pid = alloc_p::pid_to_alloc_pid(pid);
+    shpid_t alloc_pid = alloc_page_h::pid_to_alloc_pid(pid);
     uint32_t buf_index = alloc_pid - 1; // -1 for volume header
     w_assert1(buf_index < _fixed_pages->get_page_cnt() - 1); // -1 for stnode_p
     page_s* pages = _fixed_pages->get_pages();
-    alloc_p al (pages + buf_index);
+    alloc_page_h al (pages + buf_index);
     if (logit) {
         if (smlevel_0::log != NULL) {
             W_DO(log_alloc_a_page (_vid, pid));
@@ -182,21 +182,21 @@ rc_t alloc_cache_t::apply_allocate_consecutive_pages (shpid_t pid_begin, size_t 
 {
     spinlock_read_critical_section cs(&_fixed_pages->get_checkpoint_lock()); // protect against checkpoint. see bf_fixed_m comment.
     const shpid_t pid_to_end = pid_begin + page_count;
-    shpid_t alloc_pid = alloc_p::pid_to_alloc_pid(pid_begin);
+    shpid_t alloc_pid = alloc_page_h::pid_to_alloc_pid(pid_begin);
     page_s* pages = _fixed_pages->get_pages();
     
     shpid_t cur_pid = pid_begin;
 
-    // log and apply per each alloc_p
+    // log and apply per each alloc_page
     while (cur_pid < pid_to_end) {    
         uint32_t buf_index = alloc_pid - 1; // -1 for volume header
         w_assert1(buf_index < _fixed_pages->get_page_cnt() - 1); // -1 for stnode_p
-        alloc_p al (pages + buf_index);
+        alloc_page_h al (pages + buf_index);
 
         // log it
         size_t this_page_count;
-        if (pid_to_end > al.get_pid_offset() + alloc_p::bits_held) {
-            this_page_count = al.get_pid_offset() + alloc_p::bits_held - cur_pid;
+        if (pid_to_end > al.get_pid_offset() + alloc_page_h::bits_held) {
+            this_page_count = al.get_pid_offset() + alloc_page_h::bits_held - cur_pid;
         } else {
             this_page_count = pid_to_end - cur_pid;
         }
@@ -213,9 +213,9 @@ rc_t alloc_cache_t::apply_allocate_consecutive_pages (shpid_t pid_begin, size_t 
         _fixed_pages->get_dirty_flags()[buf_index] = true;
 
         cur_pid += this_page_count;
-        // if more pages to be allocated, move on to next alloc_p
+        // if more pages to be allocated, move on to next alloc_page
         if (cur_pid < pid_to_end) {
-            // move on to next alloc_p
+            // move on to next alloc_page
             ++alloc_pid;
         }
     }
@@ -224,11 +224,11 @@ rc_t alloc_cache_t::apply_allocate_consecutive_pages (shpid_t pid_begin, size_t 
 rc_t alloc_cache_t::apply_deallocate_one_page (shpid_t pid, bool logit)
 {
     spinlock_read_critical_section cs(&_fixed_pages->get_checkpoint_lock()); // protect against checkpoint. see bf_fixed_m comment.
-    shpid_t alloc_pid = alloc_p::pid_to_alloc_pid(pid);
+    shpid_t alloc_pid = alloc_page_h::pid_to_alloc_pid(pid);
     uint32_t buf_index = alloc_pid - 1; // -1 for volume header
     w_assert1(buf_index < _fixed_pages->get_page_cnt() - 1); // -1 for stnode_p
     page_s* pages = _fixed_pages->get_pages();
-    alloc_p al (pages + buf_index);
+    alloc_page_h al (pages + buf_index);
     // log it
     if (logit) {
         if (smlevel_0::log != NULL) {

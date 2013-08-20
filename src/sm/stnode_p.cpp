@@ -70,7 +70,7 @@ snum_t stnode_cache_t::get_min_unused_store_id () const
     // this method is not so efficient, but this is rarely called.
     CRITICAL_SECTION (cs, _spin_lock);
     // let's start from 1, not 0. All user store ID will begin with 1.
-    // store-id 0 will be a special store-id for stnode_p/alloc_p
+    // store-id 0 will be a special store-id for stnode_p/alloc_page
     for (int i = 1; i < stnode_p::max; ++i) {
         if (_stnodes[i].root == 0) {
             return i;

@@ -8,7 +8,7 @@
 #include "w_defines.h"
 
 class stnode_p;
-class alloc_p;
+class alloc_page_h;
 
 #ifdef __GNUG__
 #pragma interface

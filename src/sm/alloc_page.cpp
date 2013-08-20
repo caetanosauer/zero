@@ -30,7 +30,7 @@ void alloc_page::set_bits(uint32_t from, uint32_t to) {
 }
 
 
-alloc_p::alloc_p(page_s* s, const lpid_t& pid):
+alloc_page_h::alloc_page_h(page_s* s, const lpid_t& pid):
     _page(reinterpret_cast<alloc_page*>(s)) 
 {
     w_assert1(sizeof(alloc_page) == generic_page_header::page_sz);

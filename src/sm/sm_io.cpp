@@ -818,7 +818,7 @@ rc_t io_m::alloc_consecutive_pages(const stid_t &stid, size_t page_count, lpid_t
 
 rc_t io_m::sx_alloc_consecutive_pages(const stid_t &stid, size_t page_count, lpid_t &pid_begin)
 {
-    // as it might span multiple alloc_p, this might emit multiple logs.
+    // as it might span multiple alloc_page's, this might emit multiple logs.
     // (however, could be ssx later when we can have multiple pages covered by a single log)
     sys_xct_section_t sxs;
     W_DO(sxs.check_error_on_start());
