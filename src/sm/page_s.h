@@ -25,7 +25,7 @@ enum page_flag_t {
     t_written      = 0x08      // read in from disk
 };
 
-class xct_t;
+
 
 /**
 * offset divided by 8 (all records are 8-byte aligned).
@@ -79,10 +79,20 @@ inline poor_man_key extract_poor_man_key (const void* key_with_prefix, size_t ke
 
 class generic_page_header {
 public:
+    enum {
+        page_sz     = SM_PAGESIZE,
+        hdr_sz      = 64, // NOTICE always sync with the offsets below
+        data_sz     = page_sz - hdr_sz,
+        /** Poor man's normalized key length. */
+        poormkey_sz = sizeof (poor_man_key),
+        slot_sz     = sizeof(slot_offset8_t) + poormkey_sz
+    };
+
+ 
     /** LSN (Log Sequence Number) of the last write to this page. */
     lsn_t    lsn;      // +8 -> 8
     
-    /** id of the page.*/
+    /** ID of the page.*/
     lpid_t    pid;      // +12 -> 20
     
     /** tag_t. */
@@ -190,24 +200,27 @@ public:
     void       update_checksum () const {checksum = calculate_checksum();}
 };
 
-const uint32_t PAGE_S_CHECKSUM_MULT = 0x35D0B891;
 
-inline uint32_t generic_page_header::calculate_checksum () const
-{
-    const char *data = (char*)this + sizeof(*this);  // <<<>>>
+inline uint32_t generic_page_header::calculate_checksum () const {
+    const uint32_t CHECKSUM_MULT = 0x35D0B891;
 
-    const unsigned char *end_p = (const unsigned char *) (data + SM_PAGESIZE - sizeof(uint32_t));
+    // FIXME: The current checksum ignores the headers and most of the
+    // data bytes, presumably for speed reasons.  If you start
+    // checksumming the headers, be careful of the checksum field.
+
+    const unsigned char *data      = (const unsigned char *)(this + 1);  // start of data section of this page: right after these headers
+    const unsigned char *data_last = data + data_sz - sizeof(uint32_t);  // the last 32-bit word of the data section of this page
+
     uint64_t value = 0;
-    // these values(23/511) are arbitrary, but make sure it doesn't touch
-    // the checksum field (located around 60-th bytes) itself!
-    for (const unsigned char *p = (const unsigned char *) data + 23; p < end_p; p += 511) {
+    // these values (23/511) are arbitrary
+    for (const unsigned char *p = (const unsigned char *) data + 23; p <= data_last; p += 511) {
         // be aware of alignment issue on spark! so this code is not safe
         // const uint32_t*next = reinterpret_cast<const uint32_t*>(p);
         // value ^= *next;
-        value = value * PAGE_S_CHECKSUM_MULT + p[0];
-        value = value * PAGE_S_CHECKSUM_MULT + p[1];
-        value = value * PAGE_S_CHECKSUM_MULT + p[2];
-        value = value * PAGE_S_CHECKSUM_MULT + p[3];
+        value = value * CHECKSUM_MULT + p[0];
+        value = value * CHECKSUM_MULT + p[1];
+        value = value * CHECKSUM_MULT + p[2];
+        value = value * CHECKSUM_MULT + p[3];
     }
     return ((uint32_t) (value >> 32)) ^ ((uint32_t) (value & 0xFFFFFFFF));
 }
@@ -230,16 +243,6 @@ inline uint32_t generic_page_header::calculate_checksum () const
  */
 class page_s : public generic_page_header {
 public:
-    enum {
-        page_sz = SM_PAGESIZE,
-        hdr_sz = 64, // NOTICE always sync with the offsets below
-        data_sz = page_sz - hdr_sz,
-        /** Poor man's normalized key length. */
-        poormkey_sz = sizeof (poor_man_key),
-        slot_sz = sizeof(slot_offset8_t) + poormkey_sz
-    };
-
- 
     /* MUST BE 8-BYTE ALIGNED HERE */
     char     data[data_sz];        // must be aligned
 
