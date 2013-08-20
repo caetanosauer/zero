@@ -6,11 +6,6 @@
 #define ALLOC_P_H
 
 #include "w_defines.h"
-
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 #include "page_s.h"
 #include "sm_base.h"
 

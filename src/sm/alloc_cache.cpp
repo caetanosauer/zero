@@ -5,10 +5,6 @@
 #include "w_defines.h"
 #define SM_SOURCE
 
-#ifdef __GNUG__
-#       pragma implementation "alloc_p.h"
-#endif
-
 #include "sm_int_2.h"
 
 #include "alloc_cache.h"

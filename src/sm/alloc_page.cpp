@@ -2,7 +2,7 @@
  * (c) Copyright 2013, Hewlett-Packard Development Company, LP
  */
 
-#include "alloc_p.h"
+#include "alloc_page.h"
 
 
 void alloc_page::set_bits(uint32_t from, uint32_t to) {

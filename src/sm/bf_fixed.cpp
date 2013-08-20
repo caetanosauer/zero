@@ -8,7 +8,7 @@
 #include "sm_int_1.h"
 
 #include "bf_fixed.h"
-#include "alloc_p.h"
+#include "alloc_page.h"
 #include "vol.h"
 
 bf_fixed_m::bf_fixed_m()

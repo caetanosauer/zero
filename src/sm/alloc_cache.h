@@ -11,7 +11,7 @@
 #pragma interface
 #endif
 
-#include "alloc_p.h"
+#include "alloc_page.h"
 #include "latch.h"
 #include <vector>
 
