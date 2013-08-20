@@ -20,7 +20,7 @@
  * \brief Free-page allocation/deallocation page.
  *
  * \details
- * These pages contain bitmaps to represent which page is already
+ * These pages contain bitmaps that encode which pages are already
  * allocated.  They replace extlink_p and related classes in the
  * original Shore-MT.  They are drastically simpler and more efficient
  * than prior extent management.  See jira ticket:72 "fix extent
@@ -31,8 +31,22 @@ public:
     shpid_t pid_offset;        ///< the smallest page-ID that the bitmap in this page represents
     shpid_t pid_highwatermark; ///< smallest pid in this page such that all higher pid's represented have their bits OFF
 
-    /// The actual bitmap
+
+    /**
+     * \brief The actual bitmap.
+     *
+     * \details
+     * Holds the allocation status for pid's in [pid_offset..pid_offset+bits_held);
+     * for those pids, a pid p is allocated iff bitmap[bit_place(index)]&bit_mask(index) != 0
+     */
     uint8_t bitmap[data_sz - sizeof(shpid_t)*2]; 
+
+    /** Number of pages one alloc_page can cover. */
+    static const int bits_held = (sizeof(alloc_page::bitmap)) * 8;
+    
+    uint32_t byte_place(uint32_t index) { return index >> 3; }
+    uint32_t bit_place (uint32_t index) { return index & 0x7; }
+    uint32_t bit_mask  (uint32_t index) { return 1 << bit_place(index); }
 };
 
 
@@ -41,7 +55,7 @@ public:
  **/
 class alloc_p {
 public:
-    alloc_p(page_s* s) : _pp(reinterpret_cast<alloc_page*>(s)) {
+    alloc_p(page_s* s) : _page(reinterpret_cast<alloc_page*>(s)) {
         w_assert1(sizeof(alloc_page) == generic_page_header::page_sz);
     }
     ~alloc_p()  {}
@@ -49,20 +63,14 @@ public:
     rc_t format(const lpid_t& pid);
 
     /** Returns the smallest page ID bitmaps in this page represent. */
-    shpid_t get_pid_offset() const { return _pp->pid_offset; }
+    shpid_t get_pid_offset() const { return _page->pid_offset; }
 
     /** Smallest pid in this page from which all bits are OFF. */
-    shpid_t get_pid_highwatermark() const { return _pp->pid_highwatermark; }
+    shpid_t get_pid_highwatermark() const { return _page->pid_highwatermark; }
     /** Reset the pid_highwatermark. */
-    void clear_pid_highwatermark() { _pp->pid_highwatermark = 0; }
+    void clear_pid_highwatermark() { _page->pid_highwatermark = 0; }
     /** If needed, update pid_highwatermark. */
     void update_pid_highwatermark(shpid_t pid_touched);
-
-private:    
-    /** Returns the page allocation bitmap (ON if allocated).*/
-          uint8_t* get_bitmap();
-    const uint8_t* get_bitmap() const;
-public:
 
     /// Is the given page already allocated?
     bool is_set_bit(shpid_t pid) const;
@@ -82,34 +90,35 @@ public:
      */
     void unset_bit(shpid_t pid);
     
-    enum {
-        /** Number of pages one alloc_p can cover. */
-	alloc_max = (sizeof(alloc_page::bitmap)) * 8
-    };
-    
     /** determines the pid_offset for the given alloc page. */
     inline static shpid_t alloc_pid_to_pid_offset (shpid_t alloc_pid) {
         uint32_t alloc_p_seq = alloc_pid - 1; // -1 for volume header
-        return alloc_max * alloc_p_seq;
+        return alloc_page::bits_held * alloc_p_seq;
     }
 
     /** determines the alloc page the given page should belong to. */
     inline static shpid_t pid_to_alloc_pid (shpid_t pid) {
-        uint32_t alloc_p_seq = pid / alloc_max;
+        uint32_t alloc_p_seq = pid / alloc_page::bits_held;
         return alloc_p_seq + 1; // +1 for volume header
     }
-    alloc_page *_pp;
+
+    alloc_page *_page;
+
+private:    
+    /** Returns the page allocation bitmap (ON if allocated).*/
+          uint8_t* get_bitmap();
+    const uint8_t* get_bitmap() const;
 };
 inline void alloc_p::update_pid_highwatermark(shpid_t pid_touched) {
-    if (pid_touched + 1 > _pp->pid_highwatermark) {
-        _pp->pid_highwatermark = pid_touched + 1;
+    if (pid_touched + 1 > _page->pid_highwatermark) {
+        _page->pid_highwatermark = pid_touched + 1;
     }
 }
 inline uint8_t* alloc_p::get_bitmap() {
-    return &_pp->bitmap[0];
+    return &_page->bitmap[0];
 }
 inline const uint8_t* alloc_p::get_bitmap() const {
-    return (const uint8_t*)&_pp->bitmap[0];
+    return (const uint8_t*)&_page->bitmap[0];
 }
 
 inline void _set_bit (uint8_t *bitmap, uint32_t index) {
@@ -132,7 +141,7 @@ inline void _unset_bit (uint8_t *bitmap, uint32_t index) {
 
 inline void alloc_p::set_bit(shpid_t pid) {
     w_assert1(pid >= get_pid_offset());
-    w_assert1(pid < get_pid_offset() + alloc_max);
+    w_assert1(pid < get_pid_offset() + alloc_page::bits_held);
 
     _set_bit (get_bitmap(), pid - get_pid_offset());    
     update_pid_highwatermark(pid);
@@ -140,7 +149,7 @@ inline void alloc_p::set_bit(shpid_t pid) {
 inline void alloc_p::set_consecutive_bits(shpid_t pid_begin, shpid_t pid_end)
 {
     w_assert1(pid_begin >= get_pid_offset());
-    w_assert1(pid_end <= get_pid_offset() + alloc_max);
+    w_assert1(pid_end <= get_pid_offset() + alloc_page::bits_held);
     w_assert1(pid_begin <= pid_end);
     uint8_t *bitmap = get_bitmap();
     //we need to do bit-wise opeartion only for first and last bytes. other bytes are all "FF".
@@ -172,14 +181,14 @@ inline void alloc_p::set_consecutive_bits(shpid_t pid_begin, shpid_t pid_end)
 
 inline void alloc_p::unset_bit(shpid_t pid) {
     w_assert1(pid >= get_pid_offset());
-    w_assert1(pid < get_pid_offset() + alloc_max);
+    w_assert1(pid < get_pid_offset() + alloc_page::bits_held);
 
     _unset_bit (get_bitmap(), pid - get_pid_offset());    
     // don't bother to recalculate high water mark.
 }
 inline bool alloc_p::is_set_bit(shpid_t pid) const {
     w_assert1(pid >= get_pid_offset());
-    w_assert1(pid < get_pid_offset() + alloc_max);
+    w_assert1(pid < get_pid_offset() + alloc_page::bits_held);
 
     const uint8_t *bitmap = get_bitmap();
     uint32_t index = pid - get_pid_offset();
@@ -191,18 +200,18 @@ inline bool alloc_p::is_set_bit(shpid_t pid) const {
     return ((*byte & (1 << bit_place)) != 0);
 }
 
-inline rc_t alloc_p::format(const lpid_t& pid)
-{
-    ::memset (_pp, 0, sizeof(alloc_page));
-    _pp->pid = pid;
-    _pp->tag = t_alloc_p;
+inline rc_t alloc_p::format(const lpid_t& pid) {
+    ::memset (_page, 0, sizeof(alloc_page));
+    _page->pid = pid;
+    _page->tag = t_alloc_p;
 
-    // no records or whatever. this is just a huge bitmap
+    // no records or whatever.  this is just a huge bitmap
     shpid_t pid_offset = alloc_pid_to_pid_offset(pid.page);
 
-    _pp->pid_offset        = pid_offset;
-    _pp->pid_highwatermark = pid_offset;
-    ::memset (&_pp->bitmap[0], 0, sizeof(_pp->bitmap));
+    _page->pid_offset        = pid_offset;
+    _page->pid_highwatermark = pid_offset;
+    // _page->bitmap initialized to all OFF's by memset above
+
     return RCOK;
 }
     
