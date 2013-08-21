@@ -323,7 +323,7 @@ void btree_p::search_leaf(
     int key_len_remain = key_len - sizeof(poor_man_key);
     found_key = false;
     
-    const char* begin_slot = page_p::slot_addr(0 + 1);
+    const char* begin_slot = btree_p::slot_addr(0 + 1);
     const char* end_slot = begin_slot + slot_sz * nrecs();
     for (const char* cur_slot = begin_slot; cur_slot != end_slot; cur_slot += slot_sz) {
         poor_man_key cur_poormkey = *reinterpret_cast<const poor_man_key*>(cur_slot + sizeof(slot_offset8_t));
@@ -375,7 +375,7 @@ void btree_p::search_node(
 
     w_assert1 (pid0() != 0);
 
-    const char* begin_slot = page_p::slot_addr(0 + 1);
+    const char* begin_slot = btree_p::slot_addr(0 + 1);
     const char* end_slot = begin_slot + slot_sz * nrecs();
     for (const char* cur_slot = begin_slot; cur_slot != end_slot; cur_slot += slot_sz) {
         poor_man_key cur_poormkey = *reinterpret_cast<const poor_man_key*>(cur_slot + sizeof(slot_offset8_t));
@@ -429,7 +429,7 @@ void btree_p::search_leaf(
     // check the last record to speed-up sorted insert
     int last_slot = nrecs() - 1;
     if (last_slot >= 0) {
-        poor_man_key last_poormkey = page_p::tuple_poormkey(last_slot + 1); // +1 because page_p
+        poor_man_key last_poormkey = btree_p::tuple_poormkey(last_slot + 1); // +1 because page_p
         if (last_poormkey < poormkey) {
             ret_slot = nrecs();
             w_assert1(_compare_leaf_key_noprefix(last_slot, key_noprefix, key_len) < 0);
@@ -456,7 +456,7 @@ void btree_p::search_leaf(
     while (lo <= hi)  {
         mi = (lo + hi) >> 1;    // ie (lo + hi) / 2
 
-        poor_man_key cur_poormkey = page_p::tuple_poormkey(mi + 1); // +1 because page_p
+        poor_man_key cur_poormkey = btree_p::tuple_poormkey(mi + 1); // +1 because page_p
         if (cur_poormkey < poormkey) {
             lo = mi + 1;
             w_assert1(_compare_leaf_key_noprefix(mi, key_noprefix, key_len) < 0);
@@ -511,7 +511,7 @@ void btree_p::search_node(
     if (nrecs() == 0) {
         return_pid0 = true;
     } else  {
-        poor_man_key cur_poormkey = page_p::tuple_poormkey(0 + 1); // +1 because page_p
+        poor_man_key cur_poormkey = btree_p::tuple_poormkey(0 + 1); // +1 because page_p
         if (cur_poormkey > poormkey) {
             return_pid0 = true;
             w_assert1(_compare_node_key_noprefix(0, key_noprefix, key_len) > 0);
@@ -543,7 +543,7 @@ void btree_p::search_node(
     // check the last record to speed-up sorted insert
     int last_slot = nrecs() - 1;
     if (last_slot >= 0) {
-        poor_man_key last_poormkey = page_p::tuple_poormkey(last_slot + 1); // +1 because page_p
+        poor_man_key last_poormkey = btree_p::tuple_poormkey(last_slot + 1); // +1 because page_p
         if (last_poormkey < poormkey) { // note that it's "<", not "<=", because same poormkey doesn't mean same key
             ret_slot = last_slot;
             w_assert1(_compare_node_key_noprefix(last_slot, key_noprefix, key_len) < 0);
@@ -571,7 +571,7 @@ void btree_p::search_node(
     for (; lo < hi - 1; )  {
         mi = (lo + hi) >> 1;    // ie (lo + hi) / 2
 
-        poor_man_key cur_poormkey = page_p::tuple_poormkey(mi + 1); // +1 because page_p
+        poor_man_key cur_poormkey = btree_p::tuple_poormkey(mi + 1); // +1 because page_p
         if (cur_poormkey < poormkey) {
             lo = mi;
             w_assert1(_compare_node_key_noprefix(mi, key_noprefix, key_len) < 0);
@@ -702,22 +702,22 @@ rc_t btree_p::_insert_expand_nolog(slotid_t slot, const cvec_t &vec, poor_man_ke
      //  Log has already been generated ... the following actions must succeed!
      // shift slot array. if we are inserting to the end (idx == nslots), do nothing
     if (idx != _pp->nslots)    {
-        ::memmove(_pp->data + slot_sz * (idx + 1),
-                _pp->data + slot_sz * (idx),
+        ::memmove(page()->data + slot_sz * (idx + 1),
+                page()->data + slot_sz * (idx),
                 (_pp->nslots - idx) * slot_sz);
     }
 
     //  Fill up the slots and data
     slot_offset8_t new_record_head8 = _pp->record_head8 - to_aligned_offset8(vec.size());
-    char* slot_p = page_p::slot_addr(idx);
+    char* slot_p = btree_p::slot_addr(idx);
     *reinterpret_cast<slot_offset8_t*>(slot_p) = new_record_head8;
     *reinterpret_cast<poor_man_key*>(slot_p + sizeof(slot_offset8_t)) = poormkey;
-    vec.copy_to(_pp->data_addr8(new_record_head8));
+    vec.copy_to(page()->data_addr8(new_record_head8));
     _pp->record_head8 = new_record_head8;
     ++_pp->nslots;
 
     w_assert3(get_rec_size(slot) == vec.size());
-    w_assert3(page_p::tuple_poormkey(idx) == poormkey);
+    w_assert3(btree_p::tuple_poormkey(idx) == poormkey);
     w_assert3 (_is_consistent_space());
     return RCOK;
 }
@@ -729,10 +729,10 @@ void btree_p::_append_nolog(const cvec_t &vec, poor_man_key poormkey, bool ghost
     
     //  Fill up the slots and data
     slot_offset8_t new_record_head8 = _pp->record_head8 - to_aligned_offset8(vec.size());
-    char* slot_p = page_p::slot_addr(_pp->nslots);
+    char* slot_p = btree_p::slot_addr(_pp->nslots);
     *reinterpret_cast<slot_offset8_t*>(slot_p) = ghost ? -new_record_head8 : new_record_head8;
     *reinterpret_cast<poor_man_key*>(slot_p + sizeof(slot_offset8_t)) = poormkey;
-    vec.copy_to(_pp->data_addr8(new_record_head8));
+    vec.copy_to(page()->data_addr8(new_record_head8));
     _pp->record_head8 = new_record_head8;
     if (ghost) {
         ++_pp->nghosts;
@@ -746,7 +746,7 @@ void btree_p::_append_nolog(const cvec_t &vec, poor_man_key poormkey, bool ghost
         w_assert1(get_fence_rec_size() == vec.size());
     } else {
         w_assert1(get_rec_size(nrecs() - 1) == vec.size());
-        w_assert1(page_p::tuple_poormkey(_pp->nslots - 1) == poormkey);
+        w_assert1(btree_p::tuple_poormkey(_pp->nslots - 1) == poormkey);
     }
     w_assert5 (_is_consistent_space());
 #endif //W_DEBUG_LEVEL>=1
@@ -761,12 +761,12 @@ void btree_p::_expand_rec(slotid_t slot, slot_length_t rec_len)
 
     bool ghost = is_ghost(slot);
     slot_length_t old_rec_len = get_rec_size(slot);
-    void* old_rec = page_p::tuple_addr(idx);
+    void* old_rec = btree_p::tuple_addr(idx);
     slot_offset8_t new_record_head8 = _pp->record_head8 - to_aligned_offset8(rec_len);
-    page_p::change_slot_offset(idx, ghost ? -new_record_head8 : new_record_head8);
+    btree_p::change_slot_offset(idx, ghost ? -new_record_head8 : new_record_head8);
     _pp->record_head8 = new_record_head8;
 
-    void* new_rec = page_p::tuple_addr(idx);
+    void* new_rec = btree_p::tuple_addr(idx);
     *reinterpret_cast<slot_length_t*>(new_rec) = rec_len; // set new size
     // ::memcpy (new_rec, &rec_len, sizeof(slot_length_t)); // set new size
     ::memcpy (((char*)new_rec) + sizeof(slot_length_t), ((char*)old_rec) + sizeof(slot_length_t),
@@ -781,11 +781,11 @@ void btree_p::_expand_rec(slotid_t slot, slot_length_t rec_len)
 rc_t btree_p::replace_expand_fence_rec_nolog(const cvec_t &fences)
 {
     w_assert1(_pp->nslots > 0);
-    slot_offset8_t current_offset8 = page_p::tuple_offset8(0);
+    slot_offset8_t current_offset8 = btree_p::tuple_offset8(0);
     slot_length_t current_size = get_fence_rec_size();
     if (align(fences.size()) <= align(current_size)) {
         // then simply overwrite
-        void* addr = page_p::tuple_addr(0);
+        void* addr = btree_p::tuple_addr(0);
         fences.copy_to(addr);
         w_assert1(*reinterpret_cast<slot_length_t*>(addr) == (slot_length_t) fences.size());
         w_assert1 (get_fence_rec_size() == (slot_length_t) fences.size());
@@ -799,8 +799,8 @@ rc_t btree_p::replace_expand_fence_rec_nolog(const cvec_t &fences)
     w_assert3(_is_consistent_space());
     slot_offset8_t new_record_head8 = _pp->record_head8 - to_aligned_offset8(fences.size());
     slot_offset8_t new_offset8 = current_offset8 < 0 ? -new_record_head8 : new_record_head8; // for ghost records
-    page_p::change_slot_offset(0, new_offset8);
-    void* addr = page_p::tuple_addr(0);
+    btree_p::change_slot_offset(0, new_offset8);
+    void* addr = btree_p::tuple_addr(0);
     fences.copy_to(addr);
     w_assert1(*reinterpret_cast<slot_length_t*>(addr) == (slot_length_t) fences.size());
     w_assert1 (get_fence_rec_size() == (slot_length_t) fences.size());
@@ -817,13 +817,13 @@ rc_t btree_p::remove_shift_nolog(slotid_t slot)
     w_assert1(slot >= 0); // this method does NOT assume shifting fence record
     w_assert3 (_is_consistent_space());
     
-    slot_offset8_t removed_offset8 = page_p::tuple_offset8(idx);
+    slot_offset8_t removed_offset8 = btree_p::tuple_offset8(idx);
     slot_length_t removed_length = get_rec_size(slot);
 
     // Shift slot array. if we are removing last (idx==nslots - 1), do nothing.
     if (idx < _pp->nslots - 1) {
-        ::memmove(_pp->data + slot_sz * (idx),
-            _pp->data + slot_sz * (idx + 1),
+        ::memmove(page()->data + slot_sz * (idx),
+            page()->data + slot_sz * (idx + 1),
             (_pp->nslots - 1 - idx) * slot_sz);
     }
     --_pp->nslots;
@@ -889,7 +889,7 @@ rc_t btree_p::replace_ghost(
     slot_length_t klen = key.get_length_as_keystr();
     int16_t prefix_length = get_prefix_length();
 
-    char *buf = (char*) page_p::tuple_addr(slot + 1);
+    char *buf = (char*) btree_p::tuple_addr(slot + 1);
     if (rec_size != org_rec_size) {
         // update only when necessary
         w_assert1(reinterpret_cast<slot_length_t*>(buf)[0] == org_rec_size);
@@ -900,9 +900,9 @@ rc_t btree_p::replace_ghost(
     elem.copy_to(buf + sizeof(slot_length_t) * 2 + klen - prefix_length);
 
     // Reuse everything. just change the record data.
-    slot_offset8_t offset8 = page_p::tuple_offset8(slot + 1);
+    slot_offset8_t offset8 = btree_p::tuple_offset8(slot + 1);
     w_assert1 (offset8 < 0); // it should be ghost
-    page_p::change_slot_offset(slot + 1, -offset8);
+    btree_p::change_slot_offset(slot + 1, -offset8);
     return RCOK;
 }
 
@@ -913,7 +913,7 @@ rc_t btree_p::replace_el_nolog(slotid_t slot, const cvec_t &elem)
 
     w_assert1 (!is_ghost(slot));
     
-    char *buf = (char*) page_p::tuple_addr(slot + 1);
+    char *buf = (char*) btree_p::tuple_addr(slot + 1);
     slot_length_t org_rec_size = reinterpret_cast<slot_length_t*>(buf)[0];
     slot_length_t klen = reinterpret_cast<slot_length_t*>(buf)[1];
     slot_length_t prefix_length = get_prefix_length();
@@ -925,8 +925,8 @@ rc_t btree_p::replace_el_nolog(slotid_t slot, const cvec_t &elem)
             return RC(smlevel_0::eRECWONTFIT);
         }
         _expand_rec (slot, rec_size);
-        w_assert1(page_p::tuple_addr(slot + 1) != buf);
-        buf = (char *) page_p::tuple_addr(slot + 1);
+        w_assert1(btree_p::tuple_addr(slot + 1) != buf);
+        buf = (char *) btree_p::tuple_addr(slot + 1);
     }
 
     slot_length_t* array = reinterpret_cast<slot_length_t*>(buf);
@@ -943,7 +943,7 @@ void btree_p::overwrite_el_nolog(slotid_t slot, smsize_t offset,
     w_assert2( is_leaf());
     w_assert1 (!is_ghost(slot));
     
-    char *buf = (char*) page_p::tuple_addr(slot + 1);
+    char *buf = (char*) btree_p::tuple_addr(slot + 1);
     slot_length_t klen = reinterpret_cast<slot_length_t*>(buf)[1];
     slot_length_t prefix_length = get_prefix_length();
 
@@ -996,19 +996,19 @@ void btree_p::reserve_ghost(const char *key_raw, size_t key_raw_len, int record_
     poor_man_key poormkey = extract_poor_man_key(key_raw, key_raw_len, prefix_len);
     if (slot != nrecs())    {
         // note that slot=0 is fence
-        ::memmove(_pp->data + slot_sz * (slot + 2),
-                _pp->data + slot_sz * (slot + 1),
+        ::memmove(page()->data + slot_sz * (slot + 2),
+                page()->data + slot_sz * (slot + 1),
                 (nrecs() - slot) * slot_sz);
     }
     slot_offset8_t new_record_head8 = _pp->record_head8 - to_aligned_offset8(record_size);
-    char* slot_p = page_p::slot_addr(slot + 1);
+    char* slot_p = btree_p::slot_addr(slot + 1);
     *reinterpret_cast<slot_offset8_t*>(slot_p) = -new_record_head8; // ghost record
     *reinterpret_cast<poor_man_key*>(slot_p + sizeof(slot_offset8_t)) = poormkey;
 
     // make a dummy record that has the desired length
     slot_length_t klen = key_raw_len;
 
-    char *buf = _pp->data_addr8(new_record_head8);
+    char *buf = page()->data_addr8(new_record_head8);
     slot_length_t *array = reinterpret_cast<slot_length_t*>(buf);
     array[0] = (slot_length_t) record_size;
     array[1] = klen;
@@ -1020,7 +1020,7 @@ void btree_p::reserve_ghost(const char *key_raw, size_t key_raw_len, int record_
     ++_pp->nghosts;
     
     w_assert3(get_rec_size(slot) == (slot_length_t) record_size);
-    w_assert3(page_p::tuple_poormkey(slot + 1) == poormkey);
+    w_assert3(btree_p::tuple_poormkey(slot + 1) == poormkey);
     w_assert3(_is_consistent_space());
 }
 
@@ -1030,7 +1030,7 @@ void btree_p::mark_ghost(slotid_t slot)
     w_assert0(tag() == t_btree_p);
     w_assert1(idx >= 0 && idx < nslots());
     w_assert1(slot >= 0); // fence record cannot be a ghost
-    slot_offset8_t *offset8 = reinterpret_cast<slot_offset8_t*>(_pp->data + slot_sz * idx);
+    slot_offset8_t *offset8 = reinterpret_cast<slot_offset8_t*>(page()->data + slot_sz * idx);
     if (*offset8 < 0) {
         return; // already ghost. do nothing
     }
@@ -1047,7 +1047,7 @@ void btree_p::unmark_ghost(slotid_t slot)
     w_assert0(tag() == t_btree_p);
     w_assert1(idx >= 0 && idx < nslots());
     w_assert1(slot >= 0); // fence record cannot be a ghost
-    slot_offset8_t *offset8 = reinterpret_cast<slot_offset8_t*>(_pp->data + slot_sz * idx);
+    slot_offset8_t *offset8 = reinterpret_cast<slot_offset8_t*>(page()->data + slot_sz * idx);
     if (*offset8 > 0) {
         return; // already non-ghost. do nothing
     }
@@ -1065,13 +1065,13 @@ bool btree_p::check_space_for_insert_leaf(
 {
     w_assert1 (is_leaf());
     size_t rec_size = 2 * sizeof(slot_length_t) + key.get_length_as_keystr() + el.size();
-    return page_p::check_space_for_insert (rec_size);
+    return btree_p::check_space_for_insert (rec_size);
 }
 bool btree_p::check_space_for_insert_node(const w_keystr_t&     key)
 {
     w_assert1 (is_node());
     size_t rec_size = sizeof(slot_length_t) + key.get_length_as_keystr() + sizeof (shpid_t);
-    return page_p::check_space_for_insert (rec_size);
+    return btree_p::check_space_for_insert (rec_size);
 }
 
 bool btree_p::check_chance_for_norecord_split(const w_keystr_t& key_to_insert) const
@@ -1228,7 +1228,7 @@ void btree_p::rec_leaf(slotid_t idx,  w_keystr_t &key, cvec_t &el, bool &ghost) 
     w_assert1(is_leaf());
     FUNC(btree_p::rec_leaf);
     ghost = is_ghost(idx);
-    const char* base = (char*) page_p::tuple_addr(idx + 1);
+    const char* base = (char*) btree_p::tuple_addr(idx + 1);
     const char* p = base;
     
     el.reset();
@@ -1248,7 +1248,7 @@ void btree_p::rec_leaf(slotid_t idx,  w_keystr_t &key, char *el, smsize_t &elen,
     w_assert1(is_leaf());
     FUNC(btree_p::rec_leaf);
     ghost = is_ghost(idx);
-    const char* base = (char*) page_p::tuple_addr(idx + 1);
+    const char* base = (char*) btree_p::tuple_addr(idx + 1);
     const char* p = base;
     
     slot_length_t rec_len = ((slot_length_t*) p)[0];
@@ -1268,7 +1268,7 @@ bool btree_p::dat_leaf(slotid_t idx,  char *el, smsize_t &elen, bool &ghost) con
     w_assert1(is_leaf());
     FUNC(btree_p::dat_leaf);
     ghost = is_ghost(idx);
-    const char* base = (char*) page_p::tuple_addr(idx + 1);
+    const char* base = (char*) btree_p::tuple_addr(idx + 1);
     const char* p = base;
     
     slot_length_t rec_len = ((slot_length_t*) p)[0];
@@ -1293,7 +1293,7 @@ void btree_p::dat_leaf_ref(slotid_t idx, const char *&el, smsize_t &elen, bool &
     w_assert1(is_leaf());
     FUNC(btree_p::dat_leaf_ref);
     ghost = is_ghost(idx);
-    const char* base = (char*) page_p::tuple_addr(idx + 1);
+    const char* base = (char*) btree_p::tuple_addr(idx + 1);
     const char* p = base;
     
     slot_length_t rec_len = ((slot_length_t*) p)[0];
@@ -1309,7 +1309,7 @@ void btree_p::dat_leaf_ref(slotid_t idx, const char *&el, smsize_t &elen, bool &
 void btree_p::leaf_key(slotid_t idx,  w_keystr_t &key) const
 {
     w_assert1(is_leaf());
-    const char* p = (char*) page_p::tuple_addr(idx + 1);
+    const char* p = (char*) btree_p::tuple_addr(idx + 1);
     slot_length_t key_len = ((slot_length_t*) p)[1];
     p += sizeof(slot_length_t) * 2;
     slot_length_t prefix_len = get_prefix_length();
@@ -1322,7 +1322,7 @@ void  btree_p::rec_node(slotid_t idx,  w_keystr_t &key, shpid_t &el) const
     w_assert1(is_node());
     FUNC(btree_p::rec_node);
     w_assert1(!is_ghost(idx)); // non-leaf node can't be ghost
-    const char* p = (const char*) page_p::tuple_addr(idx + 1);
+    const char* p = (const char*) btree_p::tuple_addr(idx + 1);
     
     el = *((shpid_t*) p);
     p += sizeof(shpid_t);
@@ -1335,7 +1335,7 @@ void  btree_p::rec_node(slotid_t idx,  w_keystr_t &key, shpid_t &el) const
 void btree_p::node_key(slotid_t idx,  w_keystr_t &key) const
 {
     w_assert1(is_node());
-    const char* p = (char*) page_p::tuple_addr(idx + 1);
+    const char* p = (char*) btree_p::tuple_addr(idx + 1);
     p += sizeof(shpid_t);
     slot_length_t rec_len = *((const slot_length_t*) p);
     slot_length_t prefix_len = get_prefix_length();
@@ -1388,7 +1388,7 @@ btree_p::page_usage(int& data_size, int& header_size, int& unused,
     // calculate space wasted in data alignment
     for (int i=0 ; i<_pp->nslots; i++) {
         // if slot is not no-record slot
-        if ( page_p::tuple_offset8(i) != 0 ) {
+        if ( btree_p::tuple_offset8(i) != 0 ) {
             slot_length_t len = (i == 0 ? get_fence_rec_size() : get_rec_size(i - 1));
             data_size += len;
             alignment += int(align(len) - len);
@@ -1577,14 +1577,14 @@ bool btree_p::_is_consistent_poormankey () const
 {
     const int recs = nrecs();
     // the first record is fence key, so no poor man's key (always 0)
-    poor_man_key fence_poormankey = page_p::tuple_poormkey(0);
+    poor_man_key fence_poormankey = btree_p::tuple_poormkey(0);
     if (fence_poormankey != 0) {
 //        w_assert3(false);
         return false;
     }
     // for other records, check with the real key string in the record
     for (slotid_t slot = 0; slot < recs; ++slot) {
-        poor_man_key poorman_key = page_p::tuple_poormkey(slot + 1); //+1 as page_p
+        poor_man_key poorman_key = btree_p::tuple_poormkey(slot + 1); //+1 as page_p
         size_t curkey_len;
         const char* curkey = is_leaf() ? _leaf_key_noprefix(slot, curkey_len) : _node_key_noprefix(slot, curkey_len);
         poor_man_key correct_poormankey = extract_poor_man_key(curkey, curkey_len);
@@ -1610,7 +1610,7 @@ bool btree_p::_is_consistent_space () const
     uint32_t *sorted_slots = new uint32_t[slot_cnt];
     w_auto_delete_array_t<uint32_t> sorted_slots_autodel (sorted_slots);
     for (slotid_t slot = 0; slot < slot_cnt; ++slot) {
-        slot_offset8_t offset8 = page_p::tuple_offset8(slot);
+        slot_offset8_t offset8 = btree_p::tuple_offset8(slot);
         slot_length_t len = (slot == 0 ? get_fence_rec_size() : get_rec_size(slot - 1));
         if (offset8 < 0) {
             sorted_slots[slot] = ((-offset8) << 16) + len;// this means ghost slot. reverse the sign
@@ -1664,7 +1664,7 @@ rc_t btree_p::defrag(slotid_t popped)
     w_assert3 (_is_consistent_space());
     
     //  Copy headers to scratch area.
-    page_s scratch;
+    btree_page scratch;
     char *scratch_raw = reinterpret_cast<char*>(&scratch);
     ::memcpy(scratch_raw, _pp, hdr_sz);
 #ifdef ZERO_INIT
@@ -1688,7 +1688,7 @@ rc_t btree_p::defrag(slotid_t popped)
         }
         slot_offset8_t offset8;
         poor_man_key poormkey;
-        page_p::tuple_both(slot, offset8, poormkey);
+        btree_p::tuple_both(slot, offset8, poormkey);
         if (offset8 < 0) {
             // ghost record. reclaim it
             w_assert1(slot >= 1); // fence record can't be ghost
@@ -1698,7 +1698,7 @@ rc_t btree_p::defrag(slotid_t popped)
         w_assert1(offset8 != 0);
         slot_length_t len = (i == 0 ? get_fence_rec_size() : get_rec_size(slot - 1));
         new_offset8 -= to_aligned_offset8(len);
-        ::memcpy(scratch.data_addr8(new_offset8), _pp->data_addr8(offset8), len);
+        ::memcpy(scratch.data_addr8(new_offset8), page()->data_addr8(offset8), len);
 
         slot_offset8_t* offset8_p = reinterpret_cast<slot_offset8_t*>(scratch.data + slot_sz * new_slots);
         poor_man_key* poormkey_p = reinterpret_cast<poor_man_key*>(scratch.data + slot_sz * new_slots + sizeof(slot_offset8_t));

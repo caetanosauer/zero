@@ -14,6 +14,7 @@
 #include "smthread.h"
 #include "vid_t.h"
 #include "page_s.h"
+#include "btree_p.h"
 #include <string.h>
 #include "w_findprime.h"
 #include <stdlib.h>
@@ -1255,7 +1256,7 @@ void bf_tree_m::_convert_to_disk_page(page_s* page) const {
         _convert_to_pageid(&(page->btree_pid0));
         slot_index_t slots = page->nslots;
         // use page_p class just for using tuple_addr().
-        page_p p (page);
+        btree_p p (page);
         for (slot_index_t i = 1; i < slots; ++i) {
             void* addr = p.tuple_addr(i);
             _convert_to_pageid(reinterpret_cast<shpid_t*>(addr));
@@ -1286,7 +1287,7 @@ slotid_t bf_tree_m::find_page_id_slot(page_s* page, shpid_t shpid) const
             return 0;
         }
         slot_index_t slots = page->nslots;
-        page_p p (page);
+        btree_p p (page);
         for (slot_index_t i = 1; i < slots; ++i) {
             void* addr = p.tuple_addr(i);
             if (*reinterpret_cast<shpid_t*>(addr) == shpid) {
@@ -1313,7 +1314,7 @@ void bf_tree_m::swizzle_children(page_s* parent, const slotid_t* slots, uint32_t
     w_assert1(_is_active_idx(parent_idx));
     w_assert1(is_swizzled(parent)); // swizzling is transitive.
 
-    page_p p (parent);
+    btree_p p (parent);
     for (uint32_t i = 0; i < slots_size; ++i) {
         slotid_t slot = slots[i];
         w_assert1(slot >= 0); // w_assert1(slot >= -1); see below
@@ -1512,7 +1513,7 @@ void bf_tree_m::_unswizzle_traverse_node(
 
     // check children
     uint32_t remaining = _buffer[node_idx].nslots - old;
-    page_p node_p (_buffer + node_idx);
+    btree_p node_p (_buffer + node_idx);
     for (uint32_t i = 0; i < remaining && unswizzled_frames < UNSWIZZLE_BATCH_SIZE; ++i) {
         uint32_t slot = old + i;
         if (!node_cb._used || _buffer[node_idx].btree_level <= 1) {
@@ -1584,7 +1585,7 @@ bool bf_tree_m::_unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot) {
     if (child_slot >= (uint32_t) _buffer[parent_idx].nslots) {
         return false;
     }
-    page_p parent (_buffer + parent_idx);
+    btree_p parent (_buffer + parent_idx);
     shpid_t* shpid_addr;
     if (child_slot == 0) {
         shpid_addr = &(_buffer[parent_idx].btree_pid0);
@@ -1696,7 +1697,7 @@ void bf_tree_m::debug_dump_page_pointers(std::ostream& o, page_s* page) const
 
     if (page->btree_level > 1) {
         slot_index_t slots = page->nslots;
-        page_p p (page);
+        btree_p p (page);
         o << "  ";
         for (slot_index_t i = 0; i < slots; ++i) {
             o << "child[" << i << "]=";
@@ -1837,7 +1838,7 @@ void bf_tree_m::print_slots(page_s* page) const
 {
     slot_index_t slots = page->nslots;
     DBGOUT1 (<< "print " << slots << " slots");
-    page_p p (page);
+    btree_p p (page);
     for (slot_index_t i = 1; i < slots; ++i) {
         void* addr = p.tuple_addr(i);
         shpid_t* slotaddr = reinterpret_cast<shpid_t*>(addr);

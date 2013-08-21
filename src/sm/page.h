@@ -21,6 +21,8 @@ class alloc_page_h;
 #include "latch.h"
 #include <string.h>
 
+
+
 /**
  *  Basic page handle class.
  */
@@ -158,20 +160,7 @@ public:
     /** Unset the deletion flag. This is only used by UNDO, so no logging. and no failure possible. */
     void                         unset_tobedeleted ();
     
-    char*                        data_addr8(slot_offset8_t offset8);
-    const char*                  data_addr8(slot_offset8_t offset8) const;
     slotid_t                     nslots() const;
-    slot_offset8_t               tuple_offset8(slotid_t idx) const;
-    poor_man_key                 tuple_poormkey (slotid_t idx) const;
-    void                         tuple_both (slotid_t idx, slot_offset8_t &offset8, poor_man_key &poormkey) const;
-    void*                        tuple_addr(slotid_t idx) const;
-
-    char*                        slot_addr(slotid_t idx) const;
-    /**
-     * Changes only the offset part of the specified slot.
-     * Used to turn a ghost record into a usual record, or to expand a record.
-     */
-    void                         change_slot_offset (slotid_t idx, slot_offset8_t offset8);
 
     uint32_t                     page_flags() const;
     page_s&                      persistent_part();
@@ -243,48 +232,6 @@ page_p::usable_space() const
     return contiguous_free_space; 
 }
 
-inline char* page_p::data_addr8(slot_offset8_t offset8)
-{
-    return _pp->data_addr8(offset8);
-}
-inline const char* page_p::data_addr8(slot_offset8_t offset8) const
-{
-    return _pp->data_addr8(offset8);
-}
-inline char* page_p::slot_addr(slotid_t idx) const
-{
-    w_assert3(idx >= 0 && idx <= _pp->nslots);
-    return _pp->data + (slot_sz * idx);
-}
-
-inline slot_offset8_t
-page_p::tuple_offset8(slotid_t idx) const
-{
-    return *reinterpret_cast<const slot_offset8_t*>(slot_addr(idx));
-}
-inline poor_man_key page_p::tuple_poormkey (slotid_t idx) const
-{
-    return *reinterpret_cast<const poor_man_key*>(slot_addr(idx) + sizeof(slot_offset8_t));
-}
-inline void page_p::tuple_both (slotid_t idx, slot_offset8_t &offset8, poor_man_key &poormkey) const
-{
-    const char* slot = slot_addr(idx);
-    offset8 = *reinterpret_cast<const slot_offset8_t*>(slot);
-    poormkey = *reinterpret_cast<const poor_man_key*>(slot + sizeof(slot_offset8_t));
-}
-
-inline void*
-page_p::tuple_addr(slotid_t idx) const
-{
-    slot_offset8_t offset8 = tuple_offset8(idx);
-    if (offset8 < 0) offset8 = -offset8; // ghost record.
-    return _pp->data_addr8(offset8);
-}
-
-inline void page_p::change_slot_offset (slotid_t idx, slot_offset8_t offset) {
-    char* slot = slot_addr(idx);
-    *reinterpret_cast<slot_offset8_t*>(slot) = offset;
-}
 
 inline uint32_t
 page_p::page_flags() const

@@ -244,6 +244,7 @@ inline uint32_t generic_page_header::calculate_checksum () const {
  */
 class page_s : public generic_page_header {
 public:
+private:
     /* MUST BE 8-BYTE ALIGNED HERE */
     char     data[data_sz];        // must be aligned
 
@@ -253,6 +254,7 @@ public:
     const char* data_addr8(slot_offset8_t offset8) const {
         return data + to_byte_offset(offset8);
     }
+public:
 
 
     page_s() {

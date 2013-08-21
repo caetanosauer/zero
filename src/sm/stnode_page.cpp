@@ -35,7 +35,8 @@ stnode_page_h::stnode_page_h(page_s* s, const lpid_t& pid):
 stnode_cache_t::stnode_cache_t (vid_t vid, bf_fixed_m* fixed_pages): _vid(vid), _fixed_pages(fixed_pages) {
     page_s* page = _fixed_pages->get_pages() + _fixed_pages->get_page_cnt() - 1;
     w_assert1(page->pid.vol() == _vid);
-    _stnodes = (stnode_t*) page->data;
+    stnode_page_h p(page);
+    _stnodes = &p.get(0);  // <<<>>>
 }
 
 shpid_t stnode_cache_t::get_root_pid (snum_t store) const
@@ -69,7 +70,7 @@ snum_t stnode_cache_t::get_min_unused_store_id () const
     // this method is not so efficient, but this is rarely called.
     CRITICAL_SECTION (cs, _spin_lock);
     // let's start from 1, not 0. All user store ID will begin with 1.
-    // store-id 0 will be a special store-id for stnode_page_h/alloc_page
+    // store-id 0 will be a special store-id for stnode_page/alloc_page
     for (int i = 1; i < stnode_page_h::max; ++i) {
         if (_stnodes[i].root == 0) {
             return i;
