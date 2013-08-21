@@ -2,7 +2,7 @@
 #include "gtest/gtest.h"
 #include "sm_vas.h"
 #include "btree.h"
-#include "page_s.h"
+#include "generic_page.h"
 #include "bf.h"
 #include "page.h"
 #include "sm_io.h"

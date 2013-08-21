@@ -10,7 +10,7 @@
 #include "latch.h"
 #include "tatas.h"
 #include "sm_s.h"
-#include "page_s.h"
+#include "generic_page.h"
 #include "bf_idx.h"
 #include <iosfwd>
 

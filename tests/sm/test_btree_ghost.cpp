@@ -4,7 +4,7 @@
 #include "sm_vas.h"
 #include "btree.h"
 #include "bf.h"
-#include "page_s.h"
+#include "generic_page.h"
 #include "page.h"
 #include "btree_p.h"
 

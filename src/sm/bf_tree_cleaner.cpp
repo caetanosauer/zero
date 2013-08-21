@@ -11,7 +11,7 @@
 #include "bf_tree.h"
 #include "bf_fixed.h"
 #include "w_autodel.h"
-#include "page_s.h"
+#include "generic_page.h"
 #include "bf.h"
 #include "page.h"
 #include "sm_io.h"

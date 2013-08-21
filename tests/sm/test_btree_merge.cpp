@@ -10,7 +10,7 @@
 #include "gtest/gtest.h"
 #include "sm_vas.h"
 #include "bf.h"
-#include "page_s.h"
+#include "generic_page.h"
 #include "btree.h"
 #include "btree_p.h"
 #include "btree_impl.h"

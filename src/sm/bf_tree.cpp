@@ -13,7 +13,7 @@
 
 #include "smthread.h"
 #include "vid_t.h"
-#include "page_s.h"
+#include "generic_page.h"
 #include "btree_p.h"
 #include <string.h>
 #include "w_findprime.h"

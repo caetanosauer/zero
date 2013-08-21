@@ -8,7 +8,7 @@
 #define PAGE_C
 #ifdef __GNUG__
 #   pragma implementation "page.h"
-#   pragma implementation "page_s.h"
+#   pragma implementation "generic_page.h"
 #endif
 #include "sm_int_1.h"
 #include "page.h"

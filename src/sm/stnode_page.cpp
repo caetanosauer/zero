@@ -12,7 +12,7 @@
 
 #include "sm_int_2.h"
 
-#include "page_s.h"
+#include "generic_page.h"
 #include "stnode_page.h"
 #include "crash.h"
 #include "sm_s.h"

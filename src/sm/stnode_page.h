@@ -11,7 +11,7 @@
 #pragma interface
 #endif
 
-#include "page_s.h"
+#include "generic_page.h"
 #include "srwlock.h"
 #include "sthread.h"
 #include <vector>

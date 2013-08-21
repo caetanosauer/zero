@@ -4,7 +4,7 @@
 #include "sm_vas.h"
 #include "btree.h"
 #include "btcursor.h"
-#include "page_s.h"
+#include "generic_page.h"
 #include "bf.h"
 #include "btree_p.h"
 #include "e_error_def_gen.h"

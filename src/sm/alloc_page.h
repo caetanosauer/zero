@@ -6,7 +6,7 @@
 #define ALLOC_PAGE_H
 
 #include "w_defines.h"
-#include "page_s.h"
+#include "generic_page.h"
 #include "sm_base.h"
 
 

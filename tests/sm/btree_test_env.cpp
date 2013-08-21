@@ -9,7 +9,7 @@
 #include "w_strstream.h"
 #include "sm_vas.h"
 #include "sm_base.h"
-#include "page_s.h"
+#include "generic_page.h"
 #include "bf.h"
 #include "smthread.h"
 #include "page_bf_inline.h"

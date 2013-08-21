@@ -17,7 +17,7 @@ class alloc_page_h;
 #include "bf_idx.h"
 #include "stid_t.h"
 #include "vid_t.h"
-#include "page_s.h"
+#include "generic_page.h"
 #include "latch.h"
 #include <string.h>
 
