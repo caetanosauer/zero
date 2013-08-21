@@ -72,7 +72,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  */
 
 #include <bf_s.h>
-#include <page_s.h>
+#include <generic_page.h>
 
 #ifdef __GNUG__
 #pragma interface

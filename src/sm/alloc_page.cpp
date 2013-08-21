@@ -6,9 +6,6 @@
 
 
 void alloc_page::set_bits(uint32_t from, uint32_t to) {
-    if (!(from < to))
-        return;
-
     // We need to do bit-wise operations only for first and last
     // bytes.  Other bytes are all "FF".
     uint32_t last_byte = byte_place(to);
@@ -21,7 +18,7 @@ void alloc_page::set_bits(uint32_t from, uint32_t to) {
         uint32_t byte = byte_place(i);
         if (byte < last_byte) {
             ::memset(&bitmap[byte], (uint8_t) 0xFF, last_byte-byte);
-            i = (last_byte-1)*8;
+            i = last_byte*8 - 1;
             continue;
         }
 
