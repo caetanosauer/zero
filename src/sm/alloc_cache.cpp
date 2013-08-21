@@ -28,7 +28,7 @@ rc_t alloc_cache_t::load_by_scan (shpid_t max_pid) {
         shpid_t hwm = al.get_pid_highwatermark();
         shpid_t offset = al.get_pid_offset();
         for (shpid_t pid = offset; pid < hwm; ++pid) {
-            if (!al.is_set_bit(pid)) {
+            if (!al.is_bit_set(pid)) {
                 _non_contiguous_free_pages.push_back(pid);
             }
         }

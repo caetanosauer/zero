@@ -16,15 +16,14 @@
  *
  * \details
  * These pages contain bitmaps that encode which pages are already
- * allocated.  They replace extlink_p and related classes in the
- * original Shore-MT.  They are drastically simpler and more efficient
- * than prior extent management.  See jira ticket:72 "fix extent
- * management" (originally trac ticket:74) for more details.
+ * allocated.  In particular an alloc_page p encodes allocation
+ * information for pages with pids in
+ * [p.pid_offset..p.pid_offset+p.bits_held).
  *
- * The implementation is spread between this class and alloc_page_h;
- * this class contains the basic fields and accessors for the
- * bitmap's bits.  The linkage between these and their interpretation
- * is contained in the handler class.
+ * The implementation is spread between this class and its handler
+ * class, alloc_page_h.  This class contains the basic fields and
+ * accessors for the bitmap's bits.  The linkage between these and
+ * their interpretation is contained in the handler class.
  */
 class alloc_page : public generic_page_header {
     friend class alloc_page_h;
@@ -33,7 +32,8 @@ class alloc_page : public generic_page_header {
     /// the smallest page ID that the bitmap in this page represents
     shpid_t pid_offset;        
     /// smallest pid represented by this page that has never had its
-    /// corresponding bit set; if no such, holds first pid of next page.
+    /// corresponding bit set or pid_offset+bits_held if no such pid
+    /// exists.
     shpid_t pid_highwatermark; 
 
 
@@ -42,7 +42,8 @@ class alloc_page : public generic_page_header {
      *
      * \details
      * Holds the allocation status for pid's in [pid_offset..pid_offset+bits_held);
-     * for those pids, a pid p is allocated iff bitmap[bit_place(p-pid_offset)]&bit_mask(p-pid_offset) != 0
+     * for those pids, a pid p is allocated iff 
+     *   bitmap[bit_place(p-pid_offset)]&bit_mask(p-pid_offset) != 0
      */
     uint8_t bitmap[data_sz - sizeof(shpid_t)*2]; 
 
@@ -53,11 +54,11 @@ class alloc_page : public generic_page_header {
     uint32_t bit_place (uint32_t index) { return index & 0x7; }
     uint32_t bit_mask  (uint32_t index) { return 1 << bit_place(index); }
 
-    bool get_bit  (uint32_t index) { return (bitmap[byte_place(index)]&bit_mask(index)) != 0; }
+    bool       bit(uint32_t index) { return (bitmap[byte_place(index)]&bit_mask(index)) != 0; }
     void unset_bit(uint32_t index) { bitmap[byte_place(index)] &= ~bit_mask(index); }
-    void set_bit  (uint32_t index) { bitmap[byte_place(index)] |=  bit_mask(index); }
+    void   set_bit(uint32_t index) { bitmap[byte_place(index)] |=  bit_mask(index); }
     /// set all bits in [from, to)
-    void set_bits (uint32_t from, uint32_t to);
+    void  set_bits(uint32_t from, uint32_t to);
 };
 
 
@@ -92,7 +93,8 @@ public:
     static const int bits_held = alloc_page::bits_held;
 
     /// smallest pid represented by this page that has never had its
-    /// corresponding bit set; if no such, holds first pid of next page.
+    /// corresponding bit set or pid_offset+bits_held if no such pid
+    /// exists.
     ///
     /// Invariant: !get_bit(p) for p in [get_pid_highwatermark()
     ///                                  .. get_pid_offset()+bits_held)
@@ -100,7 +102,7 @@ public:
 
 
     /// Is the given page allocated?
-    bool is_set_bit(shpid_t pid) const;
+    bool is_bit_set(shpid_t pid) const;
 
     /// Turn OFF (deallocate) the bit for the given page ID.
     void unset_bit(shpid_t pid);
@@ -119,7 +121,7 @@ public:
     }
 
     /// determines the alloc page the given page should belong to
-   inline static shpid_t pid_to_alloc_pid (shpid_t pid) {
+    inline static shpid_t pid_to_alloc_pid (shpid_t pid) {
         uint32_t alloc_page_h_seq = pid / alloc_page::bits_held;
         return alloc_page_h_seq + 1; // +1 for volume header
     }
@@ -130,11 +132,11 @@ private:
 
 
 
-inline bool alloc_page_h::is_set_bit(shpid_t pid) const {
+inline bool alloc_page_h::is_bit_set(shpid_t pid) const {
     w_assert1(pid >= get_pid_offset());
     w_assert1(pid < get_pid_offset() + alloc_page::bits_held);
 
-    return _page->get_bit(pid - _page->pid_offset);
+    return _page->bit(pid - _page->pid_offset);
 }
 
 inline void alloc_page_h::unset_bit(shpid_t pid) {
@@ -143,7 +145,7 @@ inline void alloc_page_h::unset_bit(shpid_t pid) {
 
     // except possibly during redo, we should never be trying to deallocate a page twice:
     w_assert1(smlevel_0::operating_mode == smlevel_0::t_in_redo ||
-              is_set_bit(pid));
+              is_bit_set(pid));
 
     _page->unset_bit(pid - _page->pid_offset);
 }
@@ -154,7 +156,7 @@ inline void alloc_page_h::set_bit(shpid_t pid) {
 
     // except possibly during redo, we should never be trying to allocate a page twice:
     w_assert1(smlevel_0::operating_mode == smlevel_0::t_in_redo ||
-              !is_set_bit(pid));
+              !is_bit_set(pid));
 
     _page->set_bit(pid - _page->pid_offset);
     update_pid_highwatermark(pid);
