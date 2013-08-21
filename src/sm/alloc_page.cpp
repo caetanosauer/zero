@@ -32,7 +32,7 @@ alloc_page_h::alloc_page_h(generic_page* s, const lpid_t& pid):
 {
     w_assert1(sizeof(alloc_page) == generic_page_header::page_sz);
 
-    ::memset (_page, 0, sizeof(alloc_page));
+    ::memset (_page, 0, sizeof(*_page));
     _page->pid = pid;
     _page->tag = t_alloc_p;
 
