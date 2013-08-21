@@ -98,7 +98,7 @@ class btree_ghost_reclaim_log;
  * \brief Page handle for BTree data page.
  * \ingroup SSMBTREE
  * \details
- * BTree data page uses the common data layout defined in page_s.
+ * BTree data page uses the common data layout defined in generic_page.
  * However, it also has the BTree-specific header placed in the beginning of "data".
  *
  * \section FBTREE Fence Keys and B-link Tree
@@ -106,14 +106,14 @@ class btree_ghost_reclaim_log;
  * fence keys are NEVER changed once the page is created until the page gets splitted.
  * prefix compression in this scheme utilizes it by storing the common leading bytes
  * of the two fence keys and simply getting rid of them from all entries in this page.
- * See page_s for the header definitions. They are defined as part of page_s.
+ * See generic_page for the header definitions. They are defined as part of generic_page.
  *
  * \section PAGELAYOUT BTree Page Layout
  * The page layout of BTree is as follows.
  * \verbatim
-  [common-headers in page_s]
-  [btree-specific-headers in page_s]
-  (data area in page_s:
+  [common-headers in generic_page]
+  [btree-specific-headers in generic_page]
+  (data area in generic_page:
     [slot data which is growing forward]
     [(contiguous) free area]
     [record data which is growing forward]
@@ -189,7 +189,7 @@ public:
 #endif // DOXYGEN_HIDE
 
     btree_p() {}
-    btree_p(page_s* s) : page_p(s) {}
+    btree_p(generic_page* s) : page_p(s) {}
     btree_p(const btree_p&p) : page_p(p) {} 
     ~btree_p() {}
     btree_p& operator=(btree_p& p)    { page_p::operator=(p); return *this; }

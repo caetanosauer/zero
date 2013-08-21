@@ -754,11 +754,11 @@ struct page_img_format_t {
 };
 page_img_format_t::page_img_format_t (const page_p& page)
 {
-    beginning_bytes = page_s::hdr_sz + page.nslots() * page_s::slot_sz;
-    ending_bytes = page_s::page_sz - page._pp->get_record_head_byte() - page_s::hdr_sz;
+    beginning_bytes = generic_page::hdr_sz + page.nslots() * generic_page::slot_sz;
+    ending_bytes = generic_page::page_sz - page._pp->get_record_head_byte() - generic_page::hdr_sz;
     const char *pp_bin = (const char *) page._pp;
     ::memcpy (data, pp_bin, beginning_bytes);
-    ::memcpy (data + beginning_bytes, pp_bin + page_s::hdr_sz + page._pp->get_record_head_byte(), ending_bytes);
+    ::memcpy (data + beginning_bytes, pp_bin + generic_page::hdr_sz + page._pp->get_record_head_byte(), ending_bytes);
 }
 
 page_img_format_log::page_img_format_log(const page_p &page)
@@ -776,11 +776,11 @@ void page_img_format_log::redo(page_p* page)
 {
     // REDO is simply applying the image
     page_img_format_t* dp = (page_img_format_t*) _data;
-    w_assert1(dp->beginning_bytes >= page_s::hdr_sz);
-    w_assert1(dp->beginning_bytes + dp->ending_bytes <= page_s::page_sz);
+    w_assert1(dp->beginning_bytes >= generic_page::hdr_sz);
+    w_assert1(dp->beginning_bytes + dp->ending_bytes <= generic_page::page_sz);
     char *pp_bin = (char *) page->_pp;
     ::memcpy (pp_bin, dp->data, dp->beginning_bytes);
-    ::memcpy (pp_bin + page_s::page_sz - dp->ending_bytes, dp->data + dp->beginning_bytes, dp->ending_bytes);
+    ::memcpy (pp_bin + generic_page::page_sz - dp->ending_bytes, dp->data + dp->beginning_bytes, dp->ending_bytes);
     page->set_dirty();
 }
 

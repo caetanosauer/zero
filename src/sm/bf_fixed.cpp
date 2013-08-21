@@ -43,15 +43,15 @@ w_rc_t bf_fixed_m::init(vol_t* parent, int unix_fd, uint32_t max_pid) {
         ERROUT (<< "failed to reserve " << _page_cnt << " blocks of " << SM_PAGESIZE << "-bytes pages. ");
         W_FATAL(smlevel_0::eOUTOFMEMORY);
     }
-    _pages = reinterpret_cast<page_s*>(buf);
+    _pages = reinterpret_cast<generic_page*>(buf);
     _dirty_flags = new bool[_page_cnt];
     ::memset (_dirty_flags, 0, sizeof(bool) * _page_cnt);
 
     // this is called on vol_t::mount(). no other thread is reading this volume concurrently!
     smthread_t* st = me();
     w_assert1(st);
-    W_DO(st->lseek(unix_fd, sizeof(page_s), sthread_t::SEEK_AT_SET)); // skip first page
-    W_DO(st->read(unix_fd, _pages, sizeof(page_s) * _page_cnt));
+    W_DO(st->lseek(unix_fd, sizeof(generic_page), sthread_t::SEEK_AT_SET)); // skip first page
+    W_DO(st->read(unix_fd, _pages, sizeof(generic_page) * _page_cnt));
 
     return RCOK;
 }

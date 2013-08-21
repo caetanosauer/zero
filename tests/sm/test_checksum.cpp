@@ -10,12 +10,12 @@ btree_test_env *test_env;
  * Unit test for page checksum logics.
  */
 TEST (ChecksumTest, Calculate) {
-    page_s p1, p2, p3, p4;
+    generic_page p1, p2, p3, p4;
     char *c1 = (char*) &p1;
     char *c2 = (char*) &p2;
     char *c3 = (char*) &p3;
-    ::memset (&p4, 0, sizeof (page_s));
-    for (size_t i = 0; i < sizeof (page_s); ++i) {
+    ::memset (&p4, 0, sizeof (generic_page));
+    for (size_t i = 0; i < sizeof (generic_page); ++i) {
         c1[i] = (char) i;
         c2[i] = (char) i;
         c3[i] = (char) (i + 10);
@@ -60,8 +60,8 @@ w_rc_t btree_page(ss_m* ssm, test_volume_t *test_volume) {
         EXPECT_TRUE (leaf.is_fixed());
         EXPECT_TRUE (leaf.is_leaf());
         
-        page_s dummy_p;
-        ::memset (&dummy_p, 0, sizeof (page_s));
+        generic_page dummy_p;
+        ::memset (&dummy_p, 0, sizeof (generic_page));
         correct_checksum = leaf.calculate_checksum();
         EXPECT_NE (correct_checksum, dummy_p.calculate_checksum());
     }

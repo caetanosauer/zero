@@ -29,7 +29,7 @@
 #include "bf_tree.h"
 
 #ifdef EXPLICIT_TEMPLATE
-template class w_auto_delete_t<page_s>;
+template class w_auto_delete_t<generic_page>;
 template class w_auto_delete_array_t<stnode_t>;
 #endif
 
@@ -561,7 +561,7 @@ vol_t::set_fake_disk_latency(const int adelay)
  *
  *********************************************************************/
 rc_t
-vol_t::read_page(shpid_t pnum, page_s& page)
+vol_t::read_page(shpid_t pnum, generic_page& page)
 {
     w_assert1(pnum > 0 && pnum < (shpid_t)(_num_pages));
     fileoff_t offset = fileoff_t(pnum) * sizeof(page);
@@ -606,7 +606,7 @@ vol_t::read_page(shpid_t pnum, page_s& page)
  *
  *********************************************************************/
 rc_t
-vol_t::write_page(shpid_t pnum, page_s& page)
+vol_t::write_page(shpid_t pnum, generic_page& page)
 {
   return write_many_pages(pnum, &page, 1);
 }
@@ -621,11 +621,11 @@ vol_t::write_page(shpid_t pnum, page_s& page)
  *
  *********************************************************************/
 rc_t
-vol_t::write_many_pages(shpid_t pnum, const page_s* const pages, int cnt)
+vol_t::write_many_pages(shpid_t pnum, const generic_page* const pages, int cnt)
 {
     w_assert1(pnum > 0 && pnum < (shpid_t)(_num_pages));
     w_assert1(cnt > 0);
-    fileoff_t offset = fileoff_t(pnum) * sizeof(page_s);
+    fileoff_t offset = fileoff_t(pnum) * sizeof(generic_page);
 
     smthread_t* t = me();
 
@@ -633,7 +633,7 @@ vol_t::write_many_pages(shpid_t pnum, const page_s* const pages, int cnt)
     if(_apply_fake_disk_latency) start = gethrtime();
 
     // do the actual write now
-    W_COERCE_MSG(t->pwrite(_unix_fd, pages, sizeof(page_s)*cnt, offset), << "volume id=" << vid());
+    W_COERCE_MSG(t->pwrite(_unix_fd, pages, sizeof(generic_page)*cnt, offset), << "volume id=" << vid());
     
     fake_disk_latency(start);    
     ADD_TSTAT(vol_blks_written, cnt);
@@ -803,14 +803,14 @@ vol_t::format_vol(
      * FRJ: this seek is safe because no other thread can access the
      * file descriptor we just opened.
      */    
-    rc = me()->lseek(fd, sizeof(page_s), sthread_t::SEEK_AT_SET);
+    rc = me()->lseek(fd, sizeof(generic_page), sthread_t::SEEK_AT_SET);
     if (rc.is_error()) {
         W_IGNORE(me()->close(fd));
         return rc;
     }
 
     {
-        page_s buf;
+        generic_page buf;
 #ifdef ZERO_INIT
         // zero out data portion of page to keep purify/valgrind happy.
         // Unfortunately, this isn't enough, as the format below
@@ -828,7 +828,7 @@ vol_t::format_vol(
                         ap.set_bit(hdr_pid);
                     }
                 }
-                page_s& page (*ap.generic_page());
+                generic_page& page (*ap.to_generic_page());
                 w_assert9(&buf == &page);
                 w_assert1(page.pid.vol() == vid);
 
@@ -846,7 +846,7 @@ vol_t::format_vol(
             DBG(<<" formatting stnode_page");
             DBGTHRD(<<"stnode_page page " << spid.page);
             stnode_page_h fp(&buf, spid);  // formatting...
-            page_s& page (*fp.generic_page());
+            generic_page& page (*fp.to_generic_page());
             w_assert1(page.pid.vol() == vid);
             rc = me()->write(fd, &page, sizeof(page));
             if (rc.is_error()) {
@@ -863,7 +863,7 @@ vol_t::format_vol(
      *  can distinguish new pages from used pages.
      */
     if (raw) {
-        page_s buf;
+        generic_page buf;
         memset(&buf, 0, sizeof(buf));
 
         DBG(<<" raw device: zeroing...");
@@ -876,7 +876,7 @@ vol_t::format_vol(
             DBG( << "zero-ing of raw device: " << devname << " ..." );
             // zero out rest of pages
             for (size_t cur = hdr_pages;cur < num_pages; ++cur) {
-                rc = me()->write(fd, &buf, sizeof(page_s));
+                rc = me()->write(fd, &buf, sizeof(generic_page));
                 if (rc.is_error()) {
                     W_IGNORE(me()->close(fd));
                     return rc;

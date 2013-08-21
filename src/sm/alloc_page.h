@@ -74,15 +74,15 @@ class alloc_page_h {
 
 public:
     /// format given page with page-ID pid as an alloc page then return a handle to it
-    alloc_page_h(page_s* s, const lpid_t& pid);
+    alloc_page_h(generic_page* s, const lpid_t& pid);
     /// construct handle from an existing alloc page
-    alloc_page_h(page_s* s) : _page(reinterpret_cast<alloc_page*>(s)) {
+    alloc_page_h(generic_page* s) : _page(reinterpret_cast<alloc_page*>(s)) {
         w_assert1(s->tag == t_alloc_p);
     }
     ~alloc_page_h() {}
 
     /// return pointer to underlying page
-    page_s* generic_page() const { return reinterpret_cast<page_s*>(_page); }
+    generic_page* to_generic_page() const { return reinterpret_cast<generic_page*>(_page); }
 
 
     /// smallest page ID that bitmaps in this page represent

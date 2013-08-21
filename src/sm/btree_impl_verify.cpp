@@ -371,7 +371,7 @@ rc_t btree_impl::_ux_verify_volume(
         }
     }
     w_assert1(vol);
-    page_s buf;
+    generic_page buf;
     shpid_t endpid = (shpid_t) (vol->num_pages());
     for (shpid_t pid = vol->first_data_pageid(); pid < endpid; ++pid) {
         // TODO we should skip large chunks of unused areas to speedup.

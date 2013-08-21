@@ -55,7 +55,7 @@ w_rc_t create_check(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
     W_DO(ssm->force_buffers());
-    page_s buf;
+    generic_page buf;
     for (shpid_t shpid = 1; shpid < 5; ++shpid) {
         lpid_t pid (stid, shpid);
 

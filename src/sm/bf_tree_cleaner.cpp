@@ -288,7 +288,7 @@ bf_tree_cleaner_slave_thread_t::bf_tree_cleaner_slave_thread_t(bf_tree_cleaner* 
     void *buf = NULL;
     ::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * (parent->_cleaner_write_buffer_pages + 1)); // +1 margin for switching to next batch
     w_assert0(buf != NULL);
-    _write_buffer = reinterpret_cast<page_s*>(buf);
+    _write_buffer = reinterpret_cast<generic_page*>(buf);
     
     _write_buffer_indexes = new bf_idx[parent->_cleaner_write_buffer_pages + 1];
 }
@@ -486,7 +486,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
     size_t write_buffer_cur = 0;
     shpid_t prev_idx = 0; // to check duplicates
     shpid_t prev_shpid = 0; // to check if it's contiguous
-    const page_s* const page_buffer = _parent->_bufferpool->_buffer;
+    const generic_page* const page_buffer = _parent->_bufferpool->_buffer;
     int rounds = 0;
     while (true) {
         bool skipped_something = false;
@@ -520,7 +520,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
             if ((page_buffer[idx].page_flags & t_tobedeleted) != 0) {
                 tobedeleted = true;
             } else {
-                ::memcpy(_write_buffer + write_buffer_cur, page_buffer + idx, sizeof (page_s)); 
+                ::memcpy(_write_buffer + write_buffer_cur, page_buffer + idx, sizeof (generic_page)); 
                 // if the page contains a swizzled pointer, we need to convert the data back to the original pointer.
                 // we need to do this before releasing SH latch because the pointer might be unswizzled by other threads.
                 _parent->_bufferpool->_convert_to_disk_page(_write_buffer + write_buffer_cur);// convert swizzled data.
@@ -676,7 +676,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
     bool in_real_hurry = _parent->_bufferpool->_dirty_page_count_approximate > (block_cnt / 4 * 3);
 
     // list up dirty pages
-    page_s* pages = _parent->_bufferpool->_buffer;
+    generic_page* pages = _parent->_bufferpool->_buffer;
     for (bf_idx idx = 1; idx < block_cnt; ++idx) {
         bf_tree_cb_t &cb = _parent->_bufferpool->get_cb(idx);
         if (!cb._dirty || !cb._used) {

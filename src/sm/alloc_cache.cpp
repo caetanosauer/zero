@@ -20,10 +20,10 @@ rc_t alloc_cache_t::load_by_scan (shpid_t max_pid) {
     
     // at this point, no other threads are accessing the volume. we don't need any synchronization.
     uint32_t alloc_pages_cnt = _fixed_pages->get_page_cnt() - 1; // -1 for stnode_page
-    page_s *pages = _fixed_pages->get_pages();
+    generic_page *pages = _fixed_pages->get_pages();
     for (uint32_t i = 0; i < alloc_pages_cnt; ++i) {
         alloc_page_h al (pages + i);
-        w_assert1(al.generic_page()->pid.vol() == _vid);
+        w_assert1(al.to_generic_page()->pid.vol() == _vid);
 
         shpid_t hwm = al.get_pid_highwatermark();
         shpid_t offset = al.get_pid_offset();
@@ -165,7 +165,7 @@ rc_t alloc_cache_t::apply_allocate_one_page (shpid_t pid, bool logit)
     shpid_t alloc_pid = alloc_page_h::pid_to_alloc_pid(pid);
     uint32_t buf_index = alloc_pid - 1; // -1 for volume header
     w_assert1(buf_index < _fixed_pages->get_page_cnt() - 1); // -1 for stnode_page
-    page_s* pages = _fixed_pages->get_pages();
+    generic_page* pages = _fixed_pages->get_pages();
     alloc_page_h al (pages + buf_index);
     if (logit) {
         if (smlevel_0::log != NULL) {
@@ -183,7 +183,7 @@ rc_t alloc_cache_t::apply_allocate_consecutive_pages (shpid_t pid_begin, size_t 
     spinlock_read_critical_section cs(&_fixed_pages->get_checkpoint_lock()); // protect against checkpoint. see bf_fixed_m comment.
     const shpid_t pid_to_end = pid_begin + page_count;
     shpid_t alloc_pid = alloc_page_h::pid_to_alloc_pid(pid_begin);
-    page_s* pages = _fixed_pages->get_pages();
+    generic_page* pages = _fixed_pages->get_pages();
     
     shpid_t cur_pid = pid_begin;
 
@@ -227,7 +227,7 @@ rc_t alloc_cache_t::apply_deallocate_one_page (shpid_t pid, bool logit)
     shpid_t alloc_pid = alloc_page_h::pid_to_alloc_pid(pid);
     uint32_t buf_index = alloc_pid - 1; // -1 for volume header
     w_assert1(buf_index < _fixed_pages->get_page_cnt() - 1); // -1 for stnode_page
-    page_s* pages = _fixed_pages->get_pages();
+    generic_page* pages = _fixed_pages->get_pages();
     alloc_page_h al (pages + buf_index);
     // log it
     if (logit) {

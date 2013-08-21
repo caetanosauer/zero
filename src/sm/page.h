@@ -30,10 +30,10 @@ class page_p
 {
 public:
     enum {
-        page_sz = sizeof(page_s),
-        data_sz = page_s::data_sz,
-        hdr_sz = page_s::hdr_sz,
-        slot_sz = page_s::slot_sz
+        page_sz = sizeof(generic_page),
+        data_sz = generic_page::data_sz,
+        hdr_sz = generic_page::hdr_sz,
+        slot_sz = generic_page::slot_sz
     };
     enum logical_operation {
         l_none=0,
@@ -48,7 +48,7 @@ public:
     /**
      * Imaginery 'fix' for a non-bufferpool-managed page.
      */
-    page_p(page_s* s) : _pp(s), _mode(LATCH_NL) {
+    page_p(generic_page* s) : _pp(s), _mode(LATCH_NL) {
         w_assert1(s != NULL);
     }
 
@@ -163,8 +163,8 @@ public:
     slotid_t                     nslots() const;
 
     uint32_t                     page_flags() const;
-    page_s&                      persistent_part();
-    const page_s&                persistent_part_const() const;
+    generic_page&                      persistent_part();
+    const generic_page&                persistent_part_const() const;
     bool                         is_fixed() const;
     latch_mode_t                 latch_mode() const { return _mode; }
     bool                         is_latched() const { return _mode != LATCH_NL; }
@@ -187,7 +187,7 @@ protected:
      */
     bool check_space_for_insert(size_t rec_size);    
 
-    page_s*                     _pp;
+    generic_page*                     _pp;
     latch_mode_t                _mode;
 
     friend class page_img_format_t;
@@ -239,16 +239,16 @@ page_p::page_flags() const
     return _pp->page_flags;
 }
 
-inline page_s&
+inline generic_page&
 page_p::persistent_part()
 {
-    return *(page_s*) _pp;
+    return *(generic_page*) _pp;
 }
 
-inline const page_s&
+inline const generic_page&
 page_p::persistent_part_const() const
 {
-    return *(page_s*) _pp; 
+    return *(generic_page*) _pp; 
 }
 
 inline bool

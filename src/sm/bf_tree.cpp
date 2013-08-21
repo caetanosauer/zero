@@ -72,11 +72,11 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
         ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << SM_PAGESIZE << "-bytes pages. ");
         W_FATAL(smlevel_0::eOUTOFMEMORY);
     }
-    _buffer = reinterpret_cast<page_s*>(buf);
+    _buffer = reinterpret_cast<generic_page*>(buf);
     
     // the index 0 is never used. to make sure no one can successfully use it,
     // fill the block-0 with garbages
-    ::memset (&_buffer[0], 0x27, sizeof(page_s));
+    ::memset (&_buffer[0], 0x27, sizeof(generic_page));
 
 #ifdef BP_ALTERNATE_CB_LATCH
     // this allocation scheme is sensible only for control block and latch sizes of 64B (cacheline size)
@@ -374,11 +374,11 @@ w_rc_t bf_tree_m::uninstall_volume(volid_t vid) {
 // NOTE most of the page fix/unfix functions are in bf_tree_inline.h.
 // These functions are here are because called less frequently.
 
-w_rc_t bf_tree_m::fix_direct (page_s*& page, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
+w_rc_t bf_tree_m::fix_direct (generic_page*& page, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
     return _fix_nonswizzled(NULL, page, vol, shpid, mode, conditional, virgin_page);
 }
 
-w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(page_s* parent, page_s*& page, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
+w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(generic_page* parent, generic_page*& page, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
     bf_idx idx = shpid;
     bf_tree_cb_t &cb = get_cb(idx);
 #ifdef BP_MAINTAIN_PARNET_PTR
@@ -408,7 +408,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(page_s* parent, page_s*& page, s
     return rc;
 }
 
-w_rc_t bf_tree_m::_fix_nonswizzled(page_s* parent, page_s*& page, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
+w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
     w_assert1(vol != 0);
     w_assert1(shpid != 0);
     w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
@@ -579,7 +579,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(page_s* parent, page_s*& page, volid_t vol, s
     }
 }
 
-bf_idx bf_tree_m::pin_for_refix(const page_s* page) {
+bf_idx bf_tree_m::pin_for_refix(const generic_page* page) {
     w_assert1(page != NULL);
     w_assert1(latch_mode(page) != LATCH_NL);
     bf_idx idx = page - _buffer;
@@ -622,7 +622,7 @@ w_rc_t bf_tree_m::wakeup_cleaner_for_volume(volid_t vol) {
     return _cleaner->wakeup_cleaner_for_volume(vol);
 }
 
-void bf_tree_m::repair_rec_lsn (page_s *page, bool was_dirty, const lsn_t &new_rlsn) {
+void bf_tree_m::repair_rec_lsn (generic_page *page, bool was_dirty, const lsn_t &new_rlsn) {
     if( !smlevel_0::logging_enabled) return;
     
     bf_idx idx = page - _buffer;
@@ -1078,7 +1078,7 @@ void bf_tree_m::_decrement_pin_cnt_assume_positive(bf_idx idx) {
 }
 
 ///////////////////////////////////   WRITE-ORDER-DEPENDENCY BEGIN ///////////////////////////////////  
-bool bf_tree_m::register_write_order_dependency(const page_s* page, const page_s* dependency) {
+bool bf_tree_m::register_write_order_dependency(const generic_page* page, const generic_page* dependency) {
     w_assert1(page);
     w_assert1(dependency);
     w_assert1(page->pid != dependency->pid);
@@ -1221,7 +1221,7 @@ bool bf_tree_m::_check_dependency_still_active(bf_tree_cb_t& cb) {
 ///////////////////////////////////   WRITE-ORDER-DEPENDENCY END ///////////////////////////////////  
 
 #ifdef BP_MAINTAIN_PARNET_PTR
-void bf_tree_m::switch_parent(page_s* page, page_s* new_parent)
+void bf_tree_m::switch_parent(generic_page* page, generic_page* new_parent)
 {
     if (!is_swizzling_enabled()) {
         return;
@@ -1244,7 +1244,7 @@ void bf_tree_m::switch_parent(page_s* page, page_s* new_parent)
 #endif // BP_MAINTAIN_PARNET_PTR
 
 
-void bf_tree_m::_convert_to_disk_page(page_s* page) const {
+void bf_tree_m::_convert_to_disk_page(generic_page* page) const {
     DBGOUT3 (<< "converting the page " << page->pid << "... ");
     
     // if the page is a leaf page, foster is the only pointer
@@ -1274,7 +1274,7 @@ inline void bf_tree_m::_convert_to_pageid (shpid_t* shpid) const {
     }
 }
 
-slotid_t bf_tree_m::find_page_id_slot(page_s* page, shpid_t shpid) const
+slotid_t bf_tree_m::find_page_id_slot(generic_page* page, shpid_t shpid) const
 {
     w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
     // w_assert1(page->btree_foster != (shpid | SWIZZLED_PID_BIT));
@@ -1300,12 +1300,12 @@ slotid_t bf_tree_m::find_page_id_slot(page_s* page, shpid_t shpid) const
 
 ///////////////////////////////////   SWIZZLE/UNSWIZZLE BEGIN ///////////////////////////////////  
 
-void bf_tree_m::swizzle_child(page_s* parent, slotid_t slot)
+void bf_tree_m::swizzle_child(generic_page* parent, slotid_t slot)
 {
     return swizzle_children(parent, &slot, 1);
 }
 
-void bf_tree_m::swizzle_children(page_s* parent, const slotid_t* slots, uint32_t slots_size)
+void bf_tree_m::swizzle_children(generic_page* parent, const slotid_t* slots, uint32_t slots_size)
 {
     w_assert1(is_swizzling_enabled());
     w_assert1(parent != NULL);
@@ -1340,7 +1340,7 @@ void bf_tree_m::swizzle_children(page_s* parent, const slotid_t* slots, uint32_t
     }
 }
 
-inline void bf_tree_m::_swizzle_child_pointer(page_s* parent, shpid_t* pointer_addr)
+inline void bf_tree_m::_swizzle_child_pointer(generic_page* parent, shpid_t* pointer_addr)
 {
     shpid_t child_shpid = *pointer_addr;
     //w_assert1((child_shpid & SWIZZLED_PID_BIT) == 0);
@@ -1685,7 +1685,7 @@ void bf_tree_m::debug_dump(std::ostream &o) const
     }
 }
 
-void bf_tree_m::debug_dump_page_pointers(std::ostream& o, page_s* page) const
+void bf_tree_m::debug_dump_page_pointers(std::ostream& o, generic_page* page) const
 {
     bf_idx idx = page - _buffer;
     w_assert1(idx > 0);
@@ -1834,7 +1834,7 @@ void swizzling_stat_reset()
     swizzles = 0;
 }
 
-void bf_tree_m::print_slots(page_s* page) const
+void bf_tree_m::print_slots(generic_page* page) const
 {
     slot_index_t slots = page->nslots;
     DBGOUT1 (<< "print " << slots << " slots");

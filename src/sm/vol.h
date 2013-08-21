@@ -111,16 +111,16 @@ public:
     /**  Return true if the store "store" is allocated. false otherwise. */
     bool                is_alloc_store(snum_t f) const;
     
-    rc_t                write_page(shpid_t page, page_s& buf);
+    rc_t                write_page(shpid_t page, generic_page& buf);
 
     rc_t                write_many_pages(
         shpid_t             first_page,
-        const page_s*       buf, 
+        const generic_page*       buf, 
         int                 cnt);
 
     rc_t                read_page(
         shpid_t             page,
-        page_s&             buf);
+        generic_page&             buf);
 
     rc_t            alloc_a_page(const stid_t &stid, lpid_t &pid);
     rc_t            alloc_consecutive_pages(const stid_t &stid, size_t page_count, lpid_t &pid_begin);

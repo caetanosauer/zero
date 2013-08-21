@@ -100,7 +100,7 @@ public:
     void             undo(page_p*);
 
     enum {
-        max_sz = 3 * sizeof(page_s),
+        max_sz = 3 * sizeof(generic_page),
         hdr_non_ssx_sz = 32,
         hdr_single_sys_xct_sz = 16,
         // max_sz is we conservative. we don't allow the last 16 bytes to be used (anyway very rarely used)

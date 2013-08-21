@@ -59,7 +59,7 @@ rc_t btree_impl::_ux_rebalance_foster_core(btree_p &page)
     smsize_t move_size = 0;
     while (used - move_size > balanced_size && -move_count < page.nrecs() - 1) {
         ++move_count;
-        move_size += align(page.get_rec_size(page.nslots() - move_count - 1)) + page_s::slot_sz;
+        move_size += align(page.get_rec_size(page.nslots() - move_count - 1)) + generic_page::slot_sz;
     }
     
     if (move_count == 0) {
@@ -101,7 +101,7 @@ rc_t btree_impl::_ux_rebalance_foster_core(btree_p &page, btree_p &foster_p, int
     // this is also useful as defragmentation.
 
     // scratch block of foster_p
-    page_s scratch;
+    generic_page scratch;
     ::memcpy (&scratch, foster_p._pp, sizeof(scratch));
     btree_p scratch_p (&scratch);
     
@@ -238,7 +238,7 @@ rc_t btree_impl::_ux_merge_foster_core(btree_p &page)
         // if no foster after merging, chain-high will disappear
         page.copy_chain_fence_high_key(chain_high_key);
     }
-    page_s scratch;
+    generic_page scratch;
     ::memcpy (&scratch, page._pp, sizeof(scratch));
     btree_p scratch_p (&scratch);
     W_DO(page.format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(), scratch_p.pid0(),

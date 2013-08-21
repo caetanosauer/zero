@@ -1127,7 +1127,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * The buffer manager maintains a hash table mapping page IDs to
  * buffer control blocks.  A control block points to its frame, and
  * from a frame one can arithmetically locate its control block (in
- * bf_m::get_cb(const page_s *)).
+ * bf_m::get_cb(const generic_page *)).
  * The hash table for the buffer pool uses cuckoo hashing 
  * (see \ref P1) with multiple hash functions and multiple slots per bucket.  
  * These are compile-time constants and can be modified (bf_htab.h).

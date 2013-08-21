@@ -34,7 +34,7 @@ w_rc_t bf_get_empty(ss_m* ssm, test_volume_t *test_volume) {
     // write out all pages and discard from bufferpool
     W_DO(bf_m::force_all(true));
 
-    page_s *root_s = NULL;
+    generic_page *root_s = NULL;
     smlevel_0::store_flag_t stflags;
     W_DO (bf_m::fix(root_s, root_pid, 0, LATCH_SH, false, stflags, true, smlevel_0::st_bad));
     EXPECT_TRUE (root_s != NULL);
@@ -104,11 +104,11 @@ w_rc_t bf_get_many(ss_m* ssm, test_volume_t *test_volume) {
     // grab as many as possible without unfix
     cout << "reading " << pids.size() << " page from buffer pool" << endl
         << "intentionally making buffer pool full. the following error message is NOT an error!" << endl;
-    std::vector<page_s*> child_pages;
+    std::vector<generic_page*> child_pages;
     for (size_t i = 0; i < pids.size(); ++i) {
         lpid_t child_pid = root_pid;
         child_pid.page = pids[i];
-        page_s *child_s = NULL;
+        generic_page *child_s = NULL;
         
         smlevel_0::store_flag_t stflags;
         w_rc_t rc = bf_m::fix(child_s, child_pid, 0, LATCH_SH, false, stflags, true, smlevel_0::st_bad);

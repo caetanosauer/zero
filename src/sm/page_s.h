@@ -238,11 +238,11 @@ inline uint32_t generic_page_header::calculate_checksum () const {
  * \section BTree-specific page headers
  * This page layout also contains the headers just for BTree to optimize on
  * the performance of BTree.
- * Anyways, remaining page-types other than BTree are only stnode and extlink.
+ * Anyways, remaining page-types other than BTree are only stnode_page and alloc_page
  * For those page types, this header part is unused but not a big issue.
  * @see btree_p
  */
-class page_s : public generic_page_header {
+class generic_page : public generic_page_header {
 public:
 private:
     /* MUST BE 8-BYTE ALIGNED HERE */
@@ -257,10 +257,10 @@ private:
 public:
 
 
-    page_s() {
+    generic_page() {
         w_assert1(data - (const char *) this == hdr_sz);
     }
-    ~page_s() { }
+    ~generic_page() { }
 };
 
 #endif

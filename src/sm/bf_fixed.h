@@ -10,7 +10,7 @@
 #include "w_rc.h"
 #include "lsn.h"
 
-class page_s;
+class generic_page;
 class vol_t;
 
 /**
@@ -46,7 +46,7 @@ public:
     w_rc_t flush ();
 
     /** returns the pointer to page data maintained in this bufferpool. */
-    page_s* get_pages ();
+    generic_page* get_pages ();
     bool* get_dirty_flags ();
     
     /** returns number of pages maintained in this bufferpool. */
@@ -72,14 +72,14 @@ private:
     /** number of pages maintained in this bufferpool. */
     uint32_t    _page_cnt;
     /** page data maintained in this bufferpool. */
-    page_s*     _pages;
+    generic_page*     _pages;
     /** dirty flags for _pages. */
     bool*       _dirty_flags;
 };
 inline uint32_t bf_fixed_m::get_page_cnt() const {
     return _page_cnt;
 }
-inline page_s* bf_fixed_m::get_pages () {
+inline generic_page* bf_fixed_m::get_pages () {
     return _pages;
 }
 inline bool* bf_fixed_m::get_dirty_flags () {

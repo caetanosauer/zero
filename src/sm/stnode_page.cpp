@@ -19,7 +19,7 @@
 #include "bf_fixed.h"
 
 
-stnode_page_h::stnode_page_h(page_s* s, const lpid_t& pid):
+stnode_page_h::stnode_page_h(generic_page* s, const lpid_t& pid):
     _page(reinterpret_cast<stnode_page*>(s)) 
 {
     w_assert1(sizeof(stnode_page) == generic_page_header::page_sz);
@@ -33,7 +33,7 @@ stnode_page_h::stnode_page_h(page_s* s, const lpid_t& pid):
 
 
 stnode_cache_t::stnode_cache_t (vid_t vid, bf_fixed_m* fixed_pages): _vid(vid), _fixed_pages(fixed_pages) {
-    page_s* page = _fixed_pages->get_pages() + _fixed_pages->get_page_cnt() - 1;
+    generic_page* page = _fixed_pages->get_pages() + _fixed_pages->get_page_cnt() - 1;
     w_assert1(page->pid.vol() == _vid);
     stnode_page_h p(page);
     _stnodes = &p.get(0);  // <<<>>>

@@ -76,15 +76,15 @@ class stnode_page_h {
 public:
     /// format given page with page-ID pid as an stnode_page page then
     /// return a handle to it
-    stnode_page_h(page_s* s, const lpid_t& pid);
+    stnode_page_h(generic_page* s, const lpid_t& pid);
     /// construct handle from an existing stnode_page page
-    stnode_page_h(page_s* s) : _page(reinterpret_cast<stnode_page*>(s)) {
+    stnode_page_h(generic_page* s) : _page(reinterpret_cast<stnode_page*>(s)) {
         w_assert1(s->tag == t_stnode_p);
     }
     ~stnode_page_h() {}
 
     /// return pointer to underlying page
-    page_s* generic_page() const { return reinterpret_cast<page_s*>(_page); }
+    generic_page* to_generic_page() const { return reinterpret_cast<generic_page*>(_page); }
 
 
     /// max # store nodes on a page

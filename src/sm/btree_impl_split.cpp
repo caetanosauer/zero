@@ -148,7 +148,7 @@ rc_t btree_impl::_ux_split_foster_apply(btree_p &page,
     
     // next, we refactor the left page in a similar way. 
     // However, we can't use the "page" itself to construct "page".
-    page_s scratch;
+    generic_page scratch;
     ::memcpy (&scratch, page._pp, sizeof(scratch)); // thus get a copy
     btree_p scratch_p (&scratch);
     W_DO(page.format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(), scratch_p.pid0(),

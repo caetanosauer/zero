@@ -79,7 +79,7 @@ rc_t btree_p::format_steal(
     */
     // because we do this, note that we shouldn't receive any arguments
     // as reference or pointer. It might be also nuked!
-    memset(_pp, '\017', sizeof(page_s)); // trash the whole page
+    memset(_pp, '\017', sizeof(generic_page)); // trash the whole page
 #endif //ZERO_INIT
     _pp->lsn = lsn_t(0, 1);
     _pp->pid = pid_copy;
@@ -240,7 +240,7 @@ rc_t btree_p::norecord_split (shpid_t foster,
 
     if (new_prefix_len > get_prefix_length() + 3) { // this +3 is arbitrary
         // then, let's defrag this page to compress keys
-        page_s scratch;
+        generic_page scratch;
         ::memcpy (&scratch, _pp, sizeof(scratch));
         btree_p scratch_p (&scratch);
         W_DO(format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(), scratch_p.pid0(),
@@ -1383,7 +1383,7 @@ btree_p::page_usage(int& data_size, int& header_size, int& unused,
     data_size = unused = alignment = 0;
 
     // space used for headers
-    header_size = sizeof(page_s) - data_sz;
+    header_size = sizeof(generic_page) - data_sz;
     
     // calculate space wasted in data alignment
     for (int i=0 ; i<_pp->nslots; i++) {
@@ -1395,12 +1395,12 @@ btree_p::page_usage(int& data_size, int& header_size, int& unused,
         }
     }
     // unused space
-    unused = sizeof(page_s) - header_size - data_size - alignment;
+    unused = sizeof(generic_page) - header_size - data_size - alignment;
 
     t        = tag();        // the type of page 
     no_slots = _pp->nslots;  // nu of slots in this page
 
-    w_assert1(data_size + header_size + unused + alignment == sizeof(page_s));
+    w_assert1(data_size + header_size + unused + alignment == sizeof(generic_page));
 }
 btrec_t& 
 btrec_t::set(const btree_p& page, slotid_t slot)
@@ -1721,7 +1721,7 @@ rc_t btree_p::defrag(slotid_t popped)
     }
     
     // okay, apply the change!
-    ::memcpy(_pp, scratch_raw, sizeof(page_s));
+    ::memcpy(_pp, scratch_raw, sizeof(generic_page));
     set_dirty();
 
     w_assert3 (_is_consistent_space());
