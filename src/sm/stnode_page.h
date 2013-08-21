@@ -54,10 +54,11 @@ struct stnode_t {
 class stnode_page : public generic_page_header {
     friend class stnode_page_h;
 
-    /// max # store nodes on a page
-    static const int max = data_sz / sizeof(stnode_t);
+    /// max # stnode's on a page
+    static const size_t max = data_sz / sizeof(stnode_t);
 
     stnode_t stnode[max];
+
     /// unused space (ideally of zero size)
     char*    padding[data_sz - sizeof(stnode)];
 };
@@ -70,8 +71,6 @@ class stnode_page : public generic_page_header {
  */
 class stnode_page_h {
     stnode_page *_page;
-
-    friend class stnode_cache_t;
 
 public:
     /// format given page with page-ID pid as an stnode_page page then
@@ -88,9 +87,13 @@ public:
 
 
     /// max # store nodes on a page
-    static const int max = stnode_page::max;
+    static const size_t max = stnode_page::max;
 
     stnode_t& get(size_t index) {
+        w_assert1(index < max);
+        return _page->stnode[index];
+    }
+    const stnode_t& get(size_t index) const {
         w_assert1(index < max);
         return _page->stnode[index];
     }
@@ -165,14 +168,12 @@ public:
     std::vector<snum_t> get_all_used_store_id () const;
 
 private:
-    vid_t _vid;
-    bf_fixed_m* _fixed_pages;
-
-    /** this merely points to the stnode_page data in bf_fixed_m. */
-    stnode_t *_stnodes;
-
-    /** all operations in this object are protected by this lock. */
+    /// all operations in this object are protected by this lock
     mutable queue_based_lock_t _spin_lock;
+
+    vid_t         _vid;
+    bf_fixed_m*   _fixed_pages;
+    stnode_page_h _stnode_page;        // The stnode_page of _fixed_pages
 };
 
 #endif // STNODE_PAGE_H
