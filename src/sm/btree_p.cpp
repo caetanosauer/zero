@@ -7,10 +7,6 @@
 #define SM_SOURCE
 #define BTREE_C
 
-#ifdef __GNUG__
-#       pragma implementation "btree_p.h"
-#endif
-
 #include "sm_int_2.h"
 
 #include "vec_t.h"

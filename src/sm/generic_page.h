@@ -9,9 +9,6 @@
 #include "w_endian.h"
 #include "sm_s.h"
 
-#ifdef __GNUG__
-#pragma interface
-#endif
 
 enum tag_t {
     t_bad_p        = 0,        // not used

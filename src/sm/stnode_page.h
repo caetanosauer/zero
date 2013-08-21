@@ -6,11 +6,6 @@
 #define STNODE_PAGE_H
 
 #include "w_defines.h"
-
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 #include "generic_page.h"
 #include "srwlock.h"
 #include "sthread.h"

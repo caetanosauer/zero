@@ -6,10 +6,6 @@
 
 #define SM_SOURCE
 
-#ifdef __GNUG__
-#   pragma implementation "stnode_page.h"
-#endif
-
 #include "sm_int_2.h"
 
 #include "generic_page.h"

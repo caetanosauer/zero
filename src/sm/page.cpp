@@ -6,16 +6,14 @@
 
 #define SM_SOURCE
 #define PAGE_C
-#ifdef __GNUG__
-#   pragma implementation "page.h"
-#   pragma implementation "generic_page.h"
-#endif
+
 #include "sm_int_1.h"
 #include "page.h"
 #include "page_bf_inline.h"
 #include "btree_p.h"
 #include "w_key.h"
 #include "bf_tree.h"
+
 
 bool page_p::check_space_for_insert(size_t rec_size) {
     size_t contiguous_free_space = usable_space();

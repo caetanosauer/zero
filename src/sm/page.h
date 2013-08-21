@@ -10,10 +10,6 @@
 class stnode_page_h;
 class alloc_page_h;
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 #include "bf_idx.h"
 #include "stid_t.h"
 #include "vid_t.h"
