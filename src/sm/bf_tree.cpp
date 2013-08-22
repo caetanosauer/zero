@@ -412,7 +412,9 @@ w_rc_t bf_tree_m::_fix_nonswizzled(page_s* parent, page_s*& page, volid_t vol, s
     w_assert1(vol != 0);
     w_assert1(shpid != 0);
     w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
+#ifdef BP_MAINTAIN_PARNET_PTR
     w_assert1(!is_swizzling_enabled() || parent != NULL);
+#endif
     bf_tree_vol_t *volume = _volumes[vol];
     w_assert1(volume != NULL);
     w_assert1(shpid >= volume->_volume->first_data_pageid());
