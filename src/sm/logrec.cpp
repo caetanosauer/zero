@@ -981,9 +981,6 @@ void store_operation_log::undo(page_p* /*page*/)
                                 new_param) );
                     }
                     break;
-                case smlevel_0::t_store_freeing_exts:
-                    /* do nothing, not undoable */
-                    break;
                 case smlevel_0::t_unknown_deleting:
                     W_FATAL(smlevel_0::eINTERNAL);
                     break;

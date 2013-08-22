@@ -132,10 +132,9 @@ stnode_cache_t::store_operation(const store_operation_param& param) {
         case smlevel_0::t_set_store_flags:
             {
                 if (stnode.flags == param.new_store_flags())  {
-                    // xct may have converted file type to regular and 
-                    // then the automatic
-                    // conversion at commit from insert_file 
-                    // to regular needs to be ignored
+                    // xct may have converted file type to regular and
+                    // then the automatic conversion at commit from
+                    // insert_file to regular needs to be ignored
                     DBG(<<"store flags already set");
                     return RCOK;
                 } else  {
@@ -155,7 +154,7 @@ stnode_cache_t::store_operation(const store_operation_param& param) {
                 w_assert3(stnode.root == 0);
                 w_assert3(param.root());
 
-                stnode.root        = param.root();
+                stnode.root = param.root();
             }
             DBGOUT3 ( << "t_set_root:" << param.snum() << ". root=" << param.root());
             break;

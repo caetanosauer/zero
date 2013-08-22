@@ -15,9 +15,16 @@ class bf_fixed_m;
 
 
 /**
- * \brief Persistent structure representing the head of a store's extent list.
+ * \brief Persistent structure representing metadata for a store.
  *
  * \details
+ * Contains the root page ID of the given store, store flags (e.g.,
+ * what kind of logging to use), and 
+ *
+ *
+ *
+ *
+ *
  * These structures sit on stnode_page pages and point to the start of
  * the extent list.  The stnode_t structures are indexed by store
  * number.
@@ -29,10 +36,10 @@ struct stnode_t {
       deleting = 0;
     }
 
-    /// First extent of the store
+    /// Root page ID of the store; if the store isn't created yet, holds 0.
     shpid_t         root;      // +4 -> 4
-    /// store flags 
-    uint16_t        flags;     // +2 -> 6; holds a smlevel_0::store_flag_t
+    /// store flags  (holds a smlevel_0::store_flag_t)
+    uint16_t        flags;     // +2 -> 6
     /// non-zero if deleting or deleted
     uint16_t        deleting;  // +2 -> 8
 };
@@ -120,7 +127,7 @@ public:
      */
     shpid_t get_root_pid(snum_t store) const;
     
-    /// Returns the entire stnode_t of the given store.
+    /// Make a copy of the entire stnode_t of the given store.
     void get_stnode(snum_t store, stnode_t &stnode) const;
 
     /// Returns the first snum_t that can be used for a new store.
@@ -144,7 +151,6 @@ public:
      *       t_delete_store, <---- when really deleted after space freed
      *       t_create_store, <---- store is allocated (snum_t is in use)
      *       t_set_deleting, <---- when transaction deletes store (t_deleting_store)
-     *                       <---- end of xct (t_store_freeing_exts)
      *       t_set_store_flags, 
      *
      *   typedef smlevel_0::store_flag_t             store_flag_t;

@@ -516,7 +516,6 @@ public:
     enum store_deleting_t  {
             t_not_deleting_store = 0,  // must be 0: code assumes it
             t_deleting_store, 
-            t_store_freeing_exts, 
             t_unknown_deleting};
 /**\endcond skip */
 };
