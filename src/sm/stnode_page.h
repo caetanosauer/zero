@@ -100,67 +100,64 @@ public:
  * \brief Store creation/destroy/query interface.
  *
  * \details
- * This object handles store create/destroy/query requests for one volume.
- * 99.99% of the requests are of course querying the root page id of indexes.
- * This object does a light weight synchronization (latch) to protect
- * them from MT accesses.  However, this doesn't use locks because
- * we don't need them.  If the store is being destroyed, ss_m will check
- * intent locks before calling this object, so we are safe.
- * This object and vol_t replace the "directory" thingies in original Shore-MT
- * with more efficiency and simplicity.
+ * This object handles store create/destroy/query requests for one
+ * volume.  99.99% of the requests are of course querying the root
+ * page ID of indexes.  This object does a lightweight synchronization
+ * (latch) to protect them from MT accesses.  However, this doesn't
+ * use locks because we don't need them.  If the store is being
+ * destroyed, ss_m will check intent locks before calling this object,
+ * so we are safe.  This object and vol_t replace the "directory"
+ * thingies in original Shore-MT with more efficiency and simplicity.
  * @See stnode_page_h
  */
 class stnode_cache_t {
 public:
-    /** Creates the cache.*/
-    stnode_cache_t (vid_t vid, bf_fixed_m* fixed_pages);
+    stnode_cache_t(vid_t vid, bf_fixed_m* fixed_pages);
     
     /**
-     * Returns the root page Id of the store.
+     * Returns the root page ID of the store.
      * If the store isn't created yet, returns 0.
      * @param[in] store Store ID.
      */
-    shpid_t get_root_pid (snum_t store) const;
+    shpid_t get_root_pid(snum_t store) const;
     
+    /// Returns the entire stnode_t of the given store.
+    void get_stnode(snum_t store, stnode_t &stnode) const;
+
+    /// Returns the first snum_t that can be used for a new store.
+    snum_t get_min_unused_store_ID() const;
+
+    /// Returns the snum_t of all stores that exist in the volume.
+    std::vector<snum_t> get_all_used_store_ID() const;
+
+
     /**
-     * Returns the entire stnode_t of the store.
+     *  Fix the stnode_page and perform the store operation 
+     *     AND 
+     *  log it.
+     *
+     *  param type is in sm_io.h.
+     *
+     *  It contains:
+     *   typedef smlevel_0::store_operation_t        store_operation_t;
+     *   in sm_base.h
+     *   Operations:
+     *       t_delete_store, <---- when really deleted after space freed
+     *       t_create_store, <---- store is allocated (snum_t is in use)
+     *       t_set_deleting, <---- when transaction deletes store (t_deleting_store)
+     *                       <---- end of xct (t_store_freeing_exts)
+     *       t_set_store_flags, 
+     *
+     *   typedef smlevel_0::store_flag_t             store_flag_t;
+     *       in sm_base.h:
+     *       logging attribute: regular, tmp, load, insert
+     *
+     *   typedef smlevel_0::store_deleting_t         store_deleting_t;
+     *           t_not_deleting_store = 0,  // must be 0: code assumes it
+     *           t_deleting_store, 
+     *           t_unknown_deleting         // for error handling
      */
-    void get_stnode (snum_t store, stnode_t &stnode) const;
-
-    /**
-    *  Fix the storenode page and perform the store operation 
-    *     AND 
-    *  log it.
-    *
-    *  param type is in sm_io.h.
-    *
-    *  It contains:
-        typedef smlevel_0::store_operation_t        store_operation_t;
-        in sm_base.h
-        Operations:
-            t_delete_store, <---- when really deleted after space freed
-            t_create_store,  <--- store is allocated (snum_t is in use)
-            t_set_deleting,  <---- when transaction deletes store (t_deleting_store)
-                            <---- end of xct (t_store_freeing_exts)
-            t_set_store_flags, 
-
-        typedef smlevel_0::store_flag_t             store_flag_t;
-            in sm_base.h:
-            logging attribute: regular, tmp, load, insert
-
-        typedef smlevel_0::store_deleting_t         store_deleting_t;
-                t_not_deleting_store = 0,  // must be 0: code assumes it
-                t_deleting_store, 
-                t_unknown_deleting // for error handling
-    *
-    */
-    rc_t  store_operation(const store_operation_param & op);
-
-    /** Returns the first snum_t that can be used for a new store. */
-    snum_t get_min_unused_store_id () const;
-
-    /** Returns the snum_t of all stores that exist in the volume. */
-    std::vector<snum_t> get_all_used_store_id () const;
+    rc_t  store_operation(const store_operation_param &op);
 
 private:
     /// all operations in this object are protected by this lock

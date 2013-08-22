@@ -60,11 +60,11 @@ void stnode_cache_t::get_stnode (snum_t store, stnode_t &stnode) const {
     stnode = _stnode_page.get(store);
 }
 
-snum_t stnode_cache_t::get_min_unused_store_id () const {
+snum_t stnode_cache_t::get_min_unused_store_ID () const {
     // this method is not so efficient, but this is rarely called.
     CRITICAL_SECTION (cs, _spin_lock);
-    // let's start from 1, not 0. All user store ID will begin with 1.
-    // store-id 0 will be a special store-id for stnode_page/alloc_page
+    // let's start from 1, not 0. All user store ID's will begin with 1.
+    // store-ID 0 will be a special store-ID for stnode_page/alloc_page's
     for (size_t i = 1; i < stnode_page_h::max; ++i) {
         if (_stnode_page.get(i).root == 0) {
             return i;
@@ -73,9 +73,9 @@ snum_t stnode_cache_t::get_min_unused_store_id () const {
     return stnode_page_h::max;
 }
 
-std::vector<snum_t> stnode_cache_t::get_all_used_store_id() const
-{
+std::vector<snum_t> stnode_cache_t::get_all_used_store_ID() const {
     std::vector<snum_t> ret;
+
     CRITICAL_SECTION (cs, _spin_lock);
     for (size_t i = 1; i < stnode_page_h::max; ++i) {
         if (_stnode_page.get(i).root != 0) {
@@ -87,16 +87,15 @@ std::vector<snum_t> stnode_cache_t::get_all_used_store_id() const
 
 
 rc_t
-stnode_cache_t::store_operation(const store_operation_param& param)
-{
+stnode_cache_t::store_operation(const store_operation_param& param) {
     w_assert1(param.snum() < stnode_page_h::max);
 
     store_operation_param new_param(param);
     stnode_t stnode;
-    get_stnode (param.snum(), stnode); // copy out current value.
+    get_stnode(param.snum(), stnode); // copy out current value.
 
     switch (param.op())  {
-        case smlevel_0::t_delete_store:
+        case smlevel_0::t_delete_store: 
             {
                 stnode.root        = 0;
                 stnode.flags       = smlevel_0::st_bad;
@@ -141,12 +140,12 @@ stnode_cache_t::store_operation(const store_operation_param& param)
                     return RCOK;
                 } else  {
                     w_assert3(param.old_store_flags() == smlevel_0::st_bad
-                            || stnode.flags == param.old_store_flags());
+                              || stnode.flags == param.old_store_flags());
 
                     new_param.set_old_store_flags(
                             (store_operation_param::store_flag_t)stnode.flags);
 
-                    stnode.flags        = param.new_store_flags();
+                    stnode.flags = param.new_store_flags();
                 }
                 w_assert3(stnode.flags != smlevel_0::st_bad);
             }

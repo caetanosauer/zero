@@ -218,7 +218,7 @@ w_rc_t bf_tree_m::install_volume(vol_t* volume) {
 
     // load root pages. root pages are permanently fixed.
     stnode_cache_t *stcache = volume->get_stnode_cache();
-    std::vector<snum_t> stores (stcache->get_all_used_store_id());
+    std::vector<snum_t> stores (stcache->get_all_used_store_ID());
     w_rc_t rc = RCOK;
     for (size_t i = 0; i < stores.size(); ++i) {
         snum_t store = stores[i];
@@ -321,7 +321,7 @@ w_rc_t bf_tree_m::_install_volume_mainmemorydb(vol_t* volume) {
 
     bf_tree_vol_t* desc = new bf_tree_vol_t(volume);
     stnode_cache_t *stcache = volume->get_stnode_cache();
-    std::vector<snum_t> stores (stcache->get_all_used_store_id());
+    std::vector<snum_t> stores (stcache->get_all_used_store_ID());
     for (size_t i = 0; i < stores.size(); ++i) {
         snum_t store = stores[i];
         bf_idx idx = stcache->get_root_pid(store);

@@ -292,7 +292,7 @@ rc_t vol_t::find_free_store(snum_t& snum)
 {
     FUNC(find_free_store);
     w_assert1(_stnode_cache);
-    snum = _stnode_cache->get_min_unused_store_id();
+    snum = _stnode_cache->get_min_unused_store_ID();
     if (snum >= stnode_page_h::max) {
         W_RETURN_RC_MSG(eOUTOFSPACE, << "volume id = " << _vid);
     }
