@@ -8,7 +8,6 @@
 #include "w_defines.h"
 #include "generic_page.h"
 #include "srwlock.h"
-#include "sthread.h"
 #include <vector>
 
 class bf_fixed_m;
@@ -33,7 +32,7 @@ struct stnode_t {
     /// First extent of the store
     shpid_t         root;      // +4 -> 4
     /// store flags 
-    uint16_t        flags;     // +2 -> 6
+    uint16_t        flags;     // +2 -> 6; holds a smlevel_0::store_flag_t
     /// non-zero if deleting or deleted
     uint16_t        deleting;  // +2 -> 8
 };
