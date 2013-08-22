@@ -20,10 +20,10 @@
  * information for pages with pids in
  * [p.pid_offset..p.pid_offset+p.bits_held).
  *
- * The implementation is spread between this class and its handler
+ * The implementation is spread between this class and its handle
  * class, alloc_page_h.  This class contains the basic fields and
  * accessors for the bitmap's bits.  The linkage between these and
- * their interpretation is contained in the handler class.
+ * their interpretation is contained in the handle class.
  */
 class alloc_page : public generic_page_header {
     friend class alloc_page_h;
