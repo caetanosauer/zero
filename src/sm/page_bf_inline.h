@@ -4,7 +4,7 @@
 
 #ifndef PAGE_BF_INLINE_H
 #define PAGE_BF_INLINE_H
-// bufferpool-related inline methods for page_p.
+// bufferpool-related inline methods for generic_page_h.
 // these methods are small and frequently called, thus inlined.
 
 // also, they are separated from page.h because these implementations
@@ -17,7 +17,7 @@
 #include "page.h"
 #include "sm_int_0.h"
 
-inline w_rc_t page_p::fix_nonroot (const page_p &parent, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
+inline w_rc_t generic_page_h::fix_nonroot (const generic_page_h &parent, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
     w_assert1(shpid != 0);
     if (is_fixed()) {
         unfix();
@@ -29,7 +29,7 @@ inline w_rc_t page_p::fix_nonroot (const page_p &parent, volid_t vol, shpid_t sh
     return RCOK;
 }
 
-inline w_rc_t page_p::fix_direct (volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
+inline w_rc_t generic_page_h::fix_direct (volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
     w_assert1(shpid != 0);
     if (is_fixed()) {
         unfix();
@@ -41,12 +41,12 @@ inline w_rc_t page_p::fix_direct (volid_t vol, shpid_t shpid, latch_mode_t mode,
     return RCOK;
 }
 
-inline bf_idx page_p::pin_for_refix() {
+inline bf_idx generic_page_h::pin_for_refix() {
     w_assert1(is_latched());
     return smlevel_0::bf->pin_for_refix(_pp);
 }
 
-inline w_rc_t page_p::refix_direct (bf_idx idx, latch_mode_t mode, bool conditional) {
+inline w_rc_t generic_page_h::refix_direct (bf_idx idx, latch_mode_t mode, bool conditional) {
     w_assert1(idx != 0);
     if (is_fixed()) {
         unfix();
@@ -56,7 +56,7 @@ inline w_rc_t page_p::refix_direct (bf_idx idx, latch_mode_t mode, bool conditio
     return RCOK;
 }
 
-inline w_rc_t page_p::fix_virgin_root (volid_t vol, snum_t store, shpid_t shpid) {
+inline w_rc_t generic_page_h::fix_virgin_root (volid_t vol, snum_t store, shpid_t shpid) {
     w_assert1(shpid != 0);
     if (is_fixed()) {
         unfix();
@@ -68,7 +68,7 @@ inline w_rc_t page_p::fix_virgin_root (volid_t vol, snum_t store, shpid_t shpid)
     return RCOK;
 }
 
-inline w_rc_t page_p::fix_root (volid_t vol, snum_t store, latch_mode_t mode, bool conditional) {
+inline w_rc_t generic_page_h::fix_root (volid_t vol, snum_t store, latch_mode_t mode, bool conditional) {
     if (is_fixed()) {
         unfix();
     }
@@ -78,7 +78,7 @@ inline w_rc_t page_p::fix_root (volid_t vol, snum_t store, latch_mode_t mode, bo
 }
 
 
-inline void page_p::unset_tobedeleted() {
+inline void generic_page_h::unset_tobedeleted() {
     if ((_pp->page_flags & t_tobedeleted) != 0) {
         _pp->page_flags ^= t_tobedeleted;
         // we don't need set_dirty() as it's always dirty if this is ever called
@@ -87,7 +87,7 @@ inline void page_p::unset_tobedeleted() {
 }
 
 
-inline void  page_p::unfix() {
+inline void  generic_page_h::unfix() {
     if (_mode != LATCH_NL) {
         w_assert1(_pp);
         smlevel_0::bf->unfix(_pp);
@@ -96,14 +96,14 @@ inline void  page_p::unfix() {
     }
 }
 
-inline void page_p::set_dirty() const {
+inline void generic_page_h::set_dirty() const {
     w_assert1(_pp);
     if (_mode != LATCH_NL) {
         smlevel_0::bf->set_dirty(_pp);
     }
 }
 
-inline bool page_p::is_dirty() const {
+inline bool generic_page_h::is_dirty() const {
     if (_mode == LATCH_NL) {
         return false;
     } else {
@@ -111,7 +111,7 @@ inline bool page_p::is_dirty() const {
     }
 }
 
-inline bool page_p::upgrade_latch_conditional() {
+inline bool generic_page_h::upgrade_latch_conditional() {
     w_assert1(_pp != NULL);
     w_assert1(_mode == LATCH_SH);
     bool success = smlevel_0::bf->upgrade_latch_conditional(_pp);

@@ -231,7 +231,7 @@ inline uint32_t generic_page_header::calculate_checksum () const {
  * \details
  * These are persistent things. There is no hierarchy here
  * for the different page types. All the differences between
- * page types are handled by the handle classes, page_p and its
+ * page types are handled by the handle classes, generic_page_h and its
  * derived classes.
  * 
  * \section BTree-specific page headers

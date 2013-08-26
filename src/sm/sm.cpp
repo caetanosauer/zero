@@ -1357,7 +1357,7 @@ ss_m::config_info(sm_config_info_t& info)
 {
     info.page_size = ss_m::page_sz;
 
-    //however, page_p.space.acquire aligns() the whole mess (hdr + record)
+    //however, generic_page_h.space.acquire aligns() the whole mess (hdr + record)
     //which rounds up the space needed, so.... we have to figure that in
     //here: round up then subtract one aligned entity.
     // 

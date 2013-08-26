@@ -1255,7 +1255,7 @@ void bf_tree_m::_convert_to_disk_page(generic_page* page) const {
     if (page->btree_level > 1) {
         _convert_to_pageid(&(page->btree_pid0));
         slot_index_t slots = page->nslots;
-        // use page_p class just for using tuple_addr().
+        // use generic_page_h class just for using tuple_addr().
         btree_p p (page);
         for (slot_index_t i = 1; i < slots; ++i) {
             void* addr = p.tuple_addr(i);

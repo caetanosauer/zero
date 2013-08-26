@@ -42,7 +42,7 @@ btree_insert_t::btree_insert_t(
 }
 
 btree_insert_log::btree_insert_log(
-    const page_p&         page, 
+    const generic_page_h&         page, 
     const w_keystr_t&         key,
     const cvec_t&         el)
 {
@@ -52,7 +52,7 @@ btree_insert_log::btree_insert_log(
 }
 
 void 
-btree_insert_log::undo(page_p* W_IFDEBUG9(page))
+btree_insert_log::undo(generic_page_h* W_IFDEBUG9(page))
 {
     w_assert9(page == 0);
     btree_insert_t* dp = (btree_insert_t*) data();
@@ -69,7 +69,7 @@ btree_insert_log::undo(page_p* W_IFDEBUG9(page))
 }
 
 void
-btree_insert_log::redo(page_p* page)
+btree_insert_log::redo(generic_page_h* page)
 {
     btree_p* bp = (btree_p*) page;
     btree_insert_t* dp = (btree_insert_t*) data();
@@ -99,7 +99,7 @@ struct btree_update_t {
     uint16_t    _new_elen;
     char        _data[logrec_t::max_data_sz - sizeof(shpid_t) - 3*sizeof(int16_t)];
 
-    btree_update_t(const page_p& page, const w_keystr_t& key,
+    btree_update_t(const generic_page_h& page, const w_keystr_t& key,
                    const char* old_el, int old_elen, const cvec_t& new_el) {
         _root_shpid = page.btree_root();
         _klen = key.get_length_as_keystr();
@@ -113,7 +113,7 @@ struct btree_update_t {
 };
 
 btree_update_log::btree_update_log(
-    const page_p&         page, 
+    const generic_page_h&         page, 
     const w_keystr_t&     key,
     const char* old_el, int old_elen, const cvec_t& new_el)
 {
@@ -123,7 +123,7 @@ btree_update_log::btree_update_log(
 
 
 void 
-btree_update_log::undo(page_p*)
+btree_update_log::undo(generic_page_h*)
 {
     btree_update_t* dp = (btree_update_t*) data();
     
@@ -142,7 +142,7 @@ btree_update_log::undo(page_p*)
 }
 
 void
-btree_update_log::redo(page_p* page)
+btree_update_log::redo(generic_page_h* page)
 {
     btree_p* bp = (btree_p*) page;
     btree_update_t* dp = (btree_update_t*) data();
@@ -176,7 +176,7 @@ struct btree_overwrite_t {
     uint16_t    _elen;
     char        _data[logrec_t::max_data_sz - sizeof(shpid_t) - 3*sizeof(int16_t)];
 
-    btree_overwrite_t(const page_p& page, const w_keystr_t& key,
+    btree_overwrite_t(const generic_page_h& page, const w_keystr_t& key,
             const char* old_el, const char *new_el, size_t offset, size_t elen) {
         _root_shpid = page.btree_root();
         _klen = key.get_length_as_keystr();
@@ -190,13 +190,13 @@ struct btree_overwrite_t {
 };
 
 
-btree_overwrite_log::btree_overwrite_log (const page_p& page, const w_keystr_t& key,
+btree_overwrite_log::btree_overwrite_log (const generic_page_h& page, const w_keystr_t& key,
     const char* old_el, const char *new_el, size_t offset, size_t elen) {
     fill(&page.pid(), page.tag(),
          (new (_data) btree_overwrite_t(page, key, old_el, new_el, offset, elen))->size());
 }
 
-void btree_overwrite_log::undo(page_p*)
+void btree_overwrite_log::undo(generic_page_h*)
 {
     btree_overwrite_t* dp = (btree_overwrite_t*) data();
     
@@ -215,7 +215,7 @@ void btree_overwrite_log::undo(page_p*)
     }
 }
 
-void btree_overwrite_log::redo(page_p* page)
+void btree_overwrite_log::redo(generic_page_h* page)
 {
     btree_p* bp = (btree_p*) page;
     btree_overwrite_t* dp = (btree_overwrite_t*) data();
@@ -268,16 +268,16 @@ public:
     ) : btree_pid0(pid0), btree_foster(foster), btree_level(level),
     btree_chain_fence_high_length(chain_fence_high_length)
          {};
-    btree_header_t(const page_p &p)
+    btree_header_t(const generic_page_h &p)
     : btree_pid0(p._pp->btree_pid0), btree_foster(p._pp->btree_foster), btree_level(p._pp->btree_level),
     btree_chain_fence_high_length(p._pp->btree_chain_fence_high_length)
          {};
     
     int size()  { return sizeof(*this); }
-    void apply(page_p* page); // used from both undo/redo
+    void apply(generic_page_h* page); // used from both undo/redo
 };
 
-void btree_header_t::apply(page_p* page)
+void btree_header_t::apply(generic_page_h* page)
 {
     page->_pp->btree_pid0 = btree_pid0;
     page->_pp->btree_level = btree_level;
@@ -291,7 +291,7 @@ public:
     btree_header_t   before;
     btree_header_t   after;
 
-    btree_header_change_t(const page_p &p,
+    btree_header_change_t(const generic_page_h &p,
         shpid_t btree_pid0,
         int16_t btree_level,
         shpid_t btree_foster,
@@ -305,7 +305,7 @@ public:
     int size()  { return before.size() + after.size();}
 };
 
-btree_header_log::btree_header_log(const page_p& p,
+btree_header_log::btree_header_log(const generic_page_h& p,
     shpid_t btree_pid0,
     int16_t btree_level,
     shpid_t btree_foster,
@@ -318,13 +318,13 @@ btree_header_log::btree_header_log(const page_p& p,
                 btree_chain_fence_high_length))->size());
 }
 
-void  btree_header_log::redo(page_p* page)
+void  btree_header_log::redo(generic_page_h* page)
 {
     btree_header_change_t* df = (btree_header_change_t*) data();
     df->after.apply(page);
 }
 
-void  btree_header_log::undo(page_p* page)
+void  btree_header_log::undo(generic_page_h* page)
 {
     btree_header_change_t* df = (btree_header_change_t*) data();
     df->before.apply(page);
@@ -398,7 +398,7 @@ w_keystr_t btree_ghost_t::get_key (size_t i) const {
     return result;
 }
 
-btree_ghost_mark_log::btree_ghost_mark_log(const page_p& p,
+btree_ghost_mark_log::btree_ghost_mark_log(const generic_page_h& p,
     const vector<slotid_t>& slots)
 {
     w_assert0(p.tag() == t_btree_p);
@@ -407,7 +407,7 @@ btree_ghost_mark_log::btree_ghost_mark_log(const page_p& p,
 }
 
 void 
-btree_ghost_mark_log::undo(page_p*)
+btree_ghost_mark_log::undo(generic_page_h*)
 {
     // UNDO of ghost marking is to get the record back to regular state
     btree_ghost_t* dp = (btree_ghost_t*) data();
@@ -423,7 +423,7 @@ btree_ghost_mark_log::undo(page_p*)
 }
 
 void
-btree_ghost_mark_log::redo(page_p *page)
+btree_ghost_mark_log::redo(generic_page_h *page)
 {
     // REDO is physical. mark the record as ghost again.
     w_assert1(page);
@@ -444,7 +444,7 @@ btree_ghost_mark_log::redo(page_p *page)
     }
 }
 
-btree_ghost_reclaim_log::btree_ghost_reclaim_log(const page_p& p,
+btree_ghost_reclaim_log::btree_ghost_reclaim_log(const generic_page_h& p,
     const vector<slotid_t>& slots)
 {
     w_assert0(p.tag() == t_btree_p);
@@ -455,7 +455,7 @@ btree_ghost_reclaim_log::btree_ghost_reclaim_log(const page_p& p,
 }
 
 void
-btree_ghost_reclaim_log::redo(page_p* page)
+btree_ghost_reclaim_log::redo(generic_page_h* page)
 {
     // REDO is to defrag it again
     btree_p* bp = (btree_p*) page;
@@ -486,7 +486,7 @@ btree_ghost_reserve_t::btree_ghost_reserve_t(const w_keystr_t& key, int rec_len)
 }
 
 btree_ghost_reserve_log::btree_ghost_reserve_log (
-    const page_p& p, const w_keystr_t& key, int record_size)
+    const generic_page_h& p, const w_keystr_t& key, int record_size)
 {
     w_assert0(p.tag() == t_btree_p);
     // ghost creation is single-log system transaction. so, use data_ssx()
@@ -494,7 +494,7 @@ btree_ghost_reserve_log::btree_ghost_reserve_log (
     w_assert0(is_single_sys_xct());
 }
 
-void btree_ghost_reserve_log::redo(page_p* page)
+void btree_ghost_reserve_log::redo(generic_page_h* page)
 {
     // REDO is to physically make the ghost record
     btree_p* bp = (btree_p*) page;
@@ -529,14 +529,14 @@ struct btree_foster_split_t {
     int size() { return 16 + _new_child_key_len; }
 };
 
-btree_foster_split_log::btree_foster_split_log (const page_p& p,
+btree_foster_split_log::btree_foster_split_log (const generic_page_h& p,
     shpid_t new_pid, int32_t right_begins_from,
     const w_keystr_t* new_child_key, shpid_t new_child_pid)
 {
     w_assert0(p.tag() == t_btree_p);
     fill(&p.pid(), p.tag(), (new (_data) btree_foster_split_t(new_pid, right_begins_from, new_child_key, new_child_pid))->size());
 }
-void btree_foster_split_log::redo(page_p* page)
+void btree_foster_split_log::redo(generic_page_h* page)
 {
     // by careful-write-ordering, foster-parent can't be written out before foster-child
     // so, foster-parent still holds all data to recover
@@ -580,13 +580,13 @@ struct btree_foster_norecord_split_t {
     int size() { return 8 + _fence_high_len + _chain_fence_high_len; }
 };
 
-btree_foster_norecord_split_log::btree_foster_norecord_split_log(const page_p& p, shpid_t foster,
+btree_foster_norecord_split_log::btree_foster_norecord_split_log(const generic_page_h& p, shpid_t foster,
     const w_keystr_t& fence_high, const w_keystr_t& chain_fence_high)
 {
     w_assert0(p.tag() == t_btree_p);
     fill(&p.pid(), p.tag(), (new (_data) btree_foster_norecord_split_t(foster, fence_high, chain_fence_high))->size());
 }
-void btree_foster_norecord_split_log::redo(page_p* page)
+void btree_foster_norecord_split_log::redo(generic_page_h* page)
 {
     btree_p* foster_parent = (btree_p*) page;
     btree_foster_norecord_split_t *dp = (btree_foster_norecord_split_t*) _data;
@@ -613,13 +613,13 @@ struct btree_foster_adopt_parent_t {
     int size() { return sizeof(shpid_t) + sizeof(int32_t) + _new_child_key_len; }
 };
 
-btree_foster_adopt_parent_log::btree_foster_adopt_parent_log (const page_p& p,
+btree_foster_adopt_parent_log::btree_foster_adopt_parent_log (const generic_page_h& p,
     shpid_t new_child_pid, const w_keystr_t& new_child_key)
 {
     w_assert0(p.tag() == t_btree_p);
     fill(&p.pid(), p.tag(), (new (_data) btree_foster_adopt_parent_t(new_child_pid, new_child_key))->size());
 }
-void btree_foster_adopt_parent_log::redo(page_p* page)
+void btree_foster_adopt_parent_log::redo(generic_page_h* page)
 {
     // just call apply() function
     btree_p* foster_parent = (btree_p*) page;
@@ -631,12 +631,12 @@ void btree_foster_adopt_parent_log::redo(page_p* page)
         W_FATAL(rc.err_num());
     }
 }
-btree_foster_adopt_child_log::btree_foster_adopt_child_log (const page_p& p)
+btree_foster_adopt_child_log::btree_foster_adopt_child_log (const generic_page_h& p)
 {
     w_assert0(p.tag() == t_btree_p);
     fill(&p.pid(), p.tag(), 0);
 }
-void btree_foster_adopt_child_log::redo(page_p* page)
+void btree_foster_adopt_child_log::redo(generic_page_h* page)
 {
     // just call apply() function
     btree_p* foster_child = (btree_p*) page;
@@ -645,7 +645,7 @@ void btree_foster_adopt_child_log::redo(page_p* page)
 
 // logs for Merge/Rebalance/De-Adopt
 // see jira ticket:39 "Node removal and rebalancing" (originally trac ticket:39) for detailed spec
-btree_foster_merge_log::btree_foster_merge_log (const page_p& p)
+btree_foster_merge_log::btree_foster_merge_log (const generic_page_h& p)
 {
     w_assert0(p.tag() == t_btree_p);
     const btree_p& bp = * (btree_p*) &p;
@@ -654,7 +654,7 @@ btree_foster_merge_log::btree_foster_merge_log (const page_p& p)
     fill(&p.pid(), p.tag(), sizeof(shpid_t));
 }
 
-void btree_foster_merge_log::redo(page_p* page)
+void btree_foster_merge_log::redo(generic_page_h* page)
 {
     // REDO is to merge it again.
     // Because of careful-write-order, the merged page must still exist.
@@ -675,13 +675,13 @@ struct btree_foster_rebalance_t {
     int size() { return sizeof(*this); }
 };
 
-btree_foster_rebalance_log::btree_foster_rebalance_log (const page_p& p,
+btree_foster_rebalance_log::btree_foster_rebalance_log (const generic_page_h& p,
         shpid_t parent_pid, int32_t move_count) {
     w_assert0(p.tag() == t_btree_p);
     fill(&p.pid(), p.tag(), (new (_data) btree_foster_rebalance_t(parent_pid, move_count))->size());
 }
 
-void btree_foster_rebalance_log::redo(page_p* page)
+void btree_foster_rebalance_log::redo(generic_page_h* page)
 {
     // REDO is to rebalance it again.
     // "This" page must be foster-child which received entries.
@@ -710,7 +710,7 @@ struct btree_foster_deadopt_real_parent_t {
 };
 
 btree_foster_deadopt_real_parent_log::btree_foster_deadopt_real_parent_log (
-    const page_p& p, shpid_t deadopted_pid, int32_t foster_slot) {
+    const generic_page_h& p, shpid_t deadopted_pid, int32_t foster_slot) {
     w_assert0(p.tag() == t_btree_p);
 #if W_DEBUG_LEVEL>0
     const btree_p& bp = * (btree_p*) &p;
@@ -719,7 +719,7 @@ btree_foster_deadopt_real_parent_log::btree_foster_deadopt_real_parent_log (
     fill(&p.pid(), p.tag(), (new (_data) btree_foster_deadopt_real_parent_t(deadopted_pid, foster_slot))->size());
 }
 
-void btree_foster_deadopt_real_parent_log::redo(page_p* page)
+void btree_foster_deadopt_real_parent_log::redo(generic_page_h* page)
 {
     // apply changes on real-parent again. no write-order dependency with foster-parent
     btree_p* bp = (btree_p*) page;
@@ -743,13 +743,13 @@ struct btree_foster_deadopt_foster_parent_t {
     }
     int size() { return sizeof(shpid_t) + sizeof(int32_t) * 2 + _low_key_len + _high_key_len; }
 };
-btree_foster_deadopt_foster_parent_log::btree_foster_deadopt_foster_parent_log (const page_p& p,
+btree_foster_deadopt_foster_parent_log::btree_foster_deadopt_foster_parent_log (const generic_page_h& p,
     shpid_t deadopted_pid, const w_keystr_t& low_key, const w_keystr_t& high_key) {
     w_assert0(p.tag() == t_btree_p);
     fill(&p.pid(), p.tag(), (new (_data) btree_foster_deadopt_foster_parent_t(deadopted_pid, low_key, high_key))->size());
 }
 
-void btree_foster_deadopt_foster_parent_log::redo(page_p* page)
+void btree_foster_deadopt_foster_parent_log::redo(generic_page_h* page)
 {
     // apply changes on foster-parent again. no write-order dependency with real-parent
     btree_p* bp = (btree_p*) page;
@@ -761,6 +761,6 @@ void btree_foster_deadopt_foster_parent_log::redo(page_p* page)
     btree_impl::_ux_deadopt_foster_apply_foster_parent(*bp, dp->_deadopted_pid, low_key, high_key);
 }
 
-btree_noop_log::btree_noop_log (const page_p& p) {
+btree_noop_log::btree_noop_log (const generic_page_h& p) {
     fill(&p.pid(), p.tag(), 0);
 }

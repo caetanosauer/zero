@@ -406,7 +406,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  */
 /********************************************************************/
 
-class page_p;
+class generic_page_h;
 class btree_p;
 class xct_t;
 class device_m;

@@ -196,8 +196,8 @@ sub def_rec {
     my ($class) = $type . "_log";
     my ($has_idx);
 
-    my $redo_stmt = ($redo) ? 'void redo(page_p*);' : '';
-    my $undo_stmt = ($undo) ? 'void undo(page_p*);' : '';
+    my $redo_stmt = ($redo) ? 'void redo(generic_page_h*);' : '';
+    my $undo_stmt = ($undo) ? 'void undo(generic_page_h*);' : '';
     print DEF<<CLASSDEF;
     class $class : public logrec_t {
 	void fill(const lpid_t* p, uint16_t tag, int l) {

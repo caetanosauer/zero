@@ -195,7 +195,7 @@ logrec_t::valid_header(const lsn_t & lsn) const
  *  Invoke the redo method of the log record.
  *
  *********************************************************************/
-void logrec_t::redo(page_p* page)
+void logrec_t::redo(generic_page_h* page)
 {
     FUNC(logrec_t::redo);
     DBG( << "Redo  log rec: " << *this 
@@ -230,7 +230,7 @@ static __thread logrec_t::kind_t undoing_context = logrec_t::t_max_logrec; // fo
  *
  *********************************************************************/
 void
-logrec_t::undo(page_p* page)
+logrec_t::undo(generic_page_h* page)
 {
     w_assert0(!is_single_sys_xct()); // UNDO shouldn't be called for single-log sys xct
     undoing_context = logrec_t::kind_t(_type);
@@ -339,7 +339,7 @@ xct_prepare_st_log::xct_prepare_st_log(const gtid_t *g,
 }
 
 void
-xct_prepare_st_log::redo(page_p *) 
+xct_prepare_st_log::redo(generic_page_h *) 
 {
     w_assert0(!is_single_sys_xct()); // single-log sys xct shouldn't call prepare
     /*
@@ -370,7 +370,7 @@ xct_prepare_alk_log::xct_prepare_alk_log(int num,
 }
 
 void
-xct_prepare_lk_log::redo(page_p *) 
+xct_prepare_lk_log::redo(generic_page_h *) 
 {
     w_assert0(!is_single_sys_xct()); // single-log sys xct shouldn't call prepare
     /*
@@ -386,7 +386,7 @@ xct_prepare_lk_log::redo(page_p *)
 }
 
 void
-xct_prepare_alk_log::redo(page_p *) 
+xct_prepare_alk_log::redo(generic_page_h *) 
 {
     w_assert0(!is_single_sys_xct()); // single-log sys xct shouldn't call prepare
     /*
@@ -416,7 +416,7 @@ xct_prepare_fi_log::xct_prepare_fi_log(
                       rsvd, ready, used))->size());
 }
 void 
-xct_prepare_fi_log::redo(page_p *) 
+xct_prepare_fi_log::redo(generic_page_h *) 
 {
     w_assert0(!is_single_sys_xct()); // single-log sys xct shouldn't call prepare
     /*
@@ -449,7 +449,7 @@ xct_prepare_stores_log::xct_prepare_stores_log(int num, const stid_t* stids)
 }
 
 void
-xct_prepare_stores_log::redo(page_p *)
+xct_prepare_stores_log::redo(generic_page_h *)
 {
     w_assert0(!is_single_sys_xct()); // single-log sys xct shouldn't call prepare
     xct_t*        xd = xct_t::look_up(tid());
@@ -479,7 +479,7 @@ comment_log::comment_log(const char *msg)
 }
 
 void 
-comment_log::redo(page_p * W_IFDEBUG9(page))
+comment_log::redo(generic_page_h * W_IFDEBUG9(page))
 {
     w_assert9(page == 0);
     DBG(<<"comment_log: R: " << (const char *)_data);
@@ -487,7 +487,7 @@ comment_log::redo(page_p * W_IFDEBUG9(page))
 }
 
 void 
-comment_log::undo(page_p * W_IFDEBUG9(page))
+comment_log::undo(generic_page_h * W_IFDEBUG9(page))
 {
     w_assert9(page == 0);
     DBG(<<"comment_log: U: " << (const char *)_data);
@@ -688,7 +688,7 @@ mount_vol_log::mount_vol_log(
 }
 
 
-void mount_vol_log::redo(page_p* W_IFDEBUG9(page))
+void mount_vol_log::redo(generic_page_h* W_IFDEBUG9(page))
 {
     w_assert9(page == 0);
     chkpt_dev_tab_t* dp = (chkpt_dev_tab_t*) _data;
@@ -721,7 +721,7 @@ dismount_vol_log::dismount_vol_log(
 }
 
 
-void dismount_vol_log::redo(page_p* W_IFDEBUG9(page))
+void dismount_vol_log::redo(generic_page_h* W_IFDEBUG9(page))
 {
     w_assert9(page == 0);
     chkpt_dev_tab_t* dp = (chkpt_dev_tab_t*) _data;
@@ -747,9 +747,9 @@ struct page_img_format_t {
     size_t      ending_bytes;
     char        data[logrec_t::max_data_sz - 2 * sizeof(size_t)];
     int size()        { return 2 * sizeof(size_t) + beginning_bytes + ending_bytes; }
-    page_img_format_t (const page_p& page);
+    page_img_format_t (const generic_page_h& page);
 };
-page_img_format_t::page_img_format_t (const page_p& page)
+page_img_format_t::page_img_format_t (const generic_page_h& page)
 {
     beginning_bytes = generic_page::hdr_sz + page.nslots() * generic_page::slot_sz;
     ending_bytes = generic_page::page_sz - page._pp->get_record_head_byte() - generic_page::hdr_sz;
@@ -758,18 +758,18 @@ page_img_format_t::page_img_format_t (const page_p& page)
     ::memcpy (data + beginning_bytes, pp_bin + generic_page::hdr_sz + page._pp->get_record_head_byte(), ending_bytes);
 }
 
-page_img_format_log::page_img_format_log(const page_p &page)
+page_img_format_log::page_img_format_log(const generic_page_h &page)
 {
     fill(&page.pid(), page.tag(),
          (new (_data) page_img_format_t(page))->size());
 }
 
-void page_img_format_log::undo(page_p*)
+void page_img_format_log::undo(generic_page_h*)
 {
     // we don't have to do anything for UNDO
     // because this is a page creation!
 }
-void page_img_format_log::redo(page_p* page)
+void page_img_format_log::redo(generic_page_h* page)
 {
     // REDO is simply applying the image
     page_img_format_t* dp = (page_img_format_t*) _data;
@@ -839,14 +839,14 @@ public:
     int size()  { return 0;}
 };
 
-page_set_tobedeleted_log::page_set_tobedeleted_log(const page_p& p)
+page_set_tobedeleted_log::page_set_tobedeleted_log(const generic_page_h& p)
 {
     fill(&p.pid(), p.tag(), 
         (new (_data) page_set_tobedeleted_t()) ->size());
 }
 
 
-void page_set_tobedeleted_log::redo(page_p* page)
+void page_set_tobedeleted_log::redo(generic_page_h* page)
 {
     rc_t rc = page->set_tobedeleted(false); // no log
     if (rc.is_error()) {
@@ -854,7 +854,7 @@ void page_set_tobedeleted_log::redo(page_p* page)
     }
 }
 
-void page_set_tobedeleted_log::undo(page_p* page)
+void page_set_tobedeleted_log::undo(generic_page_h* page)
 {
     page->unset_tobedeleted();
 }
@@ -872,7 +872,7 @@ alloc_a_page_log::alloc_a_page_log (vid_t vid, shpid_t pid)
     w_assert0(is_single_sys_xct());
 }
 
-void alloc_a_page_log::redo(page_p*)
+void alloc_a_page_log::redo(generic_page_h*)
 {
     w_assert1(g_xct());
     w_assert1(g_xct()->is_single_log_sys_xct());
@@ -897,7 +897,7 @@ alloc_consecutive_pages_log::alloc_consecutive_pages_log (vid_t vid, shpid_t pid
     w_assert0(is_single_sys_xct());
 }
 
-void alloc_consecutive_pages_log::redo(page_p*)
+void alloc_consecutive_pages_log::redo(generic_page_h*)
 {
     // page alloation is single-log system transaction. so, use data_ssx()
     uint32_t *buf = reinterpret_cast<uint32_t*>(data_ssx());
@@ -922,7 +922,7 @@ dealloc_a_page_log::dealloc_a_page_log (vid_t vid, shpid_t pid)
     w_assert0(is_single_sys_xct());
 }
 
-void dealloc_a_page_log::redo(page_p*)
+void dealloc_a_page_log::redo(generic_page_h*)
 {
     // page dealloation is single-log system transaction. so, use data_ssx()
     shpid_t pid = *((shpid_t*) data_ssx());
@@ -939,7 +939,7 @@ store_operation_log::store_operation_log(const store_operation_param& param)
     fill(0, 0, (new (_data) store_operation_param(param))->size());
 }
 
-void store_operation_log::redo(page_p* /*page*/)
+void store_operation_log::redo(generic_page_h* /*page*/)
 {
     store_operation_param& param = *(store_operation_param*)_data;
     DBG( << "store_operation_log::redo(page=" << pid() 
@@ -947,7 +947,7 @@ void store_operation_log::redo(page_p* /*page*/)
     W_COERCE( smlevel_0::io->store_operation(vid(), param) );
 }
 
-void store_operation_log::undo(page_p* /*page*/)
+void store_operation_log::undo(generic_page_h* /*page*/)
 {
     store_operation_param& param = *(store_operation_param*)_data;
     DBG( << "store_operation_log::undo(page=" << shpid() << ", param=" << param << ")" );

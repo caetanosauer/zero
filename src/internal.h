@@ -487,7 +487,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * a build-time configuration option (see 
  * \ref CONFIGOPT). the default page size is 8192 bytes.
  *
- * All pages are \e slotted (those that don't need the slot structure
+ * All pages are \e slotted (those that don't need the slot structure  FIXME!
  * may use only one slot) and have the following layout:
  * - header, including
  *   - lsn_t log sequence number of last page update
@@ -500,11 +500,13 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * - footer (copy of log sequence number of last page update)
  *
  * Each page type is a C++ class that derives from the base class
- * page_p.  Page_p implements functionality that is common to all
- * (or most) page types. The types are as follows:
+ * generic_page_header.  generic_page_header contains headers that are
+ * common to all page types. The types are as follows:
  *
- * - alloc_p : free-page allocation pages, used by vol_m
- * - stnode_p  : store-node pages, used by vol_m
+ * - generic_page : 
+ * - alloc_page   : free-page allocation pages, used by vol_m
+ * - stnode_page  : store-node pages, used by vol_m
+ * - btree_page   :
  *
  * Issues specific to the page types will be dealt with in the descriptions of the modules that use them.
  * 

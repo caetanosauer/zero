@@ -22,8 +22,7 @@ class alloc_page_h;
 /**
  *  Basic page handle class.
  */
-class page_p
-{
+class generic_page_h {
 public:
     enum {
         page_sz = sizeof(generic_page),
@@ -40,11 +39,11 @@ public:
         l_not
     };
 
-    page_p() : _pp(NULL), _mode(LATCH_NL) {}
+    generic_page_h() : _pp(NULL), _mode(LATCH_NL) {}
     /**
      * Imaginery 'fix' for a non-bufferpool-managed page.
      */
-    page_p(generic_page* s) : _pp(s), _mode(LATCH_NL) {
+    generic_page_h(generic_page* s) : _pp(s), _mode(LATCH_NL) {
         w_assert1(s != NULL);
     }
 
@@ -52,15 +51,15 @@ public:
     void                        unfix ();
 
 
-    ~page_p() {
+    ~generic_page_h() {
         unfix();
     }
-    page_p& operator=(page_p& p) {
+    generic_page_h& operator=(generic_page_h& p) {
         // this steals the ownership of the page/latch
         steal_ownership(p);
         return *this;
     }
-    void steal_ownership (page_p& p) {
+    void steal_ownership (generic_page_h& p) {
         unfix();
         _pp = p._pp;
         _mode = p._mode;
@@ -82,7 +81,7 @@ public:
      * @param[in] virgin_page whether the page is a new page thus doesn't have to be read from disk.
      * To use this method, you need to include page_bf_inline.h.
      */
-    w_rc_t                      fix_nonroot (const page_p &parent, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional = false, bool virgin_page = false);
+    w_rc_t                      fix_nonroot (const generic_page_h &parent, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional = false, bool virgin_page = false);
 
     /**
      * Fixes any page (root or non-root) in the bufferpool without pointer swizzling.
@@ -195,34 +194,34 @@ protected:
 };
 
 inline const lpid_t&
-page_p::pid() const
+generic_page_h::pid() const
 {
     return _pp->pid;
 }
 inline volid_t
-page_p::vol() const
+generic_page_h::vol() const
 {
     return _pp->pid.vol().vol;
 }
 inline snum_t
-page_p::store() const
+generic_page_h::store() const
 {
     return _pp->pid.store();
 }
 
 inline void
-page_p::set_vid(vid_t vid)
+generic_page_h::set_vid(vid_t vid)
 {
     _pp->pid._stid.vol = vid;
 }
 inline smsize_t 
-page_p::used_space() const
+generic_page_h::used_space() const
 {
     return (data_sz - _pp->get_record_head_byte() + nslots() * slot_sz); 
 }
 
 inline smsize_t
-page_p::usable_space() const
+generic_page_h::usable_space() const
 {
     size_t contiguous_free_space = _pp->get_record_head_byte() - slot_sz * nslots();
     return contiguous_free_space; 
@@ -230,43 +229,43 @@ page_p::usable_space() const
 
 
 inline uint32_t
-page_p::page_flags() const
+generic_page_h::page_flags() const
 {
     return _pp->page_flags;
 }
 
 inline generic_page&
-page_p::persistent_part()
+generic_page_h::persistent_part()
 {
     return *(generic_page*) _pp;
 }
 
 inline const generic_page&
-page_p::persistent_part_const() const
+generic_page_h::persistent_part_const() const
 {
     return *(generic_page*) _pp; 
 }
 
 inline bool
-page_p::is_fixed() const
+generic_page_h::is_fixed() const
 {
     return _pp != 0;
 }
 
 inline slotid_t
-page_p::nslots() const
+generic_page_h::nslots() const
 {
     return _pp->nslots;
 }
 
 inline const lsn_t& 
-page_p::lsn() const
+generic_page_h::lsn() const
 {
     return _pp->lsn;
 }
 
 inline void 
-page_p::set_lsns(const lsn_t& lsn)
+generic_page_h::set_lsns(const lsn_t& lsn)
 {
     _pp->lsn = lsn;
 }

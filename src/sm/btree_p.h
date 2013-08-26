@@ -118,9 +118,9 @@ class btree_ghost_reclaim_log;
  * + chain-fence-high-key data (complete string. chain-fence-high doesn't share prefix!)]
  * 
  * \section SLOTLAYOUT BTree Slot Layout
- * btree_p is the only slotted subclass of page_p. All the other classes
+ * btree_page is the only slotted subclass of generic_page_h. All the other classes  FIXME
  * use _pp.data just as a chunk of char. (Slot-related functions and typedefs
- * should be moved from page_p to btree_p, but I haven't done the surgery yet.)
+ * should be moved from generic_page_h to btree_p, but I haven't done the surgery yet.)
  * 
  * The Btree slot uses poor-man's normalized key to speed up searches.
  * Each slot stores the first few bytes of the key as an unsigned
@@ -168,7 +168,7 @@ class btree_ghost_reclaim_log;
  *   hiding from the user whether a pointer is a frame id or page id. 
  *
  */
-class btree_p : public page_p {
+class btree_p : public generic_page_h {
     friend class btree_impl;
     friend class btree_ghost_t;
     friend class btree_ghost_mark_log;
@@ -184,10 +184,10 @@ public:
 #endif // DOXYGEN_HIDE
 
     btree_p() {}
-    btree_p(generic_page* s) : page_p(s) {}
-    btree_p(const btree_p&p) : page_p(p) {} 
+    btree_p(generic_page* s) : generic_page_h(s) {}
+    btree_p(const btree_p&p) : generic_page_h(p) {} 
     ~btree_p() {}
-    btree_p& operator=(btree_p& p)    { page_p::operator=(p); return *this; }
+    btree_p& operator=(btree_p& p)    { generic_page_h::operator=(p); return *this; }
 
 #ifdef DOXYGEN_HIDE
 ///==========================================
@@ -433,7 +433,7 @@ public:
 
     /**
      * Returns the number of records in this page.
-     * Use this instead of page_p::nslots to acount for one hidden slots.
+     * Use this instead of generic_page_h::nslots to acount for one hidden slots.
      */
     int              nrecs() const;
 

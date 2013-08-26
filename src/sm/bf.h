@@ -79,7 +79,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #endif
 
 class bfcb_t;
-class page_p;
+class generic_page_h;
 class bf_core_m;
 class bf_cleaner_thread_t;
 class bf_filter_t;
