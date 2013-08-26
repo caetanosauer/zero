@@ -42,7 +42,7 @@ w_rc_t dosome(ss_m* ssm, test_volume_t *test_volume) {
     size_t const records= 7500; //26900 is max that currently works 
     off_t  const logpagesize = 8192; // quantum of log file size
     off_t  logsize = 0; // log file size. Should grow monotonically.
-    int logfnum = 0; // log file number
+    int logfnum = 0; // log file number -- Harumi thinks this is incorrect
     int ibuffer; // hold the random int 
     
     ::srand(12345); // use fixed seed for repeatability and easier debugging
@@ -75,17 +75,16 @@ w_rc_t dosome(ss_m* ssm, test_volume_t *test_volume) {
 	struct stat buf;
 
 	std::ostringstream fname2;
-	fname2 << "log/log." << logfnum+1;
+        fname2 <<  test_env->log_dir << "/log." << logfnum+1;
 	if(0 == stat(fname2.str().c_str(), &buf)) { // next log file appeared
-	  std::cout << "log/log." << logfnum   << " ==> " 
-		    << "log/log." << logfnum+1 << " rollover" << std::endl; 
+	  std::cout << test_env->log_dir << "/log." << logfnum   << " ==> " 
+		    <<  test_env->log_dir << "/log." << logfnum+1 << " rollover" << std::endl; 
 	  ++logfnum;
 	  logsize = 0;
 	}
 
 	std::ostringstream fname;
-	fname << "log/log." << logfnum;
-	std::cout << fname.str();
+        fname <<  test_env->log_dir << "/log." << logfnum;
 	assert (0 == stat(fname.str().c_str(), &buf));
 	std::cout << " Verifying " << std::setw(3) << logsize/logpagesize 
 		  << (logsize < buf.st_size ? " < " : " = ")        
