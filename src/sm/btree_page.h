@@ -2,8 +2,8 @@
  * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
  */
 
-#ifndef BTREE_P_H
-#define BTREE_P_H
+#ifndef BTREE_PAGE_H
+#define BTREE_PAGE_H
 
 #include "w_defines.h"
 #include "generic_page_h.h"
@@ -1085,4 +1085,4 @@ inline void btree_page_h::change_slot_offset (slotid_t idx, slot_offset8_t offse
     *reinterpret_cast<slot_offset8_t*>(slot) = offset;
 }
 
-#endif // BTREE_P_H
+#endif // BTREE_PAGE_H

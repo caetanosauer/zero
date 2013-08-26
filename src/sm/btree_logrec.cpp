@@ -13,7 +13,7 @@
 #include "sm_int_2.h"
 #include "logdef_gen.cpp"
 
-#include "btree_p.h"
+#include "btree_page.h"
 #include "btree_impl.h"
 #include "vec_t.h"
 #include "page_bf_inline.h"
@@ -312,7 +312,7 @@ btree_header_log::btree_header_log(const generic_page_h& p,
     int16_t btree_chain_fence_high_length
 )
 {
-    w_assert3(p.tag() == t_btree_page_h);
+    w_assert3(p.tag() == t_btree_p);
     fill(&p.pid(), p.tag(), (new (data()) btree_header_change_t(
         p, btree_pid0, btree_level, btree_foster,
                 btree_chain_fence_high_length))->size());

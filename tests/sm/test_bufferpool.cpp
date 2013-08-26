@@ -3,7 +3,7 @@
 #include "bf.h"
 #include "bf_core.h"
 #include "btree.h"
-#include "btree_p.h"
+#include "btree_page.h"
 #include "btree_impl.h"
 #include "generic_page_h.h"
 #include "log.h"

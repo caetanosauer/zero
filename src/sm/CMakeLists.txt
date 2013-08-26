@@ -22,7 +22,7 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/btree_impl_split.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/btree_impl_verify.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/btree_logrec.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/btree_p.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/btree_page.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/chkpt.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/chkpt_serial.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/common_templates.cpp
@@ -163,7 +163,7 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/btcursor.h
   ${CMAKE_CURRENT_SOURCE_DIR}/btree.h
   ${CMAKE_CURRENT_SOURCE_DIR}/btree_impl.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/btree_p.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/btree_page.h
   ${CMAKE_CURRENT_SOURCE_DIR}/chkpt.h
   ${CMAKE_CURRENT_SOURCE_DIR}/chkpt_serial.h
   ${CMAKE_CURRENT_SOURCE_DIR}/crash.h

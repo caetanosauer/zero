@@ -16,7 +16,7 @@
 #   pragma implementation "btree_impl.h"
 #endif
 #include "bf_tree.h"
-#include "btree_p.h"
+#include "btree_page.h"
 #include "btree_impl.h"
 #include "sm_base.h"
 #include "w_key.h"

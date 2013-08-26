@@ -12,7 +12,7 @@
 #define BTREE_C
 
 #include "sm_int_2.h"
-#include "btree_p.h"
+#include "btree_page.h"
 #include "btree_impl.h"
 
 // these are for volume-wide verifications

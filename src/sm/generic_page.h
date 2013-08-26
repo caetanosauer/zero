@@ -239,7 +239,7 @@ inline uint32_t generic_page_header::calculate_checksum () const {
  * the performance of BTree.
  * Anyways, remaining page-types other than BTree are only stnode_page and alloc_page
  * For those page types, this header part is unused but not a big issue.
- * @see btree_page_h
+ * @see btree_page
  */
 class generic_page : public generic_page_header {
 public:

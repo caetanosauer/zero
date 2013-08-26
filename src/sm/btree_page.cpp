@@ -10,7 +10,7 @@
 #include "sm_int_2.h"
 
 #include "vec_t.h"
-#include "btree_p.h"
+#include "btree_page.h"
 #include "btree_impl.h"
 #include "page_bf_inline.h"
 #include "sm_du_stats.h"

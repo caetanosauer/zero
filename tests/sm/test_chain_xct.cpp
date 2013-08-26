@@ -5,7 +5,7 @@
 #include "btcursor.h"
 #include "generic_page.h"
 #include "bf.h"
-#include "btree_p.h"
+#include "btree_page.h"
 #include "w_gettimeofday.h"
 
 btree_test_env *test_env;
