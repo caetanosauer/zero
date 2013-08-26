@@ -22,7 +22,7 @@
 #include "sm_int_0.h"
 #include "sm_int_1.h"
 #include "bf.h"
-#include "page.h"
+#include "generic_page_h.h"
 #include "sm_io.h"
 #include "vol.h"
 #include "alloc_cache.h"

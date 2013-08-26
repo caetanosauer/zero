@@ -6,7 +6,7 @@
 #define BTREE_P_H
 
 #include "w_defines.h"
-#include "page.h"
+#include "generic_page_h.h"
 #include "w_key.h"
 
 struct btree_lf_stats_t;

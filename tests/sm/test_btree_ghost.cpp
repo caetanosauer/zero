@@ -5,7 +5,7 @@
 #include "btree.h"
 #include "bf.h"
 #include "generic_page.h"
-#include "page.h"
+#include "generic_page_h.h"
 #include "btree_p.h"
 
 // lots of non-sense to do REDO from testcase.

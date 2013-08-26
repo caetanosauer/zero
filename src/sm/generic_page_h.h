@@ -2,8 +2,8 @@
  * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
  */
 
-#ifndef PAGE_H
-#define PAGE_H
+#ifndef GENERIC_PAGE_H_H
+#define GENERIC_PAGE_H_H
 
 #include "w_defines.h"
 

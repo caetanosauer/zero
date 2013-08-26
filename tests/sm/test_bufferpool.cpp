@@ -5,7 +5,7 @@
 #include "btree.h"
 #include "btree_p.h"
 #include "btree_impl.h"
-#include "page.h"
+#include "generic_page_h.h"
 #include "log.h"
 #include "w_error.h"
 

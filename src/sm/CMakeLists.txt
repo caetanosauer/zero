@@ -28,18 +28,18 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/common_templates.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/crash.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/device.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/generic_page_h.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lid.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/lock.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock_core.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/lock.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock_dump.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/lock_vtable.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock_lil.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/lock_vtable.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/log_core.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/logrec.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/logstub.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/partition.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/log_core.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/page.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/pin.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/pmap.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/restart.cpp
@@ -169,6 +169,7 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/crash.h
   ${CMAKE_CURRENT_SOURCE_DIR}/device.h
   ${CMAKE_CURRENT_SOURCE_DIR}/generic_page.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/generic_page_h.h
   ${CMAKE_CURRENT_SOURCE_DIR}/lid.h
   ${CMAKE_CURRENT_SOURCE_DIR}/lock_bucket.h
   ${CMAKE_CURRENT_SOURCE_DIR}/lock_cache.h
@@ -181,7 +182,6 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/log_core.h
   ${CMAKE_CURRENT_SOURCE_DIR}/log.h
   ${CMAKE_CURRENT_SOURCE_DIR}/logrec.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/page.h
   ${CMAKE_CURRENT_SOURCE_DIR}/partition.h
   ${CMAKE_CURRENT_SOURCE_DIR}/pmap.h
   ${CMAKE_CURRENT_SOURCE_DIR}/prologue.h
