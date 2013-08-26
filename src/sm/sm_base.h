@@ -438,6 +438,7 @@ public:
     static bool        logging_enabled;
     static bool        lock_caching_default;
     static bool        do_prefetch;
+    static bool        statistics_enabled;
 
     static operating_mode_t operating_mode;
     static bool in_recovery() { 
