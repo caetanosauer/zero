@@ -10,7 +10,7 @@
 btree_test_env *test_env;
 
 /**
- * Unit tests for btree_p.
+ * Unit tests for btree_page_h.
  * It's an internal class thus indirectly tested by other testcases.
  * However, it also does a lot to be tested, so this testcase
  * specifically and directly tests its functions.
@@ -25,7 +25,7 @@ w_rc_t test_search_leaf(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(x_btree_insert_and_commit (ssm, stid, "b3", "data3"));
     W_DO(x_btree_insert_and_commit (ssm, stid, "c2", "data2"));
     
-    btree_p root;
+    btree_page_h root;
     W_DO(root.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_SH));
     w_keystr_t key;
     bool found;
@@ -105,7 +105,7 @@ w_rc_t test_search_leaf_long(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(x_btree_insert_and_commit (ssm, stid, "b301", "data3"));
     W_DO(x_btree_insert_and_commit (ssm, stid, "c202", "data2"));
     
-    btree_p root;
+    btree_page_h root;
     W_DO(root.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_SH));
     w_keystr_t key;
     bool found;
@@ -173,7 +173,7 @@ w_rc_t test_search_leaf_long2(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(x_btree_insert_and_commit (ssm, stid, "00b3", "data3"));
     W_DO(x_btree_insert_and_commit (ssm, stid, "00c2", "data2"));
     
-    btree_p root;
+    btree_page_h root;
     W_DO(root.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_SH));
     w_keystr_t key;
     bool found;

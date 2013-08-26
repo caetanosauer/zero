@@ -24,13 +24,13 @@ struct btree_insert_t {
     uint16_t        elen;
     char        data[logrec_t::max_data_sz - sizeof(shpid_t) - 2*sizeof(int16_t)];
 
-    btree_insert_t(const btree_p& page, const w_keystr_t& key,
+    btree_insert_t(const btree_page_h& page, const w_keystr_t& key,
                    const cvec_t& el);
     int size()        { return sizeof(shpid_t) + 2*sizeof(int16_t) + klen + elen; }
 };
 
 btree_insert_t::btree_insert_t(
-    const btree_p&         _page, 
+    const btree_page_h&         _page, 
     const w_keystr_t&         key, 
     const cvec_t&         el)
     : klen(key.get_length_as_keystr()), elen(el.size())
@@ -46,7 +46,7 @@ btree_insert_log::btree_insert_log(
     const w_keystr_t&         key,
     const cvec_t&         el)
 {
-    const btree_p& bp = * (btree_p*) &page;
+    const btree_page_h& bp = * (btree_page_h*) &page;
     fill(&page.pid(), page.tag(),
          (new (_data) btree_insert_t(bp, key, el))->size());
 }
@@ -71,7 +71,7 @@ btree_insert_log::undo(generic_page_h* W_IFDEBUG9(page))
 void
 btree_insert_log::redo(generic_page_h* page)
 {
-    btree_p* bp = (btree_p*) page;
+    btree_page_h* bp = (btree_page_h*) page;
     btree_insert_t* dp = (btree_insert_t*) data();
     
     w_assert1(bp->is_leaf());
@@ -144,7 +144,7 @@ btree_update_log::undo(generic_page_h*)
 void
 btree_update_log::redo(generic_page_h* page)
 {
-    btree_p* bp = (btree_p*) page;
+    btree_page_h* bp = (btree_page_h*) page;
     btree_update_t* dp = (btree_update_t*) data();
     
     w_assert1(bp->is_leaf());
@@ -217,7 +217,7 @@ void btree_overwrite_log::undo(generic_page_h*)
 
 void btree_overwrite_log::redo(generic_page_h* page)
 {
-    btree_p* bp = (btree_p*) page;
+    btree_page_h* bp = (btree_page_h*) page;
     btree_overwrite_t* dp = (btree_overwrite_t*) data();
     
     w_assert1(bp->is_leaf());
@@ -312,7 +312,7 @@ btree_header_log::btree_header_log(const generic_page_h& p,
     int16_t btree_chain_fence_high_length
 )
 {
-    w_assert3(p.tag() == t_btree_p);
+    w_assert3(p.tag() == t_btree_page_h);
     fill(&p.pid(), p.tag(), (new (data()) btree_header_change_t(
         p, btree_pid0, btree_level, btree_foster,
                 btree_chain_fence_high_length))->size());
@@ -342,11 +342,11 @@ struct btree_ghost_t {
     char          slot_data[logrec_t::max_data_sz - sizeof(shpid_t)
                         - sizeof(uint16_t) * 2 - sizeof(size_t)];
 
-    btree_ghost_t(const btree_p& p, const vector<slotid_t>& slots);
+    btree_ghost_t(const btree_page_h& p, const vector<slotid_t>& slots);
     w_keystr_t get_key (size_t i) const;
     int size() { return sizeof(shpid_t) + sizeof(uint16_t) * 2 + sizeof(size_t) + total_data_size; }
 };
-btree_ghost_t::btree_ghost_t(const btree_p& p, const vector<slotid_t>& slots)
+btree_ghost_t::btree_ghost_t(const btree_page_h& p, const vector<slotid_t>& slots)
 {
     root_shpid = p.root().page;
     cnt = slots.size();
@@ -402,7 +402,7 @@ btree_ghost_mark_log::btree_ghost_mark_log(const generic_page_h& p,
     const vector<slotid_t>& slots)
 {
     w_assert0(p.tag() == t_btree_p);
-    const btree_p& bp = * (btree_p*) &p;
+    const btree_page_h& bp = * (btree_page_h*) &p;
     fill(&p.pid(), p.tag(), (new (data()) btree_ghost_t(bp, slots))->size());
 }
 
@@ -427,7 +427,7 @@ btree_ghost_mark_log::redo(generic_page_h *page)
 {
     // REDO is physical. mark the record as ghost again.
     w_assert1(page);
-    btree_p *bp = (btree_p*) page;
+    btree_page_h *bp = (btree_page_h*) page;
     w_assert1(bp->is_leaf());
     btree_ghost_t* dp = (btree_ghost_t*) data();
     for (size_t i = 0; i < dp->cnt; ++i) {
@@ -448,7 +448,7 @@ btree_ghost_reclaim_log::btree_ghost_reclaim_log(const generic_page_h& p,
     const vector<slotid_t>& slots)
 {
     w_assert0(p.tag() == t_btree_p);
-    const btree_p& bp = * (btree_p*) &p;
+    const btree_page_h& bp = * (btree_page_h*) &p;
     // ghost reclaim is single-log system transaction. so, use data_ssx()
     fill(&p.pid(), p.tag(), (new (data_ssx()) btree_ghost_t(bp, slots))->size());
     w_assert0(is_single_sys_xct());
@@ -458,7 +458,7 @@ void
 btree_ghost_reclaim_log::redo(generic_page_h* page)
 {
     // REDO is to defrag it again
-    btree_p* bp = (btree_p*) page;
+    btree_page_h* bp = (btree_page_h*) page;
     // TODO actually should reclaim only logged entries because
     // locked entries might have been avoided.
     // (but in that case shouldn't defragging the page itself be avoided?)
@@ -497,7 +497,7 @@ btree_ghost_reserve_log::btree_ghost_reserve_log (
 void btree_ghost_reserve_log::redo(generic_page_h* page)
 {
     // REDO is to physically make the ghost record
-    btree_p* bp = (btree_p*) page;
+    btree_page_h* bp = (btree_page_h*) page;
     // ghost creation is single-log system transaction. so, use data_ssx()
     btree_ghost_reserve_t* dp = (btree_ghost_reserve_t*) data_ssx();
 
@@ -540,7 +540,7 @@ void btree_foster_split_log::redo(generic_page_h* page)
 {
     // by careful-write-ordering, foster-parent can't be written out before foster-child
     // so, foster-parent still holds all data to recover
-    btree_p* foster_parent = (btree_p*) page;
+    btree_page_h* foster_parent = (btree_page_h*) page;
     btree_foster_split_t *dp = (btree_foster_split_t*) _data;
     w_keystr_t mid_key = foster_parent->recalculate_fence_for_split(dp->_right_begins_from);
     lpid_t new_pid = page->pid();
@@ -588,7 +588,7 @@ btree_foster_norecord_split_log::btree_foster_norecord_split_log(const generic_p
 }
 void btree_foster_norecord_split_log::redo(generic_page_h* page)
 {
-    btree_p* foster_parent = (btree_p*) page;
+    btree_page_h* foster_parent = (btree_page_h*) page;
     btree_foster_norecord_split_t *dp = (btree_foster_norecord_split_t*) _data;
     w_keystr_t fence_high, chain_fence_high;
     fence_high.construct_from_keystr(dp->data, dp->_fence_high_len);
@@ -622,7 +622,7 @@ btree_foster_adopt_parent_log::btree_foster_adopt_parent_log (const generic_page
 void btree_foster_adopt_parent_log::redo(generic_page_h* page)
 {
     // just call apply() function
-    btree_p* foster_parent = (btree_p*) page;
+    btree_page_h* foster_parent = (btree_page_h*) page;
     btree_foster_adopt_parent_t *dp = (btree_foster_adopt_parent_t*) _data;
     w_keystr_t new_child_key;
     new_child_key.construct_from_keystr(dp->data, dp->_new_child_key_len);
@@ -639,7 +639,7 @@ btree_foster_adopt_child_log::btree_foster_adopt_child_log (const generic_page_h
 void btree_foster_adopt_child_log::redo(generic_page_h* page)
 {
     // just call apply() function
-    btree_p* foster_child = (btree_p*) page;
+    btree_page_h* foster_child = (btree_page_h*) page;
     btree_impl::_ux_adopt_foster_apply_child(*foster_child);
 }
 
@@ -648,7 +648,7 @@ void btree_foster_adopt_child_log::redo(generic_page_h* page)
 btree_foster_merge_log::btree_foster_merge_log (const generic_page_h& p)
 {
     w_assert0(p.tag() == t_btree_p);
-    const btree_p& bp = * (btree_p*) &p;
+    const btree_page_h& bp = * (btree_page_h*) &p;
     // we just need merged page's id. that's it.
     *reinterpret_cast<shpid_t*> (_data) = bp.get_foster();
     fill(&p.pid(), p.tag(), sizeof(shpid_t));
@@ -659,7 +659,7 @@ void btree_foster_merge_log::redo(generic_page_h* page)
     // REDO is to merge it again.
     // Because of careful-write-order, the merged page must still exist.
     // Otherwise, this page's REDO shouldn't have been called.
-    btree_p* bp = (btree_p*) page;
+    btree_page_h* bp = (btree_page_h*) page;
     W_IFDEBUG1(shpid_t merged_pid = *((shpid_t*) _data));
     w_assert1(bp->get_foster() == merged_pid); // otherwise, already merged!
     rc_t rc = btree_impl::_ux_merge_foster_core(*bp);
@@ -685,14 +685,14 @@ void btree_foster_rebalance_log::redo(generic_page_h* page)
 {
     // REDO is to rebalance it again.
     // "This" page must be foster-child which received entries.
-    btree_p* bp = (btree_p*) page;
+    btree_page_h* bp = (btree_page_h*) page;
     btree_foster_rebalance_t *dp = (btree_foster_rebalance_t*) _data;
     
     // TODO we should have two logs; one for receiver, one for sender.
     // moving from foster-parent to child. below code doesn't consider the case
     // where "this" is already written out but parent isn't yet.
     // so, "this" must be the child, stealing things from parent. oh lame kid.
-    btree_p foster_parent_p;
+    btree_page_h foster_parent_p;
     rc_t rc = foster_parent_p.fix_direct(bp->vol(), dp->_foster_parent_pid, LATCH_EX); // in REDO, so fix_direct should be safe
     w_assert1(!rc.is_error());
     rc_t rc_rb = btree_impl::_ux_rebalance_foster_core(foster_parent_p, *bp, dp->_move_count);
@@ -713,7 +713,7 @@ btree_foster_deadopt_real_parent_log::btree_foster_deadopt_real_parent_log (
     const generic_page_h& p, shpid_t deadopted_pid, int32_t foster_slot) {
     w_assert0(p.tag() == t_btree_p);
 #if W_DEBUG_LEVEL>0
-    const btree_p& bp = * (btree_p*) &p;
+    const btree_page_h& bp = * (btree_page_h*) &p;
     w_assert1(bp.is_node());
 #endif // W_DEBUG_LEVEL>0
     fill(&p.pid(), p.tag(), (new (_data) btree_foster_deadopt_real_parent_t(deadopted_pid, foster_slot))->size());
@@ -722,7 +722,7 @@ btree_foster_deadopt_real_parent_log::btree_foster_deadopt_real_parent_log (
 void btree_foster_deadopt_real_parent_log::redo(generic_page_h* page)
 {
     // apply changes on real-parent again. no write-order dependency with foster-parent
-    btree_p* bp = (btree_p*) page;
+    btree_page_h* bp = (btree_page_h*) page;
     btree_foster_deadopt_real_parent_t *dp = (btree_foster_deadopt_real_parent_t*) _data;
     w_assert1(dp->_foster_slot >= 0 && dp->_foster_slot < page->nslots());
     btree_impl::_ux_deadopt_foster_apply_real_parent(*bp, dp->_deadopted_pid, dp->_foster_slot);
@@ -752,7 +752,7 @@ btree_foster_deadopt_foster_parent_log::btree_foster_deadopt_foster_parent_log (
 void btree_foster_deadopt_foster_parent_log::redo(generic_page_h* page)
 {
     // apply changes on foster-parent again. no write-order dependency with real-parent
-    btree_p* bp = (btree_p*) page;
+    btree_page_h* bp = (btree_page_h*) page;
     btree_foster_deadopt_foster_parent_t *dp = (btree_foster_deadopt_foster_parent_t*) _data;
     
     w_keystr_t low_key, high_key;

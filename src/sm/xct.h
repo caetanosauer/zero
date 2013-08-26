@@ -1315,7 +1315,7 @@ private:
  * Use this class as follows.
  * \verbatim
   ...
-  btree_p leaf;
+  btree_page_h leaf;
   leaf.fix(pid, LATCH_EX);
   {
     ssx_defer_section_t ssx_defer (&leaf); // auto-commit for deferred ssx log on leaf

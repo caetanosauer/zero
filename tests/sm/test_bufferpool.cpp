@@ -93,7 +93,7 @@ w_rc_t bf_get_many(ss_m* ssm, test_volume_t *test_volume) {
 
     std::vector<shpid_t> pids;
     {
-        btree_p root_p;
+        btree_page_h root_p;
         W_DO (root_p.fix (root_pid, LATCH_SH));
         pids.push_back (root_p.pid0());
         for (int i = 0; i < root_p.nrecs(); ++i) {
@@ -169,7 +169,7 @@ w_rc_t create_records(ss_m* ssm, const stid_t &stid, size_t records) {
 }
 
 w_rc_t collect_pids(const lpid_t &root_pid, std::vector<lpid_t> &pids) {
-    btree_p root_p;
+    btree_page_h root_p;
     W_DO (root_p.fix (root_pid, LATCH_SH));
     pids.push_back (root_p.pid());
     for (int i = -1; i < root_p.nrecs(); ++i) {
@@ -195,7 +195,7 @@ w_rc_t bf_careful_write_order(ss_m* ssm, test_volume_t *test_volume) {
 
     // write out and evict
     W_DO(bf_m::force_all(true));
-    btree_p p[4];
+    btree_page_h p[4];
     {
         for (size_t i = 0; i < 4; ++i) {
             W_DO (p[i].fix (pids[i], LATCH_EX));
@@ -307,7 +307,7 @@ w_rc_t bf_careful_write_order_cycle(ss_m* ssm, test_volume_t *test_volume) {
 
     // write out and evict
     W_DO(bf_m::force_all(true));
-    btree_p p[3];
+    btree_page_h p[3];
     for (size_t i = 0; i < 3; ++i) {
         W_DO (p[i].fix (pids[i], LATCH_EX));
     }

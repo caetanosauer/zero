@@ -37,7 +37,7 @@ public:
 
 /** manually emulate the btree page layout */
 void _add_child_pointer (generic_page *page, shpid_t child) {
-    btree_p p (page);
+    btree_page_h p (page);
     slotid_t slot = page->nslots;
     ++page->nslots;
     char* slot_p = p.slot_addr(slot);

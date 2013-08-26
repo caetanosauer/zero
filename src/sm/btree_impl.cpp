@@ -46,7 +46,7 @@ btree_impl::_ux_insert_core(
 {
 
     // find the leaf (potentially) containing the key
-    btree_p       leaf;
+    btree_page_h       leaf;
     W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf));
     w_assert1( leaf.is_fixed());
     w_assert1( leaf.is_leaf());
@@ -94,7 +94,7 @@ btree_impl::_ux_insert_core(
             // if not, we should now insert to the new page.
             // because "leaf" is EX locked beforehand, no one
             // can have any latch on the new page, so we can always get this latch
-            btree_p another_leaf; // latch coupling
+            btree_page_h another_leaf; // latch coupling
             w_assert1(leaf.get_foster() == new_page_id.page);
             W_DO( another_leaf.fix_nonroot(leaf, leaf.vol(), new_page_id.page, LATCH_EX));
             w_assert1(another_leaf.is_fixed());                        
@@ -155,7 +155,7 @@ btree_impl::_ux_put_core(
     bool found;
     bool took_XN;
     bool is_ghost;
-    btree_p leaf;
+    btree_page_h leaf;
     W_DO(_ux_get_page_and_status(vol, store, key, need_lock, slot, found, took_XN, is_ghost, leaf));
     if (!found || is_ghost) {
         return _ux_insert_core_tail(vol, store, key, el, need_lock, slot, 
@@ -170,10 +170,10 @@ rc_t
 btree_impl::_ux_get_page_and_status(volid_t vol, snum_t store,
  			            const w_keystr_t& key,
                                     bool& need_lock, slotid_t& slot, bool& found, bool& took_XN, 
-                                    bool& is_ghost, btree_p& leaf) {
+                                    bool& is_ghost, btree_page_h& leaf) {
                         
     // find the leaf (potentially) containing the key
-    // passed in...btree_p       leaf;
+    // passed in...btree_page_h       leaf;
     W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf));
     w_assert1( leaf.is_fixed());
     w_assert1( leaf.is_leaf());
@@ -202,7 +202,7 @@ btree_impl::_ux_get_page_and_status(volid_t vol, snum_t store,
 rc_t btree_impl::_ux_insert_core_tail(volid_t vol, snum_t store,
 			const w_keystr_t& key,const cvec_t& el,
                         bool& need_lock, slotid_t& slot, bool& found, bool& alreay_took_XN, 
-                                      bool& is_ghost, btree_p& leaf) {
+                                      bool& is_ghost, btree_page_h& leaf) {
     if (found) {
         
         //If the same key exists and non-ghost, exit with error (duplicate).
@@ -231,7 +231,7 @@ rc_t btree_impl::_ux_insert_core_tail(volid_t vol, snum_t store,
             // if not, we should now insert to the new page.
             // because "leaf" is EX locked beforehand, no one
             // can have any latch on the new page, so we can always get this latch
-            btree_p another_leaf; // latch coupling
+            btree_page_h another_leaf; // latch coupling
             W_DO( another_leaf.fix_nonroot(leaf, leaf.vol(), new_page_id.page, LATCH_EX) );
             w_assert1(another_leaf.is_fixed());                        
             w_assert2(another_leaf.fence_contains(key));
@@ -266,7 +266,7 @@ rc_t btree_impl::_ux_insert_core_tail(volid_t vol, snum_t store,
 }
 
 
-rc_t btree_impl::_sx_reserve_ghost(btree_p &leaf, const w_keystr_t &key, int elem_len, bool defer_apply)
+rc_t btree_impl::_sx_reserve_ghost(btree_page_h &leaf, const w_keystr_t &key, int elem_len, bool defer_apply)
 {
     FUNC(btree_impl::_sx_reserve_ghost);
     sys_xct_section_t sxs (true); // this transaction will output only one log!
@@ -276,13 +276,13 @@ rc_t btree_impl::_sx_reserve_ghost(btree_p &leaf, const w_keystr_t &key, int ele
     return ret;
 }
 
-rc_t btree_impl::_ux_reserve_ghost_core(btree_p &leaf, const w_keystr_t &key, int elem_len, bool defer_apply)
+rc_t btree_impl::_ux_reserve_ghost_core(btree_page_h &leaf, const w_keystr_t &key, int elem_len, bool defer_apply)
 {
     w_assert1 (xct()->is_sys_xct());
     w_assert1 (leaf.fence_contains(key));
     size_t rec_size = key.get_length_as_keystr() - leaf.get_prefix_length()
         + elem_len + sizeof(int16_t) * 2;
-    w_assert1 (leaf.usable_space() >= btree_p::slot_sz + rec_size);
+    w_assert1 (leaf.usable_space() >= btree_page_h::slot_sz + rec_size);
 
     if (defer_apply) {
         W_DO (log_btree_ghost_reserve (leaf, key, rec_size));
@@ -312,7 +312,7 @@ rc_t
 btree_impl::_ux_update_core(volid_t vol, snum_t store, const w_keystr_t &key, const cvec_t &el)
 {
     bool need_lock = g_xct_does_need_lock();
-    btree_p         leaf;
+    btree_page_h         leaf;
 
     // find the leaf (potentially) containing the key
     W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf));
@@ -371,7 +371,7 @@ rc_t
 btree_impl::_ux_update_core_tail(volid_t vol, snum_t store,
      				 const w_keystr_t &key, const cvec_t &el,
                                  bool& need_lock, slotid_t& slot, bool& found, bool& is_ghost,
-                                 btree_p& leaf) {
+                                 btree_page_h& leaf) {
 
     if(!found) {
         if (need_lock) {
@@ -429,7 +429,7 @@ rc_t btree_impl::_ux_overwrite_core(
 {
     // basically same as ux_update
     bool need_lock = g_xct_does_need_lock();
-    btree_p         leaf;
+    btree_page_h         leaf;
 
     W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf));
 
@@ -488,7 +488,7 @@ rc_t
 btree_impl::_ux_remove_core(volid_t vol, snum_t store, const w_keystr_t &key)
 {
     bool need_lock = g_xct_does_need_lock();
-    btree_p         leaf;
+    btree_page_h         leaf;
 
     // find the leaf (potentially) containing the key
     W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf));
@@ -536,7 +536,7 @@ btree_impl::_ux_undo_ghost_mark(volid_t vol, snum_t store, const w_keystr_t &key
 {
     FUNC(btree_impl::_ux_undo_ghost_mark);
     w_assert1(key.is_regular());
-    btree_p         leaf;
+    btree_page_h         leaf;
     W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf));
     w_assert3(leaf.is_fixed());
     w_assert3(leaf.is_leaf());

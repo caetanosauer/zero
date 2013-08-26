@@ -40,7 +40,7 @@ void btree_m::destruct_once()
 
 smsize_t                        
 btree_m::max_entry_size() {
-    return btree_p::max_entry_size;
+    return btree_page_h::max_entry_size;
 }
 
 rc_t
@@ -78,7 +78,7 @@ btree_m::is_empty(
 
 rc_t btree_m::insert(volid_t vol, snum_t store, const w_keystr_t &key, const cvec_t &el)
 {
-    if(key.get_length_as_keystr() + el.size() > btree_p::max_entry_size) {
+    if(key.get_length_as_keystr() + el.size() > btree_page_h::max_entry_size) {
         return RC(eRECWONTFIT);
     }
     W_DO(btree_impl::_ux_insert(vol, store, key, el));
@@ -90,7 +90,7 @@ rc_t btree_m::update(
     const w_keystr_t&                 key,
     const cvec_t&                     elem)
 {
-    if(key.get_length_as_keystr() + elem.size() > btree_p::max_entry_size) {
+    if(key.get_length_as_keystr() + elem.size() > btree_page_h::max_entry_size) {
         return RC(eRECWONTFIT);
     }
     W_DO(btree_impl::_ux_update(vol, store, key, elem));
@@ -102,7 +102,7 @@ rc_t btree_m::put(
     const w_keystr_t&                 key,
     const cvec_t&                     elem)
 {
-    if(key.get_length_as_keystr() + elem.size() > btree_p::max_entry_size) {
+    if(key.get_length_as_keystr() + elem.size() > btree_page_h::max_entry_size) {
         return RC(eRECWONTFIT);
     }
     W_DO(btree_impl::_ux_put(vol, store, key, elem));
@@ -126,7 +126,7 @@ rc_t btree_m::remove(volid_t vol, snum_t store, const w_keystr_t &key)
     return RCOK;
 }
 
-rc_t btree_m::defrag_page(btree_p &page)
+rc_t btree_m::defrag_page(btree_page_h &page)
 {
     W_DO( btree_impl::_sx_defrag_page(page));
     return RCOK;
@@ -161,14 +161,14 @@ btree_m::_get_du_statistics_recurse(
     btree_int_stats_t       &int_stats,
     bool                 audit)
 {
-    btree_p next_page;
-    btree_p current;
+    btree_page_h next_page;
+    btree_page_h current;
     lpid_t nextpid = currentpid;
     // also check right foster sibling.
     // this part is now (partially) loop, not recursion to prevent the stack from growing too long
     while (nextpid.page != 0) {
         shpid_t original_pid = smlevel_0::bf->debug_get_original_pageid(nextpid.page);
-        btree_p page;
+        btree_page_h page;
         W_DO( next_page.fix_direct(currentpid.vol().vol, original_pid, LATCH_SH));
         current = next_page;// at this point (after latching next) we don't need to keep the "previous" fixed.
     
@@ -243,7 +243,7 @@ btree_m::print(const lpid_t& current,
 {
     {
         shpid_t original_pid = smlevel_0::bf->debug_get_original_pageid(current.page);
-        btree_p page;
+        btree_page_h page;
         W_COERCE( page.fix_direct(current.vol().vol, original_pid, LATCH_SH));// coerce ok-- debugging
 
         for (int i = 0; i < 5 - page.level(); i++) {

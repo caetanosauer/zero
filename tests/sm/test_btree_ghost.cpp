@@ -29,7 +29,7 @@ w_rc_t ghost_mark(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(x_btree_insert_and_commit (ssm, stid, "key1", "data1", test_env->get_use_locks()));
     W_DO(x_btree_remove_and_commit (ssm, stid, "key1", test_env->get_use_locks()));
 
-    btree_p root_p;
+    btree_page_h root_p;
     W_DO (root_p.fix_root (root_pid.vol().vol, root_pid.store(), LATCH_SH));
     EXPECT_EQ (2, root_p.nslots());
     EXPECT_EQ (1, root_p.nrecs());
@@ -67,7 +67,7 @@ w_rc_t ghost_reclaim(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(x_btree_remove_and_commit (ssm, stid, "key1", test_env->get_use_locks()));
     W_DO(x_btree_remove_and_commit (ssm, stid, "key3", test_env->get_use_locks()));
 
-    btree_p root_p;
+    btree_page_h root_p;
     W_DO (root_p.fix_root (root_pid.vol().vol, root_pid.store(), LATCH_SH));
     EXPECT_EQ (3, root_p.nrecs());
     EXPECT_TRUE (root_p.is_ghost(0));
@@ -98,7 +98,7 @@ w_rc_t ghost_reserve(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(x_btree_insert_and_commit (ssm, stid, "key1", "data", test_env->get_use_locks()));
     W_DO(x_btree_insert_and_commit (ssm, stid, "key3", "data", test_env->get_use_locks()));
 
-    btree_p root_p;
+    btree_page_h root_p;
     W_DO (root_p.fix_root (root_pid.vol().vol, root_pid.store(), LATCH_EX));
     EXPECT_EQ (2, root_p.nrecs());
     EXPECT_FALSE (root_p.is_ghost(0));
@@ -141,7 +141,7 @@ w_rc_t ghost_reserve_xct(ss_m* ssm, test_volume_t *test_volume) {
 
     W_DO(ssm->begin_xct());
     W_DO(ssm->begin_sys_xct(true));
-    btree_p root_p;
+    btree_page_h root_p;
     W_DO (root_p.fix_root (root_pid.vol().vol, root_pid.store(), LATCH_EX));
     log_btree_ghost_reserve(root_p, key, 10);
     W_DO(ssm->commit_sys_xct());
@@ -191,7 +191,7 @@ w_rc_t insert_remove_defrag(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(x_btree_remove_and_commit (ssm, stid, "key004", test_env->get_use_locks()));
     W_DO(x_btree_remove_and_commit (ssm, stid, "key005", test_env->get_use_locks()));
     
-    btree_p root_p;
+    btree_page_h root_p;
     W_DO (root_p.fix_root (root_pid.vol().vol, root_pid.store(), LATCH_SH));
     smsize_t before_defrag = root_p.usable_space();
     root_p.unfix();

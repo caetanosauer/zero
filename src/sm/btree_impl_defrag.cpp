@@ -49,13 +49,13 @@ rc_t btree_impl::_ux_defrag_tree_core(
 {
     // TODO implement
     // this should use the improved tree-walk-through jira ticket:60 "Tree walk-through without more than 2 pages latched" (originally trac ticket:62)
-    btree_p page;
+    btree_page_h page;
     W_DO (page.fix_root(vol, store, LATCH_SH));
     
     return RCOK;
 }
 
-rc_t btree_impl::_sx_defrag_page(btree_p &page)
+rc_t btree_impl::_sx_defrag_page(btree_page_h &page)
 {
     FUNC(btree_impl::_sx_defrag_page);
     sys_xct_section_t sxs (true); // this will emit a single log record
@@ -64,7 +64,7 @@ rc_t btree_impl::_sx_defrag_page(btree_p &page)
     W_DO (sxs.end_sys_xct (ret));
     return ret;
 }
-rc_t btree_impl::_ux_defrag_page_core(btree_p &page)
+rc_t btree_impl::_ux_defrag_page_core(btree_page_h &page)
 {
     w_assert1 (xct()->is_sys_xct());
     W_DO (page.defrag());

@@ -546,7 +546,7 @@ w_rc_t x_btree_adopt_foster_all(ss_m* ssm, const stid_t &stid)
     W_DO (x_btree_get_root_pid (ssm, stid, root_pid));
     W_DO(ssm->begin_xct());
     {
-        btree_p root_p;
+        btree_page_h root_p;
         W_DO(root_p.fix_root(stid.vol.vol, stid.store, LATCH_EX));
         W_DO(btree_impl::_sx_adopt_foster_all(root_p, true));
     }
