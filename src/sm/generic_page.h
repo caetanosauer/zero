@@ -225,7 +225,9 @@ inline uint32_t generic_page_header::calculate_checksum () const {
 
 
 
-/**\brief Basic page structure for all pages.
+/**
+ * \brief Basic page structure for all pages.
+ * 
  * \details
  * These are persistent things. There is no hierarchy here
  * for the different page types. All the differences between
@@ -241,23 +243,15 @@ inline uint32_t generic_page_header::calculate_checksum () const {
  */
 class generic_page : public generic_page_header {
 public:
+    generic_page() {
+        w_assert1(data - (const char *)this == hdr_sz);
+    }
+    ~generic_page() { }
+
+
 private:
     /* MUST BE 8-BYTE ALIGNED HERE */
     char     data[data_sz];        // must be aligned
-
-    char*      data_addr8(slot_offset8_t offset8) {
-        return data + to_byte_offset(offset8);
-    }
-    const char* data_addr8(slot_offset8_t offset8) const {
-        return data + to_byte_offset(offset8);
-    }
-public:
-
-
-    generic_page() {
-        w_assert1(data - (const char *) this == hdr_sz);
-    }
-    ~generic_page() { }
 };
 
 #endif

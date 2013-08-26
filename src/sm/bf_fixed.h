@@ -14,9 +14,10 @@ class generic_page;
 class vol_t;
 
 /**
- * \Brief Buffer manager for a small number of special pages in each volume.
+ * \brief Buffer manager for a small number of special pages in each volume.
  * \ingroup SSMBUFPOOL
- * \Details
+ * 
+ * \details
  * This buffer manager deals with only allocation pages (alloc_page) and
  * store node pages (stnode_page). All pages are always pinned as there are
  * only a fixed and small number of such pages. Therefore, this buffer manager

@@ -32,8 +32,8 @@ struct stnode_t {
         deleting = 0;
     }
 
-    /// Root page ID of the store; holds 0 if the store is not in use
-    /// (e.g., never created/deleted rather than being deleted)
+    /// Root page ID of the store; holds 0 *if* the store is not in
+    /// use (e.g., never created/deleted rather than being deleted).
     shpid_t         root;      // +4 -> 4
     /// store flags            (holds a smlevel_0::store_flag_t)
     uint16_t        flags;     // +2 -> 6
@@ -92,8 +92,9 @@ public:
     stnode_t& get(size_t index) {
         // FIXME: it appears we do not ever use the stnode_t for the
         // store with # 0 as we use that number as a special case to
-        // indicate stnode_page/alloc_page's.  This is demonstrated by
-        // the following assert never triggering:
+        // indicate stnode_page/alloc_page's.  See comment in
+        // stnode_cache_t::get_min_unused_store_ID().  This is
+        // demonstrated by the following assert never triggering:
         w_assert1(0 < index);
 
         w_assert1(index < max);
@@ -124,11 +125,12 @@ public:
  *
  * This object and vol_t replace the "directory" thingies in original
  * Shore-MT with more efficiency and simplicity.
- * @See stnode_page_h
  */
 class stnode_cache_t {
 public:
-    stnode_cache_t(vid_t vid, bf_fixed_m* fixed_pages);
+    /// special_pages here holds the special pages for volume vid, the
+    /// last of which should be the stnode_page for that volume
+    stnode_cache_t(vid_t vid, bf_fixed_m* special_pages);
     
     /**
      * Returns the root page ID of the given store.
@@ -140,17 +142,18 @@ public:
     /// Make a copy of the entire stnode_t of the given store.
     void get_stnode(snum_t store, stnode_t &stnode) const;
 
-    /// Returns the first snum_t that can be used for a new store.
+    /// Returns the first snum_t that can be used for a new store in
+    /// this volume or stnode_page_h::max if all available stores of
+    /// this volume are already in use.
     snum_t get_min_unused_store_ID() const;
 
-    /// Returns the snum_t of all stores that exist in the volume.
+    /// Returns the snum_t of all stores that exist (i.e., are not
+    /// deleted and thus in use) in the volume.
     std::vector<snum_t> get_all_used_store_ID() const;
 
 
     /**
-     *  Fix the stnode_page and perform the store operation 
-     *     AND 
-     *  log it.
+     *  Fix the stnode_page and perform the store operation *including* logging it.
      *
      *  param type is in sm_io.h.
      *
@@ -174,13 +177,14 @@ public:
      */
     rc_t  store_operation(const store_operation_param &op);
 
+
 private:
     /// all operations in this object are protected by this lock
     mutable queue_based_lock_t _spin_lock;
 
-    vid_t         _vid;
-    bf_fixed_m*   _fixed_pages;
-    stnode_page_h _stnode_page;        // The stnode_page of _fixed_pages
+    const vid_t   _vid;                /// The volume number of the volume we are caching 
+    bf_fixed_m*   _special_pages;      /// The buffer manager holding the volume's special pages
+    stnode_page_h _stnode_page;        /// The stnode_page of the volume we are caching
 };
 
 #endif // STNODE_PAGE_H

@@ -28,19 +28,17 @@ stnode_page_h::stnode_page_h(generic_page* s, const lpid_t& pid):
 
 
 
-stnode_cache_t::stnode_cache_t(vid_t vid, bf_fixed_m* fixed_pages):
+stnode_cache_t::stnode_cache_t(vid_t vid, bf_fixed_m* special_pages):
     _vid(vid), 
-    _fixed_pages(fixed_pages),
-    _stnode_page(fixed_pages->get_pages() + fixed_pages->get_page_cnt() - 1)
+    _special_pages(special_pages),
+    _stnode_page(special_pages->get_pages() + special_pages->get_page_cnt()-1)
 {
     w_assert1(_stnode_page.to_generic_page()->pid.vol() == _vid);
 }
 
+
 shpid_t stnode_cache_t::get_root_pid(snum_t store) const {
-    if (store >= stnode_page_h::max) {
-        w_assert1(false);
-        return 0;
-    }
+    w_assert1(0 <= store && store < stnode_page_h::max);
 
     // CRITICAL_SECTION (cs, _spin_lock);
     // commented out to improve scalability, as this is called for EVERY operation.
@@ -50,21 +48,20 @@ shpid_t stnode_cache_t::get_root_pid(snum_t store) const {
     // (if it's no-lock mode... it's user's responsibility)
     return _stnode_page.get(store).root;
 }
-void stnode_cache_t::get_stnode (snum_t store, stnode_t &stnode) const {
-    if (store >= stnode_page_h::max) {
-        w_assert1(false);
-        stnode = stnode_t();
-        return;
-    }
+
+void stnode_cache_t::get_stnode(snum_t store, stnode_t &stnode) const {
+    w_assert1(0 <= store && store < stnode_page_h::max);
     CRITICAL_SECTION (cs, _spin_lock);
     stnode = _stnode_page.get(store);
 }
 
-snum_t stnode_cache_t::get_min_unused_store_ID () const {
-    // this method is not so efficient, but this is rarely called.
+
+snum_t stnode_cache_t::get_min_unused_store_ID() const {
+    // This method is not very efficient, but is rarely called.
+
     CRITICAL_SECTION (cs, _spin_lock);
-    // let's start from 1, not 0. All user store ID's will begin with 1.
-    // store-ID 0 will be a special store-ID for stnode_page/alloc_page's
+    // Let's start from 1, not 0.  All user store ID's will begin with 1.
+    // Store-ID 0 will be a special store-ID for stnode_page/alloc_page's
     for (size_t i = 1; i < stnode_page_h::max; ++i) {
         if (_stnode_page.get(i).root == 0) {
             return i;
@@ -88,7 +85,7 @@ std::vector<snum_t> stnode_cache_t::get_all_used_store_ID() const {
 
 rc_t
 stnode_cache_t::store_operation(const store_operation_param& param) {
-    w_assert1(param.snum() < stnode_page_h::max);
+    w_assert1(0 <= param.snum() && param.snum() < stnode_page_h::max);
 
     store_operation_param new_param(param);
     stnode_t stnode;
@@ -114,11 +111,11 @@ stnode_cache_t::store_operation(const store_operation_param& param) {
             break;
         case smlevel_0::t_set_deleting:
             {
-                // bogus assertion:
-                // If we crash/restart between the time the
-                // xct gets into xct_freeing_space and
-                // the time xct_end is logged, the
-                // this store operation might already have been done, 
+                // Bogus assertion:
+                // If we crash/restart between the time the xct gets
+                // into xct_freeing_space and the time xct_end is
+                // logged, this store operation might already have
+                // been done,
                 // w_assert3(stnode.deleting != param.new_deleting_value());
                 w_assert3(param.old_deleting_value() == smlevel_0::t_unknown_deleting
                         || stnode.deleting == param.old_deleting_value());
@@ -164,9 +161,9 @@ stnode_cache_t::store_operation(const store_operation_param& param) {
 
     // log it and apply the change to the stnode_page
     CRITICAL_SECTION (cs, _spin_lock);
-    spinlock_read_critical_section cs2(&_fixed_pages->get_checkpoint_lock()); // protect against checkpoint. see bf_fixed_m comment.
+    spinlock_read_critical_section cs2(&_special_pages->get_checkpoint_lock()); // Protect against checkpoint.  See bf_fixed_m comment.
     W_DO( log_store_operation(new_param) );
     _stnode_page.get(param.snum()) = stnode;
-    _fixed_pages->get_dirty_flags()[_fixed_pages->get_page_cnt() - 1] = true;
+    _special_pages->get_dirty_flags()[_special_pages->get_page_cnt() - 1] = true;
     return RCOK;
 }
