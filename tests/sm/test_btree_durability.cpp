@@ -29,8 +29,8 @@ btree_test_env *test_env;
  * Measure: 
  *    For now, verify that: 
  *         1. the log file increases in size 
- *         2. the log rolls over into new partitions
- *         3. the log grows by logpagesize
+ *         2. the log grows by logpagesize
+ *         3. the log rolls over into new partitions
  */
 
 w_rc_t dosome(ss_m* ssm, test_volume_t *test_volume) {
@@ -47,8 +47,6 @@ w_rc_t dosome(ss_m* ssm, test_volume_t *test_volume) {
     off_t  const logpagesize = 8192; // quantum of log file size
     off_t  logsize = 0; // log file size. Should grow monotonically.
     off_t  logsize2 = 0; // log file size. Should grow monotonically.
-    int log_cnt = 0; // Count number of objects in the log directory
-    int log_cnt_orig = 0; // Count number of objects in the log directory
     int ibuffer; // hold the random int 
 
     // for checking log partition files
