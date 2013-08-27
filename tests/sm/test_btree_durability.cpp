@@ -13,20 +13,24 @@
 //#include <sys/types.h>
 #include <sys/stat.h>
 //#include <unistd.h>
+#include "log.h"
+#include "log_core.h"
+#include "partition.h"
+
 
 btree_test_env *test_env;
 
-/* Hypothesis: Together, b-link trees + fence keys reduce lock/latch
- *  contention, enabling higher insert rates than original ShoreMT.
+/* Hypothesis: Verify that log entries are persisted.
  * 
  * Procedure:
  *   For now: Create a b-tree and insert XXXX random keys in a single stream.
  *   Later: Repeat at various MPL.
  * 
  * Measure: 
- *    For now:  total runtime, throughput
- *    Later: I/O, lock and latch contention
- * 
+ *    For now, verify that: 
+ *         1. the log file increases in size 
+ *         2. the log rolls over into new partitions
+ *         3. the log grows by logpagesize
  */
 
 w_rc_t dosome(ss_m* ssm, test_volume_t *test_volume) {
@@ -42,8 +46,30 @@ w_rc_t dosome(ss_m* ssm, test_volume_t *test_volume) {
     size_t const records= 7500; //26900 is max that currently works 
     off_t  const logpagesize = 8192; // quantum of log file size
     off_t  logsize = 0; // log file size. Should grow monotonically.
-    int logfnum = 0; // log file number -- Harumi thinks this is incorrect
+    off_t  logsize2 = 0; // log file size. Should grow monotonically.
+    int log_cnt = 0; // Count number of objects in the log directory
+    int log_cnt_orig = 0; // Count number of objects in the log directory
     int ibuffer; // hold the random int 
+
+    // for checking log partition files
+    partition_number_t cur_partition_number; 
+    partition_number_t prev_partition_number, initial_partition_number;
+    cur_partition_number = log_core::THE_LOG->partition_num();
+    prev_partition_number = cur_partition_number;
+    initial_partition_number = cur_partition_number;
+    prev_partition_number = cur_partition_number;
+    std::cout << "Log starts off in dir: " << test_env->log_dir << " partition" 
+                    << cur_partition_number << "\n";
+
+    struct stat filestatus;
+    char *fname = new char [smlevel_0::max_devname];
+
+    // Get initial size of current log partition
+    log_core::THE_LOG->make_log_name(cur_partition_number, fname, smlevel_0::max_devname);  
+    stat( fname, &filestatus );
+    logsize = filestatus.st_size;
+    std::cout << "Initial log [" << fname << "] " << logsize << " bytes\n";
+
     
     ::srand(12345); // use fixed seed for repeatability and easier debugging
     W_DO(ssm->begin_xct());
@@ -66,41 +92,50 @@ w_rc_t dosome(ss_m* ssm, test_volume_t *test_volume) {
 	}
       }
 
+      // commit every other record and check log growth
+      if (produced%2 == 0) { 
 
-      if (produced%2 == 1) { // Fails with <=85 for records=10000 
-                              //==99 for records=27000
 	W_DO(ssm->commit_xct());
-	// OZ check for log file growth
 
-	struct stat buf;
+        // Check for roll-over  
+        cur_partition_number = log_core::THE_LOG->partition_num();
+        if (cur_partition_number != prev_partition_number) 
+        {
+          log_core::THE_LOG->make_log_name(cur_partition_number, fname, smlevel_0::max_devname);  
+          std::cout << "Log rolled over. " << test_env->log_dir 
+                    << " now contains " 
+                    << fname << "\n"; 
 
-	std::ostringstream fname2;
-        fname2 <<  test_env->log_dir << "/log." << logfnum+1;
-	if(0 == stat(fname2.str().c_str(), &buf)) { // next log file appeared
-	  std::cout << test_env->log_dir << "/log." << logfnum   << " ==> " 
-		    <<  test_env->log_dir << "/log." << logfnum+1 << " rollover" << std::endl; 
-	  ++logfnum;
-	  logsize = 0;
-	}
+          stat( fname, &filestatus );
+          logsize2 = filestatus.st_size;
+	  logsize = logsize2;
+          prev_partition_number = cur_partition_number;
+        } else 
+        {
+          stat( fname, &filestatus );
+          logsize2 = filestatus.st_size;
 
-	std::ostringstream fname;
-        fname <<  test_env->log_dir << "/log." << logfnum;
-	assert (0 == stat(fname.str().c_str(), &buf));
-	std::cout << " Verifying " << std::setw(3) << logsize/logpagesize 
-		  << (logsize < buf.st_size ? " < " : " = ")        
-		  << std::setw(3) << buf.st_size/logpagesize;
-	//assert (logsize < buf.st_size); // should grow by logpagesize every logpagesize/512 records
-	logsize = buf.st_size;
-	assert (0 == logsize % logpagesize);
-	std::cout << " Log file size " << logsize/logpagesize
+          // Assert that the log partition increased in size
+	  assert (logsize <= logsize2); 
+          
+	  // Assert that the log grew by logpagesize
+	  assert (0 == logsize % logpagesize);
+
+          logsize = logsize2;	
+        }
+
+	logsize = filestatus.st_size;
+        std::cout << "Log [" << fname << "] " << logsize << " bytes; ";
+	std::cout << logsize/logpagesize << " pages; "
 		  << " Processed " << produced << " keys" << std::endl;
-	
 
 	W_DO(ssm->begin_xct());
 	test_env->set_xct_query_lock();
-
       }
     }
+
+    // Assert that the log has rolled over at least once
+    assert (initial_partition_number < cur_partition_number);
     W_DO(ssm->commit_xct());
     return RCOK;
 }
