@@ -43,7 +43,8 @@ w_rc_t dosome(ss_m* ssm, test_volume_t *test_volume) {
     // XXXX should move the following out to a separate DataGen class
     typedef unsigned int size_t;
     size_t const domain = 100000;
-    size_t const records= 7500; //26900 is max that currently works 
+    // size_t const records= 30000;  // this works, but takes longer 
+    size_t const records= 3000; 
     off_t  const logpagesize = 8192; // quantum of log file size
     off_t  logsize = 0; // log file size. Should grow monotonically.
     off_t  logsize2 = 0; // log file size. Should grow monotonically.
@@ -122,9 +123,13 @@ w_rc_t dosome(ss_m* ssm, test_volume_t *test_volume) {
         }
 
 	logsize = filestatus.st_size;
+
+      // print informative message every 1000 records
+      if (produced%1000 == 0) { 
         std::cout << "Log [" << fname << "] " << logsize << " bytes; ";
 	std::cout << logsize/logpagesize << " pages; "
 		  << " Processed " << produced << " keys" << std::endl;
+        }
 
 	W_DO(ssm->begin_xct());
 	test_env->set_xct_query_lock();
