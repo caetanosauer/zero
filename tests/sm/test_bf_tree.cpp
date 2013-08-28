@@ -82,6 +82,7 @@ w_rc_t test_bf_fix_virgin_root(ss_m* /*ssm*/, test_volume_t *test_volume) {
             ::memset(page, 0, sizeof(generic_page));
             page->pid = pid;
             page->lsn = thelsn;
+            page->tag = t_btree_p;
             page->btree_level = 1;
             pool.set_dirty(page);
             pool.unfix(page);
@@ -122,6 +123,7 @@ w_rc_t test_bf_fix_virgin_child(ss_m* /*ssm*/, test_volume_t *test_volume) {
     ::memset(root_page, 0, sizeof(generic_page));
     root_page->pid = root_pid;
     root_page->lsn = thelsn;
+    root_page->tag = t_btree_p;
     root_page->btree_level = 2;
     root_page->btree_foster = 0;
     root_page->nslots = 0;
@@ -137,6 +139,7 @@ w_rc_t test_bf_fix_virgin_child(ss_m* /*ssm*/, test_volume_t *test_volume) {
             ::memset(page, 0, sizeof(generic_page));
             page->pid = pid;
             page->lsn = thelsn;
+            page->tag = t_btree_p;
             page->btree_level = 1;
             pool.set_dirty(page);
             pool.unfix(page);
@@ -151,6 +154,7 @@ w_rc_t test_bf_fix_virgin_child(ss_m* /*ssm*/, test_volume_t *test_volume) {
             EXPECT_EQ(pid.store(), page->pid.store());
             EXPECT_EQ(test_volume->_vid.vol, page->pid.vol().vol);
             EXPECT_EQ(thelsn, page->lsn);
+            EXPECT_EQ(t_btree_p, page->tag);
             EXPECT_EQ(1, page->btree_level);
             pool.unfix(page);
         }
@@ -180,6 +184,7 @@ w_rc_t test_bf_evict(ss_m* /*ssm*/, test_volume_t *test_volume) {
     ::memset(root_page, 0, sizeof(generic_page));
     root_page->pid = root_pid;
     root_page->lsn = thelsn;
+    root_page->tag = t_btree_p;
     root_page->btree_level = 2;
     root_page->btree_foster = 0;
     root_page->nslots = 0;
@@ -205,6 +210,7 @@ w_rc_t test_bf_evict(ss_m* /*ssm*/, test_volume_t *test_volume) {
             ::memset(page, 0, sizeof(generic_page));
             page->pid = pid;
             page->lsn = thelsn;
+            page->tag = t_btree_p;
             page->btree_level = 1;
             if (i % 5 == 0) {
                 dirty_idx.insert (idx);
@@ -286,6 +292,7 @@ w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_s
     EXPECT_TRUE (root_page != NULL);
     ::memset(root_page, 0, sizeof(generic_page));
     root_page->pid = root_pid;
+    root_page->tag = t_btree_p;
     root_page->btree_level = 2;
     root_page->btree_foster = 0;
     root_page->nslots = 0;
@@ -331,6 +338,7 @@ w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_s
             }
             ::memset(page, 0, sizeof(generic_page));
             page->pid = pid;
+            page->tag = t_btree_p;
             page->btree_level = 1;
             pool.set_dirty(page);
             pool.unfix(page);
@@ -440,6 +448,7 @@ w_rc_t test_bf_switch_parent(ss_m* /*ssm*/, test_volume_t *test_volume) {
     EXPECT_TRUE (root_page != NULL);
     ::memset(root_page, 0, sizeof(generic_page));
     root_page->pid = root_pid;
+    root_page->tag = t_btree_p;
     root_page->btree_level = 2;
     root_page->btree_foster = 0;
     root_page->nslots = 0;
@@ -454,6 +463,7 @@ w_rc_t test_bf_switch_parent(ss_m* /*ssm*/, test_volume_t *test_volume) {
     EXPECT_TRUE (child_page != NULL);
     ::memset(child_page, 0, sizeof(generic_page));
     child_page->pid = child_pid;
+    child_page->tag = t_btree_p;
     child_page->btree_level = 1;
     child_page->btree_foster = 0;
     child_page->nslots = 0;
@@ -470,6 +480,7 @@ w_rc_t test_bf_switch_parent(ss_m* /*ssm*/, test_volume_t *test_volume) {
     EXPECT_TRUE (sibling_page != NULL);
     ::memset(sibling_page, 0, sizeof(generic_page));
     sibling_page->pid = sibling_pid;
+    sibling_page->tag = t_btree_p;
     sibling_page->btree_level = 1;
     sibling_page->btree_foster = 0;
     sibling_page->nslots = 0;

@@ -184,10 +184,16 @@ public:
 #endif // DOXYGEN_HIDE
 
     btree_page_h() {}
-    btree_page_h(generic_page* s) : generic_page_h(s) {}
-    btree_page_h(const btree_page_h&p) : generic_page_h(p) {} 
+    btree_page_h(generic_page* s) : generic_page_h(s) {
+        w_assert1(s->tag == t_btree_p);
+    }
+    btree_page_h(const btree_page_h& p) : generic_page_h(p) {} 
     ~btree_page_h() {}
-    btree_page_h& operator=(btree_page_h& p)    { generic_page_h::operator=(p); return *this; }
+    btree_page_h& operator=(btree_page_h& p) { 
+        generic_page_h::operator=(p); 
+        w_assert1(_pp->tag == t_btree_p);
+        return *this; 
+    }
 
 #ifdef DOXYGEN_HIDE
 ///==========================================
