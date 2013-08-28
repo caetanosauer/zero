@@ -42,13 +42,12 @@ btree_insert_t::btree_insert_t(
 }
 
 btree_insert_log::btree_insert_log(
-    const btree_page_h&         page, 
-    const w_keystr_t&         key,
-    const cvec_t&         el)
+    const btree_page_h& page, 
+    const w_keystr_t&   key,
+    const cvec_t&       el)
 {
-    const btree_page_h& bp = * (btree_page_h*) &page;
     fill(&page.pid(), page.tag(),
-         (new (_data) btree_insert_t(bp, key, el))->size());
+         (new (_data) btree_insert_t(page, key, el))->size());
 }
 
 void 
@@ -113,7 +112,7 @@ struct btree_update_t {
 };
 
 btree_update_log::btree_update_log(
-    const btree_page_h&         page, 
+    const btree_page_h&   page, 
     const w_keystr_t&     key,
     const char* old_el, int old_elen, const cvec_t& new_el)
 {
@@ -191,7 +190,7 @@ struct btree_overwrite_t {
 
 
 btree_overwrite_log::btree_overwrite_log (const btree_page_h& page, const w_keystr_t& key,
-    const char* old_el, const char *new_el, size_t offset, size_t elen) {
+                                          const char* old_el, const char *new_el, size_t offset, size_t elen) {
     fill(&page.pid(), page.tag(),
          (new (_data) btree_overwrite_t(page, key, old_el, new_el, offset, elen))->size());
 }
@@ -312,7 +311,6 @@ btree_header_log::btree_header_log(const btree_page_h& p,
     int16_t btree_chain_fence_high_length
 )
 {
-    w_assert3(p.tag() == t_btree_p);
     fill(&p.pid(), p.tag(), (new (data()) btree_header_change_t(
         p, btree_pid0, btree_level, btree_foster,
                 btree_chain_fence_high_length))->size());
@@ -399,11 +397,9 @@ w_keystr_t btree_ghost_t::get_key (size_t i) const {
 }
 
 btree_ghost_mark_log::btree_ghost_mark_log(const btree_page_h& p,
-    const vector<slotid_t>& slots)
+                                           const vector<slotid_t>& slots)
 {
-    w_assert0(p.tag() == t_btree_p);
-    const btree_page_h& bp = * (btree_page_h*) &p;
-    fill(&p.pid(), p.tag(), (new (data()) btree_ghost_t(bp, slots))->size());
+    fill(&p.pid(), p.tag(), (new (data()) btree_ghost_t(p, slots))->size());
 }
 
 void 
@@ -445,12 +441,10 @@ btree_ghost_mark_log::redo(generic_page_h *page)
 }
 
 btree_ghost_reclaim_log::btree_ghost_reclaim_log(const btree_page_h& p,
-    const vector<slotid_t>& slots)
+                                                 const vector<slotid_t>& slots)
 {
-    w_assert0(p.tag() == t_btree_p);
-    const btree_page_h& bp = * (btree_page_h*) &p;
     // ghost reclaim is single-log system transaction. so, use data_ssx()
-    fill(&p.pid(), p.tag(), (new (data_ssx()) btree_ghost_t(bp, slots))->size());
+    fill(&p.pid(), p.tag(), (new (data_ssx()) btree_ghost_t(p, slots))->size());
     w_assert0(is_single_sys_xct());
 }
 
@@ -488,7 +482,6 @@ btree_ghost_reserve_t::btree_ghost_reserve_t(const w_keystr_t& key, int rec_len)
 btree_ghost_reserve_log::btree_ghost_reserve_log (
     const btree_page_h& p, const w_keystr_t& key, int record_size)
 {
-    w_assert0(p.tag() == t_btree_p);
     // ghost creation is single-log system transaction. so, use data_ssx()
     fill(&p.pid(), p.tag(), (new (data_ssx()) btree_ghost_reserve_t(key, record_size))->size());
     w_assert0(is_single_sys_xct());
@@ -530,10 +523,11 @@ struct btree_foster_split_t {
 };
 
 btree_foster_split_log::btree_foster_split_log (const btree_page_h& p,
-    shpid_t new_pid, int32_t right_begins_from,
-    const w_keystr_t* new_child_key, shpid_t new_child_pid)
+                                                shpid_t             new_pid, 
+                                                int32_t             right_begins_from,
+                                                const w_keystr_t*   new_child_key,
+                                                shpid_t             new_child_pid)
 {
-    w_assert0(p.tag() == t_btree_p);
     fill(&p.pid(), p.tag(), (new (_data) btree_foster_split_t(new_pid, right_begins_from, new_child_key, new_child_pid))->size());
 }
 void btree_foster_split_log::redo(generic_page_h* page)
@@ -581,9 +575,9 @@ struct btree_foster_norecord_split_t {
 };
 
 btree_foster_norecord_split_log::btree_foster_norecord_split_log(const btree_page_h& p, shpid_t foster,
-    const w_keystr_t& fence_high, const w_keystr_t& chain_fence_high)
+                                                                 const w_keystr_t& fence_high,
+                                                                 const w_keystr_t& chain_fence_high)
 {
-    w_assert0(p.tag() == t_btree_p);
     fill(&p.pid(), p.tag(), (new (_data) btree_foster_norecord_split_t(foster, fence_high, chain_fence_high))->size());
 }
 void btree_foster_norecord_split_log::redo(generic_page_h* page)
@@ -614,9 +608,9 @@ struct btree_foster_adopt_parent_t {
 };
 
 btree_foster_adopt_parent_log::btree_foster_adopt_parent_log (const btree_page_h& p,
-    shpid_t new_child_pid, const w_keystr_t& new_child_key)
+                                                              shpid_t new_child_pid,
+                                                              const w_keystr_t& new_child_key)
 {
-    w_assert0(p.tag() == t_btree_p);
     fill(&p.pid(), p.tag(), (new (_data) btree_foster_adopt_parent_t(new_child_pid, new_child_key))->size());
 }
 void btree_foster_adopt_parent_log::redo(generic_page_h* page)
@@ -631,9 +625,7 @@ void btree_foster_adopt_parent_log::redo(generic_page_h* page)
         W_FATAL(rc.err_num());
     }
 }
-btree_foster_adopt_child_log::btree_foster_adopt_child_log (const btree_page_h& p)
-{
-    w_assert0(p.tag() == t_btree_p);
+btree_foster_adopt_child_log::btree_foster_adopt_child_log (const btree_page_h& p) {
     fill(&p.pid(), p.tag(), 0);
 }
 void btree_foster_adopt_child_log::redo(generic_page_h* page)
@@ -645,12 +637,9 @@ void btree_foster_adopt_child_log::redo(generic_page_h* page)
 
 // logs for Merge/Rebalance/De-Adopt
 // see jira ticket:39 "Node removal and rebalancing" (originally trac ticket:39) for detailed spec
-btree_foster_merge_log::btree_foster_merge_log (const btree_page_h& p)
-{
-    w_assert0(p.tag() == t_btree_p);
-    const btree_page_h& bp = * (btree_page_h*) &p;
+btree_foster_merge_log::btree_foster_merge_log (const btree_page_h& p) {
     // we just need merged page's id. that's it.
-    *reinterpret_cast<shpid_t*> (_data) = bp.get_foster();
+    *reinterpret_cast<shpid_t*> (_data) = p.get_foster();
     fill(&p.pid(), p.tag(), sizeof(shpid_t));
 }
 
@@ -676,8 +665,8 @@ struct btree_foster_rebalance_t {
 };
 
 btree_foster_rebalance_log::btree_foster_rebalance_log (const btree_page_h& p,
-        shpid_t parent_pid, int32_t move_count) {
-    w_assert0(p.tag() == t_btree_p);
+                                                        shpid_t parent_pid, int32_t move_count) 
+{
     fill(&p.pid(), p.tag(), (new (_data) btree_foster_rebalance_t(parent_pid, move_count))->size());
 }
 
@@ -710,11 +699,10 @@ struct btree_foster_deadopt_real_parent_t {
 };
 
 btree_foster_deadopt_real_parent_log::btree_foster_deadopt_real_parent_log (
-    const btree_page_h& p, shpid_t deadopted_pid, int32_t foster_slot) {
-    w_assert0(p.tag() == t_btree_p);
+    const btree_page_h& p, shpid_t deadopted_pid, int32_t foster_slot) 
+{
 #if W_DEBUG_LEVEL>0
-    const btree_page_h& bp = * (btree_page_h*) &p;
-    w_assert1(bp.is_node());
+    w_assert1(p.is_node());
 #endif // W_DEBUG_LEVEL>0
     fill(&p.pid(), p.tag(), (new (_data) btree_foster_deadopt_real_parent_t(deadopted_pid, foster_slot))->size());
 }
@@ -744,8 +732,10 @@ struct btree_foster_deadopt_foster_parent_t {
     int size() { return sizeof(shpid_t) + sizeof(int32_t) * 2 + _low_key_len + _high_key_len; }
 };
 btree_foster_deadopt_foster_parent_log::btree_foster_deadopt_foster_parent_log (const btree_page_h& p,
-    shpid_t deadopted_pid, const w_keystr_t& low_key, const w_keystr_t& high_key) {
-    w_assert0(p.tag() == t_btree_p);
+                                                                                shpid_t             deadopted_pid,
+                                                                                const w_keystr_t&   low_key,
+                                                                                const w_keystr_t&   high_key) 
+{
     fill(&p.pid(), p.tag(), (new (_data) btree_foster_deadopt_foster_parent_t(deadopted_pid, low_key, high_key))->size());
 }
 
