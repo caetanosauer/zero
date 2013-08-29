@@ -16,7 +16,7 @@
 #   pragma implementation "btree_impl.h"
 #endif
 #include "bf_tree.h"
-#include "btree_p.h"
+#include "btree_page.h"
 #include "btree_impl.h"
 #include "sm_base.h"
 #include "w_key.h"
@@ -25,7 +25,7 @@
 
 rc_t
 btree_impl::_ux_lock_key(
-    btree_p&      leaf,
+    btree_page_h&      leaf,
     const w_keystr_t&   key,
     latch_mode_t        latch_mode,
     lock_mode_t         lock_mode,
@@ -38,7 +38,7 @@ btree_impl::_ux_lock_key(
 
 rc_t
 btree_impl::_ux_lock_key(
-    btree_p&            leaf,
+    btree_page_h&            leaf,
     const void         *keystr,
     size_t              keylen,
     latch_mode_t        latch_mode,
@@ -78,7 +78,7 @@ btree_impl::_ux_lock_key(
 
 rc_t
 btree_impl::_ux_lock_range(
-    btree_p&      leaf,
+    btree_page_h&      leaf,
     const w_keystr_t&   key,
     slotid_t slot,
     latch_mode_t        latch_mode,
@@ -92,7 +92,7 @@ btree_impl::_ux_lock_range(
 }
 rc_t
 btree_impl::_ux_lock_range(
-    btree_p&            leaf,
+    btree_page_h&            leaf,
     const void         *keystr,
     size_t              keylen,
     slotid_t            slot,
@@ -142,7 +142,7 @@ btree_impl::_ux_lock_range(
     return RCOK;
 }
 
-rc_t btree_impl::_ux_assure_fence_low_entry(btree_p &leaf)
+rc_t btree_impl::_ux_assure_fence_low_entry(btree_page_h &leaf)
 {
     w_assert1(leaf.is_fixed());
     w_assert1(leaf.latch_mode() == LATCH_EX);

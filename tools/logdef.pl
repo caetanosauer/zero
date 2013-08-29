@@ -107,9 +107,9 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
-#include "btree_p.h"
-#include "alloc_p.h"
-#include "stnode_p.h"
+#include "btree_page.h"
+#include "alloc_page.h"
+#include "stnode_page.h"
 
 EOF
 
@@ -196,8 +196,8 @@ sub def_rec {
     my ($class) = $type . "_log";
     my ($has_idx);
 
-    my $redo_stmt = ($redo) ? 'void redo(page_p*);' : '';
-    my $undo_stmt = ($undo) ? 'void undo(page_p*);' : '';
+    my $redo_stmt = ($redo) ? 'void redo(generic_page_h*);' : '';
+    my $undo_stmt = ($undo) ? 'void undo(generic_page_h*);' : '';
     print DEF<<CLASSDEF;
     class $class : public logrec_t {
 	void fill(const lpid_t* p, uint16_t tag, int l) {

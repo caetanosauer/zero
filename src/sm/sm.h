@@ -411,8 +411,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  */
 /********************************************************************/
 
-class page_p;
-class btree_p;
+class generic_page_h;
+class btree_page_h;
 class xct_t;
 class device_m;
 class vec_t;
@@ -2203,7 +2203,7 @@ public:
      * \ingroup SSMBTREE
      * @copydetails btree_impl::_sx_defrag_page
     */
-    static rc_t           defrag_index_page(btree_p &page);
+    static rc_t           defrag_index_page(btree_page_h &page);
 
     /**
     *  Verifies the integrity of B-Tree index using the fence-key bitmap technique.

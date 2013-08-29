@@ -13,7 +13,8 @@
 
 #include "smthread.h"
 #include "vid_t.h"
-#include "page_s.h"
+#include "generic_page.h"
+#include "btree_page.h"
 #include <string.h>
 #include "w_findprime.h"
 #include <stdlib.h>
@@ -21,7 +22,7 @@
 #include "sm_int_0.h"
 #include "sm_int_1.h"
 #include "bf.h"
-#include "page.h"
+#include "generic_page_h.h"
 #include "sm_io.h"
 #include "vol.h"
 #include "alloc_cache.h"
@@ -72,11 +73,11 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
         ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << SM_PAGESIZE << "-bytes pages. ");
         W_FATAL(smlevel_0::eOUTOFMEMORY);
     }
-    _buffer = reinterpret_cast<page_s*>(buf);
+    _buffer = reinterpret_cast<generic_page*>(buf);
     
     // the index 0 is never used. to make sure no one can successfully use it,
     // fill the block-0 with garbages
-    ::memset (&_buffer[0], 0x27, sizeof(page_s));
+    ::memset (&_buffer[0], 0x27, sizeof(generic_page));
 
 #ifdef BP_ALTERNATE_CB_LATCH
     // this allocation scheme is sensible only for control block and latch sizes of 64B (cacheline size)
@@ -218,7 +219,7 @@ w_rc_t bf_tree_m::install_volume(vol_t* volume) {
 
     // load root pages. root pages are permanently fixed.
     stnode_cache_t *stcache = volume->get_stnode_cache();
-    std::vector<snum_t> stores (stcache->get_all_used_store_id());
+    std::vector<snum_t> stores (stcache->get_all_used_store_ID());
     w_rc_t rc = RCOK;
     for (size_t i = 0; i < stores.size(); ++i) {
         snum_t store = stores[i];
@@ -321,7 +322,7 @@ w_rc_t bf_tree_m::_install_volume_mainmemorydb(vol_t* volume) {
 
     bf_tree_vol_t* desc = new bf_tree_vol_t(volume);
     stnode_cache_t *stcache = volume->get_stnode_cache();
-    std::vector<snum_t> stores (stcache->get_all_used_store_id());
+    std::vector<snum_t> stores (stcache->get_all_used_store_ID());
     for (size_t i = 0; i < stores.size(); ++i) {
         snum_t store = stores[i];
         bf_idx idx = stcache->get_root_pid(store);
@@ -374,11 +375,11 @@ w_rc_t bf_tree_m::uninstall_volume(volid_t vid) {
 // NOTE most of the page fix/unfix functions are in bf_tree_inline.h.
 // These functions are here are because called less frequently.
 
-w_rc_t bf_tree_m::fix_direct (page_s*& page, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
+w_rc_t bf_tree_m::fix_direct (generic_page*& page, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
     return _fix_nonswizzled(NULL, page, vol, shpid, mode, conditional, virgin_page);
 }
 
-w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(page_s* parent, page_s*& page, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
+w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(generic_page* parent, generic_page*& page, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
     bf_idx idx = shpid;
     bf_tree_cb_t &cb = get_cb(idx);
 #ifdef BP_MAINTAIN_PARNET_PTR
@@ -408,7 +409,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(page_s* parent, page_s*& page, s
     return rc;
 }
 
-w_rc_t bf_tree_m::_fix_nonswizzled(page_s* parent, page_s*& page, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
+w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
     w_assert1(vol != 0);
     w_assert1(shpid != 0);
     w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
@@ -582,7 +583,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(page_s* parent, page_s*& page, volid_t vol, s
     }
 }
 
-bf_idx bf_tree_m::pin_for_refix(const page_s* page) {
+bf_idx bf_tree_m::pin_for_refix(const generic_page* page) {
     w_assert1(page != NULL);
     w_assert1(latch_mode(page) != LATCH_NL);
     bf_idx idx = page - _buffer;
@@ -625,7 +626,7 @@ w_rc_t bf_tree_m::wakeup_cleaner_for_volume(volid_t vol) {
     return _cleaner->wakeup_cleaner_for_volume(vol);
 }
 
-void bf_tree_m::repair_rec_lsn (page_s *page, bool was_dirty, const lsn_t &new_rlsn) {
+void bf_tree_m::repair_rec_lsn (generic_page *page, bool was_dirty, const lsn_t &new_rlsn) {
     if( !smlevel_0::logging_enabled) return;
     
     bf_idx idx = page - _buffer;
@@ -1082,7 +1083,7 @@ void bf_tree_m::_decrement_pin_cnt_assume_positive(bf_idx idx) {
 }
 
 ///////////////////////////////////   WRITE-ORDER-DEPENDENCY BEGIN ///////////////////////////////////  
-bool bf_tree_m::register_write_order_dependency(const page_s* page, const page_s* dependency) {
+bool bf_tree_m::register_write_order_dependency(const generic_page* page, const generic_page* dependency) {
     w_assert1(page);
     w_assert1(dependency);
     w_assert1(page->pid != dependency->pid);
@@ -1225,7 +1226,7 @@ bool bf_tree_m::_check_dependency_still_active(bf_tree_cb_t& cb) {
 ///////////////////////////////////   WRITE-ORDER-DEPENDENCY END ///////////////////////////////////  
 
 #ifdef BP_MAINTAIN_PARNET_PTR
-void bf_tree_m::switch_parent(page_s* page, page_s* new_parent)
+void bf_tree_m::switch_parent(generic_page* page, generic_page* new_parent)
 {
     if (!is_swizzling_enabled()) {
         return;
@@ -1248,7 +1249,7 @@ void bf_tree_m::switch_parent(page_s* page, page_s* new_parent)
 #endif // BP_MAINTAIN_PARNET_PTR
 
 
-void bf_tree_m::_convert_to_disk_page(page_s* page) const {
+void bf_tree_m::_convert_to_disk_page(generic_page* page) const {
     DBGOUT3 (<< "converting the page " << page->pid << "... ");
     
     // if the page is a leaf page, foster is the only pointer
@@ -1259,8 +1260,8 @@ void bf_tree_m::_convert_to_disk_page(page_s* page) const {
     if (page->btree_level > 1) {
         _convert_to_pageid(&(page->btree_pid0));
         slot_index_t slots = page->nslots;
-        // use page_p class just for using tuple_addr().
-        page_p p (page);
+        // use generic_page_h class just for using tuple_addr().
+        btree_page_h p (page);
         for (slot_index_t i = 1; i < slots; ++i) {
             void* addr = p.tuple_addr(i);
             _convert_to_pageid(reinterpret_cast<shpid_t*>(addr));
@@ -1278,7 +1279,7 @@ inline void bf_tree_m::_convert_to_pageid (shpid_t* shpid) const {
     }
 }
 
-slotid_t bf_tree_m::find_page_id_slot(page_s* page, shpid_t shpid) const
+slotid_t bf_tree_m::find_page_id_slot(generic_page* page, shpid_t shpid) const
 {
     w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
     // w_assert1(page->btree_foster != (shpid | SWIZZLED_PID_BIT));
@@ -1291,7 +1292,7 @@ slotid_t bf_tree_m::find_page_id_slot(page_s* page, shpid_t shpid) const
             return 0;
         }
         slot_index_t slots = page->nslots;
-        page_p p (page);
+        btree_page_h p (page);
         for (slot_index_t i = 1; i < slots; ++i) {
             void* addr = p.tuple_addr(i);
             if (*reinterpret_cast<shpid_t*>(addr) == shpid) {
@@ -1304,12 +1305,12 @@ slotid_t bf_tree_m::find_page_id_slot(page_s* page, shpid_t shpid) const
 
 ///////////////////////////////////   SWIZZLE/UNSWIZZLE BEGIN ///////////////////////////////////  
 
-void bf_tree_m::swizzle_child(page_s* parent, slotid_t slot)
+void bf_tree_m::swizzle_child(generic_page* parent, slotid_t slot)
 {
     return swizzle_children(parent, &slot, 1);
 }
 
-void bf_tree_m::swizzle_children(page_s* parent, const slotid_t* slots, uint32_t slots_size)
+void bf_tree_m::swizzle_children(generic_page* parent, const slotid_t* slots, uint32_t slots_size)
 {
     w_assert1(is_swizzling_enabled());
     w_assert1(parent != NULL);
@@ -1318,7 +1319,7 @@ void bf_tree_m::swizzle_children(page_s* parent, const slotid_t* slots, uint32_t
     w_assert1(_is_active_idx(parent_idx));
     w_assert1(is_swizzled(parent)); // swizzling is transitive.
 
-    page_p p (parent);
+    btree_page_h p (parent);
     for (uint32_t i = 0; i < slots_size; ++i) {
         slotid_t slot = slots[i];
         w_assert1(slot >= 0); // w_assert1(slot >= -1); see below
@@ -1344,7 +1345,7 @@ void bf_tree_m::swizzle_children(page_s* parent, const slotid_t* slots, uint32_t
     }
 }
 
-inline void bf_tree_m::_swizzle_child_pointer(page_s* parent, shpid_t* pointer_addr)
+inline void bf_tree_m::_swizzle_child_pointer(generic_page* parent, shpid_t* pointer_addr)
 {
     shpid_t child_shpid = *pointer_addr;
     //w_assert1((child_shpid & SWIZZLED_PID_BIT) == 0);
@@ -1506,7 +1507,7 @@ void bf_tree_m::_unswizzle_traverse_store(uint32_t &unswizzled_frames, volid_t v
 
 
 bool bf_tree_m::has_swizzled_child(bf_idx node_idx) {
-    page_p node_p (_buffer + node_idx);
+    btree_page_h node_p (_buffer + node_idx);
     for (uint32_t j = 0; j < _buffer[node_idx].nslots; ++j) {
         shpid_t shpid;
         if (j == 0) {
@@ -1537,7 +1538,7 @@ void bf_tree_m::_unswizzle_traverse_node(
 
     // check children
     uint32_t remaining = _buffer[node_idx].nslots - old;
-    page_p node_p (_buffer + node_idx);
+    btree_page_h node_p (_buffer + node_idx);
     for (uint32_t i = 0; i < remaining && unswizzled_frames < UNSWIZZLE_BATCH_SIZE; ++i) {
         uint32_t slot = old + i;
         if (!node_cb._used || _buffer[node_idx].btree_level <= 1) {
@@ -1632,7 +1633,7 @@ bool bf_tree_m::_unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot) {
     if (child_slot >= (uint32_t) _buffer[parent_idx].nslots) {
         return false;
     }
-    page_p parent (_buffer + parent_idx);
+    btree_page_h parent (_buffer + parent_idx);
     shpid_t* shpid_addr;
     if (child_slot == 0) {
         shpid_addr = &(_buffer[parent_idx].btree_pid0);
@@ -1737,7 +1738,7 @@ void bf_tree_m::debug_dump(std::ostream &o) const
     }
 }
 
-void bf_tree_m::debug_dump_page_pointers(std::ostream& o, page_s* page) const
+void bf_tree_m::debug_dump_page_pointers(std::ostream& o, generic_page* page) const
 {
     bf_idx idx = page - _buffer;
     w_assert1(idx > 0);
@@ -1749,7 +1750,7 @@ void bf_tree_m::debug_dump_page_pointers(std::ostream& o, page_s* page) const
 
     if (page->btree_level > 1) {
         slot_index_t slots = page->nslots;
-        page_p p (page);
+        btree_page_h p (page);
         o << "  ";
         for (slot_index_t i = 0; i < slots; ++i) {
             o << "child[" << i << "]=";
@@ -1868,11 +1869,11 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, lsn_t *
     count = i;
 }
 
-void bf_tree_m::print_slots(page_s* page) const
+void bf_tree_m::print_slots(generic_page* page) const
 {
     slot_index_t slots = page->nslots;
     DBGOUT1 (<< "print " << slots << " slots");
-    page_p p (page);
+    btree_page_h p (page);
     for (slot_index_t i = 1; i < slots; ++i) {
         void* addr = p.tuple_addr(i);
         shpid_t* slotaddr = reinterpret_cast<shpid_t*>(addr);

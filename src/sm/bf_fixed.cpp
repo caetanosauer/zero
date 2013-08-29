@@ -8,7 +8,7 @@
 #include "sm_int_1.h"
 
 #include "bf_fixed.h"
-#include "alloc_p.h"
+#include "alloc_page.h"
 #include "vol.h"
 
 bf_fixed_m::bf_fixed_m()
@@ -33,9 +33,9 @@ w_rc_t bf_fixed_m::init(vol_t* parent, int unix_fd, uint32_t max_pid) {
     _parent = parent;
     _unix_fd = unix_fd;
     // volume has 1 volume header (pid=0), then a few allocation pages first,
-    // then 1 stnode_p and then data pages.
-    shpid_t alloc_pages = (max_pid / alloc_p::alloc_max) + 1;
-    _page_cnt = alloc_pages + 1; // +1 for stnode_p
+    // then 1 stnode_page and then data pages.
+    shpid_t alloc_pages = (max_pid / alloc_page_h::bits_held) + 1;
+    _page_cnt = alloc_pages + 1; // +1 for stnode_page
     // use posix_memalign to allow unbuffered disk I/O
     void *buf = NULL;
     ::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * _page_cnt);
@@ -43,15 +43,15 @@ w_rc_t bf_fixed_m::init(vol_t* parent, int unix_fd, uint32_t max_pid) {
         ERROUT (<< "failed to reserve " << _page_cnt << " blocks of " << SM_PAGESIZE << "-bytes pages. ");
         W_FATAL(smlevel_0::eOUTOFMEMORY);
     }
-    _pages = reinterpret_cast<page_s*>(buf);
+    _pages = reinterpret_cast<generic_page*>(buf);
     _dirty_flags = new bool[_page_cnt];
     ::memset (_dirty_flags, 0, sizeof(bool) * _page_cnt);
 
     // this is called on vol_t::mount(). no other thread is reading this volume concurrently!
     smthread_t* st = me();
     w_assert1(st);
-    W_DO(st->lseek(unix_fd, sizeof(page_s), sthread_t::SEEK_AT_SET)); // skip first page
-    W_DO(st->read(unix_fd, _pages, sizeof(page_s) * _page_cnt));
+    W_DO(st->lseek(unix_fd, sizeof(generic_page), sthread_t::SEEK_AT_SET)); // skip first page
+    W_DO(st->read(unix_fd, _pages, sizeof(generic_page) * _page_cnt));
 
     return RCOK;
 }

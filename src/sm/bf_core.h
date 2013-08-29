@@ -73,7 +73,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <sm_int_0.h>
 #endif
 
-class page_s;
+class generic_page;
 
 class bfcb_unused_list : private atomic_container {
     int _count;
@@ -210,7 +210,7 @@ private:
     static queue_based_lock_t   _bfc_mutex; // never needs long lock 
 
     static int                  _num_bufs;
-    static page_s*              _bufpool; // array of size _num_bufs
+    static generic_page*              _bufpool; // array of size _num_bufs
     static bfcb_t*              _buftab; // array of size _num_bufs
 
     static htab*                _htab;

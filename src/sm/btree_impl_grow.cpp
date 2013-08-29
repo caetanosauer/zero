@@ -14,7 +14,7 @@
 
 #include "sm_int_2.h"
 #include "sm_base.h"
-#include "btree_p.h"
+#include "btree_page.h"
 #include "btree_impl.h"
 #include "crash.h"
 #include "w_key.h"
@@ -34,7 +34,7 @@ rc_t btree_impl::_sx_create_tree(const stid_t &stid, lpid_t &root_pid)
 rc_t btree_impl::_ux_create_tree_core(const stid_t &stid, const lpid_t &root_pid)
 {
     w_assert1(root_pid.page != 0);
-    btree_p page;
+    btree_page_h page;
     // Format/init the page
     w_keystr_t infimum, supremum, dummy_chain_high; // empty fence keys=infimum-supremum
     infimum.construct_neginfkey();
@@ -48,14 +48,14 @@ rc_t btree_impl::_ux_create_tree_core(const stid_t &stid, const lpid_t &root_pid
         infimum, supremum, dummy_chain_high // start from infimum/supremum fence keys
     ));
 
-    // also register it in stnode_p
+    // also register it in stnode_page
     W_DO(io->set_root(stid, root_pid.page));
 
     return RCOK;
 }
 
 rc_t
-btree_impl::_sx_shrink_tree(btree_p& rp)
+btree_impl::_sx_shrink_tree(btree_page_h& rp)
 {
     FUNC(btree_impl::_sx_shrink_tree);
     sys_xct_section_t sxs;
@@ -66,7 +66,7 @@ btree_impl::_sx_shrink_tree(btree_p& rp)
 }
 
 rc_t
-btree_impl::_ux_shrink_tree_core(btree_p& rp)
+btree_impl::_ux_shrink_tree_core(btree_page_h& rp)
 {
     w_assert1 (xct()->is_sys_xct());
     INC_TSTAT(bt_shrinks);
@@ -85,7 +85,7 @@ btree_impl::_ux_shrink_tree_core(btree_p& rp)
     if (rp.pid0() != 0)  {
         //  The root has pid0. Copy child page over parent,
         //  and free child page.
-        btree_p cp;
+        btree_page_h cp;
         W_DO( cp.fix_nonroot(rp, rp.vol(), rp.pid0(), LATCH_EX));
 
         // steal all from child
@@ -120,7 +120,7 @@ btree_impl::_ux_shrink_tree_core(btree_p& rp)
 
 
 rc_t
-btree_impl::_sx_grow_tree(btree_p& rp)
+btree_impl::_sx_grow_tree(btree_page_h& rp)
 {
     FUNC(btree_impl::_sx_grow_tree);
     lpid_t new_pid;
@@ -133,7 +133,7 @@ btree_impl::_sx_grow_tree(btree_p& rp)
 }
 
 rc_t
-btree_impl::_ux_grow_tree_core(btree_p& rp, const lpid_t &cp_pid)
+btree_impl::_ux_grow_tree_core(btree_page_h& rp, const lpid_t &cp_pid)
 {
     w_assert1 (xct()->is_sys_xct());
     FUNC(btree_impl::_sx_grow_tree);
@@ -156,7 +156,7 @@ btree_impl::_ux_grow_tree_core(btree_p& rp, const lpid_t &cp_pid)
     rp.copy_fence_high_key(cp_fence_high);
     rp.copy_chain_fence_high_key(cp_chain_high);
 
-    btree_p cp;
+    btree_page_h cp;
     W_DO (cp.init_fix_steal(&rp, cp_pid, rp.pid().page, rp.level(), rp.pid0(), // copy pid0 of root too
         rp.get_foster(),
         cp_fence_low, cp_fence_high, cp_chain_high, // use current root's fence keys

@@ -1369,13 +1369,13 @@ ss_m::config_info(sm_config_info_t& info)
 {
     info.page_size = ss_m::page_sz;
 
-    //however, page_p.space.acquire aligns() the whole mess (hdr + record)
+    //however, generic_page_h.space.acquire aligns() the whole mess (hdr + record)
     //which rounds up the space needed, so.... we have to figure that in
     //here: round up then subtract one aligned entity.
     // 
     // OK, now that _data is already aligned, we don't have to
     // lose those 4 bytes.
-    info.lg_rec_page_space = page_s::data_sz;
+    info.lg_rec_page_space = generic_page::data_sz;
     info.buffer_pool_size = bf->get_block_cnt() * ss_m::page_sz / 1024;
     info.max_btree_entry_size  = btree_m::max_entry_size();
     info.exts_on_page  = 0;
@@ -2429,7 +2429,7 @@ ss_m::_get_du_statistics(vid_t vid, sm_du_stats_t& du, bool audit)
 
     rc_t rc;
     // get du stats on every store
-    for (stid_t s(vid, 0); s.store < stnode_p::max; s.store++) {
+    for (stid_t s(vid, 0); s.store < stnode_page_h::max; s.store++) {
         DBG(<<"look at store " << s);
         
         store_flag_t flags;

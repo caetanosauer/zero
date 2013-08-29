@@ -2,30 +2,28 @@
  * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
  */
 
-#ifndef PAGE_S_H
-#define PAGE_S_H
+#ifndef GENERIC_PAGE_H
+#define GENERIC_PAGE_H
 
 #include "w_defines.h"
 #include "w_endian.h"
+#include "sm_s.h"
 
-#ifdef __GNUG__
-#pragma interface
-#endif
 
 enum tag_t {
-    t_bad_p            = 0,        // not used
-    t_alloc_p        = 1,        // free-page allocation page 
-    t_stnode_p         = 2,        // store node page
-    t_btree_p          = 5,        // btree page 
-    t_any_p            = 11        // indifferent
+    t_bad_p        = 0,        // not used
+    t_alloc_p      = 1,        // free-page allocation page 
+    t_stnode_p     = 2,        // store node page
+    t_btree_p      = 5,        // btree page 
+    t_any_p        = 11        // indifferent
 };
 enum page_flag_t {
-    t_tobedeleted    = 0x01,        // this page will be deleted as soon as the page is evicted from bufferpool
-    t_virgin         = 0x02,        // newly allocated page
-    t_written        = 0x08        // read in from disk
+    t_tobedeleted  = 0x01,     // this page will be deleted as soon as the page is evicted from bufferpool
+    t_virgin       = 0x02,     // newly allocated page
+    t_written      = 0x08      // read in from disk
 };
 
-class xct_t;
+
 
 /**
 * offset divided by 8 (all records are 8-byte aligned).
@@ -77,36 +75,22 @@ inline poor_man_key extract_poor_man_key (const void* key_with_prefix, size_t ke
 }
 
 
-/**\brief Basic page structure for all pages.
- * \details
- * These are persistent things. There is no hierarchy here
- * for the different page types. All the differences between
- * page types are handled by the handle classes, page_p and its
- * derived classes.
- * 
- * \section BTree-specific page headers
- * This page layout also contains the headers just for BTree to optimize on
- * the performance of BTree.
- * Anyways, remaining page-types other than BTree are only stnode and extlink.
- * For those page types, this header part is unused but not a big issue.
- * @see btree_p
- */
-class page_s {
+class generic_page_header {
 public:
     enum {
-        page_sz = SM_PAGESIZE,
-        hdr_sz = 64, // NOTICE always sync with the offsets below
-        data_sz = page_sz - hdr_sz,
+        page_sz     = SM_PAGESIZE,
+        hdr_sz      = 64, // NOTICE always sync with the offsets below
+        data_sz     = page_sz - hdr_sz,
         /** Poor man's normalized key length. */
         poormkey_sz = sizeof (poor_man_key),
-        slot_sz = sizeof(slot_offset8_t) + poormkey_sz
+        slot_sz     = sizeof(slot_offset8_t) + poormkey_sz
     };
 
  
     /** LSN (Log Sequence Number) of the last write to this page. */
     lsn_t    lsn;      // +8 -> 8
     
-    /** id of the page.*/
+    /** ID of the page.*/
     lpid_t    pid;      // +12 -> 20
     
     /** tag_t. */
@@ -212,42 +196,62 @@ public:
      * Note that this is a const function. checksum is mutable property.
      */
     void       update_checksum () const {checksum = calculate_checksum();}
-
-    char*      data_addr8(slot_offset8_t offset8) {
-        return data + to_byte_offset(offset8);
-    }
-    const char* data_addr8(slot_offset8_t offset8) const {
-        return data + to_byte_offset(offset8);
-    }
-
-    /* MUST BE 8-BYTE ALIGNED HERE */
-    char     data[data_sz];        // must be aligned
-
-
-    page_s() {
-        w_assert1(data - (const char *) this == hdr_sz);
-    }
-    ~page_s() { }
 };
 
-const uint32_t PAGE_S_CHECKSUM_MULT = 0x35D0B891;
 
-inline uint32_t page_s::calculate_checksum () const
-{
-    const unsigned char *end_p = (const unsigned char *) (data + SM_PAGESIZE - sizeof(uint32_t));
+inline uint32_t generic_page_header::calculate_checksum () const {
+    const uint32_t CHECKSUM_MULT = 0x35D0B891;
+
+    // FIXME: The current checksum ignores the headers and most of the
+    // data bytes, presumably for speed reasons.  If you start
+    // checksumming the headers, be careful of the checksum field.
+
+    const unsigned char *data      = (const unsigned char *)(this + 1);  // start of data section of this page: right after these headers
+    const unsigned char *data_last = data + data_sz - sizeof(uint32_t);  // the last 32-bit word of the data section of this page
+
     uint64_t value = 0;
-    // these values(23/511) are arbitrary, but make sure it doesn't touch
-    // the checksum field (located around 60-th bytes) itself!
-    for (const unsigned char *p = (const unsigned char *) data + 23; p < end_p; p += 511) {
+    // these values (23/511) are arbitrary
+    for (const unsigned char *p = (const unsigned char *) data + 23; p <= data_last; p += 511) {
         // be aware of alignment issue on spark! so this code is not safe
         // const uint32_t*next = reinterpret_cast<const uint32_t*>(p);
         // value ^= *next;
-        value = value * PAGE_S_CHECKSUM_MULT + p[0];
-        value = value * PAGE_S_CHECKSUM_MULT + p[1];
-        value = value * PAGE_S_CHECKSUM_MULT + p[2];
-        value = value * PAGE_S_CHECKSUM_MULT + p[3];
+        value = value * CHECKSUM_MULT + p[0];
+        value = value * CHECKSUM_MULT + p[1];
+        value = value * CHECKSUM_MULT + p[2];
+        value = value * CHECKSUM_MULT + p[3];
     }
     return ((uint32_t) (value >> 32)) ^ ((uint32_t) (value & 0xFFFFFFFF));
 }
+
+
+
+/**
+ * \brief Basic page structure for all pages.
+ * 
+ * \details
+ * These are persistent things. There is no hierarchy here
+ * for the different page types. All the differences between
+ * page types are handled by the handle classes, generic_page_h and its
+ * derived classes.
+ * 
+ * \section BTree-specific page headers
+ * This page layout also contains the headers just for BTree to optimize on
+ * the performance of BTree.
+ * Anyways, remaining page-types other than BTree are only stnode_page and alloc_page
+ * For those page types, this header part is unused but not a big issue.
+ * @see btree_page
+ */
+class generic_page : public generic_page_header {
+public:
+    generic_page() {
+        w_assert1(data - (const char *)this == hdr_sz);
+    }
+    ~generic_page() { }
+
+
+private:
+    /* MUST BE 8-BYTE ALIGNED HERE */
+    char     data[data_sz];        // must be aligned
+};
 
 #endif

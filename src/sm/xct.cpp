@@ -2294,7 +2294,7 @@ xct_t::_sync_logbuf(bool block, bool signal)
  *
  *********************************************************************/
 rc_t 
-xct_t::get_logbuf(logrec_t*& ret, int t, page_p const* p)
+xct_t::get_logbuf(logrec_t*& ret, int t, generic_page_h const* p)
 {
     // then , use tentative log buffer.
     if (is_piggy_backed_single_log_sys_xct()) {
@@ -2635,7 +2635,7 @@ xct_t::get_logbuf(logrec_t*& ret, int t, page_p const* p)
 
 // See comments above get_logbuf, above
 rc_t
-xct_t::give_logbuf(logrec_t* l, const page_p *page)
+xct_t::give_logbuf(logrec_t* l, const generic_page_h *page)
 {
     FUNC(xct_t::give_logbuf);
     // then, buffer it internally. (can be defered until next log of the _outer_ transaction)
@@ -2644,7 +2644,7 @@ xct_t::give_logbuf(logrec_t* l, const page_p *page)
         if (_deferred_ssx) {
             // in this case, we don't push it to log manager for now.
             w_assert1(page != NULL);
-            W_DO(_append_piggyback_ssx_logbuf (l, const_cast<page_p*>(page)));
+            W_DO(_append_piggyback_ssx_logbuf (l, const_cast<generic_page_h*>(page)));
             w_assert1(_log_buf_for_piggybacked_ssx_used != 0);
             w_assert1(_log_buf_for_piggybacked_ssx_target != NULL);
         } else {
@@ -2652,7 +2652,7 @@ xct_t::give_logbuf(logrec_t* l, const page_p *page)
             lsn_t lsn;
             W_DO( log->insert(*l, &lsn) );
             if (page != NULL) {
-                (const_cast<page_p*> (page))->set_lsns(lsn);
+                (const_cast<generic_page_h*> (page))->set_lsns(lsn);
             }
             w_assert1(_log_buf_for_piggybacked_ssx_used == 0);
             w_assert1(_log_buf_for_piggybacked_ssx_target == NULL);
@@ -2681,8 +2681,8 @@ xct_t::give_logbuf(logrec_t* l, const page_p *page)
     
     if (page != NULL) {
         w_assert2(page->latch_mode() == LATCH_EX);
-        const_cast<page_p*>(page)->set_lsns(_last_lsn);
-        const_cast<page_p*>(page)->set_dirty();
+        const_cast<generic_page_h*>(page)->set_lsns(_last_lsn);
+        const_cast<generic_page_h*>(page)->set_dirty();
     }
 
  done:
@@ -2740,7 +2740,7 @@ xct_t::give_logbuf(logrec_t* l, const page_p *page)
     return rc;
 }
 
-w_rc_t xct_t::_append_piggyback_ssx_logbuf(logrec_t* l, page_p *page)
+w_rc_t xct_t::_append_piggyback_ssx_logbuf(logrec_t* l, generic_page_h *page)
 {
     w_assert1(is_piggy_backed_single_log_sys_xct());
 
@@ -3148,7 +3148,7 @@ xct_t::rollback(const lsn_t &save_pt)
             u_int    was_rsvd = _log_bytes_rsvd;
 #endif 
             lpid_t pid = r.construct_pid();
-            page_p page;
+            generic_page_h page;
 
             if (! r.is_logical()) {
                 DBGOUT3 (<<"physical UNDO.. which is not quite good");
@@ -3660,7 +3660,7 @@ rc_t sys_xct_section_t::end_sys_xct (rc_t result)
     return RCOK;
 }
 
-ssx_defer_section_t::ssx_defer_section_t (page_p *page, xct_t *x) : _page(page), _x(x)
+ssx_defer_section_t::ssx_defer_section_t (generic_page_h *page, xct_t *x) : _page(page), _x(x)
 {
 #if W_DEBUG_LEVEL>0
     w_assert1(page);
