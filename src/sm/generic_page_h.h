@@ -182,8 +182,8 @@ protected:
      */
     bool check_space_for_insert(size_t rec_size);    
 
-    generic_page*                     _pp;
-    latch_mode_t                _mode;
+    generic_page* _pp;
+    latch_mode_t  _mode;
 
     friend class page_img_format_t;
     friend class page_img_format_log;
@@ -191,6 +191,7 @@ protected:
     friend class btree_header_t;
     friend class btree_impl;
     friend class btree_ghost_reserve_log;
+    friend class borrowed_btree_page_h;
 };
 
 inline const lpid_t&

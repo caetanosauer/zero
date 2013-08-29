@@ -1091,4 +1091,34 @@ inline void btree_page_h::change_slot_offset (slotid_t idx, slot_offset8_t offse
     *reinterpret_cast<slot_offset8_t*>(slot) = offset;
 }
 
+
+/**
+ * \brief Specialized variant of btree_page_h that borrows a B-tree
+ * page from a generic_page_h.
+ *
+ * \details 
+ * Borrows the latch of a generic_page_h for the duration of our
+ * existence.  Returns the latch when destroyed.  Do not use the
+ * original handle while its latch is borrowed.  Transitive borrowing
+ * is fine.
+ */
+class borrowed_btree_page_h : public btree_page_h {
+    generic_page_h* _source;
+
+public:
+    borrowed_btree_page_h(generic_page_h* source) :
+        btree_page_h(&source->persistent_part()),
+        _source(source)
+    {
+        _mode = _source->_mode;
+        _source->_mode = LATCH_NL;
+    }
+
+    ~borrowed_btree_page_h() {
+        w_assert1(_source->_mode == LATCH_NL);
+        _source->_mode = _mode;
+        _mode = LATCH_NL;
+    }
+};
+
 #endif // BTREE_PAGE_H

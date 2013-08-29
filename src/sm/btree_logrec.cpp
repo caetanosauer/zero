@@ -6,6 +6,7 @@
  * Logging and its UNDO/REDO code for BTrees.
  * Separated from logrec.cpp.
  */
+
 #include "w_defines.h"
 
 #define SM_SOURCE
@@ -18,10 +19,11 @@
 #include "vec_t.h"
 #include "page_bf_inline.h"
 
+
 struct btree_insert_t {
-    shpid_t        root_shpid;
-    uint16_t        klen;
-    uint16_t        elen;
+    shpid_t     root_shpid;
+    uint16_t    klen;
+    uint16_t    elen;
     char        data[logrec_t::max_data_sz - sizeof(shpid_t) - 2*sizeof(int16_t)];
 
     btree_insert_t(const btree_page_h& page, const w_keystr_t& key,
@@ -30,8 +32,8 @@ struct btree_insert_t {
 };
 
 btree_insert_t::btree_insert_t(
-    const btree_page_h&         _page, 
-    const w_keystr_t&         key, 
+    const btree_page_h&   _page, 
+    const w_keystr_t&     key, 
     const cvec_t&         el)
     : klen(key.get_length_as_keystr()), elen(el.size())
 {
@@ -51,8 +53,7 @@ btree_insert_log::btree_insert_log(
 }
 
 void 
-btree_insert_log::undo(generic_page_h* W_IFDEBUG9(page))
-{
+btree_insert_log::undo(generic_page_h* W_IFDEBUG9(page)) {
     w_assert9(page == 0);
     btree_insert_t* dp = (btree_insert_t*) data();
 
@@ -68,12 +69,11 @@ btree_insert_log::undo(generic_page_h* W_IFDEBUG9(page))
 }
 
 void
-btree_insert_log::redo(generic_page_h* page)
-{
-    btree_page_h* bp = (btree_page_h*) page;
+btree_insert_log::redo(generic_page_h* page) {
+    borrowed_btree_page_h bp(page);
     btree_insert_t* dp = (btree_insert_t*) data();
     
-    w_assert1(bp->is_leaf());
+    w_assert1(bp.is_leaf());
     w_keystr_t key;
     vec_t el;
     key.construct_from_keystr(dp->data, dp->klen);
@@ -85,7 +85,7 @@ btree_insert_log::redo(generic_page_h* page)
     // we already made sure the page has a ghost
     // record for the key that is enough spacious.
     // so, we just replace the record!
-    w_rc_t rc = bp->replace_ghost(key, el);
+    w_rc_t rc = bp.replace_ghost(key, el);
     if(rc.is_error()) { // can't happen. wtf?
         W_FATAL_MSG(fcINTERNAL, << "btree_insert_log::redo " );
     }
@@ -101,9 +101,9 @@ struct btree_update_t {
     btree_update_t(const generic_page_h& page, const w_keystr_t& key,
                    const char* old_el, int old_elen, const cvec_t& new_el) {
         _root_shpid = page.btree_root();
-        _klen = key.get_length_as_keystr();
-        _old_elen = old_elen;
-        _new_elen = new_el.size();
+        _klen       = key.get_length_as_keystr();
+        _old_elen   = old_elen;
+        _new_elen   = new_el.size();
         key.serialize_as_keystr(_data);
         ::memcpy (_data + _klen, old_el, old_elen);
         new_el.copy_to(_data + _klen + _old_elen);
@@ -143,10 +143,10 @@ btree_update_log::undo(generic_page_h*)
 void
 btree_update_log::redo(generic_page_h* page)
 {
-    btree_page_h* bp = (btree_page_h*) page;
+    borrowed_btree_page_h bp(page);
     btree_update_t* dp = (btree_update_t*) data();
     
-    w_assert1(bp->is_leaf());
+    w_assert1(bp.is_leaf());
     w_keystr_t key;
     key.construct_from_keystr(dp->_data, dp->_klen);
     vec_t old_el;
@@ -157,12 +157,12 @@ btree_update_log::redo(generic_page_h* page)
     // PHYSICAL redo
     slotid_t       slot;
     bool           found;
-    bp->search(key, found, slot);
+    bp.search(key, found, slot);
     if (!found) {
         W_FATAL_MSG(fcINTERNAL, << "btree_update_log::redo(): not found");
         return;
     }
-    w_rc_t rc = bp->replace_el_nolog(slot, new_el);
+    w_rc_t rc = bp.replace_el_nolog(slot, new_el);
     if(rc.is_error()) { // can't happen. wtf?
         W_FATAL_MSG(fcINTERNAL, << "btree_update_log::redo(): couldn't replace");
     }
@@ -178,9 +178,9 @@ struct btree_overwrite_t {
     btree_overwrite_t(const generic_page_h& page, const w_keystr_t& key,
             const char* old_el, const char *new_el, size_t offset, size_t elen) {
         _root_shpid = page.btree_root();
-        _klen = key.get_length_as_keystr();
-        _offset = offset;
-        _elen = elen;
+        _klen       = key.get_length_as_keystr();
+        _offset     = offset;
+        _elen       = elen;
         key.serialize_as_keystr(_data);
         ::memcpy (_data + _klen, old_el + offset, elen);
         ::memcpy (_data + _klen + elen, new_el, elen);
@@ -216,10 +216,10 @@ void btree_overwrite_log::undo(generic_page_h*)
 
 void btree_overwrite_log::redo(generic_page_h* page)
 {
-    btree_page_h* bp = (btree_page_h*) page;
+    borrowed_btree_page_h bp(page);
     btree_overwrite_t* dp = (btree_overwrite_t*) data();
     
-    w_assert1(bp->is_leaf());
+    w_assert1(bp.is_leaf());
 
     uint16_t elen = dp->_elen;
     uint16_t offset = dp->_offset;
@@ -230,7 +230,7 @@ void btree_overwrite_log::redo(generic_page_h* page)
     // PHYSICAL redo
     slotid_t       slot;
     bool           found;
-    bp->search(key, found, slot);
+    bp.search(key, found, slot);
     if (!found) {
         W_FATAL_MSG(fcINTERNAL, << "btree_overwrite_log::redo(): not found");
         return;
@@ -241,13 +241,13 @@ void btree_overwrite_log::redo(generic_page_h* page)
     const char* cur_el;
     smsize_t cur_elen;
     bool ghost;
-    bp->dat_leaf_ref(slot, cur_el, cur_elen, ghost);
+    bp.dat_leaf_ref(slot, cur_el, cur_elen, ghost);
     w_assert1(!ghost);
     w_assert1(cur_elen >= offset + elen);
     w_assert1(::memcmp(old_el, cur_el + offset, elen) == 0);
 #endif //W_DEBUG_LEVEL>0
 
-    bp->overwrite_el_nolog(slot, offset, new_el, elen);
+    bp.overwrite_el_nolog(slot, offset, new_el, elen);
 }
 
 /** header log object for BTree pages. */
@@ -423,20 +423,20 @@ btree_ghost_mark_log::redo(generic_page_h *page)
 {
     // REDO is physical. mark the record as ghost again.
     w_assert1(page);
-    btree_page_h *bp = (btree_page_h*) page;
-    w_assert1(bp->is_leaf());
+    borrowed_btree_page_h bp(page);
+    w_assert1(bp.is_leaf());
     btree_ghost_t* dp = (btree_ghost_t*) data();
     for (size_t i = 0; i < dp->cnt; ++i) {
         w_keystr_t key (dp->get_key(i));
-        w_assert2(bp->fence_contains(key));
+        w_assert2(bp.fence_contains(key));
         bool found;
         slotid_t slot;
-        bp->search_leaf(key, found, slot);
+        bp.search_leaf(key, found, slot);
         if (!found) {
             cerr << " key=" << key << endl << " not found in btree_ghost_mark_log::redo" << endl;
             w_assert1(false); // something unexpected, but can go on.
         }
-        bp->mark_ghost(slot);
+        bp.mark_ghost(slot);
     }
 }
 
@@ -452,11 +452,11 @@ void
 btree_ghost_reclaim_log::redo(generic_page_h* page)
 {
     // REDO is to defrag it again
-    btree_page_h* bp = (btree_page_h*) page;
+    borrowed_btree_page_h bp(page);
     // TODO actually should reclaim only logged entries because
     // locked entries might have been avoided.
     // (but in that case shouldn't defragging the page itself be avoided?)
-    rc_t rc = btree_impl::_sx_defrag_page(*bp);
+    rc_t rc = btree_impl::_sx_defrag_page(bp);
     if (rc.is_error()) {
         W_FATAL(rc.err_num());
     }
@@ -490,14 +490,14 @@ btree_ghost_reserve_log::btree_ghost_reserve_log (
 void btree_ghost_reserve_log::redo(generic_page_h* page)
 {
     // REDO is to physically make the ghost record
-    btree_page_h* bp = (btree_page_h*) page;
+    borrowed_btree_page_h bp(page);
     // ghost creation is single-log system transaction. so, use data_ssx()
     btree_ghost_reserve_t* dp = (btree_ghost_reserve_t*) data_ssx();
 
     // PHYSICAL redo.
-    w_assert1(bp->is_leaf());
-    bp->reserve_ghost(dp->data, dp->klen, dp->record_size);
-    w_assert3(bp->is_consistent(true, true));
+    w_assert1(bp.is_leaf());
+    bp.reserve_ghost(dp->data, dp->klen, dp->record_size);
+    w_assert3(bp.is_consistent(true, true));
 }
 
 // log for Split (+adopt if intermediate node)
@@ -534,9 +534,9 @@ void btree_foster_split_log::redo(generic_page_h* page)
 {
     // by careful-write-ordering, foster-parent can't be written out before foster-child
     // so, foster-parent still holds all data to recover
-    btree_page_h* foster_parent = (btree_page_h*) page;
+    borrowed_btree_page_h foster_parent(page);
     btree_foster_split_t *dp = (btree_foster_split_t*) _data;
-    w_keystr_t mid_key = foster_parent->recalculate_fence_for_split(dp->_right_begins_from);
+    w_keystr_t mid_key = foster_parent.recalculate_fence_for_split(dp->_right_begins_from);
     lpid_t new_pid = page->pid();
     new_pid.page = dp->_foster_child_pid;
     // also, as a special case, we don't care what the new_page looks like at this point.
@@ -548,7 +548,7 @@ void btree_foster_split_log::redo(generic_page_h* page)
         new_child_key.construct_from_keystr(dp->data, dp->_new_child_key_len);
         new_child_key_ptr = &new_child_key;
     }
-    rc_t rc = btree_impl::_ux_split_foster_apply(*foster_parent,
+    rc_t rc = btree_impl::_ux_split_foster_apply(foster_parent,
         dp->_right_begins_from, mid_key, new_pid, new_child_key_ptr, dp->_new_child_pid);
     if (rc.is_error()) {
         W_FATAL(rc.err_num());
@@ -582,12 +582,12 @@ btree_foster_norecord_split_log::btree_foster_norecord_split_log(const btree_pag
 }
 void btree_foster_norecord_split_log::redo(generic_page_h* page)
 {
-    btree_page_h* foster_parent = (btree_page_h*) page;
+    borrowed_btree_page_h foster_parent(page);
     btree_foster_norecord_split_t *dp = (btree_foster_norecord_split_t*) _data;
     w_keystr_t fence_high, chain_fence_high;
     fence_high.construct_from_keystr(dp->data, dp->_fence_high_len);
     chain_fence_high.construct_from_keystr(dp->data + dp->_fence_high_len, dp->_chain_fence_high_len);
-    rc_t rc = foster_parent->norecord_split(dp->_foster, fence_high, chain_fence_high);
+    rc_t rc = foster_parent.norecord_split(dp->_foster, fence_high, chain_fence_high);
     if (rc.is_error()) {
         W_FATAL(rc.err_num());
     }
@@ -616,11 +616,11 @@ btree_foster_adopt_parent_log::btree_foster_adopt_parent_log (const btree_page_h
 void btree_foster_adopt_parent_log::redo(generic_page_h* page)
 {
     // just call apply() function
-    btree_page_h* foster_parent = (btree_page_h*) page;
+    borrowed_btree_page_h foster_parent(page);
     btree_foster_adopt_parent_t *dp = (btree_foster_adopt_parent_t*) _data;
     w_keystr_t new_child_key;
     new_child_key.construct_from_keystr(dp->data, dp->_new_child_key_len);
-    rc_t rc = btree_impl::_ux_adopt_foster_apply_parent(*foster_parent, dp->_new_child_pid, new_child_key);
+    rc_t rc = btree_impl::_ux_adopt_foster_apply_parent(foster_parent, dp->_new_child_pid, new_child_key);
     if (rc.is_error()) {
         W_FATAL(rc.err_num());
     }
@@ -631,8 +631,8 @@ btree_foster_adopt_child_log::btree_foster_adopt_child_log (const btree_page_h& 
 void btree_foster_adopt_child_log::redo(generic_page_h* page)
 {
     // just call apply() function
-    btree_page_h* foster_child = (btree_page_h*) page;
-    btree_impl::_ux_adopt_foster_apply_child(*foster_child);
+    borrowed_btree_page_h foster_child(page);
+    btree_impl::_ux_adopt_foster_apply_child(foster_child);
 }
 
 // logs for Merge/Rebalance/De-Adopt
@@ -648,10 +648,10 @@ void btree_foster_merge_log::redo(generic_page_h* page)
     // REDO is to merge it again.
     // Because of careful-write-order, the merged page must still exist.
     // Otherwise, this page's REDO shouldn't have been called.
-    btree_page_h* bp = (btree_page_h*) page;
+    borrowed_btree_page_h bp(page);
     W_IFDEBUG1(shpid_t merged_pid = *((shpid_t*) _data));
-    w_assert1(bp->get_foster() == merged_pid); // otherwise, already merged!
-    rc_t rc = btree_impl::_ux_merge_foster_core(*bp);
+    w_assert1(bp.get_foster() == merged_pid); // otherwise, already merged!
+    rc_t rc = btree_impl::_ux_merge_foster_core(bp);
     w_assert1(!rc.is_error());
 }
 
@@ -674,7 +674,7 @@ void btree_foster_rebalance_log::redo(generic_page_h* page)
 {
     // REDO is to rebalance it again.
     // "This" page must be foster-child which received entries.
-    btree_page_h* bp = (btree_page_h*) page;
+    borrowed_btree_page_h bp(page);
     btree_foster_rebalance_t *dp = (btree_foster_rebalance_t*) _data;
     
     // TODO we should have two logs; one for receiver, one for sender.
@@ -682,9 +682,9 @@ void btree_foster_rebalance_log::redo(generic_page_h* page)
     // where "this" is already written out but parent isn't yet.
     // so, "this" must be the child, stealing things from parent. oh lame kid.
     btree_page_h foster_parent_p;
-    rc_t rc = foster_parent_p.fix_direct(bp->vol(), dp->_foster_parent_pid, LATCH_EX); // in REDO, so fix_direct should be safe
+    rc_t rc = foster_parent_p.fix_direct(bp.vol(), dp->_foster_parent_pid, LATCH_EX); // in REDO, so fix_direct should be safe
     w_assert1(!rc.is_error());
-    rc_t rc_rb = btree_impl::_ux_rebalance_foster_core(foster_parent_p, *bp, dp->_move_count);
+    rc_t rc_rb = btree_impl::_ux_rebalance_foster_core(foster_parent_p, bp, dp->_move_count);
     w_assert1(!rc_rb.is_error());
 }
 
@@ -710,10 +710,10 @@ btree_foster_deadopt_real_parent_log::btree_foster_deadopt_real_parent_log (
 void btree_foster_deadopt_real_parent_log::redo(generic_page_h* page)
 {
     // apply changes on real-parent again. no write-order dependency with foster-parent
-    btree_page_h* bp = (btree_page_h*) page;
+    borrowed_btree_page_h bp(page);
     btree_foster_deadopt_real_parent_t *dp = (btree_foster_deadopt_real_parent_t*) _data;
     w_assert1(dp->_foster_slot >= 0 && dp->_foster_slot < page->nslots());
-    btree_impl::_ux_deadopt_foster_apply_real_parent(*bp, dp->_deadopted_pid, dp->_foster_slot);
+    btree_impl::_ux_deadopt_foster_apply_real_parent(bp, dp->_deadopted_pid, dp->_foster_slot);
 }
 
 struct btree_foster_deadopt_foster_parent_t {
@@ -742,13 +742,13 @@ btree_foster_deadopt_foster_parent_log::btree_foster_deadopt_foster_parent_log (
 void btree_foster_deadopt_foster_parent_log::redo(generic_page_h* page)
 {
     // apply changes on foster-parent again. no write-order dependency with real-parent
-    btree_page_h* bp = (btree_page_h*) page;
+    borrowed_btree_page_h bp(page);
     btree_foster_deadopt_foster_parent_t *dp = (btree_foster_deadopt_foster_parent_t*) _data;
     
     w_keystr_t low_key, high_key;
     low_key.construct_from_keystr(dp->data, dp->_low_key_len);
     high_key.construct_from_keystr(dp->data + dp->_low_key_len, dp->_high_key_len);
-    btree_impl::_ux_deadopt_foster_apply_foster_parent(*bp, dp->_deadopted_pid, low_key, high_key);
+    btree_impl::_ux_deadopt_foster_apply_foster_parent(bp, dp->_deadopted_pid, low_key, high_key);
 }
 
 btree_noop_log::btree_noop_log (const btree_page_h& p) {
