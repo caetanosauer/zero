@@ -44,7 +44,7 @@ w_rc_t dosome(ss_m* ssm, test_volume_t *test_volume) {
     typedef unsigned int size_t;
     size_t const domain = 100000;
     // size_t const records= 30000;  // this works, but takes longer 
-    size_t const records= 3000; 
+    size_t const records= 8000; 
     off_t  const logpagesize = 8192; // quantum of log file size
     off_t  logsize = 0; // log file size. Should grow monotonically.
     off_t  logsize2 = 0; // log file size. Should grow monotonically.
@@ -64,7 +64,7 @@ w_rc_t dosome(ss_m* ssm, test_volume_t *test_volume) {
 
     // Get initial size of current log partition
     log_core::THE_LOG->make_log_name(cur_partition_number, fname, smlevel_0::max_devname);  
-    stat( fname, &filestatus );
+    assert (0 == stat( fname, &filestatus ));
     logsize = filestatus.st_size;
     std::cout << "Initial log [" << fname << "] " << logsize << " bytes\n";
 
