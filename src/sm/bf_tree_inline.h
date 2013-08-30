@@ -40,13 +40,13 @@ inline bf_idx bf_tree_m::get_idx(const bf_tree_cb_t* cb) const {
 #endif
 }
 
-inline bf_tree_cb_t* bf_tree_m::get_cb(const page_s *page) {
+inline bf_tree_cb_t* bf_tree_m::get_cb(const generic_page *page) {
     bf_idx idx = page - _buffer;
     w_assert1(idx > 0 && idx < _block_cnt);
     return get_cbp(idx);
 }
 
-inline page_s* bf_tree_m::get_page(const bf_tree_cb_t *cb) {
+inline generic_page* bf_tree_m::get_page(const bf_tree_cb_t *cb) {
     bf_idx idx = get_idx(cb);
     w_assert1(idx > 0 && idx < _block_cnt);
     return _buffer + idx;
@@ -59,14 +59,14 @@ inline shpid_t bf_tree_m::get_root_page_id(volid_t vol, snum_t store) {
     if (idx == 0 || idx >= _block_cnt) {
         return 0;
     }
-    page_s* page = _buffer + idx;
+    generic_page* page = _buffer + idx;
     return page->pid.page;
 }
 
 ///////////////////////////////////   Page fix/unfix BEGIN         ///////////////////////////////////  
 const uint32_t SWIZZLED_LRU_UPDATE_INTERVAL = 1000;
 
-inline w_rc_t bf_tree_m::refix_direct (page_s*& page, bf_idx idx, latch_mode_t mode, bool conditional) {
+inline w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx idx, latch_mode_t mode, bool conditional) {
     bf_tree_cb_t &cb = get_cb(idx);
     w_assert1(cb.pin_cnt() > 0);
     W_DO(cb.latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
@@ -78,7 +78,7 @@ inline w_rc_t bf_tree_m::refix_direct (page_s*& page, bf_idx idx, latch_mode_t m
     return RCOK;
 }
 
-inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
+inline w_rc_t bf_tree_m::fix_nonroot (generic_page*& page, generic_page *parent, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
 #ifdef SIMULATE_MAINMEMORYDB
     if (virgin_page) {
         W_DO (_fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page));
@@ -169,7 +169,7 @@ inline w_rc_t bf_tree_m::fix_nonroot (page_s*& page, page_s *parent, volid_t vol
     return RCOK;
 }
 
-inline w_rc_t bf_tree_m::fix_virgin_root (page_s*& page, volid_t vol, snum_t store, shpid_t shpid) {
+inline w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, volid_t vol, snum_t store, shpid_t shpid) {
     w_assert1(vol != 0);
     w_assert1(store != 0);
     w_assert1(shpid != 0);
@@ -214,7 +214,7 @@ inline w_rc_t bf_tree_m::fix_virgin_root (page_s*& page, volid_t vol, snum_t sto
     return _latch_root_page(page, idx, LATCH_EX, false);
 }
 
-inline w_rc_t bf_tree_m::fix_root (page_s*& page, volid_t vol, snum_t store, latch_mode_t mode, bool conditional) {
+inline w_rc_t bf_tree_m::fix_root (generic_page*& page, volid_t vol, snum_t store, latch_mode_t mode, bool conditional) {
     w_assert1(vol != 0);
     w_assert1(store != 0);
     bf_tree_vol_t *volume = _volumes[vol];
@@ -249,7 +249,7 @@ inline w_rc_t bf_tree_m::fix_root (page_s*& page, volid_t vol, snum_t store, lat
     return _latch_root_page(page, idx, mode, conditional);
 }
 
-inline w_rc_t bf_tree_m::_latch_root_page(page_s*& page, bf_idx idx, latch_mode_t mode, bool conditional) {
+inline w_rc_t bf_tree_m::_latch_root_page(generic_page*& page, bf_idx idx, latch_mode_t mode, bool conditional) {
     
 #ifdef SIMULATE_NO_SWIZZLING
     _increment_pin_cnt_no_assumption(idx);
@@ -274,7 +274,7 @@ inline w_rc_t bf_tree_m::_latch_root_page(page_s*& page, bf_idx idx, latch_mode_
     return RCOK;
 }
 
-inline void bf_tree_m::unfix(const page_s* p) {
+inline void bf_tree_m::unfix(const generic_page* p) {
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
     bf_tree_cb_t &cb = get_cb(idx);
@@ -282,7 +282,7 @@ inline void bf_tree_m::unfix(const page_s* p) {
     cb.latch().latch_release();
 }
 
-inline void bf_tree_m::set_dirty(const page_s* p) {
+inline void bf_tree_m::set_dirty(const generic_page* p) {
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
     bf_tree_cb_t &cb = get_cb(idx);
@@ -291,19 +291,19 @@ inline void bf_tree_m::set_dirty(const page_s* p) {
         ++_dirty_page_count_approximate;
     }
 }
-inline bool bf_tree_m::is_dirty(const page_s* p) const {
+inline bool bf_tree_m::is_dirty(const generic_page* p) const {
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
     return get_cb(idx)._dirty;
 }
 
-inline latch_mode_t bf_tree_m::latch_mode(const page_s* p) {
+inline latch_mode_t bf_tree_m::latch_mode(const generic_page* p) {
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
     return get_cb(idx).latch().mode();
 }
 
-inline void bf_tree_m::downgrade_latch(const page_s* p) {
+inline void bf_tree_m::downgrade_latch(const generic_page* p) {
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
     bf_tree_cb_t &cb = get_cb(idx);
@@ -311,7 +311,7 @@ inline void bf_tree_m::downgrade_latch(const page_s* p) {
     cb.latch().downgrade();
 }
 
-inline bool bf_tree_m::upgrade_latch_conditional(const page_s* p) {
+inline bool bf_tree_m::upgrade_latch_conditional(const generic_page* p) {
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
     bf_tree_cb_t &cb = get_cb(idx);
@@ -341,7 +341,7 @@ inline bool bf_tree_m::_is_in_swizzled_lru (bf_idx idx) const {
     return SWIZZLED_LRU_NEXT(idx) != 0 || SWIZZLED_LRU_PREV(idx) != 0 || SWIZZLED_LRU_HEAD == idx;
 }
 #endif // BP_MAINTAIN_PARNET_PTR
-inline bool bf_tree_m::is_swizzled(const page_s* page) const
+inline bool bf_tree_m::is_swizzled(const generic_page* page) const
 {
     bf_idx idx = page - _buffer;
     w_assert1 (_is_active_idx(idx));
@@ -367,7 +367,7 @@ inline void pin_for_refix_holder::release() {
 
 
 inline shpid_t bf_tree_m::normalize_shpid(shpid_t shpid) const {
-    page_s* page;
+    generic_page* page;
 #ifdef SIMULATE_MAINMEMORYDB
     bf_idx idx = shpid;
     page = &_buffer[idx];

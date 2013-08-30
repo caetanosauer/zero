@@ -943,7 +943,7 @@ restart_m::redo_pass(
                     /*
                      *  Fix the page.
                      */ 
-                    page_p page;
+                    generic_page_h page;
 
                     /* 
                      * The following code determines whether to perform

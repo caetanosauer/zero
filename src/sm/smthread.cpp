@@ -62,8 +62,10 @@ smthread_t::tcb_t::create_TL_stats() {
 void 
 smthread_t::tcb_t::destroy_TL_stats() {
     if(_TL_stats) {
-        // Global stats are protected by a mutex
-        smlevel_0::add_to_global_stats(TL_stats()); // before detaching them
+        if (smlevel_0::statistics_enabled) {
+            // Global stats are protected by a mutex
+            smlevel_0::add_to_global_stats(TL_stats()); // before detaching them
+        }
         delete _TL_stats;
         _TL_stats = NULL;
     }

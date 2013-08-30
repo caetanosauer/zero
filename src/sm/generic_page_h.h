@@ -2,36 +2,33 @@
  * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
  */
 
-#ifndef PAGE_H
-#define PAGE_H
+#ifndef GENERIC_PAGE_H_H
+#define GENERIC_PAGE_H_H
 
 #include "w_defines.h"
 
-class stnode_p;
-class alloc_p;
-
-#ifdef __GNUG__
-#pragma interface
-#endif
+class stnode_page_h;
+class alloc_page_h;
 
 #include "bf_idx.h"
 #include "stid_t.h"
 #include "vid_t.h"
-#include "page_s.h"
+#include "generic_page.h"
 #include "latch.h"
 #include <string.h>
+
+
 
 /**
  *  Basic page handle class.
  */
-class page_p
-{
+class generic_page_h {
 public:
     enum {
-        page_sz = sizeof(page_s),
-        data_sz = page_s::data_sz,
-        hdr_sz = page_s::hdr_sz,
-        slot_sz = page_s::slot_sz
+        page_sz = sizeof(generic_page),
+        data_sz = generic_page::data_sz,
+        hdr_sz = generic_page::hdr_sz,
+        slot_sz = generic_page::slot_sz
     };
     enum logical_operation {
         l_none=0,
@@ -42,11 +39,11 @@ public:
         l_not
     };
 
-    page_p() : _pp(NULL), _mode(LATCH_NL) {}
+    generic_page_h() : _pp(NULL), _mode(LATCH_NL) {}
     /**
      * Imaginery 'fix' for a non-bufferpool-managed page.
      */
-    page_p(page_s* s) : _pp(s), _mode(LATCH_NL) {
+    generic_page_h(generic_page* s) : _pp(s), _mode(LATCH_NL) {
         w_assert1(s != NULL);
     }
 
@@ -54,15 +51,15 @@ public:
     void                        unfix ();
 
 
-    ~page_p() {
+    ~generic_page_h() {
         unfix();
     }
-    page_p& operator=(page_p& p) {
+    generic_page_h& operator=(generic_page_h& p) {
         // this steals the ownership of the page/latch
         steal_ownership(p);
         return *this;
     }
-    void steal_ownership (page_p& p) {
+    void steal_ownership (generic_page_h& p) {
         unfix();
         _pp = p._pp;
         _mode = p._mode;
@@ -84,7 +81,7 @@ public:
      * @param[in] virgin_page whether the page is a new page thus doesn't have to be read from disk.
      * To use this method, you need to include page_bf_inline.h.
      */
-    w_rc_t                      fix_nonroot (const page_p &parent, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional = false, bool virgin_page = false);
+    w_rc_t                      fix_nonroot (const generic_page_h &parent, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional = false, bool virgin_page = false);
 
     /**
      * Fixes any page (root or non-root) in the bufferpool without pointer swizzling.
@@ -158,24 +155,11 @@ public:
     /** Unset the deletion flag. This is only used by UNDO, so no logging. and no failure possible. */
     void                         unset_tobedeleted ();
     
-    char*                        data_addr8(slot_offset8_t offset8);
-    const char*                  data_addr8(slot_offset8_t offset8) const;
     slotid_t                     nslots() const;
-    slot_offset8_t               tuple_offset8(slotid_t idx) const;
-    poor_man_key                 tuple_poormkey (slotid_t idx) const;
-    void                         tuple_both (slotid_t idx, slot_offset8_t &offset8, poor_man_key &poormkey) const;
-    void*                        tuple_addr(slotid_t idx) const;
-
-    char*                        slot_addr(slotid_t idx) const;
-    /**
-     * Changes only the offset part of the specified slot.
-     * Used to turn a ghost record into a usual record, or to expand a record.
-     */
-    void                         change_slot_offset (slotid_t idx, slot_offset8_t offset8);
 
     uint32_t                     page_flags() const;
-    page_s&                      persistent_part();
-    const page_s&                persistent_part_const() const;
+    generic_page&                      persistent_part();
+    const generic_page&                persistent_part_const() const;
     bool                         is_fixed() const;
     latch_mode_t                 latch_mode() const { return _mode; }
     bool                         is_latched() const { return _mode != LATCH_NL; }
@@ -198,8 +182,8 @@ protected:
      */
     bool check_space_for_insert(size_t rec_size);    
 
-    page_s*                     _pp;
-    latch_mode_t                _mode;
+    generic_page* _pp;
+    latch_mode_t  _mode;
 
     friend class page_img_format_t;
     friend class page_img_format_log;
@@ -207,123 +191,82 @@ protected:
     friend class btree_header_t;
     friend class btree_impl;
     friend class btree_ghost_reserve_log;
+    friend class borrowed_btree_page_h;
 };
 
 inline const lpid_t&
-page_p::pid() const
+generic_page_h::pid() const
 {
     return _pp->pid;
 }
 inline volid_t
-page_p::vol() const
+generic_page_h::vol() const
 {
     return _pp->pid.vol().vol;
 }
 inline snum_t
-page_p::store() const
+generic_page_h::store() const
 {
     return _pp->pid.store();
 }
 
 inline void
-page_p::set_vid(vid_t vid)
+generic_page_h::set_vid(vid_t vid)
 {
     _pp->pid._stid.vol = vid;
 }
 inline smsize_t 
-page_p::used_space() const
+generic_page_h::used_space() const
 {
     return (data_sz - _pp->get_record_head_byte() + nslots() * slot_sz); 
 }
 
 inline smsize_t
-page_p::usable_space() const
+generic_page_h::usable_space() const
 {
     size_t contiguous_free_space = _pp->get_record_head_byte() - slot_sz * nslots();
     return contiguous_free_space; 
 }
 
-inline char* page_p::data_addr8(slot_offset8_t offset8)
-{
-    return _pp->data_addr8(offset8);
-}
-inline const char* page_p::data_addr8(slot_offset8_t offset8) const
-{
-    return _pp->data_addr8(offset8);
-}
-inline char* page_p::slot_addr(slotid_t idx) const
-{
-    w_assert3(idx >= 0 && idx <= _pp->nslots);
-    return _pp->data + (slot_sz * idx);
-}
-
-inline slot_offset8_t
-page_p::tuple_offset8(slotid_t idx) const
-{
-    return *reinterpret_cast<const slot_offset8_t*>(slot_addr(idx));
-}
-inline poor_man_key page_p::tuple_poormkey (slotid_t idx) const
-{
-    return *reinterpret_cast<const poor_man_key*>(slot_addr(idx) + sizeof(slot_offset8_t));
-}
-inline void page_p::tuple_both (slotid_t idx, slot_offset8_t &offset8, poor_man_key &poormkey) const
-{
-    const char* slot = slot_addr(idx);
-    offset8 = *reinterpret_cast<const slot_offset8_t*>(slot);
-    poormkey = *reinterpret_cast<const poor_man_key*>(slot + sizeof(slot_offset8_t));
-}
-
-inline void*
-page_p::tuple_addr(slotid_t idx) const
-{
-    slot_offset8_t offset8 = tuple_offset8(idx);
-    if (offset8 < 0) offset8 = -offset8; // ghost record.
-    return _pp->data_addr8(offset8);
-}
-
-inline void page_p::change_slot_offset (slotid_t idx, slot_offset8_t offset) {
-    char* slot = slot_addr(idx);
-    *reinterpret_cast<slot_offset8_t*>(slot) = offset;
-}
 
 inline uint32_t
-page_p::page_flags() const
+generic_page_h::page_flags() const
 {
     return _pp->page_flags;
 }
 
-inline page_s&
-page_p::persistent_part()
+inline generic_page&
+generic_page_h::persistent_part()
 {
-    return *(page_s*) _pp;
+    return *(generic_page*) _pp;
 }
 
-inline const page_s&
-page_p::persistent_part_const() const
+inline const generic_page&
+generic_page_h::persistent_part_const() const
 {
-    return *(page_s*) _pp; 
+    return *(generic_page*) _pp; 
 }
 
 inline bool
-page_p::is_fixed() const
+generic_page_h::is_fixed() const
 {
     return _pp != 0;
 }
 
 inline slotid_t
-page_p::nslots() const
+generic_page_h::nslots() const
 {
     return _pp->nslots;
 }
 
 inline const lsn_t& 
-page_p::lsn() const
+generic_page_h::lsn() const
 {
     return _pp->lsn;
 }
 
 inline void 
-page_p::set_lsns(const lsn_t& lsn)
+generic_page_h::set_lsns(const lsn_t& lsn)
 {
     _pp->lsn = lsn;
 }

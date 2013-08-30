@@ -1,11 +1,11 @@
 #include "btree_test_env.h"
-#include "page_s.h"
+#include "generic_page.h"
 #include "bf.h"
 #include "bf_core.h"
 #include "btree.h"
-#include "btree_p.h"
+#include "btree_page.h"
 #include "btree_impl.h"
-#include "page.h"
+#include "generic_page_h.h"
 #include "log.h"
 #include "w_error.h"
 
@@ -26,22 +26,22 @@ btree_test_env *test_env;
  */
 class test_bf_tree {
 public:
-    static bf_idx get_bf_idx (bf_tree_m *bf, page_s* page) {
+    static bf_idx get_bf_idx (bf_tree_m *bf, generic_page* page) {
         return (page - bf->_buffer);
     }
-    static bf_tree_cb_t* get_bf_control_block (bf_tree_m *bf, page_s* page) {
+    static bf_tree_cb_t* get_bf_control_block (bf_tree_m *bf, generic_page* page) {
         bf_idx idx = get_bf_idx(bf, page);
         return bf->get_cbp(idx);
     }
 };
 
 /** manually emulate the btree page layout */
-void _add_child_pointer (page_s *page, shpid_t child) {
-    page_p p (page);
+void _add_child_pointer (generic_page *page, shpid_t child) {
+    btree_page_h p (page);
     slotid_t slot = page->nslots;
     ++page->nslots;
     char* slot_p = p.slot_addr(slot);
-    *reinterpret_cast<slot_offset8_t*>(slot_p) = (page_s::data_sz / 8) - (slot + 1) * 2; // 16 bytes per record.
+    *reinterpret_cast<slot_offset8_t*>(slot_p) = (generic_page::data_sz / 8) - (slot + 1) * 2; // 16 bytes per record.
     if (slot == 0) {
         page->btree_pid0 = child;
     } else {
@@ -74,14 +74,15 @@ w_rc_t test_bf_fix_virgin_root(ss_m* /*ssm*/, test_volume_t *test_volume) {
     lsn_t thelsn = smlevel_0::log->curr_lsn();
     bf_tree_m &pool(*smlevel_0::bf);
     for (size_t i = 1; i < 4; ++i) {
-        page_s *page = NULL;
+        generic_page *page = NULL;
         lpid_t pid (test_volume->_vid, i, i + 10);
         W_DO(pool.fix_virgin_root(page, test_volume->_vid, i, i + 10));
         EXPECT_TRUE (page != NULL);
         if (page != NULL) {
-            ::memset(page, 0, sizeof(page_s));
+            ::memset(page, 0, sizeof(generic_page));
             page->pid = pid;
             page->lsn = thelsn;
+            page->tag = t_btree_p;
             page->btree_level = 1;
             pool.set_dirty(page);
             pool.unfix(page);
@@ -116,27 +117,29 @@ w_rc_t test_bf_fix_virgin_child(ss_m* /*ssm*/, test_volume_t *test_volume) {
     lsn_t thelsn = smlevel_0::log->curr_lsn();
     lpid_t root_pid(test_volume->_vid, 1, 11);
 
-    page_s *root_page = NULL;
+    generic_page *root_page = NULL;
     W_DO(pool.fix_virgin_root(root_page, test_volume->_vid, 1, 11));
     EXPECT_TRUE (root_page != NULL);
-    ::memset(root_page, 0, sizeof(page_s));
+    ::memset(root_page, 0, sizeof(generic_page));
     root_page->pid = root_pid;
     root_page->lsn = thelsn;
+    root_page->tag = t_btree_p;
     root_page->btree_level = 2;
     root_page->btree_foster = 0;
     root_page->nslots = 0;
 
     for (size_t i = 0; i < 3; ++i) {
-        page_s *page = NULL;
+        generic_page *page = NULL;
         lpid_t pid (test_volume->_vid, 1, root_pid.page + 1 + i);
         _add_child_pointer (root_page, pid.page);
 
         W_DO(pool.fix_nonroot(page, root_page, pid.vol().vol, pid.page, LATCH_EX, false, true));
         EXPECT_TRUE (page != NULL);
         if (page != NULL) {
-            ::memset(page, 0, sizeof(page_s));
+            ::memset(page, 0, sizeof(generic_page));
             page->pid = pid;
             page->lsn = thelsn;
+            page->tag = t_btree_p;
             page->btree_level = 1;
             pool.set_dirty(page);
             pool.unfix(page);
@@ -151,6 +154,7 @@ w_rc_t test_bf_fix_virgin_child(ss_m* /*ssm*/, test_volume_t *test_volume) {
             EXPECT_EQ(pid.store(), page->pid.store());
             EXPECT_EQ(test_volume->_vid.vol, page->pid.vol().vol);
             EXPECT_EQ(thelsn, page->lsn);
+            EXPECT_EQ(t_btree_p, page->tag);
             EXPECT_EQ(1, page->btree_level);
             pool.unfix(page);
         }
@@ -174,12 +178,13 @@ w_rc_t test_bf_evict(ss_m* /*ssm*/, test_volume_t *test_volume) {
     lsn_t thelsn = smlevel_0::log->curr_lsn();
     lpid_t root_pid(test_volume->_vid, 1, 3);
 
-    page_s *root_page = NULL;
+    generic_page *root_page = NULL;
     W_DO(pool.fix_virgin_root(root_page, test_volume->_vid, root_pid.store(), root_pid.page));
     EXPECT_TRUE (root_page != NULL);
-    ::memset(root_page, 0, sizeof(page_s));
+    ::memset(root_page, 0, sizeof(generic_page));
     root_page->pid = root_pid;
     root_page->lsn = thelsn;
+    root_page->tag = t_btree_p;
     root_page->btree_level = 2;
     root_page->btree_foster = 0;
     root_page->nslots = 0;
@@ -189,11 +194,11 @@ w_rc_t test_bf_evict(ss_m* /*ssm*/, test_volume_t *test_volume) {
     // see the comments around "WARNING!! bf_tree_m: page id doesn't match!" in bufferpool code.
     const size_t keep_latch_i = 23; // this page will be kept latched
     bf_idx keep_latch_idx = 0;
-    page_s* keep_latch_page = NULL;
+    generic_page* keep_latch_page = NULL;
     std::set<bf_idx> dirty_idx;
     dirty_idx.insert (test_bf_tree::get_bf_idx(&pool, root_page));
     for (size_t i = 0; i < 40; ++i) {
-        page_s *page = NULL;
+        generic_page *page = NULL;
         lpid_t pid (test_volume->_vid, 1, root_pid.page + 1 + i);
         _add_child_pointer (root_page, pid.page);
 
@@ -202,9 +207,10 @@ w_rc_t test_bf_evict(ss_m* /*ssm*/, test_volume_t *test_volume) {
         if (page != NULL) {
             bf_idx idx = test_bf_tree::get_bf_idx(&pool, page);
             EXPECT_TRUE (dirty_idx.find (idx) == dirty_idx.end());
-            ::memset(page, 0, sizeof(page_s));
+            ::memset(page, 0, sizeof(generic_page));
             page->pid = pid;
             page->lsn = thelsn;
+            page->tag = t_btree_p;
             page->btree_level = 1;
             if (i % 5 == 0) {
                 dirty_idx.insert (idx);
@@ -230,7 +236,7 @@ w_rc_t test_bf_evict(ss_m* /*ssm*/, test_volume_t *test_volume) {
             bf_tree_cb_t &cb (*test_bf_tree::get_bf_control_block(&pool, keep_latch_page));
             EXPECT_FALSE(cb._dirty);
         } else {
-            page_s *page = NULL;
+            generic_page *page = NULL;
             lpid_t pid (test_volume->_vid, 1, root_pid.page + 1 + i);
             W_DO(pool.fix_nonroot(page, root_page, pid.vol().vol, pid.page, LATCH_SH, false, false));
             EXPECT_TRUE (page != NULL);
@@ -281,11 +287,12 @@ w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_s
     bf_tree_m &pool(*smlevel_0::bf);
     lpid_t root_pid(test_volume->_vid, 1, 3);
 
-    page_s *root_page = NULL;
+    generic_page *root_page = NULL;
     W_DO(pool.fix_virgin_root(root_page, test_volume->_vid, root_pid.store(), root_pid.page));
     EXPECT_TRUE (root_page != NULL);
-    ::memset(root_page, 0, sizeof(page_s));
+    ::memset(root_page, 0, sizeof(generic_page));
     root_page->pid = root_pid;
+    root_page->tag = t_btree_p;
     root_page->btree_level = 2;
     root_page->btree_foster = 0;
     root_page->nslots = 0;
@@ -297,7 +304,7 @@ w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_s
 
     pool.debug_dump_page_pointers(std::cout, root_page);
     for (size_t i = 0; i < 20; ++i) {
-        page_s *page = NULL;
+        generic_page *page = NULL;
         lpid_t pid (test_volume->_vid, 1, root_pid.page + 1 + i);
         _add_child_pointer (root_page, pid.page);
 
@@ -329,8 +336,9 @@ w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_s
                 EXPECT_EQ ((uint) 0, cb._parent);
 #endif // BP_MAINTAIN_PARNET_PTR
             }
-            ::memset(page, 0, sizeof(page_s));
+            ::memset(page, 0, sizeof(generic_page));
             page->pid = pid;
+            page->tag = t_btree_p;
             page->btree_level = 1;
             pool.set_dirty(page);
             pool.unfix(page);
@@ -355,7 +363,7 @@ w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_s
     }
     // fix again
     for (size_t i = 0; i < 20; ++i) {
-        page_s *page = NULL;
+        generic_page *page = NULL;
         lpid_t pid (test_volume->_vid, 1, root_pid.page + 1 + i);
         W_DO(pool.fix_nonroot(page, root_page, pid.vol().vol, pid.page, LATCH_SH, false, false));
         EXPECT_TRUE (page != NULL);
@@ -435,11 +443,12 @@ w_rc_t test_bf_switch_parent(ss_m* /*ssm*/, test_volume_t *test_volume) {
     bf_tree_m &pool(*smlevel_0::bf);
     lpid_t root_pid(test_volume->_vid, 1, 3);
 
-    page_s *root_page = NULL;
+    generic_page *root_page = NULL;
     W_DO(pool.fix_virgin_root(root_page, test_volume->_vid, root_pid.store(), root_pid.page));
     EXPECT_TRUE (root_page != NULL);
-    ::memset(root_page, 0, sizeof(page_s));
+    ::memset(root_page, 0, sizeof(generic_page));
     root_page->pid = root_pid;
+    root_page->tag = t_btree_p;
     root_page->btree_level = 2;
     root_page->btree_foster = 0;
     root_page->nslots = 0;
@@ -449,11 +458,12 @@ w_rc_t test_bf_switch_parent(ss_m* /*ssm*/, test_volume_t *test_volume) {
 
     lpid_t child_pid(test_volume->_vid, 1, root_pid.page + 1);
     _add_child_pointer (root_page, child_pid.page);
-    page_s *child_page = NULL;
+    generic_page *child_page = NULL;
     W_DO(pool.fix_nonroot(child_page, root_page, child_pid.vol().vol, child_pid.page, LATCH_EX, true, true));
     EXPECT_TRUE (child_page != NULL);
-    ::memset(child_page, 0, sizeof(page_s));
+    ::memset(child_page, 0, sizeof(generic_page));
     child_page->pid = child_pid;
+    child_page->tag = t_btree_p;
     child_page->btree_level = 1;
     child_page->btree_foster = 0;
     child_page->nslots = 0;
@@ -465,11 +475,12 @@ w_rc_t test_bf_switch_parent(ss_m* /*ssm*/, test_volume_t *test_volume) {
 
     lpid_t sibling_pid(test_volume->_vid, 1, root_pid.page + 2);
     child_page->btree_foster = sibling_pid.page; // add as a foster child
-    page_s *sibling_page = NULL;
+    generic_page *sibling_page = NULL;
     W_DO(pool.fix_nonroot(sibling_page, child_page, sibling_pid.vol().vol, sibling_pid.page, LATCH_EX, true, true));
     EXPECT_TRUE (sibling_page != NULL);
-    ::memset(sibling_page, 0, sizeof(page_s));
+    ::memset(sibling_page, 0, sizeof(generic_page));
     sibling_page->pid = sibling_pid;
+    sibling_page->tag = t_btree_p;
     sibling_page->btree_level = 1;
     sibling_page->btree_foster = 0;
     sibling_page->nslots = 0;
