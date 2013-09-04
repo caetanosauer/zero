@@ -1933,7 +1933,7 @@ xct_t::_abort()
             || _core->_state == xct_freeing_space /* if it got an error in commit*/
             );
     if(_core->_state != xct_committing && _core->_state != xct_freeing_space) {
-        w_assert1(_core->_xct_ended++ == 0)
+        w_assert1(_core->_xct_ended++ == 0);
     }
 
     // first, empty the wait map because no chance this xct can cause deadlock any more.
