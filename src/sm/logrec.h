@@ -169,9 +169,10 @@ public:
         // max_data_sz is conservative. we don't allow the last 16 bytes to be used (anyway very rarely used)
         max_data_sz = max_sz - hdr_non_ssx_sz - sizeof(lsn_t)
     };
-BOOST_STATIC_ASSERT(true);
-//       static_assert(sizeof(baseLogHeader) == (smsize_t)40, "sizeof(baseHeader) == 40");
- //      static_assert(sizeof(xidChainLogHeader) == (smsize_t)16, "sizeof(xidChainLogHeader) == 16");
+
+       BOOST_STATIC_ASSERT(hdr_non_ssx_sz == 40);
+       BOOST_STATIC_ASSERT(hdr_single_sys_xct_sz == 40 - 16);
+
        const tid_t&         tid() const;
        const vid_t&         vid() const;
        const shpid_t&       shpid() const;
