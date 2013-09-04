@@ -116,7 +116,7 @@ btree_update_log::btree_update_log(
     const w_keystr_t&     key,
     const char* old_el, int old_elen, const cvec_t& new_el)
 {
-    //set_page_prev_lsn(page.lsn());
+    set_page_prev_lsn(page.lsn());
     fill(&page.pid(), page.tag(),
          (new (_data) btree_update_t(page, key, old_el, old_elen, new_el))->size());
 }

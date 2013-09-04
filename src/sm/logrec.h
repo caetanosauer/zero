@@ -72,6 +72,8 @@ typedef smlevel_0::lock_mode_t lock_mode_t;
 #pragma interface
 #endif
 
+#include <boost/static_assert.hpp>
+
 /**
  * A log record's space is divided between a header and data. 
  * All log records' headers include the information contained in baseLogHeader.
@@ -111,6 +113,12 @@ struct baseLogHeader
      * It might do to set _xid_prev iff it's not already set, in fill_xct_attr().
      * NB: this latter suggestion is what we have now done.
      */
+
+    // For per-page chains of log-records.
+    // Note that some types of log records (split, merge) impact two pages.
+    // The page_prev_lsn is for the "primary" page.
+    lsn_t               _page_prv;     // for per-page log chain
+    /* 16+8 = 24 */
 };
 
 struct xidChainLogHeader 
@@ -122,9 +130,9 @@ struct xidChainLogHeader
     // however, we really need it to reduce the volume of log we output for system transactions.
     
     tid_t               _xid;      // NOT IN SINGLE-LOG SYSTEM TRANSACTION!  (xct)tid of this xct
-    /* 16+8=24 */
-    lsn_t               _xid_prv;     // NOT IN SINGLE-LOG SYSTEM TRANSACTION! (xct)previous logrec of this xct
     /* 24+8 = 32 */
+    lsn_t               _xid_prv;     // NOT IN SINGLE-LOG SYSTEM TRANSACTION! (xct)previous logrec of this xct
+    /* 32+8 = 40 */
 };
 
 class logrec_t {
@@ -161,8 +169,9 @@ public:
         // max_data_sz is conservative. we don't allow the last 16 bytes to be used (anyway very rarely used)
         max_data_sz = max_sz - hdr_non_ssx_sz - sizeof(lsn_t)
     };
-       w_assert3(sizeof(baseLogHeader) == 40);
-       w_assert3(sizeof(xidChainLogHeader) == 16);
+BOOST_STATIC_ASSERT(true);
+//       static_assert(sizeof(baseLogHeader) == (smsize_t)40, "sizeof(baseHeader) == 40");
+ //      static_assert(sizeof(xidChainLogHeader) == (smsize_t)16, "sizeof(xidChainLogHeader) == 16");
        const tid_t&         tid() const;
        const vid_t&         vid() const;
        const shpid_t&       shpid() const;
@@ -178,6 +187,8 @@ public:
     uint16_t              tag() const;
     smsize_t             length() const;
     const lsn_t&         undo_nxt() const;
+    const lsn_t&         page_prev_lsn() const;
+    void                 set_page_prev_lsn(const lsn_t &lsn);
     const lsn_t&         xid_prev() const;
     void                 set_xid_prev(const lsn_t &lsn);
     void                 set_clr(const lsn_t& c);
@@ -563,6 +574,19 @@ logrec_t::undo_nxt() const
     // overloaded _xid_prev.
     // return _undo_nxt;
     return xid_prev();
+}
+
+inline const lsn_t&
+logrec_t::page_prev_lsn() const
+{
+    // What do we need to assert in order to make sure there IS a page_prv?
+    return header._page_prv;
+}
+inline void
+logrec_t::set_page_prev_lsn(const lsn_t &lsn)
+{
+    // What do we need to assert in order to make sure there IS a page_prv?
+    header._page_prv = lsn;
 }
 
 inline const tid_t&
