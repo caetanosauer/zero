@@ -1878,19 +1878,6 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, lsn_t *
     count = i;
 }
 
-void bf_tree_m::print_slots(generic_page* page) const
-{
-    slot_index_t slots = page->nslots;
-    DBGOUT1 (<< "print " << slots << " slots");
-    btree_page_h p (page);
-    for (slot_index_t i = 1; i < slots; ++i) {
-        void* addr = p.tuple_addr(i);
-        shpid_t* slotaddr = reinterpret_cast<shpid_t*>(addr);
-        DBGOUT1 (<< " slot[" << i << "] = " << *slotaddr);
-        //DBGOUT1 (<< " slot[" << i << "] = " << (reinterpret_cast<uint64_t>(*slotaddr) ^ SWIZZLED_PID_BIT));
-    }
-}
-
 // for debugging swizzling policy purposes -- todo: remove it when done
 #if 0 
 int bf_tree_m::nframes(int priority, int level, int refbit, bool swizzled, bool print) {
