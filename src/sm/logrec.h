@@ -161,7 +161,7 @@ public:
         // max_data_sz is conservative. we don't allow the last 16 bytes to be used (anyway very rarely used)
         max_data_sz = max_sz - hdr_non_ssx_sz - sizeof(lsn_t)
     };
-
+       w_assert3(sizeof(baseLogHeader) == 40);
        const tid_t&         tid() const;
        const vid_t&         vid() const;
        const shpid_t&       shpid() const;
