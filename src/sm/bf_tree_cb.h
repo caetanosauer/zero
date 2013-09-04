@@ -146,7 +146,12 @@ struct bf_tree_cb_t {
      * so the dependency is resolved.
      */
     lsndata_t _dependency_lsn;// +8 -> 48
-    fill32                      _fill32_52;     // +4 -> 52
+
+    /** 
+     * number of swizzled pointers to children. 
+     */
+    uint16_t                    _swizzled_ptr_cnt_hint; // +2 -> 50
+    fill16                      _fill16_52;     // +2 -> 52
     fill32                      _fill32_56;     // +4 -> 56
     fill32                      _fill32_60;     // +4 -> 60
     fill8                       _fill8_61;      // +1 -> 61

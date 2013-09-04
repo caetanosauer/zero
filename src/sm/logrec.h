@@ -74,7 +74,7 @@ typedef smlevel_0::lock_mode_t lock_mode_t;
 
 class logrec_t {
 public:
-    friend rc_t xct_t::give_logbuf(logrec_t*, const page_p *);
+    friend rc_t xct_t::give_logbuf(logrec_t*, const generic_page_h *);
 
 #include "logtype_gen.h"
     void             fill(
@@ -96,11 +96,11 @@ public:
     bool             valid_header(const lsn_t & lsn_ck) const;
     smsize_t         header_size() const;
 
-    void             redo(page_p*);
-    void             undo(page_p*);
+    void             redo(generic_page_h*);
+    void             undo(generic_page_h*);
 
     enum {
-        max_sz = 3 * sizeof(page_s),
+        max_sz = 3 * sizeof(generic_page),
         hdr_non_ssx_sz = 32,
         hdr_single_sys_xct_sz = 16,
         // max_sz is we conservative. we don't allow the last 16 bytes to be used (anyway very rarely used)

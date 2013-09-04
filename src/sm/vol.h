@@ -12,7 +12,7 @@
 #endif
 
 #include <list>
-#include "stnode_p.h"
+#include "stnode_page.h"
 
 
 struct volume_hdr_stats_t;
@@ -27,8 +27,8 @@ class volhdr_t {
     uint32_t   _format_version;
     sm_diskaddr_t       _device_quota_KB;
     lvid_t              _lvid;
-    shpid_t             _apid;        // first alloc_p pid
-    shpid_t             _spid;        // the only stnode_p pid
+    shpid_t             _apid;        // first alloc_page pid
+    shpid_t             _spid;        // the only stnode_page pid
     uint32_t            _num_pages;
     shpid_t             _hdr_pages;   // # pages in hdr includes entire store 0
     uint32_t            _page_sz;    // page size in bytes
@@ -96,7 +96,7 @@ public:
     const char*         devname() const;
     vid_t               vid() const ;
     lvid_t              lvid() const ;
-    /** returns the page ID of the first non-fixed pages (after stnode_p and alloc_p).*/
+    /** returns the page ID of the first non-fixed pages (after stnode_page and alloc_page).*/
     shpid_t             first_data_pageid() const { return _first_data_pageid;}
     uint32_t            num_pages() const;
     uint32_t            num_used_pages() const;
@@ -111,16 +111,16 @@ public:
     /**  Return true if the store "store" is allocated. false otherwise. */
     bool                is_alloc_store(snum_t f) const;
     
-    rc_t                write_page(shpid_t page, page_s& buf);
+    rc_t                write_page(shpid_t page, generic_page& buf);
 
     rc_t                write_many_pages(
         shpid_t             first_page,
-        const page_s*       buf, 
+        const generic_page*       buf, 
         int                 cnt);
 
     rc_t                read_page(
         shpid_t             page,
-        page_s&             buf);
+        generic_page&             buf);
 
     rc_t            alloc_a_page(const stid_t &stid, lpid_t &pid);
     rc_t            alloc_consecutive_pages(const stid_t &stid, size_t page_count, lpid_t &pid_begin);
@@ -288,7 +288,7 @@ inline bool vol_t::is_valid_page_num(const lpid_t& p) const
 
 inline bool vol_t::is_valid_store(snum_t f) const
 {
-    return (f < stnode_p::max);
+    return (f < stnode_page_h::max);
 }
     
 /*<std-footer incl-file-exclusion='VOL_H'>  -- do not edit anything below this line -- */

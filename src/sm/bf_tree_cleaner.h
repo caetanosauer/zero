@@ -19,7 +19,7 @@ typedef uint16_t bf_cleaner_slave_id_t;
 
 class bf_tree_m;
 class bf_tree_cleaner_slave_thread_t;
-class page_s;
+class generic_page;
 
 /**
  * \brief The diry page cleaner for the new bufferpool manager.
@@ -227,7 +227,7 @@ private:
     size_t                      _sort_buffer_size;
 
     /** reused buffer to write out the content of dirty pages. */
-    page_s*                     _write_buffer;
+    generic_page*                     _write_buffer;
     bf_idx*                     _write_buffer_indexes;
 };
 

@@ -66,7 +66,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <lintel/AtomicCounter.hpp>
 #include "w_hashing.h"
 
-class page_s;
+class generic_page;
 
 const uint32_t BFPID_T_HASH_SEED = 0xAC046148;
 
@@ -118,7 +118,7 @@ private:
     bfpid_t     _pid;            // page currently stored in the frame
     bfpid_t     _old_pid;        // previous page in the frame
     bool        _old_pid_valid;  // is the previous page in-transit-out?
-    page_s*     _frame;          // pointer to the frame
+    generic_page*     _frame;          // pointer to the frame
 
     bool        _dirty;  // true if page is dirty
     lsn_t       _rec_lsn;        // recovery lsn
@@ -151,8 +151,8 @@ public:
 
     void    clear_bfcb();
 
-    const page_s *frame() const { return _frame; }
-    page_s *frame_nonconst() { return _frame; }
+    const generic_page *frame() const { return _frame; }
+    generic_page *frame_nonconst() { return _frame; }
     void  set_storeflags(uint32_t f);
     uint32_t  read_page_storeflags();
     uint32_t  get_storeflags() const;
@@ -212,7 +212,7 @@ public:
     void        update_rec_lsn(latch_mode_t, bool check);
 
     void        initialize(
-                        page_s*           _bufpool,
+                        generic_page*           _bufpool,
                         uint32_t           hashfunc
                         );
     void        destroy();

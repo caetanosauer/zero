@@ -119,7 +119,7 @@ class ssx_defer_section_t;
 class lil_private_table;
 
 class logrec_t; // forward
-class page_p; // forward
+class generic_page_h; // forward
 
 /**
  * Results of in-query (not batch) BTree verification.
@@ -424,8 +424,8 @@ public:
     //
     bool                        is_log_on() const;
     rc_t                        get_logbuf(logrec_t*&, int t,
-                                                       const page_p *p = 0);
-    rc_t                        give_logbuf(logrec_t*, const page_p *p = 0);
+                                                       const generic_page_h *p = 0);
+    rc_t                        give_logbuf(logrec_t*, const generic_page_h *p = 0);
 
     //
     //        Used by I/O layer
@@ -657,7 +657,7 @@ private:
 
     w_rc_t                     _flush_user_logbuf (logrec_t *l, lsn_t *ret_lsn);
     w_rc_t                     _flush_piggyback_ssx_logbuf();
-    w_rc_t                     _append_piggyback_ssx_logbuf(logrec_t* l, page_p *page);
+    w_rc_t                     _append_piggyback_ssx_logbuf(logrec_t* l, generic_page_h *page);
     w_rc_t                     _flush_logbuf();
     w_rc_t                     _sync_logbuf(bool block=true, bool signal=true);
     void                       _teardown(bool is_chaining);
@@ -805,7 +805,7 @@ private: // all data members private
      * (actually it doesn't have to be commit/abort timing as far as it's pushed at some point)
      */ 
     char*                        _log_buf_for_piggybacked_ssx;
-    page_p*                      _log_buf_for_piggybacked_ssx_target; // TODO how can we make this multiples??
+    generic_page_h*                      _log_buf_for_piggybacked_ssx_target; // TODO how can we make this multiples??
     size_t                       _log_buf_for_piggybacked_ssx_used;
 
     // for _flush_user_logbuf()
@@ -1309,7 +1309,7 @@ private:
  * Use this class as follows.
  * \verbatim
   ...
-  btree_p leaf;
+  btree_page_h leaf;
   leaf.fix(pid, LATCH_EX);
   {
     ssx_defer_section_t ssx_defer (&leaf); // auto-commit for deferred ssx log on leaf
@@ -1327,10 +1327,10 @@ private:
  */
 class ssx_defer_section_t {
 public:
-    ssx_defer_section_t (page_p *page, xct_t *x = xct());
+    ssx_defer_section_t (generic_page_h *page, xct_t *x = xct());
     ~ssx_defer_section_t(); // implemented in xct.cpp
 private:
-    page_p *_page;
+    generic_page_h *_page;
     xct_t *_x;
 #if W_DEBUG_LEVEL>0
     lpid_t _pid; // to check the page hasn't be switched

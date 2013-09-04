@@ -14,7 +14,7 @@
 
 #include "sm_int_2.h"
 #include "page_bf_inline.h"
-#include "btree_p.h"
+#include "btree_page.h"
 #include "btree_impl.h"
 #include "crash.h"
 #include "vec_t.h"
@@ -25,7 +25,7 @@
 #include "bf_tree.h"
 #include "sm_int_0.h"
 
-rc_t btree_impl::_sx_split_foster(btree_p &page, lpid_t &new_page_id, const w_keystr_t &triggering_key)
+rc_t btree_impl::_sx_split_foster(btree_page_h &page, lpid_t &new_page_id, const w_keystr_t &triggering_key)
 {
     FUNC(btree_impl::_sx_split_foster);
     W_DO(io_m::sx_alloc_a_page (page.pid().stid(), new_page_id)); // allocate a page as separate system transaction
@@ -36,7 +36,7 @@ rc_t btree_impl::_sx_split_foster(btree_p &page, lpid_t &new_page_id, const w_ke
     W_DO (sxs.end_sys_xct (ret));
     return ret;
 }
-rc_t btree_impl::_ux_split_foster_core(btree_p &page, const lpid_t &new_page_id, const w_keystr_t &triggering_key,
+rc_t btree_impl::_ux_split_foster_core(btree_page_h &page, const lpid_t &new_page_id, const w_keystr_t &triggering_key,
     const w_keystr_t *new_child_key, shpid_t new_child_pid)
 {
     w_assert1 (xct()->is_sys_xct());
@@ -67,7 +67,7 @@ rc_t btree_impl::_ux_split_foster_core(btree_p &page, const lpid_t &new_page_id,
 
         // these both log and apply
         // child is just making an empty page
-        btree_p new_page;
+        btree_page_h new_page;
         W_DO(new_page.init_fix_steal(&page, new_page_id, page.btree_root(), page.level(), new_child_pid,
             page.get_foster(), mid_key, old_high, new_chain_high)); // nothing to steal
         // page is just setting new fence key and foster pointer
@@ -85,7 +85,7 @@ rc_t btree_impl::_ux_split_foster_core(btree_p &page, const lpid_t &new_page_id,
     increase_forster_child(page.pid().page); // give hint to subsequent accesses
     return RCOK;
 }
-rc_t btree_impl::_ux_split_foster_apply(btree_p &page,
+rc_t btree_impl::_ux_split_foster_apply(btree_page_h &page,
     slotid_t right_begins_from, const w_keystr_t &mid_key, const lpid_t &new_pid,
     const w_keystr_t *new_child_key, shpid_t new_child_pid)
 {
@@ -121,7 +121,7 @@ rc_t btree_impl::_ux_split_foster_apply(btree_p &page,
     }
 
     // not fix(), but a special fix() for initial allocation of BTree page.
-    btree_p new_page;
+    btree_page_h new_page;
     w_keystr_t empty_key;
     W_DO(new_page.init_fix_steal(&page, new_pid, page.btree_root(), page.level(), new_pid0,
         page.get_foster(), // the new page jumps b/w old and its b-link (if exists)
@@ -148,9 +148,9 @@ rc_t btree_impl::_ux_split_foster_apply(btree_p &page,
     
     // next, we refactor the left page in a similar way. 
     // However, we can't use the "page" itself to construct "page".
-    page_s scratch;
+    generic_page scratch;
     ::memcpy (&scratch, page._pp, sizeof(scratch)); // thus get a copy
-    btree_p scratch_p (&scratch);
+    btree_page_h scratch_p (&scratch);
     W_DO(page.format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(), scratch_p.pid0(),
         new_page.pid().page,  // also set foster pointer to new page
         low_key, mid_key, chain_high_key, // mid_key is the new high key
@@ -174,7 +174,7 @@ rc_t btree_impl::_ux_split_foster_apply(btree_p &page,
     return RCOK;
 }
 
-rc_t btree_impl::_sx_adopt_foster_all (btree_p &root, bool recursive)
+rc_t btree_impl::_sx_adopt_foster_all (btree_page_h &root, bool recursive)
 {
     FUNC(btree_impl::_sx_adopt_foster_all);
     sys_xct_section_t sxs;
@@ -184,7 +184,7 @@ rc_t btree_impl::_sx_adopt_foster_all (btree_p &root, bool recursive)
     return ret;
 }
 rc_t btree_impl::_ux_adopt_foster_all_core (
-    btree_p &parent, bool is_root, bool recursive)
+    btree_page_h &parent, bool is_root, bool recursive)
 {
     // TODO this should use the improved tree-walk-through 
     // See jira ticket:60 "Tree walk-through without more than 2 pages latched" (originally trac ticket:62)
@@ -197,7 +197,7 @@ rc_t btree_impl::_ux_adopt_foster_all_core (
         if (recursive) {
             // also adopt at all children recursively
             for (int i = -1; i < parent.nrecs(); ++i) {
-                btree_p child;
+                btree_page_h child;
                 shpid_t shpid_opaqueptr = i == -1 ? parent.get_foster_opaqueptr() : parent.child_opaqueptr(i);
                 W_DO(child.fix_nonroot(parent, parent.vol(), shpid_opaqueptr, LATCH_EX));
                 W_DO(_ux_adopt_foster_all_core(child, false, true));
@@ -213,7 +213,7 @@ rc_t btree_impl::_ux_adopt_foster_all_core (
     }
     return RCOK;
 }
-rc_t btree_impl::_sx_adopt_foster (btree_p &parent, btree_p &child)
+rc_t btree_impl::_sx_adopt_foster (btree_page_h &parent, btree_page_h &child)
 {
     FUNC(btree_impl::_sx_adopt_foster);
     sys_xct_section_t sxs;
@@ -222,7 +222,7 @@ rc_t btree_impl::_sx_adopt_foster (btree_p &parent, btree_p &child)
     W_DO (sxs.end_sys_xct (ret));
     return ret;
 }
-rc_t btree_impl::_ux_adopt_foster_core (btree_p &parent, btree_p &child)
+rc_t btree_impl::_ux_adopt_foster_core (btree_page_h &parent, btree_page_h &child)
 {
     w_assert1 (xct()->is_sys_xct());
     w_assert1 (parent.is_fixed());
@@ -253,7 +253,7 @@ rc_t btree_impl::_ux_adopt_foster_core (btree_p &parent, btree_p &child)
     _ux_adopt_foster_apply_child (child);
     return RCOK;
 }
-rc_t btree_impl::_sx_opportunistic_adopt_foster (btree_p &parent, btree_p &child, bool &pushedup)
+rc_t btree_impl::_sx_opportunistic_adopt_foster (btree_page_h &parent, btree_page_h &child, bool &pushedup)
 {
     FUNC(btree_impl::_sx_opportunistic_adopt_foster);
 
@@ -276,7 +276,7 @@ rc_t btree_impl::_sx_opportunistic_adopt_foster (btree_p &parent, btree_p &child
         return ret;
     }
 }
-rc_t btree_impl::_ux_opportunistic_adopt_foster_core (btree_p &parent, btree_p &child, bool &pushedup)
+rc_t btree_impl::_ux_opportunistic_adopt_foster_core (btree_page_h &parent, btree_page_h &child, bool &pushedup)
 {
     w_assert1 (xct()->is_sys_xct());
     w_assert1 (parent.is_fixed());
@@ -296,7 +296,7 @@ rc_t btree_impl::_ux_opportunistic_adopt_foster_core (btree_p &parent, btree_p &
     return RCOK;
 }
 
-rc_t btree_impl::_sx_adopt_foster_sweep_approximate (btree_p &parent, shpid_t surely_need_child_pid)
+rc_t btree_impl::_sx_adopt_foster_sweep_approximate (btree_page_h &parent, shpid_t surely_need_child_pid)
 {
     FUNC(btree_impl::_sx_adopt_foster_sweep_approximate);
     sys_xct_section_t sxs;
@@ -305,7 +305,7 @@ rc_t btree_impl::_sx_adopt_foster_sweep_approximate (btree_p &parent, shpid_t su
     W_DO (sxs.end_sys_xct (ret));
     return ret;
 }
-rc_t btree_impl::_ux_adopt_foster_sweep_approximate (btree_p &parent, shpid_t surely_need_child_pid)
+rc_t btree_impl::_ux_adopt_foster_sweep_approximate (btree_page_h &parent, shpid_t surely_need_child_pid)
 {
     w_assert1 (xct()->is_sys_xct());
     w_assert1 (parent.is_fixed());
@@ -319,7 +319,7 @@ rc_t btree_impl::_ux_adopt_foster_sweep_approximate (btree_p &parent, shpid_t su
             if (shpid != surely_need_child_pid && get_expected_childrens(shpid) == 0) {
                 continue; // then doesn't matter (this could be false in low probability, but it's fine)
             }
-            btree_p child;
+            btree_page_h child;
             rc_t rc = child.fix_nonroot(parent, parent.vol(), shpid_opaqueptr, LATCH_EX, true);
             // if we can't instantly get latch, just skip it. we can defer it arbitrary
             if (rc.is_error()) {
@@ -334,7 +334,7 @@ rc_t btree_impl::_ux_adopt_foster_sweep_approximate (btree_p &parent, shpid_t su
         if (parent.get_foster() == 0) {
             break;
         }
-        btree_p foster_p;
+        btree_page_h foster_p;
         W_DO(foster_p.fix_nonroot(parent, parent.vol(), parent.get_foster_opaqueptr(), LATCH_EX));// latch coupling
         parent.unfix();
         parent = foster_p;
@@ -344,17 +344,17 @@ rc_t btree_impl::_ux_adopt_foster_sweep_approximate (btree_p &parent, shpid_t su
 }
 
 
-rc_t btree_impl::_ux_adopt_foster_sweep (btree_p &parent_arg)
+rc_t btree_impl::_ux_adopt_foster_sweep (btree_page_h &parent_arg)
 {
     w_assert1 (xct()->is_sys_xct());
-    btree_p parent = parent_arg; // because it might be switched below
+    btree_page_h parent = parent_arg; // because it might be switched below
     w_assert1 (parent.is_fixed());
     w_assert1 (parent.latch_mode() == LATCH_EX);
     w_assert1 (parent.is_node());
     while (true) {
         for (slotid_t i = -1; i < parent.nrecs(); ++i) {
             shpid_t pid_opaqueptr = i == -1 ? parent.pid0_opaqueptr() : parent.child_opaqueptr(i);
-            btree_p child;
+            btree_page_h child;
             W_DO(child.fix_nonroot(parent, parent.vol(), pid_opaqueptr, LATCH_SH));
             if (child.get_foster() == 0) {
                 continue; // no foster. just ignore
@@ -369,14 +369,14 @@ rc_t btree_impl::_ux_adopt_foster_sweep (btree_p &parent_arg)
         if (parent.get_foster() == 0) {
             break;
         }
-        btree_p foster_p;
+        btree_page_h foster_p;
         W_DO(foster_p.fix_nonroot(parent, parent.vol(), parent.get_foster_opaqueptr(), LATCH_EX)); // latch coupling
         parent = foster_p;
     }
     return RCOK;
 }
 
-rc_t btree_impl::_ux_adopt_foster_apply_parent (btree_p &parent,
+rc_t btree_impl::_ux_adopt_foster_apply_parent (btree_page_h &parent,
     shpid_t new_child_pid, const w_keystr_t &new_child_key)
 {
     w_assert1 (parent.is_fixed());
@@ -398,7 +398,7 @@ rc_t btree_impl::_ux_adopt_foster_apply_parent (btree_p &parent,
     W_DO (parent.insert_node(new_child_key, slot_to_insert, new_child_pid));
     return RCOK;
 }
-void btree_impl::_ux_adopt_foster_apply_child (btree_p &child)
+void btree_impl::_ux_adopt_foster_apply_child (btree_page_h &child)
 {
     w_assert1 (child.is_fixed());
     w_assert1 (child.latch_mode() == LATCH_EX);
