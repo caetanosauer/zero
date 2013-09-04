@@ -80,8 +80,7 @@ public:
     enum {
         page_sz         = SM_PAGESIZE,
 //        hdr_sz        = 64, // NOTICE always sync with the offsets below
-        generic_hdr_sz  = 40, // NOTICE always sync with the offsets below
-        generic_data_sz = page_sz - generic_hdr_sz,
+        //generic_hdr_sz  = 40, // NOTICE always sync with the offsets below
         /** Poor man's normalized key length. */
         poormkey_sz     = sizeof (poor_man_key),
         slot_sz         = sizeof(slot_offset8_t) + poormkey_sz
@@ -144,7 +143,7 @@ inline uint32_t generic_page_header::calculate_checksum () const {
     // checksumming the headers, be careful of the checksum field.
 
     const unsigned char *data      = (const unsigned char *)(this + 1);          // start of data section of this page: right after these headers
-    const unsigned char *data_last = data + generic_data_sz - sizeof(uint32_t);  // the last 32-bit word of the data section of this page
+    const unsigned char *data_last = (const unsigned char *)(this) + page_sz - sizeof(uint32_t);  // the last 32-bit word of the data section of this page
 
     uint64_t value = 0;
     // these values (23/511) are arbitrary
@@ -181,14 +180,14 @@ inline uint32_t generic_page_header::calculate_checksum () const {
 class generic_page : public generic_page_header {
 public:
     generic_page() {
-        w_assert1(data - (const char *)this == generic_hdr_sz);
+        w_assert1(data - (const char *)this == sizeof(generic_page_header));
     }
     ~generic_page() { }
 
 
 private:
     /* MUST BE 8-BYTE ALIGNED HERE */
-    char     data[generic_data_sz];        // must be aligned
+    char     data[page_sz - sizeof(generic_page_header)];        // must be aligned
 };
 
 #endif

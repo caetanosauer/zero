@@ -45,7 +45,7 @@ class alloc_page : public generic_page_header {
      * for those pids, a pid p is allocated iff 
      *   bitmap[bit_place(p-pid_offset)]&bit_mask(p-pid_offset) != 0
      */
-    uint8_t bitmap[generic_data_sz - sizeof(shpid_t)*2]; 
+    uint8_t bitmap[page_sz - sizeof(generic_page_header) - sizeof(shpid_t)*2]; 
 
     /// Number of pages one alloc_page can cover
     static const int bits_held = (sizeof(alloc_page::bitmap)) * 8;

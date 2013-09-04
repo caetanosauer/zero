@@ -25,10 +25,8 @@ class alloc_page_h;
 class generic_page_h {
 public:
     enum {
-        page_sz         = sizeof(generic_page),
-        generic_data_sz = generic_page_header::generic_data_sz,
-        generic_hdr_sz  = generic_page_header::generic_hdr_sz,
-        slot_sz         = generic_page::slot_sz
+        page_sz = sizeof(generic_page),
+        slot_sz = generic_page::slot_sz
     };
     enum logical_operation {
         l_none=0,

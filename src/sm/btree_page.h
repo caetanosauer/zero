@@ -18,8 +18,8 @@ class btree_page : public generic_page_header {
 public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
 
     enum {
-        data_sz = generic_page_header::generic_data_sz - 24,  // <<<>>>
-        hdr_sz  = generic_page::generic_hdr_sz + 24, // <<<>>>
+        data_sz = page_sz - sizeof(generic_page_header) - 24,  // <<<>>>
+        hdr_sz  = sizeof(generic_page_header) + 24, // <<<>>>
     };
 
 
