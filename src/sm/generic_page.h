@@ -180,14 +180,15 @@ inline uint32_t generic_page_header::calculate_checksum () const {
 class generic_page : public generic_page_header {
 public:
     generic_page() {
-        w_assert1(data - (const char *)this == sizeof(generic_page_header));
+        w_assert1(sizeof(generic_page) == generic_page_header::page_sz);
+        w_assert1((undefined - (const char *)this) % 8 == 0);     // check alignment
     }
     ~generic_page() { }
 
 
 private:
     /* MUST BE 8-BYTE ALIGNED HERE */
-    char     data[page_sz - sizeof(generic_page_header)];        // must be aligned
+    char undefined[page_sz - sizeof(generic_page_header)];   // must be aligned
 };
 
 #endif

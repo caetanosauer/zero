@@ -13,30 +13,8 @@ struct btree_lf_stats_t;
 struct btree_int_stats_t;
 
 
-
-class btree_page : public generic_page_header {
+class btree_page_header : public generic_page_header {
 public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
-
-    enum {
-        data_sz = page_sz - sizeof(generic_page_header) - 24,  // <<<>>>
-        hdr_sz  = sizeof(generic_page_header) + 24, // <<<>>>
-    };
-
-
-
-    friend class btree_ghost_mark_log;
-    friend class btree_ghost_reclaim_log;
-    friend class btree_ghost_t;
-    friend class btree_header_t;
-    friend class btree_impl;
-    friend class btree_page_h;
-
-    btree_page() {
-        //w_assert1(0);  // FIXME: is this constructor ever called? yes it is (test_btree_ghost)
-        w_assert1(data - (const char *) this == hdr_sz);
-    }
-    ~btree_page() { }
-
 
 #ifdef DOXYGEN_HIDE
 ///==========================================
@@ -102,6 +80,33 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
 ///   END: BTree specific headers
 ///==========================================
 #endif // DOXYGEN_HIDE
+};
+
+
+
+class btree_page : public btree_page_header {
+public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
+
+    enum {
+        data_sz = page_sz - sizeof(btree_page_header),
+        hdr_sz  = sizeof(btree_page_header),
+    };
+
+
+
+    friend class btree_ghost_mark_log;
+    friend class btree_ghost_reclaim_log;
+    friend class btree_ghost_t;
+    friend class btree_header_t;
+    friend class btree_impl;
+    friend class btree_page_h;
+
+    btree_page() {
+        //w_assert1(0);  // FIXME: is this constructor ever called? yes it is (test_btree_ghost)
+        w_assert1(data - (const char *) this == hdr_sz);
+        w_assert1((data - (const char *)this) % 8 == 0);     // check alignment
+    }
+    ~btree_page() { }
 
 
     /* MUST BE 8-BYTE ALIGNED HERE */
