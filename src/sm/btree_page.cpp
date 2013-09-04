@@ -20,19 +20,19 @@
 #include <algorithm>
 
 rc_t btree_page_h::init_fix_steal(
-    btree_page_h*             parent,
-    const lpid_t& pid,
-    shpid_t                root, 
-    int                       l,
-    shpid_t                pid0,
-    shpid_t                foster,
-    const w_keystr_t&    fence_low,
-    const w_keystr_t&    fence_high,
-    const w_keystr_t&    chain_fence_high,
-    btree_page_h*             steal_src,
-    int                  steal_from,
-    int                  steal_to,
-    bool                 log_it)
+    btree_page_h*     parent,
+    const lpid_t&     pid,
+    shpid_t           root, 
+    int               l,
+    shpid_t           pid0,
+    shpid_t           foster,
+    const w_keystr_t& fence_low,
+    const w_keystr_t& fence_high,
+    const w_keystr_t& chain_fence_high,
+    btree_page_h*     steal_src,
+    int               steal_from,
+    int               steal_to,
+    bool              log_it)
 {
     FUNC(btree_page_h::init_fix_steal);
     INC_TSTAT(btree_p_fix_cnt);
@@ -46,23 +46,22 @@ rc_t btree_page_h::init_fix_steal(
 }
 
 rc_t btree_page_h::format_steal(
-    const lpid_t& pid,
-    shpid_t                root, 
-    int                       l,
-    shpid_t                pid0,
-    shpid_t                foster,
-    const w_keystr_t&    fence_low,
-    const w_keystr_t&    fence_high,
-    const w_keystr_t&    chain_fence_high,
-    bool                 log_it,
-    btree_page_h*             steal_src1,
-    int                  steal_from1,
-    int                  steal_to1,
-    btree_page_h*             steal_src2,
-    int                  steal_from2,
-    int                  steal_to2,
-    bool                 steal_src2_pid0
-    )
+    const lpid_t&     pid,
+    shpid_t           root, 
+    int               l,
+    shpid_t           pid0,
+    shpid_t           foster,
+    const w_keystr_t& fence_low,
+    const w_keystr_t& fence_high,
+    const w_keystr_t& chain_fence_high,
+    bool              log_it,
+    btree_page_h*     steal_src1,
+    int               steal_from1,
+    int               steal_to1,
+    btree_page_h*     steal_src2,
+    int               steal_from2,
+    int               steal_to2,
+    bool              steal_src2_pid0)
 {
     w_assert1 (l == 1 || pid0 != 0); // all interemediate node should have pid0 at least initially
 
@@ -75,27 +74,27 @@ rc_t btree_page_h::format_steal(
     */
     // because we do this, note that we shouldn't receive any arguments
     // as reference or pointer. It might be also nuked!
-    memset(_pp, '\017', sizeof(generic_page)); // trash the whole page
+    memset(page(), '\017', sizeof(generic_page)); // trash the whole page
 #endif //ZERO_INIT
-    _pp->lsn = lsn_t(0, 1);
-    _pp->pid = pid_copy;
-    _pp->tag = t_btree_p;
-    _pp->page_flags = 0;
-    _pp->record_head8 = to_offset8(data_sz);
-    _pp->nslots = _pp->nghosts = _pp->btree_consecutive_skewed_insertions = 0;
+    page()->lsn = lsn_t(0, 1);
+    page()->pid = pid_copy;
+    page()->tag = t_btree_p;
+    page()->page_flags = 0;
+    page()->record_head8 = to_offset8(data_sz);
+    page()->nslots = page()->nghosts = page()->btree_consecutive_skewed_insertions = 0;
 
-    _pp->btree_root = root;
-    _pp->btree_pid0 = pid0;
-    _pp->btree_level = l;
-    _pp->btree_foster = foster;
-    _pp->btree_fence_low_length = (int16_t) fence_low.get_length_as_keystr();
-    _pp->btree_fence_high_length = (int16_t) fence_high.get_length_as_keystr();
-    _pp->btree_chain_fence_high_length = (int16_t) chain_fence_high.get_length_as_keystr();
+    page()->btree_root = root;
+    page()->btree_pid0 = pid0;
+    page()->btree_level = l;
+    page()->btree_foster = foster;
+    page()->btree_fence_low_length = (int16_t) fence_low.get_length_as_keystr();
+    page()->btree_fence_high_length = (int16_t) fence_high.get_length_as_keystr();
+    page()->btree_chain_fence_high_length = (int16_t) chain_fence_high.get_length_as_keystr();
 
     size_t prefix_len = fence_low.common_leading_bytes(fence_high);
     w_assert1(prefix_len <= fence_low.get_length_as_keystr() && prefix_len <= fence_high.get_length_as_keystr());
     w_assert1(prefix_len <= (1<<15));
-    _pp->btree_prefix_length = (int16_t) prefix_len;
+    page()->btree_prefix_length = (int16_t) prefix_len;
 
     // set fence keys in first slot
     cvec_t fences;
@@ -264,10 +263,10 @@ rc_t btree_page_h::norecord_split (shpid_t foster,
         w_assert1(!rc.is_error());
 
         //updates headers
-        _pp->btree_foster = foster;
-        _pp->btree_fence_high_length = (int16_t) fence_high.get_length_as_keystr();
-        _pp->btree_chain_fence_high_length = (int16_t) chain_fence_high.get_length_as_keystr();
-        _pp->btree_consecutive_skewed_insertions = 0; // reset this value too.
+        page()->btree_foster = foster;
+        page()->btree_fence_high_length = (int16_t) fence_high.get_length_as_keystr();
+        page()->btree_chain_fence_high_length = (int16_t) chain_fence_high.get_length_as_keystr();
+        page()->btree_consecutive_skewed_insertions = 0; // reset this value too.
     }
     return RCOK;
 }
@@ -280,8 +279,8 @@ rc_t btree_page_h::clear_foster()
     W_DO(log_btree_header(*this, pid0(), level(), 0, // foster=0
             0 // chain-high fence key is disabled
             )); // log first
-    _pp->btree_foster = 0;
-    _pp->btree_chain_fence_high_length = 0;
+    page()->btree_foster = 0;
+    page()->btree_chain_fence_high_length = 0;
     return RCOK;
 }
 
@@ -613,7 +612,7 @@ void btree_page_h::_update_btree_consecutive_skewed_insertions(slotid_t slot)
     if (nrecs() == 0) {
         return;
     }
-    int16_t val = _pp->btree_consecutive_skewed_insertions;
+    int16_t val = page()->btree_consecutive_skewed_insertions;
     if (slot == 0) {
         // if left-most insertion, start counting negative value (or decrement further)
         if (val >= 0) {
@@ -634,7 +633,7 @@ void btree_page_h::_update_btree_consecutive_skewed_insertions(slotid_t slot)
     // to prevent overflow
     if (val < -100) val = -100;
     if (val > 100) val = 100;
-    _pp->btree_consecutive_skewed_insertions = val;
+    page()->btree_consecutive_skewed_insertions = val;
 }
 
 rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, shpid_t child)
@@ -688,7 +687,7 @@ rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, shpid_t chi
 rc_t btree_page_h::_insert_expand_nolog(slotid_t slot, const cvec_t &vec, poor_man_key poormkey)
 {
     slotid_t idx = slot + 1; // slot index in generic_page_h
-    w_assert1(idx >= 0 && idx <= _pp->nslots);
+    w_assert1(idx >= 0 && idx <= page()->nslots);
     w_assert3 (_is_consistent_space());
     // this shouldn't happen. the caller should have checked with check_space_for_insert()
     if (!check_space_for_insert(vec.size())) {
@@ -697,20 +696,20 @@ rc_t btree_page_h::_insert_expand_nolog(slotid_t slot, const cvec_t &vec, poor_m
 
      //  Log has already been generated ... the following actions must succeed!
      // shift slot array. if we are inserting to the end (idx == nslots), do nothing
-    if (idx != _pp->nslots)    {
+    if (idx != page()->nslots)    {
         ::memmove(page()->data + slot_sz * (idx + 1),
                 page()->data + slot_sz * (idx),
-                (_pp->nslots - idx) * slot_sz);
+                (page()->nslots - idx) * slot_sz);
     }
 
     //  Fill up the slots and data
-    slot_offset8_t new_record_head8 = _pp->record_head8 - to_aligned_offset8(vec.size());
+    slot_offset8_t new_record_head8 = page()->record_head8 - to_aligned_offset8(vec.size());
     char* slot_p = btree_page_h::slot_addr(idx);
     *reinterpret_cast<slot_offset8_t*>(slot_p) = new_record_head8;
     *reinterpret_cast<poor_man_key*>(slot_p + sizeof(slot_offset8_t)) = poormkey;
     vec.copy_to(page()->data_addr8(new_record_head8));
-    _pp->record_head8 = new_record_head8;
-    ++_pp->nslots;
+    page()->record_head8 = new_record_head8;
+    ++page()->nslots;
 
     w_assert3(get_rec_size(slot) == vec.size());
     w_assert3(btree_page_h::tuple_poormkey(idx) == poormkey);
@@ -724,25 +723,25 @@ void btree_page_h::_append_nolog(const cvec_t &vec, poor_man_key poormkey, bool 
     w_assert5 (_is_consistent_space());
     
     //  Fill up the slots and data
-    slot_offset8_t new_record_head8 = _pp->record_head8 - to_aligned_offset8(vec.size());
-    char* slot_p = btree_page_h::slot_addr(_pp->nslots);
+    slot_offset8_t new_record_head8 = page()->record_head8 - to_aligned_offset8(vec.size());
+    char* slot_p = btree_page_h::slot_addr(page()->nslots);
     *reinterpret_cast<slot_offset8_t*>(slot_p) = ghost ? -new_record_head8 : new_record_head8;
     *reinterpret_cast<poor_man_key*>(slot_p + sizeof(slot_offset8_t)) = poormkey;
     vec.copy_to(page()->data_addr8(new_record_head8));
-    _pp->record_head8 = new_record_head8;
+    page()->record_head8 = new_record_head8;
     if (ghost) {
-        ++_pp->nghosts;
+        ++page()->nghosts;
     }
-    ++_pp->nslots;
+    ++page()->nslots;
 
 #if W_DEBUG_LEVEL>=1
-    if (_pp->nslots == 1) {
+    if (page()->nslots == 1) {
         // the inserted record was the special fence record!
         w_assert1(poormkey == 0);
         w_assert1(get_fence_rec_size() == vec.size());
     } else {
         w_assert1(get_rec_size(nrecs() - 1) == vec.size());
-        w_assert1(btree_page_h::tuple_poormkey(_pp->nslots - 1) == poormkey);
+        w_assert1(btree_page_h::tuple_poormkey(page()->nslots - 1) == poormkey);
     }
     w_assert5 (_is_consistent_space());
 #endif //W_DEBUG_LEVEL>=1
@@ -751,16 +750,16 @@ void btree_page_h::_append_nolog(const cvec_t &vec, poor_man_key poormkey, bool 
 void btree_page_h::_expand_rec(slotid_t slot, slot_length_t rec_len)
 {
     slotid_t idx = slot + 1; // slot index in generic_page_h
-    w_assert1(idx >= 0 && idx < _pp->nslots);
+    w_assert1(idx >= 0 && idx < page()->nslots);
     w_assert1(usable_space() >= align(rec_len));
     w_assert3(_is_consistent_space());
 
     bool ghost = is_ghost(slot);
     slot_length_t old_rec_len = get_rec_size(slot);
     void* old_rec = btree_page_h::tuple_addr(idx);
-    slot_offset8_t new_record_head8 = _pp->record_head8 - to_aligned_offset8(rec_len);
+    slot_offset8_t new_record_head8 = page()->record_head8 - to_aligned_offset8(rec_len);
     btree_page_h::change_slot_offset(idx, ghost ? -new_record_head8 : new_record_head8);
-    _pp->record_head8 = new_record_head8;
+    page()->record_head8 = new_record_head8;
 
     void* new_rec = btree_page_h::tuple_addr(idx);
     *reinterpret_cast<slot_length_t*>(new_rec) = rec_len; // set new size
@@ -776,7 +775,7 @@ void btree_page_h::_expand_rec(slotid_t slot, slot_length_t rec_len)
 
 rc_t btree_page_h::replace_expand_fence_rec_nolog(const cvec_t &fences)
 {
-    w_assert1(_pp->nslots > 0);
+    w_assert1(page()->nslots > 0);
     slot_offset8_t current_offset8 = btree_page_h::tuple_offset8(0);
     slot_length_t current_size = get_fence_rec_size();
     if (align(fences.size()) <= align(current_size)) {
@@ -793,14 +792,14 @@ rc_t btree_page_h::replace_expand_fence_rec_nolog(const cvec_t &fences)
     }
     
     w_assert3(_is_consistent_space());
-    slot_offset8_t new_record_head8 = _pp->record_head8 - to_aligned_offset8(fences.size());
+    slot_offset8_t new_record_head8 = page()->record_head8 - to_aligned_offset8(fences.size());
     slot_offset8_t new_offset8 = current_offset8 < 0 ? -new_record_head8 : new_record_head8; // for ghost records
     btree_page_h::change_slot_offset(0, new_offset8);
     void* addr = btree_page_h::tuple_addr(0);
     fences.copy_to(addr);
     w_assert1(*reinterpret_cast<slot_length_t*>(addr) == (slot_length_t) fences.size());
     w_assert1 (get_fence_rec_size() == (slot_length_t) fences.size());
-    _pp->record_head8 = new_record_head8;
+    page()->record_head8 = new_record_head8;
     w_assert3 (_is_consistent_space());    
     return RCOK;
 }
@@ -809,7 +808,7 @@ rc_t btree_page_h::replace_expand_fence_rec_nolog(const cvec_t &fences)
 rc_t btree_page_h::remove_shift_nolog(slotid_t slot)
 {
     slotid_t idx = slot + 1; // slot index in generic_page_h
-    w_assert1(idx >= 0 && idx < _pp->nslots);
+    w_assert1(idx >= 0 && idx < page()->nslots);
     w_assert1(slot >= 0); // this method does NOT assume shifting fence record
     w_assert3 (_is_consistent_space());
     
@@ -817,26 +816,26 @@ rc_t btree_page_h::remove_shift_nolog(slotid_t slot)
     slot_length_t removed_length = get_rec_size(slot);
 
     // Shift slot array. if we are removing last (idx==nslots - 1), do nothing.
-    if (idx < _pp->nslots - 1) {
+    if (idx < page()->nslots - 1) {
         ::memmove(page()->data + slot_sz * (idx),
             page()->data + slot_sz * (idx + 1),
-            (_pp->nslots - 1 - idx) * slot_sz);
+            (page()->nslots - 1 - idx) * slot_sz);
     }
-    --_pp->nslots;
+    --page()->nslots;
 
     bool ghost = false;
     if (removed_offset8 < 0) {
         removed_offset8 = -removed_offset8; // ghost record
         ghost = true;
     }
-    if (_pp->record_head8 == removed_offset8) {
+    if (page()->record_head8 == removed_offset8) {
         // then, we are pushing down the record_head8. lucky!
         w_assert3 (_is_consistent_space());
-        _pp->record_head8 += to_aligned_offset8(removed_length);
+        page()->record_head8 += to_aligned_offset8(removed_length);
     }
     
     if (ghost) {
-        --_pp->nghosts;
+        --page()->nghosts;
     }
 
     w_assert3 (_is_consistent_space());
@@ -996,7 +995,7 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, int re
                 page()->data + slot_sz * (slot + 1),
                 (nrecs() - slot) * slot_sz);
     }
-    slot_offset8_t new_record_head8 = _pp->record_head8 - to_aligned_offset8(record_size);
+    slot_offset8_t new_record_head8 = page()->record_head8 - to_aligned_offset8(record_size);
     char* slot_p = btree_page_h::slot_addr(slot + 1);
     *reinterpret_cast<slot_offset8_t*>(slot_p) = -new_record_head8; // ghost record
     *reinterpret_cast<poor_man_key*>(slot_p + sizeof(slot_offset8_t)) = poormkey;
@@ -1011,9 +1010,9 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, int re
     ::memcpy (buf + 2 * sizeof(slot_length_t), key_raw + prefix_len, klen - prefix_len);
     // that's it. doesn't have to write data. do nothing.
 
-    _pp->record_head8 = new_record_head8;
-    ++_pp->nslots;
-    ++_pp->nghosts;
+    page()->record_head8 = new_record_head8;
+    ++page()->nslots;
+    ++page()->nghosts;
     
     w_assert3(get_rec_size(slot) == (slot_length_t) record_size);
     w_assert3(btree_page_h::tuple_poormkey(slot + 1) == poormkey);
@@ -1033,7 +1032,7 @@ void btree_page_h::mark_ghost(slotid_t slot)
     w_assert1(*offset8 > 0);
     // reverse the sign to make it a ghost
     *offset8 = -(*offset8);
-    ++_pp->nghosts;
+    ++page()->nghosts;
     set_dirty();
 }
 
@@ -1050,7 +1049,7 @@ void btree_page_h::unmark_ghost(slotid_t slot)
     w_assert1(*offset8 < 0);
     // reverse the sign to make it a non-ghost
     *offset8 = -(*offset8);
-    --_pp->nghosts;
+    --page()->nghosts;
     set_dirty();
 }
 
@@ -1382,7 +1381,7 @@ btree_page_h::page_usage(int& data_size, int& header_size, int& unused,
     header_size = sizeof(generic_page) - data_sz;
     
     // calculate space wasted in data alignment
-    for (int i=0 ; i<_pp->nslots; i++) {
+    for (int i=0 ; i<page()->nslots; i++) {
         // if slot is not no-record slot
         if ( btree_page_h::tuple_offset8(i) != 0 ) {
             slot_length_t len = (i == 0 ? get_fence_rec_size() : get_rec_size(i - 1));
@@ -1394,7 +1393,7 @@ btree_page_h::page_usage(int& data_size, int& header_size, int& unused,
     unused = sizeof(generic_page) - header_size - data_size - alignment;
 
     t        = tag();        // the type of page 
-    no_slots = _pp->nslots;  // nu of slots in this page
+    no_slots = page()->nslots;  // nu of slots in this page
 
     w_assert1(data_size + header_size + unused + alignment == sizeof(generic_page));
 }
@@ -1597,7 +1596,7 @@ bool btree_page_h::_is_consistent_poormankey () const
 bool btree_page_h::_is_consistent_space () const
 {
     // this is not a part of check. should be always true.
-    w_assert1((size_t) slot_sz * generic_page_h::nslots() <= (size_t) _pp->get_record_head_byte());
+    w_assert1((size_t) slot_sz * nslots() <= (size_t) page()->get_record_head_byte());
     
     // check overlapping records.
     // rather than using std::map, use array and std::sort for efficiency.
@@ -1627,8 +1626,8 @@ bool btree_page_h::_is_consistent_space () const
         }
         size_t offset = to_byte_offset(sorted_slots[slot] >> 16);
         size_t len = sorted_slots[slot] & 0xFFFF;
-        if (offset < (size_t) _pp->get_record_head_byte()) {
-            DBG(<<"the slot starting at offset " << offset <<  " is located before record_head " << _pp->get_record_head_byte());
+        if (offset < (size_t) page()->get_record_head_byte()) {
+            DBG(<<"the slot starting at offset " << offset <<  " is located before record_head " << page()->get_record_head_byte());
             w_assert1(false);
             return false;
         }
@@ -1653,7 +1652,7 @@ bool btree_page_h::_is_consistent_space () const
 
 rc_t btree_page_h::defrag(slotid_t popped)
 {
-    w_assert1(popped >= -1 && popped < _pp->nslots);
+    w_assert1(popped >= -1 && popped < page()->nslots);
     w_assert1 (xct()->is_sys_xct());
     w_assert1 (is_fixed());
     w_assert1 (latch_mode() == LATCH_EX);
@@ -1662,14 +1661,14 @@ rc_t btree_page_h::defrag(slotid_t popped)
     //  Copy headers to scratch area.
     btree_page scratch;
     char *scratch_raw = reinterpret_cast<char*>(&scratch);
-    ::memcpy(scratch_raw, _pp, hdr_sz);
+    ::memcpy(scratch_raw, page(), hdr_sz);
 #ifdef ZERO_INIT
     ::memset(scratch.data, 0, data_sz);
 #endif // ZERO_INIT
     
     //  Move data back without leaving holes
     slot_offset8_t new_offset8 = to_offset8(data_sz);
-    const slotid_t org_slots = _pp->nslots;
+    const slotid_t org_slots = page()->nslots;
     vector<slotid_t> ghost_slots;
     slotid_t new_slots = 0;
     for (slotid_t i = 0; i < org_slots + 1; i++) {//+1 for popping

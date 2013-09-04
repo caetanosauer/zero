@@ -747,19 +747,18 @@ struct page_img_format_t {
     size_t      ending_bytes;
     char        data[logrec_t::max_data_sz - 2 * sizeof(size_t)];
     int size()        { return 2 * sizeof(size_t) + beginning_bytes + ending_bytes; }
-    page_img_format_t (const generic_page_h& page);
+    page_img_format_t (const btree_page_h& page);
 };
-page_img_format_t::page_img_format_t (const generic_page_h& page)
+page_img_format_t::page_img_format_t (const btree_page_h& page)
 {
-    beginning_bytes = generic_page::hdr_sz + page.nslots() * generic_page::slot_sz;
-    ending_bytes = generic_page::page_sz - page._pp->get_record_head_byte() - generic_page::hdr_sz;
+    beginning_bytes = btree_page::hdr_sz + page.nslots() * btree_page::slot_sz;
+    ending_bytes    = btree_page::page_sz - page.page()->get_record_head_byte() - btree_page::hdr_sz;
     const char *pp_bin = (const char *) page._pp;
     ::memcpy (data, pp_bin, beginning_bytes);
-    ::memcpy (data + beginning_bytes, pp_bin + generic_page::hdr_sz + page._pp->get_record_head_byte(), ending_bytes);
+    ::memcpy (data + beginning_bytes, pp_bin + btree_page::hdr_sz + page.page()->get_record_head_byte(), ending_bytes);
 }
 
-page_img_format_log::page_img_format_log(const generic_page_h &page)
-{
+page_img_format_log::page_img_format_log(const btree_page_h &page) {
     fill(&page.pid(), page.tag(),
          (new (_data) page_img_format_t(page))->size());
 }
@@ -773,11 +772,11 @@ void page_img_format_log::redo(generic_page_h* page)
 {
     // REDO is simply applying the image
     page_img_format_t* dp = (page_img_format_t*) _data;
-    w_assert1(dp->beginning_bytes >= generic_page::hdr_sz);
-    w_assert1(dp->beginning_bytes + dp->ending_bytes <= generic_page::page_sz);
+    w_assert1(dp->beginning_bytes >= btree_page::hdr_sz);
+    w_assert1(dp->beginning_bytes + dp->ending_bytes <= btree_page::page_sz);
     char *pp_bin = (char *) page->_pp;
     ::memcpy (pp_bin, dp->data, dp->beginning_bytes);
-    ::memcpy (pp_bin + generic_page::page_sz - dp->ending_bytes, dp->data + dp->beginning_bytes, dp->ending_bytes);
+    ::memcpy (pp_bin + btree_page::page_sz - dp->ending_bytes, dp->data + dp->beginning_bytes, dp->ending_bytes);
     page->set_dirty();
 }
 

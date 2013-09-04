@@ -15,16 +15,97 @@ struct btree_int_stats_t;
 
 
 class btree_page : public generic_page_header {
+public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
+
+    enum {
+        data_sz = generic_page_header::generic_data_sz - 24,  // <<<>>>
+        hdr_sz  = generic_page::generic_hdr_sz + 24, // <<<>>>
+    };
+
+
+
+    friend class btree_ghost_mark_log;
+    friend class btree_ghost_reclaim_log;
+    friend class btree_ghost_t;
+    friend class btree_header_t;
+    friend class btree_impl;
     friend class btree_page_h;
 
     btree_page() {
+        //w_assert1(0);  // FIXME: is this constructor ever called? yes it is (test_btree_ghost)
         w_assert1(data - (const char *) this == hdr_sz);
     }
     ~btree_page() { }
 
 
+#ifdef DOXYGEN_HIDE
+///==========================================
+///   BEGIN: BTree specific headers
+///==========================================
+#endif // DOXYGEN_HIDE
+
+    /**
+    * root page used for recovery (root page is never changed even while grow/shrink).
+    * This can be removed by retrieving it from full pageid (storeid->root page id),
+    * but let's do that later.
+    */
+    shpid_t    btree_root; // +4 -> 40
+    /** first ptr in non-leaf nodes. used only in left-most non-leaf nodes. */
+    shpid_t    btree_pid0; // +4 -> 44
+    /**
+    * B-link page (0 if not linked).
+    * kind of "next", but other nodes don't know about it yet.
+    */
+    shpid_t    btree_foster;  // +4 -> 48
+    /** 1 if leaf, >1 if non-leaf. */
+    int16_t    btree_level; // +2 -> 50
+    /**
+    * length of low-fence key.
+    * Corresponding data is stored in the first slot.
+    */
+    int16_t    btree_fence_low_length;  // +2 -> 52
+    /**
+    * length of high-fence key.
+    * Corresponding data is stored in the first slot after low fence key.
+    */
+    int16_t    btree_fence_high_length;  // +2 -> 54
+    /**
+     * length of high-fence key of the foster chain. 0 if not in a foster chain or right-most of a chain.
+     * Corresponding data is stored in the first slot after high fence key.
+     * When this page belongs to a foster chain,
+     * we need to store high-fence of right-most sibling in every sibling
+     * to do batch-verification with bitmaps.
+     * @see btree_impl::_ux_verify_volume()
+     */
+    int16_t    btree_chain_fence_high_length; // +2 -> 56
+    /**
+    * counts of common leading bytes of the fence keys,
+    * thereby of all entries in this page too.
+    * 0=no prefix compression.
+    * Corresponding data is NOT stored.
+    * We can just use low fence key data.
+    */
+    int16_t    btree_prefix_length;  // +2 -> 58
+    /**
+    * Count of consecutive insertions to right-most or left-most.
+    * Positive values mean skews towards right-most.
+    * Negative values mean skews towards left-most.
+    * Whenever this page receives an insertion into the middle,
+    * this value is reset to zero.
+    * Changes of this value will NOT be logged. It doesn't matter
+    * in terms of correctness, so we don't care about undo/redo
+    * of this header item.
+    */
+    int16_t   btree_consecutive_skewed_insertions; // +2 -> 60
+#ifdef DOXYGEN_HIDE
+///==========================================
+///   END: BTree specific headers
+///==========================================
+#endif // DOXYGEN_HIDE
+
+
     /* MUST BE 8-BYTE ALIGNED HERE */
-    char     data[data_sz];        // must be aligned
+    char     data[data_sz];        // must be aligned  <<<>>>
 
     char*      data_addr8(slot_offset8_t offset8) {
         return data + to_byte_offset(offset8);
@@ -173,8 +254,16 @@ class btree_page_h : public generic_page_h {
     friend class btree_ghost_t;
     friend class btree_ghost_mark_log;
     friend class btree_ghost_reclaim_log;
+    friend class btree_header_t;
+    friend class page_img_format_t;
 
     btree_page* page() const { return reinterpret_cast<btree_page*>(_pp); }
+
+
+    enum {
+        data_sz = btree_page::data_sz,
+        hdr_sz  = btree_page::hdr_sz,
+    };
 
 public:
 #ifdef DOXYGEN_HIDE
@@ -186,6 +275,7 @@ public:
     btree_page_h() {}
     btree_page_h(generic_page* s) : generic_page_h(s) {
         w_assert1(s->tag == t_btree_p);
+        w_assert1(sizeof(btree_page) == sizeof(generic_page));
     }
     btree_page_h(const btree_page_h& p) : generic_page_h(p) {} 
     ~btree_page_h() {}
@@ -200,6 +290,14 @@ public:
 ///   BEGIN: Header Get/Set functions
 ///==========================================
 #endif // DOXYGEN_HIDE
+
+    shpid_t                     btree_root() const { return page()->btree_root;}
+    smsize_t                    used_space()  const;
+
+    // FIXME: next two functions are temporary for swizzling access <<<>>>
+    shpid_t& foster_pointer() { return page()->btree_foster; }
+    shpid_t& pid0_pointer()   { return page()->btree_pid0; }
+
     
     /** Returns 1 if leaf, >1 if non-leaf. */
     int               level() const;
@@ -747,23 +845,23 @@ private:
 inline lpid_t btree_page_h::root() const
 {
     lpid_t p = pid();
-    p.page = _pp->btree_root;
+    p.page = page()->btree_root;
     return p;
 }
 
 inline int btree_page_h::level() const
 {
-    return _pp->btree_level;
+    return page()->btree_level;
 }
 
 inline shpid_t btree_page_h::pid0_opaqueptr() const
 {
-    return _pp->btree_pid0;
+    return page()->btree_pid0;
 }
 
 inline shpid_t btree_page_h::pid0() const
 {
-    shpid_t shpid = _pp->btree_pid0;
+    shpid_t shpid = page()->btree_pid0;
     if (shpid) {
         return smlevel_0::bf->normalize_shpid(shpid);
     }
@@ -787,12 +885,12 @@ inline bool btree_page_h::is_node() const
    
 inline shpid_t btree_page_h::get_foster_opaqueptr() const
 {
-    return _pp->btree_foster;
+    return page()->btree_foster;
 }
 
 inline shpid_t btree_page_h::get_foster() const
 {
-    shpid_t shpid = _pp->btree_foster;
+    shpid_t shpid = page()->btree_foster;
     if (shpid) {
         return smlevel_0::bf->normalize_shpid(shpid);
     }
@@ -801,19 +899,19 @@ inline shpid_t btree_page_h::get_foster() const
 
 inline int16_t btree_page_h::get_prefix_length() const
 {
-    return _pp->btree_prefix_length;
+    return page()->btree_prefix_length;
 }
 inline int16_t btree_page_h::get_fence_low_length() const
 {
-    return _pp->btree_fence_low_length;
+    return page()->btree_fence_low_length;
 }
 inline int16_t btree_page_h::get_fence_high_length() const
 {
-    return _pp->btree_fence_high_length;
+    return page()->btree_fence_high_length;
 }
 inline int16_t btree_page_h::get_chain_fence_high_length() const
 {
-    return _pp->btree_chain_fence_high_length;
+    return page()->btree_chain_fence_high_length;
 }
 
 inline const char* btree_page_h::get_fence_low_key() const
@@ -916,7 +1014,7 @@ inline size_t btree_page_h::calculate_rec_size (const w_keystr_t &key, const cve
 inline bool btree_page_h::is_insertion_extremely_skewed_right() const
 {
     // this means completely pre-sorted insertion like bulk loading.
-    int ins = _pp->btree_consecutive_skewed_insertions;
+    int ins = page()->btree_consecutive_skewed_insertions;
     return ins > 50
         || ins > nrecs() * 9 / 10
         || (ins > 1 && ins >= nrecs() - 1)
@@ -924,11 +1022,11 @@ inline bool btree_page_h::is_insertion_extremely_skewed_right() const
 }    
 inline bool btree_page_h::is_insertion_skewed_right() const
 {
-    return _pp->btree_consecutive_skewed_insertions > 5;
+    return page()->btree_consecutive_skewed_insertions > 5;
 }
 inline bool btree_page_h::is_insertion_skewed_left() const
 {
-    return _pp->btree_consecutive_skewed_insertions < -5;
+    return page()->btree_consecutive_skewed_insertions < -5;
 }
 inline shpid_t btree_page_h::child_opaqueptr(slotid_t slot) const
 {
@@ -1058,7 +1156,7 @@ inline const char* btree_page_h::data_addr8(slot_offset8_t offset8) const
 }
 inline char* btree_page_h::slot_addr(slotid_t idx) const
 {
-    w_assert3(idx >= 0 && idx <= _pp->nslots);
+    w_assert3(idx >= 0 && idx <= page()->nslots);
     return page()->data + (slot_sz * idx);
 }
 
@@ -1089,6 +1187,11 @@ btree_page_h::tuple_addr(slotid_t idx) const
 inline void btree_page_h::change_slot_offset (slotid_t idx, slot_offset8_t offset) {
     char* slot = slot_addr(idx);
     *reinterpret_cast<slot_offset8_t*>(slot) = offset;
+}
+inline smsize_t 
+btree_page_h::used_space() const
+{
+    return (data_sz - page()->get_record_head_byte() + nslots() * slot_sz); 
 }
 
 

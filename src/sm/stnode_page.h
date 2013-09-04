@@ -54,13 +54,13 @@ class stnode_page : public generic_page_header {
 
     /// max # \ref stnode_t's on a single stnode_page; thus, the
     /// maximum number of stores per volume
-    static const size_t max = data_sz / sizeof(stnode_t);
+    static const size_t max = generic_data_sz / sizeof(stnode_t);
 
     /// stnode[i] is the stnode_t for store # i of this volume
     stnode_t stnode[max];
 
     /// unused space (ideally of zero size)
-    char*    padding[data_sz - sizeof(stnode)];
+    char*    padding[generic_data_sz - sizeof(stnode)];
 };
 
 

@@ -30,6 +30,12 @@
 #include <boost/static_assert.hpp>
 #include <ostream>
 
+
+// FIXME: replace all code using the below type with fixable_page_h once it has the right methods...  <<<>>>
+typedef btree_page_h my_btree_page_h;
+
+
+
 ///////////////////////////////////   Initialization and Release BEGIN ///////////////////////////////////  
 
 #ifdef PAUSE_SWIZZLING_ON
@@ -409,7 +415,10 @@ w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(generic_page* parent, generic_pa
     return rc;
 }
 
-w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
+w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page, 
+                                   volid_t vol, shpid_t shpid, 
+                                   latch_mode_t mode, bool conditional, 
+                                   bool virgin_page) {
     w_assert1(vol != 0);
     w_assert1(shpid != 0);
     w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
@@ -1251,17 +1260,16 @@ void bf_tree_m::switch_parent(generic_page* page, generic_page* new_parent)
 
 void bf_tree_m::_convert_to_disk_page(generic_page* page) const {
     DBGOUT3 (<< "converting the page " << page->pid << "... ");
-    
+    my_btree_page_h p(page);
+
     // if the page is a leaf page, foster is the only pointer
-    _convert_to_pageid(&(page->btree_foster));
-    w_assert1(page->btree_level >= 1);
+    _convert_to_pageid(&p.foster_pointer());
+    w_assert1(p.level() >= 1);
     
     //otherwise, we have to check all children
-    if (page->btree_level > 1) {
-        _convert_to_pageid(&(page->btree_pid0));
-        slot_index_t slots = page->nslots;
-        // use generic_page_h class just for using tuple_addr().
-        btree_page_h p (page);
+    if (p.level() > 1) {
+        _convert_to_pageid(&p.pid0_pointer());
+        slot_index_t slots = p.nslots();
         for (slot_index_t i = 1; i < slots; ++i) {
             void* addr = p.tuple_addr(i);
             _convert_to_pageid(reinterpret_cast<shpid_t*>(addr));
@@ -1279,20 +1287,19 @@ inline void bf_tree_m::_convert_to_pageid (shpid_t* shpid) const {
     }
 }
 
-slotid_t bf_tree_m::find_page_id_slot(generic_page* page, shpid_t shpid) const
-{
+slotid_t bf_tree_m::find_page_id_slot(generic_page* page, shpid_t shpid) const {
     w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
-    // w_assert1(page->btree_foster != (shpid | SWIZZLED_PID_BIT));
-    // if (page->btree_foster == shpid) {
+    my_btree_page_h p(page);
+    // w_assert1(p.btree_foster_opaqueptr() != (shpid | SWIZZLED_PID_BIT));
+    // if (p.btree_foster_opaqueptr() == shpid) {
     //     return -1;
     // }
-    w_assert1(page->btree_foster != shpid); // don't swizzle foster-child
-    if (page->btree_level > 1) {
-        if (page->btree_pid0 == shpid) {
+    w_assert1(p.get_foster_opaqueptr() != shpid); // don't swizzle foster-child
+    if (p.level() > 1) {
+        if (p.pid0_opaqueptr() == shpid) {
             return 0;
         }
-        slot_index_t slots = page->nslots;
-        btree_page_h p (page);
+        slot_index_t slots = p.nslots();
         for (slot_index_t i = 1; i < slots; ++i) {
             void* addr = p.tuple_addr(i);
             if (*reinterpret_cast<shpid_t*>(addr) == shpid) {
@@ -1319,7 +1326,7 @@ void bf_tree_m::swizzle_children(generic_page* parent, const slotid_t* slots, ui
     w_assert1(_is_active_idx(parent_idx));
     w_assert1(is_swizzled(parent)); // swizzling is transitive.
 
-    btree_page_h p (parent);
+    my_btree_page_h p (parent);
     for (uint32_t i = 0; i < slots_size; ++i) {
         slotid_t slot = slots[i];
         w_assert1(slot >= 0); // w_assert1(slot >= -1); see below
@@ -1328,13 +1335,13 @@ void bf_tree_m::swizzle_children(generic_page* parent, const slotid_t* slots, ui
         // To simplify the tree traversal while unswizzling,
         // we never swizzle foster-child pointers.
         // if (slot == -1) {
-        //    if ((parent->btree_foster & SWIZZLED_PID_BIT) == 0) {
-        //        _swizzle_child_pointer (parent, &(parent->btree_foster));
+        //    if ((p.foster_opaqueptr() & SWIZZLED_PID_BIT) == 0) {
+        //        _swizzle_child_pointer (parent, &(p.foster_pointer()));
         //    }
         //} else
         if (slot == 0) {
-            if ((parent->btree_pid0 & SWIZZLED_PID_BIT) == 0) {
-                _swizzle_child_pointer (parent, &(parent->btree_pid0));
+            if ((p.pid0_opaqueptr() & SWIZZLED_PID_BIT) == 0) {
+                _swizzle_child_pointer (parent, &(p.pid0_pointer()));
             }
         } else {
             shpid_t* addr = reinterpret_cast<shpid_t*>(p.tuple_addr(slot));
@@ -1493,7 +1500,8 @@ void bf_tree_m::_unswizzle_traverse_store(uint32_t &unswizzled_frames, volid_t v
         return; // just give up in unlucky case (probably the store has been just deleted)
     }
     bf_idx parent_idx = _volumes[vol]->_root_pages[store];
-    if (_buffer[parent_idx].btree_level <= 1) {
+    my_btree_page_h p(&_buffer[parent_idx]);
+    if (p.level() <= 1) {
         return;
     }
     // collect cold pages first. if need more then repeat for hot pages
@@ -1507,11 +1515,11 @@ void bf_tree_m::_unswizzle_traverse_store(uint32_t &unswizzled_frames, volid_t v
 
 
 bool bf_tree_m::has_swizzled_child(bf_idx node_idx) {
-    btree_page_h node_p (_buffer + node_idx);
-    for (uint32_t j = 0; j < _buffer[node_idx].nslots; ++j) {
+    my_btree_page_h node_p (_buffer + node_idx);
+    for (uint32_t j = 0; j < node_p.nslots(); ++j) {
         shpid_t shpid;
         if (j == 0) {
-            shpid = _buffer[node_idx].btree_pid0;
+            shpid = node_p.pid0_opaqueptr();
         } else {
             shpid = *reinterpret_cast<shpid_t*>(node_p.tuple_addr(j));
         }
@@ -1522,9 +1530,11 @@ bool bf_tree_m::has_swizzled_child(bf_idx node_idx) {
     return false;
 }
 
-void bf_tree_m::_unswizzle_traverse_node(
-    uint32_t &unswizzled_frames, volid_t vol, snum_t store, bf_idx node_idx,
-    uint16_t cur_clockhand_depth) {
+void bf_tree_m::_unswizzle_traverse_node(uint32_t &unswizzled_frames,
+                                         volid_t vol,
+                                         snum_t store,
+                                         bf_idx node_idx,
+                                         uint16_t cur_clockhand_depth) {
     w_assert1(cur_clockhand_depth < MAX_SWIZZLE_CLOCKHAND_DEPTH);
     if (_swizzle_clockhand_current_depth <= cur_clockhand_depth) {
         _swizzle_clockhand_pathway[cur_clockhand_depth] = 0;
@@ -1532,22 +1542,22 @@ void bf_tree_m::_unswizzle_traverse_node(
     }
     uint32_t old = _swizzle_clockhand_pathway[cur_clockhand_depth];
     bf_tree_cb_t &node_cb = get_cb(node_idx);
-    if (old >= (uint32_t) _buffer[node_idx].nslots) {
+    my_btree_page_h node_p (_buffer + node_idx);
+    if (old >= (uint32_t) node_p.nslots()) {
         return;
     }
 
     // check children
-    uint32_t remaining = _buffer[node_idx].nslots - old;
-    btree_page_h node_p (_buffer + node_idx);
+    uint32_t remaining = node_p.nslots() - old;
     for (uint32_t i = 0; i < remaining && unswizzled_frames < UNSWIZZLE_BATCH_SIZE; ++i) {
         uint32_t slot = old + i;
-        if (!node_cb._used || _buffer[node_idx].btree_level <= 1) {
+        if (!node_cb._used || node_p.level() <= 1) {
             return;
         }
 
         shpid_t shpid;
         if (slot == 0) {
-            shpid = _buffer[node_idx].btree_pid0;
+            shpid = node_p.pid0_opaqueptr();
         } else {
             shpid = *reinterpret_cast<shpid_t*>(node_p.tuple_addr(slot));
         }
@@ -1563,7 +1573,7 @@ void bf_tree_m::_unswizzle_traverse_node(
         }
 
         bf_idx child_idx = shpid ^ SWIZZLED_PID_BIT;
-        if (_buffer[node_idx].btree_level >= 3) {
+        if (node_p.level() >= 3) {
             // child is also an intermediate node
             _unswizzle_traverse_node (unswizzled_frames, vol, store, child_idx, cur_clockhand_depth + 1);
             // if the child node is left with no swizzled pointers then try to unswizzle 
@@ -1633,10 +1643,10 @@ bool bf_tree_m::_unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot) {
     if (child_slot >= (uint32_t) _buffer[parent_idx].nslots) {
         return false;
     }
-    btree_page_h parent (_buffer + parent_idx);
+    my_btree_page_h parent (_buffer + parent_idx);
     shpid_t* shpid_addr;
     if (child_slot == 0) {
-        shpid_addr = &(_buffer[parent_idx].btree_pid0);
+        shpid_addr = &(parent.pid0_pointer());
     } else {
         shpid_addr = reinterpret_cast<shpid_t*>(parent.tuple_addr(child_slot));
     }
@@ -1738,24 +1748,23 @@ void bf_tree_m::debug_dump(std::ostream &o) const
     }
 }
 
-void bf_tree_m::debug_dump_page_pointers(std::ostream& o, generic_page* page) const
-{
+void bf_tree_m::debug_dump_page_pointers(std::ostream& o, generic_page* page) const {
     bf_idx idx = page - _buffer;
     w_assert1(idx > 0);
     w_assert1(idx < _block_cnt);
     o << "dumping page:" << page->pid << ", bf_idx=" << idx << std::endl;
     o << "  foster=";
-    debug_dump_pointer (o, page->btree_foster);
+    my_btree_page_h p(page);
+    debug_dump_pointer (o, p.get_foster_opaqueptr());
     o << std::endl;
 
-    if (page->btree_level > 1) {
-        slot_index_t slots = page->nslots;
-        btree_page_h p (page);
+    if (p.level() > 1) {
+        slot_index_t slots = p.nslots();
         o << "  ";
         for (slot_index_t i = 0; i < slots; ++i) {
             o << "child[" << i << "]=";
             if (i == 0) {
-                debug_dump_pointer(o, page->btree_pid0);
+                debug_dump_pointer(o, p.pid0_opaqueptr());
             } else {
                 void* addr = p.tuple_addr(i);
                 debug_dump_pointer(o, *reinterpret_cast<shpid_t*>(addr));

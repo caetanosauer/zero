@@ -25,10 +25,10 @@ class alloc_page_h;
 class generic_page_h {
 public:
     enum {
-        page_sz = sizeof(generic_page),
-        data_sz = generic_page::data_sz,
-        hdr_sz = generic_page::hdr_sz,
-        slot_sz = generic_page::slot_sz
+        page_sz         = sizeof(generic_page),
+        generic_data_sz = generic_page_header::generic_data_sz,
+        generic_hdr_sz  = generic_page_header::generic_hdr_sz,
+        slot_sz         = generic_page::slot_sz
     };
     enum logical_operation {
         l_none=0,
@@ -141,12 +141,10 @@ public:
     volid_t                     vol() const;
     snum_t                      store() const;
     tag_t                       tag() const { return (tag_t) _pp->tag;}
-    shpid_t                     btree_root() const { return _pp->btree_root;}
 
     // used when page is first read from disk
     void                        set_vid(vid_t vid);
 
-    smsize_t                    used_space()  const;
     // Total usable space on page
     smsize_t                     usable_space()  const;
     
@@ -214,11 +212,6 @@ inline void
 generic_page_h::set_vid(vid_t vid)
 {
     _pp->pid._stid.vol = vid;
-}
-inline smsize_t 
-generic_page_h::used_space() const
-{
-    return (data_sz - _pp->get_record_head_byte() + nslots() * slot_sz); 
 }
 
 inline smsize_t

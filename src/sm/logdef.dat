@@ -140,7 +140,7 @@ page_set_tobedeleted   1011000 1.0 (const generic_page_h& page);
 # and from the record_head to the end of page.
 # We can assume totally defragmented page image because this is page creation.
 # We don't need UNDO (again, this is page creation!), REDO is just two memcpy().
-page_img_format   1011000 1.0 (const generic_page_h& page);
+page_img_format   1011000 1.0 (const btree_page_h& page);
 
 #########################################################################
 # type             XSRUFAL  fudge    arg                                #

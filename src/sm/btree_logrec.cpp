@@ -98,7 +98,7 @@ struct btree_update_t {
     uint16_t    _new_elen;
     char        _data[logrec_t::max_data_sz - sizeof(shpid_t) - 3*sizeof(int16_t)];
 
-    btree_update_t(const generic_page_h& page, const w_keystr_t& key,
+    btree_update_t(const btree_page_h& page, const w_keystr_t& key,
                    const char* old_el, int old_elen, const cvec_t& new_el) {
         _root_shpid = page.btree_root();
         _klen       = key.get_length_as_keystr();
@@ -175,7 +175,7 @@ struct btree_overwrite_t {
     uint16_t    _elen;
     char        _data[logrec_t::max_data_sz - sizeof(shpid_t) - 3*sizeof(int16_t)];
 
-    btree_overwrite_t(const generic_page_h& page, const w_keystr_t& key,
+    btree_overwrite_t(const btree_page_h& page, const w_keystr_t& key,
             const char* old_el, const char *new_el, size_t offset, size_t elen) {
         _root_shpid = page.btree_root();
         _klen       = key.get_length_as_keystr();
@@ -267,21 +267,20 @@ public:
     ) : btree_pid0(pid0), btree_foster(foster), btree_level(level),
     btree_chain_fence_high_length(chain_fence_high_length)
          {};
-    btree_header_t(const generic_page_h &p)
-    : btree_pid0(p._pp->btree_pid0), btree_foster(p._pp->btree_foster), btree_level(p._pp->btree_level),
-    btree_chain_fence_high_length(p._pp->btree_chain_fence_high_length)
-         {};
+    btree_header_t(const btree_page_h &p) :
+        btree_pid0(p.pid0_opaqueptr()), btree_foster(p.get_foster_opaqueptr()), btree_level(p.level()),
+        btree_chain_fence_high_length(p.get_chain_fence_high_length())
+        {};
     
     int size()  { return sizeof(*this); }
-    void apply(generic_page_h* page); // used from both undo/redo
+    void apply(btree_page_h* page); // used from both undo/redo
 };
 
-void btree_header_t::apply(generic_page_h* page)
-{
-    page->_pp->btree_pid0 = btree_pid0;
-    page->_pp->btree_level = btree_level;
-    page->_pp->btree_foster = btree_foster;
-    page->_pp->btree_chain_fence_high_length = btree_chain_fence_high_length;
+void btree_header_t::apply(btree_page_h* page) {
+    page->page()->btree_pid0   = btree_pid0;
+    page->page()->btree_level  = btree_level;
+    page->page()->btree_foster = btree_foster;
+    page->page()->btree_chain_fence_high_length = btree_chain_fence_high_length;
 }
 
 /** Log of Btree page header changes. */
@@ -290,27 +289,23 @@ public:
     btree_header_t   before;
     btree_header_t   after;
 
-    btree_header_change_t(const generic_page_h &p,
-        shpid_t btree_pid0,
-        int16_t btree_level,
-        shpid_t btree_foster,
-        int16_t btree_chain_fence_high_length
-                    ) : 
-           before (p),
-           after (btree_pid0, btree_level, btree_foster, btree_chain_fence_high_length)
-       {
-       }
+    btree_header_change_t(const btree_page_h &p,
+                          shpid_t btree_pid0,
+                          int16_t btree_level,
+                          shpid_t btree_foster,
+                          int16_t btree_chain_fence_high_length) : 
+        before (p),
+        after (btree_pid0, btree_level, btree_foster, btree_chain_fence_high_length)
+        {}
 
     int size()  { return before.size() + after.size();}
 };
 
 btree_header_log::btree_header_log(const btree_page_h& p,
-    shpid_t btree_pid0,
-    int16_t btree_level,
-    shpid_t btree_foster,
-    int16_t btree_chain_fence_high_length
-)
-{
+                                   shpid_t btree_pid0,
+                                   int16_t btree_level,
+                                   shpid_t btree_foster,
+                                   int16_t btree_chain_fence_high_length) {
     fill(&p.pid(), p.tag(), (new (data()) btree_header_change_t(
         p, btree_pid0, btree_level, btree_foster,
                 btree_chain_fence_high_length))->size());
@@ -319,13 +314,15 @@ btree_header_log::btree_header_log(const btree_page_h& p,
 void  btree_header_log::redo(generic_page_h* page)
 {
     btree_header_change_t* df = (btree_header_change_t*) data();
-    df->after.apply(page);
+    borrowed_btree_page_h p(page);
+    df->after.apply(&p);
 }
 
 void  btree_header_log::undo(generic_page_h* page)
 {
     btree_header_change_t* df = (btree_header_change_t*) data();
-    df->before.apply(page);
+    borrowed_btree_page_h p(page);
+    df->before.apply(&p);
 }
 
 struct btree_ghost_t {
@@ -353,7 +350,7 @@ btree_ghost_t::btree_ghost_t(const btree_page_h& p, const vector<slotid_t>& slot
 
     // the first data is prefix
     {
-        uint16_t prefix_len = p._pp->btree_prefix_length;
+        uint16_t prefix_len = p.page()->btree_prefix_length;
         prefix_offset = (current - slot_data);
         // *reinterpret_cast<uint16_t*>(current) = prefix_len; this causes Bus Error on solaris! so, instead:
         ::memcpy(current, &prefix_len, sizeof(uint16_t));

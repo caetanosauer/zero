@@ -1375,7 +1375,7 @@ ss_m::config_info(sm_config_info_t& info)
     // 
     // OK, now that _data is already aligned, we don't have to
     // lose those 4 bytes.
-    info.lg_rec_page_space = generic_page::data_sz;
+    info.lg_rec_page_space = btree_page::data_sz;
     info.buffer_pool_size = bf->get_block_cnt() * ss_m::page_sz / 1024;
     info.max_btree_entry_size  = btree_m::max_entry_size();
     info.exts_on_page  = 0;

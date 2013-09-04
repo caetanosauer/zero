@@ -137,6 +137,8 @@ enum replacement_policy_t {
     POLICY_RANDOM
 };
 
+
+
 /**
  * \Brief The new buffer manager that exploits the tree structure of indexes.
  * \ingroup SSMBUFPOOL

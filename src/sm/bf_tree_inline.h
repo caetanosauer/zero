@@ -13,6 +13,8 @@
 #include "bf_tree_vol.h"
 #include "bf_hashtable.h"
 
+#include "btree_page.h"  // FIXME for 1 occurrence of btree_page_h <<<>>>
+
 void swizzling_stat_swizzle();
 void swizzling_stat_print(const char* prefix);
 void swizzling_stat_reset();
@@ -78,7 +80,10 @@ inline w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx idx, latch_mo
     return RCOK;
 }
 
-inline w_rc_t bf_tree_m::fix_nonroot (generic_page*& page, generic_page *parent, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
+inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent, 
+                                     volid_t vol, shpid_t shpid, 
+                                     latch_mode_t mode, bool conditional, 
+                                     bool virgin_page) {
 #ifdef SIMULATE_MAINMEMORYDB
     if (virgin_page) {
         W_DO (_fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page));
@@ -105,8 +110,9 @@ inline w_rc_t bf_tree_m::fix_nonroot (generic_page*& page, generic_page *parent,
         // also try to swizzle this page
         // TODO so far we swizzle all pages as soon as we load them to bufferpool
         // but, we might want to consider a more advanced policy.
+        btree_page_h p(parent); // FIXME: really my_btree_page_h <<<>>>
         if (!_bf_pause_swizzling && is_swizzled(parent) && !is_swizzled(page)
-                && parent->btree_foster != shpid // don't swizzle foster child
+                && p.get_foster_opaqueptr() != shpid // don't swizzle foster child
             ) {
             slotid_t slot = find_page_id_slot (parent, shpid);
             // this is a new (virgin) page which has not been linked yet. 

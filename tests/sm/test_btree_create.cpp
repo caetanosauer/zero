@@ -72,7 +72,8 @@ w_rc_t create_check(ss_m* ssm, test_volume_t *test_volume) {
                 cout << "wtf?? " << buf.tag; break;
         }
         if (buf.tag == t_btree_p) {
-            cout << "(level=" << buf.btree_level << ")";
+            btree_page_h p(&buf);
+            cout << "(level=" << p.level() << ")";
         }
         
         buf.tag = t_any_p; // hack.
