@@ -219,6 +219,12 @@ public:
     void             update_checksum () const {_pp->update_checksum();}
 
 protected:
+    generic_page_h(generic_page* s, const lpid_t& pid, tag_t tag) : _pp(s) {
+        ::memset(_pp, 0, sizeof(*_pp));
+        _pp->pid = pid;
+        _pp->tag = tag;
+    }    
+
     generic_page* _pp;
 };
 

@@ -28,13 +28,9 @@ void alloc_page::set_bits(uint32_t from, uint32_t to) {
 
 
 alloc_page_h::alloc_page_h(generic_page* s, const lpid_t& pid):
-    generic_page_h(s)
+    generic_page_h(s, pid, t_alloc_p)
 {
     w_assert1(sizeof(alloc_page) == generic_page_header::page_sz);
-
-    ::memset (_pp, 0, sizeof(*_pp));
-    _pp->pid = pid;
-    _pp->tag = t_alloc_p;
 
     shpid_t pid_offset = alloc_pid_to_pid_offset(pid.page);
     page()->pid_offset        = pid_offset;
