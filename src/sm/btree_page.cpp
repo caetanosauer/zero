@@ -161,7 +161,7 @@ void btree_page_h::_steal_records(
         src_prefix_diff += prefix_len_diff;
     }
     for (int i = steal_from; i < steal_to; ++i) {
-        const unsigned char* src_rec = (const unsigned char*) steal_src->tuple_addr(i + 1);// +1 because it's generic_page_h
+        const unsigned char* src_rec = (const unsigned char*) steal_src->tuple_addr(i + 1);// +1 because it's btree_page_h
         cvec_t v;
         slot_length_t src_rec_len;
         slot_length_t klen;
@@ -424,7 +424,7 @@ void btree_page_h::search_leaf(
     // check the last record to speed-up sorted insert
     int last_slot = nrecs() - 1;
     if (last_slot >= 0) {
-        poor_man_key last_poormkey = btree_page_h::tuple_poormkey(last_slot + 1); // +1 because generic_page_h
+        poor_man_key last_poormkey = btree_page_h::tuple_poormkey(last_slot + 1); // +1 because btree_page_h
         if (last_poormkey < poormkey) {
             ret_slot = nrecs();
             w_assert1(_compare_leaf_key_noprefix(last_slot, key_noprefix, key_len) < 0);
@@ -451,7 +451,7 @@ void btree_page_h::search_leaf(
     while (lo <= hi)  {
         mi = (lo + hi) >> 1;    // ie (lo + hi) / 2
 
-        poor_man_key cur_poormkey = btree_page_h::tuple_poormkey(mi + 1); // +1 because generic_page_h
+        poor_man_key cur_poormkey = btree_page_h::tuple_poormkey(mi + 1); // +1 because btree_page_h
         if (cur_poormkey < poormkey) {
             lo = mi + 1;
             w_assert1(_compare_leaf_key_noprefix(mi, key_noprefix, key_len) < 0);
@@ -506,7 +506,7 @@ void btree_page_h::search_node(
     if (nrecs() == 0) {
         return_pid0 = true;
     } else  {
-        poor_man_key cur_poormkey = btree_page_h::tuple_poormkey(0 + 1); // +1 because generic_page_h
+        poor_man_key cur_poormkey = btree_page_h::tuple_poormkey(0 + 1); // +1 because btree_page_h
         if (cur_poormkey > poormkey) {
             return_pid0 = true;
             w_assert1(_compare_node_key_noprefix(0, key_noprefix, key_len) > 0);
@@ -538,7 +538,7 @@ void btree_page_h::search_node(
     // check the last record to speed-up sorted insert
     int last_slot = nrecs() - 1;
     if (last_slot >= 0) {
-        poor_man_key last_poormkey = btree_page_h::tuple_poormkey(last_slot + 1); // +1 because generic_page_h
+        poor_man_key last_poormkey = btree_page_h::tuple_poormkey(last_slot + 1); // +1 because btree_page_h
         if (last_poormkey < poormkey) { // note that it's "<", not "<=", because same poormkey doesn't mean same key
             ret_slot = last_slot;
             w_assert1(_compare_node_key_noprefix(last_slot, key_noprefix, key_len) < 0);
@@ -566,7 +566,7 @@ void btree_page_h::search_node(
     for (; lo < hi - 1; )  {
         mi = (lo + hi) >> 1;    // ie (lo + hi) / 2
 
-        poor_man_key cur_poormkey = btree_page_h::tuple_poormkey(mi + 1); // +1 because generic_page_h
+        poor_man_key cur_poormkey = btree_page_h::tuple_poormkey(mi + 1); // +1 because btree_page_h
         if (cur_poormkey < poormkey) {
             lo = mi;
             w_assert1(_compare_node_key_noprefix(mi, key_noprefix, key_len) < 0);
@@ -686,7 +686,7 @@ rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, shpid_t chi
 }
 rc_t btree_page_h::_insert_expand_nolog(slotid_t slot, const cvec_t &vec, poor_man_key poormkey)
 {
-    slotid_t idx = slot + 1; // slot index in generic_page_h
+    slotid_t idx = slot + 1; // slot index in btree_page_h
     w_assert1(idx >= 0 && idx <= nslots());
     w_assert3 (_is_consistent_space());
     // this shouldn't happen. the caller should have checked with check_space_for_insert()
@@ -749,7 +749,7 @@ void btree_page_h::_append_nolog(const cvec_t &vec, poor_man_key poormkey, bool 
 
 void btree_page_h::_expand_rec(slotid_t slot, slot_length_t rec_len)
 {
-    slotid_t idx = slot + 1; // slot index in generic_page_h
+    slotid_t idx = slot + 1; // slot index in btree_page_h
     w_assert1(idx >= 0 && idx < nslots());
     w_assert1(usable_space() >= align(rec_len));
     w_assert3(_is_consistent_space());
@@ -807,7 +807,7 @@ rc_t btree_page_h::replace_expand_fence_rec_nolog(const cvec_t &fences)
 
 rc_t btree_page_h::remove_shift_nolog(slotid_t slot)
 {
-    slotid_t idx = slot + 1; // slot index in generic_page_h
+    slotid_t idx = slot + 1; // slot index in btree_page_h
     w_assert1(idx >= 0 && idx < nslots());
     w_assert1(slot >= 0); // this method does NOT assume shifting fence record
     w_assert3 (_is_consistent_space());
@@ -1021,7 +1021,7 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, int re
 
 void btree_page_h::mark_ghost(slotid_t slot)
 {
-    slotid_t idx = slot + 1; // slot index in generic_page_h
+    slotid_t idx = slot + 1; // slot index in btree_page_h
     w_assert0(tag() == t_btree_p);
     w_assert1(idx >= 0 && idx < nslots());
     w_assert1(slot >= 0); // fence record cannot be a ghost
@@ -1038,7 +1038,7 @@ void btree_page_h::mark_ghost(slotid_t slot)
 
 void btree_page_h::unmark_ghost(slotid_t slot)
 {
-    slotid_t idx = slot + 1; // slot index in generic_page_h
+    slotid_t idx = slot + 1; // slot index in btree_page_h
     w_assert0(tag() == t_btree_p);
     w_assert1(idx >= 0 && idx < nslots());
     w_assert1(slot >= 0); // fence record cannot be a ghost
@@ -1579,7 +1579,7 @@ bool btree_page_h::_is_consistent_poormankey () const
     }
     // for other records, check with the real key string in the record
     for (slotid_t slot = 0; slot < recs; ++slot) {
-        poor_man_key poorman_key = btree_page_h::tuple_poormkey(slot + 1); //+1 as generic_page_h
+        poor_man_key poorman_key = btree_page_h::tuple_poormkey(slot + 1); //+1 as btree_page_h
         size_t curkey_len;
         const char* curkey = is_leaf() ? _leaf_key_noprefix(slot, curkey_len) : _node_key_noprefix(slot, curkey_len);
         poor_man_key correct_poormankey = extract_poor_man_key(curkey, curkey_len);
@@ -1601,7 +1601,7 @@ bool btree_page_h::_is_consistent_space () const
     // check overlapping records.
     // rather than using std::map, use array and std::sort for efficiency.
     // high-16bits=offset, low-16bits=len
-    const slotid_t slot_cnt = generic_page_h::nslots();
+    const slotid_t slot_cnt = nslots();
     uint32_t *sorted_slots = new uint32_t[slot_cnt];
     w_auto_delete_array_t<uint32_t> sorted_slots_autodel (sorted_slots);
     for (slotid_t slot = 0; slot < slot_cnt; ++slot) {

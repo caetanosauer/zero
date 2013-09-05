@@ -42,6 +42,7 @@ public:
      * Imaginery 'fix' for a non-bufferpool-managed page.
      */
     generic_page_h(generic_page* s) : _pp(s), _mode(LATCH_NL) {
+        w_assert1(s->tag == t_btree_p);  // <<<>>>
         w_assert1(s != NULL);
     }
 
