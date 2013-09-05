@@ -136,14 +136,6 @@ public:
     const lsn_t&                lsn() const;
     void                        set_lsns(const lsn_t& lsn);
 
-    const lpid_t&               pid() const;
-    volid_t                     vol() const;
-    snum_t                      store() const;
-    tag_t                       tag() const { return (tag_t) _pp->tag;}
-
-    // used when page is first read from disk
-    void                        set_vid(vid_t vid);
-
     // Total usable space on page
     smsize_t                     usable_space()  const;
     
@@ -155,21 +147,13 @@ public:
     slotid_t                     nslots() const;
 
     uint32_t                     page_flags() const;
-    generic_page&                      persistent_part();
-    const generic_page&                persistent_part_const() const;
+
     bool                         is_fixed() const;
     latch_mode_t                 latch_mode() const { return _mode; }
     bool                         is_latched() const { return _mode != LATCH_NL; }
     /** conditionally upgrade the latch to EX. returns if successfully upgraded. */
     bool                         upgrade_latch_conditional();
     
-    /** Returns the stored value of checksum of this page. */
-    uint32_t          get_checksum () const {return _pp->checksum;}
-    /** Calculate the correct value of checksum of this page. */
-    uint32_t          calculate_checksum () const {return _pp->calculate_checksum();}
-    /** Renew the stored value of checksum of this page. */
-    void             update_checksum () const {_pp->update_checksum();}
-
 protected:
 
     /**
@@ -190,27 +174,6 @@ protected:
     friend class borrowed_btree_page_h;
 };
 
-inline const lpid_t&
-fixable_page_h::pid() const
-{
-    return _pp->pid;
-}
-inline volid_t
-fixable_page_h::vol() const
-{
-    return _pp->pid.vol().vol;
-}
-inline snum_t
-fixable_page_h::store() const
-{
-    return _pp->pid.store();
-}
-
-inline void
-fixable_page_h::set_vid(vid_t vid)
-{
-    _pp->pid._stid.vol = vid;
-}
 
 inline smsize_t
 fixable_page_h::usable_space() const
@@ -224,18 +187,6 @@ inline uint32_t
 fixable_page_h::page_flags() const
 {
     return _pp->page_flags;
-}
-
-inline generic_page&
-fixable_page_h::persistent_part()
-{
-    return *(generic_page*) _pp;
-}
-
-inline const generic_page&
-fixable_page_h::persistent_part_const() const
-{
-    return *(generic_page*) _pp; 
 }
 
 inline bool

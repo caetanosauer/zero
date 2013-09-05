@@ -33,7 +33,7 @@ stnode_cache_t::stnode_cache_t(vid_t vid, bf_fixed_m* special_pages):
     _special_pages(special_pages),
     _stnode_page(special_pages->get_pages() + special_pages->get_page_cnt()-1)
 {
-    w_assert1(_stnode_page.to_generic_page()->pid.vol() == _vid);
+    w_assert1(_stnode_page.vid() == _vid);
 }
 
 

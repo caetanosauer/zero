@@ -202,10 +202,26 @@ public:
     virtual ~generic_page_h() {}
 
     /// return pointer to underlying page
-    generic_page* to_generic_page() const { return _pp; }
+    generic_page* get_generic_page() const { return _pp; }
+
+
+    const lpid_t& pid()   const { return _pp->pid; }
+    vid_t         vid()   const { return _pp->pid.vol(); }
+    volid_t       vol()   const { return _pp->pid.vol().vol; }
+    snum_t        store() const { return _pp->pid.store(); }
+    tag_t         tag()   const { return (tag_t) _pp->tag; }
+
+    /** Returns the stored value of checksum of this page. */
+    uint32_t          get_checksum () const {return _pp->checksum;}
+    /** Calculate the correct value of checksum of this page. */
+    uint32_t          calculate_checksum () const {return _pp->calculate_checksum();}
+    /** Renew the stored value of checksum of this page. */
+    void             update_checksum () const {_pp->update_checksum();}
 
 protected:
     generic_page* _pp;
 };
+
+
 
 #endif

@@ -1215,7 +1215,7 @@ class borrowed_btree_page_h : public btree_page_h {
 
 public:
     borrowed_btree_page_h(fixable_page_h* source) :
-        btree_page_h(&source->persistent_part()),
+        btree_page_h(source->get_generic_page()),
         _source(source)
     {
         _mode = _source->_mode;

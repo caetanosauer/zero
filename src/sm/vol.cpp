@@ -822,17 +822,17 @@ vol_t::format_vol(
         {
             for (apid.page = 1; apid.page < alloc_pages + 1; ++apid.page)  {
                 alloc_page_h ap(&buf, apid);  // format page
+                w_assert1(ap.vid() == vid);
                 // set bits for the header pages
                 if (apid.page == 1) {
                     for (shpid_t hdr_pid = 0; hdr_pid < hdr_pages; ++hdr_pid) {
                         ap.set_bit(hdr_pid);
                     }
                 }
-                generic_page& page (*ap.to_generic_page());
-                w_assert9(&buf == &page);
-                w_assert1(page.pid.vol() == vid);
+                generic_page* page = ap.get_generic_page();
+                w_assert9(&buf == page);
 
-                rc = me()->write(fd, &page, sizeof(page));
+                rc = me()->write(fd, page, sizeof(*page));
                 if (rc.is_error()) {
                     W_IGNORE(me()->close(fd));
                     return rc;
@@ -846,9 +846,9 @@ vol_t::format_vol(
             DBG(<<" formatting stnode_page");
             DBGTHRD(<<"stnode_page page " << spid.page);
             stnode_page_h fp(&buf, spid);  // formatting...
-            generic_page& page (*fp.to_generic_page());
-            w_assert1(page.pid.vol() == vid);
-            rc = me()->write(fd, &page, sizeof(page));
+            w_assert1(fp.vid() == vid);
+            generic_page* page = fp.get_generic_page();
+            rc = me()->write(fd, page, sizeof(*page));
             if (rc.is_error()) {
                 W_IGNORE(me()->close(fd));
                 return rc;
