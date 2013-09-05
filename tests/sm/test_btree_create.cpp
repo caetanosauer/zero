@@ -66,7 +66,6 @@ w_rc_t create_check(ss_m* ssm, test_volume_t *test_volume) {
             case t_alloc_p: cout << "t_alloc_p"; break;
             case t_stnode_p: cout << "t_stnode_p"; break;
             case t_btree_p: cout << "t_btree_p"; break;
-            case t_any_p: cout << "t_any_p"; break;
             default:
                 cout << "wtf?? " << buf.tag; break;
         }
@@ -75,7 +74,6 @@ w_rc_t create_check(ss_m* ssm, test_volume_t *test_volume) {
             cout << "(level=" << p.level() << ")";
         }
         
-        buf.tag = t_any_p; // hack.
         cout << endl;
     }
 

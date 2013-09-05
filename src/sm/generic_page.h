@@ -15,12 +15,9 @@ enum tag_t {
     t_alloc_p      = 1,        // free-page allocation page 
     t_stnode_p     = 2,        // store node page
     t_btree_p      = 5,        // btree page 
-    t_any_p        = 11        // indifferent
 };
 enum page_flag_t {
     t_tobedeleted  = 0x01,     // this page will be deleted as soon as the page is evicted from bufferpool
-    t_virgin       = 0x02,     // newly allocated page
-    t_written      = 0x08      // read in from disk
 };
 
 
@@ -79,8 +76,6 @@ class generic_page_header {
 public:
     enum {
         page_sz         = SM_PAGESIZE,
-//        hdr_sz        = 64, // NOTICE always sync with the offsets below
-        //generic_hdr_sz  = 40, // NOTICE always sync with the offsets below
         /** Poor man's normalized key length. */
         poormkey_sz     = sizeof (poor_man_key),
         slot_sz         = sizeof(slot_offset8_t) + poormkey_sz
@@ -206,10 +201,10 @@ public:
 
 
     const lpid_t& pid()   const { return _pp->pid; }
+    tag_t         tag()   const { return (tag_t) _pp->tag; }
     vid_t         vid()   const { return _pp->pid.vol(); }
     volid_t       vol()   const { return _pp->pid.vol().vol; }
     snum_t        store() const { return _pp->pid.store(); }
-    tag_t         tag()   const { return (tag_t) _pp->tag; }
 
     /** Returns the stored value of checksum of this page. */
     uint32_t          get_checksum () const {return _pp->checksum;}
@@ -227,7 +222,5 @@ protected:
 
     generic_page* _pp;
 };
-
-
 
 #endif

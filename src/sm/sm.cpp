@@ -2570,15 +2570,14 @@ ss_m::gather_xct_stats(sm_stats_info_t& _stats, bool reset)
             // print -grot
             extern int bffix_SH[];
             extern int bffix_EX[];
+        FIXME: THIS CODE IS ROTTEN AND OUT OF DATE WITH tag_t!!!
             static const char *names[] = {
                 "t_bad_p",
                 "t_alloc_p",
                 "t_stnode_p",
                 "t_btree_p",
-                "t_any_p",
                 "none"
                 };
-
             cout << "PAGE FIXES " <<endl;
             for (int i=0; i<=14; i++) {
                     cout  << names[i] << "="  
