@@ -16,14 +16,14 @@
 
 
 stnode_page_h::stnode_page_h(generic_page* s, const lpid_t& pid):
-    _page(reinterpret_cast<stnode_page*>(s)) 
+    generic_page_h(s)
 {
     w_assert1(sizeof(stnode_page) == generic_page_header::page_sz);
 
-    ::memset(_page, 0, sizeof(*_page));
+    ::memset(_pp, 0, sizeof(*_pp));
 
-    _page->pid = pid;
-    _page->tag = t_stnode_p;
+    page()->pid = pid;
+    page()->tag = t_stnode_p;
 }    
 
 

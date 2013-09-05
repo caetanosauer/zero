@@ -22,7 +22,7 @@ class alloc_page_h;
 /**
  *  Basic page handle class.
  */
-class fixable_page_h {
+class fixable_page_h : public generic_page_h {
 public:
     enum {
         page_sz = sizeof(generic_page),
@@ -37,11 +37,11 @@ public:
         l_not
     };
 
-    fixable_page_h() : _pp(NULL), _mode(LATCH_NL) {}
+    fixable_page_h() : generic_page_h(NULL), _mode(LATCH_NL) {}
     /**
      * Imaginery 'fix' for a non-bufferpool-managed page.
      */
-    fixable_page_h(generic_page* s) : _pp(s), _mode(LATCH_NL) {
+    fixable_page_h(generic_page* s) : generic_page_h(s), _mode(LATCH_NL) {
         w_assert1(s->tag == t_btree_p);  // <<<>>>
         w_assert1(s != NULL);
     }
@@ -179,7 +179,6 @@ protected:
      */
     bool check_space_for_insert(size_t rec_size);    
 
-    generic_page* _pp;
     latch_mode_t  _mode;
 
     friend class page_img_format_t;

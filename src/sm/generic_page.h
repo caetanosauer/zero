@@ -191,4 +191,21 @@ private:
     char undefined[page_sz - sizeof(generic_page_header)];   // must be aligned
 };
 
+
+
+/**
+ *  Basic page handle class.
+ */
+class generic_page_h {
+public:
+    generic_page_h(generic_page* s) : _pp(s) {}
+    virtual ~generic_page_h() {}
+
+    /// return pointer to underlying page
+    generic_page* to_generic_page() const { return _pp; }
+
+protected:
+    generic_page* _pp;
+};
+
 #endif

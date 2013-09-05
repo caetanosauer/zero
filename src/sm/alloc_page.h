@@ -70,24 +70,21 @@ class alloc_page : public generic_page_header {
  * None of these methods log; logging should be done in alloc_cache
  * when necessary before calling these methods.
  */
-class alloc_page_h {
-    alloc_page *_page;
+class alloc_page_h : public generic_page_h {
+    alloc_page *page() const { return reinterpret_cast<alloc_page*>(_pp); }
 
 public:
     /// format given page with page-ID pid as an alloc page then return a handle to it
     alloc_page_h(generic_page* s, const lpid_t& pid);
     /// construct handle from an existing alloc page
-    alloc_page_h(generic_page* s) : _page(reinterpret_cast<alloc_page*>(s)) {
+    alloc_page_h(generic_page* s) : generic_page_h(s) {
         w_assert1(s->tag == t_alloc_p);
     }
     ~alloc_page_h() {}
 
-    /// return pointer to underlying page
-    generic_page* to_generic_page() const { return reinterpret_cast<generic_page*>(_page); }
-
 
     /// smallest page ID that bitmaps in this page represent
-    shpid_t get_pid_offset() const { return _page->pid_offset; }
+    shpid_t get_pid_offset() const { return page()->pid_offset; }
 
     /// number of pages one alloc_page can cover
     static const int bits_held = alloc_page::bits_held;
@@ -98,7 +95,7 @@ public:
     ///
     /// Invariant: !get_bit(p) for p in [get_pid_highwatermark()
     ///                                  .. get_pid_offset()+bits_held)
-    shpid_t get_pid_highwatermark() const { return _page->pid_highwatermark; }
+    shpid_t get_pid_highwatermark() const { return page()->pid_highwatermark; }
 
 
     /// Is the given page allocated?
@@ -136,7 +133,7 @@ inline bool alloc_page_h::is_bit_set(shpid_t pid) const {
     w_assert1(pid >= get_pid_offset());
     w_assert1(pid < get_pid_offset() + alloc_page::bits_held);
 
-    return _page->bit(pid - _page->pid_offset);
+    return page()->bit(pid - page()->pid_offset);
 }
 
 inline void alloc_page_h::unset_bit(shpid_t pid) {
@@ -147,7 +144,7 @@ inline void alloc_page_h::unset_bit(shpid_t pid) {
     w_assert1(smlevel_0::operating_mode == smlevel_0::t_in_redo ||
               is_bit_set(pid));
 
-    _page->unset_bit(pid - _page->pid_offset);
+    page()->unset_bit(pid - page()->pid_offset);
 }
 
 inline void alloc_page_h::set_bit(shpid_t pid) {
@@ -158,7 +155,7 @@ inline void alloc_page_h::set_bit(shpid_t pid) {
     w_assert1(smlevel_0::operating_mode == smlevel_0::t_in_redo ||
               !is_bit_set(pid));
 
-    _page->set_bit(pid - _page->pid_offset);
+    page()->set_bit(pid - page()->pid_offset);
     update_pid_highwatermark(pid);
 }
 
@@ -167,15 +164,15 @@ inline void alloc_page_h::set_consecutive_bits(shpid_t pid_begin, shpid_t pid_en
     w_assert1(pid_begin <= pid_end);
     w_assert1(pid_end <= get_pid_offset() + alloc_page::bits_held);
 
-    _page->set_bits(pid_begin-_page->pid_offset, pid_end-_page->pid_offset);
+    page()->set_bits(pid_begin-page()->pid_offset, pid_end-page()->pid_offset);
 
     update_pid_highwatermark(pid_end - 1); // -1 because "end" itself is not touched
 }
 
 
 inline void alloc_page_h::update_pid_highwatermark(shpid_t pid_touched) {
-    if (pid_touched + 1 > _page->pid_highwatermark) {
-        _page->pid_highwatermark = pid_touched + 1;
+    if (pid_touched + 1 > page()->pid_highwatermark) {
+        page()->pid_highwatermark = pid_touched + 1;
     }
 }
 
