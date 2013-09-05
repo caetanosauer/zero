@@ -8,7 +8,7 @@
 #define PAGE_C
 
 #include "sm_int_1.h"
-#include "generic_page_h.h"
+#include "fixable_page_h.h"
 #include "page_bf_inline.h"
 #include "btree_page.h"
 #include "w_key.h"

@@ -14,7 +14,7 @@
 
 // also inline bf_tree_m methods.
 #include "bf_tree_inline.h"
-#include "generic_page_h.h"
+#include "fixable_page_h.h"
 #include "sm_int_0.h"
 
 inline w_rc_t fixable_page_h::fix_nonroot (const fixable_page_h &parent, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
