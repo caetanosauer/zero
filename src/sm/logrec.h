@@ -74,7 +74,7 @@ typedef smlevel_0::lock_mode_t lock_mode_t;
 
 class logrec_t {
 public:
-    friend rc_t xct_t::give_logbuf(logrec_t*, const generic_page_h *);
+    friend rc_t xct_t::give_logbuf(logrec_t*, const fixable_page_h *);
 
 #include "logtype_gen.h"
     void             fill(
@@ -96,8 +96,8 @@ public:
     bool             valid_header(const lsn_t & lsn_ck) const;
     smsize_t         header_size() const;
 
-    void             redo(generic_page_h*);
-    void             undo(generic_page_h*);
+    void             redo(fixable_page_h*);
+    void             undo(fixable_page_h*);
 
     enum {
         max_sz = 3 * sizeof(generic_page),

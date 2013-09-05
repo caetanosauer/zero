@@ -204,9 +204,9 @@ class btree_ghost_reclaim_log;
  * + chain-fence-high-key data (complete string. chain-fence-high doesn't share prefix!)]
  * 
  * \section SLOTLAYOUT BTree Slot Layout
- * btree_page is the only slotted subclass of generic_page_h. All the other classes  FIXME
+ * btree_page is the only slotted subclass of fixable_page_h. All the other classes  FIXME
  * use _pp.data just as a chunk of char. (Slot-related functions and typedefs
- * should be moved from generic_page_h to btree_page_h, but I haven't done the surgery yet.)
+ * should be moved from fixable_page_h to btree_page_h, but I haven't done the surgery yet.)
  * 
  * The Btree slot uses poor-man's normalized key to speed up searches.
  * Each slot stores the first few bytes of the key as an unsigned
@@ -254,7 +254,7 @@ class btree_ghost_reclaim_log;
  *   hiding from the user whether a pointer is a frame id or page id. 
  *
  */
-class btree_page_h : public generic_page_h {
+class btree_page_h : public fixable_page_h {
     friend class btree_impl;
     friend class btree_ghost_t;
     friend class btree_ghost_mark_log;
@@ -278,14 +278,14 @@ public:
 #endif // DOXYGEN_HIDE
 
     btree_page_h() {}
-    btree_page_h(generic_page* s) : generic_page_h(s) {
+    btree_page_h(generic_page* s) : fixable_page_h(s) {
         w_assert1(s->tag == t_btree_p);
         w_assert1(sizeof(btree_page) == sizeof(generic_page));
     }
-    btree_page_h(const btree_page_h& p) : generic_page_h(p) {} 
+    btree_page_h(const btree_page_h& p) : fixable_page_h(p) {} 
     ~btree_page_h() {}
     btree_page_h& operator=(btree_page_h& p) { 
-        generic_page_h::operator=(p); 
+        fixable_page_h::operator=(p); 
         w_assert1(_pp->tag == t_btree_p);
         return *this; 
     }
@@ -542,7 +542,7 @@ public:
 
     /**
      * Returns the number of records in this page.
-     * Use this instead of generic_page_h::nslots to acount for one hidden slots.
+     * Use this instead of fixable_page_h::nslots to acount for one hidden slots.
      */
     int              nrecs() const;
 
@@ -1202,19 +1202,19 @@ btree_page_h::used_space() const
 
 /**
  * \brief Specialized variant of btree_page_h that borrows a B-tree
- * page from a generic_page_h.
+ * page from a fixable_page_h.
  *
  * \details 
- * Borrows the latch of a generic_page_h for the duration of our
+ * Borrows the latch of a fixable_page_h for the duration of our
  * existence.  Returns the latch when destroyed.  Do not use the
  * original handle while its latch is borrowed.  Transitive borrowing
  * is fine.
  */
 class borrowed_btree_page_h : public btree_page_h {
-    generic_page_h* _source;
+    fixable_page_h* _source;
 
 public:
-    borrowed_btree_page_h(generic_page_h* source) :
+    borrowed_btree_page_h(fixable_page_h* source) :
         btree_page_h(&source->persistent_part()),
         _source(source)
     {
