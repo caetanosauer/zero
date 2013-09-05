@@ -1723,3 +1723,7 @@ rc_t btree_page_h::defrag(slotid_t popped)
     return RCOK;
 }
 
+bool btree_page_h::check_space_for_insert(size_t rec_size) {
+    size_t contiguous_free_space = usable_space();
+    return contiguous_free_space >= align(rec_size) + slot_sz;
+}

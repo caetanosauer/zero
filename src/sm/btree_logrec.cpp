@@ -709,7 +709,7 @@ void btree_foster_deadopt_real_parent_log::redo(fixable_page_h* page)
     // apply changes on real-parent again. no write-order dependency with foster-parent
     borrowed_btree_page_h bp(page);
     btree_foster_deadopt_real_parent_t *dp = (btree_foster_deadopt_real_parent_t*) _data;
-    w_assert1(dp->_foster_slot >= 0 && dp->_foster_slot < page->nslots());
+    w_assert1(dp->_foster_slot >= 0 && dp->_foster_slot < bp.nslots());
     btree_impl::_ux_deadopt_foster_apply_real_parent(bp, dp->_deadopted_pid, dp->_foster_slot);
 }
 

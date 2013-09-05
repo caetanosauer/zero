@@ -136,16 +136,11 @@ public:
     const lsn_t&                lsn() const;
     void                        set_lsns(const lsn_t& lsn);
 
-    // Total usable space on page
-    smsize_t                     usable_space()  const;
-    
     /** Reserve this page to be deleted when bufferpool evicts this page. */
     rc_t                         set_tobedeleted (bool log_it);
     /** Unset the deletion flag. This is only used by UNDO, so no logging. and no failure possible. */
     void                         unset_tobedeleted ();
     
-    slotid_t                     nslots() const;
-
     uint32_t                     page_flags() const;
 
     bool                         is_fixed() const;
@@ -155,14 +150,6 @@ public:
     bool                         upgrade_latch_conditional();
     
 protected:
-
-    /**
-     * Returns if there is enough free space to accomodate the
-     * given new record.
-     * @return true if there is free space
-     */
-    bool check_space_for_insert(size_t rec_size);    
-
     latch_mode_t  _mode;
 
     friend class page_img_format_t;
@@ -175,13 +162,6 @@ protected:
 };
 
 
-inline smsize_t
-fixable_page_h::usable_space() const
-{
-    size_t contiguous_free_space = _pp->get_record_head_byte() - slot_sz * nslots();
-    return contiguous_free_space; 
-}
-
 
 inline uint32_t
 fixable_page_h::page_flags() const
@@ -193,12 +173,6 @@ inline bool
 fixable_page_h::is_fixed() const
 {
     return _pp != 0;
-}
-
-inline slotid_t
-fixable_page_h::nslots() const
-{
-    return _pp->nslots;
 }
 
 inline const lsn_t& 

@@ -91,12 +91,6 @@ public:
     /** tag_t. */
     uint16_t    tag;     // +2 -> 22
     
-    /** total number of slots including every type of slot. */
-    slot_index_t  nslots;   // +2 -> 24
-    
-    /** number of ghost records. */
-    slot_index_t  nghosts; // +2 -> 26
-    
     /** offset to beginning of record area (location of record that is located left-most). */
     slot_offset8_t  record_head8;     // +2 -> 28
     int32_t     get_record_head_byte() const {return to_byte_offset(record_head8);}
@@ -176,13 +170,13 @@ class generic_page : public generic_page_header {
 public:
     generic_page() {
         w_assert1(sizeof(generic_page) == generic_page_header::page_sz);
-        w_assert1((undefined - (const char *)this) % 8 == 0);     // check alignment
+        w_assert1((undefined - (const char *)this) % 4 == 0);     // check alignment
     }
     ~generic_page() { }
 
 
 private:
-    /* MUST BE 8-BYTE ALIGNED HERE */
+    /* MUST BE 4-BYTE ALIGNED HERE */
     char undefined[page_sz - sizeof(generic_page_header)];   // must be aligned
 };
 

@@ -1329,7 +1329,7 @@ void bf_tree_m::swizzle_children(generic_page* parent, const slotid_t* slots, ui
     for (uint32_t i = 0; i < slots_size; ++i) {
         slotid_t slot = slots[i];
         w_assert1(slot >= 0); // w_assert1(slot >= -1); see below
-        w_assert1(slot < parent->nslots);
+        w_assert1(slot < p.nslots());
 
         // To simplify the tree traversal while unswizzling,
         // we never swizzle foster-child pointers.
@@ -1639,10 +1639,10 @@ bool bf_tree_m::_unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot) {
     }
     latch_auto_release auto_rel(parent_cb.latch()); // this automatically releaes the latch.
 
-    if (child_slot >= (uint32_t) _buffer[parent_idx].nslots) {
+    my_btree_page_h parent (_buffer + parent_idx);
+    if (child_slot >= (uint32_t) parent.nslots()) {
         return false;
     }
-    my_btree_page_h parent (_buffer + parent_idx);
     shpid_t* shpid_addr;
     if (child_slot == 0) {
         shpid_addr = &(parent.pid0_pointer());

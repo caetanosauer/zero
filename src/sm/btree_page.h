@@ -16,6 +16,13 @@ struct btree_int_stats_t;
 class btree_page_header : public generic_page_header {
 public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
 
+    /** total number of slots including every type of slot. */
+    slot_index_t  nslots;   // +2 -> 24
+    
+    /** number of ghost records. */
+    slot_index_t  nghosts; // +2 -> 26
+    
+
 #ifdef DOXYGEN_HIDE
 ///==========================================
 ///   BEGIN: BTree specific headers
@@ -302,6 +309,13 @@ public:
     // FIXME: next two functions are temporary for swizzling access <<<>>>
     shpid_t& foster_pointer() { return page()->btree_foster; }
     shpid_t& pid0_pointer()   { return page()->btree_pid0; }
+
+    slotid_t                     nslots() const;
+
+    // Total usable space on page
+    smsize_t                     usable_space()  const;
+    
+
 
     
     /** Returns 1 if leaf, >1 if non-leaf. */
@@ -839,6 +853,14 @@ private:
      * Caller should make sure there is enough space to expand.
      */
     void             _expand_rec(slotid_t slot, slot_length_t rec_len);
+
+protected:
+    /**
+     * Returns if there is enough free space to accomodate the
+     * given new record.
+     * @return true if there is free space
+     */
+    bool check_space_for_insert(size_t rec_size);    
 };
 
 #ifdef DOXYGEN_HIDE
@@ -1198,6 +1220,21 @@ btree_page_h::used_space() const
 {
     return (data_sz - page()->get_record_head_byte() + nslots() * slot_sz); 
 }
+
+inline slotid_t
+btree_page_h::nslots() const
+{
+    return page()->nslots;
+}
+
+inline smsize_t
+btree_page_h::usable_space() const
+{
+    size_t contiguous_free_space = _pp->get_record_head_byte() - slot_sz * nslots();
+    return contiguous_free_space; 
+}
+
+
 
 
 /**
