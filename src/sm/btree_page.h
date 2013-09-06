@@ -13,14 +13,81 @@ struct btree_lf_stats_t;
 struct btree_int_stats_t;
 
 
+/**
+* offset divided by 8 (all records are 8-byte aligned).
+* negative value means ghost records.
+*/
+typedef int16_t  slot_offset8_t;
+typedef uint16_t slot_length_t;
+typedef int16_t  slot_index_t; // to avoid explicit sized-types below
+/** convert a byte offset to 8-byte-divided offset. */
+inline slot_offset8_t to_offset8(int32_t byte_offset) {
+    w_assert1(byte_offset % 8 == 0);
+    w_assert1(byte_offset < (1 << 18));
+    w_assert1(byte_offset >= -(1 << 18));
+    return byte_offset / 8;
+}
+/** convert a byte offset to 8-byte-divided offset with alignment (if %8!=0, put padding bytes). */
+inline slot_offset8_t to_aligned_offset8(int32_t byte_offset) {
+    w_assert1(byte_offset >= 0); // as we are aligning the offset, it should be positive
+    w_assert1(byte_offset < (1 << 18));
+    if (byte_offset % 8 == 0) {
+        return byte_offset / 8;
+    } else {
+        return (byte_offset / 8) + 1;
+    }
+}
+/** convert a 8-byte-divided offset to a byte offset. */
+inline int32_t to_byte_offset(slot_offset8_t offset8) {
+    return offset8 * 8;
+}
+
+
+/** Poor man's normalized key type. to speed up comparison this should be an integer type, not char[]. */
+typedef uint16_t poor_man_key;
+
+/** Returns the value of poor-man's normalized key for the given key string WITHOUT prefix.*/
+inline poor_man_key extract_poor_man_key (const void* key, size_t key_len) {
+    if (key_len == 0) {
+        return 0;
+    } else if (key_len == 1) {
+        return *reinterpret_cast<const unsigned char*>(key) << 8;
+    } else {
+        return deserialize16_ho(key);
+    }
+}
+/** Returns the value of poor-man's normalized key for the given key string WITH prefix.*/
+inline poor_man_key extract_poor_man_key (const void* key_with_prefix, size_t key_len_with_prefix, size_t prefix_len) {
+    w_assert3(prefix_len <= key_len_with_prefix);
+    return extract_poor_man_key (((const char*)key_with_prefix) + prefix_len, key_len_with_prefix - prefix_len);
+}
+
+
+
+
 class btree_page_header : public generic_page_header {
 public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
+
+    enum {
+        /** Poor man's normalized key length. */
+        poormkey_sz     = sizeof (poor_man_key),
+        slot_sz         = sizeof(slot_offset8_t) + poormkey_sz
+    };
+
+ 
 
     /** total number of slots including every type of slot. */
     slot_index_t  nslots;   // +2 -> 24
     
     /** number of ghost records. */
     slot_index_t  nghosts; // +2 -> 26
+
+    /** offset to beginning of record area (location of record that is located left-most). */
+    slot_offset8_t  record_head8;     // +2 -> 28
+    int32_t     get_record_head_byte() const {return to_byte_offset(record_head8);}
+
+    uint16_t padding; // <<<>>>
+    uint32_t padding2; // <<<>>>
     
 
 #ifdef DOXYGEN_HIDE
@@ -110,8 +177,11 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
 
     btree_page() {
         //w_assert1(0);  // FIXME: is this constructor ever called? yes it is (test_btree_ghost)
-        w_assert1(data - (const char *) this == hdr_sz);
+        w_assert1((data - (const char *)this) % 4 == 0);     // check alignment<<<>>>
+        w_assert1(((const char *)&nslots - (const char *)this) % 4 == 0);     // check alignment<<<>>>
+        w_assert1(((const char *)&record_head8 - (const char *)this) % 8 == 0);     // check alignment<<<>>>
         w_assert1((data - (const char *)this) % 8 == 0);     // check alignment
+        w_assert1(data - (const char *) this == hdr_sz);
     }
     ~btree_page() { }
 
@@ -278,6 +348,11 @@ class btree_page_h : public fixable_page_h {
     };
 
 public:
+    enum {
+        slot_sz = btree_page::slot_sz
+    };
+
+
 #ifdef DOXYGEN_HIDE
 ///==========================================
 ///   BEGIN: Struct/Enum/Constructor
@@ -1230,7 +1305,7 @@ btree_page_h::nslots() const
 inline smsize_t
 btree_page_h::usable_space() const
 {
-    size_t contiguous_free_space = _pp->get_record_head_byte() - slot_sz * nslots();
+    size_t contiguous_free_space = page()->get_record_head_byte() - slot_sz * nslots();
     return contiguous_free_space; 
 }
 

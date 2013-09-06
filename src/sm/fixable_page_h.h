@@ -24,10 +24,6 @@ class alloc_page_h;
  */
 class fixable_page_h : public generic_page_h {
 public:
-    enum {
-        page_sz = sizeof(generic_page),
-        slot_sz = generic_page::slot_sz
-    };
     enum logical_operation {
         l_none=0,
         l_set, // same as a 1-byte splice
@@ -160,7 +156,6 @@ protected:
     friend class btree_ghost_reserve_log;
     friend class borrowed_btree_page_h;
 };
-
 
 
 inline uint32_t
