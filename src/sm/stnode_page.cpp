@@ -33,7 +33,7 @@ stnode_cache_t::stnode_cache_t(vid_t vid, bf_fixed_m* special_pages):
 
 
 shpid_t stnode_cache_t::get_root_pid(snum_t store) const {
-    w_assert1(0 <= store && store < stnode_page_h::max);
+    w_assert1(store < stnode_page_h::max);
 
     // CRITICAL_SECTION (cs, _spin_lock);
     // commented out to improve scalability, as this is called for EVERY operation.
@@ -45,7 +45,7 @@ shpid_t stnode_cache_t::get_root_pid(snum_t store) const {
 }
 
 void stnode_cache_t::get_stnode(snum_t store, stnode_t &stnode) const {
-    w_assert1(0 <= store && store < stnode_page_h::max);
+    w_assert1(store < stnode_page_h::max);
     CRITICAL_SECTION (cs, _spin_lock);
     stnode = _stnode_page.get(store);
 }
@@ -80,7 +80,7 @@ std::vector<snum_t> stnode_cache_t::get_all_used_store_ID() const {
 
 rc_t
 stnode_cache_t::store_operation(const store_operation_param& param) {
-    w_assert1(0 <= param.snum() && param.snum() < stnode_page_h::max);
+    w_assert1(param.snum() < stnode_page_h::max);
 
     store_operation_param new_param(param);
     stnode_t stnode;
