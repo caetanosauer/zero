@@ -517,7 +517,8 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 skipped_something = true;
                 continue;
             }
-            if ((page_buffer[idx].page_flags & t_tobedeleted) != 0) {
+            fixable_page_h page(const_cast<generic_page*>(&page_buffer[idx])); // <<<>>>
+            if (page.is_to_be_deleted()) {
                 tobedeleted = true;
             } else {
                 ::memcpy(_write_buffer + write_buffer_cur, page_buffer + idx, sizeof (generic_page)); 
@@ -529,8 +530,8 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
             }
             cb.latch().latch_release();
             
-            // then, re-calculate the checksum.
-            _write_buffer[write_buffer_cur].update_checksum();
+            // then, re-calculate the checksum:
+            _write_buffer[write_buffer_cur].checksum = _write_buffer[write_buffer_cur].calculate_checksum();
             // also copy the new checksum to make the original (bufferpool) page consistent.
             // we can do this out of latch scope because it's never used in race condition.
             // this is mainly for testcases and such.

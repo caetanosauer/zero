@@ -8,6 +8,7 @@
 #include "w_defines.h"
 #include "fixable_page_h.h"
 #include "w_key.h"
+#include "w_endian.h"
 
 struct btree_lf_stats_t;
 struct btree_int_stats_t;
@@ -87,7 +88,6 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
     int32_t     get_record_head_byte() const {return to_byte_offset(record_head8);}
 
     uint16_t padding; // <<<>>>
-    uint32_t padding2; // <<<>>>
     
 
 #ifdef DOXYGEN_HIDE
@@ -179,7 +179,7 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
         //w_assert1(0);  // FIXME: is this constructor ever called? yes it is (test_btree_ghost)
         w_assert1((data - (const char *)this) % 4 == 0);     // check alignment<<<>>>
         w_assert1(((const char *)&nslots - (const char *)this) % 4 == 0);     // check alignment<<<>>>
-        w_assert1(((const char *)&record_head8 - (const char *)this) % 8 == 0);     // check alignment<<<>>>
+        //w_assert1(((const char *)&record_head8 - (const char *)this) % 8 == 0);     // check alignment<<<>>>
         w_assert1((data - (const char *)this) % 8 == 0);     // check alignment
         w_assert1(data - (const char *) this == hdr_sz);
     }
@@ -362,6 +362,8 @@ public:
     btree_page_h() {}
     btree_page_h(generic_page* s) : fixable_page_h(s) {
         w_assert1(s->tag == t_btree_p);
+        // check claimed alignment produced by generic_page_header; see its class comment:
+        w_assert1(((char *)&page()->nslots - (char *)s) % 8 == 0); // <<<>>>
         w_assert1(sizeof(btree_page) == sizeof(generic_page));
     }
     btree_page_h(const btree_page_h& p) : fixable_page_h(p) {} 
@@ -848,7 +850,7 @@ public:
         int&                            hdr_sz,
         int&                            unused,
         int&                             alignmt,
-        tag_t&                             t,
+        page_tag_t&                             t,
         slotid_t&                     no_used_slots);
 
     /** Debugs out the contents of this page. */

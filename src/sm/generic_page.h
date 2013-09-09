@@ -6,33 +6,11 @@
 #define GENERIC_PAGE_H
 
 #include "w_defines.h"
-#include "w_endian.h"
 #include "sm_s.h"
 
 
 /**
- * \brief The type of a page; e.g., is this a B-tree page, an
- * allocation page, or what?
- */
-enum tag_t {
-    t_bad_p        = 0,        ///< not used
-    t_alloc_p      = 1,        ///< free-page allocation page 
-    t_stnode_p     = 2,        ///< store node page
-    t_btree_p      = 5,        ///< btree page 
-};
-
-
-
-
-
-enum page_flag_t {
-    t_tobedeleted  = 0x01,     // this page will be deleted as soon as the page is evicted from bufferpool
-};
-
-
-
-/**
- * \brief Page headers for all Zero pages
+ * \brief Page headers shared by all Zero pages
  *
  * \details 
  *     All page datatypes (e.g., generic_page, alloc_page, btree_page,
@@ -43,9 +21,12 @@ enum page_flag_t {
  * arranged to maximize packing into the fewest number of words
  * possible.
  *
+ *     Because this class contains a 8-byte aligned object (lsn_t), it
+ * must be a multiple of eight bytes.  The extra space not needed for
+ * all pages (field reserved) is reserved for subclass usage.
  *
- *
- *
+ *     Some page types (alloc_page, stnode_page) do not currently
+ * (9/2013) use the lsn, reserved, or page_flags fields.
  */
 class generic_page_header {
 public:
@@ -59,7 +40,7 @@ public:
      * \details
      * Checksum is calculated from various parts of this page and
      * stored when this page is written out to disk.  It is checked
-     * each time this page is read in from the disk.will
+     * each time this page is read in from the disk.
      */
     mutable uint32_t checksum;     // +4 -> 4
     
@@ -69,24 +50,46 @@ public:
     /// LSN (Log Sequence Number) of the last write to this page
     lsn_t            lsn;          // +8 -> 24
 
-    /// Page type (a page_t)
+    /// Page type (a page_tag_t)
     uint16_t         tag;          // +2 -> 26
 
-    /// Page flags (a page_flag_t)
+protected:
+    friend class fixable_page_h;   // for access to page_flags&t_tobedeleted
+
+    /// Page flags (an OR of page_flag_t's)
     uint16_t         page_flags;   //  +2 -> 28
 
-    
+    /// Reserved for subclass usage
+    uint32_t         reserved;     //  +4 -> 32
 
 
-
-    /// Calculate the correct value of checksum of this page. 
+public:
+    /// Calculate the correct value of checksum for this page. 
     uint32_t    calculate_checksum () const;
-    /**
-     * Renew the stored value of checksum of this page.
-     * Note that this is a const function. checksum is mutable property.
-     */
-    void       update_checksum () const {checksum = calculate_checksum();}
 };
+
+
+/**
+ * \brief The type of a page; e.g., is this a B-tree page, an
+ * allocation page, or what?
+ */
+enum page_tag_t {
+    t_bad_p    = 0,        ///< not used
+    t_alloc_p  = 1,        ///< free-page allocation page 
+    t_stnode_p = 2,        ///< store node page
+    t_btree_p  = 5,        ///< btree page 
+};
+
+
+/**
+ * \brief Flags that can be turned on or off per page; held in
+ * generic_page_header::page_flags.
+ */
+enum page_flag_t {
+    // Flags used by fixable pages:
+    t_tobedeleted  = 0x01,     ///< this page will be deleted as soon as the page is evicted from bufferpool
+};
+
 
 
 inline uint32_t generic_page_header::calculate_checksum () const {
@@ -132,17 +135,8 @@ inline uint32_t generic_page_header::calculate_checksum () const {
  * @see btree_page
  */
 class generic_page : public generic_page_header {
-public:
-    generic_page() {
-        w_assert1(sizeof(generic_page) == generic_page_header::page_sz);
-        w_assert1((undefined - (const char *)this) % 4 == 0);     // check alignment
-    }
-    ~generic_page() { }
-
-
 private:
-    /* MUST BE 4-BYTE ALIGNED HERE */
-    char undefined[page_sz - sizeof(generic_page_header)];   // must be aligned
+    char undefined[page_sz - sizeof(generic_page_header)];
 };
 
 
@@ -152,33 +146,45 @@ private:
  */
 class generic_page_h {
 public:
-    generic_page_h(generic_page* s) : _pp(s) {}
+    generic_page_h(generic_page* s) : _pp(s) {
+        // verify compiler tightly packed all of generic_page_header's fields:
+        w_assert1(sizeof(generic_page_header) == 32);
+        w_assert1(sizeof(generic_page) == generic_page_header::page_sz);
+    }
     virtual ~generic_page_h() {}
+
 
     /// return pointer to underlying page
     generic_page* get_generic_page() const { return _pp; }
 
 
     const lpid_t& pid()   const { return _pp->pid; }
-    tag_t         tag()   const { return (tag_t) _pp->tag; }
     vid_t         vid()   const { return _pp->pid.vol(); }
     volid_t       vol()   const { return _pp->pid.vol().vol; }
     snum_t        store() const { return _pp->pid.store(); }
 
-    /** Returns the stored value of checksum of this page. */
-    uint32_t          get_checksum () const {return _pp->checksum;}
-    /** Calculate the correct value of checksum of this page. */
-    uint32_t          calculate_checksum () const {return _pp->calculate_checksum();}
-    /** Renew the stored value of checksum of this page. */
-    void             update_checksum () const {_pp->update_checksum();}
+    page_tag_t    tag()   const { return (page_tag_t) _pp->tag; }
+
+    const lsn_t&  lsn()   const { return _pp->lsn; }
+    void          set_lsns(const lsn_t& lsn) { _pp->lsn = lsn; }
+
+
+    /// Returns the stored value of checksum of this page. 
+    uint32_t      get_checksum()       const { return _pp->checksum; }
+    /// Calculate the correct value of checksum of this page. 
+    uint32_t      calculate_checksum() const { return _pp->calculate_checksum(); }
+    /// Renew the stored value of checksum of this page.  Note that
+    /// this is a const function because checksum is mutable.
+    void          update_checksum()    const { _pp->checksum = calculate_checksum(); }
 
 protected:
-    generic_page_h(generic_page* s, const lpid_t& pid, tag_t tag) : _pp(s) {
+    generic_page_h(generic_page* s, const lpid_t& pid, page_tag_t tag) : _pp(s) {
         ::memset(_pp, 0, sizeof(*_pp));
         _pp->pid = pid;
         _pp->tag = tag;
     }    
 
+    /// The actual page we are handling; may be NULL for fixable pages
     generic_page* _pp;
 };
 

@@ -1371,8 +1371,7 @@ btree_page_h::int_stats(btree_int_stats_t& _stats)
 
 void
 btree_page_h::page_usage(int& data_size, int& header_size, int& unused,
-                   int& alignment, tag_t& t, slotid_t& no_slots)
-{
+                         int& alignment, page_tag_t& t, slotid_t& no_slots) {
     // returns space allocated for headers in this page
     // returns unused space in this page
     data_size = unused = alignment = 0;
