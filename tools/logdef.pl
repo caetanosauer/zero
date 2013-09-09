@@ -201,7 +201,7 @@ sub def_rec {
     print DEF<<CLASSDEF;
     class $class : public logrec_t {
 	void fill(const lpid_t* p, uint16_t tag, int l) {
-	  _cat = $cat, _type = t_$type;
+	  header._cat = $cat, header._type = t_$type;
 	  logrec_t::fill(p, tag, l);
 	}
       public:
