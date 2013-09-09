@@ -93,7 +93,7 @@ logrec_t::cat_str() const
 const char* 
 logrec_t::type_str() const
 {
-    switch (_type)  {
+    switch (header._type)  {
 #        include "logstr_gen.cpp"
     default:
       return 0;
@@ -129,13 +129,13 @@ logrec_t::fill(const lpid_t* p, uint16_t tag, smsize_t l)
 			   x->state() == smlevel_1::xct_aborting))
 	) 
     {
-        _cat |= t_rollback;
+        header._cat |= t_rollback;
     }
     set_pid(lpid_t::null);
     if (!is_single_sys_xct()) { // prv does not exist in single-log system transaction
-        set_xct_prev(lsn_t::null);
+        set_xid_prev(lsn_t::null);
     }
-    _page_tag = tag;
+    header._page_tag = tag;
     if (p) set_pid(*p);
     char *dat = is_single_sys_xct() ? data_ssx() : data();
     if (l != align(l)) {
@@ -145,10 +145,10 @@ logrec_t::fill(const lpid_t* p, uint16_t tag, smsize_t l)
     unsigned int tmp = align(l) + (is_single_sys_xct() ? hdr_single_sys_xct_sz : hdr_non_ssx_sz) + sizeof(lsn_t);
     tmp = (tmp + 7) & unsigned(-8); // force 8-byte alignment
     w_assert1(tmp <= sizeof(*this));
-    _len = tmp;
+    header._len = tmp;
     if(type() != t_skip) {
         DBG( << "Creat log rec: " << *this 
-                << " size: " << _len << " xct_prevlsn: " << (is_single_sys_xct() ? lsn_t::null : xct_prev()) );
+                << " size: " << header._len << " xid_prevlsn: " << (is_single_sys_xct() ? lsn_t::null : xid_prev()) );
     }
 }
 
@@ -156,7 +156,7 @@ logrec_t::fill(const lpid_t* p, uint16_t tag, smsize_t l)
 
 /*********************************************************************
  *
- *  logrec_t::fill_xct_attr(tid, xct_prev_lsn)
+ *  logrec_t::fill_xct_attr(tid, xid_prev_lsn)
  *
  *  Fill the transaction related fields of the log record.
  *
@@ -165,11 +165,11 @@ void
 logrec_t::fill_xct_attr(const tid_t& tid, const lsn_t& last)
 {
     w_assert0(!is_single_sys_xct()); // prv/xid doesn't exist in single-log system transaction!
-    _xid = tid;
-    if(xct_prev().valid()) {
+    xidInfo._xid = tid;
+    if(xid_prev().valid()) {
         w_assert2(is_cpsn());
     } else {
-        set_xct_prev (last);
+        set_xid_prev (last);
     }
 }
 
@@ -179,8 +179,8 @@ logrec_t::fill_xct_attr(const tid_t& tid, const lsn_t& last)
 bool
 logrec_t::valid_header(const lsn_t & lsn) const
 {
-    if (_len < (is_single_sys_xct() ? hdr_single_sys_xct_sz : hdr_non_ssx_sz)
-        || _type > 100 || cat() == t_bad_cat || 
+    if (header._len < (is_single_sys_xct() ? hdr_single_sys_xct_sz : hdr_non_ssx_sz)
+        || header._type > 100 || cat() == t_bad_cat || 
         lsn != *_lsn_ck()) {
         return false;
     }
@@ -199,9 +199,9 @@ void logrec_t::redo(generic_page_h* page)
 {
     FUNC(logrec_t::redo);
     DBG( << "Redo  log rec: " << *this 
-        << " size: " << _len << " xct_prevlsn: " << (is_single_sys_xct() ? lsn_t::null : xct_prev()) );
+        << " size: " << header._len << " xid_prevlsn: " << (is_single_sys_xct() ? lsn_t::null : xid_prev()) );
 
-    switch (_type)  {
+    switch (header._type)  {
 #include "redo_gen.cpp"
     }
     
@@ -233,14 +233,14 @@ void
 logrec_t::undo(generic_page_h* page)
 {
     w_assert0(!is_single_sys_xct()); // UNDO shouldn't be called for single-log sys xct
-    undoing_context = logrec_t::kind_t(_type);
+    undoing_context = logrec_t::kind_t(header._type);
     FUNC(logrec_t::undo);
     DBG( << "Undo  log rec: " << *this 
-        << " size: " << _len  << " xct_prevlsn: " << xct_prev());
-    switch (_type) {
+        << " size: " << header._len  << " xid_prevlsn: " << xid_prev());
+    switch (header._type) {
 #include "undo_gen.cpp"
     }
-    xct()->compensate_undo(xct_prev());
+    xct()->compensate_undo(xid_prev());
     undoing_context = logrec_t::t_max_logrec;
 }
 
@@ -256,7 +256,7 @@ void
 logrec_t::corrupt()
 {
     char* end_of_corruption = ((char*)this)+length();
-    char* start_of_corruption = (char*)&_type;
+    char* start_of_corruption = (char*)&header._type;
     size_t bytes_to_corrupt = end_of_corruption - start_of_corruption;
     memset(start_of_corruption, 0, bytes_to_corrupt);
 }
@@ -825,7 +825,7 @@ operator<<(ostream& o, const logrec_t& l)
 
     if (!l.is_single_sys_xct()) {
         if (l.is_cpsn())  o << " (" << l.undo_nxt() << ')';
-        else  o << " [" << l.xct_prev() << "]";
+        else  o << " [" << l.xid_prev() << "]";
     }
 
     o.flags(f);
@@ -880,7 +880,7 @@ void alloc_a_page_log::redo(generic_page_h*)
     shpid_t pid = *((shpid_t*) data_ssx());
 
     // actually this is logical REDO    
-    rc_t rc = io_m::redo_alloc_a_page(_vid, pid);
+    rc_t rc = io_m::redo_alloc_a_page(header._vid, pid);
     if (rc.is_error()) {
         W_FATAL(rc.err_num());
     }
@@ -905,7 +905,7 @@ void alloc_consecutive_pages_log::redo(generic_page_h*)
     uint32_t page_count = buf[1];
 
     // logical redo.
-    rc_t rc = io_m::redo_alloc_consecutive_pages(_vid, page_count, pid_begin);
+    rc_t rc = io_m::redo_alloc_consecutive_pages(header._vid, page_count, pid_begin);
     if (rc.is_error()) {
         W_FATAL(rc.err_num());
     }
@@ -928,7 +928,7 @@ void dealloc_a_page_log::redo(generic_page_h*)
     shpid_t pid = *((shpid_t*) data_ssx());
 
     // logical redo.
-    rc_t rc = io_m::redo_dealloc_a_page(_vid, pid);
+    rc_t rc = io_m::redo_dealloc_a_page(header._vid, pid);
     if (rc.is_error()) {
         W_FATAL(rc.err_num());
     }

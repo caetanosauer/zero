@@ -586,9 +586,8 @@ private:
     w_rc_t::errcode_t _smthread_block( timeout_in_ms WAIT_FOREVER,
                               const char * const why =0);
     w_rc_t           _smthread_unblock(w_rc_t::errcode_t e);
-public:
-    void             prepare_to_block();
 
+public:
     /* \brief Find out if log warning checks are to be made. Default is true.
      */
     bool            generate_log_warnings()const{return _gen_log_warnings;}
@@ -608,9 +607,7 @@ public:
     queue_based_lock_t::ext_qnode& get_1thread_xct_me() {
                                                return tcb()._1thread_xct_me;}
 private:
-
-    /* sm-specif block / unblock implementation */
-    volatile bool   _unblocked;
+    /* sm-specific block / unblock implementation */
     bool            _waiting;
 
     bool            _gen_log_warnings;

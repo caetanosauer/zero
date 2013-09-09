@@ -57,12 +57,12 @@ btree_insert_log::undo(generic_page_h* W_IFDEBUG9(page)) {
     w_assert9(page == 0);
     btree_insert_t* dp = (btree_insert_t*) data();
 
-    lpid_t root_pid (_vid, _snum, dp->root_shpid);
+    lpid_t root_pid (header._vid, header._snum, dp->root_shpid);
     w_keystr_t key;
     key.construct_from_keystr(dp->data, dp->klen);
 
     // ***LOGICAL*** don't grab locks during undo
-    rc_t rc = smlevel_2::bt->remove_as_undo(_vid.vol, _snum, key); 
+    rc_t rc = smlevel_2::bt->remove_as_undo(header._vid.vol, header._snum, key); 
     if(rc.is_error()) {
         W_FATAL(rc.err_num());
     }
@@ -116,6 +116,7 @@ btree_update_log::btree_update_log(
     const w_keystr_t&     key,
     const char* old_el, int old_elen, const cvec_t& new_el)
 {
+    set_page_prev_lsn(page.lsn());
     fill(&page.pid(), page.tag(),
          (new (_data) btree_update_t(page, key, old_el, old_elen, new_el))->size());
 }
@@ -126,7 +127,7 @@ btree_update_log::undo(generic_page_h*)
 {
     btree_update_t* dp = (btree_update_t*) data();
     
-    lpid_t root_pid (_vid, _snum, dp->_root_shpid);
+    lpid_t root_pid (header._vid, header._snum, dp->_root_shpid);
 
     w_keystr_t key;
     key.construct_from_keystr(dp->_data, dp->_klen);
@@ -134,7 +135,7 @@ btree_update_log::undo(generic_page_h*)
     old_el.put(dp->_data + dp->_klen, dp->_old_elen);
 
     // ***LOGICAL*** don't grab locks during undo
-    rc_t rc = smlevel_2::bt->update_as_undo(_vid.vol, _snum, key, old_el); 
+    rc_t rc = smlevel_2::bt->update_as_undo(header._vid.vol, header._snum, key, old_el); 
     if(rc.is_error()) {
         W_FATAL(rc.err_num());
     }
@@ -199,7 +200,7 @@ void btree_overwrite_log::undo(generic_page_h*)
 {
     btree_overwrite_t* dp = (btree_overwrite_t*) data();
     
-    lpid_t root_pid (_vid, _snum, dp->_root_shpid);
+    lpid_t root_pid (header._vid, header._snum, dp->_root_shpid);
 
     uint16_t elen = dp->_elen;
     uint16_t offset = dp->_offset;
@@ -208,7 +209,7 @@ void btree_overwrite_log::undo(generic_page_h*)
     const char* old_el = dp->_data + dp->_klen;
 
     // ***LOGICAL*** don't grab locks during undo
-    rc_t rc = smlevel_2::bt->overwrite_as_undo(_vid.vol, _snum, key, old_el, offset, elen); 
+    rc_t rc = smlevel_2::bt->overwrite_as_undo(header._vid.vol, header._snum, key, old_el, offset, elen); 
     if(rc.is_error()) {
         W_FATAL(rc.err_num());
     }
@@ -407,10 +408,10 @@ btree_ghost_mark_log::undo(generic_page_h*)
 {
     // UNDO of ghost marking is to get the record back to regular state
     btree_ghost_t* dp = (btree_ghost_t*) data();
-    lpid_t root_pid (_vid, _snum, dp->root_shpid);
+    lpid_t root_pid (header._vid, header._snum, dp->root_shpid);
     for (size_t i = 0; i < dp->cnt; ++i) {
         w_keystr_t key (dp->get_key(i));
-        rc_t rc = smlevel_2::bt->undo_ghost_mark(_vid.vol, _snum, key);
+        rc_t rc = smlevel_2::bt->undo_ghost_mark(header._vid.vol, header._snum, key);
         if(rc.is_error()) {
             cerr << " key=" << key << endl << " rc =" << rc << endl;
             W_FATAL(rc.err_num());

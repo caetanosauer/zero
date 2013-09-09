@@ -93,19 +93,19 @@ struct bf_tree_cb_t {
     // control block is bulk-initialized by malloc and memset. It has to be aligned.
 
     /** dirty flag. use locks to update/check this value. */
-    bool volatile               _dirty;         // +1  -> 1
+    bool _dirty;         // +1  -> 1
     
     /** true if this block is actually used. same warning as above. */
-    bool volatile               _used;          // +1  -> 2
+    bool _used;          // +1  -> 2
 
     /** volume ID of the page currently pinned on this block. */
-    volid_t volatile            _pid_vol;       // +2  -> 4
+    volid_t _pid_vol;       // +2  -> 4
 
     /** short page ID of the page currently pinned on this block. (we don't have stnum in bufferpool) */
-    shpid_t volatile            _pid_shpid;     // +4  -> 8
+    shpid_t _pid_shpid;     // +4  -> 8
 
     /** Count of pins on this block. See class comments. */
-    int32_t volatile            _pin_cnt;       // +4 -> 12
+    int32_t _pin_cnt;       // +4 -> 12
 
     /** ref count (for clock algorithm). approximate, so not protected by locks. */
     uint16_t                    _refbit_approximate;// +2  -> 14
@@ -116,10 +116,10 @@ struct bf_tree_cb_t {
     uint16_t                    _counter_approximate;// +2  -> 16
 
     /** recovery lsn. */
-    lsndata_t volatile          _rec_lsn;       // +8 -> 24
+    lsndata_t _rec_lsn;       // +8 -> 24
 
     /** Pointer to the parent page. zero for root pages. */
-    bf_idx volatile             _parent;        // +4 -> 28
+    bf_idx _parent;        // +4 -> 28
     
     /** Whether this page is swizzled from the parent. */
     bool                        _swizzled;      // +1 -> 29
@@ -132,20 +132,20 @@ struct bf_tree_cb_t {
     fill8                       _fill8;        // +1 -> 32
 
     /** if not zero, this page must be written out after this dependency page. */
-    bf_idx volatile             _dependency_idx;// +4 -> 36
+    bf_idx _dependency_idx;// +4 -> 36
     
     /**
      * used with _dependency_idx. As of registration of the dependency, the page in _dependency_idx had this pid (volid was implicitly same as myself).
      * If now it's different, the page was written out and then evicted surely at/after _dependency_lsn, so that's fine.
      */
-    shpid_t volatile            _dependency_shpid;// +4 -> 40
+    shpid_t _dependency_shpid;// +4 -> 40
 
     /**
      * used with _dependency_idx. this is the _rec_lsn of the dependent page as of the registration of the dependency.
      * So, if the _rec_lsn of the page is now strictly larger than this value, it was flushed at least once after that,
      * so the dependency is resolved.
      */
-    lsndata_t volatile          _dependency_lsn;// +8 -> 48
+    lsndata_t _dependency_lsn;// +8 -> 48
 
     /** 
      * number of swizzled pointers to children. 
@@ -165,6 +165,7 @@ struct bf_tree_cb_t {
     fill8                       _fill8_64;      // +1 -> 64
     latch_t                     _latch;         // +64 ->128
 #endif
+
     // disabled (no implementation)
     bf_tree_cb_t();
     bf_tree_cb_t(const bf_tree_cb_t&);
