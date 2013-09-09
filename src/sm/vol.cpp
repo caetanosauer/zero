@@ -137,11 +137,11 @@ rc_t vol_t::mount(const char* devname, vid_t vid)
     w_rc_t e;
     int        open_flags = smthread_t::OPEN_RDWR;
     {
-            char *s = getenv("SM_VOL_RAW");
+        char *s = getenv("SM_VOL_RAW");
         if (s && s[0] && atoi(s) > 0)
-                open_flags |= smthread_t::OPEN_RAW;
+            open_flags |= smthread_t::OPEN_RAW;
         else if (s && s[0] && atoi(s) == 0)
-                open_flags &= ~smthread_t::OPEN_RAW;
+            open_flags &= ~smthread_t::OPEN_RAW;
     }
     e = me()->open(devname, open_flags, 0666, _unix_fd);
     if (e.is_error()) {
@@ -177,7 +177,12 @@ rc_t vol_t::mount(const char* devname, vid_t vid)
     clear_caches();
     _fixed_bf = new bf_fixed_m();
     w_assert1(_fixed_bf);
-    W_DO(_fixed_bf->init(this, _unix_fd, _num_pages));
+    e = _fixed_bf->init(this, _unix_fd, _num_pages);
+    if (e.is_error()) {
+        W_IGNORE(me()->close(_unix_fd));
+        _unix_fd = -1;
+        return e;
+    }
     _first_data_pageid = _fixed_bf->get_page_cnt() + 1; // +1 for volume header
 
     _alloc_cache = new alloc_cache_t(_vid, _fixed_bf);
