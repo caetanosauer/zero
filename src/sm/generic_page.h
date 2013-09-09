@@ -35,16 +35,16 @@ public:
 
 
     /**
-     * \brief Checksum of this page.
+     * \brief Stored checksum of this page.
      *
      * \details
      * Checksum is calculated from various parts of this page and
-     * stored when this page is written out to disk.  It is checked
-     * each time this page is read in from the disk.
+     * updated just before this page is written out to disk.  It is
+     * checked each time this page is read in from the disk.
      */
     mutable uint32_t checksum;     // +4 -> 4
     
-    /// ID of the page
+    /// ID of this page
     lpid_t           pid;          // +4+4+4 (= +12) -> 16
     
     /// LSN (Log Sequence Number) of the last write to this page
@@ -94,32 +94,37 @@ enum page_flag_t {
 
 
 /**
- * \brief Basic page structure for all pages.
+ * \brief A generic page view: any Zero page can be viewed as being of
+ * this type but it only exposes fields shared by all Zero pages.  To
+ * "downcast" and access page-type--specific fields, pass a pointer to
+ * one of these to one of the page handle classes' (e.g., btree_page_h)
+ * constructors.
  * 
  * \details
- * These are persistent things. There is no hierarchy here
- * for the different page types. All the differences between
- * page types are handled by the handle classes, generic_page_h and its
- * derived classes.
+ * All zero pages have the same size and initial headers
+ * (generic_page_header's).  Each specific page type has an associated
+ * data type that is a (indirect) subclass of generic_page_header as
+ * well as an associated handle class.  For example, B-tree pages have
+ * associated page class btree_page and handle class btree_page_h.
+ * Casting between page types is done by the handle classes after
+ * verifying the cast is safe according to the page tag.  No other
+ * code should perform such casts.
  * 
- * \section BTree-specific page headers
- * This page layout also contains the headers just for BTree to optimize on
- * the performance of BTree.
- * Anyways, remaining page-types other than BTree are only stnode_page and alloc_page
- * For those page types, this header part is unused but not a big issue.
- * @see btree_page
+ * The corresponding handle class for this page type is generic_page_h.
  */
 class generic_page : public generic_page_header {
 private:
-    char undefined[page_sz - sizeof(generic_page_header)];
+    char subclass_specific[page_sz - sizeof(generic_page_header)];
 };
 
 
 
 /**
- *  \brief Basic page handle class.
+ * \brief Page handle class for any page type.
  * 
  * \details
+ * This is the root superclass of all the Zero page handle classes.
+ * It provides operations on the fields common to all pages.
  */
 class generic_page_h {
 public:
