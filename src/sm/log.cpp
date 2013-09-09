@@ -124,7 +124,7 @@ bool log_i::xct_next(lsn_t& lsn, logrec_t*& r)
  * _version_major should be incremented and version_minor set to 0.
  *
  *********************************************************************/
-uint32_t const log_m::_version_major = 4;
+uint32_t const log_m::_version_major = 5;
 uint32_t const log_m::_version_minor = 0;
 const char log_m::_SLASH = '/';
 const char log_m::_master_prefix[] = "chk."; // same size as _log_prefix
@@ -198,7 +198,8 @@ db_pretty_print(logrec_t const* rec, int /*i=0*/, char const* /*s=0*/)
              "    _tid = %d.%d\n"
              "    _pid = %d.%d.%d\n"
              "    _page_tag = %d\n"
-             "    _xct_prev = %d.%lld\n"
+             "    _page_prev = %d.%lld\n"
+             "    _xid_prev = %d.%lld\n"
              "    _ck_lsn = %d.%lld\n"
              "%s"
              "}",
@@ -210,7 +211,8 @@ db_pretty_print(logrec_t const* rec, int /*i=0*/, char const* /*s=0*/)
                      rec->construct_pid().store(), 
                      rec->construct_pid().page,
              rec->tag(),
-             (rec->xct_prev().hi()), (int64_t)(rec->xct_prev().lo()),
+             (rec->page_prev().hi()),
+             (rec->xid_prev().hi()), (int64_t)(rec->xid_prev().lo()),
              (rec->get_lsn_ck().hi()), (int64_t)(rec->get_lsn_ck().lo()),
              extra
              );

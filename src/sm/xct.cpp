@@ -2130,9 +2130,9 @@ xct_t::_flush_logbuf()
 
         DBGX ( << " xct_t::_flush_logbuf " << _last_lsn
                 << " _last_log rec type is " << _last_log->type());
-        // Fill in the _xct_prev field of the log rec if this record hasn't
+        // Fill in the _xid_prev field of the log rec if this record hasn't
         // already been compensated.
-        if (!_last_log->is_single_sys_xct()) { // single-log sys xct doesn't have xid/xct_prev
+        if (!_last_log->is_single_sys_xct()) { // single-log sys xct doesn't have xid/xid_prev
             _last_log->fill_xct_attr(tid(), _last_lsn);
         }
 
@@ -2145,7 +2145,7 @@ xct_t::_flush_logbuf()
                 << " approx lsn:" << log->curr_lsn() 
                 << " rec:" << *_last_log 
                 << " size:" << _last_log->length()  
-                << " xct_prevlsn:" << (_last_log->is_single_sys_xct() ? lsn_t::null : _last_log->xct_prev() )
+                << " xid_prevlsn:" << (_last_log->is_single_sys_xct() ? lsn_t::null : _last_log->xid_prev() )
                 );
 
         if(log) {
@@ -3175,8 +3175,8 @@ xct_t::rollback(const lsn_t &save_pt)
                 LOGTRACE2( << "U: compensating to " << r.undo_nxt() );
                 nxt = r.undo_nxt();
             } else {
-                LOGTRACE2( << "U: undoing to " << r.xct_prev() );
-                nxt = r.xct_prev();
+                LOGTRACE2( << "U: undoing to " << r.xid_prev() );
+                nxt = r.xid_prev();
             }
 
         } else  if (r.is_cpsn())  {
@@ -3188,16 +3188,16 @@ xct_t::rollback(const lsn_t &save_pt)
             } else {
                 nxt = r.undo_nxt();
             }
-            // r.xct_prev() could just as well be null
+            // r.xid_prev() could just as well be null
 
         } else {
             LOGTRACE2( << setiosflags(ios::right) << nxt
                << resetiosflags(ios::right) << " U: " << r 
-               << " skipping to " << r.xct_prev());
+               << " skipping to " << r.xid_prev());
             if (r.is_single_sys_xct()) {
                 nxt = lsn_t::null;
             } else {
-                nxt = r.xct_prev();
+                nxt = r.xid_prev();
             }
             // w_assert9(r.undo_nxt() == lsn_t::null);
         }

@@ -2514,7 +2514,7 @@ rc_t log_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn)
                 return RC(eBADCOMPENSATION);
     }
     if (!s->is_single_sys_xct()) {
-        w_assert1(s->xct_prev() == lsn_t::null || s->xct_prev() >= undo_lsn);
+        w_assert1(s->xid_prev() == lsn_t::null || s->xid_prev() >= undo_lsn);
 
         if(s->is_undoable_clr()) 
             return RC(eBADCOMPENSATION);
