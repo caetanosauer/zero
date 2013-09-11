@@ -2,8 +2,8 @@
  * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
  */
 
-#ifndef GENERIC_PAGE_H_H
-#define GENERIC_PAGE_H_H
+#ifndef FIXABLE_PAGE_H_H
+#define FIXABLE_PAGE_H_H
 
 #include "w_defines.h"
 
@@ -22,14 +22,8 @@ class alloc_page_h;
 /**
  *  Basic page handle class.
  */
-class generic_page_h {
+class fixable_page_h : public generic_page_h {
 public:
-    enum {
-        page_sz = sizeof(generic_page),
-        data_sz = generic_page::data_sz,
-        hdr_sz = generic_page::hdr_sz,
-        slot_sz = generic_page::slot_sz
-    };
     enum logical_operation {
         l_none=0,
         l_set, // same as a 1-byte splice
@@ -39,11 +33,12 @@ public:
         l_not
     };
 
-    generic_page_h() : _pp(NULL), _mode(LATCH_NL) {}
+    fixable_page_h() : generic_page_h(NULL), _mode(LATCH_NL) {}
     /**
      * Imaginery 'fix' for a non-bufferpool-managed page.
      */
-    generic_page_h(generic_page* s) : _pp(s), _mode(LATCH_NL) {
+    fixable_page_h(generic_page* s) : generic_page_h(s), _mode(LATCH_NL) {
+        w_assert1(s->tag == t_btree_p);  // <<<>>>
         w_assert1(s != NULL);
     }
 
@@ -51,15 +46,15 @@ public:
     void                        unfix ();
 
 
-    ~generic_page_h() {
+    ~fixable_page_h() {
         unfix();
     }
-    generic_page_h& operator=(generic_page_h& p) {
+    fixable_page_h& operator=(fixable_page_h& p) {
         // this steals the ownership of the page/latch
         steal_ownership(p);
         return *this;
     }
-    void steal_ownership (generic_page_h& p) {
+    void steal_ownership (fixable_page_h& p) {
         unfix();
         _pp = p._pp;
         _mode = p._mode;
@@ -81,7 +76,7 @@ public:
      * @param[in] virgin_page whether the page is a new page thus doesn't have to be read from disk.
      * To use this method, you need to include page_bf_inline.h.
      */
-    w_rc_t                      fix_nonroot (const generic_page_h &parent, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional = false, bool virgin_page = false);
+    w_rc_t                      fix_nonroot (const fixable_page_h &parent, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional = false, bool virgin_page = false);
 
     /**
      * Fixes any page (root or non-root) in the bufferpool without pointer swizzling.
@@ -134,55 +129,22 @@ public:
     /** Returns if this page in the bufferpool is marked dirty. If this page is not a bufferpool-managed page, returns false. */
     bool                        is_dirty() const;
 
-    const lsn_t&                lsn() const;
-    void                        set_lsns(const lsn_t& lsn);
 
-    const lpid_t&               pid() const;
-    volid_t                     vol() const;
-    snum_t                      store() const;
-    tag_t                       tag() const { return (tag_t) _pp->tag;}
-    shpid_t                     btree_root() const { return _pp->btree_root;}
-
-    // used when page is first read from disk
-    void                        set_vid(vid_t vid);
-
-    smsize_t                    used_space()  const;
-    // Total usable space on page
-    smsize_t                     usable_space()  const;
-    
     /** Reserve this page to be deleted when bufferpool evicts this page. */
-    rc_t                         set_tobedeleted (bool log_it);
+    rc_t                         set_to_be_deleted (bool log_it);
     /** Unset the deletion flag. This is only used by UNDO, so no logging. and no failure possible. */
-    void                         unset_tobedeleted ();
+    void                         unset_to_be_deleted ();
+    bool                         is_to_be_deleted() { return (_pp->page_flags&t_to_be_deleted) != 0; }
     
-    slotid_t                     nslots() const;
-
     uint32_t                     page_flags() const;
-    generic_page&                      persistent_part();
-    const generic_page&                persistent_part_const() const;
-    bool                         is_fixed() const;
+
+    bool                         is_fixed()   const;
     latch_mode_t                 latch_mode() const { return _mode; }
     bool                         is_latched() const { return _mode != LATCH_NL; }
     /** conditionally upgrade the latch to EX. returns if successfully upgraded. */
     bool                         upgrade_latch_conditional();
     
-    /** Returns the stored value of checksum of this page. */
-    uint32_t          get_checksum () const {return _pp->checksum;}
-    /** Calculate the correct value of checksum of this page. */
-    uint32_t          calculate_checksum () const {return _pp->calculate_checksum();}
-    /** Renew the stored value of checksum of this page. */
-    void             update_checksum () const {_pp->update_checksum();}
-
 protected:
-
-    /**
-     * Returns if there is enough free space to accomodate the
-     * given new record.
-     * @return true if there is free space
-     */
-    bool check_space_for_insert(size_t rec_size);    
-
-    generic_page* _pp;
     latch_mode_t  _mode;
 
     friend class page_img_format_t;
@@ -194,81 +156,17 @@ protected:
     friend class borrowed_btree_page_h;
 };
 
-inline const lpid_t&
-generic_page_h::pid() const
-{
-    return _pp->pid;
-}
-inline volid_t
-generic_page_h::vol() const
-{
-    return _pp->pid.vol().vol;
-}
-inline snum_t
-generic_page_h::store() const
-{
-    return _pp->pid.store();
-}
-
-inline void
-generic_page_h::set_vid(vid_t vid)
-{
-    _pp->pid._stid.vol = vid;
-}
-inline smsize_t 
-generic_page_h::used_space() const
-{
-    return (data_sz - _pp->get_record_head_byte() + nslots() * slot_sz); 
-}
-
-inline smsize_t
-generic_page_h::usable_space() const
-{
-    size_t contiguous_free_space = _pp->get_record_head_byte() - slot_sz * nslots();
-    return contiguous_free_space; 
-}
-
 
 inline uint32_t
-generic_page_h::page_flags() const
+fixable_page_h::page_flags() const
 {
     return _pp->page_flags;
 }
 
-inline generic_page&
-generic_page_h::persistent_part()
-{
-    return *(generic_page*) _pp;
-}
-
-inline const generic_page&
-generic_page_h::persistent_part_const() const
-{
-    return *(generic_page*) _pp; 
-}
-
 inline bool
-generic_page_h::is_fixed() const
+fixable_page_h::is_fixed() const
 {
     return _pp != 0;
-}
-
-inline slotid_t
-generic_page_h::nslots() const
-{
-    return _pp->nslots;
-}
-
-inline const lsn_t& 
-generic_page_h::lsn() const
-{
-    return _pp->lsn;
-}
-
-inline void 
-generic_page_h::set_lsns(const lsn_t& lsn)
-{
-    _pp->lsn = lsn;
 }
 
 #include "page_bf_inline.h"

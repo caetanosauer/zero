@@ -16,15 +16,8 @@
 
 
 stnode_page_h::stnode_page_h(generic_page* s, const lpid_t& pid):
-    _page(reinterpret_cast<stnode_page*>(s)) 
-{
-    w_assert1(sizeof(stnode_page) == generic_page_header::page_sz);
-
-    ::memset(_page, 0, sizeof(*_page));
-
-    _page->pid = pid;
-    _page->tag = t_stnode_p;
-}    
+    generic_page_h(s, pid, t_stnode_p)
+{}   
 
 
 
@@ -33,12 +26,12 @@ stnode_cache_t::stnode_cache_t(vid_t vid, bf_fixed_m* special_pages):
     _special_pages(special_pages),
     _stnode_page(special_pages->get_pages() + special_pages->get_page_cnt()-1)
 {
-    w_assert1(_stnode_page.to_generic_page()->pid.vol() == _vid);
+    w_assert1(_stnode_page.vid() == _vid);
 }
 
 
 shpid_t stnode_cache_t::get_root_pid(snum_t store) const {
-    w_assert1(0 <= store && store < stnode_page_h::max);
+    w_assert1(store < stnode_page_h::max);
 
     // CRITICAL_SECTION (cs, _spin_lock);
     // commented out to improve scalability, as this is called for EVERY operation.
@@ -50,7 +43,7 @@ shpid_t stnode_cache_t::get_root_pid(snum_t store) const {
 }
 
 void stnode_cache_t::get_stnode(snum_t store, stnode_t &stnode) const {
-    w_assert1(0 <= store && store < stnode_page_h::max);
+    w_assert1(store < stnode_page_h::max);
     CRITICAL_SECTION (cs, _spin_lock);
     stnode = _stnode_page.get(store);
 }
@@ -85,7 +78,7 @@ std::vector<snum_t> stnode_cache_t::get_all_used_store_ID() const {
 
 rc_t
 stnode_cache_t::store_operation(const store_operation_param& param) {
-    w_assert1(0 <= param.snum() && param.snum() < stnode_page_h::max);
+    w_assert1(param.snum() < stnode_page_h::max);
 
     store_operation_param new_param(param);
     stnode_t stnode;

@@ -5,253 +5,163 @@
 #ifndef GENERIC_PAGE_H
 #define GENERIC_PAGE_H
 
+#include <boost/static_assert.hpp>
 #include "w_defines.h"
-#include "w_endian.h"
 #include "sm_s.h"
 
 
-enum tag_t {
-    t_bad_p        = 0,        // not used
-    t_alloc_p      = 1,        // free-page allocation page 
-    t_stnode_p     = 2,        // store node page
-    t_btree_p      = 5,        // btree page 
-    t_any_p        = 11        // indifferent
-};
-enum page_flag_t {
-    t_tobedeleted  = 0x01,     // this page will be deleted as soon as the page is evicted from bufferpool
-    t_virgin       = 0x02,     // newly allocated page
-    t_written      = 0x08      // read in from disk
-};
-
-
-
 /**
-* offset divided by 8 (all records are 8-byte aligned).
-* negative value means ghost records.
-*/
-typedef int16_t  slot_offset8_t;
-typedef uint16_t slot_length_t;
-typedef int16_t  slot_index_t; // to avoid explicit sized-types below
-/** convert a byte offset to 8-byte-divided offset. */
-inline slot_offset8_t to_offset8(int32_t byte_offset) {
-    w_assert1(byte_offset % 8 == 0);
-    w_assert1(byte_offset < (1 << 18));
-    w_assert1(byte_offset >= -(1 << 18));
-    return byte_offset / 8;
-}
-/** convert a byte offset to 8-byte-divided offset with alignment (if %8!=0, put padding bytes). */
-inline slot_offset8_t to_aligned_offset8(int32_t byte_offset) {
-    w_assert1(byte_offset >= 0); // as we are aligning the offset, it should be positive
-    w_assert1(byte_offset < (1 << 18));
-    if (byte_offset % 8 == 0) {
-        return byte_offset / 8;
-    } else {
-        return (byte_offset / 8) + 1;
-    }
-}
-/** convert a 8-byte-divided offset to a byte offset. */
-inline int32_t to_byte_offset(slot_offset8_t offset8) {
-    return offset8 * 8;
-}
-
-
-/** Poor man's normalized key type. to speed up comparison this should be an integer type, not char[]. */
-typedef uint16_t poor_man_key;
-
-/** Returns the value of poor-man's normalized key for the given key string WITHOUT prefix.*/
-inline poor_man_key extract_poor_man_key (const void* key, size_t key_len) {
-    if (key_len == 0) {
-        return 0;
-    } else if (key_len == 1) {
-        return *reinterpret_cast<const unsigned char*>(key) << 8;
-    } else {
-        return deserialize16_ho(key);
-    }
-}
-/** Returns the value of poor-man's normalized key for the given key string WITH prefix.*/
-inline poor_man_key extract_poor_man_key (const void* key_with_prefix, size_t key_len_with_prefix, size_t prefix_len) {
-    w_assert3(prefix_len <= key_len_with_prefix);
-    return extract_poor_man_key (((const char*)key_with_prefix) + prefix_len, key_len_with_prefix - prefix_len);
-}
-
-
+ * \brief Page headers shared by all Zero pages
+ *
+ * \details 
+ *     All page data types (e.g., generic_page, alloc_page,
+ * btree_page, stnode_page) inherit (indirectly) from this class.
+ * This is a POD.
+ *
+ *     The checksum field is placed first to make the region of data
+ * it covers continuous.  The order of the other fields has been
+ * arranged to maximize packing into the fewest number of words
+ * possible.
+ *
+ *     Because this class contains an 8-byte aligned object (lsn_t),
+ * it must be a multiple of eight bytes.  The extra space not needed
+ * for all pages (field reserved) is reserved for subclass usage.
+ *
+ *     Some page types (alloc_page, stnode_page) do not currently
+ * (9/2013) use the lsn, reserved, or page_flags fields.
+ */
 class generic_page_header {
 public:
-    enum {
-        page_sz     = SM_PAGESIZE,
-        hdr_sz      = 64, // NOTICE always sync with the offsets below
-        data_sz     = page_sz - hdr_sz,
-        /** Poor man's normalized key length. */
-        poormkey_sz = sizeof (poor_man_key),
-        slot_sz     = sizeof(slot_offset8_t) + poormkey_sz
-    };
+    /// Size of all Zero pages
+    static const size_t page_sz = SM_PAGESIZE;
 
- 
-    /** LSN (Log Sequence Number) of the last write to this page. */
-    lsn_t    lsn;      // +8 -> 8
-    
-    /** ID of the page.*/
-    lpid_t    pid;      // +12 -> 20
-    
-    /** tag_t. */
-    uint16_t    tag;     // +2 -> 22
-    
-    /** total number of slots including every type of slot. */
-    slot_index_t  nslots;   // +2 -> 24
-    
-    /** number of ghost records. */
-    slot_index_t  nghosts; // +2 -> 26
-    
-    /** offset to beginning of record area (location of record that is located left-most). */
-    slot_offset8_t  record_head8;     // +2 -> 28
-    int32_t     get_record_head_byte() const {return to_byte_offset(record_head8);}
-
-    /** unused. */
-    uint32_t    _private_store_flags; // +4 -> 32
-
-    uint32_t    get_page_storeflags() const { return _private_store_flags;}
-    uint32_t    set_page_storeflags(uint32_t f) { 
-                         return (_private_store_flags=f);}
-    /** page_flag_t. */
-    uint32_t    page_flags;        //  +4 -> 36
-
-#ifdef DOXYGEN_HIDE
-///==========================================
-///   BEGIN: BTree specific headers
-///==========================================
-#endif // DOXYGEN_HIDE
 
     /**
-    * root page used for recovery (root page is never changed even while grow/shrink).
-    * This can be removed by retrieving it from full pageid (storeid->root page id),
-    * but let's do that later.
-    */
-    shpid_t    btree_root; // +4 -> 40
-    /** first ptr in non-leaf nodes. used only in left-most non-leaf nodes. */
-    shpid_t    btree_pid0; // +4 -> 44
-    /**
-    * B-link page (0 if not linked).
-    * kind of "next", but other nodes don't know about it yet.
-    */
-    shpid_t    btree_foster;  // +4 -> 48
-    /** 1 if leaf, >1 if non-leaf. */
-    int16_t    btree_level; // +2 -> 50
-    /**
-    * length of low-fence key.
-    * Corresponding data is stored in the first slot.
-    */
-    int16_t    btree_fence_low_length;  // +2 -> 52
-    /**
-    * length of high-fence key.
-    * Corresponding data is stored in the first slot after low fence key.
-    */
-    int16_t    btree_fence_high_length;  // +2 -> 54
-    /**
-     * length of high-fence key of the foster chain. 0 if not in a foster chain or right-most of a chain.
-     * Corresponding data is stored in the first slot after high fence key.
-     * When this page belongs to a foster chain,
-     * we need to store high-fence of right-most sibling in every sibling
-     * to do batch-verification with bitmaps.
-     * @see btree_impl::_ux_verify_volume()
+     * \brief Stored checksum of this page.
+     *
+     * \details
+     * Checksum is calculated from various parts of this page and
+     * updated just before this page is written out to permanent
+     * storage.  It is checked each time this page is read in from the
+     * permanent storage.
      */
-    int16_t    btree_chain_fence_high_length; // +2 -> 56
-    /**
-    * counts of common leading bytes of the fence keys,
-    * thereby of all entries in this page too.
-    * 0=no prefix compression.
-    * Corresponding data is NOT stored.
-    * We can just use low fence key data.
-    */
-    int16_t    btree_prefix_length;  // +2 -> 58
-    /**
-    * Count of consecutive insertions to right-most or left-most.
-    * Positive values mean skews towards right-most.
-    * Negative values mean skews towards left-most.
-    * Whenever this page receives an insertion into the middle,
-    * this value is reset to zero.
-    * Changes of this value will NOT be logged. It doesn't matter
-    * in terms of correctness, so we don't care about undo/redo
-    * of this header item.
-    */
-    int16_t   btree_consecutive_skewed_insertions; // +2 -> 60
-#ifdef DOXYGEN_HIDE
-///==========================================
-///   END: BTree specific headers
-///==========================================
-#endif // DOXYGEN_HIDE
-
-    /**
-     * Checksum of this page.
-     * Checksum is calculated from various parts of this page
-     * and stored when this page is written out to disk from bufferpool.
-     * It's checked when the bufferpool first reads the page from
-     * the disk and not checked afterwards.
-     */
-    mutable uint32_t    checksum; // +4 -> 64
+    mutable uint32_t checksum;     // +4 -> 4
     
-    /** Calculate the correct value of checksum of this page. */
+    /// ID of this page
+    lpid_t           pid;          // +4+4+4 (= +12) -> 16
+    
+    /// LSN (Log Sequence Number) of the last write to this page
+    lsn_t            lsn;          // +8 -> 24
+
+    /// Page type (a page_tag_t)
+    uint16_t         tag;          // +2 -> 26
+
+protected:
+    friend class fixable_page_h;   // for access to page_flags&t_to_be_deleted
+
+    /// Page flags (an OR of page_flag_t's)
+    uint16_t         page_flags;   //  +2 -> 28
+
+    /// Reserved for subclass usage
+    uint32_t         reserved;     //  +4 -> 32
+
+
+public:
+    /// Calculate the correct value of checksum for this page. 
     uint32_t    calculate_checksum () const;
-    /**
-     * Renew the stored value of checksum of this page.
-     * Note that this is a const function. checksum is mutable property.
-     */
-    void       update_checksum () const {checksum = calculate_checksum();}
+};
+// verify compiler tightly packed all of generic_page_header's fields:
+BOOST_STATIC_ASSERT(sizeof(generic_page_header) == 32);
+
+
+/**
+ * \brief The type of a page; e.g., is this a B-tree page, an
+ * allocation page, or what?
+ */
+enum page_tag_t {
+    t_bad_p    = 0,        ///< not used
+    t_alloc_p  = 1,        ///< free-page allocation page 
+    t_stnode_p = 2,        ///< store node page
+    t_btree_p  = 5,        ///< btree page 
 };
 
 
-inline uint32_t generic_page_header::calculate_checksum () const {
-    const uint32_t CHECKSUM_MULT = 0x35D0B891;
+/**
+ * \brief Flags that can be turned on or off per page; held in
+ * generic_page_header::page_flags.
+ */
+enum page_flag_t {
+    // Flags used by fixable pages:
+    t_to_be_deleted  = 0x01,     ///< this page will be deleted as soon as the page is evicted from bufferpool
+};
 
-    // FIXME: The current checksum ignores the headers and most of the
-    // data bytes, presumably for speed reasons.  If you start
-    // checksumming the headers, be careful of the checksum field.
-
-    const unsigned char *data      = (const unsigned char *)(this + 1);  // start of data section of this page: right after these headers
-    const unsigned char *data_last = data + data_sz - sizeof(uint32_t);  // the last 32-bit word of the data section of this page
-
-    uint64_t value = 0;
-    // these values (23/511) are arbitrary
-    for (const unsigned char *p = (const unsigned char *) data + 23; p <= data_last; p += 511) {
-        // be aware of alignment issue on spark! so this code is not safe
-        // const uint32_t*next = reinterpret_cast<const uint32_t*>(p);
-        // value ^= *next;
-        value = value * CHECKSUM_MULT + p[0];
-        value = value * CHECKSUM_MULT + p[1];
-        value = value * CHECKSUM_MULT + p[2];
-        value = value * CHECKSUM_MULT + p[3];
-    }
-    return ((uint32_t) (value >> 32)) ^ ((uint32_t) (value & 0xFFFFFFFF));
-}
 
 
 
 /**
- * \brief Basic page structure for all pages.
+ * \brief A generic page view: any Zero page can be viewed as being of
+ * this type but it only exposes fields shared by all Zero pages.  To
+ * "downcast" and access page-type--specific fields, pass a pointer to
+ * one of these to one of the page handle classes' (e.g., btree_page_h)
+ * constructors.
  * 
  * \details
- * These are persistent things. There is no hierarchy here
- * for the different page types. All the differences between
- * page types are handled by the handle classes, generic_page_h and its
- * derived classes.
+ * All zero pages have the same size and initial headers
+ * (generic_page_header's).  Each specific page type has an associated
+ * data type that is a (indirect) subclass of generic_page_header as
+ * well as an associated handle class.  For example, B-tree pages have
+ * associated page class btree_page and handle class btree_page_h.
+ * Casting between page types is done by the handle classes after
+ * verifying the cast is safe according to the page tag.  No other
+ * code should perform such casts.
  * 
- * \section BTree-specific page headers
- * This page layout also contains the headers just for BTree to optimize on
- * the performance of BTree.
- * Anyways, remaining page-types other than BTree are only stnode_page and alloc_page
- * For those page types, this header part is unused but not a big issue.
- * @see btree_page
+ * The corresponding handle class for this page type is generic_page_h.
  */
 class generic_page : public generic_page_header {
-public:
-    generic_page() {
-        w_assert1(data - (const char *)this == hdr_sz);
-    }
-    ~generic_page() { }
-
-
 private:
-    /* MUST BE 8-BYTE ALIGNED HERE */
-    char     data[data_sz];        // must be aligned
+    char subclass_specific[page_sz - sizeof(generic_page_header)];
+};
+BOOST_STATIC_ASSERT(sizeof(generic_page) == generic_page_header::page_sz);
+
+
+
+/**
+ * \brief Page handle class for any page type.
+ * 
+ * \details
+ * This is the root superclass of all the Zero page handle classes.
+ * It provides operations on the fields common to all pages.
+ */
+class generic_page_h {
+public:
+    generic_page_h(generic_page* s) : _pp(s) {}
+    virtual ~generic_page_h() {}
+
+
+    /// return pointer to underlying page
+    generic_page* get_generic_page() const { return _pp; }
+
+
+    const lpid_t& pid()   const { return _pp->pid; }
+    vid_t         vid()   const { return _pp->pid.vol(); }
+    volid_t       vol()   const { return _pp->pid.vol().vol; }
+    snum_t        store() const { return _pp->pid.store(); }
+
+    page_tag_t    tag()   const { return (page_tag_t) _pp->tag; }
+
+    const lsn_t&  lsn()   const { return _pp->lsn; }
+    void          set_lsns(const lsn_t& lsn) { _pp->lsn = lsn; }
+
+
+protected:
+    generic_page_h(generic_page* s, const lpid_t& pid, page_tag_t tag) : _pp(s) {
+        ::memset(_pp, 0, sizeof(*_pp));
+        _pp->pid = pid;
+        _pp->tag = tag;
+    }    
+
+    /// The actual page we are handling; may be NULL for fixable pages
+    generic_page* _pp;
 };
 
 #endif

@@ -62,7 +62,7 @@ w_rc_t btree_page(ss_m* ssm, test_volume_t *test_volume) {
         
         generic_page dummy_p;
         ::memset (&dummy_p, 0, sizeof (generic_page));
-        correct_checksum = leaf.calculate_checksum();
+        correct_checksum = leaf.get_generic_page()->calculate_checksum();
         EXPECT_NE (correct_checksum, dummy_p.calculate_checksum());
     }
     W_DO(ssm->commit_xct());
@@ -79,8 +79,8 @@ w_rc_t btree_page(ss_m* ssm, test_volume_t *test_volume) {
         EXPECT_TRUE (leaf.is_leaf());
         EXPECT_FALSE (leaf.is_dirty());
 
-        EXPECT_EQ (correct_checksum, leaf.calculate_checksum()) << "page content has changed?";
-        EXPECT_EQ (correct_checksum, leaf.get_checksum()) << "checksum hasn't been updated on write?";
+        EXPECT_EQ (correct_checksum, leaf.get_generic_page()->calculate_checksum()) << "page content has changed?";
+        EXPECT_EQ (correct_checksum, leaf.get_generic_page()->checksum) << "checksum hasn't been updated on write?";
     }
     W_DO(ssm->commit_xct());
 

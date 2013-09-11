@@ -944,7 +944,7 @@ restart_m::redo_pass(
                     /*
                      *  Fix the page.
                      */ 
-                    generic_page_h page;
+                    fixable_page_h page;
 
                     /* 
                      * The following code determines whether to perform
@@ -1073,7 +1073,7 @@ restart_m::redo_pass(
                                 page_lsn (as if it had just been logged
                                 the first time, back in the past)
                                 */
-                                smlevel_0::bf->repair_rec_lsn(&page.persistent_part(), was_dirty, lsn);
+                                smlevel_0::bf->repair_rec_lsn(page.get_generic_page(), was_dirty, lsn);
                             }
                                 
                             if (xd) me()->detach_xct(xd);
@@ -1086,7 +1086,7 @@ restart_m::redo_pass(
                             r.redo(page.is_fixed() ? &page : 0);
                             redone = true;
                             page.set_lsns(lsn);
-                            smlevel_0::bf->repair_rec_lsn(&page.persistent_part(), was_dirty, lsn);
+                            smlevel_0::bf->repair_rec_lsn(page.get_generic_page(), was_dirty, lsn);
                             W_IFDEBUG1(rc_t sxs_rc =) sxs.end_sys_xct (RCOK);
                             w_assert1(!sxs_rc.is_error());
                         }

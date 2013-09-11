@@ -54,35 +54,31 @@ class stnode_page : public generic_page_header {
 
     /// max # \ref stnode_t's on a single stnode_page; thus, the
     /// maximum number of stores per volume
-    static const size_t max = data_sz / sizeof(stnode_t);
+    static const size_t max = (page_sz - sizeof(generic_page_header)) / sizeof(stnode_t);
 
     /// stnode[i] is the stnode_t for store # i of this volume
     stnode_t stnode[max];
-
-    /// unused space (ideally of zero size)
-    char*    padding[data_sz - sizeof(stnode)];
 };
+BOOST_STATIC_ASSERT(sizeof(stnode_page) == generic_page_header::page_sz);
 
 
 
 /**
  * \brief Handle for a stnode_page.
  */
-class stnode_page_h {
-    stnode_page *_page;
+class stnode_page_h : public generic_page_h {
+    stnode_page *page() const { return reinterpret_cast<stnode_page*>(_pp); }
 
 public:
     /// format given page with page-ID pid as an stnode_page page then
     /// return a handle to it
     stnode_page_h(generic_page* s, const lpid_t& pid);
+
     /// construct handle from an existing stnode_page page
-    stnode_page_h(generic_page* s) : _page(reinterpret_cast<stnode_page*>(s)) {
+    stnode_page_h(generic_page* s) : generic_page_h(s) {
         w_assert1(s->tag == t_stnode_p);
     }
     ~stnode_page_h() {}
-
-    /// return pointer to underlying page
-    generic_page* to_generic_page() const { return reinterpret_cast<generic_page*>(_page); }
 
 
     /// max # \ref stnode_t's on a single stnode_page; thus, the
@@ -98,14 +94,14 @@ public:
         w_assert1(0 < index);
 
         w_assert1(index < max);
-        return _page->stnode[index];
+        return page()->stnode[index];
     }
     const stnode_t& get(size_t index) const {
         // see comment in non-const version of this method
         w_assert1(0 < index);
 
         w_assert1(index < max);
-        return _page->stnode[index];
+        return page()->stnode[index];
     }
 };
 

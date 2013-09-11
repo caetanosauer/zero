@@ -137,11 +137,11 @@ rc_t vol_t::mount(const char* devname, vid_t vid)
     w_rc_t e;
     int        open_flags = smthread_t::OPEN_RDWR;
     {
-            char *s = getenv("SM_VOL_RAW");
+        char *s = getenv("SM_VOL_RAW");
         if (s && s[0] && atoi(s) > 0)
-                open_flags |= smthread_t::OPEN_RAW;
+            open_flags |= smthread_t::OPEN_RAW;
         else if (s && s[0] && atoi(s) == 0)
-                open_flags &= ~smthread_t::OPEN_RAW;
+            open_flags &= ~smthread_t::OPEN_RAW;
     }
     e = me()->open(devname, open_flags, 0666, _unix_fd);
     if (e.is_error()) {
@@ -177,7 +177,12 @@ rc_t vol_t::mount(const char* devname, vid_t vid)
     clear_caches();
     _fixed_bf = new bf_fixed_m();
     w_assert1(_fixed_bf);
-    W_DO(_fixed_bf->init(this, _unix_fd, _num_pages));
+    e = _fixed_bf->init(this, _unix_fd, _num_pages);
+    if (e.is_error()) {
+        W_IGNORE(me()->close(_unix_fd));
+        _unix_fd = -1;
+        return e;
+    }
     _first_data_pageid = _fixed_bf->get_page_cnt() + 1; // +1 for volume header
 
     _alloc_cache = new alloc_cache_t(_vid, _fixed_bf);
@@ -822,17 +827,17 @@ vol_t::format_vol(
         {
             for (apid.page = 1; apid.page < alloc_pages + 1; ++apid.page)  {
                 alloc_page_h ap(&buf, apid);  // format page
+                w_assert1(ap.vid() == vid);
                 // set bits for the header pages
                 if (apid.page == 1) {
                     for (shpid_t hdr_pid = 0; hdr_pid < hdr_pages; ++hdr_pid) {
                         ap.set_bit(hdr_pid);
                     }
                 }
-                generic_page& page (*ap.to_generic_page());
-                w_assert9(&buf == &page);
-                w_assert1(page.pid.vol() == vid);
+                generic_page* page = ap.get_generic_page();
+                w_assert9(&buf == page);
 
-                rc = me()->write(fd, &page, sizeof(page));
+                rc = me()->write(fd, page, sizeof(*page));
                 if (rc.is_error()) {
                     W_IGNORE(me()->close(fd));
                     return rc;
@@ -846,9 +851,9 @@ vol_t::format_vol(
             DBG(<<" formatting stnode_page");
             DBGTHRD(<<"stnode_page page " << spid.page);
             stnode_page_h fp(&buf, spid);  // formatting...
-            generic_page& page (*fp.to_generic_page());
-            w_assert1(page.pid.vol() == vid);
-            rc = me()->write(fd, &page, sizeof(page));
+            w_assert1(fp.vid() == vid);
+            generic_page* page = fp.get_generic_page();
+            rc = me()->write(fd, page, sizeof(*page));
             if (rc.is_error()) {
                 W_IGNORE(me()->close(fd));
                 return rc;
