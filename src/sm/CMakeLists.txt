@@ -2,13 +2,8 @@
 set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/alloc_cache.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/alloc_page.cpp
-#    ${CMAKE_CURRENT_SOURCE_DIR}/bf.cpp
-#    ${CMAKE_CURRENT_SOURCE_DIR}/bf_core.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bf_fixed.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bf_hashtable.cpp
-#    ${CMAKE_CURRENT_SOURCE_DIR}/bf_htab.cpp
-#    ${CMAKE_CURRENT_SOURCE_DIR}/bf_htab_test.cpp
-#    ${CMAKE_CURRENT_SOURCE_DIR}/bf_prefetch.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bf_tree.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bf_tree_cleaner.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/btcursor.cpp
@@ -152,12 +147,9 @@ install(FILES
   ${GENFILES_H}
   ${CMAKE_CURRENT_SOURCE_DIR}/alloc_cache.h
   ${CMAKE_CURRENT_SOURCE_DIR}/alloc_page.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/bf_core.h
   ${CMAKE_CURRENT_SOURCE_DIR}/bf_fixed.h
   ${CMAKE_CURRENT_SOURCE_DIR}/bf.h
   ${CMAKE_CURRENT_SOURCE_DIR}/bf_hashtable.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/bf_htab.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/bf_prefetch.h
   ${CMAKE_CURRENT_SOURCE_DIR}/bf_s.h
   ${CMAKE_CURRENT_SOURCE_DIR}/bf_transit_bucket.h
   ${CMAKE_CURRENT_SOURCE_DIR}/bf_tree.h
