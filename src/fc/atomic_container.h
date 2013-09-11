@@ -55,6 +55,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "Lintel/AtomicCounter.hpp"
 
 // for placement new support, which users need
+#include <boost/static_assert.hpp>
 #include <new>
 #include <cassert>
 #include <stdlib.h>
@@ -89,13 +90,15 @@ protected:
     /// Unions for punning, i.e., type conversion
     union vpn { void* v; ptr* p; long n; };
     union pvn { ptr* p; void* v; long n; };
+    /// @todo instead of long, should use intptr_t here.
+    BOOST_STATIC_ASSERT(sizeof(void *) == sizeof(long)); // at least check long is OK.
     /// \endcond skipdoc
 
 public:
     typedef int64_t offset_typ;
 
     atomic_container(offset_typ offset)
-        : _offset(offset), _locked(0), _active(0), _backup(0)
+        : _offset(offset), _locked(false), _active(0), _backup(0)
     { }
     
     /// Pop an item off the stack.
@@ -135,7 +138,7 @@ public:
     offset_typ offset() const { return  _offset; } 
 
     virtual ~atomic_container() {  // for shutdown/restart purposes:
-             _locked = 0; _active = 0; _backup = 0;
+             _locked = false; _active = 0; _backup = 0;
     }
     
 protected:
@@ -158,7 +161,7 @@ protected:
     offset_typ const _offset;
     
 private:
-    unsigned volatile _locked;
+    lintel::Atomic<bool> _locked;
     /// The list of active stuff.
     /// Pop will pull things off this list until it's empty.
     ptr* volatile _active;
@@ -196,9 +199,13 @@ private:
         bool mine = false;
         pvn active = { *&_active };
         while(!mine) {
-            while(*&_locked && !pointer(active)) active.p = *&_active;
+            // more efficient here would be _locked.load(memory_order_acquire), but lintel atomics
+            // don't seem to offer that. See paired comment in release_lock() and 3 lines down
+            /// @todo update lintel, or use a newer compiler
+            while(_locked && !pointer(active)) active.p = *&_active;
             if(pointer(active)) return false;
-            mine = !lintel::unsafe::atomic_exchange(const_cast<unsigned*>(&_locked), true);
+            // more efficient if atomic_exchange(&_locked, true, memory_order_acq_rel);
+            mine = !_locked.exchange(true);
         }
         if(mine) {
             lintel::atomic_thread_fence(lintel::memory_order_acquire);
@@ -212,7 +219,8 @@ private:
     }
     ///Release the lock.
     void release_lock() {
-        lintel::atomic_thread_fence(lintel::memory_order_release);
+        // more efficient would be _locked.store(false, memory_order_release);
+        // not supported by lintel. See comment in attempt_lock
         _locked = false;
     }
     

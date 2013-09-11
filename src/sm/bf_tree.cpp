@@ -1684,8 +1684,8 @@ void bf_tree_m::_unswizzle_with_parent_pointer() {
 
 void bf_tree_m::debug_dump(std::ostream &o) const
 {
-    o << "dumping the bufferpool contents. _block_cnt=" << _block_cnt << ", _clock_hand=" << _clock_hand << std::endl;
-    o << "  _freelist_len=" << _freelist_len << ", HEAD=" << FREELIST_HEAD << std::endl;
+    o << "dumping the bufferpool contents. _block_cnt=" << _block_cnt << ", _clock_hand=" << _clock_hand << "\n";
+    o << "  _freelist_len=" << _freelist_len << ", HEAD=" << FREELIST_HEAD << "\n";
 #ifdef BP_MAINTAIN_PARNET_PTR
     o << "  _swizzled_lru_len=" << _swizzled_lru_len << ", HEAD=" << SWIZZLED_LRU_HEAD << ", TAIL=" << SWIZZLED_LRU_TAIL << std::endl;
 #endif // BP_MAINTAIN_PARNET_PTR
