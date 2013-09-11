@@ -13,17 +13,18 @@
  * \brief Page headers shared by all Zero pages
  *
  * \details 
- *     All page datatypes (e.g., generic_page, alloc_page, btree_page,
- * stnode_page) inherit (indirectly) from this class.  This is a POD.
+ *     All page data types (e.g., generic_page, alloc_page,
+ * btree_page, stnode_page) inherit (indirectly) from this class.
+ * This is a POD.
  *
  *     The checksum field is placed first to make the region of data
  * it covers continuous.  The order of the other fields has been
  * arranged to maximize packing into the fewest number of words
  * possible.
  *
- *     Because this class contains a 8-byte aligned object (lsn_t), it
- * must be a multiple of eight bytes.  The extra space not needed for
- * all pages (field reserved) is reserved for subclass usage.
+ *     Because this class contains an 8-byte aligned object (lsn_t),
+ * it must be a multiple of eight bytes.  The extra space not needed
+ * for all pages (field reserved) is reserved for subclass usage.
  *
  *     Some page types (alloc_page, stnode_page) do not currently
  * (9/2013) use the lsn, reserved, or page_flags fields.
@@ -39,8 +40,9 @@ public:
      *
      * \details
      * Checksum is calculated from various parts of this page and
-     * updated just before this page is written out to disk.  It is
-     * checked each time this page is read in from the disk.
+     * updated just before this page is written out to permanent
+     * storage.  It is checked each time this page is read in from the
+     * permanent storage.
      */
     mutable uint32_t checksum;     // +4 -> 4
     
@@ -54,7 +56,7 @@ public:
     uint16_t         tag;          // +2 -> 26
 
 protected:
-    friend class fixable_page_h;   // for access to page_flags&t_tobedeleted
+    friend class fixable_page_h;   // for access to page_flags&t_to_be_deleted
 
     /// Page flags (an OR of page_flag_t's)
     uint16_t         page_flags;   //  +2 -> 28
@@ -87,7 +89,7 @@ enum page_tag_t {
  */
 enum page_flag_t {
     // Flags used by fixable pages:
-    t_tobedeleted  = 0x01,     ///< this page will be deleted as soon as the page is evicted from bufferpool
+    t_to_be_deleted  = 0x01,     ///< this page will be deleted as soon as the page is evicted from bufferpool
 };
 
 
@@ -149,17 +151,6 @@ public:
 
     const lsn_t&  lsn()   const { return _pp->lsn; }
     void          set_lsns(const lsn_t& lsn) { _pp->lsn = lsn; }
-
-
-    /// Returns the stored checksum of this page. 
-    uint32_t      get_checksum()       const { return _pp->checksum; }
-
-    /// Calculate the correct value of checksum for this page. 
-    uint32_t      calculate_checksum() const { return _pp->calculate_checksum(); }
-
-    /// Update the stored checksum of this page.  Note that this is a
-    /// const function because checksum is mutable.
-    void          update_checksum()    const { _pp->checksum = calculate_checksum(); }
 
 
 protected:

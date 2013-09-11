@@ -15,12 +15,12 @@
 #include "bf_tree.h"
 
 
-rc_t fixable_page_h::set_tobedeleted (bool log_it) {
-    if ((_pp->page_flags & t_tobedeleted) == 0) {
+rc_t fixable_page_h::set_to_be_deleted (bool log_it) {
+    if ((_pp->page_flags & t_to_be_deleted) == 0) {
         if (log_it) {
-            W_DO(log_page_set_tobedeleted (*this));
+            W_DO(log_page_set_to_be_deleted (*this));
         }
-        _pp->page_flags ^= t_tobedeleted;
+        _pp->page_flags ^= t_to_be_deleted;
         set_dirty();
     }
     return RCOK;

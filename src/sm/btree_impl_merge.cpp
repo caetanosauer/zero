@@ -228,7 +228,7 @@ rc_t btree_impl::_ux_merge_foster_core(btree_page_h &page)
     
     // log for foster-parent.
     W_DO(log_btree_foster_merge (page));
-    W_DO(foster_p.set_tobedeleted(true)); // log it (for foster-child)
+    W_DO(foster_p.set_to_be_deleted(true)); // log it (for foster-child)
 
     // like split, use scratch block to cleanly make a new page image
     w_keystr_t low_key, high_key, chain_high_key; // fence keys after merging

@@ -31,6 +31,7 @@ class alloc_page : public generic_page_header {
 
     /// the smallest page ID that the bitmap in this page represents
     shpid_t pid_offset;        
+
     /// smallest pid represented by this page that has never had its
     /// corresponding bit set or pid_offset+bits_held if no such pid
     /// exists.
@@ -76,6 +77,7 @@ class alloc_page_h : public generic_page_h {
 public:
     /// format given page with page-ID pid as an alloc page then return a handle to it
     alloc_page_h(generic_page* s, const lpid_t& pid);
+
     /// construct handle from an existing alloc page
     alloc_page_h(generic_page* s) : generic_page_h(s) {
         w_assert1(s->tag == t_alloc_p);

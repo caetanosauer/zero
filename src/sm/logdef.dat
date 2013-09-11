@@ -131,7 +131,7 @@ store_operation    1011011 1.0 (const store_operation_param& op);
 #########################################################################
 # This just sets the status of the page to "to-be-deleted".
 # Once the page is actually deleted by bufferpool, we can't UNDO it.
-page_set_tobedeleted   1011000 1.0 (const fixable_page_h& page);
+page_set_to_be_deleted   1011000 1.0 (const fixable_page_h& page);
 
 # This is a special way of logging the creation of a new page.
 # New page creation is usually a page split, so the new page has many

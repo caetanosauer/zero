@@ -78,9 +78,9 @@ inline w_rc_t fixable_page_h::fix_root (volid_t vol, snum_t store, latch_mode_t 
 }
 
 
-inline void fixable_page_h::unset_tobedeleted() {
-    if ((_pp->page_flags & t_tobedeleted) != 0) {
-        _pp->page_flags ^= t_tobedeleted;
+inline void fixable_page_h::unset_to_be_deleted() {
+    if ((_pp->page_flags & t_to_be_deleted) != 0) {
+        _pp->page_flags ^= t_to_be_deleted;
         // we don't need set_dirty() as it's always dirty if this is ever called
         // (UNDOing this means the page wasn't deleted yet by bufferpool, so it's dirty)
     }

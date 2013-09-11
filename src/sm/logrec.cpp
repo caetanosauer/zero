@@ -832,30 +832,30 @@ operator<<(ostream& o, const logrec_t& l)
 }
 
 // nothing needed so far..
-class page_set_tobedeleted_t {
+class page_set_to_be_deleted_t {
 public:
-    page_set_tobedeleted_t(){}
+    page_set_to_be_deleted_t(){}
     int size()  { return 0;}
 };
 
-page_set_tobedeleted_log::page_set_tobedeleted_log(const fixable_page_h& p)
+page_set_to_be_deleted_log::page_set_to_be_deleted_log(const fixable_page_h& p)
 {
     fill(&p.pid(), p.tag(), 
-        (new (_data) page_set_tobedeleted_t()) ->size());
+        (new (_data) page_set_to_be_deleted_t()) ->size());
 }
 
 
-void page_set_tobedeleted_log::redo(fixable_page_h* page)
+void page_set_to_be_deleted_log::redo(fixable_page_h* page)
 {
-    rc_t rc = page->set_tobedeleted(false); // no log
+    rc_t rc = page->set_to_be_deleted(false); // no log
     if (rc.is_error()) {
         W_FATAL(rc.err_num());
     }
 }
 
-void page_set_tobedeleted_log::undo(fixable_page_h* page)
+void page_set_to_be_deleted_log::undo(fixable_page_h* page)
 {
-    page->unset_tobedeleted();
+    page->unset_to_be_deleted();
 }
 
 
