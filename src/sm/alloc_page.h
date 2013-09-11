@@ -61,6 +61,7 @@ class alloc_page : public generic_page_header {
     /// set all bits in [from, to)
     void  set_bits(uint32_t from, uint32_t to);
 };
+BOOST_STATIC_ASSERT(sizeof(alloc_page) == generic_page_header::page_sz);
 
 
 

@@ -5,6 +5,7 @@
 #ifndef GENERIC_PAGE_H
 #define GENERIC_PAGE_H
 
+#include <boost/static_assert.hpp>
 #include "w_defines.h"
 #include "sm_s.h"
 
@@ -69,6 +70,8 @@ public:
     /// Calculate the correct value of checksum for this page. 
     uint32_t    calculate_checksum () const;
 };
+// verify compiler tightly packed all of generic_page_header's fields:
+BOOST_STATIC_ASSERT(sizeof(generic_page_header) == 32);
 
 
 /**
@@ -118,6 +121,7 @@ class generic_page : public generic_page_header {
 private:
     char subclass_specific[page_sz - sizeof(generic_page_header)];
 };
+BOOST_STATIC_ASSERT(sizeof(generic_page) == generic_page_header::page_sz);
 
 
 
@@ -130,11 +134,7 @@ private:
  */
 class generic_page_h {
 public:
-    generic_page_h(generic_page* s) : _pp(s) {
-        // verify compiler tightly packed all of generic_page_header's fields:
-        w_assert1(sizeof(generic_page_header) == 32);
-        w_assert1(sizeof(generic_page) == generic_page_header::page_sz);
-    }
+    generic_page_h(generic_page* s) : _pp(s) {}
     virtual ~generic_page_h() {}
 
 

@@ -196,6 +196,7 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
         return data + to_byte_offset(offset8);
     }
 };
+BOOST_STATIC_ASSERT(sizeof(btree_page) == sizeof(generic_page));
 
 
 
@@ -364,7 +365,6 @@ public:
         w_assert1(s->tag == t_btree_p);
         // check claimed alignment produced by generic_page_header; see its class comment:
         w_assert1(((char *)&page()->nslots - (char *)s) % 8 == 0); // <<<>>>
-        w_assert1(sizeof(btree_page) == sizeof(generic_page));
     }
     btree_page_h(const btree_page_h& p) : fixable_page_h(p) {} 
     ~btree_page_h() {}

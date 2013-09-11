@@ -59,6 +59,7 @@ class stnode_page : public generic_page_header {
     /// stnode[i] is the stnode_t for store # i of this volume
     stnode_t stnode[max];
 };
+BOOST_STATIC_ASSERT(sizeof(stnode_page) == generic_page_header::page_sz);
 
 
 
@@ -72,8 +73,9 @@ public:
     /// format given page with page-ID pid as an stnode_page page then
     /// return a handle to it
     stnode_page_h(generic_page* s, const lpid_t& pid);
+
     /// construct handle from an existing stnode_page page
-    stnode_page_h(generic_page* s) : generic_page_h(s){
+    stnode_page_h(generic_page* s) : generic_page_h(s) {
         w_assert1(s->tag == t_stnode_p);
     }
     ~stnode_page_h() {}

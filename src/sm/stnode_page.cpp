@@ -17,9 +17,7 @@
 
 stnode_page_h::stnode_page_h(generic_page* s, const lpid_t& pid):
     generic_page_h(s, pid, t_stnode_p)
-{
-    w_assert1(sizeof(stnode_page) == generic_page_header::page_sz);
-}    
+{}   
 
 
 
