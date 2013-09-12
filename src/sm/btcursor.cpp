@@ -7,10 +7,6 @@
 #define SM_SOURCE
 #define BTREE_C
 
-#ifdef __GNUG__
-#   pragma implementation "btcursor.h"
-#endif
-
 #include "sm_int_0.h"
 #include "sm_int_2.h"
 #include "page_bf_inline.h"

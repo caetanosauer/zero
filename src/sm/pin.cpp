@@ -61,10 +61,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define SM_SOURCE
 #define PIN_C
 
-#ifdef __GNUG__
-#pragma implementation "pin.h"
-#endif
-
 #include <pin.h>
 #include "suppress_unused.h"
 

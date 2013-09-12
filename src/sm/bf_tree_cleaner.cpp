@@ -674,8 +674,8 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
     if (_parent->_bufferpool->_dirty_page_count_approximate < 0) {// so, even this can happen.
         _parent->_bufferpool->_dirty_page_count_approximate = 0;
     }
-    bool in_hurry = _parent->_bufferpool->_dirty_page_count_approximate > (block_cnt / 3 * 2);
-    bool in_real_hurry = _parent->_bufferpool->_dirty_page_count_approximate > (block_cnt / 4 * 3);
+    bool in_hurry = (unsigned)_parent->_bufferpool->_dirty_page_count_approximate > (block_cnt / 3 * 2);
+    bool in_real_hurry = (unsigned)_parent->_bufferpool->_dirty_page_count_approximate > (block_cnt / 4 * 3);
 
     // list up dirty pages
     page_s* pages = _parent->_bufferpool->_buffer;

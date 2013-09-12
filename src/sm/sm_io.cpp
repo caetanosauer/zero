@@ -7,10 +7,6 @@
 #define SM_SOURCE
 #define IO_C
 
-#ifdef __GNUG__
-#pragma implementation
-#endif
-
 #include "sm_int_2.h"
 #include "chkpt_serial.h"
 #include "sm_du_stats.h"

@@ -38,13 +38,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define SM_SOURCE
 #define VTABLE_SM_C
 
-#ifdef __GNUG__
-class prologue_rc_t;
-#pragma implementation "sm.h"
-#pragma implementation "prologue.h"
-#pragma implementation "sm_base.h"
-#endif
-
 #include "w.h"
 #include "option.h"
 #include "sm_int_4.h"

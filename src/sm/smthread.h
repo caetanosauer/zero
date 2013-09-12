@@ -99,10 +99,6 @@ class xct_t;
 class xct_log_t;
 class lockid_t;
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 class smthread_t;
 
 /**\brief Callback class use with smthread::for_each_smthread()

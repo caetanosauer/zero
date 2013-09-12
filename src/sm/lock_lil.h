@@ -14,10 +14,6 @@
 
 #include "w_defines.h"
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 #include <cstring> // for memset
 #include "w_rc.h"
 #include "srwlock.h"

@@ -69,10 +69,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <stid_t.h>
 #endif
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 #include "basics.h"
 
 /**\brief Long page ID.

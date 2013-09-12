@@ -7,10 +7,6 @@
 
 #include "w_defines.h"
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 #include "page_s.h"
 #include "w_key.h"
 #include "sm_base.h"

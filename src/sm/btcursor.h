@@ -9,11 +9,6 @@
 #include "w_key.h"
 #include "bf_tree.h"
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
-
 class btree_p;
 class btrec_t;
 

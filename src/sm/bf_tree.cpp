@@ -553,7 +553,7 @@ bf_idx bf_tree_m::pin_for_refix(const page_s* page) {
     // this is just atomic increment, not a CAS, because we know
     // the page is latched and eviction thread wouldn't consider this block.
     w_assert1(_control_blocks[idx].pin_cnt() >= 0);
-    _control_blocks[idx].pin_cnt_atomic_inc(1);
+    _control_blocks[idx].pin_cnt_atomic_inc();
     return idx;
 }
 
@@ -563,7 +563,7 @@ void bf_tree_m::unpin_for_refix(bf_idx idx) {
 #ifdef SIMULATE_MAINMEMORYDB
     if (true) return;
 #endif // SIMULATE_MAINMEMORYDB
-    _control_blocks[idx].pin_cnt_atomic_dec(1);
+    _control_blocks[idx].pin_cnt_atomic_dec();
 }
 
 ///////////////////////////////////   Page fix/unfix END         ///////////////////////////////////  
@@ -872,27 +872,10 @@ w_rc_t bf_tree_m::_get_replacement_block_clock(bf_idx& ret) {
 
 w_rc_t bf_tree_m::_get_replacement_block_random(bf_idx& ret) {
     DBGOUT3(<<"trying to evict some page using the RANDOM replacement policy...");
-    int blocks_replaced_count = 0;
-    int tries = 0;
-/*
-    for (bf_idx idx = 0; idx < _block_cnt; idx++) {
-        if (_buffer[idx].btree_level == 1) {
-            if (_try_evict_block(idx) == 0) {
-                // return the first block found back to the caller and try to find more to free
-                if (blocks_replaced_count++ > 0) {
-                    _add_free_block(idx);
-                } else {
-                    ret = idx;
-                }
-            }
-        }
-    }
-
-    if (blocks_replaced_count>0) {
-        return RCOK;
-    }
-*/
     while (true) {
+        int blocks_replaced_count = 0;
+        unsigned int tries = 0;
+
         bf_idx idx = me()->randn(_block_cnt-1) + 1;
         if (++tries < _block_cnt) {
             if (blocks_replaced_count > 0) {
@@ -1055,7 +1038,7 @@ void bf_tree_m::_decrement_pin_cnt_assume_positive(bf_idx idx) {
     bf_tree_cb_t &cb(_control_blocks[idx]);
     w_assert1 (cb.pin_cnt() >= 1);
     //lintel::unsafe::atomic_fetch_sub((uint32_t*) &(cb._pin_cnt),1);
-    cb.pin_cnt_atomic_dec(1);
+    cb.pin_cnt_atomic_dec();
 }
 
 ///////////////////////////////////   WRITE-ORDER-DEPENDENCY BEGIN ///////////////////////////////////  
@@ -1291,8 +1274,7 @@ void bf_tree_m::swizzle_children(page_s* parent, const slotid_t* slots, uint32_t
     w_assert1(is_swizzling_enabled());
     w_assert1(parent != NULL);
     w_assert1(latch_mode(parent) != LATCH_NL);
-    bf_idx parent_idx = parent - _buffer;
-    w_assert1(_is_active_idx(parent_idx));
+    w_assert1(_is_active_idx(parent - _buffer));
     w_assert1(is_swizzled(parent)); // swizzling is transitive.
 
     page_p p (parent);
@@ -1524,7 +1506,6 @@ void bf_tree_m::_unswizzle_traverse_node(
             _unswizzle_traverse_node (unswizzled_frames, vol, store, child_idx, cur_clockhand_depth + 1);
         } else {
             // child is a leaf page. now let's unswizzle it!
-            bf_tree_cb_t &node_cb(_control_blocks[node_idx]);
             bool unswizzled = _unswizzle_a_frame (node_idx, slot);
             if (unswizzled) {
                 ++unswizzled_frames;
@@ -1814,13 +1795,14 @@ void swizzling_stat_reset()
 
 void bf_tree_m::print_slots(page_s* page) const
 {
-    slot_index_t slots = page->nslots;
-    DBGOUT1 (<< "print " << slots << " slots");
-    page_p p (page);
-    for (slot_index_t i = 1; i < slots; ++i) {
-        void* addr = p.tuple_addr(i);
-        shpid_t* slotaddr = reinterpret_cast<shpid_t*>(addr);
-        DBGOUT1 (<< " slot[" << i << "] = " << *slotaddr);
-        //DBGOUT1 (<< " slot[" << i << "] = " << (reinterpret_cast<uint64_t>(*slotaddr) ^ SWIZZLED_PID_BIT));
+    if (W_DEBUG_LEVEL >= 1) {
+        slot_index_t slots = page->nslots;
+        DBGOUT (<< "print " << slots << " slots");
+        page_p p (page);
+        for (slot_index_t i = 1; i < slots; ++i) {
+            void* addr = p.tuple_addr(i);
+            shpid_t* slotaddr = reinterpret_cast<shpid_t*>(addr);
+            DBGOUT (<< " slot[" << i << "] = " << *slotaddr);
+        }
     }
 }

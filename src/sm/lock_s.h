@@ -6,11 +6,6 @@
 #define LOCK_S_H
 
 #include "w_defines.h"
-
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 #include "w_key.h"
 #include "w_hashing.h"
 

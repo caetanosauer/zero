@@ -62,9 +62,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #ifndef BF_HTAB_H
 #define BF_HTAB_H
 
-#ifdef __GNUG__
-#pragma interface
-#endif
 /*
  *
  * Cuckoo-hashing-based hash table for the buffer pool manager.

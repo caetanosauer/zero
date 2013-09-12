@@ -62,10 +62,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define SM_SOURCE
 #define CHKPT_C
 
-#ifdef __GNUG__
-#   pragma implementation
-#endif
-
 #include "sm_int_1.h"
 #include "chkpt_serial.h"
 #include "chkpt.h"

@@ -10,10 +10,6 @@
 class stnode_p;
 class alloc_p;
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 #include "bf_idx.h"
 #include "stid_t.h"
 #include "vid_t.h"

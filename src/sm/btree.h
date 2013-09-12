@@ -5,16 +5,13 @@
 #ifndef BTREE_H
 #define BTREE_H
 
-#include "w_defines.h"
-
 /*
  *  Interface to btree manager.  
  *  NB: put NO INLINE FUNCTIONS here.
  *  Implementation is class btree_impl, in btree_impl.[ch].
  */
-#ifdef __GNUG__
-#pragma interface
-#endif
+
+#include "w_defines.h"
 
 #include "vid_t.h"
 #include "stid_t.h"

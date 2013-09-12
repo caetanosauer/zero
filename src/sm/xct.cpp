@@ -2294,7 +2294,7 @@ xct_t::_sync_logbuf(bool block, bool signal)
  *
  *********************************************************************/
 rc_t 
-xct_t::get_logbuf(logrec_t*& ret, int t, page_p const* p)
+xct_t::get_logbuf(logrec_t*& ret, int t, page_p const*)
 {
     // then , use tentative log buffer.
     if (is_piggy_backed_single_log_sys_xct()) {

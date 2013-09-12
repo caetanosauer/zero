@@ -61,10 +61,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 #if W_DEBUG_LEVEL > 2
 // You can rebuild with this turned on 
 // if you want comment log records inserted into the log

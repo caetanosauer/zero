@@ -8,9 +8,7 @@
 
 #define SM_SOURCE
 #define LOGREC_C
-#ifdef __GNUG__
-#   pragma implementation
-#endif
+
 #include "sm_int_2.h"
 #include "logdef_gen.cpp"
 // include stnode_p.h JUST to get stnode_p::max
@@ -733,7 +731,7 @@ void dismount_vol_log::redo(page_p* W_IFDEBUG9(page))
     // this may fail since this log record is only redone on crash/restart and the
         // user may have destroyed the volume after using, but then there won't be
         // and pages that need to be updated on this volume.
-    W_IGNORE(io_m::dismount(dp->devrec[0].vid, true));
+    W_IGNORE(io_m::dismount(dp->devrec[0].vid));
 }
 
 /**

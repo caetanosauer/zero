@@ -7,10 +7,6 @@
 #define SM_SOURCE
 #define RESTART_C
 
-#ifdef __GNUG__
-#pragma implementation "restart.h"
-#endif
-
 #include "sm_int_1.h"
 #include "restart.h"
 #include "w_heap.h"

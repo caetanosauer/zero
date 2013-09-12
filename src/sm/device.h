@@ -38,11 +38,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
-
 // must be outside of device_m due to HP CC limitation
 struct device_s {
     char       name[smlevel_0::max_devname+1];

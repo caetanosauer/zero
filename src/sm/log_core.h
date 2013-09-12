@@ -63,11 +63,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include <log.h>
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
-
 // in sm_base for the purpose of log callback function argument type
 typedef    smlevel_0::partition_number_t partition_number_t; 
 enum       { PARTITION_COUNT= smlevel_0::max_openlog };

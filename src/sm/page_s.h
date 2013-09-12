@@ -8,10 +8,6 @@
 #include "w_defines.h"
 #include "w_endian.h"
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 enum tag_t {
     t_bad_p            = 0,        // not used
     t_alloc_p        = 1,        // free-page allocation page 

@@ -65,10 +65,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include "atomic_container.h"
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 #ifndef SM_INT_0_H
 #include <sm_int_0.h>
 #endif

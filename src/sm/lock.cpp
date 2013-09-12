@@ -7,10 +7,6 @@
 #define SM_SOURCE
 #define LOCK_C
 
-#ifdef __GNUG__
-#pragma implementation "lock.h"
-#endif
-
 #include "sm_int_1.h"
 #include "lock_x.h"
 #include "lock_core.h"

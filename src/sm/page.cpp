@@ -6,10 +6,6 @@
 
 #define SM_SOURCE
 #define PAGE_C
-#ifdef __GNUG__
-#   pragma implementation "page.h"
-#   pragma implementation "page_s.h"
-#endif
 #include "sm_int_1.h"
 #include "page.h"
 #include "page_bf_inline.h"

@@ -7,10 +7,6 @@
 
 #include "w_defines.h"
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 #include "page_s.h"
 #include "srwlock.h"
 #include "sthread.h"

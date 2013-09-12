@@ -14,10 +14,6 @@ class SmFileMetaStats;
 class SmStoreMetaStats;
 class xct_t; // forward
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 struct volume_hdr_stats_t;
 class alloc_cache_t;
 

@@ -60,9 +60,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #define SM_SOURCE
 #define LOGREC_C
-#ifdef __GNUG__
-#   pragma implementation
-#endif
 #include "sm_int_2.h"
 
 /*

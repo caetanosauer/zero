@@ -68,10 +68,6 @@ typedef smlevel_0::lock_mode_t lock_mode_t;
 #include "logfunc_gen.h"
 #include "xct.h"
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 class logrec_t {
 public:
     friend rc_t xct_t::give_logbuf(logrec_t*, const page_p *);
