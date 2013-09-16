@@ -86,8 +86,7 @@ class bf_filter_t;
 struct bf_page_writer_control_t; // forward
 class bf_m_test;
 
-class bf_m : public smlevel_0 
-{
+class bf_m : public smlevel_0 {
     friend class bf_cleaner_thread_t;
     friend class page_writer_thread_t;
     friend class bfcb_t;
@@ -106,28 +105,6 @@ public:
     static int                   npages();
 
     static bool                  is_cached(const bfcb_t* e);
-
-    static rc_t                  fix(
-        generic_page*&                           page,
-        const lpid_t&                      pid, 
-        uint16_t                            tag,
-        latch_mode_t                       mode,
-        bool                               no_read,
-        store_flag_t&                      out_stflags,
-        bool                               ignore_store_id = false,
-        store_flag_t                       stflags = st_bad
-                                        );
-
-    static rc_t                  conditional_fix(
-        generic_page*&                         page,
-        const lpid_t&                    pid, 
-        uint16_t                          tag,
-        latch_mode_t                     mode,
-        bool                             no_read,
-        store_flag_t&                    out_stflags,
-        bool                             ignore_store_id = false,
-        store_flag_t                    stflags = st_bad
-        );
 
     static rc_t                  refix(
         const generic_page*                     p,
@@ -267,18 +244,6 @@ public:
 private:
     static bf_core_m*           _core;
 
-    static rc_t                 _fix(
-        timeout_in_ms                    timeout, 
-        generic_page*&                         page,
-        const lpid_t&                    pid, 
-        uint16_t                          tag,
-        latch_mode_t                     mode,
-        bool                             no_read,
-        store_flag_t&                    return_store_flags,
-        bool                             ignore_store_id = false,
-        store_flag_t                     stflags = st_bad
-        );
-
     static rc_t                 _scan(
         const bf_filter_t&               filter,
         bool                             write_dirty,
@@ -308,38 +273,6 @@ private:
     static void                 _incr_page_write(int number, bool bg);
 
 };
-
-inline rc_t
-bf_m::fix(
-    generic_page*&            ret_page,
-    const lpid_t&       pid,
-    uint16_t             tag,            // page_t::tag_t
-    latch_mode_t        mode,
-    bool                no_read,
-    store_flag_t&       return_store_flags,
-    bool                ignore_store_id, // default = false
-    store_flag_t        stflags // for case no_read
-)
-{
-    return _fix(WAIT_FOREVER, ret_page, pid, tag, mode,
-        no_read, return_store_flags, ignore_store_id, stflags);
-}
-
-inline rc_t
-bf_m::conditional_fix(
-    generic_page*&            ret_page,
-    const lpid_t&       pid,
-    uint16_t             tag,            // page_t::tag_t
-    latch_mode_t        mode,
-    bool                no_read,
-    store_flag_t&       return_store_flags,
-    bool                ignore_store_id, // default = false
-    store_flag_t        stflags // for case no_read
-)
-{
-    return _fix(WAIT_IMMEDIATE, ret_page, pid, tag, mode,
-        no_read, return_store_flags, ignore_store_id, stflags);
-}
 
 /*<std-footer incl-file-exclusion='BF_H'>  -- do not edit anything below this line -- */
 

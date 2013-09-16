@@ -367,7 +367,7 @@ vol_t::get_store_flags(snum_t snum, store_flag_t& flags, bool ok_if_deleting)
     }
 
     if (snum == 0)  {
-        flags = smlevel_0::st_bad;
+        flags = smlevel_0::st_unallocated;
         return RCOK;
     }
 

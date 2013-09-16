@@ -88,13 +88,14 @@ stnode_cache_t::store_operation(const store_operation_param& param) {
         case smlevel_0::t_delete_store: 
             {
                 stnode.root        = 0;
-                stnode.flags       = smlevel_0::st_bad;
+                stnode.flags       = smlevel_0::st_unallocated;
                 stnode.deleting    = smlevel_0::t_not_deleting_store;
             }
             break;
         case smlevel_0::t_create_store:
             {
                 w_assert1(stnode.root == 0);
+                w_assert1(param.new_store_flags() != smlevel_0::st_unallocated);
 
                 stnode.root        = 0;
                 stnode.flags       = param.new_store_flags();
@@ -121,6 +122,8 @@ stnode_cache_t::store_operation(const store_operation_param& param) {
             break;
         case smlevel_0::t_set_store_flags:
             {
+                w_assert1(param.new_store_flags() != smlevel_0::st_unallocated);
+
                 if (stnode.flags == param.new_store_flags())  {
                     // xct may have converted file type to regular and
                     // then the automatic conversion at commit from
@@ -128,7 +131,7 @@ stnode_cache_t::store_operation(const store_operation_param& param) {
                     DBG(<<"store flags already set");
                     return RCOK;
                 } else  {
-                    w_assert3(param.old_store_flags() == smlevel_0::st_bad
+                    w_assert3(param.old_store_flags() == smlevel_0::st_unallocated
                               || stnode.flags == param.old_store_flags());
 
                     new_param.set_old_store_flags(
@@ -136,7 +139,6 @@ stnode_cache_t::store_operation(const store_operation_param& param) {
 
                     stnode.flags = param.new_store_flags();
                 }
-                w_assert3(stnode.flags != smlevel_0::st_bad);
             }
             break;
         case smlevel_0::t_set_root:
