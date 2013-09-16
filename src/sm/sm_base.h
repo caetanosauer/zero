@@ -484,23 +484,23 @@ public:
     enum store_flag_t {
         // NB: this had better match sm_store_property_t (sm_int_3.h) !!!
         // or at least be converted properly every time we come through the API
-        st_bad            = 0x0,
-        st_regular        = 0x01, // fully logged
-        st_tmp            = 0x02, // space logging only, 
-                                  // file destroy on dismount/restart
-        st_load_file      = 0x04, // not stored in the stnode_t, 
-                            // only passed down to
-                            // io_m and then converted to tmp and added to the
-                            // list of load files for the xct.
-                            // no longer needed
-        st_insert_file     = 0x08,        // stored in stnode, but not on page.
-                            // new pages are saved as tmp, old pages as regular.
-        st_empty           = 0x100 // store might be empty - used ONLY
-                            // as a function argument, NOT stored
-                            // persistently.  Nevertheless, it's
-                            // defined here to be sure that if other
-                            // store flags are added, this doesn't
-                            // conflict with them.
+        st_bad         = 0x0,
+        st_regular     = 0x01, // fully logged
+        st_tmp         = 0x02, // space logging only, 
+                               // file destroy on dismount/restart
+        st_load_file   = 0x04, // not stored in the stnode_t, 
+                               // only passed down to
+                               // io_m and then converted to tmp and added to the
+                               // list of load files for the xct.
+                               // no longer needed
+        st_insert_file = 0x08, // stored in stnode, but not on page.
+                               // new pages are saved as tmp, old pages as regular.
+        st_empty       = 0x100 // store might be empty - used ONLY
+                               // as a function argument, NOT stored
+                               // persistently.  Nevertheless, it's
+                               // defined here to be sure that if other
+                               // store flags are added, this doesn't
+                               // conflict with them.
     };
 
     /* 

@@ -35,108 +35,87 @@ private:
         fill2                 _filler; // for purify
         union {
             struct {
-                uint16_t                _value1;
-                uint16_t                _value2;
+                uint16_t      _value1;
+                uint16_t      _value2;
             } values;
             shpid_t page;
         } _u;
 
 
     public:
-
-        store_operation_param(snum_t snum, store_operation_t theOp)
-        :
+        store_operation_param(snum_t snum, store_operation_t theOp) :
             _snum(snum), _op(theOp)
         {
             w_assert2(_op == smlevel_0::t_delete_store);
             _u.page=0;
         };
-
         store_operation_param(snum_t snum, store_operation_t theOp, 
-                store_flag_t theFlags)
-        :
+                              store_flag_t theFlags) :
             _snum(snum), _op(theOp)
         {
             w_assert2(_op == smlevel_0::t_create_store);
             _u.values._value1 = theFlags;
-            _u.values._value2 = 0;//unused
+            _u.values._value2 = 0; // unused
         };
         store_operation_param(snum_t snum, store_operation_t theOp, 
-                store_deleting_t newValue, 
-                store_deleting_t oldValue = smlevel_0::t_unknown_deleting)
-        :
+                              store_deleting_t newValue, 
+                              store_deleting_t oldValue = smlevel_0::t_unknown_deleting) :
             _snum(snum), _op(theOp)
         {
             w_assert2(_op == smlevel_0::t_set_deleting);
-            _u.values._value1=newValue;
-            _u.values._value2=oldValue;
+            _u.values._value1 = newValue;
+            _u.values._value2 = oldValue;
         };
         store_operation_param(snum_t snum, store_operation_t theOp, 
-                store_flag_t newFlags, 
-                store_flag_t oldFlags)
-        :
+                              store_flag_t newFlags, 
+                              store_flag_t oldFlags) :
             _snum(snum), _op(theOp)
         {
             w_assert2(_op == smlevel_0::t_set_store_flags);
-            _u.values._value1=newFlags;
-            _u.values._value2=oldFlags;
+            _u.values._value1 = newFlags;
+            _u.values._value2 = oldFlags;
         };
         store_operation_param(snum_t snum, store_operation_t theOp, 
-                shpid_t root)
-        :
+                              shpid_t root) :
             _snum(snum), _op(theOp)
         {
             w_assert2(_op == smlevel_0::t_set_root);
             _u.page=root;
         };
-        snum_t snum()  const
-        {
-            return _snum;
-        };
-        store_operation_t op()  const
-        {
-            return (store_operation_t)_op;
-        };
-        store_flag_t new_store_flags()  const
-        {
+
+
+        snum_t snum()  const { return _snum; };
+        store_operation_t op()  const { return (store_operation_t)_op; };
+        store_flag_t new_store_flags()  const {
             w_assert2(_op == smlevel_0::t_create_store 
-                || _op == smlevel_0::t_set_store_flags);
+                      || _op == smlevel_0::t_set_store_flags);
             return (store_flag_t)_u.values._value1;
         };
-        store_flag_t old_store_flags()  const
-        {
+        store_flag_t old_store_flags()  const {
             w_assert2(_op == smlevel_0::t_set_store_flags);
             return (store_flag_t)_u.values._value2;
         };
-        void set_old_store_flags(store_flag_t flag)
-        {
+        void set_old_store_flags(store_flag_t flag) {
             w_assert2(_op == smlevel_0::t_set_store_flags);
             _u.values._value2 = flag;
         }
-        shpid_t root()  const
-        {
+        shpid_t root()  const {
             w_assert2(_op == smlevel_0::t_set_root);
             return _u.page;
         };
-        store_deleting_t new_deleting_value()  const
-        {
+        store_deleting_t new_deleting_value()  const {
             w_assert2(_op == smlevel_0::t_set_deleting);
             return (store_deleting_t)_u.values._value1;
         };
-        store_deleting_t old_deleting_value()  const
-        {
+        store_deleting_t old_deleting_value()  const {
             w_assert2(_op == smlevel_0::t_set_deleting);
             return (store_deleting_t)_u.values._value2;
         };
-        void set_old_deleting_value(store_deleting_t old_value)
-        {
+        void set_old_deleting_value(store_deleting_t old_value) {
             w_assert2(_op == smlevel_0::t_set_deleting);
             _u.values._value2 = old_value;
         }
-        int size()  const
-        {
-            return sizeof (*this);
-        };
+        int size()  const { return sizeof (*this); };
 
     private:
         store_operation_param();
@@ -144,11 +123,11 @@ private:
 
 class io_m_test;
 class btree_impl;
-/*
+
+/**
  * IO Manager.
  */
-class io_m : public smlevel_0 
-{
+class io_m : public smlevel_0 {
     friend class io_m_test;
     friend class btree_impl; // for volume-wide verification
 public:

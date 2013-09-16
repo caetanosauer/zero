@@ -654,7 +654,7 @@ const char* vol_t::prolog[] = {
     "%% ext_size          : ",
     "%% num_exts          : ",
     "%% hdr_exts          : ",
-    "%% hdr_pages          : ",
+    "%% hdr_pages         : ",
     "%% epid              : ",
     "%% spid              : ",
     "%% page_sz           : "
