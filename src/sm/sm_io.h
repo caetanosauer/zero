@@ -6,6 +6,8 @@
 #define SM_IO_H
 
 #include "w_defines.h"
+#include "sm_base.h"
+#include "smthread.h"
 
 class vol_t;
 class sdesc_t;
@@ -13,6 +15,7 @@ class SmVolumeMetaStats;
 class SmFileMetaStats;
 class SmStoreMetaStats;
 class xct_t; // forward
+struct lvid_t;
 
 #ifdef __GNUG__
 #pragma interface

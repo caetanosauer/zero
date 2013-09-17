@@ -450,21 +450,10 @@ rc_t vol_t::set_store_root(snum_t snum, shpid_t root)
  *
  *********************************************************************/
 rc_t
-vol_t::get_volume_meta_stats(SmVolumeMetaStats& volume_stats)
-{
-    volume_stats.numStores = stnode_page_h::max;
-
-    {
-        volume_stats.numAllocStores = 0;
-        for (slotid_t i = 1; i < stnode_page_h::max; ++i) {
-            
-            if (_stnode_cache->get_root_pid(i) != 0) {
-                ++volume_stats.numAllocStores;
-            }
-        }
-    } // unpins stnode_page
-
-    volume_stats.numPages = _num_pages;
+vol_t::get_volume_meta_stats(SmVolumeMetaStats& volume_stats) {
+    volume_stats.numStores      = stnode_page_h::max;
+    volume_stats.numAllocStores = _stnode_cache->get_all_used_store_ID().size();
+    volume_stats.numPages       = _num_pages;
     volume_stats.numSystemPages = _hdr_pages;
 
     return RCOK;
@@ -487,13 +476,11 @@ vol_t::get_store_meta_stats(snum_t, SmStoreMetaStats&)
     return RCOK;
 }
 
-bool vol_t::is_alloc_store(snum_t f) const
-{
+bool vol_t::is_alloc_store(snum_t f) const {
     FUNC(is_alloc_store);
-    return _stnode_cache->get_root_pid(f) != 0;
+    return _stnode_cache->is_allocated(f);
 }
-shpid_t vol_t::get_store_root(snum_t f) const
-{
+shpid_t vol_t::get_store_root(snum_t f) const {
     FUNC(get_root);
     return _stnode_cache->get_root_pid(f);
 }

@@ -2,15 +2,11 @@
  * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
  */
 
-#include "w_defines.h"
-
 #define SM_SOURCE
 
-#include "sm_int_2.h"
-
-#include "generic_page.h"
 #include "stnode_page.h"
-#include "crash.h"
+#include "w_defines.h"
+#include "sm_int_2.h"
 #include "sm_s.h"
 #include "bf_fixed.h"
 
@@ -42,6 +38,12 @@ shpid_t stnode_cache_t::get_root_pid(snum_t store) const {
     return _stnode_page.get(store).root;
 }
 
+bool stnode_cache_t::is_allocated(snum_t store) const {
+    stnode_t s;
+    get_stnode(store, s);
+    return s.is_allocated();
+}
+
 void stnode_cache_t::get_stnode(snum_t store, stnode_t &stnode) const {
     w_assert1(store < stnode_page_h::max);
     CRITICAL_SECTION (cs, _spin_lock);
@@ -56,7 +58,7 @@ snum_t stnode_cache_t::get_min_unused_store_ID() const {
     // Let's start from 1, not 0.  All user store ID's will begin with 1.
     // Store-ID 0 will be a special store-ID for stnode_page/alloc_page's
     for (size_t i = 1; i < stnode_page_h::max; ++i) {
-        if (_stnode_page.get(i).root == 0) {
+        if (!_stnode_page.get(i).is_allocated()) {
             return i;
         }
     }
@@ -68,7 +70,7 @@ std::vector<snum_t> stnode_cache_t::get_all_used_store_ID() const {
 
     CRITICAL_SECTION (cs, _spin_lock);
     for (size_t i = 1; i < stnode_page_h::max; ++i) {
-        if (_stnode_page.get(i).root != 0) {
+        if (_stnode_page.get(i).is_allocated()) {
             ret.push_back((snum_t) i);
         }
     }
