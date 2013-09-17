@@ -37,10 +37,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #define SM_DU_STATS_C
 
-#ifdef __GNUG__
-#pragma implementation
-#endif
-
 #include <w.h>
 #include <cstring>
 #include <w_stream.h>

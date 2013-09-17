@@ -17,10 +17,6 @@ class SmStoreMetaStats;
 class xct_t; // forward
 struct lvid_t;
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 struct volume_hdr_stats_t;
 class alloc_cache_t;
 

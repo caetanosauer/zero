@@ -74,10 +74,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <bf_s.h>
 #include <generic_page.h>
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 class bfcb_t;
 class fixable_page_h;
 class bf_core_m;

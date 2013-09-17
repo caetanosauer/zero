@@ -60,9 +60,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #define SM_SOURCE
 #define SCAN_C
-#ifdef __GNUG__
-#   pragma implementation
-#endif
 #include <sm_int_4.h>
 #include <sm.h>
 #include <pin.h>

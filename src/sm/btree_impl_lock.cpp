@@ -12,9 +12,6 @@
 #define BTREE_C
 
 #include "sm_int_2.h"
-#ifdef __GNUG__
-#   pragma implementation "btree_impl.h"
-#endif
 #include "bf_tree.h"
 #include "btree_page.h"
 #include "btree_impl.h"

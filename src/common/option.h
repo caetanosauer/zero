@@ -36,10 +36,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include <w_stream.h>
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 /**\addtogroup OPTIONS 
  *
  * The storage manager has run-time options. Some of them must be set

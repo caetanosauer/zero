@@ -14,10 +14,6 @@ class xct_lock_info_t;
 class lock_core_m;
 class lil_global_table;
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 class lock_m : public lock_base_t {
 public:
 

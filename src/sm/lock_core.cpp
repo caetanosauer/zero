@@ -7,12 +7,6 @@
 #define LOCK_CORE_C
 #define SM_SOURCE
 
-#ifdef __GNUG__
-#pragma implementation "lock_s.h"
-#pragma implementation "lock_x.h"
-#pragma implementation "lock_core.h"
-#endif
-
 #include "st_error_enum_gen.h"
 #include "block_alloc.h"
 

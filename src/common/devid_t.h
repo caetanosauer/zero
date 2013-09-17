@@ -3,10 +3,6 @@
 
 #include "w_defines.h"
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 #include "w_fill.h"
 #include <iosfwd>
 

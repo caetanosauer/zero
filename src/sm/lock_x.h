@@ -7,10 +7,6 @@
 
 #include "w_defines.h"
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 class xct_lock_info_t; // forward
 class lock_queue_entry_t;
 class lock_queue_t;

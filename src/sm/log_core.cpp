@@ -60,9 +60,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #define SM_SOURCE
 #define LOG_CORE_C
-#ifdef __GNUG__
-#   pragma implementation
-#endif
 
 #ifdef __SUNPRO_CC
 #include <stdio.h>

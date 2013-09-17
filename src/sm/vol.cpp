@@ -8,10 +8,6 @@
 
 #define SM_SOURCE
 #define VOL_C
-#ifdef __GNUG__
-#   pragma implementation
-#endif
-
 
 #include "w_stream.h"
 #include <sys/types.h>

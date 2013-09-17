@@ -70,10 +70,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * \ingroup Macros
  */
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 #include <climits>
 #ifndef OPTION_H
 #include "option.h"
