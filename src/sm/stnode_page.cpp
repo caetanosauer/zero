@@ -81,8 +81,9 @@ stnode_cache_t::store_operation(const store_operation_param& param) {
     w_assert1(param.snum() < stnode_page_h::max);
 
     store_operation_param new_param(param);
-    stnode_t stnode;
-    get_stnode(param.snum(), stnode); // copy out current value.
+
+    CRITICAL_SECTION (cs, _spin_lock);
+    stnode_t stnode = _stnode_page.get(param.snum()); // copy out current value.
 
     switch (param.op())  {
         case smlevel_0::t_delete_store: 
@@ -155,7 +156,6 @@ stnode_cache_t::store_operation(const store_operation_param& param) {
     }
 
     // log it and apply the change to the stnode_page
-    CRITICAL_SECTION (cs, _spin_lock);
     spinlock_read_critical_section cs2(&_special_pages->get_checkpoint_lock()); // Protect against checkpoint.  See bf_fixed_m comment.
     W_DO( log_store_operation(new_param) );
     _stnode_page.get(param.snum()) = stnode;
