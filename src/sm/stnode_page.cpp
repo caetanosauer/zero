@@ -6,6 +6,7 @@
 #include "sm_int_1.h"
 
 #include "stnode_page.h"
+
 #include "bf_fixed.h"
 
 
@@ -28,11 +29,14 @@ shpid_t stnode_cache_t::get_root_pid(snum_t store) const {
     w_assert1(store < stnode_page_h::max);
 
     // CRITICAL_SECTION (cs, _spin_lock);
-    // commented out to improve scalability, as this is called for EVERY operation.
-    // NOTE this protection is not needed because this is unsafe
-    // only when there is a concurrent DROP INDEX (or DROP TABLE).
-    // It should be protected by intent locks
-    // (if it's no-lock mode... it's user's responsibility)
+    // Commented out to improve scalability, as this is called for
+    // EVERY operation.  NOTE this protection is not needed because
+    // this is unsafe only when there is a concurrent DROP INDEX (or
+    // DROP TABLE).  It should be protected by intent locks (if it's
+    // no-lock mode... it's user's responsibility).
+    //
+    // JIRA: ZERO-168 notes that DROP INDEX/TABLE currently are not
+    // implemented and to fix this routine once they are.
     return _stnode_page.get(store).root;
 }
 
@@ -50,7 +54,8 @@ void stnode_cache_t::get_stnode(snum_t store, stnode_t &stnode) const {
 
 
 snum_t stnode_cache_t::get_min_unused_store_ID() const {
-    // This method is not very efficient, but is rarely called.
+    // This method is not very efficient, but is rarely called (i.e.,
+    // only when creating new stores).
 
     CRITICAL_SECTION (cs, _spin_lock);
     // Let's start from 1, not 0.  All user store ID's will begin with 1.
@@ -77,10 +82,8 @@ std::vector<snum_t> stnode_cache_t::get_all_used_store_ID() const {
 
 
 rc_t
-stnode_cache_t::store_operation(const store_operation_param& param) {
+stnode_cache_t::store_operation(store_operation_param param) {
     w_assert1(param.snum() < stnode_page_h::max);
-
-    store_operation_param new_param(param);
 
     CRITICAL_SECTION (cs, _spin_lock);
     stnode_t stnode = _stnode_page.get(param.snum()); // copy out current value.
@@ -88,6 +91,7 @@ stnode_cache_t::store_operation(const store_operation_param& param) {
     switch (param.op())  {
         case smlevel_0::t_delete_store: 
             {
+                w_assert0(false); // this case currently unused; see JIRA: ZERO-168 
                 stnode.root        = 0;
                 stnode.flags       = smlevel_0::st_unallocated;
                 stnode.deleting    = smlevel_0::t_not_deleting_store;
@@ -106,6 +110,7 @@ stnode_cache_t::store_operation(const store_operation_param& param) {
             break;
         case smlevel_0::t_set_deleting:
             {
+                w_assert0(false); // this case currently unused; see JIRA: ZERO-168 
                 // Bogus assertion:
                 // If we crash/restart between the time the xct gets
                 // into xct_freeing_space and the time xct_end is
@@ -115,7 +120,7 @@ stnode_cache_t::store_operation(const store_operation_param& param) {
                 w_assert3(param.old_deleting_value() == smlevel_0::t_unknown_deleting
                         || stnode.deleting == param.old_deleting_value());
 
-                new_param.set_old_deleting_value(
+                param.set_old_deleting_value(
                     (store_operation_param::store_deleting_t)stnode.deleting);
 
                 stnode.deleting    = param.new_deleting_value();
@@ -135,7 +140,7 @@ stnode_cache_t::store_operation(const store_operation_param& param) {
                     w_assert3(param.old_store_flags() == smlevel_0::st_unallocated
                               || stnode.flags == param.old_store_flags());
 
-                    new_param.set_old_store_flags(
+                    param.set_old_store_flags(
                             (store_operation_param::store_flag_t)stnode.flags);
 
                     stnode.flags = param.new_store_flags();
@@ -157,7 +162,7 @@ stnode_cache_t::store_operation(const store_operation_param& param) {
 
     // log it and apply the change to the stnode_page
     spinlock_read_critical_section cs2(&_special_pages->get_checkpoint_lock()); // Protect against checkpoint.  See bf_fixed_m comment.
-    W_DO( log_store_operation(new_param) );
+    W_DO( log_store_operation(param) );
     _stnode_page.get(param.snum()) = stnode;
     _special_pages->get_dirty_flags()[_special_pages->get_page_cnt() - 1] = true;
     return RCOK;

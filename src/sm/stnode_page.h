@@ -5,11 +5,12 @@
 #ifndef STNODE_PAGE_H
 #define STNODE_PAGE_H
 
+#include <vector>
+
 #include "generic_page.h"
-#include "w_defines.h"
 #include "sm_io.h"
 #include "srwlock.h"
-#include <vector>
+#include "w_defines.h"
 
 class bf_fixed_m;
 
@@ -176,7 +177,7 @@ public:
      *           t_deleting_store, 
      *           t_unknown_deleting         // for error handling
      */
-    rc_t  store_operation(const store_operation_param &op);
+    rc_t  store_operation(store_operation_param op);
 
 
 private:

@@ -6,8 +6,9 @@
 #define GENERIC_PAGE_H
 
 #include <boost/static_assert.hpp>
-#include "w_defines.h"
+
 #include "sm_s.h"
+#include "w_defines.h"
 
 
 /**
