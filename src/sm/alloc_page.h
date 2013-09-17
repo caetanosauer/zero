@@ -5,9 +5,9 @@
 #ifndef ALLOC_PAGE_H
 #define ALLOC_PAGE_H
 
-#include "w_defines.h"
-#include "sm_base.h"
 #include "generic_page.h"
+#include "sm_base.h"
+#include "w_defines.h"
 
 
 
