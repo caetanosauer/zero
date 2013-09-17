@@ -8,7 +8,6 @@
 #include "generic_page.h"
 #include "w_defines.h"
 #include "sm_io.h"
-#include "sm_base.h"
 #include "srwlock.h"
 #include <vector>
 
@@ -181,7 +180,7 @@ public:
 
 
 private:
-    /// all operations in this object are protected by this lock
+    /// all operations in this object except get_root_pid are protected by this latch
     mutable queue_based_lock_t _spin_lock;
 
     const vid_t   _vid;                /// The volume number of the volume we are caching 

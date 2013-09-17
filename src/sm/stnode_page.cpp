@@ -3,11 +3,9 @@
  */
 
 #define SM_SOURCE
+#include "sm_int_1.h"
 
 #include "stnode_page.h"
-#include "w_defines.h"
-#include "sm_int_2.h"
-#include "sm_s.h"
 #include "bf_fixed.h"
 
 
