@@ -9,10 +9,6 @@
 
 class dirty_pages_tab_t;
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 #ifndef BF_S_H
 #include <bf_s.h>
 #endif

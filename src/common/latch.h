@@ -62,10 +62,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <sthread.h>
 #endif
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 #include <list>
 
 /**\enum latch_mode_t

@@ -54,10 +54,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
-#if defined(__GNUC__)
-#pragma implementation "w_error.h"
-#endif
-
 #include <cstring>
 
 #include <w_base.h>

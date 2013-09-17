@@ -40,9 +40,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #ifdef __GNUG__
 class prologue_rc_t;
-#pragma implementation "sm.h"
-#pragma implementation "prologue.h"
-#pragma implementation "sm_base.h"
 #endif
 
 #include "w.h"

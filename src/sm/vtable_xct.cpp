@@ -38,10 +38,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define SM_SOURCE
 #define XCT_C
 
-#ifdef __GNUG__
-#pragma implementation "xct.h"
-#endif
-
 #include <new>
 #include "sm_int_1.h"
 #include "tls.h"

@@ -39,7 +39,7 @@ set (GENFILES ${OPT_ERROR_GENFILES_B_H})
 ########### install files ###############
 
 install(FILES
-  ${CMAKE_CURRENT_SOURCE_DIR}/FairRWLatch.hpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/FairRWLatch.h
   ${CMAKE_CURRENT_SOURCE_DIR}/basics.h
   ${CMAKE_CURRENT_SOURCE_DIR}/bitmap.h
   ${CMAKE_CURRENT_SOURCE_DIR}/devid_t.h

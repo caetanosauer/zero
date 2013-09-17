@@ -61,10 +61,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 #include <page_alias.h>
 
 #include "sm_int_4.h"

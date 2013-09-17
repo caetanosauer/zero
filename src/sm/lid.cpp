@@ -38,10 +38,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define SM_SOURCE
 #define LID_C
 
-#ifdef __GNUG__
-#pragma implementation "lid.h"
-#endif
-
 #include <sm_int_4.h>
 #include <btcursor.h>
 

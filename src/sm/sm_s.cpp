@@ -59,10 +59,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 /*  -- do not edit anything above this line --   </std-header>*/
 
 #define SM_SOURCE
-#ifdef __GNUG__
-#pragma implementation "sm_s.h"
-#endif
-
 #include <sm_int_0.h>
 
 #include <w_strstream.h>

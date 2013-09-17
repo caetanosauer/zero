@@ -63,9 +63,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #ifdef __GNUG__
 class prologue_rc_t;
-#pragma implementation "sm.h"
-#pragma implementation "prologue.h"
-#pragma implementation "sm_base.h"
 #endif
 
 #include "w.h"
@@ -454,7 +451,7 @@ rc_t ss_m::_set_option_logsize(
 ss_m::store_flag_t
 ss_m::_make_store_flag(store_property_t property)
 {
-    store_flag_t flag = st_bad;
+    store_flag_t flag = st_unallocated;
 
     switch (property)  {
         case t_regular:
@@ -2711,15 +2708,14 @@ operator<<(ostream& o, smlevel_3::sm_store_property_t p)
 }
 
 ostream&
-operator<<(ostream& o, smlevel_0::store_flag_t flag)
-{
-    if (flag == smlevel_0::st_bad)            o << "|bad";
-    if (flag & smlevel_0::st_regular)            o << "|regular";
-    if (flag & smlevel_0::st_tmp)            o << "|tmp";
-    if (flag & smlevel_0::st_load_file)            o << "|load_file";
+operator<<(ostream& o, smlevel_0::store_flag_t flag) {
+    if (flag == smlevel_0::st_unallocated)  o << "|unallocated";
+    if (flag & smlevel_0::st_regular)       o << "|regular";
+    if (flag & smlevel_0::st_tmp)           o << "|tmp";
+    if (flag & smlevel_0::st_load_file)     o << "|load_file";
     if (flag & smlevel_0::st_insert_file)   o << "|insert_file";
-    if (flag & smlevel_0::st_empty)            o << "|empty";
-    if (flag & !(smlevel_0::st_bad
+    if (flag & smlevel_0::st_empty)         o << "|empty";
+    if (flag & !(smlevel_0::st_unallocated
                 | smlevel_0::st_regular
                 | smlevel_0::st_tmp
                 | smlevel_0::st_load_file 

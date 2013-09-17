@@ -31,10 +31,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
-#ifdef __GNUC__
-#   pragma implementation
-#endif
-
 #include "w_base.h"
 #include <cstring>
 #include "w_bitmap.h"

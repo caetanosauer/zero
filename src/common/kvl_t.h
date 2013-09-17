@@ -38,10 +38,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * (which is defined include "basics.h") before you include this.
  */
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 #ifndef STID_T_H
 #include "stid_t.h"
 #endif

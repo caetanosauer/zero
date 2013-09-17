@@ -44,10 +44,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <cstdio>    // XXX just needs a forward decl
 #include <w_pthread.h> 
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 class ErrLog; // forward
 class logstream; // forward
 

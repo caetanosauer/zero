@@ -65,6 +65,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * \ingroup MACROS
  */
 
+#include <assert.h>
 #ifndef W_H
 #include <w.h>
 #endif
@@ -98,10 +99,6 @@ typedef sthread_t::timeout_in_ms timeout_in_ms;
 class xct_t;
 class xct_log_t;
 class lockid_t;
-
-#ifdef __GNUG__
-#pragma interface
-#endif
 
 class smthread_t;
 

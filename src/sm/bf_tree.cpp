@@ -323,7 +323,7 @@ w_rc_t bf_tree_m::_install_volume_mainmemorydb(vol_t* volume) {
             cb._swizzled = true;
         }
     }
-    // now freelist is inconsistent, but who cares. this is mainmemory-db experiment
+    // now freelist is inconsistent, but who cares. this is mainmemory-db experiment FIXME
 
     bf_tree_vol_t* desc = new bf_tree_vol_t(volume);
     stnode_cache_t *stcache = volume->get_stnode_cache();
