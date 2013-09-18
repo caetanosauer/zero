@@ -10,10 +10,10 @@
 #include "bf_idx.h"
 #include "generic_page.h"
 #include "latch.h"
+#include "sm_base.h"
 #include "stid_t.h"
 #include "vid_t.h"
 #include "w_defines.h"
-#include "sm_base.h"
 
 
 
@@ -27,8 +27,8 @@ public:
      * Imaginery 'fix' for a non-bufferpool-managed page.
      */
     fixable_page_h(generic_page* s) : generic_page_h(s), _mode(LATCH_NL) {
-        w_assert1(s->tag == t_btree_p);  // <<<>>>
         w_assert1(s != NULL);
+        w_assert1(s->tag == t_btree_p);  // <<<>>>
     }
 
     /** release the page from bufferpool. */
@@ -52,26 +52,39 @@ public:
     }
     
     /**
-     * Fixes a non-root page in the bufferpool. This method receives the parent page and efficiently
-     * fixes the page if the shpid (pointer) is already swizzled by the parent page.
-     * The optimization is transparent for most of the code because the shpid stored in the parent
-     * page is automatically (and atomically) changed to a swizzled pointer by the bufferpool.
-     * @param[in] parent parent of the page to be fixed. has to be already latched. if you can't provide this,
-     * use fix_direct() though it can't exploit pointer swizzling and thus will be slower.
+     * Fixes a non-root page in the bufferpool. This method receives
+     * the parent page and efficiently fixes the page if the shpid
+     * (pointer) is already swizzled by the parent page.  The
+     * optimization is transparent for most of the code because the
+     * shpid stored in the parent page is automatically (and
+     * atomically) changed to a swizzled pointer by the bufferpool.
+     *
+     * @param[in] parent parent of the page to be fixed. has to be
+     * already latched. if you can't provide this, use fix_direct()
+     * though it can't exploit pointer swizzling and thus will be
+     * slower.
      * @param[in] vol volume ID.
-     * @param[in] shpid ID of the page to fix (or bufferpool index when swizzled)
+     * @param[in] shpid ID of the page to fix (or bufferpool index
+     * when swizzled)
      * @param[in] mode latch mode. has to be SH or EX.
-     * @param[in] conditional whether the fix is conditional (returns immediately even if failed).
-     * @param[in] virgin_page whether the page is a new page thus doesn't have to be read from disk.
+     * @param[in] conditional whether the fix is conditional (returns
+     * immediately even if failed).
+     * @param[in] virgin_page whether the page is a new page thus
+     * doesn't have to be read from disk.
+     *
      * To use this method, you need to include page_bf_inline.h.
      */
-    w_rc_t                      fix_nonroot (const fixable_page_h &parent, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional = false, bool virgin_page = false);
+    w_rc_t fix_nonroot (const fixable_page_h &parent, volid_t vol,
+                        shpid_t shpid, latch_mode_t mode, bool conditional=false, bool
+                        virgin_page=false);
 
     /**
-     * Fixes any page (root or non-root) in the bufferpool without pointer swizzling.
-     * In some places, we need to fix a page without fixing the parent, e.g., recovery or re-fix in cursor.
-     * For such code, this method allows fixing without parent. However, this method can be used only when
-     * the pointer swizzling is off.
+     * Fixes any page (root or non-root) in the bufferpool without
+     * pointer swizzling.  In some places, we need to fix a page
+     * without fixing the parent, e.g., recovery or re-fix in cursor.
+     * For such code, this method allows fixing without
+     * parent. However, this method can be used only when the pointer
+     * swizzling is off.
      * @see bf_tree_m::fix_direct()
      * @param[in] vol volume ID.
      * @param[in] shpid ID of the page to fix. If the shpid looks like a swizzled pointer, this method returns an error (see above).
@@ -80,37 +93,44 @@ public:
      * @param[in] virgin_page whether the page is a new page thus doesn't have to be read from disk.
      * To use this method, you need to include page_bf_inline.h.
      */
-    w_rc_t                      fix_direct (volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional = false, bool virgin_page = false);
+    w_rc_t                      fix_direct (volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional=false, bool virgin_page=false);
 
     /**
-     * Adds an additional pin count for the given page (which must be already latched).
-     * This is used to re-fix the page later without parent pointer. See fix_direct() why we need this feature.
-     * Never forget to call a corresponding unpin_for_refix() for this page. Otherwise, the page will be in the bufferpool forever.
-     * @return slot index of the page in this bufferpool. Use this value to the subsequent refix_direct() and unpin_for_refix() call.
-     * To use this method, you need to include page_bf_inline.h.
+     * Adds an additional pin count for the given page (which must be
+     * already latched).  This is used to re-fix the page later
+     * without parent pointer. See fix_direct() why we need this
+     * feature.  Never forget to call a corresponding
+     * unpin_for_refix() for this page. Otherwise, the page will be in
+     * the bufferpool forever.  @return slot index of the page in this
+     * bufferpool. Use this value to the subsequent refix_direct() and
+     * unpin_for_refix() call.  To use this method, you need to
+     * include page_bf_inline.h.
      */
     bf_idx                      pin_for_refix();
 
     /**
-     * Fixes a page with the already known slot index, assuming the slot has at least one pin count.
-     * Used with pin_for_refix() and unpin_for_refix().
-     * To use this method, you need to include page_bf_inline.h.
+     * Fixes a page with the already known slot index, assuming the
+     * slot has at least one pin count.  Used with pin_for_refix() and
+     * unpin_for_refix().  To use this method, you need to include
+     * page_bf_inline.h.
      */
-    w_rc_t                      refix_direct (bf_idx idx, latch_mode_t mode, bool conditional = false);
+    w_rc_t                      refix_direct (bf_idx idx, latch_mode_t mode, bool conditional=false);
 
     /**
-     * Fixes a new (virgin) root page for a new store with the specified page ID.
-     * Implicitly, the latch will be EX and non-conditional.
-     * To use this method, you need to include page_bf_inline.h.
+     * Fixes a new (virgin) root page for a new store with the
+     * specified page ID.  Implicitly, the latch will be EX and
+     * non-conditional.  To use this method, you need to include
+     * page_bf_inline.h.
      */
     w_rc_t                      fix_virgin_root (volid_t vol, snum_t store, shpid_t shpid);
 
     /**
      * Fixes an existing (not virgin) root page for the given store.
-     * This method doesn't receive page ID because it's already known by bufferpool.
-     * To use this method, you need to include page_bf_inline.h.
+     * This method doesn't receive page ID because it's already known
+     * by bufferpool.  To use this method, you need to include
+     * page_bf_inline.h.
      */
-    w_rc_t                      fix_root (volid_t vol, snum_t store, latch_mode_t mode, bool conditional = false);
+    w_rc_t                      fix_root (volid_t vol, snum_t store, latch_mode_t mode, bool conditional=false);
 
 
     /** Marks this page in the bufferpool dirty. If this page is not a bufferpool-managed page, does nothing. */

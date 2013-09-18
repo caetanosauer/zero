@@ -421,7 +421,7 @@ public:
     shpid_t         get_foster_opaqueptr() const;
     /** Clears the foster page and also clears the chain high fence key. */
     rc_t               clear_foster();
-    /** Returns the prefix which are removed from all entries in this page. */
+    /** Returns the prefix which is removed from all entries in this page. */
     const char* get_prefix_key() const;
     /** Returns the length of prefix key (0 means no prefix compression). */
     int16_t           get_prefix_length() const;
@@ -435,8 +435,10 @@ public:
     bool              is_fence_low_infimum() const { return get_fence_low_key()[0] == SIGN_NEGINF;}
 
     /**
-     * Returns the high fence key (without prefix), which is larger than all entries in this page and its descendants.
-     * NOTE we don't provide get_fence_high_key() with prefix because the page eliminates prefix from fence-high.
+     * Returns the high fence key (without prefix), which is larger
+     * than all entries in this page and its descendants.  NOTE we
+     * don't provide get_fence_high_key() with prefix because the page
+     * eliminates prefix from fence-high.
      */
     const char*       get_fence_high_key_noprefix() const;
     /** Returns the length of high fence key with prefix. */
@@ -448,7 +450,8 @@ public:
     /** Constructs w_keystr_t object containing the low-fence key of this page. */
     void                copy_fence_high_key(w_keystr_t &buffer) const {
         buffer.construct_from_keystr(get_prefix_key(), get_prefix_length(),
-            get_fence_high_key_noprefix(), get_fence_high_length_noprefix());
+                                     get_fence_high_key_noprefix(),
+                                     get_fence_high_length_noprefix());
     }
     /** Returns if the high-fence key is supremum. */
     bool              is_fence_high_supremum() const { return get_prefix_length() == 0 && get_fence_high_key_noprefix()[0] == SIGN_POSINF;}
@@ -503,7 +506,7 @@ public:
      * Also, this outputs just a single record for everything, so much more efficient.
      */
     rc_t init_fix_steal(
-        btree_page_h*             parent,
+        btree_page_h*        parent,
         const lpid_t&        pid,
         shpid_t              root, 
         int                  level,
@@ -512,11 +515,11 @@ public:
         const w_keystr_t&    fence_low,
         const w_keystr_t&    fence_high,
         const w_keystr_t&    chain_fence_high,
-        btree_page_h*             steal_src = NULL,
+        btree_page_h*        steal_src  = NULL,
         int                  steal_from = 0,
-        int                  steal_to = 0,
-        bool                 log_it = true
-                                );
+        int                  steal_to   = 0,
+        bool                 log_it     = true
+        );
 
     /**
      * This sets all headers, fence/prefix keys and initial records altogether. Used by init_fix_steal.
@@ -533,28 +536,28 @@ public:
         const w_keystr_t&    fence_high,
         const w_keystr_t&    chain_fence_high,
         bool                 log_it = true,
-        btree_page_h*             steal_src1 = NULL,
+        btree_page_h*        steal_src1 = NULL,
         int                  steal_from1 = 0,
         int                  steal_to1 = 0,
-        btree_page_h*             steal_src2 = NULL,
+        btree_page_h*        steal_src2 = NULL,
         int                  steal_from2 = 0,
         int                  steal_to2 = 0,
         bool                 steal_src2_pid0 = false
         );
 
     /** Steal records from steal_src. Called by format_steal. */
-    void _steal_records(
-        btree_page_h*             steal_src,
-        int                  steal_from,
-        int                  steal_to);
+    void _steal_records(btree_page_h* steal_src,
+                        int           steal_from,
+                        int           steal_to);
 
     /**
      * Called when we did a split from this page but didn't move any record to new page.
      * This method can't be undone. Use this only for REDO-only system transactions.
      */
     rc_t norecord_split (shpid_t foster,
-        const w_keystr_t& fence_high, const w_keystr_t& chain_fence_high,
-        bool log_it = true);
+                         const w_keystr_t& fence_high, 
+                         const w_keystr_t& chain_fence_high,
+                         bool log_it = true);
 
     /** Returns if whether we can do norecord insert now. */
     bool                 check_chance_for_norecord_split(const w_keystr_t& key_to_insert) const;
@@ -595,29 +598,22 @@ public:
     *  key is same or smaller than left-most key in this page, this function returns
     *  ret_slot=-1, which means we should follow the pid0 pointer.
     */
-    void            search(
-                        const w_keystr_t&             key,
-                        bool&                     found_key,
-                        slotid_t&             ret_slot
-                        ) const;
+    void            search(const w_keystr_t& key,
+                           bool&             found_key,
+                           slotid_t&         ret_slot) const;
 
     /**
     * Used from search() for leaf pages.
     * Simply finds the slot matching with the search key.
     */
-    inline void         search_leaf(
-                        const w_keystr_t&             key,
-                        bool&                     found_key,
-                        slotid_t&             ret_slot
-                        ) const {
+    inline void         search_leaf(const w_keystr_t& key,
+                                    bool&             found_key,
+                                    slotid_t&         ret_slot) const {
         search_leaf((const char*) key.buffer_as_keystr(), key.get_length_as_keystr(), found_key, ret_slot);
     }
     // to make it slightly faster. not a neat kind of optimization
-    void            search_leaf(
-                        const char *key_raw, size_t key_raw_len,
-                        bool&                     found_key,
-                        slotid_t&             ret_slot
-                        ) const;
+    void            search_leaf(const char *key_raw, size_t key_raw_len,
+                                bool& found_key, slotid_t& ret_slot) const;
     /**
     * Used from search() for interior pages.
     * A bit more complicated because keys are separator keys.
@@ -626,10 +622,8 @@ public:
     * sends "AA" to left, "AAZ" to left, "AB" to right,
     * "ABA" to right, "AC" to right.
     */
-    void            search_node(
-                        const w_keystr_t&             key,
-                        slotid_t&             ret_slot
-                        ) const;
+    void            search_node(const w_keystr_t& key,
+                                slotid_t&         ret_slot) const;
 
     /**
      * Returns the number of records in this page.
@@ -709,10 +703,9 @@ public:
     * For leaf pages, always use replace_ghost() and reserve_ghost().
     * @param child child pointer to add
     */
-    rc_t            insert_node(
-                        const w_keystr_t&             key,
-                        slotid_t            slot, 
-                        shpid_t             child);
+    rc_t            insert_node(const w_keystr_t&   key,
+                                slotid_t            slot, 
+                                shpid_t             child);
     /**
      * Mark the given slot to be a ghost record.
      * If the record is already a ghost, does nothing.
@@ -845,13 +838,12 @@ public:
     rc_t             int_stats(btree_int_stats_t& btree_int);
 
     /** this is used by du/df to get page statistics DU DF. */
-    void                        page_usage(
-        int&                            data_sz,
-        int&                            hdr_sz,
-        int&                            unused,
-        int&                             alignmt,
-        page_tag_t&                             t,
-        slotid_t&                     no_used_slots);
+    void page_usage(int&        data_sz,
+                    int&        hdr_sz,
+                    int&        unused,
+                    int&        alignmt,
+                    page_tag_t& t,
+                    slotid_t&   no_used_slots);
 
     /** Debugs out the contents of this page. */
     void             print(bool print_elem=false);
