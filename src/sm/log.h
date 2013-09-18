@@ -63,7 +63,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #undef ACQUIRE
 
-
 class logrec_t;
 class log_buf;
 

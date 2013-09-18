@@ -28,6 +28,7 @@
 
 #include <boost/static_assert.hpp>
 #include <ostream>
+#include <limits>
 
 
 // FIXME: replace all code using the below type with fixable_page_h once it has the right methods...  <<<>>>
@@ -95,11 +96,12 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
         W_FATAL(smlevel_0::eOUTOFMEMORY);
     }
     ::memset (buf, 0, (sizeof(bf_tree_cb_t) + sizeof(latch_t)) * (((uint64_t) block_cnt) + 1LLU));
-    _control_blocks = reinterpret_cast<bf_tree_cb_t*>(buf + sizeof(bf_tree_cb_t));
+    _control_blocks = reinterpret_cast<bf_tree_cb_t*>(reinterpret_cast<char *>(buf) + sizeof(bf_tree_cb_t));
     w_assert0(_control_blocks != NULL);
     for (bf_idx i = 0; i < block_cnt; i++) {
+        BOOST_STATIC_ASSERT(sizeof(bf_tree_cb_t) < SCHAR_MAX);
         if (i & 0x1) { /* odd */
-            get_cb(i)._latch_offset = -sizeof(bf_tree_cb_t); // place the latch before the control block
+            get_cb(i)._latch_offset = -static_cast<int8_t>(sizeof(bf_tree_cb_t)); // place the latch before the control block
         } else { /* even */
             get_cb(i)._latch_offset = sizeof(bf_tree_cb_t); // place the latch after the control block
         }
@@ -921,10 +923,10 @@ w_rc_t bf_tree_m::_get_replacement_block_clock(bf_idx& ret, bool use_priority) {
 
 w_rc_t bf_tree_m::_get_replacement_block_random(bf_idx& ret) {
     DBGOUT3(<<"trying to evict some page using the RANDOM replacement policy...");
-    int blocks_replaced_count = 0;
-    int tries = 0;
-
     while (true) {
+        int blocks_replaced_count = 0;
+        unsigned tries = 0;
+
         bf_idx idx = me()->randn(_block_cnt-1) + 1;
         if (++tries < _block_cnt) {
             if (blocks_replaced_count > 0) {
@@ -1321,8 +1323,7 @@ void bf_tree_m::swizzle_children(generic_page* parent, const slotid_t* slots, ui
     w_assert1(is_swizzling_enabled());
     w_assert1(parent != NULL);
     w_assert1(latch_mode(parent) != LATCH_NL);
-    bf_idx parent_idx = parent - _buffer;
-    w_assert1(_is_active_idx(parent_idx));
+    w_assert1(_is_active_idx(parent - _buffer));
     w_assert1(is_swizzled(parent)); // swizzling is transitive.
 
     my_btree_page_h p (parent);
@@ -1515,7 +1516,7 @@ void bf_tree_m::_unswizzle_traverse_store(uint32_t &unswizzled_frames, volid_t v
 
 bool bf_tree_m::has_swizzled_child(bf_idx node_idx) {
     my_btree_page_h node_p (_buffer + node_idx);
-    for (uint32_t j = 0; j < node_p.nslots(); ++j) {
+    for (int32_t j = 0; j < node_p.nslots(); ++j) {
         shpid_t shpid;
         if (j == 0) {
             shpid = node_p.pid0_opaqueptr();
@@ -1600,7 +1601,6 @@ void bf_tree_m::_unswizzle_traverse_node(uint32_t &unswizzled_frames,
             }
         } else {
             // child is a leaf page. now let's unswizzle it!
-            bf_tree_cb_t &node_cb = get_cb(node_idx);
             bool unswizzled = _unswizzle_a_frame (node_idx, slot);
             if (unswizzled) {
                 ++unswizzled_frames;
@@ -1900,4 +1900,18 @@ int bf_tree_m::nframes(int priority, int level, int refbit, bool swizzled, bool 
 }
 #endif
 
-
+#if 0
+void bf_tree_m::print_slots(page_s* page) const
+{
+    if (W_DEBUG_LEVEL >= 1) {
+        slot_index_t slots = page->nslots;
+        DBGOUT (<< "print " << slots << " slots");
+        page_p p (page);
+        for (slot_index_t i = 1; i < slots; ++i) {
+            void* addr = p.tuple_addr(i);
+            shpid_t* slotaddr = reinterpret_cast<shpid_t*>(addr);
+            DBGOUT (<< " slot[" << i << "] = " << *slotaddr);
+        }
+    }
+}
+#endif

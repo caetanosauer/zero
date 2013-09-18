@@ -6,7 +6,6 @@
 #define LOCK_S_H
 
 #include "w_defines.h"
-
 #include "w_key.h"
 #include "w_hashing.h"
 

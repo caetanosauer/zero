@@ -1269,14 +1269,15 @@ void occ_rwlock::acquire_read()
             CRITICAL_SECTION(cs, _read_write_mutex);
             
             // nasty race: we could have fooled a writer into sleeping...
-            if(count == WRITER)
+            if(count == WRITER) {
                 DO_PTHREAD(pthread_cond_signal(&_write_cond));
+            }
             
             while(*&_active_count & WRITER) {
                 DO_PTHREAD(pthread_cond_wait(&_read_cond, &_read_write_mutex));
             }
         }
-        lintel::unsafe::atomic_fetch_add(const_cast<unsigned*>(&_active_count), (unsigned)READER) - READER;
+        count = lintel::unsafe::atomic_fetch_add(const_cast<unsigned*>(&_active_count), (unsigned)READER) - READER;
     }
     lintel::atomic_thread_fence(lintel::memory_order_acquire);
 }

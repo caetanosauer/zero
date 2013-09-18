@@ -6,7 +6,6 @@
 #define ALLOC_CACHE_H
 
 #include "w_defines.h"
-
 #include "alloc_page.h"
 #include "latch.h"
 #include <vector>

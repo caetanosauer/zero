@@ -2295,7 +2295,7 @@ xct_t::_sync_logbuf(bool block, bool signal)
  *
  *********************************************************************/
 rc_t 
-xct_t::get_logbuf(logrec_t*& ret, int t, fixable_page_h const* p)
+xct_t::get_logbuf(logrec_t*& ret, int t, fixable_page_h const*)
 {
     // then , use tentative log buffer.
     if (is_piggy_backed_single_log_sys_xct()) {
@@ -3527,11 +3527,11 @@ xct_t::one_thread_attached() const
             chkpt_serial_m::trx_release();
 #if W_DEBUG_LEVEL > 2
             fprintf(stderr, 
-            "Fatal VAS or SSM error: %s %d %s %d.%d \n",
-            "Only one thread allowed in this operation at any time.",
-            _core->_threads_attached, 
-            "threads are attached to xct",
-            tid().get_hi(), tid().get_lo()
+                    "Fatal VAS or SSM error: %s %d %s %d.%d \n",
+                    "Only one thread allowed in this operation at any time.",
+                    _core->_threads_attached.load(),
+                    "threads are attached to xct",
+                    tid().get_hi(), tid().get_lo()
             );
 #endif
             return false;

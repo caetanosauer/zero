@@ -145,9 +145,9 @@ public:
     static void             on_thread_destroy(sthread_t *);
     /**\endcond skip */
     
-    /// Create a latch with the given name.
-    NORET                   latch_t(const char* const desc = 0);
-    NORET                   ~latch_t();
+    /// Create a latch
+    latch_t();
+    ~latch_t();
 
     // Dump latch info to the ostream. Not thread-safe. 
     ostream&                print(ostream &) const;

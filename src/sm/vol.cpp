@@ -193,8 +193,10 @@ rc_t vol_t::mount(const char* devname, vid_t vid)
     return RCOK;
 }
 
+/** @todo flush argument is never used. Backtrace through the callers and maybe
+ * eliminate it entirely? */
 rc_t
-vol_t::dismount(bool flush)
+vol_t::dismount(bool /* flush */)
 {
     DBG(<<" vol_t::dismount flush=" << flush);
 
@@ -327,8 +329,9 @@ rc_t vol_t::redo_free_page(shpid_t pid)
  *  true and flags is regular.
  *
  *********************************************************************/
+/** @todo sync_volume is never used. Backtrack through the code and remove it entirely? */
 rc_t
-vol_t::set_store_flags(snum_t snum, store_flag_t flags, bool sync_volume)
+vol_t::set_store_flags(snum_t snum, store_flag_t flags, bool /* sync_volume */)
 {
     w_assert2(flags & st_regular
            || flags & st_tmp
