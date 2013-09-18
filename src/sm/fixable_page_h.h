@@ -5,17 +5,15 @@
 #ifndef FIXABLE_PAGE_H_H
 #define FIXABLE_PAGE_H_H
 
-#include "w_defines.h"
-
-class stnode_page_h;
-class alloc_page_h;
+#include <string.h>
 
 #include "bf_idx.h"
-#include "stid_t.h"
-#include "vid_t.h"
 #include "generic_page.h"
 #include "latch.h"
-#include <string.h>
+#include "stid_t.h"
+#include "vid_t.h"
+#include "w_defines.h"
+#include "sm_base.h"
 
 
 
@@ -24,15 +22,6 @@ class alloc_page_h;
  */
 class fixable_page_h : public generic_page_h {
 public:
-    enum logical_operation {
-        l_none=0,
-        l_set, // same as a 1-byte splice
-        l_or,
-        l_and,
-        l_xor,
-        l_not
-    };
-
     fixable_page_h() : generic_page_h(NULL), _mode(LATCH_NL) {}
     /**
      * Imaginery 'fix' for a non-bufferpool-managed page.
