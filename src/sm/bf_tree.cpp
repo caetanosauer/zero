@@ -1318,8 +1318,7 @@ void bf_tree_m::swizzle_child(generic_page* parent, slotid_t slot)
     return swizzle_children(parent, &slot, 1);
 }
 
-void bf_tree_m::swizzle_children(generic_page* parent, const slotid_t* slots, uint32_t slots_size)
-{
+void bf_tree_m::swizzle_children(generic_page* parent, const slotid_t* slots, uint32_t slots_size) {
     w_assert1(is_swizzling_enabled());
     w_assert1(parent != NULL);
     w_assert1(latch_mode(parent) != LATCH_NL);
@@ -1352,8 +1351,7 @@ void bf_tree_m::swizzle_children(generic_page* parent, const slotid_t* slots, ui
     }
 }
 
-inline void bf_tree_m::_swizzle_child_pointer(generic_page* parent, shpid_t* pointer_addr)
-{
+inline void bf_tree_m::_swizzle_child_pointer(generic_page* parent, shpid_t* pointer_addr) {
     shpid_t child_shpid = *pointer_addr;
     //w_assert1((child_shpid & SWIZZLED_PID_BIT) == 0);
     uint64_t key = bf_key (parent->pid.vol().vol, child_shpid);
@@ -1374,8 +1372,8 @@ inline void bf_tree_m::_swizzle_child_pointer(generic_page* parent, shpid_t* poi
         return;
     }
  
-    // to swizzle the child, add a pin on the page.
-    // we might fail here in a very unlucky case. still, it's fine.
+    // To swizzle the child, add a pin on the page.
+    // We might fail here in a very unlucky case.  Still, it's fine.
     bool pinned = _increment_pin_cnt_no_assumption (idx);
     if (!pinned) {
         DBGOUT1(<< "Unlucky! the child page " << child_shpid << " has been just evicted. gave up swizzling it");

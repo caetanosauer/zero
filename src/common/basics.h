@@ -47,6 +47,7 @@ typedef uint32_t               smsize_t;
 
 /* For types of store, volumes, see stid_t.h and vid_t.h */
 
+/// Short page ID (missing volume information)
 typedef uint32_t    shpid_t; 
 
 #ifndef SM_SOURCE

@@ -22,34 +22,32 @@
  */
 class fixable_page_h : public generic_page_h {
 public:
+    /// Create handle not yet fixed to a page
     fixable_page_h() : generic_page_h(NULL), _mode(LATCH_NL) {}
-    /**
-     * Imaginery 'fix' for a non-bufferpool-managed page.
-     */
+    /// Imaginery 'fix' for a non-bufferpool-managed page.
     fixable_page_h(generic_page* s) : generic_page_h(s), _mode(LATCH_NL) {
         w_assert1(s != NULL);
         w_assert1(s->tag == t_btree_p);  // <<<>>>
     }
 
-    /** release the page from bufferpool. */
-    void                        unfix ();
+    /// release the page from bufferpool.
+    void                        unfix();
 
 
-    ~fixable_page_h() {
-        unfix();
-    }
+    ~fixable_page_h() { unfix(); }
     fixable_page_h& operator=(fixable_page_h& p) {
         // this steals the ownership of the page/latch
         steal_ownership(p);
         return *this;
     }
-    void steal_ownership (fixable_page_h& p) {
+    void steal_ownership(fixable_page_h& p) {
         unfix();
         _pp = p._pp;
         _mode = p._mode;
         p._pp = NULL;
         p._mode = LATCH_NL;
     }
+
     
     /**
      * Fixes a non-root page in the bufferpool. This method receives
@@ -74,9 +72,9 @@ public:
      *
      * To use this method, you need to include page_bf_inline.h.
      */
-    w_rc_t fix_nonroot (const fixable_page_h &parent, volid_t vol,
-                        shpid_t shpid, latch_mode_t mode, bool conditional=false, bool
-                        virgin_page=false);
+    w_rc_t fix_nonroot(const fixable_page_h &parent, volid_t vol,
+                       shpid_t shpid, latch_mode_t mode, bool conditional=false, bool
+                       virgin_page=false);
 
     /**
      * Fixes any page (root or non-root) in the bufferpool without
@@ -86,14 +84,18 @@ public:
      * parent. However, this method can be used only when the pointer
      * swizzling is off.
      * @see bf_tree_m::fix_direct()
+     *
      * @param[in] vol volume ID.
-     * @param[in] shpid ID of the page to fix. If the shpid looks like a swizzled pointer, this method returns an error (see above).
+     * @param[in] shpid ID of the page to fix. If the shpid looks like
+     * a swizzled pointer, this method returns an error (see above).
      * @param[in] mode latch mode. has to be SH or EX.
      * @param[in] conditional whether the fix is conditional (returns immediately even if failed).
      * @param[in] virgin_page whether the page is a new page thus doesn't have to be read from disk.
+     *
      * To use this method, you need to include page_bf_inline.h.
      */
-    w_rc_t                      fix_direct (volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional=false, bool virgin_page=false);
+    w_rc_t fix_direct(volid_t vol, shpid_t shpid, latch_mode_t mode,
+                      bool conditional=false, bool virgin_page=false);
 
     /**
      * Adds an additional pin count for the given page (which must be
@@ -106,7 +108,7 @@ public:
      * unpin_for_refix() call.  To use this method, you need to
      * include page_bf_inline.h.
      */
-    bf_idx                      pin_for_refix();
+    bf_idx pin_for_refix();
 
     /**
      * Fixes a page with the already known slot index, assuming the
@@ -114,7 +116,8 @@ public:
      * unpin_for_refix().  To use this method, you need to include
      * page_bf_inline.h.
      */
-    w_rc_t                      refix_direct (bf_idx idx, latch_mode_t mode, bool conditional=false);
+    w_rc_t refix_direct(bf_idx idx, latch_mode_t mode, bool
+                        conditional=false);
 
     /**
      * Fixes a new (virgin) root page for a new store with the
@@ -122,7 +125,7 @@ public:
      * non-conditional.  To use this method, you need to include
      * page_bf_inline.h.
      */
-    w_rc_t                      fix_virgin_root (volid_t vol, snum_t store, shpid_t shpid);
+    w_rc_t fix_virgin_root(volid_t vol, snum_t store, shpid_t shpid);
 
     /**
      * Fixes an existing (not virgin) root page for the given store.
@@ -130,28 +133,31 @@ public:
      * by bufferpool.  To use this method, you need to include
      * page_bf_inline.h.
      */
-    w_rc_t                      fix_root (volid_t vol, snum_t store, latch_mode_t mode, bool conditional=false);
+    w_rc_t fix_root(volid_t vol, snum_t store, latch_mode_t mode,
+                    bool conditional=false);
 
 
-    /** Marks this page in the bufferpool dirty. If this page is not a bufferpool-managed page, does nothing. */
-    void                        set_dirty() const;
-    /** Returns if this page in the bufferpool is marked dirty. If this page is not a bufferpool-managed page, returns false. */
-    bool                        is_dirty() const;
+    /// Marks this page in the bufferpool dirty. If this page is not a
+    /// bufferpool-managed page, does nothing.
+    void set_dirty() const;
+    /// Returns if this page in the bufferpool is marked dirty. If
+    /// this page is not a bufferpool-managed page, returns false.
+    bool is_dirty() const;
 
 
-    /** Reserve this page to be deleted when bufferpool evicts this page. */
-    rc_t                         set_to_be_deleted (bool log_it);
-    /** Unset the deletion flag. This is only used by UNDO, so no logging. and no failure possible. */
-    void                         unset_to_be_deleted ();
-    bool                         is_to_be_deleted() { return (_pp->page_flags&t_to_be_deleted) != 0; }
+    /// Reserve this page to be deleted when bufferpool evicts this page.
+    rc_t         set_to_be_deleted(bool log_it);
+    /// Unset the deletion flag. This is only used by UNDO, so no logging. and no failure possible.
+    void         unset_to_be_deleted();
+    bool         is_to_be_deleted() { return (_pp->page_flags&t_to_be_deleted) != 0; }
     
-    uint32_t                     page_flags() const;
+    uint32_t     page_flags() const;
 
-    bool                         is_fixed()   const;
-    latch_mode_t                 latch_mode() const { return _mode; }
-    bool                         is_latched() const { return _mode != LATCH_NL; }
-    /** conditionally upgrade the latch to EX. returns if successfully upgraded. */
-    bool                         upgrade_latch_conditional();
+    bool         is_fixed()   const;
+    latch_mode_t latch_mode() const { return _mode; }
+    bool         is_latched() const { return _mode != LATCH_NL; }
+    /// conditionally upgrade the latch to EX. returns if successfully upgraded.
+    bool         upgrade_latch_conditional();
     
 protected:
     latch_mode_t  _mode;

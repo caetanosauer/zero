@@ -68,7 +68,8 @@ inline shpid_t bf_tree_m::get_root_page_id(volid_t vol, snum_t store) {
 ///////////////////////////////////   Page fix/unfix BEGIN         ///////////////////////////////////  
 const uint32_t SWIZZLED_LRU_UPDATE_INTERVAL = 1000;
 
-inline w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx idx, latch_mode_t mode, bool conditional) {
+inline w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
+                                       idx, latch_mode_t mode, bool conditional) {
     bf_tree_cb_t &cb = get_cb(idx);
     w_assert1(cb.pin_cnt() > 0);
     W_DO(cb.latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
