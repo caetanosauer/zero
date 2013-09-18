@@ -8,6 +8,7 @@
 
 #define SM_SOURCE
 #define LOGREC_C
+
 #include "sm_int_2.h"
 #include "logdef_gen.cpp"
 #include "vec_t.h"
@@ -727,7 +728,7 @@ void dismount_vol_log::redo(fixable_page_h* W_IFDEBUG9(page))
     // this may fail since this log record is only redone on crash/restart and the
         // user may have destroyed the volume after using, but then there won't be
         // and pages that need to be updated on this volume.
-    W_IGNORE(io_m::dismount(dp->devrec[0].vid, true));
+    W_IGNORE(io_m::dismount(dp->devrec[0].vid));
 }
 
 /**

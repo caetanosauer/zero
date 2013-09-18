@@ -9,7 +9,6 @@
 #include "w_key.h"
 #include "bf_tree.h"
 
-
 class btree_page_h;
 class btrec_t;
 

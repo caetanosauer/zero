@@ -158,8 +158,7 @@ btree_impl::_ux_put_core(
     btree_page_h leaf;
     W_DO(_ux_get_page_and_status(vol, store, key, need_lock, slot, found, took_XN, is_ghost, leaf));
     if (!found || is_ghost) {
-        return _ux_insert_core_tail(vol, store, key, el, need_lock, slot, 
-                                    found, took_XN, is_ghost, leaf);
+        return _ux_insert_core_tail(vol, store, key, el, need_lock, slot, found, took_XN, is_ghost, leaf);
     } else {    
         return _ux_update_core_tail(vol, store, key, el, need_lock, slot, found, is_ghost, leaf);
     }
@@ -199,10 +198,10 @@ btree_impl::_ux_get_page_and_status(volid_t vol, snum_t store,
     }
     return RCOK;
 }
-rc_t btree_impl::_ux_insert_core_tail(volid_t vol, snum_t store,
-			const w_keystr_t& key,const cvec_t& el,
-                        bool& need_lock, slotid_t& slot, bool& found, bool& alreay_took_XN, 
-                                      bool& is_ghost, btree_page_h& leaf) {
+rc_t btree_impl::_ux_insert_core_tail(volid_t /* vol */, snum_t /* store */,
+                                      const w_keystr_t& key, const cvec_t& el,
+                                      bool& need_lock, slotid_t& slot, bool& found, 
+                                      bool& alreay_took_XN, bool& is_ghost, btree_page_h& leaf) {
     if (found) {
         
         //If the same key exists and non-ghost, exit with error (duplicate).

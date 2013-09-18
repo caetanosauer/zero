@@ -68,7 +68,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 const char* const  latch_t::latch_mode_str[3] = { "NL", "SH", "EX" };
 
 
-latch_t::latch_t(const char* const desc) :
+latch_t::latch_t() :
     _total_count(0) 
 {
 }
@@ -667,10 +667,9 @@ void print_all_latches()
 void print_latch_holders(latch_t* latch) 
 {
     holder_list_list_t::iterator  iter;
-    for(iter= holder_list_list.begin(); 
-         iter != holder_list_list.end(); iter ++)
+    for(iter = holder_list_list.begin(); 
+         iter != holder_list_list.end(); ++iter)
     {
-        sthread_t* who = iter->first;
         latch_holder_t **whoslist = iter->second;
         holder_list holders(*iter->second);
         holder_list::iterator it=holders.begin();

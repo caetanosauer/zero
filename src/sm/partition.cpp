@@ -60,6 +60,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #define SM_SOURCE
 #define PARTITION_C
+
 #include "sm_int_1.h"
 #include "logtype_gen.h"
 #include "log.h"
