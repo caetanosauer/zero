@@ -158,6 +158,11 @@ public:
     bool         is_latched() const { return _mode != LATCH_NL; }
     /// conditionally upgrade the latch to EX. returns if successfully upgraded.
     bool         upgrade_latch_conditional();
+
+
+    int          max_child_slot() const;
+    shpid_t*     child_slot_address(int child_slot) const;
+
     
 protected:
     latch_mode_t  _mode;
@@ -183,6 +188,7 @@ fixable_page_h::is_fixed() const
 {
     return _pp != 0;
 }
+
 
 #include "page_bf_inline.h"
 

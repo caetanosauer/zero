@@ -4,6 +4,7 @@
 
 #ifndef PAGE_BF_INLINE_H
 #define PAGE_BF_INLINE_H
+
 // bufferpool-related inline methods for fixable_page_h.
 // these methods are small and frequently called, thus inlined.
 
@@ -17,7 +18,9 @@
 #include "fixable_page_h.h"
 #include "sm_int_0.h"
 
-inline w_rc_t fixable_page_h::fix_nonroot (const fixable_page_h &parent, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
+inline w_rc_t fixable_page_h::fix_nonroot (const fixable_page_h
+                                           &parent, volid_t vol, shpid_t shpid, latch_mode_t mode, bool
+                                           conditional, bool virgin_page) {
     w_assert1(shpid != 0);
     if (is_fixed()) {
         unfix();
@@ -29,7 +32,8 @@ inline w_rc_t fixable_page_h::fix_nonroot (const fixable_page_h &parent, volid_t
     return RCOK;
 }
 
-inline w_rc_t fixable_page_h::fix_direct (volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
+inline w_rc_t fixable_page_h::fix_direct (volid_t vol, shpid_t shpid,
+                                          latch_mode_t mode, bool conditional, bool virgin_page) {
     w_assert1(shpid != 0);
     if (is_fixed()) {
         unfix();

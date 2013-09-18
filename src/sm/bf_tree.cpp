@@ -1290,23 +1290,18 @@ inline void bf_tree_m::_convert_to_pageid (shpid_t* shpid) const {
 
 slotid_t bf_tree_m::find_page_id_slot(generic_page* page, shpid_t shpid) const {
     w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
-    my_btree_page_h p(page);
-    // w_assert1(p.btree_foster_opaqueptr() != (shpid | SWIZZLED_PID_BIT));
-    // if (p.btree_foster_opaqueptr() == shpid) {
-    //     return -1;
-    // }
-    w_assert1(p.get_foster_opaqueptr() != shpid); // don't swizzle foster-child
-    if (p.level() > 1) {
-        if (p.pid0_opaqueptr() == shpid) {
-            return 0;
+
+    fixable_page_h p(page);
+    int max_slot = p.max_child_slot();
+
+    //  don't swizzle foster-child:
+    w_assert1( *p.child_slot_address(-1) != shpid );
+    //for (int i = -1; i <= max_slot; ++i) {
+    for (int i = 0; i <= max_slot; ++i) {
+        if (*p.child_slot_address(i) != shpid) {
+            continue;
         }
-        slot_index_t slots = p.nslots();
-        for (slot_index_t i = 1; i < slots; ++i) {
-            void* addr = p.tuple_addr(i);
-            if (*reinterpret_cast<shpid_t*>(addr) == shpid) {
-                return i;
-            }
-        }
+        return i;
     }
     return -2;
 }
