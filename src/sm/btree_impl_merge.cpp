@@ -14,14 +14,14 @@
 #include "sm_int_2.h"
 #include "sm_base.h"
 #include "page_bf_inline.h"
-#include "btree_p.h"
+#include "btree_page.h"
 #include "btree_impl.h"
 #include "w_key.h"
 #include "xct.h"
 #include "bf.h"
 #include "bf_tree.h"
 
-rc_t btree_impl::_sx_rebalance_foster(btree_p &page)
+rc_t btree_impl::_sx_rebalance_foster(btree_page_h &page)
 {
     FUNC(btree_impl::_sx_rebalance_foster);
     sys_xct_section_t sxs;
@@ -31,7 +31,7 @@ rc_t btree_impl::_sx_rebalance_foster(btree_p &page)
     return ret;
 }
 
-rc_t btree_impl::_ux_rebalance_foster_core(btree_p &page)
+rc_t btree_impl::_ux_rebalance_foster_core(btree_page_h &page)
 {
     w_assert1 (xct()->is_sys_xct());
     w_assert1 (page.latch_mode() == LATCH_EX);
@@ -39,8 +39,8 @@ rc_t btree_impl::_ux_rebalance_foster_core(btree_p &page)
         return RCOK; // nothing to rebalance
     }
 
-    btree_p foster_p;
-    W_DO(foster_p.fix_nonroot(page, page.vol(), page.get_foster(), LATCH_EX));
+    btree_page_h foster_p;
+    W_DO(foster_p.fix_nonroot(page, page.vol(), page.get_foster_opaqueptr(), LATCH_EX));
 
     smsize_t used = page.used_space();
     smsize_t foster_used = foster_p.used_space();
@@ -59,7 +59,7 @@ rc_t btree_impl::_ux_rebalance_foster_core(btree_p &page)
     smsize_t move_size = 0;
     while (used - move_size > balanced_size && -move_count < page.nrecs() - 1) {
         ++move_count;
-        move_size += align(page.get_rec_size(page.nslots() - move_count - 1)) + page_s::slot_sz;
+        move_size += align(page.get_rec_size(page.nslots() - move_count - 1)) + btree_page::slot_sz;
     }
     
     if (move_count == 0) {
@@ -68,7 +68,7 @@ rc_t btree_impl::_ux_rebalance_foster_core(btree_p &page)
     return _ux_rebalance_foster_core (page, foster_p, move_count);
 }
 
-rc_t btree_impl::_ux_rebalance_foster_core(btree_p &page, btree_p &foster_p, int32_t move_count)
+rc_t btree_impl::_ux_rebalance_foster_core(btree_page_h &page, btree_page_h &foster_p, int32_t move_count)
 {
     w_assert1 (page.latch_mode() == LATCH_EX);
     w_assert1 (foster_p.latch_mode() == LATCH_EX);
@@ -101,9 +101,9 @@ rc_t btree_impl::_ux_rebalance_foster_core(btree_p &page, btree_p &foster_p, int
     // this is also useful as defragmentation.
 
     // scratch block of foster_p
-    page_s scratch;
+    generic_page scratch;
     ::memcpy (&scratch, foster_p._pp, sizeof(scratch));
-    btree_p scratch_p (&scratch);
+    btree_page_h scratch_p (&scratch);
     
     w_keystr_t new_low_key, high_key, chain_high_key;
     scratch_p.copy_fence_high_key(high_key);
@@ -158,7 +158,7 @@ rc_t btree_impl::_ux_rebalance_foster_core(btree_p &page, btree_p &foster_p, int
     return RCOK;
 }
 
-rc_t btree_impl::_sx_merge_foster(btree_p &page)
+rc_t btree_impl::_sx_merge_foster(btree_page_h &page)
 {
     FUNC(btree_impl::_sx_merge_foster);
     sys_xct_section_t sxs;
@@ -169,7 +169,7 @@ rc_t btree_impl::_sx_merge_foster(btree_p &page)
 }
 
 /** this function conservatively estimates.*/
-smsize_t estimate_required_space_to_merge (btree_p &page, btree_p &merged)
+smsize_t estimate_required_space_to_merge (btree_page_h &page, btree_page_h &merged)
 {
     smsize_t ret = merged.used_space();
 
@@ -193,7 +193,7 @@ smsize_t estimate_required_space_to_merge (btree_p &page, btree_p &merged)
     return ret;
 }
 
-rc_t btree_impl::_ux_merge_foster_core(btree_p &page)
+rc_t btree_impl::_ux_merge_foster_core(btree_page_h &page)
 {
     w_assert1 (xct()->is_sys_xct());
     w_assert1 (page.latch_mode() == LATCH_EX);
@@ -201,8 +201,8 @@ rc_t btree_impl::_ux_merge_foster_core(btree_p &page)
         return RCOK; // nothing to rebalance
     }
 
-    btree_p foster_p;
-    W_DO(foster_p.fix_nonroot(page, page.vol(), page.get_foster(), LATCH_EX));
+    btree_page_h foster_p;
+    W_DO(foster_p.fix_nonroot(page, page.vol(), page.get_foster_opaqueptr(), LATCH_EX));
     
     // assure foster-child page has an entry same as fence-low for locking correctness. 
     // See jira ticket:84 "Key Range Locking" (originally trac ticket:86).
@@ -228,7 +228,7 @@ rc_t btree_impl::_ux_merge_foster_core(btree_p &page)
     
     // log for foster-parent.
     W_DO(log_btree_foster_merge (page));
-    W_DO(foster_p.set_tobedeleted(true)); // log it (for foster-child)
+    W_DO(foster_p.set_to_be_deleted(true)); // log it (for foster-child)
 
     // like split, use scratch block to cleanly make a new page image
     w_keystr_t low_key, high_key, chain_high_key; // fence keys after merging
@@ -238,9 +238,9 @@ rc_t btree_impl::_ux_merge_foster_core(btree_p &page)
         // if no foster after merging, chain-high will disappear
         page.copy_chain_fence_high_key(chain_high_key);
     }
-    page_s scratch;
+    generic_page scratch;
     ::memcpy (&scratch, page._pp, sizeof(scratch));
-    btree_p scratch_p (&scratch);
+    btree_page_h scratch_p (&scratch);
     W_DO(page.format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(), scratch_p.pid0(),
         foster_p.get_foster(), // foster-child's foster will be the next one after merge
         low_key, high_key, chain_high_key,
@@ -253,7 +253,7 @@ rc_t btree_impl::_ux_merge_foster_core(btree_p &page)
     return RCOK;
 }
 
-rc_t btree_impl::_sx_deadopt_foster(btree_p &real_parent, slotid_t foster_parent_slot)
+rc_t btree_impl::_sx_deadopt_foster(btree_page_h &real_parent, slotid_t foster_parent_slot)
 {
     FUNC(btree_impl::_sx_deadopt_foster);
     sys_xct_section_t sxs;
@@ -263,9 +263,9 @@ rc_t btree_impl::_sx_deadopt_foster(btree_p &real_parent, slotid_t foster_parent
     return ret;
 }
 
-void btree_impl::_ux_deadopt_foster_apply_real_parent(btree_p &real_parent,
-    shpid_t W_IFDEBUG1(foster_child_id), slotid_t foster_parent_slot)
-{
+void btree_impl::_ux_deadopt_foster_apply_real_parent(btree_page_h &real_parent,
+                                                      shpid_t W_IFDEBUG1(foster_child_id),
+                                                      slotid_t foster_parent_slot) {
 #if W_DEBUG_LEVEL>0
     w_assert1 (real_parent.latch_mode() == LATCH_EX);
     w_assert1(real_parent.is_node());
@@ -275,9 +275,11 @@ void btree_impl::_ux_deadopt_foster_apply_real_parent(btree_p &real_parent,
 #endif // W_DEBUG_LEVEL>0
     real_parent.remove_shift_nolog (foster_parent_slot + 1);
 }
-void btree_impl::_ux_deadopt_foster_apply_foster_parent(btree_p &foster_parent,
-    shpid_t foster_child_id, const w_keystr_t & W_IFDEBUG1(low_key), const w_keystr_t &high_key)
-{
+
+void btree_impl::_ux_deadopt_foster_apply_foster_parent(btree_page_h &foster_parent,
+                                                        shpid_t foster_child_id,
+                                                        const w_keystr_t & W_IFDEBUG1(low_key),
+                                                        const w_keystr_t &high_key) {
 #if W_DEBUG_LEVEL>0
     w_assert1 (foster_parent.latch_mode() == LATCH_EX);
     w_assert1 (foster_parent.get_foster() == 0);
@@ -315,11 +317,11 @@ void btree_impl::_ux_deadopt_foster_apply_foster_parent(btree_p &foster_parent,
             W_FATAL(eINTERNAL); 
         }
     }
-    foster_parent._pp->btree_chain_fence_high_length = high_key.get_length_as_keystr();
+    foster_parent.page()->btree_chain_fence_high_length = high_key.get_length_as_keystr();
     
-    foster_parent._pp->btree_foster = foster_child_id;
+    foster_parent.page()->btree_foster = foster_child_id;
 }
-rc_t btree_impl::_ux_deadopt_foster_core(btree_p &real_parent, slotid_t foster_parent_slot)
+rc_t btree_impl::_ux_deadopt_foster_core(btree_page_h &real_parent, slotid_t foster_parent_slot)
 {
     w_assert1 (xct()->is_sys_xct());
     w_assert1 (real_parent.is_node());
@@ -328,11 +330,11 @@ rc_t btree_impl::_ux_deadopt_foster_core(btree_p &real_parent, slotid_t foster_p
     shpid_t foster_parent_pid;
     if (foster_parent_slot < 0) {
         w_assert1 (foster_parent_slot == -1);
-        foster_parent_pid = real_parent.pid0();
+        foster_parent_pid = real_parent.pid0_opaqueptr();
     } else {
-        foster_parent_pid = real_parent.child(foster_parent_slot);
+        foster_parent_pid = real_parent.child_opaqueptr(foster_parent_slot);
     }
-    btree_p foster_parent;
+    btree_page_h foster_parent;
     W_DO(foster_parent.fix_nonroot(real_parent, real_parent.vol(), foster_parent_pid, LATCH_EX));
     
     if (foster_parent.get_foster() != 0) {

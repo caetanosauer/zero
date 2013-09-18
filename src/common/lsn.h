@@ -142,7 +142,7 @@ typedef int64_t sm_diskaddr_t;
  * log records is not necessary.
  *
  * The storage manager has other special cases: lsn_t(0,1) -- this is
- * in page.cpp, page_p::_format(), and indicates a freshly formatted page
+ * in page.cpp, fixable_page_h::_format(), and indicates a freshly formatted page <<<>>>
  * with no further updates.
  * \subsection NPCD Nominal Page Corruption-Detection
  * Pages have two copies of their page lsn; one at the head and one at the

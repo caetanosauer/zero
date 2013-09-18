@@ -14,7 +14,7 @@
 
 #include "sm_int_2.h"
 #include "page_bf_inline.h"
-#include "btree_p.h"
+#include "btree_page.h"
 #include "btree_impl.h"
 #include "btcursor.h"
 #include "sm_base.h"
@@ -55,7 +55,7 @@ btree_impl::_ux_lookup_core(
     bool need_lock = g_xct_does_need_lock();
     bool ex_for_select = g_xct_does_ex_lock_for_select();
 
-    btree_p                leaf; // first-leaf
+    btree_page_h                leaf; // first-leaf
 
     // find the leaf (potentially) containing the key
     W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_SH, leaf));
@@ -105,7 +105,7 @@ btree_impl::_ux_traverse(
     const w_keystr_t &key,
     traverse_mode_t traverse_mode,
     latch_mode_t leaf_latch_mode,
-    btree_p &leaf,
+    btree_page_h &leaf,
     bool allow_retry
     )
 {
@@ -123,10 +123,10 @@ btree_impl::_ux_traverse(
     shpid_t leaf_pid_causing_failed_upgrade = 0;
     for (int times = 0; times < 20; ++times) { // arbitrary number
         inquery_verify_init(vol, store); // initialize in-query verification
-        btree_p root_p;
+        btree_page_h root_p;
         w_assert1(!root_p.is_fixed());
         bool should_try_ex = (leaf_latch_mode == LATCH_EX &&
-            leaf_pid_causing_failed_upgrade == smlevel_0::bf->get_root_page_id_normalized(vol, store));
+            leaf_pid_causing_failed_upgrade == smlevel_0::bf->get_root_page_id(vol, store));
         W_DO( root_p.fix_root(vol, store, should_try_ex ? LATCH_EX : LATCH_SH));
         w_assert1(root_p.is_fixed());
         
@@ -171,11 +171,11 @@ btree_impl::_ux_traverse(
 
 rc_t
 btree_impl::_ux_traverse_recurse(
-    btree_p&                        start,
+    btree_page_h&                        start,
     const w_keystr_t&               key,
     btree_impl::traverse_mode_t     traverse_mode,
     latch_mode_t                    leaf_latch_mode,
-    btree_p&                        leaf,
+    btree_page_h&                        leaf,
     shpid_t&                         leaf_pid_causing_failed_upgrade
     )
 {
@@ -190,9 +190,9 @@ btree_impl::_ux_traverse_recurse(
     }
 
     // this part is now loop, not recursion to prevent the stack from growing too long
-    btree_p *current = &start;
-    btree_p followed_p; // for latch coupling
-    btree_p *next = &followed_p;
+    btree_page_h *current = &start;
+    btree_page_h followed_p; // for latch coupling
+    btree_page_h *next = &followed_p;
     while (true) {
         if (do_inquery_verify) inquery_verify_fact(*current); // check the current page
 
@@ -227,16 +227,16 @@ btree_impl::_ux_traverse_recurse(
         }
 
         shpid_t pid_to_follow;
-        shpid_t pid_to_follow_normalized;
+        shpid_t pid_to_follow_opaqueptr;
         if (slot_to_follow == t_follow_foster) {
             pid_to_follow = current->get_foster();
-            pid_to_follow_normalized = current->get_foster_normalized();
+            pid_to_follow_opaqueptr = current->get_foster_opaqueptr();
         } else if (slot_to_follow == t_follow_pid0) {
             pid_to_follow = current->pid0();
-            pid_to_follow_normalized = current->pid0_normalized();
+            pid_to_follow_opaqueptr = current->pid0_opaqueptr();
         } else {
             pid_to_follow = current->child(slot_to_follow);
-            pid_to_follow_normalized = current->child_normalized(slot_to_follow);
+            pid_to_follow_opaqueptr = current->child_opaqueptr(slot_to_follow);
         }    
         w_assert1(pid_to_follow);
 
@@ -245,11 +245,11 @@ btree_impl::_ux_traverse_recurse(
         if ((current->level() >= 3 || 
              (current->level() == 2 && slot_to_follow == t_follow_foster)) // next will be non-leaf
             && is_ex_recommended(pid_to_follow)) { // next is VERY hot
-            W_DO (_ux_traverse_try_eager_adopt(*current, pid_to_follow));
+            W_DO (_ux_traverse_try_eager_adopt(*current, pid_to_follow_opaqueptr));
         }
         
         bool should_try_ex = leaf_latch_mode == LATCH_EX && (
-            pid_to_follow_normalized == leaf_pid_causing_failed_upgrade
+            pid_to_follow == leaf_pid_causing_failed_upgrade
             || current->latch_mode() == LATCH_EX // we have EX latch; don't SH latch
             );
         
@@ -261,7 +261,7 @@ btree_impl::_ux_traverse_recurse(
             should_try_ex = true;
         }
         
-        W_DO(next->fix_nonroot(*current, current->vol(), pid_to_follow, 
+        W_DO(next->fix_nonroot(*current, current->vol(), pid_to_follow_opaqueptr, 
                                should_try_ex ? LATCH_EX : LATCH_SH));
         
         if (slot_to_follow != t_follow_foster && next->get_foster() != 0) {
@@ -279,7 +279,7 @@ btree_impl::_ux_traverse_recurse(
 }
 
 void btree_impl::_ux_traverse_search(btree_impl::traverse_mode_t traverse_mode,
-                                     btree_p *current,
+                                     btree_page_h *current,
                                      const w_keystr_t& key,
                                      bool &this_is_the_leaf_page, slot_follow_t &slot_to_follow) {
     if (traverse_mode == t_fence_contain) {
@@ -371,7 +371,7 @@ void btree_impl::_ux_traverse_search(btree_impl::traverse_mode_t traverse_mode,
         }
     }
 } 
-rc_t btree_impl::_ux_traverse_try_eager_adopt(btree_p &current, shpid_t next_pid)
+rc_t btree_impl::_ux_traverse_try_eager_adopt(btree_page_h &current, shpid_t next_pid)
 {
     w_assert1(current.is_fixed());
     queue_based_lock_t *mutex = mutex_for_high_contention(next_pid);
@@ -385,7 +385,7 @@ rc_t btree_impl::_ux_traverse_try_eager_adopt(btree_p &current, shpid_t next_pid
             // and just go on (return RCOK, not eGOODRETRY) with SH latch
             return RCOK;
         }
-        btree_p next;
+        btree_page_h next;
         W_DO(next.fix_nonroot(current, current.vol(), next_pid, LATCH_EX));
         
         // okay, now we got EX latch, but..
@@ -399,7 +399,7 @@ rc_t btree_impl::_ux_traverse_try_eager_adopt(btree_p &current, shpid_t next_pid
     }
     return RC(eGOODRETRY); // to be safe, let's restart. this is anyway rare event
 }
-rc_t btree_impl::_ux_traverse_try_opportunistic_adopt(btree_p &current, btree_p &next)
+rc_t btree_impl::_ux_traverse_try_opportunistic_adopt(btree_page_h &current, btree_page_h &next)
 {
     w_assert1(current.is_fixed());
     w_assert1(next.is_fixed());

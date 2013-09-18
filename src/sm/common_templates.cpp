@@ -70,7 +70,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #ifdef EXPLICIT_TEMPLATE
 /*
- * vol.cpp, sort.cpp btree_bl.cpp, btree_p.cpp
+ * vol.cpp, sort.cpp btree_bl.cpp, btree_page.cpp
  */
 template class w_auto_delete_array_t<char>; 
 

@@ -10,7 +10,7 @@
 #include "sm_int_0.h"
 #include "sm_int_2.h"
 #include "page_bf_inline.h"
-#include "btree_p.h"
+#include "btree_page.h"
 #include "btcursor.h"
 #include "btree_impl.h"
 #include "bf_tree.h"
@@ -85,7 +85,7 @@ void bt_cursor_t::_release_current_page() {
     }
 }
 
-void bt_cursor_t::_set_current_page(btree_p &page) {
+void bt_cursor_t::_set_current_page(btree_page_h &page) {
     if (_pid != 0) {
         _release_current_page();
     }
@@ -112,7 +112,7 @@ rc_t bt_cursor_t::_locate_first() {
     while (true) {
         // find the leaf (potentially) containing the key
         const w_keystr_t &key = _forward ? _lower : _upper;
-        btree_p leaf;
+        btree_page_h leaf;
         bool found = false;
         W_DO( btree_impl::_ux_traverse(_vol, _store, key, btree_impl::t_fence_contain, LATCH_SH, leaf));
         w_assert3 (leaf.fence_contains(key));
@@ -199,7 +199,7 @@ rc_t bt_cursor_t::_locate_first() {
     return RCOK;
 }
 
-rc_t bt_cursor_t::_check_page_update(btree_p &p)
+rc_t bt_cursor_t::_check_page_update(btree_page_h &p)
 {
     // was the page changed?
     if (_pid != p.pid().page || p.lsn() != _lsn) {
@@ -235,7 +235,7 @@ rc_t bt_cursor_t::next()
     }
 
     w_assert3(_pid);
-    btree_p p;
+    btree_page_h p;
     W_DO(p.refix_direct(_pid_bfidx.idx(), LATCH_SH));
     w_assert3(p.is_fixed());
     w_assert3(p.pid().page == _pid);
@@ -262,7 +262,7 @@ rc_t bt_cursor_t::next()
     return RCOK;
 }
 
-rc_t bt_cursor_t::_find_next(btree_p &p, bool &eof)
+rc_t bt_cursor_t::_find_next(btree_page_h &p, bool &eof)
 {
     FUNC(bt_cursor_t::_find_next);
     while (true) {
@@ -284,7 +284,7 @@ rc_t bt_cursor_t::_find_next(btree_p &p, bool &eof)
     return RCOK;
 }
 
-rc_t bt_cursor_t::_advance_one_slot(btree_p &p, bool &eof)
+rc_t bt_cursor_t::_advance_one_slot(btree_page_h &p, bool &eof)
 {
     FUNC(bt_cursor_t::_advance_one_slot);
     w_assert1(p.is_fixed());
@@ -411,7 +411,7 @@ rc_t bt_cursor_t::_advance_one_slot(btree_p &p, bool &eof)
     return RCOK;
 }
 
-rc_t bt_cursor_t::_make_rec(const btree_p& page)
+rc_t bt_cursor_t::_make_rec(const btree_page_h& page)
 {
     FUNC(bt_cursor_t::_make_rec);
 

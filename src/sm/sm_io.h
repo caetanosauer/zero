@@ -197,8 +197,8 @@ public:
 
     static rc_t                 read_page(
         const lpid_t&                 pid,
-        page_s&                       buf);
-    static void                 write_many_pages(const page_s* bufs, int cnt);
+        generic_page&                       buf);
+    static void                 write_many_pages(const generic_page* bufs, int cnt);
     
     static rc_t                 mount(
          const char*                  device, 

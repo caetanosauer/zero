@@ -78,6 +78,12 @@ IF(GOOGLEPERFTOOLS_FOUND)
   SET (LINK_GOOGLEPROFILER " -lprofiler") #  -ltcmalloc ?
 ENDIF(GOOGLEPERFTOOLS_FOUND)
 
+# MUTrace profiles user-mode mutex locks 
+# SET(ENABLE_MUTRACE_PROFILER 'ON')
+IF(ENABLE_MUTRACE_PROFILER) 
+  LINTEL_REQUIRED_HEADER(MUTRACE MUTrace/mutrace.h)
+  SET (COMPILE_MUTRACE "-fPIC -fno-omit-frame-pointer -DMUTRACE_ENABLED_H")
+ENDIF(ENABLE_MUTRACE_PROFILER)
 
 ENABLE_TESTING() # we use CTest all over the project. run "make test" after cmake
 
@@ -93,7 +99,7 @@ ELSE (COMPILER_IS_SUNCC)
   SET(CMAKE_CXX_FLAGS_DEBUG  "-O0 -g -DDEBUG -DW_DEBUG_LEVEL=3 ${LINK_GOOGLEPROFILER}")
 ##  SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DW_DEBUG_LEVEL=1 ${LINK_GOOGLEPROFILER}")
 ## Below is better for performance analysis; above is better for debugging
-  SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DW_DEBUG_LEVEL=0 -DNDEBUG ${LINK_GOOGLEPROFILER}")
+  SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DW_DEBUG_LEVEL=0 -DNDEBUG ${LINK_GOOGLEPROFILER} ${COMPILE_MUTRACE}")
 #  SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O0 -g -DW_DEBUG_LEVEL=3 -DDEBUG ${LINK_GOOGLEPROFILER}")
   SET(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -fexpensive-optimizations -finline-functions -DW_DEBUG_LEVEL=0 ${LINK_GOOGLEPROFILER}")
 ENDIF (COMPILER_IS_SUNCC)
@@ -332,7 +338,7 @@ add_subdirectory(experiments) # benchmarks and other performance tests
 # add a target to generate API documentation with Doxygen
 find_package(Doxygen)
 if(DOXYGEN_FOUND)
-  configure_file(${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile.cmake ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile @ONLY)
+  configure_file(${CMAKE_CURRENT_SOURCE_DIR}/zero.dox ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile @ONLY)
   add_custom_target(doc
     ${DOXYGEN_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}

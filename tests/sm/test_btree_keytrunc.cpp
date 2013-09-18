@@ -2,9 +2,9 @@
 #include "gtest/gtest.h"
 #include "sm_vas.h"
 #include "bf.h"
-#include "page_s.h"
+#include "generic_page.h"
 #include "btree.h"
-#include "btree_p.h"
+#include "btree_page.h"
 #include "btree_impl.h"
 #include "w_key.h"
 
@@ -43,7 +43,7 @@ w_rc_t suffix_test(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(x_btree_verify(ssm, stid));
     
     // and let's check the root node's entries
-    btree_p root_p;
+    btree_page_h root_p;
     W_DO (root_p.fix_root (root_pid.vol().vol, root_pid.store(), LATCH_EX));
     EXPECT_TRUE (root_p.is_node());
     EXPECT_GT (root_p.nrecs(), 0);
@@ -94,7 +94,7 @@ w_rc_t suffix_test_shortest(ss_m* ssm, test_volume_t *test_volume) {
         keystr[1] = '0' + first_digits[i % 10];
         W_DO(x_btree_insert (ssm, stid, keystr, datastr));
 
-        btree_p root_p;
+        btree_page_h root_p;
         W_DO (root_p.fix_root (root_pid.vol().vol, root_pid.store(), LATCH_SH));
         if (root_p.nrecs() <= prev_recs) {
             EXPECT_TRUE (root_p.is_fence_low_infimum());
@@ -144,7 +144,7 @@ w_rc_t suffix_test_posskew(ss_m* ssm, test_volume_t *test_volume) {
         keystr[1] = '0' + (i % 10);
         W_DO(x_btree_insert (ssm, stid, keystr, datastr));
 
-        btree_p root_p;
+        btree_page_h root_p;
         W_DO (root_p.fix_root (root_pid.vol().vol, root_pid.store(), LATCH_SH));
         if (root_p.nrecs() <= prev_recs) {
             EXPECT_TRUE (root_p.is_fence_low_infimum());
@@ -196,7 +196,7 @@ w_rc_t suffix_test_negskew(ss_m* ssm, test_volume_t *test_volume) {
         keystr[1] = '0' + (i % 10);
         W_DO(x_btree_insert (ssm, stid, keystr, datastr));
 
-        btree_p root_p;
+        btree_page_h root_p;
         W_DO (root_p.fix_root (root_pid.vol().vol, root_pid.store(), LATCH_SH));
         if (root_p.nrecs() <= prev_recs) {
             EXPECT_TRUE (root_p.is_fence_low_infimum());
@@ -260,7 +260,7 @@ w_rc_t prefix_test(ss_m* ssm, test_volume_t *test_volume) {
     memset (keystr, '0', keysize - 3);
     memcpy(keystr + keysize - 3, "500", 3); // middle key
     key.construct_regularkey(keystr, keysize);
-    btree_p leaf;
+    btree_page_h leaf;
     W_DO (btree_impl::_ux_traverse(root_pid.vol().vol, root_pid.store(), key, btree_impl::t_fence_contain, LATCH_SH, leaf));
     EXPECT_TRUE (leaf.is_fixed());
     EXPECT_TRUE (leaf.is_leaf());

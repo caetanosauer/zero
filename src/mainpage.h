@@ -1,3 +1,5 @@
+/* (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP */
+
 /*<std-header orig-src='shore' incl-file-exclusion='MAINPAGE_H'>
 
  $Id: mainpage.h,v 1.14 2010/10/27 17:04:20 nhall Exp $
@@ -32,10 +34,14 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /**\page COPYRIGHT Copyrights and Licenses 
  *
-The main code base of the storage manager is subject to the SHORE/UW 
+
+Major parts of the code have been modified or developed by HP, and are
+subject to the HPDC copyright, below.
+
+The main code base of the storage manager is also subject to the SHORE/UW 
 copyright (given below) and most of it is also subject to 
 the SHORE-MT/DIAS copyright (also given below).
-Both copyrights are hereby extended to the date of this release, 2010.
+Both copyrights are hereby extended to 2010.
 
 The strstream compatibility code found in src/fc/w_compat_strstream.h and
 src/fc/w_compat_strstream.cpp
@@ -48,6 +54,10 @@ included below.
 What little remains of the old SHORE sthreads library is subject to
 copyright given in those source files (src/sthread/sthread.h) as well as to the SHORE/UW and
 SHORE-MT/DIAS copyrights.
+
+ - \b HPDC \b Copyright:
+
+(c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
 
 
  -       \b SHORE/UW \b Copyright:
@@ -136,11 +146,11 @@ to the following restrictions:
 4. This notice may not be removed or altered.
 
  * */
-/** \mainpage SHORE Storage Manager: The Multi-Threaded Version 
+/** \mainpage Zero Storage Manager
  * \section Brief Description
  *
  * This is an experiment test-bed library for use by researchers who wish to
- * write multi-threaded software that manages persistent data.   
+ * write multi-threaded software that manages persistent data.
  *
  * This storage engine provides the following capabilities:
  *  - transactions with ACID properties, with ARIES-based logging and recovery,
@@ -162,6 +172,8 @@ to the following restrictions:
  * architectures.
  *
  * \section Background
+ *
+ * The system is based on SHORE-MT, as modified by HP Labs.
  *
  * The SHORE (Scalable Heterogeneous Object REpository) project
  * at the University of Wisconsin - Madison Department of Computer Sciences
@@ -242,7 +254,7 @@ See the copyrights page \ref COPYRIGHT "Copyrights and Licenses, here".
  *    reproduce the behavior.  If you can create a script to reproduce the
  *    problem, include that.
  *
- * Mail this to: shore-mt@cs.wisc.edu
+ * Mail this to: express@groups.hp.com
  *
  * \section REFS References
  * See \ref REFERENCES "this page" for references to selected papers 
@@ -250,6 +262,9 @@ See the copyrights page \ref COPYRIGHT "Copyrights and Licenses, here".
  */
 
 /**\addtogroup OPT
+ *
+ * <b> This Section is out of date. Use cmake. JIRA issue ZERO-148 covers fixing this </b>
+ *
  * Configuring and building the storage manager consists of these steps,
  * all done at the root of the distribution directory tree.
  * - bootstrap

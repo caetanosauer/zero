@@ -10,6 +10,7 @@
 #include "vid_t.h"
 #include "latch.h"
 #include "sm_s.h"
+#include "bf_tree.h"
 #include <string.h>
 
 #include <assert.h>
@@ -69,48 +70,43 @@
 struct bf_tree_cb_t {
     /** clears all properties . */
     inline void clear () {
-        ::memset(this, 0, sizeof(bf_tree_cb_t));
+        clear_latch();
+        clear_except_latch();
     }
 
     /** clears all properties but latch. */
     inline void clear_except_latch () {
-        ::memset((void*)(&this->_dirty), 0, sizeof(this->_dirty));
-        ::memset((void*)(&this->_used), 0, sizeof(this->_used));
-        ::memset((void*)(&this->_pid_vol), 0, sizeof(this->_pid_vol));
-        ::memset((void*)(&this->_pid_shpid), 0, sizeof(this->_pid_shpid));
-        ::memset((void*)(&this->_pin_cnt), 0, sizeof(this->_pin_cnt));
-        ::memset((void*)(&this->_refbit_approximate), 0, sizeof(this->_refbit_approximate));
-        ::memset((void*)(&this->_counter_approximate), 0, sizeof(this->_counter_approximate));
-        ::memset((void*)(&this->_rec_lsn), 0, sizeof(this->_rec_lsn));
-        ::memset((void*)(&this->_parent), 0, sizeof(this->_parent));
-        //::memset((void*)(&this->_fill32), 0, sizeof(this->_fill32));
-        ::memset((void*)(&this->_swizzled), 0, sizeof(this->_swizzled));
-        ::memset((void*)(&this->_concurrent_swizzling), 0, sizeof(this->_concurrent_swizzling));
-        ::memset((void*)(&this->_workload_id), 0, sizeof(this->_workload_id));
-        ::memset((void*)(&this->_fill8), 0, sizeof(this->_fill8));
-        //::memset((void*)(&this->_fill16), 0, sizeof(this->_fill16));
-        ::memset((void*)(&this->_dependency_idx), 0, sizeof(this->_dependency_idx));
-        ::memset((void*)(&this->_dependency_shpid), 0, sizeof(this->_dependency_shpid));
-        ::memset((void*)(&this->_dependency_lsn), 0, sizeof(this->_dependency_lsn));
+#ifdef BP_ALTERNATE_CB_LATCH    
+        signed char latch_offset = _latch_offset;
+        ::memset(this, 0, sizeof(bf_tree_cb_t));
+        _latch_offset = latch_offset;
+#else
+        ::memset(this, 0, sizeof(bf_tree_cb_t)-sizeof(latch_t));
+#endif
+    }
+
+    /** clears latch */
+    inline void clear_latch() {
+        ::memset(latchp(), 0, sizeof(latch_t));
     }
 
     // control block is bulk-initialized by malloc and memset. It has to be aligned.
 
     /** dirty flag. use locks to update/check this value. */
-    bool volatile               _dirty;         // +1  -> 1
+    bool _dirty;         // +1  -> 1
     
     /** true if this block is actually used. same warning as above. */
-    bool volatile               _used;          // +1  -> 2
+    bool _used;          // +1  -> 2
 
     /** volume ID of the page currently pinned on this block. */
-    volid_t volatile            _pid_vol;       // +2  -> 4
+    volid_t _pid_vol;       // +2  -> 4
 
     /** short page ID of the page currently pinned on this block. (we don't have stnum in bufferpool) */
-    shpid_t volatile            _pid_shpid;     // +4  -> 8
+    shpid_t _pid_shpid;     // +4  -> 8
 
     /** Count of pins on this block. See class comments. */
+    int32_t _pin_cnt;       // +4 -> 12
 
-    int32_t volatile            _pin_cnt;       // +4 -> 12
     /** ref count (for clock algorithm). approximate, so not protected by locks. */
     uint16_t                    _refbit_approximate;// +2  -> 14
 
@@ -120,49 +116,77 @@ struct bf_tree_cb_t {
     uint16_t                    _counter_approximate;// +2  -> 16
 
     /** recovery lsn. */
-    lsndata_t volatile          _rec_lsn;       // +8 -> 24
+    lsndata_t _rec_lsn;       // +8 -> 24
 
     /** Pointer to the parent page. zero for root pages. */
-    bf_idx volatile             _parent;        // +4 -> 28
+    bf_idx _parent;        // +4 -> 28
     
-    //fill32                      _fill32;        // +4 -> 32
-
     /** Whether this page is swizzled from the parent. */
     bool                        _swizzled;      // +1 -> 29
+
     /** Whether this page is concurrently being swizzled by another thread. */
     bool                        _concurrent_swizzling;      // +1 -> 30
-    /** identify the last workload that referenced the page */
-    char                        _workload_id;       // +1 -> 31
+
+    /** replacement priority */
+    char                        _replacement_priority;      // +1 -> 31
     fill8                       _fill8;        // +1 -> 32
-    //fill16                      _fill16;        // +2 -> 32
 
     /** if not zero, this page must be written out after this dependency page. */
-    bf_idx volatile             _dependency_idx;// +4 -> 36
+    bf_idx _dependency_idx;// +4 -> 36
     
     /**
      * used with _dependency_idx. As of registration of the dependency, the page in _dependency_idx had this pid (volid was implicitly same as myself).
      * If now it's different, the page was written out and then evicted surely at/after _dependency_lsn, so that's fine.
      */
-    shpid_t volatile            _dependency_shpid;// +4 -> 40
+    shpid_t _dependency_shpid;// +4 -> 40
 
     /**
      * used with _dependency_idx. this is the _rec_lsn of the dependent page as of the registration of the dependency.
      * So, if the _rec_lsn of the page is now strictly larger than this value, it was flushed at least once after that,
      * so the dependency is resolved.
      */
-    lsndata_t volatile          _dependency_lsn;// +8 -> 48
+    lsndata_t _dependency_lsn;// +8 -> 48
 
-    /** the latch to protect this page. */
-    latch_t                     _latch;         // +16(?) -> 64
-    
+    /** 
+     * number of swizzled pointers to children. 
+     */
+    uint16_t                    _swizzled_ptr_cnt_hint; // +2 -> 50
+    fill16                      _fill16_52;     // +2 -> 52
+    fill32                      _fill32_56;     // +4 -> 56
+    fill32                      _fill32_60;     // +4 -> 60
+    fill8                       _fill8_61;      // +1 -> 61
+    fill8                       _fill8_62;      // +1 -> 62
+    fill8                       _fill8_63;      // +1 -> 63
+
+#ifdef BP_ALTERNATE_CB_LATCH    
+    /** offset to the latch to protect this page. */
+    int8_t                      _latch_offset;  // +1 -> 64
+#else
+    fill8                       _fill8_64;      // +1 -> 64
+    latch_t                     _latch;         // +64 ->128
+#endif
+
     // disabled (no implementation)
     bf_tree_cb_t();
     bf_tree_cb_t(const bf_tree_cb_t&);
     bf_tree_cb_t& operator=(const bf_tree_cb_t&);
 
+    latch_t* latchp() const {
+#ifdef BP_ALTERNATE_CB_LATCH    
+        uintptr_t p = reinterpret_cast<uintptr_t>(this) + _latch_offset;
+        return reinterpret_cast<latch_t*>(p);
+#else
+        return const_cast<latch_t*>(&_latch);
+#endif
+    }
+
+    latch_t &latch() {
+        return *latchp();
+    }
+
     int32_t pin_cnt() const {
 #ifdef NO_PINCNT_INCDEC
-        return _pin_cnt + _latch.latch_cnt();
+        return _pin_cnt + latchp()->latch_cnt();
 #else
         return _pin_cnt;
 #endif
@@ -172,25 +196,30 @@ struct bf_tree_cb_t {
         _pin_cnt = val;
     }
 
-    void pin_cnt_atomic_inc() {
+/// @todo NO_PINCNT_INCDEC is possibly unnecessary and should be cleaned up/removed (Haris)
 #ifndef NO_PINCNT_INCDEC
-        lintel::unsafe::atomic_fetch_add((uint32_t*) &(_pin_cnt), 1);
-#endif
-        return;
+    void pin_cnt_atomic_inc(int32_t by_val) {
+        lintel::unsafe::atomic_fetch_add((uint32_t*) &(_pin_cnt), by_val);
     }
+#else
+    void pin_cnt_atomic_inc(int32_t) {
+    }
+#endif
 
-    void pin_cnt_atomic_dec() {
 #ifndef NO_PINCNT_INCDEC
-        lintel::unsafe::atomic_fetch_sub((uint32_t*) &(_pin_cnt), 1);
-#endif
-        return;
+    void pin_cnt_atomic_dec(int32_t by_val) {
+        lintel::unsafe::atomic_fetch_sub((uint32_t*) &(_pin_cnt), by_val);
     }
+#else
+    void pin_cnt_atomic_dec(int32_t) {
+    }
+#endif
 
 #ifdef NO_PINCNT_INCDEC
-    bool pin_cnt_atomic_inc_no_assumption(int32_t /* val */) {
+    bool pin_cnt_atomic_inc_no_assumption(int32_t /* by_val */) {
         return true;
 #else
-    bool pin_cnt_atomic_inc_no_assumption(int32_t val) {
+    bool pin_cnt_atomic_inc_no_assumption(int32_t by_val) {
         int32_t cur = _pin_cnt;
         while (true) {
             w_assert1(cur >= -1);
@@ -198,7 +227,7 @@ struct bf_tree_cb_t {
                 break; // being evicted! fail
             }
             
-            if(lintel::unsafe::atomic_compare_exchange_strong(const_cast<int32_t*>(&_pin_cnt), &cur , cur + val)) {
+            if(lintel::unsafe::atomic_compare_exchange_strong(const_cast<int32_t*>(&_pin_cnt), &cur , cur + by_val)) {
                 return true; // increment occurred
             }
 

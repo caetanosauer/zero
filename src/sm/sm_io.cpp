@@ -734,7 +734,7 @@ io_m::get_vid(const lvid_t& lvid)
  *  Read the page "pid" on disk into "buf".
  *
  *********************************************************************/
-rc_t io_m::read_page(const lpid_t& pid, page_s& buf) {
+rc_t io_m::read_page(const lpid_t& pid, generic_page& buf) {
     int i = _find(pid.vol());
     if (i < 0) {
         return RC(eBADVOL);
@@ -753,7 +753,7 @@ rc_t io_m::read_page(const lpid_t& pid, page_s& buf) {
  *
  *********************************************************************/
 void 
-io_m::write_many_pages(const page_s* bufs, int cnt)
+io_m::write_many_pages(const generic_page* bufs, int cnt)
 {
     // NEVER acquire monitor to write page
     vid_t vid = bufs->pid.vol();
@@ -814,7 +814,7 @@ rc_t io_m::alloc_consecutive_pages(const stid_t &stid, size_t page_count, lpid_t
 
 rc_t io_m::sx_alloc_consecutive_pages(const stid_t &stid, size_t page_count, lpid_t &pid_begin)
 {
-    // as it might span multiple alloc_p, this might emit multiple logs.
+    // as it might span multiple alloc_page's, this might emit multiple logs.
     // (however, could be ssx later when we can have multiple pages covered by a single log)
     sys_xct_section_t sxs;
     W_DO(sxs.check_error_on_start());

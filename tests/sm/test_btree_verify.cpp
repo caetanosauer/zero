@@ -1,8 +1,8 @@
 #include "btree_test_env.h"
-#include "page_s.h"
+#include "generic_page.h"
 #include "bf.h"
 #include "btree.h"
-#include "btree_p.h"
+#include "btree_page.h"
 #include "btree_impl.h"
 #include "xct.h"
 

@@ -68,9 +68,72 @@ typedef smlevel_0::lock_mode_t lock_mode_t;
 #include "logfunc_gen.h"
 #include "xct.h"
 
+#include <boost/static_assert.hpp>
+
+/**
+ * A log record's space is divided between a header and data. 
+ * All log records' headers include the information contained in baseLogHeader.
+ * Log records pertaining to transactions that produce multiple log records
+ * also persist a transaction id chain (_xid and _xid_prv).
+ **/ 
+
+struct baseLogHeader
+{
+    uint16_t            _len;  // length of the log record
+    u_char             _type; // kind_t (included from logtype_gen.h)
+    u_char             _cat;  // category_t
+    /* 4 */
+
+    // Was _pid; broke down to save 2 bytes:
+    // May be used ONLY in set_pid() and pid()
+    // lpid_t            _pid;  // page on which action is performed
+    shpid_t             _shpid; // 4 bytes
+    /* 4 + 4=8 */
+
+
+    vid_t               _vid;   // 2 bytes
+    uint16_t             _page_tag; // tag_t 2 bytes
+    /* 8 + 4= 12 */
+    snum_t              _snum; // 4 bytes
+    /* 12 + 4= 16*/
+
+
+    
+    // lsn_t            _undo_nxt; // (xct) used in CLR only
+    /*
+     * originally: you might think it would be nice to use one lsn_t for 
+     * both _xid_prev and for _undo_lsn, but for the moment we need both because
+     * at the last minute, fill_xct_attr() is called and that fills in 
+     * _xid_prev, clobbering its value with the prior generated log record's lsn.
+     * It so happens that set_clr() is called prior to fill_xct_attr().
+     * It might do to set _xid_prev iff it's not already set, in fill_xct_attr().
+     * NB: this latter suggestion is what we have now done.
+     */
+
+    // For per-page chains of log-records.
+    // Note that some types of log records (split, merge) impact two pages.
+    // The page_prev_lsn is for the "primary" page.
+    lsn_t               _page_prv;     // for per-page log chain
+    /* 16+8 = 24 */
+};
+
+struct xidChainLogHeader 
+{
+
+    // NOTE for single-log system transaction following header items are not stored.
+    // instead, we use these area as data area to save 16 bytes.
+    // we do need to keep these 8 bytes aligned. and this is a bit dirty trick.
+    // however, we really need it to reduce the volume of log we output for system transactions.
+    
+    tid_t               _xid;      // NOT IN SINGLE-LOG SYSTEM TRANSACTION!  (xct)tid of this xct
+    /* 24+8 = 32 */
+    lsn_t               _xid_prv;     // NOT IN SINGLE-LOG SYSTEM TRANSACTION! (xct)previous logrec of this xct
+    /* 32+8 = 40 */
+};
+
 class logrec_t {
 public:
-    friend rc_t xct_t::give_logbuf(logrec_t*, const page_p *);
+    friend rc_t xct_t::give_logbuf(logrec_t*, const fixable_page_h *);
 
 #include "logtype_gen.h"
     void             fill(
@@ -92,23 +155,27 @@ public:
     bool             valid_header(const lsn_t & lsn_ck) const;
     smsize_t         header_size() const;
 
-    void             redo(page_p*);
-    void             undo(page_p*);
+    void             redo(fixable_page_h*);
+    void             undo(fixable_page_h*);
 
     enum {
-        max_sz = 3 * sizeof(page_s),
-        hdr_non_ssx_sz = 32,
-        hdr_single_sys_xct_sz = 16,
-        // max_sz is we conservative. we don't allow the last 16 bytes to be used (anyway very rarely used)
+        max_sz = 3 * sizeof(generic_page),
+        hdr_non_ssx_sz = sizeof(baseLogHeader) + sizeof(xidChainLogHeader),
+        hdr_single_sys_xct_sz = sizeof(baseLogHeader),
+        // max_data_sz is conservative. we don't allow the last 16 bytes to be used (anyway very rarely used)
         max_data_sz = max_sz - hdr_non_ssx_sz - sizeof(lsn_t)
     };
-    const tid_t&         tid() const;
-    const vid_t&         vid() const;
-    const shpid_t&       shpid() const;
-    // put construct_pid() here just to make sure we can
-    // easily locate all non-private/non-protected uses of pid()
-    lpid_t               construct_pid() const;
-protected:
+
+       BOOST_STATIC_ASSERT(hdr_non_ssx_sz == 40);
+       BOOST_STATIC_ASSERT(hdr_single_sys_xct_sz == 40 - 16);
+
+       const tid_t&         tid() const;
+       const vid_t&         vid() const;
+       const shpid_t&       shpid() const;
+       // put construct_pid() here just to make sure we can
+       // easily locate all non-private/non-protected uses of pid()
+       lpid_t               construct_pid() const;
+         protected:
     lpid_t               pid() const;
 private:
     void                 set_pid(const lpid_t& p);
@@ -117,8 +184,10 @@ public:
     uint16_t              tag() const;
     smsize_t             length() const;
     const lsn_t&         undo_nxt() const;
-    const lsn_t&         xct_prev() const;
-    void                 set_xct_prev(const lsn_t &lsn);
+    const lsn_t&         page_prev_lsn() const;
+    void                 set_page_prev_lsn(const lsn_t &lsn);
+    const lsn_t&         xid_prev() const;
+    void                 set_xid_prev(const lsn_t &lsn);
     void                 set_clr(const lsn_t& c);
     void                 set_undoable_clr(const lsn_t& c);
     kind_t               type() const;
@@ -161,69 +230,36 @@ protected:
     };
     u_char             cat() const;
 
-    uint16_t            _len;  // length of the log record
-    u_char             _type; // kind_t (included from logtype_gen.h)
-    u_char             _cat;  // category_t
-    /* 4 */
+    baseLogHeader header;
 
-    // Was _pid; broke down to save 2 bytes:
-    // May be used ONLY in set_pid() and pid()
-    // lpid_t            _pid;  // page on which action is performed
-    shpid_t             _shpid; // 4 bytes
-    /* 4 + 4=8 */
-
-
-    vid_t               _vid;   // 2 bytes
-    uint16_t             _page_tag; // tag_t 2 bytes
-    /* 8 + 4= 12 */
-    snum_t              _snum; // 4 bytes
-    /* 12 + 4= 16*/
-
-    // NOTE for single-log system transaction following header items are not stored.
-    // instead, we use these area as data area to save 16 bytes.
-    // we do need to keep these 8 bytes aligned. and this is a bit dirty trick.
-    // however, we really need it to reduce the volume of log we output for system transactions.
-    
-    tid_t               _xid;      // NOT IN SINGLE-LOG SYSTEM TRANSACTION!  (xct)tid of this xct
-    /* 16+8=24 */
-    lsn_t               _xct_prv;     // NOT IN SINGLE-LOG SYSTEM TRANSACTION! (xct)previous logrec of this xct
-    /* 24+8 = 32 */
-
-    
-    // lsn_t            _undo_nxt; // (xct) used in CLR only
-    /*
-     * originally: you might think it would be nice to use one lsn_t for 
-     * both _xct_prev and for _undo_lsn, but for the moment we need both because
-     * at the last minute, fill_xct_attr() is called and that fills in 
-     * _xct_prev, clobbering its value with the prior generated log record's lsn.
-     * It so happens that set_clr() is called prior to fill_xct_attr().
-     * It might do to set _xct_prev iff it's not already set, in fill_xct_attr().
-     * NB: this latter suggestion is what we have now done.
-     */
+    // single-log system transactions will overwrite this with _data
+    xidChainLogHeader xidInfo;
 
     /* 
      * NOTE re sizeof header:
      * NOTE For single-log system transaction, NEVER use this directly.
      * Always use data_ssx() to get the pointer because it starts
      * from 16 bytes ahead. See comments about single-log system transaction.
-     */
-    char            _data[max_sz - 32];
+    */
+    char            _data[max_sz - sizeof(baseLogHeader) - sizeof(xidChainLogHeader)];
+
 
     // The last sizeof(lsn_t) bytes of data are used for
     // recording the lsn.
     // Should always be aligned to 8 bytes.
     lsn_t*            _lsn_ck() {
-        w_assert3(alignon(_len, 8));
+        w_assert3(alignon(header._len, 8));
         char* this_ptr = reinterpret_cast<char*>(this);
-        return reinterpret_cast<lsn_t*>(this_ptr + _len - sizeof(lsn_t));
+        return reinterpret_cast<lsn_t*>(this_ptr + header._len - sizeof(lsn_t));
     }
     const lsn_t*            _lsn_ck() const {
-        w_assert3(alignon(_len, 8));
+        w_assert3(alignon(header._len, 8));
         const char* this_ptr = reinterpret_cast<const char*>(this);
-        return reinterpret_cast<const lsn_t*>(this_ptr + _len - sizeof(lsn_t));
+        return reinterpret_cast<const lsn_t*>(this_ptr + header._len - sizeof(lsn_t));
     }
 };
-// for single-log system transaction, we use tid/_xct_prev as data area!
+
+// for single-log system transaction, we use tid/_xid_prev as data area!
 inline const char*  logrec_t::data() const
 {
     return _data;
@@ -234,11 +270,11 @@ inline char*  logrec_t::data()
 }
 inline const char*  logrec_t::data_ssx() const
 {
-    return _data - (hdr_non_ssx_sz - hdr_single_sys_xct_sz);
+    return _data - sizeof(xidChainLogHeader);
 }
 inline char*  logrec_t::data_ssx()
 {
-    return _data - (hdr_non_ssx_sz - hdr_single_sys_xct_sz);
+    return _data - sizeof(xidChainLogHeader);
 }
 inline smsize_t logrec_t::header_size() const
 {
@@ -475,34 +511,34 @@ struct prepare_all_lock_t
 inline const shpid_t&
 logrec_t::shpid() const
 {
-    return _shpid;
+    return header._shpid;
 }
 
 inline const vid_t&
 logrec_t::vid() const
 {
-    return _vid;
+    return header._vid;
 }
 
 inline lpid_t
 logrec_t::pid() const
 {
-    return lpid_t(_vid, _snum, _shpid);
+    return lpid_t(header._vid, header._snum, header._shpid);
 }
 
 inline lpid_t
 logrec_t::construct_pid() const
 {
 // public version of pid(), renamed for grepping 
-    return lpid_t(_vid, _snum, _shpid);
+    return lpid_t(header._vid, header._snum, header._shpid);
 }
 
 inline void
 logrec_t::set_pid(const lpid_t& p)
 {
-    _shpid = p.page;
-    _vid = p.vol();
-    _snum = p.store();
+    header._shpid = p.page;
+    header._vid = p.vol();
+    header._snum = p.store();
 }
 
 inline bool 
@@ -510,7 +546,7 @@ logrec_t::null_pid() const
 {
     // see lpid_t::is_null() for necessary and 
     // sufficient conditions
-    bool result = (_shpid == 0);
+    bool result = (header._shpid == 0);
     w_assert3(result == (pid().is_null())); 
     return result;
 }
@@ -518,13 +554,13 @@ logrec_t::null_pid() const
 inline uint16_t
 logrec_t::tag() const
 {
-    return _page_tag;
+    return header._page_tag;
 }
 
 inline smsize_t
 logrec_t::length() const
 {
-    return _len;
+    return header._len;
 }
 
 inline const lsn_t&
@@ -532,54 +568,67 @@ logrec_t::undo_nxt() const
 {
     // To shrink log records,
     // we've taken out _undo_nxt and 
-    // overloaded _xct_prev.
+    // overloaded _xid_prev.
     // return _undo_nxt;
-    return xct_prev();
+    return xid_prev();
+}
+
+inline const lsn_t&
+logrec_t::page_prev_lsn() const
+{
+    // What do we need to assert in order to make sure there IS a page_prv?
+    return header._page_prv;
+}
+inline void
+logrec_t::set_page_prev_lsn(const lsn_t &lsn)
+{
+    // What do we need to assert in order to make sure there IS a page_prv?
+    header._page_prv = lsn;
 }
 
 inline const tid_t&
 logrec_t::tid() const
 {
     w_assert1(!is_single_sys_xct()); // otherwise this part is in data area!
-    return _xid;
+    return xidInfo._xid;
 }
 
 inline const lsn_t&
-logrec_t::xct_prev() const
+logrec_t::xid_prev() const
 {
     w_assert1(!is_single_sys_xct()); // otherwise this part is in data area!
-    return _xct_prv;
+    return xidInfo._xid_prv;
 }
 inline void
-logrec_t::set_xct_prev(const lsn_t &lsn)
+logrec_t::set_xid_prev(const lsn_t &lsn)
 {
     w_assert1(!is_single_sys_xct()); // otherwise this part is in data area!
-    _xct_prv = lsn;
+    xidInfo._xid_prv = lsn;
 }
 
 inline logrec_t::kind_t
 logrec_t::type() const
 {
-    return (kind_t) _type;
+    return (kind_t) header._type;
 }
 
 inline u_char
 logrec_t::cat() const 
 {
-    return _cat & ~t_rollback;
+    return header._cat & ~t_rollback;
 }
 
 inline bool             
 logrec_t::is_rollback() const
 {
-    return (_cat & t_rollback) != 0;
+    return (header._cat & t_rollback) != 0;
 }
 
 inline void 
 logrec_t::set_clr(const lsn_t& c)
 {
     w_assert0(!is_single_sys_xct()); // CLR shouldn't be output in this case
-    _cat &= ~t_undo; // can't undo compensated
+    header._cat &= ~t_undo; // can't undo compensated
              // log records, whatever kind they might be
              // except for special case below
              // Thus, if you set_clr, you're meaning to compensate
@@ -592,26 +641,26 @@ logrec_t::set_clr(const lsn_t& c)
              // as done with the special-case set_undoable_clr).
             
      w_assert0(!is_undoable_clr());
-    _cat |= t_cpsn;
+    header._cat |= t_cpsn;
 
     // To shrink log records,
     // we've taken out _undo_nxt and 
     // overloaded _prev.
     // _undo_nxt = c;
-    _xct_prv = c; // and _xct_prv is data area if is_single_sys_xct
+    xidInfo._xid_prv = c; // and _xid_prv is data area if is_single_sys_xct
 }
 
 inline bool 
 logrec_t::is_undoable_clr() const
 {
-    return (_cat & (t_cpsn|t_undo)) == (t_cpsn|t_undo);
+    return (header._cat & (t_cpsn|t_undo)) == (t_cpsn|t_undo);
 }
 
 
 inline bool 
 logrec_t::is_redo() const
 {
-    return (_cat & t_redo) != 0;
+    return (header._cat & t_redo) != 0;
 }
 
 inline bool
@@ -624,7 +673,7 @@ logrec_t::is_skip() const
 inline bool
 logrec_t::is_undo() const
 {
-    return (_cat & t_undo) != 0;
+    return (header._cat & t_undo) != 0;
 }
 
 
@@ -639,13 +688,13 @@ logrec_t::set_undoable_clr(const lsn_t& c)
 {
     bool undoable = is_undo();
     set_clr(c);
-    if(undoable) _cat |= t_undo;
+    if(undoable) header._cat |= t_undo;
 }
 
 inline bool 
 logrec_t::is_cpsn() const
 {
-    return (_cat & t_cpsn) != 0;
+    return (header._cat & t_cpsn) != 0;
 }
 
 inline bool 
@@ -658,13 +707,13 @@ logrec_t::is_page_update() const
 inline bool 
 logrec_t::is_logical() const
 {
-    return (_cat & t_logical) != 0;
+    return (header._cat & t_logical) != 0;
 }
 
 inline bool 
 logrec_t::is_single_sys_xct() const
 {
-    return (_cat & t_single_sys_xct) != 0;
+    return (header._cat & t_single_sys_xct) != 0;
 }
 
 inline int

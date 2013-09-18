@@ -65,7 +65,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <sm.h>
 #include <pin.h>
 #include <scan.h>
-#include <bf_prefetch.h>
 #include <btcursor.h>
 
 #if W_DEBUG_LEVEL > 1

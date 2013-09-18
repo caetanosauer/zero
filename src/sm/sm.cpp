@@ -90,6 +90,8 @@ bool        smlevel_0::lock_caching_default = true;
 bool        smlevel_0::logging_enabled = true;
 bool        smlevel_0::do_prefetch = false;
 
+bool        smlevel_0::statistics_enabled = true;
+
 #ifndef SM_LOG_WARN_EXCEED_PERCENT
 #define SM_LOG_WARN_EXCEED_PERCENT 40
 #endif
@@ -204,6 +206,7 @@ option_t* ss_m::_bufferpool_swizzle = NULL;
 option_t* ss_m::_cleaner_interval_millisec_min = NULL;
 option_t* ss_m::_cleaner_interval_millisec_max = NULL;
 option_t* ss_m::_logging = NULL;
+option_t* ss_m::_statistics = NULL;
 
 
 /*
@@ -321,6 +324,10 @@ rc_t ss_m::setup_options(option_group_t* options)
     W_DO(options->add_option("sm_logging", "yes/no", "yes",
             "no will turn off logging; Rollback, restart not possible.",
             false, option_t::set_value_bool, _logging));
+
+    W_DO(options->add_option("sm_statistics", "yes/no", "yes",
+            "yes enables collecting statistics",
+            false, option_t::set_value_bool, _statistics));
 
     _options = options;
     return RCOK;
@@ -680,6 +687,11 @@ ss_m::_construct_once(
         << flushl;
     }
     
+    badVal = true;
+
+    smlevel_0::statistics_enabled = 
+        option_t::str_to_bool(_statistics->value(), badVal);
+
     // start buffer pool cleaner when the log module is ready
     {
         w_rc_t e = bf->init();
@@ -1350,13 +1362,13 @@ ss_m::config_info(sm_config_info_t& info)
 {
     info.page_size = ss_m::page_sz;
 
-    //however, page_p.space.acquire aligns() the whole mess (hdr + record)
+    //however, fixable_page_h.space.acquire aligns() the whole mess (hdr + record)
     //which rounds up the space needed, so.... we have to figure that in
     //here: round up then subtract one aligned entity.
     // 
     // OK, now that _data is already aligned, we don't have to
     // lose those 4 bytes.
-    info.lg_rec_page_space = page_s::data_sz;
+    info.lg_rec_page_space = btree_page::data_sz;
     info.buffer_pool_size = bf->get_block_cnt() * ss_m::page_sz / 1024;
     info.max_btree_entry_size  = btree_m::max_entry_size();
     info.exts_on_page  = 0;
@@ -2410,7 +2422,7 @@ ss_m::_get_du_statistics(vid_t vid, sm_du_stats_t& du, bool audit)
 
     rc_t rc;
     // get du stats on every store
-    for (stid_t s(vid, 0); s.store < stnode_p::max; s.store++) {
+    for (stid_t s(vid, 0); s.store < stnode_page_h::max; s.store++) {
         DBG(<<"look at store " << s);
         
         store_flag_t flags;
@@ -2551,15 +2563,14 @@ ss_m::gather_xct_stats(sm_stats_info_t& _stats, bool reset)
             // print -grot
             extern int bffix_SH[];
             extern int bffix_EX[];
+        FIXME: THIS CODE IS ROTTEN AND OUT OF DATE WITH tag_t!!!
             static const char *names[] = {
                 "t_bad_p",
                 "t_alloc_p",
                 "t_stnode_p",
                 "t_btree_p",
-                "t_any_p",
                 "none"
                 };
-
             cout << "PAGE FIXES " <<endl;
             for (int i=0; i<=14; i++) {
                     cout  << names[i] << "="  

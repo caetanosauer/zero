@@ -10,9 +10,9 @@
 #include "gtest/gtest.h"
 #include "sm_vas.h"
 #include "bf.h"
-#include "page_s.h"
+#include "generic_page.h"
 #include "btree.h"
-#include "btree_p.h"
+#include "btree_page.h"
 #include "btree_impl.h"
 #include "w_key.h"
 #include "crash.h"
@@ -51,7 +51,7 @@ public:
     volid_t _vol;
     snum_t _store;
     int _retval;
-    btree_p _page;
+    btree_page_h _page;
 };
 
 void page_holding_thread_t::run()
@@ -151,14 +151,14 @@ w_rc_t merge_simple(ss_m* ssm, test_volume_t *test_volume) {
     
     W_DO(ssm->begin_xct());
     test_env->set_xct_query_lock();
-    btree_p root_p;
+    btree_page_h root_p;
     W_DO(root_p.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_EX));
     EXPECT_TRUE (root_p.is_node());
 
     shpid_t pid0 = root_p.pid0();
     shpid_t foster;
     {
-        btree_p child_p;
+        btree_page_h child_p;
         W_DO(child_p.fix_nonroot(root_p, root_p.vol(), pid0, LATCH_EX));
         EXPECT_TRUE (child_p.is_leaf());
         
@@ -181,7 +181,7 @@ w_rc_t merge_simple(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->commit_xct());// commit the deletions
 
     {
-        btree_p child_p;
+        btree_page_h child_p;
         W_DO(child_p.fix_nonroot(root_p, root_p.vol(), pid0, LATCH_EX));
         W_DO(btree_impl::_sx_defrag_page(child_p));
     }
@@ -189,7 +189,7 @@ w_rc_t merge_simple(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->begin_xct());
     test_env->set_xct_query_lock();
     {
-        btree_p child_p;
+        btree_page_h child_p;
         W_DO(child_p.fix_nonroot(root_p, root_p.vol(), pid0, LATCH_EX));
         EXPECT_TRUE (child_p.is_leaf());
         
@@ -228,14 +228,14 @@ w_rc_t merge_cycle_fail(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->begin_xct());
     test_env->set_xct_query_lock();
 
-    btree_p root_p;
+    btree_page_h root_p;
     W_DO(root_p.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_EX));
     EXPECT_TRUE (root_p.is_node());
 
     shpid_t pid0 = root_p.pid0();
     shpid_t foster;
     {
-        btree_p child_p;
+        btree_page_h child_p;
         W_DO(child_p.fix_nonroot(root_p, root_p.vol(), pid0, LATCH_EX));
         EXPECT_TRUE (child_p.is_leaf());
         lpid_t new_page_id;
@@ -263,7 +263,7 @@ w_rc_t merge_cycle_fail(ss_m* ssm, test_volume_t *test_volume) {
             << "% full. foster=" << child_p.get_foster() << endl;
 
         // check that it's still there
-        btree_p new_p;
+        btree_page_h new_p;
         W_DO(new_p.fix_nonroot(child_p, child_p.vol(), new_page_id.page, LATCH_EX));
         EXPECT_TRUE (child_p.is_dirty());
         EXPECT_TRUE (new_p.is_dirty());
@@ -289,14 +289,14 @@ w_rc_t rebalance_simple(ss_m* ssm, test_volume_t *test_volume) {
     
     W_DO(ssm->begin_xct());
     test_env->set_xct_query_lock();
-    btree_p root_p;
+    btree_page_h root_p;
     W_DO(root_p.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_EX));
     EXPECT_TRUE (root_p.is_node());
     {
         lpid_t child_pid = root_pid;
         child_pid.page = root_p.pid0();
 
-        btree_p child_p;
+        btree_page_h child_p;
         W_DO(child_p.fix_nonroot(root_p, root_p.vol(), child_pid.page, LATCH_EX));
         EXPECT_TRUE (child_p.is_leaf());
         EXPECT_NE (child_p.get_foster(), (uint) 0);        
@@ -315,7 +315,7 @@ w_rc_t rebalance_simple(ss_m* ssm, test_volume_t *test_volume) {
         // so, let's remove almost all entries from right page
         // (directly uses mark_ghost to not trigger automatic merge/rebalance)
         shpid_t foster_child_pid = child_p.get_foster();
-        btree_p foster_child_p;
+        btree_page_h foster_child_p;
         W_DO(foster_child_p.fix_nonroot(child_p, root_p.vol(), foster_child_pid, LATCH_EX));
 
         cout << "foster-child is " << (foster_child_p.used_space() * 100 / SM_PAGESIZE)
@@ -379,7 +379,7 @@ w_rc_t deadopt_simple(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->begin_xct());
     test_env->set_xct_query_lock();
     {
-        btree_p root_p;
+        btree_page_h root_p;
         W_DO(root_p.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_EX));
         EXPECT_TRUE (root_p.is_node());
         int original_nrecs = root_p.nrecs();
@@ -388,7 +388,7 @@ w_rc_t deadopt_simple(ss_m* ssm, test_volume_t *test_volume) {
             EXPECT_GE (root_p.nrecs(), 3);
             shpid_t child_pid = root_p.child(0);
             shpid_t right_pid = root_p.child(1);
-            btree_p child_p;
+            btree_page_h child_p;
             W_DO(child_p.fix_nonroot(root_p, root_p.vol(), child_pid, LATCH_EX));
             EXPECT_TRUE (child_p.is_leaf());
             EXPECT_EQ (child_p.get_foster(), (uint) 0);        
@@ -404,7 +404,7 @@ w_rc_t deadopt_simple(ss_m* ssm, test_volume_t *test_volume) {
             // then pid0 de-adopts him
             shpid_t child_pid = root_p.pid0();
             shpid_t right_pid = root_p.child(0);
-            btree_p child_p;
+            btree_page_h child_p;
             W_DO(child_p.fix_nonroot(root_p, root_p.vol(), child_pid, LATCH_EX));
             EXPECT_TRUE (child_p.is_leaf());
             EXPECT_EQ (child_p.get_foster(), (uint) 0);

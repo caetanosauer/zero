@@ -61,6 +61,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
+#include <Lintel/AtomicCounter.hpp>
 #include <log.h>
 
 // in sm_base for the purpose of log callback function argument type
@@ -91,14 +92,13 @@ private:
     static bool          _initialized;
     bool                 _reservations_active;
 
-    long volatile        _waiting_for_resv; 
-
-    long volatile        _waiting_for_space; 
-    long volatile        _waiting_for_flush;
-    long volatile        _start; // byte number of oldest unwritten byte
+    bool _waiting_for_resv;  // protected by log_m::_space_lock
+    bool _waiting_for_space; // protected by log_m::_insert_lock/_wait_flush_lock
+    bool _waiting_for_flush; // protected by log_m::_wait_flush_lock
+    long _start; // byte number of oldest unwritten byte
     long                 start_byte() const { return _start; } 
 
-    long volatile        _end; // byte number of insertion point
+    long _end; // byte number of insertion point
     long                 end_byte() const { return _end; } 
 
     long                 _segsize; // log buffer size
@@ -190,8 +190,9 @@ private:
     pthread_cond_t       _flush_cond;  // paird with _wait_flush_lock
 
     sthread_t*           _flush_daemon;
-    bool volatile        _shutting_down;
-    bool volatile        _flush_daemon_running; // for asserts only
+    /// @todo both of the below should become std::atomic_flag's at some time
+    lintel::Atomic<bool> _shutting_down;
+    lintel::Atomic<bool> _flush_daemon_running; // for asserts only
 
     // Data members:
     partition_index_t   _curr_index; // index of partition

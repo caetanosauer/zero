@@ -69,6 +69,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "bf_tree.h"
 #include <algorithm> // for std::swap
 #include <stdio.h> // snprintf
+#include <boost/static_assert.hpp>
 
 typedef smlevel_0::fileoff_t fileoff_t;
 
@@ -120,7 +121,7 @@ bool log_i::xct_next(lsn_t& lsn, logrec_t*& r)
  * _version_major should be incremented and version_minor set to 0.
  *
  *********************************************************************/
-uint32_t const log_m::_version_major = 4;
+uint32_t const log_m::_version_major = 5;
 uint32_t const log_m::_version_minor = 0;
 const char log_m::_SLASH = '/';
 const char log_m::_master_prefix[] = "chk."; // same size as _log_prefix
@@ -194,7 +195,8 @@ db_pretty_print(logrec_t const* rec, int /*i=0*/, char const* /*s=0*/)
              "    _tid = %d.%d\n"
              "    _pid = %d.%d.%d\n"
              "    _page_tag = %d\n"
-             "    _xct_prev = %d.%lld\n"
+             "    _page_prev = %d.%lld\n"
+             "    _xid_prev = %d.%lld\n"
              "    _ck_lsn = %d.%lld\n"
              "%s"
              "}",
@@ -206,7 +208,8 @@ db_pretty_print(logrec_t const* rec, int /*i=0*/, char const* /*s=0*/)
                      rec->construct_pid().store(), 
                      rec->construct_pid().page,
              rec->tag(),
-             (rec->xct_prev().hi()), (int64_t)(rec->xct_prev().lo()),
+             (rec->page_prev().hi()),
+             (rec->xid_prev().hi()), (int64_t)(rec->xid_prev().lo()),
              (rec->get_lsn_ck().hi()), (int64_t)(rec->get_lsn_ck().lo()),
              extra
              );
@@ -663,24 +666,29 @@ log_m::_read_master(
     return RCOK;
 }
 
-fileoff_t log_m::take_space(fileoff_t volatile* ptr, int amt) 
+fileoff_t log_m::take_space(fileoff_t *ptr, int amt) 
 {
-    fileoff_t ov = *ptr;
+    BOOST_STATIC_ASSERT(sizeof(fileoff_t) == sizeof(int64_t));
+    fileoff_t ov = lintel::unsafe::atomic_load(const_cast<int64_t*>(ptr));
+    // fileoff_t ov = *ptr;
 #if W_DEBUG_LEVEL > 0
     DBGTHRD("take_space " << amt << " old value of ? " << ov);
 #endif
     while(1) {
-        if(ov < amt)
+        if (ov < amt) {
             return 0;
+        }
 	fileoff_t nv = ov - amt;
-	if (lintel::unsafe::atomic_compare_exchange_strong(const_cast<int64_t*>(ptr), &ov, nv))
+	if (lintel::unsafe::atomic_compare_exchange_strong(const_cast<int64_t*>(ptr), &ov, nv)) {
 	    return amt;
+        }
     }
 }
 
 extern "C" void log_stop()
 {
 }
+
 fileoff_t log_m::reserve_space(fileoff_t amt) 
 {
     return (amt > 0)? take_space(&_space_available, amt) : 0;

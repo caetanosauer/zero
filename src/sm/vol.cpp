@@ -12,7 +12,7 @@
 #include "w_stream.h"
 #include <sys/types.h>
 #include "sm_int_1.h"
-#include "stnode_p.h"
+#include "stnode_page.h"
 #include "vol.h"
 #include "sm_du_stats.h"
 #include "crash.h"
@@ -25,7 +25,7 @@
 #include "bf_tree.h"
 
 #ifdef EXPLICIT_TEMPLATE
-template class w_auto_delete_t<page_s>;
+template class w_auto_delete_t<generic_page>;
 template class w_auto_delete_array_t<stnode_t>;
 #endif
 
@@ -35,12 +35,12 @@ static const int sector_size = 512;
 /*
 Volume layout:
    volume header 
-   alloc_p pages -- Starts on page 1.
-   stnode_p -- only one page
+   alloc_page pages -- Starts on page 1.
+   stnode_page -- only one page
    data pages -- rest of volume
 
-   alloc_p pages are bitmaps indicating which of its pages are allocated.
-   alloc_p pages are read and modified without any locks in any time.
+   alloc_page pages are bitmaps indicating which of its pages are allocated.
+   alloc_page pages are read and modified without any locks in any time.
    It's supposed to be extremely fast to allocate/deallocate pages
    unlike the original Shore-MT code. See jira ticket:72 "fix extent management" (originally trac ticket:74) for more details.
 */
@@ -133,11 +133,11 @@ rc_t vol_t::mount(const char* devname, vid_t vid)
     w_rc_t e;
     int        open_flags = smthread_t::OPEN_RDWR;
     {
-            char *s = getenv("SM_VOL_RAW");
+        char *s = getenv("SM_VOL_RAW");
         if (s && s[0] && atoi(s) > 0)
-                open_flags |= smthread_t::OPEN_RAW;
+            open_flags |= smthread_t::OPEN_RAW;
         else if (s && s[0] && atoi(s) == 0)
-                open_flags &= ~smthread_t::OPEN_RAW;
+            open_flags &= ~smthread_t::OPEN_RAW;
     }
     e = me()->open(devname, open_flags, 0666, _unix_fd);
     if (e.is_error()) {
@@ -173,7 +173,12 @@ rc_t vol_t::mount(const char* devname, vid_t vid)
     clear_caches();
     _fixed_bf = new bf_fixed_m();
     w_assert1(_fixed_bf);
-    W_DO(_fixed_bf->init(this, _unix_fd, _num_pages));
+    e = _fixed_bf->init(this, _unix_fd, _num_pages);
+    if (e.is_error()) {
+        W_IGNORE(me()->close(_unix_fd));
+        _unix_fd = -1;
+        return e;
+    }
     _first_data_pageid = _fixed_bf->get_page_cnt() + 1; // +1 for volume header
 
     _alloc_cache = new alloc_cache_t(_vid, _fixed_bf);
@@ -230,7 +235,7 @@ rc_t vol_t::check_disk()
 
     smlevel_0::errlog->clog << info_prio 
         << "\tstore  #   flags   status: [ extent-list ]" << "." << endl;
-    for (shpid_t i = 1; i < stnode_p::max; i++)  {
+    for (shpid_t i = 1; i < stnode_page_h::max; i++)  {
         stnode_t stnode;
         _stnode_cache->get_stnode(i, stnode);
         if (stnode.root)  {
@@ -272,7 +277,7 @@ rc_t vol_t::alloc_consecutive_pages(const stid_t &stid, size_t page_count, lpid_
 
 rc_t vol_t::store_operation(const store_operation_param& param)
 {
-    w_assert1(param.snum() < stnode_p::max);
+    w_assert1(param.snum() < stnode_page_h::max);
     w_assert1(_stnode_cache);
     W_DO(_stnode_cache->store_operation(param));
     return RCOK;
@@ -290,8 +295,8 @@ rc_t vol_t::find_free_store(snum_t& snum)
 {
     FUNC(find_free_store);
     w_assert1(_stnode_cache);
-    snum = _stnode_cache->get_min_unused_store_id();
-    if (snum >= stnode_p::max) {
+    snum = _stnode_cache->get_min_unused_store_ID();
+    if (snum >= stnode_page_h::max) {
         W_RETURN_RC_MSG(eOUTOFSPACE, << "volume id = " << _vid);
     }
     return RCOK;
@@ -446,17 +451,17 @@ rc_t vol_t::set_store_root(snum_t snum, shpid_t root)
 rc_t
 vol_t::get_volume_meta_stats(SmVolumeMetaStats& volume_stats)
 {
-    volume_stats.numStores = stnode_p::max;
+    volume_stats.numStores = stnode_page_h::max;
 
     {
         volume_stats.numAllocStores = 0;
-        for (slotid_t i = 1; i < stnode_p::max; ++i) {
+        for (slotid_t i = 1; (size_t)i < stnode_page_h::max; ++i) {
             
             if (_stnode_cache->get_root_pid(i) != 0) {
                 ++volume_stats.numAllocStores;
             }
         }
-    } // unpins stnode_p
+    } // unpins stnode_page
 
     volume_stats.numPages = _num_pages;
     volume_stats.numSystemPages = _hdr_pages;
@@ -560,7 +565,7 @@ vol_t::set_fake_disk_latency(const int adelay)
  *
  *********************************************************************/
 rc_t
-vol_t::read_page(shpid_t pnum, page_s& page)
+vol_t::read_page(shpid_t pnum, generic_page& page)
 {
     w_assert1(pnum > 0 && pnum < (shpid_t)(_num_pages));
     fileoff_t offset = fileoff_t(pnum) * sizeof(page);
@@ -605,7 +610,7 @@ vol_t::read_page(shpid_t pnum, page_s& page)
  *
  *********************************************************************/
 rc_t
-vol_t::write_page(shpid_t pnum, page_s& page)
+vol_t::write_page(shpid_t pnum, generic_page& page)
 {
   return write_many_pages(pnum, &page, 1);
 }
@@ -620,11 +625,11 @@ vol_t::write_page(shpid_t pnum, page_s& page)
  *
  *********************************************************************/
 rc_t
-vol_t::write_many_pages(shpid_t pnum, const page_s* const pages, int cnt)
+vol_t::write_many_pages(shpid_t pnum, const generic_page* const pages, int cnt)
 {
     w_assert1(pnum > 0 && pnum < (shpid_t)(_num_pages));
     w_assert1(cnt > 0);
-    fileoff_t offset = fileoff_t(pnum) * sizeof(page_s);
+    fileoff_t offset = fileoff_t(pnum) * sizeof(generic_page);
 
     smthread_t* t = me();
 
@@ -632,7 +637,7 @@ vol_t::write_many_pages(shpid_t pnum, const page_s* const pages, int cnt)
     if(_apply_fake_disk_latency) start = gethrtime();
 
     // do the actual write now
-    W_COERCE_MSG(t->pwrite(_unix_fd, pages, sizeof(page_s)*cnt, offset), << "volume id=" << vid());
+    W_COERCE_MSG(t->pwrite(_unix_fd, pages, sizeof(generic_page)*cnt, offset), << "volume id=" << vid());
     
     fake_disk_latency(start);    
     ADD_TSTAT(vol_blks_written, cnt);
@@ -770,8 +775,8 @@ vol_t::format_vol(
         return rc;
     }
     
-    shpid_t alloc_pages = num_pages / alloc_p::alloc_max + 1; // # alloc_p pages
-    shpid_t hdr_pages = alloc_pages + 1 + 1; // +1 for stnode_p, +1 for volume header
+    shpid_t alloc_pages = num_pages / alloc_page_h::bits_held + 1; // # alloc_page_h pages
+    shpid_t hdr_pages = alloc_pages + 1 + 1; // +1 for stnode_page, +1 for volume header
 
     lpid_t apid (vid, 0 , 1);
     lpid_t spid (vid, 0 , 1 + alloc_pages);
@@ -802,14 +807,14 @@ vol_t::format_vol(
      * FRJ: this seek is safe because no other thread can access the
      * file descriptor we just opened.
      */    
-    rc = me()->lseek(fd, sizeof(page_s), sthread_t::SEEK_AT_SET);
+    rc = me()->lseek(fd, sizeof(generic_page), sthread_t::SEEK_AT_SET);
     if (rc.is_error()) {
         W_IGNORE(me()->close(fd));
         return rc;
     }
 
     {
-        page_s buf;
+        generic_page buf;
 #ifdef ZERO_INIT
         // zero out data portion of page to keep purify/valgrind happy.
         // Unfortunately, this isn't enough, as the format below
@@ -817,22 +822,21 @@ vol_t::format_vol(
         memset(&buf, '\0', sizeof(buf));
 #endif
 
-        //  Format alloc_p pages
+        //  Format alloc_page pages
         {
             for (apid.page = 1; apid.page < alloc_pages + 1; ++apid.page)  {
-                alloc_p ap(&buf);
-                W_COERCE( ap.format(apid));
+                alloc_page_h ap(&buf, apid);  // format page
+                w_assert1(ap.vid() == vid);
                 // set bits for the header pages
                 if (apid.page == 1) {
                     for (shpid_t hdr_pid = 0; hdr_pid < hdr_pages; ++hdr_pid) {
                         ap.set_bit(hdr_pid);
                     }
                 }
-                page_s& page (*ap._pp);
-                w_assert9(&buf == &page);
-                w_assert1(page.pid.vol() == vid);
+                generic_page* page = ap.get_generic_page();
+                w_assert9(&buf == page);
 
-                rc = me()->write(fd, &page, sizeof(page));
+                rc = me()->write(fd, page, sizeof(*page));
                 if (rc.is_error()) {
                     W_IGNORE(me()->close(fd));
                     return rc;
@@ -841,15 +845,14 @@ vol_t::format_vol(
         }
         DBG(<<" done formatting extent region");
 
-        // Format stnode_p
+        // Format stnode_page
         { 
-            stnode_p fp(&buf);
-            DBG(<<" formatting stnode_p");
-            DBGTHRD(<<"stnode_p page " << spid.page);
-            W_COERCE( fp.format(spid));
-            page_s& page (*fp._pp);
-            w_assert1(page.pid.vol() == vid);
-            rc = me()->write(fd, &page, sizeof(page));
+            DBG(<<" formatting stnode_page");
+            DBGTHRD(<<"stnode_page page " << spid.page);
+            stnode_page_h fp(&buf, spid);  // formatting...
+            w_assert1(fp.vid() == vid);
+            generic_page* page = fp.get_generic_page();
+            rc = me()->write(fd, page, sizeof(*page));
             if (rc.is_error()) {
                 W_IGNORE(me()->close(fd));
                 return rc;
@@ -864,7 +867,7 @@ vol_t::format_vol(
      *  can distinguish new pages from used pages.
      */
     if (raw) {
-        page_s buf;
+        generic_page buf;
         memset(&buf, 0, sizeof(buf));
 
         DBG(<<" raw device: zeroing...");
@@ -877,7 +880,7 @@ vol_t::format_vol(
             DBG( << "zero-ing of raw device: " << devname << " ..." );
             // zero out rest of pages
             for (size_t cur = hdr_pages;cur < num_pages; ++cur) {
-                rc = me()->write(fd, &buf, sizeof(page_s));
+                rc = me()->write(fd, &buf, sizeof(generic_page));
                 if (rc.is_error()) {
                     W_IGNORE(me()->close(fd));
                     return rc;

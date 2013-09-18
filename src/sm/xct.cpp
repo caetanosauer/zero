@@ -273,7 +273,7 @@ class PrintSmthreadById : public SmthreadFunc
 void PrintSmthreadById::operator()(const smthread_t& smthread)
 {
     if (smthread.id == _i)  {
-        o << "--------------------" << endl << smthread;
+        o << "--------------------" << "\n" << smthread;
     }
 }
 
@@ -807,7 +807,7 @@ xct_t::dump(ostream &out)
     w_list_i<xct_t, queue_based_lock_t> i(_xlist);
     xct_t* xd;
     while ((xd = i.next()))  {
-        out << "********************" << endl;
+        out << "********************" << "\n";
         out << *xd << endl;
     }
     release_xlist_mutex();
@@ -960,14 +960,14 @@ operator<<(ostream& o, const xct_t& x)
         o << "<NONE>";
     }
 
-    o << endl << " state=" << x.state() << " num_threads=" << x._core->_threads_attached << endl << "   ";
+    o << "\n" << " state=" << x.state() << " num_threads=" << x._core->_threads_attached << "\n" << "   ";
 
     o << " defaultTimeout=";
     print_timeout(o, x.timeout_c());
-    o << " first_lsn=" << x._first_lsn << " last_lsn=" << x._last_lsn << endl << "   ";
+    o << " first_lsn=" << x._first_lsn << " last_lsn=" << x._last_lsn << "\n" << "   ";
 
     o << " num_storesToFree=" << x._core->_storesToFree.num_members()
-      << " num_loadStores=" << x._core->_loadStores.num_members() << endl << "   ";
+      << " num_loadStores=" << x._core->_loadStores.num_members() << "\n" << "   ";
 
     o << " in_compensated_op=" << x._in_compensated_op << " anchor=" << x._anchor;
 
@@ -1319,15 +1319,16 @@ int
 xct_t::attach_update_thread()
 {
     w_assert2(_core->_updating_operations >= 0);
-    int res = lintel::unsafe::atomic_fetch_add(const_cast<int*>(&_core->_updating_operations),1)+1;
+    int res = _core->_updating_operations++ + 1;
     me()->set_is_update_thread(true); 
     return res;
 }
+
 void
 xct_t::detach_update_thread()
 {
     me()->set_is_update_thread(false); 
-    lintel::unsafe::atomic_fetch_sub(const_cast<int*>(&_core->_updating_operations), 1);
+    _core->_updating_operations--;
     w_assert2(_core->_updating_operations >= 0);
 }
 
@@ -1449,7 +1450,7 @@ xct_t::prepare()
                    << "WARNING: " << total_EX 
                    << " write locks held by a read-only transaction thread. "
                    << " ****** voting read-only ***** "
-                   << endl;
+                   << "\n";
              }
             // w_assert9(total_EX == 0);
         }
@@ -1615,8 +1616,8 @@ xct_t::prepare_restore_log_resv(int rsvd, int ready, int used,
     fileoff_t needed = rsvd;
     needed += prepare_fi_size;
     if(!log->reserve_space(needed)) {
-        cerr<< "Could not reserve space for prepared xct!" << endl
-            << "Need "<<needed<<" (rsvd "<<rsvd<<",ready "<<ready<<" ,used "<<used<<")" <<endl;
+        cerr<< "Could not reserve space for prepared xct!" << "\n"
+            << "Need "<<needed<<" (rsvd "<<rsvd<<",ready "<<ready<<" ,used "<<used<<")" <<"\n";
         W_FATAL(eOUTOFLOGSPACE);
     }
     _log_bytes_reserved_space = needed;
@@ -1686,7 +1687,7 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
         w_assert1(_core->_state == xct_active || _core->_state == xct_prepared);
     };
 
-    w_assert1(0 == lintel::unsafe::atomic_fetch_add(const_cast<int*>(&_core->_xct_ended),1));
+    w_assert1(_core->_xct_ended++ == 0);
 
 //    W_DO( ConvertAllLoadStoresToRegularStores() );
 
@@ -1932,7 +1933,7 @@ xct_t::_abort()
             || _core->_state == xct_freeing_space /* if it got an error in commit*/
             );
     if(_core->_state != xct_committing && _core->_state != xct_freeing_space) {
-        w_assert1(0 == lintel::unsafe::atomic_fetch_add(const_cast<int*>(&_core->_xct_ended),1));
+        w_assert1(_core->_xct_ended++ == 0);
     }
 
     // first, empty the wait map because no chance this xct can cause deadlock any more.
@@ -2129,9 +2130,9 @@ xct_t::_flush_logbuf()
 
         DBGX ( << " xct_t::_flush_logbuf " << _last_lsn
                 << " _last_log rec type is " << _last_log->type());
-        // Fill in the _xct_prev field of the log rec if this record hasn't
+        // Fill in the _xid_prev field of the log rec if this record hasn't
         // already been compensated.
-        if (!_last_log->is_single_sys_xct()) { // single-log sys xct doesn't have xid/xct_prev
+        if (!_last_log->is_single_sys_xct()) { // single-log sys xct doesn't have xid/xid_prev
             _last_log->fill_xct_attr(tid(), _last_lsn);
         }
 
@@ -2144,7 +2145,7 @@ xct_t::_flush_logbuf()
                 << " approx lsn:" << log->curr_lsn() 
                 << " rec:" << *_last_log 
                 << " size:" << _last_log->length()  
-                << " xct_prevlsn:" << (_last_log->is_single_sys_xct() ? lsn_t::null : _last_log->xct_prev() )
+                << " xid_prevlsn:" << (_last_log->is_single_sys_xct() ? lsn_t::null : _last_log->xid_prev() )
                 );
 
         if(log) {
@@ -2209,7 +2210,7 @@ xct_t::_flush_logbuf()
                         << " bytes_used " << bytes_used
                         << " _rolling_back " << _rolling_back
                         << " consuming " << consuming
-                        << endl
+                        << "\n"
                         << " xct state " << state()
                         << " fudge factor is " 
                         << UNDO_FUDGE_FACTOR(l->type(),1)
@@ -2294,7 +2295,7 @@ xct_t::_sync_logbuf(bool block, bool signal)
  *
  *********************************************************************/
 rc_t 
-xct_t::get_logbuf(logrec_t*& ret, int t, page_p const*)
+xct_t::get_logbuf(logrec_t*& ret, int t, fixable_page_h const*)
 {
     // then , use tentative log buffer.
     if (is_piggy_backed_single_log_sys_xct()) {
@@ -2370,7 +2371,7 @@ xct_t::get_logbuf(logrec_t*& ret, int t, page_p const*)
                                          UNDO_FUDGE_FACTOR(t,sizeof(logrec_t));
     static u_int const MIN_BYTES_RSVD =  sizeof(logrec_t);
     DBGX(<<" get_logbuf: START reserved for rollback " << _log_bytes_reserved_space
-            << endl
+            << "\n"
             << " need ready " << MIN_BYTES_READY
             << " have " << _log_bytes_ready
             );
@@ -2463,7 +2464,7 @@ xct_t::get_logbuf(logrec_t*& ret, int t, page_p const*)
                     // also print info that shows why we didn't croak
                     // on the first check
                     << "; space left " << log->space_left()
-                    << endl;
+                    << "\n";
                     fprintf(stderr, "%s\n", tmp.str().c_str());
                     INC_TSTAT(log_full_giveup);
                     badnews = true;
@@ -2476,10 +2477,10 @@ xct_t::get_logbuf(logrec_t*& ret, int t, page_p const*)
                 // Dump relevant information
                 stringstream tmp;
                 tmp << "Log too full. " << __LINE__ << " " << __FILE__
-                << endl;
+                << "\n";
                 tmp << "Thread: me=" << me()->id
                 << " pthread=" << pthread_self()  
-                << endl;
+                << "\n";
                 tmp
                 << " xct() " << tid() 
                 << " _rolling_back " << _rolling_back
@@ -2487,7 +2488,7 @@ xct_t::get_logbuf(logrec_t*& ret, int t, page_p const*)
                 << " _state " << _core->_state
                 << " _log_bytes_ready " << _log_bytes_ready
                 << " log bytes needed " << needed
-                << endl;
+                << "\n";
 
                 tmp 
                 << " _log_bytes_used for fwd " << _log_bytes_used
@@ -2495,21 +2496,21 @@ xct_t::get_logbuf(logrec_t*& ret, int t, page_p const*)
                 << " rollback/used= " << double(_log_bytes_rsvd)/
                 double(_log_bytes_used)
                 << " fudge factor is " << UNDO_FUDGE_FACTOR(t, 1)
-                << endl;
+                << "\n";
 
                 tmp 
                     << " first_lsn="  << _first_lsn
-                << endl;
+                << "\n";
                 tmp 
                 << "Log: min_chkpt_rec_lsn=" << log->min_chkpt_rec_lsn()
-                << ", curr_lsn=" << log->curr_lsn() << endl;
+                << ", curr_lsn=" << log->curr_lsn() << "\n";
 
                 tmp 
                 << "; master_lsn " << log->master_lsn() 
                 << "; durable_lsn " << log->durable_lsn() 
                 << "; curr_lsn " << log->curr_lsn() 
                 << ", global_min_lsn=" << log->global_min_lsn()
-                << endl;
+                << "\n";
 
                 tmp
                 // also print info that shows why we didn't croak
@@ -2517,12 +2518,12 @@ xct_t::get_logbuf(logrec_t*& ret, int t, page_p const*)
                 << "; space left " << log->space_left()
                 << "; rsvd for checkpoint " << log->space_for_chkpt() 
                 << "; max checkpoint size " << log->max_chkpt_size() 
-                << endl;
+                << "\n";
 
                 tmp
                 << " MIN_BYTES_READY " << MIN_BYTES_READY
                 << " MIN_BYTES_RSVD " << MIN_BYTES_RSVD
-                << endl;
+                << "\n";
 
                 if(errlog) {
                     errlog->clog << error_prio 
@@ -2584,13 +2585,13 @@ xct_t::get_logbuf(logrec_t*& ret, int t, page_p const*)
             << " _core->_xct_aborting " << _core->_xct_aborting
             << " should_reserve_for_rollback( " << t
             << ") = " << should_reserve_for_rollback(t)
-            << endl
+            << "\n"
             << " _log_bytes_rsvd " << _log_bytes_rsvd
                 << " orig rsvd " << rsvd
-            << endl
+            << "\n"
                 << " _log_bytes_used " << _log_bytes_used
                 << " orig used " << used
-            << endl
+            << "\n"
                 << " _log_bytes_ready " << _log_bytes_ready
                 << " orig ready " << ready
                 << " _log_bytes_reserved_space " << _log_bytes_reserved_space
@@ -2635,7 +2636,7 @@ xct_t::get_logbuf(logrec_t*& ret, int t, page_p const*)
 
 // See comments above get_logbuf, above
 rc_t
-xct_t::give_logbuf(logrec_t* l, const page_p *page)
+xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page)
 {
     FUNC(xct_t::give_logbuf);
     // then, buffer it internally. (can be defered until next log of the _outer_ transaction)
@@ -2644,7 +2645,7 @@ xct_t::give_logbuf(logrec_t* l, const page_p *page)
         if (_deferred_ssx) {
             // in this case, we don't push it to log manager for now.
             w_assert1(page != NULL);
-            W_DO(_append_piggyback_ssx_logbuf (l, const_cast<page_p*>(page)));
+            W_DO(_append_piggyback_ssx_logbuf (l, const_cast<fixable_page_h*>(page)));
             w_assert1(_log_buf_for_piggybacked_ssx_used != 0);
             w_assert1(_log_buf_for_piggybacked_ssx_target != NULL);
         } else {
@@ -2652,7 +2653,7 @@ xct_t::give_logbuf(logrec_t* l, const page_p *page)
             lsn_t lsn;
             W_DO( log->insert(*l, &lsn) );
             if (page != NULL) {
-                (const_cast<page_p*> (page))->set_lsns(lsn);
+                (const_cast<fixable_page_h*> (page))->set_lsns(lsn);
             }
             w_assert1(_log_buf_for_piggybacked_ssx_used == 0);
             w_assert1(_log_buf_for_piggybacked_ssx_target == NULL);
@@ -2681,8 +2682,8 @@ xct_t::give_logbuf(logrec_t* l, const page_p *page)
     
     if (page != NULL) {
         w_assert2(page->latch_mode() == LATCH_EX);
-        const_cast<page_p*>(page)->set_lsns(_last_lsn);
-        const_cast<page_p*>(page)->set_dirty();
+        const_cast<fixable_page_h*>(page)->set_lsns(_last_lsn);
+        const_cast<fixable_page_h*>(page)->set_dirty();
     }
 
  done:
@@ -2693,13 +2694,13 @@ xct_t::give_logbuf(logrec_t* l, const page_p *page)
             << " _core->_xct_aborting " << _core->_xct_aborting
             << " should_reserve_for_rollback( " << l->type()
             << ") = " << should_reserve_for_rollback(l->type())
-            << endl
+            << "\n"
             << " _log_bytes_rsvd " << _log_bytes_rsvd
                 << " orig rsvd " << rsvd
-            << endl
+            << "\n"
                 << " _log_bytes_used " << _log_bytes_used
                 << " orig used " << used
-            << endl
+            << "\n"
                 << " _log_bytes_ready " << _log_bytes_ready
                 << " orig ready " << ready
                 << " _log_bytes_reserved_space " << _log_bytes_reserved_space
@@ -2740,7 +2741,7 @@ xct_t::give_logbuf(logrec_t* l, const page_p *page)
     return rc;
 }
 
-w_rc_t xct_t::_append_piggyback_ssx_logbuf(logrec_t* l, page_p *page)
+w_rc_t xct_t::_append_piggyback_ssx_logbuf(logrec_t* l, fixable_page_h *page)
 {
     w_assert1(is_piggy_backed_single_log_sys_xct());
 
@@ -3148,7 +3149,7 @@ xct_t::rollback(const lsn_t &save_pt)
             u_int    was_rsvd = _log_bytes_rsvd;
 #endif 
             lpid_t pid = r.construct_pid();
-            page_p page;
+            fixable_page_h page;
 
             if (! r.is_logical()) {
                 DBGOUT3 (<<"physical UNDO.. which is not quite good");
@@ -3174,8 +3175,8 @@ xct_t::rollback(const lsn_t &save_pt)
                 LOGTRACE2( << "U: compensating to " << r.undo_nxt() );
                 nxt = r.undo_nxt();
             } else {
-                LOGTRACE2( << "U: undoing to " << r.xct_prev() );
-                nxt = r.xct_prev();
+                LOGTRACE2( << "U: undoing to " << r.xid_prev() );
+                nxt = r.xid_prev();
             }
 
         } else  if (r.is_cpsn())  {
@@ -3187,16 +3188,16 @@ xct_t::rollback(const lsn_t &save_pt)
             } else {
                 nxt = r.undo_nxt();
             }
-            // r.xct_prev() could just as well be null
+            // r.xid_prev() could just as well be null
 
         } else {
             LOGTRACE2( << setiosflags(ios::right) << nxt
                << resetiosflags(ios::right) << " U: " << r 
-               << " skipping to " << r.xct_prev());
+               << " skipping to " << r.xid_prev());
             if (r.is_single_sys_xct()) {
                 nxt = lsn_t::null;
             } else {
-                nxt = r.xct_prev();
+                nxt = r.xid_prev();
             }
             // w_assert9(r.undo_nxt() == lsn_t::null);
         }
@@ -3418,8 +3419,8 @@ xct_t::attach_thread()
     CRITICAL_SECTION(xctstructure, *this);
 
     w_assert2(is_1thread_xct_mutex_mine());
-    int nt=lintel::unsafe::atomic_fetch_add(const_cast<int*>(&_core->_threads_attached),1);
-    if(nt > 0) {
+    
+    if (_core->_threads_attached++ > 0) {
         INC_TSTAT(mpl_attach_cnt);
     }
     w_assert2(_core->_threads_attached >=0);
@@ -3440,8 +3441,7 @@ xct_t::detach_thread()
     FUNC(xct_t::detach_thread);
     CRITICAL_SECTION(xctstructure, *this);
     w_assert3(is_1thread_xct_mutex_mine());
-
-    lintel::unsafe::atomic_fetch_sub(const_cast<int*>(&_core->_threads_attached), 1);
+    _core->_threads_attached--;
     w_assert2(_core->_threads_attached >=0);
     me()->no_xct(this);
 }
@@ -3527,11 +3527,11 @@ xct_t::one_thread_attached() const
             chkpt_serial_m::trx_release();
 #if W_DEBUG_LEVEL > 2
             fprintf(stderr, 
-            "Fatal VAS or SSM error: %s %d %s %d.%d \n",
-            "Only one thread allowed in this operation at any time.",
-            _core->_threads_attached, 
-            "threads are attached to xct",
-            tid().get_hi(), tid().get_lo()
+                    "Fatal VAS or SSM error: %s %d %s %d.%d \n",
+                    "Only one thread allowed in this operation at any time.",
+                    _core->_threads_attached.load(),
+                    "threads are attached to xct",
+                    tid().get_hi(), tid().get_lo()
             );
 #endif
             return false;
@@ -3645,7 +3645,7 @@ sys_xct_section_t::~sys_xct_section_t()
         rc_t result = ss_m::abort_xct();
         if (result.is_error()) {
 #if W_DEBUG_LEVEL>0
-            cerr << "system transaction automatic abort failed: " << result.err_num() << endl;
+            cerr << "system transaction automatic abort failed: " << result.err_num() << "\n";
 #endif // W_DEBUG_LEVEL>0
         }
     }
@@ -3660,7 +3660,7 @@ rc_t sys_xct_section_t::end_sys_xct (rc_t result)
     return RCOK;
 }
 
-ssx_defer_section_t::ssx_defer_section_t (page_p *page, xct_t *x) : _page(page), _x(x)
+ssx_defer_section_t::ssx_defer_section_t (fixable_page_h *page, xct_t *x) : _page(page), _x(x)
 {
 #if W_DEBUG_LEVEL>0
     w_assert1(page);

@@ -2,9 +2,8 @@
 #include "gtest/gtest.h"
 #include "sm_vas.h"
 #include "btree.h"
-#include "page_s.h"
+#include "generic_page.h"
 #include "bf.h"
-#include "page.h"
 #include "sm_io.h"
 
 btree_test_env *test_env;
@@ -55,7 +54,7 @@ w_rc_t create_check(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
     W_DO(ssm->force_buffers());
-    page_s buf;
+    generic_page buf;
     for (shpid_t shpid = 1; shpid < 5; ++shpid) {
         lpid_t pid (stid, shpid);
 
@@ -67,15 +66,14 @@ w_rc_t create_check(ss_m* ssm, test_volume_t *test_volume) {
             case t_alloc_p: cout << "t_alloc_p"; break;
             case t_stnode_p: cout << "t_stnode_p"; break;
             case t_btree_p: cout << "t_btree_p"; break;
-            case t_any_p: cout << "t_any_p"; break;
             default:
                 cout << "wtf?? " << buf.tag; break;
         }
         if (buf.tag == t_btree_p) {
-            cout << "(level=" << buf.btree_level << ")";
+            btree_page_h p(&buf);
+            cout << "(level=" << p.level() << ")";
         }
         
-        buf.tag = t_any_p; // hack.
         cout << endl;
     }
 

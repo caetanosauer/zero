@@ -72,7 +72,7 @@ class bf_hashbucket {
 public:
     srwlock_t                   _lock;
     bf_hashbucket_chunk         _chunk;
-    uint32_t volatile           _used_count;
+    uint32_t _used_count;
 
     bf_idx find (uint64_t key);
     bool append_if_not_exists (uint64_t key, bf_idx value);

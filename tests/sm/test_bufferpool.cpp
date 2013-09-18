@@ -1,11 +1,10 @@
 #include "btree_test_env.h"
-#include "page_s.h"
+#include "generic_page.h"
 #include "bf.h"
 #include "bf_core.h"
 #include "btree.h"
-#include "btree_p.h"
+#include "btree_page.h"
 #include "btree_impl.h"
-#include "page.h"
 #include "log.h"
 #include "w_error.h"
 
@@ -34,7 +33,7 @@ w_rc_t bf_get_empty(ss_m* ssm, test_volume_t *test_volume) {
     // write out all pages and discard from bufferpool
     W_DO(bf_m::force_all(true));
 
-    page_s *root_s = NULL;
+    generic_page *root_s = NULL;
     smlevel_0::store_flag_t stflags;
     W_DO (bf_m::fix(root_s, root_pid, 0, LATCH_SH, false, stflags, true, smlevel_0::st_bad));
     EXPECT_TRUE (root_s != NULL);
@@ -93,7 +92,7 @@ w_rc_t bf_get_many(ss_m* ssm, test_volume_t *test_volume) {
 
     std::vector<shpid_t> pids;
     {
-        btree_p root_p;
+        btree_page_h root_p;
         W_DO (root_p.fix (root_pid, LATCH_SH));
         pids.push_back (root_p.pid0());
         for (int i = 0; i < root_p.nrecs(); ++i) {
@@ -104,11 +103,11 @@ w_rc_t bf_get_many(ss_m* ssm, test_volume_t *test_volume) {
     // grab as many as possible without unfix
     cout << "reading " << pids.size() << " page from buffer pool" << endl
         << "intentionally making buffer pool full. the following error message is NOT an error!" << endl;
-    std::vector<page_s*> child_pages;
+    std::vector<generic_page*> child_pages;
     for (size_t i = 0; i < pids.size(); ++i) {
         lpid_t child_pid = root_pid;
         child_pid.page = pids[i];
-        page_s *child_s = NULL;
+        generic_page *child_s = NULL;
         
         smlevel_0::store_flag_t stflags;
         w_rc_t rc = bf_m::fix(child_s, child_pid, 0, LATCH_SH, false, stflags, true, smlevel_0::st_bad);
@@ -169,7 +168,7 @@ w_rc_t create_records(ss_m* ssm, const stid_t &stid, size_t records) {
 }
 
 w_rc_t collect_pids(const lpid_t &root_pid, std::vector<lpid_t> &pids) {
-    btree_p root_p;
+    btree_page_h root_p;
     W_DO (root_p.fix (root_pid, LATCH_SH));
     pids.push_back (root_p.pid());
     for (int i = -1; i < root_p.nrecs(); ++i) {
@@ -195,7 +194,7 @@ w_rc_t bf_careful_write_order(ss_m* ssm, test_volume_t *test_volume) {
 
     // write out and evict
     W_DO(bf_m::force_all(true));
-    btree_p p[4];
+    btree_page_h p[4];
     {
         for (size_t i = 0; i < 4; ++i) {
             W_DO (p[i].fix (pids[i], LATCH_EX));
@@ -307,7 +306,7 @@ w_rc_t bf_careful_write_order_cycle(ss_m* ssm, test_volume_t *test_volume) {
 
     // write out and evict
     W_DO(bf_m::force_all(true));
-    btree_p p[3];
+    btree_page_h p[3];
     for (size_t i = 0; i < 3; ++i) {
         W_DO (p[i].fix (pids[i], LATCH_EX));
     }

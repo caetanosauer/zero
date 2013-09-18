@@ -291,7 +291,12 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *      - default: yes
  *      - required?: no
  *
- */
+ * -sm_statistics
+ *      - type: Boolean
+ *      - description: Enables collecting statistics.
+ *      - default: no
+ *      - required?: no
+  */
 
 
 /**\addtogroup SSMXCT 
@@ -402,8 +407,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  */
 /********************************************************************/
 
-class page_p;
-class btree_p;
+class fixable_page_h;
+class btree_page_h;
 class xct_t;
 class device_m;
 class vec_t;
@@ -2194,7 +2199,7 @@ public:
      * \ingroup SSMBTREE
      * @copydetails btree_impl::_sx_defrag_page
     */
-    static rc_t           defrag_index_page(btree_p &page);
+    static rc_t           defrag_index_page(btree_page_h &page);
 
     /**
     *  Verifies the integrity of B-Tree index using the fence-key bitmap technique.
@@ -2566,6 +2571,7 @@ private:
     static option_t* _cleaner_interval_millisec_min;
     static option_t* _cleaner_interval_millisec_max;
     static option_t* _logging;
+    static option_t* _statistics;
 
 
     static rc_t            _set_option_logsize(
