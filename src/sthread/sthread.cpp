@@ -95,10 +95,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <w_rusage.h>
 #include "tls.h"
 
-#ifdef __GNUC__
-#pragma implementation "sthread.h"
-#endif
-
 #include "sthread.h"
 #include "rand48.h"
 #include "sthread_stats.h"

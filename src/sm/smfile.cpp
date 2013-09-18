@@ -171,7 +171,7 @@ ss_m::_set_store_property(
     /*
      * find out the current property
      */
-    store_flag_t oldflags = st_bad;
+    store_flag_t oldflags = st_unallocated;
 
     W_DO( io->get_store_flags(stid, oldflags) );
 
@@ -193,7 +193,7 @@ ss_m::_get_store_property(
     stid_t              stid,
     store_property_t&   property)
 {
-    store_flag_t flags = st_bad;
+    store_flag_t flags = st_unallocated;
     W_DO( io->get_store_flags(stid, flags) );
 
     if (flags & st_regular) {

@@ -65,6 +65,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * \ingroup MACROS
  */
 
+#include <assert.h>
 #ifndef W_H
 #include <w.h>
 #endif

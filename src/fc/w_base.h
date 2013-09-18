@@ -79,10 +79,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 /* end configuration definitions                       */
 /*******************************************************/
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 #include <w_stream.h>
 
 #ifndef W_WORKAROUND_H

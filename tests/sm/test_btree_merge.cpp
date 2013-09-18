@@ -2,10 +2,6 @@
 #define BTREE_C
 
 #include "sm_int_2.h"
-#ifdef __GNUG__
-#   pragma implementation "btree_impl.h"
-#endif
-
 #include "btree_test_env.h"
 #include "gtest/gtest.h"
 #include "sm_vas.h"

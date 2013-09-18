@@ -33,10 +33,4 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #define BASICS_C
 
-#ifdef __GNUG__
-#pragma implementation
-#endif
-
 #include <basics.h>
-    
-

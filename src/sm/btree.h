@@ -10,9 +10,7 @@
  *  NB: put NO INLINE FUNCTIONS here.
  *  Implementation is class btree_impl, in btree_impl.[ch].
  */
-
 #include "w_defines.h"
-
 #include "vid_t.h"
 #include "stid_t.h"
 
