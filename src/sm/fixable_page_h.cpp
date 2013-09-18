@@ -28,7 +28,7 @@ int fixable_page_h::max_child_slot() const {
     btree_page_h downcast(get_generic_page());
 
     if (downcast.level()<=1)
-        return -1;
+        return -1;  // if a leaf page, foster is the only pointer
     return downcast.nslots() - 1;
 }
 

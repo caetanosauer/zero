@@ -5,6 +5,7 @@
 #include "generic_page.h"
 #include "bf.h"
 #include "sm_io.h"
+#include "btree_page.h"
 
 btree_test_env *test_env;
 

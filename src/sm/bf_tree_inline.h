@@ -12,8 +12,7 @@
 #include "bf_tree_cb.h"
 #include "bf_tree_vol.h"
 #include "bf_hashtable.h"
-
-#include "btree_page.h"  // FIXME for 1 occurrence of btree_page_h <<<>>>
+#include "fixable_page_h.h"
 
 void swizzling_stat_swizzle();
 void swizzling_stat_print(const char* prefix);
@@ -111,9 +110,9 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
         // also try to swizzle this page
         // TODO so far we swizzle all pages as soon as we load them to bufferpool
         // but, we might want to consider a more advanced policy.
-        btree_page_h p(parent); // FIXME: really my_btree_page_h <<<>>>
+        fixable_page_h p(parent);
         if (!_bf_pause_swizzling && is_swizzled(parent) && !is_swizzled(page)
-                && p.get_foster_opaqueptr() != shpid // don't swizzle foster child
+            && *p.child_slot_address(-1) != shpid // don't swizzle foster child
             ) {
             slotid_t slot = find_page_id_slot (parent, shpid);
             // this is a new (virgin) page which has not been linked yet. 

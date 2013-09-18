@@ -1261,20 +1261,11 @@ void bf_tree_m::switch_parent(generic_page* page, generic_page* new_parent)
 
 void bf_tree_m::_convert_to_disk_page(generic_page* page) const {
     DBGOUT3 (<< "converting the page " << page->pid << "... ");
-    my_btree_page_h p(page);
 
-    // if the page is a leaf page, foster is the only pointer
-    _convert_to_pageid(&p.foster_pointer());
-    w_assert1(p.level() >= 1);
-    
-    //otherwise, we have to check all children
-    if (p.level() > 1) {
-        _convert_to_pageid(&p.pid0_pointer());
-        slot_index_t slots = p.nslots();
-        for (slot_index_t i = 1; i < slots; ++i) {
-            void* addr = p.tuple_addr(i);
-            _convert_to_pageid(reinterpret_cast<shpid_t*>(addr));
-        }
+    fixable_page_h p(page);
+    int max_slot = p.max_child_slot();
+    for (int i= -1; i<=max_slot; i++) {
+        _convert_to_pageid(p.child_slot_address(i));
     }
 }
 
@@ -1320,28 +1311,17 @@ void bf_tree_m::swizzle_children(generic_page* parent, const slotid_t* slots, ui
     w_assert1(_is_active_idx(parent - _buffer));
     w_assert1(is_swizzled(parent)); // swizzling is transitive.
 
-    my_btree_page_h p (parent);
+    fixable_page_h p (parent);
     for (uint32_t i = 0; i < slots_size; ++i) {
         slotid_t slot = slots[i];
-        w_assert1(slot >= 0); // w_assert1(slot >= -1); see below
-        w_assert1(slot < p.nslots());
-
         // To simplify the tree traversal while unswizzling,
         // we never swizzle foster-child pointers.
-        // if (slot == -1) {
-        //    if ((p.foster_opaqueptr() & SWIZZLED_PID_BIT) == 0) {
-        //        _swizzle_child_pointer (parent, &(p.foster_pointer()));
-        //    }
-        //} else
-        if (slot == 0) {
-            if ((p.pid0_opaqueptr() & SWIZZLED_PID_BIT) == 0) {
-                _swizzle_child_pointer (parent, &(p.pid0_pointer()));
-            }
-        } else {
-            shpid_t* addr = reinterpret_cast<shpid_t*>(p.tuple_addr(slot));
-            if (((*addr) & SWIZZLED_PID_BIT) == 0) {
-                _swizzle_child_pointer (parent, addr);
-            }
+        w_assert1(slot >= 0); // was w_assert1(slot >= -1);
+        w_assert1(slot <= p.max_child_slot());
+
+        shpid_t* addr = p.child_slot_address(slot);
+        if (((*addr) & SWIZZLED_PID_BIT) == 0) {
+            _swizzle_child_pointer(parent, addr);
         }
     }
 }
@@ -1508,14 +1488,11 @@ void bf_tree_m::_unswizzle_traverse_store(uint32_t &unswizzled_frames, volid_t v
 
 
 bool bf_tree_m::has_swizzled_child(bf_idx node_idx) {
-    my_btree_page_h node_p (_buffer + node_idx);
-    for (int32_t j = 0; j < node_p.nslots(); ++j) {
-        shpid_t shpid;
-        if (j == 0) {
-            shpid = node_p.pid0_opaqueptr();
-        } else {
-            shpid = *reinterpret_cast<shpid_t*>(node_p.tuple_addr(j));
-        }
+    fixable_page_h node_p(_buffer + node_idx);
+    int max_slot = node_p.max_child_slot();
+    // skipping foster pointer...
+    for (int32_t j = 0; j <= max_slot; ++j) {
+        shpid_t shpid = *node_p.child_slot_address(j);
         if ((shpid & SWIZZLED_PID_BIT) != 0) {
             return true;
         }
@@ -1535,26 +1512,20 @@ void bf_tree_m::_unswizzle_traverse_node(uint32_t &unswizzled_frames,
     }
     uint32_t old = _swizzle_clockhand_pathway[cur_clockhand_depth];
     bf_tree_cb_t &node_cb = get_cb(node_idx);
-    my_btree_page_h node_p (_buffer + node_idx);
-    if (old >= (uint32_t) node_p.nslots()) {
+    my_btree_page_h node_p(_buffer + node_idx);
+    if (old >= (uint32_t) node_p.max_child_slot()+1) {
         return;
     }
 
     // check children
-    uint32_t remaining = node_p.nslots() - old;
+    uint32_t remaining = node_p.max_child_slot()+1 - old;
     for (uint32_t i = 0; i < remaining && unswizzled_frames < UNSWIZZLE_BATCH_SIZE; ++i) {
         uint32_t slot = old + i;
         if (!node_cb._used || node_p.level() <= 1) {
             return;
         }
 
-        shpid_t shpid;
-        if (slot == 0) {
-            shpid = node_p.pid0_opaqueptr();
-        } else {
-            shpid = *reinterpret_cast<shpid_t*>(node_p.tuple_addr(slot));
-        }
-
+        shpid_t shpid = *node_p.child_slot_address(slot);
         if ((shpid & SWIZZLED_PID_BIT) == 0) {
             // if this page is not swizzled, none of its descendants is not swizzled either.
             continue;
@@ -1632,16 +1603,11 @@ bool bf_tree_m::_unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot) {
     }
     latch_auto_release auto_rel(parent_cb.latch()); // this automatically releaes the latch.
 
-    my_btree_page_h parent (_buffer + parent_idx);
-    if (child_slot >= (uint32_t) parent.nslots()) {
+    fixable_page_h parent(_buffer + parent_idx);
+    if (child_slot >= (uint32_t) parent.max_child_slot()+1) {
         return false;
     }
-    shpid_t* shpid_addr;
-    if (child_slot == 0) {
-        shpid_addr = &(parent.pid0_pointer());
-    } else {
-        shpid_addr = reinterpret_cast<shpid_t*>(parent.tuple_addr(child_slot));
-    }
+    shpid_t* shpid_addr = parent.child_slot_address(child_slot);
     shpid_t shpid = *shpid_addr;
     if ((shpid & SWIZZLED_PID_BIT) == 0) {
         return false;
@@ -1744,27 +1710,18 @@ void bf_tree_m::debug_dump_page_pointers(std::ostream& o, generic_page* page) co
     bf_idx idx = page - _buffer;
     w_assert1(idx > 0);
     w_assert1(idx < _block_cnt);
-    o << "dumping page:" << page->pid << ", bf_idx=" << idx << std::endl;
-    o << "  foster=";
-    my_btree_page_h p(page);
-    debug_dump_pointer (o, p.get_foster_opaqueptr());
-    o << std::endl;
 
-    if (p.level() > 1) {
-        slot_index_t slots = p.nslots();
-        o << "  ";
-        for (slot_index_t i = 0; i < slots; ++i) {
-            o << "child[" << i << "]=";
-            if (i == 0) {
-                debug_dump_pointer(o, p.pid0_opaqueptr());
-            } else {
-                void* addr = p.tuple_addr(i);
-                debug_dump_pointer(o, *reinterpret_cast<shpid_t*>(addr));
-            }
+    o << "dumping page:" << page->pid << ", bf_idx=" << idx << std::endl;
+    o << "  ";
+    fixable_page_h p(page);
+    for (int i= -1; i<=p.max_child_slot(); i++) {
+        if (i > -1) {
             o << ", ";
         }
-        o << std::endl;
+        o << "child[" << i << "]=";
+        debug_dump_pointer(o, *p.child_slot_address(i));
     }
+    o << std::endl;
 }
 void bf_tree_m::debug_dump_pointer(ostream& o, shpid_t shpid) const
 {
