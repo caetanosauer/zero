@@ -5,23 +5,26 @@
 #ifndef FIXABLE_PAGE_H_H
 #define FIXABLE_PAGE_H_H
 
-#include <string.h>
-
 #include "bf_idx.h"
 #include "generic_page.h"
 #include "latch.h"
 #include "sm_base.h"
-#include "stid_t.h"
-#include "vid_t.h"
-#include "w_defines.h"
 
 
 
 /**
- *  Basic page handle class.
+ * \brief Handle class for pages that may be fixed (i.e., paged in by
+ *  the main buffer manager, bf_tree_m)
+ *
+ * \details
+ * Currently, only B-tree pages are fixable.
  */
 class fixable_page_h : public generic_page_h {
 public:
+    // ======================================================================
+    //   BEGIN: Construction/destruction/assignment 
+    // ======================================================================
+
     /// Create handle not yet fixed to a page
     fixable_page_h() : generic_page_h(NULL), _mode(LATCH_NL) {}
     /// Imaginery 'fix' for a non-bufferpool-managed page.
@@ -29,26 +32,33 @@ public:
         w_assert1(s != NULL);
         w_assert1(s->tag == t_btree_p);  // <<<>>>
     }
-
-    /// release the page from bufferpool.
-    void                        unfix();
-
-
     ~fixable_page_h() { unfix(); }
+
     fixable_page_h& operator=(fixable_page_h& p) {
         // this steals the ownership of the page/latch
         steal_ownership(p);
         return *this;
     }
     void steal_ownership(fixable_page_h& p) {
+        if (&p == this) {
+            return;
+        }
         unfix();
-        _pp = p._pp;
-        _mode = p._mode;
-        p._pp = NULL;
+        _pp     = p._pp;
+        _mode   = p._mode;
+        p._pp   = NULL;
         p._mode = LATCH_NL;
     }
 
+
+    // ======================================================================
+    //   BEGIN: [un]fixing pages
+    // ======================================================================
     
+    bool         is_fixed()   const;
+    /// release the page from bufferpool.
+    void                        unfix();
+
     /**
      * Fixes a non-root page in the bufferpool. This method receives
      * the parent page and efficiently fixes the page if the shpid
@@ -139,6 +149,10 @@ public:
                     bool conditional=false);
 
 
+    // ======================================================================
+    //   BEGIN: 
+    // ======================================================================
+
     /// Marks this page in the bufferpool dirty. If this page is not a
     /// bufferpool-managed page, does nothing.
     void set_dirty() const;
@@ -155,31 +169,25 @@ public:
     
     uint32_t     page_flags() const;
 
-    bool         is_fixed()   const;
     latch_mode_t latch_mode() const { return _mode; }
     bool         is_latched() const { return _mode != LATCH_NL; }
     /// Conditionally upgrade the latch to EX.  Returns if successfully upgraded.
     bool         upgrade_latch_conditional();
 
 
-    /*
-     * Interface for use by buffer manager to perform swizzling:
-     */
+    // ======================================================================
+    //   BEGIN: Interface for use by buffer manager to perform swizzling
+    // ======================================================================
+
     bool         has_children()   const;
     int          max_child_slot() const;
     shpid_t*     child_slot_address(int child_slot) const;
 
     
 protected:
-    latch_mode_t  _mode;
-
-    friend class page_img_format_t;
-    friend class page_img_format_log;
-    friend class page_set_byte_log;
-    friend class btree_header_t;
-    friend class btree_impl;
-    friend class btree_ghost_reserve_log;
     friend class borrowed_btree_page_h;
+
+    latch_mode_t  _mode;
 };
 
 

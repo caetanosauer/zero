@@ -353,12 +353,9 @@ public:
         slot_sz = btree_page::slot_sz
     };
 
-
-#ifdef DOXYGEN_HIDE
-///==========================================
-///   BEGIN: Struct/Enum/Constructor
-///==========================================
-#endif // DOXYGEN_HIDE
+    // ======================================================================
+    //   BEGIN: Struct/Enum/Constructor
+    // ======================================================================
 
     btree_page_h() {}
     btree_page_h(generic_page* s) : fixable_page_h(s) {
@@ -374,11 +371,10 @@ public:
         return *this; 
     }
 
-#ifdef DOXYGEN_HIDE
-///==========================================
-///   BEGIN: Header Get/Set functions
-///==========================================
-#endif // DOXYGEN_HIDE
+
+    // ======================================================================
+    //   BEGIN: Header Get/Set functions
+    // ======================================================================
 
     shpid_t                     btree_root() const { return page()->btree_root;}
     smsize_t                    used_space()  const;
@@ -562,11 +558,10 @@ public:
     /** Returns if whether we can do norecord insert now. */
     bool                 check_chance_for_norecord_split(const w_keystr_t& key_to_insert) const;
     
-#ifdef DOXYGEN_HIDE
-///==========================================
-///   BEGIN: Search and Record Access functions
-///==========================================
-#endif // DOXYGEN_HIDE
+
+    // ======================================================================
+    //   BEGIN: Search and Record Access functions
+    // ======================================================================
 
     char*                        data_addr8(slot_offset8_t offset8);
     const char*                  data_addr8(slot_offset8_t offset8) const;
@@ -692,11 +687,10 @@ public:
     */
     shpid_t       child_opaqueptr(slotid_t slot) const;
 
-#ifdef DOXYGEN_HIDE
-///==========================================
-///   BEGIN: Insert/Update/Delete functions
-///==========================================
-#endif // DOXYGEN_HIDE
+
+    // ======================================================================
+    //   BEGIN: Insert/Update/Delete functions
+    // ======================================================================
 
     /**
     *  Insert a new entry at "slot". This is used only for non-leaf pages.
@@ -813,11 +807,10 @@ public:
     bool                 is_insertion_skewed_right() const;
     bool                 is_insertion_skewed_left()  const;
 
-#ifdef DOXYGEN_HIDE
-///==========================================
-///   BEGIN: Statistics/Debug etc functions
-///==========================================
-#endif // DOXYGEN_HIDE
+
+    // ======================================================================
+    //   BEGIN: Statistics/Debug etc functions
+    // ======================================================================
 
     /**
      * \brief Defrags this page to remove holes and ghost records in the page.
@@ -932,11 +925,10 @@ protected:
     bool check_space_for_insert(size_t rec_size);    
 };
 
-#ifdef DOXYGEN_HIDE
-///==========================================
-///   BEGIN: Inline function implementations
-///==========================================
-#endif // DOXYGEN_HIDE
+
+// ======================================================================
+//   BEGIN: Inline function implementations
+// ======================================================================
 
 inline lpid_t btree_page_h::root() const
 {

@@ -772,8 +772,8 @@ void page_img_format_log::redo(fixable_page_h* page)
     page_img_format_t* dp = (page_img_format_t*) _data;
     w_assert1(dp->beginning_bytes >= btree_page::hdr_sz);
     w_assert1(dp->beginning_bytes + dp->ending_bytes <= btree_page::page_sz);
-    char *pp_bin = (char *) page->_pp;
-    ::memcpy (pp_bin, dp->data, dp->beginning_bytes);
+    char *pp_bin = (char *) page->get_generic_page();
+    ::memcpy (pp_bin, dp->data, dp->beginning_bytes); // <<<>>>
     ::memcpy (pp_bin + btree_page::page_sz - dp->ending_bytes, dp->data + dp->beginning_bytes, dp->ending_bytes);
     page->set_dirty();
 }
