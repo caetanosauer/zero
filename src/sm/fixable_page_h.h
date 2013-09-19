@@ -34,30 +34,28 @@ public:
     }
     ~fixable_page_h() { unfix(); }
 
+    /// assignment; steals the ownership of the page/latch p and
+    /// unfixes old associated page if exists and is different
     fixable_page_h& operator=(fixable_page_h& p) {
-        // this steals the ownership of the page/latch
-        steal_ownership(p);
+        if (&p != this) {
+            unfix();
+            _pp     = p._pp;
+            _mode   = p._mode;
+            p._pp   = NULL;
+            p._mode = LATCH_NL;
+        }
         return *this;
     }
-    void steal_ownership(fixable_page_h& p) {
-        if (&p == this) {
-            return;
-        }
-        unfix();
-        _pp     = p._pp;
-        _mode   = p._mode;
-        p._pp   = NULL;
-        p._mode = LATCH_NL;
-    }
 
 
     // ======================================================================
-    //   BEGIN: [un]fixing pages
+    //   BEGIN: [Un]fixing pages
     // ======================================================================
     
-    bool         is_fixed()   const;
-    /// release the page from bufferpool.
-    void                        unfix();
+    bool is_fixed() const { return _pp != 0; }
+    /// Unassociate us with any page; releases latch we may have held
+    /// on previously associated page.
+    void unfix();
 
     /**
      * Fixes a non-root page in the bufferpool. This method receives
@@ -115,10 +113,12 @@ public:
      * without parent pointer. See fix_direct() why we need this
      * feature.  Never forget to call a corresponding
      * unpin_for_refix() for this page. Otherwise, the page will be in
-     * the bufferpool forever.  @return slot index of the page in this
-     * bufferpool. Use this value to the subsequent refix_direct() and
-     * unpin_for_refix() call.  To use this method, you need to
-     * include page_bf_inline.h.
+     * the bufferpool forever.  
+     * @return slot index of the page in this bufferpool. Use this
+     * value to the subsequent refix_direct() and unpin_for_refix()
+     * call.
+     * 
+     * To use this method, you need to include page_bf_inline.h.
      */
     bf_idx pin_for_refix();
 
@@ -153,34 +153,34 @@ public:
     //   BEGIN: 
     // ======================================================================
 
-    /// Marks this page in the bufferpool dirty. If this page is not a
+    /// Mark this page in the bufferpool dirty.  If this page is not a
     /// bufferpool-managed page, does nothing.
-    void set_dirty() const;
-    /// Returns if this page in the bufferpool is marked dirty. If
+    void         set_dirty() const;
+    /// Returns if this page in the bufferpool is marked dirty.  If
     /// this page is not a bufferpool-managed page, returns false.
-    bool is_dirty() const;
+    bool         is_dirty()  const;
 
 
-    /// Reserve this page to be deleted when bufferpool evicts this page.
+    /// Flag this page to be deleted when bufferpool evicts it.
     rc_t         set_to_be_deleted(bool log_it);
-    /// Unset the deletion flag.  This is only used by UNDO, so no logging and no failure possible.
+    /// Unset the to be deleted flag.  This is only used by UNDO, so
+    /// no logging and no failure possible.
     void         unset_to_be_deleted();
     bool         is_to_be_deleted() { return (_pp->page_flags&t_to_be_deleted) != 0; }
-    
-    uint32_t     page_flags() const;
 
     latch_mode_t latch_mode() const { return _mode; }
     bool         is_latched() const { return _mode != LATCH_NL; }
-    /// Conditionally upgrade the latch to EX.  Returns if successfully upgraded.
+    /// Conditionally upgrade the latch to EX.  Returns true if successfully upgraded.
     bool         upgrade_latch_conditional();
 
 
     // ======================================================================
-    //   BEGIN: Interface for use by buffer manager to perform swizzling
+    //   BEGIN: Interface for use only by buffer manager to perform swizzling
     // ======================================================================
 
     bool         has_children()   const;
     int          max_child_slot() const;
+    /// valid slots are [-1 .. max_child_slot()], where -1 is foster pointer and 0 is pid0
     shpid_t*     child_slot_address(int child_slot) const;
 
     
@@ -189,19 +189,6 @@ protected:
 
     latch_mode_t  _mode;
 };
-
-
-inline uint32_t
-fixable_page_h::page_flags() const
-{
-    return _pp->page_flags;
-}
-
-inline bool
-fixable_page_h::is_fixed() const
-{
-    return _pp != 0;
-}
 
 
 #include "page_bf_inline.h"

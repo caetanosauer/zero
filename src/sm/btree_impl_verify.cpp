@@ -381,7 +381,7 @@ rc_t btree_impl::_ux_verify_volume(
         }
         W_DO (vol->read_page(pid, buf));
         btree_page_h page (&buf);
-        if (page.tag() == t_btree_p && (page.page_flags() & t_to_be_deleted) == 0) {
+        if (page.tag() == t_btree_p && !page.is_to_be_deleted()) {
             verification_context *context = result.get_or_create_context(page.pid().store(), hash_bits);
             W_DO (_ux_verify_feed_page (page, *context));
 

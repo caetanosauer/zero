@@ -20,6 +20,16 @@ rc_t fixable_page_h::set_to_be_deleted (bool log_it) {
     return RCOK;
 }
 
+void fixable_page_h::unset_to_be_deleted() {
+    if ((_pp->page_flags & t_to_be_deleted) != 0) {
+        _pp->page_flags ^= t_to_be_deleted;
+        // we don't need set_dirty() as it's always dirty if this is ever called
+        // (UNDOing this means the page wasn't deleted yet by bufferpool, so it's dirty)
+    }
+}
+
+
+
 
 // <<<>>> use virtual methods later?
 
