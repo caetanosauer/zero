@@ -92,11 +92,9 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
     uint16_t padding; // <<<>>>
     
 
-#ifdef DOXYGEN_HIDE
-///==========================================
-///   BEGIN: BTree specific headers
-///==========================================
-#endif // DOXYGEN_HIDE
+    // ======================================================================
+    //   BEGIN: BTree specific headers
+    // ======================================================================
 
     /**
     * root page used for recovery (root page is never changed even while grow/shrink).
@@ -151,11 +149,10 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
     * of this header item.
     */
     int16_t   btree_consecutive_skewed_insertions; // +2 -> 60
-#ifdef DOXYGEN_HIDE
-///==========================================
-///   END: BTree specific headers
-///==========================================
-#endif // DOXYGEN_HIDE
+
+    // ======================================================================
+    //   END: BTree specific headers
+    // ======================================================================
 };
 
 

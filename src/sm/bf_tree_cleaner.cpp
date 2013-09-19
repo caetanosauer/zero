@@ -24,7 +24,7 @@
 
 #include "sm.h"
 #include "xct.h"
-
+#include "bf_tree_inline.h"
 
 typedef bf_tree_cleaner_slave_thread_t* slave_ptr;
 
