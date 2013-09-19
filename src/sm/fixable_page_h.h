@@ -77,8 +77,6 @@ public:
      * immediately even if failed).
      * @param[in] virgin_page whether the page is a new page thus
      * doesn't have to be read from disk.
-     *
-     * To use this method, you need to include page_bf_inline.h.
      */
     w_rc_t fix_nonroot(const fixable_page_h &parent, volid_t vol,
                        shpid_t shpid, latch_mode_t mode, bool conditional=false, 
@@ -101,8 +99,6 @@ public:
      * immediately even if failed).
      * @param[in] virgin_page whether the page is a new page thus
      * doesn't have to be read from disk.
-     *
-     * To use this method, you need to include page_bf_inline.h.
      */
     w_rc_t fix_direct(volid_t vol, shpid_t shpid, latch_mode_t mode,
                       bool conditional=false, bool virgin_page=false);
@@ -117,16 +113,13 @@ public:
      * @return slot index of the page in this bufferpool. Use this
      * value to the subsequent refix_direct() and unpin_for_refix()
      * call.
-     * 
-     * To use this method, you need to include page_bf_inline.h.
      */
     bf_idx pin_for_refix();
 
     /**
      * Fixes a page with the already known slot index, assuming the
      * slot has at least one pin count.  Used with pin_for_refix() and
-     * unpin_for_refix().  To use this method, you need to include
-     * page_bf_inline.h.
+     * unpin_for_refix().
      */
     w_rc_t refix_direct(bf_idx idx, latch_mode_t mode, 
                         bool conditional=false);
@@ -134,16 +127,14 @@ public:
     /**
      * Fixes a new (virgin) root page for a new store with the
      * specified page ID.  Implicitly, the latch will be EX and
-     * non-conditional.  To use this method, you need to include
-     * page_bf_inline.h.
+     * non-conditional.
      */
     w_rc_t fix_virgin_root(volid_t vol, snum_t store, shpid_t shpid);
 
     /**
      * Fixes an existing (not virgin) root page for the given store.
      * This method doesn't receive page ID because it's already known
-     * by bufferpool.  To use this method, you need to include
-     * page_bf_inline.h.
+     * by bufferpool.
      */
     w_rc_t fix_root(volid_t vol, snum_t store, latch_mode_t mode,
                     bool conditional=false);
@@ -189,8 +180,5 @@ protected:
 
     latch_mode_t  _mode;
 };
-
-
-#include "page_bf_inline.h"
 
 #endif

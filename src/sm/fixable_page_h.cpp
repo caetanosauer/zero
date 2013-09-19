@@ -6,7 +6,98 @@
 #include "sm_int_1.h"
 
 #include "fixable_page_h.h"
+#include "bf_tree_inline.h"
 
+
+void fixable_page_h::unfix() {
+    if (_mode != LATCH_NL) {
+        w_assert1(_pp);
+        smlevel_0::bf->unfix(_pp);
+        _mode = LATCH_NL;
+        _pp   = NULL;
+    }
+}
+
+w_rc_t fixable_page_h::fix_nonroot (const fixable_page_h &parent, volid_t vol,
+                                    shpid_t shpid, latch_mode_t mode, 
+                                    bool conditional, bool virgin_page) {
+    w_assert1(shpid != 0);
+    unfix();
+    W_DO(smlevel_0::bf->fix_nonroot(_pp, parent._pp, vol, shpid, mode, conditional, virgin_page));
+    _mode = mode;
+    w_assert1(smlevel_0::bf->get_cb(_pp)->_pid_vol == vol);
+    w_assert1(is_swizzled_pointer(shpid) || smlevel_0::bf->get_cb(_pp)->_pid_shpid == shpid);
+    return RCOK;
+}
+
+w_rc_t fixable_page_h::fix_direct (volid_t vol, shpid_t shpid,
+                                   latch_mode_t mode, bool conditional, 
+                                   bool virgin_page) {
+    w_assert1(shpid != 0);
+    unfix();
+    W_DO(smlevel_0::bf->fix_direct(_pp, vol, shpid, mode, conditional, virgin_page));
+    _mode = mode;
+    w_assert1(smlevel_0::bf->get_cb(_pp)->_pid_vol == vol);
+    w_assert1(smlevel_0::bf->get_cb(_pp)->_pid_shpid == shpid);
+    return RCOK;
+}
+
+bf_idx fixable_page_h::pin_for_refix() {
+    w_assert1(is_latched());
+    return smlevel_0::bf->pin_for_refix(_pp);
+}
+
+w_rc_t fixable_page_h::refix_direct (bf_idx idx, latch_mode_t mode, bool conditional) {
+    w_assert1(idx != 0);
+    unfix();
+    W_DO(smlevel_0::bf->refix_direct(_pp, idx, mode, conditional));
+    _mode = mode;
+    return RCOK;
+}
+
+w_rc_t fixable_page_h::fix_virgin_root (volid_t vol, snum_t store, shpid_t shpid) {
+    w_assert1(shpid != 0);
+    unfix();
+    W_DO(smlevel_0::bf->fix_virgin_root(_pp, vol, store, shpid));
+    _mode = LATCH_EX;
+    w_assert1(smlevel_0::bf->get_cb(_pp)->_pid_vol == vol);
+    w_assert1(smlevel_0::bf->get_cb(_pp)->_pid_shpid == shpid);
+    return RCOK;
+}
+
+w_rc_t fixable_page_h::fix_root (volid_t vol, snum_t store, latch_mode_t mode, bool conditional) {
+    unfix();
+    W_DO(smlevel_0::bf->fix_root(_pp, vol, store, mode, conditional));
+    _mode = mode;
+    return RCOK;
+}
+
+
+void fixable_page_h::set_dirty() const {
+    w_assert1(_pp);
+    if (_mode != LATCH_NL) {
+        smlevel_0::bf->set_dirty(_pp);
+    }
+}
+
+bool fixable_page_h::is_dirty() const {
+    if (_mode == LATCH_NL) {
+        return false;
+    } else {
+        return smlevel_0::bf->is_dirty(_pp);
+    }
+}
+
+
+bool fixable_page_h::upgrade_latch_conditional() {
+    w_assert1(_pp != NULL);
+    w_assert1(_mode == LATCH_SH);
+    bool success = smlevel_0::bf->upgrade_latch_conditional(_pp);
+    if (success) {
+        _mode = LATCH_EX;
+    }
+    return success;
+}
 
 
 rc_t fixable_page_h::set_to_be_deleted (bool log_it) {
@@ -27,6 +118,9 @@ void fixable_page_h::unset_to_be_deleted() {
         // (UNDOing this means the page wasn't deleted yet by bufferpool, so it's dirty)
     }
 }
+
+
+
 
 
 

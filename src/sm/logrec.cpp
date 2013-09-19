@@ -13,7 +13,6 @@
 #include "logdef_gen.cpp"
 #include "vec_t.h"
 #include "alloc_cache.h"
-#include "page_bf_inline.h"
 
 #include <iomanip>
 typedef        ios::fmtflags        ios_fmtflags;

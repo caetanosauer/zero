@@ -10,6 +10,8 @@
 #include "w_key.h"
 #include "w_endian.h"
 
+#include "bf_tree_inline.h" // for normalize_shpid <<<>>>
+
 struct btree_lf_stats_t;
 struct btree_int_stats_t;
 

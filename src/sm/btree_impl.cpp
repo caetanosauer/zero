@@ -19,7 +19,6 @@
 #include "crash.h"
 #include "xct.h"
 #include <vector>
-#include "page_bf_inline.h"
 
 rc_t
 btree_impl::_ux_insert(
@@ -99,7 +98,6 @@ btree_impl::_ux_insert_core(
             W_DO( another_leaf.fix_nonroot(leaf, leaf.vol(), new_page_id.page, LATCH_EX));
             w_assert1(another_leaf.is_fixed());                        
             w_assert2(another_leaf.fence_contains(key));
-            leaf.unfix();
             leaf = another_leaf;
             w_assert2( leaf.is_fixed());
         }
@@ -234,7 +232,6 @@ rc_t btree_impl::_ux_insert_core_tail(volid_t /* vol */, snum_t /* store */,
             W_DO( another_leaf.fix_nonroot(leaf, leaf.vol(), new_page_id.page, LATCH_EX) );
             w_assert1(another_leaf.is_fixed());                        
             w_assert2(another_leaf.fence_contains(key));
-            leaf.unfix();
             leaf = another_leaf;
             w_assert2( leaf.is_fixed());
         }

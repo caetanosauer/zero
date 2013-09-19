@@ -19,7 +19,6 @@
 #include "crash.h"
 #include "w_key.h"
 #include "xct.h"
-#include "page_bf_inline.h"
 
 rc_t btree_impl::_sx_defrag_tree(
     volid_t vol, snum_t store,

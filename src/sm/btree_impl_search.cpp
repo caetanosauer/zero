@@ -13,7 +13,6 @@
 #define BTREE_C
 
 #include "sm_int_2.h"
-#include "page_bf_inline.h"
 #include "btree_page.h"
 #include "btree_impl.h"
 #include "btcursor.h"
@@ -185,9 +184,7 @@ btree_impl::_ux_traverse_recurse(
     /// cache the flag to avoid calling the functions each time
     bool do_inquery_verify = (xct() != NULL && xct()->is_inquery_verify());
     
-    if (leaf.is_fixed()) {
-        leaf.unfix();
-    }
+    leaf.unfix();
 
     // this part is now loop, not recursion to prevent the stack from growing too long
     btree_page_h *current = &start;

@@ -23,7 +23,6 @@
 #include "xct.h"
 #include "sm_int_0.h"
 #include "bf_tree.h"
-#include "page_bf_inline.h"
 
 // NOTE we don't know the level of root until we start, so just give "-1" as magic value for root level
 const int16_t NOCHECK_ROOT_LEVEL = -1;

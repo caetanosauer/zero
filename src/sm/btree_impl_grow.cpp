@@ -19,7 +19,6 @@
 #include "crash.h"
 #include "w_key.h"
 #include "xct.h"
-#include "page_bf_inline.h"
 
 rc_t btree_impl::_sx_create_tree(const stid_t &stid, lpid_t &root_pid)
 {
