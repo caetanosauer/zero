@@ -20,9 +20,16 @@ rc_t fixable_page_h::set_to_be_deleted (bool log_it) {
     return RCOK;
 }
 
+
 // <<<>>> use virtual methods later?
 
 #include "btree_page.h"
+
+bool fixable_page_h::has_children() const {
+    btree_page_h downcast(get_generic_page());
+
+    return !downcast.is_leaf();
+}
 
 int fixable_page_h::max_child_slot() const {
     btree_page_h downcast(get_generic_page());

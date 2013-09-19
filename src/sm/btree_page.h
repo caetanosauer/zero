@@ -404,8 +404,8 @@ public:
     /** Returns root page used for recovery. */
     lpid_t           root() const;
 
-    /** Returns if this page is a leaf page. */
-    bool             is_leaf() const;
+    /// Is associated page a leaf?
+    bool         is_leaf() const;
     /** Returns if this page is NOT a leaf page.*/
     bool             is_node() const;
     /**

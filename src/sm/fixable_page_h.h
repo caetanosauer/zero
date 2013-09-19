@@ -73,8 +73,8 @@ public:
      * To use this method, you need to include page_bf_inline.h.
      */
     w_rc_t fix_nonroot(const fixable_page_h &parent, volid_t vol,
-                       shpid_t shpid, latch_mode_t mode, bool conditional=false, bool
-                       virgin_page=false);
+                       shpid_t shpid, latch_mode_t mode, bool conditional=false, 
+                       bool virgin_page=false);
 
     /**
      * Fixes any page (root or non-root) in the bufferpool without
@@ -89,8 +89,10 @@ public:
      * @param[in] shpid ID of the page to fix. If the shpid looks like
      * a swizzled pointer, this method returns an error (see above).
      * @param[in] mode latch mode. has to be SH or EX.
-     * @param[in] conditional whether the fix is conditional (returns immediately even if failed).
-     * @param[in] virgin_page whether the page is a new page thus doesn't have to be read from disk.
+     * @param[in] conditional whether the fix is conditional (returns
+     * immediately even if failed).
+     * @param[in] virgin_page whether the page is a new page thus
+     * doesn't have to be read from disk.
      *
      * To use this method, you need to include page_bf_inline.h.
      */
@@ -116,8 +118,8 @@ public:
      * unpin_for_refix().  To use this method, you need to include
      * page_bf_inline.h.
      */
-    w_rc_t refix_direct(bf_idx idx, latch_mode_t mode, bool
-                        conditional=false);
+    w_rc_t refix_direct(bf_idx idx, latch_mode_t mode, 
+                        bool conditional=false);
 
     /**
      * Fixes a new (virgin) root page for a new store with the
@@ -147,7 +149,7 @@ public:
 
     /// Reserve this page to be deleted when bufferpool evicts this page.
     rc_t         set_to_be_deleted(bool log_it);
-    /// Unset the deletion flag. This is only used by UNDO, so no logging. and no failure possible.
+    /// Unset the deletion flag.  This is only used by UNDO, so no logging and no failure possible.
     void         unset_to_be_deleted();
     bool         is_to_be_deleted() { return (_pp->page_flags&t_to_be_deleted) != 0; }
     
@@ -156,10 +158,14 @@ public:
     bool         is_fixed()   const;
     latch_mode_t latch_mode() const { return _mode; }
     bool         is_latched() const { return _mode != LATCH_NL; }
-    /// conditionally upgrade the latch to EX. returns if successfully upgraded.
+    /// Conditionally upgrade the latch to EX.  Returns if successfully upgraded.
     bool         upgrade_latch_conditional();
 
 
+    /*
+     * Interface for use by buffer manager to perform swizzling:
+     */
+    bool         has_children()   const;
     int          max_child_slot() const;
     shpid_t*     child_slot_address(int child_slot) const;
 

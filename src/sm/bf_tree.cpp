@@ -31,11 +31,6 @@
 #include <limits>
 
 
-// FIXME: replace all code using the below type with fixable_page_h once it has the right methods...  <<<>>>
-typedef btree_page_h my_btree_page_h;
-
-
-
 ///////////////////////////////////   Initialization and Release BEGIN ///////////////////////////////////  
 
 #ifdef PAUSE_SWIZZLING_ON
@@ -477,11 +472,13 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                         return RC (smlevel_0::eBADCHECKSUM);
                     }
                     // this is actually an error, but some testcases don't bother making real pages, so
-                    // we just write out some warning.
+                    // we just write out some warning.  FIXME: fix testcases and make this a real error!
                     if (!virgin_page && (_buffer[idx].pid.page != shpid || _buffer[idx].pid.vol().vol != vol)) {
                         ERROUT(<<"WARNING!! bf_tree_m: page id doesn't match! " << vol << "." << shpid << " was " << _buffer[idx].pid.vol().vol << "." << _buffer[idx].pid.page
                             << ". This means an inconsistent disk page unless this message is issued in testcases without real disk pages."
                         );
+                        // prevent assertion errors due to bad testcase pages; should not be needed once above fixed:
+                        _buffer[idx].tag = t_btree_p;
                     }
                 }
             }
@@ -533,7 +530,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             // okay, all done
 #ifdef BP_MAINTAIN_PARNET_PTR
             if (is_swizzling_enabled()) {
-		lintel::unsafe::atomic_fetch_add((uint32_t*) &(_control_bl     ocks[parent_idx]._pin_cnt), 1); // we installed a new child of the parent      to this bufferpool. add parent's count
+		lintel::unsafe::atomic_fetch_add((uint32_t*) &(_control_blocks[parent_idx]._pin_cnt), 1); // we installed a new child of the parent      to this bufferpool. add parent's count
             }
 #endif // BP_MAINTAIN_PARNET_PTR
             page = &(_buffer[idx]);
@@ -1473,8 +1470,8 @@ void bf_tree_m::_unswizzle_traverse_store(uint32_t &unswizzled_frames, volid_t v
         return; // just give up in unlucky case (probably the store has been just deleted)
     }
     bf_idx parent_idx = _volumes[vol]->_root_pages[store];
-    my_btree_page_h p(&_buffer[parent_idx]);
-    if (p.level() <= 1) {
+    fixable_page_h p(&_buffer[parent_idx]);
+    if (!p.has_children()) {
         return;
     }
     // collect cold pages first. if need more then repeat for hot pages
@@ -1512,7 +1509,7 @@ void bf_tree_m::_unswizzle_traverse_node(uint32_t &unswizzled_frames,
     }
     uint32_t old = _swizzle_clockhand_pathway[cur_clockhand_depth];
     bf_tree_cb_t &node_cb = get_cb(node_idx);
-    my_btree_page_h node_p(_buffer + node_idx);
+    fixable_page_h node_p(_buffer + node_idx);
     if (old >= (uint32_t) node_p.max_child_slot()+1) {
         return;
     }
@@ -1521,7 +1518,7 @@ void bf_tree_m::_unswizzle_traverse_node(uint32_t &unswizzled_frames,
     uint32_t remaining = node_p.max_child_slot()+1 - old;
     for (uint32_t i = 0; i < remaining && unswizzled_frames < UNSWIZZLE_BATCH_SIZE; ++i) {
         uint32_t slot = old + i;
-        if (!node_cb._used || node_p.level() <= 1) {
+        if (!node_cb._used || !node_p.has_children()) {
             return;
         }
 
@@ -1537,7 +1534,8 @@ void bf_tree_m::_unswizzle_traverse_node(uint32_t &unswizzled_frames,
         }
 
         bf_idx child_idx = shpid ^ SWIZZLED_PID_BIT;
-        if (node_p.level() >= 3) {
+        fixable_page_h node_child(_buffer + child_idx);
+        if (node_child.has_children()) {
             // child is also an intermediate node
             _unswizzle_traverse_node (unswizzled_frames, vol, store, child_idx, cur_clockhand_depth + 1);
             // if the child node is left with no swizzled pointers then try to unswizzle 
@@ -1549,7 +1547,7 @@ void bf_tree_m::_unswizzle_traverse_node(uint32_t &unswizzled_frames,
                 // this is just a hint. try conditionally latching the child and do the actual check
                 w_rc_t latch_rc = child_cb.latch().latch_acquire(LATCH_SH, sthread_t::WAIT_IMMEDIATE);
                 if (latch_rc.is_error()) {
-                    DBGOUT2(<<"_unswizzle_traverse_node: oops, unlucky. someone is latching this page. skipiing this. rc=" << latch_rc);
+                    DBGOUT2(<<"_unswizzle_traverse_node: oops, unlucky. someone is latching this page. skiping this. rc=" << latch_rc);
                 } else {
                     if (!has_swizzled_child(child_idx)) {
                         // unswizzle_a_frame will try to conditionally latch a parent while
