@@ -125,7 +125,7 @@ void fixable_page_h::unset_to_be_deleted() {
 
 
 
-// <<<>>> use virtual methods later?
+// <<<>>> 
 
 #include "btree_page.h"
 

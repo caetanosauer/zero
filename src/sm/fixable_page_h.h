@@ -8,13 +8,12 @@
 #include "bf_idx.h"
 #include "generic_page.h"
 #include "latch.h"
-#include "sm_base.h"
 
 
 
 /**
  * \brief Handle class for pages that may be fixed (i.e., paged in by
- *  the main buffer manager, bf_tree_m)
+ * the main buffer manager, bf_tree_m)
  *
  * \details
  * Currently, only B-tree pages are fixable.
@@ -65,14 +64,14 @@ public:
      * shpid stored in the parent page is automatically (and
      * atomically) changed to a swizzled pointer by the bufferpool.
      *
-     * @param[in] parent parent of the page to be fixed. has to be
-     * already latched. if you can't provide this, use fix_direct()
+     * @param[in] parent parent of the page to be fixed.  has to be
+     * already latched.  if you can't provide this, use fix_direct()
      * though it can't exploit pointer swizzling and thus will be
      * slower.
      * @param[in] vol volume ID.
      * @param[in] shpid ID of the page to fix (or bufferpool index
      * when swizzled)
-     * @param[in] mode latch mode. has to be SH or EX.
+     * @param[in] mode latch mode.  has to be SH or EX.
      * @param[in] conditional whether the fix is conditional (returns
      * immediately even if failed).
      * @param[in] virgin_page whether the page is a new page thus
@@ -87,7 +86,7 @@ public:
      * pointer swizzling.  In some places, we need to fix a page
      * without fixing the parent, e.g., recovery or re-fix in cursor.
      * For such code, this method allows fixing without
-     * parent. However, this method can be used only when the pointer
+     * parent. However, this method can be used only when pointer
      * swizzling is off.
      * @see bf_tree_m::fix_direct()
      *
@@ -106,11 +105,11 @@ public:
     /**
      * Adds an additional pin count for the given page (which must be
      * already latched).  This is used to re-fix the page later
-     * without parent pointer. See fix_direct() why we need this
+     * without parent pointer.  See fix_direct() why we need this
      * feature.  Never forget to call a corresponding
-     * unpin_for_refix() for this page. Otherwise, the page will be in
+     * unpin_for_refix() for this page.  Otherwise, the page will be in
      * the bufferpool forever.  
-     * @return slot index of the page in this bufferpool. Use this
+     * @return slot index of the page in this bufferpool.  Use this
      * value to the subsequent refix_direct() and unpin_for_refix()
      * call.
      */
@@ -147,8 +146,8 @@ public:
     /// Mark this page in the bufferpool dirty.  If this page is not a
     /// bufferpool-managed page, does nothing.
     void         set_dirty() const;
-    /// Returns if this page in the bufferpool is marked dirty.  If
-    /// this page is not a bufferpool-managed page, returns false.
+    /// Return true if this page in the bufferpool is marked dirty.
+    /// If this page is not a bufferpool-managed page, returns false.
     bool         is_dirty()  const;
 
 
