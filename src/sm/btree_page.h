@@ -200,6 +200,7 @@ BOOST_STATIC_ASSERT(sizeof(btree_page) == sizeof(generic_page));
 
 
 class btree_page_h;
+
 /**
  * \brief Represents a record in BTree.
  * \ingroup SSMBTREE
@@ -245,6 +246,8 @@ btrec_t::btrec_t(const btree_page_h& page, slotid_t slot)
 {
     set(page, slot);
 }
+
+
 class btree_impl;
 class btree_ghost_t;
 class btree_ghost_mark_log;
