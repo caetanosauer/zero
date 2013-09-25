@@ -18,6 +18,27 @@
 #include <string>
 #include <algorithm>
 
+btrec_t& 
+btrec_t::set(const btree_page_h& page, slotid_t slot) {
+    FUNC(btrec_t::set);
+    w_assert3(slot >= 0 && slot < page.nrecs());
+    // Invalidate old _elem.
+    _elem.reset();
+    
+    if (page.is_leaf())  {
+        page.rec_leaf(slot, _key, _elem, _ghost_record);
+    } else {
+        page.rec_node(slot, _key, _child);
+        _ghost_record = false;
+        // this might not be needed, but let's also add the _child value
+        // to _elem.
+        _elem.put (&_child, sizeof(_child));
+    }
+
+    return *this;
+}
+
+
 rc_t btree_page_h::init_fix_steal(btree_page_h*     parent,
                                   const lpid_t&     pid,
                                   shpid_t           root, 
@@ -298,11 +319,11 @@ void btree_page_h::search_leaf(const char *key_raw, size_t key_raw_len,
     w_assert1((uint) get_prefix_length() <= key_raw_len);
     w_assert1(::memcmp (key_raw, get_prefix_key(), get_prefix_length()) == 0);
 
-    const char *key_noprefix = key_raw + get_prefix_length();
-    int key_len = key_raw_len - get_prefix_length();
-    poor_man_key poormkey = extract_poor_man_key(key_noprefix, key_len);
-    const void *key_noprefix_remain = key_noprefix + sizeof(poor_man_key);
-    int key_len_remain = key_len - sizeof(poor_man_key);
+    const char * key_noprefix        = key_raw + get_prefix_length();
+    int          key_len             = key_raw_len - get_prefix_length();
+    poor_man_key poormkey            = extract_poor_man_key(key_noprefix, key_len);
+    const void * key_noprefix_remain = key_noprefix + sizeof(poor_man_key);
+    int          key_len_remain      = key_len - sizeof(poor_man_key);
     found_key = false;
     
     const char* begin_slot = btree_page_h::slot_addr(0 + 1);
@@ -1183,10 +1204,10 @@ void btree_page_h::rec_leaf(slotid_t idx,  w_keystr_t &key, cvec_t &el, bool &gh
     
     el.reset();
 
-    slot_length_t rec_len = ((slot_length_t*) p)[0];
-    slot_length_t key_len = ((slot_length_t*) p)[1];
+    slot_length_t rec_len    = ((slot_length_t*) p)[0];
+    slot_length_t key_len    = ((slot_length_t*) p)[1];
     slot_length_t prefix_len = (slot_length_t) get_prefix_length();
-    slot_length_t el_len = rec_len - sizeof(slot_length_t) * 2 - key_len + prefix_len;
+    slot_length_t el_len     = rec_len - sizeof(slot_length_t) * 2 - key_len + prefix_len;
     p += sizeof(slot_length_t) * 2;
     
     w_assert2 (prefix_len <= key_len);
@@ -1271,7 +1292,7 @@ void  btree_page_h::rec_node(slotid_t idx,  w_keystr_t &key, shpid_t &el) const 
     
     el = *((shpid_t*) p);
     p += sizeof(shpid_t);
-    slot_length_t rec_len = *((slot_length_t*) p);
+    slot_length_t rec_len          = *((slot_length_t*) p);
     slot_length_t key_len_noprefix = rec_len - sizeof(shpid_t) - sizeof(slot_length_t);
     p += sizeof(slot_length_t);
     slot_length_t prefix_len = get_prefix_length();
@@ -1343,25 +1364,7 @@ btree_page_h::page_usage(int& data_size, int& header_size, int& unused,
 
     w_assert1(data_size + header_size + unused + alignment == sizeof(generic_page));
 }
-btrec_t& 
-btrec_t::set(const btree_page_h& page, slotid_t slot) {
-    FUNC(btrec_t::set);
-    w_assert3(slot >= 0 && slot < page.nrecs());
-    // Invalidate old _elem.
-    _elem.reset();
-    
-    if (page.is_leaf())  {
-        page.rec_leaf(slot, _key, _elem, _ghost_record);
-    } else {
-        page.rec_node(slot, _key, _child);
-        _ghost_record = false;
-        // this might not be needed, but let's also add the _child value
-        // to _elem.
-        _elem.put (&_child, sizeof(_child));
-    }
 
-    return *this;
-}
 
 smsize_t                        
 btree_page_h::overhead_requirement_per_entry =
