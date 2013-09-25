@@ -1847,19 +1847,3 @@ int bf_tree_m::nframes(int priority, int level, int refbit, bool swizzled, bool 
     return n;
 }
 #endif
-
-#if 0
-void bf_tree_m::print_slots(page_s* page) const
-{
-    if (W_DEBUG_LEVEL >= 1) {
-        slot_index_t slots = page->nslots;
-        DBGOUT (<< "print " << slots << " slots");
-        page_p p (page);
-        for (slot_index_t i = 1; i < slots; ++i) {
-            void* addr = p.tuple_addr(i);
-            shpid_t* slotaddr = reinterpret_cast<shpid_t*>(addr);
-            DBGOUT (<< " slot[" << i << "] = " << *slotaddr);
-        }
-    }
-}
-#endif

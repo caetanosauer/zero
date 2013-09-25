@@ -43,8 +43,7 @@ void _add_child_pointer (btree_page *page, shpid_t child) {
     if (slot == 0) {
         page->btree_pid0 = child;
     } else {
-        void* tuple_p = p.tuple_addr(slot);
-        *reinterpret_cast<shpid_t*>(tuple_p) = child;
+        p.child_pointer(slot-1) = child;
     }
 }
 
