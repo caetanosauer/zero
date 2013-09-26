@@ -724,9 +724,7 @@ rc_t btree_page_h::_insert_expand_nolog(slotid_t slot, const cvec_t &vec, poor_m
     //  Log has already been generated ... the following actions must succeed!
     // shift slot array. if we are inserting to the end (idx == nslots), do nothing
     if (idx != nslots())    {
-        ::memmove(page()->data + slot_sz * (idx + 1),
-                  page()->data + slot_sz * (idx),
-                  (nslots() - idx) * slot_sz);
+        ::memmove(slot_addr(idx + 1), slot_addr(idx), (nslots() - idx) * slot_sz);
     }
 
     //  Fill up the slots and data
@@ -980,9 +978,7 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, int re
     poor_man_key poormkey = extract_poor_man_key(key_raw, key_raw_len, prefix_len);
     if (slot != nrecs()) {
         // note that slot=0 is fence
-        ::memmove(page()->data + slot_sz * (slot + 2),
-                  page()->data + slot_sz * (slot + 1),
-                  (nrecs() - slot) * slot_sz);
+        ::memmove(slot_addr(slot + 2), slot_addr(slot + 1), (nrecs() - slot) * slot_sz);
     }
     slot_offset8_t new_record_head8 = page()->record_head8 - to_aligned_offset8(record_size);
     char* slot_p = btree_page_h::slot_addr(slot + 1);
@@ -1013,7 +1009,7 @@ void btree_page_h::mark_ghost(slotid_t slot) {
     w_assert0(tag() == t_btree_p);
     w_assert1(idx >= 0 && idx < nslots());
     w_assert1(slot >= 0); // fence record cannot be a ghost
-    slot_offset8_t *offset8 = reinterpret_cast<slot_offset8_t*>(page()->data + slot_sz * idx);
+    slot_offset8_t *offset8 = reinterpret_cast<slot_offset8_t*>(slot_addr(idx));
     if (*offset8 < 0) {
         return; // already ghost. do nothing
     }
@@ -1029,7 +1025,7 @@ void btree_page_h::unmark_ghost(slotid_t slot) {
     w_assert0(tag() == t_btree_p);
     w_assert1(idx >= 0 && idx < nslots());
     w_assert1(slot >= 0); // fence record cannot be a ghost
-    slot_offset8_t *offset8 = reinterpret_cast<slot_offset8_t*>(page()->data + slot_sz * idx);
+    slot_offset8_t *offset8 = reinterpret_cast<slot_offset8_t*>(slot_addr(idx));
     if (*offset8 > 0) {
         return; // already non-ghost. do nothing
     }
@@ -1607,7 +1603,7 @@ rc_t btree_page_h::defrag(slotid_t popped) {
     char *scratch_raw = reinterpret_cast<char*>(&scratch);
     ::memcpy(scratch_raw, page(), hdr_sz);
 #ifdef ZERO_INIT
-    ::memset(scratch.data, 0, data_sz);
+    ::memset(scratch.body[0].raw, 0, data_sz);
 #endif // ZERO_INIT
     
     //  Move data back without leaving holes
@@ -1639,7 +1635,7 @@ rc_t btree_page_h::defrag(slotid_t popped) {
         new_offset8 -= to_aligned_offset8(len);
         ::memcpy(scratch.data_addr8(new_offset8), page()->data_addr8(offset8), len);
 
-        slot_offset8_t* offset8_p = reinterpret_cast<slot_offset8_t*>(scratch.data + slot_sz * new_slots);
+        slot_offset8_t* offset8_p = &scratch.head[new_slots].offset;
         *offset8_p = new_offset8;
         scratch.poor(new_slots) = poormkey;
 

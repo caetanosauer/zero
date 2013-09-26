@@ -181,11 +181,11 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
 
     btree_page() {
         //w_assert1(0);  // FIXME: is this constructor ever called? yes it is (test_btree_ghost)
-        w_assert1((data - (const char *)this) % 4 == 0);     // check alignment<<<>>>
+        w_assert1((body[0].raw - (const char *)this) % 4 == 0);     // check alignment<<<>>>
         w_assert1(((const char *)&nslots - (const char *)this) % 4 == 0);     // check alignment<<<>>>
         //w_assert1(((const char *)&record_head8 - (const char *)this) % 8 == 0);     // check alignment<<<>>>
-        w_assert1((data - (const char *)this) % 8 == 0);     // check alignment
-        w_assert1(data - (const char *) this == hdr_sz);
+        w_assert1((body[0].raw - (const char *)this) % 8 == 0);     // check alignment
+        w_assert1(body[0].raw - (const char *) this == hdr_sz);
     }
     ~btree_page() { }
 
@@ -208,19 +208,17 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
                 slot_length_t slot_len;
                 char          key[2]; // <<<>>>
             } interior;
+            struct {
+                char          key[8]; // <<<>>>
+            } fence;
         };
     } slot_body;
         
-private:
     /* MUST BE 8-BYTE ALIGNED HERE */
     union {
-        char      data[data_sz];        // must be aligned  <<<>>>
-
         slot_head head[data_sz/sizeof(slot_head)];
-
         slot_body body[data_sz/sizeof(slot_body)];
     };
-public:
 
     poor_man_key& poor(slot_index_t slot) { return head[slot].poor; }
 
@@ -251,10 +249,10 @@ public:
     void delete_slot(slot_index_t slot);
 
     char*      data_addr8(slot_offset8_t offset8) {
-        return data + to_byte_offset(offset8);
+        return &body[offset8].raw[0];
     }
     const char* data_addr8(slot_offset8_t offset8) const {
-        return data + to_byte_offset(offset8);
+        return &body[offset8].raw[0];
     }
 };
 BOOST_STATIC_ASSERT(sizeof(btree_page) == sizeof(generic_page));
@@ -1300,7 +1298,7 @@ inline bool btree_page_h::is_ghost(slotid_t slot) const {
 inline char* btree_page_h::slot_addr(slotid_t idx) const
 {
     w_assert3(idx >= 0 && idx <= page()->nslots);
-    return page()->data + (slot_sz * idx);
+    return (char*) &page()->head[idx];
 }
 
 inline slot_offset8_t
