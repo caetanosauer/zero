@@ -18,6 +18,37 @@
 #include <string>
 #include <algorithm>
 
+
+void btree_page::delete_slot(slot_index_t slot) {
+    w_assert1(slot>=0 && slot<nslots);
+    w_assert1(slot != 0); // deleting slot 0 makes no sense because it has a special format
+
+    slot_offset8_t offset = head[slot].offset;
+    if (offset < 0) {
+        offset = -offset;
+        nghosts--;
+    }
+
+    if (offset == record_head8) {
+        // Then, we are pushing down the record_head8.  lucky!
+        record_head8 += slot_length8(slot);
+    }
+
+    // shift slot array down to remove head[slot]:
+    ::memmove(&head[slot], &head[slot+1], (nslots-(slot+1))*sizeof(slot_head));
+    nslots--;
+}
+
+
+
+
+
+
+
+
+
+
+
 btrec_t& 
 btrec_t::set(const btree_page_h& page, slotid_t slot) {
     FUNC(btrec_t::set);
@@ -702,7 +733,7 @@ rc_t btree_page_h::_insert_expand_nolog(slotid_t slot, const cvec_t &vec, poor_m
     slot_offset8_t new_record_head8 = page()->record_head8 - to_aligned_offset8(vec.size());
     char* slot_p = btree_page_h::slot_addr(idx);
     *reinterpret_cast<slot_offset8_t*>(slot_p) = new_record_head8;
-    *reinterpret_cast<poor_man_key*>(slot_p + sizeof(slot_offset8_t)) = poormkey;
+    page()->poor(idx) = poormkey;
     vec.copy_to(page()->data_addr8(new_record_head8));
     page()->record_head8 = new_record_head8;
     ++page()->nslots;
@@ -721,7 +752,7 @@ void btree_page_h::_append_nolog(const cvec_t &vec, poor_man_key poormkey, bool 
     slot_offset8_t new_record_head8 = page()->record_head8 - to_aligned_offset8(vec.size());
     char* slot_p = btree_page_h::slot_addr(nslots());
     *reinterpret_cast<slot_offset8_t*>(slot_p) = ghost ? -new_record_head8 : new_record_head8;
-    *reinterpret_cast<poor_man_key*>(slot_p + sizeof(slot_offset8_t)) = poormkey;
+    page()->poor(nslots()) = poormkey;
     vec.copy_to(page()->data_addr8(new_record_head8));
     page()->record_head8 = new_record_head8;
     if (ghost) {
@@ -798,38 +829,11 @@ rc_t btree_page_h::replace_expand_fence_rec_nolog(const cvec_t &fences) {
 }
 
 
-rc_t btree_page_h::remove_shift_nolog(slotid_t slot) {
-    slotid_t idx = slot + 1; // slot index in btree_page_h
-    w_assert1(idx >= 0 && idx < nslots());
-    w_assert1(slot >= 0); // this method does NOT assume shifting fence record
+rc_t btree_page_h::remove_shift_nolog(slotid_t idx) {
+    w_assert1(idx >= 0 && idx < nrecs());
+
     w_assert3 (_is_consistent_space());
-    
-    slot_offset8_t removed_offset8 = btree_page_h::tuple_offset8(idx);
-    slot_length_t removed_length = get_rec_size(slot);
-
-    // Shift slot array. if we are removing last (idx==nslots - 1), do nothing.
-    if (idx < nslots() - 1) {
-        ::memmove(page()->data + slot_sz * (idx),
-                  page()->data + slot_sz * (idx + 1),
-                  (nslots() - 1 - idx) * slot_sz);
-    }
-    --page()->nslots;
-
-    bool ghost = false;
-    if (removed_offset8 < 0) {
-        removed_offset8 = -removed_offset8; // ghost record
-        ghost = true;
-    }
-    if (page()->record_head8 == removed_offset8) {
-        // then, we are pushing down the record_head8. lucky!
-        w_assert3 (_is_consistent_space());
-        page()->record_head8 += to_aligned_offset8(removed_length);
-    }
-    
-    if (ghost) {
-        --page()->nghosts;
-    }
-
+    page()->delete_slot(idx + 1);
     w_assert3 (_is_consistent_space());
     return RCOK;
 }
@@ -974,16 +978,16 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, int re
     
     int16_t prefix_len = get_prefix_length();
     poor_man_key poormkey = extract_poor_man_key(key_raw, key_raw_len, prefix_len);
-    if (slot != nrecs())    {
+    if (slot != nrecs()) {
         // note that slot=0 is fence
         ::memmove(page()->data + slot_sz * (slot + 2),
-                page()->data + slot_sz * (slot + 1),
-                (nrecs() - slot) * slot_sz);
+                  page()->data + slot_sz * (slot + 1),
+                  (nrecs() - slot) * slot_sz);
     }
     slot_offset8_t new_record_head8 = page()->record_head8 - to_aligned_offset8(record_size);
     char* slot_p = btree_page_h::slot_addr(slot + 1);
     *reinterpret_cast<slot_offset8_t*>(slot_p) = -new_record_head8; // ghost record
-    *reinterpret_cast<poor_man_key*>(slot_p + sizeof(slot_offset8_t)) = poormkey;
+    page()->poor(slot + 1) = poormkey;
 
     // make a dummy record that has the desired length
     slot_length_t klen = key_raw_len;
@@ -1636,9 +1640,8 @@ rc_t btree_page_h::defrag(slotid_t popped) {
         ::memcpy(scratch.data_addr8(new_offset8), page()->data_addr8(offset8), len);
 
         slot_offset8_t* offset8_p = reinterpret_cast<slot_offset8_t*>(scratch.data + slot_sz * new_slots);
-        poor_man_key* poormkey_p = reinterpret_cast<poor_man_key*>(scratch.data + slot_sz * new_slots + sizeof(slot_offset8_t));
         *offset8_p = new_offset8;
-        *poormkey_p = poormkey;
+        scratch.poor(new_slots) = poormkey;
 
         ++new_slots;
     }

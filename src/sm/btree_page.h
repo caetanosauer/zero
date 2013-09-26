@@ -195,11 +195,30 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
         poor_man_key   poor;
     } slot_head;
 
+    typedef struct {
+        union {
+            char raw[8];
+            struct {
+                slot_length_t slot_len;
+                slot_length_t key_len;
+                char          key[4]; // <<<>>>
+            } leaf;
+            struct {
+                shpid_t       child;
+                slot_length_t slot_len;
+                char          key[2]; // <<<>>>
+            } interior;
+        };
+    } slot_body;
+        
 private:
     /* MUST BE 8-BYTE ALIGNED HERE */
     union {
         char      data[data_sz];        // must be aligned  <<<>>>
+
         slot_head head[data_sz/sizeof(slot_head)];
+
+        slot_body body[data_sz/sizeof(slot_body)];
     };
 public:
 
@@ -210,11 +229,26 @@ public:
     void* slot_start(slot_index_t slot) {
         slot_offset8_t offset = head[slot].offset;
         if (offset < 0) offset = -offset; // ghost record
-        return data_addr8(offset);
+        return &body[offset].raw[0];
     }
 
+    slot_length_t slot_length(slot_index_t slot) {
+        if (slot == 0) {
+            return -1;
+        }
 
+        slot_offset8_t offset = head[slot].offset;
+        if (offset < 0) offset = -offset; // ghost record
 
+        if (btree_level == 1) {
+            return body[offset].leaf.slot_len;
+        } else {
+            return body[offset].interior.slot_len;
+        }
+    }
+    slot_length_t slot_length8(slot_index_t slot) { return (slot_length(slot)-1)/8+1; }
+
+    void delete_slot(slot_index_t slot);
 
     char*      data_addr8(slot_offset8_t offset8) {
         return data + to_byte_offset(offset8);
@@ -225,6 +259,7 @@ public:
 };
 BOOST_STATIC_ASSERT(sizeof(btree_page) == sizeof(generic_page));
 BOOST_STATIC_ASSERT(sizeof(btree_page::slot_head) == 4);
+BOOST_STATIC_ASSERT(sizeof(btree_page::slot_body) == 8);
 
 
 
@@ -594,9 +629,6 @@ public:
     // ======================================================================
     //   BEGIN: Search and Record Access functions
     // ======================================================================
-
-    char*                        data_addr8(slot_offset8_t offset8);
-    const char*                  data_addr8(slot_offset8_t offset8) const;
 
     slot_offset8_t               tuple_offset8(slotid_t idx) const;
     void                         tuple_both (slotid_t idx, slot_offset8_t &offset8, poor_man_key &poormkey) const;
@@ -1229,7 +1261,7 @@ inline int btree_page_h::_compare_node_key_noprefix(slotid_t idx, const void *ke
 }
 inline int btree_page_h::_compare_leaf_key_noprefix_remain(slot_offset8_t slot_offset8, const void *key_noprefix_remain, int key_len_remain) const {
     w_assert1(is_leaf());
-    const char* base = btree_page_h::data_addr8(slot_offset8 < 0 ? -slot_offset8 : slot_offset8);
+    const char* base = page()->data_addr8(slot_offset8 < 0 ? -slot_offset8 : slot_offset8);
     int curkey_len_remain = ((slot_length_t*) base)[1] - get_prefix_length() - sizeof(poor_man_key);
     // because this function was called, the poor man's key part was equal.
     // now we just compare the remaining part
@@ -1245,7 +1277,7 @@ inline int btree_page_h::_compare_leaf_key_noprefix_remain(slot_offset8_t slot_o
 
 inline int btree_page_h::_compare_node_key_noprefix_remain(slot_offset8_t slot_offset8, const void *key_noprefix_remain, int key_len_remain) const {
     w_assert1(is_node());
-    const char* base = btree_page_h::data_addr8(slot_offset8 < 0 ? -slot_offset8 : slot_offset8);
+    const char* base = page()->data_addr8(slot_offset8 < 0 ? -slot_offset8 : slot_offset8);
     const char *p = ((const char*) base) + sizeof(shpid_t);
     slot_length_t rec_len = *((const slot_length_t*) p);
     w_assert1(rec_len >= sizeof(shpid_t) + sizeof(slot_length_t));
@@ -1265,14 +1297,6 @@ inline bool btree_page_h::is_ghost(slotid_t slot) const {
 }
 
 
-inline char* btree_page_h::data_addr8(slot_offset8_t offset8)
-{
-    return page()->data_addr8(offset8);
-}
-inline const char* btree_page_h::data_addr8(slot_offset8_t offset8) const
-{
-    return page()->data_addr8(offset8);
-}
 inline char* btree_page_h::slot_addr(slotid_t idx) const
 {
     w_assert3(idx >= 0 && idx <= page()->nslots);
