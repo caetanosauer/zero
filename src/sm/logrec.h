@@ -68,8 +68,6 @@ typedef smlevel_0::lock_mode_t lock_mode_t;
 #include "logfunc_gen.h"
 #include "xct.h"
 
-#include <boost/static_assert.hpp>
-
 /**
  * A log record's space is divided between a header and data. 
  * All log records' headers include the information contained in baseLogHeader.
@@ -166,8 +164,8 @@ public:
         max_data_sz = max_sz - hdr_non_ssx_sz - sizeof(lsn_t)
     };
 
-       BOOST_STATIC_ASSERT(hdr_non_ssx_sz == 40);
-       BOOST_STATIC_ASSERT(hdr_single_sys_xct_sz == 40 - 16);
+    static_assert(hdr_non_ssx_sz == 40, "header not expected size");
+    static_assert(hdr_single_sys_xct_sz == 40 - 16, "header not expected size");
 
        const tid_t&         tid() const;
        const vid_t&         vid() const;

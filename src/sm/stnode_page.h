@@ -63,7 +63,7 @@ class stnode_page : public generic_page_header {
     /// stnode[i] is the stnode_t for store # i of this volume
     stnode_t stnode[max];
 };
-BOOST_STATIC_ASSERT(sizeof(stnode_page) == generic_page_header::page_sz);
+static_assert(sizeof(stnode_page) == generic_page_header::page_sz, "page sizes do not match");
 
 
 

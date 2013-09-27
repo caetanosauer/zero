@@ -5,8 +5,6 @@
 #ifndef GENERIC_PAGE_H
 #define GENERIC_PAGE_H
 
-#include <boost/static_assert.hpp>
-
 #include "sm_s.h"
 #include "w_defines.h"
 
@@ -72,7 +70,7 @@ public:
     uint32_t    calculate_checksum () const;
 };
 // verify compiler tightly packed all of generic_page_header's fields:
-BOOST_STATIC_ASSERT(sizeof(generic_page_header) == 32);
+static_assert(sizeof(generic_page_header) == 32, "generic_page_header is not tightly packed");
 
 
 /**
@@ -122,7 +120,7 @@ class generic_page : public generic_page_header {
 private:
     char subclass_specific[page_sz - sizeof(generic_page_header)];
 };
-BOOST_STATIC_ASSERT(sizeof(generic_page) == generic_page_header::page_sz);
+static_assert(sizeof(generic_page) == generic_page_header::page_sz, "page sizes do not match");
 
 
 
