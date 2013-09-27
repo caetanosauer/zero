@@ -742,56 +742,31 @@ void btree_page_h::_append_nolog(const cvec_t &vec, poor_man_key poormkey, bool 
 }
 
 void btree_page_h::_expand_rec(slotid_t slot, slot_length_t rec_len) {
-    slotid_t idx = slot + 1; // slot index in btree_page_h 
-    w_assert1(idx >= 0 && idx < nslots());
     w_assert1(usable_space() >= align(rec_len));
     w_assert3(_is_consistent_space());
 
-    bool           ghost            = is_ghost(slot);
-    slot_length_t  old_rec_len      = get_rec_size(slot);
-    void*          old_rec          = page()->slot_start(idx);
-    slot_offset8_t new_record_head8 = page()->record_head8 - to_aligned_offset8(rec_len);
-    btree_page_h::change_slot_offset(idx, ghost ? -new_record_head8 : new_record_head8);
-    page()->record_head8 = new_record_head8;
+    if (!page()->resize_slot(slot+1, rec_len, true))
+        assert(false);
 
-    void* new_rec = page()->slot_start(idx);
-    *reinterpret_cast<slot_length_t*>(new_rec) = rec_len; // set new size
-    // ::memcpy (new_rec, &rec_len, sizeof(slot_length_t)); // set new size
-    ::memcpy (((char*)new_rec) + sizeof(slot_length_t), ((char*)old_rec) + sizeof(slot_length_t),
-              old_rec_len - sizeof(slot_length_t)); // copy the original data
-#if W_DEBUG_LEVEL>0
-    ::memset (old_rec, 0, old_rec_len); // clear old slot
-#endif // W_DEBUG_LEVEL>0
+    page()->slot_value(slot+1).leaf.slot_len = rec_len;
+
     w_assert3(get_rec_size(slot) == rec_len);
     w_assert3 (_is_consistent_space());
 }
 
 rc_t btree_page_h::replace_expand_fence_rec_nolog(const cvec_t &fences) {
     w_assert1(nslots() > 0);
-    slot_offset8_t current_offset8 = btree_page_h::tuple_offset8(0);
-    slot_length_t  current_size    = get_fence_rec_size();
-    if (align(fences.size()) <= align(current_size)) {
-        // then simply overwrite
-        void* addr = page()->slot_start(0);
-        fences.copy_to(addr);
-        w_assert1(*reinterpret_cast<slot_length_t*>(addr) == (slot_length_t) fences.size());
-        w_assert1 (get_fence_rec_size() == (slot_length_t) fences.size());
-        return RCOK;
-    }
-    // otherwise, have to expand
-    if (usable_space() < align(fences.size())) {
+
+    size_t new_size = fences.size();
+    if (!page()->resize_slot(0, new_size, false)) {
         return RC(smlevel_0::eRECWONTFIT);
     }
-    
-    w_assert3(_is_consistent_space());
-    slot_offset8_t new_record_head8 = page()->record_head8 - to_aligned_offset8(fences.size());
-    slot_offset8_t new_offset8 = current_offset8 < 0 ? -new_record_head8 : new_record_head8; // for ghost records
-    btree_page_h::change_slot_offset(0, new_offset8);
+
     void* addr = page()->slot_start(0);
     fences.copy_to(addr);
-    w_assert1(*reinterpret_cast<slot_length_t*>(addr) == (slot_length_t) fences.size());
+    page()->slot_value(0).fence.slot_len = new_size;
+
     w_assert1 (get_fence_rec_size() == (slot_length_t) fences.size());
-    page()->record_head8 = new_record_head8;
     w_assert3 (_is_consistent_space());    
     return RCOK;
 }
@@ -976,33 +951,15 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, int re
 
 void btree_page_h::mark_ghost(slotid_t slot) {
     slotid_t idx = slot + 1; // slot index in btree_page_h
-    w_assert0(tag() == t_btree_p);
     w_assert1(idx >= 0 && idx < nslots());
-    w_assert1(slot >= 0); // fence record cannot be a ghost
-    slot_offset8_t *offset8 = reinterpret_cast<slot_offset8_t*>(slot_addr(idx));
-    if (*offset8 < 0) {
-        return; // already ghost. do nothing
-    }
-    w_assert1(*offset8 > 0);
-    // reverse the sign to make it a ghost
-    *offset8 = -(*offset8);
-    ++page()->nghosts;
+    page()->set_ghost(idx);
     set_dirty();
 }
 
 void btree_page_h::unmark_ghost(slotid_t slot) {
     slotid_t idx = slot + 1; // slot index in btree_page_h
-    w_assert0(tag() == t_btree_p);
     w_assert1(idx >= 0 && idx < nslots());
-    w_assert1(slot >= 0); // fence record cannot be a ghost
-    slot_offset8_t *offset8 = reinterpret_cast<slot_offset8_t*>(slot_addr(idx));
-    if (*offset8 > 0) {
-        return; // already non-ghost. do nothing
-    }
-    w_assert1(*offset8 < 0);
-    // reverse the sign to make it a non-ghost
-    *offset8 = -(*offset8);
-    --page()->nghosts;
+    page()->unset_ghost(idx);
     set_dirty();
 }
 

@@ -222,12 +222,26 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
     poor_man_key& poor(slot_index_t slot) { return head[slot].poor; }
 
     bool is_ghost(slot_index_t slot) const { return head[slot].offset < 0; }
+    void set_ghost(slot_index_t slot);
+    void unset_ghost(slot_index_t slot);
+
+
+    size_t usable_space() const {
+        return (record_head8 - 2 * nslots)*8; // <<<>>>
+    }
+
 
     void* slot_start(slot_index_t slot) {
         slot_offset8_t offset = head[slot].offset;
         if (offset < 0) offset = -offset; // ghost record
         return &body[offset].raw[0];
     }
+    slot_body& slot_value(slot_index_t slot) {
+        slot_offset8_t offset = head[slot].offset;
+        if (offset < 0) offset = -offset; // ghost record
+        return body[offset];
+    }
+
 
     slot_length_t slot_length(slot_index_t slot) {
         if (slot == 0) {
@@ -247,6 +261,7 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
     }
     slot_length_t slot_length8(slot_index_t slot) { return (slot_length(slot)-1)/8+1; }
 
+    bool resize_slot(slot_index_t slot, size_t length, bool keep_old);
     void delete_slot(slot_index_t slot);
 
     char*      data_addr8(slot_offset8_t offset8) {
