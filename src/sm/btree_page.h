@@ -209,7 +209,10 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
                 char          key[2]; // <<<>>>
             } interior;
             struct {
-                char          key[8]; // <<<>>>
+                slot_length_t slot_len;
+                char          low[6]; // low[btree_fence_low_length]
+                //char        high_noprefix[btree_fence_high_length - btree_prefix_length]
+                //char        chain[btree_chain_fence_high_length]
             } fence;
         };
     } slot_body;
@@ -232,7 +235,9 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
 
     slot_length_t slot_length(slot_index_t slot) {
         if (slot == 0) {
-            return -1;
+            return sizeof(slot_length_t) + btree_fence_low_length 
+                + btree_fence_high_length-btree_prefix_length 
+                + btree_chain_fence_high_length;
         }
 
         slot_offset8_t offset = head[slot].offset;
@@ -1062,8 +1067,7 @@ inline int16_t btree_page_h::get_chain_fence_high_length() const
     return page()->btree_chain_fence_high_length;
 }
 
-inline const char* btree_page_h::get_fence_low_key() const
-{
+inline const char* btree_page_h::get_fence_low_key() const {
     const char*s = (const char*) page()->slot_start(0);
     return s + sizeof(slot_length_t);
 }
@@ -1089,8 +1093,7 @@ inline int btree_page_h::nrecs() const
 {
     return nslots() - 1;
 }
-inline int btree_page_h::compare_with_fence_low (const w_keystr_t &key) const
-{
+inline int btree_page_h::compare_with_fence_low (const w_keystr_t &key) const {
     return key.compare_keystr(get_fence_low_key(), get_fence_low_length());
 }
 inline int btree_page_h::compare_with_fence_low (const char* key, size_t key_len) const
