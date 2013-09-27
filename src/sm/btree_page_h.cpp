@@ -656,19 +656,19 @@ rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, shpid_t chi
     }
 #endif // W_DEBUG_LEVEL
 
-    // update btree_consecutive_skewed_insertions. this is just statistics and not logged.
+    // Update btree_consecutive_skewed_insertions.  This is just statistics and not logged.
     _update_btree_consecutive_skewed_insertions (slot);
 
     slot_length_t klen = key.get_length_as_keystr();
 
-    // prefix of the key is fixed in this page, so we can simply
+    // Prefix of the key is fixed in this page, so we can simply
     // peel off leading bytes from the key+el.
     slot_length_t prefix_length = get_prefix_length();  // length of prefix of inserted tuple
     w_assert3(prefix_length <= klen);
 
     slot_length_t rec_len = sizeof(slot_length_t) + sizeof(child) + klen - prefix_length;
 
-    // see the record format in btree_page_h class comments.
+    // See the record format in btree_page_h class comments.
     vec_t v; // the record data
     v.put(&child, sizeof(child));
     v.put(&rec_len, sizeof(rec_len));  // because we do this, we have to hold the variable "rec_len" until the end of this function!
@@ -686,25 +686,12 @@ rc_t btree_page_h::_insert_expand_nolog(slotid_t slot, const cvec_t &vec, poor_m
     slotid_t idx = slot + 1; // slot index in btree_page_h
     w_assert1(idx >= 0 && idx <= nslots());
     w_assert3 (_is_consistent_space());
-    // this shouldn't happen. the caller should have checked with check_space_for_insert()
-    if (!check_space_for_insert(vec.size())) {
+
+    if (!page()->insert_slot(idx, false, vec.size(), poormkey)) {
+        // This shouldn't happen; the caller should have checked with check_space_for_insert():
         return RC(smlevel_0::eRECWONTFIT);
     }
-
-    //  Log has already been generated ... the following actions must succeed!
-    // shift slot array. if we are inserting to the end (idx == nslots), do nothing
-    if (idx != nslots())    {
-        ::memmove(slot_addr(idx + 1), slot_addr(idx), (nslots() - idx) * slot_sz);
-    }
-
-    //  Fill up the slots and data
-    slot_offset8_t new_record_head8 = page()->record_head8 - to_aligned_offset8(vec.size());
-    char* slot_p = btree_page_h::slot_addr(idx);
-    *reinterpret_cast<slot_offset8_t*>(slot_p) = new_record_head8;
-    page()->poor(idx) = poormkey;
-    vec.copy_to(page()->data_addr8(new_record_head8));
-    page()->record_head8 = new_record_head8;
-    ++page()->nslots;
+    vec.copy_to(page()->slot_start(idx));
 
     w_assert3(get_rec_size(slot) == vec.size());
     w_assert3(page()->poor(idx) == poormkey);
@@ -715,19 +702,12 @@ rc_t btree_page_h::_insert_expand_nolog(slotid_t slot, const cvec_t &vec, poor_m
 void btree_page_h::_append_nolog(const cvec_t &vec, poor_man_key poormkey, bool ghost) {
     w_assert3 (check_space_for_insert(vec.size()));
     w_assert5 (_is_consistent_space());
-    
-    //  Fill up the slots and data
-    slot_offset8_t new_record_head8 = page()->record_head8 - to_aligned_offset8(vec.size());
-    char* slot_p = btree_page_h::slot_addr(nslots());
-    *reinterpret_cast<slot_offset8_t*>(slot_p) = ghost ? -new_record_head8 : new_record_head8;
-    page()->poor(nslots()) = poormkey;
-    vec.copy_to(page()->data_addr8(new_record_head8));
-    page()->record_head8 = new_record_head8;
-    if (ghost) {
-        ++page()->nghosts;
-    }
-    ++page()->nslots;
 
+    if (!page()->insert_slot(nslots(), ghost, vec.size(), poormkey)) {
+        assert(false);
+    }
+    vec.copy_to(page()->slot_start(nslots()-1));
+    
 #if W_DEBUG_LEVEL>=1
     if (nslots() == 1) {
         // the inserted record was the special fence record!
@@ -1499,8 +1479,17 @@ bool btree_page_h::_is_consistent_space () const {
             w_assert1(false);
             return false;
         }
+        if (offset >= data_sz) {
+            DBGOUT1(<<"the slot starting at offset " << offset <<  " starts beyond the end of data area (" << data_sz << ")!");
+            // for (int i=0; i<nslots(); i++)
+            //     DBGOUT1(<<"  slot[" << i << "].offset = " << page()->head[i].offset*8);
+            w_assert1(false);
+            return false;
+        }
         if (offset + len > data_sz) {
-            DBG(<<"the slot starting at offset " << offset <<  " goes beyond the the end of data area!");
+            DBGOUT1(<<"the slot starting at offset " << offset <<  " goes beyond the end of data area (" << data_sz << ")!");
+            // for (int i=0; i<nslots(); i++)
+            //     DBGOUT1(<<"  slot[" << i << "].offset = " << page()->head[i].offset*8);
             w_assert1(false);
             return false;
         }

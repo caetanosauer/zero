@@ -30,27 +30,6 @@ void btree_page::unset_ghost(slot_index_t slot) {
 }
 
 
-void btree_page::delete_slot(slot_index_t slot) {
-    w_assert1(slot>=0 && slot<nslots);
-    w_assert1(slot != 0); // deleting slot 0 makes no sense because it has a special format
-
-    slot_offset8_t offset = head[slot].offset;
-    if (offset < 0) {
-        offset = -offset;
-        nghosts--;
-    }
-
-    if (offset == record_head8) {
-        // Then, we are pushing down the record_head8.  lucky!
-        record_head8 += slot_length8(slot);
-    }
-
-    // shift slot array down to remove head[slot]:
-    ::memmove(&head[slot], &head[slot+1], (nslots-(slot+1))*sizeof(slot_head));
-    nslots--;
-}
-
-
 bool btree_page::resize_slot(slot_index_t slot, size_t length, bool keep_old) {
     w_assert1(slot>=0 && slot<nslots);
 
@@ -85,3 +64,50 @@ bool btree_page::resize_slot(slot_index_t slot, size_t length, bool keep_old) {
 
     return true;
 }
+
+
+void btree_page::delete_slot(slot_index_t slot) {
+    w_assert1(slot>=0 && slot<nslots);
+    w_assert1(slot != 0); // deleting slot 0 makes no sense because it has a special format
+
+    slot_offset8_t offset = head[slot].offset;
+    if (offset < 0) {
+        offset = -offset;
+        nghosts--;
+    }
+
+    if (offset == record_head8) {
+        // Then, we are pushing down the record_head8.  lucky!
+        record_head8 += slot_length8(slot);
+    }
+
+    // shift slot array down to remove head[slot]:
+    ::memmove(&head[slot], &head[slot+1], (nslots-(slot+1))*sizeof(slot_head));
+    nslots--;
+}
+
+
+bool btree_page::insert_slot(slot_index_t slot, bool ghost, size_t length, 
+                             poor_man_key poor_key) {
+    w_assert1(slot>=0 && slot<=nslots);  // <= intentional
+
+    if (usable_space() < sizeof(slot_head) + align(length)) {
+        cout <<"e"<< usable_space() <<"," << length<< std::endl;
+        return false;
+    }
+
+    // shift slot array up to insert a slot so it is head[slot]:
+    ::memmove(&head[slot+1], &head[slot], (nslots-slot)*sizeof(slot_head));
+    nslots++;
+    if (ghost) {
+        nghosts++;
+    }
+
+    record_head8 -= (length-1)/8+1;
+    head[slot].offset = ghost ? -record_head8 : record_head8;
+    head[slot].poor = poor_key;
+
+    return true;
+}
+
+

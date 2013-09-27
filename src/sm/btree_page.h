@@ -227,7 +227,7 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
 
 
     size_t usable_space() const {
-        return (record_head8 - 2 * nslots)*8; // <<<>>>
+        return record_head8*8 - nslots*4; // <<<>>>
     }
 
 
@@ -261,6 +261,7 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
     }
     slot_length_t slot_length8(slot_index_t slot) { return (slot_length(slot)-1)/8+1; }
 
+    bool insert_slot(slot_index_t slot, bool ghost, size_t length, poor_man_key poor_key);
     bool resize_slot(slot_index_t slot, size_t length, bool keep_old);
     void delete_slot(slot_index_t slot);
 
