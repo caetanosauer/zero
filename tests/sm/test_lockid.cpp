@@ -3,9 +3,7 @@
 #include "sm_vas.h"
 #include "btree.h"
 #include "btcursor.h"
-#include "generic_page.h"
 #include "bf.h"
-#include "btree_page_h.h"
 #include "xct.h"
 
 btree_test_env *test_env;

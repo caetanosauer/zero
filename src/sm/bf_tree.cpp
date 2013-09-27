@@ -14,7 +14,6 @@
 #include "smthread.h"
 #include "vid_t.h"
 #include "generic_page.h"
-#include "btree_page_h.h"
 #include <string.h>
 #include "w_findprime.h"
 #include <stdlib.h>
@@ -872,7 +871,8 @@ w_rc_t bf_tree_m::_get_replacement_block_clock(bf_idx& ret, bool use_priority) {
 
 #ifndef BP_CAN_EVICT_INNER_NODE
         //do not evict interior nodes
-        if (_buffer[idx].btree_level > 1) {
+        fixable_page_h p(_buffer + idx);
+        if (p.has_children()) {
             continue;
         }
 #endif
@@ -1832,7 +1832,7 @@ int bf_tree_m::nframes(int priority, int level, int refbit, bool swizzled, bool 
     for (bf_idx idx = 0; idx <= _block_cnt; idx++) {
         bf_tree_cb_t &cb(get_cb(idx));
         if (cb._replacement_priority == priority) {
-            if (_buffer[idx].btree_level >= level) {
+            if (_buffer[idx].btree_level >= level) {  // NO LONGER LEGAL ACCESS; REMOVE <<<>>>
                 if (cb._refbit_approximate >= refbit) {
                     if (cb._swizzled == swizzled) {
                         n++;
