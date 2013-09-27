@@ -8,7 +8,7 @@
 #include "bf_idx.h"
 #include "generic_page.h"
 #include "latch.h"
-
+#include "sm_base.h"
 
 
 /**

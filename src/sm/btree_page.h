@@ -5,15 +5,11 @@
 #ifndef BTREE_PAGE_H
 #define BTREE_PAGE_H
 
-#include "w_defines.h"
 #include "fixable_page_h.h"
-#include "w_key.h"
+#include "w_defines.h"
 #include "w_endian.h"
 
-#include "bf_tree_inline.h" // for normalize_shpid <<<>>>
 
-struct btree_lf_stats_t;
-struct btree_int_stats_t;
 
 
 /**

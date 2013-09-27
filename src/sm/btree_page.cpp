@@ -2,21 +2,7 @@
  * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
  */
 
-#include "w_defines.h"
-
-#define SM_SOURCE
-#define BTREE_C
-
-#include "sm_int_2.h"
-
-#include "vec_t.h"
-#include "btree_page_h.h"
-#include "btree_impl.h"
-#include "sm_du_stats.h"
-#include "crash.h"
-#include "w_key.h"
-#include <string>
-#include <algorithm>
+#include "btree_page.h"
 
 
 void btree_page::delete_slot(slot_index_t slot) {
