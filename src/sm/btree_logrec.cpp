@@ -14,7 +14,7 @@
 #include "sm_int_2.h"
 #include "logdef_gen.cpp"
 
-#include "btree_page.h"
+#include "btree_page_h.h"
 #include "btree_impl.h"
 #include "vec_t.h"
 

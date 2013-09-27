@@ -5,7 +5,7 @@
 #include "btcursor.h"
 #include "generic_page.h"
 #include "bf.h"
-#include "btree_page.h"
+#include "btree_page_h.h"
 #include "xct.h"
 #include "w_gettimeofday.h"
 

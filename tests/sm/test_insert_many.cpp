@@ -6,7 +6,7 @@
 #include "btcursor.h"
 #include "generic_page.h"
 #include "bf.h"
-#include "btree_page.h"
+#include "btree_page_h.h"
 #include "e_error_def_gen.h"
 #include <sstream>
 

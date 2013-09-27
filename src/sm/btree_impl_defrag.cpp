@@ -14,7 +14,7 @@
 
 #include "sm_int_2.h"
 #include "sm_base.h"
-#include "btree_page.h"
+#include "btree_page_h.h"
 #include "btree_impl.h"
 #include "crash.h"
 #include "w_key.h"

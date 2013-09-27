@@ -8,7 +8,7 @@
 #include "bf.h"
 #include "generic_page.h"
 #include "btree.h"
-#include "btree_page.h"
+#include "btree_page_h.h"
 #include "btree_impl.h"
 #include "w_key.h"
 #include "crash.h"

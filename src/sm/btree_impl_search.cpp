@@ -13,7 +13,7 @@
 #define BTREE_C
 
 #include "sm_int_2.h"
-#include "btree_page.h"
+#include "btree_page_h.h"
 #include "btree_impl.h"
 #include "btcursor.h"
 #include "sm_base.h"
