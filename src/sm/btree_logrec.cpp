@@ -17,7 +17,6 @@
 #include "btree_page.h"
 #include "btree_impl.h"
 #include "vec_t.h"
-#include "page_bf_inline.h"
 
 
 struct btree_insert_t {

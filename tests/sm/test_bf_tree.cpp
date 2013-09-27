@@ -186,12 +186,12 @@ w_rc_t test_bf_evict(ss_m* /*ssm*/, test_volume_t *test_volume) {
     EXPECT_TRUE (root_page != NULL);
     ::memset(root_page, 0, sizeof(generic_page));
     btree_page *rbp = reinterpret_cast<btree_page*>(root_page);
-    root_page->pid = root_pid;
-    rbp->lsn = thelsn;
-    root_page->tag = t_btree_p;
-    rbp->btree_level = 2;
+    root_page->pid    = root_pid;
+    rbp->lsn          = thelsn;
+    root_page->tag    = t_btree_p;
+    rbp->btree_level  = 2;
     rbp->btree_foster = 0;
-    rbp->nslots = 0;
+    rbp->nslots       = 0;
 
     // TODO the code below doesn't bother making real pages. to pass this testcase, some checks in bufferpool are disabled.
     // for better testing and assertion, we should make real pages here and test against it.
@@ -213,9 +213,9 @@ w_rc_t test_bf_evict(ss_m* /*ssm*/, test_volume_t *test_volume) {
             EXPECT_TRUE (dirty_idx.find (idx) == dirty_idx.end());
             ::memset(page, 0, sizeof(generic_page));
             btree_page *bp = reinterpret_cast<btree_page*>(page);
-            page->pid = pid;
-            bp->lsn = thelsn;
-            page->tag = t_btree_p;
+            page->pid       = pid;
+            bp->lsn         = thelsn;
+            page->tag       = t_btree_p;
             bp->btree_level = 1;
             if (i % 5 == 0) {
                 dirty_idx.insert (idx);

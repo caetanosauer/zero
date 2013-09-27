@@ -330,7 +330,7 @@ public:
     /**
      * Creates a volume descriptor for the given volume and install it
      * to this bufferpool. Called when a volume is mounted.
-     * Because mounting a volume is protected by mutextes, this method is indirectly protected too.
+     * Because mounting a volume is protected by mutexes, this method is indirectly protected too.
      */
     w_rc_t install_volume (vol_t* volume);
     /**

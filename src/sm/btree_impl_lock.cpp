@@ -18,7 +18,6 @@
 #include "sm_base.h"
 #include "w_key.h"
 #include "xct.h"
-#include "page_bf_inline.h"
 
 rc_t
 btree_impl::_ux_lock_key(

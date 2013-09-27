@@ -15,7 +15,6 @@
 #include "bf_tree.h"
 #include "sm_int_0.h"
 #include "bf_tree_inline.h"
-#include "page_bf_inline.h"
 #include <map>
 
 

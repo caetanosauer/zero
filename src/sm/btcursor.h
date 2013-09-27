@@ -8,6 +8,7 @@
 #include "w_defines.h"
 #include "w_key.h"
 #include "bf_tree.h"
+#include "bf_tree_inline.h" // only for pin_for_refix_holder::release <<<>>>
 
 class btree_page_h;
 class btrec_t;

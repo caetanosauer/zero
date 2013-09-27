@@ -9,7 +9,6 @@
 #include "w_defines.h"
 #include "w_base.h"
 #include "sm_vas.h"
-#include "page_bf_inline.h"
 #include "gtest/gtest.h"
 
 #if W_DEBUG_LEVEL > 3
