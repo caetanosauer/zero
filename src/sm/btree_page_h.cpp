@@ -901,29 +901,16 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, int re
     
     int16_t prefix_len = get_prefix_length();
     poor_man_key poormkey = extract_poor_man_key(key_raw, key_raw_len, prefix_len);
-    if (slot != nrecs()) {
-        // note that slot=0 is fence
-        ::memmove(slot_addr(slot + 2), slot_addr(slot + 1), (nrecs() - slot) * slot_sz);
+
+    if (!page()->insert_slot(slot+1, true, record_size, poormkey)) {
+        assert(false);
     }
-    slot_offset8_t new_record_head8 = page()->record_head8 - to_aligned_offset8(record_size);
-    char* slot_p = btree_page_h::slot_addr(slot + 1);
-    *reinterpret_cast<slot_offset8_t*>(slot_p) = -new_record_head8; // ghost record
-    page()->poor(slot + 1) = poormkey;
+    page()->slot_value(slot+1).leaf.slot_len = record_size;
 
     // make a dummy record that has the desired length
-    slot_length_t klen = key_raw_len;
+    page()->slot_value(slot+1).leaf.key_len = key_raw_len;
+    ::memcpy(page()->slot_value(slot+1).leaf.key, key_raw + prefix_len, key_raw_len - prefix_len);
 
-    char *buf = page()->data_addr8(new_record_head8);
-    slot_length_t *array = reinterpret_cast<slot_length_t*>(buf);
-    array[0] = (slot_length_t) record_size;
-    array[1] = klen;
-    ::memcpy (buf + 2 * sizeof(slot_length_t), key_raw + prefix_len, klen - prefix_len);
-    // that's it. doesn't have to write data. do nothing.
-
-    page()->record_head8 = new_record_head8;
-    ++page()->nslots;
-    ++page()->nghosts;
-    
     w_assert3(get_rec_size(slot) == (slot_length_t) record_size);
     w_assert3(page()->poor(slot + 1) == poormkey);
     w_assert3(_is_consistent_space());
