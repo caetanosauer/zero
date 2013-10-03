@@ -258,7 +258,7 @@ lock_core_m::_acquire_lock_loop(
         the_xlinfo->refresh_wait_map(chk_result.refreshed_wait_map);
         // either no deadlock or there is a deadlock but 
         // some other xact was selected as victim
-        DBGOUT5(<< "blocking:xd=" << xd->tid()  << " mode=" << int(mode) << " timeout=" << timeout);
+        DBGOUT5(<< "blocking:xd=" << xd->tid()  /*<< " mode=" << int(mode)*/ << " timeout=" << timeout); // <<<>>>
 
         w_rc_t::errcode_t rce;
         // TODO: non-rc version of smthread_block
@@ -268,7 +268,7 @@ lock_core_m::_acquire_lock_loop(
             rce = stTIMEOUT; // no wait = spinning
         }
 
-        DBGOUT5(<< "unblocked:xd=" << xd->tid() << " mode="<< int(mode) << " timeout=" << timeout );
+        DBGOUT5(<< "unblocked:xd=" << xd->tid() /*<< " mode="<< int(mode)*/ << " timeout=" << timeout ); // <<<>>>
 
         w_assert3(!rce || rce == stTIMEOUT || rce == eDEADLOCK);
 
@@ -522,7 +522,7 @@ void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_resul
         if (!compatible) {
             DBGOUT5(<<"incompatible! (pre=" << precedes_me << ")."
                 << ", I=" << myfingerprint
-                << ", he=" << p->_thr->get_fingerprint_map()
+                << ", he=" << p->_thr.get_fingerprint_map()
                 << ", mine=" << lock_base_t::mode_str[m]
                 << ", his:gr=" << lock_base_t::mode_str[p->_granted_mode]
                 << "(req=" << lock_base_t::mode_str[p->_requested_mode] << ")");

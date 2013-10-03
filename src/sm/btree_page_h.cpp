@@ -97,8 +97,9 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
     page()->pid          = pid_copy;
     page()->tag          = t_btree_p;
     page()->page_flags   = 0;
-    page()->record_head8 = to_offset8(data_sz);
-    page()->nslots       = page()->nghosts = page()->btree_consecutive_skewed_insertions = 0;
+    page()->init_slots();
+
+    page()->btree_consecutive_skewed_insertions = 0;
 
     page()->btree_root                    = root;
     page()->btree_pid0                    = pid0;
@@ -693,7 +694,6 @@ rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, shpid_t chi
 rc_t btree_page_h::_insert_expand_nolog(slotid_t slot, const cvec_t &vec, poor_man_key poormkey) {
     slotid_t idx = slot + 1; // slot index in btree_page_h
     w_assert1(idx >= 0 && idx <= nslots());
-    w_assert3 (_is_consistent_space());
 
     if (!page()->insert_slot(idx, false, vec.size(), poormkey)) {
         // This shouldn't happen; the caller should have checked with check_space_for_insert():
@@ -703,13 +703,12 @@ rc_t btree_page_h::_insert_expand_nolog(slotid_t slot, const cvec_t &vec, poor_m
 
     w_assert3(get_rec_size(slot) == vec.size());
     w_assert3(page()->poor(idx) == poormkey);
-    w_assert3 (_is_consistent_space());
+    w_assert3(page()->_slots_are_consistent());
     return RCOK;
 }
 
 void btree_page_h::_expand_rec(slotid_t slot, slot_length_t rec_len) {
     w_assert1(usable_space() >= align(rec_len));
-    w_assert3(_is_consistent_space());
 
     if (!page()->resize_slot(slot+1, rec_len, true))
         assert(false);
@@ -717,7 +716,7 @@ void btree_page_h::_expand_rec(slotid_t slot, slot_length_t rec_len) {
     page()->slot_value(slot+1).leaf.slot_len = rec_len;
 
     w_assert3(get_rec_size(slot) == rec_len);
-    w_assert3 (_is_consistent_space());
+    w_assert3(page()->_slots_are_consistent());
 }
 
 rc_t btree_page_h::replace_expand_fence_rec_nolog(const cvec_t &fences) {
@@ -733,7 +732,7 @@ rc_t btree_page_h::replace_expand_fence_rec_nolog(const cvec_t &fences) {
     page()->slot_value(0).fence.slot_len = new_size;
 
     w_assert1 (get_fence_rec_size() == (slot_length_t) fences.size());
-    w_assert3 (_is_consistent_space());    
+    w_assert3(page()->_slots_are_consistent());
     return RCOK;
 }
 
@@ -741,9 +740,7 @@ rc_t btree_page_h::replace_expand_fence_rec_nolog(const cvec_t &fences) {
 rc_t btree_page_h::remove_shift_nolog(slotid_t idx) {
     w_assert1(idx >= 0 && idx < nrecs());
 
-    w_assert3 (_is_consistent_space());
     page()->delete_slot(idx + 1);
-    w_assert3 (_is_consistent_space());
     return RCOK;
 }
 
@@ -899,7 +896,7 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, int re
 
     w_assert3(get_rec_size(slot) == (slot_length_t) record_size);
     w_assert3(page()->poor(slot + 1) == poormkey);
-    w_assert3(_is_consistent_space());
+    w_assert3(page()->_slots_are_consistent());
 }
 
 void btree_page_h::mark_ghost(slotid_t slot) {
@@ -1313,7 +1310,7 @@ bool btree_page_h::is_consistent (bool check_keyorder, bool check_space) const {
 
     // additionally check record overlaps
     if (check_space) {
-        if (!_is_consistent_space()) {
+        if (!page()->_slots_are_consistent()) {
             w_assert1(false);
             return false;
         }
@@ -1415,77 +1412,12 @@ bool btree_page_h::_is_consistent_poormankey () const {
 }
 
 
-bool btree_page_h::_is_consistent_space () const {
-    // this is not a part of check. should be always true.
-    w_assert1((size_t) slot_sz * nslots() <= (size_t) page()->get_record_head_byte());
-    
-    // check overlapping records.
-    // rather than using std::map, use array and std::sort for efficiency.
-    // high-16bits=offset, low-16bits=len
-    const slotid_t slot_cnt = nslots();
-    uint32_t *sorted_slots = new uint32_t[slot_cnt];
-    w_auto_delete_array_t<uint32_t> sorted_slots_autodel (sorted_slots);
-    for (slotid_t slot = 0; slot < slot_cnt; ++slot) {
-        slot_offset8_t offset8 = btree_page_h::tuple_offset8(slot);
-        slot_length_t len = (slot == 0 ? get_fence_rec_size() : get_rec_size(slot - 1));
-        if (offset8 < 0) {
-            sorted_slots[slot] = ((-offset8) << 16) + len;// this means ghost slot. reverse the sign
-        } else if (offset8 == 0) {
-            // this means no-record slot. ignore it.
-            sorted_slots[slot] = 0;
-        } else {
-            sorted_slots[slot] = (offset8 << 16) + len;
-        }
-    }
-    std::sort(sorted_slots, sorted_slots + slot_cnt);
-
-    bool first = true;
-    size_t prev_end = 0;
-    for (slotid_t slot = 0; slot < slot_cnt; ++slot) {
-        if (sorted_slots[slot] == 0) {
-            continue;
-        }
-        size_t offset = to_byte_offset(sorted_slots[slot] >> 16);
-        size_t len = sorted_slots[slot] & 0xFFFF;
-        if (offset < (size_t) page()->get_record_head_byte()) {
-            DBG(<<"the slot starting at offset " << offset <<  " is located before record_head " << page()->get_record_head_byte());
-            w_assert1(false);
-            return false;
-        }
-        if (offset >= data_sz) {
-            DBGOUT1(<<"the slot starting at offset " << offset <<  " starts beyond the end of data area (" << data_sz << ")!");
-            // for (int i=0; i<nslots(); i++)
-            //     DBGOUT1(<<"  slot[" << i << "].offset = " << page()->head[i].offset*8);
-            w_assert1(false);
-            return false;
-        }
-        if (offset + len > data_sz) {
-            DBGOUT1(<<"the slot starting at offset " << offset <<  " goes beyond the end of data area (" << data_sz << ")!");
-            // for (int i=0; i<nslots(); i++)
-            //     DBGOUT1(<<"  slot[" << i << "].offset = " << page()->head[i].offset*8);
-            w_assert1(false);
-            return false;
-        }
-        if (first) {
-            first = false;
-        } else {
-            if (prev_end > offset) {
-                DBG(<<"the slot starting at offset " << offset <<  " overlaps with another slot ending at " << prev_end);
-                w_assert3(false);
-                return false;
-            }
-        }
-        prev_end = offset + len;
-    }
-    return true;
-}
-
 rc_t btree_page_h::defrag(slotid_t popped) {
     w_assert1(popped >= -1 && popped < nslots());
     w_assert1 (xct()->is_sys_xct());
     w_assert1 (is_fixed());
     w_assert1 (latch_mode() == LATCH_EX);
-    w_assert3 (_is_consistent_space());
+    w_assert3(page()->_slots_are_consistent());
     
     //  Copy headers to scratch area.
     btree_page scratch;
@@ -1547,7 +1479,7 @@ rc_t btree_page_h::defrag(slotid_t popped) {
     ::memcpy(_pp, scratch_raw, sizeof(generic_page));
     set_dirty();
 
-    w_assert3 (_is_consistent_space());
+    w_assert3(page()->_slots_are_consistent());
     return RCOK;
 }
 

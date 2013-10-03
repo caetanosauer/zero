@@ -219,6 +219,8 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
         slot_body body[data_sz/sizeof(slot_body)];
     };
 
+    void init_slots();
+
     poor_man_key& poor(slot_index_t slot) { return head[slot].poor; }
 
     bool is_ghost(slot_index_t slot) const { return head[slot].offset < 0; }
@@ -226,7 +228,7 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
     void unset_ghost(slot_index_t slot);
 
 
-    size_t usable_space() const {
+    int usable_space() const {
         return record_head8*8 - nslots*4; // <<<>>>
     }
 
@@ -243,7 +245,7 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
     }
 
 
-    slot_length_t slot_length(slot_index_t slot) {
+    slot_length_t slot_length(slot_index_t slot) const {
         if (slot == 0) {
             return sizeof(slot_length_t) + btree_fence_low_length 
                 + btree_fence_high_length-btree_prefix_length 
@@ -259,11 +261,13 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
             return body[offset].interior.slot_len;
         }
     }
-    slot_length_t slot_length8(slot_index_t slot) { return (slot_length(slot)-1)/8+1; }
+    slot_length_t slot_length8(slot_index_t slot) const { return (slot_length(slot)-1)/8+1; }
 
     bool insert_slot(slot_index_t slot, bool ghost, size_t length, poor_man_key poor_key);
     bool resize_slot(slot_index_t slot, size_t length, bool keep_old);
     void delete_slot(slot_index_t slot);
+
+    bool _slots_are_consistent() const;
 
     char*      data_addr8(slot_offset8_t offset8) {
         return &body[offset8].raw[0];

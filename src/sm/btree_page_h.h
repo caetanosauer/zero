@@ -686,9 +686,6 @@ public:
     static smsize_t         overhead_requirement_per_entry;
 
 private:
-    /** checks space correctness. */
-    bool             _is_consistent_space () const;
-
     /** internal method used from is_consistent() to check keyorder correctness. */
     bool             _is_consistent_keyorder () const;
 

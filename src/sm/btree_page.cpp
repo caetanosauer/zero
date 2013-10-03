@@ -4,6 +4,21 @@
 
 #include "btree_page.h"
 
+#include <algorithm>
+#include <memory>
+#include "w_debug.h"
+
+
+void btree_page::init_slots() {
+    const size_t max_offset = data_sz/sizeof(slot_body);
+
+    nslots       = 0;
+    nghosts      = 0;
+    record_head8 = max_offset;
+
+    w_assert3(_slots_are_consistent());
+}
+
 
 void btree_page::set_ghost(slot_index_t slot) {
     w_assert1(slot>=0 && slot<nslots);
@@ -32,6 +47,7 @@ void btree_page::unset_ghost(slot_index_t slot) {
 
 bool btree_page::resize_slot(slot_index_t slot, size_t length, bool keep_old) {
     w_assert1(slot>=0 && slot<nslots);
+    w_assert3(_slots_are_consistent());
 
     slot_offset8_t offset = head[slot].offset;
     bool ghost = false;
@@ -45,7 +61,7 @@ bool btree_page::resize_slot(slot_index_t slot, size_t length, bool keep_old) {
         return true;
     }
 
-    if (align(length) > usable_space()) {
+    if (align(length) > (size_t) usable_space()) {
         return false;
     }
 
@@ -62,6 +78,7 @@ bool btree_page::resize_slot(slot_index_t slot, size_t length, bool keep_old) {
     ::memset((char*)&body[offset], 0, align(old_length)); // clear old slot
 #endif // W_DEBUG_LEVEL>0
 
+    //w_assert3(_slots_are_consistent()); // only consistent once length is set by caller
     return true;
 }
 
@@ -69,6 +86,7 @@ bool btree_page::resize_slot(slot_index_t slot, size_t length, bool keep_old) {
 void btree_page::delete_slot(slot_index_t slot) {
     w_assert1(slot>=0 && slot<nslots);
     w_assert1(slot != 0); // deleting slot 0 makes no sense because it has a special format
+    w_assert3(_slots_are_consistent());
 
     slot_offset8_t offset = head[slot].offset;
     if (offset < 0) {
@@ -84,14 +102,17 @@ void btree_page::delete_slot(slot_index_t slot) {
     // shift slot array down to remove head[slot]:
     ::memmove(&head[slot], &head[slot+1], (nslots-(slot+1))*sizeof(slot_head));
     nslots--;
+
+    w_assert3(_slots_are_consistent());
 }
 
 
 bool btree_page::insert_slot(slot_index_t slot, bool ghost, size_t length, 
                              poor_man_key poor_key) {
     w_assert1(slot>=0 && slot<=nslots);  // use of <= intentional
+    w_assert3(_slots_are_consistent());
 
-    if (usable_space() < sizeof(slot_head) + align(length)) {
+    if ((size_t)usable_space() < sizeof(slot_head) + align(length)) {
         return false;
     }
 
@@ -106,7 +127,69 @@ bool btree_page::insert_slot(slot_index_t slot, bool ghost, size_t length,
     head[slot].offset = ghost ? -record_head8 : record_head8;
     head[slot].poor = poor_key;
 
+    //w_assert3(_slots_are_consistent()); // only consistent once length is set by caller
     return true;
 }
 
 
+bool btree_page::_slots_are_consistent() const {
+    // This is not a part of check; should be always true:
+    w_assert1(usable_space() >= 0);
+    
+    // check overlapping records.
+    // rather than using std::map, use array and std::sort for efficiency.
+    // high 16 bits=offset, low 16 bits=length
+    static_assert(sizeof(slot_length_t) <= 2, 
+                  "slot_length_t doesn't fit in 16 bits; adjust this code");
+    std::unique_ptr<uint32_t[]> sorted_slots(new uint32_t[nslots]);
+    for (int slot = 0; slot<nslots; ++slot) {
+        int offset = head[slot].offset;
+        int length = slot_length8(slot);
+        if (offset < 0) {
+            sorted_slots[slot] = ((-offset) << 16) + length;
+        } else {
+            sorted_slots[slot] =  (offset << 16)   + length;
+        }
+    }
+    std::sort(sorted_slots.get(), sorted_slots.get() + nslots);
+
+    // all offsets and lengths here are in terms of slot bodies 
+    // (e.g., 1 length unit = sizeof(slot_body) bytes):
+    const size_t max_offset = data_sz/sizeof(slot_body);
+    size_t prev_end = 0;
+    bool   error    = false;
+    for (int slot = 0; slot<nslots; ++slot) {
+        size_t offset = sorted_slots[slot] >> 16;
+        size_t len    = sorted_slots[slot] & 0xFFFF;
+
+        if (offset < (size_t) record_head8) {
+            DBGOUT1(<<"The slot starting at offset " << offset <<  " is located before record_head " << record_head8);
+            error = true;
+        }
+        if (offset >= max_offset) {
+            DBGOUT1(<<"The slot starting at offset " << offset <<  " starts beyond the end of data area (" << max_offset << ")!");
+            error = true;
+        }
+        if (offset + len > max_offset) {
+            DBGOUT1(<<"The slot starting at offset " << offset 
+                    << " (length " << len << ") goes beyond the end of data area (" << max_offset << ")!");
+            error = true;
+        }
+        if (slot != 0 && prev_end > offset) {
+            DBGOUT1(<<"The slot starting at offset " << offset <<  " overlaps with another slot ending at " << prev_end);
+            error = true;
+        }
+
+        prev_end = offset + len;
+    }
+
+    if (error) {
+        for (int i=0; i<nslots; i++) {
+            size_t offset = sorted_slots[i] >> 16;
+            size_t len    = sorted_slots[i] & 0xFFFF;
+            DBGOUT1(<<"  slot[" << i << "] body @ offsets " << offset << " to " << offset+len-1);
+        }
+    }
+
+    return !error;
+}
