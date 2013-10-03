@@ -1412,8 +1412,7 @@ bool btree_page_h::_is_consistent_poormankey () const {
 }
 
 
-rc_t btree_page_h::defrag(slotid_t popped) {
-    w_assert1(popped >= -1 && popped < nslots());
+rc_t btree_page_h::defrag() { 
     w_assert1 (xct()->is_sys_xct());
     w_assert1 (is_fixed());
     w_assert1 (latch_mode() == LATCH_EX);
@@ -1432,16 +1431,8 @@ rc_t btree_page_h::defrag(slotid_t popped) {
     const slotid_t org_slots = nslots();
     vector<slotid_t> ghost_slots;
     slotid_t new_slots = 0;
-    for (slotid_t i = 0; i < org_slots + 1; i++) {//+1 for popping
-        if (i == popped)  continue;         // ignore this slot for now
+    for (slotid_t i = 0; i < org_slots; i++) {
         slotid_t slot = i;
-        if (i == org_slots) {
-            //  Move specified slot last
-            if (popped < 0) {
-                break;
-            }
-            slot = popped;
-        }
         slot_offset8_t offset8;
         poor_man_key poormkey;
         btree_page_h::tuple_both(slot, offset8, poormkey);

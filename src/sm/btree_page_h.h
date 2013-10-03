@@ -644,9 +644,8 @@ public:
      * the slot numbers of ghost records that are removed because there are
      * 'logically' no changes.
      * Context: System transaction.
-     * @param[in] popped the record to be popped out to the head. -1 to not specify.
      */
-    rc_t                         defrag(slotid_t popped = -1);
+    rc_t                         defrag();
 
     /** stats for leaf nodes. */
     rc_t             leaf_stats(btree_lf_stats_t& btree_lf);
