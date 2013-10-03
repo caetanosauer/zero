@@ -724,16 +724,6 @@ private:
 
 
     /**
-     * This is used when it's known that we are adding the new record
-     * to the end, and the page is like a brand-new page; no holes,
-     * and enough spacious. Basically only for page-format case.
-     * This is much more efficient!
-     * This doesn't log, so the caller is responsible for it.
-     */
-    void             _append_nolog(const cvec_t &tp, poor_man_key poormkey, bool ghost);
-
-
-    /**
      * Expands an existing record for given size.
      * Caller should make sure there is enough space to expand.
      */

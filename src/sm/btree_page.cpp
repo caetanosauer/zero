@@ -89,10 +89,9 @@ void btree_page::delete_slot(slot_index_t slot) {
 
 bool btree_page::insert_slot(slot_index_t slot, bool ghost, size_t length, 
                              poor_man_key poor_key) {
-    w_assert1(slot>=0 && slot<=nslots);  // <= intentional
+    w_assert1(slot>=0 && slot<=nslots);  // use of <= intentional
 
     if (usable_space() < sizeof(slot_head) + align(length)) {
-        cout <<"e"<< usable_space() <<"," << length<< std::endl;
         return false;
     }
 

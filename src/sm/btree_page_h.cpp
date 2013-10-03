@@ -115,16 +115,17 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
 
     // set fence keys in first slot
     cvec_t fences;
-    slot_length_t fence_total_len = sizeof(slot_length_t)
-        + fence_low.get_length_as_keystr()
-        + fence_high.get_length_as_keystr() - prefix_len
-        + chain_fence_high.get_length_as_keystr();
+    slot_length_t fence_total_len = page()->slot_length(0); // <<<>>>
     fences.put (&fence_total_len, sizeof(fence_total_len));
     fences.put (fence_low);
     // eliminate prefix part from fence_high
     fences.put ((const char*) fence_high.buffer_as_keystr() + prefix_len, fence_high.get_length_as_keystr() - prefix_len);
     fences.put(chain_fence_high);
-    _append_nolog(fences, 0, false); // fence-key record doesn't need poormkey. set 0.
+    // fence-key record doesn't need poormkey; set to 0:
+    if (!page()->insert_slot(nslots(), false, fences.size(), 0)) {
+        assert(false);
+    }
+    fences.copy_to(page()->slot_start(nslots()-1));
 
     // steal records from old page
     if (steal_src1) {
@@ -137,16 +138,19 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
         w_assert1(steal_src2->pid0() != 0);
         // before stealing regular records from src2, steal it's pid0
         cvec_t v;
-        slot_length_t key_len = (slot_length_t) steal_src2->get_fence_low_length();
-        shpid_t stolen_pid0 = steal_src2->pid0();
-        slot_length_t rec_len = sizeof(slot_length_t) * 2 + sizeof(shpid_t) + key_len - prefix_len;
+        slot_length_t key_len     = (slot_length_t) steal_src2->get_fence_low_length();
+        slot_length_t rec_len     = sizeof(slot_length_t) * 2 + sizeof(shpid_t) + key_len - prefix_len;
+        shpid_t       stolen_pid0 = steal_src2->pid0();
         v.put(&rec_len, sizeof(rec_len));
         v.put(&key_len, sizeof(key_len));
         v.put(&stolen_pid0, sizeof(stolen_pid0));
         v.put(steal_src2->get_fence_low_key() + prefix_len, steal_src2->get_fence_low_length() - prefix_len);
         w_assert1(v.size() == rec_len);
         poor_man_key poormkey = extract_poor_man_key (steal_src2->get_fence_low_key(), steal_src2->get_fence_low_length(), prefix_len);
-        _append_nolog(v, poormkey, false);
+        if (!page()->insert_slot(nslots(), false, v.size(), poormkey)) {
+            assert(false);
+        }
+        v.copy_to(page()->slot_start(nslots()-1));
     }
     if (steal_src2) {
         _steal_records (steal_src2, steal_from2, steal_to2);
@@ -229,7 +233,11 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
         }
         w_assert1(new_rec_len == v.size());
 
-        _append_nolog(v, new_poormkey, steal_src->is_ghost(i));
+        if (!page()->insert_slot(nslots(), steal_src->is_ghost(i), v.size(), new_poormkey)) {
+            assert(false);
+        }
+        v.copy_to(page()->slot_start(nslots()-1));
+
         w_assert3(is_consistent());
         w_assert5(_is_consistent_keyorder());
     }
@@ -697,28 +705,6 @@ rc_t btree_page_h::_insert_expand_nolog(slotid_t slot, const cvec_t &vec, poor_m
     w_assert3(page()->poor(idx) == poormkey);
     w_assert3 (_is_consistent_space());
     return RCOK;
-}
-
-void btree_page_h::_append_nolog(const cvec_t &vec, poor_man_key poormkey, bool ghost) {
-    w_assert3 (check_space_for_insert(vec.size()));
-    w_assert5 (_is_consistent_space());
-
-    if (!page()->insert_slot(nslots(), ghost, vec.size(), poormkey)) {
-        assert(false);
-    }
-    vec.copy_to(page()->slot_start(nslots()-1));
-    
-#if W_DEBUG_LEVEL>=1
-    if (nslots() == 1) {
-        // the inserted record was the special fence record!
-        w_assert1(poormkey == 0);
-        w_assert1(get_fence_rec_size() == vec.size());
-    } else {
-        w_assert1(get_rec_size(nrecs() - 1) == vec.size());
-        w_assert1(page()->poor(nslots() - 1) == poormkey);
-    }
-    w_assert5 (_is_consistent_space());
-#endif //W_DEBUG_LEVEL>=1
 }
 
 void btree_page_h::_expand_rec(slotid_t slot, slot_length_t rec_len) {
