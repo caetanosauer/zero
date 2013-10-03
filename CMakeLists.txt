@@ -147,7 +147,7 @@ ELSE (COMPILER_IS_SUNCC)
     ELSE (COMPILER_IS_ICC)
       # -pedantic requires -Wno-long-long
       # 
-      SET (ALWAYS_FLAGS "-Werror -Wall -Wextra -Woverloaded-virtual -fno-strict-aliasing -Wpointer-arith -Wwrite-strings -pthread")
+      SET (ALWAYS_FLAGS "-Werror -Wall -Wextra -Woverloaded-virtual -fno-strict-aliasing -Wpointer-arith -Wwrite-strings -pthread --std=c++0x")
       # NO_INLINE_FLAGS =  -fno-inline
       SET (NO_INLINE_FLAGS "")
       SET (YES_INLINE_FLAGS "-finline-functions")

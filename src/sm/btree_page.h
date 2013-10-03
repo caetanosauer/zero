@@ -272,8 +272,9 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
         return &body[offset8].raw[0];
     }
 };
-BOOST_STATIC_ASSERT(sizeof(btree_page) == sizeof(generic_page));
-BOOST_STATIC_ASSERT(sizeof(btree_page::slot_head) == 4);
-BOOST_STATIC_ASSERT(sizeof(btree_page::slot_body) == 8);
+static_assert(sizeof(btree_page) == sizeof(generic_page), 
+              "btree_page has wrong length");
+static_assert(sizeof(btree_page::slot_head) == 4, "slot_head has wrong length");
+static_assert(sizeof(btree_page::slot_body) == 8, "slot_body has wrong length");
 
 #endif // BTREE_PAGE_H

@@ -25,7 +25,6 @@
 #include "vol.h"
 #include "alloc_cache.h"
 
-#include <boost/static_assert.hpp>
 #include <ostream>
 #include <limits>
 
@@ -81,8 +80,8 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
 
 #ifdef BP_ALTERNATE_CB_LATCH
     // this allocation scheme is sensible only for control block and latch sizes of 64B (cacheline size)
-    BOOST_STATIC_ASSERT(sizeof(bf_tree_cb_t) == 64);
-    BOOST_STATIC_ASSERT(sizeof(latch_t) == 64);
+    static_assert(sizeof(bf_tree_cb_t) == 64, "bf_tree_sb_t must be cacheline size");
+    static_assert(sizeof(latch_t) == 64, "latch_t must be cacheline size");
     // allocate one more pair of <control block, latch> as we want to align the table at an odd 
     // multiple of cacheline (64B)
     if (::posix_memalign(&buf, sizeof(bf_tree_cb_t) + sizeof(latch_t), (sizeof(bf_tree_cb_t) + sizeof(latch_t)) * (((uint64_t) block_cnt) + 1LLU)) != 0) {
@@ -93,7 +92,7 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
     _control_blocks = reinterpret_cast<bf_tree_cb_t*>(reinterpret_cast<char *>(buf) + sizeof(bf_tree_cb_t));
     w_assert0(_control_blocks != NULL);
     for (bf_idx i = 0; i < block_cnt; i++) {
-        BOOST_STATIC_ASSERT(sizeof(bf_tree_cb_t) < SCHAR_MAX);
+        static_assert(sizeof(bf_tree_cb_t) < SCHAR_MAX, "bf_tree_cb_t size must be less than _latch_offset range");
         if (i & 0x1) { /* odd */
             get_cb(i)._latch_offset = -static_cast<int8_t>(sizeof(bf_tree_cb_t)); // place the latch before the control block
         } else { /* even */
