@@ -127,6 +127,7 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
         assert(false);
     }
     fences.copy_to(page()->slot_start(nslots()-1));
+    page()->_slots_are_consistent(); // <<<>>>
 
     // steal records from old page
     if (steal_src1) {
@@ -152,6 +153,7 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
             assert(false);
         }
         v.copy_to(page()->slot_start(nslots()-1));
+        page()->_slots_are_consistent(); // <<<>>>
     }
     if (steal_src2) {
         _steal_records (steal_src2, steal_from2, steal_to2);
@@ -238,6 +240,7 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
             assert(false);
         }
         v.copy_to(page()->slot_start(nslots()-1));
+        page()->_slots_are_consistent(); // <<<>>>
 
         w_assert3(is_consistent());
         w_assert5(_is_consistent_keyorder());
@@ -700,6 +703,7 @@ rc_t btree_page_h::_insert_expand_nolog(slotid_t slot, const cvec_t &vec, poor_m
         return RC(smlevel_0::eRECWONTFIT);
     }
     vec.copy_to(page()->slot_start(idx));
+    page()->_slots_are_consistent(); // <<<>>>
 
     w_assert3(get_rec_size(slot) == vec.size());
     w_assert3(page()->poor(idx) == poormkey);
@@ -792,10 +796,7 @@ rc_t btree_page_h::replace_ghost(const w_keystr_t &key,
     w_assert1(reinterpret_cast<slot_length_t*>(buf)[1] == klen);
     elem.copy_to(buf + sizeof(slot_length_t) * 2 + klen - prefix_length);
 
-    // Reuse everything. just change the record data.
-    slot_offset8_t offset8 = btree_page_h::tuple_offset8(slot + 1);
-    w_assert1 (offset8 < 0); // it should be ghost
-    btree_page_h::change_slot_offset(slot + 1, -offset8);
+    page()->unset_ghost(slot + 1);
     return RCOK;
 }
 
@@ -889,6 +890,7 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, int re
         assert(false);
     }
     page()->slot_value(slot+1).leaf.slot_len = record_size;
+    page()->_slots_are_consistent(); // <<<>>>
 
     // make a dummy record that has the desired length
     page()->slot_value(slot+1).leaf.key_len = key_raw_len;
@@ -1416,61 +1418,22 @@ rc_t btree_page_h::defrag() {
     w_assert1 (xct()->is_sys_xct());
     w_assert1 (is_fixed());
     w_assert1 (latch_mode() == LATCH_EX);
-    w_assert3(page()->_slots_are_consistent());
-    
-    //  Copy headers to scratch area.
-    btree_page scratch;
-    char *scratch_raw = reinterpret_cast<char*>(&scratch);
-    ::memcpy(scratch_raw, page(), hdr_sz);
-#ifdef ZERO_INIT
-    ::memset(scratch.body[0].raw, 0, data_sz);
-#endif // ZERO_INIT
-    
-    //  Move data back without leaving holes
-    slot_offset8_t new_offset8 = to_offset8(data_sz);
-    const slotid_t org_slots = nslots();
+
     vector<slotid_t> ghost_slots;
-    slotid_t new_slots = 0;
-    for (slotid_t i = 0; i < org_slots; i++) {
-        slotid_t slot = i;
-        slot_offset8_t offset8;
-        poor_man_key poormkey;
-        btree_page_h::tuple_both(slot, offset8, poormkey);
-        if (offset8 < 0) {
-            // ghost record. reclaim it
-            w_assert1(slot >= 1); // fence record can't be ghost
-            ghost_slots.push_back (slot - 1);
-            continue;
+    for (int i=0; i<nslots(); i++) {
+        if (page()->is_ghost(i)) {
+            w_assert1(i >= 1); // fence record can't be ghost
+            ghost_slots.push_back(i-1);
         }
-        w_assert1(offset8 != 0);
-        slot_length_t len = (i == 0 ? get_fence_rec_size() : get_rec_size(slot - 1));
-        new_offset8 -= to_aligned_offset8(len);
-        ::memcpy(scratch.data_addr8(new_offset8), page()->data_addr8(offset8), len);
-
-        slot_offset8_t* offset8_p = &scratch.head[new_slots].offset;
-        *offset8_p = new_offset8;
-        scratch.poor(new_slots) = poormkey;
-
-        ++new_slots;
     }
-
-    scratch.nslots = new_slots;
-    scratch.nghosts = 0;
-    scratch.record_head8 = new_offset8;
-
-    // defrag doesn't need log if there were no ghost records
+    // defrag doesn't need log if there were no ghost records:
     if (ghost_slots.size() > 0) {
-        // ghost records are not supported in other types.
-        // REDO/UNDO of ghosting relies on BTree
-        w_assert0(tag() == t_btree_p);
         W_DO (log_btree_ghost_reclaim(*this, ghost_slots));
     }
     
-    // okay, apply the change!
-    ::memcpy(_pp, scratch_raw, sizeof(generic_page));
+    page()->compact();
     set_dirty();
 
-    w_assert3(page()->_slots_are_consistent());
     return RCOK;
 }
 

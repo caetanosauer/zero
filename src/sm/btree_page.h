@@ -221,7 +221,7 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
 
     void init_slots();
 
-    poor_man_key& poor(slot_index_t slot) { return head[slot].poor; }
+    poor_man_key poor(slot_index_t slot) const { return head[slot].poor; }
 
     bool is_ghost(slot_index_t slot) const { return head[slot].offset < 0; }
     void set_ghost(slot_index_t slot);
@@ -236,7 +236,7 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
     void* slot_start(slot_index_t slot) {
         slot_offset8_t offset = head[slot].offset;
         if (offset < 0) offset = -offset; // ghost record
-        return &body[offset].raw[0];
+        return body[offset].raw;
     }
     slot_body& slot_value(slot_index_t slot) {
         slot_offset8_t offset = head[slot].offset;
@@ -268,7 +268,9 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
     void delete_slot(slot_index_t slot);
 
     bool _slots_are_consistent() const;
+    void compact();
 
+private:
     char*      data_addr8(slot_offset8_t offset8) {
         return &body[offset8].raw[0];
     }

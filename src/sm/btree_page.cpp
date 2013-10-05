@@ -24,6 +24,7 @@ void btree_page::set_ghost(slot_index_t slot) {
     w_assert1(slot>=0 && slot<nslots);
     w_assert1(slot != 0); // fence slot cannot be a ghost
 
+    w_assert1(!is_ghost(slot));
     slot_offset8_t offset = head[slot].offset;
     w_assert1(offset != 0);
     if (offset >= 0) {
@@ -36,6 +37,7 @@ void btree_page::unset_ghost(slot_index_t slot) {
     w_assert1(slot>=0 && slot<nslots);
     w_assert1(slot != 0); // fence slot cannot be a ghost
 
+    w_assert1(is_ghost(slot));
     slot_offset8_t offset = head[slot].offset;
     w_assert1(offset != 0);
     if (offset < 0) {
@@ -142,10 +144,12 @@ bool btree_page::_slots_are_consistent() const {
     static_assert(sizeof(slot_length_t) <= 2, 
                   "slot_length_t doesn't fit in 16 bits; adjust this code");
     std::unique_ptr<uint32_t[]> sorted_slots(new uint32_t[nslots]);
+    int ghosts_seen = 0;
     for (int slot = 0; slot<nslots; ++slot) {
         int offset = head[slot].offset;
         int length = slot_length8(slot);
         if (offset < 0) {
+            ghosts_seen++;
             sorted_slots[slot] = ((-offset) << 16) + length;
         } else {
             sorted_slots[slot] =  (offset << 16)   + length;
@@ -153,17 +157,26 @@ bool btree_page::_slots_are_consistent() const {
     }
     std::sort(sorted_slots.get(), sorted_slots.get() + nslots);
 
+    bool error = false;
+    if (nghosts != ghosts_seen) {
+        DBGOUT1(<<"Actual number of ghosts, " << ghosts_seen <<  ", differs from nghosts, " << nghosts);
+        error = true;
+    }
+
     // all offsets and lengths here are in terms of slot bodies 
     // (e.g., 1 length unit = sizeof(slot_body) bytes):
     const size_t max_offset = data_sz/sizeof(slot_body);
     size_t prev_end = 0;
-    bool   error    = false;
     for (int slot = 0; slot<nslots; ++slot) {
         size_t offset = sorted_slots[slot] >> 16;
         size_t len    = sorted_slots[slot] & 0xFFFF;
 
         if (offset < (size_t) record_head8) {
             DBGOUT1(<<"The slot starting at offset " << offset <<  " is located before record_head " << record_head8);
+            error = true;
+        }
+        if (len == 0) {
+            DBGOUT1(<<"The slot starting at offset " << offset <<  " has zero length");
             error = true;
         }
         if (offset >= max_offset) {
@@ -183,13 +196,52 @@ bool btree_page::_slots_are_consistent() const {
         prev_end = offset + len;
     }
 
+#if W_DEBUG_LEVEL >= 1
     if (error) {
+        DBGOUT1(<<"nslots=" << nslots << ", nghosts="<<nghosts);
         for (int i=0; i<nslots; i++) {
-            size_t offset = sorted_slots[i] >> 16;
-            size_t len    = sorted_slots[i] & 0xFFFF;
-            DBGOUT1(<<"  slot[" << i << "] body @ offsets " << offset << " to " << offset+len-1);
+            int offset = head[i].offset;
+            if (offset < 0) offset = -offset;
+            size_t len    = slot_length8(i);
+            DBGOUT1(<<"  slot[" << i << "] body @ offsets " << offset << " to " << offset+len-1
+                    << "; ghost? " << is_ghost(i) << " poor: " << poor(i));
         }
     }
+#endif
 
     return !error;
+}
+
+
+void btree_page::compact() {
+    w_assert3(_slots_are_consistent());
+
+    const size_t max_offset = data_sz/sizeof(slot_body);
+    slot_body scratch_body[data_sz/sizeof(slot_body)];
+    int       scratch_head = max_offset;
+#ifdef ZERO_INIT
+    ::memset(&scratch_body, 0, sizeof(scratch_body));
+#endif // ZERO_INIT
+
+    int reclaimed = 0;
+    int j = 0;
+    for (int i=0; i<nslots; i++) {
+        if (head[i].offset<0) {
+            reclaimed++;
+            nghosts--;
+        } else {
+            int length = slot_length8(i);
+            scratch_head -= length;
+            head[j].poor = head[i].poor;
+            head[j].offset = scratch_head;
+            ::memcpy(scratch_body[scratch_head].raw, slot_start(i), length*sizeof(slot_body));
+            j++;
+        }
+    }
+    nslots = j;
+    record_head8 = scratch_head;
+    ::memcpy(body[record_head8].raw, scratch_body[scratch_head].raw, (max_offset-scratch_head)*sizeof(slot_body));
+    
+    w_assert1(nghosts == 0);
+    w_assert3(_slots_are_consistent());
 }
