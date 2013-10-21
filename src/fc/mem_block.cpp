@@ -126,6 +126,7 @@ block_bits::block_bits(size_t chip_count)
     : _usable_chips(create_mask(chip_count))
     , _zombie_chips(0)
 {
+    printf("chip cound is %d, bitmap size is %d\n", (int)chip_count, (int)sizeof(bitmap));
     assert(chip_count <= 8*sizeof(bitmap));
 }
 

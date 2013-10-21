@@ -76,6 +76,7 @@ find_package(Threads REQUIRED) # find pthread library
 find_package(GooglePerftools) # google-perftools / google-perftools-devel
 IF(GOOGLEPERFTOOLS_FOUND)
   SET (LINK_GOOGLEPROFILER " -lprofiler") #  -ltcmalloc ?
+  SET (LIBINCL_GOOGLEPROFILER "profiler")
 ENDIF(GOOGLEPERFTOOLS_FOUND)
 
 # MUTrace profiles user-mode mutex locks 

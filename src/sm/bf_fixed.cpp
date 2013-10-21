@@ -38,7 +38,7 @@ w_rc_t bf_fixed_m::init(vol_t* parent, int unix_fd, uint32_t max_pid) {
     _page_cnt = alloc_pages + 1; // +1 for stnode_page
     // use posix_memalign to allow unbuffered disk I/O
     void *buf = NULL;
-    ::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * _page_cnt);
+    w_assert0(::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * _page_cnt)==0);
     if (buf == NULL) {
         ERROUT (<< "failed to reserve " << _page_cnt << " blocks of " << SM_PAGESIZE << "-bytes pages. ");
         W_FATAL(smlevel_0::eOUTOFMEMORY);

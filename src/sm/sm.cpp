@@ -871,7 +871,7 @@ ss_m::_destruct_once()
     }
     // now it's safe to do the clean_up
     int nprepared = xct_t::cleanup(false /* don't dispose of prepared xcts */);
-
+    (void) nprepared; // Used only for debugging assert
     if (shutdown_clean) {
         // dismount all volumes which aren't locked by a prepared xct
         // We can't use normal dismounting for the prepared xcts because
