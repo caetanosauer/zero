@@ -195,8 +195,9 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
         return data + to_byte_offset(offset8);
     }
 };
+BOOST_STATIC_ASSERT(sizeof(btree_page) == sizeof(generic_page));
 
-static_assert(sizeof(btree_page) == sizeof(generic_page), "page sizes do not match");
+
 
 class btree_page_h;
 /**

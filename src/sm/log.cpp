@@ -69,6 +69,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "bf_tree.h"
 #include <algorithm> // for std::swap
 #include <stdio.h> // snprintf
+#include <boost/static_assert.hpp>
 
 typedef smlevel_0::fileoff_t fileoff_t;
 
@@ -667,7 +668,7 @@ log_m::_read_master(
 
 fileoff_t log_m::take_space(fileoff_t *ptr, int amt) 
 {
-    static_assert(sizeof(fileoff_t) == sizeof(int64_t), "fileoff_t must be able to be cast to appropriate atomic loadable type");
+    BOOST_STATIC_ASSERT(sizeof(fileoff_t) == sizeof(int64_t));
     fileoff_t ov = lintel::unsafe::atomic_load(const_cast<int64_t*>(ptr));
     // fileoff_t ov = *ptr;
 #if W_DEBUG_LEVEL > 0
