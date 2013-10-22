@@ -74,9 +74,10 @@ w_rc_t bf_fixed_m::flush() {
         if (cur == _page_cnt) break;
 
         w_assert1(_dirty_flags[cur]);
-        uint32_t next = cur + 1;
+
+        uint32_t next = cur;
         for (; next < _page_cnt && _dirty_flags[next]; ++next) {
-            _pages[cur].checksum = _pages[cur].calculate_checksum();
+            _pages[next].checksum = _pages[next].calculate_checksum();
         }
 
         shpid_t begin_pid = cur + 1; // +1 for volume header
