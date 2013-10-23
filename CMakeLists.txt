@@ -76,6 +76,7 @@ find_package(Threads REQUIRED) # find pthread library
 find_package(GooglePerftools) # google-perftools / google-perftools-devel
 IF(GOOGLEPERFTOOLS_FOUND)
   SET (LINK_GOOGLEPROFILER " -lprofiler") #  -ltcmalloc ?
+  SET (LIBINCL_GOOGLEPROFILER "profiler")
 ENDIF(GOOGLEPERFTOOLS_FOUND)
 
 # MUTrace profiles user-mode mutex locks 
@@ -147,7 +148,7 @@ ELSE (COMPILER_IS_SUNCC)
     ELSE (COMPILER_IS_ICC)
       # -pedantic requires -Wno-long-long
       # 
-      SET (ALWAYS_FLAGS "-Wextra -Woverloaded-virtual -Wno-deprecated -Wall -fno-strict-aliasing -Wpointer-arith -Wwrite-strings -Wno-long-long -pthread -Wno-deprecated") # for now, allow warning. add back -Werror later
+      SET (ALWAYS_FLAGS "-Werror -Wall -Wextra -Woverloaded-virtual -fno-strict-aliasing -Wpointer-arith -Wwrite-strings -pthread")
       # NO_INLINE_FLAGS =  -fno-inline
       SET (NO_INLINE_FLAGS "")
       SET (YES_INLINE_FLAGS "-finline-functions")

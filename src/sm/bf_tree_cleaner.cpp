@@ -12,8 +12,8 @@
 #include "bf_fixed.h"
 #include "w_autodel.h"
 #include "generic_page.h"
+#include "fixable_page_h.h"  // just for get_cb in bf_tree_inline.h
 #include "bf.h"
-#include "generic_page_h.h"
 #include "sm_io.h"
 #include "log.h"
 #include "vol.h"
@@ -24,7 +24,7 @@
 
 #include "sm.h"
 #include "xct.h"
-
+#include "bf_tree_inline.h"
 
 typedef bf_tree_cleaner_slave_thread_t* slave_ptr;
 
@@ -286,7 +286,7 @@ bf_tree_cleaner_slave_thread_t::bf_tree_cleaner_slave_thread_t(bf_tree_cleaner* 
 
     // use posix_memalign because the write buffer might be used for raw disk I/O
     void *buf = NULL;
-    ::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * (parent->_cleaner_write_buffer_pages + 1)); // +1 margin for switching to next batch
+    w_assert0(::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * (parent->_cleaner_write_buffer_pages + 1))==0); // +1 margin for switching to next batch
     w_assert0(buf != NULL);
     _write_buffer = reinterpret_cast<generic_page*>(buf);
     
@@ -517,7 +517,8 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 skipped_something = true;
                 continue;
             }
-            if ((page_buffer[idx].page_flags & t_tobedeleted) != 0) {
+            fixable_page_h page(const_cast<generic_page*>(&page_buffer[idx])); // <<<>>>
+            if (page.is_to_be_deleted()) {
                 tobedeleted = true;
             } else {
                 ::memcpy(_write_buffer + write_buffer_cur, page_buffer + idx, sizeof (generic_page)); 
@@ -529,8 +530,8 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
             }
             cb.latch().latch_release();
             
-            // then, re-calculate the checksum.
-            _write_buffer[write_buffer_cur].update_checksum();
+            // then, re-calculate the checksum:
+            _write_buffer[write_buffer_cur].checksum = _write_buffer[write_buffer_cur].calculate_checksum();
             // also copy the new checksum to make the original (bufferpool) page consistent.
             // we can do this out of latch scope because it's never used in race condition.
             // this is mainly for testcases and such.
@@ -672,8 +673,8 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
     if (_parent->_bufferpool->_dirty_page_count_approximate < 0) {// so, even this can happen.
         _parent->_bufferpool->_dirty_page_count_approximate = 0;
     }
-    bool in_hurry = _parent->_bufferpool->_dirty_page_count_approximate > (block_cnt / 3 * 2);
-    bool in_real_hurry = _parent->_bufferpool->_dirty_page_count_approximate > (block_cnt / 4 * 3);
+    bool in_hurry = (unsigned)_parent->_bufferpool->_dirty_page_count_approximate > (block_cnt / 3 * 2);
+    bool in_real_hurry = (unsigned)_parent->_bufferpool->_dirty_page_count_approximate > (block_cnt / 4 * 3);
 
     // list up dirty pages
     generic_page* pages = _parent->_bufferpool->_buffer;

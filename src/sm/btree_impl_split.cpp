@@ -13,7 +13,6 @@
 #define BTREE_C
 
 #include "sm_int_2.h"
-#include "page_bf_inline.h"
 #include "btree_page.h"
 #include "btree_impl.h"
 #include "crash.h"
@@ -404,7 +403,7 @@ void btree_impl::_ux_adopt_foster_apply_child (btree_page_h &child)
     w_assert1 (child.latch_mode() == LATCH_EX);
     // just clears up foster and chain-fence-high
     // note, chain-fence-high's string data is left there, but it does no harm
-    child._pp->btree_foster = 0;
-    child._pp->btree_chain_fence_high_length = 0;
+    child.page()->btree_foster = 0;
+    child.page()->btree_chain_fence_high_length = 0;
     clear_forster_child(child.pid().page); // give hint to subsequent accesses
 }

@@ -28,6 +28,8 @@ private:
 #include <sstream>
 #include "w_strstream.h"
 
+
+
 __thread stringstream *_safe_io(NULL);
 void safe_io_init() 
 { 
@@ -36,7 +38,7 @@ void safe_io_init()
 
 #define SAFE_IO(XXXX) { safe_io_init(); \
         *_safe_io <<  XXXX; \
-        fprintf(stdout, _safe_io->str().c_str()); }
+        fprintf(stdout, "%s", _safe_io->str().c_str()); }
 
 void simple_thread_t::run() 
 { 

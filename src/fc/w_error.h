@@ -58,10 +58,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 /*  -- do not edit anything above this line --   </std-header>*/
 
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 #include "fc_error_enum_gen.h"
 #include "tls.h"
 #include "w_base.h"

@@ -8,10 +8,6 @@
 
 #define SM_SOURCE
 #define VOL_C
-#ifdef __GNUG__
-#   pragma implementation
-#endif
-
 
 #include "w_stream.h"
 #include <sys/types.h>
@@ -137,11 +133,11 @@ rc_t vol_t::mount(const char* devname, vid_t vid)
     w_rc_t e;
     int        open_flags = smthread_t::OPEN_RDWR;
     {
-            char *s = getenv("SM_VOL_RAW");
+        char *s = getenv("SM_VOL_RAW");
         if (s && s[0] && atoi(s) > 0)
-                open_flags |= smthread_t::OPEN_RAW;
+            open_flags |= smthread_t::OPEN_RAW;
         else if (s && s[0] && atoi(s) == 0)
-                open_flags &= ~smthread_t::OPEN_RAW;
+            open_flags &= ~smthread_t::OPEN_RAW;
     }
     e = me()->open(devname, open_flags, 0666, _unix_fd);
     if (e.is_error()) {
@@ -177,7 +173,12 @@ rc_t vol_t::mount(const char* devname, vid_t vid)
     clear_caches();
     _fixed_bf = new bf_fixed_m();
     w_assert1(_fixed_bf);
-    W_DO(_fixed_bf->init(this, _unix_fd, _num_pages));
+    e = _fixed_bf->init(this, _unix_fd, _num_pages);
+    if (e.is_error()) {
+        W_IGNORE(me()->close(_unix_fd));
+        _unix_fd = -1;
+        return e;
+    }
     _first_data_pageid = _fixed_bf->get_page_cnt() + 1; // +1 for volume header
 
     _alloc_cache = new alloc_cache_t(_vid, _fixed_bf);
@@ -192,8 +193,10 @@ rc_t vol_t::mount(const char* devname, vid_t vid)
     return RCOK;
 }
 
+/** @todo flush argument is never used. Backtrace through the callers and maybe
+ * eliminate it entirely? */
 rc_t
-vol_t::dismount(bool flush)
+vol_t::dismount(bool /* flush */)
 {
     DBG(<<" vol_t::dismount flush=" << flush);
 
@@ -326,8 +329,9 @@ rc_t vol_t::redo_free_page(shpid_t pid)
  *  true and flags is regular.
  *
  *********************************************************************/
+/** @todo sync_volume is never used. Backtrack through the code and remove it entirely? */
 rc_t
-vol_t::set_store_flags(snum_t snum, store_flag_t flags, bool sync_volume)
+vol_t::set_store_flags(snum_t snum, store_flag_t flags, bool /* sync_volume */)
 {
     w_assert2(flags & st_regular
            || flags & st_tmp
@@ -362,7 +366,7 @@ vol_t::get_store_flags(snum_t snum, store_flag_t& flags, bool ok_if_deleting)
     }
 
     if (snum == 0)  {
-        flags = smlevel_0::st_bad;
+        flags = smlevel_0::st_unallocated;
         return RCOK;
     }
 
@@ -445,21 +449,10 @@ rc_t vol_t::set_store_root(snum_t snum, shpid_t root)
  *
  *********************************************************************/
 rc_t
-vol_t::get_volume_meta_stats(SmVolumeMetaStats& volume_stats)
-{
-    volume_stats.numStores = stnode_page_h::max;
-
-    {
-        volume_stats.numAllocStores = 0;
-        for (slotid_t i = 1; i < stnode_page_h::max; ++i) {
-            
-            if (_stnode_cache->get_root_pid(i) != 0) {
-                ++volume_stats.numAllocStores;
-            }
-        }
-    } // unpins stnode_page
-
-    volume_stats.numPages = _num_pages;
+vol_t::get_volume_meta_stats(SmVolumeMetaStats& volume_stats) {
+    volume_stats.numStores      = stnode_page_h::max;
+    volume_stats.numAllocStores = _stnode_cache->get_all_used_store_ID().size();
+    volume_stats.numPages       = _num_pages;
     volume_stats.numSystemPages = _hdr_pages;
 
     return RCOK;
@@ -482,13 +475,11 @@ vol_t::get_store_meta_stats(snum_t, SmStoreMetaStats&)
     return RCOK;
 }
 
-bool vol_t::is_alloc_store(snum_t f) const
-{
+bool vol_t::is_alloc_store(snum_t f) const {
     FUNC(is_alloc_store);
-    return _stnode_cache->get_root_pid(f) != 0;
+    return _stnode_cache->is_allocated(f);
 }
-shpid_t vol_t::get_store_root(snum_t f) const
-{
+shpid_t vol_t::get_store_root(snum_t f) const {
     FUNC(get_root);
     return _stnode_cache->get_root_pid(f);
 }
@@ -649,7 +640,7 @@ const char* vol_t::prolog[] = {
     "%% ext_size          : ",
     "%% num_exts          : ",
     "%% hdr_exts          : ",
-    "%% hdr_pages          : ",
+    "%% hdr_pages         : ",
     "%% epid              : ",
     "%% spid              : ",
     "%% page_sz           : "
@@ -822,17 +813,17 @@ vol_t::format_vol(
         {
             for (apid.page = 1; apid.page < alloc_pages + 1; ++apid.page)  {
                 alloc_page_h ap(&buf, apid);  // format page
+                w_assert1(ap.vid() == vid);
                 // set bits for the header pages
                 if (apid.page == 1) {
                     for (shpid_t hdr_pid = 0; hdr_pid < hdr_pages; ++hdr_pid) {
                         ap.set_bit(hdr_pid);
                     }
                 }
-                generic_page& page (*ap.to_generic_page());
-                w_assert9(&buf == &page);
-                w_assert1(page.pid.vol() == vid);
+                generic_page* page = ap.get_generic_page();
+                w_assert9(&buf == page);
 
-                rc = me()->write(fd, &page, sizeof(page));
+                rc = me()->write(fd, page, sizeof(*page));
                 if (rc.is_error()) {
                     W_IGNORE(me()->close(fd));
                     return rc;
@@ -846,9 +837,9 @@ vol_t::format_vol(
             DBG(<<" formatting stnode_page");
             DBGTHRD(<<"stnode_page page " << spid.page);
             stnode_page_h fp(&buf, spid);  // formatting...
-            generic_page& page (*fp.to_generic_page());
-            w_assert1(page.pid.vol() == vid);
-            rc = me()->write(fd, &page, sizeof(page));
+            w_assert1(fp.vid() == vid);
+            generic_page* page = fp.get_generic_page();
+            rc = me()->write(fd, page, sizeof(*page));
             if (rc.is_error()) {
                 W_IGNORE(me()->close(fd));
                 return rc;

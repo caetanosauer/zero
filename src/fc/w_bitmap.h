@@ -36,10 +36,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include <w_base.h>
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 /** \brief Bitmaps of arbitrary sizes (in bits).  NOT USED by the storage manager.
  *\ingroup UNUSED 
  */

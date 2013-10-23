@@ -5,7 +5,6 @@
 #include "btree.h"
 #include "btree_page.h"
 #include "btree_impl.h"
-#include "generic_page_h.h"
 #include "log.h"
 #include "w_error.h"
 
@@ -36,7 +35,7 @@ w_rc_t bf_get_empty(ss_m* ssm, test_volume_t *test_volume) {
 
     generic_page *root_s = NULL;
     smlevel_0::store_flag_t stflags;
-    W_DO (bf_m::fix(root_s, root_pid, 0, LATCH_SH, false, stflags, true, smlevel_0::st_bad));
+    W_DO (bf_m::fix(root_s, root_pid, 0, LATCH_SH, false, stflags, true, smlevel_0::st_unallocated));
     EXPECT_TRUE (root_s != NULL);
     if (root_s == NULL) return RCOK;
     EXPECT_EQ (root_s->nslots, 1); // first slot is header
@@ -111,7 +110,7 @@ w_rc_t bf_get_many(ss_m* ssm, test_volume_t *test_volume) {
         generic_page *child_s = NULL;
         
         smlevel_0::store_flag_t stflags;
-        w_rc_t rc = bf_m::fix(child_s, child_pid, 0, LATCH_SH, false, stflags, true, smlevel_0::st_bad);
+        w_rc_t rc = bf_m::fix(child_s, child_pid, 0, LATCH_SH, false, stflags, true, smlevel_0::st_unallocated);
         if (rc.is_error()) {
             // buffer pool is now full!
             EXPECT_EQ (rc.err_num(), (w_rc_t::errcode_t) fcFULL);

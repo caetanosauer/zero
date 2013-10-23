@@ -4,10 +4,6 @@
 
 #define SM_SOURCE
 
-#ifdef __GNUG__
-#pragma implementation "lock_lil.h"
-#endif
-
 #include "sm_int_2.h"
 #include "lock_lil.h"
 #include "w_gettimeofday.h"

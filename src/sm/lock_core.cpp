@@ -7,12 +7,6 @@
 #define LOCK_CORE_C
 #define SM_SOURCE
 
-#ifdef __GNUG__
-#pragma implementation "lock_s.h"
-#pragma implementation "lock_x.h"
-#pragma implementation "lock_core.h"
-#endif
-
 #include "st_error_enum_gen.h"
 #include "block_alloc.h"
 
@@ -84,8 +78,15 @@ lock_core_m::lock_core_m(uint sz)
 
     _htabsz = primes[b];
 
+    /*
+      Mark - I think you understand this code better; I'm making the obvious change to get the
+      compiler to shutup for techcon.
+
+      /home/tucekj/projects/Zero/src/sm/lock_core.cpp:82:30: error: argument to âsizeofâ in âvoid* memset(void*, int, size_t)â call is the same expression as the destination; did you mean to dereference it? [-Werror=sizeof-pointer-memaccess]
+     ::memset(_htab, 0, sizeof(_htab));
+     */
     _htab = new bucket_t[_htabsz];
-    ::memset(_htab, 0, sizeof(_htab));
+    ::memset(_htab, 0, sizeof(*_htab));
 
     w_assert1(_htab);
     

@@ -45,9 +45,9 @@
 #           <type>_log(<arg>);                                          #
 #        // and...                                                      #
 #        // iff R bit set:                                              #
-#        void redo(generic_page_h *page);                               #
+#        void redo(fixable_page_h *page);                               #
 #        // iff U bit set:                                              #
-#        void undo(generic_page_h *page);                               #
+#        void undo(fixable_page_h *page);                               #
 #       }                                                               #
 #                                                                       #
 #    The format of the file is as follows:                              #
@@ -114,8 +114,8 @@ xct_freeing_space  1000000 0.0 ();
 xct_end            1000000 0.0 ();
 xct_end_group      1000000 0.0 (const xct_t** l, int llen);
 xct_prepare_st     1010000 0.0 (const gtid_t* g, const server_handle_t& h);
-xct_prepare_lk     1010000 0.0 (int num, lock_mode_t mode, lockid_t* lks);
-xct_prepare_alk    1010000 0.0 (int num, lockid_t* lks, lock_mode_t* modes);
+xct_prepare_lk     1010000 0.0 (int num, w_base_t::lock_mode_t mode, lockid_t* lks);
+xct_prepare_alk    1010000 0.0 (int num, lockid_t* lks, w_base_t::lock_mode_t* modes);
 xct_prepare_stores 1010000 0.0 (int num, const stid_t* stids);
 xct_prepare_fi     1010000 0.0 (int numex, int numix, int numsix, const lsn_t& first, int rsvd, int ready, int used);
 #########################################################################
@@ -131,7 +131,7 @@ store_operation    1011011 1.0 (const store_operation_param& op);
 #########################################################################
 # This just sets the status of the page to "to-be-deleted".
 # Once the page is actually deleted by bufferpool, we can't UNDO it.
-page_set_tobedeleted   1011000 1.0 (const generic_page_h& page);
+page_set_to_be_deleted   1011000 1.0 (const fixable_page_h& page);
 
 # This is a special way of logging the creation of a new page.
 # New page creation is usually a page split, so the new page has many
@@ -140,7 +140,7 @@ page_set_tobedeleted   1011000 1.0 (const generic_page_h& page);
 # and from the record_head to the end of page.
 # We can assume totally defragmented page image because this is page creation.
 # We don't need UNDO (again, this is page creation!), REDO is just two memcpy().
-page_img_format   1011000 1.0 (const generic_page_h& page);
+page_img_format   1011000 1.0 (const btree_page_h& page);
 
 #########################################################################
 # type             XSRUFAL  fudge    arg                                #

@@ -8,12 +8,8 @@
 
 #define SM_SOURCE
 #define SMTHREAD_C
-#ifdef __GNUG__
-#   pragma implementation
-#endif
 
 #include <sm_int_1.h>
-//#include <e_errmsg_gen.h>
 
 #include <w_strstream.h>
 

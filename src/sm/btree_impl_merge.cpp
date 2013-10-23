@@ -13,7 +13,6 @@
 
 #include "sm_int_2.h"
 #include "sm_base.h"
-#include "page_bf_inline.h"
 #include "btree_page.h"
 #include "btree_impl.h"
 #include "w_key.h"
@@ -59,7 +58,7 @@ rc_t btree_impl::_ux_rebalance_foster_core(btree_page_h &page)
     smsize_t move_size = 0;
     while (used - move_size > balanced_size && -move_count < page.nrecs() - 1) {
         ++move_count;
-        move_size += align(page.get_rec_size(page.nslots() - move_count - 1)) + generic_page::slot_sz;
+        move_size += align(page.get_rec_size(page.nslots() - move_count - 1)) + btree_page::slot_sz;
     }
     
     if (move_count == 0) {
@@ -228,7 +227,7 @@ rc_t btree_impl::_ux_merge_foster_core(btree_page_h &page)
     
     // log for foster-parent.
     W_DO(log_btree_foster_merge (page));
-    W_DO(foster_p.set_tobedeleted(true)); // log it (for foster-child)
+    W_DO(foster_p.set_to_be_deleted(true)); // log it (for foster-child)
 
     // like split, use scratch block to cleanly make a new page image
     w_keystr_t low_key, high_key, chain_high_key; // fence keys after merging
@@ -264,8 +263,8 @@ rc_t btree_impl::_sx_deadopt_foster(btree_page_h &real_parent, slotid_t foster_p
 }
 
 void btree_impl::_ux_deadopt_foster_apply_real_parent(btree_page_h &real_parent,
-    shpid_t W_IFDEBUG1(foster_child_id), slotid_t foster_parent_slot)
-{
+                                                      shpid_t W_IFDEBUG1(foster_child_id),
+                                                      slotid_t foster_parent_slot) {
 #if W_DEBUG_LEVEL>0
     w_assert1 (real_parent.latch_mode() == LATCH_EX);
     w_assert1(real_parent.is_node());
@@ -275,9 +274,11 @@ void btree_impl::_ux_deadopt_foster_apply_real_parent(btree_page_h &real_parent,
 #endif // W_DEBUG_LEVEL>0
     real_parent.remove_shift_nolog (foster_parent_slot + 1);
 }
+
 void btree_impl::_ux_deadopt_foster_apply_foster_parent(btree_page_h &foster_parent,
-    shpid_t foster_child_id, const w_keystr_t & W_IFDEBUG1(low_key), const w_keystr_t &high_key)
-{
+                                                        shpid_t foster_child_id,
+                                                        const w_keystr_t & W_IFDEBUG1(low_key),
+                                                        const w_keystr_t &high_key) {
 #if W_DEBUG_LEVEL>0
     w_assert1 (foster_parent.latch_mode() == LATCH_EX);
     w_assert1 (foster_parent.get_foster() == 0);
@@ -315,9 +316,9 @@ void btree_impl::_ux_deadopt_foster_apply_foster_parent(btree_page_h &foster_par
             W_FATAL(eINTERNAL); 
         }
     }
-    foster_parent._pp->btree_chain_fence_high_length = high_key.get_length_as_keystr();
+    foster_parent.page()->btree_chain_fence_high_length = high_key.get_length_as_keystr();
     
-    foster_parent._pp->btree_foster = foster_child_id;
+    foster_parent.page()->btree_foster = foster_child_id;
 }
 rc_t btree_impl::_ux_deadopt_foster_core(btree_page_h &real_parent, slotid_t foster_parent_slot)
 {

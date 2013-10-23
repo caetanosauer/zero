@@ -7,10 +7,6 @@
 #define SM_SOURCE
 #define RESTART_C
 
-#ifdef __GNUG__
-#pragma implementation "restart.h"
-#endif
-
 #include "sm_int_1.h"
 #include "restart.h"
 #include "w_heap.h"
@@ -19,7 +15,6 @@
 #include "bf_tree.h"
 #include "sm_int_0.h"
 #include "bf_tree_inline.h"
-#include "page_bf_inline.h"
 #include <map>
 
 
@@ -858,6 +853,7 @@ restart_m::redo_pass(
         }
 
         bool redone = false;
+        (void) redone; // Used only for debugging output
         DBGOUT5( << setiosflags(ios::right) << lsn
                       << resetiosflags(ios::right) << " R: " << r);
         w_assert1(lsn == r.lsn_ck());
@@ -944,7 +940,7 @@ restart_m::redo_pass(
                     /*
                      *  Fix the page.
                      */ 
-                    generic_page_h page;
+                    fixable_page_h page;
 
                     /* 
                      * The following code determines whether to perform
@@ -1073,7 +1069,7 @@ restart_m::redo_pass(
                                 page_lsn (as if it had just been logged
                                 the first time, back in the past)
                                 */
-                                smlevel_0::bf->repair_rec_lsn(&page.persistent_part(), was_dirty, lsn);
+                                smlevel_0::bf->repair_rec_lsn(page.get_generic_page(), was_dirty, lsn);
                             }
                                 
                             if (xd) me()->detach_xct(xd);
@@ -1086,7 +1082,7 @@ restart_m::redo_pass(
                             r.redo(page.is_fixed() ? &page : 0);
                             redone = true;
                             page.set_lsns(lsn);
-                            smlevel_0::bf->repair_rec_lsn(&page.persistent_part(), was_dirty, lsn);
+                            smlevel_0::bf->repair_rec_lsn(page.get_generic_page(), was_dirty, lsn);
                             W_IFDEBUG1(rc_t sxs_rc =) sxs.end_sys_xct (RCOK);
                             w_assert1(!sxs_rc.is_error());
                         }

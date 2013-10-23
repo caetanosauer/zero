@@ -104,10 +104,6 @@ class sthread_t;
 class smthread_t;
 
 
-#ifdef __GNUC__
-#pragma interface
-#endif
-
 #ifndef SDISK_H
 #include <sdisk.h>
 #endif

@@ -33,10 +33,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #define VID_T_C
 
-#ifdef __GNUC__
-#pragma implementation
-#endif
-
 #include <cstdlib>
 #include <w_stream.h>
 #include <w_base.h>
@@ -44,4 +40,3 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "vid_t.h"
 
 const vid_t vid_t::null;
-

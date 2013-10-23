@@ -160,7 +160,7 @@ struct bf_tree_cb_t {
 
 #ifdef BP_ALTERNATE_CB_LATCH    
     /** offset to the latch to protect this page. */
-    signed char                 _latch_offset;  // +1 -> 64
+    int8_t                      _latch_offset;  // +1 -> 64
 #else
     fill8                       _fill8_64;      // +1 -> 64
     latch_t                     _latch;         // +64 ->128
@@ -197,24 +197,29 @@ struct bf_tree_cb_t {
     }
 
 /// @todo NO_PINCNT_INCDEC is possibly unnecessary and should be cleaned up/removed (Haris)
+#ifndef NO_PINCNT_INCDEC
     void pin_cnt_atomic_inc(int32_t by_val) {
-#ifndef NO_PINCNT_INCDEC
         lintel::unsafe::atomic_fetch_add((uint32_t*) &(_pin_cnt), by_val);
-#endif
-        return;
     }
+#else
+    void pin_cnt_atomic_inc(int32_t) {
+    }
+#endif
 
-    void pin_cnt_atomic_dec(int32_t by_val) {
 #ifndef NO_PINCNT_INCDEC
+    void pin_cnt_atomic_dec(int32_t by_val) {
         lintel::unsafe::atomic_fetch_sub((uint32_t*) &(_pin_cnt), by_val);
-#endif
-        return;
     }
+#else
+    void pin_cnt_atomic_dec(int32_t) {
+    }
+#endif
 
-    bool pin_cnt_atomic_inc_no_assumption(int32_t by_val) {
 #ifdef NO_PINCNT_INCDEC
+    bool pin_cnt_atomic_inc_no_assumption(int32_t /* by_val */) {
         return true;
 #else
+    bool pin_cnt_atomic_inc_no_assumption(int32_t by_val) {
         int32_t cur = _pin_cnt;
         while (true) {
             w_assert1(cur >= -1);

@@ -60,9 +60,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #define SM_SOURCE
 #define LOG_CORE_C
-#ifdef __GNUG__
-#   pragma implementation
-#endif
 
 #ifdef __SUNPRO_CC
 #include <stdio.h>
@@ -1511,8 +1508,8 @@ log_core::log_core(
 
         {
             DBGOUT5(<<"explicit truncating " << fname << " to " << pos);
-            os_truncate(fname, pos );
-
+            w_assert0(os_truncate(fname, pos )==0);
+            
             //
             // but we can't just use truncate() --
             // we have to truncate to a size that's a mpl

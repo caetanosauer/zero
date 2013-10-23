@@ -7,10 +7,6 @@
 
 #include "w_defines.h"
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 #include "lock_lil.h"
 
 class bucket_t;

@@ -67,10 +67,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *  definitions used in the API.
  */
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 #ifndef SM_INT_4_H
 #include <sm_int_4.h>
 #endif
@@ -411,7 +407,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  */
 /********************************************************************/
 
-class generic_page_h;
+class fixable_page_h;
 class btree_page_h;
 class xct_t;
 class device_m;

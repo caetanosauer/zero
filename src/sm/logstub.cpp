@@ -40,7 +40,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "sm_int_1.h"
 #include <new>
 #include "w_key.h"
-#include "page_bf_inline.h"
 #include "logtype_gen.h"
 #include "logdef_gen.cpp"
 #include "logstub_gen.cpp"

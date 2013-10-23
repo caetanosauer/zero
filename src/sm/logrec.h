@@ -63,14 +63,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 class rangeset_t;
 
-typedef smlevel_0::lock_mode_t lock_mode_t;
-
 #include "logfunc_gen.h"
 #include "xct.h"
-
-#ifdef __GNUG__
-#pragma interface
-#endif
 
 #include <boost/static_assert.hpp>
 
@@ -137,7 +131,7 @@ struct xidChainLogHeader
 
 class logrec_t {
 public:
-    friend rc_t xct_t::give_logbuf(logrec_t*, const generic_page_h *);
+    friend rc_t xct_t::give_logbuf(logrec_t*, const fixable_page_h *);
 
 #include "logtype_gen.h"
     void             fill(
@@ -159,8 +153,8 @@ public:
     bool             valid_header(const lsn_t & lsn_ck) const;
     smsize_t         header_size() const;
 
-    void             redo(generic_page_h*);
-    void             undo(generic_page_h*);
+    void             redo(fixable_page_h*);
+    void             undo(fixable_page_h*);
 
     enum {
         max_sz = 3 * sizeof(generic_page),
@@ -456,14 +450,13 @@ struct prepare_info_t {
         }
 };
 
-struct prepare_lock_t 
-{
+struct prepare_lock_t  {
     // -tid is stored in the log rec hdr
     // -all locks are long-term
 
-    lock_mode_t    mode; // for this group of locks
+    w_base_t::lock_mode_t    mode; // for this group of locks
     uint32_t     num_locks; // in the array below
-    enum            { max_locks_logged = (logrec_t::max_data_sz - sizeof(lock_mode_t) - sizeof(uint32_t)) / sizeof(lockid_t) };
+    enum            { max_locks_logged = (logrec_t::max_data_sz - sizeof(w_base_t::lock_mode_t) - sizeof(uint32_t)) / sizeof(lockid_t) };
 
     lockid_t    name[max_locks_logged];
 
@@ -491,7 +484,7 @@ struct prepare_all_lock_t
     // 
     struct LockAndModePair {
         lockid_t    name;
-        lock_mode_t    mode; // for this lock
+        w_base_t::lock_mode_t    mode; // for this lock
     };
 
     uint32_t             num_locks; // in the array below
@@ -501,9 +494,8 @@ struct prepare_all_lock_t
 
 
     prepare_all_lock_t(uint32_t num, 
-        lockid_t *locks,
-        lock_mode_t *modes
-        ){
+                       lockid_t *locks,
+                       w_base_t::lock_mode_t *modes) {
         num_locks = num;
         uint32_t i;
         for(i=0; i<num; i++) { pair[i].name=locks[i]; pair[i].mode = modes[i]; }

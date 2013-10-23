@@ -19,7 +19,6 @@
 #include "crash.h"
 #include "w_key.h"
 #include "xct.h"
-#include "page_bf_inline.h"
 
 rc_t btree_impl::_sx_create_tree(const stid_t &stid, lpid_t &root_pid)
 {
@@ -102,7 +101,7 @@ btree_impl::_ux_shrink_tree_core(btree_page_h& rp)
             &cp, 0, cp.nrecs()));
     
         w_assert3( cp.latch_mode() == LATCH_EX);
-        W_DO( cp.set_tobedeleted(true)); // delete the page
+        W_DO( cp.set_to_be_deleted(true)); // delete the page
     } else {
         // even pid0 doesn't exist. this is now an empty tree.
         w_keystr_t infimum, supremum, dummy_chain_high;

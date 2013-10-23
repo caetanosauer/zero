@@ -12,16 +12,12 @@
 #define BTREE_C
 
 #include "sm_int_2.h"
-#ifdef __GNUG__
-#   pragma implementation "btree_impl.h"
-#endif
 #include "bf_tree.h"
 #include "btree_page.h"
 #include "btree_impl.h"
 #include "sm_base.h"
 #include "w_key.h"
 #include "xct.h"
-#include "page_bf_inline.h"
 
 rc_t
 btree_impl::_ux_lock_key(

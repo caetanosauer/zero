@@ -77,7 +77,9 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
        w_ostrstream S; \
        S << "Unexpected result from " << #x << " " << res << " "; \
        char buf[100]; \
-       (void) strerror_r(res, &buf[0], sizeof(buf)); \
+       void * xxrs; \
+       xxrs = (void *) strerror_r(res, &buf[0], sizeof(buf));     \
+       (void) xxrs; \
        S << buf << ends; \
        W_FATAL_MSG(fcINTERNAL, << S.c_str()); \
     }  \

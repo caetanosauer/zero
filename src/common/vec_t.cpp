@@ -54,10 +54,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
-#ifdef __GNUC__
-#pragma implementation "vec_t.h"
-#endif
-
 #define VEC_T_C
 #include <cstdlib>
 #include <cstring>

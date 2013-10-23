@@ -12,7 +12,6 @@
 #include "generic_page.h"
 #include "bf.h"
 #include "smthread.h"
-#include "page_bf_inline.h"
 #include "btree.h"
 #include "btcursor.h"
 #include "btree_impl.h"

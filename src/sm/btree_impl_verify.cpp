@@ -23,7 +23,6 @@
 #include "xct.h"
 #include "sm_int_0.h"
 #include "bf_tree.h"
-#include "page_bf_inline.h"
 
 // NOTE we don't know the level of root until we start, so just give "-1" as magic value for root level
 const int16_t NOCHECK_ROOT_LEVEL = -1;
@@ -381,7 +380,7 @@ rc_t btree_impl::_ux_verify_volume(
         }
         W_DO (vol->read_page(pid, buf));
         btree_page_h page (&buf);
-        if (page.tag() == t_btree_p && (page.page_flags() & t_tobedeleted) == 0) {
+        if (page.tag() == t_btree_p && !page.is_to_be_deleted()) {
             verification_context *context = result.get_or_create_context(page.pid().store(), hash_bits);
             W_DO (_ux_verify_feed_page (page, *context));
 

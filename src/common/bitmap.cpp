@@ -33,10 +33,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #define BITMAP_C
 
-#ifdef __GNUC__
-#pragma implementation "bitmap.h"
-#endif
-
 #include <cstdlib>
 #include <w_stream.h>
 #include "basics.h" 
