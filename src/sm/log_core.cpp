@@ -1508,8 +1508,8 @@ log_core::log_core(
 
         {
             DBGOUT5(<<"explicit truncating " << fname << " to " << pos);
-            os_truncate(fname, pos );
-
+            w_assert0(os_truncate(fname, pos )==0);
+            
             //
             // but we can't just use truncate() --
             // we have to truncate to a size that's a mpl

@@ -41,7 +41,6 @@
 #include "crash.h"
 #include "chkpt.h"
 #include "bf_tree.h"
-#include "page_bf_inline.h"
 
 #ifdef EXPLICIT_TEMPLATE
 template class w_list_t<xct_t, queue_based_lock_t>;

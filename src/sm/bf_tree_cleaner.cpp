@@ -24,7 +24,7 @@
 
 #include "sm.h"
 #include "xct.h"
-
+#include "bf_tree_inline.h"
 
 typedef bf_tree_cleaner_slave_thread_t* slave_ptr;
 
@@ -286,7 +286,7 @@ bf_tree_cleaner_slave_thread_t::bf_tree_cleaner_slave_thread_t(bf_tree_cleaner* 
 
     // use posix_memalign because the write buffer might be used for raw disk I/O
     void *buf = NULL;
-    ::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * (parent->_cleaner_write_buffer_pages + 1)); // +1 margin for switching to next batch
+    w_assert0(::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * (parent->_cleaner_write_buffer_pages + 1))==0); // +1 margin for switching to next batch
     w_assert0(buf != NULL);
     _write_buffer = reinterpret_cast<generic_page*>(buf);
     

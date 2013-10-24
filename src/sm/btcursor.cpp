@@ -9,7 +9,6 @@
 
 #include "sm_int_0.h"
 #include "sm_int_2.h"
-#include "page_bf_inline.h"
 #include "btree_page.h"
 #include "btcursor.h"
 #include "btree_impl.h"

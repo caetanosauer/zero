@@ -107,9 +107,10 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
-#include "btree_page.h"
 #include "alloc_page.h"
+#include "btree_page.h"
 #include "stnode_page.h"
+#include "w_base.h"
 
 EOF
 

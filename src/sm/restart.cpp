@@ -15,7 +15,6 @@
 #include "bf_tree.h"
 #include "sm_int_0.h"
 #include "bf_tree_inline.h"
-#include "page_bf_inline.h"
 #include <map>
 
 
@@ -854,6 +853,7 @@ restart_m::redo_pass(
         }
 
         bool redone = false;
+        (void) redone; // Used only for debugging output
         DBGOUT5( << setiosflags(ios::right) << lsn
                       << resetiosflags(ios::right) << " R: " << r);
         w_assert1(lsn == r.lsn_ck());

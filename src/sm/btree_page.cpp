@@ -12,7 +12,6 @@
 #include "vec_t.h"
 #include "btree_page.h"
 #include "btree_impl.h"
-#include "page_bf_inline.h"
 #include "sm_du_stats.h"
 #include "crash.h"
 #include "w_key.h"

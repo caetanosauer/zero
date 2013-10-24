@@ -17,7 +17,6 @@
 #include "w_key.h"
 #include "xct.h"
 #include "vec_t.h"
-#include "page_bf_inline.h"
 #include <crash.h>
 
 void btree_m::construct_once()
