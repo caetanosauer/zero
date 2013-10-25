@@ -330,7 +330,7 @@ add_subdirectory(tests) # unit testcases
 # TODO: experiments should be compiled only when the user wants... maybe optional cmake argument?
 add_subdirectory(experiments) # benchmarks and other performance tests
 # add_subdirectory(examples) # examples to show how to use Foster B-tree. enabled only while demonstration or learning
-
+add_subdirectory(publications)
 # not needed so far, and causes a warning
 # add_library(shore)
 # target_link_libraries(shore fc sthread common sm)
