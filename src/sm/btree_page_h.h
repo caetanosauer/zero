@@ -687,6 +687,19 @@ private:
         w_assert1(slot>=0);
         return page()->item_data16(slot+1);
     }
+    void _get_leaf_key_fields(int slot, int& key_length, char*& key) const {
+        w_assert1(slot>=0);
+        key_length = *(slot_length_t*)page()->item_data(slot+1);
+        key        = page()->item_data(slot+1) + sizeof(slot_length_t);
+    }
+    void _get_leaf_fields(int slot, int& key_length, char*& key,
+                          int& data_length, char*& data) const {
+        _get_leaf_key_fields(slot, key_length, key);
+        int total_length = page()->item_length(slot+1);
+        data_length = total_length - key_length - sizeof(slot_length_t);
+        data        = key + key_length;
+    }
+
 
 
 

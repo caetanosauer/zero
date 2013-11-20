@@ -1064,94 +1064,86 @@ w_keystr_t btree_page_h::recalculate_fence_for_split(slotid_t right_begins_from)
 }
 
 
-void btree_page_h::rec_leaf(slotid_t idx,  w_keystr_t &key, cvec_t &el, bool &ghost) const {
+void btree_page_h::rec_leaf(slotid_t slot,  w_keystr_t &key, cvec_t &el, bool &ghost) const {
     w_assert1(is_leaf());
     FUNC(btree_page_h::rec_leaf);
-    ghost = is_ghost(idx);
-    const char* base = (char*) page()->slot_start(idx + 1);
-    const char* p = base;
-    
-    el.reset();
 
-    slot_length_t rec_len    = ((slot_length_t*) p)[0];
-    slot_length_t key_len    = ((slot_length_t*) p)[1];
-    slot_length_t prefix_len = (slot_length_t) get_prefix_length();
-    slot_length_t el_len     = rec_len - sizeof(slot_length_t) * 2 - key_len + prefix_len;
-    p += sizeof(slot_length_t) * 2;
-    
-    w_assert2 (prefix_len <= key_len);
-    key.construct_from_keystr(get_prefix_key(), prefix_len, p, key_len - prefix_len); // also from p
-    el.put(p + key_len - prefix_len, el_len);
+    int   key_length, data_length;
+    char *key_data, *data;
+    _get_leaf_fields(slot, key_length, key_data, data_length, data);
+
+    int prefix_len = get_prefix_length();
+    w_assert2 (prefix_len <= key_length);
+
+    key.construct_from_keystr(get_prefix_key(), prefix_len, key_data, key_length - prefix_len);
+    el.reset();
+    el.put(data, data_length);
+    ghost = is_ghost(slot);
 }
-void btree_page_h::rec_leaf(slotid_t idx,  w_keystr_t &key, char *el, smsize_t &elen, bool &ghost) const {
+void btree_page_h::rec_leaf(slotid_t slot,  w_keystr_t &key, char *el, smsize_t &elen, bool &ghost) const {
     w_assert1(is_leaf());
     FUNC(btree_page_h::rec_leaf);
-    ghost = is_ghost(idx);
-    const char* base = (char*) page()->slot_start(idx + 1);
-    const char* p = base;
-    
-    slot_length_t rec_len    = ((slot_length_t*) p)[0];
-    slot_length_t key_len    = ((slot_length_t*) p)[1];
-    slot_length_t prefix_len = (slot_length_t) get_prefix_length();
-    slot_length_t el_len     = rec_len - sizeof(slot_length_t) * 2 - key_len + prefix_len;
-    w_assert2 (prefix_len <= key_len);
-    w_assert1(elen >= (smsize_t) el_len); // this method assumes the buffer is large enough!
-    p += sizeof(slot_length_t) * 2;
-    
-    key.construct_from_keystr(get_prefix_key(), prefix_len, p, key_len - prefix_len); // also from p
-    ::memcpy(el, p + key_len - prefix_len, el_len);
-    elen = el_len;
+
+    int   key_length, data_length;
+    char *key_data, *data;
+    _get_leaf_fields(slot, key_length, key_data, data_length, data);
+
+    int prefix_len = get_prefix_length();
+    w_assert2 (prefix_len <= key_length);
+
+    key.construct_from_keystr(get_prefix_key(), prefix_len, key_data, key_length - prefix_len);
+    w_assert1((int)elen >= data_length); // this method assumes the buffer is large enough!
+    ::memcpy(el, data, data_length);
+    elen = data_length;
+    ghost = is_ghost(slot);
 }
-bool btree_page_h::dat_leaf(slotid_t idx,  char *el, smsize_t &elen, bool &ghost) const {
+bool btree_page_h::dat_leaf(slotid_t slot,  char *el, smsize_t &elen, bool &ghost) const {
     w_assert1(is_leaf());
     FUNC(btree_page_h::dat_leaf);
-    ghost = is_ghost(idx);
-    const char* base = (char*) page()->slot_start(idx + 1);
-    const char* p = base;
-    
-    slot_length_t rec_len    = ((slot_length_t*) p)[0];
-    slot_length_t key_len    = ((slot_length_t*) p)[1];
-    slot_length_t prefix_len = (slot_length_t) get_prefix_length();
-    slot_length_t el_len     = rec_len - sizeof(slot_length_t) * 2 - key_len + prefix_len;
-    p += sizeof(slot_length_t) * 2;
-    w_assert2 (prefix_len <= key_len);
-    if (elen >= (smsize_t) el_len) {
-        ::memcpy(el, p + key_len - prefix_len, el_len);
-        elen = el_len;
+
+    int   key_length, data_length;
+    char *key_data, *data;
+    _get_leaf_fields(slot, key_length, key_data, data_length, data);
+
+    ghost = is_ghost(slot);
+    if ((int)elen >= data_length) {
+        ::memcpy(el, data, data_length);
+        elen = data_length;
         return true;
     } else {
         // the buffer is too short
-        elen = el_len;
+        elen = data_length;
         return false;
     }
 }
 
-void btree_page_h::dat_leaf_ref(slotid_t idx, const char *&el, smsize_t &elen, bool &ghost) const {
+void btree_page_h::dat_leaf_ref(slotid_t slot, const char *&el, smsize_t &elen, bool &ghost) const {
     w_assert1(is_leaf());
     FUNC(btree_page_h::dat_leaf_ref);
-    ghost = is_ghost(idx);
-    const char* base = (char*) page()->slot_start(idx + 1);
-    const char* p = base;
-    
-    slot_length_t rec_len    = ((slot_length_t*) p)[0];
-    slot_length_t key_len    = ((slot_length_t*) p)[1];
-    slot_length_t prefix_len = (slot_length_t) get_prefix_length();
-    elen = rec_len - sizeof(slot_length_t) * 2 - key_len + prefix_len;
-    p += sizeof(slot_length_t) * 2;
-    
-    w_assert2 (prefix_len <= key_len);
-    el = p + key_len - prefix_len;
+
+    int   key_length, data_length;
+    char *key_data, *data;
+    _get_leaf_fields(slot, key_length, key_data, data_length, data);
+
+    elen  = data_length;
+    el    = data;
+    ghost = is_ghost(slot);
 }
 
-void btree_page_h::leaf_key(slotid_t idx,  w_keystr_t &key) const {
+void btree_page_h::leaf_key(slotid_t slot,  w_keystr_t &key) const {
     w_assert1(is_leaf());
-    const char* p = (char*) page()->slot_start(idx + 1);
-    slot_length_t key_len = ((slot_length_t*) p)[1];
-    p += sizeof(slot_length_t) * 2;
-    slot_length_t prefix_len = get_prefix_length();
-    w_assert2 (prefix_len <= key_len);
-    key.construct_from_keystr(get_prefix_key(), prefix_len, p, key_len - prefix_len); // also from p
+
+    int   key_length;
+    char* key_data;
+    _get_leaf_key_fields(slot, key_length, key_data);
+
+    int prefix_len = get_prefix_length();
+    w_assert2 (prefix_len <= key_length);
+
+    key.construct_from_keystr(get_prefix_key(), prefix_len, key_data, key_length - prefix_len);
 }
+
+
 
 void  btree_page_h::rec_node(slotid_t idx,  w_keystr_t &key, shpid_t &el) const {
     w_assert1(is_node());
@@ -1311,8 +1303,8 @@ bool btree_page_h::is_consistent (bool check_keyorder, bool check_space) const {
     return true;
 }
 bool btree_page_h::_is_consistent_keyorder () const {
-    const int recs = nrecs();
-    const char* lowkey = get_fence_low_key();
+    const int    recs       = nrecs();
+    const char*  lowkey     = get_fence_low_key();
     const size_t lowkey_len = get_fence_low_length();
     const size_t prefix_len = get_prefix_length();
     if (recs == 0) {
@@ -1343,7 +1335,7 @@ bool btree_page_h::_is_consistent_keyorder () const {
                 w_assert3(false);
                 return false;
             }
-            prevkey = curkey;
+            prevkey     = curkey;
             prevkey_len = curkey_len;
         }
         

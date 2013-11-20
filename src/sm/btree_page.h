@@ -212,6 +212,8 @@ public:
     char* item_data(int item);
     int item_length(int item) const;
 
+    bool resize_item(int item, size_t length, bool keep_old);
+
 
 
     typedef struct {
@@ -291,14 +293,6 @@ public:
 
     bool _slots_are_consistent() const;
     void compact();
-
-private:
-    char*      data_addr8(slot_offset8_t offset8) {
-        return &body[offset8].raw[0];
-    }
-    const char* data_addr8(slot_offset8_t offset8) const {
-        return &body[offset8].raw[0];
-    }
 };
 static_assert(sizeof(btree_page) == sizeof(generic_page), 
               "btree_page has wrong length");
@@ -329,7 +323,7 @@ inline int32_t& btree_page::item_data32(int item) {
 
 inline int btree_page::item_length(int item) const {
     w_assert1(item>=0 && item<nitems);
-    return slot_length(item);
+    return slot_length(item) - sizeof(slot_length_t);
 }
 inline char* btree_page::item_data(int item) {
     w_assert1(item>=0 && item<nitems);

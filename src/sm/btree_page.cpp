@@ -43,6 +43,58 @@ void btree_page::unset_ghost(int item) {
 }
 
 
+
+
+
+
+
+bool btree_page::resize_item(int item, size_t length, bool keep_old) {
+    w_assert1(item>=0 && item<nitems);
+    w_assert3(_slots_are_consistent());
+
+    slot_offset8_t offset = head[item].offset;
+    bool ghost = false;
+    if (offset < 0) {
+        offset = -offset;
+        ghost = true;
+    }
+
+    size_t old_length = slot_length(item);
+    if (length <= align(old_length)) {
+        return true;
+    }
+
+    if (align(length) > (size_t) usable_space()) {
+        return false;
+    }
+
+    record_head8 -= (length-1)/8+1;
+    head[item].offset = ghost ? -record_head8 : record_head8;
+
+    if (keep_old) {
+        char* old_p = (char*)&body[offset];
+        char* new_p = (char*)&body[record_head8];
+        ::memcpy(new_p, old_p, length); // later don't copy length?
+    }
+
+#if W_DEBUG_LEVEL>0
+    ::memset((char*)&body[offset], 0, align(old_length)); // clear old item
+#endif // W_DEBUG_LEVEL>0
+
+    //w_assert3(_slots_are_consistent()); // only consistent once length is set by caller
+    return true;
+}
+
+
+
+
+
+
+
+
+
+
+
 bool btree_page::resize_slot(slot_index_t slot, size_t length, bool keep_old) {
     w_assert1(slot>=0 && slot<nitems);
     w_assert3(_slots_are_consistent());
