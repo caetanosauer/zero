@@ -12,7 +12,7 @@
 void btree_page::init_slots() {
     const size_t max_offset = data_sz/sizeof(slot_body);
 
-    nslots       = 0;
+    nitems       = 0;
     nghosts      = 0;
     record_head8 = max_offset;
 
@@ -20,35 +20,35 @@ void btree_page::init_slots() {
 }
 
 
-void btree_page::set_ghost(slot_index_t slot) {
-    w_assert1(slot>=0 && slot<nslots);
-    w_assert1(slot != 0); // fence slot cannot be a ghost
+void btree_page::set_ghost(int item) {
+    w_assert1(item>=0 && item<nitems);
+    w_assert1(item != 0); // fence slot cannot be a ghost
 
-    w_assert1(!is_ghost(slot));
-    slot_offset8_t offset = head[slot].offset;
+    w_assert1(!is_ghost(item));
+    slot_offset8_t offset = head[item].offset;
     w_assert1(offset != 0);
     if (offset >= 0) {
-        head[slot].offset = -offset;
+        head[item].offset = -offset;
         nghosts++;
     }
 }
 
-void btree_page::unset_ghost(slot_index_t slot) {
-    w_assert1(slot>=0 && slot<nslots);
-    w_assert1(slot != 0); // fence slot cannot be a ghost
+void btree_page::unset_ghost(int item) {
+    w_assert1(item>=0 && item<nitems);
+    w_assert1(item != 0); // fence slot cannot be a ghost
 
-    w_assert1(is_ghost(slot));
-    slot_offset8_t offset = head[slot].offset;
+    w_assert1(is_ghost(item));
+    slot_offset8_t offset = head[item].offset;
     w_assert1(offset != 0);
     if (offset < 0) {
-        head[slot].offset = -offset;
+        head[item].offset = -offset;
         nghosts--;
     }
 }
 
 
 bool btree_page::resize_slot(slot_index_t slot, size_t length, bool keep_old) {
-    w_assert1(slot>=0 && slot<nslots);
+    w_assert1(slot>=0 && slot<nitems);
     w_assert3(_slots_are_consistent());
 
     slot_offset8_t offset = head[slot].offset;
@@ -86,7 +86,7 @@ bool btree_page::resize_slot(slot_index_t slot, size_t length, bool keep_old) {
 
 
 void btree_page::delete_slot(slot_index_t slot) {
-    w_assert1(slot>=0 && slot<nslots);
+    w_assert1(slot>=0 && slot<nitems);
     w_assert1(slot != 0); // deleting slot 0 makes no sense because it has a special format
     w_assert3(_slots_are_consistent());
 
@@ -102,8 +102,8 @@ void btree_page::delete_slot(slot_index_t slot) {
     }
 
     // shift slot array down to remove head[slot]:
-    ::memmove(&head[slot], &head[slot+1], (nslots-(slot+1))*sizeof(slot_head));
-    nslots--;
+    ::memmove(&head[slot], &head[slot+1], (nitems-(slot+1))*sizeof(slot_head));
+    nitems--;
 
     w_assert3(_slots_are_consistent());
 }
@@ -111,7 +111,7 @@ void btree_page::delete_slot(slot_index_t slot) {
 
 bool btree_page::insert_slot(slot_index_t slot, bool ghost, size_t length, 
                              poor_man_key poor_key) {
-    w_assert1(slot>=0 && slot<=nslots);  // use of <= intentional
+    w_assert1(slot>=0 && slot<=nitems);  // use of <= intentional
     w_assert3(_slots_are_consistent());
 
     if ((size_t)usable_space() < sizeof(slot_head) + align(length)) {
@@ -119,8 +119,8 @@ bool btree_page::insert_slot(slot_index_t slot, bool ghost, size_t length,
     }
 
     // shift slot array up to insert a slot so it is head[slot]:
-    ::memmove(&head[slot+1], &head[slot], (nslots-slot)*sizeof(slot_head));
-    nslots++;
+    ::memmove(&head[slot+1], &head[slot], (nitems-slot)*sizeof(slot_head));
+    nitems++;
     if (ghost) {
         nghosts++;
     }
@@ -143,9 +143,9 @@ bool btree_page::_slots_are_consistent() const {
     // high 16 bits=offset, low 16 bits=length
     static_assert(sizeof(slot_length_t) <= 2, 
                   "slot_length_t doesn't fit in 16 bits; adjust this code");
-    std::unique_ptr<uint32_t[]> sorted_slots(new uint32_t[nslots]);
+    std::unique_ptr<uint32_t[]> sorted_slots(new uint32_t[nitems]);
     int ghosts_seen = 0;
-    for (int slot = 0; slot<nslots; ++slot) {
+    for (int slot = 0; slot<nitems; ++slot) {
         int offset = head[slot].offset;
         int length = slot_length8(slot);
         if (offset < 0) {
@@ -155,7 +155,7 @@ bool btree_page::_slots_are_consistent() const {
             sorted_slots[slot] =  (offset << 16)   + length;
         }
     }
-    std::sort(sorted_slots.get(), sorted_slots.get() + nslots);
+    std::sort(sorted_slots.get(), sorted_slots.get() + nitems);
 
     bool error = false;
     if (nghosts != ghosts_seen) {
@@ -167,7 +167,7 @@ bool btree_page::_slots_are_consistent() const {
     // (e.g., 1 length unit = sizeof(slot_body) bytes):
     const size_t max_offset = data_sz/sizeof(slot_body);
     size_t prev_end = 0;
-    for (int slot = 0; slot<nslots; ++slot) {
+    for (int slot = 0; slot<nitems; ++slot) {
         size_t offset = sorted_slots[slot] >> 16;
         size_t len    = sorted_slots[slot] & 0xFFFF;
 
@@ -198,8 +198,8 @@ bool btree_page::_slots_are_consistent() const {
 
 #if W_DEBUG_LEVEL >= 1
     if (error) {
-        DBGOUT1(<<"nslots=" << nslots << ", nghosts="<<nghosts);
-        for (int i=0; i<nslots; i++) {
+        DBGOUT1(<<"nitems=" << nitems << ", nghosts="<<nghosts);
+        for (int i=0; i<nitems; i++) {
             int offset = head[i].offset;
             if (offset < 0) offset = -offset;
             size_t len    = slot_length8(i);
@@ -225,7 +225,7 @@ void btree_page::compact() {
 
     int reclaimed = 0;
     int j = 0;
-    for (int i=0; i<nslots; i++) {
+    for (int i=0; i<nitems; i++) {
         if (head[i].offset<0) {
             reclaimed++;
             nghosts--;
@@ -238,7 +238,7 @@ void btree_page::compact() {
             j++;
         }
     }
-    nslots = j;
+    nitems = j;
     record_head8 = scratch_head;
     ::memcpy(body[record_head8].raw, scratch_body[scratch_head].raw, (max_offset-scratch_head)*sizeof(slot_body));
     

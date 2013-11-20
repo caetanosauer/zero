@@ -187,8 +187,6 @@ public:
     btree_page_h() {}
     btree_page_h(generic_page* s) : fixable_page_h(s) {
         w_assert1(s->tag == t_btree_p);
-        // check claimed alignment produced by generic_page_header; see its class comment:
-        w_assert1(((char *)&page()->nslots - (char *)s) % 8 == 0); // <<<>>>
     }
     btree_page_h(const btree_page_h& p) : fixable_page_h(p) {} 
     ~btree_page_h() {}
@@ -1044,7 +1042,7 @@ inline bool btree_page_h::is_ghost(slotid_t slot) const {
 
 inline char* btree_page_h::slot_addr(slotid_t idx) const
 {
-    w_assert3(idx >= 0 && idx <= page()->nslots);
+    w_assert3(idx >= 0 && idx <= page()->number_of_items());
     return (char*) &page()->head[idx];
 }
 
@@ -1073,7 +1071,7 @@ btree_page_h::used_space() const
 inline slotid_t
 btree_page_h::nslots() const
 {
-    return page()->nslots;
+    return page()->number_of_items();
 }
 
 inline smsize_t

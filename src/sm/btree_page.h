@@ -70,6 +70,7 @@ inline poor_man_key extract_poor_man_key (const void* key_with_prefix, size_t ke
 
 
 class btree_page_header : public generic_page_header {
+    friend class btree_page;
 public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
 
     enum {
@@ -78,20 +79,6 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
         slot_sz         = sizeof(slot_offset8_t) + poormkey_sz
     };
 
- 
-
-    /** total number of slots including every type of slot. */
-    slot_index_t  nslots;   // +2 -> 24
-    
-    /** number of ghost records. */
-    slot_index_t  nghosts; // +2 -> 26
-
-    /** offset to beginning of record area (location of record that is located left-most). */
-    slot_offset8_t  record_head8;     // +2 -> 28
-    int32_t     get_record_head_byte() const {return to_byte_offset(record_head8);}
-
-    uint16_t padding; // <<<>>>
-    
 
     // ======================================================================
     //   BEGIN: BTree specific headers
@@ -162,8 +149,8 @@ class btree_page : public btree_page_header {
 public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
 
     enum {
-        data_sz = page_sz - sizeof(btree_page_header),
-        hdr_sz  = sizeof(btree_page_header),
+        data_sz = page_sz - sizeof(btree_page_header) - 8, // <<<>>>
+        hdr_sz  = sizeof(btree_page_header) + 8,
     };
 
 
@@ -178,12 +165,47 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
     btree_page() {
         //w_assert1(0);  // FIXME: is this constructor ever called? yes it is (test_btree_ghost)
         w_assert1((body[0].raw - (const char *)this) % 4 == 0);     // check alignment<<<>>>
-        w_assert1(((const char *)&nslots - (const char *)this) % 4 == 0);     // check alignment<<<>>>
+        w_assert1(((const char *)&nitems - (const char *)this) % 4 == 0);     // check alignment<<<>>>
         //w_assert1(((const char *)&record_head8 - (const char *)this) % 8 == 0);     // check alignment<<<>>>
         w_assert1((body[0].raw - (const char *)this) % 8 == 0);     // check alignment
         w_assert1(body[0].raw - (const char *) this == hdr_sz);
     }
     ~btree_page() { }
+
+
+//private:
+    /// total number of items
+    slot_index_t  nitems;   // +2 -> 24
+public:
+    
+private:
+    /// number of ghost items
+    slot_index_t  nghosts; // +2 -> 26
+public:
+
+    /** offset to beginning of record area (location of record that is located left-most). */
+    slot_offset8_t  record_head8;     // +2 -> 28
+    int32_t     get_record_head_byte() const {return to_byte_offset(record_head8);}
+
+    uint16_t padding; // <<<>>>
+
+
+
+    
+
+
+
+
+    int number_of_items()  { return nitems;}
+    int number_of_ghosts() { return nghosts;}
+
+    bool is_ghost(int item) const;
+    void set_ghost(int item);
+    void unset_ghost(int item);
+
+
+
+
 
 
     typedef struct {
@@ -223,13 +245,10 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
 
     poor_man_key poor(slot_index_t slot) const { return head[slot].poor; }
 
-    bool is_ghost(slot_index_t slot) const { return head[slot].offset < 0; }
-    void set_ghost(slot_index_t slot);
-    void unset_ghost(slot_index_t slot);
 
 
     int usable_space() const {
-        return record_head8*8 - nslots*4; // <<<>>>
+        return record_head8*8 - nitems*4; // <<<>>>
     }
 
 
@@ -282,5 +301,13 @@ static_assert(sizeof(btree_page) == sizeof(generic_page),
               "btree_page has wrong length");
 static_assert(sizeof(btree_page::slot_head) == 4, "slot_head has wrong length");
 static_assert(sizeof(btree_page::slot_body) == 8, "slot_body has wrong length");
+
+
+
+inline bool btree_page::is_ghost(int item) const { 
+    w_assert1(item>=0 && item<nitems);
+
+    return head[item].offset < 0; 
+}
 
 #endif // BTREE_PAGE_H
