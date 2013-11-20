@@ -198,14 +198,15 @@ public:
 
     void init_items();
 
-    int number_of_items()  { return nitems;}
-    int number_of_ghosts() { return nghosts;}
+    int number_of_items()  const { return nitems;}
+    int number_of_ghosts() const { return nghosts;}
 
     bool is_ghost(int item) const;
     void set_ghost(int item);
     void unset_ghost(int item);
 
     uint16_t& item_data16(int item);
+    uint16_t  item_data16(int item) const;
     int32_t&  item_data32(int item);
 
     char* item_data(int item);
@@ -246,7 +247,6 @@ public:
         slot_body body[data_sz/sizeof(slot_body)];
     };
 
-    poor_man_key poor(slot_index_t slot) const { return head[slot].poor; }
 
 
 
@@ -313,6 +313,10 @@ inline bool btree_page::is_ghost(int item) const {
 }
 
 inline uint16_t& btree_page::item_data16(int item) {
+    w_assert1(item>=0 && item<nitems);
+    return head[item].poor;    
+}
+inline uint16_t btree_page::item_data16(int item) const {
     w_assert1(item>=0 && item<nitems);
     return head[item].poor;    
 }

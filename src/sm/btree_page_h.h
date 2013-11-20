@@ -683,6 +683,14 @@ public:
     static smsize_t         overhead_requirement_per_entry;
 
 private:
+    poor_man_key _poor(int slot) const {
+        w_assert1(slot>=0);
+        return page()->item_data16(slot+1);
+    }
+
+
+
+
     /** internal method used from is_consistent() to check keyorder correctness. */
     bool             _is_consistent_keyorder () const;
 

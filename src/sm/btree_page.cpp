@@ -200,7 +200,7 @@ bool btree_page::_slots_are_consistent() const {
             if (offset < 0) offset = -offset;
             size_t len    = slot_length8(i);
             DBGOUT1(<<"  slot[" << i << "] body @ offsets " << offset << " to " << offset+len-1
-                    << "; ghost? " << is_ghost(i) << " poor: " << poor(i));
+                    << "; ghost? " << is_ghost(i) << " poor: " << item_data16(i));
         }
     }
 #endif

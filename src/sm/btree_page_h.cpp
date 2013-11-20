@@ -431,7 +431,7 @@ void btree_page_h::search_leaf(const char *key_raw, size_t key_raw_len,
     // check the last record to speed-up sorted insert
     int last_slot = nrecs() - 1;
     if (last_slot >= 0) {
-        poor_man_key last_poormkey = page()->poor(last_slot + 1); // +1 because btree_page_h
+        poor_man_key last_poormkey = _poor(last_slot);
         if (last_poormkey < poormkey) {
             ret_slot = nrecs();
             w_assert1(_compare_leaf_key_noprefix(last_slot, key_noprefix, key_len) < 0);
@@ -458,7 +458,7 @@ void btree_page_h::search_leaf(const char *key_raw, size_t key_raw_len,
     while (lo <= hi)  {
         mi = (lo + hi) >> 1;    // ie (lo + hi) / 2
 
-        poor_man_key cur_poormkey = page()->poor(mi + 1); // +1 because btree_page_h
+        poor_man_key cur_poormkey = _poor(mi);
         if (cur_poormkey < poormkey) {
             lo = mi + 1;
             w_assert1(_compare_leaf_key_noprefix(mi, key_noprefix, key_len) < 0);
@@ -510,7 +510,7 @@ void btree_page_h::search_node(const w_keystr_t& key,
     if (nrecs() == 0) {
         return_pid0 = true;
     } else  {
-        poor_man_key cur_poormkey = page()->poor(0 + 1); // +1 because btree_page_h
+        poor_man_key cur_poormkey = _poor(0);
         if (cur_poormkey > poormkey) {
             return_pid0 = true;
             w_assert1(_compare_node_key_noprefix(0, key_noprefix, key_len) > 0);
@@ -542,7 +542,7 @@ void btree_page_h::search_node(const w_keystr_t& key,
     // check the last record to speed-up sorted insert
     int last_slot = nrecs() - 1;
     if (last_slot >= 0) {
-        poor_man_key last_poormkey = page()->poor(last_slot + 1); // +1 because btree_page_h
+        poor_man_key last_poormkey = _poor(last_slot);
         if (last_poormkey < poormkey) { // note that it's "<", not "<=", because same poormkey doesn't mean same key
             ret_slot = last_slot;
             w_assert1(_compare_node_key_noprefix(last_slot, key_noprefix, key_len) < 0);
@@ -570,7 +570,7 @@ void btree_page_h::search_node(const w_keystr_t& key,
     for (; lo < hi - 1; )  {
         mi = (lo + hi) >> 1;    // ie (lo + hi) / 2
 
-        poor_man_key cur_poormkey = page()->poor(mi + 1); // +1 because btree_page_h
+        poor_man_key cur_poormkey = _poor(mi);
         if (cur_poormkey < poormkey) {
             lo = mi;
             w_assert1(_compare_node_key_noprefix(mi, key_noprefix, key_len) < 0);
@@ -698,7 +698,7 @@ rc_t btree_page_h::_insert_expand_nolog(slotid_t slot, const cvec_t &vec, poor_m
     page()->_slots_are_consistent(); // <<<>>>
 
     w_assert3(get_rec_size(slot) == vec.size());
-    w_assert3(page()->poor(idx) == poormkey);
+    w_assert3(_poor(idx-1) == poormkey);
     w_assert3(page()->_slots_are_consistent());
     return RCOK;
 }
@@ -889,7 +889,7 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, int re
     ::memcpy(page()->slot_value(slot+1).leaf.key, key_raw + prefix_len, key_raw_len - prefix_len);
 
     w_assert3(get_rec_size(slot) == (slot_length_t) record_size);
-    w_assert3(page()->poor(slot + 1) == poormkey);
+    w_assert3(_poor(slot) == poormkey);
     w_assert3(page()->_slots_are_consistent());
 }
 
@@ -1383,14 +1383,14 @@ bool btree_page_h::_is_consistent_keyorder () const {
 bool btree_page_h::_is_consistent_poormankey () const {
     const int recs = nrecs();
     // the first record is fence key, so no poor man's key (always 0)
-    poor_man_key fence_poormankey = page()->poor(0);
+    poor_man_key fence_poormankey = page()->item_data16(0);
     if (fence_poormankey != 0) {
 //        w_assert3(false);
         return false;
     }
     // for other records, check with the real key string in the record
     for (slotid_t slot = 0; slot < recs; ++slot) {
-        poor_man_key poorman_key = page()->poor(slot + 1); //+1 as btree_page_h
+        poor_man_key poorman_key = _poor(slot);
         size_t curkey_len;
         const char* curkey = is_leaf() ? _leaf_key_noprefix(slot, curkey_len) : _node_key_noprefix(slot, curkey_len);
         poor_man_key correct_poormankey = extract_poor_man_key(curkey, curkey_len);
