@@ -9,7 +9,7 @@
 #include "w_debug.h"
 
 
-void btree_page::init_slots() {
+void btree_page::init_items() {
     const size_t max_offset = data_sz/sizeof(slot_body);
 
     nitems       = 0;
@@ -22,9 +22,7 @@ void btree_page::init_slots() {
 
 void btree_page::set_ghost(int item) {
     w_assert1(item>=0 && item<nitems);
-    w_assert1(item != 0); // fence slot cannot be a ghost
 
-    w_assert1(!is_ghost(item));
     slot_offset8_t offset = head[item].offset;
     w_assert1(offset != 0);
     if (offset >= 0) {
@@ -35,9 +33,7 @@ void btree_page::set_ghost(int item) {
 
 void btree_page::unset_ghost(int item) {
     w_assert1(item>=0 && item<nitems);
-    w_assert1(item != 0); // fence slot cannot be a ghost
 
-    w_assert1(is_ghost(item));
     slot_offset8_t offset = head[item].offset;
     w_assert1(offset != 0);
     if (offset < 0) {

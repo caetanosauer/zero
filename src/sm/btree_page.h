@@ -196,6 +196,8 @@ public:
 
 
 
+    void init_items();
+
     int number_of_items()  { return nitems;}
     int number_of_ghosts() { return nghosts;}
 
@@ -240,8 +242,6 @@ public:
         slot_head head[data_sz/sizeof(slot_head)];
         slot_body body[data_sz/sizeof(slot_body)];
     };
-
-    void init_slots();
 
     poor_man_key poor(slot_index_t slot) const { return head[slot].poor; }
 

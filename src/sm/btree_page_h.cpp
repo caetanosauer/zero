@@ -97,7 +97,7 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
     page()->pid          = pid_copy;
     page()->tag          = t_btree_p;
     page()->page_flags   = 0;
-    page()->init_slots();
+    page()->init_items();
 
     page()->btree_consecutive_skewed_insertions = 0;
 
@@ -770,7 +770,7 @@ rc_t btree_page_h::replace_ghost(const w_keystr_t &key,
     slotid_t slot;
     search_leaf(key, found, slot);
     w_assert0 (found);
-    w_assert1 (is_ghost(slot));
+    w_assert1 (is_ghost(slot)); // IS THIS A BUG??? should this be slot+1?  <<<>>>
     slot_length_t rec_size = calculate_rec_size(key, elem);
     slot_length_t org_rec_size = get_rec_size(slot);
     if (align(rec_size) > align(org_rec_size)) {
@@ -902,16 +902,14 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, int re
 }
 
 void btree_page_h::mark_ghost(slotid_t slot) {
-    slotid_t idx = slot + 1; // slot index in btree_page_h
-    w_assert1(idx >= 0 && idx < nslots());
-    page()->set_ghost(idx);
+    w_assert1(!page()->is_ghost(slot+1));
+    page()->set_ghost(slot+1);
     set_dirty();
 }
 
 void btree_page_h::unmark_ghost(slotid_t slot) {
-    slotid_t idx = slot + 1; // slot index in btree_page_h
-    w_assert1(idx >= 0 && idx < nslots());
-    page()->unset_ghost(idx);
+    w_assert1(page()->is_ghost(slot+1));
+    page()->unset_ghost(slot+1);
     set_dirty();
 }
 
