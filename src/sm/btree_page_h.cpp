@@ -339,23 +339,19 @@ void btree_page_h::search_leaf(const char *key_raw, size_t key_raw_len,
     int          key_len_remain      = key_len - sizeof(poor_man_key);
     found_key = false;
     
-    const char* begin_slot = btree_page_h::slot_addr(0 + 1);
-    const char* end_slot   = begin_slot + slot_sz * nrecs();
-    for (const char* cur_slot = begin_slot; cur_slot != end_slot; cur_slot += slot_sz) {
-        poor_man_key cur_poormkey = *reinterpret_cast<const poor_man_key*>(cur_slot + sizeof(slot_offset8_t));
+    for (int slot= 0; slot < nrecs(); slot++) {
+        poor_man_key cur_poormkey = page()->item_data16(slot+1);
         if (cur_poormkey < poormkey) {
-            w_assert1(_compare_leaf_key_noprefix(((cur_slot - begin_slot) / slot_sz), key_noprefix, key_len) < 0);
+            w_assert1(_compare_leaf_key_noprefix(slot, key_noprefix, key_len) < 0);
             continue;
         }
-        int slot = ((cur_slot - begin_slot) / slot_sz);
         if (cur_poormkey > poormkey) {
             ret_slot = slot;
             w_assert1(slot == 0 || _compare_leaf_key_noprefix(slot - 1, key_noprefix, key_len) < 0);
             w_assert1(_compare_leaf_key_noprefix(slot, key_noprefix, key_len) > 0);
             return;
         }
-        slot_offset8_t offset8 = *reinterpret_cast<const slot_offset8_t*>(cur_slot);
-        int d = _compare_leaf_key_noprefix_remain(offset8, key_noprefix_remain, key_len_remain);
+        int d = _compare_leaf_key_noprefix_remain(slot, key_noprefix_remain, key_len_remain);
         if (d == 0) {
             found_key = true;
             ret_slot = slot;
@@ -388,23 +384,19 @@ void btree_page_h::search_node(const w_keystr_t& key,
 
     w_assert1 (pid0() != 0);
 
-    const char* begin_slot = btree_page_h::slot_addr(0 + 1);
-    const char* end_slot   = begin_slot + slot_sz * nrecs();
-    for (const char* cur_slot = begin_slot; cur_slot != end_slot; cur_slot += slot_sz) {
-        poor_man_key cur_poormkey = *reinterpret_cast<const poor_man_key*>(cur_slot + sizeof(slot_offset8_t));
+    for (int slot= 0; slot < nrecs(); slot++) {
+        poor_man_key cur_poormkey = page()->item_data16(slot+1);
         if (cur_poormkey < poormkey) {
-            w_assert1(_compare_node_key_noprefix(((cur_slot - begin_slot) / slot_sz), key_noprefix, key_len) < 0);
+            w_assert1(_compare_node_key_noprefix(slot, key_noprefix, key_len) < 0);
             continue;
         }
-        int slot = ((cur_slot - begin_slot) / slot_sz);
         if (cur_poormkey > poormkey) {
             ret_slot = slot - 1;
             w_assert1(slot == 0 || _compare_node_key_noprefix(slot - 1, key_noprefix, key_len) < 0);
             w_assert1(_compare_node_key_noprefix(slot, key_noprefix, key_len) > 0);
             return;
         }
-        slot_offset8_t offset8 = *reinterpret_cast<const slot_offset8_t*>(cur_slot);
-        int d = _compare_node_key_noprefix_remain(offset8, key_noprefix_remain, key_len_remain);
+        int d = _compare_node_key_noprefix_remain(slot, key_noprefix_remain, key_len_remain);
         if (d == 0) {
             ret_slot = slot;
             w_assert1(_compare_node_key_noprefix(slot, key_noprefix, key_len) == 0);

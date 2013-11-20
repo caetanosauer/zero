@@ -703,9 +703,9 @@ private:
     int             _compare_node_key_noprefix(slotid_t idx, const void *key_noprefix, size_t key_len) const;
 
     /** skips comparing the first sizeof(poormankey) bytes. */
-    int             _compare_leaf_key_noprefix_remain(slot_offset8_t slot_offset8, const void *key_noprefix_remain, int key_len_remain) const;
+    int             _compare_leaf_key_noprefix_remain(int slot, const void *key_noprefix_remain, int key_len_remain) const;
     /** skips comparing the first sizeof(poormankey) bytes. */
-    int             _compare_node_key_noprefix_remain(slot_offset8_t slot_offset8, const void *key_noprefix_remain, int key_len_remain) const;
+    int             _compare_node_key_noprefix_remain(int slot, const void *key_noprefix_remain, int key_len_remain) const;
 
     /**
     *  Insert a record at slot idx. Slots on the left of idx
@@ -1002,9 +1002,9 @@ inline int btree_page_h::_compare_node_key_noprefix(slotid_t idx, const void *ke
     const char *curkey = _node_key_noprefix(idx, curkey_len);
     return w_keystr_t::compare_bin_str(curkey, curkey_len, key_noprefix, key_len);
 }
-inline int btree_page_h::_compare_leaf_key_noprefix_remain(slot_offset8_t slot_offset8, const void *key_noprefix_remain, int key_len_remain) const {
+inline int btree_page_h::_compare_leaf_key_noprefix_remain(int slot, const void *key_noprefix_remain, int key_len_remain) const {
     w_assert1(is_leaf());
-    const char* base = page()->data_addr8(slot_offset8 < 0 ? -slot_offset8 : slot_offset8);
+    const char* base = page()->item_data(slot+1) - 2; // <<<>>>
     int curkey_len_remain = ((slot_length_t*) base)[1] - get_prefix_length() - sizeof(poor_man_key);
     // because this function was called, the poor man's key part was equal.
     // now we just compare the remaining part
@@ -1018,14 +1018,12 @@ inline int btree_page_h::_compare_leaf_key_noprefix_remain(slot_offset8_t slot_o
     }
 }
 
-inline int btree_page_h::_compare_node_key_noprefix_remain(slot_offset8_t slot_offset8, const void *key_noprefix_remain, int key_len_remain) const {
+inline int btree_page_h::_compare_node_key_noprefix_remain(int slot, const void *key_noprefix_remain, int key_len_remain) const {
     w_assert1(is_node());
-    const char* base = page()->data_addr8(slot_offset8 < 0 ? -slot_offset8 : slot_offset8);
-    const char *p = ((const char*) base) + sizeof(shpid_t);
-    slot_length_t rec_len = *((const slot_length_t*) p);
+    slot_length_t rec_len = page()->item_length(slot+1);
     w_assert1(rec_len >= sizeof(shpid_t) + sizeof(slot_length_t));
     int curkey_len_remain = rec_len - sizeof(shpid_t) - sizeof(slot_length_t) - sizeof(poor_man_key);
-    const char *curkey_remain = p + sizeof(slot_length_t) + sizeof(poor_man_key);
+    const char *curkey_remain = page()->item_data(slot+1) + sizeof(poor_man_key);
     if (key_len_remain > 0 && curkey_len_remain > 0) {
         return w_keystr_t::compare_bin_str(curkey_remain, curkey_len_remain, key_noprefix_remain, key_len_remain);
     } else {

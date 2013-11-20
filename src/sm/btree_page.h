@@ -205,8 +205,11 @@ public:
     void set_ghost(int item);
     void unset_ghost(int item);
 
+    uint16_t& item_data16(int item);
+    int32_t&  item_data32(int item);
 
-
+    char* item_data(int item);
+    int item_length(int item) const;
 
 
 
@@ -306,8 +309,33 @@ static_assert(sizeof(btree_page::slot_body) == 8, "slot_body has wrong length");
 
 inline bool btree_page::is_ghost(int item) const { 
     w_assert1(item>=0 && item<nitems);
-
     return head[item].offset < 0; 
+}
+
+inline uint16_t& btree_page::item_data16(int item) {
+    w_assert1(item>=0 && item<nitems);
+    return head[item].poor;    
+}
+
+inline int32_t& btree_page::item_data32(int item) {
+    w_assert1(item>=0 && item<nitems);
+    w_assert1(btree_level != 1); // <<<>>>
+    return *(int32_t*)&slot_value(item).interior.child;
+}
+
+inline int btree_page::item_length(int item) const {
+    w_assert1(item>=0 && item<nitems);
+    return slot_length(item);
+}
+inline char* btree_page::item_data(int item) {
+    w_assert1(item>=0 && item<nitems);
+    if (item == 0) {
+        return &slot_value(item).fence.low[0];
+    } if (btree_level == 1) {
+        return (char*)&slot_value(item).leaf.key_len;
+    } else {
+        return &slot_value(item).interior.key[0];
+    }
 }
 
 #endif // BTREE_PAGE_H
