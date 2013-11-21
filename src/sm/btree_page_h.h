@@ -207,7 +207,7 @@ public:
     // FIXME: next 3 functions are temporary for swizzling access <<<>>>
     shpid_t& foster_pointer() { return page()->btree_foster; }
     shpid_t& pid0_pointer()   { return page()->btree_pid0; }
-    shpid_t& child_pointer(slotid_t child) { return *reinterpret_cast<shpid_t*>(page()->slot_start(child+1)); }
+    shpid_t& child_pointer(slotid_t child) { return *reinterpret_cast<shpid_t*>(&page()->item_data32(child+1)); }
 
     slotid_t                     nslots() const;
 
@@ -763,25 +763,21 @@ protected:
 //   BEGIN: Inline function implementations
 // ======================================================================
 
-inline lpid_t btree_page_h::root() const
-{
+inline lpid_t btree_page_h::root() const {
     lpid_t p = pid();
     p.page = page()->btree_root;
     return p;
 }
 
-inline int btree_page_h::level() const
-{
+inline int btree_page_h::level() const {
     return page()->btree_level;
 }
 
-inline shpid_t btree_page_h::pid0_opaqueptr() const
-{
+inline shpid_t btree_page_h::pid0_opaqueptr() const {
     return page()->btree_pid0;
 }
 
-inline shpid_t btree_page_h::pid0() const
-{
+inline shpid_t btree_page_h::pid0() const {
     shpid_t shpid = page()->btree_pid0;
     if (shpid) {
         return smlevel_0::bf->normalize_shpid(shpid);
@@ -789,28 +785,23 @@ inline shpid_t btree_page_h::pid0() const
     return shpid;
 }
 
-inline bool btree_page_h::is_leaf() const
-{
+inline bool btree_page_h::is_leaf() const {
     return level() == 1;
 }
 
-inline bool btree_page_h::is_leaf_parent() const
-{
+inline bool btree_page_h::is_leaf_parent() const {
     return level() == 2;
 }
 
-inline bool btree_page_h::is_node() const
-{
+inline bool btree_page_h::is_node() const {
     return ! is_leaf();
 }
    
-inline shpid_t btree_page_h::get_foster_opaqueptr() const
-{
+inline shpid_t btree_page_h::get_foster_opaqueptr() const {
     return page()->btree_foster;
 }
 
-inline shpid_t btree_page_h::get_foster() const
-{
+inline shpid_t btree_page_h::get_foster() const {
     shpid_t shpid = page()->btree_foster;
     if (shpid) {
         return smlevel_0::bf->normalize_shpid(shpid);
@@ -818,67 +809,49 @@ inline shpid_t btree_page_h::get_foster() const
     return shpid;
 }
 
-inline int16_t btree_page_h::get_prefix_length() const
-{
+inline int16_t btree_page_h::get_prefix_length() const {
     return page()->btree_prefix_length;
 }
-inline int16_t btree_page_h::get_fence_low_length() const
-{
+inline int16_t btree_page_h::get_fence_low_length() const {
     return page()->btree_fence_low_length;
 }
-inline int16_t btree_page_h::get_fence_high_length() const
-{
+inline int16_t btree_page_h::get_fence_high_length() const {
     return page()->btree_fence_high_length;
 }
-inline int16_t btree_page_h::get_chain_fence_high_length() const
-{
+inline int16_t btree_page_h::get_chain_fence_high_length() const {
     return page()->btree_chain_fence_high_length;
 }
 
 inline const char* btree_page_h::get_fence_low_key() const {
-    const char*s = (const char*) page()->slot_start(0);
-    return s + sizeof(slot_length_t);
+    return page()->item_data(0);
 }
-inline const char* btree_page_h::get_fence_high_key_noprefix() const
-{
-    int16_t fence_low_length = get_fence_low_length();
-    const char*s = (const char*) page()->slot_start(0);
-    return s + sizeof(slot_length_t) + fence_low_length;
+inline const char* btree_page_h::get_fence_high_key_noprefix() const {
+    return page()->item_data(0) + get_fence_low_length();
 }
-inline const char* btree_page_h::get_chain_fence_high_key() const
-{
-    int16_t fence_low_length = get_fence_low_length();
-    int16_t fence_high_length_noprefix = get_fence_high_length_noprefix();
-    const char*s = (const char*) page()->slot_start(0);
-    return s + sizeof(slot_length_t) + fence_low_length + fence_high_length_noprefix;
+inline const char* btree_page_h::get_chain_fence_high_key() const {
+    return page()->item_data(0) + get_fence_low_length() + get_fence_high_length_noprefix();
 }
-inline const char* btree_page_h::get_prefix_key() const
-{
+inline const char* btree_page_h::get_prefix_key() const {
     return get_fence_low_key(); // same thing. only the length differs.
 }
 
-inline int btree_page_h::nrecs() const
-{
+inline int btree_page_h::nrecs() const {
     return nslots() - 1;
 }
 inline int btree_page_h::compare_with_fence_low (const w_keystr_t &key) const {
     return key.compare_keystr(get_fence_low_key(), get_fence_low_length());
 }
-inline int btree_page_h::compare_with_fence_low (const char* key, size_t key_len) const
-{
+inline int btree_page_h::compare_with_fence_low (const char* key, size_t key_len) const {
     return w_keystr_t::compare_bin_str (key, key_len, get_fence_low_key(), get_fence_low_length());
 }
-inline int btree_page_h::compare_with_fence_low_noprefix (const char* key, size_t key_len) const
-{
+inline int btree_page_h::compare_with_fence_low_noprefix (const char* key, size_t key_len) const {
     return w_keystr_t::compare_bin_str (key, key_len, get_fence_low_key() + get_prefix_length(), get_fence_low_length() - get_prefix_length());
 }
 
-inline int btree_page_h::compare_with_fence_high (const w_keystr_t &key) const
-{
+inline int btree_page_h::compare_with_fence_high (const w_keystr_t &key) const {
     return compare_with_fence_high ((const char*) key.buffer_as_keystr(), key.get_length_as_keystr());
 }
-inline int btree_page_h::compare_with_fence_high (const char* key, size_t key_len) const
-{
+inline int btree_page_h::compare_with_fence_high (const char* key, size_t key_len) const {
     size_t prefix_len = get_prefix_length();
     if (prefix_len > key_len) {
         return w_keystr_t::compare_bin_str (key, key_len, get_prefix_key(), key_len);
@@ -893,21 +866,17 @@ inline int btree_page_h::compare_with_fence_high (const char* key, size_t key_le
             get_fence_high_key_noprefix(), get_fence_high_length_noprefix());
     }
 }
-inline int btree_page_h::compare_with_fence_high_noprefix (const char* key, size_t key_len) const
-{
+inline int btree_page_h::compare_with_fence_high_noprefix (const char* key, size_t key_len) const {
     return w_keystr_t::compare_bin_str (key, key_len, get_fence_high_key_noprefix(), get_fence_high_length_noprefix());
 }
 
-inline int btree_page_h::compare_with_chain_fence_high (const w_keystr_t &key) const
-{
+inline int btree_page_h::compare_with_chain_fence_high (const w_keystr_t &key) const {
     return key.compare_keystr(get_chain_fence_high_key(), get_chain_fence_high_length());
 }
-inline int btree_page_h::compare_with_chain_fence_high (const char* key, size_t key_len) const
-{
+inline int btree_page_h::compare_with_chain_fence_high (const char* key, size_t key_len) const {
     return w_keystr_t::compare_bin_str (key, key_len, get_chain_fence_high_key(), get_chain_fence_high_length());
 }
-inline bool btree_page_h::fence_contains(const w_keystr_t &key) const
-{
+inline bool btree_page_h::fence_contains(const w_keystr_t &key) const {
     // fence-low is inclusive
     if (compare_with_fence_low(key) < 0) {
         return false;
@@ -919,8 +888,7 @@ inline bool btree_page_h::fence_contains(const w_keystr_t &key) const
     return true;
 }
 
-inline size_t btree_page_h::calculate_rec_size (const w_keystr_t &key, const cvec_t &el) const
-{
+inline size_t btree_page_h::calculate_rec_size (const w_keystr_t &key, const cvec_t &el) const {
     if (is_leaf()) {
         return key.get_length_as_keystr() - get_prefix_length()
             + el.size() + sizeof(slot_length_t) * 2;
@@ -930,8 +898,7 @@ inline size_t btree_page_h::calculate_rec_size (const w_keystr_t &key, const cve
     }
 }
 
-inline bool btree_page_h::is_insertion_extremely_skewed_right() const
-{
+inline bool btree_page_h::is_insertion_extremely_skewed_right() const {
     // this means completely pre-sorted insertion like bulk loading.
     int ins = page()->btree_consecutive_skewed_insertions;
     return ins > 50
@@ -939,16 +906,13 @@ inline bool btree_page_h::is_insertion_extremely_skewed_right() const
         || (ins > 1 && ins >= nrecs() - 1)
         ;
 }    
-inline bool btree_page_h::is_insertion_skewed_right() const
-{
+inline bool btree_page_h::is_insertion_skewed_right() const {
     return page()->btree_consecutive_skewed_insertions > 5;
 }
-inline bool btree_page_h::is_insertion_skewed_left() const
-{
+inline bool btree_page_h::is_insertion_skewed_left() const {
     return page()->btree_consecutive_skewed_insertions < -5;
 }
-inline shpid_t btree_page_h::child_opaqueptr(slotid_t slot) const
-{
+inline shpid_t btree_page_h::child_opaqueptr(slotid_t slot) const {
     // same as rec_node except we don't need to read key
     w_assert1(is_node());
     w_assert1(slot >= 0);
@@ -957,8 +921,7 @@ inline shpid_t btree_page_h::child_opaqueptr(slotid_t slot) const
     return *reinterpret_cast<const shpid_t*>(p);
 }
 
-inline shpid_t btree_page_h::child(slotid_t slot) const
-{
+inline shpid_t btree_page_h::child(slotid_t slot) const {
     shpid_t shpid = child_opaqueptr(slot);
     if (shpid) {
         return smlevel_0::bf->normalize_shpid(shpid);
@@ -1064,19 +1027,16 @@ inline bool btree_page_h::is_ghost(slotid_t slot) const {
 }
 
 
-inline char* btree_page_h::slot_addr(slotid_t idx) const
-{
+inline char* btree_page_h::slot_addr(slotid_t idx) const {
     w_assert3(idx >= 0 && idx <= page()->number_of_items());
     return (char*) &page()->head[idx];
 }
 
 inline slot_offset8_t
-btree_page_h::tuple_offset8(slotid_t idx) const
-{
+btree_page_h::tuple_offset8(slotid_t idx) const {
     return *reinterpret_cast<const slot_offset8_t*>(slot_addr(idx));
 }
-inline void btree_page_h::tuple_both (slotid_t idx, slot_offset8_t &offset8, poor_man_key &poormkey) const
-{
+inline void btree_page_h::tuple_both (slotid_t idx, slot_offset8_t &offset8, poor_man_key &poormkey) const {
     const char* slot = slot_addr(idx);
     offset8 = *reinterpret_cast<const slot_offset8_t*>(slot);
     poormkey = *reinterpret_cast<const poor_man_key*>(slot + sizeof(slot_offset8_t));
@@ -1087,20 +1047,17 @@ inline void btree_page_h::change_slot_offset (slotid_t idx, slot_offset8_t offse
     *reinterpret_cast<slot_offset8_t*>(slot) = offset;
 }
 inline smsize_t 
-btree_page_h::used_space() const
-{
+btree_page_h::used_space() const {
     return (data_sz - page()->get_record_head_byte() + nslots() * slot_sz); 
 }
 
 inline slotid_t
-btree_page_h::nslots() const
-{
+btree_page_h::nslots() const {
     return page()->number_of_items();
 }
 
 inline smsize_t
-btree_page_h::usable_space() const
-{
+btree_page_h::usable_space() const {
     size_t contiguous_free_space = page()->get_record_head_byte() - slot_sz * nslots();
     return contiguous_free_space; 
 }

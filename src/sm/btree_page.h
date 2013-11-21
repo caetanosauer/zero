@@ -257,7 +257,7 @@ public:
     }
 
 
-    void* slot_start(slot_index_t slot) {
+    char* slot_start(slot_index_t slot) {
         slot_offset8_t offset = head[slot].offset;
         if (offset < 0) offset = -offset; // ghost record
         return body[offset].raw;
