@@ -1069,13 +1069,13 @@ void btree_page_h::rec_leaf(slotid_t slot,  w_keystr_t &key, cvec_t &el, bool &g
     FUNC(btree_page_h::rec_leaf);
 
     int   key_length, data_length;
-    char *key_data, *data;
-    _get_leaf_fields(slot, key_length, key_data, data_length, data);
+    char *trunc_key_data, *data;
+    _get_leaf_fields(slot, key_length, trunc_key_data, data_length, data);
 
     int prefix_len = get_prefix_length();
     w_assert2 (prefix_len <= key_length);
 
-    key.construct_from_keystr(get_prefix_key(), prefix_len, key_data, key_length - prefix_len);
+    key.construct_from_keystr(get_prefix_key(), prefix_len, trunc_key_data, key_length - prefix_len);
     el.reset();
     el.put(data, data_length);
     ghost = is_ghost(slot);
@@ -1085,13 +1085,13 @@ void btree_page_h::rec_leaf(slotid_t slot,  w_keystr_t &key, char *el, smsize_t 
     FUNC(btree_page_h::rec_leaf);
 
     int   key_length, data_length;
-    char *key_data, *data;
-    _get_leaf_fields(slot, key_length, key_data, data_length, data);
+    char *trunc_key_data, *data;
+    _get_leaf_fields(slot, key_length, trunc_key_data, data_length, data);
 
     int prefix_len = get_prefix_length();
     w_assert2 (prefix_len <= key_length);
 
-    key.construct_from_keystr(get_prefix_key(), prefix_len, key_data, key_length - prefix_len);
+    key.construct_from_keystr(get_prefix_key(), prefix_len, trunc_key_data, key_length - prefix_len);
     w_assert1((int)elen >= data_length); // this method assumes the buffer is large enough!
     ::memcpy(el, data, data_length);
     elen = data_length;
@@ -1102,8 +1102,8 @@ bool btree_page_h::dat_leaf(slotid_t slot,  char *el, smsize_t &elen, bool &ghos
     FUNC(btree_page_h::dat_leaf);
 
     int   key_length, data_length;
-    char *key_data, *data;
-    _get_leaf_fields(slot, key_length, key_data, data_length, data);
+    char *trunc_key_data, *data;
+    _get_leaf_fields(slot, key_length, trunc_key_data, data_length, data);
 
     ghost = is_ghost(slot);
     if ((int)elen >= data_length) {
@@ -1122,8 +1122,8 @@ void btree_page_h::dat_leaf_ref(slotid_t slot, const char *&el, smsize_t &elen, 
     FUNC(btree_page_h::dat_leaf_ref);
 
     int   key_length, data_length;
-    char *key_data, *data;
-    _get_leaf_fields(slot, key_length, key_data, data_length, data);
+    char *trunc_key_data, *data;
+    _get_leaf_fields(slot, key_length, trunc_key_data, data_length, data);
 
     elen  = data_length;
     el    = data;
@@ -1134,13 +1134,14 @@ void btree_page_h::leaf_key(slotid_t slot,  w_keystr_t &key) const {
     w_assert1(is_leaf());
 
     int   key_length;
-    char* key_data;
-    _get_leaf_key_fields(slot, key_length, key_data);
+    char* trunc_key_data;
+    _get_leaf_key_fields(slot, key_length, trunc_key_data);
 
     int prefix_len = get_prefix_length();
     w_assert2 (prefix_len <= key_length);
 
-    key.construct_from_keystr(get_prefix_key(), prefix_len, key_data, key_length - prefix_len);
+    key.construct_from_keystr(get_prefix_key(), prefix_len,
+                              trunc_key_data, key_length - prefix_len);
 }
 
 
@@ -1150,25 +1151,25 @@ void  btree_page_h::rec_node(slotid_t slot,  w_keystr_t &key, shpid_t &el) const
     FUNC(btree_page_h::rec_node);
     w_assert1(!is_ghost(slot)); // non-leaf node can't be ghost
 
-    int   key_length;
-    char* key_data;
-    _get_node_key_fields(slot, key_length, key_data);
+    int   trunc_key_length;
+    char* trunc_key_data;
+    _get_node_key_fields(slot, trunc_key_length, trunc_key_data);
 
     int prefix_len = get_prefix_length();
 
-    key.construct_from_keystr(get_prefix_key(), prefix_len, key_data, key_length);
+    key.construct_from_keystr(get_prefix_key(), prefix_len, trunc_key_data, trunc_key_length);
     el = page()->item_data32(slot+1);
 }
 void btree_page_h::node_key(slotid_t slot,  w_keystr_t &key) const {
     w_assert1(is_node());
 
-    int   key_length;
-    char* key_data;
-    _get_node_key_fields(slot, key_length, key_data);
+    int   trunc_key_length;
+    char* trunc_key_data;
+    _get_node_key_fields(slot, trunc_key_length, trunc_key_data);
 
     int prefix_len = get_prefix_length();
 
-    key.construct_from_keystr(get_prefix_key(), prefix_len, key_data, key_length);
+    key.construct_from_keystr(get_prefix_key(), prefix_len, trunc_key_data, trunc_key_length);
 }
 
 rc_t
