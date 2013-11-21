@@ -917,8 +917,7 @@ inline shpid_t btree_page_h::child_opaqueptr(slotid_t slot) const {
     w_assert1(is_node());
     w_assert1(slot >= 0);
     w_assert1(slot < nrecs());
-    const void* p = page()->slot_start(slot + 1);
-    return *reinterpret_cast<const shpid_t*>(p);
+    return page()->item_data32(slot+1);
 }
 
 inline shpid_t btree_page_h::child(slotid_t slot) const {
@@ -929,14 +928,18 @@ inline shpid_t btree_page_h::child(slotid_t slot) const {
     return shpid;
 }
 
-inline slot_length_t btree_page_h::get_key_len(slotid_t idx) const {
+inline slot_length_t btree_page_h::get_key_len(slotid_t slot) const {
     if (is_leaf()) {
-        return ((const slot_length_t*) page()->slot_start(idx + 1))[1];
+        int   key_length;
+        char* trunc_key_data;
+        _get_leaf_key_fields(slot, key_length, trunc_key_data);
+        return key_length;
     } else {
-        // node page doesn't keep key_len. It's calculated from rec_len
-        const char *p = ((const char*) page()->slot_start(idx + 1)) + sizeof(shpid_t);
-        slot_length_t rec_len = *((const slot_length_t*) p);
-        return rec_len - sizeof(shpid_t) - sizeof(slot_length_t) + get_prefix_length();
+        int   trunc_key_length;
+        char* trunc_key_data;
+        _get_node_key_fields(slot, trunc_key_length, trunc_key_data);
+        int prefix_len = get_prefix_length();
+        return trunc_key_length + prefix_len;
     }
 }
 inline slot_length_t btree_page_h::get_rec_size_leaf(slotid_t slot) const {
@@ -962,24 +965,26 @@ inline slot_length_t btree_page_h::get_rec_size(slotid_t idx) const {
     }
 }
 inline slot_length_t btree_page_h::get_fence_rec_size() const {
-    const char *base = (const char *) page()->slot_start(0);
-    return *((const slot_length_t*) base);
+    return page()->item_length(0) + 2; // <<<>>>
 }
 
-inline const char* btree_page_h::_leaf_key_noprefix(slotid_t idx,  size_t &len) const {
+inline const char* btree_page_h::_leaf_key_noprefix(slotid_t slot,  size_t &len) const {
     w_assert1(is_leaf());
-    const char* base = (char*) page()->slot_start(idx + 1);
-    slot_length_t key_len = ((slot_length_t*) base)[1];
-    len = key_len - get_prefix_length();
-    return base + sizeof(slot_length_t) * 2;    
+    int   key_length;
+    char* trunc_key_data;
+    _get_leaf_key_fields(slot, key_length, trunc_key_data);
+
+    len = key_length - get_prefix_length();
+    return trunc_key_data;
 }
-inline const char* btree_page_h::_node_key_noprefix(slotid_t idx,  size_t &len) const {
+inline const char* btree_page_h::_node_key_noprefix(slotid_t slot,  size_t &len) const {
     w_assert1(is_node());
-    const char *p = ((const char*) page()->slot_start(idx + 1)) + sizeof(shpid_t);
-    slot_length_t rec_len = *((const slot_length_t*) p);
-    w_assert1(rec_len >= sizeof(shpid_t) + sizeof(slot_length_t));
-    len = rec_len - sizeof(shpid_t) - sizeof(slot_length_t);
-    return p + sizeof(slot_length_t);
+    int   trunc_key_length;
+    char* trunc_key_data;
+    _get_node_key_fields(slot, trunc_key_length, trunc_key_data);
+
+    len = trunc_key_length;
+    return trunc_key_data;
 }
 inline int btree_page_h::_compare_leaf_key_noprefix(slotid_t idx, const void *key_noprefix, size_t key_len) const {
     size_t curkey_len;
@@ -993,12 +998,15 @@ inline int btree_page_h::_compare_node_key_noprefix(slotid_t idx, const void *ke
 }
 inline int btree_page_h::_compare_leaf_key_noprefix_remain(int slot, const void *key_noprefix_remain, int key_len_remain) const {
     w_assert1(is_leaf());
-    const char* base = page()->item_data(slot+1) - 2; // <<<>>>
-    int curkey_len_remain = ((slot_length_t*) base)[1] - get_prefix_length() - sizeof(poor_man_key);
+    int   key_length;
+    char* trunc_key_data;
+    _get_leaf_key_fields(slot, key_length, trunc_key_data);
+
     // because this function was called, the poor man's key part was equal.
     // now we just compare the remaining part
+    int curkey_len_remain = key_length - get_prefix_length() - sizeof(poor_man_key);
     if (key_len_remain > 0 && curkey_len_remain > 0) {
-        const char *curkey_remain = base + sizeof(slot_length_t) * 2 + sizeof(poor_man_key);
+        const char *curkey_remain = trunc_key_data + sizeof(poor_man_key);
         return w_keystr_t::compare_bin_str(curkey_remain, curkey_len_remain, key_noprefix_remain, key_len_remain);
     } else {
         // the key was so short that poorman's key was everything.

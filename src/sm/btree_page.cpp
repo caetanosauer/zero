@@ -257,6 +257,7 @@ bool btree_page::_slots_are_consistent() const {
     }
 #endif
 
+    //w_assert1(!error);
     return !error;
 }
 

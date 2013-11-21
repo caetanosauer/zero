@@ -270,14 +270,12 @@ public:
 
 
     slot_length_t slot_length(slot_index_t slot) const {
-        if (slot == 0) {
-            return sizeof(slot_length_t) + btree_fence_low_length 
-                + btree_fence_high_length-btree_prefix_length 
-                + btree_chain_fence_high_length;
-        }
-
         slot_offset8_t offset = head[slot].offset;
         if (offset < 0) offset = -offset; // ghost record
+
+        if (slot == 0) {
+            return body[offset].fence.slot_len;
+        }
 
         if (btree_level == 1) {
             return body[offset].leaf.slot_len;

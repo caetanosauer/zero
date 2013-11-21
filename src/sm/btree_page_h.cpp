@@ -116,7 +116,9 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
 
     // set fence keys in first slot
     cvec_t fences;
-    slot_length_t fence_total_len = page()->slot_length(0); // <<<>>>
+    slot_length_t fence_total_len = sizeof(slot_length_t) + page()->btree_fence_low_length // <<<>>>
+        + page()->btree_fence_high_length - page()->btree_prefix_length
+        + page()->btree_chain_fence_high_length;
     fences.put (&fence_total_len, sizeof(fence_total_len));
     fences.put (fence_low);
     // eliminate prefix part from fence_high
