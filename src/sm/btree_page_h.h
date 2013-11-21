@@ -699,6 +699,11 @@ private:
         data_length = total_length - key_length - sizeof(slot_length_t);
         data        = key + key_length;
     }
+    void _get_node_key_fields(int slot, int& key_length, char*& key) const {
+        w_assert1(slot>=0);
+        key_length = page()->item_length(slot+1) - sizeof(shpid_t); // <<<>>>
+        key        = page()->item_data(slot+1);
+    }
 
 
 

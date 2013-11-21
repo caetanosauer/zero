@@ -227,12 +227,12 @@ public:
             struct {
                 slot_length_t slot_len;
                 slot_length_t key_len;
-                char          key[4]; // <<<>>>
+                char          key[4]; // <<<>>> really key_len - prefix_len
             } leaf;
             struct {
                 shpid_t       child;
                 slot_length_t slot_len;
-                char          key[2]; // <<<>>>
+                char          key[2]; // <<<>>> really slot_len - sizeof(child) - sizeof(slot_len)
             } interior;
             struct {
                 slot_length_t slot_len;

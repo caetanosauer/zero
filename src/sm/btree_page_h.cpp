@@ -1145,30 +1145,30 @@ void btree_page_h::leaf_key(slotid_t slot,  w_keystr_t &key) const {
 
 
 
-void  btree_page_h::rec_node(slotid_t idx,  w_keystr_t &key, shpid_t &el) const {
+void  btree_page_h::rec_node(slotid_t slot,  w_keystr_t &key, shpid_t &el) const {
     w_assert1(is_node());
     FUNC(btree_page_h::rec_node);
-    w_assert1(!is_ghost(idx)); // non-leaf node can't be ghost
-    const char* p = (const char*) page()->slot_start(idx + 1);
-    
-    el = *((shpid_t*) p);
-    p += sizeof(shpid_t);
-    slot_length_t rec_len          = *((slot_length_t*) p);
-    slot_length_t key_len_noprefix = rec_len - sizeof(shpid_t) - sizeof(slot_length_t);
-    p += sizeof(slot_length_t);
-    slot_length_t prefix_len = get_prefix_length();
-    key.construct_from_keystr(get_prefix_key(), prefix_len, p, key_len_noprefix); // also from p
+    w_assert1(!is_ghost(slot)); // non-leaf node can't be ghost
+
+    int   key_length;
+    char* key_data;
+    _get_node_key_fields(slot, key_length, key_data);
+
+    int prefix_len = get_prefix_length();
+
+    key.construct_from_keystr(get_prefix_key(), prefix_len, key_data, key_length);
+    el = page()->item_data32(slot+1);
 }
-void btree_page_h::node_key(slotid_t idx,  w_keystr_t &key) const {
+void btree_page_h::node_key(slotid_t slot,  w_keystr_t &key) const {
     w_assert1(is_node());
-    const char* p = (char*) page()->slot_start(idx + 1);
-    p += sizeof(shpid_t);
-    slot_length_t rec_len = *((const slot_length_t*) p);
-    slot_length_t prefix_len = get_prefix_length();
-    slot_length_t key_len = rec_len - sizeof(shpid_t) - sizeof(slot_length_t) + prefix_len;
-    p += sizeof(slot_length_t);
-    w_assert2 (prefix_len <= key_len);
-    key.construct_from_keystr(get_prefix_key(), prefix_len, p, key_len - prefix_len); // also from p
+
+    int   key_length;
+    char* key_data;
+    _get_node_key_fields(slot, key_length, key_data);
+
+    int prefix_len = get_prefix_length();
+
+    key.construct_from_keystr(get_prefix_key(), prefix_len, key_data, key_length);
 }
 
 rc_t
