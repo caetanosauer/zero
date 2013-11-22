@@ -111,7 +111,7 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
 
     // set fence keys in first slot
     cvec_t fences;
-    size_t prefix_len = _pack_fence_rec(fences, fence_low, fence_high, chain_fence_high);
+    size_t prefix_len = _pack_fence_rec(fences, fence_low, fence_high, chain_fence_high, -1);
     w_assert1(prefix_len <= fence_low.get_length_as_keystr() && prefix_len <= fence_high.get_length_as_keystr());
     w_assert1(prefix_len <= (1<<15));
     page()->btree_prefix_length = (int16_t) prefix_len;
@@ -268,17 +268,7 @@ rc_t btree_page_h::norecord_split (shpid_t foster,
     } else {
         // otherwise, just sets the fence keys and headers
         //sets new fence
-        cvec_t fences;
-        slot_length_t fence_total_len = sizeof(slot_length_t)
-            + fence_low.get_length_as_keystr()
-            + fence_high.get_length_as_keystr() - new_prefix_len
-            + chain_fence_high.get_length_as_keystr();
-        fences.put (&fence_total_len, sizeof(fence_total_len));
-        fences.put (fence_low);
-        // eliminate prefix part from fence_high
-        fences.put ((const char*) fence_high.buffer_as_keystr() + new_prefix_len, fence_high.get_length_as_keystr() - new_prefix_len);
-        fences.put(chain_fence_high);
-        rc_t rc = replace_expand_fence_rec_nolog(fences);
+        rc_t rc = replace_fence_rec_nolog(fence_low, fence_high, chain_fence_high, new_prefix_len);
         w_assert1(rc.err_num() != smlevel_0::eRECWONTFIT);// then why it passed check_chance_for_norecord_split()?
         w_assert1(!rc.is_error());
 
@@ -709,8 +699,14 @@ void btree_page_h::_expand_rec(slotid_t slot, slot_length_t rec_len) {
     w_assert3(page()->_slots_are_consistent());
 }
 
-rc_t btree_page_h::replace_expand_fence_rec_nolog(const cvec_t &fences) {
+rc_t btree_page_h::replace_fence_rec_nolog(const w_keystr_t& low,
+                                           const w_keystr_t& high, 
+                                           const w_keystr_t& chain, int new_prefix_len) {
     w_assert1(nslots() > 0);
+
+    cvec_t fences;
+    int prefix_len = _pack_fence_rec(fences, low, high, chain, new_prefix_len);
+    w_assert1(prefix_len == get_prefix_length());
 
     size_t new_size = fences.size();
     if (!page()->resize_slot(0, new_size, false)) {

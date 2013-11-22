@@ -554,7 +554,7 @@ public:
      * Replaces the special fence record with the given new data,
      * expanding the slot length if needed.
      */
-    rc_t            replace_expand_fence_rec_nolog(const cvec_t &fences);
+    rc_t            replace_fence_rec_nolog(const w_keystr_t& low, const w_keystr_t& high, const w_keystr_t& chain, int new_prefix_length= -1);
 
     /**
     *  Remove the slot and up-shift slots after the hole to fill it up.
@@ -706,8 +706,16 @@ private:
         trunc_key_data   = page()->item_data(slot+1);
     }
 
-    static int _pack_fence_rec(cvec_t& out, const w_keystr_t& low, const w_keystr_t& high, const w_keystr_t& chain) {
-        int prefix_len = low.common_leading_bytes(high);
+    static int _pack_fence_rec(cvec_t& out, const w_keystr_t& low,
+                               const w_keystr_t& high, const w_keystr_t& chain, 
+                               int new_prefix_len) {
+        int prefix_len;
+        if (new_prefix_len>=0) {
+            w_assert1(low.common_leading_bytes(high) >= (size_t)new_prefix_len);
+            prefix_len = new_prefix_len;
+        } else {
+            prefix_len = low.common_leading_bytes(high);
+        }
 
         // KLUDGE!!!!!!!!!!  <<<>>>
         static slot_length_t total_length = 0;

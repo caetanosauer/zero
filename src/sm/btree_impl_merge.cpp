@@ -294,23 +294,14 @@ void btree_impl::_ux_deadopt_foster_apply_foster_parent(btree_page_h &foster_par
     int16_t prefix_len = foster_parent.get_prefix_length();
     w_assert1 ((size_t)prefix_len == org_low_key.common_leading_bytes(org_high_key));
 
-    cvec_t fences;
-    uint16_t fence_total_len = sizeof(uint16_t)
-        + org_low_key.get_length_as_keystr()
-        + org_high_key.get_length_as_keystr() - prefix_len
-        + high_key.get_length_as_keystr();
-    fences.put (&fence_total_len, sizeof(fence_total_len));
-    fences.put (org_low_key);
-    // eliminate prefix part from fence_high
-    fences.put ((const char*)org_high_key.buffer_as_keystr() + prefix_len, org_high_key.get_length_as_keystr() - prefix_len);
-    fences.put (high_key); // high_key of adoped child is now chain-fence-high
-    rc_t rc = foster_parent.replace_expand_fence_rec_nolog (fences);
+    // high_key of adoped child is now chain-fence-high:
+    rc_t rc = foster_parent.replace_fence_rec_nolog(org_low_key, org_high_key, high_key);
     if (rc.is_error()) {
         //eRECWONTFIT is very slighly possible...
         w_assert1(rc.err_num() == eRECWONTFIT);
         rc = foster_parent.defrag();
         w_assert1(!rc.is_error());
-        rc = foster_parent.replace_expand_fence_rec_nolog (fences);
+        rc_t rc = foster_parent.replace_fence_rec_nolog(org_low_key, org_high_key, high_key);
         if (rc.is_error()) {
             w_assert1(false);        
             W_FATAL(eINTERNAL); 
