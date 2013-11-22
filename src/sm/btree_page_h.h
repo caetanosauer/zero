@@ -687,6 +687,7 @@ private:
         w_assert1(slot>=0);
         return page()->item_data16(slot+1);
     }
+
     void _get_leaf_key_fields(int slot, int& key_length, char*& trunc_key_data) const {
         w_assert1(slot>=0);
         key_length     = *(slot_length_t*)page()->item_data(slot+1);
@@ -705,6 +706,21 @@ private:
         trunc_key_data   = page()->item_data(slot+1);
     }
 
+    static int _pack_fence_rec(cvec_t& out, const w_keystr_t& low, const w_keystr_t& high, const w_keystr_t& chain) {
+        int prefix_len = low.common_leading_bytes(high);
+
+        // KLUDGE!!!!!!!!!!  <<<>>>
+        static slot_length_t total_length = 0;
+        total_length = low.get_length_as_keystr() + high.get_length_as_keystr() - prefix_len + chain.get_length_as_keystr() + 2;
+        out.put(&total_length, sizeof(slot_length_t));
+
+        out.put(low);
+        // eliminate prefix part from high:
+        out.put((const char*)high.buffer_as_keystr() + prefix_len, 
+                high.get_length_as_keystr() - prefix_len);
+        out.put(chain);
+        return prefix_len;
+    }
 
 
 
@@ -1017,10 +1033,13 @@ inline int btree_page_h::_compare_leaf_key_noprefix_remain(int slot, const void 
 
 inline int btree_page_h::_compare_node_key_noprefix_remain(int slot, const void *key_noprefix_remain, int key_len_remain) const {
     w_assert1(is_node());
-    slot_length_t rec_len = page()->item_length(slot+1);
-    w_assert1(rec_len >= sizeof(shpid_t) + sizeof(slot_length_t));
-    int curkey_len_remain = rec_len - sizeof(shpid_t) - sizeof(slot_length_t) - sizeof(poor_man_key);
-    const char *curkey_remain = page()->item_data(slot+1) + sizeof(poor_man_key);
+    w_assert1(is_node());
+    int   trunc_key_length;
+    char* trunc_key_data;
+    _get_node_key_fields(slot, trunc_key_length, trunc_key_data);
+
+    int curkey_len_remain = trunc_key_length - sizeof(poor_man_key);
+    const char *curkey_remain = trunc_key_data + sizeof(poor_man_key);
     if (key_len_remain > 0 && curkey_len_remain > 0) {
         return w_keystr_t::compare_bin_str(curkey_remain, curkey_len_remain, key_noprefix_remain, key_len_remain);
     } else {

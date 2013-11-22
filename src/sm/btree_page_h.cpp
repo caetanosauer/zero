@@ -109,21 +109,13 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
     page()->btree_fence_high_length       = (int16_t) fence_high.get_length_as_keystr();
     page()->btree_chain_fence_high_length = (int16_t) chain_fence_high.get_length_as_keystr();
 
-    size_t prefix_len = fence_low.common_leading_bytes(fence_high);
+    // set fence keys in first slot
+    cvec_t fences;
+    size_t prefix_len = _pack_fence_rec(fences, fence_low, fence_high, chain_fence_high);
     w_assert1(prefix_len <= fence_low.get_length_as_keystr() && prefix_len <= fence_high.get_length_as_keystr());
     w_assert1(prefix_len <= (1<<15));
     page()->btree_prefix_length = (int16_t) prefix_len;
 
-    // set fence keys in first slot
-    cvec_t fences;
-    slot_length_t fence_total_len = sizeof(slot_length_t) + page()->btree_fence_low_length // <<<>>>
-        + page()->btree_fence_high_length - page()->btree_prefix_length
-        + page()->btree_chain_fence_high_length;
-    fences.put (&fence_total_len, sizeof(fence_total_len));
-    fences.put (fence_low);
-    // eliminate prefix part from fence_high
-    fences.put ((const char*) fence_high.buffer_as_keystr() + prefix_len, fence_high.get_length_as_keystr() - prefix_len);
-    fences.put(chain_fence_high);
     // fence-key record doesn't need poormkey; set to 0:
     if (!page()->insert_slot(nslots(), false, fences.size(), 0)) {
         assert(false);
@@ -205,7 +197,7 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
             klen = src_rec_len - sizeof(shpid_t) - sizeof(slot_length_t) + src_prefix_len;
             new_rec_len = src_rec_len - prefix_len_diff;
             v.put(&new_rec_len, sizeof(new_rec_len));
-                        src_consumed = sizeof(slot_length_t) + sizeof(shpid_t);
+            src_consumed = sizeof(slot_length_t) + sizeof(shpid_t);
         }
 
         //copy the remaining (and potentially a substring that was a prefix in old page)
