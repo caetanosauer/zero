@@ -91,7 +91,7 @@ public:
             return true;
         }
     }
-    bool tryAcquireX(TicketQ &t) { 
+    bool tryAcquireX(TicketX &t) { 
         pthread_spin_lock(&lock);
         if (write_held || num_readers > 0) {
             pthread_spin_unlock(&lock);
