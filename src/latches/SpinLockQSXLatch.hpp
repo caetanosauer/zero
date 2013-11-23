@@ -1,7 +1,9 @@
+#ifndef SPIN_LOCK_QSX_LATCH_HPP
+#define SPIN_LOCK_QSX_LATCH_HPP
 #include <inttypes.h>
 #include <pthread.h>
 
-class SimpleLatch {
+class SpinLockQSXLatch {
 private:
     pthread_spinlock_t lock;
     int64_t num_readers;
@@ -13,17 +15,6 @@ public:
     typedef int64_t TicketS;
     typedef int64_t TicketX;
 
-    static bool isFailure(const TicketQ & t) {
-        return t==-1;
-    }
-    static bool isFailure(const TicketS & t) {
-        return t==-1;
-    }
-    static bool isFailure(const TicketX & t) {
-        return t==-1;
-    }
-
-    
     TicketQ acquireQ() {
         TicketQ ret;
         do {
@@ -116,6 +107,7 @@ public:
         }
     }
     bool releaseS(const TicketS &t) {  // Will likely return only true.
+        (void) t;
         pthread_spin_lock(&lock);
         num_readers--;
         pthread_spin_unlock(&lock);
@@ -123,6 +115,7 @@ public:
     }
 
     bool releaseX(const TicketX &t) { // Will likely return only true.
+        (void) t;
         pthread_spin_lock(&lock);
         write_held = false;
         pthread_spin_unlock(&lock);
@@ -147,6 +140,7 @@ public:
     //
     // Users must be able to deal with implementations which always return false.
     bool tryUpgradeQS(const TicketQ &t, TicketS & newTicket) {
+        (void) t;
         pthread_spin_lock(&lock);
         if (t == writer_count && ! write_held) {
             num_readers++;
@@ -160,6 +154,7 @@ public:
     }
 
     bool tryUpgradeQX(const TicketQ &t, TicketX & newTicket) {
+        (void) t;
         pthread_spin_lock(&lock);
         if (t == writer_count && ! write_held && num_readers==0) {
             write_held = true;
@@ -174,6 +169,7 @@ public:
     }
 
     bool tryUpgradeSX(const TicketS &t, TicketX & newTicket) {
+        (void) t;
         pthread_spin_lock(&lock);
         if (num_readers==1) {
             write_held = true;
@@ -204,6 +200,7 @@ public:
     //
     // Users must be able to deal with implementations which always return false.
     bool tryDownGradeXS(const TicketX &t, TicketS & newTicket) {
+        (void) t;
         pthread_spin_lock(&lock);
         num_readers++;
         write_held = false;
@@ -212,6 +209,7 @@ public:
         return true;        
     }
     bool tryDownGradeXQ(const TicketX &t, TicketQ & newTicket) {
+        (void) t;
         pthread_spin_lock(&lock);
         newTicket = writer_count;
         write_held = false;
@@ -219,6 +217,7 @@ public:
         return true;            
     }
     bool tryDownGradeSQ(const TicketS &t, TicketQ & newTicket) {
+        (void) t;
         pthread_spin_lock(&lock);
         newTicket = writer_count;
         num_readers--;
@@ -246,10 +245,12 @@ public:
         }
     }
     bool reaquireS(TicketS &t) {
+        (void) t;
         // Currently, ticket doesn't have enough info, so we just give up.
         return false;
-    }
+    }    
     bool reaquireX(TicketX &t) {
+        (void) t;
         // Currently, ticket doesn't have enough info, so we just give up.
         return false;
     }
@@ -259,13 +260,13 @@ public:
     // API to allow statically asserting if an implementation has a "useful" implementation of
     // any particular method or mode.
     
-    InternalLatch() {
+    SpinLockQSXLatch() {
         pthread_spin_init(&lock, PTHREAD_PROCESS_SHARED);
         num_readers = writer_count = 0;
         write_held = false;
     }
-    ~InternalLatch() {
+    ~SpinLockQSXLatch() {
         pthread_spin_destroy(&lock);
     }
 };
-
+#endif
