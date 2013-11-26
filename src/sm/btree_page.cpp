@@ -44,6 +44,45 @@ void btree_page::unset_ghost(int item) {
 
 
 
+bool btree_page::insert_item(int item, bool ghost, uint16_t data16,
+                             int32_t data32, size_t data_length) {
+    w_assert1(item>=0 && item<=nitems);  // use of <= intentional
+    w_assert3(_slots_are_consistent());
+
+    size_t length = data_length + sizeof(slot_length_t);
+    if ((size_t)usable_space() < sizeof(slot_head) + align(length)) {
+        return false;
+    }
+
+    // shift item array up to insert a item so it is head[item]:
+    ::memmove(&head[item+1], &head[item], (nitems-item)*sizeof(slot_head));
+    nitems++;
+    if (ghost) {
+        nghosts++;
+    }
+
+    record_head8 -= (length-1)/8+1;
+    head[item].offset = ghost ? -record_head8 : record_head8;
+    head[item].poor = data16;
+
+    if (btree_level != 1) {
+        body[record_head8].interior.child = data32;
+    } else {
+        w_assert1(data32 == 0);
+    }
+
+    w_assert3(_slots_are_consistent());
+    return true;
+}
+
+bool btree_page::insert_item(int item, bool ghost, uint16_t data16,
+                             int32_t data32, cvec_t& data) {
+    if (!insert_item(item, ghost, data16, data32, data.size())) {
+        return false;
+    }
+    data.copy_to(item_data(item));
+    return true;
+}
 
 
 

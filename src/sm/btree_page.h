@@ -8,7 +8,7 @@
 #include "fixable_page_h.h"
 #include "w_defines.h"
 #include "w_endian.h"
-
+#include "vec_t.h"
 
 
 
@@ -212,6 +212,8 @@ public:
     char* item_data(int item);
     int item_length(int item) const;
 
+    bool insert_item(int item, bool ghost, uint16_t data16, int32_t data32, size_t data_length);
+    bool insert_item(int item, bool ghost, uint16_t data16, int32_t data32, cvec_t& data);
     bool resize_item(int item, size_t length, bool keep_old);
 
 

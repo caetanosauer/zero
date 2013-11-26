@@ -134,20 +134,14 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
         w_assert1(steal_src2->pid0() != 0);
         // before stealing regular records from src2, steal it's pid0
         cvec_t v;
-        slot_length_t key_len     = (slot_length_t) steal_src2->get_fence_low_length();
-        slot_length_t rec_len     = sizeof(slot_length_t) * 2 + sizeof(shpid_t) + key_len - prefix_len;
-        shpid_t       stolen_pid0 = steal_src2->pid0();
-        v.put(&rec_len, sizeof(rec_len));
+        slot_length_t key_len = (slot_length_t) steal_src2->get_fence_low_length();
         v.put(&key_len, sizeof(key_len));
-        v.put(&stolen_pid0, sizeof(stolen_pid0));
         v.put(steal_src2->get_fence_low_key() + prefix_len, steal_src2->get_fence_low_length() - prefix_len);
-        w_assert1(v.size() == rec_len);
         poor_man_key poormkey = extract_poor_man_key (steal_src2->get_fence_low_key(), steal_src2->get_fence_low_length(), prefix_len);
-        if (!page()->insert_slot(nslots(), false, v.size(), poormkey)) {
+        shpid_t      stolen_pid0 = steal_src2->pid0();
+        if (!page()->insert_item(nslots(), false, poormkey, stolen_pid0, v)) {
             assert(false);
         }
-        v.copy_to(page()->slot_start(nslots()-1));
-        page()->_slots_are_consistent(); // <<<>>>
     }
     if (steal_src2) {
         _steal_records (steal_src2, steal_from2, steal_to2);
