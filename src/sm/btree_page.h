@@ -65,7 +65,11 @@ inline poor_man_key extract_poor_man_key (const void* key_with_prefix, size_t ke
     w_assert3(prefix_len <= key_len_with_prefix);
     return extract_poor_man_key (((const char*)key_with_prefix) + prefix_len, key_len_with_prefix - prefix_len);
 }
-
+inline poor_man_key extract_poor_man_key (const cvec_t& key) {
+    char start[2];
+    key.copy_to(start, 2);
+    return extract_poor_man_key(start, key.size());
+}
 
 
 
@@ -287,6 +291,22 @@ public:
     }
     slot_length_t slot_length8(slot_index_t slot) const { return (slot_length(slot)-1)/8+1; }
 
+    void set_slot_length(slot_index_t slot, slot_length_t length) {
+        slot_offset8_t offset = head[slot].offset;
+        if (offset < 0) offset = -offset; // ghost record
+
+        if (slot == 0) {
+            body[offset].fence.slot_len = length;
+            return;
+        }
+
+        if (btree_level == 1) {
+            body[offset].leaf.slot_len = length;
+        } else {
+            body[offset].interior.slot_len = length;
+        }
+    }
+
     bool insert_slot(slot_index_t slot, bool ghost, size_t length, poor_man_key poor_key);
     bool resize_slot(slot_index_t slot, size_t length, bool keep_old);
     void delete_slot(slot_index_t slot);
@@ -323,7 +343,11 @@ inline int32_t& btree_page::item_data32(int item) {
 
 inline int btree_page::item_length(int item) const {
     w_assert1(item>=0 && item<nitems);
-    return slot_length(item) - sizeof(slot_length_t);
+    int length = slot_length(item) - sizeof(slot_length_t);
+    if (item != 0 && btree_level != 1) {
+        length -= sizeof(shpid_t);
+    }
+    return length;
 }
 inline char* btree_page::item_data(int item) {
     w_assert1(item>=0 && item<nitems);

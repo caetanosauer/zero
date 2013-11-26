@@ -163,72 +163,47 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
     w_assert2(steal_from <= steal_to);
     w_assert2(steal_from >= 0);
     w_assert2(steal_to <= steal_src->nrecs());
-    slot_length_t src_prefix_len = steal_src->get_prefix_length();
-    slot_length_t new_prefix_len = get_prefix_length();
-    int prefix_len_diff = (int) new_prefix_len - (int) src_prefix_len; // how many bytes do we reduce in the new page?
-    const char* src_prefix_diff = steal_src->get_prefix_key() + src_prefix_len;
-    if (prefix_len_diff < 0) { // then we have to increase
-        src_prefix_diff += prefix_len_diff;
-    }
+
+    slot_length_t src_prefix_length = steal_src->get_prefix_length();
+    slot_length_t new_prefix_length = get_prefix_length();
     for (int i = steal_from; i < steal_to; ++i) {
-        const unsigned char* src_rec = (const unsigned char*) steal_src->page()->slot_start(i + 1);// +1 because it's btree_page_h
         cvec_t v;
-        slot_length_t src_rec_len;
-        slot_length_t klen;
-        slot_length_t new_rec_len;
-        slot_length_t src_consumed;
+        cvec_t new_trunc_key;
+        shpid_t child;
+
+        cvec_t key, dummy;
+        key.put(steal_src->get_prefix_key(), steal_src->get_prefix_length());
         if (is_leaf()) {
-            src_rec_len = reinterpret_cast<const slot_length_t*>(src_rec)[0];
-            klen = reinterpret_cast<const slot_length_t*>(src_rec)[1];
-            new_rec_len = src_rec_len - prefix_len_diff;
-            v.put(&new_rec_len, sizeof(new_rec_len));
+            int   key_length;
+            char* trunc_key_data;
+            int   data_length;
+            char* data;
+            steal_src->_get_leaf_fields(i, key_length, trunc_key_data, data_length, data);
+            int trunc_key_length = key_length - src_prefix_length;
+            key.put(trunc_key_data, trunc_key_length);
+
+            key.split(new_prefix_length, dummy, new_trunc_key);
+            slot_length_t klen = key_length;
             v.put(&klen, sizeof(klen));
-            src_consumed = 2 * sizeof(slot_length_t);
+            v.put(new_trunc_key);
+            v.put(data, data_length);
+            child = 0;
         } else {
-            v.put(src_rec, sizeof(shpid_t));
-            const unsigned char *p = src_rec + sizeof(shpid_t);
-            src_rec_len = *((const slot_length_t*) p);
-            klen = src_rec_len - sizeof(shpid_t) - sizeof(slot_length_t) + src_prefix_len;
-            new_rec_len = src_rec_len - prefix_len_diff;
-            v.put(&new_rec_len, sizeof(new_rec_len));
-            src_consumed = sizeof(slot_length_t) + sizeof(shpid_t);
+            int   trunc_key_length;
+            char* trunc_key_data;
+            steal_src->_get_node_key_fields(i, trunc_key_length, trunc_key_data);
+            key.put(trunc_key_data, trunc_key_length);
+
+            key.split(new_prefix_length, dummy, new_trunc_key);
+            v.put(new_trunc_key);
+            child = steal_src->page()->item_data32(i+1);
         }
 
-        //copy the remaining (and potentially a substring that was a prefix in old page)
-        // also construct the poor man's normalized key
-        poor_man_key new_poormkey;
-        if (prefix_len_diff < 0) {
-            // prefix is shorter in the new page. have to append a substring that was a prefix.
-            v.put(src_prefix_diff, -prefix_len_diff);
-            v.put(src_rec + src_consumed, src_rec_len - src_consumed);
-            // this one is tricky.
-            unsigned char poormkey_be[2]; // simply copied from the key, so still big-endian.
-            if (prefix_len_diff == -1) {
-                poormkey_be[0] = src_prefix_diff[0];
-                if (src_rec_len - src_consumed > 0) {
-                    poormkey_be[1] = src_rec[src_consumed];
-                } else {
-                    poormkey_be[1] = 0;
-                }
-            } else {
-                poormkey_be[0] = src_prefix_diff[0];
-                poormkey_be[1] = src_prefix_diff[1];
-            }
-            new_poormkey = deserialize16_ho(poormkey_be); // convert it to host endian
-        } else {
-            const unsigned char* remaining_rec = src_rec + src_consumed + prefix_len_diff;
-            slot_length_t remaining_rec_len = src_rec_len - src_consumed - prefix_len_diff;
-            v.put(remaining_rec, remaining_rec_len);
-            // simply take the first few bytes
-            new_poormkey = extract_poor_man_key(remaining_rec, klen - new_prefix_len);
-        }
-        w_assert1(new_rec_len == v.size());
-
-        if (!page()->insert_slot(nslots(), steal_src->is_ghost(i), v.size(), new_poormkey)) {
+        if (!page()->insert_item(nslots(), steal_src->is_ghost(i), 
+                                 extract_poor_man_key(new_trunc_key), 
+                                 child, v)) {
             assert(false);
         }
-        v.copy_to(page()->slot_start(nslots()-1));
-        page()->_slots_are_consistent(); // <<<>>>
 
         w_assert3(is_consistent());
         w_assert5(_is_consistent_keyorder());

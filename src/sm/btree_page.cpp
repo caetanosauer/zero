@@ -50,6 +50,9 @@ bool btree_page::insert_item(int item, bool ghost, uint16_t data16,
     w_assert3(_slots_are_consistent());
 
     size_t length = data_length + sizeof(slot_length_t);
+    if (item != 0 && btree_level != 1) {
+        length += sizeof(shpid_t);
+    }
     if ((size_t)usable_space() < sizeof(slot_head) + align(length)) {
         return false;
     }
@@ -70,6 +73,7 @@ bool btree_page::insert_item(int item, bool ghost, uint16_t data16,
     } else {
         w_assert1(data32 == 0);
     }
+    set_slot_length(item, length);
 
     w_assert3(_slots_are_consistent());
     return true;
