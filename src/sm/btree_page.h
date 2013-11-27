@@ -203,6 +203,7 @@ public:
     bool insert_item(int item, bool ghost, uint16_t data16, int32_t data32, const cvec_t& data);
     bool resize_item(int item, size_t new_length, size_t keep_old);
     bool replace_item_data(int item, const cvec_t& new_data, size_t keep_old);
+    void delete_item(int item);
 
 
 
@@ -292,7 +293,6 @@ public:
     }
 
     bool insert_slot(slot_index_t slot, bool ghost, size_t length, poor_man_key poor_key);
-    void delete_slot(slot_index_t slot);
 
     bool _slots_are_consistent() const;
     void compact();

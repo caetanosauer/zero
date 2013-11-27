@@ -148,16 +148,12 @@ bool btree_page::replace_item_data(int item, const cvec_t& new_data, size_t keep
 }
 
 
-
-
-
-
-void btree_page::delete_slot(slot_index_t slot) {
-    w_assert1(slot>=0 && slot<nitems);
-    w_assert1(slot != 0); // deleting slot 0 makes no sense because it has a special format
+void btree_page::delete_item(int item) {
+    w_assert1(item>=0 && item<nitems);
+    w_assert1(item != 0); // deleting item 0 makes no sense because it has a special format <<<>>>
     w_assert3(_slots_are_consistent());
 
-    slot_offset8_t offset = head[slot].offset;
+    slot_offset8_t offset = head[item].offset;
     if (offset < 0) {
         offset = -offset;
         nghosts--;
@@ -165,15 +161,18 @@ void btree_page::delete_slot(slot_index_t slot) {
 
     if (offset == record_head8) {
         // Then, we are pushing down the record_head8.  lucky!
-        record_head8 += slot_length8(slot);
+        record_head8 += slot_length8(item);
     }
 
-    // shift slot array down to remove head[slot]:
-    ::memmove(&head[slot], &head[slot+1], (nitems-(slot+1))*sizeof(slot_head));
+    // shift item array down to remove head[item]:
+    ::memmove(&head[item], &head[item+1], (nitems-(item+1))*sizeof(slot_head));
     nitems--;
 
     w_assert3(_slots_are_consistent());
 }
+
+
+
 
 
 bool btree_page::insert_slot(slot_index_t slot, bool ghost, size_t length, 

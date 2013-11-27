@@ -209,7 +209,7 @@ public:
     shpid_t& pid0_pointer()   { return page()->btree_pid0; }
     shpid_t& child_pointer(slotid_t child) { return *reinterpret_cast<shpid_t*>(&page()->item_data32(child+1)); }
 
-    slotid_t                     nslots() const;
+    slotid_t                     nitems() const;
 
     // Total usable space on page
     smsize_t                     usable_space()  const;
@@ -841,7 +841,7 @@ inline const char* btree_page_h::get_prefix_key() const {
 }
 
 inline int btree_page_h::nrecs() const {
-    return nslots() - 1;
+    return nitems() - 1;
 }
 inline int btree_page_h::compare_with_fence_low (const w_keystr_t &key) const {
     return key.compare_keystr(get_fence_low_key(), get_fence_low_length());
@@ -1064,17 +1064,17 @@ inline void btree_page_h::change_slot_offset (slotid_t idx, slot_offset8_t offse
 }
 inline smsize_t 
 btree_page_h::used_space() const {
-    return (data_sz - page()->get_record_head_byte() + nslots() * slot_sz); 
+    return (data_sz - page()->get_record_head_byte() + nitems() * slot_sz); 
 }
 
 inline slotid_t
-btree_page_h::nslots() const {
+btree_page_h::nitems() const {
     return page()->number_of_items();
 }
 
 inline smsize_t
 btree_page_h::usable_space() const {
-    size_t contiguous_free_space = page()->get_record_head_byte() - slot_sz * nslots();
+    size_t contiguous_free_space = page()->get_record_head_byte() - slot_sz * nitems();
     return contiguous_free_space; 
 }
 

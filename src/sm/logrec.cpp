@@ -748,7 +748,7 @@ struct page_img_format_t {
 };
 page_img_format_t::page_img_format_t (const btree_page_h& page)
 {
-    beginning_bytes = btree_page::hdr_sz + page.nslots() * btree_page::slot_sz;
+    beginning_bytes = btree_page::hdr_sz + page.nitems() * btree_page::slot_sz;
     ending_bytes    = btree_page::page_sz - page.page()->get_record_head_byte() - btree_page::hdr_sz;
     const char *pp_bin = (const char *) page._pp;
     ::memcpy (data, pp_bin, beginning_bytes);

@@ -117,7 +117,7 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
     page()->btree_prefix_length = (int16_t) prefix_len;
 
     // fence-key record doesn't need poormkey; set to 0:
-    if (!page()->insert_item(nslots(), false, 0, 0, fences)) {
+    if (!page()->insert_item(nitems(), false, 0, 0, fences)) {
         assert(false);
     }
 
@@ -137,7 +137,7 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
         v.put(steal_src2->get_fence_low_key() + prefix_len, steal_src2->get_fence_low_length() - prefix_len);
         poor_man_key poormkey = extract_poor_man_key (steal_src2->get_fence_low_key(), steal_src2->get_fence_low_length(), prefix_len);
         shpid_t      stolen_pid0 = steal_src2->pid0();
-        if (!page()->insert_item(nslots(), false, poormkey, stolen_pid0, v)) {
+        if (!page()->insert_item(nitems(), false, poormkey, stolen_pid0, v)) {
             assert(false);
         }
     }
@@ -197,7 +197,7 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
             child = steal_src->page()->item_data32(i+1);
         }
 
-        if (!page()->insert_item(nslots(), steal_src->is_ghost(i), 
+        if (!page()->insert_item(nitems(), steal_src->is_ghost(i), 
                                  extract_poor_man_key(new_trunc_key), 
                                  child, v)) {
             assert(false);
@@ -639,7 +639,7 @@ rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, shpid_t chi
 rc_t btree_page_h::replace_fence_rec_nolog(const w_keystr_t& low,
                                            const w_keystr_t& high, 
                                            const w_keystr_t& chain, int new_prefix_len) {
-    w_assert1(nslots() > 0);
+    w_assert1(nitems() > 0);
 
     cvec_t fences;
 #if W_DEBUG_LEVEL > 0
@@ -661,7 +661,7 @@ rc_t btree_page_h::replace_fence_rec_nolog(const w_keystr_t& low,
 rc_t btree_page_h::remove_shift_nolog(slotid_t idx) {
     w_assert1(idx >= 0 && idx < nrecs());
 
-    page()->delete_slot(idx + 1);
+    page()->delete_item(idx + 1);
     return RCOK;
 }
 
@@ -1111,7 +1111,7 @@ btree_page_h::page_usage(int& data_size, int& header_size, int& unused,
     header_size = sizeof(generic_page) - data_sz;
     
     // calculate space wasted in data alignment
-    for (int i=0 ; i<nslots(); i++) {
+    for (int i=0 ; i<nitems(); i++) {
         // if slot is not no-record slot
         if ( btree_page_h::tuple_offset8(i) != 0 ) {
             slot_length_t len = (i == 0 ? get_fence_rec_size() : get_rec_size(i - 1));
@@ -1123,7 +1123,7 @@ btree_page_h::page_usage(int& data_size, int& header_size, int& unused,
     unused = sizeof(generic_page) - header_size - data_size - alignment;
 
     t        = tag();        // the type of page 
-    no_slots = nslots();  // nu of slots in this page
+    no_slots = nitems();  // nu of slots in this page
 
     w_assert1(data_size + header_size + unused + alignment == sizeof(generic_page));
 }
@@ -1304,7 +1304,7 @@ rc_t btree_page_h::defrag() {
     w_assert1 (latch_mode() == LATCH_EX);
 
     vector<slotid_t> ghost_slots;
-    for (int i=0; i<nslots(); i++) {
+    for (int i=0; i<nitems(); i++) {
         if (page()->is_ghost(i)) {
             w_assert1(i >= 1); // fence record can't be ghost
             ghost_slots.push_back(i-1);
