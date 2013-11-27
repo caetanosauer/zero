@@ -595,9 +595,10 @@ void btree_page_h::_update_btree_consecutive_skewed_insertions(slotid_t slot) {
 rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, shpid_t child) {
     FUNC(btree_page_h::insert);
     
-    w_assert3 (is_node());
+    w_assert3(is_node());
+    w_assert1(slot >= 0 && slot <= nrecs()); // <= intentional to allow appending
     w_assert3(child);
-    w_assert3 (is_consistent(true, false));
+    w_assert3(is_consistent(true, false));
 
 #if W_DEBUG_LEVEL > 1
     if (slot == 0) {
@@ -616,43 +617,24 @@ rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, shpid_t chi
     // Update btree_consecutive_skewed_insertions.  This is just statistics and not logged.
     _update_btree_consecutive_skewed_insertions (slot);
 
+    // See the record format in btree_page_h class comments.
+    vec_t v; // the record data
     slot_length_t klen = key.get_length_as_keystr();
-
     // Prefix of the key is fixed in this page, so we can simply
     // peel off leading bytes from the key+el.
     slot_length_t prefix_length = get_prefix_length();  // length of prefix of inserted tuple
     w_assert3(prefix_length <= klen);
-
-    slot_length_t rec_len = sizeof(slot_length_t) + sizeof(child) + klen - prefix_length;
-
-    // See the record format in btree_page_h class comments.
-    vec_t v; // the record data
-    v.put(&child, sizeof(child));
-    v.put(&rec_len, sizeof(rec_len));  // because we do this, we have to hold the variable "rec_len" until the end of this function!
     v.put(key, prefix_length, klen - prefix_length);
     poor_man_key poormkey = extract_poor_man_key(key.buffer_as_keystr(), klen, prefix_length);
-
-    W_DO( _insert_expand_nolog(slot, v, poormkey) ); // we don't log it. btree_impl::adopt() does the logging
+    // we don't log it. btree_impl::adopt() does the logging
+    if (!page()->insert_item(slot+1, false, poormkey, child, v)) {
+        // This shouldn't happen; the caller should have checked with check_space_for_insert():
+        return RC(smlevel_0::eRECWONTFIT);
+    }
 
     w_assert3 (is_consistent(true, false));
     w_assert5 (is_consistent(true, true));
 
-    return RCOK;
-}
-rc_t btree_page_h::_insert_expand_nolog(slotid_t slot, const cvec_t &vec, poor_man_key poormkey) {
-    slotid_t idx = slot + 1; // slot index in btree_page_h
-    w_assert1(idx >= 0 && idx <= nslots());
-
-    if (!page()->insert_slot(idx, false, vec.size(), poormkey)) {
-        // This shouldn't happen; the caller should have checked with check_space_for_insert():
-        return RC(smlevel_0::eRECWONTFIT);
-    }
-    vec.copy_to(page()->slot_start(idx));
-    page()->_slots_are_consistent(); // <<<>>>
-
-    w_assert3(get_rec_size(slot) == vec.size());
-    w_assert3(_poor(idx-1) == poormkey);
-    w_assert3(page()->_slots_are_consistent());
     return RCOK;
 }
 

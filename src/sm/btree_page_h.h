@@ -759,15 +759,6 @@ private:
     /** skips comparing the first sizeof(poormankey) bytes. */
     int             _compare_node_key_noprefix_remain(int slot, const void *key_noprefix_remain, int key_len_remain) const;
 
-    /**
-    *  Insert a record at slot idx. Slots on the left of idx
-    *  are pushed further to the left to make space. 
-    *  By this it's meant that the slot table entries are moved; the
-    *  data themselves are NOT moved.
-    *  Vec[] contains the data for these new slots. 
-    */
-    rc_t             _insert_expand_nolog(slotid_t slot, const cvec_t &tp, poor_man_key poormkey);
-
 
     /**
      * Expands an existing record for given size.
