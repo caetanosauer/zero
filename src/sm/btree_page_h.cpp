@@ -656,7 +656,10 @@ rc_t btree_page_h::replace_fence_rec_nolog(const w_keystr_t& low,
     w_assert1(nslots() > 0);
 
     cvec_t fences;
-    int prefix_len = _pack_fence_rec(fences, low, high, chain, new_prefix_len);
+#if W_DEBUG_LEVEL > 0
+    int prefix_len = 
+#endif
+        _pack_fence_rec(fences, low, high, chain, new_prefix_len);
     w_assert1(prefix_len == get_prefix_length());
 
     size_t new_size = fences.size();

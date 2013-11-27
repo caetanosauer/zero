@@ -291,8 +291,7 @@ void btree_impl::_ux_deadopt_foster_apply_foster_parent(btree_page_h &foster_par
     w_keystr_t org_low_key, org_high_key;
     foster_parent.copy_fence_low_key(org_low_key);
     foster_parent.copy_fence_high_key(org_high_key);
-    int16_t prefix_len = foster_parent.get_prefix_length();
-    w_assert1 ((size_t)prefix_len == org_low_key.common_leading_bytes(org_high_key));
+    w_assert1 ((size_t)foster_parent.get_prefix_length() == org_low_key.common_leading_bytes(org_high_key));
 
     // high_key of adoped child is now chain-fence-high:
     rc_t rc = foster_parent.replace_fence_rec_nolog(org_low_key, org_high_key, high_key);

@@ -19,23 +19,6 @@
 typedef int16_t  slot_offset8_t;
 typedef uint16_t slot_length_t;
 typedef int16_t  slot_index_t; // to avoid explicit sized-types below
-/** convert a byte offset to 8-byte-divided offset. */
-inline slot_offset8_t to_offset8(int32_t byte_offset) {
-    w_assert1(byte_offset % 8 == 0);
-    w_assert1(byte_offset < (1 << 18));
-    w_assert1(byte_offset >= -(1 << 18));
-    return byte_offset / 8;
-}
-/** convert a byte offset to 8-byte-divided offset with alignment (if %8!=0, put padding bytes). */
-inline slot_offset8_t to_aligned_offset8(int32_t byte_offset) {
-    w_assert1(byte_offset >= 0); // as we are aligning the offset, it should be positive
-    w_assert1(byte_offset < (1 << 18));
-    if (byte_offset % 8 == 0) {
-        return byte_offset / 8;
-    } else {
-        return (byte_offset / 8) + 1;
-    }
-}
 /** convert a 8-byte-divided offset to a byte offset. */
 inline int32_t to_byte_offset(slot_offset8_t offset8) {
     return offset8 * 8;
