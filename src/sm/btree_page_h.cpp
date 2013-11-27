@@ -660,7 +660,7 @@ rc_t btree_page_h::replace_fence_rec_nolog(const w_keystr_t& low,
         _pack_fence_rec(fences, low, high, chain, new_prefix_len);
     w_assert1(prefix_len == get_prefix_length());
 
-    if (!page()->resize_item(0, fences, 0)) {
+    if (!page()->replace_item_data(0, fences, 0)) {
         return RC(smlevel_0::eRECWONTFIT);
     }
 
@@ -732,29 +732,16 @@ rc_t btree_page_h::replace_ghost(const w_keystr_t &key,
 rc_t btree_page_h::replace_el_nolog(slotid_t slot, const cvec_t &elem) {
     w_assert2( is_fixed());
     w_assert2( is_leaf());
-
-    w_assert1 (!is_ghost(slot));
+    w_assert1(!is_ghost(slot));
     
-    char *buf = (char*) page()->slot_start(slot + 1);
-    slot_length_t org_rec_size = reinterpret_cast<slot_length_t*>(buf)[0];
-    slot_length_t klen = reinterpret_cast<slot_length_t*>(buf)[1];
-    slot_length_t prefix_length = get_prefix_length();
+    int   key_length;
+    char* trunc_key_data;
+    _get_leaf_key_fields(slot, key_length, trunc_key_data);
+    size_t data_offset = sizeof(slot_length_t) + key_length - get_prefix_length();  // <<<>>>
 
-    // do we need to expand?
-    slot_length_t rec_size = sizeof(slot_length_t) * 2 + klen - prefix_length + elem.size();
-    if (align(rec_size) > align(org_rec_size)) {
-        if (!check_space_for_insert(rec_size)) {
-            return RC(smlevel_0::eRECWONTFIT);
-        }
-        _expand_rec (slot, rec_size);
-        w_assert1(page()->slot_start(slot + 1) != buf);
-        buf = (char *) page()->slot_start(slot + 1);
+    if (!page()->replace_item_data(slot+1, elem, data_offset)) {
+        return RC(smlevel_0::eRECWONTFIT);
     }
-
-    slot_length_t* array = reinterpret_cast<slot_length_t*>(buf);
-    array[0] = rec_size;
-    array[1] = klen;
-    elem.copy_to(buf + sizeof(slot_length_t) * 2 + klen - prefix_length);
     return RCOK;
 }
 

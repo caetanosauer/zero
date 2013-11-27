@@ -200,9 +200,9 @@ public:
     int item_length(int item) const;
 
     bool insert_item(int item, bool ghost, uint16_t data16, int32_t data32, size_t data_length);
-    bool insert_item(int item, bool ghost, uint16_t data16, int32_t data32, cvec_t& data);
+    bool insert_item(int item, bool ghost, uint16_t data16, int32_t data32, const cvec_t& data);
     bool resize_item(int item, size_t new_length, size_t keep_old);
-    bool resize_item(int item, cvec_t& new_data, size_t keep_old);
+    bool replace_item_data(int item, const cvec_t& new_data, size_t keep_old);
 
 
 

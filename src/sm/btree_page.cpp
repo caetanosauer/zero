@@ -80,7 +80,7 @@ bool btree_page::insert_item(int item, bool ghost, uint16_t data16,
 }
 
 bool btree_page::insert_item(int item, bool ghost, uint16_t data16,
-                             int32_t data32, cvec_t& data) {
+                             int32_t data32, const cvec_t& data) {
     if (!insert_item(item, ghost, data16, data32, data.size())) {
         return false;
     }
@@ -139,7 +139,7 @@ bool btree_page::resize_item(int item, size_t new_length, size_t keep_old) {
     return true;
 }
 
-bool btree_page::resize_item(int item, cvec_t& new_data, size_t keep_old) {
+bool btree_page::replace_item_data(int item, const cvec_t& new_data, size_t keep_old) {
     if (!resize_item(item, keep_old+new_data.size(), keep_old))
         return false;
 
