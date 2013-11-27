@@ -117,11 +117,9 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
     page()->btree_prefix_length = (int16_t) prefix_len;
 
     // fence-key record doesn't need poormkey; set to 0:
-    if (!page()->insert_slot(nslots(), false, fences.size(), 0)) {
+    if (!page()->insert_item(nslots(), false, 0, 0, fences)) {
         assert(false);
     }
-    fences.copy_to(page()->slot_start(nslots()-1));
-    page()->_slots_are_consistent(); // <<<>>>
 
     // steal records from old page
     if (steal_src1) {
@@ -662,16 +660,11 @@ rc_t btree_page_h::replace_fence_rec_nolog(const w_keystr_t& low,
         _pack_fence_rec(fences, low, high, chain, new_prefix_len);
     w_assert1(prefix_len == get_prefix_length());
 
-    size_t new_size = fences.size();
-    if (!page()->resize_slot(0, new_size, false)) {
+    if (!page()->resize_item(0, fences, 0)) {
         return RC(smlevel_0::eRECWONTFIT);
     }
 
-    void* addr = page()->slot_start(0);
-    fences.copy_to(addr);
-    page()->slot_value(0).fence.slot_len = new_size;
-
-    w_assert1 (get_fence_rec_size() == (slot_length_t) fences.size());
+    w_assert1 (get_fence_rec_size() == (slot_length_t) fences.size() + 2); // <<<>>>
     w_assert3(page()->_slots_are_consistent());
     return RCOK;
 }

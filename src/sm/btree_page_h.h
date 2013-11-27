@@ -719,11 +719,6 @@ private:
             prefix_len = low.common_leading_bytes(high);
         }
 
-        // KLUDGE!!!!!!!!!!  <<<>>>
-        static slot_length_t total_length = 0;
-        total_length = low.get_length_as_keystr() + high.get_length_as_keystr() - prefix_len + chain.get_length_as_keystr() + 2;
-        out.put(&total_length, sizeof(slot_length_t));
-
         out.put(low);
         // eliminate prefix part from high:
         out.put((const char*)high.buffer_as_keystr() + prefix_len, 

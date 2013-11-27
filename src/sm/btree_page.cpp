@@ -89,10 +89,9 @@ bool btree_page::insert_item(int item, bool ghost, uint16_t data16,
 }
 
 
-
-
-bool btree_page::resize_item(int item, size_t length, bool keep_old) {
+bool btree_page::resize_item(int item, size_t new_length, size_t keep_old) {
     w_assert1(item>=0 && item<nitems);
+    w_assert1(keep_old <= new_length);
     w_assert3(_slots_are_consistent());
 
     slot_offset8_t offset = head[item].offset;
@@ -103,7 +102,14 @@ bool btree_page::resize_item(int item, size_t length, bool keep_old) {
     }
 
     size_t old_length = slot_length(item);
+    size_t length = new_length + sizeof(slot_length_t);
+    if (item != 0 && btree_level != 1) {
+        length += sizeof(shpid_t);
+    }
+
     if (length <= align(old_length)) {
+        set_slot_length(item, length);
+        w_assert3(_slots_are_consistent()); 
         return true;
     }
 
@@ -113,21 +119,33 @@ bool btree_page::resize_item(int item, size_t length, bool keep_old) {
 
     record_head8 -= (length-1)/8+1;
     head[item].offset = ghost ? -record_head8 : record_head8;
+    set_slot_length(item, length);
+    if (item != 0 && btree_level != 1) {
+        body[record_head8].interior.child = body[offset].interior.child;
+    }
 
-    if (keep_old) {
-        char* old_p = (char*)&body[offset];
-        char* new_p = (char*)&body[record_head8];
-        ::memcpy(new_p, old_p, length); // later don't copy length?
+    if (keep_old > 0) {
+        char* new_p = item_data(item);
+        char* old_p = (char*)&body[offset] + (new_p - (char*)&body[record_head8]);
+        w_assert1(old_p+keep_old <= (char*)&body[offset]+old_length);
+        ::memcpy(new_p, old_p, keep_old); 
     }
 
 #if W_DEBUG_LEVEL>0
-    ::memset((char*)&body[offset], 0, align(old_length)); // clear old item
+    ::memset((char*)&body[offset], 0xef, align(old_length)); // overwrite old item
 #endif // W_DEBUG_LEVEL>0
 
-    //w_assert3(_slots_are_consistent()); // only consistent once length is set by caller
+    w_assert3(_slots_are_consistent()); 
     return true;
 }
 
+bool btree_page::resize_item(int item, cvec_t& new_data, size_t keep_old) {
+    if (!resize_item(item, keep_old+new_data.size(), keep_old))
+        return false;
+
+    new_data.copy_to(item_data(item) + keep_old);
+    return true;
+}
 
 
 
