@@ -754,13 +754,6 @@ private:
     /** skips comparing the first sizeof(poormankey) bytes. */
     int             _compare_node_key_noprefix_remain(int slot, const void *key_noprefix_remain, int key_len_remain) const;
 
-
-    /**
-     * Expands an existing record for given size.
-     * Caller should make sure there is enough space to expand.
-     */
-    void             _expand_rec(slotid_t slot, slot_length_t rec_len);
-
 protected:
     /**
      * Returns if there is enough free space to accomodate the

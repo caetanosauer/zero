@@ -636,18 +636,6 @@ rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, shpid_t chi
     return RCOK;
 }
 
-void btree_page_h::_expand_rec(slotid_t slot, slot_length_t rec_len) {
-    w_assert1(usable_space() >= align(rec_len));
-
-    if (!page()->resize_slot(slot+1, rec_len, true))
-        assert(false);
-
-    page()->slot_value(slot+1).leaf.slot_len = rec_len;
-
-    w_assert3(get_rec_size(slot) == rec_len);
-    w_assert3(page()->_slots_are_consistent());
-}
-
 rc_t btree_page_h::replace_fence_rec_nolog(const w_keystr_t& low,
                                            const w_keystr_t& high, 
                                            const w_keystr_t& chain, int new_prefix_len) {
@@ -699,31 +687,20 @@ rc_t btree_page_h::replace_ghost(const w_keystr_t &key,
     slotid_t slot;
     search_leaf(key, found, slot);
     w_assert0 (found);
-    w_assert1 (is_ghost(slot)); // IS THIS A BUG??? should this be slot+1?  <<<>>>
-    slot_length_t rec_size = calculate_rec_size(key, elem);
-    slot_length_t org_rec_size = get_rec_size(slot);
-    if (align(rec_size) > align(org_rec_size)) {
-        _expand_rec (slot, rec_size);
-    }
-    
-    w_assert1 (_is_enough_spacious_ghost(key, slot, elem));
+    w_assert1 (is_ghost(slot));
 #if W_DEBUG_LEVEL > 2
     btrec_t rec (*this, slot);
     w_assert3 (rec.key().compare(key) == 0);
 #endif // W_DEBUG_LEVEL > 2
 
-    slot_length_t klen = key.get_length_as_keystr();
-    int16_t prefix_length = get_prefix_length();
+    int   key_length;
+    char* trunc_key_data;
+    _get_leaf_key_fields(slot, key_length, trunc_key_data);
+    size_t data_offset = sizeof(slot_length_t) + key_length - get_prefix_length();  // <<<>>>
 
-    char *buf = (char*) page()->slot_start(slot + 1);
-    if (rec_size != org_rec_size) {
-        // update only when necessary
-        w_assert1(reinterpret_cast<slot_length_t*>(buf)[0] == org_rec_size);
-        *reinterpret_cast<slot_length_t*>(buf) = rec_size;
+    if (!page()->replace_item_data(slot+1, elem, data_offset)) {
+        w_assert1(false); // should not happen because ghost should have had enough space
     }
-    // klen should be same
-    w_assert1(reinterpret_cast<slot_length_t*>(buf)[1] == klen);
-    elem.copy_to(buf + sizeof(slot_length_t) * 2 + klen - prefix_length);
 
     page()->unset_ghost(slot + 1);
     return RCOK;

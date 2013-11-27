@@ -292,7 +292,6 @@ public:
     }
 
     bool insert_slot(slot_index_t slot, bool ghost, size_t length, poor_man_key poor_key);
-    bool resize_slot(slot_index_t slot, size_t length, bool keep_old);
     void delete_slot(slot_index_t slot);
 
     bool _slots_are_consistent() const;
