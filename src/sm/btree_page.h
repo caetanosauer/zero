@@ -147,9 +147,8 @@ protected:
 
 class btree_page : public btree_page_header {
     friend class btree_page_h;
-    friend class page_img_format_t;
-    friend class page_img_format_log;
-    friend class ss_m;  // for data_sz only
+    friend class page_img_format_log;  // for hdr_size only
+    friend class ss_m;                 // for data_sz only
 
     friend class test_bf_tree;
     friend w_rc_t test_bf_fix_virgin_child(ss_m* /*ssm*/, test_volume_t *test_volume);
@@ -222,6 +221,8 @@ public:
     bool resize_item(int item, size_t new_length, size_t keep_old);
     bool replace_item_data(int item, const cvec_t& new_data, size_t keep_old);
     void delete_item(int item);
+
+    char* unused_part(size_t& length);
 private:
 
 

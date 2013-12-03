@@ -287,3 +287,11 @@ void btree_page::compact() {
     w_assert1(nghosts == 0);
     w_assert3(_slots_are_consistent());
 }
+
+
+char* btree_page::unused_part(size_t& length) {
+    char* start_gap = (char*)&head[nitems];
+    char* after_gap = (char*)&body[record_head8];
+    length = after_gap - start_gap;
+    return start_gap;
+}
