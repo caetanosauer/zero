@@ -737,9 +737,17 @@ void btree_page_h::overwrite_el_nolog(slotid_t slot, smsize_t offset,
     ::memcpy (buf + sizeof(slot_length_t) * 2 + klen - prefix_length + offset, new_el, elen);
 }
 
-void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, int record_size) {
-    w_assert1(check_space_for_insert(record_size));
+void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, size_t element_length) {
     w_assert1 (is_leaf()); // ghost only exists in leaf
+
+    int16_t prefix_len       = get_prefix_length();
+    int     trunc_key_length = key_raw_len - prefix_len;
+
+    int record_size = element_length + 2 + 2 + trunc_key_length;
+    w_assert1(check_space_for_insert(record_size));
+
+    int     data_length      = _predict_leaf_data_length(trunc_key_length, element_length);
+
 
     // where to insert?
     slotid_t slot;
@@ -776,18 +784,19 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, int re
     }
 #endif // W_DEBUG_LEVEL>1
     
-    int16_t prefix_len = get_prefix_length();
     poor_man_key poormkey = extract_poor_man_key(key_raw, key_raw_len, prefix_len);
 
-    if (!page()->insert_slot(slot+1, true, record_size, poormkey)) {
+    if (!page()->insert_item(slot+1, true, poormkey, 0, data_length)) {
         assert(false);
     }
-    page()->slot_value(slot+1).leaf.slot_len = record_size;
     page()->_slots_are_consistent(); // <<<>>>
 
-    // make a dummy record that has the desired length
-    page()->slot_value(slot+1).leaf.key_len = key_raw_len;
-    ::memcpy(page()->slot_value(slot+1).leaf.key, key_raw + prefix_len, key_raw_len - prefix_len);
+    // make a dummy record that has the desired length:
+    cvec_t dummy;
+    slot_length_t klen = key_raw_len;
+    dummy.put(&klen, sizeof(klen));
+    dummy.put(key_raw + prefix_len, trunc_key_length);
+    dummy.copy_to(page()->item_data(slot+1));
 
     w_assert3(get_rec_size(slot) == (slot_length_t) record_size);
     w_assert3(_poor(slot) == poormkey);

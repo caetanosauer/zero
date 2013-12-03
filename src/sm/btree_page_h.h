@@ -579,16 +579,16 @@ public:
                                        const char *new_el, smsize_t elen);
 
     /**
-     * Creates a dummy ghost record with the given key and length
-     * as a preparation for subsequent insertion.
+     * Creates a dummy ghost record with the given key and element
+     * length as a preparation for subsequent insertion.
      * This is used by insertion (its nested system transaction).
      * This function itself does NOT log, so the caller is responsible for it.
      */
-    void             reserve_ghost(const w_keystr_t &key, int record_size) {
-        reserve_ghost((const char *)key.buffer_as_keystr(), key.get_length_as_keystr(), record_size);
+    void             reserve_ghost(const w_keystr_t &key, size_t element_length) {
+        reserve_ghost((const char *)key.buffer_as_keystr(), key.get_length_as_keystr(), element_length);
     }
     // to make it slightly faster. not a neat kind of optimization
-    void             reserve_ghost(const char *key_raw, size_t key_raw_len, int record_size);
+    void             reserve_ghost(const char *key_raw, size_t key_raw_len, size_t element_length);
 
     /**
      * Tell if the slot is a ghost record and enough spacious to store the
@@ -708,6 +708,10 @@ private:
         trunc_key_data   = page()->item_data(slot+1);
     }
 
+    int _predict_leaf_data_length(int trunc_key_length, int element_length) const {
+        return sizeof(slot_length_t) + trunc_key_length + element_length;
+    }
+        
     static int _pack_fence_rec(cvec_t& out, const w_keystr_t& low,
                                const w_keystr_t& high, const w_keystr_t& chain, 
                                int new_prefix_len) {
