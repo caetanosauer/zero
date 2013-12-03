@@ -58,7 +58,7 @@ rc_t btree_impl::_ux_rebalance_foster_core(btree_page_h &page)
     smsize_t move_size = 0;
     while (used - move_size > balanced_size && -move_count < page.nrecs() - 1) {
         ++move_count;
-        move_size += align(page.get_rec_size(page.nitems() - move_count - 1)) + btree_page::slot_sz;
+        move_size += align(page.get_rec_size(page.nitems() - move_count - 1)) + btree_page_h::slot_sz;
     }
     
     if (move_count == 0) {

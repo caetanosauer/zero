@@ -350,7 +350,7 @@ btree_ghost_t::btree_ghost_t(const btree_page_h& p, const vector<slotid_t>& slot
 
     // the first data is prefix
     {
-        uint16_t prefix_len = p.page()->btree_prefix_length;
+        uint16_t prefix_len = p.get_prefix_length();
         prefix_offset = (current - slot_data);
         // *reinterpret_cast<uint16_t*>(current) = prefix_len; this causes Bus Error on solaris! so, instead:
         ::memcpy(current, &prefix_len, sizeof(uint16_t));

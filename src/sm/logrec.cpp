@@ -746,8 +746,7 @@ struct page_img_format_t {
     int size()        { return 2 * sizeof(size_t) + beginning_bytes + ending_bytes; }
     page_img_format_t (const btree_page_h& page);
 };
-page_img_format_t::page_img_format_t (const btree_page_h& page)
-{
+page_img_format_t::page_img_format_t (const btree_page_h& page) {
     beginning_bytes = btree_page::hdr_sz + page.nitems() * btree_page::slot_sz;
     ending_bytes    = btree_page::page_sz - page.page()->get_record_head_byte() - btree_page::hdr_sz;
     const char *pp_bin = (const char *) page._pp;
@@ -760,13 +759,11 @@ page_img_format_log::page_img_format_log(const btree_page_h &page) {
          (new (_data) page_img_format_t(page))->size());
 }
 
-void page_img_format_log::undo(fixable_page_h*)
-{
+void page_img_format_log::undo(fixable_page_h*) {
     // we don't have to do anything for UNDO
     // because this is a page creation!
 }
-void page_img_format_log::redo(fixable_page_h* page)
-{
+void page_img_format_log::redo(fixable_page_h* page) {
     // REDO is simply applying the image
     page_img_format_t* dp = (page_img_format_t*) _data;
     w_assert1(dp->beginning_bytes >= btree_page::hdr_sz);

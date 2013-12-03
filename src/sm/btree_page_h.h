@@ -1068,7 +1068,7 @@ inline void btree_page_h::change_slot_offset (slotid_t idx, slot_offset8_t offse
 }
 inline smsize_t 
 btree_page_h::used_space() const {
-    return (data_sz - page()->get_record_head_byte() + nitems() * slot_sz); 
+    return data_sz - page()->usable_space();
 }
 
 inline slotid_t
@@ -1078,8 +1078,7 @@ btree_page_h::nitems() const {
 
 inline smsize_t
 btree_page_h::usable_space() const {
-    size_t contiguous_free_space = page()->get_record_head_byte() - slot_sz * nitems();
-    return contiguous_free_space; 
+    return page()->usable_space();
 }
 
 

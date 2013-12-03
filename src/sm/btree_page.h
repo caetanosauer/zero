@@ -56,9 +56,23 @@ inline poor_man_key extract_poor_man_key (const cvec_t& key) {
 
 
 
+// these for friending test...
+class ss_m;
+class test_volume_t;
+
 class btree_page_header : public generic_page_header {
-    friend class btree_page;
-public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
+    friend class btree_page_h;
+
+    // _ux_deadopt_foster_apply_foster_parent
+    // _ux_adopt_foster_apply_child
+    friend class btree_impl;
+    friend class btree_header_t;
+
+    friend w_rc_t test_bf_fix_virgin_root(ss_m* /*ssm*/, test_volume_t *test_volume);
+
+
+protected:
+//public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
 
     enum {
         /** Poor man's normalized key length. */
@@ -131,9 +145,19 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
 };
 
 
-
 class btree_page : public btree_page_header {
-public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
+    friend class btree_page_h;
+    friend class page_img_format_t;
+    friend class page_img_format_log;
+    friend class ss_m;  // for data_sz only
+
+    friend class test_bf_tree;
+    friend w_rc_t test_bf_fix_virgin_child(ss_m* /*ssm*/, test_volume_t *test_volume);
+    friend w_rc_t test_bf_evict(ss_m* /*ssm*/, test_volume_t *test_volume);
+    friend w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_swizzle);
+
+
+//public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
 
     enum {
         data_sz = page_sz - sizeof(btree_page_header) - 8, // <<<>>>
@@ -142,12 +166,6 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
 
 
 
-    friend class btree_ghost_mark_log;
-    friend class btree_ghost_reclaim_log;
-    friend class btree_ghost_t;
-    friend class btree_header_t;
-    friend class btree_impl;
-    friend class btree_page_h;
 
     btree_page() {
         //w_assert1(0);  // FIXME: is this constructor ever called? yes it is (test_btree_ghost)
@@ -160,15 +178,15 @@ public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
     ~btree_page() { }
 
 
-//private:
+private:
     /// total number of items
     slot_index_t  nitems;   // +2 -> 24
-public:
+//public:
     
 private:
     /// number of ghost items
     slot_index_t  nghosts; // +2 -> 26
-public:
+//public:
 
     /** offset to beginning of record area (location of record that is located left-most). */
     slot_offset8_t  record_head8;     // +2 -> 28
@@ -182,7 +200,7 @@ public:
 
 
 
-
+public:
     void init_items();
 
     int number_of_items()  const { return nitems;}
@@ -204,7 +222,7 @@ public:
     bool resize_item(int item, size_t new_length, size_t keep_old);
     bool replace_item_data(int item, const cvec_t& new_data, size_t keep_old);
     void delete_item(int item);
-
+private:
 
 
     typedef struct {
@@ -240,13 +258,17 @@ public:
         slot_body body[data_sz/sizeof(slot_body)];
     };
 
+    static_assert(sizeof(slot_head) == 4, "slot_head has wrong length");
+    static_assert(sizeof(slot_body) == 8, "slot_body has wrong length");
 
 
 
+public:
+    // this is continuous usable space
     int usable_space() const {
         return record_head8*8 - nitems*4; // <<<>>>
     }
-
+private:
 
     char* slot_start(slot_index_t slot) {
         slot_offset8_t offset = head[slot].offset;
@@ -292,13 +314,12 @@ public:
         }
     }
 
+public:
     bool _slots_are_consistent() const;
     void compact();
 };
 static_assert(sizeof(btree_page) == sizeof(generic_page), 
               "btree_page has wrong length");
-static_assert(sizeof(btree_page::slot_head) == 4, "slot_head has wrong length");
-static_assert(sizeof(btree_page::slot_body) == 8, "slot_body has wrong length");
 
 
 
