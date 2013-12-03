@@ -1119,12 +1119,9 @@ btree_page_h::page_usage(int& data_size, int& header_size, int& unused,
     
     // calculate space wasted in data alignment
     for (int i=0 ; i<nitems(); i++) {
-        // if slot is not no-record slot
-        if ( btree_page_h::tuple_offset8(i) != 0 ) {
-            slot_length_t len = (i == 0 ? get_fence_rec_size() : get_rec_size(i - 1));
-            data_size += len;
-            alignment += int(align(len) - len);
-        }
+        slot_length_t len = (i == 0 ? get_fence_rec_size() : get_rec_size(i - 1));
+        data_size += len;
+        alignment += int(align(len) - len);
     }
     // unused space
     unused = sizeof(generic_page) - header_size - data_size - alignment;

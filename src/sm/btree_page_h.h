@@ -389,17 +389,6 @@ public:
     //   BEGIN: Search and Record Access functions
     // ======================================================================
 
-    slot_offset8_t               tuple_offset8(slotid_t idx) const;
-    void                         tuple_both (slotid_t idx, slot_offset8_t &offset8, poor_man_key &poormkey) const;
-
-    char*                        slot_addr(slotid_t idx) const;
-    /**
-     * Changes only the offset part of the specified slot.
-     * Used to turn a ghost record into a usual record, or to expand a record.
-     */
-    void                         change_slot_offset (slotid_t idx, slot_offset8_t offset8);
-
-    
     /**
     *  Search for key in this page. Return true in "found_key" if
     *  the key is found. 
@@ -1047,25 +1036,6 @@ inline bool btree_page_h::is_ghost(slotid_t slot) const {
 }
 
 
-inline char* btree_page_h::slot_addr(slotid_t idx) const {
-    w_assert3(idx >= 0 && idx <= page()->number_of_items());
-    return (char*) &page()->head[idx];
-}
-
-inline slot_offset8_t
-btree_page_h::tuple_offset8(slotid_t idx) const {
-    return *reinterpret_cast<const slot_offset8_t*>(slot_addr(idx));
-}
-inline void btree_page_h::tuple_both (slotid_t idx, slot_offset8_t &offset8, poor_man_key &poormkey) const {
-    const char* slot = slot_addr(idx);
-    offset8 = *reinterpret_cast<const slot_offset8_t*>(slot);
-    poormkey = *reinterpret_cast<const poor_man_key*>(slot + sizeof(slot_offset8_t));
-}
-
-inline void btree_page_h::change_slot_offset (slotid_t idx, slot_offset8_t offset) {
-    char* slot = slot_addr(idx);
-    *reinterpret_cast<slot_offset8_t*>(slot) = offset;
-}
 inline smsize_t 
 btree_page_h::used_space() const {
     return data_sz - page()->usable_space();
