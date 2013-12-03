@@ -292,8 +292,6 @@ public:
         }
     }
 
-    bool insert_slot(slot_index_t slot, bool ghost, size_t length, poor_man_key poor_key);
-
     bool _slots_are_consistent() const;
     void compact();
 };

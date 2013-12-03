@@ -744,7 +744,7 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, size_t
     int     trunc_key_length = key_raw_len - prefix_len;
 
     int record_size = element_length + 2 + 2 + trunc_key_length;
-    w_assert1(check_space_for_insert(record_size));
+    w_assert1(check_space_for_insert(record_size));  // <<<>>>
 
     int     data_length      = _predict_leaf_data_length(trunc_key_length, element_length);
 
@@ -789,7 +789,6 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, size_t
     if (!page()->insert_item(slot+1, true, poormkey, 0, data_length)) {
         assert(false);
     }
-    page()->_slots_are_consistent(); // <<<>>>
 
     // make a dummy record that has the desired length:
     cvec_t dummy;
@@ -798,9 +797,8 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, size_t
     dummy.put(key_raw + prefix_len, trunc_key_length);
     dummy.copy_to(page()->item_data(slot+1));
 
-    w_assert3(get_rec_size(slot) == (slot_length_t) record_size);
     w_assert3(_poor(slot) == poormkey);
-    w_assert3(page()->_slots_are_consistent());
+    w_assert3(page()->item_length(slot+1) == data_length);
 }
 
 void btree_page_h::mark_ghost(slotid_t slot) {

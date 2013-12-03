@@ -175,31 +175,6 @@ void btree_page::delete_item(int item) {
 
 
 
-bool btree_page::insert_slot(slot_index_t slot, bool ghost, size_t length, 
-                             poor_man_key poor_key) {
-    w_assert1(slot>=0 && slot<=nitems);  // use of <= intentional
-    w_assert3(_slots_are_consistent());
-
-    if ((size_t)usable_space() < sizeof(slot_head) + align(length)) {
-        return false;
-    }
-
-    // shift slot array up to insert a slot so it is head[slot]:
-    ::memmove(&head[slot+1], &head[slot], (nitems-slot)*sizeof(slot_head));
-    nitems++;
-    if (ghost) {
-        nghosts++;
-    }
-
-    record_head8 -= (length-1)/8+1;
-    head[slot].offset = ghost ? -record_head8 : record_head8;
-    head[slot].poor = poor_key;
-
-    //w_assert3(_slots_are_consistent()); // only consistent once length is set by caller
-    return true;
-}
-
-
 bool btree_page::_slots_are_consistent() const {
     // This is not a part of check; should be always true:
     w_assert1(usable_space() >= 0);
