@@ -163,7 +163,7 @@ btree_header       1011000 1.22 (const btree_page_h& page, shpid_t btree_pid0,
 btree_ghost_mark    1011001 1.0  (const btree_page_h& page, const vector<slotid_t>& slots);
 btree_ghost_reclaim 1110000 1.0  (const btree_page_h& page, const vector<slotid_t>& slots);
 # ghost reservation is fused
-btree_ghost_reserve 1110000 1.0  (const btree_page_h& page, const w_keystr_t& key, int record_size);
+btree_ghost_reserve 1110000 1.0  (const btree_page_h& page, const w_keystr_t& key, int element_length);
 
 # page is the foster-parent page.
 # if it's intermediate node. this is combined with adopt that caused the split.

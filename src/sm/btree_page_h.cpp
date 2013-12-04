@@ -1095,9 +1095,9 @@ btree_page_h::leaf_stats(btree_lf_stats_t& _stats) {
         btrec_t rec;
         rec.set(*this, i);
         ++_stats.unique_cnt; // always unique (otherwise a bug)
-        _stats.key_bs += rec.key().get_length_as_keystr() - prefix_length;
-        _stats.data_bs += rec.elen(); 
-        _stats.entry_overhead_bs += slot_sz + sizeof(int16_t) * 2;
+        _stats.key_bs            += rec.key().get_length_as_keystr() - prefix_length;
+        _stats.data_bs           += rec.elen(); 
+        _stats.entry_overhead_bs += page()->item_space(n+1) - (rec.key().get_length_as_keystr()-prefix_length) - rec.elen();
     }
     return RCOK;
 }
@@ -1105,17 +1105,17 @@ btree_page_h::leaf_stats(btree_lf_stats_t& _stats) {
 rc_t
 btree_page_h::int_stats(btree_int_stats_t& _stats) {
     _stats.unused_bs += usable_space();
-    _stats.used_bs += used_space();
+    _stats.used_bs   += used_space();
     return RCOK;
 }
 
 
 smsize_t                        
 btree_page_h::overhead_requirement_per_entry =
-            4 // for the key length (in btree_page_h)
-            +
-            sizeof(shpid_t) // for the interior nodes (in btree_page_h)
-            ;
+    4 // for the key length (in btree_page_h)
+    +
+    sizeof(shpid_t) // for the interior nodes (in btree_page_h)
+    ;
 
 smsize_t         
 btree_page_h::max_entry_size = // must be able to fit 2 entries to a page

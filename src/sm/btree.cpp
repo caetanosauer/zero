@@ -75,9 +75,8 @@ btree_m::is_empty(
     return RCOK;
 }
 
-rc_t btree_m::insert(volid_t vol, snum_t store, const w_keystr_t &key, const cvec_t &el)
-{
-    if(key.get_length_as_keystr() + el.size() > btree_page_h::max_entry_size) {
+rc_t btree_m::insert(volid_t vol, snum_t store, const w_keystr_t &key, const cvec_t &el) {
+    if (key.get_length_as_keystr() + el.size() > btree_page_h::max_entry_size) {
         return RC(eRECWONTFIT);
     }
     W_DO(btree_impl::_ux_insert(vol, store, key, el));

@@ -59,13 +59,13 @@ typedef w_base_t::base_stat_t base_stat_t;
 
 /** btree leaf pages. */
 struct btree_lf_stats_t {
-    base_stat_t        hdr_bs;        /* page header (overhead) */
-    base_stat_t        key_bs;        /* space used for keys      */
-    base_stat_t        data_bs;    /* space for data associated to keys */
-    base_stat_t        entry_overhead_bs;  /* slot + entry info + align */
+    base_stat_t        hdr_bs;            /* page header (overhead) */
+    base_stat_t        key_bs;            /* space used for keys      */
+    base_stat_t        data_bs;           /* space for data associated to keys */
+    base_stat_t        entry_overhead_bs; /* e.g., slot header, padding for alignment */
     base_stat_t        unused_bs;
     base_stat_t        entry_cnt;
-    base_stat_t        unique_cnt;    /* number of unique entries */
+    base_stat_t        unique_cnt;        /* number of unique entries */
 
     NORET              btree_lf_stats_t() {clear();}
     void               add(const btree_lf_stats_t& stats);

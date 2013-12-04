@@ -275,12 +275,11 @@ rc_t btree_impl::_sx_reserve_ghost(btree_page_h &leaf, const w_keystr_t &key, in
 rc_t btree_impl::_ux_reserve_ghost_core(btree_page_h &leaf, const w_keystr_t &key, int elem_len, bool defer_apply) {
     w_assert1 (xct()->is_sys_xct());
     w_assert1 (leaf.fence_contains(key));
-    size_t rec_size = key.get_length_as_keystr() - leaf.get_prefix_length() // <<<>>>
-        + elem_len + sizeof(int16_t) * 2;
-    w_assert1 (leaf.usable_space() >= btree_page_h::slot_sz + rec_size);
+
+    w_assert1(leaf.check_space_for_insert_leaf(key.get_length_as_keystr()-leaf.get_prefix_length(), elem_len));
 
     if (defer_apply) {
-        W_DO (log_btree_ghost_reserve (leaf, key, rec_size));
+        W_DO (log_btree_ghost_reserve (leaf, key, elem_len));
     } else {
         // so far deferring is disabled
         // ssx_defer_section_t ssx_defer (&leaf); // auto-commit for deferred ssx log on leaf

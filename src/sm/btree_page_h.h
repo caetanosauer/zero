@@ -655,7 +655,16 @@ public:
     bool             is_consistent (bool check_keyorder = false, bool check_space = false) const;
 
 
+    /*
+     * The combined sizes of the key and value must be less than or
+     * equal to \ref max_entry_size, which is a function of the page
+     * size, and is such that two entries of this size fit on a page
+     * along with all the page and entry metadata.  See
+     * sm_config_info_t and ss_m::config_info.
+     */
     static smsize_t         max_entry_size;
+
+
     static smsize_t         overhead_requirement_per_entry;
 
 private:
