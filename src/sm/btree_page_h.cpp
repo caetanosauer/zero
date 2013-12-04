@@ -652,7 +652,7 @@ rc_t btree_page_h::replace_fence_rec_nolog(const w_keystr_t& low,
         return RC(smlevel_0::eRECWONTFIT);
     }
 
-    w_assert1 (get_fence_rec_size() == (slot_length_t) fences.size() + 2); // <<<>>>
+    w_assert1 (page()->item_length(0) == (slot_length_t) fences.size());
     w_assert3(page()->_slots_are_consistent());
     return RCOK;
 }
@@ -669,8 +669,11 @@ bool btree_page_h::_is_enough_spacious_ghost(const w_keystr_t &key, slotid_t slo
                                              const cvec_t&     el) {
     w_assert2(is_leaf());
     w_assert2(is_ghost(slot));
-    size_t rec_size = calculate_rec_size(key, el);
-    return (align(get_rec_size(slot)) >= rec_size);
+
+    size_t needed_data = key.get_length_as_keystr() - get_prefix_length()
+        + el.size() + sizeof(slot_length_t); // <<<>>>
+
+    return page()->predict_item_space(needed_data) <= page()->item_space(slot+1);
 }
 
 rc_t btree_page_h::replace_ghost(const w_keystr_t &key,
@@ -727,14 +730,14 @@ void btree_page_h::overwrite_el_nolog(slotid_t slot, smsize_t offset,
     w_assert2( is_fixed());
     w_assert2( is_leaf());
     w_assert1 (!is_ghost(slot));
-    
-    char *buf = (char*) page()->slot_start(slot + 1);
-    slot_length_t klen = reinterpret_cast<slot_length_t*>(buf)[1];
-    slot_length_t prefix_length = get_prefix_length();
 
-    w_assert1 (get_rec_size(slot) >= offset + elen + sizeof(slot_length_t) * 2 + klen - prefix_length);
+    int   key_length;
+    char* trunc_key_data;
+    _get_leaf_key_fields(slot, key_length, trunc_key_data);
+    size_t data_offset = sizeof(slot_length_t) + key_length - get_prefix_length();  // <<<>>>
 
-    ::memcpy (buf + sizeof(slot_length_t) * 2 + klen - prefix_length + offset, new_el, elen);
+    w_assert1((int)(data_offset+offset+elen) <= page()->item_length(slot+1));
+    ::memcpy(page()->item_data(slot+1)+data_offset+offset, new_el, elen);
 }
 
 void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, size_t element_length) {
@@ -1082,8 +1085,7 @@ void btree_page_h::node_key(slotid_t slot,  w_keystr_t &key) const {
 
 rc_t
 btree_page_h::leaf_stats(btree_lf_stats_t& _stats) {
-
-    _stats.hdr_bs += (hdr_sz + slot_sz + align(get_fence_rec_size()));
+    _stats.hdr_bs    += hdr_sz + get_rec_space(-1);
     _stats.unused_bs += usable_space();
 
     int n = nrecs();
@@ -1105,31 +1107,6 @@ btree_page_h::int_stats(btree_int_stats_t& _stats) {
     _stats.unused_bs += usable_space();
     _stats.used_bs += used_space();
     return RCOK;
-}
-
-void
-btree_page_h::page_usage(int& data_size, int& header_size, int& unused,
-                         int& alignment, page_tag_t& t, slotid_t& no_slots) {
-    // returns space allocated for headers in this page
-    // returns unused space in this page
-    data_size = unused = alignment = 0;
-
-    // space used for headers
-    header_size = sizeof(generic_page) - data_sz;
-    
-    // calculate space wasted in data alignment
-    for (int i=0 ; i<nitems(); i++) {
-        slot_length_t len = (i == 0 ? get_fence_rec_size() : get_rec_size(i - 1));
-        data_size += len;
-        alignment += int(align(len) - len);
-    }
-    // unused space
-    unused = sizeof(generic_page) - header_size - data_size - alignment;
-
-    t        = tag();        // the type of page 
-    no_slots = nitems();  // nu of slots in this page
-
-    w_assert1(data_size + header_size + unused + alignment == sizeof(generic_page));
 }
 
 

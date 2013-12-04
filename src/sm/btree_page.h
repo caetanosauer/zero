@@ -220,6 +220,7 @@ public:
     void delete_item(int item);
 
     size_t predict_item_space(size_t data_length);
+    size_t item_space(int item) const;
 
     char* unused_part(size_t& length);
 private:

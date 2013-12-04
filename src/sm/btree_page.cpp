@@ -304,5 +304,10 @@ size_t btree_page::predict_item_space(size_t data_length) {
         size += sizeof(uint32_t);
     }
 
-    return align(size) + sizeof(slot_head);  // ignoring slot head for now...
+    return align(size) + sizeof(slot_head);
+}
+
+
+size_t btree_page::item_space(int item) const {
+    return align(slot_length(item)) + sizeof(slot_head);
 }

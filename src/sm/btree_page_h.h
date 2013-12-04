@@ -477,15 +477,12 @@ public:
     /** Retrieves only the length of key (before prefix compression).*/
     slot_length_t       get_key_len(slotid_t idx) const;
 
-    /** Retrieves only the physical record length.*/
-    slot_length_t       get_rec_size(slotid_t idx) const;
-    /** Retrieves only the physical record length (use this if you already know it's a leaf page).*/
-    slot_length_t       get_rec_size_leaf(slotid_t idx) const;
-    /** Retrieves only the physical record length (use this if you already know it's a node page).*/
-    slot_length_t       get_rec_size_node(slotid_t idx) const;
 
-    /** for the special record which stores fence keys. */
-    slot_length_t       get_fence_rec_size() const;
+    /// Returns physical space used by the item currently in the given
+    /// slot (including padding and other overhead due to that slot
+    /// being occupied); slot -1 is the special fence record:
+    size_t              get_rec_space(int slot) const;
+
 
     /**
     *  Return the child pointer of tuple at "slot".
@@ -640,19 +637,8 @@ public:
     /** stats for interior nodes. */
     rc_t             int_stats(btree_int_stats_t& btree_int);
 
-    /** this is used by du/df to get page statistics DU DF. */
-    void page_usage(int&        data_sz,
-                    int&        hdr_sz,
-                    int&        unused,
-                    int&        alignmt,
-                    page_tag_t& t,
-                    slotid_t&   no_used_slots);
-
     /** Debugs out the contents of this page. */
     void             print(bool print_elem=false);
-
-    /** Return how many bytes will we spend to store the record (without slot). */
-    size_t           calculate_rec_size (const w_keystr_t &key, const cvec_t &el) const;
 
     /**
      * Checks integrity of this page.
@@ -887,16 +873,6 @@ inline bool btree_page_h::fence_contains(const w_keystr_t &key) const {
     return true;
 }
 
-inline size_t btree_page_h::calculate_rec_size (const w_keystr_t &key, const cvec_t &el) const {
-    if (is_leaf()) {
-        return key.get_length_as_keystr() - get_prefix_length()
-            + el.size() + sizeof(slot_length_t) * 2;
-    } else {
-        return key.get_length_as_keystr() - get_prefix_length()
-            + sizeof(shpid_t) + sizeof(slot_length_t);
-    }
-}
-
 inline bool btree_page_h::is_insertion_extremely_skewed_right() const {
     // this means completely pre-sorted insertion like bulk loading.
     int ins = page()->btree_consecutive_skewed_insertions;
@@ -941,31 +917,11 @@ inline slot_length_t btree_page_h::get_key_len(slotid_t slot) const {
         return trunc_key_length + prefix_len;
     }
 }
-inline slot_length_t btree_page_h::get_rec_size_leaf(slotid_t slot) const {
-    w_assert1(is_leaf());
-    w_assert1(slot >= 0);
-    w_assert1(slot < nrecs());
-    const char *base = (const char *) page()->slot_start(slot + 1);
-    return *((const slot_length_t*) base);
+
+inline size_t btree_page_h::get_rec_space(int slot) const {
+    return page()->item_space(slot + 1);
 }
-inline slot_length_t btree_page_h::get_rec_size_node(slotid_t slot) const {
-    w_assert1(is_node());
-    w_assert1(slot >= 0);
-    w_assert1(slot < nrecs());
-    const char *base = (const char *) page()->slot_start(slot + 1);
-    const char *p = base + sizeof(shpid_t);
-    return *((const slot_length_t*) p);
-}
-inline slot_length_t btree_page_h::get_rec_size(slotid_t idx) const {
-    if (is_leaf()) {
-        return get_rec_size_leaf(idx);
-    } else {
-        return get_rec_size_node(idx);
-    }
-}
-inline slot_length_t btree_page_h::get_fence_rec_size() const {
-    return page()->item_length(0) + 2; // <<<>>>
-}
+
 
 inline const char* btree_page_h::_leaf_key_noprefix(slotid_t slot,  size_t &len) const {
     w_assert1(is_leaf());

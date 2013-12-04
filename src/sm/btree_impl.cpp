@@ -419,26 +419,26 @@ rc_t btree_impl::_ux_overwrite(
 
 rc_t btree_impl::_ux_overwrite_core(
         volid_t vol, snum_t store, 
-        const w_keystr_t&                 key,
+        const w_keystr_t& key,
         const char *el, smsize_t offset, smsize_t elen)
 {
     // basically same as ux_update
     bool need_lock = g_xct_does_need_lock();
-    btree_page_h         leaf;
+    btree_page_h leaf;
 
     W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf));
 
     w_assert3(leaf.is_fixed());
     w_assert3(leaf.is_leaf());
 
-    slotid_t       slot = -1;
-    bool            found = false;
+    slotid_t slot  = -1;
+    bool     found = false;
     leaf.search(key, found, slot);
 
     if(!found) {
         if (need_lock) {
             W_DO(_ux_lock_range(leaf, key, slot,
-                        LATCH_SH, XN, NS, false));
+                                LATCH_SH, XN, NS, false));
         }
         return RC(eNOTFOUND);
     }
