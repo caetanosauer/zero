@@ -626,7 +626,7 @@ rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, shpid_t chi
     poor_man_key poormkey = extract_poor_man_key(key.buffer_as_keystr(), klen, prefix_length);
     // we don't log it. btree_impl::adopt() does the logging
     if (!page()->insert_item(slot+1, false, poormkey, child, v)) {
-        // This shouldn't happen; the caller should have checked with check_space_for_insert():
+        // This shouldn't happen; the caller should have checked with check_space_for_insert_for_node():
         return RC(smlevel_0::eRECWONTFIT);
     }
 
@@ -742,12 +742,9 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, size_t
 
     int16_t prefix_len       = get_prefix_length();
     int     trunc_key_length = key_raw_len - prefix_len;
-
-    int record_size = element_length + 2 + 2 + trunc_key_length;
-    w_assert1(check_space_for_insert(record_size));  // <<<>>>
-
     int     data_length      = _predict_leaf_data_length(trunc_key_length, element_length);
 
+    w_assert1(check_space_for_insert_leaf(trunc_key_length, element_length));
 
     // where to insert?
     slotid_t slot;
@@ -814,16 +811,19 @@ void btree_page_h::unmark_ghost(slotid_t slot) {
 }
 
 
-bool btree_page_h::check_space_for_insert_leaf(const w_keystr_t& key,
+bool btree_page_h::check_space_for_insert_leaf(const w_keystr_t& trunc_key,
                                                const cvec_t&     el) {
+    return check_space_for_insert_leaf(trunc_key.get_length_as_keystr(), el.size());
+}
+bool btree_page_h::check_space_for_insert_leaf(size_t trunc_key_length, size_t element_length) {
     w_assert1 (is_leaf());
-    size_t rec_size = 2 * sizeof(slot_length_t) + key.get_length_as_keystr() + el.size();
-    return btree_page_h::check_space_for_insert (rec_size);
+    size_t data_length = 1 * sizeof(slot_length_t) + trunc_key_length + element_length;
+    return btree_page_h::check_space_for_insert (data_length);
 }
 bool btree_page_h::check_space_for_insert_node(const w_keystr_t& key) {
     w_assert1 (is_node());
-    size_t rec_size = sizeof(slot_length_t) + key.get_length_as_keystr() + sizeof (shpid_t);
-    return btree_page_h::check_space_for_insert (rec_size);
+    size_t data_length = key.get_length_as_keystr();
+    return btree_page_h::check_space_for_insert (data_length);
 }
 
 bool btree_page_h::check_chance_for_norecord_split(const w_keystr_t& key_to_insert) const {
@@ -1325,7 +1325,7 @@ rc_t btree_page_h::defrag() {
     return RCOK;
 }
 
-bool btree_page_h::check_space_for_insert(size_t rec_size) {
+bool btree_page_h::check_space_for_insert(size_t data_length) {
     size_t contiguous_free_space = usable_space();
-    return contiguous_free_space >= align(rec_size) + slot_sz;
+    return contiguous_free_space >= page()->predict_item_space(data_length);
 }

@@ -592,7 +592,8 @@ public:
      * given new record.
      * @return true if there is free space
      */
-    bool           check_space_for_insert_leaf(const w_keystr_t &key, const cvec_t &el);
+    bool           check_space_for_insert_leaf(const w_keystr_t &trunc_key, const cvec_t &el);
+    bool           check_space_for_insert_leaf(size_t trunc_key_length, size_t element_length);
     /** for intermediate node (no element). */
     bool           check_space_for_insert_node(const w_keystr_t &key);
 
@@ -749,11 +750,11 @@ private:
 
 protected:
     /**
-     * Returns if there is enough free space to accomodate the
-     * given new record.
+     * Returns if there is enough free space to accomodate the given
+     * item.
      * @return true if there is free space
      */
-    bool check_space_for_insert(size_t rec_size);    
+    bool check_space_for_insert(size_t data_length);  
 };
 
 

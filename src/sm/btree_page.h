@@ -156,8 +156,6 @@ class btree_page : public btree_page_header {
     friend w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_swizzle);
 
 
-//public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
-
     enum {
         data_sz = page_sz - sizeof(btree_page_header) - 8, // <<<>>>
         hdr_sz  = sizeof(btree_page_header) + 8,
@@ -189,7 +187,6 @@ private:
 
     /** offset to beginning of record area (location of record that is located left-most). */
     slot_offset8_t  record_head8;     // +2 -> 28
-    int32_t     get_record_head_byte() const {return to_byte_offset(record_head8);}
 
     uint16_t padding; // <<<>>>
 
@@ -221,6 +218,8 @@ public:
     bool resize_item(int item, size_t new_length, size_t keep_old);
     bool replace_item_data(int item, const cvec_t& new_data, size_t keep_old);
     void delete_item(int item);
+
+    size_t predict_item_space(size_t data_length);
 
     char* unused_part(size_t& length);
 private:

@@ -295,3 +295,14 @@ char* btree_page::unused_part(size_t& length) {
     length = after_gap - start_gap;
     return start_gap;
 }
+
+
+size_t btree_page::predict_item_space(size_t data_length) {
+    size_t size = data_length + sizeof(slot_length_t);
+    int item = 1; // <<<>>>
+    if (item != 0 && btree_level != 1) {
+        size += sizeof(uint32_t);
+    }
+
+    return align(size) + sizeof(slot_head);  // ignoring slot head for now...
+}
