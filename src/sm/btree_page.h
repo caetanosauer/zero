@@ -193,6 +193,11 @@ private:
 
 
     
+    typedef struct {
+        slot_offset8_t offset;
+        poor_man_key   poor;
+    } slot_head;
+
 
 
 
@@ -222,14 +227,12 @@ public:
     size_t predict_item_space(size_t data_length);
     size_t item_space(int item) const;
 
+    // <<<>>>
+    static const size_t max_item_overhead = sizeof(slot_head) + sizeof(slot_length_t) + sizeof(int32_t) + align(1)-1;
+
     char* unused_part(size_t& length);
 private:
 
-
-    typedef struct {
-        slot_offset8_t offset;
-        poor_man_key   poor;
-    } slot_head;
 
     typedef struct {
         union {

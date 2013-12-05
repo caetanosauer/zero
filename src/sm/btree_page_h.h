@@ -176,10 +176,6 @@ class btree_page_h : public fixable_page_h {
     };
 
 public:
-    enum {
-        slot_sz = btree_page::slot_sz
-    };
-
     // ======================================================================
     //   BEGIN: Struct/Enum/Constructor
     // ======================================================================
@@ -664,8 +660,6 @@ public:
      */
     static smsize_t         max_entry_size;
 
-
-    static smsize_t         overhead_requirement_per_entry;
 
 private:
     poor_man_key _poor(int slot) const {

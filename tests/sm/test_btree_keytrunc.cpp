@@ -234,13 +234,15 @@ w_rc_t prefix_test(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
     
     // so that one leaf page can have only 4 or 5 tuples
-    const int keysize = SM_PAGESIZE / 5;
+    const int keysize = SM_PAGESIZE / 6;
+    //const int keysize = btree_m::max_entry_size() - 4; // for max size key test instead
     // these keys are good for prefix truncation, but not great for suffix truncation.
     // in leaf pages (in root pages, no prefix truncation), these keys should be significantly shortened
     w_keystr_t key;
     vec_t data;
-    char keystr[keysize] = "";
+    char keystr[keysize];
     char datastr[3] = "";
+    w_assert1(keysize <= (int)btree_m::max_entry_size() - (int)sizeof(datastr));
     W_DO(test_env->begin_xct());
     for (int i = 0; i < 20; ++i) {
         datastr[0] = keystr[keysize - 1] = ('0' + ((i / 100) % 10));

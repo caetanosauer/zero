@@ -1110,24 +1110,14 @@ btree_page_h::int_stats(btree_int_stats_t& _stats) {
 }
 
 
-smsize_t                        
-btree_page_h::overhead_requirement_per_entry =
-    4 // for the key length (in btree_page_h)
-    +
-    sizeof(shpid_t) // for the interior nodes (in btree_page_h)
-    ;
-
 smsize_t         
-btree_page_h::max_entry_size = // must be able to fit 2 entries to a page
-    (
-        ( (smlevel_0::page_sz - hdr_sz - slot_sz)
-            >> 1) 
-        - 
-        overhead_requirement_per_entry
-    ) 
-    // round down to aligned size
-    & ~ALIGNON1 
-    ;
+btree_page_h::max_entry_size = 
+    // must be able to fit 2 entries to a page; data_sz must hold:
+    //    fence record:                   max_item_overhead + max_entry_size*3   (low, high, chain keys)
+    //    each of 2 regular leaf entries: max_item_overhead + max_entry_size + sizeof(slot_length_t) [key len]
+    //
+    (btree_page::data_sz - 3*btree_page::max_item_overhead - 2*sizeof(slot_length_t)) / 5;
+
 
 void
 btree_page_h::print(bool print_elem) {
