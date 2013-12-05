@@ -49,7 +49,7 @@ bool btree_page::insert_item(int item, bool ghost, uint16_t data16,
     w_assert1(item>=0 && item<=nitems);  // use of <= intentional
     w_assert3(_slots_are_consistent());
 
-    size_t length = data_length + sizeof(slot_length_t);
+    size_t length = data_length + sizeof(item_length_t);
     if (item != 0 && btree_level != 1) {
         length += sizeof(shpid_t);
     }
@@ -102,7 +102,7 @@ bool btree_page::resize_item(int item, size_t new_length, size_t keep_old) {
     }
 
     size_t old_length = slot_length(item);
-    size_t length = new_length + sizeof(slot_length_t);
+    size_t length = new_length + sizeof(item_length_t);
     if (item != 0 && btree_level != 1) {
         length += sizeof(shpid_t);
     }
@@ -182,8 +182,8 @@ bool btree_page::_slots_are_consistent() const {
     // check overlapping records.
     // rather than using std::map, use array and std::sort for efficiency.
     // high 16 bits=offset, low 16 bits=length
-    static_assert(sizeof(slot_length_t) <= 2, 
-                  "slot_length_t doesn't fit in 16 bits; adjust this code");
+    static_assert(sizeof(item_length_t) <= 2, 
+                  "item_length_t doesn't fit in 16 bits; adjust this code");
     std::unique_ptr<uint32_t[]> sorted_slots(new uint32_t[nitems]);
     int ghosts_seen = 0;
     for (int slot = 0; slot<nitems; ++slot) {
@@ -298,7 +298,7 @@ char* btree_page::unused_part(size_t& length) {
 
 
 size_t btree_page::predict_item_space(size_t data_length) {
-    size_t size = data_length + sizeof(slot_length_t);
+    size_t size = data_length + sizeof(item_length_t);
     int item = 1; // <<<>>>
     if (item != 0 && btree_level != 1) {
         size += sizeof(uint32_t);
@@ -313,4 +313,4 @@ size_t btree_page::item_space(int item) const {
 }
 
 
-const size_t btree_page::max_item_overhead = sizeof(slot_head) + sizeof(slot_length_t) + sizeof(int32_t) + align(1)-1;
+const size_t btree_page::max_item_overhead = sizeof(slot_head) + sizeof(item_length_t) + sizeof(int32_t) + align(1)-1;

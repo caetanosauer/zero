@@ -93,12 +93,8 @@ protected:
 
 
 
-/**
-* offset divided by 8 (all records are 8-byte aligned).
-* negative value means ghost records.
-*/
-typedef int16_t  slot_offset8_t;
-typedef uint16_t slot_length_t;
+typedef uint16_t key_length_t;
+
 typedef int16_t  slot_index_t; // to avoid explicit sized-types below
 
 
@@ -134,6 +130,14 @@ inline poor_man_key extract_poor_man_key (const cvec_t& key) {
 
 
 class btree_page : public btree_page_header {
+    /**
+     * offset divided by 8 (all records are 8-byte aligned).
+     * negative value means ghost records.
+     */
+    typedef int16_t  slot_offset8_t;
+
+    typedef uint16_t item_length_t;
+
     // ======================================================================
     //   BEGIN: item-specific headers
     // ======================================================================
@@ -209,10 +213,6 @@ public:
 
 
 private:
-    friend class btree_page_h;
-    //friend class page_img_format_log;  // for hdr_size only
-    //friend class ss_m;                 // for data_sz only
-
     friend class test_bf_tree;
     friend w_rc_t test_bf_fix_virgin_child(ss_m* /*ssm*/, test_volume_t *test_volume);
     friend w_rc_t test_bf_evict(ss_m* /*ssm*/, test_volume_t *test_volume);
@@ -243,25 +243,21 @@ private:
     } slot_head;
 
 
-
-
-
-
     typedef struct {
         union {
             char raw[8];
             struct {
-                slot_length_t slot_len;
-                slot_length_t key_len;
+                item_length_t slot_len;
+                key_length_t  key_len;
                 char          key[4]; // <<<>>> really key_len - prefix_len
             } leaf;
             struct {
                 shpid_t       child;
-                slot_length_t slot_len;
+                item_length_t slot_len;
                 char          key[2]; // <<<>>> really slot_len - sizeof(child) - sizeof(slot_len)
             } interior;
             struct {
-                slot_length_t slot_len;
+                item_length_t slot_len;
                 char          low[6]; // low[btree_fence_low_length]
                 //char        high_noprefix[btree_fence_high_length - btree_prefix_length]
                 //char        chain[btree_chain_fence_high_length]
@@ -293,7 +289,7 @@ private:
     }
 
 
-    slot_length_t slot_length(slot_index_t slot) const {
+    item_length_t slot_length(slot_index_t slot) const {
         slot_offset8_t offset = head[slot].offset;
         if (offset < 0) offset = -offset; // ghost record
 
@@ -307,9 +303,9 @@ private:
             return body[offset].interior.slot_len;
         }
     }
-    slot_length_t slot_length8(slot_index_t slot) const { return (slot_length(slot)-1)/8+1; }
+    item_length_t slot_length8(slot_index_t slot) const { return (slot_length(slot)-1)/8+1; }
 
-    void set_slot_length(slot_index_t slot, slot_length_t length) {
+    void set_slot_length(slot_index_t slot, item_length_t length) {
         slot_offset8_t offset = head[slot].offset;
         if (offset < 0) offset = -offset; // ghost record
 
@@ -350,7 +346,7 @@ inline int32_t& btree_page::item_data32(int item) {
 
 inline int btree_page::item_length(int item) const {
     w_assert1(item>=0 && item<nitems);
-    int length = slot_length(item) - sizeof(slot_length_t);
+    int length = slot_length(item) - sizeof(item_length_t);
     if (item != 0 && btree_level != 1) {
         length -= sizeof(shpid_t);
     }

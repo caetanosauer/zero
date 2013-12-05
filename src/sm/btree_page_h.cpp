@@ -132,7 +132,7 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
         w_assert1(steal_src2->pid0() != 0);
         // before stealing regular records from src2, steal it's pid0
         cvec_t v;
-        slot_length_t key_len = (slot_length_t) steal_src2->get_fence_low_length();
+        key_length_t key_len = (key_length_t) steal_src2->get_fence_low_length();
         v.put(&key_len, sizeof(key_len));
         v.put(steal_src2->get_fence_low_key() + prefix_len, steal_src2->get_fence_low_length() - prefix_len);
         poor_man_key poormkey = extract_poor_man_key (steal_src2->get_fence_low_key(), steal_src2->get_fence_low_length(), prefix_len);
@@ -162,8 +162,8 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
     w_assert2(steal_from >= 0);
     w_assert2(steal_to <= steal_src->nrecs());
 
-    slot_length_t src_prefix_length = steal_src->get_prefix_length();
-    slot_length_t new_prefix_length = get_prefix_length();
+    key_length_t src_prefix_length = steal_src->get_prefix_length();
+    key_length_t new_prefix_length = get_prefix_length();
     for (int i = steal_from; i < steal_to; ++i) {
         cvec_t v;
         cvec_t new_trunc_key;
@@ -181,7 +181,7 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
             key.put(trunc_key_data, trunc_key_length);
 
             key.split(new_prefix_length, dummy, new_trunc_key);
-            slot_length_t klen = key_length;
+            key_length_t klen = key_length;
             v.put(&klen, sizeof(klen));
             v.put(new_trunc_key);
             v.put(data, data_length);
@@ -218,7 +218,7 @@ rc_t btree_page_h::norecord_split (shpid_t foster,
 
     w_keystr_t fence_low;
     copy_fence_low_key(fence_low);
-    slot_length_t new_prefix_len = fence_low.common_leading_bytes(fence_high);
+    key_length_t new_prefix_len = fence_low.common_leading_bytes(fence_high);
 
     if (new_prefix_len > get_prefix_length() + 3) { // this +3 is arbitrary
         // then, let's defrag this page to compress keys
@@ -617,10 +617,10 @@ rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, shpid_t chi
 
     // See the record format in btree_page_h class comments.
     vec_t v; // the record data
-    slot_length_t klen = key.get_length_as_keystr();
+    key_length_t klen = key.get_length_as_keystr();
     // Prefix of the key is fixed in this page, so we can simply
     // peel off leading bytes from the key+el.
-    slot_length_t prefix_length = get_prefix_length();  // length of prefix of inserted tuple
+    key_length_t prefix_length = get_prefix_length();  // length of prefix of inserted tuple
     w_assert3(prefix_length <= klen);
     v.put(key, prefix_length, klen - prefix_length);
     poor_man_key poormkey = extract_poor_man_key(key.buffer_as_keystr(), klen, prefix_length);
@@ -652,7 +652,7 @@ rc_t btree_page_h::replace_fence_rec_nolog(const w_keystr_t& low,
         return RC(smlevel_0::eRECWONTFIT);
     }
 
-    w_assert1 (page()->item_length(0) == (slot_length_t) fences.size());
+    w_assert1 (page()->item_length(0) == (key_length_t) fences.size());
     w_assert3(page()->_slots_are_consistent());
     return RCOK;
 }
@@ -671,7 +671,7 @@ bool btree_page_h::_is_enough_spacious_ghost(const w_keystr_t &key, slotid_t slo
     w_assert2(is_ghost(slot));
 
     size_t needed_data = key.get_length_as_keystr() - get_prefix_length()
-        + el.size() + sizeof(slot_length_t); // <<<>>>
+        + el.size() + sizeof(key_length_t); // <<<>>>
 
     return page()->predict_item_space(needed_data) <= page()->item_space(slot+1);
 }
@@ -699,7 +699,7 @@ rc_t btree_page_h::replace_ghost(const w_keystr_t &key,
     int   key_length;
     char* trunc_key_data;
     _get_leaf_key_fields(slot, key_length, trunc_key_data);
-    size_t data_offset = sizeof(slot_length_t) + key_length - get_prefix_length();  // <<<>>>
+    size_t data_offset = sizeof(key_length_t) + key_length - get_prefix_length();  // <<<>>>
 
     if (!page()->replace_item_data(slot+1, elem, data_offset)) {
         w_assert1(false); // should not happen because ghost should have had enough space
@@ -717,7 +717,7 @@ rc_t btree_page_h::replace_el_nolog(slotid_t slot, const cvec_t &elem) {
     int   key_length;
     char* trunc_key_data;
     _get_leaf_key_fields(slot, key_length, trunc_key_data);
-    size_t data_offset = sizeof(slot_length_t) + key_length - get_prefix_length();  // <<<>>>
+    size_t data_offset = sizeof(key_length_t) + key_length - get_prefix_length();  // <<<>>>
 
     if (!page()->replace_item_data(slot+1, elem, data_offset)) {
         return RC(smlevel_0::eRECWONTFIT);
@@ -734,7 +734,7 @@ void btree_page_h::overwrite_el_nolog(slotid_t slot, smsize_t offset,
     int   key_length;
     char* trunc_key_data;
     _get_leaf_key_fields(slot, key_length, trunc_key_data);
-    size_t data_offset = sizeof(slot_length_t) + key_length - get_prefix_length();  // <<<>>>
+    size_t data_offset = sizeof(key_length_t) + key_length - get_prefix_length();  // <<<>>>
 
     w_assert1((int)(data_offset+offset+elen) <= page()->item_length(slot+1));
     ::memcpy(page()->item_data(slot+1)+data_offset+offset, new_el, elen);
@@ -792,7 +792,7 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, size_t
 
     // make a dummy record that has the desired length:
     cvec_t dummy;
-    slot_length_t klen = key_raw_len;
+    key_length_t klen = key_raw_len;
     dummy.put(&klen, sizeof(klen));
     dummy.put(key_raw + prefix_len, trunc_key_length);
     dummy.copy_to(page()->item_data(slot+1));
@@ -820,7 +820,7 @@ bool btree_page_h::check_space_for_insert_leaf(const w_keystr_t& trunc_key,
 }
 bool btree_page_h::check_space_for_insert_leaf(size_t trunc_key_length, size_t element_length) {
     w_assert1 (is_leaf());
-    size_t data_length = 1 * sizeof(slot_length_t) + trunc_key_length + element_length;
+    size_t data_length = 1 * sizeof(key_length_t) + trunc_key_length + element_length;
     return btree_page_h::check_space_for_insert (data_length);
 }
 bool btree_page_h::check_space_for_insert_node(const w_keystr_t& key) {
@@ -1114,9 +1114,9 @@ smsize_t
 btree_page_h::max_entry_size = 
     // must be able to fit 2 entries to a page; data_sz must hold:
     //    fence record:                   max_item_overhead + max_entry_size*3   (low, high, chain keys)
-    //    each of 2 regular leaf entries: max_item_overhead + max_entry_size + sizeof(slot_length_t) [key len]
+    //    each of 2 regular leaf entries: max_item_overhead + max_entry_size + sizeof(key_length_t) [key len]
     //
-    (btree_page::data_sz - 3*btree_page::max_item_overhead - 2*sizeof(slot_length_t)) / 5;
+    (btree_page::data_sz - 3*btree_page::max_item_overhead - 2*sizeof(key_length_t)) / 5;
 
 
 void
