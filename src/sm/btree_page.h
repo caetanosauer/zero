@@ -12,50 +12,6 @@
 
 
 
-/**
-* offset divided by 8 (all records are 8-byte aligned).
-* negative value means ghost records.
-*/
-typedef int16_t  slot_offset8_t;
-typedef uint16_t slot_length_t;
-typedef int16_t  slot_index_t; // to avoid explicit sized-types below
-/** convert a 8-byte-divided offset to a byte offset. */
-inline int32_t to_byte_offset(slot_offset8_t offset8) {
-    return offset8 * 8;
-}
-
-
-/**
- * \brief Poor man's normalized key type.
- *
- * \details
- * To speed up comparison this should be an integer type, not char[]. 
- */
-typedef uint16_t poor_man_key;
-
-/** Returns the value of poor-man's normalized key for the given key string WITHOUT prefix.*/
-inline poor_man_key extract_poor_man_key (const void* key, size_t key_len) {
-    if (key_len == 0) {
-        return 0;
-    } else if (key_len == 1) {
-        return *reinterpret_cast<const unsigned char*>(key) << 8;
-    } else {
-        return deserialize16_ho(key);
-    }
-}
-/** Returns the value of poor-man's normalized key for the given key string WITH prefix.*/
-inline poor_man_key extract_poor_man_key (const void* key_with_prefix, size_t key_len_with_prefix, size_t prefix_len) {
-    w_assert3(prefix_len <= key_len_with_prefix);
-    return extract_poor_man_key (((const char*)key_with_prefix) + prefix_len, key_len_with_prefix - prefix_len);
-}
-inline poor_man_key extract_poor_man_key (const cvec_t& key) {
-    char start[2];
-    key.copy_to(start, 2);
-    return extract_poor_man_key(start, key.size());
-}
-
-
-
 // these for friending test...
 class ss_m;
 class test_volume_t;
@@ -72,15 +28,6 @@ class btree_page_header : public generic_page_header {
 
 
 protected:
-//public: // FIXME: kludge to allow test_bf_tree.cpp to function for now <<<>>>
-
-    enum {
-        /** Poor man's normalized key length. */
-        poormkey_sz     = sizeof (poor_man_key),
-        slot_sz         = sizeof(slot_offset8_t) + poormkey_sz
-    };
-
-
     // ======================================================================
     //   BEGIN: BTree specific headers
     // ======================================================================
@@ -145,63 +92,82 @@ protected:
 };
 
 
-class btree_page : public btree_page_header {
-    friend class btree_page_h;
-    friend class page_img_format_log;  // for hdr_size only
-    friend class ss_m;                 // for data_sz only
 
-    friend class test_bf_tree;
-    friend w_rc_t test_bf_fix_virgin_child(ss_m* /*ssm*/, test_volume_t *test_volume);
-    friend w_rc_t test_bf_evict(ss_m* /*ssm*/, test_volume_t *test_volume);
-    friend w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_swizzle);
-
-
-    enum {
-        data_sz = page_sz - sizeof(btree_page_header) - 8, // <<<>>>
-        hdr_sz  = sizeof(btree_page_header) + 8,
-    };
+/**
+* offset divided by 8 (all records are 8-byte aligned).
+* negative value means ghost records.
+*/
+typedef int16_t  slot_offset8_t;
+typedef uint16_t slot_length_t;
+typedef int16_t  slot_index_t; // to avoid explicit sized-types below
 
 
+/**
+ * \brief Poor man's normalized key type.
+ *
+ * \details
+ * To speed up comparison this should be an integer type, not char[]. 
+ */
+typedef uint16_t poor_man_key;
 
-
-    btree_page() {
-        //w_assert1(0);  // FIXME: is this constructor ever called? yes it is (test_btree_ghost)
-        w_assert1((body[0].raw - (const char *)this) % 4 == 0);     // check alignment<<<>>>
-        w_assert1(((const char *)&nitems - (const char *)this) % 4 == 0);     // check alignment<<<>>>
-        //w_assert1(((const char *)&record_head8 - (const char *)this) % 8 == 0);     // check alignment<<<>>>
-        w_assert1((body[0].raw - (const char *)this) % 8 == 0);     // check alignment
-        w_assert1(body[0].raw - (const char *) this == hdr_sz);
+/** Returns the value of poor-man's normalized key for the given key string WITHOUT prefix.*/
+inline poor_man_key extract_poor_man_key (const void* key, size_t key_len) {
+    if (key_len == 0) {
+        return 0;
+    } else if (key_len == 1) {
+        return *reinterpret_cast<const unsigned char*>(key) << 8;
+    } else {
+        return deserialize16_ho(key);
     }
-    ~btree_page() { }
+}
+/** Returns the value of poor-man's normalized key for the given key string WITH prefix.*/
+inline poor_man_key extract_poor_man_key (const void* key_with_prefix, size_t key_len_with_prefix, size_t prefix_len) {
+    w_assert3(prefix_len <= key_len_with_prefix);
+    return extract_poor_man_key (((const char*)key_with_prefix) + prefix_len, key_len_with_prefix - prefix_len);
+}
+inline poor_man_key extract_poor_man_key (const cvec_t& key) {
+    char start[2];
+    key.copy_to(start, 2);
+    return extract_poor_man_key(start, key.size());
+}
 
 
-private:
-    /// total number of items
-    slot_index_t  nitems;   // +2 -> 24
-//public:
-    
-private:
-    /// number of ghost items
-    slot_index_t  nghosts; // +2 -> 26
-//public:
+
+class btree_page : public btree_page_header {
+    // ======================================================================
+    //   BEGIN: item-specific headers
+    // ======================================================================
+
+    /// current number of items
+    slot_index_t  nitems;   // +2 -> 2
+
+    /// number of current ghost items
+    slot_index_t  nghosts; // +2 -> 4
 
     /** offset to beginning of record area (location of record that is located left-most). */
-    slot_offset8_t  record_head8;     // +2 -> 28
+    slot_offset8_t  record_head8;     // +2 -> 6
 
-    uint16_t padding; // <<<>>>
+    /// padding to ensure header size is a multiple of 8
+    uint16_t padding; // +2 -> 8 <<<>>>
 
-
-
-    
-    typedef struct {
-        slot_offset8_t offset;
-        poor_man_key   poor;
-    } slot_head;
-
-
+    // ======================================================================
+    //   END: item-specific headers
+    // ======================================================================
 
 
 public:
+    enum {
+        /// size of all header fields combined
+        hdr_sz  = sizeof(btree_page_header) 
+        // make sure you update this as add/or remove item-specific header fields above:
+                + sizeof(nitems) + sizeof(nghosts) 
+                + sizeof(record_head8) + sizeof(padding),
+
+        /// size of region available to store items
+        data_sz = sizeof(generic_page) - hdr_sz,
+    };
+
+
     void init_items();
 
     int number_of_items()  const { return nitems;}
@@ -227,11 +193,58 @@ public:
     size_t predict_item_space(size_t data_length);
     size_t item_space(int item) const;
 
+    // this is continuous usable space
+    int usable_space() const {
+        return record_head8*8 - nitems*4; // <<<>>>
+    }
+
+    bool _slots_are_consistent() const;
+    void compact();
+
+
     // <<<>>>
-    static const size_t max_item_overhead = sizeof(slot_head) + sizeof(slot_length_t) + sizeof(int32_t) + align(1)-1;
+    static const size_t max_item_overhead;
 
     char* unused_part(size_t& length);
+
+
 private:
+    friend class btree_page_h;
+    //friend class page_img_format_log;  // for hdr_size only
+    //friend class ss_m;                 // for data_sz only
+
+    friend class test_bf_tree;
+    friend w_rc_t test_bf_fix_virgin_child(ss_m* /*ssm*/, test_volume_t *test_volume);
+    friend w_rc_t test_bf_evict(ss_m* /*ssm*/, test_volume_t *test_volume);
+    friend w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_swizzle);
+
+
+
+
+
+
+    btree_page() {
+        //w_assert1(0);  // FIXME: is this constructor ever called? yes it is (test_btree_ghost)
+        w_assert1((body[0].raw - (const char *)this) % 4 == 0);     // check alignment<<<>>>
+        w_assert1(((const char *)&nitems - (const char *)this) % 4 == 0);     // check alignment<<<>>>
+        //w_assert1(((const char *)&record_head8 - (const char *)this) % 8 == 0);     // check alignment<<<>>>
+        w_assert1((body[0].raw - (const char *)this) % 8 == 0);     // check alignment
+        w_assert1(body[0].raw - (const char *) this == hdr_sz);
+    }
+    ~btree_page() { }
+
+
+
+
+    
+    typedef struct {
+        slot_offset8_t offset;
+        poor_man_key   poor;
+    } slot_head;
+
+
+
+
 
 
     typedef struct {
@@ -267,12 +280,6 @@ private:
 
 
 
-public:
-    // this is continuous usable space
-    int usable_space() const {
-        return record_head8*8 - nitems*4; // <<<>>>
-    }
-private:
 
     char* slot_start(slot_index_t slot) {
         slot_offset8_t offset = head[slot].offset;
@@ -317,15 +324,9 @@ private:
             body[offset].interior.slot_len = length;
         }
     }
-
-public:
-    bool _slots_are_consistent() const;
-    void compact();
 };
 static_assert(sizeof(btree_page) == sizeof(generic_page), 
               "btree_page has wrong length");
-
-
 
 inline bool btree_page::is_ghost(int item) const { 
     w_assert1(item>=0 && item<nitems);
