@@ -853,6 +853,7 @@ restart_m::redo_pass(
         }
 
         bool redone = false;
+        (void) redone; // Used only for debugging output
         DBGOUT5( << setiosflags(ios::right) << lsn
                       << resetiosflags(ios::right) << " R: " << r);
         w_assert1(lsn == r.lsn_ck());

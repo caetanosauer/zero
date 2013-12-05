@@ -55,6 +55,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "Lintel/AtomicCounter.hpp"
 
 // for placement new support, which users need
+#include <boost/static_assert.hpp>
 #include <new>
 #include <cassert>
 #include <stdlib.h>
@@ -89,8 +90,8 @@ protected:
     /// Unions for punning, i.e., type conversion
     union vpn { void* v; ptr* p; long n; };
     union pvn { ptr* p; void* v; long n; };
-    /// @todo instead of long, type should probably be intptr_t here.
-    static_assert(sizeof(void *) == sizeof(long), "pointer size is not the same as long");
+    /// @todo instead of long, should use intptr_t here.
+    BOOST_STATIC_ASSERT(sizeof(void *) == sizeof(long)); // at least check long is OK.
     /// \endcond skipdoc
 
 public:

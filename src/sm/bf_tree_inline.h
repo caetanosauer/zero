@@ -84,6 +84,7 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
                                      volid_t vol, shpid_t shpid, 
                                      latch_mode_t mode, bool conditional, 
                                      bool virgin_page) {
+    INC_TSTAT(bf_fix_nonroot_count);
 #ifdef SIMULATE_MAINMEMORYDB
     if (virgin_page) {
         W_DO (_fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page));

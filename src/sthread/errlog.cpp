@@ -144,6 +144,8 @@ is_logstream(std::basic_ostream<char, std::char_traits<char > > &o)
 	{
         l = (logstream *)&o;
     }
+        //Kill warning
+        (void) tied;
     if(l) {
         // cerr << "magic1 " << (unsigned int)l->__magic1 << endl;
         // cerr << "magic2 " << (unsigned int)l->__magic1 << endl;

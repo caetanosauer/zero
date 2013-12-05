@@ -98,6 +98,9 @@ const int64_t   w_base_t::int8_min =
                 LONGLONGCONSTANT(0x80000000);
 #endif
 
+
+
+
 ostream&
 operator<<(ostream& o, const w_base_t&)
 {
@@ -192,7 +195,7 @@ w_base_t::is_infinite(const f8_t x)
 #elif defined(MacOSX) && W_GCC_THIS_VER >= W_GCC_VER(3,0)
     value = !finite(x) && !__isnand(x);
 #else
-    value = !finite(x) && !isnan(x);
+    value = !finite(x) && !::isnan(x);
 #endif
     return value;
 }
@@ -206,7 +209,7 @@ w_base_t::is_nan(const f8_t x)
 #elif defined(MacOSX) && W_GCC_THIS_VER >= W_GCC_VER(3,0)
     value = __isnand(x);
 #else
-    value = isnan(x);
+    value = ::isnan(x);
 #endif
     return value;
 }

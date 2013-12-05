@@ -172,8 +172,8 @@ void btree_page::delete_item(int item) {
 }
 
 
-
-
+// <<<>>>
+#include <boost/scoped_array.hpp>
 
 bool btree_page::_slots_are_consistent() const {
     // This is not a part of check; should be always true:
@@ -182,9 +182,11 @@ bool btree_page::_slots_are_consistent() const {
     // check overlapping records.
     // rather than using std::map, use array and std::sort for efficiency.
     // high 16 bits=offset, low 16 bits=length
-    static_assert(sizeof(item_length_t) <= 2, 
-                  "item_length_t doesn't fit in 16 bits; adjust this code");
-    std::unique_ptr<uint32_t[]> sorted_slots(new uint32_t[nitems]);
+    //static_assert(sizeof(item_length_t) <= 2, 
+    //              "item_length_t doesn't fit in 16 bits; adjust this code");
+    BOOST_STATIC_ASSERT(sizeof(item_length_t) <= 2);
+    //std::unique_ptr<uint32_t[]> sorted_slots(new uint32_t[nitems]);
+    boost::scoped_array<uint32_t> sorted_slots(new uint32_t[nitems]); // <<<>>>
     int ghosts_seen = 0;
     for (int slot = 0; slot<nitems; ++slot) {
         int offset = head[slot].offset;

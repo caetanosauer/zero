@@ -53,6 +53,7 @@ w_rc_t dosome(ss_m* ssm, test_volume_t *test_volume) {
     cur_partition_number = log_core::THE_LOG->partition_num();
     prev_partition_number = cur_partition_number;
     initial_partition_number = cur_partition_number;
+    (void) initial_partition_number; // Used in an assert
     std::cout << "Log starts off in dir: " << test_env->log_dir << " partition" 
                     << cur_partition_number << "\n";
 

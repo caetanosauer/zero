@@ -234,8 +234,10 @@ private:
         slot_body body[data_sz/sizeof(slot_body)];
     };
 
-    static_assert(sizeof(slot_head) == 4, "slot_head has wrong length");
-    static_assert(sizeof(slot_body) == 8, "slot_body has wrong length");
+//    static_assert(sizeof(slot_head) == 4, "slot_head has wrong length");
+    BOOST_STATIC_ASSERT(sizeof(slot_head) == 4);
+//    static_assert(sizeof(slot_body) == 8, "slot_body has wrong length");
+    BOOST_STATIC_ASSERT(sizeof(slot_body) == 8);
 
 
 
@@ -284,8 +286,10 @@ private:
         }
     }
 };
-static_assert(sizeof(btree_page) == sizeof(generic_page), 
-              "btree_page has wrong length");
+//static_assert(sizeof(btree_page) == sizeof(generic_page), 
+//              "btree_page has wrong length");
+BOOST_STATIC_ASSERT(sizeof(btree_page) == sizeof(generic_page));
+
 
 inline bool btree_page::is_ghost(int item) const { 
     w_assert1(item>=0 && item<nitems);
