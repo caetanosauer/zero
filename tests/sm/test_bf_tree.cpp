@@ -40,7 +40,7 @@ public:
             w_assert1(false);
         }
         if (p.nrecs() == 0) {
-            page->btree_pid0 = child;
+            p.pid0_pointer() = child;
         }
     }
 };
@@ -121,9 +121,9 @@ w_rc_t test_bf_fix_virgin_child(ss_m* /*ssm*/, test_volume_t *test_volume) {
     EXPECT_TRUE (root_page != NULL);
     ::memset(root_page, 0, sizeof(generic_page));
     btree_page *rbp = reinterpret_cast<btree_page*>(root_page);
-    root_page->pid          = root_pid;
+    root_page->pid    = root_pid;
     rbp->lsn          = thelsn;
-    root_page->tag          = t_btree_p;
+    root_page->tag    = t_btree_p;
     rbp->btree_level  = 2;
     rbp->btree_foster = 0;
     rbp->init_items();
