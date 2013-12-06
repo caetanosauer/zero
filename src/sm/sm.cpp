@@ -1362,8 +1362,7 @@ ss_m::dump_buffers(ostream &o)
  *  ss_m::config_info()                                *
  *--------------------------------------------------------------*/
 rc_t
-ss_m::config_info(sm_config_info_t& info)
-{
+ss_m::config_info(sm_config_info_t& info) {
     info.page_size = ss_m::page_sz;
 
     //however, fixable_page_h.space.acquire aligns() the whole mess (hdr + record)

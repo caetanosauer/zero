@@ -14,7 +14,7 @@
 #include "sm_int_2.h"
 #include "logdef_gen.cpp"
 
-#include "btree_page.h"
+#include "btree_page_h.h"
 #include "btree_impl.h"
 #include "vec_t.h"
 
@@ -350,7 +350,7 @@ btree_ghost_t::btree_ghost_t(const btree_page_h& p, const vector<slotid_t>& slot
 
     // the first data is prefix
     {
-        uint16_t prefix_len = p.page()->btree_prefix_length;
+        uint16_t prefix_len = p.get_prefix_length();
         prefix_offset = (current - slot_data);
         // *reinterpret_cast<uint16_t*>(current) = prefix_len; this causes Bus Error on solaris! so, instead:
         ::memcpy(current, &prefix_len, sizeof(uint16_t));
@@ -462,30 +462,28 @@ btree_ghost_reclaim_log::redo(fixable_page_h* page)
 
 struct btree_ghost_reserve_t {
     uint16_t      klen;
-    uint16_t      record_size;
+    uint16_t      element_length;
     char          data[logrec_t::max_data_sz - sizeof(uint16_t) * 2];
 
     btree_ghost_reserve_t(const w_keystr_t& key,
-        int record_size);
+                          int element_length);
     int size() { return sizeof(uint16_t) * 2 + klen; }
 };
 
-btree_ghost_reserve_t::btree_ghost_reserve_t(const w_keystr_t& key, int rec_len)
-    : klen (key.get_length_as_keystr()), record_size (rec_len)
+btree_ghost_reserve_t::btree_ghost_reserve_t(const w_keystr_t& key, int elem_length)
+    : klen (key.get_length_as_keystr()), element_length (elem_length)
 {
     key.serialize_as_keystr(data);
 }
 
 btree_ghost_reserve_log::btree_ghost_reserve_log (
-    const btree_page_h& p, const w_keystr_t& key, int record_size)
-{
+    const btree_page_h& p, const w_keystr_t& key, int element_length) {
     // ghost creation is single-log system transaction. so, use data_ssx()
-    fill(&p.pid(), p.tag(), (new (data_ssx()) btree_ghost_reserve_t(key, record_size))->size());
+    fill(&p.pid(), p.tag(), (new (data_ssx()) btree_ghost_reserve_t(key, element_length))->size());
     w_assert0(is_single_sys_xct());
 }
 
-void btree_ghost_reserve_log::redo(fixable_page_h* page)
-{
+void btree_ghost_reserve_log::redo(fixable_page_h* page) {
     // REDO is to physically make the ghost record
     borrowed_btree_page_h bp(page);
     // ghost creation is single-log system transaction. so, use data_ssx()
@@ -493,7 +491,7 @@ void btree_ghost_reserve_log::redo(fixable_page_h* page)
 
     // PHYSICAL redo.
     w_assert1(bp.is_leaf());
-    bp.reserve_ghost(dp->data, dp->klen, dp->record_size);
+    bp.reserve_ghost(dp->data, dp->klen, dp->element_length);
     w_assert3(bp.is_consistent(true, true));
 }
 
@@ -709,7 +707,7 @@ void btree_foster_deadopt_real_parent_log::redo(fixable_page_h* page)
     // apply changes on real-parent again. no write-order dependency with foster-parent
     borrowed_btree_page_h bp(page);
     btree_foster_deadopt_real_parent_t *dp = (btree_foster_deadopt_real_parent_t*) _data;
-    w_assert1(dp->_foster_slot >= 0 && dp->_foster_slot < bp.nslots());
+    w_assert1(dp->_foster_slot >= 0 && dp->_foster_slot < bp.nitems());
     btree_impl::_ux_deadopt_foster_apply_real_parent(bp, dp->_deadopted_pid, dp->_foster_slot);
 }
 

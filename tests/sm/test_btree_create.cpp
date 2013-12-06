@@ -2,10 +2,9 @@
 #include "gtest/gtest.h"
 #include "sm_vas.h"
 #include "btree.h"
-#include "generic_page.h"
 #include "bf.h"
 #include "sm_io.h"
-#include "btree_page.h"
+#include "btree_page_h.h"
 
 btree_test_env *test_env;
 

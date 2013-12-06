@@ -15,7 +15,7 @@
 #include "btree.h"
 #include "btcursor.h"
 #include "btree_impl.h"
-#include "btree_page.h"
+#include "btree_page_h.h"
 #include "btree_test_env.h"
 #include "xct.h"
 
