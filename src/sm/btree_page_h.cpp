@@ -194,7 +194,7 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
 
             key.split(new_prefix_length, dummy, new_trunc_key);
             v.put(new_trunc_key);
-            child = steal_src->page()->item_data32(i+1);
+            child = steal_src->page()->item_child(i+1);
         }
 
         if (!page()->insert_item(nitems(), steal_src->is_ghost(i), 
@@ -736,7 +736,7 @@ void btree_page_h::overwrite_el_nolog(slotid_t slot, smsize_t offset,
     _get_leaf_key_fields(slot, key_length, trunc_key_data);
     size_t data_offset = sizeof(key_length_t) + key_length - get_prefix_length();  // <<<>>>
 
-    w_assert1((int)(data_offset+offset+elen) <= page()->item_length(slot+1));
+    w_assert1(data_offset+offset+elen <= page()->item_length(slot+1));
     ::memcpy(page()->item_data(slot+1)+data_offset+offset, new_el, elen);
 }
 
@@ -745,7 +745,7 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, size_t
 
     int16_t prefix_len       = get_prefix_length();
     int     trunc_key_length = key_raw_len - prefix_len;
-    int     data_length      = _predict_leaf_data_length(trunc_key_length, element_length);
+    size_t  data_length      = _predict_leaf_data_length(trunc_key_length, element_length);
 
     w_assert1(check_space_for_insert_leaf(trunc_key_length, element_length));
 
@@ -1069,7 +1069,7 @@ void  btree_page_h::rec_node(slotid_t slot,  w_keystr_t &key, shpid_t &el) const
     int prefix_len = get_prefix_length();
 
     key.construct_from_keystr(get_prefix_key(), prefix_len, trunc_key_data, trunc_key_length);
-    el = page()->item_data32(slot+1);
+    el = page()->item_child(slot+1);
 }
 void btree_page_h::node_key(slotid_t slot,  w_keystr_t &key) const {
     w_assert1(is_node());
@@ -1248,7 +1248,7 @@ bool btree_page_h::_is_consistent_keyorder () const {
 bool btree_page_h::_is_consistent_poormankey () const {
     const int recs = nrecs();
     // the first record is fence key, so no poor man's key (always 0)
-    poor_man_key fence_poormankey = page()->item_data16(0);
+    poor_man_key fence_poormankey = page()->item_poor(0);
     if (fence_poormankey != 0) {
 //        w_assert3(false);
         return false;
