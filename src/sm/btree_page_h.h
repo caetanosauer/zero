@@ -18,6 +18,10 @@ struct btree_lf_stats_t;
 struct btree_int_stats_t;
 
 
+
+typedef uint16_t key_length_t;  // <<<>>>
+
+
 /**
  * \brief Poor man's normalized key type.
  *

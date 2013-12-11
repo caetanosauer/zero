@@ -9,7 +9,7 @@
 #include "w_debug.h"
 
 
-void btree_page::init_items() {
+void btree_page_data::init_items() {
     const size_t max_offset = data_sz/sizeof(slot_body);
 
     nitems       = 0;
@@ -20,7 +20,7 @@ void btree_page::init_items() {
 }
 
 
-void btree_page::set_ghost(int item) {
+void btree_page_data::set_ghost(int item) {
     w_assert1(item>=0 && item<nitems);
 
     slot_offset8_t offset = head[item].offset;
@@ -31,7 +31,7 @@ void btree_page::set_ghost(int item) {
     }
 }
 
-void btree_page::unset_ghost(int item) {
+void btree_page_data::unset_ghost(int item) {
     w_assert1(item>=0 && item<nitems);
 
     slot_offset8_t offset = head[item].offset;
@@ -44,7 +44,7 @@ void btree_page::unset_ghost(int item) {
 
 
 
-bool btree_page::insert_item(int item, bool ghost, uint16_t data16,
+bool btree_page_data::insert_item(int item, bool ghost, uint16_t data16,
                              int32_t data32, size_t data_length) {
     w_assert1(item>=0 && item<=nitems);  // use of <= intentional
     w_assert3(_slots_are_consistent());
@@ -79,7 +79,7 @@ bool btree_page::insert_item(int item, bool ghost, uint16_t data16,
     return true;
 }
 
-bool btree_page::insert_item(int item, bool ghost, uint16_t data16,
+bool btree_page_data::insert_item(int item, bool ghost, uint16_t data16,
                              int32_t data32, const cvec_t& data) {
     if (!insert_item(item, ghost, data16, data32, data.size())) {
         return false;
@@ -89,7 +89,7 @@ bool btree_page::insert_item(int item, bool ghost, uint16_t data16,
 }
 
 
-bool btree_page::resize_item(int item, size_t new_length, size_t keep_old) {
+bool btree_page_data::resize_item(int item, size_t new_length, size_t keep_old) {
     w_assert1(item>=0 && item<nitems);
     w_assert1(keep_old <= new_length);
     w_assert3(_slots_are_consistent());
@@ -139,7 +139,7 @@ bool btree_page::resize_item(int item, size_t new_length, size_t keep_old) {
     return true;
 }
 
-bool btree_page::replace_item_data(int item, const cvec_t& new_data, size_t keep_old) {
+bool btree_page_data::replace_item_data(int item, const cvec_t& new_data, size_t keep_old) {
     if (!resize_item(item, keep_old+new_data.size(), keep_old))
         return false;
 
@@ -148,7 +148,7 @@ bool btree_page::replace_item_data(int item, const cvec_t& new_data, size_t keep
 }
 
 
-void btree_page::delete_item(int item) {
+void btree_page_data::delete_item(int item) {
     w_assert1(item>=0 && item<nitems);
     w_assert1(item != 0); // deleting item 0 makes no sense because it has a special format <<<>>>
     w_assert3(_slots_are_consistent());
@@ -175,7 +175,7 @@ void btree_page::delete_item(int item) {
 // <<<>>>
 #include <boost/scoped_array.hpp>
 
-bool btree_page::_slots_are_consistent() const {
+bool btree_page_data::_slots_are_consistent() const {
     // This is not a part of check; should be always true:
     w_assert1(usable_space() >= 0);
     
@@ -257,7 +257,7 @@ bool btree_page::_slots_are_consistent() const {
 }
 
 
-void btree_page::compact() {
+void btree_page_data::compact() {
     w_assert3(_slots_are_consistent());
 
     const size_t max_offset = data_sz/sizeof(slot_body);
@@ -291,7 +291,7 @@ void btree_page::compact() {
 }
 
 
-char* btree_page::unused_part(size_t& length) {
+char* btree_page_data::unused_part(size_t& length) {
     char* start_gap = (char*)&head[nitems];
     char* after_gap = (char*)&body[record_head8];
     length = after_gap - start_gap;
@@ -299,7 +299,7 @@ char* btree_page::unused_part(size_t& length) {
 }
 
 
-size_t btree_page::predict_item_space(size_t data_length) {
+size_t btree_page_data::predict_item_space(size_t data_length) {
     size_t size = data_length + sizeof(item_length_t);
     int item = 1; // <<<>>>
     if (item != 0 && btree_level != 1) {
@@ -310,9 +310,9 @@ size_t btree_page::predict_item_space(size_t data_length) {
 }
 
 
-size_t btree_page::item_space(int item) const {
+size_t btree_page_data::item_space(int item) const {
     return align(slot_length(item)) + sizeof(slot_head);
 }
 
 
-const size_t btree_page::max_item_overhead = sizeof(slot_head) + sizeof(item_length_t) + sizeof(int32_t) + align(1)-1;
+const size_t btree_page_data::max_item_overhead = sizeof(slot_head) + sizeof(item_length_t) + sizeof(int32_t) + align(1)-1;
