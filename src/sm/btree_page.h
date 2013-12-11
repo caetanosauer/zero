@@ -16,6 +16,10 @@
 class ss_m;
 class test_volume_t;
 
+/**
+ * This structure contains the B-tree but not item-specific header
+ * fields of btree_page's.
+ */
 class btree_page_header : public generic_page_header {
     friend class btree_page_h;
 
@@ -29,65 +33,75 @@ class btree_page_header : public generic_page_header {
 
 protected:
     // ======================================================================
-    //   BEGIN: BTree specific headers
+    //   BEGIN: BTree but not item-specific headers
     // ======================================================================
 
     /**
-    * root page used for recovery (root page is never changed even while grow/shrink).
-    * This can be removed by retrieving it from full pageid (storeid->root page id),
-    * but let's do that later.
-    */
+     * Root page used for recovery (root page is never changed even
+     * while grow/shrink).
+     * This field could later be removed by instead retrieving this
+     * value from full pageid (storeid->root page id), but let's do
+     * that later.
+     */
     shpid_t    btree_root; // +4 -> 40
-    /** first ptr in non-leaf nodes. used only in left-most non-leaf nodes. */
+
+    /// first ptr in non-leaf nodes.  used only in left-most non-leaf nodes. 
     shpid_t    btree_pid0; // +4 -> 44
+
     /**
-    * B-link page (0 if not linked).
-    * kind of "next", but other nodes don't know about it yet.
-    */
+     * B-link page (0 if not linked).
+     * kind of "next", but other nodes don't know about it yet.
+     */
     shpid_t    btree_foster;  // +4 -> 48
-    /** 1 if leaf, >1 if non-leaf. */
+
+    /// 1 if leaf, >1 if non-leaf. 
     int16_t    btree_level; // +2 -> 50
+
     /**
-    * length of low-fence key.
-    * Corresponding data is stored in the first slot.
-    */
+     * length of low-fence key.
+     * Corresponding data is stored in the first item.
+     */
     int16_t    btree_fence_low_length;  // +2 -> 52
+
     /**
-    * length of high-fence key.
-    * Corresponding data is stored in the first slot after low fence key.
-    */
+     * length of high-fence key.
+     * Corresponding data is stored in the first item after low fence key.
+     */
     int16_t    btree_fence_high_length;  // +2 -> 54
+
     /**
-     * length of high-fence key of the foster chain. 0 if not in a foster chain or right-most of a chain.
-     * Corresponding data is stored in the first slot after high fence key.
+     * length of high-fence key of the foster chain.  0 if not in a foster chain or right-most of a chain.
+     * Corresponding data is stored in the first item after high fence key.
      * When this page belongs to a foster chain,
      * we need to store high-fence of right-most sibling in every sibling
      * to do batch-verification with bitmaps.
      * @see btree_impl::_ux_verify_volume()
      */
     int16_t    btree_chain_fence_high_length; // +2 -> 56
+
     /**
-    * counts of common leading bytes of the fence keys,
-    * thereby of all entries in this page too.
-    * 0=no prefix compression.
-    * Corresponding data is NOT stored.
-    * We can just use low fence key data.
-    */
+     * counts of common leading bytes of the fence keys,
+     * thereby of all entries in this page too.
+     * 0=no prefix compression.
+     * Corresponding data is NOT stored.
+     * We can just use low fence key data.
+     */
     int16_t    btree_prefix_length;  // +2 -> 58
+
     /**
-    * Count of consecutive insertions to right-most or left-most.
-    * Positive values mean skews towards right-most.
-    * Negative values mean skews towards left-most.
-    * Whenever this page receives an insertion into the middle,
-    * this value is reset to zero.
-    * Changes of this value will NOT be logged. It doesn't matter
-    * in terms of correctness, so we don't care about undo/redo
-    * of this header item.
-    */
+     * Count of consecutive insertions to right-most or left-most.
+     * Positive values mean skews towards right-most.
+     * Negative values mean skews towards left-most.
+     * Whenever this page receives an insertion into the middle,
+     * this value is reset to zero.
+     * Changes of this value will NOT be logged.  It doesn't matter
+     * in terms of correctness, so we don't care about undo/redo
+     * of this header item.
+     */
     int16_t   btree_consecutive_skewed_insertions; // +2 -> 60
 
     // ======================================================================
-    //   END: BTree specific headers
+    //   END: BTree but not item-specific headers
     // ======================================================================
 };
 
@@ -119,7 +133,7 @@ class btree_page : public btree_page_header {
     /// number of current ghost items
     slot_index_t  nghosts; // +2 -> 4
 
-    /** offset to beginning of record area (location of record that is located left-most). */
+    /// offset to beginning of record area (location of record that is located left-most). 
     slot_offset8_t  record_head8;     // +2 -> 6
 
     /// padding to ensure header size is a multiple of 8
