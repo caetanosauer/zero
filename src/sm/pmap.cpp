@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /*<std-header orig-src='shore'>
 
  $Id: pmap.cpp,v 1.10 2010/05/26 01:20:40 nhall Exp $
@@ -33,9 +37,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #define SM_SOURCE
 #define PMAP_C
-#ifdef __GNUG__
-#   pragma implementation
-#endif
 #include "sm_int_0.h"
 
 ostream    &Pmap::print(ostream &s) const

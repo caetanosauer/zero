@@ -1,13 +1,12 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #ifndef ALLOC_CACHE_H
 #define ALLOC_CACHE_H
 
 #include "w_defines.h"
-
-#ifdef __GNUG__
-#pragma interface
-#endif
-
-#include "alloc_p.h"
+#include "alloc_page.h"
 #include "latch.h"
 #include <vector>
 
@@ -15,13 +14,14 @@ class bf_fixed_m;
 
 /**
  * \brief Free-Page allocation/deallocation interface.
+ *
  * \details
  * This object handles allocation/deallocation requests for one volume.
  * All allocation/deallocation are logged and done in a critical section.
  * To make it scalable, this object is designed to be as fast as possible.
  * Actually, in original Shore-MT, page allocation was a huge bottleneck in high contention.
  * See jira ticket:72 "fix extent management" (originally trac ticket:74) for more details.
- * @See alloc_p
+ * @See alloc_page_h
  */
 class alloc_cache_t {
 public:
@@ -29,7 +29,7 @@ public:
     alloc_cache_t (vid_t vid, bf_fixed_m* fixed_pages) :
         _vid(vid), _fixed_pages(fixed_pages), _contiguous_free_pages_begin(0), _contiguous_free_pages_end(0) {}
 
-    /** Initialize this object by scanning alloc_p pages of the volume. */
+    /** Initialize this object by scanning alloc_page pages of the volume. */
     rc_t load_by_scan (shpid_t max_pid);
     
     /**
@@ -82,7 +82,7 @@ private:
     /** all operations in this object are protected by this lock. */
     mutable srwlock_t _queue_lock;
 
-    // these do logging (if logit=true) and applying to alloc_p.
+    // these do logging (if logit=true) and applying to alloc_page_h.
     // they assume _contiguous_free_pages_begin/_non_contiguous_free_pages are already modified
     rc_t apply_allocate_one_page (shpid_t pid, bool logit = true);
     rc_t apply_allocate_consecutive_pages (shpid_t pid_begin, size_t page_count, bool logit = true);

@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /*<std-header orig-src='shore'>
 
  $Id: logstub.cpp,v 1.20 2010/08/23 14:28:18 nhall Exp $
@@ -36,7 +40,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "sm_int_1.h"
 #include <new>
 #include "w_key.h"
-#include "page_bf_inline.h"
 #include "logtype_gen.h"
 #include "logdef_gen.cpp"
 #include "logstub_gen.cpp"

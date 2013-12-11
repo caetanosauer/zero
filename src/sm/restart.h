@@ -1,13 +1,13 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #ifndef RESTART_H
 #define RESTART_H
 
 #include "w_defines.h"
 
 class dirty_pages_tab_t;
-
-#ifdef __GNUG__
-#pragma interface
-#endif
 
 #ifndef BF_S_H
 #include <bf_s.h>

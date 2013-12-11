@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #ifndef BF_FIXED_H
 #define BF_FIXED_H
 
@@ -6,19 +10,20 @@
 #include "w_rc.h"
 #include "lsn.h"
 
-class page_s;
+class generic_page;
 class vol_t;
 
 /**
- * \Brief Buffer manager for a small number of special pages in each volume.
+ * \brief Buffer manager for a small number of special pages in each volume.
  * \ingroup SSMBUFPOOL
- * \Details
- * This buffer manager deals with only allocation pages (alloc_p) and
- * store pages (stnode_p). All pages are always pinned as there are
+ * 
+ * \details
+ * This buffer manager deals with only allocation pages (alloc_page) and
+ * store node pages (stnode_page). All pages are always pinned as there are
  * only a fixed and small number of such pages. Therefore, this buffer manager
  * is much simpler and more efficient than the main buffer manager.
  * 
- * How simpler it is? MUCH.
+ * How simpler it is?  MUCH.
  * No pinning, no synchronization (alloc_cache does it on behalf),
  * no hash table, no background cleaner, no eviction, no write-order-dependency.
  * 
@@ -32,7 +37,7 @@ public:
     
     /**
      * This constructor is called when a volume is mounted and
-     * reads/pinns all special pages in it.
+     * reads/pins all special pages in it.
      */
     w_rc_t init(vol_t* parent, int unix_fd, uint32_t max_pid);
 
@@ -42,7 +47,7 @@ public:
     w_rc_t flush ();
 
     /** returns the pointer to page data maintained in this bufferpool. */
-    page_s* get_pages ();
+    generic_page* get_pages ();
     bool* get_dirty_flags ();
     
     /** returns number of pages maintained in this bufferpool. */
@@ -68,14 +73,14 @@ private:
     /** number of pages maintained in this bufferpool. */
     uint32_t    _page_cnt;
     /** page data maintained in this bufferpool. */
-    page_s*     _pages;
+    generic_page*     _pages;
     /** dirty flags for _pages. */
     bool*       _dirty_flags;
 };
 inline uint32_t bf_fixed_m::get_page_cnt() const {
     return _page_cnt;
 }
-inline page_s* bf_fixed_m::get_pages () {
+inline generic_page* bf_fixed_m::get_pages () {
     return _pages;
 }
 inline bool* bf_fixed_m::get_dirty_flags () {

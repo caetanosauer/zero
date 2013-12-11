@@ -238,7 +238,7 @@ SM Storage manager = 0x00060000 sm_stats_t {
     // these per-page-type-fix counts reflect the times the
     // per-page-class fix method is called, but NOT the times it
     // resulted in a bf_m::fix call. If the page is already fixed
-    // sufficient mode with the page_p, the buffer manager need not
+    // sufficient mode with the fixable_page_h, the buffer manager need not
     // be called.
     // You see many more extent-page fixes (at least an order of
     // magnitude) than the other fixes; this is because searches for
@@ -250,7 +250,7 @@ SM Storage manager = 0x00060000 sm_stats_t {
     u_long btree_p_fix_cnt        Btree_p fix method called
     u_long alloc_p_fix_cnt        Extlink_p fix method called
     u_long stnode_p_fix_cnt        Stnode_p fix method called
-    u_long page_fix_cnt        Times page_p::_fix was called (even if page already fixed)
+    u_long page_fix_cnt        Times fixable_page_h::_fix was called (even if page already fixed)
 
     // Times the buffer manager was needed for a page fix:
     u_long bf_fix_cnt        Times bp fix called  (conditional or unconditional)

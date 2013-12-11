@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /*<std-header orig-src='shore'>
 
  $Id: crash.cpp,v 1.19 2010/12/08 17:37:42 nhall Exp $
@@ -38,9 +42,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #define SM_SOURCE
 #define LOG_C
-#ifdef __GNUG__
-#   pragma implementation
-#endif
 
 #include <sm_int_0.h>
 #include <crash.h>

@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
    
@@ -61,6 +65,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * \ingroup MACROS
  */
 
+#include <assert.h>
 #ifndef W_H
 #include <w.h>
 #endif
@@ -94,10 +99,6 @@ typedef sthread_t::timeout_in_ms timeout_in_ms;
 class xct_t;
 class xct_log_t;
 class lockid_t;
-
-#ifdef __GNUG__
-#pragma interface
-#endif
 
 class smthread_t;
 
@@ -292,7 +293,7 @@ class smthread_t : public sthread_t {
 
             QUEUE_BLOCK_EXT_QNODE_INITIALIZE(_log_me_node);
             
-            create_TL_stats();
+            create_TL_stats(); 
         }
         ~tcb_t() { destroy_TL_stats(); }
     };
@@ -315,7 +316,7 @@ class smthread_t : public sthread_t {
     short              _fingerprint[FINGER_BITS]; // dreadlocks
     atomic_thread_map_t  _fingerprint_map; // map containing only fingerprint
 
-    int _workload_id; // identify workload running by this thread
+    char _replacement_priority; // identify workload priority (for use by the page replacement policy)
 
 public:
     const atomic_thread_map_t&  get_fingerprint_map() const
@@ -574,16 +575,16 @@ public:
                       const void * id = 0);
     w_rc_t            smthread_unblock(w_rc_t::errcode_t e);
 
-    int get_workload_id() { return _workload_id; }
-    void set_workload_id(int id) { _workload_id=id; }
+    int get_workload_priority() { return _replacement_priority; }
+    void set_workload_priority(char priority) { _replacement_priority = priority; }
     
+    int sampling;
 private:
     w_rc_t::errcode_t _smthread_block( timeout_in_ms WAIT_FOREVER,
                               const char * const why =0);
     w_rc_t           _smthread_unblock(w_rc_t::errcode_t e);
-public:
-    void             prepare_to_block();
 
+public:
     /* \brief Find out if log warning checks are to be made. Default is true.
      */
     bool            generate_log_warnings()const{return _gen_log_warnings;}
@@ -603,9 +604,7 @@ public:
     queue_based_lock_t::ext_qnode& get_1thread_xct_me() {
                                                return tcb()._1thread_xct_me;}
 private:
-
-    /* sm-specif block / unblock implementation */
-    volatile bool   _unblocked;
+    /* sm-specific block / unblock implementation */
     bool            _waiting;
 
     bool            _gen_log_warnings;

@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /*<std-header orig-src='shore' incl-file-exclusion='SM_DU_STATS_H'>
 
  $Id: sm_du_stats.h,v 1.21 2010/06/18 21:22:54 nhall Exp $
@@ -39,10 +43,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *  Storage Manager disk utilization (du) statistics.
  */
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 
 /*
  * Common abbreviations:
@@ -59,13 +59,13 @@ typedef w_base_t::base_stat_t base_stat_t;
 
 /** btree leaf pages. */
 struct btree_lf_stats_t {
-    base_stat_t        hdr_bs;        /* page header (overhead) */
-    base_stat_t        key_bs;        /* space used for keys      */
-    base_stat_t        data_bs;    /* space for data associated to keys */
-    base_stat_t        entry_overhead_bs;  /* slot + entry info + align */
+    base_stat_t        hdr_bs;            /* page header (overhead) */
+    base_stat_t        key_bs;            /* space used for keys      */
+    base_stat_t        data_bs;           /* space for data associated to keys */
+    base_stat_t        entry_overhead_bs; /* e.g., slot header, padding for alignment */
     base_stat_t        unused_bs;
     base_stat_t        entry_cnt;
-    base_stat_t        unique_cnt;    /* number of unique entries */
+    base_stat_t        unique_cnt;        /* number of unique entries */
 
     NORET              btree_lf_stats_t() {clear();}
     void               add(const btree_lf_stats_t& stats);

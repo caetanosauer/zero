@@ -1,11 +1,11 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #ifndef LOCK_CORE_H
 #define LOCK_CORE_H
 
 #include "w_defines.h"
-
-#ifdef __GNUG__
-#pragma interface
-#endif
 
 #include "lock_lil.h"
 

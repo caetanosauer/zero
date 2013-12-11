@@ -1,8 +1,8 @@
-#define SM_SOURCE
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
 
-#ifdef __GNUG__
-#pragma implementation "lock_lil.h"
-#endif
+#define SM_SOURCE
 
 #include "sm_int_2.h"
 #include "lock_lil.h"

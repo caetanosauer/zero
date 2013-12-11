@@ -1,15 +1,15 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #include "w_defines.h"
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
 #define SM_SOURCE
 #define SMTHREAD_C
-#ifdef __GNUG__
-#   pragma implementation
-#endif
 
 #include <sm_int_1.h>
-//#include <e_errmsg_gen.h>
 
 #include <w_strstream.h>
 
@@ -58,8 +58,10 @@ smthread_t::tcb_t::create_TL_stats() {
 void 
 smthread_t::tcb_t::destroy_TL_stats() {
     if(_TL_stats) {
-        // Global stats are protected by a mutex
-        smlevel_0::add_to_global_stats(TL_stats()); // before detaching them
+        if (smlevel_0::statistics_enabled) {
+            // Global stats are protected by a mutex
+            smlevel_0::add_to_global_stats(TL_stats()); // before detaching them
+        }
         delete _TL_stats;
         _TL_stats = NULL;
     }
@@ -139,7 +141,7 @@ smthread_t::smthread_t(
 : sthread_t(priority, name, stack_size),
   _proc(f),
   _arg(arg),
-  _workload_id(0),
+  _replacement_priority(0),
   _gen_log_warnings(true)
 {
     tcb_t *empty_tcb = new tcb_t(NULL);
@@ -166,7 +168,7 @@ smthread_t::smthread_t(
 : sthread_t(priority, name, stack_size),
   _proc(0),
   _arg(0),
-  _workload_id(0),
+  _replacement_priority(0),
   _gen_log_warnings(true)
 {
     tcb_t *empty_tcb = new tcb_t(NULL);
@@ -395,11 +397,6 @@ smthread_t::~smthread_t()
         _tcb_tail = _tcb_tail->_outer;
         delete old;
     }
-}
-
-void smthread_t::prepare_to_block()
-{
-    _unblocked = false;
 }
 
 // There's something to be said for having the smthread_unblock 

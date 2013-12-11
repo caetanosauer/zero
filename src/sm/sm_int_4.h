@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /*<std-header orig-src='shore' incl-file-exclusion='SM_INT_4_H'>
 
  $Id: sm_int_4.h,v 1.10 2010/05/26 01:20:43 nhall Exp $

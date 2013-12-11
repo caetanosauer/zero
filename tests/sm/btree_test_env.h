@@ -9,7 +9,6 @@
 #include "w_defines.h"
 #include "w_base.h"
 #include "sm_vas.h"
-#include "page_bf_inline.h"
 #include "gtest/gtest.h"
 
 #if W_DEBUG_LEVEL > 3
@@ -17,7 +16,6 @@
 #else // W_DEBUG_LEVEL
 extern std::ostream vout;
 #endif // W_DEBUG_LEVEL
-
 
 class ss_m;
 
@@ -36,14 +34,19 @@ struct test_volume_t {
 const int default_quota_in_pages = 64;
 const int default_bufferpool_size_in_pages = 64;
 const int default_locktable_size = 1 << 6;
+
+#ifdef DEFAULT_SWIZZLING_OFF
 const bool default_enable_swizzling = false;
+#else // DEFAULT_SWIZZLING_OFF
+const bool default_enable_swizzling = true;
+#endif //DEFAULT_SWIZZLING_OFF
 
 // a few convenient functions for testcases
 w_rc_t x_begin_xct(ss_m* ssm, bool use_locks);
 w_rc_t x_commit_xct(ss_m* ssm);
 w_rc_t x_btree_create_index(ss_m* ssm, test_volume_t *test_volume, stid_t &stid, lpid_t &root_pid);
 w_rc_t x_btree_get_root_pid(ss_m* ssm, const stid_t &stid, lpid_t &root_pid);
-w_rc_t x_btree_adopt_blink_all(ss_m* ssm, const stid_t &stid);
+w_rc_t x_btree_adopt_foster_all(ss_m* ssm, const stid_t &stid);
 w_rc_t x_btree_verify(ss_m* ssm, const stid_t &stid);
 w_rc_t x_btree_lookup_and_commit(ss_m* ssm, const stid_t &stid, const char *keystr, std::string &data, bool use_locks = false);
 w_rc_t x_btree_lookup(ss_m* ssm, const stid_t &stid, const char *keystr, std::string &data);

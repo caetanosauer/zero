@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #include "w_defines.h"
 
 #include "bf_hashtable.h"
@@ -9,7 +13,7 @@
 
 #include "smthread.h"
 #include "vid_t.h"
-#include "page_s.h"
+#include "generic_page.h"
 #include <string.h>
 #include "w_findprime.h"
 #include <stdlib.h>
@@ -17,12 +21,14 @@
 #include "sm_int_0.h"
 #include "sm_int_1.h"
 #include "bf.h"
-#include "page.h"
 #include "sm_io.h"
 #include "vol.h"
 #include "alloc_cache.h"
 
+#include <boost/static_assert.hpp>
 #include <ostream>
+#include <limits>
+
 
 ///////////////////////////////////   Initialization and Release BEGIN ///////////////////////////////////  
 
@@ -31,6 +37,7 @@ bool bf_tree_m::_bf_pause_swizzling = true;
 uint64_t bf_tree_m::_bf_swizzle_ex = 0;
 uint64_t bf_tree_m::_bf_swizzle_ex_fails = 0;
 #endif // PAUSE_SWIZZLING_ON
+
 
 bf_tree_m::bf_tree_m (uint32_t block_cnt,
     uint32_t cleaner_threads,
@@ -46,6 +53,8 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
     _enable_swizzling = enable_swizzling;
     if (strcmp(replacement_policy, "clock") == 0) {
         _replacement_policy = POLICY_CLOCK;
+    } else if (strcmp(replacement_policy, "clock+priority") == 0) {
+        _replacement_policy = POLICY_CLOCK_PRIORITY;
     } else if (strcmp(replacement_policy, "random") == 0) {
         _replacement_policy = POLICY_RANDOM;
     }
@@ -60,20 +69,46 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
     
     // use posix_memalign to allow unbuffered disk I/O
     void *buf = NULL;
-    ::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * block_cnt);
-    if (buf == NULL) {
+    if (::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * ((uint64_t) block_cnt)) != 0) {
         ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << SM_PAGESIZE << "-bytes pages. ");
         W_FATAL(smlevel_0::eOUTOFMEMORY);
     }
-    _buffer = reinterpret_cast<page_s*>(buf);
+    _buffer = reinterpret_cast<generic_page*>(buf);
     
     // the index 0 is never used. to make sure no one can successfully use it,
     // fill the block-0 with garbages
-    ::memset (_buffer, 0x27, sizeof(page_s));
-    
-    _control_blocks = reinterpret_cast<bf_tree_cb_t*>(new char[sizeof(bf_tree_cb_t) * block_cnt]);
+    ::memset (&_buffer[0], 0x27, sizeof(generic_page));
+
+#ifdef BP_ALTERNATE_CB_LATCH
+    // this allocation scheme is sensible only for control block and latch sizes of 64B (cacheline size)
+    BOOST_STATIC_ASSERT(sizeof(bf_tree_cb_t) == 64);
+    BOOST_STATIC_ASSERT(sizeof(latch_t) == 64);
+    // allocate one more pair of <control block, latch> as we want to align the table at an odd 
+    // multiple of cacheline (64B)
+    if (::posix_memalign(&buf, sizeof(bf_tree_cb_t) + sizeof(latch_t), (sizeof(bf_tree_cb_t) + sizeof(latch_t)) * (((uint64_t) block_cnt) + 1LLU)) != 0) {
+        ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << sizeof(bf_tree_cb_t) << "-bytes blocks. ");
+        W_FATAL(smlevel_0::eOUTOFMEMORY);
+    }
+    ::memset (buf, 0, (sizeof(bf_tree_cb_t) + sizeof(latch_t)) * (((uint64_t) block_cnt) + 1LLU));
+    _control_blocks = reinterpret_cast<bf_tree_cb_t*>(reinterpret_cast<char *>(buf) + sizeof(bf_tree_cb_t));
+    w_assert0(_control_blocks != NULL);
+    for (bf_idx i = 0; i < block_cnt; i++) {
+        BOOST_STATIC_ASSERT(sizeof(bf_tree_cb_t) < SCHAR_MAX);
+        if (i & 0x1) { /* odd */
+            get_cb(i)._latch_offset = -static_cast<int8_t>(sizeof(bf_tree_cb_t)); // place the latch before the control block
+        } else { /* even */
+            get_cb(i)._latch_offset = sizeof(bf_tree_cb_t); // place the latch after the control block
+        }
+    }
+#else  
+    if (::posix_memalign(&buf, sizeof(bf_tree_cb_t), sizeof(bf_tree_cb_t) * ((uint64_t) block_cnt)) != 0) {
+        ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << sizeof(bf_tree_cb_t) << "-bytes blocks. ");
+        W_FATAL(smlevel_0::eOUTOFMEMORY);
+    }
+    _control_blocks = reinterpret_cast<bf_tree_cb_t*>(buf);
     w_assert0(_control_blocks != NULL);
     ::memset (_control_blocks, 0, sizeof(bf_tree_cb_t) * block_cnt);
+#endif
 
 #ifdef BP_MAINTAIN_PARNET_PTR
     // swizzled-LRU is initially empty
@@ -113,7 +148,12 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
 
 bf_tree_m::~bf_tree_m() {
     if (_control_blocks != NULL) {
-        delete[] reinterpret_cast<char*>(_control_blocks);
+#ifdef BP_ALTERNATE_CB_LATCH    
+        char* buf = reinterpret_cast<char*>(_control_blocks) - sizeof(bf_tree_cb_t);
+#else
+        char* buf = reinterpret_cast<char*>(_control_blocks);
+#endif
+        delete[] buf;
         _control_blocks = NULL;
     }
 #ifdef BP_MAINTAIN_PARNET_PTR
@@ -180,7 +220,7 @@ w_rc_t bf_tree_m::install_volume(vol_t* volume) {
 
     // load root pages. root pages are permanently fixed.
     stnode_cache_t *stcache = volume->get_stnode_cache();
-    std::vector<snum_t> stores (stcache->get_all_used_store_id());
+    std::vector<snum_t> stores (stcache->get_all_used_store_ID());
     w_rc_t rc = RCOK;
     for (size_t i = 0; i < stores.size(); ++i) {
         snum_t store = stores[i];
@@ -208,7 +248,7 @@ w_rc_t bf_tree_m::install_volume(vol_t* volume) {
         for (size_t i = 0; i < stores.size(); ++i) {
             bf_idx idx = desc->_root_pages[stores[i]];
             if (idx != 0) {
-                _control_blocks[idx].clear();
+                get_cb(idx).clear();
                 _add_free_block(idx);
             }
         }
@@ -230,7 +270,7 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
         return RC(smlevel_0::eBADCHECKSUM);
     }
     
-    bf_tree_cb_t &cb(_control_blocks[idx]);
+    bf_tree_cb_t &cb = get_cb(idx);
     cb.clear();
     cb._pid_vol = vid;
     cb._pid_shpid = shpid;
@@ -269,7 +309,7 @@ w_rc_t bf_tree_m::_install_volume_mainmemorydb(vol_t* volume) {
             if (_buffer[idx].calculate_checksum() != _buffer[idx].checksum) {
                 return RC(smlevel_0::eBADCHECKSUM);
             }
-            bf_tree_cb_t &cb(_control_blocks[idx]);
+            bf_tree_cb_t &cb = get_cb(idx);
             cb.clear();
             cb._pid_vol = vid;
             cb._pid_shpid = idx;
@@ -279,11 +319,11 @@ w_rc_t bf_tree_m::_install_volume_mainmemorydb(vol_t* volume) {
             cb._swizzled = true;
         }
     }
-    // now freelist is inconsistent, but who cares. this is mainmemory-db experiment
+    // now freelist is inconsistent, but who cares. this is mainmemory-db experiment FIXME
 
     bf_tree_vol_t* desc = new bf_tree_vol_t(volume);
     stnode_cache_t *stcache = volume->get_stnode_cache();
-    std::vector<snum_t> stores (stcache->get_all_used_store_id());
+    std::vector<snum_t> stores (stcache->get_all_used_store_ID());
     for (size_t i = 0; i < stores.size(); ++i) {
         snum_t store = stores[i];
         bf_idx idx = stcache->get_root_pid(store);
@@ -308,7 +348,7 @@ w_rc_t bf_tree_m::uninstall_volume(volid_t vid) {
 
     // then, release all pages.
     for (bf_idx idx = 1; idx < _block_cnt; ++idx) {
-        bf_tree_cb_t &cb(_control_blocks[idx]);
+        bf_tree_cb_t &cb = get_cb(idx);
         if (!cb._used || cb._pid_vol != vid) {
             continue;
         }
@@ -322,7 +362,7 @@ w_rc_t bf_tree_m::uninstall_volume(volid_t vid) {
         if (cb._swizzled) {
             --_swizzled_page_count_approximate;
         }
-        _control_blocks[idx].clear();
+        get_cb(idx).clear();
         _add_free_block(idx);
     }
     
@@ -336,13 +376,13 @@ w_rc_t bf_tree_m::uninstall_volume(volid_t vid) {
 // NOTE most of the page fix/unfix functions are in bf_tree_inline.h.
 // These functions are here are because called less frequently.
 
-w_rc_t bf_tree_m::fix_direct (page_s*& page, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
+w_rc_t bf_tree_m::fix_direct (generic_page*& page, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
     return _fix_nonswizzled(NULL, page, vol, shpid, mode, conditional, virgin_page);
 }
 
-w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(page_s* parent, page_s*& page, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
+w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(generic_page* parent, generic_page*& page, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
     bf_idx idx = shpid;
-    bf_tree_cb_t &cb(_control_blocks[idx]);
+    bf_tree_cb_t &cb = get_cb(idx);
 #ifdef BP_MAINTAIN_PARNET_PTR
     bf_idx parent_idx = 0;
     if (is_swizzling_enabled()) {
@@ -356,12 +396,12 @@ w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(page_s* parent, page_s*& page, s
         cb._dirty = true;
         ++_dirty_page_count_approximate;
         bf_idx parent_idx = parent - _buffer;
-        cb._pid_vol = _control_blocks[parent_idx]._pid_vol;
+        cb._pid_vol = get_cb(parent_idx)._pid_vol;
         cb._pid_shpid = idx;
         cb.pin_cnt_set(1);
     }
     cb._used = true;
-    w_rc_t rc = cb._latch.latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER);
+    w_rc_t rc = cb.latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER);
     if (rc.is_error()) {
         DBGOUT2(<<"bf_tree_m: latch_acquire failed in buffer frame " << idx << " rc=" << rc);
     } else {
@@ -370,11 +410,16 @@ w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(page_s* parent, page_s*& page, s
     return rc;
 }
 
-w_rc_t bf_tree_m::_fix_nonswizzled(page_s* parent, page_s*& page, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
+w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page, 
+                                   volid_t vol, shpid_t shpid, 
+                                   latch_mode_t mode, bool conditional, 
+                                   bool virgin_page) {
     w_assert1(vol != 0);
     w_assert1(shpid != 0);
     w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
+#ifdef BP_MAINTAIN_PARNET_PTR
     w_assert1(!is_swizzling_enabled() || parent != NULL);
+#endif
     bf_tree_vol_t *volume = _volumes[vol];
     w_assert1(volume != NULL);
     w_assert1(shpid >= volume->_volume->first_data_pageid());
@@ -403,7 +448,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(page_s* parent, page_s*& page, volid_t vol, s
             // the page is not in the bufferpool. we need to read it from disk
             W_DO(_grab_free_block(idx)); // get a frame that will be the new page
             w_assert1(idx != 0);
-            bf_tree_cb_t &cb(_control_blocks[idx]);
+            bf_tree_cb_t &cb = get_cb(idx);
             DBGOUT1(<<"unswizzled case: load shpid = " << shpid << " into frame = " << idx);
             // after here, we must either succeed or release the free block
             if (virgin_page) {
@@ -426,11 +471,13 @@ w_rc_t bf_tree_m::_fix_nonswizzled(page_s* parent, page_s*& page, volid_t vol, s
                         return RC (smlevel_0::eBADCHECKSUM);
                     }
                     // this is actually an error, but some testcases don't bother making real pages, so
-                    // we just write out some warning.
+                    // we just write out some warning.  FIXME: fix testcases and make this a real error!
                     if (!virgin_page && (_buffer[idx].pid.page != shpid || _buffer[idx].pid.vol().vol != vol)) {
                         ERROUT(<<"WARNING!! bf_tree_m: page id doesn't match! " << vol << "." << shpid << " was " << _buffer[idx].pid.vol().vol << "." << _buffer[idx].pid.page
                             << ". This means an inconsistent disk page unless this message is issued in testcases without real disk pages."
                         );
+                        // prevent assertion errors due to bad testcase pages; should not be needed once above fixed:
+                        _buffer[idx].tag = t_btree_p;
                     }
                 }
             }
@@ -439,8 +486,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(page_s* parent, page_s*& page, volid_t vol, s
             // we don't have to atomically pin it because it's not referenced by any other yet
 
             // latch the page. (not conditional because this thread will be the only thread touching it)
-            memset(&cb._latch, 0, sizeof(cb._latch));
-            w_rc_t rc_latch = cb._latch.latch_acquire(mode, sthread_t::WAIT_IMMEDIATE);
+            cb.clear_latch();
+            w_rc_t rc_latch = cb.latch().latch_acquire(mode, sthread_t::WAIT_IMMEDIATE);
             w_assert1(!rc_latch.is_error());
 
             cb.clear_except_latch();
@@ -463,15 +510,17 @@ w_rc_t bf_tree_m::_fix_nonswizzled(page_s* parent, page_s*& page, volid_t vol, s
                 ++_dirty_page_count_approximate;
             }
             cb._used = true;
-            cb._workload_id = me()->get_workload_id();
-
+            cb._refbit_approximate = BP_INITIAL_REFCOUNT; 
+#ifdef BP_MAINTAIN_REPLACEMENT_PRIORITY
+            cb._replacement_priority = me()->get_workload_priority();
+#endif
             // finally, register the page to the hashtable.
             bool registered = _hashtable->insert_if_not_exists(key, idx);
             if (!registered) {
                 // this pid already exists in bufferpool. this means another thread concurrently
                 // added the page to bufferpool. unlucky, but can happen.
                 DBGOUT1(<<"bf_tree_m: unlucky! another thread already added the page " << shpid << " to the bufferpool. discard my own work on frame " << idx);
-                cb._latch.latch_release();
+                cb.latch().latch_release();
                 cb.clear(); // well, it should be enough to clear _used, but this is anyway a rare event. wouldn't hurt to clear all.
                 _add_free_block(idx);
                 continue;
@@ -480,7 +529,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(page_s* parent, page_s*& page, volid_t vol, s
             // okay, all done
 #ifdef BP_MAINTAIN_PARNET_PTR
             if (is_swizzling_enabled()) {
-		lintel::unsafe::atomic_fetch_add((uint32_t*) &(_control_bl     ocks[parent_idx]._pin_cnt), 1); // we installed a new child of the parent      to this bufferpool. add parent's count
+		lintel::unsafe::atomic_fetch_add((uint32_t*) &(_control_blocks[parent_idx]._pin_cnt), 1); // we installed a new child of the parent      to this bufferpool. add parent's count
             }
 #endif // BP_MAINTAIN_PARNET_PTR
             page = &(_buffer[idx]);
@@ -493,7 +542,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(page_s* parent, page_s*& page, volid_t vol, s
             } else {
                 DBGOUT1(<<"swizzled case: parent = NIL"<< ", shpid = " << shpid << " frame=" << idx);
             }
-            bf_tree_cb_t &cb(_control_blocks[idx]);
+            bf_tree_cb_t &cb = get_cb(idx);
             int32_t cur_cnt = cb.pin_cnt();
             if (cur_cnt < 0) {
                 w_assert1(cur_cnt == -1);
@@ -506,9 +555,11 @@ w_rc_t bf_tree_m::_fix_nonswizzled(page_s* parent, page_s*& page, volid_t vol, s
             {
 #endif
                 // okay, CAS went through
-                ++cb._refbit_approximate;
+                if (cb._refbit_approximate < BP_MAX_REFCOUNT) {
+                    ++cb._refbit_approximate;
+                }
                 //cout << "Bump RefCnt: " << idx << ", " << cb._refbit_approximate << endl;
-                w_rc_t rc = cb._latch.latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER);
+                w_rc_t rc = cb.latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER);
                 // either successfully or unsuccessfully, we latched the page.
                 // we don't need the pin any more.
                 // here we can simply use atomic_dec because it must be positive now.
@@ -538,7 +589,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(page_s* parent, page_s*& page, volid_t vol, s
     }
 }
 
-bf_idx bf_tree_m::pin_for_refix(const page_s* page) {
+bf_idx bf_tree_m::pin_for_refix(const generic_page* page) {
     w_assert1(page != NULL);
     w_assert1(latch_mode(page) != LATCH_NL);
     bf_idx idx = page - _buffer;
@@ -548,18 +599,18 @@ bf_idx bf_tree_m::pin_for_refix(const page_s* page) {
 #endif // SIMULATE_MAINMEMORYDB
     // this is just atomic increment, not a CAS, because we know
     // the page is latched and eviction thread wouldn't consider this block.
-    w_assert1(_control_blocks[idx].pin_cnt() >= 0);
-    _control_blocks[idx].pin_cnt_atomic_inc(1);
+    w_assert1(get_cb(idx).pin_cnt() >= 0);
+    get_cb(idx).pin_cnt_atomic_inc(1);
     return idx;
 }
 
 void bf_tree_m::unpin_for_refix(bf_idx idx) {
     w_assert1(_is_active_idx(idx));
-    w_assert1(_control_blocks[idx].pin_cnt() > 0);
+    w_assert1(get_cb(idx).pin_cnt() > 0);
 #ifdef SIMULATE_MAINMEMORYDB
     if (true) return;
 #endif // SIMULATE_MAINMEMORYDB
-    _control_blocks[idx].pin_cnt_atomic_dec(1);
+    get_cb(idx).pin_cnt_atomic_dec(1);
 }
 
 ///////////////////////////////////   Page fix/unfix END         ///////////////////////////////////  
@@ -581,14 +632,14 @@ w_rc_t bf_tree_m::wakeup_cleaner_for_volume(volid_t vol) {
     return _cleaner->wakeup_cleaner_for_volume(vol);
 }
 
-void bf_tree_m::repair_rec_lsn (page_s *page, bool was_dirty, const lsn_t &new_rlsn) {
+void bf_tree_m::repair_rec_lsn (generic_page *page, bool was_dirty, const lsn_t &new_rlsn) {
     if( !smlevel_0::logging_enabled) return;
     
     bf_idx idx = page - _buffer;
     w_assert1 (_is_active_idx(idx));
     
     lsn_t lsn = _buffer[idx].lsn;
-    lsn_t rec_lsn (_control_blocks[idx]._rec_lsn);
+    lsn_t rec_lsn (get_cb(idx)._rec_lsn);
     if (was_dirty) {
         // never mind!
         w_assert0(rec_lsn <= lsn);
@@ -596,11 +647,11 @@ void bf_tree_m::repair_rec_lsn (page_s *page, bool was_dirty, const lsn_t &new_r
         w_assert0(rec_lsn > lsn);
         if(new_rlsn.valid()) {
             w_assert0(new_rlsn <= lsn);
-            w_assert2(_control_blocks[idx]._dirty);
-            _control_blocks[idx]._rec_lsn = new_rlsn.data();
+            w_assert2(get_cb(idx)._dirty);
+            get_cb(idx)._rec_lsn = new_rlsn.data();
             INC_TSTAT(restart_repair_rec_lsn);
         } else {
-            _control_blocks[idx]._dirty = false;
+            get_cb(idx)._dirty = false;
         }
     }
 }
@@ -614,7 +665,7 @@ void bf_tree_m::repair_rec_lsn (page_s *page, bool was_dirty, const lsn_t &new_r
 void bf_tree_m::_add_to_swizzled_lru(bf_idx idx) {
     w_assert1 (is_swizzling_enabled());
     w_assert1 (_is_active_idx(idx));
-    w_assert1 (!_control_blocks[idx]._swizzled);
+    w_assert1 (!get_cb(idx)._swizzled);
     CRITICAL_SECTION(cs, &_swizzled_lru_lock);
     ++_swizzled_lru_len;
     if (SWIZZLED_LRU_HEAD == 0) {
@@ -637,7 +688,7 @@ void bf_tree_m::_add_to_swizzled_lru(bf_idx idx) {
 void bf_tree_m::_update_swizzled_lru(bf_idx idx) {
     w_assert1 (is_swizzling_enabled());
     w_assert1 (_is_active_idx(idx));
-    w_assert1 (_control_blocks[idx]._swizzled);
+    w_assert1 (get_cb(idx)._swizzled);
 
     CRITICAL_SECTION(cs, &_swizzled_lru_lock);
     w_assert1(SWIZZLED_LRU_HEAD != 0);
@@ -668,9 +719,9 @@ void bf_tree_m::_update_swizzled_lru(bf_idx idx) {
 void bf_tree_m::_remove_from_swizzled_lru(bf_idx idx) {
     w_assert1 (is_swizzling_enabled());
     w_assert1 (_is_active_idx(idx));
-    w_assert1 (_control_blocks[idx]._swizzled);
+    w_assert1 (get_cb(idx)._swizzled);
 
-    _control_blocks[idx]._swizzled = false;
+    get_cb(idx)._swizzled = false;
     CRITICAL_SECTION(cs, &_swizzled_lru_lock);
     w_assert1(SWIZZLED_LRU_HEAD != 0);
     w_assert1(SWIZZLED_LRU_TAIL != 0);
@@ -725,7 +776,7 @@ w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret) {
             if (_freelist_len > 0) { // here, we do the real check
                 bf_idx idx = FREELIST_HEAD;
                 w_assert1 (idx > 0 && idx < _block_cnt);
-                w_assert1 (!_control_blocks[idx]._used);
+                w_assert1 (!get_cb(idx)._used);
                 --_freelist_len;
                 if (_freelist_len == 0) {
                     FREELIST_HEAD = 0;
@@ -758,32 +809,36 @@ w_rc_t bf_tree_m::_get_replacement_block(bf_idx& ret) {
 
     switch (_replacement_policy) {
         case POLICY_CLOCK:
-            return _get_replacement_block_clock(ret);
+            return _get_replacement_block_clock(ret, false);
+        case POLICY_CLOCK_PRIORITY:
+            return _get_replacement_block_clock(ret, true);
         case POLICY_RANDOM:
             return _get_replacement_block_random(ret);
     }
-    return _get_replacement_block_clock(ret);
+    ERROUT (<<"Unknown replacement policy");
+    return RC(smlevel_0::eINTERNAL);
 }
 
-w_rc_t bf_tree_m::_get_replacement_block_clock(bf_idx& ret) {
+w_rc_t bf_tree_m::_get_replacement_block_clock(bf_idx& ret, bool use_priority) {
     DBGOUT3(<<"trying to evict some page using the CLOCK replacement policy...");
     int blocks_replaced_count = 0;
     uint32_t rounds = 0; // how many times the clock hand looped in this function
+    char priority_threshold = 0;
+
     while (true) {
         bf_idx idx = ++_clock_hand;
         if (idx >= _block_cnt) {
-            if (blocks_replaced_count > 0) {
-                // we found at least one so we are essentially done
+            if (blocks_replaced_count > 0 && rounds > 1) {
+                // after a complete cycle we found at least one so we are essentially done
                 return RCOK;
             }
             ++rounds;
             DBGOUT1(<<"clock hand looped! rounds=" << rounds);
             _clock_hand = 1;
             idx = 1;
+            priority_threshold++;
             if (_swizzled_page_count_approximate >= (int) (_block_cnt * 95 / 100)) {
-                //cout << "Urgent" << endl;
-                //_trigger_unswizzling(rounds >= 10);
-                _trigger_unswizzling(rounds >= 1);
+                _trigger_unswizzling(rounds >= 10);
             } else {
                 if (rounds == 2) {
                     // most likely we have too many dirty pages
@@ -807,45 +862,42 @@ w_rc_t bf_tree_m::_get_replacement_block_clock(bf_idx& ret) {
         }
         w_assert1(idx > 0);
 
-        bf_tree_cb_t &cb(_control_blocks[idx]);
+        bf_tree_cb_t &cb(get_cb(idx));
 
-        // do not evict young workload 
-        //if (cb._phase_id > 1) {
-        //    continue;
-        //}
-
-        // do not evict interior nodes
-        if (_buffer[idx].btree_level > 1) {
+        // do not evict a page used by a high priority workload
+        if (use_priority && (cb._replacement_priority > priority_threshold)) {
             continue;
         }
 
-        // do not evict hot page
-        if (cb._refbit_approximate > 0) {
-            //const uint32_t refbit_threshold = 3;
-            const uint32_t refbit_threshold = 4;
-            if (cb._refbit_approximate > refbit_threshold) {
-                //cb._refbit_approximate /= (rounds >= 5 ? 8 : 2);
-                cb._refbit_approximate /= 4;
-                //cb._refbit_approximate=0;
-            } else {
-                cb._refbit_approximate--;
-            }
+#ifndef BP_CAN_EVICT_INNER_NODE
+        //do not evict interior nodes
+        fixable_page_h p(_buffer + idx);
+        if (p.has_children()) {
             continue;
         }
-/*
+#endif
+
         // do not evict hot page
+
+#if 0 /* aggressive refcount decrement -- for use when we don't cap refcount */
         if (cb._refbit_approximate > 0) {
-            cb._refbit_approximate = 0;
-            continue;
             const uint32_t refbit_threshold = 3;
             if (cb._refbit_approximate > refbit_threshold) {
                 cb._refbit_approximate /= (rounds >= 5 ? 8 : 2);
+                //cb._refbit_approximate=0;
             } else {
-                cb._refbit_approximate = 0;
+                cb._refbit_approximate--;
+                //cb._refbit_approximate=0;
             }
             continue;
         }
-*/
+#else 
+        if (cb._refbit_approximate > 0) {
+            cb._refbit_approximate--;
+            continue;
+        }
+#endif
+
         if (_try_evict_block(idx) == 0) {
             // return the first block found back to the caller and try to find more 
             // blocks to free
@@ -854,7 +906,7 @@ w_rc_t bf_tree_m::_get_replacement_block_clock(bf_idx& ret) {
             } else {
                 ret = idx;
             }
-            if (blocks_replaced_count < (1024)) {
+            if (blocks_replaced_count < (1)) {
                 continue;
             }
             return RCOK;
@@ -868,27 +920,10 @@ w_rc_t bf_tree_m::_get_replacement_block_clock(bf_idx& ret) {
 
 w_rc_t bf_tree_m::_get_replacement_block_random(bf_idx& ret) {
     DBGOUT3(<<"trying to evict some page using the RANDOM replacement policy...");
-    int blocks_replaced_count = 0;
-    int tries = 0;
-/*
-    for (bf_idx idx = 0; idx < _block_cnt; idx++) {
-        if (_buffer[idx].btree_level == 1) {
-            if (_try_evict_block(idx) == 0) {
-                // return the first block found back to the caller and try to find more to free
-                if (blocks_replaced_count++ > 0) {
-                    _add_free_block(idx);
-                } else {
-                    ret = idx;
-                }
-            }
-        }
-    }
-
-    if (blocks_replaced_count>0) {
-        return RCOK;
-    }
-*/
     while (true) {
+        int blocks_replaced_count = 0;
+        unsigned tries = 0;
+
         bf_idx idx = me()->randn(_block_cnt-1) + 1;
         if (++tries < _block_cnt) {
             if (blocks_replaced_count > 0) {
@@ -920,7 +955,7 @@ w_rc_t bf_tree_m::_get_replacement_block_random(bf_idx& ret) {
 }
 
 int bf_tree_m::_try_evict_block(bf_idx idx) {
-    bf_tree_cb_t &cb(_control_blocks[idx]);
+    bf_tree_cb_t &cb = get_cb(idx);
 
     // do not consider dirty pages (at this point)
     // we check this again later because we don't take locks as of this.
@@ -937,7 +972,7 @@ int bf_tree_m::_try_evict_block(bf_idx idx) {
     }
     
     // if it seems someone latches it, give up.
-    if (cb._latch.latch_cnt() != 0) { // again, we check for real later
+    if (cb.latch().latch_cnt() != 0) { // again, we check for real later
         return -1;
     }
     
@@ -959,14 +994,14 @@ int bf_tree_m::_try_evict_block(bf_idx idx) {
         }
         
         // check latches too. just conditionally test it to avoid long waits.
-        w_rc_t latch_rc = cb._latch.latch_acquire(LATCH_EX, WAIT_IMMEDIATE);
+        w_rc_t latch_rc = cb.latch().latch_acquire(LATCH_EX, WAIT_IMMEDIATE);
         if (latch_rc.is_error()) {
             DBGOUT1(<<"very unlucky, someone has just latched this block.");
             cb.pin_cnt_set(0);
             return -1;
         }
         // we can immediately release EX latch because no one will newly take latch as _pin_cnt==-1
-        cb._latch.latch_release();
+        cb.latch().latch_release();
         DBGOUT1(<<"evicting page idx = " << idx << " shpid = " << cb._pid_shpid 
                 << " pincnt = " << cb.pin_cnt());
         
@@ -1000,10 +1035,10 @@ void bf_tree_m::_add_free_block(bf_idx idx) {
 
 void bf_tree_m::_delete_block(bf_idx idx) {
     w_assert1(_is_active_idx(idx));
-    bf_tree_cb_t &cb(_control_blocks[idx]);
+    bf_tree_cb_t &cb = get_cb(idx);
     w_assert1(cb._dirty);
     w_assert1(cb.pin_cnt() == 0);
-    w_assert1(!cb._latch.is_latched());
+    w_assert1(!cb.latch().is_latched());
     cb._used = false; // clear _used BEFORE _dirty so that eviction thread will ignore this block.
     cb._dirty = false;
 
@@ -1025,7 +1060,7 @@ void bf_tree_m::_delete_block(bf_idx idx) {
 
 bool bf_tree_m::_increment_pin_cnt_no_assumption(bf_idx idx) {
     w_assert1(idx > 0 && idx < _block_cnt);
-    bf_tree_cb_t &cb(_control_blocks[idx]);
+    bf_tree_cb_t &cb = get_cb(idx);
 #if 0
     int32_t cur = cb._pin_cnt;
     while (true) {
@@ -1048,27 +1083,27 @@ bool bf_tree_m::_increment_pin_cnt_no_assumption(bf_idx idx) {
 
 void bf_tree_m::_decrement_pin_cnt_assume_positive(bf_idx idx) {
     w_assert1 (_is_active_idx(idx));
-    bf_tree_cb_t &cb(_control_blocks[idx]);
+    bf_tree_cb_t &cb = get_cb(idx);
     w_assert1 (cb.pin_cnt() >= 1);
     //lintel::unsafe::atomic_fetch_sub((uint32_t*) &(cb._pin_cnt),1);
     cb.pin_cnt_atomic_dec(1);
 }
 
 ///////////////////////////////////   WRITE-ORDER-DEPENDENCY BEGIN ///////////////////////////////////  
-bool bf_tree_m::register_write_order_dependency(const page_s* page, const page_s* dependency) {
+bool bf_tree_m::register_write_order_dependency(const generic_page* page, const generic_page* dependency) {
     w_assert1(page);
     w_assert1(dependency);
     w_assert1(page->pid != dependency->pid);
 
     uint32_t idx = page - _buffer;
     w_assert1 (_is_active_idx(idx));
-    bf_tree_cb_t &cb(_control_blocks[idx]);
-    w_assert1(cb._latch.held_by_me()); 
+    bf_tree_cb_t &cb = get_cb(idx);
+    w_assert1(cb.latch().held_by_me()); 
 
     uint32_t dependency_idx = dependency - _buffer;
     w_assert1 (_is_active_idx(dependency_idx));
-    bf_tree_cb_t &dependency_cb(_control_blocks[dependency_idx]);
-    w_assert1(dependency_cb._latch.held_by_me()); 
+    bf_tree_cb_t &dependency_cb = get_cb(dependency_idx);
+    w_assert1(dependency_cb.latch().held_by_me()); 
 
     // each page can have only one out-going dependency
     if (cb._dependency_idx != 0) {
@@ -1125,7 +1160,7 @@ bool bf_tree_m::_check_dependency_cycle(bf_idx source, bf_idx start_idx) {
             found_cycle = true;
             break;
         }
-        bf_tree_cb_t &dependency_cb(_control_blocks[dependency_idx]);
+        bf_tree_cb_t &dependency_cb = get_cb(dependency_idx);
         w_assert1(dependency_cb.pin_cnt() >= 0);
         bf_idx next_dependency_idx = dependency_cb._dependency_idx;
         if (next_dependency_idx == 0) {
@@ -1137,7 +1172,7 @@ bool bf_tree_m::_check_dependency_cycle(bf_idx source, bf_idx start_idx) {
             break; // we can stop here.
         } else {
             // move on to next
-            bf_tree_cb_t &next_dependency_cb(_control_blocks[next_dependency_idx]);
+            bf_tree_cb_t &next_dependency_cb = get_cb(next_dependency_idx);
             bool still_active = _compare_dependency_lsn(dependency_cb, next_dependency_cb);
             // okay, we no longer need the previous. unpin the previous one.
             if (dependency_needs_unpin) {
@@ -1182,7 +1217,7 @@ bool bf_tree_m::_check_dependency_still_active(bf_tree_cb_t& cb) {
             // it's already evicted or being evicted. we can ignore it.
             still_active = false;
         } else {
-            still_active = _compare_dependency_lsn(cb, _control_blocks[next_idx]);
+            still_active = _compare_dependency_lsn(cb, get_cb(next_idx));
             _decrement_pin_cnt_assume_positive(next_idx);
         }
     }
@@ -1198,14 +1233,14 @@ bool bf_tree_m::_check_dependency_still_active(bf_tree_cb_t& cb) {
 ///////////////////////////////////   WRITE-ORDER-DEPENDENCY END ///////////////////////////////////  
 
 #ifdef BP_MAINTAIN_PARNET_PTR
-void bf_tree_m::switch_parent(page_s* page, page_s* new_parent)
+void bf_tree_m::switch_parent(generic_page* page, generic_page* new_parent)
 {
     if (!is_swizzling_enabled()) {
         return;
     }
     bf_idx idx = page - _buffer;
     w_assert1(_is_active_idx(idx));
-    bf_tree_cb_t &cb(_control_blocks[idx]);
+    bf_tree_cb_t &cb = get_cb(idx);
 
     w_assert1(_is_active_idx(cb._parent));
 
@@ -1215,29 +1250,19 @@ void bf_tree_m::switch_parent(page_s* page, page_s* new_parent)
     
     // move the pin_cnt from old to new parent
     _decrement_pin_cnt_assume_positive(cb._parent);
-    lintel::unsafe::atomic_fetch_add((uint32_t*) &(_control_blocks[new_par     ent_idx]._pin_cnt),1);
+    lintel::unsafe::atomic_fetch_add((uint32_t*) &(get_cb(new_parent_idx)._pin_cnt),1);
     cb._parent = new_parent_idx;
 }
 #endif // BP_MAINTAIN_PARNET_PTR
 
 
-void bf_tree_m::_convert_to_disk_page(page_s* page) const {
+void bf_tree_m::_convert_to_disk_page(generic_page* page) const {
     DBGOUT3 (<< "converting the page " << page->pid << "... ");
-    
-    // if the page is a leaf page, blink is the only pointer
-    _convert_to_pageid(&(page->btree_blink));
-    w_assert1(page->btree_level >= 1);
-    
-    //otherwise, we have to check all children
-    if (page->btree_level > 1) {
-        _convert_to_pageid(&(page->btree_pid0));
-        slot_index_t slots = page->nslots;
-        // use page_p class just for using tuple_addr().
-        page_p p (page);
-        for (slot_index_t i = 1; i < slots; ++i) {
-            void* addr = p.tuple_addr(i);
-            _convert_to_pageid(reinterpret_cast<shpid_t*>(addr));
-        }
+
+    fixable_page_h p(page);
+    int max_slot = p.max_child_slot();
+    for (int i= -1; i<=max_slot; i++) {
+        _convert_to_pageid(p.child_slot_address(i));
     }
 }
 
@@ -1245,80 +1270,60 @@ inline void bf_tree_m::_convert_to_pageid (shpid_t* shpid) const {
     if ((*shpid) & SWIZZLED_PID_BIT) {
         bf_idx idx = (*shpid) ^ SWIZZLED_PID_BIT;
         w_assert1(_is_active_idx(idx));
-        bf_tree_cb_t &cb(_control_blocks[idx]);
+        bf_tree_cb_t &cb = get_cb(idx);
         DBGOUT3 (<< "_convert_to_pageid(): converted a swizzled pointer bf_idx=" << idx << " to page-id=" << cb._pid_shpid);
         *shpid = cb._pid_shpid;
     }
 }
 
-slotid_t bf_tree_m::find_page_id_slot(page_s* page, shpid_t shpid) const
-{
+slotid_t bf_tree_m::find_page_id_slot(generic_page* page, shpid_t shpid) const {
     w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
-    // w_assert1(page->btree_blink != (shpid | SWIZZLED_PID_BIT));
-    // if (page->btree_blink == shpid) {
-    //     return -1;
-    // }
-    w_assert1(page->btree_blink != shpid); // don't swizzle foster-child
-    if (page->btree_level > 1) {
-        if (page->btree_pid0 == shpid) {
-            return 0;
+
+    fixable_page_h p(page);
+    int max_slot = p.max_child_slot();
+
+    //  don't swizzle foster-child:
+    w_assert1( *p.child_slot_address(-1) != shpid );
+    //for (int i = -1; i <= max_slot; ++i) {
+    for (int i = 0; i <= max_slot; ++i) {
+        if (*p.child_slot_address(i) != shpid) {
+            continue;
         }
-        slot_index_t slots = page->nslots;
-        page_p p (page);
-        for (slot_index_t i = 1; i < slots; ++i) {
-            void* addr = p.tuple_addr(i);
-            if (*reinterpret_cast<shpid_t*>(addr) == shpid) {
-                return i;
-            }
-        }
+        return i;
     }
     return -2;
 }
 
 ///////////////////////////////////   SWIZZLE/UNSWIZZLE BEGIN ///////////////////////////////////  
 
-void bf_tree_m::swizzle_child(page_s* parent, slotid_t slot)
+void bf_tree_m::swizzle_child(generic_page* parent, slotid_t slot)
 {
     return swizzle_children(parent, &slot, 1);
 }
 
-void bf_tree_m::swizzle_children(page_s* parent, const slotid_t* slots, uint32_t slots_size)
-{
+void bf_tree_m::swizzle_children(generic_page* parent, const slotid_t* slots, uint32_t slots_size) {
     w_assert1(is_swizzling_enabled());
     w_assert1(parent != NULL);
     w_assert1(latch_mode(parent) != LATCH_NL);
-    bf_idx parent_idx = parent - _buffer;
-    w_assert1(_is_active_idx(parent_idx));
+    w_assert1(_is_active_idx(parent - _buffer));
     w_assert1(is_swizzled(parent)); // swizzling is transitive.
 
-    page_p p (parent);
+    fixable_page_h p (parent);
     for (uint32_t i = 0; i < slots_size; ++i) {
         slotid_t slot = slots[i];
-        w_assert1(slot >= 0); // w_assert1(slot >= -1); see below
-        w_assert1(slot < parent->nslots);
-
         // To simplify the tree traversal while unswizzling,
         // we never swizzle foster-child pointers.
-        // if (slot == -1) {
-        //    if ((parent->btree_blink & SWIZZLED_PID_BIT) == 0) {
-        //        _swizzle_child_pointer (parent, &(parent->btree_blink));
-        //    }
-        //} else
-        if (slot == 0) {
-            if ((parent->btree_pid0 & SWIZZLED_PID_BIT) == 0) {
-                _swizzle_child_pointer (parent, &(parent->btree_pid0));
-            }
-        } else {
-            shpid_t* addr = reinterpret_cast<shpid_t*>(p.tuple_addr(slot));
-            if (((*addr) & SWIZZLED_PID_BIT) == 0) {
-                _swizzle_child_pointer (parent, addr);
-            }
+        w_assert1(slot >= 0); // was w_assert1(slot >= -1);
+        w_assert1(slot <= p.max_child_slot());
+
+        shpid_t* addr = p.child_slot_address(slot);
+        if (((*addr) & SWIZZLED_PID_BIT) == 0) {
+            _swizzle_child_pointer(parent, addr);
         }
     }
 }
 
-inline void bf_tree_m::_swizzle_child_pointer(page_s* parent, shpid_t* pointer_addr)
-{
+inline void bf_tree_m::_swizzle_child_pointer(generic_page* parent, shpid_t* pointer_addr) {
     shpid_t child_shpid = *pointer_addr;
     //w_assert1((child_shpid & SWIZZLED_PID_BIT) == 0);
     uint64_t key = bf_key (parent->pid.vol().vol, child_shpid);
@@ -1330,34 +1335,37 @@ inline void bf_tree_m::_swizzle_child_pointer(page_s* parent, shpid_t* pointer_a
         return;
     }
     bool concurrent_swizzling = false;
-    while (!lintel::unsafe::atomic_compare_exchange_strong(const_cast<bool*>(&_control_blocks[idx]._concurrent_swizzling), &concurrent_swizzling, true))
+    while (!lintel::unsafe::atomic_compare_exchange_strong(const_cast<bool*>(&(get_cb(idx)._concurrent_swizzling)), &concurrent_swizzling, true))
     { }
 
     if ((child_shpid & SWIZZLED_PID_BIT) != 0) {
         /* another thread swizzled it for us */
-        _control_blocks[idx]._concurrent_swizzling = false;
+        get_cb(idx)._concurrent_swizzling = false;
         return;
     }
  
-    // to swizzle the child, add a pin on the page.
-    // we might fail here in a very unlucky case. still, it's fine.
+    // To swizzle the child, add a pin on the page.
+    // We might fail here in a very unlucky case.  Still, it's fine.
     bool pinned = _increment_pin_cnt_no_assumption (idx);
     if (!pinned) {
         DBGOUT1(<< "Unlucky! the child page " << child_shpid << " has been just evicted. gave up swizzling it");
-        _control_blocks[idx]._concurrent_swizzling = false;
+        get_cb(idx)._concurrent_swizzling = false;
         return;
     }
     
     // we keep the pin until we unswizzle it.
     *pointer_addr = idx | SWIZZLED_PID_BIT; // overwrite the pointer in parent page.
-    _control_blocks[idx]._swizzled = true;
+    get_cb(idx)._swizzled = true;
+#ifdef BP_TRACK_SWIZZLED_PTR_CNT
+    get_cb(parent)->_swizzled_ptr_cnt_hint++;
+#endif
     ++_swizzled_page_count_approximate;
 #ifdef BP_MAINTAIN_PARNET_PTR
     w_assert1(!_is_in_swizzled_lru(idx));
     _add_to_swizzled_lru(idx);
     w_assert1(_is_in_swizzled_lru(idx));
 #endif // BP_MAINTAIN_PARNET_PTR
-    _control_blocks[idx]._concurrent_swizzling = false;
+    get_cb(idx)._concurrent_swizzling = false;
 }
 
 inline bool bf_tree_m::_are_there_many_swizzled_pages() const {
@@ -1462,48 +1470,59 @@ void bf_tree_m::_unswizzle_traverse_store(uint32_t &unswizzled_frames, volid_t v
         return; // just give up in unlucky case (probably the store has been just deleted)
     }
     bf_idx parent_idx = _volumes[vol]->_root_pages[store];
-    if (_buffer[parent_idx].btree_level <= 1) {
+    fixable_page_h p(&_buffer[parent_idx]);
+    if (!p.has_children()) {
         return;
     }
     // collect cold pages first. if need more then repeat for hot pages
     _swizzle_clockhand_threshold = 0;
     _unswizzle_traverse_node (unswizzled_frames, vol, store, parent_idx, 2);
     if (unswizzled_frames < UNSWIZZLE_BATCH_SIZE) {
-        _swizzle_clockhand_threshold = (uint32_t) -1;
+        _swizzle_clockhand_threshold = (uint32_t) -1; // set to maximum
         _unswizzle_traverse_node (unswizzled_frames, vol, store, parent_idx, 2);
     }
 }
 
-void bf_tree_m::_unswizzle_traverse_node(
-    uint32_t &unswizzled_frames, volid_t vol, snum_t store, bf_idx node_idx,
-    uint16_t cur_clockhand_depth) {
+
+bool bf_tree_m::has_swizzled_child(bf_idx node_idx) {
+    fixable_page_h node_p(_buffer + node_idx);
+    int max_slot = node_p.max_child_slot();
+    // skipping foster pointer...
+    for (int32_t j = 0; j <= max_slot; ++j) {
+        shpid_t shpid = *node_p.child_slot_address(j);
+        if ((shpid & SWIZZLED_PID_BIT) != 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void bf_tree_m::_unswizzle_traverse_node(uint32_t &unswizzled_frames,
+                                         volid_t vol,
+                                         snum_t store,
+                                         bf_idx node_idx,
+                                         uint16_t cur_clockhand_depth) {
     w_assert1(cur_clockhand_depth < MAX_SWIZZLE_CLOCKHAND_DEPTH);
     if (_swizzle_clockhand_current_depth <= cur_clockhand_depth) {
         _swizzle_clockhand_pathway[cur_clockhand_depth] = 0;
         _swizzle_clockhand_current_depth = cur_clockhand_depth + 1;
     }
     uint32_t old = _swizzle_clockhand_pathway[cur_clockhand_depth];
-    bf_tree_cb_t &node_cb(_control_blocks[node_idx]);
-    if (old >= (uint32_t) _buffer[node_idx].nslots) {
+    bf_tree_cb_t &node_cb = get_cb(node_idx);
+    fixable_page_h node_p(_buffer + node_idx);
+    if (old >= (uint32_t) node_p.max_child_slot()+1) {
         return;
     }
 
     // check children
-    uint32_t remaining = _buffer[node_idx].nslots - old;
-    page_p node_p (_buffer + node_idx);
+    uint32_t remaining = node_p.max_child_slot()+1 - old;
     for (uint32_t i = 0; i < remaining && unswizzled_frames < UNSWIZZLE_BATCH_SIZE; ++i) {
         uint32_t slot = old + i;
-        if (!node_cb._used || _buffer[node_idx].btree_level <= 1) {
+        if (!node_cb._used || !node_p.has_children()) {
             return;
         }
 
-        shpid_t shpid;
-        if (slot == 0) {
-            shpid = _buffer[node_idx].btree_pid0;
-        } else {
-            shpid = *reinterpret_cast<shpid_t*>(node_p.tuple_addr(slot));
-        }
-
+        shpid_t shpid = *node_p.child_slot_address(slot);
         if ((shpid & SWIZZLED_PID_BIT) == 0) {
             // if this page is not swizzled, none of its descendants is not swizzled either.
             continue;
@@ -1515,19 +1534,42 @@ void bf_tree_m::_unswizzle_traverse_node(
         }
 
         bf_idx child_idx = shpid ^ SWIZZLED_PID_BIT;
-        if (_buffer[node_idx].btree_level >= 3) {
+        fixable_page_h node_child(_buffer + child_idx);
+        if (node_child.has_children()) {
             // child is also an intermediate node
             _unswizzle_traverse_node (unswizzled_frames, vol, store, child_idx, cur_clockhand_depth + 1);
+            // if the child node is left with no swizzled pointers then try to unswizzle 
+            // the parent pointer to the child as well 
+            bf_tree_cb_t& child_cb = get_cb(child_idx);
+            if (unswizzled_frames < UNSWIZZLE_BATCH_SIZE &&
+                child_cb._swizzled_ptr_cnt_hint == 0) 
+            {
+                // this is just a hint. try conditionally latching the child and do the actual check
+                w_rc_t latch_rc = child_cb.latch().latch_acquire(LATCH_SH, sthread_t::WAIT_IMMEDIATE);
+                if (latch_rc.is_error()) {
+                    DBGOUT2(<<"_unswizzle_traverse_node: oops, unlucky. someone is latching this page. skiping this. rc=" << latch_rc);
+                } else {
+                    if (!has_swizzled_child(child_idx)) {
+                        // unswizzle_a_frame will try to conditionally latch a parent while
+                        // we hold a latch on a child. While this is latching in the reverse order,
+                        // it is still safe against deadlock as the operation is conditional.
+                        bool unswizzled = _unswizzle_a_frame (node_idx, slot);
+                        if (unswizzled) {
+                            ++unswizzled_frames;
+                        }
+                    }
+                    child_cb.latch().latch_release();
+                }
+            }
         } else {
             // child is a leaf page. now let's unswizzle it!
-            bf_tree_cb_t &node_cb(_control_blocks[node_idx]);
             bool unswizzled = _unswizzle_a_frame (node_idx, slot);
             if (unswizzled) {
                 ++unswizzled_frames;
             }
         }
     }
-    
+
     if (unswizzled_frames < UNSWIZZLE_BATCH_SIZE) {
         // exhaustively checked this node's descendants. this node is 'done'
         _swizzle_clockhand_current_depth = cur_clockhand_depth;
@@ -1544,7 +1586,7 @@ struct latch_auto_release {
 
 bool bf_tree_m::_unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot) {
     // misc checks. if any check fails, just returns false.
-    bf_tree_cb_t &parent_cb(_control_blocks[parent_idx]);
+    bf_tree_cb_t &parent_cb = get_cb(parent_idx);
     if (!parent_cb._used) {
         return false;
     }
@@ -1552,29 +1594,24 @@ bool bf_tree_m::_unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot) {
         return false;
     }
     // now, try a conditional latch on parent page.
-    w_rc_t latch_rc = parent_cb._latch.latch_acquire(LATCH_EX, sthread_t::WAIT_IMMEDIATE);
+    w_rc_t latch_rc = parent_cb.latch().latch_acquire(LATCH_EX, sthread_t::WAIT_IMMEDIATE);
     if (latch_rc.is_error()) {
         DBGOUT2(<<"_unswizzle_a_frame: oops, unlucky. someone is latching this page. skipiing this. rc=" << latch_rc);
         return false;
     }
-    latch_auto_release auto_rel(parent_cb._latch); // this automatically releaes the latch.
+    latch_auto_release auto_rel(parent_cb.latch()); // this automatically releaes the latch.
 
-    if (child_slot >= (uint32_t) _buffer[parent_idx].nslots) {
+    fixable_page_h parent(_buffer + parent_idx);
+    if (child_slot >= (uint32_t) parent.max_child_slot()+1) {
         return false;
     }
-    page_p parent (_buffer + parent_idx);
-    shpid_t* shpid_addr;
-    if (child_slot == 0) {
-        shpid_addr = &(_buffer[parent_idx].btree_pid0);
-    } else {
-        shpid_addr = reinterpret_cast<shpid_t*>(parent.tuple_addr(child_slot));
-    }
+    shpid_t* shpid_addr = parent.child_slot_address(child_slot);
     shpid_t shpid = *shpid_addr;
     if ((shpid & SWIZZLED_PID_BIT) == 0) {
         return false;
     }
     bf_idx child_idx = shpid ^ SWIZZLED_PID_BIT;
-    bf_tree_cb_t &child_cb(_control_blocks[child_idx]);
+    bf_tree_cb_t &child_cb = get_cb(child_idx);
     // don't unswizzle a frame that is hotter than current threshold temperature
     if (child_cb._refbit_approximate > _swizzle_clockhand_threshold) {
         return false;
@@ -1589,6 +1626,11 @@ bool bf_tree_m::_unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot) {
     w_assert1(child_cb.pin_cnt() >= 1); // because it's swizzled
     w_assert1(child_idx == _hashtable->lookup(bf_key (child_cb._pid_vol, child_cb._pid_shpid)));
     child_cb._swizzled = false;
+#ifdef BP_TRACK_SWIZZLED_PTR_CNT
+    if (parent_cb._swizzled_ptr_cnt_hint > 0) {
+        parent_cb._swizzled_ptr_cnt_hint--;
+    }
+#endif
     // because it was swizzled, the current pin count is >= 1, so we can simply do atomic decrement.
     _decrement_pin_cnt_assume_positive(child_idx);
     --_swizzled_page_count_approximate;
@@ -1608,8 +1650,8 @@ void bf_tree_m::_unswizzle_with_parent_pointer() {
 
 void bf_tree_m::debug_dump(std::ostream &o) const
 {
-    o << "dumping the bufferpool contents. _block_cnt=" << _block_cnt << ", _clock_hand=" << _clock_hand << std::endl;
-    o << "  _freelist_len=" << _freelist_len << ", HEAD=" << FREELIST_HEAD << std::endl;
+    o << "dumping the bufferpool contents. _block_cnt=" << _block_cnt << ", _clock_hand=" << _clock_hand << "\n";
+    o << "  _freelist_len=" << _freelist_len << ", HEAD=" << FREELIST_HEAD << "\n";
 #ifdef BP_MAINTAIN_PARNET_PTR
     o << "  _swizzled_lru_len=" << _swizzled_lru_len << ", HEAD=" << SWIZZLED_LRU_HEAD << ", TAIL=" << SWIZZLED_LRU_TAIL << std::endl;
 #endif // BP_MAINTAIN_PARNET_PTR
@@ -1628,7 +1670,7 @@ void bf_tree_m::debug_dump(std::ostream &o) const
     }
     for (bf_idx idx = 1; idx < _block_cnt && idx < 1000; ++idx) {
         o << "  frame[" << idx << "]:";
-        bf_tree_cb_t &cb(_control_blocks[idx]);
+        bf_tree_cb_t &cb = get_cb(idx);
         if (cb._used) {
             o << "page-" << cb._pid_vol << "." << cb._pid_shpid;
             if (cb._dirty) {
@@ -1651,7 +1693,7 @@ void bf_tree_m::debug_dump(std::ostream &o) const
             }
 #endif // BP_MAINTAIN_PARNET_PTR
             o << ", ";
-            cb._latch.print(o);
+            cb.latch().print(o);
         } else {
             o << "unused (next_free=" << _freelist[idx] << ")";
         }
@@ -1662,39 +1704,29 @@ void bf_tree_m::debug_dump(std::ostream &o) const
     }
 }
 
-void bf_tree_m::debug_dump_page_pointers(std::ostream& o, page_s* page) const
-{
+void bf_tree_m::debug_dump_page_pointers(std::ostream& o, generic_page* page) const {
     bf_idx idx = page - _buffer;
     w_assert1(idx > 0);
     w_assert1(idx < _block_cnt);
-    o << "dumping page:" << page->pid << ", bf_idx=" << idx << std::endl;
-    o << "  blink=";
-    debug_dump_pointer (o, page->btree_blink);
-    o << std::endl;
 
-    if (page->btree_level > 1) {
-        slot_index_t slots = page->nslots;
-        page_p p (page);
-        o << "  ";
-        for (slot_index_t i = 0; i < slots; ++i) {
-            o << "child[" << i << "]=";
-            if (i == 0) {
-                debug_dump_pointer(o, page->btree_pid0);
-            } else {
-                void* addr = p.tuple_addr(i);
-                debug_dump_pointer(o, *reinterpret_cast<shpid_t*>(addr));
-            }
+    o << "dumping page:" << page->pid << ", bf_idx=" << idx << std::endl;
+    o << "  ";
+    fixable_page_h p(page);
+    for (int i= -1; i<=p.max_child_slot(); i++) {
+        if (i > -1) {
             o << ", ";
         }
-        o << std::endl;
+        o << "child[" << i << "]=";
+        debug_dump_pointer(o, *p.child_slot_address(i));
     }
+    o << std::endl;
 }
 void bf_tree_m::debug_dump_pointer(ostream& o, shpid_t shpid) const
 {
     if (shpid & SWIZZLED_PID_BIT) {
         bf_idx idx = shpid ^ SWIZZLED_PID_BIT;
         o << "swizzled(bf_idx=" << idx;
-        o << ", page=" << _control_blocks[idx]._pid_shpid << ")";
+        o << ", page=" << get_cb(idx)._pid_shpid << ")";
     } else {
         o << "normal(page=" << shpid << ")";
     }
@@ -1703,7 +1735,7 @@ void bf_tree_m::debug_dump_pointer(ostream& o, shpid_t shpid) const
 shpid_t bf_tree_m::debug_get_original_pageid (shpid_t shpid) const {
     if (is_swizzled_pointer(shpid)) {
         bf_idx idx = shpid ^ SWIZZLED_PID_BIT;
-        return _control_blocks[idx]._pid_shpid;
+        return get_cb(idx)._pid_shpid;
     } else {
         return shpid;
     }
@@ -1736,7 +1768,10 @@ w_rc_t bf_tree_m::set_swizzling_enabled(bool enabled) {
 
     // clear all properties. could call uninstall_volume for each of them,
     // but nuking them all is faster.
-    ::memset (_control_blocks, 0, sizeof(bf_tree_cb_t) * _block_cnt);
+    for (bf_idx i = 0; i < _block_cnt; i++) {
+        bf_tree_cb_t &cb = get_cb(i);
+        cb.clear();
+    }
 #ifdef BP_MAINTAIN_PARNET_PTR
     ::memset (_swizzled_lru, 0, sizeof(bf_idx) * _block_cnt * 2);
     _swizzled_lru_len = 0;
@@ -1776,7 +1811,7 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, lsn_t *
 
     bf_idx i;
     for (i = 1; i < count && start < _block_cnt; ++start)  {
-        bf_tree_cb_t &cb(_control_blocks[start]);
+        bf_tree_cb_t &cb = get_cb(start);
         lsn_t lsn(cb._rec_lsn);
         if (cb._used && cb._dirty && lsn != lsn_t::null) {
             pid[i] = _buffer[start].pid;
@@ -1790,33 +1825,25 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, lsn_t *
     count = i;
 }
 
-//FIXME: use Shore's profiling support to collect these statistics
-static int swizzles = 0;
-
-void swizzling_stat_swizzle()
-{
-    swizzles++; // approximate - don't care about races
-}
-
-void swizzling_stat_print(const char* prefix)
-{
-    printf("%s: Swizzlings: %d\n", prefix, swizzles);
-}
-
-void swizzling_stat_reset()
-{
-    swizzles = 0;
-}
-
-void bf_tree_m::print_slots(page_s* page) const
-{
-    slot_index_t slots = page->nslots;
-    DBGOUT1 (<< "print " << slots << " slots");
-    page_p p (page);
-    for (slot_index_t i = 1; i < slots; ++i) {
-        void* addr = p.tuple_addr(i);
-        shpid_t* slotaddr = reinterpret_cast<shpid_t*>(addr);
-        DBGOUT1 (<< " slot[" << i << "] = " << *slotaddr);
-        //DBGOUT1 (<< " slot[" << i << "] = " << (reinterpret_cast<uint64_t>(*slotaddr) ^ SWIZZLED_PID_BIT));
+// for debugging swizzling policy purposes -- todo: remove it when done
+#if 0 
+int bf_tree_m::nframes(int priority, int level, int refbit, bool swizzled, bool print) {
+    int n=0;
+    for (bf_idx idx = 0; idx <= _block_cnt; idx++) {
+        bf_tree_cb_t &cb(get_cb(idx));
+        if (cb._replacement_priority == priority) {
+            if (_buffer[idx].btree_level >= level) {  // NO LONGER LEGAL ACCESS; REMOVE <<<>>>
+                if (cb._refbit_approximate >= refbit) {
+                    if (cb._swizzled == swizzled) {
+                        n++;
+                        if (print) {
+                            std::cout << idx << std::endl;
+                        }
+                    }
+                }
+            }
+        }
     }
+    return n;
 }
+#endif

@@ -62,10 +62,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <sthread.h>
 #endif
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 #include <list>
 
 /**\enum latch_mode_t
@@ -149,9 +145,9 @@ public:
     static void             on_thread_destroy(sthread_t *);
     /**\endcond skip */
     
-    /// Create a latch with the given name.
-    NORET                   latch_t(const char* const desc = 0);
-    NORET                   ~latch_t();
+    /// Create a latch
+    latch_t();
+    ~latch_t();
 
     // Dump latch info to the ostream. Not thread-safe. 
     ostream&                print(ostream &) const;

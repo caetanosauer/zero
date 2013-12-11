@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /*<std-header orig-src='shore'>
 
  $Id: vtable_sm.cpp,v 1.3 2010/06/08 22:28:57 nhall Exp $
@@ -36,9 +40,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #ifdef __GNUG__
 class prologue_rc_t;
-#pragma implementation "sm.h"
-#pragma implementation "prologue.h"
-#pragma implementation "sm_base.h"
 #endif
 
 #include "w.h"

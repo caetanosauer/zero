@@ -86,6 +86,8 @@ void check_definedness(void *v, size_t len)
     //
     static dummyfile D;
     lseek( D.fd(), 0, SEEK_SET);
-    write( D.fd(), v, len);
+    if(write( D.fd(), v, len)) {
+        // Silence compil;er
+    }
 }
 #endif

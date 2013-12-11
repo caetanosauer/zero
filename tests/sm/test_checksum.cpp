@@ -1,8 +1,8 @@
 #include "btree_test_env.h"
-#include "page_s.h"
+#include "generic_page.h"
 #include "bf.h"
 #include "btree.h"
-#include "btree_p.h"
+#include "btree_page_h.h"
 #include "btree_impl.h"
 
 btree_test_env *test_env;
@@ -10,12 +10,12 @@ btree_test_env *test_env;
  * Unit test for page checksum logics.
  */
 TEST (ChecksumTest, Calculate) {
-    page_s p1, p2, p3, p4;
+    generic_page p1, p2, p3, p4;
     char *c1 = (char*) &p1;
     char *c2 = (char*) &p2;
     char *c3 = (char*) &p3;
-    ::memset (&p4, 0, sizeof (page_s));
-    for (size_t i = 0; i < sizeof (page_s); ++i) {
+    ::memset (&p4, 0, sizeof (generic_page));
+    for (size_t i = 0; i < sizeof (generic_page); ++i) {
         c1[i] = (char) i;
         c2[i] = (char) i;
         c3[i] = (char) (i + 10);
@@ -55,14 +55,14 @@ w_rc_t btree_page(ss_m* ssm, test_volume_t *test_volume) {
     uint32_t correct_checksum;
     W_DO(ssm->begin_xct());
     {
-        btree_p leaf;
+        btree_page_h leaf;
         W_DO (btree_impl::_ux_traverse(root_pid.vol().vol, root_pid.store(), neginf, btree_impl::t_fence_low_match, LATCH_SH, leaf));
         EXPECT_TRUE (leaf.is_fixed());
         EXPECT_TRUE (leaf.is_leaf());
         
-        page_s dummy_p;
-        ::memset (&dummy_p, 0, sizeof (page_s));
-        correct_checksum = leaf.calculate_checksum();
+        generic_page dummy_p;
+        ::memset (&dummy_p, 0, sizeof (generic_page));
+        correct_checksum = leaf.get_generic_page()->calculate_checksum();
         EXPECT_NE (correct_checksum, dummy_p.calculate_checksum());
     }
     W_DO(ssm->commit_xct());
@@ -73,14 +73,14 @@ w_rc_t btree_page(ss_m* ssm, test_volume_t *test_volume) {
     // check it again
     W_DO(ssm->begin_xct());
     {
-        btree_p leaf;
+        btree_page_h leaf;
         W_DO (btree_impl::_ux_traverse(root_pid.vol().vol, root_pid.store(), neginf, btree_impl::t_fence_low_match, LATCH_SH, leaf));
         EXPECT_TRUE (leaf.is_fixed());
         EXPECT_TRUE (leaf.is_leaf());
         EXPECT_FALSE (leaf.is_dirty());
 
-        EXPECT_EQ (correct_checksum, leaf.calculate_checksum()) << "page content has changed?";
-        EXPECT_EQ (correct_checksum, leaf.get_checksum()) << "checksum hasn't been updated on write?";
+        EXPECT_EQ (correct_checksum, leaf.get_generic_page()->calculate_checksum()) << "page content has changed?";
+        EXPECT_EQ (correct_checksum, leaf.get_generic_page()->checksum) << "checksum hasn't been updated on write?";
     }
     W_DO(ssm->commit_xct());
 

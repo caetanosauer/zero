@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #include "w_defines.h"
 
 #define SM_SOURCE
@@ -228,7 +232,7 @@ rc_t ss_m::verify_index(stid_t stid, int hash_bits, bool &consistent)
     return RCOK;
 }
 
-rc_t ss_m::defrag_index_page(btree_p &page)
+rc_t ss_m::defrag_index_page(btree_page_h &page)
 {
     W_DO( bt->defrag_page(page));
     return RCOK;

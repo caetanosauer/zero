@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
    
@@ -56,10 +60,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #define SM_SOURCE
 #define PIN_C
-
-#ifdef __GNUG__
-#pragma implementation "pin.h"
-#endif
 
 #include <pin.h>
 #include "suppress_unused.h"

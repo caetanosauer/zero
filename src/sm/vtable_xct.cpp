@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /*<std-header orig-src='shore'>
 
  $Id: vtable_xct.cpp,v 1.3 2010/06/21 20:39:39 nhall Exp $
@@ -33,10 +37,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #define SM_SOURCE
 #define XCT_C
-
-#ifdef __GNUG__
-#pragma implementation "xct.h"
-#endif
 
 #include <new>
 #include "sm_int_1.h"

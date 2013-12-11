@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
    
@@ -57,13 +61,14 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
+#include <vector>
+#include "sthread.h"
+#include "basics.h"
+
+
 /**\file sm_base.h
  * \ingroup Macros
  */
-
-#ifdef __GNUG__
-#pragma interface
-#endif
 
 #include <climits>
 #ifndef OPTION_H
@@ -99,6 +104,7 @@ class rid_t;
 #define        SM_LOG_PARTITIONS        8
 #endif
 
+class w_rc_t;
 typedef   w_rc_t        rc_t;
 
 
@@ -428,6 +434,7 @@ public:
     static bool        logging_enabled;
     static bool        lock_caching_default;
     static bool        do_prefetch;
+    static bool        statistics_enabled;
 
     static operating_mode_t operating_mode;
     static bool in_recovery() { 
@@ -470,26 +477,28 @@ public:
             eNOTIMPLEMENTED = fcNOTIMPLEMENTED
     };
 
+    /// NB: this had better match sm_store_property_t (sm_int_3.h) !!!
+    // or at least be converted properly every time we come through the API
     enum store_flag_t {
-        // NB: this had better match sm_store_property_t (sm_int_3.h) !!!
-        // or at least be convted properly every time we come through the API
-        st_bad            = 0x0,
-        st_regular        = 0x01, // fully logged
-        st_tmp            = 0x02, // space logging only, 
-                                  // file destroy on dismount/restart
-        st_load_file      = 0x04, // not stored in the stnode_t, 
-                            // only passed down to
-                            // io_m and then converted to tmp and added to the
-                            // list of load files for the xct.
-                            // no longer needed
-        st_insert_file     = 0x08,        // stored in stnode, but not on page.
-                            // new pages are saved as tmp, old pages as regular.
-        st_empty           = 0x100 // store might be empty - used ONLY
-                            // as a function argument, NOT stored
-                            // persistently.  Nevertheless, it's
-                            // defined here to be sure that if other
-                            // store flags are added, this doesn't
-                            // conflict with them.
+        /// No flags means a store is not currently allocated
+        st_unallocated = 0,
+
+        st_regular     = 0x01, // fully logged
+        st_tmp         = 0x02, // space logging only, 
+                               // file destroy on dismount/restart
+        st_load_file   = 0x04, // not stored in the stnode_t, 
+                               // only passed down to io_m and then
+                               // converted to tmp and added to the
+                               // list of load files for the xct.  no
+                               // longer needed
+        st_insert_file = 0x08, // stored in stnode, but not on page.
+                               // new pages are saved as tmp, old pages as regular.
+        st_empty       = 0x100 // store might be empty - used ONLY
+                               // as a function argument, NOT stored
+                               // persistently.  Nevertheless, it's
+                               // defined here to be sure that if
+                               // other store flags are added, this
+                               // doesn't conflict with them.
     };
 
     /* 
@@ -506,7 +515,6 @@ public:
     enum store_deleting_t  {
             t_not_deleting_store = 0,  // must be 0: code assumes it
             t_deleting_store, 
-            t_store_freeing_exts, 
             t_unknown_deleting};
 /**\endcond skip */
 };

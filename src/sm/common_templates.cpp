@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
    
@@ -56,9 +60,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #define SM_SOURCE
 #define LOGREC_C
-#ifdef __GNUG__
-#   pragma implementation
-#endif
 #include "sm_int_2.h"
 
 /*
@@ -69,7 +70,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #ifdef EXPLICIT_TEMPLATE
 /*
- * vol.cpp, sort.cpp btree_bl.cpp, btree_p.cpp
+ * vol.cpp, sort.cpp btree_bl.cpp, btree_page.cpp
  */
 template class w_auto_delete_array_t<char>; 
 

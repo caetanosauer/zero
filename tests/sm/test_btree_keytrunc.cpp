@@ -2,9 +2,8 @@
 #include "gtest/gtest.h"
 #include "sm_vas.h"
 #include "bf.h"
-#include "page_s.h"
 #include "btree.h"
-#include "btree_p.h"
+#include "btree_page_h.h"
 #include "btree_impl.h"
 #include "w_key.h"
 
@@ -43,7 +42,7 @@ w_rc_t suffix_test(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(x_btree_verify(ssm, stid));
     
     // and let's check the root node's entries
-    btree_p root_p;
+    btree_page_h root_p;
     W_DO (root_p.fix_root (root_pid.vol().vol, root_pid.store(), LATCH_EX));
     EXPECT_TRUE (root_p.is_node());
     EXPECT_GT (root_p.nrecs(), 0);
@@ -94,12 +93,12 @@ w_rc_t suffix_test_shortest(ss_m* ssm, test_volume_t *test_volume) {
         keystr[1] = '0' + first_digits[i % 10];
         W_DO(x_btree_insert (ssm, stid, keystr, datastr));
 
-        btree_p root_p;
+        btree_page_h root_p;
         W_DO (root_p.fix_root (root_pid.vol().vol, root_pid.store(), LATCH_SH));
         if (root_p.nrecs() <= prev_recs) {
             EXPECT_TRUE (root_p.is_fence_low_infimum());
             EXPECT_FALSE (root_p.is_fence_high_supremum());
-            EXPECT_NE (root_p.get_blink(), (uint) 0);
+            EXPECT_NE (root_p.get_foster(), (uint) 0);
             w_keystr_t fence;
             root_p.copy_fence_high_key(fence);
             cout << "shortest-test: split happend at " << i << "-th insertion!"
@@ -144,12 +143,12 @@ w_rc_t suffix_test_posskew(ss_m* ssm, test_volume_t *test_volume) {
         keystr[1] = '0' + (i % 10);
         W_DO(x_btree_insert (ssm, stid, keystr, datastr));
 
-        btree_p root_p;
+        btree_page_h root_p;
         W_DO (root_p.fix_root (root_pid.vol().vol, root_pid.store(), LATCH_SH));
         if (root_p.nrecs() <= prev_recs) {
             EXPECT_TRUE (root_p.is_fence_low_infimum());
             EXPECT_FALSE (root_p.is_fence_high_supremum());
-            EXPECT_NE (root_p.get_blink(), (uint) 0);
+            EXPECT_NE (root_p.get_foster(), (uint) 0);
             w_keystr_t fence;
             root_p.copy_fence_high_key(fence);
             int percent = root_p.nrecs() * 100 / prev_recs;
@@ -196,12 +195,12 @@ w_rc_t suffix_test_negskew(ss_m* ssm, test_volume_t *test_volume) {
         keystr[1] = '0' + (i % 10);
         W_DO(x_btree_insert (ssm, stid, keystr, datastr));
 
-        btree_p root_p;
+        btree_page_h root_p;
         W_DO (root_p.fix_root (root_pid.vol().vol, root_pid.store(), LATCH_SH));
         if (root_p.nrecs() <= prev_recs) {
             EXPECT_TRUE (root_p.is_fence_low_infimum());
             EXPECT_FALSE (root_p.is_fence_high_supremum());
-            EXPECT_NE (root_p.get_blink(), (uint) 0);
+            EXPECT_NE (root_p.get_foster(), (uint) 0);
             w_keystr_t fence;
             root_p.copy_fence_high_key(fence);
             int percent = root_p.nrecs() * 100 / prev_recs;
@@ -235,13 +234,15 @@ w_rc_t prefix_test(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
     
     // so that one leaf page can have only 4 or 5 tuples
-    const int keysize = SM_PAGESIZE / 5;
+    const int keysize = SM_PAGESIZE / 6;
+    //const int keysize = btree_m::max_entry_size() - 4; // for max size key test instead
     // these keys are good for prefix truncation, but not great for suffix truncation.
     // in leaf pages (in root pages, no prefix truncation), these keys should be significantly shortened
     w_keystr_t key;
     vec_t data;
-    char keystr[keysize] = "";
+    char keystr[keysize];
     char datastr[3] = "";
+    w_assert1(keysize <= (int)btree_m::max_entry_size() - (int)sizeof(datastr));
     W_DO(test_env->begin_xct());
     for (int i = 0; i < 20; ++i) {
         datastr[0] = keystr[keysize - 1] = ('0' + ((i / 100) % 10));
@@ -260,7 +261,7 @@ w_rc_t prefix_test(ss_m* ssm, test_volume_t *test_volume) {
     memset (keystr, '0', keysize - 3);
     memcpy(keystr + keysize - 3, "500", 3); // middle key
     key.construct_regularkey(keystr, keysize);
-    btree_p leaf;
+    btree_page_h leaf;
     W_DO (btree_impl::_ux_traverse(root_pid.vol().vol, root_pid.store(), key, btree_impl::t_fence_contain, LATCH_SH, leaf));
     EXPECT_TRUE (leaf.is_fixed());
     EXPECT_TRUE (leaf.is_leaf());

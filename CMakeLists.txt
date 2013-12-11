@@ -76,8 +76,15 @@ find_package(Threads REQUIRED) # find pthread library
 find_package(GooglePerftools) # google-perftools / google-perftools-devel
 IF(GOOGLEPERFTOOLS_FOUND)
   SET (LINK_GOOGLEPROFILER " -lprofiler") #  -ltcmalloc ?
+  SET (LIBINCL_GOOGLEPROFILER "profiler")
 ENDIF(GOOGLEPERFTOOLS_FOUND)
 
+# MUTrace profiles user-mode mutex locks 
+# SET(ENABLE_MUTRACE_PROFILER 'ON')
+IF(ENABLE_MUTRACE_PROFILER) 
+  LINTEL_REQUIRED_HEADER(MUTRACE MUTrace/mutrace.h)
+  SET (COMPILE_MUTRACE "-fPIC -fno-omit-frame-pointer -DMUTRACE_ENABLED_H")
+ENDIF(ENABLE_MUTRACE_PROFILER)
 
 ENABLE_TESTING() # we use CTest all over the project. run "make test" after cmake
 
@@ -93,7 +100,7 @@ ELSE (COMPILER_IS_SUNCC)
   SET(CMAKE_CXX_FLAGS_DEBUG  "-O0 -g -DDEBUG -DW_DEBUG_LEVEL=3 ${LINK_GOOGLEPROFILER}")
 ##  SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DW_DEBUG_LEVEL=1 ${LINK_GOOGLEPROFILER}")
 ## Below is better for performance analysis; above is better for debugging
-  SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DW_DEBUG_LEVEL=0 -DNDEBUG ${LINK_GOOGLEPROFILER}")
+  SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DW_DEBUG_LEVEL=0 -DNDEBUG -fPIC ${LINK_GOOGLEPROFILER} ${COMPILE_MUTRACE}")
 #  SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O0 -g -DW_DEBUG_LEVEL=3 -DDEBUG ${LINK_GOOGLEPROFILER}")
   SET(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -fexpensive-optimizations -finline-functions -DW_DEBUG_LEVEL=0 ${LINK_GOOGLEPROFILER}")
 ENDIF (COMPILER_IS_SUNCC)
@@ -141,7 +148,7 @@ ELSE (COMPILER_IS_SUNCC)
     ELSE (COMPILER_IS_ICC)
       # -pedantic requires -Wno-long-long
       # 
-      SET (ALWAYS_FLAGS "-Wextra -Woverloaded-virtual -Wno-deprecated -Wall -fno-strict-aliasing -Wpointer-arith -Wwrite-strings -Wno-long-long -pthread -Wno-deprecated") # for now, allow warning. add back -Werror later
+      SET (ALWAYS_FLAGS "-Werror -Wall -Wextra -Woverloaded-virtual -fno-strict-aliasing -Wpointer-arith -Wwrite-strings -pthread")
       # NO_INLINE_FLAGS =  -fno-inline
       SET (NO_INLINE_FLAGS "")
       SET (YES_INLINE_FLAGS "-finline-functions")
@@ -323,7 +330,7 @@ add_subdirectory(tests) # unit testcases
 # TODO: experiments should be compiled only when the user wants... maybe optional cmake argument?
 add_subdirectory(experiments) # benchmarks and other performance tests
 # add_subdirectory(examples) # examples to show how to use Foster B-tree. enabled only while demonstration or learning
-
+add_subdirectory(publications)
 # not needed so far, and causes a warning
 # add_library(shore)
 # target_link_libraries(shore fc sthread common sm)
@@ -332,7 +339,7 @@ add_subdirectory(experiments) # benchmarks and other performance tests
 # add a target to generate API documentation with Doxygen
 find_package(Doxygen)
 if(DOXYGEN_FOUND)
-  configure_file(${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile.cmake ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile @ONLY)
+  configure_file(${CMAKE_CURRENT_SOURCE_DIR}/zero.dox ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile @ONLY)
   add_custom_target(doc
     ${DOXYGEN_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}

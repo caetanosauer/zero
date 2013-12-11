@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
    
@@ -56,9 +60,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #define SM_SOURCE
 #define LOG_CORE_C
-#ifdef __GNUG__
-#   pragma implementation
-#endif
 
 #ifdef __SUNPRO_CC
 #include <stdio.h>
@@ -381,7 +382,7 @@ log_core::_prime(int fd, fileoff_t start, lsn_t next)
     lsn_t start_lsn(next.hi(), base);
 
     // This should happend only in recovery/startup case.  So let's assert
-    // that there is no log daemon running yet. If we ever this this
+    // that there is no log daemon running yet. If we ever fire this
     // assert, we'd better see why and it means we might have to protect
     // _cur_epoch and _start/_end with a critical section on _insert_lock.
     w_assert1(_flush_daemon_running == false);
@@ -1507,8 +1508,8 @@ log_core::log_core(
 
         {
             DBGOUT5(<<"explicit truncating " << fname << " to " << pos);
-            os_truncate(fname, pos );
-
+            w_assert0(os_truncate(fname, pos )==0);
+            
             //
             // but we can't just use truncate() --
             // we have to truncate to a size that's a mpl
@@ -1876,7 +1877,7 @@ rc_t log_core::insert(logrec_t &rec, lsn_t* rlsn)
     *
     * If not, kick the flush daemon to make space.
     */
-    while(*&_waiting_for_space || 
+    while(_waiting_for_space || 
             end_byte() - start_byte() + recsize > segsize() - 2*BLOCK_SIZE) 
     {
         ics.pause();
@@ -1884,7 +1885,7 @@ rc_t log_core::insert(logrec_t &rec, lsn_t* rlsn)
             CRITICAL_SECTION(cs, _wait_flush_lock);
             while(end_byte() - start_byte() + recsize > segsize() - 2*BLOCK_SIZE)
             {
-                *&_waiting_for_space = true;
+                _waiting_for_space = true;
                 // SDM 3A says this drains the buffer:
                 lintel::atomic_thread_fence(lintel::memory_order_release);
 
@@ -1912,7 +1913,7 @@ rc_t log_core::insert_multiple(size_t count, logrec_t** rs, lsn_t** ret_lsns)
     
     // do the same, just for ONCE!
     CRITICAL_SECTION(ics, _insert_lock);
-    while(*&_waiting_for_space || 
+    while(_waiting_for_space || 
             end_byte() - start_byte() + total_recsize > segsize() - 2*BLOCK_SIZE) 
     {
         ics.pause();
@@ -1920,7 +1921,7 @@ rc_t log_core::insert_multiple(size_t count, logrec_t** rs, lsn_t** ret_lsns)
             CRITICAL_SECTION(cs, _wait_flush_lock);
             while(end_byte() - start_byte() + total_recsize > segsize() - 2*BLOCK_SIZE)
             {
-                *&_waiting_for_space = true;
+                _waiting_for_space = true;
                 // SDM 3A says this drains the buffer:
                 lintel::atomic_thread_fence(lintel::memory_order_release);
 
@@ -2244,7 +2245,7 @@ rc_t log_core::flush(const lsn_t &to_lsn, bool block, bool signal, bool *ret_flu
     if(lsn >= *&_durable_lsn) {
         CRITICAL_SECTION(cs, _wait_flush_lock);
         if (!block) {
-            *&_waiting_for_flush = true;
+            _waiting_for_flush = true;
             // SDM 3A says this drains the buffer:
             lintel::atomic_thread_fence(lintel::memory_order_release);
             if (signal) {
@@ -2254,7 +2255,7 @@ rc_t log_core::flush(const lsn_t &to_lsn, bool block, bool signal, bool *ret_flu
         } 
         else {
             while(lsn >= *&_durable_lsn) {
-                *&_waiting_for_flush = true;
+                _waiting_for_flush = true;
                 // SDM 3A says this drains the buffer:
                 lintel::atomic_thread_fence(lintel::memory_order_release);
                 // The only thread that should be waiting 
@@ -2292,7 +2293,7 @@ void log_core::flush_daemon()
         // flush.
         {
             CRITICAL_SECTION(cs, _wait_flush_lock);
-            if(success && (*&_waiting_for_space || *&_waiting_for_flush)) {
+            if(success && (_waiting_for_space || _waiting_for_flush)) {
                 _waiting_for_flush = _waiting_for_space = false;
 
                 // by pausing, we release the mutex and that allows the broadcast
@@ -2316,7 +2317,7 @@ void log_core::flush_daemon()
             }
         
             // sleep. We don't care if we get a spurious wakeup
-            if(!success && !*&_waiting_for_space && !*&_waiting_for_flush) {
+            if(!success && !_waiting_for_space && !_waiting_for_flush) {
                 // The only thread that should be waiting 
                 // on the _flush_cond is the log flush daemon (i.e., us/me).
                 // Yet somehow we wedge here.
@@ -2510,7 +2511,7 @@ rc_t log_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn)
                 return RC(eBADCOMPENSATION);
     }
     if (!s->is_single_sys_xct()) {
-        w_assert1(s->prev() == lsn_t::null || s->prev() >= undo_lsn);
+        w_assert1(s->xid_prev() == lsn_t::null || s->xid_prev() >= undo_lsn);
 
         if(s->is_undoable_clr()) 
             return RC(eBADCOMPENSATION);

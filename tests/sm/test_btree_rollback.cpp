@@ -165,7 +165,7 @@ w_rc_t rollback_split(ss_m* ssm, test_volume_t *test_volume) {
     test_env->set_xct_query_lock();
     // insert a few so that split will happen
     for (int i = 0; i < 6; ++i) {
-        const size_t datalen = SM_PAGESIZE / 5;
+        const size_t datalen = SM_PAGESIZE / 6;
         char data[datalen + 1];
         data[datalen] = '\0';
         memset(data, 'a', datalen);

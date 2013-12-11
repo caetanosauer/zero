@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
    
@@ -57,10 +61,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #define SM_SOURCE
 #define CHKPT_C
-
-#ifdef __GNUG__
-#   pragma implementation
-#endif
 
 #include "sm_int_1.h"
 #include "chkpt_serial.h"
@@ -143,11 +143,6 @@ struct old_xct_tracker {
         pthread_mutex_unlock(&_lock);
     }
     
-    bool finished() const {
-        long volatile const* count = &_count;
-        return 0 == *count;
-    }
-    
     void wait_for_all() {
         pthread_mutex_lock(&_lock);
         while(_count)
@@ -155,7 +150,7 @@ struct old_xct_tracker {
         pthread_mutex_unlock(&_lock);
     }
 
-     void report_finished(xct_t*) {
+    void report_finished(xct_t*) {
         pthread_mutex_lock(&_lock);
         if(! --_count)
             pthread_cond_signal(&_cond);
@@ -390,8 +385,7 @@ void chkpt_m::take()
     /* hopefully the page cleaning took long enough that the old
        transactions all ended...
      */
-    if(!tracker.finished())
-       tracker.wait_for_all();
+    tracker.wait_for_all();
 
     // raced?
     chkpt_serial_m::chkpt_acquire();

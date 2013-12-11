@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /*<std-header orig-src='shore' incl-file-exclusion='LID_H'>
 
  $Id: lid.h,v 1.66 2010/05/26 01:20:39 nhall Exp $
@@ -43,10 +47,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
    physical ID given to the volume when it is formatted.
 
 **********************************************************************/
-
-#ifdef __GNUG__
-#pragma interface
-#endif
 
 /*
  * Logical ID Manager class.

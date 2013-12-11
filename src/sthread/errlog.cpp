@@ -42,12 +42,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <cstdio>
 #include <iostream>
 
-#ifdef __GNUC__
-#pragma implementation "errlog.h"
-#pragma implementation "errlog_s.h"
-#pragma implementation "w_debug.h"
-#endif
-
 #include "w.h"
 #include "errlog.h"
 #include <errlog_s.h>
@@ -150,6 +144,8 @@ is_logstream(std::basic_ostream<char, std::char_traits<char > > &o)
 	{
         l = (logstream *)&o;
     }
+        //Kill warning
+        (void) tied;
     if(l) {
         // cerr << "magic1 " << (unsigned int)l->__magic1 << endl;
         // cerr << "magic2 " << (unsigned int)l->__magic1 << endl;

@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /*<std-header orig-src='shore' incl-file-exclusion='SM_INT_0_H'>
 
  $Id: sm_int_0.h,v 1.16 2010/05/26 01:20:43 nhall Exp $
@@ -55,7 +59,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #if defined(SM_SOURCE) && (SM_LEVEL >= 0) 
 #    include <bf.h>
-#    include <page.h>
+#    include <fixable_page_h.h>
 #    include <pmap.h>
 #    include <sm_io.h>
 #    include <log.h>

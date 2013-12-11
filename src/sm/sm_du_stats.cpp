@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /*<std-header orig-src='shore'>
 
  $Id: sm_du_stats.cpp,v 1.32 2010/12/08 17:37:43 nhall Exp $
@@ -32,10 +36,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 /*  -- do not edit anything above this line --   </std-header>*/
 
 #define SM_DU_STATS_C
-
-#ifdef __GNUG__
-#pragma implementation
-#endif
 
 #include <w.h>
 #include <cstring>

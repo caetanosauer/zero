@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
    
@@ -59,11 +63,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #undef ACQUIRE
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
-
 class logrec_t;
 class log_buf;
 
@@ -98,7 +97,7 @@ protected:
     lsn_t                   _master_lsn;
     lsn_t                   _min_chkpt_rec_lsn;
     fileoff_t       _space_available; // how many unreserved bytes left
-    fileoff_t       _space_rsvd_for_chkpt; // cat we run a chkpt now?
+    fileoff_t       _space_rsvd_for_chkpt; // can we run a chkpt now?
     fileoff_t               _partition_size;
     fileoff_t               _partition_data_size;
     bool                    _log_corruption;
@@ -310,7 +309,7 @@ public:
     fileoff_t           reserve_space(fileoff_t howmuch);
     void                release_space(fileoff_t howmuch);
     rc_t                wait_for_space(fileoff_t &amt, timeout_in_ms timeout);
-    static fileoff_t    take_space(fileoff_t volatile* ptr, int amt) ;
+    static fileoff_t    take_space(fileoff_t *ptr, int amt) ;
 
     long                max_chkpt_size() const;
     bool                verify_chkpt_reservation();
@@ -358,8 +357,8 @@ public:
     NORET                        log_i(log_m& l, const lsn_t& lsn) ;
     NORET                        ~log_i();
 
-    /// Get the next log record, put its sequence number in argument \a lsn
-    bool                         next(lsn_t& lsn, logrec_t*& r);
+    /// Get the next log record for transaction, put its sequence number in argument \a lsn
+    bool                         xct_next(lsn_t& lsn, logrec_t*& r);
     /// Get the return code from the last next() call.
     w_rc_t&                      get_last_rc();
 private:

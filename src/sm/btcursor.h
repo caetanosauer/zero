@@ -1,17 +1,17 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #ifndef BTCURSOR_H
 #define BTCURSOR_H
 
 #include "w_defines.h"
 #include "w_key.h"
 #include "bf_tree.h"
+#include "bf_tree_inline.h" // only for pin_for_refix_holder::release <<<>>>
 
-#ifdef __GNUG__
-#pragma interface
-#endif
+class btree_page_h;
 
-
-class btree_p;
-class btrec_t;
 
 /**
  * \brief A cursor object to sequentially read BTree.
@@ -119,10 +119,10 @@ private:
         const w_keystr_t& upper,  bool upper_inclusive,
         bool              forward);
     rc_t        _locate_first();
-    rc_t        _check_page_update(btree_p &p);
-    rc_t        _find_next(btree_p &p, bool &eof);
+    rc_t        _check_page_update(btree_page_h &p);
+    rc_t        _find_next(btree_page_h &p, bool &eof);
     void        _release_current_page();
-    void        _set_current_page(btree_p &page);
+    void        _set_current_page(btree_page_h &page);
 
     /**
      * \brief Chooses next slot and potentially next page for cursor access.
@@ -135,12 +135,12 @@ private:
     * @param[in] p fixed current page
     * @param[out] eof whether this cursor reached the end
     */
-    rc_t        _advance_one_slot(btree_p &p, bool &eof);
+    rc_t        _advance_one_slot(btree_page_h &p, bool &eof);
 
     /**
     *  Make the cursor point to record at "slot" on "page".
     */
-    rc_t         _make_rec(const btree_p& page);
+    rc_t         _make_rec(const btree_page_h& page);
 
     volid_t     _vol;
     snum_t      _store;

@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /*<std-header orig-src='shore' incl-file-exclusion='SMSTATS_H'>
 
  $Id: smstats.h,v 1.36 2010/09/21 14:26:20 nhall Exp $
@@ -170,11 +174,10 @@ extern sm_stats_info_t &operator-=(sm_stats_info_t &s, const sm_stats_info_t &t)
 
 /**\brief Configuration Information
  * \details
- * The method ss_m::config_info lets a server to 
- * pick up some useful configuration
- * information from the storage manager.
- * Several of these data depend on the compile-time page size; some
- * depend on run-time options.
+ * The method ss_m::config_info lets a server to pick up some useful
+ * configuration information from the storage manager.  Several of
+ * these data depend on the compile-time page size; some depend on
+ * run-time options.
  */
 struct sm_config_info_t {
     /**\brief compile-time constant. Settable in 
@@ -182,6 +185,7 @@ struct sm_config_info_t {
      * Default is 8K.
      */
     u_long page_size;         // bytes in page, including all headers
+
     /**\brief Data space available on a page of a large record */
     //TODO: SHORE-KITS-API
     // shore-kits needs max_small_rec; shore-sm-6.0.1 initializes this field at 
@@ -190,13 +194,17 @@ struct sm_config_info_t {
                 // (ie. on one page) record.  This is
                 // align(header_len)+align(body_len).
     u_long lg_rec_page_space;    
+
     /**\brief Size in KB of buffer pool */
     u_long buffer_pool_size;    // buffer pool size in kilo-bytes
+
     /**\brief Largest permissible size in bytes of an index entry 
      * (key,value pair) */
     u_long max_btree_entry_size;
+
     /**\brief Number of extent links on an extent page */
     u_long exts_on_page;
+
     /**\brief Number of pages per extent (compile-time constant) 
      * \note The storage manager has not been tested with any value but 8.
      */

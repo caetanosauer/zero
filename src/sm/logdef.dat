@@ -2,6 +2,10 @@
 #
 #  $Id: logdef.dat,v 1.67 2010/10/27 17:04:23 nhall Exp $
 #
+#
+# (c) Copyright 2013, Hewlett-Packard Development Company, LP
+#
+#
 # SHORE -- Scalable Heterogeneous Object REpository
 #
 # Copyright (c) 1994-99 Computer Sciences Department, University of
@@ -28,22 +32,22 @@
 #   -- do not edit anything above this line --   </std-header>
 
 #########################################################################
-#                                    #
-#    WARNING: if you add, delete or change any of the log records,    #
-#    or their data members, or their semantics you also need to    #
-#    update log_base::version_major and/or log_base::version_minor    #
-#    in log_base.cpp.                        #
+#                                                                       #
+#    WARNING: if you add, delete or change any of the log records,      #
+#    or their data members, or their semantics you also need to         #
+#    update log_base::version_major and/or log_base::version_minor      #
+#    in log_base.cpp.                                                   #
 #                                                                       #
 #       For every log record type, the perl script generates a class    #
 #       class <type>_log {                                              #
-#           void fill(const lpid_t*p, uint16_t tag, int len);            #
+#           void fill(const lpid_t*p, uint16_t tag, int len);           #
 #       public:                                                         #
 #           <type>_log(<arg>);                                          #
 #        // and...                                                      #
 #        // iff R bit set:                                              #
-#        void redo(page_p *page);                                       #
+#        void redo(fixable_page_h *page);                               #
 #        // iff U bit set:                                              #
-#        void undo(page_p *page);                                       #
+#        void undo(fixable_page_h *page);                               #
 #       }                                                               #
 #                                                                       #
 #    The format of the file is as follows:                              #
@@ -110,8 +114,8 @@ xct_freeing_space  1000000 0.0 ();
 xct_end            1000000 0.0 ();
 xct_end_group      1000000 0.0 (const xct_t** l, int llen);
 xct_prepare_st     1010000 0.0 (const gtid_t* g, const server_handle_t& h);
-xct_prepare_lk     1010000 0.0 (int num, lock_mode_t mode, lockid_t* lks);
-xct_prepare_alk    1010000 0.0 (int num, lockid_t* lks, lock_mode_t* modes);
+xct_prepare_lk     1010000 0.0 (int num, w_base_t::lock_mode_t mode, lockid_t* lks);
+xct_prepare_alk    1010000 0.0 (int num, lockid_t* lks, w_base_t::lock_mode_t* modes);
 xct_prepare_stores 1010000 0.0 (int num, const stid_t* stids);
 xct_prepare_fi     1010000 0.0 (int numex, int numix, int numsix, const lsn_t& first, int rsvd, int ready, int used);
 #########################################################################
@@ -127,7 +131,7 @@ store_operation    1011011 1.0 (const store_operation_param& op);
 #########################################################################
 # This just sets the status of the page to "to-be-deleted".
 # Once the page is actually deleted by bufferpool, we can't UNDO it.
-page_set_tobedeleted   1011000 1.0 (const page_p& page);
+page_set_to_be_deleted   1011000 1.0 (const fixable_page_h& page);
 
 # This is a special way of logging the creation of a new page.
 # New page creation is usually a page split, so the new page has many
@@ -136,60 +140,60 @@ page_set_tobedeleted   1011000 1.0 (const page_p& page);
 # and from the record_head to the end of page.
 # We can assume totally defragmented page image because this is page creation.
 # We don't need UNDO (again, this is page creation!), REDO is just two memcpy().
-page_img_format   1011000 1.0 (const page_p& page);
+page_img_format   1011000 1.0 (const btree_page_h& page);
 
 #########################################################################
 # type             XSRUFAL  fudge    arg                                #
 #########################################################################
-btree_insert       1011001 1.42 (const page_p& page, 
+btree_insert       1011001 1.42 (const btree_page_h& page, 
                             const w_keystr_t& key, const cvec_t& el);
 
-btree_update       1011001 1.42 (const page_p& page, const w_keystr_t& key,
+btree_update       1011001 1.42 (const btree_page_h& page, const w_keystr_t& key,
     const char* old_el, int old_elen, const cvec_t& new_el);
 
-btree_overwrite    1011001 1.00 (const page_p& page, const w_keystr_t& key,
+btree_overwrite    1011001 1.00 (const btree_page_h& page, const w_keystr_t& key,
     const char* old_el, const char* new_el, size_t offset, size_t elen);
 
 # We only need to log these header items. Other items are immutable.
-btree_header       1011000 1.22 (const page_p& page, shpid_t btree_pid0,
-    int16_t btree_level, shpid_t btree_blink,
+btree_header       1011000 1.22 (const btree_page_h& page, shpid_t btree_pid0,
+    int16_t btree_level, shpid_t btree_foster,
     int16_t btree_chain_fence_high_length);
 
 # ghost records. currently only for BTrees as their UNDO/REDO rely on BTree access.
-btree_ghost_mark    1011001 1.0  (const page_p& page, const vector<slotid_t>& slots);
-btree_ghost_reclaim 1110000 1.0  (const page_p& page, const vector<slotid_t>& slots);
+btree_ghost_mark    1011001 1.0  (const btree_page_h& page, const vector<slotid_t>& slots);
+btree_ghost_reclaim 1110000 1.0  (const btree_page_h& page, const vector<slotid_t>& slots);
 # ghost reservation is fused
-btree_ghost_reserve 1110000 1.0  (const page_p& page, const w_keystr_t& key, int record_size);
+btree_ghost_reserve 1110000 1.0  (const btree_page_h& page, const w_keystr_t& key, int element_length);
 
 # page is the foster-parent page.
 # if it's intermediate node. this is combined with adopt that caused the split.
-btree_blink_split   1010000 1.0 (const page_p& page, shpid_t new_pid, int32_t right_begins_from,
+btree_foster_split   1010000 1.0 (const btree_page_h& page, shpid_t new_pid, int32_t right_begins_from,
     const w_keystr_t* new_child_key, shpid_t new_child_pid);
 
 # for extremely skewed split (no-record move).
-btree_blink_norecord_split 1010000 1.0 (const page_p& page, shpid_t blink,
+btree_foster_norecord_split 1010000 1.0 (const btree_page_h& page, shpid_t foster,
     const w_keystr_t& fence_high, const w_keystr_t& chain_fence_high);
 
 # log for parent/child. child needs really nothing as log
-btree_blink_adopt_parent  1010000 1.0 (const page_p& page, shpid_t new_child_pid, const w_keystr_t& new_child_key);
-btree_blink_adopt_child   1010000 1.0 (const page_p& page);
+btree_foster_adopt_parent  1010000 1.0 (const btree_page_h& page, shpid_t new_child_pid, const w_keystr_t& new_child_key);
+btree_foster_adopt_child   1010000 1.0 (const btree_page_h& page);
 
 # no other arg because it always merges its foster-child.
-btree_blink_merge          1010000 1.0 (const page_p& page);
+btree_foster_merge          1010000 1.0 (const btree_page_h& page);
 
 # "page" is the foster-child, which receives entries.
-btree_blink_rebalance      1010000 1.0 (const page_p& page,
+btree_foster_rebalance      1010000 1.0 (const btree_page_h& page,
     shpid_t parent_pid, int32_t move_count);
 
 # log for each page (real-parent and foster-parent).
 # foster_slot: the slot to be foster-parent. 0=pid0.
-btree_blink_deadopt_real_parent   1010000 1.0 (const page_p& page,
+btree_foster_deadopt_real_parent   1010000 1.0 (const btree_page_h& page,
     shpid_t deadopted_pid, int32_t foster_slot);
-btree_blink_deadopt_foster_parent 1010000 1.0 (const page_p& page, shpid_t deadopted_pid,
+btree_foster_deadopt_foster_parent 1010000 1.0 (const btree_page_h& page, shpid_t deadopted_pid,
     const w_keystr_t& low_key, const w_keystr_t& high_key);
 
 # A special empty log just for updating LSN of the page.
-btree_noop                      1000000 1.0 (const page_p& page);
+btree_noop                      1000000 1.0 (const btree_page_h& page);
 
 #########################################################################
 # type             XSRUFAL  fudge    arg                                #

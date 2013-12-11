@@ -1,21 +1,20 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #ifndef BTREE_H
 #define BTREE_H
-
-#include "w_defines.h"
 
 /*
  *  Interface to btree manager.  
  *  NB: put NO INLINE FUNCTIONS here.
  *  Implementation is class btree_impl, in btree_impl.[ch].
  */
-#ifdef __GNUG__
-#pragma interface
-#endif
-
+#include "w_defines.h"
 #include "vid_t.h"
 #include "stid_t.h"
 
-class btree_p;
+class btree_page_h;
 struct btree_stats_t;
 class bt_cursor_t;
 struct btree_lf_stats_t;
@@ -27,7 +26,7 @@ class verify_volume_result;
  * \ingroup SSMBTREE
  */
 class btree_m : public smlevel_2 {
-    friend class btree_p;
+    friend class btree_page_h;
     friend class btree_impl;
     friend class bt_cursor_t;
     friend class btree_remove_log;
@@ -99,7 +98,7 @@ public:
      * \ingroup SSMBTREE
      * @copydetails btree_impl::_sx_defrag_page
     */
-    static rc_t                 defrag_page(btree_p &page);
+    static rc_t                 defrag_page(btree_page_h &page);
 
     /**
     * Find key in btree. If found, copy up to elen bytes of the 

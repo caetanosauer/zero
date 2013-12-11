@@ -34,10 +34,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 extern "C" int bm_first_set(const u_char* bm, int size, int start);
 extern "C" int bm_first_clr(const u_char* bm, int size, int start);
 

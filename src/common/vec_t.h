@@ -61,10 +61,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * (which is defined include "basics.h") before you include this.
  */
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 typedef const unsigned char * CADDR_T;
 #define MAX_SMALL_VEC_SIZE 8
 class w_keystr_t;

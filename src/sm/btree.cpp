@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #include "w_defines.h"
 
 #define SM_SOURCE
@@ -6,14 +10,13 @@
 #include "sm_int_0.h"
 #include "sm_int_2.h"
 #include "bf_tree.h"
-#include "btree_p.h"
+#include "btree_page_h.h"
 #include "btree_impl.h"
 #include "btcursor.h"
 #include "sm_du_stats.h"
 #include "w_key.h"
 #include "xct.h"
 #include "vec_t.h"
-#include "page_bf_inline.h"
 #include <crash.h>
 
 void btree_m::construct_once()
@@ -36,7 +39,7 @@ void btree_m::destruct_once()
 
 smsize_t                        
 btree_m::max_entry_size() {
-    return btree_p::max_entry_size;
+    return btree_page_h::max_entry_size;
 }
 
 rc_t
@@ -72,9 +75,8 @@ btree_m::is_empty(
     return RCOK;
 }
 
-rc_t btree_m::insert(volid_t vol, snum_t store, const w_keystr_t &key, const cvec_t &el)
-{
-    if(key.get_length_as_keystr() + el.size() > btree_p::max_entry_size) {
+rc_t btree_m::insert(volid_t vol, snum_t store, const w_keystr_t &key, const cvec_t &el) {
+    if (key.get_length_as_keystr() + el.size() > btree_page_h::max_entry_size) {
         return RC(eRECWONTFIT);
     }
     W_DO(btree_impl::_ux_insert(vol, store, key, el));
@@ -86,7 +88,7 @@ rc_t btree_m::update(
     const w_keystr_t&                 key,
     const cvec_t&                     elem)
 {
-    if(key.get_length_as_keystr() + elem.size() > btree_p::max_entry_size) {
+    if(key.get_length_as_keystr() + elem.size() > btree_page_h::max_entry_size) {
         return RC(eRECWONTFIT);
     }
     W_DO(btree_impl::_ux_update(vol, store, key, elem));
@@ -98,7 +100,7 @@ rc_t btree_m::put(
     const w_keystr_t&                 key,
     const cvec_t&                     elem)
 {
-    if(key.get_length_as_keystr() + elem.size() > btree_p::max_entry_size) {
+    if(key.get_length_as_keystr() + elem.size() > btree_page_h::max_entry_size) {
         return RC(eRECWONTFIT);
     }
     W_DO(btree_impl::_ux_put(vol, store, key, elem));
@@ -122,7 +124,7 @@ rc_t btree_m::remove(volid_t vol, snum_t store, const w_keystr_t &key)
     return RCOK;
 }
 
-rc_t btree_m::defrag_page(btree_p &page)
+rc_t btree_m::defrag_page(btree_page_h &page)
 {
     W_DO( btree_impl::_sx_defrag_page(page));
     return RCOK;
@@ -157,14 +159,14 @@ btree_m::_get_du_statistics_recurse(
     btree_int_stats_t       &int_stats,
     bool                 audit)
 {
-    btree_p next_page;
-    btree_p current;
+    btree_page_h next_page;
+    btree_page_h current;
     lpid_t nextpid = currentpid;
-    // also check right blink sibling.
+    // also check right foster sibling.
     // this part is now (partially) loop, not recursion to prevent the stack from growing too long
     while (nextpid.page != 0) {
         shpid_t original_pid = smlevel_0::bf->debug_get_original_pageid(nextpid.page);
-        btree_p page;
+        btree_page_h page;
         W_DO( next_page.fix_direct(currentpid.vol().vol, original_pid, LATCH_SH));
         current = next_page;// at this point (after latching next) we don't need to keep the "previous" fixed.
     
@@ -195,7 +197,7 @@ btree_m::_get_du_statistics_recurse(
             }
             _stats.leaf_pg.add(lf_stats);
         }
-        nextpid.page = current.get_blink();
+        nextpid.page = current.get_foster();
     }
     return RCOK;
 }
@@ -239,7 +241,7 @@ btree_m::print(const lpid_t& current,
 {
     {
         shpid_t original_pid = smlevel_0::bf->debug_get_original_pageid(current.page);
-        btree_p page;
+        btree_page_h page;
         W_COERCE( page.fix_direct(current.vol().vol, original_pid, LATCH_SH));// coerce ok-- debugging
 
         for (int i = 0; i < 5 - page.level(); i++) {
@@ -254,7 +256,7 @@ btree_m::print(const lpid_t& current,
              << "LEVEL " << page.level() 
              << ", page " << page.pid().page 
              << ", pid0 " << page.pid0()
-             << ", blink " << page.get_blink()
+             << ", foster " << page.get_foster()
              << ", nrec " << page.nrecs()
              << ", fence-low " << fence_low
              << ", fence-high " << fence_high
@@ -264,9 +266,9 @@ btree_m::print(const lpid_t& current,
         page.print(print_elem);
         cout << flush;
         //recursively print all descendants and siblings
-        if (page.get_blink()) {
+        if (page.get_foster()) {
             lpid_t child = current;
-            child.page = page.get_blink();
+            child.page = page.get_foster();
             print(child, print_elem);
         }
         if (page.is_node()) {

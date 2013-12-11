@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 /*<std-header orig-src='shore' incl-file-exclusion='DEVICE_H'>
 
  $Id: device.h,v 1.20 2010/06/08 22:28:55 nhall Exp $
@@ -33,11 +37,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "w_defines.h"
 
 /*  -- do not edit anything above this line --   </std-header>*/
-
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 
 // must be outside of device_m due to HP CC limitation
 struct device_s {

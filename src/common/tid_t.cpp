@@ -31,10 +31,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
-#ifdef __GNUG__
-#pragma implementation "tid_t.h"
-#endif
-
 #include <w_stream.h>
 #include "basics.h"
 #include "tid_t.h"

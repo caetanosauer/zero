@@ -1,11 +1,11 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #include "w_defines.h"
 
 #define SM_SOURCE
 #define RESTART_C
-
-#ifdef __GNUG__
-#pragma implementation "restart.h"
-#endif
 
 #include "sm_int_1.h"
 #include "restart.h"
@@ -15,7 +15,6 @@
 #include "bf_tree.h"
 #include "sm_int_0.h"
 #include "bf_tree_inline.h"
-#include "page_bf_inline.h"
 #include <map>
 
 
@@ -155,7 +154,7 @@ restart_m::recover(lsn_t master)
         << " STT" 
         << " lsn"
         << " A/R/I/U"
-        << "LOGREC(TID, TYPE, FLAGS:F/U PAGE <INFO> (prev)|[prev]";
+        << "LOGREC(TID, TYPE, FLAGS:F/U PAGE <INFO> (xid_prev)|[xid_prev]";
         fprintf(stderr, "%s\n", s.c_str()); 
         fprintf(stderr, " #: thread id\n");
         fprintf(stderr, " STT: xct state or ??? if unknown\n");
@@ -165,7 +164,7 @@ restart_m::recover(lsn_t master)
         fprintf(stderr, " I: inserted (undo pass or after recovery)\n");
         fprintf(stderr, " F: inserted by xct in forward processing\n");
         fprintf(stderr, " U: inserted by xct while rolling back\n");
-        fprintf(stderr, " [prev-lsn] for non-compensation records\n");
+        fprintf(stderr, " [xid_prev-lsn] for non-compensation records\n");
         fprintf(stderr, " (undo-lsn) for compensation records\n");
         fprintf(stderr, "\n\n");
     }
@@ -332,7 +331,7 @@ restart_m::analysis_pass(
      *  and get last mount/dismount lsn from it
      */
     {
-        if (! scan.next(lsn, log_rec_buf)) {
+        if (! scan.xct_next(lsn, log_rec_buf)) {
             W_COERCE(scan.get_last_rc());
         }
         logrec_t&        r = *log_rec_buf;
@@ -352,7 +351,7 @@ restart_m::analysis_pass(
      */
     int num_chkpt_end_handled = 0;
 
-    while (scan.next(lsn, log_rec_buf)) {
+    while (scan.xct_next(lsn, log_rec_buf)) {
         logrec_t&        r = *log_rec_buf;
 
         /*
@@ -401,7 +400,7 @@ restart_m::analysis_pass(
                 // comments can be after xct has ended
                     && r.type()!=logrec_t::t_comment ) {
             DBGOUT5(<<"analysis: inserting tx " << r.tid() << " active ");
-            xd = xct_t::new_xct(r.tid(), xct_t::xct_active, lsn, r.prev());
+            xd = xct_t::new_xct(r.tid(), xct_t::xct_active, lsn, r.xid_prev());
             w_assert1(xd);
             xct_t::update_youngest_tid(r.tid());
         }
@@ -544,10 +543,11 @@ restart_m::analysis_pass(
 #if W_DEBUG_LEVEL > 4
             {
                 lsn_t l, l2;
-                volatile unsigned long i = sizeof(lsn_t); 
+                unsigned long i = sizeof(lsn_t); 
                         // GROT: stop gcc from 
                         // optimizing memcpy into something that 
                         // chokes on sparc due to misalignment
+                        /// @todo: this is almost certainly obsolete?
 
                 memcpy(&l, (lsn_t*) r.data(), i);
                 memcpy(&l2, ((lsn_t*) r.data())+1, i);
@@ -773,7 +773,7 @@ restart_m::analysis_pass(
             W_IGNORE(io_m::dismount(dp->devrec[0].vid));
         }
 
-        theLastMountLSNBeforeChkpt = copy.prev();
+        theLastMountLSNBeforeChkpt = copy.xid_prev();
     }
     // close scope so the
     // auto-release will free the log rec copy buffer, __copy__buf
@@ -835,7 +835,7 @@ restart_m::redo_pass(
 
     lsn_t lsn;
     lsn_t expected_lsn = redo_lsn;
-    while (scan.next(lsn, log_rec_buf))  {
+    while (scan.xct_next(lsn, log_rec_buf))  {
         DBGOUT5(<<"redo scan returned lsn " << lsn
                 << " expected " << expected_lsn);
 
@@ -853,6 +853,7 @@ restart_m::redo_pass(
         }
 
         bool redone = false;
+        (void) redone; // Used only for debugging output
         DBGOUT5( << setiosflags(ios::right) << lsn
                       << resetiosflags(ios::right) << " R: " << r);
         w_assert1(lsn == r.lsn_ck());
@@ -939,7 +940,7 @@ restart_m::redo_pass(
                     /*
                      *  Fix the page.
                      */ 
-                    page_p page;
+                    fixable_page_h page;
 
                     /* 
                      * The following code determines whether to perform
@@ -1068,7 +1069,7 @@ restart_m::redo_pass(
                                 page_lsn (as if it had just been logged
                                 the first time, back in the past)
                                 */
-                                smlevel_0::bf->repair_rec_lsn(&page.persistent_part(), was_dirty, lsn);
+                                smlevel_0::bf->repair_rec_lsn(page.get_generic_page(), was_dirty, lsn);
                             }
                                 
                             if (xd) me()->detach_xct(xd);
@@ -1081,7 +1082,7 @@ restart_m::redo_pass(
                             r.redo(page.is_fixed() ? &page : 0);
                             redone = true;
                             page.set_lsns(lsn);
-                            smlevel_0::bf->repair_rec_lsn(&page.persistent_part(), was_dirty, lsn);
+                            smlevel_0::bf->repair_rec_lsn(page.get_generic_page(), was_dirty, lsn);
                             W_IFDEBUG1(rc_t sxs_rc =) sxs.end_sys_xct (RCOK);
                             w_assert1(!sxs_rc.is_error());
                         }

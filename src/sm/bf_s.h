@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #ifdef COMMENTED_OUT
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
@@ -59,9 +63,10 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 /*  -- do not edit anything above this line --   </std-header>*/
 
 #include <sm_s.h>
+#include <lintel/AtomicCounter.hpp>
 #include "w_hashing.h"
 
-class page_s;
+class generic_page;
 
 const uint32_t BFPID_T_HASH_SEED = 0xAC046148;
 
@@ -108,12 +113,12 @@ bfpid_t::operator==(const bfpid_t& p) const
 class bfcb_t {
     friend class bfcb_unused_list;
 private:
-    int32_t volatile     _pin_cnt;        // count of pins on the page
+    lintel::Atomic<int32_t> _pin_cnt;        // count of pins on the page
     uint32_t _store_flags; // a copy of what's in the page, alas
     bfpid_t     _pid;            // page currently stored in the frame
     bfpid_t     _old_pid;        // previous page in the frame
     bool        _old_pid_valid;  // is the previous page in-transit-out?
-    page_s*     _frame;          // pointer to the frame
+    generic_page*     _frame;          // pointer to the frame
 
     bool        _dirty;  // true if page is dirty
     lsn_t       _rec_lsn;        // recovery lsn
@@ -124,18 +129,16 @@ private:
     std::list<int32_t> *_write_order_dependencies; // used to check write order dependency
     std::list<int32_t> *_wod_back_pointers; // doubly linked list to remove _write_order_dependencies when this block is written out
 
-    int32_t      volatile _refbit;// ref count (for strict clock algorithm)
+    lintel::Atomic<int32_t> _refbit;// ref count (for strict clock algorithm)
                 // for replacement policy only
 
-    int32_t volatile      _hotbit;// copy of refbit 
+    lintel::Atomic<int32_t> _hotbit;// copy of refbit 
                 // for use by the cleaner algorithm
                 // without interfering with clock (replacement)
                 // algorithm.
-                // Volatile just to keep the compiler's optimizations from
-                // making things even more racy than we are allowing for... 
 
     int32_t       _hash_func; // which hash function was this frame placed with?
-    int32_t       volatile    _hash;        // and what was the hash value?
+    lintel::Atomic<int32_t> _hash; // and what was the hash value?
 public:
     latch_t     latch;          // latch on the frame
 
@@ -148,8 +151,8 @@ public:
 
     void    clear_bfcb();
 
-    const page_s *frame() const { return _frame; }
-    page_s *frame_nonconst() { return _frame; }
+    const generic_page *frame() const { return _frame; }
+    generic_page *frame_nonconst() { return _frame; }
     void  set_storeflags(uint32_t f);
     uint32_t  read_page_storeflags();
     uint32_t  get_storeflags() const;
@@ -209,7 +212,7 @@ public:
     void        update_rec_lsn(latch_mode_t, bool check);
 
     void        initialize(
-                        page_s*           _bufpool,
+                        generic_page*           _bufpool,
                         uint32_t           hashfunc
                         );
     void        destroy();

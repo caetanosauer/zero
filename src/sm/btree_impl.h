@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #ifndef BTREE_IMPL_H
 #define BTREE_IMPL_H
 
@@ -85,7 +89,7 @@ public:
     static rc_t _ux_get_page_and_status
     (volid_t vol, snum_t store,
      const w_keystr_t& key,
-     bool& need_lock, slotid_t& slot, bool& found, bool& took_XN, bool& is_ghost, btree_p& leaf);
+     bool& need_lock, slotid_t& slot, bool& found, bool& took_XN, bool& is_ghost, btree_page_h& leaf);
 
     /**
     *  \brief This function finds the leaf page to insert the given tuple,
@@ -111,7 +115,7 @@ public:
     (volid_t vol, snum_t store,
      const w_keystr_t& key,const cvec_t& el,
      bool& need_lock, slotid_t& slot, bool& found, bool& alreay_took_XN, 
-     bool& is_ghost, btree_p& leaf);
+     bool& is_ghost, btree_page_h& leaf);
 
     /**
     *  \brief This function finds the given key, updates the element if found.
@@ -137,7 +141,7 @@ public:
      volid_t vol, snum_t store,
      const w_keystr_t& key, const cvec_t& elem,
      bool& need_lock, slotid_t& slot, bool& found, bool& is_ghost,
-     btree_p& leaf);
+     btree_page_h& leaf);
 
    /**
     *  \brief This function finds the given key, updates the element if found and inserts it if
@@ -192,10 +196,10 @@ public:
      *  @param[in] defer_apply whether to defer push/apply the log
      */
     static rc_t                        _sx_reserve_ghost(
-        btree_p &leaf, const w_keystr_t &key, int elem_len, bool defer_apply = false);
+        btree_page_h &leaf, const w_keystr_t &key, int elem_len, bool defer_apply = false);
     /** @see _sx_reserve_ghost() */
     static rc_t                        _ux_reserve_ghost_core(
-        btree_p &leaf, const w_keystr_t &key, int elem_len, bool defer_apply = false);
+        btree_page_h &leaf, const w_keystr_t &key, int elem_len, bool defer_apply = false);
     
     /**
     *  \brief Removes the specified key from B+Tree.
@@ -254,10 +258,10 @@ public:
         */
         t_fence_high_match
     };
-    /** Used to specify which child/blink to follow next. */
+    /** Used to specify which child/foster to follow next. */
     enum slot_follow_t {
         t_follow_invalid = -3,
-        t_follow_blink = -2,
+        t_follow_foster = -2,
         t_follow_pid0 = -1
         // 0 to nrecs-1 is child
     };
@@ -294,7 +298,7 @@ public:
         const w_keystr_t&          key,
         traverse_mode_t            traverse_mode,
         latch_mode_t               leaf_latch_mode,
-        btree_p&                   leaf,
+        btree_page_h&                   leaf,
         bool                       allow_retry = true
         ); 
 
@@ -314,11 +318,11 @@ public:
     * [in:] On next try, put the page id in this param. This function will try EX-acquire, not upgrade.
     */
     static rc_t                 _ux_traverse_recurse(
-        btree_p&                   start,
+        btree_page_h&                   start,
         const w_keystr_t&          key,
         traverse_mode_t            traverse_mode,
         latch_mode_t               leaf_latch_mode,
-        btree_p&                   leaf,
+        btree_page_h&                   leaf,
         shpid_t&                    leaf_pid_causing_failed_upgrade
         ); 
     
@@ -334,7 +338,7 @@ public:
      * @param[out] slot_to_follow The slot that we will to go down (or sideways) next.
      */
     static inline void _ux_traverse_search(btree_impl::traverse_mode_t traverse_mode,
-                                    btree_p *current,
+                                    btree_page_h *current,
                                     const w_keystr_t& key,
                                     bool &this_is_the_leaf_page, slot_follow_t &slot_to_follow);
     
@@ -347,17 +351,17 @@ public:
      * and, false positive is fine. it's just one mutex call overhead.  
      * See jira ticket:78 "Eager-Opportunistic Hybrid Latching" (originally trac ticket:80).
      */
-    static rc_t _ux_traverse_try_eager_adopt(btree_p &current, shpid_t next_pid);
+    static rc_t _ux_traverse_try_eager_adopt(btree_page_h &current, shpid_t next_pid);
 
     /**
-     * If next has blink pointer and real-parent wants to adopt it, call this function.
+     * If next has foster pointer and real-parent wants to adopt it, call this function.
      * This tries opportunistic adoption by upgrading latches to EX.
      * This has a very low cost, though might do nothing in high contention.
      * If such a writer-starvation frequently happens, the above eager_adopt function
      * will be called to do it. 
      * See jira ticket:78 "Eager-Opportunistic Hybrid Latching" (originally trac ticket:80).
      */
-    static rc_t _ux_traverse_try_opportunistic_adopt(btree_p &current, btree_p &next);
+    static rc_t _ux_traverse_try_opportunistic_adopt(btree_page_h &current, btree_page_h &next);
 
     /**
     *  Find key in btree. If found, copy up to elen bytes of the 
@@ -393,43 +397,43 @@ public:
 #endif // DOXYGEN_HIDE
 
     /**
-     * \brief Checks all direct children of parent and, if some child has blink,
-     * pushes them up to parent, resolving blink status.
+     * \brief Checks all direct children of parent and, if some child has foster,
+     * pushes them up to parent, resolving foster status.
      *  \details
-     * If you already know which child has blink, you can use
-     * _sx_adopt_blink instead.
+     * If you already know which child has foster, you can use
+     * _sx_adopt_foster instead.
      * Context: only in system transaction.
      * @param[in] root root node.
-     * @param[in] recursive whether we recursively check all descendants and blinks.
+     * @param[in] recursive whether we recursively check all descendants and fosters.
      */
-    static rc_t                 _sx_adopt_blink_all(
-        btree_p &root, bool recursive=false);
+    static rc_t                 _sx_adopt_foster_all(
+        btree_page_h &root, bool recursive=false);
     /**
      * this version assumes system transaction as the active transaction on current thread.
-     * @see _sx_adopt_blink_all()
+     * @see _sx_adopt_foster_all()
      */
-    static rc_t                 _ux_adopt_blink_all_core(
-        btree_p &parent, bool is_root, bool recursive);
+    static rc_t                 _ux_adopt_foster_all_core(
+        btree_page_h &parent, bool is_root, bool recursive);
 
     /**
-     * \brief Pushes up a blink pointer of child to the parent.
+     * \brief Pushes up a foster pointer of child to the parent.
      *  \details
-     * This method resolves only one blink pointer. If there might be many
-     * blinks in this child, or its siblings, consider _ux_adopt_blink_sweep().
+     * This method resolves only one foster pointer. If there might be many
+     * fosters in this child, or its siblings, consider _ux_adopt_foster_sweep().
      * Context: only in system transaction.
      * @param[in] parent the interior node to store new children.
      * @param[in] child child page of the parent that (might) has foster-children.
      */
-    static rc_t                 _sx_adopt_blink(btree_p &parent, btree_p &child);
+    static rc_t                 _sx_adopt_foster(btree_page_h &parent, btree_page_h &child);
 
     /**
      * this version assumes system transaction as the active transaction on current thread.
-     * @see _sx_adopt_blink()
+     * @see _sx_adopt_foster()
      */
-    static rc_t                 _ux_adopt_blink_core(btree_p &parent, btree_p &child);
+    static rc_t                 _ux_adopt_foster_core(btree_page_h &parent, btree_page_h &child);
 
     /**
-     * \brief Pushes up a blink pointer of child to the parent IF we can get EX latches immediately.
+     * \brief Pushes up a foster pointer of child to the parent IF we can get EX latches immediately.
      * \details
      * latch upgrade might block, in that case this method immediately returns without doing anything.
      * Context: only in system transaction.
@@ -437,12 +441,12 @@ public:
      * @param[in] child child page of the parent that (might) has foster-children.
      * @param[out] pushedup whether the adopt was done
      */
-    static rc_t                 _sx_opportunistic_adopt_blink(btree_p &parent, btree_p &child, bool &pushedup);
+    static rc_t                 _sx_opportunistic_adopt_foster(btree_page_h &parent, btree_page_h &child, bool &pushedup);
 
     /**
-     * @see _sx_opportunistic_adopt_blink()
+     * @see _sx_opportunistic_adopt_foster()
      */
-    static rc_t                 _ux_opportunistic_adopt_blink_core(btree_p &parent, btree_p &child, bool &pushedup);
+    static rc_t                 _ux_opportunistic_adopt_foster_core(btree_page_h &parent, btree_page_h &child, bool &pushedup);
 
     /**
      * \brief Pushes up all foster-children of children to the parent.
@@ -450,29 +454,29 @@ public:
      * This method also follows foster-children of the parent.
      * @param[in] parent the interior node to store new children.
      */
-    static rc_t _ux_adopt_blink_sweep (btree_p &parent_arg);
+    static rc_t _ux_adopt_foster_sweep (btree_page_h &parent_arg);
 
     /**
-     * @see _ux_adopt_blink_sweep()
-     * @see _ux_opportunistic_adopt_blink_core()
-     * The difference from _ux_adopt_blink_sweep()
+     * @see _ux_adopt_foster_sweep()
+     * @see _ux_opportunistic_adopt_foster_core()
+     * The difference from _ux_adopt_foster_sweep()
      * is that this function doesn't exactly check children have foster-child.
      * So, this is much faster but some foster-child might be not adopted!
      */
-    static rc_t _ux_adopt_blink_sweep_approximate (btree_p &parent, shpid_t surely_need_child_pid);
+    static rc_t _ux_adopt_foster_sweep_approximate (btree_page_h &parent, shpid_t surely_need_child_pid);
     /** This version launches system transaction.*/
-    static rc_t _sx_adopt_blink_sweep_approximate (btree_p &parent, shpid_t surely_need_child_pid);
+    static rc_t _sx_adopt_foster_sweep_approximate (btree_page_h &parent, shpid_t surely_need_child_pid);
 
     /** Applies the changes of one adoption on parent node. Used by both usual adoption and REDO. */
-    static rc_t _ux_adopt_blink_apply_parent (btree_p &parent_arg,
+    static rc_t _ux_adopt_foster_apply_parent (btree_page_h &parent_arg,
         shpid_t new_child_pid, const w_keystr_t &new_child_key);
     /** Applies the changes of one adoption on child node. Used by both usual adoption and REDO. */
-    static void _ux_adopt_blink_apply_child (btree_p &child);
+    static void _ux_adopt_foster_apply_child (btree_page_h &child);
     
     /**
      * \brief Splits a page as B-link tree.
      *  \details
-     * The new page is pointed by the old page in the "blink" property.
+     * The new page is pointed by the old page in the "foster" property.
      * This function does not adopt the new separator key to parent,
      * making the by-effect minimal.
      * 
@@ -485,21 +489,21 @@ public:
      * @param[out] new_page_id ID of the newly created page.
      * @param[in] triggering_key the key to be inserted after this split. used to determine split policy.
      */
-    static rc_t                 _sx_split_blink(btree_p &page, lpid_t &new_page_id,
+    static rc_t                 _sx_split_foster(btree_page_h &page, lpid_t &new_page_id,
         const w_keystr_t &triggering_key);
 
     /**
      * this version assumes system transaction as the active transaction on current thread.
-     * @see _sx_split_blink()
+     * @see _sx_split_foster()
      */
-    static rc_t                 _ux_split_blink_core(btree_p &page, const lpid_t &new_page_id, const w_keystr_t &triggering_key,
+    static rc_t                 _ux_split_foster_core(btree_page_h &page, const lpid_t &new_page_id, const w_keystr_t &triggering_key,
         const w_keystr_t *new_child_key = NULL, shpid_t new_child_pid = 0);
     
     /**
      * applies all data changes for split. used for both usual split and REDO.
-     * @see _sx_adopt_blink_all()
+     * @see _sx_adopt_foster_all()
      */
-    static rc_t                 _ux_split_blink_apply(btree_p &page,
+    static rc_t                 _ux_split_foster_apply(btree_page_h &page,
         slotid_t right_begins_from, const w_keystr_t &mid_key, const lpid_t &new_pid,
         const w_keystr_t *new_child_key = NULL, shpid_t new_child_pid = 0);
     
@@ -520,14 +524,14 @@ public:
      * Context: only in system transaction.
      * @param[in] page the page to rebalance.
      */
-    static rc_t                 _sx_rebalance_blink(btree_p &page);
+    static rc_t                 _sx_rebalance_foster(btree_page_h &page);
     
-    /** @see _sx_rebalance_blink() */
-    static rc_t                 _ux_rebalance_blink_core(btree_p &page);
+    /** @see _sx_rebalance_foster() */
+    static rc_t                 _ux_rebalance_foster_core(btree_page_h &page);
     
-    /** @see _sx_rebalance_blink() */
-    static rc_t                 _ux_rebalance_blink_core(btree_p &page,
-                                  btree_p &blink_p, int32_t move_count);
+    /** @see _sx_rebalance_foster() */
+    static rc_t                 _ux_rebalance_foster_core(btree_page_h &page,
+                                  btree_page_h &foster_p, int32_t move_count);
     
     /**
      * \brief Absorbs foster-child of this page, deleting the foster-child.
@@ -540,10 +544,10 @@ public:
      * Context: only in system transaction.
      * @param[in] page the page to absorb foster-child.
      */
-    static rc_t                 _sx_merge_blink(btree_p &page);
+    static rc_t                 _sx_merge_foster(btree_page_h &page);
     
-    /** @see _sx_merge_blink() */
-    static rc_t                 _ux_merge_blink_core(btree_p &page);
+    /** @see _sx_merge_foster() */
+    static rc_t                 _ux_merge_foster_core(btree_page_h &page);
 
     
     /**
@@ -556,16 +560,16 @@ public:
      * @param[in] foster_parent_slot slot number of the to-be-foster-parent. -1 means pid0.
      * In other words, there is no way to convert pid0 into foster-child.
      */
-    static rc_t                 _sx_deadopt_blink(btree_p &real_parent, slotid_t foster_parent_slot);
+    static rc_t                 _sx_deadopt_foster(btree_page_h &real_parent, slotid_t foster_parent_slot);
 
-    /** @see _sx_adopt_blink() */
-    static rc_t                 _ux_deadopt_blink_core(btree_p &real_parent, slotid_t foster_parent_slot);
+    /** @see _sx_adopt_foster() */
+    static rc_t                 _ux_deadopt_foster_core(btree_page_h &real_parent, slotid_t foster_parent_slot);
 
     /** Applies data changes on real-parent for De-Adopt operation. */
-    static void _ux_deadopt_blink_apply_real_parent(btree_p &real_parent,
+    static void _ux_deadopt_foster_apply_real_parent(btree_page_h &real_parent,
         shpid_t foster_child_id, slotid_t foster_parent_slot);
     /** Applies data changes on foster-parent for De-Adopt operation. */
-    static void _ux_deadopt_blink_apply_foster_parent(btree_p &foster_parent,
+    static void _ux_deadopt_foster_apply_foster_parent(btree_page_h &foster_parent,
         shpid_t foster_child_id, const w_keystr_t &low_key, const w_keystr_t &high_key);
 
 #ifdef DOXYGEN_HIDE
@@ -593,7 +597,7 @@ public:
      * @param[in] check_only whether the lock goes away right after grant
      */
     static rc_t _ux_lock_key(
-        btree_p&      leaf,
+        btree_page_h&      leaf,
         const w_keystr_t&   key,
         latch_mode_t        latch_mode,
         lock_mode_t         lock_mode,
@@ -602,7 +606,7 @@ public:
 
     /** raw string and length version. */
     static rc_t _ux_lock_key(
-        btree_p&      leaf,
+        btree_page_h&      leaf,
         const void         *keystr,
         size_t              keylen,
         latch_mode_t        latch_mode,
@@ -613,12 +617,12 @@ public:
     /**
      * Used when the exact key is not found and range locking is needed.
      * @param[in] slot the slot where key will be placed if inserted.
-     * usually a return value of btree_p.search_leaf().
+     * usually a return value of btree_page_h.search_leaf().
      * if -1, this function will call the search again.
      * @see _ux_lock_key()
      */
     static rc_t _ux_lock_range(
-        btree_p&      leaf,
+        btree_page_h&      leaf,
         const w_keystr_t&   key,
         slotid_t slot,
         latch_mode_t        latch_mode,
@@ -629,7 +633,7 @@ public:
 
     /** raw string version. */
     static rc_t _ux_lock_range(
-        btree_p&      leaf,
+        btree_page_h&      leaf,
         const void         *keystr,
         size_t              keylen,
         slotid_t slot,
@@ -653,7 +657,7 @@ public:
      * This method is called for foster-child when Merge/Rebalance happens.
      * See jira ticket:84 "Key Range Locking" (originally trac ticket:86) for more details.
      */
-    static rc_t _ux_assure_fence_low_entry(btree_p &leaf);
+    static rc_t _ux_assure_fence_low_entry(btree_page_h &leaf);
 
     #ifdef DOXYGEN_HIDE
 ///==========================================
@@ -681,12 +685,12 @@ public:
      * Context: only in system transaction.
      * @param[in] root current root page.
     */
-    static rc_t                        _sx_shrink_tree(btree_p& root);
+    static rc_t                        _sx_shrink_tree(btree_page_h& root);
     /**
      * this version assumes system transaction as the active transaction on current thread.
      * @see _sx_shrink_tree()
      */
-    static rc_t                        _ux_shrink_tree_core(btree_p& root);
+    static rc_t                        _ux_shrink_tree_core(btree_page_h& root);
     /**
     *  \brief On root page split, allocates a new child, shifts all entries of
     *  root to new child, and has the only entry in root (pid0) point
@@ -695,12 +699,12 @@ public:
      * Context: only in system transaction.
      * @param[in] root current root page.
     */
-    static rc_t                        _sx_grow_tree(btree_p& root);
+    static rc_t                        _sx_grow_tree(btree_page_h& root);
     /**
      * this version assumes system transaction as the active transaction on current thread.
      * @see _sx_grow_tree()
      */
-    static rc_t                        _ux_grow_tree_core(btree_p& root, const lpid_t &cp_pid);
+    static rc_t                        _ux_grow_tree_core(btree_page_h& root, const lpid_t &cp_pid);
 
 #ifdef DOXYGEN_HIDE
 ///==========================================
@@ -728,21 +732,21 @@ public:
     
 
     /**
-    * Internal method to be called from _ux_verify_tree() for recursively check blink and children.
+    * Internal method to be called from _ux_verify_tree() for recursively check foster and children.
     * @param[in] parent page to check
     * @param[in] context context object to maintain
     */
     static rc_t                        _ux_verify_tree_recurse(
-        btree_p &parent, verification_context &context);
+        btree_page_h &parent, verification_context &context);
 
     /**
     * Internal method to check each page. Called both from tree-recurse type and
-    * sequential-scan type. This function doesn't follow child or blink pointers.
+    * sequential-scan type. This function doesn't follow child or foster pointers.
     * @param[in] page the page to check
     * @param[in] context context object to maintain
     */
     static rc_t                        _ux_verify_feed_page(
-        btree_p &page, verification_context &context);
+        btree_page_h &page, verification_context &context);
 
     /**
      * \brief Verifies consistency of all BTree indexes in the volume.
@@ -762,9 +766,9 @@ public:
     /** initialize context for in-query verification.*/
     static void inquery_verify_init(volid_t vol, snum_t store);
     /** checks one page against the given expectation. */
-    static void inquery_verify_fact(btree_p &page);
+    static void inquery_verify_fact(btree_page_h &page);
     /** adds expectation for next page. */
-    static void inquery_verify_expect(btree_p &page, slot_follow_t next_follow);
+    static void inquery_verify_expect(btree_page_h &page, slot_follow_t next_follow);
 
 #ifdef DOXYGEN_HIDE
 ///==========================================
@@ -815,13 +819,13 @@ public:
      * Context: System transaction.
      * @param[in] pid the page to be defraged
      */
-    static rc_t _sx_defrag_page(btree_p &page);
+    static rc_t _sx_defrag_page(btree_page_h &page);
 
     /**
      * this version assumes system transaction as the active transaction on current thread.
      * @see _sx_defrag_page()
      */
-    static rc_t _ux_defrag_page_core(btree_p &p);
+    static rc_t _ux_defrag_page_core(btree_page_h &p);
 
 #ifdef DOXYGEN_HIDE
 ///==========================================
@@ -898,7 +902,7 @@ public:
         w_assert1(hash < (1 << GAC_HASH_BITS));
         s_ex_need_counts[hash] = 0;
     }
-    /** Call this when you cleared blink status of the page.*/
+    /** Call this when you cleared foster status of the page.*/
     inline static void clear_forster_child (shpid_t foster_parent_pid) {
         uint32_t hash = shpid2hash(foster_parent_pid);
         w_assert1(hash < (1 << GAC_HASH_BITS));

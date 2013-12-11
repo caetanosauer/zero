@@ -322,9 +322,12 @@ w_rc_t span_pages(ss_m* ssm, test_volume_t *test_volume) {
     lpid_t root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
-    const size_t datsize = (SM_PAGESIZE / 5);
-    char datastr[datsize + 1];
     char keystr[3] = "";
+    
+    const size_t datsize = (SM_PAGESIZE / 6);
+    //const size_t datsize = btree_m::max_entry_size() - sizeof(keystr);
+    w_assert1(datsize <= btree_m::max_entry_size() - sizeof(keystr));
+    char datastr[datsize + 1];
     keystr[2] = '\0';
     datastr[datsize] = '\0';
     ::memset (datastr, 'a', datsize);

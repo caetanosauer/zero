@@ -1,3 +1,0 @@
-To config with Purify:
-
-CXX="purify -max-threads=100 -view-file=dorapurify.pv -windows=yes CC" ./configure

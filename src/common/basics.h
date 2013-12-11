@@ -34,10 +34,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
-#ifdef __GNUG__
-#pragma interface
-#endif
-
 #ifndef W_BASE_H
 #include <w_base.h>
 #endif
@@ -51,6 +47,7 @@ typedef uint32_t               smsize_t;
 
 /* For types of store, volumes, see stid_t.h and vid_t.h */
 
+/// Short page ID (missing volume information)
 typedef uint32_t    shpid_t; 
 
 #ifndef SM_SOURCE

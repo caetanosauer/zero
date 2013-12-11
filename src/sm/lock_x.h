@@ -1,11 +1,11 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #ifndef LOCK_X_H
 #define LOCK_X_H
 
 #include "w_defines.h"
-
-#ifdef __GNUG__
-#pragma interface
-#endif
 
 class xct_lock_info_t; // forward
 class lock_queue_entry_t;

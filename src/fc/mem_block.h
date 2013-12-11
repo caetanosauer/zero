@@ -130,8 +130,6 @@ struct block_bits {
     static
     bitmap       create_mask(size_t bits_set);
 
-    bitmap volatile*     usable_chips() { return &_usable_chips; }
-    
     size_t        usable_count() const { return _popc(_usable_chips); }
     size_t        zombie_count() const { return _popc(_zombie_chips); }
 
@@ -141,7 +139,7 @@ struct block_bits {
     size_t        _popc(bitmap bm);
 
     bitmap        _usable_chips; // available as of last recycling (1thr)
-    bitmap volatile    _zombie_chips; // deallocations since last recycling (racy)
+    bitmap _zombie_chips; // deallocations since last recycling (racy)
 };
 
 /* Control structure for one block of allocatable memory.

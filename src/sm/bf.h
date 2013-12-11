@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ */
+
 #ifdef COMMENTED_OUT
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
@@ -68,22 +72,17 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  */
 
 #include <bf_s.h>
-#include <page_s.h>
-
-#ifdef __GNUG__
-#pragma interface
-#endif
+#include <generic_page.h>
 
 class bfcb_t;
-class page_p;
+class fixable_page_h;
 class bf_core_m;
 class bf_cleaner_thread_t;
 class bf_filter_t;
 struct bf_page_writer_control_t; // forward
 class bf_m_test;
 
-class bf_m : public smlevel_0 
-{
+class bf_m : public smlevel_0 {
     friend class bf_cleaner_thread_t;
     friend class page_writer_thread_t;
     friend class bfcb_t;
@@ -103,30 +102,8 @@ public:
 
     static bool                  is_cached(const bfcb_t* e);
 
-    static rc_t                  fix(
-        page_s*&                           page,
-        const lpid_t&                      pid, 
-        uint16_t                            tag,
-        latch_mode_t                       mode,
-        bool                               no_read,
-        store_flag_t&                      out_stflags,
-        bool                               ignore_store_id = false,
-        store_flag_t                       stflags = st_bad
-                                        );
-
-    static rc_t                  conditional_fix(
-        page_s*&                         page,
-        const lpid_t&                    pid, 
-        uint16_t                          tag,
-        latch_mode_t                     mode,
-        bool                             no_read,
-        store_flag_t&                    out_stflags,
-        bool                             ignore_store_id = false,
-        store_flag_t                    stflags = st_bad
-        );
-
     static rc_t                  refix(
-        const page_s*                     p,
+        const generic_page*                     p,
         latch_mode_t                     mode);
 
     static rc_t                  get_page(
@@ -139,27 +116,27 @@ public:
     // upgrade page latch, only if would not block
     // set would_block to true if upgrade would block
     static void                  upgrade_latch_if_not_block(
-        const page_s*                     p,
+        const generic_page*                     p,
         // MULTI-SERVER only: remove
         bool&                             would_block);
 
     static latch_mode_t          latch_mode(
-        const page_s*                     p
+        const generic_page*                     p
         );
 
     static void                  upgrade_latch(
-        page_s*&                     p,
+        generic_page*&                     p,
         latch_mode_t                    m
         );
-    static void                  downgrade_latch(page_s*& p);
+    static void                  downgrade_latch(generic_page*& p);
 
     static void                  unfix(
-        const page_s*                    buf, 
+        const generic_page*                    buf, 
         bool                            dirty = false,
         int                            refbit = 1);
 
     static void                  unfix_dirty(
-        const page_s*&                    buf, 
+        const generic_page*&                    buf, 
             int                            refbit = 1) {
         unfix(buf, true, refbit); 
     }
@@ -172,13 +149,13 @@ public:
      * with an error code eWRITEORDERLOOP.
      */
     static rc_t                  register_write_order_dependency(
-        const page_s* successor,
-        const page_s* predecessor);
+        const generic_page* successor,
+        const generic_page* predecessor);
 
-    static rc_t                  set_dirty(const page_s* buf);
-    static bool                  is_dirty(const page_s* buf) ;
+    static rc_t                  set_dirty(const generic_page* buf);
+    static bool                  is_dirty(const generic_page* buf) ;
 
-    static void                  discard_pinned_page(const page_s* buf);
+    static void                  discard_pinned_page(const generic_page* buf);
     static rc_t                  discard_store(stid_t stid);
     static rc_t                  discard_volume(vid_t vid);
 private:
@@ -196,7 +173,7 @@ private:
 public:
     
     // for debugging: used only with W_DEBUG_LEVEL > 0
-    static  bool                 check_lsn_invariant(const page_s *page);
+    static  bool                 check_lsn_invariant(const generic_page *page);
     static  bool                 check_lsn_invariant(const bfcb_t *b);
 
     static rc_t                  force_store(
@@ -213,17 +190,17 @@ public:
         vid_t                             vid, 
         bool                             flush = false);
 
-    static bool                 is_mine(const page_s* buf) ;
-    static const latch_t*       my_latch(const page_s* buf) ;
-    static bool                 fixed_by_me(const page_s* buf) ;
-    static bool                 is_bf_page(const page_s* p, 
+    static bool                 is_mine(const generic_page* buf) ;
+    static const latch_t*       my_latch(const generic_page* buf) ;
+    static bool                 fixed_by_me(const generic_page* buf) ;
+    static bool                 is_bf_page(const generic_page* p, 
                                                   bool and_in_htab = true);
     // true == no longer hold any old dirty pages
     // false == unable to flush all old dirty pages we hold
     bool                        force_my_dirty_old_pages(lpid_t const* 
                                                        wal_page=0) const;
     
-    static bfcb_t*              get_cb(const page_s*) ;
+    static bfcb_t*              get_cb(const generic_page*) ;
 
     static void                 dump(ostream &o);
     static void                 stats(
@@ -263,24 +240,12 @@ public:
 private:
     static bf_core_m*           _core;
 
-    static rc_t                 _fix(
-        timeout_in_ms                    timeout, 
-        page_s*&                         page,
-        const lpid_t&                    pid, 
-        uint16_t                          tag,
-        latch_mode_t                     mode,
-        bool                             no_read,
-        store_flag_t&                    return_store_flags,
-        bool                             ignore_store_id = false,
-        store_flag_t                     stflags = st_bad
-        );
-
     static rc_t                 _scan(
         const bf_filter_t&               filter,
         bool                             write_dirty,
         bool                             discard);
     
-    static rc_t                 _write_out(const page_s* b, uint32_t cnt);
+    static rc_t                 _write_out(const generic_page* b, uint32_t cnt);
     static rc_t                 _replace_out(bfcb_t* b);
 
     static w_list_t<bf_cleaner_thread_t, queue_based_block_lock_t>*  
@@ -295,7 +260,7 @@ private:
     static rc_t                        _clean_segment(
         int                                count, 
         lpid_t                             pids[],
-        page_s*                            pbuf,
+        generic_page*                            pbuf,
         timeout_in_ms                      last_pass_timeout, 
                                             // WAIT_IMMEDIATE or WAIT_FOREVER
         bool*                              cancel_flag);
@@ -304,38 +269,6 @@ private:
     static void                 _incr_page_write(int number, bool bg);
 
 };
-
-inline rc_t
-bf_m::fix(
-    page_s*&            ret_page,
-    const lpid_t&       pid,
-    uint16_t             tag,            // page_t::tag_t
-    latch_mode_t        mode,
-    bool                no_read,
-    store_flag_t&       return_store_flags,
-    bool                ignore_store_id, // default = false
-    store_flag_t        stflags // for case no_read
-)
-{
-    return _fix(WAIT_FOREVER, ret_page, pid, tag, mode,
-        no_read, return_store_flags, ignore_store_id, stflags);
-}
-
-inline rc_t
-bf_m::conditional_fix(
-    page_s*&            ret_page,
-    const lpid_t&       pid,
-    uint16_t             tag,            // page_t::tag_t
-    latch_mode_t        mode,
-    bool                no_read,
-    store_flag_t&       return_store_flags,
-    bool                ignore_store_id, // default = false
-    store_flag_t        stflags // for case no_read
-)
-{
-    return _fix(WAIT_IMMEDIATE, ret_page, pid, tag, mode,
-        no_read, return_store_flags, ignore_store_id, stflags);
-}
 
 /*<std-footer incl-file-exclusion='BF_H'>  -- do not edit anything below this line -- */
 
