@@ -648,7 +648,7 @@ rc_t btree_page_h::replace_fence_rec_nolog(const w_keystr_t& low,
         _pack_fence_rec(fences, low, high, chain, new_prefix_len);
     w_assert1(prefix_len == get_prefix_length());
 
-    if (!page()->replace_item_data(0, fences, 0)) {
+    if (!page()->replace_item_data(0, 0, fences)) {
         return RC(smlevel_0::eRECWONTFIT);
     }
 
@@ -701,7 +701,7 @@ rc_t btree_page_h::replace_ghost(const w_keystr_t &key,
     _get_leaf_key_fields(slot, key_length, trunc_key_data);
     size_t data_offset = sizeof(key_length_t) + key_length - get_prefix_length();  // <<<>>>
 
-    if (!page()->replace_item_data(slot+1, elem, data_offset)) {
+    if (!page()->replace_item_data(slot+1, data_offset, elem)) {
         w_assert1(false); // should not happen because ghost should have had enough space
     }
 
@@ -719,7 +719,7 @@ rc_t btree_page_h::replace_el_nolog(slotid_t slot, const cvec_t &elem) {
     _get_leaf_key_fields(slot, key_length, trunc_key_data);
     size_t data_offset = sizeof(key_length_t) + key_length - get_prefix_length();  // <<<>>>
 
-    if (!page()->replace_item_data(slot+1, elem, data_offset)) {
+    if (!page()->replace_item_data(slot+1, data_offset, elem)) {
         return RC(smlevel_0::eRECWONTFIT);
     }
     return RCOK;

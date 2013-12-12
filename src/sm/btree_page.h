@@ -6,27 +6,33 @@
 #define BTREE_PAGE_H
 
 #include "fixable_page_h.h"
-#include "w_defines.h"
-#include "w_endian.h"
 #include "vec_t.h"
 
 
 /**
- * The guts of btree_page, separated out from btree_page to increase
- * access control flexibility.  (When btree_page friends classes, it
- * conveys access only to the protected members of this class not its
- * private members.)
+ * This class holds B-tree-specific headers as well as an ordered list
+ * of \e items.  Each item contains the following fixed-size fields:
  *
+ *     ghost? (1 bit):   am I a ghost item?
  *
+ *     poor   (2 bytes): leading bytes of an associated key for speeding up search 
+ *                       (type poor_man_key)
  *
+ *     child  (4 bytes): child page ID; this field is present only in interior nodes
+ *  
+ * The first two fields are stored so that for nearby items (in the
+ * list order) they are likely to be in the same cache line; e.g.,
+ * item_poor(n) and item_poor(n+1) are likely in the same cache line.
+ * Each item also contains a variable-length data field, which can be
+ * dynamically resized.
  *
+ * For how these fields are used, including the representations used
+ * with the variable-length data field, see the btree_page_h class.
  *
- *
- *
- *
- *
- *
- *
+ * The contents of this class are separated out from btree_page to
+ * increase access-control flexibility.  Its private members are
+ * accessible by only itself while its protected members are
+ * accessible to only those classes/members friended by btree_page.
  */
 class btree_page_data : public generic_page_header {
 public:
@@ -47,24 +53,28 @@ protected:
     // ======================================================================
 
     /**
-     * Root page used for recovery (root page is never changed even
-     * while grow/shrink).
-     * This field could later be removed by instead retrieving this
-     * value from full pageid (storeid->root page id), but let's do
-     * that later.
+     * Page ID of the root page of the B-tree this node belongs to.
+     * The root page ID of a B-tree is never changed even while the
+     * tree grows or shrinks.
+     *
+     * This field is redundant and could later be removed by replacing
+     * references to it with retrieving the root pid from pid via the
+     * stnode_cache_t associated with the volume pid.vol() by looking
+     * up store pid.store().
      */
     shpid_t btree_root;                         // +4 -> 4
 
-    /// first ptr in non-leaf nodes.  Used only in left-most non-leaf nodes. 
+    /// First child pointer in non-leaf nodes.  Used only in left-most non-leaf nodes. 
     shpid_t btree_pid0;                         // +4 -> 8
 
-    /**
-     * B-link page (0 if not linked).
-     * kind of "next", but other nodes don't know about it yet.
-     */
+    /// Foster link page ID (0 if not linked).
     shpid_t btree_foster;                       // +4 -> 12
 
-    /// 1 if leaf, >1 if non-leaf. 
+    /**
+     * Level of this node in the B-tree, starting from the bottom
+     * with 1.  In particular, 1 if we are a leaf and >1 if a
+     * non-leaf (interior) node.
+     */
     int16_t btree_level;                        // +2 -> 14
 
     /**
@@ -80,26 +90,25 @@ protected:
     int16_t btree_fence_high_length;            // +2 -> 18
 
     /**
-     * length of high-fence key of the foster chain.  0 if not in a foster chain or right-most of a chain.
-     * Corresponding data is stored in the first item after high fence key.
-     * When this page belongs to a foster chain,
-     * we need to store high-fence of right-most sibling in every sibling
-     * to do batch-verification with bitmaps.
-     * @see btree_impl::_ux_verify_volume()
+     * length of high-fence key of the foster chain.  0 if not in a
+     * foster chain or at the end of a foster chain.  Corresponding
+     * data is stored in the first item after high fence key.  
      */
     int16_t btree_chain_fence_high_length;      // +2 -> 20
 
     /**
-     * counts of common leading bytes of the fence keys,
-     * thereby of all entries in this page too.
-     * 0=no prefix compression.
-     * Corresponding data is NOT stored.
-     * We can just use low fence key data.
+     * Common prefix length for this page.  All keys of this page
+     * except possibly the Foster key share (at least) this many
+     * prefix bytes.
+     *
+     * btree_page_t compresses all keys except the low fence key and
+     * the Foster key by removing these prefix bytes.
      */
     int16_t btree_prefix_length;                // +2 -> 22
 
     /**
      * Count of consecutive insertions to right-most or left-most.
+     * 
      * Positive values mean skews towards right-most.
      * Negative values mean skews towards left-most.
      * Whenever this page receives an insertion into the middle,
@@ -115,13 +124,14 @@ protected:
     // ======================================================================
 
 
-protected:
     // ======================================================================
     //   BEGIN: protected item interface
     // ======================================================================
 
-    /// initialize item storage area, erasing any existing items.
-    /// btree_level must be set before hand and not changed afterwards.
+    /**
+     * Initialize item storage area, erasing any existing items.
+     * btree_level must be set before hand and not changed afterwards.
+     */
     void          init_items();
 
 
@@ -150,18 +160,26 @@ protected:
     /// return a reference to the poor_man_key data for the given item
     poor_man_key& item_poor(int item);
 
-    /// return a reference to the child pointer data for the given
-    /// item.  The reference will be word aligned and thus a suitable
-    /// target for atomic operations.
-    /// @pre this is a interior page
+    /**
+     * Return a reference to the child pointer data for the given
+     * item.  The reference will be word aligned and thus a suitable
+     * target for atomic operations.
+     * @pre this is an interior page
+     */
     shpid_t&      item_child(int item);
 
-    /// return a pointer to the variable-length data of the given item
-    ///
-    /// the variable length data occupies item_data(item) ... item_data(item)+item_length-1
+    /**
+     * return a pointer to the variable-length data of the given item
+     * 
+     * the variable length data occupies item_data(item)
+     * ... item_data(item)+item_length(item)-1
+     */
     char*         item_data(int item);
 
-    /// return the amount of variable-length data belonging to the given item
+    /**
+     * return the amount of variable-length data belonging to the
+     * given item in bytes
+     */
     size_t        item_length(int item) const;
 
 
@@ -169,31 +187,40 @@ protected:
      * Attempt to insert a new item at given item position, pushing
      * existing items at and after that position upwards.
      * E.g. inserting to item 1 makes the old item 1 (if any) now item
-     * 2, old item 2 (if any) now item 3, and so on.  Returns false
-     * iff it fails due to inadequate available space (i.e.,
-     * predict_item_space(data_length) < usable_space()).
+     * 2, old item 2 (if any) now item 3, and so on.  Item position
+     * may be one beyond the last existing item position (i.e.,
+     * number_of_items()) in order to insert the new item at the end.
+     *
+     * Returns false iff the insert fails due to inadequate available
+     * space (i.e., predict_item_space(data_length) > usable_space()).
      * 
-     * The inserted item is a ghost if ghost is set and has
+     * The inserted item is a ghost iff ghost is set and has
      * poor_man_key data poor, child child, and variable-length data
      * of length data_length.  child must be 0 if this is a leaf page.
      * 
-     * The variable-length data is allocated but not initialized.
+     * The new item's variable-length data is allocated but not
+     * initialized.
      */
-    bool          insert_item(int item, bool ghost, poor_man_key poor, shpid_t child, size_t data_length);
+    bool          insert_item(int item, bool ghost, poor_man_key poor, shpid_t child, 
+                              size_t data_length);
 
     /**
      * Attempt to insert a new item at given item position, pushing
      * existing items at and after that position upwards.
      * E.g. inserting to item 1 makes the old item 1 (if any) now item
-     * 2, old item 2 (if any) now item 3, and so on.  Returns false
-     * iff it fails due to inadequate available space (i.e.,
-     * predict_item_space(data_length) < usable_space()).
+     * 2, old item 2 (if any) now item 3, and so on.  Item position
+     * may be one beyond the last existing item position (i.e.,
+     * number_of_items()) in order to insert the new item at the end.
+     *
+     * Returns false iff the insert fails due to inadequate available
+     * space (i.e., predict_item_space(data_length) > usable_space()).
      * 
-     * The inserted item is a ghost if ghost is set and has
-     * poor_man_key data poor, child child, and variable-length data data.
-     * child must be 0 if this is a leaf page.
+     * The inserted item is a ghost iff ghost is set and has
+     * poor_man_key data poor, child child, and variable-length data
+     * data.  child must be 0 if this is a leaf page.
      */
-    bool          insert_item(int item, bool ghost, poor_man_key poor, shpid_t child, const cvec_t& data);
+    bool          insert_item(int item, bool ghost, poor_man_key poor, shpid_t child, 
+                              const cvec_t& data);
 
     /**
      * Attempt to resize the variable-length data of the given item to
@@ -208,14 +235,14 @@ protected:
     bool          resize_item(int item, size_t new_length, size_t keep_old);
 
     /**
-     * Attempt to replace the variable-length data of the given item
-     * after the first keep_old bytes with new_data, resizing the
+     * Attempt to replace all the variable-length data of the given
+     * item after the first offset bytes with new_data, resizing the
      * item's variable length data as needed.  Returns false iff it
      * fails due to inadequate available space.
      * 
      * @pre keep_old <= item_length(item)
      */
-    bool          replace_item_data(int item, const cvec_t& new_data, size_t keep_old);
+    bool          replace_item_data(int item, size_t offset, const cvec_t& new_data);
 
     /**
      * delete the given item, moving down items to take its place.
@@ -226,21 +253,27 @@ protected:
     void          delete_item(int item);
 
 
-    /// return total space currently occupied by given item, including
-    /// any overhead such as padding for alignment.
+    /**
+     * return total space currently occupied by given item, including
+     * any overhead such as padding for alignment.
+     */
     size_t        item_space(int item) const;
 
-    /// calculate how much space would be occupied by a new item that
-    /// was added to this page with data_length amount of
-    /// variable-length data.  (E.g., after insert, what will
-    /// item_space return?)
-    size_t        predict_item_space(size_t data_length);
+    /**
+     * Calculate how much space would be occupied by a new item that
+     * was added to this page with data_length amount of
+     * variable-length data.  (E.g., after insert, what will
+     * item_space return?)
+     */
+    size_t        predict_item_space(size_t data_length) const;
 
-    /// return amount of available space for inserting/resizing.
-    /// Calling compact() may increase this number.
+    /**
+     * Return amount of available space for inserting/resizing.
+     * Calling compact() may increase this number.
+     */
     size_t        usable_space() const;
 
-    /// compact items, making all freed space available.
+    /// compact item space, making all freed space available.
     void          compact();
 
 
@@ -253,15 +286,24 @@ protected:
      */
     char*         unused_part(size_t& length);
 
-    /// the maximum possible item overhead beyond a item's
-    /// variable-length data.  That is, item_space(X) <=
-    /// max_item_overhead + X always.
+    /**
+     * the maximum possible item overhead beyond a item's
+     * variable-length data.  That is, item_space(X) <=
+     * max_item_overhead + X always.
+     */
     static const size_t max_item_overhead;
 
-    /// [debugging] are item allocations consistent?  E.g., do two
-    /// item allocations overlap?
+    /**
+     * [debugging] are item allocations consistent?  E.g., do two item
+     * allocations overlap?  This should always be true.
+     */
     bool          _items_are_consistent() const;
 
+
+
+// ======================================================================
+//   BEGIN: private implementation details
+// ======================================================================
 
 private:
     /**
@@ -283,8 +325,8 @@ private:
     /// number of current ghost items
     item_index_t  nghosts;                         // +2 -> 28
 
-    /// offset to beginning of record area (location of record that is located left-most). 
-    body_offset_t  record_head8;                   // +2 -> 30
+    /// offset to beginning of used item bodies (# of used item body that is located left-most). 
+    body_offset_t  first_used_body;                   // +2 -> 30
 
     /// padding to ensure header size is a multiple of 8
     uint16_t padding;                              // +2 -> 32
@@ -294,27 +336,22 @@ private:
     // ======================================================================
 
 
-private:
-    // ======================================================================
-    //   BEGIN: 
-    // ======================================================================
     btree_page_data() {
         //w_assert1(0);  // FIXME: is this constructor ever called? yes it is (test_btree_ghost)
         w_assert1((body[0].raw - (const char *)this) % 4 == 0);     // check alignment<<<>>>
-        w_assert1(((const char *)&nitems - (const char *)this) % 4 == 0);     // check alignment<<<>>>
-        //w_assert1(((const char *)&record_head8 - (const char *)this) % 8 == 0);     // check alignment<<<>>>
         w_assert1((body[0].raw - (const char *)this) % 8 == 0);     // check alignment
         w_assert1(body[0].raw - (const char *) this == hdr_sz);
     }
-    ~btree_page_data() { }
 
 
     typedef uint16_t item_length_t;
 
     typedef struct {
         body_offset_t offset;
-        poor_man_key       poor;
-    } slot_head;
+        poor_man_key  poor;
+    } item_head;
+//    static_assert(sizeof(item_head) == 4, "item_head has wrong length");
+    BOOST_STATIC_ASSERT(sizeof(item_head) == 4);
 
     typedef uint16_t tmp_key_length_t;  // <<<>>>
 
@@ -322,102 +359,116 @@ private:
         union {
             char raw[8];
             struct {
-                item_length_t slot_len;
+                item_length_t item_len;
                 tmp_key_length_t  key_len;
                 char          key[4]; // <<<>>> really key_len - prefix_len
             } leaf;
             struct {
                 shpid_t       child;
-                item_length_t slot_len;
-                char          key[2]; // <<<>>> really slot_len - sizeof(child) - sizeof(slot_len)
+                item_length_t item_len;
+                char          key[2]; // <<<>>> really item_len - sizeof(child) - sizeof(item_len)
             } interior;
             struct {
-                item_length_t slot_len;
+                item_length_t item_len;
                 char          low[6]; // low[btree_fence_low_length]
                 //char        high_noprefix[btree_fence_high_length - btree_prefix_length]
                 //char        chain[btree_chain_fence_high_length]
             } fence;
         };
-    } slot_body;
+    } item_body;
+//    static_assert(sizeof(item_body) == 8, "item_body has wrong length");
+    BOOST_STATIC_ASSERT(sizeof(item_body) == 8);
         
-    /* MUST BE 8-BYTE ALIGNED HERE */
+    /// MUST BE 8-BYTE ALIGNED HERE
     union {
-        slot_head head[data_sz/sizeof(slot_head)];
-        slot_body body[data_sz/sizeof(slot_body)];
+        item_head head[data_sz/sizeof(item_head)];
+        item_body body[data_sz/sizeof(item_body)];
     };
-
-//    static_assert(sizeof(slot_head) == 4, "slot_head has wrong length");
-    BOOST_STATIC_ASSERT(sizeof(slot_head) == 4);
-//    static_assert(sizeof(slot_body) == 8, "slot_body has wrong length");
-    BOOST_STATIC_ASSERT(sizeof(slot_body) == 8);
+    BOOST_STATIC_ASSERT(data_sz%8 == 0);
 
 
 
 
-    char* slot_start(item_index_t slot) {
-        body_offset_t offset = head[slot].offset;
+    char* item_start(item_index_t item) {
+        body_offset_t offset = head[item].offset;
         if (offset < 0) offset = -offset; // ghost record
         return body[offset].raw;
     }
-    slot_body& slot_value(item_index_t slot) {
-        body_offset_t offset = head[slot].offset;
+    item_body& item_value(item_index_t item) {
+        body_offset_t offset = head[item].offset;
         if (offset < 0) offset = -offset; // ghost record
         return body[offset];
     }
 
 
-    item_length_t slot_length(item_index_t slot) const {
-        body_offset_t offset = head[slot].offset;
+    item_length_t my_item_length(item_index_t item) const {
+        body_offset_t offset = head[item].offset;
         if (offset < 0) offset = -offset; // ghost record
 
-        if (slot == 0) {
-            return body[offset].fence.slot_len;
+        if (item == 0) {
+            return body[offset].fence.item_len;
         }
 
         if (btree_level == 1) {
-            return body[offset].leaf.slot_len;
+            return body[offset].leaf.item_len;
         } else {
-            return body[offset].interior.slot_len;
+            return body[offset].interior.item_len;
         }
     }
-    item_length_t slot_length8(item_index_t slot) const { return (slot_length(slot)-1)/8+1; }
+    item_length_t item_length8(item_index_t item) const { return (my_item_length(item)-1)/8+1; }
 
-    void set_slot_length(item_index_t slot, item_length_t length) {
-        body_offset_t offset = head[slot].offset;
+    void set_item_length(item_index_t item, item_length_t length) {
+        body_offset_t offset = head[item].offset;
         if (offset < 0) offset = -offset; // ghost record
 
-        if (slot == 0) {
-            body[offset].fence.slot_len = length;
+        if (item == 0) {
+            body[offset].fence.item_len = length;
             return;
         }
 
         if (btree_level == 1) {
-            body[offset].leaf.slot_len = length;
+            body[offset].leaf.item_len = length;
         } else {
-            body[offset].interior.slot_len = length;
+            body[offset].interior.item_len = length;
         }
     }
 };
 
 
 
-// these for friending test...
+// forward references for friending test...
 class ss_m;
 class test_volume_t;
 
+/**
+ * \brief B-tree page.
+ *
+ * \details
+ * These pages contain the data that makes up B-trees.  
+ *
+ * The implementation is spread between this class' superclass,
+ * btree_page_data, and its handle class, btree_page_h.  The
+ * superclass contains the basic fields and dynamically-sized--item
+ * list implementation while the secrets of their usage are contained
+ * in the handle class.
+ *
+ * This class itself contains only friend declarations; those
+ * classes/members it friends have access to the protected but not
+ * private members of the superclass.
+ */
 class btree_page : public btree_page_data {
     friend class btree_page_h;
+    friend class page_img_format_t; // for unused_part()
+
 
     // _ux_deadopt_foster_apply_foster_parent
     // _ux_adopt_foster_apply_child
     friend class btree_impl;
     friend class btree_header_t;
 
-    friend w_rc_t test_bf_fix_virgin_root(ss_m* /*ssm*/, test_volume_t *test_volume);
 
-    friend class page_img_format_t; // for unused_part()
     friend class test_bf_tree;
-
+    friend w_rc_t test_bf_fix_virgin_root(ss_m* /*ssm*/, test_volume_t *test_volume);
     // these are for access to headers from btree_page_headers:
     friend w_rc_t test_bf_fix_virgin_child(ss_m* /*ssm*/, test_volume_t *test_volume);
     friend w_rc_t test_bf_evict(ss_m* /*ssm*/, test_volume_t *test_volume);
@@ -427,6 +478,13 @@ class btree_page : public btree_page_data {
 //              "btree_page has wrong length");
 BOOST_STATIC_ASSERT(sizeof(btree_page) == sizeof(generic_page));
 
+
+
+/***************************************************************************/
+/*                                                                         */
+/* Rest of file is inlined method implementations                          */
+/*                                                                         */
+/***************************************************************************/
 
 inline bool btree_page_data::is_ghost(int item) const { 
     w_assert1(item>=0 && item<nitems);
@@ -445,12 +503,12 @@ inline btree_page_data::poor_man_key btree_page_data::item_poor(int item) const 
 inline shpid_t& btree_page_data::item_child(int item) {
     w_assert1(item>=0 && item<nitems);
     w_assert1(btree_level != 1); // <<<>>>
-    return *(shpid_t*)&slot_value(item).interior.child;
+    return *(shpid_t*)&item_value(item).interior.child;
 }
 
 inline size_t btree_page_data::item_length(int item) const {
     w_assert1(item>=0 && item<nitems);
-    int length = slot_length(item) - sizeof(item_length_t);
+    int length = my_item_length(item) - sizeof(item_length_t);
     if (item != 0 && btree_level != 1) {
         length -= sizeof(shpid_t);
     }
@@ -459,16 +517,16 @@ inline size_t btree_page_data::item_length(int item) const {
 inline char* btree_page_data::item_data(int item) {
     w_assert1(item>=0 && item<nitems);
     if (item == 0) {
-        return &slot_value(item).fence.low[0];
+        return &item_value(item).fence.low[0];
     } if (btree_level == 1) {
-        return (char*)&slot_value(item).leaf.key_len;
+        return (char*)&item_value(item).leaf.key_len;
     } else {
-        return &slot_value(item).interior.key[0];
+        return &item_value(item).interior.key[0];
     }
 }
 
 inline size_t btree_page_data::usable_space() const {
-    return record_head8*8 - nitems*4; // <<<>>>
+    return first_used_body*8 - nitems*4; // <<<>>>
 }
 
 #endif // BTREE_PAGE_H

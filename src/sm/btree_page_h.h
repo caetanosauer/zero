@@ -21,6 +21,13 @@ struct btree_int_stats_t;
 
 typedef uint16_t key_length_t;  // <<<>>>
 
+     /*
+     * When this page belongs to a foster chain, we need to store
+     * high-fence of right-most sibling in every sibling to do
+     * batch-verification with bitmaps.  @see
+     * btree_impl::_ux_verify_volume()
+     */
+
 
 /**
  * \brief Poor man's normalized key type.
