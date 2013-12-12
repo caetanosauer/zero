@@ -653,7 +653,7 @@ rc_t btree_page_h::replace_fence_rec_nolog(const w_keystr_t& low,
     }
 
     w_assert1 (page()->item_length(0) == (key_length_t) fences.size());
-    w_assert3(page()->_slots_are_consistent());
+    w_assert3(page()->_items_are_consistent());
     return RCOK;
 }
 
@@ -1167,7 +1167,7 @@ bool btree_page_h::is_consistent (bool check_keyorder, bool check_space) const {
 
     // additionally check record overlaps
     if (check_space) {
-        if (!page()->_slots_are_consistent()) {
+        if (!page()->_items_are_consistent()) {
             w_assert1(false);
             return false;
         }

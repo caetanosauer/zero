@@ -17,7 +17,7 @@ void btree_page_data::init_items() {
     nghosts      = 0;
     record_head8 = max_offset;
 
-    w_assert3(_slots_are_consistent());
+    w_assert3(_items_are_consistent());
 }
 
 
@@ -48,7 +48,7 @@ void btree_page_data::unset_ghost(int item) {
 bool btree_page_data::insert_item(int item, bool ghost, poor_man_key poor,
                              shpid_t child, size_t data_length) {
     w_assert1(item>=0 && item<=nitems);  // use of <= intentional
-    w_assert3(_slots_are_consistent());
+    w_assert3(_items_are_consistent());
 
     size_t length = data_length + sizeof(item_length_t);
     if (item != 0 && btree_level != 1) {
@@ -76,7 +76,7 @@ bool btree_page_data::insert_item(int item, bool ghost, poor_man_key poor,
     }
     set_slot_length(item, length);
 
-    w_assert3(_slots_are_consistent());
+    w_assert3(_items_are_consistent());
     return true;
 }
 
@@ -93,7 +93,7 @@ bool btree_page_data::insert_item(int item, bool ghost, poor_man_key poor,
 bool btree_page_data::resize_item(int item, size_t new_length, size_t keep_old) {
     w_assert1(item>=0 && item<nitems);
     w_assert1(keep_old <= new_length);
-    w_assert3(_slots_are_consistent());
+    w_assert3(_items_are_consistent());
 
     body_offset_t offset = head[item].offset;
     bool ghost = false;
@@ -110,7 +110,7 @@ bool btree_page_data::resize_item(int item, size_t new_length, size_t keep_old) 
 
     if (length <= align(old_length)) {
         set_slot_length(item, length);
-        w_assert3(_slots_are_consistent()); 
+        w_assert3(_items_are_consistent()); 
         return true;
     }
 
@@ -136,7 +136,7 @@ bool btree_page_data::resize_item(int item, size_t new_length, size_t keep_old) 
     ::memset((char*)&body[offset], 0xef, align(old_length)); // overwrite old item
 #endif // W_DEBUG_LEVEL>0
 
-    w_assert3(_slots_are_consistent()); 
+    w_assert3(_items_are_consistent()); 
     return true;
 }
 
@@ -152,7 +152,7 @@ bool btree_page_data::replace_item_data(int item, const cvec_t& new_data, size_t
 void btree_page_data::delete_item(int item) {
     w_assert1(item>=0 && item<nitems);
     w_assert1(item != 0); // deleting item 0 makes no sense because it has a special format <<<>>>
-    w_assert3(_slots_are_consistent());
+    w_assert3(_items_are_consistent());
 
     body_offset_t offset = head[item].offset;
     if (offset < 0) {
@@ -169,16 +169,16 @@ void btree_page_data::delete_item(int item) {
     ::memmove(&head[item], &head[item+1], (nitems-(item+1))*sizeof(slot_head));
     nitems--;
 
-    w_assert3(_slots_are_consistent());
+    w_assert3(_items_are_consistent());
 }
 
 
 // <<<>>>
 #include <boost/scoped_array.hpp>
 
-bool btree_page_data::_slots_are_consistent() const {
+bool btree_page_data::_items_are_consistent() const {
     // This is not a part of check; should be always true:
-    w_assert1(usable_space() >= 0);
+    w_assert1(record_head8*8 - nitems*4 >= 0);
     
     // check overlapping records.
     // rather than using std::map, use array and std::sort for efficiency.
@@ -259,7 +259,7 @@ bool btree_page_data::_slots_are_consistent() const {
 
 
 void btree_page_data::compact() {
-    w_assert3(_slots_are_consistent());
+    w_assert3(_items_are_consistent());
 
     const size_t max_offset = data_sz/sizeof(slot_body);
     slot_body scratch_body[data_sz/sizeof(slot_body)];
@@ -288,7 +288,7 @@ void btree_page_data::compact() {
     ::memcpy(body[record_head8].raw, scratch_body[scratch_head].raw, (max_offset-scratch_head)*sizeof(slot_body));
     
     w_assert1(nghosts == 0);
-    w_assert3(_slots_are_consistent());
+    w_assert3(_items_are_consistent());
 }
 
 

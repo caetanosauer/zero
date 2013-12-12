@@ -17,6 +17,16 @@
  * conveys access only to the protected members of this class not its
  * private members.)
  *
+ *
+ *
+ *
+ *
+ *
+ *
+ *
+ *
+ *
+ *
  */
 class btree_page_data : public generic_page_header {
 public:
@@ -150,15 +160,18 @@ protected:
     ///
     /// the variable length data occupies item_data(item) ... item_data(item)+item_length-1
     char*         item_data(int item);
+
     /// return the amount of variable-length data belonging to the given item
     size_t        item_length(int item) const;
 
 
     /**
-     * Insert a new item at given item position, pushing existing
-     * items at and after that position upwards.  E.g. inserting to
-     * item 1 makes the old item 1 now item 2, old item 2 now item 3,
-     * and so on.  
+     * Attempt to insert a new item at given item position, pushing
+     * existing items at and after that position upwards.
+     * E.g. inserting to item 1 makes the old item 1 (if any) now item
+     * 2, old item 2 (if any) now item 3, and so on.  Returns false
+     * iff it fails due to inadequate available space (i.e.,
+     * predict_item_space(data_length) < usable_space()).
      * 
      * The inserted item is a ghost if ghost is set and has
      * poor_man_key data poor, child child, and variable-length data
@@ -169,10 +182,12 @@ protected:
     bool          insert_item(int item, bool ghost, poor_man_key poor, shpid_t child, size_t data_length);
 
     /**
-     * Insert a new item at given item position, pushing existing
-     * items at and after that position upwards.  E.g. inserting to
-     * item 1 makes the old item 1 now item 2, old item 2 now item 3,
-     * and so on.  
+     * Attempt to insert a new item at given item position, pushing
+     * existing items at and after that position upwards.
+     * E.g. inserting to item 1 makes the old item 1 (if any) now item
+     * 2, old item 2 (if any) now item 3, and so on.  Returns false
+     * iff it fails due to inadequate available space (i.e.,
+     * predict_item_space(data_length) < usable_space()).
      * 
      * The inserted item is a ghost if ghost is set and has
      * poor_man_key data poor, child child, and variable-length data data.
@@ -181,43 +196,71 @@ protected:
     bool          insert_item(int item, bool ghost, poor_man_key poor, shpid_t child, const cvec_t& data);
 
     /**
-     * Resize the variable-length data of the given item to new_length.
-     * Preserves only the first keep_old bytes of the old data; later
-     * bytes, if any, acquire undefined values.
+     * Attempt to resize the variable-length data of the given item to
+     * new_length.  Preserves only the first keep_old bytes of the old
+     * data; later bytes, if any, acquire undefined values.  Returns
+     * false iff it fails due to inadequate available space.  (Growing
+     * an item may require available space equivalent to inserting a
+     * new item of the larger size.)
      * 
      * @pre keep_old <= item_length(item)
      */
     bool          resize_item(int item, size_t new_length, size_t keep_old);
 
     /**
-     * Replace the variable-length data of the given item after the
-     * first keep_old bytes with new_data, resizing the item's
-     * variable length data as needed.
+     * Attempt to replace the variable-length data of the given item
+     * after the first keep_old bytes with new_data, resizing the
+     * item's variable length data as needed.  Returns false iff it
+     * fails due to inadequate available space.
      * 
      * @pre keep_old <= item_length(item)
      */
     bool          replace_item_data(int item, const cvec_t& new_data, size_t keep_old);
 
-    /// delete the given item, moving down items to take its place.
-    /// E.g., deleting item 1 makes the old item 2 now item 1 and so on.
+    /**
+     * delete the given item, moving down items to take its place.
+     * E.g., deleting item 1 makes the old item 2, if any, now item 1
+     * and so on.  Compaction (compact()) may be required to make the
+     * freed space available.
+     */
     void          delete_item(int item);
 
 
-
-    size_t        predict_item_space(size_t data_length);
+    /// return total space currently occupied by given item, including
+    /// any overhead such as padding for alignment.
     size_t        item_space(int item) const;
 
-    // this is continuous usable space
-    int           usable_space() const;
+    /// calculate how much space would be occupied by a new item that
+    /// was added to this page with data_length amount of
+    /// variable-length data.  (E.g., after insert, what will
+    /// item_space return?)
+    size_t        predict_item_space(size_t data_length);
 
-    bool          _slots_are_consistent() const;
+    /// return amount of available space for inserting/resizing.
+    /// Calling compact() may increase this number.
+    size_t        usable_space() const;
+
+    /// compact items, making all freed space available.
     void          compact();
 
+
+    /**
+     * returns the part of this page holding the available space; this
+     * region does not contain data and may be discarded when saving
+     * and filled with undefined values when restoring.  Ideally, call
+     * compact() first when doing this to maximize the bytes that may
+     * be ignored.  (See page_img_format_t for a use of this.)
+     */
     char*         unused_part(size_t& length);
 
-    // <<<>>>
+    /// the maximum possible item overhead beyond a item's
+    /// variable-length data.  That is, item_space(X) <=
+    /// max_item_overhead + X always.
     static const size_t max_item_overhead;
 
+    /// [debugging] are item allocations consistent?  E.g., do two
+    /// item allocations overlap?
+    bool          _items_are_consistent() const;
 
 
 private:
@@ -424,7 +467,7 @@ inline char* btree_page_data::item_data(int item) {
     }
 }
 
-inline int btree_page_data::usable_space() const {
+inline size_t btree_page_data::usable_space() const {
     return record_head8*8 - nitems*4; // <<<>>>
 }
 
