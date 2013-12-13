@@ -8,6 +8,7 @@
 #include "w_defines.h"
 #include "w_key.h"
 #include "w_hashing.h"
+#include "w_okvl.h"
 
 class lock_base_t : public smlevel_1 {
 public:
@@ -20,11 +21,10 @@ public:
         t_waiting = 4
     };
 
-    typedef smlevel_0::lock_mode_t lmode_t;
+    typedef w_okvl::singular_lock_mode lmode_t;
 
     enum {
-        MIN_MODE = NL, MAX_MODE = XU,
-        NUM_MODES = MAX_MODE - MIN_MODE + 1
+        NUM_MODES = w_okvl::COUNT
     };
 
     static const char* const         mode_str[NUM_MODES];

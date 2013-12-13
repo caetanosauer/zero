@@ -13,6 +13,7 @@
 #include "w_defines.h"
 #include "vid_t.h"
 #include "stid_t.h"
+#include "w_okvl.h"
 
 class btree_page_h;
 struct btree_stats_t;

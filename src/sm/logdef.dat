@@ -113,6 +113,8 @@ xct_abort          1000000 0.0 ();
 xct_freeing_space  1000000 0.0 ();
 xct_end            1000000 0.0 ();
 xct_end_group      1000000 0.0 (const xct_t** l, int llen);
+# xct_prepare_stores 1010000 0.0 (int num, const stid_t* stids);
+# xct_prepare_fi     1010000 0.0 (int numex, int numix, int numsix, const lsn_t& first, int rsvd, int ready, int used);
 #########################################################################
 # type             XSRUFAL  fudge    arg                                #
 #########################################################################

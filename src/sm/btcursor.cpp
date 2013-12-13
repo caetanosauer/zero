@@ -99,7 +99,7 @@ void bt_cursor_t::_set_current_page(btree_page_h &page) {
 rc_t bt_cursor_t::_locate_first() {
     // at the first access, we get an intent lock on store/volume
     if (_needs_lock) {
-        W_DO(smlevel_0::lm->intent_vol_store_lock(stid_t(_vol, _store), _ex_lock ? IX : IS));
+        W_DO(smlevel_0::lm->intent_vol_store_lock(stid_t(_vol, _store), _ex_lock ? w_okvl::IX : w_okvl::IS));
     }
     
     if (_lower > _upper || (_lower == _upper && (!_lower_inclusive || !_upper_inclusive))) {
@@ -123,27 +123,28 @@ rc_t bt_cursor_t::_locate_first() {
         // then find the tuple in the page
         leaf.search_leaf(key, found, _slot);
 
-        lock_mode_t mode;
+        w_okvl mode;
+        bool empty_mode = false;
         if (found) {
             // exact match!
             _key = key;
             if (_forward) {
                 if (_lower_inclusive) {
                     // let's take range lock too to reduce lock manager calls
-                    mode = _ex_lock ? XX : SS;
+                    mode = _ex_lock ? w_okvl::CONSTANTS.ALL_X_GAP_X : w_okvl::CONSTANTS.ALL_S_GAP_S;
                     _dont_move_next = true;
                 } else {
-                    mode = _ex_lock ? NX : NS;
+                    mode = _ex_lock ? w_okvl::CONSTANTS.ALL_N_GAP_X : w_okvl::CONSTANTS.ALL_N_GAP_S;
                     _dont_move_next = false;
                 }
             } else {
                 // in backward case we definitely don't need the range part
                 if (_upper_inclusive) {
-                    mode = _ex_lock ? XN : SN;
+                    mode = _ex_lock ? w_okvl::CONSTANTS.ALL_X_GAP_N : w_okvl::CONSTANTS.ALL_S_GAP_N;
                     _dont_move_next = true;
                 } else {
                     // in this case, we don't need lock at all
-                    mode = NL;
+                    empty_mode = true;
                     _dont_move_next = false;
                     // only in this case, _key might disappear. otherwise,
                     // _key will exist at least as a ghost entry.
@@ -166,7 +167,7 @@ rc_t bt_cursor_t::_locate_first() {
                     _dont_move_next = false;
                     leaf.leaf_key(_slot, _key);
                 }
-                mode = _ex_lock ? NX : NS;
+                mode = _ex_lock ? w_okvl::CONSTANTS.ALL_N_GAP_X : w_okvl::CONSTANTS.ALL_N_GAP_S;
             } else {
                 // subsequent next() will read the previous slot
                 --_slot;
@@ -174,16 +175,16 @@ rc_t bt_cursor_t::_locate_first() {
                     // then, we need to move to even more previous slot in previous page
                     _dont_move_next = false;
                     leaf.copy_fence_low_key(_key);
-                    mode = _ex_lock ? NX : NS;
+                    mode = _ex_lock ? w_okvl::CONSTANTS.ALL_N_GAP_X : w_okvl::CONSTANTS.ALL_N_GAP_S;
                 } else {
                     _dont_move_next = true;
                     leaf.leaf_key(_slot, _key);
                     // let's take range lock too to reduce lock manager calls
-                    mode = _ex_lock ? XX : SS;
+                    mode = _ex_lock ? w_okvl::CONSTANTS.ALL_X_GAP_X : w_okvl::CONSTANTS.ALL_S_GAP_S;
                 }
             }
         }
-        if (_needs_lock && mode != NL) {
+        if (_needs_lock && !empty_mode) {
             rc_t rc = btree_impl::_ux_lock_key (leaf, _key, LATCH_SH, mode, false);
             if (rc.is_error()) {
                 if (rc.err_num() == smlevel_0::eLOCKRETRY) {
@@ -345,11 +346,11 @@ rc_t bt_cursor_t::_advance_one_slot(btree_page_h &p, bool &eof)
             // take lock for the fence key
             if (_needs_lock) {
                 lockid_t lid (stid_t(_vol, _store), (const unsigned char*) neighboring_fence.buffer_as_keystr(), neighboring_fence.get_length_as_keystr());
-                lock_mode_t lock_mode;
+                w_okvl lock_mode;
                 if (only_low_fence_exact_match) {
-                    lock_mode = _ex_lock ? XN : SN;
+                    lock_mode = _ex_lock ? w_okvl::CONSTANTS.ALL_X_GAP_N: w_okvl::CONSTANTS.ALL_S_GAP_N;
                 } else {
-                    lock_mode = _ex_lock ? XX : SS;
+                    lock_mode = _ex_lock ? w_okvl::CONSTANTS.ALL_X_GAP_X : w_okvl::CONSTANTS.ALL_S_GAP_S;
                 }
                 // we can unconditionally request lock because we already released latch
                 W_DO(ss_m::lm->lock(lid, lock_mode, false));
@@ -367,32 +368,33 @@ rc_t bt_cursor_t::_advance_one_slot(btree_page_h &p, bool &eof)
         // take lock on the next key.
         // NOTE: until we get locks, we aren't sure the key really becomes
         // the next key. So, we use the temporary variable _tmp_next_key_buf.
-        lock_mode_t mode;
+        w_okvl mode;
+        bool empty_mode = false;
         {
             p.leaf_key(_slot, _tmp_next_key_buf);
             if (_forward) {
                 int d = _tmp_next_key_buf.compare(_upper);
                 if (d < 0) {
-                    mode = _ex_lock ? XX : SS;
+                    mode = _ex_lock ? w_okvl::CONSTANTS.ALL_X_GAP_X : w_okvl::CONSTANTS.ALL_S_GAP_S;
                 } else if (d == 0 && _upper_inclusive) {
-                    mode = _ex_lock ? XN : SN;
+                    mode = _ex_lock ? w_okvl::CONSTANTS.ALL_X_GAP_N : w_okvl::CONSTANTS.ALL_S_GAP_N;
                 } else {
                     eof = true;
-                    mode = NL;
+                    empty_mode = true;
                 }
             } else {
                 int d = _tmp_next_key_buf.compare(_lower);
                 if (d > 0) {
-                    mode = _ex_lock ? XX : SS;
+                    mode = _ex_lock ? w_okvl::CONSTANTS.ALL_X_GAP_X : w_okvl::CONSTANTS.ALL_S_GAP_S;
                 } else if (d == 0 && _lower_inclusive) {
-                    mode = _ex_lock ? XX : SS;
+                    mode = _ex_lock ? w_okvl::CONSTANTS.ALL_X_GAP_X : w_okvl::CONSTANTS.ALL_S_GAP_S;
                 } else {
                     eof = true;
-                    mode = _ex_lock ? NX : NS;
+                    mode = _ex_lock ? w_okvl::CONSTANTS.ALL_N_GAP_X : w_okvl::CONSTANTS.ALL_N_GAP_S;
                 }
             }
         }
-        if (_needs_lock && mode != NL) {
+        if (_needs_lock && !empty_mode) {
             rc_t rc = btree_impl::_ux_lock_key (p, _tmp_next_key_buf, LATCH_SH, mode, false);
             if (rc.is_error()) {
                 if (rc.err_num() == smlevel_0::eLOCKRETRY) {

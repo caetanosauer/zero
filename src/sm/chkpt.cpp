@@ -567,6 +567,8 @@ void chkpt_m::take()
         } while (xd);
     }
 
+        /* prepared xct feature is disabled
+        */
     xct_t::release_xlist_mutex();
 
     /*

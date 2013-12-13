@@ -387,54 +387,7 @@ public:
     NegInf=0x100, eqNegInf, gtNegInf, geNegInf, ltNegInf, leNegInf,
     PosInf=0x400, eqPosInf, gtPosInf, gePosInf, ltPosInf, lePosInf
     };
-
-    /**\enum lock_mode_t 
-     * \brief Lock modes for the Storage Manager.
-     * Note: Capital letters are used to match common usage in DB literature
-     * Note: Values MUST NOT CHANGE since order is significant.
-     * \ref SSMLOCK
-     */
-    enum lock_mode_t {
-        NL = 0,         /* no lock                */
-        IS,         /* intention share (read)        */
-        IX,            /* intention exclusive (write)        */
-        SH,            /* share (read)             */
-        SIX,        /* share with intention exclusive    */
-        UD,            /* update (allow no more readers)    */
-        EX,            /* exclusive (write)            */
-
-        // key range locks
-        NS, NU, NX, // NL on key, S/U/X on open-interval. (NN=NL)
-        SN, SU, SX, // S on key, N/U/X on open-interval. (SS=SH)
-        UN, US, UX, // U on key, N/S/X on open-interval. (UU=UD)
-        XN, XS, XU,  // X on key, N/S/U on open-interval. (XX=EX)
-
-        LL, // INVALID
-        
-        // following are synonyms for key range locking.
-        // in the new key range locking scheme,
-        // EX should be named XX, SH be SS. However,
-        // for compatibility issues we still name them EX/SH.
-        // So, where we want to clarify we mean range lock,
-        // we use following values in the code.
-        NN = NL,
-        SS = SH,
-        UU = UD,
-        XX = EX
-    };
-
-    /**\enum lock_duration_t
-     * \brief Duration for locks
-     * \ref SSMLOCK
-     */
-    enum lock_duration_t {
-        t_instant     = 0,    /* released as soon as the lock is acquired */
-        t_short     = 1,    /* held until end of some operation         */
-        t_medium     = 2,    /* held until explicitly released           */
-        t_long     = 3,    /* held until xct commits                   */
-        t_very_long = 4,    /* held across xct boundaries               */
-        t_num_durations = 5 /* not a duration -- used for typed comparisons */
-    };
+    
 };
 
 

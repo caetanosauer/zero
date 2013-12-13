@@ -114,7 +114,7 @@ scan_index_i::scan_index_i(
     const cvec_t&         bound2_, 
     bool                  include_nulls,
     concurrency_t         cc,
-    lock_mode_t           mode,
+    w_okvl::singular_lock_mode mode,
     const bool            bIgnoreLatches
     ) 
 : xct_dependent_t(xct()),
@@ -160,7 +160,7 @@ scan_index_i::_init(
     const cvec_t&         bound,
     cmp_t                 c2, 
     const cvec_t&         b2,
-    lock_mode_t           mode)
+    w_okvl::singular_lock_mode mode)
 {
     //Avoid unused parameter warning
     (void) cond;
@@ -243,7 +243,7 @@ scan_index_i::_fetch(
 scan_file_i::scan_file_i(
         const stid_t& stid_, const rid_t& start,
          concurrency_t cc, bool pre, 
-         lock_mode_t /*mode TODO: remove.  is documented as ignored*/,
+         w_okvl::singular_lock_mode /*mode TODO: remove.  is documented as ignored*/,
         const bool  bIgnoreLatches) 
 : xct_dependent_t(xct()),
   stid(stid_),
@@ -260,7 +260,7 @@ scan_file_i::scan_file_i(
 }
 
 scan_file_i::scan_file_i(const stid_t& stid_, concurrency_t cc, 
-   bool pre, lock_mode_t /*mode TODO: remove. this documented as ignored*/,
+   bool pre, w_okvl::singular_lock_mode /*mode TODO: remove. this documented as ignored*/,
    const bool  bIgnoreLatches)
 : xct_dependent_t(xct()),
   stid(stid_),

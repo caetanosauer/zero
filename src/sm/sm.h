@@ -83,6 +83,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <sm_s.h> // declares lsn_t
 #endif
 
+#include "w_okvl.h"
+
 /* DOXYGEN Documentation : */
 
 /**\addtogroup LOGSPACE 
@@ -2078,14 +2080,14 @@ public:
      */
     static rc_t            lock(
         const lockid_t&         n, 
-        lock_mode_t             m,
+        const w_okvl&           m,
         bool                    check_only = false,
         timeout_in_ms           timeout = WAIT_SPECIFIED_BY_XCT
     );
 
     static rc_t            lock(
         const stid_t&         n, 
-        lock_mode_t             m,
+        const w_okvl&           m,
         bool                    check_only = false,
         timeout_in_ms           timeout = WAIT_SPECIFIED_BY_XCT
     );

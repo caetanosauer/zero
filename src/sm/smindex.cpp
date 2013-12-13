@@ -19,9 +19,9 @@
 
 rc_t ss_m::create_index(vid_t vid, stid_t &stid)
 {
-    W_DO(lm->intent_vol_lock(vid, IX)); // take IX on volume
+    W_DO(lm->intent_vol_lock(vid, w_okvl::IX)); // take IX on volume
     W_DO(io->create_store(vid, st_regular, stid) );
-    W_DO(lm->intent_store_lock(stid, EX)); // take X on this new index
+    W_DO(lm->intent_store_lock(stid, w_okvl::X)); // take X on this new index
 
     lpid_t root;
     W_DO( bt->create(stid, root) );
@@ -71,8 +71,8 @@ ss_m::create_index(
 rc_t ss_m::destroy_index(const stid_t& stid)
 {
     // take IX on volume, X on the index
-    W_DO(lm->intent_vol_lock(stid.vol, IX));
-    W_DO(lm->intent_store_lock(stid, EX));
+    W_DO(lm->intent_vol_lock(stid.vol, w_okvl::IX));
+    W_DO(lm->intent_store_lock(stid, w_okvl::X));
     return RC(eNOTIMPLEMENTED);
     return RCOK;
 }
@@ -242,7 +242,7 @@ rc_t ss_m::open_store (const stid_t &stid, lpid_t &root_pid, bool for_update)
 {
     // take intent lock
     if (g_xct_does_need_lock()) {
-        W_DO(lm->intent_vol_store_lock(stid, for_update ? IX : IS));
+        W_DO(lm->intent_vol_store_lock(stid, for_update ? w_okvl::IX : w_okvl::IS));
     }
     return open_store_nolock (stid, root_pid);
 }

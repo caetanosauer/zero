@@ -326,9 +326,9 @@ CONFIGURE_FILE( ${CMAKE_SOURCE_DIR}/config/shore-config-env.h.cmake ${CMAKE_BINA
 add_subdirectory(src) # main source codes
 add_subdirectory(config) # to be eliminated
 add_subdirectory(gtest-1.6.0) # google-test library
-add_subdirectory(tests) # unit testcases
+# add_subdirectory(tests) # unit testcases
 # TODO: experiments should be compiled only when the user wants... maybe optional cmake argument?
-add_subdirectory(experiments) # benchmarks and other performance tests
+# add_subdirectory(experiments) # benchmarks and other performance tests
 # add_subdirectory(examples) # examples to show how to use Foster B-tree. enabled only while demonstration or learning
 add_subdirectory(publications)
 # not needed so far, and causes a warning

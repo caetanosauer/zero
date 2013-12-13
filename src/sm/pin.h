@@ -63,6 +63,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include <page_alias.h>
 
+#include "w_okvl.h"
 #include "sm_int_4.h"
 
 /* DOXYGEN Documentation */
@@ -223,7 +224,7 @@ public:
     rc_t        pin(
         const rid_t &          rid,
         smsize_t               start,
-        lock_mode_t            lmode = SH,
+        w_okvl::singular_lock_mode lmode = w_okvl::S,
         const bool             bIgnoreLatches = false);
 
     /**\brief Pin a portion of the record starting at a given location. 
@@ -234,7 +235,7 @@ public:
     rc_t        pin(
         const rid_t &          rid,
         smsize_t               start,
-        lock_mode_t            lock_mode,
+        w_okvl::singular_lock_mode lock_mode,
         latch_mode_t           latch_mode);
 
     /**\brief Unpin whatever record was pinned.  */
@@ -252,7 +253,7 @@ public:
      * \details
      * @param[in] lmode  SH or EX
      */
-    rc_t       repin(lock_mode_t lmode = SH);
+    rc_t       repin(w_okvl::singular_lock_mode lmode = w_okvl::S);
 
     /**\brief  True if record is pinned and the pin_i is valid
      * \details

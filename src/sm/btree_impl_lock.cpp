@@ -24,7 +24,7 @@ btree_impl::_ux_lock_key(
     btree_page_h&      leaf,
     const w_keystr_t&   key,
     latch_mode_t        latch_mode,
-    lock_mode_t         lock_mode,
+    const w_okvl&       lock_mode,
     bool                check_only
     )        
 {
@@ -38,7 +38,7 @@ btree_impl::_ux_lock_key(
     const void         *keystr,
     size_t              keylen,
     latch_mode_t        latch_mode,
-    lock_mode_t         lock_mode,
+    const w_okvl&       lock_mode,
     bool                check_only
     )        
 {
@@ -78,13 +78,13 @@ btree_impl::_ux_lock_range(
     const w_keystr_t&   key,
     slotid_t slot,
     latch_mode_t        latch_mode,
-    lock_mode_t         lock_key_mode,
-    lock_mode_t         lock_range_mode,
+    const w_okvl&       exact_hit_lock_mode,
+    const w_okvl&       miss_lock_mode,
     bool                check_only
     )        
 {
     return _ux_lock_range(leaf, key.buffer_as_keystr(), key.get_length_as_keystr(),
-                slot, latch_mode, lock_key_mode, lock_range_mode, check_only);    
+                slot, latch_mode, exact_hit_lock_mode, miss_lock_mode, check_only);    
 }
 rc_t
 btree_impl::_ux_lock_range(
@@ -93,15 +93,15 @@ btree_impl::_ux_lock_range(
     size_t              keylen,
     slotid_t            slot,
     latch_mode_t        latch_mode,
-    lock_mode_t         lock_key_mode,
-    lock_mode_t         lock_range_mode,
+    const w_okvl&       exact_hit_lock_mode,
+    const w_okvl&       miss_lock_mode,
     bool                check_only
     )        
 {
     // the interval from previous key is locked
     w_assert1(slot >= -1 && slot <= leaf.nrecs());
-    w_assert1(lock_key_mode == XN || lock_key_mode == SN);
-    w_assert1(lock_range_mode == NX || lock_range_mode == NS);
+    w_assert1(exact_hit_lock_mode.get_gap_mode() == w_okvl::N);
+    w_assert1(miss_lock_mode.is_keylock_empty());
     if (slot == -1) { // this means we should search it again
         bool found;
         leaf.search_leaf((const char *) keystr, keylen, found, slot);
@@ -122,7 +122,7 @@ btree_impl::_ux_lock_range(
         // the low-fence as ghost record to be aware of the lock
         W_DO (_ux_lock_key(leaf,
             leaf.get_fence_low_key(), leaf.get_fence_low_length(),
-            latch_mode, lock_key_mode, check_only));
+            latch_mode, exact_hit_lock_mode, check_only));
     } else {
         // range lock from previous key
         w_keystr_t prevkey;
@@ -133,7 +133,7 @@ btree_impl::_ux_lock_range(
         } else {
           leaf.leaf_key(slot, prevkey);
         }
-        W_DO (_ux_lock_key(leaf, prevkey, latch_mode, lock_range_mode, check_only));
+        W_DO (_ux_lock_key(leaf, prevkey, latch_mode, miss_lock_mode, check_only));
     }
     return RCOK;
 }

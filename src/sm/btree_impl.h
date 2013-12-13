@@ -600,7 +600,7 @@ public:
         btree_page_h&      leaf,
         const w_keystr_t&   key,
         latch_mode_t        latch_mode,
-        lock_mode_t         lock_mode,
+        const w_okvl&       lock_mode,
         bool                check_only
     );
 
@@ -610,7 +610,7 @@ public:
         const void         *keystr,
         size_t              keylen,
         latch_mode_t        latch_mode,
-        lock_mode_t         lock_mode,
+        const w_okvl&       lock_mode,
         bool                check_only
     );
 
@@ -620,14 +620,19 @@ public:
      * usually a return value of btree_page_h.search_leaf().
      * if -1, this function will call the search again.
      * @see _ux_lock_key()
+     * @param[in] exact_hit_lock_mode this mode is used if the search
+     * hits the low fence key (so, logically a miss, but physically a hit).
+     * This would be a lock on key, not gap.
+     * @param[in] miss_lock_mode this mode is used if the search does not
+     * hit the low fence key. This would be a lock on gap, not key.
      */
     static rc_t _ux_lock_range(
         btree_page_h&      leaf,
         const w_keystr_t&   key,
         slotid_t slot,
         latch_mode_t        latch_mode,
-        lock_mode_t         lock_key_mode,
-        lock_mode_t         lock_range_mode,
+        const w_okvl&       exact_hit_lock_mode,
+        const w_okvl&       miss_lock_mode,
         bool                check_only
     );
 
@@ -638,8 +643,8 @@ public:
         size_t              keylen,
         slotid_t slot,
         latch_mode_t        latch_mode,
-        lock_mode_t         lock_key_mode,
-        lock_mode_t         lock_range_mode,
+        const w_okvl&       exact_hit_lock_mode,
+        const w_okvl&       miss_lock_mode,
         bool                check_only
     );
 
@@ -827,6 +832,44 @@ public:
      */
     static rc_t _ux_defrag_page_core(btree_page_h &p);
 
+    /**
+    * Helper method to create an OKVL instance on one partition,
+    * using the given key/data pair.
+    */
+    static w_okvl create_part_okvl(
+        w_okvl::singular_lock_mode mode,
+        const w_keystr_t&    /*key*/,
+        const void* el, smsize_t el_size) {
+        w_okvl ret;
+
+        // TODO where to get uniquefier from. So far we don't have this information.
+        // So, just hash all parts of the data. This is unnecessary.
+        w_okvl::part_id part = w_okvl::compute_part_id(el, el_size);
+        
+        ret.set_partition_mode(part, mode);
+        return ret;
+    }
+
+    /** cvec_t overload. */
+    static w_okvl create_part_okvl(
+        w_okvl::singular_lock_mode mode,
+        const w_keystr_t&    key,
+        const cvec_t&        el) {
+        // wanna avoid copying here, but let's do that later...
+        std::basic_string<unsigned char> buffer;
+        el.copy_to(buffer);
+        return create_part_okvl(mode, key, buffer.data(), buffer.size());
+    }
+
+    /** In case el is not available. */
+    static w_okvl create_part_okvl(
+        w_okvl::singular_lock_mode mode,
+        const w_keystr_t&    /*key*/) {
+        // TODO This method doesn't make sense once we implement non-unique index.
+        // This is just a tentative code.
+        return w_okvl(0, mode);
+    }
+    
 #ifdef DOXYGEN_HIDE
 ///==========================================
 ///   BEGIN: Global Approximate (non-protected) Counters to guide opportunistic/eager latching.

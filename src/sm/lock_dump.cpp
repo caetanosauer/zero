@@ -160,8 +160,8 @@ ostream&
 operator<<(ostream& o, const lock_queue_entry_t& r)
 {
     o << "xct:" << r._li.tid()
-      << " granted-mode:" << lock_base_t::mode_str[r._granted_mode]
-      << " req-mode:" << lock_base_t::mode_str[r._requested_mode]
+      << " granted-mode:" << r._granted_mode
+      << " req-mode:" << r._requested_mode
       << " thr:" << r._thr.get_fingerprint_map()
       << " wait-map:" << r._li.get_wait_map();
 

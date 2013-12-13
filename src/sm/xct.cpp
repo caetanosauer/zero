@@ -51,7 +51,6 @@ template class w_keyed_list_t<xct_t, queue_based_lock_t, tid_t>;
 template class w_descend_list_t<xct_t, queue_based_lock_t, tid_t>;
 template class w_list_t<stid_list_elem_t, queue_based_lock_t>;
 template class w_list_i<stid_list_elem_t, queue_based_lock_t>;
-template class w_auto_delete_array_t<lock_mode_t>;
 template class w_auto_delete_array_t<lockid_t>;
 template class w_auto_delete_array_t<stid_t>;
 
@@ -564,7 +563,7 @@ xct_t::stash(xct_log_t*&x)
 }
 
 rc_t                        
-xct_t::obtain_locks(lock_mode_t mode, int num, const lockid_t *locks)
+xct_t::obtain_locks(const w_okvl& mode, int num, const lockid_t *locks)
 {
     int  i;
     rc_t rc;
@@ -585,7 +584,7 @@ xct_t::obtain_locks(lock_mode_t mode, int num, const lockid_t *locks)
 }
 
 rc_t                        
-xct_t::obtain_one_lock(lock_mode_t mode, const lockid_t &lock)
+xct_t::obtain_one_lock(const w_okvl& mode, const lockid_t &lock)
 {
     DBG(<<"Obtaining 1 lock : " << lock << " in mode " << int(mode));
 
@@ -1251,6 +1250,8 @@ xct_t::find_dependent(xct_dependent_t* ptr)
 
 /*********************************************************************
  *
+    */
+#endif // Disable prepare
  *  xct_t::commit(flags)
  *
  *  Commit the transaction. If flag t_lazy, log is not synced.
