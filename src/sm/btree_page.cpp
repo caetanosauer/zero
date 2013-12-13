@@ -46,7 +46,7 @@ void btree_page_data::unset_ghost(int item) {
 
 
 bool btree_page_data::insert_item(int item, bool ghost, poor_man_key poor,
-                             shpid_t child, size_t data_length) {
+                                  shpid_t child, size_t data_length) {
     w_assert1(item>=0 && item<=nitems);  // use of <= intentional
     w_assert3(_items_are_consistent());
 

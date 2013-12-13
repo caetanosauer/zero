@@ -118,7 +118,7 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
 
     // fence-key record doesn't need poormkey; set to 0:
     if (!page()->insert_item(nitems(), false, 0, 0, fences)) {
-        assert(false);
+        w_assert0(false);
     }
 
     // steal records from old page
@@ -138,7 +138,7 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
         poor_man_key poormkey = extract_poor_man_key (steal_src2->get_fence_low_key(), steal_src2->get_fence_low_length(), prefix_len);
         shpid_t      stolen_pid0 = steal_src2->pid0();
         if (!page()->insert_item(nitems(), false, poormkey, stolen_pid0, v)) {
-            assert(false);
+            w_assert0(false);
         }
     }
     if (steal_src2) {
@@ -166,6 +166,7 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
     key_length_t new_prefix_length = get_prefix_length();
     for (int i = steal_from; i < steal_to; ++i) {
         cvec_t v;
+        key_length_t klen; // this needs to stay in scope until v goes out of scope...
         cvec_t new_trunc_key;
         shpid_t child;
 
@@ -181,7 +182,7 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
             key.put(trunc_key_data, trunc_key_length);
 
             key.split(new_prefix_length, dummy, new_trunc_key);
-            key_length_t klen = key_length;
+            klen = key_length;
             v.put(&klen, sizeof(klen));
             v.put(new_trunc_key);
             v.put(data, data_length);
@@ -200,7 +201,7 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
         if (!page()->insert_item(nitems(), steal_src->is_ghost(i), 
                                  extract_poor_man_key(new_trunc_key), 
                                  child, v)) {
-            assert(false);
+            w_assert0(false);
         }
 
         w_assert3(is_consistent());
@@ -787,7 +788,7 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, size_t
     poor_man_key poormkey = extract_poor_man_key(key_raw, key_raw_len, prefix_len);
 
     if (!page()->insert_item(slot+1, true, poormkey, 0, data_length)) {
-        assert(false);
+        w_assert0(false);
     }
 
     // make a dummy record that has the desired length:
