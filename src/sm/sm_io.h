@@ -122,6 +122,7 @@ private:
 
 class io_m_test;
 class btree_impl;
+class generic_page;
 
 /**
  * IO Manager.
@@ -177,9 +178,7 @@ public:
     static lsn_t                GetLastMountLSN();                // used for logging/recovery purposes
     static void                 SetLastMountLSN(lsn_t theLSN);
 
-    static rc_t                 read_page(
-        const lpid_t&                 pid,
-        generic_page&                       buf);
+    static rc_t                 read_page(const lpid_t& pid, generic_page& buf);
     static void                 write_many_pages(const generic_page* bufs, int cnt);
     
     static rc_t                 mount(

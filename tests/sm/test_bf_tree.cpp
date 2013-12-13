@@ -2,7 +2,7 @@
 #include "generic_page.h"
 #include "bf.h"
 #include "btree.h"
-#include "btree_page.h"
+#include "btree_page_h.h"
 #include "btree_impl.h"
 #include "log.h"
 #include "w_error.h"
@@ -31,22 +31,21 @@ public:
         bf_idx idx = get_bf_idx(bf, page);
         return bf->get_cbp(idx);
     }
+
+
+    /** manually emulate the btree page layout */
+    static void _add_child_pointer (btree_page *page, shpid_t child) {
+        btree_page_h p(reinterpret_cast<generic_page*>(page)); // <<<>>>
+        if (!page->insert_item(p.nitems(), false, 0, child, 0)) {
+            w_assert1(false);
+        }
+        if (p.nrecs() == 0) {
+            p.pid0_pointer() = child;
+        }
+    }
 };
 
-/** manually emulate the btree page layout */
-void _add_child_pointer (btree_page *page, shpid_t child) {
-    btree_page_h p(reinterpret_cast<generic_page*>(page)); // <<<>>>
-    slotid_t slot = page->nslots;
-    ++page->nslots;
-    char* slot_p = p.slot_addr(slot);
-    *reinterpret_cast<slot_offset8_t*>(slot_p) = (btree_page::data_sz / 8) - (slot + 1) * 2; // 16 bytes per record.
-    if (slot == 0) {
-        page->btree_pid0 = child;
-    } else {
-        void* tuple_p = p.tuple_addr(slot);
-        *reinterpret_cast<shpid_t*>(tuple_p) = child;
-    }
-}
+
 
 
 TEST (TreeBufferpoolTest, AlignmentCheck) {
@@ -67,7 +66,6 @@ TEST (TreeBufferpoolTest, Init) {
         1, 20, 10000, 64, true, true
     ), 0);
 }
-
 w_rc_t test_bf_fix_virgin_root(ss_m* /*ssm*/, test_volume_t *test_volume) {
     lsn_t thelsn = smlevel_0::log->curr_lsn();
     bf_tree_m &pool(*smlevel_0::bf);
@@ -83,6 +81,7 @@ w_rc_t test_bf_fix_virgin_root(ss_m* /*ssm*/, test_volume_t *test_volume) {
             bp->lsn        = thelsn;
             page->tag      = t_btree_p;
             bp->btree_level = 1;
+            bp->init_items();                
             pool.set_dirty(page);
             pool.unfix(page);
         }
@@ -122,17 +121,16 @@ w_rc_t test_bf_fix_virgin_child(ss_m* /*ssm*/, test_volume_t *test_volume) {
     EXPECT_TRUE (root_page != NULL);
     ::memset(root_page, 0, sizeof(generic_page));
     btree_page *rbp = reinterpret_cast<btree_page*>(root_page);
-    root_page->pid          = root_pid;
+    root_page->pid    = root_pid;
     rbp->lsn          = thelsn;
-    root_page->tag          = t_btree_p;
+    root_page->tag    = t_btree_p;
     rbp->btree_level  = 2;
     rbp->btree_foster = 0;
-    rbp->nslots       = 0;
-
+    rbp->init_items();
     for (size_t i = 0; i < 3; ++i) {
         generic_page *page = NULL;
         lpid_t pid (test_volume->_vid, 1, root_pid.page + 1 + i);
-        _add_child_pointer (rbp, pid.page);
+        test_bf_tree::_add_child_pointer (rbp, pid.page);
 
         W_DO(pool.fix_nonroot(page, root_page, pid.vol().vol, pid.page, LATCH_EX, false, true));
         EXPECT_TRUE (page != NULL);
@@ -143,6 +141,7 @@ w_rc_t test_bf_fix_virgin_child(ss_m* /*ssm*/, test_volume_t *test_volume) {
             bp->lsn = thelsn;
             page->tag = t_btree_p;
             bp->btree_level = 1;
+            bp->init_items();
             pool.set_dirty(page);
             pool.unfix(page);
         }
@@ -191,7 +190,7 @@ w_rc_t test_bf_evict(ss_m* /*ssm*/, test_volume_t *test_volume) {
     root_page->tag    = t_btree_p;
     rbp->btree_level  = 2;
     rbp->btree_foster = 0;
-    rbp->nslots       = 0;
+    rbp->init_items();
 
     // TODO the code below doesn't bother making real pages. to pass this testcase, some checks in bufferpool are disabled.
     // for better testing and assertion, we should make real pages here and test against it.
@@ -204,7 +203,7 @@ w_rc_t test_bf_evict(ss_m* /*ssm*/, test_volume_t *test_volume) {
     for (size_t i = 0; i < 40; ++i) {
         generic_page *page = NULL;
         lpid_t pid (test_volume->_vid, 1, root_pid.page + 1 + i);
-        _add_child_pointer (rbp, pid.page);
+        test_bf_tree::_add_child_pointer (rbp, pid.page);
 
         W_DO(pool.fix_nonroot(page, root_page, pid.vol().vol, pid.page, i % 5 == 0 ? LATCH_EX : LATCH_SH, false, false));
         EXPECT_TRUE (page != NULL);
@@ -217,6 +216,7 @@ w_rc_t test_bf_evict(ss_m* /*ssm*/, test_volume_t *test_volume) {
             bp->lsn         = thelsn;
             page->tag       = t_btree_p;
             bp->btree_level = 1;
+            bp->init_items();
             if (i % 5 == 0) {
                 dirty_idx.insert (idx);
                 DBGOUT2(<<"dirty_idx i=" << i << " idx=" << idx);
@@ -302,7 +302,7 @@ w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_s
     root_page->tag = t_btree_p;
     rbp->btree_level = 2;
     rbp->btree_foster = 0;
-    rbp->nslots = 0;
+    rbp->init_items();
     bf_tree_cb_t &root_cb (*test_bf_tree::get_bf_control_block(&pool, root_page));
     EXPECT_EQ(1, root_cb._pin_cnt); // root page is always swizzled by volume descriptor, so pin_cnt is 1.
     if (enable_swizzle) {
@@ -313,7 +313,7 @@ w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_s
     for (size_t i = 0; i < 20; ++i) {
         generic_page *page = NULL;
         lpid_t pid (test_volume->_vid, 1, root_pid.page + 1 + i);
-        _add_child_pointer (rbp, pid.page);
+        test_bf_tree::_add_child_pointer (rbp, pid.page);
 
         if (enable_swizzle) {
 #ifdef BP_MAINTAIN_PARNET_PTR
@@ -348,6 +348,7 @@ w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_s
             page->pid = pid;
             page->tag = t_btree_p;
             bp->btree_level = 1;
+            bp->init_items();
             pool.set_dirty(page);
             pool.unfix(page);
             //  same after unfix too.
@@ -460,13 +461,13 @@ w_rc_t test_bf_switch_parent(ss_m* /*ssm*/, test_volume_t *test_volume) {
     root_page->tag = t_btree_p;
     root_page->btree_level = 2;
     root_page->btree_foster = 0;
-    root_page->nslots = 0;
+    root_page->init_items();
     bf_tree_cb_t &root_cb (*test_bf_tree::get_bf_control_block(&pool, root_page));
     EXPECT_EQ(1, root_cb._pin_cnt); // root page is always swizzled, so pin_cnt is 1.
     EXPECT_TRUE (pool.is_swizzled(root_page));
 
     lpid_t child_pid(test_volume->_vid, 1, root_pid.page + 1);
-    _add_child_pointer (root_page, child_pid.page);
+    test_bf_tree::_add_child_pointer (root_page, child_pid.page);
     generic_page *child_page = NULL;
     W_DO(pool.fix_nonroot(child_page, root_page, child_pid.vol().vol, child_pid.page, LATCH_EX, true, true));
     EXPECT_TRUE (child_page != NULL);
@@ -475,7 +476,7 @@ w_rc_t test_bf_switch_parent(ss_m* /*ssm*/, test_volume_t *test_volume) {
     child_page->tag = t_btree_p;
     child_page->btree_level = 1;
     child_page->btree_foster = 0;
-    child_page->nslots = 0;
+    child_page->init_items();
     bf_tree_cb_t &child_cb (*test_bf_tree::get_bf_control_block(&pool, child_page));
     EXPECT_EQ(1, child_cb._pin_cnt);
     EXPECT_EQ(2, root_cb._pin_cnt); // added as child
@@ -492,7 +493,7 @@ w_rc_t test_bf_switch_parent(ss_m* /*ssm*/, test_volume_t *test_volume) {
     sibling_page->tag = t_btree_p;
     sibling_page->btree_level = 1;
     sibling_page->btree_foster = 0;
-    sibling_page->nslots = 0;
+    sibling_page->init_items();
     bf_tree_cb_t &sibling_cb (*test_bf_tree::get_bf_control_block(&pool, sibling_page));
     EXPECT_EQ(1, sibling_cb._pin_cnt);
     EXPECT_EQ(2, child_cb._pin_cnt); // added as child
@@ -503,7 +504,7 @@ w_rc_t test_bf_switch_parent(ss_m* /*ssm*/, test_volume_t *test_volume) {
     pool.debug_dump(std::cout);
 
     // then, adopt the sibling to real parent
-    _add_child_pointer (root_page, sibling_pid.page);
+    test_bf_tree::_add_child_pointer (root_page, sibling_pid.page);
     child_page->btree_foster = 0;
     pool.switch_parent(sibling_page, root_page);
 

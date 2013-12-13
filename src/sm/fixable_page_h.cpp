@@ -127,7 +127,7 @@ void fixable_page_h::unset_to_be_deleted() {
 
 // <<<>>> 
 
-#include "btree_page.h"
+#include "btree_page_h.h"
 
 bool fixable_page_h::has_children() const {
     btree_page_h downcast(get_generic_page());
@@ -140,7 +140,7 @@ int fixable_page_h::max_child_slot() const {
 
     if (downcast.level()<=1)
         return -1;  // if a leaf page, foster is the only pointer
-    return downcast.nslots() - 1;
+    return downcast.nitems() - 1; // hidden slot has no child pointer
 }
 
 shpid_t* fixable_page_h::child_slot_address(int child_slot) const {
@@ -150,12 +150,11 @@ shpid_t* fixable_page_h::child_slot_address(int child_slot) const {
         return &downcast.foster_pointer();
     }
 
-    w_assert1( downcast.level()>1 && child_slot < downcast.nslots() );
+    w_assert1( downcast.level()>1 && child_slot < downcast.nitems() );
 
     if (child_slot == 0) {
         return &downcast.pid0_pointer();
     }
 
-    void* addr = downcast.tuple_addr(child_slot);
-    return reinterpret_cast<shpid_t*>(addr);
+    return &downcast.child_pointer(child_slot-1);
 }

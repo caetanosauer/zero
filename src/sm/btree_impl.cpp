@@ -13,7 +13,7 @@
 #define BTREE_C
 
 #include "sm_int_2.h"
-#include "btree_page.h"
+#include "btree_page_h.h"
 #include "btree_impl.h"
 #include "btcursor.h"
 #include "crash.h"
@@ -272,21 +272,19 @@ rc_t btree_impl::_sx_reserve_ghost(btree_page_h &leaf, const w_keystr_t &key, in
     return ret;
 }
 
-rc_t btree_impl::_ux_reserve_ghost_core(btree_page_h &leaf, const w_keystr_t &key, int elem_len, bool defer_apply)
-{
+rc_t btree_impl::_ux_reserve_ghost_core(btree_page_h &leaf, const w_keystr_t &key, int elem_len, bool defer_apply) {
     w_assert1 (xct()->is_sys_xct());
     w_assert1 (leaf.fence_contains(key));
-    size_t rec_size = key.get_length_as_keystr() - leaf.get_prefix_length()
-        + elem_len + sizeof(int16_t) * 2;
-    w_assert1 (leaf.usable_space() >= btree_page_h::slot_sz + rec_size);
+
+    w_assert1(leaf.check_space_for_insert_leaf(key.get_length_as_keystr()-leaf.get_prefix_length(), elem_len));
 
     if (defer_apply) {
-        W_DO (log_btree_ghost_reserve (leaf, key, rec_size));
+        W_DO (log_btree_ghost_reserve (leaf, key, elem_len));
     } else {
         // so far deferring is disabled
         // ssx_defer_section_t ssx_defer (&leaf); // auto-commit for deferred ssx log on leaf
-        W_DO (log_btree_ghost_reserve (leaf, key, rec_size));
-        leaf.reserve_ghost(key, rec_size);
+        W_DO (log_btree_ghost_reserve (leaf, key, elem_len));
+        leaf.reserve_ghost(key, elem_len);
     }
     return RCOK;
 }
@@ -420,26 +418,26 @@ rc_t btree_impl::_ux_overwrite(
 
 rc_t btree_impl::_ux_overwrite_core(
         volid_t vol, snum_t store, 
-        const w_keystr_t&                 key,
+        const w_keystr_t& key,
         const char *el, smsize_t offset, smsize_t elen)
 {
     // basically same as ux_update
     bool need_lock = g_xct_does_need_lock();
-    btree_page_h         leaf;
+    btree_page_h leaf;
 
     W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf));
 
     w_assert3(leaf.is_fixed());
     w_assert3(leaf.is_leaf());
 
-    slotid_t       slot = -1;
-    bool            found = false;
+    slotid_t slot  = -1;
+    bool     found = false;
     leaf.search(key, found, slot);
 
     if(!found) {
         if (need_lock) {
             W_DO(_ux_lock_range(leaf, key, slot,
-                        LATCH_SH, XN, NS, false));
+                                LATCH_SH, XN, NS, false));
         }
         return RC(eNOTFOUND);
     }

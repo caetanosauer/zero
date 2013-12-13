@@ -1,8 +1,6 @@
 #include "btree_test_env.h"
-#include "generic_page.h"
 #include "bf.h"
 #include "btree.h"
-#include "btree_page.h"
 #include "btree_impl.h"
 #include "xct.h"
 
@@ -168,21 +166,25 @@ w_rc_t verify_splits(ss_m* ssm, test_volume_t *test_volume) {
     
     W_DO(x_btree_verify(ssm, stid));
 
-    // so that one leaf page can have only 2 tuples
-    const int recsize = SM_PAGESIZE * 2 / 5;
-    char data[recsize];
-    memset (data, 'a', recsize);
-    
+    // so that one leaf page can have only 2 tuples:
+    const int data_size = 1;
+    const int key_size  = btree_m::max_entry_size() - data_size - 1;
+
+    char data[data_size];
+    char key[key_size];
+    memset (data, 'a', data_size);
+    memset (key,  '_', key_size);
+
     W_DO(ssm->begin_xct());
     test_env->set_xct_query_lock();
-    W_DO(helper_create_assoc(ssm, stid, "abcd1", 5, data, recsize));    
-    W_DO(helper_create_assoc(ssm, stid, "abcd2", 5, data, recsize));    
-    W_DO(helper_create_assoc(ssm, stid, "abcd3", 5, data, recsize));    
-    W_DO(helper_create_assoc(ssm, stid, "abcd4", 5, data, recsize));    
-    W_DO(helper_create_assoc(ssm, stid, "abcd5", 5, data, recsize));    
+    for (int i=1; i<=5; i++) {
+        // ensure prefix is minimal so we use maximum possible space:
+        key[0] = '0' + i;
+        W_DO(helper_create_assoc(ssm, stid, key, key_size, data, data_size));    
+    }
     W_DO(ssm->commit_xct());
     // now they are just b-linked.
-
+    
     W_DO(x_btree_verify(ssm, stid));
 
     return RCOK;
