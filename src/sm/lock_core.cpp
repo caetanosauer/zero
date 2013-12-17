@@ -164,7 +164,7 @@ lock_core_m::_acquire_lock(
             }
         }
 #endif // W_DEBUG_LEVEL>=3
-        req = new (*lockEntryPool) lock_queue_entry_t(*xd, *thr, *the_xlinfo, w_okvl::CONSTANTS.ALL_N_GAP_N, mode);
+        req = new (*lockEntryPool) lock_queue_entry_t(*xd, *thr, *the_xlinfo, ALL_N_GAP_N, mode);
         if (!check_only) {
             req->_xct_entry = the_xlinfo->link_to_new_request(lock, req);
         }

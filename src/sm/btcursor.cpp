@@ -131,16 +131,16 @@ rc_t bt_cursor_t::_locate_first() {
             if (_forward) {
                 if (_lower_inclusive) {
                     // let's take range lock too to reduce lock manager calls
-                    mode = _ex_lock ? w_okvl::CONSTANTS.ALL_X_GAP_X : w_okvl::CONSTANTS.ALL_S_GAP_S;
+                    mode = _ex_lock ? ALL_X_GAP_X : ALL_S_GAP_S;
                     _dont_move_next = true;
                 } else {
-                    mode = _ex_lock ? w_okvl::CONSTANTS.ALL_N_GAP_X : w_okvl::CONSTANTS.ALL_N_GAP_S;
+                    mode = _ex_lock ? ALL_N_GAP_X : ALL_N_GAP_S;
                     _dont_move_next = false;
                 }
             } else {
                 // in backward case we definitely don't need the range part
                 if (_upper_inclusive) {
-                    mode = _ex_lock ? w_okvl::CONSTANTS.ALL_X_GAP_N : w_okvl::CONSTANTS.ALL_S_GAP_N;
+                    mode = _ex_lock ? ALL_X_GAP_N : ALL_S_GAP_N;
                     _dont_move_next = true;
                 } else {
                     // in this case, we don't need lock at all
@@ -167,7 +167,7 @@ rc_t bt_cursor_t::_locate_first() {
                     _dont_move_next = false;
                     leaf.leaf_key(_slot, _key);
                 }
-                mode = _ex_lock ? w_okvl::CONSTANTS.ALL_N_GAP_X : w_okvl::CONSTANTS.ALL_N_GAP_S;
+                mode = _ex_lock ? ALL_N_GAP_X : ALL_N_GAP_S;
             } else {
                 // subsequent next() will read the previous slot
                 --_slot;
@@ -175,12 +175,12 @@ rc_t bt_cursor_t::_locate_first() {
                     // then, we need to move to even more previous slot in previous page
                     _dont_move_next = false;
                     leaf.copy_fence_low_key(_key);
-                    mode = _ex_lock ? w_okvl::CONSTANTS.ALL_N_GAP_X : w_okvl::CONSTANTS.ALL_N_GAP_S;
+                    mode = _ex_lock ? ALL_N_GAP_X : ALL_N_GAP_S;
                 } else {
                     _dont_move_next = true;
                     leaf.leaf_key(_slot, _key);
                     // let's take range lock too to reduce lock manager calls
-                    mode = _ex_lock ? w_okvl::CONSTANTS.ALL_X_GAP_X : w_okvl::CONSTANTS.ALL_S_GAP_S;
+                    mode = _ex_lock ? ALL_X_GAP_X : ALL_S_GAP_S;
                 }
             }
         }
@@ -348,9 +348,9 @@ rc_t bt_cursor_t::_advance_one_slot(btree_page_h &p, bool &eof)
                 lockid_t lid (stid_t(_vol, _store), (const unsigned char*) neighboring_fence.buffer_as_keystr(), neighboring_fence.get_length_as_keystr());
                 w_okvl lock_mode;
                 if (only_low_fence_exact_match) {
-                    lock_mode = _ex_lock ? w_okvl::CONSTANTS.ALL_X_GAP_N: w_okvl::CONSTANTS.ALL_S_GAP_N;
+                    lock_mode = _ex_lock ? ALL_X_GAP_N: ALL_S_GAP_N;
                 } else {
-                    lock_mode = _ex_lock ? w_okvl::CONSTANTS.ALL_X_GAP_X : w_okvl::CONSTANTS.ALL_S_GAP_S;
+                    lock_mode = _ex_lock ? ALL_X_GAP_X : ALL_S_GAP_S;
                 }
                 // we can unconditionally request lock because we already released latch
                 W_DO(ss_m::lm->lock(lid, lock_mode, false));
@@ -375,9 +375,9 @@ rc_t bt_cursor_t::_advance_one_slot(btree_page_h &p, bool &eof)
             if (_forward) {
                 int d = _tmp_next_key_buf.compare(_upper);
                 if (d < 0) {
-                    mode = _ex_lock ? w_okvl::CONSTANTS.ALL_X_GAP_X : w_okvl::CONSTANTS.ALL_S_GAP_S;
+                    mode = _ex_lock ? ALL_X_GAP_X : ALL_S_GAP_S;
                 } else if (d == 0 && _upper_inclusive) {
-                    mode = _ex_lock ? w_okvl::CONSTANTS.ALL_X_GAP_N : w_okvl::CONSTANTS.ALL_S_GAP_N;
+                    mode = _ex_lock ? ALL_X_GAP_N : ALL_S_GAP_N;
                 } else {
                     eof = true;
                     empty_mode = true;
@@ -385,12 +385,12 @@ rc_t bt_cursor_t::_advance_one_slot(btree_page_h &p, bool &eof)
             } else {
                 int d = _tmp_next_key_buf.compare(_lower);
                 if (d > 0) {
-                    mode = _ex_lock ? w_okvl::CONSTANTS.ALL_X_GAP_X : w_okvl::CONSTANTS.ALL_S_GAP_S;
+                    mode = _ex_lock ? ALL_X_GAP_X : ALL_S_GAP_S;
                 } else if (d == 0 && _lower_inclusive) {
-                    mode = _ex_lock ? w_okvl::CONSTANTS.ALL_X_GAP_X : w_okvl::CONSTANTS.ALL_S_GAP_S;
+                    mode = _ex_lock ? ALL_X_GAP_X : ALL_S_GAP_S;
                 } else {
                     eof = true;
-                    mode = _ex_lock ? w_okvl::CONSTANTS.ALL_N_GAP_X : w_okvl::CONSTANTS.ALL_N_GAP_S;
+                    mode = _ex_lock ? ALL_N_GAP_X : ALL_N_GAP_S;
                 }
             }
         }

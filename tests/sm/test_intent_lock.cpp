@@ -25,7 +25,7 @@ const int TEST_STORE_ID3 = 4;
 
 class lock_thread_t : public smthread_t {
 public:
-        lock_thread_t(vid_t vol, snum_t store, lock_mode_t vol_mode, lock_mode_t store_mode) 
+        lock_thread_t(vid_t vol, snum_t store, w_okvl::singular_lock_mode vol_mode, w_okvl::singular_lock_mode store_mode) 
                 : smthread_t(t_regular, "lock_thread_t"),
                 _vol(vol), _store(store), _vol_mode(vol_mode), _store_mode(store_mode),
                 _done(false), _exitted(false) {
@@ -99,7 +99,7 @@ public:
 
     vid_t _vol;
     snum_t _store;
-    lock_mode_t _vol_mode, _store_mode;
+    w_okvl::singular_lock_mode _vol_mode, _store_mode;
     rc_t _rc;
     bool _done;
     bool _exitted;
@@ -111,10 +111,10 @@ w_rc_t read_write_livelock(ss_m*, test_volume_t *) {
     EXPECT_TRUE(test_env->_use_locks);
 
     W_DO(test_env->begin_xct());
-    W_DO(ss_m::lm->intent_vol_lock(TEST_VOL_ID, EX));
+    W_DO(ss_m::lm->intent_vol_lock(TEST_VOL_ID, w_okvl::X));
 
     // write a2
-    lock_thread_t t2 (TEST_VOL_ID, 0, SH, SH);
+    lock_thread_t t2 (TEST_VOL_ID, 0, w_okvl::S, w_okvl::S);
     W_DO(t2.fork());
     ::usleep (SHORTTIME_USEC);
     EXPECT_FALSE(t2._done);

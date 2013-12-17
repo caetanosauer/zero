@@ -69,7 +69,7 @@ btree_impl::_ux_lookup_core(
         if (need_lock) {
             W_DO(_ux_lock_range(leaf, key, slot, LATCH_SH,
                 ex_for_select ? create_part_okvl(w_okvl::X, key, el, elen) : create_part_okvl(w_okvl::S, key, el, elen),
-                ex_for_select ? w_okvl::CONSTANTS.ALL_N_GAP_X : w_okvl::CONSTANTS.ALL_N_GAP_S,
+                ex_for_select ? ALL_N_GAP_X : ALL_N_GAP_S,
                 false));
         }
         return RCOK;

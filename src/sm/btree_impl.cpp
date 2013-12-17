@@ -111,7 +111,7 @@ btree_impl::_ux_insert_core(
         
         if (need_lock) {
             W_DO(_ux_lock_range(leaf, key, -1, // search again because it might be split
-                LATCH_EX, create_part_okvl(w_okvl::X, key, el), w_okvl::CONSTANTS.ALL_N_GAP_X, true)); // this lock "goes away" once it's taken
+                LATCH_EX, create_part_okvl(w_okvl::X, key, el), ALL_N_GAP_X, true)); // this lock "goes away" once it's taken
         }
         
         // so far deferring is disabled
@@ -188,7 +188,7 @@ btree_impl::_ux_get_page_and_status(volid_t vol, snum_t store,
     if (found) {
         // found! then we just lock the key (XN)
         if (need_lock) {
-            W_DO (_ux_lock_key(leaf, key, LATCH_EX, w_okvl::CONSTANTS.ALL_X_GAP_N, false));
+            W_DO (_ux_lock_key(leaf, key, LATCH_EX, ALL_X_GAP_N, false));
             took_XN = true;
         }
 
@@ -245,7 +245,7 @@ rc_t btree_impl::_ux_insert_core_tail(volid_t /* vol */, snum_t /* store */,
         
         if (need_lock) {
             W_DO(_ux_lock_range(leaf, key, -1, // search again because it might be split
-                LATCH_EX, create_part_okvl(w_okvl::X, key, el), w_okvl::CONSTANTS.ALL_N_GAP_X, true)); // this lock "goes away" once it's taken
+                LATCH_EX, create_part_okvl(w_okvl::X, key, el), ALL_N_GAP_X, true)); // this lock "goes away" once it's taken
         }
         
         // so far deferring is disabled
@@ -322,7 +322,7 @@ btree_impl::_ux_update_core(volid_t vol, snum_t store, const w_keystr_t &key, co
         if (need_lock) {
             // re-latch mode is SH because this is "not-found" case.
             W_DO(_ux_lock_range(leaf, key, slot,
-                        LATCH_SH, create_part_okvl(w_okvl::X, key, el), w_okvl::CONSTANTS.ALL_N_GAP_S, false));
+                        LATCH_SH, create_part_okvl(w_okvl::X, key, el), ALL_N_GAP_S, false));
         }
         return RC(eNOTFOUND);
     }
@@ -371,7 +371,7 @@ btree_impl::_ux_update_core_tail(volid_t vol, snum_t store,
         if (need_lock) {
             // re-latch mode is SH because this is "not-found" case.
             W_DO(_ux_lock_range(leaf, key, slot,
-                        LATCH_SH, create_part_okvl(w_okvl::X, key, el), w_okvl::CONSTANTS.ALL_N_GAP_S, false));
+                        LATCH_SH, create_part_okvl(w_okvl::X, key, el), ALL_N_GAP_S, false));
         }
         return RC(eNOTFOUND);
     }
@@ -437,7 +437,7 @@ rc_t btree_impl::_ux_overwrite_core(
     if(!found) {
         if (need_lock) {
             W_DO(_ux_lock_range(leaf, key, slot,
-                                LATCH_SH, create_part_okvl(w_okvl::X, key, el + offset, elen), w_okvl::CONSTANTS.ALL_N_GAP_S, false));
+                                LATCH_SH, create_part_okvl(w_okvl::X, key, el + offset, elen), ALL_N_GAP_S, false));
         }
         return RC(eNOTFOUND);
     }
@@ -498,7 +498,7 @@ btree_impl::_ux_remove_core(volid_t vol, snum_t store, const w_keystr_t &key)
         if (need_lock) {
             // re-latch mode is SH because this is "not-found" case.
             W_DO(_ux_lock_range(leaf, key, slot,
-                        LATCH_SH, create_part_okvl(w_okvl::X, key), w_okvl::CONSTANTS.ALL_N_GAP_S, false));
+                        LATCH_SH, create_part_okvl(w_okvl::X, key), ALL_N_GAP_S, false));
         }
         return RC(eNOTFOUND);
     }
