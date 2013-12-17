@@ -5,6 +5,7 @@ INCLUDE_DIRECTORIES (
   ${CMAKE_SOURCE_DIR}/src/common
   ${CMAKE_SOURCE_DIR}/src/sthread
   ${CMAKE_SOURCE_DIR}/src/sm
+  ${CMAKE_SOURCE_DIR}/src/latches
 ) 
 
 # to look for generated headers
@@ -30,3 +31,4 @@ add_subdirectory(common)
 add_subdirectory(fc)
 add_subdirectory(sthread)
 add_subdirectory(sm)
+add_subdirectory(latches)
