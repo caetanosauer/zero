@@ -82,9 +82,9 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <set>
 #include <Lintel/AtomicCounter.hpp>
 #include "w_key.h"
-#include "w_okvl.h"
 
 class xct_dependent_t;
+struct w_okvl;
 
 /**\cond skip */
 /**\internal Tells whether the log is on or off for this xct at this moment.

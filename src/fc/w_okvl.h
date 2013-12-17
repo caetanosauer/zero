@@ -6,30 +6,71 @@
 
 /**
  * \file w_okvl.h
- * This file defines the most basic enums/structs/functions for
- * the locking module based on Orthogonal Key Value Locking (OKVL).
+ * This file declares the most basic enums/structs/functions for
+ * the locking module based on \e OKVL (Orthogonal Key Value Locking).
  * All of them are header-only to be easily used across all modules.
+ * \note Inline functions and global constants are defined in \e w_okvl_inl.h
+ * to make this file easier to read. Include it if you need them.
  */
 
 #include <string.h> // for memset/memcpy/memcmp
 #include <ostream>
 
-// The number of partitions in Orthogonal Key Value Locking.
-// Must be 1 or more. If the value is 1, it behaves just like OKRL.
-// In the OKVL paper, this parameter is denoted as "k".
-#define OKVL_PARTITIONS 1
+/**
+ * The number of partitions in OKVL.
+ * Must be 1 or more. If the value is 1, it behaves just like OKRL.
+ * In the OKVL paper, this parameter is denoted as "k".
+ */
+const int OKVL_PARTITIONS = 2;
 
-// # of usual partitions, +1 for "wildcard" partition, and +1 for gap.
-#define OKVL_MODE_COUNT (OKVL_PARTITIONS + 1 + 1)
+/** # of individual partitions, +1 for "master" partition, and +1 for gap. */
+const int OKVL_MODE_COUNT = (OKVL_PARTITIONS + 1 + 1);
 
 struct w_okvl_consts;
 
 /**
- * \brief Represents the lock mode of one key entry in the lock manager.
+ * \brief Represents the lock mode of one key entry in the \e OKVL lock manager.
  * \details
- * It consists of lock mode for usual paritions, 1 wildcard partition, and 1 gap after the key.
- * Use CONSTANTS to quickly get a frequently-used lock modes.
+ * It consists of lock mode for \e individual paritions,
+ * 1 \e master partition, and 1 \e gap after the key.
+ * There are constant instances to quickly get frequently-used lock modes.
  * Otherwise, you have to instantiate this struct. Hope it fits on stack.
+ *
+ * \section OKVL (Orthogonal Key Value Locking)
+ * \e OKVL is a more concurrent and simple lock mode design compared to
+ * ARIES \e KVL (Key Value Locking), Lomet's \e KRL (Key Range Locking),
+ * and Graefe's \e OKRL (Orthogonal Key Range Locking).
+ * The main difference is that OKVL \e partitions the key part of
+ * the lock into \e k \e individual lock modes and their coarse level mode
+ * called the \e master partition mode.
+ * 
+ * So, it consists of k singular lock modes (e.g., S and X) for
+ * individual partitions, 1 singular lock mode for master,
+ * and 1 singular lock mode for the gap between the key and the next key.
+ * For example, suppose k=4 and a transaction (Xct-A) locks only the 2nd partition
+ * with S; 1st=N, 2nd=S, 3rd=N, 4th=N, master=IS, gap=N.
+ * Even when another transaction (Xct-B) wants to lock the key with X,
+ * the locks are compatible unless Xct-B ends up hitting 2nd partition.
+ * 
+ * We determine the partition to lock based on the \e uniquefier of the key-value entry.
+ * Thus, if the index is a unique index, OKVL behaves exactly same as OKRL.
+ * However, for non-unique indexes with lots of duplicate keys
+ * this will dramatically increase the concurrency.
+ *
+ * Note that sometimes we have to lock the master partition with
+ * absolute lock mode (e.g., S) rather than intent mode (e.g., IS).
+ * For example, a scanning transaction has to protect all entries under the key.
+ * 
+ * \section Uniquefier in non-unique indexes
+ * It depends on the implementation of non-unique indexes.
+ * Some database appends uniquefiers to keys (so, physically making it a unique index except
+ * lock manager behavior) while other stores uniquefiers as data (thus, "value" is a list).
+ * We employ the former approach, so uniquefier is the tail of each key.
+ * 
+ * \note For further understanding, you are strongly advised to
+ * read the full document about OKVL under publications/papers/TBD.
+ * Or, search "Orthogonal Key Value Locking" on Google Scholar.
+ * It's a full-length paper, but it must be worth reading (otherwise punch us).
  */
 struct w_okvl {
     friend std::ostream& operator<<(std::ostream&, const w_okvl& v);
@@ -69,7 +110,7 @@ struct w_okvl {
 
     /**
      * Each byte represents the singular lock mode for a partition or a gap.
-     * This actually means singular_lock_mode_t[OKVL_MODE_COUNT], but
+     * This actually means singular_lock_mode[OKVL_MODE_COUNT], but
      * explicitly uses char to make sure it's 1 byte.
      */
     unsigned char modes[OKVL_MODE_COUNT];
@@ -83,29 +124,38 @@ struct w_okvl {
     /** Copy constructor. */
     w_okvl& operator=(const w_okvl& r);
 
-    /** Sets only the all-partition mode and gap mode. */
-    w_okvl(singular_lock_mode wildcard_mode, singular_lock_mode gap_mode);
+    /** Sets only the master mode and gap mode. */
+    w_okvl(singular_lock_mode master_mode, singular_lock_mode gap_mode);
 
-    /** Sets only a particular partition mode (and its intent mode on wildcard). */
+    /** Sets only an individual partition mode (and its intent mode on master). */
     w_okvl(part_id part, singular_lock_mode partition_mode);
     
     singular_lock_mode get_partition_mode(part_id partition) const;
-    singular_lock_mode get_wildcard_mode() const;
+    singular_lock_mode get_master_mode() const;
     singular_lock_mode get_gap_mode() const;
     
     /** Returns whether the lock modes are completely empty (all NULL modes).*/
     bool is_empty() const;
     
-    /** Returns whether the key modes are completely empty, either wildcard or other partitions.*/
+    /** Returns whether the key modes are completely empty, either master or other partitions.*/
     bool is_keylock_empty() const;
     
-    /** Returns whether this lock modes contain any X mode in it (e.g., XN. XX, NX etc).*/
-    bool contains_x_lock() const;
+    /**
+     * \brief Returns whether this contains any lock mode that implies data update
+     * _directly_ in the resource this lock protects (e.g., XN. XX, NX etc).
+     * \details
+     * We call such a lock \b Dirty \b Lock.
+     * Note that IX is NOT a dirty lock. Only X (or in future increment lock)
+     * itself meets the criteria.
+     * This check is important for ELR and logging because they have to
+     * know whether something has been (or might have been) updated or not.
+     */
+    bool contains_dirty_lock() const;
 
-    /** Sets a particular partition mode (and its intent mode on wildcard). */
+    /** Sets an individual partition mode (and its intent mode on master). */
     void set_partition_mode(part_id partition, singular_lock_mode mode);
-    /** Sets the wildcard mode. */
-    void set_wildcard_mode(singular_lock_mode mode);
+    /** Sets the master mode. */
+    void set_master_mode(singular_lock_mode mode);
     /** Sets the gap mode. */
     void set_gap_mode(singular_lock_mode mode);
 
@@ -137,267 +187,4 @@ struct w_okvl {
      */
     static w_okvl combine(const w_okvl& left, const w_okvl& right);
 };
-
-/** Pretty name for each lock mode. */
-const char* const singular_mode_names[] = {
-    "N", "IS", "IX", "S", "SIX", "X"
-};
-
-/**
-* \brief Pre-defines frequently used lock modes as const objects.
-* \Details This is for both convenience and performance.
-* In many cases (most likely as a func param), we can just use these const static objects.
-* These constants could be named like XX, SS, .. for short, but this lengthy name is more clear,
-* so in long run it will help us.
-*/
-const w_okvl ALL_N_GAP_N(w_okvl::N, w_okvl::N);
-const w_okvl ALL_S_GAP_N(w_okvl::S, w_okvl::N);
-const w_okvl ALL_X_GAP_N(w_okvl::X, w_okvl::N);
-const w_okvl ALL_N_GAP_S(w_okvl::N, w_okvl::S);
-const w_okvl ALL_S_GAP_S(w_okvl::S, w_okvl::S);
-const w_okvl ALL_X_GAP_S(w_okvl::X, w_okvl::S);
-const w_okvl ALL_N_GAP_X(w_okvl::N, w_okvl::X);
-const w_okvl ALL_S_GAP_X(w_okvl::S, w_okvl::X);
-const w_okvl ALL_X_GAP_X(w_okvl::X, w_okvl::X);
-
-#define T true // to make following easier to read
-#define F false
-/**
-*  compatibility_table[requested mode][granted mode]
-*  means whether the requested lock mode is allowed given the already existing lock in granted mode.
-*/
-const bool compatibility_table[w_okvl::COUNT][w_okvl::COUNT] = {
-/*req*/  //N  IS  IX   S SIX   X (granted)
-/*N */    { T, T,  T,  T,  T,  T,},
-/*IS*/    { T, T,  T,  T,  T,  F,},
-/*IX*/    { T, T,  T,  F,  F,  F,},
-/*S */    { T, T,  F,  T,  F,  F,},
-/*SIX*/   { T, T,  F,  F,  F,  F,},
-/*X */    { T, F,  F,  F,  F,  F,},
-};
-#undef T
-#undef F
-
-/**
-*  parent_lock_modes[i] is the lock mode of parent of i
-*        e.g. g_parent_lock_mode[X] is IX.
-*/
-const w_okvl::singular_lock_mode parent_lock_mode[] = {
-    w_okvl::N,         // N
-    w_okvl::IS,        // IS
-    w_okvl::IX,        // IX
-    w_okvl::IS,        // S
-    w_okvl::IX,        // SIX
-    w_okvl::IX         // X
-};
-
-/**
-*  combined_lock_mode[requested mode][granted mode]
-*  returns the lock mode after combining the two lock modes.
-*  e.g., X + S = X, S + IX = SIX, etc.
-*/
-const w_okvl::singular_lock_mode combined_lock_modes[w_okvl::COUNT][w_okvl::COUNT] = {
-/*req*/   //N                   IS           IX           S            SIX  X (granted)
-/*N */    { w_okvl::N,  w_okvl::IS,  w_okvl::IX,  w_okvl::S,   w_okvl::SIX, w_okvl::X,},
-/*IS*/    { w_okvl::IS, w_okvl::IS,  w_okvl::IX,  w_okvl::S,   w_okvl::SIX, w_okvl::X,},
-/*IX*/    { w_okvl::IX, w_okvl::IX,  w_okvl::IX,  w_okvl::SIX, w_okvl::SIX, w_okvl::X,},
-/*S */    { w_okvl::S,  w_okvl::S,   w_okvl::SIX, w_okvl::S,   w_okvl::SIX, w_okvl::X,},
-/*SIX*/   { w_okvl::SIX,w_okvl::SIX, w_okvl::SIX, w_okvl::SIX, w_okvl::SIX, w_okvl::X,},
-/*X */    { w_okvl::X,  w_okvl::X,   w_okvl::X,   w_okvl::X,   w_okvl::X,   w_okvl::X,},
-};
-
-inline bool w_okvl::is_compatible_singular(
-    singular_lock_mode requested,
-    singular_lock_mode granted) {
-    return compatibility_table[requested][granted];
-}
-
-inline w_okvl::w_okvl() {
-    clear();
-}
-
-inline w_okvl::w_okvl (const w_okvl &r) {
-    ::memcpy(modes, r.modes, OKVL_MODE_COUNT);
-}
-
-inline w_okvl& w_okvl::operator=(const w_okvl& r) {
-    ::memcpy(modes, r.modes, OKVL_MODE_COUNT);
-    return *this;
-}
-
-inline w_okvl::w_okvl(singular_lock_mode wildcard_mode, singular_lock_mode gap_mode) {
-    clear();
-    if (wildcard_mode != N) {
-        set_wildcard_mode(wildcard_mode);
-    }
-    if (gap_mode != N) {
-        set_gap_mode(gap_mode);
-    }
-}
-
-inline w_okvl::w_okvl(part_id part, singular_lock_mode partition_mode) {
-    clear();
-    set_partition_mode(part, partition_mode);
-}
-
-inline w_okvl::singular_lock_mode w_okvl::get_partition_mode(part_id partition) const {
-    return  (singular_lock_mode) modes[partition];
-}
-
-inline w_okvl::singular_lock_mode w_okvl::get_wildcard_mode() const {
-    return  (singular_lock_mode) modes[OKVL_PARTITIONS];
-}
-
-inline w_okvl::singular_lock_mode w_okvl::get_gap_mode() const {
-    return  (singular_lock_mode) modes[OKVL_PARTITIONS + 1];
-}
-
-inline bool w_okvl::is_empty() const {
-    // because individual partition mode should leave an intent mode on wildcard,
-    // we can just check the wildcard and gap.
-    return (get_wildcard_mode() == N && get_gap_mode() == N);
-}
-
-inline bool w_okvl::is_keylock_empty() const {
-    // same as above
-    return (get_wildcard_mode() == N);
-}
-
-inline bool w_okvl::contains_x_lock() const {
-    if (get_wildcard_mode() == X) {
-        return true;
-    } else if (get_wildcard_mode() == IX || get_wildcard_mode() == SIX) {
-        // same above. They should have left IX in wildcard.
-        // so, we check individual partitions only in that case.
-        for (part_id part = 0; part < OKVL_PARTITIONS; ++part) {
-            if (get_partition_mode(part) == X) {
-                return true;
-            }
-        }
-    }
-    return (get_gap_mode() == X);
-}
-
-inline void w_okvl::set_partition_mode(part_id partition, singular_lock_mode mode) {
-    modes[partition] = (unsigned char) mode;
-    
-    // also set the intent mode to wildcard
-    singular_lock_mode parent_mode = parent_lock_mode[mode];
-    set_wildcard_mode(combined_lock_modes[parent_mode][get_wildcard_mode()]);
-}
-
-inline void w_okvl::set_wildcard_mode(singular_lock_mode mode) {
-    modes[OKVL_PARTITIONS] = mode;
-}
-
-inline void w_okvl::set_gap_mode(singular_lock_mode mode) {
-    modes[OKVL_PARTITIONS + 1] = mode;
-}
-
-inline void w_okvl::clear() {
-    ::memset(modes, 0, sizeof(w_okvl));
-}
-
-inline bool w_okvl::is_compatible_request(
-    const w_okvl &requested) const {
-    return w_okvl::is_compatible(requested, *this);
-}
-
-inline bool w_okvl::is_compatible_grant(
-    const w_okvl &granted) const {
-    return w_okvl::is_compatible(*this, granted);
-}
-
-inline bool w_okvl::is_compatible(
-    const w_okvl &requested,
-    const w_okvl &granted) {
-    // So far we use a straightforward for loop to check.
-    // When k is small, we might want to apply some optimization,
-    // but let's consider it later. Most likely this is not the major bottleneck.
-
-    // 1. check gap. gap is totally orthogonal to any others, so this is it.
-    if (!is_compatible_singular(requested.get_gap_mode(), granted.get_gap_mode())) {
-        return false;
-    }
-    
-    // 2. check wildcard partition of the request.
-    // this is only wildcard vs. wildcard, just like intent lock mode compatibility.
-    if (!is_compatible_singular(requested.get_wildcard_mode(), granted.get_wildcard_mode())) {
-        return false;
-    }
-
-    // 3. check usual partitions of the request.
-    // Because individual partition locks should have left intent mode on wildcard,
-    // we have to do this only when both of them have some locks on wildcard.
-    if (requested.get_wildcard_mode() != N && granted.get_wildcard_mode() != N) {
-        for (part_id partition = 0; partition < OKVL_PARTITIONS; ++partition) {
-            singular_lock_mode req = requested.get_partition_mode(partition);
-            if (!is_compatible_singular(req, granted.get_partition_mode(partition))) {
-                return false;
-            }
-        }
-    }
-    
-    return true;
-}
-
-inline w_okvl::part_id w_okvl::compute_part_id(const void* uniquefier, int uniquefier_length) {
-    const uint32_t HASH_SEED_32 = 0x35D0B891;
-    const unsigned char HASH_SEED_8 = 0xDB;
-    const int W = sizeof(uint32_t);
-    uint64_t hash = 0;
-    for (int word = 0; word < uniquefier_length / W; ++word) {
-        hash = (hash * HASH_SEED_32) + reinterpret_cast<const uint32_t*>(uniquefier)[word];
-    }
-
-    for (int remaining = uniquefier_length / W * W; remaining < uniquefier_length; ++remaining) {
-        hash = (hash * HASH_SEED_8) + reinterpret_cast<const unsigned char*>(uniquefier)[remaining];
-    }
-    
-    // so far simply mod on hash. mod/div is expensive, but probably not an issue.
-    return (w_okvl::part_id) (hash % OKVL_PARTITIONS);
-}
-
-inline w_okvl w_okvl::combine(const w_okvl& left, const w_okvl& right) {
-    w_okvl ret;
-    for (part_id part = 0; part < OKVL_PARTITIONS; ++part) {
-        // here, we do not use set_partition_mode() to skip setting the intent modes on wildcard.
-        // as far as both left and right are in consistent state, just combining wildcard alone is enough.
-        ret.modes[part] = (unsigned char) combined_lock_modes[left.get_partition_mode(part)][right.get_partition_mode(part)];
-    }
-    ret.set_wildcard_mode(combined_lock_modes[left.get_wildcard_mode()][right.get_wildcard_mode()]);
-    ret.set_gap_mode(combined_lock_modes[left.get_gap_mode()][right.get_gap_mode()]);
-    return ret;
-}
-
-inline bool w_okvl::operator==(const w_okvl& r) const {
-    if (this == &r) {
-        return true; // quick check in case this and r are the same object.
-    }
-    return ::memcmp(modes, r.modes, OKVL_MODE_COUNT) == 0;
-}
-inline bool w_okvl::operator!=(const w_okvl& r) const {
-    return !(operator==(r));
-}
-
-inline std::ostream& operator<<(std::ostream& o, const w_okvl& v) {
-    if (v.is_empty()) {
-        o << "<Empty>";
-    } else {
-        for (w_okvl::part_id part = 0; part < OKVL_PARTITIONS; ++part) {
-            if (v.get_partition_mode(part) != w_okvl::N) {
-                o << "<key_" << part << "=" << singular_mode_names[v.get_partition_mode(part)] << ">,";
-            }
-        }
-        if (v.get_wildcard_mode() != w_okvl::N) {
-            o << "<key_*=" << singular_mode_names[v.get_wildcard_mode()] << ">,";
-        }
-        if (v.get_gap_mode() != w_okvl::N) {
-            o << "<gap=" << singular_mode_names[v.get_gap_mode()] << ">";
-        }
-    }
-    return o;
-}
-
 #endif // W_OKVL_H
-

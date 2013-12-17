@@ -8,6 +8,7 @@
 #include "w_defines.h"
 
 #include "w_okvl.h"
+#include "w_okvl_inl.h"
 #include "kvl_t.h"
 #include "lock_s.h"
 

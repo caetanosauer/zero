@@ -13,7 +13,6 @@
 #include "w_defines.h"
 #include "vid_t.h"
 #include "stid_t.h"
-#include "w_okvl.h"
 
 class btree_page_h;
 struct btree_stats_t;
@@ -22,6 +21,7 @@ struct btree_lf_stats_t;
 struct btree_int_stats_t;
 class w_keystr_t;
 class verify_volume_result;
+struct w_okvl;
 /**
  * Data access API for B+Tree.
  * \ingroup SSMBTREE

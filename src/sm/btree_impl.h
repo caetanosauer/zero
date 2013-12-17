@@ -10,6 +10,7 @@
 #include "btree.h"
 #include "kvl_t.h"
 #include "btree_verify.h"
+#include "w_okvl_inl.h" // need to include this to inline create_part_okvl()
 
 /**
  * \brief The internal implementation class which actually implements the
@@ -622,7 +623,9 @@ public:
      * @see _ux_lock_key()
      * @param[in] exact_hit_lock_mode this mode is used if the search
      * hits the low fence key (so, logically a miss, but physically a hit).
-     * This would be a lock on key, not gap.
+     * This would be a lock on key, not gap. Such a low fence key is
+     * guaranteed to keep existing even during page-merge, so we
+     * can safely take a lock on it, which is more concurrent than below.
      * @param[in] miss_lock_mode this mode is used if the search does not
      * hit the low fence key. This would be a lock on gap, not key.
      */
@@ -834,40 +837,19 @@ public:
 
     /**
     * Helper method to create an OKVL instance on one partition,
-    * using the given key/data pair.
+    * using the given key.
     */
     static w_okvl create_part_okvl(
         w_okvl::singular_lock_mode mode,
-        const w_keystr_t&    /*key*/,
-        const void* el, smsize_t el_size) {
+        const w_keystr_t&    key) {
         w_okvl ret;
 
         // TODO where to get uniquefier from. So far we don't have this information.
-        // So, just hash all parts of the data. This is unnecessary.
-        w_okvl::part_id part = w_okvl::compute_part_id(el, el_size);
+        // So, just hash all parts of the key. This is unnecessary.
+        w_okvl::part_id part = w_okvl::compute_part_id(key.buffer_as_keystr(), key.get_length_as_keystr());
         
         ret.set_partition_mode(part, mode);
         return ret;
-    }
-
-    /** cvec_t overload. */
-    static w_okvl create_part_okvl(
-        w_okvl::singular_lock_mode mode,
-        const w_keystr_t&    key,
-        const cvec_t&        el) {
-        // wanna avoid copying here, but let's do that later...
-        std::basic_string<unsigned char> buffer;
-        el.copy_to(buffer);
-        return create_part_okvl(mode, key, buffer.data(), buffer.size());
-    }
-
-    /** In case el is not available. */
-    static w_okvl create_part_okvl(
-        w_okvl::singular_lock_mode mode,
-        const w_keystr_t&    /*key*/) {
-        // TODO This method doesn't make sense once we implement non-unique index.
-        // This is just a tentative code.
-        return w_okvl(0, mode);
     }
     
 #ifdef DOXYGEN_HIDE

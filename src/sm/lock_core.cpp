@@ -18,6 +18,8 @@
 #include "tls.h"
 #include "lock_compt.h"
 #include "lock_bucket.h"
+#include "w_okvl.h"
+#include "w_okvl_inl.h"
 
 #ifdef EXPLICIT_TEMPLATE
 template class w_auto_delete_array_t<unsigned>;
@@ -307,7 +309,7 @@ void lock_core_m::release_lock(
     // update lock tag if this is a part of SX-ELR.
     if (commit_lsn.valid()) {
         const w_okvl& m = req->_granted_mode;
-        if (m.contains_x_lock()) {
+        if (m.contains_dirty_lock()) {
             spinlock_write_critical_section cs(&lock->_requests_latch);
             lock->update_x_lock_tag(commit_lsn);
         }
@@ -390,7 +392,7 @@ lock_core_m::release_duration(
             xct_lock_entry_t *prev = p->prev; // get this first. release_lock will remove current p
             w_assert1(&p->entry->_thr == g_me());  // safe if true
             const w_okvl& m = p->entry->_granted_mode;
-            if (!m.contains_x_lock()) {
+            if (!m.contains_dirty_lock()) {
                 release_lock(p->queue, p->entry, commit_lsn);
             }
             p = prev;

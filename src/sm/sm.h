@@ -83,8 +83,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <sm_s.h> // declares lsn_t
 #endif
 
-#include "w_okvl.h"
-
 /* DOXYGEN Documentation : */
 
 /**\addtogroup LOGSPACE 
@@ -428,6 +426,7 @@ class prologue_rc_t;
 class w_keystr_t;
 class verify_volume_result;
 class lil_global_table;
+struct w_okvl;
 
 class key_ranges_map;
 /**\addtogroup SSMSP  
