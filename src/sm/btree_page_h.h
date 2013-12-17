@@ -18,6 +18,17 @@ struct btree_lf_stats_t;
 struct btree_int_stats_t;
 
 
+
+typedef uint16_t key_length_t;  // <<<>>>
+
+     /*
+     * When this page belongs to a foster chain, we need to store
+     * high-fence of right-most sibling in every sibling to do
+     * batch-verification with bitmaps.  @see
+     * btree_impl::_ux_verify_volume()
+     */
+
+
 /**
  * \brief Poor man's normalized key type.
  *
@@ -229,7 +240,7 @@ public:
     // FIXME: next 3 functions are temporary for swizzling access <<<>>>
     shpid_t& foster_pointer() { return page()->btree_foster; }
     shpid_t& pid0_pointer()   { return page()->btree_pid0; }
-    shpid_t& child_pointer(slotid_t child) { return *reinterpret_cast<shpid_t*>(&page()->item_data32(child+1)); }
+    shpid_t& child_pointer(slotid_t child) { return page()->item_child(child+1); }
 
     slotid_t                     nitems() const;
 
@@ -690,7 +701,7 @@ public:
 private:
     poor_man_key _poor(int slot) const {
         w_assert1(slot>=0);
-        return page()->item_data16(slot+1);
+        return page()->item_poor(slot+1);
     }
 
     void _get_leaf_key_fields(int slot, int& key_length, char*& trunc_key_data) const {
@@ -921,7 +932,7 @@ inline shpid_t btree_page_h::child_opaqueptr(slotid_t slot) const {
     w_assert1(is_node());
     w_assert1(slot >= 0);
     w_assert1(slot < nrecs());
-    return page()->item_data32(slot+1);
+    return page()->item_child(slot+1);
 }
 
 inline shpid_t btree_page_h::child(slotid_t slot) const {
