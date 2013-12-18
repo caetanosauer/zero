@@ -254,9 +254,6 @@ chkpt_m::wakeup_and_take()
  *        -- dirty page entries in bf and their recovery lsn
  *    4. Checkpoint Transaction Table Log(s) (chkpt_xct_tab)
  *        -- active transactions and their first lsn
- *    5. Checkpoint Prepared Transactions (optional)
- *        -- prepared transactions and their locks
- *         (using the same log records that prepare does)
  *    6. Checkpoint End Log (chkpt_end)
  *
  *********************************************************************/
@@ -545,17 +542,6 @@ void chkpt_m::take()
                         state[i] = xct_t::xct_active;
                     //
 
-                    if (state[i] == xct_t::xct_prepared)  {
-                        DBG(<< tid[i] <<" is prepared -- logging as active");
-                        state[i] = xct_t::xct_active;
-                    }
-                    //  ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-                    // don't worry - it
-                    // will be prepared in the next section.
-                    // this just makes recovery debug-checking
-                    // a little easier
-                    /////////////////////////////////////////
-
                     last_lsn[i] = xd->last_lsn();
                     undo_nxt[i] = xd->undo_nxt();
                     
@@ -579,32 +565,6 @@ void chkpt_m::take()
                                    last_lsn, undo_nxt), 0);
             }
         } while (xd);
-    }
-
-
-    /*
-     *  Checkpoint the prepared transactions 
-     */
-    DBG(<< "checkpoint prepared tx");
-    xct_i x(false);    /* again, the unlocked iterator */
-    xct_t* xd = 0;
-    while( (xd = x.next()) )  {
-        DBG(<< xd->tid() << " has state " << xd->state());
-        if (xd->state() == xct_t::xct_prepared)  {
-            w_assert1(xd->state() == xct_t::xct_prepared);
-            DBG(<< xd->tid() << "LOG PREPARED ");
-            //
-            // To write tx-related log records for a tx,
-            // logstub_gen.cpp functions expect the tx to be attached.
-            // NB: we might be playing with fire by attaching
-            // two threads to the tx.  NOT PREEMPTIVE-SAFE!!!! 
-            // TODO: look into this
-            //
-            me()->attach_xct(xd);
-            w_assert1(xd->state() == xct_t::xct_prepared);
-            W_COERCE(xd->log_prepared(true));
-            me()->detach_xct(xd);
-        }
     }
 
     xct_t::release_xlist_mutex();

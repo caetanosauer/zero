@@ -111,9 +111,6 @@ class lock_core_m; // forward
 class lock_request_t; // forward
 class xct_log_switch_t; // forward
 class xct_lock_info_t; // forward
-class xct_prepare_alk_log; // forward
-class xct_prepare_fi_log; // forward
-class xct_prepare_lk_log; // forward
 class smthread_t; // forward
 class ssx_defer_section_t;
 class lil_private_table;
@@ -206,9 +203,6 @@ class xct_t : public smlevel_1 {
     friend class lock_core_m;
     friend class lock_request_t;
     friend class xct_log_switch_t;
-    friend class xct_prepare_alk_log;
-    friend class xct_prepare_fi_log; 
-    friend class xct_prepare_lk_log; 
     friend class ssx_defer_section_t;
 
 protected:
@@ -276,27 +270,6 @@ public:
 
     timeout_in_ms               timeout_c() const;
 
-    /*  
-     * for 2pc: internal, external
-     */
-public:
-    void                         force_readonly();
-    bool                         forced_readonly() const;
-
-    vote_t                       vote() const;
-    bool                         is_extern2pc() const;
-    rc_t                         enter2pc(const gtid_t &g);
-    const gtid_t*                gtid() const;
-    const server_handle_t&       get_coordinator()const; 
-    void                         set_coordinator(const server_handle_t &); 
-    static rc_t                  recover2pc(const gtid_t &g,
-                                 bool mayblock, xct_t *&);  
-    static rc_t                  query_prepared(int &numtids);
-    static rc_t                  query_prepared(int numtids, gtid_t l[]);
-
-    rc_t                         prepare();
-    rc_t                         log_prepared(bool in_chkpt=false);
-
     /*
      * basic tx commands:
      */
@@ -337,7 +310,6 @@ protected:
     void                        set_first_lsn(const lsn_t &) ;
     void                        set_last_lsn(const lsn_t &) ;
     void                        set_undo_nxt(const lsn_t &) ;
-    void                        prepare_restore_log_resv(int, int, int, int);
 /**\endcond skip */
 
 public:
@@ -612,7 +584,6 @@ private:
 public:
     void                        ClearAllStoresToFree();
     void                        FreeAllStoresToFree();
-    rc_t                        PrepareLogAllStoresToFree();
     void                        DumpStoresToFree();
     rc_t                        ConvertAllLoadStoresToRegularStores();
     void                        ClearAllLoadStores();
@@ -707,10 +678,6 @@ private:
         mutable pthread_mutex_t   _waiters_mutex;  // paired with _waiters_cond
 
         state_t                   _state;
-        bool                      _forced_readonly;
-        vote_t                    _vote;
-        gtid_t *                  _global_tid; // null if not participating
-        server_handle_t*          _coord_handle; // ignored for now
         bool                      _read_only;
 
         /*
@@ -1129,8 +1096,6 @@ public:
         xct_t::destroy_xct(_xct);
     }
     rc_t commit() {
-        // These are only for local txs
-        // W_DO(_xct->prepare());
         W_DO(_xct->commit());
         return RCOK;
     }
@@ -1146,13 +1111,6 @@ bool
 operator>(const xct_t& x1, const xct_t& x2)
 {
     return (x1.tid() > x2.tid());
-}
-
-inline
-xct_t::vote_t
-xct_t::vote() const
-{
-    return _core->_vote;
 }
 
 inline
@@ -1204,37 +1162,6 @@ xct_t::last_log() const
     return _last_log;
 }
 
-inline
-bool
-xct_t::forced_readonly() const
-{
-    return _core->_forced_readonly;
-}
-
-/*********************************************************************
- *
- *  bool xct_t::is_extern2pc()
- *
- *  return true iff this tx is participating
- *  in an external 2-phase commit protocol, 
- *  which is effected by calling enter2pc() on this
- *
- *********************************************************************/
-inline bool            
-xct_t::is_extern2pc() 
-const
-{
-    // true if is a thread of global tx
-    return _core->_global_tid != 0;
-}
-
-
-inline
-const gtid_t*           
-xct_t::gtid() const 
-{
-    return _core->_global_tid;
-}
 
 /**\endcond skip */
 

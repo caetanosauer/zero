@@ -706,11 +706,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * needed until recovery is complete; the assumption is that if the
  * transaction had enough log space prior to recovery, it has enough space
  * during recovery.
- * Prepared transactions pose a challenge, in that they are not resolved until
- * after recovery is complete. Thus, when a transaction-prepare is logged,
- * the log-space-reservations of that transaction are logged along with the rest of the transaction state (locks, coordinator, etc.) and before 
- * recovery is complete, these transactions acquire their prior log-space
- * reservations.
  *
  * The above protocol is enforced by the storage manager in helper
  * functions that create log records; these functions are generated
@@ -990,9 +985,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *
  * After the storage manager has recovered, control returns from its
  * constructor method to the caller (the server).
- * There might be transactions left in prepared state.  
- * The server is now free to resolve these transactions by 
- * communicating with its coordinator. 
  *
  *\subsection LSNS Log Sequence Numbers
  *
@@ -1084,7 +1076,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *    will be a starting point for crash-recovery, if this is 
  *    the last checkpoint completed before a crash.
  * - Write a series of log records recording the states of the known 
- *    transactions, including the prepared transactions.  
+ *    transactions.  
  * - Write a chkpt_end log record.
  * - Tell the log manage where this checkpoint is: the lsn of the chkpt_begin
  *   log record becomes the new master_lsn of the log. The master_lsn is
@@ -1101,7 +1093,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *   respect to each other.
  *   - A checkpoint and the following are serialized:
  *      - mount or dismount a volume
- *      - prepare a transaction
  *      - commit or abort a transaction (a certain portion of this must
  *        wait until a checkpoint is not happening)
  *      - heriocs to cope with shortage of log space

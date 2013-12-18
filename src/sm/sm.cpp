@@ -1075,68 +1075,6 @@ ss_m::commit_xct(bool lazy, lsn_t* plastlsn)
 }
 
 /*--------------------------------------------------------------*
- *  ss_m::prepare_xct(vote_t &v)                                *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::prepare_xct(vote_t &v)
-{
-    sm_stats_info_t*             _stats=0;
-    rc_t e = prepare_xct(_stats, v);
-    /*
-     * throw away the _stats, since user isn't harvesting... 
-     */
-    delete _stats;
-    return e;
-}
-rc_t
-ss_m::prepare_xct(sm_stats_info_t*&    _stats, vote_t &v)
-{
-    v = vote_bad;
-
-    // NB:special-case checks here !! we use "abortable_xct"
-    // because we want to allow this to be called mpl times
-    //
-    SM_PROLOGUE_RC(ss_m::prepare_xct, abortable_xct, read_write, 0);
-    xct_t& x = *xct();
-    if( x.is_extern2pc() && x.state()==xct_t::xct_prepared) {
-        // already done
-        v = (vote_t)x.vote();
-        return RCOK;
-    }
-
-    // Special case:: ss_m::prepare_xct() is ONLY
-    // for external 2pc transactions. That is enforced
-    // in ss_m::_prepare_xct(...)
-
-    w_rc_t rc = _prepare_xct(_stats, v);
-
-    // TODO: not quite sure how to handle all the
-    // error cases...
-    if(rc.is_error() && !xct()) {
-        // No xct() -- must do this
-        prologue.no_longer_in_xct();
-    } else switch(v) {
-        // vote is one of :
-        // commit -- ok
-        // read-only (no commit necessary)
-        // abort (already aborted)
-        // bad (have no business calling prepare())
-    case vote_abort:
-    case vote_readonly:
-        w_assert3(!xct());
-        prologue.no_longer_in_xct();
-        break;
-    case vote_bad:
-        break;
-    case vote_commit:
-        w_assert3(xct());
-        break;
-    }
-
-    return rc;
-}
-
-/*--------------------------------------------------------------*
  *  ss_m::abort_xct()                                *
  *--------------------------------------------------------------*/
 rc_t
@@ -1166,60 +1104,6 @@ ss_m::abort_xct()
      */
     delete _stats;
     prologue.no_longer_in_xct();
-
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::set_coordinator(...)                            *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::set_coordinator(const server_handle_t &h)
-{
-    SM_PROLOGUE_RC(ss_m::set_coordinator, in_xct, read_write, 0);
-    return _set_coordinator(h);
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::force_vote_readonly(...)                            *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::force_vote_readonly()
-{
-    SM_PROLOGUE_RC(ss_m::force_vote_readonly, in_xct, read_only, 0);
-
-    W_DO(_force_vote_readonly());
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::enter_2pc(...)                            *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::enter_2pc(const gtid_t &gtid)
-{
-    SM_PROLOGUE_RC(ss_m::enter_2pc, in_xct, read_write, 0);
-
-    W_DO(_enter_2pc(gtid));
-    SSMTEST("enter.2pc.1");
-
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::recover_2pc(...)                            *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::recover_2pc(const gtid_t &gtid,
-        bool                mayblock,
-        tid_t                &tid // out
-)
-{
-    SM_PROLOGUE_RC(ss_m::recover_2pc, not_in_xct, read_only,0);
-
-    SSMTEST("recover.2pc.1");
-    W_DO(_recover_2pc(gtid, mayblock, tid));
-    SSMTEST("recover.2pc.2");
 
     return RCOK;
 }
@@ -1921,47 +1805,6 @@ ss_m::_begin_xct(sm_stats_info_t *_stats, tid_t& tid, timeout_in_ms timeout, boo
 }
 
 /*--------------------------------------------------------------*
- *  ss_m::_prepare_xct()                                *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::_prepare_xct(sm_stats_info_t*& _stats, vote_t &v)
-{
-    w_assert3(xct() != 0);
-    xct_t& x = *xct();
-
-    DBG(<<"prepare " );
-
-    if( !x.is_extern2pc() ) {
-        return rc_t(__FILE__, __LINE__, smlevel_0::eNOTEXTERN2PC);
-    }
-
-    W_DO( x.prepare() );
-    if(x.is_instrumented()) { 
-        _stats = x.steal_stats();
-        _stats->compute();
-    }
-
-    v = (vote_t)x.vote();
-    if(v == vote_readonly) {
-        SSMTEST("prepare.readonly.1");
-        W_DO( x.commit() );
-        SSMTEST("prepare.readonly.2");
-        xct_t::destroy_xct(&x);
-        w_assert3(xct() == 0);
-    } else if(v == vote_abort) {
-        SSMTEST("prepare.abort.1");
-        W_DO( x.abort() );
-        SSMTEST("prepare.abort.2");
-        xct_t::destroy_xct(&x);
-        w_assert3(xct() == 0);
-    } else if(v == vote_bad) {
-        W_DO( x.abort() );
-        xct_t::destroy_xct(&x);
-        w_assert3(xct() == 0);
-    }
-    return RCOK;
-}
-/*--------------------------------------------------------------*
  *  ss_m::_commit_xct()                                *
  *--------------------------------------------------------------*/
 rc_t
@@ -1978,13 +1821,7 @@ ss_m::_commit_xct(sm_stats_info_t*& _stats, bool lazy,
         return RCOK;
     }
 
-
-    if(x.is_extern2pc()) {
-        w_assert3(x.state()==xct_prepared);
-        SSMTEST("extern2pc.commit.1");
-    } else {
-        w_assert3(x.state()==xct_active);
-    }
+    w_assert3(x.state()==xct_active);
 
     W_DO( x.commit(lazy,plastlsn) );
 
@@ -2025,12 +1862,7 @@ ss_m::_commit_xct_group(xct_t *list[], int listlen)
     for(int i=0; i < listlen; i++) {
         // verify list
         x = list[i];
-        if(x->is_extern2pc()) {
-            participating++;
-            w_assert3(x->state()==xct_prepared);
-        } else {
-            w_assert3(x->state()==xct_active);
-        }
+        w_assert3(x->state()==xct_active);
     }
     if(participating > 0 && participating < listlen) {
         // some transaction is not participating in external 2-phase commit 
@@ -2080,92 +1912,6 @@ ss_m::_commit_xct_group(xct_t *list[], int listlen)
     }
     return RCOK;
 }
-
-/*--------------------------------------------------------------*
- *  ss_m::_set_coordinator(...)                                *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::_set_coordinator(const server_handle_t &h)
-{
-    w_assert3(xct() != 0);
-    xct_t& x = *xct();
-
-    DBG(<<"set_coordinator " );
-    x.set_coordinator(h); 
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::_force_vote_readonly()                                *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::_force_vote_readonly()
-{
-    w_assert3(xct() != 0);
-    xct_t& x = *xct();
-
-    DBG(<<"force readonly " );
-    x.force_readonly();
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::_enter_2pc()                                *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::_enter_2pc(const gtid_t &gtid)
-{
-    w_assert3(xct() != 0);
-    xct_t& x = *xct();
-
-    DBG(<<"enter 2pc " );
-    W_DO( x.enter2pc(gtid) );
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::_recover_2pc()                                *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::_recover_2pc(const gtid_t &gtid,        
-        bool                mayblock,
-        tid_t                &t
-)
-{
-    // Caller checked this:
-    // SM_PROLOGUE_RC(ss_m::recover_2pc, not_in_xct, 0);
-    //
-    w_assert3(xct() == 0);
-    DBG(<<"recover 2pc " );
-
-    xct_t        *x;
-    W_DO(xct_t::recover2pc(gtid,mayblock,x));
-    if(x) {
-        t = x->tid();
-        me()->attach_xct(x);
-    }
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::query_prepared_xct(int& numtids);
- *  ss_m::query_prepared_xct(int numtids, gtid_t l[]);
- *--------------------------------------------------------------*/
-rc_t
-ss_m::query_prepared_xct(int &numtids)
-{
-    SM_PROLOGUE_RC(ss_m::query_prepared_xct, not_in_xct, read_only, 0);
-    return xct_t::query_prepared(numtids);
-}
-
-rc_t
-ss_m::query_prepared_xct(int numtids, gtid_t list[])
-{
-    SM_PROLOGUE_RC(ss_m::query_prepared_xct, not_in_xct, read_only, 0);
-    return xct_t::query_prepared(numtids, list);
-}
-
-
 
 /*--------------------------------------------------------------*
  *  ss_m::_chain_xct()                                *

@@ -435,22 +435,6 @@ public:
         t_very_long = 4,    /* held across xct boundaries               */
         t_num_durations = 5 /* not a duration -- used for typed comparisons */
     };
-
-    /**\enum vote_t
-     * \brief Votes for two-phase commit.
-     * - vote_readonly : storage manager will return this from 
-     *   ss_m::prepare_xct when transaction has not logged anything.
-     *   See also ss_m::force_vote_readonly.
-     * - vote_abort : Might be returned if error occurs.
-     * - vote_commit : Usual result of prepare.
-     * \ref SSM2PC
-     */
-    enum vote_t {
-        vote_bad,    /* illegit value                */
-        vote_readonly,  /* no ex locks acquired for this tx         */
-        vote_abort,     /* cannot commit                            */
-        vote_commit     /* can commit if so told                    */
-    };
 };
 
 

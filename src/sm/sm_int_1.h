@@ -62,7 +62,6 @@ public:
     enum xct_state_t {  xct_stale = 0x0,  
                         xct_active = 0x1,  // active or rolling back in
                         // recovery/undo, or doing rollback_work
-                        xct_prepared = 0x2, 
                         xct_chaining = 0x3, 
                         xct_committing = 0x4, 
                         xct_aborting = 0x5, 
