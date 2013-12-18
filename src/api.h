@@ -195,7 +195,6 @@ void your_server_thread_t::run()
  * - detach the attached transaction 
  * - attach an arbitrary transaction 
  * - perform work on behalf of the attached transaction
- * - prepare the attached transaction
  * - commit or abort the attached transaction (implicitly detaching it)
  *
  * See \ref SSMXCT for details.

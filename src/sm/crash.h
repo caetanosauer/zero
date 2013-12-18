@@ -48,7 +48,6 @@ if(logtrace) {\
     s <<" th."<<me()->id << " " \
 	    << (const char *)(xct()->state()==xct_active?"Act" : \
 	    xct()->state()==xct_freeing_space?"FrS": \
-	    xct()->state()==xct_prepared?"Pre": \
 	    xct()->state()==xct_aborting?"Abt": \
 	    xct()->state()==xct_committing?"Com": \
 	    xct()->state()==xct_ended?"End": \

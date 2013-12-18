@@ -82,11 +82,6 @@ namespace locking {
 }
 using namespace locking;
 
-/**\brief Types for API used for 2PC */
-namespace two_phase_commit {
-	typedef w_base_t::vote_t  vote_t; 
-}
-using namespace two_phase_commit;
 #endif
 
 

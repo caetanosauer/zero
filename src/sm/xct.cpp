@@ -294,7 +294,7 @@ dumpThreadById(int i) {
  * in the ssm regarding update-threads.
  */
 int
-xct_t::cleanup(bool dispose_prepared)
+xct_t::cleanup(bool /*dispose_prepared*/)
 {
     bool        changed_list;
     int         nprepared = 0;
@@ -343,20 +343,6 @@ xct_t::cleanup(bool dispose_prepared)
                     // delete xd;
                     changed_list = true;
                 }
-                break;
-
-            case xct_prepared: {
-                    if(dispose_prepared) {
-                        me()->attach_xct(xd);
-                        W_COERCE( xd->dispose() );
-                        xd->destroy_xct(xd);
-                        // delete xd;
-                        changed_list = true;
-                    } else {
-                        DBG(<< xd->tid() <<"keep -- prepared ");
-                        nprepared++;
-                    }
-                } 
                 break;
 
             default: {
@@ -454,84 +440,6 @@ xct_t::abort(bool save_stats_structure /* = false */)
         __stats = 0;
     }
     return _abort();
-}
-
-/*********************************************************************
- *
- *  xct_t::recover2pc(...)
- *
- *  Locate a prepared tx with this global tid
- *
- *********************************************************************/
-
-rc_t 
-xct_t::recover2pc(const gtid_t &g,
-        bool        /*mayblock*/,
-        xct_t        *&xd)
-{
-    w_list_i<xct_t, queue_based_lock_t> i(_xlist);
-    while ((xd = i.next()))  {
-        if( xd->state() == xct_prepared ) {
-            if(xd->gtid() &&
-                *(xd->gtid()) == g) {
-                // found
-                // TODO  try to reach the coordinator
-                return RCOK;
-            }
-        }
-    }
-    return RC(eNOSUCHPTRANS);
-}
-
-/*********************************************************************
- *
- *  xct_t::query_prepared(...)
- *
- *  given a buffer into which to write global transaction ids, fill
- *  in those for all prepared tx's
- *
- *********************************************************************/
-rc_t 
-xct_t::query_prepared(int list_len, gtid_t list[])
-{
-    w_list_i<xct_t, queue_based_lock_t> iter(_xlist);
-    int i=0;
-    xct_t *xd;
-    while ((xd = iter.next()))  {
-        if( xd->state() == xct_prepared ) {
-            if(xd->gtid()) {
-                if(i < list_len) {
-                    list[i++]=*(xd->gtid());
-                } else {
-                    return RC(fcFULL);
-                }
-            // } else {
-                // was not external 2pc
-            }
-        }
-    }
-    return RCOK;
-}
-
-/*********************************************************************
- *
- *  xct_t::query_prepared(...)
- *
- *  Tell how many prepared tx's there are.
- *
- *********************************************************************/
-rc_t 
-xct_t::query_prepared(int &numtids)
-{
-    w_list_i<xct_t, queue_based_lock_t> iter(_xlist);
-    numtids=0;
-    xct_t *xd;
-    while ((xd = iter.next()))  {
-        if( xd->state() == xct_prepared ) {
-            numtids++;
-        }
-    }
-    return RCOK;
 }
 
 int
@@ -728,14 +636,6 @@ xct_t::update_youngest_tid(const tid_t &t)
     _nxt_tid.atomic_assign_max(t);
 }
 
-
-void
-xct_t::force_readonly() 
-{
-    acquire_1thread_xct_mutex();
-    _core->_forced_readonly = true;
-    release_1thread_xct_mutex();
-}
 
 void 
 xct_t::put_in_order() {
@@ -952,13 +852,6 @@ operator<<(ostream& o, const xct_t& x)
 {
     o << "tid="<< x.tid();
 
-    o << " global_tid=";
-    if (x._core->_global_tid)  {
-        o << *x._core->_global_tid;
-    }  else  {
-        o << "<NONE>";
-    }
-
     o << "\n" << " state=" << x.state() << " num_threads=" << x._core->_threads_attached << "\n" << "   ";
 
     o << " defaultTimeout=";
@@ -993,10 +886,6 @@ xct_t::xct_core::xct_core(tid_t const &t, state_t s, timeout_in_ms timeout)
     _updating_operations(0),
     _threads_attached(0),
     _state(s),
-    _forced_readonly(false),
-    _vote(vote_bad), 
-    _global_tid(0),
-    _coord_handle(0),
     _read_only(false),
     _storesToFree(stid_list_elem_t::link_offset(), &_1thread_xct),
     _loadStores(stid_list_elem_t::link_offset(), &_1thread_xct),
@@ -1106,8 +995,6 @@ xct_t::xct_t(xct_core* core, sm_stats_info_t* stats,
 xct_t::xct_core::~xct_core()
 {
     w_assert3(_state == xct_ended);
-    delete _global_tid;
-    delete _coord_handle;
     if(_lock_info) {
         agent_lock_info->put(_lock_info);
     }
@@ -1215,41 +1102,6 @@ xct_t::_teardown(bool is_chaining) {
     _log_bytes_reserved_space =
     _log_bytes_rsvd = _log_bytes_ready = _log_bytes_used = 0;
     
-}
-
-/*********************************************************************
- *
- *  xct_t::set_coordinator(...)
- *  xct_t::get_coordinator(...)
- *
- *  get and set the coordinator handle
- *  The handle is an opaque value that's
- *  logged in the prepare record.
- *
- *********************************************************************/
-void
-xct_t::set_coordinator(const server_handle_t &h) 
-{
-    DBGX(<<"set_coord for tid " << tid()
-        << " handle is " << h);
-    /*
-     * Make a copy 
-     */
-    if(!_core->_coord_handle) {
-        _core->_coord_handle = new server_handle_t; // deleted when xct goes way
-        if(!_core->_coord_handle) {
-            W_FATAL(eOUTOFMEMORY);
-        }
-    }
-
-    *_core->_coord_handle = h;
-}
-
-const server_handle_t &
-xct_t::get_coordinator() const
-{
-    // caller can copy
-    return *_core->_coord_handle;
 }
 
 /*********************************************************************
@@ -1399,249 +1251,6 @@ xct_t::find_dependent(xct_dependent_t* ptr)
 
 /*********************************************************************
  *
- *  xct_t::prepare()
- *
- *  Enter prepare state. For 2 phase commit protocol.
- *  Set vote_abort or vote_commit if any
- *  updates were done, else return vote_readonly
- *
- *  We are called here if we are participating in external 2pc,
- *  OR we're just committing 
- *
- *  This does NOT do the commit
- *
- *********************************************************************/
-rc_t 
-xct_t::prepare()
-{
-    // This is to be applied ONLY to the local thread.
-
-    // W_DO(check_one_thread_attached()); // now checked in prologue
-    w_assert1(one_thread_attached());
-
-    // must convert all these stores before entering the prepared state
-    // just as if we were committing.
-    W_DO( ConvertAllLoadStoresToRegularStores() );
-
-    w_assert1(_core->_state == xct_active);
-
-    // default unless all works ok
-    _core->_vote = vote_abort;
-
-    _core->_read_only = (_first_lsn == lsn_t::null);
-
-    if(_core->_read_only || forced_readonly()) {
-        _core->_vote = vote_readonly;
-        // No need to log prepare record
-#if W_DEBUG_LEVEL > 5
-        // This is really a bogus assumption,
-        // since a tx could have explicitly
-        // forced an EX lock and then never
-        // updated anything.  We'll leave it
-        // in until we can run all the scripts.
-        // The question is: should the lock 
-        // be held until the tx is resolved,
-        if(!forced_readonly()) {
-            int        total_EX, total_IX, total_SIX;
-            W_DO(lock_info()->get_lock_totals(total_EX, total_IX, total_SIX));
-            if(total_EX != 0) {
-                cout 
-                   << "WARNING: " << total_EX 
-                   << " write locks held by a read-only transaction thread. "
-                   << " ****** voting read-only ***** "
-                   << "\n";
-             }
-            // w_assert9(total_EX == 0);
-        }
-#endif 
-        // If commit is done in the readonly case,
-        // it's done by ss_m::_prepare_xct(), NOT HERE
-
-        change_state(xct_prepared);
-        // Let the stat indicate how many prepare records were
-        // logged
-        INC_TSTAT(s_prepared);
-        return RCOK;
-    }
-#if X_LOG_COMMENT_ON
-    {
-        w_ostrstream s;
-        s << "prepare "
-        << " lb_rsvd " << _log_bytes_rsvd
-        << " lb_ready " << _log_bytes_ready
-        << " lb_used " << _log_bytes_used
-        << " space_left " << log->space_left();
-        W_DO(log_comment(s.c_str()));
-    }
-#endif
-
-    ///////////////////////////////////////////////////////////
-    // NOT read only
-    ///////////////////////////////////////////////////////////
-
-    if(is_extern2pc() ) {
-        DBGX(<<"logging prepare because e2pc=" << is_extern2pc());
-        W_DO(log_prepared());
-
-    } else {
-        // Not distributed -- no need to log prepare
-    }
-
-    /******************************************
-    // Don't set the state until after the
-    // log records are written, so that
-    // if a checkpoint is going on right now,
-    // it'll not log this tx in the checkpoint
-    // while we are logging it.
-    ******************************************/
-
-    change_state(xct_prepared);
-    INC_TSTAT(prepare_xct_cnt);
-
-    _core->_vote = vote_commit;
-    return RCOK;
-}
-
-/*********************************************************************
- * xct_t::log_prepared(bool in_chkpt)
- *  
- * log a prepared tx 
- * (fuzzy, so to speak -- can be intermixed with other records)
- * 
- * 
- * called from xct_t::prepare() when tx requests prepare,
- * also called during checkpoint, to checkpoint already prepared
- * transactions
- * When called from checkpoint, the argument should be true, false o.w.
- *
- *********************************************************************/
-
-rc_t
-xct_t::log_prepared(bool in_chkpt)
-{
-    FUNC(xct_t::log_prepared);
-    w_assert1(_core->_state == (in_chkpt?xct_prepared:xct_active));
-
-    w_rc_t rc;
-
-    if( !in_chkpt)  {
-        // grab the mutex that serializes prepares & chkpts
-        chkpt_serial_m::trx_acquire();
-    }
-
-
-    SSMTEST("prepare.unfinished.0");
-
-    if( ! _core->_coord_handle ) {
-                return RC(eNOHANDLE);
-    }
-    rc = log_xct_prepare_st(_core->_global_tid, *_core->_coord_handle);
-    if (rc.is_error()) { RC_AUGMENT(rc); goto done; }
-
-    SSMTEST("prepare.unfinished.1");
-    {
-
-    /*
-     * We will not get here if this is a read-only
-     * transaction -- according to _read_only, above
-    */
-
-    /*
-     *  Figure out how to package the locks
-     *  If they all fit in one record, do that.
-     *  If there are lots of some kind of lock (most
-     *  likely EX in that case), split those off and
-     *  write them in a record of uniform lock mode.
-     */  
-    int i = 0;
-    // TODO now we have multiple types of EX locks
-    // that we need to record. Need to rethink
-
-    if (i < prepare_lock_t::max_locks_logged)  {
-            // EX ONLY
-            // we can fit them *all* in one record
-            lockid_t* space_l = new lockid_t[i]; // auto-del
-            w_auto_delete_array_t<lockid_t> auto_del_l(space_l);
-
-            // TODO get all EX/XN/XS/... locks
-
-            SSMTEST("prepare.unfinished.2");
-
-            rc = log_xct_prepare_lk( i, EX, space_l);
-            if (rc.is_error()) { RC_AUGMENT(rc); goto done; }
-    }
-    }
-
-    W_DO( PrepareLogAllStoresToFree() );
-
-    SSMTEST("prepare.unfinished.5");
-
-    //TODO EX lock counts
-    rc = log_xct_prepare_fi(0, 0, 0,
-        this->first_lsn(), 
-        int(_log_bytes_rsvd), int(_log_bytes_ready), int(_log_bytes_used)
-        );
-    if (rc.is_error()) { RC_AUGMENT(rc); goto done; }
-
-done:
-    // We have to force the log record to the log
-    // If we're not in a chkpt, we also have to make
-    // it durable
-    if( !in_chkpt)  {
-        _sync_logbuf();
-
-        // free the mutex that serializes prepares & chkpts
-        chkpt_serial_m::trx_release();
-    }
-    return rc;
-}
-
-/* 
- * called by log record xct_prepare_fi.redo() 
- * to restore the log reservation info
- * so that the prepared xct can reserve what it needs to
- * abort.
- */
-void
-xct_t::prepare_restore_log_resv(int rsvd, int ready, int used,
-        int prepare_fi_size)
-{
-    DBG( << "rsvd " << _log_bytes_rsvd << " ready " << _log_bytes_ready
-            << " used " << _log_bytes_used);
-    DBG( << "At prepare-end: rsvd was " << rsvd << " ready was " << ready
-            << " used was " << used );
-    DBG( << "Log space available is now " << log->space_left()  );
-
-    fileoff_t needed = rsvd;
-    needed += prepare_fi_size;
-    if(!log->reserve_space(needed)) {
-        cerr<< "Could not reserve space for prepared xct!" << "\n"
-            << "Need "<<needed<<" (rsvd "<<rsvd<<",ready "<<ready<<" ,used "<<used<<")" <<"\n";
-        W_FATAL(eOUTOFLOGSPACE);
-    }
-    _log_bytes_reserved_space = needed;
-    w_assert1(_log_bytes_reserved_space >= 0);
-
-    // Split up the log reservation:
-    // enough in ready to write a small log record; the
-    // rest for aborting.  The ready amount below doesn't
-    // have to be the size of a prepare record.
-    _log_bytes_rsvd = fileoff_t(rsvd); // to abort
-    // whatever was ready before the crash should now be avail space
-    // in the log manager. 
-    _log_bytes_ready = prepare_fi_size; 
-    _log_bytes_used = fileoff_t(used + prepare_fi_size); // from before 
-    // the crash/restart, will have had used, followed by the
-    // prepare_fi record.
-    
-    DBG( << "Now rsvd " << _log_bytes_rsvd << " ready " << _log_bytes_ready
-            << " used " << _log_bytes_used);
-    DBG( << "Log space available is now " << log->space_left()  );
-}
-
-
-/*********************************************************************
- *
  *  xct_t::commit(flags)
  *
  *  Commit the transaction. If flag t_lazy, log is not synced.
@@ -1680,11 +1289,7 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
     w_assert2(individual || ((flags & xct_t::t_chain) ==0));
     w_assert2(individual || ((flags & xct_t::t_lazy) ==0));
 
-    if(is_extern2pc()) {
-        w_assert1(_core->_state == xct_prepared);
-    } else {
-        w_assert1(_core->_state == xct_active || _core->_state == xct_prepared);
-    };
+    w_assert1(_core->_state == xct_active);
 
     w_assert1(_core->_xct_ended++ == 0);
 
@@ -2003,7 +1608,7 @@ xct_t::_abort()
 
         W_DO(rc);
 
-        if (_xct_chain_len > 0 || state() == xct_prepared) {
+        if (_xct_chain_len > 0) {
             // we need to flush only if it's chained or prepared xct
             _sync_logbuf();
         } else {
@@ -2036,36 +1641,6 @@ xct_t::_abort()
     INC_TSTAT(abort_xct_cnt);
     return RCOK;
 }
-
-
-/*********************************************************************
- *
- *  xct_t::enter2pc(...)
- *
- *  Mark this tx as a thread of a global tx (participating in EXTERNAL
- *  2PC)
- *
- *********************************************************************/
-rc_t 
-xct_t::enter2pc(const gtid_t &g)
-{
-    W_DO(check_one_thread_attached());// ***NOT*** checked in prologue
-    w_assert1(_core->_state == xct_active);
-
-    if(is_extern2pc()) {
-        return RC(eEXTERN2PCTHREAD);
-    }
-    _core->_global_tid = new gtid_t; //deleted when xct goes away
-    if(!_core->_global_tid) {
-        W_FATAL(eOUTOFMEMORY);
-    }
-    DBGX(<<"ente2pc for tid " << tid() 
-        << " global tid is " << g);
-    *_core->_global_tid = g;
-
-    return RCOK;
-}
-
 
 /*********************************************************************
  *
@@ -3273,14 +2848,6 @@ xct_t::FreeAllStoresToFree()
 {
     // TODO not implemented
 }
-
-rc_t
-xct_t::PrepareLogAllStoresToFree()
-{
-    // TODO not implemented
-    return RCOK;
-}
-
 
 void
 xct_t::DumpStoresToFree()

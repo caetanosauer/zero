@@ -172,7 +172,7 @@ prologue_rc_t::prologue_rc_t(
             || (_the_xct->state() != smlevel_1::xct_active)) {
 
             _rc = rc_t(__FILE__, __LINE__, 
-                    (_the_xct && _the_xct->state() == smlevel_1::xct_prepared)?
+                    (_the_xct)?
                     smlevel_0::eISPREPARED :
                     smlevel_0::eNOTRANS
                 );
@@ -182,19 +182,10 @@ prologue_rc_t::prologue_rc_t(
 
     case commitable_xct: {
         // called from commit and chain
-        // If this tx is participating in an external 2pc,
-        // it MUST be prepared before commit.  
-        //
-        // Furthermore, we cannot have more than one thread attached.
         int        error = 0;
         if ( ! _the_xct  ) {
             error = smlevel_0::eNOTRANS;
-        } else if (_the_xct->is_extern2pc() && 
-                (_the_xct->state() != smlevel_1::xct_prepared) ) 
-        {
-            error = smlevel_0::eNOTPREPARED;
-        } else if( (_the_xct->state() != smlevel_1::xct_active) 
-                && (_the_xct->state() != smlevel_1::xct_prepared) 
+        } else if( (_the_xct->state() != smlevel_1::xct_active)
                 ) {
             error = smlevel_0::eNOTRANS;
         }
@@ -209,12 +200,8 @@ prologue_rc_t::prologue_rc_t(
     }
 
     case abortable_xct:
-        // do not special-case external2pc transactions -- they
-        // can abort any time, since this is presumed-abort protocol
-        //
-        // But we must be sure there's only one thread attached.
-        if (! _the_xct || (_the_xct->state() != smlevel_1::xct_active && 
-                _the_xct->state() != smlevel_1::xct_prepared)) {
+        // We must be sure there's only one thread attached.
+        if (! _the_xct || (_the_xct->state() != smlevel_1::xct_active)) {
             _rc = rc_t(__FILE__, __LINE__, smlevel_0::eNOTRANS);
             check_log = false;
         }

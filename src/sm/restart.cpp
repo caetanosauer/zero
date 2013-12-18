@@ -122,7 +122,6 @@ restart_m::recover(lsn_t master)
         xct_t* xd;
         while ((xd = iter.next()))  {
             w_assert2(  xd->state() == xct_t::xct_active ||
-                    xd->state() == xct_t::xct_prepared ||
                     xd->state() == xct_t::xct_freeing_space );
             DBGOUT5(<< "transaction " << xd->tid() << " has state " << xd->state());
         }
@@ -196,8 +195,7 @@ restart_m::recover(lsn_t master)
         xct_i iter(true); // lock list
         xct_t* xd;
         while ((xd = iter.next()))  {
-            w_assert1(  xd->state() == xct_t::xct_active ||
-                        xd->state() == xct_t::xct_prepared);
+            w_assert1(  xd->state() == xct_t::xct_active);
             DBGOUT5(<< "Transaction " << xd->tid() << " has state " << xd->state());
         }
         DBGOUT5(<<"END TX TABLE at end of analysis:");
@@ -235,54 +233,6 @@ restart_m::recover(lsn_t master)
     smlevel_0::errlog->clog << info_prio 
         << "First new transaction will be greater than "
         << xct_t::youngest_tid() << flushl;
-
-#if W_DEBUG_LEVEL >= 0
-    /* Print the prepared xcts even if not in debug mode 
-     * because the locks held by prepared transactions
-     * can prevent any other work from being done
-     */
-    {
-        int number=0;
-
-        smlevel_0::errlog->clog << info_prio 
-        << "Prepared transactions:" << endl;
-        DBGOUT5(<<"TX TABLE at end of recovery:");
-        xct_i iter(true); // lock list
-        xct_t* xd;
-        while ((xd = iter.next()))  {
-            w_assert0(xd->state()==xct_t::xct_prepared);
-            server_handle_t ch = xd->get_coordinator();
-            const gtid_t *gtid = xd->gtid();
-            smlevel_0::errlog->clog << info_prio 
-                << "Tid: " <<xd->tid() << endl;
-                if(gtid) {
-                    smlevel_0::errlog->clog << info_prio 
-                    << "\t Global tid: " << *gtid << endl;
-                } else {
-                    smlevel_0::errlog->clog << info_prio 
-                    << "\t No global tid. " << endl;
-                }
-                smlevel_0::errlog->clog << info_prio 
-                << "\t Coordinator: " << ch
-                << flushl;
-            number++;
-        }
-        if(number == 0) {
-            smlevel_0::errlog->clog << info_prio  << " none." << endl;
-        } else {
-            smlevel_0::errlog->clog << info_prio 
-            << "*************************  WARNING ****************************"
-            << endl
-            << endl
-            << "WARNING: There are prepared transactions to be resolved!" 
-            << endl
-            << endl
-            << "***************************************************************"
-            << endl;
-        }
-        DBG(<<"END TX TABLE at end of recovery:");
-    }
-#endif 
 
     // turn pointer swizzling on again
     if (org_swizzling_enabled) {
@@ -414,22 +364,6 @@ restart_m::analysis_pass(
         }
 
         switch (r.type()) {
-        case logrec_t::t_xct_prepare_st:
-        case logrec_t::t_xct_prepare_lk:
-        case logrec_t::t_xct_prepare_alk:
-        case logrec_t::t_xct_prepare_stores:
-        case logrec_t::t_xct_prepare_fi:
-            if (num_chkpt_end_handled == 0)  {
-                // - redo now, because our redo phase can start after
-                //   the master checkpoint.
-                // - records after chkpt will be handled in redo and only
-                //   if the xct is not in the prepared state to prevent
-                // - redoing these records.
-                //   records before/during chkpt will be ignored in redo
-                r.redo(0);
-            }
-            break;
-
         case logrec_t::t_chkpt_begin:
             /*
              *  Found an incomplete checkpoint --- ignore 
@@ -606,8 +540,7 @@ restart_m::analysis_pass(
                     /*
                      *  Remove xct from xct tab
                      */
-                    if (xd->state() == xct_t::xct_prepared || 
-                            xd->state() == xct_t::xct_freeing_space) 
+                    if (xd->state() == xct_t::xct_freeing_space) 
                     {
                         /*
                          * was prepared in the master
@@ -629,8 +562,7 @@ restart_m::analysis_pass(
             /*
              *  Remove xct from xct tab
              */
-            if (xd->state() == xct_t::xct_prepared || 
-                    xd->state() == xct_t::xct_freeing_space) 
+            if (xd->state() == xct_t::xct_freeing_space) 
             {
                 /*
                  * was prepared in the master
@@ -879,13 +811,8 @@ restart_m::redo_pass(
                             r.redo(0);
                             redone = true;
                         }  else  {
-                            DBGOUT5(<<"no page, prepared xct " << r.tid());
-                            w_assert1(xd->state() == xct_t::xct_prepared);
-                            w_assert2(r.type() == logrec_t::t_xct_prepare_st
-                                ||    r.type() == logrec_t::t_xct_prepare_lk
-                                ||    r.type() == logrec_t::t_xct_prepare_alk
-                                ||    r.type() == logrec_t::t_xct_prepare_stores
-                                ||    r.type() == logrec_t::t_xct_prepare_fi);
+                            // as there is no longer prepared xct, we shouldn't hit here.
+                            w_assert0(false);
                         }
                     }
                 }  else  {

@@ -113,11 +113,6 @@ xct_abort          1000000 0.0 ();
 xct_freeing_space  1000000 0.0 ();
 xct_end            1000000 0.0 ();
 xct_end_group      1000000 0.0 (const xct_t** l, int llen);
-xct_prepare_st     1010000 0.0 (const gtid_t* g, const server_handle_t& h);
-xct_prepare_lk     1010000 0.0 (int num, w_base_t::lock_mode_t mode, lockid_t* lks);
-xct_prepare_alk    1010000 0.0 (int num, lockid_t* lks, w_base_t::lock_mode_t* modes);
-xct_prepare_stores 1010000 0.0 (int num, const stid_t* stids);
-xct_prepare_fi     1010000 0.0 (int numex, int numix, int numsix, const lsn_t& first, int rsvd, int ready, int used);
 #########################################################################
 # type             XSRUFAL  fudge    arg                                #
 #########################################################################

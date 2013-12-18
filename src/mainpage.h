@@ -156,7 +156,6 @@ to the following restrictions:
  *  - transactions with ACID properties, with ARIES-based logging and recovery,
  *  primitives for partial rollback,
  *  transaction chaining, and early lock release,
- *  - prepared-transaction support for two-phased commit,
  *  - persistent storage structures : 
  *  B+ tree indexes and files of untyped records,
  *  - fine-grained locking for records and B+ tree indexes with deadlock detection,

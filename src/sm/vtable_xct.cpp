@@ -100,14 +100,9 @@ xct_t::vtable_collect(vtable_row_t &t)
     // xct_nthreads_attr
     t.set_int(xct_nthreads_attr, num_threads());
 
-    // xct_gtid_attr
-    if(is_extern2pc()) {
-        w_ostrstream        s;
-        s << *gtid() << ends;
-        t.set_string(xct_gtid_attr, s.c_str());
-    } else {
-        t.set_string(xct_gtid_attr, "");
-    }
+    // xct_gtid_attr (not used)
+    t.set_string(xct_gtid_attr, "");
+
     // xct_tid_attr
     {
         w_ostrstream o;
@@ -122,18 +117,12 @@ xct_t::vtable_collect(vtable_row_t &t)
         t.set_string(xct_state_attr, o.c_str());
     }
 
-    // xct_coordinator_attr
-    if(state() == xct_prepared) {
-        w_ostrstream        s;
-        s << get_coordinator() << ends;
-        t.set_string(xct_coordinator_attr, s.c_str());
-    } else {
-        t.set_string(xct_coordinator_attr, "");
-    }
+    // xct_coordinator_attr (not used)
+    t.set_string(xct_coordinator_attr, "");
 
-    // xct_forced_readonly_attr
+    // xct_forced_readonly_attr (not used)
     t.set_string(xct_forced_readonly_attr, 
-            (forced_readonly()?"true":"false"));
+            "false");
 }
 
 void        
