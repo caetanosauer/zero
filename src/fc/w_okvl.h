@@ -36,7 +36,7 @@ struct w_okvl_consts;
  * There are constant instances to quickly get frequently-used lock modes.
  * Otherwise, you have to instantiate this struct. Hope it fits on stack.
  *
- * \section OKVL (Orthogonal Key Value Locking)
+ * \section OKVL OKVL (Orthogonal Key Value Locking)
  * \e OKVL is a more concurrent and simple lock mode design compared to
  * ARIES \e KVL (Key Value Locking), Lomet's \e KRL (Key Range Locking),
  * and Graefe's \e OKRL (Orthogonal Key Range Locking).
@@ -61,7 +61,7 @@ struct w_okvl_consts;
  * absolute lock mode (e.g., S) rather than intent mode (e.g., IS).
  * For example, a scanning transaction has to protect all entries under the key.
  * 
- * \section Uniquefier in non-unique indexes
+ * \section Uniquefier Uniquefier in non-unique indexes
  * It depends on the implementation of non-unique indexes.
  * Some database appends uniquefiers to keys (so, physically making it a unique index except
  * lock manager behavior) while other stores uniquefiers as data (thus, "value" is a list).
