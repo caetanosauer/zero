@@ -1250,8 +1250,6 @@ xct_t::find_dependent(xct_dependent_t* ptr)
 
 /*********************************************************************
  *
-    */
-#endif // Disable prepare
  *  xct_t::commit(flags)
  *
  *  Commit the transaction. If flag t_lazy, log is not synced.
