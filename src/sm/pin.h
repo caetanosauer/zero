@@ -224,7 +224,7 @@ public:
     rc_t        pin(
         const rid_t &          rid,
         smsize_t               start,
-        w_okvl::singular_lock_mode lmode = w_okvl::S,
+        okvl_mode::singular_lock_mode lmode = okvl_mode::S,
         const bool             bIgnoreLatches = false);
 
     /**\brief Pin a portion of the record starting at a given location. 
@@ -235,7 +235,7 @@ public:
     rc_t        pin(
         const rid_t &          rid,
         smsize_t               start,
-        w_okvl::singular_lock_mode lock_mode,
+        okvl_mode::singular_lock_mode lock_mode,
         latch_mode_t           latch_mode);
 
     /**\brief Unpin whatever record was pinned.  */
@@ -253,7 +253,7 @@ public:
      * \details
      * @param[in] lmode  SH or EX
      */
-    rc_t       repin(w_okvl::singular_lock_mode lmode = w_okvl::S);
+    rc_t       repin(okvl_mode::singular_lock_mode lmode = okvl_mode::S);
 
     /**\brief  True if record is pinned and the pin_i is valid
      * \details

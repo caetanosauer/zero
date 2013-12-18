@@ -53,7 +53,7 @@ private:
     friend ostream& operator<<(ostream& o, const lock_queue_entry_t& r);
 
     lock_queue_entry_t (xct_t& xct, smthread_t& thr, xct_lock_info_t& li,
-                        const w_okvl& granted_mode, const w_okvl& requested_mode)
+                        const okvl_mode& granted_mode, const okvl_mode& requested_mode)
         : _xct(xct), _thr(thr), _li(li), _xct_entry(NULL), _prev(NULL), _next(NULL),
             _granted_mode(granted_mode), _requested_mode(requested_mode) {
     }
@@ -66,8 +66,8 @@ private:
     lock_queue_entry_t* _prev;
     lock_queue_entry_t* _next;
 
-    w_okvl              _granted_mode;
-    w_okvl              _requested_mode;
+    okvl_mode              _granted_mode;
+    okvl_mode              _requested_mode;
 };
 /** 
  * Requires holding a read latch for queue._requests_latch where queue
@@ -163,10 +163,10 @@ private:
     void check_can_grant (lock_queue_entry_t* myreq, check_grant_result &result);
 
     //* Requires read access to _requests_latch of queue other_request belongs to
-    bool _check_compatible(const w_okvl& requested_mode, lock_queue_entry_t* other_request, bool proceeds_me, lsn_t& observed);
+    bool _check_compatible(const okvl_mode& requested_mode, lock_queue_entry_t* other_request, bool proceeds_me, lsn_t& observed);
 
     /** opportunistically wake up waiters.  called when some lock is released. */
-    void wakeup_waiters(const w_okvl& released_granted, const w_okvl& released_requested);
+    void wakeup_waiters(const okvl_mode& released_granted, const okvl_mode& released_requested);
 
     
     const uint32_t _hash;  ///< precise hash for this lock queue.
@@ -204,12 +204,12 @@ private:
     lock_queue_entry_t* _tail;
 };
 
-inline bool lock_queue_t::_check_compatible(const w_okvl& requested_mode, lock_queue_entry_t* other_request, bool precedes_me, lsn_t& observed) {
+inline bool lock_queue_t::_check_compatible(const okvl_mode& requested_mode, lock_queue_entry_t* other_request, bool precedes_me, lsn_t& observed) {
     bool compatible;
     if (precedes_me) {
-        compatible = w_okvl::is_compatible(other_request->_requested_mode, requested_mode);
+        compatible = okvl_mode::is_compatible(other_request->_requested_mode, requested_mode);
     } else {
-        compatible = w_okvl::is_compatible(other_request->_granted_mode, requested_mode);
+        compatible = okvl_mode::is_compatible(other_request->_granted_mode, requested_mode);
     }
 
     if (compatible)

@@ -1706,7 +1706,7 @@ lil_global_table* ss_m::get_lil_global_table() {
  *  ss_m::lock()                                *
  *--------------------------------------------------------------*/
 rc_t
-ss_m::lock(const lockid_t& n, const w_okvl& m,
+ss_m::lock(const lockid_t& n, const okvl_mode& m,
            bool check_only, timeout_in_ms timeout)
 {
     SM_PROLOGUE_RC(ss_m::lock, in_xct, read_only, 0);
@@ -1715,7 +1715,7 @@ ss_m::lock(const lockid_t& n, const w_okvl& m,
 }
 
 rc_t
-ss_m::lock(const stid_t& n, const w_okvl& m,
+ss_m::lock(const stid_t& n, const okvl_mode& m,
            bool check_only, timeout_in_ms timeout)
 {
     SUPPRESS_UNUSED_4(n, m, check_only, timeout);
@@ -2156,7 +2156,7 @@ ss_m::_get_du_statistics(vid_t vid, sm_du_stats_t& du, bool audit)
     if(smlevel_0::in_recovery()) {
         return RCOK;
     }
-    W_DO(lm->intent_vol_lock(vid, audit ? w_okvl::S : w_okvl::IS));
+    W_DO(lm->intent_vol_lock(vid, audit ? okvl_mode::S : okvl_mode::IS));
     sm_du_stats_t new_stats;
 
     /*********************************************************
@@ -2257,7 +2257,7 @@ rc_t
 ss_m::_get_volume_meta_stats(vid_t vid, SmVolumeMetaStats& volume_stats, concurrency_t cc)
 {
     if (cc == t_cc_vol)  {
-        W_DO(lm->intent_vol_lock(vid, w_okvl::S));
+        W_DO(lm->intent_vol_lock(vid, okvl_mode::S));
     }  else if (cc != t_cc_none)  {
         return RC(eBADCCLEVEL);
     }

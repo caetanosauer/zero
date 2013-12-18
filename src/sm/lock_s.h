@@ -21,10 +21,10 @@ public:
         t_waiting = 4
     };
 
-    typedef w_okvl::singular_lock_mode lmode_t;
+    typedef okvl_mode::singular_lock_mode lmode_t;
 
     enum {
-        NUM_MODES = w_okvl::COUNT
+        NUM_MODES = okvl_mode::COUNT
     };
 
     static const char* const         mode_str[NUM_MODES];

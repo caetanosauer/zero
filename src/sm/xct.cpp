@@ -563,7 +563,7 @@ xct_t::stash(xct_log_t*&x)
 }
 
 rc_t                        
-xct_t::obtain_locks(const w_okvl& mode, int num, const lockid_t *locks)
+xct_t::obtain_locks(const okvl_mode& mode, int num, const lockid_t *locks)
 {
     int  i;
     rc_t rc;
@@ -584,7 +584,7 @@ xct_t::obtain_locks(const w_okvl& mode, int num, const lockid_t *locks)
 }
 
 rc_t                        
-xct_t::obtain_one_lock(const w_okvl& mode, const lockid_t &lock)
+xct_t::obtain_one_lock(const okvl_mode& mode, const lockid_t &lock)
 {
     DBG(<<"Obtaining 1 lock : " << lock << " in mode " << int(mode));
 

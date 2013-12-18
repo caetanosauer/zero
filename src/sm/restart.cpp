@@ -364,8 +364,6 @@ restart_m::analysis_pass(
         }
 
         switch (r.type()) {
-            /* prepare feature is disabled
-            */
         case logrec_t::t_chkpt_begin:
             /*
              *  Found an incomplete checkpoint --- ignore 
@@ -815,8 +813,6 @@ restart_m::redo_pass(
                         }  else  {
                             // as there is no longer prepared xct, we shouldn't hit here.
                             w_assert0(false);
-                            /* prepare feature is disabled
-                            */
                         }
                     }
                 }  else  {

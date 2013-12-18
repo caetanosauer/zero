@@ -99,7 +99,7 @@ void bt_cursor_t::_set_current_page(btree_page_h &page) {
 rc_t bt_cursor_t::_locate_first() {
     // at the first access, we get an intent lock on store/volume
     if (_needs_lock) {
-        W_DO(smlevel_0::lm->intent_vol_store_lock(stid_t(_vol, _store), _ex_lock ? w_okvl::IX : w_okvl::IS));
+        W_DO(smlevel_0::lm->intent_vol_store_lock(stid_t(_vol, _store), _ex_lock ? okvl_mode::IX : okvl_mode::IS));
     }
     
     if (_lower > _upper || (_lower == _upper && (!_lower_inclusive || !_upper_inclusive))) {
@@ -123,28 +123,27 @@ rc_t bt_cursor_t::_locate_first() {
         // then find the tuple in the page
         leaf.search_leaf(key, found, _slot);
 
-        w_okvl mode;
-        bool empty_mode = false;
+        const okvl_mode *mode = NULL;
         if (found) {
             // exact match!
             _key = key;
             if (_forward) {
                 if (_lower_inclusive) {
                     // let's take range lock too to reduce lock manager calls
-                    mode = _ex_lock ? ALL_X_GAP_X : ALL_S_GAP_S;
+                    mode = _ex_lock ? &ALL_X_GAP_X : &ALL_S_GAP_S;
                     _dont_move_next = true;
                 } else {
-                    mode = _ex_lock ? ALL_N_GAP_X : ALL_N_GAP_S;
+                    mode = _ex_lock ? &ALL_N_GAP_X : &ALL_N_GAP_S;
                     _dont_move_next = false;
                 }
             } else {
                 // in backward case we definitely don't need the range part
                 if (_upper_inclusive) {
-                    mode = _ex_lock ? ALL_X_GAP_N : ALL_S_GAP_N;
+                    mode = _ex_lock ? &ALL_X_GAP_N : &ALL_S_GAP_N;
                     _dont_move_next = true;
                 } else {
                     // in this case, we don't need lock at all
-                    empty_mode = true;
+                    mode = &ALL_N_GAP_N;
                     _dont_move_next = false;
                     // only in this case, _key might disappear. otherwise,
                     // _key will exist at least as a ghost entry.
@@ -167,7 +166,7 @@ rc_t bt_cursor_t::_locate_first() {
                     _dont_move_next = false;
                     leaf.leaf_key(_slot, _key);
                 }
-                mode = _ex_lock ? ALL_N_GAP_X : ALL_N_GAP_S;
+                mode = _ex_lock ? &ALL_N_GAP_X : &ALL_N_GAP_S;
             } else {
                 // subsequent next() will read the previous slot
                 --_slot;
@@ -175,17 +174,17 @@ rc_t bt_cursor_t::_locate_first() {
                     // then, we need to move to even more previous slot in previous page
                     _dont_move_next = false;
                     leaf.copy_fence_low_key(_key);
-                    mode = _ex_lock ? ALL_N_GAP_X : ALL_N_GAP_S;
+                    mode = _ex_lock ? &ALL_N_GAP_X : &ALL_N_GAP_S;
                 } else {
                     _dont_move_next = true;
                     leaf.leaf_key(_slot, _key);
                     // let's take range lock too to reduce lock manager calls
-                    mode = _ex_lock ? ALL_X_GAP_X : ALL_S_GAP_S;
+                    mode = _ex_lock ? &ALL_X_GAP_X : &ALL_S_GAP_S;
                 }
             }
         }
-        if (_needs_lock && !empty_mode) {
-            rc_t rc = btree_impl::_ux_lock_key (leaf, _key, LATCH_SH, mode, false);
+        if (_needs_lock && !mode->is_empty()) {
+            rc_t rc = btree_impl::_ux_lock_key (leaf, _key, LATCH_SH, *mode, false);
             if (rc.is_error()) {
                 if (rc.err_num() == smlevel_0::eLOCKRETRY) {
                     continue;
@@ -346,7 +345,7 @@ rc_t bt_cursor_t::_advance_one_slot(btree_page_h &p, bool &eof)
             // take lock for the fence key
             if (_needs_lock) {
                 lockid_t lid (stid_t(_vol, _store), (const unsigned char*) neighboring_fence.buffer_as_keystr(), neighboring_fence.get_length_as_keystr());
-                w_okvl lock_mode;
+                okvl_mode lock_mode;
                 if (only_low_fence_exact_match) {
                     lock_mode = _ex_lock ? ALL_X_GAP_N: ALL_S_GAP_N;
                 } else {
@@ -368,34 +367,33 @@ rc_t bt_cursor_t::_advance_one_slot(btree_page_h &p, bool &eof)
         // take lock on the next key.
         // NOTE: until we get locks, we aren't sure the key really becomes
         // the next key. So, we use the temporary variable _tmp_next_key_buf.
-        w_okvl mode;
-        bool empty_mode = false;
+        const okvl_mode *mode = NULL;
         {
             p.leaf_key(_slot, _tmp_next_key_buf);
             if (_forward) {
                 int d = _tmp_next_key_buf.compare(_upper);
                 if (d < 0) {
-                    mode = _ex_lock ? ALL_X_GAP_X : ALL_S_GAP_S;
+                    mode = _ex_lock ? &ALL_X_GAP_X : &ALL_S_GAP_S;
                 } else if (d == 0 && _upper_inclusive) {
-                    mode = _ex_lock ? ALL_X_GAP_N : ALL_S_GAP_N;
+                    mode = _ex_lock ? &ALL_X_GAP_N : &ALL_S_GAP_N;
                 } else {
                     eof = true;
-                    empty_mode = true;
+                    mode = &ALL_N_GAP_N;
                 }
             } else {
                 int d = _tmp_next_key_buf.compare(_lower);
                 if (d > 0) {
-                    mode = _ex_lock ? ALL_X_GAP_X : ALL_S_GAP_S;
+                    mode = _ex_lock ? &ALL_X_GAP_X : &ALL_S_GAP_S;
                 } else if (d == 0 && _lower_inclusive) {
-                    mode = _ex_lock ? ALL_X_GAP_X : ALL_S_GAP_S;
+                    mode = _ex_lock ? &ALL_X_GAP_X : &ALL_S_GAP_S;
                 } else {
                     eof = true;
-                    mode = _ex_lock ? ALL_N_GAP_X : ALL_N_GAP_S;
+                    mode = _ex_lock ? &ALL_N_GAP_X : &ALL_N_GAP_S;
                 }
             }
         }
-        if (_needs_lock && !empty_mode) {
-            rc_t rc = btree_impl::_ux_lock_key (p, _tmp_next_key_buf, LATCH_SH, mode, false);
+        if (_needs_lock && !mode->is_empty()) {
+            rc_t rc = btree_impl::_ux_lock_key (p, _tmp_next_key_buf, LATCH_SH, *mode, false);
             if (rc.is_error()) {
                 if (rc.err_num() == smlevel_0::eLOCKRETRY) {
                     W_DO(_check_page_update(p));

@@ -49,21 +49,21 @@ public:
 
     rc_t                        lock(
         const lockid_t&             n, 
-        const w_okvl&               m,
+        const okvl_mode&               m,
         bool                        check_only,
         timeout_in_ms               timeout = WAIT_SPECIFIED_BY_XCT,
-        w_okvl*                    prev_mode = 0,
-        w_okvl*                    prev_pgmode = 0);
+        okvl_mode*                    prev_mode = 0,
+        okvl_mode*                    prev_pgmode = 0);
 
     /**
      * Take an intent lock on the given volume.
      * lock mode must be IS/IX/S/X.
      */
-    rc_t                        intent_vol_lock(vid_t vid, w_okvl::singular_lock_mode m);
+    rc_t                        intent_vol_lock(vid_t vid, okvl_mode::singular_lock_mode m);
     /**
      * Take an intent lock on the given store.
      */
-    rc_t                        intent_store_lock(const stid_t &stid, w_okvl::singular_lock_mode m);
+    rc_t                        intent_store_lock(const stid_t &stid, okvl_mode::singular_lock_mode m);
     /**
      * Take intent locks on the given store and its volume in the same mode.
      * This is used in usual operations like create_assoc/lookup.
@@ -71,7 +71,7 @@ public:
      * operations where you need different lock modes for store and volume.
      * If you only need volume lock, just use intent_vol_lock().
      */
-    rc_t                        intent_vol_store_lock(const stid_t &stid, w_okvl::singular_lock_mode m);
+    rc_t                        intent_vol_store_lock(const stid_t &stid, okvl_mode::singular_lock_mode m);
      
     // rc_t                        unlock(const lockid_t& n);
 
@@ -97,9 +97,9 @@ private:
 
     rc_t                        _lock(
         const lockid_t&              n, 
-        const w_okvl&                m,
-        w_okvl&                      prev_mode,
-        w_okvl&                      prev_pgmode,
+        const okvl_mode&                m,
+        okvl_mode&                      prev_mode,
+        okvl_mode&                      prev_pgmode,
         bool                         check_only,
         timeout_in_ms                timeout
         );

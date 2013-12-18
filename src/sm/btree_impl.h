@@ -601,7 +601,7 @@ public:
         btree_page_h&      leaf,
         const w_keystr_t&   key,
         latch_mode_t        latch_mode,
-        const w_okvl&       lock_mode,
+        const okvl_mode&       lock_mode,
         bool                check_only
     );
 
@@ -611,7 +611,7 @@ public:
         const void         *keystr,
         size_t              keylen,
         latch_mode_t        latch_mode,
-        const w_okvl&       lock_mode,
+        const okvl_mode&       lock_mode,
         bool                check_only
     );
 
@@ -634,8 +634,8 @@ public:
         const w_keystr_t&   key,
         slotid_t slot,
         latch_mode_t        latch_mode,
-        const w_okvl&       exact_hit_lock_mode,
-        const w_okvl&       miss_lock_mode,
+        const okvl_mode&       exact_hit_lock_mode,
+        const okvl_mode&       miss_lock_mode,
         bool                check_only
     );
 
@@ -646,8 +646,8 @@ public:
         size_t              keylen,
         slotid_t slot,
         latch_mode_t        latch_mode,
-        const w_okvl&       exact_hit_lock_mode,
-        const w_okvl&       miss_lock_mode,
+        const okvl_mode&       exact_hit_lock_mode,
+        const okvl_mode&       miss_lock_mode,
         bool                check_only
     );
 
@@ -839,14 +839,14 @@ public:
     * Helper method to create an OKVL instance on one partition,
     * using the given key.
     */
-    static w_okvl create_part_okvl(
-        w_okvl::singular_lock_mode mode,
+    static okvl_mode create_part_okvl(
+        okvl_mode::singular_lock_mode mode,
         const w_keystr_t&    key) {
-        w_okvl ret;
+        okvl_mode ret;
 
         // TODO where to get uniquefier from. So far we don't have this information.
         // So, just hash all parts of the key. This is unnecessary.
-        w_okvl::part_id part = w_okvl::compute_part_id(key.buffer_as_keystr(), key.get_length_as_keystr());
+        okvl_mode::part_id part = okvl_mode::compute_part_id(key.buffer_as_keystr(), key.get_length_as_keystr());
         
         ret.set_partition_mode(part, mode);
         return ret;

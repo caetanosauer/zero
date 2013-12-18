@@ -29,7 +29,7 @@ const int OKVL_MODE_COUNT = (OKVL_PARTITIONS + 1 + 1);
 struct w_okvl_consts;
 
 /**
- * \brief Represents the lock mode of one key entry in the \e OKVL lock manager.
+ * \brief Represents a lock mode of one key entry in the \e OKVL lock manager.
  * \details
  * It consists of lock mode for \e individual paritions,
  * 1 \e master partition, and 1 \e gap after the key.
@@ -72,8 +72,8 @@ struct w_okvl_consts;
  * Or, search "Orthogonal Key Value Locking" on Google Scholar.
  * It's a full-length paper, but it must be worth reading (otherwise punch us).
  */
-struct w_okvl {
-    friend std::ostream& operator<<(std::ostream&, const w_okvl& v);
+struct okvl_mode {
+    friend std::ostream& operator<<(std::ostream&, const okvl_mode& v);
 
     /** typedef for readability. it's just an integer. */
     typedef uint32_t part_id;
@@ -87,25 +87,13 @@ struct w_okvl {
     * (well, lock modes only have partitial orders, anyways)
     */
     enum singular_lock_mode {
-        /** no lock                          */
-        N = 0,
-
-        /** intention share (read)           */
-        IS,
-
-        /** intention exclusive (write)      */
-        IX,
-
-        /** share (read)                     */
-        S,
-
-        /** share with intention exclusive   */
-        SIX,
-
-        /** exclusive (write)                */
-        X,
-        
-        COUNT,
+        /** no lock                          */ N = 0,
+        /** intention share (read)           */ IS,
+        /** intention exclusive (write)      */ IX,
+        /** share (read)                     */ S,
+        /** share with intention exclusive   */ SIX,
+        /** exclusive (write)                */ X,
+        /** Dummy entry to tell # of entries */ COUNT,
     };
 
     /**
@@ -116,19 +104,19 @@ struct w_okvl {
     unsigned char modes[OKVL_MODE_COUNT];
 
     /** Empty constructor that puts N for all partitions and gap. */
-    w_okvl();
+    okvl_mode();
 
     /** Copy constructor. */
-    w_okvl (const w_okvl &r);
+    okvl_mode (const okvl_mode &r);
 
     /** Copy constructor. */
-    w_okvl& operator=(const w_okvl& r);
+    okvl_mode& operator=(const okvl_mode& r);
 
     /** Sets only the master mode and gap mode. */
-    w_okvl(singular_lock_mode master_mode, singular_lock_mode gap_mode);
+    okvl_mode(singular_lock_mode master_mode, singular_lock_mode gap_mode);
 
     /** Sets only an individual partition mode (and its intent mode on master). */
-    w_okvl(part_id part, singular_lock_mode partition_mode);
+    okvl_mode(part_id part, singular_lock_mode partition_mode);
     
     singular_lock_mode get_partition_mode(part_id partition) const;
     singular_lock_mode get_master_mode() const;
@@ -163,17 +151,17 @@ struct w_okvl {
     void clear();
     
     /** Returns whether _this_ granted mode allows the _given_ requested mode. */
-    bool is_compatible_request(const w_okvl &requested) const;
+    bool is_compatible_request(const okvl_mode &requested) const;
 
     /** Returns whether _this_ requested mode can be allowed by the _given_ granted mode. */
-    bool is_compatible_grant(const w_okvl &granted) const;
+    bool is_compatible_grant(const okvl_mode &granted) const;
 
     /** operator overloads. */
-    inline bool operator==(const w_okvl& r) const;
-    inline bool operator!=(const w_okvl& r) const;
+    inline bool operator==(const okvl_mode& r) const;
+    inline bool operator!=(const okvl_mode& r) const;
 
     /** Static function to tell whether the two modes are compatible. */
-    static bool is_compatible(const w_okvl &requested, const w_okvl &granted);
+    static bool is_compatible(const okvl_mode &requested, const okvl_mode &granted);
 
     /** Static function to check if two lock modes are compatible. */
     static bool is_compatible_singular(singular_lock_mode requested, singular_lock_mode granted);
@@ -185,6 +173,6 @@ struct w_okvl {
      * Returns the lock mode after combining the two lock modes.
      *  e.g., X + S = X, S + IX = SIX, etc.
      */
-    static w_okvl combine(const w_okvl& left, const w_okvl& right);
+    static okvl_mode combine(const okvl_mode& left, const okvl_mode& right);
 };
 #endif // W_OKVL_H

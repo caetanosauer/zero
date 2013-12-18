@@ -113,8 +113,8 @@ w_rc_t::errcode_t
 lock_core_m::acquire_lock(
     xct_t*                 xd,
     const lockid_t&        name,
-    const w_okvl&          mode,
-    w_okvl&               prev_mode,
+    const okvl_mode&          mode,
+    okvl_mode&               prev_mode,
     bool                   check_only,
     timeout_in_ms          timeout)
 {
@@ -146,8 +146,8 @@ int
 lock_core_m::_acquire_lock(
     xct_t*                 xd,
     lock_queue_t*          lock,
-    const w_okvl&          mode,
-    w_okvl&                prev_mode,
+    const okvl_mode&          mode,
+    okvl_mode&                prev_mode,
     bool                   check_only,
     timeout_in_ms          timeout,
     xct_lock_info_t*       the_xlinfo)
@@ -178,7 +178,7 @@ lock_core_m::_acquire_lock(
         w_assert1(req->_xct_entry != NULL);
         prev_mode = req->_granted_mode;
         spinlock_write_critical_section cs(&lock->_requests_latch);
-        req->_requested_mode = w_okvl::combine(mode, req->_granted_mode);
+        req->_requested_mode = okvl_mode::combine(mode, req->_granted_mode);
         if (req->_requested_mode == req->_granted_mode) {
             return RET_SUCCESS; // already had the desired lock mode!
         }
@@ -308,7 +308,7 @@ void lock_core_m::release_lock(
     
     // update lock tag if this is a part of SX-ELR.
     if (commit_lsn.valid()) {
-        const w_okvl& m = req->_granted_mode;
+        const okvl_mode& m = req->_granted_mode;
         if (m.contains_dirty_lock()) {
             spinlock_write_critical_section cs(&lock->_requests_latch);
             lock->update_x_lock_tag(commit_lsn);
@@ -318,8 +318,8 @@ void lock_core_m::release_lock(
     //copy these before destroying
     xct_lock_entry_t *xct_entry = req->_xct_entry;
     xct_lock_info_t *li = &req->_li;
-    const w_okvl& released_granted = req->_granted_mode;
-    const w_okvl& released_requested = req->_requested_mode;
+    const okvl_mode& released_granted = req->_granted_mode;
+    const okvl_mode& released_requested = req->_requested_mode;
     lockEntryPool->destroy_object(req);
     lock->wakeup_waiters(released_granted, released_requested);
     if (xct_entry) {
@@ -328,7 +328,7 @@ void lock_core_m::release_lock(
 }
 
 
-void lock_queue_t::wakeup_waiters(const w_okvl& released_granted, const w_okvl& released_requested)
+void lock_queue_t::wakeup_waiters(const okvl_mode& released_granted, const okvl_mode& released_requested)
 {
     if(g_deadlock_dreadlock_interval_ms == 0) // if ==0 (spin), no need to wakeup
         return;
@@ -345,7 +345,7 @@ void lock_queue_t::wakeup_waiters(const w_okvl& released_granted, const w_okvl& 
         // CRITICAL_SECTION(cs, _requests_latch.read_lock());
         for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
             if (p->_granted_mode != p->_requested_mode
-                && !w_okvl::is_compatible(p->_requested_mode, released_granted)) {
+                && !okvl_mode::is_compatible(p->_requested_mode, released_granted)) {
                 p->_li.set_wait_map_obsolete(true);
             }
         }
@@ -360,7 +360,7 @@ void lock_queue_t::wakeup_waiters(const w_okvl& released_granted, const w_okvl& 
         // CRITICAL_SECTION(cs, _requests_latch.read_lock());
         for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
             if (p->_granted_mode != p->_requested_mode
-                && w_okvl::is_compatible(p->_requested_mode, released_requested)) {
+                && okvl_mode::is_compatible(p->_requested_mode, released_requested)) {
                 targets[target_count] = &p->_thr;
                 ++target_count;
                 if (target_count >= MAX_WAKEUP) {
@@ -391,7 +391,7 @@ lock_core_m::release_duration(
         for (xct_lock_entry_t* p = the_xlinfo->_tail; p != NULL;) {
             xct_lock_entry_t *prev = p->prev; // get this first. release_lock will remove current p
             w_assert1(&p->entry->_thr == g_me());  // safe if true
-            const w_okvl& m = p->entry->_granted_mode;
+            const okvl_mode& m = p->entry->_granted_mode;
             if (!m.contains_dirty_lock()) {
                 release_lock(p->queue, p->entry, commit_lsn);
             }
@@ -486,7 +486,7 @@ bool lock_queue_t::grant_request (lock_queue_entry_t* myreq, lsn_t& observed) {
     // _request_latch
     w_assert1(&myreq->_thr == g_me());
     bool precedes_me = true;
-    const w_okvl& m = myreq->_requested_mode;
+    const okvl_mode& m = myreq->_requested_mode;
     // check it again.
     for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
         if (p == myreq) {
@@ -514,7 +514,7 @@ void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_resul
     result.init(myfingerprint);
     xct_t* myxd = &myreq->_xct;
     bool precedes_me = true;
-    const w_okvl& m = myreq->_requested_mode;
+    const okvl_mode& m = myreq->_requested_mode;
 
     for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
         if (p == myreq) {
