@@ -1532,7 +1532,7 @@ xct_t::_abort()
     // W_DO(check_one_thread_attached()); // now done in the prologues.
     
     w_assert1(one_thread_attached());
-    w_assert1(_core->_state == xct_active || _core->_state == xct_prepared
+    w_assert1(_core->_state == xct_active
             || _core->_state == xct_committing /* if it got an error in commit*/
             || _core->_state == xct_freeing_space /* if it got an error in commit*/
             );
@@ -2175,7 +2175,6 @@ xct_t::get_logbuf(logrec_t*& ret, int t, fixable_page_h const*)
     w_assert1(_log_bytes_ready <= _log_bytes_reserved_space);
     w_assert1(_log_bytes_rsvd <= _log_bytes_reserved_space);
     w_assert1((_log_bytes_used <= _log_bytes_reserved_space) || 
-            state() == xct_prepared ||
             should_consume_rollback_resv(t)
             );
 
