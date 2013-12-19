@@ -68,7 +68,6 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/w_error.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_findprime.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_getopt.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/w_gettimeofday.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_hash.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_heap.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_list.h

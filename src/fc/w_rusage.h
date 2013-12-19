@@ -56,11 +56,7 @@ protected:
     void*           sbrk1;        /* sbrk #1 */
     void*           sbrk2;        /* sbrk #2 */
     int                iterations;
-#ifdef Linux
 typedef enum __rusage_who who_t;
-#else
-typedef int who_t;
-#endif
     who_t who;
 
 public:

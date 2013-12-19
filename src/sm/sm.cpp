@@ -186,12 +186,6 @@ ss_m* smlevel_4::SSM = 0;
 // option related statics
 option_group_t* ss_m::_options = NULL;
 
-#if defined(Sparc) && defined(SOLARIS2) && defined(SOLARIS2_PSETS)
-#include <sys/types.h>
-#include <sys/processor.h>
-#include <sys/procset.h>
-#include <sys/pset.h>
-#endif
 option_t* ss_m::_hugetlbfs_path = NULL;
 option_t* ss_m::_reformat_log = NULL;
 option_t* ss_m::_prefetch = NULL;

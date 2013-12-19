@@ -6,7 +6,7 @@
 
 #include "sm_int_2.h"
 #include "lock_lil.h"
-#include "w_gettimeofday.h"
+#include <sys/time.h>
 
 /**
  * maximum time to wait after failed lock acquisition for intent locks.

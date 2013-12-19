@@ -3,7 +3,7 @@
  */
 
 #include "bf_tree_cleaner.h"
-#include "w_gettimeofday.h"
+#include <sys/time.h>
 #include "sm_int_0.h"
 #include "sm_int_1.h"
 #include "bf_tree_cb.h"

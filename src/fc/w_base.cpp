@@ -172,11 +172,7 @@ w_base_t::strtou8(
     return __strtou8(str, endptr, base, false);
 }
 
-#if defined(SOLARIS2)
-#include <ieeefp.h>
-#else
 #include <cmath>
-#endif
 
 bool
 w_base_t::is_finite(const f8_t x)
@@ -190,9 +186,7 @@ bool
 w_base_t::is_infinite(const f8_t x)
 {
     bool value = false;
-#if defined(SOLARIS2)
-    value = !finite(x) && !isnand(x);
-#elif defined(MacOSX) && W_GCC_THIS_VER >= W_GCC_VER(3,0)
+#if defined(MacOSX) && W_GCC_THIS_VER >= W_GCC_VER(3,0)
     value = !finite(x) && !__isnand(x);
 #else
     value = !finite(x) && !::isnan(x);
@@ -204,9 +198,7 @@ bool
 w_base_t::is_nan(const f8_t x)
 {
     bool value = false;
-#if defined(SOLARIS2)
-    value = isnand(x);
-#elif defined(MacOSX) && W_GCC_THIS_VER >= W_GCC_VER(3,0)
+#if defined(MacOSX) && W_GCC_THIS_VER >= W_GCC_VER(3,0)
     value = __isnand(x);
 #else
     value = ::isnan(x);
