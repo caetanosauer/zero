@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2013, Hewlett-Packard Development Company, LP
  */
 
 #include "btree_page.h"
@@ -279,13 +279,13 @@ void btree_page_data::compact() {
             scratch_head -= length;
             head[j].poor = head[i].poor;
             head[j].offset = scratch_head;
-            ::memcpy(scratch_body[scratch_head].raw, item_start(i), length*sizeof(item_body));
+            ::memcpy(&scratch_body[scratch_head], item_start(i), length*sizeof(item_body));
             j++;
         }
     }
     nitems = j;
     first_used_body = scratch_head;
-    ::memcpy(body[first_used_body].raw, scratch_body[scratch_head].raw, (max_offset-scratch_head)*sizeof(item_body));
+    ::memcpy(&body[first_used_body], &scratch_body[scratch_head], (max_offset-scratch_head)*sizeof(item_body));
     
     w_assert1(nghosts == 0);
     w_assert3(_items_are_consistent());

@@ -306,14 +306,9 @@ protected:
 // ======================================================================
 
 private:
-    /**
-     * offset divided by 8 (all records are 8-byte aligned).
-     * negative value means ghost records.
-     */
-    typedef int16_t body_offset_t;
-
-    typedef int16_t item_index_t; // to avoid explicit sized-types below
-
+    typedef int16_t  body_offset_t;
+    typedef int16_t  item_index_t;
+    typedef uint16_t item_length_t;
 
     // ======================================================================
     //   BEGIN: item-specific headers
@@ -326,58 +321,54 @@ private:
     item_index_t  nghosts;                         // +2 -> 28
 
     /// offset to beginning of used item bodies (# of used item body that is located left-most). 
-    body_offset_t  first_used_body;                   // +2 -> 30
+    body_offset_t first_used_body;                 // +2 -> 30
 
     /// padding to ensure header size is a multiple of 8
-    uint16_t padding;                              // +2 -> 32
+    uint16_t      padding;                         // +2 -> 32
 
     // ======================================================================
     //   END: item-specific headers
     // ======================================================================
 
 
-    btree_page_data() {
-        //w_assert1(0);  // FIXME: is this constructor ever called? yes it is (test_btree_ghost)
-        w_assert1((body[0].raw - (const char *)this) % 4 == 0);     // check alignment<<<>>>
-        w_assert1((body[0].raw - (const char *)this) % 8 == 0);     // check alignment
-        w_assert1(body[0].raw - (const char *) this == hdr_sz);
-    }
-
-
-    typedef uint16_t item_length_t;
-
     typedef struct {
         body_offset_t offset;
         poor_man_key  poor;
     } item_head;
-//    static_assert(sizeof(item_head) == 4, "item_head has wrong length");
+    //static_assert(sizeof(item_head) == 4, "item_head has wrong length");
     BOOST_STATIC_ASSERT(sizeof(item_head) == 4);
-
-    typedef uint16_t tmp_key_length_t;  // <<<>>>
 
     typedef struct {
         union {
-            char raw[8];
+            int64_t raw;  // for alignment
             struct {
                 item_length_t item_len;
-                tmp_key_length_t  key_len;
-                char          key[4]; // <<<>>> really key_len - prefix_len
+                char          item_data[6];
             } leaf;
             struct {
                 shpid_t       child;
                 item_length_t item_len;
-                char          key[2]; // <<<>>> really item_len - sizeof(child) - sizeof(item_len)
+                char          item_data[2];
             } interior;
-            struct {
-                item_length_t item_len;
-                char          low[6]; // low[btree_fence_low_length]
-                //char        high_noprefix[btree_fence_high_length - btree_prefix_length]
-                //char        chain[btree_chain_fence_high_length]
-            } fence;
         };
     } item_body;
-//    static_assert(sizeof(item_body) == 8, "item_body has wrong length");
+    //static_assert(sizeof(item_body) == 8, "item_body has wrong length");
     BOOST_STATIC_ASSERT(sizeof(item_body) == 8);
+
+
+
+
+    btree_page_data() {
+        //w_assert1(0);  // FIXME: is this constructor ever called? yes it is (test_btree_ghost)
+        /* w_assert1((body[0].raw - (const char *)this) % 4 == 0);     // check alignment<<<>>> */
+        /* w_assert1((body[0].raw - (const char *)this) % 8 == 0);     // check alignment */
+        /* w_assert1(body[0].raw - (const char *) this == hdr_sz); */
+    }
+
+
+
+    typedef uint16_t tmp_key_length_t;  // <<<>>>
+
         
     /// MUST BE 8-BYTE ALIGNED HERE
     union {
@@ -392,7 +383,7 @@ private:
     char* item_start(item_index_t item) {
         body_offset_t offset = head[item].offset;
         if (offset < 0) offset = -offset; // ghost record
-        return body[offset].raw;
+        return (char*)&body[offset];
     }
     item_body& item_value(item_index_t item) {
         body_offset_t offset = head[item].offset;
@@ -405,10 +396,6 @@ private:
         body_offset_t offset = head[item].offset;
         if (offset < 0) offset = -offset; // ghost record
 
-        if (item == 0) {
-            return body[offset].fence.item_len;
-        }
-
         if (btree_level == 1) {
             return body[offset].leaf.item_len;
         } else {
@@ -420,11 +407,6 @@ private:
     void set_item_length(item_index_t item, item_length_t length) {
         body_offset_t offset = head[item].offset;
         if (offset < 0) offset = -offset; // ghost record
-
-        if (item == 0) {
-            body[offset].fence.item_len = length;
-            return;
-        }
 
         if (btree_level == 1) {
             body[offset].leaf.item_len = length;
@@ -516,12 +498,10 @@ inline size_t btree_page_data::item_length(int item) const {
 }
 inline char* btree_page_data::item_data(int item) {
     w_assert1(item>=0 && item<nitems);
-    if (item == 0) {
-        return &item_value(item).fence.low[0];
-    } if (btree_level == 1) {
-        return (char*)&item_value(item).leaf.key_len;
+    if (btree_level == 1) {
+        return item_value(item).leaf.item_data;
     } else {
-        return &item_value(item).interior.key[0];
+        return item_value(item).interior.item_data;
     }
 }
 
