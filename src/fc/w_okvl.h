@@ -21,10 +21,10 @@
  * Must be 1 or more. If the value is 1, it behaves just like OKRL.
  * In the OKVL paper, this parameter is denoted as "k".
  */
-const int OKVL_PARTITIONS = 2;
+const uint32_t OKVL_PARTITIONS = 2;
 
 /** # of individual partitions, +1 for "master" partition, and +1 for gap. */
-const int OKVL_MODE_COUNT = (OKVL_PARTITIONS + 1 + 1);
+const uint32_t OKVL_MODE_COUNT = (OKVL_PARTITIONS + 1 + 1);
 
 struct w_okvl_consts;
 

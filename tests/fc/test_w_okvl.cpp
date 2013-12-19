@@ -119,8 +119,8 @@ TEST(OkvlWhiteboxTest, KeyVsGap) {
 TEST(OkvlWhiteboxTest, HashRandomness) {
     // randomly invoke compute_part_id and see if it's reasonably good.
     const int TRIALS = 1 << 16;
-    int counts[OKVL_PARTITIONS];
-    for (int i = 0; i < OKVL_PARTITIONS; ++i) {
+    uint32_t counts[OKVL_PARTITIONS];
+    for (uint32_t i = 0; i < OKVL_PARTITIONS; ++i) {
         counts[i] = 0;
     }
 
@@ -132,15 +132,15 @@ TEST(OkvlWhiteboxTest, HashRandomness) {
         }
         
         okvl_mode::part_id part = okvl_mode::compute_part_id(buffer, BUFFER_SIZE);
-        EXPECT_GE (part, 0);
+        EXPECT_GE (part, (uint32_t)0);
         EXPECT_LT (part, OKVL_PARTITIONS);
         ++counts[part];
     }
 
     // Assuming TRIALS >> OKVL_PARTITIONS, there shouldn't be too much skews.
-    for (int i = 0; i < OKVL_PARTITIONS; ++i) {
-        EXPECT_GE (counts[i], TRIALS * 8 / 10 / OKVL_PARTITIONS);
-        EXPECT_LT (counts[i], TRIALS * 12 / 10 / OKVL_PARTITIONS);
+    for (uint32_t i = 0; i < OKVL_PARTITIONS; ++i) {
+        EXPECT_GE (counts[i], (uint32_t)(TRIALS * 8 / 10 / OKVL_PARTITIONS));
+        EXPECT_LT (counts[i], (uint32_t)(TRIALS * 12 / 10 / OKVL_PARTITIONS));
     }
 }
 
