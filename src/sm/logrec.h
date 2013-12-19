@@ -454,9 +454,9 @@ struct prepare_lock_t  {
     // -tid is stored in the log rec hdr
     // -all locks are long-term
 
-    w_base_t::lock_mode_t    mode; // for this group of locks
+    okvl_mode::singular_lock_mode mode; // for this group of locks
     uint32_t     num_locks; // in the array below
-    enum            { max_locks_logged = (logrec_t::max_data_sz - sizeof(w_base_t::lock_mode_t) - sizeof(uint32_t)) / sizeof(lockid_t) };
+    enum            { max_locks_logged = (logrec_t::max_data_sz - sizeof(okvl_mode::singular_lock_mode) - sizeof(uint32_t)) / sizeof(lockid_t) };
 
     lockid_t    name[max_locks_logged];
 
@@ -484,7 +484,7 @@ struct prepare_all_lock_t
     // 
     struct LockAndModePair {
         lockid_t    name;
-        w_base_t::lock_mode_t    mode; // for this lock
+        okvl_mode::singular_lock_mode mode; // for this lock
     };
 
     uint32_t             num_locks; // in the array below
@@ -495,7 +495,7 @@ struct prepare_all_lock_t
 
     prepare_all_lock_t(uint32_t num, 
                        lockid_t *locks,
-                       w_base_t::lock_mode_t *modes) {
+                       okvl_mode::singular_lock_mode *modes) {
         num_locks = num;
         uint32_t i;
         for(i=0; i<num; i++) { pair[i].name=locks[i]; pair[i].mode = modes[i]; }

@@ -71,7 +71,7 @@ const char* pin_i::body()
     SUPPRESS_NON_RETURN(char*);
 }
 
-rc_t pin_i::pin(const rid_t& rid, smsize_t start, lock_mode_t lmode,
+rc_t pin_i::pin(const rid_t& rid, smsize_t start, okvl_mode::singular_lock_mode lmode,
                 const bool bIgnoreLatches)
 {
     SUPPRESS_UNUSED_4(rid, start, lmode, bIgnoreLatches);
@@ -81,7 +81,7 @@ rc_t pin_i::pin(const rid_t& rid, smsize_t start, lock_mode_t lmode,
 }
 
 rc_t pin_i::pin(const rid_t& rid, smsize_t start, 
-        lock_mode_t lmode, latch_mode_t latch_mode)
+        okvl_mode::singular_lock_mode lmode, latch_mode_t latch_mode)
 {
     SUPPRESS_UNUSED_4(rid, start, lmode, latch_mode);
     //TODO: SHORE-KITS-API
@@ -89,7 +89,7 @@ rc_t pin_i::pin(const rid_t& rid, smsize_t start,
     SUPPRESS_NON_RETURN(rc_t);
 }
 
-rc_t pin_i::repin(lock_mode_t lmode)
+rc_t pin_i::repin(okvl_mode::singular_lock_mode lmode)
 {
     SUPPRESS_UNUSED(lmode);
     //TODO: SHORE-KITS-API

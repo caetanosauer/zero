@@ -7,6 +7,8 @@
 
 #include "w_defines.h"
 
+#include "w_okvl.h"
+#include "w_okvl_inl.h"
 #include "kvl_t.h"
 #include "lock_s.h"
 
@@ -16,8 +18,6 @@ class lil_global_table;
 
 class lock_m : public lock_base_t {
 public:
-
-    typedef lock_base_t::lmode_t lmode_t;
     typedef lock_base_t::status_t status_t;
 
     // initialize/takedown functions for thread-local state
@@ -49,21 +49,21 @@ public:
 
     rc_t                        lock(
         const lockid_t&             n, 
-        lmode_t                     m,
+        const okvl_mode&               m,
         bool                        check_only,
         timeout_in_ms               timeout = WAIT_SPECIFIED_BY_XCT,
-        lmode_t*                    prev_mode = 0,
-        lmode_t*                    prev_pgmode = 0);
+        okvl_mode*                    prev_mode = 0,
+        okvl_mode*                    prev_pgmode = 0);
 
     /**
      * Take an intent lock on the given volume.
      * lock mode must be IS/IX/S/X.
      */
-    rc_t                        intent_vol_lock(vid_t vid, lmode_t m);
+    rc_t                        intent_vol_lock(vid_t vid, okvl_mode::singular_lock_mode m);
     /**
      * Take an intent lock on the given store.
      */
-    rc_t                        intent_store_lock(const stid_t &stid, lmode_t m);
+    rc_t                        intent_store_lock(const stid_t &stid, okvl_mode::singular_lock_mode m);
     /**
      * Take intent locks on the given store and its volume in the same mode.
      * This is used in usual operations like create_assoc/lookup.
@@ -71,7 +71,7 @@ public:
      * operations where you need different lock modes for store and volume.
      * If you only need volume lock, just use intent_vol_lock().
      */
-    rc_t                        intent_vol_store_lock(const stid_t &stid, lmode_t m);
+    rc_t                        intent_vol_store_lock(const stid_t &stid, okvl_mode::singular_lock_mode m);
      
     // rc_t                        unlock(const lockid_t& n);
 
@@ -97,9 +97,9 @@ private:
 
     rc_t                        _lock(
         const lockid_t&              n, 
-        lmode_t                      m,
-        lmode_t&                     prev_mode,
-        lmode_t&                     prev_pgmode,
+        const okvl_mode&                m,
+        okvl_mode&                      prev_mode,
+        okvl_mode&                      prev_pgmode,
         bool                         check_only,
         timeout_in_ms                timeout
         );

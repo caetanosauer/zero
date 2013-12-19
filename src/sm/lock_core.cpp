@@ -18,6 +18,8 @@
 #include "tls.h"
 #include "lock_compt.h"
 #include "lock_bucket.h"
+#include "w_okvl.h"
+#include "w_okvl_inl.h"
 
 #ifdef EXPLICIT_TEMPLATE
 template class w_auto_delete_array_t<unsigned>;
@@ -111,8 +113,8 @@ w_rc_t::errcode_t
 lock_core_m::acquire_lock(
     xct_t*                 xd,
     const lockid_t&        name,
-    lmode_t                mode,
-    lmode_t&               prev_mode,
+    const okvl_mode&          mode,
+    okvl_mode&               prev_mode,
     bool                   check_only,
     timeout_in_ms          timeout)
 {
@@ -144,8 +146,8 @@ int
 lock_core_m::_acquire_lock(
     xct_t*                 xd,
     lock_queue_t*          lock,
-    lmode_t                mode,
-    lmode_t&               prev_mode,
+    const okvl_mode&          mode,
+    okvl_mode&                prev_mode,
     bool                   check_only,
     timeout_in_ms          timeout,
     xct_lock_info_t*       the_xlinfo)
@@ -164,7 +166,7 @@ lock_core_m::_acquire_lock(
             }
         }
 #endif // W_DEBUG_LEVEL>=3
-        req = new (*lockEntryPool) lock_queue_entry_t(*xd, *thr, *the_xlinfo, NL, mode);
+        req = new (*lockEntryPool) lock_queue_entry_t(*xd, *thr, *the_xlinfo, ALL_N_GAP_N, mode);
         if (!check_only) {
             req->_xct_entry = the_xlinfo->link_to_new_request(lock, req);
         }
@@ -176,8 +178,7 @@ lock_core_m::_acquire_lock(
         w_assert1(req->_xct_entry != NULL);
         prev_mode = req->_granted_mode;
         spinlock_write_critical_section cs(&lock->_requests_latch);
-        req->_requested_mode = supr[mode][req->_granted_mode];
-        w_assert1(req->_requested_mode != LL);
+        req->_requested_mode = okvl_mode::combine(mode, req->_granted_mode);
         if (req->_requested_mode == req->_granted_mode) {
             return RET_SUCCESS; // already had the desired lock mode!
         }
@@ -187,7 +188,7 @@ lock_core_m::_acquire_lock(
     the_xlinfo->init_wait_map(thr);
     // discard (or downgrade) the failed request. check_only does it even on success.
     if (loop_ret != RET_SUCCESS || check_only) {
-        if (req->_granted_mode != NL) {
+        if (!req->_granted_mode.is_empty()) {
             // We deny the upgrade but leave the 
             // lock request in place with its former status.
             spinlock_write_critical_section cs(&lock->_requests_latch);
@@ -307,9 +308,8 @@ void lock_core_m::release_lock(
     
     // update lock tag if this is a part of SX-ELR.
     if (commit_lsn.valid()) {
-        lmode_t m = req->_granted_mode;
-        if (m == XN || m == XS || m == XU || m == XX
-            || m == NX || m == SX || m == UX) {
+        const okvl_mode& m = req->_granted_mode;
+        if (m.contains_dirty_lock()) {
             spinlock_write_critical_section cs(&lock->_requests_latch);
             lock->update_x_lock_tag(commit_lsn);
         }
@@ -318,8 +318,8 @@ void lock_core_m::release_lock(
     //copy these before destroying
     xct_lock_entry_t *xct_entry = req->_xct_entry;
     xct_lock_info_t *li = &req->_li;
-    lmode_t released_granted = req->_granted_mode;
-    lmode_t released_requested = req->_requested_mode;
+    const okvl_mode& released_granted = req->_granted_mode;
+    const okvl_mode& released_requested = req->_requested_mode;
     lockEntryPool->destroy_object(req);
     lock->wakeup_waiters(released_granted, released_requested);
     if (xct_entry) {
@@ -328,7 +328,7 @@ void lock_core_m::release_lock(
 }
 
 
-void lock_queue_t::wakeup_waiters(lmode_t released_granted, lmode_t released_requested)
+void lock_queue_t::wakeup_waiters(const okvl_mode& released_granted, const okvl_mode& released_requested)
 {
     if(g_deadlock_dreadlock_interval_ms == 0) // if ==0 (spin), no need to wakeup
         return;
@@ -345,7 +345,7 @@ void lock_queue_t::wakeup_waiters(lmode_t released_granted, lmode_t released_req
         // CRITICAL_SECTION(cs, _requests_latch.read_lock());
         for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
             if (p->_granted_mode != p->_requested_mode
-                && !lock_base_t::compat[p->_requested_mode][released_granted]) {
+                && !okvl_mode::is_compatible(p->_requested_mode, released_granted)) {
                 p->_li.set_wait_map_obsolete(true);
             }
         }
@@ -360,7 +360,7 @@ void lock_queue_t::wakeup_waiters(lmode_t released_granted, lmode_t released_req
         // CRITICAL_SECTION(cs, _requests_latch.read_lock());
         for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
             if (p->_granted_mode != p->_requested_mode
-                && !lock_base_t::compat[p->_requested_mode][released_requested]) {
+                && okvl_mode::is_compatible(p->_requested_mode, released_requested)) {
                 targets[target_count] = &p->_thr;
                 ++target_count;
                 if (target_count >= MAX_WAKEUP) {
@@ -391,15 +391,13 @@ lock_core_m::release_duration(
         for (xct_lock_entry_t* p = the_xlinfo->_tail; p != NULL;) {
             xct_lock_entry_t *prev = p->prev; // get this first. release_lock will remove current p
             w_assert1(&p->entry->_thr == g_me());  // safe if true
-            lmode_t m = p->entry->_granted_mode;
-            if (m == IS || m == SN || m == NS || m == SS
-                || m == UN || m == NU || m == UU
-                || m == SU || m == US) {
+            const okvl_mode& m = p->entry->_granted_mode;
+            if (!m.contains_dirty_lock()) {
                 release_lock(p->queue, p->entry, commit_lsn);
             }
             p = prev;
         }
-        // we don't "downgrade" [SU]X/X[SU] to NX/XN for laziness.  
+        // we don't "downgrade" SX/XS to NX/XN for laziness.  
 	// See jira ticket:99 "ELR for X-lock" (originally trac ticket:101).
         // likewise, we don't "downgrade" SIX to IX for laziness
     } else {
@@ -432,7 +430,7 @@ lock_queue_entry_t* lock_queue_t::find_request (const xct_lock_info_t* myli) {
 void lock_queue_t::append_request (lock_queue_entry_t* myreq) {
     spinlock_write_critical_section cs(&_requests_latch);
     // CRITICAL_SECTION(cs, _requests_latch.write_lock());
-    w_assert1(myreq->_granted_mode == smlevel_0::NL);
+    w_assert1(myreq->_granted_mode.is_empty());
     if (_head == NULL) {
         _head = myreq;
         _tail = myreq;
@@ -488,7 +486,7 @@ bool lock_queue_t::grant_request (lock_queue_entry_t* myreq, lsn_t& observed) {
     // _request_latch
     w_assert1(&myreq->_thr == g_me());
     bool precedes_me = true;
-    lmode_t m = myreq->_requested_mode;
+    const okvl_mode& m = myreq->_requested_mode;
     // check it again.
     for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
         if (p == myreq) {
@@ -516,7 +514,7 @@ void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_resul
     result.init(myfingerprint);
     xct_t* myxd = &myreq->_xct;
     bool precedes_me = true;
-    lmode_t m = myreq->_requested_mode;
+    const okvl_mode& m = myreq->_requested_mode;
 
     for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
         if (p == myreq) {

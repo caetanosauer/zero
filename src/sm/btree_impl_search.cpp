@@ -68,8 +68,8 @@ btree_impl::_ux_lookup_core(
     if (!found) {
         if (need_lock) {
             W_DO(_ux_lock_range(leaf, key, slot, LATCH_SH,
-                ex_for_select ? XN : SN,
-                ex_for_select ? NX : NS,
+                ex_for_select ? create_part_okvl(okvl_mode::X, key) : create_part_okvl(okvl_mode::S, key),
+                ex_for_select ? ALL_N_GAP_X : ALL_N_GAP_S,
                 false));
         }
         return RCOK;
@@ -79,7 +79,7 @@ btree_impl::_ux_lookup_core(
     if (need_lock) {
         // only the key is locked (SN)
         W_DO (_ux_lock_key(leaf, key, LATCH_SH,
-            ex_for_select ? XN : SN, false));
+            ex_for_select ? create_part_okvl(okvl_mode::X, key) : create_part_okvl(okvl_mode::S, key), false));
     }
 
     // Copy the element 

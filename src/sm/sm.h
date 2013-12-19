@@ -426,6 +426,7 @@ class prologue_rc_t;
 class w_keystr_t;
 class verify_volume_result;
 class lil_global_table;
+struct okvl_mode;
 
 class key_ranges_map;
 /**\addtogroup SSMSP  
@@ -2078,14 +2079,14 @@ public:
      */
     static rc_t            lock(
         const lockid_t&         n, 
-        lock_mode_t             m,
+        const okvl_mode&           m,
         bool                    check_only = false,
         timeout_in_ms           timeout = WAIT_SPECIFIED_BY_XCT
     );
 
     static rc_t            lock(
         const stid_t&         n, 
-        lock_mode_t             m,
+        const okvl_mode&           m,
         bool                    check_only = false,
         timeout_in_ms           timeout = WAIT_SPECIFIED_BY_XCT
     );

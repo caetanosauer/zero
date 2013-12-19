@@ -51,7 +51,6 @@ template class w_keyed_list_t<xct_t, queue_based_lock_t, tid_t>;
 template class w_descend_list_t<xct_t, queue_based_lock_t, tid_t>;
 template class w_list_t<stid_list_elem_t, queue_based_lock_t>;
 template class w_list_i<stid_list_elem_t, queue_based_lock_t>;
-template class w_auto_delete_array_t<lock_mode_t>;
 template class w_auto_delete_array_t<lockid_t>;
 template class w_auto_delete_array_t<stid_t>;
 
@@ -564,7 +563,7 @@ xct_t::stash(xct_log_t*&x)
 }
 
 rc_t                        
-xct_t::obtain_locks(lock_mode_t mode, int num, const lockid_t *locks)
+xct_t::obtain_locks(const okvl_mode& mode, int num, const lockid_t *locks)
 {
     int  i;
     rc_t rc;
@@ -585,7 +584,7 @@ xct_t::obtain_locks(lock_mode_t mode, int num, const lockid_t *locks)
 }
 
 rc_t                        
-xct_t::obtain_one_lock(lock_mode_t mode, const lockid_t &lock)
+xct_t::obtain_one_lock(const okvl_mode& mode, const lockid_t &lock)
 {
     DBG(<<"Obtaining 1 lock : " << lock << " in mode " << int(mode));
 
@@ -1532,7 +1531,7 @@ xct_t::_abort()
     // W_DO(check_one_thread_attached()); // now done in the prologues.
     
     w_assert1(one_thread_attached());
-    w_assert1(_core->_state == xct_active || _core->_state == xct_prepared
+    w_assert1(_core->_state == xct_active
             || _core->_state == xct_committing /* if it got an error in commit*/
             || _core->_state == xct_freeing_space /* if it got an error in commit*/
             );
@@ -2175,7 +2174,6 @@ xct_t::get_logbuf(logrec_t*& ret, int t, fixable_page_h const*)
     w_assert1(_log_bytes_ready <= _log_bytes_reserved_space);
     w_assert1(_log_bytes_rsvd <= _log_bytes_reserved_space);
     w_assert1((_log_bytes_used <= _log_bytes_reserved_space) || 
-            state() == xct_prepared ||
             should_consume_rollback_resv(t)
             );
 

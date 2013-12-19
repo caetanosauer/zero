@@ -116,8 +116,8 @@ public:
     w_rc_t::errcode_t  acquire_lock(
                 xct_t*            xd,
                 const lockid_t&   name,
-                lmode_t           mode,
-                lmode_t&          prev_mode,
+                const okvl_mode&     mode,
+                okvl_mode&           prev_mode,
                 bool              check_only,
                 timeout_in_ms     timeout);
 
@@ -145,8 +145,8 @@ private:
     int _acquire_lock(
         xct_t*                 xd,
         lock_queue_t*          lock,
-        lmode_t                mode,
-        lmode_t&               prev_mode,
+        const okvl_mode&          mode,
+        okvl_mode&               prev_mode,
         bool                   check_only,
         timeout_in_ms          timeout,
         xct_lock_info_t*       the_xlinfo);

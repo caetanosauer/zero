@@ -6,6 +6,8 @@
 #define LOCK_BUCKET_H
 
 #include <stdint.h>
+#include "w_okvl.h"
+#include "w_okvl_inl.h"
 #include "lsn.h"
 #include "sthread.h"
 #include "lock_x.h"
@@ -50,9 +52,8 @@ private:
     friend class lock_core_m;  // TODO: narrow this down later <<<>>>
     friend ostream& operator<<(ostream& o, const lock_queue_entry_t& r);
 
-    typedef lock_base_t::lmode_t lmode_t;
     lock_queue_entry_t (xct_t& xct, smthread_t& thr, xct_lock_info_t& li,
-                        lmode_t granted_mode, lmode_t requested_mode)
+                        const okvl_mode& granted_mode, const okvl_mode& requested_mode)
         : _xct(xct), _thr(thr), _li(li), _xct_entry(NULL), _prev(NULL), _next(NULL),
             _granted_mode(granted_mode), _requested_mode(requested_mode) {
     }
@@ -65,8 +66,8 @@ private:
     lock_queue_entry_t* _prev;
     lock_queue_entry_t* _next;
 
-    lmode_t             _granted_mode;
-    lmode_t             _requested_mode;
+    okvl_mode              _granted_mode;
+    okvl_mode              _requested_mode;
 };
 /** 
  * Requires holding a read latch for queue._requests_latch where queue
@@ -89,7 +90,6 @@ ostream&  operator<<(ostream& o, const lock_queue_entry_t& r);
  */
 class lock_queue_t {
 public:
-    typedef lock_base_t::lmode_t lmode_t;
     lock_queue_t(uint32_t hash) : _hash(hash), _hit_counts(0), _next (NULL),
         _x_lock_tag(lsn_t::null), _head (NULL), _tail (NULL) {
     }
@@ -163,10 +163,10 @@ private:
     void check_can_grant (lock_queue_entry_t* myreq, check_grant_result &result);
 
     //* Requires read access to _requests_latch of queue other_request belongs to
-    bool _check_compatible(lmode_t requested_mode, lock_queue_entry_t* other_request, bool proceeds_me, lsn_t& observed);
+    bool _check_compatible(const okvl_mode& requested_mode, lock_queue_entry_t* other_request, bool proceeds_me, lsn_t& observed);
 
     /** opportunistically wake up waiters.  called when some lock is released. */
-    void wakeup_waiters(lmode_t released_granted, lmode_t released_requested);
+    void wakeup_waiters(const okvl_mode& released_granted, const okvl_mode& released_requested);
 
     
     const uint32_t _hash;  ///< precise hash for this lock queue.
@@ -204,12 +204,12 @@ private:
     lock_queue_entry_t* _tail;
 };
 
-inline bool lock_queue_t::_check_compatible(lmode_t requested_mode, lock_queue_entry_t* other_request, bool precedes_me, lsn_t& observed) {
+inline bool lock_queue_t::_check_compatible(const okvl_mode& requested_mode, lock_queue_entry_t* other_request, bool precedes_me, lsn_t& observed) {
     bool compatible;
     if (precedes_me) {
-        compatible = lock_base_t::compat[other_request->_requested_mode][requested_mode];
+        compatible = okvl_mode::is_compatible(other_request->_requested_mode, requested_mode);
     } else {
-        compatible = lock_base_t::compat[other_request->_granted_mode][requested_mode];
+        compatible = okvl_mode::is_compatible(other_request->_granted_mode, requested_mode);
     }
 
     if (compatible)

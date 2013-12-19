@@ -21,6 +21,7 @@ struct btree_lf_stats_t;
 struct btree_int_stats_t;
 class w_keystr_t;
 class verify_volume_result;
+struct okvl_mode;
 /**
  * Data access API for B+Tree.
  * \ingroup SSMBTREE

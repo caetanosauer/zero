@@ -10,6 +10,7 @@
 #include "btree.h"
 #include "kvl_t.h"
 #include "btree_verify.h"
+#include "w_okvl_inl.h" // need to include this to inline create_part_okvl()
 
 /**
  * \brief The internal implementation class which actually implements the
@@ -600,7 +601,7 @@ public:
         btree_page_h&      leaf,
         const w_keystr_t&   key,
         latch_mode_t        latch_mode,
-        lock_mode_t         lock_mode,
+        const okvl_mode&       lock_mode,
         bool                check_only
     );
 
@@ -610,7 +611,7 @@ public:
         const void         *keystr,
         size_t              keylen,
         latch_mode_t        latch_mode,
-        lock_mode_t         lock_mode,
+        const okvl_mode&       lock_mode,
         bool                check_only
     );
 
@@ -620,14 +621,21 @@ public:
      * usually a return value of btree_page_h.search_leaf().
      * if -1, this function will call the search again.
      * @see _ux_lock_key()
+     * @param[in] exact_hit_lock_mode this mode is used if the search
+     * hits the low fence key (so, logically a miss, but physically a hit).
+     * This would be a lock on key, not gap. Such a low fence key is
+     * guaranteed to keep existing even during page-merge, so we
+     * can safely take a lock on it, which is more concurrent than below.
+     * @param[in] miss_lock_mode this mode is used if the search does not
+     * hit the low fence key. This would be a lock on gap, not key.
      */
     static rc_t _ux_lock_range(
         btree_page_h&      leaf,
         const w_keystr_t&   key,
         slotid_t slot,
         latch_mode_t        latch_mode,
-        lock_mode_t         lock_key_mode,
-        lock_mode_t         lock_range_mode,
+        const okvl_mode&       exact_hit_lock_mode,
+        const okvl_mode&       miss_lock_mode,
         bool                check_only
     );
 
@@ -638,8 +646,8 @@ public:
         size_t              keylen,
         slotid_t slot,
         latch_mode_t        latch_mode,
-        lock_mode_t         lock_key_mode,
-        lock_mode_t         lock_range_mode,
+        const okvl_mode&       exact_hit_lock_mode,
+        const okvl_mode&       miss_lock_mode,
         bool                check_only
     );
 
@@ -827,6 +835,23 @@ public:
      */
     static rc_t _ux_defrag_page_core(btree_page_h &p);
 
+    /**
+    * Helper method to create an OKVL instance on one partition,
+    * using the given key.
+    */
+    static okvl_mode create_part_okvl(
+        okvl_mode::singular_lock_mode mode,
+        const w_keystr_t&    key) {
+        okvl_mode ret;
+
+        // TODO where to get uniquefier from. So far we don't have this information.
+        // So, just hash all parts of the key. This is unnecessary.
+        okvl_mode::part_id part = okvl_mode::compute_part_id(key.buffer_as_keystr(), key.get_length_as_keystr());
+        
+        ret.set_partition_mode(part, mode);
+        return ret;
+    }
+    
 #ifdef DOXYGEN_HIDE
 ///==========================================
 ///   BEGIN: Global Approximate (non-protected) Counters to guide opportunistic/eager latching.

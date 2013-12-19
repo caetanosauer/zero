@@ -23,6 +23,7 @@ X_ADD_TESTCASE(test_rand "${the_libraries}")
 X_ADD_TESTCASE(test_random "${the_libraries}")
 X_ADD_TESTCASE(test_rc "${the_libraries}")
 X_ADD_TESTCASE(test_ss "${the_libraries}")
+X_ADD_TESTCASE(test_w_okvl "${the_libraries}")
 
 INCLUDE_DIRECTORIES (${CMAKE_CURRENT_BINARY_DIR}) 
 set(TEST_STAT_GENFILES_FILES

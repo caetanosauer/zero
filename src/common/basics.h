@@ -51,37 +51,6 @@ typedef uint32_t               smsize_t;
 typedef uint32_t    shpid_t; 
 
 #ifndef SM_SOURCE
-// This is for servers. SM_SOURCE is defined in the SM sources.
-namespace locking {
-	typedef w_base_t::lock_duration_t  lock_duration_t; 
-    typedef w_base_t::lock_mode_t  lock_mode_t; 
-    static const lock_mode_t NL = w_base_t::NL;
-    static const lock_mode_t IS = w_base_t::IS;
-    static const lock_mode_t IX = w_base_t::IX;
-    static const lock_mode_t SH = w_base_t::SH;
-    static const lock_mode_t SIX = w_base_t::SIX;
-    static const lock_mode_t UD = w_base_t::UD;
-    static const lock_mode_t EX = w_base_t::EX;
-    // key range locks
-    static const lock_mode_t NS = w_base_t::NS;
-    static const lock_mode_t NU = w_base_t::NU;
-    static const lock_mode_t NX = w_base_t::NX;
-    static const lock_mode_t SN = w_base_t::SN;
-    static const lock_mode_t SU = w_base_t::SU;
-    static const lock_mode_t SX = w_base_t::SX;
-    static const lock_mode_t UN = w_base_t::UN;
-    static const lock_mode_t US = w_base_t::US;
-    static const lock_mode_t UX = w_base_t::UX;
-    static const lock_mode_t XN = w_base_t::XN;
-    static const lock_mode_t XS = w_base_t::XS;
-    static const lock_mode_t XU = w_base_t::XU;
-    static const lock_mode_t NN = w_base_t::NN;
-    static const lock_mode_t SS = w_base_t::SS;
-    static const lock_mode_t UU = w_base_t::UU;
-    static const lock_mode_t XX = w_base_t::XX;
-}
-using namespace locking;
-
 #endif
 
 

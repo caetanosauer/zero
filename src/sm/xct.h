@@ -84,6 +84,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "w_key.h"
 
 class xct_dependent_t;
+struct okvl_mode;
 
 /**\cond skip */
 /**\internal Tells whether the log is on or off for this xct at this moment.
@@ -440,9 +441,9 @@ protected:
     w_rc_t                       lockblock(timeout_in_ms timeout);// await other thread
     void                         lockunblock(); // inform other waiters
 
-    rc_t                         obtain_locks(lock_mode_t mode, 
+    rc_t                         obtain_locks(const okvl_mode& mode, 
                                         int nlks, const lockid_t *l); 
-    rc_t                         obtain_one_lock(lock_mode_t mode, 
+    rc_t                         obtain_one_lock(const okvl_mode& mode, 
                                         const lockid_t &l); 
 public: // not quite public thing.. but convenient for experiments
     xct_lock_info_t*             lock_info() const;
