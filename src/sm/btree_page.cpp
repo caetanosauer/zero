@@ -51,7 +51,7 @@ bool btree_page_data::insert_item(int item, bool ghost, poor_man_key poor,
     w_assert3(_items_are_consistent());
 
     size_t length = data_length + sizeof(item_length_t);
-    if (item != 0 && btree_level != 1) {
+    if (btree_level != 1) {
         length += sizeof(shpid_t);
     }
     if ((size_t)usable_space() < sizeof(item_head) + align(length)) {
@@ -104,7 +104,7 @@ bool btree_page_data::resize_item(int item, size_t new_length, size_t keep_old) 
 
     size_t old_length = my_item_length(item);
     size_t length = new_length + sizeof(item_length_t);
-    if (item != 0 && btree_level != 1) {
+    if (btree_level != 1) {
         length += sizeof(shpid_t);
     }
 
@@ -121,7 +121,7 @@ bool btree_page_data::resize_item(int item, size_t new_length, size_t keep_old) 
     first_used_body -= (length-1)/8+1;
     head[item].offset = ghost ? -first_used_body : first_used_body;
     set_item_length(item, length);
-    if (item != 0 && btree_level != 1) {
+    if (btree_level != 1) {
         body[first_used_body].interior.child = body[offset].interior.child;
     }
 
@@ -151,7 +151,6 @@ bool btree_page_data::replace_item_data(int item, size_t offset, const cvec_t& n
 
 void btree_page_data::delete_item(int item) {
     w_assert1(item>=0 && item<nitems);
-    w_assert1(item != 0); // deleting item 0 makes no sense because it has a special format <<<>>>
     w_assert3(_items_are_consistent());
 
     body_offset_t offset = head[item].offset;
@@ -302,8 +301,7 @@ char* btree_page_data::unused_part(size_t& length) {
 
 size_t btree_page_data::predict_item_space(size_t data_length) const {
     size_t size = data_length + sizeof(item_length_t);
-    int item = 1; // <<<>>>
-    if (item != 0 && btree_level != 1) {
+    if (btree_level != 1) {
         size += sizeof(shpid_t);
     }
 

@@ -485,14 +485,23 @@ inline btree_page_data::poor_man_key& btree_page_data::item_poor(int item) {
     return head[item].poor;    
 }
 inline btree_page_data::poor_man_key btree_page_data::item_poor(int item) const {
-    w_assert1(item>=0 && item<nitems);
-    return head[item].poor;    
+    return item_poor(item);
 }
+
 
 inline shpid_t& btree_page_data::item_child(int item) {
     w_assert1(item>=0 && item<nitems);
-    w_assert1(btree_level != 1); // <<<>>>
-    return *(shpid_t*)&item_value(item).interior.child;
+    w_assert1(btree_level != 1);
+    return item_value(item).interior.child;
+}
+
+inline char* btree_page_data::item_data(int item) {
+    w_assert1(item>=0 && item<nitems);
+    if (btree_level == 1) {
+        return item_value(item).leaf.item_data;
+    } else {
+        return item_value(item).interior.item_data;
+    }
 }
 
 inline size_t btree_page_data::item_length(int item) const {
@@ -502,14 +511,6 @@ inline size_t btree_page_data::item_length(int item) const {
         length -= sizeof(shpid_t);
     }
     return length;
-}
-inline char* btree_page_data::item_data(int item) {
-    w_assert1(item>=0 && item<nitems);
-    if (btree_level == 1) {
-        return item_value(item).leaf.item_data;
-    } else {
-        return item_value(item).interior.item_data;
-    }
 }
 
 inline size_t btree_page_data::usable_space() const {
