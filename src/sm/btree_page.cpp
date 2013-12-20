@@ -11,11 +11,10 @@
 
 void btree_page_data::init_items() {
     w_assert1(btree_level >= 1);
-    const size_t max_offset = data_sz/sizeof(item_body);
 
-    nitems       = 0;
-    nghosts      = 0;
-    first_used_body = max_offset;
+    nitems          = 0;
+    nghosts         = 0;
+    first_used_body = bodies;
 
     w_assert3(_items_are_consistent());
 }
@@ -296,21 +295,6 @@ char* btree_page_data::unused_part(size_t& length) {
     char* after_gap = (char*)&body[first_used_body];
     length = after_gap - start_gap;
     return start_gap;
-}
-
-
-size_t btree_page_data::predict_item_space(size_t data_length) const {
-    size_t size = data_length + sizeof(item_length_t);
-    if (btree_level != 1) {
-        size += sizeof(shpid_t);
-    }
-
-    return align(size) + sizeof(item_head);
-}
-
-
-size_t btree_page_data::item_space(int item) const {
-    return align(my_item_length(item)) + sizeof(item_head);
 }
 
 

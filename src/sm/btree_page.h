@@ -507,14 +507,29 @@ inline char* btree_page_data::item_data(int item) {
 inline size_t btree_page_data::item_length(int item) const {
     w_assert1(item>=0 && item<nitems);
     int length = my_item_length(item) - sizeof(item_length_t);
-    if (item != 0 && btree_level != 1) {
+    if (btree_level != 1) {
         length -= sizeof(shpid_t);
     }
     return length;
 }
 
+
+inline size_t btree_page_data::predict_item_space(size_t data_length) const {
+    size_t size = data_length + sizeof(item_length_t);
+    if (btree_level != 1) {
+        size += sizeof(shpid_t);
+    }
+
+    return align(size) + sizeof(item_head);
+}
+
+inline size_t btree_page_data::item_space(int item) const {
+    return align(my_item_length(item)) + sizeof(item_head);
+}
+
 inline size_t btree_page_data::usable_space() const {
-    return first_used_body*8 - nitems*4; // <<<>>>
+    w_assert1(first_used_body*sizeof(item_body) >= nitems*sizeof(item_head));
+    return first_used_body*sizeof(item_body) - nitems*sizeof(item_head);
 }
 
 #endif // BTREE_PAGE_H
