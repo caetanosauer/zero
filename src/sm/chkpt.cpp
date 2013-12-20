@@ -95,7 +95,7 @@ public:
     virtual void        run();
     void                retire();
     void                awaken();
-    bool                isRetired() {return _retire;}
+    bool                is_retired() {return _retire;}
 private:
     bool                _retire;
     pthread_mutex_t     _retire_awaken_lock; // paired with _retire_awaken_cond
@@ -289,7 +289,7 @@ void chkpt_m::take()
     if(log && _chkpt_thread) 
     {
         // If received a 'retire' message, return without doing anything
-        if (true == _chkpt_thread->isRetired())
+        if (true == _chkpt_thread->is_retired())
         {
             DBGOUT1(<<"END chkpt_m::take - detected retire, skip checkpoint");
             return;
