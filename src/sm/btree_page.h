@@ -306,9 +306,9 @@ protected:
 // ======================================================================
 
 private:
-    typedef int16_t  body_offset_t;
-    typedef int16_t  item_index_t;
+    typedef uint16_t item_index_t;
     typedef uint16_t item_length_t;
+    typedef int16_t  body_offset_t;  // sign bit is used to encode ghostness
 
     // ======================================================================
     //   BEGIN: item-specific headers
@@ -332,15 +332,15 @@ private:
 
 
     typedef struct {
-        body_offset_t offset;
+        body_offset_t offset;  // <0: ghost, ...
         poor_man_key  poor;
     } item_head;
     //static_assert(sizeof(item_head) == 4, "item_head has wrong length");
     BOOST_STATIC_ASSERT(sizeof(item_head) == 4);
 
     typedef struct {
+        // item format depends on whether we are a leaf or not:
         union {
-            int64_t raw;  // for alignment
             struct {
                 item_length_t item_len;
                 char          item_data[6];
@@ -350,10 +350,26 @@ private:
                 item_length_t item_len;
                 char          item_data[2];
             } interior;
+            int64_t for_alignment;
         };
     } item_body;
     //static_assert(sizeof(item_body) == 8, "item_body has wrong length");
     BOOST_STATIC_ASSERT(sizeof(item_body) == 8);
+
+    BOOST_STATIC_ASSERT(data_sz%8 == 0);
+    enum {
+        heads  = data_sz/sizeof(item_head),
+        bodies = data_sz/sizeof(item_body),
+    };
+
+    union {
+        item_head head[heads];
+        item_body body[bodies];
+    };
+    // check field sizes are large enough:
+    BOOST_STATIC_ASSERT(data_sz < 1<<(sizeof(item_length_t)*8));
+    BOOST_STATIC_ASSERT(heads   < 1<<(sizeof(item_index_t)*8));
+    BOOST_STATIC_ASSERT(bodies  < 1<<(sizeof(body_offset_t)*8-1));
 
 
 
@@ -367,15 +383,6 @@ private:
 
 
 
-    typedef uint16_t tmp_key_length_t;  // <<<>>>
-
-        
-    /// MUST BE 8-BYTE ALIGNED HERE
-    union {
-        item_head head[data_sz/sizeof(item_head)];
-        item_body body[data_sz/sizeof(item_body)];
-    };
-    BOOST_STATIC_ASSERT(data_sz%8 == 0);
 
 
 
