@@ -188,7 +188,8 @@ do {                                                                    \
 #if W_DEBUG_LEVEL>=1
 #define w_assert1(x)    w_assert0(x)
 #else
-#define w_assert1(x)    /**/
+//#define w_assert1(x)    /**/
+#define w_assert1(x)    if (false) { (void)(x); }
 #endif
 
 /// Level 2 adds some time.
