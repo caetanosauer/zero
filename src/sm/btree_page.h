@@ -162,8 +162,8 @@ protected:
 
     /**
      * Return a reference to the child pointer data for the given
-     * item.  The reference will be word aligned and thus a suitable
-     * target for atomic operations.
+     * item.  The reference will be 4 byte aligned and thus a suitable
+     * target for atomic operations.  
      * @pre this is an interior page
      */
     shpid_t&      item_child(int item);
@@ -393,6 +393,14 @@ private:
     BOOST_STATIC_ASSERT(max_bodies  < 1<<(sizeof(body_offset_t)*8-1)); // -1 for ghost bit
 
 
+    /// are we a leaf node?
+    bool is_leaf() const { return btree_level == 1; }
+
+    /// align to 8-byte boundary (integral multiple of item_body's)
+    static size_t _item_align(size_t i) { return (i+7)&~7; }
+
+
+
 
 
     char* item_start(item_index_t item) {
@@ -496,16 +504,16 @@ inline btree_page_data::poor_man_key btree_page_data::item_poor(int item) const 
     return item_poor(item);
 }
 
-
 inline shpid_t& btree_page_data::item_child(int item) {
     w_assert1(item>=0 && item<nitems);
-    w_assert1(btree_level != 1);
+    w_assert1(!is_leaf());
     return item_value(item).interior.child;
 }
 
+
 inline char* btree_page_data::item_data(int item) {
     w_assert1(item>=0 && item<nitems);
-    if (btree_level == 1) {
+    if (is_leaf()) {
         return item_value(item).leaf.item_data;
     } else {
         return item_value(item).interior.item_data;
@@ -514,30 +522,40 @@ inline char* btree_page_data::item_data(int item) {
 
 inline size_t btree_page_data::item_length(int item) const {
     w_assert1(item>=0 && item<nitems);
-    int length = my_item_length(item) - sizeof(item_length_t);
-    if (btree_level != 1) {
-        length -= sizeof(shpid_t);
+    body_offset_t offset = head[item].offset;
+    if (offset < 0) {
+        offset = -offset;
     }
+
+    int length;
+    if (is_leaf()) {
+        length = body[offset].leaf.item_len;
+    } else {
+        length = body[offset].interior.item_len - sizeof(shpid_t);
+    }
+    length -= sizeof(item_length_t);
+    w_assert1(length >= 0);
     return length;
 }
 
 
 inline size_t btree_page_data::predict_item_space(size_t data_length) const {
     size_t size = data_length + sizeof(item_length_t);
-    if (btree_level != 1) {
+    if (!is_leaf()) {
         size += sizeof(shpid_t);
     }
 
-    return align(size) + sizeof(item_head);
+    return _item_align(size) + sizeof(item_head);
 }
 
 inline size_t btree_page_data::item_space(int item) const {
-    return align(my_item_length(item)) + sizeof(item_head);
+    return _item_align(my_item_length(item)) + sizeof(item_head);
 }
+
 
 inline size_t btree_page_data::usable_space() const {
     w_assert1(first_used_body*sizeof(item_body) >= nitems*sizeof(item_head));
-    return first_used_body*sizeof(item_body) - nitems*sizeof(item_head);
+    return    first_used_body*sizeof(item_body) -  nitems*sizeof(item_head);
 }
 
 #endif // BTREE_PAGE_H

@@ -50,10 +50,10 @@ bool btree_page_data::insert_item(int item, bool ghost, poor_man_key poor,
     w_assert3(_items_are_consistent());
 
     size_t length = data_length + sizeof(item_length_t);
-    if (btree_level != 1) {
+    if (!is_leaf()) {
         length += sizeof(shpid_t);
     }
-    if ((size_t)usable_space() < sizeof(item_head) + align(length)) {
+    if ((size_t)usable_space() < sizeof(item_head) + _item_align(length)) {
         return false;
     }
 
@@ -68,7 +68,7 @@ bool btree_page_data::insert_item(int item, bool ghost, poor_man_key poor,
     head[item].offset = ghost ? -first_used_body : first_used_body;
     head[item].poor = poor;
 
-    if (btree_level != 1) {
+    if (!is_leaf()) {
         body[first_used_body].interior.child = child;
     } else {
         w_assert1(child == 0);
@@ -103,24 +103,24 @@ bool btree_page_data::resize_item(int item, size_t new_length, size_t keep_old) 
 
     size_t old_length = my_item_length(item);
     size_t length = new_length + sizeof(item_length_t);
-    if (btree_level != 1) {
+    if (!is_leaf()) {
         length += sizeof(shpid_t);
     }
 
-    if (length <= align(old_length)) {
+    if (length <= _item_align(old_length)) {
         set_item_length(item, length);
         w_assert3(_items_are_consistent()); 
         return true;
     }
 
-    if (align(length) > (size_t) usable_space()) {
+    if (_item_align(length) > (size_t) usable_space()) {
         return false;
     }
 
-    first_used_body -= (length-1)/8+1;
+    first_used_body -= _item_align(length);
     head[item].offset = ghost ? -first_used_body : first_used_body;
     set_item_length(item, length);
-    if (btree_level != 1) {
+    if (!is_leaf()) {
         body[first_used_body].interior.child = body[offset].interior.child;
     }
 
@@ -132,7 +132,7 @@ bool btree_page_data::resize_item(int item, size_t new_length, size_t keep_old) 
     }
 
 #if W_DEBUG_LEVEL>0
-    ::memset((char*)&body[offset], 0xef, align(old_length)); // overwrite old item
+    ::memset((char*)&body[offset], 0xef, _item_align(old_length)); // overwrite old item
 #endif // W_DEBUG_LEVEL>0
 
     w_assert3(_items_are_consistent()); 
@@ -298,4 +298,4 @@ char* btree_page_data::unused_part(size_t& length) {
 }
 
 
-const size_t btree_page_data::max_item_overhead = sizeof(item_head) + sizeof(item_length_t) + sizeof(shpid_t) + align(1)-1;
+const size_t btree_page_data::max_item_overhead = sizeof(item_head) + sizeof(item_length_t) + sizeof(shpid_t) + _item_align(1)-1;
