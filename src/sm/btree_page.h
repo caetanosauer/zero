@@ -409,49 +409,25 @@ private:
     }
 
     item_length_t& _item_body_length(body_offset_t offset) {
+        w_assert1(offset >= 0);
         if (is_leaf()) {
             return body[offset].leaf.item_len;
         } else {
             return body[offset].interior.item_len;
         }
     }
-        
-
-
-
-    char* item_start(item_index_t item) {
-        body_offset_t offset = head[item].offset;
-        if (offset < 0) offset = -offset; // ghost record
-        return (char*)&body[offset];
-    }
-    item_body& item_value(item_index_t item) {
-        body_offset_t offset = head[item].offset;
-        if (offset < 0) offset = -offset; // ghost record
-        return body[offset];
-    }
-
-
-    item_length_t my_item_length(item_index_t item) const {
-        body_offset_t offset = head[item].offset;
-        if (offset < 0) offset = -offset; // ghost record
-
-        if (btree_level == 1) {
+    item_length_t _item_body_length(body_offset_t offset) const {
+        w_assert1(offset >= 0);
+        if (is_leaf()) {
             return body[offset].leaf.item_len;
         } else {
             return body[offset].interior.item_len;
         }
     }
-    item_length_t item_length8(item_index_t item) const { return (my_item_length(item)-1)/8+1; }
 
-    void set_item_length(item_index_t item, item_length_t length) {
-        body_offset_t offset = head[item].offset;
-        if (offset < 0) offset = -offset; // ghost record
-
-        if (btree_level == 1) {
-            body[offset].leaf.item_len = length;
-        } else {
-            body[offset].interior.item_len = length;
-        }
+    body_offset_t _item_bodies(body_offset_t offset) const {
+        w_assert1(offset >= 0);
+        return _item_align(_item_body_length(offset))/8;
     }
 };
 
@@ -517,22 +493,32 @@ inline btree_page_data::poor_man_key& btree_page_data::item_poor(int item) {
     return head[item].poor;    
 }
 inline btree_page_data::poor_man_key btree_page_data::item_poor(int item) const {
-    return item_poor(item);
+    w_assert1(item>=0 && item<nitems);
+    return head[item].poor;    
 }
 
 inline shpid_t& btree_page_data::item_child(int item) {
     w_assert1(item>=0 && item<nitems);
     w_assert1(!is_leaf());
-    return item_value(item).interior.child;
+
+    body_offset_t offset = head[item].offset;
+    if (offset < 0) {
+        offset = -offset;
+    }
+    return body[offset].interior.child;
 }
 
 
 inline char* btree_page_data::item_data(int item) {
     w_assert1(item>=0 && item<nitems);
+    body_offset_t offset = head[item].offset;
+    if (offset < 0) {
+        offset = -offset;
+    }
     if (is_leaf()) {
-        return item_value(item).leaf.item_data;
+        return body[offset].leaf.item_data;
     } else {
-        return item_value(item).interior.item_data;
+        return body[offset].interior.item_data;
     }
 }
 
@@ -556,16 +542,18 @@ inline size_t btree_page_data::item_length(int item) const {
 
 
 inline size_t btree_page_data::predict_item_space(size_t data_length) const {
-    size_t size = data_length + sizeof(item_length_t);
-    if (!is_leaf()) {
-        size += sizeof(shpid_t);
-    }
-
-    return _item_align(size) + sizeof(item_head);
+    size_t body_length = data_length + _item_body_overhead();
+    return _item_align(body_length) + sizeof(item_head);
 }
 
 inline size_t btree_page_data::item_space(int item) const {
-    return _item_align(my_item_length(item)) + sizeof(item_head);
+    w_assert1(item>=0 && item<nitems);
+    body_offset_t offset = head[item].offset;
+    if (offset < 0) {
+        offset = -offset;
+    }
+
+    return _item_align(_item_body_length(offset)) + sizeof(item_head);
 }
 
 

@@ -49,8 +49,8 @@ bool btree_page_data::insert_item(int item, bool ghost, poor_man_key poor,
     w_assert1(item>=0 && item<=nitems);  // use of <= intentional
     w_assert3(_items_are_consistent());
 
-    size_t length = data_length + _item_body_overhead();
-    if ((size_t)usable_space() < sizeof(item_head) + _item_align(length)) {
+    size_t body_length = data_length + _item_body_overhead();
+    if ((size_t)usable_space() < sizeof(item_head) + _item_align(body_length)) {
         return false;
     }
 
@@ -61,7 +61,7 @@ bool btree_page_data::insert_item(int item, bool ghost, poor_man_key poor,
         nghosts++;
     }
 
-    first_used_body -= _item_align(length)/8;
+    first_used_body -= _item_align(body_length)/8;
     head[item].offset = ghost ? -first_used_body : first_used_body;
     head[item].poor = poor;
 
@@ -70,7 +70,7 @@ bool btree_page_data::insert_item(int item, bool ghost, poor_man_key poor,
     } else {
         w_assert1(child == 0);
     }
-    _item_body_length(first_used_body) = length;
+    _item_body_length(first_used_body) = body_length;
 
     w_assert3(_items_are_consistent());
     return true;
@@ -110,6 +110,7 @@ bool btree_page_data::resize_item(int item, size_t new_length, size_t keep_old) 
         return false;
     }
 
+    char* old_p = item_data(item);
     first_used_body -= _item_align(length)/8;
     head[item].offset = ghost ? -first_used_body : first_used_body;
     _item_body_length(first_used_body) = length;
@@ -119,14 +120,9 @@ bool btree_page_data::resize_item(int item, size_t new_length, size_t keep_old) 
 
     if (keep_old > 0) {
         char* new_p = item_data(item);
-        char* old_p = (char*)&body[offset] + (new_p - (char*)&body[first_used_body]);
         w_assert1(old_p+keep_old <= (char*)&body[offset]+old_length);
         ::memcpy(new_p, old_p, keep_old); 
     }
-
-#if W_DEBUG_LEVEL>0
-    ::memset((char*)&body[offset], 0xef, _item_align(old_length)); // overwrite old item
-#endif // W_DEBUG_LEVEL>0
 
     w_assert3(_items_are_consistent()); 
     return true;
@@ -153,7 +149,7 @@ void btree_page_data::delete_item(int item) {
 
     if (offset == first_used_body) {
         // Then, we are pushing down the first_used_body.  lucky!
-        first_used_body += item_length8(item);
+        first_used_body += _item_bodies(offset);
     }
 
     // shift item array down to remove head[item]:
@@ -182,13 +178,11 @@ bool btree_page_data::_items_are_consistent() const {
     int ghosts_seen = 0;
     for (int item = 0; item<nitems; ++item) {
         int offset = head[item].offset;
-        int length = item_length8(item);
         if (offset < 0) {
+            offset = -offset;
             ghosts_seen++;
-            sorted_items[item] = ((-offset) << 16) + length;
-        } else {
-            sorted_items[item] =  (offset << 16)   + length;
         }
+        sorted_items[item] =  (offset << 16) + _item_bodies(offset);
     }
     std::sort(sorted_items.get(), sorted_items.get() + nitems);
 
@@ -237,7 +231,7 @@ bool btree_page_data::_items_are_consistent() const {
         for (int i=0; i<nitems; i++) {
             int offset = head[i].offset;
             if (offset < 0) offset = -offset;
-            size_t len    = item_length8(i);
+            size_t len    = _item_bodies(offset);
             DBGOUT1(<<"  item[" << i << "] body @ offsets " << offset << " to " << offset+len-1
                     << "; ghost? " << is_ghost(i) << " poor: " << item_poor(i));
         }
@@ -262,15 +256,16 @@ void btree_page_data::compact() {
     int reclaimed = 0;
     int j = 0;
     for (int i=0; i<nitems; i++) {
-        if (head[i].offset<0) {
+        body_offset_t offset = head[i].offset;
+        if (offset < 0) {
             reclaimed++;
             nghosts--;
         } else {
-            int length = item_length8(i);
+            int length = _item_bodies(offset);
             scratch_head -= length;
             head[j].poor = head[i].poor;
             head[j].offset = scratch_head;
-            ::memcpy(&scratch_body[scratch_head], item_start(i), length*sizeof(item_body));
+            ::memcpy(&scratch_body[scratch_head], &body[offset], length*sizeof(item_body));
             j++;
         }
     }
