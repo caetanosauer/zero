@@ -64,7 +64,8 @@ bool btree_page_data::insert_item(int item, bool ghost, poor_man_key poor,
         nghosts++;
     }
 
-    first_used_body -= (length-1)/8+1;
+    first_used_body -= _item_align(length)/8;
+//    first_used_body -= (length-1)/8+1;
     head[item].offset = ghost ? -first_used_body : first_used_body;
     head[item].poor = poor;
 
@@ -117,7 +118,7 @@ bool btree_page_data::resize_item(int item, size_t new_length, size_t keep_old) 
         return false;
     }
 
-    first_used_body -= _item_align(length);
+    first_used_body -= _item_align(length)/8;
     head[item].offset = ghost ? -first_used_body : first_used_body;
     set_item_length(item, length);
     if (!is_leaf()) {
