@@ -399,36 +399,25 @@ private:
     /// align to 8-byte boundary (integral multiple of item_body's)
     static size_t _item_align(size_t i) { return (i+7)&~7; }
 
-    /// Add this to data length to get bytes of used item bodies
-    size_t _item_body_overhead() const {
-        if (is_leaf()) {
-            return sizeof(item_length_t);
-        } else {
-            return sizeof(item_length_t) + sizeof(shpid_t);
-        }
-    }
+    /// add this to data length to get bytes used in item bodies (not counting padding)
+    size_t _item_body_overhead() const;
 
-    item_length_t& _item_body_length(body_offset_t offset) {
-        w_assert1(offset >= 0);
-        if (is_leaf()) {
-            return body[offset].leaf.item_len;
-        } else {
-            return body[offset].interior.item_len;
-        }
-    }
-    item_length_t _item_body_length(body_offset_t offset) const {
-        w_assert1(offset >= 0);
-        if (is_leaf()) {
-            return body[offset].leaf.item_len;
-        } else {
-            return body[offset].interior.item_len;
-        }
-    }
+    /**
+     * return reference to current number of bytes used in item bodies
+     * (not counting padding) associated with the item starting at
+     * offset offset
+     */
+    item_length_t& _item_body_length(body_offset_t offset);
+    /**
+     * return current number of bytes used in item bodies (not
+     * counting padding) associated with the item starting at offset
+     * offset
+     */
+    item_length_t _item_body_length(body_offset_t offset) const;
 
-    body_offset_t _item_bodies(body_offset_t offset) const {
-        w_assert1(offset >= 0);
-        return _item_align(_item_body_length(offset))/8;
-    }
+    /// return number of item bodies holding data for the items
+    /// starting at offset offset
+    body_offset_t _item_bodies(body_offset_t offset) const;
 };
 
 
@@ -482,6 +471,37 @@ BOOST_STATIC_ASSERT(sizeof(btree_page) == sizeof(generic_page));
 /* Rest of file is inlined method implementations                          */
 /*                                                                         */
 /***************************************************************************/
+
+inline size_t btree_page_data::_item_body_overhead() const {
+    if (is_leaf()) {
+        return sizeof(item_length_t);
+    } else {
+        return sizeof(item_length_t) + sizeof(shpid_t);
+    }
+}
+
+inline btree_page_data::item_length_t& btree_page_data::_item_body_length(body_offset_t offset) {
+    w_assert1(offset >= 0);
+    if (is_leaf()) {
+        return body[offset].leaf.item_len;
+    } else {
+        return body[offset].interior.item_len;
+    }
+}
+inline btree_page_data::item_length_t btree_page_data::_item_body_length(body_offset_t offset) const {
+    w_assert1(offset >= 0);
+    if (is_leaf()) {
+        return body[offset].leaf.item_len;
+    } else {
+        return body[offset].interior.item_len;
+    }
+}
+
+inline btree_page_data::body_offset_t btree_page_data::_item_bodies(body_offset_t offset) const {
+    w_assert1(offset >= 0);
+    return _item_align(_item_body_length(offset))/8;
+}
+
 
 inline bool btree_page_data::is_ghost(int item) const { 
     w_assert1(item>=0 && item<nitems);
