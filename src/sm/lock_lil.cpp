@@ -334,7 +334,7 @@ inline void clear_lock_flags(bool *lock_taken, bool read_lock_only) {
         lock_taken[LIL_IS] = lock_taken[LIL_IX] = lock_taken[LIL_S] = lock_taken[LIL_X] = false;
     }
 }
-
+    
 void lil_private_vol_table::release_vol_locks(lil_global_table *global_table, bool read_lock_only, lsn_t commit_lsn)
 {
     w_assert1(_vid);
@@ -363,7 +363,7 @@ lil_private_store_table* lil_private_vol_table::_find_store_table(uint32_t store
     }
 
     //newly add the volume.
-    if (_stores < MAX_VOL_PER_XCT) {
+    if (_stores < MAX_STORE_PER_VOL_XCT) {
         _store_tables[_stores]._store = store;
         lil_private_store_table *ret = &_store_tables[_stores];
         ++_stores;
