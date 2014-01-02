@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2013-2014, Hewlett-Packard Development Company, LP
  */
 
 #include "btree_page.h"
@@ -14,7 +14,7 @@ void btree_page_data::init_items() {
 
     nitems          = 0;
     nghosts         = 0;
-    first_used_body = bodies;
+    first_used_body = max_bodies;
 
     w_assert3(_items_are_consistent());
 }

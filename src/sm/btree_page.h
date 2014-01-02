@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 #ifndef BTREE_PAGE_H
@@ -300,15 +300,14 @@ protected:
     bool          _items_are_consistent() const;
 
 
-
+private:
 // ======================================================================
 //   BEGIN: private implementation details
 // ======================================================================
 
-private:
     typedef uint16_t item_index_t;
     typedef uint16_t item_length_t;
-    typedef int16_t  body_offset_t;  // sign bit is used to encode ghostness
+    typedef int16_t  body_offset_t;  // sign bit is used to encode ghostness in item_head's
 
     // ======================================================================
     //   BEGIN: item-specific headers
@@ -331,8 +330,26 @@ private:
     // ======================================================================
 
 
+    /*
+     * The item space is organized as follows:
+     * 
+     *   head_0 head_1 ... head_I  <possible gap> body_J body_J+1 ... body_N
+     * 
+     * where head_i is a fixed sized value of type item_head that
+     * contains the poor_man_key, the ghost bit, and a offset to a
+     * starting item_body for item # i.  As items are added, space is
+     * consumed on both sides of the gap: at the beginning for another
+     * item_head and at the end for one or more item bodies to store
+     * the remaining data, namely the variable-size data field and
+     * (for interior nodes only) the child pointer.
+     * 
+     * Here, I is nitems+1, J is first_used_body, and N is max_bodies-1.
+     */
+
     typedef struct {
-        body_offset_t offset;  // <0: ghost, ...
+        /// sign bit: is this a ghost item?  (<0 => yes)
+        /// first item_body belonging to this item is body[abs(offset)]
+        body_offset_t offset;
         poor_man_key  poor;
     } item_head;
     //static_assert(sizeof(item_head) == 4, "item_head has wrong length");
@@ -343,14 +360,18 @@ private:
         union {
             struct {
                 item_length_t item_len;
+                /// really of size item_len - sizeof(item_len):
                 char          item_data[6];
             } leaf;
             struct {
                 shpid_t       child;
                 item_length_t item_len;
+                /// really of size item_len - sizeof(item_len) - sizeof(child):
                 char          item_data[2];
             } interior;
-            int64_t for_alignment;
+            // We use 8 byte alignment instead of the required 4 for
+            // historical reasons at this point:
+            int64_t _for_alignment_only;
         };
     } item_body;
     //static_assert(sizeof(item_body) == 8, "item_body has wrong length");
@@ -358,31 +379,18 @@ private:
 
     BOOST_STATIC_ASSERT(data_sz%8 == 0);
     enum {
-        heads  = data_sz/sizeof(item_head),
-        bodies = data_sz/sizeof(item_body),
+        max_heads  = data_sz/sizeof(item_head),
+        max_bodies = data_sz/sizeof(item_body),
     };
 
     union {
-        item_head head[heads];
-        item_body body[bodies];
+        item_head head[max_heads];
+        item_body body[max_bodies];
     };
     // check field sizes are large enough:
     BOOST_STATIC_ASSERT(data_sz < 1<<(sizeof(item_length_t)*8));
-    BOOST_STATIC_ASSERT(heads   < 1<<(sizeof(item_index_t)*8));
-    BOOST_STATIC_ASSERT(bodies  < 1<<(sizeof(body_offset_t)*8-1));
-
-
-
-
-    btree_page_data() {
-        //w_assert1(0);  // FIXME: is this constructor ever called? yes it is (test_btree_ghost)
-        /* w_assert1((body[0].raw - (const char *)this) % 4 == 0);     // check alignment<<<>>> */
-        /* w_assert1((body[0].raw - (const char *)this) % 8 == 0);     // check alignment */
-        /* w_assert1(body[0].raw - (const char *) this == hdr_sz); */
-    }
-
-
-
+    BOOST_STATIC_ASSERT(max_heads   < 1<<(sizeof(item_index_t) *8));
+    BOOST_STATIC_ASSERT(max_bodies  < 1<<(sizeof(body_offset_t)*8-1)); // -1 for ghost bit
 
 
 
