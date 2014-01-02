@@ -184,8 +184,7 @@ vtable_t::init(int R, int A, int S) {
 void           
 vtable_t::filled_one() 
 { 
-    W_IFDEBUG1(vtable_row_t *t = _get_row(_rows_filled);)
-    w_assert1(t->size_in_bytes() <= _rowsize_bytes);
+    w_assert1(_get_row(_rows_filled)->size_in_bytes() <= _rowsize_bytes);
 
     _rows_filled++; 
     w_assert9(_rows_filled <= _rows);

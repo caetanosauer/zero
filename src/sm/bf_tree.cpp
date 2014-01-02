@@ -1006,7 +1006,7 @@ int bf_tree_m::_try_evict_block(bf_idx idx) {
                 << " pincnt = " << cb.pin_cnt());
         
         // remove it from hashtable.
-        W_IFDEBUG1(bool removed =) _hashtable->remove(bf_key(cb._pid_vol, cb._pid_shpid));
+        bool removed = _hashtable->remove(bf_key(cb._pid_vol, cb._pid_shpid));
         w_assert1(removed);
 #ifdef BP_MAINTAIN_PARNET_PTR
         w_assert1(!_is_in_swizzled_lru(idx));
@@ -1043,7 +1043,7 @@ void bf_tree_m::_delete_block(bf_idx idx) {
     cb._dirty = false;
 
     DBGOUT1(<<"delete block: remove page shpid = " << cb._pid_shpid);
-    W_IFDEBUG1(bool removed =) _hashtable->remove(bf_key(cb._pid_vol, cb._pid_shpid));
+    bool removed = _hashtable->remove(bf_key(cb._pid_vol, cb._pid_shpid));
     w_assert1(removed);
 #ifdef BP_MAINTAIN_PARNET_PTR
     w_assert1(!_is_in_swizzled_lru(idx));

@@ -144,7 +144,7 @@ int sthread_t::do_unmap()
     return err;
 }
 
-void sthread_t::align_for_sm(size_t W_IFDEBUG1(requested_size))
+void sthread_t::align_for_sm(size_t requested_size)
 {
     char * _disk_buffer2  = (char *)alignon( _disk_buffer, SM_PAGESIZE);
     if( _disk_buffer2 !=  _disk_buffer) 

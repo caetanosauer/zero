@@ -644,8 +644,7 @@ void btree_foster_merge_log::redo(fixable_page_h* page)
     // Because of careful-write-order, the merged page must still exist.
     // Otherwise, this page's REDO shouldn't have been called.
     borrowed_btree_page_h bp(page);
-    W_IFDEBUG1(shpid_t merged_pid = *((shpid_t*) _data));
-    w_assert1(bp.get_foster() == merged_pid); // otherwise, already merged!
+    w_assert1(bp.get_foster() == *((shpid_t*) _data)); // otherwise, already merged!
     rc_t rc = btree_impl::_ux_merge_foster_core(bp);
     w_assert1(!rc.is_error());
 }
