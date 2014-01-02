@@ -399,7 +399,23 @@ private:
     /// align to 8-byte boundary (integral multiple of item_body's)
     static size_t _item_align(size_t i) { return (i+7)&~7; }
 
+    /// Add this to data length to get bytes of used item bodies
+    size_t _item_body_overhead() const {
+        if (is_leaf()) {
+            return sizeof(item_length_t);
+        } else {
+            return sizeof(item_length_t) + sizeof(shpid_t);
+        }
+    }
 
+    item_length_t& _item_body_length(body_offset_t offset) {
+        if (is_leaf()) {
+            return body[offset].leaf.item_len;
+        } else {
+            return body[offset].interior.item_len;
+        }
+    }
+        
 
 
 
