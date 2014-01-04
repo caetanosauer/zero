@@ -220,7 +220,8 @@ do {                                                                    \
 #if W_DEBUG_LEVEL>=5
 #define w_assert5(x)    w_assert1(x)
 #else
-#define w_assert5(x)    /**/
+//#define w_assert5(x)    /**/
+#define w_assert5(x)    if (false) { (void)(x); }
 #endif
 
 /*
