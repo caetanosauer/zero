@@ -196,21 +196,24 @@ do {                                                                    \
 #if W_DEBUG_LEVEL>=2
 #define w_assert2(x)    w_assert1(x)
 #else
-#define w_assert2(x)    /**/
+//#define w_assert2(x)    /**/
+#define w_assert2(x)    if (false) { (void)(x); }
 #endif
 
 /// Level 3 definitely adds significant time.
 #if W_DEBUG_LEVEL>=3
 #define w_assert3(x)    w_assert1(x)
 #else
-#define w_assert3(x)    /**/
+//#define w_assert3(x)    /**/
+#define w_assert3(x)    if (false) { (void)(x); }
 #endif
 
 /// Level 4 can be a hog.
 #if W_DEBUG_LEVEL>=4
 #define w_assert4(x)    w_assert1(x)
 #else
-#define w_assert4(x)    /**/
+//#define w_assert4(x)    /**/
+#define w_assert4(x)    if (false) { (void)(x); }
 #endif
 
 /// Level 5 is not yet used.
@@ -229,7 +232,8 @@ do {                                                                    \
  * Make them 2 if you want them for a 'normal' debug system.
 */
 /// changing an assert to an assert9 turns it off. 
-#define w_assert9(x)    /**/
+//#define w_assert9(x)    /**/
+#define w_assert9(x)    if (false) { (void)(x); }
 
 /**\brief  Cast to treat an enum as integer value.  
  *
