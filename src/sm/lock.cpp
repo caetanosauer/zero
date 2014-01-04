@@ -156,7 +156,7 @@ lock_m::_lock(
     return rc;
 }
 
-lil_lock_modes_t to_lil_mode (okvl_mode::singular_lock_mode m) {
+lil_lock_modes_t to_lil_mode (okvl_mode::element_lock_mode m) {
     switch (m) {
         case okvl_mode::IS: return LIL_IS;
         case okvl_mode::IX: return LIL_IX;
@@ -168,7 +168,7 @@ lil_lock_modes_t to_lil_mode (okvl_mode::singular_lock_mode m) {
     return LIL_IS;// shouldn't reach here!
 }
 
-rc_t lock_m::intent_vol_lock(vid_t vid, okvl_mode::singular_lock_mode m)
+rc_t lock_m::intent_vol_lock(vid_t vid, okvl_mode::element_lock_mode m)
 {
     lil_lock_modes_t mode = to_lil_mode(m);
     xct_t *xd = xct();
@@ -184,7 +184,7 @@ rc_t lock_m::intent_vol_lock(vid_t vid, okvl_mode::singular_lock_mode m)
     return RCOK;
 }
 
-rc_t lock_m::intent_store_lock(const stid_t &stid, okvl_mode::singular_lock_mode m)
+rc_t lock_m::intent_store_lock(const stid_t &stid, okvl_mode::element_lock_mode m)
 {
     lil_lock_modes_t mode = to_lil_mode(m);
     xct_t *xd = xct();
@@ -200,7 +200,7 @@ rc_t lock_m::intent_store_lock(const stid_t &stid, okvl_mode::singular_lock_mode
     return RCOK;
 }
 
-rc_t lock_m::intent_vol_store_lock(const stid_t &stid, okvl_mode::singular_lock_mode m)
+rc_t lock_m::intent_vol_store_lock(const stid_t &stid, okvl_mode::element_lock_mode m)
 {
     lil_lock_modes_t mode = to_lil_mode(m);
     xct_t *xd = xct();

@@ -20,7 +20,7 @@
 /** implementation of dump/output/other debug utility functions in lock_core,lock_m. */
 
 // Obviously not mt-safe:
-ostream &                        
+ostream &
 xct_lock_info_t::dump_locks(ostream &out) const
 {
     /*
@@ -30,7 +30,7 @@ xct_lock_info_t::dump_locks(ostream &out) const
     while ((req = iter.next())) {
         w_assert9(req->xd == xct());
         lh = req->get_lock_head();
-        out << "Lock: " << lh->name 
+        out << "Lock: " << lh->name
             << " Mode: " << int(req->mode())
             << " State: " << int(req->status()) <<endl;
     }
@@ -47,7 +47,7 @@ xct_lock_info_t::dump_locks(ostream &out) const
 #if 1
 ostream& operator<<(ostream &o, const xct_lock_info_t &) { return o; }
 #else
-ostream &            
+ostream &
 operator<<(ostream &o, const xct_lock_info_t &x)
 {
         lock_request_t *waiting = x.waiting_request();
@@ -66,7 +66,9 @@ operator<<(ostream &o, const xct_lock_info_t &x)
  *
  *********************************************************************/
 #if 1
-void lock_core_m::dump(ostream &) {}
+void lock_core_m::dump(ostream &o) {
+    _dump(o);
+}
 #else
 /*
 // disabled because there's no safe way to iterate over the lock table
@@ -92,12 +94,12 @@ lock_core_m::dump(ostream & o)
             // First, verify the hash function:
             unsigned hh = _table_bucket(lock->name.hash());
             if(hh != h) {
-                o << "ERROR!  hash table bucket h=" << h 
+                o << "ERROR!  hash table bucket h=" << h
                     << " contains lock head " << *lock
                     << " which hashes to " << hh
                     << endl;
             }
-            
+
             ACQUIRE_HEAD_MUTEX(lock); // this is dump
             o << "\t " << *lock << endl;
             lock_request_t* request;
@@ -139,8 +141,6 @@ lock_core_m::assert_empty() const
 }
 
 
-#if 0
-//* This code is unused and UNSAFE
 void
 lock_core_m::_dump(ostream &o)
 {
@@ -148,15 +148,17 @@ lock_core_m::_dump(ostream &o)
         // empty queue is fine. just check leftover requests
         for (lock_queue_t *queue = _htab[h]._queue; queue != NULL; queue = queue->next()) {
             for (lock_queue_entry_t *req = queue->_head; req != NULL; req = req->_next) {
-                o << "lock request(hash=" << queue->hash() << "):" << *req << endl;
+                o << "lock request(hash=" << queue->hash() << "):" << *req
+                << ", observed_release_version=" << req->get_observed_release_version()
+                << ", queue's release version=" << queue->_release_version
+                << endl;
             }
         }
     }
     o << "--end of lock table--" << endl;
 }
-#endif
 
-ostream& 
+ostream&
 operator<<(ostream& o, const lock_queue_entry_t& r)
 {
     o << "xct:" << r._li.tid()
@@ -176,7 +178,7 @@ operator<<(ostream& o, const lock_queue_entry_t& r)
  *  Pretty print a lockid to "ostream".
  *
  *********************************************************************/
-ostream& 
+ostream&
 operator<<(ostream& o, const lockid_t& i)
 {
     stid_t s;

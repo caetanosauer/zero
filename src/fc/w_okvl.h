@@ -14,25 +14,31 @@
  */
 
 #include <string.h> // for memset/memcpy/memcmp
-#include <ostream>
 
 /**
  * The number of partitions in OKVL.
  * Must be 1 or more. If the value is 1, it behaves just like OKRL.
  * In the OKVL paper, this parameter is denoted as "k".
+ * \NOTE When this value is more than 1, it should be a prime number
+ * because we currently divide hashes by this number to determine
+ * the partition. A simple number, say "256", would result
+ * in horrible hash collisions (yes, I actually hit the issue).
+ * Also, it's a good idea to keep OKVL_MODE_COUNT within some multiply of
+ * 16 (for example, 61+1+1=63, which would fit in one cache line).
+ * Finally, this number should be reasonably small, say at most hundreds.
+ * We tested even larger numbers and observed slow downs.
+ * See our paper for more details.
  */
-const uint32_t OKVL_PARTITIONS = 2;
+const uint32_t OKVL_PARTITIONS = 2; // 127; // 29;
 
-/** # of individual partitions, +1 for "master" partition, and +1 for gap. */
+/** # of partitions, +1 for key, and +1 for gap. */
 const uint32_t OKVL_MODE_COUNT = (OKVL_PARTITIONS + 1 + 1);
-
-struct w_okvl_consts;
 
 /**
  * \brief Represents a lock mode of one key entry in the \e OKVL lock manager.
  * \details
- * It consists of lock mode for \e individual paritions,
- * 1 \e master partition, and 1 \e gap after the key.
+ * It consists of lock mode for \e paritions,
+ * 1 \e key, and 1 \e gap after the key.
  * There are constant instances to quickly get frequently-used lock modes.
  * Otherwise, you have to instantiate this struct. Hope it fits on stack.
  *
@@ -40,53 +46,51 @@ struct w_okvl_consts;
  * \e OKVL is a more concurrent and simple lock mode design compared to
  * ARIES \e KVL (Key Value Locking), Lomet's \e KRL (Key Range Locking),
  * and Graefe's \e OKRL (Orthogonal Key Range Locking).
- * The main difference is that OKVL \e partitions the key part of
- * the lock into \e k \e individual lock modes and their coarse level mode
- * called the \e master partition mode.
- * 
- * So, it consists of k singular lock modes (e.g., S and X) for
- * individual partitions, 1 singular lock mode for master,
- * and 1 singular lock mode for the gap between the key and the next key.
+ * It combines techniques from those previous work with
+ * \e partitioning of the key. In addition to the \e key lock mode, OKVL
+ * has \e k \e partition lock modes.
+ *
+ * So, it consists of k \e element lock modes (e.g., S and X) for
+ * individual partitions, 1 element lock mode for key,
+ * and 1 element lock mode for the gap between the key and the next key.
  * For example, suppose k=4 and a transaction (Xct-A) locks only the 2nd partition
- * with S; 1st=N, 2nd=S, 3rd=N, 4th=N, master=IS, gap=N.
+ * with S; 1st=N, 2nd=S, 3rd=N, 4th=N, key=IS, gap=N.
  * Even when another transaction (Xct-B) wants to lock the key with X,
  * the locks are compatible unless Xct-B ends up hitting 2nd partition.
- * 
+ *
  * We determine the partition to lock based on the \e uniquefier of the key-value entry.
  * Thus, if the index is a unique index, OKVL behaves exactly same as OKRL.
  * However, for non-unique indexes with lots of duplicate keys
  * this will dramatically increase the concurrency.
  *
- * Note that sometimes we have to lock the master partition with
+ * Note that sometimes we have to lock the entire key with
  * absolute lock mode (e.g., S) rather than intent mode (e.g., IS).
  * For example, a scanning transaction has to protect all entries under the key.
- * 
+ *
  * \section Uniquefier Uniquefier in non-unique indexes
  * It depends on the implementation of non-unique indexes.
  * Some database appends uniquefiers to keys (so, physically making it a unique index except
  * lock manager behavior) while other stores uniquefiers as data (thus, "value" is a list).
  * We employ the former approach, so uniquefier is the tail of each key.
- * 
+ *
  * \note For further understanding, you are strongly advised to
  * read the full document about OKVL under publications/papers/TBD.
  * Or, search "Orthogonal Key Value Locking" on Google Scholar.
  * It's a full-length paper, but it must be worth reading (otherwise punch us).
  */
 struct okvl_mode {
-    friend std::ostream& operator<<(std::ostream&, const okvl_mode& v);
-
     /** typedef for readability. it's just an integer. */
-    typedef uint32_t part_id;
+    typedef uint16_t part_id;
 
     /**
-    * \enum singular_lock_mode
-    * \brief Lock mode for one OKVL partition or a gap.
+    * \enum element_lock_mode
+    * \brief Lock mode for one OKVL component (key, partition, or gap).
     * \details
     * This enum must be up to 256 entries because we assume it's stored in char.
     * Unlike the original shore-mt's enum, the order of the entries imply NOTHING.
     * (well, lock modes only have partitial orders, anyways)
     */
-    enum singular_lock_mode {
+    enum element_lock_mode {
         /** no lock                          */ N = 0,
         /** intention share (read)           */ IS,
         /** intention exclusive (write)      */ IX,
@@ -97,8 +101,8 @@ struct okvl_mode {
     };
 
     /**
-     * Each byte represents the singular lock mode for a partition or a gap.
-     * This actually means singular_lock_mode[OKVL_MODE_COUNT], but
+     * Each byte represents the element lock mode for a component.
+     * This actually means element_lock_mode[OKVL_MODE_COUNT], but
      * explicitly uses char to make sure it's 1 byte.
      */
     unsigned char modes[OKVL_MODE_COUNT];
@@ -112,22 +116,25 @@ struct okvl_mode {
     /** Copy constructor. */
     okvl_mode& operator=(const okvl_mode& r);
 
-    /** Sets only the master mode and gap mode. */
-    okvl_mode(singular_lock_mode master_mode, singular_lock_mode gap_mode);
+    /** Sets only the key mode and gap mode. */
+    okvl_mode(element_lock_mode key_mode, element_lock_mode gap_mode);
 
-    /** Sets only an individual partition mode (and its intent mode on master). */
-    okvl_mode(part_id part, singular_lock_mode partition_mode);
-    
-    singular_lock_mode get_partition_mode(part_id partition) const;
-    singular_lock_mode get_master_mode() const;
-    singular_lock_mode get_gap_mode() const;
-    
+    /** Sets only an individual partition mode (and its intent mode on key). */
+    okvl_mode(part_id part, element_lock_mode partition_mode);
+
+    element_lock_mode get_partition_mode(part_id partition) const;
+    element_lock_mode get_key_mode() const;
+    element_lock_mode get_gap_mode() const;
+
     /** Returns whether the lock modes are completely empty (all NULL modes).*/
     bool is_empty() const;
-    
-    /** Returns whether the key modes are completely empty, either master or other partitions.*/
+
+    /** Returns whether the key modes are completely empty, either key or its partitions.*/
     bool is_keylock_empty() const;
-    
+
+    /** Returns whether the key modes are either empty or key-mode only (S/X in key). */
+    bool is_keylock_partition_empty() const;
+
     /**
      * \brief Returns whether this contains any lock mode that implies data update
      * _directly_ in the resource this lock protects (e.g., XN. XX, NX etc).
@@ -140,32 +147,48 @@ struct okvl_mode {
      */
     bool contains_dirty_lock() const;
 
-    /** Sets an individual partition mode (and its intent mode on master). */
-    void set_partition_mode(part_id partition, singular_lock_mode mode);
-    /** Sets the master mode. */
-    void set_master_mode(singular_lock_mode mode);
+    /** Sets an individual partition mode (and its intent mode on key). */
+    void set_partition_mode(part_id partition, element_lock_mode mode);
+    /** Sets the key mode. */
+    void set_key_mode(element_lock_mode mode);
     /** Sets the gap mode. */
-    void set_gap_mode(singular_lock_mode mode);
+    void set_gap_mode(element_lock_mode mode);
 
     /** Clears all lock modes to be No-Lock. */
     void clear();
-    
+
     /** Returns whether _this_ granted mode allows the _given_ requested mode. */
     bool is_compatible_request(const okvl_mode &requested) const;
 
     /** Returns whether _this_ requested mode can be allowed by the _given_ granted mode. */
     bool is_compatible_grant(const okvl_mode &granted) const;
 
+    /**
+     * Returns whether this mode is \e implied by the given mode.
+     * For example, NNNN_S is implied by NXXX_S and NSSN_S is implied by NXXN_X.
+     * Note that "X is not implied by  Y" does NOT always mean "Y is implied by X".
+     * NOTE "key=S" is logically implied by "key=IS partition= all S",
+     * but this function does not check it to be efficient.
+     * Do not use this method if it matters.
+     */
+    bool is_implied_by(const okvl_mode &superset) const;
+
     /** operator overloads. */
-    inline bool operator==(const okvl_mode& r) const;
-    inline bool operator!=(const okvl_mode& r) const;
+    bool operator==(const okvl_mode& r) const;
+    bool operator!=(const okvl_mode& r) const;
 
     /** Static function to tell whether the two modes are compatible. */
     static bool is_compatible(const okvl_mode &requested, const okvl_mode &granted);
 
-    /** Static function to check if two lock modes are compatible. */
-    static bool is_compatible_singular(singular_lock_mode requested, singular_lock_mode granted);
-    
+    /** Static function to check if two element lock modes are compatible. */
+    static bool is_compatible_element(element_lock_mode requested, element_lock_mode granted);
+
+    /**
+     * Static function to tell whether left is implied by right.
+     * Note that "X is not implied by Y" does NOT always mean "Y is implied by X".
+     */
+    static bool is_implied_by_element(element_lock_mode left, element_lock_mode right);
+
     /** Determines the partition for the given uniquefier. */
     static part_id compute_part_id(const void* uniquefier, int uniquefier_length);
 

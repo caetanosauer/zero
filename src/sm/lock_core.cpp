@@ -37,12 +37,11 @@ w_rc_t::errcode_t (*g_check_deadlock_impl)(xct_t* xd, lock_request_t *myreq);
 
 xct_lock_info_t::xct_lock_info_t() : _head (NULL), _tail (NULL), _permission_to_violate (false)
 {
-    _wait_map_obsolete = false;
     init_wait_map(g_me());
 }
 
 // allows reuse rather than free/malloc of the structure
-xct_lock_info_t* xct_lock_info_t::reset_for_reuse() 
+xct_lock_info_t* xct_lock_info_t::reset_for_reuse()
 {
     // make sure the lock lists are empty
     w_assert1(_head == NULL);
@@ -59,7 +58,7 @@ xct_lock_info_t::~xct_lock_info_t()
 }
 
 lock_core_m::lock_core_m(uint sz)
-: 
+:
   _htab(0),
   _htabsz(0)
 {
@@ -88,13 +87,13 @@ lock_core_m::lock_core_m(uint sz)
      ::memset(_htab, 0, sizeof(_htab));
      */
     _htab = new bucket_t[_htabsz];
-    ::memset(_htab, 0, sizeof(*_htab));
+    ::memset(_htab, 0, _htabsz * sizeof(bucket_t));
 
     w_assert1(_htab);
-    
+
     _lil_global_table = new lil_global_table;
     w_assert1(_lil_global_table);
-    _lil_global_table->clear();    
+    _lil_global_table->clear();
 }
 
 lock_core_m::~lock_core_m()
@@ -103,7 +102,7 @@ lock_core_m::~lock_core_m()
 
     delete[] _htab;
     _htab = NULL;
-    
+
     delete _lil_global_table;
     _lil_global_table = NULL;
 }
@@ -126,7 +125,6 @@ lock_core_m::acquire_lock(
     lock_queue_t *lock = _htab[idx].find_lock_queue(hash);
 
     int acquire_ret = _acquire_lock(xd, lock, mode, prev_mode, check_only, timeout, the_xlinfo);
-
     w_rc_t::errcode_t funcret;
     if (acquire_ret == RET_SUCCESS) {
         // store the lock queue tag we observed. this is for Safe SX-ELR
@@ -177,19 +175,22 @@ lock_core_m::_acquire_lock(
         w_assert1(&req->_li == the_xlinfo);
         w_assert1(req->_xct_entry != NULL);
         prev_mode = req->_granted_mode;
+        if (mode.is_implied_by(prev_mode)) {
+            // already had the desired lock mode!
+            // we can safely (and efficiently) exit without taking latch in this case.
+            return RET_SUCCESS;
+        }
         spinlock_write_critical_section cs(&lock->_requests_latch);
         req->_requested_mode = okvl_mode::combine(mode, req->_granted_mode);
-        if (req->_requested_mode == req->_granted_mode) {
-            return RET_SUCCESS; // already had the desired lock mode!
-        }
     }
     int loop_ret = _acquire_lock_loop(xd, thr, lock, req, check_only, timeout, the_xlinfo);
-    
+
     the_xlinfo->init_wait_map(thr);
+    req->_observed_release_version = 0;
     // discard (or downgrade) the failed request. check_only does it even on success.
     if (loop_ret != RET_SUCCESS || check_only) {
         if (!req->_granted_mode.is_empty()) {
-            // We deny the upgrade but leave the 
+            // We deny the upgrade but leave the
             // lock request in place with its former status.
             spinlock_write_critical_section cs(&lock->_requests_latch);
             req->_requested_mode = req->_granted_mode;
@@ -219,7 +220,7 @@ lock_core_m::_acquire_lock_loop(
         ::clock_gettime(CLOCK_REALTIME, &until);
         until.tv_nsec += (uint64_t) timeout * 1000000;
         until.tv_sec += until.tv_nsec / 1000000000;
-        until.tv_nsec = until.tv_nsec % 1000000000;    
+        until.tv_nsec = until.tv_nsec % 1000000000;
     }
 
     // loop again and again until decisive failure or success
@@ -233,7 +234,7 @@ lock_core_m::_acquire_lock_loop(
             << (void*) chk_result.deadlock_other_victim << ","
             << " fingerprint=" << g_me()->get_fingerprint_map()
             << " new bitmap=" << chk_result.refreshed_wait_map);
-        
+
         if (chk_result.can_be_granted) {
             if (check_only) {
                 if (chk_result.observed.valid())
@@ -259,12 +260,14 @@ lock_core_m::_acquire_lock_loop(
             DBGOUT3(<<"deadlock. I should die! ");
             return RET_DEADLOCK;
         }
-        
+
         if (timeout == WAIT_IMMEDIATE) {
             return RET_TIMEOUT;
         }
+
         the_xlinfo->refresh_wait_map(chk_result.refreshed_wait_map);
-        // either no deadlock or there is a deadlock but 
+        req->_observed_release_version = lock->_release_version;
+        // either no deadlock or there is a deadlock but
         // some other xact was selected as victim
         DBGOUT5(<< "blocking:xd=" << xd->tid()  /*<< " mode=" << int(mode)*/ << " timeout=" << timeout); // <<<>>>
 
@@ -305,7 +308,7 @@ void lock_core_m::release_lock(
     w_assert1(lock);
     w_assert1(req);
     w_assert1(&req->_thr == g_me());  // safe if true
-    
+
     // update lock tag if this is a part of SX-ELR.
     if (commit_lsn.valid()) {
         const okvl_mode& m = req->_granted_mode;
@@ -315,42 +318,27 @@ void lock_core_m::release_lock(
         }
     }
     lock->detach_request(req);
+    ++lock->_release_version; // now all wait-maps are obsolete!
     //copy these before destroying
     xct_lock_entry_t *xct_entry = req->_xct_entry;
     xct_lock_info_t *li = &req->_li;
-    const okvl_mode& released_granted = req->_granted_mode;
-    const okvl_mode& released_requested = req->_requested_mode;
+    // note, we _copy_ it here beacuse req object will disappear.
+    okvl_mode released_requested = req->_requested_mode;
     lockEntryPool->destroy_object(req);
-    lock->wakeup_waiters(released_granted, released_requested);
+    lock->wakeup_waiters(released_requested);
     if (xct_entry) {
         li->remove_request(xct_entry);
     }
 }
 
 
-void lock_queue_t::wakeup_waiters(const okvl_mode& released_granted, const okvl_mode& released_requested)
+void lock_queue_t::wakeup_waiters(const okvl_mode& released_requested)
 {
-    if(g_deadlock_dreadlock_interval_ms == 0) // if ==0 (spin), no need to wakeup
-        return;
     if (_head == NULL)
         return; //empty
+    if(g_deadlock_dreadlock_interval_ms == 0) // if ==0 (spin), no need to wakeup
+        return;
 
-    if (g_deadlock_use_waitmap_obsolete) {
-        // **BEFORE** we wake-up each waiter, we
-        // immediately invalidate the wait map so that subsequent
-        // spins will suspect this waiter's bitmap might cause false positives.
-        // this is only to reduce false positives. not required for consistency.
-        // @see xct_lock_info_t::_wait_map_obsolete
-        spinlock_read_critical_section cs(&_requests_latch);
-        // CRITICAL_SECTION(cs, _requests_latch.read_lock());
-        for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
-            if (p->_granted_mode != p->_requested_mode
-                && !okvl_mode::is_compatible(p->_requested_mode, released_granted)) {
-                p->_li.set_wait_map_obsolete(true);
-            }
-        }
-    }
-    
     // wakeup a limited number of threads to reduce overhead.
     const int MAX_WAKEUP = 4;
     smthread_t *targets[MAX_WAKEUP];
@@ -397,8 +385,8 @@ lock_core_m::release_duration(
             }
             p = prev;
         }
-        // we don't "downgrade" SX/XS to NX/XN for laziness.  
-	// See jira ticket:99 "ELR for X-lock" (originally trac ticket:101).
+        // we don't "downgrade" SX/XS to NX/XN for laziness.
+    // See jira ticket:99 "ELR for X-lock" (originally trac ticket:101).
         // likewise, we don't "downgrade" SIX to IX for laziness
     } else {
         //backwards:
@@ -493,7 +481,7 @@ bool lock_queue_t::grant_request (lock_queue_entry_t* myreq, lsn_t& observed) {
             precedes_me = false;
             continue;
         }
-        bool compatible = _check_compatible(m, p, precedes_me, observed);
+        bool compatible = _check_compatible(myreq->_granted_mode, m, p, precedes_me, observed);
         if (!compatible) {
             return false;
         }
@@ -503,7 +491,6 @@ bool lock_queue_t::grant_request (lock_queue_entry_t* myreq, lsn_t& observed) {
     return true;
 }
 
-    
 void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_result &result) {
     spinlock_read_critical_section cs(&_requests_latch);
     // CRITICAL_SECTION(cs, _requests_latch.read_lock()); // read lock suffices
@@ -515,6 +502,7 @@ void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_resul
     xct_t* myxd = &myreq->_xct;
     bool precedes_me = true;
     const okvl_mode& m = myreq->_requested_mode;
+    const uint64_t threshold_version = this->_release_version;
 
     for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
         if (p == myreq) {
@@ -523,7 +511,7 @@ void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_resul
         }
         w_assert1(&p->_li != &myreq->_li);
         w_assert1(&p->_thr != &myreq->_thr);
-        bool compatible = _check_compatible(m, p, precedes_me, result.observed);
+        bool compatible = _check_compatible(myreq->_granted_mode, m, p, precedes_me, result.observed);
         if (!compatible) {
             DBGOUT5(<<"incompatible! (pre=" << precedes_me << ")."
                 << ", I=" << myfingerprint
@@ -534,23 +522,26 @@ void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_resul
             result.can_be_granted = false;
             xct_t *theirxd = &p->_xct;
             xct_lock_info_t *theirli = &p->_li;
-            if (!theirli->is_wait_map_obsolete()) {
+            uint64_t their_version = p->get_observed_release_version();
+            if (their_version == 0 || their_version >= threshold_version) {
                 const atomic_thread_map_t &other = theirli->get_wait_map();
                 bool deadlock_detected = other.contains(myfingerprint);
 
                 // Then, take OR with other to update _wait_map (myself)
                 result.refreshed_wait_map.merge(other);
-                
+
                 if (deadlock_detected) {
                     result.deadlock_detected = true;
                     DBGOUT3(<<"check_can_grant:deadlock!"
-                        << " other=" << other
+                        << " other fingerprint=" << p->_thr.get_fingerprint_map() << "(gr=" << p->_granted_mode<< ", req=" << p->_requested_mode << ")"
+                        << " other bitmap=" << other
                         << " my fingerprint=" << myfingerprint
+                        << "(gr=" << myreq->_granted_mode<< ", req=" << myreq->_requested_mode << ")"
                         << " my bitmap=" << result.refreshed_wait_map);
 
                     uint32_t my_chain_len = myxd->get_xct_chain_len();
                     uint32_t their_chain_len = theirxd->get_xct_chain_len();
-                
+
                     bool killhim;
                     // If one of them is chained transaction, let's victimize
                     // shorter chain because it will quickly converge in dominated lock table.
@@ -574,7 +565,8 @@ void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_resul
                     }
                 }
             } else {
-                DBGOUT4(<<"but ignored as obsolete");
+                DBGOUT4(<<"but ignored as obsolete. threshold_version=" << threshold_version
+                    << ", their_version=" << their_version);
             }
         }
     }
@@ -630,6 +622,6 @@ void xct_lock_info_t::remove_request (xct_lock_entry_t *entry) {
         w_assert1(entry->next == _head || entry->next->prev == entry);
         entry->next->prev = entry->prev;
     }
-    
+
     xctLockEntryPool->destroy_object(entry);
 }

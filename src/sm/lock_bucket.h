@@ -47,6 +47,8 @@ class lock_core_m;
  * just to see if a lock needs to be released.
  */
 class lock_queue_entry_t {
+public:
+    uint32_t get_observed_release_version() const { return _observed_release_version; }
 private:
     friend class lock_queue_t;
     friend class lock_core_m;  // TODO: narrow this down later <<<>>>
@@ -55,6 +57,7 @@ private:
     lock_queue_entry_t (xct_t& xct, smthread_t& thr, xct_lock_info_t& li,
                         const okvl_mode& granted_mode, const okvl_mode& requested_mode)
         : _xct(xct), _thr(thr), _li(li), _xct_entry(NULL), _prev(NULL), _next(NULL),
+            _observed_release_version(0),
             _granted_mode(granted_mode), _requested_mode(requested_mode) {
     }
 
@@ -66,10 +69,20 @@ private:
     lock_queue_entry_t* _prev;
     lock_queue_entry_t* _next;
 
+    /**
+     * The _release_version of the lock queue when this lock's _wait_map
+     * is last updated. When we check deadlocks, we tentatively ignore
+     * other lock requests whose observed_release_version is older than
+     * _release_version of the lock queue to prevent false detections.
+     * 0 if this lock is not waiting.
+     * This is NOT protected by latch because this is used only opportunistically.
+     */
+    uint64_t            _observed_release_version;
+
     okvl_mode              _granted_mode;
     okvl_mode              _requested_mode;
 };
-/** 
+/**
  * Requires holding a read latch for queue._requests_latch where queue
  * is the lock_queue_t that r belongs to.
  */
@@ -90,7 +103,7 @@ ostream&  operator<<(ostream& o, const lock_queue_entry_t& r);
  */
 class lock_queue_t {
 public:
-    lock_queue_t(uint32_t hash) : _hash(hash), _hit_counts(0), _next (NULL),
+    lock_queue_t(uint32_t hash) : _hash(hash), _hit_counts(0), _release_version(1), _next (NULL),
         _x_lock_tag(lsn_t::null), _head (NULL), _tail (NULL) {
     }
     ~lock_queue_t() {}
@@ -163,15 +176,16 @@ private:
     void check_can_grant (lock_queue_entry_t* myreq, check_grant_result &result);
 
     //* Requires read access to _requests_latch of queue other_request belongs to
-    bool _check_compatible(const okvl_mode& requested_mode, lock_queue_entry_t* other_request, bool proceeds_me, lsn_t& observed);
+    bool _check_compatible(const okvl_mode& granted_mode, const okvl_mode& requested_mode,
+            lock_queue_entry_t* other_request, bool proceeds_me, lsn_t& observed);
 
     /** opportunistically wake up waiters.  called when some lock is released. */
-    void wakeup_waiters(const okvl_mode& released_granted, const okvl_mode& released_requested);
+    void wakeup_waiters(const okvl_mode& released_requested);
 
-    
+
     const uint32_t _hash;  ///< precise hash for this lock queue.
 
-    /** 
+    /**
      * How popular this lock is (approximately, so, no protection).
      * Intended for background cleanup to save memory, but not currently used.
      * Someday, the queue may be revoked in background cleanup.  FIXME
@@ -180,6 +194,18 @@ private:
      * incremented/decremented to control when deletion could occur.
      */
     uint32_t       _hit_counts;
+
+    /**
+     * \brief Monotonically increasing counter that is incremented
+     * when some xct releases some lock in this queue.
+     * \details
+     * This is NOT protected by latch because it is used only for quick check
+     * to opportunistically prevent false deadlock detection.
+     * This counter was previously just a true/false flag (_wait_map_obsolete flag)
+     * in waitmap, but turns out that a granular checking prevents
+     * false deadlock detections more precisely and efficiently.
+     */
+    uint64_t       _release_version;
 
     /** Forms a singly-linked list for other queues in the same bucket
         as us; protected by the bucket containing us's _queue_latch if
@@ -204,10 +230,27 @@ private:
     lock_queue_entry_t* _tail;
 };
 
-inline bool lock_queue_t::_check_compatible(const okvl_mode& requested_mode, lock_queue_entry_t* other_request, bool precedes_me, lsn_t& observed) {
+inline bool lock_queue_t::_check_compatible(const okvl_mode& granted_mode,
+    const okvl_mode& requested_mode, lock_queue_entry_t* other_request, bool precedes_me, lsn_t& observed) {
     bool compatible;
     if (precedes_me) {
+        // in this case, we _respect_ the predecesor's requested mode, not just granted mode.
+        // in case they are trying to upgrade.
         compatible = okvl_mode::is_compatible(other_request->_requested_mode, requested_mode);
+        if (!compatible) {
+            // Even when my request is not compatible with his request,
+            // there is one case where I don't have to respect the predecessor's upgrade desire.
+            // If the predecessor is _anyways_ blocked by my _granted_ mode,
+            // for example I already have SN and he is trying to upgrade from SS to XS.
+            // Now, if I want to upgrade my mode to SS, he will be anyway blocked.
+            // Thus, it wouldn't hurt to proceed.
+            if (!okvl_mode::is_compatible(other_request->_requested_mode, granted_mode)) {
+                // okay, he is anyway blocked. So, let's not respect his upgrade desire.
+                // just compare with his granted mode.
+                compatible = okvl_mode::is_compatible(other_request->_granted_mode, requested_mode);
+            }
+        }
+
     } else {
         compatible = okvl_mode::is_compatible(other_request->_granted_mode, requested_mode);
     }
@@ -262,8 +305,9 @@ private:
     srwlock_t     _queue_latch;
     //tatas_lock  _queue_latch;
 
-    /** Pointer to the first lock_queue_ of our list; protected by _queue_latch. */ 
-    lock_queue_t* _queue;
+    /** Pointer to the first lock_queue_ of our list; protected by _queue_latch. */
+public:    lock_queue_t* _queue;
+private:
 
 
     /**

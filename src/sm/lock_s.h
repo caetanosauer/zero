@@ -21,7 +21,7 @@ public:
         t_waiting = 4
     };
 
-    typedef okvl_mode::singular_lock_mode lmode_t;
+    typedef okvl_mode::element_lock_mode lmode_t;
 
     enum {
         NUM_MODES = okvl_mode::COUNT

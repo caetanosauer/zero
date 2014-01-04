@@ -18,6 +18,7 @@
 #include "btcursor.h"
 #include "crash.h"
 #include "xct.h"
+#include "lock_s.h"
 #include <vector>
 
 rc_t
@@ -50,9 +51,9 @@ btree_impl::_ux_insert_core(
     w_assert1( leaf.is_fixed());
     w_assert1( leaf.is_leaf());
     w_assert1( leaf.latch_mode() == LATCH_EX);
-    
+
     bool need_lock = g_xct_does_need_lock();
-    
+
     // check if the same key already exists
     slotid_t slot;
     bool found;
@@ -66,7 +67,7 @@ btree_impl::_ux_insert_core(
         }
 
         bool is_ghost = leaf.is_ghost(slot);
-        
+
         //If the same key exists and non-ghost, exit with error (duplicate).
         if (!is_ghost) {
             return RC(eDUPLICATE);
@@ -78,7 +79,7 @@ btree_impl::_ux_insert_core(
             return RCOK;
         }
     }
-    
+
     // then, we need to create (or expand) a ghost record for this key as a preparation to insert.
     // first, make sure this page is enough spacious (a bit conservative test).
     while (!leaf.check_space_for_insert_leaf(key, el)
@@ -87,7 +88,7 @@ btree_impl::_ux_insert_core(
         // here, we start system transaction to split page
         lpid_t new_page_id;
         W_DO( _sx_split_foster(leaf, new_page_id, key) );
-        
+
         // after split, should the old page contain the new tuple?
         if (!leaf.fence_contains(key)) {
             // if not, we should now insert to the new page.
@@ -96,7 +97,7 @@ btree_impl::_ux_insert_core(
             btree_page_h another_leaf; // latch coupling
             w_assert1(leaf.get_foster() == new_page_id.page);
             W_DO( another_leaf.fix_nonroot(leaf, leaf.vol(), new_page_id.page, LATCH_EX));
-            w_assert1(another_leaf.is_fixed());                        
+            w_assert1(another_leaf.is_fixed());
             w_assert2(another_leaf.fence_contains(key));
             leaf = another_leaf;
             w_assert2( leaf.is_fixed());
@@ -108,16 +109,16 @@ btree_impl::_ux_insert_core(
         // corresponding ghost record didn't exist even before split.
         // so, it surely doesn't exist. we just create a new ghost record
         // by system transaction.
-        
+
         if (need_lock) {
             W_DO(_ux_lock_range(leaf, key, -1, // search again because it might be split
                 LATCH_EX, create_part_okvl(okvl_mode::X, key), ALL_N_GAP_X, true)); // this lock "goes away" once it's taken
         }
-        
+
         // so far deferring is disabled
         W_DO (_sx_reserve_ghost(leaf, key, el.size(), false));
     }
-    
+
     // now we know the page has the desired ghost record. let's just replace it.
     if (need_lock && !alreay_took_XN) { // if "expand" case, do not need to get XN again
         W_DO (_ux_lock_key(leaf, key, LATCH_EX, create_part_okvl(okvl_mode::X, key), false));
@@ -157,7 +158,7 @@ btree_impl::_ux_put_core(
     W_DO(_ux_get_page_and_status(vol, store, key, need_lock, slot, found, took_XN, is_ghost, leaf));
     if (!found || is_ghost) {
         return _ux_insert_core_tail(vol, store, key, el, need_lock, slot, found, took_XN, is_ghost, leaf);
-    } else {    
+    } else {
         return _ux_update_core_tail(vol, store, key, el, need_lock, slot, found, is_ghost, leaf);
     }
 }
@@ -165,25 +166,25 @@ btree_impl::_ux_put_core(
 
 rc_t
 btree_impl::_ux_get_page_and_status(volid_t vol, snum_t store,
- 			            const w_keystr_t& key,
-                                    bool& need_lock, slotid_t& slot, bool& found, bool& took_XN, 
+                        const w_keystr_t& key,
+                                    bool& need_lock, slotid_t& slot, bool& found, bool& took_XN,
                                     bool& is_ghost, btree_page_h& leaf) {
-                        
+
     // find the leaf (potentially) containing the key
     // passed in...btree_page_h       leaf;
     W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf));
     w_assert1( leaf.is_fixed());
     w_assert1( leaf.is_leaf());
     w_assert1( leaf.latch_mode() == LATCH_EX);
-    
-    // passed in...bool need_lock 
+
+    // passed in...bool need_lock
     need_lock = g_xct_does_need_lock();
-    
+
     // check if the same key already exists
     // passed in...slotid_t slot;
     // passed in...bool found;
     leaf.search_leaf(key, found, slot);
-    // passed in...bool alreay_took_XN 
+    // passed in...bool alreay_took_XN
     took_XN = false;
     if (found) {
         // found! then we just lock the key (XN)
@@ -198,10 +199,10 @@ btree_impl::_ux_get_page_and_status(volid_t vol, snum_t store,
 }
 rc_t btree_impl::_ux_insert_core_tail(volid_t /* vol */, snum_t /* store */,
                                       const w_keystr_t& key, const cvec_t& el,
-                                      bool& need_lock, slotid_t& slot, bool& found, 
+                                      bool& need_lock, slotid_t& slot, bool& found,
                                       bool& alreay_took_XN, bool& is_ghost, btree_page_h& leaf) {
     if (found) {
-        
+
         //If the same key exists and non-ghost, exit with error (duplicate).
         if (!is_ghost) {
             return RC(eDUPLICATE);
@@ -213,7 +214,7 @@ rc_t btree_impl::_ux_insert_core_tail(volid_t /* vol */, snum_t /* store */,
             return RCOK;
         }
     }
-    
+
     // then, we need to create (or expand) a ghost record for this key as a preparation to insert.
     // first, make sure this page is enough spacious (a bit conservative test).
     while (!leaf.check_space_for_insert_leaf(key, el)
@@ -222,7 +223,7 @@ rc_t btree_impl::_ux_insert_core_tail(volid_t /* vol */, snum_t /* store */,
         // here, we start system transaction to split page
         lpid_t new_page_id;
         W_DO( _sx_split_foster(leaf, new_page_id, key) );
-        
+
         // after split, should the old page contain the new tuple?
         if (!leaf.fence_contains(key)) {
             // if not, we should now insert to the new page.
@@ -230,7 +231,7 @@ rc_t btree_impl::_ux_insert_core_tail(volid_t /* vol */, snum_t /* store */,
             // can have any latch on the new page, so we can always get this latch
             btree_page_h another_leaf; // latch coupling
             W_DO( another_leaf.fix_nonroot(leaf, leaf.vol(), new_page_id.page, LATCH_EX) );
-            w_assert1(another_leaf.is_fixed());                        
+            w_assert1(another_leaf.is_fixed());
             w_assert2(another_leaf.fence_contains(key));
             leaf = another_leaf;
             w_assert2( leaf.is_fixed());
@@ -242,16 +243,16 @@ rc_t btree_impl::_ux_insert_core_tail(volid_t /* vol */, snum_t /* store */,
         // corresponding ghost record didn't exist even before split.
         // so, it surely doesn't exist. we just create a new ghost record
         // by system transaction.
-        
+
         if (need_lock) {
             W_DO(_ux_lock_range(leaf, key, -1, // search again because it might be split
                 LATCH_EX, create_part_okvl(okvl_mode::X, key), ALL_N_GAP_X, true)); // this lock "goes away" once it's taken
         }
-        
+
         // so far deferring is disabled
         W_DO (_sx_reserve_ghost(leaf, key, el.size(), false));
     }
-    
+
     // now we know the page has the desired ghost record. let's just replace it.
     if (need_lock && !alreay_took_XN) { // if "expand" case, do not need to get XN again
         W_DO (_ux_lock_key(leaf, key, LATCH_EX, create_part_okvl(okvl_mode::X, key), false));
@@ -326,7 +327,7 @@ btree_impl::_ux_update_core(volid_t vol, snum_t store, const w_keystr_t &key, co
         }
         return RC(eNOTFOUND);
     }
-    
+
     // it's found (whether it's ghost or not)! so, let's just
     // lock the key.
     if (need_lock) {
@@ -343,7 +344,7 @@ btree_impl::_ux_update_core(volid_t vol, snum_t store, const w_keystr_t &key, co
     if (ghost) {
         return RC(eNOTFOUND);
     }
-    
+
     // are we expanding?
     if (old_elen < el.size()) {
         if (!leaf.check_space_for_insert_leaf(key, el)) {
@@ -354,16 +355,16 @@ btree_impl::_ux_update_core(volid_t vol, snum_t store, const w_keystr_t &key, co
             return RCOK;
         }
     }
-    
+
     W_DO(log_btree_update (leaf, key, old_el, old_elen, el));
-    
+
     W_DO(leaf.replace_el_nolog(slot, el));
     return RCOK;
 }
 
 rc_t
 btree_impl::_ux_update_core_tail(volid_t vol, snum_t store,
-     				 const w_keystr_t &key, const cvec_t &el,
+                     const w_keystr_t &key, const cvec_t &el,
                                  bool& need_lock, slotid_t& slot, bool& found, bool& is_ghost,
                                  btree_page_h& leaf) {
 
@@ -375,7 +376,7 @@ btree_impl::_ux_update_core_tail(volid_t vol, snum_t store,
         }
         return RC(eNOTFOUND);
     }
-    
+
     // it might be ghost..
     if (is_ghost) {
         return RC(eNOTFOUND);
@@ -383,7 +384,7 @@ btree_impl::_ux_update_core_tail(volid_t vol, snum_t store,
     const char *old_el;
     smsize_t old_elen;
     leaf.dat_leaf_ref(slot, old_el, old_elen, is_ghost);
-    
+
     // are we expanding?
     if (old_elen < el.size()) {
         if (!leaf.check_space_for_insert_leaf(key, el)) {
@@ -394,15 +395,15 @@ btree_impl::_ux_update_core_tail(volid_t vol, snum_t store,
             return RCOK;
         }
     }
-    
+
     W_DO(log_btree_update (leaf, key, old_el, old_elen, el));
-    
+
     W_DO(leaf.replace_el_nolog(slot, el));
     return RCOK;
 }
 
 rc_t btree_impl::_ux_overwrite(
-        volid_t vol, snum_t store, 
+        volid_t vol, snum_t store,
         const w_keystr_t&                 key,
         const char *el, smsize_t offset, smsize_t elen)
 {
@@ -417,7 +418,7 @@ rc_t btree_impl::_ux_overwrite(
 }
 
 rc_t btree_impl::_ux_overwrite_core(
-        volid_t vol, snum_t store, 
+        volid_t vol, snum_t store,
         const w_keystr_t& key,
         const char *el, smsize_t offset, smsize_t elen)
 {
@@ -441,7 +442,7 @@ rc_t btree_impl::_ux_overwrite_core(
         }
         return RC(eNOTFOUND);
     }
-    
+
     if (need_lock) {
         W_DO (_ux_lock_key(leaf, key, LATCH_EX, create_part_okvl(okvl_mode::X, key), false));
     }
@@ -457,8 +458,8 @@ rc_t btree_impl::_ux_overwrite_core(
     if (old_elen < offset + elen) {
         return RC(eRECWONTFIT);
     }
-    
-    W_DO(log_btree_overwrite (leaf, key, old_el, el, offset, elen));    
+
+    W_DO(log_btree_overwrite (leaf, key, old_el, el, offset, elen));
     leaf.overwrite_el_nolog(slot, offset, el, elen);
     return RCOK;
 }
@@ -502,14 +503,14 @@ btree_impl::_ux_remove_core(volid_t vol, snum_t store, const w_keystr_t &key)
         }
         return RC(eNOTFOUND);
     }
-    
+
     // it's found (whether it's ghost or not)! so, let's just
     // lock the key.
     if (need_lock) {
         // only the key is locked (XN)
         W_DO (_ux_lock_key(leaf, key, LATCH_EX, create_part_okvl(okvl_mode::X, key), false));
     }
-    
+
     // it might be already ghost..
     if (leaf.is_ghost(slot)) {
         return RC(eNOTFOUND);
@@ -519,7 +520,7 @@ btree_impl::_ux_remove_core(volid_t vol, snum_t store, const w_keystr_t &key)
     vector<slotid_t> slots;
     slots.push_back(slot);
     W_DO(log_btree_ghost_mark (leaf, slots));
-    
+
     // then mark it as ghost
     leaf.mark_ghost (slot);
     return RCOK;
@@ -544,6 +545,16 @@ btree_impl::_ux_undo_ghost_mark(volid_t vol, snum_t store, const w_keystr_t &key
     }
     leaf.unmark_ghost (slot);
     return RCOK;
+}
+
+okvl_mode btree_impl::create_part_okvl(
+    okvl_mode::element_lock_mode mode,
+    const w_keystr_t&) {
+    okvl_mode ret;
+
+    okvl_mode::part_id part = 0; // we don't have uniquefier in main branch.
+    ret.set_partition_mode(part, mode);
+    return ret;
 }
 
 uint8_t btree_impl::s_ex_need_counts[1 << btree_impl::GAC_HASH_BITS];

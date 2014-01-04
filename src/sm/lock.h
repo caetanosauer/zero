@@ -59,11 +59,11 @@ public:
      * Take an intent lock on the given volume.
      * lock mode must be IS/IX/S/X.
      */
-    rc_t                        intent_vol_lock(vid_t vid, okvl_mode::singular_lock_mode m);
+    rc_t                        intent_vol_lock(vid_t vid, okvl_mode::element_lock_mode m);
     /**
      * Take an intent lock on the given store.
      */
-    rc_t                        intent_store_lock(const stid_t &stid, okvl_mode::singular_lock_mode m);
+    rc_t                        intent_store_lock(const stid_t &stid, okvl_mode::element_lock_mode m);
     /**
      * Take intent locks on the given store and its volume in the same mode.
      * This is used in usual operations like create_assoc/lookup.
@@ -71,7 +71,7 @@ public:
      * operations where you need different lock modes for store and volume.
      * If you only need volume lock, just use intent_vol_lock().
      */
-    rc_t                        intent_vol_store_lock(const stid_t &stid, okvl_mode::singular_lock_mode m);
+    rc_t                        intent_vol_store_lock(const stid_t &stid, okvl_mode::element_lock_mode m);
      
     // rc_t                        unlock(const lockid_t& n);
 

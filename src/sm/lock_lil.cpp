@@ -334,7 +334,7 @@ inline void clear_lock_flags(bool *lock_taken, bool read_lock_only) {
         lock_taken[LIL_IS] = lock_taken[LIL_IX] = lock_taken[LIL_S] = lock_taken[LIL_X] = false;
     }
 }
-    
+
 void lil_private_vol_table::release_vol_locks(lil_global_table *global_table, bool read_lock_only, lsn_t commit_lsn)
 {
     w_assert1(_vid);
