@@ -78,14 +78,6 @@ lock_core_m::lock_core_m(uint sz)
     b -= 6;
 
     _htabsz = primes[b];
-
-    /*
-      Mark - I think you understand this code better; I'm making the obvious change to get the
-      compiler to shutup for techcon.
-
-      /home/tucekj/projects/Zero/src/sm/lock_core.cpp:82:30: error: argument to âsizeofâ in âvoid* memset(void*, int, size_t)â call is the same expression as the destination; did you mean to dereference it? [-Werror=sizeof-pointer-memaccess]
-     ::memset(_htab, 0, sizeof(_htab));
-     */
     _htab = new bucket_t[_htabsz];
     ::memset(_htab, 0, _htabsz * sizeof(bucket_t));
 
@@ -318,7 +310,9 @@ void lock_core_m::release_lock(
         }
     }
     lock->detach_request(req);
-    ++lock->_release_version; // now all wait-maps are obsolete!
+    if (g_deadlock_use_waitmap_obsolete) {
+        ++lock->_release_version; // now all wait-maps are obsolete!
+    }
     //copy these before destroying
     xct_lock_entry_t *xct_entry = req->_xct_entry;
     xct_lock_info_t *li = &req->_li;
@@ -513,12 +507,6 @@ void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_resul
         w_assert1(&p->_thr != &myreq->_thr);
         bool compatible = _check_compatible(myreq->_granted_mode, m, p, precedes_me, result.observed);
         if (!compatible) {
-            DBGOUT5(<<"incompatible! (pre=" << precedes_me << ")."
-                << ", I=" << myfingerprint
-                << ", he=" << p->_thr.get_fingerprint_map()
-                << ", mine=" << lock_base_t::mode_str[m]
-                << ", his:gr=" << lock_base_t::mode_str[p->_granted_mode]
-                << "(req=" << lock_base_t::mode_str[p->_requested_mode] << ")");
             result.can_be_granted = false;
             xct_t *theirxd = &p->_xct;
             xct_lock_info_t *theirli = &p->_li;

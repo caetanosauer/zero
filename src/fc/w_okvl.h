@@ -166,7 +166,7 @@ struct okvl_mode {
     /**
      * Returns whether this mode is \e implied by the given mode.
      * For example, NNNN_S is implied by NXXX_S and NSSN_S is implied by NXXN_X.
-     * Note that "X is not implied by  Y" does NOT always mean "Y is implied by X".
+     * Note that "A is not implied by  B" does NOT always mean "B is implied by A".
      * NOTE "key=S" is logically implied by "key=IS partition= all S",
      * but this function does not check it to be efficient.
      * Do not use this method if it matters.
@@ -185,7 +185,7 @@ struct okvl_mode {
 
     /**
      * Static function to tell whether left is implied by right.
-     * Note that "X is not implied by Y" does NOT always mean "Y is implied by X".
+     * Note that "A is not implied by B" does NOT always mean "B is implied by A".
      */
     static bool is_implied_by_element(element_lock_mode left, element_lock_mode right);
 
@@ -197,5 +197,15 @@ struct okvl_mode {
      *  e.g., X + S = X, S + IX = SIX, etc.
      */
     static okvl_mode combine(const okvl_mode& left, const okvl_mode& right);
+
+private:
+    /** We speed up comparisons by batching multiple lock modes into this size. */
+    enum const_values_enum { WORD_SIZE = sizeof(uint64_t), };
+    /** Tells if we can apply the common 64bit-batching technique for the given partition. */
+    static bool _can_batch64 (part_id part);
+    /** Returns the 64bit-batched lock modes for the given partition. */
+    uint64_t    _get_batch64 (part_id part) const;
+    /** Returns the 64bit-batched lock modes for the given partition. */
+    uint64_t&   _get_batch64_ref (part_id part);
 };
 #endif // W_OKVL_H

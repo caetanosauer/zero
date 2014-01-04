@@ -46,46 +46,6 @@ void lock_m::dump(ostream &o)
     o << "} " << endl;
 }
 
-/*rc_t lock_m::query(
-    const lockid_t&     n,
-    lmode_t&            m,
-    const tid_t&        tid)
-{
-    DBGTHRD(<<"lock_m::query for lock " << n);
-    xct_t *        xd = xct();
-    w_assert9(!implicit || tid != tid_t::null);
-
-    INC_TSTAT(lock_query_cnt);
-    m = NL;
-
-    if (tid == tid_t::null) {
-        lock_head_t* lock = _core->find_lock_head(n, false);//do not create
-        if (lock) {
-            // lock head mutex was acquired by find_lock_head
-            m = lock->granted_mode;
-            RELEASE_HEAD_MUTEX(lock); // acquired in find_lock_head
-        }
-        return RCOK;
-    }
-    w_assert2(xd);
-
-    lock_request_t* req = 0;
-    lock_head_t* lock = _core->find_lock_head(n, false); // do not create
-    if (lock) {
-        // lock head mutex was acquired by find_lock_head
-        req = lock->find_lock_request(xd->lock_info());
-    }
-    if (req) {
-        m = req->mode();
-        RELEASE_HEAD_MUTEX(lock); // acquired in find_lock_head
-        return RCOK;
-    }
-
-    if (lock)
-        RELEASE_HEAD_MUTEX(lock); // acquired in find_lock_head
-    return RCOK;
-}*/
-
 lil_global_table* lock_m::get_lil_global_table() {
     return _core->get_lil_global_table();
 }

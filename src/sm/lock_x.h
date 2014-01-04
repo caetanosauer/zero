@@ -29,7 +29,7 @@ public:
 /**\brief Shared between transaction (xct_t) and lock manager
  * \details
  */
-class xct_lock_info_t : private lock_base_t {
+class xct_lock_info_t : private smlevel_1 {
 
 public:
     NORET            xct_lock_info_t();

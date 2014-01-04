@@ -278,6 +278,8 @@ inline bool lock_queue_t::_check_compatible(const okvl_mode& granted_mode,
  * and a latch that protects that list's _next pointers.
  */
 class bucket_t {
+    /** friending for unsafe dump as an exception to the latch protocol here. */
+    friend void lock_core_m::dump(std::ostream &o);
 public:
     bucket_t() : _queue(NULL) {}
     ~bucket_t() {
@@ -293,7 +295,6 @@ public:
     /** Finds or creates a lock queue for the given hash value. */
     lock_queue_t* find_lock_queue(uint32_t hash);
 
-
 private:
     friend void lock_core_m::assert_empty() const;
 
@@ -306,9 +307,7 @@ private:
     //tatas_lock  _queue_latch;
 
     /** Pointer to the first lock_queue_ of our list; protected by _queue_latch. */
-public:    lock_queue_t* _queue;
-private:
-
+    lock_queue_t* _queue;
 
     /**
      * Tries to find a lock queue for the given hash without creating

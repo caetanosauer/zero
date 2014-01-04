@@ -162,6 +162,18 @@ inline bool okvl_mode::is_keylock_partition_empty() const {
     return (get_key_mode() == N || get_key_mode() == S || get_key_mode() == X);
 }
 
+inline bool okvl_mode::_can_batch64(part_id part) {
+    return (OKVL_PARTITIONS - part >= WORD_SIZE && part % WORD_SIZE == 0);
+}
+
+inline uint64_t okvl_mode::_get_batch64(part_id part) const {
+    return reinterpret_cast<const uint64_t*>(modes)[part / WORD_SIZE];
+}
+
+inline uint64_t& okvl_mode::_get_batch64_ref(part_id part) {
+    return reinterpret_cast<uint64_t*>(modes)[part / WORD_SIZE];
+}
+
 inline bool okvl_mode::contains_dirty_lock() const {
     if (get_key_mode() == X) {
         return true;
@@ -169,13 +181,10 @@ inline bool okvl_mode::contains_dirty_lock() const {
         // same above. They should have left IX in key.
         // so, we check individual partitions only in that case.
         for (part_id part = 0; part < OKVL_PARTITIONS; ++part) {
-            const size_t WORD_SIZE = sizeof(uint64_t); // to skip bunch of zeros
-            if (OKVL_PARTITIONS - part >= WORD_SIZE && part % WORD_SIZE == 0
-                && reinterpret_cast<const uint64_t*>(modes)[part / WORD_SIZE] == 0) {
-                part += WORD_SIZE - 1;
+            if (_can_batch64(part) && _get_batch64(part) == 0) {
+                part += sizeof(uint64_t) - 1; // skip bunch of zeros
                 continue;
-            }
-            if (get_partition_mode(part) == X) {
+            } else if (get_partition_mode(part) == X) {
                 return true;
             }
         }
@@ -239,12 +248,11 @@ inline bool okvl_mode::is_compatible(
     // 3. check individual partitions of the request.
     if (!requested.is_keylock_partition_empty() && !granted.is_keylock_partition_empty()) {
         for (part_id part = 0; part < OKVL_PARTITIONS; ++part) {
-            const size_t WORD_SIZE = sizeof(uint64_t); // to skip bunch of zeros
-            if (OKVL_PARTITIONS - part >= WORD_SIZE && part % WORD_SIZE == 0) {
-                uint64_t requested_batch = reinterpret_cast<const uint64_t*>(requested.modes)[part / WORD_SIZE];
-                uint64_t granted_batch = reinterpret_cast<const uint64_t*>(granted.modes)[part / WORD_SIZE];
+            if (_can_batch64(part)) {
+                uint64_t requested_batch = requested._get_batch64(part);
+                uint64_t granted_batch = granted._get_batch64(part);
                 if (requested_batch == 0 || granted_batch == 0) {
-                    part += WORD_SIZE - 1;
+                    part += WORD_SIZE - 1; // skip bunch of zeros
                     continue;
                 }
             }
@@ -272,12 +280,11 @@ inline bool okvl_mode::is_implied_by(const okvl_mode &superset) const {
     // check individual partitions.
     if (!is_keylock_partition_empty() && !superset.is_keylock_partition_empty()) {
         for (part_id part = 0; part < OKVL_PARTITIONS; ++part) {
-            const size_t WORD_SIZE = sizeof(uint64_t); // to skip bunch of zeros or exactly same locks
-            if (OKVL_PARTITIONS - part >= WORD_SIZE && part % WORD_SIZE == 0) {
-                uint64_t this_batch = reinterpret_cast<const uint64_t*>(modes)[part / WORD_SIZE];
-                uint64_t superset_batch = reinterpret_cast<const uint64_t*>(superset.modes)[part / WORD_SIZE];
+            if (_can_batch64(part)) {
+                uint64_t this_batch = _get_batch64(part);
+                uint64_t superset_batch = superset._get_batch64(part);
                 if (this_batch == 0 || this_batch == superset_batch) {
-                    part += WORD_SIZE - 1;
+                    part += WORD_SIZE - 1; // skip bunch of zeros or exactly same locks
                     continue;
                 }
             }
@@ -324,10 +331,9 @@ inline okvl_mode okvl_mode::combine(const okvl_mode& left, const okvl_mode& righ
 
     okvl_mode ret;
     for (part_id part = 0; part < OKVL_PARTITIONS; ++part) {
-        const size_t WORD_SIZE = sizeof(uint64_t); // to skip bunch of zeros or exactly same locks
         if (OKVL_PARTITIONS - part >= WORD_SIZE && part % WORD_SIZE == 0) {
-            uint64_t left_batch = reinterpret_cast<const uint64_t*>(left.modes)[part / WORD_SIZE];
-            uint64_t right_batch = reinterpret_cast<const uint64_t*>(right.modes)[part / WORD_SIZE];
+            uint64_t left_batch = left._get_batch64(part);
+            uint64_t right_batch = right._get_batch64(part);
             if (left_batch == 0 || right_batch == 0 || left_batch == right_batch) {
                 uint64_t result_batch = 0;
                 if (left_batch == 0) {
@@ -337,7 +343,8 @@ inline okvl_mode okvl_mode::combine(const okvl_mode& left, const okvl_mode& righ
                     // in either case:
                     result_batch = left_batch;
                 }
-                reinterpret_cast<uint64_t*>(ret.modes)[part / WORD_SIZE] = result_batch;
+                // batch-process bunch of zeros or exactly same locks
+                ret._get_batch64_ref(part) = result_batch;
                 part += WORD_SIZE - 1;
                 continue;
             }
