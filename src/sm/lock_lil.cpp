@@ -363,7 +363,7 @@ lil_private_store_table* lil_private_vol_table::_find_store_table(uint32_t store
     }
 
     //newly add the volume.
-    if (_stores < MAX_VOL_PER_XCT) {
+    if (_stores < MAX_STORE_PER_VOL_XCT) {
         _store_tables[_stores]._store = store;
         lil_private_store_table *ret = &_store_tables[_stores];
         ++_stores;

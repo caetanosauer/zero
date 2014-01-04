@@ -10,43 +10,43 @@
 #include "btree.h"
 #include "kvl_t.h"
 #include "btree_verify.h"
-#include "w_okvl_inl.h" // need to include this to inline create_part_okvl()
+#include "w_okvl.h"
 
 /**
  * \brief The internal implementation class which actually implements the
  * functions of btree_m.
- * 
+ *
  * \ingroup SSMBTREE
  * \details
  * To abstract implementation details,
  * all functions of this class should be used only from btree_m except testcases.
- * 
+ *
  * Like btree_m, this class is stateless, meaning all functions are
  * static and there are no class properties. Each function receives
  * the page(s) to work on and has no global side-effect.
- * 
+ *
  * \section TRANSACTIONS User and System Transactions
  * The functions of this class fall into two categories.
- * 
+ *
  * 1. (func name starts with \e "_ux_") functions that can be used
  * both in user and system transactions.  Such a function should
  * have only a local change and local latch.
- * 
+ *
  * 2. (func name starts with \e "_sx_") functions that starts a nested
  * system transactions in it. Such a function can affect
  * the structure of BTree.
  *
- * User transactions do \e both \e logical and \e physical changes 
+ * User transactions do \e both \e logical and \e physical changes
  * and should do \e only \e local physical changes.
- * 
+ *
  * System transactions do \e only \e physical changes. They sometimes
  * do \e global \e physical changes like page splitting and key-adopts.
  * They should be kept short-lived.
  *
  * \section REFERENCES References
- * 
+ *
  * Basic Btree technique is from Mohan, et. al.
- * IBM Research Report # RJ 7008 
+ * IBM Research Report # RJ 7008
  * 9/6/89
  * C. Mohan,
  * Aries/KVL: A Key-Value
@@ -58,7 +58,7 @@
  * C. Mohan, Frank Levine
  * Aries/IM: An Efficient and High Concureency Index Management
  * Method using Write-Ahead Logging
- * 
+ *
  * Advanced Btree techniques added as of 2011 Summer is from Graefe 2011.
  * ACM Transactions on Database Systems (TODS), 2011
  * Modern B-tree techniques
@@ -69,7 +69,7 @@ public:
 #ifdef DOXYGEN_HIDE
 ///==========================================
 ///   BEGIN: Insert/Delete functions. implemented in btree_impl.cpp
-///==========================================    
+///==========================================
 #endif // DOXYGEN_HIDE
 
     /**
@@ -85,7 +85,7 @@ public:
      * @param[out] found if the key was found
      * @param[out] took_XN if we took an XN latch on the key
      * @param[out] is_ghost if the slot was a ghost
-     * @param[out] leaf the leaf the key should be in (if it exists or if it did exist)     
+     * @param[out] leaf the leaf the key should be in (if it exists or if it did exist)
      */
     static rc_t _ux_get_page_and_status
     (volid_t vol, snum_t store,
@@ -115,7 +115,7 @@ public:
     static rc_t _ux_insert_core_tail
     (volid_t vol, snum_t store,
      const w_keystr_t& key,const cvec_t& el,
-     bool& need_lock, slotid_t& slot, bool& found, bool& alreay_took_XN, 
+     bool& need_lock, slotid_t& slot, bool& found, bool& alreay_took_XN,
      bool& is_ghost, btree_page_h& leaf);
 
     /**
@@ -201,7 +201,7 @@ public:
     /** @see _sx_reserve_ghost() */
     static rc_t                        _ux_reserve_ghost_core(
         btree_page_h &leaf, const w_keystr_t &key, int elem_len, bool defer_apply = false);
-    
+
     /**
     *  \brief Removes the specified key from B+Tree.
     * \details
@@ -214,7 +214,7 @@ public:
     static rc_t                        _ux_remove(
         volid_t vol, snum_t store,
         const w_keystr_t&                key);
-    
+
     /** _ux_remove()'s internal function without retry by itself.*/
     static rc_t _ux_remove_core(volid_t vol, snum_t store, const w_keystr_t &key);
 
@@ -238,7 +238,7 @@ public:
 #ifdef DOXYGEN_HIDE
 ///==========================================
 ///   BEGIN: Search/Lookup functions. implemented in btree_impl_search.cpp
-///==========================================    
+///==========================================
 #endif // DOXYGEN_HIDE
 
     /** \brief 3 modes of traverse(). */
@@ -247,7 +247,7 @@ public:
          * Finds a leaf page whose low-fence <= key < high-fence.
         * This is used for insert/remove and many other cases.
         */
-        t_fence_contain,  
+        t_fence_contain,
         /**
         * Finds a leaf page whose low-fence == key.
         * This is used for forward cursor (similar to page.next()).
@@ -266,24 +266,24 @@ public:
         t_follow_pid0 = -1
         // 0 to nrecs-1 is child
     };
-    
+
     /**
     * \brief Traverse the btree starting at root node to find an appropriate leaf page.
     * \details
     * The returned leaf page is latched in leaf_latch_mode mode
     * and the caller has to release the latch.
-    * 
+    *
     * This function provides 3 search mode.
     *
     * 1. t_fence_contain. find a leaf page whose low-fence <= key < high-fence.
     * This is used for insert/remove and many other cases.
-    * 
+    *
     * 2. t_fence_low_match. find a leaf page whose low-fence == key.
     * This is used for forward cursor (similar to page.next()).
-    * 
+    *
     * 3. t_fence_high_match. find a leaf page whose high-fence == key.
     * This is used for backward cursor (similar to page.prev()).
-    * 
+    *
     *  Context: Both user and system transaction.
     * @see traverse_mode_t
     * @param[in] vol Volume ID
@@ -301,7 +301,7 @@ public:
         latch_mode_t               leaf_latch_mode,
         btree_page_h&                   leaf,
         bool                       allow_retry = true
-        ); 
+        );
 
     /**
     * \brief For internal recursion. Assuming start is non-leaf, check children recursively.
@@ -325,8 +325,8 @@ public:
         latch_mode_t               leaf_latch_mode,
         btree_page_h&                   leaf,
         shpid_t&                    leaf_pid_causing_failed_upgrade
-        ); 
-    
+        );
+
     /**
      * \brief Internal helper function to actually search for the correct slot and test fence
      * assumptions.
@@ -342,14 +342,14 @@ public:
                                     btree_page_h *current,
                                     const w_keystr_t& key,
                                     bool &this_is_the_leaf_page, slot_follow_t &slot_to_follow);
-    
+
     /**
      * Call this function when it seems like the next page will have VERY high contention
      * and the page should adopt childrens.
      * to avoid excessive latch contention, we use mutex only in this case
      * This mutex doesn't assure correctness. latch does it.
      * it just gives us chance to avoid wasting CPU for latch contention.
-     * and, false positive is fine. it's just one mutex call overhead.  
+     * and, false positive is fine. it's just one mutex call overhead.
      * See jira ticket:78 "Eager-Opportunistic Hybrid Latching" (originally trac ticket:80).
      */
     static rc_t _ux_traverse_try_eager_adopt(btree_page_h &current, shpid_t next_pid);
@@ -359,14 +359,14 @@ public:
      * This tries opportunistic adoption by upgrading latches to EX.
      * This has a very low cost, though might do nothing in high contention.
      * If such a writer-starvation frequently happens, the above eager_adopt function
-     * will be called to do it. 
+     * will be called to do it.
      * See jira ticket:78 "Eager-Opportunistic Hybrid Latching" (originally trac ticket:80).
      */
     static rc_t _ux_traverse_try_opportunistic_adopt(btree_page_h &current, btree_page_h &next);
 
     /**
-    *  Find key in btree. If found, copy up to elen bytes of the 
-    *  entry element into el. 
+    *  Find key in btree. If found, copy up to elen bytes of the
+    *  entry element into el.
     *  Context: user transaction.
     * @param[in] vol Volume ID
     * @param[in] store Store ID
@@ -381,7 +381,7 @@ public:
         bool&                      found,
         void*                      el,
         smsize_t&                  elen
-        );        
+        );
     /** _ux_lookup()'s internal function which doesn't rety for locks by itself. */
     static rc_t                 _ux_lookup_core(
         volid_t vol, snum_t store,
@@ -394,7 +394,7 @@ public:
 #ifdef DOXYGEN_HIDE
 ///==========================================
 ///   BEGIN: Split/Adopt functions. implemented in btree_impl_split.cpp
-///==========================================    
+///==========================================
 #endif // DOXYGEN_HIDE
 
     /**
@@ -473,18 +473,18 @@ public:
         shpid_t new_child_pid, const w_keystr_t &new_child_key);
     /** Applies the changes of one adoption on child node. Used by both usual adoption and REDO. */
     static void _ux_adopt_foster_apply_child (btree_page_h &child);
-    
+
     /**
      * \brief Splits a page as B-link tree.
      *  \details
      * The new page is pointed by the old page in the "foster" property.
      * This function does not adopt the new separator key to parent,
      * making the by-effect minimal.
-     * 
+     *
      * If the given page already has a b-linked page, the new page
      * jumps between them. For example, [old page] -> [page a].
      * will be [old page] -> [new page] -> [page a].
-     * 
+     *
      * Context: only in system transaction.
      * @param[in] page the page to split. also called "old" page.
      * @param[out] new_page_id ID of the newly created page.
@@ -499,7 +499,7 @@ public:
      */
     static rc_t                 _ux_split_foster_core(btree_page_h &page, const lpid_t &new_page_id, const w_keystr_t &triggering_key,
         const w_keystr_t *new_child_key = NULL, shpid_t new_child_pid = 0);
-    
+
     /**
      * applies all data changes for split. used for both usual split and REDO.
      * @see _sx_adopt_foster_all()
@@ -507,13 +507,13 @@ public:
     static rc_t                 _ux_split_foster_apply(btree_page_h &page,
         slotid_t right_begins_from, const w_keystr_t &mid_key, const lpid_t &new_pid,
         const w_keystr_t *new_child_key = NULL, shpid_t new_child_pid = 0);
-    
+
 #ifdef DOXYGEN_HIDE
 ///==========================================
 ///   BEGIN: Merge/Rebalance/De-adopt functions. implemented in btree_impl_merge.cpp
-///==========================================    
+///==========================================
 #endif // DOXYGEN_HIDE
-    
+
     /**
      * \brief Rebalances this page with its foster-child page.
      * \details
@@ -526,14 +526,14 @@ public:
      * @param[in] page the page to rebalance.
      */
     static rc_t                 _sx_rebalance_foster(btree_page_h &page);
-    
+
     /** @see _sx_rebalance_foster() */
     static rc_t                 _ux_rebalance_foster_core(btree_page_h &page);
-    
+
     /** @see _sx_rebalance_foster() */
     static rc_t                 _ux_rebalance_foster_core(btree_page_h &page,
                                   btree_page_h &foster_p, int32_t move_count);
-    
+
     /**
      * \brief Absorbs foster-child of this page, deleting the foster-child.
      * \details
@@ -546,11 +546,11 @@ public:
      * @param[in] page the page to absorb foster-child.
      */
     static rc_t                 _sx_merge_foster(btree_page_h &page);
-    
+
     /** @see _sx_merge_foster() */
     static rc_t                 _ux_merge_foster_core(btree_page_h &page);
 
-    
+
     /**
      * \brief Converts the right sibling of given page to be a foster-child of it.
      * \details
@@ -576,7 +576,7 @@ public:
 #ifdef DOXYGEN_HIDE
 ///==========================================
 ///   BEGIN: Lock related functions. implemented in btree_impl_lock.cpp
-///==========================================    
+///==========================================
 #endif // DOXYGEN_HIDE
     /**
      * \brief Acquires a lock on the given leaf page, tentatively unlatching the page if needed.
@@ -670,7 +670,7 @@ public:
     #ifdef DOXYGEN_HIDE
 ///==========================================
 ///   BEGIN: Tree Grow/Shrink/Create. implemented in btree_impl_grow.cpp
-///==========================================    
+///==========================================
 #endif // DOXYGEN_HIDE
 
     /**
@@ -717,7 +717,7 @@ public:
 #ifdef DOXYGEN_HIDE
 ///==========================================
 ///   BEGIN: BTree Verification. implemented in btree_impl_verify.cpp
-///==========================================    
+///==========================================
 #endif // DOXYGEN_HIDE
 
     /**
@@ -737,7 +737,7 @@ public:
     */
     static rc_t                        _ux_verify_tree(
         volid_t vol, snum_t store, int hash_bits, bool &consistent);
-    
+
 
     /**
     * Internal method to be called from _ux_verify_tree() for recursively check foster and children.
@@ -781,8 +781,8 @@ public:
 #ifdef DOXYGEN_HIDE
 ///==========================================
 ///   BEGIN: Defrag/Reorg functions. implemented in btree_impl_defrag.cpp
-///==========================================    
-#endif // DOXYGEN_HIDE    
+///==========================================
+#endif // DOXYGEN_HIDE
     /**
     *  \brief Checks the whole tree to opportunistically adopt, in-page defrag and rebalance.
     *  \details
@@ -839,23 +839,12 @@ public:
     * Helper method to create an OKVL instance on one partition,
     * using the given key.
     */
-    static okvl_mode create_part_okvl(
-        okvl_mode::singular_lock_mode mode,
-        const w_keystr_t&    key) {
-        okvl_mode ret;
+    static okvl_mode create_part_okvl(okvl_mode::element_lock_mode mode, const w_keystr_t& key);
 
-        // TODO where to get uniquefier from. So far we don't have this information.
-        // So, just hash all parts of the key. This is unnecessary.
-        okvl_mode::part_id part = okvl_mode::compute_part_id(key.buffer_as_keystr(), key.get_length_as_keystr());
-        
-        ret.set_partition_mode(part, mode);
-        return ret;
-    }
-    
 #ifdef DOXYGEN_HIDE
 ///==========================================
 ///   BEGIN: Global Approximate (non-protected) Counters to guide opportunistic/eager latching.
-///==========================================    
+///==========================================
 #endif // DOXYGEN_HIDE
     // see jira ticket:78 "Eager-Opportunistic Hybrid Latching" (originally trac ticket:80)
     // these are used to help determine when we should do eager EX latching.
@@ -882,7 +871,7 @@ public:
      * The value is incremented when a page-split happens.
      */
     static uint8_t s_foster_children_counts[1 << GAC_HASH_BITS];
-    
+
     /** simple modular hashing. this must be cheap. */
     inline static uint32_t shpid2hash (shpid_t pid) {
         return pid % GAC_HASH_MOD;

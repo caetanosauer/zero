@@ -16,11 +16,12 @@
 
 #include "w_strstream.h"
 #include <sstream>
+#include <Lintel/AtomicCounter.hpp>
 
 /** implementation of dump/output/other debug utility functions in lock_core,lock_m. */
 
 // Obviously not mt-safe:
-ostream &                        
+ostream &
 xct_lock_info_t::dump_locks(ostream &out) const
 {
     /*
@@ -30,96 +31,14 @@ xct_lock_info_t::dump_locks(ostream &out) const
     while ((req = iter.next())) {
         w_assert9(req->xd == xct());
         lh = req->get_lock_head();
-        out << "Lock: " << lh->name 
+        out << "Lock: " << lh->name
             << " Mode: " << int(req->mode())
             << " State: " << int(req->status()) <<endl;
     }
     */
     return out;
 }
-
-
-/*********************************************************************
- *
- *  xct_lock_info_t output operator
- *
- *********************************************************************/
-#if 1
 ostream& operator<<(ostream &o, const xct_lock_info_t &) { return o; }
-#else
-ostream &            
-operator<<(ostream &o, const xct_lock_info_t &x)
-{
-        lock_request_t *waiting = x.waiting_request();
-        if (waiting) {
-                o << " wait: " << *waiting;
-        }
-        return o;
-}
-#endif
-
-/*********************************************************************
- *
- *  lock_core_m::dump()
- *
- *  Dump the lock hash table (for debugging).
- *
- *********************************************************************/
-#if 1
-void lock_core_m::dump(ostream &) {}
-#else
-/*
-// disabled because there's no safe way to iterate over the lock table
-// but you can use it in a debugger.  It is used by smsh in
-// single-thread cases.
-*/
-void
-lock_core_m::dump(ostream & o)
-{
-    o << "WARNING: lock_core_m::dump is not thread-safe:" << endl;
-    o << "lock_core_m:"
-      << " _htabsz=" << _htabsz
-      << endl;
-    for (unsigned h = 0; h < _htabsz; h++)  {
-        ACQUIRE_BUCKET_MUTEX(h);
-        chain_list_i i(_htab[h].chain);
-        lock_head_t* lock;
-        lock = i.next();
-        if (lock) {
-            o << h << ": ";
-        }
-        while (lock)  {
-            // First, verify the hash function:
-            unsigned hh = _table_bucket(lock->name.hash());
-            if(hh != h) {
-                o << "ERROR!  hash table bucket h=" << h 
-                    << " contains lock head " << *lock
-                    << " which hashes to " << hh
-                    << endl;
-            }
-            
-            ACQUIRE_HEAD_MUTEX(lock); // this is dump
-            o << "\t " << *lock << endl;
-            lock_request_t* request;
-            lock_head_t::safe_queue_iterator_t r(*lock);
-
-            while ((request = r.next()))  {
-                o << "\t\t" << *request << endl;
-            }
-            RELEASE_HEAD_MUTEX(lock); // acquired here NOT through find_lock_head
-            lock = i.next();
-        }
-        RELEASE_BUCKET_MUTEX(h);
-    }
-}
-#endif
-
-
-void lock_core_m::dump()
-{
-    dump(cerr);
-    cerr << flushl;
-}
 
 void
 lock_core_m::assert_empty() const
@@ -139,24 +58,24 @@ lock_core_m::assert_empty() const
 }
 
 
-#if 0
-//* This code is unused and UNSAFE
-void
-lock_core_m::_dump(ostream &o)
-{
+void lock_core_m::dump(ostream &o) {
+    o << " WARNING: Dumping lock table. This method is thread-unsafe!!" << std::endl;
+    lintel::atomic_signal_fence(lintel::memory_order_acquire); // memory barrier
     for (uint h = 0; h < _htabsz; h++)  {
         // empty queue is fine. just check leftover requests
         for (lock_queue_t *queue = _htab[h]._queue; queue != NULL; queue = queue->next()) {
             for (lock_queue_entry_t *req = queue->_head; req != NULL; req = req->_next) {
-                o << "lock request(hash=" << queue->hash() << "):" << *req << endl;
+                o << "lock request(hash=" << queue->hash() << "):" << *req
+                << ", observed_release_version=" << req->get_observed_release_version()
+                << ", queue's release version=" << queue->_release_version
+                << std::endl;
             }
         }
     }
-    o << "--end of lock table--" << endl;
+    o << "--end of lock table--" << std::endl;
 }
-#endif
 
-ostream& 
+ostream&
 operator<<(ostream& o, const lock_queue_entry_t& r)
 {
     o << "xct:" << r._li.tid()
@@ -176,7 +95,7 @@ operator<<(ostream& o, const lock_queue_entry_t& r)
  *  Pretty print a lockid to "ostream".
  *
  *********************************************************************/
-ostream& 
+ostream&
 operator<<(ostream& o, const lockid_t& i)
 {
     stid_t s;

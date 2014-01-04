@@ -86,28 +86,14 @@ class lock_queue_entry_t;
 *  starting an smthread, but that should not be in the critical
 *  path of a server.
 */
-class lock_core_m : public lock_base_t{
+class lock_core_m : public smlevel_1{
 public:
-    typedef lock_base_t::lmode_t lmode_t;
-
     NORET        lock_core_m(uint sz);
     NORET        ~lock_core_m();
 
     int          collect(vtable_t&, bool names_too);
-
-    /**
-    * Unsafely check that the lock table is empty. For debugging -
-    *  and assertions at shutdown, when MT-safety shouldn't be an issue.
-    */
     void        assert_empty() const;
-    void        dump();
     void        dump(ostream &o);
-    /**
-    *  Unsafely dump the lock hash table (for debugging).
-    *  Doesn't acquire the mutexes it should for safety, but allows
-    *  you dump the table while inside the lock manager core.
-    */
-    void        _dump(ostream &o);
 
     
     lil_global_table*   get_lil_global_table() { return _lil_global_table; }
