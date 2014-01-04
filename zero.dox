@@ -584,7 +584,7 @@ WARN_LOGFILE           = ./doxygen.warnings
 #INPUT                  = @PROJECT_SOURCE_DIR@/src
 # "PROJECT_SOURCE_DIR" is set by cmake. Leave the plain "src" so that this
 #  runs without cmake, too (will cause an warning in that case, though).
-INPUT                  = src @PROJECT_SOURCE_DIR@/src
+INPUT                   = src @PROJECT_SOURCE_DIR@/src
 
 # This tag can be used to specify the character encoding of the source files
 # that doxygen parses. Internally doxygen uses the UTF-8 encoding, which is
