@@ -422,6 +422,23 @@ public:
     //   BEGIN: Search and Record Access functions
     // ======================================================================
 
+
+    /**
+    *  Search for key in this page. Return true in found_key iff
+    *  the key is found. 
+    * 
+    * If found_key, always returns the slot number of the found key.
+    * If !found_key, return the slot where key should go.
+    */
+    void        new_search(const w_keystr_t& key,
+                           bool&             found_key,
+                           slotid_t&         return_slot) const {
+        new_search((const char*) key.buffer_as_keystr(), key.get_length_as_keystr(), found_key, return_slot);
+    }
+
+    void        new_search(const char *key_raw, size_t key_raw_len,
+                           bool& found_key, slotid_t& return_slot) const;
+
     int _compare_slot_with_key(int slot, const void* key_noprefix, size_t key_len, poor_man_key poor) const;
 
 
@@ -468,7 +485,6 @@ public:
 
     /**
      * Returns the number of records in this page.
-     * Use this instead of fixable_page_h::nslots to acount for one hidden slots.
      */
     int              nrecs() const;
 
