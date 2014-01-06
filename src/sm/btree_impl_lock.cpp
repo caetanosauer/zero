@@ -18,6 +18,7 @@
 #include "sm_base.h"
 #include "w_key.h"
 #include "xct.h"
+#include "w_okvl_inl.h"
 
 rc_t
 btree_impl::_ux_lock_key(

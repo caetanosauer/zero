@@ -52,7 +52,7 @@ btree_insert_log::btree_insert_log(
 }
 
 void 
-btree_insert_log::undo(fixable_page_h* W_IFDEBUG9(page)) {
+btree_insert_log::undo(fixable_page_h* page) {
     w_assert9(page == 0);
     btree_insert_t* dp = (btree_insert_t*) data();
 

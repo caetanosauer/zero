@@ -226,7 +226,7 @@ t_cc_file  | error     | error       | error     | error     | SH/none
         const cvec_t&             bound2,
         bool                      include_nulls = false,
         concurrency_t             cc = t_cc_none, //TODO: SHORE-KITS-API : In Shore-sm-6.0.1 this was t_cc_kvl
-        okvl_mode::singular_lock_mode mode = okvl_mode::S,
+        okvl_mode::element_lock_mode mode = okvl_mode::S,
         const bool                bIgnoreLatches = false
         );
 
@@ -285,7 +285,7 @@ private:
     bool                 _finished;
     bool                 _skip_nulls;
     concurrency_t        _cc;
-    okvl_mode::singular_lock_mode _mode;
+    okvl_mode::element_lock_mode _mode;
 
     rc_t            _fetch(
         vec_t*                key, 
@@ -299,7 +299,7 @@ private:
         const cvec_t&         bound,
         cmp_t                 c2,
         const cvec_t&         b2,
-        okvl_mode::singular_lock_mode           mode = okvl_mode::S);
+        okvl_mode::element_lock_mode           mode = okvl_mode::S);
 
     void            xct_state_changed(
         xct_state_t            old_state,
@@ -371,7 +371,7 @@ public:
         const rid_t&             start,
         concurrency_t            cc = t_cc_none, //TODO: SHORE-KITS-API : In Shore-sm-6.0.1 this was t_cc_file
         bool                     prefetch=false,
-        okvl_mode::singular_lock_mode ignored = okvl_mode::S,
+        okvl_mode::element_lock_mode ignored = okvl_mode::S,
         const bool               bIgnoreLatches = false);
 
     /**\brief Construct an iterator over the given store (file).
@@ -399,7 +399,7 @@ public:
         const stid_t&            stid,
         concurrency_t            cc = t_cc_none, //TODO: SHORE-KITS-API : In Shore-sm-6.0.1 this was t_cc_file
         bool                     prefetch=false,
-        okvl_mode::singular_lock_mode ignored = okvl_mode::S,
+        okvl_mode::element_lock_mode ignored = okvl_mode::S,
         const bool               bIgnoreLatches = false);
 
     NORET            ~scan_file_i();
@@ -468,8 +468,8 @@ protected:
     pin_i            _cursor;
     lpid_t           _next_pid;
     concurrency_t    _cc;  // concurrency control
-    okvl_mode::singular_lock_mode      _page_lock_mode;
-    okvl_mode::singular_lock_mode      _rec_lock_mode;
+    okvl_mode::element_lock_mode      _page_lock_mode;
+    okvl_mode::element_lock_mode      _rec_lock_mode;
 
     rc_t             _init(bool for_append=false);
 

@@ -275,97 +275,6 @@ btree_page_h::search(const w_keystr_t& key,
     }
 }
 
-// simple sequential search with poorman's key. very simple.
-// #define POORMKEY_SEQ_SEARCH
-#ifdef POORMKEY_SEQ_SEARCH
-void btree_page_h::search_leaf(const char *key_raw, size_t key_raw_len,
-                               bool& found_key, slotid_t& ret_slot) const {
-    w_assert3(is_leaf());
-    w_assert1((uint) get_prefix_length() <= key_raw_len);
-    w_assert1(::memcmp (key_raw, get_prefix_key(), get_prefix_length()) == 0);
-
-    const char * key_noprefix        = key_raw + get_prefix_length();
-    int          key_len             = key_raw_len - get_prefix_length();
-    poor_man_key poormkey            = extract_poor_man_key(key_noprefix, key_len);
-    const void * key_noprefix_remain = key_noprefix + sizeof(poor_man_key);
-    int          key_len_remain      = key_len - sizeof(poor_man_key);
-    found_key = false;
-    
-    for (int slot= 0; slot < nrecs(); slot++) {
-        poor_man_key cur_poormkey = page()->item_data16(slot+1);
-        if (cur_poormkey < poormkey) {
-            w_assert1(_compare_leaf_key_noprefix(slot, key_noprefix, key_len) < 0);
-            continue;
-        }
-        if (cur_poormkey > poormkey) {
-            ret_slot = slot;
-            w_assert1(slot == 0 || _compare_leaf_key_noprefix(slot - 1, key_noprefix, key_len) < 0);
-            w_assert1(_compare_leaf_key_noprefix(slot, key_noprefix, key_len) > 0);
-            return;
-        }
-        int d = _compare_leaf_key_noprefix_remain(slot, key_noprefix_remain, key_len_remain);
-        if (d == 0) {
-            found_key = true;
-            ret_slot = slot;
-            w_assert1(_compare_leaf_key_noprefix(slot, key_noprefix, key_len) == 0);
-            return;
-        } else if (d > 0) {
-            ret_slot = slot;
-            w_assert1(slot == 0 || _compare_leaf_key_noprefix(slot - 1, key_noprefix, key_len) < 0);
-            w_assert1(_compare_leaf_key_noprefix(slot, key_noprefix, key_len) > 0);
-            return;
-        }
-        w_assert1(_compare_leaf_key_noprefix(slot, key_noprefix, key_len) < 0);
-    }
-    ret_slot = nrecs();
-}
-
-void btree_page_h::search_node(const w_keystr_t& key,
-                               slotid_t&         ret_slot) const {
-    w_assert3(!is_leaf());
-
-    const char *key_raw = (const char *) key.buffer_as_keystr();
-    w_assert1((uint) get_prefix_length() <= key.get_length_as_keystr());
-    w_assert1(::memcmp (key_raw, get_prefix_key(), get_prefix_length()) == 0);
-
-    const char*  key_noprefix        = key_raw + get_prefix_length();
-    int          key_len             = key.get_length_as_keystr() - get_prefix_length();
-    poor_man_key poormkey            = extract_poor_man_key(key_noprefix, key_len);
-    const void*  key_noprefix_remain = key_noprefix + sizeof(poor_man_key);
-    int          key_len_remain      = key_len - sizeof(poor_man_key);
-
-    w_assert1 (pid0() != 0);
-
-    for (int slot= 0; slot < nrecs(); slot++) {
-        poor_man_key cur_poormkey = page()->item_data16(slot+1);
-        if (cur_poormkey < poormkey) {
-            w_assert1(_compare_node_key_noprefix(slot, key_noprefix, key_len) < 0);
-            continue;
-        }
-        if (cur_poormkey > poormkey) {
-            ret_slot = slot - 1;
-            w_assert1(slot == 0 || _compare_node_key_noprefix(slot - 1, key_noprefix, key_len) < 0);
-            w_assert1(_compare_node_key_noprefix(slot, key_noprefix, key_len) > 0);
-            return;
-        }
-        int d = _compare_node_key_noprefix_remain(slot, key_noprefix_remain, key_len_remain);
-        if (d == 0) {
-            ret_slot = slot;
-            w_assert1(_compare_node_key_noprefix(slot, key_noprefix, key_len) == 0);
-            return;
-        } else if (d > 0) {
-            ret_slot = slot - 1;
-            w_assert1(slot == 0 || _compare_node_key_noprefix(slot - 1, key_noprefix, key_len) < 0);
-            w_assert1(_compare_node_key_noprefix(slot, key_noprefix, key_len) > 0);
-            return;
-        }
-        w_assert1(_compare_node_key_noprefix(slot, key_noprefix, key_len) < 0);
-    }
-    ret_slot = nrecs() - 1;
-}
-
-#else // POORMKEY_SEQ_SEARCH
-
 void btree_page_h::search_leaf(const char *key_raw, size_t key_raw_len,
                                bool& found_key, slotid_t& ret_slot) const {
     w_assert3(is_leaf());
@@ -561,7 +470,6 @@ void btree_page_h::search_node(const w_keystr_t& key,
 #endif //W_DEBUG_LEVEL
 }
 
-#endif // POORMKEY_SEQ_SEARCH
 
 void btree_page_h::_update_btree_consecutive_skewed_insertions(slotid_t slot) {
     if (nrecs() == 0) {

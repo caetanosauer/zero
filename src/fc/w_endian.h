@@ -109,4 +109,27 @@ inline uint64_t deserialize64_ho (const void *buf)
 #endif // WORDS_BIGENDIAN
 }
 
+// overloading for easier use. But, be VERY careful when using
+// the following methods. The above methods are recommended to avoid
+// unexpected type cast.
+inline void serialize_be (void *dest, uint16_t value) {
+    serialize16_be(dest, value);
+}
+inline void serialize_be (void *dest, uint32_t value) {
+    serialize32_be(dest, value);
+}
+inline void serialize_be (void *dest, uint64_t value) {
+    serialize64_be(dest, value);
+}
+
+inline void deserialize_ho(uint16_t &value) {
+    value = deserialize16_ho(&value);
+}
+inline void deserialize_ho(uint32_t &value) {
+    value = deserialize32_ho(&value);
+}
+inline void deserialize_ho(uint64_t &value) {
+    value = deserialize64_ho(&value);
+}
+
 #endif // ENDIAN_H
