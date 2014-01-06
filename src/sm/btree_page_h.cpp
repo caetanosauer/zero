@@ -280,12 +280,22 @@ inline int btree_page_h::_compare_slot_with_key(int slot, const void* key_nopref
     // fast path using poor_man_key's:
     int result = _poor(slot) - (int)key_poor;
     if (result != 0) {
-        w_assert1((result<0) == (_compare_leaf_key_noprefix(slot, key_noprefix, key_len)<0));
+#if W_DEBUG_LEVEL > 0
+        if (is_leaf()) {
+            w_assert1((result<0) == (_compare_leaf_key_noprefix(slot, key_noprefix, key_len)<0));
+        } else {
+            w_assert1((result<0) == (_compare_node_key_noprefix(slot, key_noprefix, key_len)<0));
+        }
+#endif
         return result;
     }
 
     // slow path:
-    return _compare_leaf_key_noprefix(slot, key_noprefix, key_len);
+    if (is_leaf()) {
+        return _compare_leaf_key_noprefix(slot, key_noprefix, key_len);
+    } else {
+        return _compare_node_key_noprefix(slot, key_noprefix, key_len);
+    }
 }
 
 void btree_page_h::search_leaf(const char *key_raw, size_t key_raw_len,
@@ -325,6 +335,22 @@ void btree_page_h::search_leaf(const char *key_raw, size_t key_raw_len,
         high--;
     }
 #endif
+
+#if 1
+    // [optional] check the first record (0) if it exists to speed-up reverse sorted insert:
+    if (high > 0) {
+        int d = _compare_slot_with_key(0, key_noprefix, key_len, poormkey);
+        if (d > 0) { // search key lower than lowest slot
+            return_slot = 0; // -1 later
+            return;
+        } else if (d == 0) {
+            found_key   = true;
+            return_slot = 0;
+            return;
+        }
+        low++;
+    }
+#endif
     
     while (low+1 < high) {
         int mid = (low + high) / 2;
@@ -359,108 +385,65 @@ void btree_page_h::search_node(const w_keystr_t& key,
 
     poor_man_key poormkey = extract_poor_man_key(key_noprefix, key_len);
 
-    w_assert1 (pid0() != 0);
-    bool return_pid0 = false;
-    if (nrecs() == 0) {
-        return_pid0 = true;
-    } else  {
-        poor_man_key cur_poormkey = _poor(0);
-        if (cur_poormkey > poormkey) {
-            return_pid0 = true;
-            w_assert1(_compare_node_key_noprefix(0, key_noprefix, key_len) > 0);
-        } else {
-            // separator key is exclusive for left, so it's ">"
-            int d = _compare_node_key_noprefix(0, key_noprefix, key_len);
-            if (d > 0) {
-                return_pid0 = true;
-            } else if (d == 0) {
-                return_slot = 0;
-                return;
-            }
-        }
-    }
+    /*
+     * Binary search.
+     */
 
-    if (return_pid0) {
-        return_slot = -1;
-        return;
-    }
-    
-#if W_DEBUG_LEVEL > 2
-    // As we reach here, no search key can end up with pid0
-    w_assert3 (nrecs() > 0);
-    btrec_t first_tup(*this, 0); 
-    // first_tup must be smaller than the search key
-    w_assert3 (first_tup.key().compare(key) <= 0);
-#endif  // W_DEBUG_LEVEL > 2
+    //found_key = false;
+    int low = -1, high = nrecs();
+    // LOOP INVARIANT: low < high AND slot_key(low) < key < slot_key(high)
+    // where slots before real ones hold -infinity and ones after hold +infinity
 
-    // check the last record to speed-up sorted insert
-    int last_slot = nrecs() - 1;
-    if (last_slot >= 0) {
-        poor_man_key last_poormkey = _poor(last_slot);
-        if (last_poormkey < poormkey) { // note that it's "<", not "<=", because same poormkey doesn't mean same key
-            return_slot = last_slot;
-            w_assert1(_compare_node_key_noprefix(last_slot, key_noprefix, key_len) < 0);
+#if 1
+    // [optional] check the last record (high-1) if it exists to speed-up sorted insert:
+    if (high > 0) {
+        int d = _compare_slot_with_key(high-1, key_noprefix, key_len, poormkey);
+        if (d < 0) { // search key bigger than highest slot
+            return_slot = high-1; // <<<>>> was high
             return;
+        } else if (d == 0) {
+            //found_key   = true;
+            return_slot = high-1;
+            return;
+        }
+        high--;
+    }
+#endif
+
+#if 1
+    // [optional] check the first record (0) if it exists to speed-up reverse sorted insert:
+    if (high > 0) {
+        int d = _compare_slot_with_key(0, key_noprefix, key_len, poormkey);
+        if (d > 0) { // search key lower than lowest slot
+            return_slot = -1; // was 0
+            return;
+        } else if (d == 0) {
+            //found_key   = true;
+            return_slot = 0;
+            return;
+        }
+        low++;
+    }
+#endif
+    
+    while (low+1 < high) {
+        int mid = (low + high) / 2;
+        w_assert1(low<mid && mid<high);
+        int d = _compare_slot_with_key(mid, key_noprefix, key_len, poormkey);
+        if (d < 0) {        // search key after slot
+            low = mid;
+        } else if (d > 0) { // search key before slot
+            high = mid;
         } else {
-            int d = _compare_node_key_noprefix(last_slot, key_noprefix, key_len);
-            if (d <= 0) {
-                return_slot = last_slot;
-                return;
-            }
+            //found_key   = true;
+            return_slot = mid;
+            w_assert1(mid>=0 && mid<nrecs());
+            return;
         }
     }
-    
-    // we are looking for a slot such that
-    // key[slot] <= search_key < key[slot + 1]
-    // or just key[slot] <= search_key if slot is the last slot
-
-     // Binary search. TODO later try interpolation search.
-    // search for biggest key that is smaller than search key
-    
-    // note: following code is a little bit different from leaf
-    int lo = 0; // the biggest slot we already know <key
-    int hi = nrecs(); //the smallest slot we already know >=key
-    int mi;
-    for (; lo < hi - 1; )  {
-        mi = (lo + hi) >> 1;    // ie (lo + hi) / 2
-
-        poor_man_key cur_poormkey = _poor(mi);
-        if (cur_poormkey < poormkey) {
-            lo = mi;
-            w_assert1(_compare_node_key_noprefix(mi, key_noprefix, key_len) < 0);
-            continue;
-        } else if (cur_poormkey > poormkey) {
-            hi = mi;
-            w_assert1(_compare_node_key_noprefix(mi, key_noprefix, key_len) > 0);
-            continue;
-        }
-        // again, poormkey can't strictly tell < or > if it's equal
-        int d = _compare_node_key_noprefix(mi, key_noprefix, key_len);
-        if (d < 0) 
-            lo = mi;
-        else if (d > 0)
-            hi = mi;
-        else {
-            lo = mi; // separator key is lower-inclusive
-            hi = mi + 1;
-            break;
-        }
-    }
-    w_assert3(lo == hi - 1);
-    return_slot = lo;
-    w_assert3(return_slot < nrecs());
-
-#if W_DEBUG_LEVEL > 2
-    size_t curkey_len;
-    const char *curkey = _node_key_noprefix(return_slot, curkey_len);
-    int d2 = w_keystr_t::compare_bin_str(curkey, curkey_len, key_noprefix, key_len);
-    w_assert2 (d2 <= 0);
-    if (return_slot < nrecs() - 1) {
-        curkey = _node_key_noprefix(return_slot + 1, curkey_len);
-        int d3 = w_keystr_t::compare_bin_str(curkey, curkey_len, key_noprefix, key_len);
-        w_assert2 (d3 > 0);
-    }
-#endif //W_DEBUG_LEVEL
+    w_assert1(low+1 == high);
+    return_slot = high-1; // <<<>>> was high
+    w_assert1(high>=0 && high<=nrecs());
 }
 
 
