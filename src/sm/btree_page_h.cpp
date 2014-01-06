@@ -261,22 +261,35 @@ rc_t btree_page_h::clear_foster() {
     return RCOK;
 }
 
+
 void
 btree_page_h::search(const w_keystr_t& key,
                      bool&             found_key, 
-                     slotid_t&         ret_slot    // origin 0 for first record
-    ) const
+                     slotid_t&         return_slot    // origin 0 for first record
+                    ) const
 {
     if (is_leaf()) {
-        search_leaf(key, found_key, ret_slot);
+        search_leaf(key, found_key, return_slot);
     } else {
         found_key = false; // no meaning on exact match.
-        search_node(key, ret_slot);
+        search_node(key, return_slot);
     }
 }
 
+inline int btree_page_h::_compare_slot_with_key(int slot, const void* key_noprefix, size_t key_len, poor_man_key key_poor) const {
+    // fast path using poor_man_key's:
+    int result = _poor(slot) - (int)key_poor;
+    if (result != 0) {
+        w_assert1((result<0) == (_compare_leaf_key_noprefix(slot, key_noprefix, key_len)<0));
+        return result;
+    }
+
+    // slow path:
+    return _compare_leaf_key_noprefix(slot, key_noprefix, key_len);
+}
+
 void btree_page_h::search_leaf(const char *key_raw, size_t key_raw_len,
-                               bool& found_key, slotid_t& ret_slot) const {
+                               bool& found_key, slotid_t& return_slot) const {
     w_assert3(is_leaf());
     FUNC(btree_page_h::_search_leaf);
     
@@ -285,76 +298,56 @@ void btree_page_h::search_leaf(const char *key_raw, size_t key_raw_len,
     const void *key_noprefix = key_raw + get_prefix_length();
     size_t key_len = key_raw_len - get_prefix_length();
     
-    found_key = false;
-
     poor_man_key poormkey = extract_poor_man_key(key_noprefix, key_len);
 
-    // check the last record to speed-up sorted insert
-    int last_slot = nrecs() - 1;
-    if (last_slot >= 0) {
-        poor_man_key last_poormkey = _poor(last_slot);
-        if (last_poormkey < poormkey) {
-            ret_slot = nrecs();
-            w_assert1(_compare_leaf_key_noprefix(last_slot, key_noprefix, key_len) < 0);
-            return;
-        }
-        // can check only "<", not "=", because same poormkey doesn't mean same key
-        int d = _compare_leaf_key_noprefix(last_slot, key_noprefix, key_len);
-        if (d == 0) {
-            // oh, luckily found it.
-            found_key = true;
-            ret_slot = last_slot;
-            return;
-        } else if (d < 0) {
-            // even larger than the highest key. done!
-            ret_slot = nrecs();
-            // found_key is false
-            return;
-        }
-    }
-    
-    // Binary search. TODO later try interpolation search.
-    int mi = 0, lo = 0;
-    int hi = nrecs() - 2; // -2 because we already checked last record above
-    while (lo <= hi)  {
-        mi = (lo + hi) >> 1;    // ie (lo + hi) / 2
 
-        poor_man_key cur_poormkey = _poor(mi);
-        if (cur_poormkey < poormkey) {
-            lo = mi + 1;
-            w_assert1(_compare_leaf_key_noprefix(mi, key_noprefix, key_len) < 0);
-            continue;
-        } else if (cur_poormkey > poormkey) {
-            hi = mi - 1;
-            w_assert1(_compare_leaf_key_noprefix(mi, key_noprefix, key_len) > 0);
+    /*
+     * Binary search.
+     */
+
+    found_key = false;
+    int low = -1, high = nrecs();
+    // LOOP INVARIANT: low < high AND slot_key(low) < key < slot_key(high)
+    // where slots before real ones hold -infinity and ones after hold +infinity
+
+#if 1
+    // [optional] check the last record (high-1) if it exists to speed-up sorted insert:
+    if (high > 0) {
+        int d = _compare_slot_with_key(high-1, key_noprefix, key_len, poormkey);
+        if (d < 0) { // search key bigger than highest slot
+            return_slot = high;
+            return;
+        } else if (d == 0) {
+            found_key   = true;
+            return_slot = high-1;
+            return;
         }
-        int d = _compare_leaf_key_noprefix(mi, key_noprefix, key_len);
-        // d <  0 if curkey < key; key falls between mi and hi
-        // d == 0 if curkey == key; match
-        // d >  0 if curkey > key; key falls between lo and mi
-        if (d < 0) 
-            lo = mi + 1;
-        else if (d > 0)
-            hi = mi - 1;
-        else {
-            // exact match! we can exit at this point
-            found_key = true;
-            ret_slot = mi;
+        high--;
+    }
+#endif
+    
+    while (low+1 < high) {
+        int mid = (low + high) / 2;
+        w_assert1(low<mid && mid<high);
+        int d = _compare_slot_with_key(mid, key_noprefix, key_len, poormkey);
+        if (d < 0) {        // search key after slot
+            low = mid;
+        } else if (d > 0) { // search key before slot
+            high = mid;
+        } else {
+            found_key   = true;
+            return_slot = mid;
+            w_assert1(mid>=0 && mid<nrecs());
             return;
         }
     }
-    ret_slot = (lo > mi) ? lo : mi;
-#if W_DEBUG_LEVEL > 2
-    w_assert3(ret_slot <= nrecs());
-    if(ret_slot == nrecs() ) {
-        // this happens only when !found_key
-        w_assert3(!found_key);
-    }
-#endif 
+    w_assert1(low+1 == high);
+    return_slot = high;
+    w_assert1(high>=0 && high<=nrecs());
 }
 
 void btree_page_h::search_node(const w_keystr_t& key,
-                               slotid_t&         ret_slot) const {
+                               slotid_t&         return_slot) const {
     w_assert3(!is_leaf());
     FUNC(btree_page_h::_search_node);
 
@@ -381,14 +374,14 @@ void btree_page_h::search_node(const w_keystr_t& key,
             if (d > 0) {
                 return_pid0 = true;
             } else if (d == 0) {
-                ret_slot = 0;
+                return_slot = 0;
                 return;
             }
         }
     }
 
     if (return_pid0) {
-        ret_slot = -1;
+        return_slot = -1;
         return;
     }
     
@@ -405,13 +398,13 @@ void btree_page_h::search_node(const w_keystr_t& key,
     if (last_slot >= 0) {
         poor_man_key last_poormkey = _poor(last_slot);
         if (last_poormkey < poormkey) { // note that it's "<", not "<=", because same poormkey doesn't mean same key
-            ret_slot = last_slot;
+            return_slot = last_slot;
             w_assert1(_compare_node_key_noprefix(last_slot, key_noprefix, key_len) < 0);
             return;
         } else {
             int d = _compare_node_key_noprefix(last_slot, key_noprefix, key_len);
             if (d <= 0) {
-                ret_slot = last_slot;
+                return_slot = last_slot;
                 return;
             }
         }
@@ -454,16 +447,16 @@ void btree_page_h::search_node(const w_keystr_t& key,
         }
     }
     w_assert3(lo == hi - 1);
-    ret_slot = lo;
-    w_assert3(ret_slot < nrecs());
+    return_slot = lo;
+    w_assert3(return_slot < nrecs());
 
 #if W_DEBUG_LEVEL > 2
     size_t curkey_len;
-    const char *curkey = _node_key_noprefix(ret_slot, curkey_len);
+    const char *curkey = _node_key_noprefix(return_slot, curkey_len);
     int d2 = w_keystr_t::compare_bin_str(curkey, curkey_len, key_noprefix, key_len);
     w_assert2 (d2 <= 0);
-    if (ret_slot < nrecs() - 1) {
-        curkey = _node_key_noprefix(ret_slot + 1, curkey_len);
+    if (return_slot < nrecs() - 1) {
+        curkey = _node_key_noprefix(return_slot + 1, curkey_len);
         int d3 = w_keystr_t::compare_bin_str(curkey, curkey_len, key_noprefix, key_len);
         w_assert2 (d3 > 0);
     }

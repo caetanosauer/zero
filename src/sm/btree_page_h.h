@@ -422,6 +422,9 @@ public:
     //   BEGIN: Search and Record Access functions
     // ======================================================================
 
+    int _compare_slot_with_key(int slot, const void* key_noprefix, size_t key_len, poor_man_key poor) const;
+
+
     /**
     *  Search for key in this page. Return true in "found_key" if
     *  the key is found. 
@@ -434,11 +437,11 @@ public:
     *  Basically same as leaf, but it can return -1 as slot number.
     *  Only when the page is an interior left-most page and the search
     *  key is same or smaller than left-most key in this page, this function returns
-    *  ret_slot=-1, which means we should follow the pid0 pointer.
+    *  return_slot=-1, which means we should follow the pid0 pointer.
     */
     void            search(const w_keystr_t& key,
                            bool&             found_key,
-                           slotid_t&         ret_slot) const;
+                           slotid_t&         return_slot) const;
 
     /**
     * Used from search() for leaf pages.
@@ -446,12 +449,12 @@ public:
     */
     inline void         search_leaf(const w_keystr_t& key,
                                     bool&             found_key,
-                                    slotid_t&         ret_slot) const {
-        search_leaf((const char*) key.buffer_as_keystr(), key.get_length_as_keystr(), found_key, ret_slot);
+                                    slotid_t&         return_slot) const {
+        search_leaf((const char*) key.buffer_as_keystr(), key.get_length_as_keystr(), found_key, return_slot);
     }
     // to make it slightly faster. not a neat kind of optimization
     void            search_leaf(const char *key_raw, size_t key_raw_len,
-                                bool& found_key, slotid_t& ret_slot) const;
+                                bool& found_key, slotid_t& return_slot) const;
     /**
     * Used from search() for interior pages.
     * A bit more complicated because keys are separator keys.
@@ -461,7 +464,7 @@ public:
     * "ABA" to right, "AC" to right.
     */
     void            search_node(const w_keystr_t& key,
-                                slotid_t&         ret_slot) const;
+                                slotid_t&         return_slot) const;
 
     /**
      * Returns the number of records in this page.
