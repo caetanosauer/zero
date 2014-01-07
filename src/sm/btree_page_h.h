@@ -422,46 +422,56 @@ public:
     //   BEGIN: Search and Record Access functions
     // ======================================================================
 
-
     /**
-    *  Search for key in this page. Return true in found_key iff
-    *  the key is found. 
-    *     // origin 0 for first record
-    * If found_key, always returns the slot number of the found key.
-    * If !found_key, return the slot where key should go.
-    */
+     * Search for given key in this B-tree page.  Stores in found_key
+     * the key found status and in return_slot the slot where the key
+     * was found or (if not found) the slot where the key should go if
+     * inserted.  Note in the latter case that return_slot may be
+     * nrecs().
+     */
     void            search(const w_keystr_t& key,
                            bool&             found_key,
                            slotid_t&         return_slot) const {
         search((const char*) key.buffer_as_keystr(), key.get_length_as_keystr(), found_key, return_slot);
     }
 
+    /**
+     * Search for given key in this B-tree page.  Stores in found_key
+     * the key found status and in return_slot the slot where the key
+     * was found or (if not found) the slot where the key should go if
+     * inserted.  Note in the latter case that return_slot may be
+     * nrecs().
+     */
     void            search(const char *key_raw, size_t key_raw_len,
                            bool& found_key, slotid_t& return_slot) const;
 
-    int _compare_slot_with_key(int slot, const void* key_noprefix, size_t key_len, poor_man_key poor) const;
-
 
     /**
-    *  Search for key in this page. Return true in "found_key" if
-    *  the key is found. 
-    * 
-    * If the page is an interior page:
-    *  Basically same as leaf, but it can return -1 as slot number.
-    *  Only when the page is an interior left-most page and the search
-    *  key is same or smaller than left-most key in this page, this function returns
-    *  return_slot=-1, which means we should follow the pid0 pointer.
-    */
-    /**
-    * Used from search() for interior pages.
-    * A bit more complicated because keys are separator keys.
-    * Like fence keys, a separator key is exclusive for left and
-    * inclusive for right. For example, a separator key "AB"
-    * sends "AA" to left, "AAZ" to left, "AB" to right,
-    * "ABA" to right, "AC" to right.
-    */
+     * Search for given key in this interior node, determining which
+     * child pointer should be taken to continue searching down the
+     * B-tree.
+     *
+     * Stores in return_slot the slot whose child pointer should be
+     * followed, with -1 denoting that the pid0 child pointer should
+     * be followed.
+     * 
+     * Note: keys in interior nodes are separator keys.  Like fence
+     * keys, a separator key is exclusive for left and inclusive for
+     * right. For example, a separator key "AB" sends "AA" to left,
+     * "AAZ" to left, "AB" to right, "ABA" to right, and "AC" to
+     * right.
+     * 
+     * @pre this is an interior node
+     */
     void            search_node(const w_keystr_t& key,
                                 slotid_t&         return_slot) const;
+
+
+
+
+
+    int _compare_slot_with_key(int slot, const void* key_noprefix, size_t key_len, poor_man_key poor) const;
+
 
     /**
      * Returns the number of records in this page.

@@ -317,6 +317,19 @@ btree_page_h::search(const char *key_raw, size_t key_raw_len,
 }
 
 
+void btree_page_h::search_node(const w_keystr_t& key,
+                               slotid_t&         return_slot) const {
+    w_assert1(!is_leaf());
+    FUNC(btree_page_h::_search_node);
+
+    bool found_key; 
+    search(key, found_key, return_slot);
+    if (!found_key) {
+        return_slot--;
+    }
+}
+
+
 inline int btree_page_h::_compare_slot_with_key(int slot, const void* key_noprefix, size_t key_len, poor_man_key key_poor) const {
     // fast path using poor_man_key's:
     int result = _poor(slot) - (int)key_poor;
@@ -336,20 +349,6 @@ inline int btree_page_h::_compare_slot_with_key(int slot, const void* key_nopref
         return _compare_leaf_key_noprefix(slot, key_noprefix, key_len);
     } else {
         return _compare_node_key_noprefix(slot, key_noprefix, key_len);
-    }
-}
-
-
-
-void btree_page_h::search_node(const w_keystr_t& key,
-                               slotid_t&         return_slot) const {
-    w_assert3(!is_leaf());
-    FUNC(btree_page_h::_search_node);
-
-    bool found_key; 
-    search(key, found_key, return_slot);
-    if (!found_key) {
-        return_slot--;
     }
 }
 
