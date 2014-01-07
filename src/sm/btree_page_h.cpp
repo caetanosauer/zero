@@ -341,20 +341,6 @@ inline int btree_page_h::_compare_slot_with_key(int slot, const void* key_nopref
 
 
 
-void
-btree_page_h::search(const w_keystr_t& key,
-                     bool&             found_key, 
-                     slotid_t&         return_slot    // origin 0 for first record
-                    ) const
-{
-    if (is_leaf()) {
-        search_leaf(key, found_key, return_slot);
-    } else {
-        found_key = false; // no meaning on exact match.
-        search_node(key, return_slot);
-    }
-}
-
 void btree_page_h::search_leaf(const char *key_raw, size_t key_raw_len,
                                bool& found_key, slotid_t& return_slot) const {
     w_assert3(is_leaf());

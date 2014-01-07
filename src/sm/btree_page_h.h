@@ -426,7 +426,7 @@ public:
     /**
     *  Search for key in this page. Return true in found_key iff
     *  the key is found. 
-    * 
+    *     // origin 0 for first record
     * If found_key, always returns the slot number of the found key.
     * If !found_key, return the slot where key should go.
     */
@@ -443,24 +443,6 @@ public:
 
 
     /**
-    *  Search for key in this page. Return true in "found_key" if
-    *  the key is found. 
-    * 
-    * If the page is a leaf page:
-    * If found_key, always returns the slot number of the found key.
-    * If !found_key, return the slot where key should go.
-    * 
-    * If the page is an interior page:
-    *  Basically same as leaf, but it can return -1 as slot number.
-    *  Only when the page is an interior left-most page and the search
-    *  key is same or smaller than left-most key in this page, this function returns
-    *  return_slot=-1, which means we should follow the pid0 pointer.
-    */
-    void            search(const w_keystr_t& key,
-                           bool&             found_key,
-                           slotid_t&         return_slot) const;
-
-    /**
     * Used from search() for leaf pages.
     * Simply finds the slot matching with the search key.
     */
@@ -472,6 +454,17 @@ public:
     // to make it slightly faster. not a neat kind of optimization
     void            search_leaf(const char *key_raw, size_t key_raw_len,
                                 bool& found_key, slotid_t& return_slot) const;
+
+    /**
+    *  Search for key in this page. Return true in "found_key" if
+    *  the key is found. 
+    * 
+    * If the page is an interior page:
+    *  Basically same as leaf, but it can return -1 as slot number.
+    *  Only when the page is an interior left-most page and the search
+    *  key is same or smaller than left-most key in this page, this function returns
+    *  return_slot=-1, which means we should follow the pid0 pointer.
+    */
     /**
     * Used from search() for interior pages.
     * A bit more complicated because keys are separator keys.

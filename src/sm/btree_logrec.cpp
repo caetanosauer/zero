@@ -157,7 +157,7 @@ btree_update_log::redo(fixable_page_h* page)
     // PHYSICAL redo
     slotid_t       slot;
     bool           found;
-    bp.search(key, found, slot);
+    bp.search_leaf(key, found, slot);
     if (!found) {
         W_FATAL_MSG(fcINTERNAL, << "btree_update_log::redo(): not found");
         return;
@@ -230,7 +230,7 @@ void btree_overwrite_log::redo(fixable_page_h* page)
     // PHYSICAL redo
     slotid_t       slot;
     bool           found;
-    bp.search(key, found, slot);
+    bp.search_leaf(key, found, slot);
     if (!found) {
         W_FATAL_MSG(fcINTERNAL, << "btree_overwrite_log::redo(): not found");
         return;
