@@ -924,10 +924,11 @@ btree_page_h::int_stats(btree_int_stats_t& _stats) {
 smsize_t         
 btree_page_h::max_entry_size = 
     // must be able to fit 2 entries to a page; data_sz must hold:
-    //    fence record:                   max_item_overhead + max_entry_size*3   (low, high, chain keys)
-    //    each of 2 regular leaf entries: max_item_overhead + max_entry_size + sizeof(key_length_t) [key len]
+    //    fence record:                   max_item_overhead + (max_entry_size+1)*3   (low, high, chain keys)
+    //    each of 2 regular leaf entries: max_item_overhead + max_entry_size+1 + sizeof(key_length_t) [key len]
     //
-    (btree_page::data_sz - 3*btree_page::max_item_overhead - 2*sizeof(key_length_t)) / 5;
+    // +1's are for signed byte of keys
+    (btree_page::data_sz - 3*btree_page::max_item_overhead - 2*sizeof(key_length_t)) / 5 - 1;
 
 
 void

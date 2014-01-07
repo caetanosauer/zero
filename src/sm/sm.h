@@ -1716,11 +1716,12 @@ public:
      * The number of key-value pairs that an index can hold is limited by the
      * space available on the volume containing the index.
      * \anchor max_entry_size 
-     * The combined sizes of the key and value must
-     * be less than or equal to \ref max_entry_size, which is
-     * a function of the page size, and is 
+     * The combined sizes of the key (i.e., the number of actual data
+     * bytes it contains) and value must be less than or equal to \ref
+     * max_entry_size, which is a function of the page size, and is
      * such that two entries of this size fit on a page along with all
-     * the page and entry metadata.  See sm_config_info_t and ss_m::config_info.
+     * the page and entry metadata.  See sm_config_info_t and
+     * ss_m::config_info.
      *
      * The minimum size of a B-Tree index is 8 pages (1 extent).
      *
@@ -1897,8 +1898,10 @@ public:
      * @param[in] key  Key for the association to be created.
      * @param[in] el  Element for the association to be created.
      *
-     * The combined sizes of the key and element vectors must
-     * be less than or equal to \ref max_entry_size.
+     * The combined sizes of the key (i.e., the number of actual data
+     * bytes it contains; that is key.get_length_as_keystr()-1) and
+     * element vectors must be less than or equal to \ref
+     * max_entry_size.
      */
     static rc_t            create_assoc(
         stid_t                   stid, 
@@ -2263,8 +2266,9 @@ public:
      * @param[in] key  Key for the association to be created.
      * @param[in] ef  Struct that wraps the element for the association to be created
      *
-     * The combined sizes of the key and element vectors must
-     * be less than or equal to \ref max_entry_size.
+     * The combined sizes of the key (i.e., the number of actual data
+     * bytes it contains-1) and element vectors must be less than or
+     * equal to \ref max_entry_size.
      */
     static rc_t            create_mr_assoc(
         stid_t                   stid, 

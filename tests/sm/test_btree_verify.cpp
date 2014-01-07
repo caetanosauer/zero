@@ -168,7 +168,7 @@ w_rc_t verify_splits(ss_m* ssm, test_volume_t *test_volume) {
 
     // so that one leaf page can have only 2 tuples:
     const int data_size = 1;
-    const int key_size  = btree_m::max_entry_size() - data_size - 1;
+    const int key_size  = btree_m::max_entry_size() - data_size;
 
     char data[data_size];
     char key[key_size];
