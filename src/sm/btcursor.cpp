@@ -121,7 +121,7 @@ rc_t bt_cursor_t::_locate_first() {
         w_assert1(leaf.is_leaf());
 
         // then find the tuple in the page
-        leaf.search_leaf(key, found, _slot);
+        leaf.search(key, found, _slot);
 
         const okvl_mode *mode = NULL;
         if (found) {
@@ -206,11 +206,11 @@ rc_t bt_cursor_t::_check_page_update(btree_page_h &p)
         bool found = false;
         if (p.fence_contains(_key)) {
             // it still contains. just re-locate _slot
-            p.search_leaf(_key, found, _slot);
+            p.search(_key, found, _slot);
         } else {
             // we have to re-locate the page
             W_DO( btree_impl::_ux_traverse(_vol, _store, _key, btree_impl::t_fence_contain, LATCH_SH, p));
-            p.search_leaf(_key, found, _slot);
+            p.search(_key, found, _slot);
         }
         w_assert1(found || !_needs_lock
             || (!_forward && !_upper_inclusive && !_dont_move_next)); // see _locate_first

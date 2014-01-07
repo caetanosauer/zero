@@ -430,30 +430,17 @@ public:
     * If found_key, always returns the slot number of the found key.
     * If !found_key, return the slot where key should go.
     */
-    void        new_search(const w_keystr_t& key,
+    void            search(const w_keystr_t& key,
                            bool&             found_key,
                            slotid_t&         return_slot) const {
-        new_search((const char*) key.buffer_as_keystr(), key.get_length_as_keystr(), found_key, return_slot);
+        search((const char*) key.buffer_as_keystr(), key.get_length_as_keystr(), found_key, return_slot);
     }
 
-    void        new_search(const char *key_raw, size_t key_raw_len,
+    void            search(const char *key_raw, size_t key_raw_len,
                            bool& found_key, slotid_t& return_slot) const;
 
     int _compare_slot_with_key(int slot, const void* key_noprefix, size_t key_len, poor_man_key poor) const;
 
-
-    /**
-    * Used from search() for leaf pages.
-    * Simply finds the slot matching with the search key.
-    */
-    inline void         search_leaf(const w_keystr_t& key,
-                                    bool&             found_key,
-                                    slotid_t&         return_slot) const {
-        search_leaf((const char*) key.buffer_as_keystr(), key.get_length_as_keystr(), found_key, return_slot);
-    }
-    // to make it slightly faster. not a neat kind of optimization
-    void            search_leaf(const char *key_raw, size_t key_raw_len,
-                                bool& found_key, slotid_t& return_slot) const;
 
     /**
     *  Search for key in this page. Return true in "found_key" if

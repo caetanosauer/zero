@@ -157,7 +157,7 @@ btree_update_log::redo(fixable_page_h* page)
     // PHYSICAL redo
     slotid_t       slot;
     bool           found;
-    bp.search_leaf(key, found, slot);
+    bp.search(key, found, slot);
     if (!found) {
         W_FATAL_MSG(fcINTERNAL, << "btree_update_log::redo(): not found");
         return;
@@ -230,7 +230,7 @@ void btree_overwrite_log::redo(fixable_page_h* page)
     // PHYSICAL redo
     slotid_t       slot;
     bool           found;
-    bp.search_leaf(key, found, slot);
+    bp.search(key, found, slot);
     if (!found) {
         W_FATAL_MSG(fcINTERNAL, << "btree_overwrite_log::redo(): not found");
         return;
@@ -428,7 +428,7 @@ btree_ghost_mark_log::redo(fixable_page_h *page)
         w_assert2(bp.fence_contains(key));
         bool found;
         slotid_t slot;
-        bp.search_leaf(key, found, slot);
+        bp.search(key, found, slot);
         if (!found) {
             cerr << " key=" << key << endl << " not found in btree_ghost_mark_log::redo" << endl;
             w_assert1(false); // something unexpected, but can go on.

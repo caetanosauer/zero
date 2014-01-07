@@ -64,7 +64,7 @@ btree_impl::_ux_lookup_core(
 
     // then find the tuple in the page
     slotid_t slot;
-    leaf.search_leaf(key, found, slot);
+    leaf.search(key, found, slot);
     if (!found) {
         if (need_lock) {
             W_DO(_ux_lock_range(leaf, key, slot, LATCH_SH,

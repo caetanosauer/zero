@@ -263,8 +263,8 @@ rc_t btree_page_h::clear_foster() {
 
 
 void
-btree_page_h::new_search(const char *key_raw, size_t key_raw_len,
-                         bool& found_key, slotid_t& return_slot) const {
+btree_page_h::search(const char *key_raw, size_t key_raw_len,
+                     bool& found_key, slotid_t& return_slot) const {
     w_assert1((uint) get_prefix_length() <= key_raw_len);
     w_assert1(::memcmp(key_raw, get_prefix_key(), get_prefix_length()) == 0);
     const void *key_noprefix = key_raw + get_prefix_length();
@@ -341,21 +341,13 @@ inline int btree_page_h::_compare_slot_with_key(int slot, const void* key_nopref
 
 
 
-void btree_page_h::search_leaf(const char *key_raw, size_t key_raw_len,
-                               bool& found_key, slotid_t& return_slot) const {
-    w_assert3(is_leaf());
-    FUNC(btree_page_h::_search_leaf);
-
-    new_search(key_raw, key_raw_len, found_key, return_slot);
-}
-
 void btree_page_h::search_node(const w_keystr_t& key,
                                slotid_t&         return_slot) const {
     w_assert3(!is_leaf());
     FUNC(btree_page_h::_search_node);
 
     bool found_key; 
-    new_search(key, found_key, return_slot);
+    search(key, found_key, return_slot);
     if (!found_key) {
         return_slot--;
     }
@@ -485,7 +477,7 @@ rc_t btree_page_h::replace_ghost(const w_keystr_t &key,
     // which slot to replace?
     bool found;
     slotid_t slot;
-    search_leaf(key, found, slot);
+    search(key, found, slot);
     w_assert0 (found);
     w_assert1 (is_ghost(slot));
 #if W_DEBUG_LEVEL > 2
@@ -549,7 +541,7 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, size_t
     // where to insert?
     slotid_t slot;
     bool found;
-    search_leaf(key_raw, key_raw_len, found, slot);
+    search(key_raw, key_raw_len, found, slot);
     w_assert1(!found); // this is unexpected!
     if (found) { // but can go on..
         return;
