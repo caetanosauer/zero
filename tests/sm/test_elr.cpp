@@ -5,7 +5,7 @@
 #include "btcursor.h"
 #include "bf.h"
 #include "xct.h"
-#include "w_gettimeofday.h"
+#include <sys/time.h>
 
 btree_test_env *test_env;
 

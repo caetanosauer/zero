@@ -30,7 +30,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 /*  -- do not edit anything above this line --   </std-header>*/
 
 #include "w_rusage.h"
-#include "w_gettimeofday.h"
+#include <sys/time.h>
 #include <iostream>
 
 const int MIL     = 1000000;

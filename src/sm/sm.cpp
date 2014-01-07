@@ -186,12 +186,6 @@ ss_m* smlevel_4::SSM = 0;
 // option related statics
 option_group_t* ss_m::_options = NULL;
 
-#if defined(Sparc) && defined(SOLARIS2) && defined(SOLARIS2_PSETS)
-#include <sys/types.h>
-#include <sys/processor.h>
-#include <sys/procset.h>
-#include <sys/pset.h>
-#endif
 option_t* ss_m::_hugetlbfs_path = NULL;
 option_t* ss_m::_reformat_log = NULL;
 option_t* ss_m::_prefetch = NULL;
@@ -1829,9 +1823,7 @@ ss_m::_commit_xct(sm_stats_info_t*& _stats, bool lazy,
         _stats = x.steal_stats();
         _stats->compute();
     }
-#if W_DEBUG_LEVEL >= 3
-    bool was_sys_xct = x.is_sys_xct();
-#endif //W_DEBUG_LEVEL
+    bool was_sys_xct W_IFDEBUG3(= x.is_sys_xct());
     xct_t::destroy_xct(&x);
     w_assert3(was_sys_xct || xct() == 0);
 
@@ -1951,9 +1943,7 @@ ss_m::_abort_xct(sm_stats_info_t*&             _stats)
         return RCOK;
     }
     
-#if W_DEBUG_LEVEL>=3
-    bool was_sys_xct = x.is_sys_xct();
-#endif // W_DEBUG_LEVEL>=3
+    bool was_sys_xct W_IFDEBUG3(= x.is_sys_xct());
 
     W_DO( x.abort(true /* save _stats structure */) );
     if(x.is_instrumented()) {

@@ -364,7 +364,7 @@ private:
 };
 
 inline
-void* operator new(size_t W_IFDEBUG1(nbytes), blob_pool &alloc) 
+void* operator new(size_t nbytes, blob_pool &alloc) 
 {
     w_assert1(nbytes <= alloc.nbytes());
     return alloc.acquire();

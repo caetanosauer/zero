@@ -379,14 +379,7 @@ ostream &stime_t::ctime(ostream &s) const
     const   int buflen(26); 
     char    buf[buflen];    /* XXX well known magic number */
 
-    /// See Makefile.generic for note about this
-#ifdef _POSIX_PTHREAD_SEMANTICS 
     char    *when = ctime_r(&kludge, buf);
-#elif defined(SOLARIS2)
-    char    *when = ctime_r(&kludge, buf, buflen);
-#else
-    char    *when = ctime_r(&kludge, buf);
-#endif
 
     /* chop the newline */
     char *nl = strchr(when, '\n');

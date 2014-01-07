@@ -687,7 +687,7 @@ smthread_t::check_pin_count(int W_IFDEBUG4(change))
 }
 
 inline void 
-smthread_t::check_actual_pin_count(int W_IFDEBUG3(actual)) 
+smthread_t::check_actual_pin_count(int actual) 
 {
     w_assert3(tcb().pin_count == actual);
 }

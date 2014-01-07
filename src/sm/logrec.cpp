@@ -116,7 +116,6 @@ logrec_t::type_str() const
 void
 logrec_t::fill(const lpid_t* p, uint16_t tag, smsize_t l)
 {
-    w_assert9(hdr_sz == _data - (char*) this);
     w_assert9(w_base_t::is_aligned(_data));
 
     /* adjust _cat */
@@ -287,7 +286,6 @@ xct_list_t::xct_list_t(
     : count(cnt)
 {
     w_assert1(count <= max);
-    w_assert9( SIZEOF(*this) <= logrec_t::data_sz);
     for (uint i = 0; i < count; i++)  {
         xrec[i].tid = xct[i]->tid();
     }
@@ -333,7 +331,7 @@ comment_log::comment_log(const char *msg)
 }
 
 void 
-comment_log::redo(fixable_page_h * W_IFDEBUG9(page))
+comment_log::redo(fixable_page_h *page)
 {
     w_assert9(page == 0);
     DBG(<<"comment_log: R: " << (const char *)_data);
@@ -341,7 +339,7 @@ comment_log::redo(fixable_page_h * W_IFDEBUG9(page))
 }
 
 void 
-comment_log::undo(fixable_page_h * W_IFDEBUG9(page))
+comment_log::undo(fixable_page_h *page)
 {
     w_assert9(page == 0);
     DBG(<<"comment_log: U: " << (const char *)_data);
@@ -466,7 +464,6 @@ chkpt_xct_tab_t::chkpt_xct_tab_t(
     : youngest(_youngest), count(cnt)
 {
     w_assert1(count <= max);
-    w_assert9( SIZEOF(*this) <= logrec_t::data_sz);
     for (uint i = 0; i < count; i++)  {
         xrec[i].tid = tid[i];
         xrec[i].state = state[i];
@@ -504,7 +501,6 @@ chkpt_dev_tab_t::chkpt_dev_tab_t(
     const vid_t*        vid)
     : count(cnt)
 {
-    w_assert9( sizeof(*this) <= logrec_t::data_sz );
     w_assert1(count <= max);
     for (uint i = 0; i < count; i++) {
         // zero out everything and then set the string
@@ -542,7 +538,7 @@ mount_vol_log::mount_vol_log(
 }
 
 
-void mount_vol_log::redo(fixable_page_h* W_IFDEBUG9(page))
+void mount_vol_log::redo(fixable_page_h* page)
 {
     w_assert9(page == 0);
     chkpt_dev_tab_t* dp = (chkpt_dev_tab_t*) _data;
@@ -575,7 +571,7 @@ dismount_vol_log::dismount_vol_log(
 }
 
 
-void dismount_vol_log::redo(fixable_page_h* W_IFDEBUG9(page))
+void dismount_vol_log::redo(fixable_page_h* page)
 {
     w_assert9(page == 0);
     chkpt_dev_tab_t* dp = (chkpt_dev_tab_t*) _data;

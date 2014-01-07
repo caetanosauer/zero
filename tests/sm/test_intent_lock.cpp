@@ -5,7 +5,7 @@
 #include "btcursor.h"
 #include "bf.h"
 #include "xct.h"
-#include "w_gettimeofday.h"
+#include <sys/time.h>
 #include "lock.h"
 
 btree_test_env *test_env;
@@ -25,7 +25,7 @@ const int TEST_STORE_ID3 = 4;
 
 class lock_thread_t : public smthread_t {
 public:
-        lock_thread_t(vid_t vol, snum_t store, okvl_mode::singular_lock_mode vol_mode, okvl_mode::singular_lock_mode store_mode) 
+        lock_thread_t(vid_t vol, snum_t store, okvl_mode::element_lock_mode vol_mode, okvl_mode::element_lock_mode store_mode) 
                 : smthread_t(t_regular, "lock_thread_t"),
                 _vol(vol), _store(store), _vol_mode(vol_mode), _store_mode(store_mode),
                 _done(false), _exitted(false) {
@@ -99,7 +99,7 @@ public:
 
     vid_t _vol;
     snum_t _store;
-    okvl_mode::singular_lock_mode _vol_mode, _store_mode;
+    okvl_mode::element_lock_mode _vol_mode, _store_mode;
     rc_t _rc;
     bool _done;
     bool _exitted;

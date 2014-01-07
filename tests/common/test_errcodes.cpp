@@ -26,6 +26,7 @@ TEST(ErrcodesTest, All) {
 "Foundation Classes:65543:Feature is not implemented\n"
 "Foundation Classes:65544:unknown error code\n"
 "Foundation Classes:65545:Assertion Failed\n"
+"Foundation Classes:65546:User-requested rollback\n"
 "Options Package:131072:Illegal option description line\n"
 "Options Package:131073:Illegal option class name\n"
 "Options Package:131074:Option class name too long\n"

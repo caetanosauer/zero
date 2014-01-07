@@ -78,9 +78,7 @@ void bm_clr(u_char* bm, int offset)
 
 int bm_first_set(const u_char* bm, int size, int start)
 {
-#if W_DEBUG_LEVEL > 2
     const u_char *bm0 = bm;
-#endif
     register int mask;
     
     w_assert3(start >= 0 && start <= size);
@@ -106,9 +104,7 @@ int bm_first_clr(const u_char* bm, int size, int start)
 {
     w_assert3(start >= 0 && start <= size);
     register int mask;
-#if W_DEBUG_LEVEL > 2
     const u_char *bm0 = bm;
-#endif
     
     bm += div8(start);
     mask = 1 << mod8(start);
@@ -131,9 +127,7 @@ int bm_first_clr(const u_char* bm, int size, int start)
 int bm_last_set(const u_char* bm, int size, int start)
 {
     register unsigned mask;
-#if W_DEBUG_LEVEL > 2
     const    u_char *bm0 = bm;
-#endif
     
     w_assert3(start >= 0 && start < size);
     
@@ -158,9 +152,7 @@ int bm_last_set(const u_char* bm, int size, int start)
 int bm_last_clr(const u_char* bm, int size, int start)
 {
     register unsigned mask;
-#if W_DEBUG_LEVEL > 2
     const u_char *bm0 = bm;
-#endif
     
     w_assert3(start >= 0 && start < size);
     

@@ -3,7 +3,7 @@
  */
 
 #include "bf_tree_cleaner.h"
-#include "w_gettimeofday.h"
+#include <sys/time.h>
 #include "sm_int_0.h"
 #include "sm_int_1.h"
 #include "bf_tree_cb.h"
@@ -325,8 +325,7 @@ void bf_tree_cleaner_slave_thread_t::_take_interval()
 }
 
 bool bf_tree_cleaner_slave_thread_t::_cond_timedwait (uint64_t timeout_microsec) {
-    W_IFDEBUG1(int rc_mutex_lock = )
-        ::pthread_mutex_lock (&_interval_mutex);
+    int rc_mutex_lock = ::pthread_mutex_lock (&_interval_mutex);
     w_assert1(rc_mutex_lock == 0);
 
     timespec   ts;
@@ -370,8 +369,7 @@ bool bf_tree_cleaner_slave_thread_t::_cond_timedwait (uint64_t timeout_microsec)
         }
     }
 
-    W_IFDEBUG1(int rc_mutex_unlock = )
-        ::pthread_mutex_unlock (&_interval_mutex);
+    int rc_mutex_unlock = ::pthread_mutex_unlock (&_interval_mutex);
     w_assert1(rc_mutex_unlock == 0);
     _wakeup_requested = false;
     return timeouted;
@@ -380,16 +378,13 @@ bool bf_tree_cleaner_slave_thread_t::_cond_timedwait (uint64_t timeout_microsec)
 void bf_tree_cleaner_slave_thread_t::wakeup()
 {
     _wakeup_requested = true;
-    W_IFDEBUG1(int rc_mutex_lock = )
-        ::pthread_mutex_lock (&_interval_mutex);
+    int rc_mutex_lock = ::pthread_mutex_lock (&_interval_mutex);
     w_assert1(rc_mutex_lock == 0);
 
-    W_IFDEBUG1(int rc_broadcast = )
-        ::pthread_cond_broadcast(&_interval_cond);
+    int rc_broadcast = ::pthread_cond_broadcast(&_interval_cond);
     w_assert1(rc_broadcast == 0);
 
-    W_IFDEBUG1(int rc_mutex_unlock = )
-        ::pthread_mutex_unlock (&_interval_mutex);
+    int rc_mutex_unlock = ::pthread_mutex_unlock (&_interval_mutex);
     w_assert1(rc_mutex_unlock == 0);
 }
 

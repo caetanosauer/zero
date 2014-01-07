@@ -437,12 +437,6 @@ SHORE-specific Optional Packages:
  * and the rest of the options are determined in \e config/shore-config.h,
  * produced at configuration time.
  *
- * \note For Solaris users: if you use CC rather than gcc,
- * you will probably have to run configure
- * with environment variable CXX defined as the path to your
- * CC compiler, and you might also need
- * \code configure --enable-dependency-tracking \endcode.
- *
  * \section SHOREMKCHECK Checking the Release
  *
  * After building the storage manager, you can check it by running

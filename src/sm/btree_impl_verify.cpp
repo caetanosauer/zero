@@ -52,7 +52,7 @@ rc_t  btree_impl::_ux_verify_tree(
 rc_t btree_impl::_ux_verify_tree_recurse(
         btree_page_h &parent, verification_context &context)
 {
-    W_IFDEBUG1(lpid_t org_pid = parent.pid();)
+    lpid_t org_pid = parent.pid();
 
     w_assert1(parent.is_latched());
     // feed this page itself

@@ -13,26 +13,6 @@ SET(CMAKE_MODULE_PATH "${CMAKE_INSTALL_PREFIX}/share/cmake-modules" ${CMAKE_MODU
 SET(LINTEL_FIND_REQUIRED ON)
 INCLUDE(FindLintel)
 
-# Note, we can't change compiler based on CMAKE_SYSTEM.
-# Before PROJECT(), CMAKE_SYSTEM is empty, so we have no clue.
-# After PROJECT(), we can't change CMAKE_C_COMPILER.
-# The only solution is the user provides "-DCMAKE_CXX_COMPILER=CC" on solaris!
-IF(${CMAKE_SYSTEM_NAME} MATCHES "SunOS")
-  MESSAGE (STATUS "Wow, seems like I'm running on SunOS!")
-  SET (COMPILER_IS_SUNCC true)
-  SET (COMPILER_IS_GCC false)
-  SET (COMPILER_IS_ICC false)
-ELSE(${CMAKE_SYSTEM_NAME} MATCHES "SunOS")
-  SET (COMPILER_IS_SUNCC false)
-  IF (CMAKE_COMPILER_IS_GNUCXX)
-    SET (COMPILER_IS_GCC true)
-    SET (COMPILER_IS_ICC false)
-  ELSE (CMAKE_COMPILER_IS_GNUCXX)
-    SET (COMPILER_IS_GCC false)
-    SET (COMPILER_IS_ICC true)
-  ENDIF (CMAKE_COMPILER_IS_GNUCXX)
-ENDIF(${CMAKE_SYSTEM_NAME} MATCHES "SunOS")
-
 MESSAGE (STATUS)
 MESSAGE (STATUS "========================================")
 MESSAGE (STATUS "CMAKE_SYSTEM=${CMAKE_SYSTEM}")
@@ -40,21 +20,14 @@ MESSAGE (STATUS "CMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}")
 MESSAGE (STATUS "CMAKE_SYSTEM_PROCESSOR=${CMAKE_SYSTEM_PROCESSOR}")
 MESSAGE (STATUS "CMAKE_C_COMPILER=${CMAKE_C_COMPILER}")
 MESSAGE (STATUS "CMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}")
-MESSAGE (STATUS "COMPILER_IS_SUNCC=${COMPILER_IS_SUNCC}")
-MESSAGE (STATUS "COMPILER_IS_GCC=${COMPILER_IS_GCC}")
-MESSAGE (STATUS "COMPILER_IS_ICC=${COMPILER_IS_ICC}")
 MESSAGE (STATUS "========================================")
 MESSAGE (STATUS)
 
 IF(${CMAKE_SYSTEM_PROCESSOR} MATCHES ".*64.*")
   MESSAGE (STATUS "Yes, you are on 64bit OS/CPU!")
 ELSE()
-  IF(${CMAKE_SYSTEM_PROCESSOR} MATCHES ".*sparc*")
-    MESSAGE (STATUS "Your system is Sparc ('${CMAKE_SYSTEM_PROCESSOR}'), which doesn't contain '64', but we assume it's 64 bits.")
-  ELSE()
-    MESSAGE (FATAL_ERROR "Foster B-tree can only be built on 64bit OS/CPU. Your system seems '${CMAKE_SYSTEM_PROCESSOR}'")
-    RETURN()
-  ENDIF()
+  MESSAGE (FATAL_ERROR "Foster B-tree can only be built on 64bit OS/CPU. Your system seems '${CMAKE_SYSTEM_PROCESSOR}'")
+  RETURN()
 ENDIF()
 
 
@@ -90,20 +63,13 @@ ENABLE_TESTING() # we use CTest all over the project. run "make test" after cmak
 
 # compiler options. ported from Makefile.generic of original ShoreMT.
 # W_DEBUG_LEVEL enables various check logics and asserts. higher is more verbose.
-IF (COMPILER_IS_SUNCC)
-  SET(CMAKE_CXX_FLAGS_TRACE  "-xO0 -g0 -xs -DDEBUG -DW_DEBUG_LEVEL=5 ${LINK_GOOGLEPROFILER}")
-  SET(CMAKE_CXX_FLAGS_DEBUG  "-xO0 -g0 -xs -DDEBUG -DW_DEBUG_LEVEL=3 ${LINK_GOOGLEPROFILER}")
-  SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-xO2 -g0 -xs -DW_DEBUG_LEVEL=1 ${LINK_GOOGLEPROFILER}")
-  SET(CMAKE_CXX_FLAGS_RELEASE "-xO4 -xinline=%auto -DNDEBUG -DW_DEBUG_LEVEL=0 ${LINK_GOOGLEPROFILER}")
-ELSE (COMPILER_IS_SUNCC)
-  SET(CMAKE_CXX_FLAGS_TRACE  "-O0 -g -DDEBUG -DW_DEBUG_LEVEL=5 ${LINK_GOOGLEPROFILER}")
-  SET(CMAKE_CXX_FLAGS_DEBUG  "-O0 -g -DDEBUG -DW_DEBUG_LEVEL=3 ${LINK_GOOGLEPROFILER}")
+SET(CMAKE_CXX_FLAGS_TRACE  "-O0 -g -DDEBUG -DW_DEBUG_LEVEL=5 ${LINK_GOOGLEPROFILER}")
+SET(CMAKE_CXX_FLAGS_DEBUG  "-O0 -g -DDEBUG -DW_DEBUG_LEVEL=3 ${LINK_GOOGLEPROFILER}")
 ##  SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DW_DEBUG_LEVEL=1 ${LINK_GOOGLEPROFILER}")
 ## Below is better for performance analysis; above is better for debugging
-  SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DW_DEBUG_LEVEL=0 -DNDEBUG -fPIC ${LINK_GOOGLEPROFILER} ${COMPILE_MUTRACE}")
+SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DW_DEBUG_LEVEL=0 -DNDEBUG -fPIC ${LINK_GOOGLEPROFILER} ${COMPILE_MUTRACE}")
 #  SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O0 -g -DW_DEBUG_LEVEL=3 -DDEBUG ${LINK_GOOGLEPROFILER}")
-  SET(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -fexpensive-optimizations -finline-functions -DW_DEBUG_LEVEL=0 ${LINK_GOOGLEPROFILER}")
-ENDIF (COMPILER_IS_SUNCC)
+SET(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -fexpensive-optimizations -finline-functions -DW_DEBUG_LEVEL=0 ${LINK_GOOGLEPROFILER}")
 
 ## _REENTRANT and _POSIX_PTHREAD_SEMANTICS are needed on Solaris to ensure 
 # that the posix-compliant clib interfaces are there (e.g., ctime_r)
@@ -112,99 +78,23 @@ ENDIF (COMPILER_IS_SUNCC)
 
 SET (MANDATORY_FLAGS "-D_REENTRANT -D_POSIX_PTHREAD_SEMANTICS")
 
-IF (COMPILER_IS_SUNCC)
-  SET (ALWAYS_FLAGS "-features=extensions,zla -xdebugformat=stabs -library=stlport4  -mt -lpthread -lmtmalloc")
-  #  CC turns on inlining based on optimization level.  at O0 it should
-  #  do no inlining at less than O3.  There is no way to force inlining to
-  #  be off (well, +d does except when the optimization level overrides it); 
-  #  but you can force it to be on.
-  SET (NO_INLINE_FLAGS "+d")
-  SET (YES_INLINE_FLAGS "")
-ELSE (COMPILER_IS_SUNCC)
-  IF (COMPILER_IS_GCC)
-    IF (COMPILER_IS_ICC)
-      SET (ALWAYS_FLAGS "-Wall -Woverloaded-virtual -Wno-deprecated -fno-strict-aliasing -Wpointer-arith -Wwrite-strings -Werror-all -pthread -Wno-unknown-pragmas -Wcheck -wd981 -wd444 -wd383 1599 -wd1418 -wd1419 -wd1572 -wd181 -wd2259 -wd128")
-      ## intel compiler "remarks"
-      # 981 : operands are evaluated in unspecified order -- so what? OK
-      # 444 : destructor for base class is not virtual: we have a lot of these
-      # for base classes that have only static or const/enum members: smlevel*,
-      # X_base_t, etc.  OK.
-      # 383 : value copied to a temp, ref to temp used. OK 
-      # 1599: declaration hides variable X (declared at line Z) ... OK
-      # These are unavoidable due to the use of the W_DO and similar idioms.
-      # 193 : zero used for undefined preprocessing variable  - fix
-      # 1418: external function def with no prior decl
-      #  and
-      # 1419: external declaration in primary source file
-      # used to generate un-mangled names for calling in debugger. OK.
-      # 1572: floating point equality and inequality comparisons are unreliable 
-      # in btree code; OK.
-      # 181 : argument is incompat with corresponding format : in
-      # debugger-callable routines  : fix
-      # 2259: non-pointer converssion from X to Y may lose sig bits : TODO: track
-      # these down
-      # 128 : not reachable (CC complains about not returning values, icc complains
-      # about not reachable)
-    ELSE (COMPILER_IS_ICC)
-      # -pedantic requires -Wno-long-long
-      # 
-      SET (ALWAYS_FLAGS "-Werror -Wall -Wextra -Woverloaded-virtual -fno-strict-aliasing -Wpointer-arith -Wwrite-strings -pthread")
-      # NO_INLINE_FLAGS =  -fno-inline
-      SET (NO_INLINE_FLAGS "")
-      SET (YES_INLINE_FLAGS "-finline-functions")
-    ENDIF (COMPILER_IS_ICC)
-  ELSE (COMPILER_IS_GCC)
-    message ( STATUS "UNKNOWN COMPILER!")
-  ENDIF (COMPILER_IS_GCC)
-ENDIF (COMPILER_IS_SUNCC)
+# -pedantic requires -Wno-long-long
+# 
+SET (ALWAYS_FLAGS "-Wall -Wextra -Woverloaded-virtual -fno-strict-aliasing -Wpointer-arith -Wwrite-strings -pthread")
+# NO_INLINE_FLAGS =  -fno-inline
+SET (NO_INLINE_FLAGS "")
+SET (YES_INLINE_FLAGS "-finline-functions")
 
 ## enabled by config option (default) 
 ## Now try to find out the compiler arguments needed
-IF (COMPILER_IS_SUNCC)
-  ## SUN CC/64
-  ## getconf doesn't necessarily keep up with the times...
-  ## and in any case, it might target generic
-  SET(TARGET_FLAGS "-m64")
-  ## Assembler flags
-  SET(AM_LDFLAGS "-m64")
-  SET(TUNE_FLAGS "-xtarget=native")
-ELSE (COMPILER_IS_SUNCC)
-  IF (COMPILER_IS_ICC)
-      ## ICC/64
-    SET(TUNE_FLAGS "")
-  ELSE (COMPILER_IS_ICC)
-    ## GCC/64
-    SET(TUNE_FLAGS "-mtune=nocona")
-  ENDIF (COMPILER_IS_ICC)
-  # TUNE_FLAGS = -mtune=generic
-  SET(TARGET_FLAGS "-m64")
-  ## Assembler flags
-  SET(AM_LDFLAGS "-m64")
-ENDIF (COMPILER_IS_SUNCC)
-
-IF (COMPILER_IS_GCC)
-  ## TODO: pedantic for SUNCC?
-  IF (NOPEDANTIC)
-    SET(PEDANTIC "")
-  ELSE (NOPEDANTIC)
-    # SET(PEDANTIC "-pedantic-errors")
-    # SET(PEDANTIC "-pedantic") # let me do this for now please...
-  ENDIF (NOPEDANTIC)
-ENDIF (COMPILER_IS_GCC)
+SET(TUNE_FLAGS "-mtune=nocona")
+# TUNE_FLAGS = -mtune=generic
+SET(TARGET_FLAGS "-m64")
+## Assembler flags
+SET(AM_LDFLAGS "-m64")
 
 SET(ALL_FLAGS "${PEDANTIC} ${TUNE_FLAGS} ${DEBUGFLAGS} ${W_WARNINGS} ${OPTFLAGS} ${MANDATORY_FLAGS} ${ALWAYS_FLAGS} ${TARGET_FLAGS} ${TEMPLATEFLAGS}")
-IF (COMPILER_IS_SUNCC)
-  SET(ALL_FLAGS "${ALL_FLAGS} -lnsl") # on solaris, gethostbyname needs -lnsl
-  # linker ignores ADD_DEFINITIONS, and it causes a linker problem on solaris.
-  # so, let's add them as individual flags.
-  SET(CMAKE_CXX_FLAGS_TRACE  "${CMAKE_CXX_FLAGS_TRACE} ${ALL_FLAGS}")
-  SET(CMAKE_CXX_FLAGS_DEBUG  "${CMAKE_CXX_FLAGS_DEBUG} ${ALL_FLAGS}")
-  SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${ALL_FLAGS}")
-  SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${ALL_FLAGS}")
-ELSE (COMPILER_IS_SUNCC)
-  ADD_DEFINITIONS(${ALL_FLAGS})
-ENDIF (COMPILER_IS_SUNCC)
-
+ADD_DEFINITIONS(${ALL_FLAGS})
 
 ## end of compiler options
 
@@ -288,11 +178,7 @@ SET (HUGEPAGESIZE 2048) # so far hard-coded.
 SET (SM_PAGESIZE 8192)
 
 # # of bits used for dreadlock.
-IF (CMAKE_SYSTEM_PROCESSOR STREQUAL "sparc" )
-  SET (SM_DREADLOCK_BITCOUNT 512) # Sparc has many more #cores
-ELSE ()
-  SET (SM_DREADLOCK_BITCOUNT 256)
-ENDIF ()
+SET (SM_DREADLOCK_BITCOUNT 256)
 # # of bits used as identity.
 SET (SM_DREADLOCK_FINGERS 3)
 
@@ -305,7 +191,8 @@ IF(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   SET (Linux "true")
 ENDIF()
 IF (CMAKE_SYSTEM_NAME MATCHES "(Solaris|SunOS)" )
-  SET (SOLARIS2  "true")
+  MESSAGE (FATAL_ERROR "We no longer support Solaris!")
+  RETURN()
 ENDIF ()
 IF(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   SET (MacOSX "true")
@@ -315,7 +202,8 @@ IF (CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64" )
   SET (amd64 "true") # maybe additional check needed. but now they are almost synonyms
 ENDIF ()
 IF (CMAKE_SYSTEM_PROCESSOR STREQUAL "sparc" )
-  SET (Sparc "true")
+  MESSAGE (FATAL_ERROR "We no longer support Sparc!")
+  RETURN()
 ENDIF ()
 INCLUDE (TestBigEndian)
 TEST_BIG_ENDIAN(WORDS_BIGENDIAN)
