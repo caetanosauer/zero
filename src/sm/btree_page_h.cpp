@@ -296,20 +296,6 @@ btree_page_h::new_search(const char *key_raw, size_t key_raw_len,
         high--;
     }
 
-    // [optional] check the first record (0) if it exists to speed-up reverse sorted insert:
-    if (high > 0) {
-        int d = _compare_slot_with_key(0, key_noprefix, key_len, poormkey);
-        if (d > 0) { // search key lower than lowest slot
-            return_slot = 0;
-            return;
-        } else if (d == 0) {
-            found_key   = true;
-            return_slot = 0;
-            return;
-        }
-        low++;
-    }
-    
     while (low+1 < high) {
         int mid = (low + high) / 2;
         w_assert1(low<mid && mid<high);
