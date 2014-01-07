@@ -262,6 +262,29 @@ rc_t btree_page_h::clear_foster() {
 }
 
 
+inline int btree_page_h::_compare_slot_with_key(int slot, const void* key_noprefix, size_t key_len, poor_man_key key_poor) const {
+    // fast path using poor_man_key's:
+    int result = _poor(slot) - (int)key_poor;
+    if (result != 0) {
+#if W_DEBUG_LEVEL > 0
+        if (is_leaf()) {
+            w_assert1((result<0) == (_compare_leaf_key_noprefix(slot, key_noprefix, key_len)<0));
+        } else {
+            w_assert1((result<0) == (_compare_node_key_noprefix(slot, key_noprefix, key_len)<0));
+        }
+#endif
+        return result;
+    }
+
+    // slow path:
+    if (is_leaf()) {
+        return _compare_leaf_key_noprefix(slot, key_noprefix, key_len);
+    } else {
+        return _compare_node_key_noprefix(slot, key_noprefix, key_len);
+    }
+}
+
+
 void
 btree_page_h::search(const char *key_raw, size_t key_raw_len,
                      bool& found_key, slotid_t& return_slot) const {
@@ -326,29 +349,6 @@ void btree_page_h::search_node(const w_keystr_t& key,
     search(key, found_key, return_slot);
     if (!found_key) {
         return_slot--;
-    }
-}
-
-
-inline int btree_page_h::_compare_slot_with_key(int slot, const void* key_noprefix, size_t key_len, poor_man_key key_poor) const {
-    // fast path using poor_man_key's:
-    int result = _poor(slot) - (int)key_poor;
-    if (result != 0) {
-#if W_DEBUG_LEVEL > 0
-        if (is_leaf()) {
-            w_assert1((result<0) == (_compare_leaf_key_noprefix(slot, key_noprefix, key_len)<0));
-        } else {
-            w_assert1((result<0) == (_compare_node_key_noprefix(slot, key_noprefix, key_len)<0));
-        }
-#endif
-        return result;
-    }
-
-    // slow path:
-    if (is_leaf()) {
-        return _compare_leaf_key_noprefix(slot, key_noprefix, key_len);
-    } else {
-        return _compare_node_key_noprefix(slot, key_noprefix, key_len);
     }
 }
 

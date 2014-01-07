@@ -467,12 +467,6 @@ public:
                                 slotid_t&         return_slot) const;
 
 
-
-
-
-    int _compare_slot_with_key(int slot, const void* key_noprefix, size_t key_len, poor_man_key poor) const;
-
-
     /**
      * Returns the number of records in this page.
      */
@@ -773,7 +767,7 @@ private:
     /** Retrieves only the key of specified slot WITHOUT prefix in an intermediate node page.*/
     const char*     _node_key_noprefix(slotid_t idx,  size_t &len) const;
 
-    /** returns compare(specified-key, key_noprefix) for lead page. */
+    /** returns compare(specified-key, key_noprefix) for leaf page. */
     int             _compare_leaf_key_noprefix(slotid_t idx, const void *key_noprefix, size_t key_len) const;
     /** returns compare(specified-key, key_noprefix) for node page. */
     int             _compare_node_key_noprefix(slotid_t idx, const void *key_noprefix, size_t key_len) const;
@@ -782,6 +776,10 @@ private:
     int             _compare_leaf_key_noprefix_remain(int slot, const void *key_noprefix_remain, int key_len_remain) const;
     /** skips comparing the first sizeof(poormankey) bytes. */
     int             _compare_node_key_noprefix_remain(int slot, const void *key_noprefix_remain, int key_len_remain) const;
+
+    // compare slot slot's key with given key (as key_noprefix,key_len,poor tuple)
+    // result <0 if slot's key is before given key
+    int _compare_slot_with_key(int slot, const void* key_noprefix, size_t key_len, poor_man_key poor) const;
 
 protected:
     /**
