@@ -64,7 +64,7 @@ protected:
      */
     shpid_t btree_root;                         // +4 -> 4
 
-    /// First child pointer in non-leaf nodes.  Used only in left-most non-leaf nodes. 
+    /// First child pointer in non-leaf nodes.
     shpid_t btree_pid0;                         // +4 -> 8
 
     /// Foster link page ID (0 if not linked).
