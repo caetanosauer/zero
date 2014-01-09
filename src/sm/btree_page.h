@@ -300,6 +300,19 @@ protected:
     bool          _items_are_consistent() const;
 
 
+    // ======================================================================
+    //   BEGIN: Robust interface
+    // ======================================================================
+
+    /*
+     * 
+     */
+
+    int          robust_number_of_items() const;
+    poor_man_key robust_item_poor(int item) const;
+    shpid_t      robust_item_child(int item);
+
+
 private:
 // ======================================================================
 //   BEGIN: private implementation details
@@ -581,5 +594,53 @@ inline size_t btree_page_data::usable_space() const {
     w_assert1(first_used_body*sizeof(item_body) >= nitems*sizeof(item_head));
     return    first_used_body*sizeof(item_body) -  nitems*sizeof(item_head);
 }
+
+
+
+/**
+ * C++ version of Linux kernel's ACCESS_ONCE() macro
+ *
+ * Prevent the compiler from merging or refetching accesses.  The compiler
+ * is also forbidden from reordering successive instances of ACCESS_ONCE(),
+ * but only when the compiler is aware of some particular ordering.  One way
+ * to make the compiler aware of ordering is to put the two invocations of
+ * ACCESS_ONCE() in different C statements.
+ *
+ * This does absolutely -nothing- to prevent the CPU from reordering,
+ * merging, or refetching absolutely anything at any time.
+ */
+template<typename T>
+inline T volatile &ACCESS_ONCE(T &t) {
+    return static_cast<T volatile &>(t);
+}
+
+
+inline int btree_page_data::robust_number_of_items() const {
+    item_index_t number = ACCESS_ONCE(nitems);
+    if (number >= max_heads) {
+        return 0; // don't waste time examining garbage
+    } else {
+        return number;
+    }
+}
+
+inline btree_page_data::poor_man_key btree_page_data::robust_item_poor(int item) const {
+    w_assert1(item>=0 && item<max_heads);
+    return ACCESS_ONCE(head[item].poor);
+}
+
+inline shpid_t btree_page_data::robust_item_child(int item) {
+    w_assert1(item>=0 && item<max_heads);
+
+    // int type here to avoid overflow issues
+    //   (-<smallest_value_for_a_integral_type) < 0!):
+    int offset = ACCESS_ONCE(head[item].offset);
+    if (offset < 0) {
+        offset = -offset;
+        w_assert1(offset >= 0);
+    }
+    return ACCESS_ONCE(body[offset % max_bodies].interior.child);
+}
+
 
 #endif // BTREE_PAGE_H
