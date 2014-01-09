@@ -64,7 +64,7 @@ btree_impl::_ux_lookup_core(
 
     // then find the tuple in the page
     slotid_t slot;
-    leaf.search_leaf(key, found, slot);
+    leaf.search(key, found, slot);
     if (!found) {
         if (need_lock) {
             W_DO(_ux_lock_range(leaf, key, slot, LATCH_SH,
@@ -348,22 +348,21 @@ void btree_impl::_ux_traverse_search(btree_impl::traverse_mode_t traverse_mode,
         } else {
             // key is lower than fence-high. then one of the children must have it.
             w_assert2(!current->is_leaf()); // otherwise we should have seen an exact match
-            slotid_t slot;
-            current->search_node(key, slot);
-            // search_node returns the slot in which key resides or should go.
-            // For example, a separator key "AB"
-            // sends "AA" to left, "AAZ" to left, "AB" to right,
-            // "ABA" to right, "AC" to right.
-            
+
+            // We use search instead of search_node here because we
+            // need slightly different behavior:
+            //
+            // search_node returns the slot whose child pointer we
+            // should follow while searching for key.  For example, a
+            // separator key "AB" sends "AA" to left, "AAZ" to the
+            // left, "AB" to the right, "ABA" to the right, and "AC"
+            // to the right.
             // However, now we are looking for fence-high key match,
-            // so we want to send "AB" to left.
-            w_keystr_t slot_key;
-            current->node_key(slot, slot_key);
-            if (key.compare(slot_key) == 0) {
-                --slot; // if exact match, try the previous slot
-                w_assert2(slot < current->nrecs() && slot >= -1);
-            }
-            
+            // so we want to send "AB" to the left.
+            bool     key_found;
+            slotid_t slot;
+            current->search(key, key_found, slot);
+            slot--;
             slot_to_follow = (slot_follow_t) slot;
         }
     }

@@ -894,7 +894,7 @@ restart_m::redo_pass(
                         r.redo(0);
                         io_m::SetLastMountLSN(lsn);
                         redone = true;
-                        W_IFDEBUG1(rc_t sxs_rc =) sxs.end_sys_xct (RCOK);
+                        rc_t sxs_rc = sxs.end_sys_xct (RCOK);
                         w_assert1(!sxs_rc.is_error());
                     }
 
@@ -1062,7 +1062,7 @@ restart_m::redo_pass(
                             redone = true;
                             page.set_lsns(lsn);
                             smlevel_0::bf->repair_rec_lsn(page.get_generic_page(), was_dirty, lsn);
-                            W_IFDEBUG1(rc_t sxs_rc =) sxs.end_sys_xct (RCOK);
+                            rc_t sxs_rc = sxs.end_sys_xct (RCOK);
                             w_assert1(!sxs_rc.is_error());
                         }
                     } else 

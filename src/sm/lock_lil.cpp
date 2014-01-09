@@ -74,16 +74,13 @@ void lil_global_table_base::release_locks(bool *lock_taken, bool read_lock_only,
         }
     }
     if (broadcast) {
-        W_IFDEBUG1(int rc_mutex_lock = )
-            ::pthread_mutex_lock (&_waiter_mutex);
+        int rc_mutex_lock = ::pthread_mutex_lock (&_waiter_mutex);
         w_assert1(rc_mutex_lock == 0);
 
-        W_IFDEBUG1(int rc_broadcast = )
-            ::pthread_cond_broadcast(&_waiter_cond);
+        int rc_broadcast = ::pthread_cond_broadcast(&_waiter_cond);
         w_assert1(rc_broadcast == 0);
 
-        W_IFDEBUG1(int rc_mutex_unlock = )
-            ::pthread_mutex_unlock (&_waiter_mutex);
+        int rc_mutex_unlock = ::pthread_mutex_unlock (&_waiter_mutex);
         w_assert1(rc_mutex_unlock == 0);
     }
 }
@@ -91,8 +88,7 @@ void lil_global_table_base::release_locks(bool *lock_taken, bool read_lock_only,
 const clockid_t CLOCK_FOR_LIL = CLOCK_REALTIME; // CLOCK_MONOTONIC;
     
 bool lil_global_table_base::_cond_timedwait (uint32_t base_version, uint32_t timeout_microsec) {
-    W_IFDEBUG1(int rc_mutex_lock = )
-        ::pthread_mutex_lock (&_waiter_mutex);
+    int rc_mutex_lock = ::pthread_mutex_lock (&_waiter_mutex);
     w_assert1(rc_mutex_lock == 0);
 
     timespec   ts;
@@ -146,8 +142,7 @@ bool lil_global_table_base::_cond_timedwait (uint32_t base_version, uint32_t tim
         }
     }
 
-    W_IFDEBUG1(int rc_mutex_unlock = )
-        ::pthread_mutex_unlock (&_waiter_mutex);
+    int rc_mutex_unlock = ::pthread_mutex_unlock (&_waiter_mutex);
     w_assert1(rc_mutex_unlock == 0);
     
     return timeouted;
@@ -368,7 +363,7 @@ lil_private_store_table* lil_private_vol_table::_find_store_table(uint32_t store
     }
 
     //newly add the volume.
-    if (_stores < MAX_VOL_PER_XCT) {
+    if (_stores < MAX_STORE_PER_VOL_XCT) {
         _store_tables[_stores]._store = store;
         lil_private_store_table *ret = &_store_tables[_stores];
         ++_stores;

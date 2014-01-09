@@ -52,7 +52,7 @@ btree_insert_log::btree_insert_log(
 }
 
 void 
-btree_insert_log::undo(fixable_page_h* W_IFDEBUG9(page)) {
+btree_insert_log::undo(fixable_page_h* page) {
     w_assert9(page == 0);
     btree_insert_t* dp = (btree_insert_t*) data();
 
@@ -428,7 +428,7 @@ btree_ghost_mark_log::redo(fixable_page_h *page)
         w_assert2(bp.fence_contains(key));
         bool found;
         slotid_t slot;
-        bp.search_leaf(key, found, slot);
+        bp.search(key, found, slot);
         if (!found) {
             cerr << " key=" << key << endl << " not found in btree_ghost_mark_log::redo" << endl;
             w_assert1(false); // something unexpected, but can go on.
@@ -644,8 +644,7 @@ void btree_foster_merge_log::redo(fixable_page_h* page)
     // Because of careful-write-order, the merged page must still exist.
     // Otherwise, this page's REDO shouldn't have been called.
     borrowed_btree_page_h bp(page);
-    W_IFDEBUG1(shpid_t merged_pid = *((shpid_t*) _data));
-    w_assert1(bp.get_foster() == merged_pid); // otherwise, already merged!
+    w_assert1(bp.get_foster() == *((shpid_t*) _data)); // otherwise, already merged!
     rc_t rc = btree_impl::_ux_merge_foster_core(bp);
     w_assert1(!rc.is_error());
 }

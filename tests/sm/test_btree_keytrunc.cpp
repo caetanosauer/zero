@@ -235,7 +235,7 @@ w_rc_t prefix_test(ss_m* ssm, test_volume_t *test_volume) {
     
     // so that one leaf page can have only 4 or 5 tuples
     const int keysize = SM_PAGESIZE / 6;
-    //const int keysize = btree_m::max_entry_size() - 4; // for max size key test instead
+    //const int keysize = btree_m::max_entry_size() - 3; // for max size key test instead
     // these keys are good for prefix truncation, but not great for suffix truncation.
     // in leaf pages (in root pages, no prefix truncation), these keys should be significantly shortened
     w_keystr_t key;

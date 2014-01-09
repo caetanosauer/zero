@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2013-2014, Hewlett-Packard Development Company, LP
  */
 
 #include "btree_page.h"
@@ -11,11 +11,10 @@
 
 void btree_page_data::init_items() {
     w_assert1(btree_level >= 1);
-    const size_t max_offset = data_sz/sizeof(item_body);
 
-    nitems       = 0;
-    nghosts      = 0;
-    first_used_body = max_offset;
+    nitems          = 0;
+    nghosts         = 0;
+    first_used_body = max_bodies;
 
     w_assert3(_items_are_consistent());
 }
@@ -50,11 +49,8 @@ bool btree_page_data::insert_item(int item, bool ghost, poor_man_key poor,
     w_assert1(item>=0 && item<=nitems);  // use of <= intentional
     w_assert3(_items_are_consistent());
 
-    size_t length = data_length + sizeof(item_length_t);
-    if (item != 0 && btree_level != 1) {
-        length += sizeof(shpid_t);
-    }
-    if ((size_t)usable_space() < sizeof(item_head) + align(length)) {
+    size_t body_length = data_length + _item_body_overhead();
+    if ((size_t)usable_space() < sizeof(item_head) + _item_align(body_length)) {
         return false;
     }
 
@@ -65,16 +61,16 @@ bool btree_page_data::insert_item(int item, bool ghost, poor_man_key poor,
         nghosts++;
     }
 
-    first_used_body -= (length-1)/8+1;
+    first_used_body -= _item_align(body_length)/8;
     head[item].offset = ghost ? -first_used_body : first_used_body;
     head[item].poor = poor;
 
-    if (btree_level != 1) {
+    if (!is_leaf()) {
         body[first_used_body].interior.child = child;
     } else {
         w_assert1(child == 0);
     }
-    set_item_length(item, length);
+    _item_body_length(first_used_body) = body_length;
 
     w_assert3(_items_are_consistent());
     return true;
@@ -102,39 +98,31 @@ bool btree_page_data::resize_item(int item, size_t new_length, size_t keep_old) 
         ghost = true;
     }
 
-    size_t old_length = my_item_length(item);
-    size_t length = new_length + sizeof(item_length_t);
-    if (item != 0 && btree_level != 1) {
-        length += sizeof(shpid_t);
-    }
-
-    if (length <= align(old_length)) {
-        set_item_length(item, length);
+    size_t old_length  = _item_body_length(offset);
+    size_t body_length = new_length + _item_body_overhead();
+    if (body_length <= _item_align(old_length)) {
+        _item_body_length(offset) = body_length;
         w_assert3(_items_are_consistent()); 
         return true;
     }
 
-    if (align(length) > (size_t) usable_space()) {
+    if (_item_align(body_length) > (size_t) usable_space()) {
         return false;
     }
 
-    first_used_body -= (length-1)/8+1;
+    char* old_p = item_data(item);
+    first_used_body -= _item_align(body_length)/8;
     head[item].offset = ghost ? -first_used_body : first_used_body;
-    set_item_length(item, length);
-    if (item != 0 && btree_level != 1) {
+    _item_body_length(first_used_body) = body_length;
+    if (!is_leaf()) {
         body[first_used_body].interior.child = body[offset].interior.child;
     }
 
     if (keep_old > 0) {
         char* new_p = item_data(item);
-        char* old_p = (char*)&body[offset] + (new_p - (char*)&body[first_used_body]);
         w_assert1(old_p+keep_old <= (char*)&body[offset]+old_length);
         ::memcpy(new_p, old_p, keep_old); 
     }
-
-#if W_DEBUG_LEVEL>0
-    ::memset((char*)&body[offset], 0xef, align(old_length)); // overwrite old item
-#endif // W_DEBUG_LEVEL>0
 
     w_assert3(_items_are_consistent()); 
     return true;
@@ -151,7 +139,6 @@ bool btree_page_data::replace_item_data(int item, size_t offset, const cvec_t& n
 
 void btree_page_data::delete_item(int item) {
     w_assert1(item>=0 && item<nitems);
-    w_assert1(item != 0); // deleting item 0 makes no sense because it has a special format <<<>>>
     w_assert3(_items_are_consistent());
 
     body_offset_t offset = head[item].offset;
@@ -162,7 +149,7 @@ void btree_page_data::delete_item(int item) {
 
     if (offset == first_used_body) {
         // Then, we are pushing down the first_used_body.  lucky!
-        first_used_body += item_length8(item);
+        first_used_body += _item_bodies(offset);
     }
 
     // shift item array down to remove head[item]:
@@ -178,7 +165,8 @@ void btree_page_data::delete_item(int item) {
 
 bool btree_page_data::_items_are_consistent() const {
     // This is not a part of check; should be always true:
-    w_assert1(first_used_body*8 - nitems*4 >= 0);
+    w_assert1(first_used_body*sizeof(item_body) >= nitems*sizeof(item_head));
+
     
     // check overlapping records.
     // rather than using std::map, use array and std::sort for efficiency.
@@ -191,13 +179,11 @@ bool btree_page_data::_items_are_consistent() const {
     int ghosts_seen = 0;
     for (int item = 0; item<nitems; ++item) {
         int offset = head[item].offset;
-        int length = item_length8(item);
         if (offset < 0) {
+            offset = -offset;
             ghosts_seen++;
-            sorted_items[item] = ((-offset) << 16) + length;
-        } else {
-            sorted_items[item] =  (offset << 16)   + length;
         }
+        sorted_items[item] = (offset << 16) + _item_bodies(offset);
     }
     std::sort(sorted_items.get(), sorted_items.get() + nitems);
 
@@ -209,27 +195,26 @@ bool btree_page_data::_items_are_consistent() const {
 
     // all offsets and lengths here are in terms of item bodies 
     // (e.g., 1 length unit = sizeof(item_body) bytes):
-    const size_t max_offset = data_sz/sizeof(item_body);
     size_t prev_end = 0;
     for (int item = 0; item<nitems; ++item) {
         size_t offset = sorted_items[item] >> 16;
         size_t len    = sorted_items[item] & 0xFFFF;
 
         if (offset < (size_t) first_used_body) {
-            DBGOUT1(<<"The item starting at offset " << offset <<  " is located before record_head " << first_used_body);
+            DBGOUT1(<<"The item starting at offset " << offset <<  " is located before first_used_body " << first_used_body);
             error = true;
         }
         if (len == 0) {
             DBGOUT1(<<"The item starting at offset " << offset <<  " has zero length");
             error = true;
         }
-        if (offset >= max_offset) {
-            DBGOUT1(<<"The item starting at offset " << offset <<  " starts beyond the end of data area (" << max_offset << ")!");
+        if (offset >= max_bodies) {
+            DBGOUT1(<<"The item starting at offset " << offset <<  " starts beyond the end of data area (" << max_bodies << ")!");
             error = true;
         }
-        if (offset + len > max_offset) {
+        if (offset + len > max_bodies) {
             DBGOUT1(<<"The item starting at offset " << offset 
-                    << " (length " << len << ") goes beyond the end of data area (" << max_offset << ")!");
+                    << " (length " << len << ") goes beyond the end of data area (" << max_bodies << ")!");
             error = true;
         }
         if (item != 0 && prev_end > offset) {
@@ -246,7 +231,7 @@ bool btree_page_data::_items_are_consistent() const {
         for (int i=0; i<nitems; i++) {
             int offset = head[i].offset;
             if (offset < 0) offset = -offset;
-            size_t len    = item_length8(i);
+            size_t len = _item_bodies(offset);
             DBGOUT1(<<"  item[" << i << "] body @ offsets " << offset << " to " << offset+len-1
                     << "; ghost? " << is_ghost(i) << " poor: " << item_poor(i));
         }
@@ -261,9 +246,8 @@ bool btree_page_data::_items_are_consistent() const {
 void btree_page_data::compact() {
     w_assert3(_items_are_consistent());
 
-    const size_t max_offset = data_sz/sizeof(item_body);
-    item_body scratch_body[data_sz/sizeof(item_body)];
-    int       scratch_head = max_offset;
+    item_body scratch_body[max_bodies];
+    int       scratch_head = max_bodies;
 #ifdef ZERO_INIT
     ::memset(&scratch_body, 0, sizeof(scratch_body));
 #endif // ZERO_INIT
@@ -271,21 +255,22 @@ void btree_page_data::compact() {
     int reclaimed = 0;
     int j = 0;
     for (int i=0; i<nitems; i++) {
-        if (head[i].offset<0) {
+        body_offset_t offset = head[i].offset;
+        if (offset < 0) {
             reclaimed++;
             nghosts--;
         } else {
-            int length = item_length8(i);
+            int length = _item_bodies(offset);
             scratch_head -= length;
-            head[j].poor = head[i].poor;
+            head[j].poor   = head[i].poor;
             head[j].offset = scratch_head;
-            ::memcpy(scratch_body[scratch_head].raw, item_start(i), length*sizeof(item_body));
+            ::memcpy(&scratch_body[scratch_head], &body[offset], length*sizeof(item_body));
             j++;
         }
     }
     nitems = j;
     first_used_body = scratch_head;
-    ::memcpy(body[first_used_body].raw, scratch_body[scratch_head].raw, (max_offset-scratch_head)*sizeof(item_body));
+    ::memcpy(&body[first_used_body], &scratch_body[scratch_head], (max_bodies-scratch_head)*sizeof(item_body));
     
     w_assert1(nghosts == 0);
     w_assert3(_items_are_consistent());
@@ -300,20 +285,4 @@ char* btree_page_data::unused_part(size_t& length) {
 }
 
 
-size_t btree_page_data::predict_item_space(size_t data_length) const {
-    size_t size = data_length + sizeof(item_length_t);
-    int item = 1; // <<<>>>
-    if (item != 0 && btree_level != 1) {
-        size += sizeof(shpid_t);
-    }
-
-    return align(size) + sizeof(item_head);
-}
-
-
-size_t btree_page_data::item_space(int item) const {
-    return align(my_item_length(item)) + sizeof(item_head);
-}
-
-
-const size_t btree_page_data::max_item_overhead = sizeof(item_head) + sizeof(item_length_t) + sizeof(shpid_t) + align(1)-1;
+const size_t btree_page_data::max_item_overhead = sizeof(item_head) + sizeof(item_length_t) + sizeof(shpid_t) + _item_align(1)-1;

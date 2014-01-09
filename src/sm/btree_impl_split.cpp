@@ -385,11 +385,10 @@ rc_t btree_impl::_ux_adopt_foster_apply_parent (btree_page_h &parent,
     w_assert1 (parent.fence_contains(new_child_key));
 
     // where to insert?
+    bool     key_found;
     slotid_t slot_to_insert;
-    parent.search_node(new_child_key, slot_to_insert);
-    // search_node returns the slot the key potentially belongs to.
-    // we want to adopt this key AFTER the slot, so ++.
-    ++slot_to_insert;
+    parent.search(new_child_key, key_found, slot_to_insert);
+    w_assert1(!key_found);
     w_assert2 (slot_to_insert >= 0);
     w_assert2 (slot_to_insert <= parent.nrecs());
 

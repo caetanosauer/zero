@@ -18,6 +18,7 @@
 #include "sm_base.h"
 #include "w_key.h"
 #include "xct.h"
+#include "w_okvl_inl.h"
 
 rc_t
 btree_impl::_ux_lock_key(
@@ -104,7 +105,7 @@ btree_impl::_ux_lock_range(
     w_assert1(miss_lock_mode.is_keylock_empty());
     if (slot == -1) { // this means we should search it again
         bool found;
-        leaf.search_leaf((const char *) keystr, keylen, found, slot);
+        leaf.search((const char *) keystr, keylen, found, slot);
         w_assert1(!found); // otherwise why taking range lock?
     }
     w_assert1(slot >= 0 && slot <= leaf.nrecs());

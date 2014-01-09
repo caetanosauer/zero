@@ -1217,7 +1217,7 @@ mcadd(struct parse *p, cset *cs, const char *cp)
  * is deferred.
  */
 static void
-mcinvert(struct parse *, cset * W_IFDEBUG3(cs))
+mcinvert(struct parse *, cset *cs)
 {
     w_assert3(cs->multis == NULL);    /* xxx */
 }
@@ -1230,7 +1230,7 @@ mcinvert(struct parse *, cset * W_IFDEBUG3(cs))
  * is deferred.
  */
 static void
-mccase(struct parse *, cset * W_IFDEBUG3(cs))
+mccase(struct parse *, cset *cs)
 {
     w_assert3(cs->multis == NULL);    /* xxx */
 }
