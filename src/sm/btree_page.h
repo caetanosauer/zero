@@ -301,16 +301,35 @@ protected:
 
 
     // ======================================================================
-    //   BEGIN: Robust interface
+    //   BEGIN: Robust item interface
     // ======================================================================
 
     /*
+     * These methods provide the same results as the corresponding
+     * non-robust versions when *this is not being concurrently
+     * modified.
      * 
+     * When *this is being concurrently modified, however, unlike the
+     * normal methods these versions do not trigger assertions or
+     * cause other faults (e.g., segmentation fault); they may however
+     * in this case provide garbage values, abet in bounds garbage
+     * values (e.g., robust_number_of_items() is non-negative and not
+     * too large).
+     * 
+     * Item arguments here should be less than a result of
+     * robust_number_of_items().
+     * 
+     * The memory region indicated by robust_item_data() is always
+     * safe to access, but may contain garbage or have a length
+     * different from the actual item's variable-size data.
      */
 
-    int          robust_number_of_items() const;
-    poor_man_key robust_item_poor(int item) const;
-    shpid_t      robust_item_child(int item);
+    bool         robust_is_leaf()            const;
+    int          robust_number_of_items()    const;
+    poor_man_key robust_item_poor(int item)  const;
+    shpid_t      robust_item_child(int item) const;
+    /// Robust combo of item_data and item_length
+    const char* robust_item_data(int item, size_t& length) const;
 
 
 private:
@@ -615,6 +634,10 @@ inline T volatile &ACCESS_ONCE(T &t) {
 }
 
 
+inline bool btree_page_data::robust_is_leaf() const { 
+    return ACCESS_ONCE(btree_level) == 1; 
+}
+
 inline int btree_page_data::robust_number_of_items() const {
     item_index_t number = ACCESS_ONCE(nitems);
     if (number >= max_heads) {
@@ -629,7 +652,7 @@ inline btree_page_data::poor_man_key btree_page_data::robust_item_poor(int item)
     return ACCESS_ONCE(head[item].poor);
 }
 
-inline shpid_t btree_page_data::robust_item_child(int item) {
+inline shpid_t btree_page_data::robust_item_child(int item) const {
     w_assert1(item>=0 && item<max_heads);
 
     // int type here to avoid overflow issues
@@ -640,6 +663,37 @@ inline shpid_t btree_page_data::robust_item_child(int item) {
         w_assert1(offset >= 0);
     }
     return ACCESS_ONCE(body[offset % max_bodies].interior.child);
+}
+
+inline const char* btree_page_data::robust_item_data(int item, size_t& length) const {
+    w_assert1(item>=0 && item<max_heads);
+
+    // int type here to avoid overflow issues
+    //   (-<smallest_value_for_a_integral_type) < 0!):
+    int offset = ACCESS_ONCE(head[item].offset);
+    if (offset < 0) {
+        offset = -offset;
+        w_assert1(offset >= 0);
+    }
+    offset = offset % max_bodies;
+
+    const char* data;
+    int result_length;
+    if (robust_is_leaf()) {
+        result_length = ACCESS_ONCE(body[offset].leaf.item_len);
+        data          = (const char*)&body[offset].leaf.item_data;
+    } else {
+        result_length = ACCESS_ONCE(body[offset].interior.item_len);
+        data          = (const char*)&body[offset].interior.item_data - sizeof(shpid_t);
+    }
+    result_length -= sizeof(item_length_t);
+
+    if (result_length < 0  ||  data+result_length > (const char*)&body[max_bodies]) {
+        result_length = 0;
+    }
+
+    length = result_length;
+    return data;
 }
 
 
