@@ -57,7 +57,7 @@ btree_impl::_ux_insert_core(
     // check if the same key already exists
     slotid_t slot;
     bool found;
-    leaf.search_leaf(key, found, slot);
+    leaf.search(key, found, slot);
     bool alreay_took_XN = false;
     if (found) {
         // found! then we just lock the key (XN)
@@ -183,7 +183,7 @@ btree_impl::_ux_get_page_and_status(volid_t vol, snum_t store,
     // check if the same key already exists
     // passed in...slotid_t slot;
     // passed in...bool found;
-    leaf.search_leaf(key, found, slot);
+    leaf.search(key, found, slot);
     // passed in...bool alreay_took_XN
     took_XN = false;
     if (found) {
