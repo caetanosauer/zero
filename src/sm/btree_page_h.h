@@ -773,11 +773,6 @@ private:
     /** returns compare(specified-key, key_noprefix) for node page. */
     int             _compare_node_key_noprefix(slotid_t idx, const void *key_noprefix, size_t key_len) const;
 
-    /** skips comparing the first sizeof(poormankey) bytes. */
-    int             _compare_leaf_key_noprefix_remain(int slot, const void *key_noprefix_remain, int key_len_remain) const;
-    /** skips comparing the first sizeof(poormankey) bytes. */
-    int             _compare_node_key_noprefix_remain(int slot, const void *key_noprefix_remain, int key_len_remain) const;
-
     // compare slot slot's key with given key (as key_noprefix,key_len,poor tuple)
     // result <0 if slot's key is before given key
     int _compare_slot_with_key(int slot, const void* key_noprefix, size_t key_len, poor_man_key poor) const;
@@ -998,40 +993,6 @@ inline int btree_page_h::_compare_node_key_noprefix(slotid_t idx, const void *ke
     size_t curkey_len;
     const char *curkey = _node_key_noprefix(idx, curkey_len);
     return w_keystr_t::compare_bin_str(curkey, curkey_len, key_noprefix, key_len);
-}
-inline int btree_page_h::_compare_leaf_key_noprefix_remain(int slot, const void *key_noprefix_remain, int key_len_remain) const {
-    w_assert1(is_leaf());
-    int   key_length;
-    char* trunc_key_data;
-    _get_leaf_key_fields(slot, key_length, trunc_key_data);
-
-    // because this function was called, the poor man's key part was equal.
-    // now we just compare the remaining part
-    int curkey_len_remain = key_length - get_prefix_length() - sizeof(poor_man_key);
-    if (key_len_remain > 0 && curkey_len_remain > 0) {
-        const char *curkey_remain = trunc_key_data + sizeof(poor_man_key);
-        return w_keystr_t::compare_bin_str(curkey_remain, curkey_len_remain, key_noprefix_remain, key_len_remain);
-    } else {
-        // the key was so short that poorman's key was everything.
-        // then, compare the key length.
-        return curkey_len_remain - key_len_remain;
-    }
-}
-
-inline int btree_page_h::_compare_node_key_noprefix_remain(int slot, const void *key_noprefix_remain, int key_len_remain) const {
-    w_assert1(is_node());
-    w_assert1(is_node());
-    int   trunc_key_length;
-    char* trunc_key_data;
-    _get_node_key_fields(slot, trunc_key_length, trunc_key_data);
-
-    int curkey_len_remain = trunc_key_length - sizeof(poor_man_key);
-    const char *curkey_remain = trunc_key_data + sizeof(poor_man_key);
-    if (key_len_remain > 0 && curkey_len_remain > 0) {
-        return w_keystr_t::compare_bin_str(curkey_remain, curkey_len_remain, key_noprefix_remain, key_len_remain);
-    } else {
-        return curkey_len_remain - key_len_remain;
-    }
 }
 
 
