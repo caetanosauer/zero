@@ -280,8 +280,10 @@ btree_page_h::search(const char *key_raw, size_t key_raw_len,
                      bool& found_key, slotid_t& return_slot) const {
     w_assert1((uint) get_prefix_length() <= key_raw_len);
     w_assert1(::memcmp(key_raw, get_prefix_key(), get_prefix_length()) == 0);
-    const void *key_noprefix = key_raw + get_prefix_length();
-    size_t      key_len      = key_raw_len - get_prefix_length();
+
+    int         prefix_length = get_prefix_length();
+    const void* key_noprefix  = key_raw     + prefix_length;
+    size_t      key_len       = key_raw_len - prefix_length;
     
     poor_man_key poormkey = extract_poor_man_key(key_noprefix, key_len);
 
@@ -290,8 +292,10 @@ btree_page_h::search(const char *key_raw, size_t key_raw_len,
      * Binary search.
      */
 
+    int number_of_records = nrecs();
+
     found_key = false;
-    int low = -1, high = nrecs();
+    int low = -1, high = number_of_records;
     // LOOP INVARIANT: low < high AND slot_key(low) < key < slot_key(high)
     // where slots before real ones hold -infinity and ones after hold +infinity
 
@@ -320,13 +324,13 @@ btree_page_h::search(const char *key_raw, size_t key_raw_len,
         } else {
             found_key   = true;
             return_slot = mid;
-            w_assert1(mid>=0 && mid<nrecs());
+            w_assert1(mid>=0 && mid<number_of_records);
             return;
         }
     }
     w_assert1(low+1 == high);
     return_slot = high;
-    w_assert1(high>=0 && high<=nrecs());
+    w_assert1(high>=0 && high<=number_of_records);
 }
 
 
