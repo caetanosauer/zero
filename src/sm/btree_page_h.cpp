@@ -266,22 +266,12 @@ inline int btree_page_h::_compare_slot_with_key(int slot, const void* key_nopref
     // fast path using poor_man_key's:
     int result = _poor(slot) - (int)key_poor;
     if (result != 0) {
-#if W_DEBUG_LEVEL > 0
-        if (is_leaf()) {
-            w_assert1((result<0) == (_compare_leaf_key_noprefix(slot, key_noprefix, key_len)<0));
-        } else {
-            w_assert1((result<0) == (_compare_node_key_noprefix(slot, key_noprefix, key_len)<0));
-        }
-#endif
+        w_assert1((result<0) == (_compare_key_noprefix(slot, key_noprefix, key_len)<0));
         return result;
     }
 
     // slow path:
-    if (is_leaf()) {
-        return _compare_leaf_key_noprefix(slot, key_noprefix, key_len);
-    } else {
-        return _compare_node_key_noprefix(slot, key_noprefix, key_len);
-    }
+    return _compare_key_noprefix(slot, key_noprefix, key_len);
 }
 
 
@@ -635,12 +625,7 @@ bool btree_page_h::check_chance_for_norecord_split(const w_keystr_t& key_to_inse
     int prefix_len = get_prefix_length();
     w_assert1(key_to_insert_len >= prefix_len && ::memcmp(get_prefix_key(), key_to_insert_raw, prefix_len) == 0); // otherwise why to insert to this page?
     
-    int d;
-    if (is_leaf()) {
-        d = _compare_leaf_key_noprefix(nrecs() - 1, key_to_insert_raw + prefix_len, key_to_insert_len - prefix_len);
-    } else {
-        d = _compare_node_key_noprefix(nrecs() - 1, key_to_insert_raw + prefix_len, key_to_insert_len - prefix_len);
-    }
+    int d = _compare_key_noprefix(nrecs() - 1, key_to_insert_raw + prefix_len, key_to_insert_len - prefix_len);
     if (d <= 0) {
         return false; // not hitting highest. norecord-split will be useless
     }

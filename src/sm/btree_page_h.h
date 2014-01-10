@@ -768,13 +768,12 @@ private:
     /** Retrieves only the key of specified slot WITHOUT prefix in an intermediate node page.*/
     const char*     _node_key_noprefix(slotid_t idx,  size_t &len) const;
 
-    /** returns compare(specified-key, key_noprefix) for leaf page. */
-    int             _compare_leaf_key_noprefix(slotid_t idx, const void *key_noprefix, size_t key_len) const;
-    /** returns compare(specified-key, key_noprefix) for node page. */
-    int             _compare_node_key_noprefix(slotid_t idx, const void *key_noprefix, size_t key_len) const;
 
-    // compare slot slot's key with given key (as key_noprefix,key_len,poor tuple)
-    // result <0 if slot's key is before given key
+    /// returns compare(specified-key, key_noprefix)
+    int _compare_key_noprefix(slotid_t slot, const void *key_noprefix, size_t key_len) const;
+
+    /// compare slot slot's key with given key (as key_noprefix,key_len,poor tuple)
+    /// result <0 if slot's key is before given key
     int _compare_slot_with_key(int slot, const void* key_noprefix, size_t key_len, poor_man_key poor) const;
 
 protected:
@@ -984,14 +983,16 @@ inline const char* btree_page_h::_node_key_noprefix(slotid_t slot,  size_t &len)
     len = trunc_key_length;
     return trunc_key_data;
 }
-inline int btree_page_h::_compare_leaf_key_noprefix(slotid_t idx, const void *key_noprefix, size_t key_len) const {
-    size_t curkey_len;
-    const char *curkey = _leaf_key_noprefix(idx, curkey_len);
-    return w_keystr_t::compare_bin_str(curkey, curkey_len, key_noprefix, key_len);
-}
-inline int btree_page_h::_compare_node_key_noprefix(slotid_t idx, const void *key_noprefix, size_t key_len) const {
-    size_t curkey_len;
-    const char *curkey = _node_key_noprefix(idx, curkey_len);
+
+inline int btree_page_h::_compare_key_noprefix(slotid_t slot, const void *key_noprefix, size_t key_len) const {
+    size_t      curkey_len;
+    const char *curkey;
+    if (is_leaf()) {
+        curkey = _leaf_key_noprefix(slot, curkey_len);
+    } else {
+        curkey = _node_key_noprefix(slot, curkey_len);
+    }
+
     return w_keystr_t::compare_bin_str(curkey, curkey_len, key_noprefix, key_len);
 }
 
