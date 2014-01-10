@@ -253,15 +253,15 @@ public:
         W_DO(test_env->begin_xct());
         // Set the data size is the max. entry size minue key size minus 1
         // because the total size must be smaller than btree_m::max_entry_size()
-        const int keysize = 5;
-        const int datasize = btree_m::max_entry_size() - keysize - 1;
+        const int key_size = 5;
+        const int data_size = btree_m::max_entry_size() - key_size - 1;
 
         vec_t data;
-        char datastr[datasize];
-        memset(datastr, '\0', datasize);
-        data.set(datastr, datasize);
+        char datastr[data_size];
+        memset(datastr, '\0', data_size);
+        data.set(datastr, data_size);
         w_keystr_t key;
-        char keystr[keysize];
+        char keystr[key_size];
         keystr[0] = 'k';
         keystr[1] = 'e';
         keystr[2] = 'y';
@@ -274,7 +274,7 @@ public:
             }
             keystr[3] = ('0' + ((num / 10) % 10));
             keystr[4] = ('0' + (num % 10));
-            key.construct_regularkey(keystr, keysize);
+            key.construct_regularkey(keystr, key_size);
             W_DO(ssm->create_assoc(_stid, key, data));
         }
         W_DO(test_env->commit_xct());

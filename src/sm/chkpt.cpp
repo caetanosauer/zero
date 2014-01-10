@@ -281,16 +281,13 @@ void chkpt_m::take()
     // 2. Calling 'chkpt_m::take' directly - synch
     // Check for shutting_down flag, do not start checkpoint if we are shutting down
 
-    if (ss_m::shutting_down)
-    {
+    if (ss_m::shutting_down) {
         DBGOUT1(<<"END chkpt_m::take - detected shutdown, skip checkpoint");
         return;
     }
-    if(log && _chkpt_thread) 
-    {
+    if(log && _chkpt_thread) {
         // If received a 'retire' message, return without doing anything
-        if (true == _chkpt_thread->is_retired())
-        {
+        if (true == _chkpt_thread->is_retired()) {
             DBGOUT1(<<"END chkpt_m::take - detected retire, skip checkpoint");
             return;
         }
@@ -616,8 +613,7 @@ void chkpt_m::take()
     // Return without writing the Checkpoint End log, so the recovery
     // will ignore this checkpoint.
 
-    if ((io->GetLastMountLSN() <= master) && (false == ss_m::shutting_down))
-        {
+    if ((io->GetLastMountLSN() <= master) && (false == ss_m::shutting_down)) {
         /*
         *  Write the Checkpoint End Log
         */
@@ -640,8 +636,7 @@ void chkpt_m::take()
         W_COERCE( log->scavenge(min_rec_lsn, min_xct_lsn) );
 
         }
-    else
-        {
+    else {
             DBGOUT1(<<"END chkpt_m::take - skip checkpoint end log because system is shutting down");
         }
 
