@@ -510,10 +510,6 @@ public:
         }
     }
 
-    /** Retrieves only the length of key (before prefix compression).*/
-    key_length_t       get_key_len(slotid_t idx) const;
-
-
     /// Returns physical space used by the item currently in the given
     /// slot (including padding and other overhead due to that slot
     /// being occupied); slot -1 is the special fence record:
@@ -943,21 +939,6 @@ inline shpid_t btree_page_h::child(slotid_t slot) const {
         return smlevel_0::bf->normalize_shpid(shpid);
     }
     return shpid;
-}
-
-inline key_length_t btree_page_h::get_key_len(slotid_t slot) const {
-    if (is_leaf()) {
-        int   key_length;
-        char* trunc_key_data;
-        _get_leaf_key_fields(slot, key_length, trunc_key_data);
-        return key_length;
-    } else {
-        int   trunc_key_length;
-        char* trunc_key_data;
-        _get_node_key_fields(slot, trunc_key_length, trunc_key_data);
-        int prefix_len = get_prefix_length();
-        return trunc_key_length + prefix_len;
-    }
 }
 
 inline size_t btree_page_h::get_rec_space(int slot) const {
