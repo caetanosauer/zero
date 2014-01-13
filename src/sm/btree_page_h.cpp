@@ -456,10 +456,10 @@ rc_t btree_page_h::replace_fence_rec_nolog(const w_keystr_t& low,
 }
 
 
-rc_t btree_page_h::remove_shift_nolog(slotid_t idx) {
-    w_assert1(idx >= 0 && idx < nrecs());
+rc_t btree_page_h::remove_shift_nolog(slotid_t slot) {
+    w_assert1(slot >= 0 && slot < nrecs());
 
-    page()->delete_item(idx + 1);
+    page()->delete_item(slot + 1);
     return RCOK;
 }
 

@@ -418,7 +418,68 @@ public:
     
 
     // ======================================================================
-    //   BEGIN: Search and Record Access functions
+    //   BEGIN: Public record access functions
+    // ======================================================================
+
+     /// Returns the number of records in this page.
+    int              nrecs() const;
+
+
+    /// Retrieves only key from a leaf
+    void            leaf_key(slotid_t slot,  w_keystr_t &key) const;
+
+    /// Retrieves only key from a node
+    void            node_key(slotid_t slot,  w_keystr_t &key) const;
+
+    /// Retrieves only key from this
+    void            get_key(slotid_t slot,  w_keystr_t &key) const {
+        if (is_node()) {
+            node_key(slot, key);
+        } else {
+            leaf_key(slot, key);
+        }
+    }
+
+
+
+    /// Retrieves the key and record of specified slot in a leaf
+    void            rec_leaf(slotid_t slot,  w_keystr_t &key, cvec_t &el, bool &ghost) const;
+    /**
+     * Returns only the el part.
+     * @param[in,out] elen both input (size of el buffer) and output(length of el set).
+     * @return true if el is large enough. false if el was too short and just returns elen.
+     */
+    bool            dat_leaf(slotid_t slot, char *el, smsize_t &elen, bool &ghost) const;
+
+    /// This version returns the pointer to element without copying.
+    void            dat_leaf_ref(slotid_t slot, const char *&el, smsize_t &elen, bool &ghost) const;
+
+    /**
+     * Retrieves the key and corresponding page pointer of specified slot
+     * in an intermediate node page.
+     */
+    void            rec_node(slotid_t slot,  w_keystr_t &key, shpid_t &el) const;
+
+
+    /// Returns physical space used by the item currently in the given
+    /// slot (including padding and other overhead due to that slot
+    /// being occupied); slot -1 is the special fence record:
+    size_t              get_rec_space(int slot) const;
+
+
+    /**
+     *  Return the child pointer of tuple at "slot".
+     *  equivalent to rec_node(), but doesn't return key (thus faster).
+     */
+    shpid_t       child(slotid_t slot) const;
+    /**
+     *  Return the child opaque pointer of tuple at "slot".
+     */
+    shpid_t       child_opaqueptr(slotid_t slot) const;
+
+
+    // ======================================================================
+    //   BEGIN: Search functions
     // ======================================================================
 
     /**
@@ -464,59 +525,6 @@ public:
      */
     void            search_node(const w_keystr_t& key,
                                 slotid_t&         return_slot) const;
-
-
-     /// Returns the number of records in this page.
-    int              nrecs() const;
-
-    /// Retrieves the key and record of specified slot in a leaf
-    void            rec_leaf(slotid_t idx,  w_keystr_t &key, cvec_t &el, bool &ghost) const;
-    /**
-     * Returns only the el part.
-     * @param[in,out] elen both input (size of el buffer) and output(length of el set).
-     * @return true if el is large enough. false if el was too short and just returns elen.
-     */
-    bool            dat_leaf(slotid_t idx, char *el, smsize_t &elen, bool &ghost) const;
-
-    /// This version returns the pointer to element without copying.
-    void            dat_leaf_ref(slotid_t idx, const char *&el, smsize_t &elen, bool &ghost) const;
-
-    /// Retrieves only key from a leaf
-    void            leaf_key(slotid_t idx,  w_keystr_t &key) const;
-
-    /**
-     * Retrieves the key and corresponding page pointer of specified slot
-     * in an intermediate node page.
-     */
-    void            rec_node(slotid_t idx,  w_keystr_t &key, shpid_t &el) const;
-
-    /// Retrieves only key from a node
-    void            node_key(slotid_t idx,  w_keystr_t &key) const;
-
-    /// Retrieves only key from this
-    void            get_key(slotid_t idx,  w_keystr_t &key) const {
-        if (is_node()) {
-            node_key(idx, key);
-        } else {
-            leaf_key(idx, key);
-        }
-    }
-
-    /// Returns physical space used by the item currently in the given
-    /// slot (including padding and other overhead due to that slot
-    /// being occupied); slot -1 is the special fence record:
-    size_t              get_rec_space(int slot) const;
-
-
-    /**
-     *  Return the child pointer of tuple at "slot".
-     *  equivalent to rec_node(), but doesn't return key (thus faster).
-     */
-    shpid_t       child(slotid_t slot) const;
-    /**
-     *  Return the child opaque pointer of tuple at "slot".
-     */
-    shpid_t       child_opaqueptr(slotid_t slot) const;
 
 
     // ======================================================================
@@ -751,9 +759,9 @@ private:
     void             _update_btree_consecutive_skewed_insertions(slotid_t slot);
 
     /// Retrieves the key of specified slot WITHOUT prefix in a leaf
-    const char*     _leaf_key_noprefix(slotid_t idx,  size_t &len) const;
+    const char*     _leaf_key_noprefix(slotid_t slot,  size_t &len) const;
     /// Retrieves only the key of specified slot WITHOUT prefix in an intermediate node
-    const char*     _node_key_noprefix(slotid_t idx,  size_t &len) const;
+    const char*     _node_key_noprefix(slotid_t slot,  size_t &len) const;
 
 
     /// returns compare(specified-key, key_noprefix)
