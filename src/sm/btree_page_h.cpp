@@ -548,8 +548,8 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, size_t
     w_assert1(check_space_for_insert_leaf(trunc_key_length, element_length));
 
     // where to insert?
+    bool     found;
     slotid_t slot;
-    bool found;
     search(key_raw, key_raw_len, found, slot);
     w_assert1(!found); // this is unexpected!
     if (found) { // but can go on..
@@ -564,21 +564,15 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, size_t
 #if W_DEBUG_LEVEL>1
     w_keystr_t key;
     key.construct_from_keystr(key_raw, key_raw_len);
-    w_keystr_t key2;
-    cvec_t el;
-    bool ghost;
     w_assert1(compare_with_fence_low(key) >= 0);
-    if (slot > 0) {
-        // make sure previous record exists (slot=0 is fence)
-        // otherwise, compare with previous key
-        rec_leaf(slot - 1, key2, el, ghost);
-        w_assert1(key.compare(key2) > 0);
-    }
     w_assert1(compare_with_fence_high(key) < 0);
+
+    // verify search worked properly, no record with that key:
+    if (slot > 0) {
+        w_assert1(_compare_key_noprefix(slot-1,key_raw+prefix_len,trunc_key_length) < 0);
+    }
     if (slot < nrecs()) {
-        // otherwise, compare with previous key
-        rec_leaf(slot, key2, el, ghost);
-        w_assert1(key.compare(key2) < 0);
+        w_assert1(_compare_key_noprefix(slot,key_raw+prefix_len,trunc_key_length) > 0);
     }
 #endif // W_DEBUG_LEVEL>1
     

@@ -364,15 +364,14 @@ btree_impl::_ux_update_core(volid_t vol, snum_t store, const w_keystr_t &key, co
 
 rc_t
 btree_impl::_ux_update_core_tail(volid_t vol, snum_t store,
-                     const w_keystr_t &key, const cvec_t &el,
+                                 const w_keystr_t &key, const cvec_t &el,
                                  bool& need_lock, slotid_t& slot, bool& found, bool& is_ghost,
                                  btree_page_h& leaf) {
-
     if(!found) {
         if (need_lock) {
             // re-latch mode is SH because this is "not-found" case.
             W_DO(_ux_lock_range(leaf, key, slot,
-                        LATCH_SH, create_part_okvl(okvl_mode::X, key), ALL_N_GAP_S, false));
+                                LATCH_SH, create_part_okvl(okvl_mode::X, key), ALL_N_GAP_S, false));
         }
         return RC(eNOTFOUND);
     }
