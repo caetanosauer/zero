@@ -94,6 +94,67 @@ public:
     rc_t (*_functor)(ss_m*, test_volume_t*);
 };
 
+// Begin... for test_restart.cpp
+// The base class for all restart test cases.
+// Derived classes must implement two functions; pre_shutdown() and post_shutdown().
+// These are called before and after a normal or (simulated) crash shutdown
+// @See btree_test_env::runRestartTest()
+class restart_test_base {
+public:
+    restart_test_base() {}
+    virtual ~restart_test_base() {}
+
+    virtual w_rc_t pre_shutdown(ss_m *ssm) = 0;
+
+    virtual w_rc_t post_shutdown(ss_m *ssm) = 0;
+
+    test_volume_t _volume;
+
+    stid_t _stid;
+    lpid_t _root_pid;
+};
+
+class restart_dirty_test_pre_functor : public test_functor {
+public:
+    restart_dirty_test_pre_functor(restart_test_base *context) {
+        _context = context;
+        _need_init = true;
+        _clean_shutdown = false; // to simulate a crash
+    }
+    w_rc_t run_test(ss_m *ssm) {
+        _context->_volume = _test_volume; // remember the volume for use in post_shutdown
+        return _context->pre_shutdown (ssm);  // crash
+    }
+    restart_test_base *_context;
+};
+class restart_clean_test_pre_functor : public test_functor {
+public:
+    restart_clean_test_pre_functor(restart_test_base *context) {
+        _context = context;
+        _need_init = true;
+        _clean_shutdown = true;
+    }
+    w_rc_t run_test(ss_m *ssm) {
+        _context->_volume = _test_volume; // remember the volume for use in post_shutdown
+        return _context->pre_shutdown (ssm);   // no crash
+    }
+    restart_test_base *_context;
+};
+class restart_test_post_functor : public test_functor {
+public:
+    restart_test_post_functor(restart_test_base *context) {
+        _context = context;
+        _need_init = false; // we inherit the data we made in pre_shutdown()
+        _clean_shutdown = true;
+        _test_volume = context->_volume; //pre-set the volume we already made
+    }
+    w_rc_t run_test(ss_m *ssm) {
+        return _context->post_shutdown (ssm);
+    }
+    restart_test_base *_context;
+};
+// End... for test_restart.cpp
+
 /**
  * The base class for all crash test cases.
  * Derived classes must implement two functions; pre_crash() and post_crash().
@@ -186,6 +247,39 @@ public:
                       bool initially_enable_cleaners = true,
                       bool enable_swizzling = default_enable_swizzling
                      );
+
+    /**
+    * Runs a restart testcase.
+    * @param context the object to implement pre_shutdiwn(), post_shutdown().
+    * @see restart_test_base
+    */
+    int runRestartTest (restart_test_base *context,
+                      bool fCrash,
+                      bool use_locks = false,
+                      int32_t lock_table_size = default_locktable_size,
+                      int disk_quota_in_pages = default_quota_in_pages,
+                      int bufferpool_size_in_pages = default_bufferpool_size_in_pages,
+                      uint32_t cleaner_threads = 1,
+                      uint32_t cleaner_interval_millisec_min	   = 1000,
+                      uint32_t cleaner_interval_millisec_max	   = 256000,
+                      uint32_t cleaner_write_buffer_pages          = 64,
+                      bool initially_enable_cleaners = true,
+                      bool enable_swizzling = default_enable_swizzling
+                      );
+
+
+    int runRestartTest (restart_test_base *context,
+                      bool fCrash,
+                      bool use_locks, int32_t lock_table_size,
+                      int disk_quota_in_pages, int bufferpool_size_in_pages,
+                      uint32_t cleaner_threads,
+                      uint32_t cleaner_interval_millisec_min,
+                      uint32_t cleaner_interval_millisec_max,
+                      uint32_t cleaner_write_buffer_pages,
+                      bool initially_enable_cleaners,
+                      bool enable_swizzling,
+                      const std::vector<std::pair<const char*, const char*> > &additional_params);
+
     /**
      * Overload to set additional parameters.
      * @param use_locks whether to use locks

@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 #ifndef BTREE_PAGE_H
@@ -64,7 +64,7 @@ protected:
      */
     shpid_t btree_root;                         // +4 -> 4
 
-    /// First child pointer in non-leaf nodes.  Used only in left-most non-leaf nodes. 
+    /// First child pointer in non-leaf nodes.
     shpid_t btree_pid0;                         // +4 -> 8
 
     /// Foster link page ID (0 if not linked).
@@ -162,8 +162,8 @@ protected:
 
     /**
      * Return a reference to the child pointer data for the given
-     * item.  The reference will be word aligned and thus a suitable
-     * target for atomic operations.
+     * item.  The reference will be 4 byte aligned and thus a suitable
+     * target for atomic operations.  
      * @pre this is an interior page
      */
     shpid_t&      item_child(int item);
@@ -300,20 +300,46 @@ protected:
     bool          _items_are_consistent() const;
 
 
+    // ======================================================================
+    //   BEGIN: Robust item interface
+    // ======================================================================
 
+    /*
+     * These methods provide the same results as the corresponding
+     * non-robust versions when *this is not being concurrently
+     * modified.
+     * 
+     * When *this is being concurrently modified, however, unlike the
+     * normal methods these versions do not trigger assertions or
+     * cause other faults (e.g., segmentation fault); they may however
+     * in this case provide garbage values, abet in bounds garbage
+     * values (e.g., robust_number_of_items() is non-negative and not
+     * too large).
+     * 
+     * Item arguments here should be less than a result of
+     * robust_number_of_items().
+     * 
+     * The memory region indicated by robust_item_data() is always
+     * safe to access, but may contain garbage or have a length
+     * different from the actual item's variable-size data.
+     */
+
+    bool         robust_is_leaf()            const;
+    int          robust_number_of_items()    const;
+    poor_man_key robust_item_poor(int item)  const;
+    shpid_t      robust_item_child(int item) const;
+    /// Robust combo of item_data and item_length
+    const char* robust_item_data(int item, size_t& length) const;
+
+
+private:
 // ======================================================================
 //   BEGIN: private implementation details
 // ======================================================================
 
-private:
-    /**
-     * offset divided by 8 (all records are 8-byte aligned).
-     * negative value means ghost records.
-     */
-    typedef int16_t body_offset_t;
-
-    typedef int16_t item_index_t; // to avoid explicit sized-types below
-
+    typedef uint16_t item_index_t;
+    typedef uint16_t item_length_t;
+    typedef int16_t  body_offset_t;  // sign bit is used to encode ghostness in item_head's
 
     // ======================================================================
     //   BEGIN: item-specific headers
@@ -326,112 +352,104 @@ private:
     item_index_t  nghosts;                         // +2 -> 28
 
     /// offset to beginning of used item bodies (# of used item body that is located left-most). 
-    body_offset_t  first_used_body;                   // +2 -> 30
+    body_offset_t first_used_body;                 // +2 -> 30
 
     /// padding to ensure header size is a multiple of 8
-    uint16_t padding;                              // +2 -> 32
+    uint16_t      padding;                         // +2 -> 32
 
     // ======================================================================
     //   END: item-specific headers
     // ======================================================================
 
 
-    btree_page_data() {
-        //w_assert1(0);  // FIXME: is this constructor ever called? yes it is (test_btree_ghost)
-        w_assert1((body[0].raw - (const char *)this) % 4 == 0);     // check alignment<<<>>>
-        w_assert1((body[0].raw - (const char *)this) % 8 == 0);     // check alignment
-        w_assert1(body[0].raw - (const char *) this == hdr_sz);
-    }
-
-
-    typedef uint16_t item_length_t;
+    /*
+     * The item space is organized as follows:
+     * 
+     *   head_0 head_1 ... head_I  <possible gap> body_J body_J+1 ... body_N
+     * 
+     * where head_i is a fixed sized value of type item_head that
+     * contains the poor_man_key, the ghost bit, and a offset to a
+     * starting item_body for item # i.  As items are added, space is
+     * consumed on both sides of the gap: at the beginning for another
+     * item_head and at the end for one or more item bodies to store
+     * the remaining data, namely the variable-size data field and
+     * (for interior nodes only) the child pointer.
+     * 
+     * Here, I is nitems+1, J is first_used_body, and N is max_bodies-1.
+     */
 
     typedef struct {
+        /// sign bit: is this a ghost item?  (<0 => yes)
+        /// first item_body belonging to this item is body[abs(offset)]
         body_offset_t offset;
         poor_man_key  poor;
     } item_head;
-//    static_assert(sizeof(item_head) == 4, "item_head has wrong length");
+    //static_assert(sizeof(item_head) == 4, "item_head has wrong length");
     BOOST_STATIC_ASSERT(sizeof(item_head) == 4);
 
-    typedef uint16_t tmp_key_length_t;  // <<<>>>
-
     typedef struct {
+        // item format depends on whether we are a leaf or not:
         union {
-            char raw[8];
             struct {
                 item_length_t item_len;
-                tmp_key_length_t  key_len;
-                char          key[4]; // <<<>>> really key_len - prefix_len
+                /// really of size item_len - sizeof(item_len):
+                char          item_data[6];
             } leaf;
             struct {
                 shpid_t       child;
                 item_length_t item_len;
-                char          key[2]; // <<<>>> really item_len - sizeof(child) - sizeof(item_len)
+                /// really of size item_len - sizeof(item_len) - sizeof(child):
+                char          item_data[2];
             } interior;
-            struct {
-                item_length_t item_len;
-                char          low[6]; // low[btree_fence_low_length]
-                //char        high_noprefix[btree_fence_high_length - btree_prefix_length]
-                //char        chain[btree_chain_fence_high_length]
-            } fence;
+            // We use 8 byte alignment instead of the required 4 for
+            // historical reasons at this point:
+            int64_t _for_alignment_only;
         };
     } item_body;
-//    static_assert(sizeof(item_body) == 8, "item_body has wrong length");
+    //static_assert(sizeof(item_body) == 8, "item_body has wrong length");
     BOOST_STATIC_ASSERT(sizeof(item_body) == 8);
-        
-    /// MUST BE 8-BYTE ALIGNED HERE
-    union {
-        item_head head[data_sz/sizeof(item_head)];
-        item_body body[data_sz/sizeof(item_body)];
-    };
+
     BOOST_STATIC_ASSERT(data_sz%8 == 0);
+    enum {
+        max_heads  = data_sz/sizeof(item_head),
+        max_bodies = data_sz/sizeof(item_body),
+    };
+
+    union {
+        item_head head[max_heads];
+        item_body body[max_bodies];
+    };
+    // check field sizes are large enough:
+    BOOST_STATIC_ASSERT(data_sz < 1<<(sizeof(item_length_t)*8));
+    BOOST_STATIC_ASSERT(max_heads   < 1<<(sizeof(item_index_t) *8));
+    BOOST_STATIC_ASSERT(max_bodies  < 1<<(sizeof(body_offset_t)*8-1)); // -1 for ghost bit
 
 
+    /// are we a leaf node?
+    bool is_leaf() const { return btree_level == 1; }
 
+    /// align to 8-byte boundary (integral multiple of item_body's)
+    static size_t _item_align(size_t i) { return (i+7)&~7; }
 
-    char* item_start(item_index_t item) {
-        body_offset_t offset = head[item].offset;
-        if (offset < 0) offset = -offset; // ghost record
-        return body[offset].raw;
-    }
-    item_body& item_value(item_index_t item) {
-        body_offset_t offset = head[item].offset;
-        if (offset < 0) offset = -offset; // ghost record
-        return body[offset];
-    }
+    /// add this to data length to get bytes used in item bodies (not counting padding)
+    size_t _item_body_overhead() const;
 
+    /**
+     * return reference to current number of bytes used in item bodies
+     * (not counting padding) associated with the item starting at
+     * offset offset
+     */
+    item_length_t& _item_body_length(body_offset_t offset);
+    /**
+     * return current number of bytes used in item bodies (not
+     * counting padding) associated with the item starting at offset
+     * offset
+     */
+    item_length_t _item_body_length(body_offset_t offset) const;
 
-    item_length_t my_item_length(item_index_t item) const {
-        body_offset_t offset = head[item].offset;
-        if (offset < 0) offset = -offset; // ghost record
-
-        if (item == 0) {
-            return body[offset].fence.item_len;
-        }
-
-        if (btree_level == 1) {
-            return body[offset].leaf.item_len;
-        } else {
-            return body[offset].interior.item_len;
-        }
-    }
-    item_length_t item_length8(item_index_t item) const { return (my_item_length(item)-1)/8+1; }
-
-    void set_item_length(item_index_t item, item_length_t length) {
-        body_offset_t offset = head[item].offset;
-        if (offset < 0) offset = -offset; // ghost record
-
-        if (item == 0) {
-            body[offset].fence.item_len = length;
-            return;
-        }
-
-        if (btree_level == 1) {
-            body[offset].leaf.item_len = length;
-        } else {
-            body[offset].interior.item_len = length;
-        }
-    }
+    /// return number of item bodies holding data for the items
+    /// starting at offset offset
+    body_offset_t _item_bodies(body_offset_t offset) const;
 };
 
 
@@ -486,6 +504,37 @@ BOOST_STATIC_ASSERT(sizeof(btree_page) == sizeof(generic_page));
 /*                                                                         */
 /***************************************************************************/
 
+inline size_t btree_page_data::_item_body_overhead() const {
+    if (is_leaf()) {
+        return sizeof(item_length_t);
+    } else {
+        return sizeof(item_length_t) + sizeof(shpid_t);
+    }
+}
+
+inline btree_page_data::item_length_t& btree_page_data::_item_body_length(body_offset_t offset) {
+    w_assert1(offset >= 0);
+    if (is_leaf()) {
+        return body[offset].leaf.item_len;
+    } else {
+        return body[offset].interior.item_len;
+    }
+}
+inline btree_page_data::item_length_t btree_page_data::_item_body_length(body_offset_t offset) const {
+    w_assert1(offset >= 0);
+    if (is_leaf()) {
+        return body[offset].leaf.item_len;
+    } else {
+        return body[offset].interior.item_len;
+    }
+}
+
+inline btree_page_data::body_offset_t btree_page_data::_item_bodies(body_offset_t offset) const {
+    w_assert1(offset >= 0);
+    return _item_align(_item_body_length(offset))/8;
+}
+
+
 inline bool btree_page_data::is_ghost(int item) const { 
     w_assert1(item>=0 && item<nitems);
     return head[item].offset < 0; 
@@ -502,31 +551,150 @@ inline btree_page_data::poor_man_key btree_page_data::item_poor(int item) const 
 
 inline shpid_t& btree_page_data::item_child(int item) {
     w_assert1(item>=0 && item<nitems);
-    w_assert1(btree_level != 1); // <<<>>>
-    return *(shpid_t*)&item_value(item).interior.child;
+    w_assert1(!is_leaf());
+
+    body_offset_t offset = head[item].offset;
+    if (offset < 0) {
+        offset = -offset;
+    }
+    return body[offset].interior.child;
+}
+
+
+inline char* btree_page_data::item_data(int item) {
+    w_assert1(item>=0 && item<nitems);
+    body_offset_t offset = head[item].offset;
+    if (offset < 0) {
+        offset = -offset;
+    }
+    if (is_leaf()) {
+        return body[offset].leaf.item_data;
+    } else {
+        return body[offset].interior.item_data;
+    }
 }
 
 inline size_t btree_page_data::item_length(int item) const {
     w_assert1(item>=0 && item<nitems);
-    int length = my_item_length(item) - sizeof(item_length_t);
-    if (item != 0 && btree_level != 1) {
-        length -= sizeof(shpid_t);
+    body_offset_t offset = head[item].offset;
+    if (offset < 0) {
+        offset = -offset;
     }
+
+    int length;
+    if (is_leaf()) {
+        length = body[offset].leaf.item_len;
+    } else {
+        length = body[offset].interior.item_len - sizeof(shpid_t);
+    }
+    length -= sizeof(item_length_t);
+    w_assert1(length >= 0);
     return length;
 }
-inline char* btree_page_data::item_data(int item) {
+
+
+inline size_t btree_page_data::predict_item_space(size_t data_length) const {
+    size_t body_length = data_length + _item_body_overhead();
+    return _item_align(body_length) + sizeof(item_head);
+}
+
+inline size_t btree_page_data::item_space(int item) const {
     w_assert1(item>=0 && item<nitems);
-    if (item == 0) {
-        return &item_value(item).fence.low[0];
-    } if (btree_level == 1) {
-        return (char*)&item_value(item).leaf.key_len;
+    body_offset_t offset = head[item].offset;
+    if (offset < 0) {
+        offset = -offset;
+    }
+
+    return _item_align(_item_body_length(offset)) + sizeof(item_head);
+}
+
+
+inline size_t btree_page_data::usable_space() const {
+    w_assert1(first_used_body*sizeof(item_body) >= nitems*sizeof(item_head));
+    return    first_used_body*sizeof(item_body) -  nitems*sizeof(item_head);
+}
+
+
+
+/**
+ * C++ version of Linux kernel's ACCESS_ONCE() macro
+ *
+ * Prevent the compiler from merging or refetching accesses.  The compiler
+ * is also forbidden from reordering successive instances of ACCESS_ONCE(),
+ * but only when the compiler is aware of some particular ordering.  One way
+ * to make the compiler aware of ordering is to put the two invocations of
+ * ACCESS_ONCE() in different C statements.
+ *
+ * This does absolutely -nothing- to prevent the CPU from reordering,
+ * merging, or refetching absolutely anything at any time.
+ */
+template<typename T>
+inline T volatile &ACCESS_ONCE(T &t) {
+    return static_cast<T volatile &>(t);
+}
+
+
+inline bool btree_page_data::robust_is_leaf() const { 
+    return ACCESS_ONCE(btree_level) == 1; 
+}
+
+inline int btree_page_data::robust_number_of_items() const {
+    item_index_t number = ACCESS_ONCE(nitems);
+    if (number >= max_heads) {
+        return 0; // don't waste time examining garbage
     } else {
-        return &item_value(item).interior.key[0];
+        return number;
     }
 }
 
-inline size_t btree_page_data::usable_space() const {
-    return first_used_body*8 - nitems*4; // <<<>>>
+inline btree_page_data::poor_man_key btree_page_data::robust_item_poor(int item) const {
+    w_assert1(item>=0 && item<max_heads);
+    return ACCESS_ONCE(head[item].poor);
 }
+
+inline shpid_t btree_page_data::robust_item_child(int item) const {
+    w_assert1(item>=0 && item<max_heads);
+
+    // int type here to avoid overflow issues
+    //   (-<smallest_value_for_a_integral_type) < 0!):
+    int offset = ACCESS_ONCE(head[item].offset);
+    if (offset < 0) {
+        offset = -offset;
+        w_assert1(offset >= 0);
+    }
+    return ACCESS_ONCE(body[offset % max_bodies].interior.child);
+}
+
+inline const char* btree_page_data::robust_item_data(int item, size_t& length) const {
+    w_assert1(item>=0 && item<max_heads);
+
+    // int type here to avoid overflow issues
+    //   (-<smallest_value_for_a_integral_type) < 0!):
+    int offset = ACCESS_ONCE(head[item].offset);
+    if (offset < 0) {
+        offset = -offset;
+        w_assert1(offset >= 0);
+    }
+    offset = offset % max_bodies;
+
+    const char* data;
+    int result_length;
+    if (robust_is_leaf()) {
+        result_length = ACCESS_ONCE(body[offset].leaf.item_len);
+        data          = (const char*)&body[offset].leaf.item_data;
+    } else {
+        result_length = ACCESS_ONCE(body[offset].interior.item_len);
+        data          = (const char*)&body[offset].interior.item_data - sizeof(shpid_t);
+    }
+    result_length -= sizeof(item_length_t);
+
+    if (result_length < 0  ||  data+result_length > (const char*)&body[max_bodies]) {
+        result_length = 0;
+    }
+
+    length = result_length;
+    return data;
+}
+
 
 #endif // BTREE_PAGE_H

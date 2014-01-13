@@ -336,9 +336,6 @@ SHORE-specific Features:
 
   --enable-valgrind     default:no      Enable running valgrind run-time behavior
                                         Includes some code for valgrind.
-  --enable-purify       default:no      Enable build of <prog>.pure
-  --enable-quantify     default:no      Enable build of <prog>.quant
-  --enable-purecov      default:no      Enable build of <prog>.purecov
 
 SHORE-specific Optional Packages:
   --with-page-size        1024, 2048, 4196, 8192(default), 16384, or 32768

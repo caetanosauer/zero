@@ -38,5 +38,6 @@ NOTFOUND     Item not found
 NOTIMPLEMENTED    Feature is not implemented
 NOSUCHERROR    unknown error code
 ASSERT        Assertion Failed
+USERABORT   User-requested rollback
 }
 

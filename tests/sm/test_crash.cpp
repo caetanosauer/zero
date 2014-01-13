@@ -23,7 +23,6 @@ public:
         return RCOK;
     }
 };
-
 TEST (CrashTest, Empty) {
     test_env->empty_logdata_dir();
     crash_empty context;
@@ -84,7 +83,6 @@ public:
         return RCOK;
     }
 };
-
 TEST (CrashTest, CreateIndexDirty) {
     test_env->empty_logdata_dir();
     crash_createindex_dirty context;
@@ -112,13 +110,11 @@ public:
         return RCOK;
     }
 };
-
 TEST (CrashTest, InsertSingle) {
     test_env->empty_logdata_dir();
     crash_insert_single context;
     EXPECT_EQ(test_env->runCrashTest(&context), 0);
 }
-
 
 class crash_insert_multi : public crash_test_base {
 public:
@@ -143,13 +139,11 @@ public:
         return RCOK;
     }
 };
-
 TEST (CrashTest, InsertMulti) {
     test_env->empty_logdata_dir();
     crash_insert_multi context;
     EXPECT_EQ(test_env->runCrashTest(&context), 0);
 }
-
 
 class crash_insert_delete : public crash_test_base {
 public:
@@ -176,13 +170,11 @@ public:
         return RCOK;
     }
 };
-
 TEST (CrashTest, InsertDelete) {
     test_env->empty_logdata_dir();
     crash_insert_delete context;
     EXPECT_EQ(test_env->runCrashTest(&context), 0);
 }
-
 
 class crash_insert_update : public crash_test_base {
 public:
@@ -210,13 +202,11 @@ public:
         return RCOK;
     }
 };
-
 TEST (CrashTest, InsertUpdate) {
     test_env->empty_logdata_dir();
     crash_insert_update context;
     EXPECT_EQ(test_env->runCrashTest(&context), 0);
 }
-
 class crash_insert_overwrite : public crash_test_base {
 public:
     w_rc_t pre_crash(ss_m *ssm) {
@@ -243,13 +233,11 @@ public:
         return RCOK;
     }
 };
-
 TEST (CrashTest, InsertOverwrite) {
     test_env->empty_logdata_dir();
     crash_insert_overwrite context;
     EXPECT_EQ(test_env->runCrashTest(&context), 0);
 }
-
 
 class crash_insert_many : public crash_test_base {
 public:
@@ -263,14 +251,17 @@ public:
         W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
         output_durable_lsn(2);
         W_DO(test_env->begin_xct());
-        const int datasize = SM_PAGESIZE / 5;
+        // Set the data size is the max. entry size minue key size minus 1
+        // because the total size must be smaller than btree_m::max_entry_size()
+        const int key_size = 5;
+        const int data_size = btree_m::max_entry_size() - key_size - 1;
 
         vec_t data;
-        char datastr[datasize];
-        memset(datastr, '\0', datasize);
-        data.set(datastr, datasize);
+        char datastr[data_size];
+        memset(datastr, '\0', data_size);
+        data.set(datastr, data_size);
         w_keystr_t key;
-        char keystr[5];
+        char keystr[key_size];
         keystr[0] = 'k';
         keystr[1] = 'e';
         keystr[2] = 'y';
@@ -283,10 +274,9 @@ public:
             }
             keystr[3] = ('0' + ((num / 10) % 10));
             keystr[4] = ('0' + (num % 10));
-            key.construct_regularkey(keystr, 5);
+            key.construct_regularkey(keystr, key_size);
             W_DO(ssm->create_assoc(_stid, key, data));
         }
-        
         W_DO(test_env->commit_xct());
         output_durable_lsn(3);
         return RCOK;
@@ -311,7 +301,6 @@ public:
     bool _sorted;
     int _recs;
 };
-
 TEST (CrashTest, InsertFewSorted) {
     test_env->empty_logdata_dir();
     crash_insert_many context (true, 5);
@@ -328,18 +317,19 @@ TEST (CrashTest, InsertManySorted) {
     crash_insert_many context (true, 30);
     EXPECT_EQ(test_env->runCrashTest(&context), 0);
 }
-
 /*
  mmm, this testcase passes if run by itself, but fails when run after several testcases above.
  seems like REDO pass misses most of the insertion in that case.
  filesystem metadata sync issue? log file flush?
  couldn't figure it out, so tentatively commented out.
+ */
+/**
 TEST (CrashTest, InsertManyUnsorted) {
     test_env->empty_logdata_dir();
-    crash_insert_many context (false, 30);
+    crash_insert_many context (false, 7);
     EXPECT_EQ(test_env->runCrashTest(&context), 0);
 }
-*/
+**/
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     test_env = new btree_test_env();

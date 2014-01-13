@@ -69,6 +69,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "bf_tree.h"
 #include "xct_dependent.h"
 #include <new>
+#include "sm.h"
 
 #ifdef EXPLICIT_TEMPLATE
 template class w_auto_delete_array_t<lsn_t>;
@@ -94,6 +95,7 @@ public:
     virtual void        run();
     void                retire();
     void                awaken();
+    bool                is_retired() {return _retire;}
 private:
     bool                _retire;
     pthread_mutex_t     _retire_awaken_lock; // paired with _retire_awaken_cond
@@ -267,7 +269,30 @@ void chkpt_m::take()
         return;
     }
     INC_TSTAT(log_chkpt_cnt);
-    
+
+    DBGOUT1(<<"BEGIN chkpt_m::take");
+    // Note: current code in ss_m::_destruct_once() sets the shutting_down flag first, then
+    // 1. For clean shutdown, it wakes up the checkpoint thread and retires it immediatelly 
+    //    (which delete the checkpoint thread), the logic does not make sense. 
+    // 2. For dirty shutdown, it retires the checkpoint thread immediatelly (which might still be
+    //    working on a checkpoint triggered by user).
+    //Checkpoint can be activated 2 ways:
+    // 1. Calling 'wakeup_and_take' - asynch
+    // 2. Calling 'chkpt_m::take' directly - synch
+    // Check for shutting_down flag, do not start checkpoint if we are shutting down
+
+    if (ss_m::shutting_down) {
+        DBGOUT1(<<"END chkpt_m::take - detected shutdown, skip checkpoint");
+        return;
+    }
+    if(log && _chkpt_thread) {
+        // If received a 'retire' message, return without doing anything
+        if (true == _chkpt_thread->is_retired()) {
+            DBGOUT1(<<"END chkpt_m::take - detected retire, skip checkpoint");
+            return;
+        }
+    }
+
     /*
      *  Allocate a buffer for storing log records
      */
@@ -583,26 +608,37 @@ void chkpt_m::take()
     if (min_rec_lsn > master) min_rec_lsn = master;
     if (min_xct_lsn > master) min_xct_lsn = master;
 
-    /*
-     *  Write the Checkpoint End Log
-     */
-    LOG_INSERT(chkpt_end_log (master, min_rec_lsn), 0);
+    // 1. If io->GetLastMountLSN() > master, this is not supposed to happen
+    // 2. If in the process of shutting down, regardless dirty (simulating crasdh) or clean
+    // Return without writing the Checkpoint End log, so the recovery
+    // will ignore this checkpoint.
 
-    /*
-     *  Sync the log
-     */
-    W_COERCE( log->flush_all() );
+    if ((io->GetLastMountLSN() <= master) && (false == ss_m::shutting_down)) {
+        /*
+        *  Write the Checkpoint End Log
+        */
+        LOG_INSERT(chkpt_end_log (master, min_rec_lsn), 0);
+
+        /*
+        *  Sync the log
+        */
+        W_COERCE( log->flush_all() );
 
 
-    /*
-     *  Make the new master lsn durable
-     */
-    log->set_master(master, min_rec_lsn, min_xct_lsn);
+        /*
+        *  Make the new master lsn durable
+        */
+        log->set_master(master, min_rec_lsn, min_xct_lsn);
 
-    /*
-     *  Scavenge some log
-     */
-    W_COERCE( log->scavenge(min_rec_lsn, min_xct_lsn) );
+        /*
+        *  Scavenge some log
+        */
+        W_COERCE( log->scavenge(min_rec_lsn, min_xct_lsn) );
+
+        }
+    else {
+            DBGOUT1(<<"END chkpt_m::take - skip checkpoint end log because system is shutting down");
+        }
 
     chkpt_serial_m::chkpt_release();
 }

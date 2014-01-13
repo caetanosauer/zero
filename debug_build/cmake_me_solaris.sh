@@ -1,2 +1,0 @@
-#!/bin/sh
-cmake ../ -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=CC

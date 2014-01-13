@@ -402,6 +402,153 @@ int btree_test_env::runBtreeTest (w_rc_t (*func)(ss_m*, test_volume_t*),
     return rv;
 }
 
+// Begin... for test_restart.cpp
+int btree_test_env::runRestartTest (restart_test_base *context,
+    bool fCrash,
+    bool use_locks, int32_t lock_table_size,
+    int disk_quota_in_pages, int bufferpool_size_in_pages,
+    uint32_t cleaner_threads,
+    uint32_t cleaner_interval_millisec_min,
+    uint32_t cleaner_interval_millisec_max,
+    uint32_t cleaner_write_buffer_pages,
+    bool initially_enable_cleaners,
+    bool enable_swizzling)
+    {
+    std::vector<std::pair<const char*, const char*> > dummy;    
+    return runRestartTest(context, fCrash, use_locks, lock_table_size,
+            disk_quota_in_pages, bufferpool_size_in_pages,
+            cleaner_threads,
+            cleaner_interval_millisec_min,
+            cleaner_interval_millisec_max,
+            cleaner_write_buffer_pages,
+            initially_enable_cleaners,
+            enable_swizzling,
+            dummy);    
+    }
+
+int btree_test_env::runRestartTest (restart_test_base *context,
+    bool fCrash,
+    bool use_locks, int32_t lock_table_size,
+    int disk_quota_in_pages, int bufferpool_size_in_pages,
+    uint32_t cleaner_threads,
+    uint32_t cleaner_interval_millisec_min,
+    uint32_t cleaner_interval_millisec_max,
+    uint32_t cleaner_write_buffer_pages,
+    bool initially_enable_cleaners,
+    bool enable_swizzling,
+    const std::vector<std::pair<const char*, const char*> > &additional_params) 
+    {
+    _use_locks = use_locks;
+
+    DBGOUT2 ( << "Going to call pre_shutdown()...");
+    int rv;
+    w_rc_t e;
+        {
+        if (true == fCrash)
+            {
+            // Simulated crash
+            restart_dirty_test_pre_functor functor(context);
+            testdriver_thread_t smtu(
+                &functor, this, lock_table_size,
+                disk_quota_in_pages, bufferpool_size_in_pages,
+                cleaner_threads,
+                cleaner_interval_millisec_min,
+                cleaner_interval_millisec_max,
+                cleaner_write_buffer_pages,
+                initially_enable_cleaners,
+                enable_swizzling,
+                additional_params);
+            e = smtu.fork();
+            if(e.is_error()) 
+                {
+                cerr << "Error forking thread while pre_shutdown: " << e <<endl;
+                return 1;
+                }
+            e = smtu.join();
+            if(e.is_error()) 
+                {
+                cerr << "Error joining thread while pre_shutdown: " << e <<endl;
+                return 1;
+                }
+
+            rv = smtu.return_value();
+            if (rv != 0) 
+                {
+                cerr << "Error while pre_shutdown rv= " << rv <<endl;
+                return rv;
+                }
+            }
+        else
+            {
+            // Clean shutdown
+            restart_clean_test_pre_functor functor(context);
+            testdriver_thread_t smtu(
+                &functor, this, lock_table_size,
+                disk_quota_in_pages, bufferpool_size_in_pages,
+                cleaner_threads,
+                cleaner_interval_millisec_min,
+                cleaner_interval_millisec_max,
+                cleaner_write_buffer_pages,
+                initially_enable_cleaners,
+                enable_swizzling,
+                additional_params);
+            e = smtu.fork();
+            if(e.is_error()) 
+                {
+                cerr << "Error forking thread while pre_shutdown: " << e <<endl;
+                return 1;
+                }
+            e = smtu.join();
+            if(e.is_error()) 
+                {
+                cerr << "Error joining thread while pre_shutdown: " << e <<endl;
+                return 1;
+                }
+
+            rv = smtu.return_value();
+            if (rv != 0) 
+                {
+                cerr << "Error while pre_shutdown rv= " << rv <<endl;
+                return rv;
+                }
+            }
+        }
+    DBGOUT2 ( << "Going to call post_shutdown()...");
+        {
+        restart_test_post_functor functor(context);
+        testdriver_thread_t smtu(
+            &functor, this, lock_table_size,
+            disk_quota_in_pages, bufferpool_size_in_pages,
+            cleaner_threads,
+            cleaner_interval_millisec_min,
+            cleaner_interval_millisec_max,
+            cleaner_write_buffer_pages,
+            initially_enable_cleaners,
+            enable_swizzling,
+            additional_params);
+
+        w_rc_t e = smtu.fork();
+        if(e.is_error()) 
+            {
+            cerr << "Error forking thread while post_shutdown: " << e <<endl;
+            return 1;
+            }
+
+        e = smtu.join();
+        if(e.is_error()) 
+            {
+            cerr << "Error joining thread while post_shutdown: " << e <<endl;
+            return 1;
+            }
+
+        rv = smtu.return_value();
+        }
+
+    return rv;
+        
+    }
+// End... for test_restart.cpp
+
 int btree_test_env::runCrashTest (crash_test_base *context,
     bool use_locks, int32_t lock_table_size,
     int disk_quota_in_pages, int bufferpool_size_in_pages,
