@@ -814,15 +814,18 @@ void btree_page_h::dat_leaf_ref(slotid_t slot, const char *&el, smsize_t &elen, 
 void btree_page_h::leaf_key(slotid_t slot,  w_keystr_t &key) const {
     w_assert1(is_leaf());
 
-    int   key_length;
-    char* trunc_key_data;
-    _get_leaf_key_fields(slot, key_length, trunc_key_data);
+    size_t      key_noprefix_length;
+    const char* key_noprefix = _leaf_key_noprefix(slot, key_noprefix_length);
+    key.construct_from_keystr(get_prefix_key(), get_prefix_length(),
+                              key_noprefix, key_noprefix_length);
+}
+void btree_page_h::node_key(slotid_t slot,  w_keystr_t &key) const {
+    w_assert1(is_node());
 
-    int prefix_len = get_prefix_length();
-    w_assert2 (prefix_len <= key_length);
-
-    key.construct_from_keystr(get_prefix_key(), prefix_len,
-                              trunc_key_data, key_length - prefix_len);
+    size_t      key_noprefix_length;
+    const char* key_noprefix = _node_key_noprefix(slot, key_noprefix_length);
+    key.construct_from_keystr(get_prefix_key(), get_prefix_length(),
+                              key_noprefix, key_noprefix_length);
 }
 
 
@@ -840,17 +843,6 @@ void  btree_page_h::rec_node(slotid_t slot,  w_keystr_t &key, shpid_t &el) const
 
     key.construct_from_keystr(get_prefix_key(), prefix_len, trunc_key_data, trunc_key_length);
     el = page()->item_child(slot+1);
-}
-void btree_page_h::node_key(slotid_t slot,  w_keystr_t &key) const {
-    w_assert1(is_node());
-
-    int   trunc_key_length;
-    char* trunc_key_data;
-    _get_node_key_fields(slot, trunc_key_length, trunc_key_data);
-
-    int prefix_len = get_prefix_length();
-
-    key.construct_from_keystr(get_prefix_key(), prefix_len, trunc_key_data, trunc_key_length);
 }
 
 rc_t

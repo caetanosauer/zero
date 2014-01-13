@@ -424,6 +424,16 @@ public:
      /// Returns the number of records in this page.
     int              nrecs() const;
 
+    /// Retrieves only key from this
+    void            get_key(slotid_t slot,  w_keystr_t &key) const {
+        if (is_leaf()) {
+            leaf_key(slot, key);
+        } else {
+            node_key(slot, key);
+        }
+    }
+
+
 
     /// Retrieves only key from a leaf
     void            leaf_key(slotid_t slot,  w_keystr_t &key) const;
@@ -431,14 +441,6 @@ public:
     /// Retrieves only key from a node
     void            node_key(slotid_t slot,  w_keystr_t &key) const;
 
-    /// Retrieves only key from this
-    void            get_key(slotid_t slot,  w_keystr_t &key) const {
-        if (is_node()) {
-            node_key(slot, key);
-        } else {
-            leaf_key(slot, key);
-        }
-    }
 
 
 
@@ -703,6 +705,14 @@ private:
         return page()->item_poor(slot+1);
     }
 
+    /// Retrieves the key of specified slot WITHOUT prefix in a leaf
+    const char*     _leaf_key_noprefix(slotid_t slot,  size_t &len) const;
+
+    /// Retrieves only the key of specified slot WITHOUT prefix in an intermediate node
+    const char*     _node_key_noprefix(slotid_t slot,  size_t &len) const;
+
+
+
     void _get_leaf_key_fields(int slot, int& key_length, char*& trunc_key_data) const {
         w_assert1(slot>=0);
         key_length     = *(key_length_t*)page()->item_data(slot+1);
@@ -758,10 +768,6 @@ private:
     /// Given the place to insert, update btree_consecutive_skewed_insertions.
     void             _update_btree_consecutive_skewed_insertions(slotid_t slot);
 
-    /// Retrieves the key of specified slot WITHOUT prefix in a leaf
-    const char*     _leaf_key_noprefix(slotid_t slot,  size_t &len) const;
-    /// Retrieves only the key of specified slot WITHOUT prefix in an intermediate node
-    const char*     _node_key_noprefix(slotid_t slot,  size_t &len) const;
 
 
     /// returns compare(specified-key, key_noprefix)
@@ -947,21 +953,18 @@ inline size_t btree_page_h::get_rec_space(int slot) const {
 
 inline const char* btree_page_h::_leaf_key_noprefix(slotid_t slot,  size_t &len) const {
     w_assert1(is_leaf());
-    int   key_length;
-    char* trunc_key_data;
-    _get_leaf_key_fields(slot, key_length, trunc_key_data);
+    w_assert1(slot>=0);
 
-    len = key_length - get_prefix_length();
-    return trunc_key_data;
+    key_length_t* data = (key_length_t*)page()->item_data(slot+1);
+    len = *data++  - get_prefix_length();
+    return (const char*)data;
 }
 inline const char* btree_page_h::_node_key_noprefix(slotid_t slot,  size_t &len) const {
     w_assert1(is_node());
-    int   trunc_key_length;
-    char* trunc_key_data;
-    _get_node_key_fields(slot, trunc_key_length, trunc_key_data);
+    w_assert1(slot>=0);
 
-    len = trunc_key_length;
-    return trunc_key_data;
+    len = page()->item_length(slot+1);
+    return page()->item_data(slot+1);
 }
 
 inline int btree_page_h::_compare_key_noprefix(slotid_t slot, const void *key_noprefix, size_t key_len) const {
