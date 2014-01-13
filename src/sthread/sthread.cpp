@@ -100,10 +100,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "sthread_stats.h"
 #include "stcore_pthread.h"
 
-#ifdef PURIFY
-#include <purify.h>
-#endif
-
 #ifdef EXPLICIT_TEMPLATE
 template class w_list_t<sthread_t, queue_based_lock_t>;
 template class w_list_i<sthread_t, queue_based_lock_t>;
@@ -286,11 +282,6 @@ w_rc_t    sthread_t::cold_startup()
     
     if (me() != main)
         W_FATAL(stINTERNAL);
-
-#if defined(PURIFY)
-    /* The main thread is different from all other threads. */
-    purify_name_thread(me()->name());
-#endif
 
     return RCOK;
 }
@@ -708,12 +699,6 @@ void sthread_t::_start()
             _status = t_running;
         }
     }
-
-#if defined(PURIFY)
-    /* threads should be named in the constructor, not
-       in run() ... this is mostly useless if that happens */
-    purify_name_thread(name());
-#endif
 
     { 
         // thread checker complains about this not being reentrant

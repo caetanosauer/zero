@@ -37,10 +37,8 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/logrec.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/logstub.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/partition.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/pin.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/pmap.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/restart.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/scan.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/sm.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/sm_du_stats.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/sm_io.cpp
@@ -184,7 +182,6 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/restart_s.h
   ${CMAKE_CURRENT_SOURCE_DIR}/sm_base.h
   ${CMAKE_CURRENT_SOURCE_DIR}/sm_du_stats.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/sm_escalation.h
   ${CMAKE_CURRENT_SOURCE_DIR}/sm.h
   ${CMAKE_CURRENT_SOURCE_DIR}/sm_int_0.h
   ${CMAKE_CURRENT_SOURCE_DIR}/sm_int_1.h
