@@ -242,8 +242,6 @@ public:
     shpid_t& pid0_pointer()   { return page()->btree_pid0; }
     shpid_t& child_pointer(slotid_t child) { return page()->item_child(child+1); }
 
-    slotid_t                     nitems() const;
-
     // Total usable space on page
     smsize_t                     usable_space()  const;
     
@@ -474,11 +472,6 @@ public:
 
     /** Retrieves the key and record of specified slot in a leaf page.*/
     void            rec_leaf(slotid_t idx,  w_keystr_t &key, cvec_t &el, bool &ghost) const;
-    /**
-     * Overload to receive raw buffer for el.
-     * @param[in,out] elen both input (size of el buffer) and output(length of el set).
-     */
-    void            rec_leaf(slotid_t idx,  w_keystr_t &key, char *el, smsize_t &elen, bool &ghost) const;
     /**
      * Returns only the el part.
      * @param[in,out] elen both input (size of el buffer) and output(length of el set).
@@ -859,7 +852,7 @@ inline const char* btree_page_h::get_prefix_key() const {
 }
 
 inline int btree_page_h::nrecs() const {
-    return nitems() - 1;
+    return page()->number_of_items() - 1;
 }
 inline int btree_page_h::compare_with_fence_low (const w_keystr_t &key) const {
     return key.compare_keystr(get_fence_low_key(), get_fence_low_length());
@@ -987,11 +980,6 @@ inline bool btree_page_h::is_ghost(slotid_t slot) const {
 inline smsize_t 
 btree_page_h::used_space() const {
     return data_sz - page()->usable_space();
-}
-
-inline slotid_t
-btree_page_h::nitems() const {
-    return page()->number_of_items();
 }
 
 inline smsize_t

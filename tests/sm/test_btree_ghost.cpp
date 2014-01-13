@@ -29,14 +29,12 @@ w_rc_t ghost_mark(ss_m* ssm, test_volume_t *test_volume) {
 
     btree_page_h root_p;
     W_DO (root_p.fix_root (root_pid.vol().vol, root_pid.store(), LATCH_SH));
-    EXPECT_EQ (2, root_p.nitems());
     EXPECT_EQ (1, root_p.nrecs());
     EXPECT_TRUE (root_p.is_ghost(0));
     root_p.unfix();
 
     W_DO(x_btree_insert_and_commit (ssm, stid, "key2", "data2", test_env->get_use_locks()));
     W_DO (root_p.fix_root (root_pid.vol().vol, root_pid.store(), LATCH_SH));
-    EXPECT_EQ (3, root_p.nitems());
     EXPECT_EQ (2, root_p.nrecs());
     EXPECT_TRUE (root_p.is_ghost(0));
     EXPECT_FALSE (root_p.is_ghost(1));

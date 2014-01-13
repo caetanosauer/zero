@@ -36,7 +36,7 @@ public:
     /** manually emulate the btree page layout */
     static void _add_child_pointer (btree_page *page, shpid_t child) {
         btree_page_h p(reinterpret_cast<generic_page*>(page)); // <<<>>>
-        if (!page->insert_item(p.nitems(), false, 0, child, 0)) {
+        if (!page->insert_item(p.nrecs()+1, false, 0, child, 0)) {
             w_assert1(false);
         }
         if (p.nrecs() == 0) {
