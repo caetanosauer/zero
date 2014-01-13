@@ -668,7 +668,7 @@ void btree_page_h::suggest_fence_for_split(w_keystr_t &mid,
         right_begins_from = nrecs();
         if (is_leaf()) {
             w_keystr_t lastkey;
-            leaf_key(nrecs() - 1, lastkey);
+            get_key(nrecs() - 1, lastkey);
             size_t common_bytes = lastkey.common_leading_bytes(triggering_key);
             w_assert1(common_bytes < triggering_key.get_length_as_keystr());
             mid.construct_from_keystr(triggering_key.buffer_as_keystr(), common_bytes + 1);
@@ -811,23 +811,18 @@ void btree_page_h::dat_leaf_ref(slotid_t slot, const char *&el, smsize_t &elen, 
     ghost = is_ghost(slot);
 }
 
-void btree_page_h::leaf_key(slotid_t slot,  w_keystr_t &key) const {
-    w_assert1(is_leaf());
-
+void btree_page_h::get_key(slotid_t slot,  w_keystr_t &key) const {
+    const char* key_noprefix;
     size_t      key_noprefix_length;
-    const char* key_noprefix = _leaf_key_noprefix(slot, key_noprefix_length);
+    if (is_leaf()) {
+        key_noprefix = _leaf_key_noprefix(slot, key_noprefix_length);
+    } else {
+        key_noprefix = _node_key_noprefix(slot, key_noprefix_length);
+    }
+
     key.construct_from_keystr(get_prefix_key(), get_prefix_length(),
                               key_noprefix, key_noprefix_length);
 }
-void btree_page_h::node_key(slotid_t slot,  w_keystr_t &key) const {
-    w_assert1(is_node());
-
-    size_t      key_noprefix_length;
-    const char* key_noprefix = _node_key_noprefix(slot, key_noprefix_length);
-    key.construct_from_keystr(get_prefix_key(), get_prefix_length(),
-                              key_noprefix, key_noprefix_length);
-}
-
 
 
 void  btree_page_h::rec_node(slotid_t slot,  w_keystr_t &key, shpid_t &el) const {

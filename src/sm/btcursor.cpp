@@ -164,7 +164,7 @@ rc_t bt_cursor_t::_locate_first() {
                     leaf.copy_fence_low_key(_key);
                 } else {
                     _dont_move_next = false;
-                    leaf.leaf_key(_slot, _key);
+                    leaf.get_key(_slot, _key);
                 }
                 mode = _ex_lock ? &ALL_N_GAP_X : &ALL_N_GAP_S;
             } else {
@@ -177,7 +177,7 @@ rc_t bt_cursor_t::_locate_first() {
                     mode = _ex_lock ? &ALL_N_GAP_X : &ALL_N_GAP_S;
                 } else {
                     _dont_move_next = true;
-                    leaf.leaf_key(_slot, _key);
+                    leaf.get_key(_slot, _key);
                     // let's take range lock too to reduce lock manager calls
                     mode = _ex_lock ? &ALL_X_GAP_X : &ALL_S_GAP_S;
                 }
@@ -369,7 +369,7 @@ rc_t bt_cursor_t::_advance_one_slot(btree_page_h &p, bool &eof)
         // the next key. So, we use the temporary variable _tmp_next_key_buf.
         const okvl_mode *mode = NULL;
         {
-            p.leaf_key(_slot, _tmp_next_key_buf);
+            p.get_key(_slot, _tmp_next_key_buf);
             if (_forward) {
                 int d = _tmp_next_key_buf.compare(_upper);
                 if (d < 0) {
@@ -425,7 +425,7 @@ rc_t bt_cursor_t::_make_rec(const btree_page_h& page)
     w_assert1(!ghost);
 
     w_keystr_t key_again;
-    page.leaf_key(_slot, key_again);
+    page.get_key(_slot, key_again);
     w_assert1(key_again.compare(_key) == 0);
 #endif // W_DEBUG_LEVEL>0
     

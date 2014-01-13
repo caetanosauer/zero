@@ -424,22 +424,8 @@ public:
      /// Returns the number of records in this page.
     int              nrecs() const;
 
-    /// Retrieves only key from this
-    void            get_key(slotid_t slot,  w_keystr_t &key) const {
-        if (is_leaf()) {
-            leaf_key(slot, key);
-        } else {
-            node_key(slot, key);
-        }
-    }
-
-
-
-    /// Retrieves only key from a leaf
-    void            leaf_key(slotid_t slot,  w_keystr_t &key) const;
-
-    /// Retrieves only key from a node
-    void            node_key(slotid_t slot,  w_keystr_t &key) const;
+    /// Retrieves key from given record #
+    void            get_key(slotid_t slot,  w_keystr_t &key) const;
 
 
 
