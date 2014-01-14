@@ -419,8 +419,31 @@ public:
      /// Returns the number of records in this page.
     int             nrecs() const;
 
+    /// Returns if the specified record is a ghost record.
+    bool            is_ghost(slotid_t slot) const;
+    
     /// Retrieves key from given record #
     void            get_key(slotid_t slot,  w_keystr_t &key) const;
+
+    /**
+     * Return pointer to, length of element of given record.  Also
+     * returns ghost status of given record.
+     * 
+     * @pre we are a leaf page
+     */
+    const char*     element(int slot, smsize_t &len, bool &ghost) const;
+
+    /**
+     * Attempt to copy element of given record to provided buffer
+     * (out_buffer[0..len-1]).  Returns false iff failed due to
+     * insufficient buffer size.
+     * 
+     * Sets len to actual element size in all cases.  Also returns
+     * ghost status of given record.
+     * 
+     * @pre we are a leaf page
+     */
+    bool            copy_element(int slot, char *out_buffer, smsize_t &len, bool &ghost) const;
 
 
 
@@ -528,9 +551,6 @@ public:
      */
     void                        mark_ghost(slotid_t slot);
 
-    /// Returns if the specified record is a ghost record.
-    bool                        is_ghost(slotid_t slot) const;
-    
     /**
      * Un-Mark the given slot to be a regular record.
      * If the record is already a non-ghost, does nothing.
@@ -678,6 +698,10 @@ public:
 
 
 private:
+    // ======================================================================
+    //   BEGIN: Private record accessor/modifiers
+    // ======================================================================
+
     poor_man_key _poor(int slot) const {
         w_assert1(slot>=0);
         return page()->item_poor(slot+1);
@@ -710,11 +734,11 @@ private:
         data        = trunc_key_data + trunc_key_length;
         w_assert1( data_length  >= 0 );
     }
-    void _get_node_key_fields(int slot, int& trunc_key_length, char*& trunc_key_data) const {
-        w_assert1(slot>=0);
-        trunc_key_length = page()->item_length(slot+1);
-        trunc_key_data   = page()->item_data(slot+1);
-    }
+
+
+
+
+
 
     int _predict_leaf_data_length(int trunc_key_length, int element_length) const {
         return sizeof(key_length_t) + trunc_key_length + element_length;

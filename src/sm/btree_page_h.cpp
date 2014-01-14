@@ -189,9 +189,8 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
             v.put(data, data_length);
             child = 0;
         } else {
-            int   trunc_key_length;
-            char* trunc_key_data;
-            steal_src->_get_node_key_fields(i, trunc_key_length, trunc_key_data);
+            size_t      trunc_key_length;
+            const char* trunc_key_data = steal_src->_node_key_noprefix(i, trunc_key_length);
             key.put(trunc_key_data, trunc_key_length);
 
             key.split(new_prefix_length, dummy, new_trunc_key);
@@ -810,6 +809,33 @@ void btree_page_h::get_key(slotid_t slot,  w_keystr_t &key) const {
 
     key.construct_from_keystr(get_prefix_key(), get_prefix_length(),
                               key_noprefix, key_noprefix_length);
+}
+
+
+const char* btree_page_h::element(int slot, smsize_t &len, bool &ghost) const {
+    w_assert1(is_leaf());
+
+    size_t offset = _element_offset(slot);
+    int    length = page()->item_length(slot+1) - offset;
+    w_assert1(length >= 0);
+
+    len   = length;
+    ghost = is_ghost(slot);
+    return page()->item_data(slot+1) + offset;
+}
+bool btree_page_h::copy_element(int slot, char *out_buffer, smsize_t &len, bool &ghost) const {
+    smsize_t actual_length;
+    const char* element_data = element(slot, actual_length, ghost);
+
+    if (len >= actual_length) {
+        ::memcpy(out_buffer, element_data, actual_length);
+        len = actual_length;
+        return true;
+    } else {
+        // the buffer is too short
+        len = actual_length;
+        return false;
+    }
 }
 
 
