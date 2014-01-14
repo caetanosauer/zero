@@ -494,12 +494,7 @@ rc_t btree_page_h::replace_ghost(const w_keystr_t &key,
     w_assert3 (rec.key().compare(key) == 0);
 #endif // W_DEBUG_LEVEL > 2
 
-    int   key_length;
-    char* trunc_key_data;
-    _get_leaf_key_fields(slot, key_length, trunc_key_data);
-    size_t data_offset = sizeof(key_length_t) + key_length - get_prefix_length();  // <<<>>>
-
-    if (!page()->replace_item_data(slot+1, data_offset, elem)) {
+    if (!page()->replace_item_data(slot+1, _element_offset(slot), elem)) {
         w_assert1(false); // should not happen because ghost should have had enough space
     }
 
@@ -512,12 +507,7 @@ rc_t btree_page_h::replace_el_nolog(slotid_t slot, const cvec_t &elem) {
     w_assert2( is_leaf());
     w_assert1(!is_ghost(slot));
     
-    int   key_length;
-    char* trunc_key_data;
-    _get_leaf_key_fields(slot, key_length, trunc_key_data);
-    size_t data_offset = sizeof(key_length_t) + key_length - get_prefix_length();  // <<<>>>
-
-    if (!page()->replace_item_data(slot+1, data_offset, elem)) {
+    if (!page()->replace_item_data(slot+1, _element_offset(slot), elem)) {
         return RC(smlevel_0::eRECWONTFIT);
     }
     return RCOK;
@@ -529,12 +519,9 @@ void btree_page_h::overwrite_el_nolog(slotid_t slot, smsize_t offset,
     w_assert2( is_leaf());
     w_assert1 (!is_ghost(slot));
 
-    int   key_length;
-    char* trunc_key_data;
-    _get_leaf_key_fields(slot, key_length, trunc_key_data);
-    size_t data_offset = sizeof(key_length_t) + key_length - get_prefix_length();  // <<<>>>
-
+    size_t data_offset = _element_offset(slot);
     w_assert1(data_offset+offset+elen <= page()->item_length(slot+1));
+
     ::memcpy(page()->item_data(slot+1)+data_offset+offset, new_el, elen);
 }
 

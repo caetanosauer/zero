@@ -422,7 +422,7 @@ public:
     // ======================================================================
 
      /// Returns the number of records in this page.
-    int              nrecs() const;
+    int             nrecs() const;
 
     /// Retrieves key from given record #
     void            get_key(slotid_t slot,  w_keystr_t &key) const;
@@ -697,6 +697,14 @@ private:
     /// Retrieves only the key of specified slot WITHOUT prefix in an intermediate node
     const char*     _node_key_noprefix(slotid_t slot,  size_t &len) const;
 
+    /**
+     * Calculate offset within slot's variable-sized data to its
+     * element data.  All data from that point onwards makes up the
+     * element data.
+     * 
+     * @pre we are a leaf node
+     */
+    size_t _element_offset(int slot) const;
 
 
     void _get_leaf_key_fields(int slot, int& key_length, char*& trunc_key_data) const {
@@ -951,6 +959,16 @@ inline const char* btree_page_h::_node_key_noprefix(slotid_t slot,  size_t &len)
 
     len = page()->item_length(slot+1);
     return page()->item_data(slot+1);
+}
+
+inline size_t btree_page_h::_element_offset(int slot) const {
+    w_assert1(is_leaf());
+    w_assert1(slot>=0);
+
+    size_t key_noprefix_length;
+    (void)_leaf_key_noprefix(slot, key_noprefix_length);
+
+    return key_noprefix_length + sizeof(key_length_t);
 }
 
 inline int btree_page_h::_compare_key_noprefix(slotid_t slot, const void *key_noprefix, size_t key_len) const {
