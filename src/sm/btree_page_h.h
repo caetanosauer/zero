@@ -462,15 +462,6 @@ public:
 
     /// Retrieves the key and record of specified slot in a leaf
     void            rec_leaf(slotid_t slot,  w_keystr_t &key, cvec_t &el, bool &ghost) const;
-    /**
-     * Returns only the el part.
-     * @param[in,out] elen both input (size of el buffer) and output(length of el set).
-     * @return true if el is large enough. false if el was too short and just returns elen.
-     */
-    bool            dat_leaf(slotid_t slot, char *el, smsize_t &elen, bool &ghost) const;
-
-    /// This version returns the pointer to element without copying.
-    void            dat_leaf_ref(slotid_t slot, const char *&el, smsize_t &elen, bool &ghost) const;
 
 
     /// Returns physical space used by the item currently in the given

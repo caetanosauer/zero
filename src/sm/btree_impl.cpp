@@ -337,16 +337,15 @@ btree_impl::_ux_update_core(volid_t vol, snum_t store, const w_keystr_t &key, co
 
     // get the old data and log
     bool ghost;
-    const char *old_el;
-    smsize_t old_elen;
-    leaf.dat_leaf_ref(slot, old_el, old_elen, ghost);
+    smsize_t old_element_len;
+    const char *old_element = leaf.element(slot, old_element_len, ghost);
     // it might be ghost..
     if (ghost) {
         return RC(eNOTFOUND);
     }
 
     // are we expanding?
-    if (old_elen < el.size()) {
+    if (old_element_len < el.size()) {
         if (!leaf.check_space_for_insert_leaf(key, el)) {
             // this page needs split. As this is a rare case,
             // we just call remove and then insert to simplify the code
@@ -356,7 +355,7 @@ btree_impl::_ux_update_core(volid_t vol, snum_t store, const w_keystr_t &key, co
         }
     }
 
-    W_DO(log_btree_update (leaf, key, old_el, old_elen, el));
+    W_DO(log_btree_update (leaf, key, old_element, old_element_len, el));
 
     W_DO(leaf.replace_el_nolog(slot, el));
     return RCOK;
@@ -380,12 +379,11 @@ btree_impl::_ux_update_core_tail(volid_t vol, snum_t store,
     if (is_ghost) {
         return RC(eNOTFOUND);
     }
-    const char *old_el;
-    smsize_t old_elen;
-    leaf.dat_leaf_ref(slot, old_el, old_elen, is_ghost);
+    smsize_t old_element_len;
+    const char *old_element = leaf.element(slot, old_element_len, is_ghost);
 
     // are we expanding?
-    if (old_elen < el.size()) {
+    if (old_element_len < el.size()) {
         if (!leaf.check_space_for_insert_leaf(key, el)) {
             // this page needs split. As this is a rare case,
             // we just call remove and then insert to simplify the code
@@ -395,7 +393,7 @@ btree_impl::_ux_update_core_tail(volid_t vol, snum_t store,
         }
     }
 
-    W_DO(log_btree_update (leaf, key, old_el, old_elen, el));
+    W_DO(log_btree_update (leaf, key, old_element, old_element_len, el));
 
     W_DO(leaf.replace_el_nolog(slot, el));
     return RCOK;
@@ -448,17 +446,16 @@ rc_t btree_impl::_ux_overwrite_core(
 
     // get the old data and log
     bool ghost;
-    const char *old_el;
-    smsize_t old_elen;
-    leaf.dat_leaf_ref(slot, old_el, old_elen, ghost);
+    smsize_t old_element_len;
+    const char *old_element = leaf.element(slot, old_element_len, ghost);
     if (ghost) {
         return RC(eNOTFOUND);
     }
-    if (old_elen < offset + elen) {
+    if (old_element_len < offset + elen) {
         return RC(eRECWONTFIT);
     }
 
-    W_DO(log_btree_overwrite (leaf, key, old_el, el, offset, elen));
+    W_DO(log_btree_overwrite (leaf, key, old_element, el, offset, elen));
     leaf.overwrite_el_nolog(slot, offset, el, elen);
     return RCOK;
 }

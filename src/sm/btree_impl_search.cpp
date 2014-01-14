@@ -86,7 +86,7 @@ btree_impl::_ux_lookup_core(
     // assume caller provided space
     w_assert1(el != NULL || elen == 0);
     bool ghost;
-    bool will_fit = leaf.dat_leaf(slot, (char*) el, elen, ghost); // this sets elen
+    bool will_fit = leaf.copy_element(slot, (char*) el, elen, ghost); // this sets elen
     if (ghost) {
         found = false;
         return RCOK;

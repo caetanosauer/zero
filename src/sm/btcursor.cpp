@@ -417,7 +417,7 @@ rc_t bt_cursor_t::_make_rec(const btree_page_h& page)
     // Copy the record to buffer
     bool ghost;
     _elen = sizeof(_elbuf);
-    page.dat_leaf(_slot, _elbuf, _elen, ghost);
+    page.copy_element(_slot, _elbuf, _elen, ghost);
 
 #if W_DEBUG_LEVEL>0
     w_assert1(_elen <= sizeof(_elbuf));    

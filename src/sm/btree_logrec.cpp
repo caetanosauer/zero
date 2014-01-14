@@ -238,10 +238,9 @@ void btree_overwrite_log::redo(fixable_page_h* page)
 
 #if W_DEBUG_LEVEL>0
     const char* old_el = dp->_data + dp->_klen;
-    const char* cur_el;
     smsize_t cur_elen;
     bool ghost;
-    bp.dat_leaf_ref(slot, cur_el, cur_elen, ghost);
+    const char* cur_el = bp.element(slot, cur_elen, ghost);
     w_assert1(!ghost);
     w_assert1(cur_elen >= offset + elen);
     w_assert1(::memcmp(old_el, cur_el + offset, elen) == 0);

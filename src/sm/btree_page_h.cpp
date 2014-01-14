@@ -765,39 +765,6 @@ void btree_page_h::rec_leaf(slotid_t slot,  w_keystr_t &key, cvec_t &el, bool &g
     el.put(data, data_length);
     ghost = is_ghost(slot);
 }
-bool btree_page_h::dat_leaf(slotid_t slot,  char *el, smsize_t &elen, bool &ghost) const {
-    w_assert1(is_leaf());
-    FUNC(btree_page_h::dat_leaf);
-
-    int   key_length, data_length;
-    char *trunc_key_data, *data;
-    _get_leaf_fields(slot, key_length, trunc_key_data, data_length, data);
-
-    ghost = is_ghost(slot);
-    if ((int)elen >= data_length) {
-        ::memcpy(el, data, data_length);
-        elen = data_length;
-        return true;
-    } else {
-        // the buffer is too short
-        elen = data_length;
-        return false;
-    }
-}
-
-void btree_page_h::dat_leaf_ref(slotid_t slot, const char *&el, smsize_t &elen, bool &ghost) const {
-    w_assert1(is_leaf());
-    FUNC(btree_page_h::dat_leaf_ref);
-
-    int   key_length, data_length;
-    char *trunc_key_data, *data;
-    _get_leaf_fields(slot, key_length, trunc_key_data, data_length, data);
-
-    elen  = data_length;
-    el    = data;
-    ghost = is_ghost(slot);
-}
-
 void btree_page_h::get_key(slotid_t slot,  w_keystr_t &key) const {
     const char* key_noprefix;
     size_t      key_noprefix_length;
