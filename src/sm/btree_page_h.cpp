@@ -23,17 +23,18 @@ btrec_t&
 btrec_t::set(const btree_page_h& page, slotid_t slot) {
     FUNC(btrec_t::set);
     w_assert3(slot >= 0 && slot < page.nrecs());
-    // Invalidate old _elem.
+
     _elem.reset();
     
     if (page.is_leaf())  {
         page.rec_leaf(slot, _key, _elem, _ghost_record);
     } else {
-        page.rec_node(slot, _key, _child);
         _ghost_record = false;
+        page.get_key(slot, _key);
+        _child = page.child_opaqueptr(slot);
         // this might not be needed, but let's also add the _child value
         // to _elem.
-        _elem.put (&_child, sizeof(_child));
+        _elem.put(&_child, sizeof(_child));
     }
 
     return *this;
@@ -811,21 +812,6 @@ void btree_page_h::get_key(slotid_t slot,  w_keystr_t &key) const {
                               key_noprefix, key_noprefix_length);
 }
 
-
-void  btree_page_h::rec_node(slotid_t slot,  w_keystr_t &key, shpid_t &el) const {
-    w_assert1(is_node());
-    FUNC(btree_page_h::rec_node);
-    w_assert1(!is_ghost(slot)); // non-leaf node can't be ghost
-
-    int   trunc_key_length;
-    char* trunc_key_data;
-    _get_node_key_fields(slot, trunc_key_length, trunc_key_data);
-
-    int prefix_len = get_prefix_length();
-
-    key.construct_from_keystr(get_prefix_key(), prefix_len, trunc_key_data, trunc_key_length);
-    el = page()->item_child(slot+1);
-}
 
 rc_t
 btree_page_h::leaf_stats(btree_lf_stats_t& _stats) {

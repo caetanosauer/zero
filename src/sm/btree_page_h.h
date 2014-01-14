@@ -76,36 +76,32 @@ public:
     NORET            btrec_t(const btree_page_h& page, slotid_t slot);
     NORET            ~btrec_t()        {};
 
-    /**
-    *  \brief Load up a reference to the tuple at "slot" in "page".
-    * \details
-    *  NB: here we are talking about record, not absolute slot# (slot
-    *  0 is special on every page).   So here we use ORIGIN 0
-    */
+    /// Load up a reference to the tuple at slot in "page".
     btrec_t&           set(const btree_page_h& page, slotid_t slot);
     
     smsize_t           elen() const    { return _elem.size(); }
 
     const w_keystr_t&  key() const    { return _key; }
     const cvec_t&      elem() const     { return _elem; }
+    /// returns the opaque version
     shpid_t            child() const    { return _child; }
     bool               is_ghost_record() const { return _ghost_record; }
 
 private:
-    shpid_t         _child;
-    w_keystr_t      _key;
-    cvec_t          _elem;
-    bool            _ghost_record;
     friend class btree_page_h;
+
+    bool            _ghost_record;
+    w_keystr_t      _key;
+    shpid_t         _child;  // opaque pointer
+    cvec_t          _elem;
 
     // disabled
     NORET            btrec_t(const btrec_t&);
-    btrec_t&            operator=(const btrec_t&);
+    btrec_t&         operator=(const btrec_t&);
 };
 
 inline NORET
-btrec_t::btrec_t(const btree_page_h& page, slotid_t slot)  
-{
+btrec_t::btrec_t(const btree_page_h& page, slotid_t slot) {
     set(page, slot);
 }
 
@@ -192,7 +188,7 @@ class btree_ghost_reclaim_log;
  * Opaque pointers:
  * - Default is to return page id.
  * - When a page is swizzled though we can avoid hash table lookup to map page id 
- *   to frame id by using frame id directly. Opaque pointers server this purpose by 
+ *   to frame id by using frame id directly. Opaque pointers serve this purpose by 
  *   hiding from the user whether a pointer is a frame id or page id. 
  *
  */
@@ -237,10 +233,9 @@ public:
     shpid_t                     btree_root() const { return page()->btree_root;}
     smsize_t                    used_space()  const;
 
-    // FIXME: next 3 functions are temporary for swizzling access <<<>>>
+    // FIXME: next 2 functions are temporary for swizzling access <<<>>>
     shpid_t& foster_pointer() { return page()->btree_foster; }
     shpid_t& pid0_pointer()   { return page()->btree_pid0; }
-    shpid_t& child_pointer(slotid_t child) { return page()->item_child(child+1); }
 
     // Total usable space on page
     smsize_t                     usable_space()  const;
@@ -429,6 +424,18 @@ public:
 
 
 
+    shpid_t& child_pointer(slotid_t child) { return page()->item_child(child+1); }
+
+    /**
+     *  Return the child pointer of tuple at "slot".
+     */
+    shpid_t       child(slotid_t slot) const;
+    /**
+     *  Return the child opaque pointer of tuple at "slot".
+     */
+    shpid_t       child_opaqueptr(slotid_t slot) const;
+
+
 
     /// Retrieves the key and record of specified slot in a leaf
     void            rec_leaf(slotid_t slot,  w_keystr_t &key, cvec_t &el, bool &ghost) const;
@@ -442,12 +449,6 @@ public:
     /// This version returns the pointer to element without copying.
     void            dat_leaf_ref(slotid_t slot, const char *&el, smsize_t &elen, bool &ghost) const;
 
-    /**
-     * Retrieves the key and corresponding page pointer of specified slot
-     * in an intermediate node page.
-     */
-    void            rec_node(slotid_t slot,  w_keystr_t &key, shpid_t &el) const;
-
 
     /// Returns physical space used by the item currently in the given
     /// slot (including padding and other overhead due to that slot
@@ -455,15 +456,6 @@ public:
     size_t              get_rec_space(int slot) const;
 
 
-    /**
-     *  Return the child pointer of tuple at "slot".
-     *  equivalent to rec_node(), but doesn't return key (thus faster).
-     */
-    shpid_t       child(slotid_t slot) const;
-    /**
-     *  Return the child opaque pointer of tuple at "slot".
-     */
-    shpid_t       child_opaqueptr(slotid_t slot) const;
 
 
     // ======================================================================
@@ -707,14 +699,11 @@ private:
     size_t _element_offset(int slot) const;
 
 
-    void _get_leaf_key_fields(int slot, int& key_length, char*& trunc_key_data) const {
+    void _get_leaf_fields(int slot, int& key_length, char*& trunc_key_data,
+                          int& data_length, char*& data) const {
         w_assert1(slot>=0);
         key_length     = *(key_length_t*)page()->item_data(slot+1);
         trunc_key_data = page()->item_data(slot+1) + sizeof(key_length_t);
-    }
-    void _get_leaf_fields(int slot, int& key_length, char*& trunc_key_data,
-                          int& data_length, char*& data) const {
-        _get_leaf_key_fields(slot, key_length, trunc_key_data);
         int trunc_key_length = key_length - get_prefix_length();
         int total_length = page()->item_length(slot+1);
         data_length = total_length - trunc_key_length - sizeof(key_length_t);
@@ -925,7 +914,6 @@ inline bool btree_page_h::is_insertion_skewed_left() const {
     return page()->btree_consecutive_skewed_insertions < -5;
 }
 inline shpid_t btree_page_h::child_opaqueptr(slotid_t slot) const {
-    // same as rec_node except we don't need to read key
     w_assert1(is_node());
     w_assert1(slot >= 0);
     w_assert1(slot < nrecs());
