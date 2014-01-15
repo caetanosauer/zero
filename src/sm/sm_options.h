@@ -87,7 +87,7 @@ private:
 
 
 // old name in Shore-MT just for compatibility.
-typedef sm_options option_group_t;
+// typedef sm_options option_group_t;
 
 inline sm_options::sm_options() {}
 inline sm_options::sm_options(const sm_options& other)

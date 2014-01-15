@@ -370,9 +370,6 @@ ss_m::_construct_once(
 
     w_assert1(page_sz >= 1024);
 
-    // make sure setup_options was called successfully
-    w_assert1(_options);
-
     /*
      *  Reset flags
      */
