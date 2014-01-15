@@ -27,7 +27,11 @@ btrec_t::set(const btree_page_h& page, slotid_t slot) {
     _elem.reset();
     
     if (page.is_leaf())  {
-        page.rec_leaf(slot, _key, _elem, _ghost_record);
+        page.get_key(slot, _key);
+        smsize_t element_len;
+        const char* element_data = page.element(slot, element_len, _ghost_record);
+        _elem.put(element_data, element_len);
+        _child = 0;
     } else {
         _ghost_record = false;
         page.get_key(slot, _key);
@@ -749,22 +753,6 @@ w_keystr_t btree_page_h::recalculate_fence_for_split(slotid_t right_begins_from)
 }
 
 
-void btree_page_h::rec_leaf(slotid_t slot,  w_keystr_t &key, cvec_t &el, bool &ghost) const {
-    w_assert1(is_leaf());
-    FUNC(btree_page_h::rec_leaf);
-
-    int   key_length, data_length;
-    char *trunc_key_data, *data;
-    _get_leaf_fields(slot, key_length, trunc_key_data, data_length, data);
-
-    int prefix_len = get_prefix_length();
-    w_assert2 (prefix_len <= key_length);
-
-    key.construct_from_keystr(get_prefix_key(), prefix_len, trunc_key_data, key_length - prefix_len);
-    el.reset();
-    el.put(data, data_length);
-    ghost = is_ghost(slot);
-}
 void btree_page_h::get_key(slotid_t slot,  w_keystr_t &key) const {
     const char* key_noprefix;
     size_t      key_noprefix_length;

@@ -460,10 +460,6 @@ public:
 
 
 
-    /// Retrieves the key and record of specified slot in a leaf
-    void            rec_leaf(slotid_t slot,  w_keystr_t &key, cvec_t &el, bool &ghost) const;
-
-
     /// Returns physical space used by the item currently in the given
     /// slot (including padding and other overhead due to that slot
     /// being occupied); slot -1 is the special fence record:
