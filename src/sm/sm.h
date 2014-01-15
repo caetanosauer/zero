@@ -83,6 +83,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <sm_s.h> // declares lsn_t
 #endif
 
+#include <string>
+#include "sm_options.h"
 /* DOXYGEN Documentation : */
 
 /**\addtogroup LOGSPACE 
@@ -420,8 +422,6 @@ class dir_m;
 class chkpt_m;
 class lid_m; 
 class sm_stats_cache_t;
-class option_group_t;
-class option_t;
 class prologue_rc_t;
 class w_keystr_t;
 class verify_volume_result;
@@ -519,26 +519,11 @@ public:
 #endif /* COMMENT */
 
   public:
-    /**\brief Add storage manager options to the given options group.
-     *\ingroup SSMINIT
-     *\details
-     * @param[in] grp The caller's option group, to which the
-     * storage manager's options will be added for processing soon.
-     *
-     * Before the ss_m constructor can be called, setup_options
-     * \b must be called.  This will install the storage manager's options and
-     * initialize any that are not required.
-     * Once all required options have been set, an ss_m can be constructed.
-     *
-     *\note This is not thread-safe.  The application (server) must prevent
-     * concurrent calls to setup_options.
-     */
-    static rc_t setup_options(option_group_t* grp);
-
     /**\brief  Initialize the storage manager.
      * \ingroup SSMINIT
      * \details
-     * @param[in] warn   A callback function. This is called 
+     * @param[in] options Start-up parameters.
+     * @param[in] warn   A callback function. This is called
      * when/if the log is in danger of becoming "too full".
      * @param[in] get   A callback function. This is called 
      * when the storage manager needs an archived log file to be restored.
@@ -582,7 +567,7 @@ public:
      *  \ref smlevel_0::LOG_ARCHIVED_CALLBACK_FUNC, and 
      *  \ref LOGSPACE.
      */
-    ss_m(LOG_WARN_CALLBACK_FUNC warn=NULL, LOG_ARCHIVED_CALLBACK_FUNC get=NULL);
+    ss_m(const sm_options &options, LOG_WARN_CALLBACK_FUNC warn=NULL, LOG_ARCHIVED_CALLBACK_FUNC get=NULL);
 
     /**\brief  Shut down the storage manager.
      * \ingroup SSMINIT
@@ -1989,31 +1974,11 @@ public:
 private:
 
     static int _instance_cnt;
-    static option_group_t* _options;
-    static option_t* _hugetlbfs_path;
-    static option_t* _reformat_log;
-    static option_t* _prefetch;
-    static option_t* _bufpoolsize;
-    static option_t* _locktablesize;
-    static option_t* _logdir;
-    static option_t* _logsize;
-    static option_t* _logbufsize;
-    static option_t* _error_log;
-    static option_t* _error_loglevel;
-    static option_t* _log_warn_percent;
-    static option_t* _num_page_writers;
-    static option_t* _bufferpool_swizzle;
-    static option_t* _bufferpool_replacement_policy;
-    static option_t* _cleaner_interval_millisec_min;
-    static option_t* _cleaner_interval_millisec_max;
-    static option_t* _logging;
-    static option_t* _statistics;
 
+    /** Start-up parameters for the storage engine. */
+    sm_options _options;
 
-    static rc_t            _set_option_logsize(
-        option_t*              opt,
-        const char*            value,
-        ostream*               err_stream);
+    void _set_option_logsize();
     
     static rc_t            _set_store_property(
         stid_t                stid,

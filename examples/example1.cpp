@@ -1,5 +1,6 @@
 /** Example to create a new volume and an index in it. */
 #include "sm_vas.h"
+#include "sm_options.h"
 #include "sm.h"
 #include <sstream>
 

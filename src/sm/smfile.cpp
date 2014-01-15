@@ -62,7 +62,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define SMFILE_C
 
 #include "w.h"
-#include "option.h"
 #include "sm_int_4.h"
 #include "btcursor.h"
 #include "device.h"

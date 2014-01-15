@@ -71,13 +71,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  */
 
 #include <climits>
-#ifndef OPTION_H
-#include "option.h"
-#endif
-#ifndef __opt_error_def_gen_h__
-#include "opt_error_def_gen.h"
-#endif
-
 
 class ErrLog;
 class sm_stats_info_t;
@@ -465,9 +458,6 @@ public:
     // This is a zeroed page for use wherever initialized memory
     // is needed.
     static char zero_page[page_sz];
-
-    // option for controlling background buffer flush thread
-    static option_t* _backgroundflush;
 
     enum {
             eINTERNAL = fcINTERNAL,

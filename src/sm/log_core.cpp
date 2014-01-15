@@ -1032,7 +1032,7 @@ log_core::log_core(
         fprintf(stderr,
             "Log buf size (sm_logbufsize) too small: %ld, need %d\n",
             bsize, 64*1024);
-        W_FATAL(OPT_BadValue);
+        W_FATAL(eINTERNAL);
     }
 
     w_assert1(is_aligned(_readbuf));

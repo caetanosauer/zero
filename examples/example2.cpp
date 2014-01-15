@@ -1,5 +1,6 @@
 /** Example to mount an existing volume (made in example1) and read it. */
 #include "sm_vas.h"
+#include "sm_options.h"
 #include "sm.h"
 #include <sstream>
 
