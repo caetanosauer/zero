@@ -1,14 +1,28 @@
-Owner => gain familiarity, issue triage, 
+/*
+ * (c) Copyright 2011-, Hewlett-Packard Development Company, LP.
+ * HP Express (Zero) source code.
+ */
+README Last Updated: Jan 2014
 
-From: Kimura, Hideaki 
-Sent: Monday, December 16, 2013 7:12 PM
-To: express
-Subject: List of modules to be owned for code review
+==== Steps to build/test
+https://twiki.hpl.hp.com/bin/view/SIMPL/DevelopmentHowTo
 
-Hey all,
-Following to the discussion we had today, I’d like to suggest something we can start discussing with.
-I don’t claim anything about the completeness of the list.
-I also put a very rough assignment (default primary/secondary reviewers) as a placeholder, but don’t take it seriously. I’m still trying to understand who is working on what.
+Repeat after me: WE ALL DO FULL BUILD AND RUN ALL TESTCASES BEFORE CHECKING IN.
+
+==== Code Review
+http://codereview.hpl.hp.com/dashboard/
+
+==== Coding Convention
+TODO
+
+ 
+==== Module owners
+Include module owners in code reviews whenever you touch them.
+Even when your change is just one line, pay reasonable effort to communicate with
+the owners BEFORE checking it in. If they are not available within reasonable time/effort,
+you may commit and push, but you have to revert the change if the owners later insist to do so.
+In that case, or when you have major changes that are appropriate for synchronous reviews,
+follow the official design/code review steps.
 
 == CMake scripts and general build mechanism
 Example files: CMakelists.txt, folder structure, etc
