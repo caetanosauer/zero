@@ -62,7 +62,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "tls.h"
 #include "w_base.h"
 
-#define USE_BLOCK_ALLOC_FOR_W_ERROR_T 1
+// #define USE_BLOCK_ALLOC_FOR_W_ERROR_T 1
 #if USE_BLOCK_ALLOC_FOR_W_ERROR_T
 DECLARE_TLS_SCHWARZ(w_error_alloc);
 #endif
