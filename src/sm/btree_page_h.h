@@ -441,7 +441,7 @@ public:
      */
     bool            copy_element(int slot, char *out_buffer, smsize_t &len, bool &ghost) const;
 
-    /// Return the child pointer of record in slot.
+    /// Return the (non-opaque) child pointer of record in slot.
     shpid_t       child(slotid_t slot) const;
     /// Return the opaque child pointer of record in slot.
     shpid_t       child_opaqueptr(slotid_t slot) const;
@@ -466,12 +466,12 @@ public:
     shpid_t* page_pointer_address(int offset);
 
 
-    /// Returns physical space used by the item currently in the given
-    /// slot (including padding and other overhead due to that slot
-    /// being occupied); slot -1 is the special fence record:
+    /**
+     * Returns physical space used by the record currently in the
+     * given slot (including padding and other overhead due to that
+     * slot being occupied).
+     */
     size_t              get_rec_space(int slot) const;
-
-
 
 
     // ======================================================================
@@ -963,6 +963,7 @@ inline shpid_t* btree_page_h::page_pointer_address(int offset) {
 
 
 inline size_t btree_page_h::get_rec_space(int slot) const {
+    w_assert1(slot>=0);
     return page()->item_space(slot + 1);
 }
 

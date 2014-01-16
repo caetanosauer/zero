@@ -796,7 +796,7 @@ bool btree_page_h::copy_element(int slot, char *out_buffer, smsize_t &len, bool 
 
 rc_t
 btree_page_h::leaf_stats(btree_lf_stats_t& _stats) {
-    _stats.hdr_bs    += hdr_sz + get_rec_space(-1);
+    _stats.hdr_bs    += hdr_sz + page()->item_space(0);
     _stats.unused_bs += usable_space();
 
     int n = nrecs();
