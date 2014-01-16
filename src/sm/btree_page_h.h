@@ -233,10 +233,6 @@ public:
     shpid_t                     btree_root() const { return page()->btree_root;}
     smsize_t                    used_space()  const;
 
-    // FIXME: next 2 functions are temporary for swizzling access <<<>>>
-    shpid_t& foster_pointer() { return page()->btree_foster; }
-    shpid_t& pid0_pointer()   { return page()->btree_pid0; }
-
     // Total usable space on page
     smsize_t                     usable_space()  const;
     
@@ -445,19 +441,29 @@ public:
      */
     bool            copy_element(int slot, char *out_buffer, smsize_t &len, bool &ghost) const;
 
-
-
-    shpid_t& child_pointer(slotid_t child) { return page()->item_child(child+1); }
-
-    /**
-     *  Return the child pointer of tuple at "slot".
-     */
+    /// Return the child pointer of record in slot.
     shpid_t       child(slotid_t slot) const;
-    /**
-     *  Return the child opaque pointer of tuple at "slot".
-     */
+    /// Return the opaque child pointer of record in slot.
     shpid_t       child_opaqueptr(slotid_t slot) const;
 
+
+    /**
+     * Returns a pointer to given page pointer (e.g., shpid_t).
+     * 
+     * Offset may be -2 for leaf nodes or [-2,nrecs()-1] for internal
+     * nodes.  It denotes:
+     * 
+     *   -2: the foster pointer
+     *   -1: pid0
+     *    0..nrec()-1: the child pointer of the record in the corresponding slot
+     * 
+     * The page pointer will be at a 4-byte aligned address and
+     * opaque.
+     *
+     * (This method is used to implement swizzling of page pointers
+     * atomically.)
+     */
+    shpid_t* page_pointer_address(int offset);
 
 
     /// Returns physical space used by the item currently in the given
@@ -924,13 +930,13 @@ inline bool btree_page_h::is_insertion_skewed_right() const {
 inline bool btree_page_h::is_insertion_skewed_left() const {
     return page()->btree_consecutive_skewed_insertions < -5;
 }
+
 inline shpid_t btree_page_h::child_opaqueptr(slotid_t slot) const {
     w_assert1(is_node());
     w_assert1(slot >= 0);
     w_assert1(slot < nrecs());
     return page()->item_child(slot+1);
 }
-
 inline shpid_t btree_page_h::child(slotid_t slot) const {
     shpid_t shpid = child_opaqueptr(slot);
     if (shpid) {
@@ -938,6 +944,23 @@ inline shpid_t btree_page_h::child(slotid_t slot) const {
     }
     return shpid;
 }
+
+inline shpid_t* btree_page_h::page_pointer_address(int offset) {
+    if (offset == -2) {
+        return &page()->btree_foster;
+    }
+
+    w_assert1(!is_leaf());
+    w_assert1(-2<offset && offset<nrecs());
+
+    if (offset == -1) {
+        return &page()->btree_pid0;
+    }
+
+    return &page()->item_child(offset+1);
+}
+
+
 
 inline size_t btree_page_h::get_rec_space(int slot) const {
     return page()->item_space(slot + 1);

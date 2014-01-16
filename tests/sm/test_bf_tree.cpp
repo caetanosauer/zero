@@ -40,7 +40,7 @@ public:
             w_assert1(false);
         }
         if (p.nrecs() == 0) {
-            p.pid0_pointer() = child;
+            *p.page_pointer_address(-1) = child;
         }
     }
 };

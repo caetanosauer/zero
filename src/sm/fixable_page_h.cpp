@@ -145,16 +145,5 @@ int fixable_page_h::max_child_slot() const {
 
 shpid_t* fixable_page_h::child_slot_address(int child_slot) const {
     btree_page_h downcast(get_generic_page());
-
-    if (child_slot == -1) {
-        return &downcast.foster_pointer();
-    }
-
-    w_assert1( downcast.level()>1 && child_slot <= downcast.nrecs() );
-
-    if (child_slot == 0) {
-        return &downcast.pid0_pointer();
-    }
-
-    return &downcast.child_pointer(child_slot-1);
+    return downcast.page_pointer_address(child_slot -1);
 }
