@@ -76,7 +76,7 @@ btree_m::is_empty(
 }
 
 rc_t btree_m::insert(volid_t vol, snum_t store, const w_keystr_t &key, const cvec_t &el) {
-    if (key.get_length_as_keystr()-1 + el.size() > btree_page_h::max_entry_size) {
+    if (key.get_length_as_nonkeystr() + el.size() > btree_page_h::max_entry_size) {
         return RC(eRECWONTFIT);
     }
     W_DO(btree_impl::_ux_insert(vol, store, key, el));
@@ -88,7 +88,7 @@ rc_t btree_m::update(
     const w_keystr_t&                 key,
     const cvec_t&                     elem)
 {
-    if(key.get_length_as_keystr()-1 + elem.size() > btree_page_h::max_entry_size) {
+    if(key.get_length_as_nonkeystr() + elem.size() > btree_page_h::max_entry_size) {
         return RC(eRECWONTFIT);
     }
     W_DO(btree_impl::_ux_update(vol, store, key, elem));
@@ -100,7 +100,7 @@ rc_t btree_m::put(
     const w_keystr_t&                 key,
     const cvec_t&                     elem)
 {
-    if(key.get_length_as_keystr()-1 + elem.size() > btree_page_h::max_entry_size) {
+    if(key.get_length_as_nonkeystr() + elem.size() > btree_page_h::max_entry_size) {
         return RC(eRECWONTFIT);
     }
     W_DO(btree_impl::_ux_put(vol, store, key, elem));
