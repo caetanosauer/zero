@@ -167,38 +167,35 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
     w_assert2(steal_from >= 0);
     w_assert2(steal_to <= steal_src->nrecs());
 
-    key_length_t src_prefix_length = steal_src->get_prefix_length();
     key_length_t new_prefix_length = get_prefix_length();
     for (int i = steal_from; i < steal_to; ++i) {
+        // get full uncompressed key from src slot #i into key:
+        cvec_t key(steal_src->get_prefix_key(), steal_src->get_prefix_length());
+        size_t      trunc_key_length;
+        const char* trunc_key_data;
+        if (is_leaf()) {
+            trunc_key_data = steal_src->_leaf_key_noprefix(i, trunc_key_length);
+        } else {
+            trunc_key_data = steal_src->_node_key_noprefix(i, trunc_key_length);
+        }
+        key.put(trunc_key_data, trunc_key_length);
+        
+        // split off part after new_prefix_length into new_trunc_key:
+        cvec_t dummy, new_trunc_key;
+        key.split(new_prefix_length, dummy, new_trunc_key);
+
         cvec_t         v;
         pack_scratch_t v_scratch; // this needs to stay in scope until v goes out of scope...
-        cvec_t         new_trunc_key;
         shpid_t        child;
-
-        cvec_t key, dummy;
-        key.put(steal_src->get_prefix_key(), steal_src->get_prefix_length());
         if (is_leaf()) {
-            int   key_length;
-            char* trunc_key_data;
-            int   data_length;
-            char* data;
-            steal_src->_get_leaf_fields(i, key_length, trunc_key_data, data_length, data);
-            int trunc_key_length = key_length - src_prefix_length;
-            key.put(trunc_key_data, trunc_key_length);
-            // key is now full uncompressed key from src slot #i
-
-            key.split(new_prefix_length, dummy, new_trunc_key);
+            smsize_t data_length;
+            bool is_ghost;
+            const char* data = steal_src->element(i, data_length, is_ghost);
             _pack_leaf_record(v, v_scratch, new_trunc_key, data, data_length, new_prefix_length);
             child = 0;
         } else {
-            size_t      trunc_key_length;
-            const char* trunc_key_data = steal_src->_node_key_noprefix(i, trunc_key_length);
-            key.put(trunc_key_data, trunc_key_length);
-            // key is now full uncompressed key from src slot #i
-
-            key.split(new_prefix_length, dummy, new_trunc_key);
             _pack_node_record(v, new_trunc_key);
-            child = steal_src->page()->item_child(i+1);
+            child = steal_src->child_opaqueptr(i);
         }
 
         if (!page()->insert_item(nrecs()+1, steal_src->is_ghost(i), 

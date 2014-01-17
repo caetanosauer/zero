@@ -742,20 +742,6 @@ private:
     size_t _element_offset(int slot) const;
 
 
-    void _get_leaf_fields(int slot, int& key_length, char*& trunc_key_data,
-                          int& data_length, char*& data) const {
-        w_assert1(slot>=0);
-        key_length     = *(key_length_t*)page()->item_data(slot+1);
-        trunc_key_data = page()->item_data(slot+1) + sizeof(key_length_t);
-        int trunc_key_length = key_length - get_prefix_length();
-        int total_length = page()->item_length(slot+1);
-        data_length = total_length - trunc_key_length - sizeof(key_length_t);
-        data        = trunc_key_data + trunc_key_length;
-        w_assert1( data_length  >= 0 );
-    }
-
-
-
 
 
 
