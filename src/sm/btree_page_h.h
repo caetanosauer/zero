@@ -306,7 +306,9 @@ public:
     /// Returns the length of high fence key of foster chain.
     int16_t           get_chain_fence_high_length() const;
     /// Constructs w_keystr_t object containing the low-fence key of this page.
-    void                copy_chain_fence_high_key(w_keystr_t &buffer) const {buffer.construct_from_keystr(get_chain_fence_high_key(), get_chain_fence_high_length());}
+    void                copy_chain_fence_high_key(w_keystr_t &buffer) const {
+        buffer.construct_from_keystr(get_chain_fence_high_key(), get_chain_fence_high_length());
+    }
     /**
      * Returns if the given key can exist in the range specified by fence keys,
      * which is low-fence <= key < high-fence.
@@ -733,7 +735,7 @@ private:
 
 
 
-    int _predict_leaf_data_length(int trunc_key_length, int element_length) const {
+    size_t _predict_leaf_data_length(int trunc_key_length, int element_length) const {
         return sizeof(key_length_t) + trunc_key_length + element_length;
     }
         

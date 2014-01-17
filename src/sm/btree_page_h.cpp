@@ -472,8 +472,7 @@ bool btree_page_h::_is_enough_spacious_ghost(const w_keystr_t &key, slotid_t slo
     w_assert2(is_leaf());
     w_assert2(is_ghost(slot));
 
-    size_t needed_data = key.get_length_as_keystr() - get_prefix_length()
-        + el.size() + sizeof(key_length_t); // <<<>>>
+    size_t needed_data = _predict_leaf_data_length(key.get_length_as_keystr() - get_prefix_length(), el.size());
 
     return page()->predict_item_space(needed_data) <= page()->item_space(slot+1);
 }
@@ -603,7 +602,7 @@ bool btree_page_h::check_space_for_insert_leaf(const w_keystr_t& trunc_key,
 }
 bool btree_page_h::check_space_for_insert_leaf(size_t trunc_key_length, size_t element_length) {
     w_assert1 (is_leaf());
-    size_t data_length = 1 * sizeof(key_length_t) + trunc_key_length + element_length;
+    size_t data_length = _predict_leaf_data_length(trunc_key_length, element_length);
     return btree_page_h::check_space_for_insert (data_length);
 }
 bool btree_page_h::check_space_for_insert_node(const w_keystr_t& key) {
