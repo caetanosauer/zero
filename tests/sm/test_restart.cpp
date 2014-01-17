@@ -20,11 +20,11 @@ void output_durable_lsn(int W_IFDEBUG1(num)) {
 }
 
 w_rc_t populate_records(ss_m *ssm, stid_t &stid, bool fCheckPoint) {
-
-    // Set the data size is the max. entry size minue key size minus 1
-    // because the total size must be smaller than btree_m::max_entry_size()
+    // Set the data size is the max_entry_size minus key size
+    // because the total size must be smaller than or equal to
+    // btree_m::max_entry_size()
     const int key_size = 5;
-    const int data_size = btree_m::max_entry_size() - key_size - 1;
+    const int data_size = btree_m::max_entry_size() - key_size;
 
     vec_t data;
     char data_str[data_size];
