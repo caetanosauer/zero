@@ -14,6 +14,7 @@
  */
 
 #include <string.h> // for memset/memcpy/memcmp
+#include <stdint.h>
 
 /**
  * The number of partitions in OKVL.
