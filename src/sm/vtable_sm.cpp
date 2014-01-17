@@ -43,7 +43,6 @@ class prologue_rc_t;
 #endif
 
 #include "w.h"
-#include "option.h"
 #include "sm_int_4.h"
 #include "chkpt.h"
 #include "sm.h"

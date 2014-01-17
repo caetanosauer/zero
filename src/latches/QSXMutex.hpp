@@ -7,8 +7,8 @@ class QSXMutex {
   typedef uint64_t rwcount_t;
 private:
   const static rwcount_t minwriter = rwcount_t(1) << 31;
-  const static rwcount_t wlockmask = 2*minwriter-1;
-  const static rwcount_t rlockmask = minwriter-1;
+  const static rwcount_t wmask = 2*minwriter-1;
+  const static rwcount_t rmask = ~(minwriter-1);
 
   lintel::Atomic<rwcount_t> rwcount; // lower bits numreaders, upper bits - seqnum
   QSXMutex(const QSXMutex&);         // =delete (unimpemented)
@@ -21,9 +21,13 @@ public:
   QSXMutex() : rwcount(2*minwriter) {} // start from 2. 0 is an invalid Ticket/Seqnum
   ~QSXMutex() {}
 
+  void print() {
+    std::clog << "(" << (rwcount>>31) << "," << (~rmask&rwcount) << ")" << std::endl;
+  }
+
   TicketX acquireX() {
     rwcount_t seq0 = rwcount;
-    while (seq0 & wlockmask || // no readers or writer
+    while (seq0 & wmask || // no readers or writer
 	   !rwcount.compare_exchange_strong(&seq0, seq0+minwriter)) {} //weak is ok
     return seq0+minwriter;
   }
@@ -31,7 +35,7 @@ public:
   TicketX tryAcquireX() { 
     rwcount_t seq0 = rwcount;
     return 
-      seq0 & wlockmask && // no readers or writer
+      seq0 & wmask && // no readers or writer
       rwcount.compare_exchange_strong(&seq0, seq0+minwriter) //weak is ok
       ? seq0+minwriter : TicketX(false);
   }
@@ -44,7 +48,7 @@ public:
     while (rwcount++ & minwriter) { // yes writer
       rwcount--; // TODO: maybe convert to CAS
     }
-    return wlockmask & rwcount; // no writer
+    return rmask & rwcount.load(/*lintel::memory_order_acquire*/); // no writer
   }
 
   TicketS tryAcquireS() {
@@ -52,7 +56,7 @@ public:
       rwcount--; // TODO: maybe convert to CAS
       return TicketS(false);
     } else {
-      return wlockmask & rwcount; // no writer
+      return rmask & rwcount.load(/*lintel::memory_order_acquire*/); // no writer
     }
   }
 
@@ -63,7 +67,7 @@ public:
 
   TicketQ acquireQ() {
     // optimistic. Don't wait for writers if any.
-    return rwcount.load(/*lintel::memory_order_acquire*/);
+    return rmask & rwcount.load(/*lintel::memory_order_acquire*/);
   }
 
   TicketQ tryAcquireQ() {
@@ -74,7 +78,7 @@ public:
     //compiler barrier. memory_order_acquire is not a typo.
     lintel::atomic_thread_fence(lintel::memory_order_acquire);
     return !(seq0 & minwriter) && 
-      rwcount.load(/*lintel::memory_order_relaxed*/) == seq0; // TODO: ignore readers
+      rwcount.load(/*lintel::memory_order_relaxed*/) - seq0 < minwriter; //ignore readers
   }
 
   // Upgrade to higher mode -- Functions in form of tryUpgradeAB.  Caller promises they have
@@ -132,15 +136,15 @@ public:
   //
   // Users must be able to deal with implementations which always return false.
   TicketS tryDownGradeXS(const TicketX /*t*/) {
-    return rwcount+=(minwriter+1);
+    return rwcount+=(minwriter+1); // maybe can be memory_order_acq_rel? optimize with t
   }
 
   TicketQ tryDownGradeXQ(const TicketX /*t*/) {
-    return rwcount+=(minwriter+1);
+    return rwcount+=minwriter;  // maybe can be memory_order_acq_rel? optimize with t;
   }
 
   TicketQ tryDownGradeSQ(const TicketS /*t*/) {
-    return rwcount+=minwriter;    
+    return rmask & rwcount--; // maybe can be memory_order_acq or something?
   }
 
   // Reacquire rights which had been released -- If you give a previously valid ticket for a
@@ -156,12 +160,18 @@ public:
     return t == acquireQ();
   }
 
-  bool reaquireS(TicketS /*t*/) {
-    return false;
+  bool reaquireS(TicketS t) {
+    return t == acquireS();
   }    
 
-  bool reaquireX(TicketX /*t*/) {
-    return false;
+  bool reaquireX(TicketX t) {
+    QSXMutex::TicketX t2X = acquireX();
+    if(2*minwriter == t2X-t) { // no interveaning writers
+      rwcount.store(t);
+      return true;
+    } else {
+      return false;
+    }
   }
     
   // TODO:

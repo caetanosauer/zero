@@ -56,7 +56,7 @@ rc_t btree_impl::_ux_rebalance_foster_core(btree_page_h &page)
         return RCOK;
     }
     smsize_t move_size = 0;
-    while (used - move_size > balanced_size && -move_count < page.nrecs() - 1) {
+    while (used - move_size > balanced_size && move_count < page.nrecs() - 1) {
         ++move_count;
         move_size += page.get_rec_space(page.nrecs() - move_count);
     }

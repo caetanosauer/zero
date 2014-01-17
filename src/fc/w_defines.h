@@ -85,16 +85,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "shore-config.h"
 #include "shore.def"
 
-/*
- *  Valgrind/Purify support
- *  note: ZERO_INIT makes data structures clear out or
- *  otherwise initialize their contents on
- *  init so that you don't get certain benign uninit read/write errors  
- */
-#if defined(HAVE_PURIFY_H) || defined(PURIFY)
-#include <purify.h>
-#endif
-
 #ifdef HAVE_VALGRIND_H
 #define USING_VALGRIND 1
 #include <valgrind.h>
