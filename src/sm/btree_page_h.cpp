@@ -135,13 +135,13 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
         w_assert1(is_node());
         w_assert1(steal_src2->pid0() != pid0);
         w_assert1(steal_src2->pid0() != 0);
-        // before stealing regular records from src2, steal it's pid0
-        cvec_t v;
-        key_length_t key_len = (key_length_t) steal_src2->get_fence_low_length();
-        v.put(&key_len, sizeof(key_len));
-        v.put(steal_src2->get_fence_low_key() + prefix_len, steal_src2->get_fence_low_length() - prefix_len);
-        poor_man_key poormkey = extract_poor_man_key (steal_src2->get_fence_low_key(), steal_src2->get_fence_low_length(), prefix_len);
+
+        // before stealing regular records from src2, steal it's pid0:
+        cvec_t       stolen_key(steal_src2->get_fence_low_key() + prefix_len, steal_src2->get_fence_low_length() - prefix_len);
+        poor_man_key poormkey    = extract_poor_man_key(stolen_key);
         shpid_t      stolen_pid0 = steal_src2->pid0();
+        cvec_t v;
+        _pack_node_record(v, stolen_key);
         if (!page()->insert_item(nrecs()+1, false, poormkey, stolen_pid0, v)) {
             w_assert0(false);
         }
@@ -170,10 +170,10 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
     key_length_t src_prefix_length = steal_src->get_prefix_length();
     key_length_t new_prefix_length = get_prefix_length();
     for (int i = steal_from; i < steal_to; ++i) {
-        cvec_t v;
-        key_length_t klen; // this needs to stay in scope until v goes out of scope...
-        cvec_t new_trunc_key;
-        shpid_t child;
+        cvec_t         v;
+        pack_scratch_t v_scratch; // this needs to stay in scope until v goes out of scope...
+        cvec_t         new_trunc_key;
+        shpid_t        child;
 
         cvec_t key, dummy;
         key.put(steal_src->get_prefix_key(), steal_src->get_prefix_length());
@@ -185,20 +185,19 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
             steal_src->_get_leaf_fields(i, key_length, trunc_key_data, data_length, data);
             int trunc_key_length = key_length - src_prefix_length;
             key.put(trunc_key_data, trunc_key_length);
+            // key is now full uncompressed key from src slot #i
 
             key.split(new_prefix_length, dummy, new_trunc_key);
-            klen = key_length;
-            v.put(&klen, sizeof(klen));
-            v.put(new_trunc_key);
-            v.put(data, data_length);
+            _pack_leaf_record(v, v_scratch, new_trunc_key, data, data_length, new_prefix_length);
             child = 0;
         } else {
             size_t      trunc_key_length;
             const char* trunc_key_data = steal_src->_node_key_noprefix(i, trunc_key_length);
             key.put(trunc_key_data, trunc_key_length);
+            // key is now full uncompressed key from src slot #i
 
             key.split(new_prefix_length, dummy, new_trunc_key);
-            v.put(new_trunc_key);
+            _pack_node_record(v, new_trunc_key);
             child = steal_src->page()->item_child(i+1);
         }
 
@@ -398,9 +397,9 @@ void btree_page_h::_update_btree_consecutive_skewed_insertions(slotid_t slot) {
 rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, shpid_t child) {
     FUNC(btree_page_h::insert);
     
-    w_assert3(is_node());
+    w_assert1(is_node());
     w_assert1(slot >= 0 && slot <= nrecs()); // <= intentional to allow appending
-    w_assert3(child);
+    w_assert1(child);
     w_assert3(is_consistent(true, false));
 
 #if W_DEBUG_LEVEL > 1
@@ -420,15 +419,14 @@ rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, shpid_t chi
     // Update btree_consecutive_skewed_insertions.  This is just statistics and not logged.
     _update_btree_consecutive_skewed_insertions (slot);
 
-    // See the record format in btree_page_h class comments.
-    vec_t v; // the record data
-    key_length_t klen = key.get_length_as_keystr();
-    // Prefix of the key is fixed in this page, so we can simply
-    // peel off leading bytes from the key+el.
+    size_t       klen          = key.get_length_as_keystr();
     key_length_t prefix_length = get_prefix_length();  // length of prefix of inserted tuple
-    w_assert3(prefix_length <= klen);
-    v.put(key, prefix_length, klen - prefix_length);
-    poor_man_key poormkey = extract_poor_man_key(key.buffer_as_keystr(), klen, prefix_length);
+    w_assert1(prefix_length <= klen);
+    cvec_t trunc_key((const char*)key.buffer_as_keystr()+prefix_length, klen-prefix_length);
+    poor_man_key poormkey = extract_poor_man_key(trunc_key);
+
+    vec_t v;
+    _pack_node_record(v, trunc_key);
     // we don't log it. btree_impl::adopt() does the logging
     if (!page()->insert_item(slot+1, false, poormkey, child, v)) {
         // This shouldn't happen; the caller should have checked with check_space_for_insert_for_node():
@@ -566,17 +564,17 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, size_t
     }
 #endif // W_DEBUG_LEVEL>1
     
-    poor_man_key poormkey = extract_poor_man_key(key_raw, key_raw_len, prefix_len);
+    cvec_t trunc_key(key_raw + prefix_len, trunc_key_length);
+    poor_man_key poormkey = extract_poor_man_key(trunc_key);
 
     if (!page()->insert_item(slot+1, true, poormkey, 0, data_length)) {
         w_assert0(false);
     }
 
     // make a dummy record that has the desired length:
-    cvec_t dummy;
-    key_length_t klen = key_raw_len;
-    dummy.put(&klen, sizeof(klen));
-    dummy.put(key_raw + prefix_len, trunc_key_length);
+    cvec_t         dummy;
+    pack_scratch_t dummy_scratch;
+    _pack_leaf_record_prefix(dummy, dummy_scratch, trunc_key, prefix_len);
     dummy.copy_to(page()->item_data(slot+1));
 
     w_assert3(_poor(slot) == poormkey);

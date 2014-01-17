@@ -697,10 +697,34 @@ private:
     //   BEGIN: Private record accessor/modifiers
     // ======================================================================
 
+    void _pack_node_record(cvec_t& out, const cvec_t& trunc_key) const {
+        w_assert1(!is_leaf());
+        out.put(trunc_key);
+    }
+
+    typedef key_length_t pack_scratch_t;
+    void _pack_leaf_record(cvec_t& out, pack_scratch_t& out_scratch,
+                           const cvec_t& trunc_key,
+                           const char* element, size_t element_len,
+                           size_t prefix_length) const {
+        _pack_leaf_record_prefix(out, out_scratch, trunc_key, prefix_length);
+        out.put(element, element_len);
+    }
+    void _pack_leaf_record_prefix(cvec_t& out, pack_scratch_t& out_scratch,
+                                  const cvec_t& trunc_key,
+                                  size_t prefix_length) const {
+        w_assert1(is_leaf());
+        out_scratch = trunc_key.size() + prefix_length;
+        out.put(&out_scratch, sizeof(out_scratch));
+        out.put(trunc_key);
+    }
+
+
     poor_man_key _poor(int slot) const {
         w_assert1(slot>=0);
         return page()->item_poor(slot+1);
     }
+
 
     /// Retrieves the key of specified slot WITHOUT prefix in a leaf
     const char*     _leaf_key_noprefix(slotid_t slot,  size_t &len) const;
