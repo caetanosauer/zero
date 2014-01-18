@@ -1,62 +1,7 @@
-/* -*- mode:C++; c-basic-offset:4 -*-
-     Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
-                       Copyright (c) 2007-2009
-      Data Intensive Applications and Systems Labaratory (DIAS)
-               Ecole Polytechnique Federale de Lausanne
-   
-                         All Rights Reserved.
-   
-   Permission to use, copy, modify and distribute this software and
-   its documentation is hereby granted, provided that both the
-   copyright notice and this permission notice appear in all copies of
-   the software, derivative works or modified versions, and any
-   portions thereof, and that both notices appear in supporting
-   documentation.
-   
-   This code is distributed in the hope that it will be useful, but
-   WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
-   DISCLAIM ANY LIABILITY OF ANY KIND FOR ANY DAMAGES WHATSOEVER
-   RESULTING FROM THE USE OF THIS SOFTWARE.
-*/
-
-/*<std-header orig-src='shore' incl-file-exclusion='W_RC_H'>
-
- $Id: w_rc.h,v 1.73 2010/12/08 17:37:37 nhall Exp $
-
-SHORE -- Scalable Heterogeneous Object REpository
-
-Copyright (c) 1994-99 Computer Sciences Department, University of
-                      Wisconsin -- Madison
-All Rights Reserved.
-
-Permission to use, copy, modify and distribute this software and its
-documentation is hereby granted, provided that both the copyright
-notice and this permission notice appear in all copies of the
-software, derivative works or modified versions, and any portions
-thereof, and that both notices appear in supporting documentation.
-
-THE AUTHORS AND THE COMPUTER SCIENCES DEPARTMENT OF THE UNIVERSITY
-OF WISCONSIN - MADISON ALLOW FREE USE OF THIS SOFTWARE IN ITS
-"AS IS" CONDITION, AND THEY DISCLAIM ANY LIABILITY OF ANY KIND
-FOR ANY DAMAGES WHATSOEVER RESULTING FROM THE USE OF THIS SOFTWARE.
-
-This software was developed with support by the Advanced Research
-Project Agency, ARPA order number 018 (formerly 8230), monitored by
-the U.S. Army Research Laboratory under contract DAAB07-91-C-Q518.
-Further funding for this work was provided by DARPA through
-Rome Research Laboratory Contract No. F30602-97-2-0247.
-
-*/
-
 #ifndef W_RC_H
 #define W_RC_H
 
 #include "w_defines.h"
-
-/*  -- do not edit anything above this line --   </std-header>*/
-
 #include "w_error.h"
 
 
@@ -77,44 +22,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * Most of the storage manager methods return this type.  The return code
  * type is a dynamically-allocated class instance (except when RCOK, the
  * default, non-error code, is returned: this is a static constant).
- * Because it is heap-allocated, when the compiler generates code for its 
- * destruction, certain programming errors are nastier
- * than in the case of returning an atomic type (e.g., int).  For example,
- * if you write a function with a w_rc_t return type and neglect to give
- * it a return value, your program will probably fail catastrophically.
- * (You can avoid this problem by compiling with compiler warnings enabled.)
- *
- * The return code from a storage manager method should \e always be checked:
- * \code
- w_rc_t func(...)
- {
-     ...
-     w_rc_t rc = ss_m::create_file(...);
-     if(rc.is_error()) {
-        ...
-     }
-     return RCOK;
- }
- \endcode
- * The act of calling \code rc.is_error() \endcode flags the return code as
- * having been checked. 
- * The destructor for \ref w_rc_t can be made to issue an error if the
- * return code was never checked for destruction. The message takes the
- * form:
- * \code
- Error not checked: rc=1. error in j_create_rec.cpp:176 Timed out waiting for resource [0x40000]
- * \endcode
- *
- * (When a return code is sent to an output stream, it prints a 
- * stack trace. The above message contains a stack trace with one level.)
- *
- * The error-not-checked checking happens if 
- * the storage manager is configured and built with 
- * \code --enable-checkrc \endcode .
- * By default this configuration option is off so that it is off
- * for a "production", that is, optimized build.  When you are 
- * debugging your code, it is a good idea to configure the storage manager
- * with it enabled. 
  *
  * Several  macros defined in w_rc.h 
  * support writing and using methods and functions that
@@ -582,13 +489,11 @@ w_rc_t::sys_err_num() const
  *  More Macros for using rc.
  *
  *  RC_AUGMENT(rc)   : add file and line number to the rc
- *  RC_PUSH(rc, e)   : add a new error code to rc
  *
  *  e.g. 
  *    w_rc_t rc = create_file(f);
  *      if (rc)  return RC_AUGMENT(rc);
  *    rc = close_file(f);
- *    if (rc)  return RC_PUSH(rc, eCANNOTCLOSE)
  *
  *********************************************************************/
 
@@ -626,7 +531,7 @@ w_rc_t::sys_err_num() const
  * Add stack trace information (file, line) to a return code. 
  * This is the normal way to return from a method or function upon
  * receiving an error from a method or function that it called.
- * Used by \ref #W_DO(x), \ref #W_DO_MSG(x,m), \ref #W_DO_GOTO(rc,x),
+ * Used by \ref #W_DO(x), \ref #W_DO_MSG(x,m),
  * and \ref #W_COERCE(x)
  */
 #if defined(DEBUG_DESPERATE)
@@ -660,8 +565,6 @@ w_rc_t::sys_err_num() const
  *
  * Add a char string representing more information to a return code.
  * Used by \ref W_RETURN_RC_MSG(e, m),
- * \ref W_DO_MSG(x, m), 
- * \ref W_DO_PUSH_MSG(x, m), and
  * \ref W_COERCE_MSG(x, m)
  */
 #define RC_APPEND_MSG(rc, m)                \
@@ -679,22 +582,6 @@ do {                            \
     w_rc_t __e = RC(e);                    \
     RC_APPEND_MSG(__e, m);                    \
     return __e;                        \
-} while (0)
-
-/**\def  W_EDO(x)
- * \brief Call a method or function \b x that returns a lightweight error code from a method that returns a w_rc_t.
- *
- * This macro is used deep in the storage manager to call a 
- * method or function that returns a (lightweight) error code rather than
- * a \ref #w_rc_t.
- * It checks the returned code for the error case, and if it finds an
- * error, it creates a w_rc_t with the error code returned by the called
- * function or method.
- */
-#define W_EDO(x)                      \
-do {                            \
-    w_rc_t::errcode_t __e = (x);                    \
-    if (W_EXPECT_NOT(__e)) return RC(__e);        \
 } while (0)
 
 /**\def  W_DO(x)
@@ -725,64 +612,6 @@ do {                            \
         RC_AUGMENT(__e);                \
         RC_APPEND_MSG(__e, m);                \
         return __e;                    \
-    }                            \
-} while (0)
-
-/**\def  W_DO_GOTO(rc, x)
- * \brief Idiom for unusual error-handling  before returning.
- *
- *  This macro is used to process errors that require special handling before
- *  the calling function can return.
- *  It calls the method or function \b x, and if \b x returns an error, it
- *  transfers control to the label \b failure.
- *
- * Like \ref #W_DO, but: 
- * - rather than defining a local w_rc_t, it uses an elsewhere-defined
- *   w_rc_t instance; this is because: 
- * - rather than returning in the error case, it branches to the label
- *   \b failure.
- *
- * \note: the label \b failure must exist in the the calling function, and
- * the argument \b rc must have been declared in the calling scope. 
- * Presumably the argument \b rc is declared in the scope of \b failure:
- * as well, so that it can process the error.
- */
-// W_DO_GOTO assumes the rc was already declared 
-#define W_DO_GOTO(rc/*w_rc_t*/, x)          \
-do {                            \
-    (rc) = (x);    \
-    if (W_EXPECT_NOT(rc.is_error())) { \
-        RC_AUGMENT(rc);              \
-        goto failure;    \
-    } \
-} while (0)
-
-/**\def  W_DO_PUSH(x, e)
- * \brief Call a function or method \b x, if error, push error code \b e on the stack and return.
- *
- * This macro is like \ref #W_DO(x), but it adds an error code \b e to 
- * the stack trace before returning.
- */
-#define W_DO_PUSH(x, e)                    \
-do {                            \
-    w_rc_t __e = (x);                    \
-    if (W_EXPECT_NOT(__e.is_error()))  { return RC_PUSH(__e, e); }    \
-} while (0)
-
-/**\def  W_DO_PUSH_MSG(x, e, m)
- * \brief Call a function or method \b x, if error, push error code \b e on the stack and return.
- *
- * This macro is like \ref #W_DO_PUSH(x, e), but it adds an additional
- * information message \b m to
- * the stack trace before returning.
- */
-#define W_DO_PUSH_MSG(x, e, m)                \
-do {                            \
-    w_rc_t __e = (x);                    \
-    if (W_EXPECT_NOT(__e.is_error()))  {                \
-        RC_PUSH(__e, e);                \
-        RC_APPEND_MSG(__e, m);                \
-    return __e;                    \
     }                            \
 } while (0)
 
@@ -830,11 +659,6 @@ do {                            \
  * \brief Croak with the error code \b e.
  */
 #define W_FATAL(e)           W_COERCE(RC(e))
-
-/**\def  W_FATAL_RC(rc)
- * \brief Croak with the return code \b rc.
- */
-#define W_FATAL_RC(rc)        W_COERCE(rc)
 
 /**\def  W_FATAL_MSG(e, m)
  * \brief Croak with the error code \b e and message \b m.
