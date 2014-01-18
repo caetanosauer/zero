@@ -15,17 +15,6 @@ set(sthread_STAT_SRCS
 add_library(sthread STATIC ${sthread_STAT_SRCS})
 target_link_libraries (sthread fc pthread rt)
 
-set (ST_ERROR_GENFILES_H st_errmsg_gen.h st_einfo_gen.h st_error_def_gen.h st_error_enum_gen.h st_einfo_bakw_gen.h)
-foreach(_file ${ST_ERROR_GENFILES_H})
-    add_custom_command(OUTPUT ${_file}
-      COMMAND perl ${CMAKE_SOURCE_DIR}/tools/errors.pl -d -e ${CMAKE_CURRENT_SOURCE_DIR}/st_error.dat ${COPY_GENERATED_FILES}
-      DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/st_error.dat
-    )
-    set(ST_ERROR_GENFILES_B_H ${ST_ERROR_GENFILES_B_H} ${CMAKE_CURRENT_BINARY_DIR}/${_file})
-endforeach()
-add_custom_target(ST_ERROR_GENFILES DEPENDS ${ST_ERROR_GENFILES_H})
-add_dependencies(sthread ST_ERROR_GENFILES)
-
 # generate stat header files with tools/stats.pl
 # again, this has to be a part of source tree.
 set(STHREAD_GENFILES_H sthread_stats_collect_enum_gen.h sthread_stats_msg_gen.h sthread_stats_struct_gen.h)
@@ -41,7 +30,7 @@ endforeach()
 add_custom_target(STHREAD_GENFILES DEPENDS ${STHREAD_GENFILES_FILES})
 add_dependencies(sthread STHREAD_GENFILES)
 
-SET (GENFILES_H ${ST_ERROR_GENFILES_H} ${STHREAD_GENFILES_H})
+SET (GENFILES_H ${STHREAD_GENFILES_H})
 foreach(_file ${GENFILES_H})
     set(GENFILES_B_H ${GENFILES_B_H} ${CMAKE_CURRENT_BINARY_DIR}/${_file})
 endforeach()
