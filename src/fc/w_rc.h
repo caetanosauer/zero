@@ -217,10 +217,10 @@ inline std::ostream& operator<<(std::ostream& o, const w_rc_t& obj) {
             o << ":" << obj.get_custom_message();
         }
         for (uint16_t stack_index = 0; stack_index < obj.get_stack_depth(); ++stack_index) {
-            o << "  " << obj.get_filename(stack_index) << ":" << obj.get_linenum(stack_index) << std::endl;
+            o << std::endl << "  " << obj.get_filename(stack_index) << ":" << obj.get_linenum(stack_index);
         }
         if (obj.get_stack_depth() >= MAX_RCT_STACK_DEPTH) {
-            o << "  .. and more. Increase MAX_RCT_STACK_DEPTH to see full stacktraces" << std::endl;
+            o << std::endl << "  .. and more. Increase MAX_RCT_STACK_DEPTH to see full stacktraces";
         }
     }
     return o;
