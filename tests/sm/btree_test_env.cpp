@@ -650,7 +650,7 @@ w_rc_t x_btree_verify(ss_m* ssm, const stid_t &stid) {
     EXPECT_TRUE (consistent) << "BTree verification of index " << stid << " failed";
     W_DO(ssm->commit_xct());
     if (!consistent) {
-        return RC(smlevel_0::eBADARGUMENT); // or some other thing
+        return RC(eBADARGUMENT); // or some other thing
     }
     return RCOK;
 }

@@ -50,6 +50,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 */
 
 #include "block_alloc.h"
+#include "tls.h"
 #include <cassert>
 
 /**\cond skip */

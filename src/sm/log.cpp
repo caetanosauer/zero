@@ -93,15 +93,14 @@ bool log_i::xct_next(lsn_t& lsn, logrec_t*& r)
         log.release();
 
         if (rc.is_error())  {
-            last_rc = rc;
-            RC_AUGMENT(last_rc);
+            last_rc = RC_AUGMENT(rc);
             RC_APPEND_MSG(last_rc, << "trying to fetch lsn " << cursor);
             
-            if (last_rc.err_num() == smlevel_0::eEOF)  
+            if (last_rc.err_num() == eEOF)
                 eof = true;
             else  {
                 smlevel_0::errlog->clog << fatal_prio 
-                << "Fatal error : " << RC_PUSH(last_rc, smlevel_0::eINTERNAL) << flushl;
+                << "Fatal error : " << last_rc << flushl;
             }
         }
     }
@@ -269,7 +268,7 @@ log_m::new_log_m(log_m   *&the_log,
     if(!rc.is_error())  {
         log_core::THE_LOG->start_flush_daemon();
     }
-    return rc.reset();
+    return RCOK;
 }
 
 /*********************************************************************
@@ -452,7 +451,7 @@ log_m::_check_version(uint32_t major, uint32_t minor)
         if (major == _version_major && minor <= _version_minor)
                 return RCOK;
 
-        int err = (major < _version_major)
+        w_error_codes err = (major < _version_major)
                         ? eLOGVERSIONTOOOLD : eLOGVERSIONTOONEW;
 
         smlevel_0::errlog->clog << fatal_prio 

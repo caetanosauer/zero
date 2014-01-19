@@ -364,7 +364,7 @@ w_rc_t write_read_write_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(t3._exitted);
     EXPECT_FALSE(t2._rc.is_error());
     EXPECT_TRUE(t3._rc.is_error());
-    EXPECT_EQ(t3._rc.err_num(), (w_rc_t::errcode_t) smlevel_0::eDEADLOCK);
+    EXPECT_EQ(t3._rc.err_num(), (w_error_codes) eDEADLOCK);
 
     EXPECT_TRUE(t2._done_multi[0]);
     EXPECT_TRUE(t2._done_multi[1]);
@@ -415,7 +415,7 @@ w_rc_t conversion_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(t3._exitted);
     EXPECT_FALSE(t2._rc.is_error());
     EXPECT_TRUE(t3._rc.is_error());
-    EXPECT_EQ(t3._rc.err_num(), (w_rc_t::errcode_t) smlevel_0::eDEADLOCK);
+    EXPECT_EQ(t3._rc.err_num(), (w_error_codes) eDEADLOCK);
 
     EXPECT_TRUE(t2._done_multi[0]);
     EXPECT_TRUE(t2._done_multi[1]);
@@ -478,15 +478,15 @@ w_rc_t indirect_conversion_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     if (!t2._exitted || !t3._exitted || !t4._exitted) {
         cout << "oops! the bug was reproduced!" << endl;
         if (!t2._exitted) {
-            rc_t rc = t2.smthread_unblock(smlevel_0::eDEADLOCK);
+            rc_t rc = t2.smthread_unblock(eDEADLOCK);
             cout << "killed t2. rc=" << rc << endl;
         }
         if (!t3._exitted) {
-            rc_t rc = t3.smthread_unblock(smlevel_0::eDEADLOCK);
+            rc_t rc = t3.smthread_unblock(eDEADLOCK);
             cout << "killed t3. rc=" << rc << endl;
         }
         if (!t4._exitted) {
-            rc_t rc = t4.smthread_unblock(smlevel_0::eDEADLOCK);
+            rc_t rc = t4.smthread_unblock(eDEADLOCK);
             cout << "killed t4. rc=" << rc << endl;
         }
         ::usleep (LONGTIME_USEC);
@@ -501,15 +501,15 @@ w_rc_t indirect_conversion_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(t2._rc.is_error() || t3._rc.is_error() || t4._rc.is_error());
     if (t2._rc.is_error()) {
         cout << "victim was t2!" << endl;
-        EXPECT_EQ(t2._rc.err_num(), (w_rc_t::errcode_t) smlevel_0::eDEADLOCK);
+        EXPECT_EQ(t2._rc.err_num(), (w_error_codes) eDEADLOCK);
     }
     if (t3._rc.is_error()) {
         cout << "victim was t3!" << endl;
-        EXPECT_EQ(t3._rc.err_num(), (w_rc_t::errcode_t) smlevel_0::eDEADLOCK);
+        EXPECT_EQ(t3._rc.err_num(), (w_error_codes) eDEADLOCK);
     }
     if (t4._rc.is_error()) {
         cout << "victim was t4!" << endl;
-        EXPECT_EQ(t4._rc.err_num(), (w_rc_t::errcode_t) smlevel_0::eDEADLOCK);
+        EXPECT_EQ(t4._rc.err_num(), (w_error_codes) eDEADLOCK);
     }
     
     return RCOK;
@@ -586,7 +586,7 @@ w_rc_t complex1_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(t3._exitted);
     EXPECT_FALSE(t2._rc.is_error());
     EXPECT_TRUE(t3._rc.is_error());
-    EXPECT_EQ(t3._rc.err_num(), (w_rc_t::errcode_t) smlevel_0::eDEADLOCK);
+    EXPECT_EQ(t3._rc.err_num(), (w_error_codes) eDEADLOCK);
 
     EXPECT_FALSE(t4._rc.is_error());
     EXPECT_FALSE(t5._rc.is_error());
@@ -677,7 +677,7 @@ w_rc_t complex2_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(t3._exitted);
     EXPECT_FALSE(t2._rc.is_error());
     EXPECT_TRUE(t3._rc.is_error());
-    EXPECT_EQ(t3._rc.err_num(), (w_rc_t::errcode_t) smlevel_0::eDEADLOCK);
+    EXPECT_EQ(t3._rc.err_num(), (w_error_codes) eDEADLOCK);
 
     EXPECT_FALSE(t4._rc.is_error());
     EXPECT_FALSE(t5._rc.is_error());

@@ -123,9 +123,6 @@ int sthread_t::randn(int max) { return tls_rng.randn(max); }
 
 class sthread_stats SthreadStats;
 
-const
-#include "st_einfo_gen.h"
-
 extern "C" void dumpthreads();
 extern "C" void threadstats();
 
@@ -392,7 +389,7 @@ void sthread_t::sleep(timeout_in_ms timeout, const char *reason)
 void sthread_t::wakeup()
 {
     CRITICAL_SECTION(cs, _wait_lock);
-    if(_sleeping) _unblock(stOK);
+    if(_sleeping) _unblock(w_error_ok);
 }
 
 
@@ -792,18 +789,18 @@ sthread_t::block(
     const char* const   caller,        // for debugging only
     const void *        id)
 {
-    w_rc_t::errcode_t rce = _block(&lock, timeout, list, caller, id);
+    w_error_codes rce = _block(&lock, timeout, list, caller, id);
     if(rce) return RC(rce);
     return RCOK;
 }
 
-w_rc_t::errcode_t        
+w_error_codes        
 sthread_t::block(int32_t timeout /*= WAIT_FOREVER*/)
 {
     return  _block(NULL, timeout);
 }
 
-w_rc_t::errcode_t
+w_error_codes
 sthread_t::_block(
     pthread_mutex_t     *lock,
     timeout_in_ms       timeout,
@@ -811,7 +808,7 @@ sthread_t::_block(
     const char* const   caller,        // for debugging only
     const void *        id)
 {
-    w_rc_t::errcode_t rce(stOK);
+    w_error_codes rce = w_error_ok;
     sthread_t* self = me();
     {
         CRITICAL_SECTION(cs, self->_wait_lock);
@@ -857,7 +854,7 @@ void sthread_t::timeout_to_timespec(timeout_in_ms timeout, struct timespec &when
     }
 }
 
-w_rc_t::errcode_t
+w_error_codes
 sthread_t::_block(
     timeout_in_ms    timeout,
     const char* const    
@@ -928,7 +925,7 @@ sthread_t::_block(
         return self->_rce;
     default:
         self->_status = old_status;
-        return sthread_t::stOS;
+        return stOS;
     }
 }
 
@@ -942,7 +939,7 @@ sthread_t::_block(
  *
  *********************************************************************/
 w_rc_t
-sthread_t::unblock(w_rc_t::errcode_t e) 
+sthread_t::unblock(w_error_codes e) 
 {
     CRITICAL_SECTION(cs, _wait_lock);
 
@@ -958,7 +955,7 @@ sthread_t::unblock(w_rc_t::errcode_t e)
 
 // this version assumes caller holds _lock
 w_rc_t
-sthread_t::_unblock(w_rc_t::errcode_t e)
+sthread_t::_unblock(w_error_codes e)
 {
     _status = t_ready;
 
@@ -968,7 +965,7 @@ sthread_t::_unblock(w_rc_t::errcode_t e)
     if (e)
         _rce = e;
     else
-        _rce = stOK;
+        _rce = w_error_ok;
 
     /*
      *  Thread is again ready.
@@ -1481,21 +1478,7 @@ sthread_init_t::do_init()
 
             get_large_file_size(sthread_t::max_os_file_size);
 
-            /*
-             *  Register error codes.
-             */
-            if (! w_error_t::insert(
-                "Threads Package",
-                error_info,
-                sizeof(error_info) / sizeof(error_info[0])))   {
-
-                    cerr << "sthread_init_t::do_init: "
-                     << " cannot register error code" << endl;
-
-                    W_FATAL(stINTERNAL);
-                }
-
-                W_COERCE(sthread_t::cold_startup());
+            W_COERCE(sthread_t::cold_startup());
         }
     }
 }

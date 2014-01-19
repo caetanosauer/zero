@@ -173,8 +173,8 @@ prologue_rc_t::prologue_rc_t(
 
             _rc = rc_t(__FILE__, __LINE__, 
                     (_the_xct)?
-                    smlevel_0::eISPREPARED :
-                    smlevel_0::eNOTRANS
+                    eISPREPARED :
+                    eNOTRANS
                 );
             check_log = false;
         } 
@@ -182,12 +182,12 @@ prologue_rc_t::prologue_rc_t(
 
     case commitable_xct: {
         // called from commit and chain
-        int        error = 0;
+        w_error_codes        error = w_error_ok;
         if ( ! _the_xct  ) {
-            error = smlevel_0::eNOTRANS;
+            error = eNOTRANS;
         } else if( (_the_xct->state() != smlevel_1::xct_active)
                 ) {
-            error = smlevel_0::eNOTRANS;
+            error = eNOTRANS;
         }
 
         if(error) {
@@ -202,7 +202,7 @@ prologue_rc_t::prologue_rc_t(
     case abortable_xct:
         // We must be sure there's only one thread attached.
         if (! _the_xct || (_the_xct->state() != smlevel_1::xct_active)) {
-            _rc = rc_t(__FILE__, __LINE__, smlevel_0::eNOTRANS);
+            _rc = rc_t(__FILE__, __LINE__, eNOTRANS);
             check_log = false;
         }
         check_1thread = true;
@@ -210,7 +210,7 @@ prologue_rc_t::prologue_rc_t(
 
     case not_in_xct:
         if (_the_xct) {
-            _rc = rc_t(__FILE__, __LINE__, smlevel_0::eINTRANS);
+            _rc = rc_t(__FILE__, __LINE__, eINTRANS);
         }
         check_log = false;
         break;
@@ -220,7 +220,7 @@ prologue_rc_t::prologue_rc_t(
         break;
 
     default:
-        W_FATAL(smlevel_0::eINTERNAL);
+        W_FATAL(eINTERNAL);
         break;
     }
 
@@ -245,7 +245,7 @@ prologue_rc_t::prologue_rc_t(
     if(_the_xct && (_constraint == read_write))  {
         int num = _the_xct->attach_update_thread(); 
         if(num > 1) {
-            _rc =  RC(smlevel_0::eTWOUTHREAD);
+            _rc =  RC(eTWOUTHREAD);
             return; //return this error
         }
         check_1thread = false;

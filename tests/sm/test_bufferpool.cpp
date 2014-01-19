@@ -113,7 +113,7 @@ w_rc_t bf_get_many(ss_m* ssm, test_volume_t *test_volume) {
         w_rc_t rc = bf_m::fix(child_s, child_pid, 0, LATCH_SH, false, stflags, true, smlevel_0::st_unallocated);
         if (rc.is_error()) {
             // buffer pool is now full!
-            EXPECT_EQ (rc.err_num(), (w_rc_t::errcode_t) fcFULL);
+            EXPECT_EQ (rc.err_num(), (w_error_codes) fcFULL);
             EXPECT_TRUE (child_s == NULL);
             break;
         } else {
@@ -322,7 +322,7 @@ w_rc_t bf_careful_write_order_cycle(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(bf_m::register_write_order_dependency(&(p[0].persistent_part()), &(p[1].persistent_part())));
     // 2->1. this makes a cycle, so it should fail
     rc_t rc = bf_m::register_write_order_dependency(&(p[2].persistent_part()), &(p[1].persistent_part()));
-    EXPECT_EQ ((w_rc_t::errcode_t) bf_m::eWRITEORDERLOOP, rc.err_num());
+    EXPECT_EQ ((w_error_codes) bf_m::eWRITEORDERLOOP, rc.err_num());
     return RCOK;
 }
 TEST (BufferpoolTest, CarefulWriteOrderCycle) {

@@ -71,7 +71,7 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
     void *buf = NULL;
     if (::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * ((uint64_t) block_cnt)) != 0) {
         ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << SM_PAGESIZE << "-bytes pages. ");
-        W_FATAL(smlevel_0::eOUTOFMEMORY);
+        W_FATAL(eOUTOFMEMORY);
     }
     _buffer = reinterpret_cast<generic_page*>(buf);
     
@@ -87,7 +87,7 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
     // multiple of cacheline (64B)
     if (::posix_memalign(&buf, sizeof(bf_tree_cb_t) + sizeof(latch_t), (sizeof(bf_tree_cb_t) + sizeof(latch_t)) * (((uint64_t) block_cnt) + 1LLU)) != 0) {
         ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << sizeof(bf_tree_cb_t) << "-bytes blocks. ");
-        W_FATAL(smlevel_0::eOUTOFMEMORY);
+        W_FATAL(eOUTOFMEMORY);
     }
     ::memset (buf, 0, (sizeof(bf_tree_cb_t) + sizeof(latch_t)) * (((uint64_t) block_cnt) + 1LLU));
     _control_blocks = reinterpret_cast<bf_tree_cb_t*>(reinterpret_cast<char *>(buf) + sizeof(bf_tree_cb_t));
@@ -103,7 +103,7 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
 #else  
     if (::posix_memalign(&buf, sizeof(bf_tree_cb_t), sizeof(bf_tree_cb_t) * ((uint64_t) block_cnt)) != 0) {
         ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << sizeof(bf_tree_cb_t) << "-bytes blocks. ");
-        W_FATAL(smlevel_0::eOUTOFMEMORY);
+        W_FATAL(eOUTOFMEMORY);
     }
     _control_blocks = reinterpret_cast<bf_tree_cb_t*>(buf);
     w_assert0(_control_blocks != NULL);
@@ -267,7 +267,7 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
     W_DO(volume->read_page(shpid, _buffer[idx]));
 
     if (_buffer[idx].calculate_checksum() != _buffer[idx].checksum) {
-        return RC(smlevel_0::eBADCHECKSUM);
+        return RC(eBADCHECKSUM);
     }
     
     bf_tree_cb_t &cb = get_cb(idx);
@@ -283,7 +283,7 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
     bool inserted = _hashtable->insert_if_not_exists(bf_key(vid, shpid), idx); // for some type of caller (e.g., redo) we still need hashtable entry for root
     if (!inserted) {
         ERROUT (<<"failed to insert a root page to hashtable. this must not have happened because there shouldn't be any race. wtf");
-        return RC(smlevel_0::eINTERNAL);
+        return RC(eINTERNAL);
     }
     w_assert1(inserted);
 
@@ -297,7 +297,7 @@ w_rc_t bf_tree_m::_install_volume_mainmemorydb(vol_t* volume) {
     for (volid_t v = 1; v < MAX_VOL_COUNT; ++v) {
         if (_volumes[v] != NULL) {
             ERROUT (<<"MAINMEMORY-DB mode allows only one volume to be loaded, but volume " << v << " is already loaded.");
-            return RC(smlevel_0::eINTERNAL);
+            return RC(eINTERNAL);
         }
     }
     
@@ -307,7 +307,7 @@ w_rc_t bf_tree_m::_install_volume_mainmemorydb(vol_t* volume) {
         if (volume->is_allocated_page(idx)) {
             W_DO(volume->read_page(idx, _buffer[idx]));
             if (_buffer[idx].calculate_checksum() != _buffer[idx].checksum) {
-                return RC(smlevel_0::eBADCHECKSUM);
+                return RC(eBADCHECKSUM);
             }
             bf_tree_cb_t &cb = get_cb(idx);
             cb.clear();
@@ -468,7 +468,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     if (checksum != _buffer[idx].checksum) {
                         ERROUT(<<"bf_tree_m: bad page checksum in page " << shpid);
                         _add_free_block(idx);
-                        return RC (smlevel_0::eBADCHECKSUM);
+                        return RC (eBADCHECKSUM);
                     }
                     // this is actually an error, but some testcases don't bother making real pages, so
                     // we just write out some warning.  FIXME: fix testcases and make this a real error!
@@ -762,7 +762,7 @@ w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret) {
 #ifdef SIMULATE_MAINMEMORYDB
     if (true) {
         ERROUT (<<"MAINMEMORY-DB. _grab_free_block() shouldn't be called. wtf");
-        return RC(smlevel_0::eINTERNAL);
+        return RC(eINTERNAL);
     }
 #endif // SIMULATE_MAINMEMORYDB
     ret = 0;
@@ -802,7 +802,7 @@ w_rc_t bf_tree_m::_get_replacement_block(bf_idx& ret) {
 #ifdef SIMULATE_MAINMEMORYDB
     if (true) {
         ERROUT (<<"MAINMEMORY-DB. _get_replacement_block() shouldn't be called. wtf");
-        return RC(smlevel_0::eINTERNAL);
+        return RC(eINTERNAL);
     }
 #endif // SIMULATE_MAINMEMORYDB
     DBGOUT3(<<"trying to evict some page...");
@@ -816,7 +816,7 @@ w_rc_t bf_tree_m::_get_replacement_block(bf_idx& ret) {
             return _get_replacement_block_random(ret);
     }
     ERROUT (<<"Unknown replacement policy");
-    return RC(smlevel_0::eINTERNAL);
+    return RC(eINTERNAL);
 }
 
 w_rc_t bf_tree_m::_get_replacement_block_clock(bf_idx& ret, bool use_priority) {
@@ -852,7 +852,7 @@ w_rc_t bf_tree_m::_get_replacement_block_clock(bf_idx& ret, bool use_priority) {
                 } else if (rounds > 100) {
                     ERROUT(<<"woooo, couldn't find an evictable page for long time. gave up!");
                     debug_dump(std::cerr);
-                    return RC(smlevel_0::eFRAMENOTFOUND);
+                    return RC(eFRAMENOTFOUND);
                 }
             }
             if (rounds >= 2) {

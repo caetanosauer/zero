@@ -867,7 +867,7 @@ public:
     // every so often we need to fake an eOUTOFLOGSPACE error.
     w_rc_t test(int x) { _test=x; 
         if(_test && (_count % _test==0)) 
-             return RC(smlevel_0::eOUTOFLOGSPACE); // will ignore ok() 
+             return RC(eOUTOFLOGSPACE); // will ignore ok() 
         return RCOK;
     }
 

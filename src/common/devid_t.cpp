@@ -72,12 +72,11 @@ devid_t::devid_t(const char* path)
     // inode number
 
     int    fd;
-    w_rc_t    e;
 #if W_DEBUG_LEVEL > 2
     const    char    *what = "open";
 #endif
 
-    e = sthread_t::open(path, sthread_t::OPEN_RDONLY, 0, fd);
+    w_rc_t    e = sthread_t::open(path, sthread_t::OPEN_RDONLY, 0, fd);
     if (!e.is_error()) {
         sthread_t::filestat_t    st;
 #if W_DEBUG_LEVEL > 2

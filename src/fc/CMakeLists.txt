@@ -14,10 +14,8 @@ set(fc_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/vtable.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/w_base.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/w_bitmap.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/w_error.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/valgrind_help.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/w_listm.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/w_rc.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/w_input.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/tls.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/w_findprime.cpp)
@@ -50,6 +48,7 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/w_hashing.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_defines.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_error.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/w_error_xmacro.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_findprime.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_getopt.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_hash.h

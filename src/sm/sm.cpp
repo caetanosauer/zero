@@ -193,10 +193,6 @@ ss_m* smlevel_4::SSM = 0;
 int ss_m::_instance_cnt = 0;
 //ss_m::param_t ss_m::curr_param;
 
-// sm_einfo.i defines the w_error_info_t smlevel_0::error_info[]
-const
-#include <e_einfo_gen.h>
-
 void ss_m::_set_option_logsize() {
     // the logging system should not be running.  if it is
     // then don't set the option
@@ -331,11 +327,6 @@ ss_m::_construct_once(
     // this map for duplication.
     smthread_t::init_fingerprint_map();
 
-    static bool initialized = false;
-    if (! initialized)  {
-        smlevel_0::init_errorcodes();
-        initialized = true;
-    }
     if (_instance_cnt++)  {
         // errlog might not be null since in this case there was another instance.
         if(errlog) {

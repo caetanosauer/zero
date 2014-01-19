@@ -186,7 +186,7 @@ rc_t bt_cursor_t::_locate_first() {
         if (_needs_lock && !mode->is_empty()) {
             rc_t rc = btree_impl::_ux_lock_key (leaf, _key, LATCH_SH, *mode, false);
             if (rc.is_error()) {
-                if (rc.err_num() == smlevel_0::eLOCKRETRY) {
+                if (rc.err_num() == eLOCKRETRY) {
                     continue;
                 } else {
                     return rc;
@@ -395,7 +395,7 @@ rc_t bt_cursor_t::_advance_one_slot(btree_page_h &p, bool &eof)
         if (_needs_lock && !mode->is_empty()) {
             rc_t rc = btree_impl::_ux_lock_key (p, _tmp_next_key_buf, LATCH_SH, *mode, false);
             if (rc.is_error()) {
-                if (rc.err_num() == smlevel_0::eLOCKRETRY) {
+                if (rc.err_num() == eLOCKRETRY) {
                     W_DO(_check_page_update(p));
                     continue;
                 } else {

@@ -7,7 +7,6 @@
 #define LOCK_CORE_C
 #define SM_SOURCE
 
-#include "st_error_enum_gen.h"
 #include "block_alloc.h"
 
 #include "sm_int_1.h"
@@ -32,7 +31,7 @@ DECLARE_TLS(block_alloc<xct_lock_entry_t>, xctLockEntryPool);
 #ifdef SWITCH_DEADLOCK_IMPL
 bool g_deadlock_use_waitmap_obsolete = true;
 int g_deadlock_dreadlock_interval_ms = 10;
-w_rc_t::errcode_t (*g_check_deadlock_impl)(xct_t* xd, lock_request_t *myreq);
+w_error_codes (*g_check_deadlock_impl)(xct_t* xd, lock_request_t *myreq);
 #endif // SWITCH_DEADLOCK_IMPL
 
 xct_lock_info_t::xct_lock_info_t() : _head (NULL), _tail (NULL), _permission_to_violate (false)
@@ -100,7 +99,7 @@ lock_core_m::~lock_core_m()
 }
 
 
-w_rc_t::errcode_t
+w_error_codes
 lock_core_m::acquire_lock(
     xct_t*                 xd,
     const lockid_t&        name,
@@ -117,12 +116,12 @@ lock_core_m::acquire_lock(
     lock_queue_t *lock = _htab[idx].find_lock_queue(hash);
 
     int acquire_ret = _acquire_lock(xd, lock, mode, prev_mode, check_only, timeout, the_xlinfo);
-    w_rc_t::errcode_t funcret;
+    w_error_codes funcret;
     if (acquire_ret == RET_SUCCESS) {
         // store the lock queue tag we observed. this is for Safe SX-ELR
         spinlock_read_critical_section cs(&lock->_requests_latch);
         xd->update_read_watermark (lock->x_lock_tag());
-        funcret = eOK;
+        funcret = w_error_ok;
     } else if (acquire_ret == RET_TIMEOUT) {
         funcret = eLOCKTIMEOUT;
     } else {
@@ -263,7 +262,7 @@ lock_core_m::_acquire_lock_loop(
         // some other xact was selected as victim
         DBGOUT5(<< "blocking:xd=" << xd->tid()  /*<< " mode=" << int(mode)*/ << " timeout=" << timeout); // <<<>>>
 
-        w_rc_t::errcode_t rce;
+        w_error_codes rce;
         // TODO: non-rc version of smthread_block
         if (DREADLOCKS_INTERVAL_MS > 0) {
             rce = thr->smthread_block(DREADLOCKS_INTERVAL_MS, 0);
@@ -352,7 +351,7 @@ void lock_queue_t::wakeup_waiters(const okvl_mode& released_requested)
         }
     }
     for (int i = 0; i < target_count; ++i) {
-        targets[i]->smthread_unblock(smlevel_0::eOK);
+        targets[i]->smthread_unblock(w_error_ok);
     }
 }
 

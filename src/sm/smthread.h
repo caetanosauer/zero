@@ -570,19 +570,19 @@ public:
        Otherwise, ordinarly pthreads sychronization variables
        are used.
     */
-    w_rc_t::errcode_t smthread_block(timeout_in_ms WAIT_FOREVER,
+    w_error_codes smthread_block(timeout_in_ms WAIT_FOREVER,
                       const char * const caller = 0,
                       const void * id = 0);
-    w_rc_t            smthread_unblock(w_rc_t::errcode_t e);
+    w_rc_t            smthread_unblock(w_error_codes e);
 
     int get_workload_priority() { return _replacement_priority; }
     void set_workload_priority(char priority) { _replacement_priority = priority; }
     
     int sampling;
 private:
-    w_rc_t::errcode_t _smthread_block( timeout_in_ms WAIT_FOREVER,
+    w_error_codes _smthread_block( timeout_in_ms WAIT_FOREVER,
                               const char * const why =0);
-    w_rc_t           _smthread_unblock(w_rc_t::errcode_t e);
+    w_rc_t           _smthread_unblock(w_error_codes e);
 
 public:
     /* \brief Find out if log warning checks are to be made. Default is true.

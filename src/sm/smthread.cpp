@@ -206,7 +206,7 @@ void smthread_t::_initialize_fingerprint()
                 fprintf(stderr, 
             "collective thread map is full: increase #bits an recompile.\n");
             }
-            W_FATAL(smlevel_0::eTHREADMAPFULL);
+            W_FATAL(eTHREADMAPFULL);
         }
     }
 #else
@@ -357,15 +357,15 @@ smthread_t::join(timeout_in_ms timeout)
     w_rc_t rc = this->sthread_t::join(timeout);
 
     if(tcb().xct != NULL) {
-        return RC(smlevel_0::eINTRANS);
+        return RC(eINTRANS);
     }
     if(tcb().pin_count != 0)
     {
-        return RC(smlevel_0::ePINACTIVE);
+        return RC(ePINACTIVE);
     }
     if( tcb()._xct_log != NULL ) {
         fprintf(stderr, "non-null _xct_log on join\n");
-        return RC(smlevel_0::eINTRANS);
+        return RC(eINTRANS);
     }
 
     return rc;
@@ -405,25 +405,25 @@ smthread_t::~smthread_t()
 // It's possible that a thread that blocked this way will be awakened
 // by another force such as timeout, but we need to be sure that we don't
 // try here to unblock a thread that didn't block via smthread_block
-w_rc_t::errcode_t  smthread_t::_smthread_block(
+w_error_codes  smthread_t::_smthread_block(
       timeout_in_ms timeout,
       const char * const W_IFDEBUG9(blockname))
 {
     _waiting = true;
     // rval is set by the unblocker
-    w_rc_t::errcode_t rval = sthread_t::block(timeout);
+    w_error_codes rval = sthread_t::block(timeout);
     _waiting = false;
     return rval; 
 }
 
-w_rc_t    smthread_t::_smthread_unblock(w_rc_t::errcode_t e)
+w_rc_t    smthread_t::_smthread_unblock(w_error_codes e)
 {
     // We should never be unblocking ourselves.
     w_assert1(me() != this);
 
     // tried to unblock the wrong thread
     if(!_waiting) {
-        return RC(smlevel_0::eNOTBLOCKED);
+        return RC(eNOTBLOCKED);
     }
 
     return  this->sthread_t::unblock(e); // should return RCOK to the caller
@@ -431,14 +431,14 @@ w_rc_t    smthread_t::_smthread_unblock(w_rc_t::errcode_t e)
 
 /* thread-compatability block() and unblock.  Use the per-smthread _block
    as the synchronization primitive. */
-w_rc_t::errcode_t   smthread_t::smthread_block(timeout_in_ms timeout,
+w_error_codes   smthread_t::smthread_block(timeout_in_ms timeout,
       const char * const caller,
       const void *)
 {
     return _smthread_block(timeout, caller);
 }
 
-w_rc_t   smthread_t::smthread_unblock(w_rc_t::errcode_t e)
+w_rc_t   smthread_t::smthread_unblock(w_error_codes e)
 {
     return _smthread_unblock(e);
 }
@@ -517,7 +517,7 @@ smthread_t::detach_xct(xct_t* x)
     // removes the top (outmost) transaction from this thread
     if (x != _tcb_tail->xct) {
         // are you removing something else??
-        W_FATAL(smlevel_0::eNOTRANS);
+        W_FATAL(eNOTRANS);
     }
 
     // descends to xct_impl::detach_thread()
