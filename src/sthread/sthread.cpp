@@ -92,7 +92,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <new>
 
 #include <sys/stat.h>
-#include <w_rusage.h>
+#include <sys/resource.h>
 #include "tls.h"
 
 #include "sthread.h"

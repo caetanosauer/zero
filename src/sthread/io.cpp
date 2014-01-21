@@ -81,7 +81,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <new>
 #include <sys/stat.h>
 #include <sys/mman.h>
-#include <w_rusage.h>
 #if defined(HAVE_HUGETLBFS)
 #include <fcntl.h>
 #endif

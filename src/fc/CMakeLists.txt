@@ -1,7 +1,6 @@
 
 set(fc_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/rand48.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/rusage.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/block_alloc.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/dynarray.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/mem_block.cpp
@@ -9,7 +8,6 @@ set(fc_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/w_compat_strstream.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/w_form.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/common_tmpl.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/w_getopt.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/stime.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/vtable.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/w_base.cpp
@@ -50,13 +48,11 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/w_error.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_error_xmacro.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_findprime.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/w_getopt.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_hash.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_heap.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_list.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_minmax.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_rc.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/w_rusage.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_stream.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_strstream.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_stat.h

@@ -88,24 +88,6 @@ TEST(VectorTest, Put) {
     t.put("abc",3);
     EXPECT_STREQ(tostr(t).c_str(), "{ {3 \"abc\" }}");
 }
-TEST(VectorTest, ZVec0) {
-            zvec_t z(0);
-            EXPECT_EQ(z.count(), 0);
-            EXPECT_TRUE(z.is_zvec());
-            vec_t  zv;
-            zv.set(z);
-            EXPECT_EQ(zv.count(), 0);
-            EXPECT_TRUE(zv.is_zvec());
-}
-TEST(VectorTest, ZVec) {
-    zvec_t z;
-    EXPECT_EQ(z.count(), 0);
-    EXPECT_TRUE(z.is_zvec());
-    vec_t  zv;
-    zv.set(z);
-    EXPECT_EQ(zv.count(), 0);
-    EXPECT_TRUE(zv.is_zvec());
-}
 
 TEST(VectorTest, Endian) {
 // This is endian-dependent, so let's adjust the test program
