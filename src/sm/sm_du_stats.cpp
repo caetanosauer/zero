@@ -72,7 +72,7 @@ stats_audit_failed(int
         << " of file " __FILE__ << endl;
     w_assert1(0);
 #endif 
-    return RC(smlevel_0::eDUAUDITFAILED);
+    return RC(eDUAUDITFAILED);
 }
 
 void

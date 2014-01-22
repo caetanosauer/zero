@@ -373,30 +373,6 @@ inline bool operator!=(const cvec_t& v1, const cvec_t& v2)
     return ! (v1 == v2);
 }
 
-
-/**\brief A vec_t that represents a batch of zeros.
- *
- * This is used when we know we need only a (read-only) vector
- * of zeroes because it's a one-time constructed vector pointing
- * to a fixed-location at "zero_location".
- * It doesn't require any real zeroes at that location; it behaves
- * as if it really were a vector.
- */
-class zvec_t : public vec_t {
-public:
-    zvec_t() : vec_t(zero_location,0)        {};
-    zvec_t(size_t l) : vec_t(zero_location, l)        {};
-    zvec_t &put(size_t l) { reset().put(zero_location,l); return *this; }
-private:
-    // disabled
-    zvec_t(const zvec_t&) :vec_t(zero_location, 0)  {}
-    zvec_t &operator=(zvec_t);
-    // disabled other constructors from vec_t
-    zvec_t(const cvec_t& v1, const cvec_t& v2);/* {} */
-    zvec_t(const void* p, size_t l); // {}
-    zvec_t(const vec_t& v, size_t offset, size_t limit); // {}
-};
-
 /**\brief Helper struct for create_mr_assoc.
  * \ingroup SSMBTREE
  *

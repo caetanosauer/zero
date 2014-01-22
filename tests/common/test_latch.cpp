@@ -4,7 +4,6 @@
 #include <ctime>
 #include "w_base.h"
 #include "sthread.h"
-#include "w_getopt.h"
 
 #include "latch.h"
 

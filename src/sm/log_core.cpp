@@ -711,7 +711,7 @@ log_core::_close_min(partition_number_t n)
             fprintf(stderr, "%s\n", msg.c_str());
         }
         
-        if(tries++ > 8) W_FATAL(smlevel_0::eOUTOFLOGSPACE);
+        if(tries++ > 8) W_FATAL(eOUTOFLOGSPACE);
         if(bf) bf->wakeup_cleaners();
         me()->sleep(1000);
         goto again;
@@ -1613,7 +1613,11 @@ log_core::log_core(
 #if W_DEBUG_LEVEL > 2
             {
                 os_stat_t statbuf;
-                e = MAKERC(os_fstat(fileno(f), &statbuf) == -1, eOS);
+                if (os_fstat(fileno(f), &statbuf) == -1) {
+                    e = RC(eOS);
+                } else {
+                    e = RCOK;
+                }
                 if (e.is_error()) {
                     smlevel_0::errlog->clog << fatal_prio 
                             << " Cannot stat fd " << fileno(f)
@@ -2594,7 +2598,7 @@ rc_t log_core::wait_for_space(fileoff_t &amt, timeout_in_ms timeout)
     cerr<<"* - * - * tid "<<xct()->tid().get_hi()<<"."<<xct()->tid().get_lo()<<" done waiting ("<<amt<<" bytes still needed)" <<endl;
 
     DO_PTHREAD(pthread_mutex_unlock(&_space_lock));
-    return amt? RC(sthread_t::stTIMEOUT) : RCOK;
+    return amt? RC(stTIMEOUT) : RCOK;
 }
 
 void log_core::release_space(fileoff_t amt) 

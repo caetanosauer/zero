@@ -172,16 +172,6 @@ public:
     typedef int32_t timeout_in_ms;
 
 /**\cond skip */
-    static const w_error_t::info_t     error_info[];
-    static void  init_errorcodes();
-
-#include "st_error_enum_gen.h"
-
-    enum {
-    stOS = fcOS,
-    stINTERNAL = fcINTERNAL,
-    stNOTIMPLEMENTED = fcNOTIMPLEMENTED 
-    };
 
     /* import sdisk base */
     typedef sdisk_base_t::fileoff_t    fileoff_t;
@@ -607,31 +597,31 @@ public:
 private:
 
     // ASSUMES WE ALREADY LOCKED self->_wait_lock
-    static w_rc_t::errcode_t        _block(
+    static w_error_codes        _block(
                             timeout_in_ms          timeout = WAIT_FOREVER,
                             const char* const      caller = 0,
                             const void *           id = 0);
 
-    static w_rc_t::errcode_t        _block(
+    static w_error_codes        _block(
                             pthread_mutex_t        *lock, 
                             timeout_in_ms          timeout = WAIT_FOREVER,
                             sthread_list_t*        list = 0,
                             const char* const      caller = 0,
                             const void *           id = 0);
 
-    w_rc_t               _unblock(w_rc_t::errcode_t e);
+    w_rc_t               _unblock(w_error_codes e);
 
 public:
     static void          timeout_to_timespec(timeout_in_ms timeout, 
                                              struct timespec &when);
-    w_rc_t               unblock(w_rc_t::errcode_t e);
+    w_rc_t               unblock(w_error_codes e);
     static w_rc_t        block(
                             pthread_mutex_t        &lock,
                             timeout_in_ms          timeout = WAIT_FOREVER,
                             sthread_list_t*        list = 0,
                             const char* const      caller = 0,
                             const void *           id = 0);
-    static w_rc_t::errcode_t       block(int32_t  timeout = WAIT_FOREVER);
+    static w_error_codes       block(int32_t  timeout = WAIT_FOREVER);
 
     virtual void        _dump(ostream &) const; // to be over-ridden
 
@@ -834,7 +824,7 @@ private:
     sthread_core_t *            _core;        // registers, stack, etc
     volatile status_t           _status;    // thread status
     priority_t                  _priority;     // thread priority
-    w_rc_t::errcode_t           _rce;        // used in block/unblock
+    w_error_codes           _rce;        // used in block/unblock
 
     w_link_t                    _link;        // protected by _wait_lock
 

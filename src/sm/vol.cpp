@@ -18,7 +18,6 @@
 #include "crash.h"
 
 #include "sm_vtable_enum.h"
-#include "st_error_enum_gen.h"
 
 #include "bf_fixed.h"
 #include "alloc_cache.h"
@@ -574,13 +573,12 @@ vol_t::read_page(shpid_t pnum, generic_page& page)
     memset(&page, '\0', sizeof(page));
 #endif
     w_rc_t err = t->pread(_unix_fd, (char *) &page, sizeof(page), offset);
-    if(err.err_num() == sthread_t::stSHORTIO && err.sys_err_num() == 0) {
+    if(err.err_num() == stSHORTIO) {
         // read past end of OS file. return all zeros
         memset(&page, 0, sizeof(page));
     } else {
         W_COERCE_MSG(err, << "volume id=" << vid()
               << " err_num " << err.err_num()
-              << " sys_err_num " << err.sys_err_num()
               );
     }
     return RCOK;

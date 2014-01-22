@@ -24,7 +24,7 @@ w_rc_t empty_xct(ss_m*, test_volume_t *) {
     {
         sys_xct_section_t sxs;
         EXPECT_FALSE(sxs.check_error_on_start().is_error());
-        EXPECT_FALSE(sxs.end_sys_xct (RC(smlevel_0::eOUTOFSPACE)).is_error());
+        EXPECT_FALSE(sxs.end_sys_xct (RC(eOUTOFSPACE)).is_error());
     }
     EXPECT_EQ(original_depth, me()->get_tcb_depth());
 
@@ -72,7 +72,7 @@ w_rc_t empty_nested_xct(ss_m *ssm, test_volume_t *) {
         {
             sys_xct_section_t sxs2;
             EXPECT_FALSE(sxs2.check_error_on_start().is_error());
-            EXPECT_FALSE(sxs2.end_sys_xct (RC(smlevel_0::eOUTOFSPACE)).is_error());
+            EXPECT_FALSE(sxs2.end_sys_xct (RC(eOUTOFSPACE)).is_error());
         }
         EXPECT_FALSE(sxs.end_sys_xct (RCOK).is_error());
     }
@@ -89,7 +89,7 @@ w_rc_t empty_nested_xct(ss_m *ssm, test_volume_t *) {
             EXPECT_FALSE(sxs2.check_error_on_start().is_error());
             EXPECT_FALSE(sxs2.end_sys_xct (RCOK).is_error());
         }
-        EXPECT_FALSE(sxs.end_sys_xct (RC(smlevel_0::eOUTOFSPACE)).is_error());
+        EXPECT_FALSE(sxs.end_sys_xct (RC(eOUTOFSPACE)).is_error());
     }
     W_DO(ssm->commit_xct());
     EXPECT_EQ(original_depth, me()->get_tcb_depth());
@@ -102,9 +102,9 @@ w_rc_t empty_nested_xct(ss_m *ssm, test_volume_t *) {
         {
             sys_xct_section_t sxs2;
             EXPECT_FALSE(sxs2.check_error_on_start().is_error());
-            EXPECT_FALSE(sxs2.end_sys_xct (RC(smlevel_0::eOUTOFSPACE)).is_error());
+            EXPECT_FALSE(sxs2.end_sys_xct (RC(eOUTOFSPACE)).is_error());
         }
-        EXPECT_FALSE(sxs.end_sys_xct (RC(smlevel_0::eOUTOFSPACE)).is_error());
+        EXPECT_FALSE(sxs.end_sys_xct (RC(eOUTOFSPACE)).is_error());
     }
     W_DO(ssm->commit_xct());
     EXPECT_EQ(original_depth, me()->get_tcb_depth());
@@ -123,7 +123,7 @@ w_rc_t fail_user_nest(ss_m *ssm, test_volume_t *) {
     EXPECT_EQ(original_depth + 1, me()->get_tcb_depth());
 
     rc_t result = ssm->begin_xct();
-    EXPECT_EQ((w_rc_t::errcode_t) smlevel_0::eINTRANS, result.err_num());
+    EXPECT_EQ(eINTRANS, result.err_num());
     EXPECT_EQ(original_depth + 1, me()->get_tcb_depth());
 
     W_DO(ssm->commit_xct());
@@ -239,7 +239,7 @@ w_rc_t userabort_sysabort(ss_m *ssm, test_volume_t *test_volume) {
     {
         sys_xct_section_t sxs;
         W_DO(x_btree_remove(ssm, stid, "aa5"));
-        EXPECT_FALSE(sxs.end_sys_xct (RC(smlevel_0::eOUTOFSPACE)).is_error());
+        EXPECT_FALSE(sxs.end_sys_xct (RC(eOUTOFSPACE)).is_error());
     }
     W_DO(ssm->abort_xct());
     EXPECT_EQ(original_depth, me()->get_tcb_depth());

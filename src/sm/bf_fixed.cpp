@@ -41,7 +41,7 @@ w_rc_t bf_fixed_m::init(vol_t* parent, int unix_fd, uint32_t max_pid) {
     w_assert0(::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * _page_cnt)==0);
     if (buf == NULL) {
         ERROUT (<< "failed to reserve " << _page_cnt << " blocks of " << SM_PAGESIZE << "-bytes pages. ");
-        W_FATAL(smlevel_0::eOUTOFMEMORY);
+        W_FATAL(eOUTOFMEMORY);
     }
     _pages = reinterpret_cast<generic_page*>(buf);
     _dirty_flags = new bool[_page_cnt];
@@ -55,7 +55,7 @@ w_rc_t bf_fixed_m::init(vol_t* parent, int unix_fd, uint32_t max_pid) {
 
     for (uint32_t i=0; i<_page_cnt; i++) {
         if (_pages[i].checksum !=_pages[i].calculate_checksum()) {
-            return RC(smlevel_0::eBADCHECKSUM);
+            return RC(eBADCHECKSUM);
         }
     }
 

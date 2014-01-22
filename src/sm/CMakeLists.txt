@@ -83,17 +83,6 @@ set(SM_MAINMEMORY_COMPILEDEF "SIMULATE_MAINMEMORYDB")
 set_target_properties (sm_mainmemory PROPERTIES COMPILE_DEFINITIONS "${SM_MAINMEMORY_COMPILEDEF}")
 
 
-set (E_ERROR_GENFILES_H e_errmsg_gen.h e_einfo_gen.h e_error_def_gen.h e_error_enum_gen.h e_einfo_bakw_gen.h)
-foreach(_file ${E_ERROR_GENFILES_H})
-  add_custom_command(OUTPUT ${_file}
-     COMMAND perl ${CMAKE_SOURCE_DIR}/tools/errors.pl --d --e ${CMAKE_CURRENT_SOURCE_DIR}/e_error.dat ${COPY_GENERATED_FILES}
-     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/e_error.dat
-)
-  set (E_ERROR_GENFILES_B_H ${E_ERROR_GENFILES_B_H} ${CMAKE_CURRENT_BINARY_DIR}/${_file})
-endforeach()
-add_custom_target(E_ERROR_GENFILES DEPENDS ${E_ERROR_GENFILES_H})
-add_dependencies(sm E_ERROR_GENFILES)
-
 # generate stat header files with tools/stats.pl (sm_stat)
 set(SM_STATS_GENFILES_H sm_stats_t_collect_enum_gen.h sm_stats_t_msg_gen.h sm_stats_t_struct_gen.h )
 set(SM_STATS_GENFILES_CPP sm_stats_t_collect_gen.cpp sm_stats_t_dec_gen.cpp sm_stats_t_inc_gen.cpp sm_stats_t_out_gen.cpp)
@@ -137,7 +126,7 @@ add_custom_target(LOGDEF_GENFILES DEPENDS ${LOGDEF_GENFILES_FILES})
 add_dependencies(sm LOGDEF_GENFILES)
 
 
-SET (GENFILES_H ${E_ERROR_GENFILES_B_H} ${SM_STATS_GENFILES_B_H} ${BF_HTAB_STATS_GENFILES_B_H} ${LOGDEF_GENFILES_B_H})
+SET (GENFILES_H ${SM_STATS_GENFILES_B_H} ${BF_HTAB_STATS_GENFILES_B_H} ${LOGDEF_GENFILES_B_H})
 
 
 ########### install files ###############

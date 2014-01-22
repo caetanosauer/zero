@@ -8,7 +8,6 @@ typedef unsigned short uint16_t;
 
 #include "sm_int_4.h"
 #include "bf_core.h"
-#include "w_getopt.h"
 #include "rand48.h"
 #include <pthread.h>
 #include "btree_test_env.h"

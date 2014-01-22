@@ -448,7 +448,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
         DBGOUT2(<<"_clean_volume(cleaner=" << _id << "): resize sort buffer " << _sort_buffer_size << "->" << new_buffer_size);
         uint64_t* new_sort_buffer = new uint64_t[new_buffer_size];
         if (new_sort_buffer == NULL) {
-            return RC(smlevel_0::eOUTOFMEMORY);
+            return RC(eOUTOFMEMORY);
         }
         delete[] _sort_buffer;
         _sort_buffer = new_sort_buffer;
@@ -576,7 +576,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 DBGOUT1(<<"some dirty page seems to have a persistent EX latch. waiting... rounds=" << rounds);
                 if (rounds > 50) {
                     ERROUT(<<"FATAL! some dirty page keeps EX latch for long time! failed to flush out the bufferpool");
-                    return RC(smlevel_0::eINTERNAL);
+                    return RC(eINTERNAL);
                 }
                 g_me()->sleep(rounds > 5 ? 100 : 20);
             }
@@ -617,7 +617,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(volid_t vol, size_t f
     if (max_page_lsn != lsndata_null) {
         if (smlevel_0::log == NULL) {
             ERROUT (<<"cannot flush logs before flushing data. probably dirty shutdown?");
-            return RC(smlevel_0::eINTERNAL);
+            return RC(eINTERNAL);
         }
         W_COERCE( smlevel_0::log->flush(lsn_t(max_page_lsn)) );
     }

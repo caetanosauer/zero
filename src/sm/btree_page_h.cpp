@@ -237,7 +237,7 @@ rc_t btree_page_h::norecord_split (shpid_t foster,
         // otherwise, just sets the fence keys and headers
         //sets new fence
         rc_t rc = replace_fence_rec_nolog(fence_low, fence_high, chain_fence_high, new_prefix_len);
-        w_assert1(rc.err_num() != smlevel_0::eRECWONTFIT);// then why it passed check_chance_for_norecord_split()?
+        w_assert1(rc.err_num() != eRECWONTFIT);// then why it passed check_chance_for_norecord_split()?
         w_assert1(!rc.is_error());
 
         //updates headers
@@ -427,7 +427,7 @@ rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, shpid_t chi
     // we don't log it. btree_impl::adopt() does the logging
     if (!page()->insert_item(slot+1, false, poormkey, child, v)) {
         // This shouldn't happen; the caller should have checked with check_space_for_insert_for_node():
-        return RC(smlevel_0::eRECWONTFIT);
+        return RC(eRECWONTFIT);
     }
 
     w_assert3 (is_consistent(true, false));
@@ -446,7 +446,7 @@ rc_t btree_page_h::replace_fence_rec_nolog(const w_keystr_t& low,
     w_assert1(prefix_len == get_prefix_length());
 
     if (!page()->replace_item_data(0, 0, fences)) {
-        return RC(smlevel_0::eRECWONTFIT);
+        return RC(eRECWONTFIT);
     }
 
     w_assert1 (page()->item_length(0) == (key_length_t) fences.size());
@@ -506,7 +506,7 @@ rc_t btree_page_h::replace_el_nolog(slotid_t slot, const cvec_t &elem) {
     w_assert1(!is_ghost(slot));
     
     if (!page()->replace_item_data(slot+1, _element_offset(slot), elem)) {
-        return RC(smlevel_0::eRECWONTFIT);
+        return RC(eRECWONTFIT);
     }
     return RCOK;
 }

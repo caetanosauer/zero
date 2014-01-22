@@ -109,7 +109,7 @@ lock_m::_lock(
 
     w_assert9(timeout >= 0 || timeout == WAIT_FOREVER);
 
-    w_rc_t::errcode_t rce = _core->acquire_lock(xd, n, m, prev_mode, check_only,  timeout);
+    w_error_codes rce = _core->acquire_lock(xd, n, m, prev_mode, check_only,  timeout);
     if (rce) {
         rc = RC(rce);
     }

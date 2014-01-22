@@ -19,10 +19,6 @@ typedef        ios::fmtflags        ios_fmtflags;
 
 #include <new>
 
-enum {         eINTERNAL = smlevel_0::eINTERNAL,
-        eOUTOFMEMORY = smlevel_0::eOUTOFMEMORY
-        };
-
 /*********************************************************************
  *
  *  logrec_t::cat_str()
@@ -99,7 +95,7 @@ logrec_t::type_str() const
     /*
      *  Not reached.
      */
-    W_FATAL(smlevel_0::eINTERNAL);
+    W_FATAL(eINTERNAL);
     return 0;
 }
 
@@ -829,7 +825,7 @@ void store_operation_log::undo(fixable_page_h* /*page*/)
                     }
                     break;
                 case smlevel_0::t_unknown_deleting:
-                    W_FATAL(smlevel_0::eINTERNAL);
+                    W_FATAL(eINTERNAL);
                     break;
             }
             break;
