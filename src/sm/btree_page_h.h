@@ -787,6 +787,9 @@ private:
     /// result <0 if slot's key is before given key
     int _compare_slot_with_key(int slot, const void* key_noprefix, size_t key_len, poor_man_key poor) const;
 
+
+    int _robust_compare_slot_with_key(int slot, const void* key_noprefix, size_t key_len, poor_man_key poor) const;
+
 protected:
     /**
      * Returns if there is enough free space to accomodate the given
