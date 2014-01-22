@@ -995,10 +995,7 @@ inline const char* btree_page_h::_robust_leaf_key_noprefix(slotid_t slot,  size_
 
     size_t variable_length;
     key_length_t* data = (key_length_t*)page()->robust_item_data(slot+1, variable_length);
-    if (variable_length<sizeof(key_length_t)) {
-        len = 0;
-        return (const char*)data;
-    }
+    // the following dereference is always safe per additional robust_item_data guarantee:
     len = *data++;
     if (len+sizeof(key_length_t) > variable_length) {
         len = 0;
