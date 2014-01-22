@@ -191,7 +191,7 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
             smsize_t data_length;
             bool is_ghost;
             const char* data = steal_src->element(i, data_length, is_ghost);
-            _pack_leaf_record(v, v_scratch, new_trunc_key, data, data_length, new_prefix_length);
+            _pack_leaf_record(v, v_scratch, new_trunc_key, data, data_length);
             child = 0;
         } else {
             _pack_node_record(v, new_trunc_key);
@@ -571,7 +571,7 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, size_t
     // make a dummy record that has the desired length:
     cvec_t         dummy;
     pack_scratch_t dummy_scratch;
-    _pack_leaf_record_prefix(dummy, dummy_scratch, trunc_key, prefix_len);
+    _pack_leaf_record_prefix(dummy, dummy_scratch, trunc_key);
     dummy.copy_to(page()->item_data(slot+1));
 
     w_assert3(_poor(slot) == poormkey);

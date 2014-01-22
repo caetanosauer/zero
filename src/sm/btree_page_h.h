@@ -705,16 +705,14 @@ private:
     typedef key_length_t pack_scratch_t;
     void _pack_leaf_record(cvec_t& out, pack_scratch_t& out_scratch,
                            const cvec_t& trunc_key,
-                           const char* element, size_t element_len,
-                           size_t prefix_length) const {
-        _pack_leaf_record_prefix(out, out_scratch, trunc_key, prefix_length);
+                           const char* element, size_t element_len) const {
+        _pack_leaf_record_prefix(out, out_scratch, trunc_key);
         out.put(element, element_len);
     }
     void _pack_leaf_record_prefix(cvec_t& out, pack_scratch_t& out_scratch,
-                                  const cvec_t& trunc_key,
-                                  size_t prefix_length) const {
+                                  const cvec_t& trunc_key) const {
         w_assert1(is_leaf());
-        out_scratch = trunc_key.size() + prefix_length;
+        out_scratch = trunc_key.size();
         out.put(&out_scratch, sizeof(out_scratch));
         out.put(trunc_key);
     }
@@ -985,7 +983,7 @@ inline const char* btree_page_h::_leaf_key_noprefix(slotid_t slot,  size_t &len)
     w_assert1(slot>=0);
 
     key_length_t* data = (key_length_t*)page()->item_data(slot+1);
-    len = *data++  - get_prefix_length();
+    len = *data++;
     return (const char*)data;
 }
 inline const char* btree_page_h::_node_key_noprefix(slotid_t slot,  size_t &len) const {
