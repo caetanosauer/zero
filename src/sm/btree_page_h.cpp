@@ -281,7 +281,7 @@ inline int btree_page_h::_robust_compare_slot_with_key(int slot, const void* key
     }
 
     // slow path:
-    return _compare_key_noprefix(slot, key_noprefix, key_len);
+    return _robust_compare_key_noprefix(slot, key_noprefix, key_len);
 }
 
 
