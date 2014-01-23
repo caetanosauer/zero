@@ -292,7 +292,9 @@ btree_page_h::search(const char *key_raw, size_t key_raw_len,
     w_assert1((uint) get_prefix_length() <= key_raw_len);
     w_assert1(::memcmp(key_raw, get_prefix_key(), get_prefix_length()) == 0);
 
-    int         prefix_length = get_prefix_length();
+    int number_of_records = nrecs();
+    int prefix_length     = get_prefix_length();
+
     const void* key_noprefix  = key_raw     + prefix_length;
     size_t      key_len       = key_raw_len - prefix_length;
     
@@ -302,8 +304,6 @@ btree_page_h::search(const char *key_raw, size_t key_raw_len,
     /*
      * Binary search.
      */
-
-    int number_of_records = nrecs();
 
     found_key = false;
     int low = -1, high = number_of_records;
@@ -365,7 +365,7 @@ btree_page_h::search(const char *key_raw, size_t key_raw_len,
 void
 btree_page_h::search(const char *key_raw, size_t key_raw_len,
                      bool& found_key, slotid_t& return_slot) const {
-    int number_of_records = page()->robust_number_of_items()-1;
+    int number_of_records = page()->robust_number_of_items() - 1;
     int prefix_length     = ACCESS_ONCE(page()->btree_prefix_length);
 
     if (number_of_records < 0 || prefix_length < 0 || prefix_length > (int)key_raw_len) {
