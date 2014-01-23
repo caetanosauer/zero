@@ -322,8 +322,6 @@ protected:
      * The memory region indicated by robust_item_data() is always
      * safe to access, but may contain garbage or have a length
      * different from the actual item's variable-size data.
-     * Additional guarantee: the first two bytes of memory starting
-     * with the memory region address are always safe to read.
      */
 
     bool         robust_is_leaf()            const;
@@ -401,8 +399,6 @@ private:
                 shpid_t       child;
                 item_length_t item_len;
                 /// really of size item_len - sizeof(item_len) - sizeof(child):
-                /// must have room for at least 2 bytes for
-                /// robust_item_data guarantee
                 char          item_data[2];
             } interior;
             // We use 8 byte alignment instead of the required 4 for
