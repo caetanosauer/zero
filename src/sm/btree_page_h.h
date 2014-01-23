@@ -502,6 +502,18 @@ public:
      */
     void            search(const char *key_raw, size_t key_raw_len,
                            bool& found_key, slotid_t& return_slot) const;
+    /**
+     * This method provides the same results as the normal search
+     * method when our associated B-tree page is not being
+     * concurrently modified.
+     * 
+     * When the B-tree page is being concurrently modified, however,
+     * unlike the normal method this version does not trigger
+     * assertions or cause other faults (e.g., segmentation fault);
+     * it may however in this case provide garbage values.
+     */
+    void            robust_search(const char *key_raw, size_t key_raw_len,
+                                  bool& found_key, slotid_t& return_slot) const;
 
 
     /**

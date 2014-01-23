@@ -285,7 +285,6 @@ inline int btree_page_h::_robust_compare_slot_with_key(int slot, const void* key
 }
 
 
-#if 0
 void
 btree_page_h::search(const char *key_raw, size_t key_raw_len,
                      bool& found_key, slotid_t& return_slot) const {
@@ -359,11 +358,9 @@ btree_page_h::search(const char *key_raw, size_t key_raw_len,
     return_slot = high;
     w_assert1(high>=0 && high<=number_of_records);
 }
-#endif
 
-/// new robust version of search
 void
-btree_page_h::search(const char *key_raw, size_t key_raw_len,
+btree_page_h::robust_search(const char *key_raw, size_t key_raw_len,
                      bool& found_key, slotid_t& return_slot) const {
     int number_of_records = page()->robust_number_of_items() - 1;
     int prefix_length     = ACCESS_ONCE(page()->btree_prefix_length);
