@@ -726,11 +726,9 @@ private:
 
     /// Retrieves the key of specified slot WITHOUT prefix in a leaf
     const char*     _leaf_key_noprefix(slotid_t slot,  size_t &len) const;
-    const char*     _robust_leaf_key_noprefix(slotid_t slot,  size_t &len) const;
 
     /// Retrieves only the key of specified slot WITHOUT prefix in an intermediate node
     const char*     _node_key_noprefix(slotid_t slot,  size_t &len) const;
-    const char*     _robust_node_key_noprefix(slotid_t slot,  size_t &len) const;
 
     /**
      * Calculate offset within slot's variable-sized data to its
@@ -784,12 +782,43 @@ private:
 
     /// returns compare(specified-key, key_noprefix)
     int _compare_key_noprefix(slotid_t slot, const void *key_noprefix, size_t key_len) const;
-    int _robust_compare_key_noprefix(slotid_t slot, const void *key_noprefix, size_t key_len) const;
 
     /// compare slot slot's key with given key (as key_noprefix,key_len,poor tuple)
     /// result <0 if slot's key is before given key
     int _compare_slot_with_key(int slot, const void* key_noprefix, size_t key_len, poor_man_key poor) const;
+
+
+
+    /*
+     * These methods provide the same results as the corresponding
+     * non-robust versions when our associated B-tree page is not
+     * being concurrently modified.
+     * 
+     * When the B-tree page is being concurrently modified, however,
+     * unlike the normal methods these versions do not trigger
+     * assertions or cause other faults (e.g., segmentation fault);
+     * they may however in this case provide garbage values.
+     * 
+     * Slot arguments here should be less than a result of
+     * page()->robust_number_of_items()-1.
+     * 
+     * The memory regions indicated by _robust_*_key_noprefix() are
+     * always safe to access, but may contain garbage or have a length
+     * different from the actual slot's key_noprefix.
+     */
+
+    /// [Robust] Retrieves the key of specified slot WITHOUT prefix in a leaf
+    const char*     _robust_leaf_key_noprefix(slotid_t slot,  size_t &len) const;
+    /// [Robust] Retrieves only the key of specified slot WITHOUT prefix in an intermediate node
+    const char*     _robust_node_key_noprefix(slotid_t slot,  size_t &len) const;
+
+    /// [Robust] returns compare(specified-key, key_noprefix)
+    int _robust_compare_key_noprefix(slotid_t slot, const void *key_noprefix, size_t key_len) const;
+
+    /// [Robust] compare slot slot's key with given key (as key_noprefix,key_len,poor tuple)
+    /// result <0 if slot's key is before given key
     int _robust_compare_slot_with_key(int slot, const void* key_noprefix, size_t key_len, poor_man_key poor) const;
+
 
 protected:
     /**
