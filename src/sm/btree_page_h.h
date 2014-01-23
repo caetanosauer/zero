@@ -1075,9 +1075,9 @@ inline int btree_page_h::_robust_compare_key_noprefix(slotid_t slot, const void 
     size_t      curkey_len;
     const char *curkey;
     if (page()->robust_is_leaf()) {
-        curkey = _leaf_key_noprefix(slot, curkey_len);
+        curkey = _robust_leaf_key_noprefix(slot, curkey_len);
     } else {
-        curkey = _node_key_noprefix(slot, curkey_len);
+        curkey = _robust_node_key_noprefix(slot, curkey_len);
     }
 
     return w_keystr_t::compare_bin_str(curkey, curkey_len, key_noprefix, key_len);
