@@ -174,7 +174,7 @@ w_rc_t lil_global_table_base::_request_lock_IS(lsn_t &observed_tag)
             break;
         }
     }
-    return RC(smlevel_0::eLOCKTIMEOUT); // give up
+    return RC(eLOCKTIMEOUT); // give up
 }
 
 w_rc_t lil_global_table_base::_request_lock_IX(lsn_t &observed_tag)
@@ -203,7 +203,7 @@ w_rc_t lil_global_table_base::_request_lock_IX(lsn_t &observed_tag)
             break;
         }
     }
-    return RC(smlevel_0::eLOCKTIMEOUT);
+    return RC(eLOCKTIMEOUT);
 }
 
 w_rc_t lil_global_table_base::_request_lock_S(lsn_t &observed_tag)
@@ -238,7 +238,7 @@ w_rc_t lil_global_table_base::_request_lock_S(lsn_t &observed_tag)
             break;
         }
     }
-    return RC(smlevel_0::eLOCKTIMEOUT); // give up
+    return RC(eLOCKTIMEOUT); // give up
 }
 w_rc_t lil_global_table_base::_request_lock_X(lsn_t &observed_tag)
 {
@@ -267,7 +267,7 @@ w_rc_t lil_global_table_base::_request_lock_X(lsn_t &observed_tag)
             break;
         }
     }
-    return RC(smlevel_0::eLOCKTIMEOUT); // give up
+    return RC(eLOCKTIMEOUT); // give up
 }
 
 /** do we already have a desired lock? */
@@ -303,7 +303,7 @@ w_rc_t lil_private_vol_table::acquire_store_lock(lil_global_table *global_table,
     snum_t store = stid.store;
     lil_private_store_table* table = _find_store_table(store);
     if (table == NULL) {
-        return RC(smlevel_0::eLIL_TOOMANYST_XCT);
+        return RC(eLIL_TOOMANYST_XCT);
     }
     
     if (does_already_own(mode, table->_lock_taken)) {
@@ -316,8 +316,8 @@ w_rc_t lil_private_vol_table::acquire_store_lock(lil_global_table *global_table,
     rc_t rc = global_table->_vol_tables[stid.vol]._store_tables[store].request_lock(mode);
     if (rc.is_error()) {
         // this might be a bit too conservative, but doesn't matter for intent locks
-        if (rc.err_num() == smlevel_0::eLOCKTIMEOUT) {
-            return RC (smlevel_0::eDEADLOCK);
+        if (rc.err_num() == eLOCKTIMEOUT) {
+            return RC (eDEADLOCK);
         } else {
             return rc;
         }
@@ -379,7 +379,7 @@ w_rc_t lil_private_table::acquire_vol_table(lil_global_table *global_table,
     w_assert1(global_table);
     table = find_vol_table(vid);
     if (table == NULL) {
-        return RC(smlevel_0::eLIL_TOOMANYVOL_XCT);
+        return RC(eLIL_TOOMANYVOL_XCT);
     }
     
     if (does_already_own(mode, table->_lock_taken)) {
@@ -391,8 +391,8 @@ w_rc_t lil_private_table::acquire_vol_table(lil_global_table *global_table,
     // if it's timeout, it's deadlock
     rc_t rc = global_table->_vol_tables[vid].request_lock(mode);
     if (rc.is_error()) {
-        if (rc.err_num() == smlevel_0::eLOCKTIMEOUT) {
-            return RC (smlevel_0::eDEADLOCK);
+        if (rc.err_num() == eLOCKTIMEOUT) {
+            return RC (eDEADLOCK);
         } else {
             return rc;
         }

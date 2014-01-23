@@ -216,7 +216,7 @@ inline w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, volid_t vol, snum
     bool inserted = _hashtable->insert_if_not_exists(bf_key(vol, shpid), idx); // for some type of caller (e.g., redo) we still need hashtable entry for root
     if (!inserted) {
         ERROUT (<<"failed to insert a virgin root page to hashtable. this must not have happened because there shouldn't be any race. wtf");
-        return RC(smlevel_0::eINTERNAL);
+        return RC(eINTERNAL);
     }
     return _latch_root_page(page, idx, LATCH_EX, false);
 }

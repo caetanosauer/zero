@@ -81,7 +81,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <new>
 #include <sys/stat.h>
 #include <sys/mman.h>
-#include <w_rusage.h>
 #if defined(HAVE_HUGETLBFS)
 #include <fcntl.h>
 #endif
@@ -998,7 +997,7 @@ w_rc_t    sthread_t::pread(int fd, void *buf, int n, fileoff_t pos)
     errno = 0;
     e = _disks[fd]->pread(buf, n, pos, done);
     if (!e.is_error() && done != n) {
-        e = RC2(stSHORTIO, done);
+        e = RC(stSHORTIO);
     }
 
     return e;
@@ -1053,9 +1052,7 @@ w_rc_t sthread_t::lseek(int fd, fileoff_t pos, int whence, fileoff_t& ret)
     if (fd < 0 || fd >= (int)open_max || !_disks[fd]) 
         return RC(stBADFD);
 
-    w_rc_t    e;
-
-    e = _disks[fd]->seek(pos, whence, ret);
+    w_rc_t    e = _disks[fd]->seek(pos, whence, ret);
 
     return e;
 }

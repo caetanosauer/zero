@@ -66,7 +66,6 @@ class prologue_rc_t;
 #endif
 
 #include "w.h"
-#include "option.h"
 #include "sm_int_4.h"
 #include "chkpt.h"
 #include "sm.h"
@@ -77,6 +76,7 @@ class prologue_rc_t;
 #include "bf_tree.h"
 #include "crash.h"
 #include "restart.h"
+#include "sm_options.h"
 #include "suppress_unused.h"
 
 #ifdef EXPLICIT_TEMPLATE
@@ -183,30 +183,6 @@ lid_m* smlevel_4::lid = 0;
 
 ss_m* smlevel_4::SSM = 0;
 
-// option related statics
-option_group_t* ss_m::_options = NULL;
-
-option_t* ss_m::_hugetlbfs_path = NULL;
-option_t* ss_m::_reformat_log = NULL;
-option_t* ss_m::_prefetch = NULL;
-option_t* ss_m::_bufpoolsize = NULL;
-option_t* ss_m::_locktablesize = NULL;
-option_t* ss_m::_logdir = NULL;
-option_t* smlevel_0::_backgroundflush = NULL;
-option_t* ss_m::_logsize = NULL;
-option_t* ss_m::_logbufsize = NULL;
-option_t* ss_m::_error_log = NULL;
-option_t* ss_m::_error_loglevel = NULL;
-option_t* ss_m::_log_warn_percent = NULL;
-option_t* ss_m::_num_page_writers = NULL;
-option_t* ss_m::_bufferpool_replacement_policy = NULL;
-option_t* ss_m::_bufferpool_swizzle = NULL;
-option_t* ss_m::_cleaner_interval_millisec_min = NULL;
-option_t* ss_m::_cleaner_interval_millisec_max = NULL;
-option_t* ss_m::_logging = NULL;
-option_t* ss_m::_statistics = NULL;
-
-
 /*
  *  Class ss_m code
  */
@@ -217,162 +193,15 @@ option_t* ss_m::_statistics = NULL;
 int ss_m::_instance_cnt = 0;
 //ss_m::param_t ss_m::curr_param;
 
-// sm_einfo.i defines the w_error_info_t smlevel_0::error_info[]
-const
-#include <e_einfo_gen.h>
-
-const char *four_pages_min(int kb) {
-    static char  buf[48];
-
-    int four = 4 * SM_PAGESIZE/1024;
-
-    sprintf(buf, "%d", ::max(four, kb));
-
-    return   buf;
-}
-
-rc_t ss_m::setup_options(option_group_t* options)
-{
-    sthread_t::initialize_sthreads_package();
-
-    W_DO(options->add_option("sm_reformat_log", "yes/no", "no",
-            "yes will destroy your log",
-            false, option_t::set_value_bool, _reformat_log));
-
-    W_DO(options->add_option("sm_prefetch", "yes/no", "no",
-            "no disables page prefetching on scans",
-            false, option_t::set_value_bool, _prefetch));
-
-    W_DO(options->add_option("sm_bufpoolsize", "#>=8192", NULL,
-            "size of buffer pool in Kbytes",
-            true, option_t::set_value_long, _bufpoolsize));
-
-    W_DO(options->add_option("sm_locktablesize", "#>64", "64000",
-            "size of lock manager hash table",
-            false, option_t::set_value_long, _locktablesize));
-
-    // Include this option in any case, so users don't have to remove
-    // unknown options from their config files.
-    W_DO(options->add_option("sm_hugetlbfs_path",  "absolute path",
-            HUGETLBFS_PATH,
-            "needed only if you configured --with-hugetlbfs, string NULL means do not use hugetlbfs",
-            false, option_t::set_value_charstr, _hugetlbfs_path));
-
-    W_DO(options->add_option("sm_logdir", "directory name", NULL,
-            "directory for log files",
-            true, option_t::set_value_charstr, _logdir));
-
-    W_DO(options->add_option("sm_backgroundflush", "yes/no", "yes",
-            "yes indicates background buffer pool flushing thread is enabled",
-            false, option_t::set_value_bool, _backgroundflush));
-
-    W_DO(options->add_option("sm_bufferpool_replacement_policy", "clock|random", "clock",
-            "sets the page replacement policy of the buffer pool",
-            false, option_t::set_value_charstr, _bufferpool_replacement_policy));
-
-    W_DO(options->add_option("sm_bufferpool_swizzle", "yes/no", "no",
-            "yes enables pointer swizzling in buffer pool",
-            false, option_t::set_value_bool, _bufferpool_swizzle));
-
-    W_DO(options->add_option("sm_logbufsize", "(>=4 and <=128)*(page size)", 
-                // Too bad we can't compute a string here:
-             four_pages_min(128), // function above
-            "size of log buffer Kbytes",
-            false, option_t::set_value_long, _logbufsize));
-
-// NOTE: CC's preprocessor can't handle putting the #if/#else/#endif
-// inside the W_DO
-#if SM_PAGESIZE < 8192
-    W_DO(options->add_option("sm_logsize", 
-            "#>8256", 
-            "16448",
-            "maximum size of the log in Kbytes",
-            false, _set_option_logsize, _logsize));
-#else
-    W_DO(options->add_option("sm_logsize", 
-            "#>8256", 
-            "10000",
-            "maximum size of the log in Kbytes",
-            false, _set_option_logsize, _logsize));
-#endif
-
-    W_DO(options->add_option("sm_errlog", "string", "-",
-            "- (stderr) or <filename>",
-            false, option_t::set_value_charstr, _error_log));
-
-    W_DO(options->add_option("sm_errlog_level", "string", "error",
-            "none|emerg|fatal|alert|internal|error|warning|info|debug",
-            false, option_t::set_value_charstr, _error_loglevel));
-
-    W_DO(options->add_option("sm_log_warn", "0-100", "0",
-            "% of log in use that triggers callback to server (0 means no trigger)",
-            false, option_t::set_value_long, _log_warn_percent));
-
-    W_DO(options->add_option("sm_num_page_writers", ">=0", "1",
-            "the number of page writers in the bpool cleaner",
-            false, option_t::set_value_long, _num_page_writers));
-
-    W_DO(options->add_option("sm_cleaner_interval_millisec_min", ">0", "1000",
-            "as the name suggests",
-            false, option_t::set_value_int4, _cleaner_interval_millisec_min));
-    W_DO(options->add_option("sm_cleaner_interval_millisec_max", ">0", "256000",
-            "as the name suggests",
-            false, option_t::set_value_int4, _cleaner_interval_millisec_max));
-
-    W_DO(options->add_option("sm_logging", "yes/no", "yes",
-            "no will turn off logging; Rollback, restart not possible.",
-            false, option_t::set_value_bool, _logging));
-
-    W_DO(options->add_option("sm_statistics", "yes/no", "yes",
-            "yes enables collecting statistics",
-            false, option_t::set_value_bool, _statistics));
-
-    _options = options;
-    return RCOK;
-}
-
-rc_t ss_m::_set_option_logsize(
-        option_t* opt, 
-        const char* value, 
-        ostream* _err_stream
-)
-{
-    ostream* err_stream = _err_stream;
-
-    if (err_stream == NULL) {
-        err_stream = &cerr;
-    }
-
+void ss_m::_set_option_logsize() {
     // the logging system should not be running.  if it is
     // then don't set the option
-    if (smlevel_0::log) return RCOK;
+    if (!_options.get_bool_option("sm_logging", true) || smlevel_0::log) return;
 
-    w_assert3(opt == _logsize);
-
-    w_rc_t        e;
-    if (sizeof(fileoff_t) == 8)
-        e = option_t::set_value_int8(opt, value, err_stream);
-    else
-        e = option_t::set_value_int4(opt, value, err_stream);
-    W_DO(e);
-
-    fileoff_t maxlogsize = fileoff_t(
-// ARCH_LP64 and LARGEFILE_AWARE are determined by configure
-// and set isn config/shore-config.h
-#if defined(LARGEFILE_AWARE)  || defined(ARCH_LP64)
-           w_base_t::strtoi8(_logsize->value())
-#else
-           atoi(_logsize->value())
-#endif
-        );
-
-    // cerr << "User-option _logsize->value() " << maxlogsize << " KB" << endl;
+    fileoff_t maxlogsize = fileoff_t(_options.get_int_option("sm_logsize", 10000));
 
     // The option is in units of KB; convert it to bytes.
     maxlogsize *= 1024;
-
-    // cerr << "User-option _logsize->value() " << maxlogsize << " bytes" << endl;
-
 
     // maxlogsize is the user-defined maximum open-log size.
     // Compile-time constants determine the size of a segment,
@@ -384,12 +213,8 @@ rc_t ss_m::_set_option_logsize(
     // plus 1 block. The log manager computes this for us:
     fileoff_t psize = maxlogsize / smlevel_0::max_openlog;
 
-    // cerr << "Resulting partition size " << psize << " bytes" << endl;
-
     // convert partition size to partition data size: (remove overhead)
     psize = log_m::partition_size(psize);
-
-    // cerr << "Adjusted partition size " << psize << " bytes" << endl;
 
     /* Enforce the built-in shore limit that a log partition can only
        be as long as the file address in a lsn_t allows for...  
@@ -403,39 +228,37 @@ rc_t ss_m::_set_option_logsize(
         fileoff_t tmp = log_m::max_partition_size();
         tmp /= 1024;
 
-        *err_stream << "Partition data size " << psize 
+        std::cerr << "Partition data size " << psize
                 << " exceeds limit (" << log_m::max_partition_size() << ") "
                 << " imposed by the size of an lsn."
-                <<endl;
-        *err_stream << " Choose a smaller sm_logsize." <<endl;
-        *err_stream << " Maximum is :" << tmp << endl;
-        return RC(OPT_BadValue);
+                << std::endl;
+        std::cerr << " Choose a smaller sm_logsize." << std::endl;
+        std::cerr << " Maximum is :" << tmp << std::endl;
+        W_FATAL(eCRASH);
     }
 
     if (psize < log_m::min_partition_size()) {
         fileoff_t tmp = fileoff_t(log_m::min_partition_size());
         tmp *= smlevel_0::max_openlog;
         tmp /= 1024;
-        *err_stream 
+        std::cerr
             << "Partition data size (" << psize 
             << ") is too small for " << endl
             << " a segment ("  
             << log_m::min_partition_size()   << ")" << endl
             << "Partition data size is computed from sm_logsize;"
             << " minimum sm_logsize is " << tmp << endl;
-        return RC(OPT_BadValue);
+        W_FATAL(eCRASH);
     }
 
 
     // maximum size of all open log files together
-    max_logsz = fileoff_t(psize * smlevel_0::max_openlog);
+    smlevel_0::max_logsz = fileoff_t(psize * smlevel_0::max_openlog);
 
     // cerr << "Resulting max_logsz " << max_logsz << " bytes" << endl;
 
     // take check points every 3 log file segments.
-    chkpt_displacement = log_m::segment_size() * 3;
-
-    return RCOK;
+    smlevel_0::chkpt_displacement = log_m::segment_size() * 3;
 }
 
 /* 
@@ -471,13 +294,14 @@ ss_m::_make_store_flag(store_property_t property)
 
 
 static queue_based_block_lock_t ssm_once_mutex;
-
 ss_m::ss_m(
+    const sm_options &options,
     smlevel_0::LOG_WARN_CALLBACK_FUNC callbackwarn /* = NULL */,
     smlevel_0::LOG_ARCHIVED_CALLBACK_FUNC callbackget /* = NULL */
 )
+    :   _options(options)
 {
-    FUNC(ss_m::ss_m);
+    _set_option_logsize();
     sthread_t::initialize_sthreads_package();
 
     // This looks like a candidate for pthread_once(), 
@@ -503,11 +327,6 @@ ss_m::_construct_once(
     // this map for duplication.
     smthread_t::init_fingerprint_map();
 
-    static bool initialized = false;
-    if (! initialized)  {
-        smlevel_0::init_errorcodes();
-        initialized = true;
-    }
     if (_instance_cnt++)  {
         // errlog might not be null since in this case there was another instance.
         if(errlog) {
@@ -521,14 +340,14 @@ ss_m::_construct_once(
     /*
      *  Level 0
      */
-    errlog = new ErrLog("ss_m", log_to_unix_file, _error_log->value());
+    errlog = new ErrLog("ss_m", log_to_unix_file, _options.get_string_option("sm_errlog", "-").c_str());
     if(!errlog) {
         W_FATAL(eOUTOFMEMORY);
     }
-    if(_error_loglevel // && _error_loglevel->is_set() is_set means by user
-            && _error_loglevel->value()) {
-        errlog->setloglevel(ErrLog::parse(_error_loglevel->value()));
-    }
+
+
+    std::string error_loglevel = _options.get_string_option("sm_errlog_level", "error");
+    errlog->setloglevel(ErrLog::parse(error_loglevel.c_str()));
     ///////////////////////////////////////////////////////////////
     // Henceforth, all errors can go to ss_m::errlog thus:
     // ss_m::errlog->clog << XXX_prio << ... << flushl;
@@ -542,9 +361,6 @@ ss_m::_construct_once(
 
     w_assert1(page_sz >= 1024);
 
-    // make sure setup_options was called successfully
-    w_assert1(_options);
-
     /*
      *  Reset flags
      */
@@ -554,10 +370,12 @@ ss_m::_construct_once(
    /*
     * buffer pool size
     */
-    uint32_t  nbufpages = (strtoul(_bufpoolsize->value(), NULL, 0) * 1024 - 1) / page_sz + 1;
+
+    int64_t bufpoolsize = _options.get_int_option("sm_bufpoolsize", 8192);
+    uint32_t  nbufpages = (bufpoolsize * 1024 - 1) / page_sz + 1;
     if (nbufpages < 10)  {
         errlog->clog << fatal_prio << "ERROR: buffer size ("
-             << _bufpoolsize->value() 
+             << bufpoolsize
              << "-KB) is too small" << flushl;
         errlog->clog << fatal_prio << "       at least " << 32 * page_sz / 1024
              << "-KB is needed" << flushl;
@@ -565,27 +383,28 @@ ss_m::_construct_once(
     }
 
     // number of page writers
-    int32_t  npgwriters = int32_t(strtoul(_num_page_writers->value(), NULL, 0)); 
+    int32_t npgwriters = _options.get_int_option("sm_num_page_writers", 1);
     if(npgwriters < 0) {
         errlog->clog << fatal_prio << "ERROR: num page writers must be positive : "
-             << _num_page_writers->value() 
+             << npgwriters
              << flushl;
         W_FATAL(eCRASH);
     }
     if (npgwriters == 0) {
         npgwriters = 1;
     }
-    int32_t cleaner_interval_millisec_min = int32_t(strtoul(_cleaner_interval_millisec_min->value(), NULL, 0)); 
+
+    int64_t cleaner_interval_millisec_min = _options.get_int_option("sm_cleaner_interval_millisec_min", 1000);
     if (cleaner_interval_millisec_min <= 0) {
         cleaner_interval_millisec_min = 1000;
     }
 
-    int32_t cleaner_interval_millisec_max = int32_t(strtoul(_cleaner_interval_millisec_max->value(), NULL, 0)); 
+    int64_t cleaner_interval_millisec_max = _options.get_int_option("sm_cleaner_interval_millisec_max", 256000);
     if (cleaner_interval_millisec_max <= 0) {
         cleaner_interval_millisec_max = 256000;
     }
 
-    uint64_t logbufsize = (uint64_t) strtoul(_logbufsize->value(), NULL, 0) * 1024;
+    uint64_t logbufsize = _options.get_int_option("sm_logbufsize", 128 << 10); // at least 128KB
     // pretty big limit -- really, the limit is imposed by the OS's
     // ability to read/write
     if (uint64_t(logbufsize) < (uint64_t) 4 * ss_m::page_sz) {
@@ -598,33 +417,30 @@ ss_m::_construct_once(
         << "Need to hold at least 4 pages ( " << 4 * ss_m::page_sz
         << ")"
         << flushl; 
-        W_FATAL(OPT_BadValue);
+        W_FATAL(eCRASH);
     }
     if (uint64_t(logbufsize) > uint64_t(max_int4)) {
         errlog->clog << fatal_prio 
         << "Log buf size (sm_logbufsize = " << (int)logbufsize
         << " ) is too big: individual log files can't be large files yet."
         << flushl; 
-        W_FATAL(OPT_BadValue);
+        W_FATAL(eCRASH);
     }
 
     /*
      * Now we can create the buffer manager
      */ 
-    bool default_true = true, default_false = false;
-    bool initially_enable_cleaners = option_t::str_to_bool(_backgroundflush->value(), default_true);
-    bool bufferpool_swizzle = option_t::str_to_bool(_bufferpool_swizzle->value(), default_false);
-    const char* bufferpool_replacement_policy = _bufferpool_replacement_policy->value();
+    bool initially_enable_cleaners = _options.get_bool_option("sm_backgroundflush", true);
+    bool bufferpool_swizzle = _options.get_bool_option("sm_bufferpool_swizzle", false);
+    std::string bufferpool_replacement_policy = _options.get_string_option("sm_bufferpool_replacement_policy", "clock"); // clock or random
 
-    bf = new bf_tree_m(nbufpages, npgwriters, cleaner_interval_millisec_min, cleaner_interval_millisec_max, 64, bufferpool_replacement_policy, initially_enable_cleaners, bufferpool_swizzle);
+    uint32_t cleaner_write_buffer_pages = (uint32_t) _options.get_int_option("sm_cleaner_write_buffer_pages", 64);
+    bf = new bf_tree_m(nbufpages, npgwriters, cleaner_interval_millisec_min, cleaner_interval_millisec_max, cleaner_write_buffer_pages, bufferpool_replacement_policy.c_str(), initially_enable_cleaners, bufferpool_swizzle);
     if (! bf) {
         W_FATAL(eOUTOFMEMORY);
     }
     /* just hang onto this until we create thelog manager...*/
-
-    bool badVal = false;
-
-    lm = new lock_m(strtol(_locktablesize->value(), NULL, 0));
+    lm = new lock_m(_options.get_int_option("sm_locktablesize", 64000));
     if (! lm)  {
         W_FATAL(eOUTOFMEMORY);
     }
@@ -642,31 +458,26 @@ ss_m::_construct_once(
     /*
      *  Level 1
      */
-    smlevel_0::logging_enabled = 
-        option_t::str_to_bool(_logging->value(), badVal);
+    smlevel_0::logging_enabled = _options.get_bool_option("sm_logging", true);
     if (logging_enabled)  
     {
-        w_assert3(!badVal);
-
-        bool reformat_log = 
-            option_t::str_to_bool(_reformat_log->value(), badVal);
-        w_assert3(!badVal);
-
         if(max_logsz < 8*int(logbufsize)) {
           errlog->clog << warning_prio << 
             "WARNING: Log buffer is bigger than 1/8 partition (probably safe to make it smaller)."
                    << flushl;
         }
-        w_rc_t e = log_m::new_log_m(log, 
-                     _logdir->value(), 
+        std::string logdir = _options.get_string_option("sm_logdir", "");
+        if (logdir.empty()) {
+            errlog->clog << fatal_prio  << "ERROR: sm_logdir must be set to enable logging." << flushl;
+            W_FATAL(eCRASH);
+        }
+        w_rc_t e = log_m::new_log_m(log,
+                     logdir.c_str(),
                      logbufsize, 
-                     reformat_log);
+                     _options.get_bool_option("sm_reformat_log", false));
         W_COERCE(e);
 
-        int percent=0;
-        if(_log_warn_percent // && _log_warn_percent->is_set() means by user; false if default value
-                )
-            percent = strtol(_log_warn_percent->value(), NULL, 0);
+        int percent = _options.get_int_option("sm_log_warn", 0);
 
         // log_warn_exceed is %; now convert it to raw # bytes
         // that we must have left at all times. When the space available
@@ -685,10 +496,7 @@ ss_m::_construct_once(
         << flushl;
     }
     
-    badVal = true;
-
-    smlevel_0::statistics_enabled = 
-        option_t::str_to_bool(_statistics->value(), badVal);
+    smlevel_0::statistics_enabled = _options.get_bool_option("sm_statistics", true);
 
     // start buffer pool cleaner when the log module is ready
     {
@@ -737,11 +545,7 @@ ss_m::_construct_once(
      * mounted.  If not, we can skip the mount/dismount.
      */
 
-    if (
-            option_t::str_to_bool(_logging->value(), badVal)
-    )  {
-        w_assert3(!badVal);
-
+    if (_options.get_bool_option("sm_logging", true))  {
         restart_m restart;
         smlevel_0::redo_tid = restart.redo_tid();
         restart.recover(log->master_lsn());
@@ -819,9 +623,7 @@ ss_m::_construct_once(
 
     chkpt->spawn_chkpt_thread();
 
-    do_prefetch = 
-        option_t::str_to_bool(_prefetch->value(), badVal);
-    w_assert3(!badVal);
+    do_prefetch = _options.get_bool_option("sm_prefetch", false);
     DBG(<<"constructor done");
 }
 

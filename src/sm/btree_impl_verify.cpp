@@ -143,7 +143,7 @@ rc_t btree_impl::_ux_verify_feed_page(
                 page.get_fence_high_length_noprefix(), page.get_fence_high_key_noprefix());
         } else {
             // the first separator key will be high of pid0, low of child(0)
-            page.node_key(0, key);
+            page.get_key(0, key);
             context.add_expectation (page.pid0(), child_level, true, key); 
             context.add_expectation (page.child(0), child_level, false, key);
         }
@@ -152,7 +152,7 @@ rc_t btree_impl::_ux_verify_feed_page(
             pid_next.page = page.child(slot);
             if (slot + 1 < page.nrecs()) {
                 // *next* separator key will be this slot's high and next slot's low
-                page.node_key(slot + 1, key);
+                page.get_key(slot + 1, key);
                 context.add_expectation (pid_next.page, child_level, true, key);
                 context.add_expectation (page.child(slot + 1), child_level, false, key);
             } else {

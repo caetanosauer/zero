@@ -113,7 +113,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <cstddef>
 #include <w_stream.h>
 
-#include "option.h"
 #include "basics.h"
 #include "lid_t.h"
 #include "vec_t.h"
@@ -123,8 +122,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #undef SM_SOURCE
 #undef SM_LEVEL
 #include "sm.h"
-#include "pin.h"
-#include "scan.h"
 #include "kvl_t.h" // define kvl_t for lock_base_t
 #include "lock_s.h" // define lock_base_t
 

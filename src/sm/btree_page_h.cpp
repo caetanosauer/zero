@@ -23,17 +23,22 @@ btrec_t&
 btrec_t::set(const btree_page_h& page, slotid_t slot) {
     FUNC(btrec_t::set);
     w_assert3(slot >= 0 && slot < page.nrecs());
-    // Invalidate old _elem.
+
     _elem.reset();
     
     if (page.is_leaf())  {
-        page.rec_leaf(slot, _key, _elem, _ghost_record);
+        page.get_key(slot, _key);
+        smsize_t element_len;
+        const char* element_data = page.element(slot, element_len, _ghost_record);
+        _elem.put(element_data, element_len);
+        _child = 0;
     } else {
-        page.rec_node(slot, _key, _child);
         _ghost_record = false;
+        page.get_key(slot, _key);
+        _child = page.child_opaqueptr(slot);
         // this might not be needed, but let's also add the _child value
         // to _elem.
-        _elem.put (&_child, sizeof(_child));
+        _elem.put(&_child, sizeof(_child));
     }
 
     return *this;
@@ -117,7 +122,7 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
     page()->btree_prefix_length = (int16_t) prefix_len;
 
     // fence-key record doesn't need poormkey; set to 0:
-    if (!page()->insert_item(nitems(), false, 0, 0, fences)) {
+    if (!page()->insert_item(nrecs()+1, false, 0, 0, fences)) {
         w_assert0(false);
     }
 
@@ -130,14 +135,14 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
         w_assert1(is_node());
         w_assert1(steal_src2->pid0() != pid0);
         w_assert1(steal_src2->pid0() != 0);
-        // before stealing regular records from src2, steal it's pid0
-        cvec_t v;
-        key_length_t key_len = (key_length_t) steal_src2->get_fence_low_length();
-        v.put(&key_len, sizeof(key_len));
-        v.put(steal_src2->get_fence_low_key() + prefix_len, steal_src2->get_fence_low_length() - prefix_len);
-        poor_man_key poormkey = extract_poor_man_key (steal_src2->get_fence_low_key(), steal_src2->get_fence_low_length(), prefix_len);
+
+        // before stealing regular records from src2, steal it's pid0:
+        cvec_t       stolen_key(steal_src2->get_fence_low_key() + prefix_len, steal_src2->get_fence_low_length() - prefix_len);
+        poor_man_key poormkey    = extract_poor_man_key(stolen_key);
         shpid_t      stolen_pid0 = steal_src2->pid0();
-        if (!page()->insert_item(nitems(), false, poormkey, stolen_pid0, v)) {
+        cvec_t v;
+        _pack_node_record(v, stolen_key);
+        if (!page()->insert_item(nrecs()+1, false, poormkey, stolen_pid0, v)) {
             w_assert0(false);
         }
     }
@@ -162,43 +167,38 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
     w_assert2(steal_from >= 0);
     w_assert2(steal_to <= steal_src->nrecs());
 
-    key_length_t src_prefix_length = steal_src->get_prefix_length();
     key_length_t new_prefix_length = get_prefix_length();
     for (int i = steal_from; i < steal_to; ++i) {
-        cvec_t v;
-        key_length_t klen; // this needs to stay in scope until v goes out of scope...
-        cvec_t new_trunc_key;
-        shpid_t child;
-
-        cvec_t key, dummy;
-        key.put(steal_src->get_prefix_key(), steal_src->get_prefix_length());
+        // get full uncompressed key from src slot #i into key:
+        cvec_t key(steal_src->get_prefix_key(), steal_src->get_prefix_length());
+        size_t      trunc_key_length;
+        const char* trunc_key_data;
         if (is_leaf()) {
-            int   key_length;
-            char* trunc_key_data;
-            int   data_length;
-            char* data;
-            steal_src->_get_leaf_fields(i, key_length, trunc_key_data, data_length, data);
-            int trunc_key_length = key_length - src_prefix_length;
-            key.put(trunc_key_data, trunc_key_length);
+            trunc_key_data = steal_src->_leaf_key_noprefix(i, trunc_key_length);
+        } else {
+            trunc_key_data = steal_src->_node_key_noprefix(i, trunc_key_length);
+        }
+        key.put(trunc_key_data, trunc_key_length);
+        
+        // split off part after new_prefix_length into new_trunc_key:
+        cvec_t dummy, new_trunc_key;
+        key.split(new_prefix_length, dummy, new_trunc_key);
 
-            key.split(new_prefix_length, dummy, new_trunc_key);
-            klen = key_length;
-            v.put(&klen, sizeof(klen));
-            v.put(new_trunc_key);
-            v.put(data, data_length);
+        cvec_t         v;
+        pack_scratch_t v_scratch; // this needs to stay in scope until v goes out of scope...
+        shpid_t        child;
+        if (is_leaf()) {
+            smsize_t data_length;
+            bool is_ghost;
+            const char* data = steal_src->element(i, data_length, is_ghost);
+            _pack_leaf_record(v, v_scratch, new_trunc_key, data, data_length);
             child = 0;
         } else {
-            int   trunc_key_length;
-            char* trunc_key_data;
-            steal_src->_get_node_key_fields(i, trunc_key_length, trunc_key_data);
-            key.put(trunc_key_data, trunc_key_length);
-
-            key.split(new_prefix_length, dummy, new_trunc_key);
-            v.put(new_trunc_key);
-            child = steal_src->page()->item_child(i+1);
+            _pack_node_record(v, new_trunc_key);
+            child = steal_src->child_opaqueptr(i);
         }
 
-        if (!page()->insert_item(nitems(), steal_src->is_ghost(i), 
+        if (!page()->insert_item(nrecs()+1, steal_src->is_ghost(i), 
                                  extract_poor_man_key(new_trunc_key), 
                                  child, v)) {
             w_assert0(false);
@@ -237,7 +237,7 @@ rc_t btree_page_h::norecord_split (shpid_t foster,
         // otherwise, just sets the fence keys and headers
         //sets new fence
         rc_t rc = replace_fence_rec_nolog(fence_low, fence_high, chain_fence_high, new_prefix_len);
-        w_assert1(rc.err_num() != smlevel_0::eRECWONTFIT);// then why it passed check_chance_for_norecord_split()?
+        w_assert1(rc.err_num() != eRECWONTFIT);// then why it passed check_chance_for_norecord_split()?
         w_assert1(!rc.is_error());
 
         //updates headers
@@ -394,9 +394,9 @@ void btree_page_h::_update_btree_consecutive_skewed_insertions(slotid_t slot) {
 rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, shpid_t child) {
     FUNC(btree_page_h::insert);
     
-    w_assert3(is_node());
+    w_assert1(is_node());
     w_assert1(slot >= 0 && slot <= nrecs()); // <= intentional to allow appending
-    w_assert3(child);
+    w_assert1(child);
     w_assert3(is_consistent(true, false));
 
 #if W_DEBUG_LEVEL > 1
@@ -416,19 +416,18 @@ rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, shpid_t chi
     // Update btree_consecutive_skewed_insertions.  This is just statistics and not logged.
     _update_btree_consecutive_skewed_insertions (slot);
 
-    // See the record format in btree_page_h class comments.
-    vec_t v; // the record data
-    key_length_t klen = key.get_length_as_keystr();
-    // Prefix of the key is fixed in this page, so we can simply
-    // peel off leading bytes from the key+el.
+    size_t       klen          = key.get_length_as_keystr();
     key_length_t prefix_length = get_prefix_length();  // length of prefix of inserted tuple
-    w_assert3(prefix_length <= klen);
-    v.put(key, prefix_length, klen - prefix_length);
-    poor_man_key poormkey = extract_poor_man_key(key.buffer_as_keystr(), klen, prefix_length);
+    w_assert1(prefix_length <= klen);
+    cvec_t trunc_key((const char*)key.buffer_as_keystr()+prefix_length, klen-prefix_length);
+    poor_man_key poormkey = extract_poor_man_key(trunc_key);
+
+    vec_t v;
+    _pack_node_record(v, trunc_key);
     // we don't log it. btree_impl::adopt() does the logging
     if (!page()->insert_item(slot+1, false, poormkey, child, v)) {
         // This shouldn't happen; the caller should have checked with check_space_for_insert_for_node():
-        return RC(smlevel_0::eRECWONTFIT);
+        return RC(eRECWONTFIT);
     }
 
     w_assert3 (is_consistent(true, false));
@@ -440,14 +439,14 @@ rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, shpid_t chi
 rc_t btree_page_h::replace_fence_rec_nolog(const w_keystr_t& low,
                                            const w_keystr_t& high, 
                                            const w_keystr_t& chain, int new_prefix_len) {
-    w_assert1(nitems() > 0);
+    w_assert1(page()->number_of_items() > 0);
 
     cvec_t fences;
     int prefix_len = _pack_fence_rec(fences, low, high, chain, new_prefix_len);
     w_assert1(prefix_len == get_prefix_length());
 
     if (!page()->replace_item_data(0, 0, fences)) {
-        return RC(smlevel_0::eRECWONTFIT);
+        return RC(eRECWONTFIT);
     }
 
     w_assert1 (page()->item_length(0) == (key_length_t) fences.size());
@@ -456,10 +455,10 @@ rc_t btree_page_h::replace_fence_rec_nolog(const w_keystr_t& low,
 }
 
 
-rc_t btree_page_h::remove_shift_nolog(slotid_t idx) {
-    w_assert1(idx >= 0 && idx < nrecs());
+rc_t btree_page_h::remove_shift_nolog(slotid_t slot) {
+    w_assert1(slot >= 0 && slot < nrecs());
 
-    page()->delete_item(idx + 1);
+    page()->delete_item(slot + 1);
     return RCOK;
 }
 
@@ -468,8 +467,7 @@ bool btree_page_h::_is_enough_spacious_ghost(const w_keystr_t &key, slotid_t slo
     w_assert2(is_leaf());
     w_assert2(is_ghost(slot));
 
-    size_t needed_data = key.get_length_as_keystr() - get_prefix_length()
-        + el.size() + sizeof(key_length_t); // <<<>>>
+    size_t needed_data = _predict_leaf_data_length(key.get_length_as_keystr() - get_prefix_length(), el.size());
 
     return page()->predict_item_space(needed_data) <= page()->item_space(slot+1);
 }
@@ -494,12 +492,7 @@ rc_t btree_page_h::replace_ghost(const w_keystr_t &key,
     w_assert3 (rec.key().compare(key) == 0);
 #endif // W_DEBUG_LEVEL > 2
 
-    int   key_length;
-    char* trunc_key_data;
-    _get_leaf_key_fields(slot, key_length, trunc_key_data);
-    size_t data_offset = sizeof(key_length_t) + key_length - get_prefix_length();  // <<<>>>
-
-    if (!page()->replace_item_data(slot+1, data_offset, elem)) {
+    if (!page()->replace_item_data(slot+1, _element_offset(slot), elem)) {
         w_assert1(false); // should not happen because ghost should have had enough space
     }
 
@@ -512,13 +505,8 @@ rc_t btree_page_h::replace_el_nolog(slotid_t slot, const cvec_t &elem) {
     w_assert2( is_leaf());
     w_assert1(!is_ghost(slot));
     
-    int   key_length;
-    char* trunc_key_data;
-    _get_leaf_key_fields(slot, key_length, trunc_key_data);
-    size_t data_offset = sizeof(key_length_t) + key_length - get_prefix_length();  // <<<>>>
-
-    if (!page()->replace_item_data(slot+1, data_offset, elem)) {
-        return RC(smlevel_0::eRECWONTFIT);
+    if (!page()->replace_item_data(slot+1, _element_offset(slot), elem)) {
+        return RC(eRECWONTFIT);
     }
     return RCOK;
 }
@@ -529,12 +517,9 @@ void btree_page_h::overwrite_el_nolog(slotid_t slot, smsize_t offset,
     w_assert2( is_leaf());
     w_assert1 (!is_ghost(slot));
 
-    int   key_length;
-    char* trunc_key_data;
-    _get_leaf_key_fields(slot, key_length, trunc_key_data);
-    size_t data_offset = sizeof(key_length_t) + key_length - get_prefix_length();  // <<<>>>
-
+    size_t data_offset = _element_offset(slot);
     w_assert1(data_offset+offset+elen <= page()->item_length(slot+1));
+
     ::memcpy(page()->item_data(slot+1)+data_offset+offset, new_el, elen);
 }
 
@@ -548,8 +533,8 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, size_t
     w_assert1(check_space_for_insert_leaf(trunc_key_length, element_length));
 
     // where to insert?
+    bool     found;
     slotid_t slot;
-    bool found;
     search(key_raw, key_raw_len, found, slot);
     w_assert1(!found); // this is unexpected!
     if (found) { // but can go on..
@@ -564,35 +549,29 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, size_t
 #if W_DEBUG_LEVEL>1
     w_keystr_t key;
     key.construct_from_keystr(key_raw, key_raw_len);
-    w_keystr_t key2;
-    cvec_t el;
-    bool ghost;
     w_assert1(compare_with_fence_low(key) >= 0);
-    if (slot > 0) {
-        // make sure previous record exists (slot=0 is fence)
-        // otherwise, compare with previous key
-        rec_leaf(slot - 1, key2, el, ghost);
-        w_assert1(key.compare(key2) > 0);
-    }
     w_assert1(compare_with_fence_high(key) < 0);
+
+    // verify search worked properly, no record with that key:
+    if (slot > 0) {
+        w_assert1(_compare_key_noprefix(slot-1,key_raw+prefix_len,trunc_key_length) < 0);
+    }
     if (slot < nrecs()) {
-        // otherwise, compare with previous key
-        rec_leaf(slot, key2, el, ghost);
-        w_assert1(key.compare(key2) < 0);
+        w_assert1(_compare_key_noprefix(slot,key_raw+prefix_len,trunc_key_length) > 0);
     }
 #endif // W_DEBUG_LEVEL>1
     
-    poor_man_key poormkey = extract_poor_man_key(key_raw, key_raw_len, prefix_len);
+    cvec_t trunc_key(key_raw + prefix_len, trunc_key_length);
+    poor_man_key poormkey = extract_poor_man_key(trunc_key);
 
     if (!page()->insert_item(slot+1, true, poormkey, 0, data_length)) {
         w_assert0(false);
     }
 
     // make a dummy record that has the desired length:
-    cvec_t dummy;
-    key_length_t klen = key_raw_len;
-    dummy.put(&klen, sizeof(klen));
-    dummy.put(key_raw + prefix_len, trunc_key_length);
+    cvec_t         dummy;
+    pack_scratch_t dummy_scratch;
+    _pack_leaf_record_prefix(dummy, dummy_scratch, trunc_key);
     dummy.copy_to(page()->item_data(slot+1));
 
     w_assert3(_poor(slot) == poormkey);
@@ -618,7 +597,7 @@ bool btree_page_h::check_space_for_insert_leaf(const w_keystr_t& trunc_key,
 }
 bool btree_page_h::check_space_for_insert_leaf(size_t trunc_key_length, size_t element_length) {
     w_assert1 (is_leaf());
-    size_t data_length = 1 * sizeof(key_length_t) + trunc_key_length + element_length;
+    size_t data_length = _predict_leaf_data_length(trunc_key_length, element_length);
     return btree_page_h::check_space_for_insert (data_length);
 }
 bool btree_page_h::check_space_for_insert_node(const w_keystr_t& key) {
@@ -674,7 +653,7 @@ void btree_page_h::suggest_fence_for_split(w_keystr_t &mid,
         right_begins_from = nrecs();
         if (is_leaf()) {
             w_keystr_t lastkey;
-            leaf_key(nrecs() - 1, lastkey);
+            get_key(nrecs() - 1, lastkey);
             size_t common_bytes = lastkey.common_leading_bytes(triggering_key);
             w_assert1(common_bytes < triggering_key.get_length_as_keystr());
             mid.construct_from_keystr(triggering_key.buffer_as_keystr(), common_bytes + 1);
@@ -768,117 +747,50 @@ w_keystr_t btree_page_h::recalculate_fence_for_split(slotid_t right_begins_from)
 }
 
 
-void btree_page_h::rec_leaf(slotid_t slot,  w_keystr_t &key, cvec_t &el, bool &ghost) const {
-    w_assert1(is_leaf());
-    FUNC(btree_page_h::rec_leaf);
+void btree_page_h::get_key(slotid_t slot,  w_keystr_t &key) const {
+    const char* key_noprefix;
+    size_t      key_noprefix_length;
+    if (is_leaf()) {
+        key_noprefix = _leaf_key_noprefix(slot, key_noprefix_length);
+    } else {
+        key_noprefix = _node_key_noprefix(slot, key_noprefix_length);
+    }
 
-    int   key_length, data_length;
-    char *trunc_key_data, *data;
-    _get_leaf_fields(slot, key_length, trunc_key_data, data_length, data);
-
-    int prefix_len = get_prefix_length();
-    w_assert2 (prefix_len <= key_length);
-
-    key.construct_from_keystr(get_prefix_key(), prefix_len, trunc_key_data, key_length - prefix_len);
-    el.reset();
-    el.put(data, data_length);
-    ghost = is_ghost(slot);
+    key.construct_from_keystr(get_prefix_key(), get_prefix_length(),
+                              key_noprefix, key_noprefix_length);
 }
-void btree_page_h::rec_leaf(slotid_t slot,  w_keystr_t &key, char *el, smsize_t &elen, bool &ghost) const {
+
+
+const char* btree_page_h::element(int slot, smsize_t &len, bool &ghost) const {
     w_assert1(is_leaf());
-    FUNC(btree_page_h::rec_leaf);
 
-    int   key_length, data_length;
-    char *trunc_key_data, *data;
-    _get_leaf_fields(slot, key_length, trunc_key_data, data_length, data);
+    size_t offset = _element_offset(slot);
+    int    length = page()->item_length(slot+1) - offset;
+    w_assert1(length >= 0);
 
-    int prefix_len = get_prefix_length();
-    w_assert2 (prefix_len <= key_length);
-
-    key.construct_from_keystr(get_prefix_key(), prefix_len, trunc_key_data, key_length - prefix_len);
-    w_assert1((int)elen >= data_length); // this method assumes the buffer is large enough!
-    ::memcpy(el, data, data_length);
-    elen = data_length;
+    len   = length;
     ghost = is_ghost(slot);
+    return page()->item_data(slot+1) + offset;
 }
-bool btree_page_h::dat_leaf(slotid_t slot,  char *el, smsize_t &elen, bool &ghost) const {
-    w_assert1(is_leaf());
-    FUNC(btree_page_h::dat_leaf);
+bool btree_page_h::copy_element(int slot, char *out_buffer, smsize_t &len, bool &ghost) const {
+    smsize_t actual_length;
+    const char* element_data = element(slot, actual_length, ghost);
 
-    int   key_length, data_length;
-    char *trunc_key_data, *data;
-    _get_leaf_fields(slot, key_length, trunc_key_data, data_length, data);
-
-    ghost = is_ghost(slot);
-    if ((int)elen >= data_length) {
-        ::memcpy(el, data, data_length);
-        elen = data_length;
+    if (len >= actual_length) {
+        ::memcpy(out_buffer, element_data, actual_length);
+        len = actual_length;
         return true;
     } else {
         // the buffer is too short
-        elen = data_length;
+        len = actual_length;
         return false;
     }
 }
 
-void btree_page_h::dat_leaf_ref(slotid_t slot, const char *&el, smsize_t &elen, bool &ghost) const {
-    w_assert1(is_leaf());
-    FUNC(btree_page_h::dat_leaf_ref);
-
-    int   key_length, data_length;
-    char *trunc_key_data, *data;
-    _get_leaf_fields(slot, key_length, trunc_key_data, data_length, data);
-
-    elen  = data_length;
-    el    = data;
-    ghost = is_ghost(slot);
-}
-
-void btree_page_h::leaf_key(slotid_t slot,  w_keystr_t &key) const {
-    w_assert1(is_leaf());
-
-    int   key_length;
-    char* trunc_key_data;
-    _get_leaf_key_fields(slot, key_length, trunc_key_data);
-
-    int prefix_len = get_prefix_length();
-    w_assert2 (prefix_len <= key_length);
-
-    key.construct_from_keystr(get_prefix_key(), prefix_len,
-                              trunc_key_data, key_length - prefix_len);
-}
-
-
-
-void  btree_page_h::rec_node(slotid_t slot,  w_keystr_t &key, shpid_t &el) const {
-    w_assert1(is_node());
-    FUNC(btree_page_h::rec_node);
-    w_assert1(!is_ghost(slot)); // non-leaf node can't be ghost
-
-    int   trunc_key_length;
-    char* trunc_key_data;
-    _get_node_key_fields(slot, trunc_key_length, trunc_key_data);
-
-    int prefix_len = get_prefix_length();
-
-    key.construct_from_keystr(get_prefix_key(), prefix_len, trunc_key_data, trunc_key_length);
-    el = page()->item_child(slot+1);
-}
-void btree_page_h::node_key(slotid_t slot,  w_keystr_t &key) const {
-    w_assert1(is_node());
-
-    int   trunc_key_length;
-    char* trunc_key_data;
-    _get_node_key_fields(slot, trunc_key_length, trunc_key_data);
-
-    int prefix_len = get_prefix_length();
-
-    key.construct_from_keystr(get_prefix_key(), prefix_len, trunc_key_data, trunc_key_length);
-}
 
 rc_t
 btree_page_h::leaf_stats(btree_lf_stats_t& _stats) {
-    _stats.hdr_bs    += hdr_sz + get_rec_space(-1);
+    _stats.hdr_bs    += hdr_sz + page()->item_space(0);
     _stats.unused_bs += usable_space();
 
     int n = nrecs();
@@ -1069,7 +981,7 @@ rc_t btree_page_h::defrag() {
     w_assert1 (latch_mode() == LATCH_EX);
 
     vector<slotid_t> ghost_slots;
-    for (int i=0; i<nitems(); i++) {
+    for (int i=0; i<page()->number_of_items(); i++) {
         if (page()->is_ghost(i)) {
             w_assert1(i >= 1); // fence record can't be ghost
             ghost_slots.push_back(i-1);

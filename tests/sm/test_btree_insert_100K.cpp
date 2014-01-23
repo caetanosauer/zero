@@ -5,7 +5,6 @@
 #include "btree.h"
 #include "btcursor.h"
 #include "bf.h"
-#include "e_error_def_gen.h"
 #include <sstream>
 
 btree_test_env *test_env;
@@ -54,7 +53,7 @@ w_rc_t dosome(ss_m* ssm, test_volume_t *test_volume) {
 
        rc_t rc = ssm->create_assoc(stid, key, data);
        if (rc.is_error()) {
-          if (rc.err_num() != ss_m::eDUPLICATE) {
+          if (rc.err_num() != eDUPLICATE) {
                 cerr << "unexpected error";
                 return rc;
           }

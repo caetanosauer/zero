@@ -71,13 +71,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  */
 
 #include <climits>
-#ifndef OPTION_H
-#include "option.h"
-#endif
-#ifndef __opt_error_def_gen_h__
-#include "opt_error_def_gen.h"
-#endif
-
 
 class ErrLog;
 class sm_stats_info_t;
@@ -403,11 +396,6 @@ public:
         t_forward_processing = 0x8
     };
 
-#include "e_error_enum_gen.h"
-
-    static const w_error_info_t error_info[];
-    static void init_errorcodes();
-
     static void  add_to_global_stats(const sm_stats_info_t &from);
     static void  add_from_global_stats(sm_stats_info_t &to);
 
@@ -465,17 +453,6 @@ public:
     // This is a zeroed page for use wherever initialized memory
     // is needed.
     static char zero_page[page_sz];
-
-    // option for controlling background buffer flush thread
-    static option_t* _backgroundflush;
-
-    enum {
-            eINTERNAL = fcINTERNAL,
-            eOS = fcOS,
-            eOUTOFMEMORY = fcOUTOFMEMORY,
-            eNOTFOUND = fcNOTFOUND,
-            eNOTIMPLEMENTED = fcNOTIMPLEMENTED
-    };
 
     /// NB: this had better match sm_store_property_t (sm_int_3.h) !!!
     // or at least be converted properly every time we come through the API

@@ -132,7 +132,7 @@ btree_impl::_ux_lock_range(
             w_assert1(slot == 0);
             leaf.copy_fence_low_key(prevkey);
         } else {
-          leaf.leaf_key(slot, prevkey);
+          leaf.get_key(slot, prevkey);
         }
         W_DO (_ux_lock_key(leaf, prevkey, latch_mode, miss_lock_mode, check_only));
     }
@@ -154,7 +154,7 @@ rc_t btree_impl::_ux_assure_fence_low_entry(btree_page_h &leaf)
         needs_to_create = true;
     } else {
         w_keystr_t first_key;
-        leaf.leaf_key(0, first_key);
+        leaf.get_key(0, first_key);
         w_assert1(fence_low.compare(first_key) <= 0); // can't be fence_low>first_key
         if (fence_low.compare(first_key) < 0) {
             // fence-low doesn't exist as an entry!

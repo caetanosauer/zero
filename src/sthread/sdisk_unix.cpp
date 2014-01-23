@@ -96,8 +96,6 @@ extern class sthread_stats SthreadStats;
 #include <os_interface.h>
 
 
-const int stBADFD = sthread_base_t::stBADFD;
-
 int    sdisk_unix_t::convert_flags(int sflags)
 {
     int    flags = 0;

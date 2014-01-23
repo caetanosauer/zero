@@ -83,6 +83,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <sm_s.h> // declares lsn_t
 #endif
 
+#include <string>
+#include "sm_options.h"
 /* DOXYGEN Documentation : */
 
 /**\addtogroup LOGSPACE 
@@ -420,8 +422,6 @@ class dir_m;
 class chkpt_m;
 class lid_m; 
 class sm_stats_cache_t;
-class option_group_t;
-class option_t;
 class prologue_rc_t;
 class w_keystr_t;
 class verify_volume_result;
@@ -519,26 +519,11 @@ public:
 #endif /* COMMENT */
 
   public:
-    /**\brief Add storage manager options to the given options group.
-     *\ingroup SSMINIT
-     *\details
-     * @param[in] grp The caller's option group, to which the
-     * storage manager's options will be added for processing soon.
-     *
-     * Before the ss_m constructor can be called, setup_options
-     * \b must be called.  This will install the storage manager's options and
-     * initialize any that are not required.
-     * Once all required options have been set, an ss_m can be constructed.
-     *
-     *\note This is not thread-safe.  The application (server) must prevent
-     * concurrent calls to setup_options.
-     */
-    static rc_t setup_options(option_group_t* grp);
-
     /**\brief  Initialize the storage manager.
      * \ingroup SSMINIT
      * \details
-     * @param[in] warn   A callback function. This is called 
+     * @param[in] options Start-up parameters.
+     * @param[in] warn   A callback function. This is called
      * when/if the log is in danger of becoming "too full".
      * @param[in] get   A callback function. This is called 
      * when the storage manager needs an archived log file to be restored.
@@ -582,7 +567,7 @@ public:
      *  \ref smlevel_0::LOG_ARCHIVED_CALLBACK_FUNC, and 
      *  \ref LOGSPACE.
      */
-    ss_m(LOG_WARN_CALLBACK_FUNC warn=NULL, LOG_ARCHIVED_CALLBACK_FUNC get=NULL);
+    ss_m(const sm_options &options, LOG_WARN_CALLBACK_FUNC warn=NULL, LOG_ARCHIVED_CALLBACK_FUNC get=NULL);
 
     /**\brief  Shut down the storage manager.
      * \ingroup SSMINIT
@@ -1724,22 +1709,6 @@ public:
      * ss_m::config_info.
      *
      * The minimum size of a B-Tree index is 8 pages (1 extent).
-     *
-     * A variety of locking protocols is supported:
-     * - none : acquire no locks on the {key,value} pairs in the index,
-     *   although an intention lock might be acquired on the index.
-     * - kvl : key-value locking See \ref MOH1.  The key or
-     *   key-value pair is hashed into a 4-byte value and used with the
-     *   given store id to make a lock id.
-     * - im : index-management locking See \ref MOH1.  
-     *   The "value" portion of
-     *   the key-value lock is taken to be a record id, which is used 
-     *   for the lock id.
-     * - modified kvl : an ad-hoc protocol used by the Paradise project. See \ref MODKVL "the scan_index_i constructor". As with index-management locking, 
-     *   the "value" portion of
-     *   the key-value lock is taken to be a record id, which is used 
-     *   for the lock id.
-     * - file : full-index locking.
      */
 
 
@@ -1802,93 +1771,6 @@ public:
     /**\cond skip */
     static rc_t            print_index(stid_t stid);
     /**\endcond skip */
-
-    // TODO: pin: add explaination for MRBT (SSMMRBTREE :)
-
-    /**\brief Create a MR-B+-Tree index.
-     * \ingroup SSMBTREE
-     * @param[in] vid   Volume on which to create the index.
-     * @param[in] ntype   Type of index. Legitimate values are: 
-     *  - t_mrbtree : Multi-rooted B+-Tree with duplicate keys (1st design)
-     *  - t_uni_mrbtree : Multi-rooted B+-Tree without duplicate keys (1st design)
-     *  - t_mrbtree_l : Multi-rooted B+-Tree with duplicate keys allowed (2nd design)
-     *  - t_uni_mrbtree_l : Multi-rooted B+-Tree without duplicate keys (2nd design)
-     *  - t_mrbtree_p : Multi-rooted B+-Tree with duplicate keys allowed (3rd design)
-     *  - t_uni_mrbtree_p : Multi-rooted B+-Tree without duplicate keys (3rd design)
-     * @param[in] property Logging level of store. Legitimate values are:
-     *  - t_regular
-     *  - t_load_file
-     *  - t_insert_file
-     *  See sm_store_property_t for details.
-     * @param[in] key_desc Description of key type.
-     *  See \ref key_description for details.
-     * @param[in] cc The locking protocol to use with this index. See
-     * smlevel_0::concurrency_t and \ref SSMBTREE.
-     * @param[out] stid New store ID will be returned here.
-     */
-    static rc_t            create_mr_index(
-                vid_t                 vid, 
-                ndx_t                 ntype, 
-                store_property_t      property,
-                const char*           key_desc,
-                concurrency_t         cc, 
-                stid_t&               stid,
-		const bool            bIgnoreLatches = false
-    );
-
-    /**\brief Create a MR-B+-Tree index based on initial partitions.
-     * \ingroup SSMBTREE
-     * @param[in] vid   Volume on which to create the index.
-     * @param[in] ntype   Type of index. Legitimate values are: 
-     *  - t_mrbtree : Multi-rooted B+-Tree without duplicate keys (1st design)
-     *  - t_uni_mrbtree : Multi-rooted B+-Tree without duplicate keys (1st design)
-     *  - t_mrbtree_l : Multi-rooted B+-Tree with duplicate keys allowed (2nd design)
-     *  - t_uni_mrbtree_l : Multi-rooted B+-Tree without duplicate keys (2nd design)
-     *  - t_mrbtree_p : Multi-rooted B+-Tree with duplicate keys allowed (3rd design)
-     *  - t_uni_mrbtree_p : Multi-rooted B+-Tree without duplicate keys (3rd design)
-     * @param[in] property Logging level of store. Legitimate values are:
-     *  - t_regular
-     *  - t_load_file
-     *  - t_insert_file
-     *  See sm_store_property_t for details.
-     * @param[in] key_desc Description of key type.
-     *  See \ref key_description for details.
-     * @param[in] cc The locking protocol to use with this index. See
-     * smlevel_0::concurrency_t and \ref SSMBTREE.
-     * @param[out] stid New store ID will be returned here.
-     * @param[in] ranges Initial partitions
-     */
-    static rc_t            create_mr_index(
-                vid_t                 vid, 
-                ndx_t                 ntype, 
-                store_property_t      property,
-                const char*           key_desc,
-                concurrency_t         cc, 
-                stid_t&               stid,
-		key_ranges_map&       ranges,
-		const bool            bIgnoreLatches = false
-    );
-
-    /**\brief Destroy a Multi-rooted B+-Tree index.
-     * \ingroup SSMBTREE
-     *
-     * @param[in] iid  ID of the index to be destroyed.
-     */
-    static rc_t            destroy_mr_index(const stid_t& iid); 
-
-    /**\brief Partition the space between the given minKey and maxKey equally depending on the given
-     * partition count in a Multi-rooted B+-Tree index.
-     * \ingroup SSMBTREE
-     *
-     * @param[in] stid     ID of the index.
-     * @param[in] minKey   The lower bound on the keys in the index.
-     * @param[in] maxKey   The upper bound on the keys in the index.
-     * @param[in] numParts The number of partitions wanted.
-     */
-    static rc_t make_equal_partitions(stid_t stid,
-				      const vec_t& minKey,
-				      const vec_t& maxKey,
-				      uint numParts);
 
     /**
      * \brief Create an entry in a B+-Tree index.
@@ -1963,12 +1845,6 @@ public:
         const w_keystr_t&             key
     );
 
-    static rc_t            destroy_assoc(
-        stid_t                   stid, 
-        const vec_t&             key,
-        const vec_t&             el
-    );
-
     /** \brief Find an entry associated with a key in a B+-Tree index. 
      * \ingroup SSMBTREE
      *
@@ -1990,14 +1866,6 @@ public:
         void*                   el, 
         smsize_t&               elen, 
         bool&                   found
-    );
-
-    static rc_t            find_assoc(
-        stid_t stid, 
-        const vec_t& key, 
-        void* el, 
-        smsize_t& elen, 
-        bool& found
     );
 
     /**
@@ -2071,7 +1939,8 @@ public:
     /** Returns the global lock table object for light-weight intent locks. */
     static lil_global_table*  get_lil_global_table();
 
-    /**\brief Acquire a lock.
+    /**
+     * \brief Acquire a lock.
      * \ingroup SSMLOCK
      * @param[in]  n  Lock id of the entity to lock. There are
      * conversions from record ids, volume ids, store ids, and page ids to
@@ -2087,6 +1956,14 @@ public:
         timeout_in_ms           timeout = WAIT_SPECIFIED_BY_XCT
     );
 
+    /**
+     * \brief Acquire a lock on an entire store.
+     * \ingroup SSMLOCK
+     * @param[in]  n  Store ID.
+     * @param[in]  m  Desired lock mode.  Values: EX, SH.
+     * @param[in]  check_only  if true, the lock goes away right after grant. default false.
+     * @param[in]  timeout  Milliseconds willing to block.  See timeout_in_ms.
+     */
     static rc_t            lock(
         const stid_t&         n, 
         const okvl_mode&           m,
@@ -2094,297 +1971,14 @@ public:
         timeout_in_ms           timeout = WAIT_SPECIFIED_BY_XCT
     );
 
-    /**\brief Release a lock.
-     * \ingroup SSMLOCK
-     * @param[in]  n  Lock id of the entity to lock. There are
-     * conversions from record ids, volume ids, store ids, and page ids to
-     * lockid_t.
-     */
-    //static rc_t            unlock(const lockid_t& n);
-
-    /**\brief  Find out if the attached transaction has an entity locked.
-     * \ingroup SSMLOCK
-     * @param[in]  n  Lock id of the entity to lock. There are
-     * conversions from record ids, volume ids, store ids, and page ids to
-     * lockid_t.
-     * @param[out]  m  Mode of lock held. NL if none.
-     */
-    /* this is tentatively disabled. not used anyway.
-    static rc_t            query_lock(
-        const lockid_t&        n, 
-        lock_mode_t&           m
-    );
-    */
-
-
-
-    /**\brief Create a file of records.
-     * \ingroup SSMFILE
-     * \details
-     * @param[in] vid   Volume on which to create a file.
-     * @param[out] fid  Returns (store) ID of the new file here.
-     * @param[in] property Give the file the this property.
-     * @param[in] cluster_hint Not used. 
-     *
-     * The cluster hint is included in the API for future use. 
-     * It has no effect.
-     */
-    static rc_t            create_file( 
-        vid_t                   vid, 
-        stid_t&                 fid,
-        store_property_t        property,
-        shpid_t                 cluster_hint = 0
-    ); 
-
-    /**\brief Destroy a file of records.
-     * \ingroup SSMFILE
-     * \details
-     * @param[in] fid  ID of the file to destroy.
-     */
-    static rc_t            destroy_file(const stid_t& fid); 
-
-    /**\brief Create a new record.
-     * \ingroup SSMFILE
-     * \details
-     * @param[in] fid  ID of the file in which to create a record.
-     * @param[in] hdr  What to put in the record's header.
-     * @param[in] len_hint  Hint about how big the record will ultimately be.
-     * This is used to determine the initial format of the record. If you plan
-     * to append to the record and know that it will ultimately become a large
-     * record, it is more efficient to give a size hint that is larger than
-     * a page here. Otherwise, the record will be made small (as determined by
-     * the size of the parameter \a data ), and subsequent appends will cause 
-     * the record to be converted to a large record.
-     * @param[in] data  What to put in the record's body. 
-     * @param[out] new_rid  ID of the newly created record.
-     * @param[in] policy  File compaction policy to use. See \ref pg_policy_t
-     * for possible values.
-     */
-    static rc_t            create_rec(
-        const stid_t&            fid, 
-        const vec_t&             hdr, 
-        smsize_t                 len_hint, 
-        const vec_t&             data, 
-        rid_t&                   new_rid,
-#ifdef SM_DORA
-        const bool               bIgnoreLocks = false,
-#endif
-        uint4_t                  policy = t_cache | t_compact | t_append
-    ); 
-
-    /**\brief Destroy a record.
-     * \ingroup SSMFILE
-     * \details
-     * @param[in] rid  ID of the record to destroy.
-     */
-    static rc_t            destroy_rec(const rid_t& rid
-#ifdef SM_DORA
-        , const bool             bIgnoreLocks = false
-#endif
-                                       );
-
-    /**\brief Append bytes to a record body.
-     * \ingroup SSMFILE
-     * \details
-     * @param[in] rid  ID of the record to modify.
-     * @param[in] data  What to append to the record.
-     *
-     * \note This appends \b to a record; it does \b not append a record to a file!
-     * \sa pin_i::append_rec, \ref SSMPIN
-     */
-    static rc_t            append_rec(
-        const rid_t&             rid, 
-        const vec_t&             data
-                );
-
-
-    /**\addtogroup SSMFILE
-     * 
-     * This functions are for the heap file that are used in MRBtree design
-     * when it is enforced that a heap file is pointed by only one leaf page
-     * or sub-btree, because for these two designs the file_mrbt_p should be
-     * used instead of file_p. 
-     *
-     * The only difference between these two page
-     * types is that file_mrbt_p keeps the id of the leaf page or the btree
-     * root page that points to it. So it has less space for data than file_p.
-     * 
-     * Other than the file page type difference and bIgnoreLatches flag
-     * the below functions are same as the above file management functions.
-     * 
-     * There is one additional function though, which is create_file_in_page.
-     * The description for this function is below.
-     */
-    
-    static rc_t            create_mrbt_file( 
-        vid_t                   vid, 
-        stid_t&                 fid,
-        store_property_t        property,
-        shpid_t                 cluster_hint = 0
-    ); 
-
-    static rc_t            destroy_mrbt_file(const stid_t& fid); 
-    
-    static rc_t            destroy_mrbt_rec(const rid_t& rid
-        , const bool             bIgnoreLocks = false,
-	const bool               bIgnoreLatches = false
-                                       );
-
-
-    /**\brief Create a new record in one of the pages pointed
-     *        by the leaf in PLP-Leaf or by the subtree in PLP-Part.
-     * \ingroup SSMFILE
-     * \details
-     * @param[in] fid  ID of the file in which to create a record.
-     * @param[in] leaf The subtree leaf page
-     * @param[in] hdr  What to put in the record's header.
-     * @param[in] len_hint  Hint about how big the record will ultimately be.
-     * This is used to determine the initial format of the record. If you plan
-     * to append to the record and know that it will ultimately become a large
-     * record, it is more efficient to give a size hint that is larger than
-     * a page here. Otherwise, the record will be made small (as determined by
-     * the size of the parameter \a data ), and subsequent appends will cause 
-     * the record to be converted to a large record.
-     * @param[in] data  What to put in the record's body. 
-     * @param[out] new_rid  ID of the newly created record.
-     */
-    static rc_t            find_page_and_create_mrbt_rec(
-        const stid_t&            fid,
-	const lpid_t&            leaf,
-        const vec_t&             hdr, 
-        smsize_t                 len_hint, 
-        const vec_t&             data, 
-        rid_t&                   new_rid,
-	const bool             bIgnoreLocks = false,
-        const bool             bIgnoreLatches = false); 
-
-
-    /**\brief Create an entry in a Multi-rooted B+-Tree index.
-     * \ingroup SSMBTREE
-     *
-     * @param[in] stid  ID of the index. 
-     * @param[in] key  Key for the association to be created.
-     * @param[in] ef  Struct that wraps the element for the association to be created
-     *
-     * The combined sizes of the key (i.e., the number of actual data
-     * bytes it contains-1) and element vectors must be less than or
-     * equal to \ref max_entry_size.
-     */
-    static rc_t            create_mr_assoc(
-        stid_t                   stid, 
-        const vec_t&             key, 
-        el_filler&             ef,
-        const bool             bIgnoreLocks = false,
-	const bool             bIgnoreLatches = false,
-	RELOCATE_RECORD_CALLBACK_FUNC relocate_callback = NULL,
-	const lpid_t&           root = lpid_t::null);
-
-    /**\brief Remove an entry from a Multi-rooted B+-Tree index.
-     * \ingroup SSMBTREE
-     *
-     * @param[in] stid  ID of the index. 
-     * @param[in] key   Key of the entry to be removed.
-     * @param[in] el   Element (value) of the entry to be removed.
-     */
-    static rc_t            destroy_mr_assoc(
-        stid_t                   stid, 
-        const vec_t&             key,
-        const vec_t&             el,
-        const bool             bIgnoreLocks = false,
-	const bool             bIgnoreLatches = false,
-	const lpid_t&           root = lpid_t::null);
-
-    /**\brief Find an entry associated with a key in a Multi-rooted B+-Tree index. 
-     * \ingroup SSMBTREE
-     *
-     * @param[in] stid  ID of the index. 
-     * @param[in] key   Key of the entries to be found.
-     * @param[out] el   Element associated with the given key will be copied into this buffer.
-     * @param[in] elen Length of buffer into which the 
-     *                  result will be written. If too small, eRECWONTFIT will
-     *                  be returned.
-     *                 Length of result will be returned here.
-     * @param[out] found   True if an entry is found.
-     *
-     * If the index is not unique (allows duplicates), the first
-     * element found with the given key will be returned.
-     *
-     * To locate all entries associated with a non-unique key, you must
-     * use scan_index_i, q.v.. 
-     */
-    static rc_t            find_mr_assoc(
-				      stid_t                  stid, 
-				      const vec_t&            key, 
-				      void*                   el, 
-				      smsize_t&               elen, 
-				      bool&                   found,
-				      const bool             bIgnoreLocks = false,
-				      const bool             bIgnoreLatches = false,
-				      const lpid_t&           root = lpid_t::null);
-
-    /**\brief Update an entry associated with a key.
-     * Currently used for updating secondary indexes after record relocation
-     * due to the primary index being MRBT-PART or MRBT-LEAF 
-     * \ingroup SSMBTREE
-     *
-     * @param[in] stid   ID of the index. 
-     * @param[in] key    Key of the entry to be updated.
-     * @param[in] old_el Element associated with the given key
-     *                   This value is the value to be updated
-     * @param[in] new_el New element associated with the given key
-     *                   old_el will be updated with this
-     * @param[out] found   True if an entry is found.
-     *
-     */
-    static rc_t            update_mr_assoc(
-				      stid_t                 stid, 
-				      const vec_t&           key, 
-				      const vec_t&           old_el,
-				      const vec_t&           new_el, 
-				      bool&                  found,
-				      const bool             bIgnoreLocks = false,
-				      const bool             bIgnoreLatches = false,
-				      const lpid_t&          root = lpid_t::null);
- 
-
-   /**\brief Returns the range map of a Multi-rooted B+-Tree index.
-     * \ingroup SSMBTREE
-     *
-     * @param[in] stid       ID of the index.
-     * @param[out] rangemap  The range map of this index.
-     */
-    static rc_t get_range_map(stid_t stid, key_ranges_map*& rangemap);
-
-
-
 private:
 
     static int _instance_cnt;
-    static option_group_t* _options;
-    static option_t* _hugetlbfs_path;
-    static option_t* _reformat_log;
-    static option_t* _prefetch;
-    static option_t* _bufpoolsize;
-    static option_t* _locktablesize;
-    static option_t* _logdir;
-    static option_t* _logsize;
-    static option_t* _logbufsize;
-    static option_t* _error_log;
-    static option_t* _error_loglevel;
-    static option_t* _log_warn_percent;
-    static option_t* _num_page_writers;
-    static option_t* _bufferpool_swizzle;
-    static option_t* _bufferpool_replacement_policy;
-    static option_t* _cleaner_interval_millisec_min;
-    static option_t* _cleaner_interval_millisec_max;
-    static option_t* _logging;
-    static option_t* _statistics;
 
+    /** Start-up parameters for the storage engine. */
+    sm_options _options;
 
-    static rc_t            _set_option_logsize(
-        option_t*              opt,
-        const char*            value,
-        ostream*               err_stream);
+    void _set_option_logsize();
     
     static rc_t            _set_store_property(
         stid_t                stid,

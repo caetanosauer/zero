@@ -440,7 +440,7 @@ again:
         rc = read(l, pos, fd);
         DBGTHRD(<<"POS " << pos << ": tx." << *l);
 
-        if(rc.err_num() == smlevel_0::eEOF) {
+        if(rc.err_num() == eEOF) {
             // eof or record -- wipe it out
             DBGTHRD(<<"EOF--Skipping!");
             _skip(pos, fd);
@@ -734,7 +734,7 @@ partition_t::read(logrec_t *&rp, lsn_t &ll, int fd)
             if( rp->length() > sizeof(logrec_t) || 
             rp->length() < rp->header_size() ) {
                 w_assert1(ll.hi() == 0); // in peek()
-                return RC(smlevel_0::eEOF);
+                return RC(eEOF);
             }
             first_time = false;
             leftover = rp->length() - (b - off);

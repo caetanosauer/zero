@@ -62,7 +62,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define SMFILE_C
 
 #include "w.h"
-#include "option.h"
 #include "sm_int_4.h"
 #include "btcursor.h"
 #include "device.h"
@@ -96,30 +95,6 @@ ss_m::get_store_property(stid_t stid, store_property_t& property)
     W_DO( _get_store_property( stid, property) );
     return RCOK;
 }
-
-/*--------------------------------------------------------------*
- *  ss_m::create_file()                                                *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::create_file(
-    vid_t                          vid, 
-    stid_t&                        fid, 
-    store_property_t               property,
-    shpid_t                        cluster_hint // = 0
-)
-{
-    SM_PROLOGUE_RC(ss_m::create_file, in_xct, read_write, 0);
-#if FILE_LOG_COMMENT_ON
-    W_DO(log_comment("create_file"));
-#endif
-    DBGTHRD(<<"create_file " <<vid << " " << property );
-    W_DO(_create_file(vid, fid, property, cluster_hint));
-    DBGTHRD(<<"create_file returns " << fid);
-    return RCOK;
-}
-
-
-
 
 rc_t
 ss_m::lvid_to_vid(const lvid_t& lvid, vid_t& vid)
@@ -231,126 +206,4 @@ ss_m::_get_store_property(
     }
 
     return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::_create_file()                                        *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::_create_file(vid_t vid, stid_t& fid,
-                   store_property_t property,
-                   shpid_t        cluster_hint // = 0
-                   )
-{
-    SUPPRESS_UNUSED_4(vid, fid, property, cluster_hint);
-    //TODO: SHORE-KITS-API
-    assert(0);
-    SUPPRESS_NON_RETURN(rc_t);
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::_destroy_file()                                        *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::_destroy_file(const stid_t& fid)
-{
-    SUPPRESS_UNUSED(fid);
-    //TODO: SHORE-KITS-API
-    assert(0);
-    SUPPRESS_NON_RETURN(rc_t);
-}
-
-
-/*--------------------------------------------------------------*
- *  ss_m::create_mrbt_file()                                    *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::create_mrbt_file(
-    vid_t                          vid, 
-    stid_t&                        fid, 
-    store_property_t               property,
-    shpid_t                        cluster_hint // = 0
-)
-{
-    SUPPRESS_UNUSED_4(vid, fid, property, cluster_hint);
-    //TODO: SHORE-KITS-API
-    assert(0);
-    SUPPRESS_NON_RETURN(rc_t);
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::destroy_mrbt_file()                                   *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::destroy_mrbt_file(const stid_t& fid)
-{
-    SUPPRESS_UNUSED(fid);
-    //TODO: SHORE-KITS-API
-    assert(0);
-    SUPPRESS_NON_RETURN(rc_t);
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::create_rec()                                                *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::create_rec(const stid_t& fid, const vec_t& hdr,
-                 smsize_t len_hint, const vec_t& data, rid_t& new_rid,
-#ifdef SM_DORA
-                 const bool bIgnoreLocks,
-#endif
-                 uint4_t  policy
-                 )
-{
-    SUPPRESS_UNUSED_5(fid, hdr, len_hint, data, new_rid);
-    SUPPRESS_UNUSED(policy);
-    //TODO: SHORE-KITS-API
-    assert(0);
-    SUPPRESS_NON_RETURN(rc_t);
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::destroy_rec()                                                *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::destroy_rec(const rid_t& rid
-#ifdef SM_DORA
-                  , const bool bIgnoreLocks
-#endif
-                  )
-{
-    SUPPRESS_UNUSED(rid);
-     //TODO: SHORE-KITS-API
-    assert(0);
-    SUPPRESS_NON_RETURN(rc_t);
-}
-
-
-/*--------------------------------------------------------------*
- *  ss_m::create_mrbt_rec_in_page()                             *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::find_page_and_create_mrbt_rec(const stid_t& fid, const lpid_t& leaf, const vec_t& hdr,
-				    smsize_t len_hint, const vec_t& data, rid_t& new_rid,
-				    const bool bIgnoreLocks, const bool bIgnoreLatches)
-{
-    SUPPRESS_UNUSED_5(fid, leaf, hdr, len_hint, data);
-    SUPPRESS_UNUSED_3(new_rid, bIgnoreLocks, bIgnoreLatches);
-    //TODO: SHORE-KITS-API
-    assert(0);
-    SUPPRESS_NON_RETURN(rc_t);
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::destroy_mrbt_rec()                                    *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::destroy_mrbt_rec(const rid_t& rid
-		       , const bool bIgnoreLocks, const bool bIgnoreLatches
-                  )
-{
-    SUPPRESS_UNUSED_3(rid, bIgnoreLocks, bIgnoreLatches);
-    //TODO: SHORE-KITS-API
-    assert(0);
-    SUPPRESS_NON_RETURN(rc_t);
 }

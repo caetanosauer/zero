@@ -61,7 +61,7 @@ rc_t alloc_cache_t::allocate_one_page (shpid_t &pid) {
         pid_to_return = _contiguous_free_pages_begin;
         ++_contiguous_free_pages_begin;    
     } else {
-        return RC(smlevel_0::eOUTOFSPACE);
+        return RC(eOUTOFSPACE);
     }
 
     W_DO(apply_allocate_one_page(pid_to_return));
@@ -78,7 +78,7 @@ rc_t alloc_cache_t::allocate_consecutive_pages (shpid_t &pid_begin, size_t page_
         pid_to_begin = _contiguous_free_pages_begin;
         _contiguous_free_pages_begin += page_count;
     } else {
-        return RC(smlevel_0::eOUTOFSPACE);
+        return RC(eOUTOFSPACE);
     }
     W_DO(apply_allocate_consecutive_pages(pid_to_begin, page_count));
     pid_begin = pid_to_begin;

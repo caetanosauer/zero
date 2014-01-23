@@ -41,12 +41,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <sm_int_4.h>
 #include <btcursor.h>
 
-#ifdef HAVE_UTSNAME
-#        include <sys/utsname.h>
-#else
-#        include <hostname.h>
-#endif
-
 #include <netdb.h>        /* XXX really should be included for all */
 
 rc_t
@@ -69,13 +63,7 @@ lid_m::generate_new_volid(lvid_t& lvid)
     static queue_based_block_lock_t lidmgnrt_mutex;
     CRITICAL_SECTION(cs, lidmgnrt_mutex);
 
-#ifdef HAVE_UTSNAME
-    struct        utsname uts;
-    if (uname(&uts) == -1) return RC(eOS);
-    strncpy(name, uts.nodename, max_name);
-#else
     if (gethostname(name, max_name)) return RC(eOS);
-#endif
 
     struct hostent* hostinfo = gethostbyname(name);
 

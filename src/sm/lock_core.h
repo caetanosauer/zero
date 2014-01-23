@@ -99,7 +99,7 @@ public:
     lil_global_table*   get_lil_global_table() { return _lil_global_table; }
 
 public:
-    w_rc_t::errcode_t  acquire_lock(
+    w_error_codes  acquire_lock(
                 xct_t*            xd,
                 const lockid_t&   name,
                 const okvl_mode&     mode,
@@ -160,7 +160,7 @@ extern bool g_deadlock_use_waitmap_obsolete;
 /** How long to sleep between each dreadlock spin? */ 
 extern int g_deadlock_dreadlock_interval_ms;
 /** function pointer for the implementation of arbitrary _check_deadlock impl. */ 
-extern w_rc_t::errcode_t (*g_check_deadlock_impl)(xct_t* xd, lock_request_t *myreq);
+extern w_error_codes (*g_check_deadlock_impl)(xct_t* xd, lock_request_t *myreq);
 #endif // SWITCH_DEADLOCK_IMPL
 
 #endif          /*</std-footer>*/

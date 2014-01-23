@@ -31,6 +31,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define VTABLE_INFO_H
 
 #include "w_defines.h"
+#include "w_base.h"
 
 /*  -- do not edit anything above this line --   </std-header>*/
 

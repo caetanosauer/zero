@@ -164,7 +164,7 @@ rc_t bt_cursor_t::_locate_first() {
                     leaf.copy_fence_low_key(_key);
                 } else {
                     _dont_move_next = false;
-                    leaf.leaf_key(_slot, _key);
+                    leaf.get_key(_slot, _key);
                 }
                 mode = _ex_lock ? &ALL_N_GAP_X : &ALL_N_GAP_S;
             } else {
@@ -177,7 +177,7 @@ rc_t bt_cursor_t::_locate_first() {
                     mode = _ex_lock ? &ALL_N_GAP_X : &ALL_N_GAP_S;
                 } else {
                     _dont_move_next = true;
-                    leaf.leaf_key(_slot, _key);
+                    leaf.get_key(_slot, _key);
                     // let's take range lock too to reduce lock manager calls
                     mode = _ex_lock ? &ALL_X_GAP_X : &ALL_S_GAP_S;
                 }
@@ -186,7 +186,7 @@ rc_t bt_cursor_t::_locate_first() {
         if (_needs_lock && !mode->is_empty()) {
             rc_t rc = btree_impl::_ux_lock_key (leaf, _key, LATCH_SH, *mode, false);
             if (rc.is_error()) {
-                if (rc.err_num() == smlevel_0::eLOCKRETRY) {
+                if (rc.err_num() == eLOCKRETRY) {
                     continue;
                 } else {
                     return rc;
@@ -369,7 +369,7 @@ rc_t bt_cursor_t::_advance_one_slot(btree_page_h &p, bool &eof)
         // the next key. So, we use the temporary variable _tmp_next_key_buf.
         const okvl_mode *mode = NULL;
         {
-            p.leaf_key(_slot, _tmp_next_key_buf);
+            p.get_key(_slot, _tmp_next_key_buf);
             if (_forward) {
                 int d = _tmp_next_key_buf.compare(_upper);
                 if (d < 0) {
@@ -395,7 +395,7 @@ rc_t bt_cursor_t::_advance_one_slot(btree_page_h &p, bool &eof)
         if (_needs_lock && !mode->is_empty()) {
             rc_t rc = btree_impl::_ux_lock_key (p, _tmp_next_key_buf, LATCH_SH, *mode, false);
             if (rc.is_error()) {
-                if (rc.err_num() == smlevel_0::eLOCKRETRY) {
+                if (rc.err_num() == eLOCKRETRY) {
                     W_DO(_check_page_update(p));
                     continue;
                 } else {
@@ -417,7 +417,7 @@ rc_t bt_cursor_t::_make_rec(const btree_page_h& page)
     // Copy the record to buffer
     bool ghost;
     _elen = sizeof(_elbuf);
-    page.dat_leaf(_slot, _elbuf, _elen, ghost);
+    page.copy_element(_slot, _elbuf, _elen, ghost);
 
 #if W_DEBUG_LEVEL>0
     w_assert1(_elen <= sizeof(_elbuf));    
@@ -425,7 +425,7 @@ rc_t bt_cursor_t::_make_rec(const btree_page_h& page)
     w_assert1(!ghost);
 
     w_keystr_t key_again;
-    page.leaf_key(_slot, key_again);
+    page.get_key(_slot, key_again);
     w_assert1(key_again.compare(_key) == 0);
 #endif // W_DEBUG_LEVEL>0
     

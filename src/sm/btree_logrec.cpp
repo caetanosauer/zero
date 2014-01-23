@@ -238,10 +238,9 @@ void btree_overwrite_log::redo(fixable_page_h* page)
 
 #if W_DEBUG_LEVEL>0
     const char* old_el = dp->_data + dp->_klen;
-    const char* cur_el;
     smsize_t cur_elen;
     bool ghost;
-    bp.dat_leaf_ref(slot, cur_el, cur_elen, ghost);
+    const char* cur_el = bp.element(slot, cur_elen, ghost);
     w_assert1(!ghost);
     w_assert1(cur_elen >= offset + elen);
     w_assert1(::memcmp(old_el, cur_el + offset, elen) == 0);
@@ -706,7 +705,7 @@ void btree_foster_deadopt_real_parent_log::redo(fixable_page_h* page)
     // apply changes on real-parent again. no write-order dependency with foster-parent
     borrowed_btree_page_h bp(page);
     btree_foster_deadopt_real_parent_t *dp = (btree_foster_deadopt_real_parent_t*) _data;
-    w_assert1(dp->_foster_slot >= 0 && dp->_foster_slot < bp.nitems());
+    w_assert1(dp->_foster_slot >= 0 && dp->_foster_slot < bp.nrecs());
     btree_impl::_ux_deadopt_foster_apply_real_parent(bp, dp->_deadopted_pid, dp->_foster_slot);
 }
 

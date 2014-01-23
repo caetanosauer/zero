@@ -59,8 +59,8 @@ w_rc_t insert_toolong_fail(ss_m* ssm, test_volume_t *test_volume) {
     long_data[SM_PAGESIZE] = '\0';
     cout << "We should see too-long error here:" << endl;
     w_rc_t  rc = test_env->btree_insert (stid, "abcdef6", long_data);
-    EXPECT_EQ (rc.err_num(), (w_rc_t::errcode_t) ss_m::eRECWONTFIT);
-    if (rc.err_num() == ss_m::eRECWONTFIT) {
+    EXPECT_EQ (rc.err_num(), (w_error_codes) eRECWONTFIT);
+    if (rc.err_num() == eRECWONTFIT) {
         cout << "yep, we did. the following message is NOT an error." << endl;
     } else {
         cerr << "wtf" << endl;
@@ -96,8 +96,8 @@ w_rc_t insert_dup_fail(ss_m* ssm, test_volume_t *test_volume) {
     // should fail here
     cout << "We should see a duplicate error here:" << endl;
     w_rc_t  rc = test_env->btree_insert (stid, "key006", "data7");
-    EXPECT_EQ (rc.err_num(), (w_rc_t::errcode_t) ss_m::eDUPLICATE);
-    if (rc.err_num() == ss_m::eDUPLICATE) {
+    EXPECT_EQ (rc.err_num(), (w_error_codes) eDUPLICATE);
+    if (rc.err_num() == eDUPLICATE) {
         cout << "yep, we did. the following message is NOT an error." << endl;
     } else {
         cerr << "wtf: no duplicate?" << endl;
@@ -163,8 +163,8 @@ w_rc_t insert_remove_fail(ss_m* ssm, test_volume_t *test_volume) {
     // should fail here
     cout << "We should see a NOTFOUND error here:" << endl;
     w_rc_t  rc = test_env->btree_remove (stid, "key003");
-    EXPECT_EQ (rc.err_num(), (w_rc_t::errcode_t) ss_m::eNOTFOUND);
-    if (rc.err_num() == ss_m::eNOTFOUND) {
+    EXPECT_EQ (rc.err_num(), eNOTFOUND);
+    if (rc.err_num() == eNOTFOUND) {
         cout << "yep, we did. the following message is NOT an error." << endl;
     } else {
         cerr << "wtf?" << endl;
@@ -200,8 +200,8 @@ w_rc_t insert_remove_fail_repeat(ss_m* ssm, test_volume_t *test_volume) {
     // should fail here
     cout << "We should see a NOTFOUND error here:" << endl;
     w_rc_t  rc = test_env->btree_remove (stid, "key005");
-    EXPECT_EQ (rc.err_num(), (w_rc_t::errcode_t) ss_m::eNOTFOUND);
-    if (rc.err_num() == ss_m::eNOTFOUND) {
+    EXPECT_EQ (rc.err_num(), (w_error_codes) eNOTFOUND);
+    if (rc.err_num() == eNOTFOUND) {
         cout << "yep, we did. the following message is NOT an error." << endl;
     } else {
         cerr << "wtf?" << endl;
@@ -320,9 +320,9 @@ w_rc_t insert_overwrite_fail(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(test_env->btree_insert (stid, "key006", "data6"));
     W_DO(test_env->btree_overwrite (stid, "key006", "b", 4));
     rc_t rc1 = test_env->btree_overwrite (stid, "key006", "b", 5);
-    EXPECT_EQ ((w_rc_t::errcode_t) smlevel_0::eRECWONTFIT, rc1.err_num());
+    EXPECT_EQ (eRECWONTFIT, rc1.err_num());
     rc_t rc2 = test_env->btree_overwrite (stid, "key006", "b", 6);
-    EXPECT_EQ ((w_rc_t::errcode_t) smlevel_0::eRECWONTFIT, rc2.err_num());
+    EXPECT_EQ (eRECWONTFIT, rc2.err_num());
     W_DO(test_env->commit_xct());
     
     return RCOK;

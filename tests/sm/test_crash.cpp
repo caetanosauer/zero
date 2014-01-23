@@ -251,10 +251,11 @@ public:
         W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
         output_durable_lsn(2);
         W_DO(test_env->begin_xct());
-        // Set the data size is the max. entry size minue key size minus 1
-        // because the total size must be smaller than btree_m::max_entry_size()
+        // Set the data size is the max_entry_size minus key size
+        // because the total size must be smaller than or equal to
+        // btree_m::max_entry_size()
         const int key_size = 5;
-        const int data_size = btree_m::max_entry_size() - key_size - 1;
+        const int data_size = btree_m::max_entry_size() - key_size;
 
         vec_t data;
         char datastr[data_size];

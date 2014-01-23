@@ -238,7 +238,7 @@ w_rc_t
 aborttest() 
 {
     if( _debuginfo.matches == _debuginfo.value)  {
-        return RC(smlevel_0::eUSERABORT);
+        return RC(eUSERABORT);
     }
     return RCOK;
 }

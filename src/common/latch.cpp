@@ -365,8 +365,8 @@ latch_t::upgrade_if_not_block(bool& would_block)
     w_rc_t rc = _acquire(LATCH_EX, sthread_base_t::WAIT_IMMEDIATE, me.value());
     if(rc.is_error()) {
         // it never should have tried to block
-        w_assert3(rc.err_num() != sthread_t::stTIMEOUT);
-        if(rc.err_num() != sthread_t::stINUSE) 
+        w_assert3(rc.err_num() != stTIMEOUT);
+        if(rc.err_num() != stINUSE)
             return RC_AUGMENT(rc);
     
         would_block = true;
@@ -447,7 +447,7 @@ w_rc_t latch_t::_acquire(latch_mode_t new_mode,
         // to avoid deadlock,
         // never block on upgrade 
         if(!_lock.attempt_upgrade())
-            return RC(sthread_t::stINUSE);
+            return RC(stINUSE);
 
         w_assert2(me->_count > 0);
         w_assert2(new_mode == LATCH_EX);
@@ -469,7 +469,7 @@ w_rc_t latch_t::_acquire(latch_mode_t new_mode,
             bool success = (new_mode == LATCH_SH)? 
                 _lock.attempt_read() : _lock.attempt_write();
             if(!success)
-                return RC(sthread_t::stTIMEOUT);
+                return RC(stTIMEOUT);
             INC_STH_STATS(latch_condl_nowait);
         }
         else {

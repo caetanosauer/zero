@@ -229,6 +229,29 @@ public:
     void SetUp();
     void TearDown();
 
+    static sm_options make_sm_options(
+        int32_t locktable_size,
+        int bufferpool_size_in_pages,
+        uint32_t cleaner_threads,
+        uint32_t cleaner_interval_millisec_min,
+        uint32_t cleaner_interval_millisec_max,
+        uint32_t cleaner_write_buffer_pages,
+        bool initially_enable_cleaners,
+        bool enable_swizzling,
+        const std::vector<std::pair<const char*, int64_t> > &additional_int_params,
+        const std::vector<std::pair<const char*, bool> > &additional_bool_params,
+        const std::vector<std::pair<const char*, const char*> > &additional_string_params);
+
+    static sm_options make_sm_options(
+        int32_t locktable_size,
+        int bufferpool_size_in_pages,
+        uint32_t cleaner_threads,
+        uint32_t cleaner_interval_millisec_min,
+        uint32_t cleaner_interval_millisec_max,
+        uint32_t cleaner_write_buffer_pages,
+        bool initially_enable_cleaners,
+        bool enable_swizzling);
+
     /**
      * Call this method to run your test on a storage-manager-thread (smthread).
      * This method creates a volume and log directory ss_m for each test.
@@ -247,6 +270,9 @@ public:
                       bool initially_enable_cleaners = true,
                       bool enable_swizzling = default_enable_swizzling
                      );
+
+    /** This is most concise. New code should use this one. */
+    int runBtreeTest (w_rc_t (*functor)(ss_m*, test_volume_t*), bool use_locks, int disk_quota_in_pages, const sm_options &options);
 
     /**
     * Runs a restart testcase.
@@ -267,6 +293,9 @@ public:
                       bool enable_swizzling = default_enable_swizzling
                       );
 
+    /** This is most concise. New code should use this one. */
+    int runRestartTest (restart_test_base *context, bool fCrash, bool use_locks, int disk_quota_in_pages, const sm_options &options);
+
 
     int runRestartTest (restart_test_base *context,
                       bool fCrash,
@@ -278,7 +307,9 @@ public:
                       uint32_t cleaner_write_buffer_pages,
                       bool initially_enable_cleaners,
                       bool enable_swizzling,
-                      const std::vector<std::pair<const char*, const char*> > &additional_params);
+                      const std::vector<std::pair<const char*, int64_t> > &additional_int_params,
+                      const std::vector<std::pair<const char*, bool> > &additional_bool_params,
+                      const std::vector<std::pair<const char*, const char*> > &additional_string_params);
 
     /**
      * Overload to set additional parameters.
@@ -299,7 +330,9 @@ public:
                       uint32_t cleaner_write_buffer_pages,
                       bool initially_enable_cleaners,
                       bool enable_swizzling,
-                      const std::vector<std::pair<const char*, const char*> > &additional_params);
+                      const std::vector<std::pair<const char*, int64_t> > &additional_int_params,
+                      const std::vector<std::pair<const char*, bool> > &additional_bool_params,
+                      const std::vector<std::pair<const char*, const char*> > &additional_string_params);
 
     /**
      * Runs a crash testcase.
@@ -331,7 +364,12 @@ public:
                       uint32_t cleaner_write_buffer_pages,
                       bool initially_enable_cleaners,
                       bool enable_swizzling,
-                      const std::vector<std::pair<const char*, const char*> > &additional_params);
+                      const std::vector<std::pair<const char*, int64_t> > &additional_int_params,
+                      const std::vector<std::pair<const char*, bool> > &additional_bool_params,
+                      const std::vector<std::pair<const char*, const char*> > &additional_string_params);
+
+    /** This is most concise. New code should use this one. */
+    int runCrashTest (crash_test_base *context, bool use_locks, int disk_quota_in_pages, const sm_options &options);
 
     void empty_logdata_dir();
     

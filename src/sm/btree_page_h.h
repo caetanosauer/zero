@@ -76,36 +76,32 @@ public:
     NORET            btrec_t(const btree_page_h& page, slotid_t slot);
     NORET            ~btrec_t()        {};
 
-    /**
-    *  \brief Load up a reference to the tuple at "slot" in "page".
-    * \details
-    *  NB: here we are talking about record, not absolute slot# (slot
-    *  0 is special on every page).   So here we use ORIGIN 0
-    */
+    /// Load up a reference to the tuple at slot in "page".
     btrec_t&           set(const btree_page_h& page, slotid_t slot);
     
     smsize_t           elen() const    { return _elem.size(); }
 
     const w_keystr_t&  key() const    { return _key; }
     const cvec_t&      elem() const     { return _elem; }
+    /// returns the opaque version
     shpid_t            child() const    { return _child; }
     bool               is_ghost_record() const { return _ghost_record; }
 
 private:
-    shpid_t         _child;
-    w_keystr_t      _key;
-    cvec_t          _elem;
-    bool            _ghost_record;
     friend class btree_page_h;
+
+    bool            _ghost_record;
+    w_keystr_t      _key;
+    shpid_t         _child;  // opaque pointer
+    cvec_t          _elem;
 
     // disabled
     NORET            btrec_t(const btrec_t&);
-    btrec_t&            operator=(const btrec_t&);
+    btrec_t&         operator=(const btrec_t&);
 };
 
 inline NORET
-btrec_t::btrec_t(const btree_page_h& page, slotid_t slot)  
-{
+btrec_t::btrec_t(const btree_page_h& page, slotid_t slot) {
     set(page, slot);
 }
 
@@ -192,7 +188,7 @@ class btree_ghost_reclaim_log;
  * Opaque pointers:
  * - Default is to return page id.
  * - When a page is swizzled though we can avoid hash table lookup to map page id 
- *   to frame id by using frame id directly. Opaque pointers server this purpose by 
+ *   to frame id by using frame id directly. Opaque pointers serve this purpose by 
  *   hiding from the user whether a pointer is a frame id or page id. 
  *
  */
@@ -237,31 +233,24 @@ public:
     shpid_t                     btree_root() const { return page()->btree_root;}
     smsize_t                    used_space()  const;
 
-    // FIXME: next 3 functions are temporary for swizzling access <<<>>>
-    shpid_t& foster_pointer() { return page()->btree_foster; }
-    shpid_t& pid0_pointer()   { return page()->btree_pid0; }
-    shpid_t& child_pointer(slotid_t child) { return page()->item_child(child+1); }
-
-    slotid_t                     nitems() const;
-
     // Total usable space on page
     smsize_t                     usable_space()  const;
     
 
 
     
-    /** Returns 1 if leaf, >1 if non-leaf. */
+    /// Returns 1 if leaf, >1 if non-leaf.
     int               level() const;
-    /** Returns left-most ptr (used only in non-leaf nodes). */
+    /// Returns left-most ptr (used only in non-leaf nodes).
     shpid_t        pid0() const;
-    /** Returns left-most opaque pointer (used only in non-leaf nodes). */
+    /// Returns left-most opaque pointer (used only in non-leaf nodes).
     shpid_t        pid0_opaqueptr() const;
-    /** Returns root page used for recovery. */
+    /// Returns root page; used for recovery
     lpid_t           root() const;
 
     /// Is associated page a leaf?
     bool         is_leaf() const;
-    /** Returns if this page is NOT a leaf page.*/
+    /// Returns if this page is NOT a leaf
     bool             is_node() const;
     /**
     *    return true if this node is the lowest interior node,     *
@@ -270,23 +259,24 @@ public:
     */
     bool             is_leaf_parent() const;
     
-    /** Returns ID of B-link page (0 if not linked). */
+    /// Returns ID of B-link page (0 if not linked).
     shpid_t         get_foster() const;
-    /** Returns opaque pointer of B-link page (0 if not linked). */
+    /// Returns opaque pointer of B-link page (0 if not linked).
     shpid_t         get_foster_opaqueptr() const;
-    /** Clears the foster page and also clears the chain high fence key. */
+    /// Clears the foster page and also clears the chain high fence key.
     rc_t               clear_foster();
-    /** Returns the prefix which is removed from all entries in this page. */
+
+    /// Returns the prefix which is removed from all entries in this page.
     const char* get_prefix_key() const;
-    /** Returns the length of prefix key (0 means no prefix compression). */
+    /// Returns the length of prefix key (0 means no prefix compression).
     int16_t           get_prefix_length() const;
-    /** Returns the low fence key, which is same OR smaller than all entries in this page and its descendants. */
+    /// Returns the low fence key, which is same OR smaller than all entries in this page and its descendants.
     const char*  get_fence_low_key() const;
-    /** Returns the length of low fence key. */
+    /// Returns the length of low fence key.
     int16_t           get_fence_low_length() const;
-    /** Constructs w_keystr_t object containing the low-fence key of this page. */
+    /// Constructs w_keystr_t object containing the low-fence key of this page.
     void                copy_fence_low_key(w_keystr_t &buffer) const {buffer.construct_from_keystr(get_fence_low_key(), get_fence_low_length());}
-    /** Returns if the low-fence key is infimum. */
+    /// Returns if the low-fence key is infimum.
     bool              is_fence_low_infimum() const { return get_fence_low_key()[0] == SIGN_NEGINF;}
 
     /**
@@ -296,27 +286,29 @@ public:
      * eliminates prefix from fence-high.
      */
     const char*       get_fence_high_key_noprefix() const;
-    /** Returns the length of high fence key with prefix. */
+    /// Returns the length of high fence key with prefix.
     int16_t           get_fence_high_length() const;
-    /** Returns the length of high fence key without prefix. */
+    /// Returns the length of high fence key without prefix.
     int16_t           get_fence_high_length_noprefix() const {
         return get_fence_high_length() - get_prefix_length();
     }
-    /** Constructs w_keystr_t object containing the low-fence key of this page. */
+    /// Constructs w_keystr_t object containing the low-fence key of this page.
     void                copy_fence_high_key(w_keystr_t &buffer) const {
         buffer.construct_from_keystr(get_prefix_key(), get_prefix_length(),
                                      get_fence_high_key_noprefix(),
                                      get_fence_high_length_noprefix());
     }
-    /** Returns if the high-fence key is supremum. */
+    /// Returns if the high-fence key is supremum.
     bool              is_fence_high_supremum() const { return get_prefix_length() == 0 && get_fence_high_key_noprefix()[0] == SIGN_POSINF;}
 
-    /** Returns the high fence key of foster chain. */
+    /// Returns the high fence key of foster chain.
     const char*  get_chain_fence_high_key() const;
-    /** Returns the length of high fence key of foster chain. */
+    /// Returns the length of high fence key of foster chain.
     int16_t           get_chain_fence_high_length() const;
-    /** Constructs w_keystr_t object containing the low-fence key of this page. */
-    void                copy_chain_fence_high_key(w_keystr_t &buffer) const {buffer.construct_from_keystr(get_chain_fence_high_key(), get_chain_fence_high_length());}
+    /// Constructs w_keystr_t object containing the low-fence key of this page.
+    void                copy_chain_fence_high_key(w_keystr_t &buffer) const {
+        buffer.construct_from_keystr(get_chain_fence_high_key(), get_chain_fence_high_length());
+    }
     /**
      * Returns if the given key can exist in the range specified by fence keys,
      * which is low-fence <= key < high-fence.
@@ -328,9 +320,9 @@ public:
      * : >0 if key > fence-low.
      */
     int                 compare_with_fence_low (const w_keystr_t &key) const;
-    /** overload for char*. */
+    /// overload for char*.
     int                 compare_with_fence_low (const char* key, size_t key_len) const;
-    /** used when the prefix part is already checked key/key_len must be WITHOUT prefix. */
+    /// used when the prefix part is already checked key/key_len must be WITHOUT prefix.
     int                 compare_with_fence_low_noprefix (const char* key, size_t key_len) const;
     /**
      * Return value : 0 if equal.
@@ -338,9 +330,9 @@ public:
      * : >0 if key > fence-high.
      */
     int                 compare_with_fence_high (const w_keystr_t &key) const;
-    /** overload for char*. */
+    /// overload for char*.
     int                 compare_with_fence_high (const char* key, size_t key_len) const;
-    /** used when the prefix part is already checked key/key_len must be WITHOUT prefix. */
+    /// used when the prefix part is already checked key/key_len must be WITHOUT prefix.
     int                 compare_with_fence_high_noprefix (const char* key, size_t key_len) const;
     /**
      * Return value : 0 if equal.
@@ -348,7 +340,7 @@ public:
      * : >0 if key > fence-high.
      */
     int                 compare_with_chain_fence_high (const w_keystr_t &key) const;
-    /** overload for char*. */
+    /// overload for char*.
     int                 compare_with_chain_fence_high (const char* key, size_t key_len) const;
     // no 'noprefix' version because chain_fence_high might not share the prefix!
 
@@ -400,7 +392,7 @@ public:
         bool                 steal_src2_pid0 = false
         );
 
-    /** Steal records from steal_src. Called by format_steal. */
+    /// Steal records from steal_src. Called by format_steal.
     void _steal_records(btree_page_h* steal_src,
                         int           steal_from,
                         int           steal_to);
@@ -414,12 +406,78 @@ public:
                          const w_keystr_t& chain_fence_high,
                          bool log_it = true);
 
-    /** Returns if whether we can do norecord insert now. */
+    /// Returns if whether we can do norecord insert now.
     bool                 check_chance_for_norecord_split(const w_keystr_t& key_to_insert) const;
     
 
     // ======================================================================
-    //   BEGIN: Search and Record Access functions
+    //   BEGIN: Public record access functions
+    // ======================================================================
+
+     /// Returns the number of records in this page.
+    int             nrecs() const;
+
+    /// Returns if the specified record is a ghost record.
+    bool            is_ghost(slotid_t slot) const;
+    
+    /// Retrieves key from given record #
+    void            get_key(slotid_t slot,  w_keystr_t &key) const;
+
+    /**
+     * Return pointer to, length of element of given record.  Also
+     * returns ghost status of given record.
+     * 
+     * @pre we are a leaf page
+     */
+    const char*     element(int slot, smsize_t &len, bool &ghost) const;
+
+    /**
+     * Attempt to copy element of given record to provided buffer
+     * (out_buffer[0..len-1]).  Returns false iff failed due to
+     * insufficient buffer size.
+     * 
+     * Sets len to actual element size in all cases.  Also returns
+     * ghost status of given record.
+     * 
+     * @pre we are a leaf page
+     */
+    bool            copy_element(int slot, char *out_buffer, smsize_t &len, bool &ghost) const;
+
+    /// Return the (non-opaque) child pointer of record in slot.
+    shpid_t       child(slotid_t slot) const;
+    /// Return the opaque child pointer of record in slot.
+    shpid_t       child_opaqueptr(slotid_t slot) const;
+
+
+    /**
+     * Returns a pointer to given page pointer (e.g., shpid_t).
+     * 
+     * Offset may be -2 for leaf nodes or [-2,nrecs()-1] for internal
+     * nodes.  It denotes:
+     * 
+     *   -2: the foster pointer
+     *   -1: pid0
+     *    0..nrec()-1: the child pointer of the record in the corresponding slot
+     * 
+     * The page pointer will be at a 4-byte aligned address and
+     * opaque.
+     *
+     * (This method is used to implement swizzling of page pointers
+     * atomically.)
+     */
+    shpid_t* page_pointer_address(int offset);
+
+
+    /**
+     * Returns physical space used by the record currently in the
+     * given slot (including padding and other overhead due to that
+     * slot being occupied).
+     */
+    size_t              get_rec_space(int slot) const;
+
+
+    // ======================================================================
+    //   BEGIN: Search functions
     // ======================================================================
 
     /**
@@ -467,79 +525,15 @@ public:
                                 slotid_t&         return_slot) const;
 
 
-    /**
-     * Returns the number of records in this page.
-     */
-    int              nrecs() const;
-
-    /** Retrieves the key and record of specified slot in a leaf page.*/
-    void            rec_leaf(slotid_t idx,  w_keystr_t &key, cvec_t &el, bool &ghost) const;
-    /**
-     * Overload to receive raw buffer for el.
-     * @param[in,out] elen both input (size of el buffer) and output(length of el set).
-     */
-    void            rec_leaf(slotid_t idx,  w_keystr_t &key, char *el, smsize_t &elen, bool &ghost) const;
-    /**
-     * Returns only the el part.
-     * @param[in,out] elen both input (size of el buffer) and output(length of el set).
-     * @return true if el is large enough. false if el was too short and just returns elen.
-     */
-    bool            dat_leaf(slotid_t idx, char *el, smsize_t &elen, bool &ghost) const;
-
-    /** This version returns the pointer to element without copying. */
-    void            dat_leaf_ref(slotid_t idx, const char *&el, smsize_t &elen, bool &ghost) const;
-
-    /** Retrieves only key from a leaf page.*/
-    void            leaf_key(slotid_t idx,  w_keystr_t &key) const;
-
-    /**
-     * Retrieves the key and corresponding page pointer of specified slot
-     * in an intermediate node page.
-     */
-    void            rec_node(slotid_t idx,  w_keystr_t &key, shpid_t &el) const;
-
-    /** Retrieves only key from a node page.*/
-    void            node_key(slotid_t idx,  w_keystr_t &key) const;
-
-    /** Retrieves only key from this page.*/
-    void            get_key(slotid_t idx,  w_keystr_t &key) const {
-        if (is_node()) {
-            node_key(idx, key);
-        } else {
-            leaf_key(idx, key);
-        }
-    }
-
-    /** Retrieves only the length of key (before prefix compression).*/
-    key_length_t       get_key_len(slotid_t idx) const;
-
-
-    /// Returns physical space used by the item currently in the given
-    /// slot (including padding and other overhead due to that slot
-    /// being occupied); slot -1 is the special fence record:
-    size_t              get_rec_space(int slot) const;
-
-
-    /**
-    *  Return the child pointer of tuple at "slot".
-    *  equivalent to rec_node(), but doesn't return key (thus faster).
-    */
-    shpid_t       child(slotid_t slot) const;
-    /**
-    *  Return the child opaque pointer of tuple at "slot".
-    */
-    shpid_t       child_opaqueptr(slotid_t slot) const;
-
-
     // ======================================================================
     //   BEGIN: Insert/Update/Delete functions
     // ======================================================================
 
     /**
-    *  Insert a new entry at "slot". This is used only for non-leaf pages.
-    * For leaf pages, always use replace_ghost() and reserve_ghost().
-    * @param child child pointer to add
-    */
+     *  Insert a new entry at "slot". This is used only for non-leaf pages.
+     * For leaf pages, always use replace_ghost() and reserve_ghost().
+     * @param child child pointer to add
+     */
     rc_t            insert_node(const w_keystr_t&   key,
                                 slotid_t            slot, 
                                 shpid_t             child);
@@ -552,9 +546,6 @@ public:
      */
     void                        mark_ghost(slotid_t slot);
 
-    /** Returns if the specified record is a ghost record. */
-    bool                        is_ghost(slotid_t slot) const;
-    
     /**
      * Un-Mark the given slot to be a regular record.
      * If the record is already a non-ghost, does nothing.
@@ -564,13 +555,12 @@ public:
     void                        unmark_ghost(slotid_t slot);
 
     /**
-    * Replace an existing ghost record to insert the given tuple.
-    * This assumes the ghost record is enough spacious.
-    * @param[in] key inserted key
-    * @param[in] elem record data
-    */
-    rc_t            replace_ghost(
-        const w_keystr_t &key, const cvec_t &elem);
+     * Replace an existing ghost record to insert the given tuple.
+     * This assumes the ghost record is enough spacious.
+     * @param[in] key inserted key
+     * @param[in] elem record data
+     */
+    rc_t            replace_ghost(const w_keystr_t &key, const cvec_t &elem);
 
     /**
      * Replaces the special fence record with the given new data,
@@ -579,9 +569,9 @@ public:
     rc_t            replace_fence_rec_nolog(const w_keystr_t& low, const w_keystr_t& high, const w_keystr_t& chain, int new_prefix_length= -1);
 
     /**
-    *  Remove the slot and up-shift slots after the hole to fill it up.
-    * @param slot the slot to remove.
-    */
+     *  Remove the slot and up-shift slots after the hole to fill it up.
+     * @param slot the slot to remove.
+     */
     rc_t            remove_shift_nolog(slotid_t slot);
 
     /**
@@ -627,7 +617,7 @@ public:
      */
     bool           check_space_for_insert_leaf(const w_keystr_t &trunc_key, const cvec_t &el);
     bool           check_space_for_insert_leaf(size_t trunc_key_length, size_t element_length);
-    /** for intermediate node (no element). */
+    /// for intermediate node (no element).
     bool           check_space_for_insert_node(const w_keystr_t &key);
 
     /**
@@ -644,7 +634,7 @@ public:
      */
     void                 suggest_fence_for_split(
                              w_keystr_t &mid, slotid_t& right_begins_from, const w_keystr_t &triggering_key) const;
-    /** For recovering the separator key from boundary place. @see suggest_fence_for_split(). */
+    /// For recovering the separator key from boundary place. @see suggest_fence_for_split().
     w_keystr_t           recalculate_fence_for_split(slotid_t right_begins_from) const;
 
     bool                 is_insertion_extremely_skewed_right() const;
@@ -668,12 +658,12 @@ public:
      */
     rc_t                         defrag();
 
-    /** stats for leaf nodes. */
+    /// stats for leaf nodes.
     rc_t             leaf_stats(btree_lf_stats_t& btree_lf);
-    /** stats for interior nodes. */
+    /// stats for interior nodes.
     rc_t             int_stats(btree_int_stats_t& btree_int);
 
-    /** Debugs out the contents of this page. */
+    /// Debugs out the contents of this page.
     void             print(bool print_elem=false);
 
     /**
@@ -703,32 +693,57 @@ public:
 
 
 private:
+    // ======================================================================
+    //   BEGIN: Private record accessor/modifiers
+    // ======================================================================
+
+    void _pack_node_record(cvec_t& out, const cvec_t& trunc_key) const {
+        w_assert1(!is_leaf());
+        out.put(trunc_key);
+    }
+
+    typedef key_length_t pack_scratch_t;
+    void _pack_leaf_record(cvec_t& out, pack_scratch_t& out_scratch,
+                           const cvec_t& trunc_key,
+                           const char* element, size_t element_len) const {
+        _pack_leaf_record_prefix(out, out_scratch, trunc_key);
+        out.put(element, element_len);
+    }
+    void _pack_leaf_record_prefix(cvec_t& out, pack_scratch_t& out_scratch,
+                                  const cvec_t& trunc_key) const {
+        w_assert1(is_leaf());
+        out_scratch = trunc_key.size();
+        out.put(&out_scratch, sizeof(out_scratch));
+        out.put(trunc_key);
+    }
+
+
     poor_man_key _poor(int slot) const {
         w_assert1(slot>=0);
         return page()->item_poor(slot+1);
     }
 
-    void _get_leaf_key_fields(int slot, int& key_length, char*& trunc_key_data) const {
-        w_assert1(slot>=0);
-        key_length     = *(key_length_t*)page()->item_data(slot+1);
-        trunc_key_data = page()->item_data(slot+1) + sizeof(key_length_t);
-    }
-    void _get_leaf_fields(int slot, int& key_length, char*& trunc_key_data,
-                          int& data_length, char*& data) const {
-        _get_leaf_key_fields(slot, key_length, trunc_key_data);
-        int trunc_key_length = key_length - get_prefix_length();
-        int total_length = page()->item_length(slot+1);
-        data_length = total_length - trunc_key_length - sizeof(key_length_t);
-        data        = trunc_key_data + trunc_key_length;
-        w_assert1( data_length  >= 0 );
-    }
-    void _get_node_key_fields(int slot, int& trunc_key_length, char*& trunc_key_data) const {
-        w_assert1(slot>=0);
-        trunc_key_length = page()->item_length(slot+1);
-        trunc_key_data   = page()->item_data(slot+1);
-    }
 
-    int _predict_leaf_data_length(int trunc_key_length, int element_length) const {
+    /// Retrieves the key of specified slot WITHOUT prefix in a leaf
+    const char*     _leaf_key_noprefix(slotid_t slot,  size_t &len) const;
+
+    /// Retrieves only the key of specified slot WITHOUT prefix in an intermediate node
+    const char*     _node_key_noprefix(slotid_t slot,  size_t &len) const;
+
+    /**
+     * Calculate offset within slot's variable-sized data to its
+     * element data.  All data from that point onwards makes up the
+     * element data.
+     * 
+     * @pre we are a leaf node
+     */
+    size_t _element_offset(int slot) const;
+
+
+
+
+
+    size_t _predict_leaf_data_length(int trunc_key_length, int element_length) const {
         return sizeof(key_length_t) + trunc_key_length + element_length;
     }
         
@@ -754,19 +769,15 @@ private:
 
 
 
-    /** internal method used from is_consistent() to check keyorder correctness. */
+    /// internal method used from is_consistent() to check keyorder correctness.
     bool             _is_consistent_keyorder () const;
 
-    /** checks if the poor-man's normalized keys are valid. */
+    /// checks if the poor-man's normalized keys are valid.
     bool             _is_consistent_poormankey () const;
 
-    /** Given the place to insert, update btree_consecutive_skewed_insertions. */
+    /// Given the place to insert, update btree_consecutive_skewed_insertions.
     void             _update_btree_consecutive_skewed_insertions(slotid_t slot);
 
-    /** Retrieves the key of specified slot WITHOUT prefix in a leaf page.*/
-    const char*     _leaf_key_noprefix(slotid_t idx,  size_t &len) const;
-    /** Retrieves only the key of specified slot WITHOUT prefix in an intermediate node page.*/
-    const char*     _node_key_noprefix(slotid_t idx,  size_t &len) const;
 
 
     /// returns compare(specified-key, key_noprefix)
@@ -863,7 +874,7 @@ inline const char* btree_page_h::get_prefix_key() const {
 }
 
 inline int btree_page_h::nrecs() const {
-    return nitems() - 1;
+    return page()->number_of_items() - 1;
 }
 inline int btree_page_h::compare_with_fence_low (const w_keystr_t &key) const {
     return key.compare_keystr(get_fence_low_key(), get_fence_low_length());
@@ -929,14 +940,13 @@ inline bool btree_page_h::is_insertion_skewed_right() const {
 inline bool btree_page_h::is_insertion_skewed_left() const {
     return page()->btree_consecutive_skewed_insertions < -5;
 }
+
 inline shpid_t btree_page_h::child_opaqueptr(slotid_t slot) const {
-    // same as rec_node except we don't need to read key
     w_assert1(is_node());
     w_assert1(slot >= 0);
     w_assert1(slot < nrecs());
     return page()->item_child(slot+1);
 }
-
 inline shpid_t btree_page_h::child(slotid_t slot) const {
     shpid_t shpid = child_opaqueptr(slot);
     if (shpid) {
@@ -945,43 +955,53 @@ inline shpid_t btree_page_h::child(slotid_t slot) const {
     return shpid;
 }
 
-inline key_length_t btree_page_h::get_key_len(slotid_t slot) const {
-    if (is_leaf()) {
-        int   key_length;
-        char* trunc_key_data;
-        _get_leaf_key_fields(slot, key_length, trunc_key_data);
-        return key_length;
-    } else {
-        int   trunc_key_length;
-        char* trunc_key_data;
-        _get_node_key_fields(slot, trunc_key_length, trunc_key_data);
-        int prefix_len = get_prefix_length();
-        return trunc_key_length + prefix_len;
+inline shpid_t* btree_page_h::page_pointer_address(int offset) {
+    if (offset == -2) {
+        return &page()->btree_foster;
     }
+
+    w_assert1(!is_leaf());
+    w_assert1(-2<offset && offset<nrecs());
+
+    if (offset == -1) {
+        return &page()->btree_pid0;
+    }
+
+    return &page()->item_child(offset+1);
 }
 
+
+
 inline size_t btree_page_h::get_rec_space(int slot) const {
+    w_assert1(slot>=0);
     return page()->item_space(slot + 1);
 }
 
 
 inline const char* btree_page_h::_leaf_key_noprefix(slotid_t slot,  size_t &len) const {
     w_assert1(is_leaf());
-    int   key_length;
-    char* trunc_key_data;
-    _get_leaf_key_fields(slot, key_length, trunc_key_data);
+    w_assert1(slot>=0);
 
-    len = key_length - get_prefix_length();
-    return trunc_key_data;
+    key_length_t* data = (key_length_t*)page()->item_data(slot+1);
+    len = *data++;
+    return (const char*)data;
 }
 inline const char* btree_page_h::_node_key_noprefix(slotid_t slot,  size_t &len) const {
     w_assert1(is_node());
-    int   trunc_key_length;
-    char* trunc_key_data;
-    _get_node_key_fields(slot, trunc_key_length, trunc_key_data);
+    w_assert1(slot>=0);
 
-    len = trunc_key_length;
-    return trunc_key_data;
+    len = page()->item_length(slot+1);
+    return page()->item_data(slot+1);
+}
+
+inline size_t btree_page_h::_element_offset(int slot) const {
+    w_assert1(is_leaf());
+    w_assert1(slot>=0);
+
+    size_t key_noprefix_length;
+    (void)_leaf_key_noprefix(slot, key_noprefix_length);
+
+    return key_noprefix_length + sizeof(key_length_t);
 }
 
 inline int btree_page_h::_compare_key_noprefix(slotid_t slot, const void *key_noprefix, size_t key_len) const {
@@ -1006,11 +1026,6 @@ inline bool btree_page_h::is_ghost(slotid_t slot) const {
 inline smsize_t 
 btree_page_h::used_space() const {
     return data_sz - page()->usable_space();
-}
-
-inline slotid_t
-btree_page_h::nitems() const {
-    return page()->number_of_items();
 }
 
 inline smsize_t
