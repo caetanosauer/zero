@@ -29,6 +29,7 @@
 #include <ostream>
 #include <limits>
 
+#include <numa.h>
 
 ///////////////////////////////////   Initialization and Release BEGIN ///////////////////////////////////  
 
@@ -38,6 +39,31 @@ uint64_t bf_tree_m::_bf_swizzle_ex = 0;
 uint64_t bf_tree_m::_bf_swizzle_ex_fails = 0;
 #endif // PAUSE_SWIZZLING_ON
 
+
+void* numa_malloc(size_t size, int node, size_t alignment)
+{
+    void* realptr;
+    void* alignptr;
+
+    if (!(realptr = numa_alloc_onnode(size + alignment + sizeof(realptr) + sizeof(size), node))) {
+        return NULL;
+    }
+    
+    alignptr = (void*) ((((uintptr_t) realptr + sizeof(realptr) + sizeof(size)) & ~(alignment - 1)) + alignment);
+    ((uintptr_t*) alignptr)[-1] = (uintptr_t) realptr;
+    ((size_t*) alignptr)[-2] = (size_t) size;
+    return alignptr;
+}
+
+void numa_free(void* ptr)
+{
+    void* realptr = (void*)(((uintptr_t*)ptr)[-1]);
+    size_t size = (size_t)(((size_t*)ptr)[-2]);
+
+    numa_free(realptr, size);
+
+    return;
+}
 
 bf_tree_m::bf_tree_m (uint32_t block_cnt,
     uint32_t cleaner_threads,
@@ -69,10 +95,17 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
     
     // use posix_memalign to allow unbuffered disk I/O
     void *buf = NULL;
+#ifdef NUMA
+    if (!(buf = numa_malloc(SM_PAGESIZE * ((uint64_t) block_cnt), 0, SM_PAGESIZE))) {
+        ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << SM_PAGESIZE << "-bytes pages. ");
+        W_FATAL(eOUTOFMEMORY);
+    }
+#else
     if (::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * ((uint64_t) block_cnt)) != 0) {
         ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << SM_PAGESIZE << "-bytes pages. ");
         W_FATAL(eOUTOFMEMORY);
     }
+#endif
     _buffer = reinterpret_cast<generic_page*>(buf);
     
     // the index 0 is never used. to make sure no one can successfully use it,
@@ -145,7 +178,6 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
     ::memset (_swizzle_clockhand_pathway, 0, sizeof(uint32_t) * MAX_SWIZZLE_CLOCKHAND_DEPTH);
 }
 
-
 bf_tree_m::~bf_tree_m() {
     if (_control_blocks != NULL) {
 #ifdef BP_ALTERNATE_CB_LATCH    
@@ -153,7 +185,11 @@ bf_tree_m::~bf_tree_m() {
 #else
         char* buf = reinterpret_cast<char*>(_control_blocks);
 #endif
+#ifdef NUMA
+        numa_free(buf);
+#else
         delete[] buf;
+#endif
         _control_blocks = NULL;
     }
 #ifdef BP_MAINTAIN_PARNET_PTR
@@ -173,7 +209,11 @@ bf_tree_m::~bf_tree_m() {
     if (_buffer != NULL) {
         void *buf = reinterpret_cast<void*>(_buffer);
         // note we use free(), not delete[], which corresponds to posix_memalign
+#ifdef NUMA
+        numa_free(buf);
+#else
         ::free (buf);
+#endif
         _buffer = NULL;
     }
     
