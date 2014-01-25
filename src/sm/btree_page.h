@@ -683,8 +683,8 @@ inline const char* btree_page_data::robust_item_data(int item, size_t& length) c
         result_length = ACCESS_ONCE(body[offset].leaf.item_len);
         data          = (const char*)&body[offset].leaf.item_data;
     } else {
-        result_length = ACCESS_ONCE(body[offset].interior.item_len);
-        data          = (const char*)&body[offset].interior.item_data - sizeof(shpid_t);
+        result_length = ACCESS_ONCE(body[offset].interior.item_len) - sizeof(shpid_t);
+        data          = (const char*)&body[offset].interior.item_data;
     }
     result_length -= sizeof(item_length_t);
 
