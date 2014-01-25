@@ -383,8 +383,10 @@ private:
      */
 
     typedef struct {
-        /// sign bit: is this a ghost item?  (<0 => yes)
-        /// first item_body belonging to this item is body[abs(offset)]
+        /**
+         * sign bit: is this a ghost item?  (<0 => yes)
+         * first item_body belonging to this item is body[abs(offset)]
+         */
         body_offset_t offset;
         poor_man_key  poor;
     } item_head;
@@ -405,8 +407,10 @@ private:
                 /// really of size item_len - sizeof(item_len) - sizeof(child):
                 char          item_data[2];
             } interior;
-            // We use 8 byte alignment instead of the required 4 for
-            // historical reasons at this point:
+            /**
+             * We use 8 byte alignment instead of the required 4 for
+             * historical reasons at this point:
+             */
             int64_t _for_alignment_only;
         };
     } item_body;
@@ -451,8 +455,10 @@ private:
      */
     item_length_t _item_body_length(body_offset_t offset) const;
 
-    /// return number of item bodies holding data for the items
-    /// starting at offset offset
+    /**
+     * return number of item bodies holding data for the items
+     * starting at offset offset
+     */
     body_offset_t _item_bodies(body_offset_t offset) const;
 };
 
