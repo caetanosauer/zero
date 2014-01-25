@@ -339,7 +339,11 @@ private:
 
     typedef uint16_t item_index_t;
     typedef uint16_t item_length_t;
-    typedef int16_t  body_offset_t;  // sign bit is used to encode ghostness in item_head's
+    /**
+     * An offset denoting a particular item body, namely body[abs(<offset>)].
+     * In some cases, the sign bit is used to encode ghostness.
+     */
+    typedef int16_t  body_offset_t;
 
     // ======================================================================
     //   BEGIN: item-specific headers
@@ -409,7 +413,7 @@ private:
     //static_assert(sizeof(item_body) == 8, "item_body has wrong length");
     BOOST_STATIC_ASSERT(sizeof(item_body) == 8);
 
-    BOOST_STATIC_ASSERT(data_sz%8 == 0);
+    BOOST_STATIC_ASSERT(data_sz%sizeof(item_body) == 0);
     enum {
         max_heads  = data_sz/sizeof(item_head),
         max_bodies = data_sz/sizeof(item_body),
@@ -420,7 +424,7 @@ private:
         item_body body[max_bodies];
     };
     // check field sizes are large enough:
-    BOOST_STATIC_ASSERT(data_sz < 1<<(sizeof(item_length_t)*8));
+    BOOST_STATIC_ASSERT(data_sz     < 1<<(sizeof(item_length_t)*8));
     BOOST_STATIC_ASSERT(max_heads   < 1<<(sizeof(item_index_t) *8));
     BOOST_STATIC_ASSERT(max_bodies  < 1<<(sizeof(body_offset_t)*8-1)); // -1 for ghost bit
 
@@ -428,8 +432,8 @@ private:
     /// are we a leaf node?
     bool is_leaf() const { return btree_level == 1; }
 
-    /// align to 8-byte boundary (integral multiple of item_body's)
-    static size_t _item_align(size_t i) { return (i+7)&~7; }
+    /// align to item_body alignment boundary (integral multiple of item_body's)
+    static size_t _item_align(size_t i) { return (i+sizeof(item_body)-1)&~(sizeof(item_body)-1); }
 
     /// add this to data length to get bytes used in item bodies (not counting padding)
     size_t _item_body_overhead() const;
@@ -531,7 +535,7 @@ inline btree_page_data::item_length_t btree_page_data::_item_body_length(body_of
 
 inline btree_page_data::body_offset_t btree_page_data::_item_bodies(body_offset_t offset) const {
     w_assert1(offset >= 0);
-    return _item_align(_item_body_length(offset))/8;
+    return _item_align(_item_body_length(offset))/sizeof(item_body);
 }
 
 

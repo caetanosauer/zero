@@ -61,7 +61,7 @@ bool btree_page_data::insert_item(int item, bool ghost, poor_man_key poor,
         nghosts++;
     }
 
-    first_used_body -= _item_align(body_length)/8;
+    first_used_body -= _item_align(body_length)/sizeof(item_body);
     head[item].offset = ghost ? -first_used_body : first_used_body;
     head[item].poor = poor;
 
@@ -111,7 +111,7 @@ bool btree_page_data::resize_item(int item, size_t new_length, size_t keep_old) 
     }
 
     char* old_p = item_data(item);
-    first_used_body -= _item_align(body_length)/8;
+    first_used_body -= _item_align(body_length)/sizeof(item_body);
     head[item].offset = ghost ? -first_used_body : first_used_body;
     _item_body_length(first_used_body) = body_length;
     if (!is_leaf()) {
@@ -252,12 +252,10 @@ void btree_page_data::compact() {
     ::memset(&scratch_body, 0, sizeof(scratch_body));
 #endif // ZERO_INIT
 
-    int reclaimed = 0;
     int j = 0;
     for (int i=0; i<nitems; i++) {
         body_offset_t offset = head[i].offset;
         if (offset < 0) {
-            reclaimed++;
             nghosts--;
         } else {
             int length = _item_bodies(offset);
