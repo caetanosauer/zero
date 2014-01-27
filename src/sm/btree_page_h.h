@@ -706,21 +706,56 @@ public:
 
 private:
     // ======================================================================
-    //   BEGIN: Private record accessor/modifiers
+    //   BEGIN: Private record data packers
     // ======================================================================
 
+    /**
+     * Pack a node record's information into out, suitable for use
+     * with insert_item.
+     * 
+     * trunc_key is the record's key (including its w_keystr_t sign
+     * byte) without its prefix.
+     */
     void _pack_node_record(cvec_t& out, const cvec_t& trunc_key) const {
         w_assert1(!is_leaf());
         out.put(trunc_key);
     }
 
+    /// type of scratch space needed by _pack_leaf_record
     typedef key_length_t pack_scratch_t;
+    /**
+     * Pack a leaf record's information into out, suitable for use
+     * with insert_item.
+     * 
+     * trunc_key is the record's key (including its w_keystr_t sign
+     * byte) without its prefix; element is the record's associated
+     * value.
+     * 
+     * out_scratch is a scratch work area that the caller must
+     * provide; it must remain in scope in order for out to be used
+     * (i.e., out will point to part(s) of out_scratch).
+     */
     void _pack_leaf_record(cvec_t& out, pack_scratch_t& out_scratch,
                            const cvec_t& trunc_key,
                            const char* element, size_t element_len) const {
         _pack_leaf_record_prefix(out, out_scratch, trunc_key);
         out.put(element, element_len);
     }
+    /**
+     * Pack a leaf record's key information *only* into out, suitable
+     * for use with insert_item with variable-size--data length
+     * computed by _predict_leaf_data_length using in addition the
+     * expected element length.  (This is used by reserve_ghost to set
+     * only the key information leaving reserved space for the future
+     * element.)
+     * 
+     * trunc_key is the record's key (including its w_keystr_t sign
+     * byte) without its prefix.
+     * 
+     * out_scratch is a scratch work area that the caller must
+     * provide; it must remain in scope in order for out to be used
+     * (i.e., out will point to part(s) of out_scratch).
+     */
     void _pack_leaf_record_prefix(cvec_t& out, pack_scratch_t& out_scratch,
                                   const cvec_t& trunc_key) const {
         w_assert1(is_leaf());
@@ -728,6 +763,57 @@ private:
         out.put(&out_scratch, sizeof(out_scratch));
         out.put(trunc_key);
     }
+
+    /**
+     * Pack a B-tree page's fence and foster key information into out,
+     * suitable for use with insert_item.
+     * 
+     * All input keys are uncompressed.  During packing, prefix
+     * elimination is used.  The prefix length to truncate is
+     * new_prefix_len if non-negative; otherwise, the prefix length to
+     * use is computed as the maximum number of common prefix bytes of
+     * the low and high fence keys.  The prefix length used is
+     * returned either way.
+     * 
+     * The caller is responsible for ensuring that
+     * btree_fence_low_length, btree_fence_high_length,
+     * btree_chain_fence_high_length are set to the lengths of the
+     * corresponding keys and that btree_prefix_length is set to the
+     * returned prefix length.
+     */
+    static int _pack_fence_rec(cvec_t& out, const w_keystr_t& low,
+                               const w_keystr_t& high, 
+                               const w_keystr_t& chain, 
+                               int new_prefix_len) {
+        int prefix_len;
+        if (new_prefix_len >= 0) {
+            w_assert1(low.common_leading_bytes(high) >= (size_t)new_prefix_len);
+            prefix_len = new_prefix_len;
+        } else {
+            prefix_len = low.common_leading_bytes(high);
+        }
+
+        out.put(low);
+        // eliminate prefix part from high:
+        out.put((const char*)high.buffer_as_keystr()     + prefix_len, 
+                             high.get_length_as_keystr() - prefix_len);
+        out.put(chain);
+        return prefix_len;
+    }
+
+    /**
+     * Compute needed length of variable-size data to store a leaf
+     * record with the given truncated key and element lengths.
+     */
+    size_t _predict_leaf_data_length(int trunc_key_length, int element_length) const {
+        return sizeof(key_length_t) + trunc_key_length + element_length;
+    }
+
+
+    // ======================================================================
+    //   BEGIN: Private record accessor/modifiers
+    // ======================================================================
+
 
 
     poor_man_key _poor(int slot) const {
@@ -755,28 +841,7 @@ private:
 
 
 
-    size_t _predict_leaf_data_length(int trunc_key_length, int element_length) const {
-        return sizeof(key_length_t) + trunc_key_length + element_length;
-    }
         
-    static int _pack_fence_rec(cvec_t& out, const w_keystr_t& low,
-                               const w_keystr_t& high, const w_keystr_t& chain, 
-                               int new_prefix_len) {
-        int prefix_len;
-        if (new_prefix_len>=0) {
-            w_assert1(low.common_leading_bytes(high) >= (size_t)new_prefix_len);
-            prefix_len = new_prefix_len;
-        } else {
-            prefix_len = low.common_leading_bytes(high);
-        }
-
-        out.put(low);
-        // eliminate prefix part from high:
-        out.put((const char*)high.buffer_as_keystr() + prefix_len, 
-                high.get_length_as_keystr() - prefix_len);
-        out.put(chain);
-        return prefix_len;
-    }
 
 
 
