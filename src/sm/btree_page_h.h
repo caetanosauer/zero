@@ -914,14 +914,12 @@ private:
     /// Given the place to insert, update btree_consecutive_skewed_insertions.
     void             _update_btree_consecutive_skewed_insertions(slotid_t slot);
 
-
-protected:
     /**
      * Returns if there is enough free space to accomodate the given
      * item.
      * @return true if there is free space
      */
-    bool check_space_for_insert(size_t data_length);  
+    bool _check_space_for_insert(size_t data_length);  
 };
 
 

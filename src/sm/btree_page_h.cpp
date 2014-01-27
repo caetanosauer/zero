@@ -686,12 +686,12 @@ bool btree_page_h::check_space_for_insert_leaf(const w_keystr_t& trunc_key,
 bool btree_page_h::check_space_for_insert_leaf(size_t trunc_key_length, size_t element_length) {
     w_assert1 (is_leaf());
     size_t data_length = _predict_leaf_data_length(trunc_key_length, element_length);
-    return btree_page_h::check_space_for_insert(data_length);
+    return btree_page_h::_check_space_for_insert(data_length);
 }
 bool btree_page_h::check_space_for_insert_node(const w_keystr_t& key) {
     w_assert1 (is_node());
     size_t data_length = key.get_length_as_keystr();
-    return btree_page_h::check_space_for_insert (data_length);
+    return btree_page_h::_check_space_for_insert(data_length);
 }
 
 bool btree_page_h::check_chance_for_norecord_split(const w_keystr_t& key_to_insert) const {
@@ -1086,7 +1086,7 @@ rc_t btree_page_h::defrag() {
     return RCOK;
 }
 
-bool btree_page_h::check_space_for_insert(size_t data_length) {
+bool btree_page_h::_check_space_for_insert(size_t data_length) {
     size_t contiguous_free_space = usable_space();
     return contiguous_free_space >= page()->predict_item_space(data_length);
 }
