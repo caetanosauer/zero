@@ -84,83 +84,84 @@ class btree_ghost_reclaim_log;
 
 
 /**
- * \brief Page handle for BTree data page.
+ * \brief Page handle for B-Tree data page.
  * \ingroup SSMBTREE
+ * 
  * \details
- * BTree data page uses the common data layout defined in generic_page.
- * However, it also has the BTree-specific header placed in the beginning of "data".
- *
+ * 
  * \section FBTREE Fence Keys and B-link Tree
- * Our version of BTree header contains low-high fence keys and pointers as a b-link tree.
- * fence keys are NEVER changed once the page is created until the page gets splitted.
- * prefix compression in this scheme utilizes it by storing the common leading bytes
- * of the two fence keys and simply getting rid of them from all entries in this page.
- * See generic_page for the header definitions. They are defined as part of generic_page.
+ * 
+ * Our version of B-Tree header contains low-high fence keys and
+ * pointers as a b-link tree.  Fence keys are NEVER changed once the
+ * page is created until the page gets splitted.  Prefix compression
+ * in this scheme utilizes it by storing the common leading bytes of
+ * the two fence keys and simply getting rid of them from all entries
+ * in this page.  See btree_page for the header definitions.
  *
- * \section PAGELAYOUT BTree Page Layout
- * The page layout of BTree is as follows.
+ * 
+ * \section PAGELAYOUT B-Tree Page Layout
+ * 
+ * The page layout of a B-Tree page is as follows:
+ * 
  * \verbatim
-  [common-headers in generic_page]
-  [btree-specific-headers in generic_page]
-  (data area in generic_page:
-    [slot data which is growing forward]
+  [common-headers from generic_page_header]
+  [B-tree-specific-headers in btree_page]
+  (item area in btree_page:
+    [item storage part that is growing forwards]
     [(contiguous) free area]
-    [record data which is growing forward]
- )\endverbatim
- * The first record contains fence keys:
- * [record-len + low-fence-key data (including prefix) + high-fence-key data (without prefix)
- * + chain-fence-high-key data (complete string. chain-fence-high doesn't share prefix!)]
+    [item storage part that is growing backwards]
+   )\endverbatim
  * 
- * \section SLOTLAYOUT BTree Slot Layout
- * btree_page is the only slotted subclass of fixable_page_h. All the other classes  FIXME
- * use _pp.data just as a chunk of char. (Slot-related functions and typedefs
- * should be moved from fixable_page_h to btree_page_h, but I haven't done the surgery yet.)
+ * The first item contains the fence keys and foster key, if any:
+ * [low-fence-key data (including prefix) + high-fence-key data
+ * (without prefix) + chain-fence-high-key data (complete string;
+ * chain-fence-high doesn't share prefix!)].  The other items contain
+ * the B-tree page's records, one each.  These locations are called \e
+ * slots; slot 0 corresponds to item 1 and so on.
  * 
- * The Btree slot uses poor-man's normalized key to speed up searches.
- * Each slot stores the first few bytes of the key as an unsigned
- * integer (PoorMKey) so that comparison with most records are done without
- * going to the record itself, avoiding L1 cache misses. The whole point of
- * poormkey is cachemiss! So, we minimize the size of slots. Only poormkey and
- * offset (not tuple length or key length. it's at the beginning of the record).
  * 
- * NOTE So far, poor-man's normalied key is 2 byte integer (uint16_t) and
- * the corresponding bytes are NOT eliminated from the key string in the record.
- * This is to speed up the retrieval of the complete key at the cost of additional
- * 2 bytes to store it. I admit this is arguable, but deserilizing the part
- * everytime (it's likely little-endian, so we need to flip it) will slow down retrieval.
+ * \section SLOTLAYOUT B-Tree Slot Layout
  * 
- * Each slot also stores the offset (divided by 8 to enable larger page sizes)
- * to the record. If the offset is negative, it means a ghost record and
- * the offset of reversed-sign gives the actual offset.
+ * We use poor-man's normalized key to speed up searches.  Each slot
+ * has a field, _poor, that holds the first few bytes of that slot's
+ * key as an unsigned integer (poor_man_key) so that comparison with
+ * most slot keys can be done without going to the key itself,
+ * avoiding L1 cache misses.  The whole point of poor_man_key is
+ * avoiding cache misses!
+ * 
+ * NOTE So far, poor-man's normalied key is 2 byte integer (uint16_t)
+ * and the corresponding bytes are NOT eliminated from the key string
+ * in the record.  This is to speed up the retrieval of the
+ * (truncated) complete key at the cost of an additional 2 bytes to
+ * store it.  I admit this is arguable, but deserilizing the first
+ * part everytime (it's likely little-endian, so we need to flip it)
+ * will slow down retrieval.
+ * 
+ * Also associated with each slot is a ghost bit (is this record a
+ * ghost record?), a variable-size data portion used to hold the
+ * record details (i.e., key and element if a leaf node), and in the
+ * case of interior nodes, a child pointer.
+ * 
  * 
  * \section RECORDLAYOUT Record Layout
- * Internally, record data is stored as follows:
+ * 
+ * Internally, record data is stored in the item variable-size data part as follows:
  * 
  * (If the page is leaf page)
- * - physical record length (uint16_t) of the entire record (including everything
- * AFTER prefix trunction; it's physical length!).
- * - key length (uint16_t) BEFORE prefix truncation
- * - key + el (contiguous char[]) AFTER prefix truncation
- * NOTE el length can be calculated from record length and key length
- * (el length = record length - 4 - key length + prefix length).
+ * - key length (uint16_t) AFTER prefix truncation
+ * - key + element (contiguous char[]) AFTER prefix truncation
+ * NOTE: element length can be calculated from item length and key length
+ * (element length = item length - key length - sizeof(key length)).
  * 
- * (If the page is node page)
- * - pid (shpid_t; 4 bytes.)
- * - physical record length (uint16_t) of the entire record.
+ * (If the page is interior node page)
  * - key AFTER prefix truncation
- * NOTE key length is calculated from record length (record length - 6 + prefix_len).
- * pid is placed first to make it 4-byte aligned (causes a trouble in SPARC otherwise).
- * 
- * Finally,
- * - [0-7] bytes of unused space (record is 8 bytes aligned). This is just a padding,
- * so not included in the record length.
+ * NOTE: key-AFTER-prefix-truncation length here is simply the item length.
  * 
  * Opaque pointers:
- * - Default is to return page id.
- * - When a page is swizzled though we can avoid hash table lookup to map page id 
- *   to frame id by using frame id directly. Opaque pointers serve this purpose by 
- *   hiding from the user whether a pointer is a frame id or page id. 
- *
+ * - Default is to return page ID.
+ * - When a page is swizzled though we can avoid hash table lookup to map page ID 
+ *   to frame ID by using frame ID directly.  Opaque pointers serve this purpose by 
+ *   hiding from the user whether a pointer is a frame ID or page ID. 
  */
 class btree_page_h : public fixable_page_h {
     friend class btree_impl;
@@ -315,9 +316,9 @@ public:
     // no 'noprefix' version because chain_fence_high might not share the prefix!
 
     /**
-     * When allocating a new BTree page, use this instead of fix().
+     * When allocating a new B-Tree page, use this instead of fix().
      * This sets all headers, fence/prefix keys, and initial records altogether.
-     * As our new BTree header has variable-size part (fence keys),
+     * As our new B-Tree header has variable-size part (fence keys),
      * setting fence keys later than the first format() causes a problem.
      * So, the 4-argumets format(which is called from default fix() on virgin page) is disabled.
      * Also, this outputs just a single record for everything, so much more efficient.
@@ -339,8 +340,8 @@ public:
         );
 
     /**
-     * This sets all headers, fence/prefix keys and initial records altogether. Used by init_fix_steal.
-     * Steal records from steal_src1. Then steal records from steal_src2 (this is used only when merging).
+     * This sets all headers, fence/prefix keys and initial records altogether.  Used by init_fix_steal.
+     * Steal records from steal_src1.  Then steal records from steal_src2 (this is used only when merging).
      * if steal_src2_pid0 is true, it also steals src2's pid0 with low-fence key.
      */
     rc_t format_steal(
@@ -362,14 +363,14 @@ public:
         bool                 steal_src2_pid0 = false
         );
 
-    /// Steal records from steal_src. Called by format_steal.
+    /// Steal records from steal_src.  Called by format_steal.
     void _steal_records(btree_page_h* steal_src,
                         int           steal_from,
                         int           steal_to);
 
     /**
      * Called when we did a split from this page but didn't move any record to new page.
-     * This method can't be undone. Use this only for REDO-only system transactions.
+     * This method can't be undone.  Use this only for REDO-only system transactions.
      */
     rc_t norecord_split (shpid_t foster,
                          const w_keystr_t& fence_high, 
@@ -497,7 +498,7 @@ public:
      * 
      * Note: keys in interior nodes are separator keys.  Like fence
      * keys, a separator key is exclusive for left and inclusive for
-     * right. For example, a separator key "AB" sends "AA" to left,
+     * right.  For example, a separator key "AB" sends "AA" to left,
      * "AAZ" to left, "AB" to right, "ABA" to right, and "AC" to
      * right.
      * 
@@ -512,7 +513,7 @@ public:
     // ======================================================================
 
     /**
-     *  Insert a new entry at "slot". This is used only for non-leaf pages.
+     *  Insert a new entry at "slot".  This is used only for non-leaf pages.
      * For leaf pages, always use replace_ghost() and reserve_ghost().
      * @param child child pointer to add
      */
@@ -557,7 +558,7 @@ public:
     rc_t            remove_shift_nolog(slotid_t slot);
 
     /**
-     * Replaces the given slot with the new data. key is not changed.
+     * Replaces the given slot with the new data.  key is not changed.
      * If we need to expand the record and the page doesn't have
      * enough space, eRECWONTFIT is thrown.
      */
@@ -581,7 +582,7 @@ public:
     void             reserve_ghost(const w_keystr_t &key, size_t element_length) {
         reserve_ghost((const char *)key.buffer_as_keystr(), key.get_length_as_keystr(), element_length);
     }
-    // to make it slightly faster. not a neat kind of optimization
+    // to make it slightly faster.  not a neat kind of optimization
     void             reserve_ghost(const char *key_raw, size_t key_raw_len, size_t element_length);
 
     /**
@@ -612,11 +613,11 @@ public:
      * @param[out] mid suggested fence key in the middle
      * @param[out] right_begins_from slot id from which (including it)
      * the new right sibling steal the entires
-     * @param[in] triggering_key the key to be inserted after this split. used to determine split policy.
+     * @param[in] triggering_key the key to be inserted after this split.  used to determine split policy.
      */
     void                 suggest_fence_for_split(
                              w_keystr_t &mid, slotid_t& right_begins_from, const w_keystr_t &triggering_key) const;
-    /// For recovering the separator key from boundary place. @see suggest_fence_for_split().
+    /// For recovering the separator key from boundary place.  @see suggest_fence_for_split().
     w_keystr_t           recalculate_fence_for_split(slotid_t right_begins_from) const;
 
     bool                 is_insertion_extremely_skewed_right() const;
@@ -632,8 +633,8 @@ public:
      * \brief Defrags this page to remove holes and ghost records in the page.
      * \details
      * A page can have unused holes between records and ghost records as a result
-     * of inserts and deletes. This method removes those dead spaces to compress
-     * the page. The best thing of this is that we have to log only
+     * of inserts and deletes.  This method removes those dead spaces to compress
+     * the page.  The best thing of this is that we have to log only
      * the slot numbers of ghost records that are removed because there are
      * 'logically' no changes.
      * Context: System transaction.
@@ -655,9 +656,9 @@ public:
      * If the two arguments are both false (which is default), this function should be very
      * efficient.
      * @param[in] check_keyorder whether to check the sortedness and uniqueness
-     * of the keys in this page. setting this to true makes this function expensive.
+     * of the keys in this page.  setting this to true makes this function expensive.
      * @param[in] check_space whether to check any overlaps of
-     * records and integrity of space offset. setting this to true makes this function expensive.
+     * records and integrity of space offset.  setting this to true makes this function expensive.
      * @return true if this page is in a consistent state
      */
     bool             is_consistent (bool check_keyorder = false, bool check_space = false) const;
@@ -986,7 +987,7 @@ inline const char* btree_page_h::get_chain_fence_high_key() const {
     return page()->item_data(0) + get_fence_low_length() + get_fence_high_length_noprefix();
 }
 inline const char* btree_page_h::get_prefix_key() const {
-    return get_fence_low_key(); // same thing. only the length differs.
+    return get_fence_low_key(); // same thing.  only the length differs.
 }
 
 inline int btree_page_h::nrecs() const {
