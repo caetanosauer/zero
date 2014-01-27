@@ -19,8 +19,6 @@ struct btree_int_stats_t;
 
 
 
-typedef uint16_t key_length_t;  // <<<>>>
-
      /*
      * When this page belongs to a foster chain, we need to store
      * high-fence of right-most sibling in every sibling to do
@@ -29,34 +27,6 @@ typedef uint16_t key_length_t;  // <<<>>>
      */
 
 
-/**
- * \brief Poor man's normalized key type.
- *
- * \details
- * To speed up comparison this should be an integer type, not char[]. 
- */
-typedef uint16_t poor_man_key;
-
-/** Returns the value of poor-man's normalized key for the given key string WITHOUT prefix.*/
-inline poor_man_key extract_poor_man_key (const void* key, size_t key_len) {
-    if (key_len == 0) {
-        return 0;
-    } else if (key_len == 1) {
-        return *reinterpret_cast<const unsigned char*>(key) << 8;
-    } else {
-        return deserialize16_ho(key);
-    }
-}
-/** Returns the value of poor-man's normalized key for the given key string WITH prefix.*/
-inline poor_man_key extract_poor_man_key (const void* key_with_prefix, size_t key_len_with_prefix, size_t prefix_len) {
-    w_assert3(prefix_len <= key_len_with_prefix);
-    return extract_poor_man_key (((const char*)key_with_prefix) + prefix_len, key_len_with_prefix - prefix_len);
-}
-inline poor_man_key extract_poor_man_key (const cvec_t& key) {
-    char start[2];
-    key.copy_to(start, 2);
-    return extract_poor_man_key(start, key.size());
-}
 
 
 
@@ -709,6 +679,10 @@ private:
     //   BEGIN: Private record data packers
     // ======================================================================
 
+    /// A field to hold a B-tree key length
+    typedef uint16_t key_length_t;
+
+
     /**
      * Pack a node record's information into out, suitable for use
      * with insert_item.
@@ -807,6 +781,38 @@ private:
      */
     size_t _predict_leaf_data_length(int trunc_key_length, int element_length) const {
         return sizeof(key_length_t) + trunc_key_length + element_length;
+    }
+
+
+    /**
+     * \brief Poor man's normalized key type.
+     *
+     * \details
+     * To speed up comparison this should be an integer type, not char[]. 
+     */
+    typedef uint16_t poor_man_key;
+
+    /// Returns the value of poor-man's normalized key for the given key string WITHOUT prefix.
+    poor_man_key _extract_poor_man_key(const void* trunc_key, size_t trunc_key_len) const {
+        if (trunc_key_len == 0) {
+            return 0;
+        } else if (trunc_key_len == 1) {
+            return *reinterpret_cast<const unsigned char*>(trunc_key) << 8;
+        } else {
+            return deserialize16_ho(trunc_key);
+        }
+    }
+    /// Returns the value of poor-man's normalized key for the given key string WITHOUT prefix.
+    poor_man_key _extract_poor_man_key (const cvec_t& trunc_key) {
+        char start[2];
+        trunc_key.copy_to(start, 2);
+        return _extract_poor_man_key(start, trunc_key.size());
+    }
+
+    /// Returns the value of poor-man's normalized key for the given key string WITH prefix.
+    poor_man_key _extract_poor_man_key (const void* key_with_prefix, size_t key_len_with_prefix, size_t prefix_len) {
+        w_assert1(prefix_len <= key_len_with_prefix);
+        return _extract_poor_man_key (((const char*)key_with_prefix) + prefix_len, key_len_with_prefix - prefix_len);
     }
 
 
