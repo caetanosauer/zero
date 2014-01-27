@@ -428,9 +428,14 @@ private:
         item_body body[max_bodies];
     };
     // check field sizes are large enough:
-    BOOST_STATIC_ASSERT(data_sz     < 1<<(sizeof(item_length_t)*8));
-    BOOST_STATIC_ASSERT(max_heads   < 1<<(sizeof(item_index_t) *8));
-    BOOST_STATIC_ASSERT(max_bodies  < 1<<(sizeof(body_offset_t)*8-1)); // -1 for ghost bit
+    /*
+     * #define here is a workaround for ebrowse cannot handle < in
+     * marcos calls, numeric_limits::min() is not constant
+     */
+#define STATIC_LESS_THAN(x,y)  BOOST_STATIC_ASSERT((x) < (y))    
+    STATIC_LESS_THAN(data_sz,    1<<(sizeof(item_length_t)*8));
+    STATIC_LESS_THAN(max_heads,  1<<(sizeof(item_index_t) *8));
+    STATIC_LESS_THAN(max_bodies, 1<<(sizeof(body_offset_t)*8-1)); // -1 for ghost bit
 
 
     /// are we a leaf node?
