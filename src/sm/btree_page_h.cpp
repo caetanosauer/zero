@@ -686,7 +686,7 @@ bool btree_page_h::check_space_for_insert_leaf(const w_keystr_t& trunc_key,
 bool btree_page_h::check_space_for_insert_leaf(size_t trunc_key_length, size_t element_length) {
     w_assert1 (is_leaf());
     size_t data_length = _predict_leaf_data_length(trunc_key_length, element_length);
-    return btree_page_h::check_space_for_insert (data_length);
+    return btree_page_h::check_space_for_insert(data_length);
 }
 bool btree_page_h::check_space_for_insert_node(const w_keystr_t& key) {
     w_assert1 (is_node());

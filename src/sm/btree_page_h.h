@@ -818,21 +818,27 @@ private:
 
 
     // ======================================================================
-    //   BEGIN: Private record accessor/modifiers
+    //   BEGIN: Private record accessors
     // ======================================================================
 
-
-
+    /// Return poor man's key data for given slot
     poor_man_key _poor(int slot) const {
         w_assert1(slot>=0);
         return page()->item_poor(slot+1);
     }
 
-
-    /// Retrieves the key of specified slot WITHOUT prefix in a leaf
+    /**
+     * Retrieves the key WITHOUT prefix of specified slot in a leaf
+     * 
+     * @pre we are a leaf node
+     */
     const char*     _leaf_key_noprefix(slotid_t slot,  size_t &len) const;
 
-    /// Retrieves only the key of specified slot WITHOUT prefix in an intermediate node
+    /**
+     * Retrieves the key WITHOUT prefix of specified slot in an interior node
+     * 
+     * @pre we are an interior node
+     */
     const char*     _node_key_noprefix(slotid_t slot,  size_t &len) const;
 
     /**
@@ -844,26 +850,6 @@ private:
      */
     size_t _element_offset(int slot) const;
 
-
-
-
-
-        
-
-
-
-
-    /// internal method used from is_consistent() to check keyorder correctness.
-    bool             _is_consistent_keyorder () const;
-
-    /// checks if the poor-man's normalized keys are valid.
-    bool             _is_consistent_poormankey () const;
-
-    /// Given the place to insert, update btree_consecutive_skewed_insertions.
-    void             _update_btree_consecutive_skewed_insertions(slotid_t slot);
-
-
-
     /// returns compare(specified-key, key_noprefix)
     int _compare_key_noprefix(slotid_t slot, const void *key_noprefix, size_t key_len) const;
 
@@ -872,6 +858,9 @@ private:
     int _compare_slot_with_key(int slot, const void* key_noprefix, size_t key_len, poor_man_key poor) const;
 
 
+    // ======================================================================
+    //   BEGIN: Private robust record accessors
+    // ======================================================================
 
     /*
      * These methods provide the same results as the corresponding
@@ -891,9 +880,17 @@ private:
      * different from the actual slot's key_noprefix.
      */
 
-    /// [Robust] Retrieves the key of specified slot WITHOUT prefix in a leaf
+    /**
+     * [Robust] Retrieves the key WITHOUT prefix of specified slot in a leaf
+     * 
+     * @pre we are a leaf node
+     */
     const char*     _robust_leaf_key_noprefix(slotid_t slot,  size_t &len) const;
-    /// [Robust] Retrieves only the key of specified slot WITHOUT prefix in an intermediate node
+    /**
+     * [Robust] Retrieves the key WITHOUT prefix of specified slot in an interior node
+     * 
+     * @pre we are an interior node
+     */
     const char*     _robust_node_key_noprefix(slotid_t slot,  size_t &len) const;
 
     /// [Robust] returns compare(specified-key, key_noprefix)
@@ -902,6 +899,20 @@ private:
     /// [Robust] compare slot slot's key with given key (as key_noprefix,key_len,poor tuple)
     /// result <0 if slot's key is before given key
     int _robust_compare_slot_with_key(int slot, const void* key_noprefix, size_t key_len, poor_man_key poor) const;
+
+
+    // ======================================================================
+    //   BEGIN: Miscellaneous private members
+    // ======================================================================
+
+    /// internal method used from is_consistent() to check keyorder correctness.
+    bool             _is_consistent_keyorder () const;
+
+    /// checks if the poor-man's normalized keys are valid.
+    bool             _is_consistent_poormankey () const;
+
+    /// Given the place to insert, update btree_consecutive_skewed_insertions.
+    void             _update_btree_consecutive_skewed_insertions(slotid_t slot);
 
 
 protected:
