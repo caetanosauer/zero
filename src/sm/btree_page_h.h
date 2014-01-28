@@ -771,7 +771,8 @@ private:
     poor_man_key _extract_poor_man_key(const cvec_t& trunc_key) const;
 
     /// Returns the value of poor-man's normalized key for the given key string WITH prefix.
-    poor_man_key _extract_poor_man_key(const void* key_with_prefix, size_t key_len_with_prefix, size_t prefix_len) const;
+    poor_man_key _extract_poor_man_key(const void* key_with_prefix, 
+                                       size_t key_len_with_prefix, size_t prefix_len) const;
 
 
     // ======================================================================
@@ -1089,8 +1090,6 @@ inline size_t btree_page_h::get_rec_space(int slot) const {
 }
 
 
-
-
 inline bool btree_page_h::is_ghost(slotid_t slot) const {
     return page()->is_ghost(slot + 1);
 }
@@ -1150,11 +1149,13 @@ inline int btree_page_h::_pack_fence_rec(cvec_t& out, const w_keystr_t& low,
     return prefix_len;
 }
 
-inline size_t btree_page_h::_predict_leaf_data_length(int trunc_key_length, int element_length) const {
+inline size_t btree_page_h::_predict_leaf_data_length(int trunc_key_length, 
+                                                      int element_length) const {
     return sizeof(key_length_t) + trunc_key_length + element_length;
 }
 
-inline btree_page_h::poor_man_key btree_page_h::_extract_poor_man_key(const void* trunc_key, size_t trunc_key_len) const {
+inline btree_page_h::poor_man_key btree_page_h::_extract_poor_man_key(const void* trunc_key, 
+                                                                      size_t trunc_key_len) const {
     if (trunc_key_len == 0) {
         return 0;
     } else if (trunc_key_len == 1) {
@@ -1168,7 +1169,9 @@ inline btree_page_h::poor_man_key btree_page_h::_extract_poor_man_key(const cvec
     trunc_key.copy_to(start, 2);
     return _extract_poor_man_key(start, trunc_key.size());
 }
-inline btree_page_h::poor_man_key btree_page_h::_extract_poor_man_key(const void* key_with_prefix, size_t key_len_with_prefix, size_t prefix_len) const {
+inline btree_page_h::poor_man_key 
+btree_page_h::_extract_poor_man_key(const void* key_with_prefix, size_t key_len_with_prefix, 
+                                    size_t prefix_len) const {
     w_assert1(prefix_len <= key_len_with_prefix);
     return _extract_poor_man_key (((const char*)key_with_prefix) + prefix_len, key_len_with_prefix - prefix_len);
 }
@@ -1231,7 +1234,8 @@ inline size_t btree_page_h::_element_offset(int slot) const {
     return key_noprefix_length + sizeof(key_length_t);
 }
 
-inline int btree_page_h::_compare_key_noprefix(slotid_t slot, const void *key_noprefix, size_t key_len) const {
+inline int btree_page_h::_compare_key_noprefix(slotid_t slot, const void *key_noprefix, 
+                                               size_t key_len) const {
     size_t      curkey_len;
     const char *curkey;
     if (is_leaf()) {
@@ -1242,7 +1246,8 @@ inline int btree_page_h::_compare_key_noprefix(slotid_t slot, const void *key_no
 
     return w_keystr_t::compare_bin_str(curkey, curkey_len, key_noprefix, key_len);
 }
-inline int btree_page_h::_robust_compare_key_noprefix(slotid_t slot, const void *key_noprefix, size_t key_len) const {
+inline int btree_page_h::_robust_compare_key_noprefix(slotid_t slot, const void *key_noprefix, 
+                                                      size_t key_len) const {
     size_t      curkey_len;
     const char *curkey;
     if (page()->robust_is_leaf()) {
