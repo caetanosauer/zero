@@ -691,10 +691,7 @@ private:
      * trunc_key is the record's key (including its w_keystr_t sign
      * byte) without its prefix.
      */
-    void _pack_node_record(cvec_t& out, const cvec_t& trunc_key) const {
-        w_assert1(!is_leaf());
-        out.put(trunc_key);
-    }
+    void _pack_node_record(cvec_t& out, const cvec_t& trunc_key) const;
 
     /// type of scratch space needed by _pack_leaf_record
     typedef key_length_t pack_scratch_t;
@@ -712,10 +709,7 @@ private:
      */
     void _pack_leaf_record(cvec_t& out, pack_scratch_t& out_scratch,
                            const cvec_t& trunc_key,
-                           const char* element, size_t element_len) const {
-        _pack_leaf_record_prefix(out, out_scratch, trunc_key);
-        out.put(element, element_len);
-    }
+                           const char* element, size_t element_len) const;
     /**
      * Pack a leaf record's key information *only* into out, suitable
      * for use with insert_item with variable-size--data length
@@ -732,12 +726,7 @@ private:
      * (i.e., out will point to part(s) of out_scratch).
      */
     void _pack_leaf_record_prefix(cvec_t& out, pack_scratch_t& out_scratch,
-                                  const cvec_t& trunc_key) const {
-        w_assert1(is_leaf());
-        out_scratch = trunc_key.size();
-        out.put(&out_scratch, sizeof(out_scratch));
-        out.put(trunc_key);
-    }
+                                  const cvec_t& trunc_key) const;
 
     /**
      * Pack a B-tree page's fence and foster key information into out,
@@ -756,33 +745,16 @@ private:
      * corresponding keys and that btree_prefix_length is set to the
      * returned prefix length.
      */
-    static int _pack_fence_rec(cvec_t& out, const w_keystr_t& low,
-                               const w_keystr_t& high, 
-                               const w_keystr_t& chain, 
-                               int new_prefix_len) {
-        int prefix_len;
-        if (new_prefix_len >= 0) {
-            w_assert1(low.common_leading_bytes(high) >= (size_t)new_prefix_len);
-            prefix_len = new_prefix_len;
-        } else {
-            prefix_len = low.common_leading_bytes(high);
-        }
-
-        out.put(low);
-        // eliminate prefix part from high:
-        out.put((const char*)high.buffer_as_keystr()     + prefix_len, 
-                             high.get_length_as_keystr() - prefix_len);
-        out.put(chain);
-        return prefix_len;
-    }
+    int _pack_fence_rec(cvec_t& out, const w_keystr_t& low,
+                        const w_keystr_t& high, 
+                        const w_keystr_t& chain, 
+                        int new_prefix_len) const;
 
     /**
      * Compute needed length of variable-size data to store a leaf
      * record with the given truncated key and element lengths.
      */
-    size_t _predict_leaf_data_length(int trunc_key_length, int element_length) const {
-        return sizeof(key_length_t) + trunc_key_length + element_length;
-    }
+    size_t _predict_leaf_data_length(int trunc_key_length, int element_length) const;
 
 
     /**
@@ -794,27 +766,12 @@ private:
     typedef uint16_t poor_man_key;
 
     /// Returns the value of poor-man's normalized key for the given key string WITHOUT prefix.
-    poor_man_key _extract_poor_man_key(const void* trunc_key, size_t trunc_key_len) const {
-        if (trunc_key_len == 0) {
-            return 0;
-        } else if (trunc_key_len == 1) {
-            return *reinterpret_cast<const unsigned char*>(trunc_key) << 8;
-        } else {
-            return deserialize16_ho(trunc_key);
-        }
-    }
+    poor_man_key _extract_poor_man_key(const void* trunc_key, size_t trunc_key_len) const;
     /// Returns the value of poor-man's normalized key for the given key string WITHOUT prefix.
-    poor_man_key _extract_poor_man_key (const cvec_t& trunc_key) {
-        char start[2];
-        trunc_key.copy_to(start, 2);
-        return _extract_poor_man_key(start, trunc_key.size());
-    }
+    poor_man_key _extract_poor_man_key(const cvec_t& trunc_key) const;
 
     /// Returns the value of poor-man's normalized key for the given key string WITH prefix.
-    poor_man_key _extract_poor_man_key (const void* key_with_prefix, size_t key_len_with_prefix, size_t prefix_len) {
-        w_assert1(prefix_len <= key_len_with_prefix);
-        return _extract_poor_man_key (((const char*)key_with_prefix) + prefix_len, key_len_with_prefix - prefix_len);
-    }
+    poor_man_key _extract_poor_man_key(const void* key_with_prefix, size_t key_len_with_prefix, size_t prefix_len) const;
 
 
     // ======================================================================
@@ -822,10 +779,7 @@ private:
     // ======================================================================
 
     /// Return poor man's key data for given slot
-    poor_man_key _poor(int slot) const {
-        w_assert1(slot>=0);
-        return page()->item_poor(slot+1);
-    }
+    poor_man_key _poor(int slot) const;
 
     /**
      * Retrieves the key WITHOUT prefix of specified slot in a leaf
@@ -906,10 +860,10 @@ private:
     // ======================================================================
 
     /// internal method used from is_consistent() to check keyorder correctness.
-    bool             _is_consistent_keyorder () const;
+    bool             _is_consistent_keyorder() const;
 
     /// checks if the poor-man's normalized keys are valid.
-    bool             _is_consistent_poormankey () const;
+    bool             _is_consistent_poormankey() const;
 
     /// Given the place to insert, update btree_consecutive_skewed_insertions.
     void             _update_btree_consecutive_skewed_insertions(slotid_t slot);
@@ -921,6 +875,37 @@ private:
      */
     bool _check_space_for_insert(size_t data_length);  
 };
+
+
+/**
+ * \brief Specialized variant of btree_page_h that borrows a B-tree
+ * page from a fixable_page_h.
+ *
+ * \details 
+ * Borrows the latch of a fixable_page_h for the duration of our
+ * existence.  Returns the latch when destroyed.  Do not use the
+ * original handle while its latch is borrowed.  Transitive borrowing
+ * is fine.
+ */
+class borrowed_btree_page_h : public btree_page_h {
+    fixable_page_h* _source;
+
+public:
+    borrowed_btree_page_h(fixable_page_h* source) :
+        btree_page_h(source->get_generic_page()),
+        _source(source)
+    {
+        _mode = _source->_mode;
+        _source->_mode = LATCH_NL;
+    }
+
+    ~borrowed_btree_page_h() {
+        w_assert1(_source->_mode == LATCH_NL);
+        _source->_mode = _mode;
+        _mode = LATCH_NL;
+    }
+};
+
 
 
 // ======================================================================
@@ -1104,6 +1089,100 @@ inline size_t btree_page_h::get_rec_space(int slot) const {
 }
 
 
+
+
+inline bool btree_page_h::is_ghost(slotid_t slot) const {
+    return page()->is_ghost(slot + 1);
+}
+
+
+inline smsize_t 
+btree_page_h::used_space() const {
+    return data_sz - page()->usable_space();
+}
+
+inline smsize_t
+btree_page_h::usable_space() const {
+    return page()->usable_space();
+}
+
+
+// ======================================================================
+//   BEGIN: Private record data packers inline implementation
+// ======================================================================
+
+inline void btree_page_h::_pack_node_record(cvec_t& out, const cvec_t& trunc_key) const {
+    w_assert1(!is_leaf());
+    out.put(trunc_key);
+}
+
+inline void btree_page_h::_pack_leaf_record_prefix(cvec_t& out, pack_scratch_t& out_scratch,
+                                                   const cvec_t& trunc_key) const {
+    w_assert1(is_leaf());
+    out_scratch = trunc_key.size();
+    out.put(&out_scratch, sizeof(out_scratch));
+    out.put(trunc_key);
+}
+inline void btree_page_h::_pack_leaf_record(cvec_t& out, pack_scratch_t& out_scratch,
+                                            const cvec_t& trunc_key,
+                                            const char* element, size_t element_len) const {
+    _pack_leaf_record_prefix(out, out_scratch, trunc_key);
+    out.put(element, element_len);
+}
+
+inline int btree_page_h::_pack_fence_rec(cvec_t& out, const w_keystr_t& low,
+                                  const w_keystr_t& high, 
+                                  const w_keystr_t& chain, 
+                                  int new_prefix_len) const {
+    int prefix_len;
+    if (new_prefix_len >= 0) {
+        w_assert1(low.common_leading_bytes(high) >= (size_t)new_prefix_len);
+        prefix_len = new_prefix_len;
+    } else {
+        prefix_len = low.common_leading_bytes(high);
+    }
+
+    out.put(low);
+    // eliminate prefix part from high:
+    out.put((const char*)high.buffer_as_keystr()     + prefix_len, 
+            high.get_length_as_keystr() - prefix_len);
+    out.put(chain);
+    return prefix_len;
+}
+
+inline size_t btree_page_h::_predict_leaf_data_length(int trunc_key_length, int element_length) const {
+    return sizeof(key_length_t) + trunc_key_length + element_length;
+}
+
+inline btree_page_h::poor_man_key btree_page_h::_extract_poor_man_key(const void* trunc_key, size_t trunc_key_len) const {
+    if (trunc_key_len == 0) {
+        return 0;
+    } else if (trunc_key_len == 1) {
+        return *reinterpret_cast<const unsigned char*>(trunc_key) << 8;
+    } else {
+        return deserialize16_ho(trunc_key);
+    }
+}
+inline btree_page_h::poor_man_key btree_page_h::_extract_poor_man_key(const cvec_t& trunc_key) const {
+    char start[2];
+    trunc_key.copy_to(start, 2);
+    return _extract_poor_man_key(start, trunc_key.size());
+}
+inline btree_page_h::poor_man_key btree_page_h::_extract_poor_man_key(const void* key_with_prefix, size_t key_len_with_prefix, size_t prefix_len) const {
+    w_assert1(prefix_len <= key_len_with_prefix);
+    return _extract_poor_man_key (((const char*)key_with_prefix) + prefix_len, key_len_with_prefix - prefix_len);
+}
+
+
+// ======================================================================
+//   BEGIN: Private [robust] record accessors inline implementation
+// ======================================================================
+
+inline btree_page_h::poor_man_key btree_page_h::_poor(int slot) const {
+    w_assert1(slot>=0);
+    return page()->item_poor(slot+1);
+}
+
 inline const char* btree_page_h::_leaf_key_noprefix(slotid_t slot,  size_t &len) const {
     w_assert1(is_leaf());
     w_assert1(slot>=0);
@@ -1128,7 +1207,6 @@ inline const char* btree_page_h::_robust_leaf_key_noprefix(slotid_t slot,  size_
     }
     return (const char*)data;
 }
-
 
 inline const char* btree_page_h::_node_key_noprefix(slotid_t slot,  size_t &len) const {
     w_assert1(is_node());
@@ -1175,54 +1253,5 @@ inline int btree_page_h::_robust_compare_key_noprefix(slotid_t slot, const void 
 
     return w_keystr_t::compare_bin_str(curkey, curkey_len, key_noprefix, key_len);
 }
-
-
-
-inline bool btree_page_h::is_ghost(slotid_t slot) const {
-    return page()->is_ghost(slot + 1);
-}
-
-
-inline smsize_t 
-btree_page_h::used_space() const {
-    return data_sz - page()->usable_space();
-}
-
-inline smsize_t
-btree_page_h::usable_space() const {
-    return page()->usable_space();
-}
-
-
-
-
-/**
- * \brief Specialized variant of btree_page_h that borrows a B-tree
- * page from a fixable_page_h.
- *
- * \details 
- * Borrows the latch of a fixable_page_h for the duration of our
- * existence.  Returns the latch when destroyed.  Do not use the
- * original handle while its latch is borrowed.  Transitive borrowing
- * is fine.
- */
-class borrowed_btree_page_h : public btree_page_h {
-    fixable_page_h* _source;
-
-public:
-    borrowed_btree_page_h(fixable_page_h* source) :
-        btree_page_h(source->get_generic_page()),
-        _source(source)
-    {
-        _mode = _source->_mode;
-        _source->_mode = LATCH_NL;
-    }
-
-    ~borrowed_btree_page_h() {
-        w_assert1(_source->_mode == LATCH_NL);
-        _source->_mode = _mode;
-        _mode = LATCH_NL;
-    }
-};
 
 #endif // BTREE_PAGE_H_H

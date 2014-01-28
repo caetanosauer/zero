@@ -969,7 +969,7 @@ bool btree_page_h::is_consistent (bool check_keyorder, bool check_space) const {
 
     return true;
 }
-bool btree_page_h::_is_consistent_keyorder () const {
+bool btree_page_h::_is_consistent_keyorder() const {
     const int    recs       = nrecs();
     const char*  lowkey     = get_fence_low_key();
     const size_t lowkey_len = get_fence_low_length();
@@ -1039,7 +1039,7 @@ bool btree_page_h::_is_consistent_keyorder () const {
     
     return true;
 }
-bool btree_page_h::_is_consistent_poormankey () const {
+bool btree_page_h::_is_consistent_poormankey() const {
     const int recs = nrecs();
     // the first record is fence key, so no poor man's key (always 0)
     poor_man_key fence_poormankey = page()->item_poor(0);
