@@ -152,9 +152,6 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
         w_assert1(cb.pin_cnt() > 0);
         w_assert1(cb._pid_vol == vol);
         w_assert1(cb._pid_shpid == _buffer[idx].pid.page);
-#ifdef BP_MAINTAIN_PARENT_PTR
-        ++cb._counter_approximate;
-#endif // BP_MAINTAIN_PARENT_PTR
 
         // If we keep incrementing the cb._refbit_approximate then we cause a scalability 
         // bottleneck (as the associated cacheline ping-pongs between sockets).
@@ -167,6 +164,7 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
         page = &(_buffer[idx]);
         
 #ifdef BP_MAINTAIN_PARENT_PTR
+        ++cb._counter_approximate;
         // infrequently update LRU.
         if (cb._counter_approximate % SWIZZLED_LRU_UPDATE_INTERVAL == 0) {
             _update_swizzled_lru(idx);
