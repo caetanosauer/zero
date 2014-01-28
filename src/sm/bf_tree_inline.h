@@ -72,9 +72,9 @@ inline w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
     bf_tree_cb_t &cb = get_cb(idx);
     w_assert1(cb.pin_cnt() > 0);
     W_DO(cb.latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
-#ifdef BP_MAINTAIN_PARNET_PTR
+#ifdef BP_MAINTAIN_PARENT_PTR
     ++cb._counter_approximate;
-#endif // BP_MAINTAIN_PARNET_PTR
+#endif // BP_MAINTAIN_PARENT_PTR
     ++cb._refbit_approximate;
     page = &(_buffer[idx]);
     return RCOK;
@@ -152,9 +152,6 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
         w_assert1(cb.pin_cnt() > 0);
         w_assert1(cb._pid_vol == vol);
         w_assert1(cb._pid_shpid == _buffer[idx].pid.page);
-#ifdef BP_MAINTAIN_PARNET_PTR
-        ++cb._counter_approximate;
-#endif // BP_MAINTAIN_PARNET_PTR
 
         // If we keep incrementing the cb._refbit_approximate then we cause a scalability 
         // bottleneck (as the associated cacheline ping-pongs between sockets).
@@ -166,12 +163,13 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
         // also, doesn't have to unpin whether there happens an error or not. easy!
         page = &(_buffer[idx]);
         
-#ifdef BP_MAINTAIN_PARNET_PTR
+#ifdef BP_MAINTAIN_PARENT_PTR
+        ++cb._counter_approximate;
         // infrequently update LRU.
         if (cb._counter_approximate % SWIZZLED_LRU_UPDATE_INTERVAL == 0) {
             _update_swizzled_lru(idx);
         }
-#endif // BP_MAINTAIN_PARNET_PTR
+#endif // BP_MAINTAIN_PARENT_PTR
     }
     return RCOK;
 }
@@ -342,12 +340,12 @@ void print_latch_holders(latch_t* latch);
 ///////////////////////////////////   Page fix/unfix END         ///////////////////////////////////  
 
 ///////////////////////////////////   LRU/Freelist BEGIN ///////////////////////////////////  
-#ifdef BP_MAINTAIN_PARNET_PTR
+#ifdef BP_MAINTAIN_PARENT_PTR
 inline bool bf_tree_m::_is_in_swizzled_lru (bf_idx idx) const {
     w_assert1 (_is_active_idx(idx));
     return SWIZZLED_LRU_NEXT(idx) != 0 || SWIZZLED_LRU_PREV(idx) != 0 || SWIZZLED_LRU_HEAD == idx;
 }
-#endif // BP_MAINTAIN_PARNET_PTR
+#endif // BP_MAINTAIN_PARENT_PTR
 inline bool bf_tree_m::is_swizzled(const generic_page* page) const
 {
     bf_idx idx = page - _buffer;

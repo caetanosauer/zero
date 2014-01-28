@@ -316,11 +316,11 @@ w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_s
         test_bf_tree::_add_child_pointer (rbp, pid.page);
 
         if (enable_swizzle) {
-#ifdef BP_MAINTAIN_PARNET_PTR
+#ifdef BP_MAINTAIN_PARENT_PTR
             EXPECT_EQ ((int) (1 + i), root_cb._pin_cnt);
-#else // BP_MAINTAIN_PARNET_PTR
+#else // BP_MAINTAIN_PARENT_PTR
             EXPECT_EQ ((int) (1), root_cb._pin_cnt);
-#endif // BP_MAINTAIN_PARNET_PTR
+#endif // BP_MAINTAIN_PARENT_PTR
         } else {
             EXPECT_EQ ((int) (1), root_cb._pin_cnt);
         }
@@ -331,17 +331,17 @@ w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_s
             if (enable_swizzle) {
                 EXPECT_EQ (1, cb._pin_cnt); // because it's swizzled, pin_cnt is 1
                 EXPECT_TRUE (pool.is_swizzled(page));
-#ifdef BP_MAINTAIN_PARNET_PTR
+#ifdef BP_MAINTAIN_PARENT_PTR
                 EXPECT_EQ ((int) (2 + i), root_cb._pin_cnt); // parent's pin_cnt is added 
-#else // BP_MAINTAIN_PARNET_PTR
+#else // BP_MAINTAIN_PARENT_PTR
                 EXPECT_EQ ((int) 1, root_cb._pin_cnt);
-#endif // BP_MAINTAIN_PARNET_PTR
+#endif // BP_MAINTAIN_PARENT_PTR
             } else {
                 EXPECT_EQ (0, cb._pin_cnt); // otherwise, it's 0 after fix()
                 EXPECT_EQ ((int) (1), root_cb._pin_cnt);
-#ifdef BP_MAINTAIN_PARNET_PTR
+#ifdef BP_MAINTAIN_PARENT_PTR
                 EXPECT_EQ ((uint) 0, cb._parent);
-#endif // BP_MAINTAIN_PARNET_PTR
+#endif // BP_MAINTAIN_PARENT_PTR
             }
             ::memset(page, 0, sizeof(generic_page));
             btree_page *bp = reinterpret_cast<btree_page*>(page);
@@ -362,11 +362,11 @@ w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_s
     }
     pool.debug_dump_page_pointers(std::cout, root_page);
     if (enable_swizzle) {
-#ifdef BP_MAINTAIN_PARNET_PTR
+#ifdef BP_MAINTAIN_PARENT_PTR
         EXPECT_EQ (1 + 20, root_cb._pin_cnt);
-#else // BP_MAINTAIN_PARNET_PTR
+#else // BP_MAINTAIN_PARENT_PTR
         EXPECT_EQ (1, root_cb._pin_cnt);
-#endif // BP_MAINTAIN_PARNET_PTR
+#endif // BP_MAINTAIN_PARENT_PTR
     } else {
         EXPECT_EQ (1, root_cb._pin_cnt);
     }
@@ -400,22 +400,22 @@ w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_s
         }
     }
     if (enable_swizzle) {
-#ifdef BP_MAINTAIN_PARNET_PTR
+#ifdef BP_MAINTAIN_PARENT_PTR
         EXPECT_EQ (1 + 20, root_cb._pin_cnt);
-#else // BP_MAINTAIN_PARNET_PTR
+#else // BP_MAINTAIN_PARENT_PTR
         EXPECT_EQ (1, root_cb._pin_cnt);
-#endif // BP_MAINTAIN_PARNET_PTR
+#endif // BP_MAINTAIN_PARENT_PTR
     } else {
         EXPECT_EQ (1, root_cb._pin_cnt);
     }
     pool.set_dirty(root_page);
     pool.unfix(root_page);
     if (enable_swizzle) {
-#ifdef BP_MAINTAIN_PARNET_PTR
+#ifdef BP_MAINTAIN_PARENT_PTR
         EXPECT_EQ (1 + 20, root_cb._pin_cnt);
-#else // BP_MAINTAIN_PARNET_PTR
+#else // BP_MAINTAIN_PARENT_PTR
         EXPECT_EQ (1, root_cb._pin_cnt);
-#endif // BP_MAINTAIN_PARNET_PTR
+#endif // BP_MAINTAIN_PARENT_PTR
     } else {
         EXPECT_EQ (1, root_cb._pin_cnt);
     }
@@ -447,7 +447,7 @@ TEST (TreeBufferpoolTest, NoSwizzle) {
     ), 0);
 }
 
-#ifdef BP_MAINTAIN_PARNET_PTR
+#ifdef BP_MAINTAIN_PARENT_PTR
 w_rc_t test_bf_switch_parent(ss_m* /*ssm*/, test_volume_t *test_volume) {
     
     bf_tree_m &pool(*smlevel_0::bf);
@@ -530,7 +530,7 @@ TEST (TreeBufferpoolTest, SwitchParent) {
         1, 10000, 10000, 64, false, true
     ), 0);
 }
-#endif // BP_MAINTAIN_PARNET_PTR
+#endif // BP_MAINTAIN_PARENT_PTR
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
