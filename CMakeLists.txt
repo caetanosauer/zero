@@ -48,8 +48,13 @@ find_package(Threads REQUIRED) # find pthread library
 # http://code.google.com/p/google-perftools/issues/detail?id=66&can=1&q=libunwind
 find_package(GooglePerftools) # google-perftools / google-perftools-devel
 IF(GOOGLEPERFTOOLS_FOUND)
-  SET (LINK_GOOGLEPROFILER " -lprofiler") #  -ltcmalloc ?
+  SET (LINK_GOOGLEPROFILER " -lprofiler")
   SET (LIBINCL_GOOGLEPROFILER "profiler")
+  # Optionally, also use tcmalloc if there is.
+  find_package(Tcmalloc) # google-perftools-devel
+  IF(TCMALLOC_FOUND)
+    SET (LINK_GOOGLEPROFILER "${LINK_GOOGLEPROFILER} -ltcmalloc")
+  ENDIF()
 ENDIF(GOOGLEPERFTOOLS_FOUND)
 
 # MUTrace profiles user-mode mutex locks 

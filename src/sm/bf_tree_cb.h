@@ -92,7 +92,7 @@ struct bf_tree_cb_t {
 
     // control block is bulk-initialized by malloc and memset. It has to be aligned.
 
-    /** dirty flag. use locks to update/check this value. */
+    /** dirty flag. use latches to update/check this value. */
     bool _dirty;         // +1  -> 1
     
     /** true if this block is actually used. same warning as above. */
@@ -107,11 +107,11 @@ struct bf_tree_cb_t {
     /** Count of pins on this block. See class comments. */
     int32_t _pin_cnt;       // +4 -> 12
 
-    /** ref count (for clock algorithm). approximate, so not protected by locks. */
+    /** ref count (for clock algorithm). approximate, so not protected by latches. */
     uint16_t                    _refbit_approximate;// +2  -> 14
 
     /**
-     * Used to trigger LRU-update 'about' once in 100 or 1000, and so on. approximate, so not protected by locks.
+     * Used to trigger LRU-update 'about' once in 100 or 1000, and so on. approximate, so not protected by latches.
      */
     uint16_t                    _counter_approximate;// +2  -> 16
 
