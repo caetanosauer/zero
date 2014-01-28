@@ -107,11 +107,19 @@ struct bf_tree_cb_t {
     /** Count of pins on this block. See class comments. */
     int32_t _pin_cnt;       // +4 -> 12
 
-    /** ref count (for clock algorithm). approximate, so not protected by latches. */
+    /** Reference count (for clock algorithm). Approximate, so not protected by latches.
+     *  We increment it whenever (re-)fixing the page in the bufferpool. 
+     *  We limit the maximum value of the refcount by BP_MAX_REFCOUNT to avoid the scalability 
+     *  bottleneck caused by excessive cache coherence traffic (cacheline ping-pongs between sockets).
+     *  The counter still has enough granularity to separate cold from hot pages. 
+     *  Clock decrements the counter when it visits the page.
+     */
     uint16_t                    _refbit_approximate;// +2  -> 14
 
     /**
+     * Only used when the bufferpool maintains a child-to-parent pointer in each buffer frame.
      * Used to trigger LRU-update 'about' once in 100 or 1000, and so on. approximate, so not protected by latches.
+     * We increment it whenever (re-)fixing the page in the bufferpool. 
      */
     uint16_t                    _counter_approximate;// +2  -> 16
 

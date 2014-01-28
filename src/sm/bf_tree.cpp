@@ -598,7 +598,6 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 if (cb._refbit_approximate < BP_MAX_REFCOUNT) {
                     ++cb._refbit_approximate;
                 }
-                //cout << "Bump RefCnt: " << idx << ", " << cb._refbit_approximate << endl;
                 w_rc_t rc = cb.latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER);
                 // either successfully or unsuccessfully, we latched the page.
                 // we don't need the pin any more.
