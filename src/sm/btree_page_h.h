@@ -1159,7 +1159,7 @@ inline btree_page_h::poor_man_key btree_page_h::_extract_poor_man_key(const void
     if (trunc_key_len == 0) {
         return 0;
     } else if (trunc_key_len == 1) {
-        return *reinterpret_cast<const unsigned char*>(trunc_key) << 8;
+        return (*reinterpret_cast<const unsigned char*>(trunc_key)) << 8;
     } else {
         return deserialize16_ho(trunc_key);
     }
