@@ -65,7 +65,7 @@ inline uint64_t bf_key(const lpid_t &pid) {
 // their parent at the same time (e.g., page split/merge/rebalance in a node page).
 // Without this flag, we simply don't have parent pointer, thus do a hierarchical
 // walking to find a pge to evict.
-// #define BP_MAINTAIN_PARNET_PTR
+// #define BP_MAINTAIN_PARENT_PTR
 
 // A flag whether the bufferpool maintains replacement priority per page.
 #define BP_MAINTAIN_REPLACEMENT_PRIORITY
@@ -340,7 +340,7 @@ public:
      */
     w_rc_t uninstall_volume (volid_t vid);
 
-#ifdef BP_MAINTAIN_PARNET_PTR
+#ifdef BP_MAINTAIN_PARENT_PTR
     /**
      * Whenever the parent of a page is changed (adoption or de-adoption),
      * this method must be called to switch it in bufferpool.
@@ -348,7 +348,7 @@ public:
      * don't go away while this switch (i.e., latch them).
      */
     void switch_parent (generic_page* page, generic_page* new_parent);
-#endif // BP_MAINTAIN_PARNET_PTR
+#endif // BP_MAINTAIN_PARENT_PTR
     
     /**
      * Swizzle a child pointer in the parent page to speed-up accesses on the child.
@@ -494,7 +494,7 @@ private:
     /** if the shpid is a swizzled pointer, convert it to the original page id. */
     void   _convert_to_pageid (shpid_t* shpid) const;
     
-#ifdef BP_MAINTAIN_PARNET_PTR
+#ifdef BP_MAINTAIN_PARENT_PTR
     /**
      * Newly adds the speficied block to the head of swizzled-pages LRU.
      * This page must be a swizzled page that can be unswizzled.
@@ -513,7 +513,7 @@ private:
      * If the page is worth swizzling, even once in 100 would be very frequent.
      */
     void   _update_swizzled_lru (bf_idx idx);
-#endif // BP_MAINTAIN_PARNET_PTR
+#endif // BP_MAINTAIN_PARENT_PTR
 
     /** finds a free block and returns its index. if free list is empty, it evicts some page. */
     w_rc_t _grab_free_block(bf_idx& ret);
@@ -573,10 +573,10 @@ private:
     /** called from _trigger_unswizzling(). traverses the given interemediate node. */
     void   _unswizzle_traverse_node(uint32_t &unswizzled_frames, volid_t vol, snum_t store, bf_idx node_idx, uint16_t cur_clockhand_depth);
 
-#ifdef BP_MAINTAIN_PARNET_PTR
+#ifdef BP_MAINTAIN_PARENT_PTR
     /** implementation of _trigger_unswizzling assuming parent pointer in each bufferpool frame. */
     void   _unswizzle_with_parent_pointer();
-#endif // BP_MAINTAIN_PARNET_PTR
+#endif // BP_MAINTAIN_PARENT_PTR
 
     /**
      * Tries to unswizzle the given child page from the parent page.
@@ -673,7 +673,7 @@ private:
     /** spin lock to protect all freelist related stuff. */
     tatas_lock           _freelist_lock;
 
-#ifdef BP_MAINTAIN_PARNET_PTR
+#ifdef BP_MAINTAIN_PARENT_PTR
     /**
      * doubly-linked LRU list for swizzled pages THAT CAN BE UNSWIZZLED.
      * (in other words, root pages aren't included in this counter and the linked list)
@@ -686,7 +686,7 @@ private:
     uint32_t _swizzled_lru_len;
     /** spin lock to protect swizzled page LRU list. */
     tatas_lock           _swizzled_lru_lock;
-#endif // BP_MAINTAIN_PARNET_PTR
+#endif // BP_MAINTAIN_PARENT_PTR
 
     /**
      * Hierarchical clockhand to maintain where we lastly visited
