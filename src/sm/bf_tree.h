@@ -429,7 +429,7 @@ public:
      */
     inline bool  is_bf_page (const generic_page *page) const {
         int32_t idx = page - _buffer;
-        return idx > 0 && idx < (int32_t) _block_cnt;
+        return _is_valid_idx(idx);
     }
 
     /**

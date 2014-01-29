@@ -43,13 +43,13 @@ inline bf_idx bf_tree_m::get_idx(const bf_tree_cb_t* cb) const {
 
 inline bf_tree_cb_t* bf_tree_m::get_cb(const generic_page *page) {
     bf_idx idx = page - _buffer;
-    w_assert1(idx > 0 && idx < _block_cnt);
+    w_assert1(_is_valid_idx(idx));
     return get_cbp(idx);
 }
 
 inline generic_page* bf_tree_m::get_page(const bf_tree_cb_t *cb) {
     bf_idx idx = get_idx(cb);
-    w_assert1(idx > 0 && idx < _block_cnt);
+    w_assert1(_is_valid_idx(idx));
     return _buffer + idx;
 }
 inline shpid_t bf_tree_m::get_root_page_id(volid_t vol, snum_t store) {
@@ -57,7 +57,7 @@ inline shpid_t bf_tree_m::get_root_page_id(volid_t vol, snum_t store) {
         return 0;
     }
     bf_idx idx = _volumes[vol]->_root_pages[store];
-    if (idx == 0 || idx >= _block_cnt) {
+    if (!_is_valid_idx(idx)) {
         return 0;
     }
     generic_page* page = _buffer + idx;
@@ -91,9 +91,10 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
     } else {
         w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
         bf_idx idx = shpid;
-        w_assert1 (_is_active_idx(idx));
+        w_assert1(_is_valid_idx(idx));
         bf_tree_cb_t &cb = get_cb(idx);
         W_DO(cb.latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
+        w_assert1 (_is_active_idx(idx));
         page = &(_buffer[idx]);
     }
     if (true) return RCOK;
@@ -146,9 +147,10 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
         w_assert1(!virgin_page); // virgin page can't be swizzled
         // the pointer is swizzled! we can bypass pinning
         bf_idx idx = shpid ^ SWIZZLED_PID_BIT;
-        w_assert1 (_is_active_idx(idx));
+        w_assert1(_is_valid_idx(idx));
         bf_tree_cb_t &cb = get_cb(idx);
         W_DO(cb.latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
+        w_assert1 (_is_active_idx(idx));
         w_assert1(cb.pin_cnt() > 0);
         w_assert1(cb._pid_vol == vol);
         w_assert1(cb._pid_shpid == _buffer[idx].pid.page);
@@ -198,7 +200,7 @@ inline w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, volid_t vol, snum
 
     // this page will be the root page of a new store.
     W_DO(_grab_free_block(idx));
-    w_assert1 (idx > 0 && idx < _block_cnt);
+    w_assert1(_is_valid_idx(idx));
     volume->_root_pages[store] = idx;
 
     get_cb(idx).clear();
@@ -222,34 +224,31 @@ inline w_rc_t bf_tree_m::fix_root (generic_page*& page, volid_t vol, snum_t stor
     w_assert1(store != 0);
     bf_tree_vol_t *volume = _volumes[vol];
     w_assert1(volume != NULL);
-    w_assert1(volume->_root_pages[store] != 0);
 
+    // root page index is always kept in the volume descriptor:
     bf_idx idx = volume->_root_pages[store];
+    w_assert1(_is_valid_idx(idx));
 
-#ifdef SIMULATE_MAINMEMORYDB
+    W_DO(_latch_root_page(page, idx, mode, conditional));
+
+    w_assert1(_is_active_idx(idx));
     w_assert1(get_cb(idx)._pid_vol == vol);
     w_assert1(_buffer[idx].pid.store() == store);
-    if (true) return _latch_root_page(page, idx, mode, conditional);
-#endif
 
-    // root page is always kept in the volume descriptor
+#ifndef SIMULATE_MAINMEMORYDB
+    /*
+     * Verify when swizzling off & non-main memory DB that lookup table handles this page correctly:
+     */
 #ifdef SIMULATE_NO_SWIZZLING
-    bf_idx idx_dummy = _hashtable->lookup(bf_key(vol, get_cb(volume->_root_pages[store])._pid_shpid));
-    w_assert1(idx == idx_dummy);
-    idx = idx_dummy;
+    w_assert1(idx == _hashtable->lookup(bf_key(vol, get_cb(volume->_root_pages[store])._pid_shpid)));
 #else // SIMULATE_NO_SWIZZLING
     if (!is_swizzling_enabled()) {
-        bf_idx idx_dummy = _hashtable->lookup(bf_key(vol, get_cb(volume->_root_pages[store])._pid_shpid));
-        w_assert1(idx == idx_dummy);
-        idx = idx_dummy;
+        w_assert1(idx == _hashtable->lookup(bf_key(vol, get_cb(volume->_root_pages[store])._pid_shpid)));
     }
 #endif // SIMULATE_NO_SWIZZLING
+#endif // SIMULATE_MAINMEMORYDB
 
-    w_assert1 (_is_active_idx(idx));
-    w_assert1(get_cb(idx)._pid_vol == vol);
-    w_assert1(_buffer[idx].pid.store() == store);
-
-    return _latch_root_page(page, idx, mode, conditional);
+    return RCOK;
 }
 
 inline w_rc_t bf_tree_m::_latch_root_page(generic_page*& page, bf_idx idx, latch_mode_t mode, bool conditional) {

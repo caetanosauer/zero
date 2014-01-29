@@ -814,7 +814,7 @@ w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret) {
             CRITICAL_SECTION(cs, &_freelist_lock);
             if (_freelist_len > 0) { // here, we do the real check
                 bf_idx idx = FREELIST_HEAD;
-                w_assert1 (idx > 0 && idx < _block_cnt);
+                w_assert1(_is_valid_idx(idx));
                 w_assert1 (!get_cb(idx)._used);
                 --_freelist_len;
                 if (_freelist_len == 0) {
@@ -1098,7 +1098,7 @@ void bf_tree_m::_delete_block(bf_idx idx) {
 ///////////////////////////////////   LRU/Freelist END ///////////////////////////////////  
 
 bool bf_tree_m::_increment_pin_cnt_no_assumption(bf_idx idx) {
-    w_assert1(idx > 0 && idx < _block_cnt);
+    w_assert1 (_is_valid_idx(idx));
     bf_tree_cb_t &cb = get_cb(idx);
 #if 0
     int32_t cur = cb._pin_cnt;
