@@ -55,7 +55,7 @@ void* numa_malloc(size_t size, int node, size_t alignment)
     return alignptr;
 }
 
-void numa_free(void* ptr)
+void my_numa_free(void* ptr)
 {
     void* realptr = (void*)(((uintptr_t*)ptr)[-1]);
     size_t size = (size_t)(((size_t*)ptr)[-2]);
@@ -186,7 +186,7 @@ bf_tree_m::~bf_tree_m() {
         char* buf = reinterpret_cast<char*>(_control_blocks);
 #endif
 #ifdef NUMA
-        numa_free(buf);
+        my_numa_free(buf);
 #else
         delete[] buf;
 #endif
@@ -210,7 +210,7 @@ bf_tree_m::~bf_tree_m() {
         void *buf = reinterpret_cast<void*>(_buffer);
         // note we use free(), not delete[], which corresponds to posix_memalign
 #ifdef NUMA
-        numa_free(buf);
+        my_numa_free(buf);
 #else
         ::free (buf);
 #endif
