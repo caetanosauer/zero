@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 #ifndef BF_TREE_H
@@ -538,8 +538,15 @@ private:
 
     /** Adds a free block to the freelist. */
     void   _add_free_block(bf_idx idx);
+
+    /// returns true iff idx is in the valid range.  for assertion.
+    bool   _is_valid_idx (bf_idx idx) const;
     
-    /** returns if the idx is in the valid range and also the block is used. for assertion. */
+    /**
+     * returns true if idx is in the valid range and also the block is used.  for assertion.
+     * 
+     * @pre hold get_cb(idx).latch() in read or write mode
+     */
     bool   _is_active_idx (bf_idx idx) const;
 
     /**

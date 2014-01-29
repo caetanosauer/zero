@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 #ifndef BF_TREE_INLINE_H
@@ -353,11 +353,13 @@ inline bool bf_tree_m::is_swizzled(const generic_page* page) const
 
 ///////////////////////////////////   LRU/Freelist END ///////////////////////////////////  
 
+inline bool bf_tree_m::_is_valid_idx(bf_idx idx) const {
+    return idx > 0 && idx < _block_cnt;
+}
+
+
 inline bool bf_tree_m::_is_active_idx (bf_idx idx) const {
-    if (idx <= 0 || idx > _block_cnt) {
-        return false;
-    }
-    return get_cb(idx)._used;
+    return _is_valid_idx(idx) && get_cb(idx)._used;
 }
 
 
