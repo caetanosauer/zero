@@ -19,8 +19,6 @@ struct btree_int_stats_t;
 
 
 
-typedef uint16_t key_length_t;  // <<<>>>
-
      /*
      * When this page belongs to a foster chain, we need to store
      * high-fence of right-most sibling in every sibling to do
@@ -29,34 +27,6 @@ typedef uint16_t key_length_t;  // <<<>>>
      */
 
 
-/**
- * \brief Poor man's normalized key type.
- *
- * \details
- * To speed up comparison this should be an integer type, not char[]. 
- */
-typedef uint16_t poor_man_key;
-
-/** Returns the value of poor-man's normalized key for the given key string WITHOUT prefix.*/
-inline poor_man_key extract_poor_man_key (const void* key, size_t key_len) {
-    if (key_len == 0) {
-        return 0;
-    } else if (key_len == 1) {
-        return *reinterpret_cast<const unsigned char*>(key) << 8;
-    } else {
-        return deserialize16_ho(key);
-    }
-}
-/** Returns the value of poor-man's normalized key for the given key string WITH prefix.*/
-inline poor_man_key extract_poor_man_key (const void* key_with_prefix, size_t key_len_with_prefix, size_t prefix_len) {
-    w_assert3(prefix_len <= key_len_with_prefix);
-    return extract_poor_man_key (((const char*)key_with_prefix) + prefix_len, key_len_with_prefix - prefix_len);
-}
-inline poor_man_key extract_poor_man_key (const cvec_t& key) {
-    char start[2];
-    key.copy_to(start, 2);
-    return extract_poor_man_key(start, key.size());
-}
 
 
 
@@ -114,83 +84,84 @@ class btree_ghost_reclaim_log;
 
 
 /**
- * \brief Page handle for BTree data page.
+ * \brief Page handle for B-Tree data page.
  * \ingroup SSMBTREE
+ * 
  * \details
- * BTree data page uses the common data layout defined in generic_page.
- * However, it also has the BTree-specific header placed in the beginning of "data".
- *
+ * 
  * \section FBTREE Fence Keys and B-link Tree
- * Our version of BTree header contains low-high fence keys and pointers as a b-link tree.
- * fence keys are NEVER changed once the page is created until the page gets splitted.
- * prefix compression in this scheme utilizes it by storing the common leading bytes
- * of the two fence keys and simply getting rid of them from all entries in this page.
- * See generic_page for the header definitions. They are defined as part of generic_page.
+ * 
+ * Our version of B-Tree header contains low-high fence keys and
+ * pointers as a b-link tree.  Fence keys are NEVER changed once the
+ * page is created until the page gets splitted.  Prefix compression
+ * in this scheme utilizes it by storing the common leading bytes of
+ * the two fence keys and simply getting rid of them from all entries
+ * in this page.  See btree_page for the header definitions.
  *
- * \section PAGELAYOUT BTree Page Layout
- * The page layout of BTree is as follows.
+ * 
+ * \section PAGELAYOUT B-Tree Page Layout
+ * 
+ * The page layout of a B-Tree page is as follows:
+ * 
  * \verbatim
-  [common-headers in generic_page]
-  [btree-specific-headers in generic_page]
-  (data area in generic_page:
-    [slot data which is growing forward]
+  [common-headers from generic_page_header]
+  [B-tree-specific-headers in btree_page]
+  (item area in btree_page:
+    [item storage part that is growing forwards]
     [(contiguous) free area]
-    [record data which is growing forward]
- )\endverbatim
- * The first record contains fence keys:
- * [record-len + low-fence-key data (including prefix) + high-fence-key data (without prefix)
- * + chain-fence-high-key data (complete string. chain-fence-high doesn't share prefix!)]
+    [item storage part that is growing backwards]
+   )\endverbatim
  * 
- * \section SLOTLAYOUT BTree Slot Layout
- * btree_page is the only slotted subclass of fixable_page_h. All the other classes  FIXME
- * use _pp.data just as a chunk of char. (Slot-related functions and typedefs
- * should be moved from fixable_page_h to btree_page_h, but I haven't done the surgery yet.)
+ * The first item contains the fence keys and foster key, if any:
+ * [low-fence-key data (including prefix) + high-fence-key data
+ * (without prefix) + chain-fence-high-key data (complete string;
+ * chain-fence-high doesn't share prefix!)].  The other items contain
+ * the B-tree page's records, one each.  These locations are called \e
+ * slots; slot 0 corresponds to item 1 and so on.
  * 
- * The Btree slot uses poor-man's normalized key to speed up searches.
- * Each slot stores the first few bytes of the key as an unsigned
- * integer (PoorMKey) so that comparison with most records are done without
- * going to the record itself, avoiding L1 cache misses. The whole point of
- * poormkey is cachemiss! So, we minimize the size of slots. Only poormkey and
- * offset (not tuple length or key length. it's at the beginning of the record).
  * 
- * NOTE So far, poor-man's normalied key is 2 byte integer (uint16_t) and
- * the corresponding bytes are NOT eliminated from the key string in the record.
- * This is to speed up the retrieval of the complete key at the cost of additional
- * 2 bytes to store it. I admit this is arguable, but deserilizing the part
- * everytime (it's likely little-endian, so we need to flip it) will slow down retrieval.
+ * \section SLOTLAYOUT B-Tree Slot Layout
  * 
- * Each slot also stores the offset (divided by 8 to enable larger page sizes)
- * to the record. If the offset is negative, it means a ghost record and
- * the offset of reversed-sign gives the actual offset.
+ * We use poor-man's normalized key to speed up searches.  Each slot
+ * has a field, _poor, that holds the first few bytes of that slot's
+ * key as an unsigned integer (poor_man_key) so that comparison with
+ * most slot keys can be done without going to the key itself,
+ * avoiding L1 cache misses.  The whole point of poor_man_key is
+ * avoiding cache misses!
+ * 
+ * NOTE So far, poor-man's normalied key is 2 byte integer (uint16_t)
+ * and the corresponding bytes are NOT eliminated from the key string
+ * in the record.  This is to speed up the retrieval of the
+ * (truncated) complete key at the cost of an additional 2 bytes to
+ * store it.  I admit this is arguable, but deserilizing the first
+ * part everytime (it's likely little-endian, so we need to flip it)
+ * will slow down retrieval.
+ * 
+ * Also associated with each slot is a ghost bit (is this record a
+ * ghost record?), a variable-size data portion used to hold the
+ * record details (i.e., key and element if a leaf node), and in the
+ * case of interior nodes, a child pointer.
+ * 
  * 
  * \section RECORDLAYOUT Record Layout
- * Internally, record data is stored as follows:
+ * 
+ * Internally, record data is stored in the item variable-size data part as follows:
  * 
  * (If the page is leaf page)
- * - physical record length (uint16_t) of the entire record (including everything
- * AFTER prefix trunction; it's physical length!).
- * - key length (uint16_t) BEFORE prefix truncation
- * - key + el (contiguous char[]) AFTER prefix truncation
- * NOTE el length can be calculated from record length and key length
- * (el length = record length - 4 - key length + prefix length).
+ * - key length (uint16_t) AFTER prefix truncation
+ * - key + element (contiguous char[]) AFTER prefix truncation
+ * NOTE: element length can be calculated from item length and key length
+ * (element length = item length - key length - sizeof(key length)).
  * 
- * (If the page is node page)
- * - pid (shpid_t; 4 bytes.)
- * - physical record length (uint16_t) of the entire record.
+ * (If the page is interior node page)
  * - key AFTER prefix truncation
- * NOTE key length is calculated from record length (record length - 6 + prefix_len).
- * pid is placed first to make it 4-byte aligned (causes a trouble in SPARC otherwise).
- * 
- * Finally,
- * - [0-7] bytes of unused space (record is 8 bytes aligned). This is just a padding,
- * so not included in the record length.
+ * NOTE: key-AFTER-prefix-truncation length here is simply the item length.
  * 
  * Opaque pointers:
- * - Default is to return page id.
- * - When a page is swizzled though we can avoid hash table lookup to map page id 
- *   to frame id by using frame id directly. Opaque pointers serve this purpose by 
- *   hiding from the user whether a pointer is a frame id or page id. 
- *
+ * - Default is to return page ID.
+ * - When a page is swizzled though we can avoid hash table lookup to map page ID 
+ *   to frame ID by using frame ID directly.  Opaque pointers serve this purpose by 
+ *   hiding from the user whether a pointer is a frame ID or page ID. 
  */
 class btree_page_h : public fixable_page_h {
     friend class btree_impl;
@@ -345,9 +316,9 @@ public:
     // no 'noprefix' version because chain_fence_high might not share the prefix!
 
     /**
-     * When allocating a new BTree page, use this instead of fix().
+     * When allocating a new B-Tree page, use this instead of fix().
      * This sets all headers, fence/prefix keys, and initial records altogether.
-     * As our new BTree header has variable-size part (fence keys),
+     * As our new B-Tree header has variable-size part (fence keys),
      * setting fence keys later than the first format() causes a problem.
      * So, the 4-argumets format(which is called from default fix() on virgin page) is disabled.
      * Also, this outputs just a single record for everything, so much more efficient.
@@ -369,8 +340,8 @@ public:
         );
 
     /**
-     * This sets all headers, fence/prefix keys and initial records altogether. Used by init_fix_steal.
-     * Steal records from steal_src1. Then steal records from steal_src2 (this is used only when merging).
+     * This sets all headers, fence/prefix keys and initial records altogether.  Used by init_fix_steal.
+     * Steal records from steal_src1.  Then steal records from steal_src2 (this is used only when merging).
      * if steal_src2_pid0 is true, it also steals src2's pid0 with low-fence key.
      */
     rc_t format_steal(
@@ -392,14 +363,14 @@ public:
         bool                 steal_src2_pid0 = false
         );
 
-    /// Steal records from steal_src. Called by format_steal.
+    /// Steal records from steal_src.  Called by format_steal.
     void _steal_records(btree_page_h* steal_src,
                         int           steal_from,
                         int           steal_to);
 
     /**
      * Called when we did a split from this page but didn't move any record to new page.
-     * This method can't be undone. Use this only for REDO-only system transactions.
+     * This method can't be undone.  Use this only for REDO-only system transactions.
      */
     rc_t norecord_split (shpid_t foster,
                          const w_keystr_t& fence_high, 
@@ -527,7 +498,7 @@ public:
      * 
      * Note: keys in interior nodes are separator keys.  Like fence
      * keys, a separator key is exclusive for left and inclusive for
-     * right. For example, a separator key "AB" sends "AA" to left,
+     * right.  For example, a separator key "AB" sends "AA" to left,
      * "AAZ" to left, "AB" to right, "ABA" to right, and "AC" to
      * right.
      * 
@@ -542,7 +513,7 @@ public:
     // ======================================================================
 
     /**
-     *  Insert a new entry at "slot". This is used only for non-leaf pages.
+     *  Insert a new entry at "slot".  This is used only for non-leaf pages.
      * For leaf pages, always use replace_ghost() and reserve_ghost().
      * @param child child pointer to add
      */
@@ -587,7 +558,7 @@ public:
     rc_t            remove_shift_nolog(slotid_t slot);
 
     /**
-     * Replaces the given slot with the new data. key is not changed.
+     * Replaces the given slot with the new data.  key is not changed.
      * If we need to expand the record and the page doesn't have
      * enough space, eRECWONTFIT is thrown.
      */
@@ -611,7 +582,7 @@ public:
     void             reserve_ghost(const w_keystr_t &key, size_t element_length) {
         reserve_ghost((const char *)key.buffer_as_keystr(), key.get_length_as_keystr(), element_length);
     }
-    // to make it slightly faster. not a neat kind of optimization
+    // to make it slightly faster.  not a neat kind of optimization
     void             reserve_ghost(const char *key_raw, size_t key_raw_len, size_t element_length);
 
     /**
@@ -642,11 +613,11 @@ public:
      * @param[out] mid suggested fence key in the middle
      * @param[out] right_begins_from slot id from which (including it)
      * the new right sibling steal the entires
-     * @param[in] triggering_key the key to be inserted after this split. used to determine split policy.
+     * @param[in] triggering_key the key to be inserted after this split.  used to determine split policy.
      */
     void                 suggest_fence_for_split(
                              w_keystr_t &mid, slotid_t& right_begins_from, const w_keystr_t &triggering_key) const;
-    /// For recovering the separator key from boundary place. @see suggest_fence_for_split().
+    /// For recovering the separator key from boundary place.  @see suggest_fence_for_split().
     w_keystr_t           recalculate_fence_for_split(slotid_t right_begins_from) const;
 
     bool                 is_insertion_extremely_skewed_right() const;
@@ -662,8 +633,8 @@ public:
      * \brief Defrags this page to remove holes and ghost records in the page.
      * \details
      * A page can have unused holes between records and ghost records as a result
-     * of inserts and deletes. This method removes those dead spaces to compress
-     * the page. The best thing of this is that we have to log only
+     * of inserts and deletes.  This method removes those dead spaces to compress
+     * the page.  The best thing of this is that we have to log only
      * the slot numbers of ghost records that are removed because there are
      * 'logically' no changes.
      * Context: System transaction.
@@ -685,9 +656,9 @@ public:
      * If the two arguments are both false (which is default), this function should be very
      * efficient.
      * @param[in] check_keyorder whether to check the sortedness and uniqueness
-     * of the keys in this page. setting this to true makes this function expensive.
+     * of the keys in this page.  setting this to true makes this function expensive.
      * @param[in] check_space whether to check any overlaps of
-     * records and integrity of space offset. setting this to true makes this function expensive.
+     * records and integrity of space offset.  setting this to true makes this function expensive.
      * @return true if this page is in a consistent state
      */
     bool             is_consistent (bool check_keyorder = false, bool check_space = false) const;
@@ -706,40 +677,123 @@ public:
 
 private:
     // ======================================================================
-    //   BEGIN: Private record accessor/modifiers
+    //   BEGIN: Private record data packers
     // ======================================================================
 
-    void _pack_node_record(cvec_t& out, const cvec_t& trunc_key) const {
-        w_assert1(!is_leaf());
-        out.put(trunc_key);
-    }
+    /// A field to hold a B-tree key length
+    typedef uint16_t key_length_t;
 
+
+    /**
+     * Pack a node record's information into out, suitable for use
+     * with insert_item.
+     * 
+     * trunc_key is the record's key (including its w_keystr_t sign
+     * byte) without its prefix.
+     */
+    void _pack_node_record(cvec_t& out, const cvec_t& trunc_key) const;
+
+    /// type of scratch space needed by _pack_leaf_record
     typedef key_length_t pack_scratch_t;
+    /**
+     * Pack a leaf record's information into out, suitable for use
+     * with insert_item.
+     * 
+     * trunc_key is the record's key (including its w_keystr_t sign
+     * byte) without its prefix; element is the record's associated
+     * value.
+     * 
+     * out_scratch is a scratch work area that the caller must
+     * provide; it must remain in scope in order for out to be used
+     * (i.e., out will point to part(s) of out_scratch).
+     */
     void _pack_leaf_record(cvec_t& out, pack_scratch_t& out_scratch,
                            const cvec_t& trunc_key,
-                           const char* element, size_t element_len) const {
-        _pack_leaf_record_prefix(out, out_scratch, trunc_key);
-        out.put(element, element_len);
-    }
+                           const char* element, size_t element_len) const;
+    /**
+     * Pack a leaf record's key information *only* into out, suitable
+     * for use with insert_item with variable-size--data length
+     * computed by _predict_leaf_data_length using in addition the
+     * expected element length.  (This is used by reserve_ghost to set
+     * only the key information leaving reserved space for the future
+     * element.)
+     * 
+     * trunc_key is the record's key (including its w_keystr_t sign
+     * byte) without its prefix.
+     * 
+     * out_scratch is a scratch work area that the caller must
+     * provide; it must remain in scope in order for out to be used
+     * (i.e., out will point to part(s) of out_scratch).
+     */
     void _pack_leaf_record_prefix(cvec_t& out, pack_scratch_t& out_scratch,
-                                  const cvec_t& trunc_key) const {
-        w_assert1(is_leaf());
-        out_scratch = trunc_key.size();
-        out.put(&out_scratch, sizeof(out_scratch));
-        out.put(trunc_key);
-    }
+                                  const cvec_t& trunc_key) const;
+
+    /**
+     * Pack a B-tree page's fence and foster key information into out,
+     * suitable for use with insert_item.
+     * 
+     * All input keys are uncompressed.  During packing, prefix
+     * elimination is used.  The prefix length to truncate is
+     * new_prefix_len if non-negative; otherwise, the prefix length to
+     * use is computed as the maximum number of common prefix bytes of
+     * the low and high fence keys.  The prefix length used is
+     * returned either way.
+     * 
+     * The caller is responsible for ensuring that
+     * btree_fence_low_length, btree_fence_high_length,
+     * btree_chain_fence_high_length are set to the lengths of the
+     * corresponding keys and that btree_prefix_length is set to the
+     * returned prefix length.
+     */
+    int _pack_fence_rec(cvec_t& out, const w_keystr_t& low,
+                        const w_keystr_t& high, 
+                        const w_keystr_t& chain, 
+                        int new_prefix_len) const;
+
+    /**
+     * Compute needed length of variable-size data to store a leaf
+     * record with the given truncated key and element lengths.
+     */
+    size_t _predict_leaf_data_length(int trunc_key_length, int element_length) const;
 
 
-    poor_man_key _poor(int slot) const {
-        w_assert1(slot>=0);
-        return page()->item_poor(slot+1);
-    }
+    /**
+     * \brief Poor man's normalized key type.
+     *
+     * \details
+     * To speed up comparison this should be an integer type, not char[]. 
+     */
+    typedef uint16_t poor_man_key;
+
+    /// Returns the value of poor-man's normalized key for the given key string WITHOUT prefix.
+    poor_man_key _extract_poor_man_key(const void* trunc_key, size_t trunc_key_len) const;
+    /// Returns the value of poor-man's normalized key for the given key string WITHOUT prefix.
+    poor_man_key _extract_poor_man_key(const cvec_t& trunc_key) const;
+
+    /// Returns the value of poor-man's normalized key for the given key string WITH prefix.
+    poor_man_key _extract_poor_man_key(const void* key_with_prefix, 
+                                       size_t key_len_with_prefix, size_t prefix_len) const;
 
 
-    /// Retrieves the key of specified slot WITHOUT prefix in a leaf
+    // ======================================================================
+    //   BEGIN: Private record accessors
+    // ======================================================================
+
+    /// Return poor man's key data for given slot
+    poor_man_key _poor(int slot) const;
+
+    /**
+     * Retrieves the key WITHOUT prefix of specified slot in a leaf
+     * 
+     * @pre we are a leaf node
+     */
     const char*     _leaf_key_noprefix(slotid_t slot,  size_t &len) const;
 
-    /// Retrieves only the key of specified slot WITHOUT prefix in an intermediate node
+    /**
+     * Retrieves the key WITHOUT prefix of specified slot in an interior node
+     * 
+     * @pre we are an interior node
+     */
     const char*     _node_key_noprefix(slotid_t slot,  size_t &len) const;
 
     /**
@@ -751,47 +805,6 @@ private:
      */
     size_t _element_offset(int slot) const;
 
-
-
-
-
-    size_t _predict_leaf_data_length(int trunc_key_length, int element_length) const {
-        return sizeof(key_length_t) + trunc_key_length + element_length;
-    }
-        
-    static int _pack_fence_rec(cvec_t& out, const w_keystr_t& low,
-                               const w_keystr_t& high, const w_keystr_t& chain, 
-                               int new_prefix_len) {
-        int prefix_len;
-        if (new_prefix_len>=0) {
-            w_assert1(low.common_leading_bytes(high) >= (size_t)new_prefix_len);
-            prefix_len = new_prefix_len;
-        } else {
-            prefix_len = low.common_leading_bytes(high);
-        }
-
-        out.put(low);
-        // eliminate prefix part from high:
-        out.put((const char*)high.buffer_as_keystr() + prefix_len, 
-                high.get_length_as_keystr() - prefix_len);
-        out.put(chain);
-        return prefix_len;
-    }
-
-
-
-
-    /// internal method used from is_consistent() to check keyorder correctness.
-    bool             _is_consistent_keyorder () const;
-
-    /// checks if the poor-man's normalized keys are valid.
-    bool             _is_consistent_poormankey () const;
-
-    /// Given the place to insert, update btree_consecutive_skewed_insertions.
-    void             _update_btree_consecutive_skewed_insertions(slotid_t slot);
-
-
-
     /// returns compare(specified-key, key_noprefix)
     int _compare_key_noprefix(slotid_t slot, const void *key_noprefix, size_t key_len) const;
 
@@ -800,6 +813,9 @@ private:
     int _compare_slot_with_key(int slot, const void* key_noprefix, size_t key_len, poor_man_key poor) const;
 
 
+    // ======================================================================
+    //   BEGIN: Private robust record accessors
+    // ======================================================================
 
     /*
      * These methods provide the same results as the corresponding
@@ -819,9 +835,17 @@ private:
      * different from the actual slot's key_noprefix.
      */
 
-    /// [Robust] Retrieves the key of specified slot WITHOUT prefix in a leaf
+    /**
+     * [Robust] Retrieves the key WITHOUT prefix of specified slot in a leaf
+     * 
+     * @pre we are a leaf node
+     */
     const char*     _robust_leaf_key_noprefix(slotid_t slot,  size_t &len) const;
-    /// [Robust] Retrieves only the key of specified slot WITHOUT prefix in an intermediate node
+    /**
+     * [Robust] Retrieves the key WITHOUT prefix of specified slot in an interior node
+     * 
+     * @pre we are an interior node
+     */
     const char*     _robust_node_key_noprefix(slotid_t slot,  size_t &len) const;
 
     /// [Robust] returns compare(specified-key, key_noprefix)
@@ -832,14 +856,57 @@ private:
     int _robust_compare_slot_with_key(int slot, const void* key_noprefix, size_t key_len, poor_man_key poor) const;
 
 
-protected:
+    // ======================================================================
+    //   BEGIN: Miscellaneous private members
+    // ======================================================================
+
+    /// internal method used from is_consistent() to check keyorder correctness.
+    bool             _is_consistent_keyorder() const;
+
+    /// checks if the poor-man's normalized keys are valid.
+    bool             _is_consistent_poormankey() const;
+
+    /// Given the place to insert, update btree_consecutive_skewed_insertions.
+    void             _update_btree_consecutive_skewed_insertions(slotid_t slot);
+
     /**
      * Returns if there is enough free space to accomodate the given
      * item.
      * @return true if there is free space
      */
-    bool check_space_for_insert(size_t data_length);  
+    bool _check_space_for_insert(size_t data_length);  
 };
+
+
+/**
+ * \brief Specialized variant of btree_page_h that borrows a B-tree
+ * page from a fixable_page_h.
+ *
+ * \details 
+ * Borrows the latch of a fixable_page_h for the duration of our
+ * existence.  Returns the latch when destroyed.  Do not use the
+ * original handle while its latch is borrowed.  Transitive borrowing
+ * is fine.
+ */
+class borrowed_btree_page_h : public btree_page_h {
+    fixable_page_h* _source;
+
+public:
+    borrowed_btree_page_h(fixable_page_h* source) :
+        btree_page_h(source->get_generic_page()),
+        _source(source)
+    {
+        _mode = _source->_mode;
+        _source->_mode = LATCH_NL;
+    }
+
+    ~borrowed_btree_page_h() {
+        w_assert1(_source->_mode == LATCH_NL);
+        _source->_mode = _mode;
+        _mode = LATCH_NL;
+    }
+};
+
 
 
 // ======================================================================
@@ -915,7 +982,7 @@ inline const char* btree_page_h::get_chain_fence_high_key() const {
     return page()->item_data(0) + get_fence_low_length() + get_fence_high_length_noprefix();
 }
 inline const char* btree_page_h::get_prefix_key() const {
-    return get_fence_low_key(); // same thing. only the length differs.
+    return get_fence_low_key(); // same thing.  only the length differs.
 }
 
 inline int btree_page_h::nrecs() const {
@@ -1023,6 +1090,102 @@ inline size_t btree_page_h::get_rec_space(int slot) const {
 }
 
 
+inline bool btree_page_h::is_ghost(slotid_t slot) const {
+    return page()->is_ghost(slot + 1);
+}
+
+
+inline smsize_t 
+btree_page_h::used_space() const {
+    return data_sz - page()->usable_space();
+}
+
+inline smsize_t
+btree_page_h::usable_space() const {
+    return page()->usable_space();
+}
+
+
+// ======================================================================
+//   BEGIN: Private record data packers inline implementation
+// ======================================================================
+
+inline void btree_page_h::_pack_node_record(cvec_t& out, const cvec_t& trunc_key) const {
+    w_assert1(!is_leaf());
+    out.put(trunc_key);
+}
+
+inline void btree_page_h::_pack_leaf_record_prefix(cvec_t& out, pack_scratch_t& out_scratch,
+                                                   const cvec_t& trunc_key) const {
+    w_assert1(is_leaf());
+    out_scratch = trunc_key.size();
+    out.put(&out_scratch, sizeof(out_scratch));
+    out.put(trunc_key);
+}
+inline void btree_page_h::_pack_leaf_record(cvec_t& out, pack_scratch_t& out_scratch,
+                                            const cvec_t& trunc_key,
+                                            const char* element, size_t element_len) const {
+    _pack_leaf_record_prefix(out, out_scratch, trunc_key);
+    out.put(element, element_len);
+}
+
+inline int btree_page_h::_pack_fence_rec(cvec_t& out, const w_keystr_t& low,
+                                  const w_keystr_t& high, 
+                                  const w_keystr_t& chain, 
+                                  int new_prefix_len) const {
+    int prefix_len;
+    if (new_prefix_len >= 0) {
+        w_assert1(low.common_leading_bytes(high) >= (size_t)new_prefix_len);
+        prefix_len = new_prefix_len;
+    } else {
+        prefix_len = low.common_leading_bytes(high);
+    }
+
+    out.put(low);
+    // eliminate prefix part from high:
+    out.put((const char*)high.buffer_as_keystr()     + prefix_len, 
+            high.get_length_as_keystr() - prefix_len);
+    out.put(chain);
+    return prefix_len;
+}
+
+inline size_t btree_page_h::_predict_leaf_data_length(int trunc_key_length, 
+                                                      int element_length) const {
+    return sizeof(key_length_t) + trunc_key_length + element_length;
+}
+
+inline btree_page_h::poor_man_key btree_page_h::_extract_poor_man_key(const void* trunc_key, 
+                                                                      size_t trunc_key_len) const {
+    if (trunc_key_len == 0) {
+        return 0;
+    } else if (trunc_key_len == 1) {
+        return (*reinterpret_cast<const unsigned char*>(trunc_key)) << 8;
+    } else {
+        return deserialize16_ho(trunc_key);
+    }
+}
+inline btree_page_h::poor_man_key btree_page_h::_extract_poor_man_key(const cvec_t& trunc_key) const {
+    char start[2];
+    trunc_key.copy_to(start, 2);
+    return _extract_poor_man_key(start, trunc_key.size());
+}
+inline btree_page_h::poor_man_key 
+btree_page_h::_extract_poor_man_key(const void* key_with_prefix, size_t key_len_with_prefix, 
+                                    size_t prefix_len) const {
+    w_assert1(prefix_len <= key_len_with_prefix);
+    return _extract_poor_man_key (((const char*)key_with_prefix) + prefix_len, key_len_with_prefix - prefix_len);
+}
+
+
+// ======================================================================
+//   BEGIN: Private [robust] record accessors inline implementation
+// ======================================================================
+
+inline btree_page_h::poor_man_key btree_page_h::_poor(int slot) const {
+    w_assert1(slot>=0);
+    return page()->item_poor(slot+1);
+}
+
 inline const char* btree_page_h::_leaf_key_noprefix(slotid_t slot,  size_t &len) const {
     w_assert1(is_leaf());
     w_assert1(slot>=0);
@@ -1048,7 +1211,6 @@ inline const char* btree_page_h::_robust_leaf_key_noprefix(slotid_t slot,  size_
     return (const char*)data;
 }
 
-
 inline const char* btree_page_h::_node_key_noprefix(slotid_t slot,  size_t &len) const {
     w_assert1(is_node());
     w_assert1(slot>=0);
@@ -1072,7 +1234,8 @@ inline size_t btree_page_h::_element_offset(int slot) const {
     return key_noprefix_length + sizeof(key_length_t);
 }
 
-inline int btree_page_h::_compare_key_noprefix(slotid_t slot, const void *key_noprefix, size_t key_len) const {
+inline int btree_page_h::_compare_key_noprefix(slotid_t slot, const void *key_noprefix, 
+                                               size_t key_len) const {
     size_t      curkey_len;
     const char *curkey;
     if (is_leaf()) {
@@ -1083,7 +1246,8 @@ inline int btree_page_h::_compare_key_noprefix(slotid_t slot, const void *key_no
 
     return w_keystr_t::compare_bin_str(curkey, curkey_len, key_noprefix, key_len);
 }
-inline int btree_page_h::_robust_compare_key_noprefix(slotid_t slot, const void *key_noprefix, size_t key_len) const {
+inline int btree_page_h::_robust_compare_key_noprefix(slotid_t slot, const void *key_noprefix, 
+                                                      size_t key_len) const {
     size_t      curkey_len;
     const char *curkey;
     if (page()->robust_is_leaf()) {
@@ -1094,54 +1258,5 @@ inline int btree_page_h::_robust_compare_key_noprefix(slotid_t slot, const void 
 
     return w_keystr_t::compare_bin_str(curkey, curkey_len, key_noprefix, key_len);
 }
-
-
-
-inline bool btree_page_h::is_ghost(slotid_t slot) const {
-    return page()->is_ghost(slot + 1);
-}
-
-
-inline smsize_t 
-btree_page_h::used_space() const {
-    return data_sz - page()->usable_space();
-}
-
-inline smsize_t
-btree_page_h::usable_space() const {
-    return page()->usable_space();
-}
-
-
-
-
-/**
- * \brief Specialized variant of btree_page_h that borrows a B-tree
- * page from a fixable_page_h.
- *
- * \details 
- * Borrows the latch of a fixable_page_h for the duration of our
- * existence.  Returns the latch when destroyed.  Do not use the
- * original handle while its latch is borrowed.  Transitive borrowing
- * is fine.
- */
-class borrowed_btree_page_h : public btree_page_h {
-    fixable_page_h* _source;
-
-public:
-    borrowed_btree_page_h(fixable_page_h* source) :
-        btree_page_h(source->get_generic_page()),
-        _source(source)
-    {
-        _mode = _source->_mode;
-        _source->_mode = LATCH_NL;
-    }
-
-    ~borrowed_btree_page_h() {
-        w_assert1(_source->_mode == LATCH_NL);
-        _source->_mode = _mode;
-        _mode = LATCH_NL;
-    }
-};
 
 #endif // BTREE_PAGE_H_H

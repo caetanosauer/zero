@@ -138,7 +138,7 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
 
         // before stealing regular records from src2, steal it's pid0:
         cvec_t       stolen_key(steal_src2->get_fence_low_key() + prefix_len, steal_src2->get_fence_low_length() - prefix_len);
-        poor_man_key poormkey    = extract_poor_man_key(stolen_key);
+        poor_man_key poormkey    = _extract_poor_man_key(stolen_key);
         shpid_t      stolen_pid0 = steal_src2->pid0();
         cvec_t v;
         _pack_node_record(v, stolen_key);
@@ -199,7 +199,7 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
         }
 
         if (!page()->insert_item(nrecs()+1, steal_src->is_ghost(i), 
-                                 extract_poor_man_key(new_trunc_key), 
+                                 _extract_poor_man_key(new_trunc_key), 
                                  child, v)) {
             w_assert0(false);
         }
@@ -297,7 +297,7 @@ btree_page_h::search(const char *key_raw, size_t key_raw_len,
     const void* key_noprefix  = key_raw     + prefix_length;
     size_t      key_len       = key_raw_len - prefix_length;
     
-    poor_man_key poormkey = extract_poor_man_key(key_noprefix, key_len);
+    poor_man_key poormkey = _extract_poor_man_key(key_noprefix, key_len);
 
 
     /*
@@ -375,7 +375,7 @@ btree_page_h::robust_search(const char *key_raw, size_t key_raw_len,
     const void* key_noprefix  = key_raw     + prefix_length;
     size_t      key_len       = key_raw_len - prefix_length;
     
-    poor_man_key poormkey = extract_poor_man_key(key_noprefix, key_len);
+    poor_man_key poormkey = _extract_poor_man_key(key_noprefix, key_len);
 
 
     /*
@@ -508,7 +508,7 @@ rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, shpid_t chi
     key_length_t prefix_length = get_prefix_length();  // length of prefix of inserted tuple
     w_assert1(prefix_length <= klen);
     cvec_t trunc_key((const char*)key.buffer_as_keystr()+prefix_length, klen-prefix_length);
-    poor_man_key poormkey = extract_poor_man_key(trunc_key);
+    poor_man_key poormkey = _extract_poor_man_key(trunc_key);
 
     vec_t v;
     _pack_node_record(v, trunc_key);
@@ -650,7 +650,7 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, size_t
 #endif // W_DEBUG_LEVEL>1
     
     cvec_t trunc_key(key_raw + prefix_len, trunc_key_length);
-    poor_man_key poormkey = extract_poor_man_key(trunc_key);
+    poor_man_key poormkey = _extract_poor_man_key(trunc_key);
 
     if (!page()->insert_item(slot+1, true, poormkey, 0, data_length)) {
         w_assert0(false);
@@ -686,12 +686,12 @@ bool btree_page_h::check_space_for_insert_leaf(const w_keystr_t& trunc_key,
 bool btree_page_h::check_space_for_insert_leaf(size_t trunc_key_length, size_t element_length) {
     w_assert1 (is_leaf());
     size_t data_length = _predict_leaf_data_length(trunc_key_length, element_length);
-    return btree_page_h::check_space_for_insert (data_length);
+    return btree_page_h::_check_space_for_insert(data_length);
 }
 bool btree_page_h::check_space_for_insert_node(const w_keystr_t& key) {
     w_assert1 (is_node());
     size_t data_length = key.get_length_as_keystr();
-    return btree_page_h::check_space_for_insert (data_length);
+    return btree_page_h::_check_space_for_insert(data_length);
 }
 
 bool btree_page_h::check_chance_for_norecord_split(const w_keystr_t& key_to_insert) const {
@@ -969,7 +969,7 @@ bool btree_page_h::is_consistent (bool check_keyorder, bool check_space) const {
 
     return true;
 }
-bool btree_page_h::_is_consistent_keyorder () const {
+bool btree_page_h::_is_consistent_keyorder() const {
     const int    recs       = nrecs();
     const char*  lowkey     = get_fence_low_key();
     const size_t lowkey_len = get_fence_low_length();
@@ -1039,7 +1039,7 @@ bool btree_page_h::_is_consistent_keyorder () const {
     
     return true;
 }
-bool btree_page_h::_is_consistent_poormankey () const {
+bool btree_page_h::_is_consistent_poormankey() const {
     const int recs = nrecs();
     // the first record is fence key, so no poor man's key (always 0)
     poor_man_key fence_poormankey = page()->item_poor(0);
@@ -1052,7 +1052,7 @@ bool btree_page_h::_is_consistent_poormankey () const {
         poor_man_key poorman_key = _poor(slot);
         size_t curkey_len;
         const char* curkey = is_leaf() ? _leaf_key_noprefix(slot, curkey_len) : _node_key_noprefix(slot, curkey_len);
-        poor_man_key correct_poormankey = extract_poor_man_key(curkey, curkey_len);
+        poor_man_key correct_poormankey = _extract_poor_man_key(curkey, curkey_len);
         if (poorman_key != correct_poormankey) {
 //            w_assert3(false);
             return false;
@@ -1086,7 +1086,7 @@ rc_t btree_page_h::defrag() {
     return RCOK;
 }
 
-bool btree_page_h::check_space_for_insert(size_t data_length) {
+bool btree_page_h::_check_space_for_insert(size_t data_length) {
     size_t contiguous_free_space = usable_space();
     return contiguous_free_space >= page()->predict_item_space(data_length);
 }
