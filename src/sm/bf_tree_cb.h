@@ -77,7 +77,7 @@
  * opportunistic rather than mandatory.
  */
 struct bf_tree_cb_t {
-    /** clears all properties . */
+    /** clears all properties. */
     inline void clear () {
         clear_latch();
         clear_except_latch();
@@ -107,13 +107,16 @@ struct bf_tree_cb_t {
     /// true if this block is actually used; protected by our latch
     bool _used;          // +1  -> 2
 
-    /** volume ID of the page currently pinned on this block. */
+    /// volume ID of the page currently pinned on this block; protected by ??
     volid_t _pid_vol;       // +2  -> 4
 
-    /** short page ID of the page currently pinned on this block.  (we don't have stnum in bufferpool) */
+    /**
+     * short page ID of the page currently pinned on this block.  (we don't have stnum in
+     * bufferpool) protected by ??
+     */
     shpid_t _pid_shpid;     // +4  -> 8
 
-    /** Count of pins on this block.  See class comments. */
+    /// Count of pins on this block.  See class comments; protected by ??
     int32_t _pin_cnt;       // +4 -> 12
 
     /** 
@@ -134,30 +137,30 @@ struct bf_tree_cb_t {
      */
     uint16_t                    _counter_approximate;// +2  -> 16
 
-    /** recovery lsn. */
+    /// recovery lsn; protected by ??
     lsndata_t _rec_lsn;       // +8 -> 24
 
-    /** Pointer to the parent page.  zero for root pages. */
+    /// Pointer to the parent page.  zero for root pages; protected by ??
     bf_idx _parent;        // +4 -> 28
     
-    /** Whether this page is swizzled from the parent. */
+    /// Whether this page is swizzled from the parent; protected by ??
     bool                        _swizzled;      // +1 -> 29
 
-    /** Whether this page is concurrently being swizzled by another thread. */
+    /// Whether this page is concurrently being swizzled by another thread; protected by ??
     bool                        _concurrent_swizzling;      // +1 -> 30
 
-    /** replacement priority */
+    /// replacement priority; protected by ??
     char                        _replacement_priority;      // +1 -> 31
     fill8                       _fill8;        // +1 -> 32
 
-    /** if not zero, this page must be written out after this dependency page. */
+    /// if not zero, this page must be written out after this dependency page; protected by ??
     bf_idx _dependency_idx;// +4 -> 36
     
     /**
      * used with _dependency_idx.  As of registration of the dependency, the page in
      * _dependency_idx had this pid (volid was implicitly same as myself).  If now it's
      * different, the page was written out and then evicted surely at/after
-     * _dependency_lsn, so that's fine.
+     * _dependency_lsn, so that's fine.  protected by ??
      */
     shpid_t _dependency_shpid;// +4 -> 40
 
@@ -165,14 +168,15 @@ struct bf_tree_cb_t {
      * used with _dependency_idx.  this is the _rec_lsn of the dependent page as of the
      * registration of the dependency.  So, if the _rec_lsn of the page is now strictly
      * larger than this value, it was flushed at least once after that, so the dependency
-     * is resolved.
+     * is resolved.  protected by ??
      */
     lsndata_t _dependency_lsn;// +8 -> 48
 
     /** 
-     * number of swizzled pointers to children. 
+     * number of swizzled pointers to children; protected by ??
      */
     uint16_t                    _swizzled_ptr_cnt_hint; // +2 -> 50
+
     fill16                      _fill16_52;     // +2 -> 52
     fill32                      _fill32_56;     // +4 -> 56
     fill32                      _fill32_60;     // +4 -> 60
