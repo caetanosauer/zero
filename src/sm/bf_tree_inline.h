@@ -225,7 +225,7 @@ inline w_rc_t bf_tree_m::fix_root (generic_page*& page, volid_t vol, snum_t stor
     bf_tree_vol_t *volume = _volumes[vol];
     w_assert1(volume != NULL);
 
-    // root page index is always kept in the volume descriptor:
+    // root-page index is always kept in the volume descriptor:
     bf_idx idx = volume->_root_pages[store];
     w_assert1(_is_valid_idx(idx));
 
