@@ -153,10 +153,8 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
         w_assert1(cb._pid_vol == vol);
         w_assert1(cb._pid_shpid == _buffer[idx].pid.page);
 
-        // If we keep incrementing the cb._refbit_approximate then we cause a scalability 
-        // bottleneck (as the associated cacheline ping-pongs between sockets).
-        // Intead we limit the maximum value of the refcount. The refcount still has
-        // enough granularity to separate cold from hot pages. 
+        // We limit the maximum value of the refcount by BP_MAX_REFCOUNT to avoid the scalability 
+        // bottleneck caused by excessive cache coherence traffic (cacheline ping-pongs between sockets).
         if (get_cb(idx)._refbit_approximate < BP_MAX_REFCOUNT) {
             ++cb._refbit_approximate;
         }
