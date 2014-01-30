@@ -289,6 +289,13 @@ public:
      * To use this method, you need to include bf_tree_inline.h.
      */
     w_rc_t fix_root (generic_page*& page, volid_t vol, snum_t store, latch_mode_t mode, bool conditional);
+
+    /**
+     * To be written...  <<<>>>
+     * To use this method, you need to include bf_tree_inline.h.
+     */
+    w_rc_t fix_with_Q_root(generic_page*& page, volid_t vol, snum_t store);
+
     
     /** returns the current latch mode of the page. */
     latch_mode_t latch_mode(const generic_page* p);

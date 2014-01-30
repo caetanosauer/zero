@@ -276,6 +276,29 @@ inline w_rc_t bf_tree_m::_latch_root_page(generic_page*& page, bf_idx idx, latch
     return RCOK;
 }
 
+inline w_rc_t bf_tree_m::fix_with_Q_root(generic_page*& page, volid_t vol, snum_t store) {
+    w_assert1(vol != 0);
+    w_assert1(store != 0);
+    bf_tree_vol_t *volume = _volumes[vol];
+    w_assert1(volume != NULL);
+
+    // root-page index is always kept in the volume descriptor:
+    bf_idx idx = volume->_root_pages[store];
+    w_assert1(_is_valid_idx(idx));
+
+    // later we will acquire the latch in Q mode <<<>>>
+    //W_DO(get_cb(idx).latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
+    page = &(_buffer[idx]);
+
+    /*
+     * We do not bother verifying we got the right page as root page IDs only change when
+     * tables are dropped.
+     */
+
+    return RCOK;
+}
+
+
 inline void bf_tree_m::unfix(const generic_page* p) {
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
