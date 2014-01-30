@@ -237,6 +237,14 @@ public:
     w_rc_t fix_nonroot (generic_page*& page, generic_page *parent, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page);
 
     /**
+     * To be written...  <<<>>>
+     * success will be replaced by a returned Q ticket in later version...
+     * @pre shpid is a swizzled pointer
+     * To use this method, you need to include bf_tree_inline.h.
+     */
+    w_rc_t fix_with_Q_nonroot(generic_page*& page, volid_t vol, shpid_t shpid, bool& success);
+
+    /**
      * Fixes any page (root or non-root) in the bufferpool without pointer swizzling.
      * In some places, we need to fix a page without fixing the parent, e.g., recovery or re-fix in cursor.
      * For such code, this method allows fixing without parent. However, this method can be used only when
