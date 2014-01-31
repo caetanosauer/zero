@@ -29,7 +29,7 @@ public:
     /// Imaginery 'fix' for a non-bufferpool-managed page.
     fixable_page_h(generic_page* s) : generic_page_h(s), _mode(LATCH_NL) {
         w_assert1(s != NULL);
-        w_assert1(s->tag == t_btree_p);  // <<<>>>
+        w_assert1(s->tag == t_btree_p);  // make sure page type is fixable
     }
     ~fixable_page_h() { unfix(); }
 
@@ -136,25 +136,43 @@ public:
     //   BEGIN: 
     // ======================================================================
 
-    /// Mark this page in the bufferpool dirty.  If this page is not a
-    /// bufferpool-managed page, does nothing.
+    /**
+     * Mark this page in the bufferpool dirty.  If this page is not a bufferpool-managed
+     * page, does nothing.
+     * 
+     * @pre We do not hold current page's latch in Q mode
+     */
     void         set_dirty() const;
-    /// Return true if this page in the bufferpool is marked dirty.
-    /// If this page is not a bufferpool-managed page, returns false.
+    /**
+     * Return true if this page in the bufferpool is marked dirty.  If this page is not a
+     * bufferpool-managed page, returns false.
+     * 
+     * @pre We do not hold current page's latch in Q mode
+     */
     bool         is_dirty()  const;
 
 
     /// Flag this page to be deleted when bufferpool evicts it.
+    /// @pre We hold our associated page's latch in SH or EX mode
     rc_t         set_to_be_deleted(bool log_it);
-    /// Unset the to be deleted flag.  This is only used by UNDO, so
-    /// no logging and no failure possible.
+    /// Unset the to be deleted flag.  This is only used by UNDO, so no logging and no
+    /// failure possible.
+    /// @pre We hold our associated page's latch in SH or EX mode
     void         unset_to_be_deleted();
-    bool         is_to_be_deleted() { return (_pp->page_flags&t_to_be_deleted) != 0; }
+    /// Return flag for if this page to be deleted when bufferpool evicts it.
+    /// @pre We do not hold current page's latch in Q mode
+    bool         is_to_be_deleted();
+
 
     latch_mode_t latch_mode() const { return _mode; }
     /// Do we hold our page's latch in SH or EX mode?
     bool         is_latched() const { return _mode == LATCH_SH || _mode == LATCH_EX; }
-    /// Conditionally upgrade the latch to EX.  Returns true if successfully upgraded.
+
+    /**
+     * Conditionally upgrade the latch to EX.  Returns true if successfully upgraded.
+     * 
+     * @pre We hold the current page's latch in SH mode.
+     */
     bool         upgrade_latch_conditional();
 
 
@@ -162,9 +180,12 @@ public:
     //   BEGIN: Interface for use only by buffer manager to perform swizzling
     // ======================================================================
 
+    /// @pre We do not hold current page's latch in Q mode
     bool         has_children()   const;
+    /// @pre We do not hold current page's latch in Q mode
     int          max_child_slot() const;
     /// valid slots are [-1 .. max_child_slot()], where -1 is foster pointer and 0 is pid0
+    /// @pre We do not hold current page's latch in Q mode
     shpid_t*     child_slot_address(int child_slot) const;
 
     
