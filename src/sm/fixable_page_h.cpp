@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 #define SM_SOURCE
@@ -67,8 +67,14 @@ w_rc_t fixable_page_h::fix_virgin_root (volid_t vol, snum_t store, shpid_t shpid
 
 w_rc_t fixable_page_h::fix_root (volid_t vol, snum_t store, latch_mode_t mode, bool conditional) {
     unfix();
-    W_DO(smlevel_0::bf->fix_root(_pp, vol, store, mode, conditional));
-    _mode = mode;
+    if (mode == LATCH_Q) {
+        W_DO(smlevel_0::bf->fix_with_Q_root(_pp, vol, store));
+        // later deal with possibility of latching failure (not yet possible) <<<>>>
+        _mode = LATCH_SH; // <<<>>>
+    } else {
+        W_DO(smlevel_0::bf->fix_root(_pp, vol, store, mode, conditional));
+        _mode = mode;
+    }
     return RCOK;
 }
 
