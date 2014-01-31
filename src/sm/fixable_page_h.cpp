@@ -23,10 +23,21 @@ w_rc_t fixable_page_h::fix_nonroot (const fixable_page_h &parent, volid_t vol,
                                     bool conditional, bool virgin_page) {
     w_assert1(shpid != 0);
     unfix();
-    W_DO(smlevel_0::bf->fix_nonroot(_pp, parent._pp, vol, shpid, mode, conditional, virgin_page));
-    _mode = mode;
-    w_assert1(smlevel_0::bf->get_cb(_pp)->_pid_vol == vol);
-    w_assert1(is_swizzled_pointer(shpid) || smlevel_0::bf->get_cb(_pp)->_pid_shpid == shpid);
+    if (mode == LATCH_Q) {
+        // just return an error later: <<<>>>
+        w_assert1(!virgin_page);
+        w_assert1(is_swizzled_pointer(shpid));
+
+        bool success;
+        W_DO(smlevel_0::bf->fix_with_Q_nonroot(_pp, vol, shpid, success));
+        // later deal with possibility of latching failure <<<>>>
+        _mode = LATCH_SH; // <<<>>>
+    } else {
+        W_DO(smlevel_0::bf->fix_nonroot(_pp, parent._pp, vol, shpid, mode, conditional, virgin_page));
+        _mode = mode;
+        w_assert1(smlevel_0::bf->get_cb(_pp)->_pid_vol == vol);
+        w_assert1(is_swizzled_pointer(shpid) || smlevel_0::bf->get_cb(_pp)->_pid_shpid == shpid);
+    }
     return RCOK;
 }
 
