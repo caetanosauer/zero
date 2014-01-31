@@ -20,6 +20,7 @@ X(fcFULL,                     "Container is full")
 X(fcOUTOFMEMORY,              "Malloc failed: out of memory ")
 X(fcMMAPFAILED,               "Mmap could not map aligned memory")
 X(fcNOTIMPLEMENTED,           "Feature is not implemented")
+
 X(stINTERNAL,                 "Internal error")
 X(stOS,                       "Operating system error ")
 X(stTIMEOUT,                  "Timed out waiting for resource")
@@ -28,6 +29,7 @@ X(stBADFD,                    "Bad file descriptor for I/O operation, seek, or c
 X(stINUSE,                    "Resource in use")
 X(stSHORTIO,                  "Short I/O")
 X(stSHORTSEEK,                "Short Seek")
+
 X(eINTERNAL,                  "Internal error")
 X(eOS,                        "Operating system error ")
 X(eNOTIMPLEMENTED,            "Feature is not implemented")
@@ -65,6 +67,7 @@ X(eISPREPARED,                "Transaction thread is prepared  -- cannot do this
 X(eNOTEXTERN2PC,              "Transaction is not participating in external 2-phase commit ")
 X(eTHREADMAPFULL,             "No more bits for thread maps")
 X(eLOCKTIMEOUT,               "Lock timeout")
+X(eLATCHQFAIL,                "Attempt to acquire/maintain latch in Q mode failed")
 X(eNOTBLOCKED,                "Smthread is not blocked")
 X(eDEADLOCK,                  "Deadlock detected")
 X(eBADCCLEVEL,                "Unsupported concurrency control level")
