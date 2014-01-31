@@ -1,1 +1,1 @@
-REVIEWBOARD_URL = "https://codereview.hpl.hp.com"
+REVIEWBOARD_URL = "http://codereview.hpl.hp.com"
