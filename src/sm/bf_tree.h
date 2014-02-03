@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 #ifndef BF_TREE_H
@@ -65,7 +65,7 @@ inline uint64_t bf_key(const lpid_t &pid) {
 // their parent at the same time (e.g., page split/merge/rebalance in a node page).
 // Without this flag, we simply don't have parent pointer, thus do a hierarchical
 // walking to find a pge to evict.
-// #define BP_MAINTAIN_PARNET_PTR
+// #define BP_MAINTAIN_PARENT_PTR
 
 // A flag whether the bufferpool maintains replacement priority per page.
 #define BP_MAINTAIN_REPLACEMENT_PRIORITY
@@ -224,17 +224,32 @@ public:
      * fixes the page if the shpid (pointer) is already swizzled by the parent page.
      * The optimization is transparent for most of the code because the shpid stored in the parent
      * page is automatically (and atomically) changed to a swizzled pointer by the bufferpool.
-     * @param[out] page the fixed page.
-     * @param[in] parent parent of the page to be fixed. has to be already latched. if you can't provide this,
-     * use fix_direct() though it can't exploit pointer swizzling.
-     * @param[in] vol volume ID.
-     * @param[in] shpid ID of the page to fix (or bufferpool index when swizzled)
-     * @param[in] mode latch mode. has to be SH or EX.
-     * @param[in] conditional whether the fix is conditional (returns immediately even if failed).
-     * @param[in] virgin_page whether the page is a new page thus doesn't have to be read from disk.
+     * 
+     * @param[out] page         the fixed page.
+     * @param[in]  parent       parent of the page to be fixed. has to be already latched. if you can't provide this,
+     *                          use fix_direct() though it can't exploit pointer swizzling.
+     * @param[in]  vol          volume ID.
+     * @param[in]  shpid        ID of the page to fix (or bufferpool index when swizzled)
+     * @param[in]  mode         latch mode. has to be SH or EX.
+     * @param[in]  conditional  whether the fix is conditional (returns immediately even if failed).
+     * @param[in]  virgin_page  whether the page is a new page thus doesn't have to be read from disk.
+     * 
      * To use this method, you need to include bf_tree_inline.h.
      */
     w_rc_t fix_nonroot (generic_page*& page, generic_page *parent, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page);
+
+    /**
+     * Fixes a non-root page in the bufferpool in Q mode.
+     * 
+     * @param[out] page     the fixed page.
+     * @param[in]  vol      volume ID.
+     * @param[in]  shpid    ID of the page to fix
+     * @param[out] success  (for now) whether or not the Q latching succeeded; will be replaced by a returned Q ticket in later version... <<<>>>
+     * @pre shpid is a swizzled pointer
+     * 
+     * To use this method, you need to include bf_tree_inline.h.
+     */
+    w_rc_t fix_with_Q_nonroot(generic_page*& page, volid_t vol, shpid_t shpid, bool& success);
 
     /**
      * Fixes any page (root or non-root) in the bufferpool without pointer swizzling.
@@ -289,6 +304,13 @@ public:
      * To use this method, you need to include bf_tree_inline.h.
      */
     w_rc_t fix_root (generic_page*& page, volid_t vol, snum_t store, latch_mode_t mode, bool conditional);
+
+    /**
+     * Fixes an existing (not virgin) root page for the given store in Q mode.
+     * To use this method, you need to include bf_tree_inline.h.
+     */
+    w_rc_t fix_with_Q_root(generic_page*& page, volid_t vol, snum_t store);
+
     
     /** returns the current latch mode of the page. */
     latch_mode_t latch_mode(const generic_page* p);
@@ -340,7 +362,7 @@ public:
      */
     w_rc_t uninstall_volume (volid_t vid);
 
-#ifdef BP_MAINTAIN_PARNET_PTR
+#ifdef BP_MAINTAIN_PARENT_PTR
     /**
      * Whenever the parent of a page is changed (adoption or de-adoption),
      * this method must be called to switch it in bufferpool.
@@ -348,7 +370,7 @@ public:
      * don't go away while this switch (i.e., latch them).
      */
     void switch_parent (generic_page* page, generic_page* new_parent);
-#endif // BP_MAINTAIN_PARNET_PTR
+#endif // BP_MAINTAIN_PARENT_PTR
     
     /**
      * Swizzle a child pointer in the parent page to speed-up accesses on the child.
@@ -429,7 +451,7 @@ public:
      */
     inline bool  is_bf_page (const generic_page *page) const {
         int32_t idx = page - _buffer;
-        return idx > 0 && idx < (int32_t) _block_cnt;
+        return _is_valid_idx(idx);
     }
 
     /**
@@ -494,7 +516,7 @@ private:
     /** if the shpid is a swizzled pointer, convert it to the original page id. */
     void   _convert_to_pageid (shpid_t* shpid) const;
     
-#ifdef BP_MAINTAIN_PARNET_PTR
+#ifdef BP_MAINTAIN_PARENT_PTR
     /**
      * Newly adds the speficied block to the head of swizzled-pages LRU.
      * This page must be a swizzled page that can be unswizzled.
@@ -513,7 +535,7 @@ private:
      * If the page is worth swizzling, even once in 100 would be very frequent.
      */
     void   _update_swizzled_lru (bf_idx idx);
-#endif // BP_MAINTAIN_PARNET_PTR
+#endif // BP_MAINTAIN_PARENT_PTR
 
     /** finds a free block and returns its index. if free list is empty, it evicts some page. */
     w_rc_t _grab_free_block(bf_idx& ret);
@@ -538,8 +560,15 @@ private:
 
     /** Adds a free block to the freelist. */
     void   _add_free_block(bf_idx idx);
+
+    /// returns true iff idx is in the valid range.  for assertion.
+    bool   _is_valid_idx (bf_idx idx) const;
     
-    /** returns if the idx is in the valid range and also the block is used. for assertion. */
+    /**
+     * returns true if idx is in the valid range and also the block is used.  for assertion.
+     * 
+     * @pre hold get_cb(idx).latch() in read or write mode
+     */
     bool   _is_active_idx (bf_idx idx) const;
 
     /**
@@ -573,10 +602,10 @@ private:
     /** called from _trigger_unswizzling(). traverses the given interemediate node. */
     void   _unswizzle_traverse_node(uint32_t &unswizzled_frames, volid_t vol, snum_t store, bf_idx node_idx, uint16_t cur_clockhand_depth);
 
-#ifdef BP_MAINTAIN_PARNET_PTR
+#ifdef BP_MAINTAIN_PARENT_PTR
     /** implementation of _trigger_unswizzling assuming parent pointer in each bufferpool frame. */
     void   _unswizzle_with_parent_pointer();
-#endif // BP_MAINTAIN_PARNET_PTR
+#endif // BP_MAINTAIN_PARENT_PTR
 
     /**
      * Tries to unswizzle the given child page from the parent page.
@@ -673,7 +702,7 @@ private:
     /** spin lock to protect all freelist related stuff. */
     tatas_lock           _freelist_lock;
 
-#ifdef BP_MAINTAIN_PARNET_PTR
+#ifdef BP_MAINTAIN_PARENT_PTR
     /**
      * doubly-linked LRU list for swizzled pages THAT CAN BE UNSWIZZLED.
      * (in other words, root pages aren't included in this counter and the linked list)
@@ -686,7 +715,7 @@ private:
     uint32_t _swizzled_lru_len;
     /** spin lock to protect swizzled page LRU list. */
     tatas_lock           _swizzled_lru_lock;
-#endif // BP_MAINTAIN_PARNET_PTR
+#endif // BP_MAINTAIN_PARENT_PTR
 
     /**
      * Hierarchical clockhand to maintain where we lastly visited
