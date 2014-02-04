@@ -14,7 +14,9 @@ int fixable_page_h::force_Q_fixing = 0;  // <<<>>>
 void fixable_page_h::unfix() {
     if (_mode != LATCH_NL) {
         w_assert1(_pp);
-        smlevel_0::bf->unfix(_pp);
+        if (_mode != LATCH_Q) {
+            smlevel_0::bf->unfix(_pp);
+        }
         _mode = LATCH_NL;
         _pp   = NULL;
     }
@@ -93,11 +95,10 @@ w_rc_t fixable_page_h::fix_root (volid_t vol, snum_t store, latch_mode_t mode, b
     if (mode == LATCH_Q) {
         W_DO(smlevel_0::bf->fix_with_Q_root(_pp, vol, store));
         // later deal with possibility of latching failure (not yet possible) <<<>>>
-        _mode = LATCH_SH; // <<<>>>
     } else {
         W_DO(smlevel_0::bf->fix_root(_pp, vol, store, mode, conditional));
-        _mode = mode;
     }
+    _mode = mode;
     return RCOK;
 }
 
