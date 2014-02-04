@@ -1,8 +1,8 @@
-# Find the google tcmalloc library.
+# Find the numa policy library.
 # Output variables:
-#  TCMALLOC_INCLUDE_DIR : e.g., /usr/include/.
-#  TCMALLOC_LIBRARY     : Library path of tcmalloc.
-#  TCMALLOC_FOUND       : True if found.
+#  NUMA_INCLUDE_DIR : e.g., /usr/include/.
+#  NUMA_LIBRARY     : Library path of numa library
+#  NUMA_FOUND       : True if found.
 FIND_PATH(NUMA_INCLUDE_DIR NAME numa.h
   PATHS /opt/local/include /usr/local/include /usr/include)
 
