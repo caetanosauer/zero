@@ -4,4 +4,4 @@ REPOSITORY = "zero"
 # what to diff against:
 TRACKING_BRANCH = "origin/latching"
 # what branch a change is expected to be merged into
-BRANCH = "latch"
+BRANCH = "latching"
