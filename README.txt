@@ -13,7 +13,7 @@ Repeat after me: WE ALL DO FULL BUILD AND RUN ALL TESTCASES BEFORE CHECKING IN.
 http://codereview.hpl.hp.com/dashboard/
 
 ==== Coding Convention
-TODO
+See CodingConvention.txt
 
  
 ==== Module owners

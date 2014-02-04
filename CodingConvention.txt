@@ -1,0 +1,82 @@
+Date: Thu, 30 Jan 2014 10:43:57 -0800
+From: Hideaki Kimura <hideaki.kimura@hp.com>
+To: express <express@groups.hp.com>
+Subject: Draft coding convention
+
+Hi all,
+After the meeting, Joe/Mark and I kept discussing and checking with other people.
+To avoid forever-lasting war on coding convention, we ended up with the following rule as Greatest Common Dividor.
+
+Because it's a GCD and because many of us have strong voices, this has become a quite minimalistic convention.
+If any of you replies to this email saying you don't like some of the rule, we will further cut down the rules, not adding (again, it's a GCD).
+
+Thus, as a supplement, I also suggest maintaining a twiki article about our "soft" recommendations, which are continuously and collaboratively edited by us.
+It will not have any binding power, but beneficial for us to _voluntarily_ get aligned with other developers and maybe upgraded to "hard" rule when we get a consensus.
+
+Final note. These rules have binding power only to our new code.
+We do not enforce developers to apply the rules in existing code, although we might voluntarily do so.
+
+== Naming convention
+Class name (*) is in camel case starting with capital.
+Underscore separated, lower-case for method name and variable name.
+
+e.g., .
+class BrownFox {
+public:
+  void jumps_over();
+private:
+  int lazy_dog;
+};
+
+(*) typedefs are not considered as class name.
+
+Prefix/suffix has no binding rules so far. It might be discussed as a soft recommendation.
+
+== Namespaces
+No "using" is allowed in header file. "using" in cpp might be discussed as a soft recommendation.
+
+== Comments
+Class/method/namespace/etc comments in Javadoc style.
+In other words, start with /**, * for each line,  ends with */.
+An optional exception is when the class/method comment is single-line.
+In that case, you can use either Javadoc style or "///", up to your taste.
+
+/**
+ * The quick brown fox jumps over the
+ * lazy dog.
+*/
+class BrownFox {
+public:
+  /// this is allowed
+  void jumps_over();
+private:
+  /** this is allowed, too. */
+  int lazy_dog;
+};
+
+There is no binding rule about how beefy/complete your comments have to be.
+Also, there is no binding rule about the style of comments _within_ functions.
+It might be discussed as a soft recommendation.
+
+== Misc
+4 space indent. No tabs.
+Line length must be within 95 chars. (If you exceed 95, some of us gets troubles in his environment. Please exercise your camaraderie.)
+
+"{" in the same line.
+Magic numbers must be declared as constant with comments.
+
+For example:
+const int HOGE = 123; // foo
+for (int i = 0; i < HOGE; ++i) {
+    if (aaa) {
+        bbbf();
+    } else if (bbb) {
+        bbbf2();
+    }
+}
+
+Let us know what you think within this week.
+- Joe, Mark, and Hideaki.
+
+
+## UPDATE: Approved as of 2014/02/03.
