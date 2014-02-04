@@ -8,5 +8,5 @@ TEST(ErrcodesTest, FcFull) {
 
 TEST(ErrcodesTest, eDEADLOCK) {
     EXPECT_STREQ(w_error_name(eDEADLOCK), "eDEADLOCK");
-    EXPECT_STREQ(w_error_message(eDEADLOCK), "deadlock detected");
+    EXPECT_STREQ(w_error_message(eDEADLOCK), "Deadlock detected");
 }

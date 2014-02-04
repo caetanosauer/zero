@@ -224,17 +224,32 @@ public:
      * fixes the page if the shpid (pointer) is already swizzled by the parent page.
      * The optimization is transparent for most of the code because the shpid stored in the parent
      * page is automatically (and atomically) changed to a swizzled pointer by the bufferpool.
-     * @param[out] page the fixed page.
-     * @param[in] parent parent of the page to be fixed. has to be already latched. if you can't provide this,
-     * use fix_direct() though it can't exploit pointer swizzling.
-     * @param[in] vol volume ID.
-     * @param[in] shpid ID of the page to fix (or bufferpool index when swizzled)
-     * @param[in] mode latch mode. has to be SH or EX.
-     * @param[in] conditional whether the fix is conditional (returns immediately even if failed).
-     * @param[in] virgin_page whether the page is a new page thus doesn't have to be read from disk.
+     * 
+     * @param[out] page         the fixed page.
+     * @param[in]  parent       parent of the page to be fixed. has to be already latched. if you can't provide this,
+     *                          use fix_direct() though it can't exploit pointer swizzling.
+     * @param[in]  vol          volume ID.
+     * @param[in]  shpid        ID of the page to fix (or bufferpool index when swizzled)
+     * @param[in]  mode         latch mode. has to be SH or EX.
+     * @param[in]  conditional  whether the fix is conditional (returns immediately even if failed).
+     * @param[in]  virgin_page  whether the page is a new page thus doesn't have to be read from disk.
+     * 
      * To use this method, you need to include bf_tree_inline.h.
      */
     w_rc_t fix_nonroot (generic_page*& page, generic_page *parent, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page);
+
+    /**
+     * Fixes a non-root page in the bufferpool in Q mode.
+     * 
+     * @param[out] page     the fixed page.
+     * @param[in]  vol      volume ID.
+     * @param[in]  shpid    ID of the page to fix
+     * @param[out] success  (for now) whether or not the Q latching succeeded; will be replaced by a returned Q ticket in later version... <<<>>>
+     * @pre shpid is a swizzled pointer
+     * 
+     * To use this method, you need to include bf_tree_inline.h.
+     */
+    w_rc_t fix_with_Q_nonroot(generic_page*& page, volid_t vol, shpid_t shpid, bool& success);
 
     /**
      * Fixes any page (root or non-root) in the bufferpool without pointer swizzling.
@@ -289,6 +304,13 @@ public:
      * To use this method, you need to include bf_tree_inline.h.
      */
     w_rc_t fix_root (generic_page*& page, volid_t vol, snum_t store, latch_mode_t mode, bool conditional);
+
+    /**
+     * Fixes an existing (not virgin) root page for the given store in Q mode.
+     * To use this method, you need to include bf_tree_inline.h.
+     */
+    w_rc_t fix_with_Q_root(generic_page*& page, volid_t vol, snum_t store);
+
     
     /** returns the current latch mode of the page. */
     latch_mode_t latch_mode(const generic_page* p);

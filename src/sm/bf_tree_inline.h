@@ -65,6 +65,7 @@ inline shpid_t bf_tree_m::get_root_page_id(volid_t vol, snum_t store) {
 }
 
 ///////////////////////////////////   Page fix/unfix BEGIN         ///////////////////////////////////  
+
 const uint32_t SWIZZLED_LRU_UPDATE_INTERVAL = 1000;
 
 inline w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
@@ -174,6 +175,51 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
     return RCOK;
 }
 
+inline w_rc_t bf_tree_m::fix_with_Q_nonroot(generic_page*& page, volid_t vol, shpid_t shpid, bool& success) {
+    w_assert1((shpid & SWIZZLED_PID_BIT) != 0);
+
+    INC_TSTAT(bf_fix_nonroot_count);
+
+    bf_idx idx = shpid ^ SWIZZLED_PID_BIT;
+    w_assert1(_is_valid_idx(idx));
+
+    bf_tree_cb_t &cb = get_cb(idx);
+
+    // later we will acquire the latch in Q mode <<<>>>
+    //W_DO(get_cb(idx).latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
+    page = &(_buffer[idx]);
+    success = true;
+
+    // cheap approximate test to see if got right page; benign data races:
+    if (!cb._used ||
+        (cb._pid_vol   != vol) ||
+        (cb._pid_shpid != _buffer[idx].pid.page)) {
+        success = false;
+        return RCOK;
+    }
+
+    // We limit the maximum value of the refcount by BP_MAX_REFCOUNT to avoid the scalability 
+    // bottleneck caused by excessive cache coherence traffic (cacheline ping-pongs between sockets).
+    if (get_cb(idx)._refbit_approximate < BP_MAX_REFCOUNT) {
+        ++cb._refbit_approximate;
+    }
+        
+#ifdef BP_MAINTAIN_PARENT_PTR
+    ++cb._counter_approximate;
+    // infrequently update LRU.
+    if (cb._counter_approximate % SWIZZLED_LRU_UPDATE_INTERVAL == 0) {
+        // Cannot call _update_swizzled_lru without S or X latch
+        // because page might not still be a swizzled page so disable!
+        // [JIRA issue ZERO-175]
+        BOOST_STATIC_ASSERT(false);
+        _update_swizzled_lru(idx);
+    }
+#endif // BP_MAINTAIN_PARENT_PTR
+
+    return RCOK;
+}
+
+
 inline w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, volid_t vol, snum_t store, shpid_t shpid) {
     w_assert1(vol != 0);
     w_assert1(store != 0);
@@ -275,6 +321,29 @@ inline w_rc_t bf_tree_m::_latch_root_page(generic_page*& page, bf_idx idx, latch
 #endif // SIMULATE_NO_SWIZZLING
     return RCOK;
 }
+
+inline w_rc_t bf_tree_m::fix_with_Q_root(generic_page*& page, volid_t vol, snum_t store) {
+    w_assert1(vol != 0);
+    w_assert1(store != 0);
+    bf_tree_vol_t *volume = _volumes[vol];
+    w_assert1(volume != NULL);
+
+    // root-page index is always kept in the volume descriptor:
+    bf_idx idx = volume->_root_pages[store];
+    w_assert1(_is_valid_idx(idx));
+
+    // later we will acquire the latch in Q mode <<<>>>
+    //W_DO(get_cb(idx).latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
+    page = &(_buffer[idx]);
+
+    /*
+     * We do not bother verifying we got the right page as root page IDs only change when
+     * tables are dropped.
+     */
+
+    return RCOK;
+}
+
 
 inline void bf_tree_m::unfix(const generic_page* p) {
     uint32_t idx = p - _buffer;

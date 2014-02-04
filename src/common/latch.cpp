@@ -1,3 +1,8 @@
+// -*- mode:c++; c-basic-offset:4 -*-
+/*
+ * (c) Copyright 2014, Hewlett-Packard Development Company, LP
+ */
+
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
    
@@ -21,7 +26,6 @@
    RESULTING FROM THE USE OF THIS SOFTWARE.
 */
 
-// -*- mode:c++; c-basic-offset:4 -*-
 /*<std-header orig-src='shore'>
 
  $Id: latch.cpp,v 1.49 2010/12/08 17:37:34 nhall Exp $
@@ -65,7 +69,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <list>
 #include <algorithm>
 
-const char* const  latch_t::latch_mode_str[3] = { "NL", "SH", "EX" };
+const char* const  latch_t::latch_mode_str[4] = { "NL", "Q", "SH", "EX" };
 
 
 latch_t::latch_t() :
@@ -343,6 +347,7 @@ w_rc_t
 latch_t::latch_acquire(latch_mode_t mode, sthread_t::timeout_in_ms timeout) 
 {
     w_assert1(mode != LATCH_NL); 
+    w_assert1(mode != LATCH_Q); // <<<>>>
     holder_search me(this);
     return _acquire(mode, timeout, me.value());
 }
