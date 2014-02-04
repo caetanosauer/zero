@@ -386,12 +386,24 @@ restart_m::analysis_pass(
             if (!(dptab.exists(page_of_interest))) {
                 dptab.insert( page_of_interest, lsn.data() );
             }
+            // If the log touches multi-records, we put that page in table too.
+            // SSX is the only log type that has multi-pages.
+            if (r.is_multi_page()) {
+                lpid_t page2_of_interest = r.construct_pid2();
+                DBGOUT5(<<" multi-page:" <<  page2_of_interest);
+                if (!(dptab.exists(page2_of_interest))) {
+                    dptab.insert( page2_of_interest, lsn.data() );
+                }
+            }
             
             xd->change_state(xct_t::xct_ended);
             xct_t::destroy_xct(xd);
             continue;
         }
 
+        // We already ruled out all SSX logs. So we don't have to worry about
+        // multi-page logs in the code below.
+        w_assert1(!r.is_multi_page());
         xct_t* xd = 0;
 
         /*
@@ -692,7 +704,6 @@ restart_m::analysis_pass(
                 }
             } else if (
                     r.type()!=logrec_t::t_comment
-                    && r.type()!=logrec_t::t_btree_noop
                     && r.type()!=logrec_t::t_store_operation
                     ) {
                 W_FATAL(eINTERNAL);
@@ -775,8 +786,6 @@ restart_m::analysis_pass(
         << flushl;
 }
 
-
-
 /*********************************************************************
  * 
  *  restart_m::redo_pass(redo_lsn, highest_lsn, dptab)
@@ -788,7 +797,7 @@ restart_m::analysis_pass(
 void 
 restart_m::redo_pass(
     lsn_t redo_lsn, 
-    const lsn_t & W_IFDEBUG3(highest_lsn),
+    const lsn_t &highest_lsn,
     dirty_pages_tab_t& dptab
 )
 {
@@ -820,7 +829,7 @@ restart_m::redo_pass(
     lsn_t lsn;
     lsn_t expected_lsn = redo_lsn;
     while (scan.xct_next(lsn, log_rec_buf))  {
-        DBGOUT5(<<"redo scan returned lsn " << lsn
+        DBGOUT3(<<"redo scan returned lsn " << lsn
                 << " expected " << expected_lsn);
 
         logrec_t& r = *log_rec_buf;
@@ -838,7 +847,7 @@ restart_m::redo_pass(
 
         bool redone = false;
         (void) redone; // Used only for debugging output
-        DBGOUT5( << setiosflags(ios::right) << lsn
+        DBGOUT3( << setiosflags(ios::right) << lsn
                       << resetiosflags(ios::right) << " R: " << r);
         w_assert1(lsn == r.lsn_ck());
         w_assert1(lsn == expected_lsn || lsn.hi() == expected_lsn.hi()+1);
@@ -859,7 +868,7 @@ restart_m::redo_pass(
                     xct_t *xd = xct_t::look_up(r.tid());
                     if (xd) {
                         if (xd->state() == xct_t::xct_active)  {
-                            DBGOUT5(<<"redo - no page, xct is " << r.tid());
+                            DBGOUT3(<<"redo - no page, xct is " << r.tid());
                             r.redo(0);
                             redone = true;
                         }  else  {
@@ -881,14 +890,14 @@ restart_m::redo_pass(
                     if (!r.is_single_sys_xct()) {
                         w_assert9(r.type() == logrec_t::t_dismount_vol || 
                                     r.type() == logrec_t::t_mount_vol);
-                        DBGOUT5(<<"redo - no page, no xct ");
+                        DBGOUT3(<<"redo - no page, no xct ");
                         r.redo(0);
                         io_m::SetLastMountLSN(lsn);
                         redone = true;
                     } else {
                         // single-log-sys-xct doesn't have tid (because it's not needed!).
                         // we simply creates a new ssx and runs it.
-                        DBGOUT5(<<"redo - no page, ssx");
+                        DBGOUT3(<<"redo - no page, ssx");
                         sys_xct_section_t sxs (true); // single log!
                         w_assert1(!sxs.check_error_on_start().is_error());
                         r.redo(0);
@@ -901,218 +910,18 @@ restart_m::redo_pass(
                 }
 
             } else {
-                lpid_t        page_updated = r.construct_pid();
-                dp_lsn_iterator it = dptab.find(page_updated);
-                if (it != dptab.dp_lsns().end() && lsn.data() >= it->second)  {
-                    /*
-                     *  We are only concerned about log records that involve
-                     *  page updates.
-                     */
-                    DBGOUT5(<<"redo page update, pid " 
-                            << r.shpid() 
-                            << "(" << page_updated << ")"
-                            << " rec_lsn: "  << lsn_t(it->second)
-                            << " log record: "  << lsn
-                            );
-                    w_assert1(r.shpid()); 
-
-                    /*
-                     *  Fix the page.
-                     */ 
-                    fixable_page_h page;
-
-                    /* 
-                     * The following code determines whether to perform
-                     * redo on the page.  If the log record is for a page
-                     * format (page_init) then there are two possible
-                     * implementations.
-                     * 
-                     * 1) Trusted LSN on New Pages
-                     *   If we assume that the LSNs on new pages can always be
-                     *   trusted then the code reads in the page and 
-                     *   checks the page lsn to see if the log record
-                     *   needs to be redone.  Note that this requires that
-                     *   pages on volumes stored on a raw device must be
-                     *   zero'd when the volume is created.
-                     * 
-                     * 2) No Trusted LSN on New Pages
-                     *   If new pages are not in a known (ie. lsn of 0) state
-                     *   then when a page_init record is encountered, it
-                     *   must always be redone and therefore all records after
-                     *   it must be redone.
-                     *
-                     * ATTENTION!!!!!! case 2 causes problems with
-                     *   tmp file pages that can get reformatted as tmp files,
-                     *   then converted to regular followed by a restart with
-                     *   no chkpt after the conversion and flushing of pages
-                     *   to disk, and so it has been disabled. That is to
-                     *   say:
-                     *
-                     *   DO NOT BUILD WITH
-                     *   DONT_TRUST_PAGE_LSN defined . In any case, I
-                     *   removed the code for its defined case.
-                     */
-                    
-                    // this direct page fix requires the pointer swizzling to be off.
-                    w_assert1(!smlevel_0::bf->is_swizzling_enabled());
-                    bool virgin_page = false;
-                    if (r.type() == logrec_t::t_page_img_format) {
-                        virgin_page = true;
-                    }
-                    W_COERCE(page.fix_direct(page_updated.vol().vol, page_updated.page, LATCH_EX, false, virgin_page));
-
-#if W_DEBUG_LEVEL > 2
-                    if(page_updated != page.pid()) {
-                        DBGOUT5(<<"Pids don't match: expected " << page_updated
-                            << " got " << page.pid());
-                    }
-#endif 
-
-                    lsn_t page_lsn = page.lsn();
-                    DBGOUT5( << setiosflags(ios::right) << lsn
-                              << resetiosflags(ios::right) << " R: " 
-                                << " page_lsn " << page_lsn
-                                << " will redo if 1: " << int(page_lsn < lsn));
-                    if (page_lsn < lsn) 
-                    {
-                        /*
-                         *  Redo must be performed if page has lower lsn 
-                         *  than record.
-                         *
-                         * NB: this business of attaching the xct isn't
-                         * all that reliable.  If the xct was found during
-                         * analysis to have committed, the xct won't be found
-                         * in the table, yet we might have to redo the records
-                         * anyway.  For that reason, not only do we attach it,
-                         * but we also stuff it into a global variable, redo_tid.
-                         * This is redundant, and we should fix this.  The 
-                         * RIGHT thing to do is probably to leave the xct in the table
-                         * after analysis, and make xct_end redo-able -- at that
-                         * point, we should remove the xct from the table.
-                         * However, since we don't have any code that really needs this
-                         * to happen (recovery all happens w/o grabbing locks; there
-                         * is no need for xct in redo as of this writing, and for
-                         * undo we will not have found the xct to have ended), we
-                         * choose to leave well enough alone.
-                         */
-                        if (!r.is_single_sys_xct()) {
-                            xct_t* xd = 0; 
-                            if (r.tid() != tid_t::null)  { 
-                                if ((xd = xct_t::look_up(r.tid())))  {
-                                    /*
-                                    * xd will be aborted following redo
-                                    * thread attached to xd to make sure that
-                                    * redo is correct for the transaction
-                                    */
-                                    me()->attach_xct(xd);
-                                }
-                            }
-
-                            /*
-                            *  Perform the redo. Do not generate log.
-                            */
-                            {
-                                bool was_dirty = page.is_dirty();
-                                // remember the tid for space resv hack.
-                                _redo_tid = r.tid();
-                                r.redo(page.is_fixed() ? &page : 0);
-                                redone = true;
-                                _redo_tid = tid_t::null;
-                                page.set_lsns(lsn);        /* page is updated */
-
-                                /* If we crash during recovery the _default_
-                                value_of_rec_lsn_ is too high and we risk
-                                losing data if a checkpoint sees it.
-                                By _default_value_of_rec_lsn_ what is meant
-                                is that which is set by update_rec_lsn on
-                                the page fix.  That is, it is set to the
-                                tail of the log,  which is correct for
-                                forward processing, but not for recovery
-                                processing.
-                                The problem is that because the log allows a
-                                scan to be ongoing while other threads
-                                are appending to the tail, there is no one
-                                "current" log pointer. So we can't easily
-                                ask the log for the correct lsn - it's
-                                context-dependent.  The fix code is too far
-                                in the call stack from that context, so it's
-                                hard for bf's update_rec_lsn to get the right
-                                lsn. Therefore, it's optimized
-                                for the most common case in forward processing, 
-                                and recovery/redo, tmp-page and other unlogged-
-                                update cases have to expend a little more
-                                effort to keep the rec_lsn accurate.
-                    
-                                FRJ: in our case the correct rec_lsn is
-                                anything not later than the new
-                                page_lsn (as if it had just been logged
-                                the first time, back in the past)
-                                */
-                                smlevel_0::bf->repair_rec_lsn(page.get_generic_page(), was_dirty, lsn);
-                            }
-                                
-                            if (xd) me()->detach_xct(xd);
-                        } else {
-                            // single-log-sys-xct doesn't have tid (because it's not needed!).
-                            // we simply creates a new ssx and runs it.
-                            sys_xct_section_t sxs (true); // single log!
-                            w_assert1(!sxs.check_error_on_start().is_error());
-                            bool was_dirty = page.is_dirty();
-                            r.redo(page.is_fixed() ? &page : 0);
-                            redone = true;
-                            page.set_lsns(lsn);
-                            smlevel_0::bf->repair_rec_lsn(page.get_generic_page(), was_dirty, lsn);
-                            rc_t sxs_rc = sxs.end_sys_xct (RCOK);
-                            w_assert1(!sxs_rc.is_error());
-                        }
-                    } else 
-#if W_DEBUG_LEVEL>2
-                    if(page_lsn >= highest_lsn) {
-                        DBGOUT1( << "WAL violation! page " 
-                        << page.pid()
-                        << " has lsn " << page_lsn
-                        << " end of log is record prior to " << highest_lsn);
-
-                        W_FATAL(eINTERNAL);
-                    } else
-#endif 
-                    {
-                        DBGOUT5( << setiosflags(ios::right) << lsn
-                                  << resetiosflags(ios::right) << " R: " 
-                                  << " page_lsn " << page_lsn
-                                  << " will skip & increment rec_lsn ");
-                        /*
-                         *  Bump the recovery lsn for the page to indicate that 
-                         *  the page is younger than this record; the earliest
-                         *  record we have to apply is that after the page lsn.
-                         *  NOTE: rec_lsn points INTO the dirty page table so
-                         *  this changes the rec_lsn in the dptab.
-                         */
-                        it->second = page_lsn.advance(1).data(); // non-const method
-                    }
-
-                    // page.destructor is supposed to do this:
-                    // page.unfix();
-                } else {
-                    if (it != dptab.dp_lsns().end())  {
-                        DBGOUT5( << setiosflags(ios::right) << lsn
-                          << resetiosflags(ios::right) << " R: page " 
-                          << page_updated << " found in dptab but lsn " << lsn
-                           << " < page rec_lsn=" <<  lsn_t(it->second)
-                            << " will skip ");
-                    } else {
-                        DBGOUT5( << setiosflags(ios::right) << lsn
-                          << resetiosflags(ios::right) << " R: page " 
-                          << page_updated << " not found in dptab; will skip " );
-                    }
-                    DBGOUT5(<<"not found in dptab: log record/lsn= " << lsn 
-                        << " page_updated=" << page_updated
-                        << " page=" << r.shpid()
-                        << " page rec_lsn=" << lsn_t(it->second));
+                _redo_log_with_pid(r, lsn, highest_lsn, r.construct_pid(), dptab, redone);
+                if (r.is_multi_page()) {
+                    w_assert1(r.is_single_sys_xct());
+                    // If the log is an SSX log that touches multi-pages, also invoke
+                    // REDO on the second page. Whenever the log type moves content
+                    // (or, not self-contained), page=dest, page2=src.
+                    // So, we try recovering page2 after page.
+                    _redo_log_with_pid(r, lsn, highest_lsn, r.construct_pid2(), dptab, redone);
                 }
             }
         }
-        DBGOUT5( << setiosflags(ios::right) << lsn
+        DBGOUT3( << setiosflags(ios::right) << lsn
                       << resetiosflags(ios::right) << " R: " 
                       << (redone ? " redone" : " skipped") );
     }
@@ -1123,6 +932,218 @@ restart_m::redo_pass(
             << "Redo_pass: "
             << f << " log_fetches, " 
             << i << " log_inserts " << flushl;
+    }
+}
+
+void restart_m::_redo_log_with_pid(
+    logrec_t& r, lsn_t &lsn, const lsn_t &highest_lsn,
+    lpid_t page_updated, dirty_pages_tab_t& dptab, bool &redone) {
+    dp_lsn_iterator it = dptab.find(page_updated);
+    if (it != dptab.dp_lsns().end() && lsn.data() >= it->second)  {
+        /*
+        *  We are only concerned about log records that involve
+        *  page updates.
+        */
+        DBGOUT5(<<"redo page update, pid "
+                << r.shpid()
+                << "(" << page_updated << ")"
+                << " rec_lsn: "  << lsn_t(it->second)
+                << " log record: "  << lsn
+                );
+        w_assert1(r.shpid());
+
+        /*
+        *  Fix the page.
+        */
+        fixable_page_h page;
+
+        /*
+        * The following code determines whether to perform
+        * redo on the page.  If the log record is for a page
+        * format (page_init) then there are two possible
+        * implementations.
+        *
+        * 1) Trusted LSN on New Pages
+        *   If we assume that the LSNs on new pages can always be
+        *   trusted then the code reads in the page and
+        *   checks the page lsn to see if the log record
+        *   needs to be redone.  Note that this requires that
+        *   pages on volumes stored on a raw device must be
+        *   zero'd when the volume is created.
+        *
+        * 2) No Trusted LSN on New Pages
+        *   If new pages are not in a known (ie. lsn of 0) state
+        *   then when a page_init record is encountered, it
+        *   must always be redone and therefore all records after
+        *   it must be redone.
+        *
+        * ATTENTION!!!!!! case 2 causes problems with
+        *   tmp file pages that can get reformatted as tmp files,
+        *   then converted to regular followed by a restart with
+        *   no chkpt after the conversion and flushing of pages
+        *   to disk, and so it has been disabled. That is to
+        *   say:
+        *
+        *   DO NOT BUILD WITH
+        *   DONT_TRUST_PAGE_LSN defined . In any case, I
+        *   removed the code for its defined case.
+        */
+
+        // this direct page fix requires the pointer swizzling to be off.
+        w_assert1(!smlevel_0::bf->is_swizzling_enabled());
+        bool virgin_page = false;
+        if (r.type() == logrec_t::t_page_img_format
+            // btree_norec_alloc is a multi-page log. "page2" (so, !=shpid()) is the new page.
+            || (r.type() == logrec_t::t_btree_norec_alloc && page_updated.page != r.shpid())) {
+            virgin_page = true;
+        }
+        W_COERCE(page.fix_direct(page_updated.vol().vol, page_updated.page, LATCH_EX, false, virgin_page));
+        if (virgin_page) {
+            // We rely on pid/tag set correctly in individual redo() functions, so
+            // we set it here for virgin pages.
+            page.get_generic_page()->pid = page_updated;
+            page.get_generic_page()->tag = t_btree_p;
+            page.get_generic_page()->lsn = lsn_t::null;
+        }
+        w_assert1(page.pid() == page_updated);
+
+        lsn_t page_lsn = page.lsn();
+        DBGOUT3( << setiosflags(ios::right) << lsn
+                    << resetiosflags(ios::right) << " R: "
+                    << " page_lsn " << page_lsn
+                    << " will redo if 1: " << int(page_lsn < lsn));
+        if (page_lsn < lsn)
+        {
+            /*
+            *  Redo must be performed if page has lower lsn
+            *  than record.
+            *
+            * NB: this business of attaching the xct isn't
+            * all that reliable.  If the xct was found during
+            * analysis to have committed, the xct won't be found
+            * in the table, yet we might have to redo the records
+            * anyway.  For that reason, not only do we attach it,
+            * but we also stuff it into a global variable, redo_tid.
+            * This is redundant, and we should fix this.  The
+            * RIGHT thing to do is probably to leave the xct in the table
+            * after analysis, and make xct_end redo-able -- at that
+            * point, we should remove the xct from the table.
+            * However, since we don't have any code that really needs this
+            * to happen (recovery all happens w/o grabbing locks; there
+            * is no need for xct in redo as of this writing, and for
+            * undo we will not have found the xct to have ended), we
+            * choose to leave well enough alone.
+            */
+            if (!r.is_single_sys_xct()) {
+                xct_t* xd = 0;
+                if (r.tid() != tid_t::null)  {
+                    if ((xd = xct_t::look_up(r.tid())))  {
+                        /*
+                        * xd will be aborted following redo
+                        * thread attached to xd to make sure that
+                        * redo is correct for the transaction
+                        */
+                        me()->attach_xct(xd);
+                    }
+                }
+
+                /*
+                *  Perform the redo. Do not generate log.
+                */
+                {
+                    bool was_dirty = page.is_dirty();
+                    // remember the tid for space resv hack.
+                    _redo_tid = r.tid();
+                    r.redo(page.is_fixed() ? &page : 0);
+                    redone = true;
+                    _redo_tid = tid_t::null;
+                    page.set_lsns(lsn);        /* page is updated */
+
+                    /* If we crash during recovery the _default_
+                    value_of_rec_lsn_ is too high and we risk
+                    losing data if a checkpoint sees it.
+                    By _default_value_of_rec_lsn_ what is meant
+                    is that which is set by update_rec_lsn on
+                    the page fix.  That is, it is set to the
+                    tail of the log,  which is correct for
+                    forward processing, but not for recovery
+                    processing.
+                    The problem is that because the log allows a
+                    scan to be ongoing while other threads
+                    are appending to the tail, there is no one
+                    "current" log pointer. So we can't easily
+                    ask the log for the correct lsn - it's
+                    context-dependent.  The fix code is too far
+                    in the call stack from that context, so it's
+                    hard for bf's update_rec_lsn to get the right
+                    lsn. Therefore, it's optimized
+                    for the most common case in forward processing,
+                    and recovery/redo, tmp-page and other unlogged-
+                    update cases have to expend a little more
+                    effort to keep the rec_lsn accurate.
+
+                    FRJ: in our case the correct rec_lsn is
+                    anything not later than the new
+                    page_lsn (as if it had just been logged
+                    the first time, back in the past)
+                    */
+                    smlevel_0::bf->repair_rec_lsn(page.get_generic_page(), was_dirty, lsn);
+                }
+
+                if (xd) me()->detach_xct(xd);
+            } else {
+                // single-log-sys-xct doesn't have tid (because it's not needed!).
+                // we simply creates a new ssx and runs it.
+                sys_xct_section_t sxs (true); // single log!
+                w_assert1(!sxs.check_error_on_start().is_error());
+                bool was_dirty = page.is_dirty();
+                r.redo(page.is_fixed() ? &page : 0);
+                redone = true;
+                page.set_lsns(lsn);
+                smlevel_0::bf->repair_rec_lsn(page.get_generic_page(), was_dirty, lsn);
+                rc_t sxs_rc = sxs.end_sys_xct (RCOK);
+                w_assert1(!sxs_rc.is_error());
+            }
+        } else if(page_lsn >= highest_lsn) {
+            DBGOUT1( << "WAL violation! page "
+            << page.pid()
+            << " has lsn " << page_lsn
+            << " end of log is record prior to " << highest_lsn);
+
+            W_FATAL(eINTERNAL);
+        } else {
+            DBGOUT3( << setiosflags(ios::right) << lsn
+                        << resetiosflags(ios::right) << " R: "
+                        << " page_lsn " << page_lsn
+                        << " will skip & increment rec_lsn ");
+            /*
+            *  Bump the recovery lsn for the page to indicate that
+            *  the page is younger than this record; the earliest
+            *  record we have to apply is that after the page lsn.
+            *  NOTE: rec_lsn points INTO the dirty page table so
+            *  this changes the rec_lsn in the dptab.
+            */
+            it->second = page_lsn.advance(1).data(); // non-const method
+        }
+
+        // page.destructor is supposed to do this:
+        // page.unfix();
+    } else {
+        if (it != dptab.dp_lsns().end())  {
+            DBGOUT5( << setiosflags(ios::right) << lsn
+                << resetiosflags(ios::right) << " R: page "
+                << page_updated << " found in dptab but lsn " << lsn
+                << " < page rec_lsn=" <<  lsn_t(it->second)
+                << " will skip ");
+        } else {
+            DBGOUT5( << setiosflags(ios::right) << lsn
+                << resetiosflags(ios::right) << " R: page "
+                << page_updated << " not found in dptab; will skip " );
+        }
+        DBGOUT5(<<"not found in dptab: log record/lsn= " << lsn
+            << " page_updated=" << page_updated
+            << " page=" << r.shpid()
+            << " page rec_lsn=" << lsn_t(it->second));
     }
 }
 

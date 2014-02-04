@@ -66,6 +66,11 @@ logrec_t::cat_str() const
     case t_undo | t_logical : 
         return "l-u-";
 
+    case t_redo | t_single_sys_xct:
+        return "ssx-";
+    case t_multi | t_redo | t_single_sys_xct:
+        return "ssxm";
+
 #if W_DEBUG_LEVEL > 0
     case t_bad_cat:
         // for debugging only
@@ -649,7 +654,10 @@ operator<<(ostream& o, const logrec_t& l)
         o << l.tid() << ' ';
     }
     W_FORM(o)("%19s%5s:%1s", l.type_str(), l.cat_str(), rb );
-    o << "  " << l.pid();
+    o << "  " << l.construct_pid();
+    if (l.is_multi_page()) {
+        o << " MULTI_P:" << l.construct_pid2();
+    }
 
     switch(l.type()) {
         case t_comment : 

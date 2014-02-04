@@ -68,6 +68,13 @@ private:
     // keep track of tid from log record that we're redoing
     // for a horrid space-recovery handling hack
     static tid_t                _redo_tid;
+
+    /**
+     * \brief sub-routine of redo_pass() for logs that have pid.
+     */
+    static void                 _redo_log_with_pid(
+        logrec_t& r, lsn_t &lsn, const lsn_t &highest_lsn,
+        lpid_t page_updated, dirty_pages_tab_t& dptab, bool &redone);
 public:
     tid_t                        *redo_tid() { return &_redo_tid; }
 

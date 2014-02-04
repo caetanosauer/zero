@@ -44,6 +44,71 @@ btrec_t::set(const btree_page_h& page, slotid_t slot) {
     return *this;
 }
 
+#ifdef ZERO_INIT
+void trash_page(btree_page *page) {
+    /* NB -- NOTE -------- NOTE BENE
+    *  Note this is not exactly zero-init, but it doesn't matter
+    * WHAT we use to init each byte for the purpose of purify or valgrind
+    */
+    // because we do this, note that we shouldn't receive any arguments
+    // as reference or pointer. It might be also nuked!
+    memset(page, '\017', sizeof(generic_page)); // trash the whole page
+}
+#else //ZERO_INIT
+void trash_page(btree_page *) {}
+#endif //ZERO_INIT
+
+void btree_page_h::init_as_empty_child(lsn_t new_lsn, lpid_t new_page_id,
+    shpid_t root_pid, shpid_t foster_pid, int16_t btree_level,
+    const w_keystr_t &low, const w_keystr_t &high, const w_keystr_t &chain_fence_high) {
+    w_assert1 (new_page_id.page != root_pid);
+    trash_page(page());
+    page()->lsn          = new_lsn;
+    page()->pid          = new_page_id;
+    page()->tag          = t_btree_p;
+    page()->page_flags   = 0;
+    page()->init_items();
+    page()->btree_consecutive_skewed_insertions = 0;
+    page()->btree_root                    = root_pid;
+    page()->btree_pid0                    = 0;
+    page()->btree_level                   = btree_level;
+    page()->btree_foster                  = foster_pid;
+    page()->btree_fence_low_length        = (int16_t) low.get_length_as_keystr();
+    page()->btree_fence_high_length       = (int16_t) high.get_length_as_keystr();
+    page()->btree_chain_fence_high_length = (int16_t) chain_fence_high.get_length_as_keystr();
+
+    // set fence keys in first slot
+    cvec_t fences;
+    size_t prefix_len = _pack_fence_rec(fences, low, high, chain_fence_high, -1);
+    w_assert1(prefix_len <= low.get_length_as_keystr());
+    w_assert1(prefix_len <= (1<<15));
+    page()->btree_prefix_length = (int16_t) prefix_len;
+
+    // fence-key record doesn't need poormkey; set to 0:
+    if (!page()->insert_item(nrecs()+1, false, 0, 0, fences)) {
+        w_assert0(false);
+    }
+}
+
+void btree_page_h::accept_empty_child(lsn_t new_lsn, shpid_t new_page_id) {
+    w_assert1 (g_xct()->is_single_log_sys_xct());
+    w_assert1 (new_lsn != lsn_t::null);
+
+    // Slight change in foster-parent, touching only foster link and chain-high.
+    page()->btree_foster = new_page_id;
+    page()->lsn          = new_lsn;
+    // the only case we have to change parent's chain-high is when this page is the first
+    // foster child. otherwise, chain_fence_high is unchanged.
+    if (get_chain_fence_high_length() == 0) {
+        // we COPY them because this operation changes this page itself
+        w_keystr_t low, high;
+        copy_fence_low_key(low);
+        copy_fence_high_key(high);
+
+        // it passed check_chance_for_norecord_split(), so no error should happen here.
+        W_COERCE(replace_fence_rec_nolog_may_defrag(low, high, high, get_prefix_length()));
+    }
+}
 
 rc_t btree_page_h::init_fix_steal(btree_page_h*     parent,
                                   const lpid_t&     pid,
@@ -89,15 +154,7 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
 
     //first, nuke the page
     lpid_t pid_copy = pid; // take a copy first, because pid might point to a part of this page itself!
-#ifdef ZERO_INIT
-    /* NB -- NOTE -------- NOTE BENE
-    *  Note this is not exactly zero-init, but it doesn't matter
-    * WHAT we use to init each byte for the purpose of purify or valgrind
-    */
-    // because we do this, note that we shouldn't receive any arguments
-    // as reference or pointer. It might be also nuked!
-    memset(page(), '\017', sizeof(generic_page)); // trash the whole page
-#endif //ZERO_INIT
+    trash_page(page());
     page()->lsn          = lsn_t(0, 1);
     page()->pid          = pid_copy;
     page()->tag          = t_btree_p;
@@ -209,13 +266,9 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
     }
 }
 rc_t btree_page_h::norecord_split (shpid_t foster,
-                                   const w_keystr_t& fence_high, const w_keystr_t& chain_fence_high,
-                                   bool log_it) {
+                    const w_keystr_t& fence_high, const w_keystr_t& chain_fence_high) {
     w_assert1(compare_with_fence_low(fence_high) > 0);
     w_assert1(compare_with_fence_low(chain_fence_high) > 0);
-    if (log_it) {
-        W_DO(log_btree_foster_norecord_split (*this, foster, fence_high, chain_fence_high));
-    }
 
     w_keystr_t fence_low;
     copy_fence_low_key(fence_low);
@@ -236,31 +289,17 @@ rc_t btree_page_h::norecord_split (shpid_t foster,
     } else {
         // otherwise, just sets the fence keys and headers
         //sets new fence
-        rc_t rc = replace_fence_rec_nolog(fence_low, fence_high, chain_fence_high, new_prefix_len);
+        rc_t rc = replace_fence_rec_nolog_may_defrag(fence_low, fence_high, chain_fence_high,
+            new_prefix_len);
         w_assert1(rc.err_num() != eRECWONTFIT);// then why it passed check_chance_for_norecord_split()?
         w_assert1(!rc.is_error());
 
         //updates headers
         page()->btree_foster                        = foster;
-        page()->btree_fence_high_length             = (int16_t) fence_high.get_length_as_keystr();
-        page()->btree_chain_fence_high_length       = (int16_t) chain_fence_high.get_length_as_keystr();
         page()->btree_consecutive_skewed_insertions = 0; // reset this value too.
     }
     return RCOK;
 }
-
-rc_t btree_page_h::clear_foster() {
-    // note that we don't have to change the chain-high fence key.
-    // we just leave it there, and update the length only.
-    // chain-high-fence key is placed after low/high, so it doesn't matter.
-    W_DO(log_btree_header(*this, pid0(), level(), 0, // foster=0
-                          0 // chain-high fence key is disabled
-             )); // log first
-    page()->btree_foster = 0;
-    page()->btree_chain_fence_high_length = 0;
-    return RCOK;
-}
-
 
 inline int btree_page_h::_compare_slot_with_key(int slot, const void* key_noprefix, size_t key_len, poor_man_key key_poor) const {
     // fast path using poor_man_key's:
@@ -524,7 +563,23 @@ rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, shpid_t chi
     return RCOK;
 }
 
-rc_t btree_page_h::replace_fence_rec_nolog(const w_keystr_t& low,
+rc_t btree_page_h::replace_fence_rec_nolog_may_defrag(const w_keystr_t& low,
+    const w_keystr_t& high, const w_keystr_t& chain, int new_prefix_length) {
+    rc_t rc = replace_fence_rec_nolog_no_defrag(low, high, chain, new_prefix_length);
+    if (rc.is_error()) {
+        // if eRECWONTFIT, try to defrag the page to get the space.
+        w_assert1(rc.err_num() == eRECWONTFIT);
+        rc = defrag();
+        w_assert1(!rc.is_error());
+        rc = replace_fence_rec_nolog_no_defrag(low, high, chain, new_prefix_length);
+        if (rc.is_error()) {
+            return rc;
+        }
+    }
+    return RCOK;
+}
+
+rc_t btree_page_h::replace_fence_rec_nolog_no_defrag(const w_keystr_t& low,
                                            const w_keystr_t& high, 
                                            const w_keystr_t& chain, int new_prefix_len) {
     w_assert1(page()->number_of_items() > 0);
@@ -536,6 +591,9 @@ rc_t btree_page_h::replace_fence_rec_nolog(const w_keystr_t& low,
     if (!page()->replace_item_data(0, 0, fences)) {
         return RC(eRECWONTFIT);
     }
+    page()->btree_fence_low_length        = (int16_t) low.get_length_as_keystr();
+    page()->btree_fence_high_length       = (int16_t) high.get_length_as_keystr();
+    page()->btree_chain_fence_high_length = (int16_t) chain.get_length_as_keystr();
 
     w_assert1 (page()->item_length(0) == (key_length_t) fences.size());
     w_assert3(page()->_items_are_consistent());
@@ -974,9 +1032,17 @@ bool btree_page_h::_is_consistent_keyorder() const {
     const char*  lowkey     = get_fence_low_key();
     const size_t lowkey_len = get_fence_low_length();
     const size_t prefix_len = get_prefix_length();
+    const size_t chain_high_len = get_chain_fence_high_length();
+    const shpid_t foster = get_foster();
+    // chain-high must be set if foster link exists.
+    if(chain_high_len == 0 && foster != 0) {
+        w_assert3(false);
+        return false;
+    }
     if (recs == 0) {
-        // then just compare low-high and quit
-        if (compare_with_fence_high(lowkey, lowkey_len) >= 0) {
+        // then just compare low-high and quit.
+        // low==high is now allowed as part of page split.
+        if (compare_with_fence_high(lowkey, lowkey_len) > 0) {
             w_assert3(false);
             return false;
         }

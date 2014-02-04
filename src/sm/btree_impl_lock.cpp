@@ -151,6 +151,11 @@ rc_t btree_impl::_ux_assure_fence_low_entry(btree_page_h &leaf)
     leaf.copy_fence_low_key(fence_low);
     bool needs_to_create = false;
     if (leaf.nrecs() == 0) {
+        if (leaf.compare_with_fence_high(fence_low) == 0) {
+            // low==high happens only during page split. In that case, no one can have a lock
+            // in the page being created. No need to assure the record.
+            return RCOK;
+        }
         needs_to_create = true;
     } else {
         w_keystr_t first_key;

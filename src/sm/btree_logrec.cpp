@@ -115,7 +115,6 @@ btree_update_log::btree_update_log(
     const w_keystr_t&     key,
     const char* old_el, int old_elen, const cvec_t& new_el)
 {
-    set_page_prev_lsn(page.lsn());
     fill(&page.pid(), page.tag(),
          (new (_data) btree_update_t(page, key, old_el, old_elen, new_el))->size());
 }
@@ -247,81 +246,6 @@ void btree_overwrite_log::redo(fixable_page_h* page)
 #endif //W_DEBUG_LEVEL>0
 
     bp.overwrite_el_nolog(slot, offset, new_el, elen);
-}
-
-/** header log object for BTree pages. */
-class btree_header_t {
-public:
-    shpid_t btree_pid0; // +4 -> 4
-    shpid_t btree_foster; // +4 -> 8
-    int16_t btree_level; // +2 -> 10
-    int16_t btree_chain_fence_high_length; // +2 -> 12
-    fill4          _fill; // +4 -> 16
-
-    btree_header_t(
-        shpid_t pid0,
-        int16_t level,
-        shpid_t foster,
-        int16_t chain_fence_high_length
-    ) : btree_pid0(pid0), btree_foster(foster), btree_level(level),
-    btree_chain_fence_high_length(chain_fence_high_length)
-         {};
-    btree_header_t(const btree_page_h &p) :
-        btree_pid0(p.pid0_opaqueptr()), btree_foster(p.get_foster_opaqueptr()), btree_level(p.level()),
-        btree_chain_fence_high_length(p.get_chain_fence_high_length())
-        {};
-    
-    int size()  { return sizeof(*this); }
-    void apply(btree_page_h* page); // used from both undo/redo
-};
-
-void btree_header_t::apply(btree_page_h* page) {
-    page->page()->btree_pid0   = btree_pid0;
-    page->page()->btree_level  = btree_level;
-    page->page()->btree_foster = btree_foster;
-    page->page()->btree_chain_fence_high_length = btree_chain_fence_high_length;
-}
-
-/** Log of Btree page header changes. */
-class btree_header_change_t {
-public:
-    btree_header_t   before;
-    btree_header_t   after;
-
-    btree_header_change_t(const btree_page_h &p,
-                          shpid_t btree_pid0,
-                          int16_t btree_level,
-                          shpid_t btree_foster,
-                          int16_t btree_chain_fence_high_length) : 
-        before (p),
-        after (btree_pid0, btree_level, btree_foster, btree_chain_fence_high_length)
-        {}
-
-    int size()  { return before.size() + after.size();}
-};
-
-btree_header_log::btree_header_log(const btree_page_h& p,
-                                   shpid_t btree_pid0,
-                                   int16_t btree_level,
-                                   shpid_t btree_foster,
-                                   int16_t btree_chain_fence_high_length) {
-    fill(&p.pid(), p.tag(), (new (data()) btree_header_change_t(
-        p, btree_pid0, btree_level, btree_foster,
-                btree_chain_fence_high_length))->size());
-}
-
-void  btree_header_log::redo(fixable_page_h* page)
-{
-    btree_header_change_t* df = (btree_header_change_t*) data();
-    borrowed_btree_page_h p(page);
-    df->after.apply(&p);
-}
-
-void  btree_header_log::undo(fixable_page_h* page)
-{
-    btree_header_change_t* df = (btree_header_change_t*) data();
-    borrowed_btree_page_h p(page);
-    df->before.apply(&p);
 }
 
 struct btree_ghost_t {
@@ -494,256 +418,357 @@ void btree_ghost_reserve_log::redo(fixable_page_h* page) {
     w_assert3(bp.is_consistent(true, true));
 }
 
-// log for Split (+adopt if intermediate node)
-struct btree_foster_split_t {
-    shpid_t       _foster_child_pid; // +4 -> 4
-    int32_t       _right_begins_from; // +4 -> 8
-    shpid_t       _new_child_pid; // +4 -> 12
-    int32_t       _new_child_key_len; // +4 -> 16
-    char          data[logrec_t::max_data_sz - 16];
+/**
+ * A \b multi-page \b SSX log record for \b btree_norec_alloc.
+ * This log is totally \b self-contained, so no WOD assumed.
+ */
+struct btree_norec_alloc_t : public multi_page_log_t {
+    btree_norec_alloc_t(const btree_page_h &p,
+        shpid_t new_page_id, const w_keystr_t& fence, const w_keystr_t& chain_fence_high);
+    shpid_t     _root_pid, _foster_pid;       // +4+4 => 8
+    uint16_t    _fence_len, _chain_high_len;  // +2+2 => 12
+    int16_t     _btree_level;                 // +2   => 14
+    /** fence key and chain-high key. */
+    char        _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) - 14];
 
-    btree_foster_split_t(shpid_t foster_child_pid, int32_t right_begins_from,
-        const w_keystr_t* new_child_key, shpid_t new_child_pid)
-        : _foster_child_pid (foster_child_pid), _right_begins_from(right_begins_from) {
-        _new_child_pid = new_child_pid;
-        if (new_child_key == NULL) {
-            _new_child_key_len = 0;
-        } else {
-            _new_child_key_len = new_child_key->get_length_as_keystr();
-            new_child_key->serialize_as_keystr(data);
-        }
+    int      size() const {
+        return sizeof(multi_page_log_t) + 14 + _fence_len + _chain_high_len;
     }
-    int size() { return 16 + _new_child_key_len; }
 };
 
-btree_foster_split_log::btree_foster_split_log (const btree_page_h& p,
-                                                shpid_t             new_pid, 
-                                                int32_t             right_begins_from,
-                                                const w_keystr_t*   new_child_key,
-                                                shpid_t             new_child_pid)
-{
-    fill(&p.pid(), p.tag(), (new (_data) btree_foster_split_t(new_pid, right_begins_from, new_child_key, new_child_pid))->size());
-}
-void btree_foster_split_log::redo(fixable_page_h* page)
-{
-    // by careful-write-ordering, foster-parent can't be written out before foster-child
-    // so, foster-parent still holds all data to recover
-    borrowed_btree_page_h foster_parent(page);
-    btree_foster_split_t *dp = (btree_foster_split_t*) _data;
-    w_keystr_t mid_key = foster_parent.recalculate_fence_for_split(dp->_right_begins_from);
-    lpid_t new_pid = page->pid();
-    new_pid.page = dp->_foster_child_pid;
-    // also, as a special case, we don't care what the new_page looks like at this point.
-    // this is a split operation to make a new page, so we can just nuke it here.
-    // that's why this REDO is on foster_parent. No REDO for foster_child page.
-    w_keystr_t new_child_key;
-    w_keystr_t *new_child_key_ptr = NULL;
-    if (dp->_new_child_key_len > 0) {
-        new_child_key.construct_from_keystr(dp->data, dp->_new_child_key_len);
-        new_child_key_ptr = &new_child_key;
-    }
-    rc_t rc = btree_impl::_ux_split_foster_apply(foster_parent,
-        dp->_right_begins_from, mid_key, new_pid, new_child_key_ptr, dp->_new_child_pid);
-    if (rc.is_error()) {
-        W_FATAL(rc.err_num());
-    }
+btree_norec_alloc_t::btree_norec_alloc_t(const btree_page_h &p,
+        shpid_t new_page_id, const w_keystr_t& fence, const w_keystr_t& chain_fence_high)
+    : multi_page_log_t(new_page_id) {
+    w_assert1 (g_xct()->is_single_log_sys_xct());
+    w_assert1 (new_page_id != p.btree_root());
+    w_assert1 (p.latch_mode() != LATCH_NL);
+
+    _root_pid       = p.btree_root();
+    _foster_pid     = p.get_foster();
+    _fence_len      = (uint16_t) fence.get_length_as_keystr();
+    _chain_high_len = (uint16_t) chain_fence_high.get_length_as_keystr();
+    _btree_level    = (int16_t) p.level();
+    w_assert1(size() < logrec_t::max_data_sz);
+
+    fence.serialize_as_keystr(_data);
+    chain_fence_high.serialize_as_keystr(_data + _fence_len);
 }
 
-// log for special split moving nothing
-// this log is for foster-parent node.
-struct btree_foster_norecord_split_t {
-    shpid_t       _foster; // +4 -> 4
-    int16_t       _fence_high_len; // +2 -> 6
-    int16_t       _chain_fence_high_len; // +2 -> 8
-    char          data[logrec_t::max_data_sz - 8];
+btree_norec_alloc_log::btree_norec_alloc_log(const btree_page_h &p, const btree_page_h &,
+    shpid_t new_page_id, const w_keystr_t& fence, const w_keystr_t& chain_fence_high) {
+    fill(&p.pid(), p.tag(), (new (data_ssx()) btree_norec_alloc_t(p,
+        new_page_id, fence, chain_fence_high))->size());
+}
 
-    btree_foster_norecord_split_t(shpid_t foster,
-        const w_keystr_t& fence_high, const w_keystr_t& chain_fence_high)
-        : _foster(foster) {
-        _fence_high_len = fence_high.get_length_as_keystr();
-        _chain_fence_high_len = chain_fence_high.get_length_as_keystr();
-        fence_high.serialize_as_keystr(data);
-        chain_fence_high.serialize_as_keystr(data + _fence_high_len);
+void btree_norec_alloc_log::redo(fixable_page_h* p) {
+    w_assert1(is_single_sys_xct());
+    borrowed_btree_page_h bp(p);
+    btree_norec_alloc_t *dp = reinterpret_cast<btree_norec_alloc_t*>(data_ssx());
+
+    const lsn_t &new_lsn = lsn_ck();
+    w_keystr_t fence, chain_high;
+    fence.construct_from_keystr(dp->_data, dp->_fence_len);
+    chain_high.construct_from_keystr(dp->_data + dp->_fence_len, dp->_chain_high_len);
+
+    shpid_t target_pid = p->pid().page;
+    DBGOUT3 (<< *this << ": new_lsn=" << new_lsn
+        << ", target_pid=" << target_pid << ", bp.lsn=" << bp.lsn());
+    if (target_pid == header._shpid) {
+        // we are recovering "page", which is foster-parent.
+        bp.accept_empty_child(new_lsn, dp->_page2_pid);
+    } else {
+        // we are recovering "page2", which is foster-child.
+        w_assert0(target_pid == dp->_page2_pid);
+        // This log is also a page-allocation log, so redo the page allocation.
+        W_COERCE(io_m::redo_alloc_a_page(p->pid().vol(), dp->_page2_pid));
+        lpid_t pid(header._vid, header._snum, dp->_page2_pid);
+        bp.init_as_empty_child(new_lsn, pid, dp->_root_pid, dp->_foster_pid,
+            dp->_btree_level, fence, fence, chain_high);
     }
-    int size() { return 8 + _fence_high_len + _chain_fence_high_len; }
-};
-
-btree_foster_norecord_split_log::btree_foster_norecord_split_log(const btree_page_h& p, shpid_t foster,
-                                                                 const w_keystr_t& fence_high,
-                                                                 const w_keystr_t& chain_fence_high)
-{
-    fill(&p.pid(), p.tag(), (new (_data) btree_foster_norecord_split_t(foster, fence_high, chain_fence_high))->size());
-}
-void btree_foster_norecord_split_log::redo(fixable_page_h* page)
-{
-    borrowed_btree_page_h foster_parent(page);
-    btree_foster_norecord_split_t *dp = (btree_foster_norecord_split_t*) _data;
-    w_keystr_t fence_high, chain_fence_high;
-    fence_high.construct_from_keystr(dp->data, dp->_fence_high_len);
-    chain_fence_high.construct_from_keystr(dp->data + dp->_fence_high_len, dp->_chain_fence_high_len);
-    rc_t rc = foster_parent.norecord_split(dp->_foster, fence_high, chain_fence_high);
-    if (rc.is_error()) {
-        W_FATAL(rc.err_num());
-    }
-}
-
-// logs for Adopt
-struct btree_foster_adopt_parent_t {
-    shpid_t _new_child_pid;
-    int32_t _new_child_key_len;
-    char    data[logrec_t::max_data_sz - sizeof(shpid_t) - sizeof(int32_t)];
-
-    btree_foster_adopt_parent_t(shpid_t new_child_pid, const w_keystr_t& new_child_key)
-        : _new_child_pid (new_child_pid) {
-        _new_child_key_len = new_child_key.get_length_as_keystr();
-        new_child_key.serialize_as_keystr(data);
-    }
-    int size() { return sizeof(shpid_t) + sizeof(int32_t) + _new_child_key_len; }
-};
-
-btree_foster_adopt_parent_log::btree_foster_adopt_parent_log (const btree_page_h& p,
-                                                              shpid_t new_child_pid,
-                                                              const w_keystr_t& new_child_key)
-{
-    fill(&p.pid(), p.tag(), (new (_data) btree_foster_adopt_parent_t(new_child_pid, new_child_key))->size());
-}
-void btree_foster_adopt_parent_log::redo(fixable_page_h* page)
-{
-    // just call apply() function
-    borrowed_btree_page_h foster_parent(page);
-    btree_foster_adopt_parent_t *dp = (btree_foster_adopt_parent_t*) _data;
-    w_keystr_t new_child_key;
-    new_child_key.construct_from_keystr(dp->data, dp->_new_child_key_len);
-    rc_t rc = btree_impl::_ux_adopt_foster_apply_parent(foster_parent, dp->_new_child_pid, new_child_key);
-    if (rc.is_error()) {
-        W_FATAL(rc.err_num());
-    }
-}
-btree_foster_adopt_child_log::btree_foster_adopt_child_log (const btree_page_h& p) {
-    fill(&p.pid(), p.tag(), 0);
-}
-void btree_foster_adopt_child_log::redo(fixable_page_h* page)
-{
-    // just call apply() function
-    borrowed_btree_page_h foster_child(page);
-    btree_impl::_ux_adopt_foster_apply_child(foster_child);
 }
 
 // logs for Merge/Rebalance/De-Adopt
 // see jira ticket:39 "Node removal and rebalancing" (originally trac ticket:39) for detailed spec
-btree_foster_merge_log::btree_foster_merge_log (const btree_page_h& p) {
-    // we just need merged page's id. that's it.
-    *reinterpret_cast<shpid_t*> (_data) = p.get_foster();
-    fill(&p.pid(), p.tag(), sizeof(shpid_t));
-}
 
-void btree_foster_merge_log::redo(fixable_page_h* page)
-{
-    // REDO is to merge it again.
-    // Because of careful-write-order, the merged page must still exist.
-    // Otherwise, this page's REDO shouldn't have been called.
-    borrowed_btree_page_h bp(page);
-    w_assert1(bp.get_foster() == *((shpid_t*) _data)); // otherwise, already merged!
-    rc_t rc = btree_impl::_ux_merge_foster_core(bp);
-    w_assert1(!rc.is_error());
-}
-
-struct btree_foster_rebalance_t {
-    shpid_t       _foster_parent_pid; // +4 -> 4
-    int32_t       _move_count; // +4 -> 8
-
-    btree_foster_rebalance_t(shpid_t parent_pid, int32_t move_count)
-        : _foster_parent_pid (parent_pid), _move_count(move_count) {}
-    int size() { return sizeof(*this); }
+/**
+ * A \b multi-page \b SSX log record for \b btree_foster_merge.
+ * This log is \b NOT-self-contained, so it assumes WOD (foster-child is deleted later).
+ */
+struct btree_foster_merge_t : multi_page_log_t {
+    btree_foster_merge_t(shpid_t page2_id) : multi_page_log_t(page2_id){}
+    int size() const { return sizeof(multi_page_log_t); }
 };
+
+btree_foster_merge_log::btree_foster_merge_log (const btree_page_h& p, const btree_page_h& p2) {
+    fill(&p.pid(), p.tag(), (new (data_ssx()) btree_foster_merge_t(p2.pid().page))->size());
+}
+
+void btree_foster_merge_log::redo(fixable_page_h* p) {
+    // REDO is to merge it again.
+    // WOD: "page" is the data source, which is written later.
+    borrowed_btree_page_h bp(p);
+    btree_foster_merge_t *dp = reinterpret_cast<btree_foster_merge_t*>(data_ssx());
+
+    // WOD: "page" is the data source, which is written later.
+    // this is in REDO, so fix_direct should be safe.
+    shpid_t target_pid = p->pid().page;
+    if (target_pid == header._shpid) {
+        // we are recovering "page", which is foster-parent (dest).
+        // thanks to WOD, "page2" (src) is also assured to be not recovered yet.
+        btree_page_h src;
+        W_COERCE(src.fix_direct(bp.vol(), dp->_page2_pid, LATCH_EX));
+
+        w_assert0(src.lsn() < lsn_ck());
+        btree_impl::_ux_merge_foster_apply_parent(bp, src);
+        src.set_dirty();
+        src.set_lsns(lsn_ck());
+        W_COERCE(src.set_to_be_deleted(false));
+    } else {
+        // we are recovering "page2", which is foster-child (src).
+        // in this case, foster-parent(dest) may or may not be written yet.
+        w_assert0(target_pid == dp->_page2_pid);
+        btree_page_h dest;
+        W_COERCE(dest.fix_direct(bp.vol(), shpid(), LATCH_EX));
+        if (dest.lsn() >= lsn_ck()) {
+            // if page (destination) is already durable/recovered,
+            // we just delete the foster child and done.
+            W_COERCE(bp.set_to_be_deleted(false));
+        } else {
+            // dest is also old, so we are recovering both.
+            btree_impl::_ux_merge_foster_apply_parent(dest, bp);
+            dest.set_dirty();
+            dest.set_lsns(lsn_ck());
+        }
+    }
+}
+
+/**
+ * A \b multi-page \b SSX log record for \b btree_foster_rebalance.
+ * This log is \b NOT-self-contained, so it assumes WOD (foster-parent is written later).
+ */
+struct btree_foster_rebalance_t : multi_page_log_t {
+    int32_t         _move_count;    // +4
+    shpid_t         _new_pid0;      // +4
+    uint16_t        _fence_len;     // +2
+    char            _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) - 10];
+
+    btree_foster_rebalance_t(shpid_t page2_id, int32_t move_count,
+            const w_keystr_t& fence, shpid_t new_pid0);
+    int size() const { return sizeof(multi_page_log_t) + 10 + _fence_len; }
+};
+
+btree_foster_rebalance_t::btree_foster_rebalance_t(shpid_t page2_id, int32_t move_count,
+        const w_keystr_t& fence, shpid_t new_pid0) : multi_page_log_t(page2_id) {
+    _move_count = move_count;
+    _new_pid0   = new_pid0;
+    _fence_len = fence.get_length_as_keystr();
+    fence.serialize_as_keystr(_data);
+}
 
 btree_foster_rebalance_log::btree_foster_rebalance_log (const btree_page_h& p,
-                                                        shpid_t parent_pid, int32_t move_count) 
-{
-    fill(&p.pid(), p.tag(), (new (_data) btree_foster_rebalance_t(parent_pid, move_count))->size());
+    const btree_page_h &p2, int32_t move_count, const w_keystr_t& fence, shpid_t new_pid0) {
+    fill(&p.pid(), p.tag(), (new (data_ssx()) btree_foster_rebalance_t(p2.pid().page,
+        move_count, fence, new_pid0))->size());
 }
 
-void btree_foster_rebalance_log::redo(fixable_page_h* page)
-{
-    // REDO is to rebalance it again.
-    // "This" page must be foster-child which received entries.
-    borrowed_btree_page_h bp(page);
-    btree_foster_rebalance_t *dp = (btree_foster_rebalance_t*) _data;
-    
-    // TODO we should have two logs; one for receiver, one for sender.
-    // moving from foster-parent to child. below code doesn't consider the case
-    // where "this" is already written out but parent isn't yet.
-    // so, "this" must be the child, stealing things from parent. oh lame kid.
-    btree_page_h foster_parent_p;
-    rc_t rc = foster_parent_p.fix_direct(bp.vol(), dp->_foster_parent_pid, LATCH_EX); // in REDO, so fix_direct should be safe
-    w_assert1(!rc.is_error());
-    rc_t rc_rb = btree_impl::_ux_rebalance_foster_core(foster_parent_p, bp, dp->_move_count);
-    w_assert1(!rc_rb.is_error());
-}
+void btree_foster_rebalance_log::redo(fixable_page_h* p) {
+    borrowed_btree_page_h bp(p);
+    btree_foster_rebalance_t *dp = reinterpret_cast<btree_foster_rebalance_t*>(data_ssx());
+    w_keystr_t fence;
+    fence.construct_from_keystr(dp->_data, dp->_fence_len);
 
-struct btree_foster_deadopt_real_parent_t {
-    shpid_t     _deadopted_pid; // +4 -> 4
-    int32_t     _foster_slot; // +4 -> 8
-
-    btree_foster_deadopt_real_parent_t(shpid_t deadopted_pid,
-    int32_t foster_slot) : _deadopted_pid (deadopted_pid), _foster_slot(foster_slot) {
+    // WOD: "page2" is the data source, which is written later.
+    // this is in REDO, so fix_direct should be safe.
+    const shpid_t target_pid = p->pid().page;
+    const shpid_t page_id = shpid();
+    const shpid_t page2_id = dp->_page2_pid;
+    const lsn_t  &redo_lsn = lsn_ck();
+    DBGOUT3 (<< *this << ": redo_lsn=" << redo_lsn << ", bp.lsn=" << bp.lsn());
+    w_assert1(bp.lsn() < redo_lsn);
+    if (target_pid == page_id) {
+        // we are recovering "page", which is foster-child (dest).
+        // thanks to WOD, "page2" (src) is also assured to be not recovered yet.
+        btree_page_h src;
+        W_COERCE(src.fix_direct(bp.vol(), page2_id, LATCH_EX));
+        DBGOUT3 (<< "Recovering 'page'. page2.lsn=" << src.lsn());
+        w_assert0(src.lsn() < redo_lsn);
+        W_COERCE(btree_impl::_ux_rebalance_foster_apply(src, bp, dp->_move_count,
+                                                        fence, dp->_new_pid0));
+        src.set_dirty();
+        src.set_lsns(redo_lsn);
+    } else {
+        // we are recovering "page2", which is foster-parent (src).
+        w_assert0(target_pid == page2_id);
+        btree_page_h dest;
+        W_COERCE(dest.fix_direct(bp.vol(), page_id, LATCH_EX));
+        DBGOUT3 (<< "Recovering 'page2'. page.lsn=" << dest.lsn());
+        if (dest.lsn() >= redo_lsn) {
+            // if page (destination) is already durable/recovered, we create a dummy scratch
+            // space which will be thrown away after recovering "page2".
+            w_keystr_t high, chain_high;
+            bp.copy_fence_high_key(high);
+            bp.copy_chain_fence_high_key(chain_high);
+            scratch_btree_page_h scratch_p(dest.pid(), bp.btree_root(), 0, bp.level(),
+                high, chain_high, chain_high);
+            W_COERCE(btree_impl::_ux_rebalance_foster_apply(bp, scratch_p, dp->_move_count,
+                                                        fence, dp->_new_pid0));
+        } else {
+            // dest is also old, so we are recovering both.
+            W_COERCE(btree_impl::_ux_rebalance_foster_apply(bp, dest, dp->_move_count,
+                                                        fence, dp->_new_pid0));
+            dest.set_dirty();
+            dest.set_lsns(redo_lsn);
+        }
     }
-    int size() { return sizeof(*this); }
+}
+
+/**
+ * A \b multi-page \b SSX log record for \b btree_foster_rebalance_norec.
+ * This log is totally \b self-contained, so no WOD assumed.
+ */
+struct btree_foster_rebalance_norec_t : multi_page_log_t {
+    int16_t       _fence_len; // +2 -> 2
+    char          _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) - 2];
+
+    btree_foster_rebalance_norec_t(const btree_page_h& p,
+        const w_keystr_t& fence) : multi_page_log_t(p.get_foster()) {
+        w_assert1 (g_xct()->is_single_log_sys_xct());
+        w_assert1 (p.latch_mode() == LATCH_EX);
+        _fence_len = fence.get_length_as_keystr();
+        fence.serialize_as_keystr(_data);
+    }
+    int size() const { return sizeof(multi_page_log_t) + 2 + _fence_len; }
 };
 
-btree_foster_deadopt_real_parent_log::btree_foster_deadopt_real_parent_log (
-    const btree_page_h& p, shpid_t deadopted_pid, int32_t foster_slot) 
-{
-#if W_DEBUG_LEVEL>0
+btree_foster_rebalance_norec_log::btree_foster_rebalance_norec_log(
+    const btree_page_h &p, const btree_page_h &, const w_keystr_t& fence) {
+    fill(&p.pid(), p.tag(), (new (data_ssx()) btree_foster_rebalance_norec_t(
+        p, fence))->size());
+}
+void btree_foster_rebalance_norec_log::redo(fixable_page_h* p) {
+    w_assert1(is_single_sys_xct());
+    borrowed_btree_page_h bp(p);
+    btree_foster_rebalance_norec_t *dp =
+        reinterpret_cast<btree_foster_rebalance_norec_t*>(data_ssx());
+
+    w_keystr_t fence, chain_high;
+    fence.construct_from_keystr(dp->_data, dp->_fence_len);
+    bp.copy_chain_fence_high_key(chain_high);
+
+    shpid_t target_pid = p->pid().page;
+    if (target_pid == header._shpid) {
+        // we are recovering "page", which is foster-parent.
+        W_COERCE(bp.norecord_split(bp.get_foster(), fence, chain_high));
+    } else {
+        // we are recovering "page2", which is foster-child.
+        w_assert0(target_pid == dp->_page2_pid);
+        w_assert1(bp.nrecs() == 0); // this should happen only during page split.
+
+        w_keystr_t high;
+        bp.copy_fence_high_key(high);
+        w_keystr_len_t prefix_len = fence.common_leading_bytes(high);
+        W_COERCE(bp.replace_fence_rec_nolog_may_defrag(fence, high, chain_high, prefix_len));
+    }
+}
+
+/**
+ * A \b multi-page \b SSX log record for \b btree_foster_adopt.
+ * This log is totally \b self-contained, so no WOD assumed.
+ */
+struct btree_foster_adopt_t : multi_page_log_t {
+    shpid_t _new_child_pid;     // +4
+    int16_t _new_child_key_len; // +2
+    char    _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) - 6];
+
+    btree_foster_adopt_t(shpid_t page2_id, shpid_t new_child_pid,
+                         const w_keystr_t& new_child_key);
+    int size() const { return sizeof(multi_page_log_t) + 6 + _new_child_key_len; }
+};
+btree_foster_adopt_t::btree_foster_adopt_t(shpid_t page2_id, shpid_t new_child_pid,
+                        const w_keystr_t& new_child_key)
+    : multi_page_log_t(page2_id), _new_child_pid (new_child_pid) {
+    _new_child_key_len = new_child_key.get_length_as_keystr();
+    new_child_key.serialize_as_keystr(_data);
+}
+
+btree_foster_adopt_log::btree_foster_adopt_log (const btree_page_h& p, const btree_page_h& p2,
+    shpid_t new_child_pid, const w_keystr_t& new_child_key) {
+    fill(&p.pid(), p.tag(), (new (data_ssx()) btree_foster_adopt_t(
+        p2.pid().page, new_child_pid, new_child_key))->size());
+}
+void btree_foster_adopt_log::redo(fixable_page_h* p) {
+    w_assert1(is_single_sys_xct());
+    borrowed_btree_page_h bp(p);
+    btree_foster_adopt_t *dp = reinterpret_cast<btree_foster_adopt_t*>(data_ssx());
+
+    w_keystr_t new_child_key;
+    new_child_key.construct_from_keystr(dp->_data, dp->_new_child_key_len);
+
+    shpid_t target_pid = p->pid().page;
+    DBGOUT3 (<< *this << " target_pid=" << target_pid << ", new_child_pid="
+        << dp->_new_child_pid << ", new_child_key=" << new_child_key);
+    if (target_pid == header._shpid) {
+        // we are recovering "page", which is real-parent.
+        btree_impl::_ux_adopt_foster_apply_parent(bp, dp->_new_child_pid, new_child_key);
+    } else {
+        // we are recovering "page2", which is real-child.
+        w_assert0(target_pid == dp->_page2_pid);
+        btree_impl::_ux_adopt_foster_apply_child(bp);
+    }
+}
+
+/**
+ * A \b multi-page \b SSX log record for \b btree_foster_deadopt.
+ * This log is totally \b self-contained, so no WOD assumed.
+ */
+struct btree_foster_deadopt_t : multi_page_log_t {
+    shpid_t     _deadopted_pid;         // +4
+    int32_t     _foster_slot;           // +4
+    uint16_t    _low_len, _high_len;    // +2+2
+    char        _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) + 12];
+
+    btree_foster_deadopt_t(shpid_t page2_id, shpid_t deadopted_pid,
+    int32_t foster_slot, const w_keystr_t &low, const w_keystr_t &high);
+    int size() const { return sizeof(multi_page_log_t) + 12 + _low_len + _high_len ; }
+};
+btree_foster_deadopt_t::btree_foster_deadopt_t(shpid_t page2_id, shpid_t deadopted_pid,
+    int32_t foster_slot, const w_keystr_t &low, const w_keystr_t &high)
+    : multi_page_log_t(page2_id) {
+    _deadopted_pid = deadopted_pid;
+    _foster_slot = foster_slot;
+    _low_len = low.get_length_as_keystr();
+    _high_len = high.get_length_as_keystr();
+    low.serialize_as_keystr(_data);
+    high.serialize_as_keystr(_data + _low_len);
+}
+
+btree_foster_deadopt_log::btree_foster_deadopt_log (
+    const btree_page_h& p, const btree_page_h& p2, shpid_t deadopted_pid, int32_t foster_slot,
+    const w_keystr_t &low, const w_keystr_t &high) {
     w_assert1(p.is_node());
-#endif // W_DEBUG_LEVEL>0
-    fill(&p.pid(), p.tag(), (new (_data) btree_foster_deadopt_real_parent_t(deadopted_pid, foster_slot))->size());
+    fill(&p.pid(), p.tag(), (new (data_ssx()) btree_foster_deadopt_t(p2.pid().page,
+        deadopted_pid, foster_slot, low, high))->size());
 }
 
-void btree_foster_deadopt_real_parent_log::redo(fixable_page_h* page)
-{
+void btree_foster_deadopt_log::redo(fixable_page_h* p) {
     // apply changes on real-parent again. no write-order dependency with foster-parent
-    borrowed_btree_page_h bp(page);
-    btree_foster_deadopt_real_parent_t *dp = (btree_foster_deadopt_real_parent_t*) _data;
-    w_assert1(dp->_foster_slot >= 0 && dp->_foster_slot < bp.nrecs());
-    btree_impl::_ux_deadopt_foster_apply_real_parent(bp, dp->_deadopted_pid, dp->_foster_slot);
-}
+    borrowed_btree_page_h bp(p);
+    btree_foster_deadopt_t *dp = reinterpret_cast<btree_foster_deadopt_t*>(data_ssx());
 
-struct btree_foster_deadopt_foster_parent_t {
-    shpid_t     _deadopted_pid;
-    int32_t     _low_key_len, _high_key_len;
-    char        data[logrec_t::max_data_sz - sizeof(shpid_t) - sizeof(int32_t) * 2];
-
-    btree_foster_deadopt_foster_parent_t(shpid_t deadopted_pid,
-    const w_keystr_t& low_key, const w_keystr_t& high_key) :
-        _deadopted_pid (deadopted_pid),
-        _low_key_len(low_key.get_length_as_keystr()),
-        _high_key_len(high_key.get_length_as_keystr()) {
-        low_key.serialize_as_keystr(data);
-        high_key.serialize_as_keystr(data + _low_key_len);
+    shpid_t target_pid = p->pid().page;
+    if (target_pid == header._shpid) {
+        // we are recovering "page", which is real-parent.
+        w_assert1(dp->_foster_slot >= 0 && dp->_foster_slot < bp.nrecs());
+        btree_impl::_ux_deadopt_foster_apply_real_parent(bp, dp->_deadopted_pid,
+                                                         dp->_foster_slot);
+    } else {
+        // we are recovering "page2", which is foster-parent.
+        w_assert0(target_pid == dp->_page2_pid);
+        w_keystr_t low_key, high_key;
+        low_key.construct_from_keystr(dp->_data, dp->_low_len);
+        high_key.construct_from_keystr(dp->_data + dp->_low_len, dp->_high_len);
+        btree_impl::_ux_deadopt_foster_apply_foster_parent(bp, dp->_deadopted_pid,
+                                                           low_key, high_key);
     }
-    int size() { return sizeof(shpid_t) + sizeof(int32_t) * 2 + _low_key_len + _high_key_len; }
-};
-btree_foster_deadopt_foster_parent_log::btree_foster_deadopt_foster_parent_log (const btree_page_h& p,
-                                                                                shpid_t             deadopted_pid,
-                                                                                const w_keystr_t&   low_key,
-                                                                                const w_keystr_t&   high_key) 
-{
-    fill(&p.pid(), p.tag(), (new (_data) btree_foster_deadopt_foster_parent_t(deadopted_pid, low_key, high_key))->size());
 }
 
-void btree_foster_deadopt_foster_parent_log::redo(fixable_page_h* page)
-{
-    // apply changes on foster-parent again. no write-order dependency with real-parent
-    borrowed_btree_page_h bp(page);
-    btree_foster_deadopt_foster_parent_t *dp = (btree_foster_deadopt_foster_parent_t*) _data;
-    
-    w_keystr_t low_key, high_key;
-    low_key.construct_from_keystr(dp->data, dp->_low_key_len);
-    high_key.construct_from_keystr(dp->data + dp->_low_key_len, dp->_high_key_len);
-    btree_impl::_ux_deadopt_foster_apply_foster_parent(bp, dp->_deadopted_pid, low_key, high_key);
-}
-
-btree_noop_log::btree_noop_log (const btree_page_h& p) {
-    fill(&p.pid(), p.tag(), 0);
-}
