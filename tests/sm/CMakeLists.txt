@@ -12,6 +12,7 @@ target_link_libraries(btree_test_env gtest common fc sthread sm)
 
 X_ADD_TESTCASE(test_alloc btree_test_env)
 X_ADD_TESTCASE(test_bf_tree btree_test_env)
+X_ADD_TESTCASE(test_fix_with_Q btree_test_env)
 X_ADD_TESTCASE(test_btree_create btree_test_env)
 X_ADD_TESTCASE(test_btree_cursor btree_test_env)
 X_ADD_TESTCASE(test_btree_basic btree_test_env)
