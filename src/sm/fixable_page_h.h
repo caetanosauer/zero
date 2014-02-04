@@ -20,6 +20,8 @@
  */
 class fixable_page_h : public generic_page_h {
 public:
+    static int force_Q_fixing; // converts S mode to Q when: 0=no (default), 1=root only, 2=all <<<>>>
+
     // ======================================================================
     //   BEGIN: Construction/destruction/assignment 
     // ======================================================================

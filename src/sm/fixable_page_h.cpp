@@ -9,6 +9,8 @@
 #include "bf_tree_inline.h"
 
 
+int fixable_page_h::force_Q_fixing = 0;  // <<<>>>
+
 void fixable_page_h::unfix() {
     if (_mode != LATCH_NL) {
         w_assert1(_pp);
@@ -21,6 +23,7 @@ void fixable_page_h::unfix() {
 w_rc_t fixable_page_h::fix_nonroot (const fixable_page_h &parent, volid_t vol,
                                     shpid_t shpid, latch_mode_t mode, 
                                     bool conditional, bool virgin_page) {
+    if (force_Q_fixing > 1 && mode == LATCH_SH) mode = LATCH_Q; // <<<>>>
     w_assert1(shpid != 0);
     unfix();
     if (mode == LATCH_Q) {
@@ -85,6 +88,7 @@ w_rc_t fixable_page_h::fix_virgin_root (volid_t vol, snum_t store, shpid_t shpid
 }
 
 w_rc_t fixable_page_h::fix_root (volid_t vol, snum_t store, latch_mode_t mode, bool conditional) {
+    if (force_Q_fixing > 0 && mode == LATCH_SH) mode = LATCH_Q; // <<<>>>
     unfix();
     if (mode == LATCH_Q) {
         W_DO(smlevel_0::bf->fix_with_Q_root(_pp, vol, store));
