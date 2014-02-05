@@ -76,6 +76,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  */
 enum latch_mode_t { LATCH_NL = 0, LATCH_Q = 1, LATCH_SH = 2, LATCH_EX = 3 };
 
+/// type of a Q mode ticket; exact type and location of definition TBD
+typedef int64_t q_ticket_t;
 
 
 class latch_t;

@@ -896,13 +896,15 @@ public:
         btree_page_h(source->get_generic_page()),
         _source(source)
     {
-        _mode = _source->_mode;
+        _mode     = _source->_mode;
+        _Q_ticket = _source->_Q_ticket;
         _source->_mode = LATCH_NL;
     }
 
     ~borrowed_btree_page_h() {
         w_assert1(_source->_mode == LATCH_NL);
-        _source->_mode = _mode;
+        _source->_mode     = _mode;
+        _source->_Q_ticket = _Q_ticket;
         _mode = LATCH_NL;
     }
 };

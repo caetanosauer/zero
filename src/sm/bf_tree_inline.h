@@ -175,7 +175,7 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
     return RCOK;
 }
 
-inline w_rc_t bf_tree_m::fix_with_Q_nonroot(generic_page*& page, volid_t vol, shpid_t shpid, bool& success) {
+inline w_rc_t bf_tree_m::fix_with_Q_nonroot(generic_page*& page, volid_t vol, shpid_t shpid, bool& success, q_ticket_t& ticket) {
     w_assert1((shpid & SWIZZLED_PID_BIT) != 0);
 
     INC_TSTAT(bf_fix_nonroot_count);
@@ -187,6 +187,7 @@ inline w_rc_t bf_tree_m::fix_with_Q_nonroot(generic_page*& page, volid_t vol, sh
 
     // later we will acquire the latch in Q mode <<<>>>
     //W_DO(get_cb(idx).latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
+    ticket = 42; // <<<>>>
     page = &(_buffer[idx]);
     success = true;
 
@@ -322,7 +323,7 @@ inline w_rc_t bf_tree_m::_latch_root_page(generic_page*& page, bf_idx idx, latch
     return RCOK;
 }
 
-inline w_rc_t bf_tree_m::fix_with_Q_root(generic_page*& page, volid_t vol, snum_t store) {
+inline w_rc_t bf_tree_m::fix_with_Q_root(generic_page*& page, volid_t vol, snum_t store, q_ticket_t& ticket) {
     w_assert1(vol != 0);
     w_assert1(store != 0);
     bf_tree_vol_t *volume = _volumes[vol];
@@ -334,6 +335,7 @@ inline w_rc_t bf_tree_m::fix_with_Q_root(generic_page*& page, volid_t vol, snum_
 
     // later we will acquire the latch in Q mode <<<>>>
     //W_DO(get_cb(idx).latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
+    ticket = 42; // <<<>>>
     page = &(_buffer[idx]);
 
     /*

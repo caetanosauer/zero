@@ -40,10 +40,11 @@ public:
     fixable_page_h& operator=(fixable_page_h& p) {
         if (&p != this) {
             unfix();
-            _pp     = p._pp;
-            _mode   = p._mode;
-            p._pp   = NULL;
-            p._mode = LATCH_NL;
+            _pp       = p._pp;
+            _mode     = p._mode;
+            _Q_ticket = p._Q_ticket;
+            p._pp     = NULL;
+            p._mode   = LATCH_NL;
         }
         return *this;
     }
@@ -195,6 +196,7 @@ protected:
     friend class borrowed_btree_page_h;
 
     latch_mode_t  _mode;
+    q_ticket_t    _Q_ticket;
 };
 
 #endif
