@@ -2197,7 +2197,6 @@ void _update_page_lsns(const fixable_page_h *page, const lsn_t &new_lsn) {
     }
 }
 
-// See comments above get_logbuf, above
 rc_t
 xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page, const fixable_page_h *page2)
 {

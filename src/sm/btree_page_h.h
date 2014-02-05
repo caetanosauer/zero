@@ -699,6 +699,26 @@ public:
      */
     bool             is_consistent (bool check_keyorder = false, bool check_space = false) const;
 
+    /** Returns Expected-Min-LSN of pid0. \ingroup SPR */
+    const lsn_t&    get_pid0_emlsn() const;
+    /** Changes Expected-Min-LSN of pid0. \ingroup SPR */
+    void            set_pid0_emlsn(const lsn_t &lsn);
+
+    /** Returns Expected-Min-LSN of foster-child. \ingroup SPR */
+    const lsn_t&    get_foster_emlsn() const;
+    /** Changes Expected-Min-LSN of foster-child. \ingroup SPR */
+    void            set_foster_emlsn(const lsn_t &lsn);
+
+    /** Returns Expected-Min-LSN of the specified child. \ingroup SPR */
+    const lsn_t&    get_child_emlsn(slotid_t slot) const;
+    /** Changes Expected-Min-LSN of the specified child. \ingroup SPR */
+    void            set_child_emlsn(slotid_t slot, const lsn_t &lsn);
+
+    /**
+     * \brief Changes Expected-Min-LSN of either pid, foster-child, or real child.
+     * @param[in] slot -2 if foster-child, -1 if pid0, 0 or larger if real child
+     */
+    void            set_emlsn_general(slotid_t slot, const lsn_t &lsn);
 
     /*
      * The combined sizes of the key (i.e., the number of actual data
@@ -1323,6 +1343,40 @@ inline int btree_page_h::_robust_compare_key_noprefix(slotid_t slot, const void 
     }
 
     return w_keystr_t::compare_bin_str(curkey, curkey_len, key_noprefix, key_len);
+}
+
+// TODO fill these in when we finalize where to put EMLSN
+inline const lsn_t& btree_page_h::get_pid0_emlsn() const {
+    return lsn();
+}
+inline void btree_page_h::set_pid0_emlsn(const lsn_t &lsn) {
+    w_assert1(lsn != lsn_t::null);
+}
+inline const lsn_t& btree_page_h::get_foster_emlsn() const {
+    return lsn();
+}
+inline void  btree_page_h::set_foster_emlsn(const lsn_t &lsn) {
+    w_assert1(lsn != lsn_t::null);
+}
+inline const lsn_t& btree_page_h::get_child_emlsn(slotid_t slot) const {
+    w_assert1(slot >= 0);
+    return lsn();
+}
+inline void btree_page_h::set_child_emlsn(slotid_t slot, const lsn_t &lsn) {
+    w_assert1(slot >= 0);
+    w_assert1(lsn != lsn_t::null);
+}
+inline void btree_page_h::set_emlsn_general(slotid_t slot, const lsn_t &lsn) {
+    if (slot == -1) {
+        // this means pid0
+        set_pid0_emlsn(lsn);
+    } else if (slot == -2) {
+        // this means foster child
+        set_foster_emlsn(lsn);
+    } else {
+        w_assert1(slot >= 0);
+        set_child_emlsn(slot, lsn);
+    }
 }
 
 #endif // BTREE_PAGE_H_H
