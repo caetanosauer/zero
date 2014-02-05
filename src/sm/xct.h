@@ -398,13 +398,25 @@ public:
     bool                        is_log_on() const;
 
     /**
-    rc_t                        give_logbuf(logrec_t*, const fixable_page_h *p = 0);
+    * \brief Flush the logbuf and return it in "ret" for use.
+    * \details Caller must call give_logbuf(ret) to free it after use.
+    *  Leaves the xct's log mutex acquired.
     *
+    *  This and give_logbuf() are used in the log_stub.i functions
     *  and ONLY there.  THE ERROR RETURN (running out of log space)
     *  IS PREDICATED ON THAT -- in that it's expected that in the case of
     *  a normal  return (no error), give_logbuf will be called, but in
     *  the error case (out of log space), it will not, and so we must
     *  release the mutex in get_logbuf error cases.
+    * @param[out] ret the acquired log buffer
+    * @param[in] t bytes to reserve
+    */
+    rc_t                        get_logbuf(logrec_t* &ret, int t);
+
+    /**
+     * \brief Returns the log buffer acquired by get_logbuf().
+     * \details
+     * This method receives 0 to 2 pages that were updated by the logged operation,
      * making the pages dirty and updating the LSN.
      * @param[in] l log buffer to return
      * @param[in] p the main page the log updated

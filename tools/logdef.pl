@@ -245,31 +245,18 @@ CLASSDEF
     print STUB "    if (should_log)  {\n";
     print STUB "        logrec_t* logrec;\n";
     print FUDGE " $fudge, \n";
-	    print STUB "        W_DO(xd->get_logbuf(logrec, t_$type));\n";
-        print STUB "        new (logrec) $class($real);\n";	   
-	if ($page eq "page") {
-	    print STUB " // fudge $fudge \n";
-	    print STUB "        W_DO(xd->get_logbuf(logrec, t_$type, &page));\n";
-        print STUB "        reinterpret_cast<$class*>(logrec)->set_dest_prev_lsn(lsn_t::null);\n";
-        }
-	} else {
-	    print STUB " // fudge $fudge \n";
-	    print STUB "        W_DO(xd->get_logbuf(logrec, t_$type));\n";
-	}
-        print STUB "        new (logrec) $class($real);\n";	   
+        print STUB "        W_DO(xd->get_logbuf(logrec, t_$type));\n";
+        print STUB "        new (logrec) $class($real);\n";
     if ($page eq "page") {
         if ($multi) {
+        print STUB "        W_DO(xd->give_logbuf(logrec, &page, &page2));\n";
+        } else {
         print STUB "        W_DO(xd->give_logbuf(logrec, &page));\n";
+        }
     } else {
         print STUB "        W_DO(xd->give_logbuf(logrec));\n";
     }
     print STUB "    }\n";
-	    print STUB "    else page.set_dirty();\n" if ($real);
-	    print STUB "        page.set_dirty();\n";
-        if ($multi) {
-        print STUB "        page2.set_dirty();\n";
-        }
-        print STUB "    }\n";
     print STUB "    return RCOK;\n";
     print STUB "}\n";
 

@@ -108,12 +108,9 @@ struct baseLogHeader
      * NB: this latter suggestion is what we have now done.
      */
 
-    /**
-     * For per-page chains of log-records.
-     * Note that some types of log records (split, merge) impact two pages.
-     * The page_prev_lsn is for the "primary" page.
-     * \ingroup SPR
-     */
+    // For per-page chains of log-records.
+    // Note that some types of log records (split, merge) impact two pages.
+    // The page_prev_lsn is for the "primary" page.
     lsn_t               _page_prv;     // for per-page log chain
     /* 16+8 = 24 */
 };
@@ -228,8 +225,8 @@ protected:
     t_undo      = 0x02,
     /** log with REDO action? */
     t_redo      = 0x04,
-    // old: t_cpsn = 020 | t_redo,
-    t_cpsn = 020,
+    /** log for multi pages? */
+    t_multi     = 0x08,
     /**
      * is the UNDO logical? If so, do not fix the page for undo.
      * Irrelevant if not an undoable log record.

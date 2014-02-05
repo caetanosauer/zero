@@ -772,22 +772,3 @@ void btree_foster_deadopt_log::redo(fixable_page_h* p) {
     }
 }
 
-/** Log content of page_evict. See SPR design document for more details. \ingroup SPR */
-struct page_evict_t {
-    lsn_t       _child_lsn;
-    slotid_t    _child_slot;
-    page_evict_t(const lsn_t &child_lsn, slotid_t child_slot)
-        : _child_lsn (child_lsn), _child_slot(child_slot) {}
-};
-
-page_evict_log::page_evict_log (const btree_page_h& p, slotid_t child_slot, lsn_t child_lsn) {
-    new (_data) page_evict_t(child_lsn, child_slot);
-    fill(&p.pid(), p.tag(), sizeof(page_evict_t));
-}
-
-void page_evict_log::redo(fixable_page_h* page) {
-    borrowed_btree_page_h bp(page);
-    page_evict_t *dp = (page_evict_t*) _data;
-    bp.set_emlsn_general(dp->_child_slot, dp->_child_lsn);
-}
-
