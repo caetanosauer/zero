@@ -1850,25 +1850,8 @@ xct_t::_sync_logbuf(bool block, bool signal)
     return RCOK;
 }
 
-/*********************************************************************
- *
- *  xct_t::get_logbuf(ret)
- *  xct_t::give_logbuf(ret, page)
- *
- *  Flush the logbuf and return it in "ret" for use. Caller must call
- *  give_logbuf(ret) to free it after use.
- *  Leaves the xct's log mutex acquired
- *
- *  These are used in the log_stub.i functions
- *  and ONLY there.  THE ERROR RETURN (running out of log space)
- *  IS PREDICATED ON THAT -- in that it's expected that in the case of
- *  a normal  return (no error), give_logbuf will be called, but in
- *  the error case (out of log space), it will not, and so we must
- *  release the mutex in get_logbuf error cases.
- *
- *********************************************************************/
-rc_t 
-xct_t::get_logbuf(logrec_t*& ret, int t, fixable_page_h const*)
+rc_t
+xct_t::get_logbuf(logrec_t*& ret, int t)
 {
     // then , use tentative log buffer.
     if (is_piggy_backed_single_log_sys_xct()) {
@@ -2206,9 +2189,8 @@ xct_t::get_logbuf(logrec_t*& ret, int t, fixable_page_h const*)
     return RCOK;
 }
 
-// See comments above get_logbuf, above
 rc_t
-xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page)
+xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page, const fixable_page_h *page2)
 {
     FUNC(xct_t::give_logbuf);
     // then, buffer it internally. (can be defered until next log of the _outer_ transaction)

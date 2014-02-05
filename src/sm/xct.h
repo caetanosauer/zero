@@ -396,9 +396,27 @@ public:
     //        logging functions -- used in logstub_gen.cpp only
     //
     bool                        is_log_on() const;
-    rc_t                        get_logbuf(logrec_t*&, int t,
-                                                       const fixable_page_h *p = 0);
-    rc_t                        give_logbuf(logrec_t*, const fixable_page_h *p = 0);
+
+    /**
+    *  Flush the logbuf and return it in "ret" for use. Caller must call
+    *  give_logbuf(ret) to free it after use.
+    *  Leaves the xct's log mutex acquired
+    *
+    *  These are used in the log_stub.i functions
+    *  and ONLY there.  THE ERROR RETURN (running out of log space)
+    *  IS PREDICATED ON THAT -- in that it's expected that in the case of
+    *  a normal  return (no error), give_logbuf will be called, but in
+    *  the error case (out of log space), it will not, and so we must
+    *  release the mutex in get_logbuf error cases.
+    */
+    rc_t                        get_logbuf(logrec_t*&, int t);
+    /**
+     * See above.
+     * @param[in] p The page this log updates
+     * @param[in] p2 Another page this log updates. Only non-NULL for multi-page log types.
+     */
+    rc_t                        give_logbuf(logrec_t*, const fixable_page_h *p = 0,
+                                            const fixable_page_h *p2 = 0);
 
     //
     //        Used by I/O layer

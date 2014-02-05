@@ -108,9 +108,12 @@ struct baseLogHeader
      * NB: this latter suggestion is what we have now done.
      */
 
-    // For per-page chains of log-records.
-    // Note that some types of log records (split, merge) impact two pages.
-    // The page_prev_lsn is for the "primary" page.
+    /**
+     * For per-page chains of log-records.
+     * Note that some types of log records (split, merge) impact two pages.
+     * The page_prev_lsn is for the "primary" page.
+     * \ingroup SPR
+     */
     lsn_t               _page_prv;     // for per-page log chain
     /* 16+8 = 24 */
 };
@@ -210,21 +213,38 @@ public:
     friend ostream& operator<<(ostream&, const logrec_t&);
 
 protected:
+    /**
+     * Bit flags for the properties of log records.
+     */
     enum category_t {
-    t_bad_cat = 0,
-    t_status = 01,
-    t_undo = 02,
-    t_redo = 04,
-    t_logical = 010,
-        // Note: compensation records are not undo-able
-        // (ie. they compensate around themselves as well)
-        // So far this limitation has been fine.
-    // old: t_cpsn = 020 | t_redo,
-    t_cpsn = 020,
-    t_rollback = 040, // Not a category, but means log rec was issued in 
-        // rollback/abort/undo --
-        // adding a bit is cheaper than adding a comment log record
-    t_single_sys_xct = 80 // log by system transaction which is fused with begin/commit record
+    /** should not happen. */
+    t_bad_cat   = 0x00,
+    /** No property. */
+    t_status    = 0x01,
+    /** log with UNDO action? */
+    t_undo      = 0x02,
+    /** log with REDO action? */
+    t_redo      = 0x04,
+    /** log for Single page recovery? */
+    t_spr       = 0x08,
+    /**
+     * is the UNDO logical? If so, do not fix the page for undo.
+     * Irrelevant if not an undoable log record.
+     */
+    t_logical   = 0x10,
+    /**
+     * Note: compensation records are not undo-able
+     * (ie. they compensate around themselves as well)
+     * So far this limitation has been fine.
+     */
+    t_cpsn      = 0x20,
+    /**
+     * Not a category, but means log rec was issued in rollback/abort/undo.
+     * adding a bit is cheaper than adding a comment log record.
+     */
+    t_rollback  = 0x40,
+    /** log by system transaction which is fused with begin/commit record. */
+    t_single_sys_xct    = 0x80
     };
     u_char             cat() const;
 

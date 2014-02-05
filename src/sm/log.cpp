@@ -70,6 +70,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <algorithm> // for std::swap
 #include <stdio.h> // snprintf
 #include <boost/static_assert.hpp>
+#include <vector>
 
 typedef smlevel_0::fileoff_t fileoff_t;
 
@@ -763,4 +764,18 @@ log_m::file_was_archived(const char *file)
     // TODO: should check that this is the oldest, 
     // and that we indeed asked for it to be archived.
     return log_core::THE_LOG->file_was_archived(file);
+}
+
+
+rc_t log_m::recover_single_page(generic_page* p, const lsn_t& emlsn) {
+    w_assert1(p->lsn < emlsn);
+    const size_t SPR_LOG_BUFSIZE = 1 << 14;
+    char buffer[SPR_LOG_BUFSIZE]; // TODO, we should have an object pool for this.
+    std::vector<char*> ordered_entires;
+    W_DO(log_core::THE_LOG->_collect_single_page_recovery_logs(p->pid, p->lsn, emlsn, buffer, SPR_LOG_BUFSIZE, ordered_entires));
+    W_DO(log_core::THE_LOG->_apply_single_page_recovery_logs(p, ordered_entires));
+
+    // after SPR, the page should be exactly the requested LSN
+    w_assert0(p->lsn == emlsn);
+    return RCOK;
 }

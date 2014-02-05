@@ -115,7 +115,6 @@ btree_update_log::btree_update_log(
     const w_keystr_t&     key,
     const char* old_el, int old_elen, const cvec_t& new_el)
 {
-    set_page_prev_lsn(page.lsn());
     fill(&page.pid(), page.tag(),
          (new (_data) btree_update_t(page, key, old_el, old_elen, new_el))->size());
 }
@@ -746,4 +745,23 @@ void btree_foster_deadopt_foster_parent_log::redo(fixable_page_h* page)
 
 btree_noop_log::btree_noop_log (const btree_page_h& p) {
     fill(&p.pid(), p.tag(), 0);
+}
+
+/** Log content of page_evict. See SPR design document for more details. \ingroup SPR */
+struct page_evict_t {
+    lsn_t       _child_lsn;
+    slotid_t    _child_slot;
+    page_evict_t(const lsn_t &child_lsn, slotid_t child_slot)
+        : _child_lsn (child_lsn), _child_slot(child_slot) {}
+};
+
+page_evict_log::page_evict_log (const btree_page_h& p, slotid_t child_slot, lsn_t child_lsn) {
+    new (_data) page_evict_t(child_lsn, child_slot);
+    fill(&p.pid(), p.tag(), sizeof(page_evict_t));
+}
+
+void page_evict_log::redo(fixable_page_h* page) {
+    borrowed_btree_page_h bp(page);
+    page_evict_t *dp = (page_evict_t*) _data;
+    bp.set_emlsn_general(dp->_child_slot, dp->_child_lsn);
 }

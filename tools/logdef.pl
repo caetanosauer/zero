@@ -146,11 +146,11 @@ while (<INPUT>) {
     my ($type, $attr, $fudge, $arg) = split(/[ \t\n]+/, $_, 4);
     chop $arg;
 
-    my ($xflag, $singsys, $redo, $undo, $format, $aflag, $logical) = split(//, $attr);
-    my $cat = &get_cat($redo, $undo, $format, $logical, $singsys);
+    my ($xflag, $singsys, $redo, $undo, $multi, $aflag, $logical) = split(//, $attr);
+    my $cat = &get_cat($redo, $undo, $multi, $logical, $singsys);
     
     printf(TYPE "\tt_$type = %d,\n", $unique++);
-    &def_rec($type, $xflag, $aflag, $singsys, $redo, $undo, $cat, $fudge, $arg);
+    &def_rec($type, $xflag, $aflag, $singsys, $redo, $undo, $multi, $cat, $fudge, $arg);
 				# 
     print REDO "\tcase t_$type : \n";
     if ($redo) {
@@ -180,12 +180,12 @@ print FUDGE "\n\n 0.0 }; \n";
 exit(0);
 
 sub get_cat {
-    my ($redo, $undo, $format, $logical, $singsys) = @_;
+    my ($redo, $undo, $multi, $logical, $singsys) = @_;
     my ($ret);
     $ret = "0";
     $ret .= "|t_redo" if $redo;
     $ret .= "|t_undo" if $undo;
-    $ret .= "|t_format" if $format;
+    $ret .= "|t_multi" if $multi;
     $ret .= "|t_logical" if $logical;
     $ret .= "|t_single_sys_xct" if $singsys;
     if ($ret eq "0") { $ret = "t_status";};
@@ -193,7 +193,7 @@ sub get_cat {
 }
 
 sub def_rec {
-    my ($type, $xflag, $aflag, $singsys, $redo, $undo, $cat, $fudge, $arg) = @_;
+    my ($type, $xflag, $aflag, $singsys, $redo, $undo, $multi, $cat, $fudge, $arg) = @_;
     my ($class) = $type . "_log";
     my ($has_idx);
 
@@ -245,23 +245,34 @@ CLASSDEF
 	print STUB "    if (should_log)  {\n";
 	print STUB "        logrec_t* logrec;\n";
 	print FUDGE " $fudge, \n";
-	if ($page eq "page") {
-	    print STUB " // fudge $fudge \n";
-	    print STUB "        W_DO(xd->get_logbuf(logrec, t_$type, &page));\n";
-	} else {
-	    print STUB " // fudge $fudge \n";
 	    print STUB "        W_DO(xd->get_logbuf(logrec, t_$type));\n";
-	}
         print STUB "        new (logrec) $class($real);\n";	   
+    if ($page eq "page") {
+        print STUB "        logrec->set_page_prev_lsn(page.lsn());\n";
+        if ($multi) {
+        print STUB "        reinterpret_cast<$class*>(logrec)->set_dest_prev_lsn(lsn_t::null);\n";
+        }
+    } else {
+        print STUB "        logrec->set_page_prev_lsn(lsn_t::null);\n";
+    }
 	if ($page eq "page") {
-	    print STUB "        W_DO(xd->give_logbuf(logrec, &page));\n";
+        if ($multi) {
+	    print STUB "        W_DO(xd->give_logbuf(logrec, &page, &page2));\n";
+	    } else {
+        print STUB "        W_DO(xd->give_logbuf(logrec, &page));\n";
+	    }
 	} else {
 	    print STUB "        W_DO(xd->give_logbuf(logrec));\n";
 	}
 	print STUB "    }\n";
 	if ($page eq "page") {
 	    # no longer need to call set_dirty explicitly after give_logbuf 
-	    print STUB "    else page.set_dirty();\n" if ($real);
+        print STUB "    else {\n";
+	    print STUB "        page.set_dirty();\n";
+        if ($multi) {
+        print STUB "        page2.set_dirty();\n";
+        }
+        print STUB "    }\n";
 	}
 	print STUB "    return RCOK;\n";
     print STUB "}\n";
