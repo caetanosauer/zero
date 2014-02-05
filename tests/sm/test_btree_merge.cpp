@@ -24,15 +24,15 @@ btree_test_env *test_env;
 /** Used to hold a latch on a root page by another thread. */
 class page_holding_thread_t : public smthread_t {
 public:
-        page_holding_thread_t(volid_t vol, snum_t store) 
-                : smthread_t(t_regular, "page_holding_thread_t"),
-                page_held_flag(false),
-                release_request_flag(false),
-                released_flag(false),
-                _vol(vol), _store(store), _retval(0) {}
-        ~page_holding_thread_t()  {_page.unfix();}
-        void run();
-        int  return_value() const { return _retval; }
+    page_holding_thread_t(volid_t vol, snum_t store) 
+        : smthread_t(t_regular, "page_holding_thread_t"),
+          page_held_flag(false),
+          release_request_flag(false),
+          released_flag(false),
+          _vol(vol), _store(store), _retval(0) {}
+    ~page_holding_thread_t()  {_page.unfix();}
+    void run();
+    int  return_value() const { return _retval; }
 
     /** true when this thread got latch on the page. ONLY THIS THREAD UPDATES IT. */
     bool volatile page_held_flag;
