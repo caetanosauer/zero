@@ -68,6 +68,7 @@ X(eNOTEXTERN2PC,              "Transaction is not participating in external 2-ph
 X(eTHREADMAPFULL,             "No more bits for thread maps")
 X(eLOCKTIMEOUT,               "Lock timeout")
 X(eLATCHQFAIL,                "Attempt to acquire/maintain latch in Q mode failed")
+X(ePARENTLATCHQFAIL,          "Attempt to fix page in Q mode failed because parent's Q latch failed")
 X(eNOTBLOCKED,                "Smthread is not blocked")
 X(eDEADLOCK,                  "Deadlock detected")
 X(eBADCCLEVEL,                "Unsupported concurrency control level")

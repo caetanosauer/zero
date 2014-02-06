@@ -44,6 +44,16 @@ w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent, volid_t vol,
         w_assert1(is_swizzled_pointer(shpid) || smlevel_0::bf->get_cb(_pp)->_pid_shpid == shpid);
     }
     _mode = mode;
+
+    // Check crabbing in Q to Q case:
+    if (mode == LATCH_Q) {
+        if (parent.latch_mode() == LATCH_Q) {
+            if (parent.change_possible_after_fix()) {
+                unfix();
+                return RC(ePARENTLATCHQFAIL);
+            }
+        }
+    }
     return RCOK;
 }
 

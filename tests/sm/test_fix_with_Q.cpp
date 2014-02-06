@@ -304,7 +304,7 @@ w_rc_t test_non_root_page_fixing(ss_m* ssm, test_volume_t *test_volume) {
     // Can we fix it in Q mode?  Do inspectors behave properly?
     btree_page_h child_page;
     w_rc_t r = child_page.fix_nonroot(root_page, root_pid.vol().vol, child_pid, 
-                                     LATCH_Q, false, false);
+                                      LATCH_Q, false, false);
     if (!is_swizzled_pointer(child_pid)) {
         EXPECT_EQ(r.err_num(), eLATCHQFAIL);
         return RCOK;
@@ -317,8 +317,21 @@ w_rc_t test_non_root_page_fixing(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_EQ(child_page.is_fixed(),                  false);
 
 
-
-
+    // test Q->Q crabbing:
+    root_page.unfix();
+    W_DO(root_page.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_Q));
+    W_DO(child_page.fix_nonroot(root_page, root_pid.vol().vol, child_pid, 
+                                LATCH_Q, false, false));
+    FixRootPageOperator op(root_pid.vol().vol, root_pid.store(), LATCH_EX);
+    W_DO(op.action(1));
+    W_DO(op.action(2));
+    EXPECT_EQ(root_page.change_possible_after_fix(), true);
+    W_DO(op.stop());
+    EXPECT_EQ(child_page.change_possible_after_fix(), false);
+    child_page.unfix();
+    r = child_page.fix_nonroot(root_page, root_pid.vol().vol, child_pid, 
+                               LATCH_Q, false, false);
+    EXPECT_EQ(r.err_num(), ePARENTLATCHQFAIL);
     root_page.unfix();
 
     return RCOK;
