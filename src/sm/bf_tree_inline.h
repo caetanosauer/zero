@@ -175,7 +175,7 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
     return RCOK;
 }
 
-inline w_rc_t bf_tree_m::fix_with_Q_nonroot(generic_page*& page, volid_t vol, shpid_t shpid, bool& success, q_ticket_t& ticket) {
+inline w_rc_t bf_tree_m::fix_with_Q_nonroot(generic_page*& page, volid_t vol, shpid_t shpid, q_ticket_t& ticket) {
     w_assert1((shpid & SWIZZLED_PID_BIT) != 0);
 
     INC_TSTAT(bf_fix_nonroot_count);
@@ -189,13 +189,12 @@ inline w_rc_t bf_tree_m::fix_with_Q_nonroot(generic_page*& page, volid_t vol, sh
     //W_DO(get_cb(idx).latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
     ticket = 42; // <<<>>>
     page = &(_buffer[idx]);
-    success = true;
 
     // cheap approximate test to see if got right page; benign data races:
     if (!cb._used ||
         (cb._pid_vol   != vol) ||
         (cb._pid_shpid != _buffer[idx].pid.page)) {
-        success = false;
+        ticket = 666;  // substitute always invalid ticket here <<<>>>
         return RCOK;
     }
 

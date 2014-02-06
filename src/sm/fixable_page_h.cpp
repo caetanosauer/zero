@@ -33,9 +33,9 @@ w_rc_t fixable_page_h::fix_nonroot (const fixable_page_h &parent, volid_t vol,
             return RC(eLATCHQFAIL);
         }
 
-        bool success;
-        W_DO(smlevel_0::bf->fix_with_Q_nonroot(_pp, vol, shpid, success, _Q_ticket));
-        if (!success) {
+        W_DO(smlevel_0::bf->fix_with_Q_nonroot(_pp, vol, shpid, _Q_ticket));
+        if (false) { // test ticket later for validity <<<>>>
+            _pp = NULL;
             return RC(eLATCHQFAIL);
         }
         _mode = LATCH_SH; // <<<>>>
