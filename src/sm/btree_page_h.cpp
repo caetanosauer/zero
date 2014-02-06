@@ -154,8 +154,9 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
 
     //first, nuke the page
     lpid_t pid_copy = pid; // take a copy first, because pid might point to a part of this page itself!
+    lsn_t lsn_copy = page()->lsn; // for the same purpose, need to keep LSN
     trash_page(page());
-    page()->lsn          = lsn_t(0, 1);
+    page()->lsn          = lsn_copy;
     page()->pid          = pid_copy;
     page()->tag          = t_btree_p;
     page()->page_flags   = 0;
