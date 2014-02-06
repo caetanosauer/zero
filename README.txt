@@ -1,8 +1,8 @@
 /*
- * (c) Copyright 2011-, Hewlett-Packard Development Company, LP.
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP.
  * HP Express (Zero) source code.
  */
-README Last Updated: Jan 2014
+README Last Updated: February 2014
 
 ==== Steps to build/test
 https://twiki.hpl.hp.com/bin/view/SIMPL/DevelopmentHowTo
@@ -35,7 +35,7 @@ Primary: ???
 Secondary: All of us (for individual testcases)
 
 == Bufferpool
-Example files: bf_*.h/cpp
+Example files: bf_*.h/cpp, fixable_page_h.*
 Primary: Haris
 Secondary: Stan
 
@@ -74,7 +74,7 @@ Primary: Hideaki
 Secondary: Charlie
 
 == Page formats, core Btree storage classes
-Example files: *_page.h/cpp
+Example files: *_page.h/cpp, excluding fixable_page_h.*
 Primary: Mark
 Secondary: Joe
 
