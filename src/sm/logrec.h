@@ -185,7 +185,15 @@ public:
     uint16_t              tag() const;
     smsize_t             length() const;
     const lsn_t&         undo_nxt() const;
+    /**
+     * Returns the LSN of previous log that modified this page.
+     * \ingroup SPR
+     */
     const lsn_t&         page_prev_lsn() const;
+    /**
+     * Sets the LSN of previous log that modified this page.
+     * \ingroup SPR
+     */
     void                 set_page_prev_lsn(const lsn_t &lsn);
     const lsn_t&         xid_prev() const;
     void                 set_xid_prev(const lsn_t &lsn);
@@ -285,12 +293,16 @@ protected:
  * If possible, such log record should contain everything we physically need to recover
  * either page without the other page. This is an important property
  * because otherwise it imposes write-order-dependency and a careful recovery.
+ * In such a case "page2" is the data source page while "page" is the data destination page.
  * \NOTE a REDO operation of multi-page log must expect _either_ of page/page2 are given.
  * It must first check if which page is requested to recover, then apply right changes
  * to the page.
  */
 struct multi_page_log_t {
-    /** _page_prv for another page touched by the operation. */
+    /**
+     *_page_prv for another page touched by the operation.
+     * \ingroup SPR
+     */
     lsn_t       _page2_prv; // +8
 
     /** Page ID of another page touched by the operation. */
@@ -299,11 +311,8 @@ struct multi_page_log_t {
     /** for alignment only. */
     uint32_t    _fill4;    // +4.
 
-    multi_page_log_t(shpid_t page2_pid) : _page2_pid(page2_pid) {
+    multi_page_log_t(shpid_t page2_pid) : _page2_prv(lsn_t::null), _page2_pid(page2_pid) {
     }
-
-    /** Return the actual length of the log record. */
-    virtual int size() const = 0;
 };
 
 // for single-log system transaction, we use tid/_xid_prev as data area!
