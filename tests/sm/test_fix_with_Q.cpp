@@ -258,6 +258,79 @@ TEST (FixWithQTest, RootPageChangePossible) {
 
 
 
+w_rc_t test_non_root_page_fixing(ss_m* ssm, test_volume_t *test_volume) {
+    /*
+     * Create a B-tree with at least two levels:
+     */
+
+    stid_t stid;
+    lpid_t root_pid;
+    W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
+
+    const int recsize = SM_PAGESIZE / 20;
+    char datastr[recsize];
+    memset (datastr, 'a', recsize);
+    vec_t data;
+    data.set(datastr, recsize);
+
+    // insert key000, key002 ... key198 (will be at least 5 pages)
+    W_DO(ssm->begin_xct());
+    test_env->set_xct_query_lock();
+    w_keystr_t key;
+    char keystr[6] = "";
+    memset(keystr, '\0', 6);
+    keystr[0] = 'k';
+    keystr[1] = 'e';
+    keystr[2] = 'y';
+    for (int i = 0; i < 200; i += 2) {
+        keystr[3] = ('0' + ((i / 100) % 10));
+        keystr[4] = ('0' + ((i / 10) % 10));
+        keystr[5] = ('0' + ((i / 1) % 10));
+        key.construct_regularkey(keystr, 6);
+        W_DO(ssm->create_assoc(stid, key, data));
+    }
+    W_DO(ssm->commit_xct());
+    W_DO(x_btree_verify(ssm, stid));
+
+
+    /*
+     * Get the shpid of a child of the root page:
+     */
+    btree_page_h root_page;
+    W_DO(root_page.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_SH));
+    shpid_t child_pid = *root_page.child_slot_address(0);
+
+
+    // Can we fix it in Q mode?  Do inspectors behave properly?
+    btree_page_h child_page;
+    w_rc_t r = child_page.fix_nonroot(root_page, root_pid.vol().vol, child_pid, 
+                                     LATCH_Q, false, false);
+    if (!is_swizzled_pointer(child_pid)) {
+        EXPECT_EQ(r.err_num(), eLATCHQFAIL);
+        return RCOK;
+    }
+    EXPECT_EQ(child_page.is_fixed(),                  true);
+    EXPECT_EQ(child_page.is_latched(),                false);
+    EXPECT_EQ(child_page.latch_mode(),                LATCH_Q);
+    EXPECT_EQ(child_page.change_possible_after_fix(), false);
+    child_page.unfix();
+    EXPECT_EQ(child_page.is_fixed(),                  false);
+
+
+
+
+    root_page.unfix();
+
+    return RCOK;
+}
+
+TEST (FixWithQTest, NonRootPageFixing) {
+    test_env->empty_logdata_dir();
+    EXPECT_EQ(test_env->runBtreeTest(test_non_root_page_fixing, true, default_locktable_size, 4096, 1024), 0);
+}
+
+
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     test_env = new btree_test_env();

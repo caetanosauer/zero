@@ -22,9 +22,9 @@ void fixable_page_h::unfix() {
     }
 }
 
-w_rc_t fixable_page_h::fix_nonroot (const fixable_page_h &parent, volid_t vol,
-                                    shpid_t shpid, latch_mode_t mode, 
-                                    bool conditional, bool virgin_page) {
+w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent, volid_t vol,
+                                   shpid_t shpid, latch_mode_t mode, 
+                                   bool conditional, bool virgin_page) {
     if (force_Q_fixing > 1 && mode == LATCH_SH) mode = LATCH_Q; // <<<>>>
     w_assert1(shpid != 0);
     unfix();
@@ -38,13 +38,12 @@ w_rc_t fixable_page_h::fix_nonroot (const fixable_page_h &parent, volid_t vol,
             _pp = NULL;
             return RC(eLATCHQFAIL);
         }
-        _mode = LATCH_SH; // <<<>>>
     } else {
         W_DO(smlevel_0::bf->fix_nonroot(_pp, parent._pp, vol, shpid, mode, conditional, virgin_page));
-        _mode = mode;
         w_assert1(smlevel_0::bf->get_cb(_pp)->_pid_vol == vol);
         w_assert1(is_swizzled_pointer(shpid) || smlevel_0::bf->get_cb(_pp)->_pid_shpid == shpid);
     }
+    _mode = mode;
     return RCOK;
 }
 
@@ -94,7 +93,10 @@ w_rc_t fixable_page_h::fix_root (volid_t vol, snum_t store, latch_mode_t mode, b
     unfix();
     if (mode == LATCH_Q) {
         W_DO(smlevel_0::bf->fix_with_Q_root(_pp, vol, store, _Q_ticket));
-        // later deal with possibility of latching failure (not yet possible) <<<>>>
+        if (false) { // test ticket later for validity <<<>>>
+            _pp = NULL;
+            return RC(eLATCHQFAIL);
+        }
     } else {
         W_DO(smlevel_0::bf->fix_root(_pp, vol, store, mode, conditional));
     }
