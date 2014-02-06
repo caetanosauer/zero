@@ -382,7 +382,7 @@ public:
     * For example, the first entry would be the log record with EMLSN.
     * @param[in] buffer_size size of log_copy_buffer.
     * If we need a bigger buffer, we return an error.
-    * @param[out] ordered_entries point to the beginning of each log
+    * @param[out] ordered_entries point to each log
     * record in log_copy_buffer in the order of the log.
     * This is easier to use for the purpose of applying them.
     * @pre current_lsn < emlsn
@@ -390,7 +390,7 @@ public:
     rc_t _collect_single_page_recovery_logs(
         const lpid_t& pid, const lsn_t &current_lsn, const lsn_t &emlsn,
         char* log_copy_buffer, size_t buffer_size,
-        std::vector<char*> &ordered_entries);
+        std::vector<logrec_t*> &ordered_entries);
 
     /**
     * \brief Apply the given logs to the given page.
@@ -401,7 +401,7 @@ public:
     * @pre p is already fixed with exclusive latch
     */
     rc_t _apply_single_page_recovery_logs(generic_page* p,
-        const std::vector<char*> &ordered_entries);
+        const std::vector<logrec_t*> &ordered_entries);
 
 private:
     void                _sanity_check() const;

@@ -713,11 +713,60 @@ rc_t log_m::recover_single_page(generic_page* p, const lsn_t& emlsn) {
     w_assert1(p->lsn < emlsn);
     const size_t SPR_LOG_BUFSIZE = 1 << 14;
     char buffer[SPR_LOG_BUFSIZE]; // TODO, we should have an object pool for this.
-    std::vector<char*> ordered_entires;
-    W_DO(log_core::THE_LOG->_collect_single_page_recovery_logs(p->pid, p->lsn, emlsn, buffer, SPR_LOG_BUFSIZE, ordered_entires));
+    std::vector<logrec_t*> ordered_entires;
+    W_DO(log_core::THE_LOG->_collect_single_page_recovery_logs(p->pid, p->lsn, emlsn, buffer,
+        SPR_LOG_BUFSIZE, ordered_entires));
     W_DO(log_core::THE_LOG->_apply_single_page_recovery_logs(p, ordered_entires));
 
     // after SPR, the page should be exactly the requested LSN
     w_assert0(p->lsn == emlsn);
     return RCOK;
+}
+
+void log_m::dump_page_lsn_chain() {
+    dump_page_lsn_chain(lpid_t::null, lsn_t::max);
+}
+void log_m::dump_page_lsn_chain(const lpid_t &pid) {
+    dump_page_lsn_chain(pid, lsn_t::max);
+}
+void log_m::dump_page_lsn_chain(const lpid_t &pid, const lsn_t &max_lsn) {
+    lsn_t master = master_lsn();
+    std::cout << "Dumping Page LSN Chain for PID=" << pid << ", MAXLSN=" << max_lsn
+        << ", MasterLSN=" << master << "..." << std::endl;
+
+    log_i           scan(*this, master);
+    logrec_t*       buf;
+    lsn_t           lsn;
+    // Scan all log entries until EMLSN
+    while (scan.xct_next(lsn, buf) && buf->lsn_ck() <= max_lsn) {
+        if (buf->type() == logrec_t::t_chkpt_begin) {
+            std::cout << "  CHECKPT: " << *buf << std::endl;
+            continue;
+        }
+        if (buf->null_pid()) {
+            continue;
+        }
+
+        lpid_t log_pid = buf->construct_pid();
+        lpid_t log_pid2 = log_pid;
+        if (buf->is_multi_page()) {
+            log_pid2.page = buf->data_ssx_multi()->_page2_pid;
+        }
+
+        // Is this page interesting to us?
+        if (pid != lpid_t::null && pid != log_pid && pid != log_pid2) {
+            continue;
+        }
+
+        std::cout << "  LOG: " << *buf << ", P_PREV=" << buf->page_prev_lsn();
+        if (buf->is_multi_page()) {
+            std::cout << ", P2_PREV=" << buf->data_ssx_multi()->_page2_prv << std::endl;
+        }
+        std::cout << std::endl;
+    }
+
+    // after the dumping, recovers the original master_lsn because log_i increased it.
+    // of course, this is not safe if there are other transactions going.
+    // but, this method is for debugging.
+    _master_lsn = master;
 }

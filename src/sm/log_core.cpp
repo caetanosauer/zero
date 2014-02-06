@@ -2703,24 +2703,34 @@ log_core::file_was_archived(const char * /*file*/)
 
 rc_t log_core::_collect_single_page_recovery_logs(
     const lpid_t& pid, const lsn_t& current_lsn, const lsn_t& emlsn,
-    char* log_copy_buffer, size_t buffer_size, std::vector<char*>& ordered_entries) {
+    char* log_copy_buffer, size_t buffer_size, std::vector<logrec_t*>& ordered_entries) {
     // we go back using page log chain like what xct_t::rollback() does on undo log chain.
     ordered_entries.clear();
     size_t buffer_capacity = buffer_size;
     for (lsn_t nxt = emlsn; current_lsn < nxt;) {
         logrec_t* record = NULL;
         W_DO(fetch(nxt, record, NULL));
-        w_assert1(record->shpid() == pid.page);
 
         if (buffer_capacity < record->length()) {
             // This might happen when we have a really long page log chain,
             // but so far we don't handle this case. crash.
             W_FATAL(eOUTOFMEMORY);
         }
-
         ::memcpy(log_copy_buffer, record, record->length());
-        nxt = record->page_prev_lsn();
-        ordered_entries.insert(ordered_entries.begin(), log_copy_buffer);
+
+        // follow next pointer. This log might touch multi-pages. So, check both cases.
+        if (pid.page == record->shpid()) {
+            nxt = record->page_prev_lsn();
+        } else if (!record->is_multi_page()
+            || pid.page != record->data_ssx_multi()->_page2_pid) {
+            W_RETURN_RC_MSG(eWRONG_PAGE_LSNCHAIN, << "PID= " << pid << ", CUR_LSN="
+                << current_lsn << ", EMLSN=" << emlsn << ", log=" << record);
+        } else {
+            nxt = record->data_ssx_multi()->_page2_prv;
+        }
+
+        ordered_entries.insert(ordered_entries.begin(),
+                               reinterpret_cast<logrec_t*>(log_copy_buffer));
         log_copy_buffer += record->length();
         buffer_capacity -= record->length();
     }
@@ -2728,17 +2738,15 @@ rc_t log_core::_collect_single_page_recovery_logs(
 }
 
 rc_t log_core::_apply_single_page_recovery_logs(generic_page* p,
-    const std::vector<char*>& ordered_entries) {
+    const std::vector<logrec_t*>& ordered_entries) {
     // So far, we assume the SPR target is a fixable page with latches.
     // So far no plan to extend it to non-fixable pages.
     // Note: we can't use dynamic_cast here because we didn't instantiate it as any class.
     // We only reinterpreted a buffer frame (char*).
     fixable_page_h* fixable_page = reinterpret_cast<fixable_page_h*>(p);
-    for (std::vector<char*>::const_iterator it = ordered_entries.begin();
+    for (std::vector<logrec_t*>::const_iterator it = ordered_entries.begin();
          it != ordered_entries.end(); ++it) {
-        logrec_t *record = reinterpret_cast<logrec_t*>(*it);
-        // TODO if the log is multi-page and has dependency on up-to-date page, we have to
-        // time-travel using scratch space.
+        logrec_t *record = *it;
         if (record->is_redo()) {
             record->redo(fixable_page);
         }

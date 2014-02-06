@@ -431,6 +431,22 @@ public:
     */
     rc_t recover_single_page(generic_page* p, const lsn_t &emlsn);
 
+    /**
+    * \brief Pretty-prints the content of log file to stdout in a way we
+    * can easily debug single-page recovery.
+    * \ingroup SPR
+    * \details
+    * This is for debugging, so performance is not guaranteed.
+    * @param[in] pid If given, we only dump logs relevant to the page.
+    * @param[in] max_lsn If given, we only dump logs required to recover
+    * the page up to this LSN. We omit the logs after that.
+    */
+    void dump_page_lsn_chain(const lpid_t &pid, const lsn_t &max_lsn);
+    /** Overload to receive only pid. \ingroup SPR */
+    void dump_page_lsn_chain(const lpid_t &pid);
+    /** Overload to receive neither. \ingroup SPR */
+    void dump_page_lsn_chain();
+
     /**\brief used by partition */
     fileoff_t limit() const { return _partition_size; }
     

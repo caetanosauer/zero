@@ -62,6 +62,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 /*  -- do not edit anything above this line --   </std-header>*/
 
 class rangeset_t;
+struct multi_page_log_t;
 
 #include "logfunc_gen.h"
 #include "xct.h"
@@ -206,6 +207,10 @@ public:
     char*                data();
     const char*          data_ssx() const;
     char*                data_ssx();
+    /** Returns the log record data as a multi-page SSX log. */
+    multi_page_log_t*           data_ssx_multi();
+    /** Const version */
+    const multi_page_log_t*     data_ssx_multi() const;
     const lsn_t&         lsn_ck() const {  return *_lsn_ck(); }
     const lsn_t          get_lsn_ck() const { 
                                 lsn_t    tmp = *_lsn_ck();
@@ -664,6 +669,15 @@ inline bool
 logrec_t::is_single_sys_xct() const
 {
     return (header._cat & t_single_sys_xct) != 0;
+}
+
+inline multi_page_log_t* logrec_t::data_ssx_multi() {
+    w_assert1(is_multi_page());
+    return reinterpret_cast<multi_page_log_t*>(data_ssx());
+}
+inline const multi_page_log_t* logrec_t::data_ssx_multi() const {
+    w_assert1(is_multi_page());
+    return reinterpret_cast<const multi_page_log_t*>(data_ssx());
 }
 
 inline int
