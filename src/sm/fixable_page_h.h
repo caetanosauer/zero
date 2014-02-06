@@ -136,7 +136,7 @@ public:
 
 
     // ======================================================================
-    //   BEGIN: 
+    //   BEGIN: Other page operations
     // ======================================================================
 
     /**
@@ -170,6 +170,16 @@ public:
     latch_mode_t latch_mode() const { return _mode; }
     /// Do we hold our page's latch in SH or EX mode?
     bool         is_latched() const { return _mode == LATCH_SH || _mode == LATCH_EX; }
+
+    /**
+     * Could someone else have changed our page via a EX latch since we last fixed it?
+     * 
+     * Returns false for pages latched via NL as they are assumed to be private pages not
+     * in the buffer pool.
+     *
+     * @pre is_fixed()
+     */
+    bool         change_possible_after_fix() const;
 
     /**
      * Conditionally upgrade the latch to EX.  Returns true if successfully upgraded.

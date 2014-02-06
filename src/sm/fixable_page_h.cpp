@@ -148,6 +148,11 @@ bool fixable_page_h::is_to_be_deleted() {
 }
 
 
+bool fixable_page_h::change_possible_after_fix() const {
+    w_assert1(is_fixed());
+    return false; // for now assume no interference <<<>>>
+}
+
 
 bool fixable_page_h::upgrade_latch_conditional() {
     w_assert1(_pp != NULL);

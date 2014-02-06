@@ -133,9 +133,10 @@ w_rc_t test_root_page_fixing(ss_m* ssm, test_volume_t *test_volume) {
     // Can we fix it in Q mode?  Do inspectors behave properly?
     btree_page_h root_page;
     W_DO(root_page.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_Q));
-    EXPECT_EQ(root_page.is_fixed(),   true);
-    EXPECT_EQ(root_page.is_latched(), false);
-    EXPECT_EQ(root_page.latch_mode(), LATCH_Q);
+    EXPECT_EQ(root_page.is_fixed(),                  true);
+    EXPECT_EQ(root_page.is_latched(),                false);
+    EXPECT_EQ(root_page.latch_mode(),                LATCH_Q);
+    EXPECT_EQ(root_page.change_possible_after_fix(), false);
     root_page.unfix();
     EXPECT_EQ(root_page.is_fixed(), false);
 
@@ -159,6 +160,7 @@ w_rc_t test_root_page_fixing_with_interference(ss_m* ssm, test_volume_t *test_vo
         W_DO(op.action(1));   // fix root page in background with Q mode
         btree_page_h root_page;
         W_DO(root_page.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_Q));
+        EXPECT_EQ(root_page.change_possible_after_fix(), false);
         root_page.unfix();
         W_DO(op.action(2));  // unfix root page in background
         W_DO(op.stop());
@@ -169,6 +171,7 @@ w_rc_t test_root_page_fixing_with_interference(ss_m* ssm, test_volume_t *test_vo
         W_DO(op.action(1));
         btree_page_h root_page;
         W_DO(root_page.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_Q));
+        EXPECT_EQ(root_page.change_possible_after_fix(), false);
         root_page.unfix();
         W_DO(op.action(2));
         W_DO(op.stop());
@@ -179,7 +182,8 @@ w_rc_t test_root_page_fixing_with_interference(ss_m* ssm, test_volume_t *test_vo
         W_DO(op.action(1));
         btree_page_h root_page;
         w_rc_t r = root_page.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_Q);
-        EXPECT_EQ(r.err_num(), eLATCHQFAIL);
+        EXPECT_EQ(r.err_num(),          eLATCHQFAIL);
+        EXPECT_EQ(root_page.is_fixed(), false);
         W_DO(op.action(2));
         W_DO(op.stop());
     }
@@ -190,6 +194,66 @@ w_rc_t test_root_page_fixing_with_interference(ss_m* ssm, test_volume_t *test_vo
 TEST (FixWithQTest, RootPageFixingWithInterference) {
     test_env->empty_logdata_dir();
     EXPECT_EQ(test_env->runBtreeTest(test_root_page_fixing_with_interference, true, default_locktable_size, 4096, 1024), 0);
+}
+
+
+w_rc_t test_root_page_change_possible(ss_m* ssm, test_volume_t *test_volume) {
+    // create a root page:
+    stid_t stid;
+    lpid_t root_pid;
+    W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
+
+    /*
+     * Already tested vs. nothing, vs. already {Q, SH, EX} in previous tests...
+     * 
+     * Here we test versus {Q, SH, EX} held during or from middle onwards.
+     */
+
+    {   // vs. Q:
+        FixRootPageOperator op(root_pid.vol().vol, root_pid.store(), LATCH_Q);
+        btree_page_h root_page;
+        W_DO(root_page.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_Q));
+        EXPECT_EQ(root_page.change_possible_after_fix(), false);
+        W_DO(op.action(1));  // fix   root page in background with Q mode
+        EXPECT_EQ(root_page.change_possible_after_fix(), false);
+        W_DO(op.action(2));  // unfix root page in background
+        EXPECT_EQ(root_page.change_possible_after_fix(), false);
+        W_DO(op.stop());
+        root_page.unfix();
+    }
+
+    {   // vs. SH:
+        FixRootPageOperator op(root_pid.vol().vol, root_pid.store(), LATCH_SH);
+        btree_page_h root_page;
+        W_DO(root_page.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_Q));
+        EXPECT_EQ(root_page.change_possible_after_fix(), false);
+        W_DO(op.action(1));
+        EXPECT_EQ(root_page.change_possible_after_fix(), false);
+        W_DO(op.action(2));
+        EXPECT_EQ(root_page.change_possible_after_fix(), false);
+        W_DO(op.stop());
+        root_page.unfix();
+    }
+
+    {   // vs. EX:
+        FixRootPageOperator op(root_pid.vol().vol, root_pid.store(), LATCH_EX);
+        btree_page_h root_page;
+        W_DO(root_page.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_Q));
+        EXPECT_EQ(root_page.change_possible_after_fix(), false);
+        W_DO(op.action(1));
+        EXPECT_EQ(root_page.change_possible_after_fix(), true);
+        W_DO(op.action(2));
+        EXPECT_EQ(root_page.change_possible_after_fix(), true);
+        W_DO(op.stop());
+        root_page.unfix();
+    }
+
+    return RCOK;
+}
+
+TEST (FixWithQTest, RootPageChangePossible) {
+    test_env->empty_logdata_dir();
+    EXPECT_EQ(test_env->runBtreeTest(test_root_page_change_possible, true, default_locktable_size, 4096, 1024), 0);
 }
 
 
