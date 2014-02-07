@@ -33,6 +33,7 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/lock_lil.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock_vtable.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log_core.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/log_spr.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/logrec.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/logstub.cpp
@@ -179,6 +180,7 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/lock_s.h
   ${CMAKE_CURRENT_SOURCE_DIR}/lock_x.h
   ${CMAKE_CURRENT_SOURCE_DIR}/log_core.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/log_spr.h
   ${CMAKE_CURRENT_SOURCE_DIR}/log.h
   ${CMAKE_CURRENT_SOURCE_DIR}/logrec.h
   ${CMAKE_CURRENT_SOURCE_DIR}/partition.h

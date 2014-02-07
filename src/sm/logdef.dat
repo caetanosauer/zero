@@ -140,6 +140,9 @@ page_set_to_be_deleted   1011000 1.0 (const fixable_page_h& page);
 # We don't need UNDO (again, this is page creation!), REDO is just two memcpy().
 page_img_format   1011000 1.0 (const btree_page_h& page);
 
+# Invoked when a page is evicted from bufferpool. Implemented in log_spr.h/cpp
+page_evict        1110000 1.0 (const btree_page_h& page, int16_t child_slot, lsn_t child_lsn);
+
 #########################################################################
 # type             XSRUMAL  fudge    arg                                #
 #########################################################################

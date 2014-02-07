@@ -384,8 +384,6 @@ public:
     void                         log_warn_resume();
     bool                         log_warn_is_on() const;
 
-/**\cond skip */
-
 public:
     // used in sm.cpp
     rc_t                        add_dependent(xct_dependent_t* dependent);
@@ -572,7 +570,6 @@ public:
                                         smlevel_0::in_recovery()
                                         ;
     }
-/**\endcond skip */
 
 private:
     void                         acquire_1thread_log_mutex() {
