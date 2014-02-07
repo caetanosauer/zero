@@ -19,7 +19,7 @@ INCLUDE_DIRECTORIES (
   ${LINTEL_INCLUDE_DIR}
 )
 
-INCLUDE_DIRECTORIES (${CMAKE_SOURCE_DIR}/gtest-1.6.0/include) 
+INCLUDE_DIRECTORIES (${CMAKE_SOURCE_DIR}/gtest-1.7.0/include)
 
 IF (COMPILER_IS_GCC)
     # strip out unused data/function. this also removes -rdynamic
