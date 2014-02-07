@@ -44,50 +44,12 @@ btrec_t::set(const btree_page_h& page, slotid_t slot) {
     return *this;
 }
 
-#ifdef ZERO_INIT
-void trash_page(btree_page *page) {
-    /* NB -- NOTE -------- NOTE BENE
-    *  Note this is not exactly zero-init, but it doesn't matter
-    * WHAT we use to init each byte for the purpose of purify or valgrind
-    */
-    // because we do this, note that we shouldn't receive any arguments
-    // as reference or pointer. It might be also nuked!
-    memset(page, '\017', sizeof(generic_page)); // trash the whole page
-}
-#else //ZERO_INIT
-void trash_page(btree_page *) {}
-#endif //ZERO_INIT
-
 void btree_page_h::init_as_empty_child(lsn_t new_lsn, lpid_t new_page_id,
     shpid_t root_pid, shpid_t foster_pid, int16_t btree_level,
     const w_keystr_t &low, const w_keystr_t &high, const w_keystr_t &chain_fence_high) {
     w_assert1 (new_page_id.page != root_pid);
-    trash_page(page());
-    page()->lsn          = new_lsn;
-    page()->pid          = new_page_id;
-    page()->tag          = t_btree_p;
-    page()->page_flags   = 0;
-    page()->init_items();
-    page()->btree_consecutive_skewed_insertions = 0;
-    page()->btree_root                    = root_pid;
-    page()->btree_pid0                    = 0;
-    page()->btree_level                   = btree_level;
-    page()->btree_foster                  = foster_pid;
-    page()->btree_fence_low_length        = (int16_t) low.get_length_as_keystr();
-    page()->btree_fence_high_length       = (int16_t) high.get_length_as_keystr();
-    page()->btree_chain_fence_high_length = (int16_t) chain_fence_high.get_length_as_keystr();
-
-    // set fence keys in first slot
-    cvec_t fences;
-    size_t prefix_len = _pack_fence_rec(fences, low, high, chain_fence_high, -1);
-    w_assert1(prefix_len <= low.get_length_as_keystr());
-    w_assert1(prefix_len <= (1<<15));
-    page()->btree_prefix_length = (int16_t) prefix_len;
-
-    // fence-key record doesn't need poormkey; set to 0:
-    if (!page()->insert_item(nrecs()+1, false, 0, 0, fences)) {
-        w_assert0(false);
-    }
+    _init(new_lsn, new_page_id, root_pid, 0, foster_pid, btree_level,
+        low, high, chain_fence_high);
 }
 
 void btree_page_h::accept_empty_child(lsn_t new_lsn, shpid_t new_page_id) {
@@ -150,39 +112,12 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
                                 int               steal_from2,
                                 int               steal_to2,
                                 bool              steal_src2_pid0) {
-    w_assert1 (l == 1 || pid0 != 0); // all interemediate node should have pid0 at least initially
+    // intermedaite nodes have pid0 except in the initial norec-alloc case (nrecs()==0)
+    w_assert1 (l == 1 || nrecs() == 0 || pid0 != 0);
 
-    //first, nuke the page
-    lpid_t pid_copy = pid; // take a copy first, because pid might point to a part of this page itself!
-    lsn_t lsn_copy = page()->lsn; // for the same purpose, need to keep LSN
-    trash_page(page());
-    page()->lsn          = lsn_copy;
-    page()->pid          = pid_copy;
-    page()->tag          = t_btree_p;
-    page()->page_flags   = 0;
-    page()->init_items();
-
-    page()->btree_consecutive_skewed_insertions = 0;
-
-    page()->btree_root                    = root;
-    page()->btree_pid0                    = pid0;
-    page()->btree_level                   = l;
-    page()->btree_foster                  = foster;
-    page()->btree_fence_low_length        = (int16_t) fence_low.get_length_as_keystr();
-    page()->btree_fence_high_length       = (int16_t) fence_high.get_length_as_keystr();
-    page()->btree_chain_fence_high_length = (int16_t) chain_fence_high.get_length_as_keystr();
-
-    // set fence keys in first slot
-    cvec_t fences;
-    size_t prefix_len = _pack_fence_rec(fences, fence_low, fence_high, chain_fence_high, -1);
-    w_assert1(prefix_len <= fence_low.get_length_as_keystr() && prefix_len <= fence_high.get_length_as_keystr());
-    w_assert1(prefix_len <= (1<<15));
-    page()->btree_prefix_length = (int16_t) prefix_len;
-
-    // fence-key record doesn't need poormkey; set to 0:
-    if (!page()->insert_item(nrecs()+1, false, 0, 0, fences)) {
-        w_assert0(false);
-    }
+    // Note that the method receives a copy, not reference, of pid/lsn here.
+    // pid might point to a part of this page itself!
+    _init(page()->lsn, pid, root, pid0, foster, l, fence_low, fence_high, chain_fence_high);
 
     // steal records from old page
     if (steal_src1) {
@@ -195,7 +130,8 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
         w_assert1(steal_src2->pid0() != 0);
 
         // before stealing regular records from src2, steal it's pid0:
-        cvec_t       stolen_key(steal_src2->get_fence_low_key() + prefix_len, steal_src2->get_fence_low_length() - prefix_len);
+        cvec_t       stolen_key(steal_src2->get_fence_low_key() + page()->btree_prefix_length,
+                            steal_src2->get_fence_low_length() - page()->btree_prefix_length);
         poor_man_key poormkey    = _extract_poor_man_key(stolen_key);
         shpid_t      stolen_pid0 = steal_src2->pid0();
         cvec_t v;
@@ -1034,7 +970,7 @@ bool btree_page_h::_is_consistent_keyorder() const {
     const size_t lowkey_len = get_fence_low_length();
     const size_t prefix_len = get_prefix_length();
     const size_t chain_high_len = get_chain_fence_high_length();
-    const shpid_t foster = get_foster();
+    const shpid_t foster = get_foster_opaqueptr();
     // chain-high must be set if foster link exists.
     if(chain_high_len == 0 && foster != 0) {
         w_assert3(false);
@@ -1156,4 +1092,42 @@ rc_t btree_page_h::defrag() {
 bool btree_page_h::_check_space_for_insert(size_t data_length) {
     size_t contiguous_free_space = usable_space();
     return contiguous_free_space >= page()->predict_item_space(data_length);
+}
+
+
+void btree_page_h::_init(lsn_t lsn, lpid_t page_id,
+    shpid_t root_pid, shpid_t pid0, shpid_t foster_pid, int16_t btree_level,
+    const w_keystr_t &low, const w_keystr_t &high, const w_keystr_t &chain_fence_high) {
+
+#ifdef ZERO_INIT
+    // because we do this, note that we shouldn't receive any arguments
+    // as reference or pointer. It might be also nuked!
+    memset(page(), '\017', sizeof(generic_page)); // trash the whole page
+#endif //ZERO_INIT
+
+    page()->lsn          = lsn;
+    page()->pid          = page_id;
+    page()->tag          = t_btree_p;
+    page()->page_flags   = 0;
+    page()->init_items();
+    page()->btree_consecutive_skewed_insertions = 0;
+    page()->btree_root                    = root_pid;
+    page()->btree_pid0                    = pid0;
+    page()->btree_level                   = btree_level;
+    page()->btree_foster                  = foster_pid;
+    page()->btree_fence_low_length        = (int16_t) low.get_length_as_keystr();
+    page()->btree_fence_high_length       = (int16_t) high.get_length_as_keystr();
+    page()->btree_chain_fence_high_length = (int16_t) chain_fence_high.get_length_as_keystr();
+
+    // set fence keys in first slot
+    cvec_t fences;
+    size_t prefix_len = _pack_fence_rec(fences, low, high, chain_fence_high, -1);
+    w_assert1(prefix_len <= low.get_length_as_keystr());
+    w_assert1(prefix_len <= max_key_length);
+    page()->btree_prefix_length = (int16_t) prefix_len;
+
+    // fence-key record doesn't need poormkey; set to 0:
+    if (!page()->insert_item(nrecs() + 1, false, 0, 0, fences)) {
+        w_assert0(false);
+    }
 }
