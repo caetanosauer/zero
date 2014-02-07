@@ -313,13 +313,13 @@ public:
     // no 'noprefix' version because chain_fence_high might not share the prefix!
 
     /**
-     * \brief Initializes this as an empty child page.
+     * \brief Initializes the associated page as an empty child page.
      * \details
-     * This is the primary way to initialize a page in Foster B-tree.
-     * @param[in] new_lsn LSN of the operation to create this page.
+     * This is the primary way (for non-root pages) to initialize a page in Foster B-tree.
+     * @param[in] new_lsn LSN of the operation that creates this page.
      * @param[in] new_page_id Page ID of the new page.
-     * @param[in] root_pid Page ID of the root page.
-     * @param[in] foster_pid Page ID of the foster-child of the parent, if exists.
+     * @param[in] root_pid Page ID of the root page of the B-tree this page belongs to.
+     * @param[in] foster_pid Page ID of the (if exists) foster-child of the parent.
      * @param[in] btree_level Level of the new page.
      * @param[in] low The fence low key of the new page.
      * @param[in] high The fence high key of the new page.
@@ -333,13 +333,13 @@ public:
         const w_keystr_t &low, const w_keystr_t &high, const w_keystr_t &chain_fence_high);
 
     /**
-     * Modifies this page assuming it has accepted an empty foster-child page.
-     * @param[in] new_lsn LSN of the operation to create the foster-child page.
+     * Modifies the associated page to accept an empty foster-child page.
+     * @param[in] new_lsn LSN of the operation that creates the foster-child page.
      * @param[in] new_page_id Page ID of the new page.
      * @see btree_impl::_sx_norec_alloc()
      * @see init_as_empty_child()
      * @pre in SSX (thus REDO-only. no worry for compensation log)
-     * @pre this page is already exclusively latched
+     * @pre latch_mode() == EX
      */
     void accept_empty_child(lsn_t new_lsn, shpid_t new_page_id);
 
@@ -577,7 +577,7 @@ public:
      * expanding the slot length if needed.
      * \details
      * This method also updates fence_low/high/chain-high_length.
-     * Also, this method defrags the page to squeeze the space to place the fence keys
+     * Also, this method may defrag the page to squeeze out space for the fence keys
      * if needed (returns eRECWONTFIT if it still doesn't fit).
      */
     rc_t            replace_fence_rec_nolog_may_defrag(const w_keystr_t& low,
@@ -738,6 +738,10 @@ private:
 
     /// A field to hold a B-tree key length
     typedef uint16_t key_length_t;
+    enum _internal {
+        /** Maximum key length allows in B-tree pages. */
+        max_key_length = (1 << (sizeof(key_length_t) * 8 - 1)) - 1,
+    };
 
 
     /**
@@ -930,7 +934,14 @@ private:
      * item.
      * @return true if there is free space
      */
-    bool _check_space_for_insert(size_t data_length);  
+    bool _check_space_for_insert(size_t data_length);
+
+    /**
+     * Initialize the whole image of this page as an empty page.
+     */
+    void            _init(lsn_t lsn, lpid_t page_id,
+        shpid_t root_pid, shpid_t pid0, shpid_t foster_pid, int16_t btree_level,
+        const w_keystr_t &low, const w_keystr_t &high, const w_keystr_t &chain_fence_high);
 };
 
 
@@ -968,7 +979,8 @@ public:
  * \brief A dummy page image.
  * \details
  * The only usecase is to make a scratch space that will be discarded, but has to
- * behave "reasonably".
+ * behave "reasonably". This class is used to hold a non-bufferpool-managed page,
+ * which other page handle class doesn't allow.
  */
 class scratch_btree_page_h : public btree_page_h {
 public:
