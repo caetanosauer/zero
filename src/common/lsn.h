@@ -107,8 +107,11 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 typedef int64_t sm_diskaddr_t;
 
-/**\addtogroup LSNS 
- *
+/**
+ * \defgroup LSNS Log Sequence Numbers (LSN)
+ * \brief How Log Sequence Numbers are Used
+ * \ingroup SSMLOG
+ * \details
  * \section LLR Locates Log Records 
  * A log sequence number generally points to a record in the log.
  * It consists of two parts:

@@ -186,11 +186,11 @@ class stid_list_elem_t  {
 
 
 
-/**\brief A transaction. Internal to the storage manager.
- * \ingroup LOGSPACE
- *
+/**
+ * \brief A transaction. Internal to the storage manager.
+ * \ingroup SSMXCT
  * This class may be used in a limited way for the handling of 
- * out-of-log-space conditions.  See \ref LOGSPACE.
+ * out-of-log-space conditions.  See \ref SSMLOG.
  */
 class xct_t : public smlevel_1 {
 /**\cond skip */
@@ -384,8 +384,6 @@ public:
     void                         log_warn_resume();
     bool                         log_warn_is_on() const;
 
-/**\cond skip */
-
 public:
     // used in sm.cpp
     rc_t                        add_dependent(xct_dependent_t* dependent);
@@ -572,7 +570,6 @@ public:
                                         smlevel_0::in_recovery()
                                         ;
     }
-/**\endcond skip */
 
 private:
     void                         acquire_1thread_log_mutex() {
@@ -1003,7 +1000,7 @@ bool xct_t::is_log_on() const {
 /**\brief Iterator over transaction list.
  *
  * This is exposed for the purpose of coping with out-of-log-space 
- * conditions. See \ref LOGSPACE.
+ * conditions. See \ref SSMLOG.
  */
 class xct_i  {
 public:

@@ -389,14 +389,6 @@ void your_server_thread_t::run()
  * \ingroup SSMSTG
  */
 
-/**\defgroup SSMFILE Files of Records
- * \ingroup SSMSTG
- */
-
-/**\defgroup SSMPIN Pinning Records
- * \ingroup SSMFILE
- */
-
 /**\defgroup SSMBTREE B+-Tree Indexes
  * \ingroup SSMSTG
  */
@@ -421,25 +413,6 @@ void your_server_thread_t::run()
  */
 
 /**\defgroup SSMSP  Partial Rollback: Savepoints
- * \ingroup SSMXCT
- */
-
-/**\defgroup SSMQK  Early Lock Release: Quarks
- * \ingroup SSMXCT
- */
-
-/**\defgroup SSM2PC  Distributed Transactions: Two-Phase Commit
- * \ingroup SSMXCT
- */
-/**\defgroup SSMMULTIXCT Multi-threaded Transactions
- * \ingroup SSMXCT
- */
-
-/**\defgroup LOGSPACE Running Out of Log Space  
- *   \ingroup SSMXCT
- */
-
-/**\defgroup LSNS How Log Sequence Numbers are Used
  * \ingroup SSMXCT
  */
 

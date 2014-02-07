@@ -2197,7 +2197,6 @@ void _update_page_lsns(const fixable_page_h *page, const lsn_t &new_lsn) {
     }
 }
 
-// See comments above get_logbuf, above
 rc_t
 xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page, const fixable_page_h *page2)
 {
@@ -2209,8 +2208,9 @@ xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page, const fixable_page_h
             // For multi-page log, also set LSN chain with a branch.
             w_assert1(l->is_multi_page());
             w_assert1(l->is_single_sys_xct());
-            w_assert1(reinterpret_cast<multi_page_log_t*>(l->data_ssx())->_page2_pid != 0);
-            reinterpret_cast<multi_page_log_t*>(l->data_ssx())->_page2_prv = page2->lsn();
+            multi_page_log_t *multi = l->data_ssx_multi();
+            w_assert1(multi->_page2_pid != 0);
+            multi->_page2_prv = page2->lsn();
         }
     }
     // then, buffer it internally. (can be defered until next log of the _outer_ transaction)
