@@ -723,15 +723,9 @@ rc_t log_m::recover_single_page(generic_page* p, const lsn_t& emlsn) {
     return RCOK;
 }
 
-void log_m::dump_page_lsn_chain() {
-    dump_page_lsn_chain(lpid_t::null, lsn_t::max);
-}
-void log_m::dump_page_lsn_chain(const lpid_t &pid) {
-    dump_page_lsn_chain(pid, lsn_t::max);
-}
-void log_m::dump_page_lsn_chain(const lpid_t &pid, const lsn_t &max_lsn) {
+void log_m::dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t &max_lsn) {
     lsn_t master = master_lsn();
-    std::cout << "Dumping Page LSN Chain for PID=" << pid << ", MAXLSN=" << max_lsn
+    o << "Dumping Page LSN Chain for PID=" << pid << ", MAXLSN=" << max_lsn
         << ", MasterLSN=" << master << "..." << std::endl;
 
     log_i           scan(*this, master);
@@ -740,7 +734,7 @@ void log_m::dump_page_lsn_chain(const lpid_t &pid, const lsn_t &max_lsn) {
     // Scan all log entries until EMLSN
     while (scan.xct_next(lsn, buf) && buf->lsn_ck() <= max_lsn) {
         if (buf->type() == logrec_t::t_chkpt_begin) {
-            std::cout << "  CHECKPT: " << *buf << std::endl;
+            o << "  CHECKPT: " << *buf << std::endl;
             continue;
         }
         if (buf->null_pid()) {
@@ -758,11 +752,11 @@ void log_m::dump_page_lsn_chain(const lpid_t &pid, const lsn_t &max_lsn) {
             continue;
         }
 
-        std::cout << "  LOG: " << *buf << ", P_PREV=" << buf->page_prev_lsn();
+        o << "  LOG: " << *buf << ", P_PREV=" << buf->page_prev_lsn();
         if (buf->is_multi_page()) {
-            std::cout << ", P2_PREV=" << buf->data_ssx_multi()->_page2_prv << std::endl;
+            o << ", P2_PREV=" << buf->data_ssx_multi()->_page2_prv << std::endl;
         }
-        std::cout << std::endl;
+        o << std::endl;
     }
 
     // after the dumping, recovers the original master_lsn because log_i increased it.

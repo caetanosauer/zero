@@ -79,6 +79,15 @@ class generic_page;
 #include <partition.h>
 #include <deque>
 
+/**
+ * \brief Core Implementation of Log Manager
+ * \ingroup SSMLOG
+ * \details
+ * This is the internal implementation class used from log_m.
+ * This class contains the dirty details which should not be exposed to other modules.
+ * It is similar to what people call "pimpl" or "compiler firewall".
+ * @see log_m
+ */
 class log_core : public log_m 
 {
     struct waiting_xct {

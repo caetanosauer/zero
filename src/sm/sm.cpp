@@ -1126,6 +1126,16 @@ ss_m::get_durable_lsn(lsn_t& anlsn)
   return (RCOK);
 }
 
+void ss_m::dump_page_lsn_chain(std::ostream &o) {
+    dump_page_lsn_chain(o, lpid_t::null, lsn_t::max);
+}
+void ss_m::dump_page_lsn_chain(std::ostream &o, const lpid_t &pid) {
+    dump_page_lsn_chain(o, pid, lsn_t::max);
+}
+void ss_m::dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t &max_lsn) {
+    log->dump_page_lsn_chain(o, pid, max_lsn);
+}
+
 /*--------------------------------------------------------------*
  *  DEVICE and VOLUME MANAGEMENT                        *
  *--------------------------------------------------------------*/
