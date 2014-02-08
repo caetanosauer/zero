@@ -88,7 +88,7 @@ class generic_page;
  * It is similar to what people call "pimpl" or "compiler firewall".
  * @see log_m
  */
-class log_core : public log_m 
+class log_core : public log_m
 {
     struct waiting_xct {
         fileoff_t* needed;
