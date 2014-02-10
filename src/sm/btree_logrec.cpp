@@ -18,7 +18,6 @@
 #include "btree_impl.h"
 #include "vec_t.h"
 
-
 struct btree_insert_t {
     shpid_t     root_shpid;
     uint16_t    klen;
@@ -771,4 +770,3 @@ void btree_foster_deadopt_log::redo(fixable_page_h* p) {
                                                            low_key, high_key);
     }
 }
-

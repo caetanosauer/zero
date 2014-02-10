@@ -5,45 +5,12 @@
 #define W_OKVL_H
 
 /**
- * \file w_okvl.h
- * This file declares the most basic enums/structs/functions for
- * the locking module based on \e OKVL (Orthogonal Key Value Locking).
- * All of them are header-only to be easily used across all modules.
- * \note Inline functions and global constants are defined in \e w_okvl_inl.h
- * to make this file easier to read. Include it if you need them.
- */
-
-#include <string.h> // for memset/memcpy/memcmp
-#include <stdint.h>
-
-/**
- * The number of partitions in OKVL.
- * Must be 1 or more. If the value is 1, it behaves just like OKRL.
- * In the OKVL paper, this parameter is denoted as "k".
- * \NOTE When this value is more than 1, it should be a prime number
- * because we currently divide hashes by this number to determine
- * the partition. A simple number, say "256", would result
- * in horrible hash collisions (yes, I actually hit the issue).
- * Also, it's a good idea to keep OKVL_MODE_COUNT within some multiply of
- * 16 (for example, 61+1+1=63, which would fit in one cache line).
- * Finally, this number should be reasonably small, say at most hundreds.
- * We tested even larger numbers and observed slow downs.
- * See our paper for more details.
- */
-const uint32_t OKVL_PARTITIONS = 2; // 127; // 29;
-
-/** # of partitions, +1 for key, and +1 for gap. */
-const uint32_t OKVL_MODE_COUNT = (OKVL_PARTITIONS + 1 + 1);
-
-/**
- * \brief Represents a lock mode of one key entry in the \e OKVL lock manager.
+ * \defgroup OKVL
+ * \ingroup SSMLOCK
+ * \brief \b Orthogonal \b Key \b Value \b Locking (\b OKVL).
  * \details
- * It consists of lock mode for \e paritions,
- * 1 \e key, and 1 \e gap after the key.
- * There are constant instances to quickly get frequently-used lock modes.
- * Otherwise, you have to instantiate this struct. Hope it fits on stack.
  *
- * \section OKVL OKVL (Orthogonal Key Value Locking)
+ * \section OVERVIEW Overview
  * \e OKVL is a more concurrent and simple lock mode design compared to
  * ARIES \e KVL (Key Value Locking), Lomet's \e KRL (Key Range Locking),
  * and Graefe's \e OKRL (Orthogonal Key Range Locking).
@@ -74,10 +41,56 @@ const uint32_t OKVL_MODE_COUNT = (OKVL_PARTITIONS + 1 + 1);
  * lock manager behavior) while other stores uniquefiers as data (thus, "value" is a list).
  * We employ the former approach, so uniquefier is the tail of each key.
  *
- * \note For further understanding, you are strongly advised to
+ * \section HOWTO How To Use
+ * Include w_okvl.h.
+ * This file declares the most basic enums/structs/functions for
+ * the locking module based on \e OKVL (Orthogonal Key Value Locking).
+ * All of them are header-only to be easily used across all modules.
+ * \note Inline functions and global constants are defined in \e w_okvl_inl.h
+ * to make this file easier to read. Include it if you need them.
+ *
+ * \section REF References
+ * For further understanding, you are strongly advised to
  * read the full document about OKVL under publications/papers/TBD.
  * Or, search "Orthogonal Key Value Locking" on Google Scholar.
  * It's a full-length paper, but it must be worth reading (otherwise punch us).
+ */
+
+#include <string.h> // for memset/memcpy/memcmp
+#include <stdint.h>
+
+/**
+ * \brief The number of partitions in OKVL.
+ * \details
+ * Must be 1 or more. If the value is 1, it behaves just like OKRL.
+ * In the OKVL paper, this parameter is denoted as "k".
+ * \NOTE When this value is more than 1, it should be a prime number
+ * because we currently divide hashes by this number to determine
+ * the partition. A simple number, say "256", would result
+ * in horrible hash collisions (yes, I actually hit the issue).
+ * Also, it's a good idea to keep OKVL_MODE_COUNT within some multiply of
+ * 16 (for example, 61+1+1=63, which would fit in one cache line).
+ * Finally, this number should be reasonably small, say at most hundreds.
+ * We tested even larger numbers and observed slow downs.
+ * See our paper for more details.
+ * \ingroup OKVL
+ */
+const uint32_t OKVL_PARTITIONS = 2; // 127; // 29;
+
+/**
+ * Number of partitions, +1 for key, and +1 for gap.
+ * \ingroup OKVL
+ */
+const uint32_t OKVL_MODE_COUNT = (OKVL_PARTITIONS + 1 + 1);
+
+/**
+ * \brief Represents a lock mode of one key entry in the \e OKVL lock manager.
+ * \ingroup OKVL
+ * \details
+ * It consists of lock mode for \e paritions,
+ * 1 \e key, and 1 \e gap after the key.
+ * There are constant instances to quickly get frequently-used lock modes.
+ * Otherwise, you have to instantiate this struct. Hope it fits on stack.
  */
 struct okvl_mode {
     /** typedef for readability. it's just an integer. */

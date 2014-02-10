@@ -62,18 +62,12 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 /*  -- do not edit anything above this line --   </std-header>*/
 
 class rangeset_t;
+struct multi_page_log_t;
 
 #include "logfunc_gen.h"
 #include "xct.h"
 
 #include <boost/static_assert.hpp>
-
-/**
- * A log record's space is divided between a header and data. 
- * All log records' headers include the information contained in baseLogHeader.
- * Log records pertaining to transactions that produce multiple log records
- * also persist a transaction id chain (_xid and _xid_prv).
- **/ 
 
 struct baseLogHeader
 {
@@ -108,20 +102,19 @@ struct baseLogHeader
      * NB: this latter suggestion is what we have now done.
      */
 
-    // For per-page chains of log-records.
-    // Note that some types of log records (split, merge) impact two pages.
-    // The page_prev_lsn is for the "primary" page.
-    lsn_t               _page_prv;     // for per-page log chain
+    /**
+     * For per-page chains of log-records.
+     * Note that some types of log records (split, merge) impact two pages.
+     * The page_prev_lsn is for the "primary" page.
+     * \ingroup SPR
+     */
+    lsn_t               _page_prv;
     /* 16+8 = 24 */
 };
 
-struct xidChainLogHeader 
+struct xidChainLogHeader
 {
 
-    // NOTE for single-log system transaction following header items are not stored.
-    // instead, we use these area as data area to save 16 bytes.
-    // we do need to keep these 8 bytes aligned. and this is a bit dirty trick.
-    // however, we really need it to reduce the volume of log we output for system transactions.
     
     tid_t               _xid;      // NOT IN SINGLE-LOG SYSTEM TRANSACTION!  (xct)tid of this xct
     /* 24+8 = 32 */
@@ -129,6 +122,21 @@ struct xidChainLogHeader
     /* 32+8 = 40 */
 };
 
+/**
+ * \brief Represents a transactional log record.
+ * \ingroup SSMLOG
+ * \details
+ * A log record's space is divided between a header and data.
+ * All log records' headers include the information contained in baseLogHeader.
+ * Log records pertaining to transactions that produce multiple log records
+ * also persist a transaction id chain (_xid and _xid_prv).
+ *
+ * \section OPT Optimization for single-log system transaction
+ * For single-log system transaction, header items in xidChainLogHeader are not stored.
+ * instead, we use these area as data area to save 16 bytes.
+ * we do need to keep these 8 bytes aligned. and this is a bit dirty trick.
+ * however, we really need it to reduce the volume of log we output for system transactions.
+ */
 class logrec_t {
 public:
     friend rc_t xct_t::give_logbuf(logrec_t*, const fixable_page_h *, const fixable_page_h *);
@@ -185,7 +193,15 @@ public:
     uint16_t              tag() const;
     smsize_t             length() const;
     const lsn_t&         undo_nxt() const;
+    /**
+     * Returns the LSN of previous log that modified this page.
+     * \ingroup SPR
+     */
     const lsn_t&         page_prev_lsn() const;
+    /**
+     * Sets the LSN of previous log that modified this page.
+     * \ingroup SPR
+     */
     void                 set_page_prev_lsn(const lsn_t &lsn);
     const lsn_t&         xid_prev() const;
     void                 set_xid_prev(const lsn_t &lsn);
@@ -198,6 +214,10 @@ public:
     char*                data();
     const char*          data_ssx() const;
     char*                data_ssx();
+    /** Returns the log record data as a multi-page SSX log. */
+    multi_page_log_t*           data_ssx_multi();
+    /** Const version */
+    const multi_page_log_t*     data_ssx_multi() const;
     const lsn_t&         lsn_ck() const {  return *_lsn_ck(); }
     const lsn_t          get_lsn_ck() const { 
                                 lsn_t    tmp = *_lsn_ck();
@@ -280,17 +300,22 @@ protected:
 
 /**
  * \brief Base struct for log records that touch multi-pages.
+ * \ingroup SSMLOG
  * \details
  * Such log records are so far _always_ single-log system transaction that touches 2 pages.
  * If possible, such log record should contain everything we physically need to recover
  * either page without the other page. This is an important property
  * because otherwise it imposes write-order-dependency and a careful recovery.
+ * In such a case "page2" is the data source page while "page" is the data destination page.
  * \NOTE a REDO operation of multi-page log must expect _either_ of page/page2 are given.
  * It must first check if which page is requested to recover, then apply right changes
  * to the page.
  */
 struct multi_page_log_t {
-    /** _page_prv for another page touched by the operation. */
+    /**
+     * _page_prv for another page touched by the operation.
+     * \ingroup SPR
+     */
     lsn_t       _page2_prv; // +8
 
     /** Page ID of another page touched by the operation. */
@@ -299,11 +324,8 @@ struct multi_page_log_t {
     /** for alignment only. */
     uint32_t    _fill4;    // +4.
 
-    multi_page_log_t(shpid_t page2_pid) : _page2_pid(page2_pid) {
+    multi_page_log_t(shpid_t page2_pid) : _page2_prv(lsn_t::null), _page2_pid(page2_pid) {
     }
-
-    /** Return the actual length of the log record. */
-    virtual int size() const = 0;
 };
 
 // for single-log system transaction, we use tid/_xid_prev as data area!
@@ -655,6 +677,15 @@ inline bool
 logrec_t::is_single_sys_xct() const
 {
     return (header._cat & t_single_sys_xct) != 0;
+}
+
+inline multi_page_log_t* logrec_t::data_ssx_multi() {
+    w_assert1(is_multi_page());
+    return reinterpret_cast<multi_page_log_t*>(data_ssx());
+}
+inline const multi_page_log_t* logrec_t::data_ssx_multi() const {
+    w_assert1(is_multi_page());
+    return reinterpret_cast<const multi_page_log_t*>(data_ssx());
 }
 
 inline int
