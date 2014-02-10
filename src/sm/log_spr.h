@@ -104,5 +104,5 @@ struct page_evict_t {
     page_evict_t(const lsn_t &child_lsn, slotid_t child_slot)
         : _child_lsn (child_lsn), _child_slot(child_slot) {}
 };
-
+// trivial change
 #endif // SM_LOG_SPR_H
