@@ -223,41 +223,44 @@ btree_impl::_ux_traverse_recurse(
             inquery_verify_expect(*current, slot_to_follow); // adds expectation
         }
 
-        shpid_t pid_to_follow;
+        // we only deal with opaque ptr here. Normalizing it to non-opaque version
+        // was a few % in overall CPU profile (yes, a bit surprising).
         shpid_t pid_to_follow_opaqueptr;
         if (slot_to_follow == t_follow_foster) {
-            pid_to_follow = current->get_foster();
             pid_to_follow_opaqueptr = current->get_foster_opaqueptr();
         } else if (slot_to_follow == t_follow_pid0) {
-            pid_to_follow = current->pid0();
             pid_to_follow_opaqueptr = current->pid0_opaqueptr();
         } else {
-            pid_to_follow = current->child(slot_to_follow);
             pid_to_follow_opaqueptr = current->child_opaqueptr(slot_to_follow);
         }    
-        w_assert1(pid_to_follow);
 
         // if worth it, do eager adoption. If it actually did something, it returns 
         // eGOODRETRY so that we will exit and retry
         if ((current->level() >= 3 || 
              (current->level() == 2 && slot_to_follow == t_follow_foster)) // next will be non-leaf
-            && is_ex_recommended(pid_to_follow)) { // next is VERY hot
+            && is_ex_recommended(pid_to_follow_opaqueptr)) { // next is VERY hot
+            // note: is_ex_recommended is just a hint, so using opaque ptr is okay.
+            // in most cases, the pid is always swizzled or always non-swizzled, thus accurate.
             W_DO (_ux_traverse_try_eager_adopt(*current, pid_to_follow_opaqueptr));
         }
         
-        bool should_try_ex = leaf_latch_mode == LATCH_EX && (
-            pid_to_follow == leaf_pid_causing_failed_upgrade
-            || current->latch_mode() == LATCH_EX // we have EX latch; don't SH latch
-            );
-        
-        if(current->level()==2 && slot_to_follow!=t_follow_foster && leaf_latch_mode==LATCH_EX) {
-            //We're likely going to find the target next, so go ahead and EX if we need to.
-            //The other possibility is a long adoption chain; if that is the case this is
-            //a performance oops, but we're also messed up anyway, so fix the bad chain and
-            //still do this.
-            should_try_ex = true;
+        bool should_try_ex = false;
+        if (leaf_latch_mode == LATCH_EX) {
+            if (current->latch_mode() == LATCH_EX) { // we have EX latch; don't SH latch
+                should_try_ex = true;
+            } else if (current->level()==2 && slot_to_follow!=t_follow_foster) {
+                //We're likely going to find the target next, so go ahead and EX if we need to.
+                //The other possibility is a long adoption chain; if that is the case this is
+                //a performance oops, but we're also messed up anyway, so fix the bad chain and
+                //still do this.
+                should_try_ex = true;
+            } else {
+                // this is also just a hint. TODO can we avoid normalize overhead?
+                should_try_ex = (smlevel_0::bf->normalize_shpid(pid_to_follow_opaqueptr)
+                                    == leaf_pid_causing_failed_upgrade);
+            }
         }
-        
+
         W_DO(next->fix_nonroot(*current, current->vol(), pid_to_follow_opaqueptr, 
                                should_try_ex ? LATCH_EX : LATCH_SH));
         
