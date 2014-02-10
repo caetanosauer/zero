@@ -28,7 +28,7 @@ w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent, volid_t vol,
     if (force_Q_fixing > 1 && mode == LATCH_SH) mode = LATCH_Q; // <<<>>>
     w_assert1(shpid != 0);
     unfix();
-    if (mode == LATCH_Q) {
+    if (mode == LATCH_Q || parent.latch_mode() == LATCH_Q) {
         if (virgin_page || !is_swizzled_pointer(shpid)) {
             return RC(eLATCHQFAIL);
         }
@@ -38,6 +38,10 @@ w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent, volid_t vol,
             _pp = NULL;
             return RC(eLATCHQFAIL);
         }
+        if (mode != LATCH_Q) {
+            _pp = NULL;
+            return RC(ePARENTLATCHQFAIL);  // should try to upgrade to given mode<<<>>>
+        }
     } else {
         W_DO(smlevel_0::bf->fix_nonroot(_pp, parent._pp, vol, shpid, mode, conditional, virgin_page));
         w_assert1(smlevel_0::bf->get_cb(_pp)->_pid_vol == vol);
@@ -45,13 +49,11 @@ w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent, volid_t vol,
     }
     _mode = mode;
 
-    // Check crabbing in Q to Q case:
-    if (mode == LATCH_Q) {
-        if (parent.latch_mode() == LATCH_Q) {
-            if (parent.change_possible_after_fix()) {
-                unfix();
-                return RC(ePARENTLATCHQFAIL);
-            }
+    // Check crabbing from Q case:
+    if (parent.latch_mode() == LATCH_Q) {
+        if (parent.change_possible_after_fix()) {
+            unfix();
+            return RC(ePARENTLATCHQFAIL);
         }
     }
     return RCOK;

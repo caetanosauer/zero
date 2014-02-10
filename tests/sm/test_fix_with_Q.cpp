@@ -332,8 +332,25 @@ w_rc_t test_non_root_page_fixing(ss_m* ssm, test_volume_t *test_volume) {
     r = child_page.fix_nonroot(root_page, root_pid.vol().vol, child_pid, 
                                LATCH_Q, false, false);
     EXPECT_EQ(r.err_num(), ePARENTLATCHQFAIL);
-    root_page.unfix();
 
+    // test Q->{SH,EX} crabbing:
+    r = child_page.fix_nonroot(root_page, root_pid.vol().vol, child_pid, 
+                               LATCH_SH, false, false);
+    EXPECT_EQ(r.err_num(), ePARENTLATCHQFAIL);
+    r = child_page.fix_nonroot(root_page, root_pid.vol().vol, child_pid, 
+                               LATCH_EX, false, false);
+    EXPECT_EQ(r.err_num(), ePARENTLATCHQFAIL);
+
+    root_page.unfix();
+    W_DO(root_page.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_Q));
+    W_DO(child_page.fix_nonroot(root_page, root_pid.vol().vol, child_pid, 
+                                LATCH_SH, false, false));
+    child_page.unfix();
+    W_DO(child_page.fix_nonroot(root_page, root_pid.vol().vol, child_pid, 
+                                LATCH_EX, false, false));
+    child_page.unfix();
+    root_page.unfix();
+    
     return RCOK;
 }
 
