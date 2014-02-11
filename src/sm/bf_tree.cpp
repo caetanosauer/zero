@@ -39,7 +39,13 @@ uint64_t bf_tree_m::_bf_swizzle_ex = 0;
 uint64_t bf_tree_m::_bf_swizzle_ex_fails = 0;
 #endif // PAUSE_SWIZZLING_ON
 
-
+/**
+ * Allocates memory on a specific NUMA node.
+ *
+ * @param[in] size of memory to be allocated.
+ * @param[in] NUMA node to allocate memory on.
+ * @param[in] align memory on a boundary that is a multiple of this parameter
+ */
 void* numa_malloc(size_t size, int node, size_t alignment)
 {
     void* realptr;
@@ -55,6 +61,11 @@ void* numa_malloc(size_t size, int node, size_t alignment)
     return alignptr;
 }
 
+/**
+ * Frees memory allocated by numa_alloc.
+ * 
+ * @param[in] pointer to the memory space to be freed.
+ */ 
 void my_numa_free(void* ptr)
 {
     void* realptr = (void*)(((uintptr_t*)ptr)[-1]);
@@ -118,10 +129,17 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
     BOOST_STATIC_ASSERT(sizeof(latch_t) == 64);
     // allocate one more pair of <control block, latch> as we want to align the table at an odd 
     // multiple of cacheline (64B)
+# ifdef NUMA
+    if (!(buf = numa_malloc((sizeof(bf_tree_cb_t) + sizeof(latch_t)) * (((uint64_t) block_cnt) + 1LLU), 0, sizeof(bf_tree_cb_t) + sizeof(latch_t)))) {
+        ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << sizeof(bf_tree_cb_t) << "-bytes blocks. ");
+        W_FATAL(eOUTOFMEMORY);
+    }
+# else
     if (::posix_memalign(&buf, sizeof(bf_tree_cb_t) + sizeof(latch_t), (sizeof(bf_tree_cb_t) + sizeof(latch_t)) * (((uint64_t) block_cnt) + 1LLU)) != 0) {
         ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << sizeof(bf_tree_cb_t) << "-bytes blocks. ");
         W_FATAL(eOUTOFMEMORY);
     }
+# endif
     ::memset (buf, 0, (sizeof(bf_tree_cb_t) + sizeof(latch_t)) * (((uint64_t) block_cnt) + 1LLU));
     _control_blocks = reinterpret_cast<bf_tree_cb_t*>(reinterpret_cast<char *>(buf) + sizeof(bf_tree_cb_t));
     w_assert0(_control_blocks != NULL);
@@ -134,10 +152,17 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
         }
     }
 #else  
+# ifdef NUMA
+    if (!(buf = numa_malloc(sizeof(bf_tree_cb_t) * ((uint64_t) block_cnt), 0, sizeof(bf_tree_cb_t)))) {
+        ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << sizeof(bf_tree_cb_t) << "-bytes blocks. ");
+        W_FATAL(eOUTOFMEMORY);
+    }
+# else
     if (::posix_memalign(&buf, sizeof(bf_tree_cb_t), sizeof(bf_tree_cb_t) * ((uint64_t) block_cnt)) != 0) {
         ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << sizeof(bf_tree_cb_t) << "-bytes blocks. ");
         W_FATAL(eOUTOFMEMORY);
     }
+# endif
     _control_blocks = reinterpret_cast<bf_tree_cb_t*>(buf);
     w_assert0(_control_blocks != NULL);
     ::memset (_control_blocks, 0, sizeof(bf_tree_cb_t) * block_cnt);
