@@ -412,12 +412,12 @@ public:
     /**
     * \brief Apply single-page-recovery to the given page.
     * \ingroup SPR
+    * Defined in log_spr.cpp.
     * \NOTE This method returns an error if the user had truncated
     * the transaction logs required for the recovery.
     * @param[in, out] p the page to recover.
     * @param[in] emlsn the LSN up to which we should recover the page.
-    * @pre p->lsn < emlsn (otherwise, you shouldn't have called this method)
-    * @pre p is already fixed with exclusive latch
+    * @pre p has a backup in the backup file
     */
     rc_t recover_single_page(generic_page* p, const lsn_t &emlsn);
 
@@ -426,6 +426,7 @@ public:
 
     /**
      * \ingroup SPR
+     * Defined in log_spr.cpp.
      * @see ss_m::dump_page_lsn_chain()
      */
     void dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t &max_lsn);

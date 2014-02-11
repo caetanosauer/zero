@@ -78,6 +78,7 @@ class prologue_rc_t;
 #include "restart.h"
 #include "sm_options.h"
 #include "suppress_unused.h"
+#include "backup.h"
 
 #ifdef EXPLICIT_TEMPLATE
 template class w_auto_delete_t<SmStoreMetaStats*>;
@@ -162,6 +163,7 @@ typedef srwlock_t sm_vol_rwlock_t;
 // Certain operations have to exclude xcts
 static sm_vol_rwlock_t          _begin_xct_mutex;
 
+backup_m* smlevel_0::bk = 0;
 device_m* smlevel_0::dev = 0;
 io_m* smlevel_0::io = 0;
 bf_tree_m* smlevel_0::bf = 0;
@@ -442,6 +444,11 @@ ss_m::_construct_once(
     /* just hang onto this until we create thelog manager...*/
     lm = new lock_m(_options.get_int_option("sm_locktablesize", 64000));
     if (! lm)  {
+        W_FATAL(eOUTOFMEMORY);
+    }
+
+    bk = new backup_m();
+    if (! bk) {
         W_FATAL(eOUTOFMEMORY);
     }
 
@@ -747,6 +754,7 @@ ss_m::_destruct_once()
         W_COERCE (e);
     }
     delete bf; bf = 0; // destroy buffer manager last because io/dev are flushing them!
+    delete bk; bk = 0;
     /*
      *  Level 0
      */

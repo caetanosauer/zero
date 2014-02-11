@@ -381,6 +381,7 @@ public:
     * the page-log-chain to go backward in the log file until
     * it hits a page-img log from which we can reconstruct the
     * page or it reaches the current_lsn.
+    * Defined in log_spr.cpp.
     * \NOTE This method returns an error if the user had truncated
     * the transaction logs required for the recovery.
     * @param[in] pid ID of the page to recover.
@@ -404,6 +405,7 @@ public:
     /**
     * \brief Apply the given logs to the given page.
     * \ingroup SPR
+    * Defined in log_spr.cpp.
     * @param[in, out] p the page to recover.
     * @param[in] ordered_entries the log records to apply
     * in the order of the log.
