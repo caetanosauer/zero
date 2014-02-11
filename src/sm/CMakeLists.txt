@@ -81,7 +81,6 @@ get_target_property (SM_MAINMEMORY_COMPILEDEF sm_mainmemory COMPILE_DEFINITIONS)
 set(SM_MAINMEMORY_COMPILEDEF "SIMULATE_MAINMEMORYDB")
 set_target_properties (sm_mainmemory PROPERTIES COMPILE_DEFINITIONS "${SM_MAINMEMORY_COMPILEDEF}")
 
-find_package(Numa) # numa library
 IF(NUMA_FOUND)
     # generate a library that simulates no swizzling and uses numa alloc
     add_library(sm_noswizzling_numa STATIC ${sm_STAT_SRCS})
