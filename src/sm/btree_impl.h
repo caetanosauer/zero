@@ -398,6 +398,26 @@ public:
 #endif // DOXYGEN_HIDE
 
     /**
+     * \brief Creates a new empty page as a foster-child of the given page
+     * \details
+     * This is the primary way of allocating a new page in Zero.
+     * Whenever we need a new page, whether no-record-split or not, we allocate a
+     * new page with empty key ranges. This is done as one SSX.
+     * @param[in] page the new page belongs to this page as foster-child.
+     * @param[out] new_page_id Page ID of the new page.
+     */
+    static rc_t _sx_norec_alloc(btree_page_h &page, lpid_t &new_page_id);
+
+    /**
+     * this version assumes system transaction as the active transaction on current thread.
+     * @see _sx_norec_alloc()
+     * @param[out] new_page_id Page ID of the new page.
+     * @pre In SSX
+     * @pre In page is EX-latched
+     */
+    static rc_t _ux_norec_alloc_core(btree_page_h &page, lpid_t &new_page_id);
+
+    /**
      * \brief Checks all direct children of parent and, if some child has foster,
      * pushes them up to parent, resolving foster status.
      *  \details
@@ -409,29 +429,31 @@ public:
      */
     static rc_t                 _sx_adopt_foster_all(
         btree_page_h &root, bool recursive=false);
-    /**
-     * this version assumes system transaction as the active transaction on current thread.
-     * @see _sx_adopt_foster_all()
-     */
-    static rc_t                 _ux_adopt_foster_all_core(
+    /** overload for recursion. */
+    static rc_t                 _sx_adopt_foster_all_core(
         btree_page_h &parent, bool is_root, bool recursive);
 
     /**
      * \brief Pushes up a foster pointer of child to the parent.
      *  \details
      * This method resolves only one foster pointer. If there might be many
-     * fosters in this child, or its siblings, consider _ux_adopt_foster_sweep().
-     * Context: only in system transaction.
+     * fosters in this child, or its siblings, consider _sx_adopt_foster_sweep().
+     * Adopt consists of one or two system transactions.
+     * If the parent has enough space: one SSX to move the pointer from child to parent.
+     * If not: one SSX to split the parent and then another SSX to move the pointer.
+     * So, it checks if we have enough space first.
      * @param[in] parent the interior node to store new children.
      * @param[in] child child page of the parent that (might) has foster-children.
      */
     static rc_t                 _sx_adopt_foster(btree_page_h &parent, btree_page_h &child);
 
     /**
-     * this version assumes system transaction as the active transaction on current thread.
+     * this version assumes we have already split the parent if needed.
+     * Context: in system transaction.
      * @see _sx_adopt_foster()
      */
-    static rc_t                 _ux_adopt_foster_core(btree_page_h &parent, btree_page_h &child);
+    static rc_t                 _ux_adopt_foster_core(btree_page_h &parent,
+                                        btree_page_h &child, const w_keystr_t &new_child_key);
 
     /**
      * \brief Pushes up a foster pointer of child to the parent IF we can get EX latches immediately.
@@ -445,68 +467,57 @@ public:
     static rc_t                 _sx_opportunistic_adopt_foster(btree_page_h &parent, btree_page_h &child, bool &pushedup);
 
     /**
-     * @see _sx_opportunistic_adopt_foster()
-     */
-    static rc_t                 _ux_opportunistic_adopt_foster_core(btree_page_h &parent, btree_page_h &child, bool &pushedup);
-
-    /**
      * \brief Pushes up all foster-children of children to the parent.
      *  \details
      * This method also follows foster-children of the parent.
      * @param[in] parent the interior node to store new children.
      */
-    static rc_t _ux_adopt_foster_sweep (btree_page_h &parent_arg);
+    static rc_t _sx_adopt_foster_sweep (btree_page_h &parent_arg);
 
     /**
-     * @see _ux_adopt_foster_sweep()
+     * @see _sx_adopt_foster_sweep()
      * @see _ux_opportunistic_adopt_foster_core()
-     * The difference from _ux_adopt_foster_sweep()
+     * The difference from _sx_adopt_foster_sweep()
      * is that this function doesn't exactly check children have foster-child.
      * So, this is much faster but some foster-child might be not adopted!
      */
-    static rc_t _ux_adopt_foster_sweep_approximate (btree_page_h &parent, shpid_t surely_need_child_pid);
-    /** This version launches system transaction.*/
     static rc_t _sx_adopt_foster_sweep_approximate (btree_page_h &parent, shpid_t surely_need_child_pid);
 
     /** Applies the changes of one adoption on parent node. Used by both usual adoption and REDO. */
-    static rc_t _ux_adopt_foster_apply_parent (btree_page_h &parent_arg,
+    static void _ux_adopt_foster_apply_parent (btree_page_h &parent_arg,
         shpid_t new_child_pid, const w_keystr_t &new_child_key);
     /** Applies the changes of one adoption on child node. Used by both usual adoption and REDO. */
     static void _ux_adopt_foster_apply_child (btree_page_h &child);
 
     /**
-     * \brief Splits a page as B-link tree.
+     * \brief Splits a page, making the new page as foster-child.
      *  \details
      * The new page is pointed by the old page in the "foster" property.
      * This function does not adopt the new separator key to parent,
      * making the by-effect minimal.
      *
-     * If the given page already has a b-linked page, the new page
+     * If the given page already has a foster child, the new page
      * jumps between them. For example, [old page] -> [page a].
      * will be [old page] -> [new page] -> [page a].
      *
      * Context: only in system transaction.
      * @param[in] page the page to split. also called "old" page.
      * @param[out] new_page_id ID of the newly created page.
-     * @param[in] triggering_key the key to be inserted after this split. used to determine split policy.
+     * @param[in] triggering_key the key to be inserted after this split.
+     * used to determine split policy.
      */
     static rc_t                 _sx_split_foster(btree_page_h &page, lpid_t &new_page_id,
         const w_keystr_t &triggering_key);
 
     /**
-     * this version assumes system transaction as the active transaction on current thread.
-     * @see _sx_split_foster()
+     * \brief Splits the given page if we need to do so for inserting the given key.
+     * @param[in,out] page the page that might split. When this method splits the page and
+     * also new_key should belong to the new page (foster-child), then this in/out param
+     * is switched to the new page. Remember, we receive a reference here.
+     * @param[in] new_key the key that has to be inserted.
      */
-    static rc_t                 _ux_split_foster_core(btree_page_h &page, const lpid_t &new_page_id, const w_keystr_t &triggering_key,
-        const w_keystr_t *new_child_key = NULL, shpid_t new_child_pid = 0);
-
-    /**
-     * applies all data changes for split. used for both usual split and REDO.
-     * @see _sx_adopt_foster_all()
-     */
-    static rc_t                 _ux_split_foster_apply(btree_page_h &page,
-        slotid_t right_begins_from, const w_keystr_t &mid_key, const lpid_t &new_pid,
-        const w_keystr_t *new_child_key = NULL, shpid_t new_child_pid = 0);
+    static rc_t                 _sx_split_if_needed (btree_page_h &page,
+                                                      const w_keystr_t &new_key);
 
 #ifdef DOXYGEN_HIDE
 ///==========================================
@@ -527,12 +538,21 @@ public:
      */
     static rc_t                 _sx_rebalance_foster(btree_page_h &page);
 
-    /** @see _sx_rebalance_foster() */
-    static rc_t                 _ux_rebalance_foster_core(btree_page_h &page);
+    /** Overload to specify how many records we move and the new fence key. */
+    static rc_t                 _sx_rebalance_foster(btree_page_h &page,
+        btree_page_h &foster_p, int32_t move_count, const w_keystr_t &mid_key, shpid_t new_pid0);
 
     /** @see _sx_rebalance_foster() */
     static rc_t                 _ux_rebalance_foster_core(btree_page_h &page,
-                                  btree_page_h &foster_p, int32_t move_count);
+        btree_page_h &foster_p, int32_t move_count, const w_keystr_t &mid_key, shpid_t new_pid0);
+
+    /** @see _ux_rebalance_foster_core() */
+    static rc_t                 _ux_rebalance_foster_apply(btree_page_h &page,
+        btree_page_h &foster_p, int32_t move_count, const w_keystr_t &mid_key, shpid_t new_pid0);
+
+    /** Special case that changes only fence key (for no-record-split). */
+    static rc_t                 _ux_rebalance_foster_norec(btree_page_h &page,
+        btree_page_h &foster_p, const w_keystr_t &mid_key);
 
     /**
      * \brief Absorbs foster-child of this page, deleting the foster-child.
@@ -548,8 +568,12 @@ public:
     static rc_t                 _sx_merge_foster(btree_page_h &page);
 
     /** @see _sx_merge_foster() */
-    static rc_t                 _ux_merge_foster_core(btree_page_h &page);
+    static rc_t                 _ux_merge_foster_core(btree_page_h &page,
+                                                      btree_page_h &foster_p);
 
+    /** @see _sx_merge_foster() */
+    static void                 _ux_merge_foster_apply_parent(btree_page_h &page,
+                                                              btree_page_h &foster_p);
 
     /**
      * \brief Converts the right sibling of given page to be a foster-child of it.

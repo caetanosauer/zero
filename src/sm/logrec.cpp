@@ -66,6 +66,11 @@ logrec_t::cat_str() const
     case t_undo | t_logical : 
         return "l-u-";
 
+    case t_redo | t_single_sys_xct:
+        return "ssx-";
+    case t_multi | t_redo | t_single_sys_xct:
+        return "ssxm";
+
 #if W_DEBUG_LEVEL > 0
     case t_bad_cat:
         // for debugging only
@@ -643,13 +648,19 @@ operator<<(ostream& o, const logrec_t& l)
     ios_fmtflags        f = o.flags();
     o.setf(ios::left, ios::left);
 
+    o << "LSN=" << l.lsn_ck() << " ";
     const char *rb = l.is_rollback()? "U" : "F"; // rollback/undo or forward
 
     if (!l.is_single_sys_xct()) {
-        o << l.tid() << ' ';
+        o << "TID=" << l.tid() << ' ';
+    } else {
+        o << "TID=SSX" << ' ';
     }
-    W_FORM(o)("%19s%5s:%1s", l.type_str(), l.cat_str(), rb );
-    o << "  " << l.pid();
+    W_FORM(o)("%20s%5s:%1s", l.type_str(), l.cat_str(), rb );
+    o << "  " << l.construct_pid();
+    if (l.is_multi_page()) {
+        o << " src-" << l.construct_pid2();
+    }
 
     switch(l.type()) {
         case t_comment : 
@@ -670,8 +681,8 @@ operator<<(ostream& o, const logrec_t& l)
     }
 
     if (!l.is_single_sys_xct()) {
-        if (l.is_cpsn())  o << " (" << l.undo_nxt() << ')';
-        else  o << " [" << l.xid_prev() << "]";
+        if (l.is_cpsn())  o << " (UNDO-NXT=" << l.undo_nxt() << ')';
+        else  o << " [UNDO-PRV=" << l.xid_prev() << "]";
     }
 
     o.flags(f);

@@ -251,15 +251,11 @@ public:
     }
 };
 
-/* Passing in retail build */
-/* Core dump in debug build - /projects/Zero/src/sm/restart.cpp:446, assert: r.is_redo() */
-/* Question: can a system normal shutdown with in-flight transaction?  Would restart go through the crash code path? *
 TEST (RestartTest, InflightNormalShutdown) {
     test_env->empty_logdata_dir();
     restart_inflight_normal_shutdown context;
     EXPECT_EQ(test_env->runRestartTest(&context, false), 0);  // false = no simulated crash, normal shutdown
 }
-**/
 
 // Test case with an uncommitted transaction, checkpoint, normal shutdown
 class restart_inflight_checkpoint_normal_shutdown : public restart_test_base 
@@ -334,13 +330,11 @@ public:
     }
 };
 
-/* Passing *
 TEST (RestartTest, InflightCrashShutdown) {
     test_env->empty_logdata_dir();
     restart_inflight_crash_shutdown context;
     EXPECT_EQ(test_env->runRestartTest(&context, true), 0);  // true = simulated crash
 }
-**/
 
 // Test case with an uncommitted transaction, checkpoint, simulated crash shutdown
 class restart_inflight_checkpoint_crash_shutdown : public restart_test_base 
@@ -374,13 +368,15 @@ public:
     }
 };
 
-/* Passing *
+/* one in 20-30 runs fails. btree_page_h.cpp:651 Assertion failed during recovery.
+It's reserve_ghost()'s insert_item failure (not enough space). Why this happens?
+Not yet figured it out, so commented out.
 TEST (RestartTest, InflightCheckpointCrashShutdown) {
     test_env->empty_logdata_dir();
     restart_inflight_checkpoint_crash_shutdown context;
     EXPECT_EQ(test_env->runRestartTest(&context, true), 0);  // true = simulated crash
 }
-**/
+*/
 
 // Test case with an uncommitted transaction, more than one page of data, no checkpoint, simulated crash shutdown
 class restart_inflight_many_crash_shutdown : public restart_test_base 
@@ -412,14 +408,11 @@ public:
     }
 };
 
-/* Passing */
-/* if execute test case 'restart_empty' first and then followed by this test case, AV: btree_page.h:518, item>=0 && item<nitems *
 TEST (RestartTest, InflightManyCrashShutdown) {
     test_env->empty_logdata_dir();
     restart_inflight_many_crash_shutdown context;
     EXPECT_EQ(test_env->runRestartTest(&context, true), 0);  // true = simulated crash
 }
-**/
 
 // Test case with an uncommitted transaction, more than one page of data, checkpoint, simulated crash shutdown
 class restart_inflight_ckpt_many_crash_shutdown : public restart_test_base 
@@ -561,14 +554,11 @@ public:
     }
 };
 
-/* Passing */
-/* if execute test case 'restart_empty' first and then followed by this test case, AV: btree_page.h:518, item>=0 && item<nitems *
 TEST (RestartTest, ManyCrashShutdown) {
     test_env->empty_logdata_dir();
     restart_many_crash_shutdown context;
     EXPECT_EQ(test_env->runRestartTest(&context, true), 0);  // true = simulated crash
 }
-**/
 
 // Test case with committed transactions,  more than one page of data, checkpoint, simulated crash shutdown
 class restart_many_ckpt_crash_shutdown : public restart_test_base 

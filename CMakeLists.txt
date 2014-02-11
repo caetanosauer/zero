@@ -64,6 +64,8 @@ IF(ENABLE_MUTRACE_PROFILER)
   SET (COMPILE_MUTRACE "-fPIC -fno-omit-frame-pointer -DMUTRACE_ENABLED_H")
 ENDIF(ENABLE_MUTRACE_PROFILER)
 
+find_package(Numa) # numa library
+
 ENABLE_TESTING() # we use CTest all over the project. run "make test" after cmake
 
 # compiler options. ported from Makefile.generic of original ShoreMT.
@@ -145,6 +147,7 @@ CHECK_INCLUDE_FILES(sys/types.h HAVE_SYS_TYPES_H)
 CHECK_INCLUDE_FILES(valgrind.h HAVE_VALGRIND_H)
 CHECK_INCLUDE_FILES(valgrind/valgrind.h HAVE_VALGRIND_VALGRIND_H)
 CHECK_INCLUDE_FILES(google/profiler.h HAVE_GOOGLE_PROFILER_H)
+CHECK_INCLUDE_FILES(numa.h HAVE_NUMA_H)
 
 ####################   std functions #####################
 CHECK_FUNCTION_EXISTS(vprintf HAVE_VPRINTF)
@@ -218,7 +221,7 @@ CONFIGURE_FILE( ${CMAKE_SOURCE_DIR}/config/shore-config-env.h.cmake ${CMAKE_BINA
 
 add_subdirectory(src) # main source codes
 add_subdirectory(config) # to be eliminated
-add_subdirectory(gtest-1.6.0) # google-test library
+add_subdirectory(gtest-1.7.0) # google-test library
 add_subdirectory(tests) # unit testcases
 # TODO: experiments should be compiled only when the user wants... maybe optional cmake argument?
 add_subdirectory(experiments) # benchmarks and other performance tests
@@ -239,3 +242,19 @@ if(DOXYGEN_FOUND)
     COMMENT "Generating API documentation with Doxygen" VERBATIM
   )
 endif(DOXYGEN_FOUND)
+
+# "make lint" will run google-cpplint
+add_custom_target(lint
+    # ALL # Enable this line if we want to enforce lint for every compilation.. not so far.
+    COMMAND python
+        ${CMAKE_SOURCE_DIR}/tools/cpplint.py
+        --linelength=95
+        --extensions=c,cpp,h,hpp,txt
+        --root=${CMAKE_SOURCE_DIR}/src
+        --filter=-,+whitespace/line_length,+whitespace/tab # So far minimal rules only
+        ${CMAKE_SOURCE_DIR}/src/*.h
+        ${CMAKE_SOURCE_DIR}/src/common/*
+        ${CMAKE_SOURCE_DIR}/src/fc/*
+        ${CMAKE_SOURCE_DIR}/src/sthread/*
+        ${CMAKE_SOURCE_DIR}/src/sm/*
+)

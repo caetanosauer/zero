@@ -186,11 +186,11 @@ class stid_list_elem_t  {
 
 
 
-/**\brief A transaction. Internal to the storage manager.
- * \ingroup LOGSPACE
- *
+/**
+ * \brief A transaction. Internal to the storage manager.
+ * \ingroup SSMXCT
  * This class may be used in a limited way for the handling of 
- * out-of-log-space conditions.  See \ref LOGSPACE.
+ * out-of-log-space conditions.  See \ref SSMLOG.
  */
 class xct_t : public smlevel_1 {
 /**\cond skip */
@@ -384,8 +384,6 @@ public:
     void                         log_warn_resume();
     bool                         log_warn_is_on() const;
 
-/**\cond skip */
-
 public:
     // used in sm.cpp
     rc_t                        add_dependent(xct_dependent_t* dependent);
@@ -396,9 +394,34 @@ public:
     //        logging functions -- used in logstub_gen.cpp only
     //
     bool                        is_log_on() const;
-    rc_t                        get_logbuf(logrec_t*&, int t,
-                                                       const fixable_page_h *p = 0);
-    rc_t                        give_logbuf(logrec_t*, const fixable_page_h *p = 0);
+
+    /**
+    * \brief Flush the logbuf and return it in "ret" for use.
+    * \details Caller must call give_logbuf(ret) to free it after use.
+    *  Leaves the xct's log mutex acquired.
+    *
+    *  This and give_logbuf() are used in the log_stub.i functions
+    *  and ONLY there.  THE ERROR RETURN (running out of log space)
+    *  IS PREDICATED ON THAT -- in that it's expected that in the case of
+    *  a normal  return (no error), give_logbuf will be called, but in
+    *  the error case (out of log space), it will not, and so we must
+    *  release the mutex in get_logbuf error cases.
+    * @param[out] ret the acquired log buffer
+    * @param[in] t bytes to reserve
+    */
+    rc_t                        get_logbuf(logrec_t* &ret, int t);
+
+    /**
+     * \brief Returns the log buffer acquired by get_logbuf().
+     * \details
+     * This method receives 0 to 2 pages that were updated by the logged operation,
+     * making the pages dirty and updating the LSN.
+     * @param[in] l log buffer to return
+     * @param[in] p the main page the log updated
+     * @param[in] p2 the second page the log updated
+     */
+    rc_t                        give_logbuf(logrec_t* l,
+        const fixable_page_h *p = NULL, const fixable_page_h *p2 = NULL);
 
     //
     //        Used by I/O layer
@@ -547,7 +570,6 @@ public:
                                         smlevel_0::in_recovery()
                                         ;
     }
-/**\endcond skip */
 
 private:
     void                         acquire_1thread_log_mutex() {
@@ -978,7 +1000,7 @@ bool xct_t::is_log_on() const {
 /**\brief Iterator over transaction list.
  *
  * This is exposed for the purpose of coping with out-of-log-space 
- * conditions. See \ref LOGSPACE.
+ * conditions. See \ref SSMLOG.
  */
 class xct_i  {
 public:

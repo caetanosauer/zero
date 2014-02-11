@@ -70,17 +70,6 @@ const lpid_t lpid_t::bof;
 const lpid_t lpid_t::eof;
 const lpid_t lpid_t::null;
 
-#ifdef SUN4V
-// debug pretty-print of an lsn -- used in debugger
-char const*
-db_pretty_print(lsn_t const* lsn, int /*i=0*/, char const* /* s=0 */)
-{
-  char *tmp = (char *) ::valloc(100);
-  snprintf(tmp, sizeof(tmp), "%d.%lld", lsn->hi(), (int64_t)(lsn->lo()));
-  return tmp;
-}
-#endif // SUN4V
-
 /* This function makes an atomic copy of the lsn passed to it.
 
    To prove correctness, we need to show that all possible

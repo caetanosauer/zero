@@ -158,64 +158,6 @@ fileoff_t log_m::max_partition_size() {
     return  partition_size(tmp);
 }
 
-#ifdef SUN4V
-// make dbx print log records at all, and in a readable way
-char const* 
-db_pretty_print(logrec_t const* rec, int /*i=0*/, char const* /*s=0*/) 
-{
-    static char tmp_data[1024];
-    
-    // what categories?
-    typedef char const* str;
-    str undo=(rec->is_undo()? "undo " : ""),
-        redo=(rec->is_redo()? "redo " : ""),
-        cpsn=(rec->is_cpsn()? "cpsn " : ""),
-        logical=(rec->is_logical()? "logical " : "");
-
-    char scratch[100];
-    str extra = scratch;
-    switch(rec->type()) {
-
-    case logrec_t::t_page_mark:
-    case logrec_t::t_page_reclaim:
-        snprintf(scratch, sizeof(scratch), "    { idx=%d, len=%d }\n",
-                 *(short*) rec->data(), *(short*) (rec->data()+sizeof(short)));
-        break;
-    default:
-        extra = "";
-        break;
-    }
-    
-    snprintf(tmp_data, sizeof(tmp_data),
-             "{\n"
-             "    _len = %d\n"
-             "    _type = %s\n"
-             "    _cat = %s%s%s%s\n"
-             "    _tid = %d.%d\n"
-             "    _pid = %d.%d.%d\n"
-             "    _page_tag = %d\n"
-             "    _page_prev = %d.%lld\n"
-             "    _xid_prev = %d.%lld\n"
-             "    _ck_lsn = %d.%lld\n"
-             "%s"
-             "}",
-             rec->length(),
-             rec->type_str(),
-             logical, undo, redo, cpsn,
-             rec->tid().get_hi(), rec->tid().get_lo(),
-             rec->construct_pid().vol().vol, 
-                     rec->construct_pid().store(), 
-                     rec->construct_pid().page,
-             rec->tag(),
-             (rec->page_prev().hi()),
-             (rec->xid_prev().hi()), (int64_t)(rec->xid_prev().lo()),
-             (rec->get_lsn_ck().hi()), (int64_t)(rec->get_lsn_ck().lo()),
-             extra
-             );
-    return tmp_data;
-}
-#endif // SUN4V
-
 log_m::log_m()
     : 
       _min_chkpt_rec_lsn(first_lsn(1)), 
