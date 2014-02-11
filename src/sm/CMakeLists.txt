@@ -2,6 +2,7 @@
 set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/alloc_cache.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/alloc_page.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/backup.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bf_fixed.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bf_hashtable.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bf_tree.cpp
@@ -153,6 +154,7 @@ install(FILES
   ${GENFILES_H}
   ${CMAKE_CURRENT_SOURCE_DIR}/alloc_cache.h
   ${CMAKE_CURRENT_SOURCE_DIR}/alloc_page.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/backup.h
   ${CMAKE_CURRENT_SOURCE_DIR}/bf_fixed.h
   ${CMAKE_CURRENT_SOURCE_DIR}/bf.h
   ${CMAKE_CURRENT_SOURCE_DIR}/bf_hashtable.h
