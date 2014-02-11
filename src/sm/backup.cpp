@@ -14,10 +14,21 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sstream>
+#include <stdlib.h>
+#include <memory.h>
 
 #define BACKUP_MEM_ALIGNMENT 4096
-#define BACKUP_ALIGN(address) ( ((((unsigned int)(address)+BACKUP_MEM_ALIGNMENT-1)/BACKUP_MEM_ALIGNMENT)*BACKUP_MEM_ALIGNMENT))
-#define BACKUP_ALIGN_DOWN(address) ( ((((unsigned int)(address)/BACKUP_MEM_ALIGNMENT)*BACKUP_MEM_ALIGNMENT))
+
+
+char* allocate_aligned_memory(size_t size_to_allocate) {
+    w_assert1(size_to_allocate % BACKUP_MEM_ALIGNMENT == 0);
+    char* buffer = NULL;
+    int ret = ::posix_memalign(reinterpret_cast<void**>(&buffer),
+                                BACKUP_MEM_ALIGNMENT, size_to_allocate);
+    w_assert1(ret == 0);
+    return buffer;
+}
 
 backup_m::backup_m() {
 
@@ -32,35 +43,28 @@ bool backup_m::backup_m_valid(){
 }
 
 w_rc_t backup_m::retrieve_page(generic_page *page, volid_t vid, shpid_t shpid) {
-	char fname[30];
+    std::stringstream file_name;
+    file_name << "backup_" << vid;
+    int fd = ::open(file_name.str().c_str(), O_RDONLY|O_DIRECT|O_NOATIME);
+    if (fd == -1) {
+        return RC (eBADCHECKSUM);
+    }
 
-	int k = sprintf(fname, "backup_%d", vid);
-	w_assert1(k > 0);
-/*
- *	ifstream backup(fname, ios::binary);
- *	w_assert1(backup.is_open());
- *	backup.seekg(sizeof(generic_page)*shpid);
- *	backup.read((char *)page, sizeof(generic_page));
- *	backup.close();
- */
-	int fd = open(fname, O_RDONLY|O_DIRECT|O_NOATIME);
-	if (fd == -1)
-		return RC (eBADCHECKSUM);
-	int aligned_pagesize = (int)BACKUP_ALIGN(sizeof(generic_page));
-	char *backup_pages = (char *)malloc(aligned_pagesize*2 + BACKUP_MEM_ALIGNMENT);
-	char *aligned = (char *)BACKUP_ALIGN(backup_pages);
-	int aligned_offset = (int)BACKUP_ALIGN_DOWN(shpid*sizeof(generic_page));
-	lseek(fd, aligned_offset, SEEK_SET);
-	read(fd, aligned, aligned_pagesize);
-	memcpy((char *)page, aligned + (shpid*sizeof(generic_page) - aligned_offset), sizeof(generic_page));
-	free(backup_pages);
-	
-	uint32_t checksum = page->calculate_checkup();
-	if (checksum != page->checksum)
-		return RC (eBADCHECKSUM);
+    char *aligned = allocate_aligned_memory(sizeof(generic_page));
+    ::lseek(fd, shpid*sizeof(generic_page), SEEK_SET);
+    size_t read_bytes = ::read(fd, aligned, sizeof(generic_page));
+    w_assert1(read_bytes == sizeof(generic_page));
+    ::memcpy(page, aligned, sizeof(generic_page));
+    ::free(aligned);
 
-	if ((page->pid.page != shpid) || (page->pid.vol() != vid))
-		return RC (eBADCHECKSUM);
+    uint32_t checksum = page->calculate_checksum();
+    if (checksum != page->checksum) {
+        return RC (eBADCHECKSUM);
+    }
 
-	return RCOK;
+    if ((page->pid.page != shpid) || (page->pid.vol().vol != vid)) {
+        return RC (eBADCHECKSUM);
+    }
+
+    return RCOK;
 }
