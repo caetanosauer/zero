@@ -7,9 +7,21 @@
 
 #include "w_defines.h"
 
-
-/*
- *  Backup manager interface.  
+/**
+ * \defgroup SSMBCK Backup Module
+ * \brief \b Backup \b Manager manipulates backup files that can be used for recovery from
+ * failures.
+ * \ingroup SSMAPI
+ * \details
+ * TODO Put detailed description of Backup module here.
+ * \section SUMMARY Overview
+ * bluh
+ * \section FUNC Functionalities
+ * bluh
+ * \section LIMIT Limitations
+ * bluh
+ * \section FUTURE Planned Extension
+ * bluh
  */
 
 #include "vid_t.h"
@@ -17,6 +29,12 @@
 
 class generic_page;
 
+/**
+ * \brief The API class of Backup Manager.
+ * \ingroup SSMBCK
+ * \details
+ * TODO Put detailed description of backup_m here.
+ */
 class backup_m {
 
 public:
