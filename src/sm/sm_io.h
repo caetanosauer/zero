@@ -257,7 +257,19 @@ public:
         store_flag_t                   flags,
         bool                           sync_volume = true);
     static bool                 is_valid_store(const stid_t& stid);
-    static shpid_t              get_root(const stid_t& stid);
+
+    /**
+     * \brief Returns page ID of the given store.
+     * @param[in] nolock If true, this method assumes appropriate locks are already taken
+     * to protect from concurrent volume unmount.
+     * \details
+     * Please use nolock=true whenever safe because it is significantly faster
+     * on NUMA environment. We observed sometimes 30% of CPU costs comes from _find_and_grab()
+     * by itself otherwise. nolock=true uses _find() instead, which is much faster.
+     * @see _find()
+     * @see _find_and_grab()
+     */
+    static shpid_t              get_root(const stid_t& stid, bool nolock = false);
     static rc_t                 set_root(const stid_t& stid, shpid_t root_pid);
 
     
