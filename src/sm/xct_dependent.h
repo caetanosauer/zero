@@ -46,7 +46,7 @@ public:
 
     virtual void        xct_state_changed(
     smlevel_1::xct_state_t        old_state,
-    smlevel_1::xct_state_t        new_state) = 0;
+    smlevel_1::xct_state_t        new_state);
 
     xct_t*                xd() const { return _xd; }
 protected:
@@ -69,6 +69,9 @@ private:
     w_link_t    _link;
     bool        _registered;
 };
+
+inline void xct_dependent_t::xct_state_changed(smlevel_1::xct_state_t, smlevel_1::xct_state_t)
+{}
 
 /*<std-footer incl-file-exclusion='XCT_DEPENDENT_H'>  -- do not edit anything below this line -- */
 

@@ -49,11 +49,17 @@ public:
 
   TicketS acquireS() {
     rwcount_t seq0;
-    while ( minwriter & (seq0=rwcount.load(/*lintel::memory_order_acquire*/)) || // no writer
-	    !rwcount.compare_exchange_strong(&seq0, seq0+1)) { //weak is ok
-      //asm("PAUSE\n\t":::); // doesn't seem to help. Can't just stick into non-asm loop...
-      //...because compiler generates loop, not recognized by the "PAUSE" convention
+    while ((seq0=rwcount++) & minwriter) { // yes writer
+      rwcount--; // TODO: maybe convert to CAS
     }
+    
+    // This way it's faster if it races with writers, not readers
+    // while ( minwriter & (seq0=rwcount.load(/*lintel::memory_order_acquire*/)) || // no writer
+    // 	    !rwcount.compare_exchange_strong(&seq0, seq0+1)) { //weak is ok
+    //   //asm("PAUSE\n\t":::); // doesn't seem to help. Can't just stick into non-asm loop...
+    //   //...because compiler generates loop, not recognized by the "PAUSE" convention
+    // }
+    
     return rmask & seq0;
   }
 
