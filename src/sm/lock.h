@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 #ifndef LOCK_H
@@ -16,6 +16,11 @@ class xct_lock_info_t;
 class lock_core_m;
 class lil_global_table;
 
+/**
+ * \brief Lock Manager API.
+ * \ingroup SSMLOCK
+ * See \ref OKVL and \ref LIL.
+ */
 class lock_m : public smlevel_1 {
 public:
     // initialize/takedown functions for thread-local state
@@ -106,4 +111,4 @@ private:
     lock_core_m*                _core;
 };
 
-#endif          /*</std-footer>*/
+#endif // LOCK_H
