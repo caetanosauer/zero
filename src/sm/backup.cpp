@@ -61,6 +61,9 @@ w_rc_t backup_m::_retrieve_page(generic_page& page, volid_t vid, shpid_t shpid) 
         return RC (eBADCHECKSUM);
     }
 
+    /* NB: If sizeof(generic_page) (== 8K) changes to a non-multiple of 512/1K/4K,
+     * the read length will need to be explicitly realigned.
+     */
     char *aligned = allocate_aligned_memory(sizeof(generic_page));
     ::lseek(fd, shpid*sizeof(generic_page), SEEK_SET);
     size_t read_bytes = ::read(fd, aligned, sizeof(generic_page));

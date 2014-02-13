@@ -716,7 +716,7 @@ public:
 
     /**
      * \brief Changes Expected-Min-LSN of either pid, foster-child, or real child.
-     * @param[in] slot -2 if foster-child, -1 if pid0, 0 or larger if real child
+     * @param[in] slot -1 if foster-child, 0 if pid0, 1 or larger if real child
      */
     void            set_emlsn_general(slotid_t slot, const lsn_t &lsn);
 
@@ -1379,10 +1379,10 @@ inline void btree_page_h::set_child_emlsn(slotid_t slot, const lsn_t &lsn) {
     w_assert1(lsn != lsn_t::null);
 }
 inline void btree_page_h::set_emlsn_general(slotid_t slot, const lsn_t &lsn) {
-    if (slot == -1) {
+    if (slot == 0) {
         // this means pid0
         set_pid0_emlsn(lsn);
-    } else if (slot == -2) {
+    } else if (slot == -1) {
         // this means foster child
         set_foster_emlsn(lsn);
     } else {

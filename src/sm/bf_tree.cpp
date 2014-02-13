@@ -34,7 +34,8 @@
 #include "latch.h"
 #include "btree_page_h.h"
 #include "log.h"
-
+#include "xct.h"
+#include <logfunc_gen.h>
 ///////////////////////////////////   Initialization and Release BEGIN ///////////////////////////////////  
 
 #ifdef PAUSE_SWIZZLING_ON
@@ -506,11 +507,13 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     DBGOUT3(<<"bf_tree_m: error while reading page " << shpid << " to frame " << idx << ". rc=" << read_rc);
                     _add_free_block(idx);
                     return read_rc;
+                    /* TODO: if this is an I/O error, we could try to do SPR on it. */
                 } else {
                     // for each page retrieved from disk, compare its checksum
                     uint32_t checksum = _buffer[idx].calculate_checksum();
                     if (checksum != _buffer[idx].checksum) {
                         ERROUT(<<"bf_tree_m: bad page checksum in page " << shpid);
+                        /* Begin SPR_related */
                         ::memset(&_buffer[idx], '\0', sizeof(generic_page));
                         _buffer[idx].lsn = lsn_t::null;
                         _buffer[idx].pid = lpid_t(vol, parent->pid.store(), shpid);
@@ -526,6 +529,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                         } else {
                             W_COERCE(smlevel_0::log->recover_single_page(&_buffer[idx], child_emlsn));
                         }
+                        /* End SPR-related */
                     }
                     // this is actually an error, but some testcases don't bother making real pages, so
                     // we just write out some warning.  FIXME: fix testcases and make this a real error!
@@ -536,12 +540,14 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                         // prevent assertion errors due to bad testcase pages; should not be needed once above fixed:
                         _buffer[idx].tag = t_btree_p;
                     }
-
+                    /* Begin SPR-related */
                     /* Page is valid, but it might be stale. */
                     lsn_t child_emlsn = btree_page_h(parent).get_child_emlsn(find_page_id_slot(parent, shpid));
                     if (child_emlsn < _buffer[idx].lsn) {
                         /* Parent's EMLSN is out of date, e.g. system died before
-                         * parent was updated on child's previous eviction. Update it.
+                         * parent was updated on child's previous eviction. 
+                         * We can update it here and have to do more I/O 
+                         * or try to catch it again on eviction and risk being unlucky.
                          */
                         
                     } else if (child_emlsn > _buffer[idx].lsn) {
@@ -551,12 +557,14 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                             cb.latch().upgrade_if_not_block(would_block);
                         }
                         if (would_block) {
-                                _add_free_block(idx);
+                           W_FATAL_MSG(eINTERNAL, << "A page that was newly brought into bufferpool"
+                                " couldn't be EX latched. pid:" << _buffer[idx].pid);
                         } else {
                             W_COERCE(smlevel_0::log->recover_single_page(&_buffer[idx], child_emlsn));
                         }
                     }
                     /* else child_emlsn == lsn. we are ok. */
+                    /* End SPR-related */
                 }
             }
 
@@ -1082,6 +1090,16 @@ int bf_tree_m::_try_evict_block(bf_idx idx) {
         DBGOUT1(<<"evicting page idx = " << idx << " shpid = " << cb._pid_shpid 
                 << " pincnt = " << cb.pin_cnt());
         
+        /* Begin SPR-related */
+        slotid_t child_slotid = find_page_id_slot(&_buffer[cb._parent], cb._pid_shpid);
+        w_assert1(child_slotid > -2);
+        W_COERCE(_sx_update_child_emlsn(&_buffer[cb._parent], child_slotid, _buffer[idx].lsn));
+        /* Note that we are not grabbing EX latch on parent here. I presume that no
+         * one else should be touching these exact bytes anyway. 
+         */ 
+        
+        /* End SPR-related */
+
         // remove it from hashtable.
         bool removed = _hashtable->remove(bf_key(cb._pid_vol, cb._pid_shpid));
         w_assert1(removed);
@@ -1924,3 +1942,17 @@ int bf_tree_m::nframes(int priority, int level, int refbit, bool swizzled, bool 
     return n;
 }
 #endif
+
+w_rc_t bf_tree_m::_sx_update_child_emlsn(generic_page* parent, slotid_t child_slotid, 
+                                         lsn_t child_emlsn)
+{
+   
+    sys_xct_section_t sxs (true); // this transaction will output only one log!
+    W_DO(sxs.check_error_on_start());
+    btree_page_h bp(parent);
+    W_DO(log_page_evict(bp, child_slotid, child_emlsn));
+    bp.set_emlsn_general(child_slotid, child_emlsn);
+    W_DO (sxs.end_sys_xct (RCOK));
+    return RCOK;
+}
+

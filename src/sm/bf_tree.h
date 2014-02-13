@@ -656,6 +656,15 @@ private:
     w_rc_t _install_volume_mainmemorydb(vol_t* volume);
     w_rc_t _fix_nonswizzled_mainmemorydb(generic_page* parent, generic_page*& page, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page);
 
+    
+    /**
+     * \brief System transaction for upadting child EMLSN in parent
+     * \ingroup SPR
+     * @param[in,out] parent parent page
+     * @param[in] child_slotid slot id of child
+     * @param[in] child_emlsn new emlsn to store in parent
+     */
+    w_rc_t _sx_update_child_emlsn(generic_page *parent, slotid_t child_slotid, lsn_t child_emlsn);
 
 private:
     /** count of blocks (pages) in this bufferpool. */
