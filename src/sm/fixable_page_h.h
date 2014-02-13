@@ -182,11 +182,16 @@ public:
     bool         change_possible_after_fix() const;
 
     /**
-     * Conditionally upgrade the latch to EX.  Returns true if successfully upgraded.
+     * Attempt to upgrade our latch to at least mode, which must be either LATCH_EX (the
+     * default) or LATCH_SH.  Returns true iff our latch mode afterwards is >= mode.  Our
+     * latch mode is unchanged if we return false.
      * 
-     * @pre We hold the current page's latch in SH mode.
+     * WARNING: this operation can spuriously fail once in a while (e.g., S -> X may fail
+     * even without any other latch holders).
+     * 
+     * @pre We hold the current page's latch in Q, SH, or EX mode.
      */
-    bool         upgrade_latch_conditional();
+    bool         upgrade_latch_conditional(latch_mode_t mode=LATCH_EX);
 
 
     // ======================================================================

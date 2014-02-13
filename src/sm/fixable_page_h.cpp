@@ -168,14 +168,25 @@ bool fixable_page_h::change_possible_after_fix() const {
 }
 
 
-bool fixable_page_h::upgrade_latch_conditional() {
+bool fixable_page_h::upgrade_latch_conditional(latch_mode_t mode) {
     w_assert1(_pp != NULL);
-    w_assert1(_mode == LATCH_SH);
-    bool success = smlevel_0::bf->upgrade_latch_conditional(_pp);
-    if (success) {
-        _mode = LATCH_EX;
+    w_assert1(mode == LATCH_SH || mode == LATCH_EX);
+    w_assert1(_mode != LATCH_NL);
+
+    if (_mode >= mode) {
+        return true;
+    } else if (_mode == LATCH_SH) {
+        w_assert1(mode == LATCH_EX);
+        bool success = smlevel_0::bf->upgrade_latch_conditional(_pp);
+        if (success) {
+            _mode = LATCH_EX;
+        }
+        return success;
+        
+    } else {
+        w_assert1(_mode == LATCH_Q);
+        return false; // later need to call latch operation and appropriately set _mode <<<>>>
     }
-    return success;
 }
 
 
