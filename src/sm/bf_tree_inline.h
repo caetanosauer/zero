@@ -175,7 +175,7 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
     return RCOK;
 }
 
-inline w_rc_t bf_tree_m::fix_with_Q_nonroot(generic_page*& page, shpid_t shpid, q_ticket_t& ticket) {
+inline w_rc_t bf_tree_m::fix_unsafely_nonroot(generic_page*& page, shpid_t shpid, latch_mode_t mode, bool conditional, q_ticket_t& ticket) {
     w_assert1((shpid & SWIZZLED_PID_BIT) != 0);
 
     INC_TSTAT(bf_fix_nonroot_count);
@@ -185,9 +185,13 @@ inline w_rc_t bf_tree_m::fix_with_Q_nonroot(generic_page*& page, shpid_t shpid, 
 
     bf_tree_cb_t &cb = get_cb(idx);
 
-    // later we will acquire the latch in Q mode <<<>>>
-    //W_DO(get_cb(idx).latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
-    ticket = 42; // <<<>>>
+    if (mode == LATCH_Q) {
+        // later we will acquire the latch in Q mode <<<>>>
+        //W_DO(get_cb(idx).latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
+        ticket = 42; // <<<>>>
+    } else {
+        W_DO(get_cb(idx).latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
+    }
     page = &(_buffer[idx]);
 
     // We limit the maximum value of the refcount by BP_MAX_REFCOUNT to avoid the scalability 

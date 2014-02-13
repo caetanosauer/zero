@@ -64,20 +64,22 @@ public:
      * efficiently fixes the page if the shpid (pointer) is already swizzled by the parent
      * page.  The optimization is transparent for most of the code because the shpid
      * stored in the parent page is automatically (and atomically) changed to a swizzled
-     * pointer by the bufferpool.
+     * pointer when permited by the latch mode.
      *
-     * @param[in] parent        parent of the page to be fixed.  has to be
-     *                          already latched.  if you can't provide this, use
-     *                          fix_direct() though it can't exploit pointer swizzling and
-     *                          thus will be slower.
+     * @param[in] parent       parent of the page to be fixed.  If you can't provide this, use
+     *                         fix_direct() though it can't exploit pointer swizzling and
+     *                         thus will be slower.
      * @param[in] vol          volume ID.
-     * @param[in] shpid        ID of the page to fix (or bufferpool index
-     *                         when swizzled)
-     * @param[in] mode         latch mode.  has to be SH or EX.
-     * @param[in] conditional  whether the fix is conditional (returns
-     *                         immediately even if failed).
-     * @param[in] virgin_page  whether the page is a new page thus
-     *                         doesn't have to be read from disk.
+     * @param[in] shpid        ID of the page to fix (or bufferpool index when swizzled)
+     * @param[in] mode         latch mode.  Can be Q, SH, or EX.
+     * @param[in] conditional  whether the fix is conditional (returns immediately even if 
+     *                         failed).
+     * @param[in] virgin_page  whether the page is a new page and thus doesn't have to be
+     *                         read from disk.
+     * 
+     * If parent.latch_mode() or mode is LATCH_Q, can return eLATCHQFAIL,
+     * ePARENTLATCHQFAIL, or eNEEDREALLATCH.  The later occurs only when virgin_page is
+     * true or shpid is not swizzled.
      */
     w_rc_t fix_nonroot(const fixable_page_h &parent, volid_t vol,
                        shpid_t shpid, latch_mode_t mode, bool conditional=false, 

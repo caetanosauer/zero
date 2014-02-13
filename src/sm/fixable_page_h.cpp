@@ -25,22 +25,29 @@ void fixable_page_h::unfix() {
 w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent, volid_t vol,
                                    shpid_t shpid, latch_mode_t mode, 
                                    bool conditional, bool virgin_page) {
-    if (force_Q_fixing > 1 && mode == LATCH_SH) mode = LATCH_Q; // <<<>>>
+    w_assert1(mode != LATCH_NL);
     w_assert1(shpid != 0);
+
+    if (force_Q_fixing > 1 && mode == LATCH_SH) mode = LATCH_Q; // <<<>>>
     unfix();
     if (mode == LATCH_Q || parent.latch_mode() == LATCH_Q) {
         if (virgin_page || !is_swizzled_pointer(shpid)) {
-            return RC(eLATCHQFAIL);
+            return RC(eNEEDREALLATCH);
         }
 
-        W_DO(smlevel_0::bf->fix_with_Q_nonroot(_pp, shpid, _Q_ticket));
-        if (false) { // test ticket later for validity <<<>>>
-            _pp = NULL;
-            return RC(eLATCHQFAIL);
+        W_DO(smlevel_0::bf->fix_unsafely_nonroot(_pp, shpid, mode, conditional, _Q_ticket));
+        if (mode == LATCH_Q) {
+            if (false) { // test ticket later for validity <<<>>>
+                _pp = NULL;
+                return RC(eLATCHQFAIL);
+            }
         }
-        if (mode != LATCH_Q) {
-            _pp = NULL;
-            return RC(ePARENTLATCHQFAIL);  // should try to upgrade to given mode<<<>>>
+        // Check crabbing from Q case:
+        if (parent.latch_mode() == LATCH_Q) {
+            if (parent.change_possible_after_fix()) {
+                unfix();
+                return RC(ePARENTLATCHQFAIL);
+            }
         }
     } else {
         W_DO(smlevel_0::bf->fix_nonroot(_pp, parent._pp, vol, shpid, mode, conditional, virgin_page));
@@ -49,13 +56,6 @@ w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent, volid_t vol,
     }
     _mode = mode;
 
-    // Check crabbing from Q case:
-    if (parent.latch_mode() == LATCH_Q) {
-        if (parent.change_possible_after_fix()) {
-            unfix();
-            return RC(ePARENTLATCHQFAIL);
-        }
-    }
     return RCOK;
 }
 
