@@ -57,13 +57,23 @@ public:
 
     lil_global_table*            get_lil_global_table();
 
+    /**
+     * \brief Returns the lock granted to this transaction for the given lock ID.
+     * @param[in] lock_id identifier of the lock
+     * @return the lock mode this transaction has for the lock. ALL_N_GAP_N if not any.
+     * \details
+     * This method returns very quickly because it only checks transaction-private data.
+     */
+    const okvl_mode&            get_granted_mode(const lockid_t& lock_id);
+
+    /**
+     * \brief Acquires a lock of the given mode (or stronger)
+     */
     rc_t                        lock(
         const lockid_t&             n, 
-        const okvl_mode&               m,
+        const okvl_mode&            m,
         bool                        check_only,
-        timeout_in_ms               timeout = WAIT_SPECIFIED_BY_XCT,
-        okvl_mode*                    prev_mode = 0,
-        okvl_mode*                    prev_pgmode = 0);
+        timeout_in_ms               timeout = WAIT_SPECIFIED_BY_XCT);
 
     /**
      * Take an intent lock on the given volume.
@@ -102,8 +112,6 @@ private:
     rc_t                        _lock(
         const lockid_t&              n, 
         const okvl_mode&                m,
-        okvl_mode&                      prev_mode,
-        okvl_mode&                      prev_pgmode,
         bool                         check_only,
         timeout_in_ms                timeout
         );
