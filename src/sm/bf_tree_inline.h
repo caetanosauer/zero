@@ -175,7 +175,7 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
     return RCOK;
 }
 
-inline w_rc_t bf_tree_m::fix_with_Q_nonroot(generic_page*& page, volid_t vol, shpid_t shpid, q_ticket_t& ticket) {
+inline w_rc_t bf_tree_m::fix_with_Q_nonroot(generic_page*& page, shpid_t shpid, q_ticket_t& ticket) {
     w_assert1((shpid & SWIZZLED_PID_BIT) != 0);
 
     INC_TSTAT(bf_fix_nonroot_count);
@@ -189,14 +189,6 @@ inline w_rc_t bf_tree_m::fix_with_Q_nonroot(generic_page*& page, volid_t vol, sh
     //W_DO(get_cb(idx).latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
     ticket = 42; // <<<>>>
     page = &(_buffer[idx]);
-
-    // cheap approximate test to see if got right page; benign data races:
-    if (!cb._used ||
-        (cb._pid_vol   != vol) ||
-        (cb._pid_shpid != _buffer[idx].pid.page)) {
-        ticket = 666;  // substitute always invalid ticket here <<<>>>
-        return RCOK;
-    }
 
     // We limit the maximum value of the refcount by BP_MAX_REFCOUNT to avoid the scalability 
     // bottleneck caused by excessive cache coherence traffic (cacheline ping-pongs between sockets).

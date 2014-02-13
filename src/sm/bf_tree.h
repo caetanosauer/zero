@@ -242,14 +242,13 @@ public:
      * Fixes a non-root page in the bufferpool in Q mode.
      * 
      * @param[out] page     the fixed page.
-     * @param[in]  vol      volume ID.
      * @param[in]  shpid    ID of the page to fix
      * @param[out] ticket   the resulting Q ticket
      * @pre shpid is a swizzled pointer
      * 
      * To use this method, you need to include bf_tree_inline.h.
      */
-    w_rc_t fix_with_Q_nonroot(generic_page*& page, volid_t vol, shpid_t shpid, q_ticket_t& ticket);
+    w_rc_t fix_with_Q_nonroot(generic_page*& page, shpid_t shpid, q_ticket_t& ticket);
 
     /**
      * Fixes any page (root or non-root) in the bufferpool without pointer swizzling.
