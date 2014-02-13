@@ -15,6 +15,7 @@ class lock_queue_entry_t;
 
 /**
 * \brief Lock table implementation class.
+* \ingroup SSMLOCK
 * \details
 * This is the gut of lock management in Foster B-trees.
 * \section Synchronization
@@ -103,7 +104,6 @@ public:
                 xct_t*            xd,
                 const lockid_t&   name,
                 const okvl_mode&     mode,
-                okvl_mode&           prev_mode,
                 bool              check_only,
                 timeout_in_ms     timeout);
 
@@ -132,7 +132,6 @@ private:
         xct_t*                 xd,
         lock_queue_t*          lock,
         const okvl_mode&          mode,
-        okvl_mode&               prev_mode,
         bool                   check_only,
         timeout_in_ms          timeout,
         xct_lock_info_t*       the_xlinfo);

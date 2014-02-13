@@ -23,8 +23,9 @@ class lock_core_m;
 
 
 /**
- * A lock request entry in a lock queue.
- *
+ * \brief A lock request entry in a lock queue.
+ * \ingroup SSMLOCK
+ * \details
  * All fields except _prev and _next, which are protected by L in the
  * usual way, of this class have unusual access protections:
  *
@@ -49,6 +50,8 @@ class lock_core_m;
 class lock_queue_entry_t {
 public:
     uint32_t get_observed_release_version() const { return _observed_release_version; }
+    const okvl_mode& get_requested_mode() const { return _requested_mode; }
+    const okvl_mode& get_granted_mode() const { return _granted_mode; }
 private:
     friend class lock_queue_t;
     friend class lock_core_m;  // TODO: narrow this down later <<<>>>
@@ -92,7 +95,8 @@ ostream&  operator<<(ostream& o, const lock_queue_entry_t& r);
 /**
  * \brief A lock queue to hold granted and waiting lock requests
  * (lock_queue_entry_t's) for a given lock.
- *
+ * \ingroup SSMLOCK
+ * \details
  * NOTE objects of this class are created via the container of this
  * object (bucket_t) calling allocate_lock_queue /
  * deallocate_lock_queue.
@@ -271,8 +275,9 @@ inline bool lock_queue_t::_check_compatible(const okvl_mode& granted_mode,
 
 
 /**
- * Lock table hash table bucket.
- *
+ * \brief Lock table hash table bucket.
+ * \ingroup SSMLOCK
+ * \details
  * Lock table's hash table is lock_core_m::_htab, which is an array of
  * bucket_t's.  Each bucket contains a linked list of lock_queue_t's
  * and a latch that protects that list's _next pointers.
