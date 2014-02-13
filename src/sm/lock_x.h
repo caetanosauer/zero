@@ -67,6 +67,9 @@ const int XCT_LOCK_HASHMAP_SIZE = 1023;
  * Further, Shore-MT had a feature to run a single transaction on multi-threads.
  * There was no truly "private" memory back then for this reason.
  * We found this causes an issue in NUMA environment, and made this private hashmap.
+ * \section PERFORMANCE Performance Comparison
+ * As of 20140213, with and without this improvement, TPCC on 4-socket machine is as
+ * follows: BEFORE=12027 TPS, AFTER=13764 TPS.
  * @see xct_lock_entry_t
  */
 struct XctLockHashMap {
