@@ -511,21 +511,21 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     uint32_t checksum = _buffer[idx].calculate_checksum();
                     if (checksum != _buffer[idx].checksum) {
                         ERROUT(<<"bf_tree_m: bad page checksum in page " << shpid);
-+                        memset(&_buffer[idx], '\0', sizeof(generic_page));
-                         _buffer[idx].lsn = lsn_t::null;
-                         _buffer[idx].pid = lpid_t(vol, parent->pid.store(), shpid);
-                         _buffer[idx].tag = t_btree_p;
-                         lsn_t child_emlsn = btree_page_h(parent).get_child_emlsn(find_page_id_slot(parent, shpid));
-                         bool would_block(true);
-                         if (!cb.latch().is_mine()) {
-                             cb.latch().upgrade_if_not_block(would_block);
-                         }
-                         if (would_block) {
-                             W_FATAL_MSG(eINTERNAL, << "A page that was newly brought into bufferpool"
-                                 " couldn't be EX latched. pid:" << _buffer[idx].pid);
-                         } else {
-                             W_COERCE(smlevel_0::log->recover_single_page(&_buffer[idx], child_emlsn));
-                         }
+                        ::memset(&_buffer[idx], '\0', sizeof(generic_page));
+                        _buffer[idx].lsn = lsn_t::null;
+                        _buffer[idx].pid = lpid_t(vol, parent->pid.store(), shpid);
+                        _buffer[idx].tag = t_btree_p;
+                        lsn_t child_emlsn = btree_page_h(parent).get_child_emlsn(find_page_id_slot(parent, shpid));
+                        bool would_block(true);
+                        if (!cb.latch().is_mine()) {
+                            cb.latch().upgrade_if_not_block(would_block);
+                        }
+                        if (would_block) {
+                            W_FATAL_MSG(eINTERNAL, << "A page that was newly brought into bufferpool"
+                                " couldn't be EX latched. pid:" << _buffer[idx].pid);
+                        } else {
+                            W_COERCE(smlevel_0::log->recover_single_page(&_buffer[idx], child_emlsn));
+                        }
                     }
                     // this is actually an error, but some testcases don't bother making real pages, so
                     // we just write out some warning.  FIXME: fix testcases and make this a real error!
@@ -537,26 +537,26 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                         _buffer[idx].tag = t_btree_p;
                     }
 
-                     /* Page is valid, but it might be stale. */
-                     lsn_t child_emlsn = btree_page_h(parent).get_child_emlsn(find_page_id_slot(parent, shpid));
-                     if (child_emlsn < _buffer[idx].lsn) {
-                         /* Parent's EMLSN is out of date, e.g. system died before
-                          * parent was updated on child's previous eviction. Update it.
-                          */
-                         
-                     } else if (child_emlsn > _buffer[idx].lsn) {
-                         /* Child is stale. */
-                         bool would_block(true);
-                         if (!cb.latch().is_mine()) {
-                             cb.latch().upgrade_if_not_block(would_block);
-                         }
-                         if (would_block) {
-                                 _add_free_block(idx);
-                         } else {
-                             W_COERCE(smlevel_0::log->recover_single_page(&_buffer[idx], child_emlsn));
-                         }
-                     }
-                     /* else child_emlsn == lsn. we are ok. */
+                    /* Page is valid, but it might be stale. */
+                    lsn_t child_emlsn = btree_page_h(parent).get_child_emlsn(find_page_id_slot(parent, shpid));
+                    if (child_emlsn < _buffer[idx].lsn) {
+                        /* Parent's EMLSN is out of date, e.g. system died before
+                         * parent was updated on child's previous eviction. Update it.
+                         */
+                        
+                    } else if (child_emlsn > _buffer[idx].lsn) {
+                        /* Child is stale. */
+                        bool would_block(true);
+                        if (!cb.latch().is_mine()) {
+                            cb.latch().upgrade_if_not_block(would_block);
+                        }
+                        if (would_block) {
+                                _add_free_block(idx);
+                        } else {
+                            W_COERCE(smlevel_0::log->recover_single_page(&_buffer[idx], child_emlsn));
+                        }
+                    }
+                    /* else child_emlsn == lsn. we are ok. */
                 }
             }
 
