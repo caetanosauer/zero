@@ -71,7 +71,7 @@ rc_t log_m::recover_single_page(generic_page* p, const lsn_t& emlsn) {
     // First, retrieve the backup page we will be based on.
     // If this backup is enough recent, we have to apply only a few logs.
     lpid_t pid = p->pid;
-    W_DO(smlevel_0::bk->retrieve_page(p, p->pid.vol().vol, pid.page));
+    W_DO(smlevel_0::bk->retrieve_page(*p, p->pid.vol().vol, pid.page));
     w_assert1(pid == p->pid);
     // TODO out-of-scope: what if it returns a garbage page for non-backed up page?
 

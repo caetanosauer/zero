@@ -18,6 +18,8 @@
 #include <stdlib.h>
 #include <memory.h>
 
+#include "alloc_page.h"
+
 #define BACKUP_MEM_ALIGNMENT 4096
 
 
@@ -42,7 +44,16 @@ bool backup_m::backup_m_valid(){
 	return true;
 }
 
-w_rc_t backup_m::retrieve_page(generic_page *page, volid_t vid, shpid_t shpid) {
+bool backup_m::page_exists(volid_t vol, shpid_t shpid) {
+    generic_page buffer;
+    shpid_t alloc_pid = alloc_page_h::pid_to_alloc_pid(shpid);
+    W_COERCE(_retrieve_page(buffer, vol, alloc_pid));
+    alloc_page_h alloc_p(&buffer);
+    return alloc_p.is_bit_set(shpid);
+}
+
+
+w_rc_t backup_m::_retrieve_page(generic_page& page, volid_t vid, shpid_t shpid) {
     std::stringstream file_name;
     file_name << "backup_" << vid;
     int fd = ::open(file_name.str().c_str(), O_RDONLY|O_DIRECT|O_NOATIME);
@@ -54,15 +65,20 @@ w_rc_t backup_m::retrieve_page(generic_page *page, volid_t vid, shpid_t shpid) {
     ::lseek(fd, shpid*sizeof(generic_page), SEEK_SET);
     size_t read_bytes = ::read(fd, aligned, sizeof(generic_page));
     w_assert1(read_bytes == sizeof(generic_page));
-    ::memcpy(page, aligned, sizeof(generic_page));
+    ::memcpy(&page, aligned, sizeof(generic_page));
     ::free(aligned);
+    return RCOK;
+}
 
-    uint32_t checksum = page->calculate_checksum();
-    if (checksum != page->checksum) {
+
+w_rc_t backup_m::retrieve_page(generic_page &page, volid_t vid, shpid_t shpid) {
+    W_DO(_retrieve_page(page, vid, shpid));
+    uint32_t checksum = page.calculate_checksum();
+    if (checksum != page.checksum) {
         return RC (eBADCHECKSUM);
     }
 
-    if ((page->pid.page != shpid) || (page->pid.vol().vol != vid)) {
+    if ((page.pid.page != shpid) || (page.pid.vol().vol != vid)) {
         return RC (eBADCHECKSUM);
     }
 

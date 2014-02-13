@@ -43,8 +43,23 @@ public:
 	
 	bool 						 backup_m_valid();
 
-	w_rc_t						 retrieve_page(generic_page *page, volid_t vid, shpid_t shpid);
+	w_rc_t						 retrieve_page(generic_page &page, volid_t vid, shpid_t shpid);
+    
+    /**
+     * \brief Tells whether the given page exists in this backup.
+     * @param[in] vol volume ID
+     * @param[in] shpid page ID
+     * @return true if the given page exists in this backup
+     */
+    bool                          page_exists(volid_t vol, shpid_t shpid); 
 
+private:
+    /**
+     * \brief This one simply retrieves the page as a byte array, no content checking,
+     * so it can be used for any type of data region.
+     */
+    w_rc_t                       _retrieve_page(generic_page &page, volid_t vid, shpid_t shpid);
+    
 };
 
 #endif // BACKUP_H
