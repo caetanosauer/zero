@@ -22,18 +22,21 @@ public:
   ~QSXMutex() {}
 
   void print() {
-    std::clog << "(" << (rwcount>>31) << "," << (~rmask&rwcount) << ")" << std::endl;
+    //std::clog << "(" << (rwcount>>31) << "," << (~rmask&rwcount) << ")" << std::endl;
   }
 
   TicketX acquireX() {
-    rwcount_t seq0 = rwcount;
-    while (seq0 & wmask || // no readers or writer
-	   !rwcount.compare_exchange_strong(&seq0, seq0+minwriter)) {} //weak is ok
+    rwcount_t seq0;
+    while ( wmask & (seq0=rwcount.load(/*lintel::memory_order_acquire*/)) || // no readers or writer
+	    !rwcount.compare_exchange_strong(&seq0, seq0+minwriter)) { //weak is ok
+      //asm("PAUSE\n\t":::); // doesn't seem to help. Can't just stick into non-asm loop...
+      //...because compiler generates loop, not recognized by the "PAUSE" convention
+    }
     return seq0+minwriter;
   }
   
   TicketX tryAcquireX() { 
-    rwcount_t seq0 = rwcount;
+    rwcount_t seq0 = rwcount.load(/*lintel::memory_order_acquire*/);
     return 
       seq0 & wmask && // no readers or writer
       rwcount.compare_exchange_strong(&seq0, seq0+minwriter) //weak is ok
@@ -45,10 +48,19 @@ public:
   }
 
   TicketS acquireS() {
-    while (rwcount++ & minwriter) { // yes writer
+    rwcount_t seq0;
+    while ((seq0=rwcount++) & minwriter) { // yes writer
       rwcount--; // TODO: maybe convert to CAS
     }
-    return rmask & rwcount.load(/*lintel::memory_order_acquire*/); // no writer
+    
+    // This way it's faster if it races with writers, not readers
+    // while ( minwriter & (seq0=rwcount.load(/*lintel::memory_order_acquire*/)) || // no writer
+    // 	    !rwcount.compare_exchange_strong(&seq0, seq0+1)) { //weak is ok
+    //   //asm("PAUSE\n\t":::); // doesn't seem to help. Can't just stick into non-asm loop...
+    //   //...because compiler generates loop, not recognized by the "PAUSE" convention
+    // }
+    
+    return rmask & seq0;
   }
 
   TicketS tryAcquireS() {
@@ -107,15 +119,16 @@ public:
   }    
     
   TicketX tryUpgradeSX(const TicketS /*t*/) {
-    rwcount_t seq0 = rwcount;
+    rwcount_t seq0 = rwcount.load(/*lintel::memory_order_acq_rel*/); 
     if(!rwcount.compare_exchange_strong(&seq0, seq0+minwriter)) {
-      // another try_rdunlock_and_lock() is ahead of us
+      // another tryUpgradeSX() is ahead of us
+      // or raced with acquireS (spurious failure)
       return TicketX(false);
-    } else { //wait for other readers to release their rdlocks
-      rwcount_t expected = seq0+minwriter; //no writer or readers, except us
-      while(!rwcount.compare_exchange_strong(&expected, expected-1)) {
-	expected=seq0+minwriter;
-      }
+    } else { //wait for other readers to release their locks
+      rwcount_t expected;
+      do {
+	expected=seq0+minwriter;  //no writer or readers, except us
+      } while(!rwcount.compare_exchange_strong(&expected, expected-1)); //release S, acquire X
       return seq0+minwriter;
     }
   }

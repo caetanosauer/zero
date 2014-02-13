@@ -57,6 +57,12 @@ rc_t
 btree_impl::_sx_shrink_tree(btree_page_h& rp)
 {
     FUNC(btree_impl::_sx_shrink_tree);
+    if( rp.nrecs() > 0 || rp.get_foster() != 0) {
+        // then still not the time for shrink
+        W_DO (_sx_adopt_foster_all_core (rp, true, false));
+        return RCOK;
+    }
+
     sys_xct_section_t sxs;
     W_DO(sxs.check_error_on_start());
     rc_t ret = _ux_shrink_tree_core(rp);
@@ -75,9 +81,7 @@ btree_impl::_ux_shrink_tree_core(btree_page_h& rp)
     lpid_t rp_pid = rp.pid();
     
     if( rp.nrecs() > 0 || rp.get_foster() != 0) {
-        // then still not the time for shrink
-        W_DO (_ux_adopt_foster_all_core (rp, true, false));
-        return RCOK;
+        return RCOK; // just to make sure
     }
     w_assert1( rp.nrecs() == 0 && rp.get_foster() == 0);
 

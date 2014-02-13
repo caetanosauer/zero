@@ -62,18 +62,12 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 /*  -- do not edit anything above this line --   </std-header>*/
 
 class rangeset_t;
+struct multi_page_log_t;
 
 #include "logfunc_gen.h"
 #include "xct.h"
 
 #include <boost/static_assert.hpp>
-
-/**
- * A log record's space is divided between a header and data. 
- * All log records' headers include the information contained in baseLogHeader.
- * Log records pertaining to transactions that produce multiple log records
- * also persist a transaction id chain (_xid and _xid_prv).
- **/ 
 
 struct baseLogHeader
 {
@@ -108,20 +102,19 @@ struct baseLogHeader
      * NB: this latter suggestion is what we have now done.
      */
 
-    // For per-page chains of log-records.
-    // Note that some types of log records (split, merge) impact two pages.
-    // The page_prev_lsn is for the "primary" page.
-    lsn_t               _page_prv;     // for per-page log chain
+    /**
+     * For per-page chains of log-records.
+     * Note that some types of log records (split, merge) impact two pages.
+     * The page_prev_lsn is for the "primary" page.
+     * \ingroup SPR
+     */
+    lsn_t               _page_prv;
     /* 16+8 = 24 */
 };
 
-struct xidChainLogHeader 
+struct xidChainLogHeader
 {
 
-    // NOTE for single-log system transaction following header items are not stored.
-    // instead, we use these area as data area to save 16 bytes.
-    // we do need to keep these 8 bytes aligned. and this is a bit dirty trick.
-    // however, we really need it to reduce the volume of log we output for system transactions.
     
     tid_t               _xid;      // NOT IN SINGLE-LOG SYSTEM TRANSACTION!  (xct)tid of this xct
     /* 24+8 = 32 */
@@ -129,9 +122,24 @@ struct xidChainLogHeader
     /* 32+8 = 40 */
 };
 
+/**
+ * \brief Represents a transactional log record.
+ * \ingroup SSMLOG
+ * \details
+ * A log record's space is divided between a header and data.
+ * All log records' headers include the information contained in baseLogHeader.
+ * Log records pertaining to transactions that produce multiple log records
+ * also persist a transaction id chain (_xid and _xid_prv).
+ *
+ * \section OPT Optimization for single-log system transaction
+ * For single-log system transaction, header items in xidChainLogHeader are not stored.
+ * instead, we use these area as data area to save 16 bytes.
+ * we do need to keep these 8 bytes aligned. and this is a bit dirty trick.
+ * however, we really need it to reduce the volume of log we output for system transactions.
+ */
 class logrec_t {
 public:
-    friend rc_t xct_t::give_logbuf(logrec_t*, const fixable_page_h *);
+    friend rc_t xct_t::give_logbuf(logrec_t*, const fixable_page_h *, const fixable_page_h *);
 
 #include "logtype_gen.h"
     void             fill(
@@ -146,6 +154,7 @@ public:
     bool             is_skip() const;
     bool             is_undo() const;
     bool             is_cpsn() const;
+    bool             is_multi_page() const;
     bool             is_rollback() const;
     bool             is_undoable_clr() const;
     bool             is_logical() const;
@@ -173,6 +182,8 @@ public:
        // put construct_pid() here just to make sure we can
        // easily locate all non-private/non-protected uses of pid()
        lpid_t               construct_pid() const;
+       /** This returns null page ID unless it's t_multi. */
+       lpid_t               construct_pid2() const;
          protected:
     lpid_t               pid() const;
 private:
@@ -182,7 +193,15 @@ public:
     uint16_t              tag() const;
     smsize_t             length() const;
     const lsn_t&         undo_nxt() const;
+    /**
+     * Returns the LSN of previous log that modified this page.
+     * \ingroup SPR
+     */
     const lsn_t&         page_prev_lsn() const;
+    /**
+     * Sets the LSN of previous log that modified this page.
+     * \ingroup SPR
+     */
     void                 set_page_prev_lsn(const lsn_t &lsn);
     const lsn_t&         xid_prev() const;
     void                 set_xid_prev(const lsn_t &lsn);
@@ -195,6 +214,10 @@ public:
     char*                data();
     const char*          data_ssx() const;
     char*                data_ssx();
+    /** Returns the log record data as a multi-page SSX log. */
+    multi_page_log_t*           data_ssx_multi();
+    /** Const version */
+    const multi_page_log_t*     data_ssx_multi() const;
     const lsn_t&         lsn_ck() const {  return *_lsn_ck(); }
     const lsn_t          get_lsn_ck() const { 
                                 lsn_t    tmp = *_lsn_ck();
@@ -210,22 +233,40 @@ public:
     friend ostream& operator<<(ostream&, const logrec_t&);
 
 protected:
+    /**
+     * Bit flags for the properties of log records.
+     */
     enum category_t {
-    t_bad_cat = 0,
-    t_status = 01,
-    t_undo = 02,
-    t_redo = 04,
-    t_logical = 010,
-        // Note: compensation records are not undo-able
-        // (ie. they compensate around themselves as well)
-        // So far this limitation has been fine.
-    // old: t_cpsn = 020 | t_redo,
-    t_cpsn = 020,
-    t_rollback = 040, // Not a category, but means log rec was issued in 
-        // rollback/abort/undo --
-        // adding a bit is cheaper than adding a comment log record
-    t_single_sys_xct = 80 // log by system transaction which is fused with begin/commit record
+    /** should not happen. */
+    t_bad_cat   = 0x00,
+    /** No property. */
+    t_status    = 0x01,
+    /** log with UNDO action? */
+    t_undo      = 0x02,
+    /** log with REDO action? */
+    t_redo      = 0x04,
+    /** log for multi pages? */
+    t_multi     = 0x08,
+    /**
+     * is the UNDO logical? If so, do not fix the page for undo.
+     * Irrelevant if not an undoable log record.
+     */
+    t_logical   = 0x10,
+    /**
+     * Note: compensation records are not undo-able
+     * (ie. they compensate around themselves as well)
+     * So far this limitation has been fine.
+     */
+    t_cpsn      = 0x20,
+    /**
+     * Not a category, but means log rec was issued in rollback/abort/undo.
+     * adding a bit is cheaper than adding a comment log record.
+     */
+    t_rollback  = 0x40,
+    /** log by system transaction which is fused with begin/commit record. */
+    t_single_sys_xct    = 0x80
     };
+
     u_char             cat() const;
 
     baseLogHeader header;
@@ -254,6 +295,36 @@ protected:
         w_assert3(alignon(header._len, 8));
         const char* this_ptr = reinterpret_cast<const char*>(this);
         return reinterpret_cast<const lsn_t*>(this_ptr + header._len - sizeof(lsn_t));
+    }
+};
+
+/**
+ * \brief Base struct for log records that touch multi-pages.
+ * \ingroup SSMLOG
+ * \details
+ * Such log records are so far _always_ single-log system transaction that touches 2 pages.
+ * If possible, such log record should contain everything we physically need to recover
+ * either page without the other page. This is an important property
+ * because otherwise it imposes write-order-dependency and a careful recovery.
+ * In such a case "page2" is the data source page while "page" is the data destination page.
+ * \NOTE a REDO operation of multi-page log must expect _either_ of page/page2 are given.
+ * It must first check if which page is requested to recover, then apply right changes
+ * to the page.
+ */
+struct multi_page_log_t {
+    /**
+     * _page_prv for another page touched by the operation.
+     * \ingroup SPR
+     */
+    lsn_t       _page2_prv; // +8
+
+    /** Page ID of another page touched by the operation. */
+    shpid_t     _page2_pid; // +4
+
+    /** for alignment only. */
+    uint32_t    _fill4;    // +4.
+
+    multi_page_log_t(shpid_t page2_pid) : _page2_prv(lsn_t::null), _page2_pid(page2_pid) {
     }
 };
 
@@ -414,6 +485,12 @@ logrec_t::construct_pid() const
     return lpid_t(header._vid, header._snum, header._shpid);
 }
 
+inline lpid_t logrec_t::construct_pid2() const {
+    w_assert1(header._cat == (t_multi | t_single_sys_xct | t_redo));
+    const multi_page_log_t* multi_log = reinterpret_cast<const multi_page_log_t*> (data_ssx());
+    return lpid_t(header._vid, header._snum, multi_log->_page2_pid);
+}
+
 inline void
 logrec_t::set_pid(const lpid_t& p)
 {
@@ -544,6 +621,11 @@ logrec_t::is_redo() const
     return (header._cat & t_redo) != 0;
 }
 
+inline bool logrec_t::is_multi_page() const {
+    return (header._cat & t_multi) != 0;
+}
+
+
 inline bool
 logrec_t::is_skip() const
 {
@@ -595,6 +677,15 @@ inline bool
 logrec_t::is_single_sys_xct() const
 {
     return (header._cat & t_single_sys_xct) != 0;
+}
+
+inline multi_page_log_t* logrec_t::data_ssx_multi() {
+    w_assert1(is_multi_page());
+    return reinterpret_cast<multi_page_log_t*>(data_ssx());
+}
+inline const multi_page_log_t* logrec_t::data_ssx_multi() const {
+    w_assert1(is_multi_page());
+    return reinterpret_cast<const multi_page_log_t*>(data_ssx());
 }
 
 inline int

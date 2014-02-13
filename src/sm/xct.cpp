@@ -1850,25 +1850,8 @@ xct_t::_sync_logbuf(bool block, bool signal)
     return RCOK;
 }
 
-/*********************************************************************
- *
- *  xct_t::get_logbuf(ret)
- *  xct_t::give_logbuf(ret, page)
- *
- *  Flush the logbuf and return it in "ret" for use. Caller must call
- *  give_logbuf(ret) to free it after use.
- *  Leaves the xct's log mutex acquired
- *
- *  These are used in the log_stub.i functions
- *  and ONLY there.  THE ERROR RETURN (running out of log space)
- *  IS PREDICATED ON THAT -- in that it's expected that in the case of
- *  a normal  return (no error), give_logbuf will be called, but in
- *  the error case (out of log space), it will not, and so we must
- *  release the mutex in get_logbuf error cases.
- *
- *********************************************************************/
-rc_t 
-xct_t::get_logbuf(logrec_t*& ret, int t, fixable_page_h const*)
+rc_t
+xct_t::get_logbuf(logrec_t*& ret, int t)
 {
     // then , use tentative log buffer.
     if (is_piggy_backed_single_log_sys_xct()) {
@@ -2206,11 +2189,30 @@ xct_t::get_logbuf(logrec_t*& ret, int t, fixable_page_h const*)
     return RCOK;
 }
 
-// See comments above get_logbuf, above
+void _update_page_lsns(const fixable_page_h *page, const lsn_t &new_lsn) {
+    if (page != NULL) {
+        w_assert1(page->latch_mode() == LATCH_EX);
+        const_cast<fixable_page_h*>(page)->set_lsns(new_lsn);
+        const_cast<fixable_page_h*>(page)->set_dirty();
+    }
+}
+
 rc_t
-xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page)
+xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page, const fixable_page_h *page2)
 {
     FUNC(xct_t::give_logbuf);
+    // set page LSN chain
+    if (page != NULL) {
+        l->set_page_prev_lsn(page->lsn());
+        if (page2 != NULL) {
+            // For multi-page log, also set LSN chain with a branch.
+            w_assert1(l->is_multi_page());
+            w_assert1(l->is_single_sys_xct());
+            multi_page_log_t *multi = l->data_ssx_multi();
+            w_assert1(multi->_page2_pid != 0);
+            multi->_page2_prv = page2->lsn();
+        }
+    }
     // then, buffer it internally. (can be defered until next log of the _outer_ transaction)
     if (is_piggy_backed_single_log_sys_xct()) {
         w_assert1(l->is_single_sys_xct());
@@ -2224,9 +2226,8 @@ xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page)
             // otherwise we do it right now.
             lsn_t lsn;
             W_DO( log->insert(*l, &lsn) );
-            if (page != NULL) {
-                (const_cast<fixable_page_h*> (page))->set_lsns(lsn);
-            }
+            _update_page_lsns(page, lsn);
+            _update_page_lsns(page2, lsn);
             w_assert1(_log_buf_for_piggybacked_ssx_used == 0);
             w_assert1(_log_buf_for_piggybacked_ssx_target == NULL);
         }
@@ -2252,11 +2253,8 @@ xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page)
     if(rc.is_error())
     goto done;
     
-    if (page != NULL) {
-        w_assert2(page->latch_mode() == LATCH_EX);
-        const_cast<fixable_page_h*>(page)->set_lsns(_last_lsn);
-        const_cast<fixable_page_h*>(page)->set_dirty();
-    }
+    _update_page_lsns(page, _last_lsn);
+    _update_page_lsns(page2, _last_lsn);
 
  done:
 #if W_DEBUG_LEVEL > 0
@@ -2711,6 +2709,7 @@ xct_t::rollback(const lsn_t &save_pt)
 
         if (r.is_undo()) {
             w_assert1(!r.is_single_sys_xct());
+            w_assert1(!r.is_multi_page()); // All multi-page logs are SSX, so no UNDO.
             /*
              *  Undo action of r.
              */

@@ -171,7 +171,7 @@ rc_t alloc_cache_t::apply_allocate_one_page (shpid_t pid, bool logit)
         if (smlevel_0::log != NULL) {
             W_DO(log_alloc_a_page (_vid, pid));
         } else {
-            ERROUT(<< "WARNING! apply_allocate_one_page: logging is disabled. skipped logging");
+            DBGOUT1(<< "WARNING! apply_allocate_one_page: logging is disabled. skipped logging");
         }
     }
     al.set_bit(pid);

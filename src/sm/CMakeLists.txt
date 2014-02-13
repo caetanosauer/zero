@@ -32,6 +32,7 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/lock_dump.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock_lil.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock_vtable.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/lock_x.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log_core.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/logrec.cpp
@@ -81,7 +82,6 @@ get_target_property (SM_MAINMEMORY_COMPILEDEF sm_mainmemory COMPILE_DEFINITIONS)
 set(SM_MAINMEMORY_COMPILEDEF "SIMULATE_MAINMEMORYDB")
 set_target_properties (sm_mainmemory PROPERTIES COMPILE_DEFINITIONS "${SM_MAINMEMORY_COMPILEDEF}")
 
-find_package(Numa) # numa library
 IF(NUMA_FOUND)
     # generate a library that simulates no swizzling and uses numa alloc
     add_library(sm_noswizzling_numa STATIC ${sm_STAT_SRCS})

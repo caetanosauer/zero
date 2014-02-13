@@ -46,7 +46,6 @@ public:
         data_sz = sizeof(generic_page) - hdr_sz,
     };
 
-
 protected:
     // ======================================================================
     //   BEGIN: BTree but not item-specific headers
@@ -497,7 +496,6 @@ class btree_page : public btree_page_data {
     // _ux_deadopt_foster_apply_foster_parent
     // _ux_adopt_foster_apply_child
     friend class btree_impl;
-    friend class btree_header_t;
 
 
     friend class test_bf_tree;
