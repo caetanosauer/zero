@@ -346,9 +346,19 @@ w_rc_t test_non_root_page_fixing(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(child_page.fix_nonroot(root_page, root_pid.vol().vol, child_pid, 
                                 LATCH_SH, false, false));
     child_page.unfix();
-    W_DO(child_page.fix_nonroot(root_page, root_pid.vol().vol, child_pid, 
+    W_DO(child_page.fix_nonroot(root_page, root_pid.vol().vol, child_pid,
                                 LATCH_EX, false, false));
     child_page.unfix();
+
+    // test eNEEDREALLATCH error cases:
+    r = child_page.fix_nonroot(root_page, root_pid.vol().vol, child_pid, 
+                               LATCH_Q, false, true); // ask for virgin page
+    EXPECT_EQ(r.err_num(), eNEEDREALLATCH);
+    r = child_page.fix_nonroot(root_page, root_pid.vol().vol, 
+                               // unswizzled pointer:
+                               smlevel_0::bf->normalize_shpid(child_pid), 
+                               LATCH_EX, false, false);
+    EXPECT_EQ(r.err_num(), eNEEDREALLATCH);
     root_page.unfix();
     
     return RCOK;
