@@ -25,8 +25,9 @@ void fixable_page_h::unfix() {
 w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent, volid_t vol,
                                    shpid_t shpid, latch_mode_t mode, 
                                    bool conditional, bool virgin_page) {
-    w_assert1(mode != LATCH_NL);
+    w_assert1(parent.is_fixed());
     w_assert1(shpid != 0);
+    w_assert1(mode != LATCH_NL);
 
     if (force_Q_fixing > 1 && mode == LATCH_SH) mode = LATCH_Q; // <<<>>>
     unfix();
@@ -63,10 +64,8 @@ w_rc_t fixable_page_h::fix_direct(volid_t vol, shpid_t shpid,
                                   latch_mode_t mode, bool conditional, 
                                   bool virgin_page) {
     w_assert1(shpid != 0);
+    w_assert1(mode >= LATCH_SH);
     unfix();
-    if (mode == LATCH_Q) {
-        return RC(eLATCHQFAIL);
-    }
     W_DO(smlevel_0::bf->fix_direct(_pp, vol, shpid, mode, conditional, virgin_page));
     _mode = mode;
     w_assert1(smlevel_0::bf->get_cb(_pp)->_pid_vol   == vol);
@@ -83,7 +82,7 @@ w_rc_t fixable_page_h::refix_direct (bf_idx idx, latch_mode_t mode, bool conditi
     w_assert1(idx != 0);
     unfix();
     if (mode == LATCH_Q) {
-        return RC(eLATCHQFAIL);
+        return RC(eNEEDREALLATCH);
     }
     W_DO(smlevel_0::bf->refix_direct(_pp, idx, mode, conditional));
     _mode = mode;
@@ -170,7 +169,7 @@ bool fixable_page_h::change_possible_after_fix() const {
 
 bool fixable_page_h::upgrade_latch_conditional(latch_mode_t mode) {
     w_assert1(_pp != NULL);
-    w_assert1(mode == LATCH_SH || mode == LATCH_EX);
+    w_assert1(mode >= LATCH_SH);
     w_assert1(_mode != LATCH_NL);
 
     if (_mode >= mode) {

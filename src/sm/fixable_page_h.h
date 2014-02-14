@@ -17,6 +17,12 @@
  *
  * \details
  * Currently, only B-tree pages are fixable.
+ * 
+ * Pages fixed using latching mode Q for the page being fixed are still subject to
+ * modification by other threads at any time, including replacement by a different page;
+ * the methods of this class are safe to use in this case (but may return errors such as
+ * eLATCHQFAIL) but super or subclass methods may not be safe to use in this case unless
+ * their description specifically says so or they are labeled "robust".
  */
 class fixable_page_h : public generic_page_h {
 public:
@@ -54,13 +60,15 @@ public:
     //   BEGIN: [Un]fixing pages
     // ======================================================================
     
+    /// Do we have an associated page?
     bool is_fixed() const { return _pp != 0; }
+
     /// Unassociate us with any page; releases latch we may have held on previously
     /// associated page.
     void unfix();
 
     /**
-     * Fixes a non-root page in the bufferpool. This method receives the parent page and
+     * Fixes a non-root page in the bufferpool.  This method receives the parent page and
      * efficiently fixes the page if the shpid (pointer) is already swizzled by the parent
      * page.  The optimization is transparent for most of the code because the shpid
      * stored in the parent page is automatically (and atomically) changed to a swizzled
@@ -89,11 +97,11 @@ public:
      * Fixes any page (root or non-root) in the bufferpool without pointer swizzling.  In
      * some places, we need to fix a page without fixing the parent, e.g., recovery or
      * re-fix in cursor.  For such code, this method allows fixing without
-     * parent. However, this method can be used only when pointer swizzling is off.
+     * parent.  However, this method can be used only when pointer swizzling is off.
      * @see bf_tree_m::fix_direct()
      *
      * @param[in] vol          volume ID.
-     * @param[in] shpid        ID of the page to fix. If the shpid looks like
+     * @param[in] shpid        ID of the page to fix.  If the shpid looks like
      *                         a swizzled pointer, this method returns an error (see above).
      * @param[in] mode         latch mode.  has to be SH or EX.
      * @param[in] conditional  whether the fix is conditional (returns
@@ -111,7 +119,7 @@ public:
      * page will be in the bufferpool forever.
      * 
      * @pre We hold our associated page's latch in SH or EX mode
-     * @return slot index of the page in this bufferpool.  Use this value to the
+     * @return slot index of the page in this bufferpool.  Pass this value to the
      * subsequent refix_direct() and unpin_for_refix() call.
      */
     bf_idx pin_for_refix();
@@ -119,9 +127,10 @@ public:
     /**
      * Fixes a page with the already known slot index, assuming the slot has at least one
      * pin count.  Used with pin_for_refix() and unpin_for_refix().
+     * 
+     * Currently returns eNEEDREALLATCH if mode is Q
      */
-    w_rc_t refix_direct(bf_idx idx, latch_mode_t mode, 
-                        bool conditional=false);
+    w_rc_t refix_direct(bf_idx idx, latch_mode_t mode, bool conditional=false);
 
     /**
      * Fixes a new (virgin) root page for a new store with the specified page ID.
@@ -133,8 +142,7 @@ public:
      * Fixes an existing (not virgin) root page for the given store.  This method doesn't
      * receive page ID because it's already known by bufferpool.
      */
-    w_rc_t fix_root(volid_t vol, snum_t store, latch_mode_t mode,
-                    bool conditional=false);
+    w_rc_t fix_root(volid_t vol, snum_t store, latch_mode_t mode, bool conditional=false);
 
 
     // ======================================================================
