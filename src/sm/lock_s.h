@@ -12,6 +12,7 @@
 
 /**
  * \brief The means of identifying a desired or held lock
+ * \ingroup SSMLOCK
  * \details
  * Lock manager requests (acquire, release, query) take an argument
  * of this kind to identify the entity to be locked.

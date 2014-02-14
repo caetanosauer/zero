@@ -11,6 +11,10 @@
 #include "lock_x.h"
 #include "lock_core.h"
 #include "lock_lil.h"
+#include "xct.h"
+#include "lock_s.h"
+#include "w_okvl.h"
+#include "w_okvl_inl.h"
 #include <new>
 
 lock_m::lock_m(int sz)
@@ -51,47 +55,37 @@ lil_global_table* lock_m::get_lil_global_table() {
 }
 
 
-rc_t
-lock_m::lock(
-    const lockid_t&      n, 
-    const okvl_mode&        m,
-    bool                 check_only,
-    timeout_in_ms        timeout,
-    okvl_mode*             prev_mode,
-    okvl_mode*             prev_pgmode
-    )
-{
-    okvl_mode _prev_mode;
-    okvl_mode _prev_pgmode;
-
-    rc_t rc = _lock(n, m, _prev_mode, _prev_pgmode, check_only, timeout);
-
-    if (prev_mode != 0)
-        *prev_mode = _prev_mode;
-    if (prev_pgmode != 0)
-        *prev_pgmode = _prev_pgmode;
-    return rc;
+const okvl_mode& lock_m::get_granted_mode(const lockid_t& lock_id) {
+    xct_t* xd = g_xct();
+    if (xd == NULL) {
+        return ALL_N_GAP_N;
+    }
+    xct_lock_info_t* lock_info = xd->lock_info();
+    if (lock_info == NULL) {
+        return ALL_N_GAP_N;
+    }
+    return lock_info->get_private_hashmap().get_granted_mode(lock_id.hash());
 }
 
-rc_t
-lock_m::_lock(
-    const lockid_t&         n,
-    const okvl_mode&           m,
-    okvl_mode&                prev_mode,
-    okvl_mode&                prev_pgmode,
-    bool                    check_only,
-    timeout_in_ms           timeout
-    )
-{
-    xct_t*                 xd = xct();
+rc_t lock_m::lock(const lockid_t &n, const okvl_mode &m, bool check_only,
+                  timeout_in_ms timeout) {
+    return _lock(n, m, check_only, timeout);
+}
+
+rc_t lock_m::_lock(const lockid_t& n, const okvl_mode& m,
+    bool check_only, timeout_in_ms timeout) {
+    xct_t*                 xd = g_xct();
     if (xd == NULL) {
         return RCOK;
     }
 
-    w_rc_t                 rc; // == RCOK
-    prev_mode.clear();
-    prev_pgmode.clear();
+    // First, check the transaction-private hashmap to see if we already have the lock.
+    // This is quick because this involves no critical section.
+    if (m.is_implied_by(get_granted_mode(n))) {
+        return RCOK;
+    }
 
+    w_rc_t                 rc; // == RCOK
     switch (timeout) {
         case WAIT_SPECIFIED_BY_XCT:
             timeout = xd->timeout_c();
@@ -109,7 +103,7 @@ lock_m::_lock(
 
     w_assert9(timeout >= 0 || timeout == WAIT_FOREVER);
 
-    w_error_codes rce = _core->acquire_lock(xd, n, m, prev_mode, check_only,  timeout);
+    w_error_codes rce = _core->acquire_lock(xd, n, m, check_only,  timeout);
     if (rce) {
         rc = RC(rce);
     }
