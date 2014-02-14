@@ -1257,7 +1257,8 @@ void bf_tree_m::switch_parent(generic_page* page, generic_page* new_parent)
 void bf_tree_m::_convert_to_disk_page(generic_page* page) const {
     DBGOUT3 (<< "converting the page " << page->pid << "... ");
 
-    fixable_page_h p(page);
+    fixable_page_h p;
+    p.fix_nonbufferpool_page(page);
     int max_slot = p.max_child_slot();
     for (int i= -1; i<=max_slot; i++) {
         _convert_to_pageid(p.child_slot_address(i));
@@ -1277,7 +1278,8 @@ inline void bf_tree_m::_convert_to_pageid (shpid_t* shpid) const {
 slotid_t bf_tree_m::find_page_id_slot(generic_page* page, shpid_t shpid) const {
     w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
 
-    fixable_page_h p(page);
+    fixable_page_h p;
+    p.fix_nonbufferpool_page(page);
     int max_slot = p.max_child_slot();
 
     //  don't swizzle foster-child:
@@ -1306,7 +1308,8 @@ void bf_tree_m::swizzle_children(generic_page* parent, const slotid_t* slots, ui
     w_assert1(_is_active_idx(parent - _buffer));
     w_assert1(is_swizzled(parent)); // swizzling is transitive.
 
-    fixable_page_h p (parent);
+    fixable_page_h p;
+    p.fix_nonbufferpool_page(parent);
     for (uint32_t i = 0; i < slots_size; ++i) {
         slotid_t slot = slots[i];
         // To simplify the tree traversal while unswizzling,
@@ -1468,7 +1471,8 @@ void bf_tree_m::_unswizzle_traverse_store(uint32_t &unswizzled_frames, volid_t v
         return; // just give up in unlucky case (probably the store has been just deleted)
     }
     bf_idx parent_idx = _volumes[vol]->_root_pages[store];
-    fixable_page_h p(&_buffer[parent_idx]);
+    fixable_page_h p;
+    p.fix_nonbufferpool_page(&_buffer[parent_idx]);
     if (!p.has_children()) {
         return;
     }
@@ -1483,7 +1487,8 @@ void bf_tree_m::_unswizzle_traverse_store(uint32_t &unswizzled_frames, volid_t v
 
 
 bool bf_tree_m::has_swizzled_child(bf_idx node_idx) {
-    fixable_page_h node_p(_buffer + node_idx);
+    fixable_page_h node_p;
+    node_p.fix_nonbufferpool_page(_buffer + node_idx);
     int max_slot = node_p.max_child_slot();
     // skipping foster pointer...
     for (int32_t j = 0; j <= max_slot; ++j) {
@@ -1507,7 +1512,8 @@ void bf_tree_m::_unswizzle_traverse_node(uint32_t &unswizzled_frames,
     }
     uint32_t old = _swizzle_clockhand_pathway[cur_clockhand_depth];
     bf_tree_cb_t &node_cb = get_cb(node_idx);
-    fixable_page_h node_p(_buffer + node_idx);
+    fixable_page_h node_p;
+    node_p.fix_nonbufferpool_page(_buffer + node_idx);
     if (old >= (uint32_t) node_p.max_child_slot()+1) {
         return;
     }
@@ -1532,7 +1538,8 @@ void bf_tree_m::_unswizzle_traverse_node(uint32_t &unswizzled_frames,
         }
 
         bf_idx child_idx = shpid ^ SWIZZLED_PID_BIT;
-        fixable_page_h node_child(_buffer + child_idx);
+        fixable_page_h node_child;
+        node_child.fix_nonbufferpool_page(_buffer + child_idx);
         if (node_child.has_children()) {
             // child is also an intermediate node
             _unswizzle_traverse_node (unswizzled_frames, vol, store, child_idx, cur_clockhand_depth + 1);
@@ -1599,7 +1606,8 @@ bool bf_tree_m::_unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot) {
     }
     latch_auto_release auto_rel(parent_cb.latch()); // this automatically releaes the latch.
 
-    fixable_page_h parent(_buffer + parent_idx);
+    fixable_page_h parent;
+    parent.fix_nonbufferpool_page(_buffer + parent_idx);
     if (child_slot >= (uint32_t) parent.max_child_slot()+1) {
         return false;
     }
@@ -1709,7 +1717,8 @@ void bf_tree_m::debug_dump_page_pointers(std::ostream& o, generic_page* page) co
 
     o << "dumping page:" << page->pid << ", bf_idx=" << idx << std::endl;
     o << "  ";
-    fixable_page_h p(page);
+    fixable_page_h p;
+    p.fix_nonbufferpool_page(page);
     for (int i= -1; i<=p.max_child_slot(); i++) {
         if (i > -1) {
             o << ", ";
