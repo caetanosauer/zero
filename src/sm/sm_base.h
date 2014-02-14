@@ -396,6 +396,15 @@ public:
         t_forward_processing = 0x8
     };
 
+    /*
+    * smlevel_0::chkpt_mode is always set to one of the mode
+     */
+    enum chkpt_mode_t {
+        t_chkpt_none,    // no on-going checkpoint
+        t_chkpt_sync,    // in the middle of synchronous checkpoint
+        t_chkpt_async    // in the middle of asynchronous checkpoint
+    };
+
     static void  add_to_global_stats(const sm_stats_info_t &from);
     static void  add_from_global_stats(sm_stats_info_t &to);
 
@@ -417,12 +426,12 @@ public:
 
     static ErrLog* errlog;
 
-    static bool        shutdown_clean;
-    static bool        shutting_down;
-    static bool        logging_enabled;
-    static bool        lock_caching_default;
-    static bool        do_prefetch;
-    static bool        statistics_enabled;
+    static bool         shutdown_clean;
+    static bool         shutting_down;
+    static bool         logging_enabled;
+    static bool         lock_caching_default;
+    static bool         do_prefetch;
+    static bool         statistics_enabled;
 
     static operating_mode_t operating_mode;
     static bool in_recovery() { 
@@ -434,6 +443,13 @@ public:
         return ((operating_mode & t_in_undo ) !=0); }
     static bool in_recovery_redo() { 
         return ((operating_mode & t_in_redo ) !=0); }
+
+    static bool before_recovery() { 
+        if ((false == in_recovery()) && (t_forward_processing != operating_mode))
+            return true;
+        else
+            return false;
+    }
 
     // These variables control the size of the log.
     static fileoff_t max_logsz; // max log file size

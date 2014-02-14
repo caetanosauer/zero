@@ -217,6 +217,8 @@ xct_t::new_xct(
         bool single_log_sys_xct, bool deferred_ssx
               )
 {
+    // For normal user transaction
+    
     xct_core* core = NEW_CORE xct_core(_nxt_tid.atomic_incr(),
                        xct_active, timeout);
     xct_t* xd = NEW_XCT xct_t(core, stats, lsn_t(), lsn_t(),
@@ -231,6 +233,7 @@ xct_t::new_xct(const tid_t& t, state_t s, const lsn_t& last_lsn,
              bool single_log_sys_xct, bool deferred_ssx
               ) 
 {
+    // For transaction from Log Analysis phase in Recovery
 
     // Uses user(recovery)-provided tid
     _nxt_tid.atomic_assign_max(t);
@@ -1117,6 +1120,17 @@ xct_t::change_state(state_t new_state)
     FUNC(xct_t::change_state);
     w_assert1(one_thread_attached());
 
+    // Acquire a write latch, the traditional read latch is used by checkpoint
+    w_rc_t latch_rc = latch().latch_acquire(LATCH_EX, WAIT_FOREVER);
+    if (latch_rc.is_error())
+    {
+        // Unable to the read acquire latch, cannot continue, raise an internal error
+        DBGOUT2 (<< "Unable to acquire LATCH_EX for transaction object. tid = "
+                 << tid() << ", rc = " << latch_rc);
+        W_FATAL_MSG(fcINTERNAL, << "unable to write latch a transaction object to change state");
+        return;
+    }
+
     CRITICAL_SECTION(xctstructure, *this);
     w_assert1(is_1thread_xct_mutex_mine());
 
@@ -1142,6 +1156,10 @@ xct_t::change_state(state_t new_state)
     while ((d = i.next()))  {
         d->xct_state_changed(old_state, new_state);
     }
+
+    // Release the write latch
+    latch().latch_release();
+
 }
 
 
@@ -1313,8 +1331,8 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
          *  prepares (done by chkpt).
          */
         
-        // wait for the checkpoint to finish
-        chkpt_serial_m::trx_acquire();
+        // Does not wait for the checkpoint to finish, checkpoint is a non-blocking operation
+        // chkpt_serial_m::read_acquire();
 
         // Have to re-check since in the meantime another thread might
         // have attached. Of course, that's always the case... we
@@ -1334,7 +1352,10 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
         if (!is_sys_xct()) { // system transaction has nothing to free, so this log is not needed
             rc = log_xct_freeing_space();
         }
-        chkpt_serial_m::trx_release();
+
+        // Does not wait for the checkpoint to finish, checkpoint is a non-blocking operation
+        // chkpt_serial_m::read_release();
+        
         if(rc.is_error()) {
             // Log insert failed.
             // restore the state.
@@ -1600,10 +1621,14 @@ xct_t::_abort()
         // on an assertion having to do with the xct state. Wait until
         // state is changed from aborting to something else.
 
-        chkpt_serial_m::trx_acquire();
+        // Does not wait for the checkpoint to finish, checkpoint is a non-blocking operation
+        // chkpt_serial_m::read_acquire();
+        
         change_state(xct_freeing_space);
         rc_t rc = log_xct_freeing_space();
-        chkpt_serial_m::trx_release();
+
+        // Does not wait for the checkpoint to finish, checkpoint is a non-blocking operation
+        // chkpt_serial_m::read_release();
 
         W_DO(rc);
 
@@ -1619,10 +1644,14 @@ xct_t::_abort()
         // the log record, since otherwise it might try to change the state
         // to the current state (which causes an assertion failure).
 
-        chkpt_serial_m::trx_acquire();
+        // Does not wait for the checkpoint to finish, checkpoint is a non-blocking operation
+        // chkpt_serial_m::read_acquire();
+        
         change_state(xct_ended);
         rc =  log_xct_abort();
-        chkpt_serial_m::trx_release();
+
+        // Does not wait for the checkpoint to finish, checkpoint is a non-blocking operation
+        // chkpt_serial_m::read_release();
 
         W_DO(rc);
     }  else  {
@@ -1964,8 +1993,10 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
                    chkpt serial mutex so ongoing checkpoint has a
                    chance to complete before we go crazy.
                 */
-                chkpt_serial_m::trx_acquire(); // wait for chkpt to finish
-                chkpt_serial_m::trx_release();
+
+                // Does not wait for the checkpoint to finish, checkpoint is a non-blocking operation
+                // chkpt_serial_m::read_acquire(); // wait for chkpt to finish
+                // chkpt_serial_m::read_release();
 
                 static queue_based_block_lock_t emergency_log_flush_mutex;
                 CRITICAL_SECTION(cs, emergency_log_flush_mutex);                
@@ -3083,11 +3114,21 @@ xct_t::check_one_thread_attached() const
 bool
 xct_t::one_thread_attached() const
 {
-    // wait for the checkpoint to finish
+    // This function is called in multiple places, including txn commit, abort,
+    // savepoint, chain, change state, etc.
+    // The original code (commented out) would acquire the read mutex on checkpoint,
+    // which wiats until the checkpoint is done, it makes the checkpoint a blocking operation.
+    //
+    // The current code commented out the read mutex on checkpoint, in other words,
+    // checkpoint is not a blocking operation anymore, but when checkpoint gathering
+    // the txn data, it reads stable txn data by grabing a latch on txn object
+    // 
     if( _core->_threads_attached > 1) {
-        chkpt_serial_m::trx_acquire();
+        // Does not wait for checkpoint to finish, checkpoint is a non-blocking operation
+        // chkpt_serial_m::read_acquire();
         if( _core->_threads_attached > 1) {
-            chkpt_serial_m::trx_release();
+            // chkpt_serial_m::read_release();
+
 #if W_DEBUG_LEVEL > 2
             fprintf(stderr, 
                     "Fatal VAS or SSM error: %s %d %s %d.%d \n",

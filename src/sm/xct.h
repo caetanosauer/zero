@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 /* -*- mode:C++; c-basic-offset:4 -*-
@@ -82,6 +82,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <set>
 #include <Lintel/AtomicCounter.hpp>
 #include "w_key.h"
+
+#include "latch.h"
 
 class xct_dependent_t;
 struct okvl_mode;
@@ -482,6 +484,7 @@ public:
     static void                  assert_xlist_mutex_is_mine();
     static bool                  xlist_mutex_is_mine();
 
+
     /* "poisons" the transaction so cannot block on locks (or remain
        blocked if already so), instead aborting the offending lock
        request with eDEADLOCK. We use eDEADLOCK instead of
@@ -703,6 +706,9 @@ private:
         state_t                   _state;
         bool                      _read_only;
 
+        // Latch object mainly for checkpoint to access information in txn object
+        latch_t                   _latch;
+
         /*
          * List of stores which this xct will free after completion
          * Protected by _1thread_xct.
@@ -856,6 +862,20 @@ public:
     }
     elr_mode_t                  get_elr_mode() const { return _elr_mode; }
     void                        set_elr_mode(elr_mode_t mode) { _elr_mode = mode; }
+
+    // Latch the xct object in order to access internal data
+    // it is to prevent data changing while reading them
+    // Mainly for checkpoint logging purpose
+    latch_t* latchp() const
+    {
+        w_assert1(_core != NULL);
+        return const_cast<latch_t*>(&(_core->_latch));
+    }
+    latch_t &latch()
+    {
+        return *latchp();
+    }
+
 };
 
 /**\cond skip */

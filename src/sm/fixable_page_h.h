@@ -151,6 +151,28 @@ public:
      */
     bool         is_dirty()  const;
 
+    /**
+     * Mark this page in the bufferpool in_doubt.  If this page is not a bufferpool-managed
+     * page, does nothing.
+     *
+     * in_doubt bit is only set during Log Analysis phase to indicate a page needs REDO
+     * the actual page is only registered in buffer pool but not loaded until the Log Analysis phase
+     * 
+     * @pre We do not hold current page's latch in Q mode
+     */
+    void         set_in_doubt() const;
+    /**
+     * Return true if this page in the bufferpool is marked in_doubt.  If this page is not a
+     * bufferpool-managed page, returns false.
+     * 
+     *
+     * in_doubt bit is only set during Log Analysis phase to indicate a page needs REDO
+     * the actual page is only registered in buffer pool but not loaded until the Log Analysis phase
+     *     
+     * @pre We do not hold current page's latch in Q mode
+     */
+    bool         is_in_doubt()  const;
+
 
     /// Flag this page to be deleted when bufferpool evicts it.
     /// @pre We hold our associated page's latch in SH or EX mode

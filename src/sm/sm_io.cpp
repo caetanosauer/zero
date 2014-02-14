@@ -79,12 +79,12 @@ private:
     void on_leaving() const { _x->stop_crit(); }
 public:
     auto_leave_and_trx_release_t() : _x(xct()) {
-        chkpt_serial_m::trx_acquire();
+        chkpt_serial_m::read_acquire();
         if(_x) on_entering();
     }
     ~auto_leave_and_trx_release_t() {
         if(_x) on_leaving(); 
-        chkpt_serial_m::trx_release();
+        chkpt_serial_m::read_release();
     }
 };
 

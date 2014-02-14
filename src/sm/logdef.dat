@@ -3,7 +3,7 @@
 #  $Id: logdef.dat,v 1.67 2010/10/27 17:04:23 nhall Exp $
 #
 #
-# (c) Copyright 2013, Hewlett-Packard Development Company, LP
+# (c) Copyright 2014, Hewlett-Packard Development Company, LP
 #
 #
 # SHORE -- Scalable Heterogeneous Object REpository
@@ -100,7 +100,7 @@ compensate         1000001 0.0 (const lsn_t& rec_lsn);
 skip               0000000 0.0 ();
 chkpt_begin        0000000 0.0 (const lsn_t &lastMountLSN);
 chkpt_bf_tab       0000000 0.0 (int cnt, const lpid_t* pid,
-                            const lsn_t* rec_lsn);
+                            const lsn_t* rec_lsn, const lsn_t* page_lsn);
 chkpt_xct_tab      0000000 0.0 (const tid_t& youngest, 
                             int cnt, const tid_t* tid, 
                             const smlevel_1::xct_state_t* state,

@@ -241,6 +241,7 @@ inline w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, volid_t vol, snum
     cb.pin_cnt_set(1); // root page's pin count is always positive
     cb._used = true;
     cb._dirty = true;
+    get_cb(idx)._in_doubt = false;
     if (true) return _latch_root_page(page, idx, LATCH_EX, false);
 #endif // SIMULATE_MAINMEMORYDB
 
@@ -255,6 +256,7 @@ inline w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, volid_t vol, snum
     get_cb(idx).pin_cnt_set(1); // root page's pin count is always positive
     get_cb(idx)._used = true;
     get_cb(idx)._dirty = true;
+    get_cb(idx)._in_doubt = false;
     ++_dirty_page_count_approximate;
     get_cb(idx)._swizzled = true;
     bool inserted = _hashtable->insert_if_not_exists(bf_key(vol, shpid), idx); // for some type of caller (e.g., redo) we still need hashtable entry for root
@@ -366,6 +368,22 @@ inline bool bf_tree_m::is_dirty(const generic_page* p) const {
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
     return get_cb(idx)._dirty;
+}
+
+inline void bf_tree_m::set_in_doubt(const generic_page* p) {
+    // Caller has latch on page
+    uint32_t idx = p - _buffer;
+    w_assert1 (_is_active_idx(idx));
+    bf_tree_cb_t &cb = get_cb(idx);
+    if (!cb._in_doubt) {
+        cb._in_doubt = true;
+    }
+}
+inline bool bf_tree_m::is_in_doubt(const generic_page* p) const {
+    // Caller has latch on page
+    uint32_t idx = p - _buffer;
+    w_assert1 (_is_active_idx(idx));
+    return get_cb(idx)._in_doubt;
 }
 
 inline latch_mode_t bf_tree_m::latch_mode(const generic_page* p) {

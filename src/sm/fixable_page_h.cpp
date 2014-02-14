@@ -115,6 +115,22 @@ bool fixable_page_h::is_dirty() const {
     }
 }
 
+void fixable_page_h::set_in_doubt() const {
+    w_assert1(_pp);
+    w_assert1(_mode != LATCH_Q);
+    if (_mode != LATCH_NL) {
+        smlevel_0::bf->set_in_doubt(_pp);
+    }
+}
+
+bool fixable_page_h::is_in_doubt() const {
+    w_assert1(_mode != LATCH_Q);
+    if (_mode == LATCH_NL) {
+        return false;
+    } else {
+        return smlevel_0::bf->is_in_doubt(_pp);
+    }
+}
 
 rc_t fixable_page_h::set_to_be_deleted (bool log_it) {
     w_assert1(is_latched());

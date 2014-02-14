@@ -68,6 +68,7 @@ class prologue_rc_t;
 #include "w.h"
 #include "sm_int_4.h"
 #include "chkpt.h"
+#include "chkpt_serial.h"
 #include "sm.h"
 #include "sm_vtable_enum.h"
 #include "prologue.h"
@@ -83,8 +84,8 @@ class prologue_rc_t;
 template class w_auto_delete_t<SmStoreMetaStats*>;
 #endif
 
-bool        smlevel_0::shutdown_clean = true;
-bool        smlevel_0::shutting_down = false;
+bool         smlevel_0::shutdown_clean = true;
+bool         smlevel_0::shutting_down = false;
 
 smlevel_0::operating_mode_t 
             smlevel_0::operating_mode = smlevel_0::t_not_started;
@@ -525,6 +526,9 @@ ss_m::_construct_once(
         W_FATAL(eOUTOFMEMORY);
     }
 
+    // Spawn the checkpoint child thread immediatelly
+    chkpt->spawn_chkpt_thread();
+
     DBG(<<"Level 4");
     /*
      *  Level 4
@@ -548,6 +552,8 @@ ss_m::_construct_once(
     if (_options.get_bool_option("sm_logging", true))  {
         restart_m restart;
         smlevel_0::redo_tid = restart.redo_tid();
+
+        // Recovery process, a checkpoint will be taken at the end of recovery
         restart.recover(log->master_lsn());
 
         {   // contain the scope of dname[]
@@ -616,12 +622,13 @@ ss_m::_construct_once(
     // we will do this directly.  Take a checkpoint as well.
     if(log) {
         bf->force_until_lsn(log->curr_lsn().data());
+
+        // An synchronous checkpoint was taken at the end of recovery
+        // This is a asynchronous checkpoint after buffer pool flush
         chkpt->wakeup_and_take();
     }    
 
     me()->check_pin_count(0);
-
-    chkpt->spawn_chkpt_thread();
 
     do_prefetch = _options.get_bool_option("sm_prefetch", false);
     DBG(<<"constructor done");
@@ -684,7 +691,9 @@ ss_m::_destruct_once()
         // with serial writes since the background flushing has been
         // disabled
         if(log) bf->force_until_lsn(log->curr_lsn());
-    chkpt->wakeup_and_take();
+
+        // Take a synch checkpoint (blocking) after buffer pool flush but before shutting down
+        chkpt->synch_take();
 
         // from now no more logging and checkpoints will be done
         chkpt->retire_chkpt_thread();
@@ -1200,8 +1209,9 @@ ss_m::dismount_dev(const char* device)
         W_DO( _dismount_dev(device) );
     }
 
-    // take a checkpoint to record the dismount
-    chkpt->take();
+    // take a synch checkpoint to record the dismount
+    chkpt->synch_take();
+
 
     DBG(<<"dismount_dev ok");
 
@@ -1229,8 +1239,8 @@ ss_m::dismount_all()
         return RC(eCANTWHILEACTIVEXCTS);
     }
 
-    // take a checkpoint to record the dismounts
-    chkpt->take();
+    // take a synch checkpoint to record the dismounts
+    chkpt->synch_take();
 
     // dismount is protected by _begin_xct_mutex, actually....
     W_DO( io->dismount_all_dev() );
@@ -1361,8 +1371,8 @@ ss_m::destroy_vol(const lvid_t& lvid)
 
         /* XXX possible loss of bits */
         W_DO(vol_t::format_dev(dev_name, shpid_t(quota_KB/(page_sz/1024)), true));
-        // take a checkpoint to record the destroy (dismount)
-        chkpt->take();
+        // take a synch checkpoint to record the destroy (dismount)
+        chkpt->synch_take();
 
         // tell the system about the device again
         u_int vol_cnt;
@@ -1837,8 +1847,8 @@ ss_m::_mount_dev(const char* device, u_int& vol_cnt, vid_t local_vid)
     }
 
     W_DO(io->mount(device, vid));
-    // take a checkpoint to record the mount
-    chkpt->take();
+    // take a synch checkpoint to record the mount
+    chkpt->synch_take();
 
     return RCOK;
 }

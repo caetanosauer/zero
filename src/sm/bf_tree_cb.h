@@ -177,7 +177,11 @@ struct bf_tree_cb_t {
      */
     uint16_t                    _swizzled_ptr_cnt_hint; // +2 -> 50
 
-    fill16                      _fill16_52;     // +2 -> 52
+
+    // in_doubt flag; used in Recovery process, protected by our latch
+    bool                        _in_doubt;      // +1 -> 51
+    fill8                       _fill8_52;      // +1 -> 52
+
     fill32                      _fill32_56;     // +4 -> 56
     fill32                      _fill32_60;     // +4 -> 60
     fill8                       _fill8_61;      // +1 -> 61

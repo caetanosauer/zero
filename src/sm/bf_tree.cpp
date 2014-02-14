@@ -24,6 +24,8 @@
 #include "sm_io.h"
 #include "vol.h"
 #include "alloc_cache.h"
+#include "chkpt_serial.h"
+
 
 #include <boost/static_assert.hpp>
 #include <ostream>
@@ -434,6 +436,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(generic_page* parent, generic_pa
     if (virgin_page) {
         cb._rec_lsn = 0;
         cb._dirty = true;
+        cb._in_doubt = false;
         ++_dirty_page_count_approximate;
         bf_idx parent_idx = parent - _buffer;
         cb._pid_vol = get_cb(parent_idx)._pid_vol;
@@ -547,6 +550,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 cb._rec_lsn = _buffer[idx].lsn.data();
             } else {
                 cb._dirty = true;
+                cb._in_doubt = false;
                 ++_dirty_page_count_approximate;
             }
             cb._used = true;
@@ -691,6 +695,7 @@ void bf_tree_m::repair_rec_lsn (generic_page *page, bool was_dirty, const lsn_t 
             INC_TSTAT(restart_repair_rec_lsn);
         } else {
             get_cb(idx)._dirty = false;
+            get_cb(idx)._in_doubt = false;
         }
     }
 }
@@ -999,7 +1004,7 @@ int bf_tree_m::_try_evict_block(bf_idx idx) {
     // do not consider dirty pages (at this point)
     // we check this again later because we don't take locks as of this.
     // we also avoid grabbing unused block because it has to be grabbed via freelist
-    if (cb._dirty || !cb._used) {
+    if (cb._dirty || !cb._used || cb._in_doubt) {
         return -1;
     }
 
@@ -1025,7 +1030,7 @@ int bf_tree_m::_try_evict_block(bf_idx idx) {
         w_assert1(cb.pin_cnt() == -1);
         
         // let's do a real check.
-        if (cb._dirty || !cb._used) {
+        if (cb._dirty || !cb._used || cb._in_doubt) {
             DBGOUT1(<<"very unlucky, this block has just become dirty.");
             // oops, then put this back and give up this block
             cb.pin_cnt_set(0);
@@ -1080,6 +1085,7 @@ void bf_tree_m::_delete_block(bf_idx idx) {
     w_assert1(!cb.latch().is_latched());
     cb._used = false; // clear _used BEFORE _dirty so that eviction thread will ignore this block.
     cb._dirty = false;
+    cb._in_doubt = false; // always set in_doubt bit to false
 
     DBGOUT1(<<"delete block: remove page shpid = " << cb._pid_shpid);
     bool removed = _hashtable->remove(bf_key(cb._pid_vol, cb._pid_shpid));
@@ -1715,6 +1721,9 @@ void bf_tree_m::debug_dump(std::ostream &o) const
             if (cb._dirty) {
                 o << " (dirty)";
             }
+            if (cb._in_doubt) {
+                o << " (in_doubt)";
+            }
 #ifdef BP_MAINTAIN_PARENT_PTR
             o << ", _parent=" << cb._parent;
 #endif // BP_MAINTAIN_PARENT_PTR
@@ -1844,22 +1853,96 @@ w_rc_t bf_tree_m::set_swizzling_enabled(bool enabled) {
     return RCOK;
 }
 
-void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, lsn_t *rec_lsn, lsn_t &min_rec_lsn)
+void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid,
+                             lsn_t *rec_lsn, lsn_t *page_lsn, lsn_t &min_rec_lsn,
+                             const lsn_t master, const lsn_t current_lsn)
 {
+    // Only used by checkpoint to gather dirty page information
+    
     w_assert1(start > 0 && count > 0);
 
     bf_idx i;
-    for (i = 1; i < count && start < _block_cnt; ++start)  {
+    for (i = 1; i < count && start < _block_cnt; ++start)  
+    {
         bf_tree_cb_t &cb = get_cb(start);
+
+        // Acquire traditional read latch for each page, not Q latch
+        // because it cannot fail on latch release       
+        w_rc_t latch_rc = cb.latch().latch_acquire(LATCH_SH, WAIT_FOREVER);        
+        if (latch_rc.is_error())
+        {
+            // Unable to the read acquire latch, cannot continue, raise an internal error
+            DBGOUT2 (<< "Error when acquiring LATCH_SH for checkpoint buffer pool. cb._pid_shpid = "
+                     << cb._pid_shpid << ", rc = " << latch_rc);
+
+            // To be a good citizen, release the 'write' mutex before raise error
+            chkpt_serial_m::write_release();
+
+            W_FATAL_MSG(fcINTERNAL, << "unable to latch a buffer pool page");
+            return;
+        }
+
         lsn_t lsn(cb._rec_lsn);
-        if (cb._used && cb._dirty && lsn != lsn_t::null) {
-            pid[i] = _buffer[start].pid;
-            rec_lsn[i] = lsn;
-            if(min_rec_lsn > lsn) {
+
+        // If a page is in use and dirty, or is in_doubt (only marked by Log Analysis phase)
+        if ((cb._used && cb._dirty && lsn != lsn_t::null) || (cb._in_doubt))
+        {
+            if (cb._in_doubt)
+            {
+                // in_doubt is only marked during Log Analysis and the page is not loaded until
+                // REDO phase.  The 'in_doubt' flag would be replaced by 'dirty' flag in REDO phase.
+                // A checkpoint is taken at the end of Log Analysis phase, therefore 
+                // in_doubt pages are not loaded into buffer pool yet, cannot get information
+                // from page ('_buffer')
+
+// TODO(M1)... 
+//                    change the log record so it keeps the 'lpid_t' so I can get it             <<<<<<<<<<<<<<<<<<<
+                // Assuming we can get the cb even if the page is not loaded     <--- verify
+                // lpid_t: Store ID (volume number + store number) + page number
+                // shpid_t: page number only
+                // Use a dummy lpid_t with the actual shpid_t, is this sufficient?
+
+                vid_t vid(1);
+                lpid_t dummy (vid, 0, cb._pid_shpid);
+                pid[i] = dummy;
+                rec_lsn[i] = master;  // Use the begin checkpoint LSN for the oldest LSN
+                assert(lsn_t::null!= current_lsn);
+                page_lsn[i] = current_lsn;    // Use the current LSN for page LSN
+
+            }
+            else
+            {
+                // Ignore this page if the pin count is -1
+                if (cb.pin_cnt() == -1)
+                {
+                    cb.latch().latch_release();                
+                    continue;
+                }
+            
+                // Actual dirty page
+                // Record pid, minimum (earliest) and latest LSN values of the page
+                // cb._rec_lsn is the minimum LSN
+                // buffer[start].lsn.data() is the Page LSN, which is the latest LSN
+                
+                pid[i] = _buffer[start].pid;
+                assert(lsn_t::null!= lsn);
+                rec_lsn[i] = lsn;
+                assert(lsn_t::null!= _buffer[start].lsn.data());
+                page_lsn[i] = _buffer[start].lsn.data();
+            }
+
+            // Update min_rec_lsn if necessary
+            if(min_rec_lsn > lsn) 
+            {
                 min_rec_lsn = lsn;
             }
+
+            // Increment counter
             ++i;
         }
+
+        // Done with this cb, release the latch on it before moving to the next cb
+        cb.latch().latch_release();
     }
     count = i;
 }

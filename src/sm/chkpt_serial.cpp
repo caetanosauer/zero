@@ -69,7 +69,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *
  *  Fuzzy checkpoints and prepares cannot be inter-mixed in the log.
  *  This mutex is for serializing them.
- *  Note that transactions acquire the mutex in read mode; the
+ *  Note that callers of the checkpoint acquire the mutex in read mode; the
  *  checkpoint acquires it in write mode. Since the chkpt thread is the
  *  ONLY one that acquires in write mode, it's safe to use an occ_rwlock.
  *
@@ -77,25 +77,25 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 static occ_rwlock _chkpt_mutex;
 
 void
-chkpt_serial_m::trx_release()
+chkpt_serial_m::read_release()
 {
   _chkpt_mutex.release_read();
 }
 
 void
-chkpt_serial_m::trx_acquire()
+chkpt_serial_m::read_acquire()
 {
   _chkpt_mutex.acquire_read();
 }
 
 void
-chkpt_serial_m::chkpt_release()
+chkpt_serial_m::write_release()
 {
   _chkpt_mutex.release_write();
 }
 
 void
-chkpt_serial_m::chkpt_acquire()
+chkpt_serial_m::write_acquire()
 {
   _chkpt_mutex.acquire_write();
 }

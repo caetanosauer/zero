@@ -340,6 +340,15 @@ public:
     bool is_dirty(const generic_page* p) const;
 
     /**
+     * Mark the page as in_doubt.  This is set during Log Analysis phase only
+     */
+    void set_in_doubt(const generic_page* p);
+    /**
+     * Returns if the page is already marked in_doubt.
+     */
+    bool is_in_doubt(const generic_page* p) const;
+
+    /**
      * Adds a write-order dependency such that one is always written out after another.
      * @param[in] page the page to be written later. must be latched.
      * @param[in] dependency the page to be written first. must be latched.
@@ -417,9 +426,9 @@ public:
     w_rc_t force_volume (volid_t vol);
     /** Immediately writes out all dirty pages.*/
     w_rc_t force_all ();
-    /** Immediately writes out all dirty pages up to the given LSN. used while checkpointing. */
+    /** Immediately writes out all dirty pages up to the given LSN. */
     w_rc_t force_until_lsn (lsndata_t lsn);
-    /** Immediately writes out all dirty pages up to the given LSN. used while checkpointing. */
+    /** Immediately writes out all dirty pages up to the given LSN. */
     w_rc_t force_until_lsn (const lsn_t &lsn) {
         return force_until_lsn(lsn.data());
     }
@@ -456,12 +465,15 @@ public:
 
     /**
      * Get recovery lsn of "count" frames in the buffer pool starting at
-     *  index "start". The pids and rec_lsns are returned in "pid" and
-     *  "rec_lsn" arrays, respectively. The values of "start" and "count"
+     *  index "start". The pids, rec_lsns and page_lsn are returned in "pid",
+     *  "rec_lsn" and "page_lsn" arrays, respectively. The values of "start" and "count"
      *  are updated to reflect where the search ended and how many dirty
      *  pages it found, respectively.
+     *  master and current_lsn are used only for 'in_doubt' pages which are not loaded
     */
-    void get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, lsn_t *rec_lsn, lsn_t &min_rec_lsn);
+    void get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, lsn_t *rec_lsn,
+                       lsn_t *page_lsn, lsn_t &min_rec_lsn,
+                       const lsn_t master, const lsn_t current_lsn);
     
     /**
     *  Ensures the buffer pool's rec_lsn for this page is no larger than

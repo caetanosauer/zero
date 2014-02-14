@@ -81,6 +81,7 @@ class xct_log_warn_check_t : public smlevel_0 {
 public:
     static w_rc_t check(xct_t*&);
 };
+
 #if defined(__GNUC__) && __GNUC_MINOR__ > 6
 ostream& operator<<(ostream& o, const smlevel_1::xct_state_t& xct_state);
 #endif

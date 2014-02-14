@@ -89,7 +89,7 @@ public:
     /** Immediately writes out all dirty pages.*/
     w_rc_t force_all ();
 
-    /** Immediately writes out all dirty pages up to the given LSN. used while checkpointing. */
+    /** Immediately writes out all dirty pages up to the given LSN. */
     w_rc_t force_until_lsn (lsndata_t lsn);
 
 private:
