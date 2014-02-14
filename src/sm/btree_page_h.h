@@ -952,25 +952,6 @@ public:
 };
 
 
-/**
- * \brief A dummy page image.
- * \details
- * The only usecase is to make a scratch space that will be discarded, but has to
- * behave "reasonably". This class is used to hold a non-bufferpool-managed page,
- * which other page handle class doesn't allow.
- */
-class scratch_btree_page_h : public btree_page_h {
-public:
-    scratch_btree_page_h(const lpid_t &pid, shpid_t root, shpid_t foster, int16_t l,
-        const w_keystr_t &low, const w_keystr_t &high, const w_keystr_t &chain_high) {
-        _mode = LATCH_NL;
-        _pp = &_space;
-        init_as_empty_child(lsn_t::null, pid, root, foster, l, low, high, chain_high);
-    }
-
-    generic_page _space;
-};
-
 // ======================================================================
 //   BEGIN: Inline function implementations
 // ======================================================================

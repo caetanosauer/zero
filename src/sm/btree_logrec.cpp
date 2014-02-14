@@ -607,8 +607,12 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
             w_keystr_t high, chain_high;
             bp.copy_fence_high_key(high);
             bp.copy_chain_fence_high_key(chain_high);
-            scratch_btree_page_h scratch_p(dest.pid(), bp.btree_root(), 0, bp.level(),
-                high, chain_high, chain_high);
+            generic_page scratch_page;
+            scratch_page.tag = t_btree_p;
+            btree_page_h scratch_p;
+            scratch_p.fix_nonbufferpool_page(&scratch_page);
+            scratch_p.init_as_empty_child(lsn_t::null, dest.pid(), bp.btree_root(), 0, bp.level(),
+                                          high, chain_high, chain_high);
             W_COERCE(btree_impl::_ux_rebalance_foster_apply(bp, scratch_p, dp->_move_count,
                                                         fence, dp->_new_pid0));
         } else {
