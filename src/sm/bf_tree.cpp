@@ -514,6 +514,10 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     if (checksum != _buffer[idx].checksum) {
                         ERROUT(<<"bf_tree_m: bad page checksum in page " << shpid);
                         /* Begin SPR_related */
+                        if (parent == NULL) {
+                            _add_free_block(idx);
+                            return RC(eNO_PARENT_SPR);
+                        }
                         ::memset(&_buffer[idx], '\0', sizeof(generic_page));
                         _buffer[idx].lsn = lsn_t::null;
                         _buffer[idx].pid = lpid_t(vol, parent->pid.store(), shpid);
@@ -542,6 +546,10 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     }
                     /* Begin SPR-related */
                     /* Page is valid, but it might be stale. */
+                    if (parent == NULL) {
+                        _add_free_block(idx);
+                        return RC(eNO_PARENT_SPR);
+                    }
                     lsn_t child_emlsn = btree_page_h(parent).get_child_emlsn(find_page_id_slot(parent, shpid));
                     if (child_emlsn < _buffer[idx].lsn) {
                         /* Parent's EMLSN is out of date, e.g. system died before
