@@ -125,6 +125,18 @@ private:
     void        _set_current_page(btree_page_h &page);
 
     /**
+     * \brief Re-fix the page at which the cursor was on.
+     * \details
+     * In most cases, this method just re-fixes the page ID we observed before.
+     * However, fix_direct might fail if the disk page is corrupted. In that case, we need
+     * the parent page to apply SPR on the corrupted page (eBF_DIRECTFIX_SWIZZLED_PTR).
+     * Thus, we re-locate the key by traversing from the root.
+     * This is expensive, but does not happen often.
+    * @param[out] p page handle that will hold the re-fixed page
+     */
+    w_rc_t      _refix_current_key(btree_page_h &p);
+
+    /**
      * \brief Chooses next slot and potentially next page for cursor access.
      *  \details
     *  Computes the next slot, which might be on a successor to p,
