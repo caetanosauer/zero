@@ -49,10 +49,6 @@ public:
 
 
 TEST (TreeBufferpoolTest, AlignmentCheck) {
-    cout << "sizeof(latch_t)=" << sizeof(latch_t) << endl;
-    cout << "sizeof(tatas_lock)=" << sizeof(tatas_lock) << endl;
-    cout << "sizeof(queue_based_lock_t)=" << sizeof(queue_based_lock_t) << endl;
-    exit(0);
     cout << "sizeof(bf_tree_cb_t)=" << sizeof(bf_tree_cb_t) << endl;
     EXPECT_EQ ((uint)0, sizeof(bf_tree_cb_t) % 8);
 }
