@@ -345,7 +345,6 @@ public:
      * This sets all headers, fence/prefix keys, and initial records altogether.
      * As our new B-Tree header has variable-size part (fence keys),
      * setting fence keys later than the first format() causes a problem.
-     * So, the 4-argumets format(which is called from default fix() on virgin page) is disabled.
      * Also, this outputs just a single record for everything, so much more efficient.
      */
     rc_t init_fix_steal(
