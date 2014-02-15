@@ -167,7 +167,7 @@ rc_t btree_impl::_ux_assure_fence_low_entry(btree_page_h &leaf)
         }
     }
     if (needs_to_create) {
-        W_DO(_sx_reserve_ghost(leaf, fence_low, 0, false)); // no data is needed
+        W_DO(_sx_reserve_ghost(leaf, fence_low, 0)); // no data is needed
     }
     return RCOK;
 }

@@ -1903,43 +1903,6 @@ rc_t log_core::insert(logrec_t &rec, lsn_t* rlsn)
     W_DO (insert_criticalsection(rec, rlsn));
     return RCOK;
 }
-rc_t log_core::insert_multiple(size_t count, logrec_t** rs, lsn_t** ret_lsns)
-{
-    // we can do this out of critical section
-    int total_recsize = 0;
-    for (size_t i = 0; i < count; ++i) {
-        total_recsize += rs[i]->length();
-    }
-    
-    // do the same, just for ONCE!
-    CRITICAL_SECTION(ics, _insert_lock);
-    while(_waiting_for_space || 
-            end_byte() - start_byte() + total_recsize > segsize() - 2*BLOCK_SIZE) 
-    {
-        ics.pause();
-        {
-            CRITICAL_SECTION(cs, _wait_flush_lock);
-            while(end_byte() - start_byte() + total_recsize > segsize() - 2*BLOCK_SIZE)
-            {
-                _waiting_for_space = true;
-                // SDM 3A says this drains the buffer:
-                lintel::atomic_thread_fence(lintel::memory_order_release);
-
-                // The only thread that should be waiting 
-                // on the _flush_cond is the log flush daemon.
-                // So we shouldn't have to use broadcast.
-                DO_PTHREAD(pthread_cond_signal(&_flush_cond));
-                DO_PTHREAD(pthread_cond_wait(&_space_cond, &_wait_flush_lock));
-            }
-        }
-        ics.resume();
-    }
-    
-    for (size_t i = 0; i < count; ++i) {
-        W_DO(insert_criticalsection(*(rs[i]), ret_lsns[i]));
-    }
-    return RCOK;
-}
 
 rc_t log_core::insert_criticalsection(logrec_t &rec, lsn_t* rlsn)
 {

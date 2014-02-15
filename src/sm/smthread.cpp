@@ -524,8 +524,6 @@ smthread_t::detach_xct(xct_t* x)
     // which grabs the 1thread mutex, calls no_xct, releases the mutex.
     x->detach_thread();
 
-    w_assert1(x->_log_buf_for_piggybacked_ssx_used == 0);
-
     // pop the outmost tcb_t after the above which cleans up some property of tcb_t
     tcb_t *outmost = _tcb_tail;
     _tcb_tail = _tcb_tail->_outer;

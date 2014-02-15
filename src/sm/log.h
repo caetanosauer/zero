@@ -368,7 +368,6 @@ public:
     rc_t                scavenge(const lsn_t &min_rec_lsn, 
                                const lsn_t &min_xct_lsn);
     rc_t                insert(logrec_t &r, lsn_t* ret);
-    rc_t                insert_multiple(size_t count, logrec_t** rs, lsn_t** ret_lsns);
     rc_t                compensate(const lsn_t& orig_lsn, 
                                const lsn_t& undo_lsn);
     // used by log_i and xct_impl
