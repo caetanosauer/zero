@@ -29,8 +29,6 @@
 #include <ostream>
 #include <limits>
 
-#include <numa.h>
-
 #include "latch.h"
 #include "btree_page_h.h"
 #include "log.h"
@@ -44,42 +42,6 @@ uint64_t bf_tree_m::_bf_swizzle_ex = 0;
 uint64_t bf_tree_m::_bf_swizzle_ex_fails = 0;
 #endif // PAUSE_SWIZZLING_ON
 
-/**
- * Allocates memory on a specific NUMA node.
- *
- * @param[in] size of memory to be allocated.
- * @param[in] NUMA node to allocate memory on.
- * @param[in] align memory on a boundary that is a multiple of this parameter
- */
-void* numa_malloc(size_t size, int node, size_t alignment)
-{
-    void* realptr;
-    void* alignptr;
-
-    if (!(realptr = numa_alloc_onnode(size + alignment + sizeof(realptr) + sizeof(size), node))) {
-        return NULL;
-    }
-    
-    alignptr = (void*) ((((uintptr_t) realptr + sizeof(realptr) + sizeof(size)) & ~(alignment - 1)) + alignment);
-    ((uintptr_t*) alignptr)[-1] = (uintptr_t) realptr;
-    ((size_t*) alignptr)[-2] = (size_t) size;
-    return alignptr;
-}
-
-/**
- * Frees memory allocated by numa_alloc.
- * 
- * @param[in] pointer to the memory space to be freed.
- */ 
-void my_numa_free(void* ptr)
-{
-    void* realptr = (void*)(((uintptr_t*)ptr)[-1]);
-    size_t size = (size_t)(((size_t*)ptr)[-2]);
-
-    numa_free(realptr, size);
-
-    return;
-}
 
 bf_tree_m::bf_tree_m (uint32_t block_cnt,
     uint32_t cleaner_threads,
@@ -111,17 +73,10 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
     
     // use posix_memalign to allow unbuffered disk I/O
     void *buf = NULL;
-#ifdef NUMA
-    if (!(buf = numa_malloc(SM_PAGESIZE * ((uint64_t) block_cnt), 0, SM_PAGESIZE))) {
-        ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << SM_PAGESIZE << "-bytes pages. ");
-        W_FATAL(eOUTOFMEMORY);
-    }
-#else
     if (::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * ((uint64_t) block_cnt)) != 0) {
         ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << SM_PAGESIZE << "-bytes pages. ");
         W_FATAL(eOUTOFMEMORY);
     }
-#endif
     _buffer = reinterpret_cast<generic_page*>(buf);
     
     // the index 0 is never used. to make sure no one can successfully use it,
@@ -134,17 +89,10 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
     BOOST_STATIC_ASSERT(sizeof(latch_t) == 64);
     // allocate one more pair of <control block, latch> as we want to align the table at an odd 
     // multiple of cacheline (64B)
-# ifdef NUMA
-    if (!(buf = numa_malloc((sizeof(bf_tree_cb_t) + sizeof(latch_t)) * (((uint64_t) block_cnt) + 1LLU), 0, sizeof(bf_tree_cb_t) + sizeof(latch_t)))) {
-        ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << sizeof(bf_tree_cb_t) << "-bytes blocks. ");
-        W_FATAL(eOUTOFMEMORY);
-    }
-# else
     if (::posix_memalign(&buf, sizeof(bf_tree_cb_t) + sizeof(latch_t), (sizeof(bf_tree_cb_t) + sizeof(latch_t)) * (((uint64_t) block_cnt) + 1LLU)) != 0) {
         ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << sizeof(bf_tree_cb_t) << "-bytes blocks. ");
         W_FATAL(eOUTOFMEMORY);
     }
-# endif
     ::memset (buf, 0, (sizeof(bf_tree_cb_t) + sizeof(latch_t)) * (((uint64_t) block_cnt) + 1LLU));
     _control_blocks = reinterpret_cast<bf_tree_cb_t*>(reinterpret_cast<char *>(buf) + sizeof(bf_tree_cb_t));
     w_assert0(_control_blocks != NULL);
@@ -157,17 +105,10 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
         }
     }
 #else  
-# ifdef NUMA
-    if (!(buf = numa_malloc(sizeof(bf_tree_cb_t) * ((uint64_t) block_cnt), 0, sizeof(bf_tree_cb_t)))) {
-        ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << sizeof(bf_tree_cb_t) << "-bytes blocks. ");
-        W_FATAL(eOUTOFMEMORY);
-    }
-# else
     if (::posix_memalign(&buf, sizeof(bf_tree_cb_t), sizeof(bf_tree_cb_t) * ((uint64_t) block_cnt)) != 0) {
         ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << sizeof(bf_tree_cb_t) << "-bytes blocks. ");
         W_FATAL(eOUTOFMEMORY);
     }
-# endif
     _control_blocks = reinterpret_cast<bf_tree_cb_t*>(buf);
     w_assert0(_control_blocks != NULL);
     ::memset (_control_blocks, 0, sizeof(bf_tree_cb_t) * block_cnt);
@@ -215,11 +156,8 @@ bf_tree_m::~bf_tree_m() {
 #else
         char* buf = reinterpret_cast<char*>(_control_blocks);
 #endif
-#ifdef NUMA
-        my_numa_free(buf);
-#else
-        delete[] buf;
-#endif
+        // note we use free(), not delete[], which corresponds to posix_memalign
+        ::free (buf);
         _control_blocks = NULL;
     }
 #ifdef BP_MAINTAIN_PARENT_PTR
@@ -239,11 +177,7 @@ bf_tree_m::~bf_tree_m() {
     if (_buffer != NULL) {
         void *buf = reinterpret_cast<void*>(_buffer);
         // note we use free(), not delete[], which corresponds to posix_memalign
-#ifdef NUMA
-        my_numa_free(buf);
-#else
         ::free (buf);
-#endif
         _buffer = NULL;
     }
     
