@@ -82,11 +82,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <sched.h>
 #include <cstring>
 
-#ifdef __SUNPRO_CC
-#include <sys/time.h>
-#else
 #include <ctime>
-#endif
 
 #include <sys/wait.h>
 #include <new>

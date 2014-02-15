@@ -239,27 +239,10 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
    If a portable scan() equivalent is written, a similar set
    of W_SCAN macros could encapuslate input scanning too.
  */  
-#if defined(__GNUG__)
-#if W_GCC_THIS_VER < W_GCC_VER(3,0)
-#define    FC_IOSTREAM_FORM_METHOD
-#else
-#define    FC_NEED_UNBOUND_FORM
-#endif
-#elif defined(__SUNPRO_CC)
-#define    FC_NEED_UNBOUND_FORM
-#endif
+#define    W_FORM(stream)        stream << form
 
-#ifdef FC_IOSTREAM_FORM_METHOD
-#define    W_FORM(stream)        stream . form
-#else
-#define    W_FORM(stream)        stream << form    
-#endif
-
-/* Grab our form if needed.  */
-#ifdef FC_NEED_UNBOUND_FORM
 // in w_form.cpp
 extern const char *form(const char *, ...);
-#endif
 
 #define    W_FORM2(stream,args)    W_FORM(stream) args
 

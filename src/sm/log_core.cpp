@@ -61,11 +61,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define SM_SOURCE
 #define LOG_CORE_C
 
-#ifdef __SUNPRO_CC
-#include <stdio.h>
-#else
 #include <cstdio>        /* XXX for log recovery */
-#endif
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <os_interface.h>
