@@ -163,7 +163,7 @@ typedef srwlock_t sm_vol_rwlock_t;
 // Certain operations have to exclude xcts
 static sm_vol_rwlock_t          _begin_xct_mutex;
 
-backup_m* smlevel_0::bk = 0;
+BackupManager* smlevel_0::bk = 0;
 device_m* smlevel_0::dev = 0;
 io_m* smlevel_0::io = 0;
 bf_tree_m* smlevel_0::bf = 0;
@@ -447,7 +447,7 @@ ss_m::_construct_once(
         W_FATAL(eOUTOFMEMORY);
     }
 
-    bk = new backup_m();
+    bk = new BackupManager();
     if (! bk) {
         W_FATAL(eOUTOFMEMORY);
     }

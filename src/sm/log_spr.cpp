@@ -71,12 +71,17 @@ rc_t log_m::recover_single_page(generic_page* p, const lsn_t& emlsn) {
     // First, retrieve the backup page we will be based on.
     // If this backup is enough recent, we have to apply only a few logs.
     lpid_t pid = p->pid;
-    W_DO(smlevel_0::bk->retrieve_page(*p, p->pid.vol().vol, pid.page));
-    w_assert1(pid == p->pid);
-    // TODO out-of-scope: what if it returns a garbage page for non-backed up page?
+    if (smlevel_0::bk->page_exists(p->pid.vol().vol, pid.page)) {
+        W_DO(smlevel_0::bk->retrieve_page(*p, p->pid.vol().vol, pid.page));
+        w_assert1(pid == p->pid);
+    } else {
+        // if the page is not in the backup (possible if the page was created after the
+        // backup), we need to recover the page purely from the log. So, current_lsn=0.
+        p->lsn = lsn_t::null;
+    }
 
     // Then, collect logs to apply. Depending on the recency of the backup and the
-    // previous page-allocation operation on the page, we may or may not use the backup.
+    // previous page-allocation operation on the page, we might have to collect many logs.
     const size_t SPR_LOG_BUFSIZE = 1 << 14;
     char buffer[SPR_LOG_BUFSIZE]; // TODO, we should have an object pool for this.
     std::vector<logrec_t*> ordered_entires;
