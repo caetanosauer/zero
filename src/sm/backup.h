@@ -5,8 +5,6 @@
 #ifndef BACKUP_H
 #define BACKUP_H
 
-#include "w_defines.h"
-
 /**
  * \defgroup SSMBCK Backup Module
  * \brief \b Backup \b Manager manipulates backup files that can be used for recovery from
@@ -33,6 +31,7 @@
 
 #include "vid_t.h"
 #include "basics.h"
+#include <string>
 
 // forward declarations
 class generic_page;
@@ -82,6 +81,14 @@ public:
      */
     w_rc_t  retrieve_page(generic_page &page, volid_t vid, shpid_t shpid);
 
+    /**
+     * \brief Returns the expected file path of the backup file for the
+     * given volume.
+     * @param[in] vid volume ID
+     * @return path of the backup file, relative from working directory.
+     */
+    std::string get_backup_path(volid_t vid) const;
+
 private:
     /**
      * \brief This one simply retrieves the page as a byte array, no content checking,
@@ -101,9 +108,9 @@ public:
     AlignedMemory(size_t size);
     ~AlignedMemory();
 
-    size_t get_size() const;
-    char* get_buffer();
-    void release();
+    size_t  get_size() const;
+    char*   get_buffer();
+    void    release();
 
     enum ConstantValue {
         /**
@@ -113,29 +120,32 @@ public:
     };
 
 private:
-    size_t _size;
-    char* _buffer;
+    size_t  _size;
+    char*   _buffer;
 };
 
 /**
  * \brief Represents a backup file for one volume.
  * \ingroup SSMBCK
+ * \details
+ * This class uses O_DIRECT to bypass OS bufferpool.
  */
 class BackupFile {
 public:
     /**
      * Empty constructor that doesn't open the file yet.
      * @param[in] vid volume ID
+     * @param[in] path File path of the backup file, relative to the working directory
      */
-    BackupFile(volid_t vid);
+    BackupFile(volid_t vid, const std::string &path);
     /** Automatically closes the file if it is opened. */
     ~BackupFile();
 
     /** Tries to open the backup file for the specified volume. */
-    void open();
+    void    open();
 
     /** Close the backup file if not yet closed. */
-    void close();
+    void    close();
 
     /**
      * \brief Read the given page ID from the backup file.
@@ -143,16 +153,18 @@ public:
      * @param[in] shpid page ID
      * @pre buffer.get_size() >= sizeof(generic_page)
      */
-    w_rc_t read_page(AlignedMemory& buffer, shpid_t shpid);
+    w_rc_t  read_page(AlignedMemory& buffer, shpid_t shpid);
 
     /** Returns if the file exists and is correctly opened. */
-    bool is_opened() const;
+    bool    is_opened() const;
     volid_t get_vid() const;
 private:
+    /** File path of the backup file, relative to the working directory. */
+    std::string _path;
     /** Volume ID. */
     volid_t _vid;
     /** Return value of the POSIX open() semantics. */
-    int _fd;
+    int     _fd;
 };
 
 inline BackupManager::BackupManager() {}
@@ -162,11 +174,9 @@ inline AlignedMemory::~AlignedMemory() { release(); }
 inline size_t AlignedMemory::get_size() const { return _size; }
 inline char* AlignedMemory::get_buffer() { return _buffer; }
 
-inline BackupFile::BackupFile(volid_t vid) : _vid(vid), _fd(-1) {}
+inline BackupFile::BackupFile(volid_t vid, const std::string &path)
+    : _path(path), _vid(vid), _fd(-1) {}
 inline BackupFile::~BackupFile() { close(); }
 inline volid_t BackupFile::get_vid() const { return _vid; }
 inline bool BackupFile::is_opened() const { return _fd != -1; }
-
-
 #endif // BACKUP_H
-

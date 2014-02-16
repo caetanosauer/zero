@@ -1,32 +1,29 @@
 /*
  * (c) Copyright 2014, Hewlett-Packard Development Company, LP
  */
-
-#include "w_defines.h"
-
 #include "backup.h"
 #include "generic_page.h"
-#include "vid_t.h"
+#include "alloc_page.h"
 
-#include <cstdio>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sstream>
-#include <stdlib.h>
 #include <memory.h>
 
-#include "alloc_page.h"
+std::string BackupManager::get_backup_path(volid_t vid) const {
+    std::stringstream file_name;
+    file_name << "backup_" << vid;
+    return file_name.str();
+}
 
 bool BackupManager::volume_exists(volid_t vid) {
-    BackupFile file(vid);
+    BackupFile file(vid, get_backup_path(vid));
     file.open();
     return file.is_opened();
 }
 
 bool BackupManager::page_exists(volid_t vid, shpid_t shpid) {
-    BackupFile file(vid);
+    BackupFile file(vid, get_backup_path(vid));
     file.open();
     if (!file.is_opened()) {
         return false;
@@ -48,7 +45,7 @@ w_rc_t BackupManager::_retrieve_page(BackupFile &file, generic_page& page, shpid
 }
 
 w_rc_t BackupManager::retrieve_page(generic_page &page, volid_t vid, shpid_t shpid) {
-    BackupFile file(vid);
+    BackupFile file(vid, get_backup_path(vid));
     file.open();
     if (!file.is_opened()) {
         W_RETURN_RC_MSG(eNO_BACKUP_FILE, << " vid=" << vid << ", errno=" << errno);
@@ -82,9 +79,7 @@ void AlignedMemory::release() {
 
 void BackupFile::open() {
     w_assert1(_fd == -1); // not yet opened
-    std::stringstream file_name;
-    file_name << "backup_" << _vid;
-    _fd = ::open(file_name.str().c_str(), O_RDONLY|O_DIRECT|O_NOATIME);
+    _fd = ::open(_path.c_str(), O_RDONLY|O_DIRECT|O_NOATIME);
 }
 void BackupFile::close() {
     if (is_opened()) {
@@ -98,12 +93,12 @@ w_rc_t BackupFile::read_page(AlignedMemory& buffer, shpid_t shpid) {
     char* memory = buffer.get_buffer();
     __off_t seeked = ::lseek(_fd, shpid * sizeof(generic_page), SEEK_SET);
     if (seeked != static_cast<__off_t>(shpid * sizeof(generic_page))) {
-        W_RETURN_RC_MSG(eBACKUP_SHORTSEEK, << " vid=" << _vid
+        W_RETURN_RC_MSG(eBACKUP_SHORTSEEK, << " _path=" << _path
             << ", shpid=" << shpid << ", seeked=" << seeked << ", errno=" << errno);
     }
     size_t read_bytes = ::read(_fd, memory, sizeof(generic_page));
     if (read_bytes != sizeof(generic_page)) {
-        W_RETURN_RC_MSG(eBACKUP_SHORTIO, << " vid=" << _vid
+        W_RETURN_RC_MSG(eBACKUP_SHORTIO, << " _path=" << _path
             << ", shpid=" << shpid << ", read_bytes=" << read_bytes << ", errno=" << errno);
     }
     return RCOK;
