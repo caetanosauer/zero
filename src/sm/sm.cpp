@@ -817,11 +817,11 @@ ss_m::begin_xct(tid_t& tid, timeout_in_ms timeout)
     return RCOK;
 }
 
-rc_t ss_m::begin_sys_xct(bool single_log_sys_xct, bool deferred_ssx,
+rc_t ss_m::begin_sys_xct(bool single_log_sys_xct,
     sm_stats_info_t *stats, timeout_in_ms timeout)
 {
     tid_t tid;
-    W_DO (_begin_xct(stats, tid, timeout, true, single_log_sys_xct, deferred_ssx));
+    W_DO (_begin_xct(stats, tid, timeout, true, single_log_sys_xct));
     return RCOK;
 }
 
@@ -1578,10 +1578,9 @@ ss_m::query_lock(const lockid_t& n, lock_mode_t& m)
  *--------------------------------------------------------------*/
 rc_t
 ss_m::_begin_xct(sm_stats_info_t *_stats, tid_t& tid, timeout_in_ms timeout, bool sys_xct,
-    bool single_log_sys_xct, bool deferred_ssx)
+    bool single_log_sys_xct)
 {
     w_assert1(!single_log_sys_xct || sys_xct); // SSX is always system-transaction
-    w_assert1(!deferred_ssx || single_log_sys_xct); // deferred SSX is always SSX
 
     // system transaction can be a nested transaction, so
     // xct() could be non-NULL
@@ -1602,7 +1601,7 @@ ss_m::_begin_xct(sm_stats_info_t *_stats, tid_t& tid, timeout_in_ms timeout, boo
         }
         // system transaction doesn't need synchronization with create_vol etc
         // TODO might need to reconsider. but really needs this change now
-        x = xct_t::new_xct(_stats, timeout, sys_xct, single_log_sys_xct, deferred_ssx);
+        x = xct_t::new_xct(_stats, timeout, sys_xct, single_log_sys_xct);
     } else {
         spinlock_read_critical_section cs(&_begin_xct_mutex);
         x = xct_t::new_xct(_stats, timeout, sys_xct);

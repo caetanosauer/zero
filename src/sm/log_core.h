@@ -268,7 +268,6 @@ public:
 
     // returns lsn where data were written 
     rc_t            insert(logrec_t &r, lsn_t* l); 
-    rc_t            insert_multiple(size_t count, logrec_t** rs, lsn_t** ret_lsns);
     rc_t            insert_criticalsection(logrec_t &r, lsn_t* l); 
     rc_t            flush(const lsn_t &lsn, bool block=true, bool signal=true, bool *ret_flushed=NULL);
     rc_t            compensate(const lsn_t &orig_lsn, const lsn_t& undo_lsn);

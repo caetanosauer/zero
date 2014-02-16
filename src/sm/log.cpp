@@ -259,11 +259,6 @@ log_m::insert(logrec_t &r, lsn_t* ret)
     }
     return log_core::THE_LOG->insert(r, ret); 
 }
-rc_t 
-log_m::insert_multiple(size_t count, logrec_t** rs, lsn_t** ret_lsns)
-{ 
-    return log_core::THE_LOG->insert_multiple(count, rs, ret_lsns); 
-}
 
 rc_t 
 log_m::flush(const lsn_t &lsn, bool block, bool signal, bool *ret_flushed)

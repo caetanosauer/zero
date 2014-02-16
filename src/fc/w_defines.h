@@ -102,17 +102,10 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define ZERO_INIT 1 /* for valgrind/purify */
 #endif
 
-#ifdef __SUNPRO_CC
-#include <errno.h>
-#include <stddef.h>
-#include <stdlib.h>
-#include <limits.h>
-#else
 #include <cerrno>
 #include <cstddef>
 #include <cstdlib>
 #include <climits>
-#endif
 
 #include <stdint.h>
 
