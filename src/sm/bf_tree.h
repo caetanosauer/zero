@@ -665,7 +665,8 @@ private:
      * @param[in] child_slotid slot id of child
      * @param[in] child_emlsn new emlsn to store in parent
      */
-    w_rc_t _sx_update_child_emlsn(generic_page *parent, slotid_t child_slotid, lsn_t child_emlsn);
+    w_rc_t _sx_update_child_emlsn(generic_page *parent,
+                                  general_recordid_t child_slotid, lsn_t child_emlsn);
 
 private:
     /** count of blocks (pages) in this bufferpool. */

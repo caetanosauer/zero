@@ -1057,8 +1057,8 @@ int bf_tree_m::_try_evict_block(bf_idx idx) {
                 << " pincnt = " << cb.pin_cnt());
         
         /* Begin SPR-related */
-        slotid_t child_slotid = find_page_id_slot(&_buffer[cb._parent], cb._pid_shpid);
-        w_assert1(child_slotid > -2);
+        general_recordid_t child_slotid = find_page_id_slot(&_buffer[cb._parent], cb._pid_shpid);
+        w_assert1(child_slotid != GeneralRecordIds::INVALID);
         W_COERCE(_sx_update_child_emlsn(&_buffer[cb._parent], child_slotid, _buffer[idx].lsn));
         /* Note that we are not grabbing EX latch on parent here. I presume that no
          * one else should be touching these exact bytes anyway. 
@@ -1910,10 +1910,8 @@ int bf_tree_m::nframes(int priority, int level, int refbit, bool swizzled, bool 
 }
 #endif
 
-w_rc_t bf_tree_m::_sx_update_child_emlsn(generic_page* parent, slotid_t child_slotid, 
-                                         lsn_t child_emlsn)
-{
-   
+w_rc_t bf_tree_m::_sx_update_child_emlsn(generic_page* parent, general_recordid_t child_slotid,
+                                         lsn_t child_emlsn) {
     sys_xct_section_t sxs (true); // this transaction will output only one log!
     W_DO(sxs.check_error_on_start());
     btree_page_h bp(parent);

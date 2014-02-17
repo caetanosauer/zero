@@ -525,6 +525,19 @@ private:
      */
     uint32_t                     _xct_chain_len;
 
+    /**
+     * \brief The count of consecutive SSXs conveyed by this transaction object.
+     * \details
+     * SSX can't nest SSX.
+     * However, as SSX doesn't care what the transaction object is, SSX can \e chain
+     * an arbitraly number of SSXs as far as they are consecutive SSXs, no multi-log
+     * system transactions or user-transactions in-between.
+     * In that case, we simply increment/decrement this counter when we
+     * start/end SSX. Chaining is useful when SSX operation might cause another SSX
+     * operation, eg ghost-reservation causes page-split which causes page-evict etc etc.
+     */
+    uint32_t                     _ssx_chain_len;
+
     /** concurrency mode of this transaction. */
     concurrency_t                _query_concurrency;
     /** whether to take X lock for lookup/cursor. */
@@ -834,7 +847,8 @@ public:
                                     w_assert1(_core == NULL || _tid == _core->_tid);
                                     return _tid; }
     uint32_t                    get_xct_chain_len() const { return _xct_chain_len;}
-                                    
+    uint32_t&                   ssx_chain_len() { return _ssx_chain_len;}
+
     const lsn_t&                get_read_watermark() const { return _read_watermark; }
     void                        update_read_watermark(const lsn_t &tag) {
         if (_read_watermark < tag) {

@@ -1594,8 +1594,12 @@ ss_m::_begin_xct(sm_stats_info_t *_stats, tid_t& tid, timeout_in_ms timeout, boo
         if (single_log_sys_xct && x) {
             // in this case, we don't need an independent transaction object.
             // we just piggy back on the outer transaction
-            w_assert0(x->is_piggy_backed_single_log_sys_xct() == false); // ssx can't be nested by ssx
-            x->set_piggy_backed_single_log_sys_xct(true);
+            if (x->is_piggy_backed_single_log_sys_xct()) {
+                // SSX can't nest SSX, but we can chain consecutive SSXs.
+                ++(x->ssx_chain_len());
+            } else {
+                x->set_piggy_backed_single_log_sys_xct(true);
+            }
             tid = x->tid();
             return RCOK;
         }
@@ -1630,11 +1634,17 @@ ss_m::_commit_xct(sm_stats_info_t*& _stats, bool lazy,
     
     if (x.is_piggy_backed_single_log_sys_xct()) {
         // then, commit() does nothing
-        x.set_piggy_backed_single_log_sys_xct(false); // but resets the flag
+        // It just "resolves" the SSX on piggyback
+        if (x.ssx_chain_len() > 0) {
+            --x.ssx_chain_len(); // multiple SSXs on piggyback
+        } else {
+            x.set_piggy_backed_single_log_sys_xct(false);
+        }
         return RCOK;
     }
 
     w_assert3(x.state()==xct_active);
+    w_assert1(x.ssx_chain_len() == 0);
 
     W_DO( x.commit(lazy,plastlsn) );
 
