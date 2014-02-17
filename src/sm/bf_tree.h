@@ -379,7 +379,7 @@ public:
      * If these child pages aren't in bufferpool yet, this method ignores the child.
      * It should be loaded beforehand.
      */
-    void swizzle_child (generic_page* parent, slotid_t slot);
+    void swizzle_child (generic_page* parent, general_recordid_t slot);
 
     /**
      * Swizzle a bunch of child pointers in the parent page to speed-up accesses on them.
@@ -389,7 +389,8 @@ public:
      * They should be loaded beforehand.
      * @param[in] slots_size length of slots.
      */
-    void swizzle_children (generic_page* parent, const slotid_t *slots, uint32_t slots_size);
+    void swizzle_children (generic_page* parent, const general_recordid_t *slots,
+                            uint32_t slots_size);
 
     /**
      * Search in the given page to find the slot that contains the page id as a child.
