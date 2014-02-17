@@ -175,48 +175,67 @@ TEST (TreeBufferpoolTest, FixVirginChild) {
     ), 0);
 }
 
-w_rc_t test_bf_evict(ss_m* /*ssm*/, test_volume_t *test_volume) {
+// make big enough database for tests
+w_rc_t prepare_test(ss_m* ssm, test_volume_t *test_volume, stid_t &stid, lpid_t &root_pid) {
+    W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
+
+    const int recsize = SM_PAGESIZE / 6;
+    char datastr[recsize];
+    ::memset (datastr, 'a', recsize);
+    vec_t data;
+    data.set(datastr, recsize);
+
+    // create at least 30 pages.
+    // commit each time so that pages can be evicted
+    w_keystr_t key;
+    char keystr[6] = "";
+    ::memset(keystr, '\0', 6);
+    keystr[0] = 'k';
+    keystr[1] = 'e';
+    keystr[2] = 'y';
+    for (int i = 0; i < 180; ++i) {
+        keystr[3] = ('0' + ((i / 100) % 10));
+        keystr[4] = ('0' + ((i / 10) % 10));
+        keystr[5] = ('0' + ((i / 1) % 10));
+        key.construct_regularkey(keystr, 6);
+        W_DO(ssm->begin_xct());
+        test_env->set_xct_query_lock();
+        W_DO(ssm->create_assoc(stid, key, data));
+        W_DO(ssm->commit_xct());
+    }
+    W_DO(x_btree_verify(ssm, stid));
+    W_DO(ssm->force_buffers()); // clean them up
+    return RCOK;
+}
+
+w_rc_t test_bf_evict(ss_m* ssm, test_volume_t *test_volume) {
+    stid_t stid;
+    lpid_t root_pid;
+    W_DO (prepare_test(ssm, test_volume, stid, root_pid));
+
     bf_tree_m &pool(*smlevel_0::bf);
     lsn_t thelsn = smlevel_0::log->curr_lsn();
-    lpid_t root_pid(test_volume->_vid, 1, 3);
 
-    generic_page *root_page = NULL;
-    W_DO(pool.fix_virgin_root(root_page, test_volume->_vid, root_pid.store(), root_pid.page));
-    EXPECT_TRUE (root_page != NULL);
-    ::memset(root_page, 0, sizeof(generic_page));
-    btree_page *rbp = reinterpret_cast<btree_page*>(root_page);
-    root_page->pid    = root_pid;
-    rbp->lsn          = thelsn;
-    root_page->tag    = t_btree_p;
-    rbp->btree_level  = 2;
-    rbp->btree_foster = 0;
-    rbp->init_items();
+    btree_page_h root_p;
+    W_DO(root_p.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_SH));
+    EXPECT_TRUE (root_p.is_node());
+    EXPECT_TRUE (root_p.nrecs() > 30);
 
-    // TODO the code below doesn't bother making real pages. to pass this testcase, some checks in bufferpool are disabled.
-    // for better testing and assertion, we should make real pages here and test against it.
-    // see the comments around "WARNING!! bf_tree_m: page id doesn't match!" in bufferpool code.
     const size_t keep_latch_i = 23; // this page will be kept latched
     bf_idx keep_latch_idx = 0;
     generic_page* keep_latch_page = NULL;
     std::set<bf_idx> dirty_idx;
-    dirty_idx.insert (test_bf_tree::get_bf_idx(&pool, root_page));
-    for (size_t i = 0; i < 40; ++i) {
+    for (size_t i = 0; i < 30; ++i) {
         generic_page *page = NULL;
-        lpid_t pid (test_volume->_vid, 1, root_pid.page + 1 + i);
-        test_bf_tree::_add_child_pointer (rbp, pid.page);
+        lpid_t pid (root_pid.vol().vol, root_pid.store(), root_p.child(i));
 
-        W_DO(pool.fix_nonroot(page, root_page, pid.vol().vol, pid.page, i % 5 == 0 ? LATCH_EX : LATCH_SH, false, false));
+        W_DO(pool.fix_nonroot(page, root_p.get_generic_page(), pid.vol().vol, pid.page, i % 5 == 0 ? LATCH_EX : LATCH_SH, false, false));
         EXPECT_TRUE (page != NULL);
         if (page != NULL) {
             bf_idx idx = test_bf_tree::get_bf_idx(&pool, page);
             EXPECT_TRUE (dirty_idx.find (idx) == dirty_idx.end());
-            ::memset(page, 0, sizeof(generic_page));
             btree_page *bp = reinterpret_cast<btree_page*>(page);
-            page->pid       = pid;
             bp->lsn         = thelsn;
-            page->tag       = t_btree_p;
-            bp->btree_level = 1;
-            bp->init_items();
             if (i % 5 == 0) {
                 dirty_idx.insert (idx);
                 DBGOUT2(<<"dirty_idx i=" << i << " idx=" << idx);
@@ -233,29 +252,28 @@ w_rc_t test_bf_evict(ss_m* /*ssm*/, test_volume_t *test_volume) {
             }
         }
     }
-    EXPECT_EQ(root_pid.page + 1 + keep_latch_i, keep_latch_page->pid.page);
 
     // fix again
-    for (size_t i = 0; i < 40; ++i) {
+    for (size_t i = 0; i < 30; ++i) {
         if (i == keep_latch_i) {
             bf_tree_cb_t &cb (*test_bf_tree::get_bf_control_block(&pool, keep_latch_page));
             EXPECT_FALSE(cb._dirty);
         } else {
             generic_page *page = NULL;
-            lpid_t pid (test_volume->_vid, 1, root_pid.page + 1 + i);
-            W_DO(pool.fix_nonroot(page, root_page, pid.vol().vol, pid.page, LATCH_SH, false, false));
+            lpid_t pid (root_pid.vol().vol, root_pid.store(), root_p.child(i));
+            W_DO(pool.fix_nonroot(page, root_p.get_generic_page(), pid.vol().vol, pid.page, LATCH_SH, false, false));
             EXPECT_TRUE (page != NULL);
             if (page != NULL) {
                 btree_page *bp = reinterpret_cast<btree_page*>(page);
                 bf_idx idx = test_bf_tree::get_bf_idx(&pool, page);
                 EXPECT_NE (keep_latch_idx, idx);
                 bf_tree_cb_t &cb (*test_bf_tree::get_bf_control_block(&pool, page));
+                EXPECT_EQ(pid.page, page->pid.page) << "i" << i << ".idx" << idx;
+                EXPECT_EQ(pid.store(), page->pid.store());
+                EXPECT_EQ(test_volume->_vid.vol, page->pid.vol().vol);
+                EXPECT_EQ(1, bp->btree_level);
                 if (i % 5 == 0) {
-                    EXPECT_EQ(pid.page, page->pid.page) << "i" << i << ".idx" << idx;
-                    EXPECT_EQ(pid.store(), page->pid.store());
-                    EXPECT_EQ(test_volume->_vid.vol, page->pid.vol().vol);
                     EXPECT_EQ(thelsn, bp->lsn);
-                    EXPECT_EQ(1, bp->btree_level);
                     EXPECT_TRUE (dirty_idx.find (idx) != dirty_idx.end()) << "i" << i << ".idx" << idx;
                     EXPECT_TRUE(cb._dirty) << "i" << i << ".idx" << idx;
                 } else {
@@ -267,24 +285,22 @@ w_rc_t test_bf_evict(ss_m* /*ssm*/, test_volume_t *test_volume) {
         }
     }
     pool.debug_dump(std::cout);
-    EXPECT_EQ(root_pid.page + 1 + keep_latch_i, keep_latch_page->pid.page);
     pool.unfix(keep_latch_page);
-    pool.set_dirty(root_page);
-    pool.unfix(root_page);
+    root_p.unfix();
 
     return RCOK;
 }
 TEST (TreeBufferpoolTest, EvictNoSwizzle) {
     test_env->empty_logdata_dir();
     EXPECT_EQ(test_env->runBtreeTest(test_bf_evict,
-        false, default_locktable_size, default_quota_in_pages, 20,
+        false, default_locktable_size, 256, 20,
         1, 1000, 10000, 64, false, false
     ), 0);
 }
 TEST (TreeBufferpoolTest, EvictSwizzle) {
     test_env->empty_logdata_dir();
     EXPECT_EQ(test_env->runBtreeTest(test_bf_evict,
-        false, default_locktable_size, default_quota_in_pages, 20,
+        false, default_locktable_size, 256, 20,
         1, 1000, 10000, 64, false, true
     ), 0);
 }
