@@ -998,16 +998,16 @@ int bf_tree_m::_try_evict_block(bf_idx idx) {
         cb.latch().latch_release();
         DBGOUT1(<<"evicting page idx = " << idx << " shpid = " << cb._pid_shpid 
                 << " pincnt = " << cb.pin_cnt());
-        
-        /* Begin SPR-related */
-        general_recordid_t child_slotid = find_page_id_slot(&_buffer[cb._parent], cb._pid_shpid);
-        w_assert1(child_slotid != GeneralRecordIds::INVALID);
-        W_COERCE(_sx_update_child_emlsn(&_buffer[cb._parent], child_slotid, _buffer[idx].lsn));
-        /* Note that we are not grabbing EX latch on parent here. I presume that no
-         * one else should be touching these exact bytes anyway. 
-         */ 
-        
-        /* End SPR-related */
+
+        if (_buffer[idx].tag == t_btree_p && cb._parent != 0) {
+            // If evicting a non-root Btree page, output SPR log for updating EMLSN in parent.
+            generic_page *parent = &_buffer[cb._parent];
+            general_recordid_t child_slotid = find_page_id_slot(parent, cb._pid_shpid);
+            w_assert1(child_slotid != GeneralRecordIds::INVALID);
+            W_COERCE(_sx_update_child_emlsn(parent, child_slotid, _buffer[idx].lsn));
+            // Note that we are not grabbing EX latch on parent here. I presume that no
+            // one else should be touching these exact bytes anyway.
+        }
 
         // remove it from hashtable.
         bool removed = _hashtable->remove(bf_key(cb._pid_vol, cb._pid_shpid));

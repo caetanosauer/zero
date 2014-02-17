@@ -37,7 +37,6 @@ bool BackupManager::page_exists(volid_t vid, shpid_t shpid) {
 
 w_rc_t BackupManager::_retrieve_page(BackupFile &file, generic_page& page, shpid_t shpid) {
     w_assert1(file.is_opened());
-    w_assert1(page_exists(file.get_vid(), shpid));
     AlignedMemory aligned(sizeof(generic_page));
     W_DO(file.read_page(aligned, shpid));
     ::memcpy(&page, aligned.get_buffer(), sizeof(generic_page));

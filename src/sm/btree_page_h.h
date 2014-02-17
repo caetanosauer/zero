@@ -731,17 +731,9 @@ public:
     /** Sets the Expected Child LSN of foster-child. \ingroup SPR */
     void           set_foster_emlsn(const lsn_t &lsn);
 
-    /**
-     * \brief Returns the Expected Child LSN of pid0.
-     * \ingroup SPR
-     * @pre is_leaf() == false
-     */
+    /** Returns the Expected Child LSN of pid0. \ingroup SPR */
     const lsn_t&   get_pid0_emlsn() const;
-    /**
-     * \brief Sets the Expected Child LSN of pid0.
-     * \ingroup SPR
-     * @pre is_leaf() == false
-     */
+    /** Sets the Expected Child LSN of pid0. \ingroup SPR */
     void           set_pid0_emlsn(const lsn_t &lsn);
 
     /*
@@ -1424,7 +1416,6 @@ inline const lsn_t& btree_page_h::get_foster_emlsn() const {
     return page()->btree_foster_emlsn;
 }
 inline const lsn_t& btree_page_h::get_pid0_emlsn() const {
-    w_assert1(!is_leaf());
     return page()->btree_pid0_emlsn;
 }
 inline void btree_page_h::set_foster_emlsn(const lsn_t& lsn) {

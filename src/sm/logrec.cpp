@@ -610,6 +610,8 @@ page_img_format_t::page_img_format_t (const btree_page_h& page) {
 
     ::memcpy (data, pp_bin, beginning_bytes);
     ::memcpy (data + beginning_bytes, unused + unused_length, ending_bytes);
+    w_assert1(beginning_bytes >= btree_page::hdr_sz);
+    w_assert1(beginning_bytes + ending_bytes <= sizeof(btree_page));
 }
 
 page_img_format_log::page_img_format_log(const btree_page_h &page) {
