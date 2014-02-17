@@ -57,7 +57,7 @@ const int XCT_LOCK_HASHMAP_SIZE = 1023;
  * \section THREADS Multi-thread safety
  * get_granted_mode(), the method used from lock_m::lock(), has a precondition that says
  * it must be called from the transaction's thread.
- * The precondition is important because we don't take latch in the method
+ * The precondition is important because we don't take latch in get_granted_mode()
  * nor return a copied lock mode (returns reference). As "this" is the only thread
  * that might change granted mode of the lock entry or change the bucket's linked list,
  * this is safe.
@@ -72,7 +72,8 @@ const int XCT_LOCK_HASHMAP_SIZE = 1023;
  * follows: BEFORE=12027 TPS, AFTER=13764 TPS.
  * @see xct_lock_entry_t
  */
-struct XctLockHashMap {
+class XctLockHashMap {
+public:
     XctLockHashMap();
     ~XctLockHashMap();
 
@@ -87,13 +88,19 @@ struct XctLockHashMap {
     /** Clears hash buckets. */
     void                        reset();
 
+    /** Add a new entry to this hashmap. */
+    void                        push_front(xct_lock_entry_t *link);
+    /** Removes the entry from this hashmap. */
+    void                        remove(xct_lock_entry_t *link);
+private:
+
     /**
      * Hash buckets. In each bucket, we have a doubly-linked list of xct_lock_entry_t.
      */
-    xct_lock_entry_t*           buckets[XCT_LOCK_HASHMAP_SIZE];
+    xct_lock_entry_t*           _buckets[XCT_LOCK_HASHMAP_SIZE];
 
     /** Returns the bucket index for the lock. */
-    static uint32_t bucket_id(uint32_t lock_id) { return lock_id % XCT_LOCK_HASHMAP_SIZE; }
+    static uint32_t _bucket_id(uint32_t lock_id) { return lock_id % XCT_LOCK_HASHMAP_SIZE; }
 };
 
 /**
