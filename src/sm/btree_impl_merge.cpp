@@ -58,11 +58,13 @@ rc_t btree_impl::_sx_rebalance_foster(btree_page_h &page)
     // What would be the new fence key?
     w_keystr_t mid_key;
     shpid_t new_pid0;
+    lsn_t   new_pid0_emlsn;
     if (foster_p.is_node()) {
         // then, choosing the new mid_key is easier, but handling of pid0 is uglier.
         btrec_t lowest (page, page.nrecs() - move_count);
         mid_key = lowest.key();
         new_pid0 = lowest.child();
+        new_pid0_emlsn = lowest.child_emlsn();
     } else {
         // then, choosing the new mid_key is uglier, but handling of pid0 is easier.
         // pick new mid_key. this is same as split code though we don't look for shorter keys.
@@ -72,26 +74,30 @@ rc_t btree_impl::_sx_rebalance_foster(btree_page_h &page)
         w_assert1(common_bytes < k2.key().get_length_as_keystr()); // otherwise the two keys are the same.
         mid_key.construct_from_keystr(k2.key().buffer_as_keystr(), common_bytes + 1);
         new_pid0 = 0;
+        new_pid0_emlsn = lsn_t::null;
     }
 
-    W_DO(_sx_rebalance_foster(page, foster_p, move_count, mid_key, new_pid0));
+    W_DO(_sx_rebalance_foster(page, foster_p, move_count, mid_key, new_pid0, new_pid0_emlsn));
     return RCOK;
 }
 rc_t btree_impl::_sx_rebalance_foster(btree_page_h &page, btree_page_h &foster_p,
-            int32_t move_count, const w_keystr_t &mid_key, shpid_t new_pid0) {
+            int32_t move_count, const w_keystr_t &mid_key, shpid_t new_pid0,
+            lsn_t new_pid0_emlsn) {
     // assure foster-child page has an entry same as fence-low for locking correctness.
     // See jira ticket:84 "Key Range Locking" (originally trac ticket:86).
     W_DO(_ux_assure_fence_low_entry(foster_p)); // this might be another SSX
 
     sys_xct_section_t sxs(true);
     W_DO(sxs.check_error_on_start());
-    rc_t ret = _ux_rebalance_foster_core(page, foster_p, move_count, mid_key, new_pid0);
+    rc_t ret = _ux_rebalance_foster_core(page, foster_p, move_count, mid_key, new_pid0,
+        new_pid0_emlsn);
     W_DO (sxs.end_sys_xct (ret));
     return ret;
 }
 
 rc_t btree_impl::_ux_rebalance_foster_core(btree_page_h &page, btree_page_h &foster_p,
-            int32_t move_count, const w_keystr_t &mid_key, shpid_t new_pid0) {
+            int32_t move_count, const w_keystr_t &mid_key, shpid_t new_pid0,
+            lsn_t new_pid0_emlsn) {
     w_assert1 (g_xct()->is_single_log_sys_xct());
     w_assert1 (page.latch_mode() == LATCH_EX);
     w_assert1 (foster_p.latch_mode() == LATCH_EX);
@@ -116,13 +122,16 @@ rc_t btree_impl::_ux_rebalance_foster_core(btree_page_h &page, btree_page_h &fos
     // Note: log_ receives pages in reverse order. "page" is the foster-child (dest),
     // "page2" is the foster-parent (src) to specify redo order.
     // This is confusing and we should refactor the current logging framework (perl script).
-    W_DO (log_btree_foster_rebalance (foster_p, page, move_count, mid_key, new_pid0));
-    W_DO (_ux_rebalance_foster_apply(page, foster_p, move_count, mid_key, new_pid0));
+    W_DO (log_btree_foster_rebalance(foster_p, page, move_count, mid_key, new_pid0,
+                                     new_pid0_emlsn));
+    W_DO (_ux_rebalance_foster_apply(page, foster_p, move_count, mid_key, new_pid0,
+                                     new_pid0_emlsn));
     return RCOK;
 }
 
 rc_t btree_impl::_ux_rebalance_foster_apply(btree_page_h &page,
-    btree_page_h &foster_p, int32_t move_count, const w_keystr_t &mid_key, shpid_t new_pid0) {
+    btree_page_h &foster_p, int32_t move_count, const w_keystr_t &mid_key, shpid_t new_pid0,
+    lsn_t new_pid0_emlsn) {
     // we are moving significant fraction of records in the pages,
     // so the move will most likely change the fence keys in the middle, thus prefix too.
     // it will not be a simple move, so we have to make the page image from scratch.
@@ -144,8 +153,9 @@ rc_t btree_impl::_ux_rebalance_foster_apply(btree_page_h &page,
         // Otherwise, we also steal old page's pid0 with low-fence key as a regular record
         w_assert1(foster_p.nrecs() == 0 || foster_p.pid0() != 0);
         bool steal_scratch_pid0 = foster_p.pid0() != 0;
-        W_DO(foster_p.format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(), new_pid0,
-            scratch_p.get_foster(),
+        W_DO(foster_p.format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(),
+            new_pid0, new_pid0_emlsn,
+            scratch_p.get_foster(), scratch_p.get_foster_emlsn(),
             mid_key, high_key, chain_high_key,
             false, // don't log it
             &page, page.nrecs() - move_count + 1, page.nrecs(), // steal from foster-parent (+1 to skip lowest record)
@@ -153,8 +163,9 @@ rc_t btree_impl::_ux_rebalance_foster_apply(btree_page_h &page,
             steal_scratch_pid0
         ));
     } else {
-        W_DO(foster_p.format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(), 0,
-            scratch_p.get_foster(),
+        W_DO(foster_p.format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(),
+            0, lsn_t::null,
+            scratch_p.get_foster(), scratch_p.get_foster_emlsn(),
             mid_key, high_key, chain_high_key,
             false, // don't log it
             &page, page.nrecs() - move_count, page.nrecs(), // steal from foster-parent
@@ -167,8 +178,9 @@ rc_t btree_impl::_ux_rebalance_foster_apply(btree_page_h &page,
     w_keystr_t low_key;
     scratch_p.copy_fence_low_key(low_key);
     scratch_p.copy_chain_fence_high_key(chain_high_key);
-    W_DO(page.format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(), scratch_p.pid0(),
-        scratch_p.get_foster(),
+    W_DO(page.format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(),
+        scratch_p.pid0(), scratch_p.get_pid0_emlsn(),
+        scratch_p.get_foster(), scratch_p.get_foster_emlsn(),
         low_key, mid_key, chain_high_key, // high key is changed!
         false, // don't log it
         &scratch_p, 0, scratch_p.nrecs() - move_count // steal from old page
@@ -199,7 +211,7 @@ rc_t btree_impl::_ux_rebalance_foster_norec(btree_page_h &page,
     foster_p.copy_chain_fence_high_key(chain_high);
 
     // Update foster parent.
-    W_DO(page.norecord_split(foster_p.pid().page, mid_key, chain_high));
+    W_DO(page.norecord_split(foster_p.pid().page, foster_p.lsn(), mid_key, chain_high));
 
     // Update foster child. It should be an empty page so far
     w_keystr_t high;
@@ -303,8 +315,9 @@ void btree_impl::_ux_merge_foster_apply_parent(btree_page_h &page, btree_page_h 
     ::memcpy (&scratch, page._pp, sizeof(scratch));
     btree_page_h scratch_p (&scratch);
     W_COERCE(page.format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(),
-        scratch_p.pid0(),
-        foster_p.get_foster(), // foster-child's foster will be the next one after merge
+        scratch_p.pid0(), scratch_p.get_pid0_emlsn(),
+        // foster-child's foster will be the next one after merge
+        foster_p.get_foster(), foster_p.get_foster_emlsn(),
         low_key, high_key, chain_high_key,
         false, // don't log it
         &scratch_p, 0, scratch_p.nrecs(), // steal from foster-parent
@@ -336,6 +349,7 @@ void btree_impl::_ux_deadopt_foster_apply_real_parent(btree_page_h &real_parent,
 
 void btree_impl::_ux_deadopt_foster_apply_foster_parent(btree_page_h &foster_parent,
                                                         shpid_t foster_child_id,
+                                                        lsn_t foster_child_emlsn,
                                                         const w_keystr_t &low_key,
                                                         const w_keystr_t &high_key) {
     w_assert1 (foster_parent.latch_mode() == LATCH_EX);
@@ -355,6 +369,7 @@ void btree_impl::_ux_deadopt_foster_apply_foster_parent(btree_page_h &foster_par
         org_low_key, org_high_key, high_key));
     
     foster_parent.page()->btree_foster = foster_child_id;
+    foster_parent.set_foster_emlsn(foster_child_emlsn);
 }
 rc_t btree_impl::_ux_deadopt_foster_core(btree_page_h &real_parent, slotid_t foster_parent_slot)
 {
@@ -382,6 +397,7 @@ rc_t btree_impl::_ux_deadopt_foster_core(btree_page_h &real_parent, slotid_t fos
     btrec_t rec (real_parent, foster_parent_slot + 1);
     const w_keystr_t &low_key = rec.key();
     shpid_t foster_child_id = rec.child();
+    lsn_t foster_child_emlsn = rec.child_emlsn();
 
     // get high_key. if it's the last record, fence-high of real parent
     w_keystr_t high_key;
@@ -395,10 +411,11 @@ rc_t btree_impl::_ux_deadopt_foster_core(btree_page_h &real_parent, slotid_t fos
     w_assert1(low_key.compare(high_key) < 0);
 
     W_DO(log_btree_foster_deadopt(real_parent, foster_parent, foster_child_id,
-                                  foster_parent_slot, low_key, high_key));
+                                  foster_child_emlsn, foster_parent_slot, low_key, high_key));
     
     _ux_deadopt_foster_apply_real_parent (real_parent, foster_child_id, foster_parent_slot);
-    _ux_deadopt_foster_apply_foster_parent (foster_parent, foster_child_id, low_key, high_key);
+    _ux_deadopt_foster_apply_foster_parent (foster_parent,
+                                foster_child_id, foster_child_emlsn, low_key, high_key);
 
     w_assert3(real_parent.is_consistent(true, true));
     w_assert3(foster_parent.is_consistent(true, true));

@@ -99,9 +99,9 @@
  * @see log_page_evict()
  */
 struct page_evict_t {
-    lsn_t       _child_lsn;
-    slotid_t    _child_slot;
-    page_evict_t(const lsn_t &child_lsn, slotid_t child_slot)
+    lsn_t                   _child_lsn;
+    general_recordid_t      _child_slot;
+    page_evict_t(const lsn_t &child_lsn, general_recordid_t child_slot)
         : _child_lsn (child_lsn), _child_slot(child_slot) {}
 };
 // trivial change

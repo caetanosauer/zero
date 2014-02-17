@@ -45,7 +45,7 @@ void btree_page_data::unset_ghost(int item) {
 
 
 bool btree_page_data::insert_item(int item, bool ghost, poor_man_key poor,
-                                  shpid_t child, size_t data_length) {
+                shpid_t child, const lsn_t &child_emlsn, size_t data_length) {
     w_assert1(item>=0 && item<=nitems);  // use of <= intentional
     w_assert3(_items_are_consistent());
 
@@ -66,7 +66,8 @@ bool btree_page_data::insert_item(int item, bool ghost, poor_man_key poor,
     head[item].poor = poor;
 
     if (!is_leaf()) {
-        body[first_used_body].interior.child = child;
+        body(first_used_body).interior.child = child;
+        body(first_used_body).interior.child_emlsn = child_emlsn.data();
     } else {
         w_assert1(child == 0);
     }
@@ -77,8 +78,8 @@ bool btree_page_data::insert_item(int item, bool ghost, poor_man_key poor,
 }
 
 bool btree_page_data::insert_item(int item, bool ghost, poor_man_key poor,
-                             shpid_t child, const cvec_t& data) {
-    if (!insert_item(item, ghost, poor, child, data.size())) {
+                             shpid_t child, const lsn_t &child_emlsn, const cvec_t& data) {
+    if (!insert_item(item, ghost, poor, child, child_emlsn, data.size())) {
         return false;
     }
     data.copy_to(item_data(item));
@@ -115,12 +116,13 @@ bool btree_page_data::resize_item(int item, size_t new_length, size_t keep_old) 
     head[item].offset = ghost ? -first_used_body : first_used_body;
     _item_body_length(first_used_body) = body_length;
     if (!is_leaf()) {
-        body[first_used_body].interior.child = body[offset].interior.child;
+        body(first_used_body).interior.child = body(offset).interior.child;
+        body(first_used_body).interior.child_emlsn = body(offset).interior.child_emlsn;
     }
 
     if (keep_old > 0) {
         char* new_p = item_data(item);
-        w_assert1(old_p+keep_old <= (char*)&body[offset]+old_length);
+        w_assert1(old_p+keep_old <= (char*)&body(offset)+old_length);
         ::memcpy(new_p, old_p, keep_old); 
     }
 
@@ -262,13 +264,13 @@ void btree_page_data::compact() {
             scratch_head -= length;
             head[j].poor   = head[i].poor;
             head[j].offset = scratch_head;
-            ::memcpy(&scratch_body[scratch_head], &body[offset], length*sizeof(item_body));
+            ::memcpy(&scratch_body[scratch_head], &body(offset), length*sizeof(item_body));
             j++;
         }
     }
     nitems = j;
     first_used_body = scratch_head;
-    ::memcpy(&body[first_used_body], &scratch_body[scratch_head], (max_bodies-scratch_head)*sizeof(item_body));
+    ::memcpy(&body(first_used_body), &scratch_body[scratch_head], (max_bodies-scratch_head)*sizeof(item_body));
     
     w_assert1(nghosts == 0);
     w_assert3(_items_are_consistent());
@@ -277,10 +279,11 @@ void btree_page_data::compact() {
 
 char* btree_page_data::unused_part(size_t& length) {
     char* start_gap = (char*)&head[nitems];
-    char* after_gap = (char*)&body[first_used_body];
+    char* after_gap = (char*)&body(first_used_body);
     length = after_gap - start_gap;
     return start_gap;
 }
 
 
-const size_t btree_page_data::max_item_overhead = sizeof(item_head) + sizeof(item_length_t) + sizeof(shpid_t) + _item_align(1)-1;
+const size_t btree_page_data::max_item_overhead = sizeof(item_head) + sizeof(item_length_t)
+    + sizeof(shpid_t) + sizeof(lsn_t) + _item_align(1)-1;

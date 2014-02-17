@@ -42,8 +42,8 @@ rc_t btree_impl::_ux_create_tree_core(const stid_t &stid, const lpid_t &root_pid
     w_assert1(supremum.is_constructed());
     W_DO(page.init_fix_steal(NULL, root_pid, root_pid.page,
         1, // level=1. initial tree has only one level
-        0, // no child
-        0, // no b-link page
+        0, lsn_t::null,// no pid0
+        0, lsn_t::null,// no foster child
         infimum, supremum, dummy_chain_high // start from infimum/supremum fence keys
     ));
 
@@ -98,8 +98,8 @@ btree_impl::_ux_shrink_tree_core(btree_page_h& rp)
         cp.copy_chain_fence_high_key(dummy_chain_high);
         W_DO( rp.format_steal(rp_pid, rp_pid.page, // root page id is not changed.
             cp.level(), // one level shorter
-            cp.pid().page, // left-most is cp's left-most
-            cp.get_foster(), // foster is cp's foster
+            cp.pid().page, cp.lsn(), // left-most is cp's left-most
+            cp.get_foster(), cp.get_foster_emlsn(),// foster is cp's foster
             fence_low, fence_high, dummy_chain_high,
             true, // log it to avoid write-order dependency. anyway it's very rare!
             &cp, 0, cp.nrecs()));
@@ -113,8 +113,8 @@ btree_impl::_ux_shrink_tree_core(btree_page_h& rp)
         supremum.construct_posinfkey();
         W_DO( rp.format_steal(rp_pid, rp_pid.page, // root page id is not changed.
             1, // root is now leaf
-            0, // leaf has no pid0
-            0, // no foster
+            0, lsn_t::null, // leaf has no pid0
+            0, lsn_t::null, // no foster
             infimum, supremum, dummy_chain_high // empty fence keys=infimum-supremum
             ) ); // nothing to steal
     }
@@ -160,8 +160,9 @@ btree_impl::_ux_grow_tree_core(btree_page_h& rp, const lpid_t &cp_pid)
     rp.copy_chain_fence_high_key(cp_chain_high);
 
     btree_page_h cp;
-    W_DO (cp.init_fix_steal(&rp, cp_pid, rp.pid().page, rp.level(), rp.pid0(), // copy pid0 of root too
-        rp.get_foster(),
+    W_DO (cp.init_fix_steal(&rp, cp_pid, rp.pid().page, rp.level(),
+        rp.pid0(), rp.get_pid0_emlsn(),// copy pid0 of root too
+        rp.get_foster(), rp.get_foster_emlsn(),
         cp_fence_low, cp_fence_high, cp_chain_high, // use current root's fence keys
         &rp, 0, rp.nrecs() // steal everything from root
     ));
@@ -172,8 +173,8 @@ btree_impl::_ux_grow_tree_core(btree_page_h& rp, const lpid_t &cp_pid)
     supremum.construct_posinfkey();
     W_DO( rp.format_steal(rp.pid(), rp.pid().page, // root page id is not changed.
         rp.level() + 1, // grow one level
-        cp.pid().page, // left-most is cp
-        0, // no foster
+        cp.pid().page, cp.lsn(), // left-most is cp
+        0, lsn_t::null,// no foster
         infimum, supremum, dummy_chain_high // empty fence keys=infimum-supremum
         ) ); // nothing to steal
     

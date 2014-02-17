@@ -395,7 +395,7 @@ public:
      * Search in the given page to find the slot that contains the page id as a child.
      * Returns >0 if a normal slot, 0 if pid0, -1 if foster, -2 if not found.
      */
-    slotid_t find_page_id_slot (generic_page* page, shpid_t shpid) const;
+    general_recordid_t find_page_id_slot (generic_page* page, shpid_t shpid) const;
 
     /**
      * Returns if the page is swizzled by parent or the volume descriptor.

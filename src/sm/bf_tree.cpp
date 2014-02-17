@@ -481,7 +481,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                         _buffer[idx].lsn = lsn_t::null;
                         _buffer[idx].pid = lpid_t(vol, parent->pid.store(), shpid);
                         _buffer[idx].tag = t_btree_p;
-                        lsn_t child_emlsn = btree_page_h(parent).get_child_emlsn(find_page_id_slot(parent, shpid));
+                        lsn_t child_emlsn = btree_page_h(parent).get_emlsn_general(
+                                find_page_id_slot(parent, shpid));
                         bool would_block(true);
                         if (!cb.latch().is_mine()) {
                             cb.latch().upgrade_if_not_block(would_block);
@@ -509,7 +510,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                         _add_free_block(idx);
                         return RC(eNO_PARENT_SPR);
                     }
-                    lsn_t child_emlsn = btree_page_h(parent).get_child_emlsn(find_page_id_slot(parent, shpid));
+                    lsn_t child_emlsn = btree_page_h(parent).get_emlsn_general(
+                        find_page_id_slot(parent, shpid));
                     if (child_emlsn < _buffer[idx].lsn) {
                         /* Parent's EMLSN is out of date, e.g. system died before
                          * parent was updated on child's previous eviction. 

@@ -32,10 +32,12 @@ btrec_t::set(const btree_page_h& page, slotid_t slot) {
         const char* element_data = page.element(slot, element_len, _ghost_record);
         _elem.put(element_data, element_len);
         _child = 0;
+        _child_emlsn = lsn_t::null;
     } else {
         _ghost_record = false;
         page.get_key(slot, _key);
         _child = page.child_opaqueptr(slot);
+        _child_emlsn.set(page.child_emlsn(slot));
         // this might not be needed, but let's also add the _child value
         // to _elem.
         _elem.put(&_child, sizeof(_child));
@@ -45,11 +47,11 @@ btrec_t::set(const btree_page_h& page, slotid_t slot) {
 }
 
 void btree_page_h::init_as_empty_child(lsn_t new_lsn, lpid_t new_page_id,
-    shpid_t root_pid, shpid_t foster_pid, int16_t btree_level,
+    shpid_t root_pid, shpid_t foster_pid, lsn_t foster_emlsn, int16_t btree_level,
     const w_keystr_t &low, const w_keystr_t &high, const w_keystr_t &chain_fence_high) {
     w_assert1 (new_page_id.page != root_pid);
-    _init(new_lsn, new_page_id, root_pid, 0, foster_pid, btree_level,
-        low, high, chain_fence_high);
+    _init(new_lsn, new_page_id, root_pid, 0, lsn_t::null, foster_pid, foster_emlsn,
+          btree_level, low, high, chain_fence_high);
 }
 
 void btree_page_h::accept_empty_child(lsn_t new_lsn, shpid_t new_page_id) {
@@ -77,7 +79,9 @@ rc_t btree_page_h::init_fix_steal(btree_page_h*     parent,
                                   shpid_t           root, 
                                   int               l,
                                   shpid_t           pid0,
+                                  lsn_t             pid0_emlsn,
                                   shpid_t           foster,
+                                  lsn_t             foster_emlsn,
                                   const w_keystr_t& fence_low,
                                   const w_keystr_t& fence_high,
                                   const w_keystr_t& chain_fence_high,
@@ -92,7 +96,8 @@ rc_t btree_page_h::init_fix_steal(btree_page_h*     parent,
     } else {
         W_DO(fix_nonroot(*parent, parent->vol(), pid.page, LATCH_EX, false, true));
     }
-    W_DO(format_steal(pid, root, l, pid0, foster, fence_low, fence_high, chain_fence_high, log_it, steal_src, steal_from, steal_to));
+    W_DO(format_steal(pid, root, l, pid0, pid0_emlsn, foster, foster_emlsn, fence_low,
+                      fence_high, chain_fence_high, log_it, steal_src, steal_from, steal_to));
     return RCOK;
 }
 
@@ -100,7 +105,9 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
                                 shpid_t           root, 
                                 int               l,
                                 shpid_t           pid0,
+                                lsn_t             pid0_emlsn,
                                 shpid_t           foster,
+                                lsn_t             foster_emlsn,
                                 const w_keystr_t& fence_low,
                                 const w_keystr_t& fence_high,
                                 const w_keystr_t& chain_fence_high,
@@ -117,7 +124,8 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
 
     // Note that the method receives a copy, not reference, of pid/lsn here.
     // pid might point to a part of this page itself!
-    _init(page()->lsn, pid, root, pid0, foster, l, fence_low, fence_high, chain_fence_high);
+    _init(page()->lsn, pid, root, pid0, pid0_emlsn, foster, foster_emlsn,
+          l, fence_low, fence_high, chain_fence_high);
 
     // steal records from old page
     if (steal_src1) {
@@ -134,9 +142,11 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
                             steal_src2->get_fence_low_length() - page()->btree_prefix_length);
         poor_man_key poormkey    = _extract_poor_man_key(stolen_key);
         shpid_t      stolen_pid0 = steal_src2->pid0();
+        lsn_t        stolen_pid0_emlsn = steal_src2->get_pid0_emlsn();
         cvec_t v;
         _pack_node_record(v, stolen_key);
-        if (!page()->insert_item(nrecs()+1, false, poormkey, stolen_pid0, v)) {
+        if (!page()->insert_item(nrecs()+1, false, poormkey, stolen_pid0,
+                stolen_pid0_emlsn, v)) {
             w_assert0(false);
         }
     }
@@ -181,20 +191,23 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
         cvec_t         v;
         pack_scratch_t v_scratch; // this needs to stay in scope until v goes out of scope...
         shpid_t        child;
+        lsn_t          child_emlsn;
         if (is_leaf()) {
             smsize_t data_length;
             bool is_ghost;
             const char* data = steal_src->element(i, data_length, is_ghost);
             _pack_leaf_record(v, v_scratch, new_trunc_key, data, data_length);
             child = 0;
+            child_emlsn = lsn_t::null;
         } else {
             _pack_node_record(v, new_trunc_key);
             child = steal_src->child_opaqueptr(i);
+            child_emlsn.set(steal_src->child_emlsn(i));
         }
 
         if (!page()->insert_item(nrecs()+1, steal_src->is_ghost(i), 
                                  _extract_poor_man_key(new_trunc_key), 
-                                 child, v)) {
+                                 child, child_emlsn, v)) {
             w_assert0(false);
         }
 
@@ -202,7 +215,7 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
         w_assert5(_is_consistent_keyorder());
     }
 }
-rc_t btree_page_h::norecord_split (shpid_t foster,
+rc_t btree_page_h::norecord_split (shpid_t foster, lsn_t foster_emlsn,
                     const w_keystr_t& fence_high, const w_keystr_t& chain_fence_high) {
     w_assert1(compare_with_fence_low(fence_high) > 0);
     w_assert1(compare_with_fence_low(chain_fence_high) > 0);
@@ -216,8 +229,9 @@ rc_t btree_page_h::norecord_split (shpid_t foster,
         generic_page scratch;
         ::memcpy (&scratch, _pp, sizeof(scratch));
         btree_page_h scratch_p (&scratch);
-        W_DO(format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(), scratch_p.pid0(),
-                          foster,
+        W_DO(format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(),
+                          scratch_p.pid0(), scratch_p.get_pid0_emlsn(),
+                          foster, foster_emlsn,
                           fence_low, fence_high, chain_fence_high,
                           false, // don't log it
                           &scratch_p, 0, scratch_p.nrecs()
@@ -233,6 +247,7 @@ rc_t btree_page_h::norecord_split (shpid_t foster,
 
         //updates headers
         page()->btree_foster                        = foster;
+        set_foster_emlsn(foster_emlsn);
         page()->btree_consecutive_skewed_insertions = 0; // reset this value too.
     }
     return RCOK;
@@ -455,7 +470,8 @@ void btree_page_h::_update_btree_consecutive_skewed_insertions(slotid_t slot) {
     page()->btree_consecutive_skewed_insertions = val;
 }
 
-rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, shpid_t child) {
+rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, shpid_t child,
+    const lsn_t& child_emlsn) {
     FUNC(btree_page_h::insert);
     
     w_assert1(is_node());
@@ -489,7 +505,7 @@ rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, shpid_t chi
     vec_t v;
     _pack_node_record(v, trunc_key);
     // we don't log it. btree_impl::adopt() does the logging
-    if (!page()->insert_item(slot+1, false, poormkey, child, v)) {
+    if (!page()->insert_item(slot+1, false, poormkey, child, child_emlsn, v)) {
         // This shouldn't happen; the caller should have checked with check_space_for_insert_for_node():
         return RC(eRECWONTFIT);
     }
@@ -647,7 +663,7 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, size_t
     cvec_t trunc_key(key_raw + prefix_len, trunc_key_length);
     poor_man_key poormkey = _extract_poor_man_key(trunc_key);
 
-    if (!page()->insert_item(slot+1, true, poormkey, 0, data_length)) {
+    if (!page()->insert_item(slot+1, true, poormkey, 0, lsn_t::null, data_length)) {
         w_assert0(false);
     }
 
@@ -928,7 +944,7 @@ btree_page_h::print(bool print_elem) {
                 cout << ", elen="  << r.elen() << " bytes: " << r.elem();
             }
         } else {
-            cout << "pid = " << r.child();
+            cout << "pid = " << r.child() << ", emlsn=" << r.child_emlsn();
         }
         cout << ">" << endl;
     }
@@ -1096,7 +1112,8 @@ bool btree_page_h::_check_space_for_insert(size_t data_length) {
 
 
 void btree_page_h::_init(lsn_t lsn, lpid_t page_id,
-    shpid_t root_pid, shpid_t pid0, shpid_t foster_pid, int16_t btree_level,
+    shpid_t root_pid, shpid_t pid0, lsn_t pid0_emlsn,
+    shpid_t foster_pid, lsn_t foster_emlsn, int16_t btree_level,
     const w_keystr_t &low, const w_keystr_t &high, const w_keystr_t &chain_fence_high) {
 
 #ifdef ZERO_INIT
@@ -1113,8 +1130,10 @@ void btree_page_h::_init(lsn_t lsn, lpid_t page_id,
     page()->btree_consecutive_skewed_insertions = 0;
     page()->btree_root                    = root_pid;
     page()->btree_pid0                    = pid0;
+    page()->btree_pid0_emlsn              = pid0_emlsn;
     page()->btree_level                   = btree_level;
     page()->btree_foster                  = foster_pid;
+    page()->btree_foster_emlsn            = foster_emlsn;
     page()->btree_fence_low_length        = (int16_t) low.get_length_as_keystr();
     page()->btree_fence_high_length       = (int16_t) high.get_length_as_keystr();
     page()->btree_chain_fence_high_length = (int16_t) chain_fence_high.get_length_as_keystr();
@@ -1127,7 +1146,7 @@ void btree_page_h::_init(lsn_t lsn, lpid_t page_id,
     page()->btree_prefix_length = (int16_t) prefix_len;
 
     // fence-key record doesn't need poormkey; set to 0:
-    if (!page()->insert_item(nrecs() + 1, false, 0, 0, fences)) {
+    if (!page()->insert_item(nrecs() + 1, false, 0, 0, lsn_t::null, fences)) {
         w_assert0(false);
     }
 }
