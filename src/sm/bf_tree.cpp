@@ -414,7 +414,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(generic_page* parent, generic_pa
     return rc;
 }
 
-w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page, 
+w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                                    volid_t vol, shpid_t shpid, 
                                    latch_mode_t mode, bool conditional, 
                                    bool virgin_page) {
@@ -468,69 +468,12 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     return read_rc;
                     /* TODO: if this is an I/O error, we could try to do SPR on it. */
                 } else {
-                    // for each page retrieved from disk, compare its checksum
-                    uint32_t checksum = _buffer[idx].calculate_checksum();
-                    if (checksum != _buffer[idx].checksum) {
-                        ERROUT(<<"bf_tree_m: bad page checksum in page " << shpid);
-                        /* Begin SPR_related */
-                        if (parent == NULL) {
-                            _add_free_block(idx);
-                            return RC(eNO_PARENT_SPR);
-                        }
-                        ::memset(&_buffer[idx], '\0', sizeof(generic_page));
-                        _buffer[idx].lsn = lsn_t::null;
-                        _buffer[idx].pid = lpid_t(vol, parent->pid.store(), shpid);
-                        _buffer[idx].tag = t_btree_p;
-                        lsn_t child_emlsn = btree_page_h(parent).get_emlsn_general(
-                                find_page_id_slot(parent, shpid));
-                        bool would_block(true);
-                        if (!cb.latch().is_mine()) {
-                            cb.latch().upgrade_if_not_block(would_block);
-                        }
-                        if (would_block) {
-                            W_FATAL_MSG(eINTERNAL, << "A page that was newly brought into bufferpool"
-                                " couldn't be EX latched. pid:" << _buffer[idx].pid);
-                        } else {
-                            W_COERCE(smlevel_0::log->recover_single_page(&_buffer[idx], child_emlsn));
-                        }
-                        /* End SPR-related */
-                    }
-                    // Then, page ID must match
-                    if (_buffer[idx].pid.page != shpid || _buffer[idx].pid.vol().vol != vol) {
-                        W_FATAL_MSG(eINTERNAL, <<"inconsistent disk page: "
-                            << vol << "." << shpid << " was " << _buffer[idx].pid.vol().vol
-                            << "." << _buffer[idx].pid.page);
-                    }
-                    /* Begin SPR-related */
-                    /* Page is valid, but it might be stale. */
-                    if (parent == NULL) {
+                    // for each page retrieved from disk, check validity, possibly apply SPR.
+                    w_rc_t check_rc = _check_read_page(parent, idx, vol, shpid);
+                    if (check_rc.is_error()) {
                         _add_free_block(idx);
-                        return RC(eNO_PARENT_SPR);
+                        return check_rc;
                     }
-                    lsn_t child_emlsn = btree_page_h(parent).get_emlsn_general(
-                        find_page_id_slot(parent, shpid));
-                    if (child_emlsn < _buffer[idx].lsn) {
-                        /* Parent's EMLSN is out of date, e.g. system died before
-                         * parent was updated on child's previous eviction. 
-                         * We can update it here and have to do more I/O 
-                         * or try to catch it again on eviction and risk being unlucky.
-                         */
-                        
-                    } else if (child_emlsn > _buffer[idx].lsn) {
-                        /* Child is stale. */
-                        bool would_block(true);
-                        if (!cb.latch().is_mine()) {
-                            cb.latch().upgrade_if_not_block(would_block);
-                        }
-                        if (would_block) {
-                           W_FATAL_MSG(eINTERNAL, << "A page that was newly brought into bufferpool"
-                                " couldn't be EX latched. pid:" << _buffer[idx].pid);
-                        } else {
-                            W_COERCE(smlevel_0::log->recover_single_page(&_buffer[idx], child_emlsn));
-                        }
-                    }
-                    /* else child_emlsn == lsn. we are ok. */
-                    /* End SPR-related */
                 }
             }
 
@@ -1921,3 +1864,59 @@ w_rc_t bf_tree_m::_sx_update_child_emlsn(generic_page* parent, general_recordid_
     return RCOK;
 }
 
+w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
+                                   volid_t vol, shpid_t shpid) {
+    uint32_t checksum = _buffer[idx].calculate_checksum();
+    if (checksum != _buffer[idx].checksum) {
+        ERROUT(<<"bf_tree_m: bad page checksum in page " << shpid);
+        // Checksum didn't agree! this page image is completely
+        // corrupted and we have to recover the page from scratch.
+
+        if (parent == NULL) {
+            // If parent page is not available (eg, via fix_direct),
+            // we can't apply SPR. Then we return error and let the caller
+            // to decide what to do (e.g., re-traverse from root).
+            return RC(eNO_PARENT_SPR);
+        }
+        W_DO(_try_recover_page(parent, idx, vol, shpid, true));
+    }
+
+    // Then, page ID must match.
+    // There should be no case where checksum agrees but page ID doesn't agree.
+    if (_buffer[idx].pid.page != shpid || _buffer[idx].pid.vol().vol != vol) {
+        W_FATAL_MSG(eINTERNAL, <<"inconsistent disk page: "
+            << vol << "." << shpid << " was " << _buffer[idx].pid.vol().vol
+            << "." << _buffer[idx].pid.page);
+    }
+    // Page is valid, but it might be stale...
+    if (parent == NULL) {
+        // this should also return eNO_PARENT_SPR, but parent might be NULL
+        // if swizzling is OFF...
+        ERROUT(<<"bf_tree_m: Parent pointer NULL while SPR. no swizzling? pid=" << shpid);
+        return RCOK;
+    }
+    lsn_t emlsn = btree_page_h(parent).get_emlsn_general(find_page_id_slot(parent, shpid));
+    if (emlsn < _buffer[idx].lsn) {
+        // Parent's EMLSN is out of date, e.g. system died before
+        // parent was updated on child's previous eviction.
+        // We can update it here and have to do more I/O
+        // or try to catch it again on eviction and risk being unlucky.
+    } else if (emlsn > _buffer[idx].lsn) {
+        // Child is stale. Apply SPR
+        W_DO(_try_recover_page(parent, idx, vol, shpid, false));
+    }
+    // else child_emlsn == lsn. we are ok.
+    return RCOK;
+}
+
+w_rc_t bf_tree_m::_try_recover_page(generic_page* parent, bf_idx idx, volid_t vol,
+                                    shpid_t shpid, bool corrupted) {
+    if (corrupted) {
+        ::memset(&_buffer[idx], '\0', sizeof(generic_page));
+        _buffer[idx].lsn = lsn_t::null;
+        _buffer[idx].pid = lpid_t(vol, parent->pid.store(), shpid);
+        _buffer[idx].tag = t_btree_p;
+    }
+    lsn_t emlsn = btree_page_h(parent).get_emlsn_general(find_page_id_slot(parent, shpid));
+    return smlevel_0::log->recover_single_page(&_buffer[idx], emlsn);
+}

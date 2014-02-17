@@ -500,7 +500,31 @@ private:
 
     /** fixes a non-swizzled page. */
     w_rc_t _fix_nonswizzled(generic_page* parent, generic_page*& page, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page);
-    
+
+    /**
+     * \brief Checks validity of the page image that has been retrieved from disk,
+     * \e trying to recover the page via SPR if its has some issue.
+     * \ingroup SPR
+     * @param[in,out] parent Parent page of the given page. Might be NULL.
+     * @param[in] idx Bufferpool index of the page to check and recover.
+     * @param[in] vol Volume ID
+     * @param[in] shpid Page ID
+     */
+    w_rc_t _check_read_page(generic_page* parent, bf_idx idx, volid_t vol, shpid_t shpid);
+
+    /**
+     * \brief Tries to recover the given page with some issue via SPR.
+     * \ingroup SPR
+     * @param[in,out] parent Parent page of the given page. Must not be NULL.
+     * @param[in] idx Bufferpool index of the page to check and recover.
+     * @param[in] vol Volume ID
+     * @param[in] shpid Page ID
+     * @param[in] corrupted Whether the page has been completely damanged (e.g., checksum
+     * did not match). Otherwise, the page is just a little stale and SPR is more efficient.
+     */
+    w_rc_t _try_recover_page(generic_page* parent, bf_idx idx, volid_t vol,
+                             shpid_t shpid, bool corrupted);
+
     /** used by fix_root and fix_virgin_root. */
     w_rc_t _latch_root_page(generic_page*& page, bf_idx idx, latch_mode_t mode, bool conditional);
 

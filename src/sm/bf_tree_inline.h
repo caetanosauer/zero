@@ -102,7 +102,7 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
 #endif // SIMULATE_MAINMEMORYDB
     w_assert1(parent !=  NULL);
     if (!is_swizzling_enabled()) {
-        return _fix_nonswizzled(NULL, page, vol, shpid, mode, conditional, virgin_page);
+        return _fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page);
     }
     
     // the parent must be latched
