@@ -469,14 +469,12 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                         _add_free_block(idx);
                         return RC (eBADCHECKSUM);
                     }
-                    // this is actually an error, but some testcases don't bother making real pages, so
-                    // we just write out some warning.  FIXME: fix testcases and make this a real error!
-                    if (!virgin_page && (_buffer[idx].pid.page != shpid || _buffer[idx].pid.vol().vol != vol)) {
-                        ERROUT(<<"WARNING!! bf_tree_m: page id doesn't match! " << vol << "." << shpid << " was " << _buffer[idx].pid.vol().vol << "." << _buffer[idx].pid.page
-                            << ". This means an inconsistent disk page unless this message is issued in testcases without real disk pages."
-                        );
-                        // prevent assertion errors due to bad testcase pages; should not be needed once above fixed:
-                        _buffer[idx].tag = t_btree_p;
+                    // Then, page ID must match
+                    if (!virgin_page && (_buffer[idx].pid.page != shpid
+                        || _buffer[idx].pid.vol().vol != vol)) {
+                        W_FATAL_MSG(eINTERNAL, <<"inconsistent disk page: "
+                            << vol << "." << shpid << " was " << _buffer[idx].pid.vol().vol
+                            << "." << _buffer[idx].pid.page);
                     }
                 }
             }
