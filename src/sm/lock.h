@@ -63,6 +63,7 @@ public:
      * @return the lock mode this transaction has for the lock. ALL_N_GAP_N if not any.
      * \details
      * This method returns very quickly because it only checks transaction-private data.
+     * @pre the current thread is the only thread running the current transaction
      */
     const okvl_mode&            get_granted_mode(const lockid_t& lock_id);
 
