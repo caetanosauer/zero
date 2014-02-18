@@ -80,11 +80,9 @@ struct GeneralRecordIds {
     };
 
     static slotid_t from_general_to_slot(general_recordid_t general) {
-        w_assert1(general >= REAL_CHILD_BEGIN);
         return general - 1;
     }
     static general_recordid_t from_slot_to_general(slotid_t slot) {
-        w_assert1(slot >= 0);
         return slot + 1;
     }
 };
