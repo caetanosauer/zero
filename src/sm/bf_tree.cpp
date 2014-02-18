@@ -1816,6 +1816,8 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid,
                              const lsn_t master, const lsn_t current_lsn)
 {
     // Only used by checkpoint to gather dirty page information
+    // Caller is the checkpoint operation which is holding a 'write' mutex', 
+    // everything in this function MUST BE W_COERCE (not W_DO).
     
     w_assert1(start > 0 && count > 0);
 
@@ -1833,6 +1835,7 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid,
             DBGOUT2 (<< "Error when acquiring LATCH_SH for checkpoint buffer pool. cb._pid_shpid = "
                      << cb._pid_shpid << ", rc = " << latch_rc);
 
+            // Called by checkpoint operation which is holding a 'write' mutex on checkpoint
             // To be a good citizen, release the 'write' mutex before raise error
             chkpt_serial_m::write_release();
 

@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 /* -*- mode:C++; c-basic-offset:4 -*-
@@ -67,8 +67,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "bf_tree.h"
 #include "sm_int_0.h"
 #include "bf_tree_inline.h"
+#include "chkpt.h"
 #include <map>
-
 
 #ifdef EXPLICIT_TEMPLATE
 template class Heap<xct_t*, CmpXctUndoLsns>;
@@ -161,6 +161,9 @@ void
 restart_m::recover(lsn_t master)
 {
     FUNC(restart_m::recover);
+
+// TODO(M1)... don't use dirty_pages_tab_t (take a look at the class definition to see what information are being captured)
+//                    use the system buffer pool instead, make sure we have all the necessary information in the buffer pool page cb
     dirty_pages_tab_t dptab;
     lsn_t redo_lsn;
 
@@ -231,6 +234,10 @@ restart_m::recover(lsn_t master)
         smlevel_0::errlog->clog << info_prio  
             << "Database is clean" << flushl;
     }
+
+    // Take a synch checkpoint at the end of log analysis phase
+    assert(smlevel_1::chkpt);    
+    smlevel_1::chkpt->synch_take();
     
     /*
      *  Phase 2: REDO -- use dirty page table and redo lsn of phase 1
@@ -285,6 +292,9 @@ restart_m::recover(lsn_t master)
     smlevel_0::errlog->clog << info_prio 
         << "First new transaction will be greater than "
         << xct_t::youngest_tid() << flushl;
+
+    // Take a synch checkpoint at the end of log analysis phase
+    smlevel_1::chkpt->synch_take();
 
     // turn pointer swizzling on again
     if (org_swizzling_enabled) {

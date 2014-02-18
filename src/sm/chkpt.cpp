@@ -275,10 +275,8 @@ void chkpt_m::synch_take()
 {
     if(log)
     {
-        // Acquire a 'read' mutex which wait until the current checkpoint is done
-        chkpt_serial_m::read_acquire();
-
-        // The checkpoint function release the 'read' mutex
+        // No need to acquire any mutex on checkpoint before calling the checkpoint function
+        // The checkpoint function acqures the 'write' mutex internally
         take(smlevel_0::t_chkpt_sync);
     }
     return;
@@ -316,20 +314,21 @@ void chkpt_m::synch_take()
  *
  *  Because a checkpoint can be executed either asynch or synch, it cannot return
  *  return code to caller.
- *  It brings down the server i catastrophically error occurred (i.e., not able to
+ *  It brings down the server if catastrophically error occurred (i.e., not able to
  *  make the new master lsn durable, out-of-log space, etc.)
- *  If minor error occurred (i.e. failed the initial validation), generate a debug output, 
- *  cancel the checkpoint operation silently.
+ *  If minor error occurrs (i.e. failed the initial validation), it generates a debug output, 
+ *  and cancel the checkpoint operation silently.
  *********************************************************************/
 void chkpt_m::take(chkpt_mode_t chkpt_mode)
 {
     FUNC(chkpt_m::take);
 
-    // Release the 'read' mutex which was acquired by caller
-    chkpt_serial_m::read_release();
-
-    // Due to the 'read' mutex, it is possible multiple checkpoint requests came in,
-    // this is okay because we will serialize the requests using a 'write' mutex
+    // It is possible multiple checkpoint requests arrived concurrently, at most 
+    // one asynch checkpoint request at any time, but we might have multiple synch
+    // checkpoiint requests.
+    // This is okay because we will serialize the requests using a 'write' mutex and
+    // not lose any of the checkpoint request, although some of the requests might
+    // need to wait for a while (blocking)
 
     if (! log)   {
         /*
@@ -337,9 +336,21 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
          */
         return;
     }
-    INC_TSTAT(log_chkpt_cnt);
 
+    /*   
+     * checkpoints are fuzzy
+     * but must be serialized wrt each other.
+     *
+     * Acquire the 'write' mutex immediatelly to serialize concurrent checkpoint requests.
+     *
+     * NB: EVERYTHING BETWEEN HERE AND RELEASING THE MUTEX
+     * MUST BE W_COERCE (not W_DO).
+     */
+    chkpt_serial_m::write_acquire();
     DBGOUT1(<<"BEGIN chkpt_m::take");
+
+    // Update statistics
+    INC_TSTAT(log_chkpt_cnt);
 
     // Note: current code in ss_m::_destruct_once() sets the shutting_down flag first, then
     // 1. For clean shutdown, it takes a synchronous checkpoint and then
@@ -351,11 +362,14 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
     // 1. Calling 'wakeup_and_take' - asynch
     // 2. Calling 'chkpt_m::synch_take' - synch
 
+    // Start the initial validation check for make sure the incoming checkpoint request is valid
+    bool valid_chkpt = true;
+
     if (log && _chkpt_thread) {
         // If received a 'retire' message, return without doing anything
         if (true == _chkpt_thread->is_retired()) {
             DBGOUT1(<<"END chkpt_m::take - detected retire, skip checkpoint");
-            return;
+            valid_chkpt = false;
         }
     }
 
@@ -363,7 +377,7 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
     {
         // No asynch checkpoint if we are shutting down    
         DBGOUT1(<<"END chkpt_m::take - detected shutdown, skip asynch checkpoint");
-        return;
+        valid_chkpt = false;
     }
     else if ((ss_m::shutting_down) && (smlevel_0::t_chkpt_sync == chkpt_mode))
     {
@@ -376,12 +390,12 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
         if (before_recovery())
         {
             DBGOUT1(<<"END chkpt_m::take - before system startup/recovery, skip checkpoint");
-            return;  
+            valid_chkpt = false;
         }
         if (in_recovery() && (smlevel_0::t_chkpt_sync != chkpt_mode))
         {
             DBGOUT1(<<"END chkpt_m::take - system in recovery, skip asynch checkpoint");            
-            return;
+            valid_chkpt = false;
         } 
         else if (in_recovery() && (smlevel_0::t_chkpt_sync == chkpt_mode))
         {
@@ -392,13 +406,17 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
             else
             {
                 DBGOUT1(<<"END chkpt_m::take - system in REDO phase, disallow checkpoint");
-                return;
+                valid_chkpt = false;
             }
         }
         else
         {
-            // Not in recovery
-            assert(!in_recovery());
+            // We cannot be in recovery if we get here
+            if (true == in_recovery())
+            {
+                DBGOUT1(<<"END chkpt_m::take - system should not be in Recovery, exist checkpoint");
+                valid_chkpt = false;           
+            }
         }
     }
 
@@ -407,22 +425,17 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
     // No, becasue even without new log record, there still might be buffer pool flush after
     // the previous completed checkpoint (note checkpoint is a non-blocking operation),
     // we should take a checkpoint just to be safe
-      
-    /*   
-     * checkpoints are fuzzy
-     * but must be serialized wrt each other.
-     *
-     * Through various validations above to eliminates invalid checkpoint requests,
-     * in rare race condition multiple checkpoint requests might come in
-     *     
-     * Acquire the 'write' mutex to serialize prepares and
-     * checkpoints. 
-     *
-     * NB: EVERYTHING BETWEEN HERE AND RELEASING THE MUTEX
-     * MUST BE W_COERCE (not W_DO).
-     */
-    chkpt_serial_m::write_acquire();
 
+    // Done with the checkpoint validation, should we continue?
+    if (false == valid_chkpt)
+    {
+        // Failed the checkpoint validation, release the 'write' mutex and exist
+        chkpt_serial_m::write_release();
+        return;
+    }
+
+    // We are okay to proceed with the checkpoint process
+    
     /*
      * Allocate a buffer for storing log records
      */
@@ -440,7 +453,9 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
     } while(0)
 
 
-/*
+/*****************************************************
+// Dead code, comment out just in case we need to re-visit it in the future
+
  // No checking on available log space (Recovery milestone 1)
  // Not waiting on old transactions to finish and no buffle pool flush before checkpoint
 
@@ -537,7 +552,7 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
     chkpt_serial_m::write_acquire();
     if(_chkpt_count != chkpt_stamp)
     goto retry;
-*/
+*****************************************************/
 
 
     // Finally, we're ready to start the actual checkpoint!
@@ -547,11 +562,12 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
     // Write a Checkpoint Begin Log and record its lsn in master
     lsn_t master;
 
-    // _curr_lsn is the lsn of the next-to-be-inserted log record
-    // It is the LSN for the begin checkpoint LSN
+    // The original chkpt code was using the LSN when the device was mounted
+    // as the begin checkpoint LSN
+    //     LOG_INSERT(chkpt_begin_log(io->GetLastMountLSN()), &master);   
+    // In the new implementation, use _curr_lsn as the begin checkpoint LSN
+    // while _curr_lsn is the lsn of the next-to-be-inserted log record LSN
     LOG_INSERT(chkpt_begin_log(log->curr_lsn()), &master);
-    // Use the LSN when the device was mounted
-//    LOG_INSERT(chkpt_begin_log(io->GetLastMountLSN()), &master);
 
     /*
      *  Checkpoint the buffer pool dirty page table, and record
@@ -605,7 +621,9 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
     }
 
 
-/*
+/*****************************************************
+//Dead code, comment out just in case we need to re-visit it in the future
+
 // Eliminate logging mount/vol related stuff in checkpoint (Recovery milestone 1)
 // Is it safe to eliminate this set of logging?  We won't have volume and device information
 // in the checkpoint, which is used in lpid_t (volume number + store number + page number)
@@ -651,7 +669,7 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
             delete [] devs[i];
         delete [] devs;
     }
-*/
+*****************************************************/
 
     // Checkpoint is not a blocking operation, do not locking the transaction table
     // Note that transaction table list could change underneath the checkpoint
@@ -850,6 +868,7 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
 
     // Release the 'write' mutex so the next checkpoint request can come in
     chkpt_serial_m::write_release();
+    DBGOUT1(<<"END chkpt_m::take");
 
     return;
 }
@@ -933,23 +952,13 @@ chkpt_thread_t::run()
             _kicked = false;
         }
 
+        assert(smlevel_1::chkpt);
+
         // If a retire request arrived, exit immediatelly without checkpoint
         if(_retire)
             break;
 
-        assert(smlevel_1::chkpt);
-
-        // Acquire a 'read' mutex which waits until the current checkpoint is done
-        chkpt_serial_m::read_acquire();
-
-        // It might take a while to get the mutex, check for retire again j.i.c.
-        if(_retire)
-        {
-            chkpt_serial_m::read_release();        
-            break;
-        }
-
-        // The checkpoint function release the 'read' mutex
+        // No need to acquire checkpoint mutex before calling the checkpoint operation
         smlevel_1::chkpt->take(smlevel_0::t_chkpt_async);
     }
 }
