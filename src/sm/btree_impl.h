@@ -194,13 +194,12 @@ public:
      *  @param[in] leaf the page to which we insert ghost record.
      *  @param[in] key key of the ghost record.
      *  @param[in] elem_len size of elem to be inserted
-     *  @param[in] defer_apply whether to defer push/apply the log
      */
     static rc_t                        _sx_reserve_ghost(
-        btree_page_h &leaf, const w_keystr_t &key, int elem_len, bool defer_apply = false);
+        btree_page_h &leaf, const w_keystr_t &key, int elem_len);
     /** @see _sx_reserve_ghost() */
     static rc_t                        _ux_reserve_ghost_core(
-        btree_page_h &leaf, const w_keystr_t &key, int elem_len, bool defer_apply = false);
+        btree_page_h &leaf, const w_keystr_t &key, int elem_len);
 
     /**
     *  \brief Removes the specified key from B+Tree.

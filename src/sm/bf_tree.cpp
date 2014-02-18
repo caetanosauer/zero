@@ -472,14 +472,12 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                         _add_free_block(idx);
                         return RC (eBADCHECKSUM);
                     }
-                    // this is actually an error, but some testcases don't bother making real pages, so
-                    // we just write out some warning.  FIXME: fix testcases and make this a real error!
-                    if (!virgin_page && (_buffer[idx].pid.page != shpid || _buffer[idx].pid.vol().vol != vol)) {
-                        ERROUT(<<"WARNING!! bf_tree_m: page id doesn't match! " << vol << "." << shpid << " was " << _buffer[idx].pid.vol().vol << "." << _buffer[idx].pid.page
-                            << ". This means an inconsistent disk page unless this message is issued in testcases without real disk pages."
-                        );
-                        // prevent assertion errors due to bad testcase pages; should not be needed once above fixed:
-                        _buffer[idx].tag = t_btree_p;
+                    // Then, page ID must match
+                    if (!virgin_page && (_buffer[idx].pid.page != shpid
+                        || _buffer[idx].pid.vol().vol != vol)) {
+                        W_FATAL_MSG(eINTERNAL, <<"inconsistent disk page: "
+                            << vol << "." << shpid << " was " << _buffer[idx].pid.vol().vol
+                            << "." << _buffer[idx].pid.page);
                     }
                 }
             }
@@ -1280,32 +1278,33 @@ inline void bf_tree_m::_convert_to_pageid (shpid_t* shpid) const {
     }
 }
 
-slotid_t bf_tree_m::find_page_id_slot(generic_page* page, shpid_t shpid) const {
+general_recordid_t bf_tree_m::find_page_id_slot(generic_page* page, shpid_t shpid) const {
     w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
 
     fixable_page_h p(page);
     int max_slot = p.max_child_slot();
 
     //  don't swizzle foster-child:
-    w_assert1( *p.child_slot_address(-1) != shpid );
+    w_assert1( *p.child_slot_address(GeneralRecordIds::FOSTER_CHILD) != shpid );
     //for (int i = -1; i <= max_slot; ++i) {
-    for (int i = 0; i <= max_slot; ++i) {
+    for (general_recordid_t i = GeneralRecordIds::PID0; i <= max_slot; ++i) {
         if (*p.child_slot_address(i) != shpid) {
             continue;
         }
         return i;
     }
-    return -2;
+    return GeneralRecordIds::INVALID;
 }
 
 ///////////////////////////////////   SWIZZLE/UNSWIZZLE BEGIN ///////////////////////////////////  
 
-void bf_tree_m::swizzle_child(generic_page* parent, slotid_t slot)
+void bf_tree_m::swizzle_child(generic_page* parent, general_recordid_t slot)
 {
     return swizzle_children(parent, &slot, 1);
 }
 
-void bf_tree_m::swizzle_children(generic_page* parent, const slotid_t* slots, uint32_t slots_size) {
+void bf_tree_m::swizzle_children(generic_page* parent, const general_recordid_t* slots,
+                                 uint32_t slots_size) {
     w_assert1(is_swizzling_enabled());
     w_assert1(parent != NULL);
     w_assert1(latch_mode(parent) != LATCH_NL);
@@ -1314,10 +1313,10 @@ void bf_tree_m::swizzle_children(generic_page* parent, const slotid_t* slots, ui
 
     fixable_page_h p (parent);
     for (uint32_t i = 0; i < slots_size; ++i) {
-        slotid_t slot = slots[i];
+        general_recordid_t slot = slots[i];
         // To simplify the tree traversal while unswizzling,
         // we never swizzle foster-child pointers.
-        w_assert1(slot >= 0); // was w_assert1(slot >= -1);
+        w_assert1(slot >= GeneralRecordIds::PID0); // was w_assert1(slot >= -1);
         w_assert1(slot <= p.max_child_slot());
 
         shpid_t* addr = p.child_slot_address(slot);

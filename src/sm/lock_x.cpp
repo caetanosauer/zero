@@ -39,7 +39,6 @@ xct_lock_info_t::~xct_lock_info_t() {
     w_assert1(_tail == NULL);
 }
 
-
 xct_lock_entry_t* xct_lock_info_t::link_to_new_request (lock_queue_t *queue,
                                                         lock_queue_entry_t *entry) {
     xct_lock_entry_t* link = new (*xctLockEntryPool) xct_lock_entry_t();
@@ -53,14 +52,7 @@ xct_lock_entry_t* xct_lock_info_t::link_to_new_request (lock_queue_t *queue,
         link->prev = _tail;
         _tail = link;
     }
-    // also add to private hashmap. (becomes a new head of the bucket)
-    uint32_t bid = XctLockHashMap::bucket_id(queue->hash());
-    link->private_hashmap_prev = NULL;
-    link->private_hashmap_next = _hashmap.buckets[bid];
-    if (_hashmap.buckets[bid] != NULL) {
-        _hashmap.buckets[bid]->private_hashmap_prev = link;
-    }
-    _hashmap.buckets[bid] = link;
+    _hashmap.push_front(link); // also add to private hashmap
     return link;
 }
 void xct_lock_info_t::remove_request (xct_lock_entry_t *entry) {
@@ -98,18 +90,7 @@ void xct_lock_info_t::remove_request (xct_lock_entry_t *entry) {
         entry->next->prev = entry->prev;
     }
 
-    //removes from private hashmap, too
-    if (entry->private_hashmap_next != NULL) {
-        entry->private_hashmap_next->private_hashmap_prev = entry->private_hashmap_prev;
-    }
-    if (entry->private_hashmap_prev != NULL) {
-        entry->private_hashmap_prev->private_hashmap_next = entry->private_hashmap_next;
-    } else {
-        // "entry" was the head.
-        uint32_t bid = XctLockHashMap::bucket_id(entry->queue->hash());
-        w_assert1(_hashmap.buckets[bid] == entry);
-        _hashmap.buckets[bid] = entry->private_hashmap_next;
-    }
+    _hashmap.remove(entry); //removes from private hashmap, too
 
     xctLockEntryPool->destroy_object(entry);
 }
@@ -120,18 +101,42 @@ XctLockHashMap::XctLockHashMap() {
 XctLockHashMap::~XctLockHashMap() {
 }
 void XctLockHashMap::reset() {
-    ::memset(buckets, 0, sizeof(xct_lock_entry_t*) * XCT_LOCK_HASHMAP_SIZE);
+    ::memset(_buckets, 0, sizeof(xct_lock_entry_t*) * XCT_LOCK_HASHMAP_SIZE);
 }
 
 const okvl_mode& XctLockHashMap::get_granted_mode(uint32_t lock_id) const {
-    uint32_t bid = bucket_id(lock_id);
+    uint32_t bid = _bucket_id(lock_id);
     // we don't take any latch here. See the comment of XctLockHashMap
     // for why this is safe.
-    for (const xct_lock_entry_t *current = buckets[bid]; current != NULL;
+    for (const xct_lock_entry_t *current = _buckets[bid]; current != NULL;
          current = current->private_hashmap_next) {
         if (current->queue->hash() == lock_id) {
             return current->entry->get_granted_mode();
         }
     }
     return ALL_N_GAP_N;
+}
+
+void XctLockHashMap::push_front(xct_lock_entry_t* link) {
+    // link becomes a new head of the bucket
+    uint32_t bid = _bucket_id(link->queue->hash());
+    link->private_hashmap_prev = NULL;
+    link->private_hashmap_next = _buckets[bid];
+    if (_buckets[bid] != NULL) {
+        _buckets[bid]->private_hashmap_prev = link;
+    }
+    _buckets[bid] = link;
+}
+void XctLockHashMap::remove(xct_lock_entry_t* link) {
+    if (link->private_hashmap_next != NULL) {
+        link->private_hashmap_next->private_hashmap_prev = link->private_hashmap_prev;
+    }
+    if (link->private_hashmap_prev != NULL) {
+        link->private_hashmap_prev->private_hashmap_next = link->private_hashmap_next;
+    } else {
+        // "link" was the head.
+        uint32_t bid = _bucket_id(link->queue->hash());
+        w_assert1(_buckets[bid] == link);
+        _buckets[bid] = link->private_hashmap_next;
+    }
 }
