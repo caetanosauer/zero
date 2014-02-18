@@ -11,6 +11,10 @@
 #include <cstdio>
 #include <string>
 
+// for mkdir
+#include <sys/stat.h>
+#include <sys/types.h>
+
 btree_test_env *test_env;
 
 /**
@@ -32,6 +36,7 @@ w_rc_t take_backup(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->force_buffers());
 
     BackupManager *bk = ssm->bk;
+    ::mkdir(bk->get_backup_folder().c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
     std::string backup_path(bk->get_backup_path(test_volume->_vid));
     std::ifstream copy_from(test_volume->_device_name, std::ios::binary);
     std::ofstream copy_to(backup_path.c_str(), std::ios::binary);

@@ -22,6 +22,7 @@ class bf_hashtable; // include bf_hashtable.h in implementation codes
 
 class test_bf_tree;
 class test_bf_fixed;
+class test_emlsn;
 class bf_tree_cleaner;
 class bf_tree_cleaner_slave_thread_t;
 
@@ -159,6 +160,7 @@ enum replacement_policy_t {
 class bf_tree_m {
     friend class test_bf_tree; // for testcases
     friend class test_bf_fixed; // for testcases
+    friend class test_emlsn; // for testcases
     friend class bf_tree_cleaner; // for page cleaning
     friend class bf_tree_cleaner_slave_thread_t; // for page cleaning
 
@@ -688,6 +690,11 @@ private:
      * @param[in,out] parent parent page
      * @param[in] child_slotid slot id of child
      * @param[in] child_emlsn new emlsn to store in parent
+     * @pre parent.is_latched()
+     * \NOTE parent must be latched, but does not have to be EX-latched.
+     * This is because of the "regular register" semantics of
+     * item_body_layout::interior::child_emlsn and essential to call this method from
+     * various places without risking latch deadlocks.
      */
     w_rc_t _sx_update_child_emlsn(generic_page *parent,
                                   general_recordid_t child_slotid, lsn_t child_emlsn);

@@ -447,7 +447,7 @@ ss_m::_construct_once(
         W_FATAL(eOUTOFMEMORY);
     }
 
-    bk = new BackupManager();
+    bk = new BackupManager(_options.get_string_option("sm_backup_dir", "."));
     if (! bk) {
         W_FATAL(eOUTOFMEMORY);
     }

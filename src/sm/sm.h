@@ -91,6 +91,12 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *
  * These are the run-time options for the storage manager.
  *
+ * -sm_backup_dir :
+ *      - type: string
+ *      - description: Path of the folder containing backup files.
+ *      - default: "."
+ *      - required?: no
+ *
  * -sm_bufpoolsize : 
  *      - type: number
  *      - description: This is the size of 

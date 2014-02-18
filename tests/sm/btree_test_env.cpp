@@ -27,7 +27,7 @@ std::ostream vout (&null_obj);
 namespace {
     char device_name[MAXPATHLEN] = "./volumes/dev_test";
     char global_log_dir[MAXPATHLEN] = "./log";
-
+    char global_backup_dir[MAXPATHLEN] = "./backups";
 }
 
 sm_options btree_test_env::make_sm_options(
@@ -107,6 +107,19 @@ public:
                 _disk_quota_in_pages(disk_quota_in_pages),
                 _retval(0),
                 _functor(functor) {
+            // complement required options if not set
+            std::string not_set("not_set");
+            int not_set_int = -1;
+            if (_options.get_string_option("sm_logdir", not_set) == not_set) {
+                _options.set_string_option("sm_logdir", global_log_dir);
+            }
+            if (_options.get_string_option("sm_backup_dir", not_set) == not_set) {
+                _options.set_string_option("sm_backup_dir", global_backup_dir);
+            }
+            if (_options.get_int_option("sm_bufpoolsize", not_set_int) == not_set_int) {
+                _options.set_int_option("sm_bufpoolsize",
+                            SM_PAGESIZE / 1024 * default_bufferpool_size_in_pages);
+            }
         }
 
         ~testdriver_thread_t()  {}

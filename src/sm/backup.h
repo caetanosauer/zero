@@ -45,8 +45,8 @@ class BackupManager;
  * \details
  * Main class of \ref SSMBCK.
  * We assume the user has created backup files under the current path with the following
- * filename: "backup_" + vid. This means we can manipulate only one backup file
- * per volume.
+ * filename: backup_folder + "/backup_" + vid.
+ * This means we can manipulate only one backup file per volume.
  * So far, the backup file is a simple file copy of the volume data file.
  * The current implementations simply read the alloc_p area and btree_p area for each
  * API call.
@@ -54,7 +54,7 @@ class BackupManager;
 class BackupManager {
 
 public:
-    BackupManager();
+    BackupManager(const std::string &backup_folder);
     ~BackupManager();
 
     /**
@@ -85,9 +85,12 @@ public:
      * \brief Returns the expected file path of the backup file for the
      * given volume.
      * @param[in] vid volume ID
-     * @return path of the backup file, relative from working directory.
+     * @return path of the backup file.
      */
     std::string get_backup_path(volid_t vid) const;
+
+    /** Returns path of the backup folder. */
+    const std::string& get_backup_folder() const;
 
 private:
     /**
@@ -96,6 +99,11 @@ private:
      * @pre file.is_opened() == true
      */
     w_rc_t  _retrieve_page(BackupFile &file, generic_page &page, shpid_t shpid);
+
+    /**
+     * path of the backup folder, absolute or relative from working directory.
+     */
+    std::string _backup_folder;
 };
 
 /**
@@ -135,7 +143,7 @@ public:
     /**
      * Empty constructor that doesn't open the file yet.
      * @param[in] vid volume ID
-     * @param[in] path File path of the backup file, relative to the working directory
+     * @param[in] path File path of the backup file
      */
     BackupFile(volid_t vid, const std::string &path);
     /** Automatically closes the file if it is opened. */
@@ -167,8 +175,11 @@ private:
     int     _fd;
 };
 
-inline BackupManager::BackupManager() {}
+inline BackupManager::BackupManager(const std::string &backup_folder)
+    : _backup_folder(backup_folder) {}
 inline BackupManager::~BackupManager() {}
+inline const string& BackupManager::get_backup_folder() const { return _backup_folder; }
+
 
 inline AlignedMemory::~AlignedMemory() { release(); }
 inline size_t AlignedMemory::get_size() const { return _size; }

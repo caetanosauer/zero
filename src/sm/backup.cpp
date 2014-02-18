@@ -12,7 +12,7 @@
 
 std::string BackupManager::get_backup_path(volid_t vid) const {
     std::stringstream file_name;
-    file_name << "backup_" << vid;
+    file_name << _backup_folder << "/backup_" << vid;
     return file_name.str();
 }
 

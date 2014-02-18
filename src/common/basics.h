@@ -36,7 +36,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #ifndef W_BASE_H
 #include <w_base.h>
-#include <boost/concept_check.hpp>
 #endif
 
 typedef uint16_t               uint2_t; 

@@ -1001,12 +1001,17 @@ int bf_tree_m::_try_evict_block(bf_idx idx) {
 
         if (_buffer[idx].tag == t_btree_p && cb._parent != 0) {
             // If evicting a non-root Btree page, output SPR log for updating EMLSN in parent.
+            w_assert1(_buffer[cb._parent].tag == t_btree_p);
             generic_page *parent = &_buffer[cb._parent];
             general_recordid_t child_slotid = find_page_id_slot(parent, cb._pid_shpid);
             w_assert1(child_slotid != GeneralRecordIds::INVALID);
-            W_COERCE(_sx_update_child_emlsn(parent, child_slotid, _buffer[idx].lsn));
-            // Note that we are not grabbing EX latch on parent here. I presume that no
-            // one else should be touching these exact bytes anyway.
+            lsn_t old = btree_page_h(parent).get_emlsn_general(child_slotid);
+            if (old < _buffer[idx].lsn) {
+                W_COERCE(_sx_update_child_emlsn(parent, child_slotid, _buffer[idx].lsn));
+                // Note that we are not grabbing EX latch on parent here.
+                // This is safe because no one else should be touching these exact bytes,
+                // and because EMLSN values are aligned to be "regular register".
+            }
         }
 
         // remove it from hashtable.
@@ -1286,10 +1291,8 @@ general_recordid_t bf_tree_m::find_page_id_slot(generic_page* page, shpid_t shpi
     fixable_page_h p(page);
     int max_slot = p.max_child_slot();
 
-    //  don't swizzle foster-child:
-    w_assert1( *p.child_slot_address(GeneralRecordIds::FOSTER_CHILD) != shpid );
     //for (int i = -1; i <= max_slot; ++i) {
-    for (general_recordid_t i = GeneralRecordIds::PID0; i <= max_slot; ++i) {
+    for (general_recordid_t i = GeneralRecordIds::FOSTER_CHILD; i <= max_slot; ++i) {
         if (*p.child_slot_address(i) != shpid) {
             continue;
         }
@@ -1858,6 +1861,7 @@ w_rc_t bf_tree_m::_sx_update_child_emlsn(generic_page* parent, general_recordid_
     sys_xct_section_t sxs (true); // this transaction will output only one log!
     W_DO(sxs.check_error_on_start());
     btree_page_h bp(parent);
+    w_assert1(bp.is_latched());
     W_DO(log_page_evict(bp, child_slotid, child_emlsn));
     bp.set_emlsn_general(child_slotid, child_emlsn);
     W_DO (sxs.end_sys_xct (RCOK));
@@ -1890,9 +1894,11 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
     }
     // Page is valid, but it might be stale...
     if (parent == NULL) {
-        // this should also return eNO_PARENT_SPR, but parent might be NULL
-        // if swizzling is OFF...
-        ERROUT(<<"bf_tree_m: Parent pointer NULL while SPR. no swizzling? pid=" << shpid);
+        // EMLSN check is possible only when parent pointer is available.
+        // In case of fix_direct, we do only checksum validation.
+        // fix_direct are used in 1) restart and 2) cursor refix.
+        // 1) is fine because we anyway recover the child page during REDO.
+        // 2) is fine because of pin_for_refix() (in other words, it never comes here).
         return RCOK;
     }
     lsn_t emlsn = btree_page_h(parent).get_emlsn_general(find_page_id_slot(parent, shpid));

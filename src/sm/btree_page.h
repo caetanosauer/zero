@@ -433,8 +433,22 @@ private:
                 char          item_data[14];
             } leaf;
             struct {
-                /** Not lsn_t because union doesn't allow it (unless C++11). */
+                /**
+                 * \brief Child Expected Minimum LSN.
+                 * \ingroup SPR
+                 * \details
+                 * Not lsn_t because union doesn't allow it (unless C++11).
+                 * \NOTE This is 8-bytes aligned so as to provide "regular register"
+                 * semantics. We can update this value only with SH-latch.
+                 * Other threads see either the old value or new value, but not a random
+                 * value. All usecases of this value are safe with that semantics.
+                 * @see bf_tree_m::_sx_update_child_emlsn()
+                 */
                 lsndata_t     child_emlsn;
+                /**
+                 * \brief Child Page ID pointer, either swizzled or not.
+                 * \NOTE This is 4-bytes aligned for "regular register" semantics (see above).
+                 */
                 shpid_t       child;
                 item_length_t item_len;
                 /// really of size item_len - sizeof(item_len) - sizeof(child) - sizeof(lsn_t):
