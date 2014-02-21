@@ -70,7 +70,8 @@ w_rc_t create_check(ss_m* ssm, test_volume_t *test_volume) {
                 cout << "wtf?? " << buf.tag; break;
         }
         if (buf.tag == t_btree_p) {
-            btree_page_h p(&buf);
+            btree_page_h p;
+            p.fix_nonbufferpool_page(&buf);
             cout << "(level=" << p.level() << ")";
         }
         
