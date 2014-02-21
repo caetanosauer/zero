@@ -44,14 +44,6 @@ btrec_t::set(const btree_page_h& page, slotid_t slot) {
     return *this;
 }
 
-void btree_page_h::init_as_empty_child(lsn_t new_lsn, lpid_t new_page_id,
-    shpid_t root_pid, shpid_t foster_pid, int16_t btree_level,
-    const w_keystr_t &low, const w_keystr_t &high, const w_keystr_t &chain_fence_high) {
-    w_assert1 (new_page_id.page != root_pid);
-    _init(new_lsn, new_page_id, root_pid, 0, foster_pid, btree_level,
-        low, high, chain_fence_high);
-}
-
 void btree_page_h::accept_empty_child(lsn_t new_lsn, shpid_t new_page_id) {
     w_assert1 (g_xct()->is_single_log_sys_xct());
     w_assert1 (new_lsn != lsn_t::null);
@@ -72,7 +64,7 @@ void btree_page_h::accept_empty_child(lsn_t new_lsn, shpid_t new_page_id) {
     }
 }
 
-rc_t btree_page_h::format_steal(lsn_t new_lsn,
+rc_t btree_page_h::format_steal(lsn_t             new_lsn,
                                 const lpid_t&     pid,
                                 shpid_t           root, 
                                 int               l,

@@ -310,31 +310,10 @@ public:
     // no 'noprefix' version because chain_fence_high might not share the prefix!
 
     /**
-     * \brief Initializes the associated page as an empty child page.
-     * \details
-     * This is the primary way (for non-root pages) to initialize a page in Foster B-tree.
-     * @param[in] new_lsn LSN of the operation that creates this page.
-     * @param[in] new_page_id Page ID of the new page.
-     * @param[in] root_pid Page ID of the root page of the B-tree this page belongs to.
-     * @param[in] foster_pid Page ID of the (if exists) foster-child of the parent.
-     * @param[in] btree_level Level of the new page.
-     * @param[in] low The fence low key of the new page.
-     * @param[in] high The fence high key of the new page.
-     * @param[in] chain_fence_high highest key in the foster chain.
-     * @see btree_impl::_sx_norec_alloc()
-     * @see accept_empty_child()
-     * @pre this is not a root page.
-     */
-    void init_as_empty_child(lsn_t new_lsn, lpid_t new_page_id,
-        shpid_t root_pid, shpid_t foster_pid, int16_t btree_level,
-        const w_keystr_t &low, const w_keystr_t &high, const w_keystr_t &chain_fence_high);
-
-    /**
      * Modifies the associated page to accept an empty foster-child page.
      * @param[in] new_lsn LSN of the operation that creates the foster-child page.
      * @param[in] new_page_id Page ID of the new page.
      * @see btree_impl::_sx_norec_alloc()
-     * @see init_as_empty_child()
      * @pre in SSX (thus REDO-only. no worry for compensation log)
      * @pre latch_mode() == EX
      */
