@@ -168,7 +168,7 @@ rc_t ss_m::open_store (const stid_t &stid, lpid_t &root_pid, bool for_update)
 }
 rc_t ss_m::open_store_nolock (const stid_t &stid, lpid_t &root_pid)
 {
-    root_pid = lpid_t (stid, io->get_root(stid));
+    root_pid = lpid_t (stid, io->get_root(stid, true)); // use nolock version
     if (root_pid.page == 0) {
         return RC(eBADSTID);
     }

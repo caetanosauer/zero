@@ -113,21 +113,23 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
         // also try to swizzle this page
         // TODO so far we swizzle all pages as soon as we load them to bufferpool
         // but, we might want to consider a more advanced policy.
-        fixable_page_h p(parent);
+        fixable_page_h p;
+        p.fix_nonbufferpool_page(parent);
         if (!_bf_pause_swizzling && is_swizzled(parent) && !is_swizzled(page)
             && *p.child_slot_address(-1) != shpid // don't swizzle foster child
             ) {
-            slotid_t slot = find_page_id_slot (parent, shpid);
+            general_recordid_t slot = find_page_id_slot (parent, shpid);
             // this is a new (virgin) page which has not been linked yet. 
             // skip swizzling this page
-            if (slot == -2 && virgin_page) {
+            if (slot == GeneralRecordIds::INVALID && virgin_page) {
                 return RCOK;
             }
 
             // benign race: if (slot < -1 && is_swizzled(page)) then some other 
             // thread swizzled it already. This can happen when two threads that 
             // have the page latched as shared need to swizzle it
-            w_assert1(slot >= -1 || is_swizzled(page) || (slot == -2 && virgin_page));
+            w_assert1(slot >= GeneralRecordIds::FOSTER_CHILD || is_swizzled(page)
+                || (slot == GeneralRecordIds::INVALID && virgin_page));
             
 #ifdef EX_LATCH_ON_SWIZZLING
             if (latch_mode(parent) != LATCH_EX) {

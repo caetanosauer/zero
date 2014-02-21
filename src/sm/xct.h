@@ -113,7 +113,6 @@ class lock_request_t; // forward
 class xct_log_switch_t; // forward
 class xct_lock_info_t; // forward
 class smthread_t; // forward
-class ssx_defer_section_t;
 class lil_private_table;
 
 class logrec_t; // forward
@@ -186,11 +185,11 @@ class stid_list_elem_t  {
 
 
 
-/**\brief A transaction. Internal to the storage manager.
- * \ingroup LOGSPACE
- *
+/**
+ * \brief A transaction. Internal to the storage manager.
+ * \ingroup SSMXCT
  * This class may be used in a limited way for the handling of 
- * out-of-log-space conditions.  See \ref LOGSPACE.
+ * out-of-log-space conditions.  See \ref SSMLOG.
  */
 class xct_t : public smlevel_1 {
 /**\cond skip */
@@ -204,7 +203,6 @@ class xct_t : public smlevel_1 {
     friend class lock_core_m;
     friend class lock_request_t;
     friend class xct_log_switch_t;
-    friend class ssx_defer_section_t;
 
 protected:
     enum commit_t { t_normal = 0, t_lazy = 1, t_chain = 2, t_group = 4 };
@@ -219,7 +217,7 @@ public:
         sm_stats_info_t*             stats = 0,  // allocated by caller
         timeout_in_ms                timeout = WAIT_SPECIFIED_BY_THREAD,
         bool                         sys_xct = false,
-        bool single_log_sys_xct = false, bool deferred_ssx = false
+        bool single_log_sys_xct = false
                                          );
     
     static
@@ -230,7 +228,7 @@ public:
         const lsn_t&                 undo_nxt,
         timeout_in_ms                timeout = WAIT_SPECIFIED_BY_THREAD,
         bool                         sys_xct = false,
-        bool single_log_sys_xct = false, bool deferred_ssx = false
+        bool single_log_sys_xct = false
                                         );
     static
     void                        destroy_xct(xct_t* xd);
@@ -254,7 +252,7 @@ private:
         const lsn_t&                 last_lsn,
         const lsn_t&                 undo_nxt,
         bool                         sys_xct = false,
-        bool single_log_sys_xct = false, bool deferred_ssx = false
+        bool single_log_sys_xct = false
                                       );
     NORET                       ~xct_t();
 
@@ -384,8 +382,6 @@ public:
     void                         log_warn_resume();
     bool                         log_warn_is_on() const;
 
-/**\cond skip */
-
 public:
     // used in sm.cpp
     rc_t                        add_dependent(xct_dependent_t* dependent);
@@ -396,9 +392,34 @@ public:
     //        logging functions -- used in logstub_gen.cpp only
     //
     bool                        is_log_on() const;
-    rc_t                        get_logbuf(logrec_t*&, int t,
-                                                       const fixable_page_h *p = 0);
-    rc_t                        give_logbuf(logrec_t*, const fixable_page_h *p = 0);
+
+    /**
+    * \brief Flush the logbuf and return it in "ret" for use.
+    * \details Caller must call give_logbuf(ret) to free it after use.
+    *  Leaves the xct's log mutex acquired.
+    *
+    *  This and give_logbuf() are used in the log_stub.i functions
+    *  and ONLY there.  THE ERROR RETURN (running out of log space)
+    *  IS PREDICATED ON THAT -- in that it's expected that in the case of
+    *  a normal  return (no error), give_logbuf will be called, but in
+    *  the error case (out of log space), it will not, and so we must
+    *  release the mutex in get_logbuf error cases.
+    * @param[out] ret the acquired log buffer
+    * @param[in] t bytes to reserve
+    */
+    rc_t                        get_logbuf(logrec_t* &ret, int t);
+
+    /**
+     * \brief Returns the log buffer acquired by get_logbuf().
+     * \details
+     * This method receives 0 to 2 pages that were updated by the logged operation,
+     * making the pages dirty and updating the LSN.
+     * @param[in] l log buffer to return
+     * @param[in] p the main page the log updated
+     * @param[in] p2 the second page the log updated
+     */
+    rc_t                        give_logbuf(logrec_t* l,
+        const fixable_page_h *p = NULL, const fixable_page_h *p2 = NULL);
 
     //
     //        Used by I/O layer
@@ -504,6 +525,19 @@ private:
      */
     uint32_t                     _xct_chain_len;
 
+    /**
+     * \brief The count of consecutive SSXs conveyed by this transaction object.
+     * \details
+     * SSX can't nest SSX.
+     * However, as SSX doesn't care what the transaction object is, SSX can \e chain
+     * an arbitraly number of SSXs as far as they are consecutive SSXs, no multi-log
+     * system transactions or user-transactions in-between.
+     * In that case, we simply increment/decrement this counter when we
+     * start/end SSX. Chaining is useful when SSX operation might cause another SSX
+     * operation, eg ghost-reservation causes page-split which causes page-evict etc etc.
+     */
+    uint32_t                     _ssx_chain_len;
+
     /** concurrency mode of this transaction. */
     concurrency_t                _query_concurrency;
     /** whether to take X lock for lookup/cursor. */
@@ -547,7 +581,6 @@ public:
                                         smlevel_0::in_recovery()
                                         ;
     }
-/**\endcond skip */
 
 private:
     void                         acquire_1thread_log_mutex() {
@@ -627,9 +660,6 @@ private:
                                     u_long&             aborts,
                                     bool                 reset);
 
-    w_rc_t                     _flush_user_logbuf (logrec_t *l, lsn_t *ret_lsn);
-    w_rc_t                     _flush_piggyback_ssx_logbuf();
-    w_rc_t                     _append_piggyback_ssx_logbuf(logrec_t* l, fixable_page_h *page);
     w_rc_t                     _flush_logbuf();
     w_rc_t                     _sync_logbuf(bool block=true, bool signal=true);
     void                       _teardown(bool is_chaining);
@@ -765,20 +795,12 @@ private: // all data members private
      */
     logrec_t*                    _last_log;    // last log generated by xct
     logrec_t*                    _log_buf;
-    
     /**
-     * As SSX log never has to be eagerly pushed to log manager, we buffer it here.
-     * All of these have to be pushed to log manager when
-     * the outer transaction ends WHETHER the outer transaction commits or aborts.
-     * (actually it doesn't have to be commit/abort timing as far as it's pushed at some point)
-     */ 
-    char*                        _log_buf_for_piggybacked_ssx;
-    fixable_page_h*                      _log_buf_for_piggybacked_ssx_target; // TODO how can we make this multiples??
-    size_t                       _log_buf_for_piggybacked_ssx_used;
-
-    // for _flush_user_logbuf()
-    logrec_t**                   _tmp_array_for_rs;
-    lsn_t**                      _tmp_array_for_ret_lsns;
+     * As SSX log must be separated from outer transaction's logs, we maintain another buffer.
+     * This buffer is only used during one get/give_logbuf() call because it's SSX.
+     * Also, again because it's SSX, it can contain only one log.
+     */
+    logrec_t*                    _log_buf_for_piggybacked_ssx;
 
     /* track log space needed to avoid wedging the transaction in the
        event of an abort due to full log
@@ -825,7 +847,8 @@ public:
                                     w_assert1(_core == NULL || _tid == _core->_tid);
                                     return _tid; }
     uint32_t                    get_xct_chain_len() const { return _xct_chain_len;}
-                                    
+    uint32_t&                   ssx_chain_len() { return _ssx_chain_len;}
+
     const lsn_t&                get_read_watermark() const { return _read_watermark; }
     void                        update_read_watermark(const lsn_t &tag) {
         if (_read_watermark < tag) {
@@ -978,7 +1001,7 @@ bool xct_t::is_log_on() const {
 /**\brief Iterator over transaction list.
  *
  * This is exposed for the purpose of coping with out-of-log-space 
- * conditions. See \ref LOGSPACE.
+ * conditions. See \ref SSMLOG.
  */
 class xct_i  {
 public:
@@ -1207,9 +1230,8 @@ public:
     /**
      * starts a nested system transaction.
      * @param[in] singular_sys_xct whether this transaction will have at most one xlog entry
-     * @param[in] deferred_ssx whether to defer the loggin and applying of this transaction.
      */
-    sys_xct_section_t(bool single_log_sys_xct = false, bool deferred_ssx = false);
+    sys_xct_section_t(bool single_log_sys_xct = false);
     /** This destructor makes sure the system transaction ended. */
     ~sys_xct_section_t();
     
@@ -1222,47 +1244,6 @@ public:
 private:
     rc_t   _error_on_start;
     size_t _original_xct_depth;
-};
-
-/**
- * \brief Used to automatically record/apply deferred single-log-system-transaction log record.
- * \details
- * See jira ticket:75 "Log-centric model (in single-log system transaction)" (originally trac ticket:77).
- * log of single-log-system-transaction (ssx) has to be pushed to log manager AND
- * applied to the bufferpool-page in question before both of following
- * 1. Next outer user transaction's log is written
- * 2. The outer user transaction releases the EX-latch on the page (probably when it aborts)
- * In other words, until these events we can safely defer ssx log and its apply() forever.
- * 
- * Use this class as follows.
- * \verbatim
-  ...
-  btree_page_h leaf;
-  leaf.fix(pid, LATCH_EX);
-  {
-    ssx_defer_section_t ssx_defer (&leaf); // auto-commit for deferred ssx log on leaf
-    // defer ssx log here
-    W_DO (_sx_reserve_ghost(leaf, key, el.size()));
-    ... // remember that it might crash here.
-        //in that case, the destructor of ssx_defer does the job.
-    W_DO (leaf.replace_ghost(key, el)); // push/apply the ssx log AND the user-xct push/apply
-  } // automatically checks if the current transaction has dangling ssx log, if so, push/apply.
-  ...
-  // you can unlatch the page only after the scope.
-  leaf.unfix(); 
-  ...
-}\endverbatim
- */
-class ssx_defer_section_t {
-public:
-    ssx_defer_section_t (fixable_page_h *page, xct_t *x = xct());
-    ~ssx_defer_section_t(); // implemented in xct.cpp
-private:
-    fixable_page_h *_page;
-    xct_t *_x;
-#if W_DEBUG_LEVEL>0
-    lpid_t _pid; // to check the page hasn't be switched
-#endif // W_DEBUG_LEVEL>0    
 };
 
 /** Used to tentatively set t_cc_none to _query_concurrency. */

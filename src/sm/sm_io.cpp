@@ -1014,16 +1014,21 @@ io_m::is_valid_store(const stid_t& stid)
     return v->is_alloc_store(stid.store);
 }
 
-shpid_t io_m::get_root(const stid_t& stid)
+shpid_t io_m::get_root(const stid_t& stid, bool nolock)
 {
     auto_leave_t enter;
     vid_t volid = stid.vol;
 
-    lock_state rme_node ;
-    vol_t *v = _find_and_grab(volid, &rme_node, false); 
-    if (!v)  return false;
-    auto_release_r_t<VolumeLock> release_on_return(v->vol_mutex());
-    return v->get_store_root(stid.store);
+    if (nolock) {
+        int index = _find(volid);
+        return vol[index]->get_store_root(stid.store);
+    } else {
+        lock_state rme_node ;
+        vol_t *v = _find_and_grab(volid, &rme_node, false);
+        if (!v)  return false;
+        auto_release_r_t<VolumeLock> release_on_return(v->vol_mutex());
+        return v->get_store_root(stid.store);
+    }
 }
 rc_t io_m::set_root(const stid_t& stid, shpid_t root_pid)
 {

@@ -168,7 +168,6 @@ class btree_page_h : public fixable_page_h {
     friend class btree_ghost_t;
     friend class btree_ghost_mark_log;
     friend class btree_ghost_reclaim_log;
-    friend class btree_header_t;
     friend class page_img_format_t;
 
     btree_page* page() const { return reinterpret_cast<btree_page*>(_pp); }
@@ -185,9 +184,6 @@ public:
     // ======================================================================
 
     btree_page_h() {}
-    btree_page_h(generic_page* s) : fixable_page_h(s) {
-        w_assert1(s->tag == t_btree_p);
-    }
     btree_page_h(const btree_page_h& p) : fixable_page_h(p) {} 
     ~btree_page_h() {}
     btree_page_h& operator=(btree_page_h& p) { 
@@ -234,8 +230,6 @@ public:
     shpid_t         get_foster() const;
     /// Returns opaque pointer of B-link page (0 if not linked).
     shpid_t         get_foster_opaqueptr() const;
-    /// Clears the foster page and also clears the chain high fence key.
-    rc_t               clear_foster();
 
     /// Returns the prefix which is removed from all entries in this page.
     const char* get_prefix_key() const;
@@ -316,51 +310,53 @@ public:
     // no 'noprefix' version because chain_fence_high might not share the prefix!
 
     /**
-     * When allocating a new B-Tree page, use this instead of fix().
-     * This sets all headers, fence/prefix keys, and initial records altogether.
-     * As our new B-Tree header has variable-size part (fence keys),
-     * setting fence keys later than the first format() causes a problem.
-     * So, the 4-argumets format(which is called from default fix() on virgin page) is disabled.
-     * Also, this outputs just a single record for everything, so much more efficient.
+     * Modifies the associated page to accept an empty foster-child page.
+     * @param[in] new_lsn LSN of the operation that creates the foster-child page.
+     * @param[in] new_page_id Page ID of the new page.
+     * @see btree_impl::_sx_norec_alloc()
+     * @pre in SSX (thus REDO-only. no worry for compensation log)
+     * @pre latch_mode() == EX
      */
-    rc_t init_fix_steal(
-        btree_page_h*        parent,
-        const lpid_t&        pid,
-        shpid_t              root, 
-        int                  level,
-        shpid_t              pid0,
-        shpid_t              foster,
-        const w_keystr_t&    fence_low,
-        const w_keystr_t&    fence_high,
-        const w_keystr_t&    chain_fence_high,
-        btree_page_h*        steal_src  = NULL,
-        int                  steal_from = 0,
-        int                  steal_to   = 0,
-        bool                 log_it     = true
-        );
+    void accept_empty_child(lsn_t new_lsn, shpid_t new_page_id);
 
     /**
-     * This sets all headers, fence/prefix keys and initial records altogether.  Used by init_fix_steal.
-     * Steal records from steal_src1.  Then steal records from steal_src2 (this is used only when merging).
-     * if steal_src2_pid0 is true, it also steals src2's pid0 with low-fence key.
+     * \brief Initializes the associated page, stealing records from other pages as specified.
+     * 
+     * \details 
+     * This sets all headers, fence/prefix keys, and initial records altogether.  Steals
+     * records from steal_src1 if non-null.  Then steal records from steal_src2 if
+     * non-null (this is used only when merging).  If steal_src2_pid0 is true, it also
+     * steals src2's pid0 with low-fence key.
+     * 
+     * @param[in] new_lsn           LSN of the operation that creates this page.
+     * @param[in] pid               Page ID of the new page; this must match pid used to fix this page if a buffer pool-manage page.
+     * @param[in] root              Page ID of the root page of the B-tree this page belongs to.
+     * @param[in] level             Level of the new page.
+     * @param[in] pid0              New pid0 value
+     * @param[in] foster            Page ID of the (if exists) foster-child of the parent.
+     * @param[in] fence_low         The fence low key of the new page.
+     * @param[in] fence_high        The fence high key of the new page.
+     * @param[in] chain_fence_high  Highest key in the foster chain.
+     * @param[in] log_it            Should we log this change?
+     * ...
      */
-    rc_t format_steal(
-        const lpid_t&        pid,
-        shpid_t              root, 
-        int                  level,
-        shpid_t              pid0,
-        shpid_t              foster,
-        const w_keystr_t&    fence_low,
-        const w_keystr_t&    fence_high,
-        const w_keystr_t&    chain_fence_high,
-        bool                 log_it = true,
-        btree_page_h*        steal_src1 = NULL,
-        int                  steal_from1 = 0,
-        int                  steal_to1 = 0,
-        btree_page_h*        steal_src2 = NULL,
-        int                  steal_from2 = 0,
-        int                  steal_to2 = 0,
-        bool                 steal_src2_pid0 = false
+    rc_t format_steal(lsn_t                new_lsn,
+                      const lpid_t&        pid,
+                      shpid_t              root, 
+                      int                  level,
+                      shpid_t              pid0,
+                      shpid_t              foster,
+                      const w_keystr_t&    fence_low,
+                      const w_keystr_t&    fence_high,
+                      const w_keystr_t&    chain_fence_high,
+                      bool                 log_it = true,
+                      btree_page_h*        steal_src1 = NULL,
+                      int                  steal_from1 = 0,
+                      int                  steal_to1 = 0,
+                      btree_page_h*        steal_src2 = NULL,
+                      int                  steal_from2 = 0,
+                      int                  steal_to2 = 0,
+                      bool                 steal_src2_pid0 = false
         );
 
     /// Steal records from steal_src.  Called by format_steal.
@@ -374,8 +370,7 @@ public:
      */
     rc_t norecord_split (shpid_t foster,
                          const w_keystr_t& fence_high, 
-                         const w_keystr_t& chain_fence_high,
-                         bool log_it = true);
+                         const w_keystr_t& chain_fence_high);
 
     /// Returns if whether we can do norecord insert now.
     bool                 check_chance_for_norecord_split(const w_keystr_t& key_to_insert) const;
@@ -546,10 +541,19 @@ public:
     rc_t            replace_ghost(const w_keystr_t &key, const cvec_t &elem);
 
     /**
-     * Replaces the special fence record with the given new data,
+     * \brief Replaces the special fence record with the given new data,
      * expanding the slot length if needed.
+     * \details
+     * This method also updates fence_low/high/chain-high_length.
+     * Also, this method may defrag the page to squeeze out space for the fence keys
+     * if needed (returns eRECWONTFIT if it still doesn't fit).
      */
-    rc_t            replace_fence_rec_nolog(const w_keystr_t& low, const w_keystr_t& high, const w_keystr_t& chain, int new_prefix_length= -1);
+    rc_t            replace_fence_rec_nolog_may_defrag(const w_keystr_t& low,
+        const w_keystr_t& high, const w_keystr_t& chain, int new_prefix_length= -1);
+
+    /** @see replace_fence_rec_nolog_may_defrag(). */
+    rc_t            replace_fence_rec_nolog_no_defrag(const w_keystr_t& low,
+        const w_keystr_t& high, const w_keystr_t& chain, int new_prefix_length);
 
     /**
      *  Remove the slot and up-shift slots after the hole to fill it up.
@@ -682,6 +686,10 @@ private:
 
     /// A field to hold a B-tree key length
     typedef uint16_t key_length_t;
+    enum _internal {
+        /** Maximum key length allows in B-tree pages. */
+        max_key_length = (1 << (sizeof(key_length_t) * 8 - 1)) - 1,
+    };
 
 
     /**
@@ -874,7 +882,14 @@ private:
      * item.
      * @return true if there is free space
      */
-    bool _check_space_for_insert(size_t data_length);  
+    bool _check_space_for_insert(size_t data_length);
+
+    /**
+     * Initialize the whole image of this page as an empty page.
+     */
+    void            _init(lsn_t lsn, lpid_t page_id,
+        shpid_t root_pid, shpid_t pid0, shpid_t foster_pid, int16_t btree_level,
+        const w_keystr_t &low, const w_keystr_t &high, const w_keystr_t &chain_fence_high);
 };
 
 
@@ -893,9 +908,9 @@ class borrowed_btree_page_h : public btree_page_h {
 
 public:
     borrowed_btree_page_h(fixable_page_h* source) :
-        btree_page_h(source->get_generic_page()),
-        _source(source)
+        btree_page_h(), _source(source)
     {
+        _pp       = _source->get_generic_page();
         _mode     = _source->_mode;
         _Q_ticket = _source->_Q_ticket;
         _source->_mode = LATCH_NL;
@@ -908,7 +923,6 @@ public:
         _mode = LATCH_NL;
     }
 };
-
 
 
 // ======================================================================
@@ -1147,7 +1161,20 @@ inline int btree_page_h::_pack_fence_rec(cvec_t& out, const w_keystr_t& low,
     // eliminate prefix part from high:
     out.put((const char*)high.buffer_as_keystr()     + prefix_len, 
             high.get_length_as_keystr() - prefix_len);
-    out.put(chain);
+    if (!chain.is_constructed()) {
+        // If chain-high is not set, we don't need to put it here. However,
+        // we will at least need fench-high length of capacity when we split this page.
+        // As running out of space even for splitting is a severe issue, we pre-allocate
+        // a fence-high length of capacity here.
+        out.put(high);
+    } else {
+        out.put(chain);
+        if (chain.get_length_as_keystr() < high.get_length_as_keystr()) {
+            // for the same purpose, put additional bytes
+            out.put(high.buffer_as_keystr(),
+                    high.get_length_as_keystr() - chain.get_length_as_keystr());
+        }
+    }
     return prefix_len;
 }
 

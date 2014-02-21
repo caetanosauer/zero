@@ -40,12 +40,13 @@ rc_t btree_impl::_ux_create_tree_core(const stid_t &stid, const lpid_t &root_pid
     w_assert1(infimum.is_constructed());
     supremum.construct_posinfkey();
     w_assert1(supremum.is_constructed());
-    W_DO(page.init_fix_steal(NULL, root_pid, root_pid.page,
-        1, // level=1. initial tree has only one level
-        0, // no child
-        0, // no b-link page
-        infimum, supremum, dummy_chain_high // start from infimum/supremum fence keys
-    ));
+    W_DO(page.fix_virgin_root(root_pid.vol().vol, root_pid.store(), root_pid.page));
+    W_DO(page.format_steal(page.lsn(), root_pid, root_pid.page,
+                           1, // level=1. initial tree has only one level
+                           0, // no child
+                           0, // no b-link page
+                           infimum, supremum, dummy_chain_high // start from infimum/supremum fence keys
+                           ));
 
     // also register it in stnode_page
     W_DO(io->set_root(stid, root_pid.page));
@@ -57,6 +58,12 @@ rc_t
 btree_impl::_sx_shrink_tree(btree_page_h& rp)
 {
     FUNC(btree_impl::_sx_shrink_tree);
+    if( rp.nrecs() > 0 || rp.get_foster() != 0) {
+        // then still not the time for shrink
+        W_DO (_sx_adopt_foster_all_core (rp, true, false));
+        return RCOK;
+    }
+
     sys_xct_section_t sxs;
     W_DO(sxs.check_error_on_start());
     rc_t ret = _ux_shrink_tree_core(rp);
@@ -75,9 +82,7 @@ btree_impl::_ux_shrink_tree_core(btree_page_h& rp)
     lpid_t rp_pid = rp.pid();
     
     if( rp.nrecs() > 0 || rp.get_foster() != 0) {
-        // then still not the time for shrink
-        W_DO (_ux_adopt_foster_all_core (rp, true, false));
-        return RCOK;
+        return RCOK; // just to make sure
     }
     w_assert1( rp.nrecs() == 0 && rp.get_foster() == 0);
 
@@ -92,13 +97,13 @@ btree_impl::_ux_shrink_tree_core(btree_page_h& rp)
         cp.copy_fence_low_key(fence_low);
         cp.copy_fence_high_key(fence_high);
         cp.copy_chain_fence_high_key(dummy_chain_high);
-        W_DO( rp.format_steal(rp_pid, rp_pid.page, // root page id is not changed.
-            cp.level(), // one level shorter
-            cp.pid().page, // left-most is cp's left-most
-            cp.get_foster(), // foster is cp's foster
-            fence_low, fence_high, dummy_chain_high,
-            true, // log it to avoid write-order dependency. anyway it's very rare!
-            &cp, 0, cp.nrecs()));
+        W_DO(rp.format_steal(rp.lsn(), rp_pid, rp_pid.page, // root page id is not changed.
+                             cp.level(), // one level shorter
+                             cp.pid().page, // left-most is cp's left-most
+                             cp.get_foster(), // foster is cp's foster
+                             fence_low, fence_high, dummy_chain_high,
+                             true, // log it to avoid write-order dependency. anyway it's very rare!
+                             &cp, 0, cp.nrecs()));
     
         w_assert3( cp.latch_mode() == LATCH_EX);
         W_DO( cp.set_to_be_deleted(true)); // delete the page
@@ -107,12 +112,12 @@ btree_impl::_ux_shrink_tree_core(btree_page_h& rp)
         w_keystr_t infimum, supremum, dummy_chain_high;
         infimum.construct_neginfkey();
         supremum.construct_posinfkey();
-        W_DO( rp.format_steal(rp_pid, rp_pid.page, // root page id is not changed.
-            1, // root is now leaf
-            0, // leaf has no pid0
-            0, // no foster
-            infimum, supremum, dummy_chain_high // empty fence keys=infimum-supremum
-            ) ); // nothing to steal
+        W_DO(rp.format_steal(rp.lsn(), rp_pid, rp_pid.page, // root page id is not changed.
+                             1, // root is now leaf
+                             0, // leaf has no pid0
+                             0, // no foster
+                             infimum, supremum, dummy_chain_high // empty fence keys=infimum-supremum
+                 )); // nothing to steal
     }
     return RCOK;
 }
@@ -156,22 +161,24 @@ btree_impl::_ux_grow_tree_core(btree_page_h& rp, const lpid_t &cp_pid)
     rp.copy_chain_fence_high_key(cp_chain_high);
 
     btree_page_h cp;
-    W_DO (cp.init_fix_steal(&rp, cp_pid, rp.pid().page, rp.level(), rp.pid0(), // copy pid0 of root too
-        rp.get_foster(),
-        cp_fence_low, cp_fence_high, cp_chain_high, // use current root's fence keys
-        &rp, 0, rp.nrecs() // steal everything from root
-    ));
+    W_DO(cp.fix_nonroot(rp, rp.vol(), cp_pid.page, LATCH_EX, false, true));
+    W_DO(cp.format_steal(cp.lsn(), cp_pid, rp.pid().page, rp.level(), rp.pid0(), // copy pid0 of root too
+                         rp.get_foster(),
+                         cp_fence_low, cp_fence_high, cp_chain_high, // use current root's fence keys
+                         true, // log it
+                         &rp, 0, rp.nrecs() // steal everything from root
+                         ));
 
     // now rp is empty, so we can call format_steal() to re-set the fence keys.
     w_keystr_t infimum, supremum, dummy_chain_high;
     infimum.construct_neginfkey();
     supremum.construct_posinfkey();
-    W_DO( rp.format_steal(rp.pid(), rp.pid().page, // root page id is not changed.
-        rp.level() + 1, // grow one level
-        cp.pid().page, // left-most is cp
-        0, // no foster
-        infimum, supremum, dummy_chain_high // empty fence keys=infimum-supremum
-        ) ); // nothing to steal
+    W_DO(rp.format_steal(rp.lsn(), rp.pid(), rp.pid().page, // root page id is not changed.
+                         rp.level() + 1, // grow one level
+                         cp.pid().page, // left-most is cp
+                         0, // no foster
+                         infimum, supremum, dummy_chain_high // empty fence keys=infimum-supremum
+             )); // nothing to steal
     
     w_assert3(cp.is_consistent(true, true));
     cp.unfix();

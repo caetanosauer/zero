@@ -198,14 +198,16 @@ bool fixable_page_h::upgrade_latch_conditional(latch_mode_t mode) {
 
 bool fixable_page_h::has_children() const {
     w_assert1(_mode != LATCH_Q);
-    btree_page_h downcast(get_generic_page());
+    btree_page_h downcast;
+    downcast.fix_nonbufferpool_page(get_generic_page());
 
     return !downcast.is_leaf();
 }
 
 int fixable_page_h::max_child_slot() const {
     w_assert1(_mode != LATCH_Q);
-    btree_page_h downcast(get_generic_page());
+    btree_page_h downcast;
+    downcast.fix_nonbufferpool_page(get_generic_page());
 
     if (downcast.level()<=1)
         return -1;  // if a leaf page, foster is the only pointer
@@ -214,6 +216,7 @@ int fixable_page_h::max_child_slot() const {
 
 shpid_t* fixable_page_h::child_slot_address(int child_slot) const {
     w_assert1(_mode != LATCH_Q);
-    btree_page_h downcast(get_generic_page());
+    btree_page_h downcast;
+    downcast.fix_nonbufferpool_page(get_generic_page());
     return downcast.page_pointer_address(child_slot -1);
 }

@@ -77,7 +77,16 @@ class skip_log; // forward
 #include <partition.h>
 #include <deque>
 
-class log_core : public log_m 
+/**
+ * \brief Core Implementation of Log Manager
+ * \ingroup SSMLOG
+ * \details
+ * This is the internal implementation class used from log_m.
+ * This class contains the dirty details which should not be exposed to other modules.
+ * It is similar to what people call "pimpl" or "compiler firewall".
+ * @see log_m
+ */
+class log_core : public log_m
 {
     struct waiting_xct {
         fileoff_t* needed;
@@ -257,7 +266,6 @@ public:
 
     // returns lsn where data were written 
     rc_t            insert(logrec_t &r, lsn_t* l); 
-    rc_t            insert_multiple(size_t count, logrec_t** rs, lsn_t** ret_lsns);
     rc_t            insert_criticalsection(logrec_t &r, lsn_t* l); 
     rc_t            flush(const lsn_t &lsn, bool block=true, bool signal=true, bool *ret_flushed=NULL);
     rc_t            compensate(const lsn_t &orig_lsn, const lsn_t& undo_lsn);

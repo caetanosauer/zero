@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 #include "w_defines.h"
@@ -26,35 +26,12 @@ template class w_auto_delete_array_t<unsigned>;
 
 DECLARE_TLS(block_alloc<lock_queue_t>, lockQueuePool);
 DECLARE_TLS(block_alloc<lock_queue_entry_t>, lockEntryPool);
-DECLARE_TLS(block_alloc<xct_lock_entry_t>, xctLockEntryPool);
 
 #ifdef SWITCH_DEADLOCK_IMPL
 bool g_deadlock_use_waitmap_obsolete = true;
 int g_deadlock_dreadlock_interval_ms = 10;
 w_error_codes (*g_check_deadlock_impl)(xct_t* xd, lock_request_t *myreq);
 #endif // SWITCH_DEADLOCK_IMPL
-
-xct_lock_info_t::xct_lock_info_t() : _head (NULL), _tail (NULL), _permission_to_violate (false)
-{
-    init_wait_map(g_me());
-}
-
-// allows reuse rather than free/malloc of the structure
-xct_lock_info_t* xct_lock_info_t::reset_for_reuse()
-{
-    // make sure the lock lists are empty
-    w_assert1(_head == NULL);
-    w_assert1(_tail == NULL);
-    new (this) xct_lock_info_t;
-    return this;
-}
-
-
-xct_lock_info_t::~xct_lock_info_t()
-{
-    w_assert1(_head == NULL);
-    w_assert1(_tail == NULL);
-}
 
 lock_core_m::lock_core_m(uint sz)
 :
@@ -104,7 +81,6 @@ lock_core_m::acquire_lock(
     xct_t*                 xd,
     const lockid_t&        name,
     const okvl_mode&          mode,
-    okvl_mode&               prev_mode,
     bool                   check_only,
     timeout_in_ms          timeout)
 {
@@ -115,7 +91,7 @@ lock_core_m::acquire_lock(
     uint32_t idx = _table_bucket(hash);
     lock_queue_t *lock = _htab[idx].find_lock_queue(hash);
 
-    int acquire_ret = _acquire_lock(xd, lock, mode, prev_mode, check_only, timeout, the_xlinfo);
+    int acquire_ret = _acquire_lock(xd, lock, mode, check_only, timeout, the_xlinfo);
     w_error_codes funcret;
     if (acquire_ret == RET_SUCCESS) {
         // store the lock queue tag we observed. this is for Safe SX-ELR
@@ -136,7 +112,6 @@ lock_core_m::_acquire_lock(
     xct_t*                 xd,
     lock_queue_t*          lock,
     const okvl_mode&          mode,
-    okvl_mode&                prev_mode,
     bool                   check_only,
     timeout_in_ms          timeout,
     xct_lock_info_t*       the_xlinfo)
@@ -165,10 +140,10 @@ lock_core_m::_acquire_lock(
         w_assert1(&req->_xct == xd);
         w_assert1(&req->_li == the_xlinfo);
         w_assert1(req->_xct_entry != NULL);
-        prev_mode = req->_granted_mode;
-        if (mode.is_implied_by(prev_mode)) {
+        if (mode.is_implied_by(req->_granted_mode)) {
             // already had the desired lock mode!
-            // we can safely (and efficiently) exit without taking latch in this case.
+            // This shouldn't happen because we always check
+            ERROUT(<< "Already desired lock mode. Private lock table didn't work?");
             return RET_SUCCESS;
         }
         spinlock_write_critical_section cs(&lock->_requests_latch);
@@ -558,57 +533,4 @@ void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_resul
         }
     }
     w_assert1(!precedes_me);
-}
-
-
-xct_lock_entry_t* xct_lock_info_t::link_to_new_request (lock_queue_t *queue, lock_queue_entry_t *entry) {
-    xct_lock_entry_t* link = new (*xctLockEntryPool) xct_lock_entry_t();
-    link->queue = queue;
-    link->entry = entry;
-    if (_head == NULL) {
-        _head = link;
-        _tail = link;
-    } else {
-        _tail->next = link;
-        link->prev = _tail;
-        _tail = link;
-    }
-    return link;
-}
-void xct_lock_info_t::remove_request (xct_lock_entry_t *entry) {
-#if W_DEBUG_LEVEL>=3
-    bool found = false;
-    for (xct_lock_entry_t *p = _head; p != NULL; p = p->next) {
-        if (p == entry) {
-            found = true;
-            break;
-        }
-    }
-    w_assert3(found);
-#endif //W_DEBUG_LEVEL>=3
-    if (entry->prev == NULL) {
-        // then it should be current head
-        w_assert1(_head == entry);
-        _head = entry->next;
-        if (_head != NULL) {
-            _head->prev = NULL;
-        }
-    } else {
-        w_assert1(entry->prev->next == entry);
-        entry->prev->next = entry->next;
-    }
-
-    if (entry->next == NULL) {
-        // then it should be current tail
-        w_assert1(_tail == entry);
-        _tail = entry->prev;
-        if (_tail != NULL) {
-            _tail->next = NULL;
-        }
-    } else {
-        w_assert1(entry->next == _head || entry->next->prev == entry);
-        entry->next->prev = entry->prev;
-    }
-
-    xctLockEntryPool->destroy_object(entry);
 }
