@@ -341,27 +341,41 @@ public:
     void accept_empty_child(lsn_t new_lsn, shpid_t new_page_id);
 
     /**
-     * This sets all headers, fence/prefix keys and initial records altogether.  Used by init_fix_steal.
-     * Steal records from steal_src1.  Then steal records from steal_src2 (this is used only when merging).
-     * if steal_src2_pid0 is true, it also steals src2's pid0 with low-fence key.
+     * \brief Initializes the associated page, stealing records from other pages as specified.
+     * 
+     * \details 
+     * This sets all headers, fence/prefix keys, and initial records altogether.  Steals
+     * records from steal_src1 if non-null.  Then steal records from steal_src2 if
+     * non-null (this is used only when merging).  If steal_src2_pid0 is true, it also
+     * steals src2's pid0 with low-fence key.
+     * 
+     * @param[in] new_lsn           LSN of the operation that creates this page.
+     * @param[in] new_page_id       Page ID of the new page; this must match pid used to fix this page if a buffer pool-manage page.
+     * @param[in] root_pid          Page ID of the root page of the B-tree this page belongs to.
+     * @param[in] foster_pid        Page ID of the (if exists) foster-child of the parent.
+     * @param[in] btree_level       Level of the new page.
+     * @param[in] low               The fence low key of the new page.
+     * @param[in] high              The fence high key of the new page.
+     * @param[in] chain_fence_high  Highest key in the foster chain.
+     * 
      */
-    rc_t format_steal(
-        const lpid_t&        pid,
-        shpid_t              root, 
-        int                  level,
-        shpid_t              pid0,
-        shpid_t              foster,
-        const w_keystr_t&    fence_low,
-        const w_keystr_t&    fence_high,
-        const w_keystr_t&    chain_fence_high,
-        bool                 log_it = true,
-        btree_page_h*        steal_src1 = NULL,
-        int                  steal_from1 = 0,
-        int                  steal_to1 = 0,
-        btree_page_h*        steal_src2 = NULL,
-        int                  steal_from2 = 0,
-        int                  steal_to2 = 0,
-        bool                 steal_src2_pid0 = false
+    rc_t format_steal(lsn_t new_lsn,
+                      const lpid_t&        pid,
+                      shpid_t              root, 
+                      int                  level,
+                      shpid_t              pid0,
+                      shpid_t              foster,
+                      const w_keystr_t&    fence_low,
+                      const w_keystr_t&    fence_high,
+                      const w_keystr_t&    chain_fence_high,
+                      bool                 log_it = true,
+                      btree_page_h*        steal_src1 = NULL,
+                      int                  steal_from1 = 0,
+                      int                  steal_to1 = 0,
+                      btree_page_h*        steal_src2 = NULL,
+                      int                  steal_from2 = 0,
+                      int                  steal_to2 = 0,
+                      bool                 steal_src2_pid0 = false
         );
 
     /// Steal records from steal_src.  Called by format_steal.

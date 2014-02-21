@@ -41,7 +41,7 @@ rc_t btree_impl::_ux_create_tree_core(const stid_t &stid, const lpid_t &root_pid
     supremum.construct_posinfkey();
     w_assert1(supremum.is_constructed());
     W_DO(page.fix_virgin_root(root_pid.vol().vol, root_pid.store(), root_pid.page));
-    W_DO(page.format_steal(root_pid, root_pid.page,
+    W_DO(page.format_steal(page.lsn(), root_pid, root_pid.page,
                            1, // level=1. initial tree has only one level
                            0, // no child
                            0, // no b-link page
@@ -97,13 +97,13 @@ btree_impl::_ux_shrink_tree_core(btree_page_h& rp)
         cp.copy_fence_low_key(fence_low);
         cp.copy_fence_high_key(fence_high);
         cp.copy_chain_fence_high_key(dummy_chain_high);
-        W_DO( rp.format_steal(rp_pid, rp_pid.page, // root page id is not changed.
-            cp.level(), // one level shorter
-            cp.pid().page, // left-most is cp's left-most
-            cp.get_foster(), // foster is cp's foster
-            fence_low, fence_high, dummy_chain_high,
-            true, // log it to avoid write-order dependency. anyway it's very rare!
-            &cp, 0, cp.nrecs()));
+        W_DO(rp.format_steal(rp.lsn(), rp_pid, rp_pid.page, // root page id is not changed.
+                             cp.level(), // one level shorter
+                             cp.pid().page, // left-most is cp's left-most
+                             cp.get_foster(), // foster is cp's foster
+                             fence_low, fence_high, dummy_chain_high,
+                             true, // log it to avoid write-order dependency. anyway it's very rare!
+                             &cp, 0, cp.nrecs()));
     
         w_assert3( cp.latch_mode() == LATCH_EX);
         W_DO( cp.set_to_be_deleted(true)); // delete the page
@@ -112,12 +112,12 @@ btree_impl::_ux_shrink_tree_core(btree_page_h& rp)
         w_keystr_t infimum, supremum, dummy_chain_high;
         infimum.construct_neginfkey();
         supremum.construct_posinfkey();
-        W_DO( rp.format_steal(rp_pid, rp_pid.page, // root page id is not changed.
-            1, // root is now leaf
-            0, // leaf has no pid0
-            0, // no foster
-            infimum, supremum, dummy_chain_high // empty fence keys=infimum-supremum
-            ) ); // nothing to steal
+        W_DO(rp.format_steal(rp.lsn(), rp_pid, rp_pid.page, // root page id is not changed.
+                             1, // root is now leaf
+                             0, // leaf has no pid0
+                             0, // no foster
+                             infimum, supremum, dummy_chain_high // empty fence keys=infimum-supremum
+                 )); // nothing to steal
     }
     return RCOK;
 }
@@ -162,7 +162,7 @@ btree_impl::_ux_grow_tree_core(btree_page_h& rp, const lpid_t &cp_pid)
 
     btree_page_h cp;
     W_DO(cp.fix_nonroot(rp, rp.vol(), cp_pid.page, LATCH_EX, false, true));
-    W_DO(cp.format_steal(cp_pid, rp.pid().page, rp.level(), rp.pid0(), // copy pid0 of root too
+    W_DO(cp.format_steal(cp.lsn(), cp_pid, rp.pid().page, rp.level(), rp.pid0(), // copy pid0 of root too
                          rp.get_foster(),
                          cp_fence_low, cp_fence_high, cp_chain_high, // use current root's fence keys
                          true, // log it
@@ -173,12 +173,12 @@ btree_impl::_ux_grow_tree_core(btree_page_h& rp, const lpid_t &cp_pid)
     w_keystr_t infimum, supremum, dummy_chain_high;
     infimum.construct_neginfkey();
     supremum.construct_posinfkey();
-    W_DO( rp.format_steal(rp.pid(), rp.pid().page, // root page id is not changed.
-        rp.level() + 1, // grow one level
-        cp.pid().page, // left-most is cp
-        0, // no foster
-        infimum, supremum, dummy_chain_high // empty fence keys=infimum-supremum
-        ) ); // nothing to steal
+    W_DO(rp.format_steal(rp.lsn(), rp.pid(), rp.pid().page, // root page id is not changed.
+                         rp.level() + 1, // grow one level
+                         cp.pid().page, // left-most is cp
+                         0, // no foster
+                         infimum, supremum, dummy_chain_high // empty fence keys=infimum-supremum
+             )); // nothing to steal
     
     w_assert3(cp.is_consistent(true, true));
     cp.unfix();

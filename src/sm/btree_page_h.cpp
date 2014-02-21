@@ -72,7 +72,8 @@ void btree_page_h::accept_empty_child(lsn_t new_lsn, shpid_t new_page_id) {
     }
 }
 
-rc_t btree_page_h::format_steal(const lpid_t&     pid,
+rc_t btree_page_h::format_steal(lsn_t new_lsn,
+                                const lpid_t&     pid,
                                 shpid_t           root, 
                                 int               l,
                                 shpid_t           pid0,
@@ -93,7 +94,7 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
 
     // Note that the method receives a copy, not reference, of pid/lsn here.
     // pid might point to a part of this page itself!
-    _init(page()->lsn, pid, root, pid0, foster, l, fence_low, fence_high, chain_fence_high);
+    _init(new_lsn, pid, root, pid0, foster, l, fence_low, fence_high, chain_fence_high);
 
     // steal records from old page
     if (steal_src1) {
@@ -179,7 +180,7 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
     }
 }
 rc_t btree_page_h::norecord_split (shpid_t foster,
-                    const w_keystr_t& fence_high, const w_keystr_t& chain_fence_high) {
+                                   const w_keystr_t& fence_high, const w_keystr_t& chain_fence_high) {
     w_assert1(compare_with_fence_low(fence_high) > 0);
     w_assert1(compare_with_fence_low(chain_fence_high) > 0);
 
@@ -193,8 +194,8 @@ rc_t btree_page_h::norecord_split (shpid_t foster,
         ::memcpy (&scratch, _pp, sizeof(scratch));
         btree_page_h scratch_p;
         scratch_p.fix_nonbufferpool_page(&scratch);
-        W_DO(format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(), scratch_p.pid0(),
-                          foster,
+        W_DO(format_steal(scratch_p.lsn(), scratch_p.pid(), scratch_p.btree_root(),
+                          scratch_p.level(), scratch_p.pid0(), foster,
                           fence_low, fence_high, chain_fence_high,
                           false, // don't log it
                           &scratch_p, 0, scratch_p.nrecs()
