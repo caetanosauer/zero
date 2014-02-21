@@ -350,16 +350,18 @@ public:
      * steals src2's pid0 with low-fence key.
      * 
      * @param[in] new_lsn           LSN of the operation that creates this page.
-     * @param[in] new_page_id       Page ID of the new page; this must match pid used to fix this page if a buffer pool-manage page.
-     * @param[in] root_pid          Page ID of the root page of the B-tree this page belongs to.
-     * @param[in] foster_pid        Page ID of the (if exists) foster-child of the parent.
-     * @param[in] btree_level       Level of the new page.
-     * @param[in] low               The fence low key of the new page.
-     * @param[in] high              The fence high key of the new page.
+     * @param[in] pid               Page ID of the new page; this must match pid used to fix this page if a buffer pool-manage page.
+     * @param[in] root              Page ID of the root page of the B-tree this page belongs to.
+     * @param[in] level             Level of the new page.
+     * @param[in] pid0              New pid0 value
+     * @param[in] foster            Page ID of the (if exists) foster-child of the parent.
+     * @param[in] fence_low         The fence low key of the new page.
+     * @param[in] fence_high        The fence high key of the new page.
      * @param[in] chain_fence_high  Highest key in the foster chain.
-     * 
+     * @param[in] log_it            Should we log this change?
+     * ...
      */
-    rc_t format_steal(lsn_t new_lsn,
+    rc_t format_steal(lsn_t                new_lsn,
                       const lpid_t&        pid,
                       shpid_t              root, 
                       int                  level,

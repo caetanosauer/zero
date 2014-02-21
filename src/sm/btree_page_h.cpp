@@ -89,9 +89,6 @@ rc_t btree_page_h::format_steal(lsn_t new_lsn,
                                 int               steal_from2,
                                 int               steal_to2,
                                 bool              steal_src2_pid0) {
-    // intermedaite nodes have pid0 except in the initial norec-alloc case (nrecs()==0)
-    w_assert1 (l == 1 || nrecs() == 0 || pid0 != 0);
-
     // Note that the method receives a copy, not reference, of pid/lsn here.
     // pid might point to a part of this page itself!
     _init(new_lsn, pid, root, pid0, foster, l, fence_low, fence_high, chain_fence_high);
