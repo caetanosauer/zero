@@ -37,6 +37,9 @@ void ConsolidationArray::wait_for_leader(CArraySlot* info) {
 
 bool ConsolidationArray::wait_for_expose(CArraySlot* info) {
     w_assert1(SLOT_FINISHED == info->vthis()->count);
+    if (!CARRAY_RELEASE_DELEGATION) {
+        return false;
+    }
     lintel::atomic_thread_fence(lintel::memory_order_seq_cst);
     // If there is a predecessor which is still running,
     // let's try to delegate the work of releasing the buffer
@@ -121,8 +124,10 @@ CArraySlot* ConsolidationArray::join_slot(
 }
 
 void ConsolidationArray::join_expose(CArraySlot* info) {
-    info->me2._status.individual._delegated = 0;
-    info->pred2 = _expose_lock.__unsafe_begin_acquire(&info->me2);
+    if (CARRAY_RELEASE_DELEGATION) {
+        info->me2._status.individual._delegated = 0;
+        info->pred2 = _expose_lock.__unsafe_begin_acquire(&info->me2);
+    }
 }
 
 CArraySlot* ConsolidationArray::grab_delegated_expose(CArraySlot* info) {
@@ -132,42 +137,44 @@ CArraySlot* ConsolidationArray::grab_delegated_expose(CArraySlot* info) {
     // 3. Spinning (can't delegate)
     // 4. Busy
     w_assert1(SLOT_FINISHED == info->vthis()->count);
-    lintel::atomic_thread_fence(lintel::memory_order_release);
-    // did next (predecessor in terms of logging) delegate to us?
-    mcs_lock::qnode *next = info->me2.vthis()->_next;
-    if (!next) {
-        // the above fast check is not atomic if someone else is now connecting.
-        // (if it's already connected, as 8-byte read is at least regular, safe)
-        // So, additional atomic CAS to make sure we really don't have next.
-        mcs_lock::qnode* me2_cas_tmp = &(info->me2);
-        if (!lintel::unsafe::atomic_compare_exchange_strong<mcs_lock::qnode*>(
-               &_expose_lock._tail, &me2_cas_tmp, (mcs_lock::qnode*) NULL)) {
-            // CAS failed, so someone just connected to us.
-            w_assert1(_expose_lock._tail != info->me2.vthis());
-            w_assert1(info->me2.vthis()->_next != NULL);
-            next = _expose_lock.spin_on_next(&info->me2);
-        } else {
-            // CAS succeeded, so we removed ourself from _expose_lock!
+    if (CARRAY_RELEASE_DELEGATION) {
+        lintel::atomic_thread_fence(lintel::memory_order_release);
+        // did next (predecessor in terms of logging) delegate to us?
+        mcs_lock::qnode *next = info->me2.vthis()->_next;
+        if (!next) {
+            // the above fast check is not atomic if someone else is now connecting.
+            // (if it's already connected, as 8-byte read is at least regular, safe)
+            // So, additional atomic CAS to make sure we really don't have next.
+            mcs_lock::qnode* me2_cas_tmp = &(info->me2);
+            if (!lintel::unsafe::atomic_compare_exchange_strong<mcs_lock::qnode*>(
+                &_expose_lock._tail, &me2_cas_tmp, (mcs_lock::qnode*) NULL)) {
+                // CAS failed, so someone just connected to us.
+                w_assert1(_expose_lock._tail != info->me2.vthis());
+                w_assert1(info->me2.vthis()->_next != NULL);
+                next = _expose_lock.spin_on_next(&info->me2);
+            } else {
+                // CAS succeeded, so we removed ourself from _expose_lock!
+            }
         }
-    }
 
-    if (next) {
-        // This is safe because me2 is the first element
-        CArraySlot* next_i = reinterpret_cast<CArraySlot*>(next);
-        w_assert1(&next_i->me2 == next);
+        if (next) {
+            // This is safe because me2 is the first element
+            CArraySlot* next_i = reinterpret_cast<CArraySlot*>(next);
+            w_assert1(&next_i->me2 == next);
 
-        // if the next says it's delegated, we take it over.
-        int64_t status_cas_tmp = QNODE_WAITING._combined;
-        lintel::unsafe::atomic_compare_exchange_strong<int64_t>(
-               &(next_i->me2._status._combined), &status_cas_tmp, QNODE_IDLE._combined);
-        if (status_cas_tmp == QNODE_DELEGATED._combined) {
-            // they delegated... up to us to do their dirty work
-            w_assert1(SLOT_FINISHED == next_i->vthis()->count);
-            w_assert1(next_i->pred2 == &info->me2);
-            lintel::atomic_thread_fence(lintel::memory_order_seq_cst);
-            info->vthis()->count = SLOT_UNUSED;
-            info = next_i;
-            return info;
+            // if the next says it's delegated, we take it over.
+            int64_t status_cas_tmp = QNODE_WAITING._combined;
+            lintel::unsafe::atomic_compare_exchange_strong<int64_t>(
+                &(next_i->me2._status._combined), &status_cas_tmp, QNODE_IDLE._combined);
+            if (status_cas_tmp == QNODE_DELEGATED._combined) {
+                // they delegated... up to us to do their dirty work
+                w_assert1(SLOT_FINISHED == next_i->vthis()->count);
+                w_assert1(next_i->pred2 == &info->me2);
+                lintel::atomic_thread_fence(lintel::memory_order_seq_cst);
+                info->vthis()->count = SLOT_UNUSED;
+                info = next_i;
+                return info;
+            }
         }
     }
 

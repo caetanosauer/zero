@@ -76,6 +76,12 @@
 #include "lsn.h"
 
 /**
+ * Whether to enable \e Delegated-Buffer-Release.
+ * \ingroup CARRAY
+ */
+const bool CARRAY_RELEASE_DELEGATION = false;
+
+/**
  * \brief An integer to represents the status of one C-Array slot.
  * \ingroup CARRAY
  * \details
