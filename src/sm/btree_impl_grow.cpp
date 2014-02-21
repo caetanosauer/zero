@@ -40,12 +40,13 @@ rc_t btree_impl::_ux_create_tree_core(const stid_t &stid, const lpid_t &root_pid
     w_assert1(infimum.is_constructed());
     supremum.construct_posinfkey();
     w_assert1(supremum.is_constructed());
-    W_DO(page.init_fix_steal(NULL, root_pid, root_pid.page,
-        1, // level=1. initial tree has only one level
-        0, // no child
-        0, // no b-link page
-        infimum, supremum, dummy_chain_high // start from infimum/supremum fence keys
-    ));
+    W_DO(page.fix_virgin_root(root_pid.vol().vol, root_pid.store(), root_pid.page));
+    W_DO(page.format_steal(root_pid, root_pid.page,
+                           1, // level=1. initial tree has only one level
+                           0, // no child
+                           0, // no b-link page
+                           infimum, supremum, dummy_chain_high // start from infimum/supremum fence keys
+                           ));
 
     // also register it in stnode_page
     W_DO(io->set_root(stid, root_pid.page));
@@ -160,11 +161,13 @@ btree_impl::_ux_grow_tree_core(btree_page_h& rp, const lpid_t &cp_pid)
     rp.copy_chain_fence_high_key(cp_chain_high);
 
     btree_page_h cp;
-    W_DO (cp.init_fix_steal(&rp, cp_pid, rp.pid().page, rp.level(), rp.pid0(), // copy pid0 of root too
-        rp.get_foster(),
-        cp_fence_low, cp_fence_high, cp_chain_high, // use current root's fence keys
-        &rp, 0, rp.nrecs() // steal everything from root
-    ));
+    W_DO(cp.fix_nonroot(rp, rp.vol(), cp_pid.page, LATCH_EX, false, true));
+    W_DO(cp.format_steal(cp_pid, rp.pid().page, rp.level(), rp.pid0(), // copy pid0 of root too
+                         rp.get_foster(),
+                         cp_fence_low, cp_fence_high, cp_chain_high, // use current root's fence keys
+                         true, // log it
+                         &rp, 0, rp.nrecs() // steal everything from root
+                         ));
 
     // now rp is empty, so we can call format_steal() to re-set the fence keys.
     w_keystr_t infimum, supremum, dummy_chain_high;

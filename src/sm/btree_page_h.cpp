@@ -72,30 +72,6 @@ void btree_page_h::accept_empty_child(lsn_t new_lsn, shpid_t new_page_id) {
     }
 }
 
-rc_t btree_page_h::init_fix_steal(btree_page_h*     parent,
-                                  const lpid_t&     pid,
-                                  shpid_t           root, 
-                                  int               l,
-                                  shpid_t           pid0,
-                                  shpid_t           foster,
-                                  const w_keystr_t& fence_low,
-                                  const w_keystr_t& fence_high,
-                                  const w_keystr_t& chain_fence_high,
-                                  btree_page_h*     steal_src,
-                                  int               steal_from,
-                                  int               steal_to,
-                                  bool              log_it) {
-    FUNC(btree_page_h::init_fix_steal);
-    INC_TSTAT(btree_p_fix_cnt);
-    if (parent == NULL) {
-        W_DO(fix_virgin_root(pid.vol().vol, pid.store(), pid.page));
-    } else {
-        W_DO(fix_nonroot(*parent, parent->vol(), pid.page, LATCH_EX, false, true));
-    }
-    W_DO(format_steal(pid, root, l, pid0, foster, fence_low, fence_high, chain_fence_high, log_it, steal_src, steal_from, steal_to));
-    return RCOK;
-}
-
 rc_t btree_page_h::format_steal(const lpid_t&     pid,
                                 shpid_t           root, 
                                 int               l,

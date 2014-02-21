@@ -341,29 +341,6 @@ public:
     void accept_empty_child(lsn_t new_lsn, shpid_t new_page_id);
 
     /**
-     * When allocating a new B-Tree page, use this instead of fix().
-     * This sets all headers, fence/prefix keys, and initial records altogether.
-     * As our new B-Tree header has variable-size part (fence keys),
-     * setting fence keys later than the first format() causes a problem.
-     * Also, this outputs just a single record for everything, so much more efficient.
-     */
-    rc_t init_fix_steal(
-        btree_page_h*        parent,
-        const lpid_t&        pid,
-        shpid_t              root, 
-        int                  level,
-        shpid_t              pid0,
-        shpid_t              foster,
-        const w_keystr_t&    fence_low,
-        const w_keystr_t&    fence_high,
-        const w_keystr_t&    chain_fence_high,
-        btree_page_h*        steal_src  = NULL,
-        int                  steal_from = 0,
-        int                  steal_to   = 0,
-        bool                 log_it     = true
-        );
-
-    /**
      * This sets all headers, fence/prefix keys and initial records altogether.  Used by init_fix_steal.
      * Steal records from steal_src1.  Then steal records from steal_src2 (this is used only when merging).
      * if steal_src2_pid0 is true, it also steals src2's pid0 with low-fence key.
