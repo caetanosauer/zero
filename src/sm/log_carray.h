@@ -38,8 +38,8 @@
  *
  * \section ACK Acknowledgement
  * The ideas, performance evaluations, and the initial implementation are solely done by the
- * EPFL team. We took the implementation and intensively refactored, keeping the main logics.
- * @see https://bitbucket.org/shoremt/shore-mt/commits/66e5c0aa2f6528cfdbda0907ad338066f14ec066?at=default
+ * EPFL team. We just took the implementation and refactored, keeping the main logics.
+ * @see https://bitbucket.org/shoremt/shore-mt/commits/66e5c0aa2f6528cfdbda0907ad338066f14ec066
  *
  * \section DIFF Differences from Original Implementation
  * A few minor details have been changed.
@@ -51,14 +51,24 @@
  *   \li qnode itself has the status as union so that we don't need hacked_qnode thingy.
  *   \li We use Lintel's atomic operations, which have slightly different method signatures.
  * We made according changes to incorporate that.
- *   \li Lots of comments added. Better than "read the paper".
+ *   \li Lots of comments added.
+ *
+ * \section PERF Performance Improvements
+ * As of 20140220, with and without this improvement, TPCC on 4-socket machine is as
+ * follows (12 worker threads).
+ *   \li LOCK-ON: BEFORE=13800 TPS, AFTER=14400 TPS.
+ *   \li LOCK-OFF: BEFORE=17900 TPS, AFTER=23500 TPS.
+ *   \li i.e. LOCK-OFF, LOG-OFF: 63000 TPS.
+ * So, big improvements in log contention, but not completely removing it.
+ * Now lock manager is bigger bottleneck.
+ * We did not turn off Delegated-Buffer-Release in this experiment. See below.
  *
  * \section CON Considerations
  * Among the three techniques, \e Delegated-Buffer-Release was a bit dubious to be added
  * because, as shown in the Aether paper, it has little benefits in "usual" workload yet
  * adds 10% overheads because of a few more atomic operations.
- * However, we have observed that log manager is no longer the bottleneck, so it wouldn't hurt
- * to pay this extra 10% for stability in case of highly skewed log sizes.
+ * It might be worth the extra 10% for stability in case of highly skewed log sizes, so we
+ * should keep an eye. CARRAY_RELEASE_DELEGATION option turns on/off this feature.
  *
  * \section REF Reference
  * \li Ryan Johnson, Ippokratis Pandis, Radu Stoica, Manos Athanassoulis, and Anastasia
@@ -79,7 +89,7 @@
  * Whether to enable \e Delegated-Buffer-Release.
  * \ingroup CARRAY
  */
-const bool CARRAY_RELEASE_DELEGATION = false;
+const bool CARRAY_RELEASE_DELEGATION = true;
 
 /**
  * \brief An integer to represents the status of one C-Array slot.
@@ -105,8 +115,8 @@ typedef uint32_t carray_slotid_t;
  * \brief One slot in ConsolidationArray.
  * \ingroup CARRAY
  * \details
- * Each slot belongs to two mcs_lock queues, one for buffer acquisition (\b _insert_lock)
- * and another for buffer release (\b _expose_lock).
+ * Each slot belongs to two mcs_lock queues, one for buffer acquisition (me/_insert_lock)
+ * and another for buffer release (me2/_expose_lock).
  */
 struct CArraySlot {
     /**
@@ -142,7 +152,7 @@ struct CArraySlot {
     /**
     * The main queue lock used to acquire log buffers.
     * Lock head is log_core::_insert_lock.
-    * \NOTE This should not in the same cache line as me2.
+    * \NOTE This should not be in the same cache line as me2.
     */
     mcs_lock::qnode me;                 // +8 -> 80
     /**
@@ -207,11 +217,11 @@ public:
     /**
      * Calculate a new CArray status after joining the given log size to the existing status.
      */
-    static carray_status_t join_carray_status (carray_status_t current_status, int32_t log_size) {
-        w_assert1(log_size >= 0);
+    static carray_status_t join_carray_status (carray_status_t current_status, int32_t size) {
+        w_assert1(size >= 0);
         w_assert1(current_status >= 0);
         const carray_status_t THREAD_INCREMENT = 1L << 32;
-        return current_status + log_size + THREAD_INCREMENT;
+        return current_status + size + THREAD_INCREMENT;
     }
     /**
      * Extract the current-total of log size in C-Array status.

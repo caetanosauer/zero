@@ -302,6 +302,8 @@ void
 log_core::_flushX(lsn_t start_lsn, 
         long start1, long end1, long start2, long end2)
 {
+    w_assert1(end1 >= start1);
+    w_assert1(end2 >= start2);
     // time to open a new partition? (used to be in log_core::insert,
     // now called by log flush daemon)
     // This will open a new file when the given start_lsn has a
@@ -1858,7 +1860,6 @@ w_rc_t log_core::_set_size(fileoff_t size)
 
 void log_core::_acquire_buffer_space(CArraySlot* info, long recsize)
 {
-    w_assert2((unsigned long)(recsize) <= sizeof(logrec_t));
     w_assert2(recsize > 0);
 
 
@@ -1914,6 +1915,8 @@ void log_core::_acquire_buffer_space(CArraySlot* info, long recsize)
         }
         _insert_lock.acquire(&info->me);
     }
+    // lfence because someone else might have entered and left during above release/acquire.
+    lintel::atomic_thread_fence(lintel::memory_order_consume);
     // Having ics now should mean that even if another insert snuck in here,
     // we're ok since we recheck the condition. However, we *could* starve here.
  
@@ -2032,6 +2035,7 @@ void log_core::_acquire_buffer_space(CArraySlot* info, long recsize)
         long leftovers = _partition_data_size - curr_lsn.lo();
         w_assert2(leftovers >= 0);
         if(leftovers && !reserve_space(leftovers)) {
+            std::cerr << "WARNING WARNING: OUTOFLOGSPACE in update_epochs" << std::endl;
             info->error = eOUTOFLOGSPACE;
             _insert_lock.release(&info->me);
             return;
@@ -2158,7 +2162,7 @@ bool log_core::_update_epochs(CArraySlot* info) {
 
 rc_t log_core::insert(logrec_t &rec, lsn_t* rlsn) {
     w_assert1(rec.length() <= sizeof(logrec_t));
-    int32_t size = static_cast<int32_t>(rec.length());
+    int32_t size = rec.length();
 
     /* Copy our data into the buffer and update/create epochs. Note
        that, while we may race the flush daemon to update the epoch
@@ -2294,7 +2298,7 @@ void log_core::flush_daemon()
         // flush.
         {
             CRITICAL_SECTION(cs, _wait_flush_lock);
-            if(success && (_waiting_for_space || _waiting_for_flush)) {
+            if(success && (*&_waiting_for_space || *&_waiting_for_flush)) {
                 _waiting_for_flush = _waiting_for_space = false;
                 DO_PTHREAD(pthread_cond_broadcast(&_wait_cond));
                 // wake up anyone waiting on log flush
@@ -2305,7 +2309,7 @@ void log_core::flush_daemon()
             }
 
             // sleep. We don't care if we get a spurious wakeup
-            if(!success && !_waiting_for_space && !_waiting_for_flush) {
+            if(!success && !*&_waiting_for_space && !*&_waiting_for_flush) {
                 // Use signal since the only thread that should be waiting
                 // on the _flush_cond is the log flush daemon.
                 DO_PTHREAD(pthread_cond_wait(&_flush_cond, &_wait_flush_lock));
@@ -2364,8 +2368,10 @@ lsn_t log_core::flush_daemon_work(lsn_t old_mark)
 
         if(_old_epoch.start == _old_epoch.end) {
             // no wrap -- flush only the new
+            w_assert1(_cur_epoch.end >= _cur_epoch.start);
             start2 = _cur_epoch.start;
             end2 = _cur_epoch.end;            
+            w_assert1(end2 >= start2);
             // false alarm?
             if(start2 == end2) {
                 return old_mark;
@@ -2418,6 +2424,8 @@ lsn_t log_core::flush_daemon_work(lsn_t old_mark)
         _flush_lsn = end_lsn;
     }
 
+    w_assert1(end1 >= start1);
+    w_assert1(end2 >= start2);
     w_assert1(end_lsn == first_lsn(start_lsn.hi()+1)
           || end_lsn.lo() - start_lsn.lo() == (end1-start1) + (end2-start2));
 
@@ -2524,11 +2532,12 @@ rc_t log_core::wait_for_space(fileoff_t &amt, timeout_in_ms timeout)
 {
     DBG(<<"log_core::wait_for_space " << amt);
     // if they're asking too much don't even bother
-    if(amt > _partition_data_size)
+    if(amt > _partition_data_size) {
         return RC(eOUTOFLOGSPACE);
+    }
 
     // wait for a signal or 100ms, whichever is longer...
-    w_assert0(amt > 0);
+    w_assert1(amt > 0);
     struct timespec when;
     if(timeout != WAIT_FOREVER)
         sthread_t::timeout_to_timespec(timeout, when);
@@ -2579,7 +2588,7 @@ rc_t log_core::wait_for_space(fileoff_t &amt, timeout_in_ms timeout)
 void log_core::release_space(fileoff_t amt) 
 {
     DBG(<<"log_core::release_space " << amt);
-    w_assert0(amt >= 0);
+    w_assert1(amt >= 0);
     /* NOTE: The use of _waiting_for_space is purposefully racy
        because we don't want to pay the cost of a mutex for every
        space release (which should happen every transaction
@@ -2620,7 +2629,7 @@ void log_core::release_space(fileoff_t amt)
         DO_PTHREAD(pthread_mutex_unlock(&_space_lock));
     }
     
-    lintel::unsafe::atomic_fetch_add(const_cast<int64_t*>(&_space_available), amt);
+    lintel::unsafe::atomic_fetch_add<fileoff_t>(&_space_available, amt);
 }
 
 void 

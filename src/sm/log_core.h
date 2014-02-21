@@ -138,6 +138,7 @@ private:
         epoch(lsn_t l, long b, long s, long e)
             : base_lsn(l), base(b), start(s), end(e)
         {
+            w_assert0(e >= s);
         }
         epoch* vthis() { return this; }
     };
@@ -195,6 +196,7 @@ private:
 
     lsn_t                _flush_lsn;
 
+    /** @cond */ char    _padding[CACHELINE_SIZE]; /** @endcond */
     tatas_lock           _flush_lock;
     /** @cond */ char    _padding2[CACHELINE_TATAS_PADDING]; /** @endcond */
     tatas_lock           _comp_lock;
