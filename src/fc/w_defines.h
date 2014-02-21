@@ -171,6 +171,16 @@ public:
   // no destructor because we don't know what's going on...
 };
 
+/**
+* \brief CPU Cache line size in bytes.
+* \details
+* Most modern CPU has 64 bytes cacheline.
+* Some less popular CPU like Spark uses 128 bytes.
+* This value is used for padding to keep lock objects in different cachelines.
+* TODO: CMake script to automatically detect this and cmakedefine for it.
+*/
+const size_t CACHELINE_SIZE = 64;
+
 /*<std-footer incl-file-exclusion='W_DEFINES_H'>  -- do not edit anything below this line -- */
 
 #endif          /*</std-footer>*/

@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 
@@ -73,9 +73,13 @@ typedef    int    partition_index_t;
 #define CHKPT_META_BUF 512
 
 class skip_log; // forward
+class ConsolidationArray;
+struct CArraySlot;
 
 #include <partition.h>
 #include <deque>
+#include "mcs_lock.h"
+#include "tatas.h"
 
 /**
  * \brief Core Implementation of Log Manager
@@ -101,7 +105,6 @@ private:
     static bool          _initialized;
     bool                 _reservations_active;
 
-    bool _waiting_for_resv;  // protected by log_m::_space_lock
     bool _waiting_for_space; // protected by log_m::_insert_lock/_wait_flush_lock
     bool _waiting_for_flush; // protected by log_m::_wait_flush_lock
     long _start; // byte number of oldest unwritten byte
@@ -136,8 +139,11 @@ private:
             : base_lsn(l), base(b), start(s), end(e)
         {
         }
+        epoch* vthis() { return this; }
     };
 
+    /** \ingroup CARRAY */
+    epoch                _buf_epoch;
     epoch                _cur_epoch;
     epoch                _old_epoch;
     /*
@@ -190,18 +196,28 @@ private:
     lsn_t                _flush_lsn;
 
     tatas_lock           _flush_lock;
+    /** @cond */ char    _padding2[CACHELINE_TATAS_PADDING]; /** @endcond */
     tatas_lock           _comp_lock;
-    queue_based_lock_t   _insert_lock; // synchronize concurrent log inserts
+    /** @cond */ char    _padding3[CACHELINE_TATAS_PADDING]; /** @endcond */
+    /** Lock to protect threads acquiring their log buffer. */
+    mcs_lock             _insert_lock;
+    /** @cond */ char    _padding4[CACHELINE_MCS_PADDING]; /** @endcond */
 
-    // paired with _space_cond, _flush_cond
+    // paired with _wait_cond, _flush_cond
     pthread_mutex_t      _wait_flush_lock; 
-    pthread_cond_t       _space_cond;  // paired with _wait_flush_lock
+    pthread_cond_t       _wait_cond;  // paired with _wait_flush_lock
     pthread_cond_t       _flush_cond;  // paird with _wait_flush_lock
 
     sthread_t*           _flush_daemon;
     /// @todo both of the below should become std::atomic_flag's at some time
     lintel::Atomic<bool> _shutting_down;
     lintel::Atomic<bool> _flush_daemon_running; // for asserts only
+
+    /**
+     * Consolidation array for this log manager.
+     * \ingroup CARRAY
+     */
+    ConsolidationArray*  _carray;
 
     // Data members:
     partition_index_t   _curr_index; // index of partition
@@ -266,7 +282,6 @@ public:
 
     // returns lsn where data were written 
     rc_t            insert(logrec_t &r, lsn_t* l); 
-    rc_t            insert_criticalsection(logrec_t &r, lsn_t* l); 
     rc_t            flush(const lsn_t &lsn, bool block=true, bool signal=true, bool *ret_flushed=NULL);
     rc_t            compensate(const lsn_t &orig_lsn, const lsn_t& undo_lsn);
     void            start_flush_daemon();
@@ -305,6 +320,15 @@ private:
                         return ( segsize()  + BLOCK_SIZE) * PARTITION_COUNT;
                     }
     partition_t *   _partition(partition_index_t i) const;
+
+    /**
+     * \ingroup CARRAY
+     *  @{
+     */
+    void _acquire_buffer_space(CArraySlot* info, long size);
+    lsn_t _copy_to_buffer(logrec_t &rec, long pos, long size, CArraySlot* info);
+    bool _update_epochs(CArraySlot* info);
+    /** @}*/
 
 public:
     // for partition_t

@@ -1006,6 +1006,11 @@ ss_m::chain_xct(bool lazy)
     return RCOK;
 }
 
+rc_t ss_m::flushlog() {
+    // forces until the current lsn
+    bf->force_until_lsn(log->curr_lsn());
+    return (RCOK);
+}
 
 /*--------------------------------------------------------------*
  *  ss_m::checkpoint()                                        
