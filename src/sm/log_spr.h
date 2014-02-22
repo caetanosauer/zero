@@ -24,7 +24,7 @@
  * collects only relevant transactional logs for the page, and applies them to the page.
  *
  * \section Terminology Terminology
- * \li A \b page here refers to a B-tree page. It does NOT refer to
+ * \li A \b page in this module refers to a fixable page. It does NOT refer to
  * other types of pages (e.g., page-allocation bitmap pages, store-node pages).
  *
  * \li \b Page-LSN of page X, or PageLSN(X), refers to the log sequence number
@@ -37,15 +37,15 @@
  *
  * \li \b Expected-Minimum-LSN of page X, or EMLSN(X), refers to the Page-LSN of X at the
  * time of its latest eviction from the buffer pool when the page X was dirty. EM-LSN of X
- * is stored in X's parent page, except in the case of the root page.
+ * is stored in X's parent page (in media or bufferpool), except in the case of a root page.
  *
- * \section Invariantes Invariantes
+ * \section Invariants Invariants
  * \li EMLSN(X) <= PageLSN(X)
  * \li EMLSN(X) = PageLSN(X) only when X had no updates since previous write-out.
  * \li EMLSN(X) > 0
  *
  * \section Algorithm Algorithm Overview
- * Single page recovery is invoked only when a page is first brought into the buffer pool.
+ * Single page recovery is invoked only when a page is brought into the buffer pool from media.
  * When we bring a page, X, into the buffer pool, we compare RecordedPageLSN(X, media)
  * to EMLSN(X). If we see that that EMLSN(X) > RecordedPageLSN(X, media),
  * then we will invoke single page recovery.
@@ -104,5 +104,4 @@ struct page_evict_t {
     page_evict_t(const lsn_t &child_lsn, general_recordid_t child_slot)
         : _child_lsn (child_lsn), _child_slot(child_slot) {}
 };
-// trivial change
 #endif // SM_LOG_SPR_H
