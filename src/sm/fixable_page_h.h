@@ -26,11 +26,6 @@ public:
 
     /// Create handle not yet fixed to a page
     fixable_page_h() : generic_page_h(NULL), _mode(LATCH_NL) {}
-    /// Imaginery 'fix' for a non-bufferpool-managed page.
-    fixable_page_h(generic_page* s) : generic_page_h(s), _mode(LATCH_NL) {
-        w_assert1(s != NULL);
-        w_assert1(s->tag == t_btree_p);  // make sure page type is fixable
-    }
     ~fixable_page_h() { unfix(); }
 
     /// assignment; steals the ownership of the page/latch p and unfixes old associated
@@ -130,6 +125,15 @@ public:
      */
     w_rc_t fix_root(volid_t vol, snum_t store, latch_mode_t mode,
                     bool conditional=false);
+
+    /// Imaginery 'fix' for a non-bufferpool-managed page.
+    void fix_nonbufferpool_page(generic_page* s, latch_mode_t mode = LATCH_NL) {
+        w_assert1(s != NULL);
+        w_assert1(s->tag == t_btree_p);  // make sure page type is fixable
+        unfix();
+        _pp   = s;
+        _mode = mode;
+    }
 
 
     // ======================================================================

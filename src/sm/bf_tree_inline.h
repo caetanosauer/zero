@@ -113,7 +113,8 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
         // also try to swizzle this page
         // TODO so far we swizzle all pages as soon as we load them to bufferpool
         // but, we might want to consider a more advanced policy.
-        fixable_page_h p(parent);
+        fixable_page_h p;
+        p.fix_nonbufferpool_page(parent);
         if (!_bf_pause_swizzling && is_swizzled(parent) && !is_swizzled(page)
             //  don't swizzle foster-child
             && *p.child_slot_address(GeneralRecordIds::FOSTER_CHILD) != shpid) {

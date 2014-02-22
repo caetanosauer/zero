@@ -140,7 +140,8 @@ rc_t btree_impl::_ux_rebalance_foster_apply(btree_page_h &page,
     // scratch block of foster_p
     generic_page scratch;
     ::memcpy (&scratch, foster_p._pp, sizeof(scratch));
-    btree_page_h scratch_p (&scratch);
+    btree_page_h scratch_p;
+    scratch_p.fix_nonbufferpool_page(&scratch);
 
     w_keystr_t high_key, chain_high_key;
     scratch_p.copy_fence_high_key(high_key);
@@ -313,7 +314,8 @@ void btree_impl::_ux_merge_foster_apply_parent(btree_page_h &page, btree_page_h 
     }
     generic_page scratch;
     ::memcpy (&scratch, page._pp, sizeof(scratch));
-    btree_page_h scratch_p (&scratch);
+    btree_page_h scratch_p;
+    scratch_p.fix_nonbufferpool_page(&scratch);
     W_COERCE(page.format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(),
         scratch_p.pid0(), scratch_p.get_pid0_emlsn(),
         // foster-child's foster will be the next one after merge

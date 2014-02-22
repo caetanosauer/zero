@@ -25,6 +25,7 @@ class test_bf_fixed;
 class test_emlsn;
 class bf_tree_cleaner;
 class bf_tree_cleaner_slave_thread_t;
+class btree_page_h;
 
 /** a swizzled pointer (page ID) has this bit ON. */
 const uint32_t SWIZZLED_PID_BIT = 0x80000000;
@@ -696,7 +697,7 @@ private:
      * item_body_layout::interior::child_emlsn and essential to call this method from
      * various places without risking latch deadlocks.
      */
-    w_rc_t _sx_update_child_emlsn(generic_page *parent,
+    w_rc_t _sx_update_child_emlsn(btree_page_h &parent,
                                   general_recordid_t child_slotid, lsn_t child_emlsn);
 
 private:
