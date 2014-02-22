@@ -23,7 +23,7 @@
  * database is not running. No API for taking backups, no incremental backup, no whatsover.
  * \li We assume only one version of backup per volume. When the page image in the backup
  * is corrupted, another backup would be useful, but we do not support it so far.
- * \li No serious performance optimization for everything.
+ * \li No serious performance optimization for anything.
  *
  * \section FUTURE Planned Extension
  * Addressing the limitations above would be high-priority.
@@ -44,8 +44,8 @@ class BackupManager;
  * \ingroup SSMBCK
  * \details
  * Main class of \ref SSMBCK.
- * We assume the user has created backup files under the current path with the following
- * filename: backup_folder + "/backup_" + vid.
+ * We assume the user has created backup files under the backup folder with the following
+ * filename: "/backup_" + vid.
  * This means we can manipulate only one backup file per volume.
  * So far, the backup file is a simple file copy of the volume data file.
  * The current implementations simply read the alloc_p area and btree_p area for each
@@ -66,6 +66,7 @@ public:
 
     /**
      * \brief Tells whether the given page exists in this backup.
+     * This method works only for fixable pages, not stnode_p or alloc_p.
      * @param[in] vid volume ID
      * @param[in] shpid page ID
      * @return true if the given page exists in this backup
@@ -171,7 +172,7 @@ private:
     std::string _path;
     /** Volume ID. */
     volid_t _vid;
-    /** Return value of the POSIX open() semantics. */
+    /** Return value of the POSIX open() semantics (e.g., -1 is "invalid"). */
     int     _fd;
 };
 
