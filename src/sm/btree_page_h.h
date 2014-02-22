@@ -184,9 +184,6 @@ public:
     // ======================================================================
 
     btree_page_h() {}
-    btree_page_h(generic_page* s) : fixable_page_h(s) {
-        w_assert1(s->tag == t_btree_p);
-    }
     btree_page_h(const btree_page_h& p) : fixable_page_h(p) {} 
     ~btree_page_h() {}
     btree_page_h& operator=(btree_page_h& p) { 
@@ -348,7 +345,6 @@ public:
      * This sets all headers, fence/prefix keys, and initial records altogether.
      * As our new B-Tree header has variable-size part (fence keys),
      * setting fence keys later than the first format() causes a problem.
-     * So, the 4-argumets format(which is called from default fix() on virgin page) is disabled.
      * Also, this outputs just a single record for everything, so much more efficient.
      */
     rc_t init_fix_steal(
@@ -940,9 +936,9 @@ class borrowed_btree_page_h : public btree_page_h {
 
 public:
     borrowed_btree_page_h(fixable_page_h* source) :
-        btree_page_h(source->get_generic_page()),
-        _source(source)
+        btree_page_h(), _source(source)
     {
+        _pp   = source->get_generic_page();
         _mode = _source->_mode;
         _source->_mode = LATCH_NL;
     }
@@ -954,25 +950,6 @@ public:
     }
 };
 
-
-/**
- * \brief A dummy page image.
- * \details
- * The only usecase is to make a scratch space that will be discarded, but has to
- * behave "reasonably". This class is used to hold a non-bufferpool-managed page,
- * which other page handle class doesn't allow.
- */
-class scratch_btree_page_h : public btree_page_h {
-public:
-    scratch_btree_page_h(const lpid_t &pid, shpid_t root, shpid_t foster, int16_t l,
-        const w_keystr_t &low, const w_keystr_t &high, const w_keystr_t &chain_high) {
-        _mode = LATCH_NL;
-        _pp = &_space;
-        init_as_empty_child(lsn_t::null, pid, root, foster, l, low, high, chain_high);
-    }
-
-    generic_page _space;
-};
 
 // ======================================================================
 //   BEGIN: Inline function implementations

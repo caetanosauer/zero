@@ -215,7 +215,8 @@ rc_t btree_page_h::norecord_split (shpid_t foster,
         // then, let's defrag this page to compress keys
         generic_page scratch;
         ::memcpy (&scratch, _pp, sizeof(scratch));
-        btree_page_h scratch_p (&scratch);
+        btree_page_h scratch_p;
+        scratch_p.fix_nonbufferpool_page(&scratch);
         W_DO(format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(), scratch_p.pid0(),
                           foster,
                           fence_low, fence_high, chain_fence_high,
