@@ -2,23 +2,23 @@
  * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
+#include "fixable_page_h.h"
+
 #define SM_SOURCE
 #include "sm_int_1.h"
 
-#include "fixable_page_h.h"
 #include "bf_tree_inline.h"
 
 
 int fixable_page_h::force_Q_fixing = 0;  // <<<>>>
 
 void fixable_page_h::unfix() {
-    if (_mode != LATCH_NL) {
-        w_assert1(_pp);
-        if (_mode != LATCH_Q) {
+    if (_pp) {
+        if (_bufferpool_managed && _mode != LATCH_Q) {
             smlevel_0::bf->unfix(_pp);
         }
-        _mode = LATCH_NL;
         _pp   = NULL;
+        _mode = LATCH_NL;
     }
 }
 
@@ -55,7 +55,8 @@ w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent, volid_t vol,
         w_assert1(smlevel_0::bf->get_cb(_pp)->_pid_vol == vol);
         w_assert1(is_swizzled_pointer(shpid) || smlevel_0::bf->get_cb(_pp)->_pid_shpid == shpid);
     }
-    _mode = mode;
+    _bufferpool_managed = true;
+    _mode               = mode;
 
     return RCOK;
 }
@@ -65,41 +66,51 @@ w_rc_t fixable_page_h::fix_direct(volid_t vol, shpid_t shpid,
                                   bool virgin_page) {
     w_assert1(shpid != 0);
     w_assert1(mode >= LATCH_SH);
+
     unfix();
     W_DO(smlevel_0::bf->fix_direct(_pp, vol, shpid, mode, conditional, virgin_page));
-    _mode = mode;
+    _bufferpool_managed = true;
+    _mode               = mode;
     w_assert1(smlevel_0::bf->get_cb(_pp)->_pid_vol   == vol);
     w_assert1(smlevel_0::bf->get_cb(_pp)->_pid_shpid == shpid);
     return RCOK;
 }
 
 bf_idx fixable_page_h::pin_for_refix() {
+    w_assert1(_bufferpool_managed);
     w_assert1(is_latched());
     return smlevel_0::bf->pin_for_refix(_pp);
 }
 
 w_rc_t fixable_page_h::refix_direct (bf_idx idx, latch_mode_t mode, bool conditional) {
     w_assert1(idx != 0);
+    w_assert1(mode != LATCH_NL);
+
     unfix();
     if (mode == LATCH_Q) {
         return RC(eNEEDREALLATCH);
     }
     W_DO(smlevel_0::bf->refix_direct(_pp, idx, mode, conditional));
-    _mode = mode;
+    _bufferpool_managed = true;
+    _mode               = mode;
     return RCOK;
 }
 
 w_rc_t fixable_page_h::fix_virgin_root (volid_t vol, snum_t store, shpid_t shpid) {
     w_assert1(shpid != 0);
+
     unfix();
     W_DO(smlevel_0::bf->fix_virgin_root(_pp, vol, store, shpid));
-    _mode = LATCH_EX;
+    _bufferpool_managed = true;
+    _mode               = LATCH_EX;
     w_assert1(smlevel_0::bf->get_cb(_pp)->_pid_vol   == vol);
     w_assert1(smlevel_0::bf->get_cb(_pp)->_pid_shpid == shpid);
     return RCOK;
 }
 
 w_rc_t fixable_page_h::fix_root (volid_t vol, snum_t store, latch_mode_t mode, bool conditional) {
+    w_assert1(mode != LATCH_NL);
+
     if (force_Q_fixing > 0 && mode == LATCH_SH) mode = LATCH_Q; // <<<>>>
     unfix();
     if (mode == LATCH_Q) {
@@ -111,28 +122,46 @@ w_rc_t fixable_page_h::fix_root (volid_t vol, snum_t store, latch_mode_t mode, b
     } else {
         W_DO(smlevel_0::bf->fix_root(_pp, vol, store, mode, conditional));
     }
-    _mode = mode;
+    _bufferpool_managed = true;
+    _mode               = mode;
     return RCOK;
+}
+
+void fixable_page_h::fix_nonbufferpool_page(generic_page* s) {
+    w_assert1(s != NULL);
+    w_assert1(s->tag == t_btree_p);  // make sure page type is fixable
+
+    unfix();
+    _pp                 = s;
+    _bufferpool_managed = false;
+    _mode               = LATCH_EX;
 }
 
 
 void fixable_page_h::set_dirty() const {
     w_assert1(_pp);
     w_assert1(_mode != LATCH_Q);
-    if (_mode != LATCH_NL) {
+
+    if (_bufferpool_managed) {
         smlevel_0::bf->set_dirty(_pp);
     }
 }
 
 bool fixable_page_h::is_dirty() const {
     w_assert1(_mode != LATCH_Q);
-    if (_mode == LATCH_NL) {
-        return false;
-    } else {
+
+    if (_bufferpool_managed) {
         return smlevel_0::bf->is_dirty(_pp);
+    } else {
+        return false;
     }
 }
 
+
+bool fixable_page_h::is_to_be_deleted() {
+    w_assert1(_mode != LATCH_Q);
+    return (_pp->page_flags&t_to_be_deleted) != 0; 
+}
 
 rc_t fixable_page_h::set_to_be_deleted (bool log_it) {
     w_assert1(is_latched());
@@ -155,11 +184,6 @@ void fixable_page_h::unset_to_be_deleted() {
     }
 }
 
-bool fixable_page_h::is_to_be_deleted() {
-    w_assert1(_mode != LATCH_Q);
-    return (_pp->page_flags&t_to_be_deleted) != 0; 
-}
-
 
 bool fixable_page_h::change_possible_after_fix() const {
     w_assert1(is_fixed());
@@ -170,11 +194,16 @@ bool fixable_page_h::change_possible_after_fix() const {
 bool fixable_page_h::upgrade_latch_conditional(latch_mode_t mode) {
     w_assert1(_pp != NULL);
     w_assert1(mode >= LATCH_SH);
-    w_assert1(_mode != LATCH_NL);
 
     if (_mode >= mode) {
         return true;
-    } else if (_mode == LATCH_SH) {
+    };
+    if (!_bufferpool_managed) {
+        _mode = mode;
+        return true;
+    }
+
+    if (_mode == LATCH_SH) {
         w_assert1(mode == LATCH_EX);
         bool success = smlevel_0::bf->upgrade_latch_conditional(_pp);
         if (success) {

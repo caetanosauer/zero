@@ -33,7 +33,7 @@ public:
     // ======================================================================
 
     /// Create handle not yet fixed to a page
-    fixable_page_h() : generic_page_h(NULL), _mode(LATCH_NL) {}
+    fixable_page_h() : generic_page_h(NULL), _bufferpool_managed(false), _mode(LATCH_NL) {}
     ~fixable_page_h() { unfix(); }
 
     /// assignment; steals the ownership of the page/latch p and unfixes old associated
@@ -41,11 +41,12 @@ public:
     fixable_page_h& operator=(fixable_page_h& p) {
         if (&p != this) {
             unfix();
-            _pp       = p._pp;
-            _mode     = p._mode;
-            _Q_ticket = p._Q_ticket;
-            p._pp     = NULL;
-            p._mode   = LATCH_NL;
+            _pp                 = p._pp;
+            _bufferpool_managed = p._bufferpool_managed;
+            _mode               = p._mode;
+            _Q_ticket           = p._Q_ticket;
+            p._pp               = NULL;
+            p._mode             = LATCH_NL;
         }
         return *this;
     }
@@ -113,7 +114,7 @@ public:
      * forget to call a corresponding unpin_for_refix() for this page.  Otherwise, the
      * page will be in the bufferpool forever.
      * 
-     * @pre We hold our associated page's latch in SH or EX mode
+     * @pre We hold our associated page's latch in SH or EX mode, it is managed by the buffer pool
      * @return slot index of the page in this bufferpool.  Pass this value to the
      * subsequent refix_direct() and unpin_for_refix() call.
      */
@@ -140,13 +141,7 @@ public:
     w_rc_t fix_root(volid_t vol, snum_t store, latch_mode_t mode, bool conditional=false);
 
     /// Imaginery 'fix' for a non-bufferpool-managed page.
-    void fix_nonbufferpool_page(generic_page* s) {
-        w_assert1(s != NULL);
-        w_assert1(s->tag == t_btree_p);  // make sure page type is fixable
-        unfix();
-        _pp   = s;
-        _mode = LATCH_NL;
-    }
+    void fix_nonbufferpool_page(generic_page* s);
 
 
     // ======================================================================
@@ -169,6 +164,9 @@ public:
     bool         is_dirty()  const;
 
 
+    /// Return flag for if this page to be deleted when bufferpool evicts it.
+    /// @pre We do not hold current page's latch in Q mode
+    bool         is_to_be_deleted();
     /// Flag this page to be deleted when bufferpool evicts it.
     /// @pre We hold our associated page's latch in SH or EX mode
     rc_t         set_to_be_deleted(bool log_it);
@@ -176,9 +174,6 @@ public:
     /// failure possible.
     /// @pre We hold our associated page's latch in SH or EX mode
     void         unset_to_be_deleted();
-    /// Return flag for if this page to be deleted when bufferpool evicts it.
-    /// @pre We do not hold current page's latch in Q mode
-    bool         is_to_be_deleted();
 
 
     latch_mode_t latch_mode() const { return _mode; }
@@ -188,8 +183,8 @@ public:
     /**
      * Could someone else have changed our page via a EX latch since we last fixed it?
      * 
-     * Returns false for pages latched via NL as they are assumed to be private pages not
-     * in the buffer pool.
+     * Returns false for non-bufferpool managed pages as they are assumed to be private
+     * pages not in the buffer pool.
      *
      * @pre is_fixed()
      */
@@ -202,8 +197,6 @@ public:
      * 
      * WARNING: this operation can spuriously fail once in a while (e.g., S -> X may fail
      * even without any other latch holders).
-     * 
-     * @pre We hold the current page's latch in Q, SH, or EX mode.
      */
     bool         upgrade_latch_conditional(latch_mode_t mode=LATCH_EX);
 
@@ -221,9 +214,10 @@ public:
     shpid_t*     child_slot_address(int child_slot) const;
 
     
-protected:
+//protected:
     friend class borrowed_btree_page_h;
 
+    bool          _bufferpool_managed; ///< is our associated page managed by the buffer pool?
     latch_mode_t  _mode;
     q_ticket_t    _Q_ticket;
 };
