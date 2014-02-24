@@ -1,5 +1,2 @@
 REVIEWBOARD_URL = "http://codereview.hpl.hp.com"
 REPOSITORY = "zero"
-
-# what branch a change is expected to be merged into
-BRANCH = "latching"
