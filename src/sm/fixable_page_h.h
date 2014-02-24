@@ -140,7 +140,11 @@ public:
      */
     w_rc_t fix_root(volid_t vol, snum_t store, latch_mode_t mode, bool conditional=false);
 
-    /// Imaginery 'fix' for a non-bufferpool-managed page.
+    /**
+     * Imaginery 'fix' for a non-bufferpool-managed page.
+     * 
+     * The resulting page is considered to be latched in EX mode.
+     */
     void fix_nonbufferpool_page(generic_page* s);
 
 
@@ -214,7 +218,7 @@ public:
     shpid_t*     child_slot_address(int child_slot) const;
 
     
-//protected:
+protected:
     friend class borrowed_btree_page_h;
 
     bool          _bufferpool_managed; ///< is our associated page managed by the buffer pool?
