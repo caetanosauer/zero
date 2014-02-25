@@ -512,7 +512,8 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 skipped_something = true;
                 continue;
             }
-            fixable_page_h page(const_cast<generic_page*>(&page_buffer[idx])); // <<<>>>
+            fixable_page_h page;
+            page.fix_nonbufferpool_page(const_cast<generic_page*>(&page_buffer[idx])); // <<<>>>
             if (page.is_to_be_deleted()) {
                 tobedeleted = true;
             } else {

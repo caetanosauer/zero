@@ -184,9 +184,6 @@ public:
     // ======================================================================
 
     btree_page_h() {}
-    btree_page_h(generic_page* s) : fixable_page_h(s) {
-        w_assert1(s->tag == t_btree_p);
-    }
     btree_page_h(const btree_page_h& p) : fixable_page_h(p) {} 
     ~btree_page_h() {}
     btree_page_h& operator=(btree_page_h& p) { 
@@ -313,82 +310,53 @@ public:
     // no 'noprefix' version because chain_fence_high might not share the prefix!
 
     /**
-     * \brief Initializes the associated page as an empty child page.
-     * \details
-     * This is the primary way (for non-root pages) to initialize a page in Foster B-tree.
-     * @param[in] new_lsn LSN of the operation that creates this page.
-     * @param[in] new_page_id Page ID of the new page.
-     * @param[in] root_pid Page ID of the root page of the B-tree this page belongs to.
-     * @param[in] foster_pid Page ID of the (if exists) foster-child of the parent.
-     * @param[in] btree_level Level of the new page.
-     * @param[in] low The fence low key of the new page.
-     * @param[in] high The fence high key of the new page.
-     * @param[in] chain_fence_high highest key in the foster chain.
-     * @see btree_impl::_sx_norec_alloc()
-     * @see accept_empty_child()
-     * @pre this is not a root page.
-     */
-    void init_as_empty_child(lsn_t new_lsn, lpid_t new_page_id,
-        shpid_t root_pid, shpid_t foster_pid, int16_t btree_level,
-        const w_keystr_t &low, const w_keystr_t &high, const w_keystr_t &chain_fence_high);
-
-    /**
      * Modifies the associated page to accept an empty foster-child page.
      * @param[in] new_lsn LSN of the operation that creates the foster-child page.
      * @param[in] new_page_id Page ID of the new page.
      * @see btree_impl::_sx_norec_alloc()
-     * @see init_as_empty_child()
      * @pre in SSX (thus REDO-only. no worry for compensation log)
      * @pre latch_mode() == EX
      */
     void accept_empty_child(lsn_t new_lsn, shpid_t new_page_id);
 
     /**
-     * When allocating a new B-Tree page, use this instead of fix().
-     * This sets all headers, fence/prefix keys, and initial records altogether.
-     * As our new B-Tree header has variable-size part (fence keys),
-     * setting fence keys later than the first format() causes a problem.
-     * So, the 4-argumets format(which is called from default fix() on virgin page) is disabled.
-     * Also, this outputs just a single record for everything, so much more efficient.
+     * \brief Initializes the associated page, stealing records from other pages as specified.
+     * 
+     * \details 
+     * This sets all headers, fence/prefix keys, and initial records altogether.  Steals
+     * records from steal_src1 if non-null.  Then steal records from steal_src2 if
+     * non-null (this is used only when merging).  If steal_src2_pid0 is true, it also
+     * steals src2's pid0 with low-fence key.
+     * 
+     * @param[in] new_lsn           LSN of the operation that creates this page.
+     * @param[in] pid               Page ID of the new page; this must match pid used to fix this page if a buffer pool-manage page.
+     * @param[in] root              Page ID of the root page of the B-tree this page belongs to.
+     * @param[in] level             Level of the new page.
+     * @param[in] pid0              New pid0 value
+     * @param[in] foster            Page ID of the (if exists) foster-child of the parent.
+     * @param[in] fence_low         The fence low key of the new page.
+     * @param[in] fence_high        The fence high key of the new page.
+     * @param[in] chain_fence_high  Highest key in the foster chain.
+     * @param[in] log_it            Should we log this change?
+     * ...
      */
-    rc_t init_fix_steal(
-        btree_page_h*        parent,
-        const lpid_t&        pid,
-        shpid_t              root, 
-        int                  level,
-        shpid_t              pid0,
-        shpid_t              foster,
-        const w_keystr_t&    fence_low,
-        const w_keystr_t&    fence_high,
-        const w_keystr_t&    chain_fence_high,
-        btree_page_h*        steal_src  = NULL,
-        int                  steal_from = 0,
-        int                  steal_to   = 0,
-        bool                 log_it     = true
-        );
-
-    /**
-     * This sets all headers, fence/prefix keys and initial records altogether.  Used by init_fix_steal.
-     * Steal records from steal_src1.  Then steal records from steal_src2 (this is used only when merging).
-     * if steal_src2_pid0 is true, it also steals src2's pid0 with low-fence key.
-     */
-    rc_t format_steal(
-        const lpid_t&        pid,
-        shpid_t              root, 
-        int                  level,
-        shpid_t              pid0,
-        shpid_t              foster,
-        const w_keystr_t&    fence_low,
-        const w_keystr_t&    fence_high,
-        const w_keystr_t&    chain_fence_high,
-        bool                 log_it = true,
-        btree_page_h*        steal_src1 = NULL,
-        int                  steal_from1 = 0,
-        int                  steal_to1 = 0,
-        btree_page_h*        steal_src2 = NULL,
-        int                  steal_from2 = 0,
-        int                  steal_to2 = 0,
-        bool                 steal_src2_pid0 = false
+    rc_t format_steal(lsn_t                new_lsn,
+                      const lpid_t&        pid,
+                      shpid_t              root, 
+                      int                  level,
+                      shpid_t              pid0,
+                      shpid_t              foster,
+                      const w_keystr_t&    fence_low,
+                      const w_keystr_t&    fence_high,
+                      const w_keystr_t&    chain_fence_high,
+                      bool                 log_it = true,
+                      btree_page_h*        steal_src1 = NULL,
+                      int                  steal_from1 = 0,
+                      int                  steal_to1 = 0,
+                      btree_page_h*        steal_src2 = NULL,
+                      int                  steal_from2 = 0,
+                      int                  steal_to2 = 0,
+                      bool                 steal_src2_pid0 = false
         );
 
     /// Steal records from steal_src.  Called by format_steal.
@@ -940,39 +908,22 @@ class borrowed_btree_page_h : public btree_page_h {
 
 public:
     borrowed_btree_page_h(fixable_page_h* source) :
-        btree_page_h(source->get_generic_page()),
-        _source(source)
+        btree_page_h(), _source(source)
     {
-        _mode = _source->_mode;
+        _pp       = _source->get_generic_page();
+        _mode     = _source->_mode;
+        _Q_ticket = _source->_Q_ticket;
         _source->_mode = LATCH_NL;
     }
 
     ~borrowed_btree_page_h() {
         w_assert1(_source->_mode == LATCH_NL);
-        _source->_mode = _mode;
+        _source->_mode     = _mode;
+        _source->_Q_ticket = _Q_ticket;
         _mode = LATCH_NL;
     }
 };
 
-
-/**
- * \brief A dummy page image.
- * \details
- * The only usecase is to make a scratch space that will be discarded, but has to
- * behave "reasonably". This class is used to hold a non-bufferpool-managed page,
- * which other page handle class doesn't allow.
- */
-class scratch_btree_page_h : public btree_page_h {
-public:
-    scratch_btree_page_h(const lpid_t &pid, shpid_t root, shpid_t foster, int16_t l,
-        const w_keystr_t &low, const w_keystr_t &high, const w_keystr_t &chain_high) {
-        _mode = LATCH_NL;
-        _pp = &_space;
-        init_as_empty_child(lsn_t::null, pid, root, foster, l, low, high, chain_high);
-    }
-
-    generic_page _space;
-};
 
 // ======================================================================
 //   BEGIN: Inline function implementations

@@ -44,14 +44,6 @@ btrec_t::set(const btree_page_h& page, slotid_t slot) {
     return *this;
 }
 
-void btree_page_h::init_as_empty_child(lsn_t new_lsn, lpid_t new_page_id,
-    shpid_t root_pid, shpid_t foster_pid, int16_t btree_level,
-    const w_keystr_t &low, const w_keystr_t &high, const w_keystr_t &chain_fence_high) {
-    w_assert1 (new_page_id.page != root_pid);
-    _init(new_lsn, new_page_id, root_pid, 0, foster_pid, btree_level,
-        low, high, chain_fence_high);
-}
-
 void btree_page_h::accept_empty_child(lsn_t new_lsn, shpid_t new_page_id) {
     w_assert1 (g_xct()->is_single_log_sys_xct());
     w_assert1 (new_lsn != lsn_t::null);
@@ -72,31 +64,8 @@ void btree_page_h::accept_empty_child(lsn_t new_lsn, shpid_t new_page_id) {
     }
 }
 
-rc_t btree_page_h::init_fix_steal(btree_page_h*     parent,
-                                  const lpid_t&     pid,
-                                  shpid_t           root, 
-                                  int               l,
-                                  shpid_t           pid0,
-                                  shpid_t           foster,
-                                  const w_keystr_t& fence_low,
-                                  const w_keystr_t& fence_high,
-                                  const w_keystr_t& chain_fence_high,
-                                  btree_page_h*     steal_src,
-                                  int               steal_from,
-                                  int               steal_to,
-                                  bool              log_it) {
-    FUNC(btree_page_h::init_fix_steal);
-    INC_TSTAT(btree_p_fix_cnt);
-    if (parent == NULL) {
-        W_DO(fix_virgin_root(pid.vol().vol, pid.store(), pid.page));
-    } else {
-        W_DO(fix_nonroot(*parent, parent->vol(), pid.page, LATCH_EX, false, true));
-    }
-    W_DO(format_steal(pid, root, l, pid0, foster, fence_low, fence_high, chain_fence_high, log_it, steal_src, steal_from, steal_to));
-    return RCOK;
-}
-
-rc_t btree_page_h::format_steal(const lpid_t&     pid,
+rc_t btree_page_h::format_steal(lsn_t             new_lsn,
+                                const lpid_t&     pid,
                                 shpid_t           root, 
                                 int               l,
                                 shpid_t           pid0,
@@ -112,12 +81,9 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
                                 int               steal_from2,
                                 int               steal_to2,
                                 bool              steal_src2_pid0) {
-    // intermedaite nodes have pid0 except in the initial norec-alloc case (nrecs()==0)
-    w_assert1 (l == 1 || nrecs() == 0 || pid0 != 0);
-
     // Note that the method receives a copy, not reference, of pid/lsn here.
     // pid might point to a part of this page itself!
-    _init(page()->lsn, pid, root, pid0, foster, l, fence_low, fence_high, chain_fence_high);
+    _init(new_lsn, pid, root, pid0, foster, l, fence_low, fence_high, chain_fence_high);
 
     // steal records from old page
     if (steal_src1) {
@@ -203,7 +169,7 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
     }
 }
 rc_t btree_page_h::norecord_split (shpid_t foster,
-                    const w_keystr_t& fence_high, const w_keystr_t& chain_fence_high) {
+                                   const w_keystr_t& fence_high, const w_keystr_t& chain_fence_high) {
     w_assert1(compare_with_fence_low(fence_high) > 0);
     w_assert1(compare_with_fence_low(chain_fence_high) > 0);
 
@@ -215,9 +181,10 @@ rc_t btree_page_h::norecord_split (shpid_t foster,
         // then, let's defrag this page to compress keys
         generic_page scratch;
         ::memcpy (&scratch, _pp, sizeof(scratch));
-        btree_page_h scratch_p (&scratch);
-        W_DO(format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(), scratch_p.pid0(),
-                          foster,
+        btree_page_h scratch_p;
+        scratch_p.fix_nonbufferpool_page(&scratch);
+        W_DO(format_steal(scratch_p.lsn(), scratch_p.pid(), scratch_p.btree_root(),
+                          scratch_p.level(), scratch_p.pid0(), foster,
                           fence_low, fence_high, chain_fence_high,
                           false, // don't log it
                           &scratch_p, 0, scratch_p.nrecs()

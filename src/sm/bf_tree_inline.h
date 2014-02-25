@@ -113,7 +113,8 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
         // also try to swizzle this page
         // TODO so far we swizzle all pages as soon as we load them to bufferpool
         // but, we might want to consider a more advanced policy.
-        fixable_page_h p(parent);
+        fixable_page_h p;
+        p.fix_nonbufferpool_page(parent);
         if (!_bf_pause_swizzling && is_swizzled(parent) && !is_swizzled(page)
             && *p.child_slot_address(-1) != shpid // don't swizzle foster child
             ) {
@@ -176,7 +177,7 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
     return RCOK;
 }
 
-inline w_rc_t bf_tree_m::fix_with_Q_nonroot(generic_page*& page, volid_t vol, shpid_t shpid, bool& success) {
+inline w_rc_t bf_tree_m::fix_unsafely_nonroot(generic_page*& page, shpid_t shpid, latch_mode_t mode, bool conditional, q_ticket_t& ticket) {
     w_assert1((shpid & SWIZZLED_PID_BIT) != 0);
 
     INC_TSTAT(bf_fix_nonroot_count);
@@ -186,18 +187,14 @@ inline w_rc_t bf_tree_m::fix_with_Q_nonroot(generic_page*& page, volid_t vol, sh
 
     bf_tree_cb_t &cb = get_cb(idx);
 
-    // later we will acquire the latch in Q mode <<<>>>
-    //W_DO(get_cb(idx).latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
-    page = &(_buffer[idx]);
-    success = true;
-
-    // cheap approximate test to see if got right page; benign data races:
-    if (!cb._used ||
-        (cb._pid_vol   != vol) ||
-        (cb._pid_shpid != _buffer[idx].pid.page)) {
-        success = false;
-        return RCOK;
+    if (mode == LATCH_Q) {
+        // later we will acquire the latch in Q mode <<<>>>
+        //W_DO(get_cb(idx).latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
+        ticket = 42; // <<<>>>
+    } else {
+        W_DO(get_cb(idx).latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
     }
+    page = &(_buffer[idx]);
 
     // We limit the maximum value of the refcount by BP_MAX_REFCOUNT to avoid the scalability 
     // bottleneck caused by excessive cache coherence traffic (cacheline ping-pongs between sockets).
@@ -325,7 +322,7 @@ inline w_rc_t bf_tree_m::_latch_root_page(generic_page*& page, bf_idx idx, latch
     return RCOK;
 }
 
-inline w_rc_t bf_tree_m::fix_with_Q_root(generic_page*& page, volid_t vol, snum_t store) {
+inline w_rc_t bf_tree_m::fix_with_Q_root(generic_page*& page, volid_t vol, snum_t store, q_ticket_t& ticket) {
     w_assert1(vol != 0);
     w_assert1(store != 0);
     bf_tree_vol_t *volume = _volumes[vol];
@@ -337,6 +334,7 @@ inline w_rc_t bf_tree_m::fix_with_Q_root(generic_page*& page, volid_t vol, snum_
 
     // later we will acquire the latch in Q mode <<<>>>
     //W_DO(get_cb(idx).latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
+    ticket = 42; // <<<>>>
     page = &(_buffer[idx]);
 
     /*
