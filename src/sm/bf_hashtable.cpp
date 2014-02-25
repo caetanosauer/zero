@@ -75,6 +75,7 @@ public:
     uint32_t _used_count;
 
     bf_idx find (uint64_t key);
+    bf_idx find_imprecise (uint64_t key);
     bool append_if_not_exists (uint64_t key, bf_idx value);
     bool remove (uint64_t key);
 private:
@@ -102,6 +103,29 @@ bf_idx bf_hashbucket::find(uint64_t key) {
         }
     }
 
+    return 0; // not found
+}
+bf_idx bf_hashbucket::find_imprecise(uint64_t key) {
+    // same as find(), but this doesn't take locks. So, we might get false positives/negatives.
+    // we have to make sure we don't crash because of concurrent updates (cf. robust search).
+    const uint32_t used_count = *&_used_count;
+    for (uint32_t i = 0; i < used_count && i < HASHBUCKET_INITIAL_CHUNK_SIZE; ++i) {
+        if (_chunk.keys[i] == key) {
+            return _chunk.values[i];
+        }
+    }
+    uint32_t cur_count = HASHBUCKET_INITIAL_CHUNK_SIZE;
+    for (bf_hashbucket_chunk_linked* cur_chunk = *&(_chunk.next_chunk); cur_count < used_count;
+         cur_chunk = *&(cur_chunk->next_chunk)) {
+        if (cur_chunk == NULL) {
+            break;
+        }
+        for (uint32_t i = 0; i < cur_chunk->size && cur_count < used_count; ++i, ++cur_count) {
+            if (cur_chunk->keys[i] == key) {
+                return cur_chunk->values[i];
+            }
+        }
+    }
     return 0; // not found
 }
 
@@ -218,6 +242,10 @@ bool bf_hashtable::insert_if_not_exists(uint64_t key, bf_idx value) {
 bf_idx bf_hashtable::lookup(uint64_t key) const {
     uint32_t hash = bf_hash(key);
     return _table[hash % _size].find(key);
+}
+bf_idx bf_hashtable::lookup_imprecise(uint64_t key) const {
+    uint32_t hash = bf_hash(key);
+    return _table[hash % _size].find_imprecise(key);
 }
 
 bool bf_hashtable::remove(uint64_t key) {

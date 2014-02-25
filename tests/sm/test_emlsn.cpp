@@ -21,20 +21,6 @@ btree_test_env *test_env;
  * Tests for EMLSN get/set in B-tree pages.
  */
 
-/** A class to use private methods in bf_tree_m. In C++, your friends can see your private! */
-class test_emlsn {
-public:
-    static void triger_urgent_unswizzling (bf_tree_m &bf) {
-        bf._trigger_unswizzling(true);
-    }
-    static void try_evict_all (bf_tree_m &bf, bf_idx max_idx) {
-        triger_urgent_unswizzling(bf);
-        for (bf_idx idx = 1; idx <= max_idx; ++idx) {
-            bf._try_evict_block(idx);
-        }
-    }
-};
-
 // make big enough database for tests
 const int MAX_PAGES = 100;
 w_rc_t prepare_test(ss_m* ssm, test_volume_t *test_volume, stid_t &stid, lpid_t &root_pid) {
@@ -86,11 +72,12 @@ w_rc_t test_all(ss_m* ssm, test_volume_t *test_volume) {
     root_p.unfix();
 
     // Now, to invoke eviction and EMLSN updates, evict all as much as possible.
-    test_emlsn::try_evict_all(pool, MAX_PAGES);
+    uint32_t evicted_count, unswizzled_count;
+    W_DO(ssm->bf->evict_blocks(evicted_count, unswizzled_count, bf_tree_m::EVICT_COMPLETE));
 
     // Because of the evictions, the parent page should have been updated.
     W_DO(root_p.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_SH));
-    // EXPECT_GT(root_p.lsn(), root_lsn_before); // TODO this fails now. cb._parent is required
+    EXPECT_GT(root_p.lsn(), root_lsn_before); // TODO this fails now. cb._parent is required
 
     root_p.unfix();
     W_DO(x_btree_verify(ssm, stid));

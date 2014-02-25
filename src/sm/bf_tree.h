@@ -22,7 +22,6 @@ class bf_hashtable; // include bf_hashtable.h in implementation codes
 
 class test_bf_tree;
 class test_bf_fixed;
-class test_emlsn;
 class bf_tree_cleaner;
 class bf_tree_cleaner_slave_thread_t;
 class btree_page_h;
@@ -68,6 +67,8 @@ inline uint64_t bf_key(const lpid_t &pid) {
 // Without this flag, we simply don't have parent pointer, thus do a hierarchical
 // walking to find a pge to evict.
 // #define BP_MAINTAIN_PARENT_PTR
+//// TODO Now that we evict hierarchically, we won't need it in any situation.
+//// Should we remove all codes in #ifdef BP_MAINTAIN_PARENT_PTR?
 
 // A flag whether the bufferpool maintains replacement priority per page.
 #define BP_MAINTAIN_REPLACEMENT_PRIORITY
@@ -103,11 +104,11 @@ const bool _bf_pause_swizzling = false; // compiler will strip this out from if 
 #endif // PAUSE_SWIZZLING_ON    
 
 /**
- * recursive clockhand's maximum depth used while choosing a page to unswizzle.
+ * recursive clockhand's maximum depth used while choosing a page to evict/unswizzle.
  * To make this depth reasonably short, we never swizzle foster-child pointer.
  * Foster relationship is tentative and short-lived, so it doesn't need the performance boost in BP.
  */
-const uint16_t MAX_SWIZZLE_CLOCKHAND_DEPTH = 10;
+const uint16_t MAX_CLOCKHAND_DEPTH = 10;
 
 /**
  * When unswizzling is triggered, _about_ this number of frames will be unswizzled at once.
@@ -115,6 +116,15 @@ const uint16_t MAX_SWIZZLE_CLOCKHAND_DEPTH = 10;
  */
 const uint32_t UNSWIZZLE_BATCH_SIZE = 1000;
 
+/**
+* When eviction is triggered, _about_ this number of frames will be evicted at once.
+*/
+const uint32_t EVICT_BATCH_SIZE = 1000;
+
+/**
+* We don't go through frames for each evict/unswizzle try.
+*/
+const uint16_t EVICT_MAX_ROUNDS = 20;
 
 /** 
  * Maximum value of the per-frame refcount (reference counter).
@@ -161,7 +171,6 @@ enum replacement_policy_t {
 class bf_tree_m {
     friend class test_bf_tree; // for testcases
     friend class test_bf_fixed; // for testcases
-    friend class test_emlsn; // for testcases
     friend class bf_tree_cleaner; // for page cleaning
     friend class bf_tree_cleaner_slave_thread_t; // for page cleaning
 
@@ -496,6 +505,54 @@ public:
      * its swizzled pointers. It requires the caller to have the node latched.
      */ 
     bool has_swizzled_child(bf_idx node_idx);
+
+    /** Specifies how urgent we are to evict pages. \NOTE Order does matter.  */
+    enum evict_urgency_t {
+        /** Not urgent at all. We don't even try multiple rounds of traversal. */
+        EVICT_NORMAL = 0,
+        /** Continue until we evict the given number of pages or a few rounds of traversal. */
+        EVICT_EAGER,
+        /** We evict the given number of pages, even trying unswizzling some pages. */
+        EVICT_URGENT,
+        /** No mercy. Unswizzle/evict completely. Mainly for testcases/experiments. */
+        EVICT_COMPLETE,
+    };
+
+    /**
+     * \brief Invoke block eviction, possibly unswizzling too, based on hierarchical clockhand.
+     * @param[out] evicted_count Returns the number of blocks evicted
+     * @param[out] unswizzled_count Returns the number of blocks unswizzled
+     * @param[in] urgency Specifies how thorough the eviction should be
+     * @param[in] preferred_count Number of blocks to evict. Might evict less or more blocks
+     * for some reason
+     * \details
+     * Our eviction is hierarchical because we might have to unswizzle the page before
+     * eviction and because SPR needs to touch parent to evict child.
+     * Below are the contracts of this method. In short, it's supposed to be thorough
+     * but still best-effort (otherwise this method and other methods need too many locks).
+     *
+     * 1. Restarts tree traversal from the clockhand place to make sure it's \e largely fair.
+     *   It might have some hiccups like skipping or double-visiting a few pages, but it's not
+     * that often.
+     * 2. It's very highly likely that this method evicts/unswizzles a bunch of frames.
+     *   But, there is a slight chance that you need to call this again to evict more frames.
+     * 3. Absolutely no deadlocks nor waits. If this method finds that a frame is being
+     * write-locked by someone, it simply skips that frame. All locks by this method is
+     * conditional and for very short-time.
+     * 4. Absolutely multi-thread safe. Again, it might have some hiccups on fairness
+     * because of multi-threading, but concurrent threads calling this method at the same
+     * time will cause no severe problems.
+     * 5. Lastly, this method isn't supposed to be super-fast, but should be okay to call it
+     * for every millisec or so. If you have to call this method too often, inrease the batch
+     * size.
+     * TODO This and related methods should be defined in its own file, say bf_tree_evict.cpp.
+     * bf_tree.cpp is a bit too bloated.
+     */
+    w_rc_t evict_blocks(
+        uint32_t &evicted_count,
+        uint32_t &unswizzled_count,
+        evict_urgency_t urgency = EVICT_NORMAL,
+        uint32_t preferred_count = EVICT_BATCH_SIZE);
 private:
 
     /** called when a volume is mounted. */
@@ -569,22 +626,29 @@ private:
     w_rc_t _grab_free_block(bf_idx& ret);
     
     /**
-     * evict a block and get its exclusive ownership.
+     * evict some number of blocks.
      */
-    w_rc_t _get_replacement_block(bf_idx& ret);
+    w_rc_t _get_replacement_block();
 
     /**
-     * evict a block using a CLOCK replacement policy and get its exclusive ownership.
+     * try to evict a given block.
+     * @return whether evicted the page or not
      */
-    w_rc_t _get_replacement_block_clock(bf_idx& ret, bool use_priority);
+    bool _try_evict_block(bf_idx parent_idx, bf_idx idx);
 
     /**
-     * evict a block using a RANDOM replacement policy and get its exclusive ownership.
+     * Subroutine of _try_evict_block() called after the CAS on pin_cnt.
+     * @pre cb.pin_cnt() == -1
      */
-    w_rc_t _get_replacement_block_random(bf_idx& ret);
-
-    /** try to evict a given block. */
-    int _try_evict_block(bf_idx idx);
+    bool _try_evict_block_pinned(bf_tree_cb_t &parent_cb, bf_tree_cb_t &cb,
+        bf_idx parent_idx, bf_idx idx);
+    /**
+     * Subroutine of _try_evict_block_pinned() to update parent's EMLSN.
+     * @pre cb.pin_cnt() == -1
+     * @pre parent_cb.latch().is_latched()
+     */
+    bool _try_evict_block_update_emlsn(bf_tree_cb_t &parent_cb, bf_tree_cb_t &cb,
+        bf_idx parent_idx, bf_idx idx, general_recordid_t child_slotid);
 
     /** Adds a free block to the freelist. */
     void   _add_free_block(bf_idx idx);
@@ -599,36 +663,76 @@ private:
      */
     bool   _is_active_idx (bf_idx idx) const;
 
-    /**
-     * \brief Looks for some buffered frames that are swizzled and can be unswizzled, then
-     * unswizzles UNSWIZZLE_BATCH_SIZE frames to make room for eviction.
-     * \details
-     * Below are the contracts of this method. In short, it's supposed to be very safe but not that precise.
-     * 
-     * 1. Restarts tree traversal from the clockhand place to make sure it's _LARGELY_ fair.
-     *   It might have some hiccups like skipping or double-visiting a few pages, but it's not that often.
-     * 2. It's very highly likely that this method unswizzles at least a bunch of frames.
-     *   But, there is a slight chance that you need to call this again to make room for eviction.
-     * 3. Absolutely no deadlocks nor waits. If this method finds that a frame is being write-locked
-     *   by someone, it simply skips that frame. All locks by this method is conditional and for very short-time.
-     * 4. Absolutely multi-thread safe. Again, it might have some hiccups on fairness because of
-     *   multi-threading, but concurrent threads calling this method at the same time will cause no severe problems.
-     * 5. Lastly, this method isn't supposed to be super-fast (if it has to be, something about unswizzling policy is wrong..),
-     *   but should be okay to call it for every millisec or so.
-     * 
-     * @param[in] urgent whether this method thoroughly traverses even if there seems few swizzled pages.
-     * @see UNSWIZZLE_BATCH_SIZE
-     */
-    void   _trigger_unswizzling(bool urgent = false);
+    /** Context object that is passed around during eviction. */
+    struct EvictionContext {
+        /** The number of blocks evicted. */
+        uint32_t        evicted_count;
+        /** The number of blocks unswizzled. */
+        uint32_t        unswizzled_count;
+        /** Specifies how thorough the eviction should be */
+        evict_urgency_t urgency;
+        /** Number of blocks to evict. Might evict less or more blocks for some reason. */
+        uint32_t        preferred_count;
 
-    void   _dump_swizzle_clockhand() const;
+        /**
+        * Hierarchical clockhand. Initialized by copying _clockhand_pathway in _bf_tree
+        * which are shared by all eviction threads. Copied back to the _clockhand_pathway
+        * when the eviction is done.
+        * @see bf_tree#_clockhand_pathway
+        */
+        uint32_t        clockhand_pathway[MAX_CLOCKHAND_DEPTH];
+        /**
+         * Same as above, but in terms of buffer index in this bufferpool.
+         * The buffer index is not protected by latches, so we must check validity when
+         * we really evict/unswizzle.
+         * The first entry is dummy as it's vol. (store -> root page's bufidx)
+         */
+        bf_idx          bufidx_pathway[MAX_CLOCKHAND_DEPTH];
+        /** Same as above, whether the block was swizzled. */
+        bool            swizzled_pathway[MAX_CLOCKHAND_DEPTH];
+        /** Same as above. @see bf_tree#_clockhand_current_depth */
+        uint16_t        clockhand_current_depth;
+        /** The depth of the current thread-local traversal (as of entering the method). */
+        uint16_t        traverse_depth;
 
-    /** called from _trigger_unswizzling(). traverses the given volume. */
-    void   _unswizzle_traverse_volume(uint32_t &unswizzled_frames, volid_t vol);
-    /** called from _trigger_unswizzling(). traverses the given store. */
-    void   _unswizzle_traverse_store(uint32_t &unswizzled_frames, volid_t vol, snum_t store);
-    /** called from _trigger_unswizzling(). traverses the given interemediate node. */
-    void   _unswizzle_traverse_node(uint32_t &unswizzled_frames, volid_t vol, snum_t store, bf_idx node_idx, uint16_t cur_clockhand_depth);
+        /**
+         * How many times we visited all frames during the eviction.
+         * It's rarely more than 0 except a very thorough eviction mode.
+         */
+        uint16_t        rounds;
+
+        /** Returns current volume. */
+        volid_t         get_vol() const { return (volid_t) clockhand_pathway[0]; }
+        /** Returns current store. */
+        snum_t          get_store() const { return (snum_t) clockhand_pathway[1]; }
+
+        /** Did we evict enough frames? */
+        bool            is_enough() const { return evicted_count >= preferred_count; }
+
+        /** Are we now even unswizzling frames? */
+        bool            is_unswizzling() const {
+            return urgency >= EVICT_COMPLETE || (urgency >= EVICT_URGENT && rounds > 0);
+        }
+
+        EvictionContext() : evicted_count(0), unswizzled_count(0), traverse_depth(0),
+            rounds(0) {}
+    };
+    /** Core implementation of evict_blocks(). */
+    w_rc_t _evict_blocks(EvictionContext &context);
+    /** Debug out the current evict context. Do nothing in release mode. */
+    void   _dump_evict_clockhand(const EvictionContext &context) const;
+    /** Quickly lookup the given vol/pid in bufferpool. Used by non-precise routine (evict). */
+    void   _lookup_buf_imprecise(btree_page_h &parent, uint32_t slot,
+                                 bf_idx &idx, bool &swizzled) const;
+
+    /** called from evict_blocks(). traverses the given volume. */
+    w_rc_t _evict_traverse_volume(EvictionContext &context);
+    /** called from evict_blocks(). traverses the given store. */
+    w_rc_t _evict_traverse_store(EvictionContext &context);
+    /** called from evict_blocks(). traverses the given non-root page. */
+    w_rc_t _evict_traverse_page(EvictionContext &context);
+    /** called from _evict_traverse_page(). evict/unswizzle the given page. */
+    w_rc_t _evict_page(EvictionContext &context, btree_page_h &p);
 
 #ifdef BP_MAINTAIN_PARENT_PTR
     /** implementation of _trigger_unswizzling assuming parent pointer in each bufferpool frame. */
@@ -703,10 +807,7 @@ private:
 private:
     /** count of blocks (pages) in this bufferpool. */
     bf_idx               _block_cnt;
-    
-    /** current clock hand for eviction. */
-    lintel::Atomic<bf_idx> _clock_hand;
-    
+
     /**
      * Array of pointers to root page descriptors of all currently mounted volumes.
      * The array index is volume ID.
@@ -761,28 +862,44 @@ private:
 #endif // BP_MAINTAIN_PARENT_PTR
 
     /**
-     * Hierarchical clockhand to maintain where we lastly visited
-     * to choose a victim page for unswizzling.
+     * \brief Hierarchical clockhand to maintain where we lastly visited
+     * to choose a victim page for eviction/unswizzling.
+     * \details
      * The first element is the volume to check,
      * the second element is the store to check,
      * the third element is the ordinal in the root page (0=first child,1=second child),...
      * 
      * We need this hierarchical clockhand because we must
-     * go _back_ to the parent page to unswizzle the child.
+     * go _back_ to the parent page to evict/unswizzle the child.
      * The swizzled pointer is stored in the parent page, we need to
      * modify it back to a usual page ID. The hierarchical clockhand
      * tells what is the parent page without parent pointers.
+     * Also, eviction needs parent to apply EMLSN update for SPR.
      * 
-     * Like the usual clockhand, this is an imprecise data structure
-     * that doesn't use locks or other heavy-weight methods to maintain.
+     * Like the usual clockhand, hierarchical clockhand can be imprecise
+     * to avoid locks or other heavy-weight methods.
      *   If we skip over some node, that's fine. We will visit it later anyways.
      *   If we visit some node twice, that's fine. Not much overhead.
      *   If any other inconsistency occured, that's fine. We just restart the search.
-     * We are just going to find a few pages to unswizzle, nothing more.
+     * We are just going to find a few pages to evict/unswizzle, nothing more.
+     *
+     * This variable is the shared place each eviction/unswizzling thread copy-from
+     * at beginning and copy-back at the end. If there are multi-threads doing eviction/
+     * unswizzling, this can result in double-checking some frames, but that's fine.
      */
-    uint32_t             _swizzle_clockhand_pathway[MAX_SWIZZLE_CLOCKHAND_DEPTH];
-    /** the lastly visited element in _swizzle_clockhand_pathway that might have some remaining descendants to visit. */
-    uint16_t             _swizzle_clockhand_current_depth;
+    uint32_t             _clockhand_pathway[MAX_CLOCKHAND_DEPTH];
+    /**
+     * the lastly visited element in _swizzle_clockhand_pathway that might have some
+     * remaining descendants to visit.
+     */
+    uint16_t             _clockhand_current_depth;
+
+    /**
+     * The lock to take when we copy-from/to _clockhand_pathway and _clockhand_current_depth.
+     * This only protects the copying. We don't protect between copy-from and copy-to as
+     * described above. If we check some frames multiple times, that's fine.
+     */
+    tatas_lock           _clockhand_copy_lock;
 
     /** threshold temperature above which to not unswizzle a frame */
     uint32_t             _swizzle_clockhand_threshold;
