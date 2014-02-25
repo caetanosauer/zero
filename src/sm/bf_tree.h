@@ -340,13 +340,41 @@ public:
     bool is_dirty(const generic_page* p) const;
 
     /**
-     * Mark the page as in_doubt.  This is set during Log Analysis phase only
+     * Mark the page in_doubt and used flags where the page is not in buffer pool
+     * also update the LSN (when the page was made dirty)
+     */
+    void set_in_doubt(bf_idx idx, lsn_t new_lsn);
+
+    /**
+     * Clear the page in_doubt flag where the page is not in buffer pool
+     */
+    void clear_in_doubt(bf_idx idx, bool clear_used);
+
+    /**
+     * Returns true if the page is already marked in_doubt, the page is not in buffer pool
+     */
+    bool is_in_doubt(bf_idx idx) const;
+
+    /**
+     * Mark the page in_doubt and used flags where the page is in buffer pool
      */
     void set_in_doubt(const generic_page* p);
+
     /**
-     * Returns if the page is already marked in_doubt.
+     * Clear the page in_doubt flag where thie page is in buffer pool
+     */
+    void clear_in_doubt(const generic_page* p, bool clear_used);
+
+    /**
+     * Returns true if the page is already marked in_doubt, the page is in buffer pool
      */
     bool is_in_doubt(const generic_page* p) const;
+
+    /**
+     * Returns the index of the page if page cb is in buffer pool, it is used in Recovery
+     * therefore the actual page might or might not be loaded at thi spoint
+     */
+    bf_idx lookup_in_doubt(int64_t key) const;
 
     /**
      * Adds a write-order dependency such that one is always written out after another.
@@ -470,7 +498,7 @@ public:
      *  "rec_lsn" and "page_lsn" arrays, respectively. The values of "start" and "count"
      *  are updated to reflect where the search ended and how many dirty
      *  pages it found, respectively.
-     *  master and current_lsn are used only for 'in_doubt' pages which are not loaded
+     *  'master' and 'current_lsn' are used only for 'in_doubt' pages which are not loaded
     */
     void get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, lsn_t *rec_lsn,
                        lsn_t *page_lsn, lsn_t &min_rec_lsn,
@@ -505,6 +533,19 @@ public:
      * its swizzled pointers. It requires the caller to have the node latched.
      */ 
     bool has_swizzled_child(bf_idx node_idx);
+
+    /**
+     * Used during Log Analysis in Recovery only
+     * If the page exists in the buffer pool, make sure in_doubt and used flags are on
+     * If the page does not exist in the buffer pool, find a free block in buffer pool
+     * without evict, return error if the freelist is empty.
+     * Populate the page cb but not loading the actual page
+     * Set in_doubt and used flags in cb to true, update lsn (where the page gor dirty)
+     * update the in_doubt page counter and return the index of the page
+     */    
+    w_rc_t register_and_mark(bf_idx& ret, volid_t vid, shpid_t shpid,
+           lsn_t new_lsn, uint32_t& in_doubt_count);
+
 private:
 
     /** called when a volume is mounted. */
@@ -550,8 +591,8 @@ private:
     void   _update_swizzled_lru (bf_idx idx);
 #endif // BP_MAINTAIN_PARENT_PTR
 
-    /** finds a free block and returns its index. if free list is empty, it evicts some page. */
-    w_rc_t _grab_free_block(bf_idx& ret);
+    /** finds a free block and returns its index. if free list is empty and 'evict' = true, it evicts some page. */
+    w_rc_t _grab_free_block(bf_idx& ret, bool evict = true);
     
     /**
      * evict a block and get its exclusive ownership.

@@ -53,8 +53,9 @@ private:
 
     static void                 analysis_pass(
         lsn_t                             master,
-        dirty_pages_tab_t&                ptab, 
-        lsn_t&                            redo_lsn
+//        dirty_pages_tab_t&                ptab, 
+        lsn_t&                            redo_lsn,
+        uint32_t&                         in_doubt_count
         );
 
     static void                 redo_pass(

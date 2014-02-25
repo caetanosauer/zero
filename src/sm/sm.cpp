@@ -554,6 +554,8 @@ ss_m::_construct_once(
         smlevel_0::redo_tid = restart.redo_tid();
 
         // Recovery process, a checkpoint will be taken at the end of recovery
+        // Make surethe current operating state is before recovery
+        smlevel_0::operating_mode = t_not_started;
         restart.recover(log->master_lsn());
 
         {   // contain the scope of dname[]
@@ -611,6 +613,7 @@ ss_m::_construct_once(
 
     }
 
+    // We are done with recovery, change the state accordingly
     smlevel_0::operating_mode = t_forward_processing;
 
     // Have the log initialize its reservation accounting.

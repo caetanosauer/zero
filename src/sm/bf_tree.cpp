@@ -759,7 +759,7 @@ void bf_tree_m::_remove_from_swizzled_lru(bf_idx idx) {
 }
 #endif // BP_MAINTAIN_PARENT_PTR
 
-w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret) {
+w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret, bool evict) {
 #ifdef SIMULATE_MAINMEMORYDB
     if (true) {
         ERROUT (<<"MAINMEMORY-DB. _grab_free_block() shouldn't be called. wtf");
@@ -791,9 +791,17 @@ w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret) {
         } // exit the scope to do the following out of the critical section
 
         // if the freelist was empty, let's evict some page.
-        W_DO (_get_replacement_block(ret));
-        if (ret != 0) {
-            return RCOK;
+        if (true == evict)
+        {
+            W_DO (_get_replacement_block(ret));
+            if (ret != 0) {
+                return RCOK;
+            }
+        }
+        else
+        {
+            // Freelist is empty and caller does not want to evict pages (Recovery M1)
+            return RC(eBFFULL);
         }
     }
     return RCOK;
@@ -1500,6 +1508,93 @@ bool bf_tree_m::has_swizzled_child(bf_idx node_idx) {
     return false;
 }
 
+w_rc_t bf_tree_m::register_and_mark(bf_idx& ret, volid_t vid,
+                  shpid_t shpid, lsn_t new_lsn, uint32_t& in_doubt_count)
+{
+    ret = 0;
+
+    // This function is only allowed in the Recovery Log Analysis phase
+    if (smlevel_0::t_in_analysis != smlevel_0::operating_mode)
+        W_FATAL_MSG(fcINTERNAL, 
+                    << "Can register a page in buffer pool only during Log Analysis phase, current phase: "
+                    << smlevel_0::operating_mode);
+
+    // Do we have this page in buffer pool already?
+    uint64_t key = bf_key(vid, shpid);
+    bf_idx idx = lookup_in_doubt(key);
+    if (0 != idx)
+    {
+        // If the page exists in buffer pool - it does not mean the in_doubt flag is on
+        //   Increment the in_doubt page counter only if the in_doubt flag was off
+        //   Make sure in_doubt and used flags are on and update the rec_lsn if one is provided.
+        if (false == is_in_doubt(idx))        
+            ++in_doubt_count;
+        set_in_doubt(idx, new_lsn);
+
+        DBGOUT5(<<"Page is registered in buffer pool updated rec_lsn, idx: " << idx);
+    }
+    else
+    {
+        // If the page does not exist in buffer pool -
+        //   Find a free block in buffer pool without evict, return error if the freelist is empty.
+        //   Populate the page cb but not loading the actual page
+        //   set the in_doubt and used flags in cb to true, update the rec_lsn
+        //   and return the index of the page   
+
+        DBGOUT5(<<"Page not registered in buffer pool, start registration process");
+        w_rc_t grab_rc = _grab_free_block(idx, false);  // Do not evict
+        if (grab_rc.is_error())
+            return grab_rc;
+
+        // Now we have a page, populate the cb but not load the physical page in Log Analysis phase
+        // The actual page will be loaded in REDO phase
+        
+// TODO(M1)...  Populate the page cb....
+
+        // Update the in_doubt page counter
+        ++in_doubt_count;
+
+        DBGOUT5(<<"Done registration process, idx: " << idx);
+
+
+// _grab_free_block(idx, false);  // get a frame that will be the new page, no evict        
+		/*
+		w_rc_t bf_tree_m::_preload_root_page
+		w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret);
+		bool bf_tree_m::_is_active_idx (bf_idx idx) const
+		void bf_tree_m::set_in_doubt(const generic_page* p)
+		void bf_tree_m::clear_in_doubt(const generic_page* p)
+		bf_idx bf_tree_m::get_idx(const bf_tree_cb_t* cb)
+		generic_page* bf_tree_m::get_page(const bf_tree_cb_t *cb)
+		bf_tree_cb_t& bf_tree_m::get_cb(bf_idx idx) const
+		*/
+		
+		/*
+		Each page frame:
+		// Array of control blocks. array size is _block_cnt. index 0 is never used (means NULL).
+		bf_tree_cb_t*		 _control_blocks;
+		// Array of page contents. array size is _block_cnt. index 0 is never used (means NULL). 
+		generic_page*			   _buffer;
+		// hashtable to locate a page in this bufferpool. swizzled pages are removed from bufferpool. 
+		bf_hashtable*		 _hashtable;
+		*/
+		
+		// We want to use '_grab_free_block' but do not evict (_get_replacement_block)
+		// Once we get the idx back, we want to fill the cb but not load the page
+		
+		//				uint64_t key = bf_key(vol, shpid);
+		//				bf_idx idx = _hashtable->lookup(key);
+		//				if (idx == 0) {
+		//					// the page is not in the bufferpool. we need to read it from disk
+		//					W_DO(_grab_free_block(idx)); // get a frame that will be the new page
+		//						w_assert1(_is_valid_idx(idx));
+
+    }
+    
+
+    return RCOK;
+}
+
 void bf_tree_m::_unswizzle_traverse_node(uint32_t &unswizzled_frames,
                                          volid_t vol,
                                          snum_t store,
@@ -1856,16 +1951,12 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid,
                 // in_doubt pages are not loaded into buffer pool yet, cannot get information
                 // from page ('_buffer')
 
-// TODO(M1)... 
-//                    change the log record so it keeps the 'lpid_t' so I can get it             <<<<<<<<<<<<<<<<<<<
-                // Assuming we can get the cb even if the page is not loaded     <--- verify
-                // lpid_t: Store ID (volume number + store number) + page number
-                // shpid_t: page number only
-                // Use a dummy lpid_t with the actual shpid_t, is this sufficient?
-
-                vid_t vid(1);
-                lpid_t dummy (vid, 0, cb._pid_shpid);
-                pid[i] = dummy;
+// TODO(M1)...  make sure we can get the cb even if the page is not loaded, meaning the Log Analysis phase must register the in_doubt page (cb) in buffer pool     <--- verify
+                // lpid_t: Store ID (volume number + store number) + page number (4+4+4)
+                // Re-construct the lpid using several fields in cb
+                vid_t vid(cb._pid_vol);
+                lpid_t store_id(vid, cb._store_num, cb._pid_shpid);
+                pid[i] = store_id;
                 rec_lsn[i] = master;  // Use the begin checkpoint LSN for the oldest LSN
                 assert(lsn_t::null!= current_lsn);
                 page_lsn[i] = current_lsn;    // Use the current LSN for page LSN

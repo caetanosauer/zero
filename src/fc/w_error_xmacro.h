@@ -89,3 +89,5 @@ X(eWRITEORDERLOOP,            "Causes a loop in write order dependency")
 X(eLIL_TOOMANYVOL_XCT,        "Accessing too many volumes in one transaction")
 X(eLIL_TOOMANYST_XCT,         "Accessing too many stores in one transaction")
 X(eBF_DIRECTFIX_SWIZZLED_PTR, "Requested a direct page fix with swizzled pointer")
+X(eBFFULL,                    "Buffer pool is full during Recovery operation")
+

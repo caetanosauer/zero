@@ -162,10 +162,15 @@ restart_m::recover(lsn_t master)
 {
     FUNC(restart_m::recover);
 
-// TODO(M1)... don't use dirty_pages_tab_t (take a look at the class definition to see what information are being captured)
-//                    use the system buffer pool instead, make sure we have all the necessary information in the buffer pool page cb
+    // Make sure the current state is before 'recovery', the Recovery operation can
+    // be called only once per system start
+    if (!before_recovery())
+        W_FATAL_MSG(fcINTERNAL, 
+        << "Cannot recovery while the system is not in before_recovery state, current state: " 
+        << smlevel_0::operating_mode);
+
     dirty_pages_tab_t dptab;
-    lsn_t redo_lsn;
+    lsn_t redo_lsn = lsn_t::null;
 
     // set so mount and dismount redo can tell that they should log stuff.
 
@@ -222,79 +227,111 @@ restart_m::recover(lsn_t master)
         fprintf(stderr, " (undo-lsn) for compensation records\n");
         fprintf(stderr, "\n\n");
     }
-    analysis_pass(master, dptab, redo_lsn);
 
-    if(dptab.size() || xct_t::num_active_xcts()) {
+// TODO(M1)... ignore 'non-read-lock' in M1
+    // Log Analysis phase, the store is not opened for new transaction during this phase
+    // Populate transaction table for all in-flight transactions, mark them as 'abort'
+    // Populate buffer pool for 'in_doubt' pages, register but not loading the pages
+//    analysis_pass(master, dptab, redo_lsn);
+    uint32_t in_doubt_count = 0;
+    analysis_pass(master, redo_lsn, in_doubt_count);
+
+    // If nothing from Log Analysis, in other words, if both transaction table and buffer pool
+    // are empty, there is nothing to do in REDO and UNDO phases, but we still want to 
+    // take a 'empty' checkpoint' as the starting point for the next server start
+    uint32_t xct_count = xct_t::num_active_xcts();
+    if ((0 == xct_count) && (0 == in_doubt_count)) 
+    {
+        smlevel_0::errlog->clog << info_prio  
+            << "Database is clean" << flushl;    
+    }
+    else
+    {
         smlevel_0::errlog->clog << info_prio 
-            << "Log contains " << dptab.size()
-            << " dirty pages and " << xct_t::num_active_xcts()
+            << "Log contains " << in_doubt_count
+            << " in_doubt pages and " << xct_count
             << " active transactions" << flushl;
     }
-    else {
-        smlevel_0::errlog->clog << info_prio  
-            << "Database is clean" << flushl;
-    }
 
-    // Take a synch checkpoint at the end of log analysis phase
+    // Take a synch checkpoint afterLog Analysis phase but before REDO phase
     assert(smlevel_1::chkpt);    
     smlevel_1::chkpt->synch_take();
-    
-    /*
-     *  Phase 2: REDO -- use dirty page table and redo lsn of phase 1
-     *                  We save curr_lsn before redo_pass() and assert after
-     *                 redo_pass that no log record has been generated.
-     *  pass in highest_lsn for debugging
-     */
-    smlevel_0::errlog->clog << info_prio << "Redo ..." << flushl;
+
     lsn_t curr_lsn = log->curr_lsn(); 
+    if (0 != in_doubt_count)
+    {
+         // Come in here only if we have something to REDO
+         
+         //  Phase 2: REDO -- use dirty page table and redo lsn of phase 1
+         //                  We save curr_lsn before redo_pass() and assert after
+         //                 redo_pass that no log record has been generated.
+         //  pass in highest_lsn for debugging
+
+        smlevel_0::errlog->clog << info_prio << "Redo ..." << flushl;
 
 #if W_DEBUG_LEVEL > 2
-    {
-        DBGOUT5(<<"TX TABLE at end of analysis:");
-        xct_i iter(true); // lock list
-        xct_t* xd;
-        while ((xd = iter.next()))  {
-            w_assert1(  xd->state() == xct_t::xct_active);
-            DBGOUT5(<< "Transaction " << xd->tid() << " has state " << xd->state());
+        {
+            DBGOUT5(<<"TX TABLE at end of analysis:");
+            xct_i iter(true); // lock list
+            xct_t* xd;
+            while ((xd = iter.next()))  {
+                w_assert1(  xd->state() == xct_t::xct_active);
+                DBGOUT5(<< "Transaction " << xd->tid() << " has state " << xd->state());
+            }
+            DBGOUT5(<<"END TX TABLE at end of analysis:");
         }
-        DBGOUT5(<<"END TX TABLE at end of analysis:");
-    }
 #endif 
 
-    DBGOUT3(<<"starting redo at " << redo_lsn << " highest_lsn " << curr_lsn);
-    redo_pass(redo_lsn, curr_lsn, dptab);
+// TODO(M1)... does not open the store for new transactions in M1
+//                    ignore 'non-read-lock' in M1
+        // REDO phase, based on log records (forward scan), load 'in_doubt' pages
+        // into buffer pool, REDO the updates, clear the 'in_doubt' flags and mark
+        // the 'dirty' flags.
+        // No change to transaction table or recovery log
+        DBGOUT3(<<"starting REDO at " << redo_lsn << " highest_lsn " << curr_lsn);
+        redo_pass(redo_lsn, curr_lsn, dptab);
 
+        /* no logging during redo */
+        w_assert1(curr_lsn == log->curr_lsn()); 
 
-    /* no logging during redo */
-    w_assert1(curr_lsn == log->curr_lsn()); 
+        /* In order to preserve the invariant that the rec_lsn <= page's lsn1,
+         * we need to make sure that all dirty pages get flushed to disk,
+         * since the redo phase does NOT log these page updates, it causes
+         * rec_lsns to be at the tail of the log while the page lsns are
+         * in the middle of the log somewhere.  It seems worthwhile to
+         * do this flush, slow though it might be, because if we have a crash
+         * and have to re-recover, we would have less to do at that time.
+         */
+        W_COERCE(bf->force_all());
+    }
 
-    /* In order to preserve the invariant that the rec_lsn <= page's lsn1,
-     * we need to make sure that all dirty pages get flushed to disk,
-     * since the redo phase does NOT log these page updates, it causes
-     * rec_lsns to be at the tail of the log while the page lsns are
-     * in the middle of the log somewhere.  It seems worthwhile to
-     * do this flush, slow though it might be, because if we have a crash
-     * and have to re-recover, we would have less to do at that time.
-     */
-    W_COERCE(bf->force_all());
+    if (0 != xct_count)
+    {
+        // Come in here only if we have something to UNDO
+        
+        // Phase 3: UNDO -- abort all active transactions
+        smlevel_0::errlog->clog  << info_prio<< "Undo ..." 
+            << " curr_lsn = " << curr_lsn
+            << flushl;
 
-    /*
-     *  Phase 3: UNDO -- abort all active transactions
-     */
-    smlevel_0::errlog->clog  << info_prio<< "Undo ..." 
-        << " curr_lsn = " << curr_lsn
-        << flushl;
+// TODO(M1)... does not open the store for new transactions in M1
+//                    ignore 'non-read-lock' in M1
+        // UNDO phase, based on log records (reverse scan), use compensate operations
+        // to UNDO (abort) the in-flight transactions, remove the aborted transactions
+        // from the transaction table after rollback (compensation).
+        // New log records would be generated due to compensation operations
+        DBGOUT3(<<"starting UNDO phase, current lsn: " << curr_lsn);    
+        undo_pass();
 
-    undo_pass();
+        smlevel_0::errlog->clog << info_prio << "Oldest active transaction is " 
+            << xct_t::oldest_tid() << flushl;
+        smlevel_0::errlog->clog << info_prio 
+            << "First new transaction will be greater than "
+            << xct_t::youngest_tid() << flushl;
 
-    smlevel_0::errlog->clog << info_prio << "Oldest active transaction is " 
-        << xct_t::oldest_tid() << flushl;
-    smlevel_0::errlog->clog << info_prio 
-        << "First new transaction will be greater than "
-        << xct_t::youngest_tid() << flushl;
-
-    // Take a synch checkpoint at the end of log analysis phase
-    smlevel_1::chkpt->synch_take();
+        // Take a synch checkpoint after UNDO phase but before exist the Recovery operation
+        smlevel_1::chkpt->synch_take();
+        }
 
     // turn pointer swizzling on again
     if (org_swizzling_enabled) {
@@ -302,41 +339,69 @@ restart_m::recover(lsn_t master)
     }
 
     smlevel_0::errlog->clog << info_prio << "Restart successful." << flushl;
+
+    // Existing from the Recovery operation, caller of the Recovery operation is 
+    // responsible of changing the 'operating_mode' to 'smlevel_0::t_forward_processing',
+    // because caller is doing some mounting/dismounting devices, we want to change
+    // the 'operating_mode' after the device mounting operations are done.
+
 }
 
 
 /*********************************************************************
  *
- *  restart_m::analysis_pass(master, dptab, redo_lsn)
+ *  restart_m::analysis_pass(master, redo_lsn, in_doubt_count)
  *
- *  Scan log forward from master_lsn. Insert and update dptab.
+ *  Scan log forward from master_lsn. Insert and update buffer pool, 
+ *  insert transaction table.
  *  Compute redo_lsn.
  *
  *********************************************************************/
 void 
 restart_m::analysis_pass(
     lsn_t                 master,
-    dirty_pages_tab_t&    dptab,
-    lsn_t&                redo_lsn
+//    dirty_pages_tab_t&    dptab,
+    lsn_t&                redo_lsn,
+    uint32_t&             in_doubt_count  // Counter for in_doubt page count in buffer pool
 )
 {
     FUNC(restart_m::analysis_pass);
 
+    // Actually turn off logging during Log Analysis phase, there is no possibility
+    // to add new log records by accident during this phase
     AutoTurnOffLogging turnedOnWhenDestroyed;
 
     redo_lsn = lsn_t::null;
-    if (master == lsn_t::null) return;
+    in_doubt_count = 0;
+    lsn_t begin_chkpt = lsn_t::null;
 
+    if (master == lsn_t::null)
+    {
+        // 'master'is  the LSN from the last completed checkpoint
+        // It was identified from log_core::log_core()
+        
+        // The only possibility that we have a NULL as master lsn is due to a brand new
+        // start (empty) of the engine, in such case, nothing to recover
+
+        DBGOUT3( << "NULL master, nothing to analysis in Log Analysis phase");        
+        return;
+    }
+
+    // Change state, we have work to do in Log Analysis phase
     smlevel_0::operating_mode = smlevel_0::t_in_analysis;
 
     /*
-     *  Open a forward scan
+     *  Open a forward scan starting from master (the begin checkpoint LSN from the 
+     *  last completed checkpoint
      */
     log_i         scan(*log, master);
     logrec_t*     log_rec_buf;
     lsn_t         lsn;
 
     lsn_t         theLastMountLSNBeforeChkpt;
+
+    bf_idx idx = 0;
+    w_rc_t grab_rc = RCOK;
 
     /*
      *  Assert first record is Checkpoint Begin Log
@@ -347,140 +412,279 @@ restart_m::analysis_pass(
             W_COERCE(scan.get_last_rc());
         }
         logrec_t&        r = *log_rec_buf;
-        w_assert1(r.type() == logrec_t::t_chkpt_begin);
+
+        // The first record must be a 'begin checkpoint', otherwise we don't want to continue, error out 
+        if (r.type() != logrec_t::t_chkpt_begin)
+            W_FATAL_MSG(fcINTERNAL, << "First log record in Log Analysis is not a begin checkpoint log: " << r.type());
+
         theLastMountLSNBeforeChkpt = *(lsn_t *)r.data();
-        DBGOUT3( << "last mount LSN from chkpt_begin=" << theLastMountLSNBeforeChkpt);
+        DBGOUT3( << "Last mount LSN from chkpt_begin: " << theLastMountLSNBeforeChkpt);
     }
 
     unsigned int cur_segment = 0;
-    
+
     /*
      *  Number of complete chkpts handled.  Only the first
      *  chkpt is actually handled.  There may be a second
      *  complete chkpt due to a race condition between writing
-     *  a chkpt_end record, updating the master lsn and crashing.
-     *  Used to avoid processing an incomplete checkpoint.
+     *  a chkpt_end record and updating the master lsn.  In other words, 
+     *  a chkpt_end log was harden, but crash before updating the master,
+     *  therefore the master is the previous checkpoint, while there is a newer
+     *  completed checkpoint after the checkpoint recorded by master.
+     * 
+     *  This is a valid scenario and need to handle it.  The log scan is based on 
+     *  the checkpoint recorded by master, ignore other completed or incompleted
+     *  checkpoints.
      */
     int num_chkpt_end_handled = 0;
 
-    while (scan.xct_next(lsn, log_rec_buf)) {
-        logrec_t&        r = *log_rec_buf;
+    // At the beginning of the Recovery from a system crash, both the transaction table
+    // and buffer pool should be initialized with the information from the specified checkpoint,
+    // and then apply the rest of log records in the recovery log
+    
+    while (scan.xct_next(lsn, log_rec_buf)) 
+    {
+        logrec_t& r = *log_rec_buf;
 
-        /*
-         *  Scan next record
-         */
+        // Scan next record
         DBGOUT5( << setiosflags(ios::right) << lsn 
                   << resetiosflags(ios::right) << " A: " << r );
-        w_assert1(lsn == r.lsn_ck());
 
-        if(lsn.hi() != cur_segment) {
+        // If LSN is not intact, stop now
+        if (lsn != r.lsn_ck())
+            W_FATAL_MSG(fcINTERNAL, << "Bad LSN from recovery log scan: " << lsn);        
+
+        if(lsn.hi() != cur_segment) 
+        {
+            // Record the current segment log in partition
             cur_segment = lsn.hi();
             smlevel_0::errlog->clog << info_prio  
                << "Analyzing log segment " << cur_segment << flushl;
         }
         
         //if the log was a system transaction fused to a single log entry,
-        // we should do the equivalent to xct_end here
-        if (r.is_single_sys_xct()) {
-            xct_t* xd = xct_t::new_xct(xct_t::_nxt_tid.atomic_incr(), // let's use a new transaction id
-                xct_t::xct_active, lsn,
-                lsn_t::null); // no next_undo
-            w_assert1(xd);
-            xd->set_last_lsn(lsn);
+        // we should do the equivalent to xct_end, fix it first
 
+        // Note currently all system transactions are single log entry, we do not have
+        // system transaction involving multiple log records
+        
+        if (r.is_single_sys_xct()) 
+        {
+            // Construct a system transaction into transaction table
+            xct_t* xd = xct_t::new_xct(
+                xct_t::_nxt_tid.atomic_incr(), // let's use a new transaction id
+                xct_t::xct_active,         // state
+                lsn,                       // last LSN
+                lsn_t::null,               // no next_undo
+                WAIT_SPECIFIED_BY_THREAD,  // timeout
+                true,                      // system xct
+                true                       // single log sys xct
+                );
+        
+            w_assert1(xd);
+            xd->set_last_lsn(lsn);         // set the last lsn in the transaction
+
+            // Get the associated page
             lpid_t page_of_interest = r.construct_pid();
             DBGOUT5(<<"analysis (single_log system xct): default " <<  r.type()
                     << " page of interest " << page_of_interest);
+
             w_assert1(!r.is_undo()); // no UNDO for ssx
-            w_assert0(r.is_redo());
-            if (!(dptab.exists(page_of_interest))) {
-                dptab.insert( page_of_interest, lsn.data() );
-            }
-            // If the log touches multi-records, we put that page in table too.
-            // SSX is the only log type that has multi-pages.
-            if (r.is_multi_page()) {
-                lpid_t page2_of_interest = r.construct_pid2();
-                DBGOUT5(<<" multi-page:" <<  page2_of_interest);
-                if (!(dptab.exists(page2_of_interest))) {
-                    dptab.insert( page2_of_interest, lsn.data() );
+            w_assert0(r.is_redo());  // system txn is REDO only
+
+            // Record the page into buffer pool (don't load the actual page)
+            // Allocation of a page (t_alloc_a_page, t_alloc_consecutive_pages) - clear
+            //      the in_doubt bit, because the page might be allocated for a 
+            //      non-logged operation, we don't want to re-format the page
+            // De-allocation of a page (t_dealloc_a_page, t_page_set_to_be_deleted) - 
+            //      clear the in_doubt bit, so the page can be evicted if needed.
+
+            if ((true == r.is_page_allocate()) ||
+                (true == r.is_page_deallocate()))
+            {
+                // Remove the in_doubt flag in buffer pool of the page if it exists in buffer pool
+                uint64_t key = bf_key(page_of_interest.vol().vol, page_of_interest.page);
+                bf_idx idx = smlevel_0::bf->lookup_in_doubt(key);
+                if (0 != idx)
+                {
+                    // Page cb is in buffer pool, clear the 'in_doubt' and 'used' flags
+                    // If the cb for this page does not exist in buffer pool, no-op 
+                    if (true == smlevel_0::bf->is_in_doubt(idx))
+                    {
+                        smlevel_0::bf->clear_in_doubt(idx, true);  
+                        assert(0 < in_doubt_count);
+                        --in_doubt_count;
+                    }
                 }
             }
-            
+            else if (false == r.is_skip())  // t_skip is to mark the end of partition, no-op
+            {
+                // Register the page cb in buffer pool (if not exist) and mark the in_doubt flag               
+                idx = 0;
+                grab_rc = smlevel_0::bf->register_and_mark(idx, page_of_interest.vol().vol,
+                          page_of_interest.page, lsn, in_doubt_count);
+                if (grab_rc.is_error()) 
+                {
+                    // Not able to get a free block in buffer pool without evict, cannot continue in M1
+                    W_FATAL_MSG(fcINTERNAL, 
+                        << "Failed to record an in_doubt page for system transaction during Log Analysis");
+                }
+                assert(0 != idx);
+
+                // If we get here, we have registed a new page with the 'in_doubt' and 'used' flags
+                // set to true in page cb, but not load the actual page
+
+                // If the log touches multi-records, we put that page in buffer pool too.
+                // SSX is the only log type that has multi-pages.
+                // Note this logic only deal with a log record with 2 pages, no more than 2
+                if (r.is_multi_page()) 
+                {
+                    lpid_t page2_of_interest = r.construct_pid2();
+                    DBGOUT5(<<" multi-page:" <<  page2_of_interest);
+                    idx = 0;
+                    grab_rc = smlevel_0::bf->register_and_mark(idx, page2_of_interest.vol().vol,
+                              page2_of_interest.page, lsn, in_doubt_count);
+                    if (grab_rc.is_error()) 
+                    {
+                        // Not able to get a free block in buffer pool without evict, cannot continue in M1
+                        W_FATAL_MSG(fcINTERNAL, 
+                            << "Failed to record a second in_doubt page for system transaction during Log Analysis");
+                    }
+                    assert(0 != idx);
+                }
+                
+/**  original code using dptab *
+                if (!(dptab.exists(page_of_interest))) 
+                {
+                    dptab.insert( page_of_interest, lsn.data() );
+                }
+                // If the log touches multi-records, we put that page in table too.
+                // SSX is the only log type that has multi-pages.
+                if (r.is_multi_page()) 
+                {
+                    lpid_t page2_of_interest = r.construct_pid2();
+                    DBGOUT5(<<" multi-page:" <<  page2_of_interest);
+                    if (!(dptab.exists(page2_of_interest))) 
+                    {
+                        dptab.insert( page2_of_interest, lsn.data() );
+                    }
+                }
+**/                
+            }
+
+            // Because all system transactions are single log record, there is no
+            // UNDO for system transaction.           
             xd->change_state(xct_t::xct_ended);
+
+            // Remove this system transaction from the transaction table
             xct_t::destroy_xct(xd);
             continue;
         }
 
         // We already ruled out all SSX logs. So we don't have to worry about
-        // multi-page logs in the code below.
+        // multi-page logs in the code below, because multi-page log only exist
+        // in system transactions
         w_assert1(!r.is_multi_page());
         xct_t* xd = 0;
 
-        /*
-         *  If log is transaction related, insert the transaction
-         *  into transaction table if it is not already there.
-         */
+        // If log is transaction related, insert the transaction
+        // into transaction table if it is not already there.
         if ((r.tid() != tid_t::null) && ! (xd = xct_t::look_up(r.tid()))
                 // comments can be after xct has ended
-                    && r.type()!=logrec_t::t_comment ) {
+                    && r.type()!=logrec_t::t_comment ) 
+        {
             DBGOUT5(<<"analysis: inserting tx " << r.tid() << " active ");
-            xd = xct_t::new_xct(r.tid(), xct_t::xct_active, lsn, r.xid_prev());
+            xd = xct_t::new_xct(r.tid(),              // Use the tid from log record
+                                xct_t::xct_aborting,  // state, by default treat as an in-flight
+                                                      // transaction and mark it 'abort' 
+                                                      // the state will be changed to 'end' only
+                                                      // if we hit a matching t_xct_end' log
+                                lsn,                  // last LSN
+                                r.xid_prev());        // next_undo
             w_assert1(xd);
             xct_t::update_youngest_tid(r.tid());
-        }
 
-        /*
-         *  Update last lsn of transaction
-         */
-        if (xd) {
-            xd->set_last_lsn(lsn);
+            xd->set_last_lsn(lsn);                  // set the last lsn in the transaction
             w_assert1( xd->tid() == r.tid() );
         }
+        else
+        {
+            // Log record is not transaction related, no-op to transaction table
+        }
 
-        switch (r.type()) {
+        // Process based on the type of the log record
+        // Modify transaction table and buffer pool accordingly
+        switch (r.type()) 
+        {
         case logrec_t::t_chkpt_begin:
-            /*
-             *  Found an incomplete checkpoint --- ignore 
-             */
+            // We already read passed the master checkpoint
+            // If we hit another begin checkpoint log, it is either
+            // incomplete or a 2nd completed checkpoint, ignore 
+            // all the logs related to this checkpoint
+            // The way to do it is by checking'num_chkpt_end_handled'
             break;
 
         case logrec_t::t_chkpt_bf_tab:
-            if (num_chkpt_end_handled == 0)  {
-                /*
-                 *  Still processing the master checkpoint record.
-                 *  For each entry in log,
-                 *        if it is not in dptab, insert it.
-                 *          If it is already in the dptab, update the rec_lsn.
-                 */
+            // Buffer pool dirty pages from checkpoint
+            if (num_chkpt_end_handled == 0)  
+            {
+                //  Still processing the master checkpoint record.
                 const chkpt_bf_tab_t* dp = (chkpt_bf_tab_t*) r.data();
-                for (uint i = 0; i < dp->count; i++)  {
+                for (uint i = 0; i < dp->count; i++)  
+                {
+                    // For each entry in log,
+                    // if it is not in buffer pool, register and mark it.
+                    // If it is already in the buffer pool, update the rec_lsn to the earliest LSN
+
+                    idx = 0;
+                    grab_rc = smlevel_0::bf->register_and_mark(idx, dp->brec[i].pid.vol().vol,
+                              dp->brec[i].pid.page, dp->brec[i].rec_lsn.data(), in_doubt_count);
+                    if (grab_rc.is_error()) 
+                    {
+                        // Not able to get a free block in buffer pool without evict, cannot continue in M1
+                        W_FATAL_MSG(fcINTERNAL, 
+                            << "Failed to record an in_doubt page in t_chkpt_bf_tab during Log Analysis");
+                    }
+                    assert(0 != idx);
+/**  original code using dptab 
                     dp_lsn_iterator it = dptab.find(dp->brec[i].pid);
-                    if (it == dptab.dp_lsns().end())  {
+                    if (it == dptab.dp_lsns().end())  
+                    {
                         DBGOUT5(<<"dptab.insert dirty pg " 
                         << dp->brec[i].pid << " " << dp->brec[i].rec_lsn);
                         dptab.insert(dp->brec[i].pid, dp->brec[i].rec_lsn.data());
-                    } else {
+                    }
+                    else 
+                    {
                         DBGOUT5(<<"dptab.update dirty pg " 
                         << dp->brec[i].pid << " " << dp->brec[i].rec_lsn);
                         it->second = dp->brec[i].rec_lsn.data();
                     }
+*/
                 }
+            }
+            else
+            {
+                // Not from the master checkpoint, ignore
             }
             break;
                 
         case logrec_t::t_chkpt_xct_tab:
-            if (num_chkpt_end_handled == 0)  {
-                /*
-                 *  Still processing the master checkpoint record.
-                 *  For each entry in the log,
-                 *         If the xct is not in xct tab, insert it.
-                 */
+            // Transaction table entries from checkpoint
+            if (num_chkpt_end_handled == 0)  
+            {
+                // Still processing the master checkpoint record.
+                // For each entry in the log,
+                //         If the xct is not in xct tab, insert it.
                 const chkpt_xct_tab_t* dp = (chkpt_xct_tab_t*) r.data();
                 xct_t::update_youngest_tid(dp->youngest);
-                for (uint i = 0; i < dp->count; i++)  {
+                for (uint i = 0; i < dp->count; i++)  
+                {
                     xd = xct_t::look_up(dp->xrec[i].tid);
-                    if (!xd) {
-                        if (dp->xrec[i].state != xct_t::xct_ended)  {
+                    if (!xd) 
+                    {
+                        if (dp->xrec[i].state != xct_t::xct_ended)  
+                        {
                             xd = xct_t::new_xct(dp->xrec[i].tid,
                                            dp->xrec[i].state,
                                            dp->xrec[i].last_lsn,
@@ -488,28 +692,40 @@ restart_m::analysis_pass(
                             DBGOUT5(<<"add xct " << dp->xrec[i].tid
                                     << " state " << dp->xrec[i].state
                                     << " last lsn " << dp->xrec[i].last_lsn
-                                    << " undo " << dp->xrec[i].undo_nxt
-                                );
+                                    << " undo " << dp->xrec[i].undo_nxt);
                             w_assert1(xd);
                         }
                         // skip finished ones
                         // (they can get in there!)
-                    } else {
+                    }
+                    else
+                    {
                        // Could be active or aborting
                        w_assert9(dp->xrec[i].state != xct_t::xct_ended);
                     }
                 }
             }
+            else
+            {
+                // Not from the master checkpoint, ignore            
+            }
             break;
             
         case logrec_t::t_chkpt_dev_tab:
-            if (num_chkpt_end_handled == 0)  {
-                /*
-                 *  Still processing the master checkpoint record.
-                 *  For each entry in the log, mount the device.
-                 */
+            // With the new checkpoint implementation in M1,
+            // it does not generate device related log anymore, raise error
+            W_FATAL_MSG(fcINTERNAL, << "Unexpected log record: logrec_t::t_chkpt_dev_tab");            
+
+/*****************************************************
+//Dead code, comment out just in case we need to re-visit it in the future
+
+            if (num_chkpt_end_handled == 0)  
+            {
+                // Still processing the master checkpoint record.
+                // For each entry in the log, mount the device.
                 const chkpt_dev_tab_t* dv = (chkpt_dev_tab_t*) r.data();
-                for (uint i = 0; i < dv->count; i++)  {
+                for (uint i = 0; i < dv->count; i++)  
+                {
                     smlevel_0::errlog->clog << info_prio 
                         << "Device " << dv->devrec[i].dev_name 
                          << " will be recovered as vid " << dv->devrec[i].vid
@@ -520,10 +736,12 @@ restart_m::analysis_pass(
                     w_assert9(io_m::is_mounted(dv->devrec[i].vid));
                 }
             }
+*****************************************************/
             break;
         
         case logrec_t::t_dismount_vol:
         case logrec_t::t_mount_vol:
+
             /* JK: perform all mounts and dismounts up to the minimum redo lsn,
             * so that the system has the right volumes mounted during 
             * the redo phase.  the only time the this should  be redone is 
@@ -537,38 +755,47 @@ restart_m::analysis_pass(
 
             w_assert9(num_chkpt_end_handled > 0);  
             // mount & dismount shouldn't happen during a check point
-            
-            if (lsn < dptab.min_rec_lsn())  {
+            // redo_lsn is initialized to NULL, and only set to the minimum lsn
+            // from master 'end checkpoint' when we encounter it during log scan
+            if (lsn < redo_lsn)  
+            {
                 r.redo(0);
             }
             break;
                 
         case logrec_t::t_chkpt_end:
-            /*
-             *  Done with the master checkpoint record. Flag true 
-             *  to avoid processing an incomplete checkpoint.
-             */
-#if W_DEBUG_LEVEL > 4
+            if (num_chkpt_end_handled == 0)              
             {
-                lsn_t l, l2;
+                // Retrieve the master and min_rec_lsn from the first (master) 'end checkpoint',
+                // The minimum lsn of all buffer pool dirty or in_doubt pages
+                // The REDO phase must start with the earliest LSN
+                // The master(begin_chkpt) should be the same as the master from caller
                 unsigned long i = sizeof(lsn_t); 
-                        // GROT: stop gcc from 
-                        // optimizing memcpy into something that 
-                        // chokes on sparc due to misalignment
-                        /// @todo: this is almost certainly obsolete?
+                            // GROT: stop gcc from 
+                            // optimizing memcpy into something that 
+                            // chokes on sparc due to misalignment
+                            // @todo: this is almost certainly obsolete?
 
-                memcpy(&l, (lsn_t*) r.data(), i);
-                memcpy(&l2, ((lsn_t*) r.data())+1, i);
+                memcpy(&begin_chkpt, (lsn_t*) r.data(), i);
+                memcpy(&redo_lsn, ((lsn_t*) r.data())+1, i);
 
-                DBGOUT5(<<"checkpt end: master=" << l 
-                    << " min_rec_lsn= " << l2);
+                if (master != begin_chkpt)
+                    W_FATAL_MSG(fcINTERNAL, 
+                                << "Master from 'end checkpoint' is different from caller of Log Analysis");
+ 
+                DBGOUT5(<<"checkpt end: master=" << begin_chkpt
+                        << " min_rec_lsn= " << redo_lsn);
 
-                if(lsn == l) {
-                    w_assert9(l2 == dptab.min_rec_lsn());
+                if(lsn == begin_chkpt) 
+                {
+                    // Only used in mount/unmount related code, comment out (M1)
+                    // w_assert9(l2 == dptab.min_rec_lsn());
                 }
             }
 
-            if (num_chkpt_end_handled > 2) {
+#if W_DEBUG_LEVEL > 4
+            if (num_chkpt_end_handled > 2) 
+            {
                 /*
                  * We hope we do not encounter more than one complete chkpt.
                  * Unfortunately, we *can* crash between the flushing
@@ -589,16 +816,28 @@ restart_m::analysis_pass(
 
 #endif 
 
+            // Done with the master checkpoint log records. Update 'num_chkpt_end_handled'
+            // to avoid processing incomplete or extra completed checkpoints
             num_chkpt_end_handled++;
+
             break;
 
 
         case logrec_t::t_xct_freeing_space:
-                xd->change_state(xct_t::xct_freeing_space);
-                break;
+
+            // If the txn state in 'xct_freeing_space' or 'xct_committing',
+            // something went wrong in the commit process, need to abort the txn
+
+            // A t_xct_freeing_space log record is generated when the txn
+            // entered 'xct_freeing_space' state
+            // Because we are in Recovery, keep the txn in the 'abort' state
+            // and don't change it.
+            
+            xd->change_state(xct_t::xct_aborting);
+            break;
 
         case logrec_t::t_xct_end_group: 
-                {
+            {
                 // Do what we do for t_xct_end for each of the
                 // transactions in the list, then drop through
                 // and do it for the xct named in "xd" (the attached one)
@@ -610,127 +849,212 @@ restart_m::analysis_pass(
                     xd = xct_t::look_up(list->xrec[i].tid);
                     // If it's not there, it could have been a read-only xct?
                     w_assert0(xd);
-                    /* Now do exactly what's done below */
-                    /*
-                     *  Remove xct from xct tab
-                     */
-                    if (xd->state() == xct_t::xct_freeing_space) 
+                    // Now do exactly what's done below
+                    //  Remove xct from xct tab
+                    if ((xd->state() == xct_t::xct_freeing_space) ||
+                        (xd->state() == xct_t::xct_aborting))
                     {
-                        /*
-                         * was prepared in the master
-                         * checkpoint, so the locks
-                         * were acquired.  have to free them
-                         */
+                        // was prepared in the master
+                        // checkpoint, so the locks
+                        // were acquired.  have to free them
                         me()->attach_xct(xd);        
                         W_COERCE( lm->unlock_duration() );
                         me()->detach_xct(xd);        
                     }
+
+                    // This txn has ended already, safe to remove it from transaction table
                     xd->change_state(xct_t::xct_ended);
                     xct_t::destroy_xct(xd);
                 }
-                }
-                break;
+            }
+            break;
 
         case logrec_t::t_xct_abort:
         case logrec_t::t_xct_end:
-            /*
-             *  Remove xct from xct tab
-             */
+            //  Remove xct from xct tab
             if (xd->state() == xct_t::xct_freeing_space) 
             {
-                /*
-                 * was prepared in the master
-                 * checkpoint, so the locks
-                 * were acquired.  have to free them
-                 */
+                // was prepared in the master
+                // checkpoint, so the locks
+                // were acquired.  have to free them
                 me()->attach_xct(xd);        
                 W_COERCE( lm->unlock_duration() );
                 me()->detach_xct(xd);        
             }
+            // Log record indicated this txn has ended or aborted already
+            // It is safe to remove it from transaction table
             xd->change_state(xct_t::xct_ended);
             xct_t::destroy_xct(xd);
             break;
 
-        default: {
-            lpid_t page_of_interest = r.construct_pid();
-            DBGOUT5(<<"analysis: default " << 
+        default: 
+            // All the other log records, since we have created transaction already
+            // we only care about if the log affect buffer pool here
+            
+            {
+                lpid_t page_of_interest = r.construct_pid();
+                DBGOUT5(<<"analysis: default " << 
                     r.type() << " tid " << r.tid()
                     << " page of interest " << page_of_interest);
-            if (r.is_page_update()) {
-                DBGOUT5(<<"is page update " );
-                DBGOUT5( << setiosflags(ios::right) << lsn 
-                    << resetiosflags(ios::right) << " A: " 
-                    << "is page update " << page_of_interest );
-                // redoable, has a pid, and is not compensated.
-                // Why the compensated predicate?
-                if (r.is_undo()) {
-                    /*
-                     *  r is undoable. Update next undo lsn of xct
-                     */
-                    xd->set_undo_nxt(lsn);
-                }
-                w_assert0(r.is_redo());
-                // TODO: remove the predicate is_redo below. It's
-                // superfluous
-                if (r.is_redo() && !(dptab.exists(page_of_interest))) {
-                    /*
-                     *  r is redoable and not in dptab ...
-                     *  Register a new dirty page.
-                     */
-                    DBGOUT5(<<"dptab.insert dirty pg " << page_of_interest 
-                        << " " << lsn);
-                    DBGOUT5( << setiosflags(ios::right) << lsn
-                            << resetiosflags(ios::right) << " A: " 
-                            << "insert in dirty page table " << page_of_interest );
-                    dptab.insert( page_of_interest, lsn.data() );
-                }
+                if (r.is_page_update()) 
+                {                    
+                    DBGOUT5(<<"is page update " );
+                    DBGOUT5( << setiosflags(ios::right) << lsn 
+                        << resetiosflags(ios::right) << " A: " 
+                        << "is page update " << page_of_interest );
+                    // redoable, has a pid, and is not compensated.
+                    // Why the compensated predicate?
+                    if (r.is_undo()) 
+                    {
+                        // r is undoable. Update next undo lsn of xct
+                        xd->set_undo_nxt(lsn);
+                    }
 
-            } else if (r.is_cpsn()) {
-                /* 
-                 *  Update undo_nxt lsn of xct
-                 */
-                if(r.is_undo()) {
-                    DBGOUT5(<<"is cpsn, undo " << " undo_nxt<--lsn " << lsn );
-                    /*
-                     *  r is undoable. There is one possible case of
-                     *  this (undoable compensation record)
-                     */
-                    xd->set_undo_nxt(lsn);
-                } else {
-                    DBGOUT5(<<"is cpsn, not undo " << " undo_next<--lsn " << r.undo_nxt() );
-                    xd->set_undo_nxt(r.undo_nxt());
+                    // Must be redoable
+                    w_assert0(r.is_redo());
+
+                    // These log records are not compensation log and affected buffer pool pages
+                    // we need to record these in_doubt pages in buffer pool
+                    // Exceptions:
+                    // Allocation of a page (t_alloc_a_page, t_alloc_consecutive_pages) - clear
+                    //           the in_doubt bit, because the page might be allocated for a 
+                    //           non-logged operation, we don't want to re-format the page
+                    // De-allocation of a page (t_dealloc_a_page, t_page_set_to_be_deleted) - 
+                    //          clear the in_doubt bit, so the page can be evicted if needed.
+
+                    if ((true == r.is_page_allocate()) ||
+                        (true == r.is_page_deallocate()))
+                    {
+                        // Remove the in_doubt flag in buffer pool of the page if it exists in buffer pool
+                        uint64_t key = bf_key(page_of_interest.vol().vol, page_of_interest.page);
+                        bf_idx idx = smlevel_0::bf->lookup_in_doubt(key);
+                        if (0 != idx)
+                        {
+                            // Page cb is in buffer pool, clear the 'in_doubt' and 'used'  flags
+                            // If the cb for this page does not exist in buffer pool, no-op
+                            if (true == smlevel_0::bf->is_in_doubt(idx))
+                            {
+                                smlevel_0::bf->clear_in_doubt(idx, true);  
+                                assert(0 < in_doubt_count);
+                                --in_doubt_count;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Register the page cb in buffer pool (if not exist) and mark the in_doubt flag
+                        idx = 0;
+                        grab_rc = smlevel_0::bf->register_and_mark(idx, 
+                                  page_of_interest.vol().vol, page_of_interest.page,
+                                  lsn, in_doubt_count);
+                        if (grab_rc.is_error()) 
+                        {
+                            // Not able to get a free block in buffer pool without evict, cannot continue in M1
+                            W_FATAL_MSG(fcINTERNAL, 
+                                << "Failed to record an in_doubt page for updated page during Log Analysis");
+                        }
+                        assert(0 != idx);
+                        
+/**  original code using dptab
+                        if (!(dptab.exists(page_of_interest))) 
+                        {
+                            // r is redoable and not in dptab ...
+                            // Register a new dirty page.
+                            DBGOUT5(<<"dptab.insert dirty pg " << page_of_interest 
+                                << " " << lsn);
+                            DBGOUT5( << setiosflags(ios::right) << lsn
+                                    << resetiosflags(ios::right) << " A: " 
+                                    << "insert in dirty page table " << page_of_interest );
+                            dptab.insert( page_of_interest, lsn.data() );
+                        }
+**/                        
+                    }
                 }
-                if (r.is_redo() && !(dptab.exists(page_of_interest))) {
-                    /*
-                     *  r is redoable and not in dptab ...
-                     *  Register a new dirty page.
-                     */
-                    DBGOUT5(<<"dptab.insert dirty pg " << page_of_interest 
-                        << " " << lsn);
-                    DBGOUT5( << setiosflags(ios::right) << lsn
-                          << resetiosflags(ios::right) << " A: " 
-                          << "insert in dirty page table " << page_of_interest );
-                    dptab.insert( page_of_interest, lsn.data() );
+                else if (r.is_cpsn()) 
+                {
+                    // If compensation record (t_compensate) should be REDO only, 
+                    //          no UNDO and  skipped in the UNDO phase.
+                
+                    // Update undo_nxt lsn of xct
+                    if(r.is_undo()) 
+                    {
+                        DBGOUT5(<<"is cpsn, undo " << " undo_nxt<--lsn " << lsn );
+
+                        // r is undoable. There is one possible case of
+                        // this (undoable compensation record)
+
+                        xd->set_undo_nxt(lsn);
+                    }
+                    else 
+                    {
+                        // Majority of the compensation log should not be undoable                       
+                        DBGOUT5(<<"is cpsn, not undo " << " set undo_next lsn to NULL");
+                        xd->set_undo_nxt(lsn_t::null);
+                    }
+
+                    // Register the page cb in buffer pool (if not exist) and mark the in_doubt flag
+                    if (r.is_redo())
+                    {
+                        idx = 0;
+                        grab_rc = smlevel_0::bf->register_and_mark(idx, 
+                                  page_of_interest.vol().vol, page_of_interest.page, 
+                                  lsn, in_doubt_count);
+                        if (grab_rc.is_error()) 
+                        {
+                            // Not able to get a free block in buffer pool without evict, cannot continue in M1
+                            W_FATAL_MSG(fcINTERNAL, 
+                                << "Failed to record an in_doubt page for compensation record during Log Analysis");
+                        }
+                        assert(0 != idx);
+                    }
+                    
+/**  original code using dptab
+
+                    if (r.is_redo() && !(dptab.exists(page_of_interest))) 
+                    {
+                        //  r is redoable and not in dptab ...
+                        //  Register a new dirty page.
+                        DBGOUT5(<<"dptab.insert dirty pg " << page_of_interest 
+                            << " " << lsn);
+                        DBGOUT5( << setiosflags(ios::right) << lsn
+                              << resetiosflags(ios::right) << " A: " 
+                              << "insert in dirty page table " << page_of_interest );
+                        dptab.insert( page_of_interest, lsn.data() );
+                    }
+*/
                 }
-            } else if (
-                    r.type()!=logrec_t::t_comment
-                    && r.type()!=logrec_t::t_store_operation
-                    ) {
-                W_FATAL(eINTERNAL);
-            }
-        }// case default
+                else if (r.type()!=logrec_t::t_comment &&      // Comments
+                    r.type()!=logrec_t::t_store_operation &&   // Store operation (sm)
+                    !r.is_skip() &&                            // Marker for the end of partition
+                    r.type()!=logrec_t::t_max_logrec)          // End of log type      
+                {
+                    // Retrieve a log buffer which we don't know how to handle
+                    // Raise erroe
+                    W_FATAL_MSG(fcINTERNAL, << "Unexpected log record type: " << r.type());
+                }
+            }// case default
         }// switch
     }
 
-    /*
-     *  Start of redo is the minimum of recovery lsn of all entries
-     *  in the dirty page table.
-     */
-    redo_lsn = dptab.min_rec_lsn();
+    // Read all the recovery logs, we should have a minimum LSN from the master checkpoint
+    // at this point, which is where the REDO phase should start for the in_doubt pages
+    // Error out if we don't have a valid LSN
+    if (lsn_t::null == redo_lsn)
+        W_FATAL_MSG(fcINTERNAL, << "Missing redo_lsn at the end of Log Analysis phase");
 
-    /*
-     * undo any mounts/dismounts that occured between chkpt and min_rec_lsn
-     */
+    // redo_lsn is where the REDO phase should start, it must be the earliest LSN, which could be
+    // earlier than the begin checkpoint LSN.
+    if (redo_lsn > begin_chkpt)
+       redo_lsn = begin_chkpt;
+
+
+/*****************************************************
+//Dead code, comment out just in case we need to re-visit it in the future
+
+// Eliminate mount/volume related stuff in Recovery milestone 1
+
+
+    // undo any mounts/dismounts that occured between chkpt and min_rec_lsn
     DBGOUT3( << ((theLastMountLSNBeforeChkpt != lsn_t::null && 
                     theLastMountLSNBeforeChkpt > redo_lsn) \
             ? "redoing mounts/dismounts before chkpt but after redo_lsn"  \
@@ -738,52 +1062,62 @@ restart_m::analysis_pass(
 
     { // Contain the scope of the following __copy__buf:
 
-    logrec_t* __copy__buf = new logrec_t;
-    if(! __copy__buf) { W_FATAL(eOUTOFMEMORY); }
-    w_auto_delete_t<logrec_t> auto_del(__copy__buf);
-    logrec_t&         copy = *__copy__buf;
+        logrec_t* __copy__buf = new logrec_t;
+        if(! __copy__buf)
+        {
+            W_FATAL(eOUTOFMEMORY); 
+        }
+        w_auto_delete_t<logrec_t> auto_del(__copy__buf);
+        logrec_t&         copy = *__copy__buf;
 
-    while (theLastMountLSNBeforeChkpt != lsn_t::null 
-        && theLastMountLSNBeforeChkpt > redo_lsn)  {
+        while (theLastMountLSNBeforeChkpt != lsn_t::null 
+            && theLastMountLSNBeforeChkpt > redo_lsn)  
+        {
 
-        W_COERCE(log->fetch(theLastMountLSNBeforeChkpt, log_rec_buf, 0));  
+            W_COERCE(log->fetch(theLastMountLSNBeforeChkpt, log_rec_buf, 0));  
 
-        // HAVE THE LOG_M MUTEX
-        // We have to release it in order to do the mount/dismounts
-        // so we make a copy of the log record (log_rec_buf points
-        // into the log_m's copy, and thus we have the mutex.`
+            // HAVE THE LOG_M MUTEX
+            // We have to release it in order to do the mount/dismounts
+            // so we make a copy of the log record (log_rec_buf points
+            // into the log_m's copy, and thus we have the mutex.`
 
-        logrec_t& r = *log_rec_buf;
+            logrec_t& r = *log_rec_buf;
 
-        /* Only copy the valid portion of the log record. */
-        memcpy(__copy__buf, &r, r.length());
-        log->release();
+            // Only copy the valid portion of the log record.
+            memcpy(__copy__buf, &r, r.length());
+            log->release();
 
-        DBGOUT3( << theLastMountLSNBeforeChkpt << ": " << copy );
+            DBGOUT3( << theLastMountLSNBeforeChkpt << ": " << copy );
 
-        w_assert9(copy.type() == logrec_t::t_dismount_vol || 
+            w_assert9(copy.type() == logrec_t::t_dismount_vol || 
                     copy.type() == logrec_t::t_mount_vol);
 
-        chkpt_dev_tab_t *dp = (chkpt_dev_tab_t*)copy.data();
-        w_assert9(dp->count == 1);
+            chkpt_dev_tab_t *dp = (chkpt_dev_tab_t*)copy.data();
+            w_assert9(dp->count == 1);
 
-        // it is ok if the mount/dismount fails, since this 
-        // may be caused by the destruction
-        // of the volume.  if that was the case then there 
-        // won't be updates that need to be
-        // done/undone to this volume so it doesn't matter.
-        if (copy.type() == logrec_t::t_dismount_vol)  {
-            W_IGNORE(io_m::mount(dp->devrec[0].dev_name, dp->devrec[0].vid));
-        }  else  {
-            W_IGNORE(io_m::dismount(dp->devrec[0].vid));
+            // it is ok if the mount/dismount fails, since this 
+            // may be caused by the destruction
+            // of the volume.  if that was the case then there 
+            // won't be updates that need to be
+            // done/undone to this volume so it doesn't matter.
+            if (copy.type() == logrec_t::t_dismount_vol)  
+            {
+                W_IGNORE(io_m::mount(dp->devrec[0].dev_name, dp->devrec[0].vid));
+            }
+            else
+            {
+                W_IGNORE(io_m::dismount(dp->devrec[0].vid));
+            }
+
+            theLastMountLSNBeforeChkpt = copy.xid_prev();
         }
 
-        theLastMountLSNBeforeChkpt = copy.xid_prev();
-    }
     // close scope so the
     // auto-release will free the log rec copy buffer, __copy__buf
     } 
+*****************************************************/
 
+    // Update the last mount LSN, which is from the begin checkpoint log record
     io_m::SetLastMountLSN(theLastMountLSNBeforeChkpt);
 
     w_base_t::base_stat_t f = GET_TSTAT(log_fetches);

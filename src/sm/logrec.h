@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 /* -*- mode:C++; c-basic-offset:4 -*-
@@ -152,6 +152,8 @@ public:
     bool             is_page_update() const;
     bool             is_redo() const;
     bool             is_skip() const;
+    bool             is_page_allocate() const;
+    bool             is_page_deallocate() const;
     bool             is_undo() const;
     bool             is_cpsn() const;
     bool             is_multi_page() const;
@@ -632,6 +634,18 @@ inline bool
 logrec_t::is_skip() const
 {
     return type() == t_skip;
+}
+
+inline bool
+logrec_t::is_page_allocate() const
+{
+    return ((t_alloc_a_page == type()) || (t_alloc_consecutive_pages == type()));
+}
+
+inline bool
+logrec_t::is_page_deallocate() const
+{
+    return ((t_dealloc_a_page == type()) || (t_page_set_to_be_deleted == type()));
 }
 
 

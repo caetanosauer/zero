@@ -371,21 +371,88 @@ inline bool bf_tree_m::is_dirty(const generic_page* p) const {
     return get_cb(idx)._dirty;
 }
 
+inline void bf_tree_m::set_in_doubt(bf_idx idx, lsn_t new_lsn) {
+    // Caller has latch on page
+    // From Log Analysis phase in Recovery, page is not in buffer pool
+    w_assert1 (_is_active_idx(idx));
+    bf_tree_cb_t &cb = get_cb(idx);
+    cb._in_doubt = true;
+    cb._used = true;
+    // Update LSN only if it is earlier than the current one
+    if (new_lsn.data() < cb._rec_lsn)
+        cb._rec_lsn = new_lsn.data();
+}
+
+inline void bf_tree_m::clear_in_doubt(bf_idx idx, bool clear_used) {
+    // Caller has latch on page
+    // From Log Analysis phase in Recovery, page is not in buffer pool    
+    w_assert1 (_is_active_idx(idx));
+    bf_tree_cb_t &cb = get_cb(idx);
+
+    // Clear 'in_doubt' flag
+    cb._in_doubt = false;
+
+    // Clear 'used' flag only if caller asked for it
+    // 1. Change a page from in_doubt to dirty, don't clear the 'used' flag
+    // 2. Mark a page not 'in_doubt' anymore, clear the 'used' flag
+    if (true == clear_used)
+        cb._used = false;
+}
+
+inline bool bf_tree_m::is_in_doubt(bf_idx idx) const {
+    // Caller has latch on page
+    // From Log Analysis phase in Recovery, page is not in buffer pool    
+    w_assert1 (_is_active_idx(idx));
+    return get_cb(idx)._in_doubt;
+}
+
 inline void bf_tree_m::set_in_doubt(const generic_page* p) {
     // Caller has latch on page
+    // Page is in buffer pool already
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
     bf_tree_cb_t &cb = get_cb(idx);
-    if (!cb._in_doubt) {
-        cb._in_doubt = true;
-    }
+    cb._in_doubt = true;
+    cb._used = true;
 }
+
+inline void bf_tree_m::clear_in_doubt(const generic_page* p, bool clear_used) {
+    // Caller has latch on page
+    // Page is in buffer pool already    
+    uint32_t idx = p - _buffer;
+    w_assert1 (_is_active_idx(idx));
+    bf_tree_cb_t &cb = get_cb(idx);
+
+    // Clear 'in_doubt' flag
+    cb._in_doubt = false;
+
+    // Clear 'used' flag only if caller asked for it
+    // 1. Change a page from in_doubt to dirty, don't clear the 'used' flag
+    // 2. Mark a page not 'in_doubt' anymore, clear the 'used' flag
+    if (true == clear_used)
+        cb._used = false;
+}
+
 inline bool bf_tree_m::is_in_doubt(const generic_page* p) const {
     // Caller has latch on page
+    // Page is in buffer pool already    
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
     return get_cb(idx)._in_doubt;
 }
+
+inline bf_idx bf_tree_m::lookup_in_doubt(int64_t key) const
+{
+    // Look up the hashtable using the provided key
+    // return 0 if the page cb is not in the buffer pool 
+    // Otherwise returning the index
+    // This function is for the Recovery to handle the in_doubt flag in cb
+    // note that the actual page (_buffer) may or may not in the buffer pool
+    // use this function with caution
+
+    return _hashtable->lookup(key);
+}
+
 
 inline latch_mode_t bf_tree_m::latch_mode(const generic_page* p) {
     uint32_t idx = p - _buffer;

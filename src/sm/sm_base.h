@@ -445,11 +445,11 @@ public:
         return ((operating_mode & t_in_redo ) !=0); }
 
     static bool before_recovery() { 
-        if ((false == in_recovery()) && (t_forward_processing != operating_mode))
+        if (t_not_started == operating_mode)
             return true;
-        else
+        else 
             return false;
-    }
+        }
 
     // These variables control the size of the log.
     static fileoff_t max_logsz; // max log file size

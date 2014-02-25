@@ -562,12 +562,15 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
     // Write a Checkpoint Begin Log and record its lsn in master
     lsn_t master;
 
-    // The original chkpt code was using the LSN when the device was mounted
-    // as the begin checkpoint LSN
-    //     LOG_INSERT(chkpt_begin_log(io->GetLastMountLSN()), &master);   
-    // In the new implementation, use _curr_lsn as the begin checkpoint LSN
-    // while _curr_lsn is the lsn of the next-to-be-inserted log record LSN
-    LOG_INSERT(chkpt_begin_log(log->curr_lsn()), &master);
+    // Put the last mounted LSN in the 'begin checkpoint ' log record, it is used in
+    // Recovery Log Analysis for device mounting purpose.
+    // Use _curr_lsn as the master (begin checkpoint LSN) for the rest of the checkpoint
+    // operation, while _curr_lsn is the lsn of the next-to-be-inserted log record LSN,
+    // master LSN (or if there is a smaller LSN) will be recorded in the 'end checkpoint'
+    // log record for the Recovery purpose.
+    lsn_t tmp_lsn;    
+    master = log->curr_lsn();
+    LOG_INSERT(chkpt_begin_log(io->GetLastMountLSN()), &tmp_lsn);
 
     /*
      *  Checkpoint the buffer pool dirty page table, and record
@@ -607,6 +610,8 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
 
             // Have the minimum rec_lsn of the bunch
             // returned iff it's less than the value passed in
+            // min_rec_lsn will be recorded in 'end checkpoint' log, it is used to determine the
+            // beginning of the REDO phase
             bf->get_rec_lsn(i, count, pid.get(), rec_lsn.get(), page_lsn.get(), min_rec_lsn,
                             master, log->curr_lsn());
             if (count)  
@@ -686,6 +691,8 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
      */
     lsn_t min_xct_lsn = lsn_t::max;
     {
+// TODO(M1)... we are not recording 'non-read-lock' during checkpoint in M1
+
         // For each transaction, record transaction ID,
         // lastLSN (the LSN of the most recent log record for the transaction)
         // 'abort' flags (transaction state), and undo nxt (for rollback)
@@ -774,8 +781,12 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
                     //     last log record's undo_next
                     // 'undo_nxt' is used in UNDO phase in Recovery, 
                     // transaction abort/rollback, also somehow in log truncation
-                    //                 
-                    undo_nxt[i] = xd->undo_nxt();
+
+                    // System transaction is not undoable
+                    if (xd->is_sys_xct())
+                        undo_nxt[i] = lsn_t::null;
+                    else
+                        undo_nxt[i] = xd->undo_nxt();
 
                     assert(lsn_t::null!= xd->first_lsn());                    
                     if (min_xct_lsn > xd->first_lsn())
@@ -814,7 +825,7 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
      *  min_xct_lsn: minimum of first_lsn of all recorded transactions, both active and aborting
      *  min_rec_lsn: minimum lsn of all buffer pool dirty or in_doubt pages
      *
-     *  If min_*_lsn > master, it could be one ot 2 things:
+     *  If min_*_lsn > master, it could be one of 2 things:
      *    1. Nothing happened, therefore the min_*_lsn are still set to lsn_t::max
      *    2. All activities occurred after 'begin checkpoint'
      *  Recovery would have to start from the master LSN in any case.
@@ -837,7 +848,7 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
         (smlevel_0::t_chkpt_sync == chkpt_mode))))    // In shutdown and synch checkpoint
     {
         // Write the Checkpoint End Log with:
-        //  1. master: LSN from begin checkpoint
+        //  1. master: LSN from begin checkpoint, thi sis where the checkpoint started
         //  2. min_rec_lsn: minimum lsn of all buffer pool dirty or in_doubt pages
 
         LOG_INSERT(chkpt_end_log (master, min_rec_lsn), 0);

@@ -156,18 +156,29 @@ public:
      * page, does nothing.
      *
      * in_doubt bit is only set during Log Analysis phase to indicate a page needs REDO
-     * the actual page is only registered in buffer pool but not loaded until the Log Analysis phase
+     * the actual page is only registered in buffer pool but not loaded until the REDO phase
      * 
      * @pre We do not hold current page's latch in Q mode
      */
     void         set_in_doubt() const;
+
+    /**
+     * Clear the in_doubt flag for this page in the bufferpool.  If this page is not a bufferpool-managed
+     * page, does nothing.
+     *
+     * in_doubt bit is only clear during REDO phase to indicate a page has been updated and 
+     * marked dirty
+     * 
+     * @pre We do not hold current page's latch in Q mode
+     */
+    void         clear_in_doubt() const;
+
     /**
      * Return true if this page in the bufferpool is marked in_doubt.  If this page is not a
      * bufferpool-managed page, returns false.
      * 
-     *
      * in_doubt bit is only set during Log Analysis phase to indicate a page needs REDO
-     * the actual page is only registered in buffer pool but not loaded until the Log Analysis phase
+     * the actual page is only registered in buffer pool but not loaded until the REDO phase
      *     
      * @pre We do not hold current page's latch in Q mode
      */
