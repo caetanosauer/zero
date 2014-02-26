@@ -20,7 +20,6 @@
  *    (type poor_man_key)
  *
  * \li child  (4 bytes): child page ID; this and next fields are present only in interior nodes
- * \li expected Child LSN (8 bytes): see \ref SPR for more details.
  *
  * The first two fields are stored so that for nearby items (in the
  * list order) they are likely to be in the same cache line; e.g.,
@@ -430,54 +429,48 @@ private:
             struct {
                 item_length_t item_len;
                 /// really of size item_len - sizeof(item_len):
-                char          item_data[14];
+                char          item_data[6];
             } leaf;
             struct {
                 /**
-                 * \brief Child Expected Minimum LSN.
-                 * \ingroup SPR
-                 * \details
-                 * Not lsn_t because union doesn't allow it (unless C++11).
-                 * \NOTE This is 8-bytes aligned so as to provide "regular register"
-                 * semantics. We can update this value only with SH-latch.
-                 * Other threads see either the old value or new value, but not a random
-                 * value. All usecases of this value are safe with that semantics.
-                 * @see bf_tree_m::_sx_update_child_emlsn()
-                 */
-                lsndata_t     child_emlsn;
-                /**
                  * \brief Child Page ID pointer, either swizzled or not.
-                 * \NOTE This is 4-bytes aligned for "regular register" semantics (see above).
+                 * \NOTE This is 4-bytes aligned for "regular register" semantics. We can
+                 * update this value only with SH-latch. Other threads see either the old value
+                 * or new value, but not a random value. All usecases of this value are safe
+                 * with that semantics.
                  */
                 shpid_t       child;
                 item_length_t item_len;
-                /// really of size item_len - sizeof(item_len) - sizeof(child) - sizeof(lsn_t):
+                /**
+                 * really of size item_len - sizeof(item_len) - sizeof(child).
+                 * the last 8 bytes are child EMLSN (lsndata_t), so the actualy key data size
+                 * is item_len - sizeof(item_len) - sizeof(child) - sizeof(lsndata_t).
+                 */
                 char          item_data[2];
             } interior;
             /**
-             * We use a 16 byte struct to \e interpret the body area, but we \e allocate
-             * a body in item_body unit (8 bytes) to not waste space.
+             * We use 8 byte alignment instead of the required 4 for
+             * historical reasons at this point:
              */
-            char _for_alignment_only[16];
+            int64_t _for_alignment_only;
         };
-    } item_body_layout;
+    } item_body;
     /** 8 bytes minimal unit of allocation for body. This can be 4 bytes. */
-    struct item_body {
-        uint64_t _for_alignment_only;
-    };
-    BOOST_STATIC_ASSERT(sizeof(item_body_layout) == 16);
     BOOST_STATIC_ASSERT(sizeof(item_body) == 8);
 
     BOOST_STATIC_ASSERT(data_sz%sizeof(item_body) == 0);
     enum {
         max_heads  = data_sz/sizeof(item_head),
         max_bodies = data_sz/sizeof(item_body),
+        /** Bytes that should be subtracted from item_len for actual data in leaf. */
+        leaf_overhead = sizeof(item_length_t),
+        /** Bytes that should be subtracted from item_len for actual data in interior. */
+        interior_overhead = sizeof(item_length_t) + sizeof(shpid_t) + sizeof(lsndata_t),
     };
 
     union {
         item_head head[max_heads];
-        /** @see body(body_offset_t) */
-        item_body body_units[max_bodies];
+        item_body body[max_bodies];
     };
     // check field sizes are large enough:
     /*
@@ -488,15 +481,6 @@ private:
     STATIC_LESS_THAN(data_sz,    1<<(sizeof(item_length_t)*8));
     STATIC_LESS_THAN(max_heads,  1<<(sizeof(item_index_t) *8));
     STATIC_LESS_THAN(max_bodies, 1<<(sizeof(body_offset_t)*8-1)); // -1 for ghost bit
-
-    /** Allows an access to item body layout. */
-    item_body_layout& body(body_offset_t offset) {
-        return reinterpret_cast<item_body_layout&>(body_units[offset]);
-    }
-    /** Const version. */
-    const item_body_layout& body(body_offset_t offset) const {
-        return reinterpret_cast<const item_body_layout&>(body_units[offset]);
-    }
 
     /// are we a leaf node?
     bool is_leaf() const { return btree_level == 1; }
@@ -519,6 +503,9 @@ private:
      * offset
      */
     item_length_t _item_body_length(body_offset_t offset) const;
+
+    /** Return reference to Child EMLSN data in item bodies. */
+    lsndata_t&    _item_child_emlsn(body_offset_t offset);
 
     /**
      * return number of item bodies holding data for the items
@@ -580,27 +567,34 @@ BOOST_STATIC_ASSERT(sizeof(btree_page) == sizeof(generic_page));
 
 inline size_t btree_page_data::_item_body_overhead() const {
     if (is_leaf()) {
-        return sizeof(item_length_t);
+        return leaf_overhead;
     } else {
-        return sizeof(item_length_t) + sizeof(shpid_t) + sizeof(lsn_t);
+        return interior_overhead;
     }
 }
 
 inline btree_page_data::item_length_t& btree_page_data::_item_body_length(body_offset_t offset) {
     w_assert1(offset >= 0);
     if (is_leaf()) {
-        return body(offset).leaf.item_len;
+        return body[offset].leaf.item_len;
     } else {
-        return body(offset).interior.item_len;
+        return body[offset].interior.item_len;
     }
 }
 inline btree_page_data::item_length_t btree_page_data::_item_body_length(body_offset_t offset) const {
     w_assert1(offset >= 0);
     if (is_leaf()) {
-        return body(offset).leaf.item_len;
+        return body[offset].leaf.item_len;
     } else {
-        return body(offset).interior.item_len;
+        return body[offset].interior.item_len;
     }
+}
+inline lsndata_t& btree_page_data::_item_child_emlsn(body_offset_t offset) {
+    w_assert1(offset >= 0);
+    w_assert1(body[offset].interior.item_len >= interior_overhead);
+    // last 8 bytes after usual item_data is the child EMLSN.
+    return *reinterpret_cast<lsndata_t*>(body[offset].interior.item_data
+        + body[offset].interior.item_len - interior_overhead);
 }
 
 inline btree_page_data::body_offset_t btree_page_data::_item_bodies(body_offset_t offset) const {
@@ -631,7 +625,7 @@ inline shpid_t& btree_page_data::item_child(int item) {
     if (offset < 0) {
         offset = -offset;
     }
-    return body(offset).interior.child;
+    return body[offset].interior.child;
 }
 
 inline lsndata_t& btree_page_data::item_child_emlsn(int item) {
@@ -642,7 +636,7 @@ inline lsndata_t& btree_page_data::item_child_emlsn(int item) {
     if (offset < 0) {
         offset = -offset;
     }
-    return body(offset).interior.child_emlsn;
+    return _item_child_emlsn(offset);
 }
 
 inline char* btree_page_data::item_data(int item) {
@@ -652,9 +646,9 @@ inline char* btree_page_data::item_data(int item) {
         offset = -offset;
     }
     if (is_leaf()) {
-        return body(offset).leaf.item_data;
+        return body[offset].leaf.item_data;
     } else {
-        return body(offset).interior.item_data;
+        return body[offset].interior.item_data;
     }
 }
 
@@ -667,11 +661,10 @@ inline size_t btree_page_data::item_length(int item) const {
 
     int length;
     if (is_leaf()) {
-        length = body(offset).leaf.item_len;
+        length = body[offset].leaf.item_len - leaf_overhead;
     } else {
-        length = body(offset).interior.item_len - sizeof(shpid_t) - sizeof(lsn_t);
+        length = body[offset].interior.item_len - interior_overhead;
     }
-    length -= sizeof(item_length_t);
     w_assert1(length >= 0);
     return length;
 }
@@ -746,7 +739,7 @@ inline shpid_t btree_page_data::robust_item_child(int item) const {
         offset = -offset;
         w_assert1(offset >= 0);
     }
-    return ACCESS_ONCE(body(offset % max_bodies).interior.child);
+    return ACCESS_ONCE(body[offset % max_bodies].interior.child);
 }
 
 inline lsndata_t btree_page_data::robust_item_child_emlsn(int item) const {
@@ -756,7 +749,11 @@ inline lsndata_t btree_page_data::robust_item_child_emlsn(int item) const {
         offset = -offset;
         w_assert1(offset >= 0);
     }
-    return ACCESS_ONCE(body(offset % max_bodies).interior.child_emlsn);
+    int body_len = ACCESS_ONCE(body[offset % max_bodies].interior.item_len);
+    body_len -= interior_overhead;
+    w_assert1(body_len >= 0);
+    return *reinterpret_cast<const volatile lsndata_t*>(
+        ACCESS_ONCE(body[offset % max_bodies].interior.item_data) + body_len);
 }
 
 inline const char* btree_page_data::robust_item_data(int item, size_t& length) const {
@@ -774,16 +771,15 @@ inline const char* btree_page_data::robust_item_data(int item, size_t& length) c
     const char* data;
     int result_length;
     if (robust_is_leaf()) {
-        result_length = ACCESS_ONCE(body(offset).leaf.item_len);
-        data          = (const char*)&body(offset).leaf.item_data;
+        result_length = ACCESS_ONCE(body[offset].leaf.item_len) - leaf_overhead;
+        data          = (const char*)&body[offset].leaf.item_data;
     } else {
-        result_length = ACCESS_ONCE(body(offset).interior.item_len) - sizeof(shpid_t);
-        data          = (const char*)&body(offset).interior.item_data;
+        result_length = ACCESS_ONCE(body[offset].interior.item_len) - interior_overhead;
+        data          = (const char*)&body[offset].interior.item_data;
     }
-    result_length -= sizeof(item_length_t);
 
     if (result_length < 0
-        || data + result_length > reinterpret_cast<const char*>(&body(max_bodies))) {
+        || data + result_length > reinterpret_cast<const char*>(&body[max_bodies])) {
         result_length = 0;
     }
 
