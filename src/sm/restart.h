@@ -59,11 +59,15 @@ private:
         );
 
     static void                 redo_pass(
-        lsn_t                             redo_lsn, 
-        const lsn_t                     &highest,  /* for debugging */
-        dirty_pages_tab_t&             ptab);
+        lsn_t                    redo_lsn, 
+        const lsn_t              &highest,  /* for debugging */
+        dirty_pages_tab_t&       ptab,
+        const uint32_t           in_doubt_count  // How many in_doubt pages in buffer pool
+        );
 
-    static void                 undo_pass();
+    static void                 undo_pass(
+        const uint32_t          xct_count  // How many transactions in buffer pool
+        );
 
 private:
     // keep track of tid from log record that we're redoing

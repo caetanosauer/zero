@@ -188,6 +188,8 @@ struct bf_tree_cb_t {
     // volume number - _pid_vol (overload for in_doubt purpose)
     // store number    - _pid_shpid
     // page number    - _store_num (only valid if in_doubt is true)
+    // If _in_doubt == true, do not access 'bf_tree_m::_buffer'
+    //
     bool                        _in_doubt;      // +1 -> 51
     fill8                       _fill8_52;      // +1 -> 52
     snum_t                      _store_num;     // +4 -> 56

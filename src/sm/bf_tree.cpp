@@ -280,6 +280,7 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
     cb._rec_lsn = _buffer[idx].lsn.data();
     cb.pin_cnt_set(1); // root page's pin count is always positive
     cb._swizzled = true;
+    cb._in_doubt = false;
     cb._used = true; // turn on _used at last
     bool inserted = _hashtable->insert_if_not_exists(bf_key(vid, shpid), idx); // for some type of caller (e.g., redo) we still need hashtable entry for root
     if (!inserted) {
@@ -316,6 +317,7 @@ w_rc_t bf_tree_m::_install_volume_mainmemorydb(vol_t* volume) {
             cb._pid_shpid = idx;
             cb._rec_lsn = _buffer[idx].lsn.data();
             cb.pin_cnt_set(1);
+            cb._in_doubt = false;
             cb._used = true;
             cb._swizzled = true;
         }
@@ -634,10 +636,11 @@ w_rc_t bf_tree_m::wakeup_cleaner_for_volume(volid_t vol) {
 
 void bf_tree_m::repair_rec_lsn (generic_page *page, bool was_dirty, const lsn_t &new_rlsn) {
     if( !smlevel_0::logging_enabled) return;
-    
+
     bf_idx idx = page - _buffer;
     w_assert1 (_is_active_idx(idx));
-    
+    w_assert1(false == get_cb(idx)._in_doubt);    
+
     lsn_t lsn = _buffer[idx].lsn;
     lsn_t rec_lsn (get_cb(idx)._rec_lsn);
     if (was_dirty) {
@@ -1107,6 +1110,7 @@ bool bf_tree_m::register_write_order_dependency(const generic_page* page, const 
 
     uint32_t idx = page - _buffer;
     w_assert1 (_is_active_idx(idx));
+    w_assert1(false == get_cb(idx)._in_doubt);
     bf_tree_cb_t &cb = get_cb(idx);
     w_assert1(cb.latch().held_by_me()); 
 
@@ -1248,6 +1252,7 @@ void bf_tree_m::switch_parent(generic_page* page, generic_page* new_parent)
     if (!is_swizzling_enabled()) {
         return;
     }
+    w_assert1(false == get_cb(idx)._in_doubt);
     bf_idx idx = page - _buffer;
     w_assert1(_is_active_idx(idx));
     bf_tree_cb_t &cb = get_cb(idx);
@@ -1516,13 +1521,19 @@ bool bf_tree_m::has_swizzled_child(bf_idx node_idx) {
 w_rc_t bf_tree_m::register_and_mark(bf_idx& ret, volid_t vid,
                   shpid_t shpid, lsn_t new_lsn, uint32_t& in_doubt_count)
 {
+    w_rc_t rc = RCOK;
+
     ret = 0;
 
     // This function is only allowed in the Recovery Log Analysis phase
+    
+    // Note we are not holding latch for any of the operations in this function, because 
+    // Log Analysis phase is running in serial, it is not opened for new transactions so no race
+    
     if (smlevel_0::t_in_analysis != smlevel_0::operating_mode)
         W_FATAL_MSG(fcINTERNAL, 
-                    << "Can register a page in buffer pool only during Log Analysis phase, current phase: "
-                    << smlevel_0::operating_mode);
+            << "Can register a page in buffer pool only during Log Analysis phase, current phase: "
+            << smlevel_0::operating_mode);
 
     // Do we have this page in buffer pool already?
     uint64_t key = bf_key(vid, shpid);
@@ -1531,7 +1542,9 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret, volid_t vid,
     {
         // If the page exists in buffer pool - it does not mean the in_doubt flag is on
         //   Increment the in_doubt page counter only if the in_doubt flag was off
-        //   Make sure in_doubt and used flags are on and update the rec_lsn if one is provided.
+        //   Make sure in_doubt and used flags are on, update _rec_lsn if 
+        //   new_lsn is smaller (earlier) than _rec_lsn in cb, _rec_lsn is the LSN
+        //   which made the page 'dirty' initially
         if (false == is_in_doubt(idx))        
             ++in_doubt_count;
         set_in_doubt(idx, new_lsn);
@@ -1542,62 +1555,50 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret, volid_t vid,
     {
         // If the page does not exist in buffer pool -
         //   Find a free block in buffer pool without evict, return error if the freelist is empty.
-        //   Populate the page cb but not loading the actual page
+        //   Populate the page cb but not loading the actual page (do not load _buffer)
         //   set the in_doubt and used flags in cb to true, update the rec_lsn
+        //   Insert into _hashtable so the page cb can be found later
         //   and return the index of the page   
 
         DBGOUT5(<<"Page not registered in buffer pool, start registration process");
-        w_rc_t grab_rc = _grab_free_block(idx, false);  // Do not evict
-        if (grab_rc.is_error())
-            return grab_rc;
+        rc = _grab_free_block(idx, false);  // Do not evict
+        if (rc.is_error())
+            return rc;
 
-        // Now we have a page, populate the cb but not load the physical page in Log Analysis phase
-        // The actual page will be loaded in REDO phase
+        // Now we have an empty page
+        // Do not load the physical page from disk:  volume->_volume->read_page(shpid, _buffer[idx]);
+        // The actual page will be loaded in REDO phase       
         
-// TODO(M1)...  Populate the page cb....
+        // Initialize control block of the page, mark the in_doubt and used flags, 
+        // add the rec_lsn which indicates when the page was dirty initially
+        bf_tree_cb_t &cb = get_cb(idx);
+        cb._pid_vol = vid;
+        cb._pid_shpid = shpid;
+        cb._dirty = false;
+        cb._in_doubt = true;
+        cb._used = true;
+        cb._refbit_approximate = BP_INITIAL_REFCOUNT; 
+
+        // For a loade page,  get _rec_lsn from the physical page (cb._rec_lsn = _buffer[idx].lsn.data())
+        // But in Log Analysis, we don't load the page, so initialize _rec_lsn from input parameter
+        cb._rec_lsn = new_lsn.data();
+
+        // Register the constructed 'key' into hash table so we can find this page cb later
+        bool inserted = _hashtable->insert_if_not_exists(key, idx);
+        if (false == inserted)
+        {
+            ERROUT(<<"failed to register a page as in_doubt in hashtable during Log Analysis phase");
+            return RC(eINTERNAL);
+        }
 
         // Update the in_doubt page counter
         ++in_doubt_count;
 
+        // Now we are done
         DBGOUT5(<<"Done registration process, idx: " << idx);
-
-
-// _grab_free_block(idx, false);  // get a frame that will be the new page, no evict        
-		/*
-		w_rc_t bf_tree_m::_preload_root_page
-		w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret);
-		bool bf_tree_m::_is_active_idx (bf_idx idx) const
-		void bf_tree_m::set_in_doubt(const generic_page* p)
-		void bf_tree_m::clear_in_doubt(const generic_page* p)
-		bf_idx bf_tree_m::get_idx(const bf_tree_cb_t* cb)
-		generic_page* bf_tree_m::get_page(const bf_tree_cb_t *cb)
-		bf_tree_cb_t& bf_tree_m::get_cb(bf_idx idx) const
-		*/
-		
-		/*
-		Each page frame:
-		// Array of control blocks. array size is _block_cnt. index 0 is never used (means NULL).
-		bf_tree_cb_t*		 _control_blocks;
-		// Array of page contents. array size is _block_cnt. index 0 is never used (means NULL). 
-		generic_page*			   _buffer;
-		// hashtable to locate a page in this bufferpool. swizzled pages are removed from bufferpool. 
-		bf_hashtable*		 _hashtable;
-		*/
-		
-		// We want to use '_grab_free_block' but do not evict (_get_replacement_block)
-		// Once we get the idx back, we want to fill the cb but not load the page
-		
-		//				uint64_t key = bf_key(vol, shpid);
-		//				bf_idx idx = _hashtable->lookup(key);
-		//				if (idx == 0) {
-		//					// the page is not in the bufferpool. we need to read it from disk
-		//					W_DO(_grab_free_block(idx)); // get a frame that will be the new page
-		//						w_assert1(_is_valid_idx(idx));
-
     }
-    
 
-    return RCOK;
+    return rc;
 }
 
 void bf_tree_m::_unswizzle_traverse_node(uint32_t &unswizzled_frames,
@@ -1613,6 +1614,7 @@ void bf_tree_m::_unswizzle_traverse_node(uint32_t &unswizzled_frames,
     uint32_t old = _swizzle_clockhand_pathway[cur_clockhand_depth];
     bf_tree_cb_t &node_cb = get_cb(node_idx);
     fixable_page_h node_p;
+    w_assert1(false == node_cb._in_doubt);
     node_p.fix_nonbufferpool_page(_buffer + node_idx);
     if (old >= (uint32_t) node_p.max_child_slot()+1) {
         return;
@@ -1707,6 +1709,7 @@ bool bf_tree_m::_unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot) {
     latch_auto_release auto_rel(parent_cb.latch()); // this automatically releaes the latch.
 
     fixable_page_h parent;
+    w_assert1(false == parent_cb._in_doubt);
     parent.fix_nonbufferpool_page(_buffer + parent_idx);
     if (child_slot >= (uint32_t) parent.max_child_slot()+1) {
         return false;
@@ -1960,16 +1963,16 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid,
                 // in_doubt pages are not loaded into buffer pool yet, cannot get information
                 // from page ('_buffer')
 
-// TODO(M1)...  make sure we can get the cb even if the page is not loaded, meaning the Log Analysis phase must register the in_doubt page (cb) in buffer pool     <--- verify
                 // lpid_t: Store ID (volume number + store number) + page number (4+4+4)
                 // Re-construct the lpid using several fields in cb
                 vid_t vid(cb._pid_vol);
                 lpid_t store_id(vid, cb._store_num, cb._pid_shpid);
                 pid[i] = store_id;
-                rec_lsn[i] = master;  // Use the begin checkpoint LSN for the oldest LSN
-                assert(lsn_t::null!= current_lsn);
+                // rec_lsn is when the page got dirty initially, since this is an in_doubt page for Log Analysis
+                // use the smaller LSN between cb and checkpoint master
+                rec_lsn[i] = (lsn.data() < master.data())? lsn : master;
+                w_assert1(lsn_t::null!= current_lsn);
                 page_lsn[i] = current_lsn;    // Use the current LSN for page LSN
-
             }
             else
             {
@@ -1986,9 +1989,9 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid,
                 // buffer[start].lsn.data() is the Page LSN, which is the latest LSN
                 
                 pid[i] = _buffer[start].pid;
-                assert(lsn_t::null!= lsn);
+                w_assert1(lsn_t::null!= lsn);
                 rec_lsn[i] = lsn;
-                assert(lsn_t::null!= _buffer[start].lsn.data());
+                w_assert1(lsn_t::null!= _buffer[start].lsn.data());
                 page_lsn[i] = _buffer[start].lsn.data();
             }
 

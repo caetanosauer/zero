@@ -201,7 +201,6 @@ restart_m::recover(lsn_t master)
      */
     smlevel_0::errlog->clog << info_prio << "Analysis ..." << flushl;
 
-
     DBGOUT3(<<"starting analysis at " << master << " redo_lsn = " << redo_lsn);
     if(logtrace) {
         // Print some info about the log tracing that will follow.
@@ -228,11 +227,13 @@ restart_m::recover(lsn_t master)
         fprintf(stderr, "\n\n");
     }
 
+////////////////////////////////////////
 // TODO(M1)... ignore 'non-read-lock' in M1
+////////////////////////////////////////
+
     // Log Analysis phase, the store is not opened for new transaction during this phase
     // Populate transaction table for all in-flight transactions, mark them as 'abort'
     // Populate buffer pool for 'in_doubt' pages, register but not loading the pages
-//    analysis_pass(master, dptab, redo_lsn);
     uint32_t in_doubt_count = 0;
     analysis_pass(master, redo_lsn, in_doubt_count);
 
@@ -240,6 +241,12 @@ restart_m::recover(lsn_t master)
     // are empty, there is nothing to do in REDO and UNDO phases, but we still want to 
     // take a 'empty' checkpoint' as the starting point for the next server start
     uint32_t xct_count = xct_t::num_active_xcts();
+
+    // xct_count: the number of transactions in transaction table, 
+    //                 all transactions shoul be marked as aborting, they would be
+    //                 removed in the UNDO phase
+    // in_doubt_count: the number of in_doubt pages in buffer pool,
+    //                 the pages would be loaded and turned into 'dirty' in REDO phase
     if ((0 == xct_count) && (0 == in_doubt_count)) 
     {
         smlevel_0::errlog->clog << info_prio  
@@ -254,7 +261,7 @@ restart_m::recover(lsn_t master)
     }
 
     // Take a synch checkpoint afterLog Analysis phase but before REDO phase
-    assert(smlevel_1::chkpt);    
+    w_assert1(smlevel_1::chkpt);    
     smlevel_1::chkpt->synch_take();
 
     lsn_t curr_lsn = log->curr_lsn(); 
@@ -282,18 +289,26 @@ restart_m::recover(lsn_t master)
         }
 #endif 
 
+////////////////////////////////////////
 // TODO(M1)... does not open the store for new transactions in M1
 //                    ignore 'non-read-lock' in M1
+////////////////////////////////////////
+
         // REDO phase, based on log records (forward scan), load 'in_doubt' pages
         // into buffer pool, REDO the updates, clear the 'in_doubt' flags and mark
-        // the 'dirty' flags.
+        // the 'dirty' flags for modified pages.
         // No change to transaction table or recovery log
         DBGOUT3(<<"starting REDO at " << redo_lsn << " highest_lsn " << curr_lsn);
-        redo_pass(redo_lsn, curr_lsn, dptab);
+        redo_pass(redo_lsn, curr_lsn, dptab, in_doubt_count);
 
         /* no logging during redo */
         w_assert1(curr_lsn == log->curr_lsn()); 
 
+        // We took a checkpoint at the end of Log Analysis phase which caused
+        // a log flush, therefore the buffer pool flush at the end of the REDO phase
+        // is optional, but we are doing it anyway so if we encounter a system crash
+        // after this point, we would have less recovery work to do in the next recovery
+        
         /* In order to preserve the invariant that the rec_lsn <= page's lsn1,
          * we need to make sure that all dirty pages get flushed to disk,
          * since the redo phase does NOT log these page updates, it causes
@@ -314,14 +329,17 @@ restart_m::recover(lsn_t master)
             << " curr_lsn = " << curr_lsn
             << flushl;
 
+////////////////////////////////////////
 // TODO(M1)... does not open the store for new transactions in M1
 //                    ignore 'non-read-lock' in M1
+////////////////////////////////////////
+
         // UNDO phase, based on log records (reverse scan), use compensate operations
         // to UNDO (abort) the in-flight transactions, remove the aborted transactions
         // from the transaction table after rollback (compensation).
         // New log records would be generated due to compensation operations
         DBGOUT3(<<"starting UNDO phase, current lsn: " << curr_lsn);    
-        undo_pass();
+        undo_pass(xct_count);
 
         smlevel_0::errlog->clog << info_prio << "Oldest active transaction is " 
             << xct_t::oldest_tid() << flushl;
@@ -401,7 +419,7 @@ restart_m::analysis_pass(
     lsn_t         theLastMountLSNBeforeChkpt;
 
     bf_idx idx = 0;
-    w_rc_t grab_rc = RCOK;
+    w_rc_t rc = RCOK;
 
     /*
      *  Assert first record is Checkpoint Begin Log
@@ -511,8 +529,11 @@ restart_m::analysis_pass(
                     // If the cb for this page does not exist in buffer pool, no-op 
                     if (true == smlevel_0::bf->is_in_doubt(idx))
                     {
-                        smlevel_0::bf->clear_in_doubt(idx, true);  
-                        assert(0 < in_doubt_count);
+                        if (true == r.is_page_allocate())
+                            smlevel_0::bf->clear_in_doubt(idx, true, key);    // Page is still used
+                        else
+                            smlevel_0::bf->clear_in_doubt(idx, false, key);   // Page is not used
+                        w_assert1(0 < in_doubt_count);
                         --in_doubt_count;
                     }
                 }
@@ -521,15 +542,15 @@ restart_m::analysis_pass(
             {
                 // Register the page cb in buffer pool (if not exist) and mark the in_doubt flag               
                 idx = 0;
-                grab_rc = smlevel_0::bf->register_and_mark(idx, page_of_interest.vol().vol,
+                rc = smlevel_0::bf->register_and_mark(idx, page_of_interest.vol().vol,
                           page_of_interest.page, lsn, in_doubt_count);
-                if (grab_rc.is_error()) 
+                if (rc.is_error()) 
                 {
                     // Not able to get a free block in buffer pool without evict, cannot continue in M1
                     W_FATAL_MSG(fcINTERNAL, 
                         << "Failed to record an in_doubt page for system transaction during Log Analysis");
                 }
-                assert(0 != idx);
+                w_assert1(0 != idx);
 
                 // If we get here, we have registed a new page with the 'in_doubt' and 'used' flags
                 // set to true in page cb, but not load the actual page
@@ -542,15 +563,15 @@ restart_m::analysis_pass(
                     lpid_t page2_of_interest = r.construct_pid2();
                     DBGOUT5(<<" multi-page:" <<  page2_of_interest);
                     idx = 0;
-                    grab_rc = smlevel_0::bf->register_and_mark(idx, page2_of_interest.vol().vol,
+                    rc = smlevel_0::bf->register_and_mark(idx, page2_of_interest.vol().vol,
                               page2_of_interest.page, lsn, in_doubt_count);
-                    if (grab_rc.is_error()) 
+                    if (rc.is_error()) 
                     {
                         // Not able to get a free block in buffer pool without evict, cannot continue in M1
                         W_FATAL_MSG(fcINTERNAL, 
                             << "Failed to record a second in_doubt page for system transaction during Log Analysis");
                     }
-                    assert(0 != idx);
+                    w_assert1(0 != idx);
                 }
                 
 /**  original code using dptab *
@@ -637,15 +658,15 @@ restart_m::analysis_pass(
                     // If it is already in the buffer pool, update the rec_lsn to the earliest LSN
 
                     idx = 0;
-                    grab_rc = smlevel_0::bf->register_and_mark(idx, dp->brec[i].pid.vol().vol,
+                    rc = smlevel_0::bf->register_and_mark(idx, dp->brec[i].pid.vol().vol,
                               dp->brec[i].pid.page, dp->brec[i].rec_lsn.data(), in_doubt_count);
-                    if (grab_rc.is_error()) 
+                    if (rc.is_error()) 
                     {
                         // Not able to get a free block in buffer pool without evict, cannot continue in M1
                         W_FATAL_MSG(fcINTERNAL, 
                             << "Failed to record an in_doubt page in t_chkpt_bf_tab during Log Analysis");
                     }
-                    assert(0 != idx);
+                    w_assert1(0 != idx);
 /**  original code using dptab 
                     dp_lsn_iterator it = dptab.find(dp->brec[i].pid);
                     if (it == dptab.dp_lsns().end())  
@@ -682,25 +703,29 @@ restart_m::analysis_pass(
                 {
                     xd = xct_t::look_up(dp->xrec[i].tid);
                     if (!xd) 
-                    {
+                    {           
+                        // Not found in the transaction table
                         if (dp->xrec[i].state != xct_t::xct_ended)  
                         {
+                            // skip finished ones                        
                             xd = xct_t::new_xct(dp->xrec[i].tid,
-                                           dp->xrec[i].state,
-                                           dp->xrec[i].last_lsn,
-                                           dp->xrec[i].undo_nxt);
+                                        xct_t::xct_aborting, // Instead of using dp->xrec[i].state
+                                                             // gathered in checkpoint log,
+                                                             // mark transaction aborting to 
+                                                             // indicate this transaction
+                                                             // might need UNDO
+                                        dp->xrec[i].last_lsn,
+                                        dp->xrec[i].undo_nxt);
                             DBGOUT5(<<"add xct " << dp->xrec[i].tid
                                     << " state " << dp->xrec[i].state
                                     << " last lsn " << dp->xrec[i].last_lsn
                                     << " undo " << dp->xrec[i].undo_nxt);
                             w_assert1(xd);
                         }
-                        // skip finished ones
-                        // (they can get in there!)
                     }
                     else
                     {
-                       // Could be active or aborting
+                       // Found in the transaction tablke, it must not be ended
                        w_assert9(dp->xrec[i].state != xct_t::xct_ended);
                     }
                 }
@@ -872,7 +897,8 @@ restart_m::analysis_pass(
         case logrec_t::t_xct_abort:
         case logrec_t::t_xct_end:
             //  Remove xct from xct tab
-            if (xd->state() == xct_t::xct_freeing_space) 
+            if ((xd->state() == xct_t::xct_freeing_space) ||
+                (xd->state() == xct_t::xct_aborting))
             {
                 // was prepared in the master
                 // checkpoint, so the locks
@@ -934,8 +960,11 @@ restart_m::analysis_pass(
                             // If the cb for this page does not exist in buffer pool, no-op
                             if (true == smlevel_0::bf->is_in_doubt(idx))
                             {
-                                smlevel_0::bf->clear_in_doubt(idx, true);  
-                                assert(0 < in_doubt_count);
+                                if (true == r.is_page_allocate())
+                                    smlevel_0::bf->clear_in_doubt(idx, true, key);   // Page is still used
+                                else
+                                    smlevel_0::bf->clear_in_doubt(idx, false, key);  // Page is not used
+                                w_assert1(0 < in_doubt_count);
                                 --in_doubt_count;
                             }
                         }
@@ -944,16 +973,16 @@ restart_m::analysis_pass(
                     {
                         // Register the page cb in buffer pool (if not exist) and mark the in_doubt flag
                         idx = 0;
-                        grab_rc = smlevel_0::bf->register_and_mark(idx, 
+                        rc = smlevel_0::bf->register_and_mark(idx, 
                                   page_of_interest.vol().vol, page_of_interest.page,
                                   lsn, in_doubt_count);
-                        if (grab_rc.is_error()) 
+                        if (rc.is_error()) 
                         {
                             // Not able to get a free block in buffer pool without evict, cannot continue in M1
                             W_FATAL_MSG(fcINTERNAL, 
                                 << "Failed to record an in_doubt page for updated page during Log Analysis");
                         }
-                        assert(0 != idx);
+                        w_assert1(0 != idx);
                         
 /**  original code using dptab
                         if (!(dptab.exists(page_of_interest))) 
@@ -996,16 +1025,16 @@ restart_m::analysis_pass(
                     if (r.is_redo())
                     {
                         idx = 0;
-                        grab_rc = smlevel_0::bf->register_and_mark(idx, 
+                        rc = smlevel_0::bf->register_and_mark(idx, 
                                   page_of_interest.vol().vol, page_of_interest.page, 
                                   lsn, in_doubt_count);
-                        if (grab_rc.is_error()) 
+                        if (rc.is_error()) 
                         {
                             // Not able to get a free block in buffer pool without evict, cannot continue in M1
                             W_FATAL_MSG(fcINTERNAL, 
                                 << "Failed to record an in_doubt page for compensation record during Log Analysis");
                         }
-                        assert(0 != idx);
+                        w_assert1(0 != idx);
                     }
                     
 /**  original code using dptab
@@ -1132,21 +1161,26 @@ restart_m::analysis_pass(
 
 /*********************************************************************
  * 
- *  restart_m::redo_pass(redo_lsn, highest_lsn, dptab)
+ *  restart_m::redo_pass(redo_lsn, highest_lsn, dptab, in_doubt_count)
  *
- *  Scan log forward from redo_lsn. Base on entries in dptab, 
+ *  Scan log forward from redo_lsn. Base on entries in buffer pool, 
  *  apply redo if durable page is old.
  *
  *********************************************************************/
 void 
 restart_m::redo_pass(
-    lsn_t redo_lsn, 
-    const lsn_t &highest_lsn,
-    dirty_pages_tab_t& dptab
+    lsn_t              redo_lsn,       // This is where the log scan should start
+    const lsn_t&       highest_lsn,    // This is the current log LSN, REDO should not
+                                       //generate log so this value should not change
+    dirty_pages_tab_t& dptab,
+    const uint32_t     in_doubt_count  // How many in_doubt pages in buffer pool
+                                       // for validation purpose
 )
 {
     FUNC(restart_m::redo_pass);
     smlevel_0::operating_mode = smlevel_0::t_in_redo;
+
+    w_assert1(0 != in_doubt_count);
 
     AutoTurnOffLogging turnedOnWhenDestroyed;
 
@@ -1493,7 +1527,7 @@ void restart_m::_redo_log_with_pid(
 
 /*********************************************************************
  *
- *  restart_m::undo_pass()
+ *  restart_m::undo_pass(xct_count)
  *
  *  abort all the active transactions, doing so in a strictly reverse
  *  chronological order.  This is done to get around a boundary condition
@@ -1513,11 +1547,16 @@ void restart_m::_redo_log_with_pid(
  *
  *********************************************************************/
 void 
-restart_m::undo_pass()
+restart_m::undo_pass(
+    const uint32_t     xct_count  // How many transactions in buffer pool
+                                  // for validation purpose
+    )
 {
     FUNC(restart_m::undo_pass);
 
     smlevel_0::operating_mode = smlevel_0::t_in_undo;
+
+    w_assert1(0 != xct_count);
 
     CmpXctUndoLsns        cmp;
     XctPtrHeap            heap(cmp);

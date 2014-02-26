@@ -465,6 +465,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
             continue;
         }
         w_assert1(cb._pid_shpid >= _parent->_bufferpool->_volumes[vol]->_volume->first_data_pageid());
+        w_assert1(false == cb._in_doubt);
         w_assert1(_parent->_bufferpool->_buffer->lsn.valid());
         _sort_buffer[sort_buf_used] = (((uint64_t) cb._pid_shpid) << 32) + ((uint64_t) idx);
         ++sort_buf_used;

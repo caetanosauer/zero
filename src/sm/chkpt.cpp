@@ -691,7 +691,9 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
      */
     lsn_t min_xct_lsn = lsn_t::max;
     {
+////////////////////////////////////////
 // TODO(M1)... we are not recording 'non-read-lock' during checkpoint in M1
+////////////////////////////////////////
 
         // For each transaction, record transaction ID,
         // lastLSN (the LSN of the most recent log record for the transaction)
@@ -736,7 +738,7 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
                 if (latch_rc.is_error())
                 {
                     // Unable to the read acquire latch, cannot continue, raise an internal error
-                    DBGOUT2 (<< "Error when acquiring LATCH_SH for checkpoint transaction object. xd->tid = "
+                    DBGOUT1 (<< "Error when acquiring LATCH_SH for checkpoint transaction object. xd->tid = "
                              << xd->tid() << ", rc = " << latch_rc);
 
                     // To be a good citizen, release the 'write' mutex before raise error
@@ -770,7 +772,7 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
                     //
                     state[i] = xd->state();
 
-                    assert(lsn_t::null!= xd->last_lsn());
+                    w_assert1(lsn_t::null!= xd->last_lsn());
                     last_lsn[i] = xd->last_lsn();  // most recent LSN
 
                     // 'set_undo_nxt' is initiallized to NULL,
@@ -788,7 +790,7 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
                     else
                         undo_nxt[i] = xd->undo_nxt();
 
-                    assert(lsn_t::null!= xd->first_lsn());                    
+                    w_assert1(lsn_t::null!= xd->first_lsn());                    
                     if (min_xct_lsn > xd->first_lsn())
                         min_xct_lsn = xd->first_lsn();
 
@@ -954,7 +956,7 @@ chkpt_thread_t::run()
             // checkpoint requests, we will only execute checkpoint once in such case
             if (true == _kicked)
             {
-                assert(0 < chkpt_count);            
+                w_assert1(0 < chkpt_count);            
                 DBG(<<"Found pending checkpoint request count: " << chkpt_count);
                 chkpt_count = 0;
             }
@@ -963,7 +965,7 @@ chkpt_thread_t::run()
             _kicked = false;
         }
 
-        assert(smlevel_1::chkpt);
+        w_assert1(smlevel_1::chkpt);
 
         // If a retire request arrived, exit immediatelly without checkpoint
         if(_retire)

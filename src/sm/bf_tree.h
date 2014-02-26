@@ -344,35 +344,26 @@ public:
     bool is_dirty(const generic_page* p) const;
 
     /**
-     * Mark the page in_doubt and used flags where the page is not in buffer pool
-     * also update the LSN (when the page was made dirty)
+     * Mark the page in_doubt and used flags, the physical page is not in buffer pool
+     * also update the LSN (track when the page was made dirty initially)
      */
     void set_in_doubt(bf_idx idx, lsn_t new_lsn);
 
     /**
-     * Clear the page in_doubt flag where the page is not in buffer pool
+     * Clear the page in_doubt flag, if pase is no longer needed, clear the used flag and
+     * add it back to freelist, the physical page is not in buffer pool
      */
-    void clear_in_doubt(bf_idx idx, bool clear_used);
+    void clear_in_doubt(bf_idx idx, bool still_used, uint64_t key);
+
+    /**
+     * Change from in_doubt to dirty flag, the physical page is in buffer pool
+     */
+    void in_doubt_to_dirty(bf_idx idx);
 
     /**
      * Returns true if the page is already marked in_doubt, the page is not in buffer pool
      */
     bool is_in_doubt(bf_idx idx) const;
-
-    /**
-     * Mark the page in_doubt and used flags where the page is in buffer pool
-     */
-    void set_in_doubt(const generic_page* p);
-
-    /**
-     * Clear the page in_doubt flag where thie page is in buffer pool
-     */
-    void clear_in_doubt(const generic_page* p, bool clear_used);
-
-    /**
-     * Returns true if the page is already marked in_doubt, the page is in buffer pool
-     */
-    bool is_in_doubt(const generic_page* p) const;
 
     /**
      * Returns the index of the page if page cb is in buffer pool, it is used in Recovery
