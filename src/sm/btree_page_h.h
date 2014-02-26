@@ -945,17 +945,23 @@ public:
     borrowed_btree_page_h(fixable_page_h* source) :
         btree_page_h(), _source(source)
     {
-        _pp       = _source->get_generic_page();
-        _mode     = _source->_mode;
-        _Q_ticket = _source->_Q_ticket;
-        _source->_mode = LATCH_NL;
+        w_assert1(_source->_pp != NULL);
+        _pp                 = _source->get_generic_page();
+        _bufferpool_managed = _source->_bufferpool_managed;
+        _mode               = _source->_mode;
+        _Q_ticket           = _source->_Q_ticket;
+        _source->_mode      = LATCH_NL;
     }
 
     ~borrowed_btree_page_h() {
+        w_assert1(_source->_pp == _pp);
         w_assert1(_source->_mode == LATCH_NL);
         _source->_mode     = _mode;
         _source->_Q_ticket = _Q_ticket;
-        _mode = LATCH_NL;
+
+        // prevent superclass destructor from trying to unfix us in the bufferpool:
+        _bufferpool_managed = false;
+        _mode               = LATCH_NL;
     }
 };
 
