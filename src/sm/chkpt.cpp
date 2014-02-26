@@ -399,7 +399,7 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
         } 
         else if (in_recovery() && (smlevel_0::t_chkpt_sync == chkpt_mode))
         {
-            if (!in_recovery_analysis() && !in_recovery_redo())
+            if (in_recovery_analysis() || in_recovery_undo())
             {
                 DBGOUT1(<<"END chkpt_m::take - system in recovery, allow synch checkpoint");
             }
@@ -870,8 +870,11 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
         // Error in this step will bring down the server
         log->set_master(master, min_rec_lsn, min_xct_lsn);
 
+////////////////////////////////////////
+// TODO(M1)...  Do not scaverge log space, because Single Page Recovery might need old log records
+////////////////////////////////////////
         // Scavenge some log
-        W_COERCE( log->scavenge(min_rec_lsn, min_xct_lsn) );
+        // W_COERCE( log->scavenge(min_rec_lsn, min_xct_lsn) );
 
     }
     else
