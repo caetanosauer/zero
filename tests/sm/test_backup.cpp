@@ -23,43 +23,21 @@ btree_test_env *test_env;
 
 const shpid_t FIRST_PID = 1 + 1 + 1; // 0=vol_hdr, 1=alloc_p, 2=stnode_p
 
-/** Delete backup if exists. */
-void delete_backup(ss_m* ssm, test_volume_t *test_volume) {
-    BackupManager *bk = ssm->bk;
-    std::string backup_path(bk->get_backup_path(test_volume->_vid));
-    std::remove(backup_path.c_str());
-}
-
-/** Take a backup of the test volume. */
-w_rc_t take_backup(ss_m* ssm, test_volume_t *test_volume) {
-    // Flush the volume before taking backup
-    W_DO(ssm->force_buffers());
-
-    BackupManager *bk = ssm->bk;
-    ::mkdir(bk->get_backup_folder().c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-    std::string backup_path(bk->get_backup_path(test_volume->_vid));
-    std::ifstream copy_from(test_volume->_device_name, std::ios::binary);
-    std::ofstream copy_to(backup_path.c_str(), std::ios::binary);
-    copy_to << copy_from.rdbuf();
-
-    return RCOK;
-}
-
 w_rc_t initial_test(ss_m* ssm, test_volume_t *test_volume) {
     BackupManager *bk = ssm->bk;
     volid_t vid = test_volume->_vid;
-    delete_backup(ssm, test_volume);
+    x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));
 
     // do nothing and immediately take backup
-    W_DO(take_backup(ssm, test_volume));
+    W_DO(x_take_backup(ssm, test_volume));
     EXPECT_TRUE(bk->volume_exists(vid));
 
     // this is initial state, so all data pages are unused.
     for (shpid_t pid = FIRST_PID; pid < default_quota_in_pages; ++pid) {
         EXPECT_FALSE(bk->page_exists(vid, pid));
     }
-    delete_backup(ssm, test_volume);
+    x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));
     return RCOK;
 }
@@ -96,13 +74,13 @@ w_rc_t allocate_few(ss_m* ssm, test_volume_t *test_volume, shpid_t alloc_count) 
 w_rc_t allocate_few_test(ss_m* ssm, test_volume_t *test_volume) {
     BackupManager *bk = ssm->bk;
     volid_t vid = test_volume->_vid;
-    delete_backup(ssm, test_volume);
+    x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));
 
     // allocate a few pages and then take backup
     const shpid_t ALLOCATE_COUNT = 4;
     W_DO(allocate_few(ssm, test_volume, ALLOCATE_COUNT));
-    W_DO(take_backup(ssm, test_volume));
+    W_DO(x_take_backup(ssm, test_volume));
     EXPECT_TRUE(bk->volume_exists(vid));
 
     generic_page buf;
@@ -121,7 +99,7 @@ w_rc_t allocate_few_test(ss_m* ssm, test_volume_t *test_volume) {
             EXPECT_FALSE(bk->page_exists(vid, pid));
         }
     }
-    delete_backup(ssm, test_volume);
+    x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));
     return RCOK;
 }
@@ -134,7 +112,7 @@ TEST (BackupTest, AllocateFew) {
 w_rc_t mixed_test(ss_m* ssm, test_volume_t *test_volume) {
     BackupManager *bk = ssm->bk;
     volid_t vid = test_volume->_vid;
-    delete_backup(ssm, test_volume);
+    x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));
 
     // allocate a few pages, then deallocate a few, then take backup
@@ -149,7 +127,7 @@ w_rc_t mixed_test(ss_m* ssm, test_volume_t *test_volume) {
     }
     W_DO(ssm->commit_xct());
 
-    W_DO(take_backup(ssm, test_volume));
+    W_DO(x_take_backup(ssm, test_volume));
     EXPECT_TRUE(bk->volume_exists(vid));
 
     generic_page buf;
@@ -169,7 +147,7 @@ w_rc_t mixed_test(ss_m* ssm, test_volume_t *test_volume) {
             EXPECT_FALSE(bk->page_exists(vid, pid));
         }
     }
-    delete_backup(ssm, test_volume);
+    x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));
     return RCOK;
 }

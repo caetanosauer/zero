@@ -18,6 +18,7 @@
 #include "btree_test_env.h"
 #include "sm_options.h"
 #include "xct.h"
+#include "backup.h"
 
 #include "../nullbuf.h"
 #if W_DEBUG_LEVEL <= 3
@@ -811,5 +812,27 @@ w_rc_t x_btree_scan(ss_m* ssm, const stid_t &stid, x_btree_scan_result &result, 
         ++result.rownum;
     } while (true);
     W_DO(ssm->commit_xct());
+    return RCOK;
+}
+
+/** Delete backup if exists. */
+void x_delete_backup(ss_m* ssm, test_volume_t *test_volume) {
+    BackupManager *bk = ssm->bk;
+    std::string backup_path(bk->get_backup_path(test_volume->_vid));
+    std::remove(backup_path.c_str());
+}
+
+/** Take a backup of the test volume. */
+w_rc_t x_take_backup(ss_m* ssm, test_volume_t *test_volume) {
+    // Flush the volume before taking backup
+    W_DO(ssm->force_buffers());
+
+    BackupManager *bk = ssm->bk;
+    ::mkdir(bk->get_backup_folder().c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+    std::string backup_path(bk->get_backup_path(test_volume->_vid));
+    std::ifstream copy_from(test_volume->_device_name, std::ios::binary);
+    std::ofstream copy_to(backup_path.c_str(), std::ios::binary);
+    copy_to << copy_from.rdbuf();
+
     return RCOK;
 }

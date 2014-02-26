@@ -58,7 +58,8 @@ w_rc_t dump_simple(ss_m* ssm, test_volume_t *test_volume) {
 
 TEST (PageLsnChainTest, DumpSimple) {
     test_env->empty_logdata_dir();
-    EXPECT_EQ(test_env->runBtreeTest(dump_simple), 0);
+    sm_options options;
+    EXPECT_EQ(test_env->runBtreeTest(dump_simple, options), 0);
 }
 
 int main(int argc, char **argv) {

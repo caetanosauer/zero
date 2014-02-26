@@ -58,9 +58,6 @@ w_rc_t test_all(ss_m* ssm, test_volume_t *test_volume) {
     stid_t stid;
     lpid_t root_pid;
     W_DO (prepare_test(ssm, test_volume, stid, root_pid));
-
-    bf_tree_m &pool(*smlevel_0::bf);
-
     btree_page_h root_p;
     W_DO(root_p.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_SH));
     EXPECT_TRUE (root_p.is_node());
@@ -77,7 +74,7 @@ w_rc_t test_all(ss_m* ssm, test_volume_t *test_volume) {
 
     // Because of the evictions, the parent page should have been updated.
     W_DO(root_p.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_SH));
-    EXPECT_GT(root_p.lsn(), root_lsn_before); // TODO this fails now. cb._parent is required
+    EXPECT_GT(root_p.lsn(), root_lsn_before);
 
     root_p.unfix();
     W_DO(x_btree_verify(ssm, stid));
@@ -87,8 +84,6 @@ w_rc_t test_all(ss_m* ssm, test_volume_t *test_volume) {
 TEST (EmlsnTest, All) {
     test_env->empty_logdata_dir();
     sm_options options;
-    // SPR requires cb._parent, thus requires swizzling
-    options.set_bool_option("sm_bufferpool_swizzle", true);
     EXPECT_EQ(0, test_env->runBtreeTest(test_all, false, default_quota_in_pages, options));
 }
 

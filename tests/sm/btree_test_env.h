@@ -59,6 +59,11 @@ w_rc_t x_btree_update(ss_m* ssm, const stid_t &stid, const char *keystr, const c
 w_rc_t x_btree_overwrite_and_commit(ss_m* ssm, const stid_t &stid, const char *keystr, const char *datastr, smsize_t offset, bool use_locks = false);
 w_rc_t x_btree_overwrite(ss_m* ssm, const stid_t &stid, const char *keystr, const char *datastr, smsize_t offset);
 
+/** Delete backup if exists. */
+void x_delete_backup(ss_m* ssm, test_volume_t *test_volume);
+/** Take a backup of the test volume. */
+w_rc_t x_take_backup(ss_m* ssm, test_volume_t *test_volume);
+
 struct x_btree_scan_result {
     int rownum;
     // don't use code point >127 for this test!
@@ -273,6 +278,11 @@ public:
 
     /** This is most concise. New code should use this one. */
     int runBtreeTest (w_rc_t (*functor)(ss_m*, test_volume_t*), bool use_locks, int disk_quota_in_pages, const sm_options &options);
+
+    /** Overload for convenience. */
+    int runBtreeTest (w_rc_t (*functor)(ss_m*, test_volume_t*), const sm_options &options) {
+        return runBtreeTest(functor, false, default_quota_in_pages, options);
+    }
 
     /**
     * Runs a restart testcase.
