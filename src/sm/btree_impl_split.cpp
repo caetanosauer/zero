@@ -64,9 +64,11 @@ rc_t btree_impl::_ux_norec_alloc_core(btree_page_h &page, lpid_t &new_page_id) {
             << old_lsn << "new-LSN=" << page.lsn() << ", PID=" << new_page_id << std::endl;
 #endif //W_DEBUG_LEVEL
         if (!rc.is_error()) {
-            new_page.init_as_empty_child(page.lsn(), new_page_id, page.root().page,
-                page.get_foster(), page.get_foster_emlsn(),
-                page.level(), fence, fence, chain_high);
+            // initialize as an empty child:
+            new_page.format_steal(page.lsn(), new_page_id, page.root().page,
+                                  page.level(), 0, lsn_t::null,
+                                  page.get_foster(), page.get_foster_emlsn(),
+                                  fence, fence, chain_high, false);
             page.accept_empty_child(page.lsn(), new_page_id.page);
         }
 

@@ -154,7 +154,8 @@ rc_t btree_impl::_ux_rebalance_foster_apply(btree_page_h &page,
         // Otherwise, we also steal old page's pid0 with low-fence key as a regular record
         w_assert1(foster_p.nrecs() == 0 || foster_p.pid0() != 0);
         bool steal_scratch_pid0 = foster_p.pid0() != 0;
-        W_DO(foster_p.format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(),
+        W_DO(foster_p.format_steal(scratch_p.lsn(),
+            scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(),
             new_pid0, new_pid0_emlsn,
             scratch_p.get_foster(), scratch_p.get_foster_emlsn(),
             mid_key, high_key, chain_high_key,
@@ -164,7 +165,8 @@ rc_t btree_impl::_ux_rebalance_foster_apply(btree_page_h &page,
             steal_scratch_pid0
         ));
     } else {
-        W_DO(foster_p.format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(),
+        W_DO(foster_p.format_steal(scratch_p.lsn(),
+            scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(),
             0, lsn_t::null,
             scratch_p.get_foster(), scratch_p.get_foster_emlsn(),
             mid_key, high_key, chain_high_key,
@@ -179,13 +181,14 @@ rc_t btree_impl::_ux_rebalance_foster_apply(btree_page_h &page,
     w_keystr_t low_key;
     scratch_p.copy_fence_low_key(low_key);
     scratch_p.copy_chain_fence_high_key(chain_high_key);
-    W_DO(page.format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(),
+    W_DO(page.format_steal(scratch_p.lsn(),
+        scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(),
         scratch_p.pid0(), scratch_p.get_pid0_emlsn(),
         scratch_p.get_foster(), scratch_p.get_foster_emlsn(),
-        low_key, mid_key, chain_high_key, // high key is changed!
-        false, // don't log it
-        &scratch_p, 0, scratch_p.nrecs() - move_count // steal from old page
-    ));
+                           low_key, mid_key, chain_high_key, // high key is changed!
+                           false, // don't log it
+                           &scratch_p, 0, scratch_p.nrecs() - move_count // steal from old page
+             ));
 
     w_assert3(page.is_consistent(true, true));
     w_assert3(foster_p.is_consistent(true, true));
@@ -316,15 +319,15 @@ void btree_impl::_ux_merge_foster_apply_parent(btree_page_h &page, btree_page_h 
     ::memcpy (&scratch, page._pp, sizeof(scratch));
     btree_page_h scratch_p;
     scratch_p.fix_nonbufferpool_page(&scratch);
-    W_COERCE(page.format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(),
-        scratch_p.pid0(), scratch_p.get_pid0_emlsn(),
-        // foster-child's foster will be the next one after merge
-        foster_p.get_foster(), foster_p.get_foster_emlsn(),
-        low_key, high_key, chain_high_key,
-        false, // don't log it
-        &scratch_p, 0, scratch_p.nrecs(), // steal from foster-parent
-        &foster_p, 0, foster_p.nrecs() // steal from foster-child
-    ));
+    W_COERCE(page.format_steal(scratch_p.lsn(), scratch_p.pid(), scratch_p.btree_root(), 
+                               scratch_p.level(), scratch_p.pid0(), scratch_p.get_pid0_emlsn(),
+                               // foster-child's foster will be the next one after merge
+                               foster_p.get_foster(), foster_p.get_foster_emlsn(),
+                               low_key, high_key, chain_high_key,
+                               false, // don't log it
+                               &scratch_p, 0, scratch_p.nrecs(), // steal from foster-parent
+                               &foster_p, 0, foster_p.nrecs() // steal from foster-child
+                 ));
     w_assert3(page.is_consistent(true, true));
     w_assert1(page.is_fixed());
 }
