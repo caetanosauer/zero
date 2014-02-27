@@ -230,7 +230,7 @@ public:
      *                          use fix_direct() though it can't exploit pointer swizzling.
      * @param[in]  vol          volume ID.
      * @param[in]  shpid        ID of the page to fix (or bufferpool index when swizzled)
-     * @param[in]  mode         latch mode. has to be SH or EX.
+     * @param[in]  mode         latch mode.  has to be SH or EX.
      * @param[in]  conditional  whether the fix is conditional (returns immediately even if failed).
      * @param[in]  virgin_page  whether the page is a new page thus doesn't have to be read from disk.
      * 
@@ -239,17 +239,21 @@ public:
     w_rc_t fix_nonroot (generic_page*& page, generic_page *parent, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page);
 
     /**
-     * Fixes a non-root page in the bufferpool in Q mode.
+     * Fixes a non-root page in the bufferpool given a swizzled pointer that may be stale.
+     * Because of the possibility of staleness, the actual page fixed may be different
+     * from the page ID given.
      * 
-     * @param[out] page     the fixed page.
-     * @param[in]  vol      volume ID.
-     * @param[in]  shpid    ID of the page to fix
-     * @param[out] success  (for now) whether or not the Q latching succeeded; will be replaced by a returned Q ticket in later version... <<<>>>
+     * @param[out] page         the fixed page.
+     * @param[in]  shpid        ID of the page to fix
+     * @param[in]  mode         latch mode.  has to be Q, SH, or EX.
+     * @param[in]  conditional  whether the fix is conditional (returns immediately even if failed).
+     * @param[out] ticket       the resulting Q ticket if mode is LATCH_Q
+     * 
      * @pre shpid is a swizzled pointer
      * 
      * To use this method, you need to include bf_tree_inline.h.
      */
-    w_rc_t fix_with_Q_nonroot(generic_page*& page, volid_t vol, shpid_t shpid, bool& success);
+    w_rc_t fix_unsafely_nonroot(generic_page*& page, shpid_t shpid, latch_mode_t mode, bool conditional, q_ticket_t& ticket);
 
     /**
      * Fixes any page (root or non-root) in the bufferpool without pointer swizzling.
@@ -309,7 +313,7 @@ public:
      * Fixes an existing (not virgin) root page for the given store in Q mode.
      * To use this method, you need to include bf_tree_inline.h.
      */
-    w_rc_t fix_with_Q_root(generic_page*& page, volid_t vol, snum_t store);
+    w_rc_t fix_with_Q_root(generic_page*& page, volid_t vol, snum_t store, q_ticket_t& ticket);
 
     
     /** returns the current latch mode of the page. */
