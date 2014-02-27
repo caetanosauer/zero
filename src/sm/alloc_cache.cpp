@@ -174,7 +174,7 @@ rc_t alloc_cache_t::apply_allocate_one_page (shpid_t pid, bool logit)
             DBGOUT1(<< "WARNING! apply_allocate_one_page: logging is disabled. skipped logging");
         }
     }
-    al.set_bit(pid);
+    al.set_bit(pid, !logit);
     _fixed_pages->get_dirty_flags()[buf_index] = true;
     return RCOK;
 }
@@ -238,7 +238,7 @@ rc_t alloc_cache_t::apply_deallocate_one_page (shpid_t pid, bool logit)
         }
     }
     // then update the bitmap
-    al.unset_bit(pid);
+    al.unset_bit(pid, !logit);
     _fixed_pages->get_dirty_flags()[buf_index] = true;
     return RCOK;
 }

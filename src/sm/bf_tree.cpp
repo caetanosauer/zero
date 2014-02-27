@@ -271,7 +271,15 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
     w_assert1(shpid >= volume->first_data_pageid());
     W_DO(volume->read_page(shpid, _buffer[idx]));
 
-    if (_buffer[idx].calculate_checksum() != _buffer[idx].checksum) {
+    // _buffer[idx].checksum == 0 is possible when the root page has been never flushed out.
+    // this method is called during volume mount (even before recover), so crash tests like
+    // test_restart, test_crash
+    if (_buffer[idx].checksum == 0) {
+        DBGOUT0(<<"emptycheck sum root page during volume nount. crash happened?"
+            " pid=" << shpid << " of store " << store << " in volume "
+            << vid << ". to buffer frame " << idx);
+    }
+    else if (_buffer[idx].calculate_checksum() != _buffer[idx].checksum) {
         return RC(eBADCHECKSUM);
     }
     
@@ -1905,8 +1913,12 @@ w_rc_t bf_tree_m::_sx_update_child_emlsn(btree_page_h &parent, general_recordid_
 
 w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
                                    volid_t vol, shpid_t shpid) {
+    w_assert0(shpid != 0);
     generic_page &page = _buffer[idx];
     uint32_t checksum = page.calculate_checksum();
+    if (checksum == 0) {
+        DBGOUT0(<<"_check_read_page(): empty checksum?? PID=" << shpid);
+    }
     if (checksum != page.checksum) {
         ERROUT(<<"bf_tree_m: bad page checksum in page " << shpid);
         // Checksum didn't agree! this page image is completely
@@ -1971,5 +1983,8 @@ w_rc_t bf_tree_m::_try_recover_page(generic_page* parent, bf_idx idx, volid_t vo
     btree_page_h parent_h;
     parent_h.fix_nonbufferpool_page(parent);
     lsn_t emlsn = parent_h.get_emlsn_general(recordid);
+    if (emlsn == lsn_t::null) {
+        return RCOK; // this can happen when the page has been just created.
+    }
     return smlevel_0::log->recover_single_page(&_buffer[idx], emlsn);
 }

@@ -16,7 +16,26 @@
 
 #include "btree_page_h.h"
 #include "btree_impl.h"
+#include "lock.h"
+#include "log.h"
 #include "vec_t.h"
+#include "tls.h"
+#include "block_alloc.h"
+
+/**
+ * Page buffers used while SPR as scratch space.
+ * \ingroup SPR
+ */
+DECLARE_TLS(block_alloc<generic_page>, scratch_space_pool);
+/**
+ * Automatically deletes generic_page obtained from scratch_space_pool.
+ * \ingroup SPR
+ */
+struct SprScratchSpace {
+    SprScratchSpace() { p = new (*scratch_space_pool) generic_page(); }
+    ~SprScratchSpace() { scratch_space_pool->destroy_object(p); }
+    generic_page* p;
+};
 
 struct btree_insert_t {
     shpid_t     root_shpid;
@@ -512,35 +531,56 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
     btree_foster_merge_t *dp = reinterpret_cast<btree_foster_merge_t*>(data_ssx());
 
     // WOD: "page" is the data source, which is written later.
-    // this is in REDO, so fix_direct should be safe.
     shpid_t target_pid = p->pid().page;
-    if (target_pid == header._shpid) {
-        // we are recovering "page", which is foster-parent (dest).
-        // thanks to WOD, "page2" (src) is also assured to be not recovered yet.
-        btree_page_h src;
-        W_COERCE(src.fix_direct(bp.vol(), dp->_page2_pid, LATCH_EX));
-
-        w_assert0(src.lsn() < lsn_ck());
-        btree_impl::_ux_merge_foster_apply_parent(bp, src);
-        src.set_dirty();
-        src.set_lsns(lsn_ck());
-        W_COERCE(src.set_to_be_deleted(false));
-    } else {
-        // we are recovering "page2", which is foster-child (src).
-        // in this case, foster-parent(dest) may or may not be written yet.
-        w_assert0(target_pid == dp->_page2_pid);
-        btree_page_h dest;
-        W_COERCE(dest.fix_direct(bp.vol(), shpid(), LATCH_EX));
-        if (dest.lsn() >= lsn_ck()) {
-            // if page (destination) is already durable/recovered,
-            // we just delete the foster child and done.
-            W_COERCE(bp.set_to_be_deleted(false));
+    bool recovering_dest = (target_pid == shpid());
+    shpid_t another_pid = recovering_dest ? dp->_page2_pid : shpid();
+    w_assert0(recovering_dest || target_pid == dp->_page2_pid);
+    if (p->is_bufferpool_managed()) {
+        // this is in REDO, so fix_direct should be safe.
+        btree_page_h another;
+        W_COERCE(another.fix_direct(bp.vol(), another_pid, LATCH_EX));
+        if (recovering_dest) {
+            // we are recovering "page", which is foster-parent (dest).
+            // thanks to WOD, "page2" (src) is also assured to be not recovered yet.
+            w_assert0(another.lsn() < lsn_ck());
+            btree_impl::_ux_merge_foster_apply_parent(bp, another);
+            another.set_dirty();
+            another.set_lsns(lsn_ck());
+            W_COERCE(another.set_to_be_deleted(false));
         } else {
-            // dest is also old, so we are recovering both.
-            btree_impl::_ux_merge_foster_apply_parent(dest, bp);
-            dest.set_dirty();
-            dest.set_lsns(lsn_ck());
+            // we are recovering "page2", which is foster-child (src).
+            // in this case, foster-parent(dest) may or may not be written yet.
+            if (another.lsn() >= lsn_ck()) {
+                // if page (destination) is already durable/recovered,
+                // we just delete the foster child and done.
+                W_COERCE(bp.set_to_be_deleted(false));
+            } else {
+                // dest is also old, so we are recovering both.
+                btree_impl::_ux_merge_foster_apply_parent(another, bp);
+                another.set_dirty();
+                another.set_lsns(lsn_ck());
+            }
         }
+    } else {
+        // this is in SPR. we use scratch space for another page because bufferpool frame
+        // for another page is probably too latest for SPR.
+        DBGOUT1(<< "merge SPR! another=" << another_pid);
+        if (!recovering_dest) {
+            // source page is simply deleted, so we don't have to do anything here
+            DBGOUT1(<< "recovering source page in merge... nothing to do");
+            return;
+        }
+        DBGOUT1(<< "recovering dest page in merge. recursive SPR!");
+        SprScratchSpace frame;
+        frame.p->tag = t_btree_p;
+        frame.p->pid = lpid_t(stid_t(bp.vol(), bp.store()), another_pid);
+        frame.p->lsn = lsn_t::null;
+        // Here, we do "time travel", recursively invoking SPR.
+        lsn_t another_previous_lsn = recovering_dest ? dp->_page2_prv : page_prev_lsn();
+        btree_page_h another;
+        another.fix_nonbufferpool_page(frame.p);
+        W_COERCE(smlevel_0::log->recover_single_page(frame.p, another_previous_lsn));
+        btree_impl::_ux_merge_foster_apply_parent(bp, another);
     }
 }
 
@@ -584,53 +624,73 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
     fence.construct_from_keystr(dp->_data, dp->_fence_len);
 
     // WOD: "page2" is the data source, which is written later.
-    // this is in REDO, so fix_direct should be safe.
     const shpid_t target_pid = p->pid().page;
     const shpid_t page_id = shpid();
     const shpid_t page2_id = dp->_page2_pid;
     const lsn_t  &redo_lsn = lsn_ck();
     DBGOUT3 (<< *this << ": redo_lsn=" << redo_lsn << ", bp.lsn=" << bp.lsn());
     w_assert1(bp.lsn() < redo_lsn);
-    if (target_pid == page_id) {
-        // we are recovering "page", which is foster-child (dest).
-        // thanks to WOD, "page2" (src) is also assured to be not recovered yet.
-        btree_page_h src;
-        W_COERCE(src.fix_direct(bp.vol(), page2_id, LATCH_EX));
-        DBGOUT3 (<< "Recovering 'page'. page2.lsn=" << src.lsn());
-        w_assert0(src.lsn() < redo_lsn);
-        W_COERCE(btree_impl::_ux_rebalance_foster_apply(src, bp, dp->_move_count,
-                                            fence, dp->_new_pid0, dp->_new_pid0_emlsn));
-        src.set_dirty();
-        src.set_lsns(redo_lsn);
-    } else {
-        // we are recovering "page2", which is foster-parent (src).
-        w_assert0(target_pid == page2_id);
-        btree_page_h dest;
-        W_COERCE(dest.fix_direct(bp.vol(), page_id, LATCH_EX));
-        DBGOUT3 (<< "Recovering 'page2'. page.lsn=" << dest.lsn());
-        if (dest.lsn() >= redo_lsn) {
-            // if page (destination) is already durable/recovered, we create a dummy scratch
-            // space which will be thrown away after recovering "page2".
-            w_keystr_t high, chain_high;
-            bp.copy_fence_high_key(high);
-            bp.copy_chain_fence_high_key(chain_high);
-            generic_page scratch_page;
-            scratch_page.tag = t_btree_p;
-            btree_page_h scratch_p;
-            scratch_p.fix_nonbufferpool_page(&scratch_page);
-            // initialize as an empty child:
-            scratch_p.format_steal(lsn_t::null, dest.pid(), bp.btree_root(), bp.level(),
-                                   0, lsn_t::null, 0, lsn_t::null,
-                                   high, chain_high, chain_high, false);
-            W_COERCE(btree_impl::_ux_rebalance_foster_apply(bp, scratch_p, dp->_move_count,
-                                            fence, dp->_new_pid0, dp->_new_pid0_emlsn));
+    bool recovering_dest = (target_pid == page_id);
+    shpid_t another_pid = recovering_dest ? page2_id : page_id;
+    w_assert0(recovering_dest || target_pid == page2_id);
+
+    if (p->is_bufferpool_managed()) {
+        // this is in REDO, so fix_direct should be safe.
+        btree_page_h another;
+        W_COERCE(another.fix_direct(bp.vol(), another_pid, LATCH_EX));
+        if (recovering_dest) {
+            // we are recovering "page", which is foster-child (dest).
+            // thanks to WOD, "page2" (src) is also assured to be not recovered yet.
+            DBGOUT3 (<< "Recovering 'page'. page2.lsn=" << another.lsn());
+            w_assert0(another.lsn() < redo_lsn);
+            W_COERCE(btree_impl::_ux_rebalance_foster_apply(another, bp, dp->_move_count,
+                                                fence, dp->_new_pid0, dp->_new_pid0_emlsn));
+            another.set_dirty();
+            another.set_lsns(redo_lsn);
         } else {
-            // dest is also old, so we are recovering both.
-            W_COERCE(btree_impl::_ux_rebalance_foster_apply(bp, dest, dp->_move_count,
-                                            fence, dp->_new_pid0, dp->_new_pid0_emlsn));
-            dest.set_dirty();
-            dest.set_lsns(redo_lsn);
+            // we are recovering "page2", which is foster-parent (src).
+            DBGOUT3 (<< "Recovering 'page2'. page.lsn=" << another.lsn());
+            if (another.lsn() >= redo_lsn) {
+                // if page (destination) is already durable/recovered, we create a dummy scratch
+                // space which will be thrown away after recovering "page2".
+                w_keystr_t high, chain_high;
+                bp.copy_fence_high_key(high);
+                bp.copy_chain_fence_high_key(chain_high);
+                generic_page scratch_page;
+                scratch_page.tag = t_btree_p;
+                btree_page_h scratch_p;
+                scratch_p.fix_nonbufferpool_page(&scratch_page);
+                // initialize as an empty child:
+                scratch_p.format_steal(lsn_t::null, another.pid(), bp.btree_root(), bp.level(),
+                                    0, lsn_t::null, 0, lsn_t::null,
+                                    high, chain_high, chain_high, false);
+                W_COERCE(btree_impl::_ux_rebalance_foster_apply(bp, scratch_p, dp->_move_count,
+                                                fence, dp->_new_pid0, dp->_new_pid0_emlsn));
+            } else {
+                // dest is also old, so we are recovering both.
+                W_COERCE(btree_impl::_ux_rebalance_foster_apply(bp, another, dp->_move_count,
+                                                fence, dp->_new_pid0, dp->_new_pid0_emlsn));
+                another.set_dirty();
+                another.set_lsns(redo_lsn);
+            }
         }
+    } else {
+        // this is in SPR. we use scratch space for another page because bufferpool frame
+        // for another page is probably too latest for SPR.
+        SprScratchSpace frame;
+        frame.p->tag = t_btree_p;
+        frame.p->pid = lpid_t(stid_t(bp.vol(), bp.store()), another_pid);
+        frame.p->lsn = lsn_t::null;
+        // Here, we do "time travel", recursively invoking SPR.
+        lsn_t another_previous_lsn = recovering_dest ? dp->_page2_prv : page_prev_lsn();
+        DBGOUT1(<< "SPR for rebalance. recursive SPR! another=" << another_pid <<
+            ", another_previous_lsn=" << another_previous_lsn);
+        btree_page_h another;
+        another.fix_nonbufferpool_page(frame.p);
+        W_COERCE(smlevel_0::log->recover_single_page(frame.p, another_previous_lsn));
+        W_COERCE(btree_impl::_ux_rebalance_foster_apply(
+            recovering_dest ? another : bp, recovering_dest ? bp : another,
+            dp->_move_count, fence, dp->_new_pid0, dp->_new_pid0_emlsn));
     }
 }
 

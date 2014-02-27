@@ -47,7 +47,6 @@ btrec_t::set(const btree_page_h& page, slotid_t slot) {
 }
 
 void btree_page_h::accept_empty_child(lsn_t new_lsn, shpid_t new_page_id) {
-    w_assert1 (g_xct()->is_single_log_sys_xct());
     w_assert1 (new_lsn != lsn_t::null);
 
     // Slight change in foster-parent, touching only foster link and chain-high.

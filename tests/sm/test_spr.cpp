@@ -88,7 +88,6 @@ void corrupt_page(test_volume_t *test_volume, shpid_t target_pid) {
         std::ifstream file(test_volume->_device_name, std::ios::binary);
         file.seekg(sizeof(generic_page) * target_pid);
         file.read(reinterpret_cast<char*>(&page), sizeof(generic_page));
-        EXPECT_EQ(page.pid.page, target_pid);
     }
 
     ::memset(reinterpret_cast<char*>(&page) + 1234, 42, 987);
@@ -99,7 +98,14 @@ void corrupt_page(test_volume_t *test_volume, shpid_t target_pid) {
         file.flush();
     }
 }
-
+bool is_consecutive_chars(char* str, char c, int len) {
+    for (int i = 0; i < len; ++i) {
+        if (str[i] != c) {
+            return false;
+        }
+    }
+    return true;
+}
 w_rc_t test_nochange(ss_m* ssm, test_volume_t *test_volume) {
     stid_t stid;
     lpid_t root_pid;
@@ -116,13 +122,11 @@ w_rc_t test_nochange(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->find_assoc(stid, target_key0, buf, buf_len, found));
     EXPECT_TRUE(found);
     EXPECT_EQ(SM_PAGESIZE / 6, buf_len);
-    for (int i = 0; i < SM_PAGESIZE / 6; ++i) {
-        EXPECT_EQ('a', buf[i]) << i;
-        if (buf[i] != 'a') {
-            break;
-        }
-    }
-
+    EXPECT_TRUE(is_consecutive_chars(buf, 'a', SM_PAGESIZE / 6));
+    W_DO(ssm->find_assoc(stid, target_key1, buf, buf_len, found));
+    EXPECT_TRUE(found);
+    EXPECT_EQ(SM_PAGESIZE / 6, buf_len);
+    EXPECT_TRUE(is_consecutive_chars(buf, 'a', SM_PAGESIZE / 6));
     return RCOK;
 }
 TEST (SprTest, NoChange) {
@@ -153,12 +157,7 @@ w_rc_t test_one_change(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->find_assoc(stid, target_key0, buf, buf_len, found));
     EXPECT_TRUE(found);
     EXPECT_EQ(SM_PAGESIZE / 6, buf_len);
-    for (int i = 0; i < SM_PAGESIZE / 6; ++i) {
-        EXPECT_EQ('a', buf[i]) << i;
-        if (buf[i] != 'a') {
-            break;
-        }
-    }
+    EXPECT_TRUE(is_consecutive_chars(buf, 'a', SM_PAGESIZE / 6));
     W_DO(ssm->find_assoc(stid, target_key1, buf, buf_len, found));
     EXPECT_FALSE(found);
     W_DO(ssm->commit_xct());
@@ -202,6 +201,103 @@ TEST (SprTest, TwoChanges) {
     test_env->empty_logdata_dir();
     sm_options options;
     EXPECT_EQ(0, test_env->runBtreeTest(test_two_changes, options));
+}
+
+bool test_multi_pages_corrupt_source_page = false;
+bool test_multi_pages_corrupt_destination_page = false;
+w_rc_t test_multi_pages(ss_m* ssm, test_volume_t *test_volume) {
+    stid_t stid;
+    lpid_t root_pid;
+    shpid_t target_pid;
+    w_keystr_t target_key0, target_key1;
+    W_DO (prepare_test(ssm, test_volume, stid, root_pid, target_pid, target_key0, target_key1));
+
+    // After taking backup, invoke page split, then propagate EMLSN change
+    W_DO(ssm->begin_xct());
+    const int recsize = SM_PAGESIZE / 6;
+    smsize_t buf_len = recsize;
+    char buf[recsize];
+    bool found;
+    ::memset (buf, 'a', recsize);
+    vec_t vec (buf, recsize);
+
+    for (int i = 0; i < 5; ++i) {
+        char keystr[7] = "";
+        target_key0.serialize_as_nonkeystr(keystr);
+        w_keystr_t key;
+        keystr[6] = '0' + i;
+        key.construct_regularkey(keystr, 7);
+        W_DO(ssm->create_assoc(stid, key, vec));
+        W_DO(ssm->find_assoc(stid, key, buf, buf_len, found)); // just to invoke adoption
+        EXPECT_TRUE(found);
+    }
+    // this should have caused page split and adoption.
+    shpid_t destination_pid = 0; // the new page should be next to target_pid
+    {
+        btree_page_h root_p;
+        W_DO(root_p.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_SH));
+        for (int i = 0 ; i < root_p.nrecs(); ++i) {
+            if (root_p.child(i) == target_pid) {
+                destination_pid = root_p.child(i + 1);
+                break;
+            }
+        }
+    }
+    std::cout << "multi_pages: destination_pid=" << destination_pid << std::endl;
+    W_DO(ssm->commit_xct());
+    W_DO(x_btree_verify(ssm, stid));
+    W_DO(flush_and_evict(ssm));
+
+    // target_pid is the data source page of split.
+    if (test_multi_pages_corrupt_source_page) {
+        corrupt_page(test_volume, target_pid);
+    }
+    if (test_multi_pages_corrupt_destination_page) {
+        corrupt_page(test_volume, destination_pid);
+    }
+
+    // this should invoke SPR with multi-page REDO applications (split/rebalance/adopt)
+    W_DO(ssm->begin_xct());
+    W_DO(ssm->find_assoc(stid, target_key0, buf, buf_len, found));
+    EXPECT_TRUE(found);
+    EXPECT_EQ(recsize, buf_len);
+    EXPECT_TRUE(is_consecutive_chars(buf, 'a', recsize));
+    W_DO(ssm->find_assoc(stid, target_key1, buf, buf_len, found));
+    EXPECT_TRUE(found);
+    EXPECT_EQ(recsize, buf_len);
+    EXPECT_TRUE(is_consecutive_chars(buf, 'a', recsize));
+    W_DO(ssm->commit_xct());
+
+    return RCOK;
+}
+// which pages to corrupt?
+TEST (SprTest, MultiPagesNone) {
+    test_env->empty_logdata_dir();
+    test_multi_pages_corrupt_source_page = false;
+    test_multi_pages_corrupt_destination_page = false;
+    sm_options options;
+    EXPECT_EQ(0, test_env->runBtreeTest(test_multi_pages, options));
+}
+TEST (SprTest, MultiPagesSourceOnly) {
+    test_env->empty_logdata_dir();
+    test_multi_pages_corrupt_source_page = true;
+    test_multi_pages_corrupt_destination_page = false;
+    sm_options options;
+    EXPECT_EQ(0, test_env->runBtreeTest(test_multi_pages, options));
+}
+TEST (SprTest, MultiPagesDestinationOnly) {
+    test_env->empty_logdata_dir();
+    test_multi_pages_corrupt_source_page = false;
+    test_multi_pages_corrupt_destination_page = true;
+    sm_options options;
+    EXPECT_EQ(0, test_env->runBtreeTest(test_multi_pages, options));
+}
+TEST (SprTest, MultiPagesDestinationBoth) {
+    test_env->empty_logdata_dir();
+    test_multi_pages_corrupt_source_page = true;
+    test_multi_pages_corrupt_destination_page = true;
+    sm_options options;
+    EXPECT_EQ(0, test_env->runBtreeTest(test_multi_pages, options));
 }
 
 int main(int argc, char **argv) {

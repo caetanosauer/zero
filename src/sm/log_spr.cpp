@@ -123,7 +123,7 @@ rc_t log_core::_collect_single_page_recovery_logs(
         } else if (!record->is_multi_page()
             || pid.page != record->data_ssx_multi()->_page2_pid) {
             W_RETURN_RC_MSG(eWRONG_PAGE_LSNCHAIN, << "PID= " << pid << ", CUR_LSN="
-                << current_lsn << ", EMLSN=" << emlsn << ", log=" << record);
+                << current_lsn << ", EMLSN=" << emlsn << ", log=" << *record);
         } else {
             w_assert0(record->data_ssx_multi()->_page2_pid == pid.page);
             nxt = record->data_ssx_multi()->_page2_prv;
@@ -135,6 +135,13 @@ rc_t log_core::_collect_single_page_recovery_logs(
                                 reinterpret_cast<logrec_t*>(log_copy_buffer));
             log_copy_buffer += record->length();
             buffer_capacity -= record->length();
+        }
+
+        if (record->type() == logrec_t::t_btree_norec_alloc && pid.page != record->shpid()) {
+            break; // child page allocated. this is the initial log, so no need to go further
+        }
+        if (record->type() == logrec_t::t_page_img_format) {
+            break; // root page allocated. initial log
         }
     }
     return RCOK;
@@ -151,7 +158,8 @@ rc_t log_core::_apply_single_page_recovery_logs(generic_page* p,
     for (std::vector<logrec_t*>::const_iterator it = ordered_entries.begin();
          it != ordered_entries.end(); ++it) {
         logrec_t *record = *it;
-        DBGOUT1(<< "Applying SPR. current page LSN=" << page_h.lsn() << ", log=" << *record);
+        DBGOUT1(<< "Applying SPR. current page(" << p->pid << ") LSN="
+            << page_h.lsn() << ", log=" << *record);
         w_assert1(record->is_redo());
         record->redo(&page_h);
         page_h.set_lsns(record->lsn_ck());

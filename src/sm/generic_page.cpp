@@ -16,8 +16,9 @@ uint32_t generic_page_header::calculate_checksum () const {
     // data bytes, presumably for speed reasons.
 
     const uint32_t CHECKSUM_MULT = 0x35D0B891;
+    const uint64_t CHECKSUM_INIT = 0x5CC31574A49F933B;
 
-    uint64_t value = 0;
+    uint64_t value = CHECKSUM_INIT;
     // these values (23/511) are arbitrary
     for (const unsigned char *p = start + 23; p+3 < end; p += 511) {
         // be aware of alignment issue on spark! so this code is not safe:
