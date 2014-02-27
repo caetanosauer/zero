@@ -138,9 +138,9 @@ private:
         epoch(lsn_t l, long b, long s, long e)
             : base_lsn(l), base(b), start(s), end(e)
         {
-            w_assert0(e >= s);
+            w_assert1(e >= s);
         }
-        epoch* vthis() { return this; }
+        epoch volatile* vthis() { return this; }
     };
 
     /** \ingroup CARRAY */

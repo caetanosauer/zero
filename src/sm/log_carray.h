@@ -80,6 +80,7 @@
  */
 
 #include <stdint.h>
+#include <boost/static_assert.hpp>
 #include "w_base.h"
 #include "w_error.h"
 #include "mcs_lock.h"
@@ -154,15 +155,18 @@ struct CArraySlot {
     * Lock head is log_core::_insert_lock.
     * \NOTE This should not be in the same cache line as me2.
     */
-    mcs_lock::qnode me;                 // +8 -> 80
+    mcs_lock::qnode me;                 // +16 -> 88
     /**
     * Predecessor qnode of me2. Used to delegate buffer release.
     */
-    mcs_lock::qnode* pred2;             // +8 -> 88
+    mcs_lock::qnode* pred2;             // +8 -> 96
     /**
      * Set when inserting the log of this slot failed, so far only eOUTOFLOGSPACE possible.
      */
-    w_error_codes error;                // +4 or 8, doesn't matter
+    w_error_codes error;                // +sizeof(w_error_codes)
+
+    /** To make this multiply of cacheline size. */
+    char            padding[32-sizeof(w_error_codes)]; // +32-sizeof(w_error_codes) -> 128
 
     /**
      * volatile accesses to make sure compiler isn't fooling us.
@@ -172,6 +176,8 @@ struct CArraySlot {
     /** const version. */
     const CArraySlot volatile* vthis() const { return this; }
 };
+BOOST_STATIC_ASSERT_MSG((sizeof(CArraySlot) % CACHELINE_SIZE) == 0,
+    "size of CArraySlot must be aligned to CACHELINE_SIZE for better performance");
 
 /**
  * \brief The implementation class of \b Consolidation \b Array.
@@ -190,7 +196,7 @@ public:
         ALL_SLOT_COUNT      = 256,
 
         /** Max number of slots that can be active at the same time. */
-        ACTIVE_SLOT_COUNT   = 5,
+        ACTIVE_SLOT_COUNT   = 3,
 
         /**
         * slots that are in active slots and up for grab have this carray_status_t.
