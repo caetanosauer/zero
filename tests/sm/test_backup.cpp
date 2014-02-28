@@ -65,6 +65,7 @@ w_rc_t allocate_few(ss_m* ssm, test_volume_t *test_volume, shpid_t alloc_count) 
         page.set_dirty();
         page.get_generic_page()->pid = pid;
         page.get_generic_page()->tag = t_btree_p;
+        page.unset_to_be_deleted();
         page.unfix();
     }
     W_DO(ssm->commit_xct());

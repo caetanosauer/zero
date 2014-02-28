@@ -898,7 +898,7 @@ bool bf_tree_m::_try_evict_block_pinned(
     if (!parent_cb.latch().held_by_me()) {
         w_rc_t latch_parent_rc = parent_cb.latch().latch_acquire(LATCH_SH, WAIT_IMMEDIATE);
         if (latch_parent_rc.is_error()) {
-            DBGOUT1(<<"Unlucky, failed to latch parent block while eviction. skipping this");
+            DBGOUT1(<<"Unlucky, failed to latch parent block while evicting. skipping this");
             return false;
         }
         parent_latched = true;
@@ -1603,7 +1603,7 @@ w_rc_t bf_tree_m::_evict_page(EvictionContext& context, btree_page_h& p) {
         // this is just a hint. try conditionally latching the child and do the actual check
         w_rc_t latch_rc = cb.latch().latch_acquire(LATCH_SH, sthread_t::WAIT_IMMEDIATE);
         if (latch_rc.is_error()) {
-            DBGOUT2(<<"unswizzle: oops, unlucky. someone is latching this page. skiping this."
+            DBGOUT2(<<"unswizzle: oops, unlucky. someone is latching this page. skipping this."
                         " rc=" << latch_rc);
         } else {
             if (!has_swizzled_child(idx)) {
