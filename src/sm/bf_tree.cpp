@@ -1986,5 +1986,7 @@ w_rc_t bf_tree_m::_try_recover_page(generic_page* parent, bf_idx idx, volid_t vo
     if (emlsn == lsn_t::null) {
         return RCOK; // this can happen when the page has been just created.
     }
-    return smlevel_0::log->recover_single_page(&_buffer[idx], emlsn);
+    btree_page_h p;
+    p.fix_nonbufferpool_page(_buffer + idx);
+    return smlevel_0::log->recover_single_page(p, emlsn);
 }

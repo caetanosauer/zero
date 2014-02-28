@@ -410,7 +410,7 @@ public:
     * in the order of the log.
     * @pre p is already fixed with exclusive latch
     */
-    rc_t _apply_single_page_recovery_logs(generic_page* p,
+    rc_t _apply_single_page_recovery_logs(fixable_page_h &p,
         const std::vector<logrec_t*> &ordered_entries);
 
 private:

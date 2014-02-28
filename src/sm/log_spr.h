@@ -47,7 +47,8 @@
  * \section Algorithm Algorithm Overview
  * Single page recovery is invoked only when a page is brought into the buffer pool from media.
  * When we bring a page, X, into the buffer pool, we compare RecordedPageLSN(X, media)
- * to EMLSN(X). If we see that that EMLSN(X) > RecordedPageLSN(X, media),
+ * to EMLSN(X) in the parent page image in bufferpool.
+ * If we see that that EMLSN(X) > RecordedPageLSN(X, media),
  * then we will invoke single page recovery.
  *
  * Given a parent page P with a child page C, EMLSN(C) is updated only when the child page C is

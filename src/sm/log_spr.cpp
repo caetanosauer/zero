@@ -68,19 +68,20 @@ void log_m::dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t 
     _master_lsn = master;
 }
 
-rc_t log_m::recover_single_page(generic_page* p, const lsn_t& emlsn) {
+rc_t log_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn) {
     // First, retrieve the backup page we will be based on.
     // If this backup is enough recent, we have to apply only a few logs.
-    lpid_t pid = p->pid;
+    w_assert1(p.is_fixed());
+    lpid_t pid = p.pid();
     DBGOUT1(<< "SPR on " << pid << ", EMLSN=" << emlsn);
-    if (smlevel_0::bk->page_exists(p->pid.vol().vol, pid.page)) {
-        W_DO(smlevel_0::bk->retrieve_page(*p, p->pid.vol().vol, pid.page));
-        w_assert1(pid == p->pid);
-        DBGOUT1(<< "Backup page retrieved. Backup-LSN=" << p->lsn);
+    if (smlevel_0::bk->page_exists(p.vol(), pid.page)) {
+        W_DO(smlevel_0::bk->retrieve_page(*p.get_generic_page(), p.vol(), pid.page));
+        w_assert1(pid == p.pid());
+        DBGOUT1(<< "Backup page retrieved. Backup-LSN=" << p.lsn());
     } else {
         // if the page is not in the backup (possible if the page was created after the
         // backup), we need to recover the page purely from the log. So, current_lsn=0.
-        p->lsn = lsn_t::null;
+        p.set_lsns(lsn_t::null);
         DBGOUT1(<< "No backup page. Recovering only from log");
     }
 
@@ -89,13 +90,13 @@ rc_t log_m::recover_single_page(generic_page* p, const lsn_t& emlsn) {
     const size_t SPR_LOG_BUFSIZE = 1 << 14;
     char buffer[SPR_LOG_BUFSIZE]; // TODO, we should have an object pool for this.
     std::vector<logrec_t*> ordered_entires;
-    W_DO(log_core::THE_LOG->_collect_single_page_recovery_logs(pid, p->lsn, emlsn, buffer,
+    W_DO(log_core::THE_LOG->_collect_single_page_recovery_logs(pid, p.lsn(), emlsn, buffer,
         SPR_LOG_BUFSIZE, ordered_entires));
     DBGOUT1(<< "Collected log. About to apply " << ordered_entires.size() << " logs");
     W_DO(log_core::THE_LOG->_apply_single_page_recovery_logs(p, ordered_entires));
 
     // after SPR, the page should be exactly the requested LSN
-    w_assert0(p->lsn == emlsn);
+    w_assert0(p.lsn() == emlsn);
     DBGOUT1(<< "SPR done!");
     return RCOK;
 }
@@ -147,22 +148,18 @@ rc_t log_core::_collect_single_page_recovery_logs(
     return RCOK;
 }
 
-rc_t log_core::_apply_single_page_recovery_logs(generic_page* p,
+rc_t log_core::_apply_single_page_recovery_logs(fixable_page_h &p,
     const std::vector<logrec_t*>& ordered_entries) {
     // So far, we assume the SPR target is a fixable page with latches.
     // So far no plan to extend it to non-fixable pages.
-    // Note: we can't use dynamic_cast here because we didn't instantiate it as any class.
-    // We only reinterpreted a buffer frame (char*).
-    fixable_page_h page_h;
-    page_h.fix_nonbufferpool_page(p);
     for (std::vector<logrec_t*>::const_iterator it = ordered_entries.begin();
          it != ordered_entries.end(); ++it) {
         logrec_t *record = *it;
-        DBGOUT1(<< "Applying SPR. current page(" << p->pid << ") LSN="
-            << page_h.lsn() << ", log=" << *record);
+        DBGOUT1(<< "Applying SPR. current page(" << p.pid() << ") LSN="
+            << p.lsn() << ", log=" << *record);
         w_assert1(record->is_redo());
-        record->redo(&page_h);
-        page_h.set_lsns(record->lsn_ck());
+        record->redo(&p);
+        p.set_lsns(record->lsn_ck());
     }
     return RCOK;
 }

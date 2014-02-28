@@ -1066,11 +1066,13 @@ public:
     /**
      * Overload to receive only pid.
      * \ingroup SPR
+     * @copydoc dump_page_lsn_chain(std::ostream&, const lpid_t &, const lsn_t&)
      */
     static void             dump_page_lsn_chain(std::ostream &o, const lpid_t &pid);
     /**
      * Overload to receive neither.
      * \ingroup SPR
+     * @copydoc dump_page_lsn_chain(std::ostream&, const lpid_t &, const lsn_t&)
      */
     static void             dump_page_lsn_chain(std::ostream &o);
 

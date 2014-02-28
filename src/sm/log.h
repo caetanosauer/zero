@@ -417,8 +417,9 @@ public:
     * @param[in, out] p the page to recover.
     * @param[in] emlsn the LSN up to which we should recover the page.
     * @pre p has a backup in the backup file
+    * @pre p.is_fixed() (could be bufferpool managed or non-bufferpool managed)
     */
-    rc_t recover_single_page(generic_page* p, const lsn_t &emlsn);
+    rc_t recover_single_page(fixable_page_h &p, const lsn_t &emlsn);
 
     /**\brief used by partition */
     fileoff_t limit() const { return _partition_size; }
@@ -426,7 +427,7 @@ public:
     /**
      * \ingroup SPR
      * Defined in log_spr.cpp.
-     * @see ss_m::dump_page_lsn_chain()
+     * @copydoc ss_m::dump_page_lsn_chain(std::ostream&, const lpid_t &, const lsn_t&)
      */
     void dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t &max_lsn);
 
