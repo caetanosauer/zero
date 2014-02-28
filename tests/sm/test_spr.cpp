@@ -266,6 +266,17 @@ w_rc_t test_multi_pages(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(found);
     EXPECT_EQ(recsize, buf_len);
     EXPECT_TRUE(is_consecutive_chars(buf, 'a', recsize));
+    for (int i = 0; i < 5; ++i) {
+        char keystr[7] = "";
+        target_key0.serialize_as_nonkeystr(keystr);
+        w_keystr_t key;
+        keystr[6] = '0' + i;
+        key.construct_regularkey(keystr, 7);
+        W_DO(ssm->find_assoc(stid, key, buf, buf_len, found)); // just to invoke adoption
+        EXPECT_TRUE(found);
+        EXPECT_EQ(recsize, buf_len);
+        EXPECT_TRUE(is_consecutive_chars(buf, 'a', recsize));
+    }
     W_DO(ssm->commit_xct());
 
     return RCOK;
