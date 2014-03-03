@@ -223,7 +223,7 @@ w_rc_t bt_cursor_t::_refix_current_key(btree_page_h &p) {
     while (true) {
         w_rc_t fix_rt = p.refix_direct(_pid_bfidx.idx(), LATCH_SH);
         if (!fix_rt.is_error()) {
-            break; // mostly this case.
+            break; // mostly no error.
         }
         if(fix_rt.err_num() != eBF_DIRECTFIX_SWIZZLED_PTR) {
             return fix_rt; // unexpected error code

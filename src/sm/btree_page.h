@@ -432,20 +432,9 @@ private:
                 char          item_data[6];
             } leaf;
             struct {
-                /**
-                 * \brief Child Page ID pointer, either swizzled or not.
-                 * \NOTE This is 4-bytes aligned for "regular register" semantics. We can
-                 * update this value only with SH-latch. Other threads see either the old value
-                 * or new value, but not a random value. All usecases of this value are safe
-                 * with that semantics.
-                 */
                 shpid_t       child;
                 item_length_t item_len;
-                /**
-                 * really of size item_len - sizeof(item_len) - sizeof(child).
-                 * the last 8 bytes are child EMLSN (lsndata_t), so the actualy key data size
-                 * is item_len - sizeof(item_len) - sizeof(child) - sizeof(lsndata_t).
-                 */
+                /// really of size item_len - sizeof(item_len) - sizeof(child).
                 char          item_data[2];
             } interior;
             /**
@@ -455,7 +444,6 @@ private:
             int64_t _for_alignment_only;
         };
     } item_body;
-    /** 8 bytes minimal unit of allocation for body. This can be 4 bytes. */
     BOOST_STATIC_ASSERT(sizeof(item_body) == 8);
 
     BOOST_STATIC_ASSERT(data_sz%sizeof(item_body) == 0);
@@ -481,6 +469,7 @@ private:
     STATIC_LESS_THAN(data_sz,    1<<(sizeof(item_length_t)*8));
     STATIC_LESS_THAN(max_heads,  1<<(sizeof(item_index_t) *8));
     STATIC_LESS_THAN(max_bodies, 1<<(sizeof(body_offset_t)*8-1)); // -1 for ghost bit
+
 
     /// are we a leaf node?
     bool is_leaf() const { return btree_level == 1; }

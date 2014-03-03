@@ -1004,6 +1004,7 @@ void restart_m::_redo_log_with_pid(
             page.get_generic_page()->pid = page_updated;
             page.get_generic_page()->tag = t_btree_p;
             page.get_generic_page()->lsn = lsn_t::null;
+            page.unset_to_be_deleted();
         }
         w_assert1(page.pid() == page_updated);
 

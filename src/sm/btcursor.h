@@ -125,7 +125,7 @@ private:
     void        _set_current_page(btree_page_h &page);
 
     /**
-     * \brief Re-fix the page at which the cursor was on.
+     * \brief Re-fix the page at which the cursor was on with SH mode.
      * \details
      * In most cases, this method just re-fixes the page ID we observed before.
      * However, fix_direct might fail if the disk page is corrupted. In that case, we need
