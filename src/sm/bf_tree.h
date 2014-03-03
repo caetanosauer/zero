@@ -550,7 +550,7 @@ public:
      * for every millisec or so. If you have to call this method too often, inrease the batch
      * size.
      * TODO This and related methods should be defined in its own file, say bf_tree_evict.cpp.
-     * bf_tree.cpp is a bit too bloated.
+     * bf_tree.cpp is a bit too bloated (JIRA ZERO-180).
      */
     w_rc_t evict_blocks(
         uint32_t &evicted_count,
@@ -801,8 +801,8 @@ private:
      * @param[in] child_emlsn new emlsn to store in parent
      * @pre parent.is_latched()
      * \NOTE parent must be latched, but does not have to be EX-latched.
-     * This is because we use atomic operations to update the EMLSN anyways and because it is
-     * essential to call this method from various places without risking latch deadlocks.
+     * This is because EMLSN are not viewed/updated by multi threads (only accessed during
+     * page eviction or cache miss of the particular page).
      */
     w_rc_t _sx_update_child_emlsn(btree_page_h &parent,
                                   general_recordid_t child_slotid, lsn_t child_emlsn);

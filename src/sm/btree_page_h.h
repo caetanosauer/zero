@@ -679,9 +679,15 @@ public:
 
     /** Returns the pointer to Expected Child LSN of pid0, foster-child, or real child. \ingroup SPR */
     lsn_t*         emlsn_address(general_recordid_t slot);
-    /** Returns the Expected Child LSN of pid0, foster-child, or real child. \ingroup SPR */
+    /** Returns the Expected Child LSN of pid0, foster-child, or real child. */
     const lsn_t&   get_emlsn_general(general_recordid_t slot) const;
-    /** Sets the Expected Child LSN of pid0, foster-child, or real child. \ingroup SPR */
+    /**
+     * \brief Sets the Expected Child LSN of pid0, foster-child, or real child.
+     * \ingroup SPR
+     * \details
+     * This method is not protected by exclusive latch but still safe because EMLSN are not
+     * viewed/updated by multi threads.
+     */
     void           set_emlsn_general(general_recordid_t slot, const lsn_t &lsn);
 
     /** Returns the Expected Child LSN of foster-child. \ingroup SPR */
