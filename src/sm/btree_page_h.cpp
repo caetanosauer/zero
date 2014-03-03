@@ -37,7 +37,7 @@ btrec_t::set(const btree_page_h& page, slotid_t slot) {
         _ghost_record = false;
         page.get_key(slot, _key);
         _child = page.child_opaqueptr(slot);
-        _child_emlsn.set(page.child_emlsn(slot));
+        _child_emlsn = page.get_emlsn_general(GeneralRecordIds::from_slot_to_general(slot));
         // this might not be needed, but let's also add the _child value
         // to _elem.
         _elem.put(&_child, sizeof(_child));
@@ -106,9 +106,8 @@ rc_t btree_page_h::format_steal(lsn_t             new_lsn,
         shpid_t      stolen_pid0 = steal_src2->pid0();
         lsn_t        stolen_pid0_emlsn = steal_src2->get_pid0_emlsn();
         cvec_t v;
-        _pack_node_record(v, stolen_key);
-        if (!page()->insert_item(nrecs()+1, false, poormkey, stolen_pid0,
-                stolen_pid0_emlsn, v)) {
+        _pack_node_record(v, stolen_key, stolen_pid0_emlsn.data());
+        if (!page()->insert_item(nrecs()+1, false, poormkey, stolen_pid0, v)) {
             w_assert0(false);
         }
     }
@@ -153,23 +152,23 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
         cvec_t         v;
         pack_scratch_t v_scratch; // this needs to stay in scope until v goes out of scope...
         shpid_t        child;
-        lsn_t          child_emlsn;
         if (is_leaf()) {
             smsize_t data_length;
             bool is_ghost;
             const char* data = steal_src->element(i, data_length, is_ghost);
             _pack_leaf_record(v, v_scratch, new_trunc_key, data, data_length);
             child = 0;
-            child_emlsn = lsn_t::null;
         } else {
-            _pack_node_record(v, new_trunc_key);
+            // EMLSN is after the key data
+            const lsn_t* emlsn_ptr = reinterpret_cast<const lsn_t*>(
+                trunc_key_data + trunc_key_length);
+            _pack_node_record(v, new_trunc_key, *emlsn_ptr);
             child = steal_src->child_opaqueptr(i);
-            child_emlsn.set(steal_src->child_emlsn(i));
         }
 
         if (!page()->insert_item(nrecs()+1, steal_src->is_ghost(i), 
                                  _extract_poor_man_key(new_trunc_key), 
-                                 child, child_emlsn, v)) {
+                                 child, v)) {
             w_assert0(false);
         }
 
@@ -211,7 +210,7 @@ rc_t btree_page_h::norecord_split (shpid_t foster, lsn_t foster_emlsn,
 
         //updates headers
         page()->btree_foster                        = foster;
-        set_foster_emlsn(foster_emlsn);
+        page()->btree_foster_emlsn                  = foster_emlsn;
         page()->btree_consecutive_skewed_insertions = 0; // reset this value too.
     }
     return RCOK;
@@ -467,9 +466,9 @@ rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, shpid_t chi
     poor_man_key poormkey = _extract_poor_man_key(trunc_key);
 
     vec_t v;
-    _pack_node_record(v, trunc_key);
+    _pack_node_record(v, trunc_key, child_emlsn.data());
     // we don't log it. btree_impl::adopt() does the logging
-    if (!page()->insert_item(slot+1, false, poormkey, child, child_emlsn, v)) {
+    if (!page()->insert_item(slot+1, false, poormkey, child, v)) {
         // This shouldn't happen; the caller should have checked with check_space_for_insert_for_node():
         return RC(eRECWONTFIT);
     }
@@ -627,7 +626,7 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, size_t
     cvec_t trunc_key(key_raw + prefix_len, trunc_key_length);
     poor_man_key poormkey = _extract_poor_man_key(trunc_key);
 
-    if (!page()->insert_item(slot+1, true, poormkey, 0, lsn_t::null, data_length)) {
+    if (!page()->insert_item(slot+1, true, poormkey, 0, data_length)) {
         w_assert0(false);
     }
 
@@ -665,7 +664,7 @@ bool btree_page_h::check_space_for_insert_leaf(size_t trunc_key_length, size_t e
 }
 bool btree_page_h::check_space_for_insert_node(const w_keystr_t& key) {
     w_assert1 (is_node());
-    size_t data_length = key.get_length_as_keystr();
+    size_t data_length = key.get_length_as_keystr() + sizeof(lsn_t);
     return btree_page_h::_check_space_for_insert(data_length);
 }
 
@@ -1110,7 +1109,7 @@ void btree_page_h::_init(lsn_t lsn, lpid_t page_id,
     page()->btree_prefix_length = (int16_t) prefix_len;
 
     // fence-key record doesn't need poormkey; set to 0:
-    if (!page()->insert_item(nrecs() + 1, false, 0, 0, lsn_t::null, fences)) {
+    if (!page()->insert_item(nrecs() + 1, false, 0, 0, fences)) {
         w_assert0(false);
     }
 }

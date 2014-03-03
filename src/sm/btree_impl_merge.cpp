@@ -374,7 +374,7 @@ void btree_impl::_ux_deadopt_foster_apply_foster_parent(btree_page_h &foster_par
         org_low_key, org_high_key, high_key));
     
     foster_parent.page()->btree_foster = foster_child_id;
-    foster_parent.set_foster_emlsn(foster_child_emlsn);
+    foster_parent.set_emlsn_general(GeneralRecordIds::FOSTER_CHILD, foster_child_emlsn);
 }
 rc_t btree_impl::_ux_deadopt_foster_core(btree_page_h &real_parent, slotid_t foster_parent_slot)
 {

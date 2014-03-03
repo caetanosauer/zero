@@ -68,7 +68,7 @@ inline uint64_t bf_key(const lpid_t &pid) {
 // walking to find a pge to evict.
 // #define BP_MAINTAIN_PARENT_PTR
 //// TODO Now that we evict hierarchically, we won't need it in any situation.
-//// Should we remove all codes in #ifdef BP_MAINTAIN_PARENT_PTR?
+//// We should remove all codes in #ifdef BP_MAINTAIN_PARENT_PTR. JIRA Issue ZERO-178.
 
 // A flag whether the bufferpool maintains replacement priority per page.
 #define BP_MAINTAIN_REPLACEMENT_PRIORITY
@@ -801,9 +801,8 @@ private:
      * @param[in] child_emlsn new emlsn to store in parent
      * @pre parent.is_latched()
      * \NOTE parent must be latched, but does not have to be EX-latched.
-     * This is because of the "regular register" semantics of
-     * item_body_layout::interior::child_emlsn and essential to call this method from
-     * various places without risking latch deadlocks.
+     * This is because we use atomic operations to update the EMLSN anyways and because it is
+     * essential to call this method from various places without risking latch deadlocks.
      */
     w_rc_t _sx_update_child_emlsn(btree_page_h &parent,
                                   general_recordid_t child_slotid, lsn_t child_emlsn);

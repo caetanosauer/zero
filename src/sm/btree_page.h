@@ -19,7 +19,7 @@
  * \li poor   (2 bytes): leading bytes of an associated key for speeding up search
  *    (type poor_man_key)
  *
- * \li child  (4 bytes): child page ID; this and next fields are present only in interior nodes
+ * \li child  (4 bytes): child page ID; this field is present only in interior nodes
  *
  * The first two fields are stored so that for nearby items (in the
  * list order) they are likely to be in the same cache line; e.g.,
@@ -169,13 +169,6 @@ protected:
     shpid_t&      item_child(int item);
 
     /**
-     * \brief Return a reference to the expectd child LSN for the given item.
-     * \ingroup SPR
-     * @pre this is an interior page
-     */
-    lsndata_t&    item_child_emlsn(int item);
-
-    /**
      * return a pointer to the variable-length data of the given item
      *
      * the variable length data occupies item_data(item)
@@ -209,7 +202,7 @@ protected:
      * initialized.
      */
     bool          insert_item(int item, bool ghost, poor_man_key poor, shpid_t child,
-                              const lsn_t &child_emlsn, size_t data_length);
+                              size_t data_length);
 
     /**
      * Attempt to insert a new item at given item position, pushing
@@ -227,7 +220,7 @@ protected:
      * data.  child must be 0 if this is a leaf page.
      */
     bool          insert_item(int item, bool ghost, poor_man_key poor, shpid_t child,
-                              const lsn_t &child_emlsn, const cvec_t& data);
+                              const cvec_t& data);
 
     /**
      * Attempt to resize the variable-length data of the given item to
@@ -335,7 +328,6 @@ protected:
     int          robust_number_of_items()    const;
     poor_man_key robust_item_poor(int item)  const;
     shpid_t      robust_item_child(int item) const;
-    lsndata_t    robust_item_child_emlsn(int item) const;
     /// Robust combo of item_data and item_length
     const char* robust_item_data(int item, size_t& length) const;
 
@@ -434,7 +426,7 @@ private:
             struct {
                 shpid_t       child;
                 item_length_t item_len;
-                /// really of size item_len - sizeof(item_len) - sizeof(child).
+                /// really of size item_len - sizeof(item_len) - sizeof(child):
                 char          item_data[2];
             } interior;
             /**
@@ -453,7 +445,7 @@ private:
         /** Bytes that should be subtracted from item_len for actual data in leaf. */
         leaf_overhead = sizeof(item_length_t),
         /** Bytes that should be subtracted from item_len for actual data in interior. */
-        interior_overhead = sizeof(item_length_t) + sizeof(shpid_t) + sizeof(lsndata_t),
+        interior_overhead = sizeof(item_length_t) + sizeof(shpid_t),
     };
 
     union {
@@ -492,9 +484,6 @@ private:
      * offset
      */
     item_length_t _item_body_length(body_offset_t offset) const;
-
-    /** Return reference to Child EMLSN data in item bodies. */
-    lsndata_t&    _item_child_emlsn(body_offset_t offset);
 
     /**
      * return number of item bodies holding data for the items
@@ -578,13 +567,6 @@ inline btree_page_data::item_length_t btree_page_data::_item_body_length(body_of
         return body[offset].interior.item_len;
     }
 }
-inline lsndata_t& btree_page_data::_item_child_emlsn(body_offset_t offset) {
-    w_assert1(offset >= 0);
-    w_assert1(body[offset].interior.item_len >= interior_overhead);
-    // last 8 bytes after usual item_data is the child EMLSN.
-    return *reinterpret_cast<lsndata_t*>(body[offset].interior.item_data
-        + body[offset].interior.item_len - interior_overhead);
-}
 
 inline btree_page_data::body_offset_t btree_page_data::_item_bodies(body_offset_t offset) const {
     w_assert1(offset >= 0);
@@ -617,16 +599,6 @@ inline shpid_t& btree_page_data::item_child(int item) {
     return body[offset].interior.child;
 }
 
-inline lsndata_t& btree_page_data::item_child_emlsn(int item) {
-    w_assert1(item>=0 && item<nitems);
-    w_assert1(!is_leaf());
-
-    body_offset_t offset = head[item].offset;
-    if (offset < 0) {
-        offset = -offset;
-    }
-    return _item_child_emlsn(offset);
-}
 
 inline char* btree_page_data::item_data(int item) {
     w_assert1(item>=0 && item<nitems);
@@ -729,20 +701,6 @@ inline shpid_t btree_page_data::robust_item_child(int item) const {
         w_assert1(offset >= 0);
     }
     return ACCESS_ONCE(body[offset % max_bodies].interior.child);
-}
-
-inline lsndata_t btree_page_data::robust_item_child_emlsn(int item) const {
-    w_assert1(item>=0 && item<max_heads);
-    int offset = ACCESS_ONCE(head[item].offset);
-    if (offset < 0) {
-        offset = -offset;
-        w_assert1(offset >= 0);
-    }
-    int body_len = ACCESS_ONCE(body[offset % max_bodies].interior.item_len);
-    body_len -= interior_overhead;
-    w_assert1(body_len >= 0);
-    return *reinterpret_cast<const volatile lsndata_t*>(
-        ACCESS_ONCE(body[offset % max_bodies].interior.item_data) + body_len);
 }
 
 inline const char* btree_page_data::robust_item_data(int item, size_t& length) const {
