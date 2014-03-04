@@ -1913,7 +1913,7 @@ w_rc_t bf_tree_m::_sx_update_child_emlsn(btree_page_h &parent, general_recordid_
 
 w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
                                    volid_t vol, shpid_t shpid) {
-    w_assert0(shpid != 0);
+    w_assert1(shpid != 0);
     generic_page &page = _buffer[idx];
     uint32_t checksum = page.calculate_checksum();
     if (checksum == 0) {
