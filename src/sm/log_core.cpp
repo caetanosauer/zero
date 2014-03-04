@@ -2113,8 +2113,14 @@ bool log_core::_update_epochs(CArraySlot* info) {
     // Even though the end pointer we're checking wraps regularly, we
     // already have to limit each address in the buffer to one active
     // writer or data corruption will result.
-    if(_carray->wait_for_expose(info)) {
-        return true; // we delegated!
+    if (CARRAY_RELEASE_DELEGATION) {
+        if(_carray->wait_for_expose(info)) {
+            return true; // we delegated!
+        }
+    } else {
+        // If delegated-buffer-release is off, we simply spin until predecessors complete.
+        lintel::atomic_thread_fence(lintel::memory_order_seq_cst);
+        while(*&_cur_epoch.vthis()->end + *&_cur_epoch.vthis()->base != info->old_end);
     }
 
     // now update the epoch(s)

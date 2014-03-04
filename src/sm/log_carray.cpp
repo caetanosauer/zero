@@ -37,9 +37,7 @@ void ConsolidationArray::wait_for_leader(CArraySlot* info) {
 
 bool ConsolidationArray::wait_for_expose(CArraySlot* info) {
     w_assert1(SLOT_FINISHED == info->vthis()->count);
-    if (!CARRAY_RELEASE_DELEGATION) {
-        return false;
-    }
+    w_assert1(CARRAY_RELEASE_DELEGATION);
     lintel::atomic_thread_fence(lintel::memory_order_seq_cst);
     // If there is a predecessor which is still running,
     // let's try to delegate the work of releasing the buffer

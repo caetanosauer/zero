@@ -177,7 +177,7 @@ public:
 * Most modern CPU has 64 bytes cacheline.
 * Some less popular CPU like Spark uses 128 bytes.
 * This value is used for padding to keep lock objects in different cachelines.
-* TODO: CMake script to automatically detect this and cmakedefine for it.
+* TODO: CMake script to automatically detect this and cmakedefine for it (JIRA ZERO-179).
 */
 const size_t CACHELINE_SIZE = 64;
 
