@@ -32,7 +32,13 @@ DECLARE_TLS(block_alloc<generic_page>, scratch_space_pool);
  * \ingroup SPR
  */
 struct SprScratchSpace {
-    SprScratchSpace() { p = new (*scratch_space_pool) generic_page(); }
+    SprScratchSpace(volid_t vol, snum_t store, shpid_t pid) {
+        p = new (*scratch_space_pool) generic_page();
+        ::memset(p, 0, sizeof(generic_page));
+        p->tag = t_btree_p;
+        p->pid = lpid_t(stid_t(vol, store), pid);
+        p->lsn = lsn_t::null;
+    }
     ~SprScratchSpace() { scratch_space_pool->destroy_object(p); }
     generic_page* p;
 };
@@ -563,7 +569,7 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
         }
     } else {
         // this is in SPR. we use scratch space for another page because bufferpool frame
-        // for another page is probably too latest for SPR.
+        // for another page is probably too recent for SPR.
         DBGOUT1(<< "merge SPR! another=" << another_pid);
         if (!recovering_dest) {
             // source page is simply deleted, so we don't have to do anything here
@@ -571,10 +577,7 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
             return;
         }
         DBGOUT1(<< "recovering dest page in merge. recursive SPR!");
-        SprScratchSpace frame;
-        frame.p->tag = t_btree_p;
-        frame.p->pid = lpid_t(stid_t(bp.vol(), bp.store()), another_pid);
-        frame.p->lsn = lsn_t::null;
+        SprScratchSpace frame(bp.vol(), bp.store(), another_pid);
         // Here, we do "time travel", recursively invoking SPR.
         lsn_t another_previous_lsn = recovering_dest ? dp->_page2_prv : page_prev_lsn();
         btree_page_h another;
@@ -677,10 +680,7 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
     } else {
         // this is in SPR. we use scratch space for another page because bufferpool frame
         // for another page is probably too latest for SPR.
-        SprScratchSpace frame;
-        frame.p->tag = t_btree_p;
-        frame.p->pid = lpid_t(stid_t(bp.vol(), bp.store()), another_pid);
-        frame.p->lsn = lsn_t::null;
+        SprScratchSpace frame(bp.vol(), bp.store(), another_pid);
         // Here, we do "time travel", recursively invoking SPR.
         lsn_t another_previous_lsn = recovering_dest ? dp->_page2_prv : page_prev_lsn();
         DBGOUT1(<< "SPR for rebalance. recursive SPR! another=" << another_pid <<
