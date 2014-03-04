@@ -2181,9 +2181,9 @@ void _update_page_lsns(const fixable_page_h *page, const lsn_t &new_lsn) {
             lsndata_t cas_tmp = *addr;
             while (!lintel::unsafe::atomic_compare_exchange_strong<lsndata_t>(
                 addr, &cas_tmp, new_lsn_data)) {
-                if (lsn_t(cas_tmp) > lsn_t(new_lsn_data)) {
+                if (lsn_t(cas_tmp) > new_lsn) {
                     DBGOUT1(<<"Someone else has already set a larger LSN. ");
-                    continue;
+                    break;
                 }
             }
             w_assert1(page->lsn() >= new_lsn);
