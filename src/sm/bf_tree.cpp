@@ -820,7 +820,7 @@ w_rc_t bf_tree_m::_get_replacement_block() {
 #endif // W_DEBUG_LEVEL>=1
     }
 
-    ERROUT(<<"woooo, couldn't find an evictable page for long time. gave up!");
+    ERROUT(<<"whoa, couldn't find an evictable page for long time. gave up!");
     debug_dump(std::cerr);
     W_DO(evict_blocks(evicted_count, unswizzled_count, EVICT_COMPLETE));
     if (evicted_count > 0 || _freelist_len > 0) {

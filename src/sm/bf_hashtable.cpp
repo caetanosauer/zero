@@ -108,6 +108,7 @@ bf_idx bf_hashbucket::find(uint64_t key) {
 bf_idx bf_hashbucket::find_imprecise(uint64_t key) {
     // same as find(), but this doesn't take locks. So, we might get false positives/negatives.
     // we have to make sure we don't crash because of concurrent updates (cf. robust search).
+    // note that _chunk has always size of HASHBUCKET_INITIAL_CHUNK_SIZE.
     const uint32_t used_count = *&_used_count;
     for (uint32_t i = 0; i < used_count && i < HASHBUCKET_INITIAL_CHUNK_SIZE; ++i) {
         if (_chunk.keys[i] == key) {
