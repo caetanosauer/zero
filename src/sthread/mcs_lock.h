@@ -38,9 +38,9 @@ union qnode_status {
     } individual;
     int64_t _combined;
 };
-const qnode_status QNODE_IDLE = {0, 0};
-const qnode_status QNODE_WAITING = {1, 0};
-const qnode_status QNODE_DELEGATED = {1, 1};
+const qnode_status QNODE_IDLE = {{0, 0}};
+const qnode_status QNODE_WAITING = {{1, 0}};
+const qnode_status QNODE_DELEGATED = {{1, 1}};
 
 /**\brief An MCS queuing spinlock.
  *
