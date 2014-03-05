@@ -179,8 +179,9 @@ struct CArraySlot {
     /** const version. */
     const CArraySlot volatile* vthis() const { return this; }
 };
-BOOST_STATIC_ASSERT_MSG((sizeof(CArraySlot) % CACHELINE_SIZE) == 0,
-    "size of CArraySlot must be aligned to CACHELINE_SIZE for better performance");
+// Doesn't compile in old Debian.
+//BOOST_STATIC_ASSERT_MSG((sizeof(CArraySlot) % CACHELINE_SIZE) == 0,
+//    "size of CArraySlot must be aligned to CACHELINE_SIZE for better performance");
 
 /**
  * \brief The implementation class of \b Consolidation \b Array.
