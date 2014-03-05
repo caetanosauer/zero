@@ -257,7 +257,8 @@ public:
     static rc_t    new_log_m(
                         log_m    *&the_log,
                         int        wrlogbufsize,
-                        bool    reformat);
+                        bool    reformat,
+                        int        carray_active_slot_count);
 
     // Exported to log_m
     static          log_core *THE_LOG;
@@ -274,7 +275,8 @@ public:
 
     NORET           log_core(
                         long wrbufsize, 
-                        bool reformat);
+                        bool reformat,
+                        int carray_active_slot_count);
     NORET           ~log_core();
     // do whatever needs to be done before destructor is callable
     void            shutdown(); 

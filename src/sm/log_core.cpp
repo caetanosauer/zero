@@ -102,7 +102,7 @@ log_core::min_partition_size() {
 }
 /*********************************************************************
  *
- *  log_core *log_core::new_log_m(logdir,segid)
+ *  log_core *log_core::new_log_m(logdir,segid,reformat,carray_active_slot_count)
  *
  *  CONSTRUCTOR.  Returns one or the other log types.
  *
@@ -112,7 +112,8 @@ w_rc_t
 log_core::new_log_m(
     log_m        *&log_p,
     int          wrbufsize,
-    bool         reformat
+    bool         reformat,
+    int          carray_active_slot_count
 )
 {
     rc_t        rc;
@@ -146,7 +147,7 @@ log_core::new_log_m(
             return RC(eOUTOFLOGSPACE);
         }
 
-        l = new log_core(wrbufsize, reformat);
+        l = new log_core(wrbufsize, reformat, carray_active_slot_count);
     }
     if (rc.is_error())
         return rc;    
@@ -970,7 +971,8 @@ log_core::shutdown()
 NORET
 log_core::log_core(
     long bsize,
-    bool reformat) 
+    bool reformat,
+    int carray_active_slot_count)
 
     : 
       _reservations_active(false), 
@@ -983,7 +985,7 @@ log_core::log_core(
       _buf(NULL),
       _shutting_down(false),
       _flush_daemon_running(false),
-      _carray(new ConsolidationArray()),
+      _carray(new ConsolidationArray(carray_active_slot_count)),
       _curr_index(-1),
       _curr_num(1),
       _readbuf(NULL),

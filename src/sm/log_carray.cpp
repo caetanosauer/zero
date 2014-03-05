@@ -57,20 +57,24 @@ bool ConsolidationArray::wait_for_expose(CArraySlot* info) {
     return false;
 }
 
-ConsolidationArray::ConsolidationArray() : _slot_mark(0) {
+ConsolidationArray::ConsolidationArray(int active_slot_count)
+    : _slot_mark(0), _active_slot_count(active_slot_count) {
     // Zero-out all slots
     ::memset(_all_slots, 0, sizeof(CArraySlot) * ALL_SLOT_COUNT);
+    typedef CArraySlot* CArraySlotPtr;
+    _active_slots = new CArraySlotPtr[_active_slot_count];
     for (int i = 0; i < ALL_SLOT_COUNT; ++i) {
         _all_slots[i].count = SLOT_UNUSED;
         _all_slots[i].error = w_error_ok;
     }
     // Mark initially active slots
-    for (int i = 0; i < ACTIVE_SLOT_COUNT; ++i) {
+    for (int i = 0; i < _active_slot_count; ++i) {
         _active_slots[i] = _all_slots + i;
         _active_slots[i]->count = SLOT_AVAILABLE;
     }
 }
 ConsolidationArray::~ConsolidationArray() {
+    delete[] _active_slots;
     // Check all slots are freed
     for (int i = 0; i < ALL_SLOT_COUNT; ++i) {
         w_assert0(_all_slots[i].count == SLOT_UNUSED
@@ -87,7 +91,7 @@ CArraySlot* ConsolidationArray::join_slot(
         // probe phase
         CArraySlot* info = NULL;
         while (true) {
-            idx = (idx + 1) % ACTIVE_SLOT_COUNT;
+            idx = (idx + 1) % _active_slot_count;
             info = _active_slots[idx];
             old_count = info->vthis()->count;
             if (old_count >= SLOT_AVAILABLE) {

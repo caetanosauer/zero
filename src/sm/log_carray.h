@@ -55,13 +55,12 @@
  *
  * \section PERF Performance Improvements
  * As of 20140220, with and without this improvement, TPCC on 4-socket machine is as
- * follows (12 worker threads).
- *   \li LOCK-ON: BEFORE=13800 TPS, AFTER=14400 TPS.
- *   \li LOCK-OFF: BEFORE=17900 TPS, AFTER=23500 TPS.
+ * follows (12 worker threads, 3 active slots, CARRAY_RELEASE_DELEGATION=false).
+ *   \li LOCK-ON: BEFORE=13800 TPS, AFTER=15400 TPS.
+ *   \li LOCK-OFF: BEFORE=17900 TPS, AFTER=30900 TPS.
  *   \li i.e. LOCK-OFF, LOG-OFF: 63000 TPS.
  * So, big improvements in log contention, but not completely removing it.
  * Now lock manager is bigger bottleneck.
- * We did not turn off Delegated-Buffer-Release in this experiment. See below.
  *
  * \section CON Considerations
  * Among the three techniques, \e Delegated-Buffer-Release was a bit dubious to be added
@@ -69,6 +68,10 @@
  * adds 10% overheads because of a few more atomic operations.
  * It might be worth the extra 10% for stability in case of highly skewed log sizes, so we
  * should keep an eye. CARRAY_RELEASE_DELEGATION option turns on/off this feature.
+ *
+ * Also, consider adjusting the number of active slots depending on the number of worker
+ * threads as suggested in the paper. The startup option \b sm_carray_slots does it.
+ * The default value for this option is ConsolidationArray#DEFAULT_ACTIVE_SLOT_COUNT
  *
  * \section REF Reference
  * \li Ryan Johnson, Ippokratis Pandis, Radu Stoica, Manos Athanassoulis, and Anastasia
@@ -187,7 +190,8 @@ BOOST_STATIC_ASSERT_MSG((sizeof(CArraySlot) % CACHELINE_SIZE) == 0,
  */
 class ConsolidationArray {
 public:
-    ConsolidationArray();
+    /** @param[in] active_slot_count Max number of slots that can be active at the same time */
+    ConsolidationArray(int active_slot_count);
     ~ConsolidationArray();
 
     /** Constant numbers. */
@@ -195,8 +199,8 @@ public:
         /** Total number of slots. */
         ALL_SLOT_COUNT      = 256,
 
-        /** Max number of slots that can be active at the same time. */
-        ACTIVE_SLOT_COUNT   = 3,
+        /** Default value for max number of slots that can be active at the same time. */
+        DEFAULT_ACTIVE_SLOT_COUNT   = 3,
 
         /**
         * slots that are in active slots and up for grab have this carray_status_t.
@@ -294,10 +298,12 @@ private:
      * perfectly even. We anyway atomically obtain the slot.
      */
     int32_t             _slot_mark;
+    /** Max number of slots that can be active at the same time. */
+    const int32_t       _active_slot_count;
     /** All slots, including available, currently used, or retired slots. */
     CArraySlot          _all_slots[ALL_SLOT_COUNT];
     /** Active slots that are (probably) up for grab or join. */
-    CArraySlot*         _active_slots[ACTIVE_SLOT_COUNT];
+    CArraySlot**        _active_slots;
 
     // paddings to make sure mcs_lock are in different cacheline
     /** @cond */ char   _padding[CACHELINE_SIZE]; /** @endcond */
