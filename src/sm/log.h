@@ -278,14 +278,16 @@ public:
      * @param[in] wrlogbufsize  Size of log buffer, see ss_m run-time options.
      * @param[in] reformat  If true, the manager will blow away the log and start over.
      * This precludes recovery.
-     *
+     * @param[in] carray_active_slot_count Max number of Consolidation Array slots that
+     * can be active at the same time.
      * \todo explain the logbuf size and log size options
      */
     static rc_t         new_log_m(
                              log_m        *&the_log,
                              const char   *path,
                              int          wrlogbufsize,
-                             bool         reformat);
+                             bool         reformat,
+                             int          carray_active_slot_count);
 
     /**\brief log segment size; exported for use by ss_m::options processing 
      * \details

@@ -233,6 +233,8 @@ partition_t::flush(
         long start2, 
         long end2)
 {
+    w_assert0(end1 >= start1);
+    w_assert0(end2 >= start2);
     long size = (end2 - start2) + (end1 - start1);
     long write_size = size;
 
