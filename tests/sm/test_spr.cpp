@@ -18,6 +18,7 @@
 btree_test_env *test_env;
 
 /**
+ * \file test_spr.cpp
  * Tests for Single-page recovery (SPR).
  */
 

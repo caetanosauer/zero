@@ -24,6 +24,7 @@
  * collects only relevant transactional logs for the page, and applies them to the page.
  *
  * \section Terminology Terminology
+ * TODO: A few words below should have more mathematic definitions.
  * \li A \b page in this module refers to a fixable page. It does NOT refer to
  * other types of pages (e.g., page-allocation bitmap pages, store-node pages).
  *
