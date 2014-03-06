@@ -383,6 +383,19 @@ w_rc_t bf_tree_m::fix_direct (generic_page*& page, volid_t vol, shpid_t shpid, l
     return _fix_nonswizzled(NULL, page, vol, shpid, mode, conditional, virgin_page);
 }
 
+void bf_tree_m::associate_page(generic_page*&_pp, bf_idx idx)
+{
+    // Special function for REDO phase of the system Recovery process
+    // The physical page is loaded in buffer pool, idx is known but we 
+    // need to associate it with fixable_page data structure
+    // Swizzling must be off
+
+    w_assert1(!smlevel_0::bf->is_swizzling_enabled());   
+    w_assert1 (_is_active_idx(idx));
+    _pp = &(smlevel_0::bf->_buffer[idx]);
+    return;
+}
+
 w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(generic_page* parent, generic_page*& page, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
     bf_idx idx = shpid;
     bf_tree_cb_t &cb = get_cb(idx);
@@ -1522,6 +1535,8 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret, volid_t vid,
                   shpid_t shpid, lsn_t new_lsn, uint32_t& in_doubt_count)
 {
     w_rc_t rc = RCOK;
+    w_assert1(vid != 0);
+    w_assert1(shpid != 0);
 
     ret = 0;
 
@@ -1596,6 +1611,51 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret, volid_t vid,
 
         // Now we are done
         DBGOUT5(<<"Done registration process, idx: " << idx);
+    }
+
+    return rc;
+}
+
+w_rc_t bf_tree_m::load_for_redo(bf_idx idx, volid_t vid, shpid_t shpid)
+{
+    // idx is in hash table already
+    
+    w_rc_t rc = RCOK;
+    w_assert1(vid != 0);
+    w_assert1(shpid != 0);
+
+    DBGOUT3(<<"REDO phase: loading page " << vid << "." << shpid 
+            << " into buffer pool frame " << idx);
+
+    bf_tree_vol_t *volume = _volumes[vid];
+    w_assert1(volume != NULL);
+    w_assert1(shpid >= volume->_volume->first_data_pageid());
+
+    // Load the physical page from disk
+    rc = volume->_volume->read_page(shpid, _buffer[idx]);
+    if (rc.is_error()) 
+    {
+        DBGOUT3(<<"bf_tree_m: error while reading page " << shpid 
+                << " to frame " << idx << ". rc=" << rc);
+        return rc;
+    }
+    else
+    {    
+        // For the loaded page, compare its checksum
+        // If inconsistent, return error       
+        uint32_t checksum = _buffer[idx].calculate_checksum();
+        if (checksum != _buffer[idx].checksum) 
+        {        
+            ERROUT(<<"bf_tree_m: bad page checksum in page " << shpid);
+            return RC (eBADCHECKSUM);
+        }
+        // Then, page ID must match, otherwise raise error
+        if (( shpid != _buffer[idx].pid.page) || (vid != _buffer[idx].pid.vol().vol)) 
+        {
+            W_FATAL_MSG(eINTERNAL, <<"inconsistent disk page: "
+                << vid << "." << shpid << " was " << _buffer[idx].pid.vol().vol
+                << "." << _buffer[idx].pid.page);
+        }
     }
 
     return rc;
@@ -1977,6 +2037,8 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid,
             else
             {
                 // Ignore this page if the pin count is -1
+                // Checkpoint records dirty pages in buffer pool, we never evict dirty pages so ignoring
+                // a page that is being evicted (pin_cnt == -1) is safe.
                 if (cb.pin_cnt() == -1)
                 {
                     cb.latch().latch_release();                

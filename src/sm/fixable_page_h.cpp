@@ -76,6 +76,23 @@ w_rc_t fixable_page_h::fix_direct(volid_t vol, shpid_t shpid,
     return RCOK;
 }
 
+w_rc_t fixable_page_h::fix_recovery_redo(bf_idx idx) {
+
+    // Latch has been held on this page by caller
+    // This is a newly load page during REDO phase in Recovery, caller has a latch on it already
+    // The idx is already in hashtable, all we need to do is to associate it with 
+    // fixable page data structure.
+    // Swizzling must be off when calling this function.
+
+    w_assert1(!smlevel_0::bf->is_swizzling_enabled());
+
+    smlevel_0::bf->associate_page(_pp, idx);
+    _bufferpool_managed = true;
+    _mode = LATCH_NL;
+
+    return RCOK;
+}
+
 bf_idx fixable_page_h::pin_for_refix() {
     w_assert1(_bufferpool_managed);
     w_assert1(is_latched());
@@ -156,6 +173,7 @@ bool fixable_page_h::is_dirty() const {
         return false;
     }
 }
+
 
 bool fixable_page_h::is_to_be_deleted() {
     w_assert1(_mode != LATCH_Q);

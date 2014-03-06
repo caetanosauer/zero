@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 #include "w_defines.h"
@@ -1535,12 +1535,25 @@ xct_t::_abort()
     // W_DO(check_one_thread_attached()); // now done in the prologues.
     
     w_assert1(one_thread_attached());
-    w_assert1(_core->_state == xct_active
-            || _core->_state == xct_committing /* if it got an error in commit*/
-            || _core->_state == xct_freeing_space /* if it got an error in commit*/
-            );
-    if(_core->_state != xct_committing && _core->_state != xct_freeing_space) {
-        w_assert1(_core->_xct_ended++ == 0);
+
+    // The transaction abort function is shared by :
+    // 1. Normal transaction abort, in such case the state would be in xct_active,
+    //     xct_committing, or xct_freeing_space
+    // 2. UNDO phase in Recovery, in such case the state would be in xct_aborting
+    //     to indicating a doom transaction
+    // Note that if we open the store for new transaction during Recovery
+    // we could encounter normal transaction abort while Recovery is going on, 
+    // in such case the aborting transaction state would fall into case #1 above
+    
+    if (false == in_recovery())
+    {
+        w_assert1(_core->_state == xct_active
+                || _core->_state == xct_committing /* if it got an error in commit*/
+                || _core->_state == xct_freeing_space /* if it got an error in commit*/
+                );
+        if(_core->_state != xct_committing && _core->_state != xct_freeing_space) {
+            w_assert1(_core->_xct_ended++ == 0);
+        }
     }
 
     // first, empty the wait map because no chance this xct can cause deadlock any more.
@@ -1563,7 +1576,14 @@ xct_t::_abort()
         W_DO(log_comment(s.c_str()));
     }
 #endif
-    change_state(xct_aborting);
+
+    // If caller is from UNDO in Recovery for a doomed transaction,
+    // the transaction has been marked as xct_aborting already
+    // do not change to the same state (will assert)
+    if (in_recovery() && (_core->_state == xct_aborting))
+        ;
+    else
+        change_state(xct_aborting);
 
     /*
      * clear the list of load stores as they are going to be destroyed

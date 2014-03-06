@@ -106,7 +106,7 @@ chkpt_xct_tab      0000000 0.0 (const tid_t& youngest,
                             const smlevel_1::xct_state_t* state,
                             const lsn_t* last_lsn, const lsn_t* undo_nxt);
 chkpt_dev_tab      0000000 0.0 (int cnt, const char** dev_name, const vid_t* vid);
-chkpt_end          0000000 0.0 (const lsn_t& master, const lsn_t& min_rec_lsn);
+chkpt_end          0000000 0.0 (const lsn_t& master, const lsn_t& min_rec_lsn, const lsn_t& min_xct_lsn);
 mount_vol          0010010 0.0 (const char *dev_name, const vid_t &vid);
 dismount_vol       0010010 0.0 (const char *dev_name, const vid_t &vid);
 #########################################################################

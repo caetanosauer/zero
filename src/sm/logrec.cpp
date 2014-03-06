@@ -391,21 +391,25 @@ chkpt_begin_log::chkpt_begin_log(const lsn_t &lastMountLSN)
 
 /*********************************************************************
  *
- *  chkpt_end_log(const lsn_t &master, const lsn_t& min_rec_lsn) 
+ *  chkpt_end_log(const lsn_t &master, const lsn_t& min_rec_lsn, const lsn_t& min_txn_lsn) 
  *
  *  Status Log to mark completion of fussy checkpoint.
  *  Master is the lsn of the record that began this chkpt.
- *  min_rec_lsn is the lsn of the record that began this chkpt.
+ *  min_rec_lsn is the earliest lsn for all dirty pages in this chkpt.
+ *  min_txn_lsn is the earliest lsn for all txn in this chkpt.
  *
  *********************************************************************/
-chkpt_end_log::chkpt_end_log(const lsn_t& lsn, const lsn_t& min_rec_lsn)
+chkpt_end_log::chkpt_end_log(const lsn_t& lsn, const lsn_t& min_rec_lsn,
+                                const lsn_t& min_txn_lsn)
 {
     // initialize _data
     lsn_t *l = new (_data) lsn_t(lsn);
     l++; //grot
     *l = min_rec_lsn;
+    l++; //grot
+    *l = min_txn_lsn;
 
-    fill(0, 0, (2 * sizeof(lsn_t)) + (2 * sizeof(int)));
+    fill(0, 0, (3 * sizeof(lsn_t)) + (3 * sizeof(int)));
 }
 
 

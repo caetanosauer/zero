@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 /* -*- mode:C++; c-basic-offset:4 -*-
@@ -298,30 +298,88 @@ static queue_based_block_lock_t ssm_once_mutex;
 ss_m::ss_m(
     const sm_options &options,
     smlevel_0::LOG_WARN_CALLBACK_FUNC callbackwarn /* = NULL */,
-    smlevel_0::LOG_ARCHIVED_CALLBACK_FUNC callbackget /* = NULL */
+    smlevel_0::LOG_ARCHIVED_CALLBACK_FUNC callbackget /* = NULL */,
+    bool start /* = true for backward compatibility reason */
 )
     :   _options(options)
 {
     _set_option_logsize();
     sthread_t::initialize_sthreads_package();
 
-    // This looks like a candidate for pthread_once(), 
-    // but then smsh would not be able to
-    // do multiple startups and shutdowns in one process, alas. 
+    // Save input parameters for future 'startup' calls
+    // input parameters cannot be modified after ss_m object has been constructed
+    smlevel_0::log_warn_callback  = callbackwarn;
+    smlevel_0::log_archived_callback  = callbackget;
+
+    // Start the store during ss_m constructor if caller is asking for it
+    if (true == start)
+    {
+        bool started = startup();
+        // If error encountered, raise fatal error if it was not raised already
+        if (false == started)
+            W_FATAL_MSG(eINTERNAL, << "Failed to start the store from ss_m constructor");
+    }
+}
+
+bool ss_m::startup()
+{   
     CRITICAL_SECTION(cs, ssm_once_mutex);
-    _construct_once(callbackwarn, callbackget);
+    if (0 == _instance_cnt)
+    {
+        // Start the store if it is not running currently
+        // Caller can start and stop the store independent of construct and destory
+        // the ss_m object.
+
+        // Note: before each startup() call, including the initial one from ssm 
+        //          constructor choicen (default setting currently), caller can
+        //          optionally clear the log files and data files if a clean start is
+        //          required (no recovery in this case).
+        //          If the log files and data files are intact from previous runs,
+        //          either normal or crash shutdowns, the startup() call will go
+        //          through the recovery logic when starting up the store.
+        //          After the store started, caller can call 'format_dev', 'mount_dev',
+        //          'generate_new_lvid', 'and create_vol' if caller would like to use
+        //          new devics and volumes for operations in the new run.
+        
+        _construct_once();
+        return true;
+    }
+    // Store is already running, cannot have multiple instances running concurrently
+    return false;
+}
+
+bool ss_m::shutdown()
+{
+    CRITICAL_SECTION(cs, ssm_once_mutex);
+    if (0 < _instance_cnt)
+    {
+        // Stop the store if it is running currently, 
+        // do not destroy the ss_m object, caller can start the store again using
+        // the same ss_m object.
+
+        // Note: If caller would like to use the simulated 'crash' shutdown logic, 
+        //          caller must call set_shutdown_flag(false) to set the crash
+        //          shutdown flag before the shutdown() call.
+        //          The simulated crash shutdown flag would be reset in every 
+        //          startup() call.
+        
+        _destruct_once();
+        return true;
+    }
+    // If the store is not running currently, no-op
+    return true;
 }
 
 void
-ss_m::_construct_once(
-    smlevel_0::LOG_WARN_CALLBACK_FUNC warn,
-    smlevel_0::LOG_ARCHIVED_CALLBACK_FUNC get
-)
+ss_m::_construct_once()
 {
     FUNC(ss_m::_construct_once);
 
-    smlevel_0::log_warn_callback  = warn;
-    smlevel_0::log_archived_callback  = get;
+    // Use the options and callbacks from ss_m constructor, no change allowed
+
+    // The input paramters were saved during ss_m constructor
+    //   smlevel_0::log_warn_callback  = warn;
+    //   smlevel_0::log_archived_callback  = get;
 
     // Clear out the fingerprint map for the smthreads.
     // All smthreads created after this will be compared against
@@ -643,7 +701,10 @@ ss_m::~ss_m()
     // would not be able to
     // do multiple startups and shutdowns in one process, alas. 
     CRITICAL_SECTION(cs, ssm_once_mutex);
-    _destruct_once();
+// TODO(M1)...
+    if (0 < _instance_cnt)
+        _destruct_once();
+// TODO(M1)...end
 }
 
 void

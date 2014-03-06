@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 /*<std-header orig-src='shore' incl-file-exclusion='SM_INT_1_H'>
@@ -64,7 +64,10 @@ public:
                         // recovery/undo, or doing rollback_work
                         xct_chaining = 0x3, 
                         xct_committing = 0x4, 
-                        xct_aborting = 0x5, 
+                        xct_aborting = 0x5,  // Overloaded for both normal transaction abort
+                                             // and doom transaction in Recovery
+                                             // overload because rollback steps are
+                                             // mostly the same
                         xct_freeing_space = 0x6, 
                         xct_ended = 0x7
     };

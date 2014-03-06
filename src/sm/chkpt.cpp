@@ -852,8 +852,9 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
         // Write the Checkpoint End Log with:
         //  1. master: LSN from begin checkpoint, thi sis where the checkpoint started
         //  2. min_rec_lsn: minimum lsn of all buffer pool dirty or in_doubt pages
+        //  3. min_xct_lsn: minimum lsn of all in-flight (including aborting) transactions
 
-        LOG_INSERT(chkpt_end_log (master, min_rec_lsn), 0);
+        LOG_INSERT(chkpt_end_log (master, min_rec_lsn, min_xct_lsn), 0);
         DBGOUT1(<<"chkpt_m::take - total dirty page count = " << total_page_count << ", total txn count = " << total_txn_count);
 
         // Sync the log
@@ -871,7 +872,8 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
         log->set_master(master, min_rec_lsn, min_xct_lsn);
 
 ////////////////////////////////////////
-// TODO(M1)...  Do not scaverge log space, because Single Page Recovery might need old log records
+// TODO(M1)...  Do not scaverge log space, because:
+//                     Single Page Recovery might need old log records
 ////////////////////////////////////////
         // Scavenge some log
         // W_COERCE( log->scavenge(min_rec_lsn, min_xct_lsn) );

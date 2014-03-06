@@ -375,7 +375,14 @@ inline bool bf_tree_m::is_dirty(const generic_page* p) const {
     return get_cb(idx)._dirty;
 }
 
-inline void bf_tree_m::set_in_doubt(bf_idx idx, lsn_t new_lsn) {
+inline bool bf_tree_m::is_dirty(const bf_idx idx) const {
+    // Caller has latch on page
+    // Used by REDO phase in Recovery
+    w_assert1 (_is_active_idx(idx));
+    return get_cb(idx)._dirty;
+}
+
+inline void bf_tree_m::set_in_doubt(const bf_idx idx, lsn_t new_lsn) {
     // Caller has latch on page
     // From Log Analysis phase in Recovery, page is not in buffer pool
     w_assert1 (_is_active_idx(idx));
@@ -389,9 +396,10 @@ inline void bf_tree_m::set_in_doubt(bf_idx idx, lsn_t new_lsn) {
         cb._rec_lsn = new_lsn.data();
 }
 
-inline void bf_tree_m::clear_in_doubt(bf_idx idx, bool still_used, uint64_t key) {
+inline void bf_tree_m::clear_in_doubt(const bf_idx idx, bool still_used, uint64_t key) {
     // Caller has latch on page
-    // From Log Analysis phase in Recovery, page is not in buffer pool    
+    // 1. From Log Analysis phase in Recovery, page is not in buffer pool    
+    // 2. From REDO phase in Recovery, page is in buffer pool.  This is a virgin page so it is not dirty
 
     // Only reasons to call this function:
     // Log record indicating allocating or deallocating a page
@@ -400,12 +408,14 @@ inline void bf_tree_m::clear_in_doubt(bf_idx idx, bool still_used, uint64_t key)
     //                 from hashtable
     // Deallocating: clear both in_doubt and used flags, also remove it from
     //                 hashtable so the page can be used by others
-    
+    // Page format: clear the in_doubt flag but not the 'used' flag, page is virgin (not dirty)
+    //
     w_assert1 (_is_active_idx(idx));
     bf_tree_cb_t &cb = get_cb(idx);
 
     // Clear both 'in_doubt' and 'used' flags, no change to _dirty flag
     cb._in_doubt = false;
+    cb._dirty = false;
 
     // Page is no longer needed, caller is from de-allocating a page log record
     if (false == still_used)
@@ -419,7 +429,7 @@ inline void bf_tree_m::clear_in_doubt(bf_idx idx, bool still_used, uint64_t key)
     }
 }
 
-inline void bf_tree_m::in_doubt_to_dirty(bf_idx idx) {
+inline void bf_tree_m::in_doubt_to_dirty(const bf_idx idx) {
     // Caller has latch on page
     // From REDO phase in Recovery, page is in buffer pool    
 
@@ -435,14 +445,14 @@ inline void bf_tree_m::in_doubt_to_dirty(bf_idx idx) {
 }
 
 
-inline bool bf_tree_m::is_in_doubt(bf_idx idx) const {
+inline bool bf_tree_m::is_in_doubt(const bf_idx idx) const {
     // Caller has latch on page
     // From Log Analysis phase in Recovery, page is not in buffer pool    
     w_assert1 (_is_active_idx(idx));
     return get_cb(idx)._in_doubt;
 }
 
-inline bf_idx bf_tree_m::lookup_in_doubt(int64_t key) const
+inline bf_idx bf_tree_m::lookup_in_doubt(const int64_t key) const
 {
     // Look up the hashtable using the provided key
     // return 0 if the page cb is not in the buffer pool 

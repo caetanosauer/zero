@@ -371,7 +371,7 @@ public:
     rc_t                compensate(const lsn_t& orig_lsn, 
                                const lsn_t& undo_lsn);
     // used by log_i and xct_impl
-    rc_t                fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt=NULL);
+    rc_t                fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt=NULL, const bool forward = true);
 
             // used in implementation also:
     virtual void        release(); // used by log_i
@@ -425,22 +425,24 @@ private:
 class log_i {
 public:
     /// start a scan of the given log a the given log sequence number.
-    NORET                        log_i(log_m& l, const lsn_t& lsn) ;
+    NORET                        log_i(log_m& l, const lsn_t& lsn, const bool forward = true) ;
     NORET                        ~log_i();
 
     /// Get the next log record for transaction, put its sequence number in argument \a lsn
     bool                         xct_next(lsn_t& lsn, logrec_t*& r);
+
     /// Get the return code from the last next() call.
     w_rc_t&                      get_last_rc();
 private:
     log_m&                       log;
     lsn_t                        cursor;
     w_rc_t                       last_rc;
+    bool                         forward_scan;
 }; // log_i
 
 inline NORET
-log_i::log_i(log_m& l, const lsn_t& lsn) 
-    : log(l), cursor(lsn)
+log_i::log_i(log_m& l, const lsn_t& lsn, const bool forward)  // Default: true for forward scan
+    : log(l), cursor(lsn), forward_scan(forward)
 { }
 
 inline

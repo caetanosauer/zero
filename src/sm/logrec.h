@@ -645,6 +645,7 @@ logrec_t::is_page_allocate() const
 inline bool
 logrec_t::is_page_deallocate() const
 {
+    // t_page_set_to_be_deleted - page might still in buffer pool and not evict yet
     return ((t_dealloc_a_page == type()) || (t_page_set_to_be_deleted == type()));
 }
 

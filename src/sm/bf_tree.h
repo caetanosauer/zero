@@ -276,6 +276,16 @@ public:
     w_rc_t fix_direct (generic_page*& page, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page);
 
     /**
+     * Special function for the REDO phase in system Recovery process
+     * The page has been loaded into buffer pool and in the hashtable with known idx
+     * Thi sfunction associates the page in buffer pool with fixable_page data structure.
+     * There is no parent involved, and swizzling must be disabled.    
+     * @param[out] page the fixed page.
+     * @param[in] idx idx of the page.
+     */
+    void associate_page(generic_page*&_pp, bf_idx idx);
+
+    /**
      * Adds an additional pin count for the given page (which must be already latched).
      * This is used to re-fix the page later without parent pointer. See fix_direct() why we need this feature.
      * Never forget to call a corresponding unpin_for_refix() for this page. Otherwise, the page will be in the bufferpool forever.
@@ -344,32 +354,37 @@ public:
     bool is_dirty(const generic_page* p) const;
 
     /**
+     * Returns if the page is already marked dirty.
+     */
+    bool is_dirty(const bf_idx idx) const;
+
+    /**
      * Mark the page in_doubt and used flags, the physical page is not in buffer pool
      * also update the LSN (track when the page was made dirty initially)
      */
-    void set_in_doubt(bf_idx idx, lsn_t new_lsn);
+    void set_in_doubt(const bf_idx idx, lsn_t new_lsn);
 
     /**
-     * Clear the page in_doubt flag, if pase is no longer needed, clear the used flag and
+     * Clear the page in_doubt flag, if page is no longer needed, clear the used flag and
      * add it back to freelist, the physical page is not in buffer pool
      */
-    void clear_in_doubt(bf_idx idx, bool still_used, uint64_t key);
+    void clear_in_doubt(const bf_idx idx, bool still_used, uint64_t key);
 
     /**
      * Change from in_doubt to dirty flag, the physical page is in buffer pool
      */
-    void in_doubt_to_dirty(bf_idx idx);
+    void in_doubt_to_dirty(const bf_idx idx);
 
     /**
      * Returns true if the page is already marked in_doubt, the page is not in buffer pool
      */
-    bool is_in_doubt(bf_idx idx) const;
+    bool is_in_doubt(const bf_idx idx) const;
 
     /**
      * Returns the index of the page if page cb is in buffer pool, it is used in Recovery
      * therefore the actual page might or might not be loaded at thi spoint
      */
-    bf_idx lookup_in_doubt(int64_t key) const;
+    bf_idx lookup_in_doubt(const int64_t key) const;
 
     /**
      * Adds a write-order dependency such that one is always written out after another.
@@ -540,6 +555,15 @@ public:
      */    
     w_rc_t register_and_mark(bf_idx& ret, volid_t vid, shpid_t shpid,
            lsn_t new_lsn, uint32_t& in_doubt_count);
+
+
+    /**
+     * Used during REDO phase in Recovery only
+     * The specified page has cb in buffer pool, also registered in hashtable
+     * but the actual page is not in buffer pool yet
+     * Load the actual page into buffer pool
+     */    
+    w_rc_t load_for_redo(bf_idx idx, volid_t vid, shpid_t shpid);
 
 private:
 
