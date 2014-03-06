@@ -78,6 +78,7 @@ class prologue_rc_t;
 #include "restart.h"
 #include "sm_options.h"
 #include "suppress_unused.h"
+#include "log_carray.h"
 
 #ifdef EXPLICIT_TEMPLATE
 template class w_auto_delete_t<SmStoreMetaStats*>;
@@ -474,7 +475,9 @@ ss_m::_construct_once(
         w_rc_t e = log_m::new_log_m(log,
                      logdir.c_str(),
                      logbufsize, 
-                     _options.get_bool_option("sm_reformat_log", false));
+                     _options.get_bool_option("sm_reformat_log", false),
+                     _options.get_int_option("sm_carray_slots",
+                                             ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT));
         W_COERCE(e);
 
         int percent = _options.get_int_option("sm_log_warn", 0);
@@ -1006,6 +1009,11 @@ ss_m::chain_xct(bool lazy)
     return RCOK;
 }
 
+rc_t ss_m::flushlog() {
+    // forces until the current lsn
+    bf->force_until_lsn(log->curr_lsn());
+    return (RCOK);
+}
 
 /*--------------------------------------------------------------*
  *  ss_m::checkpoint()                                        
