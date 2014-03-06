@@ -590,6 +590,20 @@ public:
     void             reserve_ghost(const char *key_raw, size_t key_raw_len, size_t element_length);
 
     /**
+     * Creates a non-ghost record with the given key and data.
+     * If the record already exists as a ghost, we reuse it.
+     * This is logically a combination of reserve_ghost() and replace_ghost(), but this does
+     * the two in one-go.
+     * This function itself does NOT log, so the caller is responsible for it.
+     * @param[in] key inserted key
+     * @param[in] elem record data
+     * @pre is_leaf()
+     * @pre the page has enough space to insert the record. The caller must make sure this
+     * is the case.
+     */
+    void             insert_nonghost(const w_keystr_t &key, const cvec_t &elem);
+
+    /**
      * Tell if the slot is a ghost record and enough spacious to store the
      * given key/data.
      */
