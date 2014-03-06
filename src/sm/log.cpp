@@ -204,14 +204,15 @@ rc_t
 log_m::new_log_m(log_m   *&the_log,
                          const char *path,
                          int wrbufsize,
-                         bool  reformat)
+                         bool  reformat,
+                         int carray_active_slot_count)
 {
     FUNC(log_m::new_log_m);
 
     w_assert1(strlen(path) < sizeof(_logdir));
     strcpy(_logdir, path);
 
-    rc_t rc = log_core::new_log_m(the_log, wrbufsize, reformat);
+    rc_t rc = log_core::new_log_m(the_log, wrbufsize, reformat, carray_active_slot_count);
 
     w_assert1(the_log != NULL);
 

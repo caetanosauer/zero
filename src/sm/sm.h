@@ -950,6 +950,12 @@ public:
      */
     static rc_t            thread_collect(vtable_t&v, bool names_too=true);
 
+    /**
+     * \brief Write all existing log entries to disk.
+     * \ingroup SSMLOG
+     */
+    static rc_t            flushlog();
+
     /**\brief Take a checkpoint.
      * \ingroup SSMAPIDEBUG
      * \note For debugging only!
