@@ -89,6 +89,25 @@ btree_insert_log::redo(fixable_page_h* page) {
     }
 }
 
+btree_insert_nonghost_log::btree_insert_nonghost_log(
+    const btree_page_h &page, const w_keystr_t &key, const cvec_t &el) {
+    fill(&page.pid(), page.tag(), (new (_data) btree_insert_t(page, key, el))->size());
+}
+void btree_insert_nonghost_log::undo(fixable_page_h* page) {
+    reinterpret_cast<btree_insert_log*>(this)->undo(page); // same as btree_insert
+}
+
+void btree_insert_nonghost_log::redo(fixable_page_h* page) {
+    borrowed_btree_page_h bp(page);
+    btree_insert_t* dp = reinterpret_cast<btree_insert_t*>(data());
+    w_assert1(bp.is_leaf());
+    w_keystr_t key;
+    vec_t el;
+    key.construct_from_keystr(dp->data, dp->klen);
+    el.put(dp->data + dp->klen, dp->elen);
+    bp.insert_nonghost(key, el);
+}
+
 struct btree_update_t {
     shpid_t     _root_shpid;
     uint16_t    _klen;
