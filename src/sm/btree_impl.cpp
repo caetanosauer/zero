@@ -115,15 +115,19 @@ btree_impl::_ux_insert_core(
                 LATCH_EX, create_part_okvl(okvl_mode::X, key), ALL_N_GAP_X, true)); // this lock "goes away" once it's taken
         }
 
-        // so far deferring is disabled
-        W_DO (_sx_reserve_ghost(leaf, key, el.size(), false));
+        // do it in one-go
+        W_DO(log_btree_insert_nonghost(leaf, key, el));
+        leaf.insert_nonghost(key, el);
+        // W_DO (_sx_reserve_ghost(leaf, key, el.size()));
     }
 
     // now we know the page has the desired ghost record. let's just replace it.
     if (need_lock && !alreay_took_XN) { // if "expand" case, do not need to get XN again
         W_DO (_ux_lock_key(leaf, key, LATCH_EX, create_part_okvl(okvl_mode::X, key), false));
     }
-    W_DO(leaf.replace_ghost(key, el));
+    if (found) {
+        W_DO(leaf.replace_ghost(key, el));
+    }
 
     return RCOK;
 }
@@ -249,8 +253,7 @@ rc_t btree_impl::_ux_insert_core_tail(volid_t /* vol */, snum_t /* store */,
                 LATCH_EX, create_part_okvl(okvl_mode::X, key), ALL_N_GAP_X, true)); // this lock "goes away" once it's taken
         }
 
-        // so far deferring is disabled
-        W_DO (_sx_reserve_ghost(leaf, key, el.size(), false));
+        W_DO (_sx_reserve_ghost(leaf, key, el.size()));
     }
 
     // now we know the page has the desired ghost record. let's just replace it.
@@ -263,30 +266,24 @@ rc_t btree_impl::_ux_insert_core_tail(volid_t /* vol */, snum_t /* store */,
 }
 
 
-rc_t btree_impl::_sx_reserve_ghost(btree_page_h &leaf, const w_keystr_t &key, int elem_len, bool defer_apply)
+rc_t btree_impl::_sx_reserve_ghost(btree_page_h &leaf, const w_keystr_t &key, int elem_len)
 {
     FUNC(btree_impl::_sx_reserve_ghost);
     sys_xct_section_t sxs (true); // this transaction will output only one log!
     W_DO(sxs.check_error_on_start());
-    rc_t ret = _ux_reserve_ghost_core(leaf, key, elem_len, defer_apply);
+    rc_t ret = _ux_reserve_ghost_core(leaf, key, elem_len);
     W_DO (sxs.end_sys_xct (ret));
     return ret;
 }
 
-rc_t btree_impl::_ux_reserve_ghost_core(btree_page_h &leaf, const w_keystr_t &key, int elem_len, bool defer_apply) {
+rc_t btree_impl::_ux_reserve_ghost_core(btree_page_h &leaf, const w_keystr_t &key, int elem_len) {
     w_assert1 (xct()->is_sys_xct());
     w_assert1 (leaf.fence_contains(key));
 
     w_assert1(leaf.check_space_for_insert_leaf(key.get_length_as_keystr()-leaf.get_prefix_length(), elem_len));
 
-    if (defer_apply) {
-        W_DO (log_btree_ghost_reserve (leaf, key, elem_len));
-    } else {
-        // so far deferring is disabled
-        // ssx_defer_section_t ssx_defer (&leaf); // auto-commit for deferred ssx log on leaf
-        W_DO (log_btree_ghost_reserve (leaf, key, elem_len));
-        leaf.reserve_ghost(key, elem_len);
-    }
+    W_DO (log_btree_ghost_reserve (leaf, key, elem_len));
+    leaf.reserve_ghost(key, elem_len);
     return RCOK;
 }
 

@@ -102,17 +102,10 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define ZERO_INIT 1 /* for valgrind/purify */
 #endif
 
-#ifdef __SUNPRO_CC
-#include <errno.h>
-#include <stddef.h>
-#include <stdlib.h>
-#include <limits.h>
-#else
 #include <cerrno>
 #include <cstddef>
 #include <cstdlib>
 #include <climits>
-#endif
 
 #include <stdint.h>
 
@@ -177,6 +170,16 @@ public:
   operator void*() { return aligned_cast<double>(_buf); }
   // no destructor because we don't know what's going on...
 };
+
+/**
+* \brief CPU Cache line size in bytes.
+* \details
+* Most modern CPU has 64 bytes cacheline.
+* Some less popular CPU like Spark uses 128 bytes.
+* This value is used for padding to keep lock objects in different cachelines.
+* TODO: CMake script to automatically detect this and cmakedefine for it (JIRA ZERO-179).
+*/
+const size_t CACHELINE_SIZE = 64;
 
 /*<std-footer incl-file-exclusion='W_DEFINES_H'>  -- do not edit anything below this line -- */
 

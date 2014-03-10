@@ -32,6 +32,7 @@ class btree_m : public smlevel_2 {
     friend class bt_cursor_t;
     friend class btree_remove_log;
     friend class btree_insert_log;
+    friend class btree_insert_nonghost_log;
     friend class btree_update_log;
     friend class btree_overwrite_log;
     friend class btree_ghost_mark_log;

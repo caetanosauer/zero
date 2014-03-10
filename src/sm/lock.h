@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 #ifndef LOCK_H
@@ -16,6 +16,11 @@ class xct_lock_info_t;
 class lock_core_m;
 class lil_global_table;
 
+/**
+ * \brief Lock Manager API.
+ * \ingroup SSMLOCK
+ * See \ref OKVL and \ref LIL.
+ */
 class lock_m : public smlevel_1 {
 public:
     // initialize/takedown functions for thread-local state
@@ -52,13 +57,24 @@ public:
 
     lil_global_table*            get_lil_global_table();
 
+    /**
+     * \brief Returns the lock granted to this transaction for the given lock ID.
+     * @param[in] lock_id identifier of the lock
+     * @return the lock mode this transaction has for the lock. ALL_N_GAP_N if not any.
+     * \details
+     * This method returns very quickly because it only checks transaction-private data.
+     * @pre the current thread is the only thread running the current transaction
+     */
+    const okvl_mode&            get_granted_mode(const lockid_t& lock_id);
+
+    /**
+     * \brief Acquires a lock of the given mode (or stronger)
+     */
     rc_t                        lock(
         const lockid_t&             n, 
-        const okvl_mode&               m,
+        const okvl_mode&            m,
         bool                        check_only,
-        timeout_in_ms               timeout = WAIT_SPECIFIED_BY_XCT,
-        okvl_mode*                    prev_mode = 0,
-        okvl_mode*                    prev_pgmode = 0);
+        timeout_in_ms               timeout = WAIT_SPECIFIED_BY_XCT);
 
     /**
      * Take an intent lock on the given volume.
@@ -97,8 +113,6 @@ private:
     rc_t                        _lock(
         const lockid_t&              n, 
         const okvl_mode&                m,
-        okvl_mode&                      prev_mode,
-        okvl_mode&                      prev_pgmode,
         bool                         check_only,
         timeout_in_ms                timeout
         );
@@ -106,4 +120,4 @@ private:
     lock_core_m*                _core;
 };
 
-#endif          /*</std-footer>*/
+#endif // LOCK_H

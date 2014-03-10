@@ -70,12 +70,17 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /**
  * \enum latch_mode_t
+ *
+ * Increasing values indicate increasing degrees of privilege; that is lock mode l, l>k,
+ * allows at least as many operations as mode k.  I.e., EX > SH > Q > NL.
  * 
  * If you alter this, also change the corresponding interface and definition of
  * latch_mode_str.
  */
 enum latch_mode_t { LATCH_NL = 0, LATCH_Q = 1, LATCH_SH = 2, LATCH_EX = 3 };
 
+/// type of a Q mode ticket; exact type and location of definition TBD
+typedef int64_t q_ticket_t;
 
 
 class latch_t;

@@ -85,6 +85,9 @@
 /* Defined if you have the <google/profiler.h> header file. */
 #cmakedefine HAVE_GOOGLE_PROFILER_H
 
+/* Defined if you have the <numa.h> header file. */
+#cmakedefine HAVE_NUMA_H
+
 /****************** std functions. *****************************/
 
 /* Defined if you have the `vprintf' function. */

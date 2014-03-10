@@ -17,6 +17,7 @@ FIND_PATH(BERKELEY_DB_INCLUDE_DIR NAMES db.h
   PATHS
   /usr/include # older Linux distro puts it directly under here.
   /usr/include/db4
+  /usr/include/db43
   /usr/include/libdb4 # newer Linux distro puts it here.
   /usr/local/include
   /usr/local/include/db4 

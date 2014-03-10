@@ -89,6 +89,25 @@ btree_insert_log::redo(fixable_page_h* page) {
     }
 }
 
+btree_insert_nonghost_log::btree_insert_nonghost_log(
+    const btree_page_h &page, const w_keystr_t &key, const cvec_t &el) {
+    fill(&page.pid(), page.tag(), (new (_data) btree_insert_t(page, key, el))->size());
+}
+void btree_insert_nonghost_log::undo(fixable_page_h* page) {
+    reinterpret_cast<btree_insert_log*>(this)->undo(page); // same as btree_insert
+}
+
+void btree_insert_nonghost_log::redo(fixable_page_h* page) {
+    borrowed_btree_page_h bp(page);
+    btree_insert_t* dp = reinterpret_cast<btree_insert_t*>(data());
+    w_assert1(bp.is_leaf());
+    w_keystr_t key;
+    vec_t el;
+    key.construct_from_keystr(dp->data, dp->klen);
+    el.put(dp->data + dp->klen, dp->elen);
+    bp.insert_nonghost(key, el);
+}
+
 struct btree_update_t {
     shpid_t     _root_shpid;
     uint16_t    _klen;
@@ -481,8 +500,9 @@ void btree_norec_alloc_log::redo(fixable_page_h* p) {
         // This log is also a page-allocation log, so redo the page allocation.
         W_COERCE(io_m::redo_alloc_a_page(p->pid().vol(), dp->_page2_pid));
         lpid_t pid(header._vid, header._snum, dp->_page2_pid);
-        bp.init_as_empty_child(new_lsn, pid, dp->_root_pid, dp->_foster_pid,
-            dp->_btree_level, fence, fence, chain_high);
+        // initialize as an empty child:
+        bp.format_steal(new_lsn, pid, dp->_root_pid, dp->_btree_level, 0,
+                        dp->_foster_pid, fence, fence, chain_high, false);
     }
 }
 
@@ -607,8 +627,13 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
             w_keystr_t high, chain_high;
             bp.copy_fence_high_key(high);
             bp.copy_chain_fence_high_key(chain_high);
-            scratch_btree_page_h scratch_p(dest.pid(), bp.btree_root(), 0, bp.level(),
-                high, chain_high, chain_high);
+            generic_page scratch_page;
+            scratch_page.tag = t_btree_p;
+            btree_page_h scratch_p;
+            scratch_p.fix_nonbufferpool_page(&scratch_page);
+            // initialize as an empty child:
+            scratch_p.format_steal(lsn_t::null, dest.pid(), bp.btree_root(), bp.level(), 0, 0,
+                                   high, chain_high, chain_high, false);
             W_COERCE(btree_impl::_ux_rebalance_foster_apply(bp, scratch_p, dp->_move_count,
                                                         fence, dp->_new_pid0));
         } else {

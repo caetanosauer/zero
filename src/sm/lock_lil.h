@@ -6,6 +6,10 @@
 #define LOCK_LIL_H
 
 /**
+ * \defgroup LIL
+ * \brief \b Light-weight \b Intent \b Lock (\b LIL)
+ * \ingroup SSMLOCK
+ * \details
  * Classes implementing Light-weight Intent Lock (LIL).
  * These are super-fast and scalable lock tables for
  * volume/store.
@@ -41,6 +45,7 @@ enum lil_lock_modes_t {
 
 /**
  * \brief LIL global lock table to protect Volume/Store from concurrent accesses.
+ * \ingroup LIL
  * \details
  * This class provides a super-fast yet non-starving
  * locks for classes that mainly have intent locks (IS/IX).
@@ -91,14 +96,20 @@ private:
     bool        _cond_timedwait (uint32_t base_version, uint32_t timeout_microsec);
 };
 
-/** lock table for store. */
+/**
+ * lock table for store.
+ * \ingroup LIL
+ */
 class lil_global_store_table : public lil_global_table_base {
 public:
     lil_global_store_table() {}
     ~lil_global_store_table() {}
 };
 
-/** lock table for volume. also contains lock tables for stores in it. */
+/**
+ * lock table for volume. also contains lock tables for stores in it.
+ * \ingroup LIL
+ */
 class lil_global_vol_table : public lil_global_table_base {
 public:
     lil_global_store_table _store_tables[stnode_page_h::max]; // for all possible stores
@@ -122,7 +133,10 @@ public:
     }
 };
 
-/** For all volumes. This object is retained in lock manager. */
+/**
+ * For all volumes. This object is retained in lock manager.
+ * \ingroup LIL
+ */
 class lil_global_table {
 public:
     lil_global_vol_table _vol_tables[MAX_VOL_GLOBAL];
@@ -138,6 +152,7 @@ public:
 
 /**
  * \brief LIL private lock table to remember Store locks taken by current xct.
+ * \ingroup LIL
  */
 class lil_private_store_table {
 public:
@@ -155,6 +170,7 @@ public:
 
 /**
  * \brief LIL private lock table to remember Volume locks and Stores in it.
+ * \ingroup LIL
  */
 class lil_private_vol_table {
 public:
@@ -192,6 +208,7 @@ private:
 
 /**
  * \brief LIL private lock table to remember all locks in xct.
+ * \ingroup LIL
  */
 class lil_private_table {
 public:

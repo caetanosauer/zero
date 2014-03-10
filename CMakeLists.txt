@@ -64,6 +64,8 @@ IF(ENABLE_MUTRACE_PROFILER)
   SET (COMPILE_MUTRACE "-fPIC -fno-omit-frame-pointer -DMUTRACE_ENABLED_H")
 ENDIF(ENABLE_MUTRACE_PROFILER)
 
+find_package(Numa) # numa library
+
 ENABLE_TESTING() # we use CTest all over the project. run "make test" after cmake
 
 # compiler options. ported from Makefile.generic of original ShoreMT.
@@ -145,6 +147,7 @@ CHECK_INCLUDE_FILES(sys/types.h HAVE_SYS_TYPES_H)
 CHECK_INCLUDE_FILES(valgrind.h HAVE_VALGRIND_H)
 CHECK_INCLUDE_FILES(valgrind/valgrind.h HAVE_VALGRIND_VALGRIND_H)
 CHECK_INCLUDE_FILES(google/profiler.h HAVE_GOOGLE_PROFILER_H)
+CHECK_INCLUDE_FILES(numa.h HAVE_NUMA_H)
 
 ####################   std functions #####################
 CHECK_FUNCTION_EXISTS(vprintf HAVE_VPRINTF)

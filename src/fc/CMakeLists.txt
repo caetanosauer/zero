@@ -51,6 +51,8 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/w_hash.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_heap.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_list.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/w_lockfree_list.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/w_markable_pointer.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_minmax.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_rc.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_stream.h

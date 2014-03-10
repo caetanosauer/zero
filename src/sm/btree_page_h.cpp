@@ -44,14 +44,6 @@ btrec_t::set(const btree_page_h& page, slotid_t slot) {
     return *this;
 }
 
-void btree_page_h::init_as_empty_child(lsn_t new_lsn, lpid_t new_page_id,
-    shpid_t root_pid, shpid_t foster_pid, int16_t btree_level,
-    const w_keystr_t &low, const w_keystr_t &high, const w_keystr_t &chain_fence_high) {
-    w_assert1 (new_page_id.page != root_pid);
-    _init(new_lsn, new_page_id, root_pid, 0, foster_pid, btree_level,
-        low, high, chain_fence_high);
-}
-
 void btree_page_h::accept_empty_child(lsn_t new_lsn, shpid_t new_page_id) {
     w_assert1 (g_xct()->is_single_log_sys_xct());
     w_assert1 (new_lsn != lsn_t::null);
@@ -72,31 +64,8 @@ void btree_page_h::accept_empty_child(lsn_t new_lsn, shpid_t new_page_id) {
     }
 }
 
-rc_t btree_page_h::init_fix_steal(btree_page_h*     parent,
-                                  const lpid_t&     pid,
-                                  shpid_t           root, 
-                                  int               l,
-                                  shpid_t           pid0,
-                                  shpid_t           foster,
-                                  const w_keystr_t& fence_low,
-                                  const w_keystr_t& fence_high,
-                                  const w_keystr_t& chain_fence_high,
-                                  btree_page_h*     steal_src,
-                                  int               steal_from,
-                                  int               steal_to,
-                                  bool              log_it) {
-    FUNC(btree_page_h::init_fix_steal);
-    INC_TSTAT(btree_p_fix_cnt);
-    if (parent == NULL) {
-        W_DO(fix_virgin_root(pid.vol().vol, pid.store(), pid.page));
-    } else {
-        W_DO(fix_nonroot(*parent, parent->vol(), pid.page, LATCH_EX, false, true));
-    }
-    W_DO(format_steal(pid, root, l, pid0, foster, fence_low, fence_high, chain_fence_high, log_it, steal_src, steal_from, steal_to));
-    return RCOK;
-}
-
-rc_t btree_page_h::format_steal(const lpid_t&     pid,
+rc_t btree_page_h::format_steal(lsn_t             new_lsn,
+                                const lpid_t&     pid,
                                 shpid_t           root, 
                                 int               l,
                                 shpid_t           pid0,
@@ -112,12 +81,9 @@ rc_t btree_page_h::format_steal(const lpid_t&     pid,
                                 int               steal_from2,
                                 int               steal_to2,
                                 bool              steal_src2_pid0) {
-    // intermedaite nodes have pid0 except in the initial norec-alloc case (nrecs()==0)
-    w_assert1 (l == 1 || nrecs() == 0 || pid0 != 0);
-
     // Note that the method receives a copy, not reference, of pid/lsn here.
     // pid might point to a part of this page itself!
-    _init(page()->lsn, pid, root, pid0, foster, l, fence_low, fence_high, chain_fence_high);
+    _init(new_lsn, pid, root, pid0, foster, l, fence_low, fence_high, chain_fence_high);
 
     // steal records from old page
     if (steal_src1) {
@@ -203,7 +169,7 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
     }
 }
 rc_t btree_page_h::norecord_split (shpid_t foster,
-                    const w_keystr_t& fence_high, const w_keystr_t& chain_fence_high) {
+                                   const w_keystr_t& fence_high, const w_keystr_t& chain_fence_high) {
     w_assert1(compare_with_fence_low(fence_high) > 0);
     w_assert1(compare_with_fence_low(chain_fence_high) > 0);
 
@@ -215,9 +181,10 @@ rc_t btree_page_h::norecord_split (shpid_t foster,
         // then, let's defrag this page to compress keys
         generic_page scratch;
         ::memcpy (&scratch, _pp, sizeof(scratch));
-        btree_page_h scratch_p (&scratch);
-        W_DO(format_steal(scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(), scratch_p.pid0(),
-                          foster,
+        btree_page_h scratch_p;
+        scratch_p.fix_nonbufferpool_page(&scratch);
+        W_DO(format_steal(scratch_p.lsn(), scratch_p.pid(), scratch_p.btree_root(),
+                          scratch_p.level(), scratch_p.pid0(), foster,
                           fence_low, fence_high, chain_fence_high,
                           false, // don't log it
                           &scratch_p, 0, scratch_p.nrecs()
@@ -659,6 +626,54 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, size_t
 
     w_assert3(_poor(slot) == poormkey);
     w_assert3(page()->item_length(slot+1) == data_length);
+}
+void btree_page_h::insert_nonghost(const w_keystr_t &key, const cvec_t &elem) {
+    w_assert1 (is_leaf());
+    w_assert1(compare_with_fence_low(key) >= 0);
+    w_assert1(compare_with_fence_high(key) < 0);
+
+    int16_t prefix_len       = get_prefix_length();
+    int     trunc_key_length = key.get_length_as_keystr() - prefix_len;
+
+    w_assert1(check_space_for_insert_leaf(trunc_key_length, elem.size()));
+
+    // where to insert?
+    bool     found;
+    slotid_t slot;
+    search(key, found, slot);
+    if (found) {
+        // because of logical UNDO, this might happen. in this case, we just reuse the ghost.
+        w_assert1 (is_ghost(slot));
+#if W_DEBUG_LEVEL > 2
+        btrec_t rec (*this, slot);
+        w_assert3 (rec.key().compare(key) == 0);
+#endif // W_DEBUG_LEVEL > 2
+
+        if (!page()->replace_item_data(slot+1, _element_offset(slot), elem)) {
+            w_assert1(false); // should not happen because ghost should have had enough space
+        }
+
+        page()->unset_ghost(slot + 1);
+        return;
+    }
+    w_assert1(slot >= 0 && slot <= nrecs());
+
+    // update btree_consecutive_skewed_insertions. this is just statistics and not logged.
+    _update_btree_consecutive_skewed_insertions(slot);
+
+    cvec_t trunc_key(reinterpret_cast<const char*>(key.buffer_as_keystr()) + prefix_len,
+                     trunc_key_length);
+    poor_man_key poormkey = _extract_poor_man_key(trunc_key);
+
+    cvec_t leaf_record;
+    pack_scratch_t leaf_scratch;
+    _pack_leaf_record_prefix(leaf_record, leaf_scratch, trunc_key);
+    leaf_record.put(elem);
+    if (!page()->insert_item(slot+1, false, poormkey, 0, leaf_record)) {
+        w_assert0(false);
+    }
+
+    w_assert3(_poor(slot) == poormkey);
 }
 
 void btree_page_h::mark_ghost(slotid_t slot) {
