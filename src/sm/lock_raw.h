@@ -21,20 +21,17 @@
  * Remember, the canonical meaning of "lock-free" is "some call always finishes in a finite
  * number of steps" [HERLIHY]. Lock manager is inherently not such an existence.
  *
- * \section HIERARCHY Lock buckets, queues, and lock entries
- * In [JUNG13], a bucket is a queue. However, we can't tolerate hash collisions
- * just because of coarser hash in buckets (e.g., if we have only 1024 buckets, we can have
- * only 1024 lock queues). This restricts concurrency, so we still keep the bucket-queue-lock
- * hierarchy in Shore-MT's lock manager. Queues in buckets are allocated/deallocated just like
- * locks in queues. So, the same RAW techniques and object pooling apply.
+ * \section HIERARCHY Lock queues and lock entries
+ * Shore-MT's lock manager had a three-level hierarchy; bucket with hash modulo,
+ * queue with precise hash, and each lock.
+ * In [JUNG13], a bucket is a queue. This might cause more hash collisions, but adding
+ * another level in RAW-style algorithm is quite tricky (eg, how and when we can safely
+ * delete the queue?).
+ * So, here we do something in-between.
  *
- * To recap:
- *   \li \e Bucket : For a range of hash. Say Bucket-1 contains locks with "hash%1024==1".
- * Bucket maintains a singly linked-list of \e Queue.
- *   \li \e Queue : For a precise hash. All lock entries in a queue has exactly same 32 bit
- * hashes, strongly implying they are for the same key (unless nasty hash collisions).
- * Queue maintains a singly linked-list of \e Lock.
- *   \li \e Lock : One lock request from a transaction.
+ * Bucket is a queue. However, each lock also contains the precise hash in the member.
+ * When lock-compatibility methods traverse the list, we ignore locks that have different
+ * hashes. This gives the same concurrency and yet does not cause 3-level complexity.
  *
  * \section ALGO Algorithm Overview
  * In short, [JUNG13] proposes an RAW-style singly-linked list (based on well known lock-free
@@ -50,28 +47,38 @@
  * conservative executions) and even some false negatives (see check_only param of
  * RawLockQueue#acquire()).
  *
+ * \section DIFF Differences from [JUNG13]
+ * We made a few changes from the original algorithm.
+ * The first one is, as described above, we put precise hash in each lock and ignore
+ * locks that have different hashes during checks.
+ *
+ * Another difference is that we don't use "OBSOLETE flag" to disable a lock.
+ * We rather immediately delete the lock from the queue. This is still safe because
+ * we use delayed garbage collection. No dangling pointer possible.
+ * Also, to safely remove a lock in a safe way, we do exactly same as LockFreeList.
+ * So, we don't have "tail" as a member in RawLockQueue and traverse the list with
+ * checking mark-for-death bit. See Chap 9.8 in [HERLIHY].
+ *
  * \section REF References
  *   \li [JUNG13] "A scalable lock manager for multicores"
  *   Hyungsoo Jung, Hyuck Han, Alan D. Fekete, Gernot Heiser, Heon Y. Yeom. SIGMOD'13.
- *
- *   \li [HERLIHY] "The Art of Multiprocessor Programming". Maurice Herlihy, Nir Shavit.
- *   (shame if you don't own a copy yet work on multi-core optimization!)
- *
- *   \li Also see \ref MARKPTR.
+ *   \li Also see \ref MARKPTR, [MICH02], and [HERLIHY].
  */
 
 #include <stdint.h>
+#include <ostream>
 #include <pthread.h>
 #include "w_defines.h"
 #include "w_okvl.h"
 #include "w_rc.h"
+#include "w_gc_pool_forest.h"
+#include "w_lockfree_list.h"
 #include "w_markable_pointer.h"
 #include "lsn.h"
 
 struct RawLockBucket;
-class RawLockQueue;
+struct RawLockQueue;
 struct RawLock;
-struct RawLockQueuePimpl;
 struct RawXct;
 
 /**
@@ -83,7 +90,7 @@ struct RawXct;
  * lock entry. Thus, we might have multiple lock entries from one transaction in one queue.
  * This enables the RAW-style lock queue optimizations.
  */
-struct RawLock {
+struct RawLock : public GcPoolEntry {
     enum LockState {
         /** This lock is in the pool and not used in any queue. */
         UNUSED = 0,
@@ -93,14 +100,17 @@ struct RawLock {
         ACTIVE,
         /** This lock is not granted and waiting for others to unlock. */
         WAITING,
-        /** Special entry type only for the always-existing queue head. */
-        HEAD,
     };
+
+    RawLock() : hash(0), state(UNUSED), owner_xct(NULL) {}
+
+    /** Precise hash of the protected resource. */
+    uint32_t                    hash;
 
     /** Current status of this lock. */
     LockState                   state;
 
-    /** Constitutes a singly-linked list. Stashed value=DELETE flag of \b this. */
+    /** Constitutes a singly-linked list. */
     MarkablePointer<RawLock>    next;
 
     /** owning xct. */
@@ -109,33 +119,25 @@ struct RawLock {
     /** Requested lock mode. */
     okvl_mode                   mode;
 };
+std::ostream& operator<<(std::ostream& o, const RawLock& v);
 
-/** Const object representing NULL. */
-const MarkablePointer<RawLock> NULL_RAW_LOCK(NULL);
+/** Const object representing NULL RawLock. */
+const MarkablePointer<RawLock> NULL_RAW_LOCK;
 
 /**
  * \brief An RAW-style lock queue to hold granted and waiting lock requests (RawLock).
  * \ingroup RAWLOCK
  * \details
- * A queue corresponds to one precise 32-bit hash value. Even if we have small number of
- * lock buckets, these queues separate locks with different hashes.
+ * Queue is a bucket. So, this queue can contain locks for resources with different hashes.
+ * However, each lock also contains the precise hash in the member.
+ * When lock-compatibility methods traverse the list, we ignore locks that have different
+ * hashes. This gives the same concurrency and yet does not cause 3-level complexity.
  */
-class RawLockQueue {
-public:
-    enum QueueState {
-        /** This queue is in the pool and not used in any bucket. */
-        UNUSED = 0,
-        /** This queue exists in a bucket, but others can skip over or remove it. */
-        OBSOLETE,
-        /** This queue is being used. */
-        ACTIVE,
-        /** Special entry type only for the always-existing bucket head. */
-        HEAD,
-    };
-
+struct RawLockQueue : public GcPoolEntry {
     /**
      * \brief Adds a new lock in the given mode to this queue, waiting until it is granted.
      * @param[in] xct the transaction to own the new lock
+     * @param[in] hash precise hash of the resource to lock.
      * @param[in] mode requested lock mode
      * @param[in] timeout_in_ms maximum length to wait in milliseconds. 0 means
      * conditional locking (immediately timeout).
@@ -148,7 +150,8 @@ public:
      * tentative NX lock check before inserting a new key, \b because we then have an EX latch!
      * Thus, this is a safe and efficient check for B-tree insertion.
      */
-    w_rc_t  acquire(RawXct *xct, const okvl_mode& mode, int32_t timeout_in_ms, bool check_only);
+    w_rc_t  acquire(RawXct *xct, uint32_t hash, const okvl_mode& mode,
+                    int32_t timeout_in_ms, bool check_only);
 
     /**
      * \brief Releases the given lock from this queue, waking up others if necessary.
@@ -156,14 +159,6 @@ public:
      * @param[in] commit_lsn LSN to update X-lock tag during SX-ELR.
      */
     void    release(RawLock *lock, const lsn_t &commit_lsn);
-
-    /** Returns an identifier of this queue. Called from the common list class. */
-    uint32_t key() const { return _hash; }
-    /** Returns if this queue is ready for removal. Called from the common list class. */
-    bool     is_obsolete() const { return _state == OBSOLETE; }
-    /** Returns next queue in the bucket. Called from the common list class. */
-    MarkablePointer<RawLockQueue>&  next() { return _next; }
-private:
 
     /**
      * \brief Atomically insert the given lock to this queue. Called from acquire().
@@ -173,32 +168,10 @@ private:
     void    atomic_lock_insert(RawLock *new_lock);
 
     /**
-     * \brief Removes OBSOLETE entries using lock-free list technique.
-     * \details
-     * Called from atomic_lock_insert() before check_compatiblity().
-     * [JUNG13] is not clear what chapter of [HERLIHY] it refers to, but I think it's Chap 9.8.
-     * The reason why we eliminate OBSOLETE entries now, not later, is described in Sec 4.4 of
-     * [JUNG13]. In short, if this transaction started after release of some lock,
-     * this transaction must skip it for safe garbage collection.
-     */
-    void    next_pointer_update();
-
-    /**
-     * \brief Wait until the given pointer gets a valid next pointer, then return it.
-     * \details
-     * while traversing, we don't have to worry about other threads concurrently deleting
-     * entries because de-linked entry still points to a valid next, eventually covering
-     * all entries we are interested in (as, of course, only OBSOLETE entries are removed).
-     * However, in case other threads have just inserted and are now setting next pointer,
-     * we have to wait. See Figure 5 of [JUNG13].
-     */
-    MarkablePointer<RawLock>& wait_for_next(RawLock* pointer);
-
-    /**
      * Checks if the given lock can be granted.
      * Called from acquire() after atomic_lock_insert().
      */
-    w_rc_t  check_compatiblity(RawLock *new_lock);
+    w_rc_t  check_compatiblity(RawLock *new_lock) const;
 
     /**
      * \brief Used for check_only=true case. Many things are much simpler and faster.
@@ -207,7 +180,7 @@ private:
      * As commented in acquire(), this method is safe for check_only case.
      * EX latch on the page guarantees that no lock for the key is newly coming now.
      */
-    bool    peek_compatiblity(RawXct* xct, const okvl_mode &mode);
+    bool    peek_compatiblity(RawXct* xct, uint32_t hash, const okvl_mode &mode) const;
 
     /**
      * Sleeps until the lock is granted using mutex.
@@ -216,50 +189,59 @@ private:
     w_rc_t  wait_mutex(RawLock *new_lock, int32_t timeout_in_ms);
 
     /**
-     * The always-existing dummy entry as queue head with HEAD status.
+     * \brief Returns the predecessor of the given lock.
+     * This removes marked entries it encounters.
+     * @return predecessor of the given lock. Never returns NULL, but might be &head.
      */
-    RawLock                     _head;
+    RawLock*    find(RawLock *lock) const;
 
-    /** The last entry in this queue or NULL if queue empty. Stashed value=OBSOLETE flag. */
-    MarkablePointer<RawLock>    _tail;
+    /**
+     * Main routine of find()
+     * @return predecessor of the given lock.
+     */
+    RawLock*    find_retry_loop(RawLock *lock, bool& must_retry) const;
 
-    /** Constitutes a singly-linked list in bucket. Stashed value=DELETE flag of \b this. */
-    MarkablePointer<RawLockQueue>   _next;
+    /**
+     * \brief Returns the last entry of this queue.
+     * This removes marked entries it encounters, which is the reason why we can't have
+     * "tail" as a variable in the queue and instead we have to traverse each time.
+     * @return the last entry. Never returns NULL, but might be &head (meaning empty).
+     */
+    RawLock*    tail() const;
 
-    /** precise hash for this lock queue. */
-    uint32_t                    _hash;
+    /**
+     * Main routine of tail()
+     * @return the last entry.
+     */
+    RawLock*    tail_retry_loop(bool& must_retry) const;
 
-    /** For garbage collection of queue object. */
-    QueueState                  _state;
+    /**
+     * \brief Delinks a marked entry from the list and deallocates the entry object.
+     * @return whether the delink was really done by this thread
+     * \details
+     * target should be marked for death (target->next.is_marked()), but this is not
+     * a contract because of concurrent delinks. If it isn't (say target is already delinked),
+     * then the atomic CAS fails, returning false.
+     * \NOTE Although might sound weird, this method \e is const.
+     * This method \b physically delinks an already-marked entry, so \b logically it does
+     * nothing.
+     */
+    bool        delink(RawLock* predecessor, const MarkablePointer<RawLock> &target,
+                   const MarkablePointer<RawLock> &successor) const;
+
+    /**
+     * The always-existing dummy entry as head.
+     * _head is never marked for death.
+     * Mutable because even find() physically removes something (though logically nothing).
+     */
+    mutable RawLock             head;
 
     /**
      * Stores the commit timestamp of the latest transaction that released an X lock on this
      * queue; holds lsn_t::null if no such transaction exists; protected by _requests_latch.
      */
-    lsn_t                       _x_lock_tag;
+    lsn_t                       x_lock_tag;
 };
-
-/**
- * \brief An RAW-style lock bucket for a hash range, holding lock queues (RawLockQueue) in it.
- * \ingroup RAWLOCK
- * \details
- * Each bucket forms a lock-free singly-linked list of queue, ordered by the hash value.
- * Yes, it's really a lock-free linked list exactly as in Chap 9.8 of [HERLIHY].
- * Because the entries (queues) must be unique wrt hash values, we need more strict
- * algorithm, thus using the full lock-free linked list.
- * NOTE This is not a skip-list because we assume entries in each bucket should be at most a
- * few. Otherwise, we should increase the number of buckets.
- */
-struct RawLockBucket {
-    /**
-     * Adds a new lock in this bucket, also acquiring a new queue if necessary.
-     * \copydoc RawLockQueue#acquire()
-     * @param[in] hash Precise hash of the resource to lock
-     */
-    w_rc_t  acquire(uint32_t hash, RawXct *xct, const okvl_mode& mode,
-                    int32_t timeout_in_ms, bool check_only);
-};
-
 
 /**
  * \brief A shadow transaction object for RAW-style lock manager.
@@ -304,6 +286,22 @@ struct RawXct {
         }
     }
 
+    /** Newly allocate a lock object from the object pool. */
+    RawLock*                    allocate_lock(uint32_t hash,
+                                              const okvl_mode& mode, RawLock::LockState state);
+
+    /**
+     * Identifier of the thread running this transaction, eg pthread_self().
+     */
+    gc_thread_id                thread_id;
+
+    /** Pointer to object pool for RawLock. */
+    GcPoolForest<RawLock>*      lock_pool;
+
+    /** Pointer to thread-local allocation hint for lock_pool. */
+    gc_pointer_raw*             lock_pool_next;
+
+    /** Whether this transaction is waiting for another transaction. */
     XctState                    state;
 
     /** Other transaction while unlocking realized that this transaction is deadlocked. */
@@ -316,7 +314,6 @@ struct RawXct {
     pthread_cond_t              lock_wait_cond;
     /** Used to wait in lock manager, paired with lock_wait_cond. */
     pthread_mutex_t             lock_wait_mutex;
-
 
     /**
      * Whenever a transaction acquires some lock,
