@@ -115,14 +115,19 @@ btree_impl::_ux_insert_core(
                 LATCH_EX, create_part_okvl(okvl_mode::X, key), ALL_N_GAP_X, true)); // this lock "goes away" once it's taken
         }
 
-        W_DO (_sx_reserve_ghost(leaf, key, el.size()));
+        // do it in one-go
+        W_DO(log_btree_insert_nonghost(leaf, key, el));
+        leaf.insert_nonghost(key, el);
+        // W_DO (_sx_reserve_ghost(leaf, key, el.size()));
     }
 
     // now we know the page has the desired ghost record. let's just replace it.
     if (need_lock && !alreay_took_XN) { // if "expand" case, do not need to get XN again
         W_DO (_ux_lock_key(leaf, key, LATCH_EX, create_part_okvl(okvl_mode::X, key), false));
     }
-    W_DO(leaf.replace_ghost(key, el));
+    if (found) {
+        W_DO(leaf.replace_ghost(key, el));
+    }
 
     return RCOK;
 }
