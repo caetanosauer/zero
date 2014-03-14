@@ -639,40 +639,40 @@ public:
     );
 
     /**
+     * Lock gap containing nonexistent key key in page leaf with locking mode
+     * miss_lock_mode; exception: if key equals the low fence key of leaf, instead lock
+     * just that key with lock mode exact_hit_lock_mode (the gap is not locked in this
+     * case).
+     * 
+     * @param[in] slot          The slot where key would be placed if inserted (usually a 
+     *                          return value of btree_page_h::search()) or -1, in which
+     *                          case the leaf will be searched to determine the correct slot.
+     * @param[in] latch_mode    If this has to un-latch/re-latch, this mode is used.
+     * @param[in] check_only    If set, release the lock immediately after acquiring it.
+     * 
+     * @pre key no record with key key exists in leaf (low fence is fine),
+     * exact_hit_lock_mode is N for the gap, and miss_lock_mode is N for the key.
+     * 
      * Used when the exact key is not found and range locking is needed.
-     * @param[in] slot the slot where key will be placed if inserted.
-     * usually a return value of btree_page_h.search_leaf().
-     * if -1, this function will call the search again.
      * @see _ux_lock_key()
-     * @param[in] exact_hit_lock_mode this mode is used if the search
-     * hits the low fence key (so, logically a miss, but physically a hit).
-     * This would be a lock on key, not gap. Such a low fence key is
-     * guaranteed to keep existing even during page-merge, so we
-     * can safely take a lock on it, which is more concurrent than below.
-     * @param[in] miss_lock_mode this mode is used if the search does not
-     * hit the low fence key. This would be a lock on gap, not key.
      */
-    static rc_t _ux_lock_range(
-        btree_page_h&      leaf,
-        const w_keystr_t&   key,
-        slotid_t slot,
-        latch_mode_t        latch_mode,
-        const okvl_mode&       exact_hit_lock_mode,
-        const okvl_mode&       miss_lock_mode,
-        bool                check_only
-    );
+    static rc_t _ux_lock_range(btree_page_h&     leaf,
+                               const w_keystr_t& key,
+                               slotid_t          slot,
+                               latch_mode_t      latch_mode,
+                               const okvl_mode&  exact_hit_lock_mode,
+                               const okvl_mode&  miss_lock_mode,
+                               bool              check_only);
 
     /** raw string version. */
-    static rc_t _ux_lock_range(
-        btree_page_h&      leaf,
-        const void         *keystr,
-        size_t              keylen,
-        slotid_t slot,
-        latch_mode_t        latch_mode,
-        const okvl_mode&       exact_hit_lock_mode,
-        const okvl_mode&       miss_lock_mode,
-        bool                check_only
-    );
+    static rc_t _ux_lock_range(btree_page_h&    leaf,
+                               const void*      keystr,
+                               size_t           keylen,
+                               slotid_t         slot,
+                               latch_mode_t     latch_mode,
+                               const okvl_mode& exact_hit_lock_mode,
+                               const okvl_mode& miss_lock_mode,
+                               bool             check_only);
 
     /**
      * \brief Assures the given leaf page has an entry whose key is the low-fence.
