@@ -74,66 +74,64 @@ btree_impl::_ux_lock_key(
 }
 
 rc_t
-btree_impl::_ux_lock_range(
-    btree_page_h&      leaf,
-    const w_keystr_t&   key,
-    slotid_t slot,
-    latch_mode_t        latch_mode,
-    const okvl_mode&       exact_hit_lock_mode,
-    const okvl_mode&       miss_lock_mode,
-    bool                check_only
-    )        
-{
+btree_impl::_ux_lock_range(btree_page_h&     leaf,
+                           const w_keystr_t& key,
+                           slotid_t          slot,
+                           latch_mode_t      latch_mode,
+                           const okvl_mode&  exact_hit_lock_mode,
+                           const okvl_mode&  miss_lock_mode,
+                           bool              check_only) {
     return _ux_lock_range(leaf, key.buffer_as_keystr(), key.get_length_as_keystr(),
-                slot, latch_mode, exact_hit_lock_mode, miss_lock_mode, check_only);    
+                          slot, latch_mode, exact_hit_lock_mode, miss_lock_mode, check_only);    
 }
 rc_t
-btree_impl::_ux_lock_range(
-    btree_page_h&            leaf,
-    const void         *keystr,
-    size_t              keylen,
-    slotid_t            slot,
-    latch_mode_t        latch_mode,
-    const okvl_mode&       exact_hit_lock_mode,
-    const okvl_mode&       miss_lock_mode,
-    bool                check_only
-    )        
-{
-    // the interval from previous key is locked
+btree_impl::_ux_lock_range(btree_page_h&    leaf,
+                           const void*      keystr,
+                           size_t           keylen,
+                           slotid_t         slot,
+                           latch_mode_t     latch_mode,
+                           const okvl_mode& exact_hit_lock_mode,
+                           const okvl_mode& miss_lock_mode,
+                           bool             check_only) {
     w_assert1(slot >= -1 && slot <= leaf.nrecs());
     w_assert1(exact_hit_lock_mode.get_gap_mode() == okvl_mode::N);
     w_assert1(miss_lock_mode.is_keylock_empty());
+
     if (slot == -1) { // this means we should search it again
         bool found;
         leaf.search((const char *) keystr, keylen, found, slot);
-        w_assert1(!found); // otherwise why taking range lock?
+        w_assert1(!found); // precondition
     }
     w_assert1(slot >= 0 && slot <= leaf.nrecs());
+#if W_DEBUG_LEVEL > 1
+    w_keystr_t key, key_at_slot;
+    key.construct_from_keystr(keystr, keylen);
+    if (slot<leaf.nrecs()) {
+        leaf.get_key(slot, key_at_slot);
+        w_assert1(key_at_slot.compare(key)>0);
+    }
+#endif // W_DEBUG_LEVEL > 1
     
-    // if "slot" says the key should be placed in the end of this page,
-    // take range lock from the one before (well, except the page has no entry)
-    if (slot == leaf.nrecs() && slot != 0) --slot;
-    
-    if (slot == 0 &&
+    slot--;  // want range lock from previous key
+    if (slot == -1 &&
         w_keystr_t::compare_bin_str(keystr, keylen,
-        leaf.get_fence_low_key(), leaf.get_fence_low_length()) == 0) {
-        // we were searching for the low-fence key!
-        // then, we take key lock on it. and subsequent
-        // structural modification (e.g., merge) will add
-        // the low-fence as ghost record to be aware of the lock
-        W_DO (_ux_lock_key(leaf,
-            leaf.get_fence_low_key(), leaf.get_fence_low_length(),
-            latch_mode, exact_hit_lock_mode, check_only));
+                                    leaf.get_fence_low_key(), leaf.get_fence_low_length()) == 0) {
+            // We were searching for the low-fence key!  then, we take key lock on it and
+            // subsequent structural modification (e.g., merge) will add the low-fence as
+            // ghost record to be aware of the lock.
+            W_DO (_ux_lock_key(leaf,
+                               leaf.get_fence_low_key(), leaf.get_fence_low_length(),
+                               latch_mode, exact_hit_lock_mode, check_only));
     } else {
-        // range lock from previous key
         w_keystr_t prevkey;
-        if (slot == leaf.nrecs()) {
-            // this happens when the page has no entry
-            w_assert1(slot == 0);
+        if (slot == -1) {
             leaf.copy_fence_low_key(prevkey);
         } else {
-          leaf.get_key(slot, prevkey);
+            leaf.get_key(slot, prevkey);
         }
+#if W_DEBUG_LEVEL > 1
+        w_assert1(prevkey.compare(key) < 0);
+#endif // W_DEBUG_LEVEL > 1
         W_DO (_ux_lock_key(leaf, prevkey, latch_mode, miss_lock_mode, check_only));
     }
     return RCOK;
