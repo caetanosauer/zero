@@ -15,6 +15,7 @@
 
 #include <vector>
 #include <set>
+#include <boost/concept_check.hpp>
 
 btree_test_env *test_env;
 /**
@@ -47,7 +48,42 @@ public:
 };
 
 
+enum test_size_t {
+    SMALL, NORMAL, LARGE
+};
 
+void run_bf_test(w_rc_t (*func)(ss_m*, test_volume_t*),
+    test_size_t size, bool initially_enable_cleaners, bool enable_swizzling) {
+    // (some of) tests in this file needs REALLY big log.
+    test_env->empty_logdata_dir();
+    sm_options options;
+    options.set_int_option("sm_logbufsize", 512 << 10);
+    options.set_int_option("sm_logsize", 8192 << 10);
+    options.set_int_option("sm_locktablesize", default_locktable_size);
+    options.set_int_option("sm_bufpoolsize", SM_PAGESIZE / 1024 *
+        (size == LARGE ? 10000 : (size == NORMAL ? 256 : 50)));
+    options.set_int_option("sm_num_page_writers", 1);
+    options.set_int_option("sm_cleaner_interval_millisec_min",
+        (size == LARGE ? 10000 : (size == NORMAL ? 1000 : 20)));
+    options.set_int_option("sm_cleaner_interval_millisec_max", 10000);
+    options.set_int_option("sm_cleaner_write_buffer_pages", 64);
+    options.set_bool_option("sm_backgroundflush", initially_enable_cleaners);
+    options.set_bool_option("sm_bufferpool_swizzle", enable_swizzling);
+
+    options.set_int_option("sm_rawlock_lockpool_initseg",
+        (size == LARGE ? 100 : (size == NORMAL ? 50 : 20)));
+    options.set_int_option("sm_rawlock_lockpool_segsize",
+        (size == LARGE ? 1 << 14 : (size == NORMAL ? 1 << 12 : 1 << 10)));
+    options.set_int_option("sm_rawlock_gc_generation_count",
+        (size == LARGE ? 30 : (size == NORMAL ? 20 : 10)));
+    options.set_int_option("sm_rawlock_gc_free_segment_count",
+        (size == LARGE ? 50 : (size == NORMAL ? 20 : 10)));
+    options.set_int_option("sm_rawlock_gc_max_segment_count",
+        (size == LARGE ? 200 : (size == NORMAL ? 100 : 50)));
+
+    int quota = (size == LARGE ? 4096 : (size == NORMAL ? 1024 : 256));
+    EXPECT_EQ(test_env->runBtreeTest(func, false, quota, options), 0);
+}
 
 TEST (TreeBufferpoolTest, AlignmentCheck) {
     cout << "sizeof(bf_tree_cb_t)=" << sizeof(bf_tree_cb_t) << endl;
@@ -61,11 +97,7 @@ w_rc_t test_bf_init(ss_m* /*ssm*/, test_volume_t */*test_volume*/) {
     return RCOK;
 }
 TEST (TreeBufferpoolTest, Init) {
-    test_env->empty_logdata_dir();
-    EXPECT_EQ(test_env->runBtreeTest(test_bf_init,
-        false, default_locktable_size, default_quota_in_pages, 50,
-        1, 20, 10000, 64, true, true
-    ), 0);
+    run_bf_test(test_bf_init, SMALL, true, true);
 }
 w_rc_t test_bf_fix_virgin_root(ss_m* /*ssm*/, test_volume_t *test_volume) {
     lsn_t thelsn = smlevel_0::log->curr_lsn();
@@ -105,11 +137,7 @@ w_rc_t test_bf_fix_virgin_root(ss_m* /*ssm*/, test_volume_t *test_volume) {
     return RCOK;
 }
 TEST (TreeBufferpoolTest, FixVirginRoot) {
-    test_env->empty_logdata_dir();
-    EXPECT_EQ(test_env->runBtreeTest(test_bf_fix_virgin_root,
-        false, default_locktable_size, default_quota_in_pages, 50,
-        1, 20, 10000, 64, true, true
-    ), 0);
+    run_bf_test(test_bf_fix_virgin_root, SMALL, true, true);
 }
 
 w_rc_t test_bf_fix_virgin_child(ss_m* /*ssm*/, test_volume_t *test_volume) {
@@ -169,11 +197,7 @@ w_rc_t test_bf_fix_virgin_child(ss_m* /*ssm*/, test_volume_t *test_volume) {
     return RCOK;
 }
 TEST (TreeBufferpoolTest, FixVirginChild) {
-    test_env->empty_logdata_dir();
-    EXPECT_EQ(test_env->runBtreeTest(test_bf_fix_virgin_child,
-        false, default_locktable_size, default_quota_in_pages, 50,
-        1, 20, 10000, 64, true, true
-    ), 0);
+    run_bf_test(test_bf_fix_virgin_child, SMALL, true, true);
 }
 
 // make big enough database for tests
@@ -292,18 +316,10 @@ w_rc_t test_bf_evict(ss_m* ssm, test_volume_t *test_volume) {
     return RCOK;
 }
 TEST (TreeBufferpoolTest, EvictNoSwizzle) {
-    test_env->empty_logdata_dir();
-    EXPECT_EQ(test_env->runBtreeTest(test_bf_evict,
-        false, default_locktable_size, 256, 20,
-        1, 1000, 10000, 64, false, false
-    ), 0);
+    run_bf_test(test_bf_evict, NORMAL, false, false);
 }
 TEST (TreeBufferpoolTest, EvictSwizzle) {
-    test_env->empty_logdata_dir();
-    EXPECT_EQ(test_env->runBtreeTest(test_bf_evict,
-        false, default_locktable_size, 256, 20,
-        1, 1000, 10000, 64, false, true
-    ), 0);
+    run_bf_test(test_bf_evict, NORMAL, false, true);
 }
 
 w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_swizzle) {
@@ -448,20 +464,11 @@ w_rc_t test_bf_noswizzle(ss_m* ssm, test_volume_t *test_volume) {
     return _test_bf_swizzle(ssm, test_volume, false);
 }
 TEST (TreeBufferpoolTest, Swizzle) {
-    test_env->empty_logdata_dir();
-    EXPECT_EQ(test_env->runBtreeTest(test_bf_swizzle,
-        false, default_locktable_size, default_quota_in_pages, 50,
-        1, 10000, 10000, 64, false, // disable background cleaner because we test pin_cnt
-        true
-    ), 0);
+    // disable background cleaner because we test pin_cnt
+    run_bf_test(test_bf_swizzle, LARGE, false, true);
 }
 TEST (TreeBufferpoolTest, NoSwizzle) {
-    test_env->empty_logdata_dir();
-    EXPECT_EQ(test_env->runBtreeTest(test_bf_noswizzle,
-        false, default_locktable_size, default_quota_in_pages, 50,
-        1, 10000, 10000, 64, false, // disable background cleaner because we test pin_cnt
-        false
-    ), 0);
+    run_bf_test(test_bf_noswizzle, LARGE, false, false);
 }
 
 #ifdef BP_MAINTAIN_PARENT_PTR

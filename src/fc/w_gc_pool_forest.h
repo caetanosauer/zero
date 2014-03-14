@@ -8,7 +8,6 @@
 #include <memory>
 #include <Lintel/AtomicCounter.hpp>
 #include "w_defines.h"
-#include "w_base.h"
 #include "w_debug.h"
 #include "lsn.h"
 
@@ -296,11 +295,22 @@ struct GcSegment {
     GcSegment(gc_offset size) {
         ::memset(this, 0, sizeof(GcSegment));
         objects = new T[size];
+        ::memset(objects, 0, sizeof(T) * size); // for easier debugging
         w_assert1(objects != NULL);
         total_objects = size;
     }
     ~GcSegment() {
         delete[] objects;
+    }
+    /**
+     * Recycle this generation \b assuming there is no transaction that uses any of the
+     * objects in this segment. If the assumption does not hold, this might cause ABA
+     * and other corruption.
+     */
+    void recycle() {
+        owner = 0;
+        allocated_objects = 0;
+        ::memset(objects, 0, sizeof(T) * total_objects);
     }
     /** ID of the thread that can exclusively own this segment. */
     gc_thread_id    owner;
@@ -346,6 +356,22 @@ struct GcGeneration {
     bool            preallocate_segments(size_t segment_count, gc_offset segment_size);
 
     /**
+     * Recycle this generation \b assuming there is no transaction that uses any of the
+     * segments in this generation. If the assumption does not hold, this might cause ABA
+     * and other corruption.
+     */
+    void            recycle(uint32_t generation_nowrap_arg) {
+        retire_suggested = false;
+        generation_nowrap = generation_nowrap_arg;
+        for (uint32_t seg = 0; seg < total_segments; ++seg) {
+            if (segments[seg]->owner != 0) {
+                segments[seg]->recycle();
+            }
+        }
+        allocated_segments = 0;
+    }
+
+    /**
      * A loose request for threads to start retiring this generation.
      * Threads that saw this stop making a new segment in this generation.
      * It's loose. Threads might not take barriers to check this.
@@ -385,6 +411,15 @@ struct GcPoolEntry {
 };
 
 /**
+ * Callback interface used when pre-allocation or retiring gets behind.
+ * \ingroup GCFOREST
+ */
+struct GcWakeupFunctor {
+    virtual ~GcWakeupFunctor() {}
+    virtual void wakeup() = 0;
+};
+
+/**
  * \brief Garbage-collected Pool Forest
  * \ingroup GCFOREST
  * @tparam T Type of the managed class/struct. It must have a member
@@ -395,8 +430,11 @@ struct GcPoolEntry {
  */
 template <class T>
 struct GcPoolForest {
-    GcPoolForest(size_t initial_segment_count = 0, gc_offset initial_segment_size = 0) {
+    GcPoolForest(const char* debug_name, uint32_t desired_gens,
+        size_t initial_segment_count, gc_offset initial_segment_size) {
         ::memset(this, 0, sizeof(GcPoolForest));
+        desired_generations = desired_gens;
+        name = debug_name;
         // generation=0 is an invalid generation, so we start from 1.
         head_nowrap = 1;
         curr_nowrap = 1;
@@ -407,9 +445,10 @@ struct GcPoolForest {
         if (initial_segment_count > 0) {
             generations[1]->preallocate_segments(initial_segment_count, initial_segment_size);
         }
+        gc_wakeup_functor = NULL;
     }
     ~GcPoolForest() {
-        DBGOUT1(<<"Destroying a GC Pool Forest. head_nowrap=" << head_nowrap
+        DBGOUT1(<< name << ": Destroying a GC Pool Forest. head_nowrap=" << head_nowrap
             << ", tail_nowrap=" << tail_nowrap);
         for (size_t i = head_nowrap; i < tail_nowrap; ++i) {
             delete generations[wrap(i)];
@@ -464,25 +503,31 @@ struct GcPoolForest {
     gc_generation       curr() const { return wrap(curr_nowrap); }
     /** Returns the number of active generations. */
     size_t              active_generations() const { return tail_nowrap - head_nowrap; }
+    GcGeneration<T>*    head_generation() { return generations[head()]; }
+    GcGeneration<T>*    curr_generation() { return generations[curr()]; }
     bool                is_valid_generation(gc_generation generation) const {
         return generation != 0 && generation >= head() && generation < tail();
     }
 
     /**
      * Create a new generation for the given starting LSN.
+     * @param[in] low_water_mark LSN of the oldest transaction in the system. Used to recycle
+     * old generations. lsn_t::null prohibits recycling.
      * @param[in] now higest LSN as of now, which means every thread that newly allocates
      * from this new generation would have this LSN or higher.
      * @return whether we could advance the generation or there is already a generation
      * for the starting LSN (or more recent). false means too many generations.
      */
-    bool                advance_generation(lsn_t now,
+    bool                advance_generation(lsn_t low_water_mark, lsn_t now,
                 size_t initial_segment_count, gc_offset segment_size);
 
     /**
      * Retire old generations that are no longer needed.
      * @param[in] low_water_mark LSN of the oldest transaction in the system
+     * @param[in] recycle_now higest LSN as of now. This is used to recycle retired generations.
+     * lsn_t::null means prohibiting recycle.
      */
-    void                retire_generations(lsn_t low_water_mark);
+    void                retire_generations(lsn_t low_water_mark, lsn_t recycle_now = lsn_t::null);
 
     /** full load-store fence. */
     void                mfence() const {
@@ -491,16 +536,23 @@ struct GcPoolForest {
 
     static gc_generation wrap(size_t i) { return static_cast<gc_generation>(i); }
 
+    /** Only used to put the name of this forest in debug print. */
+    const char*         name;
     /** The oldest active generation. No wrap, so take modulo before use. */
     uint32_t            head_nowrap;
     /** The latest active generation. No wrap, so take modulo before use. */
     uint32_t            curr_nowrap;
     /** The exclusive end of active generation. No wrap, so take modulo before use. */
     uint32_t            tail_nowrap;
+    /** Desired number of generations. Don't add more than it unless can't retire old ones. */
+    uint32_t            desired_generations;
     /** Active (or being-retired) generation objects. */
     GcGeneration<T>*    generations[GC_MAX_GENERATIONS];
     /** LSN as of starting each generation. */
     lsn_t               epochs[GC_MAX_GENERATIONS];
+
+    /** Function pointer to wakeup GC when pre-allocation or retiring gets behind. */
+    GcWakeupFunctor*    gc_wakeup_functor;
 };
 
 template <class T>
@@ -529,7 +581,8 @@ inline T* GcPoolForest<T>::resolve_pointer(gc_pointer_raw pointer) {
 template <class T>
 inline T* GcPoolForest<T>::allocate(gc_pointer_raw &next, gc_thread_id self) {
     if (!is_valid_generation(next.components.generation)
-        || generations[next.components.generation]->retire_suggested) {
+        || generations[next.components.generation]->retire_suggested
+        || next.components.generation != curr()) {
         next = occupy_segment(self);
     }
 
@@ -583,8 +636,11 @@ inline gc_pointer_raw GcPoolForest<T>::occupy_segment(gc_thread_id self) {
         GcGeneration<T>* gen = generations[generation];
         if (gen->allocated_segments >= gen->total_segments) {
             // allocator threads are not catching up. This must be rare. let's sleep.
-            DBGOUT0(<<"GC Allocator Thread is not catching up. have to sleep. me=" << self);
-            const uint32_t SLEEP_MICROSEC = 1000000;
+            DBGOUT0(<< name << ": GC Thread is not catching up. have to sleep. me=" << self);
+            if (gc_wakeup_functor != NULL) {
+                gc_wakeup_functor->wakeup();
+            }
+            const uint32_t SLEEP_MICROSEC = 10000;
             ::usleep(SLEEP_MICROSEC);
             continue;
         }
@@ -597,7 +653,7 @@ inline gc_pointer_raw GcPoolForest<T>::occupy_segment(gc_thread_id self) {
             while (segment == NULL) {
                 // possible right after CAS in preallocate_segments. wait.
                 mfence();
-                DBGOUT3(<<"Waiting for segment " << alloc_segment << " in generation "
+                DBGOUT3(<< name << ": Waiting for segment " << alloc_segment << " in generation "
                     << gen->generation_nowrap << ". me=" << self);
                 segment = gen->segments[alloc_segment];
             }
@@ -606,8 +662,8 @@ inline gc_pointer_raw GcPoolForest<T>::occupy_segment(gc_thread_id self) {
             w_assert1(segment->total_objects > 0);
 
             // Occupied!
-            DBGOUT1(<<"Occupied a pre-allocated Segment " << alloc_segment << " in generation "
-                << gen->generation_nowrap << ". me=" << self << ".");
+            DBGOUT1(<< name << ": Occupied a pre-allocated Segment " << alloc_segment
+                << " in generation " << gen->generation_nowrap << ". me=" << self << ".");
             segment->owner = self;
             mfence(); // let the world know (though the CAS above should be enough..)
             gc_pointer_raw ret;
@@ -625,24 +681,26 @@ inline gc_pointer_raw GcPoolForest<T>::occupy_segment(gc_thread_id self) {
 
 
 template <class T>
-inline bool GcPoolForest<T>::advance_generation(lsn_t now,
+inline bool GcPoolForest<T>::advance_generation(lsn_t low_water_mark, lsn_t now,
     size_t segment_count, gc_offset segment_size) {
     while (true) {
         mfence();
-        gc_generation cur = curr();
-        if (epochs[cur] >= now) {
-            DBGOUT3(<<"No need to advance generation for " << now.data()
-                << ". recent gen=" << epochs[cur].data());
-            return true;
+        if (low_water_mark != lsn_t::null && active_generations() >= desired_generations) {
+            // try recycling oldest generation
+            uint32_t old_tail_nowrap = tail_nowrap;
+            retire_generations(low_water_mark, now);
+            if (old_tail_nowrap < tail_nowrap) {
+                return true; // it worked!
+            }
         }
         if (tail_nowrap - head_nowrap >= GC_MAX_GENERATIONS - 1) {
-            ERROUT(<<"Too many generations!");
+            ERROUT(<< name << ": Too many generations!");
             return false; // too many generations
         }
         uint32_t new_generation_nowrap = tail_nowrap;
         uint32_t new_tail = new_generation_nowrap + 1;
         if (wrap(new_tail) == 0) {
-            DBGOUT1(<<"Generation wrapped!");
+            DBGOUT1(<< name << ": Generation wrapped!");
             ++new_tail; // skip generation==0
         }
         if (lintel::unsafe::atomic_compare_exchange_strong<uint32_t>(
@@ -652,7 +710,8 @@ inline bool GcPoolForest<T>::advance_generation(lsn_t now,
             generations[new_generation] = new GcGeneration<T>(new_generation_nowrap);
             epochs[new_generation] = now;
             generations[new_generation]->preallocate_segments(segment_count, segment_size);
-            DBGOUT1(<<"Generation " << new_generation_nowrap << " created. epoch=" << now.data());
+            DBGOUT1(<< name << ": Generation " << new_generation_nowrap
+                << " created. epoch=" << now.data());
             curr_nowrap = new_generation_nowrap;
             mfence();
             return true;
@@ -687,7 +746,7 @@ inline bool GcGeneration<T>::preallocate_segments(size_t segment_count, gc_offse
 }
 
 template <class T>
-inline void GcPoolForest<T>::retire_generations(lsn_t low_water_mark) {
+inline void GcPoolForest<T>::retire_generations(lsn_t low_water_mark, lsn_t recycle_now) {
     // this method is infrequently called by background thread,
     // so barriers/atomics and big deallocations are fine.
     w_assert1(tail_nowrap > 0);
@@ -713,13 +772,40 @@ inline void GcPoolForest<T>::retire_generations(lsn_t low_water_mark) {
             if (lintel::unsafe::atomic_compare_exchange_strong<uint32_t>(
                 &head_nowrap, &oldest_nowrap, next_oldest_nowrap)) {
                 // okay, I'm exclusively retiring this generation.
-                DBGOUT1(<<"Retiring generation " << oldest_nowrap << "...");
-                delete oldest;
                 generations[wrap(oldest_nowrap)] = NULL;
                 epochs[wrap(oldest_nowrap)].set(0);
+
+                DBGOUT0(<< name << ": Successfully retired generation " << oldest_nowrap);
+                if (recycle_now != lsn_t::null && active_generations() <= desired_generations) {
+                    DBGOUT0(<< "Now recycling it as new generation ...");
+                    mfence();
+                    uint32_t new_generation_nowrap = tail_nowrap;
+                    uint32_t new_tail = new_generation_nowrap + 1;
+                    if (wrap(new_tail) == 0) {
+                        DBGOUT1(<< name << ": Generation wrapped!");
+                        ++new_tail; // skip generation==0
+                    }
+
+                    if (lintel::unsafe::atomic_compare_exchange_strong<uint32_t>(
+                        &tail_nowrap, &new_generation_nowrap, new_tail)) {
+                        oldest->recycle(new_generation_nowrap);
+                        generations[wrap(new_generation_nowrap)] = oldest;
+                        epochs[wrap(new_generation_nowrap)].set(recycle_now.data());
+                        curr_nowrap = new_generation_nowrap;
+                        DBGOUT0(<< name << ": Successfully recycled as gen " << new_generation_nowrap);
+                        mfence();
+                        return;
+                    } else {
+                        DBGOUT0(<< name << ": Oops, others incremented generation. couldn't "
+                            << " reuse the retired generation");
+                        delete oldest; // well, no other way.
+                    }
+                } else {
+                    delete oldest;
+                }
             } else {
                 // someone else has retired it.
-                DBGOUT1(<<"Oops, CAS failed, someone has retired it?");
+                DBGOUT1(<< name << ": Oops, CAS failed, someone has retired it?");
                 continue;
             }
         } else {

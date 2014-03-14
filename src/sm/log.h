@@ -66,6 +66,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 class logrec_t;
 class log_buf;
 class generic_page;
+class PoorMansOldestLsnTracker;
 /**
  * \defgroup SSMLOG Logging And Recovery
  * \ingroup SSMXCT
@@ -176,6 +177,7 @@ protected:
     bool                    _waiting_for_space; 
     pthread_mutex_t         _space_lock; // tied to _space_cond
     pthread_cond_t          _space_cond; // tied to _space_lock
+    PoorMansOldestLsnTracker* _oldest_lsn_tracker;
 
 protected:
     log_m();
@@ -381,7 +383,7 @@ public:
 
     fileoff_t           reserve_space(fileoff_t howmuch);
     void                release_space(fileoff_t howmuch);
-    rc_t                wait_for_space(fileoff_t &amt, timeout_in_ms timeout);
+    rc_t                wait_for_space(fileoff_t &amt, int32_t timeout);
     static fileoff_t    take_space(fileoff_t *ptr, int amt) ;
 
     long                max_chkpt_size() const;
@@ -409,6 +411,8 @@ public:
     // used by bf_m
     rc_t    flush_all(bool block=true) { 
                           return flush(curr_lsn().advance(-1), block); }
+
+    PoorMansOldestLsnTracker* get_oldest_lsn_tracker() { return _oldest_lsn_tracker; }
 
 public:
     /**\brief used by partition */
