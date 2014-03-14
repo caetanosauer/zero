@@ -13,8 +13,15 @@
  * [JUNG13]. This lock manager reduces mutex enter/release and the length of critical
  * sections by employing RAW-style algorithm as much as possible.
  *
+ * \section RAW Read-After-Write
+ * In short, RAW is a general protocol to \e Write (Declare) something in a shared variable
+ * followed by a \e memory-barrier, then followed by \e Read. Assuming all other threads
+ * are also running the same protocol, this can be an efficient lightweight synchronization
+ * without too many atomic operations or mutex. Membar is also expensive, but not as much
+ * as atomic operations and mutex.
+ *
  * \section TERM Terminology
- * In this code, we avoid using the often misused term "lock-free" because it's confusing
+ * In this code, we avoid abusing the often misused term "lock-free" because it's confusing
  * especially in our context (lock manager). Instead, we use "RAW-style" to mean that we
  * reduce blocking as much as possible. We say "lock-free" only when it's really lock-free.
  *
@@ -40,30 +47,41 @@
  *
  * There are a few complications and simplifications, though.
  *   \li When we have to really wait (conflicting locks), there is no option other than
- * waiting with mutex. So, this is not really a lock-free list.
+ * waiting with mutex or spinning. So, this is not really a lock-free list.
  *   \li We never \e insert into lock queue, rather we always \e append. This makes many
  * operations easier than the original lock-free linked list.
  *   \li There are several cases we can tolerate false positives (which only results in
  * conservative executions) and even some false negatives (see check_only param of
  * RawLockQueue#acquire()).
+ *   \li Garbage collection has to be based on LSN.
+ *
+ * \section GC Garbage Collection
+ * RawXct and RawLock are maintained by LSN-based Garbage Collector.
+ * See GcPoolForest for more details.
  *
  * \section DIFF Differences from [JUNG13]
  * We made a few changes from the original algorithm.
  * The first one is, as described above, we put precise hash in each lock and ignore
  * locks that have different hashes during checks.
  *
- * TODO rewrite. TODO predecessor/successor invariants and why we don't need mutex in release.
- * Another difference is that we don't use "OBSOLETE flag" to disable a lock.
- * We rather immediately delete the lock from the queue. This is still safe because
- * we use delayed garbage collection. No dangling pointer possible.
- * Also, to safely remove a lock in a safe way, we do exactly same as LockFreeList.
- * So, we don't have "tail" as a member in RawLockQueue and traverse the list with
- * checking mark-for-death bit. See Chap 9.8 in [HERLIHY].
+ * Second difference is that we \e steal a bit from 64 bit pointer to atomically delete
+ * an obsolete lock entry. We use MarkablePointer class and the same protocol as the standard
+ * LockFreeList with mark-for-death bit. See Chap 9.8 in [HERLIHY].
+ *
+ * Third difference is that we physically delete the lock from the queue as soon as we
+ * end the transaction. This is required to avoid dangling pointer even with garbage collector.
+ *
+ * Fource, we found that spinning while waiting is more efficient than mutex assuming the
+ * system does a right throttling to bound the number of active workers.
+ * PURE_SPIN_RAWLOCK ifdef controls it.
+ *
+ * Finally, we don't have "tail" as a member in RawLockQueue.
+ * Again, it's equivalent to the standard Harris-Michael LockFreeList [MICH02].
  *
  * \section REF References
  *   \li [JUNG13] "A scalable lock manager for multicores"
  *   Hyungsoo Jung, Hyuck Han, Alan D. Fekete, Gernot Heiser, Heon Y. Yeom. SIGMOD'13.
- *   \li Also see \ref MARKPTR, [MICH02], and [HERLIHY].
+ *   \li Also see MarkablePointer, [MICH02], and [HERLIHY].
  */
 
 #include <stdint.h>
@@ -82,6 +100,7 @@
  * As far as we don't over-subscribe workers, this has no disadvantages.
  * Pure spinning means we don't have to do anything in lock release, we don't have to do
  * keep any of mutexes, so much faster.
+ * \ingroup RAWLOCK
  */
 #define PURE_SPIN_RAWLOCK
 
