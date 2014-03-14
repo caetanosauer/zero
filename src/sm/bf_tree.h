@@ -547,7 +547,7 @@ public:
      * because of multi-threading, but concurrent threads calling this method at the same
      * time will cause no severe problems.
      * 5. Lastly, this method isn't supposed to be super-fast, but should be okay to call it
-     * for every millisec or so. If you have to call this method too often, inrease the batch
+     * for every millisec or so. If you have to call this method too often, increase the batch
      * size.
      * TODO This and related methods should be defined in its own file, say bf_tree_evict.cpp.
      * bf_tree.cpp is a bit too bloated (JIRA ZERO-180).
@@ -583,7 +583,7 @@ private:
      * @param[in] idx Bufferpool index of the page to check and recover.
      * @param[in] vol Volume ID
      * @param[in] shpid Page ID
-     * @param[in] corrupted Whether the page has been completely damanged (e.g., checksum
+     * @param[in] corrupted Whether the page is corrupt (e.g., checksum
      * did not match). Otherwise, the page is just a little stale and SPR is more efficient.
      */
     w_rc_t _try_recover_page(generic_page* parent, bf_idx idx, volid_t vol,

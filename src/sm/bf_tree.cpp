@@ -898,7 +898,7 @@ bool bf_tree_m::_try_evict_block_pinned(
     if (!parent_cb.latch().held_by_me()) {
         w_rc_t latch_parent_rc = parent_cb.latch().latch_acquire(LATCH_SH, WAIT_IMMEDIATE);
         if (latch_parent_rc.is_error()) {
-            DBGOUT1(<<"Unlucky, failed to latch parent block while evicting. skipping this");
+            DBGOUT1(<<"Unlucky, failed to latch parent block while evicting. skipping block");
             return false;
         }
         parent_latched = true;
