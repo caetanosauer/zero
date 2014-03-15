@@ -1,3 +1,7 @@
+/*
+ * (c) Copyright 2014, Hewlett-Packard Development Company, LP
+ */
+
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
    
@@ -278,6 +282,13 @@ void* block_list::_slow_acquire(size_t chip_size,
         size_t chip_count, size_t block_size)
 {
     _change_blocks(TEMPLATE_ARGS);
+    // The below loop occasionally runs for hundreds of thousands of
+    // iterations (~10 times runs for more than 100 iterations in a
+    // TPC-C run); do not use tail recursion here because it is not
+    // optimized in debug mode:
+    while (_tail->_bits.usable_count() == 0) {
+        _change_blocks(TEMPLATE_ARGS);
+    }
     return acquire(TEMPLATE_ARGS);
 }
 
