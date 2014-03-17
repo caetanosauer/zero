@@ -462,7 +462,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             W_DO(_grab_free_block(idx)); // get a frame that will be the new page
             w_assert1(idx != 0);
             bf_tree_cb_t &cb = get_cb(idx);
-            DBGOUT1(<<"unswizzled case: load shpid = " << shpid << " into frame = " << idx);
+            DBGOUT3(<<"unswizzled case: load shpid = " << shpid << " into frame = " << idx);
             // after here, we must either succeed or release the free block
             if (virgin_page) {
                 // except a virgin page. then the page is anyway empty
@@ -542,9 +542,9 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
         } else {
             // unlike swizzled case, we have to atomically pin it while verifying it's still there.
             if (parent) {
-                DBGOUT1(<<"swizzled case: parent = " << parent->pid << ", shpid = " << shpid << " frame=" << idx);
+                DBGOUT3(<<"swizzled case: parent = " << parent->pid << ", shpid = " << shpid << " frame=" << idx);
             } else {
-                DBGOUT1(<<"swizzled case: parent = NIL"<< ", shpid = " << shpid << " frame=" << idx);
+                DBGOUT3(<<"swizzled case: parent = NIL"<< ", shpid = " << shpid << " frame=" << idx);
             }
             bf_tree_cb_t &cb = get_cb(idx);
             int32_t cur_cnt = cb.pin_cnt();

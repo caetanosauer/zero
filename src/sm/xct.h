@@ -85,6 +85,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 class xct_dependent_t;
 struct okvl_mode;
+struct RawXct;
 
 /**\cond skip */
 /**\internal Tells whether the log is on or off for this xct at this moment.
@@ -457,18 +458,10 @@ public:
     void                         detach_update_thread();
     int                          update_threads() const;
 
-protected:
-    // For use by lock manager:
-    w_rc_t                       lockblock(timeout_in_ms timeout);// await other thread
-    void                         lockunblock(); // inform other waiters
-
-    rc_t                         obtain_locks(const okvl_mode& mode, 
-                                        int nlks, const lockid_t *l); 
-    rc_t                         obtain_one_lock(const okvl_mode& mode, 
-                                        const lockid_t &l); 
 public: // not quite public thing.. but convenient for experiments
     xct_lock_info_t*             lock_info() const;
     lil_private_table*           lil_lock_info() const;
+    RawXct*                      raw_lock_xct() const;
 
 public:
     // XXX this is only for chkpt::take().  This problem needs to
@@ -691,6 +684,9 @@ private:
         bool                   _warn_on;
         xct_lock_info_t*       _lock_info;
         lil_private_table*     _lil_lock_info;
+
+        /** RAW-style lock manager's shadow transaction object. Garbage collected. */
+        RawXct*                _raw_lock_xct;
         
         // the 1thread_xct mutex is used to ensure that only one thread
         // is using the xct structure on behalf of a transaction 
@@ -703,10 +699,6 @@ private:
 
         // to be manipulated only by smthread funcs
         lintel::Atomic<int> _threads_attached; 
-
-        // used in lockblock, lockunblock, by lock_core 
-        pthread_cond_t            _waiters_cond;  // paired with _waiters_mutex
-        mutable pthread_mutex_t   _waiters_mutex;  // paired with _waiters_cond
 
         state_t                   _state;
         bool                      _read_only;
@@ -783,7 +775,7 @@ private: // all data members private
      * See jira ticket:99 "ELR for X-lock" (originally trac ticket:101).
      */
     lsn_t                        _read_watermark;
-    
+
     elr_mode_t                   _elr_mode;
 
     // list of dependents: protected by _1thread_xct

@@ -19,6 +19,7 @@
 #include "w_key.h"
 #include "xct.h"
 #include "w_okvl_inl.h"
+struct RawLock;
 
 rc_t
 btree_impl::_ux_lock_key(
@@ -44,30 +45,45 @@ btree_impl::_ux_lock_key(
     )        
 {
     lockid_t lid (leaf.pid().stid(), (const unsigned char*) keystr, keylen);
-    // first, try conditionally
-    rc_t lock_rc = lm->lock(lid, lock_mode, check_only, WAIT_IMMEDIATE);
+    // first, try conditionally. we utilize the inserted lock entry even if it fails
+    RawLock* entry = NULL;
+    rc_t lock_rc = lm->lock(lid, lock_mode, true, check_only, WAIT_IMMEDIATE, &entry);
     if (!lock_rc.is_error()) {
         // lucky! we got it immediately. just return.
         return RCOK;
     } else {
         // if it caused deadlock and it was chosen to be victim, give up! (not retry)
         if (lock_rc.err_num() == eDEADLOCK) {
+            w_assert1(entry == NULL);
             return lock_rc;
         }
         // couldn't immediately get it. then we unlatch the page and wait.
-        w_assert2(lock_rc.err_num() == eLOCKTIMEOUT);
-        
+        w_assert1(lock_rc.err_num() == eCONDLOCKTIMEOUT);
+        w_assert1(entry != NULL);
+
         // we release the latch here. However, we increment the pin count before that
         // to prevent the page from being evicted.
         pin_for_refix_holder pin_holder(leaf.pin_for_refix()); // automatically releases the pin
         lsn_t prelsn = leaf.lsn(); // to check if it's modified after this unlatch
         leaf.unfix();
         // then, we try it unconditionally (this will block)
-        W_DO(lm->lock(lid, lock_mode, check_only));
+        W_DO(lm->retry_lock(&entry, check_only));
         // now we got the lock.. but it might be changed because we unlatched.
-        W_DO(leaf.refix_direct(pin_holder.idx(), latch_mode));
-        if (leaf.lsn() != prelsn) { // unluckily, it's the case
-            return RC(eLOCKRETRY); // retry!
+        w_rc_t refix_rc = leaf.refix_direct(pin_holder.idx(), latch_mode);
+        if (refix_rc.is_error() || leaf.lsn() != prelsn) {
+            // release acquired lock
+            if (entry != NULL) {
+                w_assert1(!check_only);
+                lm->unlock(entry);
+            } else {
+                w_assert1(check_only);
+            }
+            if (refix_rc.is_error()) {
+                return refix_rc;
+            } else {
+                w_assert1(leaf.lsn() != prelsn); // unluckily, it's the case
+                return RC(eLOCKRETRY); // retry!
+            }
         }
         return RCOK;
     }

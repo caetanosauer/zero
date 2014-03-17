@@ -39,6 +39,8 @@
 #include "crash.h"
 #include "chkpt.h"
 #include "bf_tree.h"
+#include "lock_raw.h"
+#include "log_lsn_tracker.h"
 
 #ifdef EXPLICIT_TEMPLATE
 template class w_list_t<xct_t, queue_based_lock_t>;
@@ -244,6 +246,9 @@ xct_t::new_xct(const tid_t& t, state_t s, const lsn_t& last_lsn,
 void
 xct_t::destroy_xct(xct_t* xd) 
 {
+    if (!xd->_sys_xct && smlevel_0::log) {
+        smlevel_0::log->get_oldest_lsn_tracker()->leave(reinterpret_cast<uintptr_t>(xd));
+    }
     LOGREC_ACCOUNTING_PRINT // see logrec.h
     // xct_core* core = xd->_core;
     DELETE_XCT(xd);
@@ -409,6 +414,9 @@ lil_private_table* xct_t::lil_lock_info() const
 {
     return _core->_lil_lock_info;
 }
+RawXct* xct_t::raw_lock_xct() const {
+    return _core->_raw_lock_xct;
+}
 
 timeout_in_ms
 xct_t::timeout_c() const {
@@ -558,43 +566,6 @@ xct_t::stash(xct_log_t*&x)
     else { __saved_xct_log_t = x; }
     x = 0;
     // dup acquire/release removed release_1thread_xct_mutex();
-}
-
-rc_t                        
-xct_t::obtain_locks(const okvl_mode& mode, int num, const lockid_t *locks)
-{
-    int  i;
-    rc_t rc;
-
-    for (i=0; i<num; i++) {
-        DBG(<<"Obtaining lock : " << locks[i] << " in mode " << int(mode));
-
-        rc =lm->lock(locks[i], mode, false, WAIT_IMMEDIATE);
-        if(rc.is_error()) {
-            lm->dump(smlevel_0::errlog->clog);
-            smlevel_0::errlog->clog << fatal_prio
-                << "can't obtain lock " <<rc <<endl;
-            W_FATAL(eINTERNAL);
-        }
-    }
-
-    return RCOK;
-}
-
-rc_t                        
-xct_t::obtain_one_lock(const okvl_mode& mode, const lockid_t &lock)
-{
-    DBG(<<"Obtaining 1 lock : " << lock << " in mode " << int(mode));
-
-    rc_t rc;
-    rc = lm->lock(lock, mode, false, WAIT_IMMEDIATE);
-    if(rc.is_error()) {
-        lm->dump(smlevel_0::errlog->clog);
-        smlevel_0::errlog->clog << fatal_prio
-            << "can't obtain lock " <<rc <<endl;
-        W_FATAL(eINTERNAL);
-    }
-    return RCOK;
 }
 
 /**\brief Set the log state for this xct/thread pair to the value \e s.
@@ -860,8 +831,8 @@ operator<<(ostream& o, const xct_t& x)
 
     o << " in_compensated_op=" << x._in_compensated_op << " anchor=" << x._anchor;
 
-    if(x.lock_info()) {
-         o << *x.lock_info();
+    if(x.raw_lock_xct()) {
+         x.raw_lock_xct()->dump_lockinfo(o);
     }
 
     return o;
@@ -880,6 +851,7 @@ xct_t::xct_core::xct_core(tid_t const &t, state_t s, timeout_in_ms timeout)
     _warn_on(true),
     _lock_info(agent_lock_info->take()),    
     _lil_lock_info(agent_lil_lock_info->take()),    
+    _raw_lock_xct(NULL),
     _updating_operations(0),
     _threads_attached(0),
     _state(s),
@@ -893,9 +865,9 @@ xct_t::xct_core::xct_core(tid_t const &t, state_t s, timeout_in_ms timeout)
     w_assert1(_tid == _lock_info->tid());
 
     w_assert1(_lil_lock_info);
-    
-    DO_PTHREAD(pthread_mutex_init(&_waiters_mutex, NULL));
-    DO_PTHREAD(pthread_cond_init(&_waiters_cond, NULL));
+    if (smlevel_0::lm) {
+        _raw_lock_xct = smlevel_0::lm->allocate_xct();
+    }
 
     INC_TSTAT(begin_xct_cnt);
 
@@ -990,6 +962,9 @@ xct_t::xct_core::~xct_core()
     }
     if (_lil_lock_info) {
         agent_lil_lock_info->put(_lil_lock_info);
+    }
+    if (_raw_lock_xct) {
+        smlevel_0::lm->deallocate_xct(_raw_lock_xct);
     }
 }
 /*********************************************************************
@@ -1257,14 +1232,6 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
     // W_DO(check_one_thread_attached()); // now checked in prologue
     w_assert1(one_thread_attached());
 
-    // first, empty the wait map because no chance this xct can cause deadlock any more.
-    {
-        xct_lock_info_t *linfo = lock_info();
-        if (linfo) {
-            linfo->clear_wait_map();
-        }
-    }
-
     // "normal" means individual commit; not group commit.
     // Group commit cannot be lazy or chained.
     bool individual = ! (flags & xct_t::t_group);
@@ -1481,15 +1448,21 @@ rc_t xct_t::early_lock_release() {
                 W_DO(commit_free_locks(true));
                 break;
             case elr_sx:
+            case elr_clv: // TODO see below
                 // simply release all locks
                 // update tag for safe SX-ELR with _last_lsn which should be the commit lsn
                 // (we should have called log_xct_end right before this)
                 W_DO(commit_free_locks(false, _last_lsn));
                 break;
+                // TODO Controlled Lock Violation is tentatively replaced with SX-ELR.
+                // In RAW-style lock manager, reading the permitted LSN needs another barrier.
+                // In reality (not concept but dirty impl), they are doing the same anyways.
+                /*
             case elr_clv:
                 // release no locks, but give permission to violate ours:
                 lm->give_permission_to_violate(_last_lsn);
                 break;
+                */
             default:
                 w_assert1(false); // wtf??
         }
@@ -1520,14 +1493,6 @@ xct_t::_abort()
             );
     if(_core->_state != xct_committing && _core->_state != xct_freeing_space) {
         w_assert1(_core->_xct_ended++ == 0);
-    }
-
-    // first, empty the wait map because no chance this xct can cause deadlock any more.
-    {
-        xct_lock_info_t *linfo = lock_info();
-        if (linfo) {
-            linfo->clear_wait_map();
-        }
     }
 
 #if X_LOG_COMMENT_ON
@@ -2243,7 +2208,7 @@ xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page, const fixable_page_h
     }
 
 #if W_DEBUG_LEVEL > 0
-    DBGOUT3(
+    DBGOUT4(
             << " state() " << state()
             << " _rolling_back " << _rolling_back
             << " _core->_xct_aborting " << _core->_xct_aborting
@@ -2914,11 +2879,6 @@ xct_t::attach_thread()
     w_assert2(is_1thread_xct_mutex_mine());
     thr->new_xct(this);
     w_assert2(is_1thread_xct_mutex_mine());
-    // set the fingerprint of this thread to the xct's wait-bitmap
-    xct_lock_info_t *linfo = lock_info();
-    if (linfo) {
-        linfo->init_wait_map(thr);
-    }
 }
 
 
@@ -2931,63 +2891,6 @@ xct_t::detach_thread()
     _core->_threads_attached--;
     w_assert2(_core->_threads_attached >=0);
     me()->no_xct(this);
-}
-
-w_rc_t
-xct_t::lockblock(timeout_in_ms /*timeout*/)
-{
-    /*
-// Used by lock manager. (lock_core_m)
-// Another thread in our xct is blocking. We're going to have to
-// wait on another resource, until our partner thread unblocks,
-// and then try again.
-    CRITICAL_SECTION(bcs, _core->_waiters_mutex);
-    w_rc_t rc;
-    if(num_threads() > 1) {
-        DBGX(<<"blocking on condn variable");
-        // Don't block if other thread has gone away
-        // GNATS 119 This is still racy!  multi.1 shows us that.
-        //
-        xct_lock_info_t*       the_xlinfo = lock_info();
-        if(! the_xlinfo->waiting_request()) {
-            // No longer has waiting request - return w/o blocking.
-            return RCOK;
-        }
-
-        // this code taken from scond_t implementation, from when
-        // _waiters_cond was an scond_t:
-        if(timeout == WAIT_IMMEDIATE)  return RC(sthread_t::stTIMEOUT);
-        if(timeout == WAIT_FOREVER)  {
-            DO_PTHREAD(pthread_cond_wait(&_core->_waiters_cond, &_core->_waiters_mutex));
-        } else {
-            struct timespec when;
-            sthread_t::timeout_to_timespec(timeout, when);
-            DO_PTHREAD_TIMED(pthread_cond_timedwait(&_core->_waiters_cond, &_core->_waiters_mutex, &when));
-        }
-
-        DBGX(<<"not blocked on cond'n variable");
-    }
-    if(rc.is_error()) {
-        return RC_AUGMENT(rc);
-    } 
-    return rc;
-    */
-    return RCOK;
-}
-
-void
-xct_t::lockunblock()
-{
-// Used by lock manager. (lock_core_m)
-// This thread in our xct is no longer blocking. Wake up anyone
-// who was waiting on this other resource because I was 
-// blocked in the lock manager.
-    CRITICAL_SECTION(bcs, _core->_waiters_mutex);
-    if(num_threads() > 1) {
-        DBGX(<<"signalling waiters on cond'n variable");
-        DO_PTHREAD(pthread_cond_broadcast(&_core->_waiters_cond));
-        DBGX(<<"signalling cond'n variable done");
-    }
 }
 
 //
@@ -3069,7 +2972,8 @@ xct_t::release_1thread_xct_mutex() const
 ostream &
 xct_t::dump_locks(ostream &out) const
 {
-    return lock_info()->dump_locks(out);
+    raw_lock_xct()->dump_lockinfo(out);
+    return out;
 }
 
 

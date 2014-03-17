@@ -21,7 +21,7 @@ gc_thread_id self() {
 TEST(GcPoolForestTest, SingleThread) {
     gc_pointer_raw next;
     next.word = 0; // don't bother __thread or C++11.
-    GcPoolForest<DummyEntry> forest;
+    GcPoolForest<DummyEntry> forest("unnamed", 5, 0, 0);
     const size_t SEGMENTS = 2;
     const size_t SEGMENT_SIZE = 3;
     forest.resolve_generation(forest.curr())->preallocate_segments(SEGMENTS , SEGMENT_SIZE);
@@ -96,7 +96,7 @@ TEST(GcPoolForestTest, SingleThread) {
     // create a few new generations
     for (int i = 0; i < 5; ++i) {
         lsn_t now(100 * (i + 1));
-        EXPECT_TRUE(forest.advance_generation(now, 0, 0));
+        EXPECT_TRUE(forest.advance_generation(lsn_t::null, now, 0, 0));
     }
 
     // start retiring
@@ -113,14 +113,15 @@ TEST(GcPoolForestTest, SingleThread) {
         EXPECT_GT(6, forest.active_generations());
     }
 
-    // let's also wrap
+    // let's also wrap. try recycle.
     for (size_t i = 0; i < GC_MAX_GENERATIONS; ++i) {
         lsn_t now(1000 + 100 * (i + 1));
-        EXPECT_TRUE(forest.advance_generation(now, 0, 0));
-        forest.retire_generations(now);
-        EXPECT_GT(6, forest.active_generations());
+        lsn_t then(1000 + 100 * (i + 2));
+        EXPECT_TRUE(forest.advance_generation(lsn_t::null, now, 0, 0));
+        forest.retire_generations(now, then);
+        EXPECT_GT(20, forest.active_generations());
     }
-    EXPECT_GT(6, forest.active_generations());
+    EXPECT_GT(20, forest.active_generations());
 }
 
 const int THREAD_COUNT = 6;
@@ -167,12 +168,12 @@ void *test_work(void *t) {
 }
 
 TEST(GcPoolForestTest, MultiThread) {
-    GcPoolForest<DummyEntry> forest;
+    GcPoolForest<DummyEntry> forest("unnamed", 5, 0, 0);
 
     TestSharedContext shared(&forest);
 
     lsn_t now(2000);
-    EXPECT_TRUE(forest.advance_generation(now, 0, 0));
+    EXPECT_TRUE(forest.advance_generation(lsn_t::null, now, 0, 0));
     shared.recommended_generation = forest.curr();
     forest.resolve_generation(forest.curr())->preallocate_segments(100, 1000);
 
@@ -191,7 +192,7 @@ TEST(GcPoolForestTest, MultiThread) {
         if (i % 10 == 0) {
             std::cout << "[master thread] Advancing generation " << i << std::endl;
             lsn_t now(100 * (i + 30));
-            EXPECT_TRUE(forest.advance_generation(now, 10, 1000));
+            EXPECT_TRUE(forest.advance_generation(lsn_t::null, now, 10, 1000));
             // let clients know, too
             shared.recommended_generation = forest.curr();
             mfence();
@@ -220,7 +221,7 @@ TEST(GcPoolForestTest, MultiThread) {
         if (i % 10 == 0) {
             std::cout << "[master thread] Advancing generation " << i << std::endl;
             lsn_t now(100 * (i + 30));
-            EXPECT_TRUE(forest.advance_generation(now, 10, 1000));
+            EXPECT_TRUE(forest.advance_generation(lsn_t::null, now, 10, 1000));
             // let clients know, too
             shared.recommended_generation = forest.curr();
             mfence();
