@@ -15,7 +15,6 @@
 
 #include <vector>
 #include <set>
-#include <boost/concept_check.hpp>
 
 btree_test_env *test_env;
 /**
