@@ -441,6 +441,14 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
     bool requested_volume, lsndata_t requested_lsn)
 {
     if (_dirty_shutdown_happening()) return RCOK;
+
+    // Don't clean the buffer pool if in the middle of recovery of Log Analysis or REDO,
+    // because we are using buffer pool for the Recovery REDO purpose
+    if (smlevel_0::before_recovery() || 
+        (smlevel_0::in_recovery() && 
+        (smlevel_0::in_recovery_analysis() || smlevel_0::in_recovery_redo())))
+        return RCOK;
+
     // TODO this method should separate dirty pages that have dependency and flush them after others.
     DBGOUT1(<<"_clean_volume(cleaner=" << _id << "): volume " << vol);
     if (_sort_buffer_size < candidates.size()) {

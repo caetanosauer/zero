@@ -739,7 +739,8 @@ rc_t io_m::read_page(const lpid_t& pid, generic_page& buf) {
     if (i < 0) {
         return RC(eBADVOL);
     }
-    W_DO( vol[i]->read_page(pid.page, buf) );
+    bool passed_end;
+    W_DO( vol[i]->read_page(pid.page, buf, passed_end) );
     return RCOK;
 }
 

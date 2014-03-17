@@ -265,7 +265,8 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
     volid_t vid = volume->vid().vol;
     DBGOUT2(<<"preloading root page " << shpid << " of store " << store << " in volume " << vid << ". to buffer frame " << idx);
     w_assert1(shpid >= volume->first_data_pageid());
-    W_DO(volume->read_page(shpid, _buffer[idx]));
+    bool passed_end;
+    W_DO(volume->read_page(shpid, _buffer[idx], passed_end));
 
     if (_buffer[idx].calculate_checksum() != _buffer[idx].checksum) {
         return RC(eBADCHECKSUM);
@@ -307,7 +308,8 @@ w_rc_t bf_tree_m::_install_volume_mainmemorydb(vol_t* volume) {
     bf_idx endidx = volume->num_pages();
     for (bf_idx idx = volume->first_data_pageid(); idx < endidx; ++idx) {
         if (volume->is_allocated_page(idx)) {
-            W_DO(volume->read_page(idx, _buffer[idx]));
+            bool passed_end;
+            W_DO(volume->read_page(idx, _buffer[idx], passed_end));
             if (_buffer[idx].calculate_checksum() != _buffer[idx].checksum) {
                 return RC(eBADCHECKSUM);
             }
@@ -383,7 +385,7 @@ w_rc_t bf_tree_m::fix_direct (generic_page*& page, volid_t vol, shpid_t shpid, l
     return _fix_nonswizzled(NULL, page, vol, shpid, mode, conditional, virgin_page);
 }
 
-void bf_tree_m::associate_page(generic_page*&_pp, bf_idx idx)
+void bf_tree_m::associate_page(generic_page*&_pp, bf_idx idx, lpid_t page_updated)
 {
     // Special function for REDO phase of the system Recovery process
     // The physical page is loaded in buffer pool, idx is known but we 
@@ -393,6 +395,10 @@ void bf_tree_m::associate_page(generic_page*&_pp, bf_idx idx)
     w_assert1(!smlevel_0::bf->is_swizzling_enabled());   
     w_assert1 (_is_active_idx(idx));
     _pp = &(smlevel_0::bf->_buffer[idx]);
+
+    // Store lptid_t (vol and store IDs and page number) into the data buffer in the page
+    _buffer[idx].pid = page_updated;
+
     return;
 }
 
@@ -474,7 +480,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             } else {
                 DBGOUT3(<<"bf_tree_m: cache miss. reading page "<<vol<<"." << shpid << " to frame " << idx);
                 INC_TSTAT(bf_fix_nonroot_miss_count);
-                w_rc_t read_rc = volume->_volume->read_page(shpid, _buffer[idx]);
+                bool passed_end;
+                w_rc_t read_rc = volume->_volume->read_page(shpid, _buffer[idx], passed_end);
                 if (read_rc.is_error()) {
                     DBGOUT3(<<"bf_tree_m: error while reading page " << shpid << " to frame " << idx << ". rc=" << read_rc);
                     _add_free_block(idx);
@@ -1531,12 +1538,16 @@ bool bf_tree_m::has_swizzled_child(bf_idx node_idx) {
     return false;
 }
 
-w_rc_t bf_tree_m::register_and_mark(bf_idx& ret, volid_t vid,
-                  shpid_t shpid, lsn_t new_lsn, uint32_t& in_doubt_count)
+w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
+                  lpid_t page_of_interest,
+                  lsn_t new_lsn,             // Current log record LSN from log scan
+                  uint32_t& in_doubt_count)
 {
     w_rc_t rc = RCOK;
-    w_assert1(vid != 0);
-    w_assert1(shpid != 0);
+    w_assert1(page_of_interest.vol().vol != 0);
+    w_assert1(page_of_interest.page != 0);
+    volid_t vid = page_of_interest.vol().vol;
+    shpid_t shpid = page_of_interest.page;
 
     ret = 0;
 
@@ -1581,21 +1592,25 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret, volid_t vid,
             return rc;
 
         // Now we have an empty page
-        // Do not load the physical page from disk:  volume->_volume->read_page(shpid, _buffer[idx]);
+        // Do not load the physical page from disk:  
+        //     volume->_volume->read_page(shpid, _buffer[idx]);
         // The actual page will be loaded in REDO phase       
         
         // Initialize control block of the page, mark the in_doubt and used flags, 
         // add the rec_lsn which indicates when the page was dirty initially
         bf_tree_cb_t &cb = get_cb(idx);
         cb._pid_vol = vid;
+        cb._store_num = page_of_interest.store(); 
         cb._pid_shpid = shpid;
         cb._dirty = false;
         cb._in_doubt = true;
         cb._used = true;
         cb._refbit_approximate = BP_INITIAL_REFCOUNT; 
 
-        // For a loade page,  get _rec_lsn from the physical page (cb._rec_lsn = _buffer[idx].lsn.data())
-        // But in Log Analysis, we don't load the page, so initialize _rec_lsn from input parameter
+        // For a page from disk,  get _rec_lsn from the physical page 
+        // (cb._rec_lsn = _buffer[idx].lsn.data())
+        // But in Log Analysis, we don't load the page, so initialize _rec_lsn from new_lsn
+        // which is the current log record LSN from log scan
         cb._rec_lsn = new_lsn.data();
 
         // Register the constructed 'key' into hash table so we can find this page cb later
@@ -1613,16 +1628,26 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret, volid_t vid,
         DBGOUT5(<<"Done registration process, idx: " << idx);
     }
 
+    // Return the idx of this page
+    ret = idx;
+
     return rc;
 }
 
-w_rc_t bf_tree_m::load_for_redo(bf_idx idx, volid_t vid, shpid_t shpid)
+w_rc_t bf_tree_m::load_for_redo(bf_idx idx, volid_t vid, 
+                  shpid_t shpid, bool& passed_end)
 {
+    // Special function for Recovery REDO phase
     // idx is in hash table already
+    // but the actual page has not loaded from disk into buffer pool yet
+
+    // Caller of this fumction is responsible for acquire and release EX latch on this page
     
     w_rc_t rc = RCOK;
     w_assert1(vid != 0);
     w_assert1(shpid != 0);
+
+    passed_end = false;
 
     DBGOUT3(<<"REDO phase: loading page " << vid << "." << shpid 
             << " into buffer pool frame " << idx);
@@ -1632,7 +1657,18 @@ w_rc_t bf_tree_m::load_for_redo(bf_idx idx, volid_t vid, shpid_t shpid)
     w_assert1(shpid >= volume->_volume->first_data_pageid());
 
     // Load the physical page from disk
-    rc = volume->_volume->read_page(shpid, _buffer[idx]);
+    rc = volume->_volume->read_page(shpid, _buffer[idx], passed_end);
+    if (true == passed_end)
+    {
+        // During REDO phase when trying to load a page from disk, the disk does
+        // not exist on disk.
+        // We cannot apply REDO because the page in buffer pool has been zero out
+        // notify the caller by setting a return flag
+       
+        passed_end = true;
+        DBGOUT3(<<"REDO phase: page does not exist on disk: "
+            << vid << "." << shpid);
+    }
     if (rc.is_error()) 
     {
         DBGOUT3(<<"bf_tree_m: error while reading page " << shpid 
@@ -1649,6 +1685,7 @@ w_rc_t bf_tree_m::load_for_redo(bf_idx idx, volid_t vid, shpid_t shpid)
             ERROUT(<<"bf_tree_m: bad page checksum in page " << shpid);
             return RC (eBADCHECKSUM);
         }
+
         // Then, page ID must match, otherwise raise error
         if (( shpid != _buffer[idx].pid.page) || (vid != _buffer[idx].pid.vol().vol)) 
         {
@@ -1988,8 +2025,9 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid,
     
     w_assert1(start > 0 && count > 0);
 
-    bf_idx i;
-    for (i = 1; i < count && start < _block_cnt; ++start)  
+    bf_idx i = 0;
+    // _block_cnt is the number of blocks/pages in buffer pool, while 0 is never used
+    for (i = 0; i < count && start < _block_cnt; ++start)  
     {
         bf_tree_cb_t &cb = get_cb(start);
 
@@ -2010,6 +2048,7 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid,
             return;
         }
 
+        // The earliest LSN which made this page dirty
         lsn_t lsn(cb._rec_lsn);
 
         // If a page is in use and dirty, or is in_doubt (only marked by Log Analysis phase)
@@ -2027,6 +2066,7 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid,
                 // Re-construct the lpid using several fields in cb
                 vid_t vid(cb._pid_vol);
                 lpid_t store_id(vid, cb._store_num, cb._pid_shpid);
+                w_assert1(0 != cb._pid_shpid);   // Page number cannot be 0
                 pid[i] = store_id;
                 // rec_lsn is when the page got dirty initially, since this is an in_doubt page for Log Analysis
                 // use the smaller LSN between cb and checkpoint master
@@ -2051,6 +2091,7 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid,
                 // buffer[start].lsn.data() is the Page LSN, which is the latest LSN
                 
                 pid[i] = _buffer[start].pid;
+                w_assert1(0 != pid[i].page);   // Page number cannot be 0
                 w_assert1(lsn_t::null!= lsn);
                 rec_lsn[i] = lsn;
                 w_assert1(lsn_t::null!= _buffer[start].lsn.data());

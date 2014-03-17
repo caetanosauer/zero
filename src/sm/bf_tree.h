@@ -278,12 +278,13 @@ public:
     /**
      * Special function for the REDO phase in system Recovery process
      * The page has been loaded into buffer pool and in the hashtable with known idx
-     * Thi sfunction associates the page in buffer pool with fixable_page data structure.
+     * This function associates the page in buffer pool with fixable_page data structure.
+     * also store the vol and store number into the buffer (store number is not in cb)
      * There is no parent involved, and swizzling must be disabled.    
      * @param[out] page the fixed page.
      * @param[in] idx idx of the page.
      */
-    void associate_page(generic_page*&_pp, bf_idx idx);
+    void associate_page(generic_page*&_pp, bf_idx idx, lpid_t page_updated);
 
     /**
      * Adds an additional pin count for the given page (which must be already latched).
@@ -385,6 +386,18 @@ public:
      * therefore the actual page might or might not be loaded at thi spoint
      */
     bf_idx lookup_in_doubt(const int64_t key) const;
+
+    /**
+     * Set the _rec_lsn (the LSN which made the page dirty initially) in page cb
+     * if it is later than the new_lsn.
+     * Thi sfunction is mainly used when a page format log record was generated
+     */
+    void set_initial_rec_lsn(const lpid_t& pid, lsn_t new_lsn);
+
+    /**
+     * Returns true if the page's _used flag is on
+     */
+    bool is_used (bf_idx idx) const;
 
     /**
      * Adds a write-order dependency such that one is always written out after another.
@@ -553,7 +566,7 @@ public:
      * Set in_doubt and used flags in cb to true, update lsn (where the page gor dirty)
      * update the in_doubt page counter and return the index of the page
      */    
-    w_rc_t register_and_mark(bf_idx& ret, volid_t vid, shpid_t shpid,
+    w_rc_t register_and_mark(bf_idx& ret, lpid_t page_of_interest,
            lsn_t new_lsn, uint32_t& in_doubt_count);
 
 
@@ -563,7 +576,7 @@ public:
      * but the actual page is not in buffer pool yet
      * Load the actual page into buffer pool
      */    
-    w_rc_t load_for_redo(bf_idx idx, volid_t vid, shpid_t shpid);
+    w_rc_t load_for_redo(bf_idx idx, volid_t vid, shpid_t shpid, bool& passed_end);
 
 private:
 

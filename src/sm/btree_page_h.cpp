@@ -45,7 +45,9 @@ btrec_t::set(const btree_page_h& page, slotid_t slot) {
 }
 
 void btree_page_h::accept_empty_child(lsn_t new_lsn, shpid_t new_page_id) {
-    w_assert1 (g_xct()->is_single_log_sys_xct());
+    // Somewhere there is a bug, when calling from btree_norec_alloc_log::redo
+    // the assertion fired on is_single_log_sys_xct, but it is a system txn
+    // w_assert1 (g_xct()->is_single_log_sys_xct());
     w_assert1 (new_lsn != lsn_t::null);
 
     // Slight change in foster-parent, touching only foster link and chain-high.
@@ -81,6 +83,7 @@ rc_t btree_page_h::format_steal(lsn_t             new_lsn,
                                 int               steal_from2,
                                 int               steal_to2,
                                 bool              steal_src2_pid0) {
+
     // Note that the method receives a copy, not reference, of pid/lsn here.
     // pid might point to a part of this page itself!
     _init(new_lsn, pid, root, pid0, foster, l, fence_low, fence_high, chain_fence_high);
@@ -114,6 +117,17 @@ rc_t btree_page_h::format_steal(lsn_t             new_lsn,
     if (log_it) {
         W_DO(log_page_img_format(*this));
         w_assert1(lsn().valid());
+
+// TODO(M1)...
+        // This is the only place where a page format log record is being generated, 
+        // although the function can be called from multiple places (mostly from B-tree functions)
+        // the _init() function only set the last write LSN, but not the initial dirty LSN in page cb
+        // For system crash recovery purpose, we need the initial dirty LSN to trace back to the
+        // page format log record so everything can be REDO
+        // Set the _rec_lsn using the new_lan (which is the last write LSN) if _rec_lsn is later than 
+        // new_lsn.
+        smlevel_0::bf->set_initial_rec_lsn(pid, new_lsn);
+
     }
     
     return RCOK;

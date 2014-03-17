@@ -363,6 +363,14 @@ bool ss_m::shutdown()
         //          shutdown flag before the shutdown() call.
         //          The simulated crash shutdown flag would be reset in every 
         //          startup() call.
+
+        // This is a force shutdown, meaning:
+        // Clean shutdown - abort all active in-flight transactions, flush buffer pool
+        //                            take a checkpoint which would record the mounted vol
+        //                            then destroy all the managers and free memory
+        // Dirty shutdown (false == shutdown_clean) - destroy all active in-flight 
+        //                            transactions without aborting, then destroy all the managers
+        //                            and free memory.  No flush and no checkpoint
         
         _destruct_once();
         return true;
@@ -740,6 +748,8 @@ ss_m::_destruct_once()
         me()->detach_xct(xct());
     }
     // now it's safe to do the clean_up
+    // The code for distributed txn (prepared xcts has been deleted, the input paramter
+    // in cleanup() is not used
     int nprepared = xct_t::cleanup(false /* don't dispose of prepared xcts */);
     (void) nprepared; // Used only for debugging assert
     if (shutdown_clean) {

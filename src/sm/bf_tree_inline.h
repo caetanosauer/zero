@@ -391,7 +391,8 @@ inline void bf_tree_m::set_in_doubt(const bf_idx idx, lsn_t new_lsn) {
     cb._dirty = false;
     cb._used = true;
 
-    // Update LSN only if it is earlier than the current one
+    // _rec_lsn is the initial LSN which made the page dirty
+    // Update the earliest LSN only if new_lsn is earlier than the current one
     if (new_lsn.data() < cb._rec_lsn)
         cb._rec_lsn = new_lsn.data();
 }
@@ -399,7 +400,7 @@ inline void bf_tree_m::set_in_doubt(const bf_idx idx, lsn_t new_lsn) {
 inline void bf_tree_m::clear_in_doubt(const bf_idx idx, bool still_used, uint64_t key) {
     // Caller has latch on page
     // 1. From Log Analysis phase in Recovery, page is not in buffer pool    
-    // 2. From REDO phase in Recovery, page is in buffer pool.  This is a virgin page so it is not dirty
+    // 2. From REDO phase in Recovery, page is in buffer pool but does not exist on disk
 
     // Only reasons to call this function:
     // Log record indicating allocating or deallocating a page
@@ -408,7 +409,6 @@ inline void bf_tree_m::clear_in_doubt(const bf_idx idx, bool still_used, uint64_
     //                 from hashtable
     // Deallocating: clear both in_doubt and used flags, also remove it from
     //                 hashtable so the page can be used by others
-    // Page format: clear the in_doubt flag but not the 'used' flag, page is virgin (not dirty)
     //
     w_assert1 (_is_active_idx(idx));
     bf_tree_cb_t &cb = get_cb(idx);
@@ -431,7 +431,7 @@ inline void bf_tree_m::clear_in_doubt(const bf_idx idx, bool still_used, uint64_
 
 inline void bf_tree_m::in_doubt_to_dirty(const bf_idx idx) {
     // Caller has latch on page
-    // From REDO phase in Recovery, page is in buffer pool    
+    // From REDO phase in Recovery, page just loaded into buffer pool    
 
     // Change a page from in_doubt to dirty by setting the flags
    
@@ -442,6 +442,7 @@ inline void bf_tree_m::in_doubt_to_dirty(const bf_idx idx) {
     cb._in_doubt = false;
     cb._dirty = true;
     cb._used = true;
+    cb._refbit_approximate = BP_INITIAL_REFCOUNT; 
 }
 
 
@@ -462,6 +463,38 @@ inline bf_idx bf_tree_m::lookup_in_doubt(const int64_t key) const
     // use this function with caution
 
     return _hashtable->lookup(key);
+}
+
+inline void bf_tree_m::set_initial_rec_lsn(const lpid_t& pid, lsn_t new_lsn)
+{
+    // Caller has latch on page
+    // Special function called from btree_page_h::format_steal() when the
+    // page format log record was generated
+    
+    // Reset the _rec_lsn in page cb (when the page was dirtied initially) if
+    // it is later than the new_lsn, we want the earliest lsn in _rec_lsn
+   
+    uint64_t key = bf_key(pid.vol().vol, pid.page);
+    bf_idx idx = _hashtable->lookup(key);
+    if (0 != idx)
+    {
+        // Page exists in buffer pool hash table
+        bf_tree_cb_t &cb = smlevel_0::bf->get_cb(idx);
+
+        // Update the initial LSN which is when the page got dirty initially
+        if (cb._rec_lsn > new_lsn.data())
+            cb._rec_lsn = new_lsn.data();
+    }
+    else
+    {
+        // Page does not exist in buffer pool hash table
+        // This should not happen, no-op and we are not raising an error
+    }
+}
+
+
+inline bool bf_tree_m::is_used (bf_idx idx) const {
+    return _is_active_idx(idx);
 }
 
 

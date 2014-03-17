@@ -545,16 +545,21 @@ vol_t::set_fake_disk_latency(const int adelay)
 
 /*********************************************************************
  *
- *  vol_t::read_page(pnum, page)
+ *  vol_t::read_page(pnum, page, passed_end)
  *
  *  Read the page at "pnum" of the volume into the buffer "page".
  *
  *********************************************************************/
 rc_t
-vol_t::read_page(shpid_t pnum, generic_page& page)
+vol_t::read_page(shpid_t pnum, generic_page& page, bool& passed_end)
 {
     w_assert1(pnum > 0 && pnum < (shpid_t)(_num_pages));
     fileoff_t offset = fileoff_t(pnum) * sizeof(page);
+
+    // Notify caller it is trying to read past the end of OS file
+    // The function returns a good return code in this case because not all
+    // caller cares about reading past the end
+    passed_end = false;
 
     smthread_t* t = me();
 
@@ -574,8 +579,13 @@ vol_t::read_page(shpid_t pnum, generic_page& page)
 #endif
     w_rc_t err = t->pread(_unix_fd, (char *) &page, sizeof(page), offset);
     if(err.err_num() == stSHORTIO) {
+
+// TODO(M1)...
+DBGOUT3 (<< "************ vol_t::read_page, read passed the end, zero out the page");
+
         // read past end of OS file. return all zeros
         memset(&page, 0, sizeof(page));
+        passed_end = true;
     } else {
         W_COERCE_MSG(err, << "volume id=" << vid()
               << " err_num " << err.err_num()

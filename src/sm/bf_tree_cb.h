@@ -186,8 +186,8 @@ struct bf_tree_cb_t {
     // to load the actual page, all the information are stored in cb but need to 
     // re-construct the long ID:
     // volume number - _pid_vol (overload for in_doubt purpose)
-    // store number    - _pid_shpid
-    // page number    - _store_num (only valid if in_doubt is true)
+    // store number    - _store_num (valid for Recovery only)
+    // page number    - _pid_shpid
     // If _in_doubt == true, do not access 'bf_tree_m::_buffer'
     //
     bool                        _in_doubt;      // +1 -> 51

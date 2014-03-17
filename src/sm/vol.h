@@ -116,7 +116,8 @@ public:
 
     rc_t                read_page(
         shpid_t             page,
-        generic_page&             buf);
+        generic_page&       buf,
+        bool&               passed_end);
 
     rc_t            alloc_a_page(const stid_t &stid, lpid_t &pid);
     rc_t            alloc_consecutive_pages(const stid_t &stid, size_t page_count, lpid_t &pid_begin);

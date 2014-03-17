@@ -100,6 +100,10 @@ void btree_insert_nonghost_log::undo(fixable_page_h* page) {
 void btree_insert_nonghost_log::redo(fixable_page_h* page) {
     borrowed_btree_page_h bp(page);
     btree_insert_t* dp = reinterpret_cast<btree_insert_t*>(data());
+
+// TODO(M1)...
+DBGOUT3 (<< "************ Page level = " << bp.level());
+
     w_assert1(bp.is_leaf());
     w_keystr_t key;
     vec_t el;

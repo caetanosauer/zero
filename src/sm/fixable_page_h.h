@@ -119,7 +119,7 @@ public:
      *
      * @param[in] idx          index into buffer pool
      */
-    w_rc_t fix_recovery_redo(bf_idx idx);
+    w_rc_t fix_recovery_redo(bf_idx idx, lpid_t page_updated);
 
     /**
      * Adds an additional pin count for the given page.  This is used to re-fix the page

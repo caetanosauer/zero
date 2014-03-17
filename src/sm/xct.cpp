@@ -1577,13 +1577,7 @@ xct_t::_abort()
     }
 #endif
 
-    // If caller is from UNDO in Recovery for a doomed transaction,
-    // the transaction has been marked as xct_aborting already
-    // do not change to the same state (will assert)
-    if (in_recovery() && (_core->_state == xct_aborting))
-        ;
-    else
-        change_state(xct_aborting);
+    change_state(xct_aborting);
 
     /*
      * clear the list of load stores as they are going to be destroyed
