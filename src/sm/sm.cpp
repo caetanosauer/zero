@@ -79,7 +79,9 @@ class prologue_rc_t;
 #include "restart.h"
 #include "sm_options.h"
 #include "suppress_unused.h"
+#include "tid_t.h"
 #include "log_carray.h"
+#include "log_lsn_tracker.h"
 
 #ifdef EXPLICIT_TEMPLATE
 template class w_auto_delete_t<SmStoreMetaStats*>;
@@ -508,7 +510,7 @@ ss_m::_construct_once()
         W_FATAL(eOUTOFMEMORY);
     }
     /* just hang onto this until we create thelog manager...*/
-    lm = new lock_m(_options.get_int_option("sm_locktablesize", 64000));
+    lm = new lock_m(_options);
     if (! lm)  {
         W_FATAL(eOUTOFMEMORY);
     }
@@ -1683,6 +1685,11 @@ ss_m::_begin_xct(sm_stats_info_t *_stats, tid_t& tid, timeout_in_ms timeout, boo
     } else {
         spinlock_read_critical_section cs(&_begin_xct_mutex);
         x = xct_t::new_xct(_stats, timeout, sys_xct);
+        if(log) {
+            // This transaction will make no events related to LSN
+            // smaller than this. Used to control garbage collection, etc.
+            log->get_oldest_lsn_tracker()->enter(reinterpret_cast<uintptr_t>(x), log->curr_lsn());
+        }
     }
 
     if (!x) 

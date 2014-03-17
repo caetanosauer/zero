@@ -23,7 +23,7 @@ struct DummyEntry : public GcPoolEntry {
 ////////////////////// Single-threaded tests BEGIN ///////////////////////////////////
 
 TEST(LockFreeListTest, SingleThreadMixed) {
-    GcPoolForest<DummyEntry> pool(1, 100);
+    GcPoolForest<DummyEntry> pool("DummyEntry", 10, 1, 100);
     LockFreeList<DummyEntry, uint32_t> the_list(&pool);
     gc_pointer_raw next;
     next.word = 0;
@@ -131,7 +131,7 @@ TEST(LockFreeListTest, SingleThreadMixed) {
 }
 
 TEST(LockFreeListTest, SingleThreadRandom) {
-    GcPoolForest<DummyEntry> pool(1, 1000);
+    GcPoolForest<DummyEntry> pool("DummyEntry", 10, 1, 1000);
     gc_pointer_raw next;
     next.word = 0;
     gc_thread_id self = 0;
@@ -268,7 +268,7 @@ void *test_work(void *t) {
 
 
 void multi_thread_test(bool pause_before_delete, bool insert_only) {
-    GcPoolForest<DummyEntry> pool(THREAD_COUNT * 2, REP_COUNT);
+    GcPoolForest<DummyEntry> pool("DummyEntry", 10, THREAD_COUNT * 2, REP_COUNT);
     TestSharedContext shared (pool, pause_before_delete, insert_only);
 
     pthread_attr_t join_attr;

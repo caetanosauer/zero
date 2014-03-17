@@ -86,6 +86,7 @@ public:
 
     uint32_t get_hi() const { return (uint32_t) (_data >> 32); }
     uint32_t get_lo() const { return (uint32_t) _data; }
+    datum_t  as_int64() const { return _data; }
 
     tid_t& operator=(const tid_t& t)    {
         _data = t._data;

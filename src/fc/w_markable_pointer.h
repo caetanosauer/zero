@@ -9,7 +9,6 @@
 #include <cassert>
 #include <iostream>
 #include <Lintel/AtomicCounter.hpp>
-#include <boost/atomic.hpp>
 
 /**
  * \brief Lock-Free Data Structures and Algorithm

@@ -45,10 +45,11 @@ btrec_t::set(const btree_page_h& page, slotid_t slot) {
 }
 
 void btree_page_h::accept_empty_child(lsn_t new_lsn, shpid_t new_page_id) {
+// TODO(M1)...
     // Somewhere there is a bug, when calling from btree_norec_alloc_log::redo
     // the assertion fired on is_single_log_sys_xct, but it is a system txn
-    // w_assert1 (g_xct()->is_single_log_sys_xct());
-    w_assert1 (new_lsn != lsn_t::null);
+    // w_assert1(g_xct()->is_single_log_sys_xct());
+    w_assert1(new_lsn != lsn_t::null || !smlevel_0::logging_enabled);
 
     // Slight change in foster-parent, touching only foster link and chain-high.
     page()->btree_foster = new_page_id;
@@ -116,7 +117,7 @@ rc_t btree_page_h::format_steal(lsn_t             new_lsn,
     // log as one record
     if (log_it) {
         W_DO(log_page_img_format(*this));
-        w_assert1(lsn().valid());
+        w_assert1(lsn().valid() || !smlevel_0::logging_enabled);
 
 // TODO(M1)...
         // This is the only place where a page format log record is being generated, 
@@ -127,7 +128,6 @@ rc_t btree_page_h::format_steal(lsn_t             new_lsn,
         // Set the _rec_lsn using the new_lan (which is the last write LSN) if _rec_lsn is later than 
         // new_lsn.
         smlevel_0::bf->set_initial_rec_lsn(pid, new_lsn);
-
     }
     
     return RCOK;
