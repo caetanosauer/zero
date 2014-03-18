@@ -1479,7 +1479,7 @@ w_rc_t bf_tree_m::_evict_traverse_store(EvictionContext &context) {
             bool swizzled;
             bf_idx idx;
             _lookup_buf_imprecise(root_p, slot, idx, swizzled);
-            if (idx == 0) {
+            if (idx == 0 || idx >= _block_cnt) {
                 continue;
             }
 
