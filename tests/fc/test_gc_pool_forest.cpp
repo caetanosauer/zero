@@ -36,7 +36,7 @@ TEST(GcPoolForestTest, SingleThread) {
     GcGeneration<DummyEntry> *gen1 = forest.resolve_generation(entry1->gc_pointer);
     GcSegment<DummyEntry> *seg1 = forest.resolve_segment(entry1->gc_pointer);
     EXPECT_EQ(SEGMENTS, gen1->total_segments);
-    EXPECT_EQ(1, gen1->allocated_segments);
+    EXPECT_EQ((uint32_t) 1, gen1->allocated_segments);
 
     DummyEntry *entry2 = forest.allocate(next, self());
     EXPECT_EQ(1, entry2->gc_pointer.components.generation);
@@ -70,8 +70,8 @@ TEST(GcPoolForestTest, SingleThread) {
     EXPECT_NE(seg1, forest.resolve_segment(entry4->gc_pointer));
     EXPECT_EQ(gen1, forest.resolve_generation(entry4->gc_pointer));
 
-    EXPECT_EQ(SEGMENTS, gen1->total_segments);
-    EXPECT_EQ(2, gen1->allocated_segments);
+    EXPECT_EQ((uint32_t) SEGMENTS, gen1->total_segments);
+    EXPECT_EQ((uint32_t) 2, gen1->allocated_segments);
 
     EXPECT_NE(entry1, entry2);
     EXPECT_NE(entry2, entry3);
@@ -82,16 +82,16 @@ TEST(GcPoolForestTest, SingleThread) {
     forest.deallocate(entry2);
 
     EXPECT_EQ(SEGMENTS, gen1->total_segments);
-    EXPECT_EQ(2, gen1->allocated_segments);
+    EXPECT_EQ((uint32_t) 2, gen1->allocated_segments);
     forest.deallocate(entry3);
 
     EXPECT_EQ(SEGMENTS, gen1->total_segments);
-    EXPECT_EQ(2, gen1->allocated_segments);
+    EXPECT_EQ((uint32_t) 2, gen1->allocated_segments);
 
     forest.deallocate(entry4);
 
     EXPECT_EQ(SEGMENTS, gen1->total_segments);
-    EXPECT_EQ(2, gen1->allocated_segments);
+    EXPECT_EQ((uint32_t) 2, gen1->allocated_segments);
 
     // create a few new generations
     for (int i = 0; i < 5; ++i) {
@@ -102,15 +102,15 @@ TEST(GcPoolForestTest, SingleThread) {
     // start retiring
     {
         lsn_t now(50);
-        EXPECT_EQ(6, forest.active_generations());
+        EXPECT_EQ((uint32_t) 6, forest.active_generations());
         forest.retire_generations(now);
-        EXPECT_EQ(6, forest.active_generations());
+        EXPECT_EQ((uint32_t) 6, forest.active_generations());
     }
     {
         lsn_t now(520);
-        EXPECT_EQ(6, forest.active_generations());
+        EXPECT_EQ((uint32_t) 6, forest.active_generations());
         forest.retire_generations(now);
-        EXPECT_GT(6, forest.active_generations());
+        EXPECT_GT((uint32_t) 6, forest.active_generations());
     }
 
     // let's also wrap. try recycle.
@@ -119,9 +119,9 @@ TEST(GcPoolForestTest, SingleThread) {
         lsn_t then(1000 + 100 * (i + 2));
         EXPECT_TRUE(forest.advance_generation(lsn_t::null, now, 0, 0));
         forest.retire_generations(now, then);
-        EXPECT_GT(20, forest.active_generations());
+        EXPECT_GT((uint32_t) 20, forest.active_generations());
     }
-    EXPECT_GT(20, forest.active_generations());
+    EXPECT_GT((uint32_t) 20, forest.active_generations());
 }
 
 const int THREAD_COUNT = 6;

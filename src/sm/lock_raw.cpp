@@ -182,6 +182,7 @@ w_error_codes RawLockQueue::complete_acquire(RawLock** lock, bool check_only, in
     }
 
     // okay, we are granted.
+    atomic_synchronize();
     w_assert1((*lock)->state == RawLock::ACTIVE);
     w_assert1(xct->blocker == NULL);
     xct->update_read_watermark(x_lock_tag);
@@ -832,7 +833,7 @@ void handle_pool(bool &more_work,
     // Pre allocate segments
     atomic_synchronize();
     if (!stop_requested && pool->curr_generation()->get_free_count() < free_segment_count) {
-        DBGOUT0(<< name << "Current generation (" << pool->curr_nowrap << ") has too few free"
+        DBGOUT1(<< name << "Current generation (" << pool->curr_nowrap << ") has too few free"
             << "  segments. allocated=" << pool->curr_generation()->allocated_segments
             << "/" << pool->curr_generation()->total_segments << ". Preallocating..");
         uint32_t more_segments = free_segment_count;
@@ -847,7 +848,7 @@ void handle_pool(bool &more_work,
     atomic_synchronize();
     if (!stop_requested && pool->curr_generation()->get_free_count() < free_segment_count
             && pool->curr_generation()->total_segments >= max_segment_count) {
-        DBGOUT0(<< name << "Current generation (" << pool->curr_nowrap << ")  can't add more"
+        DBGOUT1(<< name << "Current generation (" << pool->curr_nowrap << ")  can't add more"
             << " segments. current allocated=" << pool->curr_generation()->allocated_segments
             << "/" << pool->curr_generation()->total_segments
             << " new gen segments will be:" << init_segment_count);
@@ -869,7 +870,7 @@ void handle_pool(bool &more_work,
     // Retire generations
     atomic_synchronize();
     if (!stop_requested && pool->active_generations() > generation_count) {
-        DBGOUT0(<< name << "There are too many generations retiring some. head_nowrap="
+        DBGOUT1(<< name << "There are too many generations retiring some. head_nowrap="
             << pool->head_nowrap << ", tail_nowrap=" << pool->tail_nowrap
             << ", desired generation_count=" << generation_count);
         lsn_t low_water_mark;
