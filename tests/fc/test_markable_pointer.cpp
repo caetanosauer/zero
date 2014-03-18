@@ -134,12 +134,12 @@ void do_test(Foo* pointer, uint64_t int_value, bool real_pointer, uint32_t id) {
 
         EXPECT_EQ(FOO_ID, ptr->id);
         ++ptr->released_count;
-        EXPECT_EQ(1, ptr->released_count);
+        EXPECT_EQ((uint32_t) 1, ptr->released_count);
 
         EXPECT_FALSE(ptr.atomic_cas(&foo, pointer, false, false, 0, 1));
         EXPECT_EQ(FOO_ID, ptr->id);
         ++ptr->released_count;
-        EXPECT_EQ(2, ptr->released_count);
+        EXPECT_EQ((uint32_t) 2, ptr->released_count);
         EXPECT_EQ(&foo, ptr.get_pointer());
 
         EXPECT_TRUE(ptr.atomic_cas(&foo, pointer, false, false, 0xE3F1, 1));

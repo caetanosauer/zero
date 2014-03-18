@@ -775,9 +775,9 @@ inline void GcPoolForest<T>::retire_generations(lsn_t low_water_mark, lsn_t recy
                 generations[wrap(oldest_nowrap)] = NULL;
                 epochs[wrap(oldest_nowrap)].set(0);
 
-                DBGOUT0(<< name << ": Successfully retired generation " << oldest_nowrap);
+                DBGOUT1(<< name << ": Successfully retired generation " << oldest_nowrap);
                 if (recycle_now != lsn_t::null && active_generations() <= desired_generations) {
-                    DBGOUT0(<< "Now recycling it as new generation ...");
+                    DBGOUT1(<< "Now recycling it as new generation ...");
                     mfence();
                     uint32_t new_generation_nowrap = tail_nowrap;
                     uint32_t new_tail = new_generation_nowrap + 1;
@@ -792,11 +792,11 @@ inline void GcPoolForest<T>::retire_generations(lsn_t low_water_mark, lsn_t recy
                         generations[wrap(new_generation_nowrap)] = oldest;
                         epochs[wrap(new_generation_nowrap)].set(recycle_now.data());
                         curr_nowrap = new_generation_nowrap;
-                        DBGOUT0(<< name << ": Successfully recycled as gen " << new_generation_nowrap);
+                        DBGOUT1(<< name << ": Successfully recycled as gen " << new_generation_nowrap);
                         mfence();
                         return;
                     } else {
-                        DBGOUT0(<< name << ": Oops, others incremented generation. couldn't "
+                        DBGOUT1(<< name << ": Oops, others incremented generation. couldn't "
                             << " reuse the retired generation");
                         delete oldest; // well, no other way.
                     }
