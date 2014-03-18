@@ -295,7 +295,11 @@ protected:
                 if (delink(result.predecessor, result.current, successor)) {
                     result.current = successor;
                     current = result.current.dereference(*_pool);
-                    successor = current->next;
+                    if (current == NULL) {
+                        successor = GcPointer<T>();
+                    } else {
+                        successor = current->next;
+                    }
                 } else {
                     // CAS failed. someone might have done something in predecessor, retry.
                     return true;

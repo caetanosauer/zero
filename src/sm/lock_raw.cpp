@@ -2,48 +2,198 @@
  * (c) Copyright 2014, Hewlett-Packard Development Company, LP
  */
 #include "lock_raw.h"
-#include <Lintel/AtomicCounter.hpp>
 #include <time.h>
+#include <set>
 #include "w_okvl_inl.h"
 #include "w_debug.h"
 #include "critical_section.h"
 #include "sthread.h"
+#include "sm_options.h"
 
-/**
- * \brief Invokes "mfence", which is sfence + lfence.
- * \ingroup RAWLOCK
- * \details
- * [JUNG13] uses only one type of membar named "atomic_synchronize", not clarifying which
- * place needs full mfence, which place needs only sfence or lfence.
- * This code might result in too conservative barriers. Should revisit later.
- */
-inline void atomic_synchronize() {
-    lintel::atomic_thread_fence(lintel::memory_order_seq_cst); // corresponds to full mfence
+#include "sm_base.h"
+#include "sthread.h"
+#include "log.h"
+#include "log_lsn_tracker.h"
+
+////////////////////////////////////////////////////////////////////////////////////////
+////
+//// RawLockQueue::Iterator and related methods Implementation BEGIN
+////
+////////////////////////////////////////////////////////////////////////////////////////
+
+RawLockQueue::Iterator::Iterator(const RawLockQueue* enclosure_arg, RawLock* start_from)
+    : enclosure(enclosure_arg), predecessor(start_from) {
+    w_assert1(predecessor != NULL);
+    w_assert1(!predecessor->next.is_marked());
+    current = predecessor->next;
 }
 
-w_rc_t RawLockQueue::acquire(RawXct* xct, uint32_t hash, const okvl_mode& mode,
-                             int32_t timeout_in_ms, bool check_only) {
-    if (check_only) {
-        // in this case, we don't have to actually make a lock entry. much faster.
-        if (!peek_compatiblity(xct, hash, mode)) {
-            xct->update_read_watermark(x_lock_tag);
-            return RCOK;
+void RawLockQueue::Iterator::next(bool& must_retry) {
+    must_retry = false;
+    // the lock-free list iteration with mark-for-death in [MICH93]
+    while (!current.is_null() && current->next.is_marked()) {
+        // current marked for removal. let's physically remove it to be safe.
+        if (enclosure->delink(predecessor, current.get_pointer(), current->next.get_pointer())) {
+            current = current->next;
         } else {
-            return RC(eLOCKTIMEOUT);
+            // CAS failed. someone might have done something in predecessor, retry.
+            must_retry = true;
+            return;
+        }
+    }
+    if (!current.is_null()) {
+        predecessor = current.get_pointer();
+        current = current->next;
+    }
+}
+
+RawLock* RawLockQueue::find_predecessor(RawLock* lock) const {
+    bool must_retry = false;
+    do {
+        must_retry = false;
+        for (Iterator iterator(this, &head); !must_retry && !iterator.is_null();
+                iterator.next(must_retry)) {
+            if (iterator.current.get_pointer() == lock) {
+                return iterator.predecessor;
+            }
+        }
+    } while (must_retry);
+    // we reached the tail without finding the lock
+    return NULL;
+}
+
+RawLock* RawLockQueue::tail() const {
+    do {
+        bool must_retry = false;
+        Iterator iterator(this, &head);
+        for (; !must_retry && !iterator.is_null(); iterator.next(must_retry));
+        if (!must_retry) {
+            w_assert1(iterator.predecessor != NULL); // at least head exists.
+            return iterator.predecessor;
+        }
+    } while (true);
+}
+
+bool RawLockQueue::delink(RawLock* predecessor, RawLock* target, RawLock* successor) const {
+    w_assert1(predecessor != NULL);
+    w_assert1(target != NULL);
+    if (predecessor->next.atomic_cas(target, successor, false, false, 0, 0)) {
+        // we just have delinked.
+        return true;
+    } else {
+        // delink failed. someone has done it.
+        return false;
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////
+////
+//// RawLockQueue Implementation BEGIN
+////
+////////////////////////////////////////////////////////////////////////////////////////
+
+w_error_codes RawLockQueue::acquire(RawXct* xct, uint32_t hash, const okvl_mode& mode,
+                int32_t timeout_in_ms, bool conditional, bool check_only, RawLock** out) {
+    w_assert1(out != NULL);
+    *out = NULL;
+    if (check_only) {
+        // peek_compatiblity() provides weaker correctness condition, but check_only is used
+        // only when it's still safe (we have EX latch in the page!). so, fine.
+        if (peek_compatiblity(xct, hash, mode)) {
+            // hope fully this case.
+            // in this case, we don't have to actually make a lock entry. much faster.
+            xct->update_read_watermark(x_lock_tag);
+            return w_error_ok;
+        }
+        // else, we have to actually make a lock entry and wait. but will remove
+        // the lock entry as soon as we are granted.
+    }
+
+    // <Line numbers> from [JUNG13] Fig 3.
+    RawLock* new_lock = xct->allocate_lock(hash, mode, RawLock::ACTIVE); // A1-A2
+    DBGOUT4(<< "RawLockQueue::acquire() before:" << *this << "adding:" << *new_lock);
+    atomic_lock_insert(new_lock); // A3 . BTW this implies a barrier in x86
+    Compatibility compatibility = check_compatiblity(new_lock); // A4-A5
+    if (compatibility.deadlocked) {
+        release(new_lock, lsn_t::null);
+        return eDEADLOCK;
+    } else if (!compatibility.can_be_granted) {
+        // duh, there is a lock that prevents us.
+        w_assert1(compatibility.blocker != NULL);
+        xct->blocker = compatibility.blocker; // A6'
+        new_lock->state = RawLock::WAITING; // A6
+        // announce our waiting status to make sure no one is falsely waiting for us.
+        atomic_synchronize_if_mutex(); // A7
+        if (conditional) {
+            // a failed conditional locking! we immediately return, but keep the
+            // already inserted lock entry.
+            DBGOUT3(<<"RawLockQueue::acquire() failed conditional locking:" << *this);
+            *out = new_lock;
+            return eCONDLOCKTIMEOUT;
+        }
+#ifndef PURE_SPIN_RAWLOCK
+        compatibility = check_compatiblity(new_lock); // A8
+        if (compatibility.deadlocked) {
+            release(new_lock, lsn_t::null);
+            return eDEADLOCK;
+        } else if (compatibility.can_be_granted) {
+            xct->blocker = NULL; // A9'
+            new_lock->state = RawLock::ACTIVE; // A9
+            atomic_synchronize_if_mutex(); // A10
+        }
+#endif // PURE_SPIN_RAWLOCK
+    }
+
+    w_error_codes err_code = complete_acquire(&new_lock, check_only, timeout_in_ms);
+    if (err_code == w_error_ok && !check_only) {
+        w_assert1(new_lock->state == RawLock::ACTIVE);
+        *out = new_lock;
+    }
+    return err_code;
+}
+
+w_error_codes RawLockQueue::retry_acquire(RawLock** lock, bool check_only, int32_t timeout_in_ms) {
+    w_assert1(lock != NULL && (*lock) != NULL);
+    RawXct *xct = (*lock)->owner_xct;
+    atomic_synchronize();
+    Compatibility compatibility = check_compatiblity(*lock);
+    if (compatibility.deadlocked) {
+        release(*lock, lsn_t::null);
+        *lock = NULL;
+        return eDEADLOCK;
+    } else if (compatibility.can_be_granted) {
+        xct->blocker = NULL;
+        (*lock)->state = RawLock::ACTIVE;
+        atomic_synchronize();
+    }
+
+    return complete_acquire(lock, check_only, timeout_in_ms);
+}
+
+w_error_codes RawLockQueue::complete_acquire(RawLock** lock, bool check_only, int32_t timeout_in_ms) {
+    RawXct *xct = (*lock)->owner_xct;
+    if ((*lock)->state == RawLock::WAITING) {
+        w_error_codes err_code = wait_for(*lock, timeout_in_ms);
+        if (err_code != w_error_ok) {
+            release(*lock, lsn_t::null);
+            *lock = NULL;
+            return err_code;
         }
     }
 
-    RawLock* new_lock = xct->allocate_lock(hash, mode, RawLock::ACTIVE);
-    atomic_lock_insert(new_lock);
-    W_DO(check_compatiblity(new_lock));
-
-    if (new_lock->state == RawLock::WAITING) {
-        W_DO(wait_mutex(new_lock, timeout_in_ms));
-    }
+    // okay, we are granted.
+    atomic_synchronize();
+    w_assert1((*lock)->state == RawLock::ACTIVE);
+    w_assert1(xct->blocker == NULL);
     xct->update_read_watermark(x_lock_tag);
-    return RCOK;
+    if (check_only) {
+        // immediately release the lock
+        release(*lock, lsn_t::null);
+        *lock = NULL;
+    }
+    DBGOUT4(<<"RawLockQueue::acquire() after:" << *this);
+    return w_error_ok;
 }
-
 
 void RawLockQueue::atomic_lock_insert(RawLock* new_lock) {
     // atomic CAS to append the new lock.
@@ -51,168 +201,295 @@ void RawLockQueue::atomic_lock_insert(RawLock* new_lock) {
     MarkablePointer<RawLock> new_ptr(new_lock, false);
     while (true) {
         RawLock *last = tail();
-        if (last->next.atomic_cas(last->next, new_ptr)) {
+        // in case someone else is now deleting or adding to tail, we must do atomic CAS
+        // with special pointer that has mark-for-death and ABA counter.
+        // if anything unexpected observed, retry from traversal. same as LockFreeList.
+        if (last->next.atomic_cas(NULL_RAW_LOCK, new_ptr)) {
             break;
         }
     }
 }
 
-w_rc_t RawLockQueue::check_compatiblity(RawLock* new_lock) const {
-    const okvl_mode &mode = new_lock->mode;
-    uint32_t hash = new_lock->hash;
-    RawXct *xct = new_lock->owner_xct;
-    for (MarkablePointer<RawLock> lock = head.next; !lock.is_null(); lock = lock->next) {
-        RawLock *pointer = lock.get_pointer();
-        if (pointer->state != RawLock::ACTIVE) {
-            // Only ACTIVE lock entry can prevent this lock.
-            continue;
-        }
-
-        if (pointer->owner_xct == xct) {
-            // Myself
-            continue;
-        }
-        if (pointer->hash != hash) {
-            // Other key. again, queue=bucket but we use precise hash.
-            continue;
-        }
-
-        if (!mode.is_compatible_grant(pointer->mode)) {
-            // duh, there is a lock that prevents us.
-            new_lock->state = RawLock::WAITING;
-            // one more chance. Maybe it has been just removed?
-            atomic_synchronize();
+RawLockQueue::Compatibility RawLockQueue::check_compatiblity(RawLock *lock) const {
+    if (head.next.get_pointer() == lock) {
+        // fast path. If it's the first, because followers respect predecessors, granted.
+        // also, remember that no one can newly enter between I and head because
+        // new locks are appended at last.
+        return Compatibility(true, false, NULL);
+    }
+    const okvl_mode &mode = lock->mode;
+    uint32_t hash = lock->hash;
+    RawXct *xct = lock->owner_xct;
+    bool must_retry = false;
+    do {
+        must_retry = false;
+        for (Iterator iterator(this, &head); !must_retry && !iterator.is_null();
+                iterator.next(must_retry)) {
+            RawLock *pointer = iterator.current.get_pointer();
+            if (pointer == lock) {
+                // as we atomically insert, every lock respects predecessors.
+                // furthermore, we no longer have lock upgrades. they are multiple locks.
+                // so, we never have to check locks after myself.
+                break;
+            }
             if (pointer->state == RawLock::OBSOLETE) {
-                // yay!
-                new_lock->state = RawLock::ACTIVE;
-                atomic_synchronize();
                 continue;
             }
 
-            // nope. we have to wait. let's check for deadlock.
-            xct->blocker = pointer->owner_xct;
-            if (xct->is_deadlocked()) {
-                return RC(eDEADLOCK);
-            } else {
-                xct->state = RawXct::WAITING;
-                break;
+            // oh yeah, we hit the case where the following assertion isn't met, and suprsingly
+            // the debugger said pointer->state was OBSOLETE. yes, cacheline-sync happened
+            // between the line above and here! it's possible. this assertion has to be disabled.
+            // w_assert1(pointer->state == RawLock::ACTIVE || pointer->state == RawLock::WAITING);
+
+            if (pointer->owner_xct == xct) {
+                // Myself
+                continue;
+            }
+            if (pointer->hash != hash) {
+                // Other key. again, queue=bucket but we use precise hash.
+                continue;
+            }
+
+            if (!mode.is_compatible_grant(pointer->mode)) {
+                if (xct->is_deadlocked(pointer->owner_xct)) {
+                    return Compatibility(false, true, NULL);
+                } else {
+                    return Compatibility(false, false, pointer->owner_xct);
+                }
             }
         }
-    }
-
-    return RCOK;
+    } while (must_retry);
+    return Compatibility(true, false, NULL);
 }
 
 bool RawLockQueue::peek_compatiblity(RawXct* xct, uint32_t hash, const okvl_mode &mode) const {
-    for (MarkablePointer<RawLock> &lock = head.next; !lock.is_null();) {
+    for (MarkablePointer<RawLock> lock = head.next; !lock.is_null();) {
         RawLock *pointer = lock.get_pointer();
-        if (pointer->state != RawLock::ACTIVE || pointer->hash != hash
-            || pointer->owner_xct == xct) {
-            continue;
+        if (pointer->state == RawLock::ACTIVE && pointer->hash == hash
+            && pointer->owner_xct != xct) {
+            if (!mode.is_compatible_grant(pointer->mode)) {
+                return false;
+            }
         }
-        if (!mode.is_compatible_grant(pointer->mode)) {
-            return false;
-        }
+        lock = pointer->next;
     }
     return true;
 }
 
-w_rc_t RawLockQueue::wait_mutex(RawLock* new_lock, int32_t timeout_in_ms) {
-    if (timeout_in_ms <= 0) {
-        return RC(eLOCKTIMEOUT);
-    }
+w_error_codes RawLockQueue::wait_for(RawLock* new_lock, int32_t timeout_in_ms) {
+    w_assert1(timeout_in_ms >= 0 || timeout_in_ms < 0); // to suppress warning
     RawXct *xct = new_lock->owner_xct;
-    CRITICAL_SECTION(cs, xct->lock_wait_mutex);
-    atomic_synchronize();
+#ifndef PURE_SPIN_RAWLOCK
+    CRITICAL_SECTION(cs, xct->lock_wait_mutex); // A18
+#endif // PURE_SPIN_RAWLOCK
+    atomic_synchronize_if_mutex(); // A19
     // after membar, we test again if we really have to sleep or not.
     // See Figure 6 of [JUNG13] for why we need to do this.
-    W_DO(check_compatiblity(new_lock));
-    if (new_lock->state == RawLock::WAITING) {
-        xct->state = RawXct::WAITING;
-        struct timespec ts;
-        sthread_t::timeout_to_timespec(timeout_in_ms, ts);
-        int ret = ::pthread_cond_timedwait(&xct->lock_wait_cond, &xct->lock_wait_mutex, &ts);
-        if (ret == 0) {
-            DBGOUT3(<<"Successfully ended the wait.");
-            if (xct->deadlock_detected_while_unlock) {
-                DBGOUT1(<<"Deadlock reported by other transaction!");
-                return RC(eDEADLOCK);
+    Compatibility compatibility = check_compatiblity(new_lock); // A20
+    if (compatibility.deadlocked) {
+        xct->blocker = NULL;
+        atomic_synchronize();
+        return eDEADLOCK;
+    } else if (!compatibility.can_be_granted) {
+        xct->state = RawXct::WAITING; // A21
+
+#ifdef PURE_SPIN_RAWLOCK
+        uint32_t spin_count = 0;
+        while (true) { // pure spin implementation. much more efficient.
+            if (((++spin_count) & 0xFFF) == 0) { // not too frequent barriers
+                atomic_synchronize();
             }
-            DBGOUT3(<<"Now it we should be granted!");
-            w_assert1(new_lock->state == RawLock::ACTIVE);
-        } else if (ret == ETIMEDOUT) {
-            DBGOUT1(<<"Wait timed out");
-            return RC(eLOCKTIMEOUT);
-        } else {
-            // unexpected error
-            ERROUT(<<"WTF? " << ret);
-            return RC(eINTERNAL);
+            compatibility = check_compatiblity(new_lock);
+            if (compatibility.can_be_granted) {
+                xct->blocker = NULL;
+                new_lock->state = RawLock::ACTIVE;
+                atomic_synchronize();
+                return w_error_ok;
+            } else if (compatibility.deadlocked) {
+                DBGOUT1(<<"Deadlock found by myself! lock=" << *new_lock << ", queue="
+                    << *this << ", xct=" << *xct);
+                xct->blocker = NULL;
+                atomic_synchronize();
+                return eDEADLOCK;
+            } else {
+                if (xct->blocker != compatibility.blocker) {
+                    xct->blocker = compatibility.blocker;
+                }
+            }
         }
+#else // PURE_SPIN_RAWLOCK
+        bool forever = timeout_in_ms < 0;
+        const int32_t INTERVAL = 1000; // something sensible for debugging. we repeat anyways.
+        int max_sleep_count = forever ? 0x7FFFFFFF : (timeout_in_ms / INTERVAL) + 1;
+        for (int sleep_count = 0; sleep_count < max_sleep_count; ++sleep_count) {
+            DBGOUT3(<<"Going into pthread_cond_timedwait. new_lock=" << *new_lock);
+            if (sleep_count > 5) {
+                ERROUT(<<"Very long lock wait! Sleep count=" << sleep_count << "/"
+                    << max_sleep_count << "new_lock=" << *new_lock);
+            }
+            struct timespec ts;
+            sthread_t::timeout_to_timespec(INTERVAL, ts);
+            int ret = ::pthread_cond_timedwait(&xct->lock_wait_cond,
+                                                &xct->lock_wait_mutex, &ts); // A22
+            atomic_synchronize();
+            if (ret != 0 && ret != ETIMEDOUT) {
+                // unexpected error
+                ERROUT(<<"WTF? " << ret);
+                return eINTERNAL;
+            }
+
+            DBGOUT3(<<"Woke up.");
+            if (xct->deadlock_detected_by_others) {
+                DBGOUT1(<<"Deadlock reported by other transaction!");
+                xct->blocker = NULL;
+                return eDEADLOCK;
+            }
+            atomic_synchronize();
+            if (xct->state == RawXct::WAITING) {
+                DBGOUT1(<<"Still waiting. lock=" << *new_lock);
+                compatibility = check_compatiblity(new_lock);
+                if (compatibility.can_be_granted) {
+                    // This shouldn't happen, but as a safety net
+                    DBGOUT0(<<"Umm? Now can be granted. No one got us aware of this.");
+                    xct->blocker = NULL;
+                    xct->state = RawXct::ACTIVE;
+                    atomic_synchronize_if_mutex();
+                    return w_error_ok;
+                } else if (compatibility.deadlocked) {
+                    ERROUT(<<"Deadlock found by myself!");
+                    xct->blocker = NULL;
+                    atomic_synchronize_if_mutex();
+                    return eDEADLOCK;
+                }
+            } else {
+                DBGOUT3(<<"Now it's granted!");
+                w_assert1(xct->state == RawXct::ACTIVE);
+                w_assert1(xct->blocker == NULL);
+                return w_error_ok;
+            }
+        }
+        DBGOUT1(<<"Lock timeout!");
+        xct->blocker = NULL;
+        return eLOCKTIMEOUT;
+#endif // PURE_SPIN_RAWLOCK
     } else {
         DBGOUT1(<<"Interesting. Re-check after barrier tells that now we are granted");
+        xct->blocker = NULL; // A24'
+        xct->state = RawXct::ACTIVE; // A24
         new_lock->state = RawLock::ACTIVE;
-        atomic_synchronize();
+        atomic_synchronize_if_mutex(); // A25
+        return w_error_ok;
     }
-    return RCOK;
+}
+
+void RawLockQueue::update_xlock_tag(const lsn_t& commit_lsn) {
+    if (commit_lsn <= x_lock_tag) {
+        return;
+    }
+    DBGOUT4(<<"CAS to update x_lock_tag... cur=" << x_lock_tag.data() << " to "
+        << commit_lsn.data());
+    while (true) {
+        lsndata_t current = x_lock_tag.data();
+        lsndata_t desired = commit_lsn.data();
+        if (lintel::unsafe::atomic_compare_exchange_strong<lsndata_t>(
+            reinterpret_cast<lsndata_t*>(&x_lock_tag), &current, desired)) {
+            break;
+        } else if (lsn_t(current) >= commit_lsn) {
+            break;
+        }
+    }
+    DBGOUT4(<<"Done cur=" << x_lock_tag.data());
 }
 
 void RawLockQueue::release(RawLock* lock, const lsn_t& commit_lsn) {
+    w_assert1(!head.next.is_null());
+    w_assert1(!head.next.is_marked());
     RawXct *xct = lock->owner_xct;
-    uint32_t hash = lock->hash;
-    // update the tag for SX-ELR. we don't have mutex, so need to do atomic CAS
+    xct->blocker = NULL;
+    DBGOUT4(<<"Releasing lock=" << *lock << ", xct=" << *xct);
     if (lock->mode.contains_dirty_lock() && commit_lsn > x_lock_tag) {
-        DBGOUT3(<<"CAS to update x_lock_tag... cur=" << x_lock_tag.data() << " to "
-            << commit_lsn.data());
-        while (true) {
-            lsndata_t current = x_lock_tag.data();
-            lsndata_t desired = commit_lsn.data();
-            if (lintel::unsafe::atomic_compare_exchange_strong<lsndata_t>(
-                reinterpret_cast<lsndata_t*>(&x_lock_tag), &current, desired)) {
-                break;
-            } else if (lsn_t(current) >= commit_lsn) {
-                break;
-            }
-        }
-        DBGOUT3(<<"Done cur=" << x_lock_tag.data());
+        update_xlock_tag(commit_lsn);
     }
 
-    lock->state = RawLock::OBSOLETE;
+    lock->state = RawLock::OBSOLETE; // R2
+    atomic_synchronize(); // R3
 
-    atomic_synchronize();
+    w_assert1(!head.next.is_null());
+    // pure spin implementation doesn't have to do ANYTHING in release. MUCH faster!
+#ifndef PURE_SPIN_RAWLOCK
     // we can ignore locks before us. So, start from lock.
-    for (MarkablePointer<RawLock> next = lock->next; !next.is_null(); next = next->next) {
-        if (next->hash != hash || next->owner_xct == xct) {
-            continue;
-        }
-        // BEFORE we check the status of the next lock, we have to take mutex.
-        // This is required to not miss the case we have to wake them up.
-        CRITICAL_SECTION(cs, next->owner_xct->lock_wait_mutex);
-        if (next->state == RawLock::WAITING) {
+    uint32_t hash = lock->hash;
+    bool must_retry = false;
+    do {
+        must_retry = false;
+        for (Iterator iterator(this, lock); !must_retry && !iterator.is_null();
+                iterator.next(must_retry)) {
+            RawLock* next = iterator.current.get_pointer();
+            w_assert1(next != lock);
+            if (next->hash != hash || next->owner_xct == xct) {
+                continue;
+            }
+            // R4-5
+            // Unlike [JUNG13], we don't lock mutex of next->owner_xct here before
+            // signaling. We don't need it because next->owner_xct side would check
+            // if its sleep is done or not by seeing the state, and sleep again if not yet.
+            // Instead, we have to be careful when we change its state to RawXct::ACTIVE
+            // without false-acquisition and to RawXct::WAITING without infinite-sleep.
+            DBGOUT3(<<"Do I have to wake up this guy? " << *next);
             // Does releasing the lock free him up?
-            w_rc_t ret = check_compatiblity(next.get_pointer());
-            if (!ret.is_error() && next->state == RawLock::WAITING) {
-                // then keep waiting
-            } else {
-                // the next should wake up for..
-                if (ret.err_num() == eDEADLOCK) {
-                    // deadlock!!
-                    DBGOUT1(<<"Deadlock detected while unlocking.");
-                    next->owner_xct->deadlock_detected_while_unlock = true;
+            if (next->state == RawLock::WAITING) { // R6
+                Compatibility compatibility = check_compatiblity(next); // R7
+                if (!compatibility.can_be_granted && !compatibility.deadlocked) {
+                    // then keep waiting
+                    DBGOUT3(<<"No, I don't");
                 } else {
-                    // now granted!!
-                    DBGOUT3(<<"Now granted while unlocking.");
-                    w_assert1(next->state == RawLock::ACTIVE);
-                    next->owner_xct->state = RawXct::ACTIVE;
+                    if (compatibility.deadlocked) {
+                        // deadlock!!
+                        DBGOUT1(<<"Deadlock detected while unlocking.");
+                        next->owner_xct->deadlock_detected_by_others = true;
+                    } else {
+                        // now granted!!
+                        DBGOUT3(<<"Now granted while unlocking.");
+                        next->state = RawLock::ACTIVE; // R8
+                        next->owner_xct->blocker = NULL; // R9'
+                        next->owner_xct->state = RawXct::ACTIVE; // R9
+                    }
+                    atomic_synchronize();
+                    ::pthread_cond_broadcast(&next->owner_xct->lock_wait_cond);
+                }
+            }
+        }
+    } while (must_retry);
+#endif // PURE_SPIN_RAWLOCK
+
+    // Remove the (obsolete) lock from queue immediately. This is different from [JUNG13]
+    // [JUNG13] also has to do this even with garbage collector. otherwise they can't safely
+    // call "next_pointer_update()" itself. pazzles me.
+    w_assert1(!head.next.is_null());
+    bool logically_deleted = false;
+    int retry_count = 0;
+    while (true) {
+        w_assert1(logically_deleted || !head.next.is_null());
+        w_assert1(!head.next.is_marked());
+        RawLock* predecessor = find_predecessor(lock);
+        if (predecessor == NULL) {
+            if (logically_deleted) {
+                // this is totally possible
+                DBGOUT2(<<"Interesting. 2nd step of deletion was taken care of other thread");
+                break;
+            } else {
+                // possible with concurrent deletion. try again.
+                // but, if it keeps happening even after mfence and many retries, probably bug.
+                if (retry_count > 5) {
+                    DBGOUT0(<<"The lock we are deleting now isn't found in the queue. phantom"
+                        << ", retry_count=" << retry_count
+                        << ". lock=" << *lock << ", queue=" << *this << ", me=" << *xct);
                 }
                 atomic_synchronize();
-                ::pthread_cond_broadcast(&next->owner_xct->lock_wait_cond);
+                ++retry_count;
+                continue;
             }
         }
-    }
-
-    // Delink the lock from queue immediately. This is different from [JUNG13]
-    while (true) {
-        RawLock* predecessor = find(lock);
         // 2-step deletions same as LockFreeList.
         // One simplification is that we don't have to worry about ABA or SEGFAULT.
         // The same lock object (pointer address) never appears again because
@@ -221,120 +498,91 @@ void RawLockQueue::release(RawLock* lock, const lsn_t& commit_lsn) {
         if (lock->next.is_marked()
             || lock->next.atomic_cas(successor, successor, false, true, 0, 0)) {
             // CAS succeeded. now really delink it.
-            MarkablePointer<RawLock> current_ptr(lock, false);
-            MarkablePointer<RawLock> successor_ptr(successor, false);
-            delink(predecessor, current_ptr, successor_ptr);
-            // done. even if
-            break;
+            logically_deleted = true;
+            if (delink(predecessor, lock, successor)) {
+                break; // done
+            } else {
+                // then, we have to retry. unlike the LockFreeList, we can't just leave it
+                // and let the following traversals to delete because it might be garbage
+                // collected!
+                atomic_synchronize();
+                continue;
+            }
         } else {
             // CAS failed. start over.
             DBGOUT1(<<"Interesting. race in delinking while deletion");
-           continue;
+            continue;
         }
     }
+
+    xct->deallocate_lock(lock);
 }
 
-RawLock* RawLockQueue::find(RawLock* lock) const {
-    while (true) {
-        bool must_retry;
-        RawLock* predecessor = find_retry_loop(lock, must_retry);
-        if (!must_retry) {
-            return predecessor;
-        }
-    }
-}
+////////////////////////////////////////////////////////////////////////////////////////
+////
+//// RawXct and its related class Implementation BEGIN
+////
+////////////////////////////////////////////////////////////////////////////////////////
 
-RawLock* RawLockQueue::find_retry_loop(RawLock* lock, bool& must_retry) const {
-    must_retry = false;
-    RawLock* predecessor = &head;
-    MarkablePointer<RawLock> current = predecessor->next;
-    while (!current.is_null()) {
-        MarkablePointer<RawLock> successor = current->next;
-        while (successor.is_marked()) {
-            // current marked for removal. let's delink it
-            if (delink(predecessor, current, successor)) {
-                current = successor;
-                successor = current->next;
-            } else {
-                // CAS failed. someone might have done something in predecessor, retry.
-                must_retry = true;
-                return NULL;
-            }
-        }
-
-        if (current.get_pointer() == lock) {
-            return predecessor;
-        }
-        predecessor = current.get_pointer();
-        current = successor;
-    }
-    // we reached the tail without finding the lock
-    w_assert1(false);
-    return NULL;
-}
-
-RawLock* RawLockQueue::tail() const {
-    while (true) {
-        bool must_retry;
-        RawLock* ret = tail_retry_loop(must_retry);
-        if (!must_retry) {
-            return ret;
-        }
-    }
-}
-
-RawLock* RawLockQueue::tail_retry_loop(bool& must_retry) const {
-    // mostly same as find_retry_loop except.
-    must_retry = false;
-    RawLock* predecessor = &head;
-    MarkablePointer<RawLock> current = predecessor->next;
-    while (!current.is_null()) {
-        MarkablePointer<RawLock> successor = current->next;
-        while (successor.is_marked()) {
-            if (delink(predecessor, current, successor)) {
-                current = successor;
-                successor = current->next;
-            } else {
-                must_retry = true;
-                return NULL;
-            }
-        }
-
-        predecessor = current.get_pointer();
-        current = successor;
-    }
-    return predecessor;
-}
-
-bool RawLockQueue::delink(RawLock* predecessor, const MarkablePointer< RawLock >& target,
-                          const MarkablePointer< RawLock >& successor) const {
-    MarkablePointer< RawLock > successor_after(successor);
-    successor_after.set_mark(false);
-    if (predecessor->next.atomic_cas(target, successor_after)) {
-        // we just have delinked. the deleted object will be garbage collected
-        return true;
-    } else {
-        // delink failed. someone has done it.
-        return false;
-    }
-}
-
-
-
-void RawXct::init() {
-    state = RawXct::UNUSED;
-    deadlock_detected_while_unlock = false;
+void RawXct::init(gc_thread_id thread_id_arg,
+        GcPoolForest<RawLock>* lock_pool_arg, gc_pointer_raw* lock_pool_next_arg) {
+    thread_id = thread_id_arg;
+    lock_pool = lock_pool_arg;
+    lock_pool_next = lock_pool_next_arg;
+    state = RawXct::ACTIVE;
+    deadlock_detected_by_others = false;
     blocker = NULL;
     read_watermark = lsn_t::null;
+    private_first = NULL;
+    private_last = NULL;
+#ifndef PURE_SPIN_RAWLOCK
     ::pthread_mutex_init(&lock_wait_mutex, NULL);
     ::pthread_cond_init(&lock_wait_cond, NULL);
+#endif // PURE_SPIN_RAWLOCK
 }
 
 void RawXct::uninit() {
     state = RawXct::UNUSED;
     blocker = NULL;
+#ifndef PURE_SPIN_RAWLOCK
     ::pthread_mutex_destroy(&lock_wait_mutex);
     ::pthread_cond_destroy(&lock_wait_cond);
+#endif // PURE_SPIN_RAWLOCK
+}
+
+// for assertion only.
+// this is quite expensive (insert_100K test takes 2 minutes). thus should be level 4.
+bool is_private_list_consistent(RawXct *xct) {
+    std::set<RawLock*> dup;
+    RawLock* last_observed = NULL;
+    for (RawLock* lock = xct->private_first; lock != NULL; lock = lock->xct_next) {
+        if (dup.find(lock) != dup.end()) {
+            w_assert1(false);
+            return false;
+        }
+        dup.insert(lock);
+        last_observed = lock;
+    }
+    if (xct->private_first == NULL) {
+        if (dup.size() != 0 || xct->private_last != NULL) {
+            w_assert1(false);
+            return false;
+        }
+    } else {
+        if (xct->private_last == NULL) {
+            if (dup.size() != 1 || xct->private_first != last_observed) {
+                w_assert1(false);
+                return false;
+            }
+        } else if (xct->private_last == xct->private_first) {
+            w_assert1(false);
+            return false;
+        } else if (xct->private_last != last_observed) {
+            w_assert1(false);
+            return false;
+        }
+    }
+    return true;
 }
 
 RawLock* RawXct::allocate_lock(uint32_t hash, const okvl_mode& mode, RawLock::LockState state) {
@@ -344,22 +592,389 @@ RawLock* RawXct::allocate_lock(uint32_t hash, const okvl_mode& mode, RawLock::Lo
     lock->owner_xct = this;
     lock->next = NULL_RAW_LOCK;
     lock->state = state;
+
+    w_assert4(is_private_list_consistent(this));
+    // put it on transaction-private linked list
+    if (private_first == NULL) {
+        // was empty
+        w_assert1(private_last == NULL);
+        private_first = lock;
+        lock->xct_previous = NULL;
+        lock->xct_next = NULL;
+    } else if (private_last == NULL) {
+        // only one lock
+        w_assert1(private_first->xct_next == NULL);
+        private_last = lock;
+        lock->xct_previous = private_first;
+        private_first->xct_next = lock;
+        lock->xct_next = NULL;
+    } else {
+        // else, we put it in last
+        w_assert1(private_last->xct_previous != NULL);
+        w_assert1(private_last->xct_next == NULL);
+        lock->xct_previous = private_last;
+        private_last->xct_next = lock;
+        private_last = lock;
+    }
+    w_assert4(is_private_list_consistent(this));
+
+    // and transaction-private hashmap
+    private_hash_map.push_front(lock);
     return lock;
 }
 
-bool RawXct::is_deadlocked() {
-    w_assert1(blocker != NULL);
-    for (RawXct* next = blocker; next != NULL; next = next->blocker) {
-        if (next->state != RawXct::WAITING) {
+void RawXct::deallocate_lock(RawLock* lock) {
+    // remove from transaction-private linked list
+    w_assert1(this == lock->owner_xct);
+    w_assert1(private_first != NULL);
+    w_assert4(is_private_list_consistent(this));
+    if (private_last == NULL) {
+        // was the only entry
+        w_assert1(private_first->xct_next == NULL);
+        w_assert1(lock->xct_previous == NULL);
+        w_assert1(lock->xct_next == NULL);
+        private_first = NULL;
+    } else if (lock == private_first) {
+        // was the head
+        w_assert1(lock->xct_previous == NULL);
+        w_assert1(lock->xct_next != NULL);
+        private_first = lock->xct_next;
+        private_first->xct_previous = NULL;
+    } else if (lock == private_last) {
+        // was the tail
+        w_assert1(lock->xct_previous != NULL);
+        w_assert1(lock->xct_next == NULL);
+        lock->xct_previous->xct_next = NULL;
+        private_last = lock->xct_previous;
+    } else {
+        w_assert1(lock->xct_previous != NULL);
+        w_assert1(lock->xct_next != NULL);
+        lock->xct_previous->xct_next = lock->xct_next;
+        lock->xct_next->xct_previous = lock->xct_previous;
+    }
+    if (private_first == private_last) {
+        private_last = NULL;
+    }
+    w_assert4(is_private_list_consistent(this));
+
+    // and from transaction-private hashmap
+    private_hash_map.remove(lock);
+
+    lock_pool->deallocate(lock);
+}
+
+bool RawXct::is_deadlocked(RawXct* first_blocker) {
+    w_assert1(first_blocker != NULL);
+    w_assert1(first_blocker != this);
+#ifndef PURE_SPIN_RAWLOCK
+    // It's possible that block->block is an infinite loop WITHOUT seeing myself.
+    // eg. me -> Xct-A -> Xct-B -> Xct-A -> ....
+    // however, std::set for such a thing would be too costly.
+    // Let's assume there aren't cycle more than 16 deep. If there is, deadlock-abort.
+    const int MAX_DEPTH = 16;
+    int depth = 0;
+    RawXct* observed[MAX_DEPTH];
+#endif // PURE_SPIN_RAWLOCK
+    for (RawXct* next = first_blocker; next != NULL; next = next->blocker) {
+        if (next->blocker == NULL) {
             return false;
         }
         if (next->blocker == this) {
             return true;
         }
+#ifndef PURE_SPIN_RAWLOCK
+        for (int i = 0; i < depth; ++i) {
+            if (observed[i] == next) {
+                DBGOUT1(<<"Not myself as joint point of deadlock, but found someone else's");
+                next->deadlock_detected_by_others = true;
+                atomic_synchronize();
+                ::pthread_cond_broadcast(&next->lock_wait_cond);
+            }
+        }
+        if (depth >= MAX_DEPTH) {
+            ERROUT(<<"Very deep wait-for loop. Assume there is a deadlock");
+            return true;
+        }
+        observed[depth] = next;
+        ++depth;
+#endif // PURE_SPIN_RAWLOCK
     }
     return false;
 }
 
+RawXctLockHashMap::RawXctLockHashMap() {
+    reset();
+}
+RawXctLockHashMap::~RawXctLockHashMap() {
+}
+void RawXctLockHashMap::reset() {
+    ::memset(_buckets, 0, sizeof(RawLock*) * RAW_XCT_LOCK_HASHMAP_SIZE);
+}
+
+okvl_mode RawXctLockHashMap::get_granted_mode(uint32_t lock_id) const {
+    uint32_t bid = _bucket_id(lock_id);
+    // we don't take any latch here. See the comment of RawXctLockHashMap
+    // for why this is safe.
+    okvl_mode ret(ALL_N_GAP_N);
+    for (const RawLock *current = _buckets[bid]; current != NULL;
+         current = current->xct_hashmap_next) {
+        if (current->hash == lock_id && current->state == RawLock::ACTIVE) {
+            // we don't upgrade locks any more, so we can have multiple lock entries
+            // for the same resource. we take OR of them.
+            ret = okvl_mode::combine(ret, current->mode);
+        }
+    }
+    return ret;
+}
+
+void RawXctLockHashMap::push_front(RawLock* link) {
+    // link becomes a new head of the bucket
+    uint32_t bid = _bucket_id(link->hash);
+    link->xct_hashmap_previous = NULL;
+    link->xct_hashmap_next = _buckets[bid];
+    if (_buckets[bid] != NULL) {
+        _buckets[bid]->xct_hashmap_previous = link;
+    }
+    _buckets[bid] = link;
+}
+void RawXctLockHashMap::remove(RawLock* link) {
+    if (link->xct_hashmap_next != NULL) {
+        link->xct_hashmap_next->xct_hashmap_previous = link->xct_hashmap_previous;
+    }
+    if (link->xct_hashmap_previous != NULL) {
+        link->xct_hashmap_previous->xct_hashmap_next = link->xct_hashmap_next;
+    } else {
+        // "link" was the head.
+        uint32_t bid = _bucket_id(link->hash);
+        w_assert1(_buckets[bid] == link);
+        _buckets[bid] = link->xct_hashmap_next;
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////
+////
+//// RawLockBackgroundThread Implementation BEGIN
+////
+////////////////////////////////////////////////////////////////////////////////////////
+
+RawLockBackgroundThread::RawLockBackgroundThread(const sm_options& options,
+    GcPoolForest< RawLock >* lock_pool, GcPoolForest< RawXct >* xct_pool) {
+    _stop_requested = false;
+    _running = false;
+    _dummy_lsn_lock = 1000;
+    _dummy_lsn_xct = 1000;
+    _lock_pool = lock_pool;
+    _xct_pool = xct_pool;
+    _internal_milliseconds = options.get_int_option("sm_rawlock_gc_interval_ms", 1000);
+    _lockpool_segsize = options.get_int_option("sm_rawlock_lockpool_segsize", 1 << 13);
+    _xctpool_segsize = options.get_int_option("sm_rawlock_xctpool_segsize", 1 << 8);
+    _generation_count = options.get_int_option("sm_rawlock_gc_generation_count", 5);
+    _init_generation_count = options.get_int_option("sm_rawlock_gc_init_generation_count", 0);
+    _lockpool_initseg = options.get_int_option("sm_rawlock_lockpool_initseg", 32);
+    _xctpool_initseg = options.get_int_option("sm_rawlock_xctpool_initseg", 128);
+    _free_segment_count = options.get_int_option("sm_rawlock_gc_free_segment_count", 20);
+    _max_segment_count = options.get_int_option("sm_rawlock_gc_max_segment_count", 200);
+
+    DO_PTHREAD(::pthread_mutex_init(&_interval_mutex, NULL));
+    DO_PTHREAD(::pthread_cond_init (&_interval_cond, NULL));
+    DO_PTHREAD(::pthread_attr_init(&_join_attr));
+    DO_PTHREAD(::pthread_attr_setdetachstate(&_join_attr, PTHREAD_CREATE_JOINABLE));
+}
+RawLockBackgroundThread::~RawLockBackgroundThread() {
+    DO_PTHREAD(::pthread_attr_destroy(&_join_attr));
+    DO_PTHREAD(::pthread_cond_destroy(&_interval_cond));
+    DO_PTHREAD(::pthread_mutex_destroy(&_interval_mutex));
+}
+
+void RawLockBackgroundThread::start() {
+    DBGOUT1(<<"Starting RawLockBackgroundThread...");
+    if (_running) {
+        ERROUT(<<"RawLockBackgroundThread already running. ignored.");
+        return;
+    }
+    atomic_synchronize();
+    DO_PTHREAD(::pthread_create(&_thread, NULL, RawLockBackgroundThread::pthread_main, this));
+}
+
+void* RawLockBackgroundThread::pthread_main(void* t) {
+    RawLockBackgroundThread* obj = reinterpret_cast<RawLockBackgroundThread*>(t);
+    w_assert1(obj);
+    obj->_running = true;
+    atomic_synchronize();
+    DBGOUT1(<<"RawLockBackgroundThread thread routine entered");
+
+    obj->run_main();
+
+    DBGOUT1(<<"RawLockBackgroundThread thread ended");
+    obj->_running = false;
+    atomic_synchronize();
+    ::pthread_exit(NULL);
+    return NULL;
+}
+
+/**
+ * Main implementation of run_main().
+ * Templatized to handle both pools. Can't be a class member without putting these dirty
+ * details in header file. C++ sucks, though other languages suck more.
+ */
+template <class T>
+void handle_pool(bool &more_work,
+                 bool &stop_requested,
+                 GcPoolForest<T>* pool,
+                 const char *name,
+                 uint32_t generation_count,
+                 uint32_t free_segment_count,
+                 uint32_t max_segment_count,
+                 uint32_t init_segment_count,
+                 uint32_t segment_size,
+                 int &dummy_lsn) {
+    w_assert3(name != NULL);
+    DBGOUT1(<< name << "handle_pool start.");
+    // Pre allocate segments
+    atomic_synchronize();
+    if (!stop_requested && pool->curr_generation()->get_free_count() < free_segment_count) {
+        DBGOUT1(<< name << "Current generation (" << pool->curr_nowrap << ") has too few free"
+            << "  segments. allocated=" << pool->curr_generation()->allocated_segments
+            << "/" << pool->curr_generation()->total_segments << ". Preallocating..");
+        uint32_t more_segments = free_segment_count;
+        if (more_segments + pool->curr_generation()->total_segments > max_segment_count) {
+            more_segments = max_segment_count - pool->curr_generation()->total_segments;
+        }
+        pool->curr_generation()->preallocate_segments(
+            free_segment_count, segment_size);
+    }
+
+    // Advance generation
+    atomic_synchronize();
+    if (!stop_requested && pool->curr_generation()->get_free_count() < free_segment_count
+            && pool->curr_generation()->total_segments >= max_segment_count) {
+        DBGOUT1(<< name << "Current generation (" << pool->curr_nowrap << ")  can't add more"
+            << " segments. current allocated=" << pool->curr_generation()->allocated_segments
+            << "/" << pool->curr_generation()->total_segments
+            << " new gen segments will be:" << init_segment_count);
+        lsn_t low_water_mark; // try recycling
+        lsn_t now;
+        if (smlevel_0::log == NULL) {
+            DBGOUT1(<< name << "There is no log manager. Immitating ");
+            low_water_mark.set(dummy_lsn - generation_count + 1);
+            now.set(++dummy_lsn);
+        } else {
+            low_water_mark = smlevel_0::log->get_oldest_lsn_tracker()->get_oldest_active_lsn(
+                smlevel_0::log->curr_lsn());
+            now = smlevel_0::log->curr_lsn();
+        }
+        bool ret = pool->advance_generation(low_water_mark, now, init_segment_count, segment_size);
+        w_assert1(ret);
+    }
+
+    // Retire generations
+    atomic_synchronize();
+    if (!stop_requested && pool->active_generations() > generation_count) {
+        DBGOUT1(<< name << "There are too many generations retiring some. head_nowrap="
+            << pool->head_nowrap << ", tail_nowrap=" << pool->tail_nowrap
+            << ", desired generation_count=" << generation_count);
+        lsn_t low_water_mark;
+        if (smlevel_0::log == NULL) {
+            DBGOUT1(<< name << "There is no log manager. Immitating low-water-mark"
+                << ". dummy_lsn=" << dummy_lsn);
+            low_water_mark.set(dummy_lsn - generation_count + 1);
+        } else {
+            DBGOUT1(<< name << "Retrieving low water mark...");
+            low_water_mark = smlevel_0::log->get_oldest_lsn_tracker()->get_oldest_active_lsn(
+                smlevel_0::log->curr_lsn());
+            DBGOUT1(<< name << "Retrieved low water mark=" << low_water_mark.data()
+                << "(curr_lsn=" << smlevel_0::log->curr_lsn().data()
+                << ", durable_lsn=" << smlevel_0::log->durable_lsn().data() << ")");
+        }
+        pool->retire_generations(low_water_mark);
+    }
+
+    atomic_synchronize();
+    if (!stop_requested) {
+        if (pool->curr_generation()->get_free_count() < free_segment_count
+            || pool->active_generations() > generation_count) {
+            more_work = true;
+        }
+    }
+    DBGOUT1(<< name << "handle_pool end. more_work? " << more_work);
+}
+
+void RawLockBackgroundThread::run_main() {
+    while (!_stop_requested) {
+        atomic_synchronize();
+        bool more_work = false; // do we have more work without sleep?
+        handle_pool<RawLock>(more_work, _stop_requested, _lock_pool, "LockPool:",
+            _generation_count, _free_segment_count, _max_segment_count,
+            _lockpool_initseg, _lockpool_segsize, _dummy_lsn_lock);
+        handle_pool<RawXct>(more_work, _stop_requested, _xct_pool, "XctPool:",
+            _generation_count, _free_segment_count, _max_segment_count,
+            _xctpool_initseg, _xctpool_segsize, _dummy_lsn_xct);
+
+        // let's sleep.
+        atomic_synchronize();
+        if (_internal_milliseconds > 0 && !_stop_requested && !more_work) {
+            DO_PTHREAD(::pthread_mutex_lock(&_interval_mutex));
+            DBGOUT1(<<"RawLockBackgroundThread interval=" << _internal_milliseconds);
+            struct timeval now;
+            struct timespec timeout;
+            ::gettimeofday(&now, NULL);
+            timeout.tv_sec = now.tv_sec + _internal_milliseconds / 1000;
+            timeout.tv_nsec = now.tv_usec * 1000
+                + (_internal_milliseconds % 1000) * 1000000;
+            if (timeout.tv_nsec >= 1000000000LL) {
+                w_assert1(timeout.tv_nsec < 2000000000LL);
+                timeout.tv_nsec -= 1000000000LL;
+                ++timeout.tv_sec;
+            }
+            int ret = ::pthread_cond_timedwait(&_interval_cond, &_interval_mutex, &timeout);
+            DBGOUT1(<<"RawLockBackgroundThread after interval! ret=" << ret);
+            (void)ret; // suppress compiler warning in release
+            DO_PTHREAD(::pthread_mutex_unlock(&_interval_mutex));
+        }
+    }
+}
+
+void RawLockBackgroundThread::stop_synchronous() {
+    DBGOUT1(<<"Stopping RawLockBackgroundThread...");
+    if (_stop_requested) {
+        ERROUT(<<"Already requested.");
+        return;
+    }
+    _stop_requested = true;
+    atomic_synchronize();
+    if (!_running) {
+        DBGOUT1(<<"Already stopped.");
+        return;
+    }
+    DO_PTHREAD(::pthread_mutex_lock(&_interval_mutex));
+    int ret_cond = ::pthread_cond_broadcast(&_interval_cond);
+    DO_PTHREAD(::pthread_mutex_unlock(&_interval_mutex));
+    DBGOUT1(<<"Noticed RawLockBackgroundThread. ret=" << ret_cond << ". joining..");
+    void *join_status;
+    int ret_join = ::pthread_join(_thread, &join_status);
+    DBGOUT1(<<"Joined RawLockBackgroundThread thread. done. ret=" << ret_join);
+    w_assert1(!_running);
+    (void)ret_join; // suppress compiler warning in release
+    (void)ret_cond; // suppress compiler warning in release
+}
+void RawLockBackgroundThread::wakeup() {
+    DBGOUT1(<<"Waking up RawLockBackgroundThread...");
+    if (_running) {
+        DO_PTHREAD(::pthread_mutex_lock(&_interval_mutex));
+        int ret = ::pthread_cond_broadcast(&_interval_cond);
+        DO_PTHREAD(::pthread_mutex_unlock(&_interval_mutex));
+        DBGOUT1(<<"Woke up RawLockBackgroundThread. ret=" << ret);
+        (void)ret; // suppress compiler warning in release
+    } else {
+        DBGOUT0(<<"The thread is not running.");
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////
+////
+//// Dump methods
+////
+////////////////////////////////////////////////////////////////////////////////////////
 
 std::ostream& operator<<(std::ostream& o, const RawLock& v) {
     o << "RawLock Hash=" << v.hash << " State=";
@@ -377,6 +992,31 @@ std::ostream& operator<<(std::ostream& o, const RawLock& v) {
         o << " <Has next>";
     }
 
-    o << "mode=" << v.mode << ", owner_xct=" << v.owner_xct->thread_id;
+    o << " mode=" << v.mode << ", owner_xct=" << v.owner_xct->thread_id;
     return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const RawLockQueue& v) {
+    o << "RawLockQueue x_lock_tag=" << v.x_lock_tag.data() << " locks:" << std::endl;
+    for (MarkablePointer<RawLock> lock = v.head.next; !lock.is_null(); lock = lock->next) {
+        RawLock *pointer = lock.get_pointer();
+        o << *pointer << std::endl;
+    }
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const RawXct &v) {
+    o << "Transaction: xct-" << v.thread_id;
+    if (v.blocker != NULL) {
+        o << " blocked by " << v.blocker->thread_id;
+    }
+    o << std::endl << "Transaction-private Lock list" << std::endl;
+    for (RawLock *lock = v.private_first; lock != NULL; lock = lock->xct_next) {
+        o << *lock << std::endl;
+    }
+    return o;
+}
+
+void RawXct::dump_lockinfo(std::ostream& o) const {
+    o << *this;
 }
