@@ -139,9 +139,18 @@ w_rc_t dosome(ss_m* ssm, test_volume_t *test_volume) {
     return RCOK;
 }
 
+sm_options make_options() {
+    sm_options options;
+    // MUCH larger than usual testcases
+    options.set_int_option("sm_locktablesize", 1 << 14);
+    options.set_int_option("sm_bufpoolsize", SM_PAGESIZE / 1024 * 1024);
+    options.set_int_option("sm_rawlock_lockpool_segsize", 1 << 14);
+    return options;
+}
+
 TEST (BtreeBasicTest2, DoSomeLock) {
     test_env->empty_logdata_dir();
-    EXPECT_EQ(test_env->runBtreeTest(dosome, true, default_locktable_size, 4096, 1024), 0);
+    EXPECT_EQ(test_env->runBtreeTest(dosome, true, 4096, make_options()), 0);
 }
 
 

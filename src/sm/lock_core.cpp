@@ -7,37 +7,52 @@
 #define LOCK_CORE_C
 #define SM_SOURCE
 
-#include "block_alloc.h"
-
 #include "sm_int_1.h"
-#include "kvl_t.h"
 #include "lock_s.h"
-#include "lock_x.h"
+#include "lock_lil.h"
 #include "lock_core.h"
-#include "tls.h"
+#include "lock_raw.h"
 #include "lock_compt.h"
-#include "lock_bucket.h"
+#include "sm_options.h"
+#include "xct.h"
 #include "w_okvl.h"
 #include "w_okvl_inl.h"
 
-#ifdef EXPLICIT_TEMPLATE
-template class w_auto_delete_array_t<unsigned>;
-#endif
-
-DECLARE_TLS(block_alloc<lock_queue_t>, lockQueuePool);
-DECLARE_TLS(block_alloc<lock_queue_entry_t>, lockEntryPool);
-
+// these are not used now
 #ifdef SWITCH_DEADLOCK_IMPL
 bool g_deadlock_use_waitmap_obsolete = true;
 int g_deadlock_dreadlock_interval_ms = 10;
 w_error_codes (*g_check_deadlock_impl)(xct_t* xd, lock_request_t *myreq);
 #endif // SWITCH_DEADLOCK_IMPL
 
-lock_core_m::lock_core_m(uint sz)
-:
-  _htab(0),
-  _htabsz(0)
-{
+struct RawLockCleanerFunctor : public GcWakeupFunctor {
+    RawLockCleanerFunctor(RawLockBackgroundThread* cleaner_arg) : cleaner(cleaner_arg) {}
+    void wakeup() {
+        cleaner->wakeup();
+    }
+    RawLockBackgroundThread*    cleaner;
+};
+
+lock_core_m::lock_core_m(const sm_options &options) : _htab(NULL), _htabsz(0) {
+    size_t sz = options.get_int_option("sm_locktablesize", 64000);
+
+    size_t generation_count = options.get_int_option("sm_rawlock_gc_generation_count", 5);
+    size_t init_generations = options.get_int_option("sm_rawlock_gc_init_generation_count", 0);
+    if (init_generations > generation_count) {
+        generation_count = init_generations;
+    }
+    size_t lockpool_initseg = options.get_int_option("sm_rawlock_lockpool_initseg", 32);
+    size_t xctpool_initseg = options.get_int_option("sm_rawlock_xctpool_initseg", 128);
+    size_t lockpool_segsize = options.get_int_option("sm_rawlock_lockpool_segsize", 1 << 13);
+    size_t xctpool_segsize = options.get_int_option("sm_rawlock_xctpool_segsize", 1 << 8);
+    DBGOUT3(<<"lock_core_m constructor: sm_locktablesize=" << sz
+        << ", sm_rawlock_gc_generation_count=" << generation_count
+        << ", sm_rawlock_gc_init_generation_count=" << init_generations
+        << ", sm_rawlock_lockpool_initseg=" << lockpool_initseg
+        << ", sm_rawlock_xctpool_initseg=" << xctpool_initseg
+        << ", sm_rawlock_lockpool_segsize=" << lockpool_segsize
+        << ", sm_rawlock_xctpool_segsize=" << xctpool_segsize);
+
     // find _htabsz, a power of 2 greater than sz
     int b=0; // count bits shifted
     for (_htabsz = 1; _htabsz < sz; _htabsz <<= 1) b++;
@@ -54,10 +69,32 @@ lock_core_m::lock_core_m(uint sz)
     b -= 6;
 
     _htabsz = primes[b];
-    _htab = new bucket_t[_htabsz];
-    ::memset(_htab, 0, _htabsz * sizeof(bucket_t));
-
+    _htab = new RawLockQueue[_htabsz];
     w_assert1(_htab);
+    ::memset(_htab, 0, _htabsz * sizeof(RawLockQueue));
+
+    _lock_pool = new GcPoolForest<RawLock>("Lock Pool", generation_count,
+                                           lockpool_initseg, lockpool_segsize);
+    w_assert1(_lock_pool);
+    while (_lock_pool->active_generations() < init_generations) {
+        _lock_pool->advance_generation(lsn_t::null, lsn_t::null, lockpool_initseg, lockpool_segsize);
+    }
+
+    _xct_pool = new GcPoolForest<RawXct>("Xct Pool", generation_count,
+                                         xctpool_initseg, xctpool_segsize);
+    w_assert1(_xct_pool);
+    while (_xct_pool->active_generations() < init_generations) {
+        _xct_pool->advance_generation(lsn_t::null, lsn_t::null, xctpool_initseg, xctpool_segsize);
+    }
+
+    _raw_lock_cleaner = new RawLockBackgroundThread(options, _lock_pool, _xct_pool);
+    w_assert1(_raw_lock_cleaner);
+    _raw_lock_cleaner->start();
+
+    _raw_lock_cleaner_functor = new RawLockCleanerFunctor(_raw_lock_cleaner);
+    w_assert1(_raw_lock_cleaner_functor);
+    _lock_pool->gc_wakeup_functor = _raw_lock_cleaner_functor;
+    _xct_pool->gc_wakeup_functor = _raw_lock_cleaner_functor;
 
     _lil_global_table = new lil_global_table;
     w_assert1(_lil_global_table);
@@ -67,6 +104,24 @@ lock_core_m::lock_core_m(uint sz)
 lock_core_m::~lock_core_m()
 {
     DBGOUT3( << " lock_core_m::~lock_core_m()" );
+    DBGOUT1( << "Checking if all locks were released..." );
+    for (uint32_t i = 0; i < _htabsz; ++i) {
+        if (!_htab[i].head.next.is_null()) {
+            ERROUT( << "There is some lock not released!" );
+            dump(std::cerr);
+            w_assert0(false);
+            break;
+        }
+    }
+
+    _lock_pool->gc_wakeup_functor = NULL;
+    _xct_pool->gc_wakeup_functor = NULL;
+    _raw_lock_cleaner->stop_synchronous();
+    delete _raw_lock_cleaner;
+    delete _raw_lock_cleaner_functor;
+
+    delete _lock_pool;
+    delete _xct_pool;
 
     delete[] _htab;
     _htab = NULL;
@@ -76,461 +131,109 @@ lock_core_m::~lock_core_m()
 }
 
 
-w_error_codes
-lock_core_m::acquire_lock(
-    xct_t*                 xd,
-    const lockid_t&        name,
-    const okvl_mode&          mode,
-    bool                   check_only,
-    timeout_in_ms          timeout)
-{
-    xct_lock_info_t*       the_xlinfo = xd->lock_info();
-    w_assert2(xd == g_xct());
+__thread gc_pointer_raw tls_xct_pool_next; // Thread local variable for xct_pool.
+__thread gc_pointer_raw tls_lock_pool_next; // Thread local variable for lock_pool.
 
-    uint32_t hash = name.hash();
+RawXct* lock_core_m::allocate_xct() {
+    RawXct* xct = _xct_pool->allocate(tls_xct_pool_next, ::pthread_self());
+    xct->init(static_cast<gc_thread_id>(::pthread_self()), _lock_pool, &tls_lock_pool_next);
+    return xct;
+}
+
+void lock_core_m::deallocate_xct(RawXct* xct) {
+    xct->uninit();
+    _xct_pool->deallocate(xct);
+}
+
+
+w_error_codes lock_core_m::acquire_lock(RawXct* xct, uint32_t hash, const okvl_mode& mode,
+                bool conditional, bool check_only, int32_t timeout, RawLock** out) {
+    w_assert1(timeout >= 0 || timeout == WAIT_FOREVER);
     uint32_t idx = _table_bucket(hash);
-    lock_queue_t *lock = _htab[idx].find_lock_queue(hash);
-
-    int acquire_ret = _acquire_lock(xd, lock, mode, check_only, timeout, the_xlinfo);
-    w_error_codes funcret;
-    if (acquire_ret == RET_SUCCESS) {
-        // store the lock queue tag we observed. this is for Safe SX-ELR
-        spinlock_read_critical_section cs(&lock->_requests_latch);
-        xd->update_read_watermark (lock->x_lock_tag());
-        funcret = w_error_ok;
-    } else if (acquire_ret == RET_TIMEOUT) {
-        funcret = eLOCKTIMEOUT;
-    } else {
-        w_assert1(acquire_ret == RET_DEADLOCK);
-        funcret = eDEADLOCK;
-    }
-    return funcret;
-}
-
-int
-lock_core_m::_acquire_lock(
-    xct_t*                 xd,
-    lock_queue_t*          lock,
-    const okvl_mode&          mode,
-    bool                   check_only,
-    timeout_in_ms          timeout,
-    xct_lock_info_t*       the_xlinfo)
-{
-    // is there already my request?
-    smthread_t *thr = g_me();
-    lock_queue_entry_t* req = lock->find_request(the_xlinfo);
-    if (req == NULL) {
-#if W_DEBUG_LEVEL>=3
-        {
-            spinlock_read_critical_section cs(&lock->_requests_latch);
-            for (lock_queue_entry_t* p = lock->_head; p != NULL; p = p->_next) {
-                w_assert3(&p->_xct != xd);
-                w_assert3(&p->_thr != thr);
-                w_assert3(&p->_li != the_xlinfo);
-            }
-        }
-#endif // W_DEBUG_LEVEL>=3
-        req = new (*lockEntryPool) lock_queue_entry_t(*xd, *thr, *the_xlinfo, ALL_N_GAP_N, mode);
-        if (!check_only) {
-            req->_xct_entry = the_xlinfo->link_to_new_request(lock, req);
-        }
-        lock->append_request(req);
-    } else {
-        w_assert1(&req->_thr == thr);  // safe if true
-        w_assert1(&req->_xct == xd);
-        w_assert1(&req->_li == the_xlinfo);
-        w_assert1(req->_xct_entry != NULL);
-        if (mode.is_implied_by(req->_granted_mode)) {
-            // already had the desired lock mode!
-            // This shouldn't happen because we always check
-            ERROUT(<< "Already desired lock mode. Private lock table didn't work?");
-            return RET_SUCCESS;
-        }
-        spinlock_write_critical_section cs(&lock->_requests_latch);
-        req->_requested_mode = okvl_mode::combine(mode, req->_granted_mode);
-    }
-    int loop_ret = _acquire_lock_loop(xd, thr, lock, req, check_only, timeout, the_xlinfo);
-
-    the_xlinfo->init_wait_map(thr);
-    req->_observed_release_version = 0;
-    // discard (or downgrade) the failed request. check_only does it even on success.
-    if (loop_ret != RET_SUCCESS || check_only) {
-        if (!req->_granted_mode.is_empty()) {
-            // We deny the upgrade but leave the
-            // lock request in place with its former status.
-            spinlock_write_critical_section cs(&lock->_requests_latch);
-            req->_requested_mode = req->_granted_mode;
-        } else {
-            // Remove the request
-            release_lock (lock, req, lsn_t::null);
-        }
-    }
-
-    return loop_ret;
-}
-
-int
-lock_core_m::_acquire_lock_loop(
-    xct_t*                 xd,
-    smthread_t*            thr,
-    lock_queue_t*          lock,
-    lock_queue_entry_t*    req,
-    bool                   check_only,
-    timeout_in_ms          timeout,
-    xct_lock_info_t*       the_xlinfo)
-{
-    const int DREADLOCKS_INTERVAL_MS = g_deadlock_dreadlock_interval_ms;
-
-    timespec   until;
-    if (timeout != WAIT_FOREVER && timeout != WAIT_IMMEDIATE) {
-        ::clock_gettime(CLOCK_REALTIME, &until);
-        until.tv_nsec += (uint64_t) timeout * 1000000;
-        until.tv_sec += until.tv_nsec / 1000000000;
-        until.tv_nsec = until.tv_nsec % 1000000000;
-    }
-
-    // loop again and again until decisive failure or success
-    lock_queue_t::check_grant_result chk_result;
     while (true) {
-        chk_result.observed = lsn_t::null;
-        lock->check_can_grant(req, chk_result);
-        DBGOUT5(<<"check done:" << chk_result.can_be_granted << ","
-            << chk_result.deadlock_detected << ","
-            << chk_result.deadlock_myself_should_die << ","
-            << (void*) chk_result.deadlock_other_victim << ","
-            << " fingerprint=" << g_me()->get_fingerprint_map()
-            << " new bitmap=" << chk_result.refreshed_wait_map);
-
-        if (chk_result.can_be_granted) {
-            if (check_only) {
-                if (chk_result.observed.valid())
-                    // for controlled lock violation mode:
-                    xd->update_read_watermark (chk_result.observed);
-                return RET_SUCCESS;
-            }
-            lsn_t observed;
-            bool granted = lock->grant_request(req, observed);
-            if (granted) {
-                if (observed.valid())
-                    // for controlled lock violation mode:
-                    xd->update_read_watermark (observed);
-                return RET_SUCCESS;
-            } else {
-                // must be an extremely unlucky case. try again
-                DBGOUT1(<<"someone took the lock between check_can_grant and grant_request");
-                continue;
-            }
+        w_error_codes er = _htab[idx].acquire(xct, hash, mode, timeout, conditional, check_only, out);
+        if (er == eDEADLOCK && !xct->has_locks() && !check_only && timeout == WAIT_FOREVER) {
+            // this was a failed lock aquisition, so it didn't get the new lock.
+            // the transaction doesn't have any other lock, and waiting unconditionally.
+            // this means we can forever retry without risking anything!
+            atomic_synchronize();
+            continue;
         }
-
-        if (chk_result.deadlock_myself_should_die) {
-            DBGOUT3(<<"deadlock. I should die! ");
-            return RET_DEADLOCK;
-        }
-
-        if (timeout == WAIT_IMMEDIATE) {
-            return RET_TIMEOUT;
-        }
-
-        the_xlinfo->refresh_wait_map(chk_result.refreshed_wait_map);
-        req->_observed_release_version = lock->_release_version;
-        // either no deadlock or there is a deadlock but
-        // some other xact was selected as victim
-        DBGOUT5(<< "blocking:xd=" << xd->tid()  /*<< " mode=" << int(mode)*/ << " timeout=" << timeout); // <<<>>>
-
-        w_error_codes rce;
-        // TODO: non-rc version of smthread_block
-        if (DREADLOCKS_INTERVAL_MS > 0) {
-            rce = thr->smthread_block(DREADLOCKS_INTERVAL_MS, 0);
-        } else {
-            rce = stTIMEOUT; // no wait = spinning
-        }
-
-        DBGOUT5(<< "unblocked:xd=" << xd->tid() /*<< " mode="<< int(mode)*/ << " timeout=" << timeout ); // <<<>>>
-
-        w_assert3(!rce || rce == stTIMEOUT || rce == eDEADLOCK);
-
-        if (rce == eDEADLOCK) {
-            return RET_DEADLOCK;
-        } else {
-            // already past the timeout?
-            if (timeout != WAIT_FOREVER) {
-                timespec   now;
-                ::clock_gettime(CLOCK_REALTIME, &now);
-                if (now.tv_sec > until.tv_sec
-                    || (now.tv_sec == until.tv_sec && now.tv_nsec >= until.tv_nsec)) {
-                    return RET_TIMEOUT;
-                }
-            }
-            // otherwise, once more!
-        }
+        return er;
     }
 }
 
-void lock_core_m::release_lock(
-    lock_queue_t*       lock,
-    lock_queue_entry_t* req,
-    lsn_t               commit_lsn)
-{
+w_error_codes lock_core_m::retry_acquire(RawLock** lock, bool check_only, int32_t timeout) {
+    w_assert1(timeout >= 0 || timeout == WAIT_FOREVER);
+    uint32_t hash = (*lock)->hash;
+    uint32_t idx = _table_bucket(hash);
+    const okvl_mode& mode = (*lock)->mode;
+    RawXct* xct = (*lock)->owner_xct;
+    while (true) {
+        w_error_codes er = _htab[idx].retry_acquire(lock, check_only, timeout);
+        if (er == eDEADLOCK && !xct->has_locks() && timeout == WAIT_FOREVER) {
+            // same as above, but now the lock was removed. we have to switch to acquire_lock.
+            w_assert1(*lock == NULL);
+            return acquire_lock(xct, hash, mode, false, check_only, WAIT_FOREVER, lock);
+        }
+        return er;
+    }
+}
+
+void lock_core_m::release_lock(RawLock* lock, lsn_t commit_lsn) {
     w_assert1(lock);
-    w_assert1(req);
-    w_assert1(&req->_thr == g_me());  // safe if true
-
-    // update lock tag if this is a part of SX-ELR.
-    if (commit_lsn.valid()) {
-        const okvl_mode& m = req->_granted_mode;
-        if (m.contains_dirty_lock()) {
-            spinlock_write_critical_section cs(&lock->_requests_latch);
-            lock->update_x_lock_tag(commit_lsn);
-        }
-    }
-    lock->detach_request(req);
-    if (g_deadlock_use_waitmap_obsolete) {
-        ++lock->_release_version; // now all wait-maps are obsolete!
-    }
-    //copy these before destroying
-    xct_lock_entry_t *xct_entry = req->_xct_entry;
-    xct_lock_info_t *li = &req->_li;
-    // note, we _copy_ it here beacuse req object will disappear.
-    okvl_mode released_requested = req->_requested_mode;
-    lockEntryPool->destroy_object(req);
-    lock->wakeup_waiters(released_requested);
-    if (xct_entry) {
-        li->remove_request(xct_entry);
-    }
+    uint32_t hash = lock->hash;
+    uint32_t idx = _table_bucket(hash);
+    _htab[idx].release(lock, commit_lsn);
 }
 
 
-void lock_queue_t::wakeup_waiters(const okvl_mode& released_requested)
-{
-    if (_head == NULL)
-        return; //empty
-    if(g_deadlock_dreadlock_interval_ms == 0) // if ==0 (spin), no need to wakeup
+void lock_core_m::release_duration(bool read_lock_only, lsn_t commit_lsn) {
+    xct_t* xd = g_xct();
+    if (xd == NULL) {
         return;
-
-    // wakeup a limited number of threads to reduce overhead.
-    const int MAX_WAKEUP = 4;
-    smthread_t *targets[MAX_WAKEUP];
-    int target_count = 0;
-    {
-        spinlock_read_critical_section cs(&_requests_latch);
-        // CRITICAL_SECTION(cs, _requests_latch.read_lock());
-        for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
-            if (p->_granted_mode != p->_requested_mode
-                && okvl_mode::is_compatible(p->_requested_mode, released_requested)) {
-                targets[target_count] = &p->_thr;
-                ++target_count;
-                if (target_count >= MAX_WAKEUP) {
-                    break;
+    }
+    RawXct* xct = xd->raw_lock_xct();
+    //we always release backwards. otherwise concurrency bug.
+    // First, quickly set OBSOLETE to all locks.
+    for (RawLock* lock = xct->private_first; lock != NULL; lock = lock->xct_next) {
+        if (lock->mode.contains_dirty_lock()) {
+            if (!read_lock_only) {
+                // also do SX-ELR tag update BEFORE changing the status
+                if (commit_lsn != lsn_t::null) {
+                    uint32_t hash = lock->hash;
+                    uint32_t idx = _table_bucket(hash);
+                    _htab[idx].update_xlock_tag(commit_lsn);
                 }
+                lock->state = RawLock::OBSOLETE;
             }
+        } else {
+            lock->state = RawLock::OBSOLETE;
         }
     }
-    for (int i = 0; i < target_count; ++i) {
-        targets[i]->smthread_unblock(w_error_ok);
-    }
-}
+    // announce it as soon as possible
+    atomic_synchronize();
 
-rc_t
-lock_core_m::release_duration(
-    xct_lock_info_t*    the_xlinfo,
-    bool                read_lock_only,
-    lsn_t               commit_lsn
-    )
-{
-    FUNC(lock_core_m::release_duration);
-    DBGOUT4(<<"lock_core_m::release_duration "
-            << " tid=" << the_xlinfo->tid()
-            << " read_lock_only=" << read_lock_only);
-
+    // then, do actual deletions. this can be okay to delay.
     if (read_lock_only) {
-        // releases only read locks
-        for (xct_lock_entry_t* p = the_xlinfo->_tail; p != NULL;) {
-            xct_lock_entry_t *prev = p->prev; // get this first. release_lock will remove current p
-            w_assert1(&p->entry->_thr == g_me());  // safe if true
-            const okvl_mode& m = p->entry->_granted_mode;
-            if (!m.contains_dirty_lock()) {
-                release_lock(p->queue, p->entry, commit_lsn);
+        // releases only read locks. as now we don't do lock upgrades,
+        // lock downgrades are not needed any more.
+        for (RawLock* lock = xct->private_first; lock != NULL;) {
+            RawLock* next = lock->xct_next;
+            if (!lock->mode.contains_dirty_lock()) {
+                uint32_t hash = lock->hash;
+                uint32_t idx = _table_bucket(hash);
+                _htab[idx].release(lock, commit_lsn);
             }
-            p = prev;
+            lock = next;
         }
-        // we don't "downgrade" SX/XS to NX/XN for laziness.
-    // See jira ticket:99 "ELR for X-lock" (originally trac ticket:101).
-        // likewise, we don't "downgrade" SIX to IX for laziness
     } else {
-        //backwards:
-        while (the_xlinfo->_tail != NULL)  {
-            release_lock(the_xlinfo->_tail->queue, the_xlinfo->_tail->entry, commit_lsn);
+        while (xct->private_first != NULL)  {
+            RawLock* lock = xct->private_first;
+            uint32_t hash = lock->hash;
+            uint32_t idx = _table_bucket(hash);
+            _htab[idx].release(lock, commit_lsn);
         }
     }
     DBGOUT4(<<"lock_core_m::release_duration DONE");
-    return RCOK;
-}
-
-lock_queue_t* lock_queue_t::allocate_lock_queue(uint32_t hash) {
-    return new (*lockQueuePool) lock_queue_t(hash);
-}
-void lock_queue_t::deallocate_lock_queue(lock_queue_t* obj) {
-    lockQueuePool->destroy_object(obj);
-}
-
-lock_queue_entry_t* lock_queue_t::find_request (const xct_lock_info_t* myli) {
-    spinlock_read_critical_section cs(&_requests_latch);
-    // CRITICAL_SECTION(cs, _requests_latch.read_lock()); // read lock suffices
-    for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
-        if (&p->_li == myli) {
-            return p;
-        }
-    }
-    return NULL;
-}
-void lock_queue_t::append_request (lock_queue_entry_t* myreq) {
-    spinlock_write_critical_section cs(&_requests_latch);
-    // CRITICAL_SECTION(cs, _requests_latch.write_lock());
-    w_assert1(myreq->_granted_mode.is_empty());
-    if (_head == NULL) {
-        _head = myreq;
-        _tail = myreq;
-    } else {
-        _tail->_next = myreq;
-        myreq->_prev = _tail;
-        _tail = myreq;
-    }
-}
-
-void lock_queue_t::detach_request (lock_queue_entry_t* myreq) {
-    spinlock_write_critical_section cs(&_requests_latch);
-    // CRITICAL_SECTION(cs, _requests_latch.write_lock());
-#if W_DEBUG_LEVEL>=3
-    bool found = false;
-    for (lock_queue_entry_t *p = _head; p != NULL; p = p->_next) {
-        if (p == myreq) {
-            found = true;
-            break;
-        }
-    }
-    w_assert3(found);
-#endif //W_DEBUG_LEVEL>=3
-
-    if (myreq->_prev == NULL) {
-        w_assert1(_head == myreq);
-        _head = myreq->_next;
-        if (_head != NULL) {
-            _head->_prev = NULL;
-        }
-    } else {
-        w_assert1(myreq->_prev->_next == myreq);
-        myreq->_prev->_next = myreq->_next;
-    }
-
-    if (myreq->_next == NULL) {
-        w_assert1(_tail == myreq);
-        _tail = myreq->_prev;
-        if (_tail != NULL) {
-            _tail->_next = NULL;
-        }
-    } else {
-        w_assert1(myreq->_next == _head || myreq->_next->_prev == myreq);
-        myreq->_next->_prev = myreq->_prev;
-    }
-}
-
-bool lock_queue_t::grant_request (lock_queue_entry_t* myreq, lsn_t& observed) {
-    spinlock_write_critical_section cs(&_requests_latch);
-    // CRITICAL_SECTION(cs, _requests_latch.write_lock());
-
-    // assume here myreq is a member of our queue and hence covered by
-    // _request_latch
-    w_assert1(&myreq->_thr == g_me());
-    bool precedes_me = true;
-    const okvl_mode& m = myreq->_requested_mode;
-    // check it again.
-    for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
-        if (p == myreq) {
-            precedes_me = false;
-            continue;
-        }
-        bool compatible = _check_compatible(myreq->_granted_mode, m, p, precedes_me, observed);
-        if (!compatible) {
-            return false;
-        }
-    }
-    // finally granted
-    myreq->_granted_mode = myreq->_requested_mode;
-    return true;
-}
-
-void lock_queue_t::check_can_grant (lock_queue_entry_t* myreq, check_grant_result &result) {
-    spinlock_read_critical_section cs(&_requests_latch);
-    // CRITICAL_SECTION(cs, _requests_latch.read_lock()); // read lock suffices
-
-    // assume here myreq is a member of our queue and hence covered by
-    // _request_latch
-    const atomic_thread_map_t &myfingerprint = myreq->_thr.get_fingerprint_map();
-    result.init(myfingerprint);
-    xct_t* myxd = &myreq->_xct;
-    bool precedes_me = true;
-    const okvl_mode& m = myreq->_requested_mode;
-    const uint64_t threshold_version = this->_release_version;
-
-    for (lock_queue_entry_t* p = _head; p != NULL; p = p->_next) {
-        if (p == myreq) {
-            precedes_me = false;
-            continue;
-        }
-        w_assert1(&p->_li != &myreq->_li);
-        w_assert1(&p->_thr != &myreq->_thr);
-        bool compatible = _check_compatible(myreq->_granted_mode, m, p, precedes_me, result.observed);
-        if (!compatible) {
-            result.can_be_granted = false;
-            xct_t *theirxd = &p->_xct;
-            xct_lock_info_t *theirli = &p->_li;
-            uint64_t their_version = p->get_observed_release_version();
-            if (their_version == 0 || their_version >= threshold_version) {
-                const atomic_thread_map_t &other = theirli->get_wait_map();
-                bool deadlock_detected = other.contains(myfingerprint);
-
-                // Then, take OR with other to update _wait_map (myself)
-                result.refreshed_wait_map.merge(other);
-
-                if (deadlock_detected) {
-                    result.deadlock_detected = true;
-                    DBGOUT3(<<"check_can_grant:deadlock!"
-                        << " other fingerprint=" << p->_thr.get_fingerprint_map() << "(gr=" << p->_granted_mode<< ", req=" << p->_requested_mode << ")"
-                        << " other bitmap=" << other
-                        << " my fingerprint=" << myfingerprint
-                        << "(gr=" << myreq->_granted_mode<< ", req=" << myreq->_requested_mode << ")"
-                        << " my bitmap=" << result.refreshed_wait_map);
-
-                    uint32_t my_chain_len = myxd->get_xct_chain_len();
-                    uint32_t their_chain_len = theirxd->get_xct_chain_len();
-
-                    bool killhim;
-                    // If one of them is chained transaction, let's victimize
-                    // shorter chain because it will quickly converge in dominated lock table.
-                    // See jira ticket:100 "Deadlock victim: who should be killed" (originally trac ticket:102).
-                    if (their_chain_len < my_chain_len) {
-                        killhim = true;
-                    } else if (their_chain_len > my_chain_len) {
-                        killhim = false;
-                    } else {
-                        // if chain length is same, kill younger xct (larger tid)
-                        killhim = myxd->tid() < theirxd->tid();
-                    }
-
-                    if (killhim) {
-                        DBGOUT3(<<"kill him");
-                        result.deadlock_other_victim = &p->_thr;
-                    } else {
-                        DBGOUT3(<<"kill myself");
-                        result.deadlock_myself_should_die = true;
-                        return;
-                    }
-                }
-            } else {
-                DBGOUT4(<<"but ignored as obsolete. threshold_version=" << threshold_version
-                    << ", their_version=" << their_version);
-            }
-        }
-    }
-    w_assert1(!precedes_me);
 }
