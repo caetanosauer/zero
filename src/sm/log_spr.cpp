@@ -88,10 +88,10 @@ rc_t log_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn) {
     // Then, collect logs to apply. Depending on the recency of the backup and the
     // previous page-allocation operation on the page, we might have to collect many logs.
     const size_t SPR_LOG_BUFSIZE = 1 << 17; // 1 << 14;
-    char buffer[SPR_LOG_BUFSIZE]; // TODO, we should have an object pool for this.
+    std::vector<char> buffer(SPR_LOG_BUFSIZE); // TODO, we should have an object pool for this.
     std::vector<logrec_t*> ordered_entires;
-    W_DO(log_core::THE_LOG->_collect_single_page_recovery_logs(pid, p.lsn(), emlsn, buffer,
-        SPR_LOG_BUFSIZE, ordered_entires));
+    W_DO(log_core::THE_LOG->_collect_single_page_recovery_logs(pid, p.lsn(), emlsn,
+        &buffer[0], SPR_LOG_BUFSIZE, ordered_entires));
     DBGOUT1(<< "Collected log. About to apply " << ordered_entires.size() << " logs");
     W_DO(log_core::THE_LOG->_apply_single_page_recovery_logs(p, ordered_entires));
 
