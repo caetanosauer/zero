@@ -412,10 +412,24 @@ restart_m::analysis_pass(
     // to add new log records by accident during this phase
     AutoTurnOffLogging turnedOnWhenDestroyed;
 
+    // redo_lsn will be used as the starting point for REDO forward log scan, 
+    // it should be the earliest LSN for all in_doubt pages, it is very likely this
+    // LSN is earlier than the master LSN (begin checkpoint LSN).
+    // Because we do not load the physical page during Log Analysis phase, we are
+    // not able to retrieve _rec_lsn (initial dirty LSN) from each page, therefore we
+    // have to rely on:
+    // 1. minimum LSN recorded in the 'end checkpoint' log record
+    // 2. If a newly allocated and formated page after the checkpoint, there must
+    //     be a page format log record in the recovery log before any usage of the page.
+
+    // Initialize both redo_lsn and undo_lsn to 0 which is the smallest lsn
     redo_lsn = lsn_t::null;
     undo_lsn = lsn_t::null;
     in_doubt_count = 0;
     lsn_t begin_chkpt = lsn_t::null;
+
+    // Did any device mounting occurred during Log Analysis phase, debugging purpose
+    bool mount = false;
 
     if (master == lsn_t::null)
     {
@@ -460,7 +474,11 @@ restart_m::analysis_pass(
 
         // The first record must be a 'begin checkpoint', otherwise we don't want to continue, error out 
         if (r.type() != logrec_t::t_chkpt_begin)
+        {
+            DBGOUT3( << setiosflags(ios::right) << lsn
+                     << resetiosflags(ios::right) << " R: " << r);
             W_FATAL_MSG(fcINTERNAL, << "First log record in Log Analysis is not a begin checkpoint log: " << r.type());
+        }
 
         theLastMountLSNBeforeChkpt = *(lsn_t *)r.data();
         DBGOUT3( << "Last mount LSN from chkpt_begin: " << theLastMountLSNBeforeChkpt);
@@ -585,9 +603,6 @@ restart_m::analysis_pass(
                             << "Page # = 0 from a system transaction log record");
                     rc = smlevel_0::bf->register_and_mark(idx, page_of_interest,
                               lsn, in_doubt_count);
-// TODO(M1)...
-DBGOUT3(<<"************ Log Analysis, in_doubt_count: " << in_doubt_count << ", log record" << r);
-
 
                     if (rc.is_error()) 
                     {
@@ -631,8 +646,6 @@ DBGOUT3(<<"************ Log Analysis, in_doubt_count: " << in_doubt_count << ", 
                             }
                         }
                         rc = smlevel_0::bf->register_and_mark(idx, page2_of_interest, lsn, in_doubt_count);
-// TODO(M1)...
-DBGOUT3(<<"************ Log Analysis, in_doubt_count: " << in_doubt_count << ", log record" << r);
                         if (rc.is_error()) 
                         {
                             // Not able to get a free block in buffer pool without evict, cannot continue in M1
@@ -728,8 +741,6 @@ DBGOUT3(<<"************ Log Analysis, in_doubt_count: " << in_doubt_count << ", 
                             << "Page # = 0 from a page in t_chkpt_bf_tab log record");
                     rc = smlevel_0::bf->register_and_mark(idx, dp->brec[i].pid,
                             dp->brec[i].rec_lsn.data(), in_doubt_count);
-// TODO(M1)...
-DBGOUT3(<<"************ Log Analysis, in_doubt_count: " << in_doubt_count << ", log record" << r);
                     if (rc.is_error()) 
                     {
                         // Not able to get a free block in buffer pool without evict, cannot continue in M1
@@ -816,9 +827,49 @@ DBGOUT3(<<"************ Log Analysis, in_doubt_count: " << in_doubt_count << ", 
             {
                 // Still processing the master checkpoint record.
                 // For each entry in the checkpoint related log, mount the device.
-                // No dismount
+                // No dismount because t_chkpt_dev_tab only contain mounted devices
+
+                // In checkpoint generation, the t_chkpt_dev_tab log record must come
+                // before the t_chkpt_bf_tab log record, this is for root page handling.
+                //
+                // Note io_m::mount() calls vol_t::mount(), which calls install_volume()
+                // which would preload the root page (_preload_root_page)
+                // Scenario 1: Root page was not an in_doubt page.  The root page gets
+                //                  pre-loaded into buffer pool, registered in hash table, page
+                //                  is marked as used but not dirty and not in_doubt during 
+                //                  the 'mount' process.
+                //                  No problem in this scenario because REDO phase will not
+                //                  encounter the root page.
+                // Scenario 2: Root page was an in_doubt page but only identified after
+                //                   the 'mount' operation (guranteed by the checkpoint logic).
+                //                   It could be either part of t_chkpt_bf_tab or other log records
+                //                   which identified the root page as an in_doubt page.
+                //                   1. In Log Analysis phase, it marked the root page as 'in_doubt'
+                //                       and update the in_doubt counter.
+                //                   2. REDO phase encounters a page fomat log for the root page
+                //                       This can happen only if it is a brand new root page which 
+                //                       does not exist on disk, therefore the preload root failed.
+                //                       No problem in this scenario because the REDO phase will
+                //                       allocate a virgin root page and register it, also update flags
+                //                       and in_doubt counter accordingly.
+                //                   3. In REDO phase encounters a regular log record which does
+                //                       operation on the root page.  Because the page is in_doubt
+                //                       so we will try to load the root page, this operation would fail
+                //                       because the root page was loaded already.
+                //                       Need to set the 'In_doubt' and 'dirty' flags correctly and
+                //                       update the in_doubt counter accordingly.
+                // Scenario 3: Root page was an in_doubt page but identified before the 'mount'
+                //                  operation.  Although the checkpoint operation gurantee the 
+                //                  't_chkpt_dev_tab' log comes before 't_chkpt_bf_tab', because checkpoint
+                //                  is a non-blocking operation, it is possible after the 'begin checkpoint'
+                //                  log record, a regular log record comes in before 't_chkpt_dev_tab'
+                //                  which mark the root page 'in_doubt' and register the root page 
+                //                  in hash table.  In this case, we need to make sure the 'in_doubt'
+                //                  flag is still on for the root page.
                 
                 const chkpt_dev_tab_t* dv = (chkpt_dev_tab_t*) r.data();
+                DBGOUT3(<<"Log Analysis, number of devices in t_chkpt_dev_tab: " << dv->count);
+
                 for (uint i = 0; i < dv->count; i++)  
                 {
                     smlevel_0::errlog->clog << info_prio 
@@ -829,6 +880,8 @@ DBGOUT3(<<"************ Log Analysis, in_doubt_count: " << in_doubt_count << ", 
                                        dv->devrec[i].vid));
 
                     w_assert9(io_m::is_mounted(dv->devrec[i].vid));
+
+                    mount = true;
                 }
             }
             break;
@@ -851,9 +904,14 @@ DBGOUT3(<<"************ Log Analysis, in_doubt_count: " << in_doubt_count << ", 
             // mount & dismount shouldn't happen during a check point
             // redo_lsn is initialized to NULL, and only set to the minimum lsn
             // from master 'end checkpoint' when we encounter it during log scan
+            // Only redo, no undo for mount & dismount
             if (lsn < redo_lsn)  
             {
+DBGOUT3(<<"************ Log Analysis, t_dismount_vol or t_mount_vol log record, redo");            
                 r.redo(0);
+
+                if (logrec_t::t_mount_vol == r.type())
+                    mount = true;
             }
             break;
                 
@@ -881,7 +939,7 @@ DBGOUT3(<<"************ Log Analysis, in_doubt_count: " << in_doubt_count << ", 
                     W_FATAL_MSG(fcINTERNAL, 
                                 << "Master from 'end checkpoint' is different from caller of Log Analysis");
  
-                DBGOUT3(<<"checkpt end: master=" << begin_chkpt
+                DBGOUT3(<<"t_chkpt_end log record: master=" << begin_chkpt
                         << " min_rec_lsn= " << redo_lsn
                         << " min_txn_lsn= " << undo_lsn);
 
@@ -1052,9 +1110,6 @@ DBGOUT3(<<"************ Log Analysis, in_doubt_count: " << in_doubt_count << ", 
                                 << "Page # = 0 from a page in log record, log type = " << r.type());
                         rc = smlevel_0::bf->register_and_mark(idx, 
                                   page_of_interest, lsn, in_doubt_count);
-// TODO(M1)...
-DBGOUT3(<<"************ Log Analysis, in_doubt_count: " << in_doubt_count << ", log record" << r);
-
                         if (rc.is_error()) 
                         {
                             // Not able to get a free block in buffer pool without evict, cannot continue in M1
@@ -1103,9 +1158,6 @@ DBGOUT3(<<"************ Log Analysis, in_doubt_count: " << in_doubt_count << ", 
                                 << "Page # = 0 from a page in compensation log record");
                         rc = smlevel_0::bf->register_and_mark(idx, 
                                   page_of_interest, lsn, in_doubt_count);
-// TODO(M1)...
-DBGOUT3(<<"************ Log Analysis, in_doubt_count: " << in_doubt_count << ", log record" << r);
-
                         if (rc.is_error()) 
                         {
                             // Not able to get a free block in buffer pool without evict, cannot continue in M1
@@ -1130,8 +1182,12 @@ DBGOUT3(<<"************ Log Analysis, in_doubt_count: " << in_doubt_count << ", 
 
     // Read all the recovery logs, we should have a minimum LSN from the master checkpoint
     // at this point, which is where the REDO phase should start for the in_doubt pages
-    // Error out if we don't have a valid LSN
-    // Same as the UNDO lsn
+    // Error out if we don't have a valid LSN, same as the UNDO lsn
+    // Generate error because the assumption is that we always start the forward log scan 
+    // from a completed checkpoint, so the redo and undo LSNs must exist.
+    // In theory, if we do not have the redo and undo LSNs, we can alwasy start the recovery from 
+    // the very beginning of the recovery log, but we are not doing so in this implementation
+    // therefore raise error
     if (lsn_t::null == redo_lsn)
         W_FATAL_MSG(fcINTERNAL, << "Missing redo_lsn at the end of Log Analysis phase");
     if (lsn_t::null == undo_lsn)
@@ -1142,32 +1198,25 @@ DBGOUT3(<<"************ Log Analysis, in_doubt_count: " << in_doubt_count << ", 
     // than the begin checkpoint LSN
     // undo_lsn is where the UNDO phase should stop for the backward scan (if used),
     // it must be the earliest LSN for all transactions, which could be earlier than
-    // the begin checkpoint LSN   
-    if (redo_lsn > begin_chkpt)
-       redo_lsn = begin_chkpt;
+    // the begin checkpoint LSN
+    w_assert1(begin_chkpt == master);
     if (redo_lsn > master)
        redo_lsn = master;
-    if (undo_lsn > begin_chkpt)
-       undo_lsn = begin_chkpt;
     if (undo_lsn > master)
        undo_lsn = master;
 
-
-/*****************************************************
-//Dead code, comment out just in case we need to re-visit it in the future
-
-// Eliminate mount/volume related stuff in Recovery milestone 1
-// This logic is only for mount/dismount occurred between redo_lsn
-// and the 'begin checkpoint', if any happened.
-
-    // undo any mounts/dismounts that occured between chkpt and min_rec_lsn
+    // If there were any mounts/dismounts that occured between redo_lsn and
+    // begin chkpt, need to redo them
     DBGOUT3( << ((theLastMountLSNBeforeChkpt != lsn_t::null && 
                     theLastMountLSNBeforeChkpt > redo_lsn) \
             ? "redoing mounts/dismounts before chkpt but after redo_lsn"  \
             : "no mounts/dismounts need to be redone"));
 
+    // At this point, we have mounted devices from t_chkpt_dev_tab log record and
+    // also the individual mount/dismount log records
+    // Do we have more to mount?
+    if ( 0 != in_doubt_count)
     { // Contain the scope of the following __copy__buf:
-
         logrec_t* __copy__buf = new logrec_t;
         if(! __copy__buf)
         {
@@ -1176,6 +1225,8 @@ DBGOUT3(<<"************ Log Analysis, in_doubt_count: " << in_doubt_count << ", 
         w_auto_delete_t<logrec_t> auto_del(__copy__buf);
         logrec_t&         copy = *__copy__buf;
 
+        // theLastMountLSNBeforeChkpt was from the begin checkpoint log record
+        // it was the lsn of the last mount before the begin checkpoint
         while (theLastMountLSNBeforeChkpt != lsn_t::null 
             && theLastMountLSNBeforeChkpt > redo_lsn)  
         {
@@ -1209,6 +1260,7 @@ DBGOUT3(<<"************ Log Analysis, in_doubt_count: " << in_doubt_count << ", 
             if (copy.type() == logrec_t::t_dismount_vol)  
             {
                 W_IGNORE(io_m::mount(dp->devrec[0].dev_name, dp->devrec[0].vid));
+                mount = true;
             }
             else
             {
@@ -1221,9 +1273,10 @@ DBGOUT3(<<"************ Log Analysis, in_doubt_count: " << in_doubt_count << ", 
     // close scope so the
     // auto-release will free the log rec copy buffer, __copy__buf
     } 
-*****************************************************/
+    // Now theLastMountLSNBeforeChkpt == redo_lsn
 
-    // Update the last mount LSN, which is from the begin checkpoint log record
+    // Update the last mount LSN, it was originally set from the begin checkpoint log record
+    // but it might have been modified to redo_lsn (earlier)
     io_m::SetLastMountLSN(theLastMountLSNBeforeChkpt);
 
     // We are done with Log Analysis, at this point each transactions in transaction
@@ -1288,7 +1341,9 @@ DBGOUT3(<<"************ Log Analysis, in_doubt_count: " << in_doubt_count << ", 
         }
         // Done populating the heap, now tell the heap to sort
         heap.Heapify();
+
         DBGOUT3( << "Number of transaction entries in heap: " << heap.NumElements());
+        DBGOUT3( << "Number of active transactions in transaction table: " << xct_t::num_active_xcts());
     }  // destroy iter which also unlock the transaction table
 
     w_base_t::base_stat_t f = GET_TSTAT(log_fetches);
@@ -1300,6 +1355,23 @@ DBGOUT3(<<"************ Log Analysis, in_doubt_count: " << in_doubt_count << ", 
         << " redo_lsn is " << redo_lsn
         << " undo_lsn is " << undo_lsn
         << flushl;
+
+    DBGOUT3 (<< "End of Log Analysis phase.  Master: " 
+             << master << ", redo_lsn: " << redo_lsn
+             << ", undo lsn: " << undo_lsn);
+
+    if ((false == mount))
+    {
+        // We did not mount any device during Log Analysis phase
+        // All the device mounting should happen before the REDO phase
+        // in other words, we will not be able to fetch page from disk since we did not
+        // mount any device 
+        // If we have in_doubt pages, unless all in_doubt pages are virgin pages, 
+        // otherwise we will run into errors because we won't be able to fetch pages
+        // from disk (not mounted)
+        
+        DBGOUT1( << "Log Analysis phase: no device mounting occurred.");
+    }
 
     return;
 }
@@ -1465,7 +1537,8 @@ restart_m::redo_pass(
                         
                         w_assert9(r.type() == logrec_t::t_dismount_vol || 
                                     r.type() == logrec_t::t_mount_vol);
-                        DBGOUT3(<<"redo - no page, no xct ");
+                        DBGOUT3(<<"redo - no page, no xct, this is a device log record ");
+
                         r.redo(0);
                         io_m::SetLastMountLSN(lsn);
 
@@ -1658,18 +1731,11 @@ void restart_m::_redo_log_with_pid(
             //*   DO NOT BUILD WITH
             //*   DONT_TRUST_PAGE_LSN defined . In any case, I
             //*   removed the code for its defined case.
-// TODO(M1)...
-if (r.type() == logrec_t::t_btree_norec_alloc)
-   DBGOUT3 (<< "************ t_btree_norec_alloc, Incoming page ID: "
-         << page_updated.page << ", log record id = " << r.shpid());
 
             if (r.type() == logrec_t::t_page_img_format
                 // btree_norec_alloc is a multi-page log. "page2" (so, !=shpid()) is the new page.
                 || (r.type() == logrec_t::t_btree_norec_alloc && page_updated.page != r.shpid())) 
-            {
-// TODO(M1)...
-DBGOUT3 (<< "************ virgin page");
-            
+            {           
                 virgin_page = true;
             }
 
@@ -1677,8 +1743,12 @@ DBGOUT3 (<< "************ virgin page");
             {
                 // Page is in_doubt and not a virgin page, this is the first time we have seen this page
                 // need to load the page from disk into buffer pool first
-// TODO(M1)...
-DBGOUT3 (<< "************ Loading page, page = " << page_updated.page);
+                // Special case: the page is a root page which exists on disk, it was pre-loaded
+                //                     during device mounting (_preload_root_page).
+                //                     We will load reload the root page here but not register it to the
+                //                     hash table (already registered).  Use the same logic to fix up
+                //                     page cb, it does no harm.
+                DBGOUT3 (<< "REDO phase, loading page from disk, page = " << page_updated.page);
 
                 // If passed_end is true, the page does not exist on disk and the buffer pool page
                 // has been zerod out, we cannot apply REDO in this case
@@ -1811,12 +1881,13 @@ DBGOUT3 (<< "************ Loading page, page = " << page_updated.page);
                 // gets initialized as an empty child page during 'redo'
                 r.redo(&page);
 
-// TODO(M1)...In Restart heap, do we still need this?
-//_redo_tid = tid_t::null;
+                // TODO(M1)... Something to do with space recoverying issue, 
+                // it does not seem needed with the new code
+                //_redo_tid = tid_t::null;
 
                 // Set the 'lsn' of this page (page lsn) to the log record lsn
                 // which is the last write to this page
-                page.set_lsns(lsn);
+                page.update_initial_and_last_lsn(lsn);
 
                 // The _rec_lsn in page cb is the earliest lsn which made the page dirty
                 // the _rec_lsn (earliest lns) must be earlier than the page lsn

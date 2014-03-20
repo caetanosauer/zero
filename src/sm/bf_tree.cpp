@@ -285,8 +285,22 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
     cb._used = true; // turn on _used at last
     bool inserted = _hashtable->insert_if_not_exists(bf_key(vid, shpid), idx); // for some type of caller (e.g., redo) we still need hashtable entry for root
     if (!inserted) {
-        ERROUT (<<"failed to insert a root page to hashtable. this must not have happened because there shouldn't be any race. wtf");
-        return RC(eINTERNAL);
+        if (smlevel_0::in_recovery())
+        {
+            // If we are loading the root page from Recovery Log Analysis phase,
+            // it is possible we have a regular log record accessing the root page 
+            // before the device mounting log record, in this case the root page
+            // has been registered into the hash table before we mount the device.
+            // This is not an error condition therefore swallow the error, also mark 
+            // the page as an in_doubt page
+            cb._in_doubt = true;
+            inserted = true;
+        }
+        else
+        {
+            ERROUT (<<"failed to insert a root page to hashtable. this must not have happened because there shouldn't be any race. wtf");
+            return RC(eINTERNAL);
+            }
     }
     w_assert1(inserted);
 
@@ -528,6 +542,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 // the page is flushed as of the page LSN (otherwise why we can read it!)
                 cb._rec_lsn = _buffer[idx].lsn.data();
             } else {
+                // Virgin page, we are not setting _rec_lsn (initial dirty)
+                // Page format would set the _rec_lsn
                 cb._dirty = true;
                 cb._in_doubt = false;
                 ++_dirty_page_count_approximate;
@@ -1571,6 +1587,10 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
         //   Make sure in_doubt and used flags are on, update _rec_lsn if 
         //   new_lsn is smaller (earlier) than _rec_lsn in cb, _rec_lsn is the LSN
         //   which made the page 'dirty' initially
+        // This is in Log Analysis phase, we have have page in buffer pool but in_doubt flag off:
+        // 1. Root page pre-loaded by device mounting
+        // 2. Page was de-allocated but for some reason it is still in the hash table
+        
         if (false == is_in_doubt(idx))        
             ++in_doubt_count;
         set_in_doubt(idx, new_lsn);
@@ -1668,6 +1688,7 @@ w_rc_t bf_tree_m::load_for_redo(bf_idx idx, volid_t vid,
         passed_end = true;
         DBGOUT3(<<"REDO phase: page does not exist on disk: "
             << vid << "." << shpid);
+        return rc;
     }
     if (rc.is_error()) 
     {
@@ -2017,7 +2038,8 @@ w_rc_t bf_tree_m::set_swizzling_enabled(bool enabled) {
 
 void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid,
                              lsn_t *rec_lsn, lsn_t *page_lsn, lsn_t &min_rec_lsn,
-                             const lsn_t master, const lsn_t current_lsn)
+                             const lsn_t master, const lsn_t current_lsn,
+                             lsn_t last_mount_lsn)
 {
     // Only used by checkpoint to gather dirty page information
     // Caller is the checkpoint operation which is holding a 'write' mutex', 
@@ -2052,7 +2074,7 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid,
         lsn_t lsn(cb._rec_lsn);
 
         // If a page is in use and dirty, or is in_doubt (only marked by Log Analysis phase)
-        if ((cb._used && cb._dirty && lsn != lsn_t::null) || (cb._in_doubt))
+        if ((cb._used && cb._dirty) || (cb._in_doubt))
         {
             if (cb._in_doubt)
             {
@@ -2080,7 +2102,7 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid,
                 // Checkpoint records dirty pages in buffer pool, we never evict dirty pages so ignoring
                 // a page that is being evicted (pin_cnt == -1) is safe.
                 if (cb.pin_cnt() == -1)
-                {
+                {               
                     cb.latch().latch_release();                
                     continue;
                 }
@@ -2088,18 +2110,31 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid,
                 // Actual dirty page
                 // Record pid, minimum (earliest) and latest LSN values of the page
                 // cb._rec_lsn is the minimum LSN
-                // buffer[start].lsn.data() is the Page LSN, which is the latest LSN
+                // buffer[start].lsn.data() is the Page LSN, which is the last write LSN
                 
                 pid[i] = _buffer[start].pid;
                 w_assert1(0 != pid[i].page);   // Page number cannot be 0
-                w_assert1(lsn_t::null!= lsn);
+
+                if ((lsn_t::null == lsn) || (0 == lsn.data()))
+                {
+                    // If we have a dirty page but _rec_lsn (initial dirty) is 0
+                    // someone forgot to set it for the dirty page (most likely a
+                    // newly allocated page and it does not exist on disk yet).
+                    // In this case we won't be able to trace the history of the dirty
+                    // page during a crahs recovery.
+                    // In order to be more defensive, we use the mount lsn so
+                    // during Recovery REDO phase, we will start the log scan 
+                    // from the mount lsn
+                    w_assert1(0 != last_mount_lsn.data());                    
+                    lsn = last_mount_lsn;
+                }
                 rec_lsn[i] = lsn;
                 w_assert1(lsn_t::null!= _buffer[start].lsn.data());
                 page_lsn[i] = _buffer[start].lsn.data();
             }
 
             // Update min_rec_lsn if necessary
-            if(min_rec_lsn > lsn) 
+            if(min_rec_lsn.data() > lsn.data()) 
             {
                 min_rec_lsn = lsn;
             }

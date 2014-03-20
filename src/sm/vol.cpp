@@ -579,9 +579,7 @@ vol_t::read_page(shpid_t pnum, generic_page& page, bool& passed_end)
 #endif
     w_rc_t err = t->pread(_unix_fd, (char *) &page, sizeof(page), offset);
     if(err.err_num() == stSHORTIO) {
-
-// TODO(M1)...
-DBGOUT3 (<< "************ vol_t::read_page, read passed the end, zero out the page");
+        DBGOUT3 (<< "vol_t::read_page, read passed the end, zero out the page");
 
         // read past end of OS file. return all zeros
         memset(&page, 0, sizeof(page));

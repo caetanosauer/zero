@@ -368,6 +368,7 @@ inline void bf_tree_m::set_dirty(const generic_page* p) {
         cb._dirty = true;
         ++_dirty_page_count_approximate;
     }
+    cb._used = true;
 }
 inline bool bf_tree_m::is_dirty(const generic_page* p) const {
     uint32_t idx = p - _buffer;
@@ -382,6 +383,18 @@ inline bool bf_tree_m::is_dirty(const bf_idx idx) const {
     return get_cb(idx)._dirty;
 }
 
+inline void bf_tree_m::update_initial_dirty_lsn(const generic_page* p,
+                                                const lsn_t new_lsn)
+{
+    // Update the initial dirty lsn (if needed) for the page regardless page is dirty or not
+
+    uint32_t idx = p - _buffer;
+    w_assert1 (_is_active_idx(idx));
+    bf_tree_cb_t &cb = get_cb(idx);
+    if ((new_lsn.data() < cb._rec_lsn) || (0 == cb._rec_lsn))
+        cb._rec_lsn = new_lsn.data();
+}
+
 inline void bf_tree_m::set_in_doubt(const bf_idx idx, lsn_t new_lsn) {
     // Caller has latch on page
     // From Log Analysis phase in Recovery, page is not in buffer pool
@@ -393,7 +406,7 @@ inline void bf_tree_m::set_in_doubt(const bf_idx idx, lsn_t new_lsn) {
 
     // _rec_lsn is the initial LSN which made the page dirty
     // Update the earliest LSN only if new_lsn is earlier than the current one
-    if (new_lsn.data() < cb._rec_lsn)
+    if ((new_lsn.data() < cb._rec_lsn) || (0 == cb._rec_lsn))
         cb._rec_lsn = new_lsn.data();
 }
 
@@ -465,7 +478,9 @@ inline bf_idx bf_tree_m::lookup_in_doubt(const int64_t key) const
     return _hashtable->lookup(key);
 }
 
-inline void bf_tree_m::set_initial_rec_lsn(const lpid_t& pid, lsn_t new_lsn)
+inline void bf_tree_m::set_initial_rec_lsn(const lpid_t& pid, 
+                       const lsn_t new_lsn,       // In-coming LSN
+                       const lsn_t current_lsn)   // Current log LSN
 {
     // Caller has latch on page
     // Special function called from btree_page_h::format_steal() when the
@@ -473,7 +488,7 @@ inline void bf_tree_m::set_initial_rec_lsn(const lpid_t& pid, lsn_t new_lsn)
     
     // Reset the _rec_lsn in page cb (when the page was dirtied initially) if
     // it is later than the new_lsn, we want the earliest lsn in _rec_lsn
-   
+
     uint64_t key = bf_key(pid.vol().vol, pid.page);
     bf_idx idx = _hashtable->lookup(key);
     if (0 != idx)
@@ -481,9 +496,20 @@ inline void bf_tree_m::set_initial_rec_lsn(const lpid_t& pid, lsn_t new_lsn)
         // Page exists in buffer pool hash table
         bf_tree_cb_t &cb = smlevel_0::bf->get_cb(idx);
 
+        lsn_t lsn = new_lsn;
+        if (0 == new_lsn.data())
+        {
+           lsn = current_lsn;
+           w_assert1(0 != lsn.data());
+        }
+
         // Update the initial LSN which is when the page got dirty initially
-        if (cb._rec_lsn > new_lsn.data())
+        // Update only if the existing initial LSN was later than the incoming LSN
+        // or the original LSN did not exist
+        if ((cb._rec_lsn > lsn.data()) || (0 == cb._rec_lsn))
             cb._rec_lsn = new_lsn.data();
+        cb._used = true;
+        cb._dirty = true;
     }
     else
     {

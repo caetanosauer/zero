@@ -642,6 +642,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(volid_t vol, size_t f
         cb._dirty = false;
         cb._in_doubt = false;
         --_parent->_bufferpool->_dirty_page_count_approximate;
+
         cb._rec_lsn = _write_buffer[i].lsn.data();
         cb._dependency_idx = 0;
         cb._dependency_lsn = 0;

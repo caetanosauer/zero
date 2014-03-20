@@ -180,6 +180,11 @@ public:
      */
     bool         is_dirty()  const;
 
+    // Update both initial dirty lsn (if needed) and last write lsn on page
+    void update_initial_and_last_lsn(const lsn_t & lsn) const;
+
+    // Update initial dirty lsn (if needed) on page
+    void update_initial_dirty_lsn(const lsn_t & lsn) const;
 
     /// Return flag for if this page to be deleted when bufferpool evicts it.
     /// @pre We do not hold current page's latch in Q mode

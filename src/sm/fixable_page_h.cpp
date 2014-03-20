@@ -187,6 +187,30 @@ bool fixable_page_h::is_dirty() const {
     }
 }
 
+void fixable_page_h::update_initial_and_last_lsn(const lsn_t & lsn) const 
+{
+    // Update both initial dirty lsn (if needed) and last write lsn
+    // Caller should have latch on the page
+    if (_pp)
+    {
+        ((generic_page_h*)this)->set_lsns(lsn);    
+        update_initial_dirty_lsn(lsn);
+    }
+}
+
+void fixable_page_h::update_initial_dirty_lsn(const lsn_t & lsn) const 
+{
+    // Whenever updating a page lsn (last write through set_lsns())
+    // caller should update the initial dirty lsn on the page also
+    
+    w_assert1(_pp);
+    w_assert1(_mode != LATCH_Q);
+
+    if (_bufferpool_managed) 
+    {
+        smlevel_0::bf->update_initial_dirty_lsn(_pp, lsn);
+    }
+}
 
 bool fixable_page_h::is_to_be_deleted() {
     w_assert1(_mode != LATCH_Q);

@@ -396,7 +396,7 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
             DBGOUT1(<<"END chkpt_m::take - before system startup/recovery, skip checkpoint");
             valid_chkpt = false;
         }
-        if (in_recovery() && (smlevel_0::t_chkpt_sync != chkpt_mode))
+        else if (in_recovery() && (smlevel_0::t_chkpt_sync != chkpt_mode))
         {
             DBGOUT1(<<"END chkpt_m::take - system in recovery, skip asynch checkpoint");            
             valid_chkpt = false;
@@ -573,19 +573,72 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
     // Finally, we're ready to start the actual checkpoint!
     uint16_t total_page_count = 0;
     uint16_t total_txn_count = 0;
+    int      total_dev_cnt = 0;
 
     // Write a Checkpoint Begin Log and record its lsn in master
-    lsn_t master;
+    lsn_t master = lsn_t::null;
 
     // Put the last mounted LSN in the 'begin checkpoint ' log record, it is used in
     // Recovery Log Analysis for device mounting purpose.
-    // Use _curr_lsn as the master (begin checkpoint LSN) for the rest of the checkpoint
-    // operation, while _curr_lsn is the lsn of the next-to-be-inserted log record LSN,
-    // master LSN (or if there is a smaller LSN) will be recorded in the 'end checkpoint'
-    // log record for the Recovery purpose.
-    lsn_t tmp_lsn;    
-    master = log->curr_lsn();
-    LOG_INSERT(chkpt_begin_log(io->GetLastMountLSN()), &tmp_lsn);
+    // Get the master lsn (begin checkpoint LSN) for the rest of the checkpoint
+    // operation.
+    // The curr_lsn is the lsn of the next-to-be-inserted log record LSN,
+    // master LSN must be equal or later than the current lsn (if busy system).
+    // The master LSN will be the starting point for Recovery Log Analysis log scan
+    lsn_t tmp_lsn = log->curr_lsn();
+    LOG_INSERT(chkpt_begin_log(io->GetLastMountLSN()), &master);
+    w_assert1(tmp_lsn.data() <= master.data());
+
+    // The order of logging is important:
+    //   1. Device mount
+    //   2. Buffer pool dirty pages
+    //   3. Active transactions
+    // Because during Recovery, we need to mount the device before loading
+    // pages into buffer pool
+    // Note that mounting a device would preload the root page, which might be 
+    // in-doubt page itself, need to take care of this special case in Recovery
+    
+    // Checkpoint the dev mount table
+    {
+        // Log the mount table in "max loggable size" chunks.
+        // XXX casts due to enums
+        const int chunk = (int)max_vols > (int)chkpt_dev_tab_t::max 
+            ? (int)chkpt_dev_tab_t::max : (int)max_vols;
+        total_dev_cnt = io->num_vols();
+
+        int    i;
+        char   **devs;
+        devs = new char *[chunk];
+        if (!devs)
+            W_FATAL(fcOUTOFMEMORY);
+        for (i = 0; i < chunk; i++) 
+        {
+            devs[i] = new char[max_devname+1];
+            if (!devs[i])
+                W_FATAL(fcOUTOFMEMORY);
+        }
+        vid_t  *vids;
+        vids = new vid_t[chunk];
+        if (!vids)
+            W_FATAL(fcOUTOFMEMORY);
+
+        for (i = 0; i < total_dev_cnt; i += chunk)
+        {
+            int ret;
+            W_COERCE(io->get_vols(i, MIN(total_dev_cnt - i, chunk),
+                     devs, vids, ret));
+            if (ret)  
+            {
+                // Write a Checkpoint Device Table Log
+                // XXX The bogus 'const char **' cast is for visual c++
+                LOG_INSERT(chkpt_dev_tab_log(ret, (const char **) devs, vids), 0);
+            }
+        }
+        delete [] vids;
+        for (i = 0; i < chunk; i++)
+            delete [] devs[i];
+        delete [] devs;
+    }
 
     /*
      *  Checkpoint the buffer pool dirty page table, and record
@@ -629,8 +682,9 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
             // returned iff it's less than the value passed in
             // min_rec_lsn will be recorded in 'end checkpoint' log, it is used to determine the
             // beginning of the REDO phase
+           
             bf->get_rec_lsn(i, count, pid.get(), rec_lsn.get(), page_lsn.get(), min_rec_lsn,
-                            master, log->curr_lsn());
+                            master, log->curr_lsn(), io->GetLastMountLSN());
             if (count)  
             {
                 total_page_count += count;
@@ -640,48 +694,6 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
             }
         }
         //fprintf(stderr, "Checkpoint found %d dirty pages\n", total_page_count);
-    }
-
-    // Checkpoint the dev mount table
-    {
-        // Log the mount table in "max loggable size" chunks.
-        // XXX casts due to enums
-        const int chunk = (int)max_vols > (int)chkpt_dev_tab_t::max 
-            ? (int)chkpt_dev_tab_t::max : (int)max_vols;
-        int dev_cnt = io->num_vols();
-
-        int    i;
-        char   **devs;
-        devs = new char *[chunk];
-        if (!devs)
-            W_FATAL(fcOUTOFMEMORY);
-        for (i = 0; i < chunk; i++) 
-        {
-            devs[i] = new char[max_devname+1];
-            if (!devs[i])
-                W_FATAL(fcOUTOFMEMORY);
-        }
-        vid_t  *vids;
-        vids = new vid_t[chunk];
-        if (!vids)
-            W_FATAL(fcOUTOFMEMORY);
-
-        for (i = 0; i < dev_cnt; i += chunk)  
-        {
-            int ret;
-            W_COERCE( io->get_vols(i, MIN(dev_cnt - i, chunk),
-                          devs, vids, ret));
-            if (ret)  
-            {
-                // Write a Checkpoint Device Table Log
-                // XXX The bogus 'const char **' cast is for visual c++
-                LOG_INSERT(chkpt_dev_tab_log(ret, (const char **) devs, vids), 0);
-            }
-        }
-        delete [] vids;
-        for (i = 0; i < chunk; i++)
-            delete [] devs[i];
-        delete [] devs;
     }
 
     // Checkpoint is not a blocking operation, do not locking the transaction table
@@ -867,7 +879,9 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
     {
         if (ss_m::shutting_down && !ss_m::shutdown_clean) // Dirty shutdown (simulated crash)
         {
-            DBGOUT1(<<"chkpt_m::take - Detected dirty shutwond, abort checkpoint");       
+            DBGOUT1(<<"chkpt_m::take ABORTED due to dirty shutdown, dirty page count = "
+                    << total_page_count << ", total txn count = "
+                    << total_txn_count << ", total vol count = " << total_dev_cnt);
         }
         else
         {
@@ -877,21 +891,22 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
             //  3. min_xct_lsn: minimum lsn of all in-flight (including aborting) transactions
 
             LOG_INSERT(chkpt_end_log (master, min_rec_lsn, min_xct_lsn), 0);
-            DBGOUT1(<<"chkpt_m::take - total dirty page count = " 
-                    << total_page_count << ", total txn count = " << total_txn_count);
+            DBGOUT1(<<"chkpt_m::take completed - total dirty page count = " 
+                    << total_page_count << ", total txn count = " 
+                    << total_txn_count << ", total vol count = "
+                    << total_dev_cnt);
 
             // Sync the log
             // In checkpoint operation, flush the recovery log to harden the log records
             // We either flush the log or flush the buffer pool, but not both        
             
-            // We do not flush the buffer pool (bf->force_all()), also it might cause
-            // confusion when counting in_doubt pages in the Recovery logic.
+            // We do not flush the buffer pool (bf->force_all()).
             // One scenario: If the dirty page was a new page but never flushed to disk, 
-            //                 the page it do not exist on disk until the buffer pool page gets 
+            //                 the page do not exist on disk until the buffer pool page gets 
             //                 flushed.  When taking a checkpoint, it captures the fact that the
             //                 page is dirty in buffer pool but it does not know the page does 
             //                 not exist on disk.  If the transaction ended (log record generated)
-            //                 and then system crashed.
+            //                 and then system crashed, the page might not exist on disk..
             //                 During system startup, the Recovery starts from the last completed
             //                 checkpoint, it correctly determined the transaction was finished 
             //                 and there was an associated in_doubt page, so it tries to REDO the
@@ -899,10 +914,12 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
             //                 does not exist on disk, so REDO cannot fetch the page from disk.
             // Solution: During the Log Analysis phase, it track the page history to find the 
             //                 LSN which made the page dirty initially, in case of virgin page it should
-            //                 be the page format LSN.  The REDO log scan starts from the earliest
-            //                 LSN which might be earlier than the 'begin checkpoint' LSN.  In this case
-            //                 a page format log record would be REDO for each virgin page and we
-            //                 should never try to fetch a virgin page from disk.
+            //                 be the page format log record LSN.  The REDO log scan starts from 
+            //                 the earliest LSN which might be earlier than the 'begin checkpoint' LSN.
+            //                 In this case a page format log record would be REDO for a virgin page
+            //                 and we should never have the situation fetching a non-existing page
+            //                 from disk.  A virgin page should always start from a page_imp_format
+            //                 or t_btree_norec_alloc log record.
             // Note that we cannot force a buffer pool flush after a page format operation, because
             // the transaction was not committed at that point.
 
@@ -923,17 +940,23 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
 ////////////////////////////////////////
             // Scavenge some log
             // W_COERCE( log->scavenge(min_rec_lsn, min_xct_lsn) );
+
+            // Finished a completed checkpoint
+            DBGOUT1(<< "END chkpt_m::take, begin LSN = " << master 
+                    << ", min_rec_lsn = " << min_rec_lsn);
+
         }
     }
     else
     {
         DBGOUT1(<<"chkpt_m::take - GetLastMountLSN > master, invalid situation for checkpoint, "
                 << "GetLastMountLSN = " << io->GetLastMountLSN() << ", master = " << master);
+        DBGOUT1(<<"END chkpt_m::take, abort checkpoint" << master);
     }
 
     // Release the 'write' mutex so the next checkpoint request can come in
     chkpt_serial_m::write_release();
-    DBGOUT1(<<"END chkpt_m::take");
+
 
     return;
 }

@@ -714,10 +714,9 @@ ss_m::~ss_m()
     // would not be able to
     // do multiple startups and shutdowns in one process, alas. 
     CRITICAL_SECTION(cs, ssm_once_mutex);
-// TODO(M1)...
+
     if (0 < _instance_cnt)
         _destruct_once();
-// TODO(M1)...end
 }
 
 void

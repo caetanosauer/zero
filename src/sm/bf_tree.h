@@ -360,6 +360,12 @@ public:
     bool is_dirty(const bf_idx idx) const;
 
     /**
+     * Update the initial dirty lsn in the page if needed.
+     */
+    void update_initial_dirty_lsn(const generic_page* p,
+                                   const lsn_t new_lsn);
+
+    /**
      * Mark the page in_doubt and used flags, the physical page is not in buffer pool
      * also update the LSN (track when the page was made dirty initially)
      */
@@ -390,9 +396,9 @@ public:
     /**
      * Set the _rec_lsn (the LSN which made the page dirty initially) in page cb
      * if it is later than the new_lsn.
-     * Thi sfunction is mainly used when a page format log record was generated
+     * This function is mainly used when a page format log record was generated
      */
-    void set_initial_rec_lsn(const lpid_t& pid, lsn_t new_lsn);
+    void set_initial_rec_lsn(const lpid_t& pid, const lsn_t new_lsn, const lsn_t current_lsn);
 
     /**
      * Returns true if the page's _used flag is on
@@ -525,7 +531,8 @@ public:
     */
     void get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, lsn_t *rec_lsn,
                        lsn_t *page_lsn, lsn_t &min_rec_lsn,
-                       const lsn_t master, const lsn_t current_lsn);
+                       const lsn_t master, const lsn_t current_lsn,
+                       lsn_t last_mount_lsn);
     
     /**
     *  Ensures the buffer pool's rec_lsn for this page is no larger than
@@ -545,7 +552,6 @@ public:
     *  FRJ: I don't see any evidence that this function is actually
     *  called because of (3) above...
     * 
-    * NOTE call this method only while REDO!
     */
     void repair_rec_lsn (generic_page *page, bool was_dirty, const lsn_t &new_rlsn);
 

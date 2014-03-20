@@ -2180,7 +2180,7 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
 void _update_page_lsns(const fixable_page_h *page, const lsn_t &new_lsn) {
     if (page != NULL) {
         w_assert1(page->latch_mode() == LATCH_EX);
-        const_cast<fixable_page_h*>(page)->set_lsns(new_lsn);
+        const_cast<fixable_page_h*>(page)->update_initial_and_last_lsn(new_lsn);
         const_cast<fixable_page_h*>(page)->set_dirty();
     }
 }
@@ -2208,6 +2208,7 @@ xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page, const fixable_page_h
         w_assert1(l == _log_buf_for_piggybacked_ssx);
         lsn_t lsn;
         W_DO( log->insert(*l, &lsn) );
+        // Mark dirty flags for both pages
         _update_page_lsns(page, lsn);
         _update_page_lsns(page2, lsn);
         DBGOUT3(<< " SSX logged: " << l->type() << "\n new_lsn= " << lsn);

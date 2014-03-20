@@ -101,9 +101,6 @@ void btree_insert_nonghost_log::redo(fixable_page_h* page) {
     borrowed_btree_page_h bp(page);
     btree_insert_t* dp = reinterpret_cast<btree_insert_t*>(data());
 
-// TODO(M1)...
-DBGOUT3 (<< "************ Page level = " << bp.level());
-
     w_assert1(bp.is_leaf());
     w_keystr_t key;
     vec_t el;
@@ -544,7 +541,8 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
         w_assert0(src.lsn() < lsn_ck());
         btree_impl::_ux_merge_foster_apply_parent(bp, src);
         src.set_dirty();
-        src.set_lsns(lsn_ck());
+        src.update_initial_and_last_lsn(lsn_ck());
+
         W_COERCE(src.set_to_be_deleted(false));
     } else {
         // we are recovering "page2", which is foster-child (src).
@@ -560,7 +558,8 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
             // dest is also old, so we are recovering both.
             btree_impl::_ux_merge_foster_apply_parent(dest, bp);
             dest.set_dirty();
-            dest.set_lsns(lsn_ck());
+            dest.update_initial_and_last_lsn(lsn_ck());
+
         }
     }
 }
@@ -618,7 +617,8 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
         W_COERCE(btree_impl::_ux_rebalance_foster_apply(src, bp, dp->_move_count,
                                                         fence, dp->_new_pid0));
         src.set_dirty();
-        src.set_lsns(redo_lsn);
+        src.update_initial_and_last_lsn(redo_lsn);
+
     } else {
         // we are recovering "page2", which is foster-parent (src).
         w_assert0(target_pid == page2_id);
@@ -645,7 +645,8 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
             W_COERCE(btree_impl::_ux_rebalance_foster_apply(bp, dest, dp->_move_count,
                                                         fence, dp->_new_pid0));
             dest.set_dirty();
-            dest.set_lsns(redo_lsn);
+            dest.update_initial_and_last_lsn(redo_lsn);
+
         }
     }
 }

@@ -370,6 +370,8 @@ public:
     }
 };
 
+// In this test case, the user checkpoint was aborted due to crash shutdown
+
 /* Passing */
 TEST (RestartTest, InflightCheckpointCrashShutdown) {
     test_env->empty_logdata_dir();
@@ -444,18 +446,22 @@ public:
         x_btree_scan_result s;
         W_DO(test_env->btree_scan(_stid, s));
         const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
+
+        // I have seen in retail run, we have 24 records instead of 25, depending on when and 
+        // how fast the the crash comes in, we might roll back a committed record
+        // 
         EXPECT_EQ (recordCount, s.rownum);
         return RCOK;
     }
 };
 
-/* No Passing: btree_page.h:578, item>=0 && item<nitems *
+/* Passing */
 TEST (RestartTest, InflightCkptManyCrashShutdown) {
     test_env->empty_logdata_dir();
     restart_inflight_ckpt_many_crash_shutdown context;
     EXPECT_EQ(test_env->runRestartTest(&context, true), 0);  // true = simulated crash
 }
-**/
+/**/
 
 // Test case with committed transactions,  no checkpoint, simulated crash shutdown
 class restart_crash_shutdown : public restart_test_base 
@@ -517,6 +523,13 @@ public:
         output_durable_lsn(4);
         x_btree_scan_result s;
         W_DO(test_env->btree_scan(_stid, s));
+
+        // I have seen incorrect result (inconsistent repro)  with 4 records instead of 5.
+        // Depending on when the crash occurred, it might roll back the last
+        // committed record 
+        // But when this occurred, the minkey = 'aa2' instead of 'aa1',
+        // this should not happen and need to debug on a repro
+        
         EXPECT_EQ (5, s.rownum);
         EXPECT_EQ (std::string("aa1"), s.minkey);
         EXPECT_EQ (std::string("aa5"), s.maxkey);
@@ -524,7 +537,7 @@ public:
     }
 };
 
-/* Not Passing - bp.is_leaf() *
+/* Passing - This test fails something due to incorrect results, when it happens, 4 records, and the smalles one is aa2 instead of aa1 *
 TEST (RestartTest, CheckpointCrashShutdown) {
     test_env->empty_logdata_dir();
     restart_checkpoint_crash_shutdown context;
@@ -588,13 +601,13 @@ public:
     }
 };
 
-/* No Passing: btree_page.h:578, item>=0 && item<nitems *
+/* Passing */
 TEST (RestartTest, ManyCkptCrashShutdown) {
     test_env->empty_logdata_dir();
     restart_many_ckpt_crash_shutdown context;
     EXPECT_EQ(test_env->runRestartTest(&context, true), 0);  // true = simulated crash
 }
-**/
+/**/
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
