@@ -95,6 +95,10 @@ public:
     /** Print the btree (for debugging only). */
     static void                 print(const lpid_t& root,  bool print_elem = true);
 
+    /** Touch all pages in the btree (for performance experiments). */
+    static rc_t                 touch_all(const lpid_t& root, uint64_t &page_count);
+    static rc_t                 touch(const btree_page_h& page, uint64_t &page_count);
+
     /**
      * \brief Defrags the given page to remove holes and ghost records in the page.
      * \ingroup SSMBTREE

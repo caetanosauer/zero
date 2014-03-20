@@ -285,6 +285,34 @@ btree_m::print(const lpid_t& current,
         }
     }
 }
+rc_t btree_m::touch_all(const lpid_t& root, uint64_t &page_count) {
+    btree_page_h page;
+    W_DO( page.fix_root(root.vol().vol, root.store(), LATCH_SH));
+    page_count = 0;
+    return touch(page, page_count);
+}
+rc_t btree_m::touch(const btree_page_h& page, uint64_t &page_count) {
+    ++page_count;
+    if (page.get_foster_opaqueptr() != 0) {
+        btree_page_h next;
+        W_DO(next.fix_nonroot(page, page.vol(), page.get_foster_opaqueptr(), LATCH_SH));
+        W_DO(touch(next, page_count));
+    }
+    if (page.is_node()) {
+        if (page.pid0_opaqueptr())  {
+            btree_page_h next;
+            W_DO(next.fix_nonroot(page, page.vol(), page.pid0_opaqueptr(), LATCH_SH));
+            W_DO(touch(next, page_count));
+        }
+        for (int i = 0; i < page.nrecs(); ++i) {
+            btree_page_h next;
+            W_DO(next.fix_nonroot(page, page.vol(), page.child_opaqueptr(i), LATCH_SH));
+            W_DO(touch(next, page_count));
+        }
+    }
+    return RCOK;
+}
+
 /* 
  * for use by logrecs for logical undo of inserts/deletes
  */
