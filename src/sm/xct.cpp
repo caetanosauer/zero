@@ -1295,6 +1295,11 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
         // to the current state (which causes an assertion failure).
         // NEW: had to allow this below, because the freeing of
         // locks needs to happen after the commit log record is written.
+        //
+        // Note freeing the locks and log flush occur after 'log_xct_end',
+        // and then change state.
+        // if the logic changes here, need to visit chkpt logic which is 
+        // depending on the logic here when recording active transactions
 
         state_t old_state = _core->_state;
         change_state(xct_freeing_space);

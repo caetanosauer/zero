@@ -768,9 +768,27 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
                     return;
                 }
 
-                if ( xd->state() == xct_t::xct_ended)
+                if ((xd->state() == xct_t::xct_ended) ||
+                    (xd->state() == xct_t::xct_freeing_space))
                 {
-                    // If transactipon ended already, it is safe not to record it
+                    // In xct_t::_commit(), the txn state was changed to xct_freeing_space
+                    // first, then log the free space log recorsd, followed by the txn complete
+                    // log record, followed by lock release and log sync, and then change 
+                    // the xct state to xct_ended, the gap is long.  Therefore,                    
+                    // if transaction state is in either xct_free_space or xct_ended, the
+                    // log record has written and it is safe not to record it
+
+                    // Potential race condition: if error occurred during lock release or log sync,
+                    // it would bring down the system and the log not flushed.
+                    // If the checkpoint was on at the same time
+                    // 1. Checkpoint completed and the target txn was not recorded - the 
+                    //     recovery starts from this last compeleted checkpoint which does not
+                    //     have this transaction, so it won't get rolled back.  Whether we have
+                    //     an issue or not is depending on the state of the buffer pool on disk or not,
+                    //     but the window for this scenario to occur is so small, is it even possible?
+                    // 2. Checkpoint aborted - the transaction would be rollback during recover
+                    //     because the 'end txn' log record was not flushed.
+                    
                     xd->latch().latch_release();                
                     continue;
                 }
@@ -781,6 +799,9 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
                 
                 if (xd->first_lsn().valid())  
                 {
+                    // Not all transactions have tid, i.e. system transaction
+                    // does not have tid, device mount/dismount does not
+                    // have tid
                     tid[i] = xd->tid();
 
                     // Record the transactions in following states:
