@@ -1661,6 +1661,17 @@ public:
     /**\endcond skip */
 
     /**
+     * \brief Touches all pages in the B-tree index to load them into bufferpool.
+     * \ingroup SSMBTREE
+     * @param[in] stid ID of the index to be touched.
+     * @param[out] page_count Number of pages touched.
+     * \details This is mainly for performance experiments with \e hot bufferpool.
+     * We traditionally used a cursor to touch all pages, but this one is much more efficient
+     * for the purpose.
+     */
+    static rc_t            touch_index(stid_t stid, uint64_t &page_count);
+
+    /**
      * \brief Create an entry in a B+-Tree index.
      * \ingroup SSMBTREE
      *
