@@ -14,8 +14,6 @@
 #define USE_BLOCK_ALLOC_FOR_LOGREC 1
 #define USE_BLOCK_ALLOC_FOR_XCT_IMPL 1
 
-#define SSX_LOGBUFFER_SIZE (sizeof(logrec_t))
-
 #include <new>
 #define SM_LEVEL 0
 #include "sm_int_1.h"
@@ -41,6 +39,8 @@
 #include "crash.h"
 #include "chkpt.h"
 #include "bf_tree.h"
+#include "lock_raw.h"
+#include "log_lsn_tracker.h"
 
 #ifdef EXPLICIT_TEMPLATE
 template class w_list_t<xct_t, queue_based_lock_t>;
@@ -214,13 +214,13 @@ xct_t::new_xct(
         sm_stats_info_t* stats, 
         timeout_in_ms timeout,
         bool sys_xct,
-        bool single_log_sys_xct, bool deferred_ssx
+        bool single_log_sys_xct
               )
 {
     xct_core* core = NEW_CORE xct_core(_nxt_tid.atomic_incr(),
                        xct_active, timeout);
     xct_t* xd = NEW_XCT xct_t(core, stats, lsn_t(), lsn_t(),
-                              sys_xct, single_log_sys_xct, deferred_ssx);
+                              sys_xct, single_log_sys_xct);
     me()->attach_xct(xd);
     return xd;
 }
@@ -228,7 +228,7 @@ xct_t::new_xct(
 xct_t*
 xct_t::new_xct(const tid_t& t, state_t s, const lsn_t& last_lsn,
              const lsn_t& undo_nxt, timeout_in_ms timeout, bool sys_xct,
-             bool single_log_sys_xct, bool deferred_ssx
+             bool single_log_sys_xct
               ) 
 {
 
@@ -236,7 +236,7 @@ xct_t::new_xct(const tid_t& t, state_t s, const lsn_t& last_lsn,
     _nxt_tid.atomic_assign_max(t);
     xct_core* core = NEW_CORE xct_core(t, s, timeout);
     xct_t* xd = NEW_XCT xct_t(core, 0, last_lsn, undo_nxt,
-        sys_xct, single_log_sys_xct, deferred_ssx);
+        sys_xct, single_log_sys_xct);
     
     /// Don't attach
     w_assert1(me()->xct() == 0);
@@ -246,6 +246,9 @@ xct_t::new_xct(const tid_t& t, state_t s, const lsn_t& last_lsn,
 void
 xct_t::destroy_xct(xct_t* xd) 
 {
+    if (!xd->_sys_xct && smlevel_0::log) {
+        smlevel_0::log->get_oldest_lsn_tracker()->leave(reinterpret_cast<uintptr_t>(xd));
+    }
     LOGREC_ACCOUNTING_PRINT // see logrec.h
     // xct_core* core = xd->_core;
     DELETE_XCT(xd);
@@ -411,6 +414,9 @@ lil_private_table* xct_t::lil_lock_info() const
 {
     return _core->_lil_lock_info;
 }
+RawXct* xct_t::raw_lock_xct() const {
+    return _core->_raw_lock_xct;
+}
 
 timeout_in_ms
 xct_t::timeout_c() const {
@@ -560,43 +566,6 @@ xct_t::stash(xct_log_t*&x)
     else { __saved_xct_log_t = x; }
     x = 0;
     // dup acquire/release removed release_1thread_xct_mutex();
-}
-
-rc_t                        
-xct_t::obtain_locks(const okvl_mode& mode, int num, const lockid_t *locks)
-{
-    int  i;
-    rc_t rc;
-
-    for (i=0; i<num; i++) {
-        DBG(<<"Obtaining lock : " << locks[i] << " in mode " << int(mode));
-
-        rc =lm->lock(locks[i], mode, false, WAIT_IMMEDIATE);
-        if(rc.is_error()) {
-            lm->dump(smlevel_0::errlog->clog);
-            smlevel_0::errlog->clog << fatal_prio
-                << "can't obtain lock " <<rc <<endl;
-            W_FATAL(eINTERNAL);
-        }
-    }
-
-    return RCOK;
-}
-
-rc_t                        
-xct_t::obtain_one_lock(const okvl_mode& mode, const lockid_t &lock)
-{
-    DBG(<<"Obtaining 1 lock : " << lock << " in mode " << int(mode));
-
-    rc_t rc;
-    rc = lm->lock(lock, mode, false, WAIT_IMMEDIATE);
-    if(rc.is_error()) {
-        lm->dump(smlevel_0::errlog->clog);
-        smlevel_0::errlog->clog << fatal_prio
-            << "can't obtain lock " <<rc <<endl;
-        W_FATAL(eINTERNAL);
-    }
-    return RCOK;
 }
 
 /**\brief Set the log state for this xct/thread pair to the value \e s.
@@ -862,8 +831,8 @@ operator<<(ostream& o, const xct_t& x)
 
     o << " in_compensated_op=" << x._in_compensated_op << " anchor=" << x._anchor;
 
-    if(x.lock_info()) {
-         o << *x.lock_info();
+    if(x.raw_lock_xct()) {
+         x.raw_lock_xct()->dump_lockinfo(o);
     }
 
     return o;
@@ -882,6 +851,7 @@ xct_t::xct_core::xct_core(tid_t const &t, state_t s, timeout_in_ms timeout)
     _warn_on(true),
     _lock_info(agent_lock_info->take()),    
     _lil_lock_info(agent_lil_lock_info->take()),    
+    _raw_lock_xct(NULL),
     _updating_operations(0),
     _threads_attached(0),
     _state(s),
@@ -895,9 +865,9 @@ xct_t::xct_core::xct_core(tid_t const &t, state_t s, timeout_in_ms timeout)
     w_assert1(_tid == _lock_info->tid());
 
     w_assert1(_lil_lock_info);
-    
-    DO_PTHREAD(pthread_mutex_init(&_waiters_mutex, NULL));
-    DO_PTHREAD(pthread_cond_init(&_waiters_cond, NULL));
+    if (smlevel_0::lm) {
+        _raw_lock_xct = smlevel_0::lm->allocate_xct();
+    }
 
     INC_TSTAT(begin_xct_cnt);
 
@@ -913,7 +883,7 @@ xct_t::xct_core::xct_core(tid_t const &t, state_t s, timeout_in_ms timeout)
  *********************************************************************/
 xct_t::xct_t(xct_core* core, sm_stats_info_t* stats,
            const lsn_t& last_lsn, const lsn_t& undo_nxt, bool sys_xct,
-           bool single_log_sys_xct, bool deferred_ssx
+           bool single_log_sys_xct
             ) 
     :   
     __stats(stats),
@@ -921,12 +891,12 @@ xct_t::xct_t(xct_core* core, sm_stats_info_t* stats,
     __saved_xct_log_t(0),
     _tid(core->_tid), 
     _xct_chain_len(0),
+    _ssx_chain_len(0),
     _query_concurrency (smlevel_0::t_cc_none),
     _query_exlock_for_select(false),
     _piggy_backed_single_log_sys_xct(false),
     _sys_xct (sys_xct),
     _single_log_sys_xct (single_log_sys_xct),
-    _deferred_ssx (deferred_ssx),
     _inquery_verify(false),
     _inquery_verify_keyorder(false),
     _inquery_verify_space(false),
@@ -959,22 +929,15 @@ xct_t::xct_t(xct_core* core, sm_stats_info_t* stats,
 
 #if USE_BLOCK_ALLOC_FOR_LOGREC 
     _log_buf = new (*logrec_pool) logrec_t; // deleted when xct goes away
+    _log_buf_for_piggybacked_ssx = new (*logrec_pool) logrec_t;
 #else
     _log_buf = new logrec_t; // deleted when xct goes away
+    _log_buf_for_piggybacked_ssx = new logrec_t;
 #endif
-    _log_buf_for_piggybacked_ssx = new char[SSX_LOGBUFFER_SIZE]; // TODO this should be pooled too
-    _log_buf_for_piggybacked_ssx_target = NULL;
-    _log_buf_for_piggybacked_ssx_used = 0;
 
-    // so far only 2 (ssx + user log), but in future can be many more
-    typedef logrec_t* logrec_ptr;
-    typedef lsn_t* lsn_ptr;
-    _tmp_array_for_rs = new logrec_ptr[2];
-    _tmp_array_for_ret_lsns = new lsn_ptr[2];
-    
 #ifdef ZERO_INIT
     memset(_log_buf, '\0', sizeof(logrec_t));
-    memset(_log_buf_for_piggybacked_ssx, '\0', SSX_LOGBUFFER_SIZE);
+    memset(_log_buf_for_piggybacked_ssx, '\0', sizeof(logrec_t));
 #endif
 
     if (!_log_buf || !_log_buf_for_piggybacked_ssx)  {
@@ -999,6 +962,9 @@ xct_t::xct_core::~xct_core()
     }
     if (_lil_lock_info) {
         agent_lil_lock_info->put(_lil_lock_info);
+    }
+    if (_raw_lock_xct) {
+        smlevel_0::lm->deallocate_xct(_raw_lock_xct);
     }
 }
 /*********************************************************************
@@ -1038,15 +1004,11 @@ xct_t::~xct_t()
 
 #if USE_BLOCK_ALLOC_FOR_LOGREC 
         logrec_pool->destroy_object(_log_buf);
+        logrec_pool->destroy_object(_log_buf_for_piggybacked_ssx);
 #else
         delete _log_buf;
+        delete _log_buf_for_piggybacked_ssx;
 #endif
-        // w_assert1(_log_buf_for_piggybacked_ssx_used == 0); could happen in crash
-        delete[] _log_buf_for_piggybacked_ssx;
-
-        delete[] _tmp_array_for_rs;
-        delete[] _tmp_array_for_ret_lsns;
-
         // clean up what's stored in the thread
         me()->no_xct(this);
     }
@@ -1270,18 +1232,6 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
     // W_DO(check_one_thread_attached()); // now checked in prologue
     w_assert1(one_thread_attached());
 
-    // first, empty the wait map because no chance this xct can cause deadlock any more.
-    {
-        xct_lock_info_t *linfo = lock_info();
-        if (linfo) {
-            linfo->clear_wait_map();
-        }
-    }
-    
-    if (_log_buf_for_piggybacked_ssx_used > 0) {
-        W_DO(_flush_piggyback_ssx_logbuf());
-    }
-
     // "normal" means individual commit; not group commit.
     // Group commit cannot be lazy or chained.
     bool individual = ! (flags & xct_t::t_group);
@@ -1498,15 +1448,21 @@ rc_t xct_t::early_lock_release() {
                 W_DO(commit_free_locks(true));
                 break;
             case elr_sx:
+            case elr_clv: // TODO see below
                 // simply release all locks
                 // update tag for safe SX-ELR with _last_lsn which should be the commit lsn
                 // (we should have called log_xct_end right before this)
                 W_DO(commit_free_locks(false, _last_lsn));
                 break;
+                // TODO Controlled Lock Violation is tentatively replaced with SX-ELR.
+                // In RAW-style lock manager, reading the permitted LSN needs another barrier.
+                // In reality (not concept but dirty impl), they are doing the same anyways.
+                /*
             case elr_clv:
                 // release no locks, but give permission to violate ours:
                 lm->give_permission_to_violate(_last_lsn);
                 break;
+                */
             default:
                 w_assert1(false); // wtf??
         }
@@ -1537,18 +1493,6 @@ xct_t::_abort()
             );
     if(_core->_state != xct_committing && _core->_state != xct_freeing_space) {
         w_assert1(_core->_xct_ended++ == 0);
-    }
-
-    // first, empty the wait map because no chance this xct can cause deadlock any more.
-    {
-        xct_lock_info_t *linfo = lock_info();
-        if (linfo) {
-            linfo->clear_wait_map();
-        }
-    }
-
-    if (_log_buf_for_piggybacked_ssx_used > 0) {
-        W_DO(_flush_piggyback_ssx_logbuf());
     }
 
 #if X_LOG_COMMENT_ON
@@ -1725,8 +1669,7 @@ xct_t::_flush_logbuf()
             logrec_t* l = _last_log;
             bool      consuming = should_consume_rollback_resv(l->type());
             _last_log = 0;
-            size_t old_ssx_used = _log_buf_for_piggybacked_ssx_used; // remember it before we flush
-            W_DO( _flush_user_logbuf(l, &_last_lsn) );
+            W_DO(log->insert(*l, &_last_lsn));
 
             LOGTRACE( << setiosflags(ios::right) << _last_lsn
                       << resetiosflags(ios::right) << " I: " << *l
@@ -1752,7 +1695,7 @@ xct_t::_flush_logbuf()
                compensations and undo was already accounted for)
             */
             if(smlevel_0::operating_mode == t_forward_processing) {
-                long bytes_used = l->length() + old_ssx_used;
+                long bytes_used = l->length();
                 if(consuming)
                 {
                     ADD_TSTAT(log_bytes_generated_rb,bytes_used);
@@ -1855,10 +1798,10 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
 {
     // then , use tentative log buffer.
     if (is_piggy_backed_single_log_sys_xct()) {
-        ret = reinterpret_cast<logrec_t*>(_log_buf_for_piggybacked_ssx + _log_buf_for_piggybacked_ssx_used);
+        ret = _log_buf_for_piggybacked_ssx;
         return RCOK;
     }
-    
+
     // protect the log buf that we'll return
 #if W_DEBUG_LEVEL > 0
     fileoff_t rsvd = _log_bytes_rsvd;
@@ -2213,27 +2156,19 @@ xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page, const fixable_page_h
             multi->_page2_prv = page2->lsn();
         }
     }
-    // then, buffer it internally. (can be defered until next log of the _outer_ transaction)
+    // If it's a log for piggy-backed SSX, we call log->insert without updating _last_log
+    // because this is a single log independent from other logs in outer transaction.
     if (is_piggy_backed_single_log_sys_xct()) {
         w_assert1(l->is_single_sys_xct());
-        if (_deferred_ssx) {
-            // in this case, we don't push it to log manager for now.
-            w_assert1(page != NULL);
-            W_DO(_append_piggyback_ssx_logbuf (l, const_cast<fixable_page_h*>(page)));
-            w_assert1(_log_buf_for_piggybacked_ssx_used != 0);
-            w_assert1(_log_buf_for_piggybacked_ssx_target != NULL);
-        } else {
-            // otherwise we do it right now.
-            lsn_t lsn;
-            W_DO( log->insert(*l, &lsn) );
-            _update_page_lsns(page, lsn);
-            _update_page_lsns(page2, lsn);
-            w_assert1(_log_buf_for_piggybacked_ssx_used == 0);
-            w_assert1(_log_buf_for_piggybacked_ssx_target == NULL);
-        }
+        w_assert1(l == _log_buf_for_piggybacked_ssx);
+        lsn_t lsn;
+        W_DO( log->insert(*l, &lsn) );
+        _update_page_lsns(page, lsn);
+        _update_page_lsns(page2, lsn);
+        DBGOUT3(<< " SSX logged: " << l->type() << "\n new_lsn= " << lsn);
         return RCOK;
     }
-    
+
 #if W_DEBUG_LEVEL > 0
     fileoff_t rsvd = _log_bytes_rsvd;
     fileoff_t ready = _log_bytes_ready;
@@ -2250,15 +2185,13 @@ xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page, const fixable_page_h
     rc_t rc = _flush_logbuf(); 
                       // stuffs tid, _last_lsn into our record,
                       // then inserts it into the log, getting _last_lsn
-    if(rc.is_error())
-    goto done;
-    
-    _update_page_lsns(page, _last_lsn);
-    _update_page_lsns(page2, _last_lsn);
+    if(!rc.is_error()) {
+        _update_page_lsns(page, _last_lsn);
+        _update_page_lsns(page2, _last_lsn);
+    }
 
- done:
 #if W_DEBUG_LEVEL > 0
-    DBG( 
+    DBGOUT4(
             << " state() " << state()
             << " _rolling_back " << _rolling_back
             << " _core->_xct_aborting " << _core->_xct_aborting
@@ -2277,26 +2210,26 @@ xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page, const fixable_page_h
                 << " orig reserved " << requested
                 );
     if(smlevel_0::operating_mode == t_forward_processing) {
-    if(should_reserve_for_rollback(l->type()))
-    {
-        // Must be reserving for rollback
-        w_assert1(_log_bytes_rsvd >= rsvd); // consumed in _flush_logbuf
-        w_assert1(_log_bytes_used > used); // consumed in _flush_logbuf 
-        // but the above 2 numbers are increased by the actual
-        // log bytes used or a fudge function of that size.
-        w_assert1(_log_bytes_reserved_space >= requested); //monotonically incr
-    } 
-    else
-    {
-        // Must be consuming rollback space (or is xct_freeing_space)
-        // would be < but for special rollback case, in which
-        // we do a SMO, in which case they both can be 0.
-        w_assert1(_log_bytes_rsvd <= rsvd); // consumed in _flush_logbuf
-        w_assert1(_log_bytes_used >= used); // consumed in _flush_logbuf
-        // but the above 2 numbers are adjusted by the actual
-        // log bytes used 
-        w_assert1(_log_bytes_reserved_space >= requested); //monotonically incr
-    }
+        if(should_reserve_for_rollback(l->type()))
+        {
+            // Must be reserving for rollback
+            w_assert1(_log_bytes_rsvd >= rsvd); // consumed in _flush_logbuf
+            w_assert1(_log_bytes_used > used); // consumed in _flush_logbuf
+            // but the above 2 numbers are increased by the actual
+            // log bytes used or a fudge function of that size.
+            w_assert1(_log_bytes_reserved_space >= requested); //monotonically incr
+        }
+        else
+        {
+            // Must be consuming rollback space (or is xct_freeing_space)
+            // would be < but for special rollback case, in which
+            // we do a SMO, in which case they both can be 0.
+            w_assert1(_log_bytes_rsvd <= rsvd); // consumed in _flush_logbuf
+            w_assert1(_log_bytes_used >= used); // consumed in _flush_logbuf
+            // but the above 2 numbers are adjusted by the actual
+            // log bytes used
+            w_assert1(_log_bytes_reserved_space >= requested); //monotonically incr
+        }
     }
     else 
     {
@@ -2308,67 +2241,6 @@ xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page, const fixable_page_h
 
 #endif
 
-    return rc;
-}
-
-w_rc_t xct_t::_append_piggyback_ssx_logbuf(logrec_t* l, fixable_page_h *page)
-{
-    w_assert1(is_piggy_backed_single_log_sys_xct());
-
-    if(!log) {
-        return RCOK;
-    }
-    
-    // so far we don't allow more than 1 deferred ssx log (but possible, try this later)
-    w_assert0(_log_buf_for_piggybacked_ssx_used == 0);
-    
-    size_t len = l->length();
-    _log_buf_for_piggybacked_ssx_used += len;
-    w_assert1(_log_buf_for_piggybacked_ssx_used <= SSX_LOGBUFFER_SIZE);
-    _log_buf_for_piggybacked_ssx_target = page;
-    return RCOK;
-}
-w_rc_t xct_t::_flush_piggyback_ssx_logbuf()
-{
-    if(!log || _log_buf_for_piggybacked_ssx_used == 0) {
-        return RCOK;
-    }
-    w_assert1(_log_buf_for_piggybacked_ssx_target);
-    w_assert1(_log_buf_for_piggybacked_ssx_target->is_fixed());
-    w_assert1(_log_buf_for_piggybacked_ssx_target->latch_mode() == LATCH_EX);
-    lsn_t lsn;
-    W_DO( log->insert(*reinterpret_cast<logrec_t*>(_log_buf_for_piggybacked_ssx), &lsn) );
-    _log_buf_for_piggybacked_ssx_target->set_lsns(lsn);
-    _log_buf_for_piggybacked_ssx_used = 0;
-    _log_buf_for_piggybacked_ssx_target = NULL;
-    
-    return RCOK;
-}
-w_rc_t xct_t::_flush_user_logbuf (logrec_t *l, lsn_t *ret_lsn) {
-    if (_log_buf_for_piggybacked_ssx_used == 0) {
-        return log->insert(*l, ret_lsn); // then just as usual
-    }
-    w_assert1(_log_buf_for_piggybacked_ssx_target);
-
-    // there IS a deferred ssx log. so, let's record it together and also apply.
-    // See jira ticket:75 "Log-centric model (in single-log system transaction)" (originally trac ticket:77) for why we can do this
-    // so far we allow only one ssx log. could be multiple in future.
-    logrec_t* ssx_log = reinterpret_cast<logrec_t*>(_log_buf_for_piggybacked_ssx);
-    _tmp_array_for_rs[0] = ssx_log;
-    _tmp_array_for_rs[1] = l;
-
-    lsn_t ssx_lsn;
-    _tmp_array_for_ret_lsns[0] = &ssx_lsn;
-    _tmp_array_for_ret_lsns[1] = ret_lsn;
-    
-    rc_t rc = log->insert_multiple (2, _tmp_array_for_rs, _tmp_array_for_ret_lsns); // this enters critical section only once!
-    if (!rc.is_error()) {
-        _log_buf_for_piggybacked_ssx_target->set_lsns(ssx_lsn);
-        ssx_log->redo(_log_buf_for_piggybacked_ssx_target); // also apply the change to the page
-    }
-    _log_buf_for_piggybacked_ssx_used = 0;
-    _log_buf_for_piggybacked_ssx_target = NULL;
-    
     return rc;
 }
 
@@ -2990,11 +2862,6 @@ xct_t::attach_thread()
     w_assert2(is_1thread_xct_mutex_mine());
     thr->new_xct(this);
     w_assert2(is_1thread_xct_mutex_mine());
-    // set the fingerprint of this thread to the xct's wait-bitmap
-    xct_lock_info_t *linfo = lock_info();
-    if (linfo) {
-        linfo->init_wait_map(thr);
-    }
 }
 
 
@@ -3007,63 +2874,6 @@ xct_t::detach_thread()
     _core->_threads_attached--;
     w_assert2(_core->_threads_attached >=0);
     me()->no_xct(this);
-}
-
-w_rc_t
-xct_t::lockblock(timeout_in_ms /*timeout*/)
-{
-    /*
-// Used by lock manager. (lock_core_m)
-// Another thread in our xct is blocking. We're going to have to
-// wait on another resource, until our partner thread unblocks,
-// and then try again.
-    CRITICAL_SECTION(bcs, _core->_waiters_mutex);
-    w_rc_t rc;
-    if(num_threads() > 1) {
-        DBGX(<<"blocking on condn variable");
-        // Don't block if other thread has gone away
-        // GNATS 119 This is still racy!  multi.1 shows us that.
-        //
-        xct_lock_info_t*       the_xlinfo = lock_info();
-        if(! the_xlinfo->waiting_request()) {
-            // No longer has waiting request - return w/o blocking.
-            return RCOK;
-        }
-
-        // this code taken from scond_t implementation, from when
-        // _waiters_cond was an scond_t:
-        if(timeout == WAIT_IMMEDIATE)  return RC(sthread_t::stTIMEOUT);
-        if(timeout == WAIT_FOREVER)  {
-            DO_PTHREAD(pthread_cond_wait(&_core->_waiters_cond, &_core->_waiters_mutex));
-        } else {
-            struct timespec when;
-            sthread_t::timeout_to_timespec(timeout, when);
-            DO_PTHREAD_TIMED(pthread_cond_timedwait(&_core->_waiters_cond, &_core->_waiters_mutex, &when));
-        }
-
-        DBGX(<<"not blocked on cond'n variable");
-    }
-    if(rc.is_error()) {
-        return RC_AUGMENT(rc);
-    } 
-    return rc;
-    */
-    return RCOK;
-}
-
-void
-xct_t::lockunblock()
-{
-// Used by lock manager. (lock_core_m)
-// This thread in our xct is no longer blocking. Wake up anyone
-// who was waiting on this other resource because I was 
-// blocked in the lock manager.
-    CRITICAL_SECTION(bcs, _core->_waiters_mutex);
-    if(num_threads() > 1) {
-        DBGX(<<"signalling waiters on cond'n variable");
-        DO_PTHREAD(pthread_cond_broadcast(&_core->_waiters_cond));
-        DBGX(<<"signalling cond'n variable done");
-    }
 }
 
 //
@@ -3145,7 +2955,8 @@ xct_t::release_1thread_xct_mutex() const
 ostream &
 xct_t::dump_locks(ostream &out) const
 {
-    return lock_info()->dump_locks(out);
+    raw_lock_xct()->dump_lockinfo(out);
+    return out;
 }
 
 
@@ -3196,10 +3007,10 @@ xct_dependent_t::~xct_dependent_t()
 /**\endcond skip */
 
 
-sys_xct_section_t::sys_xct_section_t(bool single_log_sys_xct, bool deferred_ssx)
+sys_xct_section_t::sys_xct_section_t(bool single_log_sys_xct)
 {
     _original_xct_depth = me()->get_tcb_depth();
-    _error_on_start = ss_m::begin_sys_xct(single_log_sys_xct, deferred_ssx);
+    _error_on_start = ss_m::begin_sys_xct(single_log_sys_xct);
 }
 sys_xct_section_t::~sys_xct_section_t()
 {
@@ -3221,35 +3032,4 @@ rc_t sys_xct_section_t::end_sys_xct (rc_t result)
         W_DO (ss_m::commit_sys_xct());
     }
     return RCOK;
-}
-
-ssx_defer_section_t::ssx_defer_section_t (fixable_page_h *page, xct_t *x) : _page(page), _x(x)
-{
-#if W_DEBUG_LEVEL>0
-    w_assert1(page);
-    w_assert1(page->is_fixed());
-    w_assert1(page->latch_mode() == LATCH_EX);
-    w_assert1(x);
-    _pid = page->pid();
-#endif // W_DEBUG_LEVEL>0    
-}
-
-ssx_defer_section_t::~ssx_defer_section_t()
-{
-#if W_DEBUG_LEVEL>0
-    w_assert1(_page->is_fixed());
-    w_assert1(_page->latch_mode() == LATCH_EX);
-    w_assert1(_pid == _page->pid());
-#endif // W_DEBUG_LEVEL>0
-    if (_x->_log_buf_for_piggybacked_ssx_used == 0) {
-        return;
-    }
-        
-    // oh, the outer transaction has dangling log to push/apply!
-    rc_t rc = _x->_flush_piggyback_ssx_logbuf();
-    if (rc.is_error()) {
-        W_FATAL(rc.err_num());
-    } else {
-        w_assert1(_x->_log_buf_for_piggybacked_ssx_used == 0);
-    }
 }

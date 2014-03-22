@@ -65,7 +65,9 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "logdef_gen.cpp"
 #include "log.h"
 #include "log_core.h"
+#include "log_lsn_tracker.h"
 #include "crash.h"
+#include "lock_raw.h"
 #include "bf_tree.h"
 #include <algorithm> // for std::swap
 #include <stdio.h> // snprintf
@@ -132,6 +134,8 @@ void  log_m::shutdown()
 {
     log_core::THE_LOG->shutdown();
     delete log_core::THE_LOG; // side effect: sets THE_LOG to NULL
+    delete _oldest_lsn_tracker;
+    _oldest_lsn_tracker = NULL;
 }
 
 
@@ -170,6 +174,9 @@ log_m::log_m()
 {
     pthread_mutex_init(&_space_lock, 0);
     pthread_cond_init(&_space_cond, 0);
+
+    _oldest_lsn_tracker = new PoorMansOldestLsnTracker(1 << 20);
+    w_assert1(_oldest_lsn_tracker);
 }
 
 
@@ -196,14 +203,15 @@ rc_t
 log_m::new_log_m(log_m   *&the_log,
                          const char *path,
                          int wrbufsize,
-                         bool  reformat)
+                         bool  reformat,
+                         int carray_active_slot_count)
 {
     FUNC(log_m::new_log_m);
 
     w_assert1(strlen(path) < sizeof(_logdir));
     strcpy(_logdir, path);
 
-    rc_t rc = log_core::new_log_m(the_log, wrbufsize, reformat);
+    rc_t rc = log_core::new_log_m(the_log, wrbufsize, reformat, carray_active_slot_count);
 
     w_assert1(the_log != NULL);
 
@@ -257,11 +265,6 @@ log_m::insert(logrec_t &r, lsn_t* ret)
         _log_corruption = false;
     }
     return log_core::THE_LOG->insert(r, ret); 
-}
-rc_t 
-log_m::insert_multiple(size_t count, logrec_t** rs, lsn_t** ret_lsns)
-{ 
-    return log_core::THE_LOG->insert_multiple(count, rs, ret_lsns); 
 }
 
 rc_t 

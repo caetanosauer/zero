@@ -247,7 +247,6 @@ SM Storage manager = 0x00060000 sm_stats_t {
     // where bf_m::unfix + bf_m::fix is not needed.
     //  
     u_long any_p_fix_cnt        Fix method called for unknown type
-    u_long btree_p_fix_cnt        Btree_p fix method called
     u_long alloc_p_fix_cnt        Extlink_p fix method called
     u_long stnode_p_fix_cnt        Stnode_p fix method called
     u_long page_fix_cnt        Times fixable_page_h::_fix was called (even if page already fixed)

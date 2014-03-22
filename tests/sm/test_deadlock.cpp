@@ -358,21 +358,28 @@ w_rc_t write_read_write_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(test_env->commit_xct());
     W_DO(t2.join());
     W_DO(t3.join());
-    
-    // t3 is younger, so t3 should be the victim
+
+    // now that we use RAW-style lock manager, we can't choose deadlock victim by any policy.
+    // So, though t3 is younger, t2 might be the victim. both cases are possible.
     EXPECT_TRUE(t2._exitted);
     EXPECT_TRUE(t3._exitted);
-    EXPECT_FALSE(t2._rc.is_error());
-    EXPECT_TRUE(t3._rc.is_error());
-    EXPECT_EQ(t3._rc.err_num(), (w_error_codes) eDEADLOCK);
-
     EXPECT_TRUE(t2._done_multi[0]);
     EXPECT_TRUE(t2._done_multi[1]);
-    EXPECT_TRUE(t2._done_multi[2]);
     EXPECT_TRUE(t3._done_multi[0]);
     EXPECT_TRUE(t3._done_multi[1]);
-    EXPECT_FALSE(t3._done_multi[2]);
-    
+    if (t3._rc.is_error()) {
+        // t3 was the victim
+        EXPECT_FALSE(t2._rc.is_error());
+        EXPECT_EQ(t3._rc.err_num(), (w_error_codes) eDEADLOCK);
+        EXPECT_TRUE(t2._done_multi[2]);
+        EXPECT_FALSE(t3._done_multi[2]);
+    } else {
+        // t2 was the victim
+        EXPECT_TRUE(t2._rc.is_error());
+        EXPECT_EQ(t2._rc.err_num(), (w_error_codes) eDEADLOCK);
+        EXPECT_FALSE(t2._done_multi[2]);
+        EXPECT_TRUE(t3._done_multi[2]);
+    }
     return RCOK;
 }
 
@@ -410,20 +417,28 @@ w_rc_t conversion_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(t2.join());
     W_DO(t3.join());
     
-    // t3 is younger, so t3 should be the victim
+    // now that we use RAW-style lock manager, we can't choose deadlock victim by any policy.
+    // So, though t3 is younger, t2 might be the victim. both cases are possible.
     EXPECT_TRUE(t2._exitted);
     EXPECT_TRUE(t3._exitted);
-    EXPECT_FALSE(t2._rc.is_error());
-    EXPECT_TRUE(t3._rc.is_error());
-    EXPECT_EQ(t3._rc.err_num(), (w_error_codes) eDEADLOCK);
-
     EXPECT_TRUE(t2._done_multi[0]);
     EXPECT_TRUE(t2._done_multi[1]);
-    EXPECT_TRUE(t2._done_multi[2]);
     EXPECT_TRUE(t3._done_multi[0]);
     EXPECT_TRUE(t3._done_multi[1]);
-    EXPECT_FALSE(t3._done_multi[2]);
-    
+    if (t3._rc.is_error()) {
+        // t3 was the victim
+        EXPECT_FALSE(t2._rc.is_error());
+        EXPECT_EQ(t3._rc.err_num(), (w_error_codes) eDEADLOCK);
+        EXPECT_TRUE(t2._done_multi[2]);
+        EXPECT_FALSE(t3._done_multi[2]);
+    } else {
+        // t2 was the victim
+        EXPECT_TRUE(t2._rc.is_error());
+        EXPECT_EQ(t2._rc.err_num(), (w_error_codes) eDEADLOCK);
+        EXPECT_FALSE(t2._done_multi[2]);
+        EXPECT_TRUE(t3._done_multi[2]);
+    }
+
     return RCOK;
 }
 
@@ -469,7 +484,12 @@ w_rc_t indirect_conversion_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(t3._done_multi[0]);
     EXPECT_FALSE(t3._done_multi[1]);
     EXPECT_FALSE(t3._exitted);   
-    
+
+    ::usleep (LONGTIME_USEC);
+    EXPECT_FALSE(t2._exitted);
+    EXPECT_FALSE(t3._exitted);
+    EXPECT_FALSE(t4._exitted);
+
     W_DO(test_env->commit_xct()); // go!
     ::usleep (LONGTIME_USEC * 20);
     EXPECT_TRUE(t2._exitted);
@@ -581,26 +601,38 @@ w_rc_t complex1_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(t8.join());
     cout << "joined all!" << endl;
     
-    // t3 is younger, so t3 should be the victim
+    // now that we use RAW-style lock manager, we can't choose deadlock victim by any policy.
+    // So, though t3 is younger, t2 might be the victim. both cases are possible.
     EXPECT_TRUE(t2._exitted);
     EXPECT_TRUE(t3._exitted);
-    EXPECT_FALSE(t2._rc.is_error());
-    EXPECT_TRUE(t3._rc.is_error());
-    EXPECT_EQ(t3._rc.err_num(), (w_error_codes) eDEADLOCK);
-
     EXPECT_FALSE(t4._rc.is_error());
     EXPECT_FALSE(t5._rc.is_error());
     EXPECT_FALSE(t6._rc.is_error());
     EXPECT_FALSE(t7._rc.is_error());
     EXPECT_FALSE(t8._rc.is_error());
-    
     EXPECT_TRUE(t2._done_multi[0]);
     EXPECT_TRUE(t2._done_multi[1]);
-    EXPECT_TRUE(t2._done_multi[2]);
     EXPECT_TRUE(t3._done_multi[0]);
     EXPECT_TRUE(t3._done_multi[1]);
-    EXPECT_FALSE(t3._done_multi[2]);
-    
+    if (!t2._rc.is_error()) {
+        // t3 was victim
+        EXPECT_EQ(t3._rc.err_num(), (w_error_codes) eDEADLOCK);
+        EXPECT_TRUE(t2._done_multi[2]);
+        EXPECT_FALSE(t3._done_multi[2]);
+    } else if (!t3._rc.is_error()) {
+        // t2 was victim
+        EXPECT_TRUE(t2._rc.is_error());
+        EXPECT_EQ(t2._rc.err_num(), (w_error_codes) eDEADLOCK);
+        EXPECT_FALSE(t2._done_multi[2]);
+        EXPECT_TRUE(t3._done_multi[2]);
+    } else {
+        // both were victims. because this involves multiple transactions, it's possible
+        EXPECT_EQ(t2._rc.err_num(), (w_error_codes) eDEADLOCK);
+        EXPECT_EQ(t3._rc.err_num(), (w_error_codes) eDEADLOCK);
+        EXPECT_FALSE(t2._done_multi[2]);
+        EXPECT_FALSE(t3._done_multi[2]);
+    }
+
     return RCOK;
 }
 
@@ -672,28 +704,39 @@ w_rc_t complex2_deadlock(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(t8.join());
     cout << "joined all!" << endl;
     
-    // t3 is younger, so t3 should be the victim
+    // now that we use RAW-style lock manager, we can't choose deadlock victim by any policy.
+    // So, though t3 is younger, t2 might be the victim. both cases are possible.
     EXPECT_TRUE(t2._exitted);
     EXPECT_TRUE(t3._exitted);
-    EXPECT_FALSE(t2._rc.is_error());
-    EXPECT_TRUE(t3._rc.is_error());
-    EXPECT_EQ(t3._rc.err_num(), (w_error_codes) eDEADLOCK);
-
     EXPECT_FALSE(t4._rc.is_error());
     EXPECT_FALSE(t5._rc.is_error());
     EXPECT_FALSE(t6._rc.is_error());
     EXPECT_FALSE(t7._rc.is_error());
     EXPECT_FALSE(t8._rc.is_error());
-    
     EXPECT_TRUE(t2._done_multi[0]);
     EXPECT_TRUE(t2._done_multi[1]);
     EXPECT_TRUE(t2._done_multi[2]);
-    EXPECT_TRUE(t2._done_multi[3]);
     EXPECT_TRUE(t3._done_multi[0]);
     EXPECT_TRUE(t3._done_multi[1]);
     EXPECT_TRUE(t3._done_multi[2]);
-    EXPECT_FALSE(t3._done_multi[3]);
-    
+    if (!t2._rc.is_error()) {
+        // t3 was victim
+        EXPECT_EQ(t3._rc.err_num(), (w_error_codes) eDEADLOCK);
+        EXPECT_TRUE(t2._done_multi[3]);
+        EXPECT_FALSE(t3._done_multi[3]);
+    } else if (!t3._rc.is_error()) {
+        // t2 was victim
+        EXPECT_TRUE(t2._rc.is_error());
+        EXPECT_EQ(t2._rc.err_num(), (w_error_codes) eDEADLOCK);
+        EXPECT_FALSE(t2._done_multi[3]);
+        EXPECT_TRUE(t3._done_multi[3]);
+    } else {
+        // both were victims. because this involves multiple transactions, it's possible
+        EXPECT_EQ(t2._rc.err_num(), (w_error_codes) eDEADLOCK);
+        EXPECT_EQ(t3._rc.err_num(), (w_error_codes) eDEADLOCK);
+        EXPECT_FALSE(t2._done_multi[3]);
+        EXPECT_FALSE(t3._done_multi[3]);
+    }
     return RCOK;
 }
 

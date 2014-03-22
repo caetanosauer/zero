@@ -625,17 +625,11 @@ public:
      * system transaction, if the current thread already has a transaction,
      * inside the current transaction.
      * @param[in] single_log_sys_xct whether this transaction will have at most one xlog entry
-     * @param[in] deferred_ssx whether to defer the logging and applying of the change made
-     * by single-log system transaxction (SSX). This is experimental and so far always false.
-     * If this is true, the "outer" transaction outputs the deferred log and also applies it.
-     * Let's revisit this when we go into "REDO-only" model. 
-     * See jira ticket:75 "Log-centric model (in single-log system transaction)" (originally trac ticket:77).
      * @param[in] stats   Pointer to an allocated statistics-holding structure.
      * @param[in] timeout   Optional, controls blocking behavior.
      */
     static rc_t           begin_sys_xct(
         bool single_log_sys_xct = false,
-        bool deferred_ssx = false,
         sm_stats_info_t*         stats = NULL,
         timeout_in_ms            timeout = WAIT_SPECIFIED_BY_THREAD);
 
@@ -934,6 +928,12 @@ public:
      * \attention Not thread-safe. Can yield stale data. 
      */
     static rc_t            thread_collect(vtable_t&v, bool names_too=true);
+
+    /**
+     * \brief Write all existing log entries to disk.
+     * \ingroup SSMLOG
+     */
+    static rc_t            flushlog();
 
     /**\brief Take a checkpoint.
      * \ingroup SSMAPIDEBUG
@@ -1661,6 +1661,17 @@ public:
     /**\endcond skip */
 
     /**
+     * \brief Touches all pages in the B-tree index to load them into bufferpool.
+     * \ingroup SSMBTREE
+     * @param[in] stid ID of the index to be touched.
+     * @param[out] page_count Number of pages touched.
+     * \details This is mainly for performance experiments with \e hot bufferpool.
+     * We traditionally used a cursor to touch all pages, but this one is much more efficient
+     * for the purpose.
+     */
+    static rc_t            touch_index(stid_t stid, uint64_t &page_count);
+
+    /**
      * \brief Create an entry in a B+-Tree index.
      * \ingroup SSMBTREE
      *
@@ -1881,7 +1892,7 @@ private:
         tid_t&                tid, 
         timeout_in_ms         timeout,
         bool sys_xct = false,
-        bool single_log_sys_xct = false, bool deferred_ssx = false);
+        bool single_log_sys_xct = false);
 
     static rc_t            _commit_xct(
         sm_stats_info_t*&     stats,

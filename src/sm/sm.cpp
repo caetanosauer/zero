@@ -78,6 +78,9 @@ class prologue_rc_t;
 #include "restart.h"
 #include "sm_options.h"
 #include "suppress_unused.h"
+#include "tid_t.h"
+#include "log_carray.h"
+#include "log_lsn_tracker.h"
 
 #ifdef EXPLICIT_TEMPLATE
 template class w_auto_delete_t<SmStoreMetaStats*>;
@@ -440,7 +443,7 @@ ss_m::_construct_once(
         W_FATAL(eOUTOFMEMORY);
     }
     /* just hang onto this until we create thelog manager...*/
-    lm = new lock_m(_options.get_int_option("sm_locktablesize", 64000));
+    lm = new lock_m(_options);
     if (! lm)  {
         W_FATAL(eOUTOFMEMORY);
     }
@@ -474,7 +477,9 @@ ss_m::_construct_once(
         w_rc_t e = log_m::new_log_m(log,
                      logdir.c_str(),
                      logbufsize, 
-                     _options.get_bool_option("sm_reformat_log", false));
+                     _options.get_bool_option("sm_reformat_log", false),
+                     _options.get_int_option("sm_carray_slots",
+                                             ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT));
         W_COERCE(e);
 
         int percent = _options.get_int_option("sm_log_warn", 0);
@@ -809,11 +814,11 @@ ss_m::begin_xct(tid_t& tid, timeout_in_ms timeout)
     return RCOK;
 }
 
-rc_t ss_m::begin_sys_xct(bool single_log_sys_xct, bool deferred_ssx,
+rc_t ss_m::begin_sys_xct(bool single_log_sys_xct,
     sm_stats_info_t *stats, timeout_in_ms timeout)
 {
     tid_t tid;
-    W_DO (_begin_xct(stats, tid, timeout, true, single_log_sys_xct, deferred_ssx));
+    W_DO (_begin_xct(stats, tid, timeout, true, single_log_sys_xct));
     return RCOK;
 }
 
@@ -1006,6 +1011,11 @@ ss_m::chain_xct(bool lazy)
     return RCOK;
 }
 
+rc_t ss_m::flushlog() {
+    // forces until the current lsn
+    bf->force_until_lsn(log->curr_lsn());
+    return (RCOK);
+}
 
 /*--------------------------------------------------------------*
  *  ss_m::checkpoint()                                        
@@ -1560,10 +1570,9 @@ ss_m::query_lock(const lockid_t& n, lock_mode_t& m)
  *--------------------------------------------------------------*/
 rc_t
 ss_m::_begin_xct(sm_stats_info_t *_stats, tid_t& tid, timeout_in_ms timeout, bool sys_xct,
-    bool single_log_sys_xct, bool deferred_ssx)
+    bool single_log_sys_xct)
 {
     w_assert1(!single_log_sys_xct || sys_xct); // SSX is always system-transaction
-    w_assert1(!deferred_ssx || single_log_sys_xct); // deferred SSX is always SSX
 
     // system transaction can be a nested transaction, so
     // xct() could be non-NULL
@@ -1577,17 +1586,26 @@ ss_m::_begin_xct(sm_stats_info_t *_stats, tid_t& tid, timeout_in_ms timeout, boo
         if (single_log_sys_xct && x) {
             // in this case, we don't need an independent transaction object.
             // we just piggy back on the outer transaction
-            w_assert0(x->is_piggy_backed_single_log_sys_xct() == false); // ssx can't be nested by ssx
-            x->set_piggy_backed_single_log_sys_xct(true);
+            if (x->is_piggy_backed_single_log_sys_xct()) {
+                // SSX can't nest SSX, but we can chain consecutive SSXs.
+                ++(x->ssx_chain_len());
+            } else {
+                x->set_piggy_backed_single_log_sys_xct(true);
+            }
             tid = x->tid();
             return RCOK;
         }
         // system transaction doesn't need synchronization with create_vol etc
         // TODO might need to reconsider. but really needs this change now
-        x = xct_t::new_xct(_stats, timeout, sys_xct, single_log_sys_xct, deferred_ssx);
+        x = xct_t::new_xct(_stats, timeout, sys_xct, single_log_sys_xct);
     } else {
         spinlock_read_critical_section cs(&_begin_xct_mutex);
         x = xct_t::new_xct(_stats, timeout, sys_xct);
+        if(log) {
+            // This transaction will make no events related to LSN
+            // smaller than this. Used to control garbage collection, etc.
+            log->get_oldest_lsn_tracker()->enter(reinterpret_cast<uintptr_t>(x), log->curr_lsn());
+        }
     }
 
     if (!x) 
@@ -1613,11 +1631,17 @@ ss_m::_commit_xct(sm_stats_info_t*& _stats, bool lazy,
     
     if (x.is_piggy_backed_single_log_sys_xct()) {
         // then, commit() does nothing
-        x.set_piggy_backed_single_log_sys_xct(false); // but resets the flag
+        // It just "resolves" the SSX on piggyback
+        if (x.ssx_chain_len() > 0) {
+            --x.ssx_chain_len(); // multiple SSXs on piggyback
+        } else {
+            x.set_piggy_backed_single_log_sys_xct(false);
+        }
         return RCOK;
     }
 
     w_assert3(x.state()==xct_active);
+    w_assert1(x.ssx_chain_len() == 0);
 
     W_DO( x.commit(lazy,plastlsn) );
 

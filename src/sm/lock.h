@@ -15,6 +15,9 @@
 class xct_lock_info_t;
 class lock_core_m;
 class lil_global_table;
+struct RawXct;
+struct RawLock;
+class sm_options;
 
 /**
  * \brief Lock Manager API.
@@ -27,7 +30,7 @@ public:
     static void on_thread_init();
     static void on_thread_destroy();
 
-    NORET                        lock_m(int sz);
+    NORET                        lock_m(const sm_options &options);
     NORET                        ~lock_m();
 
     int                          collect(vtable_t&, bool names_too);
@@ -63,17 +66,22 @@ public:
      * @return the lock mode this transaction has for the lock. ALL_N_GAP_N if not any.
      * \details
      * This method returns very quickly because it only checks transaction-private data.
+     * @pre the current thread is the only thread running the current transaction
      */
-    const okvl_mode&            get_granted_mode(const lockid_t& lock_id);
+    okvl_mode                   get_granted_mode(const lockid_t& lock_id);
+    okvl_mode                   get_granted_mode(uint32_t hash);
 
     /**
      * \brief Acquires a lock of the given mode (or stronger)
+     * @copydoc RawLockQueue::acquire()
      */
-    rc_t                        lock(
-        const lockid_t&             n, 
-        const okvl_mode&            m,
-        bool                        check_only,
-        timeout_in_ms               timeout = WAIT_SPECIFIED_BY_XCT);
+    rc_t                        lock(const lockid_t &n, const okvl_mode &m, bool conditional,
+        bool check_only, timeout_in_ms timeout = WAIT_SPECIFIED_BY_XCT, RawLock** out = NULL);
+    rc_t                        lock(uint32_t hash, const okvl_mode &m, bool conditional,
+        bool check_only, timeout_in_ms timeout = WAIT_SPECIFIED_BY_XCT, RawLock** out = NULL);
+    /** @copydoc RawLockQueue::retry_acquire() */
+    rc_t                        retry_lock(RawLock** lock, bool check_only,
+                                           timeout_in_ms timeout = WAIT_SPECIFIED_BY_XCT);
 
     /**
      * Take an intent lock on the given volume.
@@ -93,7 +101,7 @@ public:
      */
     rc_t                        intent_vol_store_lock(const stid_t &stid, okvl_mode::element_lock_mode m);
      
-    // rc_t                        unlock(const lockid_t& n);
+    void                        unlock(RawLock* lock, lsn_t commit_lsn = lsn_t::null);
 
     rc_t                        unlock_duration(bool read_lock_only = false, lsn_t commit_lsn = lsn_t::null);
 
@@ -106,15 +114,12 @@ public:
         u_long&                      unlocks,
         bool                         reset);
 
-private:
-    lock_core_m*                core() const { return _core; }
+    RawXct*     allocate_xct();
+    void        deallocate_xct(RawXct* xct);
 
-    rc_t                        _lock(
-        const lockid_t&              n, 
-        const okvl_mode&                m,
-        bool                         check_only,
-        timeout_in_ms                timeout
-        );
+private:
+    timeout_in_ms               _convert_timeout(timeout_in_ms timeout);
+    lock_core_m*                core() const { return _core; }
 
     lock_core_m*                _core;
 };

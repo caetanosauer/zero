@@ -720,20 +720,7 @@ istream& operator>>(istream& is, cvec_t& v)
             */
         }
         if(err >0) {
-#if defined(__SUNPRO_CC)
-            // XXX kludgy version of set, but it works
-            is.clear(is.rdstate() | ios::badbit);
-#elif defined(__GNUC__)
-#if W_GCC_THIS_VER >= W_GCC_VER(3,0)
-            /* XXX gcc-3.2 */
             is.setstate(ios::badbit);
-#else
-            is.set(ios::badbit);
-#endif
-#else
-            is.set(ios::badbit);
-#endif
-
             state = done;
             err = is.tellg();
             //cerr << "error at byte #" << err <<endl;

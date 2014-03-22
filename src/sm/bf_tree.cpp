@@ -29,8 +29,6 @@
 #include <ostream>
 #include <limits>
 
-#include <numa.h>
-
 ///////////////////////////////////   Initialization and Release BEGIN ///////////////////////////////////  
 
 #ifdef PAUSE_SWIZZLING_ON
@@ -39,31 +37,6 @@ uint64_t bf_tree_m::_bf_swizzle_ex = 0;
 uint64_t bf_tree_m::_bf_swizzle_ex_fails = 0;
 #endif // PAUSE_SWIZZLING_ON
 
-
-void* numa_malloc(size_t size, int node, size_t alignment)
-{
-    void* realptr;
-    void* alignptr;
-
-    if (!(realptr = numa_alloc_onnode(size + alignment + sizeof(realptr) + sizeof(size), node))) {
-        return NULL;
-    }
-    
-    alignptr = (void*) ((((uintptr_t) realptr + sizeof(realptr) + sizeof(size)) & ~(alignment - 1)) + alignment);
-    ((uintptr_t*) alignptr)[-1] = (uintptr_t) realptr;
-    ((size_t*) alignptr)[-2] = (size_t) size;
-    return alignptr;
-}
-
-void my_numa_free(void* ptr)
-{
-    void* realptr = (void*)(((uintptr_t*)ptr)[-1]);
-    size_t size = (size_t)(((size_t*)ptr)[-2]);
-
-    numa_free(realptr, size);
-
-    return;
-}
 
 bf_tree_m::bf_tree_m (uint32_t block_cnt,
     uint32_t cleaner_threads,
@@ -95,17 +68,10 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
     
     // use posix_memalign to allow unbuffered disk I/O
     void *buf = NULL;
-#ifdef NUMA
-    if (!(buf = numa_malloc(SM_PAGESIZE * ((uint64_t) block_cnt), 0, SM_PAGESIZE))) {
-        ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << SM_PAGESIZE << "-bytes pages. ");
-        W_FATAL(eOUTOFMEMORY);
-    }
-#else
     if (::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * ((uint64_t) block_cnt)) != 0) {
         ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << SM_PAGESIZE << "-bytes pages. ");
         W_FATAL(eOUTOFMEMORY);
     }
-#endif
     _buffer = reinterpret_cast<generic_page*>(buf);
     
     // the index 0 is never used. to make sure no one can successfully use it,
@@ -185,11 +151,8 @@ bf_tree_m::~bf_tree_m() {
 #else
         char* buf = reinterpret_cast<char*>(_control_blocks);
 #endif
-#ifdef NUMA
-        my_numa_free(buf);
-#else
-        delete[] buf;
-#endif
+        // note we use free(), not delete[], which corresponds to posix_memalign
+        ::free (buf);
         _control_blocks = NULL;
     }
 #ifdef BP_MAINTAIN_PARENT_PTR
@@ -209,11 +172,7 @@ bf_tree_m::~bf_tree_m() {
     if (_buffer != NULL) {
         void *buf = reinterpret_cast<void*>(_buffer);
         // note we use free(), not delete[], which corresponds to posix_memalign
-#ifdef NUMA
-        my_numa_free(buf);
-#else
         ::free (buf);
-#endif
         _buffer = NULL;
     }
     
@@ -489,7 +448,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             W_DO(_grab_free_block(idx)); // get a frame that will be the new page
             w_assert1(idx != 0);
             bf_tree_cb_t &cb = get_cb(idx);
-            DBGOUT1(<<"unswizzled case: load shpid = " << shpid << " into frame = " << idx);
+            DBGOUT3(<<"unswizzled case: load shpid = " << shpid << " into frame = " << idx);
             // after here, we must either succeed or release the free block
             if (virgin_page) {
                 // except a virgin page. then the page is anyway empty
@@ -510,14 +469,12 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                         _add_free_block(idx);
                         return RC (eBADCHECKSUM);
                     }
-                    // this is actually an error, but some testcases don't bother making real pages, so
-                    // we just write out some warning.  FIXME: fix testcases and make this a real error!
-                    if (!virgin_page && (_buffer[idx].pid.page != shpid || _buffer[idx].pid.vol().vol != vol)) {
-                        ERROUT(<<"WARNING!! bf_tree_m: page id doesn't match! " << vol << "." << shpid << " was " << _buffer[idx].pid.vol().vol << "." << _buffer[idx].pid.page
-                            << ". This means an inconsistent disk page unless this message is issued in testcases without real disk pages."
-                        );
-                        // prevent assertion errors due to bad testcase pages; should not be needed once above fixed:
-                        _buffer[idx].tag = t_btree_p;
+                    // Then, page ID must match
+                    if (!virgin_page && (_buffer[idx].pid.page != shpid
+                        || _buffer[idx].pid.vol().vol != vol)) {
+                        W_FATAL_MSG(eINTERNAL, <<"inconsistent disk page: "
+                            << vol << "." << shpid << " was " << _buffer[idx].pid.vol().vol
+                            << "." << _buffer[idx].pid.page);
                     }
                 }
             }
@@ -578,9 +535,9 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
         } else {
             // unlike swizzled case, we have to atomically pin it while verifying it's still there.
             if (parent) {
-                DBGOUT1(<<"swizzled case: parent = " << parent->pid << ", shpid = " << shpid << " frame=" << idx);
+                DBGOUT3(<<"swizzled case: parent = " << parent->pid << ", shpid = " << shpid << " frame=" << idx);
             } else {
-                DBGOUT1(<<"swizzled case: parent = NIL"<< ", shpid = " << shpid << " frame=" << idx);
+                DBGOUT3(<<"swizzled case: parent = NIL"<< ", shpid = " << shpid << " frame=" << idx);
             }
             bf_tree_cb_t &cb = get_cb(idx);
             int32_t cur_cnt = cb.pin_cnt();
@@ -1298,7 +1255,8 @@ void bf_tree_m::switch_parent(generic_page* page, generic_page* new_parent)
 void bf_tree_m::_convert_to_disk_page(generic_page* page) const {
     DBGOUT3 (<< "converting the page " << page->pid << "... ");
 
-    fixable_page_h p(page);
+    fixable_page_h p;
+    p.fix_nonbufferpool_page(page);
     int max_slot = p.max_child_slot();
     for (int i= -1; i<=max_slot; i++) {
         _convert_to_pageid(p.child_slot_address(i));
@@ -1315,44 +1273,47 @@ inline void bf_tree_m::_convert_to_pageid (shpid_t* shpid) const {
     }
 }
 
-slotid_t bf_tree_m::find_page_id_slot(generic_page* page, shpid_t shpid) const {
+general_recordid_t bf_tree_m::find_page_id_slot(generic_page* page, shpid_t shpid) const {
     w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
 
-    fixable_page_h p(page);
+    fixable_page_h p;
+    p.fix_nonbufferpool_page(page);
     int max_slot = p.max_child_slot();
 
     //  don't swizzle foster-child:
-    w_assert1( *p.child_slot_address(-1) != shpid );
+    w_assert1( *p.child_slot_address(GeneralRecordIds::FOSTER_CHILD) != shpid );
     //for (int i = -1; i <= max_slot; ++i) {
-    for (int i = 0; i <= max_slot; ++i) {
+    for (general_recordid_t i = GeneralRecordIds::PID0; i <= max_slot; ++i) {
         if (*p.child_slot_address(i) != shpid) {
             continue;
         }
         return i;
     }
-    return -2;
+    return GeneralRecordIds::INVALID;
 }
 
 ///////////////////////////////////   SWIZZLE/UNSWIZZLE BEGIN ///////////////////////////////////  
 
-void bf_tree_m::swizzle_child(generic_page* parent, slotid_t slot)
+void bf_tree_m::swizzle_child(generic_page* parent, general_recordid_t slot)
 {
     return swizzle_children(parent, &slot, 1);
 }
 
-void bf_tree_m::swizzle_children(generic_page* parent, const slotid_t* slots, uint32_t slots_size) {
+void bf_tree_m::swizzle_children(generic_page* parent, const general_recordid_t* slots,
+                                 uint32_t slots_size) {
     w_assert1(is_swizzling_enabled());
     w_assert1(parent != NULL);
     w_assert1(latch_mode(parent) != LATCH_NL);
     w_assert1(_is_active_idx(parent - _buffer));
     w_assert1(is_swizzled(parent)); // swizzling is transitive.
 
-    fixable_page_h p (parent);
+    fixable_page_h p;
+    p.fix_nonbufferpool_page(parent);
     for (uint32_t i = 0; i < slots_size; ++i) {
-        slotid_t slot = slots[i];
+        general_recordid_t slot = slots[i];
         // To simplify the tree traversal while unswizzling,
         // we never swizzle foster-child pointers.
-        w_assert1(slot >= 0); // was w_assert1(slot >= -1);
+        w_assert1(slot >= GeneralRecordIds::PID0); // was w_assert1(slot >= -1);
         w_assert1(slot <= p.max_child_slot());
 
         shpid_t* addr = p.child_slot_address(slot);
@@ -1509,7 +1470,8 @@ void bf_tree_m::_unswizzle_traverse_store(uint32_t &unswizzled_frames, volid_t v
         return; // just give up in unlucky case (probably the store has been just deleted)
     }
     bf_idx parent_idx = _volumes[vol]->_root_pages[store];
-    fixable_page_h p(&_buffer[parent_idx]);
+    fixable_page_h p;
+    p.fix_nonbufferpool_page(&_buffer[parent_idx]);
     if (!p.has_children()) {
         return;
     }
@@ -1524,7 +1486,8 @@ void bf_tree_m::_unswizzle_traverse_store(uint32_t &unswizzled_frames, volid_t v
 
 
 bool bf_tree_m::has_swizzled_child(bf_idx node_idx) {
-    fixable_page_h node_p(_buffer + node_idx);
+    fixable_page_h node_p;
+    node_p.fix_nonbufferpool_page(_buffer + node_idx);
     int max_slot = node_p.max_child_slot();
     // skipping foster pointer...
     for (int32_t j = 0; j <= max_slot; ++j) {
@@ -1548,7 +1511,8 @@ void bf_tree_m::_unswizzle_traverse_node(uint32_t &unswizzled_frames,
     }
     uint32_t old = _swizzle_clockhand_pathway[cur_clockhand_depth];
     bf_tree_cb_t &node_cb = get_cb(node_idx);
-    fixable_page_h node_p(_buffer + node_idx);
+    fixable_page_h node_p;
+    node_p.fix_nonbufferpool_page(_buffer + node_idx);
     if (old >= (uint32_t) node_p.max_child_slot()+1) {
         return;
     }
@@ -1573,7 +1537,8 @@ void bf_tree_m::_unswizzle_traverse_node(uint32_t &unswizzled_frames,
         }
 
         bf_idx child_idx = shpid ^ SWIZZLED_PID_BIT;
-        fixable_page_h node_child(_buffer + child_idx);
+        fixable_page_h node_child;
+        node_child.fix_nonbufferpool_page(_buffer + child_idx);
         if (node_child.has_children()) {
             // child is also an intermediate node
             _unswizzle_traverse_node (unswizzled_frames, vol, store, child_idx, cur_clockhand_depth + 1);
@@ -1640,7 +1605,8 @@ bool bf_tree_m::_unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot) {
     }
     latch_auto_release auto_rel(parent_cb.latch()); // this automatically releaes the latch.
 
-    fixable_page_h parent(_buffer + parent_idx);
+    fixable_page_h parent;
+    parent.fix_nonbufferpool_page(_buffer + parent_idx);
     if (child_slot >= (uint32_t) parent.max_child_slot()+1) {
         return false;
     }
@@ -1750,7 +1716,8 @@ void bf_tree_m::debug_dump_page_pointers(std::ostream& o, generic_page* page) co
 
     o << "dumping page:" << page->pid << ", bf_idx=" << idx << std::endl;
     o << "  ";
-    fixable_page_h p(page);
+    fixable_page_h p;
+    p.fix_nonbufferpool_page(page);
     for (int i= -1; i<=p.max_child_slot(); i++) {
         if (i > -1) {
             o << ", ";

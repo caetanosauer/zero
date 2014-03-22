@@ -32,6 +32,7 @@ class btree_m : public smlevel_2 {
     friend class bt_cursor_t;
     friend class btree_remove_log;
     friend class btree_insert_log;
+    friend class btree_insert_nonghost_log;
     friend class btree_update_log;
     friend class btree_overwrite_log;
     friend class btree_ghost_mark_log;
@@ -93,6 +94,10 @@ public:
 
     /** Print the btree (for debugging only). */
     static void                 print(const lpid_t& root,  bool print_elem = true);
+
+    /** Touch all pages in the btree (for performance experiments). */
+    static rc_t                 touch_all(const lpid_t& root, uint64_t &page_count);
+    static rc_t                 touch(const btree_page_h& page, uint64_t &page_count);
 
     /**
      * \brief Defrags the given page to remove holes and ghost records in the page.

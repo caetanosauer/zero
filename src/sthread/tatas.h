@@ -3,6 +3,7 @@
 
 #include "Lintel/AtomicCounter.hpp"
 #include "os_interface.h"
+#include "w_defines.h"
 
 #if MUTRACE_ENABLED_H
 #include <MUTrace/mutrace.h>
@@ -116,5 +117,8 @@ public:
 private:
     tatas_lock *_lock;
 };
+
+/** Used to keep tatas_lock in its own cacheline. */
+const size_t CACHELINE_TATAS_PADDING = CACHELINE_SIZE - sizeof(tatas_lock);
 
 #endif // TATAS_H

@@ -409,19 +409,11 @@ public:
    with it also.    A better solution for w_strstreams and
    strstreams would be something overloaded instead of a macro. */
 
-#if defined (__SUNPRO_CC)
-#define w_reset_strstream(s) \
-  do { \
-    s.clear();                \
-    s.seekp(0); \
-  } while(0)
-#else
 #define    w_reset_strstream(s)        \
     do {                \
         s.clear();        \
         s.seekp(ios::beg);    \
     } while (0)
-#endif
 
 
 /*--------------------------------------------------------------*
