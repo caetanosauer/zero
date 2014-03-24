@@ -45,9 +45,10 @@ btrec_t::set(const btree_page_h& page, slotid_t slot) {
 }
 
 void btree_page_h::accept_empty_child(lsn_t new_lsn, shpid_t new_page_id) {
-    // Somewhere there is a bug, when calling from btree_norec_alloc_log::redo
-    // the assertion fired on is_single_log_sys_xct, but it is a system txn
-    // w_assert1(g_xct()->is_single_log_sys_xct());
+    // If called from Recovery, i.e. btree_norec_alloc_log::redo, do not check for
+    // is_single_log_sys_xct(), the transaction flags are not setup properly
+    if (false == smlevel_0::in_recovery())
+        w_assert1(g_xct()->is_single_log_sys_xct());
     w_assert1(new_lsn != lsn_t::null || !smlevel_0::logging_enabled);
 
     // Slight change in foster-parent, touching only foster link and chain-high.

@@ -1103,6 +1103,8 @@ inline
 xct_t::state_t
 xct_t::state() const
 {
+    if (NULL == _core)
+        return xct_ended;
     return _core->_state;
 }
 
