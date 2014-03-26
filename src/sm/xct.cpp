@@ -1025,8 +1025,20 @@ xct_t::~xct_t()
         delete __saved_xct_log_t; 
         __saved_xct_log_t=0; 
     }
-    if(_core) DELETE_CORE(_core);
-    _core = NULL;
+
+    if (LATCH_NL != latch().mode())
+    {
+        // Someone is accessing the core of this txn, wait until it finished
+        w_rc_t latch_rc = latch().latch_acquire(LATCH_EX, WAIT_SPECIFIED_BY_XCT);
+
+        // Now we can delete the core
+        if(_core) 
+            DELETE_CORE(_core);
+        _core = NULL;
+
+        if (false == latch_rc.is_error())
+            latch().latch_release();
+    }
 }
 
 // common code needed by _commit(t_chain) and ~xct_t()
