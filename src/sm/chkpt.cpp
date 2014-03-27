@@ -582,6 +582,8 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
     goto retry;
 *****************************************************/
 
+try
+{
 
     // Finally, we're ready to start the actual checkpoint!
     uint16_t total_page_count = 0;
@@ -783,24 +785,34 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
 
                 // Acquire a traditional read latch to prevent reading transitional data
                 // A write latch is issued from the xct_t::change_state function which
-                // is used in txn commit and abort operation
-                // We don't want to read transaction data when state is changing
+                // is used in txn commit and abort operation, it is also issued from
+                // ~xct_t when destroying the transaction.
+                // We don't want to read transaction data when state is changing or
+                // transaction is being destoryed.
                 // It is possible the transaction got committed or aborted after we 
-                // gather log data for the transaction, so the commit or abort information
-                // will be in the logs after the checkpoint, it is okay
-                
-                w_rc_t latch_rc = xd->latch().latch_acquire(LATCH_SH, WAIT_FOREVER);
+                // gather log data for the transaction, so the commit or abort log record
+                // will be in the recovery log after the checkpoint, it is okay
+                //
+                // There is a small window (race condition) that transaction is in the process
+                // of being destroyed while checkpoint is trying to get information from the 
+                // same transaction concurrently.  If we catch this window then an exception
+                // would be throw, we abort the current checkpoint but not bringing down
+                // the system.
 
+                w_rc_t latch_rc = xd->latch().latch_acquire(LATCH_SH, WAIT_FOREVER);
                 if (latch_rc.is_error())
                 {
-                    // Unable to the read acquire latch, cannot continue, raise an internal error
+                    // Unable to the read acquire latch, cannot continue, log an internal error
                     DBGOUT1 (<< "Error when acquiring LATCH_SH for checkpoint transaction object. xd->tid = "
                              << xd->tid() << ", rc = " << latch_rc);
 
                     // To be a good citizen, release the 'write' mutex before raise error
                     chkpt_serial_m::write_release();
 
-                    W_FATAL_MSG(fcINTERNAL, << "unable to latch a transaction object");
+                    // Abort the current checkpoint silently
+                    smlevel_0::errlog->clog << info_prio 
+                        << "Failed to latch a txn from checkpoint, abort current checkpoint." << flushl;
+                    
                     return;
                 }
 
@@ -1012,6 +1024,21 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
 
     // Release the 'write' mutex so the next checkpoint request can come in
     chkpt_serial_m::write_release();
+}
+catch (...)
+{
+    // Catch all exceptions
+    
+    // Be a good citizen and release the 'write' mutex first
+    chkpt_serial_m::write_acquire();
+
+    // Log a message and abort the current checkpoint, we do not want to
+    // bring down the system due to a checkpoint failure
+    DBGOUT1(<<"chkpt_m::take, encountered 'catch' block, abort current checkpoint");
+
+    smlevel_0::errlog->clog << error_prio 
+    << "Exception caught during checkpoint process, checkpoint aborted." << flushl;
+}
 
     return;
 }

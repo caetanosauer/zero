@@ -861,7 +861,10 @@ public:
     // Mainly for checkpoint logging purpose
     latch_t* latchp() const
     {
-        w_assert1(_core != NULL);
+        // If _core is gone (txn is being destroyed), return NULL
+        if ( NULL == _core)
+            return (latch_t *)NULL;
+
         return const_cast<latch_t*>(&(_core->_latch));
     }
     latch_t &latch()
