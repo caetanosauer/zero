@@ -1822,10 +1822,11 @@ void restart_m::_redo_log_with_pid(
                     // This is not a valid situation because if the dirty page was never flushed
                     // to disk before the system crash, the Log Analysis phase trace the page
                     // history to find the original page format record, and the REDO phase
-                    // starts its log scan from the earliest LSN, so we should alwasy see the 
+                    // starts its log scan from the earliest LSN, so we should always see the 
                     // page format log record for a dirty page which was not on disk.
                     // Raise error becasue we should not hit this error
 
+                    cb.latch().latch_release();
                     W_FATAL_MSG(fcINTERNAL, 
                                 << "REDO phase, expected page does not exist on disk.  Page: "
                                 << page_updated.page);

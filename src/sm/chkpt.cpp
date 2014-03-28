@@ -1020,6 +1020,9 @@ try
         DBGOUT1(<<"chkpt_m::take - GetLastMountLSN > master, invalid situation for checkpoint, "
                 << "GetLastMountLSN = " << io->GetLastMountLSN() << ", master = " << master);
         DBGOUT1(<<"END chkpt_m::take, abort checkpoint" << master);
+
+        smlevel_0::errlog->clog << error_prio 
+            << "chkpt_m::take - GetLastMountLSN > master, checkpoint aborted." << flushl;
     }
 
     // Release the 'write' mutex so the next checkpoint request can come in
@@ -1037,7 +1040,7 @@ catch (...)
     DBGOUT1(<<"chkpt_m::take, encountered 'catch' block, abort current checkpoint");
 
     smlevel_0::errlog->clog << error_prio 
-    << "Exception caught during checkpoint process, checkpoint aborted." << flushl;
+        << "Exception caught during a checkpoint process, checkpoint aborted." << flushl;
 }
 
     return;

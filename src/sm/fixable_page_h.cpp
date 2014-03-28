@@ -79,10 +79,10 @@ w_rc_t fixable_page_h::fix_direct(volid_t vol, shpid_t shpid,
 w_rc_t fixable_page_h::fix_recovery_redo(bf_idx idx, lpid_t page_updated) {
 
     // Special function for Recovery REDO phase
-    // Caller of this fumction is responsible for acquire and release EX latch on this page
+    // Caller of this function is responsible for acquire and release EX latch on this page
       
     // This is a newly loaded page during REDO phase in Recovery
-    // The idx is already in hashtable, we need to do is to associate it with 
+    // The idx is already in hashtable, all we need to do is to associate it with 
     // fixable page data structure.
     // Swizzling must be off when calling this function.
 
