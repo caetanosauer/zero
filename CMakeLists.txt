@@ -53,7 +53,8 @@ IF(GOOGLEPERFTOOLS_FOUND)
   # Optionally, also use tcmalloc if there is.
   find_package(Tcmalloc) # google-perftools-devel
   IF(TCMALLOC_FOUND)
-    SET (LINK_GOOGLEPROFILER "${LINK_GOOGLEPROFILER} -ltcmalloc")
+    # Disabled tcmalloc because the memory acquired by tcmalloc is somehow slower to access.
+    # SET (LINK_GOOGLEPROFILER "${LINK_GOOGLEPROFILER} -ltcmalloc")
   ENDIF()
 ENDIF(GOOGLEPERFTOOLS_FOUND)
 
