@@ -1508,27 +1508,11 @@ lil_global_table* ss_m::get_lil_global_table() {
     }
 }
 
-/*--------------------------------------------------------------*
- *  ss_m::lock()                                *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::lock(const lockid_t& n, const okvl_mode& m,
+rc_t ss_m::lock(const lockid_t& n, const okvl_mode& m,
            bool check_only, timeout_in_ms timeout)
 {
-    SM_PROLOGUE_RC(ss_m::lock, in_xct, read_only, 0);
-    W_DO( lm->lock(n, m, check_only, timeout) );
+    W_DO( lm->lock(n, m, false, check_only, timeout) );
     return RCOK;
-}
-
-rc_t
-ss_m::lock(const stid_t& n, const okvl_mode& m,
-           bool check_only, timeout_in_ms timeout)
-{
-    SUPPRESS_UNUSED_4(n, m, check_only, timeout);
-    //TODO: SHORE-KITS-API
-    //Why stid_t??? Shore-MT doesn't support this function signature 
-    assert(0);
-    SUPPRESS_NON_RETURN(rc_t);
 }
 
 
