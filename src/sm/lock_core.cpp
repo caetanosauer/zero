@@ -25,6 +25,10 @@ int g_deadlock_dreadlock_interval_ms = 10;
 w_error_codes (*g_check_deadlock_impl)(xct_t* xd, lock_request_t *myreq);
 #endif // SWITCH_DEADLOCK_IMPL
 
+bool OKVL_EXPERIMENT = false;
+uint32_t OKVL_INIT_STR_PREFIX_LEN = 0;
+uint32_t OKVL_INIT_STR_UNIQUEFIER_LEN = 0;
+
 struct RawLockCleanerFunctor : public GcWakeupFunctor {
     RawLockCleanerFunctor(RawLockBackgroundThread* cleaner_arg) : cleaner(cleaner_arg) {}
     void wakeup() {
