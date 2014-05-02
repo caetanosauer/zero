@@ -542,10 +542,20 @@ btree_impl::_ux_undo_ghost_mark(volid_t vol, snum_t store, const w_keystr_t &key
 
 okvl_mode btree_impl::create_part_okvl(
     okvl_mode::element_lock_mode mode,
-    const w_keystr_t&) {
+    const w_keystr_t &key) {
     okvl_mode ret;
 
-    okvl_mode::part_id part = 0; // we don't have uniquefier in main branch.
+    okvl_mode::part_id part = 0;
+    if (OKVL_EXPERIMENT) {
+        //Use the uniquefier part
+        if (OKVL_INIT_STR_UNIQUEFIER_LEN != 0) {
+            w_assert1(key.get_length_as_keystr() >= OKVL_INIT_STR_UNIQUEFIER_LEN);
+            const char* uniquefier = reinterpret_cast<const char*>(key.buffer_as_keystr());
+            uniquefier += key.get_length_as_keystr();
+            uniquefier -= OKVL_INIT_STR_UNIQUEFIER_LEN;
+            part = okvl_mode::compute_part_id(uniquefier, OKVL_INIT_STR_UNIQUEFIER_LEN);
+        }
+    }
     ret.set_partition_mode(part, mode);
     return ret;
 }

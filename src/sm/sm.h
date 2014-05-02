@@ -1876,21 +1876,6 @@ public:
         timeout_in_ms           timeout = WAIT_SPECIFIED_BY_XCT
     );
 
-    /**
-     * \brief Acquire a lock on an entire store.
-     * \ingroup SSMLOCK
-     * @param[in]  n  Store ID.
-     * @param[in]  m  Desired lock mode.  Values: EX, SH.
-     * @param[in]  check_only  if true, the lock goes away right after grant. default false.
-     * @param[in]  timeout  Milliseconds willing to block.  See timeout_in_ms.
-     */
-    static rc_t            lock(
-        const stid_t&         n, 
-        const okvl_mode&           m,
-        bool                    check_only = false,
-        timeout_in_ms           timeout = WAIT_SPECIFIED_BY_XCT
-    );
-
 private:
 
     static int _instance_cnt;

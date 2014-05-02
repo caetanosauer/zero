@@ -5,6 +5,20 @@
 #ifndef LOCK_S_H
 #define LOCK_S_H
 
+/**
+ * This is only for OKVL performance experiments.
+ * This must be usually turned off as we do not have metadata to automatically determine
+ * the following parameters per B-tree.
+ */
+extern bool OKVL_EXPERIMENT;
+
+/** Global variable to specify the length of "logical" key part in OKVL. 0 to turn it off. */
+extern uint32_t OKVL_INIT_STR_PREFIX_LEN;
+
+/** Global variable to specify the length of "uniquefier" key part in OKVL. 0 to turn it off. */
+extern uint32_t OKVL_INIT_STR_UNIQUEFIER_LEN;
+
+
 #include "w_defines.h"
 #include "w_key.h"
 #include "w_hashing.h"
@@ -145,6 +159,13 @@ lockid_t::_init_for_str(const stid_t &stid, const unsigned char *keystr, int16_t
 {
     zero();
     set_store (stid);
+
+    if (OKVL_EXPERIMENT) {
+        // take only the prefix part (logical key)
+        if (OKVL_INIT_STR_PREFIX_LEN > 0 && keylen > (int32_t) OKVL_INIT_STR_PREFIX_LEN) {
+            keylen = OKVL_INIT_STR_PREFIX_LEN;
+        }
+    }
     l[1] = w_hashing::uhash::hash64(LOCKID_T_HASH_SEED, keystr, keylen);
 }
 
