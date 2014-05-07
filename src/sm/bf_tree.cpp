@@ -2103,7 +2103,8 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid,
                 // a page that is being evicted (pin_cnt == -1) is safe.
                 if (cb.pin_cnt() == -1)
                 {               
-                    cb.latch().latch_release();                
+                    if (cb.latch().held_by_me())
+                        cb.latch().latch_release();                
                     continue;
                 }
             
