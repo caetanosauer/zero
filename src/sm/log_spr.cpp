@@ -87,11 +87,11 @@ rc_t log_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn) {
 
     // Then, collect logs to apply. Depending on the recency of the backup and the
     // previous page-allocation operation on the page, we might have to collect many logs.
-    const size_t SPR_LOG_BUFSIZE = 1 << 14;
-    char buffer[SPR_LOG_BUFSIZE]; // TODO, we should have an object pool for this.
+    const size_t SPR_LOG_BUFSIZE = 1 << 17; // 1 << 14;
+    std::vector<char> buffer(SPR_LOG_BUFSIZE); // TODO, we should have an object pool for this.
     std::vector<logrec_t*> ordered_entires;
-    W_DO(log_core::THE_LOG->_collect_single_page_recovery_logs(pid, p.lsn(), emlsn, buffer,
-        SPR_LOG_BUFSIZE, ordered_entires));
+    W_DO(log_core::THE_LOG->_collect_single_page_recovery_logs(pid, p.lsn(), emlsn,
+        &buffer[0], SPR_LOG_BUFSIZE, ordered_entires));
     DBGOUT1(<< "Collected log. About to apply " << ordered_entires.size() << " logs");
     W_DO(log_core::THE_LOG->_apply_single_page_recovery_logs(p, ordered_entires));
 
@@ -109,8 +109,13 @@ rc_t log_core::_collect_single_page_recovery_logs(
     size_t buffer_capacity = buffer_size;
     for (lsn_t nxt = emlsn; current_lsn < nxt && nxt != lsn_t::null;) {
         logrec_t* record = NULL;
-        W_DO(fetch(nxt, record, NULL));
+        lsn_t obtained = nxt;
+        W_DO(fetch(obtained, record, NULL));
         release(); // release _partition_lock immediately
+        if (obtained != nxt) {
+            ERROUT(<<"log_core::fetch() returned a different LSN, old log partition already"
+                " wiped?? nxt=" << nxt << ", obtained=" << obtained);
+        }
 
         if (buffer_capacity < record->length()) {
             // This might happen when we have a really long page log chain,
@@ -124,7 +129,8 @@ rc_t log_core::_collect_single_page_recovery_logs(
         } else if (!record->is_multi_page()
             || pid.page != record->data_ssx_multi()->_page2_pid) {
             W_RETURN_RC_MSG(eWRONG_PAGE_LSNCHAIN, << "PID= " << pid << ", CUR_LSN="
-                << current_lsn << ", EMLSN=" << emlsn << ", log=" << *record);
+                << current_lsn << ", EMLSN=" << emlsn << ", next_lsn=" << nxt
+                << ", obtained_lsn=" << obtained << ", log=" << *record);
         } else {
             w_assert0(record->data_ssx_multi()->_page2_pid == pid.page);
             nxt = record->data_ssx_multi()->_page2_prv;

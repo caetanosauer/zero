@@ -46,6 +46,15 @@ sm_options btree_test_env::make_sm_options(
     sm_options options;
     options.set_int_option("sm_bufpoolsize", SM_PAGESIZE / 1024 * bufferpool_size_in_pages);
     options.set_int_option("sm_locktablesize", locktable_size);
+    // Most testcases make little locks. to speed them up, use small number here.
+    // In a few testcases that need many locks, specify larger number in sm_options.
+    options.set_int_option("sm_rawlock_lockpool_initseg", 20);
+    options.set_int_option("sm_rawlock_xctpool_initseg", 20);
+    options.set_int_option("sm_rawlock_lockpool_segsize", 1 << 10);
+    options.set_int_option("sm_rawlock_xctpool_segsize", 1 << 8);
+    // most of experiments don't bother creating transactions, so we can't garbage collect.
+    // to not throw away active generations, just increase threashold.
+    options.set_int_option("sm_rawlock_gc_generation_count", 100);
     options.set_string_option("sm_logdir", global_log_dir);
     options.set_int_option("sm_num_page_writers", cleaner_threads);
     options.set_int_option("sm_cleaner_interval_millisec_min", cleaner_interval_millisec_min);

@@ -47,7 +47,7 @@ btrec_t::set(const btree_page_h& page, slotid_t slot) {
 }
 
 void btree_page_h::accept_empty_child(lsn_t new_lsn, shpid_t new_page_id) {
-    w_assert1 (new_lsn != lsn_t::null);
+    w_assert1(new_lsn != lsn_t::null || !smlevel_0::logging_enabled);
 
     // Slight change in foster-parent, touching only foster link and chain-high.
     page()->btree_foster = new_page_id;
@@ -118,7 +118,7 @@ rc_t btree_page_h::format_steal(lsn_t             new_lsn,
     // log as one record
     if (log_it) {
         W_DO(log_page_img_format(*this));
-        w_assert1(lsn().valid());
+        w_assert1(lsn().valid() || !smlevel_0::logging_enabled);
     }
     
     return RCOK;
@@ -638,6 +638,54 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, size_t
 
     w_assert3(_poor(slot) == poormkey);
     w_assert3(page()->item_length(slot+1) == data_length);
+}
+void btree_page_h::insert_nonghost(const w_keystr_t &key, const cvec_t &elem) {
+    w_assert1 (is_leaf());
+    w_assert1(compare_with_fence_low(key) >= 0);
+    w_assert1(compare_with_fence_high(key) < 0);
+
+    int16_t prefix_len       = get_prefix_length();
+    int     trunc_key_length = key.get_length_as_keystr() - prefix_len;
+
+    w_assert1(check_space_for_insert_leaf(trunc_key_length, elem.size()));
+
+    // where to insert?
+    bool     found;
+    slotid_t slot;
+    search(key, found, slot);
+    if (found) {
+        // because of logical UNDO, this might happen. in this case, we just reuse the ghost.
+        w_assert1 (is_ghost(slot));
+#if W_DEBUG_LEVEL > 2
+        btrec_t rec (*this, slot);
+        w_assert3 (rec.key().compare(key) == 0);
+#endif // W_DEBUG_LEVEL > 2
+
+        if (!page()->replace_item_data(slot+1, _element_offset(slot), elem)) {
+            w_assert1(false); // should not happen because ghost should have had enough space
+        }
+
+        page()->unset_ghost(slot + 1);
+        return;
+    }
+    w_assert1(slot >= 0 && slot <= nrecs());
+
+    // update btree_consecutive_skewed_insertions. this is just statistics and not logged.
+    _update_btree_consecutive_skewed_insertions(slot);
+
+    cvec_t trunc_key(reinterpret_cast<const char*>(key.buffer_as_keystr()) + prefix_len,
+                     trunc_key_length);
+    poor_man_key poormkey = _extract_poor_man_key(trunc_key);
+
+    cvec_t leaf_record;
+    pack_scratch_t leaf_scratch;
+    _pack_leaf_record_prefix(leaf_record, leaf_scratch, trunc_key);
+    leaf_record.put(elem);
+    if (!page()->insert_item(slot+1, false, poormkey, 0, leaf_record)) {
+        w_assert0(false);
+    }
+
+    w_assert3(_poor(slot) == poormkey);
 }
 
 void btree_page_h::mark_ghost(slotid_t slot) {

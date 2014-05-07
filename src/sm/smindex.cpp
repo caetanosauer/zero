@@ -85,6 +85,14 @@ rc_t ss_m::print_index(stid_t stid)
     return RCOK;
 }
 
+rc_t ss_m::touch_index(stid_t stid, uint64_t &page_count)
+{
+    lpid_t root_pid;
+    W_DO(open_store_nolock (stid, root_pid)); // this method is for debugging
+    bt->touch_all(root_pid, page_count);
+    return RCOK;
+}
+
 rc_t ss_m::create_assoc(stid_t stid, const w_keystr_t& key, const vec_t& el)
 {
     lpid_t root_pid;

@@ -67,6 +67,7 @@ X(eISPREPARED,                "Transaction thread is prepared  -- cannot do this
 X(eNOTEXTERN2PC,              "Transaction is not participating in external 2-phase commit ")
 X(eTHREADMAPFULL,             "No more bits for thread maps")
 X(eLOCKTIMEOUT,               "Lock timeout")
+X(eCONDLOCKTIMEOUT,           "Conditional lock timeout. Unconditional retry should follow")
 X(eLATCHQFAIL,                "Attempt to acquire/maintain latch in Q mode failed")
 X(ePARENTLATCHQFAIL,          "Attempt to fix page in Q mode failed because parent's Q latch failed")
 X(eNEEDREALLATCH,             "Need parent and child page fixed in SH or EX modes")

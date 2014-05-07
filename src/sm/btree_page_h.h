@@ -316,8 +316,6 @@ public:
     // no 'noprefix' version because chain_fence_high might not share the prefix!
 
     /**
-     * @param[in] foster_emlsn Expected Child LSN of (if exists) foster-child of the parent.
-     * Modifies the associated page to accept an empty foster-child page.
      * @param[in] new_lsn LSN of the operation that creates the foster-child page.
      * @param[in] new_page_id Page ID of the new page.
      * @see btree_impl::_sx_norec_alloc()
@@ -422,6 +420,7 @@ public:
     shpid_t       child(slotid_t slot) const;
     /// Return the opaque child pointer of record in slot.
     shpid_t       child_opaqueptr(slotid_t slot) const;
+
 
     /**
      * Returns a pointer to given page pointer (e.g., shpid_t).
@@ -600,6 +599,20 @@ public:
     void             reserve_ghost(const char *key_raw, size_t key_raw_len, size_t element_length);
 
     /**
+     * Creates a non-ghost record with the given key and data.
+     * If the record already exists as a ghost, we reuse it.
+     * This is logically a combination of reserve_ghost() and replace_ghost(), but this does
+     * the two in one-go.
+     * This function itself does NOT log, so the caller is responsible for it.
+     * @param[in] key inserted key
+     * @param[in] elem record data
+     * @pre is_leaf()
+     * @pre the page has enough space to insert the record. The caller must make sure this
+     * is the case.
+     */
+    void             insert_nonghost(const w_keystr_t &key, const cvec_t &elem);
+
+    /**
      * Tell if the slot is a ghost record and enough spacious to store the
      * given key/data.
      */
@@ -678,9 +691,9 @@ public:
     bool             is_consistent (bool check_keyorder = false, bool check_space = false) const;
 
     /** Returns the pointer to Expected Child LSN of pid0, foster-child, or real child. \ingroup SPR */
-    lsn_t*         emlsn_address(general_recordid_t slot);
+    lsn_t*         emlsn_address(general_recordid_t pos);
     /** Returns the Expected Child LSN of pid0, foster-child, or real child. */
-    const lsn_t&   get_emlsn_general(general_recordid_t slot) const;
+    const lsn_t&   get_emlsn_general(general_recordid_t pos) const;
     /**
      * \brief Sets the Expected Child LSN of pid0, foster-child, or real child.
      * \ingroup SPR
@@ -688,7 +701,7 @@ public:
      * This method is not protected by exclusive latch but still safe because EMLSN are not
      * viewed/updated by multi threads.
      */
-    void           set_emlsn_general(general_recordid_t slot, const lsn_t &lsn);
+    void           set_emlsn_general(general_recordid_t pos, const lsn_t &lsn);
 
     /** Returns the Expected Child LSN of foster-child. \ingroup SPR */
     const lsn_t&   get_foster_emlsn() const;
@@ -728,7 +741,7 @@ private:
      * byte) without its prefix.
      *
      * emlsn is the expected minimum LSN for the pointed child page.
-     * Be \b VERY careful that both data in trunk_key and emlsn are stored as references.
+     * Be \b VERY careful because both data in trunk_key and emlsn are stored as references.
      * You must keep the original variables until the resulting cvec_t gets out of scope.
      */
     void _pack_node_record(cvec_t& out, const cvec_t& trunc_key, const lsn_t &emlsn) const;
@@ -1294,7 +1307,11 @@ inline const char* btree_page_h::_robust_node_key_noprefix(slotid_t slot,  size_
     w_assert1(slot>=0);
 
     const char* data = page()->robust_item_data(slot+1, len);
-    len -= sizeof(lsn_t);
+    if (len >= sizeof(lsn_t)) {
+        len -= sizeof(lsn_t);
+    } else {
+        len = 0;
+    }
     return data;
 }
 
@@ -1337,29 +1354,29 @@ inline int btree_page_h::_robust_compare_key_noprefix(slotid_t slot, const void 
 //   BEGIN: SPR related EMLSN accessors implementation
 // ======================================================================
 
-inline lsn_t* btree_page_h::emlsn_address(general_recordid_t slot) {
-    if (slot == GeneralRecordIds::PID0) {
-        return &page()->btree_foster_emlsn;
-    } else if (slot == GeneralRecordIds::FOSTER_CHILD) {
-        // this means foster child
+inline lsn_t* btree_page_h::emlsn_address(general_recordid_t pos) {
+    if (pos == GeneralRecordIds::PID0) {
         return &page()->btree_pid0_emlsn;
+    } else if (pos == GeneralRecordIds::FOSTER_CHILD) {
+        // this means foster child
+        return &page()->btree_foster_emlsn;
     } else {
         // last 8 bytes after usual item_data is the child EMLSN.
-        // Note: these are "slot", not "slot+1" because it's general_recordid_t, not slotid_t
-        char* data = page()->item_data(slot);
-        size_t len = page()->item_length(slot);
+        // Note: these are "pos", not "pos+1" because it's general_recordid_t, not slotid_t
+        char* data = page()->item_data(pos);
+        size_t len = page()->item_length(pos);
         w_assert1(len >= sizeof(lsn_t));
         len -= sizeof(lsn_t);
         return reinterpret_cast<lsn_t*>(data + len);
     }
 }
 
-inline const lsn_t& btree_page_h::get_emlsn_general(general_recordid_t slot) const {
-    return *(const_cast<btree_page_h*>(this)->emlsn_address(slot));
+inline const lsn_t& btree_page_h::get_emlsn_general(general_recordid_t pos) const {
+    return *(const_cast<btree_page_h*>(this)->emlsn_address(pos));
 }
 
-inline void btree_page_h::set_emlsn_general(general_recordid_t slot, const lsn_t& lsn) {
-    *emlsn_address(slot) = lsn;
+inline void btree_page_h::set_emlsn_general(general_recordid_t pos, const lsn_t& lsn) {
+    *emlsn_address(pos) = lsn;
 }
 
 inline const lsn_t& btree_page_h::get_foster_emlsn() const {

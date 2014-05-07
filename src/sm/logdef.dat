@@ -153,6 +153,8 @@ btree_norec_alloc  1110110 1.0 (const btree_page_h& page, const btree_page_h& pa
 
 btree_insert       1011001 1.42 (const btree_page_h& page,
                             const w_keystr_t& key, const cvec_t& el);
+btree_insert_nonghost 1011001 1.42 (const btree_page_h& page,
+                            const w_keystr_t& key, const cvec_t& el);
 
 btree_update       1011001 1.42 (const btree_page_h& page, const w_keystr_t& key,
     const char* old_el, int old_elen, const cvec_t& new_el);

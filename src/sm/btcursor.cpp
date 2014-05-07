@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 #include "w_defines.h"
@@ -94,6 +94,7 @@ void bt_cursor_t::_set_current_page(btree_page_h &page) {
     // pin this page for subsequent refix()
     _pid_bfidx.set(page.pin_for_refix());
     _lsn = page.lsn();
+    w_assert1(_lsn.valid()); // must have a valid LSN for _check_page_update to work
 }
 
 rc_t bt_cursor_t::_locate_first() {
@@ -371,7 +372,7 @@ rc_t bt_cursor_t::_advance_one_slot(btree_page_h &p, bool &eof)
                     lock_mode = _ex_lock ? ALL_X_GAP_X : ALL_S_GAP_S;
                 }
                 // we can unconditionally request lock because we already released latch
-                W_DO(ss_m::lm->lock(lid, lock_mode, false));
+                W_DO(ss_m::lm->lock(lid, lock_mode, false, false));
             }
             
             // TODO this part should check if we find an exact match of fence keys.
