@@ -83,8 +83,9 @@ void BackupFile::open() {
 void BackupFile::close() {
     if (is_opened()) {
         int ret = ::close(_fd);
-        w_assert1(ret == 0);
+        w_assert1(ret == 0); // close called from destructor, no other error handling
         _fd = -1;
+        
     }
 }
 w_rc_t BackupFile::read_page(AlignedMemory& buffer, shpid_t shpid) {

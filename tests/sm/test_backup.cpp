@@ -6,6 +6,7 @@
 #include "bf.h"
 #include "sm_io.h"
 #include "backup.h"
+#include "vol.h"
 #include <iostream>
 #include <sstream>
 #include <cstdio>
@@ -21,7 +22,7 @@ btree_test_env *test_env;
  * Unit tests for backup manager.
  */
 
-const shpid_t FIRST_PID = 1 + 1 + 1; // 0=vol_hdr, 1=alloc_p, 2=stnode_p
+//const shpid_t FIRST_PID = 1 + 1 + 1; // 0=vol_hdr, 1=alloc_p, 2=stnode_p
 
 w_rc_t initial_test(ss_m* ssm, test_volume_t *test_volume) {
     BackupManager *bk = ssm->bk;
@@ -34,6 +35,8 @@ w_rc_t initial_test(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(bk->volume_exists(vid));
 
     // this is initial state, so all data pages are unused.
+    vol_t *vol = ssm->io->get_volume(test_volume->_vid);
+    const shpid_t FIRST_PID = vol->first_data_pageid();
     for (shpid_t pid = FIRST_PID; pid < default_quota_in_pages; ++pid) {
         EXPECT_FALSE(bk->page_exists(vid, pid));
     }
@@ -51,6 +54,8 @@ const snum_t STNUM = 10;
 /** helper to allocate a few pages */
 w_rc_t allocate_few(ss_m* ssm, test_volume_t *test_volume, shpid_t alloc_count) {
     volid_t vid = test_volume->_vid;
+    vol_t *vol = ssm->io->get_volume(test_volume->_vid);
+    const shpid_t FIRST_PID = vol->first_data_pageid();
     W_DO(ssm->begin_xct());
     stid_t stid (vid, STNUM);
     for (shpid_t i = 0; i < alloc_count; ++i) {
@@ -75,6 +80,8 @@ w_rc_t allocate_few(ss_m* ssm, test_volume_t *test_volume, shpid_t alloc_count) 
 w_rc_t allocate_few_test(ss_m* ssm, test_volume_t *test_volume) {
     BackupManager *bk = ssm->bk;
     volid_t vid = test_volume->_vid;
+    vol_t *vol = ssm->io->get_volume(test_volume->_vid);
+    const shpid_t FIRST_PID = vol->first_data_pageid();
     x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));
 
@@ -113,6 +120,8 @@ TEST (BackupTest, AllocateFew) {
 w_rc_t mixed_test(ss_m* ssm, test_volume_t *test_volume) {
     BackupManager *bk = ssm->bk;
     volid_t vid = test_volume->_vid;
+    vol_t *vol = ssm->io->get_volume(test_volume->_vid);
+    const shpid_t FIRST_PID = vol->first_data_pageid();
     x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));
 
