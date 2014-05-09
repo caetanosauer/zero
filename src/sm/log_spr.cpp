@@ -110,7 +110,7 @@ rc_t log_core::_collect_single_page_recovery_logs(
     for (lsn_t nxt = emlsn; current_lsn < nxt && nxt != lsn_t::null;) {
         logrec_t* record = NULL;
         lsn_t obtained = nxt;
-        W_DO(fetch(obtained, record, NULL));
+        W_DO(fetch(obtained, record, NULL, true)); 
         release(); // release _partition_lock immediately
         if (obtained != nxt) {
             ERROUT(<<"log_core::fetch() returned a different LSN, old log partition already"

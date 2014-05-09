@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 /* -*- mode:C++; c-basic-offset:4 -*-
@@ -86,10 +86,17 @@ typedef smlevel_0::fileoff_t fileoff_t;
  *********************************************************************/
 bool log_i::xct_next(lsn_t& lsn, logrec_t*& r)  
 {
+    // Initially (before the first xct_next call, 
+    // 'cursor' is set to the starting point of the scan
+    // After each xct_next call, 
+    // 'cursor' is set to the lsn of the next log record if forward scan
+    // or the lsn of the previous log record if backward scan
+    
     bool eof = (cursor == lsn_t::null);
+
     if (! eof) {
         lsn = cursor;
-        rc_t rc = log.fetch(lsn, r, &cursor);
+        rc_t rc = log.fetch(lsn, r, &cursor, forward_scan);  // Either forward or backward scan
         
         // release right away, since this is only
         // used in recovery.
@@ -107,6 +114,7 @@ bool log_i::xct_next(lsn_t& lsn, logrec_t*& r)
             }
         }
     }
+
     return ! eof;
 }
 
@@ -123,7 +131,7 @@ bool log_i::xct_next(lsn_t& lsn, logrec_t*& r)
  * _version_major should be incremented and version_minor set to 0.
  *
  *********************************************************************/
-uint32_t const log_m::_version_major = 5;
+uint32_t const log_m::_version_major = 6;
 uint32_t const log_m::_version_minor = 0;
 const char log_m::_SLASH = '/';
 const char log_m::_master_prefix[] = "chk."; // same size as _log_prefix
@@ -249,8 +257,8 @@ log_m:: release()
     { log_core::THE_LOG->release(); }
 
 rc_t 
-log_m::fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt) 
-    { return log_core::THE_LOG->fetch(lsn, rec, nxt); }
+log_m::fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, bool forward) 
+    { return log_core::THE_LOG->fetch(lsn, rec, nxt, forward); }
 
 rc_t 
 log_m::insert(logrec_t &r, lsn_t* ret)

@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 /* -*- mode:C++; c-basic-offset:4 -*-
@@ -85,12 +85,13 @@ public:
     void             wakeup_and_take();
     void             spawn_chkpt_thread();
     void             retire_chkpt_thread();
-    void             take();
+    void             synch_take();
+    void             take(chkpt_mode_t chkpt_mode);
+
 
 private:
     chkpt_thread_t*  _chkpt_thread;
     long             _chkpt_count;
-
 
 public:
     // These functions are for the use of chkpt -- to serialize

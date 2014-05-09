@@ -177,8 +177,23 @@ struct bf_tree_cb_t {
      */
     uint16_t                    _swizzled_ptr_cnt_hint; // +2 -> 50
 
-    fill16                      _fill16_52;     // +2 -> 52
-    fill32                      _fill32_56;     // +4 -> 56
+
+    // in_doubt flag; used in Recovery process, protected by our latch
+    // If in_doubt flag is ON (only set in Log Analysys phase', an in_doubt page
+    // is registered in the buffer pool but the page has not been loaded into the
+    // buffer pool yet.
+    // We need the long ID (volume number + store number + page number)
+    // to load the actual page, all the information are stored in cb but need to 
+    // re-construct the long ID:
+    // volume number - _pid_vol (overload for in_doubt purpose)
+    // store number    - _store_num (valid for Recovery only)
+    // page number    - _pid_shpid
+    // If _in_doubt == true, do not access 'bf_tree_m::_buffer'
+    //
+    bool                        _in_doubt;      // +1 -> 51
+    fill8                       _fill8_52;      // +1 -> 52
+    snum_t                      _store_num;     // +4 -> 56
+
     fill32                      _fill32_60;     // +4 -> 60
     fill8                       _fill8_61;      // +1 -> 61
     fill8                       _fill8_62;      // +1 -> 62

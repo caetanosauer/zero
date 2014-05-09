@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 /*<std-header orig-src='shore' incl-file-exclusion='SM_INT_1_H'>
@@ -61,10 +61,12 @@ public:
 	// change state to a larger state with change_state().
     enum xct_state_t {  xct_stale = 0x0,  
                         xct_active = 0x1,  // active or rolling back in
-                        // recovery/undo, or doing rollback_work
+                                           // doing rollback_work
+                                           // also used in Recovery for doomed transaction
+                                           // because it is using the standard rollback logic
                         xct_chaining = 0x3, 
                         xct_committing = 0x4, 
-                        xct_aborting = 0x5, 
+                        xct_aborting = 0x5,  // normal transaction abort
                         xct_freeing_space = 0x6, 
                         xct_ended = 0x7
     };
@@ -81,6 +83,7 @@ class xct_log_warn_check_t : public smlevel_0 {
 public:
     static w_rc_t check(xct_t*&);
 };
+
 #if defined(__GNUC__) && __GNUC_MINOR__ > 6
 ostream& operator<<(ostream& o, const smlevel_1::xct_state_t& xct_state);
 #endif

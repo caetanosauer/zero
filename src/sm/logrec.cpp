@@ -389,24 +389,27 @@ chkpt_begin_log::chkpt_begin_log(const lsn_t &lastMountLSN)
 
 
 
-
 /*********************************************************************
  *
- *  chkpt_end_log(const lsn_t &master, const lsn_t& min_rec_lsn)
+ *  chkpt_end_log(const lsn_t &master, const lsn_t& min_rec_lsn, const lsn_t& min_txn_lsn) 
  *
  *  Status Log to mark completion of fussy checkpoint.
  *  Master is the lsn of the record that began this chkpt.
- *  min_rec_lsn is the lsn of the record that began this chkpt.
+ *  min_rec_lsn is the earliest lsn for all dirty pages in this chkpt.
+ *  min_txn_lsn is the earliest lsn for all txn in this chkpt.
  *
  *********************************************************************/
-chkpt_end_log::chkpt_end_log(const lsn_t &lsn, const lsn_t& min_rec_lsn)
+chkpt_end_log::chkpt_end_log(const lsn_t& lsn, const lsn_t& min_rec_lsn,
+                                const lsn_t& min_txn_lsn)
 {
     // initialize _data
     lsn_t *l = new (_data) lsn_t(lsn);
     l++; //grot
     *l = min_rec_lsn;
+    l++; //grot
+    *l = min_txn_lsn;
 
-    fill(0, 0, 2 * sizeof(lsn_t));
+    fill(0, 0, (3 * sizeof(lsn_t)) + (3 * sizeof(int)));
 }
 
 
@@ -416,14 +419,15 @@ chkpt_end_log::chkpt_end_log(const lsn_t &lsn, const lsn_t& min_rec_lsn)
  *  chkpt_bf_tab_log
  *
  *  Data Log to save dirty page table at checkpoint.
- *  Contains, for each dirty page, its pid and recovery lsn.
+ *  Contains, for each dirty page, its pid, minimum recovery lsn and page (latest) lsn.
  *
  *********************************************************************/
 
 chkpt_bf_tab_t::chkpt_bf_tab_t(
     int                 cnt,        // I-  # elements in pids[] and rlsns[]
     const lpid_t*         pids,        // I-  id of of dirty pages
-    const lsn_t*         rlsns)        // I-  rlsns[i] is recovery lsn of pids[i]
+    const lsn_t*         rlsns,        // I-  rlsns[i] is recovery lsn of pids[i], the oldest
+    const lsn_t*         plsns)        // I-  plsns[i] is page lsn lsn of pids[i], the latest
     : count(cnt)
 {
     w_assert1( sizeof(*this) <= logrec_t::max_data_sz );
@@ -431,6 +435,7 @@ chkpt_bf_tab_t::chkpt_bf_tab_t(
     for (uint i = 0; i < count; i++) {
         brec[i].pid = pids[i];
         brec[i].rec_lsn = rlsns[i];
+        brec[i].page_lsn = plsns[i];
     }
 }
 
@@ -438,9 +443,10 @@ chkpt_bf_tab_t::chkpt_bf_tab_t(
 chkpt_bf_tab_log::chkpt_bf_tab_log(
     int                 cnt,        // I-  # elements in pids[] and rlsns[]
     const lpid_t*         pid,        // I-  id of of dirty pages
-    const lsn_t*         rec_lsn)// I-  rlsns[i] is recovery lsn of pids[i]
+    const lsn_t*         rec_lsn,// I-  rec_lsn[i] is recovery lsn (oldest) of pids[i]
+    const lsn_t*         page_lsn)// I-  page_lsn[i] is page lsn (latest) of pids[i]    
 {
-    fill(0, 0, (new (_data) chkpt_bf_tab_t(cnt, pid, rec_lsn))->size());
+    fill(0, 0, (new (_data) chkpt_bf_tab_t(cnt, pid, rec_lsn, page_lsn))->size());
 }
 
 

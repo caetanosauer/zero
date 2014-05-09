@@ -76,6 +76,36 @@ w_rc_t fixable_page_h::fix_direct(volid_t vol, shpid_t shpid,
     return RCOK;
 }
 
+w_rc_t fixable_page_h::fix_recovery_redo(bf_idx idx, lpid_t page_updated) {
+
+    // Special function for Recovery REDO phase
+    // Caller of this function is responsible for acquire and release EX latch on this page
+      
+    // This is a newly loaded page during REDO phase in Recovery
+    // The idx is already in hashtable, all we need to do is to associate it with 
+    // fixable page data structure.
+    // Swizzling must be off when calling this function.
+
+    // For Recovery REDO page loading, we do not use 'fix_direct' because
+    // before the loading, the page idx is known and in hash table already, which
+    // is different from the assumption in 'fix_direct' (idx is not in hashtable).
+    // The Recovery REDO logic for each 'in_doubt' page:
+    //    Acquire EX latch on the page
+    //    bf_tree_m::load_for_redo - load the physical page if it has not been loaded
+    //    fixable_page_h::fix_recovery_redo - associate the idx with fixable_page_h data structure
+    //    perform REDO operation on the page
+    //    Release EX latch on the page
+
+    w_assert1(!smlevel_0::bf->is_swizzling_enabled());
+
+    smlevel_0::bf->associate_page(_pp, idx, page_updated);
+
+    _bufferpool_managed = true;
+    _mode = LATCH_EX;
+
+    return RCOK;
+}
+
 bf_idx fixable_page_h::pin_for_refix() {
     w_assert1(_bufferpool_managed);
     w_assert1(is_latched());
@@ -157,6 +187,30 @@ bool fixable_page_h::is_dirty() const {
     }
 }
 
+void fixable_page_h::update_initial_and_last_lsn(const lsn_t & lsn) const 
+{
+    // Update both initial dirty lsn (if needed) and last write lsn
+    // Caller should have latch on the page
+    if (_pp)
+    {
+        ((generic_page_h*)this)->set_lsns(lsn);    
+        update_initial_dirty_lsn(lsn);
+    }
+}
+
+void fixable_page_h::update_initial_dirty_lsn(const lsn_t & lsn) const 
+{
+    // Whenever updating a page lsn (last write through set_lsns())
+    // caller should update the initial dirty lsn on the page also
+    
+    w_assert1(_pp);
+    w_assert1(_mode != LATCH_Q);
+
+    if (_bufferpool_managed) 
+    {
+        smlevel_0::bf->update_initial_dirty_lsn(_pp, lsn);
+    }
+}
 
 bool fixable_page_h::is_to_be_deleted() {
     w_assert1(_mode != LATCH_Q);

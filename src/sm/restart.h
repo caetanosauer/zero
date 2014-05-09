@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
  
      /*<std-header orig-src='shore' incl-file-exclusion='RESTART_H'>
@@ -35,12 +35,31 @@
 #define RESTART_H
 
 #include "w_defines.h"
+#include "w_heap.h"
 
 class dirty_pages_tab_t;
 
 #ifndef BF_S_H
 #include <bf_s.h>
 #endif
+
+class CmpXctUndoLsns
+{
+    public:
+        bool                        gt(const xct_t* x, const xct_t* y) const;
+};
+
+
+inline bool
+CmpXctUndoLsns::gt(const xct_t* x, const xct_t* y) const
+{
+    return x->undo_nxt() > y->undo_nxt();
+}
+
+
+// Special heap for UNDO phase
+typedef class Heap<xct_t*, CmpXctUndoLsns> XctPtrHeap;
+
 
 class restart_m : public smlevel_1 {
 public:
@@ -52,17 +71,27 @@ public:
 private:
 
     static void                 analysis_pass(
-        lsn_t                             master,
-        dirty_pages_tab_t&                ptab, 
-        lsn_t&                            redo_lsn
+        const lsn_t                       master,
+        lsn_t&                            redo_lsn,
+        uint32_t&                         in_doubt_count,
+        lsn_t&                            undo_lsn,
+        XctPtrHeap&                       heap
         );
 
     static void                 redo_pass(
-        lsn_t                             redo_lsn, 
-        const lsn_t                     &highest,  /* for debugging */
-        dirty_pages_tab_t&             ptab);
+        const lsn_t              redo_lsn, 
+        const lsn_t              &highest,  /* for debugging */
+        const uint32_t           in_doubt_count  // How many in_doubt pages in buffer pool
+        );
 
-    static void                 undo_pass();
+    static void                 undo_pass(
+        XctPtrHeap&             heap,       // heap populated with doomed transactions
+        const lsn_t             curr_lsn,   // current lsn, the starting point of backward scan
+                                            // not used in current implementation
+        const lsn_t             undo_lsn    // undo lsn, the end point of backward scan
+                                            // not used in current implementation        
+
+        );
 
 private:
     // keep track of tid from log record that we're redoing
@@ -74,7 +103,7 @@ private:
      */
     static void                 _redo_log_with_pid(
         logrec_t& r, lsn_t &lsn, const lsn_t &highest_lsn,
-        lpid_t page_updated, dirty_pages_tab_t& dptab, bool &redone);
+        lpid_t page_updated, bool &redone, uint32_t &dirty_count);
 public:
     tid_t                        *redo_tid() { return &_redo_tid; }
 
@@ -102,18 +131,5 @@ class AutoTurnOffLogging {
         AutoTurnOffLogging(const AutoTurnOffLogging&);
 };
 
-
-class CmpXctUndoLsns
-{
-    public:
-        bool                        gt(const xct_t* x, const xct_t* y) const;
-};
-
-
-inline bool
-CmpXctUndoLsns::gt(const xct_t* x, const xct_t* y) const
-{
-    return x->undo_nxt() > y->undo_nxt();
-}
 
 #endif

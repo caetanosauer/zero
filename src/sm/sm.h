@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 /* -*- mode:C++; c-basic-offset:4 -*-
@@ -505,7 +505,11 @@ public:
      *  \ref smlevel_0::LOG_ARCHIVED_CALLBACK_FUNC, and 
      *  \ref SSMLOG.
      */
-    ss_m(const sm_options &options, LOG_WARN_CALLBACK_FUNC warn=NULL, LOG_ARCHIVED_CALLBACK_FUNC get=NULL);
+    ss_m(const sm_options &options,
+           LOG_WARN_CALLBACK_FUNC warn=NULL, 
+           LOG_ARCHIVED_CALLBACK_FUNC get=NULL,
+           bool start = true);   // Default = True: start the store automaticlly
+                                 // this is for backward compatibility reason
 
     /**\brief  Shut down the storage manager.
      * \ingroup SSMINIT
@@ -515,6 +519,22 @@ public:
      * constructed.
      */
     ~ss_m();
+
+    // Manually start the store if the store is not running already.
+    // Only one instance of store can be running at any time.
+    // The function starts the store using the input parameters from sm constructor,
+    // no change allowed after the ss_m constructor
+    // Internal settings will be reset, i.e. shutting_down, shutdown_clean flags
+    // Return: true if store started successfully
+    //             false if store was running already
+    bool startup();
+
+    // Manually stop a running store.  If the store was not running, no-op.
+    // Only one instance of store can be running at any time.
+    // The shutdown process obeys the internal settings, 
+    // i.e. shutting_down, shutdown_clean flags
+    // Return: if store shutdown successfully or was not running
+    bool shutdown();
 
     /**\brief Cause the storage manager's shutting down do be done cleanly 
      * or to simulate a crash.
@@ -545,8 +565,9 @@ public:
     static rc_t         log_file_was_archived(const char * logfile);
 
 private:
-    void                _construct_once(LOG_WARN_CALLBACK_FUNC x=NULL,
-                                           LOG_ARCHIVED_CALLBACK_FUNC y=NULL);
+//    void                _construct_once(LOG_WARN_CALLBACK_FUNC x=NULL,
+//                                           LOG_ARCHIVED_CALLBACK_FUNC y=NULL);
+    void                _construct_once();
     void                _destruct_once();
 
 
@@ -1882,21 +1903,6 @@ public:
      */
     static rc_t            lock(
         const lockid_t&         n, 
-        const okvl_mode&           m,
-        bool                    check_only = false,
-        timeout_in_ms           timeout = WAIT_SPECIFIED_BY_XCT
-    );
-
-    /**
-     * \brief Acquire a lock on an entire store.
-     * \ingroup SSMLOCK
-     * @param[in]  n  Store ID.
-     * @param[in]  m  Desired lock mode.  Values: EX, SH.
-     * @param[in]  check_only  if true, the lock goes away right after grant. default false.
-     * @param[in]  timeout  Milliseconds willing to block.  See timeout_in_ms.
-     */
-    static rc_t            lock(
-        const stid_t&         n, 
         const okvl_mode&           m,
         bool                    check_only = false,
         timeout_in_ms           timeout = WAIT_SPECIFIED_BY_XCT

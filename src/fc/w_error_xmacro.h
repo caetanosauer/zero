@@ -97,3 +97,5 @@ X(eNO_PARENT_SPR,             "Parent page needed for SPR")
 X(eNO_BACKUP_FILE,            "Backup file does not exist")
 X(eBACKUP_SHORTSEEK,          "Failed to seek in Backup file")
 X(eBACKUP_SHORTIO,            "Failed to read from Backup file")
+X(eBFFULL,                    "Buffer pool is full during Recovery operation")
+

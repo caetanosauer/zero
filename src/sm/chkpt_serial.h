@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 /* -*- mode:C++; c-basic-offset:4 -*-
@@ -63,10 +63,10 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 class chkpt_serial_m : public smlevel_0 {
 public:
-  static void trx_acquire();
-  static void trx_release();
-  static void chkpt_acquire();
-  static void chkpt_release();
+  static void read_acquire();
+  static void read_release();
+  static void write_acquire();
+  static void write_release();
 };
 
 /*<std-footer incl-file-exclusion='CHKPT_SERIAL_H'>  -- do not edit anything below this line -- */

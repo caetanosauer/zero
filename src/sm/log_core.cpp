@@ -516,12 +516,12 @@ log_core::_sanity_check() const
 
 /*********************************************************************
  *
- *  log_core::fetch(lsn, rec, nxt)
+ *  log_core::fetch(lsn, rec, nxt, forward)
  * 
  *  used in rollback and log_i
  *
  *  Fetch a record at lsn, and return it in rec. Optionally, return
- *  the lsn of the next record in nxt.  The lsn parameter also returns
+ *  the lsn of the next/previous record in nxt.  The lsn parameter also returns
  *  the lsn of the log record actually fetched.  This is necessary
  *  since it is possible while scanning to specify an lsn
  *  that points to the end of a log file and therefore is actually
@@ -530,7 +530,7 @@ log_core::_sanity_check() const
  * NOTE: caller must call release() 
  *********************************************************************/
 rc_t
-log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt)
+log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
 {
     FUNC(log_core::fetch);
 
@@ -597,11 +597,33 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt)
         }
     }
 
+    bool first_record = false;  // True if target record is the first record in a partition
+    
     W_COERCE(p->read(rp, ll));
     {
         logrec_t        &r = *rp;
 
         if (r.type() == logrec_t::t_skip && r.get_lsn_ck() == ll) {
+
+            // The log record we want to read is at the end of one partition
+            // therefore the actual log record is in the next partition
+            // Everything is good except if caller is asking for a backward scan
+            // then the 'nxt' is in the current partition, not the next partition which
+            // we are about to go to
+
+            if ((false == forward) && (nxt))
+            {
+                // If backward scan, save the 'nxt' before moving to the next partition
+                // Note the parameter for 'advance' is a signed int, so we are using
+                // negative number to get the lsn from previous log record
+                lsn_t tmp = ll;
+                int distance = 0 - (int)(r.length());
+                *nxt = tmp.advance(distance);
+
+                // The target record is the first record in the next partition
+                // we recorded the lsn for 'nxt' before we move to the next partition
+                first_record = true;
+            }
 
             DBGTHRD(<<"seeked to skip" << ll );
             DBGTHRD(<<"getting next partition.");
@@ -633,9 +655,24 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt)
             << endl);
     }
 
-    if (nxt) {
+    if ((nxt) && (false == first_record))
+    {
+        // Get the lsn for next/previous log record
+        // If backward scan, the target record might be the first one in the partition
+        // so the previous record would be in a different partition
+        // we don't need to worry about this special case because:
+        // The logic would go to the previous partition first, realized the actual log record
+        // is the first record of the next partition, record the 'nxt' and then move 
+        // to the next partition, so the 'nxt' has been taken care of if the target is the first
+        // record in a partition (true == first_record)
+        
         lsn_t tmp = ll;
-        *nxt = tmp.advance(r.length());
+        int distance;
+        if (true == forward)
+            distance = (int)(r.length());
+        else
+            distance = 0 - (int)(r.length());
+        *nxt = tmp.advance(distance);
     }
 
     DBGTHRD(<<"fetch at lsn " << ll  << " returns " << r);

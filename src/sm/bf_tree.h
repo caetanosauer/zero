@@ -288,6 +288,17 @@ public:
     w_rc_t fix_direct (generic_page*& page, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page);
 
     /**
+     * Special function for the REDO phase in system Recovery process
+     * The page has been loaded into buffer pool and in the hashtable with known idx
+     * This function associates the page in buffer pool with fixable_page data structure.
+     * also store the vol and store number into the buffer (store number is not in cb)
+     * There is no parent involved, and swizzling must be disabled.    
+     * @param[out] page the fixed page.
+     * @param[in] idx idx of the page.
+     */
+    void associate_page(generic_page*&_pp, bf_idx idx, lpid_t page_updated);
+
+    /**
      * Adds an additional pin count for the given page (which must be already latched).
      * This is used to re-fix the page later without parent pointer. See fix_direct() why we need this feature.
      * Never forget to call a corresponding unpin_for_refix() for this page. Otherwise, the page will be in the bufferpool forever.
@@ -354,6 +365,57 @@ public:
      * Returns if the page is already marked dirty.
      */
     bool is_dirty(const generic_page* p) const;
+
+    /**
+     * Returns if the page is already marked dirty.
+     */
+    bool is_dirty(const bf_idx idx) const;
+
+    /**
+     * Update the initial dirty lsn in the page if needed.
+     */
+    void update_initial_dirty_lsn(const generic_page* p,
+                                   const lsn_t new_lsn);
+
+    /**
+     * Mark the page in_doubt and used flags, the physical page is not in buffer pool
+     * also update the LSN (track when the page was made dirty initially)
+     */
+    void set_in_doubt(const bf_idx idx, lsn_t new_lsn);
+
+    /**
+     * Clear the page in_doubt flag, if page is no longer needed, clear the used flag and
+     * add it back to freelist, the physical page is not in buffer pool
+     */
+    void clear_in_doubt(const bf_idx idx, bool still_used, uint64_t key);
+
+    /**
+     * Change from in_doubt to dirty flag, the physical page is in buffer pool
+     */
+    void in_doubt_to_dirty(const bf_idx idx);
+
+    /**
+     * Returns true if the page is already marked in_doubt, the page is not in buffer pool
+     */
+    bool is_in_doubt(const bf_idx idx) const;
+
+    /**
+     * Returns the index of the page if page cb is in buffer pool, it is used in Recovery
+     * therefore the actual page might or might not be loaded at thi spoint
+     */
+    bf_idx lookup_in_doubt(const int64_t key) const;
+
+    /**
+     * Set the _rec_lsn (the LSN which made the page dirty initially) in page cb
+     * if it is later than the new_lsn.
+     * This function is mainly used when a page format log record was generated
+     */
+    void set_initial_rec_lsn(const lpid_t& pid, const lsn_t new_lsn, const lsn_t current_lsn);
+
+    /**
+     * Returns true if the page's _used flag is on
+     */
+    bool is_used (bf_idx idx) const;
 
     /**
      * Adds a write-order dependency such that one is always written out after another.
@@ -434,9 +496,9 @@ public:
     w_rc_t force_volume (volid_t vol);
     /** Immediately writes out all dirty pages.*/
     w_rc_t force_all ();
-    /** Immediately writes out all dirty pages up to the given LSN. used while checkpointing. */
+    /** Immediately writes out all dirty pages up to the given LSN. */
     w_rc_t force_until_lsn (lsndata_t lsn);
-    /** Immediately writes out all dirty pages up to the given LSN. used while checkpointing. */
+    /** Immediately writes out all dirty pages up to the given LSN. */
     w_rc_t force_until_lsn (const lsn_t &lsn) {
         return force_until_lsn(lsn.data());
     }
@@ -473,12 +535,16 @@ public:
 
     /**
      * Get recovery lsn of "count" frames in the buffer pool starting at
-     *  index "start". The pids and rec_lsns are returned in "pid" and
-     *  "rec_lsn" arrays, respectively. The values of "start" and "count"
+     *  index "start". The pids, rec_lsns and page_lsn are returned in "pid",
+     *  "rec_lsn" and "page_lsn" arrays, respectively. The values of "start" and "count"
      *  are updated to reflect where the search ended and how many dirty
      *  pages it found, respectively.
+     *  'master' and 'current_lsn' are used only for 'in_doubt' pages which are not loaded
     */
-    void get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, lsn_t *rec_lsn, lsn_t &min_rec_lsn);
+    void get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, lsn_t *rec_lsn,
+                       lsn_t *page_lsn, lsn_t &min_rec_lsn,
+                       const lsn_t master, const lsn_t current_lsn,
+                       lsn_t last_mount_lsn);
     
     /**
     *  Ensures the buffer pool's rec_lsn for this page is no larger than
@@ -498,7 +564,6 @@ public:
     *  FRJ: I don't see any evidence that this function is actually
     *  called because of (3) above...
     * 
-    * NOTE call this method only while REDO!
     */
     void repair_rec_lsn (generic_page *page, bool was_dirty, const lsn_t &new_rlsn);
 
@@ -509,6 +574,7 @@ public:
      * its swizzled pointers. It requires the caller to have the node latched.
      */ 
     bool has_swizzled_child(bf_idx node_idx);
+
 
     /** Specifies how urgent we are to evict pages. \NOTE Order does matter.  */
     enum evict_urgency_t {
@@ -557,6 +623,29 @@ public:
         uint32_t &unswizzled_count,
         evict_urgency_t urgency = EVICT_NORMAL,
         uint32_t preferred_count = EVICT_BATCH_SIZE);
+
+    /**
+     * Used during Log Analysis in Recovery only
+     * If the page exists in the buffer pool, make sure in_doubt and used flags are on
+     * If the page does not exist in the buffer pool, find a free block in buffer pool
+     * without evict, return error if the freelist is empty.
+     * Populate the page cb but not loading the actual page
+     * Set in_doubt and used flags in cb to true, update lsn (where the page gor dirty)
+     * update the in_doubt page counter and return the index of the page
+     */    
+    w_rc_t register_and_mark(bf_idx& ret, lpid_t page_of_interest,
+           lsn_t new_lsn, uint32_t& in_doubt_count);
+
+
+    /**
+     * Used during REDO phase in Recovery only
+     * The specified page has cb in buffer pool, also registered in hashtable
+     * but the actual page is not in buffer pool yet
+     * Load the actual page into buffer pool
+     */    
+    w_rc_t load_for_redo(bf_idx idx, volid_t vid, shpid_t shpid, bool& passed_end);
+
+
 private:
 
     /** called when a volume is mounted. */
@@ -626,8 +715,8 @@ private:
     void   _update_swizzled_lru (bf_idx idx);
 #endif // BP_MAINTAIN_PARENT_PTR
 
-    /** finds a free block and returns its index. if free list is empty, it evicts some page. */
-    w_rc_t _grab_free_block(bf_idx& ret);
+    /** finds a free block and returns its index. if free list is empty and 'evict' = true, it evicts some page. */
+    w_rc_t _grab_free_block(bf_idx& ret, bool evict = true);
     
     /**
      * evict some number of blocks.

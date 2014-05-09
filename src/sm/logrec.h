@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 /* -*- mode:C++; c-basic-offset:4 -*-
@@ -152,6 +152,8 @@ public:
     bool             is_page_update() const;
     bool             is_redo() const;
     bool             is_skip() const;
+    bool             is_page_allocate() const;
+    bool             is_page_deallocate() const;
     bool             is_undo() const;
     bool             is_cpsn() const;
     bool             is_multi_page() const;
@@ -356,9 +358,10 @@ inline smsize_t logrec_t::header_size() const
 
 struct chkpt_bf_tab_t {
     struct brec_t {
-    lpid_t    pid;
-    fill4    fill; // for purify
-    lsn_t    rec_lsn;
+    lpid_t    pid;      // +12  -> 12
+    fill4    fill;      // for purify, +4 -> 16
+    lsn_t    rec_lsn;   // +8 -> 24, this is the minimum (earliest) LSN 
+    lsn_t    page_lsn;  // +8 -> 32, this is the latest (page) LSN 
     };
 
     // max is set to make chkpt_bf_tab_t fit in logrec_t::data_sz
@@ -370,7 +373,8 @@ struct chkpt_bf_tab_t {
     NORET            chkpt_bf_tab_t(
     int                 cnt, 
     const lpid_t*             p, 
-    const lsn_t*             l);
+    const lsn_t*             l,
+    const lsn_t*             pl);
     
     int                size() const;
 };
@@ -630,6 +634,19 @@ inline bool
 logrec_t::is_skip() const
 {
     return type() == t_skip;
+}
+
+inline bool
+logrec_t::is_page_allocate() const
+{
+    return ((t_alloc_a_page == type()) || (t_alloc_consecutive_pages == type()));
+}
+
+inline bool
+logrec_t::is_page_deallocate() const
+{
+    // t_page_set_to_be_deleted - page might still in buffer pool and not evict yet
+    return ((t_dealloc_a_page == type()) || (t_page_set_to_be_deleted == type()));
 }
 
 

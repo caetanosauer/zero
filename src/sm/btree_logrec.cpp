@@ -125,6 +125,7 @@ void btree_insert_nonghost_log::undo(fixable_page_h* page) {
 void btree_insert_nonghost_log::redo(fixable_page_h* page) {
     borrowed_btree_page_h bp(page);
     btree_insert_t* dp = reinterpret_cast<btree_insert_t*>(data());
+
     w_assert1(bp.is_leaf());
     w_keystr_t key;
     vec_t el;
@@ -557,6 +558,7 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
 
     // WOD: "page" is the data source, which is written later.
     shpid_t target_pid = p->pid().page;
+
     bool recovering_dest = (target_pid == shpid());
     shpid_t another_pid = recovering_dest ? dp->_page2_pid : shpid();
     w_assert0(recovering_dest || target_pid == dp->_page2_pid);
@@ -570,7 +572,7 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
             w_assert0(another.lsn() < lsn_ck());
             btree_impl::_ux_merge_foster_apply_parent(bp, another);
             another.set_dirty();
-            another.set_lsns(lsn_ck());
+            another.update_initial_and_last_lsn(lsn_ck());
             W_COERCE(another.set_to_be_deleted(false));
         } else {
             // we are recovering "page2", which is foster-child (src).
@@ -583,7 +585,7 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
                 // dest is also old, so we are recovering both.
                 btree_impl::_ux_merge_foster_apply_parent(another, bp);
                 another.set_dirty();
-                another.set_lsns(lsn_ck());
+                another.update_initial_and_last_lsn(lsn_ck());
             }
         }
     } else {
@@ -652,6 +654,7 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
     const lsn_t  &redo_lsn = lsn_ck();
     DBGOUT3 (<< *this << ": redo_lsn=" << redo_lsn << ", bp.lsn=" << bp.lsn());
     w_assert1(bp.lsn() < redo_lsn);
+
     bool recovering_dest = (target_pid == page_id);
     shpid_t another_pid = recovering_dest ? page2_id : page_id;
     w_assert0(recovering_dest || target_pid == page2_id);
@@ -668,7 +671,7 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
             W_COERCE(btree_impl::_ux_rebalance_foster_apply(another, bp, dp->_move_count,
                                                 fence, dp->_new_pid0, dp->_new_pid0_emlsn));
             another.set_dirty();
-            another.set_lsns(redo_lsn);
+            another.update_initial_and_last_lsn(redo_lsn);
         } else {
             // we are recovering "page2", which is foster-parent (src).
             DBGOUT3 (<< "Recovering 'page2'. page.lsn=" << another.lsn());
@@ -693,8 +696,9 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
                 W_COERCE(btree_impl::_ux_rebalance_foster_apply(bp, another, dp->_move_count,
                                                 fence, dp->_new_pid0, dp->_new_pid0_emlsn));
                 another.set_dirty();
-                another.set_lsns(redo_lsn);
+                another.update_initial_and_last_lsn(redo_lsn);
             }
+
         }
     } else {
         // this is in SPR. we use scratch space for another page because bufferpool frame

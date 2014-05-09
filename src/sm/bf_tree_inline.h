@@ -77,6 +77,7 @@ inline w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
     ++cb._counter_approximate;
 #endif // BP_MAINTAIN_PARENT_PTR
     ++cb._refbit_approximate;
+    assert(false == cb._in_doubt);
     page = &(_buffer[idx]);
     return RCOK;
 }
@@ -96,6 +97,7 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
         bf_tree_cb_t &cb = get_cb(idx);
         W_DO(cb.latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
         w_assert1 (_is_active_idx(idx));
+        w_assert1(false == cb._in_doubt);
         page = &(_buffer[idx]);
     }
     if (true) return RCOK;
@@ -158,6 +160,7 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
         w_assert1 (_is_active_idx(idx));
         w_assert1(cb.pin_cnt() > 0);
         w_assert1(cb._pid_vol == vol);
+        w_assert1(false == cb._in_doubt);
         w_assert1(cb._pid_shpid == _buffer[idx].pid.page);
 
         // We limit the maximum value of the refcount by BP_MAX_REFCOUNT to avoid the scalability 
@@ -196,6 +199,7 @@ inline w_rc_t bf_tree_m::fix_unsafely_nonroot(generic_page*& page, shpid_t shpid
     } else {
         W_DO(get_cb(idx).latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
     }
+    w_assert1(false == cb._in_doubt);
     page = &(_buffer[idx]);
 
     // We limit the maximum value of the refcount by BP_MAX_REFCOUNT to avoid the scalability 
@@ -241,6 +245,7 @@ inline w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, volid_t vol, snum
     cb.pin_cnt_set(1); // root page's pin count is always positive
     cb._used = true;
     cb._dirty = true;
+    get_cb(idx)._in_doubt = false;
     if (true) return _latch_root_page(page, idx, LATCH_EX, false);
 #endif // SIMULATE_MAINMEMORYDB
 
@@ -255,6 +260,7 @@ inline w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, volid_t vol, snum
     get_cb(idx).pin_cnt_set(1); // root page's pin count is always positive
     get_cb(idx)._used = true;
     get_cb(idx)._dirty = true;
+    get_cb(idx)._in_doubt = false;
     ++_dirty_page_count_approximate;
     get_cb(idx)._swizzled = true;
     bool inserted = _hashtable->insert_if_not_exists(bf_key(vol, shpid), idx); // for some type of caller (e.g., redo) we still need hashtable entry for root
@@ -279,6 +285,7 @@ inline w_rc_t bf_tree_m::fix_root (generic_page*& page, volid_t vol, snum_t stor
 
     w_assert1(_is_active_idx(idx));
     w_assert1(get_cb(idx)._pid_vol == vol);
+    w_assert1(false == get_cb(idx)._in_doubt);
     w_assert1(_buffer[idx].pid.store() == store);
 
 #ifndef SIMULATE_MAINMEMORYDB
@@ -310,6 +317,7 @@ inline w_rc_t bf_tree_m::_latch_root_page(generic_page*& page, bf_idx idx, latch
     // root page is always swizzled. thus we don't need to increase pin. just take latch.
     W_DO(get_cb(idx).latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
     // also, doesn't have to unpin whether there happens an error or not. easy!
+    w_assert1(false == get_cb(idx)._in_doubt);    
     page = &(_buffer[idx]);
 
 #ifdef SIMULATE_NO_SWIZZLING
@@ -362,12 +370,161 @@ inline void bf_tree_m::set_dirty(const generic_page* p) {
         cb._dirty = true;
         ++_dirty_page_count_approximate;
     }
+    cb._used = true;
 }
 inline bool bf_tree_m::is_dirty(const generic_page* p) const {
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
     return get_cb(idx)._dirty;
 }
+
+inline bool bf_tree_m::is_dirty(const bf_idx idx) const {
+    // Caller has latch on page
+    // Used by REDO phase in Recovery
+    w_assert1 (_is_active_idx(idx));
+    return get_cb(idx)._dirty;
+}
+
+inline void bf_tree_m::update_initial_dirty_lsn(const generic_page* p,
+                                                const lsn_t new_lsn)
+{
+    // Update the initial dirty lsn (if needed) for the page regardless page is dirty or not
+
+    uint32_t idx = p - _buffer;
+    w_assert1 (_is_active_idx(idx));
+    bf_tree_cb_t &cb = get_cb(idx);
+    if ((new_lsn.data() < cb._rec_lsn) || (0 == cb._rec_lsn))
+        cb._rec_lsn = new_lsn.data();
+}
+
+inline void bf_tree_m::set_in_doubt(const bf_idx idx, lsn_t new_lsn) {
+    // Caller has latch on page
+    // From Log Analysis phase in Recovery, page is not in buffer pool
+    w_assert1 (_is_active_idx(idx));
+    bf_tree_cb_t &cb = get_cb(idx);
+    cb._in_doubt = true;
+    cb._dirty = false;
+    cb._used = true;
+
+    // _rec_lsn is the initial LSN which made the page dirty
+    // Update the earliest LSN only if new_lsn is earlier than the current one
+    if ((new_lsn.data() < cb._rec_lsn) || (0 == cb._rec_lsn))
+        cb._rec_lsn = new_lsn.data();
+}
+
+inline void bf_tree_m::clear_in_doubt(const bf_idx idx, bool still_used, uint64_t key) {
+    // Caller has latch on page
+    // 1. From Log Analysis phase in Recovery, page is not in buffer pool    
+    // 2. From REDO phase in Recovery, page is in buffer pool but does not exist on disk
+
+    // Only reasons to call this function:
+    // Log record indicating allocating or deallocating a page
+    // Allocating: the page might be used for a non-logged operation (i.e. bulk load),
+    //                 clear the in_doubt flag but not the 'used' flag, also don't remove it 
+    //                 from hashtable
+    // Deallocating: clear both in_doubt and used flags, also remove it from
+    //                 hashtable so the page can be used by others
+    //
+    w_assert1 (_is_active_idx(idx));
+    bf_tree_cb_t &cb = get_cb(idx);
+
+    // Clear both 'in_doubt' and 'used' flags, no change to _dirty flag
+    cb._in_doubt = false;
+    cb._dirty = false;
+
+    // Page is no longer needed, caller is from de-allocating a page log record
+    if (false == still_used)
+    {
+        cb._used = false;
+
+        // Give this page back to freelist, so this block can be reused from now on
+        bool removed = _hashtable->remove(key);
+        w_assert1(removed);
+        _add_free_block(idx);
+    }
+}
+
+inline void bf_tree_m::in_doubt_to_dirty(const bf_idx idx) {
+    // Caller has latch on page
+    // From REDO phase in Recovery, page just loaded into buffer pool    
+
+    // Change a page from in_doubt to dirty by setting the flags
+   
+    w_assert1 (_is_active_idx(idx));
+    bf_tree_cb_t &cb = get_cb(idx);
+
+    // Clear both 'in_doubt' and 'used' flags, no change to _dirty flag
+    cb._in_doubt = false;
+    cb._dirty = true;
+    cb._used = true;
+    cb._refbit_approximate = BP_INITIAL_REFCOUNT; 
+}
+
+
+inline bool bf_tree_m::is_in_doubt(const bf_idx idx) const {
+    // Caller has latch on page
+    // From Log Analysis phase in Recovery, page is not in buffer pool    
+    w_assert1 (_is_active_idx(idx));
+    return get_cb(idx)._in_doubt;
+}
+
+inline bf_idx bf_tree_m::lookup_in_doubt(const int64_t key) const
+{
+    // Look up the hashtable using the provided key
+    // return 0 if the page cb is not in the buffer pool 
+    // Otherwise returning the index
+    // This function is for the Recovery to handle the in_doubt flag in cb
+    // note that the actual page (_buffer) may or may not in the buffer pool
+    // use this function with caution
+
+    return _hashtable->lookup(key);
+}
+
+inline void bf_tree_m::set_initial_rec_lsn(const lpid_t& pid, 
+                       const lsn_t new_lsn,       // In-coming LSN
+                       const lsn_t current_lsn)   // Current log LSN
+{
+    // Caller has latch on page
+    // Special function called from btree_page_h::format_steal() when the
+    // page format log record was generated
+    
+    // Reset the _rec_lsn in page cb (when the page was dirtied initially) if
+    // it is later than the new_lsn, we want the earliest lsn in _rec_lsn
+
+    uint64_t key = bf_key(pid.vol().vol, pid.page);
+    bf_idx idx = _hashtable->lookup(key);
+    if (0 != idx)
+    {
+        // Page exists in buffer pool hash table
+        bf_tree_cb_t &cb = smlevel_0::bf->get_cb(idx);
+
+        lsn_t lsn = new_lsn;
+        if (0 == new_lsn.data())
+        {
+           lsn = current_lsn;
+           w_assert1(0 != lsn.data());
+        }
+
+        // Update the initial LSN which is when the page got dirty initially
+        // Update only if the existing initial LSN was later than the incoming LSN
+        // or the original LSN did not exist
+        if ((cb._rec_lsn > lsn.data()) || (0 == cb._rec_lsn))
+            cb._rec_lsn = new_lsn.data();
+        cb._used = true;
+        cb._dirty = true;
+    }
+    else
+    {
+        // Page does not exist in buffer pool hash table
+        // This should not happen, no-op and we are not raising an error
+    }
+}
+
+
+inline bool bf_tree_m::is_used (bf_idx idx) const {
+    return _is_active_idx(idx);
+}
+
 
 inline latch_mode_t bf_tree_m::latch_mode(const generic_page* p) {
     uint32_t idx = p - _buffer;

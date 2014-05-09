@@ -111,6 +111,19 @@ public:
     w_rc_t fix_direct(volid_t vol, shpid_t shpid, latch_mode_t mode,
                       bool conditional=false, bool virgin_page=false);
 
+
+    /**
+     * Only used in the REDO phase of Recovery process
+     * The physical page has been loaded into buffer pooland the idx is known 
+     * when calling this function.  
+     * We associate the page in buffer pool with fixable_page.
+     * In this case we need to fix the page without fixing the parent.
+     * This method can be used only when pointer swizzling is off.
+     *
+     * @param[in] idx          index into buffer pool
+     */
+    w_rc_t fix_recovery_redo(bf_idx idx, lpid_t page_updated);
+
     /**
      * Adds an additional pin count for the given page.  This is used to re-fix the page
      * later without parent pointer.  See fix_direct() why we need this feature.  Never
@@ -170,6 +183,11 @@ public:
      */
     bool         is_dirty()  const;
 
+    // Update both initial dirty lsn (if needed) and last write lsn on page
+    void update_initial_and_last_lsn(const lsn_t & lsn) const;
+
+    // Update initial dirty lsn (if needed) on page
+    void update_initial_dirty_lsn(const lsn_t & lsn) const;
 
     /// Return flag for if this page to be deleted when bufferpool evicts it.
     /// @pre We do not hold current page's latch in Q mode

@@ -24,6 +24,8 @@
 #include "sm_io.h"
 #include "vol.h"
 #include "alloc_cache.h"
+#include "chkpt_serial.h"
+
 
 #include <boost/static_assert.hpp>
 #include <ostream>
@@ -269,7 +271,8 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
     volid_t vid = volume->vid().vol;
     DBGOUT2(<<"preloading root page " << shpid << " of store " << store << " in volume " << vid << ". to buffer frame " << idx);
     w_assert1(shpid >= volume->first_data_pageid());
-    W_DO(volume->read_page(shpid, _buffer[idx]));
+    bool passed_end;
+    W_DO(volume->read_page(shpid, _buffer[idx], passed_end));
 
     // _buffer[idx].checksum == 0 is possible when the root page has been never flushed out.
     // this method is called during volume mount (even before recover), so crash tests like
@@ -292,11 +295,26 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
     cb._rec_lsn = _buffer[idx].lsn.data();
     cb.pin_cnt_set(1); // root page's pin count is always positive
     cb._swizzled = true;
+    cb._in_doubt = false;
     cb._used = true; // turn on _used at last
     bool inserted = _hashtable->insert_if_not_exists(bf_key(vid, shpid), idx); // for some type of caller (e.g., redo) we still need hashtable entry for root
     if (!inserted) {
-        ERROUT (<<"failed to insert a root page to hashtable. this must not have happened because there shouldn't be any race. wtf");
-        return RC(eINTERNAL);
+        if (smlevel_0::in_recovery())
+        {
+            // If we are loading the root page from Recovery Log Analysis phase,
+            // it is possible we have a regular log record accessing the root page 
+            // before the device mounting log record, in this case the root page
+            // has been registered into the hash table before we mount the device.
+            // This is not an error condition therefore swallow the error, also mark 
+            // the page as an in_doubt page
+            cb._in_doubt = true;
+            inserted = true;
+        }
+        else
+        {
+            ERROUT (<<"failed to insert a root page to hashtable. this must not have happened because there shouldn't be any race. wtf");
+            return RC(eINTERNAL);
+            }
     }
     w_assert1(inserted);
 
@@ -318,7 +336,8 @@ w_rc_t bf_tree_m::_install_volume_mainmemorydb(vol_t* volume) {
     bf_idx endidx = volume->num_pages();
     for (bf_idx idx = volume->first_data_pageid(); idx < endidx; ++idx) {
         if (volume->is_allocated_page(idx)) {
-            W_DO(volume->read_page(idx, _buffer[idx]));
+            bool passed_end;
+            W_DO(volume->read_page(idx, _buffer[idx], passed_end));
             if (_buffer[idx].calculate_checksum() != _buffer[idx].checksum) {
                 return RC(eBADCHECKSUM);
             }
@@ -328,6 +347,7 @@ w_rc_t bf_tree_m::_install_volume_mainmemorydb(vol_t* volume) {
             cb._pid_shpid = idx;
             cb._rec_lsn = _buffer[idx].lsn.data();
             cb.pin_cnt_set(1);
+            cb._in_doubt = false;
             cb._used = true;
             cb._swizzled = true;
         }
@@ -393,6 +413,23 @@ w_rc_t bf_tree_m::fix_direct (generic_page*& page, volid_t vol, shpid_t shpid, l
     return _fix_nonswizzled(NULL, page, vol, shpid, mode, conditional, virgin_page);
 }
 
+void bf_tree_m::associate_page(generic_page*&_pp, bf_idx idx, lpid_t page_updated)
+{
+    // Special function for REDO phase of the system Recovery process
+    // The physical page is loaded in buffer pool, idx is known but we 
+    // need to associate it with fixable_page data structure
+    // Swizzling must be off
+
+    w_assert1(!smlevel_0::bf->is_swizzling_enabled());   
+    w_assert1 (_is_active_idx(idx));
+    _pp = &(smlevel_0::bf->_buffer[idx]);
+
+    // Store lptid_t (vol and store IDs and page number) into the data buffer in the page
+    _buffer[idx].pid = page_updated;
+
+    return;
+}
+
 w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(generic_page* parent, generic_page*& page, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
     bf_idx idx = shpid;
     bf_tree_cb_t &cb = get_cb(idx);
@@ -407,6 +444,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(generic_page* parent, generic_pa
     if (virgin_page) {
         cb._rec_lsn = 0;
         cb._dirty = true;
+        cb._in_doubt = false;
         ++_dirty_page_count_approximate;
         bf_idx parent_idx = parent - _buffer;
         cb._pid_vol = get_cb(parent_idx)._pid_vol;
@@ -470,7 +508,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             } else {
                 DBGOUT3(<<"bf_tree_m: cache miss. reading page "<<vol<<"." << shpid << " to frame " << idx);
                 INC_TSTAT(bf_fix_nonroot_miss_count);
-                w_rc_t read_rc = volume->_volume->read_page(shpid, _buffer[idx]);
+                bool passed_end;
+                w_rc_t read_rc = volume->_volume->read_page(shpid, _buffer[idx], passed_end);
                 if (read_rc.is_error()) {
                     DBGOUT3(<<"bf_tree_m: error while reading page " << shpid << " to frame " << idx << ". rc=" << read_rc);
                     _add_free_block(idx);
@@ -510,7 +549,10 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 // the page is flushed as of the page LSN (otherwise why we can read it!)
                 cb._rec_lsn = _buffer[idx].lsn.data();
             } else {
+                // Virgin page, we are not setting _rec_lsn (initial dirty)
+                // Page format would set the _rec_lsn
                 cb._dirty = true;
+                cb._in_doubt = false;
                 ++_dirty_page_count_approximate;
             }
             cb._used = true;
@@ -637,10 +679,11 @@ w_rc_t bf_tree_m::wakeup_cleaner_for_volume(volid_t vol) {
 
 void bf_tree_m::repair_rec_lsn (generic_page *page, bool was_dirty, const lsn_t &new_rlsn) {
     if( !smlevel_0::logging_enabled) return;
-    
+
     bf_idx idx = page - _buffer;
     w_assert1 (_is_active_idx(idx));
-    
+    w_assert1(false == get_cb(idx)._in_doubt);    
+
     lsn_t lsn = _buffer[idx].lsn;
     lsn_t rec_lsn (get_cb(idx)._rec_lsn);
     if (was_dirty) {
@@ -655,6 +698,7 @@ void bf_tree_m::repair_rec_lsn (generic_page *page, bool was_dirty, const lsn_t 
             INC_TSTAT(restart_repair_rec_lsn);
         } else {
             get_cb(idx)._dirty = false;
+            get_cb(idx)._in_doubt = false;
         }
     }
 }
@@ -761,7 +805,7 @@ void bf_tree_m::_remove_from_swizzled_lru(bf_idx idx) {
 }
 #endif // BP_MAINTAIN_PARENT_PTR
 
-w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret) {
+w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret, bool evict) {
 #ifdef SIMULATE_MAINMEMORYDB
     if (true) {
         ERROUT (<<"MAINMEMORY-DB. _grab_free_block() shouldn't be called. wtf");
@@ -793,7 +837,15 @@ w_rc_t bf_tree_m::_grab_free_block(bf_idx& ret) {
         } // exit the scope to do the following out of the critical section
 
         // if the freelist was empty, let's evict some page.
-        W_DO (_get_replacement_block());
+        if (true == evict)
+        {
+            W_DO (_get_replacement_block());
+        }
+        else
+        {
+            // Freelist is empty and caller does not want to evict pages (Recovery M1)
+            return RC(eBFFULL);
+        }
     }
     return RCOK;
 }
@@ -836,8 +888,8 @@ bool bf_tree_m::_try_evict_block(bf_idx parent_idx, bf_idx idx) {
     // do not consider dirty pages (at this point)
     // we check this again later because we don't take locks as of this.
     // we also avoid grabbing unused block because it has to be grabbed via freelist
-    if (cb._dirty || !cb._used || !parent_cb._used) {
-        return false;
+    if (cb._dirty || !cb._used || !parent_cb._used || cb._in_doubt) {
+        return -1;
     }
 
     // find a block that has no pinning (or not being evicted by others).
@@ -861,7 +913,6 @@ bool bf_tree_m::_try_evict_block(bf_idx parent_idx, bf_idx idx) {
         // CAS did it job. the current thread has an exclusive access to this block
         bool evicted = _try_evict_block_pinned(parent_cb, cb, parent_idx, idx);
         if (!evicted) {
-            // oops, then put this back and give up this block
             cb.pin_cnt_set(0);
         }
         return evicted;
@@ -875,7 +926,7 @@ bool bf_tree_m::_try_evict_block_pinned(
     w_assert1(cb.pin_cnt() == -1);
 
     // let's do a real check.
-    if (cb._dirty || !cb._used) {
+    if (cb._dirty || !cb._used || cb._in_doubt) {
         DBGOUT1(<<"very unlucky, this block has just become dirty.");
         // oops, then put this back and give up this block
         return false;
@@ -982,6 +1033,7 @@ void bf_tree_m::_delete_block(bf_idx idx) {
     w_assert1(!cb.latch().is_latched());
     cb._used = false; // clear _used BEFORE _dirty so that eviction thread will ignore this block.
     cb._dirty = false;
+    cb._in_doubt = false; // always set in_doubt bit to false
 
     DBGOUT1(<<"delete block: remove page shpid = " << cb._pid_shpid);
     bool removed = _hashtable->remove(bf_key(cb._pid_vol, cb._pid_shpid));
@@ -1038,6 +1090,7 @@ bool bf_tree_m::register_write_order_dependency(const generic_page* page, const 
 
     uint32_t idx = page - _buffer;
     w_assert1 (_is_active_idx(idx));
+    w_assert1(false == get_cb(idx)._in_doubt);
     bf_tree_cb_t &cb = get_cb(idx);
     w_assert1(cb.latch().held_by_me()); 
 
@@ -1179,6 +1232,7 @@ void bf_tree_m::switch_parent(generic_page* page, generic_page* new_parent)
     if (!is_swizzling_enabled()) {
         return;
     }
+    w_assert1(false == get_cb(idx)._in_doubt);
     bf_idx idx = page - _buffer;
     w_assert1(_is_active_idx(idx));
     bf_tree_cb_t &cb = get_cb(idx);
@@ -1568,6 +1622,172 @@ w_rc_t bf_tree_m::_evict_traverse_page(EvictionContext &context) {
     return RCOK;
 }
 
+w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
+                  lpid_t page_of_interest,
+                  lsn_t new_lsn,             // Current log record LSN from log scan
+                  uint32_t& in_doubt_count)
+{
+    w_rc_t rc = RCOK;
+    w_assert1(page_of_interest.vol().vol != 0);
+    w_assert1(page_of_interest.page != 0);
+    volid_t vid = page_of_interest.vol().vol;
+    shpid_t shpid = page_of_interest.page;
+
+    ret = 0;
+
+    // This function is only allowed in the Recovery Log Analysis phase
+    
+    // Note we are not holding latch for any of the operations in this function, because 
+    // Log Analysis phase is running in serial, it is not opened for new transactions so no race
+    
+    if (smlevel_0::t_in_analysis != smlevel_0::operating_mode)
+        W_FATAL_MSG(fcINTERNAL, 
+            << "Can register a page in buffer pool only during Log Analysis phase, current phase: "
+            << smlevel_0::operating_mode);
+
+    // Do we have this page in buffer pool already?
+    uint64_t key = bf_key(vid, shpid);
+    bf_idx idx = lookup_in_doubt(key);
+    if (0 != idx)
+    {
+        // If the page exists in buffer pool - it does not mean the in_doubt flag is on
+        //   Increment the in_doubt page counter only if the in_doubt flag was off
+        //   Make sure in_doubt and used flags are on, update _rec_lsn if 
+        //   new_lsn is smaller (earlier) than _rec_lsn in cb, _rec_lsn is the LSN
+        //   which made the page 'dirty' initially
+        // This is in Log Analysis phase, we have have page in buffer pool but in_doubt flag off:
+        // 1. Root page pre-loaded by device mounting
+        // 2. Page was de-allocated but for some reason it is still in the hash table
+        
+        if (false == is_in_doubt(idx))        
+            ++in_doubt_count;
+        set_in_doubt(idx, new_lsn);
+
+        DBGOUT5(<<"Page is registered in buffer pool updated rec_lsn, idx: " << idx);
+    }
+    else
+    {
+        // If the page does not exist in buffer pool -
+        //   Find a free block in buffer pool without evict, return error if the freelist is empty.
+        //   Populate the page cb but not loading the actual page (do not load _buffer)
+        //   set the in_doubt and used flags in cb to true, update the rec_lsn
+        //   Insert into _hashtable so the page cb can be found later
+        //   and return the index of the page   
+
+        DBGOUT5(<<"Page not registered in buffer pool, start registration process");
+        rc = _grab_free_block(idx, false);  // Do not evict
+        if (rc.is_error())
+            return rc;
+
+        // Now we have an empty page
+        // Do not load the physical page from disk:  
+        //     volume->_volume->read_page(shpid, _buffer[idx]);
+        // The actual page will be loaded in REDO phase       
+        
+        // Initialize control block of the page, mark the in_doubt and used flags, 
+        // add the rec_lsn which indicates when the page was dirty initially
+        bf_tree_cb_t &cb = get_cb(idx);
+        cb._pid_vol = vid;
+        cb._store_num = page_of_interest.store(); 
+        cb._pid_shpid = shpid;
+        cb._dirty = false;
+        cb._in_doubt = true;
+        cb._used = true;
+        cb._refbit_approximate = BP_INITIAL_REFCOUNT; 
+
+        // For a page from disk,  get _rec_lsn from the physical page 
+        // (cb._rec_lsn = _buffer[idx].lsn.data())
+        // But in Log Analysis, we don't load the page, so initialize _rec_lsn from new_lsn
+        // which is the current log record LSN from log scan
+        cb._rec_lsn = new_lsn.data();
+
+        // Register the constructed 'key' into hash table so we can find this page cb later
+        bool inserted = _hashtable->insert_if_not_exists(key, idx);
+        if (false == inserted)
+        {
+            ERROUT(<<"failed to register a page as in_doubt in hashtable during Log Analysis phase");
+            return RC(eINTERNAL);
+        }
+
+        // Update the in_doubt page counter
+        ++in_doubt_count;
+
+        // Now we are done
+        DBGOUT5(<<"Done registration process, idx: " << idx);
+    }
+
+    // Return the idx of this page
+    ret = idx;
+
+    return rc;
+}
+
+w_rc_t bf_tree_m::load_for_redo(bf_idx idx, volid_t vid, 
+                  shpid_t shpid, bool& passed_end)
+{
+    // Special function for Recovery REDO phase
+    // idx is in hash table already
+    // but the actual page has not loaded from disk into buffer pool yet
+
+    // Caller of this fumction is responsible for acquire and release EX latch on this page
+    
+    w_rc_t rc = RCOK;
+    w_assert1(vid != 0);
+    w_assert1(shpid != 0);
+
+    passed_end = false;
+
+    DBGOUT3(<<"REDO phase: loading page " << vid << "." << shpid 
+            << " into buffer pool frame " << idx);
+
+    bf_tree_vol_t *volume = _volumes[vid];
+    w_assert1(volume != NULL);
+    w_assert1(shpid >= volume->_volume->first_data_pageid());
+
+    // Load the physical page from disk
+    rc = volume->_volume->read_page(shpid, _buffer[idx], passed_end);
+    if (true == passed_end)
+    {
+        // During REDO phase when trying to load a page from disk, the disk does
+        // not exist on disk.
+        // We cannot apply REDO because the page in buffer pool has been zero out
+        // notify the caller by setting a return flag
+       
+        passed_end = true;
+        DBGOUT3(<<"REDO phase: page does not exist on disk: "
+            << vid << "." << shpid);
+        return rc;
+    }
+    if (rc.is_error()) 
+    {
+        DBGOUT3(<<"bf_tree_m: error while reading page " << shpid 
+                << " to frame " << idx << ". rc=" << rc);
+        return rc;
+    }
+    else
+    {    
+        // For the loaded page, compare its checksum
+        // If inconsistent, return error       
+        uint32_t checksum = _buffer[idx].calculate_checksum();
+        if (checksum != _buffer[idx].checksum) 
+        {        
+            ERROUT(<<"bf_tree_m: bad page checksum in page " << shpid);
+            return RC (eBADCHECKSUM);
+        }
+
+        // Then, page ID must match, otherwise raise error
+        if (( shpid != _buffer[idx].pid.page) || (vid != _buffer[idx].pid.vol().vol)) 
+        {
+            W_FATAL_MSG(eINTERNAL, <<"inconsistent disk page: "
+                << vid << "." << shpid << " was " << _buffer[idx].pid.vol().vol
+                << "." << _buffer[idx].pid.page);
+        }
+    }
+
+    return rc;
+}
+
+
 w_rc_t bf_tree_m::_evict_page(EvictionContext& context, btree_page_h& p) {
     bf_idx idx = context.bufidx_pathway[context.traverse_depth - 1];
     uint32_t slot = context.clockhand_pathway[context.traverse_depth - 1];
@@ -1652,6 +1872,7 @@ bool bf_tree_m::_unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot) {
     latch_auto_release auto_rel(parent_cb.latch()); // this automatically releaes the latch.
 
     fixable_page_h parent;
+    w_assert1(false == parent_cb._in_doubt);
     parent.fix_nonbufferpool_page(_buffer + parent_idx);
     if (child_slot >= (uint32_t) parent.max_child_slot()+1) {
         return false;
@@ -1726,6 +1947,9 @@ void bf_tree_m::debug_dump(std::ostream &o) const
             o << "page-" << cb._pid_vol << "." << cb._pid_shpid;
             if (cb._dirty) {
                 o << " (dirty)";
+            }
+            if (cb._in_doubt) {
+                o << " (in_doubt)";
             }
 #ifdef BP_MAINTAIN_PARENT_PTR
             o << ", _parent=" << cb._parent;
@@ -1857,22 +2081,117 @@ w_rc_t bf_tree_m::set_swizzling_enabled(bool enabled) {
     return RCOK;
 }
 
-void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, lsn_t *rec_lsn, lsn_t &min_rec_lsn)
+void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid,
+                             lsn_t *rec_lsn, lsn_t *page_lsn, lsn_t &min_rec_lsn,
+                             const lsn_t master, const lsn_t current_lsn,
+                             lsn_t last_mount_lsn)
 {
+    // Only used by checkpoint to gather dirty page information
+    // Caller is the checkpoint operation which is holding a 'write' mutex', 
+    // everything in this function MUST BE W_COERCE (not W_DO).
+    
     w_assert1(start > 0 && count > 0);
 
-    bf_idx i;
-    for (i = 1; i < count && start < _block_cnt; ++start)  {
+    bf_idx i = 0;
+    // _block_cnt is the number of blocks/pages in buffer pool, while 0 is never used
+    for (i = 0; i < count && start < _block_cnt; ++start)  
+    {
         bf_tree_cb_t &cb = get_cb(start);
+
+        // Acquire traditional read latch for each page, not Q latch
+        // because it cannot fail on latch release       
+        w_rc_t latch_rc = cb.latch().latch_acquire(LATCH_SH, WAIT_FOREVER);        
+        if (latch_rc.is_error())
+        {
+            // Unable to the read acquire latch, cannot continue, raise an internal error
+            DBGOUT2 (<< "Error when acquiring LATCH_SH for checkpoint buffer pool. cb._pid_shpid = "
+                     << cb._pid_shpid << ", rc = " << latch_rc);
+
+            // Called by checkpoint operation which is holding a 'write' mutex on checkpoint
+            // To be a good citizen, release the 'write' mutex before raise error
+            chkpt_serial_m::write_release();
+
+            W_FATAL_MSG(fcINTERNAL, << "unable to latch a buffer pool page");
+            return;
+        }
+
+        // The earliest LSN which made this page dirty
         lsn_t lsn(cb._rec_lsn);
-        if (cb._used && cb._dirty && lsn != lsn_t::null) {
-            pid[i] = _buffer[start].pid;
-            rec_lsn[i] = lsn;
-            if(min_rec_lsn > lsn) {
+
+        // If a page is in use and dirty, or is in_doubt (only marked by Log Analysis phase)
+        if ((cb._used && cb._dirty) || (cb._in_doubt))
+        {
+            if (cb._in_doubt)
+            {
+                // in_doubt is only marked during Log Analysis and the page is not loaded until
+                // REDO phase.  The 'in_doubt' flag would be replaced by 'dirty' flag in REDO phase.
+                // A checkpoint is taken at the end of Log Analysis phase, therefore 
+                // in_doubt pages are not loaded into buffer pool yet, cannot get information
+                // from page ('_buffer')
+
+                // lpid_t: Store ID (volume number + store number) + page number (4+4+4)
+                // Re-construct the lpid using several fields in cb
+                vid_t vid(cb._pid_vol);
+                lpid_t store_id(vid, cb._store_num, cb._pid_shpid);
+                w_assert1(0 != cb._pid_shpid);   // Page number cannot be 0
+                pid[i] = store_id;
+                // rec_lsn is when the page got dirty initially, since this is an in_doubt page for Log Analysis
+                // use the smaller LSN between cb and checkpoint master
+                rec_lsn[i] = (lsn.data() < master.data())? lsn : master;
+                w_assert1(lsn_t::null!= current_lsn);
+                page_lsn[i] = current_lsn;    // Use the current LSN for page LSN
+            }
+            else
+            {
+                // Ignore this page if the pin count is -1
+                // Checkpoint records dirty pages in buffer pool, we never evict dirty pages so ignoring
+                // a page that is being evicted (pin_cnt == -1) is safe.
+                if (cb.pin_cnt() == -1)
+                {               
+                    if (cb.latch().held_by_me())
+                        cb.latch().latch_release();                
+                    continue;
+                }
+            
+                // Actual dirty page
+                // Record pid, minimum (earliest) and latest LSN values of the page
+                // cb._rec_lsn is the minimum LSN
+                // buffer[start].lsn.data() is the Page LSN, which is the last write LSN
+                
+                pid[i] = _buffer[start].pid;
+                w_assert1(0 != pid[i].page);   // Page number cannot be 0
+
+                if ((lsn_t::null == lsn) || (0 == lsn.data()))
+                {
+                    // If we have a dirty page but _rec_lsn (initial dirty) is 0
+                    // someone forgot to set it for the dirty page (most likely a
+                    // newly allocated page and it does not exist on disk yet).
+                    // In this case we won't be able to trace the history of the dirty
+                    // page during a crahs recovery.
+                    // In order to be more defensive, we use the mount lsn so
+                    // during Recovery REDO phase, we will start the log scan 
+                    // from the mount lsn
+                    w_assert1(0 != last_mount_lsn.data());                    
+                    lsn = last_mount_lsn;
+                }
+                rec_lsn[i] = lsn;
+                w_assert1(lsn_t::null!= _buffer[start].lsn.data());
+                page_lsn[i] = _buffer[start].lsn.data();
+            }
+
+            // Update min_rec_lsn if necessary
+            if(min_rec_lsn.data() > lsn.data()) 
+            {
                 min_rec_lsn = lsn;
             }
+
+            // Increment counter
             ++i;
         }
+
+        // Done with this cb, release the latch on it before moving to the next cb
+        if (cb.latch().held_by_me())
+            cb.latch().latch_release();
     }
     count = i;
 }

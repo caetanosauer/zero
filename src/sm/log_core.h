@@ -290,7 +290,7 @@ public:
     rc_t            flush(const lsn_t &lsn, bool block=true, bool signal=true, bool *ret_flushed=NULL);
     rc_t            compensate(const lsn_t &orig_lsn, const lsn_t& undo_lsn);
     void            start_flush_daemon();
-    rc_t            fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt);
+    rc_t            fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, const bool forward);
     rc_t            scavenge(const lsn_t &min_rec_lsn, const lsn_t&min_xct_lsn);
     void            release_space(fileoff_t howmuch);
     void            activate_reservations() ;

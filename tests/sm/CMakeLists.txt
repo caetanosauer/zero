@@ -34,10 +34,13 @@ X_ADD_TESTCASE(test_lockid btree_test_env)
 X_ADD_TESTCASE(test_lock_cache btree_test_env)
 X_ADD_TESTCASE(test_page_lsn_chain btree_test_env)
 X_ADD_TESTCASE(test_spr btree_test_env)
+X_ADD_TESTCASE(test_lock_okvl btree_test_env)
 X_ADD_TESTCASE(test_lock_raw btree_test_env)
 X_ADD_TESTCASE(test_log_lsn_tracker btree_test_env)
 X_ADD_TESTCASE(test_sys_xct btree_test_env)
 X_ADD_TESTCASE(test_insert_many btree_test_env)
 X_ADD_TESTCASE(test_btree_insert_100K btree_test_env)
 X_ADD_TESTCASE(test_btree_durability btree_test_env)
-X_ADD_TESTCASE(test_restart btree_test_env)
+# X_ADD_TESTCASE(test_restart btree_test_env)  # not fully tested
+
+
