@@ -204,6 +204,14 @@ chkpt_m::~chkpt_m()
     {
         retire_chkpt_thread();
     }
+
+    // Destruct the chkpt_m thresd (itself), if it is a simulated crash,
+    // the system might be in the middle of taking a checkpoint, and
+    // the chkpt_m thread has the chekpt chkpt_serial_m mutex and won't have
+    // a chance to release the mutex
+    // We cannot blindly release the mutex because it will get into infinite wait
+    // in such case, we might see debug assert (core dump) from
+    //     ~w_pthread_lock_t() { w_assert1(!_holder); pthread_mutex_destroy(&_mutex);}
 }
 
 
@@ -250,6 +258,8 @@ chkpt_m::retire_chkpt_thread()
     if (log)  
     {
         w_assert1(_chkpt_thread);
+
+        // Notify the checkpoint thread to retire itself
         _chkpt_thread->retire();
         W_COERCE( _chkpt_thread->join() ); // wait for it to end
         delete _chkpt_thread;
@@ -696,7 +706,7 @@ try
         // as _buffer and _control_blocks, zero means no link.
         // Index 0 is always the head of the list (points to the first free block
         // or 0 if no free block), therefore index 0 is never used.
-        
+
         for (bf_idx i = 1; i < bfsz; )  
         {
             // Loop over all buffer pages, put as many dirty page information as possible into 
@@ -744,7 +754,7 @@ try
     lsn_t min_xct_lsn = master;
     {
 ////////////////////////////////////////
-// TODO(M1)... we are not recording 'non-read-lock' during checkpoint in M1
+// TODO(Restart)... we are not recording 'non-read-lock' during checkpoint in M1
 ////////////////////////////////////////
 
         // For each transaction, record transaction ID,
@@ -771,6 +781,7 @@ try
 
         // Not 'const' becasue we are acquring a traditional latch on the object
         xct_t* xd = 0;  
+
         do 
         {
             int per_chuck_txn_count = 0;
@@ -914,8 +925,7 @@ try
     }
 
     // Non-blocking checkpoint, we never acquired a mutex on the list
-
-    
+   
     /*
      *  Make sure that min_rec_lsn and min_xct_lsn are valid
      *  master: lsn from the 'begin checkpoint' log record
@@ -1003,7 +1013,7 @@ try
             log->set_master(master, min_rec_lsn, min_xct_lsn);
 
 ////////////////////////////////////////
-// TODO(M1)...  Do not scaverge log space, because:
+// TODO(Restart)...  Do not scaverge log space, because:
 //                     Single Page Recovery might need old log records
 ////////////////////////////////////////
             // Scavenge some log

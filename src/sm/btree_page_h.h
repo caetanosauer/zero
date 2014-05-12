@@ -313,11 +313,13 @@ public:
      * Modifies the associated page to accept an empty foster-child page.
      * @param[in] new_lsn LSN of the operation that creates the foster-child page.
      * @param[in] new_page_id Page ID of the new page.
+     * @param[in] f_redo true if caller is from redo logic.     
      * @see btree_impl::_sx_norec_alloc()
+     * @see btree_norec_alloc_log::redo     
      * @pre in SSX (thus REDO-only. no worry for compensation log)
      * @pre latch_mode() == EX
      */
-    void accept_empty_child(lsn_t new_lsn, shpid_t new_page_id);
+    void accept_empty_child(lsn_t new_lsn, shpid_t new_page_id, const bool f_redo);
 
     /**
      * \brief Initializes the associated page, stealing records from other pages as specified.

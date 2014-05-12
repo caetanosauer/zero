@@ -67,7 +67,7 @@ rc_t btree_impl::_ux_norec_alloc_core(btree_page_h &page, lpid_t &new_page_id) {
             // initialize as an empty child:
             new_page.format_steal(page.lsn(), new_page_id, page.root().page,
                                   page.level(), 0, page.get_foster(), fence, fence, chain_high, false);
-            page.accept_empty_child(page.lsn(), new_page_id.page);
+            page.accept_empty_child(page.lsn(), new_page_id.page, false /*not from redo*/);
         }
 
         // in this operation, the log contains everything we need to recover without any

@@ -494,7 +494,7 @@ void btree_norec_alloc_log::redo(fixable_page_h* p) {
         << ", target_pid=" << target_pid << ", bp.lsn=" << bp.lsn());
     if (target_pid == header._shpid) {
         // we are recovering "page", which is foster-parent.
-        bp.accept_empty_child(new_lsn, dp->_page2_pid);
+        bp.accept_empty_child(new_lsn, dp->_page2_pid, true /*from redo*/);
     } else {
         // we are recovering "page2", which is foster-child.
         w_assert0(target_pid == dp->_page2_pid);

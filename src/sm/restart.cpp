@@ -194,7 +194,7 @@ restart_m::recover(lsn_t master)
 
 
 ////////////////////////////////////////
-// TODO(M1)... turning swizzling off in M1
+// TODO(Restart)... turning swizzling off in M1
 //             we will need to address this issue
 //             especially for on-demand recovery
 //             turning swizzling on before UNDO raise
@@ -240,7 +240,7 @@ restart_m::recover(lsn_t master)
     }
 
 ////////////////////////////////////////
-// TODO(M1)... ignore 'non-read-lock' in M1
+// TODO(Restart)... ignore 'non-read-lock' in M1
 ////////////////////////////////////////
 
     // Log Analysis phase, the store is not opened for new transaction during this phase
@@ -313,7 +313,7 @@ restart_m::recover(lsn_t master)
 #endif 
 
 ////////////////////////////////////////
-// TODO(M1)... does not open the store for new transactions in M1
+// TODO(Restart)... does not open the store for new transactions in M1
 //                    ignore 'non-read-lock' in M1
 ////////////////////////////////////////
 
@@ -333,7 +333,7 @@ restart_m::recover(lsn_t master)
         // after this point, we would have less recovery work to do in the next recovery
 
 ////////////////////////////////////////
-// TODO(M1)... flush_all in M1
+// TODO(Restart)... flush_all in M1
 //         once we open REDO phase for new transaction, 
 //         then we don't need the flush in buffer pool
 ////////////////////////////////////////
@@ -361,7 +361,7 @@ restart_m::recover(lsn_t master)
             << flushl;
 
 ////////////////////////////////////////
-// TODO(M1)... does not open the store for new transactions in M1
+// TODO(Restart)... does not open the store for new transactions in M1
 //                    ignore 'non-read-lock' in M1
 ////////////////////////////////////////
 
@@ -1385,7 +1385,7 @@ restart_m::analysis_pass(
                     xd = iter.next();
 
 ////////////////////////////////////////
-// TODO(M1)... not handling ignore 'non-read-lock' in M1
+// TODO(Restart)... not handling ignore 'non-read-lock' in M1
 //                    me()->attach_xct(curr);
 //                    W_DO(curr->commit_free_locks());
 //                    me()->detach_xct(curr);                   
@@ -1458,7 +1458,7 @@ restart_m::redo_pass(
 )
 {
 ////////////////////////////////////////
-// TODO(M1)... does not open the store for new transactions during REDO phase in M1
+// TODO(Restart)... does not open the store for new transactions during REDO phase in M1
 //                    ignore 'non-read-lock' in M1
 ////////////////////////////////////////
 
@@ -1837,7 +1837,7 @@ void restart_m::_redo_log_with_pid(
                     if (eBADCHECKSUM == rc.err_num())
                     {
 ////////////////////////////////////////
-// TODO(M1)... if the loaded page is corrupted, 
+// TODO(Restart)... if the loaded page is corrupted, 
 //                    we do not have Single Page Recover
 //                    in M1, must raise error and abort
 ////////////////////////////////////////
@@ -1884,7 +1884,7 @@ void restart_m::_redo_log_with_pid(
             //   in the buffer pool, no-op (we should not get here in this case)
             // 2. If the page image in the buffer pool is newer than the log record, no-op
 ////////////////////////////////////////
-// TODO(M1)... not implemented
+// TODO(Restart)... not implemented
             // 3. If the PageLSN value in the page image in the buffer pool differs from the
             //   'prior PageLSN value' in the log record, report an error (no SPR)
 ////////////////////////////////////////
@@ -1943,7 +1943,7 @@ void restart_m::_redo_log_with_pid(
                 // gets initialized as an empty child page during 'redo'
                 r.redo(&page);
 
-                // TODO(M1)... Something to do with space recoverying issue, 
+                // TODO(Restart)... Something to do with space recoverying issue, 
                 // it does not seem needed with the new code
                 //_redo_tid = tid_t::null;
 
@@ -2129,7 +2129,7 @@ restart_m::undo_pass(
     )
 {
 ////////////////////////////////////////
-// TODO(M1)... does not open the store for new transactions during UNDO phase in M1
+// TODO(Restart)... does not open the store for new transactions during UNDO phase in M1
 //                    ignore 'non-read-lock' in M1
 ////////////////////////////////////////
 
