@@ -655,10 +655,62 @@ void bf_tree_m::unpin_for_refix(bf_idx idx) {
 
 ///////////////////////////////////   Dirty Page Cleaner BEGIN       ///////////////////////////////////  
 w_rc_t bf_tree_m::force_all() {
-    return _cleaner->force_all();
+    if (false == smlevel_0::use_m1_recovery())
+    {
+////////////////////////////////////////
+// TODO(Restart)... this is because we might still
+//                          have in_doubt pages in buffer
+//                          pool, we do not have a way to
+//                          flush buffer pool with in_doubt
+//                          pages currently
+////////////////////////////////////////
+        // If recovery is still going on and system is opened 
+        // after Log Analysis, do not flush buffer pool while recovery is
+        // still going on
+        if (smlevel_1::recovery)
+        {
+            // Recovery child thread is still around
+            DBGOUT1( << "Block buffer pool flush because recovery is still on");
+            return RCOK;
+        }
+        else
+        {
+            return _cleaner->force_all();
+        }
+    }
+    else
+    {
+        return _cleaner->force_all();    
+    }
 }
 w_rc_t bf_tree_m::force_until_lsn(lsndata_t lsn) {
-    return _cleaner->force_until_lsn(lsn);
+    if (false == smlevel_0::use_m1_recovery())
+    {
+////////////////////////////////////////
+// TODO(Restart)... this is because we might still
+//                          have in_doubt pages in buffer
+//                          pool, we do not have a way to
+//                          flush buffer pool with in_doubt
+//                          pages currently
+////////////////////////////////////////
+        // If recovery is still going on and system is opened 
+        // after Log Analysis, do not flush buffer pool while recovery is
+        // still going on
+        if (smlevel_1::recovery)
+        {
+            // Recovery child thread is still around        
+            DBGOUT1( << "Block buffer pool flush until lsn because recovery is still on");
+            return RCOK;
+        }
+        else
+        {
+            return _cleaner->force_until_lsn(lsn);        
+        }
+    }
+    else
+    {
+        return _cleaner->force_until_lsn(lsn);
+    }
 }
 w_rc_t bf_tree_m::force_volume(volid_t vol) {
     return _cleaner->force_volume(vol);

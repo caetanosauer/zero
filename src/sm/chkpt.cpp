@@ -423,19 +423,41 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
         }
         else if (in_recovery() && (smlevel_0::t_chkpt_sync != chkpt_mode))
         {
-            DBGOUT1(<<"END chkpt_m::take - system in recovery, skip asynch checkpoint");            
-            valid_chkpt = false;
-        } 
-        else if (in_recovery() && (smlevel_0::t_chkpt_sync == chkpt_mode))
-        {
-            if (in_recovery_analysis() || in_recovery_undo())
+            // Asynch checkpoint
+            if (false == smlevel_0::use_m1_recovery())
             {
-                DBGOUT1(<<"PROCESS chkpt_m::take - system in recovery, allow synch checkpoint");
+                // System opened after Log Analysis phase, allow asynch checkpoint
+                // after Log Analysis phase
+                if (in_recovery_analysis())
+                    valid_chkpt = false;
             }
             else
             {
-                DBGOUT1(<<"END chkpt_m::take - system in REDO phase, disallow checkpoint");
+                // System is not opened during recovery
+                DBGOUT1(<<"END chkpt_m::take - system in recovery, skip asynch checkpoint");            
                 valid_chkpt = false;
+            }
+        } 
+        else if (in_recovery() && (smlevel_0::t_chkpt_sync == chkpt_mode))
+        {
+            // Synch checkpoint        
+            if (false == smlevel_0::use_m1_recovery())
+            {
+                // System opened after Log Analysis phase, accept system checkpoint anytime
+                DBGOUT1(<<"PROCESS chkpt_m::take - system in recovery, allow synch checkpoint");                
+            }
+            else
+            {
+                // System is not opened during recovery            
+                if (in_recovery_analysis() || in_recovery_undo())
+                {
+                    DBGOUT1(<<"PROCESS chkpt_m::take - system in recovery, allow synch checkpoint");
+                }
+                else
+                {
+                    DBGOUT1(<<"END chkpt_m::take - system in REDO phase, disallow checkpoint");
+                    valid_chkpt = false;
+                }
             }
         }
         else

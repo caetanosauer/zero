@@ -405,6 +405,75 @@ public:
         t_chkpt_async    // in the middle of asynchronous checkpoint
     };
 
+    // smlevel_0::recovery_internal is an internal setting, not exposed
+    // to external callers.  It is used to control the internal logic in recovery
+    // in order to test different implementations.
+    // It is always set to one of the mode, so they are in bit-mast values. 
+    //
+    // Only the Recovery (restart.cpp) process should check this value.    
+    // The only place to set the value is in 'sm.cpp', it is a static setting and
+    // cannot be set dynamiclly, a recompile is required to change the setting.
+    enum recovery_internal_mode_t {
+        t_recovery_m1 = 0x1,                // M1 implementation:
+                                            //    System is not opened until Recovery completed.
+                                            //    REDO is log record driven, not page drive
+                                            //    UNDO is in reverse chronological order, 
+                                            //             not true transaction drive
+        t_recovery_m2 = 0x2,                // M2 implementation:
+                                            //    System is opened after Log Analysis.
+                                            //    Using commit_lsn for new transactions
+                                            //    REDO is page driven using SPR
+                                            //    UNDO is transaction driven
+        t_recovery_m2_traditional = 0x4,    // M2 traditional implementation:
+                                            //    System is opened after Log Analysis.
+                                            //    Using commit_lsn for new transactions        <==                                           
+                                            //    REDO is log scan driven                             <==
+                                            //    UNDO is transaction driven
+                                            
+        t_recovery_m3 = 0x8,                // M3 implementation:
+                                            //    System is opened after Log Analysis.
+                                            //    Using lock acquisition for new transactions
+                                            //    REDO is on-demand SPR                
+                                            //    UNDO is ????
+        t_recovery_m3_traditional = 0x16,   // M3 traditional implementation:
+                                            //    System is opened after Log Analysis.
+                                            //    Using lock acquisition for new transactions   <==
+                                            //    REDO is log scan driven                             <==
+                                            //    UNDO is ????                                           
+        t_recovery_m4 = 0x32,               // M4 implementation:            
+                                            //    System is opened after Log Analysis.
+                                            //    REDO is the combination of M2 and M3
+                                            //    UNDO is ????
+    };
+    static recovery_internal_mode_t recovery_internal_mode;
+    static bool use_m1_recovery()
+    {
+        return ((recovery_internal_mode & t_recovery_m1 ) !=0); 
+    }
+    static bool use_m2_recovery() 
+    { 
+        return ((recovery_internal_mode & t_recovery_m2 ) !=0);     
+    }
+    static bool use_m2_traditional_recovery() 
+    { 
+        return ((recovery_internal_mode & t_recovery_m2_traditional ) !=0);     
+    }
+
+    static bool use_m3_recovery() 
+    { 
+        // NYI
+        w_assert1(false);
+
+        return ((recovery_internal_mode & t_recovery_m2 ) !=0);     
+    }
+    static bool use_m4_recovery() 
+    { 
+        // NYI    
+        w_assert1(false);
+
+        return ((recovery_internal_mode & t_recovery_m2 ) !=0);     
+    }
+
     static void  add_to_global_stats(const sm_stats_info_t &from);
     static void  add_from_global_stats(sm_stats_info_t &to);
 
@@ -414,7 +483,8 @@ public:
     static lock_m* lm;
 
     static log_m* log;
-    static tid_t* redo_tid;
+    // TODO(Restart)... it was for a space-recovery hack, not needed
+    // static tid_t* redo_tid;
 
     static LOG_WARN_CALLBACK_FUNC log_warn_callback;
     static LOG_ARCHIVED_CALLBACK_FUNC log_archived_callback;

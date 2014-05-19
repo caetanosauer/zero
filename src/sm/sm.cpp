@@ -93,6 +93,18 @@ bool         smlevel_0::shutting_down = false;
 smlevel_0::operating_mode_t 
             smlevel_0::operating_mode = smlevel_0::t_not_started;
 
+
+////////////////////////////////////////
+// TODO(Restart)... 
+// Set the internal recovery mode which controls which recovery
+// logic (mainly REDO and UNDO) to use during the recovery process
+// This is for testing purpose only, the final code should always use the
+// most recent or the most stable implementation.
+////////////////////////////////////////
+smlevel_0::recovery_internal_mode_t 
+           smlevel_0::recovery_internal_mode = smlevel_0::t_recovery_m1;
+
+
             //controlled by AutoTurnOffLogging:
 bool        smlevel_0::lock_caching_default = true;
 bool        smlevel_0::logging_enabled = true;
@@ -170,7 +182,9 @@ device_m* smlevel_0::dev = 0;
 io_m* smlevel_0::io = 0;
 bf_tree_m* smlevel_0::bf = 0;
 log_m* smlevel_0::log = 0;
-tid_t *smlevel_0::redo_tid = 0;
+
+// TODO(Restart)... it was for a space-recovery hack, not needed
+//tid_t *smlevel_0::redo_tid = 0;
 
 lock_m* smlevel_0::lm = 0;
 
@@ -181,11 +195,15 @@ char smlevel_0::zero_page[page_sz];
 
 chkpt_m* smlevel_1::chkpt = 0;
 
+restart_m* smlevel_1::recovery = 0;
+
 btree_m* smlevel_2::bt = 0;
 
 lid_m* smlevel_4::lid = 0;
 
 ss_m* smlevel_4::SSM = 0;
+
+
 
 /*
  *  Class ss_m code
@@ -620,92 +638,146 @@ ss_m::_construct_once()
      * mounted.  If not, we can skip the mount/dismount.
      */
 
-    if (_options.get_bool_option("sm_logging", true))  {
+    if (_options.get_bool_option("sm_logging", true))  
+    {
+        // Start the recovery process as sequential  operations
         restart_m restart;
-        smlevel_0::redo_tid = restart.redo_tid();
+
+        // TODO(Restart)... it was for a space-recovery hack, not needed
+        // smlevel_0::redo_tid = restart.redo_tid();
 
         // Recovery process, a checkpoint will be taken at the end of recovery
         // Make surethe current operating state is before recovery
         smlevel_0::operating_mode = t_not_started;
         restart.recover(log->master_lsn());
-
-        {   // contain the scope of dname[]
-            // record all the mounted volumes after recovery.
-            int num_volumes_mounted = 0;
-            int        i;
-            char    **dname;
-            dname = new char *[max_vols];
-            if (!dname) {
+        
+        // contain the scope of dname[]
+        // record all the mounted volumes after recovery.
+        int num_volumes_mounted = 0;
+        int        i;
+        char    **dname;
+        dname = new char *[max_vols];
+        if (!dname) 
+        {
+            W_FATAL(fcOUTOFMEMORY);
+        }
+        for (i = 0; i < max_vols; i++) 
+        {
+            dname[i] = new char[smlevel_0::max_devname+1];
+            if (!dname[i]) 
+            {
                 W_FATAL(fcOUTOFMEMORY);
             }
-            for (i = 0; i < max_vols; i++) {
-                dname[i] = new char[smlevel_0::max_devname+1];
-                if (!dname[i]) {
-                    W_FATAL(fcOUTOFMEMORY);
-                }
-            }
-            vid_t    *vid = new vid_t[max_vols];
-            if (!vid) {
-                W_FATAL(fcOUTOFMEMORY);
-            }
-
-            W_COERCE( io->get_vols(0, max_vols, dname, vid, num_volumes_mounted) );
-
-            DBG(<<"Dismount all volumes " << num_volumes_mounted);
-            // now dismount all of them at the io level, the level where they
-            // were mounted during recovery.
-            W_COERCE( io->dismount_all(true/*flush*/) );
-
-            // now mount all the volumes properly at the sm level.
-            // then dismount them and free temp files only if there
-            // are no locks held.
-            for (i = 0; i < num_volumes_mounted; i++)  {
-                uint vol_cnt;
-                rc_t rc;
-                DBG(<<"Remount volume " << dname[i]);
-                rc =  _mount_dev(dname[i], vol_cnt, vid[i]) ;
-                if(rc.is_error()) {
-                    ss_m::errlog->clog  << warning_prio
-                    << "Volume on device " << dname[i]
-                    << " was only partially formatted; cannot be recovered."
-                    << flushl;
-                } else {
-                    W_COERCE( _dismount_dev(dname[i]));
-                }
-            }
-            delete [] vid;
-            for (i = 0; i < max_vols; i++) {
-                delete [] dname[i];
-            }
-            delete [] dname;    
+        }
+        vid_t    *vid = new vid_t[max_vols];
+        if (!vid) 
+        {
+            W_FATAL(fcOUTOFMEMORY);
         }
 
-        smlevel_0::redo_tid = 0;
+        W_COERCE( io->get_vols(0, max_vols, dname, vid, num_volumes_mounted) );
+
+        DBG(<<"Dismount all volumes " << num_volumes_mounted);
+        // now dismount all of them at the io level, the level where they
+        // were mounted during recovery.
+        W_COERCE( io->dismount_all(true/*flush*/) );
+
+        // now mount all the volumes properly at the sm level.
+        // then dismount them and free temp files only if there
+        // are no locks held.
+        for (i = 0; i < num_volumes_mounted; i++)  
+        {
+            uint vol_cnt;
+            rc_t rc;
+            DBG(<<"Remount volume " << dname[i]);
+            rc =  _mount_dev(dname[i], vol_cnt, vid[i]) ;
+            if(rc.is_error()) 
+            {
+                ss_m::errlog->clog  << warning_prio
+                << "Volume on device " << dname[i]
+                << " was only partially formatted; cannot be recovered."
+                << flushl;
+            }
+            else 
+            {
+                // Dismount only if using m1 implementation: open database after REcovery
+                if (true == smlevel_0::use_m1_recovery())                
+                    W_COERCE( _dismount_dev(dname[i]));
+            }
+        }
+        delete [] vid;
+        for (i = 0; i < max_vols; i++) {
+            delete [] dname[i];
+        }
+        delete [] dname;    
+
+        // TODO(Restart)... it was for a space-recovery hack, not needed
+        // smlevel_0::redo_tid = 0;
+    }
+
+    if (false == smlevel_0::use_m1_recovery())
+    {
+        // Log Analysis has completed but no REDO or UNDO yet
+        // Start the recovery process child thread to carry out
+        // the REDO and UNDO phases.
+        // The Recovery child thread terminates itself after the
+        // recovery process is completed.
+
+        // Check the operating mode
+        w_assert1(t_in_analysis == smlevel_0::operating_mode);
+
+        recovery = new restart_m;
+        if (! recovery)
+        {
+            W_FATAL(eOUTOFMEMORY);
+        }
+        recovery->spawn_recovery_thread();
+
+        // Continue the process to open system for user transactions immediatelly
+        // No buffer pool flush or user checkpoint in this case
+        
+        smlevel_0::operating_mode = t_forward_processing;
+
+        // Have the log initialize its reservation accounting.
+        // while Recovery REDO and UNDO is happening concurrently
+        // the 'activate_reservations' does not affect Recovery task
+        // althought the calculation might be off since UNDO might not be 
+        // completed yet
+        if (log)
+            log->activate_reservations();
+
+    }
+    else
+    {
+        // We are done with the entire recovery, change the state accordingly
+        smlevel_0::operating_mode = t_forward_processing;
+
+        // Have the log initialize its reservation accounting.
+        if(log)
+            log->activate_reservations();
+
+        // Force the log after recovery.  The background flush threads exist
+        // and might be working due to recovery activities.
+        // But to avoid interference with their control structure, 
+        // we will do this directly.  Take a checkpoint as well.
+        if(log) 
+        {
+            bf->force_until_lsn(log->curr_lsn().data());
+
+            // An synchronous checkpoint was taken at the end of recovery
+            // This is a asynchronous checkpoint after buffer pool flush
+            chkpt->wakeup_and_take();
+        }    
+
+        // Debug only
+        me()->check_pin_count(0);
 
     }
 
-    // We are done with recovery, change the state accordingly
-    smlevel_0::operating_mode = t_forward_processing;
-
-    // Have the log initialize its reservation accounting.
-    if(log) log->activate_reservations();
-
-    // Force the log after recovery.  The background flush threads exist
-    // and might be working due to recovery activities.
-    // But to avoid interference with their control structure, 
-    // we will do this directly.  Take a checkpoint as well.
-    if(log) {
-        bf->force_until_lsn(log->curr_lsn().data());
-
-        // An synchronous checkpoint was taken at the end of recovery
-        // This is a asynchronous checkpoint after buffer pool flush
-        chkpt->wakeup_and_take();
-    }    
-
-    me()->check_pin_count(0);
-
     do_prefetch = _options.get_bool_option("sm_prefetch", false);
     DBG(<<"constructor done");
+
+    // System is opened for user transactions once the function returns
 }
 
 ss_m::~ss_m()
@@ -790,6 +862,43 @@ ss_m::_destruct_once()
 
         log = saved_log;            // turn on logging
     }
+
+    if (recovery)
+    {
+        // Only inistantiated after m2 (open system for user
+        // transactions during recovery)   
+        w_assert1(false == smlevel_0::use_m1_recovery());
+
+        if (shutdown_clean) 
+        {
+            // Clean shutdown, best effort to give the child thread
+            // some time to finish the recovery work
+            // If it does not finish, terminate the child thread
+            // This would happen only if there are extremely long recovery
+            // process and user shutdowns the system quickly
+            int32_t limit = 10;
+            uint32_t interval = 100;
+            while ((recovery) && (0 < limit))
+            {
+                DBGOUT2(<< "waiting for recovery child thread to finish...");
+                g_me()->sleep(interval);
+                --limit;
+            }           
+        }
+        else
+        {
+            // Simulated crash, just kill the child read
+        }
+
+        // The destructor will terminate the child thread if the child
+        // thread is still active.
+        // The child thread is for Recovery process only, it should terminate
+        // itself after the Recovery process completed
+        
+        delete recovery;
+        recovery = 0;
+    }
+
     nprepared = xct_t::cleanup(true /* now dispose of prepared xcts */);
     w_assert1(nprepared == 0);
     w_assert1(xct_t::num_active_xcts() == 0);

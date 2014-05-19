@@ -48,6 +48,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 
 class chkpt_m;
+class restart_m;
 
 /* xct_freeing_space implies that the xct is completed, but not yet freed stores and
    extents.  xct_ended implies completed and freeing space completed */
@@ -71,6 +72,9 @@ public:
                         xct_ended = 0x7
     };
     static chkpt_m*    chkpt;
+
+    // Recovery manager
+    static restart_m*  recovery;
 };
 
 #if (SM_LEVEL >= 1)

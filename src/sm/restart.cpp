@@ -74,7 +74,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 template class Heap<xct_t*, CmpXctUndoLsns>;
 #endif
 
-tid_t                restart_m::_redo_tid;
+// TODO(Restart)... it was for a space-recovery hack, not needed
+// tid_t                restart_m::_redo_tid;
 
 
 /*****************************************************
@@ -159,6 +160,10 @@ private:
  *  Start the recovery process. Master is the master lsn (lsn of
  *  the last successful checkpoint record).
  *
+ * Recover invokes Log Analysis, REDO and UNDO if system is not opened during
+ * the entire recovery process.
+ * Recovery invokes Log Analysis only if system is opened after Log Analysis.
+ *
  *********************************************************************/
 void 
 restart_m::recover(lsn_t master)
@@ -192,17 +197,7 @@ restart_m::recover(lsn_t master)
     }
 #endif 
 
-
-////////////////////////////////////////
-// TODO(Restart)... turning swizzling off in M1
-//             we will need to address this issue
-//             especially for on-demand recovery
-//             turning swizzling on before UNDO raise
-//             exception currently
-////////////////////////////////////////
-
-    // during REDO, we need to turn off pointer swizzling, it will be turned back on
-    // after UNDO phase, after the Recovery is done
+    // Turn off swizzling because it does not work with REDO and UNDO
     bool org_swizzling_enabled = smlevel_0::bf->is_swizzling_enabled();
     if (org_swizzling_enabled) {
         W_COERCE(smlevel_0::bf->set_swizzling_enabled(false));
@@ -257,7 +252,7 @@ restart_m::recover(lsn_t master)
     // take a 'empty' checkpoint' as the starting point for the next server start.
     // In this case, only one checkpoint will be taken during Recovery, not multiple checkpoints
 
-    int32_t xct_count = heap.NumElements();
+    int32_t xct_count = xct_t::num_active_xcts();
 
     // xct_count: the number of doomed transactions in transaction table, 
     //                 all transactions shoul be marked as 'active', they would be
@@ -281,35 +276,67 @@ restart_m::recover(lsn_t master)
     w_assert1(smlevel_1::chkpt);    
     smlevel_1::chkpt->synch_take();
 
-    // It is valid to have in_doubt_count <> 0 while xct_count == 0 (all transactions ended)
-    // because when a transaction commits, it flushs the log but not the buffer pool.
-
-    lsn_t curr_lsn = log->curr_lsn(); 
-
-    // Change mode to REDO although we would enter REDO only if we have in_doubt page
-    smlevel_0::operating_mode = smlevel_0::t_in_redo;
-    if (0 != in_doubt_count)
+    if (false == use_m1_recovery())
     {
-         // Come in here only if we have something to REDO
-         
-         //  Phase 2: REDO -- use dirty page table and redo lsn of phase 1
-         //                  We save curr_lsn before redo_pass() and assert after
-         //                 redo_pass that no log record has been generated.
-         //  pass in highest_lsn for debugging
+        // We are done with Log Analysis phase
+        // ready to open system before REDO and UNDO phases
+        
+        // Turn pointer swizzling on again
+        if (org_swizzling_enabled) 
+        {
+////////////////////////////////////////
+// TODO(Restart)... with this change, we have disabled swizzling for the entire run
+//                          if we open the system after Log Analysis phase
+////////////////////////////////////////
+        
+            // Do not turn on szizzling
+        }
 
-        smlevel_0::errlog->clog << info_prio << "Redo ..." << flushl;
+        smlevel_0::errlog->clog << info_prio << "Restart Log Analysis successful." << flushl;
+        DBGOUT1(<<"Recovery Log Analysis ended");   
+
+        // Retur to caller (main thread), at this point, buffer pool contains all 'in_doubt' pages
+        // but the actual pages are not loaded.
+        // Transaction table contains all doomed transactions (marked as 'active').
+        // No need to pass any information to caller because caller will not scan the recovery log again
+        // We have not constructed the in-memory heap for UNDO, caller is using different
+        // logic for UNDO
+        
+    }
+    else
+    {
+        // System is not opened during the entire Recovery process
+        // carry on the operations
+
+        // It is valid to have in_doubt_count <> 0 while xct_count == 0 (all transactions ended)
+        // because when a transaction commits, it flushs the log but not the buffer pool.
+
+        lsn_t curr_lsn = log->curr_lsn(); 
+
+        // Change mode to REDO although we would enter REDO only if we have in_doubt page
+        smlevel_0::operating_mode = smlevel_0::t_in_redo;
+        if (0 != in_doubt_count)
+        {
+             // Come in here only if we have something to REDO
+         
+             //  Phase 2: REDO -- use dirty page table and redo lsn of phase 1
+             //                  We save curr_lsn before redo_pass() and assert after
+             //                 redo_pass that no log record has been generated.
+             //  pass in highest_lsn for debugging
+
+            smlevel_0::errlog->clog << info_prio << "Redo ..." << flushl;
 
 #if W_DEBUG_LEVEL > 2
-        {
-            DBGOUT5(<<"TX TABLE at end of analysis:");
-            xct_i iter(true); // lock list
-            xct_t* xd;
-            while ((xd = iter.next()))  {
-                w_assert1(  xd->state() == xct_t::xct_active);
-                DBGOUT5(<< "Transaction " << xd->tid() << " has state " << xd->state());
+            {
+                DBGOUT5(<<"TX TABLE at end of analysis:");
+                xct_i iter(true); // lock list
+                xct_t* xd;
+                while ((xd = iter.next()))  {
+                    w_assert1(  xd->state() == xct_t::xct_active);
+                    DBGOUT5(<< "Transaction " << xd->tid() << " has state " << xd->state());
+                }
+                DBGOUT5(<<"END TX TABLE at end of analysis:");
             }
-            DBGOUT5(<<"END TX TABLE at end of analysis:");
-        }
 #endif 
 
 ////////////////////////////////////////
@@ -317,20 +344,20 @@ restart_m::recover(lsn_t master)
 //                    ignore 'non-read-lock' in M1
 ////////////////////////////////////////
 
-        // REDO phase, based on log records (forward scan), load 'in_doubt' pages
-        // into buffer pool, REDO the updates, clear the 'in_doubt' flags and mark
-        // the 'dirty' flags for modified pages.
-        // No change to transaction table or recovery log
-        DBGOUT3(<<"starting REDO at " << redo_lsn << " highest_lsn " << curr_lsn);
-        redo_pass(redo_lsn, curr_lsn, in_doubt_count);
+            // REDO phase, based on log records (forward scan), load 'in_doubt' pages
+            // into buffer pool, REDO the updates, clear the 'in_doubt' flags and mark
+            // the 'dirty' flags for modified pages.
+            // No change to transaction table or recovery log
+            DBGOUT3(<<"starting REDO at " << redo_lsn << " highest_lsn " << curr_lsn);
+            redo_pass(redo_lsn, curr_lsn, in_doubt_count);
 
-        // no logging during redo
-        w_assert1(curr_lsn == log->curr_lsn()); 
+            // no logging during redo
+            w_assert1(curr_lsn == log->curr_lsn()); 
 
-        // We took a checkpoint at the end of Log Analysis phase which caused
-        // a log flush, therefore the buffer pool flush at the end of the REDO phase
-        // is optional, but we are doing it anyway so if we encounter a system crash
-        // after this point, we would have less recovery work to do in the next recovery
+            // We took a checkpoint at the end of Log Analysis phase which caused
+            // a log flush, therefore the buffer pool flush at the end of the REDO phase
+            // is optional, but we are doing it anyway so if we encounter a system crash
+            // after this point, we would have less recovery work to do in the next recovery
 
 ////////////////////////////////////////
 // TODO(Restart)... flush_all in M1
@@ -338,72 +365,72 @@ restart_m::recover(lsn_t master)
 //         then we don't need the flush in buffer pool
 ////////////////////////////////////////
         
-        /* In order to preserve the invariant that the rec_lsn <= page's lsn1,
-         * we need to make sure that all dirty pages get flushed to disk,
-         * since the redo phase does NOT log these page updates, it causes
-         * rec_lsns to be at the tail of the log while the page lsns are
-         * in the middle of the log somewhere.  It seems worthwhile to
-         * do this flush, slow though it might be, because if we have a crash
-         * and have to re-recover, we would have less to do at that time.
-         */
-        W_COERCE(bf->force_all());
-    }
+            /* In order to preserve the invariant that the rec_lsn <= page's lsn1,
+             * we need to make sure that all dirty pages get flushed to disk,
+             * since the redo phase does NOT log these page updates, it causes
+             * rec_lsns to be at the tail of the log while the page lsns are
+             * in the middle of the log somewhere.  It seems worthwhile to
+             * do this flush, slow though it might be, because if we have a crash
+             * and have to re-recover, we would have less to do at that time.
+             */
+            W_COERCE(bf->force_all());
+        }
 
-    // Change mode to UNDO although we would enter UNDO only if we have doomed txn
-    smlevel_0::operating_mode = smlevel_0::t_in_undo;
-    if (0 != xct_count)
-    {
-        // Come in here only if we have something to UNDO
+        // Change mode to UNDO although we would enter UNDO only if we have doomed txn
+        smlevel_0::operating_mode = smlevel_0::t_in_undo;
+        if (0 != xct_count)
+        {
+            // Come in here only if we have something to UNDO
         
-        // Phase 3: UNDO -- abort all active transactions
-        smlevel_0::errlog->clog  << info_prio<< "Undo ..." 
-            << " curr_lsn = " << curr_lsn  << " undo_lsn = " << undo_lsn
-            << flushl;
+            // Phase 3: UNDO -- abort all active transactions
+            smlevel_0::errlog->clog  << info_prio<< "Undo ..." 
+                << " curr_lsn = " << curr_lsn  << " undo_lsn = " << undo_lsn
+                << flushl;
 
 ////////////////////////////////////////
 // TODO(Restart)... does not open the store for new transactions in M1
 //                    ignore 'non-read-lock' in M1
 ////////////////////////////////////////
 
-        // UNDO phase, based on log records (reverse scan), use compensate operations
-        // to UNDO (abort) the in-flight transactions, remove the aborted transactions
-        // from the transaction table after rollback (compensation).
-        // New log records would be generated due to compensation operations
+            // UNDO phase, based on log records (reverse scan), use compensate operations
+            // to UNDO (abort) the in-flight transactions, remove the aborted transactions
+            // from the transaction table after rollback (compensation).
+            // New log records would be generated due to compensation operations
 
-        // curr_lsn: the current lsn which is at the end of pre-crash recovery log
-        // undo_lsn: if doing backward log scan, this is the stopping point of the log scan       
-        //    in such case the backward log scan should start from from 'curr_lsn' and
-        //    stop at 'undo_lsn'
-        //    currently the implementation is not using backward log scan therefore
-        //    the 'undo_lsn' is not used
-        DBGOUT3(<<"starting UNDO phase, current lsn: " << curr_lsn << 
-                ", undo_lsn = " << undo_lsn);
-        undo_pass(heap, curr_lsn, undo_lsn);
+            // curr_lsn: the current lsn which is at the end of pre-crash recovery log
+            // undo_lsn: if doing backward log scan, this is the stopping point of the log scan       
+            //    in such case the backward log scan should start from from 'curr_lsn' and
+            //    stop at 'undo_lsn'
+            //    currently the implementation is not using backward log scan therefore
+            //    the 'undo_lsn' is not used
+            DBGOUT3(<<"starting UNDO phase, current lsn: " << curr_lsn << 
+                    ", undo_lsn = " << undo_lsn);
+            undo_pass(heap, curr_lsn, undo_lsn);
 
-        smlevel_0::errlog->clog << info_prio << "Oldest active transaction is " 
-            << xct_t::oldest_tid() << flushl;
-        smlevel_0::errlog->clog << info_prio 
-            << "First new transaction will be greater than "
-            << xct_t::youngest_tid() << flushl;
+            smlevel_0::errlog->clog << info_prio << "Oldest active transaction is " 
+                << xct_t::oldest_tid() << flushl;
+            smlevel_0::errlog->clog << info_prio 
+                << "First new transaction will be greater than "
+                << xct_t::youngest_tid() << flushl;
 
-        // Take a synch checkpoint after UNDO phase but before existing the Recovery operation
-        smlevel_1::chkpt->synch_take();
+            // Take a synch checkpoint after UNDO phase but before existing the Recovery operation
+            smlevel_1::chkpt->synch_take();
+        }
+
+        // turn pointer swizzling on again after we are done with the Recovery
+        if (org_swizzling_enabled) 
+        {
+            W_COERCE(smlevel_0::bf->set_swizzling_enabled(true));
+        }
+
+        smlevel_0::errlog->clog << info_prio << "Restart successful." << flushl;
+        DBGOUT1(<<"Recovery ended");
+
+        // Exiting from the Recovery operation, caller of the Recovery operation is 
+        // responsible of changing the 'operating_mode' to 'smlevel_0::t_forward_processing',
+        // because caller is doing some mounting/dismounting devices, we change
+        // the 'operating_mode' only after the device mounting operations are done.
     }
-
-    // turn pointer swizzling on again after we are done with the Recovery
-    if (org_swizzling_enabled) 
-    {
-        W_COERCE(smlevel_0::bf->set_swizzling_enabled(true));
-    }
-
-    smlevel_0::errlog->clog << info_prio << "Restart successful." << flushl;
-    DBGOUT1(<<"Recovery ended");
-
-    // Exiting from the Recovery operation, caller of the Recovery operation is 
-    // responsible of changing the 'operating_mode' to 'smlevel_0::t_forward_processing',
-    // because caller is doing some mounting/dismounting devices, we change
-    // the 'operating_mode' only after the device mounting operations are done.
-
 }
 
 
@@ -414,6 +441,9 @@ restart_m::recover(lsn_t master)
  *  Scan log forward from master_lsn. Insert and update buffer pool, 
  *  insert transaction table.
  *  Compute redo_lsn.
+ *
+ *  This function is used in all situations, because system is not opened during 
+ *  Log Analysis phase
  *
  *********************************************************************/
 void 
@@ -1345,44 +1375,55 @@ restart_m::analysis_pass(
     // We are done with Log Analysis, at this point each transactions in the transaction
     // table is either doomed (active) or ended; destroy the ended transactions
     // and populate the special heap with doomed (active) transactions for the UNDO phase.
-    
-    // After this step, only doomed transactions are left in the transaction table   
-    // all of them have state 'active' and will be cleaned up in the UNDO phase.
-    // We are not locking the transaction table during this process because 
-    // we are in the Log Analysis phase and the system is not opened for new 
-    // transaction yet
-    // Similarly, no lock is required on the transaction table if we want to delete
-    // ended transaction from transaction table
-    
+
+
+    if (false == use_m1_recovery())
     {
-        xct_i iter(false); // not locking the transaction table list
-        xct_t*  xd; 
-        xct_t*  curr;
-        DBGOUT3( << "Building heap...");
-        xd = iter.next();
-        while (xd)
+        // Open the system after Log Analysis phase
+        // No need to build the in-memory heap data structure
+        // Return now
+    }
+    else
+    {
+        // Execute the entire Recovery process before opening the system.
+        
+        // After this step, only doomed transactions are left in the transaction table   
+        // all of them have state 'active' and will be cleaned up in the UNDO phase.
+        // We are not locking the transaction table during this process because 
+        // we are in the Log Analysis phase and the system is not opened for new 
+        // transaction yet
+        // Similarly, no lock is required on the transaction table if we want to delete
+        // ended transaction from transaction table
+    
         {
-            DBGOUT3( << "Transaction " << xd->tid() 
-                     << " has state " << xd->state() );
-
-            if (xct_t::xct_active == xd->state())  
+            xct_i iter(false); // not locking the transaction table list
+            xct_t*  xd; 
+            xct_t*  curr;
+            DBGOUT3( << "Building heap...");
+            xd = iter.next();
+            while (xd)
             {
-                // Doomed transaction
-                heap.AddElementDontHeapify(xd);
+                DBGOUT3( << "Transaction " << xd->tid() 
+                         << " has state " << xd->state() );
 
-                // Advance to the next transaction
-                xd = iter.next();
-            }
-            else
-            {
-                if (xct_t::xct_ended == xd->state())
+                if (xct_t::xct_active == xd->state())  
                 {
-                    // Ended transaction 
-                    curr = iter.curr();
-                    w_assert1(curr);
+                    // Doomed transaction
+                    heap.AddElementDontHeapify(xd);
 
-                    // Advance to the next transaction first
+                    // Advance to the next transaction
                     xd = iter.next();
+                }
+                else
+                {
+                    if (xct_t::xct_ended == xd->state())
+                    {
+                        // Ended transaction 
+                        curr = iter.curr();
+                        w_assert1(curr);
+
+                        // Advance to the next transaction first
+                        xd = iter.next();
 
 ////////////////////////////////////////
 // TODO(Restart)... not handling ignore 'non-read-lock' in M1
@@ -1391,24 +1432,25 @@ restart_m::analysis_pass(
 //                    me()->detach_xct(curr);                   
 ////////////////////////////////////////
 
-                    // Then destroy the ended transaction                    
-                    xct_t::destroy_xct(curr);
-                }
-                else
-                {
-                    // We are not supposed ot see transaction with other stats
-                    W_FATAL_MSG(fcINTERNAL, 
-                        << "Transaction in the traction table is not doomed in Log Analysis phase, xd: "
-                        << xd->tid());                   
+                        // Then destroy the ended transaction                    
+                        xct_t::destroy_xct(curr);
+                    }
+                    else
+                    {
+                        // We are not supposed ot see transaction with other stats
+                        W_FATAL_MSG(fcINTERNAL, 
+                            << "Transaction in the traction table is not doomed in Log Analysis phase, xd: "
+                            << xd->tid());                   
+                    }
                 }
             }
-        }
-        // Done populating the heap, now tell the heap to sort
-        heap.Heapify();
+            // Done populating the heap, now tell the heap to sort
+            heap.Heapify();
 
-        DBGOUT3( << "Number of transaction entries in heap: " << heap.NumElements());
-        DBGOUT3( << "Number of active transactions in transaction table: " << xct_t::num_active_xcts());
-    }  // destroy iter which also unlock the transaction table
+            DBGOUT3( << "Number of transaction entries in heap: " << heap.NumElements());
+            DBGOUT3( << "Number of active transactions in transaction table: " << xct_t::num_active_xcts());
+        }  // destroy iter which also unlock the transaction table
+    }
 
     w_base_t::base_stat_t f = GET_TSTAT(log_fetches);
     w_base_t::base_stat_t i = GET_TSTAT(log_inserts);
@@ -1447,6 +1489,8 @@ restart_m::analysis_pass(
  *  Scan log forward from redo_lsn. Base on entries in buffer pool, 
  *  apply redo if durable page is old.
  *
+ *  M1 only while system is not opened during the entire Recovery process
+ *
  *********************************************************************/
 void 
 restart_m::redo_pass(
@@ -1470,215 +1514,223 @@ restart_m::redo_pass(
         return;
     }
 
-    // REDO phase never writes its own log records or modify anything in 
-    // the transaction table, this is an extra gurantee to make sure 
-    // no new log record.
-    
-    AutoTurnOffLogging turnedOnWhenDestroyed;
-
-    // How many pages have been changed from in_doubt to dirty?
-    uint32_t dirty_count = 0;
-
-    // Open a forward scan of the recovery log, starting from the redo_lsn which 
-    // is the earliest lsn determined in the Log Analysis phase
-    DBGOUT3(<<"Start redo scanning at redo_lsn = " << redo_lsn);
-    log_i scan(*log, redo_lsn);
-    lsn_t cur_lsn = log->curr_lsn();
-    if(redo_lsn < cur_lsn) {
-        DBGOUT3(<< "Redoing log from " << redo_lsn
-                << " to " << cur_lsn);
-        smlevel_0::errlog->clog << info_prio  
-            << "Redoing log from " << redo_lsn 
-            << " to " << cur_lsn << flushl;
-    }
-    DBGOUT3( << "LSN " << " A/R/I(pass): " << "LOGREC(TID, TYPE, FLAGS:F/U(fwd/rolling-back) PAGE <INFO>");
-
-    // Allocate a (temporary) log record buffer for reading 
-    logrec_t* log_rec_buf=0;
-
-    lsn_t lsn;
-    lsn_t expected_lsn = redo_lsn;
-    bool redone = false;
-    while (scan.xct_next(lsn, log_rec_buf))  
+    if (false == use_m1_recovery())
     {
-        DBGOUT3(<<"redo scan returned lsn " << lsn
-                << " expected " << expected_lsn);
+        // Only M1 should come into this function
+        W_FATAL_MSG(fcINTERNAL, << "REDO phase, restart_m::redo_pass() is valid for M1 only");   
+    }
+    else
+    {
+        // REDO phase never writes its own log records or modify anything in 
+        // the transaction table, this is an extra gurantee to make sure 
+        // no new log record.
+    
+        AutoTurnOffLogging turnedOnWhenDestroyed;
 
-        logrec_t& r = *log_rec_buf;
+        // How many pages have been changed from in_doubt to dirty?
+        uint32_t dirty_count = 0;
 
-        // For each log record ...
-        if (!r.valid_header(lsn)) 
-        {
-            smlevel_0::errlog->clog << error_prio 
-            << "Internal error during redo recovery." << flushl;
-            smlevel_0::errlog->clog << error_prio 
-            << "    log record at position: " << lsn 
-            << " appears invalid." << endl << flushl;
-            abort();
+        // Open a forward scan of the recovery log, starting from the redo_lsn which 
+        // is the earliest lsn determined in the Log Analysis phase
+        DBGOUT3(<<"Start redo scanning at redo_lsn = " << redo_lsn);
+        log_i scan(*log, redo_lsn);
+        lsn_t cur_lsn = log->curr_lsn();
+        if(redo_lsn < cur_lsn) {
+            DBGOUT3(<< "Redoing log from " << redo_lsn
+                    << " to " << cur_lsn);
+            smlevel_0::errlog->clog << info_prio  
+                << "Redoing log from " << redo_lsn 
+                << " to " << cur_lsn << flushl;
         }
+        DBGOUT3( << "LSN " << " A/R/I(pass): " << "LOGREC(TID, TYPE, FLAGS:F/U(fwd/rolling-back) PAGE <INFO>");
 
-        // All these are for debugging and validation purposes
-        // redone: whether REDO occurred for this log record
-        // expected_lsn: the LSN in the retrieved log is what we expected
-        redone = false;
-        (void) redone; // Used only for debugging output
-        DBGOUT3( << setiosflags(ios::right) << lsn
-                      << resetiosflags(ios::right) << " R: " << r);
-        w_assert1(lsn == r.lsn_ck());
-        w_assert1(lsn == expected_lsn || lsn.hi() == expected_lsn.hi()+1);
-        expected_lsn.advance(r.length());
+        // Allocate a (temporary) log record buffer for reading 
+        logrec_t* log_rec_buf=0;
 
-        if ( r.is_redo() ) 
+        lsn_t lsn;
+        lsn_t expected_lsn = redo_lsn;
+        bool redone = false;
+        while (scan.xct_next(lsn, log_rec_buf))  
         {
-            // If the log record is marked as REDOable (correct marking is important)
-            // Most of the log records are REDOable.
-            // These are not REDOable:
-            //    txn related log records, e.g., txn begin/commit
-            //    checkpoint related log records
-            //    skip log records
-            // Note compensation log records are 'redo only'
+            DBGOUT3(<<"redo scan returned lsn " << lsn
+                    << " expected " << expected_lsn);
 
-            // pid in log record is populated when a log record is filled
-            // null_pid is checking the page numer (shpid_t) recorded in the log record
-            if (r.null_pid()) 
+            logrec_t& r = *log_rec_buf;
+
+            // For each log record ...
+            if (!r.valid_header(lsn)) 
             {
-                // The log record does not contain a page number for the buffer pool
-                // there is no 'redo' in the buffer pool but we still need to 'redo' these
-                // transactions
-                
-                // If the transaction is still in the table after log analysis, 
-                // it didn't get committed or aborted,
-                // so go ahead and process it.  
-                // If it isn't in the table, it was  already committed or aborted.
-                // If it's in the table, its state is prepared or active.
-                // Nothing in the table should now be in aborting state.
-                if (!r.is_single_sys_xct() && r.tid() != tid_t::null)  
+                smlevel_0::errlog->clog << error_prio 
+                << "Internal error during redo recovery." << flushl;
+                smlevel_0::errlog->clog << error_prio 
+                << "    log record at position: " << lsn 
+                << " appears invalid." << endl << flushl;
+                abort();
+            }
+
+            // All these are for debugging and validation purposes
+            // redone: whether REDO occurred for this log record
+            // expected_lsn: the LSN in the retrieved log is what we expected
+            redone = false;
+            (void) redone; // Used only for debugging output
+            DBGOUT3( << setiosflags(ios::right) << lsn
+                          << resetiosflags(ios::right) << " R: " << r);
+            w_assert1(lsn == r.lsn_ck());
+            w_assert1(lsn == expected_lsn || lsn.hi() == expected_lsn.hi()+1);
+            expected_lsn.advance(r.length());
+
+            if ( r.is_redo() ) 
+            {
+                // If the log record is marked as REDOable (correct marking is important)
+                // Most of the log records are REDOable.
+                // These are not REDOable:
+                //    txn related log records, e.g., txn begin/commit
+                //    checkpoint related log records
+                //    skip log records
+                // Note compensation log records are 'redo only'
+
+                // pid in log record is populated when a log record is filled
+                // null_pid is checking the page numer (shpid_t) recorded in the log record
+                if (r.null_pid()) 
                 {
-                    // Regular transaction with a valid txn id
-                    xct_t *xd = xct_t::look_up(r.tid());
-                    if (xd) 
+                    // The log record does not contain a page number for the buffer pool
+                    // there is no 'redo' in the buffer pool but we still need to 'redo' these
+                    // transactions
+                
+                    // If the transaction is still in the table after log analysis, 
+                    // it didn't get committed or aborted,
+                    // so go ahead and process it.  
+                    // If it isn't in the table, it was  already committed or aborted.
+                    // If it's in the table, its state is prepared or active.
+                    // Nothing in the table should now be in aborting state.
+                    if (!r.is_single_sys_xct() && r.tid() != tid_t::null)  
                     {
-                        if (xd->state() == xct_t::xct_active)  
+                        // Regular transaction with a valid txn id
+                        xct_t *xd = xct_t::look_up(r.tid());
+                        if (xd) 
                         {
-                            DBGOUT3(<<"redo - no page, xct is " << r.tid());
+                            if (xd->state() == xct_t::xct_active)  
+                            {
+                                DBGOUT3(<<"redo - no page, xct is " << r.tid());
+                                r.redo(0);
+
+                                // No page involved, no need to update dirty_count
+                                redone = true;
+                            }
+                            else  
+                            {
+                                // as there is no longer prepared xct, we shouldn't hit here.
+                                W_FATAL_MSG(fcINTERNAL, 
+                                    << "REDO phase, no page transaction not in 'active' state - invalid");
+                            }
+                        }
+                        else
+                        {
+                            // Transaction is not in the transaction table, it ended already, no-op
+                        }
+                    }  
+                    else
+                    {
+                        // Redo mounts and dismounts, at the start of redo, 
+                        // all the volumes which were mounted at the redo lsn 
+                        // should be mounted.  
+                        // need to do this to take care of the case of creating
+                        // a volume which mounts the volume under a temporary
+                        // volume id in order to create stores and initialize the 
+                        // volume.  this temporary volume id can be reused,
+                        // which is why this must be done.
+
+                        if (!r.is_single_sys_xct()) 
+                        {
+                            // Regular transaction without a valid txn id
+                            // It must be a mount or dismount log record
+                        
+                            w_assert9(r.type() == logrec_t::t_dismount_vol || 
+                                        r.type() == logrec_t::t_mount_vol);
+                            DBGOUT3(<<"redo - no page, no xct, this is a device log record ");
+
                             r.redo(0);
+                            io_m::SetLastMountLSN(lsn);
 
                             // No page involved, no need to update dirty_count
                             redone = true;
                         }
-                        else  
+                        else
                         {
-                            // as there is no longer prepared xct, we shouldn't hit here.
-                            W_FATAL_MSG(fcINTERNAL, 
-                                << "REDO phase, no page transaction not in 'active' state - invalid");
+                            // single-log-sys-xct doesn't have tid (because it's not needed!).
+
+                            // Log Analysis phase took care of buffer pool information for system
+                            // transaction.
+                            // For system transaction without buffer pool impact, we need to redo
+                            // them here.
+                            // System transaction should have page number also, the logic here is 
+                            // on the defensive side in case we have system transactions which
+                            // does not affect buffer pool.
+                        
+                            // Note we cannot look up system transaction in transaction table because 
+                            // it does not have txn id.
+                        
+                            // If the system transaction is not for page allocation/deallocation, 
+                            // creates a new ssx and runs it.
+                            // Page allocation - taken care of as part of page format
+                            // Page deallocation - no need from a recovery
+                            if ((false == r.is_page_allocate()) &&
+                                (false == r.is_page_deallocate()))
+                            {                       
+                                DBGOUT3(<<"redo - no page, ssx");
+                                sys_xct_section_t sxs (true); // single log!
+                                w_assert1(!sxs.check_error_on_start().is_error());
+                                r.redo(0);
+                                io_m::SetLastMountLSN(lsn);
+                                redone = true;
+                                rc_t sxs_rc = sxs.end_sys_xct (RCOK);
+                                w_assert1(!sxs_rc.is_error());
+                            }
                         }
                     }
-                    else
-                    {
-                        // Transaction is not in the transaction table, it ended already, no-op
-                    }
-                }  
+                }
                 else
                 {
-                    // Redo mounts and dismounts, at the start of redo, 
-                    // all the volumes which were mounted at the redo lsn 
-                    // should be mounted.  
-                    // need to do this to take care of the case of creating
-                    // a volume which mounts the volume under a temporary
-                    // volume id in order to create stores and initialize the 
-                    // volume.  this temporary volume id can be reused,
-                    // which is why this must be done.
-
-                    if (!r.is_single_sys_xct()) 
-                    {
-                        // Regular transaction without a valid txn id
-                        // It must be a mount or dismount log record
-                        
-                        w_assert9(r.type() == logrec_t::t_dismount_vol || 
-                                    r.type() == logrec_t::t_mount_vol);
-                        DBGOUT3(<<"redo - no page, no xct, this is a device log record ");
-
-                        r.redo(0);
-                        io_m::SetLastMountLSN(lsn);
-
-                        // No page involved, no need to update dirty_count
-                        redone = true;
-                    }
-                    else
-                    {
-                        // single-log-sys-xct doesn't have tid (because it's not needed!).
-
-                        // Log Analysis phase took care of buffer pool information for system
-                        // transaction.
-                        // For system transaction without buffer pool impact, we need to redo
-                        // them here.
-                        // System transaction should have page number also, the logic here is 
-                        // on the defensive side in case we have system transactions which
-                        // does not affect buffer pool.
-                        
-                        // Note we cannot look up system transaction in transaction table because 
-                        // it does not have txn id.
-                        
-                        // If the system transaction is not for page allocation/deallocation, 
-                        // creates a new ssx and runs it.
-                        // Page allocation - taken care of as part of page format
-                        // Page deallocation - no need from a recovery
-                        if ((false == r.is_page_allocate()) &&
-                            (false == r.is_page_deallocate()))
-                        {                       
-                            DBGOUT3(<<"redo - no page, ssx");
-                            sys_xct_section_t sxs (true); // single log!
-                            w_assert1(!sxs.check_error_on_start().is_error());
-                            r.redo(0);
-                            io_m::SetLastMountLSN(lsn);
-                            redone = true;
-                            rc_t sxs_rc = sxs.end_sys_xct (RCOK);
-                            w_assert1(!sxs_rc.is_error());
-                        }
-                    }
-                }
-            }
-            else
-            {
-                // The log record contains a page number, ready to load and update the page
+                    // The log record contains a page number, ready to load and update the page
                 
-                _redo_log_with_pid(r, lsn, highest_lsn, r.construct_pid(),
+                    _redo_log_with_pid(r, lsn, highest_lsn, r.construct_pid(),
                                    redone, dirty_count);
-                if (r.is_multi_page()) 
-                {
-                    w_assert1(r.is_single_sys_xct());
-                    // If the log is an SSX log that touches multi-pages, also invoke
-                    // REDO on the second page. Whenever the log type moves content
-                    // (or, not self-contained), page=dest, page2=src.
-                    // So, we try recovering page2 after page.
-                    // Note currently only system transaction can affect more than one page, and
-                    // in fact it is limited to 2 pages only
+                    if (r.is_multi_page()) 
+                    {
+                        w_assert1(r.is_single_sys_xct());
+                        // If the log is an SSX log that touches multi-pages, also invoke
+                        // REDO on the second page. Whenever the log type moves content
+                        // (or, not self-contained), page=dest, page2=src.
+                        // So, we try recovering page2 after page.
+                        // Note currently only system transaction can affect more than one page, and
+                        // in fact it is limited to 2 pages only
                     
-                    _redo_log_with_pid(r, lsn, highest_lsn, r.construct_pid2(), 
-                                       redone, dirty_count);
+                        _redo_log_with_pid(r, lsn, highest_lsn, r.construct_pid2(), 
+                                           redone, dirty_count);
+                    }
                 }
             }
+            DBGOUT3( << setiosflags(ios::right) << lsn
+                          << resetiosflags(ios::right) << " R: " 
+                          << (redone ? " redone" : " skipped") );
         }
-        DBGOUT3( << setiosflags(ios::right) << lsn
-                      << resetiosflags(ios::right) << " R: " 
-                      << (redone ? " redone" : " skipped") );
-    }
 
-    if (in_doubt_count != dirty_count)
-    {
-        // We did not convert all the in_doubt pages, raise error and do not continue the Recovery
-        W_FATAL_MSG(fcINTERNAL, 
-                    << "Unexpected dirty page count at the end of REDO phase.  In_doubt count: "
-                    << in_doubt_count << ", dirty count: " << dirty_count);        
-    }
+        if (in_doubt_count != dirty_count)
+        {
+            // We did not convert all the in_doubt pages, raise error and do not continue the Recovery
+            W_FATAL_MSG(fcINTERNAL, 
+                        << "Unexpected dirty page count at the end of REDO phase.  In_doubt count: "
+                        << in_doubt_count << ", dirty count: " << dirty_count);        
+        }
 
-    {
-        w_base_t::base_stat_t f = GET_TSTAT(log_fetches);
-        w_base_t::base_stat_t i = GET_TSTAT(log_inserts);
-        smlevel_0::errlog->clog << info_prio 
-            << "Redo_pass: "
-            << f << " log_fetches, " 
-            << i << " log_inserts " << flushl;
+        {
+            w_base_t::base_stat_t f = GET_TSTAT(log_fetches);
+            w_base_t::base_stat_t i = GET_TSTAT(log_inserts);
+            smlevel_0::errlog->clog << info_prio 
+                << "Redo_pass: "
+                << f << " log_fetches, " 
+                << i << " log_inserts " << flushl;
+        }
     }
 
     return;
@@ -2118,6 +2170,8 @@ void restart_m::_redo_log_with_pid(
  *  But then there will also be the problem of page allocations, which
  *  I think is another reason for undoing in reverse chronological order.
  *
+ *  M1 only while system is not opened during the entire Recovery process
+ *
  *********************************************************************/
 void 
 restart_m::undo_pass(
@@ -2135,19 +2189,26 @@ restart_m::undo_pass(
 
     FUNC(restart_m::undo_pass);
 
-    int xct_count = heap.NumElements();
-    if (0 == xct_count)
+    if (false == use_m1_recovery())
     {
-        // No doomed transaction in transaction table, nothing to do in UNDO phase
-        DBGOUT3(<<"No doomed transaction to undo");
-        return;
+        // Only M1 should come into this function
+        W_FATAL_MSG(fcINTERNAL, << "UNDO phase, restart_m::undo_pass() is valid for M1 only");
     }
+    else
+    {
+        int xct_count = heap.NumElements();
+        if (0 == xct_count)
+        {
+            // No doomed transaction in transaction table, nothing to do in UNDO phase
+            DBGOUT3(<<"No doomed transaction to undo");
+            return;
+        }
 
-    // curr_lsn and undo_lsn are used only if we are using the backward log scan
-    // for the UNDO phase, which is not used currently.
-    w_assert1(lsn_t::null != curr_lsn);
-    w_assert1(lsn_t::null != undo_lsn);
-    w_assert1(curr_lsn.data() != undo_lsn.data());
+        // curr_lsn and undo_lsn are used only if we are using the backward log scan
+        // for the UNDO phase, which is not used currently.
+        w_assert1(lsn_t::null != curr_lsn);
+        w_assert1(lsn_t::null != undo_lsn);
+        w_assert1(curr_lsn.data() != undo_lsn.data());
 
 /*****************************************************
 //Dead code, comment out just in case we want to consider this solution in the future
@@ -2181,160 +2242,160 @@ restart_m::undo_pass(
     }
 *****************************************************/
 
-    // This is an enhanced version of the UNDO phase based on the original 
-    // implementation of Shore-MT implementation using the heap data structure
-    // The main difference is we populating the heap at the end of 
-    // Log Analysis phase instead of at the beginning of UNDO phase,
-    // therefore we don't need to lock down the transaction table during UNDO
+        // This is an enhanced version of the UNDO phase based on the original 
+        // implementation of Shore-MT implementation using the heap data structure
+        // The main difference is we populating the heap at the end of 
+        // Log Analysis phase instead of at the beginning of UNDO phase,
+        // therefore we don't need to lock down the transaction table during UNDO
 
-    w_ostrstream s;
-    s << "restart undo_pass";
-    (void) log_comment(s.c_str());
+        w_ostrstream s;
+        s << "restart undo_pass";
+        (void) log_comment(s.c_str());
 
-    if(heap.NumElements() > 0) 
-    {
-        DBGOUT3(<<"Undoing  " << heap.NumElements() << " active transactions ");
-        smlevel_0::errlog->clog << info_prio  
-            << "Undoing " << heap.NumElements() << " active transactions "
-            << flushl;
-    }
+        if(heap.NumElements() > 0) 
+        {
+            DBGOUT3(<<"Undoing  " << heap.NumElements() << " active transactions ");
+            smlevel_0::errlog->clog << info_prio  
+                << "Undoing " << heap.NumElements() << " active transactions "
+                << flushl;
+        }
     
-    // rollback the xct with the largest lsn, then the 2nd largest lsn,
-    // and repeat until all xct's are rolled back completely
+        // rollback the xct with the largest lsn, then the 2nd largest lsn,
+        // and repeat until all xct's are rolled back completely
 
-    xct_t*  xd;
+        xct_t*  xd;
 
-    if (heap.NumElements() > 1)  
-    { 
-        // Only handle transaction which can be UNDOne:
-        //     1. System transaction can roll forward instead
-        //         currently all system transactions are single log, so
-        //         they should not come into UNDO phase at all
-        //     2. Compensation operations are REDO only, skipped in UNDO
-        //         Log Analysis phase marked the associated transaction
-        //         'undo_nxt' to null already, so they would be skipped here
+        if (heap.NumElements() > 1)  
+        { 
+            // Only handle transaction which can be UNDOne:
+            //     1. System transaction can roll forward instead
+            //         currently all system transactions are single log, so
+            //         they should not come into UNDO phase at all
+            //     2. Compensation operations are REDO only, skipped in UNDO
+            //         Log Analysis phase marked the associated transaction
+            //         'undo_nxt' to null already, so they would be skipped here
         
-        while (heap.First()->undo_nxt() != lsn_t::null)  
-        {           
-            xd = heap.First();
+            while (heap.First()->undo_nxt() != lsn_t::null)  
+            {           
+                xd = heap.First();
 
-            // We do not have multiple log system transaction currently
-            if (true == xd->is_sys_xct())
-            {
-                // Nothing to do if single log system transaction            
-                w_assert1(true == xd->is_single_log_sys_xct());
-                if (true == xd->is_single_log_sys_xct())
+                // We do not have multiple log system transaction currently
+                if (true == xd->is_sys_xct())
                 {
-                    // We should not get here but j.i.c.
-                    xd->set_undo_nxt(lsn_t::null);
-                    heap.ReplacedFirst();
-                    continue;
+                    // Nothing to do if single log system transaction            
+                    w_assert1(true == xd->is_single_log_sys_xct());
+                    if (true == xd->is_single_log_sys_xct())
+                    {
+                        // We should not get here but j.i.c.
+                        xd->set_undo_nxt(lsn_t::null);
+                        heap.ReplacedFirst();
+                        continue;
+                    }
                 }
-            }
            
-            DBGOUT3( << "Transaction " << xd->tid() 
-                << " with undo_nxt lsn " << xd->undo_nxt()
-                << " rolling back to " << heap.Second()->undo_nxt() 
-                );
+                DBGOUT3( << "Transaction " << xd->tid() 
+                    << " with undo_nxt lsn " << xd->undo_nxt()
+                    << " rolling back to " << heap.Second()->undo_nxt() 
+                    );
 
-            // Note that this rollback/undo for doomed/in-flight transactions
-            // which were marked as 'active' in the Log Analysis phase.
-            // These transactions are marked 'active' in the transaction table
-            // so the standard rooback/abort logic works.
-            // We will open the store for new transactions after Log Analysis,
-            // new incoming transaction should have different TID and not confused 
-            // with the doomed (marked as active) transactions
+                // Note that this rollback/undo for doomed/in-flight transactions
+                // which were marked as 'active' in the Log Analysis phase.
+                // These transactions are marked 'active' in the transaction table
+                // so the standard rooback/abort logic works.
+                // We will open the store for new transactions after Log Analysis,
+                // new incoming transaction should have different TID and not confused 
+                // with the doomed (marked as active) transactions
             
-            // It behaves as if it were a rollback to a save_point where
-            // the save_point is 'undo_nxt' of the next transaction in the heap.
-            // This is the same as a normal active transaction rolling back to 
-            // a specified save point.
-            // In a loop it fetches the associated recovery log record using the current
-            // transaction's 'undo_nxt' (follow the 'undo_nxt' chain), and then call
-            // the 'undo' function of the recovery log record
-            // It is being done this way so the roll back is in a strictly reverse
-            // chronological order
-            // Note that beause this is a 'roll back to save point' logic, locks are not
-            // involved here
+                // It behaves as if it were a rollback to a save_point where
+                // the save_point is 'undo_nxt' of the next transaction in the heap.
+                // This is the same as a normal active transaction rolling back to 
+                // a specified save point.
+                // In a loop it fetches the associated recovery log record using the current
+                // transaction's 'undo_nxt' (follow the 'undo_nxt' chain), and then call
+                // the 'undo' function of the recovery log record
+                // It is being done this way so the roll back is in a strictly reverse
+                // chronological order
+                // Note that beause this is a 'roll back to save point' logic, locks are not
+                // involved here
             
-            // Special case: If there's only one transaction on the heap, there is no save_point
-            // from the next transaction in the heap.  The rollbak would be via abort() (below)
-            // which rolls back without save_point
+                // Special case: If there's only one transaction on the heap, there is no save_point
+                // from the next transaction in the heap.  The rollbak would be via abort() (below)
+                // which rolls back without save_point
+
+                me()->attach_xct(xd);
+
+#if 0 && W_DEBUG_LEVEL > 4
+                {
+                    lsn_t tmp = heap.Second()->undo_nxt();
+                    if(tmp == lsn_t::null) 
+                    {
+                        fprintf(stderr, 
+                                "WARNING: Rolling back to null lsn_t\n");
+                        // Is this a degenerate xct that's still active?
+                        // TODO WRITE A RESTART SCRIPT FOR THAT CASE
+                    }
+                }
+#endif
+                // Undo until the next-highest undo_nxt for an active
+                // xct. If that xct's last inserted log record is a compensation,
+                // the compensated-to lsn will be the lsn we find -- just
+                // noted that for the purpose of deciphering the log...
+                W_COERCE( xd->rollback(heap.Second()->undo_nxt()) );
+                me()->detach_xct(xd);
+
+                w_assert9(xd->undo_nxt() < heap.Second()->undo_nxt() 
+                        || xd->undo_nxt() == lsn_t::null);
+
+                heap.ReplacedFirst();
+            }
+        }
+        // Unless we have only one transaction in the heap, at this point all xct
+        // are completely rolled back in a strictly reverse chronological order 
+        // (no more undo for those transactions)
+
+        while (heap.NumElements() > 0)  
+        {
+            // For all the doom transactions in the heap
+            // destroy them from the transaction table
+        
+            xd = heap.RemoveFirst();
+
+            // Note that all transaction has been rolled back, excpet a special case
+            // where there was only one transaction in the heap, in such case the 
+            // actual rollback will happen here
+        
+            w_assert9(xd->undo_nxt() == lsn_t::null || heap.NumElements() == 0);
+
+            DBGOUT3( << "Transaction " << xd->tid() 
+                    << " is rolled back: aborting it now " );
 
             me()->attach_xct(xd);
 
-#if 0 && W_DEBUG_LEVEL > 4
-            {
-                lsn_t tmp = heap.Second()->undo_nxt();
-                if(tmp == lsn_t::null) 
-                {
-                    fprintf(stderr, 
-                            "WARNING: Rolling back to null lsn_t\n");
-                    // Is this a degenerate xct that's still active?
-                    // TODO WRITE A RESTART SCRIPT FOR THAT CASE
-                }
-            }
-#endif
-            // Undo until the next-highest undo_nxt for an active
-            // xct. If that xct's last inserted log record is a compensation,
-            // the compensated-to lsn will be the lsn we find -- just
-            // noted that for the purpose of deciphering the log...
-            W_COERCE( xd->rollback(heap.Second()->undo_nxt()) );
-            me()->detach_xct(xd);
+            // Abort the transaction, this is using the standard transaction abort logic, 
+            // which release locks (which was not involved in the roll back to save point operation),
+            // generate an end transaction log record if any log has been generated by
+            // this transaction (i.e. compensation records), and change state accordingly       
+            // Because we are using the standard abort logic, all the in-flight /doomed transactions
+            // were marked as 'active' so abort() works correctly
+            W_COERCE( xd->abort() );
 
-            w_assert9(xd->undo_nxt() < heap.Second()->undo_nxt() 
-                    || xd->undo_nxt() == lsn_t::null);
-
-            heap.ReplacedFirst();
+            xct_t::destroy_xct(xd);
         }
+
+        w_assert1(0 == heap.NumElements());
+        {
+            w_base_t::base_stat_t f = GET_TSTAT(log_fetches);
+            w_base_t::base_stat_t i = GET_TSTAT(log_inserts);
+            smlevel_0::errlog->clog << info_prio 
+                << "Undo_pass: "
+                << f << " log_fetches, " 
+                << i << " log_inserts " << flushl;
+        }
+
+        // Force a recovery log flush, this would harden the log records 
+        // generated by compensation operations
+        W_COERCE( log->flush_all() );
     }
-    // Unless we have only one transaction in the heap, at this point all xct
-    // are completely rolled back in a strictly reverse chronological order 
-    // (no more undo for those transactions)
-
-    while (heap.NumElements() > 0)  
-    {
-        // For all the doom transactions in the heap
-        // destroy them from the transaction table
-        
-        xd = heap.RemoveFirst();
-
-        // Note that all transaction has been rolled back, excpet a special case
-        // where there was only one transaction in the heap, in such case the 
-        // actual rollback will happen here
-        
-        w_assert9(xd->undo_nxt() == lsn_t::null || heap.NumElements() == 0);
-
-        DBGOUT3( << "Transaction " << xd->tid() 
-                << " is rolled back: aborting it now " );
-
-        me()->attach_xct(xd);
-
-        // Abort the transaction, this is using the standard transaction abort logic, 
-        // which release locks (which was not involved in the roll back to save point operation),
-        // generate an end transaction log record if any log has been generated by
-        // this transaction (i.e. compensation records), and change state accordingly       
-        // Because we are using the standard abort logic, all the in-flight /doomed transactions
-        // were marked as 'active' so abort() works correctly
-        W_COERCE( xd->abort() );
-
-        xct_t::destroy_xct(xd);
-    }
-
-    w_assert1(0 == heap.NumElements());
-    {
-        w_base_t::base_stat_t f = GET_TSTAT(log_fetches);
-        w_base_t::base_stat_t i = GET_TSTAT(log_inserts);
-        smlevel_0::errlog->clog << info_prio 
-            << "Undo_pass: "
-            << f << " log_fetches, " 
-            << i << " log_inserts " << flushl;
-    }
-
-    // Force a recovery log flush, this would harden the log records 
-    // generated by compensation operations
-    W_COERCE( log->flush_all() );
-
     return;
 }
 
