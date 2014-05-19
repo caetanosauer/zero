@@ -16,7 +16,32 @@
 
 #include "btree_page_h.h"
 #include "btree_impl.h"
+#include "lock.h"
+#include "log.h"
 #include "vec_t.h"
+#include "tls.h"
+#include "block_alloc.h"
+
+/**
+ * Page buffers used while SPR as scratch space.
+ * \ingroup SPR
+ */
+DECLARE_TLS(block_alloc<generic_page>, scratch_space_pool);
+/**
+ * Automatically deletes generic_page obtained from scratch_space_pool.
+ * \ingroup SPR
+ */
+struct SprScratchSpace {
+    SprScratchSpace(volid_t vol, snum_t store, shpid_t pid) {
+        p = new (*scratch_space_pool) generic_page();
+        ::memset(p, 0, sizeof(generic_page));
+        p->tag = t_btree_p;
+        p->pid = lpid_t(stid_t(vol, store), pid);
+        p->lsn = lsn_t::null;
+    }
+    ~SprScratchSpace() { scratch_space_pool->destroy_object(p); }
+    generic_page* p;
+};
 
 struct btree_insert_t {
     shpid_t     root_shpid;
@@ -445,13 +470,14 @@ struct btree_norec_alloc_t : public multi_page_log_t {
     btree_norec_alloc_t(const btree_page_h &p,
         shpid_t new_page_id, const w_keystr_t& fence, const w_keystr_t& chain_fence_high);
     shpid_t     _root_pid, _foster_pid;       // +4+4 => 8
-    uint16_t    _fence_len, _chain_high_len;  // +2+2 => 12
-    int16_t     _btree_level;                 // +2   => 14
+    lsn_t       _foster_emlsn;                // +8   => 16
+    uint16_t    _fence_len, _chain_high_len;  // +2+2 => 20
+    int16_t     _btree_level;                 // +2   => 22
     /** fence key and chain-high key. */
-    char        _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) - 14];
+    char        _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) - 22];
 
     int      size() const {
-        return sizeof(multi_page_log_t) + 14 + _fence_len + _chain_high_len;
+        return sizeof(multi_page_log_t) + 22 + _fence_len + _chain_high_len;
     }
 };
 
@@ -464,6 +490,7 @@ btree_norec_alloc_t::btree_norec_alloc_t(const btree_page_h &p,
 
     _root_pid       = p.btree_root();
     _foster_pid     = p.get_foster();
+    _foster_emlsn   = p.get_foster_emlsn();
     _fence_len      = (uint16_t) fence.get_length_as_keystr();
     _chain_high_len = (uint16_t) chain_fence_high.get_length_as_keystr();
     _btree_level    = (int16_t) p.level();
@@ -502,8 +529,8 @@ void btree_norec_alloc_log::redo(fixable_page_h* p) {
         W_COERCE(io_m::redo_alloc_a_page(p->pid().vol(), dp->_page2_pid));
         lpid_t pid(header._vid, header._snum, dp->_page2_pid);
         // initialize as an empty child:
-        bp.format_steal(new_lsn, pid, dp->_root_pid, dp->_btree_level, 0,
-                        dp->_foster_pid, fence, fence, chain_high, false);
+        bp.format_steal(new_lsn, pid, dp->_root_pid, dp->_btree_level, 0, lsn_t::null,
+                        dp->_foster_pid, dp->_foster_emlsn, fence, fence, chain_high, false);
     }
 }
 
@@ -530,37 +557,54 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
     btree_foster_merge_t *dp = reinterpret_cast<btree_foster_merge_t*>(data_ssx());
 
     // WOD: "page" is the data source, which is written later.
-    // this is in REDO, so fix_direct should be safe.
     shpid_t target_pid = p->pid().page;
-    if (target_pid == header._shpid) {
-        // we are recovering "page", which is foster-parent (dest).
-        // thanks to WOD, "page2" (src) is also assured to be not recovered yet.
-        btree_page_h src;
-        W_COERCE(src.fix_direct(bp.vol(), dp->_page2_pid, LATCH_EX));
 
-        w_assert0(src.lsn() < lsn_ck());
-        btree_impl::_ux_merge_foster_apply_parent(bp, src);
-        src.set_dirty();
-        src.update_initial_and_last_lsn(lsn_ck());
-
-        W_COERCE(src.set_to_be_deleted(false));
-    } else {
-        // we are recovering "page2", which is foster-child (src).
-        // in this case, foster-parent(dest) may or may not be written yet.
-        w_assert0(target_pid == dp->_page2_pid);
-        btree_page_h dest;
-        W_COERCE(dest.fix_direct(bp.vol(), shpid(), LATCH_EX));
-        if (dest.lsn() >= lsn_ck()) {
-            // if page (destination) is already durable/recovered,
-            // we just delete the foster child and done.
-            W_COERCE(bp.set_to_be_deleted(false));
+    bool recovering_dest = (target_pid == shpid());
+    shpid_t another_pid = recovering_dest ? dp->_page2_pid : shpid();
+    w_assert0(recovering_dest || target_pid == dp->_page2_pid);
+    if (p->is_bufferpool_managed()) {
+        // this is in REDO, so fix_direct should be safe.
+        btree_page_h another;
+        W_COERCE(another.fix_direct(bp.vol(), another_pid, LATCH_EX));
+        if (recovering_dest) {
+            // we are recovering "page", which is foster-parent (dest).
+            // thanks to WOD, "page2" (src) is also assured to be not recovered yet.
+            w_assert0(another.lsn() < lsn_ck());
+            btree_impl::_ux_merge_foster_apply_parent(bp, another);
+            another.set_dirty();
+            another.update_initial_and_last_lsn(lsn_ck());
+            W_COERCE(another.set_to_be_deleted(false));
         } else {
-            // dest is also old, so we are recovering both.
-            btree_impl::_ux_merge_foster_apply_parent(dest, bp);
-            dest.set_dirty();
-            dest.update_initial_and_last_lsn(lsn_ck());
-
+            // we are recovering "page2", which is foster-child (src).
+            // in this case, foster-parent(dest) may or may not be written yet.
+            if (another.lsn() >= lsn_ck()) {
+                // if page (destination) is already durable/recovered,
+                // we just delete the foster child and done.
+                W_COERCE(bp.set_to_be_deleted(false));
+            } else {
+                // dest is also old, so we are recovering both.
+                btree_impl::_ux_merge_foster_apply_parent(another, bp);
+                another.set_dirty();
+                another.update_initial_and_last_lsn(lsn_ck());
+            }
         }
+    } else {
+        // this is in SPR. we use scratch space for another page because bufferpool frame
+        // for another page is probably too recent for SPR.
+        DBGOUT1(<< "merge SPR! another=" << another_pid);
+        if (!recovering_dest) {
+            // source page is simply deleted, so we don't have to do anything here
+            DBGOUT1(<< "recovering source page in merge... nothing to do");
+            return;
+        }
+        DBGOUT1(<< "recovering dest page in merge. recursive SPR!");
+        SprScratchSpace frame(bp.vol(), bp.store(), another_pid);
+        // Here, we do "time travel", recursively invoking SPR.
+        lsn_t another_previous_lsn = recovering_dest ? dp->_page2_prv : page_prev_lsn();
+        btree_page_h another;
+        another.fix_nonbufferpool_page(frame.p);
+        W_COERCE(smlevel_0::log->recover_single_page(another, another_previous_lsn));
+        btree_impl::_ux_merge_foster_apply_parent(bp, another);
     }
 }
 
@@ -571,26 +615,30 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
 struct btree_foster_rebalance_t : multi_page_log_t {
     int32_t         _move_count;    // +4
     shpid_t         _new_pid0;      // +4
+    lsn_t           _new_pid0_emlsn;// +8
     uint16_t        _fence_len;     // +2
-    char            _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) - 10];
+    char            _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) - 18];
 
     btree_foster_rebalance_t(shpid_t page2_id, int32_t move_count,
-            const w_keystr_t& fence, shpid_t new_pid0);
-    int size() const { return sizeof(multi_page_log_t) + 10 + _fence_len; }
+            const w_keystr_t& fence, shpid_t new_pid0, lsn_t new_pid0_emlsn);
+    int size() const { return sizeof(multi_page_log_t) + 18 + _fence_len; }
 };
 
 btree_foster_rebalance_t::btree_foster_rebalance_t(shpid_t page2_id, int32_t move_count,
-        const w_keystr_t& fence, shpid_t new_pid0) : multi_page_log_t(page2_id) {
+        const w_keystr_t& fence, shpid_t new_pid0, lsn_t new_pid0_emlsn)
+    : multi_page_log_t(page2_id) {
     _move_count = move_count;
     _new_pid0   = new_pid0;
+    _new_pid0_emlsn = new_pid0_emlsn;
     _fence_len = fence.get_length_as_keystr();
     fence.serialize_as_keystr(_data);
 }
 
 btree_foster_rebalance_log::btree_foster_rebalance_log (const btree_page_h& p,
-    const btree_page_h &p2, int32_t move_count, const w_keystr_t& fence, shpid_t new_pid0) {
+    const btree_page_h &p2, int32_t move_count, const w_keystr_t& fence, shpid_t new_pid0,
+    lsn_t new_pid0_emlsn) {
     fill(&p.pid(), p.tag(), (new (data_ssx()) btree_foster_rebalance_t(p2.pid().page,
-        move_count, fence, new_pid0))->size());
+        move_count, fence, new_pid0, new_pid0_emlsn))->size());
 }
 
 void btree_foster_rebalance_log::redo(fixable_page_h* p) {
@@ -600,54 +648,72 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
     fence.construct_from_keystr(dp->_data, dp->_fence_len);
 
     // WOD: "page2" is the data source, which is written later.
-    // this is in REDO, so fix_direct should be safe.
     const shpid_t target_pid = p->pid().page;
     const shpid_t page_id = shpid();
     const shpid_t page2_id = dp->_page2_pid;
     const lsn_t  &redo_lsn = lsn_ck();
     DBGOUT3 (<< *this << ": redo_lsn=" << redo_lsn << ", bp.lsn=" << bp.lsn());
     w_assert1(bp.lsn() < redo_lsn);
-    if (target_pid == page_id) {
-        // we are recovering "page", which is foster-child (dest).
-        // thanks to WOD, "page2" (src) is also assured to be not recovered yet.
-        btree_page_h src;
-        W_COERCE(src.fix_direct(bp.vol(), page2_id, LATCH_EX));
-        DBGOUT3 (<< "Recovering 'page'. page2.lsn=" << src.lsn());
-        w_assert0(src.lsn() < redo_lsn);
-        W_COERCE(btree_impl::_ux_rebalance_foster_apply(src, bp, dp->_move_count,
-                                                        fence, dp->_new_pid0));
-        src.set_dirty();
-        src.update_initial_and_last_lsn(redo_lsn);
 
-    } else {
-        // we are recovering "page2", which is foster-parent (src).
-        w_assert0(target_pid == page2_id);
-        btree_page_h dest;
-        W_COERCE(dest.fix_direct(bp.vol(), page_id, LATCH_EX));
-        DBGOUT3 (<< "Recovering 'page2'. page.lsn=" << dest.lsn());
-        if (dest.lsn() >= redo_lsn) {
-            // if page (destination) is already durable/recovered, we create a dummy scratch
-            // space which will be thrown away after recovering "page2".
-            w_keystr_t high, chain_high;
-            bp.copy_fence_high_key(high);
-            bp.copy_chain_fence_high_key(chain_high);
-            generic_page scratch_page;
-            scratch_page.tag = t_btree_p;
-            btree_page_h scratch_p;
-            scratch_p.fix_nonbufferpool_page(&scratch_page);
-            // initialize as an empty child:
-            scratch_p.format_steal(lsn_t::null, dest.pid(), bp.btree_root(), bp.level(), 0, 0,
-                                   high, chain_high, chain_high, false);
-            W_COERCE(btree_impl::_ux_rebalance_foster_apply(bp, scratch_p, dp->_move_count,
-                                                        fence, dp->_new_pid0));
+    bool recovering_dest = (target_pid == page_id);
+    shpid_t another_pid = recovering_dest ? page2_id : page_id;
+    w_assert0(recovering_dest || target_pid == page2_id);
+
+    if (p->is_bufferpool_managed()) {
+        // this is in REDO, so fix_direct should be safe.
+        btree_page_h another;
+        W_COERCE(another.fix_direct(bp.vol(), another_pid, LATCH_EX));
+        if (recovering_dest) {
+            // we are recovering "page", which is foster-child (dest).
+            // thanks to WOD, "page2" (src) is also assured to be not recovered yet.
+            DBGOUT3 (<< "Recovering 'page'. page2.lsn=" << another.lsn());
+            w_assert0(another.lsn() < redo_lsn);
+            W_COERCE(btree_impl::_ux_rebalance_foster_apply(another, bp, dp->_move_count,
+                                                fence, dp->_new_pid0, dp->_new_pid0_emlsn));
+            another.set_dirty();
+            another.update_initial_and_last_lsn(redo_lsn);
         } else {
-            // dest is also old, so we are recovering both.
-            W_COERCE(btree_impl::_ux_rebalance_foster_apply(bp, dest, dp->_move_count,
-                                                        fence, dp->_new_pid0));
-            dest.set_dirty();
-            dest.update_initial_and_last_lsn(redo_lsn);
+            // we are recovering "page2", which is foster-parent (src).
+            DBGOUT3 (<< "Recovering 'page2'. page.lsn=" << another.lsn());
+            if (another.lsn() >= redo_lsn) {
+                // if page (destination) is already durable/recovered, we create a dummy scratch
+                // space which will be thrown away after recovering "page2".
+                w_keystr_t high, chain_high;
+                bp.copy_fence_high_key(high);
+                bp.copy_chain_fence_high_key(chain_high);
+                generic_page scratch_page;
+                scratch_page.tag = t_btree_p;
+                btree_page_h scratch_p;
+                scratch_p.fix_nonbufferpool_page(&scratch_page);
+                // initialize as an empty child:
+                scratch_p.format_steal(lsn_t::null, another.pid(), bp.btree_root(), bp.level(),
+                                    0, lsn_t::null, 0, lsn_t::null,
+                                    high, chain_high, chain_high, false);
+                W_COERCE(btree_impl::_ux_rebalance_foster_apply(bp, scratch_p, dp->_move_count,
+                                                fence, dp->_new_pid0, dp->_new_pid0_emlsn));
+            } else {
+                // dest is also old, so we are recovering both.
+                W_COERCE(btree_impl::_ux_rebalance_foster_apply(bp, another, dp->_move_count,
+                                                fence, dp->_new_pid0, dp->_new_pid0_emlsn));
+                another.set_dirty();
+                another.update_initial_and_last_lsn(redo_lsn);
+            }
 
         }
+    } else {
+        // this is in SPR. we use scratch space for another page because bufferpool frame
+        // for another page is probably too latest for SPR.
+        SprScratchSpace frame(bp.vol(), bp.store(), another_pid);
+        // Here, we do "time travel", recursively invoking SPR.
+        lsn_t another_previous_lsn = recovering_dest ? dp->_page2_prv : page_prev_lsn();
+        DBGOUT1(<< "SPR for rebalance. recursive SPR! another=" << another_pid <<
+            ", another_previous_lsn=" << another_previous_lsn);
+        btree_page_h another;
+        another.fix_nonbufferpool_page(frame.p);
+        W_COERCE(smlevel_0::log->recover_single_page(another, another_previous_lsn));
+        W_COERCE(btree_impl::_ux_rebalance_foster_apply(
+            recovering_dest ? another : bp, recovering_dest ? bp : another,
+            dp->_move_count, fence, dp->_new_pid0, dp->_new_pid0_emlsn));
     }
 }
 
@@ -687,7 +753,8 @@ void btree_foster_rebalance_norec_log::redo(fixable_page_h* p) {
     shpid_t target_pid = p->pid().page;
     if (target_pid == header._shpid) {
         // we are recovering "page", which is foster-parent.
-        W_COERCE(bp.norecord_split(bp.get_foster(), fence, chain_high));
+        W_COERCE(bp.norecord_split(bp.get_foster(), bp.get_foster_emlsn(),
+                                   fence, chain_high));
     } else {
         // we are recovering "page2", which is foster-child.
         w_assert0(target_pid == dp->_page2_pid);
@@ -705,25 +772,27 @@ void btree_foster_rebalance_norec_log::redo(fixable_page_h* p) {
  * This log is totally \b self-contained, so no WOD assumed.
  */
 struct btree_foster_adopt_t : multi_page_log_t {
+    lsn_t   _new_child_emlsn;   // +8
     shpid_t _new_child_pid;     // +4
     int16_t _new_child_key_len; // +2
-    char    _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) - 6];
+    char    _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) - 14];
 
     btree_foster_adopt_t(shpid_t page2_id, shpid_t new_child_pid,
-                         const w_keystr_t& new_child_key);
-    int size() const { return sizeof(multi_page_log_t) + 6 + _new_child_key_len; }
+                         lsn_t new_child_emlsn, const w_keystr_t& new_child_key);
+    int size() const { return sizeof(multi_page_log_t) + 14 + _new_child_key_len; }
 };
 btree_foster_adopt_t::btree_foster_adopt_t(shpid_t page2_id, shpid_t new_child_pid,
-                        const w_keystr_t& new_child_key)
-    : multi_page_log_t(page2_id), _new_child_pid (new_child_pid) {
+                        lsn_t new_child_emlsn, const w_keystr_t& new_child_key)
+    : multi_page_log_t(page2_id), _new_child_emlsn(new_child_emlsn),
+    _new_child_pid (new_child_pid) {
     _new_child_key_len = new_child_key.get_length_as_keystr();
     new_child_key.serialize_as_keystr(_data);
 }
 
 btree_foster_adopt_log::btree_foster_adopt_log (const btree_page_h& p, const btree_page_h& p2,
-    shpid_t new_child_pid, const w_keystr_t& new_child_key) {
+    shpid_t new_child_pid, lsn_t new_child_emlsn, const w_keystr_t& new_child_key) {
     fill(&p.pid(), p.tag(), (new (data_ssx()) btree_foster_adopt_t(
-        p2.pid().page, new_child_pid, new_child_key))->size());
+        p2.pid().page, new_child_pid, new_child_emlsn, new_child_key))->size());
 }
 void btree_foster_adopt_log::redo(fixable_page_h* p) {
     w_assert1(is_single_sys_xct());
@@ -738,7 +807,8 @@ void btree_foster_adopt_log::redo(fixable_page_h* p) {
         << dp->_new_child_pid << ", new_child_key=" << new_child_key);
     if (target_pid == header._shpid) {
         // we are recovering "page", which is real-parent.
-        btree_impl::_ux_adopt_foster_apply_parent(bp, dp->_new_child_pid, new_child_key);
+        btree_impl::_ux_adopt_foster_apply_parent(bp, dp->_new_child_pid,
+                                                  dp->_new_child_emlsn, new_child_key);
     } else {
         // we are recovering "page2", which is real-child.
         w_assert0(target_pid == dp->_page2_pid);
@@ -753,18 +823,20 @@ void btree_foster_adopt_log::redo(fixable_page_h* p) {
 struct btree_foster_deadopt_t : multi_page_log_t {
     shpid_t     _deadopted_pid;         // +4
     int32_t     _foster_slot;           // +4
+    lsn_t       _deadopted_emlsn;       // +8
     uint16_t    _low_len, _high_len;    // +2+2
-    char        _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) + 12];
+    char        _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) + 20];
 
-    btree_foster_deadopt_t(shpid_t page2_id, shpid_t deadopted_pid,
+    btree_foster_deadopt_t(shpid_t page2_id, shpid_t deadopted_pid, lsn_t deadopted_emlsn,
     int32_t foster_slot, const w_keystr_t &low, const w_keystr_t &high);
     int size() const { return sizeof(multi_page_log_t) + 12 + _low_len + _high_len ; }
 };
 btree_foster_deadopt_t::btree_foster_deadopt_t(shpid_t page2_id, shpid_t deadopted_pid,
-    int32_t foster_slot, const w_keystr_t &low, const w_keystr_t &high)
+    lsn_t deadopted_emlsn, int32_t foster_slot, const w_keystr_t &low, const w_keystr_t &high)
     : multi_page_log_t(page2_id) {
     _deadopted_pid = deadopted_pid;
     _foster_slot = foster_slot;
+    _deadopted_emlsn = deadopted_emlsn;
     _low_len = low.get_length_as_keystr();
     _high_len = high.get_length_as_keystr();
     low.serialize_as_keystr(_data);
@@ -772,11 +844,12 @@ btree_foster_deadopt_t::btree_foster_deadopt_t(shpid_t page2_id, shpid_t deadopt
 }
 
 btree_foster_deadopt_log::btree_foster_deadopt_log (
-    const btree_page_h& p, const btree_page_h& p2, shpid_t deadopted_pid, int32_t foster_slot,
+    const btree_page_h& p, const btree_page_h& p2,
+    shpid_t deadopted_pid, lsn_t deadopted_emlsn, int32_t foster_slot,
     const w_keystr_t &low, const w_keystr_t &high) {
     w_assert1(p.is_node());
     fill(&p.pid(), p.tag(), (new (data_ssx()) btree_foster_deadopt_t(p2.pid().page,
-        deadopted_pid, foster_slot, low, high))->size());
+        deadopted_pid, deadopted_emlsn, foster_slot, low, high))->size());
 }
 
 void btree_foster_deadopt_log::redo(fixable_page_h* p) {
@@ -797,6 +870,6 @@ void btree_foster_deadopt_log::redo(fixable_page_h* p) {
         low_key.construct_from_keystr(dp->_data, dp->_low_len);
         high_key.construct_from_keystr(dp->_data + dp->_low_len, dp->_high_len);
         btree_impl::_ux_deadopt_foster_apply_foster_parent(bp, dp->_deadopted_pid,
-                                                           low_key, high_key);
+                                        dp->_deadopted_emlsn, low_key, high_key);
     }
 }

@@ -34,6 +34,11 @@ Example files: Everything under tests.
 Primary: ???
 Secondary: All of us (for individual testcases)
 
+== Backup Manager
+Example files: backup_*.h/cpp
+Primary: Stan
+Secondary: Hideaki
+
 == Bufferpool
 Example files: bf_*.h/cpp, fixable_page_h.*
 Primary: Haris
@@ -67,6 +72,11 @@ Primary: Charlie and Stan
 Secondary: Wey and Goetz
 
 Note: Same as above. Obviously the owners of the two logging aspects must be in close sync.
+
+== Logging – Single Page Recovery
+Example files: log_spr*.h/cpp and relevant methods in Btree, log_m/log_core
+Primary: Stan and Hideaki
+Secondary: Mark, Harumi and Charlie
 
 == Transaction classes
 Example files: xct.cpp/xct.h

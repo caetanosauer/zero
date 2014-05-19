@@ -484,7 +484,7 @@ public:
 
     /** Applies the changes of one adoption on parent node. Used by both usual adoption and REDO. */
     static void _ux_adopt_foster_apply_parent (btree_page_h &parent_arg,
-        shpid_t new_child_pid, const w_keystr_t &new_child_key);
+        shpid_t new_child_pid, lsn_t new_child_emlsn, const w_keystr_t &new_child_key);
     /** Applies the changes of one adoption on child node. Used by both usual adoption and REDO. */
     static void _ux_adopt_foster_apply_child (btree_page_h &child);
 
@@ -539,15 +539,18 @@ public:
 
     /** Overload to specify how many records we move and the new fence key. */
     static rc_t                 _sx_rebalance_foster(btree_page_h &page,
-        btree_page_h &foster_p, int32_t move_count, const w_keystr_t &mid_key, shpid_t new_pid0);
+        btree_page_h &foster_p, int32_t move_count, const w_keystr_t &mid_key,
+        shpid_t new_pid0, lsn_t new_pid0_emlsn);
 
     /** @see _sx_rebalance_foster() */
     static rc_t                 _ux_rebalance_foster_core(btree_page_h &page,
-        btree_page_h &foster_p, int32_t move_count, const w_keystr_t &mid_key, shpid_t new_pid0);
+        btree_page_h &foster_p, int32_t move_count, const w_keystr_t &mid_key,
+        shpid_t new_pid0, lsn_t new_pid0_emlsn);
 
     /** @see _ux_rebalance_foster_core() */
     static rc_t                 _ux_rebalance_foster_apply(btree_page_h &page,
-        btree_page_h &foster_p, int32_t move_count, const w_keystr_t &mid_key, shpid_t new_pid0);
+        btree_page_h &foster_p, int32_t move_count, const w_keystr_t &mid_key,
+        shpid_t new_pid0, lsn_t new_pid0_emlsn);
 
     /** Special case that changes only fence key (for no-record-split). */
     static rc_t                 _ux_rebalance_foster_norec(btree_page_h &page,
@@ -594,7 +597,8 @@ public:
         shpid_t foster_child_id, slotid_t foster_parent_slot);
     /** Applies data changes on foster-parent for De-Adopt operation. */
     static void _ux_deadopt_foster_apply_foster_parent(btree_page_h &foster_parent,
-        shpid_t foster_child_id, const w_keystr_t &low_key, const w_keystr_t &high_key);
+        shpid_t foster_child_id, lsn_t foster_child_emlsn,
+        const w_keystr_t &low_key, const w_keystr_t &high_key);
 
 #ifdef DOXYGEN_HIDE
 ///==========================================

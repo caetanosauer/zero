@@ -55,6 +55,7 @@ public:
     const cvec_t&      elem() const     { return _elem; }
     /// returns the opaque version
     shpid_t            child() const    { return _child; }
+    const lsn_t&       child_emlsn() const { return _child_emlsn; }
     bool               is_ghost_record() const { return _ghost_record; }
 
 private:
@@ -63,6 +64,11 @@ private:
     bool            _ghost_record;
     w_keystr_t      _key;
     shpid_t         _child;  // opaque pointer
+    /**
+     * Expected child LSN for the _child (only in interior node).
+     * \ingroup SPR
+     */
+    lsn_t           _child_emlsn;
     cvec_t          _elem;
 
     // disabled
@@ -310,7 +316,6 @@ public:
     // no 'noprefix' version because chain_fence_high might not share the prefix!
 
     /**
-     * Modifies the associated page to accept an empty foster-child page.
      * @param[in] new_lsn LSN of the operation that creates the foster-child page.
      * @param[in] new_page_id Page ID of the new page.
      * @param[in] f_redo true if caller is from redo logic.     
@@ -347,7 +352,9 @@ public:
                       shpid_t              root, 
                       int                  level,
                       shpid_t              pid0,
+                      lsn_t                pid0_emlsn,
                       shpid_t              foster,
+                      lsn_t                foster_emlsn,
                       const w_keystr_t&    fence_low,
                       const w_keystr_t&    fence_high,
                       const w_keystr_t&    chain_fence_high,
@@ -370,7 +377,7 @@ public:
      * Called when we did a split from this page but didn't move any record to new page.
      * This method can't be undone.  Use this only for REDO-only system transactions.
      */
-    rc_t norecord_split (shpid_t foster,
+    rc_t norecord_split (shpid_t foster, lsn_t foster_emlsn,
                          const w_keystr_t& fence_high, 
                          const w_keystr_t& chain_fence_high);
 
@@ -512,11 +519,13 @@ public:
     /**
      *  Insert a new entry at "slot".  This is used only for non-leaf pages.
      * For leaf pages, always use replace_ghost() and reserve_ghost().
-     * @param child child pointer to add
+     * @param[in] child child pointer to add
+     * @param[in] child_emlsn Expected child LSN of the pointed page
      */
     rc_t            insert_node(const w_keystr_t&   key,
                                 slotid_t            slot, 
-                                shpid_t             child);
+                                shpid_t             child,
+                                const lsn_t&        child_emlsn);
     /**
      * Mark the given slot to be a ghost record.
      * If the record is already a ghost, does nothing.
@@ -683,6 +692,24 @@ public:
      */
     bool             is_consistent (bool check_keyorder = false, bool check_space = false) const;
 
+    /** Returns the pointer to Expected Child LSN of pid0, foster-child, or real child. \ingroup SPR */
+    lsn_t*         emlsn_address(general_recordid_t pos);
+    /** Returns the Expected Child LSN of pid0, foster-child, or real child. */
+    const lsn_t&   get_emlsn_general(general_recordid_t pos) const;
+    /**
+     * \brief Sets the Expected Child LSN of pid0, foster-child, or real child.
+     * \ingroup SPR
+     * \details
+     * This method is not protected by exclusive latch but still safe because EMLSN are not
+     * viewed/updated by multi threads.
+     */
+    void           set_emlsn_general(general_recordid_t pos, const lsn_t &lsn);
+
+    /** Returns the Expected Child LSN of foster-child. \ingroup SPR */
+    const lsn_t&   get_foster_emlsn() const;
+
+    /** Returns the Expected Child LSN of pid0. \ingroup SPR */
+    const lsn_t&   get_pid0_emlsn() const;
 
     /*
      * The combined sizes of the key (i.e., the number of actual data
@@ -714,8 +741,12 @@ private:
      * 
      * trunc_key is the record's key (including its w_keystr_t sign
      * byte) without its prefix.
+     *
+     * emlsn is the expected minimum LSN for the pointed child page.
+     * Be \b VERY careful because both data in trunk_key and emlsn are stored as references.
+     * You must keep the original variables until the resulting cvec_t gets out of scope.
      */
-    void _pack_node_record(cvec_t& out, const cvec_t& trunc_key) const;
+    void _pack_node_record(cvec_t& out, const cvec_t& trunc_key, const lsn_t &emlsn) const;
 
     /// type of scratch space needed by _pack_leaf_record
     typedef key_length_t pack_scratch_t;
@@ -904,7 +935,8 @@ private:
      * Initialize the whole image of this page as an empty page.
      */
     void            _init(lsn_t lsn, lpid_t page_id,
-        shpid_t root_pid, shpid_t pid0, shpid_t foster_pid, int16_t btree_level,
+        shpid_t root_pid, shpid_t pid0, lsn_t pid0_emlsn,
+        shpid_t foster_pid, lsn_t foster_emlsn, int16_t btree_level,
         const w_keystr_t &low, const w_keystr_t &high, const w_keystr_t &chain_fence_high);
 };
 
@@ -1105,6 +1137,8 @@ inline shpid_t btree_page_h::child(slotid_t slot) const {
     return shpid;
 }
 
+
+
 inline shpid_t* btree_page_h::page_pointer_address(int offset) {
     if (offset == -2) {
         return &page()->btree_foster;
@@ -1148,9 +1182,11 @@ btree_page_h::usable_space() const {
 //   BEGIN: Private record data packers inline implementation
 // ======================================================================
 
-inline void btree_page_h::_pack_node_record(cvec_t& out, const cvec_t& trunc_key) const {
+inline void btree_page_h::_pack_node_record(cvec_t& out, const cvec_t& trunc_key,
+    const lsn_t &emlsn) const {
     w_assert1(!is_leaf());
     out.put(trunc_key);
+    out.put(&emlsn, sizeof(lsn_t));
 }
 
 inline void btree_page_h::_pack_leaf_record_prefix(cvec_t& out, pack_scratch_t& out_scratch,
@@ -1266,13 +1302,19 @@ inline const char* btree_page_h::_node_key_noprefix(slotid_t slot,  size_t &len)
     w_assert1(is_node());
     w_assert1(slot>=0);
 
-    len = page()->item_length(slot+1);
+    len = page()->item_length(slot+1) - sizeof(lsn_t);
     return page()->item_data(slot+1);
 }
 inline const char* btree_page_h::_robust_node_key_noprefix(slotid_t slot,  size_t &len) const {
     w_assert1(slot>=0);
 
-    return page()->robust_item_data(slot+1, len);
+    const char* data = page()->robust_item_data(slot+1, len);
+    if (len >= sizeof(lsn_t)) {
+        len -= sizeof(lsn_t);
+    } else {
+        len = 0;
+    }
+    return data;
 }
 
 inline size_t btree_page_h::_element_offset(int slot) const {
@@ -1308,6 +1350,42 @@ inline int btree_page_h::_robust_compare_key_noprefix(slotid_t slot, const void 
     }
 
     return w_keystr_t::compare_bin_str(curkey, curkey_len, key_noprefix, key_len);
+}
+
+// ======================================================================
+//   BEGIN: SPR related EMLSN accessors implementation
+// ======================================================================
+
+inline lsn_t* btree_page_h::emlsn_address(general_recordid_t pos) {
+    if (pos == GeneralRecordIds::PID0) {
+        return &page()->btree_pid0_emlsn;
+    } else if (pos == GeneralRecordIds::FOSTER_CHILD) {
+        // this means foster child
+        return &page()->btree_foster_emlsn;
+    } else {
+        // last 8 bytes after usual item_data is the child EMLSN.
+        // Note: these are "pos", not "pos+1" because it's general_recordid_t, not slotid_t
+        char* data = page()->item_data(pos);
+        size_t len = page()->item_length(pos);
+        w_assert1(len >= sizeof(lsn_t));
+        len -= sizeof(lsn_t);
+        return reinterpret_cast<lsn_t*>(data + len);
+    }
+}
+
+inline const lsn_t& btree_page_h::get_emlsn_general(general_recordid_t pos) const {
+    return *(const_cast<btree_page_h*>(this)->emlsn_address(pos));
+}
+
+inline void btree_page_h::set_emlsn_general(general_recordid_t pos, const lsn_t& lsn) {
+    *emlsn_address(pos) = lsn;
+}
+
+inline const lsn_t& btree_page_h::get_foster_emlsn() const {
+    return page()->btree_foster_emlsn;
+}
+inline const lsn_t& btree_page_h::get_pid0_emlsn() const {
+    return page()->btree_pid0_emlsn;
 }
 
 #endif // BTREE_PAGE_H_H

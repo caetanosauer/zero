@@ -632,8 +632,10 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(volid_t vol, size_t f
         W_COERCE( smlevel_0::log->flush(lsn_t(max_page_lsn)) );
     }
 
+#ifndef BF_WRITE_ELISION
     // then, write them out in one batch
     W_COERCE(_parent->_bufferpool->_volumes[vol]->_volume->write_many_pages(_write_buffer[from].pid.page, _write_buffer + from, consecutive));
+#endif // BF_WRITE_ELISION
 
     // after writing them out, update rec_lsn in bufferpool
     for (size_t i = from; i < from + consecutive; ++i) {

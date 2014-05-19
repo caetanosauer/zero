@@ -226,6 +226,8 @@ w_rc_t prepare_test(ss_m* ssm, test_volume_t *test_volume, stid_t &stid, lpid_t 
         test_env->set_xct_query_lock();
         W_DO(ssm->create_assoc(stid, key, data));
         W_DO(ssm->commit_xct());
+
+        W_DO(ssm->force_buffers());
     }
     W_DO(x_btree_verify(ssm, stid));
     W_DO(ssm->force_buffers()); // clean them up
@@ -237,80 +239,65 @@ w_rc_t test_bf_evict(ss_m* ssm, test_volume_t *test_volume) {
     lpid_t root_pid;
     W_DO (prepare_test(ssm, test_volume, stid, root_pid));
 
-    bf_tree_m &pool(*smlevel_0::bf);
-    lsn_t thelsn = smlevel_0::log->curr_lsn();
-
     btree_page_h root_p;
     W_DO(root_p.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_SH));
     EXPECT_TRUE (root_p.is_node());
     EXPECT_TRUE (root_p.nrecs() > 30);
 
-    const size_t keep_latch_i = 23; // this page will be kept latched
-    bf_idx keep_latch_idx = 0;
-    generic_page* keep_latch_page = NULL;
-    std::set<bf_idx> dirty_idx;
-    for (size_t i = 0; i < 30; ++i) {
-        generic_page *page = NULL;
-        lpid_t pid (root_pid.vol().vol, root_pid.store(), root_p.child(i));
+    W_DO(ssm->begin_xct());
 
-        W_DO(pool.fix_nonroot(page, root_p.get_generic_page(), pid.vol().vol, pid.page, i % 5 == 0 ? LATCH_EX : LATCH_SH, false, false));
-        EXPECT_TRUE (page != NULL);
-        if (page != NULL) {
-            bf_idx idx = test_bf_tree::get_bf_idx(&pool, page);
-            EXPECT_TRUE (dirty_idx.find (idx) == dirty_idx.end());
-            btree_page *bp = reinterpret_cast<btree_page*>(page);
-            bp->lsn         = thelsn;
-            if (i % 5 == 0) {
-                dirty_idx.insert (idx);
-                DBGOUT2(<<"dirty_idx i=" << i << " idx=" << idx);
-            }
-            if (i == keep_latch_i) {
-                keep_latch_idx = idx;
-                keep_latch_page = page;
-            } else {
-                EXPECT_NE (keep_latch_idx, idx); // although not dirty, no one will evict the latched page
-                if (i % 5 == 0) {
-                    pool.set_dirty(page);
-                }
-                pool.unfix(page);
-            }
+    btree_page_h keep_latch_p;
+    const size_t keep_latch_i = 23; // this page will be kept latched
+    std::map<size_t, lsn_t> dirty_lsns;
+    for (size_t i = 0; i < 30; ++i) {
+        lpid_t pid (root_pid.vol().vol, root_pid.store(), root_p.child(i));
+        if (i == keep_latch_i) {
+            W_DO(keep_latch_p.fix_nonroot(root_p, pid.vol().vol, pid.page, LATCH_SH));
+            continue;
         }
+        btree_page_h child_p;
+        W_DO(child_p.fix_nonroot(root_p, pid.vol().vol, pid.page, i % 5 == 0 ? LATCH_EX : LATCH_SH));
+        if (i % 5 == 0) {
+            // do some operation to make this page dirty
+            w_keystr_t key;
+            child_p.get_key(0, key);
+            EXPECT_FALSE(child_p.is_dirty());
+            W_DO(ssm->destroy_assoc(stid, key));
+            EXPECT_TRUE(child_p.is_dirty());
+            dirty_lsns.insert(std::pair<size_t, lsn_t>(i, child_p.lsn()));
+        }
+        child_p.unfix();
     }
 
     // fix again
     for (size_t i = 0; i < 30; ++i) {
         if (i == keep_latch_i) {
-            bf_tree_cb_t &cb (*test_bf_tree::get_bf_control_block(&pool, keep_latch_page));
-            EXPECT_FALSE(cb._dirty);
+            EXPECT_FALSE(keep_latch_p.is_dirty());
         } else {
-            generic_page *page = NULL;
             lpid_t pid (root_pid.vol().vol, root_pid.store(), root_p.child(i));
-            W_DO(pool.fix_nonroot(page, root_p.get_generic_page(), pid.vol().vol, pid.page, LATCH_SH, false, false));
-            EXPECT_TRUE (page != NULL);
-            if (page != NULL) {
-                btree_page *bp = reinterpret_cast<btree_page*>(page);
-                bf_idx idx = test_bf_tree::get_bf_idx(&pool, page);
-                EXPECT_NE (keep_latch_idx, idx);
-                bf_tree_cb_t &cb (*test_bf_tree::get_bf_control_block(&pool, page));
-                EXPECT_EQ(pid.page, page->pid.page) << "i" << i << ".idx" << idx;
-                EXPECT_EQ(pid.store(), page->pid.store());
-                EXPECT_EQ(test_volume->_vid.vol, page->pid.vol().vol);
-                EXPECT_EQ(1, bp->btree_level);
-                if (i % 5 == 0) {
-                    EXPECT_EQ(thelsn, bp->lsn);
-                    EXPECT_TRUE (dirty_idx.find (idx) != dirty_idx.end()) << "i" << i << ".idx" << idx;
-                    EXPECT_TRUE(cb._dirty) << "i" << i << ".idx" << idx;
-                } else {
-                    EXPECT_TRUE (dirty_idx.find (idx) == dirty_idx.end()) << "i" << i << ".idx" << idx;
-                    EXPECT_FALSE(cb._dirty) << "i" << i << ".idx" << idx;
+            btree_page_h child_p;
+            W_DO(child_p.fix_nonroot(root_p, pid.vol().vol, pid.page, LATCH_SH));
+            EXPECT_EQ(pid.page, child_p.pid().page) << "i" << i;
+            EXPECT_EQ(pid.store(), child_p.pid().store());
+            EXPECT_EQ(test_volume->_vid.vol, child_p.pid().vol().vol);
+            EXPECT_EQ(1, child_p.level());
+            if (i % 5 == 0) {
+                std::map<size_t, lsn_t>::const_iterator di = dirty_lsns.find(i);
+                EXPECT_NE(dirty_lsns.end(), di);
+                if (di != dirty_lsns.end()) {
+                    EXPECT_EQ(di->second, child_p.lsn());
                 }
-                pool.unfix(page);
+                EXPECT_TRUE(child_p.is_dirty()) << "i" << i;
+            } else {
+                EXPECT_FALSE(child_p.is_dirty()) << "i" << i;
             }
+            child_p.unfix();
         }
     }
-    pool.debug_dump(std::cout);
-    pool.unfix(keep_latch_page);
+    keep_latch_p.unfix();
     root_p.unfix();
+
+    W_DO(ssm->commit_xct());
 
     return RCOK;
 }

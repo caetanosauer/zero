@@ -104,7 +104,7 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
 #endif // SIMULATE_MAINMEMORYDB
     w_assert1(parent !=  NULL);
     if (!is_swizzling_enabled()) {
-        return _fix_nonswizzled(NULL, page, vol, shpid, mode, conditional, virgin_page);
+        return _fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page);
     }
     
     // the parent must be latched
@@ -118,10 +118,12 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
         fixable_page_h p;
         p.fix_nonbufferpool_page(parent);
         if (!_bf_pause_swizzling && is_swizzled(parent) && !is_swizzled(page)
-            && *p.child_slot_address(-1) != shpid // don't swizzle foster child
-            ) {
+            //  don't swizzle foster-child
+            && *p.child_slot_address(GeneralRecordIds::FOSTER_CHILD) != shpid) {
             general_recordid_t slot = find_page_id_slot (parent, shpid);
-            // this is a new (virgin) page which has not been linked yet. 
+            w_assert1(slot != GeneralRecordIds::FOSTER_CHILD); // because we ruled it out
+
+            // this is a new (virgin) page which has not been linked yet.
             // skip swizzling this page
             if (slot == GeneralRecordIds::INVALID && virgin_page) {
                 return RCOK;

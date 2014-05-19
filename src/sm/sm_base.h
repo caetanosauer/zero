@@ -79,6 +79,7 @@ class xct_i;
 
 class device_m;
 class io_m;
+class BackupManager;
 class bf_m;
 class bf_tree_m;
 class comm_m;
@@ -477,6 +478,7 @@ public:
     static void  add_to_global_stats(const sm_stats_info_t &from);
     static void  add_from_global_stats(sm_stats_info_t &to);
 
+    static BackupManager* bk;
     static device_m* dev;
     static io_m* io;
     static bf_tree_m* bf;

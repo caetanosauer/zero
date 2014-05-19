@@ -91,6 +91,12 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *
  * These are the run-time options for the storage manager.
  *
+ * -sm_backup_dir :
+ *      - type: string
+ *      - description: Path of the folder containing backup files.
+ *      - default: "."
+ *      - required?: no
+ *
  * -sm_bufpoolsize : 
  *      - type: number
  *      - description: This is the size of 
@@ -1070,6 +1076,32 @@ public:
      * \ingroup SSMLOG
      */
     static rc_t            get_durable_lsn(lsn_t& anlsn);
+
+    /**
+    * \brief Pretty-prints the content of log file to the given stream
+    * in a way we can easily debug single-page recovery.
+    * \ingroup SPR
+    * \details
+    * This is for debugging, so performance is not guaranteed and also not thread-safe.
+    * @param[in] o   Stream to which to write the information.
+    * @param[in] pid If given, we only dump logs relevant to the page.
+    * @param[in] max_lsn If given, we only dump logs required to recover
+    * the page up to this LSN. We omit the logs after that.
+    */
+    static void             dump_page_lsn_chain(std::ostream &o, const lpid_t &pid,
+                                                const lsn_t &max_lsn);
+    /**
+     * Overload to receive only pid.
+     * \ingroup SPR
+     * @copydoc dump_page_lsn_chain(std::ostream&, const lpid_t &, const lsn_t&)
+     */
+    static void             dump_page_lsn_chain(std::ostream &o, const lpid_t &pid);
+    /**
+     * Overload to receive neither.
+     * \ingroup SPR
+     * @copydoc dump_page_lsn_chain(std::ostream&, const lpid_t &, const lsn_t&)
+     */
+    static void             dump_page_lsn_chain(std::ostream &o);
 
 
     /*

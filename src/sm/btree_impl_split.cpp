@@ -66,7 +66,9 @@ rc_t btree_impl::_ux_norec_alloc_core(btree_page_h &page, lpid_t &new_page_id) {
         if (!rc.is_error()) {
             // initialize as an empty child:
             new_page.format_steal(page.lsn(), new_page_id, page.root().page,
-                                  page.level(), 0, page.get_foster(), fence, fence, chain_high, false);
+                                  page.level(), 0, lsn_t::null,
+                                  page.get_foster(), page.get_foster_emlsn(),
+                                  fence, fence, chain_high, false);
             page.accept_empty_child(page.lsn(), new_page_id.page, false /*not from redo*/);
         }
 
@@ -99,17 +101,20 @@ rc_t btree_impl::_sx_split_foster(btree_page_h &page, lpid_t &new_page_id, const
     int32_t move_count = page.nrecs() - right_begins_from;
 
     shpid_t new_pid0;
+    lsn_t   new_pid0_emlsn;
     if (page.is_node()) {
         btrec_t lowest (page, page.nrecs() - move_count);
         w_assert1(lowest.key().compare(mid_key) == 0);
         new_pid0 = lowest.child();
+        new_pid0_emlsn = lowest.child_emlsn();
     } else {
         new_pid0 = 0;
+        new_pid0_emlsn = lsn_t::null;
     }
 
     btree_page_h foster_p;
     W_DO(foster_p.fix_nonroot(page, page.vol(), page.get_foster_opaqueptr(), LATCH_EX));
-    W_DO(_sx_rebalance_foster(page, foster_p, move_count, mid_key, new_pid0));
+    W_DO(_sx_rebalance_foster(page, foster_p, move_count, mid_key, new_pid0, new_pid0_emlsn));
     increase_forster_child(page.pid().page); // give hint to subsequent accesses
     return RCOK;
 }
@@ -197,9 +202,10 @@ rc_t btree_impl::_ux_adopt_foster_core (btree_page_h &parent, btree_page_h &chil
     w_assert1 (child.latch_mode() == LATCH_EX);
     w_assert0 (child.get_foster() != 0);
     shpid_t new_child_pid = child.get_foster();
+    lsn_t child_emlsn = child.get_foster_emlsn();
 
-    W_DO(log_btree_foster_adopt (parent, child, new_child_pid, new_child_key));
-    _ux_adopt_foster_apply_parent (parent, new_child_pid, new_child_key);
+    W_DO(log_btree_foster_adopt (parent, child, new_child_pid, child_emlsn, new_child_key));
+    _ux_adopt_foster_apply_parent (parent, new_child_pid, child_emlsn, new_child_key);
     _ux_adopt_foster_apply_child (child);
     w_assert3(parent.is_consistent(true, true));
     w_assert3(child.is_consistent(true, true));
@@ -308,7 +314,7 @@ rc_t btree_impl::_sx_adopt_foster_sweep (btree_page_h &parent_arg)
 }
 
 void btree_impl::_ux_adopt_foster_apply_parent (btree_page_h &parent,
-    shpid_t new_child_pid, const w_keystr_t &new_child_key)
+    shpid_t new_child_pid, lsn_t new_child_emlsn, const w_keystr_t &new_child_key)
 {
     w_assert1 (parent.is_fixed());
     w_assert1 (parent.latch_mode() == LATCH_EX);
@@ -325,7 +331,8 @@ void btree_impl::_ux_adopt_foster_apply_parent (btree_page_h &parent,
     w_assert2 (slot_to_insert <= parent.nrecs());
 
     // okay, do it!
-    W_COERCE (parent.insert_node(new_child_key, slot_to_insert, new_child_pid));
+    W_COERCE (parent.insert_node(new_child_key, slot_to_insert,
+                                 new_child_pid, new_child_emlsn));
 }
 void btree_impl::_ux_adopt_foster_apply_child (btree_page_h &child)
 {

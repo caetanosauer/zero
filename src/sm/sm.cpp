@@ -79,6 +79,7 @@ class prologue_rc_t;
 #include "restart.h"
 #include "sm_options.h"
 #include "suppress_unused.h"
+#include "backup.h"
 #include "tid_t.h"
 #include "log_carray.h"
 #include "log_lsn_tracker.h"
@@ -178,6 +179,7 @@ typedef srwlock_t sm_vol_rwlock_t;
 // Certain operations have to exclude xcts
 static sm_vol_rwlock_t          _begin_xct_mutex;
 
+BackupManager* smlevel_0::bk = 0;
 device_m* smlevel_0::dev = 0;
 io_m* smlevel_0::io = 0;
 bf_tree_m* smlevel_0::bf = 0;
@@ -530,6 +532,11 @@ ss_m::_construct_once()
     /* just hang onto this until we create thelog manager...*/
     lm = new lock_m(_options);
     if (! lm)  {
+        W_FATAL(eOUTOFMEMORY);
+    }
+
+    bk = new BackupManager(_options.get_string_option("sm_backup_dir", "."));
+    if (! bk) {
         W_FATAL(eOUTOFMEMORY);
     }
 
@@ -943,6 +950,7 @@ ss_m::_destruct_once()
         W_COERCE (e);
     }
     delete bf; bf = 0; // destroy buffer manager last because io/dev are flushing them!
+    delete bk; bk = 0;
     /*
      *  Level 0
      */
@@ -1325,6 +1333,16 @@ ss_m::get_durable_lsn(lsn_t& anlsn)
 {
   anlsn = log->durable_lsn();
   return (RCOK);
+}
+
+void ss_m::dump_page_lsn_chain(std::ostream &o) {
+    dump_page_lsn_chain(o, lpid_t::null, lsn_t::max);
+}
+void ss_m::dump_page_lsn_chain(std::ostream &o, const lpid_t &pid) {
+    dump_page_lsn_chain(o, pid, lsn_t::max);
+}
+void ss_m::dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t &max_lsn) {
+    log->dump_page_lsn_chain(o, pid, max_lsn);
 }
 
 /*--------------------------------------------------------------*

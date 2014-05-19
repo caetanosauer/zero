@@ -828,6 +828,7 @@ vol_t::format_vol(
                 }
                 generic_page* page = ap.get_generic_page();
                 w_assert9(&buf == page);
+                page->checksum = page->calculate_checksum();
 
                 rc = me()->write(fd, page, sizeof(*page));
                 if (rc.is_error()) {
@@ -845,6 +846,7 @@ vol_t::format_vol(
             stnode_page_h fp(&buf, spid);  // formatting...
             w_assert1(fp.vid() == vid);
             generic_page* page = fp.get_generic_page();
+            page->checksum = page->calculate_checksum();
             rc = me()->write(fd, page, sizeof(*page));
             if (rc.is_error()) {
                 W_IGNORE(me()->close(fd));

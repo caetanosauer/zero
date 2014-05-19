@@ -65,7 +65,9 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 class logrec_t;
 class log_buf;
+class lpid_t;
 class generic_page;
+class fixable_page_h;
 class PoorMansOldestLsnTracker;
 /**
  * \defgroup SSMLOG Logging And Recovery
@@ -414,17 +416,38 @@ public:
 
     PoorMansOldestLsnTracker* get_oldest_lsn_tracker() { return _oldest_lsn_tracker; }
 
-public:
+    /**
+    * \brief Apply single-page-recovery to the given page.
+    * \ingroup SPR
+    * Defined in log_spr.cpp.
+    * \NOTE This method returns an error if the user had truncated
+    * the transaction logs required for the recovery.
+    * @param[in, out] p the page to recover.
+    * @param[in] emlsn the LSN up to which we should recover the page.
+    * @pre p has a backup in the backup file
+    * @pre p.is_fixed() (could be bufferpool managed or non-bufferpool managed)
+    */
+    rc_t recover_single_page(fixable_page_h &p, const lsn_t &emlsn);
+
     /**\brief used by partition */
     fileoff_t limit() const { return _partition_size; }
-    
+
+    /**
+     * \ingroup SPR
+     * Defined in log_spr.cpp.
+     * @copydoc ss_m::dump_page_lsn_chain(std::ostream&, const lpid_t &, const lsn_t&)
+     */
+    void dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t &max_lsn);
+
 private:
     // no copying allowed
     log_m &operator=(log_m const &);
     log_m(log_m const &);
 }; // log_m
 
-/**\brief Log-scan iterator
+/**
+ * \brief Log-scan iterator
+ * \ingroup SSMLOG
  * \details
  * Used in restart to scan the log.
  */

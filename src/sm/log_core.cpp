@@ -78,6 +78,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "chkpt.h"
 #include "bf_tree.h"
 
+#include "fixable_page_h.h"
+
 #include <sstream>
 #include <w_strstream.h>
 

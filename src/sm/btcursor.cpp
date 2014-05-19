@@ -220,6 +220,25 @@ rc_t bt_cursor_t::_check_page_update(btree_page_h &p)
     return RCOK;
 }
 
+w_rc_t bt_cursor_t::_refix_current_key(btree_page_h &p) {
+    while (true) {
+        w_rc_t fix_rt = p.refix_direct(_pid_bfidx.idx(), LATCH_SH);
+        if (!fix_rt.is_error()) {
+            break; // mostly no error.
+        }
+        if(fix_rt.err_num() != eBF_DIRECTFIX_SWIZZLED_PTR) {
+            return fix_rt; // unexpected error code
+        }
+
+        W_DO(btree_impl::_ux_traverse(_vol, _store, _key, btree_impl::t_fence_contain,
+                                      LATCH_SH, p));
+        _slot = _forward ? 0 : p.nrecs() - 1;
+        _set_current_page(p);
+        // now let's re-locate the key
+    }
+    return RCOK;
+}
+
 rc_t bt_cursor_t::next()
 {
     if (!is_valid()) {
@@ -236,7 +255,7 @@ rc_t bt_cursor_t::next()
 
     w_assert3(_pid);
     btree_page_h p;
-    W_DO(p.refix_direct(_pid_bfidx.idx(), LATCH_SH));
+    W_DO(_refix_current_key(p));
     w_assert3(p.is_fixed());
     w_assert3(p.pid().page == _pid);
 

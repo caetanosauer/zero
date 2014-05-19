@@ -72,6 +72,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <algorithm> // for std::swap
 #include <stdio.h> // snprintf
 #include <boost/static_assert.hpp>
+#include <vector>
 
 typedef smlevel_0::fileoff_t fileoff_t;
 

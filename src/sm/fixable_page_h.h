@@ -63,6 +63,9 @@ public:
     /// associated page.
     void unfix();
 
+    /// Is this page really fixed in bufferpool or a psuedo-fix?
+    bool is_bufferpool_managed() const { return _bufferpool_managed; }
+
     /**
      * Fixes a non-root page in the bufferpool.  This method receives the parent page and
      * efficiently fixes the page if the shpid (pointer) is already swizzled by the parent
@@ -155,7 +158,7 @@ public:
 
     /**
      * Imaginery 'fix' for a non-bufferpool-managed page.
-     * 
+     *
      * The resulting page is considered to be latched in EX mode.
      */
     void fix_nonbufferpool_page(generic_page* s);

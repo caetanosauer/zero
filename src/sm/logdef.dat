@@ -140,6 +140,10 @@ page_set_to_be_deleted   1011000 1.0 (const fixable_page_h& page);
 # We don't need UNDO (again, this is page creation!), REDO is just two memcpy().
 page_img_format   1011000 1.0 (const btree_page_h& page);
 
+# Invoked when a page is evicted from bufferpool. Implemented in log_spr.h/cpp
+page_evict        1110000 1.0 (const btree_page_h& page,
+                        general_recordid_t child_slot, lsn_t child_lsn);
+
 #########################################################################
 # type             XSRUMAL  fudge    arg                                #
 #########################################################################
@@ -166,7 +170,7 @@ btree_ghost_reserve 1110000 1.0  (const btree_page_h& page, const w_keystr_t& ke
 
 # page is real-parent, page2 is real-child. If needed page is already split before this op.
 btree_foster_adopt  1110100 1.0 (const btree_page_h& page, const btree_page_h& page2,
-    shpid_t new_child_pid, const w_keystr_t& new_child_key);
+    shpid_t new_child_pid, lsn_t child_emlsn, const w_keystr_t& new_child_key);
 
 # page is foster-parent (dest), page2 is foster_child (src) which will disappear.
 # Non-self contained log. So, page=dest, page2=src.
@@ -175,13 +179,14 @@ btree_foster_merge  1110100 1.0 (const btree_page_h& page, const btree_page_h& p
 # "page" is the foster-child (dest). "page2" is the foster-parent (src).
 # Non-self contained log. So, page=dest, page2=src.
 btree_foster_rebalance       1110100 1.0 (const btree_page_h& page, const btree_page_h& page2,
-    int32_t move_count, const w_keystr_t& fence, shpid_t new_pid0);
+    int32_t move_count, const w_keystr_t& fence, shpid_t new_pid0, lsn_t pid0_emlsn);
 btree_foster_rebalance_norec 1110100 1.0 (const btree_page_h& page, const btree_page_h& page2,
     const w_keystr_t& fence);
 
 # "page" is the real-parent. "page2" is the foster-parent.
 btree_foster_deadopt         1110100 1.0 (const btree_page_h& page, const btree_page_h& page2,
-    shpid_t deadopted_pid, int32_t foster_slot, const w_keystr_t& low, const w_keystr_t& high);
+    shpid_t deadopted_pid, lsn_t deadopted_emlsn,
+    int32_t foster_slot, const w_keystr_t& low, const w_keystr_t& high);
 
 #########################################################################
 # type             XSRUMAL  fudge    arg                                #
