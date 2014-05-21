@@ -155,7 +155,7 @@ private:
 
 /*********************************************************************
  *  
- *  restart_m::recover(master)
+ *  restart_m::recover(master, commit_lsn, redo_lsn, in_doubt_count)
  *
  *  Start the recovery process. Master is the master lsn (lsn of
  *  the last successful checkpoint record).
@@ -166,7 +166,12 @@ private:
  *
  *********************************************************************/
 void 
-restart_m::recover(lsn_t master)
+restart_m::recover(
+    lsn_t master,             // In: starting point for log scan
+    lsn_t& commit_lsn,        // Out: used if use_concurrent_log_recovery()
+    lsn_t& redo_lsn,          // Out: used if log driven REDO with use_concurrent_XXX_recovery()            
+    uint32_t& in_doubt_count  // Out: used if log driven REDO with use_concurrent_XXX_recovery()   
+    )
 {
     FUNC(restart_m::recover);
 
@@ -177,7 +182,8 @@ restart_m::recover(lsn_t master)
         << "Cannot recovery while the system is not in before_recovery state, current state: " 
         << smlevel_0::operating_mode);
 
-    lsn_t redo_lsn = lsn_t::null;  // redo_lsn is the starting point for REDO log forward scan
+    redo_lsn = lsn_t::null;        // redo_lsn is the starting point for REDO log forward scan
+    in_doubt_count = 0;            // How many in_doubt pages from  Log Analysis phase
     lsn_t undo_lsn = lsn_t::null;  // undo_lsn is the stopping point for UNDO log backward scan (if used)
 
     // set so mount and dismount redo can tell that they should log stuff.
@@ -242,10 +248,9 @@ restart_m::recover(lsn_t master)
     // Populate transaction table for all in-flight transactions, mark them as 'active'
     // Populate buffer pool for 'in_doubt' pages, register but not loading the pages
     // Populate the special heap with all the doomed transactions for UNDO purpose
-    uint32_t in_doubt_count = 0;
     CmpXctUndoLsns        cmp;
     XctPtrHeap            heap(cmp);
-    analysis_pass(master, redo_lsn, in_doubt_count, undo_lsn, heap);
+    analysis_pass(master, redo_lsn, in_doubt_count, undo_lsn, heap, commit_lsn);
 
     // If nothing from Log Analysis, in other words, if both transaction table and buffer pool
     // are empty, there is nothing to do in REDO and UNDO phases, but we still want to 
@@ -276,7 +281,7 @@ restart_m::recover(lsn_t master)
     w_assert1(smlevel_1::chkpt);    
     smlevel_1::chkpt->synch_take();
 
-    if (false == use_m1_recovery())
+    if (false == use_serial_recovery())
     {
         // We are done with Log Analysis phase
         // ready to open system before REDO and UNDO phases
@@ -295,12 +300,16 @@ restart_m::recover(lsn_t master)
         smlevel_0::errlog->clog << info_prio << "Restart Log Analysis successful." << flushl;
         DBGOUT1(<<"Recovery Log Analysis ended");   
 
-        // Retur to caller (main thread), at this point, buffer pool contains all 'in_doubt' pages
+        // Return to caller (main thread), at this point, buffer pool contains all 'in_doubt' pages
         // but the actual pages are not loaded.
         // Transaction table contains all doomed transactions (marked as 'active').
-        // No need to pass any information to caller because caller will not scan the recovery log again
-        // We have not constructed the in-memory heap for UNDO, caller is using different
-        // logic for UNDO
+        // This function returns sufficient information to caller, mainly to support 'Log driven REDO'
+        // and concurrent txn validation
+        // We do not persist the in-memory heap for UNDO, caller is using different
+        // logic for UNDO and will not use the heap
+
+        // Note that smlevel_0::operating_mode remains in t_in_analysis, while the caller
+        // will change it to t_forward_processing
         
     }
     else
@@ -313,8 +322,9 @@ restart_m::recover(lsn_t master)
 
         lsn_t curr_lsn = log->curr_lsn(); 
 
-        // Change mode to REDO although we would enter REDO only if we have in_doubt page
+        // Change mode to REDO outside of the REDO phase, this is for serialize process only
         smlevel_0::operating_mode = smlevel_0::t_in_redo;
+
         if (0 != in_doubt_count)
         {
              // Come in here only if we have something to REDO
@@ -376,8 +386,9 @@ restart_m::recover(lsn_t master)
             W_COERCE(bf->force_all());
         }
 
-        // Change mode to UNDO although we would enter UNDO only if we have doomed txn
+        // Change mode to UNDO outside of the UNDO phase, this is for serialize process only
         smlevel_0::operating_mode = smlevel_0::t_in_undo;
+
         if (0 != xct_count)
         {
             // Come in here only if we have something to UNDO
@@ -436,7 +447,7 @@ restart_m::recover(lsn_t master)
 
 /*********************************************************************
  *
- *  restart_m::analysis_pass(master, redo_lsn, in_doubt_count, undo_lsn, heap)
+ *  restart_m::analysis_pass(master, redo_lsn, in_doubt_count, undo_lsn, heap, commit_lsn)
  *
  *  Scan log forward from master_lsn. Insert and update buffer pool, 
  *  insert transaction table.
@@ -448,11 +459,15 @@ restart_m::recover(lsn_t master)
  *********************************************************************/
 void 
 restart_m::analysis_pass(
-    const lsn_t           master,
-    lsn_t&                redo_lsn,
+    const lsn_t           master,          // Starting point for forward log scan
+    lsn_t&                redo_lsn,        // Starting point for REDO forward log scan (if used),
+                                           // which could be different from master
     uint32_t&             in_doubt_count,  // Counter for in_doubt page count in buffer pool
-    lsn_t&                undo_lsn,
-    XctPtrHeap&           heap             // Heap to record all the doomed transactions
+    lsn_t&                undo_lsn,        // Stopping point for UNDO backward log scan (if used)
+    XctPtrHeap&           heap,            // Heap to record all the doomed transactions,
+                                           // used only for reverse chronological order
+                                           // UNDO phase (if used)
+    lsn_t&                commit_lsn       // Commit lsn for concurrent transaction (if used)
 )
 {
     FUNC(restart_m::analysis_pass);
@@ -471,15 +486,21 @@ restart_m::analysis_pass(
     // 2. If a newly allocated and formated page after the checkpoint, there must
     //     be a page format log record in the recovery log before any usage of the page.
 
-    // Initialize both redo_lsn and undo_lsn to 0 which is the smallest lsn
+    // Initialize redo_lsn, undo_lsn and commit_lsn to 0 which is the smallest lsn
     redo_lsn = lsn_t::null;
     undo_lsn = lsn_t::null;
+    commit_lsn = lsn_t::null;
+
+    // Initialize the in_doubt count
     in_doubt_count = 0;
     lsn_t begin_chkpt = lsn_t::null;
 
     // Did any device mounting occurred during the Log Analysis phase?
     // mount: for DBGOUT purpose to indicate any device was mounted
     bool mount = false;
+
+    // Change state first regardless whether we have work to do or not
+    smlevel_0::operating_mode = smlevel_0::t_in_analysis;
 
     if (master == lsn_t::null)
     {
@@ -495,9 +516,6 @@ restart_m::analysis_pass(
 
     // The UNDO heap must be empty initially
     w_assert1(0 == heap.NumElements());
-
-    // Change state, we have work to do in Log Analysis phase
-    smlevel_0::operating_mode = smlevel_0::t_in_analysis;
 
     // Open a forward scan starting from master (the begin checkpoint LSN from the 
     // last completed checkpoint
@@ -1299,6 +1317,14 @@ restart_m::analysis_pass(
     if (undo_lsn > master)
        undo_lsn = master;
 
+// TODO(Restart)...  need to gather and determine the value of commit_lsn
+
+    // Commit_lsn is the validation point for concurrent user transaction if
+    // we open the system after Log Analysis phase and if we are using the commit_lsn
+    // implementation instead of no lock acquisition implementation.
+    // If commit_lsn == lsn_t::null, which is the smallest value, then all concurrent
+    // user transaction would be aborted or blocked.
+    
     // If there were any mounts/dismounts that occured between redo_lsn and
     // begin chkpt, need to redo them
     DBGOUT3( << ((theLastMountLSNBeforeChkpt != lsn_t::null && 
@@ -1377,7 +1403,7 @@ restart_m::analysis_pass(
     // and populate the special heap with doomed (active) transactions for the UNDO phase.
 
 
-    if (false == use_m1_recovery())
+    if (false == use_serial_recovery())
     {
         // Open the system after Log Analysis phase
         // No need to build the in-memory heap data structure
@@ -1460,11 +1486,12 @@ restart_m::analysis_pass(
         << i << " log_inserts " 
         << " redo_lsn is " << redo_lsn
         << " undo_lsn is " << undo_lsn
+        << " commit_lsn is " << commit_lsn        
         << flushl;
 
     DBGOUT3 (<< "End of Log Analysis phase.  Master: " 
              << master << ", redo_lsn: " << redo_lsn
-             << ", undo lsn: " << undo_lsn);
+             << ", undo lsn: " << undo_lsn << ", commit_lsn: " << commit_lsn);
 
     if ((false == mount))
     {
@@ -1495,8 +1522,11 @@ restart_m::analysis_pass(
 void 
 restart_m::redo_pass(
     const lsn_t        redo_lsn,       // This is where the log scan should start
-    const lsn_t&       highest_lsn,    // This is the current log LSN, REDO should not
-                                       //generate log so this value should not change
+    const lsn_t&       highest_lsn,    // This is the current log LSN, if in serial mode
+                                       // REDO should not/generate log and this
+                                       // value should not change
+                                       // If concurrent mode, this is the stopping
+                                       // point for log scan
     const uint32_t     in_doubt_count  // How many in_doubt pages in buffer pool
                                        // for validation purpose
 )
@@ -1514,18 +1544,23 @@ restart_m::redo_pass(
         return;
     }
 
-    if (false == use_m1_recovery())
+    if (false == use_redo_log_recovery())
     {
-        // Only M1 should come into this function
-        W_FATAL_MSG(fcINTERNAL, << "REDO phase, restart_m::redo_pass() is valid for M1 only");   
+        // If not using log driven REDO
+        W_FATAL_MSG(fcINTERNAL, << "REDO phase, restart_m::redo_pass() is valid for log driven REDO operation");   
     }
     else
     {
-        // REDO phase never writes its own log records or modify anything in 
-        // the transaction table, this is an extra gurantee to make sure 
-        // no new log record.
-    
-        AutoTurnOffLogging turnedOnWhenDestroyed;
+        // The same function can be used in both serial and concurrent (open system early) modes
+        // Also both commit_log and lock acquision methods
+
+        // If serial mode then REDO phase never writes its own log records or 
+        // modify anything in  the transaction table
+        // Because we are sharing this function for both serial and concurrent modes,
+        // comment out this is an extra gurantee to make sure 
+        // no new log record.   
+        //
+        // AutoTurnOffLogging turnedOnWhenDestroyed;
 
         // How many pages have been changed from in_doubt to dirty?
         uint32_t dirty_count = 0;
@@ -1550,8 +1585,16 @@ restart_m::redo_pass(
         lsn_t lsn;
         lsn_t expected_lsn = redo_lsn;
         bool redone = false;
+        bool serial_recovery = use_serial_recovery();
         while (scan.xct_next(lsn, log_rec_buf))  
         {
+            if ((false == serial_recovery) && (lsn > highest_lsn))
+            {
+                // If concurrent recovery, user transactions would generate new log records
+                // stop forward scanning once we passed the highest_lsn (passed in by caller)
+                break;
+            }
+
             DBGOUT3(<<"redo scan returned lsn " << lsn
                     << " expected " << expected_lsn);
 
@@ -1750,8 +1793,9 @@ restart_m::redo_pass(
 void restart_m::_redo_log_with_pid(
     logrec_t& r,              // Incoming log record
     lsn_t &lsn,               // LSN of the incoming log record
-    const lsn_t &highest_lsn, // This is the current LSN, REDO should not generate log record
-                              // so this value should not change
+    const lsn_t &highest_lsn, // This is the current LSN, if in serial mode, 
+                              // REDO should not generate log record
+                              // and this value should not change
                               // this is passed in for validation purpose
     lpid_t page_updated,      // Store ID (vol + store number) + page number
                               // This is mainly because if the log is a multi-page log
@@ -2189,10 +2233,10 @@ restart_m::undo_pass(
 
     FUNC(restart_m::undo_pass);
 
-    if (false == use_m1_recovery())
+    if ((false == use_serial_recovery()) || (false == use_undo_reverse_recovery()))
     {
-        // Only M1 should come into this function
-        W_FATAL_MSG(fcINTERNAL, << "UNDO phase, restart_m::undo_pass() is valid for M1 only");
+        // The reverse chronological order UNDO is supported in serial operation only
+        W_FATAL_MSG(fcINTERNAL, << "UNDO phase, restart_m::undo_pass() is valid for serial operation only");
     }
     else
     {
@@ -2399,6 +2443,170 @@ restart_m::undo_pass(
     return;
 }
 
+//*********************************************************************
+// restart_m::redo_concurrent()
+//
+// Function used when system is opened after Log Analysis phase
+// while concurrent user transactions are allowed during REDO and UNDO phases
+//
+// Concurrent can be doen in two differe logics:
+//     Commit_log:   use_concurrent_log_recovery()    <-- Milestone 2
+//     Lock:              use_concurrent_lock_recovery()  <-- Milestone 3
+//
+// REDO is performed using one of the following:
+//    Log driven:      use_redo_log_recovery()       <-- Milestone 1 default, see redo_pass
+//    Page driven:    use_redo_page_recovery()    <-- Milestone 2
+//    SPR driven:     use_redo_spr_recovery()       <-- Milestone 3
+//    Mixed driven:   use_redo_mix_recovery()      <-- Milestone 4
+//*********************************************************************
+void restart_m::redo_concurrent()
+{
+    if (true == use_serial_recovery())
+    {
+        W_FATAL_MSG(fcINTERNAL, << "REDO phase, restart_m::redo_concurrent() is valid for concurrent operation only");   
+    }
+
+    // REDO has no difference between commit_log and lock_acquisition
+    // The differences are from user transaction side to detect conflict
+    w_assert1((true == use_concurrent_log_recovery()) || (true == use_concurrent_lock_recovery()));
+
+    if (true == use_redo_log_recovery())
+    {
+        // Use the same redo_pass function for log driven REDO phase
+        if (0 != smlevel_0::in_doubt_count)
+        {
+            // Need the REDO operation only if we have in_doubt pages in buffer pool
+            // Do not change the smlevel_0::operating_mode, because the system
+            // is opened for concurrent txn already
+
+            smlevel_0::errlog->clog << info_prio << "Redo ..." << flushl;
+
+            // Current log lsn is for validation purpose during REDO phase, also the stopping
+            // point for forward scan
+            lsn_t curr_lsn = log->curr_lsn(); 
+            DBGOUT3(<<"starting REDO at " << smlevel_0::redo_lsn << " highest_lsn " << curr_lsn);
+            redo_pass(smlevel_0::redo_lsn, curr_lsn, smlevel_0::in_doubt_count);
+
+            // Concurrent txn will generate new log records so the curr_lsn could be different
+        }
+    }
+    else if (true == use_redo_page_recovery())
+    {
+// TODO(Restart)...  page driven REDO    
+
+    }
+    else if (true == use_redo_spr_recovery())
+    {
+        // On-demand SPR
+// TODO(Restart)...        
+        w_assert1(false);               
+    }
+    else if (true == use_redo_mix_recovery())
+    {
+        // Mix mode REDO
+// TODO(Restart)...
+        w_assert1(false);   
+    }
+    else
+    {
+        W_FATAL_MSG(fcINTERNAL, << "REDO phase, missing execution mode setting for REDO");
+    }    
+}
+
+//*********************************************************************
+// restart_m::undo_concurrent()
+//
+// Function used when system is opened after Log Analysis phase
+// while concurrent user transactions are allowed during REDO and UNDO phases
+//
+// Concurrent can be doen in two differe logics:
+//     Commit_log:         use_concurrent_log_recovery()   <-- Milestone 2
+//     Lock:                    use_concurrent_lock_recovery() <-- Milestone 3
+//
+// UNDO is performed using one of the following:
+//    Reverse driven:      use_undo_reverse_recovery()   <-- Milestone 1 default, see undo_pass
+//    Transaction driven: use_undo_txn_recovery()          <-- Milestone 2
+//*********************************************************************
+void restart_m::undo_concurrent()
+{
+    if (true == use_serial_recovery())
+    {
+        W_FATAL_MSG(fcINTERNAL, << "UNDO phase, restart_m::undo_concurrent() is valid for concurrent operation only");   
+    }
+
+    // UNDO behaves differently between commit_log and lock_acquisition
+    //     commit_log: no lock operations
+    //     lock acquisition: release locks
+    // Also differences from the user transaction side to detect conflicts
+    w_assert1((true == use_concurrent_log_recovery()) || (true == use_concurrent_lock_recovery()));
+
+    if (true == use_concurrent_log_recovery())
+    {
+        // Commit_lsn, no lock release
+        if (true == use_undo_reverse_recovery())
+        {
+            // Not supported, because we do not have the special heap
+            // If it is necessary to support this feature, we can build 
+            // the heap at the begining of UNDO phase
+            W_FATAL_MSG(fcINTERNAL, << "UNDO phase does not support reverse chronological order undo with concurrency");   
+        }
+        else if (true == use_undo_txn_recovery())
+        {
+// TODO(Restart)...  transaction driven undo
+
+        }
+        else
+        {
+            W_FATAL_MSG(fcINTERNAL, << "UNDO phase, missing execution mode setting for UNDO");
+        }        
+    }
+    else if (true == use_concurrent_lock_recovery())
+    {
+        // Lock acquisition, release locks during UNDO
+// TODO(Restart)...        
+        w_assert1(false);
+
+        if (true == use_undo_reverse_recovery())
+        {
+            // Not supported, because we do not have the special heap
+            // If it is necessary to support this feature, we can build 
+            // the heap at the begining of UNDO phase
+            W_FATAL_MSG(fcINTERNAL, << "UNDO phase does not support reverse chronological order undo with concurrency");   
+        }
+        else if (true == use_undo_txn_recovery())
+        {
+// TODO(Restart)...  transaction driven undo
+        }
+        else
+        {
+            W_FATAL_MSG(fcINTERNAL, << "UNDO phase, missing execution mode setting for UNDO");
+        }
+    }
+    else
+    {
+        W_FATAL_MSG(fcINTERNAL, << "UNDO phase, missing concurrent mode setting for UNDO");    
+    }
+}
+
+//*********************************************************************
+// Main body of the child thread restart_thread_t for Recovery process
+// Only used if system is in concurrent recovery mode, while the system was
+// opened after Log Analysis phase to allow concurrent user transactions
+//*********************************************************************
+void restart_thread_t::run()
+{
+    // Body of the restart thread to carry out the REDO and UNDO work
+    // When this function returns, the child thread will be destroyed
+
+    // REDO, call back to restart_m to carry out the concurrent REDO
+    smlevel_1::recovery->redo_concurrent();
+
+    // UNDO, call back to restart_m to carry out the concurrent UNDO
+    smlevel_1::recovery->undo_concurrent();
+
+    // Done
+    return;
+};
 
 
 /*********************************************************************

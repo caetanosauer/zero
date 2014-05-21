@@ -26,7 +26,6 @@
 #include "alloc_cache.h"
 #include "chkpt_serial.h"
 
-
 #include <boost/static_assert.hpp>
 #include <ostream>
 #include <limits>
@@ -36,6 +35,9 @@
 #include "log.h"
 #include "xct.h"
 #include <logfunc_gen.h>
+
+#include "restart.h"
+
 ///////////////////////////////////   Initialization and Release BEGIN ///////////////////////////////////  
 
 #ifdef PAUSE_SWIZZLING_ON
@@ -662,7 +664,7 @@ void bf_tree_m::unpin_for_refix(bf_idx idx) {
 
 ///////////////////////////////////   Dirty Page Cleaner BEGIN       ///////////////////////////////////  
 w_rc_t bf_tree_m::force_all() {
-    if (false == smlevel_0::use_m1_recovery())
+    if (false == smlevel_0::use_serial_recovery())
     {
 ////////////////////////////////////////
 // TODO(Restart)... this is because we might still
@@ -671,10 +673,11 @@ w_rc_t bf_tree_m::force_all() {
 //                          flush buffer pool with in_doubt
 //                          pages currently
 ////////////////////////////////////////
-        // If recovery is still going on and system is opened 
-        // after Log Analysis, do not flush buffer pool while recovery is
-        // still going on
-        if (smlevel_1::recovery)
+
+        // Open system after Log Analysis
+        // Do not flush buffer pool as long as the recovery is still going on
+        if ((smlevel_1::recovery) &&                       // The restart_m object is valid
+            (smlevel_1::recovery->recovery_in_progress())) // Recovery is in progress
         {
             // Recovery child thread is still around
             DBGOUT1( << "Block buffer pool flush because recovery is still on");
@@ -687,11 +690,14 @@ w_rc_t bf_tree_m::force_all() {
     }
     else
     {
+        // Using serial recovery, system is not opened until the entire
+        // recovery process is done
+        
         return _cleaner->force_all();    
     }
 }
 w_rc_t bf_tree_m::force_until_lsn(lsndata_t lsn) {
-    if (false == smlevel_0::use_m1_recovery())
+    if (false == smlevel_0::use_serial_recovery())
     {
 ////////////////////////////////////////
 // TODO(Restart)... this is because we might still
@@ -700,10 +706,11 @@ w_rc_t bf_tree_m::force_until_lsn(lsndata_t lsn) {
 //                          flush buffer pool with in_doubt
 //                          pages currently
 ////////////////////////////////////////
-        // If recovery is still going on and system is opened 
-        // after Log Analysis, do not flush buffer pool while recovery is
-        // still going on
-        if (smlevel_1::recovery)
+
+        // Open system after Log Analysis
+        // Do not flush buffer pool as long as the recovery is still going on
+        if ((smlevel_1::recovery) &&                       // The restart_m object is valid
+            (smlevel_1::recovery->recovery_in_progress())) // Recovery is in progress
         {
             // Recovery child thread is still around        
             DBGOUT1( << "Block buffer pool flush until lsn because recovery is still on");
@@ -716,6 +723,9 @@ w_rc_t bf_tree_m::force_until_lsn(lsndata_t lsn) {
     }
     else
     {
+        // Using serial recovery , system is not opened until the entire
+        // recovery process is done
+        
         return _cleaner->force_until_lsn(lsn);
     }
 }

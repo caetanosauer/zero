@@ -58,8 +58,8 @@ public:
     /**\todo xct_state_t */
     // The numeric equivalents of state are not significant; they are
     // given here only for convenience in debugging/grepping
-	// Well, their ORDER is significant, so that you can only
-	// change state to a larger state with change_state().
+    // Well, their ORDER is significant, so that you can only
+    // change state to a larger state with change_state().
     enum xct_state_t {  xct_stale = 0x0,  
                         xct_active = 0x1,  // active or rolling back in
                                            // doing rollback_work
@@ -71,6 +71,8 @@ public:
                         xct_freeing_space = 0x6, 
                         xct_ended = 0x7
     };
+
+    // Checkpoint manager
     static chkpt_m*    chkpt;
 
     // Recovery manager

@@ -424,7 +424,7 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
         else if (in_recovery() && (smlevel_0::t_chkpt_sync != chkpt_mode))
         {
             // Asynch checkpoint
-            if (false == smlevel_0::use_m1_recovery())
+            if (false == smlevel_0::use_serial_recovery())
             {
                 // System opened after Log Analysis phase, allow asynch checkpoint
                 // after Log Analysis phase
@@ -441,7 +441,7 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
         else if (in_recovery() && (smlevel_0::t_chkpt_sync == chkpt_mode))
         {
             // Synch checkpoint        
-            if (false == smlevel_0::use_m1_recovery())
+            if (false == smlevel_0::use_serial_recovery())
             {
                 // System opened after Log Analysis phase, accept system checkpoint anytime
                 DBGOUT1(<<"PROCESS chkpt_m::take - system in recovery, allow synch checkpoint");                

@@ -94,16 +94,64 @@ bool         smlevel_0::shutting_down = false;
 smlevel_0::operating_mode_t 
             smlevel_0::operating_mode = smlevel_0::t_not_started;
 
+lsn_t        smlevel_0::commit_lsn = lsn_t::null;
+lsn_t        smlevel_0::redo_lsn = lsn_t::null;
+uint32_t     smlevel_0::in_doubt_count = 0;
 
+
+// Define the supported modes for Recovery process
+// not all bit combinations would be supported or tested
+// use int64_t to make sure we have enough bits:
 ////////////////////////////////////////
 // TODO(Restart)... 
-// Set the internal recovery mode which controls which recovery
-// logic (mainly REDO and UNDO) to use during the recovery process
-// This is for testing purpose only, the final code should always use the
-// most recent or the most stable implementation.
+// Set the internal recovery mode to control which recovery
+// logic (mainly for REDO and UNDO phases) to use during 
+// the recovery process
+// These modes are for testing purpose only, the final code 
+// should use features based on test results and the most
+// stable implementations.
 ////////////////////////////////////////
+
+// Basic modes:
+const int64_t m1_default_recovery = 
+    smlevel_0::t_recovery_serial |          // Serial operation
+    smlevel_0::t_recovery_redo_log |        // Log scan driven REDO
+    smlevel_0::t_recovery_undo_reverse;     // Reverse UNDO
+const int64_t m2_default_recovery = 
+    smlevel_0::t_recovery_concurrent_log |  // Concurrent operation using log 
+    smlevel_0::t_recovery_redo_page |       // Page driven REDO
+    smlevel_0::t_recovery_undo_txn;         // Transaction driven UNDO
+const int64_t m3_default_recovery = 
+    smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
+    smlevel_0::t_recovery_redo_spr |        // On-demand driven REDO
+    smlevel_0::t_recovery_undo_txn;         // Transaction driven UNDO
+const int64_t m4_default_recovery = 
+    smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
+    smlevel_0::t_recovery_redo_mix |        // Mixed REDO
+    smlevel_0::t_recovery_undo_txn;         // Transaction driven UNDO
+
+// Alternative modes:
+// Compare with m2_default_recovery, difference in REDO 
+const int64_t alternative_concurrent_log_log_recovery = 
+    smlevel_0::t_recovery_concurrent_log |  // Concurrent operation using log 
+    smlevel_0::t_recovery_redo_log |        // Log scan driven REDO
+    smlevel_0::t_recovery_undo_txn;         // Transaction driven UNDO
+// Compare with m2_default_recovery, difference in concurrent
+const int64_t alternative_concurrent_lock_page_recovery = 
+    smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
+    smlevel_0::t_recovery_redo_page |       // Page driven REDO
+    smlevel_0::t_recovery_undo_txn;         // Transaction driven UNDO
+// Compare with alternative_concurrent_log_log_recovery, difference in concurrent
+const int64_t alternative_concurrent_lock_log_recovery = 
+    smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
+    smlevel_0::t_recovery_redo_log |        // Log scan driven REDO
+    smlevel_0::t_recovery_undo_txn;         // Transaction driven UNDO
+
+
+// This is the controlling variable to determine which mode to use at run time:
 smlevel_0::recovery_internal_mode_t 
-           smlevel_0::recovery_internal_mode = smlevel_0::t_recovery_m1;
+           smlevel_0::recovery_internal_mode = 
+                 (smlevel_0::recovery_internal_mode_t)m1_default_recovery;
 
 
             //controlled by AutoTurnOffLogging:
@@ -645,9 +693,16 @@ ss_m::_construct_once()
      * mounted.  If not, we can skip the mount/dismount.
      */
 
+    lsn_t     verify_lsn = lsn_t::null;  // verify_lsn is for use_concurrent_log_recovery() only
+    lsn_t     redo_lsn = lsn_t::null;    // used if log driven REDO with use_concurrent_XXX_recovery()   
+    uint32_t  in_doubt_count = 0;        // used if log driven REDO with use_concurrent_XXX_recovery()   
+    lsn_t     master = log->master_lsn();
+
     if (_options.get_bool_option("sm_logging", true))  
     {
         // Start the recovery process as sequential  operations
+        // The recovery manager is on the stack, it will be destroyed once it is
+        // out of scope
         restart_m restart;
 
         // TODO(Restart)... it was for a space-recovery hack, not needed
@@ -656,7 +711,7 @@ ss_m::_construct_once()
         // Recovery process, a checkpoint will be taken at the end of recovery
         // Make surethe current operating state is before recovery
         smlevel_0::operating_mode = t_not_started;
-        restart.recover(log->master_lsn());
+        restart.recover(master, verify_lsn, redo_lsn, in_doubt_count);
         
         // contain the scope of dname[]
         // record all the mounted volumes after recovery.
@@ -707,8 +762,8 @@ ss_m::_construct_once()
             }
             else 
             {
-                // Dismount only if using m1 implementation: open database after REcovery
-                if (true == smlevel_0::use_m1_recovery())                
+                // Dismount only if using serial implementation: open database after Recovery
+                if (true == smlevel_0::use_serial_recovery())                
                     W_COERCE( _dismount_dev(dname[i]));
             }
         }
@@ -722,7 +777,7 @@ ss_m::_construct_once()
         // smlevel_0::redo_tid = 0;
     }
 
-    if (false == smlevel_0::use_m1_recovery())
+    if (false == smlevel_0::use_serial_recovery())
     {
         // Log Analysis has completed but no REDO or UNDO yet
         // Start the recovery process child thread to carry out
@@ -730,15 +785,39 @@ ss_m::_construct_once()
         // The Recovery child thread terminates itself after the
         // recovery process is completed.
 
-        // Check the operating mode
-        w_assert1(t_in_analysis == smlevel_0::operating_mode);
-
-        recovery = new restart_m;
-        if (! recovery)
+        if (_options.get_bool_option("sm_logging", true))
         {
-            W_FATAL(eOUTOFMEMORY);
+            // If we have the recovery process
+            
+            // Check the operating mode
+            w_assert1(t_in_analysis == smlevel_0::operating_mode);
+
+// TODO(Restart)...  concurrent txn needs to check with commit_lsn, how?
+
+            // Store the commit_lsn, redo_lsn and in_doubt_count globally,
+            // concurrent txn will use commit_lsn only if use_concurrent_log_recovery()
+            // REDO from child thread will use redo_lsn and in_doubt_count to control the REDO phase
+            smlevel_0::commit_lsn = verify_lsn;
+            smlevel_0::redo_lsn = redo_lsn;
+            smlevel_0::in_doubt_count = in_doubt_count;
+
+            if (lsn_t::null != master)
+            {
+                // If it is not an empty database, then instinate
+                // the recovery manager because we need to persist it
+                // Note that even if the database is not empty, it does 
+                // not mean we have recovery work to do in REDO and 
+                // UNDO phases
+                
+                w_assert1(!recovery);
+                recovery = new restart_m;
+                if (! recovery)
+                {
+                    W_FATAL(eOUTOFMEMORY);
+                }
+                recovery->spawn_recovery_thread();
+            }
         }
-        recovery->spawn_recovery_thread();
 
         // Continue the process to open system for user transactions immediatelly
         // No buffer pool flush or user checkpoint in this case
@@ -752,6 +831,9 @@ ss_m::_construct_once()
         // completed yet
         if (log)
             log->activate_reservations();
+
+        // Do not flush buffer pool or take checkpoint because recovery
+        // is still going on
 
     }
     else
@@ -827,6 +909,25 @@ ss_m::_destruct_once()
     if(xct()) {
         me()->detach_xct(xct());
     }
+
+    if (recovery)
+    {
+        // The recovery object is only inistantiated if open system for user
+        // transactions during recovery
+        w_assert1(false == smlevel_0::use_serial_recovery());
+       
+        // The destructor of restart_m terminates the child thread if the child
+        // thread is still active.
+        // The child thread is for Recovery process only, it should terminate
+        // itself after the Recovery process completed
+        
+        delete recovery;
+        recovery = 0;
+    }
+    // At this point, the restart_m should no longer exist and we are safe to continue the
+    // shutdown process
+    w_assert1(!recovery);
+
     // now it's safe to do the clean_up
     // The code for distributed txn (prepared xcts has been deleted, the input paramter
     // in cleanup() is not used
@@ -868,42 +969,6 @@ ss_m::_destruct_once()
         W_COERCE( dev->dismount_all() );
 
         log = saved_log;            // turn on logging
-    }
-
-    if (recovery)
-    {
-        // Only inistantiated after m2 (open system for user
-        // transactions during recovery)   
-        w_assert1(false == smlevel_0::use_m1_recovery());
-
-        if (shutdown_clean) 
-        {
-            // Clean shutdown, best effort to give the child thread
-            // some time to finish the recovery work
-            // If it does not finish, terminate the child thread
-            // This would happen only if there are extremely long recovery
-            // process and user shutdowns the system quickly
-            int32_t limit = 10;
-            uint32_t interval = 100;
-            while ((recovery) && (0 < limit))
-            {
-                DBGOUT2(<< "waiting for recovery child thread to finish...");
-                g_me()->sleep(interval);
-                --limit;
-            }           
-        }
-        else
-        {
-            // Simulated crash, just kill the child read
-        }
-
-        // The destructor will terminate the child thread if the child
-        // thread is still active.
-        // The child thread is for Recovery process only, it should terminate
-        // itself after the Recovery process completed
-        
-        delete recovery;
-        recovery = 0;
     }
 
     nprepared = xct_t::cleanup(true /* now dispose of prepared xcts */);

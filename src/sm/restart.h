@@ -62,57 +62,178 @@ CmpXctUndoLsns::gt(const xct_t* x, const xct_t* y) const
 // Special heap for UNDO phase
 typedef class Heap<xct_t*, CmpXctUndoLsns> XctPtrHeap;
 
-class restart_thread_t;
+// Class restart_thread_t
+// Child thread created by restart_m for concurrent recovery operation
+// It is to carry out the REDO and UNDO phases while the system is
+// opened for user transactions
+class restart_thread_t : public smthread_t  
+{
+public:
+    NORET restart_thread_t() 
+        : smthread_t(t_regular, "restart", WAIT_NOT_USED)
+    {
+        // Construct the restart thread to perform the REDO and UNDO work, 
+        // Give the thread priority as t_regular instead of t_time_critical
+        // It performs the recovery work while concurrent user transactions
+        // are coming in
+        
+        w_assert1(false == smlevel_0::use_serial_recovery());        
+    };
+    NORET ~restart_thread_t() 
+    {
+        // Empty 
+    };
+
+    // Main body of the child thread
+    void run();
+
+private:
+    // disabled
+    NORET restart_thread_t(const restart_thread_t&);
+    restart_thread_t& operator=(const restart_thread_t&);
+
+};
 
 class restart_m : public smlevel_1 {
+    friend class restart_thread_t;
+
 public:
     NORET                        restart_m():_restart_thread(0) {};
     NORET                        ~restart_m() 
     {
+        // If we are still in Log Analysis phase, no child thread yet, go ahead and terminate
+        
         if (_restart_thread) 
         {
-// TODO(Restart)...
-//            retire_chkpt_thread();
+            // Child thread (for REDO and UNDO if open system early)
+            // is still active
+            w_assert1(false == smlevel_0::use_serial_recovery());
+
+            if (shutdown_clean)
+            {
+                // Clean shutdown, try to let the child thread finish its work
+                // This would happen only if there are extremely long recovery
+                // process and user shutdowns the system quickly after system start
+                DBGOUT2(<< "waiting for recovery child thread to finish...");
+
+                // Wait for the child thread to join, we don't want to wait forever
+                // give a time out value which is pretty long just in case
+                // If the child thread does not stop, terminate it with a message
+                uint32_t interval = 10000;                
+                w_rc_t rc = _restart_thread->join(interval);
+                if (rc.is_error())
+                {
+                    DBGOUT1(<< "Normal shutdown before restart child thread finished");               
+                    smlevel_0::errlog->clog << info_prio 
+                        << "Normal shutdown before restart child thread finished" << flushl;
+                }
+            }
+            else
+            {
+                // Simulated crash, just kill the child thread, no wait            
+            }
+
+            // Terminate the child thread
+            delete _restart_thread;
+            _restart_thread = 0;
         }
+        w_assert1(!_restart_thread);
+
+        // Okay to destroy the restart_m now
     };
 
-    static void                 recover(lsn_t master);
-
+    // Function used for concurrent operations, open system after Log Analysis
+    // we need a child thread to carry out the REDO and UNDO operations 
+    // while concurrent user transactions are coming in
     void                        spawn_recovery_thread()
     {
-////////////////////////////////////////
-// TODO(Restart)... consider spawn the child thread after Log Analysis phase, and return the control to main
-//                          while the child tread carry out the REDO and UNDO phases
-////////////////////////////////////////
+        // In case caller calls this function while chid thread is alive (accident), no-op
+        if (_restart_thread)
+            return;
 
-        w_assert1(_restart_thread == 0);
+        if (false == smlevel_0::use_serial_recovery())
         {
-            // Only if not m1, create thread (1) to perform recovery
-// TODO(Restart)...
-
-//            _chkpt_thread = new chkpt_thread_t;
-//            if (! _chkpt_thread)
-//                W_FATAL(eOUTOFMEMORY);
-//            W_COERCE(_chkpt_thread->fork());
+            // Only if not serial operation, create a child thread to perform recovery
+            _restart_thread = new restart_thread_t;
+            if (!_restart_thread)
+                W_FATAL(eOUTOFMEMORY);
+            W_COERCE(_restart_thread->fork());
+            w_assert1(_restart_thread);
+        }
+        else
+        {
+            // If open system after Recovery (serialized operations)
+            // do not create a child thread, simply return
+            w_assert1(!_restart_thread);        
         }
     }
 
-private:
+    // Return true if the recovery operation is still on-going
+    bool                     recovery_in_progress()
+    {
+        // Recovery is in progress if one of the conditions is true:
+        // Serial mode and still in recovery
+        // Concurrent mode and:
+        //     Workign on Log Analysis
+        //     or
+        //     Child thread is alive
+        if (true == smlevel_0::use_serial_recovery())
+        {
+            // Serial mode
+            return in_recovery();
+        }
+        else
+        {
+            // Concurrent mode        
+            if (in_recovery_analysis())
+                return true;
 
-    static void                 analysis_pass(
-        const lsn_t                       master,
-        lsn_t&                            redo_lsn,
-        uint32_t&                         in_doubt_count,
-        lsn_t&                            undo_lsn,
-        XctPtrHeap&                       heap
+            if (_restart_thread)
+                return true;
+
+            // Child thread does not exist, and the operating mode is 
+            // not in recovery anymore
+            // For concurrent mode, the operating mode changes to
+            // t_forward_processing after the child thread has been spawn
+            if (false == in_recovery())
+                return false;
+
+            // Corner case, if this function gets called after Log Analysis but
+            // before the child thread was created, the operating mode would
+            // be in Log Analysis 
+            return true;
+        }
+    }
+
+
+    // Top function to start the recovery process
+    static void                 recover(
+        lsn_t                   master,         // In: Starting point for log scan
+        lsn_t&                  commit_lsn,     // Out: used if use_concurrent_log_recovery()
+        lsn_t&                  redo_lsn,       // Out: used if log driven REDO with use_concurrent_XXX_recovery()        
+        uint32_t&               in_doubt_count  // Out: used if log driven REDO with use_concurrent_XXX_recovery()           
         );
 
+private:
+
+    // Shared by all recovery modes
+    static void                 analysis_pass(
+        const lsn_t             master,
+        lsn_t&                  redo_lsn,
+        uint32_t&               in_doubt_count,
+        lsn_t&                  undo_lsn,
+        XctPtrHeap&             heap,
+        lsn_t&                  commit_lsn // Commit lsn for concurrent transaction (if used)        
+        );
+
+    // Function used for serialized operations, open system after the entire recovery process finished
     static void                 redo_pass(
         const lsn_t              redo_lsn, 
         const lsn_t              &highest,  /* for debugging */
         const uint32_t           in_doubt_count  // How many in_doubt pages in buffer pool
         );
 
+    // Function used for serialized operations, open system after the entire recovery process finished
     static void                 undo_pass(
         XctPtrHeap&             heap,       // heap populated with doomed transactions
         const lsn_t             curr_lsn,   // current lsn, the starting point of backward scan
@@ -122,8 +243,15 @@ private:
 
         );
 
-    // Child thread, used only if open database after Log Analysis phase
+    // Child thread, used only if open system after Log Analysis phase while REDO and UNDO
+    // will be performed with concurrent user transactions
     restart_thread_t*           _restart_thread;
+
+    // Function used for concurrent operations, open system after Log Analysis
+    static void redo_concurrent();
+
+    // Function used for concurrent operations, open system after Log Analysis
+    static void undo_concurrent();
 
 private:
     // TODO(Restart)... it was for a space-recovery hack, not needed
@@ -131,28 +259,14 @@ private:
     // for a horrid space-recovery handling hack
     // static tid_t                _redo_tid;
 
-    /**
-     * \brief sub-routine of redo_pass() for logs that have pid.
-     */
+    // Function used for serialized operations, open system after the entire recovery process finished
+    // brief sub-routine of redo_pass() for logs that have pid.    
     static void                 _redo_log_with_pid(
         logrec_t& r, lsn_t &lsn, const lsn_t &highest_lsn,
         lpid_t page_updated, bool &redone, uint32_t &dirty_count);
 public:
     // TODO(Restart)... it was for a space-recovery hack, not needed
     // tid_t                        *redo_tid() { return &_redo_tid; }
-
-};
-
-
-// Class restart_thread_t
-// Restart thread, only used if open system after Log Analysis phase
-class restart_thread_t : public smthread_t  
-{
-public:
-    NORET                restart_thread_t() {};
-    NORET                ~restart_thread_t() {};
-
-// TODO(Restart)...
 
 };
 

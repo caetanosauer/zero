@@ -91,6 +91,8 @@ class option_t;
 
 class rid_t;
 
+class lsn_t;
+
 #ifndef        SM_EXTENTSIZE
 #define        SM_EXTENTSIZE        8
 #endif
@@ -327,12 +329,12 @@ public:
         t_btree,                 // B+tree with duplicates
         t_uni_btree,             // Unique-key btree
         t_rtree,                  // R*tree
-    	t_mrbtree,       // Multi-rooted B+tree with regular heap files   
-    	t_uni_mrbtree,          
-    	t_mrbtree_l,          // Multi-rooted B+tree where a heap file is pointed by only one leaf page 
-    	t_uni_mrbtree_l,               
-    	t_mrbtree_p,     // Multi-rooted B+tree where a heap file belongs to only one partition
-    	t_uni_mrbtree_p
+        t_mrbtree,       // Multi-rooted B+tree with regular heap files   
+        t_uni_mrbtree,          
+        t_mrbtree_l,          // Multi-rooted B+tree where a heap file is pointed by only one leaf page 
+        t_uni_mrbtree_l,               
+        t_mrbtree_p,     // Multi-rooted B+tree where a heap file belongs to only one partition
+        t_uni_mrbtree_p
     };
 
 
@@ -409,71 +411,93 @@ public:
     // smlevel_0::recovery_internal is an internal setting, not exposed
     // to external callers.  It is used to control the internal logic in recovery
     // in order to test different implementations.
-    // It is always set to one of the mode, so they are in bit-mast values. 
+    // Multiple features could be turned on/off, so they are in bit-mast values. 
     //
-    // Only the Recovery (restart.cpp) process should check this value.    
-    // The only place to set the value is in 'sm.cpp', it is a static setting and
-    // cannot be set dynamiclly, a recompile is required to change the setting.
+    // Only the Recovery related operations should check these values.    
+    // The only place to set the value is in 'sm.cpp' (recovery_internal_mode),
+    // it is a static setting and cannot be changed dynamiclly because we cannot 
+    // change behavior in the middle of recovery process, a recompile is 
+    // required to change the setting.
     enum recovery_internal_mode_t {
-        t_recovery_m1 = 0x1,                // M1 implementation:
-                                            //    System is not opened until Recovery completed.
-                                            //    REDO is log record driven, not page drive
-                                            //    UNDO is in reverse chronological order, 
-                                            //             not true transaction drive
-        t_recovery_m2 = 0x2,                // M2 implementation:
+        t_recovery_serial = 0x1,            // M1 implementation:
+                                            //    System is not opened until Recovery completed
+        t_recovery_concurrent_log = 0x2,    // M2 implementation:
                                             //    System is opened after Log Analysis.
                                             //    Using commit_lsn for new transactions
-                                            //    REDO is page driven using SPR
-                                            //    UNDO is transaction driven
-        t_recovery_m2_traditional = 0x4,    // M2 traditional implementation:
-                                            //    System is opened after Log Analysis.
-                                            //    Using commit_lsn for new transactions        <==                                           
-                                            //    REDO is log scan driven                             <==
-                                            //    UNDO is transaction driven
-                                            
-        t_recovery_m3 = 0x8,                // M3 implementation:
+        t_recovery_concurrent_lock = 0x4,   // M3 implementation:
                                             //    System is opened after Log Analysis.
                                             //    Using lock acquisition for new transactions
-                                            //    REDO is on-demand SPR                
-                                            //    UNDO is ????
-        t_recovery_m3_traditional = 0x16,   // M3 traditional implementation:
-                                            //    System is opened after Log Analysis.
-                                            //    Using lock acquisition for new transactions   <==
-                                            //    REDO is log scan driven                             <==
-                                            //    UNDO is ????                                           
-        t_recovery_m4 = 0x32,               // M4 implementation:            
-                                            //    System is opened after Log Analysis.
-                                            //    REDO is the combination of M2 and M3
-                                            //    UNDO is ????
+        
+        t_recovery_redo_log = 0x8,          // M1 traditional implementation:
+                                            //    REDO is forward log scan driven                                           
+        t_recovery_redo_page = 0x10,        // M2 implementation:
+                                            //    REDO is page driven using SPR                
+        t_recovery_redo_spr = 0x20,         // M3 implementation:
+                                            //    REDO is on-demand using SPR                
+        t_recovery_redo_mix = 0x40,         // M4 implementation:
+                                            //    REDO is using both page driven and
+                                            //    on-demand using SPR                
+                                            
+        t_recovery_undo_reverse = 0x80,     // M1 traditional implementation:
+                                            //    UNDO is using reverse order with heap
+        t_recovery_undo_txn = 0x100,        // M2 implementation:            
+                                            //    UNDO is transaction driven
+
     };
     static recovery_internal_mode_t recovery_internal_mode;
-    static bool use_m1_recovery()
+
+    // Set of functions to check individual recovery implementations
+    // No setting because the bit values are set staticlly, not dynamiclly
+    static bool use_serial_recovery()
     {
-        return ((recovery_internal_mode & t_recovery_m1 ) !=0); 
+        // Recovery M1
+        return ((recovery_internal_mode & t_recovery_serial ) !=0); 
     }
-    static bool use_m2_recovery() 
+    static bool use_concurrent_log_recovery() 
     { 
-        return ((recovery_internal_mode & t_recovery_m2 ) !=0);     
+        // Recovery M2
+        return ((recovery_internal_mode & t_recovery_concurrent_log ) !=0);     
     }
-    static bool use_m2_traditional_recovery() 
+    static bool use_concurrent_lock_recovery() 
     { 
-        return ((recovery_internal_mode & t_recovery_m2_traditional ) !=0);     
+        // NYI, Recovery M3
+//        w_assert1(false);       
+        return ((recovery_internal_mode & t_recovery_concurrent_lock ) !=0);     
     }
 
-    static bool use_m3_recovery() 
+    static bool use_redo_log_recovery() 
+    {
+        // Recovery M1
+        return ((recovery_internal_mode & t_recovery_redo_log ) !=0);     
+    }
+    static bool use_redo_page_recovery() 
     { 
-        // NYI
+        // Recovery M2
+        return ((recovery_internal_mode & t_recovery_redo_page ) !=0);     
+    }
+    static bool use_redo_spr_recovery() 
+    { 
+        // NYI, Recovery M3
         w_assert1(false);
-
-        return ((recovery_internal_mode & t_recovery_m2 ) !=0);     
+        return ((recovery_internal_mode & t_recovery_redo_spr ) !=0);     
     }
-    static bool use_m4_recovery() 
+    static bool use_redo_mix_recovery() 
     { 
-        // NYI    
+        // NYI, Recovery M4
         w_assert1(false);
-
-        return ((recovery_internal_mode & t_recovery_m2 ) !=0);     
+        return ((recovery_internal_mode & t_recovery_redo_mix ) !=0);     
     }
+    static bool use_undo_reverse_recovery() 
+    { 
+        // Recovery M1
+        return ((recovery_internal_mode & t_recovery_undo_reverse ) !=0);     
+    }
+    static bool use_undo_txn_recovery() 
+    { 
+        // Recovery M2
+        return ((recovery_internal_mode & t_recovery_undo_txn ) !=0);     
+    }
+
 
     static void  add_to_global_stats(const sm_stats_info_t &from);
     static void  add_from_global_stats(sm_stats_info_t &to);
@@ -504,6 +528,11 @@ public:
     static bool         lock_caching_default;
     static bool         do_prefetch;
     static bool         statistics_enabled;
+
+    static lsn_t        commit_lsn;      // commit_lsn is for use_concurrent_log_recovery() only
+                                         // this is the validation lsn for all concurrent user txns
+    static lsn_t        redo_lsn;        // redo_lsn is used by child thread as the start scanning point for redo
+    static uint32_t     in_doubt_count;  // in_doubt_count is used to child thread during the REDO phase   
 
     static operating_mode_t operating_mode;
     static bool in_recovery() { 
