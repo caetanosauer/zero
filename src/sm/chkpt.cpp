@@ -798,6 +798,7 @@ try
         w_auto_delete_array_t<xct_state_t> state(new xct_state_t[chunk]); // state
         w_auto_delete_array_t<lsn_t> last_lsn(new lsn_t[chunk]);          // most recent log record
         w_auto_delete_array_t<lsn_t> undo_nxt(new lsn_t[chunk]);          // undo next
+        w_auto_delete_array_t<lsn_t> first_lsn(new lsn_t[chunk]);         // first lsn of the txn
 
         xct_i x(false); // false -> do not acquire the mutex when accessing the transaction table
 
@@ -874,6 +875,18 @@ try
                     continue;
                 }
 
+                // If checkpoint comes in during recovery, we might see doomed transactions
+                // which are yet to be undone.
+                // If system starts with checkpoint containing doomed txns:
+                // 1. For a doomed txn in checkpoint, UNDO operation would generate an
+                //    'end transaction log record' after UNDO, which cancels out the doomed
+                //    txn in checkpoint log.
+                // 2. For a doomed txn in checkpoint, if system crashs before UNDO this
+                //    doomed txn, then no matching 'end transaction log record' so restart will
+                //    take care of this doomed txn again.
+                // No need to record the doomed_txn flag, because all in-flight txns in recovery
+                // will be marked as doomed.
+
                 // Transaction table is implemented in a descend list sorted by tid
                 // therefore the newest transaction goes to the beginning of the list
                 // When scanning, the newest transaction comes first
@@ -899,6 +912,7 @@ try
 
                     w_assert1(lsn_t::null!= xd->last_lsn());
                     last_lsn[per_chuck_txn_count] = xd->last_lsn();  // most recent LSN
+                    first_lsn[per_chuck_txn_count] = xd->first_lsn();  // first LSN of the txn
 
                     // 'set_undo_nxt' is initiallized to NULL,
                     // 1. Set in Log_Analysis phase in Recovery for UNDO phase,
@@ -941,7 +955,7 @@ try
                 // before processing more transactions
 
                 LOG_INSERT(chkpt_xct_tab_log(youngest, per_chuck_txn_count,
-                                   tid, state, last_lsn, undo_nxt), 0);
+                                   tid, state, last_lsn, undo_nxt, first_lsn), 0);
             }
         } while (xd);
     }

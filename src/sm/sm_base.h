@@ -414,10 +414,15 @@ public:
     // Multiple features could be turned on/off, so they are in bit-mast values. 
     //
     // Only the Recovery related operations should check these values.    
-    // The only place to set the value is in 'sm.cpp' (recovery_internal_mode),
-    // it is a static setting and cannot be changed dynamiclly because we cannot 
-    // change behavior in the middle of recovery process, a recompile is 
-    // required to change the setting.
+    // The only place to get/set the value is in 'sm.cpp' (recovery_internal_mode),
+    // the setting is determined during system startup and cannot be changed 
+    // dynamiclly, because we cannot change restart behavior in the middle
+    // of recovery process
+    // The actual recovery mode is determined by startup option 'sm_restart',
+    // no recompile required. 
+    // If the startup option is not set, the default setting is to use the initialization 
+    // value set in sm.cpp
+
     enum recovery_internal_mode_t {
         t_recovery_serial = 0x1,            // M1 implementation:
                                             //    System is not opened until Recovery completed
@@ -460,8 +465,7 @@ public:
     }
     static bool use_concurrent_lock_recovery() 
     { 
-        // NYI, Recovery M3
-//        w_assert1(false);       
+// TODO(Restart)... NYI, Recovery M3
         return ((recovery_internal_mode & t_recovery_concurrent_lock ) !=0);     
     }
 
@@ -477,14 +481,12 @@ public:
     }
     static bool use_redo_spr_recovery() 
     { 
-        // NYI, Recovery M3
-        w_assert1(false);
+// TODO(Restart)... NYI, Recovery M3
         return ((recovery_internal_mode & t_recovery_redo_spr ) !=0);     
     }
     static bool use_redo_mix_recovery() 
     { 
-        // NYI, Recovery M4
-        w_assert1(false);
+// TODO(Restart)... NYI, Recovery M4
         return ((recovery_internal_mode & t_recovery_redo_mix ) !=0);     
     }
     static bool use_undo_reverse_recovery() 

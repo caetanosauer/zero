@@ -654,6 +654,12 @@ private:
     /** fixes a non-swizzled page. */
     w_rc_t _fix_nonswizzled(generic_page* parent, generic_page*& page, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page);
 
+    // Validate whether the given page is safe for concurrent operation to access
+    // Validate is based on either commit_lsn or lock acquisition
+    // Commit_lsn: raise error if conflict
+    // Lock acquisition: block if conflict
+    w_rc_t _validate_commit_lsn(generic_page*& page);
+
     /**
      * \brief Checks validity of the page image that has been retrieved from disk,
      * \e trying to recover the page via SPR if its has some issue.

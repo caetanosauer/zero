@@ -220,8 +220,8 @@ public:
         sm_stats_info_t*             stats = 0,  // allocated by caller
         timeout_in_ms                timeout = WAIT_SPECIFIED_BY_THREAD,
         bool                         sys_xct = false,
-        bool single_log_sys_xct = false
-                                         );
+        bool                         single_log_sys_xct = false,
+        bool                         doomed_xct = false );
     
     static
     xct_t*                       new_xct(
@@ -231,8 +231,8 @@ public:
         const lsn_t&                 undo_nxt,
         timeout_in_ms                timeout = WAIT_SPECIFIED_BY_THREAD,
         bool                         sys_xct = false,
-        bool single_log_sys_xct = false
-                                        );
+        bool                         single_log_sys_xct = false,
+        bool                         doomed_xct = false );
     static
     void                        destroy_xct(xct_t* xd);
 
@@ -255,7 +255,8 @@ private:
         const lsn_t&                 last_lsn,
         const lsn_t&                 undo_nxt,
         bool                         sys_xct = false,
-        bool single_log_sys_xct = false
+        bool                         single_log_sys_xct = false,
+        bool                         doomed_xct = false
                                       );
     NORET                       ~xct_t();
 
@@ -566,7 +567,14 @@ private:
     
     /** result and context of in-query verification. */
     inquery_verify_context_t     _inquery_verify_context;
-    
+
+    // For a doomed transaction identified during Log Analysis phase in Recovery,
+    // the transaction state is 'xct_active' so the standard roll back logic can be
+    // used.  In order to distingish a doomed transaction and normal active
+    // transaction, check the '_doomed_xct' flag, this is especially important
+    // for transaction driven UNDO logic.
+    bool                         _doomed_xct;
+
 public:
     void                         acquire_1thread_xct_mutex() const; // serialize
     void                         release_1thread_xct_mutex() const; // concurrency ok
@@ -640,6 +648,8 @@ public:
     void                         set_query_concurrency(concurrency_t mode) { _query_concurrency = mode; }
     bool                         get_query_exlock_for_select() const {return _query_exlock_for_select;}
     void                         set_query_exlock_for_select(bool mode) {_query_exlock_for_select = mode;}
+
+    bool                        is_doomed_xct() const { return _doomed_xct; }
 
     ostream &                   dump_locks(ostream &) const;
 

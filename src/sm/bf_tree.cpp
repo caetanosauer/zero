@@ -340,6 +340,11 @@ w_rc_t bf_tree_m::_install_volume_mainmemorydb(vol_t* volume) {
         if (volume->is_allocated_page(idx)) {
             bool passed_end;
             W_DO(volume->read_page(idx, _buffer[idx], passed_end));
+            if (true == passed_end)
+            {
+                // Page does not exist on disk, raise error since this should not happen
+                return RC(stSHORTIO);
+            }
             if (_buffer[idx].calculate_checksum() != _buffer[idx].checksum) {
                 return RC(eBADCHECKSUM);
             }
@@ -466,7 +471,43 @@ w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(generic_page* parent, generic_pa
 w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                                    volid_t vol, shpid_t shpid, 
                                    latch_mode_t mode, bool conditional, 
-                                   bool virgin_page) {
+                                   bool virgin_page) 
+{
+////////////////////////////////////////
+// TODO(Restart)...   
+//    All the page checking and handling are done for nonswizzling code path only.
+//    The 'Instand Restart' project has disabled the swizzling logic.
+////////////////////////////////////////
+
+    // Main function to set up a page in buffer pool before it can be used for various purposes.
+    // Page index not in hashtable: loads a page from disk into buffer pool memory, setup proper
+    //     fields in cb, register the page in hashtable, and then return page pointer to caller.
+    // Page index in hashtable: assumping page is in memory already, does some validation 
+    //     and then return page pointer to caller.
+    //
+    // With concurrent Recovery, the system is opened after Log Analysis phase, and in_doubt
+    // pages will be loaded into buffer pool while concurrent transactions are coming in.
+    // It is possible an user transaction asks for a page before the REDO phase gets to
+    // load the page (M2), in such case the page index is in hashtable but the actual page has
+    // not been loaded into memory yet.
+
+////////////////////////////////////////
+// TODO(Restart)... in M2, only restart_m would load the in_doubt page
+//                          if an user transaction beats the REDO phase, the
+//                          user transaction does not load the page and it would 
+//                          raise error instead
+//                          This limitation will be addressed in M3.
+//
+//                          M2 is using commit_lsn to control access conflict from user txn, and abort
+//                          any conflicting user transactions.
+//                          M3 will use lock acquisition to control the access, and block the conflicting
+//                          user transactions until the recovery is done.
+////////////////////////////////////////
+
+    // Note in 'restart_m', it does not use this function to load page into buffer pool, because
+    // restart_m is driven by in_doubt flag and has different requirements on loading pages.
+    
+    
     w_assert1(vol != 0);
     w_assert1(shpid != 0);
     w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
@@ -498,7 +539,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 #endif
         bf_idx idx = _hashtable->lookup(key);
         if (idx == 0) {
-            // the page is not in the bufferpool. we need to read it from disk
+            // the page is not in the bufferpool, and it is not an in_doubt page either.
+            // we need to read it from disk
             W_DO(_grab_free_block(idx)); // get a frame that will be the new page
             w_assert1(idx != 0);
             bf_tree_cb_t &cb = get_cb(idx);
@@ -512,6 +554,11 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 INC_TSTAT(bf_fix_nonroot_miss_count);
                 bool passed_end;
                 w_rc_t read_rc = volume->_volume->read_page(shpid, _buffer[idx], passed_end);
+
+                // Not checking 'passed_end' (stSHORTIO), because if the page does not exist
+                // on disk, the page context will be zero out, and the following logic (_check_read_page)
+                // will fail in checksum and try SPR immediatelly
+
                 if (read_rc.is_error()) {
                     DBGOUT3(<<"bf_tree_m: error while reading page " << shpid << " to frame " << idx << ". rc=" << read_rc);
                     _add_free_block(idx);
@@ -533,7 +580,14 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             // latch the page. (not conditional because this thread will be the only thread touching it)
             cb.clear_latch();
             w_rc_t rc_latch = cb.latch().latch_acquire(mode, sthread_t::WAIT_IMMEDIATE);
-            w_assert1(!rc_latch.is_error());
+            if (rc_latch.is_error()) 
+            {
+                // We load the page so we should be the only one wanting to latch this page now
+                // If we are not able to latch the page, abandon the load and return error code to caller
+                DBGOUT2(<<"bf_tree_m: latch_acquire failed in buffer frame " << idx << " rc=" << rc_latch);
+                _add_free_block(idx);
+                return rc_latch;
+            }
 
             cb.clear_except_latch();
             cb._pid_vol = vol;
@@ -577,13 +631,18 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             // okay, all done
 #ifdef BP_MAINTAIN_PARENT_PTR
             if (is_swizzling_enabled()) {
-		lintel::unsafe::atomic_fetch_add((uint32_t*) &(_control_blocks[parent_idx]._pin_cnt), 1); // we installed a new child of the parent      to this bufferpool. add parent's count
+                lintel::unsafe::atomic_fetch_add((uint32_t*) &(_control_blocks[parent_idx]._pin_cnt), 1); // we installed a new child of the parent      to this bufferpool. add parent's count
             }
 #endif // BP_MAINTAIN_PARENT_PTR
             page = &(_buffer[idx]);
 
-            return RCOK;
-        } else {
+            // Is it safe to access this page?
+            return _validate_commit_lsn(page);
+        }
+        else
+        {
+            // Page index is registered in hash table
+                   
             // unlike swizzled case, we have to atomically pin it while verifying it's still there.
             if (parent) {
                 DBGOUT3(<<"swizzled case: parent = " << parent->pid << ", shpid = " << shpid << " frame=" << idx);
@@ -591,6 +650,22 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 DBGOUT3(<<"swizzled case: parent = NIL"<< ", shpid = " << shpid << " frame=" << idx);
             }
             bf_tree_cb_t &cb = get_cb(idx);
+
+            if ((cb._in_doubt))
+            {
+                // in_doubt flag is on, page is not in buffer pool memory
+                // we do not have latch on the page at this point
+                
+////////////////////////////////////////
+// TODO(Restart)... in m2, only restart_m would load in_doubt pages into memory
+//                          concurrent txn does not load in_doubt page
+//                          instead of waiting, we are raising error and do not continue
+//                          this limitation will be addressed in m3
+////////////////////////////////////////
+
+                return RC(eNOTIMPLEMENTED);
+            }
+
             int32_t cur_cnt = cb.pin_cnt();
             if (cur_cnt < 0) {
                 w_assert1(cur_cnt == -1);
@@ -619,10 +694,16 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 #ifndef NO_PINCNT_INCDEC
                 lintel::unsafe::atomic_fetch_sub((uint32_t*)(&cb._pin_cnt), 1);
 #endif
-                if (rc.is_error()) {
+                if (rc.is_error()) 
+                {
                     DBGOUT2(<<"bf_tree_m: latch_acquire failed in buffer frame " << idx << " rc=" << rc);
-                } else {
+                }
+                else 
+                {
                     page = &(_buffer[idx]);
+
+                    // Is it safe to access this page?
+                    rc = _validate_commit_lsn(page);
                 }
                 return rc;
 #ifndef NO_PINCNT_INCDEC
@@ -634,6 +715,72 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 #endif
         }
     }
+}
+
+w_rc_t bf_tree_m::_validate_commit_lsn(
+                  generic_page*& page  // this is a pointer to the underlying page _pp
+                  )
+{
+    // Special function to validate whether a page is safe to be accessed by
+    // concurrent operation while the recovery is still going on
+    // The page is either just loaded for the first time by user transaction
+    // (page was not in_doubt), or already loaded (either by recovery as
+    // an in_doubt page or user transaction as a non-in_doubt page)
+
+    // Validate is based on either commit_lsn or lock acquisition
+    //    Commit_lsn: raise error if conflict
+    //    Lock acquisition: block if conflict
+    
+    // If the system is doing concurrent recovery and we are still in the middle
+    // of recovery, it might not be safe to access the page
+    if ((smlevel_1::recovery) &&   // The restart_m object is valid
+        (smlevel_1::recovery->recovery_in_progress())) // Recovery is in progress
+    {    
+        if (true ==  restart_m::use_concurrent_log_recovery()) 
+        {
+            // Accept a new transaction if the associated page met the following conditions:
+            // REDO phase:
+            //    1. Page is not an 'in_doubt' page - 'dirty' is okay. 
+            //    2. Page_LSN < Commit_LSN (minimum Txn LSN of all doomed transactions).
+            // UNDO phase:
+            //    Page_LSN < Commit_LSN (minimum Txn LSN of all doomed transactions).
+
+            // With the M2 limitation, user transaction does not load in_doubt page (raise error),
+            // so we only need to validate one condition for the newly loaded page:
+            //    Page_LSN < Commit_LSN (minimum Txn LSN of all doomed transactions)
+            // The last write on the page was before the minimum TXN lsn of all doomed transactions
+            // Note this is an over conserve policy mainly because we do not have
+            // lock acquisition to protect doomed transactions.
+            
+            if (lsn_t::null == smlevel_0::commit_lsn)
+            {
+                // commit_lsn == null only if empty database or no
+                // actual work for recovery
+                // All access are allowed in this case
+            }
+            else
+            {
+                // Get the last write on the page
+                lsn_t page_lsn = page->lsn;
+                if (page_lsn >= smlevel_0::commit_lsn)
+                {
+                    // Condition not met, cannot continue
+                    DBGOUT2(<<"bf_tree_m: page access condition not met, page_lsn: " 
+                            << page_lsn << ", commit_lsn:" << smlevel_0::commit_lsn);
+                    return RC(eACCESS_CONFLICT);
+                }
+            }
+        }
+        else if (true == restart_m::use_concurrent_lock_recovery())
+        {
+////////////////////////////////////////
+// TODO(Restart)... concurrency through lock acquisition, NYI
+////////////////////////////////////////
+
+            return RC(eNOTIMPLEMENTED);
+        }
+    }
+    return RCOK;
 }
 
 bf_idx bf_tree_m::pin_for_refix(const generic_page* page) {
@@ -1810,10 +1957,13 @@ w_rc_t bf_tree_m::load_for_redo(bf_idx idx, volid_t vid,
     rc = volume->_volume->read_page(shpid, _buffer[idx], passed_end);
     if (true == passed_end)
     {
-        // During REDO phase when trying to load a page from disk, the disk does
-        // not exist on disk.
-        // We cannot apply REDO because the page in buffer pool has been zero out
-        // notify the caller by setting a return flag
+        // During system recovery REDO phase when trying to load a page from disk,
+        // the page does not exist on disk.
+        // This can happen only if page driven REDO phase and an in_doubt page
+        // was never flushed from buffer pool to disk before the system crash.
+        // We cannot apply REDO on this page using the last write lsn of the page,
+        // because the page in buffer pool has been zero out, notify caller through 
+        // return flag, while the return code (rc) is a good return code
        
         passed_end = true;
         DBGOUT3(<<"REDO phase: page does not exist on disk: "

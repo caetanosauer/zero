@@ -214,15 +214,15 @@ xct_t::new_xct(
         sm_stats_info_t* stats, 
         timeout_in_ms timeout,
         bool sys_xct,
-        bool single_log_sys_xct
-              )
+        bool single_log_sys_xct,
+        bool doomed_xct)
 {
     // For normal user transaction
     
     xct_core* core = NEW_CORE xct_core(_nxt_tid.atomic_incr(),
                        xct_active, timeout);
     xct_t* xd = NEW_XCT xct_t(core, stats, lsn_t(), lsn_t(),
-                              sys_xct, single_log_sys_xct);
+                              sys_xct, single_log_sys_xct, doomed_xct);
     me()->attach_xct(xd);
     return xd;
 }
@@ -230,8 +230,7 @@ xct_t::new_xct(
 xct_t*
 xct_t::new_xct(const tid_t& t, state_t s, const lsn_t& last_lsn,
              const lsn_t& undo_nxt, timeout_in_ms timeout, bool sys_xct,
-             bool single_log_sys_xct
-              ) 
+             bool single_log_sys_xct, bool doomed_xct) 
 {
     // For transaction from Log Analysis phase in Recovery
 
@@ -239,7 +238,7 @@ xct_t::new_xct(const tid_t& t, state_t s, const lsn_t& last_lsn,
     _nxt_tid.atomic_assign_max(t);
     xct_core* core = NEW_CORE xct_core(t, s, timeout);
     xct_t* xd = NEW_XCT xct_t(core, 0, last_lsn, undo_nxt,
-        sys_xct, single_log_sys_xct);
+        sys_xct, single_log_sys_xct, doomed_xct);
     
     /// Don't attach
     w_assert1(me()->xct() == 0);
@@ -886,7 +885,7 @@ xct_t::xct_core::xct_core(tid_t const &t, state_t s, timeout_in_ms timeout)
  *********************************************************************/
 xct_t::xct_t(xct_core* core, sm_stats_info_t* stats,
            const lsn_t& last_lsn, const lsn_t& undo_nxt, bool sys_xct,
-           bool single_log_sys_xct
+           bool single_log_sys_xct, bool doomed_xct
             ) 
     :   
     __stats(stats),
@@ -903,6 +902,7 @@ xct_t::xct_t(xct_core* core, sm_stats_info_t* stats,
     _inquery_verify(false),
     _inquery_verify_keyorder(false),
     _inquery_verify_space(false),
+    _doomed_xct(doomed_xct),
     // _first_lsn, _last_lsn, _undo_nxt, 
     _last_lsn(last_lsn),
     _undo_nxt(undo_nxt),

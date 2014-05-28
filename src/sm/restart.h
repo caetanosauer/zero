@@ -169,7 +169,7 @@ public:
     }
 
     // Return true if the recovery operation is still on-going
-    bool                     recovery_in_progress()
+    bool                        recovery_in_progress()
     {
         // Recovery is in progress if one of the conditions is true:
         // Serial mode and still in recovery
@@ -248,10 +248,10 @@ private:
     restart_thread_t*           _restart_thread;
 
     // Function used for concurrent operations, open system after Log Analysis
-    static void redo_concurrent();
+    static void                 redo_concurrent();
 
     // Function used for concurrent operations, open system after Log Analysis
-    static void undo_concurrent();
+    static void                 undo_concurrent();
 
 private:
     // TODO(Restart)... it was for a space-recovery hack, not needed
@@ -264,6 +264,16 @@ private:
     static void                 _redo_log_with_pid(
         logrec_t& r, lsn_t &lsn, const lsn_t &highest_lsn,
         lpid_t page_updated, bool &redone, uint32_t &dirty_count);
+
+    // Function used for concurrent operations, open system after Log Analysis
+    // The function could be used for serialized operation with some minor work
+    // Transaction driven UNDO phase, it handles both commit_lsn and lock acquisition
+    static void                 _undo_txn_pass();
+
+    // Function used for concurrent operations, open system after Log Analysis
+    // Page driven REDO phase, it handles both commit_lsn and lock acquisition
+    static void                 _redo_page_pass();
+
 public:
     // TODO(Restart)... it was for a space-recovery hack, not needed
     // tid_t                        *redo_tid() { return &_redo_tid; }

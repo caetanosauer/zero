@@ -131,7 +131,7 @@ bool log_i::xct_next(lsn_t& lsn, logrec_t*& r)
  * _version_major should be incremented and version_minor set to 0.
  *
  *********************************************************************/
-uint32_t const log_m::_version_major = 6;
+uint32_t const log_m::_version_major = 7;
 uint32_t const log_m::_version_minor = 0;
 const char log_m::_SLASH = '/';
 const char log_m::_master_prefix[] = "chk."; // same size as _log_prefix

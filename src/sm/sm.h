@@ -236,6 +236,14 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *      - description: Enables collecting statistics.
  *      - default: no
  *      - required?: no
+ *
+ * -sm_restart
+ *  - type: number
+ *  - description: control internal restart/recovery mode
+ *     this option is for internal testing purpose and must be used with caution
+ *     valid values: 1, 2, 3, 4, 10, 11, 12
+ *  - default: see sm.cpp for initial setting
+ *  - required?: no
   */
 
 

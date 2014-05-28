@@ -170,6 +170,7 @@ TEST (SprTest, OneChange) {
     sm_options options;
     EXPECT_EQ(0, test_env->runBtreeTest(test_one_change, options));
 }
+
 w_rc_t test_two_changes(ss_m* ssm, test_volume_t *test_volume) {
     stid_t stid;
     lpid_t root_pid;

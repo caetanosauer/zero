@@ -99,9 +99,6 @@ lsn_t        smlevel_0::redo_lsn = lsn_t::null;
 uint32_t     smlevel_0::in_doubt_count = 0;
 
 
-// Define the supported modes for Recovery process
-// not all bit combinations would be supported or tested
-// use int64_t to make sure we have enough bits:
 ////////////////////////////////////////
 // TODO(Restart)... 
 // Set the internal recovery mode to control which recovery
@@ -112,40 +109,44 @@ uint32_t     smlevel_0::in_doubt_count = 0;
 // stable implementations.
 ////////////////////////////////////////
 
+// Define the supported modes for Recovery process
+// not all bit combinations would be supported or tested
+// use int64_t to make sure we have enough bits:
+
 // Basic modes:
-const int64_t m1_default_recovery = 
+const int64_t m1_default_recovery =         // sm_restart = 1 (default)
     smlevel_0::t_recovery_serial |          // Serial operation
     smlevel_0::t_recovery_redo_log |        // Log scan driven REDO
     smlevel_0::t_recovery_undo_reverse;     // Reverse UNDO
-const int64_t m2_default_recovery = 
+const int64_t m2_default_recovery =         // sm_restart = 2
     smlevel_0::t_recovery_concurrent_log |  // Concurrent operation using log 
     smlevel_0::t_recovery_redo_page |       // Page driven REDO
     smlevel_0::t_recovery_undo_txn;         // Transaction driven UNDO
-const int64_t m3_default_recovery = 
+const int64_t m3_default_recovery =         // sm_restart = 3
     smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
     smlevel_0::t_recovery_redo_spr |        // On-demand driven REDO
     smlevel_0::t_recovery_undo_txn;         // Transaction driven UNDO
-const int64_t m4_default_recovery = 
+const int64_t m4_default_recovery =         // sm_restart = 4
     smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
     smlevel_0::t_recovery_redo_mix |        // Mixed REDO
     smlevel_0::t_recovery_undo_txn;         // Transaction driven UNDO
 
 // Alternative modes:
 // Compare with m2_default_recovery, difference in REDO 
-const int64_t alternative_concurrent_log_log_recovery = 
-    smlevel_0::t_recovery_concurrent_log |  // Concurrent operation using log 
-    smlevel_0::t_recovery_redo_log |        // Log scan driven REDO
-    smlevel_0::t_recovery_undo_txn;         // Transaction driven UNDO
+const int64_t alternative_log_log_recovery =     // sm_restart = 10
+    smlevel_0::t_recovery_concurrent_log |       // Concurrent operation using log 
+    smlevel_0::t_recovery_redo_log |             // Log scan driven REDO
+    smlevel_0::t_recovery_undo_txn;              // Transaction driven UNDO
 // Compare with m2_default_recovery, difference in concurrent
-const int64_t alternative_concurrent_lock_page_recovery = 
-    smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
-    smlevel_0::t_recovery_redo_page |       // Page driven REDO
-    smlevel_0::t_recovery_undo_txn;         // Transaction driven UNDO
-// Compare with alternative_concurrent_log_log_recovery, difference in concurrent
-const int64_t alternative_concurrent_lock_log_recovery = 
-    smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
-    smlevel_0::t_recovery_redo_log |        // Log scan driven REDO
-    smlevel_0::t_recovery_undo_txn;         // Transaction driven UNDO
+const int64_t alternative_lock_page_recovery =   // sm_restart = 11
+    smlevel_0::t_recovery_concurrent_lock |      // Concurrent operation using lock
+    smlevel_0::t_recovery_redo_page |            // Page driven REDO
+    smlevel_0::t_recovery_undo_txn;              // Transaction driven UNDO
+// Compare with alternative_log_log_recovery, difference in concurrent
+const int64_t alternative_lock_log_recovery =    // sm_restart = 12
+    smlevel_0::t_recovery_concurrent_lock |      // Concurrent operation using lock
+    smlevel_0::t_recovery_redo_log |             // Log scan driven REDO
+    smlevel_0::t_recovery_undo_txn;              // Transaction driven UNDO
 
 
 // This is the controlling variable to determine which mode to use at run time:
@@ -426,7 +427,7 @@ bool ss_m::shutdown()
     {
         // Stop the store if it is running currently, 
         // do not destroy the ss_m object, caller can start the store again using
-        // the same ss_m object.
+        // the same ss_m object, therefore all the option setting remain the same
 
         // Note: If caller would like to use the simulated 'crash' shutdown logic, 
         //          caller must call set_shutdown_flag(false) to set the crash
@@ -563,6 +564,44 @@ ss_m::_construct_once()
         << " ) is too big: individual log files can't be large files yet."
         << flushl; 
         W_FATAL(eCRASH);
+    }
+
+    // Which internal restart mode to use?
+    int32_t restart_mode = _options.get_int_option("sm_restart", 1);
+    switch (restart_mode) 
+    {
+    case 1:
+        smlevel_0::recovery_internal_mode = 
+             (smlevel_0::recovery_internal_mode_t)m1_default_recovery;
+        break;
+    case 2:
+        smlevel_0::recovery_internal_mode = 
+             (smlevel_0::recovery_internal_mode_t)m2_default_recovery;
+        break;
+    case 3:
+        smlevel_0::recovery_internal_mode = 
+             (smlevel_0::recovery_internal_mode_t)m3_default_recovery;
+        break;
+    case 4:
+        smlevel_0::recovery_internal_mode = 
+             (smlevel_0::recovery_internal_mode_t)m4_default_recovery;
+        break;
+    case 10:
+        smlevel_0::recovery_internal_mode = 
+             (smlevel_0::recovery_internal_mode_t)alternative_log_log_recovery;
+        break;
+    case 11:
+        smlevel_0::recovery_internal_mode = 
+             (smlevel_0::recovery_internal_mode_t)alternative_lock_page_recovery;
+        break;
+    case 12:
+        smlevel_0::recovery_internal_mode = 
+             (smlevel_0::recovery_internal_mode_t)alternative_lock_log_recovery;
+        break;
+    default:
+        // Either 'sm_restart' was not set or it was set to an invalid value
+        // use the initialization setting and no overwrite
+        break;
     }
 
     /*
@@ -792,8 +831,6 @@ ss_m::_construct_once()
             // Check the operating mode
             w_assert1(t_in_analysis == smlevel_0::operating_mode);
 
-// TODO(Restart)...  concurrent txn needs to check with commit_lsn, how?
-
             // Store the commit_lsn, redo_lsn and in_doubt_count globally,
             // concurrent txn will use commit_lsn only if use_concurrent_log_recovery()
             // REDO from child thread will use redo_lsn and in_doubt_count to control the REDO phase
@@ -808,7 +845,13 @@ ss_m::_construct_once()
                 // Note that even if the database is not empty, it does 
                 // not mean we have recovery work to do in REDO and 
                 // UNDO phases
-                
+
+                // We should have a non-null commit_lsn as long as
+                // the database was not a brand new one, even if there
+                // was no in-flight txn or dirty page
+                if (true == smlevel_0::use_concurrent_log_recovery())
+                    w_assert1(lsn_t::null != smlevel_0::commit_lsn);
+
                 w_assert1(!recovery);
                 recovery = new restart_m;
                 if (! recovery)

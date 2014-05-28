@@ -68,7 +68,8 @@ void log_m::dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t 
     _master_lsn = master;
 }
 
-rc_t log_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn) {
+rc_t log_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn, 
+                                    const bool validate) {
     // First, retrieve the backup page we will be based on.
     // If this backup is enough recent, we have to apply only a few logs.
     w_assert1(p.is_fixed());
@@ -95,8 +96,10 @@ rc_t log_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn) {
     DBGOUT1(<< "Collected log. About to apply " << ordered_entires.size() << " logs");
     W_DO(log_core::THE_LOG->_apply_single_page_recovery_logs(p, ordered_entires));
 
-    // after SPR, the page should be exactly the requested LSN
-    w_assert0(p.lsn() == emlsn);
+    // after SPR, the page should be exactly the requested LSN, perform the validation only if
+    // it is told to do so.  Caller would set the validate to false if virgin or corrupted in_doubt page
+    if (true == validate)
+        w_assert0(p.lsn() == emlsn);
     DBGOUT1(<< "SPR done!");
     return RCOK;
 }

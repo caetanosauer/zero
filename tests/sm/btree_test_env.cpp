@@ -130,6 +130,15 @@ public:
                 _options.set_int_option("sm_bufpoolsize",
                             SM_PAGESIZE / 1024 * default_bufferpool_size_in_pages);
             }
+
+            // Control which internal restart mode/setting to use.  This is the only place setting the
+            // value for 'sm_restart', a re-compile of test code is required to change this value.
+            //
+            // If not set, the internal default value is determined in sm.cpp
+            // Currently 'sm_restart' is set to '1'.  Change this value for testing purpose. 
+            if (_options.get_int_option("sm_restart", not_set_int) == not_set_int) {            
+                _options.set_int_option("sm_restart", 1);
+            }
         }
 
         ~testdriver_thread_t()  {}
