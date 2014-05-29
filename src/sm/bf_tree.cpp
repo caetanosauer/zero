@@ -582,11 +582,11 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             w_rc_t rc_latch = cb.latch().latch_acquire(mode, sthread_t::WAIT_IMMEDIATE);
             if (rc_latch.is_error()) 
             {
-                // We load the page so we should be the only one wanting to latch this page now
-                // If we are not able to latch the page, abandon the load and return error code to caller
-                DBGOUT2(<<"bf_tree_m: latch_acquire failed in buffer frame " << idx << " rc=" << rc_latch);
+                // We load the page so we should be the only one wanting to latch this page
+                // If we are not able to latch the page for some reason, try again
+                DBGOUT2(<<"bf_tree_m: latch_acquire failed in buffer frame " << idx << ", rc= " << rc_latch);
                 _add_free_block(idx);
-                return rc_latch;
+                continue;
             }
 
             cb.clear_except_latch();
@@ -2011,8 +2011,8 @@ w_rc_t bf_tree_m::_evict_page(EvictionContext& context, btree_page_h& p) {
         << ", swizzled=" << swizzled << ", hot-ness=" << cb._refbit_approximate
         << ", dirty=" << cb._dirty << " parent_idx=" << parent_idx);
 
-    // do not evict hot pages, dirty pages
-    if (!cb._used || cb._dirty) {
+    // do not evict hot pages, dirty pages, in_doubt pages
+    if (!cb._used || cb._dirty || cb._in_doubt) {
         return RCOK;
     }
     if (context.urgency >= EVICT_URGENT) {

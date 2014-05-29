@@ -351,8 +351,7 @@ restart_m::recover(
 #endif 
 
 ////////////////////////////////////////
-// TODO(Restart)... does not open the store for new transactions in M1
-//                    ignore 'non-read-lock' in M1
+// TODO(Restart)...  ignore 'non-read-lock' in M1
 ////////////////////////////////////////
 
             // REDO phase, based on log records (forward scan), load 'in_doubt' pages
@@ -397,8 +396,7 @@ restart_m::recover(
                 << flushl;
 
 ////////////////////////////////////////
-// TODO(Restart)... does not open the store for new transactions in M1
-//                    ignore 'non-read-lock' in M1
+// TODO(Restart)...  ignore 'non-read-lock' in M1
 ////////////////////////////////////////
 
             // UNDO phase, based on log records (reverse scan), use compensate operations
@@ -1450,7 +1448,9 @@ restart_m::analysis_pass(
         xct_t*  xd; 
         xct_t*  curr;
         if (true == use_serial_recovery())
+        {
             DBGOUT3( << "Building heap...");
+        }
         xd = iter.next();
         while (xd)
         {
@@ -1580,8 +1580,7 @@ restart_m::redo_pass(
 )
 {
 ////////////////////////////////////////
-// TODO(Restart)... does not open the store for new transactions during REDO phase in M1
-//                    ignore 'non-read-lock' in M1
+// TODO(Restart)...  ignore 'non-read-lock' in M1
 ////////////////////////////////////////
 
     FUNC(restart_m::redo_pass);
@@ -2284,8 +2283,7 @@ restart_m::undo_pass(
     )
 {
 ////////////////////////////////////////
-// TODO(Restart)... does not open the store for new transactions during UNDO phase in M1
-//                    ignore 'non-read-lock' in M1
+// TODO(Restart)...  ignore 'non-read-lock' in M1
 ////////////////////////////////////////
 
     FUNC(restart_m::undo_pass);
@@ -2579,7 +2577,7 @@ void restart_m::redo_concurrent()
         W_FATAL_MSG(fcINTERNAL, << "REDO phase, missing execution mode setting for REDO");
     }    
 
-    // Take a synch checkpoint after REDO phase
+    // Take a synch checkpoint after REDO phase, even if there was no REDO work
     smlevel_1::chkpt->synch_take();
 
     return;
@@ -2644,6 +2642,7 @@ void restart_m::undo_concurrent()
     }
 
     // Take a synch checkpoint after UNDO phase but before existing the Recovery operation
+    // Checkpoint will be taken even if there was no UNDO work
     smlevel_1::chkpt->synch_take();
 
     return;
@@ -2668,7 +2667,7 @@ void restart_m::_redo_page_pass()
     w_assert1(true == use_redo_page_recovery());
 
     // If no in_doubt page in buffer pool, then nothing to process
-    if (0 != smlevel_0::in_doubt_count)
+    if (0 == smlevel_0::in_doubt_count)
     {
         DBGOUT3(<<"No in_doubt page to redo");
         return;
@@ -2744,7 +2743,7 @@ void restart_m::_redo_page_pass()
             // If non-pvirgin page, load the page so we have the page_lsn (last write)
             //
             // SPR API smlevel_0::log->recover_single_page(p, page_lsn) requires target
-            // page pointer in fixable_page_h and page_lsn (last write to the page).  
+            // page pointer in fixable_page_h format and page_lsn (last write to the page).  
             // After the page is in buffer pool memory, we can use SPR to perform 
             // the REDO operation
 
@@ -2867,6 +2866,8 @@ void restart_m::_redo_page_pass()
             //   page - fixable_page_h, the page to recover
             //   page_lsn - last write to the page according to the page we have, if the page
             //                   is virgin or corrupted page, tell SPR not to validate page_lsn
+            //   validate - if a virgin or corrupted page, we don't have the actual page_lsn, 
+            //                  we are using the current lsn instead, so do not validate the lsn
             DBGOUT3(<< "REDO (redo_page_pass()): SPR with page_lsn" << page_lsn);           
             W_COERCE(smlevel_0::log->recover_single_page(page, page_lsn, 
                      ((true == virgin_page)|| (true == corrupted_page))? false : true));
@@ -3030,6 +3031,8 @@ void restart_thread_t::run()
     // Body of the restart thread to carry out the REDO and UNDO work
     // When this function returns, the child thread will be destroyed
 
+    DBGOUT1(<< "restart_thread_t: Starts REDO and UNDO tasks");
+
     // REDO, call back to restart_m to carry out the concurrent REDO
     smlevel_1::recovery->redo_concurrent();
 
@@ -3037,6 +3040,7 @@ void restart_thread_t::run()
     smlevel_1::recovery->undo_concurrent();
 
     // Done
+    DBGOUT1(<< "restart_thread_t: Finished REDO and UNDO tasks");    
     return;
 };
 

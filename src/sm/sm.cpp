@@ -846,11 +846,9 @@ ss_m::_construct_once()
                 // not mean we have recovery work to do in REDO and 
                 // UNDO phases
 
-                // We should have a non-null commit_lsn as long as
-                // the database was not a brand new one, even if there
-                // was no in-flight txn or dirty page
-                if (true == smlevel_0::use_concurrent_log_recovery())
-                    w_assert1(lsn_t::null != smlevel_0::commit_lsn);
+                // Commit_lsn could be null if:
+                // 1. Empty database
+                // 2. No recovery work to do
 
                 w_assert1(!recovery);
                 recovery = new restart_m;

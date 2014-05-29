@@ -8,7 +8,7 @@
 
 btree_test_env *test_env;
 
-// Test cases to test restart.
+// Test cases to test serial and traditional restart.
 
 lsn_t get_durable_lsn() {
     lsn_t ret;
@@ -77,7 +77,8 @@ public:
 TEST (RestartTest, Empty) {
     test_env->empty_logdata_dir();
     restart_empty context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false), 0);  // false = no simulated crash, normal shutdown
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 1), 0);  // false = no simulated crash, normal shutdown
+                                                                 // 1 = recovery mode
 }
 /**/
 
@@ -112,7 +113,8 @@ public:
 TEST (RestartTest, NormalShutdown) {
     test_env->empty_logdata_dir();
     restart_normal_shutdown context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false), 0);  // false = no simulated crash, normal shutdown
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 1), 0);  // false = no simulated crash, normal shutdown
+                                                                      // 1 = recovery mode
 }
 /**/
 
@@ -150,7 +152,8 @@ public:
 TEST (RestartTest, NormalCheckpointShutdown) {
     test_env->empty_logdata_dir();
     restart_checkpoint_normal_shutdown context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false), 0);  // false = no simulated crash, normal shutdown
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 1), 0);  // false = no simulated crash, normal shutdown
+                                                                 // 1 = recovery mode
 }
 /**/
 
@@ -182,7 +185,8 @@ public:
 TEST (RestartTest, NormalManyShutdown) {
     test_env->empty_logdata_dir();
     restart_many_normal_shutdown context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false), 0);  // false = no simulated crash, normal shutdown
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 1), 0);  // false = no simulated crash, normal shutdown
+                                                                 // 1 = recovery mode
 }
 /**/
 
@@ -218,7 +222,8 @@ public:
 TEST (RestartTest, NormalManyCheckpointShutdown) {
     test_env->empty_logdata_dir();
     restart_many_checkpoint_normal_shutdown context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false), 0);  // false = no simulated crash, normal shutdown
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 1), 0);  // false = no simulated crash, normal shutdown
+                                                                 // 1 = recovery mode
 }
 /**/
 
@@ -256,7 +261,8 @@ public:
 TEST (RestartTest, InflightNormalShutdown) {
     test_env->empty_logdata_dir();
     restart_inflight_normal_shutdown context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false), 0);  // false = no simulated crash, normal shutdown
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 1), 0);  // false = no simulated crash, normal shutdown
+                                                                 // 1 = recovery mode
 }
 /**/
 
@@ -296,7 +302,8 @@ public:
 TEST (RestartTest, InflightcheckpointNormalShutdown) {
     test_env->empty_logdata_dir();
     restart_inflight_checkpoint_normal_shutdown context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false), 0);  // false = no simulated crash, normal shutdown
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 1), 0);  // false = no simulated crash, normal shutdown
+                                                                 // 1 = recovery mode
 }
 /**/
 
@@ -334,7 +341,8 @@ public:
 TEST (RestartTest, InflightCrashShutdown) {
     test_env->empty_logdata_dir();
     restart_inflight_crash_shutdown context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true), 0);  // true = simulated crash
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 1), 0);  // true = simulated crash
+                                                                // 1 = recovery mode
 }
 /**/
 
@@ -376,7 +384,8 @@ public:
 TEST (RestartTest, InflightCheckpointCrashShutdown) {
     test_env->empty_logdata_dir();
     restart_inflight_checkpoint_crash_shutdown context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true), 0);  // true = simulated crash
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 1), 0);  // true = simulated crash
+                                                                // 1 = recovery mode
 }
 /**/
 
@@ -414,7 +423,8 @@ public:
 TEST (RestartTest, InflightManyCrashShutdown) {
     test_env->empty_logdata_dir();
     restart_inflight_many_crash_shutdown context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true), 0);  // true = simulated crash
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 1), 0);  // true = simulated crash
+                                                                // 1 = recovery mode
 }
 /**/
 
@@ -455,7 +465,8 @@ public:
 TEST (RestartTest, InflightCkptManyCrashShutdown) {
     test_env->empty_logdata_dir();
     restart_inflight_ckpt_many_crash_shutdown context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true), 0);  // true = simulated crash
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 1), 0);  // true = simulated crash
+                                                                // 1 = recovery mode
 }
 /**/
 
@@ -491,7 +502,8 @@ public:
 TEST (RestartTest, CrashShutdown) {
     test_env->empty_logdata_dir();
     restart_crash_shutdown context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true), 0);  // true = simulated crash
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 1), 0);  // true = simulated crash
+                                                                // 1 = recovery mode
 }
 /**/
 
@@ -530,7 +542,8 @@ public:
 TEST (RestartTest, CheckpointCrashShutdown) {
     test_env->empty_logdata_dir();
     restart_checkpoint_crash_shutdown context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true), 0);  // true = simulated crash
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 1), 0);  // true = simulated crash
+                                                                // 1 = recovery mode
 }
 /**/
 
@@ -562,7 +575,8 @@ public:
 TEST (RestartTest, ManyCrashShutdown) {
     test_env->empty_logdata_dir();
     restart_many_crash_shutdown context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true), 0);  // true = simulated crash
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 1), 0);  // true = simulated crash
+                                                                // 1 = recovery mode
 }
 /**/
 
@@ -594,7 +608,8 @@ public:
 TEST (RestartTest, ManyCkptCrashShutdown) {
     test_env->empty_logdata_dir();
     restart_many_ckpt_crash_shutdown context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true), 0);  // true = simulated crash
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 1), 0);  // true = simulated crash
+                                                                // 1 = recovery mode
 }
 /**/
 

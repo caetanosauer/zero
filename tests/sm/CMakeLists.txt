@@ -25,7 +25,7 @@ X_ADD_TESTCASE(test_btree_verify btree_test_env)
 X_ADD_TESTCASE(test_btree_page_h btree_test_env)
 X_ADD_TESTCASE(test_chain_xct btree_test_env)
 X_ADD_TESTCASE(test_checksum btree_test_env)
-X_ADD_TESTCASE(test_crash btree_test_env)
+X_ADD_TESTCASE(test_crash btree_test_env)               # Serial and traditional recovery test suite
 X_ADD_TESTCASE(test_deadlock btree_test_env)
 X_ADD_TESTCASE(test_emlsn btree_test_env)
 X_ADD_TESTCASE(test_elr btree_test_env)
@@ -41,6 +41,6 @@ X_ADD_TESTCASE(test_sys_xct btree_test_env)
 X_ADD_TESTCASE(test_insert_many btree_test_env)
 X_ADD_TESTCASE(test_btree_insert_100K btree_test_env)
 X_ADD_TESTCASE(test_btree_durability btree_test_env)
-X_ADD_TESTCASE(test_restart btree_test_env)
-
+X_ADD_TESTCASE(test_restart btree_test_env)             # Serial and traditional recovery test suite
+X_ADD_TESTCASE(test_concurrent_restart btree_test_env)  # Concurrent recovery test suite
 

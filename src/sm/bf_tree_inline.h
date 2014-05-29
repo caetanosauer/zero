@@ -486,7 +486,8 @@ inline void bf_tree_m::set_initial_rec_lsn(const lpid_t& pid,
 {
     // Caller has latch on page
     // Special function called from btree_page_h::format_steal() when the
-    // page format log record was generated
+    // page format log record was generated, this can happen during a b-tree
+    // operation or from redo during recovery
     
     // Reset the _rec_lsn in page cb (when the page was dirtied initially) if
     // it is later than the new_lsn, we want the earliest lsn in _rec_lsn
@@ -512,6 +513,9 @@ inline void bf_tree_m::set_initial_rec_lsn(const lpid_t& pid,
             cb._rec_lsn = new_lsn.data();
         cb._used = true;
         cb._dirty = true;
+
+        // Either from regular b-tree operation or from redo during recovery
+        // do not change the in_doubt flag setting, caller handles it
     }
     else
     {

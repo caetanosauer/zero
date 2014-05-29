@@ -112,14 +112,21 @@ public:
             if (shutdown_clean)
             {
                 // Clean shutdown, try to let the child thread finish its work
-                // This would happen only if there are extremely long recovery
-                // process and user shutdowns the system quickly after system start
+                // This would happen only if user shutdowns the system 
+                // immediatelly after the startup call
                 DBGOUT2(<< "waiting for recovery child thread to finish...");
 
                 // Wait for the child thread to join, we don't want to wait forever
-                // give a time out value which is pretty long just in case
-                // If the child thread does not stop, terminate it with a message
-                uint32_t interval = 10000;                
+                // give a time out value which is pretty long in case child thread has
+                // more work to do
+                // If the child thread does not have enough time to finish the recovery
+                // work (e.g., a lot of recovery work to do), terminate the child thread
+                // with a message
+                // In this case, the normal shutdown becomes a force shutdown, meaning
+                // the next server startup will need to recovery again
+                // This can happen in concurrent recovery mode because system is opened
+                // while the recovery is still going on
+                uint32_t interval = 50000;
                 w_rc_t rc = _restart_thread->join(interval);
                 if (rc.is_error())
                 {
@@ -153,6 +160,8 @@ public:
 
         if (false == smlevel_0::use_serial_recovery())
         {
+            DBGOUT1(<< "Spawn child recovery thread");
+
             // Only if not serial operation, create a child thread to perform recovery
             _restart_thread = new restart_thread_t;
             if (!_restart_thread)

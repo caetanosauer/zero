@@ -508,6 +508,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 continue;
             }
             bf_tree_cb_t &cb = _parent->_bufferpool->get_cb(idx);
+            // cb._used covers in_doubt
             if (!cb._dirty || !cb._used) {
                 continue;
             }
@@ -689,6 +690,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
     generic_page* pages = _parent->_bufferpool->_buffer;
     for (bf_idx idx = 1; idx < block_cnt; ++idx) {
         bf_tree_cb_t &cb = _parent->_bufferpool->get_cb(idx);
+        // cb._used covers in_doubt
         if (!cb._dirty || !cb._used) {
             continue;
         }

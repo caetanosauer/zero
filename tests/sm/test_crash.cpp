@@ -8,10 +8,8 @@
 
 btree_test_env *test_env;
 
-/**
- * Testcases to test crash and recovery from logs.
- * Due to its nature, these testcases are more tricky.
- */
+// Test cases to test serial and traditional restart.
+// Due to its nature, these testcases are more tricky.
 
 class crash_empty : public crash_test_base {
 public:

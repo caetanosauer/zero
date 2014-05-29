@@ -116,29 +116,26 @@ public:
                 _options(options),
                 _disk_quota_in_pages(disk_quota_in_pages),
                 _retval(0),
-                _functor(functor) {
-            // complement required options if not set
-            std::string not_set("not_set");
-            int not_set_int = -1;
-            if (_options.get_string_option("sm_logdir", not_set) == not_set) {
-                _options.set_string_option("sm_logdir", global_log_dir);
-            }
-            if (_options.get_string_option("sm_backup_dir", not_set) == not_set) {
-                _options.set_string_option("sm_backup_dir", global_backup_dir);
-            }
-            if (_options.get_int_option("sm_bufpoolsize", not_set_int) == not_set_int) {
-                _options.set_int_option("sm_bufpoolsize",
-                            SM_PAGESIZE / 1024 * default_bufferpool_size_in_pages);
-            }
+                _functor(functor) 
+        {
+            // Initialize using serial traditional recovery mode
+            do_construct(1);
+        }
 
-            // Control which internal restart mode/setting to use.  This is the only place setting the
-            // value for 'sm_restart', a re-compile of test code is required to change this value.
-            //
-            // If not set, the internal default value is determined in sm.cpp
-            // Currently 'sm_restart' is set to '1'.  Change this value for testing purpose. 
-            if (_options.get_int_option("sm_restart", not_set_int) == not_set_int) {            
-                _options.set_int_option("sm_restart", 1);
-            }
+        testdriver_thread_t(test_functor *functor,
+            btree_test_env *env,
+            int disk_quota_in_pages,
+            const sm_options &options,
+            int32_t recovery_mode)
+                : smthread_t(t_regular, "testdriver_thread_t"),
+                _env(env),
+                _options(options),
+                _disk_quota_in_pages(disk_quota_in_pages),
+                _retval(0),
+                _functor(functor) 
+        {
+            // Initialize using caller specified recovery mode                
+            do_construct(recovery_mode);    
         }
 
         ~testdriver_thread_t()  {}
@@ -148,6 +145,7 @@ public:
 
 
 private:
+        void   do_construct(int32_t recovery_mode);
         w_rc_t do_init(ss_m &ssm);
     
         btree_test_env *_env;
@@ -156,6 +154,45 @@ private:
         int             _retval; // return value from run()
         test_functor*   _functor;// test functor object
 };
+
+void
+testdriver_thread_t::do_construct(int32_t recovery_mode)
+{
+    // Private function called by testdriver_thread_t constructors to 
+    // complement required options if not set
+    // Also set up the recovery mode per caller's request
+
+    std::string not_set("not_set");
+    int not_set_int = -1;
+    if (_options.get_string_option("sm_logdir", not_set) == not_set) {
+        _options.set_string_option("sm_logdir", global_log_dir);
+    }
+    if (_options.get_string_option("sm_backup_dir", not_set) == not_set) {
+        _options.set_string_option("sm_backup_dir", global_backup_dir);
+    }
+    if (_options.get_int_option("sm_bufpoolsize", not_set_int) == not_set_int) {
+        _options.set_int_option("sm_bufpoolsize",
+                 SM_PAGESIZE / 1024 * default_bufferpool_size_in_pages);
+    }
+
+    // Control which internal restart mode/setting to use.  This is the only place from test suites
+    // to set the value for 'sm_restart'.
+    // If not set, the internal default value is determined in sm.cpp (hard coded).
+    //
+    // This function is called by all constructors, while mode 1 (serial traditional recovery)
+    // is for non-recovery related test suites and serial traditional recovery test suite
+    // (test_crash)
+    // Other recovery modes are for target recovery testing (e.g. test_restart, 
+    // test_concurrent_restart), not used by non-recovery related test suites.
+    // 
+    // Valid modes are: 1, 2, 3, 4, 10, 11, 12.  These are internal setting, see sm.cpp for
+    // detail information on each mode
+    // If an invalid recovery_mode was specified, the system defaults to the internal
+    // default setting in sm.cpp
+    if (_options.get_int_option("sm_restart", not_set_int) == not_set_int) {
+        _options.set_int_option("sm_restart", recovery_mode);
+    }   
+}
 
 rc_t
 testdriver_thread_t::do_init(ss_m &ssm)
@@ -400,9 +437,10 @@ int btree_test_env::runBtreeTest (w_rc_t (*func)(ss_m*, test_volume_t*),
     return rv;
 }
 
-// Begin... for test_restart.cpp
+// Begin... for test_restart.cpp, test_concurrent_restart.cpp
 int btree_test_env::runRestartTest (restart_test_base *context,
     bool fCrash,
+    int32_t recovery_mode,        
     bool use_locks, int32_t lock_table_size,
     int disk_quota_in_pages, int bufferpool_size_in_pages,
     uint32_t cleaner_threads,
@@ -411,7 +449,7 @@ int btree_test_env::runRestartTest (restart_test_base *context,
     uint32_t cleaner_write_buffer_pages,
     bool initially_enable_cleaners,
     bool enable_swizzling) {
-    return runRestartTest(context, fCrash, use_locks, disk_quota_in_pages,
+    return runRestartTest(context, fCrash, recovery_mode, use_locks, disk_quota_in_pages,
             make_sm_options(lock_table_size,
                     bufferpool_size_in_pages,
                     cleaner_threads,
@@ -424,6 +462,7 @@ int btree_test_env::runRestartTest (restart_test_base *context,
 
 int btree_test_env::runRestartTest (restart_test_base *context,
     bool fCrash,
+    int32_t recovery_mode,        
     bool use_locks, int32_t lock_table_size,
     int disk_quota_in_pages, int bufferpool_size_in_pages,
     uint32_t cleaner_threads,
@@ -435,7 +474,7 @@ int btree_test_env::runRestartTest (restart_test_base *context,
     const std::vector<std::pair<const char*, int64_t> > &additional_int_params,
     const std::vector<std::pair<const char*, bool> > &additional_bool_params,
     const std::vector<std::pair<const char*, const char*> > &additional_string_params) {
-    return runRestartTest(context, fCrash, use_locks, disk_quota_in_pages,
+    return runRestartTest(context, fCrash, recovery_mode, use_locks, disk_quota_in_pages,
         make_sm_options(lock_table_size,
                     bufferpool_size_in_pages,
                     cleaner_threads,
@@ -446,9 +485,14 @@ int btree_test_env::runRestartTest (restart_test_base *context,
                     enable_swizzling,
                     additional_int_params, additional_bool_params, additional_string_params));
 }
-int btree_test_env::runRestartTest (restart_test_base *context, bool fCrash, bool use_locks, int disk_quota_in_pages, const sm_options &options) {
+int btree_test_env::runRestartTest (restart_test_base *context, bool fCrash, int32_t recovery_mode,  
+                                      bool use_locks, int disk_quota_in_pages, const sm_options &options) {
     _use_locks = use_locks;
 
+    // This function is called by restart test cases, while caller specify
+    // the recovery mode via 'recovery_mode'
+    // e.g., serial traditional, various concurrent combinations
+    
     DBGOUT2 ( << "Going to call pre_shutdown()...");
     int rv;
     w_rc_t e;
@@ -457,7 +501,7 @@ int btree_test_env::runRestartTest (restart_test_base *context, bool fCrash, boo
             {
             // Simulated crash
             restart_dirty_test_pre_functor functor(context);
-            testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options);
+            testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options, recovery_mode);  // User specified recovery mode
             e = smtu.fork();
             if(e.is_error()) 
                 {
@@ -482,7 +526,7 @@ int btree_test_env::runRestartTest (restart_test_base *context, bool fCrash, boo
             {
             // Clean shutdown
             restart_clean_test_pre_functor functor(context);
-            testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options);
+            testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options, recovery_mode);  // User specified recovery mode
             e = smtu.fork();
             if(e.is_error()) 
                 {
@@ -507,7 +551,7 @@ int btree_test_env::runRestartTest (restart_test_base *context, bool fCrash, boo
     DBGOUT2 ( << "Going to call post_shutdown()...");
         {
         restart_test_post_functor functor(context);
-        testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options);
+        testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options, recovery_mode);   // User specified recovery mode
 
         w_rc_t e = smtu.fork();
         if(e.is_error()) 
@@ -529,7 +573,7 @@ int btree_test_env::runRestartTest (restart_test_base *context, bool fCrash, boo
     return rv;
         
 }
-// End... for test_restart.cpp
+// End... for test_restart.cpp, test_concurrent_restart.cpp
 
 int btree_test_env::runCrashTest (crash_test_base *context,
     bool use_locks, int32_t lock_table_size,
@@ -581,7 +625,7 @@ int btree_test_env::runCrashTest (crash_test_base *context, bool use_locks, int 
     int rv;
     {
         crash_test_pre_functor functor(context);
-        testdriver_thread_t smtu(&functor, this,  disk_quota_in_pages, options);
+        testdriver_thread_t smtu(&functor, this,  disk_quota_in_pages, options);  // Use serial recovery mode
 
         w_rc_t e = smtu.fork();
         if(e.is_error()) {
@@ -604,7 +648,7 @@ int btree_test_env::runCrashTest (crash_test_base *context, bool use_locks, int 
     DBGOUT2 ( << "Crash simulated! going to call post_crash()...");
     {
         crash_test_post_functor functor(context);
-        testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options);
+        testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options);  // Use serial recovery mode
 
         w_rc_t e = smtu.fork();
         if(e.is_error()) {
@@ -624,7 +668,6 @@ int btree_test_env::runCrashTest (crash_test_base *context, bool use_locks, int 
     return rv;
     
 }
-
 
 void btree_test_env::set_xct_query_lock() {
     if (_use_locks) {

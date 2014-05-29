@@ -99,7 +99,7 @@ public:
     rc_t (*_functor)(ss_m*, test_volume_t*);
 };
 
-// Begin... for test_restart.cpp
+// Begin... for test_restart.cpp and test_concurrent_restart.cpp
 // The base class for all restart test cases.
 // Derived classes must implement two functions; pre_shutdown() and post_shutdown().
 // These are called before and after a normal or (simulated) crash shutdown
@@ -158,7 +158,7 @@ public:
     }
     restart_test_base *_context;
 };
-// End... for test_restart.cpp
+// End... for test_restart.cpp and and test_concurrent_restart.cpp
 
 /**
  * The base class for all crash test cases.
@@ -285,43 +285,6 @@ public:
     }
 
     /**
-    * Runs a restart testcase.
-    * @param context the object to implement pre_shutdiwn(), post_shutdown().
-    * @see restart_test_base
-    */
-    int runRestartTest (restart_test_base *context,
-                      bool fCrash,
-                      bool use_locks = false,
-                      int32_t lock_table_size = default_locktable_size,
-                      int disk_quota_in_pages = default_quota_in_pages,
-                      int bufferpool_size_in_pages = default_bufferpool_size_in_pages,
-                      uint32_t cleaner_threads = 1,
-                      uint32_t cleaner_interval_millisec_min	   = 1000,
-                      uint32_t cleaner_interval_millisec_max	   = 256000,
-                      uint32_t cleaner_write_buffer_pages          = 64,
-                      bool initially_enable_cleaners = true,
-                      bool enable_swizzling = default_enable_swizzling
-                      );
-
-    /** This is most concise. New code should use this one. */
-    int runRestartTest (restart_test_base *context, bool fCrash, bool use_locks, int disk_quota_in_pages, const sm_options &options);
-
-
-    int runRestartTest (restart_test_base *context,
-                      bool fCrash,
-                      bool use_locks, int32_t lock_table_size,
-                      int disk_quota_in_pages, int bufferpool_size_in_pages,
-                      uint32_t cleaner_threads,
-                      uint32_t cleaner_interval_millisec_min,
-                      uint32_t cleaner_interval_millisec_max,
-                      uint32_t cleaner_write_buffer_pages,
-                      bool initially_enable_cleaners,
-                      bool enable_swizzling,
-                      const std::vector<std::pair<const char*, int64_t> > &additional_int_params,
-                      const std::vector<std::pair<const char*, bool> > &additional_bool_params,
-                      const std::vector<std::pair<const char*, const char*> > &additional_string_params);
-
-    /**
      * Overload to set additional parameters.
      * @param use_locks whether to use locks
      * @param lock_table_size from 2^6 to 2^23. default 2^6 in testcases.
@@ -345,7 +308,48 @@ public:
                       const std::vector<std::pair<const char*, const char*> > &additional_string_params);
 
     /**
-     * Runs a crash testcase.
+    * Runs a restart testcase in various recovery modes
+    * Caller specify the recovery mode through input parameter 'recovery_mode'
+    * @param context the object to implement pre_shutdiwn(), post_shutdown().
+    * @see restart_test_base
+    */
+    int runRestartTest (restart_test_base *context,
+                      bool fCrash,
+                      int32_t recovery_mode,                      
+                      bool use_locks = false,
+                      int32_t lock_table_size = default_locktable_size,
+                      int disk_quota_in_pages = default_quota_in_pages,
+                      int bufferpool_size_in_pages = default_bufferpool_size_in_pages,
+                      uint32_t cleaner_threads = 1,
+                      uint32_t cleaner_interval_millisec_min	   = 1000,
+                      uint32_t cleaner_interval_millisec_max	   = 256000,
+                      uint32_t cleaner_write_buffer_pages          = 64,
+                      bool initially_enable_cleaners = true,
+                      bool enable_swizzling = default_enable_swizzling
+                      );
+
+    /** This is most concise. New code should use this one. */
+    int runRestartTest (restart_test_base *context, bool fCrash, int32_t recovery_mode,
+                          bool use_locks, int disk_quota_in_pages, const sm_options &options);
+
+
+    int runRestartTest (restart_test_base *context,
+                      bool fCrash,
+                      int32_t recovery_mode,                      
+                      bool use_locks, int32_t lock_table_size,
+                      int disk_quota_in_pages, int bufferpool_size_in_pages,
+                      uint32_t cleaner_threads,
+                      uint32_t cleaner_interval_millisec_min,
+                      uint32_t cleaner_interval_millisec_max,
+                      uint32_t cleaner_write_buffer_pages,
+                      bool initially_enable_cleaners,
+                      bool enable_swizzling,
+                      const std::vector<std::pair<const char*, int64_t> > &additional_int_params,
+                      const std::vector<std::pair<const char*, bool> > &additional_bool_params,
+                      const std::vector<std::pair<const char*, const char*> > &additional_string_params);
+
+    /**
+     * Runs a crash testcase in serial traditional recovery mode
      * @param context the object to implement pre_crash(), post_crash().
      * @see crash_test_base
      */
