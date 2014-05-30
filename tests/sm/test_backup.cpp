@@ -37,7 +37,7 @@ w_rc_t initial_test(ss_m* ssm, test_volume_t *test_volume) {
     // this is initial state, so all data pages are unused.
     vol_t *vol = ssm->io->get_volume(test_volume->_vid);
     const shpid_t FIRST_PID = vol->first_data_pageid();
-    for (shpid_t pid = FIRST_PID; pid < default_quota_in_pages; ++pid) {
+    for (shpid_t pid = FIRST_PID; pid < (uint32_t)default_quota_in_pages; ++pid) {
         EXPECT_FALSE(bk->page_exists(vid, pid));
     }
     x_delete_backup(ssm, test_volume);
@@ -92,7 +92,7 @@ w_rc_t allocate_few_test(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(bk->volume_exists(vid));
 
     generic_page buf;
-    for (shpid_t pid = FIRST_PID; pid < default_quota_in_pages; ++pid) {
+    for (shpid_t pid = FIRST_PID; pid < (uint32_t)default_quota_in_pages; ++pid) {
         SCOPED_TRACE(pid);
         if (pid < FIRST_PID + ALLOCATE_COUNT) {
             // this page exists in backup
@@ -141,7 +141,7 @@ w_rc_t mixed_test(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(bk->volume_exists(vid));
 
     generic_page buf;
-    for (shpid_t pid = FIRST_PID; pid < default_quota_in_pages; ++pid) {
+    for (shpid_t pid = FIRST_PID; pid < (uint32_t)default_quota_in_pages; ++pid) {
         SCOPED_TRACE(pid);
         if (pid < FIRST_PID + ALLOCATE_COUNT
                 && (pid < DEALLOCATE_START || pid >= DEALLOCATE_END)) {

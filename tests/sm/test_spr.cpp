@@ -122,11 +122,11 @@ w_rc_t test_nochange(ss_m* ssm, test_volume_t *test_volume) {
     bool found;
     W_DO(ssm->find_assoc(stid, target_key0, buf, buf_len, found));
     EXPECT_TRUE(found);
-    EXPECT_EQ(SM_PAGESIZE / 6, buf_len);
+    EXPECT_EQ((smsize_t)(SM_PAGESIZE / 6), buf_len);
     EXPECT_TRUE(is_consecutive_chars(buf, 'a', SM_PAGESIZE / 6));
     W_DO(ssm->find_assoc(stid, target_key1, buf, buf_len, found));
     EXPECT_TRUE(found);
-    EXPECT_EQ(SM_PAGESIZE / 6, buf_len);
+    EXPECT_EQ((smsize_t)(SM_PAGESIZE / 6), buf_len);
     EXPECT_TRUE(is_consecutive_chars(buf, 'a', SM_PAGESIZE / 6));
     return RCOK;
 }
@@ -157,7 +157,7 @@ w_rc_t test_one_change(ss_m* ssm, test_volume_t *test_volume) {
     bool found;
     W_DO(ssm->find_assoc(stid, target_key0, buf, buf_len, found));
     EXPECT_TRUE(found);
-    EXPECT_EQ(SM_PAGESIZE / 6, buf_len);
+    EXPECT_EQ((smsize_t)(SM_PAGESIZE / 6), buf_len);
     EXPECT_TRUE(is_consecutive_chars(buf, 'a', SM_PAGESIZE / 6));
     W_DO(ssm->find_assoc(stid, target_key1, buf, buf_len, found));
     EXPECT_FALSE(found);
@@ -262,11 +262,11 @@ w_rc_t test_multi_pages(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->begin_xct());
     W_DO(ssm->find_assoc(stid, target_key0, buf, buf_len, found));
     EXPECT_TRUE(found);
-    EXPECT_EQ(recsize, buf_len);
+    EXPECT_EQ((smsize_t)recsize, buf_len);
     EXPECT_TRUE(is_consecutive_chars(buf, 'a', recsize));
     W_DO(ssm->find_assoc(stid, target_key1, buf, buf_len, found));
     EXPECT_TRUE(found);
-    EXPECT_EQ(recsize, buf_len);
+    EXPECT_EQ((smsize_t)recsize, buf_len);
     EXPECT_TRUE(is_consecutive_chars(buf, 'a', recsize));
     for (int i = 0; i < 5; ++i) {
         char keystr[7] = "";
@@ -276,7 +276,7 @@ w_rc_t test_multi_pages(ss_m* ssm, test_volume_t *test_volume) {
         key.construct_regularkey(keystr, 7);
         W_DO(ssm->find_assoc(stid, key, buf, buf_len, found)); // just to invoke adoption
         EXPECT_TRUE(found);
-        EXPECT_EQ(recsize, buf_len);
+        EXPECT_EQ((smsize_t)recsize, buf_len);
         EXPECT_TRUE(is_consecutive_chars(buf, 'a', recsize));
     }
     W_DO(ssm->commit_xct());

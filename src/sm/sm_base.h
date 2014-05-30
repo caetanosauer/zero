@@ -396,7 +396,7 @@ public:
         t_in_analysis = 0x1,
         t_in_redo = 0x2,
         t_in_undo = 0x4,
-        t_forward_processing = 0x8
+        t_forward_processing = 0x8   // System is opened for transaction
     };
 
     /*
@@ -431,8 +431,7 @@ public:
                                             //    Using commit_lsn for new transactions
         t_recovery_concurrent_lock = 0x4,   // M3 implementation:
                                             //    System is opened after Log Analysis.
-                                            //    Using lock acquisition for new transactions
-        
+                                            //    Using lock acquisition for new transactions       
         t_recovery_redo_log = 0x8,          // M1 traditional implementation:
                                             //    REDO is forward log scan driven                                           
         t_recovery_redo_page = 0x10,        // M2 implementation:
@@ -441,13 +440,11 @@ public:
                                             //    REDO is on-demand using SPR                
         t_recovery_redo_mix = 0x40,         // M4 implementation:
                                             //    REDO is using both page driven and
-                                            //    on-demand using SPR                
-                                            
+                                            //    on-demand using SPR                                                           
         t_recovery_undo_reverse = 0x80,     // M1 traditional implementation:
                                             //    UNDO is using reverse order with heap
         t_recovery_undo_txn = 0x100,        // M2 implementation:            
                                             //    UNDO is transaction driven
-
     };
     static recovery_internal_mode_t recovery_internal_mode;
 

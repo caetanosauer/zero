@@ -119,32 +119,32 @@ const int64_t m1_default_recovery =         // sm_restart = 1 (default)
     smlevel_0::t_recovery_redo_log |        // Log scan driven REDO
     smlevel_0::t_recovery_undo_reverse;     // Reverse UNDO
 const int64_t m2_default_recovery =         // sm_restart = 2
-    smlevel_0::t_recovery_concurrent_log |  // Concurrent operation using log 
-    smlevel_0::t_recovery_redo_page |       // Page driven REDO
-    smlevel_0::t_recovery_undo_txn;         // Transaction driven UNDO
+    smlevel_0::t_recovery_concurrent_log |  // Concurrent operation using log           << new
+    smlevel_0::t_recovery_redo_page |       // Page driven REDO                           << new
+    smlevel_0::t_recovery_undo_txn;         // Transaction driven UNDO                  << new
 const int64_t m3_default_recovery =         // sm_restart = 3
-    smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
-    smlevel_0::t_recovery_redo_spr |        // On-demand driven REDO
+    smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock          << new
+    smlevel_0::t_recovery_redo_spr |        // On-demand driven REDO                  << new
     smlevel_0::t_recovery_undo_txn;         // Transaction driven UNDO
 const int64_t m4_default_recovery =         // sm_restart = 4
     smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
-    smlevel_0::t_recovery_redo_mix |        // Mixed REDO
+    smlevel_0::t_recovery_redo_mix |        // Mixed REDO                                   << new
     smlevel_0::t_recovery_undo_txn;         // Transaction driven UNDO
 
 // Alternative modes:
 // Compare with m2_default_recovery, difference in REDO 
 const int64_t alternative_log_log_recovery =     // sm_restart = 10
     smlevel_0::t_recovery_concurrent_log |       // Concurrent operation using log 
-    smlevel_0::t_recovery_redo_log |             // Log scan driven REDO
+    smlevel_0::t_recovery_redo_log |             // Log scan driven REDO             << compare with sm_restart 2
     smlevel_0::t_recovery_undo_txn;              // Transaction driven UNDO
 // Compare with m2_default_recovery, difference in concurrent
 const int64_t alternative_lock_page_recovery =   // sm_restart = 11
-    smlevel_0::t_recovery_concurrent_lock |      // Concurrent operation using lock
+    smlevel_0::t_recovery_concurrent_lock |      // Concurrent operation using lock  << compare with sm_restart 2
     smlevel_0::t_recovery_redo_page |            // Page driven REDO
     smlevel_0::t_recovery_undo_txn;              // Transaction driven UNDO
 // Compare with alternative_log_log_recovery, difference in concurrent
 const int64_t alternative_lock_log_recovery =    // sm_restart = 12
-    smlevel_0::t_recovery_concurrent_lock |      // Concurrent operation using lock
+    smlevel_0::t_recovery_concurrent_lock |      // Concurrent operation using lock  << compare with sm_restart 10
     smlevel_0::t_recovery_redo_log |             // Log scan driven REDO
     smlevel_0::t_recovery_undo_txn;              // Transaction driven UNDO
 
