@@ -8,6 +8,8 @@
 
 btree_test_env *test_env;
 
+const int WAIT_TIME = 1000; // Wait 1 second
+
 // Test cases to test concurrent restart.
 // Depending on the recovery mode, the test results might vary and therefore tricky
 
@@ -78,11 +80,104 @@ public:
 TEST (RestartTest, Empty) {
     test_env->empty_logdata_dir();
     restart_empty context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 2), 0);  // false = no simulated crash, normal shutdown
-                                                                 // 2 = recovery mode
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 20), 0);  // false = no simulated crash, normal shutdown
+                                                                  // 20 = recovery mode, m2 default concurrent mode
 }
 /**/
 
+// Test case with simple transactions (1 in-flight) and normal shutdown, no concurrent activities during recovery
+class restart_simple_normal : public restart_test_base  {
+public:
+    w_rc_t pre_shutdown(ss_m *ssm) {
+        output_durable_lsn(1);
+        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        output_durable_lsn(2);
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa3", "data3"));
+
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa1", "data1"));
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa2", "data2"));
+
+        W_DO(test_env->begin_xct());
+        W_DO(test_env->btree_insert(_stid, "aa4", "data4"));             // in-flight
+
+        output_durable_lsn(3);
+        return RCOK;
+    }
+
+    w_rc_t post_shutdown(ss_m *) {
+        output_durable_lsn(4);
+        x_btree_scan_result s;
+
+        while (true == test_env->in_recovery())
+        {
+            // Concurrent recovery is still going on, wait
+            ::usleep(WAIT_TIME);            
+        }
+
+        // Verify
+        W_DO(test_env->btree_scan(_stid, s));
+        EXPECT_EQ (3, s.rownum);
+        EXPECT_EQ (std::string("aa1"), s.minkey);
+        EXPECT_EQ (std::string("aa3"), s.maxkey);
+        return RCOK;
+    }
+};
+
+/* Passing */
+TEST (RestartTest, SimpleNormal) {
+    test_env->empty_logdata_dir();
+    restart_simple_normal context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 20), 0);  // false = no simulated crash, normal shutdown
+                                                                  // 20 = recovery mode, m2 default concurrent mode, no wait
+}
+/**/
+
+// Test case with simple transactions (1 in-flight) and crash shutdown, no concurrent activities during recovery
+class restart_simple_crash : public restart_test_base  {
+public:
+    w_rc_t pre_shutdown(ss_m *ssm) {
+        output_durable_lsn(1);
+        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        output_durable_lsn(2);
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa3", "data3"));
+
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa1", "data1"));
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa2", "data2"));
+
+        W_DO(test_env->begin_xct());
+        W_DO(test_env->btree_insert(_stid, "aa4", "data4"));             // in-flight
+
+        output_durable_lsn(3);
+        return RCOK;
+    }
+
+    w_rc_t post_shutdown(ss_m *) {
+        output_durable_lsn(4);
+        x_btree_scan_result s;
+
+        while (true == test_env->in_recovery())
+        {
+            // Concurrent recovery is still going on, wait
+            ::usleep(WAIT_TIME);            
+        }
+
+        // Verify
+        W_DO(test_env->btree_scan(_stid, s));
+        EXPECT_EQ (3, s.rownum);
+        EXPECT_EQ (std::string("aa1"), s.minkey);
+        EXPECT_EQ (std::string("aa3"), s.maxkey);
+        return RCOK;
+    }
+};
+
+/* Not passing in UNDO phase during 'abort' *
+TEST (RestartTest, SimpleCrash) {
+    test_env->empty_logdata_dir();
+    restart_simple_crash context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 20), 0);   // true = simulated crash
+                                                                  // 20 = recovery mode, m2 default concurrent mode, no wait
+}
+**/
 
 
 int main(int argc, char **argv) {

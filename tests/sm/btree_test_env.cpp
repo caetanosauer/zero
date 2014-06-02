@@ -185,7 +185,7 @@ testdriver_thread_t::do_construct(int32_t recovery_mode)
     // Other recovery modes are for target recovery testing (e.g. test_restart, 
     // test_concurrent_restart), not used by non-recovery related test suites.
     // 
-    // Valid modes are: 1, 2, 3, 4, 10, 11, 12.  These are internal setting, see sm.cpp for
+    // Valid modes are specified in sm.cpp, these are internal setting, see sm.cpp for
     // detail information on each mode
     // If an invalid recovery_mode was specified, the system defaults to the internal
     // default setting in sm.cpp
@@ -897,3 +897,9 @@ w_rc_t x_take_backup(ss_m* ssm, test_volume_t *test_volume) {
 
     return RCOK;
 }
+
+bool x_in_recovery(ss_m* ssm)
+{
+    return ssm->in_recovery();
+}
+

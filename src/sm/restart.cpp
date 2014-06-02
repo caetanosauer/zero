@@ -1517,6 +1517,7 @@ restart_m::analysis_pass(
             heap.Heapify();
             DBGOUT3( << "Number of transaction entries in heap: " << heap.NumElements());
         }
+
         DBGOUT3( << "Number of active transactions in transaction table: " << xct_t::num_active_xcts());
     }  // destroy iter, no unlock of the transaction table because we did not lock it initially
 
@@ -1579,9 +1580,8 @@ restart_m::redo_pass(
                                        // for validation purpose
 )
 {
-////////////////////////////////////////
-// TODO(Restart)...  ignore 'non-read-lock' in M1
-////////////////////////////////////////
+
+    // Log driven Redo phase for both serial and concurrent modes
 
     FUNC(restart_m::redo_pass);
 
@@ -1912,6 +1912,7 @@ void restart_m::_redo_log_with_pid(
         {
             fixable_page_h page;
             bool virgin_page = false;
+            bool corrupted_page = false;
 
             // Comments below (page format) are from the original implementation
             // save this comments so we don't lose the original thought in this area, although
@@ -1988,14 +1989,10 @@ void restart_m::_redo_log_with_pid(
                     cb.latch().latch_release();                
                     if (eBADCHECKSUM == rc.err_num())
                     {
-////////////////////////////////////////
-// TODO(Restart)... if the loaded page is corrupted, 
-//                    we do not have Single Page Recover
-//                    in M1, must raise error and abort
-////////////////////////////////////////
-
-                        W_FATAL_MSG(fcINTERNAL, 
-                                    << "Bad page checksum in page: " << page_updated.page);
+                        // Corrupted page, allow it to continue and we will
+                        // use SPR to recovery the page
+                        DBGOUT3 (<< "REDO phase, newly loaded page was corrupted, page = " << page_updated.page);                    
+                        corrupted_page = true;
                     }
                     else
                     {
@@ -2035,11 +2032,7 @@ void restart_m::_redo_log_with_pid(
             // 1. If a log record pertains does not pertain to one of the pages marked 'in_doubt' 
             //   in the buffer pool, no-op (we should not get here in this case)
             // 2. If the page image in the buffer pool is newer than the log record, no-op
-////////////////////////////////////////
-// TODO(Restart)... not implemented
-            // 3. If the PageLSN value in the page image in the buffer pool differs from the
-            //   'prior PageLSN value' in the log record, report an error (no SPR)
-////////////////////////////////////////
+            // 3. If the page was corrupted from loading, use SPR to recover first
             // 4. Apply REDO, modify the pageLSN value in the page image
 
             // Associate this buffer pool page with fixable_page data structure
@@ -2056,6 +2049,15 @@ void restart_m::_redo_log_with_pid(
                 page.get_generic_page()->lsn = lsn_t::null;
             }
             w_assert1(page.pid() == page_updated);
+
+            if (corrupted_page)
+            {
+                // Corrupted page, use SPR to recovery before retrieving
+                // the last write lsn from page context
+                // use the log record lsn for SPR, no lsn validation
+                
+                W_COERCE(smlevel_0::log->recover_single_page(page, lsn, false));                
+            }
 
             /// page.lsn() is the last write to this page
             lsn_t page_lsn = page.lsn();
@@ -2282,9 +2284,7 @@ restart_m::undo_pass(
                                   // Not used currently
     )
 {
-////////////////////////////////////////
-// TODO(Restart)...  ignore 'non-read-lock' in M1
-////////////////////////////////////////
+    // Serial UNDO phase, ignore 'non-read-lock'
 
     FUNC(restart_m::undo_pass);
 
@@ -2615,7 +2615,8 @@ void restart_m::undo_concurrent()
     if ((true == use_concurrent_log_recovery()) || (true == use_concurrent_lock_recovery()))
     {
 ////////////////////////////////////////            
-// TODO(Restart)... Lock acquisition, release locks during UNDO, NYI
+// TODO(Restart)... Lock acquisition, acquire locks during Log Analysis - NYI
+//                          release locks during UNDO - already as part of 'transaction abort' operation
 ////////////////////////////////////////
         if (true == use_concurrent_lock_recovery())
             W_FATAL_MSG(fcINTERNAL, << "UNDO phase with lock acquisition: NYI");   
@@ -2671,6 +2672,13 @@ void restart_m::_redo_page_pass()
     {
         DBGOUT3(<<"No in_doubt page to redo");
         return;
+    }
+
+    if(true == use_redo_delay_recovery())
+    {
+        // For concurrent testing purpose, delay the REDO 
+        // operation so the user transactions can hit conflicts
+        g_me()->sleep(wait_interval); // 1 second, this is a very long time
     }
 
     w_ostrstream s;
@@ -2919,6 +2927,13 @@ void restart_m::_undo_txn_pass()
         return;
     }
 
+    if(true == use_undo_delay_recovery())
+    {
+        // For concurrent testing purpose, delay the UNDO 
+        // operation so the user transactions can hit conflicts
+        g_me()->sleep(wait_interval); // 1 second, this is a very long time
+    }
+
     w_ostrstream s;
     s << "restart concurrent undo_txn_pass";
     (void) log_comment(s.c_str());
@@ -3032,6 +3047,7 @@ void restart_thread_t::run()
     // When this function returns, the child thread will be destroyed
 
     DBGOUT1(<< "restart_thread_t: Starts REDO and UNDO tasks");
+    working = true;
 
     // REDO, call back to restart_m to carry out the concurrent REDO
     smlevel_1::recovery->redo_concurrent();
@@ -3041,6 +3057,8 @@ void restart_thread_t::run()
 
     // Done
     DBGOUT1(<< "restart_thread_t: Finished REDO and UNDO tasks");    
+    working = false;
+
     return;
 };
 

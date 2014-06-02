@@ -445,6 +445,12 @@ public:
                                             //    UNDO is using reverse order with heap
         t_recovery_undo_txn = 0x100,        // M2 implementation:            
                                             //    UNDO is transaction driven
+        t_recovery_redo_delay = 0x200,      // Testing hook:            
+                                            //    Internal delay before REDO phase
+                                            //    only if we have actual REDO work
+        t_recovery_undo_delay = 0x400,      // Testing hook:            
+                                            //    Internal delay before UNDO phase
+                                            //    only if we have actual UNDO work
     };
     static recovery_internal_mode_t recovery_internal_mode;
 
@@ -496,7 +502,16 @@ public:
         // Recovery M2
         return ((recovery_internal_mode & t_recovery_undo_txn ) !=0);     
     }
-
+    static bool use_redo_delay_recovery() 
+    { 
+        // Testing purpose
+        return ((recovery_internal_mode & t_recovery_redo_delay ) !=0);     
+    }
+    static bool use_undo_delay_recovery() 
+    { 
+        // Testing purpose
+        return ((recovery_internal_mode & t_recovery_undo_delay ) !=0);     
+    }
 
     static void  add_to_global_stats(const sm_stats_info_t &from);
     static void  add_from_global_stats(sm_stats_info_t &to);

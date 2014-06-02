@@ -45,6 +45,11 @@ class dirty_pages_tab_t;
 
 #include "sm_int_1.h"
 
+// Used for:
+//    internal wait for testing purpose
+//    normal shutdown wait
+const uint32_t wait_interval = 1000;   // 1 seconds
+
 class CmpXctUndoLsns
 {
     public:
@@ -77,15 +82,21 @@ public:
         // It performs the recovery work while concurrent user transactions
         // are coming in
         
-        w_assert1(false == smlevel_0::use_serial_recovery());        
+        w_assert1(false == smlevel_0::use_serial_recovery());
+
+        working = true;
     };
     NORET ~restart_thread_t() 
     {
-        // Empty 
+        DBGOUT1(<< "restart_thread_t: Exiting child thread");
     };
 
     // Main body of the child thread
     void run();
+    inline bool in_recovery() { return working; }
+
+private:
+    bool working;  // true if the child thread is still working on recovery
 
 private:
     // disabled
@@ -113,26 +124,38 @@ public:
             {
                 // Clean shutdown, try to let the child thread finish its work
                 // This would happen only if user shutdowns the system 
-                // immediatelly after the startup call
+                // as soon as the system is open (concurrent recovery just started) 
                 DBGOUT2(<< "waiting for recovery child thread to finish...");
 
-                // Wait for the child thread to join, we don't want to wait forever
-                // give a time out value which is pretty long in case child thread has
-                // more work to do
-                // If the child thread does not have enough time to finish the recovery
-                // work (e.g., a lot of recovery work to do), terminate the child thread
-                // with a message
+                // Wait for the child thread to join, we want to give the child thread some time to 
+                // finish its work but we don't want to wait forever, so we are giving
+                // some time to the child thread
+                // If the child thread did not have enough time to finish the recovery
+                // work (e.g., a lot of recovery work to do) after the wait, terminate the 
+                // child thread with a message
                 // In this case, the normal shutdown becomes a force shutdown, meaning
                 // the next server startup will need to recovery again
                 // This can happen in concurrent recovery mode because system is opened
                 // while the recovery is still going on
-                uint32_t interval = 50000;
-                w_rc_t rc = _restart_thread->join(interval);
+                
+                if (_restart_thread->in_recovery())
+                {
+                    DBGOUT1(<< "Child thread is still busy, extra sleep");
+                    g_me()->sleep(wait_interval*2); // 2 second, this is a very long time
+                }
+                if (_restart_thread->in_recovery())
+                {
+                    DBGOUT1(<< "Force a shutdown before restart child thread finished it work");               
+                    smlevel_0::errlog->clog << info_prio 
+                        << "Force a shutdown before restart child thread finished it work" << flushl;
+                }
+
+                w_rc_t rc = _restart_thread->join(wait_interval);  // Another wait to give child thread more time
                 if (rc.is_error())
                 {
-                    DBGOUT1(<< "Normal shutdown before restart child thread finished");               
+                    DBGOUT1(<< "Normal shutdown - child thread join error: " << rc);
                     smlevel_0::errlog->clog << info_prio 
-                        << "Normal shutdown before restart child thread finished" << flushl;
+                        << "Normal shutdown - child thread join error: " << rc << flushl;
                 }
             }
             else
@@ -197,19 +220,25 @@ public:
             if (in_recovery_analysis())
                 return true;
 
+            // Child thread exists
             if (_restart_thread)
-                return true;
+            {
+                if (_restart_thread->in_recovery())
+                    return true;
+                else
+                    return false;
+            }
 
             // Child thread does not exist, and the operating mode is 
             // not in recovery anymore
             // For concurrent mode, the operating mode changes to
             // t_forward_processing after the child thread has been spawn
+            // Corner case, if this function gets called after Log Analysis but
+            // before the child thread was created, the operating mode would
+            // be in Log Analysis            
             if (false == in_recovery())
                 return false;
 
-            // Corner case, if this function gets called after Log Analysis but
-            // before the child thread was created, the operating mode would
-            // be in Log Analysis 
             return true;
         }
     }

@@ -241,7 +241,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *  - type: number
  *  - description: control internal restart/recovery mode
  *     this option is for internal testing purpose and must be used with caution
- *     valid values: 1, 2, 3, 4, 10, 11, 12
+ *     valid values: see sm.cpp
  *  - default: see sm.cpp for initial setting
  *  - required?: no
   */
@@ -578,6 +578,7 @@ private:
     void                _construct_once();
     void                _destruct_once();
 
+    void                _set_recovery_mode();
 
 public:
     /**\addtogroup SSMXCT
@@ -1916,6 +1917,13 @@ public:
         timeout_in_ms           timeout = WAIT_SPECIFIED_BY_XCT
     );
 
+    // Debugging function
+    // Returns true if recovery is still going on
+    // Serial recovery mode: always return false
+    // Concurrent recovery mode: return true if concurrent recovery 
+    //                                          (REDO and UNDO) is active
+    static bool            in_recovery();
+
 private:
 
     static int _instance_cnt;
@@ -1946,8 +1954,8 @@ private:
         lsn_t* plastlsn);
 
     static rc_t            _commit_xct_group(
-		xct_t *               list[],
-		int                   listlen);
+        xct_t *               list[],
+        int                   listlen);
     static rc_t            _chain_xct(
         sm_stats_info_t*&      stats,
         bool                   lazy);

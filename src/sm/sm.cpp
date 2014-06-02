@@ -114,37 +114,89 @@ uint32_t     smlevel_0::in_doubt_count = 0;
 // use int64_t to make sure we have enough bits:
 
 // Basic modes:
-const int64_t m1_default_recovery =         // sm_restart = 1 (default)
+const int64_t m1_default_recovery =         // sm_restart = 10 (default)
     smlevel_0::t_recovery_serial |          // Serial operation
     smlevel_0::t_recovery_redo_log |        // Log scan driven REDO
     smlevel_0::t_recovery_undo_reverse;     // Reverse UNDO
-const int64_t m2_default_recovery =         // sm_restart = 2
+    
+const int64_t m2_default_recovery =         // sm_restart = 20
     smlevel_0::t_recovery_concurrent_log |  // Concurrent operation using log           << new
     smlevel_0::t_recovery_redo_page |       // Page driven REDO                           << new
-    smlevel_0::t_recovery_undo_txn;         // Transaction driven UNDO                  << new
-const int64_t m3_default_recovery =         // sm_restart = 3
+    smlevel_0::t_recovery_undo_txn;         // Transaction driven UNDO                  << new   
+const int64_t m2_redo_delay_recovery =      // sm_restart = 21, concurrent testing purpose
+    smlevel_0::t_recovery_concurrent_log |  // Concurrent operation using log
+    smlevel_0::t_recovery_redo_page |       // Page driven REDO
+    smlevel_0::t_recovery_undo_txn |        // Transaction driven UNDO
+    smlevel_0::t_recovery_redo_delay;       // Delay before REDO                         << new
+const int64_t m2_undo_delay_recovery =      // sm_restart = 22, concurrent testing purpose
+    smlevel_0::t_recovery_concurrent_log |  // Concurrent operation using log
+    smlevel_0::t_recovery_redo_page |       // Page driven REDO
+    smlevel_0::t_recovery_undo_txn |        // Transaction driven UNDO
+    smlevel_0::t_recovery_undo_delay;       // Delay before UNDO                         << new    
+const int64_t m2_both_delay_recovery =      // sm_restart = 23, concurrent testing purpose
+    smlevel_0::t_recovery_concurrent_log |  // Concurrent operation using log
+    smlevel_0::t_recovery_redo_page |       // Page driven REDO
+    smlevel_0::t_recovery_undo_txn |        // Transaction driven UNDO
+    smlevel_0::t_recovery_redo_delay |      // Delay before REDO                         << new
+    smlevel_0::t_recovery_undo_delay;       // Delay before UNDO                         << new
+    
+const int64_t m3_default_recovery =         // sm_restart = 30
     smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock          << new
     smlevel_0::t_recovery_redo_spr |        // On-demand driven REDO                  << new
     smlevel_0::t_recovery_undo_txn;         // Transaction driven UNDO
-const int64_t m4_default_recovery =         // sm_restart = 4
+const int64_t m3_redo_delay_recovery =      // sm_restart = 31, concurrent testing purpose
+    smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
+    smlevel_0::t_recovery_redo_spr |        // On-demand driven REDO
+    smlevel_0::t_recovery_undo_txn |        // Transaction driven UNDO
+    smlevel_0::t_recovery_redo_delay;       // Delay before REDO                         << new    
+const int64_t m3_undo_delay_recovery =      // sm_restart = 32, concurrent testing purpose
+    smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
+    smlevel_0::t_recovery_redo_spr |        // On-demand driven REDO
+    smlevel_0::t_recovery_undo_txn |        // Transaction driven UNDO
+    smlevel_0::t_recovery_undo_delay;       // Delay before UNDO                         << new    
+const int64_t m3_both_delay_recovery =      // sm_restart = 33, concurrent testing purpose
+    smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
+    smlevel_0::t_recovery_redo_spr |        // On-demand driven REDO
+    smlevel_0::t_recovery_undo_txn |        // Transaction driven UNDO
+    smlevel_0::t_recovery_redo_delay |      // Delay before REDO                         << new
+    smlevel_0::t_recovery_undo_delay;       // Delay before UNDO                         << new
+    
+const int64_t m4_default_recovery =         // sm_restart = 40
     smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
     smlevel_0::t_recovery_redo_mix |        // Mixed REDO                                   << new
     smlevel_0::t_recovery_undo_txn;         // Transaction driven UNDO
+const int64_t m4_redo_delay_recovery =      // sm_restart = 41, concurrent testing purpose
+    smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
+    smlevel_0::t_recovery_redo_mix |        // Mixed REDO                                   << new
+    smlevel_0::t_recovery_undo_txn |        // Transaction driven UNDO
+    smlevel_0::t_recovery_redo_delay;       // Delay before REDO                         << new        
+const int64_t m4_undo_delay_recovery =      // sm_restart = 42, concurrent testing purpose
+    smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
+    smlevel_0::t_recovery_redo_mix |        // Mixed REDO                                   << new
+    smlevel_0::t_recovery_undo_txn |        // Transaction driven UNDO
+    smlevel_0::t_recovery_undo_delay;       // Delay before UNDO                         << new        
+const int64_t m4_both_delay_recovery =      // sm_restart = 43, concurrent testing purpose
+    smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
+    smlevel_0::t_recovery_redo_mix |        // Mixed REDO                                   << new
+    smlevel_0::t_recovery_undo_txn |        // Transaction driven UNDO
+    smlevel_0::t_recovery_redo_delay |      // Delay before REDO                          << new
+    smlevel_0::t_recovery_undo_delay;       // Delay before REDO                          << new
+
 
 // Alternative modes:
 // Compare with m2_default_recovery, difference in REDO 
-const int64_t alternative_log_log_recovery =     // sm_restart = 10
+const int64_t alternative_log_log_recovery =     // sm_restart = 70
     smlevel_0::t_recovery_concurrent_log |       // Concurrent operation using log 
-    smlevel_0::t_recovery_redo_log |             // Log scan driven REDO             << compare with sm_restart 2
+    smlevel_0::t_recovery_redo_log |             // Log scan driven REDO             << compare with sm_restart 20
     smlevel_0::t_recovery_undo_txn;              // Transaction driven UNDO
 // Compare with m2_default_recovery, difference in concurrent
-const int64_t alternative_lock_page_recovery =   // sm_restart = 11
-    smlevel_0::t_recovery_concurrent_lock |      // Concurrent operation using lock  << compare with sm_restart 2
+const int64_t alternative_lock_page_recovery =   // sm_restart = 80
+    smlevel_0::t_recovery_concurrent_lock |      // Concurrent operation using lock  << compare with sm_restart 20
     smlevel_0::t_recovery_redo_page |            // Page driven REDO
     smlevel_0::t_recovery_undo_txn;              // Transaction driven UNDO
 // Compare with alternative_log_log_recovery, difference in concurrent
-const int64_t alternative_lock_log_recovery =    // sm_restart = 12
-    smlevel_0::t_recovery_concurrent_lock |      // Concurrent operation using lock  << compare with sm_restart 10
+const int64_t alternative_lock_log_recovery =    // sm_restart = 90
+    smlevel_0::t_recovery_concurrent_lock |      // Concurrent operation using lock  << compare with sm_restart 70
     smlevel_0::t_recovery_redo_log |             // Log scan driven REDO
     smlevel_0::t_recovery_undo_txn;              // Transaction driven UNDO
 
@@ -566,43 +618,9 @@ ss_m::_construct_once()
         W_FATAL(eCRASH);
     }
 
-    // Which internal restart mode to use?
-    int32_t restart_mode = _options.get_int_option("sm_restart", 1);
-    switch (restart_mode) 
-    {
-    case 1:
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)m1_default_recovery;
-        break;
-    case 2:
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)m2_default_recovery;
-        break;
-    case 3:
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)m3_default_recovery;
-        break;
-    case 4:
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)m4_default_recovery;
-        break;
-    case 10:
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)alternative_log_log_recovery;
-        break;
-    case 11:
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)alternative_lock_page_recovery;
-        break;
-    case 12:
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)alternative_lock_log_recovery;
-        break;
-    default:
-        // Either 'sm_restart' was not set or it was set to an invalid value
-        // use the initialization setting and no overwrite
-        break;
-    }
+    // For Instant Restart testing purpose, determine which 
+    // internal code path to use
+    _set_recovery_mode();
 
     /*
      * Now we can create the buffer manager
@@ -910,6 +928,89 @@ ss_m::_construct_once()
     // System is opened for user transactions once the function returns
 }
 
+void ss_m::_set_recovery_mode()
+{
+    // For Instant Restart testing purpose
+    // which internal restart mode to use?
+    int32_t restart_mode = _options.get_int_option("sm_restart", 1);
+    switch (restart_mode) 
+    {
+    case 10:   // default
+        smlevel_0::recovery_internal_mode = 
+             (smlevel_0::recovery_internal_mode_t)m1_default_recovery;
+        break;
+
+    case 20:   // default
+        smlevel_0::recovery_internal_mode = 
+             (smlevel_0::recovery_internal_mode_t)m2_default_recovery;
+        break;
+    case 21:   // Concurrent testing
+        smlevel_0::recovery_internal_mode = 
+             (smlevel_0::recovery_internal_mode_t)m2_redo_delay_recovery;
+        break;
+    case 22:   // Concurrent testing
+        smlevel_0::recovery_internal_mode = 
+             (smlevel_0::recovery_internal_mode_t)m2_undo_delay_recovery;
+        break;
+    case 23:   // Concurrent testing
+        smlevel_0::recovery_internal_mode = 
+             (smlevel_0::recovery_internal_mode_t)m2_both_delay_recovery;
+        break;
+
+    case 30:   // default
+        smlevel_0::recovery_internal_mode = 
+             (smlevel_0::recovery_internal_mode_t)m3_default_recovery;
+        break;
+    case 31:   // Concurrent testing
+        smlevel_0::recovery_internal_mode = 
+             (smlevel_0::recovery_internal_mode_t)m3_redo_delay_recovery;
+        break;
+    case 32:   // Concurrent testing
+        smlevel_0::recovery_internal_mode = 
+             (smlevel_0::recovery_internal_mode_t)m3_undo_delay_recovery;
+        break;
+    case 33:   // Concurrent testing
+        smlevel_0::recovery_internal_mode = 
+             (smlevel_0::recovery_internal_mode_t)m3_both_delay_recovery;
+        break;
+
+    case 40:   // default
+        smlevel_0::recovery_internal_mode = 
+             (smlevel_0::recovery_internal_mode_t)m4_default_recovery;
+        break;
+    case 41:   // Concurrent testing
+        smlevel_0::recovery_internal_mode = 
+             (smlevel_0::recovery_internal_mode_t)m4_redo_delay_recovery;
+        break;
+    case 42:   // Concurrent testing
+        smlevel_0::recovery_internal_mode = 
+             (smlevel_0::recovery_internal_mode_t)m4_undo_delay_recovery;
+        break;
+    case 43:   // Concurrent testing
+        smlevel_0::recovery_internal_mode = 
+             (smlevel_0::recovery_internal_mode_t)m4_both_delay_recovery;
+        break;
+
+    case 70:   // Alternative testing
+        smlevel_0::recovery_internal_mode = 
+             (smlevel_0::recovery_internal_mode_t)alternative_log_log_recovery;
+        break;
+    case 80:   // Alternative testing
+        smlevel_0::recovery_internal_mode = 
+             (smlevel_0::recovery_internal_mode_t)alternative_lock_page_recovery;
+        break;
+    case 90:   // Alternative testing
+        smlevel_0::recovery_internal_mode = 
+             (smlevel_0::recovery_internal_mode_t)alternative_lock_log_recovery;
+        break;
+
+    default:
+        // Either 'sm_restart' was not set or it was set to an invalid value
+        // use the internal initialization setting and no overwrite
+        break;
+    }
+}
+
 ss_m::~ss_m()
 {
     // This looks like a candidate for pthread_once(), but then smsh 
@@ -957,8 +1058,8 @@ ss_m::_destruct_once()
         // transactions during recovery
         w_assert1(false == smlevel_0::use_serial_recovery());
        
-        // The destructor of restart_m terminates the child thread if the child
-        // thread is still active.
+        // The destructor of restart_m terminates (no wait if crash shutdown)
+        // the child thread if the child thread is still active.
         // The child thread is for Recovery process only, it should terminate
         // itself after the Recovery process completed
         
@@ -1079,6 +1180,36 @@ void ss_m::set_shutdown_flag(bool clean)
 {
     shutdown_clean = clean;
 }
+
+// Debugging function
+// Returns true if recovery is still going on
+// Serial recovery mode: always return false
+// Concurrent recovery mode: return true if concurrent recovery 
+//                                          (REDO and UNDO) is active
+bool ss_m::in_recovery()
+{
+    // This function can be called only after the system is opened
+    // therefore the system is not in recovery when running in serial recovery mode
+    
+    if (true == smlevel_0::use_serial_recovery())
+    {
+        return false;
+    }
+    else if (recovery)
+    {
+        return recovery->recovery_in_progress();
+    }
+    else
+    {
+        w_assert1(false == smlevel_0::use_serial_recovery());
+
+        // Recovery object does not exist, this can happen if the system
+        // was started from an empty database and nothing to recover
+
+        return false;        
+    }
+}
+
 
 /*--------------------------------------------------------------*
  *  ss_m::begin_xct()                                *
