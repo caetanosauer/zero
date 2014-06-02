@@ -179,6 +179,249 @@ TEST (RestartTest, SimpleCrash) {
 }
 **/
 
+// Test case with transactions (1 in-flight with multiple operations) and crash shutdown
+// no concurrent activities during recovery
+class restart_complex_in_flight_crash : public restart_test_base  {
+public:
+    w_rc_t pre_shutdown(ss_m *ssm) {
+        output_durable_lsn(1);
+        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        output_durable_lsn(2);
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa3", "data3"));
+
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa1", "data1"));
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa4", "data4"));
+
+        W_DO(test_env->begin_xct());                                     // in-flight
+        W_DO(test_env->btree_insert(_stid, "aa5", "data5"));
+        W_DO(test_env->btree_insert(_stid, "aa2", "data2"));
+        W_DO(test_env->btree_insert(_stid, "aa7", "data7"));
+
+        output_durable_lsn(3);
+        return RCOK;
+    }
+
+    w_rc_t post_shutdown(ss_m *) {
+        output_durable_lsn(4);
+        x_btree_scan_result s;
+
+        while (true == test_env->in_recovery())
+        {
+            // Concurrent recovery is still going on, wait
+            ::usleep(WAIT_TIME);            
+        }
+
+        // Verify
+        W_DO(test_env->btree_scan(_stid, s));
+        EXPECT_EQ (3, s.rownum);
+        EXPECT_EQ (std::string("aa1"), s.minkey);
+        EXPECT_EQ (std::string("aa4"), s.maxkey);
+        return RCOK;
+    }
+};
+
+/* Not passing in UNDO phase during 'abort' *
+TEST (RestartTest, ComplexInFlightCrash) {
+    test_env->empty_logdata_dir();
+    restart_complex_in_flight_crash context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 20), 0);   // true = simulated crash
+                                                                  // 20 = recovery mode, m2 default concurrent mode, no wait
+}
+**/
+
+// Test case with transactions (1 in-flight with multiple operations) with checkpoint and crash shutdown
+// no concurrent activities during recovery
+class restart_complex_in_flight_chkpt_crash : public restart_test_base  {
+public:
+    w_rc_t pre_shutdown(ss_m *ssm) {
+        output_durable_lsn(1);
+        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        output_durable_lsn(2);
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa3", "data3"));
+
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa1", "data1"));
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa4", "data4"));
+
+        W_DO(test_env->begin_xct());                                     // in-flight
+        W_DO(test_env->btree_insert(_stid, "aa5", "data5"));
+        W_DO(test_env->btree_insert(_stid, "aa2", "data2"));
+        W_DO(test_env->btree_insert(_stid, "aa7", "data7"));
+
+        W_DO(ss_m::checkpoint()); 
+
+        output_durable_lsn(3);
+        return RCOK;
+    }
+
+    w_rc_t post_shutdown(ss_m *) {
+        output_durable_lsn(4);
+        x_btree_scan_result s;
+
+        while (true == test_env->in_recovery())
+        {
+            // Concurrent recovery is still going on, wait
+            ::usleep(WAIT_TIME);            
+        }
+
+        // Verify
+        W_DO(test_env->btree_scan(_stid, s));
+        EXPECT_EQ (3, s.rownum);
+        EXPECT_EQ (std::string("aa1"), s.minkey);
+        EXPECT_EQ (std::string("aa4"), s.maxkey);
+        return RCOK;
+    }
+};
+
+/* Not passing in UNDO phase during 'abort' *
+TEST (RestartTest, ComplexInFlightChkptCrash) {
+    test_env->empty_logdata_dir();
+    restart_complex_in_flight_chkpt_crash context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 20), 0);   // true = simulated crash
+                                                                  // 20 = recovery mode, m2 default concurrent mode, no wait
+}
+**/
+
+// Test case with simple transactions (1 in-flight) and crash shutdown, one concurrent txn with conflict
+class restart_simple_concurrent_crash : public restart_test_base  {
+public:
+    w_rc_t pre_shutdown(ss_m *ssm) {
+        output_durable_lsn(1);
+        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        output_durable_lsn(2);
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa3", "data3"));
+
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa1", "data1"));
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa2", "data2"));
+
+        W_DO(test_env->begin_xct());
+        W_DO(test_env->btree_insert(_stid, "aa4", "data4"));             // in-flight
+
+        output_durable_lsn(3);
+        return RCOK;
+    }
+
+    w_rc_t post_shutdown(ss_m *) {
+        output_durable_lsn(4);
+        x_btree_scan_result s;
+
+        // Verify
+        W_DO(test_env->btree_scan(_stid, s));  // Should have only one page of data
+                                               // while recovery is on for this page
+                                               // therefore the concurrent txn should not be allowed
+        EXPECT_EQ (3, s.rownum);
+        EXPECT_EQ (std::string("aa1"), s.minkey);
+        EXPECT_EQ (std::string("aa3"), s.maxkey);
+        return RCOK;
+    }
+};
+
+/* Not passing in UNDO phase during 'abort' *
+TEST (RestartTest, SimpleConcurrentCrash) {
+    test_env->empty_logdata_dir();
+    restart_simple_concurrent_crash context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 21), 0);   // true = simulated crash
+                                                                  // 21 = recovery mode, m2 concurrent mode with delay in REDO
+}
+**/
+
+// Test case with more than one page of data (1 in-flight) and crash shutdown, one concurrent txn to
+// access a non-dirty page so it should be allowed
+class restart_concurrent_no_conflict_crash : public restart_test_base  {
+public:
+    w_rc_t pre_shutdown(ss_m *ssm) {
+        output_durable_lsn(1);
+        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        output_durable_lsn(2);
+
+/** TODO...
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa3", "data3"));
+
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa1", "data1"));
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa2", "data2"));
+**/
+
+        W_DO(test_env->begin_xct());
+        W_DO(test_env->btree_insert(_stid, "aa4", "data4"));             // in-flight
+
+        output_durable_lsn(3);
+        return RCOK;
+    }
+
+    w_rc_t post_shutdown(ss_m *) {
+        output_durable_lsn(4);
+        x_btree_scan_result s;
+
+/** TODO...
+        // Verify
+        W_DO(test_env->btree_scan(_stid, s));  // Should have only one page of data
+                                               // while recovery is on for this page
+                                               // therefore the concurrent txn should not be allowed
+        EXPECT_EQ (3, s.rownum);
+        EXPECT_EQ (std::string("aa1"), s.minkey);
+        EXPECT_EQ (std::string("aa3"), s.maxkey);
+**/        
+        return RCOK;
+    }
+};
+
+/* Not passing in UNDO phase during 'abort' *
+TEST (RestartTest, ConcurrentNoConflictCrash) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_no_conflict_crash context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 23), 0);   // true = simulated crash
+                                                                  // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+}
+**/
+
+// Test case with more than one page of data (1 in-flight) and crash shutdown, one concurrent txn to
+// access an in_doubt page so it should not be allowed
+class restart_concurrent_conflict_crash : public restart_test_base  {
+public:
+    w_rc_t pre_shutdown(ss_m *ssm) {
+        output_durable_lsn(1);
+        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        output_durable_lsn(2);
+
+/** TODO...
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa3", "data3"));
+
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa1", "data1"));
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa2", "data2"));
+**/
+
+        W_DO(test_env->begin_xct());
+        W_DO(test_env->btree_insert(_stid, "aa4", "data4"));             // in-flight
+
+        output_durable_lsn(3);
+        return RCOK;
+    }
+
+    w_rc_t post_shutdown(ss_m *) {
+        output_durable_lsn(4);
+        x_btree_scan_result s;
+
+/** TODO...
+        // Verify
+        W_DO(test_env->btree_scan(_stid, s));  // Should have only one page of data
+                                               // while recovery is on for this page
+                                               // therefore the concurrent txn should not be allowed
+        EXPECT_EQ (3, s.rownum);
+        EXPECT_EQ (std::string("aa1"), s.minkey);
+        EXPECT_EQ (std::string("aa3"), s.maxkey);
+**/        
+        return RCOK;
+    }
+};
+
+/* Not passing in UNDO phase during 'abort' *
+TEST (RestartTest, ConcurrentConflictCrash) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_conflict_crash context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 23), 0);   // true = simulated crash
+                                                                  // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+}
+**/
+
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
