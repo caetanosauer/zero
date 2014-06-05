@@ -79,6 +79,20 @@ rc_t log_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
         W_DO(smlevel_0::bk->retrieve_page(*p.get_generic_page(), p.vol(), pid.page));
         w_assert1(pid == p.pid());
         DBGOUT1(<< "Backup page retrieved. Backup-LSN=" << p.lsn());
+        if (p.lsn() > emlsn)
+        {
+            // Last write LSN from backup > given LSN, the page last write LSN
+            // from the backup is newer (later) than our recorded emlsn (last write)
+            // on the page.
+            // _collect_single_page_recovery_logs would be an no-op in such case
+            //
+            // How can this happen and is this valid?            
+            // Note that if caller is from concurrent recovery for a virgin or corrupted
+            // page, then the emlsn is the current log LSN.  How can the page from
+            // backup has a LSN > current log LSN?
+
+            DBGOUT1(<< "Backup page last write LSN > emlsn");
+        }
     } else {
         // if the page is not in the backup (possible if the page was created after the
         // backup), we need to recover the page purely from the log. So, current_lsn=0.
@@ -98,6 +112,7 @@ rc_t log_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
 
     // after SPR, the page should be exactly the requested LSN, perform the validation only if
     // it is told to do so.  Caller would set the validate to false if virgin or corrupted in_doubt page
+    // from recovery
     if (true == validate)
         w_assert0(p.lsn() == emlsn);
     DBGOUT1(<< "SPR done!");
@@ -113,8 +128,13 @@ rc_t log_core::_collect_single_page_recovery_logs(
     for (lsn_t nxt = emlsn; current_lsn < nxt && nxt != lsn_t::null;) {
         logrec_t* record = NULL;
         lsn_t obtained = nxt;
-        W_DO(fetch(obtained, record, NULL, true)); 
+        rc_t rc = fetch(obtained, record, NULL, true); 
         release(); // release _partition_lock immediately
+        if ((rc.is_error()) && (eEOF == rc.err_num()))
+        {
+            // End of Log, cannot go further
+            break;
+        }
         if (obtained != nxt) {
             ERROUT(<<"log_core::fetch() returned a different LSN, old log partition already"
                 " wiped?? nxt=" << nxt << ", obtained=" << obtained);

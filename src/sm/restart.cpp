@@ -241,16 +241,15 @@ restart_m::recover(
         fprintf(stderr, "\n\n");
     }
 
-////////////////////////////////////////
-// TODO(Restart)... ignore 'non-read-lock' in M1
-////////////////////////////////////////
-
     // Log Analysis phase, the store is not opened for new transaction during this phase
     // Populate transaction table for all in-flight transactions, mark them as 'active'
     // Populate buffer pool for 'in_doubt' pages, register but not loading the pages
     // Populate the special heap with all the doomed transactions for UNDO purpose
     CmpXctUndoLsns        cmp;
     XctPtrHeap            heap(cmp);
+////////////////////////////////////////
+// TODO(Restart)... ignore 'non-read-lock'
+////////////////////////////////////////
     analysis_pass(master, redo_lsn, in_doubt_count, undo_lsn, heap, commit_lsn);
 
     // If nothing from Log Analysis, in other words, if both transaction table and buffer pool
@@ -350,10 +349,6 @@ restart_m::recover(
             }
 #endif 
 
-////////////////////////////////////////
-// TODO(Restart)...  ignore 'non-read-lock' in M1
-////////////////////////////////////////
-
             // REDO phase, based on log records (forward scan), load 'in_doubt' pages
             // into buffer pool, REDO the updates, clear the 'in_doubt' flags and mark
             // the 'dirty' flags for modified pages.
@@ -394,10 +389,6 @@ restart_m::recover(
             smlevel_0::errlog->clog  << info_prio<< "Undo ..." 
                 << " curr_lsn = " << curr_lsn  << " undo_lsn = " << undo_lsn
                 << flushl;
-
-////////////////////////////////////////
-// TODO(Restart)...  ignore 'non-read-lock' in M1
-////////////////////////////////////////
 
             // UNDO phase, based on log records (reverse scan), use compensate operations
             // to UNDO (abort) the in-flight transactions, remove the aborted transactions
@@ -973,6 +964,23 @@ restart_m::analysis_pass(
 
                     mount = true;
                 }
+
+                if ((false == smlevel_0::use_serial_recovery()) && (true == smlevel_0::use_redo_page_recovery()))
+                {
+                    // It is a side effect of mount operation to pre-load the root page
+                    // If in concurrent mode and page driven redo, increase the
+                    // in_doubt_count count regardless the root page is in_doubt or not
+                    // because we want to make sure the root page gets loaded during REDO phase
+                    //
+                    // Note that we are blinding increase the in_doubt count without checking
+                    // whether this page is in the hash table already (could it happen that other
+                    // log records marked this page in_doubt already?), but this is okay because
+                    // the page driven REDO does not validate the in_doubt count, it is
+                    // only using the in_doubt count to determine whether to go into REDO
+                    // phase or not
+                    
+                    ++in_doubt_count;
+                }
             }
             break;
         
@@ -1493,7 +1501,7 @@ restart_m::analysis_pass(
                     xd = iter.next();
 
 ////////////////////////////////////////
-// TODO(Restart)... not handling ignore 'non-read-lock' in M1
+// TODO(Restart)... not handling ignore 'non-read-lock'
 //                    me()->attach_xct(curr);
 //                    W_DO(curr->commit_free_locks());
 //                    me()->detach_xct(curr);                   
@@ -1542,6 +1550,8 @@ restart_m::analysis_pass(
              << master << ", redo_lsn: " << redo_lsn
              << ", undo lsn: " << undo_lsn << ", commit_lsn: " << commit_lsn);
 
+    DBGOUT3( << "Number of in_doubt pages: " << in_doubt_count);
+
     if ((false == mount))
     {
         // We did not mount any device during Log Analysis phase
@@ -1553,6 +1563,16 @@ restart_m::analysis_pass(
         // from disk (not mounted)
         
         DBGOUT1( << "Log Analysis phase: no device mounting occurred.");
+    }
+
+    if (true == use_concurrent_lock_recovery())
+    {
+////////////////////////////////////////
+// TODO(Restart)... concurrency through lock acquisition, NYI
+////////////////////////////////////////
+    
+        // NYI
+        W_FATAL_MSG(eNOTIMPLEMENTED, << "NYI - Lock acquisition");   
     }
 
     return;
@@ -2056,7 +2076,7 @@ void restart_m::_redo_log_with_pid(
                 // the last write lsn from page context
                 // use the log record lsn for SPR, no lsn validation
                 
-                W_COERCE(smlevel_0::log->recover_single_page(page, lsn, false));                
+                W_COERCE(smlevel_0::log->recover_single_page(page, lsn, false));
             }
 
             /// page.lsn() is the last write to this page
@@ -2284,16 +2304,50 @@ restart_m::undo_pass(
                                   // Not used currently
     )
 {
-    // Serial UNDO phase, ignore 'non-read-lock'
+    // This function supports both serial and concurrent_log mode
+    // For concurrent mode, the same function is used for both concurrent_log
+    // and concurrent_lock modes, this is because the code is using the standard
+    // transaction rollback and abort functions, which should take care of
+    // 'non-read-lock' (if acquired during Log Analysis phase)
 
     FUNC(restart_m::undo_pass);
 
-    if ((false == use_serial_recovery()) || (false == use_undo_reverse_recovery()))
+    if ((false == use_serial_recovery()) && (true == use_undo_reverse_recovery()))
     {
-        // The reverse chronological order UNDO is supported in serial operation only
-        W_FATAL_MSG(fcINTERNAL, << "UNDO phase, restart_m::undo_pass() is valid for serial operation only");
+        // If in concurrent mode and using reverse chronological order UNDO
+        // caller does not have the special heap, build it base on transaction table
+        
+        // Should be empty heap
+        w_assert1(0 == heap.NumElements());
+
+        // TODO(Restart)... Not locking the transaction table while 
+        // looping through it, this logic works while new transactions are
+        // coming in, because the current implementation of transaction 
+        // table is inserting new transactions into the beginning of the 
+        // transaction table, so they won't affect the on-going loop operation
+
+        xct_i iter(false); // not locking the transaction table list
+        xct_t* xd; 
+        DBGOUT3( << "Building heap...");
+        xd = iter.next();
+        while (xd)
+        {
+            DBGOUT3( << "Transaction " << xd->tid() 
+                     << " has state " << xd->state() );
+
+            if ((true == xd->is_doomed_xct()) && (xct_t::xct_active == xd->state()))
+            {
+                // Found a doomed transaction
+                heap.AddElementDontHeapify(xd);
+            }
+            // Advance to the next transaction
+            xd = iter.next();
+        }
+        heap.Heapify();
+        DBGOUT3( << "Number of transaction entries in heap: " << heap.NumElements());
     }
-    else
+
+    // Now we are ready to start the UNDO operation
     {
         // Executing reverse chronological order UNDO under serial operation (open system
         // after the entire recovery process finished)
@@ -2614,19 +2668,19 @@ void restart_m::undo_concurrent()
 
     if ((true == use_concurrent_log_recovery()) || (true == use_concurrent_lock_recovery()))
     {
-////////////////////////////////////////            
-// TODO(Restart)... Lock acquisition, acquire locks during Log Analysis - NYI
-//                          release locks during UNDO - already as part of 'transaction abort' operation
-////////////////////////////////////////
-        if (true == use_concurrent_lock_recovery())
-            W_FATAL_MSG(fcINTERNAL, << "UNDO phase with lock acquisition: NYI");   
+        // If use_concurrent_lock_recovery(), locks are acquired during Log Analysis phase
+        // and release during UNDO phase
+        // The implementation of UNDO phases (both txn driven and reverse drive) are using
+        // standand transaction abort logic (and transaction rollback logic is reverse driven UNDO)
+        // therefore the implementation took care of the lock release already
 
         if (true == use_undo_reverse_recovery())
         {
-            // Not supported, because we do not have the special heap
-            // If it is necessary to support this feature, we can build the
-            // heap at the begining of UNDO phase based on doomed_txn flag
-            W_FATAL_MSG(fcINTERNAL, << "UNDO phase does not support reverse chronological order undo with concurrency");   
+            // Use the same undo_pass function for reverse UNDO phase        
+            // callee must build the heap itself
+            CmpXctUndoLsns  cmp;
+            XctPtrHeap      heap(cmp);
+            undo_pass(heap, log->curr_lsn().data(), smlevel_0::redo_lsn);  // Input LSNs are not used currently
         }
         else if (true == use_undo_txn_recovery())
         {
@@ -2673,6 +2727,10 @@ void restart_m::_redo_page_pass()
         DBGOUT3(<<"No in_doubt page to redo");
         return;
     }
+    else
+    {
+        DBGOUT3( << "restart_m::_redo_page_pass() - Number of in_doubt pages: " << smlevel_0::in_doubt_count);
+    }
 
     if(true == use_redo_delay_recovery())
     {
@@ -2690,6 +2748,7 @@ void restart_m::_redo_page_pass()
 
     // Count of blocks/pages in buffer pool
     bf_idx bfsz = bf->get_block_cnt();
+    DBGOUT3( << "restart_m::_redo_page_pass() - Number of block count: " << bfsz);
 
     // Loop through the buffer pool pages and look for in_doubt pages
     // which are dirty and not loaded into buffer pool yet
@@ -2743,6 +2802,7 @@ void restart_m::_redo_page_pass()
                 // In_doubt page but not in hasktable, this should not happen               
                 W_FATAL_MSG(fcINTERNAL, << "REDO (redo_page_pass()): in_doubt page not in hash table");
             }
+            DBGOUT3( << "restart_m::_redo_page_pass() - in_doubt page idx: " << idx);
 
             // Okay to load the page from disk into buffer pool memory
             // Load the initial page into buffer pool memory
@@ -2769,7 +2829,7 @@ void restart_m::_redo_page_pass()
             snum_t store = cb._store_num; 
 
             // Try to load the page into buffer pool using information from cb
-            // , if detects a virgin page, deal with it
+            // if detects a virgin page, deal with it
             // Special case: the page is a root page which exists on disk, it was pre-loaded
             //                     during device mounting (_preload_root_page).
             //                     We will reload the root page here but not register it to the
@@ -2785,6 +2845,7 @@ void restart_m::_redo_page_pass()
             {
                 // Fetch a page from disk but the page does not exist, this is a virgin page
                 // meaning the page was never persisted on disk, but we still need to redo it
+                DBGOUT3 (<< "REDO phase, virgin page, page = " << shpid);                
                 virgin_page = true;
             }
             else if (rc.is_error()) 
@@ -2794,6 +2855,7 @@ void restart_m::_redo_page_pass()
                     // We are using SPR for REDO, if checksum is
                     // incorrect, make sure we force a SPR REDO
                     // Do not raise error here
+                    DBGOUT3 (<< "REDO phase, corrupted page, page = " << shpid);                                    
                     corrupted_page = true;
                 }
                 else
@@ -2827,38 +2889,37 @@ void restart_m::_redo_page_pass()
             page.get_generic_page()->pid = store_id;
             page.get_generic_page()->tag = t_btree_p;
 
+            lsn_t curr_lsn = log->curr_lsn().data();
             if (true == virgin_page) 
             {
                 // If virgin page, set the vol, store and page in cb again            
                 cb._pid_vol = vol;
                 cb._store_num = store; 
                 cb._pid_shpid = shpid;
-                
-                // Need the last write lsn for SPR, but this is a virgin page and no
-                // page vontext (it does not exist on disk, therefore the page context
-                // in memory has benn zero'd), we cannot retrieve the last write lsn
-                // from page context
-                // Use the current log LSN for SPR to recovery, SPR will scan all log
-                // records and collect logs based on page ID, and then redo all
-                // associated record, this is more expensive since we are using
-                // the current log lsn
 
-                lsn_t curr_lsn = log->curr_lsn().data();
+                // Need the last write lsn for SPR, but this is a virgin page and no
+                // page context (it does not exist on disk, therefore the page context
+                // in memory has been zero'd out), we cannot retrieve the last write lsn
+                // from page context.  Set the page lsn to NULL for SPR
+                // SPR will scan all log records and collect logs based on page ID,
+                // and then redo all associated record
+
                 DBGOUT3(<< "REDO (redo_page_pass()): found a virgin page" <<
-                        ", using current lsn for SPR redo, lsn = " << curr_lsn);
-                page.get_generic_page()->lsn = curr_lsn;
+                        ", using current lsn for SPR redo and last write on the page, lsn = "
+                        << curr_lsn);
+                page.set_lsns(lsn_t::null);
             }
             else if (true == corrupted_page) 
             {
                 // With a corrupted page, we are not able to verify the correctness of
-                // last write lsn and we cannot trust it, so use the current log lsn to be safe
-                lsn_t curr_lsn = log->curr_lsn().data();
+                // last write lsn and we cannot trust it, so set it to NULL
                 DBGOUT3(<< "REDO (redo_page_pass()): found a corrupted page" <<
-                        ", using current lsn for SPR redo, lsn = " << curr_lsn);               
-                page.get_generic_page()->lsn = curr_lsn;
+                        ", using current lsn for SPR redo and last write on the page, lsn = "
+                        << curr_lsn);               
+                page.set_lsns(lsn_t::null);
             }
 
-            // Use SPR to REDO all in_doubt pages, including virgin pages               
+            // Use SPR to REDO all in_doubt pages, including virgin and corrupted pages
             w_assert1(page.pid() == store_id);            
             w_assert1(page.is_fixed());
 
@@ -2868,21 +2929,34 @@ void restart_m::_redo_page_pass()
             // SPR must take care of these cases
 
             // page.lsn() is the last write to this page
-            lsn_t page_lsn = page.lsn();
+            lsn_t page_lsn = page.lsn();            
+            DBGOUT3(<< "REDO (redo_page_pass()): LSN for SPR:" << page_lsn);
 
+            // Using SPR for the REDO operation, which is based on
+            // page.pid(), page.vol(), page.pid().page and page.lsn() 
             // Call SPR API
             //   page - fixable_page_h, the page to recover
             //   page_lsn - last write to the page according to the page we have, if the page
             //                   is virgin or corrupted page, tell SPR not to validate page_lsn
             //   validate - if a virgin or corrupted page, we don't have the actual page_lsn, 
             //                  we are using the current lsn instead, so do not validate the lsn
-            DBGOUT3(<< "REDO (redo_page_pass()): SPR with page_lsn" << page_lsn);           
+            DBGOUT3(<< "REDO (redo_page_pass()): SPR with page_lsn" << page_lsn << ", page idx: " << idx);           
             W_COERCE(smlevel_0::log->recover_single_page(page, page_lsn, 
                      ((true == virgin_page)|| (true == corrupted_page))? false : true));
 
+            // No page_lsn (last write) after SPR, it can only happen if it was a virgin
+            // or corrupted page, SPR did not find anything to recover from recovery log
+////////////////////////////////////////
+// TODO(Restart)... Is this a valid situation?
+////////////////////////////////////////            
+            // Set the last write to be the same as current lsn
+            // which would block concurrent user transaction on this page during recovery
+            if (lsn_t::null == page_lsn)
+                page.set_lsns(curr_lsn);;
+
             // The _rec_lsn in page cb is the earliest lsn which made the page dirty
             // the _rec_lsn (earliest lns) must be earlier than the page_lsn
-            // (last write to this page)               
+            // (last write to this page)        
             if (cb._rec_lsn > page_lsn.data())
                 cb._rec_lsn = page_lsn.data();
 
@@ -2895,7 +2969,8 @@ void restart_m::_redo_page_pass()
         }
 
         // Release EX latch before moving to the next page in buffer pool
-        cb.latch().latch_release();
+        if (cb.latch().held_by_me())                        
+            cb.latch().latch_release();
     }
 
     // Done with REDO phase

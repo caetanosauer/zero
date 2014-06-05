@@ -769,7 +769,20 @@ ss_m::_construct_once()
         // Make surethe current operating state is before recovery
         smlevel_0::operating_mode = t_not_started;
         restart.recover(master, verify_lsn, redo_lsn, in_doubt_count);
-        
+
+        // Perform the low level dismount, remount in higher level
+        // and dismount again steps.
+        // If running in serial mode, everything is fine.
+        // If running in concurrent mode, no final higher level dismount.
+        // Special case: the mount operation pre-loads the root page as
+        // a side effect, if the root page does not exist on disk (e.g., B-tree
+        // has only one page worth of data and was never flushed before crash),
+        // the mount operation would detect 'page not exist' condition and zero
+        // out the root page, this is bad because if the root page was marked as
+        // an in_doubt during Log Analysis, this information would be erased
+        // when the page got zero out.  This is handled in bf_tree_m::_preload_root_page
+        // to put the in_doubt flag back to the root page.
+            
         // contain the scope of dname[]
         // record all the mounted volumes after recovery.
         int num_volumes_mounted = 0;
@@ -799,7 +812,7 @@ ss_m::_construct_once()
         DBG(<<"Dismount all volumes " << num_volumes_mounted);
         // now dismount all of them at the io level, the level where they
         // were mounted during recovery.
-        W_COERCE( io->dismount_all(true/*flush*/) );
+        W_COERCE( io->dismount_all(true) ); //flush
 
         // now mount all the volumes properly at the sm level.
         // then dismount them and free temp files only if there
@@ -810,7 +823,7 @@ ss_m::_construct_once()
             rc_t rc;
             DBG(<<"Remount volume " << dname[i]);
             rc =  _mount_dev(dname[i], vol_cnt, vid[i]) ;
-            if(rc.is_error()) 
+            if (rc.is_error()) 
             {
                 ss_m::errlog->clog  << warning_prio
                 << "Volume on device " << dname[i]
@@ -819,7 +832,7 @@ ss_m::_construct_once()
             }
             else 
             {
-                // Dismount only if using serial implementation: open database after Recovery
+                // Dismount only if running in serial mode
                 if (true == smlevel_0::use_serial_recovery())                
                     W_COERCE( _dismount_dev(dname[i]));
             }

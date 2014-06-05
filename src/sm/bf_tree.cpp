@@ -277,10 +277,11 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
     W_DO(volume->read_page(shpid, _buffer[idx], passed_end));
 
     // _buffer[idx].checksum == 0 is possible when the root page has been never flushed out.
-    // this method is called during volume mount (even before recover), so crash tests like
-    // test_restart, test_crash
+    // this method is called during volume mount (even before recover), crash tests like
+    // test_restart, test_crash might encounter this scenario, swallow the error
     if (_buffer[idx].checksum == 0) {
-        DBGOUT0(<<"emptycheck sum root page during volume nount. crash happened?"
+        w_assert1(true == passed_end);
+        DBGOUT0(<<"empty check sum root page during volume mount. crash happened?"
             " pid=" << shpid << " of store " << store << " in volume "
             << vid << ". to buffer frame " << idx);
     }
@@ -292,12 +293,35 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
     cb.clear();
     cb._pid_vol = vid;
     cb._pid_shpid = shpid;
+    cb._store_num = store; 
+
     // as the page is read from disk, at least it's sure that
     // the page is flushed as of the page LSN (otherwise why we can read it!)
+    // if the page does not exist on disk, the page would be zero out already
+    // so the cb._rec_lsn (initial dirty lsn) would be 0
     cb._rec_lsn = _buffer[idx].lsn.data();
     cb.pin_cnt_set(1); // root page's pin count is always positive
     cb._swizzled = true;
-    cb._in_doubt = false;
+
+    if ((false == smlevel_0::use_serial_recovery()) && (true == smlevel_0::use_redo_page_recovery()))
+    {
+        // If running in concurrent recovery and doing page driven REDO, 
+        // make sure the in_doubt flag is on so the REDO phase would load
+        // the root page into buffer pool
+        if (smlevel_0::in_recovery())
+        {
+            cb._in_doubt = true;
+            DBGOUT3(<<"Mark root page in_doubt due to page driven REDO operation");
+        }
+        else
+        {
+            cb._in_doubt = false;
+        }
+    }
+    else
+        cb._in_doubt = false;
+ 
+    cb._recovery_undo = false;
     cb._used = true; // turn on _used at last
     bool inserted = _hashtable->insert_if_not_exists(bf_key(vid, shpid), idx); // for some type of caller (e.g., redo) we still need hashtable entry for root
     if (!inserted) {
@@ -316,7 +340,7 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
         {
             ERROUT (<<"failed to insert a root page to hashtable. this must not have happened because there shouldn't be any race. wtf");
             return RC(eINTERNAL);
-            }
+        }
     }
     w_assert1(inserted);
 
@@ -355,6 +379,7 @@ w_rc_t bf_tree_m::_install_volume_mainmemorydb(vol_t* volume) {
             cb._rec_lsn = _buffer[idx].lsn.data();
             cb.pin_cnt_set(1);
             cb._in_doubt = false;
+            cb._recovery_undo = false;
             cb._used = true;
             cb._swizzled = true;
         }
@@ -452,6 +477,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(generic_page* parent, generic_pa
         cb._rec_lsn = 0;
         cb._dirty = true;
         cb._in_doubt = false;
+        cb._recovery_undo = false;
         ++_dirty_page_count_approximate;
         bf_idx parent_idx = parent - _buffer;
         cb._pid_vol = get_cb(parent_idx)._pid_vol;
@@ -566,6 +592,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     /* TODO: if this is an I/O error, we could try to do SPR on it. */
                 } else {
                     // for each page retrieved from disk, check validity, possibly apply SPR.
+                    // this is not a virgin page so if the page does not exist on disk, we need to
+                    // try the backup
                     w_rc_t check_rc = _check_read_page(parent, idx, vol, shpid);
                     if (check_rc.is_error()) {
                         _add_free_block(idx);
@@ -609,6 +637,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 // Page format would set the _rec_lsn
                 cb._dirty = true;
                 cb._in_doubt = false;
+                cb._recovery_undo = false;
                 ++_dirty_page_count_approximate;
             }
             cb._used = true;
@@ -636,8 +665,17 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 #endif // BP_MAINTAIN_PARENT_PTR
             page = &(_buffer[idx]);
 
-            // Is it safe to access this page?
-            return _validate_commit_lsn(page);
+            // Just loaded a page, not an in_doubt or dirty page, it was not involved
+            // in the crash recovery process
+            // The page loading was due to:
+            // User transaction - page was not involved in the recovery operation
+            // UNDO operation - page was not in_doubt, the page is needed for
+            //                            b-tree search traversal of the UNDO operation, but
+            //                            it is not the page to apply UNDO operation on
+            // Page is safe to access, not calling _validate_access(page, cb._recovery_undo) 
+            // for page access validation purpose
+            DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: retrieved a new page: " << shpid);
+            return RCOK;
         }
         else
         {
@@ -654,16 +692,22 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             if ((cb._in_doubt))
             {
                 // in_doubt flag is on, page is not in buffer pool memory
-                // we do not have latch on the page at this point
+                // we do not have latch on the page at this point, okay to return
                 
 ////////////////////////////////////////
-// TODO(Restart)... in m2, only restart_m would load in_doubt pages into memory
-//                          concurrent txn does not load in_doubt page
-//                          instead of waiting, we are raising error and do not continue
-//                          this limitation will be addressed in m3
+// TODO(Restart)... M2 (concurrent log mode) - raise error and abort the user transaction
+//                          M3 (concurrent lock mode) - block user transaction until recovery is done
 ////////////////////////////////////////
 
-                return RC(eNOTIMPLEMENTED);
+                if (true ==  restart_m::use_concurrent_log_recovery()) 
+                    return RC(eACCESS_CONFLICT);
+                else if (true ==  restart_m::use_concurrent_lock_recovery()) 
+                    return RC(eNOTIMPLEMENTED);
+                else
+                {
+                    // Unexpected mode
+                    W_FATAL_MSG(fcINTERNAL, << "bf_tree_m::_fix_nonswizzled: unexpected recovery mode");
+                }
             }
 
             int32_t cur_cnt = cb.pin_cnt();
@@ -702,8 +746,21 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 {
                     page = &(_buffer[idx]);
 
-                    // Is it safe to access this page?
-                    rc = _validate_commit_lsn(page);
+                    // Page was already loaded in buffer pool by:
+                    //     Recovery operation - was an in_doubt page
+                    // or 
+                    //     Previous user transaction - was not an non-in_doubt page
+                    // we do not have a way knowingwho loaded the page initially
+                    // therefore we have to validate the page if running in
+                    // concurrent mode
+                    // 
+                    // Two scenarios:
+                    //     User transaction - validate
+                    //     UNDO operation - allow
+                    DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: an existing page, check for accessability: " << shpid);
+                    rc = _validate_access(page, cb._recovery_undo);
+
+                    // On return, we are holding latch on this page
                 }
                 return rc;
 #ifndef NO_PINCNT_INCDEC
@@ -717,19 +774,22 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
     }
 }
 
-w_rc_t bf_tree_m::_validate_commit_lsn(
-                  generic_page*& page  // this is a pointer to the underlying page _pp
-                  )
+w_rc_t bf_tree_m::_validate_access(
+                  generic_page*& page,      // this is a pointer to the underlying page _pp
+                  const bool for_recovery)  // true is page is being accessed for recovery purpose
 {
     // Special function to validate whether a page is safe to be accessed by
     // concurrent operation while the recovery is still going on
-    // The page is either just loaded for the first time by user transaction
-    // (page was not in_doubt), or already loaded (either by recovery as
-    // an in_doubt page or user transaction as a non-in_doubt page)
+    // Page is already loaded in buffer pool, and the page_lsn (last write)
+    // is available.
 
-    // Validate is based on either commit_lsn or lock acquisition
+    // Validation is based on either commit_lsn or lock acquisition
     //    Commit_lsn: raise error if conflict
     //    Lock acquisition: block if conflict
+
+    // Scenarions:
+    //    Recovery related operation due to UNDO/compensation - allow
+    //    User transaction - validation
     
     // If the system is doing concurrent recovery and we are still in the middle
     // of recovery, it might not be safe to access the page
@@ -760,14 +820,29 @@ w_rc_t bf_tree_m::_validate_commit_lsn(
             }
             else
             {
-                // Get the last write on the page
-                lsn_t page_lsn = page->lsn;
-                if (page_lsn >= smlevel_0::commit_lsn)
+                // If the page is not marked being access for recovery purpose
+                // then we need to validate the accessability
+                if (false == for_recovery)
                 {
-                    // Condition not met, cannot continue
-                    DBGOUT2(<<"bf_tree_m: page access condition not met, page_lsn: " 
+                    // Get the last write on the page
+                    lsn_t page_lsn = page->lsn;
+                    if (page_lsn >= smlevel_0::commit_lsn)
+                    {
+                        // Condition not met, cannot continue
+                        DBGOUT2(<<"bf_tree_m: page access condition not met, page_lsn: " 
                             << page_lsn << ", commit_lsn:" << smlevel_0::commit_lsn);
-                    return RC(eACCESS_CONFLICT);
+                        return RC(eACCESS_CONFLICT);
+                    }
+                    else
+                    {
+                        DBGOUT2(<<"bf_tree_m: page access condition met, page_lsn: " 
+                            << page_lsn << ", commit_lsn:" << smlevel_0::commit_lsn);                   
+                    }
+                }
+                else
+                {
+                    DBGOUT2(<<"bf_tree_m: page being accessed for Recovery UNDO purpose, skip validation" );
+                
                 }
             }
         }
@@ -779,6 +854,11 @@ w_rc_t bf_tree_m::_validate_commit_lsn(
 
             return RC(eNOTIMPLEMENTED);
         }
+    }
+    else
+    {
+        // Serial recovery mode or concurrent recovery mode but recovery has completed
+        // No need to validate for page accessability
     }
     return RCOK;
 }
@@ -908,6 +988,7 @@ void bf_tree_m::repair_rec_lsn (generic_page *page, bool was_dirty, const lsn_t 
         } else {
             get_cb(idx)._dirty = false;
             get_cb(idx)._in_doubt = false;
+            get_cb(idx)._recovery_undo = false;
         }
     }
 }
@@ -1901,6 +1982,7 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
         cb._pid_shpid = shpid;
         cb._dirty = false;
         cb._in_doubt = true;
+        cb._recovery_undo = false;
         cb._used = true;
         cb._refbit_approximate = BP_INITIAL_REFCOUNT; 
 

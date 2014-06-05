@@ -424,7 +424,7 @@ public:
     * the transaction logs required for the recovery.
     * @param[in, out] p the page to recover.
     * @param[in] emlsn the LSN up to which we should recover the page.
-    * @param[in, out] validate is set to false if not to validate emlsn after recover, this
+    * @param[in] validate is set to false if not to validate emlsn after recover, this
     *                         is used by concurrent REDO for virgin or corrupted in_doubt page
     * @pre p has a backup in the backup file
     * @pre p.is_fixed() (could be bufferpool managed or non-bufferpool managed)

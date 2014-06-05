@@ -183,6 +183,26 @@ public:
      */
     bool         is_dirty()  const;
 
+    /**
+     * Mark this page being accessed for recovery UNDO purpose, so the pagee access
+     * validation will let it go through if in concurrent log mode
+     * 
+     * @pre We do not hold current page's latch in Q mode
+     */
+    void         set_recovery_undo() const;
+    /**
+     * Return true if this page is marked for recovery UNDO access.
+     * 
+     * @pre We do not hold current page's latch in Q mode
+     */
+    bool         is_recovery_undo()  const;
+    /**
+     * Clear the flag so the page is no longer being accessed for recovery UNDO purpose
+     * 
+     * @pre We do not hold current page's latch in Q mode
+     */
+    void         clear_recovery_undo() const;
+
     // Update both initial dirty lsn (if needed) and last write lsn on page
     void update_initial_and_last_lsn(const lsn_t & lsn) const;
 

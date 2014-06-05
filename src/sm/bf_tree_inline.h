@@ -261,6 +261,7 @@ inline w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, volid_t vol, snum
     get_cb(idx)._used = true;
     get_cb(idx)._dirty = true;
     get_cb(idx)._in_doubt = false;
+    get_cb(idx)._recovery_undo = false;
     ++_dirty_page_count_approximate;
     get_cb(idx)._swizzled = true;
     bool inserted = _hashtable->insert_if_not_exists(bf_key(vol, shpid), idx); // for some type of caller (e.g., redo) we still need hashtable entry for root
@@ -285,7 +286,9 @@ inline w_rc_t bf_tree_m::fix_root (generic_page*& page, volid_t vol, snum_t stor
 
     w_assert1(_is_active_idx(idx));
     w_assert1(get_cb(idx)._pid_vol == vol);
-    w_assert1(false == get_cb(idx)._in_doubt);
+    w_assert1(false == get_cb(idx)._in_doubt);  // accessing page data, meaning the actual page
+                                                // is in buffer pool, the in_doubt flag must be off
+    w_assert1(true == get_cb(idx)._used);
     w_assert1(_buffer[idx].pid.store() == store);
 
 #ifndef SIMULATE_MAINMEMORYDB
@@ -317,7 +320,6 @@ inline w_rc_t bf_tree_m::_latch_root_page(generic_page*& page, bf_idx idx, latch
     // root page is always swizzled. thus we don't need to increase pin. just take latch.
     W_DO(get_cb(idx).latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
     // also, doesn't have to unpin whether there happens an error or not. easy!
-    w_assert1(false == get_cb(idx)._in_doubt);    
     page = &(_buffer[idx]);
 
 #ifdef SIMULATE_NO_SWIZZLING
@@ -395,6 +397,25 @@ inline void bf_tree_m::update_initial_dirty_lsn(const generic_page* p,
     bf_tree_cb_t &cb = get_cb(idx);
     if ((new_lsn.data() < cb._rec_lsn) || (0 == cb._rec_lsn))
         cb._rec_lsn = new_lsn.data();
+}
+
+inline void bf_tree_m::set_recovery_undo(const generic_page* p) {
+    uint32_t idx = p - _buffer;
+    w_assert1 (_is_active_idx(idx));
+    bf_tree_cb_t &cb = get_cb(idx);
+    cb._recovery_undo = true;
+}
+inline bool bf_tree_m::is_recovery_undo(const generic_page* p) const {
+    uint32_t idx = p - _buffer;
+    w_assert1 (_is_active_idx(idx));
+    return get_cb(idx)._recovery_undo;
+}
+
+inline void bf_tree_m::clear_recovery_undo(const generic_page* p) {
+    uint32_t idx = p - _buffer;
+    w_assert1 (_is_active_idx(idx));
+    bf_tree_cb_t &cb = get_cb(idx);
+    cb._recovery_undo = false;
 }
 
 inline void bf_tree_m::set_in_doubt(const bf_idx idx, lsn_t new_lsn) {

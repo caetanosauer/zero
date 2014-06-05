@@ -700,6 +700,12 @@ w_rc_t x_commit_xct(ss_m* ssm)
     return RCOK;
 }
 
+w_rc_t x_abort_xct(ss_m* ssm)
+{
+    W_DO(ssm->abort_xct());
+    return RCOK;
+}
+
 w_rc_t x_btree_get_root_pid(ss_m* ssm, const stid_t &stid, lpid_t &root_pid)
 {
     W_DO(ssm->open_store_nolock(stid, root_pid));

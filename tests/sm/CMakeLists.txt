@@ -42,5 +42,5 @@ X_ADD_TESTCASE(test_insert_many btree_test_env)
 X_ADD_TESTCASE(test_btree_insert_100K btree_test_env)
 X_ADD_TESTCASE(test_btree_durability btree_test_env)
 X_ADD_TESTCASE(test_restart btree_test_env)             # Serial and traditional recovery test suite
-X_ADD_TESTCASE(test_concurrent_restart btree_test_env)  # Concurrent recovery test suite
+#X_ADD_TESTCASE(test_concurrent_restart btree_test_env)  # Concurrent recovery test suite
 

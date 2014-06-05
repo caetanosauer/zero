@@ -378,6 +378,19 @@ public:
                                    const lsn_t new_lsn);
 
     /**
+     * Mark the page being accessed by recovery UNDO.
+     */
+    void set_recovery_undo(const generic_page* p);
+    /**
+     * Returns if the page is being accessed by recovery UNDO.
+     */
+    bool is_recovery_undo(const generic_page* p) const;
+    /**
+     * Clear the page being accessed by recovery UNDO.
+     */
+    void clear_recovery_undo(const generic_page* p);
+
+    /**
      * Mark the page in_doubt and used flags, the physical page is not in buffer pool
      * also update the LSN (track when the page was made dirty initially)
      */
@@ -658,7 +671,7 @@ private:
     // Validate is based on either commit_lsn or lock acquisition
     // Commit_lsn: raise error if conflict
     // Lock acquisition: block if conflict
-    w_rc_t _validate_commit_lsn(generic_page*& page);
+    w_rc_t _validate_access(generic_page*& page, const bool for_recovery);
 
     /**
      * \brief Checks validity of the page image that has been retrieved from disk,
@@ -669,7 +682,8 @@ private:
      * @param[in] vol Volume ID
      * @param[in] shpid Page ID
      */
-    w_rc_t _check_read_page(generic_page* parent, bf_idx idx, volid_t vol, shpid_t shpid);
+    w_rc_t _check_read_page(generic_page* parent, bf_idx idx, volid_t vol,
+                                 shpid_t shpid);
 
     /**
      * \brief Tries to recover the given page with some issue via SPR.

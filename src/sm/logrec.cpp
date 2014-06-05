@@ -234,10 +234,33 @@ logrec_t::undo(fixable_page_h* page)
     FUNC(logrec_t::undo);
     DBG( << "Undo  log rec: " << *this 
         << " size: " << header._len  << " xid_prevlsn: " << xid_prev());
+
+    // Only system transactions involve multiple pages, while there
+    // is no UNDO for system transactions, so we only need to mark
+    // recovery flag for the current UNDO page
+
+    // If we have a page, mark the page for recovery, this is for page access 
+    // validation purpose
+    // allow recovery operation to by-pass the page concurrent access check
+    // In most cases we do not have a page, therefore we need to go to individual 
+    // undo function (see Btree_logrec.cpp) to mark page flag
+////////////////////////////////////////    
+// TODO(Restart)...     
+////////////////////////////////////////
+    if(page) 
+        page->set_recovery_undo();
+
     switch (header._type) {
 #include "undo_gen.cpp"
     }
+
     xct()->compensate_undo(xid_prev());
+
+    // If we have a page, clear the recovery flag on the page after
+    // we are done with undo operation
+    if(page) 
+        page->clear_recovery_undo();
+
     undoing_context = logrec_t::t_max_logrec;
 }
 

@@ -44,6 +44,7 @@ const bool default_enable_swizzling = true;
 // a few convenient functions for testcases
 w_rc_t x_begin_xct(ss_m* ssm, bool use_locks);
 w_rc_t x_commit_xct(ss_m* ssm);
+w_rc_t x_abort_xct(ss_m* ssm);
 w_rc_t x_btree_create_index(ss_m* ssm, test_volume_t *test_volume, stid_t &stid, lpid_t &root_pid);
 w_rc_t x_btree_get_root_pid(ss_m* ssm, const stid_t &stid, lpid_t &root_pid);
 w_rc_t x_btree_adopt_foster_all(ss_m* ssm, const stid_t &stid);
@@ -402,6 +403,9 @@ public:
     }
     w_rc_t commit_xct() {
         return x_commit_xct(_ssm);
+    }
+    w_rc_t abort_xct() {
+        return x_abort_xct(_ssm);
     }
     w_rc_t btree_lookup_and_commit(const stid_t &stid, const char *keystr, std::string &data) {
         return x_btree_lookup_and_commit(_ssm, stid, keystr, data, _use_locks);

@@ -137,7 +137,7 @@ struct bf_tree_cb_t {
      */
     uint16_t                    _counter_approximate;// +2  -> 16
 
-    /// recovery lsn; protected by ??
+    /// recovery lsn; first lsn to make the page dirty; protected by ??
     lsndata_t _rec_lsn;       // +8 -> 24
 
     /// Pointer to the parent page.  zero for root pages; protected by ??
@@ -195,7 +195,12 @@ struct bf_tree_cb_t {
     snum_t                      _store_num;     // +4 -> 56
 
     fill32                      _fill32_60;     // +4 -> 60
-    fill8                       _fill8_61;      // +1 -> 61
+
+    // If _recovery == true, page is being accessed for recovery UNDO purpose
+    // this is a short duration flag which is only set when performing 
+    // UNDO operation on this page
+    bool                        _recovery_undo; // +1 -> 61
+    
     fill8                       _fill8_62;      // +1 -> 62
     fill8                       _fill8_63;      // +1 -> 63
 
