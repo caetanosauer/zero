@@ -245,10 +245,13 @@ public:
      * @param[in]  mode         latch mode.  has to be SH or EX.
      * @param[in]  conditional  whether the fix is conditional (returns immediately even if failed).
      * @param[in]  virgin_page  whether the page is a new page thus doesn't have to be read from disk.
+     * @param[in]  from_recovery true if caller is from recovery.     
      * 
      * To use this method, you need to include bf_tree_inline.h.
      */
-    w_rc_t fix_nonroot (generic_page*& page, generic_page *parent, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page);
+    w_rc_t fix_nonroot (generic_page*& page, generic_page *parent, volid_t vol, shpid_t shpid, 
+                          latch_mode_t mode, bool conditional, bool virgin_page,
+                          const bool from_recovery = false);
 
     /**
      * Fixes a non-root page in the bufferpool given a swizzled pointer that may be stale.
@@ -378,17 +381,17 @@ public:
                                    const lsn_t new_lsn);
 
     /**
-     * Mark the page being accessed by recovery UNDO.
+     * Mark the page being accessed by recovery.
      */
-    void set_recovery_undo(const generic_page* p);
+    void set_recovery_access(const generic_page* p);
     /**
-     * Returns if the page is being accessed by recovery UNDO.
+     * Returns if the page is being accessed by recovery.
      */
-    bool is_recovery_undo(const generic_page* p) const;
+    bool is_recovery_access(const generic_page* p) const;
     /**
-     * Clear the page being accessed by recovery UNDO.
+     * Clear the page being accessed by recovery.
      */
-    void clear_recovery_undo(const generic_page* p);
+    void clear_recovery_access(const generic_page* p);
 
     /**
      * Mark the page in_doubt and used flags, the physical page is not in buffer pool
@@ -665,13 +668,15 @@ private:
     w_rc_t _preload_root_page (bf_tree_vol_t* desc, vol_t* volume, snum_t store, shpid_t shpid, bf_idx idx);
 
     /** fixes a non-swizzled page. */
-    w_rc_t _fix_nonswizzled(generic_page* parent, generic_page*& page, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page);
+    w_rc_t _fix_nonswizzled(generic_page* parent, generic_page*& page, volid_t vol, shpid_t shpid,
+                               latch_mode_t mode, bool conditional, bool virgin_page,
+                               const bool from_recovery = false);
 
     // Validate whether the given page is safe for concurrent operation to access
     // Validate is based on either commit_lsn or lock acquisition
     // Commit_lsn: raise error if conflict
     // Lock acquisition: block if conflict
-    w_rc_t _validate_access(generic_page*& page, const bool for_recovery);
+    w_rc_t _validate_access(generic_page*& page);
 
     /**
      * \brief Checks validity of the page image that has been retrieved from disk,

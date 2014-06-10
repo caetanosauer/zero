@@ -96,6 +96,7 @@ smlevel_0::operating_mode_t
 
 lsn_t        smlevel_0::commit_lsn = lsn_t::null;
 lsn_t        smlevel_0::redo_lsn = lsn_t::null;
+lsn_t        smlevel_0::last_lsn = lsn_t::null;
 uint32_t     smlevel_0::in_doubt_count = 0;
 
 
@@ -752,6 +753,7 @@ ss_m::_construct_once()
 
     lsn_t     verify_lsn = lsn_t::null;  // verify_lsn is for use_concurrent_log_recovery() only
     lsn_t     redo_lsn = lsn_t::null;    // used if log driven REDO with use_concurrent_XXX_recovery()   
+    lsn_t     last_lsn = lsn_t::null;    // used if page driven REDO with use_concurrent_XXX_recovery()       
     uint32_t  in_doubt_count = 0;        // used if log driven REDO with use_concurrent_XXX_recovery()   
     lsn_t     master = log->master_lsn();
 
@@ -768,7 +770,7 @@ ss_m::_construct_once()
         // Recovery process, a checkpoint will be taken at the end of recovery
         // Make surethe current operating state is before recovery
         smlevel_0::operating_mode = t_not_started;
-        restart.recover(master, verify_lsn, redo_lsn, in_doubt_count);
+        restart.recover(master, verify_lsn, redo_lsn, last_lsn, in_doubt_count);
 
         // Perform the low level dismount, remount in higher level
         // and dismount again steps.
@@ -862,11 +864,13 @@ ss_m::_construct_once()
             // Check the operating mode
             w_assert1(t_in_analysis == smlevel_0::operating_mode);
 
-            // Store the commit_lsn, redo_lsn and in_doubt_count globally,
+            // Store the information globally,
             // concurrent txn will use commit_lsn only if use_concurrent_log_recovery()
-            // REDO from child thread will use redo_lsn and in_doubt_count to control the REDO phase
+            // REDO from child thread will use redo_lsn, last_lsn and in_doubt_count
+            // to control the REDO phase
             smlevel_0::commit_lsn = verify_lsn;
             smlevel_0::redo_lsn = redo_lsn;
+            smlevel_0::last_lsn = last_lsn;
             smlevel_0::in_doubt_count = in_doubt_count;
 
             if (lsn_t::null != master)
@@ -882,7 +886,7 @@ ss_m::_construct_once()
                 // 2. No recovery work to do
 
                 w_assert1(!recovery);
-                recovery = new restart_m;
+                recovery = new restart_m();
                 if (! recovery)
                 {
                     W_FATAL(eOUTOFMEMORY);

@@ -83,6 +83,7 @@ public:
      *                         failed).
      * @param[in] virgin_page  whether the page is a new page and thus doesn't have to be
      *                         read from disk.
+     * @param[in] from_recovery true if caller is from recovery
      * 
      * If parent.latch_mode() or mode is LATCH_Q, can return eLATCHQFAIL,
      * ePARENTLATCHQFAIL, or eNEEDREALLATCH.  The later occurs only when virgin_page is
@@ -90,7 +91,7 @@ public:
      */
     w_rc_t fix_nonroot(const fixable_page_h &parent, volid_t vol,
                        shpid_t shpid, latch_mode_t mode, bool conditional=false, 
-                       bool virgin_page=false);
+                       bool virgin_page=false, const bool from_recovery = false);
 
     /**
      * Fixes any page (root or non-root) in the bufferpool without pointer swizzling.  In
@@ -184,24 +185,24 @@ public:
     bool         is_dirty()  const;
 
     /**
-     * Mark this page being accessed for recovery UNDO purpose, so the pagee access
+     * Mark this page being accessed for recovery purpose, so the pagee access
      * validation will let it go through if in concurrent log mode
      * 
      * @pre We do not hold current page's latch in Q mode
      */
-    void         set_recovery_undo() const;
+    void         set_recovery_access() const;
     /**
-     * Return true if this page is marked for recovery UNDO access.
+     * Return true if this page is marked for recovery access.
      * 
      * @pre We do not hold current page's latch in Q mode
      */
-    bool         is_recovery_undo()  const;
+    bool         is_recovery_access()  const;
     /**
-     * Clear the flag so the page is no longer being accessed for recovery UNDO purpose
+     * Clear the flag so the page is no longer being accessed for recovery purpose
      * 
      * @pre We do not hold current page's latch in Q mode
      */
-    void         clear_recovery_undo() const;
+    void         clear_recovery_access() const;
 
     // Update both initial dirty lsn (if needed) and last write lsn on page
     void update_initial_and_last_lsn(const lsn_t & lsn) const;

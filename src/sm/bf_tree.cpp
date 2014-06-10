@@ -321,7 +321,7 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
     else
         cb._in_doubt = false;
  
-    cb._recovery_undo = false;
+    cb._recovery_access = false;
     cb._used = true; // turn on _used at last
     bool inserted = _hashtable->insert_if_not_exists(bf_key(vid, shpid), idx); // for some type of caller (e.g., redo) we still need hashtable entry for root
     if (!inserted) {
@@ -379,7 +379,7 @@ w_rc_t bf_tree_m::_install_volume_mainmemorydb(vol_t* volume) {
             cb._rec_lsn = _buffer[idx].lsn.data();
             cb.pin_cnt_set(1);
             cb._in_doubt = false;
-            cb._recovery_undo = false;
+            cb._recovery_access = false;
             cb._used = true;
             cb._swizzled = true;
         }
@@ -477,7 +477,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(generic_page* parent, generic_pa
         cb._rec_lsn = 0;
         cb._dirty = true;
         cb._in_doubt = false;
-        cb._recovery_undo = false;
+        cb._recovery_access = false;
         ++_dirty_page_count_approximate;
         bf_idx parent_idx = parent - _buffer;
         cb._pid_vol = get_cb(parent_idx)._pid_vol;
@@ -497,7 +497,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(generic_page* parent, generic_pa
 w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                                    volid_t vol, shpid_t shpid, 
                                    latch_mode_t mode, bool conditional, 
-                                   bool virgin_page) 
+                                   bool virgin_page, 
+                                   const bool from_recovery)  // True if caller is from recovery UNDO operation
 {
 ////////////////////////////////////////
 // TODO(Restart)...   
@@ -518,7 +519,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
     // not been loaded into memory yet.
 
 ////////////////////////////////////////
-// TODO(Restart)... in M2, only restart_m would load the in_doubt page
+// TODO(Restart)... in M2, only restart_m would load in_doubt pages
 //                          if an user transaction beats the REDO phase, the
 //                          user transaction does not load the page and it would 
 //                          raise error instead
@@ -637,7 +638,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 // Page format would set the _rec_lsn
                 cb._dirty = true;
                 cb._in_doubt = false;
-                cb._recovery_undo = false;
+                cb._recovery_access = false;
                 ++_dirty_page_count_approximate;
             }
             cb._used = true;
@@ -672,7 +673,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             // UNDO operation - page was not in_doubt, the page is needed for
             //                            b-tree search traversal of the UNDO operation, but
             //                            it is not the page to apply UNDO operation on
-            // Page is safe to access, not calling _validate_access(page, cb._recovery_undo) 
+            // Page is safe to access, not calling _validate_access(page) 
             // for page access validation purpose
             DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: retrieved a new page: " << shpid);
             return RCOK;
@@ -689,15 +690,38 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             }
             bf_tree_cb_t &cb = get_cb(idx);
 
-            if ((cb._in_doubt))
+            shpid_t root_shpid = smlevel_0::bf->get_root_page_id(vol, cb._store_num);
+
+            if ((cb._in_doubt) && (root_shpid != shpid))
             {
-                // in_doubt flag is on, page is not in buffer pool memory
+                // If in_doubt flag is on and not the root page, the page is not 
+                // in buffer pool memory
                 // we do not have latch on the page at this point, okay to return
+            
+                // bf_tree_m::_fix_nonswizzled iscalled by two different functions:
+                //   fix_direct: for REDO operation, rollback and cursor re-fix, both root
+                //                  and non-root page
+                //   fix_nonroot: user txn and UNDO operations to traversal the tree
+                //                      only non-root pages               
+                //
+                // Exception: root page is pre-loaded but in concurrent and page driven
+                // REDO recovery, the in_doubt flag would be turned on when pre-loading
+                // the root page, it is due to volume mount pre-loads the root page,
+                // while the code does a volume mount after the Log Analysis phase,
+                // which could erase the 'in_doubt' flag on the root page.  Therefore we
+                // always set the 'in_doubt' flag while pre-loading the root page to ensure
+                // a REDO on the root page (j.i.c.), the in_doubt flag would be turned off
+                // after the REDO on root page.
+                // Due to this implementation, if in_doubt flag is on for root page, the root
+                // page is in memory already.
                 
 ////////////////////////////////////////
 // TODO(Restart)... M2 (concurrent log mode) - raise error and abort the user transaction
 //                          M3 (concurrent lock mode) - block user transaction until recovery is done
 ////////////////////////////////////////
+
+                DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: page in hash table but not in buffer pool, page: " 
+                        << shpid << ", root page: " << root_shpid);
 
                 if (true ==  restart_m::use_concurrent_log_recovery()) 
                     return RC(eACCESS_CONFLICT);
@@ -750,15 +774,30 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     //     Recovery operation - was an in_doubt page
                     // or 
                     //     Previous user transaction - was not an non-in_doubt page
-                    // we do not have a way knowingwho loaded the page initially
-                    // therefore we have to validate the page if running in
-                    // concurrent mode
+                    // we need to validate the page only if runnign in concurrent mode
+                    // and the request coming from a user transaction
                     // 
                     // Two scenarios:
                     //     User transaction - validate
-                    //     UNDO operation - allow
-                    DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: an existing page, check for accessability: " << shpid);
-                    rc = _validate_access(page, cb._recovery_undo);
+                    //     Recovery operation - allow
+                    //                    from_recovery - UNDO operation
+                    //                    cb._recovery_access - REDO operation
+                    //         Two different ways to indicate caller from recovery, because
+                    //         REDO is page driven so we can mark cb._recovery_access
+                    //         but UNDO is transaction driven, not able to associate it to target
+                    //         page and also it has to traversal B-tree (visit multiple pages), so
+                    //         it is relying on input parameter 'from_recovery'
+
+                    if ((false == from_recovery) && (false == cb._recovery_access))
+                    {
+                        // Not from Recovery
+                        DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: an existing page from recovery, skip check for accessability: " << shpid);
+                    }
+                    else
+                    {
+                        DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: an existing page from user txn, check for accessability: " << shpid);
+                        rc = _validate_access(page);
+                    }
 
                     // On return, we are holding latch on this page
                 }
@@ -774,9 +813,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
     }
 }
 
-w_rc_t bf_tree_m::_validate_access(
-                  generic_page*& page,      // this is a pointer to the underlying page _pp
-                  const bool for_recovery)  // true is page is being accessed for recovery purpose
+w_rc_t bf_tree_m::_validate_access(generic_page*& page)   // pointer to the underlying page _pp
 {
     // Special function to validate whether a page is safe to be accessed by
     // concurrent operation while the recovery is still going on
@@ -786,11 +823,7 @@ w_rc_t bf_tree_m::_validate_access(
     // Validation is based on either commit_lsn or lock acquisition
     //    Commit_lsn: raise error if conflict
     //    Lock acquisition: block if conflict
-
-    // Scenarions:
-    //    Recovery related operation due to UNDO/compensation - allow
-    //    User transaction - validation
-    
+  
     // If the system is doing concurrent recovery and we are still in the middle
     // of recovery, it might not be safe to access the page
     if ((smlevel_1::recovery) &&   // The restart_m object is valid
@@ -822,27 +855,20 @@ w_rc_t bf_tree_m::_validate_access(
             {
                 // If the page is not marked being access for recovery purpose
                 // then we need to validate the accessability
-                if (false == for_recovery)
+
+                // Get the last write on the page
+                lsn_t page_lsn = page->lsn;
+                if (page_lsn >= smlevel_0::commit_lsn)
                 {
-                    // Get the last write on the page
-                    lsn_t page_lsn = page->lsn;
-                    if (page_lsn >= smlevel_0::commit_lsn)
-                    {
-                        // Condition not met, cannot continue
-                        DBGOUT2(<<"bf_tree_m: page access condition not met, page_lsn: " 
+                    // Condition not met, cannot continue
+                    DBGOUT2(<<"bf_tree_m: page access condition not met, page_lsn: " 
                             << page_lsn << ", commit_lsn:" << smlevel_0::commit_lsn);
-                        return RC(eACCESS_CONFLICT);
-                    }
-                    else
-                    {
-                        DBGOUT2(<<"bf_tree_m: page access condition met, page_lsn: " 
-                            << page_lsn << ", commit_lsn:" << smlevel_0::commit_lsn);                   
-                    }
+                    return RC(eACCESS_CONFLICT);
                 }
                 else
                 {
-                    DBGOUT2(<<"bf_tree_m: page being accessed for Recovery UNDO purpose, skip validation" );
-                
+                    DBGOUT2(<<"bf_tree_m: page access condition met, page_lsn: " 
+                            << page_lsn << ", commit_lsn:" << smlevel_0::commit_lsn);                   
                 }
             }
         }
@@ -988,7 +1014,7 @@ void bf_tree_m::repair_rec_lsn (generic_page *page, bool was_dirty, const lsn_t 
         } else {
             get_cb(idx)._dirty = false;
             get_cb(idx)._in_doubt = false;
-            get_cb(idx)._recovery_undo = false;
+            get_cb(idx)._recovery_access = false;
         }
     }
 }
@@ -1982,7 +2008,7 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
         cb._pid_shpid = shpid;
         cb._dirty = false;
         cb._in_doubt = true;
-        cb._recovery_undo = false;
+        cb._recovery_access = false;
         cb._used = true;
         cb._refbit_approximate = BP_INITIAL_REFCOUNT; 
 

@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 #ifndef BTREE_IMPL_H
@@ -131,12 +131,14 @@ public:
     static rc_t                        _ux_update(
         volid_t vol, snum_t store,
         const w_keystr_t&                 key,
-        const cvec_t&                     elem);
+        const cvec_t&                     elem,
+        const bool                        undo);
     /** _ux_update()'s internal function without retry by itself.*/
     static rc_t                        _ux_update_core(
         volid_t vol, snum_t store,
         const w_keystr_t&                 key,
-        const cvec_t&                     elem);
+        const cvec_t&                     elem,
+        const bool                        undo);
     /** Last half of _ux_update, after traversing, finding (or not) and ghost determination.*/
     static rc_t _ux_update_core_tail(
      volid_t vol, snum_t store,
@@ -181,12 +183,14 @@ public:
     static rc_t                        _ux_overwrite(
         volid_t vol, snum_t store,
         const w_keystr_t&                 key,
-        const char *el, smsize_t offset, smsize_t elen);
+        const char *el, smsize_t offset, smsize_t elen,
+        const bool undo);
     /** _ux_overwrite()'s internal function without retry by itself.*/
     static rc_t                        _ux_overwrite_core(
         volid_t vol, snum_t store,
         const w_keystr_t&                 key,
-        const char *el, smsize_t offset, smsize_t elen);
+        const char *el, smsize_t offset, smsize_t elen,
+        const bool undo);
 
     /**
      * \brief Creates a ghost record for the key as a preparation for insert.
@@ -212,10 +216,11 @@ public:
     */
     static rc_t                        _ux_remove(
         volid_t vol, snum_t store,
-        const w_keystr_t&                key);
+        const w_keystr_t&   key,
+        const bool          undo);
 
     /** _ux_remove()'s internal function without retry by itself.*/
-    static rc_t _ux_remove_core(volid_t vol, snum_t store, const w_keystr_t &key);
+    static rc_t _ux_remove_core(volid_t vol, snum_t store, const w_keystr_t &key, const bool undo);
 
     /**
     *  \brief Reverses the ghost record of specified key to regular state.
@@ -292,6 +297,7 @@ public:
     * @param[in] leaf_latch_mode EX for insert/remove, SH for lookup
     * @param[out] leaf leaf satisfying search
     * @param[in] allow_retry only when leaf_latch_mode=EX. whether to retry from root if latch upgrade fails
+    * @param[in] from_undo is true if caller is from an UNDO operation
     */
     static rc_t                 _ux_traverse(
         volid_t vol, snum_t store,
@@ -299,7 +305,8 @@ public:
         traverse_mode_t            traverse_mode,
         latch_mode_t               leaf_latch_mode,
         btree_page_h&                   leaf,
-        bool                       allow_retry = true
+        bool                       allow_retry = true,
+        const bool                 from_undo = false
         );
 
     /**
@@ -322,8 +329,9 @@ public:
         const w_keystr_t&          key,
         traverse_mode_t            traverse_mode,
         latch_mode_t               leaf_latch_mode,
-        btree_page_h&                   leaf,
-        shpid_t&                    leaf_pid_causing_failed_upgrade
+        btree_page_h&              leaf,
+        shpid_t&                   leaf_pid_causing_failed_upgrade,
+        const bool                 from_undo
         );
 
     /**

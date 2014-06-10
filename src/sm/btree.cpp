@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 #include "w_defines.h"
@@ -91,7 +91,7 @@ rc_t btree_m::update(
     if(key.get_length_as_nonkeystr() + elem.size() > btree_page_h::max_entry_size) {
         return RC(eRECWONTFIT);
     }
-    W_DO(btree_impl::_ux_update(vol, store, key, elem));
+    W_DO(btree_impl::_ux_update(vol, store, key, elem, false));  // Not from UNDO
     return RCOK;
 }
 
@@ -114,13 +114,13 @@ rc_t btree_m::overwrite(
     smsize_t                          offset,
     smsize_t                          elen)
 {
-    W_DO(btree_impl::_ux_overwrite(vol, store, key, el, offset, elen));
+    W_DO(btree_impl::_ux_overwrite(vol, store, key, el, offset, elen, false));  // Not from UNDO
     return RCOK;
 }
 
 rc_t btree_m::remove(volid_t vol, snum_t store, const w_keystr_t &key)
 {
-    W_DO(btree_impl::_ux_remove(vol, store, key));
+    W_DO(btree_impl::_ux_remove(vol, store, key, false));  // Not from UNDO
     return RCOK;
 }
 
@@ -319,25 +319,29 @@ rc_t btree_m::touch(const btree_page_h& page, uint64_t &page_count) {
 rc_t                        
 btree_m::remove_as_undo(volid_t vol, snum_t store, const w_keystr_t &key)
 {
+    // UNDO insert operation
     no_lock_section_t nolock;
-    return btree_impl::_ux_remove(vol, store,key);
+    return btree_impl::_ux_remove(vol, store,key, true);  // From UNDO
 }
 
 rc_t btree_m::update_as_undo(volid_t vol, snum_t store, const w_keystr_t &key, const cvec_t &elem)
 {
+    // UNDO update operation
     no_lock_section_t nolock;
-    return btree_impl::_ux_update(vol, store, key, elem);
+    return btree_impl::_ux_update(vol, store, key, elem, true);  // from UNDO
 }
 
 rc_t btree_m::overwrite_as_undo(volid_t vol, snum_t store, const w_keystr_t &key,
     const char *el, smsize_t offset, smsize_t elen)
 {
+    // UNDO update operation
     no_lock_section_t nolock;
-    return btree_impl::_ux_overwrite(vol, store, key, el, offset, elen);
+    return btree_impl::_ux_overwrite(vol, store, key, el, offset, elen, true);  // from UNDO
 }
 rc_t
 btree_m::undo_ghost_mark(volid_t vol, snum_t store, const w_keystr_t &key)
 {
+    // UNDO delete operation
     no_lock_section_t nolock;
     return btree_impl::_ux_undo_ghost_mark(vol, store, key);
 }

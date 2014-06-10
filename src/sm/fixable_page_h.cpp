@@ -24,7 +24,8 @@ void fixable_page_h::unfix() {
 
 w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent, volid_t vol,
                                    shpid_t shpid, latch_mode_t mode, 
-                                   bool conditional, bool virgin_page) {
+                                   bool conditional, bool virgin_page,
+                                   const bool from_recovery) {
     w_assert1(parent.is_fixed());
     w_assert1(shpid != 0);
     w_assert1(mode != LATCH_NL);
@@ -51,7 +52,7 @@ w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent, volid_t vol,
             }
         }
     } else {
-        W_DO(smlevel_0::bf->fix_nonroot(_pp, parent._pp, vol, shpid, mode, conditional, virgin_page));
+        W_DO(smlevel_0::bf->fix_nonroot(_pp, parent._pp, vol, shpid, mode, conditional, virgin_page, from_recovery));
         w_assert1(smlevel_0::bf->get_cb(_pp)->_pid_vol == vol);
         w_assert1(is_swizzled_pointer(shpid) || smlevel_0::bf->get_cb(_pp)->_pid_shpid == shpid);
     }
@@ -187,29 +188,29 @@ bool fixable_page_h::is_dirty() const {
     }
 }
 
-void fixable_page_h::set_recovery_undo() const 
+void fixable_page_h::set_recovery_access() const 
 {
     // Set a flag in cb to indicate this page is being
-    // accessed for recovery UNDO purpose
+    // accessed for recovery purpose
     
     w_assert1(_pp);
     w_assert1(_mode != LATCH_Q);
 
     if (_bufferpool_managed) 
     {
-        smlevel_0::bf->set_recovery_undo(_pp);
+        smlevel_0::bf->set_recovery_access(_pp);
     }
 }
 
-bool fixable_page_h::is_recovery_undo() const 
+bool fixable_page_h::is_recovery_access() const 
 {
-    // Is this page being accessed recovery UNDO purpose?
+    // Is this page being accessed recovery purpose?
 
     w_assert1(_mode != LATCH_Q);
 
     if (_bufferpool_managed) 
     {
-        return smlevel_0::bf->is_recovery_undo(_pp);
+        return smlevel_0::bf->is_recovery_access(_pp);
     }
     else 
     {
@@ -217,17 +218,17 @@ bool fixable_page_h::is_recovery_undo() const
     }
 }
 
-void fixable_page_h::clear_recovery_undo() const 
+void fixable_page_h::clear_recovery_access() const 
 {
     // Set a flag in cb to indicate this page is being
-    // accessed for recovery UNDO purpose
+    // accessed for recovery purpose
     
     w_assert1(_pp);
     w_assert1(_mode != LATCH_Q);
 
     if (_bufferpool_managed) 
     {
-        smlevel_0::bf->clear_recovery_undo(_pp);
+        smlevel_0::bf->clear_recovery_access(_pp);
     }
 }
 

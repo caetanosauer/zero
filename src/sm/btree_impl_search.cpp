@@ -88,7 +88,7 @@ btree_impl::_ux_lookup_core(volid_t vol, snum_t store, const w_keystr_t& key,
 rc_t
 btree_impl::_ux_traverse(volid_t vol, snum_t store, const w_keystr_t &key,
                          traverse_mode_t traverse_mode, latch_mode_t leaf_latch_mode,
-                         btree_page_h &leaf, bool allow_retry) {
+                         btree_page_h &leaf, bool allow_retry, const bool from_undo) {
     FUNC(btree_impl::_ux_traverse);
     INC_TSTAT(bt_traverse_cnt);
     if (key.is_posinf()) {
@@ -106,6 +106,7 @@ btree_impl::_ux_traverse(volid_t vol, snum_t store, const w_keystr_t &key,
         btree_page_h root_p;
         bool should_try_ex = (leaf_latch_mode == LATCH_EX &&
                               leaf_pid_causing_failed_upgrade == smlevel_0::bf->get_root_page_id(vol, store));
+        // Root page is pre-loaded into buffer pool
         W_DO( root_p.fix_root(vol, store, should_try_ex ? LATCH_EX : LATCH_SH));
         w_assert1(root_p.is_fixed());
         
@@ -121,7 +122,7 @@ btree_impl::_ux_traverse(volid_t vol, snum_t store, const w_keystr_t &key,
         }
         
         rc_t rc = _ux_traverse_recurse (root_p, key, traverse_mode, leaf_latch_mode, leaf, 
-                                        leaf_pid_causing_failed_upgrade);
+                                        leaf_pid_causing_failed_upgrade, from_undo);
         if (rc.is_error()) {
             if (rc.err_num() == eGOODRETRY) {
                 // did some opportunistic structure modification, and going to retry
@@ -154,7 +155,8 @@ btree_impl::_ux_traverse_recurse(btree_page_h&                start,
                                  btree_impl::traverse_mode_t  traverse_mode,
                                  latch_mode_t                 leaf_latch_mode,
                                  btree_page_h&                leaf,
-                                 shpid_t&                     leaf_pid_causing_failed_upgrade) {
+                                 shpid_t&                     leaf_pid_causing_failed_upgrade,
+                                 const bool                   from_undo) {
     FUNC(btree_impl::_ux_traverse_recurse);
     INC_TSTAT(bt_partial_traverse_cnt);
 
@@ -238,9 +240,11 @@ btree_impl::_ux_traverse_recurse(btree_page_h&                start,
             }
         }
 
+        // Will load the page if page is not in buffer pool already
         W_DO(next->fix_nonroot(*current, current->vol(), pid_to_follow_opaqueptr, 
-                               should_try_ex ? LATCH_EX : LATCH_SH));
-        
+                               should_try_ex ? LATCH_EX : LATCH_SH, false /*conditional*/,
+                               false /*virgin_page*/, from_undo /*from_recovery*/));
+       
         if (slot_to_follow != t_follow_foster && next->get_foster() != 0) {
             // We followed a real-child pointer and found that it has foster... let's adopt it! (but
             // opportunistically).  Just like eager adoption, it returns eGOODRETRY and we will

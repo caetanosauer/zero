@@ -126,14 +126,14 @@ public:
     }
 };
 
-/* Passing *
+/* Passing */
 TEST (RestartTest, Empty) {
     test_env->empty_logdata_dir();
     restart_empty context;
     EXPECT_EQ(test_env->runRestartTest(&context, false, 20), 0);  // false = no simulated crash, normal shutdown
                                                                   // 20 = recovery mode, m2 default concurrent mode
 }
-**/
+/**/
 
 // Test case with simple transactions (1 in-flight) and normal shutdown, no concurrent activities during recovery
 class restart_simple_normal : public restart_test_base  {
@@ -173,14 +173,14 @@ public:
     }
 };
 
-/* Passing *
+/* Passing */
 TEST (RestartTest, SimpleNormal) {
     test_env->empty_logdata_dir();
     restart_simple_normal context;
     EXPECT_EQ(test_env->runRestartTest(&context, false, 20), 0);  // false = no simulated crash, normal shutdown
                                                                   // 20 = recovery mode, m2 default concurrent mode, no wait
 }
-**/
+/**/
 
 // Test case with simple transactions (1 in-flight) and crash shutdown, no concurrent activities during recovery
 class restart_simple_crash : public restart_test_base  {
@@ -220,7 +220,7 @@ public:
     }
 };
 
-/* Not passing in UNDO phase during 'abort' */
+/* Passing */
 TEST (RestartTest, SimpleCrash) {
     test_env->empty_logdata_dir();
     restart_simple_crash context;
@@ -243,9 +243,9 @@ public:
         W_DO(test_env->btree_insert_and_commit(_stid, "aa4", "data4"));
 
         W_DO(test_env->begin_xct());                                     // in-flight
-        W_DO(test_env->btree_insert(_stid, "aa5", "data5"));
+        W_DO(test_env->btree_insert(_stid, "aa7", "data5"));
         W_DO(test_env->btree_insert(_stid, "aa2", "data2"));
-        W_DO(test_env->btree_insert(_stid, "aa7", "data7"));
+        W_DO(test_env->btree_insert(_stid, "aa5", "data7"));
 
         output_durable_lsn(3);
         return RCOK;
@@ -270,7 +270,10 @@ public:
     }
 };
 
-/* Need testing *
+/* Not passing, when there are multiple insertions in one txn, it rolls back only the very first */
+/* insertion in the txn, but not the rest of the insertions.  Issue in xct_t::rollback undo_nxt */
+/* for this test case, the result: 5 records instead of 3 records, 'aa7' was rollback, so the max is 'aa5' instead of ''aa4' */
+/* Not passing *
 TEST (RestartTest, ComplexInFlightCrash) {
     test_env->empty_logdata_dir();
     restart_complex_in_flight_crash context;

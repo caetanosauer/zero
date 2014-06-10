@@ -372,6 +372,7 @@ btree_ghost_mark_log::undo(fixable_page_h*)
     // UNDO of ghost marking is to get the record back to regular state
     btree_ghost_t* dp = (btree_ghost_t*) data();
     lpid_t root_pid (header._vid, header._snum, dp->root_shpid);
+
     for (size_t i = 0; i < dp->cnt; ++i) {
         w_keystr_t key (dp->get_key(i));
         rc_t rc = smlevel_2::bt->undo_ghost_mark(header._vid.vol, header._snum, key);

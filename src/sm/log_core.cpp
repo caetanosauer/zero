@@ -2503,13 +2503,17 @@ rc_t log_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn)
     
     // no need to grab a mutex if it's too late
     if(orig_lsn < _flush_lsn)
-      return RC(eBADCOMPENSATION);
+    {
+        DBGOUT3( << "log_core::compensate - orig_lsn: " << orig_lsn 
+                 << ", flush_lsn: " << _flush_lsn << ", undo_lsn: " << undo_lsn);  
+        return RC(eBADCOMPENSATION);
+    }
     
     CRITICAL_SECTION(cs, _comp_lock);
     // check again; did we just miss it?
     lsn_t flsn = _flush_lsn;
     if(orig_lsn < flsn)
-      return RC(eBADCOMPENSATION);
+        return RC(eBADCOMPENSATION);
     
     /* where does it live? the buffer is always aligned with a
        buffer-sized chunk of the partition, so all we need to do is

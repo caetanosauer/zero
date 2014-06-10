@@ -84,20 +84,16 @@ rc_t log_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
             // Last write LSN from backup > given LSN, the page last write LSN
             // from the backup is newer (later) than our recorded emlsn (last write)
             // on the page.
-            // _collect_single_page_recovery_logs would be an no-op in such case
-            //
-            // How can this happen and is this valid?            
-            // Note that if caller is from concurrent recovery for a virgin or corrupted
-            // page, then the emlsn is the current log LSN.  How can the page from
-            // backup has a LSN > current log LSN?
+            // This should not happen, raise an error
 
             DBGOUT1(<< "Backup page last write LSN > emlsn");
+            W_FATAL(eBAD_BACKUPPAGE);
         }
     } else {
         // if the page is not in the backup (possible if the page was created after the
         // backup), we need to recover the page purely from the log. So, current_lsn=0.
         p.set_lsns(lsn_t::null);
-        DBGOUT1(<< "No backup page. Recovering only from log");
+        DBGOUT1(<< "No backup page. Recovering from log only");
     }
 
     // Then, collect logs to apply. Depending on the recency of the backup and the
@@ -125,9 +121,13 @@ rc_t log_core::_collect_single_page_recovery_logs(
     // we go back using page log chain like what xct_t::rollback() does on undo log chain.
     ordered_entries.clear();
     size_t buffer_capacity = buffer_size;
+
+    DBGOUT1(<< "log_core::_collect_single_page_recovery_logs: current_lsn (end): " << current_lsn
+            << ", emlsn (begin): " << emlsn );
     for (lsn_t nxt = emlsn; current_lsn < nxt && nxt != lsn_t::null;) {
         logrec_t* record = NULL;
         lsn_t obtained = nxt;
+        DBGOUT1(<< "log_core::_collect_single_page_recovery_logs: fetch: " << obtained);
         rc_t rc = fetch(obtained, record, NULL, true); 
         release(); // release _partition_lock immediately
         if ((rc.is_error()) && (eEOF == rc.err_num()))

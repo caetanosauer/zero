@@ -109,7 +109,7 @@ class restart_m : public smlevel_1 {
     friend class restart_thread_t;
 
 public:
-    NORET                        restart_m():_restart_thread(0) {};
+    NORET                        restart_m():_restart_thread(0){};
     NORET                        ~restart_m() 
     {
         // If we are still in Log Analysis phase, no child thread yet, go ahead and terminate
@@ -249,6 +249,7 @@ public:
         lsn_t                   master,         // In: Starting point for log scan
         lsn_t&                  commit_lsn,     // Out: used if use_concurrent_log_recovery()
         lsn_t&                  redo_lsn,       // Out: used if log driven REDO with use_concurrent_XXX_recovery()        
+        lsn_t&                  last_lsn,       // Out: used if page driven REDO with use_concurrent_XXX_recovery()                
         uint32_t&               in_doubt_count  // Out: used if log driven REDO with use_concurrent_XXX_recovery()           
         );
 
@@ -261,7 +262,8 @@ private:
         uint32_t&               in_doubt_count,
         lsn_t&                  undo_lsn,
         XctPtrHeap&             heap,
-        lsn_t&                  commit_lsn // Commit lsn for concurrent transaction (if used)        
+        lsn_t&                  commit_lsn, // Commit lsn for concurrent transaction (if used)        
+        lsn_t&                  last_lsn    // Last lsn in recovery log (forward scan)
         );
 
     // Function used for serialized operations, open system after the entire recovery process finished

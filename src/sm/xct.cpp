@@ -1528,15 +1528,16 @@ xct_t::_abort()
 
     // The transaction abort function is shared by :
     // 1. Normal transaction abort, in such case the state would be in xct_active,
-    //     xct_committing, or xct_freeing_space
-    // 2. UNDO phase in Recovery, in such case the state would be in xct_aborting
-    //     to indicating a doom transaction
+    //     xct_committing, or xct_freeing_space, and the _doomed_xct flag off
+    // 2. UNDO phase in Recovery, in such case the state would be in xct_active
+    //     but the _doomed_xct flag is on to indicating a doom transaction
     // Note that if we open the store for new transaction during Recovery
     // we could encounter normal transaction abort while Recovery is going on, 
     // in such case the aborting transaction state would fall into case #1 above
     
-    if (false == in_recovery())
+    if (false == in_recovery() && false == _doomed_xct)
     {
+        // Not a doomed txn
         w_assert1(_core->_state == xct_active
                 || _core->_state == xct_committing /* if it got an error in commit*/
                 || _core->_state == xct_freeing_space /* if it got an error in commit*/
@@ -2625,7 +2626,12 @@ xct_t::rollback(const lsn_t &save_pt)
     w_assert0(!_rolling_back); 
     _rolling_back = true; 
 
+    // undo_nxt is the lsn of last recovery log for this txn
     lsn_t nxt = _undo_nxt;
+
+// TODO(Restart)...
+DBGOUT1(<<"!!!!!!!! Initial rollback, undo_nxt: " << nxt);
+
 
     LOGTRACE( << setiosflags(ios::right) << nxt
               << resetiosflags(ios::right) 
@@ -2636,18 +2642,22 @@ xct_t::rollback(const lsn_t &save_pt)
     { // Contain the scope of the following __copy__buf:
 
     logrec_t* __copy__buf = new logrec_t; // auto-del
-    if(! __copy__buf) { W_FATAL(eOUTOFMEMORY); }
+    if(! __copy__buf)
+        { W_FATAL(eOUTOFMEMORY); }
     w_auto_delete_t<logrec_t> auto_del(__copy__buf);
     logrec_t&         r = *__copy__buf;
 
-    while (save_pt < nxt)  {
+    while (save_pt < nxt)  
+    {
         rc =  log->fetch(nxt, buf, 0);
-        if(rc.is_error() && rc.err_num()==eEOF) {
+        if(rc.is_error() && rc.err_num()==eEOF) 
+        {
             LOGTRACE2( << "U: end of log looking to fetch nxt=" << nxt);
             DBGX(<< " fetch returns EOF" );
             log->release(); 
             goto done;
-        } else
+        }
+        else
         {
              LOGTRACE2( << "U: fetch nxt=" << nxt << "  returns rc=" << rc);
              logrec_t& temp = *buf;
@@ -2660,7 +2670,13 @@ xct_t::rollback(const lsn_t &save_pt)
              log->release();
         }
 
-        if (r.is_undo()) {
+        if (r.is_undo()) 
+        {
+           w_assert1(nxt == r.lsn_ck());
+// TODO(Restart)...
+DBGOUT1(<<"!!!!!!!! Rollback, log record is undoable, lsn = " << nxt);
+
+            // r is undoable 
             w_assert1(!r.is_single_sys_xct());
             w_assert1(!r.is_multi_page()); // All multi-page logs are SSX, so no UNDO.
             /*
@@ -2675,11 +2691,15 @@ xct_t::rollback(const lsn_t &save_pt)
             lpid_t pid = r.construct_pid();
             fixable_page_h page;
 
-            if (! r.is_logical()) {
+            if (! r.is_logical()) 
+            {
+                // Operations such as foster adoption, load balance, etc.
+                
                 DBGOUT3 (<<"physical UNDO.. which is not quite good");
                 // tentatively use fix_direct for this. eventually all physical UNDOs should go away
                 rc = page.fix_direct(pid.vol().vol, pid.page, LATCH_EX);
-                if(rc.is_error()) {
+                if(rc.is_error()) 
+                {
                     goto done;
                 }
                 w_assert1(page.pid() == pid);
@@ -2694,33 +2714,53 @@ xct_t::rollback(const lsn_t &save_pt)
                           (was_rsvd - _log_bytes_rsvd));
             }
 #endif 
-            if(r.is_cpsn()) {
+            if(r.is_cpsn()) 
+            {
+                // A compensation log record
                 w_assert1(r.is_undoable_clr());
                 LOGTRACE2( << "U: compensating to " << r.undo_nxt() );
                 nxt = r.undo_nxt();
-            } else {
+// TODO(Restart)...
+DBGOUT1(<<"!!!!!!!! Rollback, log record is compensation, undo_nxt: " << nxt);
+            }
+            else
+            {
+                // Not a compensation log record, use xid_prev() which is
+                // previous logrec of this xct
                 LOGTRACE2( << "U: undoing to " << r.xid_prev() );
                 nxt = r.xid_prev();
+// TODO(Restart)...
+DBGOUT1(<<"!!!!!!!! Rollback, log record is not compensation, xid_prev: " << nxt);
             }
-
-        } else  if (r.is_cpsn())  {
+        } 
+        else  if (r.is_cpsn())  
+        {
             LOGTRACE2( << setiosflags(ios::right) << nxt
                       << resetiosflags(ios::right) << " U: " << r 
                       << " compensating to " << r.undo_nxt() );
-            if (r.is_single_sys_xct()) {
+            if (r.is_single_sys_xct()) 
+            {
                 nxt = lsn_t::null;
-            } else {
+            }
+            else 
+            {
                 nxt = r.undo_nxt();
             }
             // r.xid_prev() could just as well be null
 
-        } else {
+        } 
+        else
+        {
+            // r is not undoable         
             LOGTRACE2( << setiosflags(ios::right) << nxt
                << resetiosflags(ios::right) << " U: " << r 
                << " skipping to " << r.xid_prev());
-            if (r.is_single_sys_xct()) {
+            if (r.is_single_sys_xct()) 
+            {
                 nxt = lsn_t::null;
-            } else {
+            }
+            else
+            {
                 nxt = r.xid_prev();
             }
             // w_assert9(r.undo_nxt() == lsn_t::null);

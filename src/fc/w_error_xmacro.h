@@ -99,5 +99,6 @@ X(eBACKUP_SHORTSEEK,          "Failed to seek in Backup file")
 X(eBACKUP_SHORTIO,            "Failed to read from Backup file")
 X(eBFFULL,                    "Buffer pool is full during Recovery operation")
 X(eACCESS_CONFLICT,           "User transaction is conflicting with Recovery task on a page access")
+X(eBAD_BACKUPPAGE,            "Retrieved page from backup file was incorrect")
 
 

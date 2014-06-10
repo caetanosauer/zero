@@ -196,10 +196,10 @@ struct bf_tree_cb_t {
 
     fill32                      _fill32_60;     // +4 -> 60
 
-    // If _recovery == true, page is being accessed for recovery UNDO purpose
+    // If _recovery_access == true, page is being accessed for recovery purpose
     // this is a short duration flag which is only set when performing 
-    // UNDO operation on this page
-    bool                        _recovery_undo; // +1 -> 61
+    // recovery operation on this page
+    bool                        _recovery_access; // +1 -> 61
     
     fill8                       _fill8_62;      // +1 -> 62
     fill8                       _fill8_63;      // +1 -> 63

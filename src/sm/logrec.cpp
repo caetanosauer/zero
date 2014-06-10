@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 #include "w_defines.h"
@@ -198,9 +198,28 @@ void logrec_t::redo(fixable_page_h* page)
     DBG( << "Redo  log rec: " << *this 
         << " size: " << header._len << " xid_prevlsn: " << (is_single_sys_xct() ? lsn_t::null : xid_prev()) );
 
+    // Could be either user transaction or compensation operatio,
+    // not system transaction because currently all system transactions
+    // are single log
+    
+    // This is used by both SPR and serial recovery REDO phase
+
+    // Not all REDO operations have associated page
+    // If there is a page, mark the page for recovery access
+    // this is for page access validation purpose to allow recovery
+    // operation to by-pass the page concurrent access check
+    
+    if(page) 
+        page->set_recovery_access();
+
     switch (header._type)  {
 #include "redo_gen.cpp"
     }
+
+    // If we have a page, clear the recovery flag on the page after
+    // we are done with undo operation
+    if(page) 
+        page->clear_recovery_access();
     
     /*
      *  Page is dirty after redo.
@@ -239,16 +258,17 @@ logrec_t::undo(fixable_page_h* page)
     // is no UNDO for system transactions, so we only need to mark
     // recovery flag for the current UNDO page
 
-    // If we have a page, mark the page for recovery, this is for page access 
-    // validation purpose
-    // allow recovery operation to by-pass the page concurrent access check
-    // In most cases we do not have a page, therefore we need to go to individual 
-    // undo function (see Btree_logrec.cpp) to mark page flag
-////////////////////////////////////////    
-// TODO(Restart)...     
-////////////////////////////////////////
+    // If there is a page, mark the page for recovery, this is for page access 
+    // validation purpose to allow recovery operation to by-pass the 
+    // page concurrent access check
+    // In most cases we do not have a page from caller, therefore
+    // we need to go to individual undo function to mark the recovery flag.
+    // All the page related operations are in Btree_logrec.cpp, including
+    // operations for system and user transactions, note that operations 
+    // for system transaction have REDO but no UNDO
+    // The actual UNDO implementation in Btree_impl.cpp   
     if(page) 
-        page->set_recovery_undo();
+        page->set_recovery_access();
 
     switch (header._type) {
 #include "undo_gen.cpp"
@@ -259,7 +279,7 @@ logrec_t::undo(fixable_page_h* page)
     // If we have a page, clear the recovery flag on the page after
     // we are done with undo operation
     if(page) 
-        page->clear_recovery_undo();
+        page->clear_recovery_access();
 
     undoing_context = logrec_t::t_max_logrec;
 }

@@ -545,8 +545,15 @@ public:
 
     static lsn_t        commit_lsn;      // commit_lsn is for use_concurrent_log_recovery() only
                                          // this is the validation lsn for all concurrent user txns
+
+    // The following variables are used by concurrent recovery process only
+    // they should be stored in class 'restart_m'
+    // Currently resides here for prototype converient access only
     static lsn_t        redo_lsn;        // redo_lsn is used by child thread as the start scanning point for redo
+    static lsn_t        last_lsn;        // last_lsn is used by page driven REDO operation SPR emlsn if encounter
+                                         // a virgin or corrupted page
     static uint32_t     in_doubt_count;  // in_doubt_count is used to child thread during the REDO phase   
+
 
     static operating_mode_t operating_mode;
     static bool in_recovery() { 

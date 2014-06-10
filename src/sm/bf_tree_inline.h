@@ -85,7 +85,8 @@ inline w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
 inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent, 
                                      volid_t vol, shpid_t shpid, 
                                      latch_mode_t mode, bool conditional, 
-                                     bool virgin_page) {
+                                     bool virgin_page,
+                                     const bool from_recovery) {
     INC_TSTAT(bf_fix_nonroot_count);
 #ifdef SIMULATE_MAINMEMORYDB
     if (virgin_page) {
@@ -104,14 +105,14 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
 #endif // SIMULATE_MAINMEMORYDB
     w_assert1(parent !=  NULL);
     if (!is_swizzling_enabled()) {
-        return _fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page);
+        return _fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page, from_recovery);
     }
     
     // the parent must be latched
     w_assert1(latch_mode(parent) == LATCH_SH || latch_mode(parent) == LATCH_EX);
     if((shpid & SWIZZLED_PID_BIT) == 0) {
         // non-swizzled page. or even worse it might not exist in bufferpool yet!
-        W_DO (_fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page));
+        W_DO (_fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page, from_recovery));
         // also try to swizzle this page
         // TODO so far we swizzle all pages as soon as we load them to bufferpool
         // but, we might want to consider a more advanced policy.
@@ -261,7 +262,7 @@ inline w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, volid_t vol, snum
     get_cb(idx)._used = true;
     get_cb(idx)._dirty = true;
     get_cb(idx)._in_doubt = false;
-    get_cb(idx)._recovery_undo = false;
+    get_cb(idx)._recovery_access = false;
     ++_dirty_page_count_approximate;
     get_cb(idx)._swizzled = true;
     bool inserted = _hashtable->insert_if_not_exists(bf_key(vol, shpid), idx); // for some type of caller (e.g., redo) we still need hashtable entry for root
@@ -399,23 +400,23 @@ inline void bf_tree_m::update_initial_dirty_lsn(const generic_page* p,
         cb._rec_lsn = new_lsn.data();
 }
 
-inline void bf_tree_m::set_recovery_undo(const generic_page* p) {
+inline void bf_tree_m::set_recovery_access(const generic_page* p) {
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
     bf_tree_cb_t &cb = get_cb(idx);
-    cb._recovery_undo = true;
+    cb._recovery_access = true;
 }
-inline bool bf_tree_m::is_recovery_undo(const generic_page* p) const {
+inline bool bf_tree_m::is_recovery_access(const generic_page* p) const {
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
-    return get_cb(idx)._recovery_undo;
+    return get_cb(idx)._recovery_access;
 }
 
-inline void bf_tree_m::clear_recovery_undo(const generic_page* p) {
+inline void bf_tree_m::clear_recovery_access(const generic_page* p) {
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
     bf_tree_cb_t &cb = get_cb(idx);
-    cb._recovery_undo = false;
+    cb._recovery_access = false;
 }
 
 inline void bf_tree_m::set_in_doubt(const bf_idx idx, lsn_t new_lsn) {
