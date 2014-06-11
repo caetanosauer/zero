@@ -355,7 +355,7 @@ restart_m::recover(
             // the 'dirty' flags for modified pages.
             // No change to transaction table or recovery log
             DBGOUT3(<<"starting REDO at " << redo_lsn << " highest_lsn " << curr_lsn);
-            redo_pass(redo_lsn, curr_lsn, in_doubt_count);
+            redo_log_pass(redo_lsn, curr_lsn, in_doubt_count);
 
             // no logging during redo
             w_assert1(curr_lsn == log->curr_lsn()); 
@@ -404,7 +404,7 @@ restart_m::recover(
             //    the 'undo_lsn' is not used
             DBGOUT3(<<"starting UNDO phase, current lsn: " << curr_lsn << 
                     ", undo_lsn = " << undo_lsn);
-            undo_pass(heap, last_lsn, undo_lsn);
+            undo_reverse_pass(heap, last_lsn, undo_lsn);
 
             smlevel_0::errlog->clog << info_prio << "Oldest active transaction is " 
                 << xct_t::oldest_tid() << flushl;
@@ -1609,7 +1609,7 @@ restart_m::analysis_pass(
 
 /*********************************************************************
  * 
- *  restart_m::redo_pass(redo_lsn, highest_lsn, in_doubt_count)
+ *  restart_m::redo_log_pass(redo_lsn, highest_lsn, in_doubt_count)
  *
  *  Scan log forward from redo_lsn. Base on entries in buffer pool, 
  *  apply redo if durable page is old.
@@ -1618,7 +1618,7 @@ restart_m::analysis_pass(
  *
  *********************************************************************/
 void 
-restart_m::redo_pass(
+restart_m::redo_log_pass(
     const lsn_t        redo_lsn,       // This is where the log scan should start
     const lsn_t&       highest_lsn,    // This is the current log LSN, if in serial mode
                                        // REDO should not/generate log and this
@@ -2303,7 +2303,7 @@ void restart_m::_redo_log_with_pid(
 
 /*********************************************************************
  *
- *  restart_m::undo_pass(heap, curr_lsn, undo_lsn)
+ *  restart_m::undo_reverse_pass(heap, curr_lsn, undo_lsn)
  *
  *  abort all the active transactions, doing so in a strictly reverse
  *  chronological order.  This is done to get around a boundary condition
@@ -2325,7 +2325,7 @@ void restart_m::_redo_log_with_pid(
  *
  *********************************************************************/
 void 
-restart_m::undo_pass(
+restart_m::undo_reverse_pass(
     XctPtrHeap&        heap,      // Heap populated with doomed transactions
     const lsn_t        curr_lsn,  // Current lsn, the starting point of backward scan
                                   // Not used currently
@@ -2628,7 +2628,7 @@ void restart_m::redo_concurrent()
             // point for forward scan
             lsn_t curr_lsn = log->curr_lsn(); 
             DBGOUT3(<<"starting REDO at " << smlevel_0::redo_lsn << " highest_lsn " << curr_lsn);
-            redo_pass(smlevel_0::redo_lsn, curr_lsn, smlevel_0::in_doubt_count);
+            redo_log_pass(smlevel_0::redo_lsn, curr_lsn, smlevel_0::in_doubt_count);
 
             // Concurrent txn would generate new log records so the curr_lsn could be different
         }
@@ -2709,7 +2709,7 @@ void restart_m::undo_concurrent()
             // callee must build the heap itself
             CmpXctUndoLsns  cmp;
             XctPtrHeap      heap(cmp);
-            undo_pass(heap, log->curr_lsn().data(), smlevel_0::redo_lsn);  // Input LSNs are not used currently
+            undo_reverse_pass(heap, log->curr_lsn().data(), smlevel_0::redo_lsn);  // Input LSNs are not used currently
         }
         else if (true == use_undo_txn_recovery())
         {
@@ -2761,19 +2761,13 @@ void restart_m::_redo_page_pass()
         DBGOUT3( << "restart_m::_redo_page_pass() - Number of in_doubt pages: " << smlevel_0::in_doubt_count);
     }
 
-    if(true == use_redo_delay_recovery())
-    {
-        // For concurrent testing purpose, delay the REDO 
-        // operation so the user transactions can hit conflicts
-        g_me()->sleep(wait_interval); // 1 second, this is a very long time
-    }
-
     w_ostrstream s;
     s << "restart concurrent redo_page_pass";
     (void) log_comment(s.c_str());
 
     w_rc_t rc = RCOK;
     bool passed_end = false;  // Detect virgin page
+    bf_idx root_idx = 0;    
 
     // Count of blocks/pages in buffer pool
     bf_idx bfsz = bf->get_block_cnt();
@@ -2787,7 +2781,7 @@ void restart_m::_redo_page_pass()
     // Index 0 is always the head of the list (points to the first free block
     // or 0 if no free block), therefore index 0 is never used.
     for (bf_idx i = 1; i < bfsz; ++i)
-    {
+    {   
         rc = RCOK;
         passed_end = false;
 
@@ -2994,6 +2988,15 @@ void restart_m::_redo_page_pass()
 
             // Done with REDO of this page, turn the in_doubt flag into the dirty flag
             smlevel_0::bf->in_doubt_to_dirty(idx);        // In use and dirty
+
+            if ((true == use_redo_delay_recovery()) && (0 == root_idx))
+            {
+                // For testing purpose, if we need to sleep during REDO
+                // sleep after we recovered the root page (which is needed for tree traversal)
+                
+                // Get root-page index if we don't already had it
+                root_idx = smlevel_0::bf->get_root_page_idx(vol, store);
+            }
         }          
         else
         {
@@ -3003,6 +3006,17 @@ void restart_m::_redo_page_pass()
         // Release EX latch before moving to the next page in buffer pool
         if (cb.latch().held_by_me())                        
             cb.latch().latch_release();
+
+        if ((true == use_redo_delay_recovery()) && (i == root_idx))
+        {
+            // Just re-loaded the root page
+            
+            // For concurrent testing purpose, delay the REDO 
+            // operation so user transactions can encounter access conflicts
+            // Note the sleep is after REDO processed the in_doubt root page
+            DBGOUT3(<< "REDO (redo_page_pass()): sleep after REDO on root page" << root_idx);            
+            g_me()->sleep(wait_interval); // 1 second, this is a very long time
+        }
     }
 
     // Done with REDO phase

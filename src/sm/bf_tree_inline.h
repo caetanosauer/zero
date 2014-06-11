@@ -64,6 +64,18 @@ inline shpid_t bf_tree_m::get_root_page_id(volid_t vol, snum_t store) {
     return page->pid.page;
 }
 
+inline bf_idx bf_tree_m::get_root_page_idx(volid_t vol, snum_t store) {
+    if (_volumes[vol] == NULL)
+        return 0;
+
+    // root-page index is always kept in the volume descriptor:
+    bf_idx idx = _volumes[vol]->_root_pages[store];
+    if (!_is_valid_idx(idx)) 
+        return 0;
+    else
+        return idx;
+}
+
 ///////////////////////////////////   Page fix/unfix BEGIN         ///////////////////////////////////  
 
 const uint32_t SWIZZLED_LRU_UPDATE_INTERVAL = 1000;
@@ -273,7 +285,8 @@ inline w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, volid_t vol, snum
     return _latch_root_page(page, idx, LATCH_EX, false);
 }
 
-inline w_rc_t bf_tree_m::fix_root (generic_page*& page, volid_t vol, snum_t store, latch_mode_t mode, bool conditional) {
+inline w_rc_t bf_tree_m::fix_root (generic_page*& page, volid_t vol, snum_t store, 
+                                   latch_mode_t mode, bool conditional, const bool from_undo) {
     w_assert1(vol != 0);
     w_assert1(store != 0);
     bf_tree_vol_t *volume = _volumes[vol];
@@ -283,14 +296,47 @@ inline w_rc_t bf_tree_m::fix_root (generic_page*& page, volid_t vol, snum_t stor
     bf_idx idx = volume->_root_pages[store];
     w_assert1(_is_valid_idx(idx));
 
-    W_DO(_latch_root_page(page, idx, mode, conditional));
-
     w_assert1(_is_active_idx(idx));
     w_assert1(get_cb(idx)._pid_vol == vol);
-    w_assert1(false == get_cb(idx)._in_doubt);  // accessing page data, meaning the actual page
-                                                // is in buffer pool, the in_doubt flag must be off
+
     w_assert1(true == get_cb(idx)._used);
+
+    // Root page is pre-loaded into buffer pool when loading volume
+    // this function is called for both normal and Recovery operations
+    // In concurrent recovery mode, the root page might still be in_doubt
+    // when called, need to block user txn in such case, but allow recovery
+    // operation to go through
+    
+    if (true == get_cb(idx)._in_doubt)
+    {
+        // Page still in_doubt, block the access if not from Recovery
+        DBGOUT3(<<"bf_tree_m::fix_root: root page is still in_doubt");
+
+        if ((false == from_undo) && (false == get_cb(idx)._recovery_access))
+        {
+////////////////////////////////////////
+// TODO(Restart)... M2 (concurrent log mode) - raise error and abort the user transaction
+//                          M3 (concurrent lock mode) - block user transaction until recovery is done
+////////////////////////////////////////
+        
+            return RC(eACCESS_CONFLICT);
+        }
+    }
+
+    W_DO(_latch_root_page(page, idx, mode, conditional));
     w_assert1(_buffer[idx].pid.store() == store);
+
+    if ((false == from_undo) && (false == get_cb(idx)._recovery_access))
+    {
+        // Page is not in_doubt and caller is not from Recovery
+        // validate the accessability of the page
+        w_rc_t rc = _validate_access(page);
+        if (rc.is_error()) 
+        {
+            get_cb(idx).latch().latch_release();
+            return rc;
+        }
+    }
 
 #ifndef SIMULATE_MAINMEMORYDB
     /*

@@ -155,7 +155,8 @@ public:
      * Fixes an existing (not virgin) root page for the given store.  This method doesn't
      * receive page ID because it's already known by bufferpool.
      */
-    w_rc_t fix_root(volid_t vol, snum_t store, latch_mode_t mode, bool conditional=false);
+    w_rc_t fix_root(volid_t vol, snum_t store, latch_mode_t mode, 
+                    bool conditional=false, const bool from_undo = false);
 
     /**
      * Imaginery 'fix' for a non-bufferpool-managed page.

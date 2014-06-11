@@ -139,7 +139,8 @@ w_rc_t fixable_page_h::fix_virgin_root (volid_t vol, snum_t store, shpid_t shpid
     return RCOK;
 }
 
-w_rc_t fixable_page_h::fix_root (volid_t vol, snum_t store, latch_mode_t mode, bool conditional) {
+w_rc_t fixable_page_h::fix_root (volid_t vol, snum_t store, latch_mode_t mode, 
+                                 bool conditional, const bool from_undo) {
     w_assert1(mode != LATCH_NL);
 
     if (force_Q_fixing > 0 && mode == LATCH_SH) mode = LATCH_Q; // <<<>>>
@@ -151,7 +152,7 @@ w_rc_t fixable_page_h::fix_root (volid_t vol, snum_t store, latch_mode_t mode, b
             return RC(eLATCHQFAIL);
         }
     } else {
-        W_DO(smlevel_0::bf->fix_root(_pp, vol, store, mode, conditional));
+        W_DO(smlevel_0::bf->fix_root(_pp, vol, store, mode, conditional, from_undo));
     }
     _bufferpool_managed = true;
     _mode               = mode;

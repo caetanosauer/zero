@@ -266,15 +266,15 @@ private:
         lsn_t&                  last_lsn    // Last lsn in recovery log (forward scan)
         );
 
-    // Function used for serialized operations, open system after the entire recovery process finished
-    static void                 redo_pass(
+    // Function used for log scan REDO operations, open system after the entire recovery process finished
+    static void                 redo_log_pass(
         const lsn_t              redo_lsn, 
         const lsn_t              &highest,  /* for debugging */
         const uint32_t           in_doubt_count  // How many in_doubt pages in buffer pool
         );
 
-    // Function used for serialized operations, open system after the entire recovery process finished
-    static void                 undo_pass(
+    // Function used for reverse order UNDO operations, open system after the entire recovery process finished
+    static void                 undo_reverse_pass(
         XctPtrHeap&             heap,       // heap populated with doomed transactions
         const lsn_t             curr_lsn,   // current lsn, the starting point of backward scan
                                             // not used in current implementation

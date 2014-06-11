@@ -514,13 +514,13 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
     //
     // With concurrent Recovery, the system is opened after Log Analysis phase, and in_doubt
     // pages will be loaded into buffer pool while concurrent transactions are coming in.
-    // It is possible an user transaction asks for a page before the REDO phase gets to
+    // It is possible a user transaction asks for a page before the REDO phase gets to
     // load the page (M2), in such case the page index is in hashtable but the actual page has
     // not been loaded into memory yet.
 
 ////////////////////////////////////////
 // TODO(Restart)... in M2, only restart_m would load in_doubt pages
-//                          if an user transaction beats the REDO phase, the
+//                          if a user transaction beats the REDO phase, the
 //                          user transaction does not load the page and it would 
 //                          raise error instead
 //                          This limitation will be addressed in M3.
@@ -583,8 +583,9 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 w_rc_t read_rc = volume->_volume->read_page(shpid, _buffer[idx], passed_end);
 
                 // Not checking 'passed_end' (stSHORTIO), because if the page does not exist
-                // on disk, the page context will be zero out, and the following logic (_check_read_page)
-                // will fail in checksum and try SPR immediatelly
+                // on disk (only if fix_direct from REDO operation), the page context will be zero out,
+                // and the following logic (_check_read_page) will fail in checksum and try SPR immediatelly
+                // Note that for fix_direct from REDO, we do not have parent page pointer
 
                 if (read_rc.is_error()) {
                     DBGOUT3(<<"bf_tree_m: error while reading page " << shpid << " to frame " << idx << ". rc=" << read_rc);
@@ -595,7 +596,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     // for each page retrieved from disk, check validity, possibly apply SPR.
                     // this is not a virgin page so if the page does not exist on disk, we need to
                     // try the backup
-                    w_rc_t check_rc = _check_read_page(parent, idx, vol, shpid);
+                    w_rc_t check_rc = _check_read_page(parent, idx, vol, shpid, passed_end);
                     if (check_rc.is_error()) {
                         _add_free_block(idx);
                         return check_rc;
@@ -773,7 +774,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     // Page was already loaded in buffer pool by:
                     //     Recovery operation - was an in_doubt page
                     // or 
-                    //     Previous user transaction - was not an non-in_doubt page
+                    //     Previous user transaction - was not an in_doubt page
                     // we need to validate the page only if runnign in concurrent mode
                     // and the request coming from a user transaction
                     // 
@@ -797,9 +798,14 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     {
                         DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: an existing page from user txn, check for accessability: " << shpid);
                         rc = _validate_access(page);
+                        if (rc.is_error()) 
+                        {
+                            ++cb._refbit_approximate;                        
+                            cb.latch().latch_release();
+                        }
                     }
 
-                    // On return, we are holding latch on this page
+                    // On successful return, we are holding latch on this page
                 }
                 return rc;
 #ifndef NO_PINCNT_INCDEC
@@ -2551,14 +2557,43 @@ w_rc_t bf_tree_m::_sx_update_child_emlsn(btree_page_h &parent, general_recordid_
 }
 
 w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
-                                   volid_t vol, shpid_t shpid) {
+                                   volid_t vol, shpid_t shpid,
+                                   const bool passed_end)    // In: true if page does not exist on disk
+                                                             //     this can happen only if fix_direct for REDO
+{
     w_assert1(shpid != 0);
     generic_page &page = _buffer[idx];
     uint32_t checksum = page.calculate_checksum();
     if (checksum == 0) {
         DBGOUT0(<<"_check_read_page(): empty checksum?? PID=" << shpid);
     }
-    if (checksum != page.checksum) {
+
+    if ((true == passed_end) && (parent == NULL))
+    {
+        ERROUT(<<"bf_tree_m: page does not exist on disk and it is from REDO operation: " << shpid);
+        // Need to recover from scratch, no parent page pointer (from fix_direct)
+        // therefore we cannot use the typical logic in this function
+        // The page has already been zero'd out
+        // Call recover_single_page() directly:
+        //    page: page to recover
+        //    emlsn:  Use the last LSN from pre-crash recovery log
+        //    validation: no validation
+
+        _buffer[idx].lsn = lsn_t::null;
+        snum_t store;
+        if (NULL != parent)
+            store = parent->pid.store();
+        else
+            store = 1;  // No information for store
+        _buffer[idx].pid = lpid_t(vol, store, shpid);
+        _buffer[idx].tag = t_btree_p;
+
+        btree_page_h p;
+        p.fix_nonbufferpool_page(_buffer + idx);
+        return (smlevel_0::log->recover_single_page(p, smlevel_0::last_lsn, false)); // No validation on emlsn
+    }
+    else if (checksum != page.checksum) 
+    {
         ERROUT(<<"bf_tree_m: bad page checksum in page " << shpid);
         // Checksum didn't agree! this page image is completely
         // corrupted and we have to recover the page from scratch.

@@ -231,6 +231,10 @@ public:
     /** returns the page ID of the root page (which is already loaded in this bufferpool) in given store. mainly for debugging or approximate purpose. */
     shpid_t get_root_page_id(volid_t vol, snum_t store);
 
+    /** returns the root-page index of the root page, which is always kept in the volume descriptor:*/
+    bf_idx get_root_page_idx(volid_t vol, snum_t store);
+
+
     /**
      * Fixes a non-root page in the bufferpool. This method receives the parent page and efficiently
      * fixes the page if the shpid (pointer) is already swizzled by the parent page.
@@ -333,7 +337,8 @@ public:
      * This method doesn't receive page ID because it's already known by bufferpool.
      * To use this method, you need to include bf_tree_inline.h.
      */
-    w_rc_t fix_root (generic_page*& page, volid_t vol, snum_t store, latch_mode_t mode, bool conditional);
+    w_rc_t fix_root (generic_page*& page, volid_t vol, snum_t store, latch_mode_t mode,
+                     bool conditional, const bool from_undo = false);
 
     /**
      * Fixes an existing (not virgin) root page for the given store in Q mode.
@@ -686,9 +691,10 @@ private:
      * @param[in] idx Bufferpool index of the page to check and recover.
      * @param[in] vol Volume ID
      * @param[in] shpid Page ID
+     * @param[in] passed_end true if page not on disk
      */
     w_rc_t _check_read_page(generic_page* parent, bf_idx idx, volid_t vol,
-                                 shpid_t shpid);
+                                 shpid_t shpid, const bool passed_end);
 
     /**
      * \brief Tries to recover the given page with some issue via SPR.
