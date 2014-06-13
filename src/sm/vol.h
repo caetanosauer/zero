@@ -79,7 +79,7 @@ public:
     rc_t                mount(const char* devname, vid_t vid);
 
     /** Dismount the volume. */
-    rc_t                dismount(bool flush = true);
+    rc_t                dismount(bool flush = true, const bool clear_cb = true);
 
     /**
     * Print out meta info about the volume.
@@ -117,7 +117,7 @@ public:
     rc_t                read_page(
         shpid_t             page,
         generic_page&       buf,
-        bool&               passed_end);
+        bool&               past_end);
 
     rc_t            alloc_a_page(const stid_t &stid, lpid_t &pid);
     rc_t            alloc_consecutive_pages(const stid_t &stid, size_t page_count, lpid_t &pid_begin);

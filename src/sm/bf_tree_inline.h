@@ -478,6 +478,12 @@ inline void bf_tree_m::set_in_doubt(const bf_idx idx, lsn_t new_lsn) {
     // Update the earliest LSN only if new_lsn is earlier than the current one
     if ((new_lsn.data() < cb._rec_lsn) || (0 == cb._rec_lsn))
         cb._rec_lsn = new_lsn.data();
+
+    // During recovery, _dependency_lsn is used to store the last write lsn on 
+    // the in_doubt page.  Update it if the new lsn is later than the current one
+    if ((new_lsn.data() < cb._dependency_lsn) || (0 == cb._dependency_lsn))
+        cb._dependency_lsn = new_lsn.data();
+
 }
 
 inline void bf_tree_m::clear_in_doubt(const bf_idx idx, bool still_used, uint64_t key) {
@@ -526,6 +532,11 @@ inline void bf_tree_m::in_doubt_to_dirty(const bf_idx idx) {
     cb._dirty = true;
     cb._used = true;
     cb._refbit_approximate = BP_INITIAL_REFCOUNT; 
+
+    // Page has been loaded into buffer pool, no need for the
+    // last write LSN any more (only used for SPR purpose),
+    // stop overloading 
+    cb._dependency_lsn = 0;
 }
 
 

@@ -426,7 +426,8 @@ public:
     rc_t _collect_single_page_recovery_logs(
         const lpid_t& pid, const lsn_t &current_lsn, const lsn_t &emlsn,
         char* log_copy_buffer, size_t buffer_size,
-        std::vector<logrec_t*> &ordered_entries);
+        std::vector<logrec_t*> &ordered_entries,
+        const bool valid_start_emlan = true);
 
     /**
     * \brief Apply the given logs to the given page.

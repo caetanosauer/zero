@@ -814,8 +814,11 @@ ss_m::_construct_once()
         DBG(<<"Dismount all volumes " << num_volumes_mounted);
         // now dismount all of them at the io level, the level where they
         // were mounted during recovery.
-        W_COERCE( io->dismount_all(true) ); //flush
-
+        if (true == smlevel_0::use_serial_recovery())                        
+            W_COERCE( io->dismount_all(true) ); // true: flush
+        else
+            W_COERCE( io->dismount_all(true, false) ); //true: flush
+                                                       // false: do not clear cb if in concurrent recovery mode
         // now mount all the volumes properly at the sm level.
         // then dismount them and free temp files only if there
         // are no locks held.

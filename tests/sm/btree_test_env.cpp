@@ -119,7 +119,7 @@ public:
                 _functor(functor) 
         {
             // Initialize using serial traditional recovery mode
-            do_construct(1);
+            do_construct(10);
         }
 
         testdriver_thread_t(test_functor *functor,

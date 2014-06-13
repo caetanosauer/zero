@@ -302,7 +302,7 @@ private:
     // Function used for serialized operations, open system after the entire recovery process finished
     // brief sub-routine of redo_pass() for logs that have pid.    
     static void                 _redo_log_with_pid(
-        logrec_t& r, lsn_t &lsn, const lsn_t &highest_lsn,
+        logrec_t& r, lsn_t &lsn, const lsn_t &end_logscan_lsn,
         lpid_t page_updated, bool &redone, uint32_t &dirty_count);
 
     // Function used for concurrent operations, open system after Log Analysis

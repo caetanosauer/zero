@@ -84,7 +84,19 @@ rc_t log_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
             // Last write LSN from backup > given LSN, the page last write LSN
             // from the backup is newer (later) than our recorded emlsn (last write)
             // on the page.
-            // This should not happen, raise an error
+            // First, there are cases of single-page failure in which the backup media
+            // are not consulted: the prototypical example here is restart bringing
+            // a page up-to-date from an out-of-date page in the database.
+            // Second, there might be weird cases (all requiring double failures) 
+            // in which a database page might be written to persistent storage
+            // (e.g., a child page in a self-repairing b-tree index) but the 
+            // expected LSN value is not up-to-date.
+
+            // Raise error for now, we cannot handle double failures and other special
+            // cases currently
+////////////////////////////////////////
+// TODO(Restart)... NYI
+////////////////////////////////////////
 
             DBGOUT1(<< "Backup page last write LSN > emlsn");
             W_FATAL(eBAD_BACKUPPAGE);
@@ -102,7 +114,7 @@ rc_t log_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
     std::vector<char> buffer(SPR_LOG_BUFSIZE); // TODO, we should have an object pool for this.
     std::vector<logrec_t*> ordered_entires;
     W_DO(log_core::THE_LOG->_collect_single_page_recovery_logs(pid, p.lsn(), emlsn,
-        &buffer[0], SPR_LOG_BUFSIZE, ordered_entires));
+        &buffer[0], SPR_LOG_BUFSIZE, ordered_entires, validate));
     DBGOUT1(<< "Collected log. About to apply " << ordered_entires.size() << " logs");
     W_DO(log_core::THE_LOG->_apply_single_page_recovery_logs(p, ordered_entires));
 
@@ -116,14 +128,39 @@ rc_t log_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
 }
 
 rc_t log_core::_collect_single_page_recovery_logs(
-    const lpid_t& pid, const lsn_t& current_lsn, const lsn_t& emlsn,
-    char* log_copy_buffer, size_t buffer_size, std::vector<logrec_t*>& ordered_entries) {
+    const lpid_t& pid,
+    const lsn_t& current_lsn,
+    const lsn_t& emlsn,                        // In: starting point of the log chain
+    char* log_copy_buffer, size_t buffer_size,
+    std::vector<logrec_t*>& ordered_entries,
+    const bool valid_start_emlan)              // In: true if emlsn is the last write of the page,
+                                               //     false if a assumed starting point
+{
+    // When caller from recovery REDO phase on a virgin or corrupted page, we do not have
+    // a valid emlsn and page last-write lsn has been set to lsn_t::null.
+    // The pre-crash last log lsn was used instead for emlsn, therefore passed in emlsn 
+    // is not a valid starting point for log chain, need to find the starting point for the valid
+    // page log chain
+
     // we go back using page log chain like what xct_t::rollback() does on undo log chain.
     ordered_entries.clear();
     size_t buffer_capacity = buffer_size;
 
     DBGOUT1(<< "log_core::_collect_single_page_recovery_logs: current_lsn (end): " << current_lsn
             << ", emlsn (begin): " << emlsn );
+
+    if (false == valid_start_emlan)
+    {
+        // The emlsn is not the actual last write on the page, most likely it is a corrupted page
+        // during recovery, we do not have a parent page to retrieve the actual last write lsn,
+        // and we cannot trust the last write LSN due to corruption, using the last LSN 
+        // before system crash as the emlsn, therefore we need to find the actual emlsn first
+        //
+// TODO(Restart)... how to find the valid emlsn?  Need backward log scan and slow
+
+        
+    }
+
     for (lsn_t nxt = emlsn; current_lsn < nxt && nxt != lsn_t::null;) {
         logrec_t* record = NULL;
         lsn_t obtained = nxt;

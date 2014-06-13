@@ -459,7 +459,7 @@ public:
      * Called when a volume is unmounted.
      * Like install_volume(), this method is indirectly protected too.
      */
-    w_rc_t uninstall_volume (volid_t vid);
+    w_rc_t uninstall_volume (volid_t vid, const bool clear_cb = true);
 
 #ifdef BP_MAINTAIN_PARENT_PTR
     /**
@@ -664,7 +664,7 @@ public:
      * but the actual page is not in buffer pool yet
      * Load the actual page into buffer pool
      */    
-    w_rc_t load_for_redo(bf_idx idx, volid_t vid, shpid_t shpid, bool& passed_end);
+    w_rc_t load_for_redo(bf_idx idx, volid_t vid, shpid_t shpid, bool& past_end);
 
 
 private:
@@ -691,10 +691,10 @@ private:
      * @param[in] idx Bufferpool index of the page to check and recover.
      * @param[in] vol Volume ID
      * @param[in] shpid Page ID
-     * @param[in] passed_end true if page not on disk
+     * @param[in] past_end true if page not on disk
      */
     w_rc_t _check_read_page(generic_page* parent, bf_idx idx, volid_t vol,
-                                 shpid_t shpid, const bool passed_end);
+                                 shpid_t shpid, const bool past_end);
 
     /**
      * \brief Tries to recover the given page with some issue via SPR.

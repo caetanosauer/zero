@@ -378,10 +378,10 @@ rc_t btree_impl::_ux_verify_volume(
         if (!vol->is_allocated_page(pid)) {
             continue;
         }
-        bool passed_end;
-        W_DO (vol->read_page(pid, buf, passed_end));
+        bool past_end;
+        W_DO (vol->read_page(pid, buf, past_end));
         // Page must exist on disk in this case
-        w_assert1(false == passed_end);
+        w_assert1(false == past_end);
         btree_page_h page;
         page.fix_nonbufferpool_page(&buf);
         if (page.tag() == t_btree_p && !page.is_to_be_deleted()) {

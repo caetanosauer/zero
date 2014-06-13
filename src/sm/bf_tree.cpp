@@ -236,20 +236,37 @@ w_rc_t bf_tree_m::install_volume(vol_t* volume) {
         shpid_t shpid = stcache->get_root_pid(store);
         w_assert1(shpid > 0);
 
-        bf_idx idx = 0;
-        w_rc_t grab_rc = _grab_free_block(idx);
-        if (grab_rc.is_error()) {
-            ERROUT(<<"failed to grab a free page while mounting a volume: " << grab_rc);
-            rc = grab_rc;
-            break;
-        }
+        uint64_t key = bf_key(vid, shpid);
+        bf_idx idx = _hashtable->lookup(key);
+        if (0 != idx)
+        {
+            // Root page is in hash table already
+            // This is for a volume mount in concurrent recovery
+            // mode after Log Analysis phase, do not re-load 
+            // the root page so the original root page is intack
+            DBGOUT3(<<"bf_tree_m::install_volume: root page is already in buffer pool, no re-load");            
 
-        w_rc_t preload_rc = _preload_root_page(desc, volume, store, shpid, idx);
-        if (preload_rc.is_error()) {
-            ERROUT(<<"failed to preload a root page " << shpid << " of store " << store << " in volume " << vid << ". to buffer frame " << idx << ". err=" << preload_rc);
-            rc = preload_rc;
-            _add_free_block(idx);
-            break;
+            // set the root page
+            desc->_root_pages[store] = idx;
+        }
+        else
+        {
+            DBGOUT3(<<"bf_tree_m::install_volume: root page is not in buffer pool, loading...");                    
+            // Root page is not in hash table, pre-load it
+            w_rc_t grab_rc = _grab_free_block(idx);
+            if (grab_rc.is_error()) {
+                ERROUT(<<"failed to grab a free page while mounting a volume: " << grab_rc);
+                rc = grab_rc;
+                break;
+            }
+
+            w_rc_t preload_rc = _preload_root_page(desc, volume, store, shpid, idx);
+            if (preload_rc.is_error()) {
+                ERROUT(<<"failed to preload a root page " << shpid << " of store " << store << " in volume " << vid << ". to buffer frame " << idx << ". err=" << preload_rc);
+                rc = preload_rc;
+                _add_free_block(idx);
+                break;
+            }
         }
     }
     if (rc.is_error()) {
@@ -273,14 +290,14 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
     volid_t vid = volume->vid().vol;
     DBGOUT2(<<"preloading root page " << shpid << " of store " << store << " in volume " << vid << ". to buffer frame " << idx);
     w_assert1(shpid >= volume->first_data_pageid());
-    bool passed_end;
-    W_DO(volume->read_page(shpid, _buffer[idx], passed_end));
+    bool past_end;
+    W_DO(volume->read_page(shpid, _buffer[idx], past_end));
 
     // _buffer[idx].checksum == 0 is possible when the root page has been never flushed out.
     // this method is called during volume mount (even before recover), crash tests like
     // test_restart, test_crash might encounter this scenario, swallow the error
     if (_buffer[idx].checksum == 0) {
-        w_assert1(true == passed_end);
+        w_assert1(true == past_end);
         DBGOUT0(<<"empty check sum root page during volume mount. crash happened?"
             " pid=" << shpid << " of store " << store << " in volume "
             << vid << ". to buffer frame " << idx);
@@ -303,26 +320,15 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
     cb.pin_cnt_set(1); // root page's pin count is always positive
     cb._swizzled = true;
 
-    if ((false == smlevel_0::use_serial_recovery()) && (true == smlevel_0::use_redo_page_recovery()))
-    {
-        // If running in concurrent recovery and doing page driven REDO, 
-        // make sure the in_doubt flag is on so the REDO phase would load
-        // the root page into buffer pool
-        if (smlevel_0::in_recovery())
-        {
-            cb._in_doubt = true;
-            DBGOUT3(<<"Mark root page in_doubt due to page driven REDO operation");
-        }
-        else
-        {
-            cb._in_doubt = false;
-        }
-    }
-    else
-        cb._in_doubt = false;
- 
+    // When install volume, if the root page was not already loaded, then the in_doubt 
+    // page is off initially
+    // The only possibility the root page was already loaded: install volume after Log Analysis
+    // during a concurrent recovery, while the root page was loaded during Log Analysis
+    cb._in_doubt = false;
+
     cb._recovery_access = false;
     cb._used = true; // turn on _used at last
+    cb._dependency_lsn = 0;
     bool inserted = _hashtable->insert_if_not_exists(bf_key(vid, shpid), idx); // for some type of caller (e.g., redo) we still need hashtable entry for root
     if (!inserted) {
         if (smlevel_0::in_recovery())
@@ -362,9 +368,9 @@ w_rc_t bf_tree_m::_install_volume_mainmemorydb(vol_t* volume) {
     bf_idx endidx = volume->num_pages();
     for (bf_idx idx = volume->first_data_pageid(); idx < endidx; ++idx) {
         if (volume->is_allocated_page(idx)) {
-            bool passed_end;
-            W_DO(volume->read_page(idx, _buffer[idx], passed_end));
-            if (true == passed_end)
+            bool past_end;
+            W_DO(volume->read_page(idx, _buffer[idx], past_end));
+            if (true == past_end)
             {
                 // Page does not exist on disk, raise error since this should not happen
                 return RC(stSHORTIO);
@@ -399,7 +405,10 @@ w_rc_t bf_tree_m::_install_volume_mainmemorydb(vol_t* volume) {
     return RCOK;
 }
 
-w_rc_t bf_tree_m::uninstall_volume(volid_t vid) {
+w_rc_t bf_tree_m::uninstall_volume(volid_t vid,
+                                     const bool clear_cb) // In: true to clear buffer pool cb data
+                                                          //     do not clear cb if 
+{
     // assuming this thread is the only thread working on this volume,
 
     // first, clean up all dirty pages
@@ -411,24 +420,39 @@ w_rc_t bf_tree_m::uninstall_volume(volid_t vid) {
     }
     W_DO(_cleaner->force_volume(vid));
 
-    // then, release all pages.
-    for (bf_idx idx = 1; idx < _block_cnt; ++idx) {
-        bf_tree_cb_t &cb = get_cb(idx);
-        if (!cb._used || cb._pid_vol != vid) {
+    // If caller is a concurrent recovery and call 'dismount_all' after 
+    // Log Analysys phase, do not clear the buffer pool because the remaining
+    // Recovery work (REDO and UNDO) is depending on infomration
+    // stored in buffer pool cb and transaction table
+    
+    if (true == clear_cb)
+    {
+        // then, release all pages.
+        for (bf_idx idx = 1; idx < _block_cnt; ++idx) 
+        {
+            bf_tree_cb_t &cb = get_cb(idx);
+            if (!cb._used || cb._pid_vol != vid) 
+            {
             continue;
-        }
+            }
 #ifdef BP_MAINTAIN_PARENT_PTR
-        // if swizzled, remove from the swizzled-page LRU too
-        if (_is_in_swizzled_lru(idx)) {
-            _remove_from_swizzled_lru(idx);
-        }
+            // if swizzled, remove from the swizzled-page LRU too
+            if (_is_in_swizzled_lru(idx)) {
+                _remove_from_swizzled_lru(idx);
+            }
 #endif // BP_MAINTAIN_PARENT_PTR
-        _hashtable->remove(bf_key(vid, cb._pid_shpid));
-        if (cb._swizzled) {
-            --_swizzled_page_count_approximate;
+            _hashtable->remove(bf_key(vid, cb._pid_shpid));
+            if (cb._swizzled) 
+            {
+                --_swizzled_page_count_approximate;
+            }
+            get_cb(idx).clear();
+            _add_free_block(idx);
         }
-        get_cb(idx).clear();
-        _add_free_block(idx);
+    }
+    else
+    {
+        DBGOUT3(<<"bf_tree_m::uninstall_volume: no buffer pool cleanup");    
     }
     
     _volumes[vid] = NULL;
@@ -579,10 +603,10 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             } else {
                 DBGOUT3(<<"bf_tree_m: cache miss. reading page "<<vol<<"." << shpid << " to frame " << idx);
                 INC_TSTAT(bf_fix_nonroot_miss_count);
-                bool passed_end;
-                w_rc_t read_rc = volume->_volume->read_page(shpid, _buffer[idx], passed_end);
+                bool past_end;
+                w_rc_t read_rc = volume->_volume->read_page(shpid, _buffer[idx], past_end);
 
-                // Not checking 'passed_end' (stSHORTIO), because if the page does not exist
+                // Not checking 'past_end' (stSHORTIO), because if the page does not exist
                 // on disk (only if fix_direct from REDO operation), the page context will be zero out,
                 // and the following logic (_check_read_page) will fail in checksum and try SPR immediatelly
                 // Note that for fix_direct from REDO, we do not have parent page pointer
@@ -596,7 +620,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     // for each page retrieved from disk, check validity, possibly apply SPR.
                     // this is not a virgin page so if the page does not exist on disk, we need to
                     // try the backup
-                    w_rc_t check_rc = _check_read_page(parent, idx, vol, shpid, passed_end);
+                    w_rc_t check_rc = _check_read_page(parent, idx, vol, shpid, past_end);
                     if (check_rc.is_error()) {
                         _add_free_block(idx);
                         return check_rc;
@@ -2024,6 +2048,9 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
         // which is the current log record LSN from log scan
         cb._rec_lsn = new_lsn.data();
 
+        // Store the last write LSN in _dependency_lsn, use the same value as the first lsn
+        cb._dependency_lsn = cb._rec_lsn;
+
         // Register the constructed 'key' into hash table so we can find this page cb later
         bool inserted = _hashtable->insert_if_not_exists(key, idx);
         if (false == inserted)
@@ -2046,7 +2073,7 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
 }
 
 w_rc_t bf_tree_m::load_for_redo(bf_idx idx, volid_t vid, 
-                  shpid_t shpid, bool& passed_end)
+                  shpid_t shpid, bool& past_end)
 {
     // Special function for Recovery REDO phase
     // idx is in hash table already
@@ -2058,7 +2085,7 @@ w_rc_t bf_tree_m::load_for_redo(bf_idx idx, volid_t vid,
     w_assert1(vid != 0);
     w_assert1(shpid != 0);
 
-    passed_end = false;
+    past_end = false;
 
     DBGOUT3(<<"REDO phase: loading page " << vid << "." << shpid 
             << " into buffer pool frame " << idx);
@@ -2068,8 +2095,8 @@ w_rc_t bf_tree_m::load_for_redo(bf_idx idx, volid_t vid,
     w_assert1(shpid >= volume->_volume->first_data_pageid());
 
     // Load the physical page from disk
-    rc = volume->_volume->read_page(shpid, _buffer[idx], passed_end);
-    if (true == passed_end)
+    rc = volume->_volume->read_page(shpid, _buffer[idx], past_end);
+    if (true == past_end)
     {
         // During system recovery REDO phase when trying to load a page from disk,
         // the page does not exist on disk.
@@ -2079,7 +2106,7 @@ w_rc_t bf_tree_m::load_for_redo(bf_idx idx, volid_t vid,
         // because the page in buffer pool has been zero out, notify caller through 
         // return flag, while the return code (rc) is a good return code
        
-        passed_end = true;
+        past_end = true;
         DBGOUT3(<<"REDO phase: page does not exist on disk: "
             << vid << "." << shpid);
         return rc;
@@ -2558,8 +2585,8 @@ w_rc_t bf_tree_m::_sx_update_child_emlsn(btree_page_h &parent, general_recordid_
 
 w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
                                    volid_t vol, shpid_t shpid,
-                                   const bool passed_end)    // In: true if page does not exist on disk
-                                                             //     this can happen only if fix_direct for REDO
+                                   const bool past_end)    // In: true if page does not exist on disk
+                                                           //     this can happen only if fix_direct for REDO
 {
     w_assert1(shpid != 0);
     generic_page &page = _buffer[idx];
@@ -2568,7 +2595,7 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
         DBGOUT0(<<"_check_read_page(): empty checksum?? PID=" << shpid);
     }
 
-    if ((true == passed_end) && (parent == NULL))
+    if ((true == past_end) && (parent == NULL))
     {
         ERROUT(<<"bf_tree_m: page does not exist on disk and it is from REDO operation: " << shpid);
         // Need to recover from scratch, no parent page pointer (from fix_direct)

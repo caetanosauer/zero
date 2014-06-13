@@ -195,14 +195,14 @@ rc_t vol_t::mount(const char* devname, vid_t vid)
 /** @todo flush argument is never used. Backtrace through the callers and maybe
  * eliminate it entirely? */
 rc_t
-vol_t::dismount(bool /* flush */)
+vol_t::dismount(bool /* flush */, const bool clear_cb)
 {
     DBG(<<" vol_t::dismount flush=" << flush);
 
     INC_TSTAT(vol_cache_clears);
 
     w_assert1(_unix_fd >= 0);
-    W_DO(bf->uninstall_volume(_vid.vol));
+    W_DO(bf->uninstall_volume(_vid.vol, clear_cb));
 
     /*
      *  Close the device
@@ -545,13 +545,13 @@ vol_t::set_fake_disk_latency(const int adelay)
 
 /*********************************************************************
  *
- *  vol_t::read_page(pnum, page, passed_end)
+ *  vol_t::read_page(pnum, page, past_end)
  *
  *  Read the page at "pnum" of the volume into the buffer "page".
  *
  *********************************************************************/
 rc_t
-vol_t::read_page(shpid_t pnum, generic_page& page, bool& passed_end)
+vol_t::read_page(shpid_t pnum, generic_page& page, bool& past_end)
 {
     w_assert1(pnum > 0 && pnum < (shpid_t)(_num_pages));
     fileoff_t offset = fileoff_t(pnum) * sizeof(page);
@@ -559,7 +559,7 @@ vol_t::read_page(shpid_t pnum, generic_page& page, bool& passed_end)
     // Notify caller it is trying to read past the end of OS file
     // The function returns a good return code in this case because not all
     // caller cares about reading past the end
-    passed_end = false;
+    past_end = false;
 
     smthread_t* t = me();
 
@@ -583,7 +583,7 @@ vol_t::read_page(shpid_t pnum, generic_page& page, bool& passed_end)
 
         // read past end of OS file. return all zeros
         memset(&page, 0, sizeof(page));
-        passed_end = true;
+        past_end = true;
     } else {
         W_COERCE_MSG(err, << "volume id=" << vid()
               << " err_num " << err.err_num()
