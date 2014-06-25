@@ -378,7 +378,7 @@ public:
 };
 
 /* Multiple issues when there are multiple pages of data in one in-flight transaction */
-/* 1. During REDO, SPR complains about log record touching multiple pages: eWRONG_PAGE_LSNCHAIN(77) */
+/* 1. During REDO, multi-pages, WOD is not followed for SPR */
 /* 2. Same issue as previous tests when the in-flight txn has more than one operations */
 /* Not passing *
 TEST (RestartTest, MultiPageInFlightCrash) {
@@ -524,10 +524,10 @@ public:
         // One big committed txn
         W_DO(populate_multi_page_record(ssm, _stid, true));  // true: commit
         
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa2", "data2"));
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa4", "data2"));
 
         W_DO(test_env->begin_xct());
-        W_DO(test_env->btree_insert(_stid, "aa4", "data4"));             // in-flight
+        W_DO(test_env->btree_insert(_stid, "aa2", "data4"));             // in-flight
 
         output_durable_lsn(3);
         return RCOK;
@@ -570,12 +570,13 @@ public:
 
         int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5 + 1;
         EXPECT_EQ (recordCount, s.rownum);
+        EXPECT_EQ (std::string("aa4"), s.minkey);
         return RCOK;
     }
 };
 
 
-/* During REDO, SPR complains about log record touching multiple pages: eWRONG_PAGE_LSNCHAIN(77) */
+/* During REDO, multi-pages, WOD is not followed for SPR */
 /* but the conflict detection is working */
 /* Not passing *
 TEST (RestartTest, MultiConcurrentRedoCrash) {
@@ -737,8 +738,7 @@ public:
     }
 };
 
-/* During REDO, SPR complains about log record touching multiple pages: eWRONG_PAGE_LSNCHAIN(77) */
-/* Because the SPR is on root page, the concurrent insert failed during tree walk */
+/* During REDO, multi-pages, WOD is not followed for SPR */
 /* Not passing *
 TEST (RestartTest, ConcurrentNoConflictCrash) {
     test_env->empty_logdata_dir();
@@ -819,8 +819,7 @@ public:
     }
 };
 
-/* During REDO, SPR complains about log record touching multiple pages: eWRONG_PAGE_LSNCHAIN(77) */
-/* Because the SPR is on root page, the concurrent insert failed during tree walk */
+/* During REDO, multi-pages, WOD is not followed for SPR */
 /* Not passing *
 TEST (RestartTest, ConcurrentConflictCrash) {
     test_env->empty_logdata_dir();
@@ -926,8 +925,7 @@ public:
     }
 };
 
-/* During REDO, SPR complains about log record touching multiple pages: eWRONG_PAGE_LSNCHAIN(77) */
-/* Because the SPR is on root page, the concurrent insert failed during tree walk */
+/* During REDO, multi-pages, WOD is not followed for SPR */
 /* Not passing *
 TEST (RestartTest, MultiConcurrentConflictCrash) {
     test_env->empty_logdata_dir();

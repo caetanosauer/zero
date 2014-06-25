@@ -872,8 +872,8 @@ ss_m::_construct_once()
             // REDO from child thread will use redo_lsn, last_lsn and in_doubt_count
             // to control the REDO phase
             smlevel_0::commit_lsn = verify_lsn;
-            smlevel_0::redo_lsn = redo_lsn;
-            smlevel_0::last_lsn = last_lsn;
+            smlevel_0::redo_lsn = redo_lsn;      // Log driven REDO, starting point for forward log scan
+            smlevel_0::last_lsn = last_lsn;      // page driven REDO, last LSN in Recovery log before system crash
             smlevel_0::in_doubt_count = in_doubt_count;
 
             if (lsn_t::null != master)

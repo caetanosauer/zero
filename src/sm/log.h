@@ -424,13 +424,13 @@ public:
     * the transaction logs required for the recovery.
     * @param[in, out] p the page to recover.
     * @param[in] emlsn the LSN up to which we should recover the page.
-    * @param[in] validate is set to false if not to validate emlsn after recover, this
-    *                         is used by concurrent REDO for virgin or corrupted in_doubt page
+    * @param[in] actual_emlsn is set to false if we do not have the actual emlsn due to page corruption
+    *                         during recovery (no parent page)
     * @pre p has a backup in the backup file
     * @pre p.is_fixed() (could be bufferpool managed or non-bufferpool managed)
     */
     rc_t recover_single_page(fixable_page_h &p, const lsn_t &emlsn, 
-                                 const bool validate = true);
+                                 const bool actual_emlsn = true);
 
     /**\brief used by partition */
     fileoff_t limit() const { return _partition_size; }

@@ -456,7 +456,7 @@ restart_m::analysis_pass(
                                            // used only for reverse chronological order
                                            // UNDO phase (if used)
     lsn_t&                commit_lsn,      // Commit lsn for concurrent transaction (if used)
-    lsn_t&                last_lsn         // Last lsn in the recovery log
+    lsn_t&                last_lsn         // Last lsn in the recovery log before system crash
 )
 {
     FUNC(restart_m::analysis_pass);
@@ -569,9 +569,6 @@ restart_m::analysis_pass(
     
     while (scan.xct_next(lsn, log_rec_buf)) 
     {
-        // Forward scanm, update the last lsn
-        last_lsn = lsn;
-
         logrec_t& r = *log_rec_buf;
 
         // Scan next record
@@ -589,6 +586,11 @@ restart_m::analysis_pass(
             smlevel_0::errlog->clog << info_prio  
                << "Analyzing log segment " << cur_segment << flushl;
         }
+
+        // Forward scan, update last_lsn which is the very last 
+        // lsn in Recovery log before the system crash
+        // we use last_lsn in REDO SPR if there is a corrupted page
+        last_lsn = lsn;
         
         // If the log was a system transaction fused to a single log entry,
         // we should do the equivalent to xct_end, but take care of marking the
@@ -787,8 +789,20 @@ restart_m::analysis_pass(
         }
         else
         {
-            // Log record is not transaction related, or already exist in the transaction table
-            // no-op to transaction table
+            // No-op to transaction table
+            
+            // If Log record is not transaction related, we should not have
+            // an entry in the transaction table
+
+            // If the log record is transaction related and the entry already
+            // existed in transaction table, 'xd' contains the existing transaction
+            // entry at this point
+
+            if (xd)
+            {
+                // Transaction exists in transaction table
+                xd->set_last_lsn(lsn);                  // set the last lsn in the transaction            
+            }
         }
 
         // Process based on the type of the log record
@@ -974,22 +988,12 @@ restart_m::analysis_pass(
                     mount = true;
                 }
 
-                if ((false == smlevel_0::use_serial_recovery()) && (true == smlevel_0::use_redo_page_recovery()))
-                {
-                    // It is a side effect of mount operation to pre-load the root page
-                    // If in concurrent mode and page driven redo, increase the
-                    // in_doubt_count count regardless the root page is in_doubt or not
-                    // because we want to make sure the root page gets loaded during REDO phase
-                    //
-                    // Note that we are blinding increase the in_doubt count without checking
-                    // whether this page is in the hash table already (could it happen that other
-                    // log records marked this page in_doubt already?), but this is okay because
-                    // the page driven REDO does not validate the in_doubt count, it is
-                    // only using the in_doubt count to determine whether to go into REDO
-                    // phase or not
-                    
-                    ++in_doubt_count;
-                }
+                // It is a side effect of mount operation to pre-load the root page
+                // Do not increase the in_doubt_count for the root page.
+                // The in_doubt_count would be increased only if the page is made dirty
+                // by other transactions.  If the root page is in_doubt (dirty), 
+                // REDO will recover the root page, otherwise no need to recover
+                // the root page, since it is already loaded by the mount operation.                   
             }
             break;
         
@@ -2101,11 +2105,11 @@ void restart_m::_redo_log_with_pid(
 
             if (corrupted_page)
             {
-                // Corrupted page, use SPR to recovery before retrieving
+                // Corrupted page, use SPR to recovery the page before retrieving
                 // the last write lsn from page context
-                // use the log record lsn for SPR, no lsn validation
+                // use the log record lsn for SPR, which is the the actual emlsn
                 
-                W_COERCE(smlevel_0::log->recover_single_page(page, lsn, false));
+                W_COERCE(smlevel_0::log->recover_single_page(page, lsn, true));
             }
 
             /// page.lsn() is the last write to this page
@@ -2780,8 +2784,43 @@ void restart_m::_redo_page_pass()
     // as _buffer and _control_blocks, zero means no link.
     // Index 0 is always the head of the list (points to the first free block
     // or 0 if no free block), therefore index 0 is never used.
+
+    // Note: Page driven REDO is using SPR.
+    // When SPR is used for page recovery during normal operation (using parent page),
+    // the implementation has assumptions on 'write-order-dependency (WOD)' 
+    // for the following operations:
+    //     btree_foster_merge_log: when recoverying foster parent (dest),
+    //                                          assumed foster child (src) is not recovered yet
+    //     btree_foster_rebalance_log:  when recoverying foster-child (dest),
+    //                                          assured foster parent (scr) is not recovered yet
+    // These WODs are not followed during page driven REDO recovery, because 
+    // the REDO operation is going through all in_doubt pages to recover in_doubt 
+    // pages one by one, it does not understand nor obey the foster B-tree relationship.
+    // Therefore special logic must be implemented in the 'redo' functions of 
+    // these log records (Btree_logrec.cpp) when WOD is not being followed
+
+    // TODO(Restart)...    
+    // In milestone 2, a workaround has been implemented where we disable
+    // the optimized logging, in other words, when page rebalance and merge operations
+    // occurs, full logging is used for all record movements, while btree_foster_merge_log
+    // and btree_foster_rebalance_log log records do not trigger any operation.
+    //
+    // Note that the workaround is only triggered when we are using page-driven REDO
+    // operation.  For log-driven REDO operation, we will continue using optimized logging.
+    
     for (bf_idx i = 1; i < bfsz; ++i)
     {   
+        // Loop through all pages in buffer pool and redo in_doubt pages
+        // In_doubt pages could be recovered in multiple situations:
+        // 1. REDO phase (this function) to load the page and calling SPR to recover
+        //     page context
+        // 2. SPR operation is using recovery log redo function to recovery 
+        //     page context, which would trigger a new page loading if the recovery log
+        //     has multiple pages (foster merge, foster re-balance).  In such case, the 
+        //     newly loaded page (via _fix_nonswizzled) would be recovered by nested SPR,
+        //     and it will not be recovered by REDO phase (this function) directly
+        // 3. By SPR triggered by concurrent user transaction - on-demand REDO (M3)
+        
         rc = RCOK;
         past_end = false;
 
@@ -2853,13 +2892,11 @@ void restart_m::_redo_page_pass()
 
             // Get the last write lsn on the page, this would be used
             // as emlsn for SPR if virgin or corrupted page
-            // Note that we were overloading _dependency_lsn for 
-            // last write lsn during Log Analysis phase
-////////////////////////////////////////                    
-// TODO(Restart)... using last write lsn as EMLSN, see log_spr.cpp also
-////////////////////////////////////////
-//            lsn_t emlsn = cb._dependency_lsn;
-            lsn_t emlsn = smlevel_0::last_lsn;
+            // Note that we were overloading cb._dependency_lsn for 
+            // per page last write lsn in Log Analysis phase until
+            // the page context is loaded into buffer pool (REDO), then
+            // cb._dependency_lsn will be used for its original purpose
+            lsn_t emlsn = cb._dependency_lsn;
 
             // Try to load the page into buffer pool using information from cb
             // if detects a virgin page, deal with it
@@ -2935,12 +2972,12 @@ void restart_m::_redo_page_pass()
                 // from page context.  Set the page lsn to NULL for SPR and
                 // set the emlsn based on information gathered during Log Analysis
                 // SPR will scan log records and collect logs based on page ID,
-                // and then redo all associated record
+                // and then redo all associated records
 
                 DBGOUT3(<< "REDO (redo_page_pass()): found a virgin page" <<
                         ", using latest durable lsn for SPR emlsn and NULL for last write on the page, emlsn = "
                         << emlsn);
-                page.set_lsns(lsn_t::null);
+                page.set_lsns(lsn_t::null);  // last write lsn
             }
             else if (true == corrupted_page) 
             {
@@ -2950,7 +2987,7 @@ void restart_m::_redo_page_pass()
                 DBGOUT3(<< "REDO (redo_page_pass()): found a corrupted page" <<
                         ", using latest durable lsn for SPR emlsn and NULL for last write on the page, emlsn = "
                         << emlsn);               
-                page.set_lsns(lsn_t::null);
+                page.set_lsns(lsn_t::null);  // last write lsn
             }
 
             // Use SPR to REDO all in_doubt pages, including virgin and corrupted pages
@@ -2964,62 +3001,57 @@ void restart_m::_redo_page_pass()
 
             // page.lsn() is the last write to this page (on disk version)
             // not necessary the actual last write (if the page was not flushed to disk)
-            lsn_t page_lsn = page.lsn();
-
-            if (emlsn != page_lsn)
+            if (emlsn != page.lsn())
             {
-                // page.lsn() is different from last write lsn recorded from Log Analysis
-                // page corruption?  Use the last write lsn as emlsn for SPR
+                // page.lsn() is different from last write lsn recorded during Log Analysis
+                // must ber either virgin or corrupted page
             
                 if ((false == virgin_page) && (false == corrupted_page))
                 {
-                    DBGOUT3(<< "REDO (redo_page_pass()): page lsn != last_write lsn, page lsn: " << page_lsn
+                    DBGOUT3(<< "REDO (redo_page_pass()): page lsn != last_write lsn, page lsn: " << page.lsn()
                             << ", last_write_lsn: " << emlsn);
                 }
-
-                page_lsn = emlsn;
+                page.set_lsns(lsn_t::null);  // set last write lsn to null to force a complete recovery
             }
  
             // Using SPR for the REDO operation, which is based on
             // page.pid(), page.vol(), page.pid().page and page.lsn() 
             // Call SPR API
             //   page - fixable_page_h, the page to recover
-            //   page_lsn - last write to the page according to the page we have, if the page
-            //                   is virgin or corrupted page, tell SPR not to validate page_lsn
-            //   validate - because we have the last write lsn, okay to verify the emlsn
-            //                  even if this is a  virgin or corrupted page
-            DBGOUT3(<< "REDO (redo_page_pass()): SPR with emlsn" << page_lsn << ", page idx: " << idx); 
+            //   emlsn - last write to the page, if the page
+            //   actual_emlsn - we have the last write lsn from log analysis, it is
+            //                          okay to verify the emlsn even if this is a 
+            //                          virgin or corrupted page
+            DBGOUT3(<< "REDO (redo_page_pass()): SPR with emlsn: " << emlsn << ", page idx: " << idx); 
             // Signal this page is being accessed by recovery
             page.set_recovery_access();
-////////////////////////////////////////
-// TODO(Restart)... using last write lsn as EMLSN, see log_spr.cpp also
-////////////////////////////////////////
-//            W_COERCE(smlevel_0::log->recover_single_page(page, page_lsn, true));
-            W_COERCE(smlevel_0::log->recover_single_page(page, page_lsn, 
-                     ((true == virgin_page)|| (true == corrupted_page))? false : true));
-
+            W_COERCE(smlevel_0::log->recover_single_page(page, emlsn, true));   // we have the actual emlsn even if page corrupted
 
             page.clear_recovery_access();
 
-            // If no page_lsn (last write) after SPR, it can only happen if it was a virgin
-            // or corrupted page, and SPR did not find anything to recover from backup and 
-            // recovery log
-            // Set the last write to be the same as last lsn before crash, which blocks concurrent user
-            // transaction from accessing this page during recovery
+            // After the page is loaded and recovered (SPR), the page context should
+            // have the last-write lsn information (not in cb).  
+            // If no page_lsn (last write) in page context, it can only happen if it was a virgin
+            // or corrupted page, and SPR did not find anything in backup and recovery log
+            // Is this a valid scenario?  Should this happen, there is nothing we can do because
+            // we don't have anything to recover from
+            // 'recover_single_page' should debug assert on page.lsn() == emlsn already
             if (lsn_t::null == page.lsn())
-                page.set_lsns(smlevel_0::last_lsn);
+            {
+                DBGOUT3(<< "REDO (redo_page_pass()): nothing has been recovered by SPR for page: " << idx);
+            }
 
             // The _rec_lsn in page cb is the earliest lsn which made the page dirty
             // the _rec_lsn (earliest lns) must be earlier than the page_lsn
             // (last write to this page)        
-            if (cb._rec_lsn > page_lsn.data())
-                cb._rec_lsn = page_lsn.data();
+            if (cb._rec_lsn > page.lsn().data())
+                cb._rec_lsn = page.lsn().data();
 
             // Done with REDO of this page, turn the in_doubt flag into the dirty flag
             // also clear cb._dependency_lsn which was overloaded for last write lsn
             smlevel_0::bf->in_doubt_to_dirty(idx);        // In use and dirty
 
-            if ((true == use_redo_delay_recovery()) && (0 == root_idx))
+            if ((0 == root_idx) && (true == use_redo_delay_recovery()))
             {
                 // For testing purpose, if we need to sleep during REDO
                 // sleep after we recovered the root page (which is needed for tree traversal)
@@ -3037,7 +3069,7 @@ void restart_m::_redo_page_pass()
         if (cb.latch().held_by_me())                        
             cb.latch().latch_release();
 
-        if ((true == use_redo_delay_recovery()) && (i == root_idx))
+        if ((i == root_idx) && (true == use_redo_delay_recovery()))
         {
             // Just re-loaded the root page
             

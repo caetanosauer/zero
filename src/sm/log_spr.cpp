@@ -69,7 +69,7 @@ void log_m::dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t 
 }
 
 rc_t log_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn, 
-                                    const bool validate) {
+                                    const bool actual_emlsn) {
     // First, retrieve the backup page we will be based on.
     // If this backup is enough recent, we have to apply only a few logs.
     w_assert1(p.is_fixed());
@@ -114,14 +114,14 @@ rc_t log_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
     std::vector<char> buffer(SPR_LOG_BUFSIZE); // TODO, we should have an object pool for this.
     std::vector<logrec_t*> ordered_entires;
     W_DO(log_core::THE_LOG->_collect_single_page_recovery_logs(pid, p.lsn(), emlsn,
-        &buffer[0], SPR_LOG_BUFSIZE, ordered_entires, validate));
+        &buffer[0], SPR_LOG_BUFSIZE, ordered_entires, actual_emlsn));
     DBGOUT1(<< "Collected log. About to apply " << ordered_entires.size() << " logs");
     W_DO(log_core::THE_LOG->_apply_single_page_recovery_logs(p, ordered_entires));
 
     // after SPR, the page should be exactly the requested LSN, perform the validation only if
-    // it is told to do so.  Caller would set the validate to false if virgin or corrupted in_doubt page
-    // from recovery
-    if (true == validate)
+    // caller is using an actual emlsn
+    // An estimated emlsn would be used for a corrupted page during recovery
+    if (true == actual_emlsn)
         w_assert0(p.lsn() == emlsn);
     DBGOUT1(<< "SPR done!");
     return RCOK;
@@ -134,7 +134,7 @@ rc_t log_core::_collect_single_page_recovery_logs(
     char* log_copy_buffer, size_t buffer_size,
     std::vector<logrec_t*>& ordered_entries,
     const bool valid_start_emlan)              // In: true if emlsn is the last write of the page,
-                                               //     false if a assumed starting point
+                                               //     false if an assumed starting point
 {
     // When caller from recovery REDO phase on a virgin or corrupted page, we do not have
     // a valid emlsn and page last-write lsn has been set to lsn_t::null.
@@ -151,14 +151,16 @@ rc_t log_core::_collect_single_page_recovery_logs(
 
     if (false == valid_start_emlan)
     {
-        // The emlsn is not the actual last write on the page, most likely it is a corrupted page
+        // Failure on failure scenario    
+        // The emlsn is not the actual last write on the page, it is a corrupted page
         // during recovery, we do not have a parent page to retrieve the actual last write lsn,
-        // and we cannot trust the last write LSN due to corruption, using the last LSN 
+        // and we cannot trust the last write LSN due to page corruption, using the last LSN 
         // before system crash as the emlsn, therefore we need to find the actual emlsn first
-        //
+
 // TODO(Restart)... how to find the valid emlsn?  Need backward log scan and slow
 
-        
+        DBGOUT1(<< "log_core::_collect_single_page_recovery_logs: search for the actual emlsn");
+        W_FATAL_MSG(fcINTERNAL, << "log_core::_collect_single_page_recovery_logs - failure on failure, NYI");       
     }
 
     for (lsn_t nxt = emlsn; current_lsn < nxt && nxt != lsn_t::null;) {
