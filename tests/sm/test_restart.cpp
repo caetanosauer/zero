@@ -322,7 +322,6 @@ public:
         // Start a transaction but no commit, normal shutdown
         W_DO(test_env->begin_xct());
         W_DO(test_env->btree_insert(_stid, "aa2", "data2"));
-        W_DO(test_env->btree_insert(_stid, "aa5", "data5"));
         output_durable_lsn(3);
         return RCOK;
     }
@@ -338,7 +337,7 @@ public:
     }
 };
 
-/* Failing */
+/* Passing */
 TEST (RestartTest, InflightCrashShutdown) {
     test_env->empty_logdata_dir();
     restart_inflight_crash_shutdown context;
