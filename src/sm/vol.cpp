@@ -11,6 +11,7 @@
 
 #include "w_stream.h"
 #include <sys/types.h>
+#include <boost/concept_check.hpp>
 #include "sm_int_1.h"
 #include "stnode_page.h"
 #include "vol.h"
@@ -649,7 +650,10 @@ const char* vol_t::prolog[] = {
     "%% hdr_pages         : ",
     "%% epid              : ",
     "%% spid              : ",
-    "%% page_sz           : "
+    "%% page_sz           : ",
+    "%% ctime_tv_sec      : ",
+    "%% ctime_tv_nsec     : ",
+    "%% ctime_salt        : "
 };
 
 rc_t
@@ -784,6 +788,200 @@ vol_t::format_vol(
     vhdr.set_apid(apid.page);
     vhdr.set_spid(spid.page);
     vhdr.set_page_sz(page_sz);
+    struct timespec ctime;
+    ::clock_gettime(CLOCK_MONOTONIC, &ctime);
+    ::srand(ctime.tv_nsec);
+    vhdr.set_ctime(ctime);
+    vhdr.set_ctime_salt(::rand());
+   
+    /*
+     *  Write volume header
+     */
+    rc = write_vhdr(fd, vhdr, raw);
+    if (rc.is_error())  {
+        W_IGNORE(me()->close(fd));
+        return RC_AUGMENT(rc);
+    }
+
+    /*
+     *  Skip first page ... seek to first info page.
+     *
+     * FRJ: this seek is safe because no other thread can access the
+     * file descriptor we just opened.
+     */    
+    rc = me()->lseek(fd, sizeof(generic_page), sthread_t::SEEK_AT_SET);
+    if (rc.is_error()) {
+        W_IGNORE(me()->close(fd));
+        return rc;
+    }
+
+    {
+        generic_page buf;
+#ifdef ZERO_INIT
+        // zero out data portion of page to keep purify/valgrind happy.
+        // Unfortunately, this isn't enough, as the format below
+        // seems to assign an uninit value.
+        memset(&buf, '\0', sizeof(buf));
+#endif
+
+        //  Format alloc_page pages
+        {
+            for (apid.page = 1; apid.page < alloc_pages + 1; ++apid.page)  {
+                alloc_page_h ap(&buf, apid);  // format page
+                w_assert1(ap.vid() == vid);
+                // set bits for the header pages
+                if (apid.page == 1) {
+                    for (shpid_t hdr_pid = 0; hdr_pid < hdr_pages; ++hdr_pid) {
+                        ap.set_bit(hdr_pid);
+                    }
+                }
+                generic_page* page = ap.get_generic_page();
+                w_assert9(&buf == page);
+                page->checksum = page->calculate_checksum();
+
+                rc = me()->write(fd, page, sizeof(*page));
+                if (rc.is_error()) {
+                    W_IGNORE(me()->close(fd));
+                    return rc;
+                }
+            }
+        }
+        DBG(<<" done formatting extent region");
+
+        // Format stnode_page
+        { 
+            DBG(<<" formatting stnode_page");
+            DBGTHRD(<<"stnode_page page " << spid.page);
+            stnode_page_h fp(&buf, spid);  // formatting...
+            w_assert1(fp.vid() == vid);
+            generic_page* page = fp.get_generic_page();
+            page->checksum = page->calculate_checksum();
+            rc = me()->write(fd, page, sizeof(*page));
+            if (rc.is_error()) {
+                W_IGNORE(me()->close(fd));
+                return rc;
+            }
+        }
+        DBG(<<" done formatting store node region");
+    }
+
+    /*
+     *  For raw devices, we must zero out all unused pages
+     *  on the device.  This is needed so that the recovery algorithm
+     *  can distinguish new pages from used pages.
+     */
+    if (raw) {
+        generic_page buf;
+        memset(&buf, 0, sizeof(buf));
+
+        DBG(<<" raw device: zeroing...");
+
+        //  This is expensive, so see if we should skip it
+        if (skip_raw_init) {
+            DBG( << "skipping zero-ing of raw device: " << devname );
+        } else {
+
+            DBG( << "zero-ing of raw device: " << devname << " ..." );
+            // zero out rest of pages
+            for (size_t cur = hdr_pages;cur < num_pages; ++cur) {
+                rc = me()->write(fd, &buf, sizeof(generic_page));
+                if (rc.is_error()) {
+                    W_IGNORE(me()->close(fd));
+                    return rc;
+                }
+            }
+            DBG( << "finished zero-ing of raw device: " << devname);
+        }
+
+    }
+
+    W_COERCE(me()->close(fd));
+    DBG(<<"format_vol: done" );
+
+    return RCOK;
+}
+
+/*********************************************************************
+ *
+ *  vol_t::reformat_vol(devname, lvid, num_pages, skip_raw_init, 
+ *                    apply_fake_io_latency, fake_disk_latency)
+ *
+ *  Reformat the volume "devname" for long volume id "lvid" and
+ *  a size of "num_pages". "Skip_raw_init" indicates whether to
+ *  zero out all pages in the volume during format. For testing only.
+ *
+ *********************************************************************/
+rc_t
+vol_t::reformat_vol(
+    const char*         devname,
+    lvid_t              lvid,
+    vid_t               vid,
+    shpid_t             num_pages,
+    bool                skip_raw_init)
+{
+    FUNC(vol_t::reformat_vol);
+
+    /*
+     *  No log needed.
+     *  WHOLE FUNCTION is a critical section
+     */
+    xct_log_switch_t log_off(OFF);
+
+    /*
+     *  Read the volume header
+     */
+    volhdr_t vhdr;
+    W_DO(read_vhdr(devname, vhdr));
+
+    /* XXX possible bit loss */
+    uint quota_pages = (uint) (vhdr.device_quota_KB()/(page_sz/1024));
+
+    if (num_pages > quota_pages) {
+        return RC(eVOLTOOLARGE);
+    }
+
+    /*
+     *  Determine if the volume is on a raw device
+     */
+    bool raw;
+    rc_t rc = check_raw_device(devname, raw);
+    if (rc.is_error())  {
+        return RC_AUGMENT(rc);
+    }
+
+
+    DBG( << "formating volume " << lvid << " <"
+         << devname << ">" );
+    int flags = smthread_t::OPEN_RDWR;
+    if (!raw) flags |= smthread_t::OPEN_TRUNC;
+    int fd;
+    rc = me()->open(devname, flags, 0666, fd);
+    if (rc.is_error()) {
+        DBG(<<" open " << devname << " failed " << rc );
+        return rc;
+    }
+    
+    shpid_t alloc_pages = num_pages / alloc_page_h::bits_held + 1; // # alloc_page_h pages
+    shpid_t hdr_pages = alloc_pages + 1 + 1; // +1 for stnode_page, +1 for volume header
+
+    lpid_t apid (vid, 0 , 1);
+    lpid_t spid (vid, 0 , 1 + alloc_pages);
+
+    /*
+     *  Set up the volume header
+     */
+    vhdr.set_format_version(volume_format_version);
+    vhdr.set_lvid(lvid);
+    vhdr.set_num_pages(num_pages);
+    vhdr.set_hdr_pages(hdr_pages);
+    vhdr.set_apid(apid.page);
+    vhdr.set_spid(spid.page);
+    vhdr.set_page_sz(page_sz);
+    struct timespec ctime;
+    ::clock_gettime(CLOCK_MONOTONIC, &ctime);
+    ::srand(ctime.tv_nsec);
+    vhdr.set_ctime(ctime);
+    vhdr.set_ctime_salt(::rand());
    
     /*
      *  Write volume header
@@ -953,6 +1151,12 @@ vol_t::write_vhdr(int fd, volhdr_t& vhdr, bool raw_device)
     s << prolog[i++] << vhdr.apid() << endl;
     s << prolog[i++] << vhdr.spid() << endl;
     s << prolog[i++] << vhdr.page_sz() << endl;
+    struct timespec ctime;
+    int ctime_salt;
+    vhdr.ctime(ctime, ctime_salt);
+    s << prolog[i++] << ctime.tv_sec << endl;
+    s << prolog[i++] << ctime.tv_nsec << endl;
+    s << prolog[i++] << ctime_salt << endl;
     if (!s)  {
         return RC(eOS);
     }
@@ -1031,6 +1235,13 @@ vol_t::read_vhdr(int fd, volhdr_t& vhdr)
     s.read(buf, strlen(prolog[i++])) >> temp; vhdr.set_apid(temp);
     s.read(buf, strlen(prolog[i++])) >> temp; vhdr.set_spid(temp);
     s.read(buf, strlen(prolog[i++])) >> temp; vhdr.set_page_sz(temp);
+    struct timespec ctime_temp;
+    time_t tv_sec; long tv_nsec;
+    s.read(buf, strlen(prolog[i++])) >> tv_sec; ctime_temp.tv_sec = tv_sec;
+    s.read(buf, strlen(prolog[i++])) >> tv_nsec; ctime_temp.tv_nsec = tv_nsec;
+    vhdr.set_ctime(ctime_temp);
+    int salt;
+    s.read(buf, strlen(prolog[i++])) >> salt; vhdr.set_ctime_salt(salt);
 
     if ( !s || vhdr.page_sz() != page_sz ||
         vhdr.format_version() != volume_format_version ) {
@@ -1047,6 +1258,8 @@ vol_t::read_vhdr(int fd, volhdr_t& vhdr)
         cout << "1st apid " << vhdr.apid() << endl;
         cout << "spid " << vhdr.spid() << endl;
 
+        cout << "ctime " << ctime_temp.tv_sec << "." << ctime_temp.tv_nsec << endl;
+        cout << "ctime salt " << vhdr.ctime_salt() << endl;
         cout << "Buffer: " << endl;
         cout << buf << endl;
 
@@ -1090,8 +1303,22 @@ vol_t::read_vhdr(const char* devname, volhdr_t& vhdr)
     return RCOK;
 }
 
-
-
+/*--------------------------------------------------------------*
+ *  vol_t::get_vol_ctime(ctime)          
+ *--------------------------------------------------------------*/
+rc_t            
+vol_t::get_vol_ctime(struct timespec& ctime, int& salt)
+{
+    volhdr_t vhdr;
+    
+    rc_t rc = vol_t::read_vhdr(_devname, vhdr);
+    if (rc.is_error())  {
+        W_DO_MSG(rc, << "bad device name=" << _devname);
+        return RC_AUGMENT(rc);
+    }
+    vhdr.ctime(ctime, salt); 
+    return RCOK;
+}
 
 /*--------------------------------------------------------------*
  *  vol_t::get_du_statistics()           DU DF

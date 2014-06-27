@@ -6,6 +6,7 @@
 #include "btree_impl.h"
 #include "log.h"
 #include "w_error.h"
+#include "backup.h"
 
 #include "bf_fixed.h"
 #include "bf_tree_cb.h"
@@ -128,6 +129,13 @@ w_rc_t test_nochange(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(found);
     EXPECT_EQ((smsize_t)(SM_PAGESIZE / 6), buf_len);
     EXPECT_TRUE(is_consecutive_chars(buf, 'a', SM_PAGESIZE / 6));
+
+    //Clean up backup file
+    BackupManager *bk = ssm->bk;
+    volid_t vid = test_volume->_vid;
+    x_delete_backup(ssm, test_volume);
+    EXPECT_FALSE(bk->volume_exists(vid));
+    
     return RCOK;
 }
 TEST (SprTest, NoChange) {
@@ -163,6 +171,12 @@ w_rc_t test_one_change(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_FALSE(found);
     W_DO(ssm->commit_xct());
 
+    //Clean up backup file
+    BackupManager *bk = ssm->bk;
+    volid_t vid = test_volume->_vid;
+    x_delete_backup(ssm, test_volume);
+    EXPECT_FALSE(bk->volume_exists(vid));
+    
     return RCOK;
 }
 TEST (SprTest, OneChange) {
@@ -196,7 +210,13 @@ w_rc_t test_two_changes(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->find_assoc(stid, target_key1, buf, buf_len, found));
     EXPECT_FALSE(found);
     W_DO(ssm->commit_xct());
-
+    
+    //Clean up backup file
+    BackupManager *bk = ssm->bk;
+    volid_t vid = test_volume->_vid;
+    x_delete_backup(ssm, test_volume);
+    EXPECT_FALSE(bk->volume_exists(vid));
+    
     return RCOK;
 }
 TEST (SprTest, TwoChanges) {
@@ -281,6 +301,12 @@ w_rc_t test_multi_pages(ss_m* ssm, test_volume_t *test_volume) {
     }
     W_DO(ssm->commit_xct());
 
+    //Clean up backup file
+    BackupManager *bk = ssm->bk;
+    volid_t vid = test_volume->_vid;
+    x_delete_backup(ssm, test_volume);
+    EXPECT_FALSE(bk->volume_exists(vid));
+    
     return RCOK;
 }
 // which pages to corrupt?

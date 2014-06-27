@@ -33,11 +33,13 @@
 #include "basics.h"
 #include <string>
 
+
 // forward declarations
 class generic_page;
 class AlignedMemory;
 class BackupFile;
 class BackupManager;
+
 
 /**
  * \brief The API class of Backup Manager.
@@ -167,6 +169,7 @@ public:
     /** Returns if the file exists and is correctly opened. */
     bool    is_opened() const;
     volid_t get_vid() const;
+
 private:
     /** File path of the backup file, relative to the working directory. */
     std::string _path;
@@ -191,4 +194,5 @@ inline BackupFile::BackupFile(volid_t vid, const std::string &path)
 inline BackupFile::~BackupFile() { close(); }
 inline volid_t BackupFile::get_vid() const { return _vid; }
 inline bool BackupFile::is_opened() const { return _fd != -1; }
+
 #endif // BACKUP_H

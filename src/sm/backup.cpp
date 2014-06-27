@@ -4,11 +4,14 @@
 #include "backup.h"
 #include "generic_page.h"
 #include "alloc_page.h"
+#include "sm.h"
+#include "vol.h"
 
 #include <fcntl.h>
 #include <unistd.h>
 #include <sstream>
 #include <memory.h>
+#include <boost/concept_check.hpp>
 
 std::string BackupManager::get_backup_path(volid_t vid) const {
     std::stringstream file_name;
@@ -79,6 +82,26 @@ void AlignedMemory::release() {
 void BackupFile::open() {
     w_assert1(_fd == -1); // not yet opened
     _fd = ::open(_path.c_str(), O_RDONLY|O_DIRECT|O_NOATIME);
+    if (is_opened()) {
+        vid_t vid = vid_t(_vid);
+        vol_t* vol = io_m::get_volume(vid); // The backup and volume share the same volid.
+        struct timespec vol_ctime; int vol_salt;
+        vol->get_vol_ctime(vol_ctime, vol_salt);
+        volhdr_t backup_hdr;
+        rc_t rc = vol_t::read_vhdr(_path.c_str(), backup_hdr); //Note: this fd is actually the backup...
+        if (!rc.is_error())  {
+           struct timespec backup_ctime; int backup_salt;
+           backup_hdr.ctime(backup_ctime, backup_salt);
+           
+           if ((backup_ctime.tv_sec != vol_ctime.tv_sec) ||
+               (backup_ctime.tv_nsec != vol_ctime.tv_nsec) ||
+               (backup_salt != vol_salt) ) {
+               this->close();
+           }          
+        } else {
+            this->close();
+        }
+    }
 }
 void BackupFile::close() {
     if (is_opened()) {
