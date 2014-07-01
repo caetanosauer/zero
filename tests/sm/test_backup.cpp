@@ -190,31 +190,27 @@ w_rc_t validity_test(ss_m* ssm, test_volume_t *test_volume) {
     vol->get_vol_ctime(vol_ctime, vol_salt);
     volhdr_t backup_hdr;
     std::string backup_path(bk->get_backup_path(test_volume->_vid));
-    //BackupFile file(vid, backup_path);
-    //int _fd = ::open(backup_path.c_str(), O_RDONLY|O_DIRECT|O_NOATIME);
     rc_t rc = vol_t::read_vhdr(backup_path.c_str(), backup_hdr); 
-    if (!rc.is_error())  {
- 
-       backup_hdr.ctime(backup_ctime, backup_salt);
-       
-       EXPECT_EQ(backup_ctime.tv_sec, vol_ctime.tv_sec);
-       EXPECT_EQ(backup_ctime.tv_nsec, vol_ctime.tv_nsec);
-       EXPECT_EQ(backup_salt, vol_salt);         
-    }
+    backup_hdr.ctime(backup_ctime, backup_salt);    
+    EXPECT_EQ(backup_ctime.tv_sec, vol_ctime.tv_sec);
+    EXPECT_EQ(backup_ctime.tv_nsec, vol_ctime.tv_nsec);
+    EXPECT_EQ(backup_salt, vol_salt);         
+    
         
     //Reformat to generate new ctime
-//     ssm->generate_new_lvid(test_volume->_lvid);
-//     test_volume->_vid = vid_t::null;
-//     ssm->create_vol(test_volume->_device_name, test_volume->_lvid,
-//                         8192*1024, false, test_volume->_vid);
+    sleep(2);
     vol->reformat_vol(test_volume->_device_name, test_volume->_lvid, test_volume->_vid, 
-                    4, true);
+                    8, true);
     vol = ssm->io->get_volume(test_volume->_vid);
     vol->get_vol_ctime(vol_ctime, vol_salt);
-    EXPECT_NE(backup_ctime.tv_sec, vol_ctime.tv_sec);
-    EXPECT_NE(backup_ctime.tv_nsec, vol_ctime.tv_nsec);
-    EXPECT_NE(backup_salt, vol_salt);    
     
+    bool ctime_same = false;
+    if ((backup_ctime.tv_sec == vol_ctime.tv_sec) &&
+        (backup_ctime.tv_nsec == vol_ctime.tv_nsec) &&
+        (backup_salt == vol_salt)) {
+        ctime_same = true;
+    }
+    EXPECT_FALSE(ctime_same);
     
     x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));

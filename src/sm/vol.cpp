@@ -1311,7 +1311,7 @@ vol_t::get_vol_ctime(struct timespec& ctime, int& salt)
 {
     volhdr_t vhdr;
     
-    rc_t rc = vol_t::read_vhdr(_devname, vhdr);
+    rc_t rc = vol_t::read_vhdr(_unix_fd, vhdr);
     if (rc.is_error())  {
         W_DO_MSG(rc, << "bad device name=" << _devname);
         return RC_AUGMENT(rc);
