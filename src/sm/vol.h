@@ -63,7 +63,7 @@ public:
     uint32_t         page_sz() const {  return _page_sz; }
     void             set_page_sz(uint32_t n) {  _page_sz = n; }
     
-    void             ctime(struct timespec& ctime, int& salt) const { 
+    void             get_ctime(struct timespec& ctime, int& salt) const { 
                             ctime.tv_sec = _ctime.tv_sec; 
                             ctime.tv_nsec = _ctime.tv_nsec; 
                             salt = _ctime_salt; 
@@ -73,7 +73,7 @@ public:
                         _ctime.tv_nsec = ctime.tv_nsec;
                      }
     void             set_ctime_salt(int salt) { _ctime_salt = salt; }
-    int              ctime_salt() { return _ctime_salt; }
+    int              get_ctime_salt() { return _ctime_salt; }
 
     
     

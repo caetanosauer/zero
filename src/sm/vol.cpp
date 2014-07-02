@@ -1153,7 +1153,7 @@ vol_t::write_vhdr(int fd, volhdr_t& vhdr, bool raw_device)
     s << prolog[i++] << vhdr.page_sz() << endl;
     struct timespec ctime;
     int ctime_salt;
-    vhdr.ctime(ctime, ctime_salt);
+    vhdr.get_ctime(ctime, ctime_salt);
     s << prolog[i++] << ctime.tv_sec << endl;
     s << prolog[i++] << ctime.tv_nsec << endl;
     s << prolog[i++] << ctime_salt << endl;
@@ -1259,7 +1259,7 @@ vol_t::read_vhdr(int fd, volhdr_t& vhdr)
         cout << "spid " << vhdr.spid() << endl;
 
         cout << "ctime " << ctime_temp.tv_sec << "." << ctime_temp.tv_nsec << endl;
-        cout << "ctime salt " << vhdr.ctime_salt() << endl;
+        cout << "ctime salt " << vhdr.get_ctime_salt() << endl;
         cout << "Buffer: " << endl;
         cout << buf << endl;
 
@@ -1316,7 +1316,7 @@ vol_t::get_vol_ctime(struct timespec& ctime, int& salt)
         W_DO_MSG(rc, << "bad device name=" << _devname);
         return RC_AUGMENT(rc);
     }
-    vhdr.ctime(ctime, salt); 
+    vhdr.get_ctime(ctime, salt); 
     return RCOK;
 }
 

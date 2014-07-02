@@ -90,7 +90,7 @@ void BackupFile::open() {
         rc_t rc = vol_t::read_vhdr(_path.c_str(), backup_hdr); 
         if (!rc.is_error())  {
            struct timespec backup_ctime; int backup_salt;
-           backup_hdr.ctime(backup_ctime, backup_salt);
+           backup_hdr.get_ctime(backup_ctime, backup_salt);
            struct timespec vol_ctime; int vol_salt;
            vol->get_vol_ctime(vol_ctime, vol_salt);  
            
@@ -98,9 +98,11 @@ void BackupFile::open() {
                (backup_ctime.tv_nsec != vol_ctime.tv_nsec) ||
                (backup_salt != vol_salt) ) {
                this->close();
+               DBGOUT1(<<"Backup open: ctime mismatch");
            }          
         } else {
             this->close();
+            DBGOUT1(<<"Backup open: failed to read volume header");
         }
     }
 }

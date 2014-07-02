@@ -191,7 +191,7 @@ w_rc_t validity_test(ss_m* ssm, test_volume_t *test_volume) {
     volhdr_t backup_hdr;
     std::string backup_path(bk->get_backup_path(test_volume->_vid));
     rc_t rc = vol_t::read_vhdr(backup_path.c_str(), backup_hdr); 
-    backup_hdr.ctime(backup_ctime, backup_salt);    
+    backup_hdr.get_ctime(backup_ctime, backup_salt);    
     EXPECT_EQ(backup_ctime.tv_sec, vol_ctime.tv_sec);
     EXPECT_EQ(backup_ctime.tv_nsec, vol_ctime.tv_nsec);
     EXPECT_EQ(backup_salt, vol_salt);         
