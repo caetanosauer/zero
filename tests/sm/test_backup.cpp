@@ -11,7 +11,8 @@
 #include <sstream>
 #include <cstdio>
 #include <string>
-
+#include <fcntl.h>
+#include <unistd.h>
 // for mkdir
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -165,6 +166,60 @@ w_rc_t mixed_test(ss_m* ssm, test_volume_t *test_volume) {
 TEST (BackupTest, Mixed) {
     test_env->empty_logdata_dir();
     EXPECT_EQ(test_env->runBtreeTest(mixed_test), 0);
+}
+
+w_rc_t validity_test(ss_m* ssm, test_volume_t *test_volume) {
+    BackupManager *bk = ssm->bk;
+    volid_t vid = test_volume->_vid;
+    x_delete_backup(ssm, test_volume);
+    EXPECT_FALSE(bk->volume_exists(vid));
+
+    // do nothing and immediately take backup
+    W_DO(x_take_backup(ssm, test_volume));
+    EXPECT_TRUE(bk->volume_exists(vid));
+
+    // this is initial state, so all data pages are unused.
+    vol_t *vol = ssm->io->get_volume(test_volume->_vid);
+    const shpid_t FIRST_PID = vol->first_data_pageid();
+    for (shpid_t pid = FIRST_PID; pid < (uint32_t)default_quota_in_pages; ++pid) {
+        EXPECT_FALSE(bk->page_exists(vid, pid));
+    }
+    
+    struct timespec vol_ctime; int vol_salt;
+    struct timespec backup_ctime; int backup_salt;
+    vol->get_vol_ctime(vol_ctime, vol_salt);
+    volhdr_t backup_hdr;
+    std::string backup_path(bk->get_backup_path(test_volume->_vid));
+    rc_t rc = vol_t::read_vhdr(backup_path.c_str(), backup_hdr); 
+    backup_hdr.get_ctime(backup_ctime, backup_salt);    
+    EXPECT_EQ(backup_ctime.tv_sec, vol_ctime.tv_sec);
+    EXPECT_EQ(backup_ctime.tv_nsec, vol_ctime.tv_nsec);
+    EXPECT_EQ(backup_salt, vol_salt);         
+    
+        
+    //Reformat to generate new ctime
+    sleep(2);
+    vol->reformat_vol(test_volume->_device_name, test_volume->_lvid, test_volume->_vid, 
+                    8, true);
+    vol = ssm->io->get_volume(test_volume->_vid);
+    vol->get_vol_ctime(vol_ctime, vol_salt);
+    
+    bool ctime_same = false;
+    if ((backup_ctime.tv_sec == vol_ctime.tv_sec) &&
+        (backup_ctime.tv_nsec == vol_ctime.tv_nsec) &&
+        (backup_salt == vol_salt)) {
+        ctime_same = true;
+    }
+    EXPECT_FALSE(ctime_same);
+    
+    x_delete_backup(ssm, test_volume);
+    EXPECT_FALSE(bk->volume_exists(vid));
+    return RCOK;
+}
+
+TEST (BackupTest, Validity) {
+    test_env->empty_logdata_dir();
+    EXPECT_EQ(test_env->runBtreeTest(validity_test), 0);
 }
 
 int main(int argc, char **argv) {

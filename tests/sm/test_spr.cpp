@@ -6,6 +6,7 @@
 #include "btree_impl.h"
 #include "log.h"
 #include "w_error.h"
+#include "backup.h"
 
 #include "bf_fixed.h"
 #include "bf_tree_cb.h"
@@ -14,6 +15,11 @@
 #include "sm_int_0.h"
 
 #include <vector>
+
+#include <sys/types.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
 
 btree_test_env *test_env;
 
@@ -89,15 +95,26 @@ void corrupt_page(test_volume_t *test_volume, shpid_t target_pid) {
         std::ifstream file(test_volume->_device_name, std::ios::binary);
         file.seekg(sizeof(generic_page) * target_pid);
         file.read(reinterpret_cast<char*>(&page), sizeof(generic_page));
+        file.close();
     }
 
     ::memset(reinterpret_cast<char*>(&page) + 1234, 42, 987);
+//     {
+//         std::ofstream file(test_volume->_device_name, std::ios::binary | std::ios::out);
+//         file.seekp(sizeof(generic_page) * target_pid, ios_base::beg);
+//         DBGOUT1(<<"setting seekp to " <<file.tellp());
+//         file.write(reinterpret_cast<char*>(&page), sizeof(generic_page));
+//         file.flush();
+//         file.close();
+//     } //This block corrupts 48K starting at offset 0 instead of a single page.
     {
-        std::ofstream file(test_volume->_device_name, std::ios::binary | std::ios::out);
-        file.seekp(sizeof(generic_page) * target_pid);
-        file.write(reinterpret_cast<char*>(&page), sizeof(generic_page));
-        file.flush();
+        //This block works.
+        int vol_fd = open(test_volume->_device_name, O_WRONLY);
+        pwrite(vol_fd, (char *)&page, sizeof(generic_page), sizeof(generic_page)*target_pid);
+        fsync(vol_fd);
+        close(vol_fd);
     }
+        
 }
 bool is_consecutive_chars(char* str, char c, int len) {
     for (int i = 0; i < len; ++i) {
@@ -128,6 +145,13 @@ w_rc_t test_nochange(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(found);
     EXPECT_EQ((smsize_t)(SM_PAGESIZE / 6), buf_len);
     EXPECT_TRUE(is_consecutive_chars(buf, 'a', SM_PAGESIZE / 6));
+
+    //Clean up backup file
+    BackupManager *bk = ssm->bk;
+    volid_t vid = test_volume->_vid;
+    x_delete_backup(ssm, test_volume);
+    EXPECT_FALSE(bk->volume_exists(vid));
+    
     return RCOK;
 }
 TEST (SprTest, NoChange) {
@@ -163,6 +187,12 @@ w_rc_t test_one_change(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_FALSE(found);
     W_DO(ssm->commit_xct());
 
+    //Clean up backup file
+    BackupManager *bk = ssm->bk;
+    volid_t vid = test_volume->_vid;
+    x_delete_backup(ssm, test_volume);
+    EXPECT_FALSE(bk->volume_exists(vid));
+    
     return RCOK;
 }
 TEST (SprTest, OneChange) {
@@ -196,7 +226,13 @@ w_rc_t test_two_changes(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->find_assoc(stid, target_key1, buf, buf_len, found));
     EXPECT_FALSE(found);
     W_DO(ssm->commit_xct());
-
+    
+    //Clean up backup file
+    BackupManager *bk = ssm->bk;
+    volid_t vid = test_volume->_vid;
+    x_delete_backup(ssm, test_volume);
+    EXPECT_FALSE(bk->volume_exists(vid));
+    
     return RCOK;
 }
 TEST (SprTest, TwoChanges) {
@@ -281,6 +317,12 @@ w_rc_t test_multi_pages(ss_m* ssm, test_volume_t *test_volume) {
     }
     W_DO(ssm->commit_xct());
 
+    //Clean up backup file
+    BackupManager *bk = ssm->bk;
+    volid_t vid = test_volume->_vid;
+    x_delete_backup(ssm, test_volume);
+    EXPECT_FALSE(bk->volume_exists(vid));
+    
     return RCOK;
 }
 // which pages to corrupt?
@@ -312,6 +354,7 @@ TEST (SprTest, MultiPagesDestinationBoth) {
     sm_options options;
     EXPECT_EQ(0, test_env->runBtreeTest(test_multi_pages, options));
 }
+
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
