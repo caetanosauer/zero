@@ -455,4 +455,17 @@ private:
 
 };
 
+class transact_thread_t : public smthread_t {
+public:
+    transact_thread_t(stid_t stid, void (*runfunct)(stid_t));
+    ~transact_thread_t();
+
+    virtual void run();
+    static int next_thid; // Adopted from test_deadlock, assuming there is a reason
+    stid_t _stid;
+    int _thid;
+    void (*_runnerfunc)(stid_t);
+    bool _finished;
+};
+
 #endif // TESTS_BTREE_TEST_ENV_H

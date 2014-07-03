@@ -613,6 +613,58 @@ TEST (RestartTest, ManyCkptCrashShutdown) {
 }
 /**/
 
+/* Multi-thread test cases from here on */
+
+/* Test case with 2 threads, 1 committed transaction each, no checkpoints, normal shutdown */
+class restart_multithrd_normal_shutdown : public restart_test_base
+{
+public:
+    static void t1Run(stid_t pstid) {
+        test_env->btree_insert_and_commit(pstid, "aa1", "data1");
+    }   
+
+    static void t2Run(stid_t pstid) {
+        test_env->btree_insert_and_commit(pstid, "aa2", "data2");
+    }   
+
+    w_rc_t pre_shutdown(ss_m *ssm) {
+        output_durable_lsn(1);
+        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        output_durable_lsn(2);
+        transact_thread_t t1 (_stid, t1Run);
+        transact_thread_t t2 (_stid, t2Run);
+        output_durable_lsn(3);
+
+        W_DO(t1.fork());
+        W_DO(t2.fork());
+        W_DO(t1.join());
+        W_DO(t2.join());
+
+        EXPECT_TRUE(t1._finished);
+        EXPECT_TRUE(t2._finished);
+        return RCOK;
+    }   
+
+
+    w_rc_t post_shutdown(ss_m *) {
+        output_durable_lsn(4);
+        x_btree_scan_result s;
+        W_DO(test_env->btree_scan(_stid, s));
+        EXPECT_EQ (2, s.rownum);
+        EXPECT_EQ (std::string("aa1"), s.minkey);
+        EXPECT_EQ (std::string("aa2"), s.maxkey);
+        return RCOK;
+    }   
+};
+
+/* Passing */
+TEST (RestartTestBugs, MultithrdNormal) {
+    test_env->empty_logdata_dir();
+    restart_multithrd_normal_shutdown context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0); 
+}
+/**/
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     test_env = new btree_test_env();
