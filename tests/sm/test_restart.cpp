@@ -712,14 +712,14 @@ public:
     }
 };
 
-/* Failing because inflight transactions are not supported by the current transaction thread 
+/* Passing */
 TEST (RestartTestBugs, MultithrdCrashWithInflight) {
     test_env->empty_logdata_dir();
     restart_multithrd_crash_inflight context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0); 
     // true = crash shutdown, 10 = recovery mode, m1 default serial mode
 }
-*/
+/**/
 
 /* Test case with 3 threads, 1 insert&commit, 1 aborted, 1 with two inserts, one update and commit*/
 class restart_multithrd_crash : public restart_test_base
