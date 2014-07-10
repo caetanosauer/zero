@@ -909,3 +909,24 @@ bool x_in_recovery(ss_m* ssm)
     return ssm->in_recovery();
 }
 
+
+/* Thread-API to be used by tests to simulate multiple threads as sources of transactions.
+ * Usage: 1) Construct thread object providing a pointer to the function to be executed when the thread is run.
+ * 	     This function has to be a static function with an argument of type stid_t as the only one.
+ * 	  2) Call fork() on the thread object to run the thread
+ * 	 [3) Call join() on the thread to wait for it to finish or use  _finished to see if it has finished yet]
+ */
+transact_thread_t::transact_thread_t(stid_t stid, void (*runfunc)(stid_t)) : smthread_t(t_regular, "transact_thread_t"), _stid(stid), _finished(false) {
+    _runnerfunc = runfunc;
+    _thid = next_thid++;
+}
+transact_thread_t::~transact_thread_t() {}
+
+int transact_thread_t::next_thid = 10;
+
+void transact_thread_t::run() {
+    std::cout << ":T" << _thid << " starting..";
+    _runnerfunc(_stid);
+    _finished = true;
+    std::cout << ":T" << _thid << " finished.";
+}
