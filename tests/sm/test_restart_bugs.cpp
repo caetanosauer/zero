@@ -69,6 +69,43 @@ public:
  */
 
 
+/* Test case with a committed insert, an aborted removal and an aborted update 
+ * Currently failing because of a bug in the code, see issue ZERO-183 
+ */
+class restart_aborted_remove : public restart_test_base
+{
+public:
+    w_rc_t pre_shutdown(ss_m *ssm) {
+	output_durable_lsn(1);
+	W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+	output_durable_lsn(2);
+	W_DO(test_env->btree_insert_and_commit(_stid, "aa0", "data0"));
+	W_DO(test_env->begin_xct());
+	W_DO(test_env->btree_remove(_stid, "aa0"));
+	W_DO(test_env->abort_xct());
+	output_durable_lsn(3);
+	return RCOK;
+    }
+
+    w_rc_t post_shutdown(ss_m *) {
+	output_durable_lsn(4);
+	x_btree_scan_result s;
+	W_DO(test_env->btree_scan(_stid, s));
+	EXPECT_EQ(1, s.rownum);
+	EXPECT_EQ(std::string("aa0"), s.maxkey);
+	return RCOK;
+    }
+};
+
+/* Disabled, because it's failing 
+TEST (RestartTestBugs, AbortedRemoveFailingC) {
+    test_env->empty_logdata_dir();
+    restart_aborted_remove context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
+    // true = simulated crash; 10 = recovery mode, m1 default serial mode
+}
+*/
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     test_env = new btree_test_env();
