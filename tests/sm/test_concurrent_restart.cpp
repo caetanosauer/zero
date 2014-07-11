@@ -277,7 +277,7 @@ public:
     }
 };
 
-/* Not passing, when there are multiple insertions in one txn, it rolls back only the very first */
+/* When there are multiple insertions in one txn, it rolls back only the very first */
 /* insertion in the txn, but not the rest of the insertions.  Issue in xct_t::rollback undo_nxt */
 /* for this test case, the result: 5 records instead of 3 records, 'aa7' was rollback, so the max is 'aa5' instead of ''aa4' */
 /* Not passing *
@@ -578,7 +578,7 @@ public:
 
 /* During REDO, multi-pages, WOD is not followed for SPR */
 /* but the conflict detection is working */
-/* Not passing *
+/* Not passing - currently using this one to debug *
 TEST (RestartTest, MultiConcurrentRedoCrash) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_redo_crash context;

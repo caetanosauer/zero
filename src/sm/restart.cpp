@@ -696,6 +696,15 @@ restart_m::analysis_pass(
                     //    btree_foster_rebalance_norec_log - during a page split, foster parent page would split
                     //                                                         does it allocate a new page?
                     //    btree_foster_deadopt_log
+                    //
+                    // TODO(Restart)... milestone 2
+                    // If page driven REDO with SPR: b-tree rebalance and merge operations are doing
+                    // full logging (log all the record movements).  We still have the log records for these
+                    // system transactions, but the corresponding REDO operations are for 
+                    // setting page fence keys only, not the actual record movements
+                    //
+                    // If log scan driven REDO: continue using minimum logging.
+                    
                     if (r.is_multi_page()) 
                     {
                         lpid_t page2_of_interest = r.construct_pid2();
@@ -2795,18 +2804,20 @@ void restart_m::_redo_page_pass()
     //                                          assured foster parent (scr) is not recovered yet
     // These WODs are not followed during page driven REDO recovery, because 
     // the REDO operation is going through all in_doubt pages to recover in_doubt 
-    // pages one by one, it does not understand nor obey the foster B-tree relationship.
+    // pages one by one, it does not understand nor obey the foster B-tree 
+    // parent-child relationship.
     // Therefore special logic must be implemented in the 'redo' functions of 
     // these log records (Btree_logrec.cpp) when WOD is not being followed
 
     // TODO(Restart)...    
-    // In milestone 2, a workaround has been implemented where we disable
-    // the optimized logging, in other words, when page rebalance and merge operations
-    // occurs, full logging is used for all record movements, while btree_foster_merge_log
-    // and btree_foster_rebalance_log log records do not trigger any operation.
+    // In milestone 2, a workaround has been implemented for page driven REDO 
+    // where we disable the minimum logging for b-tree rebalance and merge operations,
+    // in other words, for page rebalance and merge operations, full logging is used for 
+    // all record movements, while btree_foster_merge_log and btree_foster_rebalance_log
+    // log records are used to set page fence keys during the REDO operations.
     //
     // Note that the workaround is only triggered when we are using page-driven REDO
-    // operation.  For log-driven REDO operation, we will continue using optimized logging.
+    // operation.  For log scan driven REDO operation, we will continue using minimum logging.
     
     for (bf_idx i = 1; i < bfsz; ++i)
     {   

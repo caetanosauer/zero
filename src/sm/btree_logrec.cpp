@@ -21,6 +21,7 @@
 #include "vec_t.h"
 #include "tls.h"
 #include "block_alloc.h"
+#include "restart.h"
 
 /**
  * Page buffers used while SPR as scratch space.
@@ -397,11 +398,25 @@ btree_ghost_mark_log::redo(fixable_page_h *page)
         bool found;
         slotid_t slot;
         bp.search(key, found, slot);
-        if (!found) {
-            cerr << " key=" << key << endl << " not found in btree_ghost_mark_log::redo" << endl;
-            w_assert1(false); // something unexpected, but can go on.
+        if (false == restart_m::use_redo_page_recovery()) 
+        {
+            // If doing page driven REDO, page_rebalance initialized the
+            // target page (foster child).
+            if (!found) {
+                cerr << " key=" << key << endl << " not found in btree_ghost_mark_log::redo" << endl;
+                w_assert1(false); // something unexpected, but can go on.
+            }
+            else
+                bp.mark_ghost(slot);
         }
-        bp.mark_ghost(slot);
+        else
+        {
+            if (!found) 
+            {        
+// TODO(Restart)...            
+                DBGOUT3( << "&&&& btree_ghost_mark_log::redo - page driven, key not found in page but it is okay");
+            }
+        }
     }
 }
 
@@ -552,52 +567,77 @@ btree_foster_merge_log::btree_foster_merge_log (const btree_page_h& p, const btr
 }
 
 void btree_foster_merge_log::redo(fixable_page_h* p) {
+    // If log scan driven REDO, continue using minimum logging.
+
+    // Two pages are involved:
+    // first page: destination, foster parent in this case
+    // second page: source, foster child in this case
+
     // REDO is to merge it again.
-    // WOD: "page" is the data source, which is written later.
+    // WOD: "page" is the data source (foster child), which is written later.
     borrowed_btree_page_h bp(p);
     btree_foster_merge_t *dp = reinterpret_cast<btree_foster_merge_t*>(data_ssx());
 
     // WOD: "page" is the data source, which is written later.
     shpid_t target_pid = p->pid().page;
 
-    bool recovering_dest = (target_pid == shpid());
+    bool recovering_dest = (target_pid == shpid());   // true: recover foster parent
+                                                      // false: recovery foster child
     shpid_t another_pid = recovering_dest ? dp->_page2_pid : shpid();
     w_assert0(recovering_dest || target_pid == dp->_page2_pid);
+
+    if (true == restart_m::use_redo_page_recovery())
+    {
+        // TODO(Restart)... milestone 2
+        // If using page driven REDO recovery, full logging was used for
+        // b-tree merge operation, the merge log record (system txn)
+        // occurs before all the actual record move log records
+
+        // For the merge REDO, the REDO is to delete records from 
+        // source (foster child) and insert them into destination (foster parent).
+        // Do not initialize the target page (fost parent) because it is an existing
+        // page containing records, but we do need to reset the high fence and chain_high
+        // for the destination (foster parent) page before the actual record movements
+
+        if (recovering_dest)
+        {
+            // Recover the destination (foster parent) page
+// TODO(Restart)... set the fence key using information from the log record (dp), 
+// do not initial the page because we need all the existing records
+//
+// cannot use format_steal because it initialize the page to empty
+
+
+        }
+        else
+        {
+            // Recover the source (foster child) page, we are only deleting records
+            // from the source page, and will delete the page in a page-merge call
+            // no need to set the new fence keys
+        }
+        return;
+    }
+
+    // Two pages are involved:
+    // first page: destination, foster child in this case
+    // second page: source, foster parent in this case
+
     if (p->is_bufferpool_managed()) {
         // this is in REDO, so fix_direct should be safe.
         btree_page_h another;
         W_COERCE(another.fix_direct(bp.vol(), another_pid, LATCH_EX));
         if (recovering_dest) {
             // we are recovering "page", which is foster-parent (dest).
-            if ((p->is_recovery_access()) && (another.lsn() >= lsn_ck()))
+            if (another.lsn() >= lsn_ck())
             {
-                // recovery_access flag is on, the caller is from Recovery REDO phase
-                // and "page2" (src) has been recovered already
-                // When usign page driven REDO recovery, we are recover all in_doubt pages
-                // in buffer pool, we cannot rely on "page2" (src) not been recivered yet
+                // TODO(Restart)...
+                // See detail comments in btree_foster_rebalance_log::redo               
 
-// TODO(Restart)...
-                // The problem is that we are replying on "page2" (src, foster child) has not been recovered
-                // and it contains all the records, so we can move records from 'page2' into 'page' (dest)
-                // If 'page2' has been recovered already, it does not contain the records which should
-                // be moved to 'page' (dest), we are missing the records we need to move
-                // Possible solutions:
-                // 1. Record the page dependencies, and recover them in the correct order.  This solution
-                //     becomes messy in a hurry because the dependency gets complex when we have 
-                //     situations such as foster chain, multiple adoptions, multiple splits/merges, etc.
-                // 2. Have the rebalance/merge log record to contain all record movement information
-                //     the size of these log records become large and potentially expand to multiple log 
-                //     records.  Currently both rebalance and merge are system transaction while we only
-                //     supoort single record system transaction, so it requires special handling in log 
-                //     record processing
-                // 3. Disable the allocation logging only optimization, in other words, we will not generate
-                //     log records for btree_foster_rebalance_log and btree_foster_merge_log (currently
-                //     one log record implies the actual record movements), instead we will use full logging
-                //     and generate both record insert/record delete for each record move.
-                //
-                // For now, we will use solution #3, disable the optimize logging and use full logging instead
-                // therefore disable btree_foster_rebalance_log and btree_foster_merge_log log records.
-                
+                // If we get here, caller was not from page driven REDO phase but "page2" (src) has
+                // been recovered already, this is breaking WOD rule and cannot continue
+
+                w_assert1(false == p->is_recovery_access());
+
                 DBGOUT3 (<< "btree_foster_merge_log::redo: caller from page driven REDO, source(foster child) has been recovered");
                 W_FATAL_MSG(fcINTERNAL, << "btree_foster_merge_log::redo - WOD cannot be followed, abort the operation");
             }
@@ -605,7 +645,7 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
             {
                 // thanks to WOD, "page2" (src) is also assured to be not recovered yet.
                 w_assert0(another.lsn() < lsn_ck());
-                btree_impl::_ux_merge_foster_apply_parent(bp, another);
+                btree_impl::_ux_merge_foster_apply_parent(bp /*dest*/, another /*src*/);
                 another.set_dirty();
                 another.update_initial_and_last_lsn(lsn_ck());
                 W_COERCE(another.set_to_be_deleted(false));
@@ -619,7 +659,7 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
                 W_COERCE(bp.set_to_be_deleted(false));
             } else {
                 // dest is also old, so we are recovering both.
-                btree_impl::_ux_merge_foster_apply_parent(another, bp);
+                btree_impl::_ux_merge_foster_apply_parent(another /*dest*/, bp /*src*/);
                 another.set_dirty();
                 another.update_initial_and_last_lsn(lsn_ck());
             }
@@ -650,10 +690,10 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
  */
 struct btree_foster_rebalance_t : multi_page_log_t {
     int32_t         _move_count;    // +4
-    shpid_t         _new_pid0;      // +4
-    lsn_t           _new_pid0_emlsn;// +8
-    uint16_t        _fence_len;     // +2
-    char            _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) - 18];
+    shpid_t         _new_pid0;      // +4, non-leaf node only  
+    lsn_t           _new_pid0_emlsn;// +8, non-leaf node only
+    uint16_t        _fence_len;     // +2, new fence key length
+    char            _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) - 18];  // new fence key data
 
     btree_foster_rebalance_t(shpid_t page2_id, int32_t move_count,
             const w_keystr_t& fence, shpid_t new_pid0, lsn_t new_pid0_emlsn);
@@ -673,11 +713,68 @@ btree_foster_rebalance_t::btree_foster_rebalance_t(shpid_t page2_id, int32_t mov
 btree_foster_rebalance_log::btree_foster_rebalance_log (const btree_page_h& p,
     const btree_page_h &p2, int32_t move_count, const w_keystr_t& fence, shpid_t new_pid0,
     lsn_t new_pid0_emlsn) {
+    // p - destination
+    // p2 - source
     fill(&p.pid(), p.tag(), (new (data_ssx()) btree_foster_rebalance_t(p2.pid().page,
         move_count, fence, new_pid0, new_pid0_emlsn))->size());
 }
 
 void btree_foster_rebalance_log::redo(fixable_page_h* p) {
+    // TODO(Restart)...
+    // The problem is that we are replying on "page2" (src, another) has the pre-rebalance 
+    // image so it contains all the records, therefore we can move records from 'another' (src) 
+    // into 'bp' (dest).
+    // If 'another' (src) has been recovered already (post-rebalance image), it does not 
+    // contain the records which should be moved to 'bp' (dest) anymore, therefore we lost
+    // the records we need to move in the source page at this point.
+    // Possible solutions:
+    // 1. Record the page dependencies (Write Order Dependency) during Log Analysis,
+    //       and recover them in the correct order.  This solution becomes messy in a hurry
+    //       because the dependency gets complex when we have situations such as foster chain,
+    //       multiple adoptions, multiple splits/merges, etc.  Also when REDOing the destination page,
+    //       we need to recover the source page to the pre-rebalance/pre-merge image first, 
+    //       recover the destination page, and then finish the recovery for the source page.
+    //       If there are multiple rebalance and/or merge operations on the same source page,
+    //       the recovery becomes tricky.
+    // 2. Have the rebalance/merge log record to contain all record movement information,
+    //       the size of the log record becomes large and potentially expand to multiple log 
+    //       records.  Both rebalance and merge are system transactions while we only
+    //       supoort single log record system transaction currently, it requires extra handling
+    //       in Recovery logic for multi-log system transactions, e.g. rolling forward.
+    // 3. Disable the minimum logging for rebalance and merge operations, in other words,
+    //       log records for btree_foster_rebalance_log and btree_foster_merge_log
+    //       (currently one log record covers the entire operation) will not cover the actual
+    //       record movements anymore, instead we will use full logging to generate deletion/insertion 
+    //       for all record movements.  Multiple log records will be generated:
+    //       1. System transaction log record - contain information to set the destination page fence keys, 
+    //                                               including low and high fence keys and chain_high_key if it 
+    //                                               exists in source page (form a foster chain)
+    //                                               also the source page new high fence key which is the same as
+    //                                               the destination page's low fence key
+    //       2. Delete/Insert pair for every record moved
+
+    // TODO(Restart)...
+    // In milestone 2, we use solution #3 which disables the minimum logging and uses full logging
+    // instead, therefore if page driven REDO, btree_foster_rebalance_log and 
+    // btree_foster_merge_log log records are used to set page fence keys only.
+    // This implies that when Page Driven REDO flag is on, we will use full logging for all page
+    // rebalance and page merge operations, both page driven REDO and corruption SPR will 
+    // use the full logging logic for the REDO operations.
+    //
+    // Long-term solution (what it should be implemented eventually)...
+    // 1. Use minimum logging (one system transaction for the entire operation).
+    // 2. Page rebalance and page merge operations should share one generic system transaction
+    //    log record (load-balance) instead of two different log records, while it is a multi-page single
+    //    log system transaction, the first page is the destination page and the second page is the 
+    //    source page.
+    // 3. The destination page is not always empty, because for a merge operation, the destination
+    //    page (foster parent) is not empty.  For the split operation, the destination page (foster child)
+    //    is always empty.
+    // 4. The system transaction 'load-balance' log record should be used for 3 types of operations:
+    //     1. Page split: currently btree_foster_rebalance_log
+    //     2. Page merge: currently btree_foster_merge_log
+    //     3. Load balance among two existing pages: does not exist currently
+
     borrowed_btree_page_h bp(p);
     btree_foster_rebalance_t *dp = reinterpret_cast<btree_foster_rebalance_t*>(data_ssx());
     w_keystr_t fence;
@@ -691,47 +788,147 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
     DBGOUT3 (<< *this << ": redo_lsn=" << redo_lsn << ", bp.lsn=" << bp.lsn());
     w_assert1(bp.lsn() < redo_lsn);
 
-    bool recovering_dest = (target_pid == page_id);
-    shpid_t another_pid = recovering_dest ? page2_id : page_id;
+    bool recovering_dest = (target_pid == page_id);             // 'p' is the page we are trying to recover: target
+    shpid_t another_pid = recovering_dest ? page2_id : page_id; // another_pid: data source
+                                                                // if 'p' is foster child, then another_pid is foster parent
+                                                                // if 'p' is foster parent, then another_pid is foster child
+                                                                // In the normal SPR case with WOD, another_pid (foster parent)
+                                                                // must be recovered after foster child
+
+    // recovering_dest == true: recovery foster child, assume foster parent has not been recovered
+    // recovering_dest == false: recover foster parent, assumed foster child has been recovered
     w_assert0(recovering_dest || target_pid == page2_id);
 
+    if (true == restart_m::use_redo_page_recovery()) 
+    {
+        // TODO(Restart)... milestone 2
+        // If using page driven REDO recovery, use full logging for b-tree 
+        // rebalance operation, the rebalance log record (system txn) during REDO
+        // occurs before all the actual record move log records
+
+        // If called by the regular SPR due to page corruption, not from system recovery
+        // because the page driven flag was on, full logging was taken for page rebalance
+        // and merge operations, we cannot use the optimized code path for regular SPR either
+
+        if (recovering_dest)
+        {
+            // Recover the destination (foster child) page, regardless whether the foster parent has been: 
+            // recovered (no WOD) - parent_page.lsn() >=  redo_lsn
+            // not recovered (WOD) - parent_page.lsn() <  redo_lsn
+
+            // In a page split operation (this one), the assumption is the destination page is a new page
+            // therefore it is safe initialize the destination page (foster child) to an empty page
+            // The following full logging (delete/insert) whould insert records into the empty destination  page
+            // If there are existing records in the destination page, the initialization would erase them
+            
+// TODO(Restart)...            
+            DBGOUT3( << "&&&& btree_foster_rebalance_log: recover foster child page, initialize it to an empty page, foster child pid: " 
+                     << bp.pid() << ", number of records: " << bp.nrecs());
+            if (bp.is_leaf())
+            {
+                DBGOUT3( << "&&&& Foster child page is a leaf page");
+            }
+            else
+            {
+                DBGOUT3( << "&&&& Foster child page is a non-leaf page");            
+            }
+
+            w_keystr_t high_key, chain_high_key;
+
+/**
+            if (0 < bp.nrecs())
+            {
+                // Destination page (foster child) had records from disk image, use the low and high fence keys from existing page
+                bp.copy_fence_high_key(high_key);               // high
+                bp.copy_chain_fence_high_key(chain_high_key);   // chain
+                fence.clear();
+                bp.copy_fence_low_key(fence);                   // low
+
+                W_COERCE(bp.format_steal(bp.lsn(), bp.pid(),
+                                bp.btree_root(), bp.level(),
+                                (bp.is_leaf())? 0 : dp->_new_pid0,                 // leaf has no pid0
+                                (bp.is_leaf())? lsn_t::null : dp->_new_pid0_emlsn, // leaf has no emlsn
+                                bp.get_foster(), bp.get_foster_emlsn(),
+                                fence, high_key, chain_high_key,
+                                false // don't log the page_img_format record
+                                ));
+            }
+            else
+**/            
+            {
+                // Get fence key information from log record (dp)
+
+// TODO(Restart...
+
+                // bp.copy_fence_high_key(high_key);               // high, nothing
+                //bp.copy_chain_fence_high_key(chain_high_key);   // chain, nothing                
+                fence.clear();        
+// The high/low fence keys are not correct?
+// See how 'btree_foster_rebalance_t' log record was generated, might need to add more info from
+// pre-recover foster parent, we already have the mid_key (use as low), might also need
+// the high and chain keys in log record, mist fit into logrec_t::max_data_sz
+// See btree_impl::_ux_rebalance_foster_core for log_btree_foster_rebalance(foster_p, page, move_count, mid_key, new_pid0, new_pid0_emlsn);
+// if taken from 'dp', it is same as incoming key, compare failed
+                fence.construct_from_keystr(dp->_data, dp->_fence_len);  // 'dp->_data' is the fence key for foster child
+                                                                         // use it as low
+
+                // Calling format_steal to initialize the page only, no stealing
+                W_COERCE(bp.format_steal(bp.lsn(), bp.pid(),
+                                bp.btree_root(), bp.level(),
+                                (bp.is_leaf())? 0 : dp->_new_pid0,                 // leaf has no pid0
+                                (bp.is_leaf())? lsn_t::null : dp->_new_pid0_emlsn, // leaf has no emlsn
+                                bp.get_foster(), bp.get_foster_emlsn(),    // if destination (foster child) has foster child itself (foster chain)
+                                fence,            // Low fence of the destination page
+                                high_key,         // High fence of the destination
+                                chain_high_key,   // Chain_high_fence if exists (foster chain)
+                                false,            // don't log the page_img_format record
+                                NULL, 0, 0,       // no steal from src_1
+                                NULL, 0, 0,       // no steal from src_2
+                                false,            // src_2
+                                false,            // No full logging
+                                false             // No logging
+                                ));
+            }           
+        }
+        else
+        {
+            // Recover the foster parent page, do not initialize the foster parent page 
+            // but need to set the new high fence key, and chain_high_key if exist
+            // Note if there were a foster chain before the page-balance, then no change in the chain_high_key
+            // If the destination page is the only foster child, then the original source high is the chain_high_key          
+            // The following full logging (delete/insert) should remove records from the foster parent page
+            
+            DBGOUT3( << "&&&& btree_foster_rebalance_log: recover foster parent page, do not initialize the page, foster parent pid: " << bp.pid());
+            DBGOUT3( << "&&&& Page had " << bp.nrecs() << " records");       
+
+// TODO(Restart)...  cannot use format_steal because it initialize the page to empty
+
+        }
+
+        // Return now to skip the optimal code path
+        return;
+    }
+
+
+    // Two pages are involved:
+    // first page: destination, foster child in this case
+    // second page: source, foster parent in this case
+
+    // If not Page Drive REDO, use the optimized code path (no full logging)
     if (p->is_bufferpool_managed()) {
         // this is in REDO, so fix_direct should be safe.
         btree_page_h another;
         W_COERCE(another.fix_direct(bp.vol(), another_pid, LATCH_EX));
         if (recovering_dest) {
-                // we are recovering "page", which is foster-child (dest).
+            // we are recovering "page", which is foster-child (dest).
             DBGOUT3 (<< "Recovering 'page'. page2.lsn=" << another.lsn());
-            if ((p->is_recovery_access()) && (another.lsn() >= redo_lsn))
-            {
-                // recovery_access flag is on, the caller is from Recovery REDO phase
-                // and "page2" (src) has been recovered already
-                // When usign page driven REDO recovery, we are recover all in_doubt pages
-                // in buffer pool, we cannot rely on "page2" (src) not been recivered yet
-                
-// TODO(Restart)...
-                // The problem is that we are replying on "page2" (src, another) has not been recovered
-                // and it contains all the records, so we can move records from 'another' into 'bp' (dest)
-                // If 'another' has been recovered already, it does not contain the records which should
-                // be moved to 'bp' (dest), we are missing the records we need to move
-                // Possible solutions:
-                // 1. Record the page dependencies, and recover them in the correct order.  This solution
-                //     becomes messy in a hurry because the dependency gets complex when we have 
-                //     situations such as foster chain, multiple adoptions, multiple splits/merges, etc.
-                // 2. Have the rebalance/merge log record to contain all record movement information
-                //     the size of these log records become large and potentially expand to multiple log 
-                //     records.  Currently both rebalance and merge are system transaction while we only
-                //     supoort single record system transaction, so it requires special handling in log 
-                //     record processing
-                // 3. Disable the allocation logging only optimization, in other words, we will not generate
-                //     log records for btree_foster_rebalance_log and btree_foster_merge_log (currently
-                //     one log record implies the actual record movements), instead we will use full logging
-                //     and generate both record insert/record delete for each record move.
-                //
-                // For now, we will use solution #3, disable the optimize logging and use full logging instead
-                // therefore disable btree_foster_rebalance_log and btree_foster_merge_log log records.
-                
-                DBGOUT3 (<< "btree_foster_rebalance_log::redo: caller from page driven REDO, source (foster parent) has been recovered");               
+            if (another.lsn() >= redo_lsn)
+            {               
+                w_assert1(false == p->is_recovery_access());
+                // If we get here, this is not a page driven REDO therefore minimum logging, 
+                // but "page2" (src) has been fully recovered already, it is breaking WOD rule and cannot continue
+
+                DBGOUT3 (<< "btree_foster_rebalance_log::redo: caller did not have page driven REDO, source (foster parent) has been recovered");               
                 W_FATAL_MSG(fcINTERNAL, << "btree_foster_rebalance_log::redo - WOD cannot be followed, abort the operation");
             }
             else
@@ -741,7 +938,7 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
                 // thanks to WOD, "page2" (src) is also assured to be not recovered yet.
 
                 w_assert0(another.lsn() < redo_lsn);
-                W_COERCE(btree_impl::_ux_rebalance_foster_apply(another, bp, dp->_move_count,
+                W_COERCE(btree_impl::_ux_rebalance_foster_apply(another/*src*/, bp /*dest*/, dp->_move_count,
                                                 fence, dp->_new_pid0, dp->_new_pid0_emlsn));
                 another.set_dirty();
                 another.update_initial_and_last_lsn(redo_lsn);
@@ -763,11 +960,11 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
                 scratch_p.format_steal(lsn_t::null, another.pid(), bp.btree_root(), bp.level(),
                                     0, lsn_t::null, 0, lsn_t::null,
                                     high, chain_high, chain_high, false);
-                W_COERCE(btree_impl::_ux_rebalance_foster_apply(bp, scratch_p, dp->_move_count,
+                W_COERCE(btree_impl::_ux_rebalance_foster_apply(bp /*src*/, scratch_p /*dest*/, dp->_move_count,
                                                 fence, dp->_new_pid0, dp->_new_pid0_emlsn));
             } else {
                 // dest is also old, so we are recovering both.
-                W_COERCE(btree_impl::_ux_rebalance_foster_apply(bp, another, dp->_move_count,
+                W_COERCE(btree_impl::_ux_rebalance_foster_apply(bp /*src*/, another /*dest*/, dp->_move_count,
                                                 fence, dp->_new_pid0, dp->_new_pid0_emlsn));
                 another.set_dirty();
                 another.update_initial_and_last_lsn(redo_lsn);

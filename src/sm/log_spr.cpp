@@ -166,7 +166,6 @@ rc_t log_core::_collect_single_page_recovery_logs(
     for (lsn_t nxt = emlsn; current_lsn < nxt && nxt != lsn_t::null;) {
         logrec_t* record = NULL;
         lsn_t obtained = nxt;
-        DBGOUT1(<< "log_core::_collect_single_page_recovery_logs: fetch: " << obtained);
         rc_t rc = fetch(obtained, record, NULL, true); 
         release(); // release _partition_lock immediately
         if ((rc.is_error()) && (eEOF == rc.err_num()))
@@ -178,6 +177,8 @@ rc_t log_core::_collect_single_page_recovery_logs(
             ERROUT(<<"log_core::fetch() returned a different LSN, old log partition already"
                 " wiped?? nxt=" << nxt << ", obtained=" << obtained);
         }
+
+        DBGOUT1(<< "log_core::_collect_single_page_recovery_logs, log = " << *record);
 
         if (buffer_capacity < record->length()) {
             // This might happen when we have a really long page log chain,

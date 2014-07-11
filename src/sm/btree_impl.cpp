@@ -116,6 +116,8 @@ btree_impl::_ux_insert_core(
         }
 
         // do it in one-go
+// TODO(Restart)...        
+DBGOUT3( << "&&&& Log for regular insertion, key: " << key);        
         W_DO(log_btree_insert_nonghost(leaf, key, el));
         leaf.insert_nonghost(key, el);
         // W_DO (_sx_reserve_ghost(leaf, key, el.size()));

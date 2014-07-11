@@ -113,6 +113,12 @@ str1.construct_regularkey ("your_key", 8);\endverbatim
     bool construct_from_vec(const cvec_t &vect);    
 
     /**
+     * Copy data from cvec_t, it does not insert the type byte. This is implemented in vec_t.cpp.
+     * So, link to libcommon if you want to use this method.
+     */
+    bool copy_from_vec(const cvec_t &vect);    
+
+    /**
      *  This class does NOT throw exceptions on out-of-memory.
      *  Use this function to check if it's constructed.
      * @return whether this object is constructed. false if out-of-memory.

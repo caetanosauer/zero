@@ -763,8 +763,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 //                      only non-root pages, has parent     
                 //
                 // Exception: root page is pre-loaded into buffer pool when mounting
-                // volume,  due to this implementation, if in_doubt flag is on (dirty) for
-                // root page, the root page is in memory already.
+                // volume, although the root page could be either in_doubt or clean, but
+                // the root page is in memory already.
               
                 DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: page in hash table but not in buffer pool, page: " 
                         << shpid << ", root page: " << root_shpid);
@@ -2081,6 +2081,8 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
         cb._recovery_access = false;
         cb._used = true;
         cb._refbit_approximate = BP_INITIAL_REFCOUNT; 
+        cb._dependency_idx = 0;        // In_doubt page, no dependency
+        cb._dependency_shpid = 0;      // In_doubt page, no dependency
 
         // For a page from disk,  get _rec_lsn from the physical page 
         // (cb._rec_lsn = _buffer[idx].lsn.data())
@@ -2088,7 +2090,8 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
         // which is the current log record LSN from log scan
         cb._rec_lsn = new_lsn.data();
 
-        // Store the last write LSN in _dependency_lsn, use the same value as the first lsn
+        // Store the 'last write LSN' in _dependency_lsn (overload this field because there is
+        // no dependency for in_doubt page), use the same value as the first lsn
         cb._dependency_lsn = new_lsn.data();
 
         // Register the constructed 'key' into hash table so we can find this page cb later

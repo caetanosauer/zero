@@ -365,13 +365,18 @@ public:
                       btree_page_h*        steal_src2 = NULL,
                       int                  steal_from2 = 0,
                       int                  steal_to2 = 0,
-                      bool                 steal_src2_pid0 = false
+                      bool                 steal_src2_pid0 = false,
+                      const bool           full_logging = false,  // True if doing full logging for record movement
+                      const bool           log_src_1 = false      // Use only if full_logging = true
+                                                                  // True if log movements from src1
+                                                                  // False if log movements from src2                      
         );
 
     /// Steal records from steal_src.  Called by format_steal.
     void _steal_records(btree_page_h* steal_src,
                         int           steal_from,
-                        int           steal_to);
+                        int           steal_to,
+                        const bool    full_logging);
 
     /**
      * Called when we did a split from this page but didn't move any record to new page.
