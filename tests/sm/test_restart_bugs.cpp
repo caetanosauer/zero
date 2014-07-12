@@ -71,6 +71,8 @@ public:
 
 /* Test case with a committed insert, an aborted removal and an aborted update 
  * Currently failing because of a bug in the code, see issue ZERO-183 
+ * There are two other test cases in test_restart - MultithrdInflightC and MultithrdAbortC - that fail for the same reason.
+ * When the issue is resolved and this test case is transferred to test_restart, enable those as well.
  */
 class restart_aborted_remove : public restart_test_base
 {
@@ -105,6 +107,7 @@ TEST (RestartTestBugs, AbortedRemoveFailingC) {
     // true = simulated crash; 10 = recovery mode, m1 default serial mode
 }
 */
+
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
