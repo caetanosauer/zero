@@ -157,7 +157,9 @@ rc_t log_core::_collect_single_page_recovery_logs(
         // and we cannot trust the last write LSN due to page corruption, using the last LSN 
         // before system crash as the emlsn, therefore we need to find the actual emlsn first
 
-// TODO(Restart)... how to find the valid emlsn?  Need backward log scan and slow
+////////////////////////////////////////
+// TODO(Restart)... NYI.  How to find the valid emlsn?  Need backward log scan and slow
+////////////////////////////////////////
 
         DBGOUT1(<< "log_core::_collect_single_page_recovery_logs: search for the actual emlsn");
         W_FATAL_MSG(fcINTERNAL, << "log_core::_collect_single_page_recovery_logs - failure on failure, NYI");       

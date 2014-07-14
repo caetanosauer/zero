@@ -616,7 +616,7 @@ TEST (RestartTest, ManyCkptCrashShutdown) {
 /* Multi-thread test cases from here on */
 
 /* Test case with 2 threads, 1 committed transaction each, no checkpoints, normal shutdown */
-class restart_multithrd_normal_shutdown : public restart_test_base
+class restart_multithrd_basic : public restart_test_base
 {
 public:
     static void t1Run(stid_t pstid) {
@@ -658,16 +658,26 @@ public:
 };
 
 /* Passing */
-TEST (RestartTest, MultithrdNormal) {
+TEST (RestartTest, MultithrdBasicN) {
     test_env->empty_logdata_dir();
-    restart_multithrd_normal_shutdown context;
+    restart_multithrd_basic context;
     EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0); 
     // false = normal shutdown, 10 = recovery mode, m1 default serial mode
 }
 /**/
 
+/* Passing */
+TEST (RestartTest, MultithrdBasicC) {
+    test_env->empty_logdata_dir();
+    restart_multithrd_basic context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0); 
+    // true = crash shutdown, 10 = recovery mode, m1 default serial mode
+}
+/**/
+
+
 /* Test case with 3 threads, 1 insert&commit, 1 abort, 1 in-flight */
-class restart_multithrd_crash_inflight : public restart_test_base
+class restart_multithrd_inflight1 : public restart_test_base
 {
 public:
     static void t1Run(stid_t pstid) {
@@ -713,16 +723,26 @@ public:
 };
 
 /* Passing */
-TEST (RestartTest, MultithrdCrashWithInflight) {
+TEST (RestartTest, MultithrdInflight1N) {
     test_env->empty_logdata_dir();
-    restart_multithrd_crash_inflight context;
+    restart_multithrd_inflight1 context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0); 
+    // false = normal shutdown, 10 = recovery mode, m1 default serial mode
+}
+/**/
+
+/* Passing */ 
+TEST (RestartTest, MultithrdInflight1C) {
+    test_env->empty_logdata_dir();
+    restart_multithrd_inflight1 context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0); 
     // true = crash shutdown, 10 = recovery mode, m1 default serial mode
 }
 /**/
 
+
 /* Test case with 3 threads, 1 insert&commit, 1 aborted, 1 with two inserts, one update and commit*/
-class restart_multithrd_crash : public restart_test_base
+class restart_multithrd_abort1 : public restart_test_base
 {
 public:
     static void t1Run(stid_t pstid) {
@@ -754,6 +774,7 @@ public:
     W_DO(t3.fork());
     W_DO(t1.join());
     W_DO(t2.join());
+    W_DO(t3.join());
     return RCOK;
     }
     
@@ -771,10 +792,20 @@ public:
     }
 };
 
-/* Passing */
-TEST (RestartTest, MultithrdCrash) {
+/* Passing */ 
+TEST (RestartTest, MultithrdAbort1N) {
     test_env->empty_logdata_dir();
-    restart_multithrd_crash context;
+    restart_multithrd_abort1 context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0); 
+    // false = normal shutdown, 10 = recovery mode, m1 default serial mode
+}
+/**/
+
+
+/* Passing */ 
+TEST (RestartTest, MultithrdAbort1C) {
+    test_env->empty_logdata_dir();
+    restart_multithrd_abort1 context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0); 
     // true = crash shutdown, 10 = recovery mode, m1 default serial mode
 }
@@ -782,7 +813,7 @@ TEST (RestartTest, MultithrdCrash) {
 
 
 /* Test case with 3 threads, 1 insert&commit, 1 aborted, 1 with two inserts, one update and commit*/
-class restart_multithrd_normal_chckp : public restart_test_base
+class restart_multithrd_chckp : public restart_test_base
 {
 public:
     static void t1Run(stid_t pstid) {
@@ -843,13 +874,217 @@ public:
 };
 
 /* Passing */
-TEST (RestartTest, MultithrdNormalCheckp) {
+TEST (RestartTest, MultithrdCheckpN) {
     test_env->empty_logdata_dir();
-    restart_multithrd_normal_chckp context;
+    restart_multithrd_chckp context;
     EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0); 
-    // fals = normal shutdown, 10 = recovery mode, m1 default serial mode
+    // false = normal shutdown, 10 = recovery mode, m1 default serial mode
 }
 /**/
+
+/* Passing */  
+TEST (RestartTest, MultithrdCheckpC) {
+    test_env->empty_logdata_dir();
+    restart_multithrd_chckp context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
+    // true = crash shutdown, 10 = recovery mode, m1 default serial mode
+}
+/**/
+
+/* Test case with 3 threads:
+ * t1:	2 committed inserts, one inflight update
+ * t2:	1 aborted insert, 1 committed insert, 1 inflight remove
+ * t3:	1 inflight transaction with several inserts and one update
+ */
+class restart_multithrd_inflight2 : public restart_test_base
+{
+public:
+    static void t1Run(stid_t pstid) {
+    test_env->begin_xct();
+    test_env->btree_insert(pstid, "aa0", "data0");
+    test_env->btree_insert(pstid, "aa2", "data2");
+    test_env->commit_xct();
+    test_env->begin_xct();
+    test_env->btree_update(pstid, "aa0", "data00");
+    //test_env->btree_update(pstid, "aa1", "data1");
+    ss_m::detach_xct();
+    }
+    static void t2Run(stid_t pstid) {
+    test_env->begin_xct();
+    test_env->btree_insert(pstid, "aa3", "data3");
+    test_env->abort_xct();
+    test_env->btree_insert_and_commit(pstid, "aa4", "data4");
+    test_env->begin_xct();
+    test_env->btree_remove(pstid, "aa4");
+    ss_m::detach_xct();
+    }
+    static void t3Run(stid_t pstid) {
+    test_env->begin_xct();
+    test_env->btree_insert(pstid, "aa5", "data5");
+    test_env->btree_insert(pstid, "aa6", "data6");
+    test_env->btree_insert(pstid, "aa7", "data7");
+    test_env->btree_insert(pstid, "aa8", "data8");
+    test_env->btree_insert(pstid, "aa9", "data9");
+    test_env->btree_update(pstid, "aa7", "data77");
+    test_env->btree_insert(pstid, "aa10", "data10");
+    ss_m::detach_xct();
+    }
+
+    w_rc_t pre_shutdown(ss_m *ssm) {
+    output_durable_lsn(1);
+    W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+    output_durable_lsn(2);
+    transact_thread_t t1 (_stid, t1Run);
+    transact_thread_t t2 (_stid, t2Run);
+    transact_thread_t t3 (_stid, t3Run);
+    output_durable_lsn(3);
+    W_DO(t1.fork());
+    W_DO(t2.fork());
+    W_DO(t3.fork());
+    W_DO(t1.join());
+    W_DO(t2.join());
+    W_DO(t3.join());
+    return RCOK;
+    }
+    
+    w_rc_t post_shutdown(ss_m *) {
+    output_durable_lsn(4);
+    x_btree_scan_result s;
+    W_DO(test_env->btree_scan(_stid, s));
+    EXPECT_EQ(3, s.rownum);
+    EXPECT_EQ(std::string("aa0"), s.minkey);
+    EXPECT_EQ(std::string("aa4"), s.maxkey);
+    return RCOK;
+    }
+};
+
+/* Normal Shutdown scenario for restart_multithrd_inflight2 -- Passing */
+TEST (RestartTest, MultithrdInflightN) {
+    test_env->empty_logdata_dir();
+    restart_multithrd_inflight2 context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);
+    // false = normal shutdown, 10 = recovery mode, m1 default serial mode
+}
+/**/
+
+/* Crash shutdown scenario for restart_multithrd_inflight2 -- Failing
+ * Failing due to issue ZERO-183 (see test_restart_bugs)
+TEST (RestartTest, MultithrdInflightC) {
+    test_env->empty_logdata_dir();
+    restart_multithrd_inflight2 context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
+    // true = crash shutdown, 10 = recovery mode, m1 default serial mode
+}
+*/
+
+/* Test case with 3 threads:
+ * t1:    1 committed trans w/ 2 inserts, 1 aborted trans w/ 1 update & 1 remove
+ * t2:    1 committed trans w/ 2 inserts, 1 aborted trans w/ 1 remove & 1 update, 1 aborted trans w/ 1 update & 1 remove
+ * t3:    1 committed trans w/ 2 inserts, 1 aborted trans w/ 2 updates & 1 insert
+ */
+class restart_multithrd_abort2 : public restart_test_base
+{
+public:
+    static void t1Run(stid_t pstid) {
+        test_env->begin_xct();
+    test_env->btree_insert(pstid, "aa0", "data0");
+    test_env->btree_insert(pstid, "aa1", "data1");
+    test_env->commit_xct();
+    test_env->begin_xct();
+    test_env->btree_update(pstid, "aa0", "data00");
+    test_env->btree_remove(pstid, "aa1");
+    test_env->abort_xct();
+    }   
+    static void t2Run(stid_t pstid) {
+        test_env->begin_xct();
+    test_env->btree_insert(pstid, "aa2", "data2");
+    test_env->btree_insert(pstid, "aa3", "data3");
+    test_env->commit_xct();
+    test_env->begin_xct();
+    test_env->btree_remove(pstid, "aa2");
+    test_env->btree_update(pstid, "aa3", "data33");
+    test_env->abort_xct();
+    test_env->begin_xct();
+    test_env->btree_update(pstid, "aa2", "data22");
+    test_env->btree_remove(pstid, "aa3");
+    test_env->abort_xct();
+    }   
+    static void t3Run(stid_t pstid) {
+        test_env->begin_xct();
+    test_env->btree_insert(pstid, "aa4", "data4");
+    test_env->btree_insert(pstid, "aa5", "data5");
+    test_env->commit_xct();
+    test_env->begin_xct();
+    test_env->btree_update(pstid, "aa4", "data44");
+    test_env->btree_update(pstid, "aa5", "data55");
+    test_env->btree_insert(pstid, "aa6", "data6");
+    test_env->abort_xct();
+    }   
+
+    w_rc_t pre_shutdown(ss_m *ssm) {
+        output_durable_lsn(1);
+        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        output_durable_lsn(2);
+        transact_thread_t t1 (_stid, t1Run);
+        transact_thread_t t2 (_stid, t2Run);
+        transact_thread_t t3 (_stid, t3Run);
+        output_durable_lsn(3);
+        W_DO(t1.fork());
+        W_DO(t2.fork());
+        W_DO(t3.fork());
+        W_DO(t1.join());
+        W_DO(t2.join());
+        W_DO(t3.join());
+        return RCOK;
+    }   
+    
+    w_rc_t post_shutdown(ss_m *) {
+        output_durable_lsn(4);
+        x_btree_scan_result s;
+        W_DO(test_env->btree_scan(_stid, s));
+        EXPECT_EQ(6, s.rownum);
+        EXPECT_EQ(std::string("aa0"), s.minkey);
+        EXPECT_EQ(std::string("aa5"), s.maxkey);
+    std::string data;
+        test_env->btree_lookup_and_commit(_stid, "aa0", data);
+        EXPECT_EQ(std::string("data0"), data);
+    data = "";
+        test_env->btree_lookup_and_commit(_stid, "aa1", data);
+        EXPECT_EQ(std::string("data1"), data);
+    data = "";
+        test_env->btree_lookup_and_commit(_stid, "aa2", data);
+        EXPECT_EQ(std::string("data2"), data);
+    data = "";
+        test_env->btree_lookup_and_commit(_stid, "aa3", data);
+        EXPECT_EQ(std::string("data3"), data);
+    data = "";
+        test_env->btree_lookup_and_commit(_stid, "aa4", data);
+        EXPECT_EQ(std::string("data4"), data);
+    data = "";
+        test_env->btree_lookup_and_commit(_stid, "aa5", data);
+        EXPECT_EQ(std::string("data5"), data);
+        return RCOK;
+    }
+};
+
+/* Normal Shutdown scenario for restart_multithrd_abort2 -- Passing */
+TEST (RestartTest, MultithrdAbort2N) {
+    test_env->empty_logdata_dir();
+    restart_multithrd_abort2 context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);
+    // false = normal shutdown, 10 = recovery mode, m1 default serial mode
+    }
+/**/
+
+/* Crash Shutdown scenario for restart_multithrd_abort2 -- Failing
+ * Failing due to issue ZERO-183 (see test_restart_bugs)
+TEST (RestartTest, MultithrdAbort2C) {
+    test_env->empty_logdata_dir();
+    restart_multithrd_abort2 context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
+    // true = crash shutdown, 10 = recovery mode, m1 default serial mode
+}
+*/
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
