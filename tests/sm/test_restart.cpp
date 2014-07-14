@@ -658,7 +658,7 @@ public:
 };
 
 /* Passing */
-TEST (RestartTestBugs, MultithrdNormal) {
+TEST (RestartTest, MultithrdNormal) {
     test_env->empty_logdata_dir();
     restart_multithrd_normal_shutdown context;
     EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0); 
@@ -671,49 +671,49 @@ class restart_multithrd_crash_inflight : public restart_test_base
 {
 public:
     static void t1Run(stid_t pstid) {
-	test_env->btree_insert_and_commit(pstid, "aa1", "data1");
+    test_env->btree_insert_and_commit(pstid, "aa1", "data1");
     }
     static void t2Run(stid_t pstid) {
-	test_env->begin_xct();
-	test_env->btree_insert(pstid, "aa2", "data2");
-	test_env->abort_xct();
+    test_env->begin_xct();
+    test_env->btree_insert(pstid, "aa2", "data2");
+    test_env->abort_xct();
     }
     static void t3Run(stid_t pstid) {
-	test_env->begin_xct();
+    test_env->begin_xct();
 
-	test_env->btree_insert(pstid, "aa3", "data3");
+    test_env->btree_insert(pstid, "aa3", "data3");
 
-	ss_m::detach_xct();
+    ss_m::detach_xct();
     }
 
     w_rc_t pre_shutdown(ss_m *ssm) {
-	output_durable_lsn(1);
-	W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
-	output_durable_lsn(2);
-	transact_thread_t t1 (_stid, t1Run);
-	transact_thread_t t2 (_stid, t2Run);
-	transact_thread_t t3 (_stid, t3Run);
-	output_durable_lsn(3);
-	W_DO(t1.fork());
-	W_DO(t2.fork());
-	W_DO(t3.fork());
-	W_DO(t1.join());
-	W_DO(t2.join());
-	return RCOK;
+    output_durable_lsn(1);
+    W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+    output_durable_lsn(2);
+    transact_thread_t t1 (_stid, t1Run);
+    transact_thread_t t2 (_stid, t2Run);
+    transact_thread_t t3 (_stid, t3Run);
+    output_durable_lsn(3);
+    W_DO(t1.fork());
+    W_DO(t2.fork());
+    W_DO(t3.fork());
+    W_DO(t1.join());
+    W_DO(t2.join());
+    return RCOK;
     }
     
     w_rc_t post_shutdown(ss_m *) {
-	output_durable_lsn(4);
-	x_btree_scan_result s;
-	W_DO(test_env->btree_scan(_stid, s));
-	EXPECT_EQ(1, s.rownum);
-	EXPECT_EQ(std::string("aa1"), s.minkey);
-	return RCOK;
+    output_durable_lsn(4);
+    x_btree_scan_result s;
+    W_DO(test_env->btree_scan(_stid, s));
+    EXPECT_EQ(1, s.rownum);
+    EXPECT_EQ(std::string("aa1"), s.minkey);
+    return RCOK;
     }
 };
 
 /* Passing */
-TEST (RestartTestBugs, MultithrdCrashWithInflight) {
+TEST (RestartTest, MultithrdCrashWithInflight) {
     test_env->empty_logdata_dir();
     restart_multithrd_crash_inflight context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0); 
@@ -726,53 +726,53 @@ class restart_multithrd_crash : public restart_test_base
 {
 public:
     static void t1Run(stid_t pstid) {
-	test_env->btree_insert_and_commit(pstid, "aa1", "data1");
+    test_env->btree_insert_and_commit(pstid, "aa1", "data1");
     }
     static void t2Run(stid_t pstid) {
-	test_env->begin_xct();
-	test_env->btree_insert(pstid, "aa2", "data2");
-	test_env->abort_xct();
+    test_env->begin_xct();
+    test_env->btree_insert(pstid, "aa2", "data2");
+    test_env->abort_xct();
     }
     static void t3Run(stid_t pstid) {
-	test_env->begin_xct();
-	test_env->btree_insert(pstid, "aa3", "data3");
-	test_env->btree_insert(pstid, "aa4", "data4");
-	test_env->btree_update(pstid, "aa3", "data33");
-	test_env->commit_xct();
+    test_env->begin_xct();
+    test_env->btree_insert(pstid, "aa3", "data3");
+    test_env->btree_insert(pstid, "aa4", "data4");
+    test_env->btree_update(pstid, "aa3", "data33");
+    test_env->commit_xct();
     }
 
     w_rc_t pre_shutdown(ss_m *ssm) {
-	output_durable_lsn(1);
-	W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
-	output_durable_lsn(2);
-	transact_thread_t t1 (_stid, t1Run);
-	transact_thread_t t2 (_stid, t2Run);
-	transact_thread_t t3 (_stid, t3Run);
-	output_durable_lsn(3);
-	W_DO(t1.fork());
-	W_DO(t2.fork());
-	W_DO(t3.fork());
-	W_DO(t1.join());
-	W_DO(t2.join());
-	return RCOK;
+    output_durable_lsn(1);
+    W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+    output_durable_lsn(2);
+    transact_thread_t t1 (_stid, t1Run);
+    transact_thread_t t2 (_stid, t2Run);
+    transact_thread_t t3 (_stid, t3Run);
+    output_durable_lsn(3);
+    W_DO(t1.fork());
+    W_DO(t2.fork());
+    W_DO(t3.fork());
+    W_DO(t1.join());
+    W_DO(t2.join());
+    return RCOK;
     }
     
     w_rc_t post_shutdown(ss_m *) {
-	output_durable_lsn(4);
-	x_btree_scan_result s;
-	W_DO(test_env->btree_scan(_stid, s));
-	EXPECT_EQ(3, s.rownum);
-	EXPECT_EQ(std::string("aa1"), s.minkey);
-	EXPECT_EQ(std::string("aa4"), s.maxkey);
-	std::string data;
-	test_env->btree_lookup_and_commit(_stid, "aa3", data);
-	EXPECT_EQ(std::string("data33"), data);
-	return RCOK;
+    output_durable_lsn(4);
+    x_btree_scan_result s;
+    W_DO(test_env->btree_scan(_stid, s));
+    EXPECT_EQ(3, s.rownum);
+    EXPECT_EQ(std::string("aa1"), s.minkey);
+    EXPECT_EQ(std::string("aa4"), s.maxkey);
+    std::string data;
+    test_env->btree_lookup_and_commit(_stid, "aa3", data);
+    EXPECT_EQ(std::string("data33"), data);
+    return RCOK;
     }
 };
 
 /* Passing */
-TEST (RestartTestBugs, MultithrdCrash) {
+TEST (RestartTest, MultithrdCrash) {
     test_env->empty_logdata_dir();
     restart_multithrd_crash context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0); 
@@ -786,64 +786,64 @@ class restart_multithrd_normal_chckp : public restart_test_base
 {
 public:
     static void t1Run(stid_t pstid) {
-	test_env->btree_insert_and_commit(pstid, "aa1", "data1");
-	test_env->btree_insert_and_commit(pstid, "aa3", "data3");
-	test_env->btree_insert_and_commit(pstid, "aa2", "data2");
-	test_env->btree_insert_and_commit(pstid, "aa4", "data4");
+    test_env->btree_insert_and_commit(pstid, "aa1", "data1");
+    test_env->btree_insert_and_commit(pstid, "aa3", "data3");
+    test_env->btree_insert_and_commit(pstid, "aa2", "data2");
+    test_env->btree_insert_and_commit(pstid, "aa4", "data4");
     }
     static void t2Run(stid_t pstid) {
-	test_env->begin_xct();
-	test_env->btree_insert(pstid, "aa5", "data5");
-	test_env->btree_insert(pstid, "aa0", "data0");
-	test_env->btree_update(pstid, "aa5", "data55");
-	ss_m::checkpoint();
-	test_env->btree_update(pstid, "aa5", "data555");
-	test_env->abort_xct();
-	test_env->btree_insert_and_commit(pstid, "aa5", "data5555");
+    test_env->begin_xct();
+    test_env->btree_insert(pstid, "aa5", "data5");
+    test_env->btree_insert(pstid, "aa0", "data0");
+    test_env->btree_update(pstid, "aa5", "data55");
+    ss_m::checkpoint();
+    test_env->btree_update(pstid, "aa5", "data555");
+    test_env->abort_xct();
+    test_env->btree_insert_and_commit(pstid, "aa5", "data5555");
     }
     static void t3Run(stid_t pstid) {
-	test_env->begin_xct();
-	test_env->btree_insert(pstid, "aa6", "data6");
-	test_env->btree_insert(pstid, "aa7", "data7");
-	test_env->btree_update(pstid, "aa6", "data66");
-	test_env->commit_xct();
+    test_env->begin_xct();
+    test_env->btree_insert(pstid, "aa6", "data6");
+    test_env->btree_insert(pstid, "aa7", "data7");
+    test_env->btree_update(pstid, "aa6", "data66");
+    test_env->commit_xct();
     }
 
     w_rc_t pre_shutdown(ss_m *ssm) {
-	output_durable_lsn(1);
-	W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
-	output_durable_lsn(2);
-	transact_thread_t t1 (_stid, t1Run);
-	transact_thread_t t2 (_stid, t2Run);
-	transact_thread_t t3 (_stid, t3Run);
-	output_durable_lsn(3);
-	W_DO(t1.fork());
-	W_DO(t2.fork());
-	W_DO(t3.fork());
-	W_DO(t1.join());
-	W_DO(t2.join());
-	return RCOK;
+    output_durable_lsn(1);
+    W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+    output_durable_lsn(2);
+    transact_thread_t t1 (_stid, t1Run);
+    transact_thread_t t2 (_stid, t2Run);
+    transact_thread_t t3 (_stid, t3Run);
+    output_durable_lsn(3);
+    W_DO(t1.fork());
+    W_DO(t2.fork());
+    W_DO(t3.fork());
+    W_DO(t1.join());
+    W_DO(t2.join());
+    return RCOK;
     }
     
     w_rc_t post_shutdown(ss_m *) {
-	output_durable_lsn(4);
-	x_btree_scan_result s;
-	W_DO(test_env->btree_scan(_stid, s));
-	EXPECT_EQ(7, s.rownum);
-	EXPECT_EQ(std::string("aa1"), s.minkey);
-	EXPECT_EQ(std::string("aa7"), s.maxkey);
-	std::string data;
-	test_env->btree_lookup_and_commit(_stid, "aa5", data);
-	EXPECT_EQ(std::string("data5555"), data);
-	data = "";
-	test_env->btree_lookup_and_commit(_stid, "aa6", data);
-	EXPECT_EQ(std::string("data66"), data);
-	return RCOK;
+    output_durable_lsn(4);
+    x_btree_scan_result s;
+    W_DO(test_env->btree_scan(_stid, s));
+    EXPECT_EQ(7, s.rownum);
+    EXPECT_EQ(std::string("aa1"), s.minkey);
+    EXPECT_EQ(std::string("aa7"), s.maxkey);
+    std::string data;
+    test_env->btree_lookup_and_commit(_stid, "aa5", data);
+    EXPECT_EQ(std::string("data5555"), data);
+    data = "";
+    test_env->btree_lookup_and_commit(_stid, "aa6", data);
+    EXPECT_EQ(std::string("data66"), data);
+    return RCOK;
     }
 };
 
 /* Passing */
-TEST (RestartTestBugs, MultithrdNormalCheckp) {
+TEST (RestartTest, MultithrdNormalCheckp) {
     test_env->empty_logdata_dir();
     restart_multithrd_normal_chckp context;
     EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0); 

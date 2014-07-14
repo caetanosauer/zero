@@ -366,6 +366,99 @@ DBGOUT3( << "&&&& Log for non-leaf insertion, key: " << keystr);
         w_assert5(_is_consistent_keyorder());
     }
 }
+
+rc_t btree_page_h::init_fence_keys(
+            const bool set_low, const w_keystr_t &low,               // Low fence key
+            const bool set_high, const w_keystr_t &high,             // High key (foster)
+            const bool set_chain, const w_keystr_t &chain_high,      // Chain high fence key
+            const bool set_pid0, const shpid_t new_pid0,             // pid0, non-leaf node only
+            const bool set_emlsn, const lsn_t new_pid0_emlsn,        // emlan,  non-leaf node only
+            const bool set_foster, const shpid_t foster_pid0,        // foster page id 
+            const bool set_foster_emlsn, const lsn_t foster_emlsn)   // foster page emlsn
+{
+    // Reset the fence key and other information in an existing page, 
+    // do not change existing record data in the page and no change to number of records
+    // This is a special function currently only used by SPR REDO operation for 
+    // page rebalance and page merge when full logging is on and the target page
+    // contains data already (not an empty page)
+
+    bool update_fence = false;
+
+    if (true == set_pid0)
+    {
+        // This information is for non-leaf page only
+        page()->btree_pid0 = new_pid0;       
+    }
+    if (true == set_emlsn)
+    {
+        // This information is for non-leaf page only
+        page()->btree_pid0_emlsn = new_pid0_emlsn;        
+    }
+    if (true == set_foster)
+    {
+        // Foster page id
+        page()->btree_foster = foster_pid0;        
+    }
+    if (true == set_foster_emlsn)
+    {
+        // Foster page emlsn
+        page()->btree_foster_emlsn = foster_emlsn;
+    }
+
+    w_keystr_t low_fence;
+    w_keystr_t high_key;
+    w_keystr_t chain_fence_key;
+
+    if (false == set_low)
+    {
+        // Get the existing low fence key
+        copy_fence_low_key(low_fence);
+    }
+    else
+    {
+        // Get the low fence key from input parameter
+        low_fence.construct_from_keystr(&low, low.get_length_as_keystr());
+        update_fence = true;
+    }
+
+    if (false == set_high)
+    {
+        // Get the existing high key (foster)
+        copy_fence_high_key(high_key);
+
+    }
+    else
+    {
+        // Get the high key from input parameter    
+        high_key.construct_from_keystr(&high, high.get_length_as_keystr());
+        update_fence = true;
+    }
+
+    if (false == set_chain)
+    {
+        // Get the existing chain high fence key
+        copy_chain_fence_high_key(chain_fence_key);
+    }
+    else
+    {
+        chain_fence_key.construct_from_keystr(&chain_high, chain_high.get_length_as_keystr());
+        update_fence = true;
+    }
+
+    if (false == update_fence)
+        return RCOK;
+
+    // Prepare for updating the fence key slot
+    cvec_t fences;
+    size_t prefix_len = _pack_fence_rec(fences, low_fence, high_key, chain_fence_key, -1);
+    w_assert1(prefix_len <= low_fence.get_length_as_keystr());
+    w_assert1(prefix_len <= max_key_length);
+    page()->btree_prefix_length = (int16_t) prefix_len;
+
+    // Update the original fence key slot which is the first slot
+    return replace_fence_rec_nolog_may_defrag(low_fence, high_key, chain_fence_key, prefix_len);
+}
+
 rc_t btree_page_h::norecord_split (shpid_t foster, lsn_t foster_emlsn,
                                 const w_keystr_t& fence_high, const w_keystr_t& chain_fence_high) {
     w_assert1(compare_with_fence_low(fence_high) > 0);
@@ -1332,9 +1425,9 @@ void btree_page_h::_init(lsn_t lsn, lpid_t page_id,
     // A node contains low fence, high fence and foster key if a foster child exists
     // When a foster child or foster chain (multiple foster child nodes) exists, all
     // the foster child nodes have the same high fence key, which is the same as 
-    // the foster parent's high fence key, while the foster key is different in each
-    // foster child node and it is used to determine record boundaries (same purpose 
-    // as a regular high fence key.
+    // the foster parent's high fence key (chain_fence_high), while the foster key (high)
+    // is different in each foster child node and it is used to determine record 
+    // boundaries (same purpose  as a regular high fence key.
     // 
     // The naming in existing Express code is confusing:
     // Low - low fence key

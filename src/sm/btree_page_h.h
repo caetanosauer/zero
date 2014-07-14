@@ -378,6 +378,18 @@ public:
                         int           steal_to,
                         const bool    full_logging);
 
+    // Set the node fence keys, no change in data and other page information
+    // A special function used by SPR REDO operation for page rebalance and page merge
+    // when full logging is on (no minimum logging), set the page fence key before the
+    // fully logged actual record movements
+    rc_t init_fence_keys(const bool set_low, const w_keystr_t &low,
+                           const bool set_high, const w_keystr_t &high,
+                           const bool set_chain, const w_keystr_t &chain_fence_high,
+                           const bool set_pid0, const shpid_t new_pid0,
+                           const bool set_emlsn, const lsn_t new_pid0_emlsn,
+                           const bool set_foster, const shpid_t foster_pid0,
+                           const bool set_foster_emlsn, const lsn_t foster_emlsn);
+
     /**
      * Called when we did a split from this page but didn't move any record to new page.
      * This method can't be undone.  Use this only for REDO-only system transactions.

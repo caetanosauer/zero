@@ -174,12 +174,22 @@ btree_foster_adopt  1110100 1.0 (const btree_page_h& page, const btree_page_h& p
 
 # page is foster-parent (dest), page2 is foster_child (src) which will disappear.
 # Non-self contained log. So, page=dest, page2=src.
-btree_foster_merge  1110100 1.0 (const btree_page_h& page, const btree_page_h& page2);
+# high - high key of the destination page (foster key if exists)
+# chain_high - high fence key of all foster nodes (parent and child nodes)
+# foster_pid0 - page id of the foster page in destination page
+# foster_emlsn - emlsn of the foster page in destination page
+btree_foster_merge  1110100 1.0 (const btree_page_h& page, const btree_page_h& page2, 
+    const w_keystr_t& high, const w_keystr_t& chain_high, shpid_t foster_pid0, lsn_t foster_emlsn);
 
 # "page" is the foster-child (dest). "page2" is the foster-parent (src).
 # Non-self contained log. So, page=dest, page2=src.
+# fence - low fence key of the destination page, also foster key (high) of the source page
+# high - high key of the destination page (foster key if exists)
+# chain_high - high fence key of all foster nodes (parent and child nodes)
 btree_foster_rebalance       1110100 1.0 (const btree_page_h& page, const btree_page_h& page2,
-    int32_t move_count, const w_keystr_t& fence, shpid_t new_pid0, lsn_t pid0_emlsn);
+    int32_t move_count, const w_keystr_t& fence, shpid_t new_pid0, lsn_t pid0_emlsn, 
+    const w_keystr_t& high, const w_keystr_t& chain_high);
+
 btree_foster_rebalance_norec 1110100 1.0 (const btree_page_h& page, const btree_page_h& page2,
     const w_keystr_t& fence);
 

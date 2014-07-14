@@ -173,19 +173,25 @@ rc_t btree_impl::_ux_rebalance_foster_core(
         // this can't cause cycle as it's always right-to-left depdencency.
     }
 
+    // TODO(Restart)... see the same fence key setting code in btree_impl::_ux_rebalance_foster_apply
+    // the assumption is the fence keys in destination page has been set up already    
+    w_keystr_t high_key, chain_high_key;
+    foster_p.copy_fence_high_key(high_key);          // High (foster) is from destination page, confusing naming, we are assuming the 
+                                                     // destination (foster child) page has the proper fence and foster key setup already
+    foster_p.copy_chain_fence_high_key(chain_high_key);  // Get chain high fence from destination page, all foster nodes have the same chain_high
+
     // Note: log_ receives pages in reverse order. "page" is the foster-child (dest),
     // "page2" is the foster-parent (src) to specify redo order.
-    // This is confusing and we should refactor the current logging framework (perl script).
-    
-// TODO(Restart)...
-// The system txn, we need to store the fence key information for destination page
-// need low and high fence (foster) keys, and the chain_high key (high fence if foster chain), all from pre-balance source page
-//
-// and then the fence key information for source page
-// need high fence (foster, which is the same as low fence in destination), no change in the low fence key or the chain_high (if exists)
-
+    // fence - high (foster) key in source and low fence key in destination after rebalance
+    // high - high (foster) key in destination after rebalance
+    // chain_high - high fence key for all foster nodes
+    // In a rebalance case, there are changes in the pid0 and pid_emlsn of the destination page (foster child, non-leaf)
+    //    the new information are in the log record.
+    // No changes in the foster page id and foster emlsn of the destination page (foster child)
+    //    because the assumption is that all these information in foster child page were already setup
     rc_t ret = log_btree_foster_rebalance(foster_p /*page, destination*/, page /*page2, source*/,
-                                     move_count, mid_key, new_pid0, new_pid0_emlsn);
+                                     move_count, mid_key /* fence*/, new_pid0, new_pid0_emlsn,
+                                     high_key /*high*/, chain_high_key /*chain_high*/);
     if (ret.is_error())
         return ret;
     if (true == restart_m::use_redo_page_recovery())
@@ -212,27 +218,6 @@ rc_t btree_impl::_ux_rebalance_foster_core(
     W_DO (_ux_rebalance_foster_apply(page, foster_p, move_count, mid_key, new_pid0,
                                      new_pid0_emlsn, restart_m::use_redo_page_recovery()));
 
-    if (true == restart_m::use_redo_page_recovery())
-    {
-        // In full logging mode, we generates multiple log records:
-        // 1. A system txn log record for the destination page fence keys and foster key, commit the system txn
-        // 2. Multiple record movement log records
-        // 3. A system txn log record for the source page fence keys, commit the system txn  <-- no need ????
-
-        // This is #3:
-        sys_xct_section_t sxs(true);
-        W_DO(sxs.check_error_on_start());
-
-// TODO(Restart)...
-// The first system txn, we need to store the fence key information for source page
-// need high fence, no change in the low fence key or the chain_high (if exists)
-
-//        rc_t ret = log_btree_foster_rebalance(foster_p /*page, destination*/, page /*page2, source*/,
-//                                              move_count, mid_key, new_pid0, new_pid0_emlsn);
-
-        W_DO (sxs.end_sys_xct (ret));
-
-    }
     return RCOK;
 }
 
@@ -260,9 +245,11 @@ rc_t btree_impl::_ux_rebalance_foster_apply(
     scratch_p.fix_nonbufferpool_page(&scratch);
 
     w_keystr_t high_key, chain_high_key;
-    // The following fence keys are taken from destination page
-    // so the assumption is the fence keys in destination page has been set up already
-    scratch_p.copy_fence_high_key(high_key);             // High is from destination page, confusing naming, this is actually the fence key
+    // The following fence keys are taken from destination page,
+    // the assumption is the fence keys in destination page has been set up already
+    scratch_p.copy_fence_high_key(high_key);             // High is from destination page, confusing naming, 
+                                                         // this is actually the fence key, it should contains valid
+                                                         // information only if the destination page has a foster child
     scratch_p.copy_chain_fence_high_key(chain_high_key); // High chain fence is from destination page
 
 // TODO(Restart)...
@@ -320,14 +307,13 @@ DBGOUT3( << "&&&& btree_impl::_ux_rebalance_foster_apply, destination page low: 
     ::memcpy (&scratch, page._pp, sizeof(scratch));  // scratch is copied from foster parent page (source)
     w_keystr_t low_key;
     scratch_p.copy_fence_low_key(low_key);                // No change
-    scratch_p.copy_chain_fence_high_key(chain_high_key);  // No change
     W_DO(page.format_steal(scratch_p.lsn(),
              scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(),   // source (foster parent) is the new page
              scratch_p.pid0(), scratch_p.get_pid0_emlsn(),
              scratch_p.get_foster(), scratch_p.get_foster_emlsn(),  // No change in foster relationship
              low_key,        // low fence is the existing one
              mid_key,        // high key, confusing naming, this is actually the foster key, now is the low fence key of the destination page
-             chain_high_key, // high fence key of the foster chain, it is the existing one
+             chain_high_key, // high fence key of the foster chain, it is the existing one because we have the same chain_high for all foster pages
              false, // don't log the page_img_format record
              &scratch_p, 0, scratch_p.nrecs() - move_count, // steal from old page, only need to records which were not moved
              NULL,         // steal_src2
@@ -484,13 +470,34 @@ rc_t btree_impl::_ux_merge_foster_core(btree_page_h &page, btree_page_h &foster_
         }
     }
 
-// TODO(Restart)...
-// In full logging mode for page merge, we generates multiple log records:
-// 1. A system txn log record for the destination page fence keys, need the new high fence and chain high key (if foster chain), both are from the source page, commit the system txn
-// 2. Multiple record movement log records
-// 3. no need for another system txn log record, because we delete the source page
+    // TODO(Restart)... see the same fence key setting code in btree_impl::_ux_merge_foster_apply_parent
+    w_keystr_t high_key, chain_high_key;
+    if (foster_p.get_foster() != 0) 
+    {
+        foster_p.copy_fence_high_key(high_key);          // high key (the new foster in destination) is the high from source
+                                                         //confusing naming, it is actually the foster key
+    
+        // Source has a foster, after merge we still have a foster, use the same chain_high
+        page.copy_chain_fence_high_key(chain_high_key);  // foster chain, get the chain high fence from destination
+                                                         // because all foster nodes have the same chain high
+    }
+    else
+    {
+        page.copy_chain_fence_high_key(high_key);        // no foster after merge, high key is the same as chain high
 
-    rc_t ret = log_btree_foster_merge (page, foster_p);
+        // Source does not have a foster, after merging we do not have foster, chain-high will disappear    
+        chain_high_key.clear();   // if no foster chain pre-merge, then no more foster after merge
+    }
+
+    // High -new high (foster) key in destination after merge
+    // Chain_high - new chain_high key in destination after merge
+    // In a merge case, no change in the pid0 and pid_emlsn of the destination page (foster parent, non-leaf)
+    // Changes in the foster page id and foster emlsn of the destination page (foster parent)
+    //    the new information are taken from the source (foster child page) and stored the log record.    
+    rc_t ret = log_btree_foster_merge (page /*destination*/, foster_p /*source*/, 
+                                       high_key /*high*/, chain_high_key/*chain_high*/,
+                                       foster_p.get_foster() /* foster pid*/,
+                                       foster_p.get_foster_emlsn() /* foster emlsn*/);
     if (ret.is_error())
         return ret;
     if (true == restart_m::use_redo_page_recovery())
@@ -530,15 +537,17 @@ void btree_impl::_ux_merge_foster_apply_parent(
     // like split, use scratch block to cleanly make a new page image
     w_keystr_t low_key, high_key, chain_high_key; // fence keys after merging
     page.copy_fence_low_key(low_key);             // low fence is from the destination page, no change
-    foster_p.copy_fence_high_key(high_key);       // high key is the high from source, confusing naming, it is actually the foster key
     if (foster_p.get_foster() != 0) {
-        // if no foster after merging, chain-high will disappear
-        page.copy_chain_fence_high_key(chain_high_key);  // foster chain, get the chain high fence from destination
-                                                         // because all foster nodes have the same chain high
+        // Foster chain pre-merge, continue having foster after merge
+        foster_p.copy_fence_high_key(high_key);          // high key is the high from source, confusing naming, it is actually the foster key
+        page.copy_chain_fence_high_key(chain_high_key);  // get the chain high fence from destination
+                                                         // all foster nodes have the same chain high
     }
     else
     {
-        chain_high_key.clear();   // if no foster chain pre-merge, then no more foster after merge
+        // No foster chain pre-merge, no more foster after merge
+        page.copy_chain_fence_high_key(high_key);        // no foster after merge, high key is the same as chain_high
+        chain_high_key.clear();                          // no foster after merging, chain-high will disappear        
     }
     generic_page scratch;
     ::memcpy (&scratch, page._pp, sizeof(scratch));  // scratch is copied from the destination (foster parent page)

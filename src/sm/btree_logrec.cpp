@@ -558,12 +558,48 @@ void btree_norec_alloc_log::redo(fixable_page_h* p) {
  * This log is \b NOT-self-contained, so it assumes WOD (foster-child is deleted later).
  */
 struct btree_foster_merge_t : multi_page_log_t {
-    btree_foster_merge_t(shpid_t page2_id) : multi_page_log_t(page2_id){}
-    int size() const { return sizeof(multi_page_log_t); }
+    shpid_t         _foster_pid0;        // +4 => 4, foster page ID (destination page)
+    lsn_t           _foster_pid0_emlsn;  // +8 => 12, foster emlsn (destination page)
+    uint16_t        _high_len;           // +2 => 14, high key length    
+    uint16_t        _chain_high_len;     // +2 => 16, chain_high key length        
+    // _data contains high and chain_high
+    char            _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) - 16];
+
+    btree_foster_merge_t(shpid_t page2_id,
+        const w_keystr_t& high, const w_keystr_t& chain_high,
+        shpid_t foster_pid0, lsn_t foster_pid0_emlsn);
+    int size() const { return sizeof(multi_page_log_t) + 16 + _high_len + _chain_high_len; }
 };
 
-btree_foster_merge_log::btree_foster_merge_log (const btree_page_h& p, const btree_page_h& p2) {
-    fill(&p.pid(), p.tag(), (new (data_ssx()) btree_foster_merge_t(p2.pid().page))->size());
+btree_foster_merge_t::btree_foster_merge_t(shpid_t page2_id,
+        const w_keystr_t& high,        // high (foster) of destination
+        const w_keystr_t& chain_high,  // high fence of all foster nodes
+        shpid_t foster_pid0,           // foster page id in destination page
+        lsn_t foster_pid0_emlsn)       // foster emlsn in destination page   
+    : multi_page_log_t(page2_id) {
+
+    w_assert1(size() < logrec_t::max_data_sz);
+
+    _foster_pid0   = foster_pid0;
+    _foster_pid0_emlsn = foster_pid0_emlsn;
+
+    // Figure out the size of each data field
+    _high_len = (uint16_t)high.get_length_as_keystr();
+    _chain_high_len = (uint16_t)chain_high.get_length_as_keystr();
+
+    // Put all data fields into _data
+    high.serialize_as_keystr(_data);
+    chain_high.serialize_as_keystr(_data + _high_len);
+}
+
+btree_foster_merge_log::btree_foster_merge_log (const btree_page_h& p, // destination
+    const btree_page_h& p2,           // source
+    const w_keystr_t& high,           // high (foster) of destination
+    const w_keystr_t& chain_high,     // high fence of all foster nodes
+    shpid_t foster_pid0,              // foster page id in destination page
+    lsn_t foster_pid0_emlsn) {        // foster emlsn in destination page   
+    fill(&p.pid(), p.tag(), (new (data_ssx()) btree_foster_merge_t(p2.pid().page,
+        high, chain_high, foster_pid0, foster_pid0_emlsn))->size());
 }
 
 void btree_foster_merge_log::redo(fixable_page_h* p) {
@@ -599,15 +635,33 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
         // page containing records, but we do need to reset the high fence and chain_high
         // for the destination (foster parent) page before the actual record movements
 
+        w_keystr_t high_key, chain_high_key;
+
+        // Get fence key information from log record (dp)
+        // The _data field in log record:
+        // high key + chain_high key
+        // Use key lengh to offset into the _data field
+        high_key.construct_from_keystr(dp->_data,        // high (foster) key is for the destination page
+                                       dp->_high_len);
+        chain_high_key.construct_from_keystr(dp->_data + // chain_high is the same for all foster nodes
+                                       dp->_high_len, dp->_chain_high_len);
+
         if (recovering_dest)
         {
-            // Recover the destination (foster parent) page
-// TODO(Restart)... set the fence key using information from the log record (dp), 
-// do not initial the page because we need all the existing records
-//
-// cannot use format_steal because it initialize the page to empty
+            // Recover the destination (foster parent) page, do not initialize the foster 
+            // parent page because it contains valid records, set the new high key and 
+            // chain_high_key 
+            // The following full logging (delete/insert) should insert records from
+            // the source (foster child) page
 
-
+            // Calling init_fence_keys to set the fence keys of the source page
+            W_COERCE(bp.init_fence_keys(false /* set_low */, high_key,         // Do not reset the low fence key
+                                        true /* set_high */, high_key,         // Reset the high key of the destination page
+                                        true /* set_chain */, chain_high_key,  // Reset the chain_high
+                                        false /* set_pid0*/, 0,               // No change in destination page of non-leaf pid
+                                        false /* set_emlsn*/, lsn_t::null,    // No change in destination  page of non-leaf emlsn
+                                        true /* set_foster*/, dp->_foster_pid0,               // Destination  page foster pid
+                                        true /* set_foster_emlsn*/, dp->_foster_pid0_emlsn));  // Destination page foster emlsn
         }
         else
         {
@@ -689,34 +743,54 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
  * This log is \b NOT-self-contained, so it assumes WOD (foster-parent is written later).
  */
 struct btree_foster_rebalance_t : multi_page_log_t {
-    int32_t         _move_count;    // +4
-    shpid_t         _new_pid0;      // +4, non-leaf node only  
-    lsn_t           _new_pid0_emlsn;// +8, non-leaf node only
-    uint16_t        _fence_len;     // +2, new fence key length
-    char            _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) - 18];  // new fence key data
+    int32_t         _move_count;         // +4 => 4
+    shpid_t         _new_pid0;           // +4 => 8, non-leaf node only  
+    lsn_t           _new_pid0_emlsn;     // +8 => 16, non-leaf node only
+    uint16_t        _fence_len;          // +2 => 18, fence key length
+    uint16_t        _high_len;           // +2 => 20, high key length    
+    uint16_t        _chain_high_len;     // +2 => 22, chain_high key length        
+    
+    // _data contains fence, high and chain_high
+    char            _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) - 22];
 
     btree_foster_rebalance_t(shpid_t page2_id, int32_t move_count,
-            const w_keystr_t& fence, shpid_t new_pid0, lsn_t new_pid0_emlsn);
-    int size() const { return sizeof(multi_page_log_t) + 18 + _fence_len; }
+            const w_keystr_t& fence, shpid_t new_pid0, lsn_t new_pid0_emlsn,
+            const w_keystr_t& high, const w_keystr_t& chain_high);
+    int size() const { return sizeof(multi_page_log_t) + 22 + _fence_len + _high_len + _chain_high_len; }
 };
 
 btree_foster_rebalance_t::btree_foster_rebalance_t(shpid_t page2_id, int32_t move_count,
-        const w_keystr_t& fence, shpid_t new_pid0, lsn_t new_pid0_emlsn)
+        const w_keystr_t& fence,       // low fence of destination, also high (foster) of source
+        shpid_t new_pid0, lsn_t new_pid0_emlsn,
+        const w_keystr_t& high,        // high (foster) of destination
+        const w_keystr_t& chain_high)  // high fence of all foster nodes
     : multi_page_log_t(page2_id) {
     _move_count = move_count;
     _new_pid0   = new_pid0;
     _new_pid0_emlsn = new_pid0_emlsn;
-    _fence_len = fence.get_length_as_keystr();
+
+    w_assert1(size() < logrec_t::max_data_sz);
+
+    // Figure out the size of each data field
+    _fence_len = (uint16_t)fence.get_length_as_keystr();
+    _high_len = (uint16_t)high.get_length_as_keystr();
+    _chain_high_len = (uint16_t)chain_high.get_length_as_keystr();
+
+    // Put all data fields into _data
     fence.serialize_as_keystr(_data);
+    high.serialize_as_keystr(_data + _fence_len);
+    chain_high.serialize_as_keystr(_data + _fence_len + _high_len);
 }
 
 btree_foster_rebalance_log::btree_foster_rebalance_log (const btree_page_h& p,
-    const btree_page_h &p2, int32_t move_count, const w_keystr_t& fence, shpid_t new_pid0,
-    lsn_t new_pid0_emlsn) {
+    const btree_page_h &p2, int32_t move_count, const w_keystr_t& fence,  // low fence of destination, also high (foster) of source
+    shpid_t new_pid0, lsn_t new_pid0_emlsn,
+    const w_keystr_t& high,          // high (foster) of destination
+    const w_keystr_t& chain_high) {  // high fence of all foster nodes
     // p - destination
     // p2 - source
     fill(&p.pid(), p.tag(), (new (data_ssx()) btree_foster_rebalance_t(p2.pid().page,
-        move_count, fence, new_pid0, new_pid0_emlsn))->size());
+        move_count, fence, new_pid0, new_pid0_emlsn, high, chain_high))->size());
 }
 
 void btree_foster_rebalance_log::redo(fixable_page_h* p) {
@@ -805,25 +879,30 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
         // If using page driven REDO recovery, use full logging for b-tree 
         // rebalance operation, the rebalance log record (system txn) during REDO
         // occurs before all the actual record move log records
-
-        // If called by the regular SPR due to page corruption, not from system recovery
+        //
+        // Even if called by the regular SPR due to page corruption (not from system recovery)
         // because the page driven flag was on, full logging was taken for page rebalance
-        // and merge operations, we cannot use the optimized code path for regular SPR either
+        // and merge operations, we cannot use the minimum logging code path for regular SPR either
+
+        w_keystr_t high_key, chain_high_key;
+
+        // Get fence key information from log record (dp)
+        // The _data field in log record:
+        // fence key + high key + chain_high key
+        // Use key lengh to offset into the _data field
+        fence.construct_from_keystr(dp->_data, dp->_fence_len);    // fence key is the low fence of destination page
+                                                                   // also the high (foster) of the source page
+        high_key.construct_from_keystr(dp->_data + dp->_fence_len, // high (foster) key is for the destination page
+                                       dp->_high_len);
+        chain_high_key.construct_from_keystr(dp->_data + dp->_fence_len + // chain_high is the same for all foster nodes
+                                       dp->_high_len, dp->_chain_high_len);
 
         if (recovering_dest)
         {
             // Recover the destination (foster child) page, regardless whether the foster parent has been: 
             // recovered (no WOD) - parent_page.lsn() >=  redo_lsn
             // not recovered (WOD) - parent_page.lsn() <  redo_lsn
-
-            // In a page split operation (this one), the assumption is the destination page is a new page
-            // therefore it is safe initialize the destination page (foster child) to an empty page
-            // The following full logging (delete/insert) whould insert records into the empty destination  page
-            // If there are existing records in the destination page, the initialization would erase them
-            
-// TODO(Restart)...            
-            DBGOUT3( << "&&&& btree_foster_rebalance_log: recover foster child page, initialize it to an empty page, foster child pid: " 
-                     << bp.pid() << ", number of records: " << bp.nrecs());
+           
             if (bp.is_leaf())
             {
                 DBGOUT3( << "&&&& Foster child page is a leaf page");
@@ -832,77 +911,53 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
             {
                 DBGOUT3( << "&&&& Foster child page is a non-leaf page");            
             }
+// TODO(Restart)... 
+            DBGOUT3( << "&&&& btree_foster_rebalance_log: recover foster child page, initialize it to an empty page, foster child pid: " 
+                     << bp.pid() << ", number of records (should be zero): " << bp.nrecs());
 
-            w_keystr_t high_key, chain_high_key;
+            // In a page split operation (this one), the assumption is the destination page is a 
+            // newly allocated  page, therefore it is safe initialize the destination page (foster child) to 
+            // an empty page.
+            // The following full logging (delete/insert) whould insert records into the empty destination  page
+            // If there are existing records in the destination page, the initialization would erase them
 
-/**
-            if (0 < bp.nrecs())
-            {
-                // Destination page (foster child) had records from disk image, use the low and high fence keys from existing page
-                bp.copy_fence_high_key(high_key);               // high
-                bp.copy_chain_fence_high_key(chain_high_key);   // chain
-                fence.clear();
-                bp.copy_fence_low_key(fence);                   // low
-
-                W_COERCE(bp.format_steal(bp.lsn(), bp.pid(),
-                                bp.btree_root(), bp.level(),
-                                (bp.is_leaf())? 0 : dp->_new_pid0,                 // leaf has no pid0
-                                (bp.is_leaf())? lsn_t::null : dp->_new_pid0_emlsn, // leaf has no emlsn
-                                bp.get_foster(), bp.get_foster_emlsn(),
-                                fence, high_key, chain_high_key,
-                                false // don't log the page_img_format record
-                                ));
-            }
-            else
-**/            
-            {
-                // Get fence key information from log record (dp)
-
-// TODO(Restart...
-
-                // bp.copy_fence_high_key(high_key);               // high, nothing
-                //bp.copy_chain_fence_high_key(chain_high_key);   // chain, nothing                
-                fence.clear();        
-// The high/low fence keys are not correct?
-// See how 'btree_foster_rebalance_t' log record was generated, might need to add more info from
-// pre-recover foster parent, we already have the mid_key (use as low), might also need
-// the high and chain keys in log record, mist fit into logrec_t::max_data_sz
-// See btree_impl::_ux_rebalance_foster_core for log_btree_foster_rebalance(foster_p, page, move_count, mid_key, new_pid0, new_pid0_emlsn);
-// if taken from 'dp', it is same as incoming key, compare failed
-                fence.construct_from_keystr(dp->_data, dp->_fence_len);  // 'dp->_data' is the fence key for foster child
-                                                                         // use it as low
-
-                // Calling format_steal to initialize the page only, no stealing
-                W_COERCE(bp.format_steal(bp.lsn(), bp.pid(),
-                                bp.btree_root(), bp.level(),
-                                (bp.is_leaf())? 0 : dp->_new_pid0,                 // leaf has no pid0
-                                (bp.is_leaf())? lsn_t::null : dp->_new_pid0_emlsn, // leaf has no emlsn
-                                bp.get_foster(), bp.get_foster_emlsn(),    // if destination (foster child) has foster child itself (foster chain)
-                                fence,            // Low fence of the destination page
-                                high_key,         // High fence of the destination
-                                chain_high_key,   // Chain_high_fence if exists (foster chain)
-                                false,            // don't log the page_img_format record
-                                NULL, 0, 0,       // no steal from src_1
-                                NULL, 0, 0,       // no steal from src_2
-                                false,            // src_2
-                                false,            // No full logging
-                                false             // No logging
-                                ));
-            }           
+            // Calling format_steal to initialize the destination page, no stealing
+            W_COERCE(bp.format_steal(bp.lsn(), bp.pid(),
+                            bp.btree_root(), bp.level(),
+                            (bp.is_leaf())? 0 : dp->_new_pid0,                 // leaf has no pid0
+                            (bp.is_leaf())? lsn_t::null : dp->_new_pid0_emlsn, // leaf has no emlsn
+                            bp.get_foster(), bp.get_foster_emlsn(),    // if destination (foster child) has foster child itself (foster chain)
+                            fence,            // Low fence of the destination page
+                            high_key,         // High fence of the destination, valid only if three is a foster chain
+                            chain_high_key,   // Chain_high_fence
+                            false,            // don't log the page_img_format record
+                            NULL, 0, 0,       // no steal from src_1
+                            NULL, 0, 0,       // no steal from src_2
+                            false,            // src_2
+                            false,            // No full logging
+                            false             // No logging
+                            ));
         }
         else
         {
-            // Recover the foster parent page, do not initialize the foster parent page 
-            // but need to set the new high fence key, and chain_high_key if exist
-            // Note if there were a foster chain before the page-balance, then no change in the chain_high_key
-            // If the destination page is the only foster child, then the original source high is the chain_high_key          
-            // The following full logging (delete/insert) should remove records from the foster parent page
-            
+            // Recover the source (foster parent) page, do not initialize the foster parent page because 
+            // it contains valid records, set the new high key and chain_high_key 
+            // The following full logging (delete/insert) should remove records from 
+            // the source (foster parent) page
+
+// TODO(Restart)...             
             DBGOUT3( << "&&&& btree_foster_rebalance_log: recover foster parent page, do not initialize the page, foster parent pid: " << bp.pid());
             DBGOUT3( << "&&&& Page had " << bp.nrecs() << " records");       
 
-// TODO(Restart)...  cannot use format_steal because it initialize the page to empty
-
+            // Calling init_fence_keys to set the fence keys of the source page
+            W_COERCE(bp.init_fence_keys(false /* set_low */, fence,                // Do not reset the low fence key
+                                        true /* set_high */, fence,                // Reset the high key of the source page to fence key
+                                        true /* set_chain */, chain_high_key,      // Reset the chain_high although it should be the same
+                                        false /* set_pid0*/, 0,                   // No change in source page of non-leaf pid
+                                        false /* set_emlsn*/, lsn_t::null,        // No change in source page of non-leaf emlsn
+                                        false /* set_foster*/, 0,                  // No change in source page of foster pid
+                                        false /* set_foster_emlsn*/, lsn_t::null)); // No change in source page of foster emlsn
+                                        
         }
 
         // Return now to skip the optimal code path
