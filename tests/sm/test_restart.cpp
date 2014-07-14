@@ -891,6 +891,11 @@ TEST (RestartTest, MultithrdCheckpC) {
 }
 /**/
 
+/* Test case with 3 threads:
+ * t1:	2 committed inserts, one inflight update
+ * t2:	1 aborted insert, 1 committed insert, 1 inflight remove
+ * t3:	1 inflight transaction with several inserts and one update
+ */
 class restart_multithrd_inflight2 : public restart_test_base
 {
 public:
@@ -953,7 +958,7 @@ public:
     }
 };
 
-/* Passing */
+/* Normal Shutdown scenario for restart_multithrd_inflight2 -- Passing */
 TEST (RestartTest, MultithrdInflightN) {
     test_env->empty_logdata_dir();
     restart_multithrd_inflight2 context;
@@ -962,7 +967,8 @@ TEST (RestartTest, MultithrdInflightN) {
 }
 /**/
 
-/* Failing due to issue ZERO-183 (see test_restart_bugs)
+/* Crash shutdown scenario for restart_multithrd_inflight2 -- Failing
+ * Failing due to issue ZERO-183 (see test_restart_bugs)
 TEST (RestartTest, MultithrdInflightC) {
     test_env->empty_logdata_dir();
     restart_multithrd_inflight2 context;
@@ -971,6 +977,11 @@ TEST (RestartTest, MultithrdInflightC) {
 }
 */
 
+/* Test case with 3 threads:
+ * t1:	1 committed trans w/ 2 inserts, 1 aborted trans w/ 1 update & 1 remove
+ * t2:	1 committed trans w/ 2 inserts, 1 aborted trans w/ 1 remove & 1 update, 1 aborted trans w/ 1 update & 1 remove
+ * t3:	1 committed trans w/ 2 inserts, 1 aborted trans w/ 2 updates & 1 insert
+ */
 class restart_multithrd_abort2 : public restart_test_base
 {
 public:
@@ -1056,7 +1067,7 @@ public:
     }
 };
 
-/* Passing */
+/* Normal Shutdown scenario for restart_multithrd_abort2 -- Passing */
 TEST (RestartTest, MultithrdAbort2N) {
     test_env->empty_logdata_dir();
     restart_multithrd_abort2 context;
@@ -1065,7 +1076,8 @@ TEST (RestartTest, MultithrdAbort2N) {
     }
 /**/
 
-/* Failing due to issue ZERO-183 (see test_restart_bugs)
+/* Crash Shutdown scenario for restart_multithrd_abort2 -- Failing
+ * Failing due to issue ZERO-183 (see test_restart_bugs)
 TEST (RestartTest, MultithrdAbort2C) {
     test_env->empty_logdata_dir();
     restart_multithrd_abort2 context;
