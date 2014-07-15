@@ -305,10 +305,8 @@ public:
 
         W_DO(test_env->begin_xct());                                     // in-flight
         W_DO(test_env->btree_insert(_stid, "aa5", "data5"));
-
-        // Commented out, same issue as the previous test 'restart_complex_in_flight_crash'
-//        W_DO(test_env->btree_insert(_stid, "aa2", "data2"));
-//        W_DO(test_env->btree_insert(_stid, "aa7", "data7"));
+        W_DO(test_env->btree_insert(_stid, "aa2", "data2"));
+        W_DO(test_env->btree_insert(_stid, "aa7", "data7"));
 
         W_DO(ss_m::checkpoint()); 
 
@@ -377,9 +375,7 @@ public:
     }
 };
 
-/* Multiple issues when there are multiple pages of data in one in-flight transaction */
-/* 1. During REDO, multi-pages, WOD is not followed for SPR */
-/* 2. Same issue as previous tests when the in-flight txn has more than one operations */
+/* During REDO, multi-pages, WOD is not followed for SPR */
 /* Not passing *
 TEST (RestartTest, MultiPageInFlightCrash) {
     test_env->empty_logdata_dir();

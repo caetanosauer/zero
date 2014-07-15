@@ -2629,10 +2629,7 @@ xct_t::rollback(const lsn_t &save_pt)
     // undo_nxt is the lsn of last recovery log for this txn
     lsn_t nxt = _undo_nxt;
 
-// TODO(Restart)...
-DBGOUT1(<<"!!!!!!!! Initial rollback, undo_nxt: " << nxt);
-
-
+    DBGOUT3(<<"Initial rollback, undo_nxt: " << nxt);
     LOGTRACE( << setiosflags(ios::right) << nxt
               << resetiosflags(ios::right) 
               << " Roll back " << " " << tid()
@@ -2673,9 +2670,6 @@ DBGOUT1(<<"!!!!!!!! Initial rollback, undo_nxt: " << nxt);
         if (r.is_undo()) 
         {
            w_assert1(nxt == r.lsn_ck());
-// TODO(Restart)...
-DBGOUT1(<<"!!!!!!!! Rollback, log record is undoable, lsn = " << nxt);
-
             // r is undoable 
             w_assert1(!r.is_single_sys_xct());
             w_assert1(!r.is_multi_page()); // All multi-page logs are SSX, so no UNDO.
@@ -2720,8 +2714,7 @@ DBGOUT1(<<"!!!!!!!! Rollback, log record is undoable, lsn = " << nxt);
                 w_assert1(r.is_undoable_clr());
                 LOGTRACE2( << "U: compensating to " << r.undo_nxt() );
                 nxt = r.undo_nxt();
-// TODO(Restart)...
-DBGOUT1(<<"!!!!!!!! Rollback, log record is compensation, undo_nxt: " << nxt);
+                DBGOUT1(<<"Rollback, log record is compensation, undo_nxt: " << nxt);
             }
             else
             {
@@ -2729,8 +2722,7 @@ DBGOUT1(<<"!!!!!!!! Rollback, log record is compensation, undo_nxt: " << nxt);
                 // previous logrec of this xct
                 LOGTRACE2( << "U: undoing to " << r.xid_prev() );
                 nxt = r.xid_prev();
-// TODO(Restart)...
-DBGOUT1(<<"!!!!!!!! Rollback, log record is not compensation, xid_prev: " << nxt);
+                DBGOUT1(<<"Rollback, log record is not compensation, xid_prev: " << nxt);
             }
         } 
         else  if (r.is_cpsn())  

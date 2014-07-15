@@ -42,8 +42,11 @@ public:
 
         // Start a transaction but no commit, normal shutdown
         W_DO(test_env->begin_xct());
-        W_DO(test_env->btree_insert(_stid, "aa2", "data2"));
         W_DO(test_env->btree_insert(_stid, "aa5", "data5"));
+        W_DO(test_env->btree_insert(_stid, "aa2", "data2"));
+        W_DO(test_env->btree_insert(_stid, "aa7", "data7"));
+        W_DO(test_env->btree_insert(_stid, "aa0", "data0"));
+        W_DO(test_env->btree_insert(_stid, "aa9", "data9"));
         output_durable_lsn(3);
         return RCOK;
     }
@@ -59,14 +62,14 @@ public:
     }
 };
 
-/* Disabled because it's failing
- * TEST (RestartTestBugs, InflightCrashShutdownFailing) {
- *   test_env->empty_logdata_dir();
- *   restart_complic_inflight_crash_shutdown context;
- *   EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);  // true = simulated crash
- *                                                                // 10 = recovery mode, m1 default serial mode
- * } 
- */
+/* Passing */
+TEST (RestartTestBugs, InflightCrashShutdownFailing) {
+    test_env->empty_logdata_dir();
+    restart_complic_inflight_crash_shutdown context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);  // true = simulated crash
+                                                                 // 10 = recovery mode, m1 default serial mode
+} 
+/**/
 
 
 /* Test case with a committed insert, an aborted removal and an aborted update 
