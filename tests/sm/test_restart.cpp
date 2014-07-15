@@ -967,15 +967,15 @@ TEST (RestartTest, MultithrdInflightN) {
 }
 /**/
 
-/* Crash shutdown scenario for restart_multithrd_inflight2 -- Failing
- * Failing due to issue ZERO-183 (see test_restart_bugs)
+/* Crash shutdown scenario for restart_multithrd_inflight2 -- Failing 
+* Failing due to issue ZERO-183 (see test_restart_bugs) *
 TEST (RestartTest, MultithrdInflightC) {
     test_env->empty_logdata_dir();
     restart_multithrd_inflight2 context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
     // true = crash shutdown, 10 = recovery mode, m1 default serial mode
 }
-*/
+**/
 
 /* Test case with 3 threads:
  * t1:    1 committed trans w/ 2 inserts, 1 aborted trans w/ 1 update & 1 remove
@@ -1077,14 +1077,14 @@ TEST (RestartTest, MultithrdAbort2N) {
 /**/
 
 /* Crash Shutdown scenario for restart_multithrd_abort2 -- Failing
- * Failing due to issue ZERO-183 (see test_restart_bugs)
+ * Failing due to issue ZERO-183 (see test_restart_bugs) *
 TEST (RestartTest, MultithrdAbort2C) {
     test_env->empty_logdata_dir();
     restart_multithrd_abort2 context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
     // true = crash shutdown, 10 = recovery mode, m1 default serial mode
 }
-*/
+**/
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

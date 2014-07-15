@@ -1102,15 +1102,16 @@ restart_m::analysis_pass(
 
         case logrec_t::t_xct_freeing_space:
 
-            // Normally if the txn state in 'xct_freeing_space' or 'xct_committing',
-            // something went wrong in the commit process, need to abort the txn
+            // A t_xct_freeing_space log record is generated when entering 
+            // txn state 'xct_freeing_space' which is before txn commit or abort.
+            // If system crashed before the final txn commit or abort occurred,
+            // the recovery log does not know whether the txn should be 
+            // committed or abort, do not mark the txn to xct_ended when we 
+            // see this log record, so if we do not see another log record to indicate
+            // txn commit or abort, the txn will be treated as a doomed txn and 
+            // rollback during UNDO phase
 
-            // A t_xct_freeing_space log record is generated when the txn
-            // entered 'xct_freeing_space' state
-            // Because we are in Recovery, mark the txn to 'ended' state
-
-            if (xct_t::xct_ended != xd->state())
-                xd->change_state(xct_t::xct_ended);
+            w_assert1(xct_t::xct_ended != xd->state());
             break;
 
         case logrec_t::t_xct_end_group: 
@@ -1146,9 +1147,22 @@ restart_m::analysis_pass(
             }
             break;
 
-        case logrec_t::t_xct_abort:
+        case logrec_t::t_xct_abort:           
+            // Transaction aborted before system crash, need to 
+            // undo the entire transaction.  Compensation operations
+            // were executed for the abort operation.
+            // The compensation log records contain LSN only and will
+            // be skipped in the REDO phase (compensation not applied).
+            
+            // Leave the transaction as doomed transaction so we can
+            // UNDO the transaction.  Do not change the transaction state
+            // (!= xct_ended) so it will be treated as a doomed transaction
+            // and perform the rollback operation during UNDO phase
+            
+            w_assert1(xct_t::xct_ended != xd->state());
+            break;
+
         case logrec_t::t_xct_end:
-            //  Remove xct from xct tab
             if ((xd->state() == xct_t::xct_freeing_space) ||
                 (xd->state() == xct_t::xct_aborting))
             {
@@ -1159,7 +1173,8 @@ restart_m::analysis_pass(
                 W_COERCE( lm->unlock_duration() );
                 me()->detach_xct(xd);        
             }
-            // Log record indicated this txn has ended or aborted already
+
+            // Log record indicated this txn has ended
             // It is safe to remove it from transaction table
             if (xct_t::xct_ended != xd->state())
                 xd->change_state(xct_t::xct_ended);
@@ -1865,6 +1880,20 @@ restart_m::redo_log_pass(
                     }
                 }
             }
+            if ( r.is_cpsn() ) 
+            {
+                // Compensate log record in recovery log, they are from aborted/rollback transaction
+                // before system crash, these transactions have been rollbacked before the system crash.
+                // Because the compensation log records do not have sufficient information to perform
+                // REDO the rollback operation, skip the REDO of these compensation log records and
+                // relying on UNDO to rollback these aborted transactions.
+                // Note this is for user aborted transactions (existing compensation log records), it is
+                // different from in-flight transaction.
+
+                // Cannot be a multi-page log record
+                w_assert1(false == r.is_multi_page());
+                DBGOUT3(<<"redo - existing compensation log record contains LSN only, skip in REDO phase");               
+            }
             DBGOUT3( << setiosflags(ios::right) << lsn
                           << resetiosflags(ios::right) << " R: " 
                           << (redone ? " redone" : " skipped") );
@@ -1930,8 +1959,7 @@ void restart_m::_redo_log_with_pid(
                                 // it does not exist (it was never flushed 
                                 // before the crash
 
-    // 'is_redo()' covers regular transaction, compensation transaction
-    // and system transaction (if any)
+    // 'is_redo()' covers regular transaction but not compensation transaction
     w_assert1(r.is_redo());
     w_assert1(r.shpid());
 
