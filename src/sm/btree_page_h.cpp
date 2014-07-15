@@ -456,6 +456,8 @@ rc_t btree_page_h::init_fence_keys(
     page()->btree_prefix_length = (int16_t) prefix_len;
 
     // Update the original fence key slot which is the first slot
+    DBGOUT3( << "btree_page_h::init_fence_keys - new fence keys.  Low: " 
+             << low_fence << ", high key: " << high_key << ", chain high: " << chain_fence_key);    
     return replace_fence_rec_nolog_may_defrag(low_fence, high_key, chain_fence_key, prefix_len);
 }
 
