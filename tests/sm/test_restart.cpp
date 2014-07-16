@@ -61,6 +61,45 @@ w_rc_t populate_records(stid_t &stid, bool fCheckPoint, bool fInflight, char key
 w_rc_t populate_records(stid_t stid, bool fCheckPoint) {
     return populate_records(stid, fCheckPoint, false, '\0');
 }
+
+w_rc_t delete_records(stid_t &stid, bool fCheckPoint, bool fInflight, char keySuffix) {
+    const bool isMultiThrd = (keySuffix!='\0');
+    const int key_size = isMultiThrd ? 6 : 5; // When this is used in multi-threaded tests, each thread needs to pass a different keySuffix to prevent duplicate records
+    char key_str[key_size];
+    key_str[0] = 'k';
+    key_str[1] = 'e';
+    key_str[2] = 'y';
+
+    // Delete every second record, will lead to page merge
+    // One big transaction with multiple deletions
+    W_DO(test_env->begin_xct());
+    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
+    for (int i=0; i < recordCount; i+=2) {
+	key_str[3] = ('0' + ((i / 10) % 10));
+	key_str[4] = ('0' + (i % 10));
+	if(isMultiThrd) key_str[5] = keySuffix;
+	if (true == fCheckPoint && i == recordCount/2) {
+	    // Take one checkpoint halfway through deletions
+	    W_DO(ss_m::checkpoint());
+	}
+	W_DO(test_env->btree_remove(stid, key_str));
+    }
+    if (true == fInflight) ss_m::detach_xct();
+    else W_DO(test_env->commit_xct());
+    return RCOK;
+}
+
+std::string getMaxKeyString(char maxSuffix) {
+    const int recordsPerThrd = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
+    char a = '0' + (recordsPerThrd-1) / 10;
+    char b = '0' + (recordsPerThrd-1) % 10;
+    char maxkeystr[10] = {"key000"};
+    maxkeystr[3] = a;
+    maxkeystr[4] = b;
+    if (maxSuffix != '\0')
+	maxkeystr[5] = maxSuffix;
+    return std::string(maxkeystr);
+}
 // Test case without any operation, start and normal shutdown SM
 class restart_empty : public restart_test_base  {
 public:
@@ -1259,12 +1298,12 @@ TEST (RestartTest, MultithrdInflightChckp1C) {
 }
 */
 
-/* Test case with 3 threads, each with more than one page of committed inserts, no checkpoints */ 
+/// Test case with 3 threads, each with a committed transaction containing a large amount of inserts, no checkpoints
 class restart_multithrd_ldata1 : public restart_test_base
 {
 public:
     static void t1Run(stid_t pstid) {
-	populate_records(pstid, false, false, '1');
+	populate_records(pstid, false, false, '1'); // Populate records without checkpoint, commit, keySuffix '1'
     }
     static void t2Run(stid_t pstid) {
         populate_records(pstid, false, false, '2');
@@ -1297,12 +1336,7 @@ public:
         const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 15;
         EXPECT_EQ (recordCount, s.rownum); 
 	EXPECT_EQ(std::string("key001"), s.minkey);
-	char a = '0' + (recordCount/3-1) / 10;
-	char b = '0' + (recordCount/3-1) % 10;
-	char maxkeystr[10] = {"key003"};
-	maxkeystr[3] = a;
-	maxkeystr[4] = b;
-	EXPECT_EQ(std::string(maxkeystr), s.maxkey);
+	EXPECT_EQ(getMaxKeyString('3'), s.maxkey);
 	return RCOK;
     }
 };
@@ -1322,6 +1356,249 @@ TEST (RestartTest, MultithrdLData1C) {
     // true = crash shutdown, 10 = recovery mode, m1 default serial mode
 }
 /**/
+
+/// Test case with 3 threads, each with a committed transaction containing a large amount of inserts, 2 checkpoints
+class restart_multithrd_ldata2 : public restart_test_base
+{
+public:
+    static void t1Run(stid_t pstid) {
+	populate_records(pstid, true, false, '1'); // Populate records with checkpoint, commit, keySuffix '1'
+    }
+    static void t2Run(stid_t pstid) {
+	populate_records(pstid, false, false, '2'); // Populate records without checkpoint, commit, keySuffix '2'
+    }
+    static void t3Run(stid_t pstid) {
+	populate_records(pstid, true, false, '3');
+    }
+    
+    w_rc_t pre_shutdown(ss_m *ssm) {
+        output_durable_lsn(1);
+        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        output_durable_lsn(2);
+        transact_thread_t t1 (_stid, t1Run);
+        transact_thread_t t2 (_stid, t2Run);
+        transact_thread_t t3 (_stid, t3Run);
+        output_durable_lsn(3);
+        W_DO(t1.fork());
+        W_DO(t2.fork());
+        W_DO(t3.fork());
+        W_DO(t1.join());
+        W_DO(t2.join());
+        W_DO(t3.join());
+        return RCOK;
+    }
+    
+    w_rc_t post_shutdown(ss_m *) {
+	output_durable_lsn(4);
+        x_btree_scan_result s;
+        W_DO(test_env->btree_scan(_stid, s));
+        const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 15;
+        EXPECT_EQ (recordCount, s.rownum); 
+	EXPECT_EQ(std::string("key001"), s.minkey);
+	EXPECT_EQ(getMaxKeyString('3'), s.maxkey);
+	return RCOK;
+    }
+};
+
+/* Passing */
+TEST (RestartTest, MultithrdLData2N) {
+    test_env->empty_logdata_dir();
+    restart_multithrd_ldata2 context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);
+    // false = normal shutdown, 10 = recovery mode, m1 default serial mode
+}
+/* Passing */
+TEST (RestartTest, MultithrdLData2C) {
+    test_env->empty_logdata_dir();
+    restart_multithrd_ldata2 context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
+    // true = crash shutdown, 10 = recovery mode, m1 default serial mode
+}
+/**/
+
+
+/// Test case with 3 threads, each with a transaction containing a large amount of inserts, 2 inflight, 1 committed, no checkpoints
+class restart_multithrd_ldata3 : public restart_test_base
+{
+public:
+    static void t1Run(stid_t pstid) {
+	populate_records(pstid, false, true, '1'); // Populate records without checkpoint, don't commit, keySuffix '1'
+    }
+    static void t2Run(stid_t pstid) {
+	populate_records(pstid, false, false, '2'); // Populate records without checkpoint, don't commit, keySuffix '2'
+    }
+    static void t3Run(stid_t pstid) {
+	populate_records(pstid, false, true, '3');
+    }
+    
+    w_rc_t pre_shutdown(ss_m *ssm) {
+        output_durable_lsn(1);
+        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        output_durable_lsn(2);
+        transact_thread_t t1 (_stid, t1Run);
+        transact_thread_t t2 (_stid, t2Run);
+        transact_thread_t t3 (_stid, t3Run);
+        output_durable_lsn(3);
+        W_DO(t1.fork());
+        W_DO(t2.fork());
+        W_DO(t3.fork());
+        W_DO(t1.join());
+        W_DO(t2.join());
+        W_DO(t3.join());
+        return RCOK;
+    }
+    
+    w_rc_t post_shutdown(ss_m *) {
+	output_durable_lsn(4);
+        x_btree_scan_result s;
+        W_DO(test_env->btree_scan(_stid, s));
+        const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
+        EXPECT_EQ (recordCount, s.rownum); 
+	EXPECT_EQ(std::string("key002"), s.minkey);
+	EXPECT_EQ(getMaxKeyString('2'), s.maxkey);
+	return RCOK;
+    }
+};
+
+/* Passing */
+TEST (RestartTest, MultithrdLData3N) {
+    test_env->empty_logdata_dir();
+    restart_multithrd_ldata3 context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);
+    // false = normal shutdown, 10 = recovery mode, m1 default serial mode
+}
+/* Passing 
+TEST (RestartTest, MultithrdLData3C) {
+    test_env->empty_logdata_dir();
+    restart_multithrd_ldata3 context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
+    // true = crash shutdown, 10 = recovery mode, m1 default serial mode
+}
+*/
+
+/// Test case with 3 threads, each with a transaction containing a large amount of inserts, 2 inflight, 1 committed, 2 checkpoints
+class restart_multithrd_ldata4 : public restart_test_base
+{
+public:
+    static void t1Run(stid_t pstid) {
+	populate_records(pstid, true, true, '1'); // Populate records with checkpoint, don't commit, keySuffix '1'
+    }
+    static void t2Run(stid_t pstid) {
+	populate_records(pstid, true, false, '2'); // Populate records with checkpoint, commit, keySuffix '2'
+    }
+    static void t3Run(stid_t pstid) {
+	populate_records(pstid, false, true, '3'); // Populate reacords without checkpoint, don't commit, keySuffix '3'
+    }
+    
+    w_rc_t pre_shutdown(ss_m *ssm) {
+        output_durable_lsn(1);
+        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        output_durable_lsn(2);
+        transact_thread_t t1 (_stid, t1Run);
+        transact_thread_t t2 (_stid, t2Run);
+        transact_thread_t t3 (_stid, t3Run);
+        output_durable_lsn(3);
+        W_DO(t1.fork());
+        W_DO(t2.fork());
+        W_DO(t3.fork());
+        W_DO(t1.join());
+        W_DO(t2.join());
+        W_DO(t3.join());
+        return RCOK;
+    }
+    
+    w_rc_t post_shutdown(ss_m *) {
+	output_durable_lsn(4);
+        x_btree_scan_result s;
+        W_DO(test_env->btree_scan(_stid, s));
+        const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
+        EXPECT_EQ (recordCount, s.rownum); 
+	EXPECT_EQ(std::string("key002"), s.minkey);
+	EXPECT_EQ(getMaxKeyString('2'), s.maxkey);
+	return RCOK;
+    }
+};
+
+/* Passing */
+TEST (RestartTest, MultithrdLData4N) {
+    test_env->empty_logdata_dir();
+    restart_multithrd_ldata4 context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);
+    // false = normal shutdown, 10 = recovery mode, m1 default serial mode
+}
+/* Passing 
+TEST (RestartTest, MultithrdLData4C) {
+    test_env->empty_logdata_dir();
+    restart_multithrd_ldata4 context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
+    // true = crash shutdown, 10 = recovery mode, m1 default serial mode
+}
+*/
+
+/// Test case with 3 threads, each with a transaction containing a large amount of inserts, 2 inflight, 1 committed, 2 checkpoints
+class restart_multithrd_ldata5 : public restart_test_base
+{
+public:
+    static void t1Run(stid_t pstid) {
+	populate_records(pstid, true, true, '1'); // Populate records w/ checkpoint, don't commit, keySuffix '1'
+    }
+    static void t2Run(stid_t pstid) {
+	populate_records(pstid, true, false, '2'); // Populate records w/ checkpoint, commit, keySuffix '2'
+	delete_records(pstid, false, false, '2');  // Delete half of those, w/o checkpoint, commit, keySuffix '2'
+    }
+    static void t3Run(stid_t pstid) {
+	populate_records(pstid, false, false, '3'); // Populate records w/o checkpoint, commit, keySuffix '3'
+	delete_records(pstid, false, true, '3');    // Delete half of those, w/o checkpoint, don't commit, keySuffix '3'
+    }
+    
+    w_rc_t pre_shutdown(ss_m *ssm) {
+        output_durable_lsn(1);
+        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        output_durable_lsn(2);
+        transact_thread_t t1 (_stid, t1Run);
+        transact_thread_t t2 (_stid, t2Run);
+        transact_thread_t t3 (_stid, t3Run);
+        output_durable_lsn(3);
+        W_DO(t1.fork());
+        W_DO(t2.fork());
+        W_DO(t3.fork());
+        W_DO(t1.join());
+        W_DO(t2.join());
+        W_DO(t3.join());
+        return RCOK;
+    }
+    
+    w_rc_t post_shutdown(ss_m *) {
+	output_durable_lsn(4);
+        x_btree_scan_result s;
+        W_DO(test_env->btree_scan(_stid, s));
+        int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5; // Inserts from t3 (not deleted)
+        recordCount += ((SM_PAGESIZE / btree_m::max_entry_size()) * 5) / 2;  // Inserts from t2 (half deleted)
+	EXPECT_EQ (recordCount, s.rownum); 
+	EXPECT_EQ(std::string("key003"), s.minkey);
+	EXPECT_EQ(getMaxKeyString('3'), s.maxkey);
+	return RCOK;
+    }
+};
+
+/* Passing */
+TEST (RestartTest, MultithrdLData5N) {
+    test_env->empty_logdata_dir();
+    restart_multithrd_ldata5 context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);
+    // false = normal shutdown, 10 = recovery mode, m1 default serial mode
+}
+/**/
+/* Failing (ghost page bug)  
+TEST (RestartTest, MultithrdLData5C) {
+    test_env->empty_logdata_dir();
+    restart_multithrd_ldata5 context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
+    // true = crash shutdown, 10 = recovery mode, m1 default serial mode
+}
+*/
+
+
 
 
 int main(int argc, char **argv) {
