@@ -2491,6 +2491,9 @@ restart_m::undo_reverse_pass(
 
         xct_t*  xd;
 
+std::cout << std::endl;
+std::cout << "Number of active transactions in transaction table: " << heap.NumElements() << std::endl << std::endl;
+
         if (heap.NumElements() > 1)  
         { 
             // Only handle transaction which can be UNDOne:
