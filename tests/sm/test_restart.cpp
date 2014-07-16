@@ -1425,7 +1425,7 @@ public:
 	populate_records(pstid, false, true, '1'); // Populate records without checkpoint, don't commit, keySuffix '1'
     }
     static void t2Run(stid_t pstid) {
-	populate_records(pstid, false, false, '2'); // Populate records without checkpoint, don't commit, keySuffix '2'
+	populate_records(pstid, false, false, '2'); // Populate records without checkpoint, commit, keySuffix '2'
     }
     static void t3Run(stid_t pstid) {
 	populate_records(pstid, false, true, '3');
@@ -1467,7 +1467,7 @@ TEST (RestartTest, MultithrdLData3N) {
     EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);
     // false = normal shutdown, 10 = recovery mode, m1 default serial mode
 }
-/* Passing 
+/* Failing - Assertion failure in src/sm/log_core.cpp:2552 during restart 
 TEST (RestartTest, MultithrdLData3C) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata3 context;
@@ -1526,7 +1526,7 @@ TEST (RestartTest, MultithrdLData4N) {
     EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);
     // false = normal shutdown, 10 = recovery mode, m1 default serial mode
 }
-/* Passing 
+/* Failing - Assertion failure in src/sm/log_core.cpp:2552 during restart
 TEST (RestartTest, MultithrdLData4C) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata4 context;
