@@ -455,8 +455,6 @@ private:
 
 };
 
-w_rc_t populate_records(stid_t &stid, bool fCheckPoint, bool fInflight);
-
 class transact_thread_t : public smthread_t {
 public:
     transact_thread_t(stid_t stid, void (*runfunct)(stid_t));
