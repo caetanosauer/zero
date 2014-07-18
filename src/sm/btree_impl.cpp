@@ -542,6 +542,22 @@ btree_impl::_ux_undo_ghost_mark(volid_t vol, snum_t store, const w_keystr_t &key
     if(!found) {
         return RC(eNOTFOUND);
     }
+
+    // Undo a remove (delete operation), which becomes an insert
+    // the ghost (deleted) record is available in page, so we only need to unmark the ghost
+    
+    // The undo operation (compensation) is used for 1) transaction abort, 2) recovery undo,
+    // generate an insert log record for the operation so the REDO phase
+    // handles the txn abort behavior correctly
+
+    // Get the existing data for logging purpose, because this is a transaction abort, proper lock
+    // should be held and the original record should still be intact
+    bool ghost;
+    smsize_t existing_element_len;
+    const char *existing_element = leaf.element(slot, existing_element_len, ghost);
+    cvec_t el (existing_element, existing_element_len);
+    W_DO(log_btree_insert_nonghost(leaf, key, el));
+
     leaf.unmark_ghost (slot);
     return RCOK;
 }

@@ -1007,14 +1007,14 @@ TEST (RestartTest, MultithrdInflightN) {
 /**/
 
 /* Crash shutdown scenario for restart_multithrd_inflight2 -- Failing
- * Failing due to issue ZERO-183 and ZERO-182 (see test_restart_bugs)
+ * Failing due to issue ZERO-183 and ZERO-182 (see test_restart_bugs) */
 TEST (RestartTest, MultithrdInflightC) {
     test_env->empty_logdata_dir();
     restart_multithrd_inflight2 context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
     // true = crash shutdown, 10 = recovery mode, m1 default serial mode
 }
-**/
+/**/
 
 /* Test case with 3 threads:
  * t1:    1 committed trans w/ 2 inserts, 1 aborted trans w/ 1 update & 1 remove
@@ -1116,14 +1116,14 @@ TEST (RestartTest, MultithrdAbort2N) {
 /**/
 
 /* Crash Shutdown scenario for restart_multithrd_abort2 -- Failing
- * Failing due to issue ZERO-183 (see test_restart_bugs) *
+ * Failing due to issue ZERO-183 (see test_restart_bugs) */
 TEST (RestartTest, MultithrdAbort2C) {
     test_env->empty_logdata_dir();
     restart_multithrd_abort2 context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
     // true = crash shutdown, 10 = recovery mode, m1 default serial mode
 }
-**/
+/**/
 
 /* Test case with 3 threads:
  * t1:	1 committed insert, 1 in-flight trans with an update, insert, remove
@@ -1203,14 +1203,14 @@ TEST (RestartTest, MultithrdInflight3N) {
     // false = normal shutdown, 10 = recovery mode, m1 default serial mode
 }
 /**/
-/* Failing, see ZERO-182 / ZERO-183
+/* Failing, see ZERO-182 / ZERO-183 */
 TEST (RestartTest, MultithrdInflight3C) {
     test_env->empty_logdata_dir();
     restart_multithrd_inflight3 context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
     // true = crash shutdown, 10 = recovery mode, m1 default serial mode
 }
-*/
+/**/
     
 /* Same test code as restart_multithrd_inflight3 above, with 2 checkpoints in between */
 class restart_multithrd_inflight_chckp1 : public restart_test_base
@@ -1289,14 +1289,14 @@ TEST (RestartTest, MultithrdInflightChckp1N) {
 }
 /**/
 
-/* Failing, see ZERO-182 / ZERO-183
+/* Failing, see ZERO-182 / ZERO-183 */
 TEST (RestartTest, MultithrdInflightChckp1C) {
     test_env->empty_logdata_dir();
     restart_multithrd_inflight_chckp1 context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
     // true = crash shutdown, 10 = recovery mode, m1 default serial mode
 }
-*/
+/**/
 
 /// Test case with 3 threads, each with a committed transaction containing a large amount of inserts, no checkpoints
 class restart_multithrd_ldata1 : public restart_test_base
@@ -1467,14 +1467,14 @@ TEST (RestartTest, MultithrdLData3N) {
     EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);
     // false = normal shutdown, 10 = recovery mode, m1 default serial mode
 }
-/* Failing - Assertion failure in src/sm/log_core.cpp:2552 during restart 
+/* Failing - Assertion failure in src/sm/log_core.cpp:2552 during restart */
 TEST (RestartTest, MultithrdLData3C) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata3 context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
     // true = crash shutdown, 10 = recovery mode, m1 default serial mode
 }
-*/
+/**/
 
 /// Test case with 3 threads, each with a transaction containing a large amount of inserts, 2 inflight, 1 committed, 2 checkpoints
 class restart_multithrd_ldata4 : public restart_test_base
@@ -1526,14 +1526,14 @@ TEST (RestartTest, MultithrdLData4N) {
     EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);
     // false = normal shutdown, 10 = recovery mode, m1 default serial mode
 }
-/* Failing - Assertion failure in src/sm/log_core.cpp:2552 during restart
+/* Failing - Assertion failure in src/sm/log_core.cpp:2552 during restart */
 TEST (RestartTest, MultithrdLData4C) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata4 context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
     // true = crash shutdown, 10 = recovery mode, m1 default serial mode
 }
-*/
+/**/
 
 /// Test case with 3 threads, each with a transaction containing a large amount of inserts, 2 inflight, 1 committed, 2 checkpoints
 class restart_multithrd_ldata5 : public restart_test_base
@@ -1589,14 +1589,14 @@ TEST (RestartTest, MultithrdLData5N) {
     // false = normal shutdown, 10 = recovery mode, m1 default serial mode
 }
 /**/
-/* Failing (ghost page bug)  
+/* Failing (ghost page bug)  */
 TEST (RestartTest, MultithrdLData5C) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata5 context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
     // true = crash shutdown, 10 = recovery mode, m1 default serial mode
 }
-*/
+/**/
 
 
 

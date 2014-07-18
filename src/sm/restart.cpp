@@ -1152,10 +1152,10 @@ restart_m::analysis_pass(
             // Relying on the REDO phase to execute both the original
             // statements and the compensate statemetns, no UNDO
             // operation for this transaction therefore remove the aborted
-            // transaction from transaction table           
+            // transaction from transaction table
             w_assert1(xct_t::xct_ended != xd->state());
-// TODO(Restart)... uncomment out the line below to make abort txn a doomed txn, so UNDO phase will handle it
-// break;
+
+            // fall-through
 
         case logrec_t::t_xct_end:
             if ((xd->state() == xct_t::xct_freeing_space) ||
@@ -1319,17 +1319,12 @@ restart_m::analysis_pass(
                         // system crash.  
                         // Compensation log record need to be executed in the log scan
                         // driven REDO phase, and no-op in transaction UNDO phase.
-                        // Seset the 'undo_next' to NULL so rollback can be performed
-                        // on this aborted txn
+                        // If we encounter a compensation log record, it indicates the
+                        // current txn has been aborted, set the 'undo_next' to NULL
+                        // so the txn cannot be rollback in UNDO (should not get there anyway)
 
                         // set undo_nxt to NULL so there is no rollback
                         DBGOUT3(<<"is cpsn, no undo, set undo_next to NULL");
-
-// TODO(Restart)... comment out the line below to skip UNDO for this txn (if the current transaction is doomed)
-//                          note this is the entire txn, not only this log record
-//                          we would see compemsation log record only if current txn aborted
-//                          which means we do not mark the txn as doomed (no UNDO), 
-//                          in REDO phase, we want to execute all these compensation log reocrds
                         xd->set_undo_nxt(lsn_t::null);
                     }
 
@@ -1789,15 +1784,10 @@ restart_m::redo_log_pass(
                     // Nothing in the table should now be in aborting state.
                     if (!r.is_single_sys_xct() && r.tid() != tid_t::null)  
                     {
-if ( r.is_cpsn() )                     
-DBGOUT3(<<"&&&&& 1");
                         // Regular transaction with a valid txn id
                         xct_t *xd = xct_t::look_up(r.tid());
                         if (xd) 
                         {
-if ( r.is_cpsn() )
-DBGOUT3(<<"&&&&& 2");
-                        
                             if (xd->state() == xct_t::xct_active)  
                             {
                                 DBGOUT3(<<"redo - no page, xct is " << r.tid());
@@ -1815,9 +1805,6 @@ DBGOUT3(<<"&&&&& 2");
                         }
                         else
                         {
-if ( r.is_cpsn() )
-DBGOUT3(<<"&&&&& 3");
-                        
                             // Transaction is not in the transaction table, it ended already, no-op
                         }
                     }  
@@ -1834,9 +1821,6 @@ DBGOUT3(<<"&&&&& 3");
 
                         if (!r.is_single_sys_xct()) 
                         {
-if ( r.is_cpsn() )
-DBGOUT3(<<"&&&&& 4");
-                        
                             // Regular transaction without a valid txn id
                             // It must be a mount or dismount log record
                         
@@ -1852,9 +1836,6 @@ DBGOUT3(<<"&&&&& 4");
                         }
                         else
                         {
-if ( r.is_cpsn() )
-DBGOUT3(<<"&&&&& 5");
-                        
                             // single-log-sys-xct doesn't have tid (because it's not needed!).
 
                             // Log Analysis phase took care of buffer pool information for system
@@ -1891,10 +1872,12 @@ DBGOUT3(<<"&&&&& 5");
                 {
 
                     // The log record contains a page number, ready to load and update the page
-                    // It might be a compensate log record
+                    
+                    // It might be a compensate log record for aborted transaction before system crash,
+                    // in such case, execute the compensate log reocrd as a normal log record to
+                    // achieve the 'transaction abort' effect during REDO phase, no UNDO for 
+                    // aborted transaction (aborted txn are not kept in transaction table).
                 
-if ( r.is_cpsn() )
-DBGOUT3(<<"&&&&& 6");
                     _redo_log_with_pid(r, lsn, end_logscan_lsn, r.construct_pid(),
                                    redone, dirty_count);
                     if (r.is_multi_page()) 
@@ -1916,18 +1899,14 @@ DBGOUT3(<<"&&&&& 6");
             {
                 // Compensate log record in recovery log, they are from aborted/rollback transaction
                 // before system crash, these transactions have been rollbacked before the system crash.
-                // Several types:
-                // 1. Regular record type but marked as 'cpsn' - these are the actual compensation log record
-                //                                                                   which we need to REDO them, no UNDO.
-                // 2. Compensate log record type - contain a LSN which is the LSN of record it compensates with.
-                //                                                 It might be a compensate on compensate.  These records 
-                //                                                 come into this loop and no-op.
+                // The actual log records to compensate the actions are marked 'redo' and handled in
+                // the above 'if' case.
+                // The log records falling into this 'if' are 'compensation' log record which contains the
+                // original LSN which being compensated on, no other information.
+                // No REDO for these log records.
                 
                 // Cannot be a multi-page log record
                 w_assert1(false == r.is_multi_page());
-
-if ( r.is_cpsn() )
-DBGOUT3(<<"&&&&& 7");
 
                 // If this compensation log record is for a previous compensation log record
                 // (r.xid_prev() is a cpsn log record), ignore it.

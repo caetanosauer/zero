@@ -108,14 +108,14 @@ public:
     }
 };
 
-/* Not passing in retail build *
+/* Not passing in retail build */
 TEST (RestartTestBugs, AbortedRemoveFailingC) {
     test_env->empty_logdata_dir();
     restart_aborted_remove context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
     // true = simulated crash; 10 = recovery mode, m1 default serial mode
 }
-**/
+/**/
 
 
 int main(int argc, char **argv) {
