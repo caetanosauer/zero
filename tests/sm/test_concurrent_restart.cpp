@@ -277,17 +277,14 @@ public:
     }
 };
 
-/* When there are multiple insertions in one txn, it rolls back only the very first */
-/* insertion in the txn, but not the rest of the insertions.  Issue in xct_t::rollback undo_nxt */
-/* for this test case, the result: 5 records instead of 3 records, 'aa7' was rollback, so the max is 'aa5' instead of ''aa4' */
-/* Not passing *
+/* Passing */
 TEST (RestartTest, ComplexInFlightCrash) {
     test_env->empty_logdata_dir();
     restart_complex_in_flight_crash context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 20), 0);   // true = simulated crash
                                                                   // 20 = recovery mode, m2 default concurrent mode, no wait
 }
-**/
+/**/
 
 // Test case with transactions (1 in-flight) with checkpoint and crash shutdown
 // no concurrent activities during recovery
