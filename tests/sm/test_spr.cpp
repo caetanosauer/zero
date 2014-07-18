@@ -110,7 +110,8 @@ void corrupt_page(test_volume_t *test_volume, shpid_t target_pid) {
     {
         //This block works.
         int vol_fd = open(test_volume->_device_name, O_WRONLY);
-        pwrite(vol_fd, (char *)&page, sizeof(generic_page), sizeof(generic_page)*target_pid);
+        ssize_t written = pwrite(vol_fd, (char *)&page, sizeof(generic_page), sizeof(generic_page)*target_pid);
+		EXPECT_EQ(written, sizeof(generic_page));
         fsync(vol_fd);
         close(vol_fd);
     }

@@ -780,7 +780,7 @@ restart_m::analysis_pass(
                                                           // the state will be changed to 'end' only
                                                           // if we hit a matching t_xct_end' log
                                 lsn,                      // last LSN
-                                r.xid_prev(),             // next_undo, r.xid_prev() is previous logrec
+                                r.xid_prev(),             // undo_nxt: r.xid_prev() is previous logrec
                                                           //of this xct stored in log record, since
                                                           // this is the first log record for this txn
                                                           // r.xid_prev() should be lsn_t::null
@@ -1148,19 +1148,14 @@ restart_m::analysis_pass(
             break;
 
         case logrec_t::t_xct_abort:           
-            // Transaction aborted before system crash, need to 
-            // undo the entire transaction.  Compensation operations
-            // were executed for the abort operation.
-            // The compensation log records contain LSN only and will
-            // be skipped in the REDO phase (compensation not applied).
-            
-            // Leave the transaction as doomed transaction so we can
-            // UNDO the transaction.  Do not change the transaction state
-            // (!= xct_ended) so it will be treated as a doomed transaction
-            // and perform the rollback operation during UNDO phase
-            
+            // Transaction aborted before system crash.
+            // Relying on the REDO phase to execute both the original
+            // statements and the compensate statemetns, no UNDO
+            // operation for this transaction therefore remove the aborted
+            // transaction from transaction table           
             w_assert1(xct_t::xct_ended != xd->state());
-            break;
+// TODO(Restart)... uncomment out the line below to make abort txn a doomed txn, so UNDO phase will handle it
+// break;
 
         case logrec_t::t_xct_end:
             if ((xd->state() == xct_t::xct_freeing_space) ||
@@ -1174,7 +1169,7 @@ restart_m::analysis_pass(
                 me()->detach_xct(xd);        
             }
 
-            // Log record indicated this txn has ended
+            // Log record indicated this txn has ended or aborted
             // It is safe to remove it from transaction table
             if (xct_t::xct_ended != xd->state())
                 xd->change_state(xct_t::xct_ended);
@@ -1230,14 +1225,14 @@ restart_m::analysis_pass(
                             // Set the undo_nxt lsn to the current log record lsn because 
                             // UNDO is using reverse chronological order
                             // and the undo_lsn is used to stop the individual rollback
-                            
+
                             xd->set_undo_nxt(lsn);                            
                         }
                         else
                         {
                             // If UNDO is txn driven, set undo_nxt lsn.  Abort operation use it
                             // to retrieve log record and follow the log record undo_next list
-                        
+                            
                             xd->set_undo_nxt(lsn);
                         }
                     }
@@ -1318,8 +1313,23 @@ restart_m::analysis_pass(
                     }
                     else 
                     {
-                        // Majority of the compensation log should not be undoable                       
-                        DBGOUT3(<<"is cpsn, not undo " << " set undo_next lsn to NULL");
+                        // Majority of the compensation log should not be undoable. 
+                        // This is a compensation log record in the existing recovery log
+                        // which came from a user transaction abort operation before 
+                        // system crash.  
+                        // Compensation log record need to be executed in the log scan
+                        // driven REDO phase, and no-op in transaction UNDO phase.
+                        // Seset the 'undo_next' to NULL so rollback can be performed
+                        // on this aborted txn
+
+                        // set undo_nxt to NULL so there is no rollback
+                        DBGOUT3(<<"is cpsn, no undo, set undo_next to NULL");
+
+// TODO(Restart)... comment out the line below to skip UNDO for this txn (if the current transaction is doomed)
+//                          note this is the entire txn, not only this log record
+//                          we would see compemsation log record only if current txn aborted
+//                          which means we do not mark the txn as doomed (no UNDO), 
+//                          in REDO phase, we want to execute all these compensation log reocrds
                         xd->set_undo_nxt(lsn_t::null);
                     }
 
@@ -1757,12 +1767,16 @@ restart_m::redo_log_pass(
                 //    txn related log records, e.g., txn begin/commit
                 //    checkpoint related log records
                 //    skip log records
-                // Note compensation log records are 'redo only'
+                // Note compensation log records are 'redo only', the record type are regular
+                // log record but marked as 'cpsn'
 
                 // pid in log record is populated when a log record is filled
                 // null_pid is checking the page numer (shpid_t) recorded in the log record
                 if (r.null_pid()) 
                 {
+                    // Cannot be compensate log record
+                    w_assert1(!r.is_cpsn());
+
                     // The log record does not contain a page number for the buffer pool
                     // there is no 'redo' in the buffer pool but we still need to 'redo' these
                     // transactions
@@ -1775,10 +1789,15 @@ restart_m::redo_log_pass(
                     // Nothing in the table should now be in aborting state.
                     if (!r.is_single_sys_xct() && r.tid() != tid_t::null)  
                     {
+if ( r.is_cpsn() )                     
+DBGOUT3(<<"&&&&& 1");
                         // Regular transaction with a valid txn id
                         xct_t *xd = xct_t::look_up(r.tid());
                         if (xd) 
                         {
+if ( r.is_cpsn() )
+DBGOUT3(<<"&&&&& 2");
+                        
                             if (xd->state() == xct_t::xct_active)  
                             {
                                 DBGOUT3(<<"redo - no page, xct is " << r.tid());
@@ -1796,6 +1815,9 @@ restart_m::redo_log_pass(
                         }
                         else
                         {
+if ( r.is_cpsn() )
+DBGOUT3(<<"&&&&& 3");
+                        
                             // Transaction is not in the transaction table, it ended already, no-op
                         }
                     }  
@@ -1812,6 +1834,9 @@ restart_m::redo_log_pass(
 
                         if (!r.is_single_sys_xct()) 
                         {
+if ( r.is_cpsn() )
+DBGOUT3(<<"&&&&& 4");
+                        
                             // Regular transaction without a valid txn id
                             // It must be a mount or dismount log record
                         
@@ -1827,6 +1852,9 @@ restart_m::redo_log_pass(
                         }
                         else
                         {
+if ( r.is_cpsn() )
+DBGOUT3(<<"&&&&& 5");
+                        
                             // single-log-sys-xct doesn't have tid (because it's not needed!).
 
                             // Log Analysis phase took care of buffer pool information for system
@@ -1861,8 +1889,12 @@ restart_m::redo_log_pass(
                 }
                 else
                 {
+
                     // The log record contains a page number, ready to load and update the page
+                    // It might be a compensate log record
                 
+if ( r.is_cpsn() )
+DBGOUT3(<<"&&&&& 6");
                     _redo_log_with_pid(r, lsn, end_logscan_lsn, r.construct_pid(),
                                    redone, dirty_count);
                     if (r.is_multi_page()) 
@@ -1880,19 +1912,26 @@ restart_m::redo_log_pass(
                     }
                 }
             }
-            if ( r.is_cpsn() ) 
+            else if ( r.is_cpsn() ) 
             {
                 // Compensate log record in recovery log, they are from aborted/rollback transaction
                 // before system crash, these transactions have been rollbacked before the system crash.
-                // Because the compensation log records do not have sufficient information to perform
-                // REDO the rollback operation, skip the REDO of these compensation log records and
-                // relying on UNDO to rollback these aborted transactions.
-                // Note this is for user aborted transactions (existing compensation log records), it is
-                // different from in-flight transaction.
-
+                // Several types:
+                // 1. Regular record type but marked as 'cpsn' - these are the actual compensation log record
+                //                                                                   which we need to REDO them, no UNDO.
+                // 2. Compensate log record type - contain a LSN which is the LSN of record it compensates with.
+                //                                                 It might be a compensate on compensate.  These records 
+                //                                                 come into this loop and no-op.
+                
                 // Cannot be a multi-page log record
                 w_assert1(false == r.is_multi_page());
-                DBGOUT3(<<"redo - existing compensation log record contains LSN only, skip in REDO phase");               
+
+if ( r.is_cpsn() )
+DBGOUT3(<<"&&&&& 7");
+
+                // If this compensation log record is for a previous compensation log record
+                // (r.xid_prev() is a cpsn log record), ignore it.
+                DBGOUT3(<<"redo - existing compensation log record, r.xid_prev(): " << r.xid_prev());               
             }
             DBGOUT3( << setiosflags(ios::right) << lsn
                           << resetiosflags(ios::right) << " R: " 
@@ -2491,9 +2530,6 @@ restart_m::undo_reverse_pass(
 
         xct_t*  xd;
 
-std::cout << std::endl;
-std::cout << "Number of active transactions in transaction table: " << heap.NumElements() << std::endl << std::endl;
-
         if (heap.NumElements() > 1)  
         { 
             // Only handle transaction which can be UNDOne:
@@ -2516,6 +2552,7 @@ std::cout << "Number of active transactions in transaction table: " << heap.NumE
                     if (true == xd->is_single_log_sys_xct())
                     {
                         // We should not get here but j.i.c.
+                        // Set undo_nxt to NULL so it cannot be rollback
                         xd->set_undo_nxt(lsn_t::null);
                         heap.ReplacedFirst();
                         continue;
@@ -2569,6 +2606,7 @@ std::cout << "Number of active transactions in transaction table: " << heap.NumE
                 // xct. If that xct's last inserted log record is a compensation,
                 // the compensated-to lsn will be the lsn we find -- just
                 // noted that for the purpose of deciphering the log...
+
                 W_COERCE( xd->rollback(heap.Second()->undo_nxt()) );
                 me()->detach_xct(xd);
 
@@ -2592,13 +2630,13 @@ std::cout << "Number of active transactions in transaction table: " << heap.NumE
             // Note that all transaction has been rolled back, excpet a special case
             // where there was only one transaction in the heap, in such case the 
             // actual rollback will happen here
-        
+
+            me()->attach_xct(xd);
+
             w_assert9(xd->undo_nxt() == lsn_t::null || heap.NumElements() == 0);
 
             DBGOUT3( << "Transaction " << xd->tid() 
                     << " is rolled back: aborting it now " );
-
-            me()->attach_xct(xd);
 
             // Abort the transaction, this is using the standard transaction abort logic, 
             // which release locks (which was not involved in the roll back to save point operation),
@@ -3212,6 +3250,7 @@ void restart_m::_undo_txn_pass()
                     w_assert1(true == curr->is_single_log_sys_xct());
 
                     // We should not get here but j.i.c.
+                    // Set undo_nxt to NULL so it cannot be rollback
                     curr->set_undo_nxt(lsn_t::null);
                 }
                 else

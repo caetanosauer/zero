@@ -86,8 +86,10 @@ public:
     output_durable_lsn(2);
     W_DO(test_env->btree_insert_and_commit(_stid, "aa0", "data0"));
     W_DO(test_env->begin_xct());
+    W_DO(test_env->btree_insert(_stid, "aa1", "data1"));
     W_DO(test_env->btree_remove(_stid, "aa0"));
     W_DO(test_env->abort_xct());
+    test_env->btree_update_and_commit(_stid, "aa0", "data0000");
     output_durable_lsn(3);
     return RCOK;
     }
@@ -98,6 +100,10 @@ public:
     W_DO(test_env->btree_scan(_stid, s));
     EXPECT_EQ(1, s.rownum);
     EXPECT_EQ(std::string("aa0"), s.maxkey);
+    std::string data;
+    test_env->btree_lookup_and_commit(_stid, "aa0", data);
+    EXPECT_EQ(std::string("data0000"), data);
+
     return RCOK;
     }
 };

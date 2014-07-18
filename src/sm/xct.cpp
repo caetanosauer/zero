@@ -1622,7 +1622,8 @@ xct_t::_abort()
 
         // Does not wait for the checkpoint to finish, checkpoint is a non-blocking operation
         // chkpt_serial_m::read_acquire();
-        
+
+        // Log transaction abort for both cases: 1) normal abort, 2) UNDO
         change_state(xct_ended);
         rc =  log_xct_abort();
 
@@ -2629,7 +2630,7 @@ xct_t::rollback(const lsn_t &save_pt)
     // undo_nxt is the lsn of last recovery log for this txn
     lsn_t nxt = _undo_nxt;
 
-    DBGOUT3(<<"Initial rollback, undo_nxt: " << nxt);
+    DBGOUT3(<<"Initial rollback, from: " << nxt << " to: " << save_pt);
     LOGTRACE( << setiosflags(ios::right) << nxt
               << resetiosflags(ios::right) 
               << " Roll back " << " " << tid()
@@ -2666,6 +2667,8 @@ xct_t::rollback(const lsn_t &save_pt)
              memcpy(__copy__buf, &temp, temp.length());
              log->release();
         }
+
+        DBGOUT1(<<"Rollback, current undo lsn: " << nxt);
 
         if (r.is_undo()) 
         {

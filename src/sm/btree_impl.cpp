@@ -508,17 +508,20 @@ btree_impl::_ux_remove_core(volid_t vol, snum_t store, const w_keystr_t &key, co
     }
 
     // it might be already ghost..
-    if (leaf.is_ghost(slot)) {
+    if (leaf.is_ghost(slot)) 
+    {
         return RC(eNOTFOUND);
     }
+    else
+    {
+        // log first
+        vector<slotid_t> slots;
+        slots.push_back(slot);
+        W_DO(log_btree_ghost_mark (leaf, slots));
 
-    // log first
-    vector<slotid_t> slots;
-    slots.push_back(slot);
-    W_DO(log_btree_ghost_mark (leaf, slots));
-
-    // then mark it as ghost
-    leaf.mark_ghost (slot);
+        // then mark it as ghost
+        leaf.mark_ghost (slot);
+    }
     return RCOK;
 }
 
