@@ -134,7 +134,7 @@ public:
 };
 
 /* Passing */
-TEST (RestartTest, Empty) {
+TEST (RestartTest, EmptyN) {
     test_env->empty_logdata_dir();
     restart_empty context;
     EXPECT_EQ(test_env->runRestartTest(&context, false, 20), 0);  // false = no simulated crash, normal shutdown
@@ -142,8 +142,18 @@ TEST (RestartTest, Empty) {
 }
 /**/
 
-// Test case with simple transactions (1 in-flight) and normal shutdown, no concurrent activities during recovery
-class restart_simple_normal : public restart_test_base  {
+/* Passing */
+TEST (RestartTest, EmptyC) {
+    test_env->empty_logdata_dir();
+    restart_empty context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 20), 0);   // true = simulated crash
+                                                                  // 20 = recovery mode, m2 default concurrent mode
+}
+/**/
+
+
+// Test case with simple transactions (1 in-flight), no concurrent activities during recovery
+class restart_simple : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
         output_durable_lsn(1);
@@ -181,64 +191,27 @@ public:
 };
 
 /* Passing */
-TEST (RestartTest, SimpleNormal) {
+TEST (RestartTest, SimpleN) {
     test_env->empty_logdata_dir();
-    restart_simple_normal context;
+    restart_simple context;
     EXPECT_EQ(test_env->runRestartTest(&context, false, 20), 0);  // false = no simulated crash, normal shutdown
                                                                   // 20 = recovery mode, m2 default concurrent mode, no wait
 }
 /**/
 
-// Test case with simple transactions (1 in-flight) and crash shutdown, no concurrent activities during recovery
-class restart_simple_crash : public restart_test_base  {
-public:
-    w_rc_t pre_shutdown(ss_m *ssm) {
-        output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
-        output_durable_lsn(2);
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa3", "data3"));
-
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa1", "data1"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa2", "data2"));
-
-        W_DO(test_env->begin_xct());
-        W_DO(test_env->btree_insert(_stid, "aa4", "data4"));             // in-flight
-
-        output_durable_lsn(3);
-        return RCOK;
-    }
-
-    w_rc_t post_shutdown(ss_m *) {
-        output_durable_lsn(4);
-        x_btree_scan_result s;
-
-        while (true == test_env->in_recovery())
-        {
-            // Concurrent recovery is still going on, wait
-            ::usleep(WAIT_TIME);            
-        }
-
-        // Verify
-        W_DO(test_env->btree_scan(_stid, s));
-        EXPECT_EQ (3, s.rownum);
-        EXPECT_EQ (std::string("aa1"), s.minkey);
-        EXPECT_EQ (std::string("aa3"), s.maxkey);
-        return RCOK;
-    }
-};
-
 /* Passing */
-TEST (RestartTest, SimpleCrash) {
+TEST (RestartTest, SimpleC) {
     test_env->empty_logdata_dir();
-    restart_simple_crash context;
+    restart_simple context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 20), 0);   // true = simulated crash
                                                                   // 20 = recovery mode, m2 default concurrent mode, no wait
 }
 /**/
 
-// Test case with transactions (1 in-flight with multiple operations) and crash shutdown
+
+// Test case with transactions (1 in-flight with multiple operations)
 // no concurrent activities during recovery
-class restart_complex_in_flight_crash : public restart_test_base  {
+class restart_complex_in_flight : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
         output_durable_lsn(1);
@@ -277,21 +250,31 @@ public:
     }
 };
 
+/* Passing */
+TEST (RestartTest, ComplexInFlightN) {
+    test_env->empty_logdata_dir();
+    restart_complex_in_flight context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 20), 0);  // false = no simulated crash, normal shutdown
+                                                                  // 20 = recovery mode, m2 default concurrent mode, no wait
+}
+/**/
+
 /* Not passing, when there are multiple insertions in one txn, it rolls back only the very first */
 /* insertion in the txn, but not the rest of the insertions.  Issue in xct_t::rollback undo_nxt */
 /* for this test case, the result: 5 records instead of 3 records, 'aa7' was rollback, so the max is 'aa5' instead of ''aa4' */
 /* Not passing *
-TEST (RestartTest, ComplexInFlightCrash) {
+TEST (RestartTest, ComplexInFlightC) {
     test_env->empty_logdata_dir();
-    restart_complex_in_flight_crash context;
+    restart_complex_in_flight context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 20), 0);   // true = simulated crash
                                                                   // 20 = recovery mode, m2 default concurrent mode, no wait
 }
 **/
 
-// Test case with transactions (1 in-flight) with checkpoint and crash shutdown
+
+// Test case with transactions (1 in-flight) with checkpoint
 // no concurrent activities during recovery
-class restart_complex_in_flight_chkpt_crash : public restart_test_base  {
+class restart_complex_in_flight_chkpt : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
         output_durable_lsn(1);
@@ -306,7 +289,7 @@ public:
         W_DO(test_env->begin_xct());                                     // in-flight
         W_DO(test_env->btree_insert(_stid, "aa5", "data5"));
 
-        // Commented out, same issue as the previous test 'restart_complex_in_flight_crash'
+        // Commented out, same issue as the previous test 'restart_complex_in_flight' in crash scenario
 //        W_DO(test_env->btree_insert(_stid, "aa2", "data2"));
 //        W_DO(test_env->btree_insert(_stid, "aa7", "data7"));
 
@@ -336,17 +319,27 @@ public:
 };
 
 /* Passing */
-TEST (RestartTest, ComplexInFlightChkptCrash) {
+TEST (RestartTest, ComplexInFlightChkptN) {
     test_env->empty_logdata_dir();
-    restart_complex_in_flight_chkpt_crash context;
+    restart_complex_in_flight_chkpt context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 20), 0);  // false = no simulated crash, normal shutdown
+                                                                  // 20 = recovery mode, m2 default concurrent mode, no wait
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, ComplexInFlightChkptC) {
+    test_env->empty_logdata_dir();
+    restart_complex_in_flight_chkpt context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 20), 0);   // true = simulated crash
                                                                   // 20 = recovery mode, m2 default concurrent mode, no wait
 }
 /**/
 
-// Test case with 1 transaction (in-flight with more than one page of data) and crash shutdown
+
+// Test case with 1 transaction (in-flight with more than one page of data)
 // no concurrent activities during recovery
-class restart_multi_page_in_flight_crash : public restart_test_base  {
+class restart_multi_page_in_flight : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
         output_durable_lsn(1);
@@ -377,20 +370,30 @@ public:
     }
 };
 
+/* Passing */
+TEST (RestartTest, MultiPageInFlightN) {
+    test_env->empty_logdata_dir();
+    restart_multi_page_in_flight context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 20), 0);  // false = no simulated crash, normal shutdown
+                                                                  // 20 = recovery mode, m2 default concurrent mode, no wait
+}
+/**/
+
 /* Multiple issues when there are multiple pages of data in one in-flight transaction */
 /* 1. During REDO, SPR complains about log record touching multiple pages: eWRONG_PAGE_LSNCHAIN(77) */
 /* 2. Same issue as previous tests when the in-flight txn has more than one operations */
 /* Not passing *
-TEST (RestartTest, MultiPageInFlightCrash) {
+TEST (RestartTest, MultiPageInFlightC) {
     test_env->empty_logdata_dir();
-    restart_multi_page_in_flight_crash context;
+    restart_multi_page_in_flight context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 20), 0);   // true = simulated crash
                                                                   // 20 = recovery mode, m2 default concurrent mode, no wait
 }
 **/
 
-// Test case with simple transactions (1 in-flight) and crash shutdown, one concurrent chkpt
-class restart_concurrent_chkpt_crash : public restart_test_base  {
+
+// Test case with simple transactions (1 in-flight), one concurrent chkpt
+class restart_concurrent_chkpt : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
         output_durable_lsn(1);
@@ -433,17 +436,27 @@ public:
 };
 
 /* Passing */
-TEST (RestartTest, ConcurrentChkptCrash) {
+TEST (RestartTest, ConcurrentChkptN) {
     test_env->empty_logdata_dir();
-    restart_concurrent_chkpt_crash context;
+    restart_concurrent_chkpt context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 21), 0);  // false = no simulated crash, normal shutdown
+                                                                  // 21 = recovery mode, m2 concurrent mode with delay in REDO
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, ConcurrentChkptC) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_chkpt context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 21), 0);   // true = simulated crash
                                                                   // 21 = recovery mode, m2 concurrent mode with delay in REDO
 }
 /**/
 
-// Test case with simple transactions (1 in-flight) and crash shutdown, 
+
+// Test case with simple transactions (1 in-flight)
 // one concurrent txn with conflict during redo phase
-class restart_simple_concurrent_redo_crash : public restart_test_base  {
+class restart_simple_concurrent_redo : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
         output_durable_lsn(1);
@@ -504,17 +517,27 @@ public:
 };
 
 /* Passing */
-TEST (RestartTest, SimpleConcurrentRedoCrash) {
+TEST (RestartTest, SimpleConcurrentRedoN) {
     test_env->empty_logdata_dir();
-    restart_simple_concurrent_redo_crash context;
+    restart_simple_concurrent_redo context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 21), 0);  // false = no simulated crash, normal shutdown
+                                                                  // 21 = recovery mode, m2 concurrent mode with delay in REDO
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, SimpleConcurrentRedoC) {
+    test_env->empty_logdata_dir();
+    restart_simple_concurrent_redo context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 21), 0);   // true = simulated crash
                                                                   // 21 = recovery mode, m2 concurrent mode with delay in REDO
 }
 /**/
 
-// Test case with multi-page b-tree, simple transactions (1 in-flight) and crash shutdown, 
+
+// Test case with multi-page b-tree, simple transactions (1 in-flight)
 // one concurrent txn with conflict during redo phase
-class restart_multi_concurrent_redo_crash : public restart_test_base  {
+class restart_multi_concurrent_redo : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
         output_durable_lsn(1);
@@ -574,21 +597,30 @@ public:
     }
 };
 
+/* Passing */
+TEST (RestartTest, MultiConcurrentRedoN) {
+    test_env->empty_logdata_dir();
+    restart_multi_concurrent_redo context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 21), 0);  // false = no simulated crash, normal shutdown
+                                                                  // 21 = recovery mode, m2 concurrent mode with delay in REDO
+}
+/**/
 
 /* During REDO, SPR complains about log record touching multiple pages: eWRONG_PAGE_LSNCHAIN(77) */
 /* but the conflict detection is working */
 /* Not passing *
-TEST (RestartTest, MultiConcurrentRedoCrash) {
+TEST (RestartTest, MultiConcurrentRedoC) {
     test_env->empty_logdata_dir();
-    restart_multi_concurrent_redo_crash context;
+    restart_multi_concurrent_redo context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 21), 0);   // true = simulated crash
                                                                   // 21 = recovery mode, m2 concurrent mode with delay in REDO
 }
 **/
 
-// Test case with simple transactions (1 in-flight) and crash shutdown, 
+
+// Test case with simple transactions (1 in-flight)
 // one concurrent txn with conflict during undo phase
-class restart_simple_concurrent_undo_crash : public restart_test_base  {
+class restart_simple_concurrent_undo : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
         output_durable_lsn(1);
@@ -651,17 +683,27 @@ public:
 };
 
 /* Passing */
-TEST (RestartTest, SimpleConcurrentUndoCrash) {
+TEST (RestartTest, SimpleConcurrentUndoN) {
     test_env->empty_logdata_dir();
-    restart_simple_concurrent_undo_crash context;
+    restart_simple_concurrent_undo context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 22), 0);  // false = no simulated crash, normal shutdown
+                                                                  // 22 = recovery mode, m2 concurrent mode with delay in UNDO
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, SimpleConcurrentUndoC) {
+    test_env->empty_logdata_dir();
+    restart_simple_concurrent_undo context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 22), 0);   // true = simulated crash
                                                                   // 22 = recovery mode, m2 concurrent mode with delay in UNDO
 }
 /**/
 
-// Test case with more than one page of data (1 in-flight) and crash shutdown, one concurrent txn to
+
+// Test case with more than one page of data (1 in-flight), one concurrent txn to
 // access a non-dirty page so it should be allowed
-class restart_concurrent_no_conflict_crash : public restart_test_base  {
+class restart_concurrent_no_conflict : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
         output_durable_lsn(1);
@@ -737,20 +779,30 @@ public:
     }
 };
 
+/* Passing */
+TEST (RestartTest, ConcurrentNoConflictN) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_no_conflict context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 23), 0);  // false = no simulated crash, normal shutdown
+                                                                  // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+}
+/**/
+
 /* During REDO, SPR complains about log record touching multiple pages: eWRONG_PAGE_LSNCHAIN(77) */
 /* Because the SPR is on root page, the concurrent insert failed during tree walk */
 /* Not passing *
-TEST (RestartTest, ConcurrentNoConflictCrash) {
+TEST (RestartTest, ConcurrentNoConflictC) {
     test_env->empty_logdata_dir();
-    restart_concurrent_no_conflict_crash context;
+    restart_concurrent_no_conflict context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 23), 0);   // true = simulated crash
                                                                   // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
 }
 **/
 
+
 // Test case with more than one page of data (1 in-flight) and crash shutdown, one concurrent txn to
 // access an in_doubt page so it should not be allowed
-class restart_concurrent_conflict_crash : public restart_test_base  {
+class restart_concurrent_conflict : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
         output_durable_lsn(1);
@@ -819,10 +871,19 @@ public:
     }
 };
 
+/* Passing */
+TEST (RestartTest, ConcurrentConflictN) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_conflict context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 23), 0);  // false = no simulated crash, normal shutdown
+                                                                  // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+}
+/**/
+
 /* During REDO, SPR complains about log record touching multiple pages: eWRONG_PAGE_LSNCHAIN(77) */
 /* Because the SPR is on root page, the concurrent insert failed during tree walk */
 /* Not passing *
-TEST (RestartTest, ConcurrentConflictCrash) {
+TEST (RestartTest, ConcurrentConflictC) {
     test_env->empty_logdata_dir();
     restart_concurrent_conflict_crash context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 23), 0);   // true = simulated crash
@@ -833,7 +894,7 @@ TEST (RestartTest, ConcurrentConflictCrash) {
 // Test case with more than one page of data (1 in-flight) and crash shutdown, multiple concurrent txns
 // some should succeeded (no conflict) while others failed (conflict), also one 'conflict' user transaction
 // after recovery which should succeed
-class restart_multi_concurrent_conflict_crash : public restart_test_base  {
+class restart_multi_concurrent_conflict : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
         output_durable_lsn(1);
@@ -926,12 +987,21 @@ public:
     }
 };
 
+/* Passing */
+TEST (RestartTest, MultiConcurrentConflictN) {
+    test_env->empty_logdata_dir();
+    restart_multi_concurrent_conflict context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 23), 0);  // false = no simulated crash, normal shutdown
+                                                                  // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+}
+/**/
+
 /* During REDO, SPR complains about log record touching multiple pages: eWRONG_PAGE_LSNCHAIN(77) */
 /* Because the SPR is on root page, the concurrent insert failed during tree walk */
 /* Not passing *
-TEST (RestartTest, MultiConcurrentConflictCrash) {
+TEST (RestartTest, MultiConcurrentConflictC) {
     test_env->empty_logdata_dir();
-    restart_multi_concurrent_conflict_crash context;
+    restart_multi_concurrent_conflict context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 23), 0);   // true = simulated crash
                                                                   // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
 }

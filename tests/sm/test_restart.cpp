@@ -100,6 +100,7 @@ std::string getMaxKeyString(char maxSuffix) {
 	maxkeystr[5] = maxSuffix;
     return std::string(maxkeystr);
 }
+
 // Test case without any operation, start and normal shutdown SM
 class restart_empty : public restart_test_base  {
 public:
@@ -113,7 +114,7 @@ public:
 };
 
 /* Passing */
-TEST (RestartTest, Empty) {
+TEST (RestartTest, EmptyN) {
     test_env->empty_logdata_dir();
     restart_empty context;
     EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);  // false = no simulated crash, normal shutdown
@@ -121,8 +122,18 @@ TEST (RestartTest, Empty) {
 }
 /**/
 
+/* Passing */
+TEST (RestartTest, EmptyC) {
+    test_env->empty_logdata_dir();
+    restart_empty context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);   // true = simulated crash
+                                                                  // 10 = recovery mode, m1 default serial mode
+}
+/**/
+
+
 // Test case without checkpoint and normal shutdown
-class restart_normal_shutdown : public restart_test_base 
+class restart_basic : public restart_test_base 
 {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
@@ -132,6 +143,7 @@ public:
         W_DO(test_env->btree_insert_and_commit(_stid, "aa3", "data3"));
         W_DO(test_env->btree_insert_and_commit(_stid, "aa4", "data4"));
         W_DO(test_env->btree_insert_and_commit(_stid, "aa1", "data1"));
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa5", "data5"));
         W_DO(test_env->btree_insert_and_commit(_stid, "aa2", "data2"));
         output_durable_lsn(3);
         return RCOK;
@@ -141,24 +153,34 @@ public:
         output_durable_lsn(4);
         x_btree_scan_result s;
         W_DO(test_env->btree_scan(_stid, s));
-        EXPECT_EQ (4, s.rownum);
+        EXPECT_EQ (5, s.rownum);
         EXPECT_EQ (std::string("aa1"), s.minkey);
-        EXPECT_EQ (std::string("aa4"), s.maxkey);
+        EXPECT_EQ (std::string("aa5"), s.maxkey);
         return RCOK;
     }
 };
 
 /* Passing */
-TEST (RestartTest, NormalShutdown) {
+TEST (RestartTest, BasicN) {
     test_env->empty_logdata_dir();
-    restart_normal_shutdown context;
+    restart_basic context;
     EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);  // false = no simulated crash, normal shutdown
                                                                   // 10 = recovery mode, m1 default serial mode
 }
 /**/
 
+/* Passing */
+TEST (RestartTest, BasicC) {
+    test_env->empty_logdata_dir();
+    restart_basic context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);  // true = simulated crash
+                                                                 // 10 = recovery mode, m1 default serial mode
+}
+/**/
+
+
 // Test case with checkpoint and normal shutdown
-class restart_checkpoint_normal_shutdown : public restart_test_base 
+class restart_checkpoint : public restart_test_base 
 {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
@@ -169,6 +191,7 @@ public:
         W_DO(test_env->btree_insert_and_commit(_stid, "aa4", "data4"));
         W_DO(ss_m::checkpoint());
         W_DO(test_env->btree_insert_and_commit(_stid, "aa1", "data1"));
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa5", "data5"));
         W_DO(test_env->btree_insert_and_commit(_stid, "aa2", "data2"));
         // If enabled the 2nd checkpoint, it is passing also
         // W_DO(ss_m::checkpoint());
@@ -180,24 +203,34 @@ public:
         output_durable_lsn(4);
         x_btree_scan_result s;
         W_DO(test_env->btree_scan(_stid, s));
-        EXPECT_EQ (4, s.rownum);
+        EXPECT_EQ (5, s.rownum);
         EXPECT_EQ (std::string("aa1"), s.minkey);
-        EXPECT_EQ (std::string("aa4"), s.maxkey);
+        EXPECT_EQ (std::string("aa5"), s.maxkey);
         return RCOK;
     }
 };
 
 /* Passing */
-TEST (RestartTest, NormalCheckpointShutdown) {
+TEST (RestartTest, CheckpointN) {
     test_env->empty_logdata_dir();
-    restart_checkpoint_normal_shutdown context;
+    restart_checkpoint context;
     EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);  // false = no simulated crash, normal shutdown
                                                                   // 10 = recovery mode, m1 default serial mode
 }
 /**/
 
+/* Passing */
+TEST (RestartTest, CheckpointC) {
+    test_env->empty_logdata_dir();
+    restart_checkpoint context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);   // true = simulated crash
+                                                                  // 10 = recovery mode, m1 default serial mode
+}
+/**/
+
+
 // Test case with more than one page of data, without checkpoint and normal shutdown
-class restart_many_normal_shutdown : public restart_test_base 
+class restart_many : public restart_test_base 
 {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
@@ -221,16 +254,26 @@ public:
 };
 
 /* Passing */
-TEST (RestartTest, NormalManyShutdown) {
+TEST (RestartTest, ManySimpleN) {
     test_env->empty_logdata_dir();
-    restart_many_normal_shutdown context;
+    restart_many context;
     EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);  // false = no simulated crash, normal shutdown
                                                                   // 10 = recovery mode, m1 default serial mode
 }
 /**/
 
+/* Passing */
+TEST (RestartTest, ManySimpleC) {
+    test_env->empty_logdata_dir();
+    restart_many context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);   // true = simulated crash
+                                                                  // 10 = recovery mode, m1 default serial mode
+}
+/**/
+
+
 // Test case with more than one page of data, with checkpoint and normal shutdown
-class restart_many_checkpoint_normal_shutdown : public restart_test_base 
+class restart_many_checkpoint : public restart_test_base 
 {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
@@ -258,16 +301,26 @@ public:
 };
 
 /* Passing */
-TEST (RestartTest, NormalManyCheckpointShutdown) {
+TEST (RestartTest, ManyCheckpointN) {
     test_env->empty_logdata_dir();
-    restart_many_checkpoint_normal_shutdown context;
+    restart_many_checkpoint context;
     EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);  // false = no simulated crash, normal shutdown
                                                                   // 10 = recovery mode, m1 default serial mode
 }
 /**/
 
+/* Passing */
+TEST (RestartTest, ManyCheckpointC) {
+    test_env->empty_logdata_dir();
+    restart_many_checkpoint context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);   // true = simulated crash
+                                                                  // 10 = recovery mode, m1 default serial mode
+}
+/**/
+
+
 // Test case with an uncommitted transaction, no checkpoint, normal shutdown
-class restart_inflight_normal_shutdown : public restart_test_base 
+class restart_inflight : public restart_test_base 
 {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
@@ -297,16 +350,26 @@ public:
 };
 
 /* Passing */
-TEST (RestartTest, InflightNormalShutdown) {
+TEST (RestartTest, InflightN) {
     test_env->empty_logdata_dir();
-    restart_inflight_normal_shutdown context;
+    restart_inflight context;
     EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);  // false = no simulated crash, normal shutdown
                                                                   // 10 = recovery mode, m1 default serial mode
 }
 /**/
+
+/* Passing */
+TEST (RestartTest, InflightC) {
+    test_env->empty_logdata_dir();
+    restart_inflight context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);   // true = simulated crash
+                                                                  // 10 = recovery mode, m1 default serial mode
+}
+/**/
+
 
 // Test case with an uncommitted transaction, checkpoint, normal shutdown
-class restart_inflight_checkpoint_normal_shutdown : public restart_test_base 
+class restart_inflight_checkpoint : public restart_test_base 
 {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
@@ -338,98 +401,27 @@ public:
 };
 
 /* Passing */
-TEST (RestartTest, InflightcheckpointNormalShutdown) {
+TEST (RestartTest, InflightCheckpointN) {
     test_env->empty_logdata_dir();
-    restart_inflight_checkpoint_normal_shutdown context;
+    restart_inflight_checkpoint context;
     EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);  // false = no simulated crash, normal shutdown
                                                                   // 10 = recovery mode, m1 default serial mode
 }
 /**/
 
-// Test case with an uncommitted transaction, no checkpoint, simulated crash shutdown
-class restart_inflight_crash_shutdown : public restart_test_base 
-{
-public:
-    w_rc_t pre_shutdown(ss_m *ssm) {
-        output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
-        output_durable_lsn(2);
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa3", "data3"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa4", "data4"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa1", "data1"));
-
-        // Start a transaction but no commit, normal shutdown
-        W_DO(test_env->begin_xct());
-        W_DO(test_env->btree_insert(_stid, "aa2", "data2"));
-        output_durable_lsn(3);
-        return RCOK;
-    }
-
-    w_rc_t post_shutdown(ss_m *) {
-        output_durable_lsn(4);
-        x_btree_scan_result s;
-        W_DO(test_env->btree_scan(_stid, s));
-        EXPECT_EQ (3, s.rownum);
-        EXPECT_EQ (std::string("aa1"), s.minkey);
-        EXPECT_EQ (std::string("aa4"), s.maxkey);
-        return RCOK;
-    }
-};
-
 /* Passing */
-TEST (RestartTest, InflightCrashShutdown) {
-    test_env->empty_logdata_dir();
-    restart_inflight_crash_shutdown context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);  // true = simulated crash
-                                                                 // 10 = recovery mode, m1 default serial mode
-}
-/**/
-
-// Test case with an uncommitted transaction, checkpoint, simulated crash shutdown
-class restart_inflight_checkpoint_crash_shutdown : public restart_test_base 
-{
-public:
-    w_rc_t pre_shutdown(ss_m *ssm) {
-        output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
-        output_durable_lsn(2);
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa3", "data3"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa4", "data4"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa1", "data1"));
-        W_DO(ss_m::checkpoint()); 
-
-        // Start a transaction but no commit, checkpoint, and then normal shutdown
-        W_DO(test_env->begin_xct());
-        W_DO(test_env->btree_insert(_stid, "aa2", "data2"));
-        W_DO(ss_m::checkpoint()); 
-        output_durable_lsn(3);
-        return RCOK;
-    }
-
-    w_rc_t post_shutdown(ss_m *) {
-        output_durable_lsn(4);
-        x_btree_scan_result s;
-        W_DO(test_env->btree_scan(_stid, s));
-        EXPECT_EQ (3, s.rownum);
-        EXPECT_EQ (std::string("aa1"), s.minkey);
-        EXPECT_EQ (std::string("aa4"), s.maxkey);
-        return RCOK;
-    }
-};
-
 // In this test case, the user checkpoint was aborted due to crash shutdown
-
-/* Passing */
-TEST (RestartTest, InflightCheckpointCrashShutdown) {
+TEST (RestartTest, InflightCheckpointC) {
     test_env->empty_logdata_dir();
-    restart_inflight_checkpoint_crash_shutdown context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);  // true = simulated crash
-                                                                 // 10 = recovery mode, m1 default serial mode
+    restart_inflight_checkpoint context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);   // true = simulated crash
+                                                                  // 10 = recovery mode, m1 default serial mode
 }
 /**/
+
 
 // Test case with an uncommitted transaction, more than one page of data, no checkpoint, simulated crash shutdown
-class restart_inflight_many_crash_shutdown : public restart_test_base 
+class restart_inflight_many : public restart_test_base 
 {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
@@ -459,16 +451,26 @@ public:
 };
 
 /* Passing */
-TEST (RestartTest, InflightManyCrashShutdown) {
+TEST (RestartTest, InflightManyN) {
     test_env->empty_logdata_dir();
-    restart_inflight_many_crash_shutdown context;
+    restart_inflight_many context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0); // false = no simulated crash, normal shutdown
+                                                                 // 10 = recovery mode, m1 default serial mode
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, InflightManyC) {
+    test_env->empty_logdata_dir();
+    restart_inflight_many context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);  // true = simulated crash
                                                                  // 10 = recovery mode, m1 default serial mode
 }
 /**/
 
+
 // Test case with an uncommitted transaction, more than one page of data, checkpoint, simulated crash shutdown
-class restart_inflight_ckpt_many_crash_shutdown : public restart_test_base 
+class restart_inflight_ckpt_many : public restart_test_base 
 {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
@@ -501,156 +503,23 @@ public:
 };
 
 /* Passing */
-TEST (RestartTest, InflightCkptManyCrashShutdown) {
+TEST (RestartTest, InflightCkptManyN) {
     test_env->empty_logdata_dir();
-    restart_inflight_ckpt_many_crash_shutdown context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);  // true = simulated crash
+    restart_inflight_ckpt_many context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0); // false = no simulated crash, normal shutdown
                                                                  // 10 = recovery mode, m1 default serial mode
 }
 /**/
-
-// Test case with committed transactions,  no checkpoint, simulated crash shutdown
-class restart_crash_shutdown : public restart_test_base 
-{
-public:
-    w_rc_t pre_shutdown(ss_m *ssm) {
-        output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
-        output_durable_lsn(2);
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa3", "data1"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa4", "data1"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa1", "data1"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa5", "data1"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa2", "data1"));
-        output_durable_lsn(3);
-        return RCOK;
-    }
-
-    w_rc_t post_shutdown(ss_m *) {
-        output_durable_lsn(4);
-        x_btree_scan_result s;
-        W_DO(test_env->btree_scan(_stid, s));
-        EXPECT_EQ (5, s.rownum);
-        EXPECT_EQ (std::string("aa1"), s.minkey);
-        EXPECT_EQ (std::string("aa5"), s.maxkey);
-        return RCOK;
-    }
-};
 
 /* Passing */
-TEST (RestartTest, CrashShutdown) {
+TEST (RestartTest, InflightCkptManyC) {
     test_env->empty_logdata_dir();
-    restart_crash_shutdown context;
+    restart_inflight_ckpt_many context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);  // true = simulated crash
                                                                  // 10 = recovery mode, m1 default serial mode
 }
 /**/
 
-// Test case with committed transactions,  checkpoint, simulated crash shutdown
-class restart_checkpoint_crash_shutdown : public restart_test_base 
-{
-public:
-    w_rc_t pre_shutdown(ss_m *ssm) {
-        output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
-        output_durable_lsn(2);
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa3", "data1"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa4", "data1"));
-        W_DO(ss_m::checkpoint());
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa1", "data1"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa5", "data1"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa2", "data1"));
-        // If enabled the 2nd checkpoint...
-        // W_DO(ss_m::checkpoint());
-        output_durable_lsn(3);
-        return RCOK;
-    }
-
-    w_rc_t post_shutdown(ss_m *) {
-        output_durable_lsn(4);
-        x_btree_scan_result s;
-        W_DO(test_env->btree_scan(_stid, s));
-        EXPECT_EQ (5, s.rownum);
-        EXPECT_EQ (std::string("aa1"), s.minkey);
-        EXPECT_EQ (std::string("aa5"), s.maxkey);
-        return RCOK;
-    }
-};
-
-/* Passing  */
-TEST (RestartTest, CheckpointCrashShutdown) {
-    test_env->empty_logdata_dir();
-    restart_checkpoint_crash_shutdown context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);  // true = simulated crash
-                                                                 // 10 = recovery mode, m1 default serial mode
-}
-/**/
-
-// Test case with committed transactions,  more than one page of data, no checkpoint, simulated crash shutdown
-class restart_many_crash_shutdown : public restart_test_base 
-{
-public:
-    w_rc_t pre_shutdown(ss_m *ssm) {
-        output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
-        output_durable_lsn(2);
-
-        W_DO(populate_records(_stid, false));  // No checkpoint
-        output_durable_lsn(3);
-        return RCOK;
-    }
-
-    w_rc_t post_shutdown(ss_m *) {
-        output_durable_lsn(4);
-        x_btree_scan_result s;
-        W_DO(test_env->btree_scan(_stid, s));
-        const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
-        EXPECT_EQ (recordCount, s.rownum);
-        return RCOK;
-    }
-};
-
-/* Passing */
-TEST (RestartTest, ManyCrashShutdown) {
-    test_env->empty_logdata_dir();
-    restart_many_crash_shutdown context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);  // true = simulated crash
-                                                                 // 10 = recovery mode, m1 default serial mode
-}
-/**/
-
-// Test case with committed transactions,  more than one page of data, checkpoint, simulated crash shutdown
-class restart_many_ckpt_crash_shutdown : public restart_test_base 
-{
-public:
-    w_rc_t pre_shutdown(ss_m *ssm) {
-        output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
-        output_durable_lsn(2);
-
-        W_DO(populate_records(_stid, true));  // Checkpoint
-        output_durable_lsn(3);
-        return RCOK;
-    }
-
-    w_rc_t post_shutdown(ss_m *) {
-        output_durable_lsn(4);
-        x_btree_scan_result s;
-        W_DO(test_env->btree_scan(_stid, s));
-        const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
-        EXPECT_EQ (recordCount, s.rownum);
-        return RCOK;
-    }
-};
-
-/* Passing */
-TEST (RestartTest, ManyCkptCrashShutdown) {
-    test_env->empty_logdata_dir();
-    restart_many_ckpt_crash_shutdown context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);  // true = simulated crash
-                                                                 // 10 = recovery mode, m1 default serial mode
-}
-/**/
 
 /* Multi-thread test cases from here on */
 
