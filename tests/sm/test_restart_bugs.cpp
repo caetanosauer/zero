@@ -24,12 +24,12 @@ void output_durable_lsn(int W_IFDEBUG1(num)) {
 }
 
 
-/* Test case with an uncommitted transaction, no checkpoint, simulated crash shutdown
- * It is currently failing because the current implementation for simulated crash shutdown
+/* Test case with an uncommitted transaction, no checkpoint
+ * The crash shutdown scenario is currently failing because the current implementation for simulated crash shutdown
  * is unable to handle an in-flight transaction with multiple inserts.
  * A bug report concerning this issue has been submitted. (ZERO-182) 
  */
-class restart_complic_inflight_crash_shutdown : public restart_test_base 
+class restart_complic_inflight : public restart_test_base 
 {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
@@ -59,10 +59,19 @@ public:
     }
 };
 
+/* Passing */
+TEST (RestartTestBugs, ComplicInflightN) {
+    test_env->emtpy_logdata_dir();
+    restart_complic_inflight context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0); // false = no simulated crash, normal shutdown
+								 // 10 = recovery mode, m1 default serial mode
+}
+/**/
+
 /* Disabled because it's failing
- * TEST (RestartTestBugs, InflightCrashShutdownFailing) {
+ * TEST (RestartTestBugs, ComplicInflightC) {
  *   test_env->empty_logdata_dir();
- *   restart_complic_inflight_crash_shutdown context;
+ *   restart_complic_inflight context;
  *   EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);  // true = simulated crash
  *                                                                // 10 = recovery mode, m1 default serial mode
  * } 
@@ -70,7 +79,7 @@ public:
 
 
 /* Test case with a committed insert, an aborted removal and an aborted update 
- * Currently failing because of a bug in the code, see issue ZERO-183 
+ * Currently, the crash shutdown scenario is failing because of a bug in the code, see issue ZERO-183 
  * There are two other test cases in test_restart - MultithrdInflightC and MultithrdAbortC - that fail for the same reason.
  * When the issue is resolved and this test case is transferred to test_restart, enable those as well.
  */
@@ -98,6 +107,15 @@ public:
 	return RCOK;
     }
 };
+
+/* Passing */
+TEST (RestartTestBugs, AbortedRemoveN) {
+    test_env->empty_logdata_dir();
+    restar_aborted_remove context;
+    EXPECT_EQ(text_env->runRestartTest(&context, false, 10), 0);  // false = no simulated crash, normal shutdown
+								  // 10 = recovery mode, m1 default serial mode
+}
+/**/
 
 /* Disabled, because it's failing 
 TEST (RestartTestBugs, AbortedRemoveFailingC) {
