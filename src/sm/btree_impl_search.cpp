@@ -120,7 +120,7 @@ btree_impl::_ux_traverse(volid_t vol, snum_t store, const w_keystr_t &key,
             --times; // We don't penalize this.  Do it again.
             continue;
         }
-        
+
         rc_t rc = _ux_traverse_recurse (root_p, key, traverse_mode, leaf_latch_mode, leaf, 
                                         leaf_pid_causing_failed_upgrade, from_undo);
         if (rc.is_error()) {
@@ -247,8 +247,7 @@ btree_impl::_ux_traverse_recurse(btree_page_h&                start,
        
         if (slot_to_follow != t_follow_foster && next->get_foster() != 0) {
             // We followed a real-child pointer and found that it has foster... let's adopt it! (but
-            // opportunistically).  Just like eager adoption, it returns eGOODRETRY and we will
-            // retry if it succeeded.  otherwise, go on.
+            // opportunistically).  Same as  eager adoption, retry if eGOODRETRY, otherwise go on
             W_DO(_ux_traverse_try_opportunistic_adopt(*current, *next));
         }
 

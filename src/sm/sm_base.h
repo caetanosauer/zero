@@ -435,20 +435,22 @@ public:
         t_recovery_redo_log = 0x8,          // M1 traditional implementation:
                                             //    REDO is forward log scan driven                                           
         t_recovery_redo_page = 0x10,        // M2 implementation:
-                                            //    REDO is page driven using SPR                
+                                            //    REDO is page driven using SPR with minimum logging                
         t_recovery_redo_spr = 0x20,         // M3 implementation:
-                                            //    REDO is on-demand using SPR                
+                                            //    REDO is on-demand using SPR with minimum logging                
         t_recovery_redo_mix = 0x40,         // M4 implementation:
                                             //    REDO is using both page driven and
-                                            //    on-demand using SPR                                                           
-        t_recovery_undo_reverse = 0x80,     // M1 traditional implementation:
+                                            //    on-demand using SPR with minimum logging                    
+        t_recovery_redo_full_logging = 0x80,// M2 implementation:
+                                            //    REDO is page driven using SPR with full logging
+        t_recovery_undo_reverse = 0x100,     // M1 traditional implementation:
                                             //    UNDO is using reverse order with heap
-        t_recovery_undo_txn = 0x100,        // M2 implementation:            
+        t_recovery_undo_txn = 0x200,        // M2 implementation:            
                                             //    UNDO is transaction driven
-        t_recovery_redo_delay = 0x200,      // Testing hook:            
+        t_recovery_redo_delay = 0x400,      // Testing hook:            
                                             //    Internal delay before REDO phase
                                             //    only if we have actual REDO work
-        t_recovery_undo_delay = 0x400,      // Testing hook:            
+        t_recovery_undo_delay = 0x800,      // Testing hook:            
                                             //    Internal delay before UNDO phase
                                             //    only if we have actual UNDO work
     };
@@ -491,6 +493,11 @@ public:
     { 
 // TODO(Restart)... NYI, Recovery M4
         return ((recovery_internal_mode & t_recovery_redo_mix ) !=0);     
+    }
+    static bool use_redo_full_logging_recovery() 
+    { 
+        // Recovery M2
+        return ((recovery_internal_mode & t_recovery_redo_full_logging ) !=0);     
     }
     static bool use_undo_reverse_recovery() 
     { 

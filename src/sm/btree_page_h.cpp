@@ -108,7 +108,7 @@ rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the 
     // and we do not want to log the log_page_img_format log record
     if (true == full_logging)
     {
-       w_assert1(true == restart_m::use_redo_page_recovery());
+       w_assert1(true == restart_m::use_redo_full_logging_recovery());
        w_assert1(false == log_it);
     }
 
@@ -224,7 +224,7 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
         // Currently using full logging only if we are using page driven REDO recovery
         // The full logging flag is on when we are moving new records into destination page
         // not when we are re-copy existing (old) records into destination page
-        w_assert1(true == restart_m::use_redo_page_recovery());
+        w_assert1(true == restart_m::use_redo_full_logging_recovery());
         DBGOUT3( << "btree_page_h::_steal_records for a system transaction - need full logging");
     }
     else

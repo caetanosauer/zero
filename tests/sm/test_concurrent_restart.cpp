@@ -139,6 +139,7 @@ TEST (RestartTest, Empty) {
     restart_empty context;
     EXPECT_EQ(test_env->runRestartTest(&context, false, 20), 0);  // false = no simulated crash, normal shutdown
                                                                   // 20 = recovery mode, m2 default concurrent mode
+                                                                  // minimum logging
 }
 /**/
 
@@ -186,6 +187,7 @@ TEST (RestartTest, SimpleNormal) {
     restart_simple_normal context;
     EXPECT_EQ(test_env->runRestartTest(&context, false, 20), 0);  // false = no simulated crash, normal shutdown
                                                                   // 20 = recovery mode, m2 default concurrent mode, no wait
+                                                                  // minimum logging
 }
 /**/
 
@@ -233,6 +235,7 @@ TEST (RestartTest, SimpleCrash) {
     restart_simple_crash context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 20), 0);   // true = simulated crash
                                                                   // 20 = recovery mode, m2 default concurrent mode, no wait
+                                                                  // minimum logging
 }
 /**/
 
@@ -283,6 +286,7 @@ TEST (RestartTest, ComplexInFlightCrash) {
     restart_complex_in_flight_crash context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 20), 0);   // true = simulated crash
                                                                   // 20 = recovery mode, m2 default concurrent mode, no wait
+                                                                  // minimum logging
 }
 /**/
 
@@ -336,6 +340,7 @@ TEST (RestartTest, ComplexInFlightChkptCrash) {
     restart_complex_in_flight_chkpt_crash context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 20), 0);   // true = simulated crash
                                                                   // 20 = recovery mode, m2 default concurrent mode, no wait
+                                                                  // minimum logging
 }
 /**/
 
@@ -372,13 +377,26 @@ public:
     }
 };
 
-/* During REDO, multi-pages, WOD is not followed for SPR */
-/* Not passing *
+/* See btree_impl::_ux_traverse_recurse, the '_ux_traverse_try_opportunistic_adopt' call */
+/*    is returning eGOODRETRY and infinite loop, need further investigation, why?  A similar */
+/* test case 'restart_multi_concurrent_redo_crash' is passing */
+/* Not passing, WOD with minimum logging *
 TEST (RestartTest, MultiPageInFlightCrash) {
     test_env->empty_logdata_dir();
     restart_multi_page_in_flight_crash context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 20), 0);   // true = simulated crash
                                                                   // 20 = recovery mode, m2 default concurrent mode, no wait
+                                                                  // minimum logging
+}
+**/
+
+/* Need testing, full logging *
+TEST (RestartTest, MultiPageInFlightCrash) {
+    test_env->empty_logdata_dir();
+    restart_multi_page_in_flight_crash context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 24), 0);   // true = simulated crash
+                                                                  // 24 = recovery mode, m2 default concurrent mode, no wait
+                                                                  // full logging
 }
 **/
 
@@ -431,6 +449,7 @@ TEST (RestartTest, ConcurrentChkptCrash) {
     restart_concurrent_chkpt_crash context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 21), 0);   // true = simulated crash
                                                                   // 21 = recovery mode, m2 concurrent mode with delay in REDO
+                                                                  // minimum logging
 }
 /**/
 
@@ -502,6 +521,7 @@ TEST (RestartTest, SimpleConcurrentRedoCrash) {
     restart_simple_concurrent_redo_crash context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 21), 0);   // true = simulated crash
                                                                   // 21 = recovery mode, m2 concurrent mode with delay in REDO
+                                                                  // minimum logging
 }
 /**/
 
@@ -569,16 +589,26 @@ public:
 };
 
 
-/* During REDO, multi-pages, WOD is not followed for SPR */
-/* but the conflict detection is working */
-/* Not passing - currently using this one to debug *
+/* Passing, WOD with minimum logging, in-flight is in the first page, not splitted page */
 TEST (RestartTest, MultiConcurrentRedoCrash) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_redo_crash context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 21), 0);   // true = simulated crash
                                                                   // 21 = recovery mode, m2 concurrent mode with delay in REDO
+                                                                  // minimum logging
+}
+/**/
+
+/* Need testing, full logging, in-flight is in the first page, not splitted page *
+TEST (RestartTest, MultiConcurrentRedoCrash) {
+    test_env->empty_logdata_dir();
+    restart_multi_concurrent_redo_crash context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 25), 0);   // true = simulated crash
+                                                                  // 25 = recovery mode, m2 concurrent mode with delay in REDO
+                                                                  // full logging
 }
 **/
+
 
 // Test case with simple transactions (1 in-flight) and crash shutdown, 
 // one concurrent txn with conflict during undo phase
@@ -650,6 +680,7 @@ TEST (RestartTest, SimpleConcurrentUndoCrash) {
     restart_simple_concurrent_undo_crash context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 22), 0);   // true = simulated crash
                                                                   // 22 = recovery mode, m2 concurrent mode with delay in UNDO
+                                                                  // minimum logging
 }
 /**/
 
@@ -670,12 +701,12 @@ public:
 
         // Now insert more records, make sure these records are at 
         // the end of B-tree (append)
-        W_DO(test_env->btree_insert_and_commit(_stid, "zz3", "data3"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "zz1", "data1"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "zz2", "data2"));
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa3", "data3"));
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa1", "data1"));
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa2", "data2"));
 
         W_DO(test_env->begin_xct());
-        W_DO(test_env->btree_insert(_stid, "zz4", "data4"));             // in-flight
+        W_DO(test_env->btree_insert(_stid, "aa4", "data4"));             // in-flight
 
         output_durable_lsn(3);
         return RCOK;
@@ -694,7 +725,7 @@ public:
         // Insert into the first page, depending on how far the REDO goes,
         // the insertion might or might not succeed
         W_DO(test_env->begin_xct());
-        w_rc_t rc = test_env->btree_insert(_stid, "aa1", "data4");
+        w_rc_t rc = test_env->btree_insert(_stid, "aa7", "data4");
         if (rc.is_error())
         {
             // Conflict        
@@ -731,15 +762,29 @@ public:
     }
 };
 
-/* During REDO, multi-pages, WOD is not followed for SPR */
-/* Not passing *
+/* During scan, fence key error from btree_impl_search.cpp:304: d > 0 */
+/* The in-flight is in the first page, not splitted page */
+/* if eliminates the page split, the code works */
+/* Not passing, WOD with minimum logging *
 TEST (RestartTest, ConcurrentNoConflictCrash) {
     test_env->empty_logdata_dir();
     restart_concurrent_no_conflict_crash context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 23), 0);   // true = simulated crash
                                                                   // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+                                                                  // minimum logging
 }
 **/
+
+/* Need testing, full logging *
+TEST (RestartTest, ConcurrentNoConflictCrash) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_no_conflict_crash context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 27), 0);   // true = simulated crash
+                                                                  // 27 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+                                                                  // full logging
+}
+**/
+
 
 // Test case with more than one page of data (1 in-flight) and crash shutdown, one concurrent txn to
 // access an in_doubt page so it should not be allowed
@@ -812,13 +857,25 @@ public:
     }
 };
 
-/* During REDO, multi-pages, WOD is not followed for SPR */
-/* Not passing *
+/* UNDO phase, item not found, probably due to multiple splits */
+/* The in-flight is in the last page, splitted page */
+/* Not passing, WOD with minimum logging *
 TEST (RestartTest, ConcurrentConflictCrash) {
     test_env->empty_logdata_dir();
     restart_concurrent_conflict_crash context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 23), 0);   // true = simulated crash
                                                                   // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+                                                                  // minimum logging
+}
+**/
+
+/* Need testing, full logging *
+TEST (RestartTest, ConcurrentConflictCrash) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_conflict_crash context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 27), 0);   // true = simulated crash
+                                                                  // 27 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+                                                                  // full logging
 }
 **/
 
@@ -918,13 +975,25 @@ public:
     }
 };
 
-/* During REDO, multi-pages, WOD is not followed for SPR */
-/* Not passing *
+/* UNDO phase, item not found, probably due to multiple splits */
+/* The in-flight is in the last page, splitted page */
+/* Not passing, WOD with minimum logging *
 TEST (RestartTest, MultiConcurrentConflictCrash) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_conflict_crash context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 23), 0);   // true = simulated crash
                                                                   // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+                                                                  // minimum logging
+}
+**/
+
+/* Need testing, full logging *
+TEST (RestartTest, MultiConcurrentConflictCrash) {
+    test_env->empty_logdata_dir();
+    restart_multi_concurrent_conflict_crash context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 27), 0);   // true = simulated crash
+                                                                  // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+                                                                  // full logging
 }
 **/
 

@@ -398,7 +398,7 @@ btree_ghost_mark_log::redo(fixable_page_h *page)
         bool found;
         slotid_t slot;
         bp.search(key, found, slot);
-        if (false == restart_m::use_redo_page_recovery()) 
+        if (false == restart_m::use_redo_full_logging_recovery()) 
         {
             // If doing page driven REDO, page_rebalance initialized the
             // target page (foster child).
@@ -414,7 +414,7 @@ btree_ghost_mark_log::redo(fixable_page_h *page)
             if (!found) 
             {        
 // TODO(Restart)...            
-                DBGOUT3( << "&&&& btree_ghost_mark_log::redo - page driven, key not found in page but it is okay");
+                DBGOUT3( << "&&&& btree_ghost_mark_log::redo - page driven with full logging, key not found in page but it is okay");
             }
         }
     }
@@ -622,7 +622,7 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
     shpid_t another_pid = recovering_dest ? dp->_page2_pid : shpid();
     w_assert0(recovering_dest || target_pid == dp->_page2_pid);
 
-    if (true == restart_m::use_redo_page_recovery())
+    if (true == restart_m::use_redo_full_logging_recovery())
     {
         // TODO(Restart)... milestone 2
         // If using page driven REDO recovery, full logging was used for
@@ -873,7 +873,7 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
     // recovering_dest == false: recover foster parent, assumed foster child has been recovered
     w_assert0(recovering_dest || target_pid == page2_id);
 
-    if (true == restart_m::use_redo_page_recovery()) 
+    if (true == restart_m::use_redo_full_logging_recovery()) 
     {
         // TODO(Restart)... milestone 2
         // If using page driven REDO recovery, use full logging for b-tree 
@@ -1027,6 +1027,28 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
 
         }
     } else {
+        // Cannot be in full logging mode
+        w_assert1(false == restart_m::use_redo_full_logging_recovery());
+
+        // If we are in restart_m::use_redo_page_recovery() mode (minimum logging)
+        // then the Recovery REDO via SPR comes here.  The REDO logic marks the
+        // page as not bufferpool_managed before SPR and mark it bufferpool_managed
+        // after SPR.
+        // If recoverying destination or destination, the following logic would recover the
+        // source page to immediately before the page rebalance operation (using a scratch page),
+        // so the source page has all the original records, and then move the records
+        // from source to destination.  Because this is a page rebalance operation, the
+        // destination page starts as an empty page.
+        //
+        // The logic probably works well with normal Single Page Recovery (do we have 
+        // sufficient test?)
+        // but does it work well with Recovery REDO with minimum logging?  Especially if
+        // we have complex operations, such as multiple rebalance and merge operations
+        // on the same page, etc.  If we are doing log scan driven REDO then we are probably
+        // okay using this logic, but when using page driven REDO then we have problems if
+        // there are multiple load balance operations on the same page, the record movements
+        // might not be what we expected.
+
         // this is in SPR. we use scratch space for another page because bufferpool frame
         // for another page is probably too latest for SPR.
         SprScratchSpace frame(bp.vol(), bp.store(), another_pid);

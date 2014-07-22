@@ -8,6 +8,7 @@
 #include "sm_int_1.h"
 
 #include "bf_tree_inline.h"
+#include "restart.h"
 
 
 int fixable_page_h::force_Q_fixing = 0;  // <<<>>>
@@ -77,7 +78,8 @@ w_rc_t fixable_page_h::fix_direct(volid_t vol, shpid_t shpid,
     return RCOK;
 }
 
-w_rc_t fixable_page_h::fix_recovery_redo(bf_idx idx, lpid_t page_updated) {
+w_rc_t fixable_page_h::fix_recovery_redo(bf_idx idx, lpid_t page_updated,
+                                            const bool managed) {
 
     // Special function for Recovery REDO phase
     // Caller of this function is responsible for acquire and release EX latch on this page
@@ -101,9 +103,26 @@ w_rc_t fixable_page_h::fix_recovery_redo(bf_idx idx, lpid_t page_updated) {
 
     smlevel_0::bf->associate_page(_pp, idx, page_updated);
 
-    _bufferpool_managed = true;
+    if (false == managed)
+    {
+        // Page is not managed only if using minimum logging with page driven REDO
+        w_assert1(true == restart_m::use_redo_page_recovery());
+    }
+    _bufferpool_managed = managed;
     _mode = LATCH_EX;
 
+    return RCOK;
+}
+
+w_rc_t fixable_page_h::fix_recovery_redo(const bool managed) 
+{
+    // Special function for Recovyer REDO phase
+    // Mark the page as buffer pool managed
+    // It is only used for page driven REDO (SPR) with minimum logging and
+    // the page has been recovered via SPR already
+    
+    w_assert1(true == restart_m::use_redo_page_recovery());
+    _bufferpool_managed = managed;
     return RCOK;
 }
 

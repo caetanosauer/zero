@@ -706,7 +706,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     // Clear the in_doubt flag so the page driven REDO phase 
                     // does not load this page again
                     w_assert1(0 != idx);       
-                    w_assert1(true == restart_m::use_redo_page_recovery());
+                    w_assert1(true == restart_m::use_redo_page_recovery() || 
+                              true == restart_m::use_redo_full_logging_recovery());
                     force_load = false;
                     in_doubt_to_dirty(idx);        // Reset in_doubt and dirty flags accordingly
                 }
@@ -785,11 +786,18 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 //                          M3 (concurrent lock mode) - block user transaction until recovery is done
 ////////////////////////////////////////
                 
-                    // Has parent, block
-                    if (true ==  restart_m::use_concurrent_log_recovery()) 
+                    // Has parent, block if caller is not from recovery
+                    if ((true ==  restart_m::use_concurrent_log_recovery()) && (false == from_recovery))
                         return RC(eACCESS_CONFLICT);
                     else if (true ==  restart_m::use_concurrent_lock_recovery()) 
                         return RC(eNOTIMPLEMENTED);
+                    else if (true == from_recovery)
+                    {
+                        // If caller is from recovery (e.g. rollback), do not block
+                        // page is in_doubt, set force_load to cause the retry logic to load the page                        
+                        force_load = true;
+                        continue;
+                    }
                     else
                     {
                         // Unexpected mode
@@ -852,9 +860,9 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     //         page and also it has to traversal B-tree (visit multiple pages), so
                     //         it is relying on input parameter 'from_recovery'
 
-                    if ((false == from_recovery) && (false == cb._recovery_access))
+                    if ((true == from_recovery) || (true == cb._recovery_access))
                     {
-                        // Not from Recovery
+                        // From Recovery, no validation
                         DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: an existing page from recovery, skip check for accessability, page: " << shpid);
                     }
                     else

@@ -2656,10 +2656,11 @@ restart_m::undo_reverse_pass(
 //     Lock:              use_concurrent_lock_recovery()  <-- Milestone 3
 //
 // REDO is performed using one of the following:
-//    Log driven:      use_redo_log_recovery()       <-- Milestone 1 default, see redo_pass
-//    Page driven:    use_redo_page_recovery()    <-- Milestone 2
-//    SPR driven:     use_redo_spr_recovery()       <-- Milestone 3
-//    Mixed driven:   use_redo_mix_recovery()      <-- Milestone 4
+//    Log driven:      use_redo_log_recovery()              <-- Milestone 1 default, see redo_pass
+//    Page driven:    use_redo_page_recovery()           <-- Milestone 2, minimum logging
+//    Page driven:    use_redo_full_logging_recovery()  <-- Milestone 2, full logging
+//    SPR driven:     use_redo_spr_recovery()              <-- Milestone 3
+//    Mixed driven:   use_redo_mix_recovery()             <-- Milestone 4
 //*********************************************************************
 void restart_m::redo_concurrent()
 {
@@ -2694,7 +2695,7 @@ void restart_m::redo_concurrent()
             // Concurrent txn would generate new log records so the curr_lsn could be different
         }
     }
-    else if (true == use_redo_page_recovery())
+    else if (true == use_redo_page_recovery() || true == use_redo_full_logging_recovery())
     {
         _redo_page_pass();
     }
@@ -2809,7 +2810,7 @@ void restart_m::_redo_page_pass()
     //                             no lock operations during REDO
 
     w_assert1((true == use_concurrent_log_recovery()) || (true == use_concurrent_lock_recovery()));
-    w_assert1(true == use_redo_page_recovery());
+    w_assert1(true == use_redo_page_recovery() || true == use_redo_full_logging_recovery());
 
     // If no in_doubt page in buffer pool, then nothing to process
     if (0 == smlevel_0::in_doubt_count)
@@ -3011,7 +3012,19 @@ void restart_m::_redo_page_pass()
             // Re-construct the lpid using several fields in cb
             vid_t vid(vol);
             lpid_t store_id(vid, store, shpid);           
-            W_COERCE(page.fix_recovery_redo(idx, store_id));
+            if (true == use_redo_page_recovery())
+            {
+                // Use minimum logging
+                // page is not buffer pool managed before SPR
+                // only mark the page as buffer pool managed after SPR
+                W_COERCE(page.fix_recovery_redo(idx, store_id, false /* managed*/));            
+            }
+            else if (true == use_redo_full_logging_recovery())
+            {
+                // Use full logging, page is buffer pool managed
+                W_COERCE(page.fix_recovery_redo(idx, store_id));                
+            }
+
 
             // We rely on pid/tag set correctly in individual redo() functions
             // set for all pages, both virgin and non-virgin
@@ -3083,10 +3096,19 @@ void restart_m::_redo_page_pass()
             //                          virgin or corrupted page
             DBGOUT3(<< "REDO (redo_page_pass()): SPR with emlsn: " << emlsn << ", page idx: " << idx); 
             // Signal this page is being accessed by recovery
+            // SPR operation does not hold latch on the page to be recovered, because 
+            // it assumes the page is private until recovered.  It is not the case during
+            // recovery.  It is caller's responsibility to hold latch before accessing SPR
             page.set_recovery_access();
             W_COERCE(smlevel_0::log->recover_single_page(page, emlsn, true));   // we have the actual emlsn even if page corrupted
-
             page.clear_recovery_access();
+
+            if (true == use_redo_page_recovery())
+            {
+                // Use minimum logging
+                // Mark the page as buffer pool managed after SPR REDO
+                W_COERCE(page.fix_recovery_redo(true /* managed*/));            
+            }
 
             // After the page is loaded and recovered (SPR), the page context should
             // have the last-write lsn information (not in cb).  

@@ -70,6 +70,10 @@ void log_m::dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t 
 
 rc_t log_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn, 
                                     const bool actual_emlsn) {
+    // SPR operation does not hold latch on the page to be recovered, because 
+    // it assumes the page is private until recovered.  It is not the case during
+    // recovery.  It is caller's responsibility to hold latch before accessing SPR
+
     // First, retrieve the backup page we will be based on.
     // If this backup is enough recent, we have to apply only a few logs.
     w_assert1(p.is_fixed());
