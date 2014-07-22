@@ -456,6 +456,7 @@ TEST (RestartTest, ConcurrentChkptC) {
 
 // Test case with simple transactions (1 in-flight)
 // one concurrent txn with conflict during redo phase
+// Currently failing in both scenarios because scan is succeeding concurrently to redo (should not)
 class restart_simple_concurrent_redo : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
@@ -488,7 +489,7 @@ public:
                                                      // read/scan txn, it should not be allowed
         if (rc.is_error())
         {
-            DBGOUT3(<<"restart_simple_concurrent_redo_crash: tree_scan error: " << rc);        
+            DBGOUT3(<<"restart_simple_concurrent_redo: tree_scan error: " << rc);        
 
             // Abort the failed scan txn
             test_env->abort_xct();
@@ -505,7 +506,7 @@ public:
         }
         else
         {
-            cerr << "restart_simple_concurrent_redo_crash: scan operation should not succeed"<< endl;         
+            cerr << "restart_simple_concurrent_redo: scan operation should not succeed"<< endl;         
             return RC(eINTERNAL);
         }
 
@@ -516,23 +517,23 @@ public:
     }
 };
 
-/* Passing */
+/* Failing * 
 TEST (RestartTest, SimpleConcurrentRedoN) {
     test_env->empty_logdata_dir();
     restart_simple_concurrent_redo context;
     EXPECT_EQ(test_env->runRestartTest(&context, false, 21), 0);  // false = no simulated crash, normal shutdown
                                                                   // 21 = recovery mode, m2 concurrent mode with delay in REDO
 }
-/**/
+**/
 
-/* Passing */
+/* Failing * 
 TEST (RestartTest, SimpleConcurrentRedoC) {
     test_env->empty_logdata_dir();
     restart_simple_concurrent_redo context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 21), 0);   // true = simulated crash
                                                                   // 21 = recovery mode, m2 concurrent mode with delay in REDO
 }
-/**/
+**/
 
 
 // Test case with multi-page b-tree, simple transactions (1 in-flight)
@@ -597,14 +598,14 @@ public:
     }
 };
 
-/* Passing */
+/* Failing, same as below 
 TEST (RestartTest, MultiConcurrentRedoN) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_redo context;
     EXPECT_EQ(test_env->runRestartTest(&context, false, 21), 0);  // false = no simulated crash, normal shutdown
                                                                   // 21 = recovery mode, m2 concurrent mode with delay in REDO
 }
-/**/
+**/
 
 /* During REDO, SPR complains about log record touching multiple pages: eWRONG_PAGE_LSNCHAIN(77) */
 /* but the conflict detection is working */
@@ -620,6 +621,7 @@ TEST (RestartTest, MultiConcurrentRedoC) {
 
 // Test case with simple transactions (1 in-flight)
 // one concurrent txn with conflict during undo phase
+// Currently failing in both scenarios because scan is succeeding concurrently to undo (should not)
 class restart_simple_concurrent_undo : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
@@ -654,7 +656,7 @@ public:
 
         if (rc.is_error())
         {
-            DBGOUT3(<<"restart_simple_concurrent_undo_crash: tree_scan error: " << rc);
+            DBGOUT3(<<"restart_simple_concurrent_undo: tree_scan error: " << rc);
 
             // Abort the failed scan txn
             test_env->abort_xct();
@@ -671,7 +673,7 @@ public:
         }
         else
         {
-            cerr << "restart_simple_concurrent_undo_crash: scan operation should not succeed"<< endl;         
+            cerr << "restart_simple_concurrent_undo: scan operation should not succeed"<< endl;         
             return RC(eINTERNAL);
         }
 
@@ -682,23 +684,23 @@ public:
     }
 };
 
-/* Passing */
+/* Failing *
 TEST (RestartTest, SimpleConcurrentUndoN) {
     test_env->empty_logdata_dir();
     restart_simple_concurrent_undo context;
     EXPECT_EQ(test_env->runRestartTest(&context, false, 22), 0);  // false = no simulated crash, normal shutdown
                                                                   // 22 = recovery mode, m2 concurrent mode with delay in UNDO
 }
-/**/
+**/
 
-/* Passing */
+/* Failing *
 TEST (RestartTest, SimpleConcurrentUndoC) {
     test_env->empty_logdata_dir();
     restart_simple_concurrent_undo context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 22), 0);   // true = simulated crash
                                                                   // 22 = recovery mode, m2 concurrent mode with delay in UNDO
 }
-/**/
+**/
 
 
 // Test case with more than one page of data (1 in-flight), one concurrent txn to
@@ -871,14 +873,14 @@ public:
     }
 };
 
-/* Passing */
+/* Failing, same as below *
 TEST (RestartTest, ConcurrentConflictN) {
     test_env->empty_logdata_dir();
     restart_concurrent_conflict context;
     EXPECT_EQ(test_env->runRestartTest(&context, false, 23), 0);  // false = no simulated crash, normal shutdown
                                                                   // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
 }
-/**/
+**/
 
 /* During REDO, SPR complains about log record touching multiple pages: eWRONG_PAGE_LSNCHAIN(77) */
 /* Because the SPR is on root page, the concurrent insert failed during tree walk */
@@ -987,14 +989,14 @@ public:
     }
 };
 
-/* Passing */
+/* Failing, same as below * 
 TEST (RestartTest, MultiConcurrentConflictN) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_conflict context;
     EXPECT_EQ(test_env->runRestartTest(&context, false, 23), 0);  // false = no simulated crash, normal shutdown
                                                                   // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
 }
-/**/
+**/
 
 /* During REDO, SPR complains about log record touching multiple pages: eWRONG_PAGE_LSNCHAIN(77) */
 /* Because the SPR is on root page, the concurrent insert failed during tree walk */
