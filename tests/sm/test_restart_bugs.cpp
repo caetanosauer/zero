@@ -24,8 +24,8 @@ void output_durable_lsn(int W_IFDEBUG1(num)) {
 }
 
 
-/* Test case with an uncommitted transaction, no checkpoint, simulated crash shutdown
- * It is currently failing because the current implementation for simulated crash shutdown
+/* Test case with an uncommitted transaction, no checkpoint
+ * The crash shutdown scenario is currently failing because the current implementation for simulated crash shutdown
  * is unable to handle an in-flight transaction with multiple inserts.
  * A bug report concerning this issue has been submitted. (ZERO-182) 
  */
@@ -80,9 +80,8 @@ TEST (RestartTestBugs, ComplicInflightC) {
 } 
 /* */
 
-
 /* Test case with a committed insert, an aborted removal and an aborted update 
- * Currently failing because of a bug in the code, see issue ZERO-183 
+ * Currently, the crash shutdown scenario is failing because of a bug in the code, see issue ZERO-183 
  * There are two other test cases in test_restart - MultithrdInflightC and MultithrdAbortC - that fail for the same reason.
  * When the issue is resolved and this test case is transferred to test_restart, enable those as well.
  */
@@ -127,11 +126,11 @@ TEST (RestartTestBugs, AbortedRemoveN) {
 /**/
 
 /* Passing */
-TEST (RestartTestBugs, AbortedRemoveFailingC) {
+TEST (RestartTestBugs, AbortedRemoveC) {
     test_env->empty_logdata_dir();
     restart_aborted_remove context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
-    // true = simulated crash; 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);   // true = simulated crash; 
+                                                                  // 10 = recovery mode, m1 default serial mode
 }
 /**/
 

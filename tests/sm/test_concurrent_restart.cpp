@@ -232,7 +232,8 @@ TEST (RestartTest, SimpleCF) {
 }
 /**/
 
-// Test case with transactions (1 in-flight with multiple operations) and crash shutdown
+
+// Test case with transactions (1 in-flight with multiple operations)
 // no concurrent activities during recovery
 class restart_complex_in_flight : public restart_test_base  {
 public:
@@ -313,7 +314,8 @@ TEST (RestartTest, ComplexInFlightCF) {
 }
 /**/
 
-// Test case with transactions (1 in-flight) with checkpoint and crash shutdown
+
+// Test case with transactions (1 in-flight) with checkpoint
 // no concurrent activities during recovery
 class restart_complex_in_flight_chkpt : public restart_test_base  {
 public:
@@ -331,7 +333,6 @@ public:
         W_DO(test_env->btree_insert(_stid, "aa5", "data5"));
         W_DO(test_env->btree_insert(_stid, "aa2", "data2"));
         W_DO(test_env->btree_insert(_stid, "aa7", "data7"));
-
         W_DO(ss_m::checkpoint()); 
 
         output_durable_lsn(3);
@@ -397,7 +398,8 @@ TEST (RestartTest, ComplexInFlightChkptCF) {
 }
 /**/
 
-// Test case with 1 transaction (in-flight with more than one page of data) and crash shutdown
+
+// Test case with 1 transaction (in-flight with more than one page of data)
 // no concurrent activities during recovery
 class restart_multi_page_in_flight : public restart_test_base  {
 public:
@@ -556,7 +558,8 @@ TEST (RestartTest, ConcurrentChkptCF) {
 }
 /**/
 
-// Test case with simple transactions (1 in-flight) and crash shutdown, 
+
+// Test case with simple transactions (1 in-flight)
 // one concurrent txn with conflict during redo phase
 class restart_simple_concurrent_redo : public restart_test_base  {
 public:
@@ -663,7 +666,7 @@ TEST (RestartTest, SimpleConcurrentRedoCF) {
 /**/
 
 
-// Test case with multi-page b-tree, simple transactions (1 in-flight) and crash shutdown, 
+// Test case with multi-page b-tree, simple transactions (1 in-flight)
 // one concurrent txn with conflict during redo phase
 class restart_multi_concurrent_redo : public restart_test_base  {
 public:
@@ -725,7 +728,6 @@ public:
         return RCOK;
     }
 };
-
 
 /* Passing, WOD with minimal logging, in-flight is in the first page *
 * please re-design test case becasue normal shutdown does not have recovery, therefore the post-crash scan should succeed *
@@ -881,7 +883,8 @@ TEST (RestartTest, SimpleConcurrentUndoCF) {
 }
 /**/
 
-// Test case with more than one page of data (1 in-flight) and crash shutdown, one concurrent txn to
+
+// Test case with more than one page of data (1 in-flight), one concurrent txn to
 // access a non-dirty page so it should be allowed
 class restart_concurrent_no_conflict : public restart_test_base  {
 public:
@@ -1245,7 +1248,7 @@ TEST (RestartTest, MultiConcurrentConflictNF) {
 /* Not passing, WOD with minimal logging *
 TEST (RestartTest, MultiConcurrentConflictCrash) {
     test_env->empty_logdata_dir();
-    restart_multi_concurrent_conflict_crash context;
+    restart_multi_concurrent_conflict context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 23), 0);   // true = simulated crash
                                                                   // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
                                                                   // minimal logging

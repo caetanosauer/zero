@@ -1218,6 +1218,7 @@ TEST (RestartTest, MultithrdLData1N) {
     EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);
     // false = normal shutdown, 10 = recovery mode, m1 default serial mode
 }
+
 /* Passing */
 TEST (RestartTest, MultithrdLData1C) {
     test_env->empty_logdata_dir();
@@ -1348,7 +1349,7 @@ TEST (RestartTest, MultithrdLData3C) {
 }
 /**/
 
-/// Test case with 3 threads, each with a transaction containing a large amount of inserts, 2 inflight, 1 committed, 2 checkpoints
+// Test case with 3 threads, each with a transaction containing a large amount of inserts, 2 inflight, 1 committed, 2 checkpoints
 class restart_multithrd_ldata4 : public restart_test_base
 {
 public:
@@ -1408,7 +1409,7 @@ TEST (RestartTest, MultithrdLData4C) {
 }
 /**/
 
-/// Test case with 3 threads, each with a transaction containing a large amount of inserts, 2 inflight, 1 committed, 2 checkpoints
+// Test case with 3 threads, each with a transaction containing a large amount of inserts, 2 inflight, 1 committed, 2 checkpoints
 class restart_multithrd_ldata5 : public restart_test_base
 {
 public:
@@ -1471,8 +1472,6 @@ TEST (RestartTest, MultithrdLData5C) {
     // true = crash shutdown, 10 = recovery mode, m1 default serial mode
 }
 /**/
-
-
 
 
 int main(int argc, char **argv) {
