@@ -435,14 +435,14 @@ public:
         t_recovery_redo_log = 0x8,          // M1 traditional implementation:
                                             //    REDO is forward log scan driven                                           
         t_recovery_redo_page = 0x10,        // M2 implementation:
-                                            //    REDO is page driven using SPR with minimum logging                
-        t_recovery_redo_spr = 0x20,         // M3 implementation:
-                                            //    REDO is on-demand using SPR with minimum logging                
+                                            //    REDO is page driven using Single-Page-Recovery with minimal logging                
+        t_recovery_redo_demand = 0x20,      // M3 implementation:
+                                            //    REDO is on-demand using Single-Page-Recovery with minimal logging                
         t_recovery_redo_mix = 0x40,         // M4 implementation:
                                             //    REDO is using both page driven and
-                                            //    on-demand using SPR with minimum logging                    
+                                            //    on-demand using Single-Page-Recovery with minimal logging                    
         t_recovery_redo_full_logging = 0x80,// M2 implementation:
-                                            //    REDO is page driven using SPR with full logging
+                                            //    REDO is page driven using Single-Page-Recovery with full logging
         t_recovery_undo_reverse = 0x100,     // M1 traditional implementation:
                                             //    UNDO is using reverse order with heap
         t_recovery_undo_txn = 0x200,        // M2 implementation:            
@@ -484,10 +484,10 @@ public:
         // Recovery M2
         return ((recovery_internal_mode & t_recovery_redo_page ) !=0);     
     }
-    static bool use_redo_spr_recovery() 
+    static bool use_redo_demand_recovery() 
     { 
 // TODO(Restart)... NYI, Recovery M3
-        return ((recovery_internal_mode & t_recovery_redo_spr ) !=0);     
+        return ((recovery_internal_mode & t_recovery_redo_demand ) !=0);     
     }
     static bool use_redo_mix_recovery() 
     { 
@@ -557,7 +557,7 @@ public:
     // they should be stored in class 'restart_m'
     // Currently resides here for prototype converient access only
     static lsn_t        redo_lsn;        // redo_lsn is used by child thread as the start scanning point for redo
-    static lsn_t        last_lsn;        // last_lsn is used by page driven REDO operation SPR emlsn if encounter
+    static lsn_t        last_lsn;        // last_lsn is used by page driven REDO operation Single-Page-Recovery emlsn if encounter
                                          // a virgin or corrupted page
     static uint32_t     in_doubt_count;  // in_doubt_count is used to child thread during the REDO phase   
 

@@ -29,7 +29,7 @@ void output_durable_lsn(int W_IFDEBUG1(num)) {
  * is unable to handle an in-flight transaction with multiple inserts.
  * A bug report concerning this issue has been submitted. (ZERO-182) 
  */
-class restart_complic_inflight_crash_shutdown : public restart_test_base 
+class restart_complic_inflight : public restart_test_base 
 {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
@@ -42,9 +42,9 @@ public:
 
         // Start a transaction but no commit, normal shutdown
         W_DO(test_env->begin_xct());
-        W_DO(test_env->btree_insert(_stid, "aa5", "data5"));
-        W_DO(test_env->btree_insert(_stid, "aa2", "data2"));
         W_DO(test_env->btree_insert(_stid, "aa7", "data7"));
+        W_DO(test_env->btree_insert(_stid, "aa2", "data2"));
+        W_DO(test_env->btree_insert(_stid, "aa5", "data5"));
         W_DO(test_env->btree_insert(_stid, "aa0", "data0"));
         W_DO(test_env->btree_insert(_stid, "aa9", "data9"));
         output_durable_lsn(3);
@@ -63,13 +63,22 @@ public:
 };
 
 /* Passing */
-TEST (RestartTestBugs, InflightCrashShutdownFailing) {
+TEST (RestartTestBugs, ComplicInflightN) {
     test_env->empty_logdata_dir();
-    restart_complic_inflight_crash_shutdown context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);  // true = simulated crash
+    restart_complic_inflight context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);  // false = no simulated crash
                                                                  // 10 = recovery mode, m1 default serial mode
 } 
 /**/
+
+/* Passing */
+TEST (RestartTestBugs, ComplicInflightC) {
+    test_env->empty_logdata_dir();
+    restart_complic_inflight context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);  // true = simulated crash
+                                                                // 10 = recovery mode, m1 default serial mode
+} 
+/* */
 
 
 /* Test case with a committed insert, an aborted removal and an aborted update 
@@ -108,7 +117,16 @@ public:
     }
 };
 
-/* Not passing in retail build */
+/* Passing */
+TEST (RestartTestBugs, AbortedRemoveN) {
+    test_env->empty_logdata_dir();
+    restart_aborted_remove context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);  // false = no simulated crash;
+                                                                  // 10 = recovery mode, m1 default serial mode
+}
+/**/
+
+/* Passing */
 TEST (RestartTestBugs, AbortedRemoveFailingC) {
     test_env->empty_logdata_dir();
     restart_aborted_remove context;
@@ -116,7 +134,6 @@ TEST (RestartTestBugs, AbortedRemoveFailingC) {
     // true = simulated crash; 10 = recovery mode, m1 default serial mode
 }
 /**/
-
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

@@ -1089,7 +1089,7 @@ public:
     /**
     * \brief Pretty-prints the content of log file to the given stream
     * in a way we can easily debug single-page recovery.
-    * \ingroup SPR
+    * \ingroup Single-Page-Recovery
     * \details
     * This is for debugging, so performance is not guaranteed and also not thread-safe.
     * @param[in] o   Stream to which to write the information.
@@ -1101,13 +1101,13 @@ public:
                                                 const lsn_t &max_lsn);
     /**
      * Overload to receive only pid.
-     * \ingroup SPR
+     * \ingroup Single-Page-Recovery
      * @copydoc dump_page_lsn_chain(std::ostream&, const lpid_t &, const lsn_t&)
      */
     static void             dump_page_lsn_chain(std::ostream &o, const lpid_t &pid);
     /**
      * Overload to receive neither.
-     * \ingroup SPR
+     * \ingroup Single-Page-Recovery
      * @copydoc dump_page_lsn_chain(std::ostream&, const lpid_t &, const lsn_t&)
      */
     static void             dump_page_lsn_chain(std::ostream &o);

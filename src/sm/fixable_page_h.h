@@ -128,7 +128,7 @@ public:
 
     /**
      * Only used in the REDO phase of Recovery process
-     * with page driven REDO (SPR) with minimum logging
+     * with page driven REDO (Single-Page-Recovery) with minimal logging
      */
     w_rc_t fix_recovery_redo(const bool managed);
 

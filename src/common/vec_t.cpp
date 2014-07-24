@@ -760,7 +760,7 @@ bool w_keystr_t::construct_from_vec(const cvec_t &vect) {
 
 bool w_keystr_t::copy_from_vec(const cvec_t &vect) {
     // Different from construct_from_vec
-    // this function copy the data from cvec_t into w_keystr only,
+    // this function copies the data from cvec_t into w_keystr only,
     // it does not add the leading type byte
     clear();
 

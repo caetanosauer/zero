@@ -70,15 +70,15 @@ void log_m::dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t 
 
 rc_t log_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn, 
                                     const bool actual_emlsn) {
-    // SPR operation does not hold latch on the page to be recovered, because 
+    // Single-Page-Recovery operation does not hold latch on the page to be recovered, because 
     // it assumes the page is private until recovered.  It is not the case during
-    // recovery.  It is caller's responsibility to hold latch before accessing SPR
+    // recovery.  It is caller's responsibility to hold latch before accessing Single-Page-Recovery
 
     // First, retrieve the backup page we will be based on.
     // If this backup is enough recent, we have to apply only a few logs.
     w_assert1(p.is_fixed());
     lpid_t pid = p.pid();
-    DBGOUT1(<< "SPR on " << pid << ", EMLSN=" << emlsn);
+    DBGOUT1(<< "Single-Page-Recovery on " << pid << ", EMLSN=" << emlsn);
     if (smlevel_0::bk->page_exists(p.vol(), pid.page)) {
         W_DO(smlevel_0::bk->retrieve_page(*p.get_generic_page(), p.vol(), pid.page));
         w_assert1(pid == p.pid());
@@ -122,12 +122,12 @@ rc_t log_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
     DBGOUT1(<< "Collected log. About to apply " << ordered_entires.size() << " logs");
     W_DO(log_core::THE_LOG->_apply_single_page_recovery_logs(p, ordered_entires));
 
-    // after SPR, the page should be exactly the requested LSN, perform the validation only if
+    // after Single-Page-Recovery, the page should be exactly the requested LSN, perform the validation only if
     // caller is using an actual emlsn
     // An estimated emlsn would be used for a corrupted page during recovery
     if (true == actual_emlsn)
         w_assert0(p.lsn() == emlsn);
-    DBGOUT1(<< "SPR done!");
+    DBGOUT1(<< "Single-Page-Recovery done!");
     return RCOK;
 }
 
@@ -225,12 +225,12 @@ rc_t log_core::_collect_single_page_recovery_logs(
 
 rc_t log_core::_apply_single_page_recovery_logs(fixable_page_h &p,
     const std::vector<logrec_t*>& ordered_entries) {
-    // So far, we assume the SPR target is a fixable page with latches.
+    // So far, we assume the Single-Page-Recovery target is a fixable page with latches.
     // So far no plan to extend it to non-fixable pages.
     for (std::vector<logrec_t*>::const_iterator it = ordered_entries.begin();
          it != ordered_entries.end(); ++it) {
         logrec_t *record = *it;
-        DBGOUT1(<< "Applying SPR. current page(" << p.pid() << ") LSN="
+        DBGOUT1(<< "Applying Single-Page-Recovery. current page(" << p.pid() << ") LSN="
             << p.lsn() << ", log=" << *record);
         w_assert1(record->is_redo());
         record->redo(&p);

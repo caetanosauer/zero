@@ -229,8 +229,8 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
     }
     else
     {
-        // Eigher minimum logging or full logging but caller asked not to log because no need for the current movement
-        DBGOUT3( << "btree_page_h::_steal_records for a system transaction - either minimum logging or no logging");
+        // Eigher minimal logging or full logging but caller asked not to log because no need for the current movement
+        DBGOUT3( << "btree_page_h::_steal_records for a system transaction - either minimal logging or no logging");
     }
 
     key_length_t new_prefix_length = get_prefix_length();
@@ -378,7 +378,7 @@ rc_t btree_page_h::init_fence_keys(
 {
     // Reset the fence key and other information in an existing page, 
     // do not change existing record data in the page and no change to number of records
-    // This is a special function currently only used by SPR REDO operation for 
+    // This is a special function currently only used by Single-Page-Recovery REDO operation for 
     // page rebalance and page merge when full logging is on and the target page
     // contains data already (not an empty page)
 

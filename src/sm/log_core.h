@@ -401,7 +401,7 @@ public:
 
     /**
     * \brief Collect relevant logs to recover the given page.
-    * \ingroup SPR
+    * \ingroup Single-Page-Recovery
     * \details
     * This method starts from the log record at EMLSN and follows
     * the page-log-chain to go backward in the log file until
@@ -431,7 +431,7 @@ public:
 
     /**
     * \brief Apply the given logs to the given page.
-    * \ingroup SPR
+    * \ingroup Single-Page-Recovery
     * Defined in log_spr.cpp.
     * @param[in, out] p the page to recover.
     * @param[in] ordered_entries the log records to apply

@@ -589,7 +589,7 @@ restart_m::analysis_pass(
 
         // Forward scan, update last_lsn which is the very last 
         // lsn in Recovery log before the system crash
-        // we use last_lsn in REDO SPR if there is a corrupted page
+        // we use last_lsn in REDO Single-Page-Recovery if there is a corrupted page
         last_lsn = lsn;
         
         // If the log was a system transaction fused to a single log entry,
@@ -698,12 +698,12 @@ restart_m::analysis_pass(
                     //    btree_foster_deadopt_log
                     //
                     // TODO(Restart)... milestone 2
-                    // If page driven REDO with SPR: b-tree rebalance and merge operations are doing
+                    // If page driven REDO with Single-Page-Recovery: b-tree rebalance and merge operations are doing
                     // full logging (log all the record movements).  We still have the log records for these
                     // system transactions, but the corresponding REDO operations are for 
                     // setting page fence keys only, not the actual record movements
                     //
-                    // If log scan driven REDO: continue using minimum logging.
+                    // If log scan driven REDO: continue using minimal logging.
                     
                     if (r.is_multi_page()) 
                     {
@@ -2004,7 +2004,7 @@ void restart_m::_redo_log_with_pid(
         //    Serial mode: no conflict because this is the only operation
         //    Concurrent mode (both commit_lsn and lock): 
         //                 Page (m2): concurrent txn does not load page, no conflict 
-        //                 SPR (m3): only concurrent txn load page, no conflict
+        //                 On-demand (m3): only concurrent txn load page, no conflict
         //                 Mixed (m4): potential conflict, the failed one skip the page silently
         rc = cb.latch().latch_acquire(LATCH_EX, WAIT_IMMEDIATE);
         if (rc.is_error())
@@ -2098,7 +2098,7 @@ void restart_m::_redo_log_with_pid(
                     if (eBADCHECKSUM == rc.err_num())
                     {
                         // Corrupted page, allow it to continue and we will
-                        // use SPR to recovery the page
+                        // use Single-Page-Recovery to recovery the page
                         DBGOUT3 (<< "REDO phase, newly loaded page was corrupted, page = " << page_updated.page);                    
                         corrupted_page = true;
                     }
@@ -2140,7 +2140,7 @@ void restart_m::_redo_log_with_pid(
             // 1. If a log record pertains does not pertain to one of the pages marked 'in_doubt' 
             //   in the buffer pool, no-op (we should not get here in this case)
             // 2. If the page image in the buffer pool is newer than the log record, no-op
-            // 3. If the page was corrupted from loading, use SPR to recover first
+            // 3. If the page was corrupted from loading, use Single-Page-Recovery to recover first
             // 4. Apply REDO, modify the pageLSN value in the page image
 
             // Associate this buffer pool page with fixable_page data structure
@@ -2160,9 +2160,9 @@ void restart_m::_redo_log_with_pid(
 
             if (corrupted_page)
             {
-                // Corrupted page, use SPR to recovery the page before retrieving
+                // Corrupted page, use Single-Page-Recovery to recovery the page before retrieving
                 // the last write lsn from page context
-                // use the log record lsn for SPR, which is the the actual emlsn
+                // use the log record lsn for Single-Page-Recovery, which is the the actual emlsn
                 
                 W_COERCE(smlevel_0::log->recover_single_page(page, lsn, true));
             }
@@ -2193,7 +2193,7 @@ void restart_m::_redo_log_with_pid(
                 // For the generic log records, the 'redo' and 'undo' are in logrec.cpp
                 // For the B-tree related log records, they are in btree_logrec.cpp
 
-                // This function is shared by both Recovery and SPR, it sets the page
+                // This function is shared by both Recovery and Single-Page-Recovery, it sets the page
                 // dirty flag before the function returns, which is redudent for Recovery
                 // because we will clear in_doubt flag and set dirty flag later
 
@@ -2657,9 +2657,9 @@ restart_m::undo_reverse_pass(
 //
 // REDO is performed using one of the following:
 //    Log driven:      use_redo_log_recovery()              <-- Milestone 1 default, see redo_pass
-//    Page driven:    use_redo_page_recovery()           <-- Milestone 2, minimum logging
+//    Page driven:    use_redo_page_recovery()           <-- Milestone 2, minimal logging
 //    Page driven:    use_redo_full_logging_recovery()  <-- Milestone 2, full logging
-//    SPR driven:     use_redo_spr_recovery()              <-- Milestone 3
+//    Demand driven:     use_redo_demand_recovery() <-- Milestone 3
 //    Mixed driven:   use_redo_mix_recovery()             <-- Milestone 4
 //*********************************************************************
 void restart_m::redo_concurrent()
@@ -2699,9 +2699,9 @@ void restart_m::redo_concurrent()
     {
         _redo_page_pass();
     }
-    else if (true == use_redo_spr_recovery())
+    else if (true == use_redo_demand_recovery())
     {
-        // On-demand SPR
+        // On-demand Single-Page-Recovery
 ////////////////////////////////////////                
 // TODO(Restart)...  NYI
 ////////////////////////////////////////
@@ -2843,8 +2843,8 @@ void restart_m::_redo_page_pass()
     // Index 0 is always the head of the list (points to the first free block
     // or 0 if no free block), therefore index 0 is never used.
 
-    // Note: Page driven REDO is using SPR.
-    // When SPR is used for page recovery during normal operation (using parent page),
+    // Note: Page driven REDO is using Single-Page-Recovery.
+    // When Single-Page-Recovery is used for page recovery during normal operation (using parent page),
     // the implementation has assumptions on 'write-order-dependency (WOD)' 
     // for the following operations:
     //     btree_foster_merge_log: when recoverying foster parent (dest),
@@ -2860,26 +2860,26 @@ void restart_m::_redo_page_pass()
 
     // TODO(Restart)...    
     // In milestone 2, a workaround has been implemented for page driven REDO 
-    // where we disable the minimum logging for b-tree rebalance and merge operations,
+    // where we disable the minimal logging for b-tree rebalance and merge operations,
     // in other words, for page rebalance and merge operations, full logging is used for 
     // all record movements, while btree_foster_merge_log and btree_foster_rebalance_log
     // log records are used to set page fence keys during the REDO operations.
     //
     // Note that the workaround is only triggered when we are using page-driven REDO
-    // operation.  For log scan driven REDO operation, we will continue using minimum logging.
+    // operation.  For log scan driven REDO operation, we will continue using minimal logging.
     
     for (bf_idx i = 1; i < bfsz; ++i)
     {   
         // Loop through all pages in buffer pool and redo in_doubt pages
         // In_doubt pages could be recovered in multiple situations:
-        // 1. REDO phase (this function) to load the page and calling SPR to recover
+        // 1. REDO phase (this function) to load the page and calling Single-Page-Recovery to recover
         //     page context
-        // 2. SPR operation is using recovery log redo function to recovery 
+        // 2. Single-Page-Recovery operation is using recovery log redo function to recovery 
         //     page context, which would trigger a new page loading if the recovery log
         //     has multiple pages (foster merge, foster re-balance).  In such case, the 
-        //     newly loaded page (via _fix_nonswizzled) would be recovered by nested SPR,
+        //     newly loaded page (via _fix_nonswizzled) would be recovered by nested Single-Page-Recovery,
         //     and it will not be recovered by REDO phase (this function) directly
-        // 3. By SPR triggered by concurrent user transaction - on-demand REDO (M3)
+        // 3. By Single-Page-Recovery triggered by concurrent user transaction - on-demand REDO (M3)
         
         rc = RCOK;
         past_end = false;
@@ -2898,7 +2898,7 @@ void restart_m::_redo_page_pass()
 //                          raise an internal error for now
 //
 //                          Page (m2): concurrent txn does not load page, no conflict 
-//                          SPR (m3): only concurrent txn load page, no conflict
+//                          Demand (m3): only concurrent txn load page, no conflict
 //                          Mixed (m4): potential conflict, the failed one skip the page silently
 //                                             if (stTIMEOUT != latch_rc.err_num()
 ////////////////////////////////////////
@@ -2932,14 +2932,14 @@ void restart_m::_redo_page_pass()
             // a virgin page, then nothing to load and just initialize the page.
             // If non-pvirgin page, load the page so we have the page_lsn (last write)
             //
-            // SPR API smlevel_0::log->recover_single_page(p, page_lsn) requires target
+            // Single-Page-Recovery API smlevel_0::log->recover_single_page(p, page_lsn) requires target
             // page pointer in fixable_page_h format and page_lsn (last write to the page).  
-            // After the page is in buffer pool memory, we can use SPR to perform 
+            // After the page is in buffer pool memory, we can use Single-Page-Recovery to perform 
             // the REDO operation
 
             // After REDO, make sure reset the in_doubt and dirty flags in cb, and make
             // sure hashtable entry is fine
-            // Note that we are holding the page latch now, check with SPR to make sure
+            // Note that we are holding the page latch now, check with Single-Page-Recovery to make sure
             // it is okay to hold the latch
 
             fixable_page_h page;
@@ -2951,7 +2951,7 @@ void restart_m::_redo_page_pass()
             snum_t store = cb._store_num; 
 
             // Get the last write lsn on the page, this would be used
-            // as emlsn for SPR if virgin or corrupted page
+            // as emlsn for Single-Page-Recovery if virgin or corrupted page
             // Note that we were overloading cb._dependency_lsn for 
             // per page last write lsn in Log Analysis phase until
             // the page context is loaded into buffer pool (REDO), then
@@ -2982,8 +2982,8 @@ void restart_m::_redo_page_pass()
             {
                 if (eBADCHECKSUM == rc.err_num())
                 {
-                    // We are using SPR for REDO, if checksum is
-                    // incorrect, make sure we force a SPR REDO
+                    // We are using Single-Page-Recovery for REDO, if checksum is
+                    // incorrect, make sure we force a Single-Page-Recovery REDO
                     // Do not raise error here
                     DBGOUT3 (<< "REDO phase, corrupted page, page = " << shpid);                                    
                     corrupted_page = true;
@@ -3004,7 +3004,7 @@ void restart_m::_redo_page_pass()
             // we have the idx, need to manage the in_doubt and dirty flags for the page
             // and we have loaded the page already
             // 0. Assocate the page to fixable_page_h, swizzling must be off
-            // 1. Use SPR to carry out REDO operations using the last write lsn,
+            // 1. Use Single-Page-Recovery to carry out REDO operations using the last write lsn,
             //     including regular page, corrupted page and virgin page
 
             // Associate this buffer pool page with fixable_page data structure
@@ -3014,9 +3014,9 @@ void restart_m::_redo_page_pass()
             lpid_t store_id(vid, store, shpid);           
             if (true == use_redo_page_recovery())
             {
-                // Use minimum logging
-                // page is not buffer pool managed before SPR
-                // only mark the page as buffer pool managed after SPR
+                // Use minimal logging
+                // page is not buffer pool managed before Single-Page-Recovery
+                // only mark the page as buffer pool managed after Single-Page-Recovery
                 W_COERCE(page.fix_recovery_redo(idx, store_id, false /* managed*/));            
             }
             else if (true == use_redo_full_logging_recovery())
@@ -3038,16 +3038,16 @@ void restart_m::_redo_page_pass()
                 cb._store_num = store; 
                 cb._pid_shpid = shpid;
 
-                // Need the last write lsn for SPR, but this is a virgin page and no
+                // Need the last write lsn for Single-Page-Recovery, but this is a virgin page and no
                 // page context (it does not exist on disk, therefore the page context
                 // in memory has been zero'd out), we cannot retrieve the last write lsn
-                // from page context.  Set the page lsn to NULL for SPR and
+                // from page context.  Set the page lsn to NULL for Single-Page-Recovery and
                 // set the emlsn based on information gathered during Log Analysis
-                // SPR will scan log records and collect logs based on page ID,
+                // Single-Page-Recovery will scan log records and collect logs based on page ID,
                 // and then redo all associated records
 
                 DBGOUT3(<< "REDO (redo_page_pass()): found a virgin page" <<
-                        ", using latest durable lsn for SPR emlsn and NULL for last write on the page, emlsn = "
+                        ", using latest durable lsn for Single-Page-Recovery emlsn and NULL for last write on the page, emlsn = "
                         << emlsn);
                 page.set_lsns(lsn_t::null);  // last write lsn
             }
@@ -3057,19 +3057,19 @@ void restart_m::_redo_page_pass()
                 // last write lsn on page, so set it to NULL
                 // Set the emlsn based on information gathered during Log Analysis                
                 DBGOUT3(<< "REDO (redo_page_pass()): found a corrupted page" <<
-                        ", using latest durable lsn for SPR emlsn and NULL for last write on the page, emlsn = "
+                        ", using latest durable lsn for Single-Page-Recovery emlsn and NULL for last write on the page, emlsn = "
                         << emlsn);               
                 page.set_lsns(lsn_t::null);  // last write lsn
             }
 
-            // Use SPR to REDO all in_doubt pages, including virgin and corrupted pages
+            // Use Single-Page-Recovery to REDO all in_doubt pages, including virgin and corrupted pages
             w_assert1(page.pid() == store_id);            
             w_assert1(page.is_fixed());
 
             // Both btree_norec_alloc_log and tree_foster_rebalance_log are multi-page
             // system transactions, the 2nd page is the foster child and the page
             // gets initialized as an empty child page during 'redo'.
-            // SPR must take care of these cases
+            // Single-Page-Recovery must take care of these cases
 
             // page.lsn() is the last write to this page (on disk version)
             // not necessary the actual last write (if the page was not flushed to disk)
@@ -3086,40 +3086,40 @@ void restart_m::_redo_page_pass()
                 page.set_lsns(lsn_t::null);  // set last write lsn to null to force a complete recovery
             }
  
-            // Using SPR for the REDO operation, which is based on
+            // Using Single-Page-Recovery for the REDO operation, which is based on
             // page.pid(), page.vol(), page.pid().page and page.lsn() 
-            // Call SPR API
+            // Call Single-Page-Recovery API
             //   page - fixable_page_h, the page to recover
             //   emlsn - last write to the page, if the page
             //   actual_emlsn - we have the last write lsn from log analysis, it is
             //                          okay to verify the emlsn even if this is a 
             //                          virgin or corrupted page
-            DBGOUT3(<< "REDO (redo_page_pass()): SPR with emlsn: " << emlsn << ", page idx: " << idx); 
+            DBGOUT3(<< "REDO (redo_page_pass()): Single-Page-Recovery with emlsn: " << emlsn << ", page idx: " << idx); 
             // Signal this page is being accessed by recovery
-            // SPR operation does not hold latch on the page to be recovered, because 
+            // Single-Page-Recovery operation does not hold latch on the page to be recovered, because 
             // it assumes the page is private until recovered.  It is not the case during
-            // recovery.  It is caller's responsibility to hold latch before accessing SPR
+            // recovery.  It is caller's responsibility to hold latch before accessing Single-Page-Recovery
             page.set_recovery_access();
             W_COERCE(smlevel_0::log->recover_single_page(page, emlsn, true));   // we have the actual emlsn even if page corrupted
             page.clear_recovery_access();
 
             if (true == use_redo_page_recovery())
             {
-                // Use minimum logging
-                // Mark the page as buffer pool managed after SPR REDO
+                // Use minimal logging
+                // Mark the page as buffer pool managed after Single-Page-Recovery REDO
                 W_COERCE(page.fix_recovery_redo(true /* managed*/));            
             }
 
-            // After the page is loaded and recovered (SPR), the page context should
+            // After the page is loaded and recovered (Single-Page-Recovery), the page context should
             // have the last-write lsn information (not in cb).  
             // If no page_lsn (last write) in page context, it can only happen if it was a virgin
-            // or corrupted page, and SPR did not find anything in backup and recovery log
+            // or corrupted page, and Single-Page-Recovery did not find anything in backup and recovery log
             // Is this a valid scenario?  Should this happen, there is nothing we can do because
             // we don't have anything to recover from
             // 'recover_single_page' should debug assert on page.lsn() == emlsn already
             if (lsn_t::null == page.lsn())
             {
-                DBGOUT3(<< "REDO (redo_page_pass()): nothing has been recovered by SPR for page: " << idx);
+                DBGOUT3(<< "REDO (redo_page_pass()): nothing has been recovered by Single-Page-Recovery for page: " << idx);
             }
 
             // The _rec_lsn in page cb is the earliest lsn which made the page dirty

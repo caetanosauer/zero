@@ -105,7 +105,7 @@ w_rc_t fixable_page_h::fix_recovery_redo(bf_idx idx, lpid_t page_updated,
 
     if (false == managed)
     {
-        // Page is not managed only if using minimum logging with page driven REDO
+        // Page is not managed only if using minimal logging with page driven REDO
         w_assert1(true == restart_m::use_redo_page_recovery());
     }
     _bufferpool_managed = managed;
@@ -118,8 +118,8 @@ w_rc_t fixable_page_h::fix_recovery_redo(const bool managed)
 {
     // Special function for Recovyer REDO phase
     // Mark the page as buffer pool managed
-    // It is only used for page driven REDO (SPR) with minimum logging and
-    // the page has been recovered via SPR already
+    // It is only used for page driven REDO (Single-Page-Recovery) with minimal logging and
+    // the page has been recovered via Single-Page-Recovery already
     
     w_assert1(true == restart_m::use_redo_page_recovery());
     _bufferpool_managed = managed;

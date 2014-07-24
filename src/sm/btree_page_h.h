@@ -66,7 +66,7 @@ private:
     shpid_t         _child;  // opaque pointer
     /**
      * Expected child LSN for the _child (only in interior node).
-     * \ingroup SPR
+     * \ingroup Single-Page-Recovery
      */
     lsn_t           _child_emlsn;
     cvec_t          _elem;
@@ -379,8 +379,8 @@ public:
                         const bool    full_logging);
 
     // Set the node fence keys, no change in data and other page information
-    // A special function used by SPR REDO operation for page rebalance and page merge
-    // when full logging is on (no minimum logging), set the page fence key before the
+    // A special function used by Single-Page-Recovery REDO operation for page rebalance and page merge
+    // when full logging is on (no minimal logging), set the page fence key before the
     // fully logged actual record movements
     rc_t init_fence_keys(const bool set_low, const w_keystr_t &low,
                            const bool set_high, const w_keystr_t &high,
@@ -709,23 +709,23 @@ public:
      */
     bool             is_consistent (bool check_keyorder = false, bool check_space = false) const;
 
-    /** Returns the pointer to Expected Child LSN of pid0, foster-child, or real child. \ingroup SPR */
+    /** Returns the pointer to Expected Child LSN of pid0, foster-child, or real child. \ingroup Single-Page-Recovery */
     lsn_t*         emlsn_address(general_recordid_t pos);
     /** Returns the Expected Child LSN of pid0, foster-child, or real child. */
     const lsn_t&   get_emlsn_general(general_recordid_t pos) const;
     /**
      * \brief Sets the Expected Child LSN of pid0, foster-child, or real child.
-     * \ingroup SPR
+     * \ingroup Single-Page-Recovery
      * \details
      * This method is not protected by exclusive latch but still safe because EMLSN are not
      * viewed/updated by multi threads.
      */
     void           set_emlsn_general(general_recordid_t pos, const lsn_t &lsn);
 
-    /** Returns the Expected Child LSN of foster-child. \ingroup SPR */
+    /** Returns the Expected Child LSN of foster-child. \ingroup Single-Page-Recovery */
     const lsn_t&   get_foster_emlsn() const;
 
-    /** Returns the Expected Child LSN of pid0. \ingroup SPR */
+    /** Returns the Expected Child LSN of pid0. \ingroup Single-Page-Recovery */
     const lsn_t&   get_pid0_emlsn() const;
 
     /*
@@ -1370,7 +1370,7 @@ inline int btree_page_h::_robust_compare_key_noprefix(slotid_t slot, const void 
 }
 
 // ======================================================================
-//   BEGIN: SPR related EMLSN accessors implementation
+//   BEGIN: Single-Page-Recovery related EMLSN accessors implementation
 // ======================================================================
 
 inline lsn_t* btree_page_h::emlsn_address(general_recordid_t pos) {

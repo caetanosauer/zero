@@ -129,7 +129,7 @@ private:
      * \details
      * In most cases, this method just re-fixes the page ID we observed before.
      * However, fix_direct might fail if the disk page is corrupted. In that case, we need
-     * the parent page to apply SPR on the corrupted page (eBF_DIRECTFIX_SWIZZLED_PTR).
+     * the parent page to apply Single-Page-Recovery on the corrupted page (eBF_DIRECTFIX_SWIZZLED_PTR).
      * Thus, we re-locate the key by traversing from the root.
      * This is expensive, but does not happen often.
     * @param[out] p page handle that will hold the re-fixed page

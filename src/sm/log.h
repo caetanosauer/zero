@@ -418,7 +418,7 @@ public:
 
     /**
     * \brief Apply single-page-recovery to the given page.
-    * \ingroup SPR
+    * \ingroup Single-Page-Recovery
     * Defined in log_spr.cpp.
     * \NOTE This method returns an error if the user had truncated
     * the transaction logs required for the recovery.
@@ -436,7 +436,7 @@ public:
     fileoff_t limit() const { return _partition_size; }
 
     /**
-     * \ingroup SPR
+     * \ingroup Single-Page-Recovery
      * Defined in log_spr.cpp.
      * @copydoc ss_m::dump_page_lsn_chain(std::ostream&, const lpid_t &, const lsn_t&)
      */

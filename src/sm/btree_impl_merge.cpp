@@ -145,11 +145,11 @@ rc_t btree_impl::_ux_rebalance_foster_core(
     if (true == restart_m::use_redo_full_logging_recovery())
     {
         // If page driven REDO recovery, the recovery operation cannot
-        // obey WOD for b-tree rebalance operation, disable minimum logging and
+        // obey WOD for b-tree rebalance operation, disable minimal logging and
         // use full logging for all the record movements
-        // the system transaction log records are used to set page fence keys,
-        // not the actual record movements
-        // Do not check for WOD (Write Order Dependency) in this case
+        // the system transaction log records are used to set page fence keys only,
+        // the following log records record the the actual record movements
+        // No dependency on WOD (Write Order Dependency) in this case
         caller_commit = false;        
     }
     else
@@ -160,13 +160,13 @@ rc_t btree_impl::_ux_rebalance_foster_core(
             DBGOUT1 (<< "oops, couldn't force write order dependency in rebalance. this should be treated with care");
 
 // TODO(Restart)...
-// This is an existing bug from SPR, when a WOD cannot be generated, it should use full logging or other solution
+// This is an existing bug from Single-Page-Recovery, when a WOD cannot be generated, it should use full logging or other solution
 // but the current code continue the execution, therefore if system crash with this page rebalance log record
 // the recover code won't be able to recover this page rebalance operation
 // This scenario is not so difficult to encounter, at least one of the test cases in test_restart would trigger this error
-// comment out the fatal error for now, because milestone 1 is using log scan driven REDO, no SPR so this failure does not matter
-// milestone 2 is using full logging which by-pass this error
-// we should address this issue if we want to turn on minimum logging with SPR for recovery eventually
+// comment out the fatal error for now, because milestone 1 is using log scan driven REDO, no Single-Page-Recovery
+// so this failure does not matter milestone 2 is using full logging which by-pass this error
+// we should address this issue if we want to turn on minimal logging with Single-Page-Recovery for recovery eventually
 
 //            W_FATAL_MSG(fcINTERNAL, << "oops, couldn't force write order dependency in rebalance, full loggig required: NYI");
         }
@@ -204,7 +204,7 @@ rc_t btree_impl::_ux_rebalance_foster_core(
         // If system failure occurrs during record movements, the standard recovery
         // would handle the REDO/UNDO for each record movement, the system 
         // transaction REDO does not handle record movements
-        // this behavior is due to the fact that we are using page driven REDO with SPR,
+        // this behavior is due to the fact that we are using page driven REDO with Single-Page-Recovery,
         // while the WOD cannot be followed   
         caller_commit = false;        
         W_DO (sxs.end_sys_xct (ret));
@@ -450,11 +450,11 @@ rc_t btree_impl::_ux_merge_foster_core(btree_page_h &page, btree_page_h &foster_
     if (true == restart_m::use_redo_full_logging_recovery())
     {
         // If page driven REDO during recovery, the recovery operation cannot
-        // obey WOD for b-tree merge, disable minimum logging and
+        // obey WOD for b-tree merge, disable minimal logging and
         // use full logging for all the record movements
-        // the system transactions are used to set page fence keys, not
-        // for the actual record movements
-        // Do not check for WOD (Write Order Dependency) in this case        
+        // the system transactions are used to set page fence keys only the following
+        // log records record the actual record movements
+        // No dependency on WOD (Write Order Dependency) in this case        
         caller_commit = false;        
     }
     else
@@ -510,7 +510,7 @@ rc_t btree_impl::_ux_merge_foster_core(btree_page_h &page, btree_page_h &foster_
         // If system failure occurred during record movements, the standard recovery
         // would handle the REDO/UNDO for each record movement, the system 
         // transaction REDO is no-op
-        // this behavior is due to the fact that we are using page driven REDO with SPR,
+        // this behavior is due to the fact that we are using page driven REDO with Single-Page-Recovery,
         // while the WOD cannot be followed
         caller_commit = false;        
         W_DO (sxs.end_sys_xct (ret));

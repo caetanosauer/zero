@@ -577,7 +577,10 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
     // we need to carefully follow the protocol to make it safe.
     uint64_t key = bf_key(vol, shpid);
 
-    // If true, even if the index is in hash table already, force load the page
+    // Force loading the data even if the page is in hash table already, this could happen
+    // during Recovery REDO phase, all 'in_doubt' pages are in hash table but not loaded
+    // an page REDO operation might need to access a second page (multi-page operations
+    // such as page rebalance and page merge), while the second page might still be in_doubt
     // This flag is used for Recovery operation only
     bool force_load = false;
 
@@ -612,19 +615,21 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 
                 // Not checking 'past_end' (stSHORTIO), because if the page does not exist
                 // on disk (only if fix_direct from REDO operation), the page context will be zero out,
-                // and the following logic (_check_read_page) will fail in checksum and try SPR immediatelly
+                // and the following logic (_check_read_page) will fail in checksum and try Single-Page-Recovery immediatelly
                 // Note that for fix_direct from REDO, we do not have parent page pointer
 
                 if (read_rc.is_error()) {
                     DBGOUT3(<<"bf_tree_m: error while reading page " << shpid << " to frame " << idx << ". rc=" << read_rc);
                     _add_free_block(idx);
                     return read_rc;
-                    /* TODO: if this is an I/O error, we could try to do SPR on it. */
+                    /* TODO: if this is an I/O error, we could try to do Single-Page-Recovery on it. */
                 } else {
-                    // for each page retrieved from disk, check validity, possibly apply SPR.
+                    // for each page retrieved from disk, check validity, possibly apply Singel-Page-Recovery.
                     // this is not a virgin page so if the page does not exist on disk, we need to
                     // try the backup
-                    // Including both normal page loading and SPR triggered REDO (force_load)
+                    // Scenarios:
+                    // 1. Normal page loading due to user transaction accessing a page not in buffer pool
+                    // 2. Recovery REDO (force_load)
                     w_rc_t check_rc = _check_read_page(parent, idx, vol, shpid, past_end);
                     if (check_rc.is_error()) {
                         _add_free_block(idx);
@@ -646,7 +651,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 DBGOUT2(<<"bf_tree_m: latch_acquire failed in buffer frame " << idx << ", rc= " << rc_latch);
                 _add_free_block(idx);
 
-                // Turn off the force_load flag just in case REDO Recovery is coming to recover this page also
+                // Turn off the force_load flag before the retry
                 force_load = false;
 
                 continue;
@@ -698,10 +703,11 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 else
                 {
                     // If the force_load flag is on and the pid is already in hash table, 
-                    // this is a force load during SPR REDO
+                    // this is a force load during Single-Page-Recovery REDO
                     // In this case an in_doubt page is loaded as a side effect of the 
-                    // SPR REDO operation, the page is not loaded by Recovery page
-                    // driven REDO phase.  Note SPR has been performed on this newly
+                    // Single-Page-Recovery REDO operation, the page is not loaded by
+                    // Recovery page driven REDO phase.  Note Single-Page-Recovery 
+                    //has been performed on this newly
                     // loaded page already
                     // Clear the in_doubt flag so the page driven REDO phase 
                     // does not load this page again
@@ -1386,7 +1392,7 @@ bool bf_tree_m::_try_evict_block_update_emlsn(
     DBGOUT1(<<"evicting page idx = " << idx << " shpid = " << cb._pid_shpid
             << " pincnt = " << cb.pin_cnt());
 
-    // Output SPR log for updating EMLSN in parent.
+    // Output Single-Page-Recovery log for updating EMLSN in parent.
     // safe to disguise as LATCH_EX for the reason above.
     btree_page_h parent_h;
     generic_page *parent = &_buffer[parent_idx];
@@ -2649,7 +2655,9 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
     if ((true == past_end) && (parent == NULL))
     {
         ERROUT(<<"bf_tree_m: page does not exist on disk and it is from REDO operation, page: " << shpid);
-        // Need to recover from scratch, no parent page pointer (from fix_direct)
+        // Special scenario from Recovery and REDO with multi-page log record
+        // loading the 2nd page via fix_direct.
+        // Failure on failure case, need to recover from scratch, no parent page pointer (from fix_direct)
         // therefore we cannot use the typical logic in this function
         // The page has already been zero'd out
         // Call recover_single_page() directly:
@@ -2668,7 +2676,7 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
 
         btree_page_h p;
         p.fix_nonbufferpool_page(_buffer + idx);
-        return (smlevel_0::log->recover_single_page(p, smlevel_0::last_lsn, false)); // false: not the actual emlsn
+        return (smlevel_0::log->recover_single_page(p, smlevel_0::last_lsn, false /*actual_emlsn*/));
     }
     else if (checksum != page.checksum) 
     {
@@ -2678,7 +2686,7 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
 
         if (parent == NULL) {
             // If parent page is not available (eg, via fix_direct),
-            // we can't apply SPR. Then we return error and let the caller
+            // we can't apply Single-Page-Recovery. Then we return error and let the caller
             // to decide what to do (e.g., re-traverse from root).
             return RC(eNO_PARENT_SPR);
         }
@@ -2711,13 +2719,13 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
         // We can update it here and have to do more I/O
         // or try to catch it again on eviction and risk being unlucky.
     } else if (emlsn > page.lsn) {
-        // Child is stale. Apply SPR
-        ERROUT(<< "Stale Child LSN found! Invoking SPR.. parent=" << parent->pid
+        // Child is stale. Apply Single-Page-Recovery
+        ERROUT(<< "Stale Child LSN found! Invoking Single-Page-Recovery.. parent=" << parent->pid
             << ", child pid=" << shpid << ", EMLSN=" << emlsn << " LSN=" << page.lsn);
 #if W_DEBUG_LEVEL>0
         debug_dump(std::cerr);
 #endif // W_DEBUG_LEVEL>0
-        W_DO(_try_recover_page(parent, idx, vol, shpid, false));
+        W_DO(_try_recover_page(parent, idx, vol, shpid, false /*corrupted*/));
     }
     // else child_emlsn == lsn. we are ok.
     return RCOK;

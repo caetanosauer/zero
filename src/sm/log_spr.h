@@ -7,7 +7,7 @@
 #include "lsn.h"
 
 /**
- * \defgroup SPR  Single-Page Recovery
+ * \defgroup Single-Page-Recovery
  * \brief \b Single-Page-Recovery (\b SPR) is a novel feature to recover a single page
  * without going through the entire restart procedure.
  * \ingroup SSMLOG
@@ -20,7 +20,7 @@
  *
  * The time to recover the single page in traditional database would be hours, analyzing the
  * logs, applying REDOs and UNDOs.
- * SPR, on the other hand, finishes in milliseconds. It fetches a single page from the backup,
+ * Single-Page-Recovery, on the other hand, finishes in milliseconds. It fetches a single page from the backup,
  * collects only relevant transactional logs for the page, and applies them to the page.
  *
  * \section Terminology Terminology
@@ -78,7 +78,7 @@
  *
  * \section EMLSN-BTREE EMLSN in B-tree pages
  * We also have EMLSN fields for all page pointers in B-tree pages, which is required
- * to tell "from where we should start collecting relevant per-page logs" in case of SPR.
+ * to tell "from where we should start collecting relevant per-page logs" in case of Single-Page-Recovery.
  * See the setters/getters of btree_page_h linked to this HTML.
  * We also run a system transaction to update the EMLSN whenever we evict the child page
  * from bufferpool. See page_evict_t and log_page_evict().
@@ -93,7 +93,7 @@
 
 /**
  * \brief Log content of page_evict to maintain EMLSN in parent page.
- * \ingroup SPR
+ * \ingroup Single-Page-Recovery
  * \details
  * This is the log of the system transaction to maintain EMLSN.
  * The log is generated whenever we evict a page from bufferpool to maintain EMLSN

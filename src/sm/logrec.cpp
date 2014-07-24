@@ -202,7 +202,7 @@ void logrec_t::redo(fixable_page_h* page)
     // not system transaction because currently all system transactions
     // are single log
     
-    // This is used by both SPR and serial recovery REDO phase
+    // This is used by both Single-Page-Recovery and serial recovery REDO phase
 
     // Not all REDO operations have associated page
     // If there is a page, mark the page for recovery access

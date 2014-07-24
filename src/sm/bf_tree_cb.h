@@ -183,10 +183,10 @@ struct bf_tree_cb_t {
      * larger than this value, it was flushed at least once after that, so the dependency
      * is resolved.  protected by ??
      *
-     * Overload this field to use it as last_write_lsn for REDO SPR purpose, we can 
+     * Overload this field to use it as last_write_lsn for REDO Single-Page-Recovery purpose, we can 
      * overload this field because last_write_lsn is only used during the initial recover
-     * of a page through SPR (as the emlsn), it is not used once a page has been
-     * recovered through SPR after the system crash recover
+     * of a page through Single-Page-Recovery (as the emlsn), it is not used once a page has been
+     * recovered through Single-Page-Recovery after the system crash recover
      * The last write lsn is identified during Log Analysis phase, when used as
      * last_write_lsn, it is written during Log Analysis phase and read during
      * REDO phase

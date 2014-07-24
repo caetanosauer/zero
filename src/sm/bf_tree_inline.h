@@ -534,7 +534,7 @@ inline void bf_tree_m::in_doubt_to_dirty(const bf_idx idx) {
     cb._refbit_approximate = BP_INITIAL_REFCOUNT; 
 
     // Page has been loaded into buffer pool, no need for the
-    // last write LSN any more (only used for SPR during system crash restart 
+    // last write LSN any more (only used for Single-Page-Recovery during system crash restart 
     // purpose), stop overloading this field
     cb._dependency_lsn = 0;
 }

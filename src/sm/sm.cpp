@@ -121,24 +121,24 @@ const int64_t m1_default_recovery =         // sm_restart = 10 (default)
     smlevel_0::t_recovery_redo_log |        // Log scan driven REDO
     smlevel_0::t_recovery_undo_reverse;     // Reverse UNDO
 
-// Milestone 2 with minimum logging    
+// Milestone 2 with minimal logging    
 const int64_t m2_default_recovery =         // sm_restart = 20
     smlevel_0::t_recovery_concurrent_log |  // Concurrent operation using log                << new
-    smlevel_0::t_recovery_redo_page |       // Page driven REDO with minimum logging   << new
+    smlevel_0::t_recovery_redo_page |       // Page driven REDO with minimal logging   << new
     smlevel_0::t_recovery_undo_txn;         // Transaction driven UNDO                       << new   
 const int64_t m2_redo_delay_recovery =      // sm_restart = 21, concurrent testing purpose
     smlevel_0::t_recovery_concurrent_log |  // Concurrent operation using log
-    smlevel_0::t_recovery_redo_page |       // Page driven REDO with minimum logging
+    smlevel_0::t_recovery_redo_page |       // Page driven REDO with minimal logging
     smlevel_0::t_recovery_undo_txn |        // Transaction driven UNDO
     smlevel_0::t_recovery_redo_delay;       // Delay before REDO                              << new
 const int64_t m2_undo_delay_recovery =      // sm_restart = 22, concurrent testing purpose
     smlevel_0::t_recovery_concurrent_log |  // Concurrent operation using log
-    smlevel_0::t_recovery_redo_page |       // Page driven REDO with minimum logging
+    smlevel_0::t_recovery_redo_page |       // Page driven REDO with minimal logging
     smlevel_0::t_recovery_undo_txn |        // Transaction driven UNDO
     smlevel_0::t_recovery_undo_delay;       // Delay before UNDO                              << new    
 const int64_t m2_both_delay_recovery =      // sm_restart = 23, concurrent testing purpose
     smlevel_0::t_recovery_concurrent_log |  // Concurrent operation using log
-    smlevel_0::t_recovery_redo_page |       // Page driven REDO with minimum logging
+    smlevel_0::t_recovery_redo_page |       // Page driven REDO with minimal logging
     smlevel_0::t_recovery_undo_txn |        // Transaction driven UNDO
     smlevel_0::t_recovery_redo_delay |      // Delay before REDO                              << new
     smlevel_0::t_recovery_undo_delay;       // Delay before UNDO                              << new
@@ -165,29 +165,29 @@ const int64_t m2_both_fl_delay_recovery =     // sm_restart = 27, concurrent tes
     smlevel_0::t_recovery_redo_delay |        // Delay before REDO                              << new
     smlevel_0::t_recovery_undo_delay;         // Delay before UNDO                              << new
 
-// Milestone 3 with minimum logging        
+// Milestone 3 with minimal logging        
 const int64_t m3_default_recovery =         // sm_restart = 30
     smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock          << new
-    smlevel_0::t_recovery_redo_spr |        // On-demand driven REDO                  << new
+    smlevel_0::t_recovery_redo_demand |     // On-demand driven REDO                  << new
     smlevel_0::t_recovery_undo_txn;         // Transaction driven UNDO
 const int64_t m3_redo_delay_recovery =      // sm_restart = 31, concurrent testing purpose
     smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
-    smlevel_0::t_recovery_redo_spr |        // On-demand driven REDO
+    smlevel_0::t_recovery_redo_demand |     // On-demand driven REDO
     smlevel_0::t_recovery_undo_txn |        // Transaction driven UNDO
     smlevel_0::t_recovery_redo_delay;       // Delay before REDO                         << new    
 const int64_t m3_undo_delay_recovery =      // sm_restart = 32, concurrent testing purpose
     smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
-    smlevel_0::t_recovery_redo_spr |        // On-demand driven REDO
+    smlevel_0::t_recovery_redo_demand |     // On-demand driven REDO
     smlevel_0::t_recovery_undo_txn |        // Transaction driven UNDO
     smlevel_0::t_recovery_undo_delay;       // Delay before UNDO                         << new    
 const int64_t m3_both_delay_recovery =      // sm_restart = 33, concurrent testing purpose
     smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
-    smlevel_0::t_recovery_redo_spr |        // On-demand driven REDO
+    smlevel_0::t_recovery_redo_demand |     // On-demand driven REDO
     smlevel_0::t_recovery_undo_txn |        // Transaction driven UNDO
     smlevel_0::t_recovery_redo_delay |      // Delay before REDO                         << new
     smlevel_0::t_recovery_undo_delay;       // Delay before UNDO                         << new
 
-// Milestone 4 with minimum logging        
+// Milestone 4 with minimal logging        
 const int64_t m4_default_recovery =         // sm_restart = 40
     smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
     smlevel_0::t_recovery_redo_mix |        // Mixed REDO                                   << new
@@ -219,7 +219,7 @@ const int64_t alternative_log_log_recovery =     // sm_restart = 70
 // Compare with m2_default_recovery, difference in concurrent
 const int64_t alternative_lock_page_recovery =   // sm_restart = 80
     smlevel_0::t_recovery_concurrent_lock |      // Concurrent operation using lock  << compare with sm_restart 20
-    smlevel_0::t_recovery_redo_page |            // Page driven REDO with minimum logging
+    smlevel_0::t_recovery_redo_page |            // Page driven REDO with minimal logging
     smlevel_0::t_recovery_undo_txn;              // Transaction driven UNDO
 // Compare with alternative_log_log_recovery, difference in concurrent
 const int64_t alternative_lock_log_recovery =    // sm_restart = 90
@@ -986,19 +986,19 @@ void ss_m::_set_recovery_mode()
              (smlevel_0::recovery_internal_mode_t)m1_default_recovery;
         break;
 
-    case 20:   // M2, minimum logging
+    case 20:   // M2, minimal logging
         smlevel_0::recovery_internal_mode = 
              (smlevel_0::recovery_internal_mode_t)m2_default_recovery;
         break;
-    case 21:   // M2, concurrent testing, minimum logging
+    case 21:   // M2, concurrent testing, minimal logging
         smlevel_0::recovery_internal_mode = 
              (smlevel_0::recovery_internal_mode_t)m2_redo_delay_recovery;
         break;
-    case 22:   // M2, concurrent testing, minimum logging
+    case 22:   // M2, concurrent testing, minimal logging
         smlevel_0::recovery_internal_mode = 
              (smlevel_0::recovery_internal_mode_t)m2_undo_delay_recovery;
         break;
-    case 23:   // M2, concurrent testing, minimum logging
+    case 23:   // M2, concurrent testing, minimal logging
         smlevel_0::recovery_internal_mode = 
              (smlevel_0::recovery_internal_mode_t)m2_both_delay_recovery;
         break;
@@ -1020,36 +1020,36 @@ void ss_m::_set_recovery_mode()
              (smlevel_0::recovery_internal_mode_t)m2_both_fl_delay_recovery;
         break;
 
-    case 30:   // M3, minimum logging
+    case 30:   // M3, minimal logging
         smlevel_0::recovery_internal_mode = 
              (smlevel_0::recovery_internal_mode_t)m3_default_recovery;
         break;
-    case 31:   // M3, concurrent testing, minimum logging
+    case 31:   // M3, concurrent testing, minimal logging
         smlevel_0::recovery_internal_mode = 
              (smlevel_0::recovery_internal_mode_t)m3_redo_delay_recovery;
         break;
-    case 32:   // M3, concurrent testing, minimum logging
+    case 32:   // M3, concurrent testing, minimal logging
         smlevel_0::recovery_internal_mode = 
              (smlevel_0::recovery_internal_mode_t)m3_undo_delay_recovery;
         break;
-    case 33:   // M3, concurrent testing, minimum logging
+    case 33:   // M3, concurrent testing, minimal logging
         smlevel_0::recovery_internal_mode = 
              (smlevel_0::recovery_internal_mode_t)m3_both_delay_recovery;
         break;
 
-    case 40:   // M4, minimum logging, minimum logging
+    case 40:   // M4, minimum logging, minimal logging
         smlevel_0::recovery_internal_mode = 
              (smlevel_0::recovery_internal_mode_t)m4_default_recovery;
         break;
-    case 41:   // M4, concurrent testing, minimum logging
+    case 41:   // M4, concurrent testing, minimal logging
         smlevel_0::recovery_internal_mode = 
              (smlevel_0::recovery_internal_mode_t)m4_redo_delay_recovery;
         break;
-    case 42:   // M4, concurrent testing, minimum logging
+    case 42:   // M4, concurrent testing, minimal logging
         smlevel_0::recovery_internal_mode = 
              (smlevel_0::recovery_internal_mode_t)m4_undo_delay_recovery;
         break;
-    case 43:   // M4, concurrent testing, minimum logging
+    case 43:   // M4, concurrent testing, minimal logging
         smlevel_0::recovery_internal_mode = 
              (smlevel_0::recovery_internal_mode_t)m4_both_delay_recovery;
         break;
@@ -1058,7 +1058,7 @@ void ss_m::_set_recovery_mode()
         smlevel_0::recovery_internal_mode = 
              (smlevel_0::recovery_internal_mode_t)alternative_log_log_recovery;
         break;
-    case 80:   // Alternative testing, page driven REDO with minimum logging, concurrent with lock
+    case 80:   // Alternative testing, page driven REDO with minimal logging, concurrent with lock
         smlevel_0::recovery_internal_mode = 
              (smlevel_0::recovery_internal_mode_t)alternative_lock_page_recovery;
         break;

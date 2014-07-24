@@ -134,17 +134,28 @@ public:
 };
 
 /* Passing */
-TEST (RestartTest, Empty) {
+TEST (RestartTest, EmptyN) {
     test_env->empty_logdata_dir();
     restart_empty context;
     EXPECT_EQ(test_env->runRestartTest(&context, false, 20), 0);  // false = no simulated crash, normal shutdown
                                                                   // 20 = recovery mode, m2 default concurrent mode
-                                                                  // minimum logging
+                                                                  // minimal logging
 }
 /**/
+
+/* Passing */
+TEST (RestartTest, EmptyC) {
+    test_env->empty_logdata_dir();
+    restart_empty context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 20), 0);   // true = simulated crash
+                                                                  // 20 = recovery mode, m2 default concurrent mode
+                                                                  // minimal logging
+}
+/**/
+
 
 // Test case with simple transactions (1 in-flight) and normal shutdown, no concurrent activities during recovery
-class restart_simple_normal : public restart_test_base  {
+class restart_simple : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
         output_durable_lsn(1);
@@ -182,66 +193,48 @@ public:
 };
 
 /* Passing */
-TEST (RestartTest, SimpleNormal) {
+TEST (RestartTest, SimpleN) {
     test_env->empty_logdata_dir();
-    restart_simple_normal context;
+    restart_simple context;
     EXPECT_EQ(test_env->runRestartTest(&context, false, 20), 0);  // false = no simulated crash, normal shutdown
                                                                   // 20 = recovery mode, m2 default concurrent mode, no wait
-                                                                  // minimum logging
+                                                                  // minimal logging
 }
 /**/
 
-// Test case with simple transactions (1 in-flight) and crash shutdown, no concurrent activities during recovery
-class restart_simple_crash : public restart_test_base  {
-public:
-    w_rc_t pre_shutdown(ss_m *ssm) {
-        output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
-        output_durable_lsn(2);
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa3", "data3"));
-
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa1", "data1"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa2", "data2"));
-
-        W_DO(test_env->begin_xct());
-        W_DO(test_env->btree_insert(_stid, "aa4", "data4"));             // in-flight
-
-        output_durable_lsn(3);
-        return RCOK;
-    }
-
-    w_rc_t post_shutdown(ss_m *) {
-        output_durable_lsn(4);
-        x_btree_scan_result s;
-
-        while (true == test_env->in_recovery())
-        {
-            // Concurrent recovery is still going on, wait
-            ::usleep(WAIT_TIME);            
-        }
-
-        // Verify
-        W_DO(test_env->btree_scan(_stid, s));
-        EXPECT_EQ (3, s.rownum);
-        EXPECT_EQ (std::string("aa1"), s.minkey);
-        EXPECT_EQ (std::string("aa3"), s.maxkey);
-        return RCOK;
-    }
-};
+/* Passing */
+TEST (RestartTest, SimpleNF) {
+    test_env->empty_logdata_dir();
+    restart_simple context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 24), 0);  // false = no simulated crash, normal shutdown
+                                                                  // 24 = recovery mode, m2 default concurrent mode, no wait
+                                                                  // full logging
+}
+/**/
 
 /* Passing */
-TEST (RestartTest, SimpleCrash) {
+TEST (RestartTest, SimpleC) {
     test_env->empty_logdata_dir();
-    restart_simple_crash context;
+    restart_simple context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 20), 0);   // true = simulated crash
                                                                   // 20 = recovery mode, m2 default concurrent mode, no wait
-                                                                  // minimum logging
+                                                                  // minimal logging
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, SimpleCF) {
+    test_env->empty_logdata_dir();
+    restart_simple context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 24), 0);   // true = simulated crash
+                                                                  // 24 = recovery mode, m2 default concurrent mode, no wait
+                                                                  // full logging
 }
 /**/
 
 // Test case with transactions (1 in-flight with multiple operations) and crash shutdown
 // no concurrent activities during recovery
-class restart_complex_in_flight_crash : public restart_test_base  {
+class restart_complex_in_flight : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
         output_durable_lsn(1);
@@ -281,18 +274,48 @@ public:
 };
 
 /* Passing */
-TEST (RestartTest, ComplexInFlightCrash) {
+TEST (RestartTest, ComplexInFlightN) {
     test_env->empty_logdata_dir();
-    restart_complex_in_flight_crash context;
+    restart_complex_in_flight context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 20), 0);  // false = no simulated crash
+                                                                  // 20 = recovery mode, m2 default concurrent mode, no wait
+                                                                  // minimal logging
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, ComplexInFlightNF) {
+    test_env->empty_logdata_dir();
+    restart_complex_in_flight context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 24), 0);  // false = no simulated crash
+                                                                  // 24 = recovery mode, m2 default concurrent mode, no wait
+                                                                  // full logging
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, ComplexInFlightC) {
+    test_env->empty_logdata_dir();
+    restart_complex_in_flight context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 20), 0);   // true = simulated crash
                                                                   // 20 = recovery mode, m2 default concurrent mode, no wait
-                                                                  // minimum logging
+                                                                  // minimal logging
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, ComplexInFlightCF) {
+    test_env->empty_logdata_dir();
+    restart_complex_in_flight context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 24), 0);   // true = simulated crash
+                                                                  // 24 = recovery mode, m2 default concurrent mode, no wait
+                                                                  // full logging
 }
 /**/
 
 // Test case with transactions (1 in-flight) with checkpoint and crash shutdown
 // no concurrent activities during recovery
-class restart_complex_in_flight_chkpt_crash : public restart_test_base  {
+class restart_complex_in_flight_chkpt : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
         output_durable_lsn(1);
@@ -335,18 +358,48 @@ public:
 };
 
 /* Passing */
-TEST (RestartTest, ComplexInFlightChkptCrash) {
+TEST (RestartTest, ComplexInFlightChkptN) {
     test_env->empty_logdata_dir();
-    restart_complex_in_flight_chkpt_crash context;
+    restart_complex_in_flight_chkpt context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 20), 0);  // false = no simulated crash
+                                                                  // 20 = recovery mode, m2 default concurrent mode, no wait
+                                                                  // minimal logging
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, ComplexInFlightChkptNF) {
+    test_env->empty_logdata_dir();
+    restart_complex_in_flight_chkpt context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 24), 0);  // false = no simulated crash
+                                                                  // 24 = recovery mode, m2 default concurrent mode, no wait
+                                                                  // full logging
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, ComplexInFlightChkptC) {
+    test_env->empty_logdata_dir();
+    restart_complex_in_flight_chkpt context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 20), 0);   // true = simulated crash
                                                                   // 20 = recovery mode, m2 default concurrent mode, no wait
-                                                                  // minimum logging
+                                                                  // minimal logging
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, ComplexInFlightChkptCF) {
+    test_env->empty_logdata_dir();
+    restart_complex_in_flight_chkpt context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 24), 0);   // true = simulated crash
+                                                                  // 24 = recovery mode, m2 default concurrent mode, no wait
+                                                                  // full logging
 }
 /**/
 
 // Test case with 1 transaction (in-flight with more than one page of data) and crash shutdown
 // no concurrent activities during recovery
-class restart_multi_page_in_flight_crash : public restart_test_base  {
+class restart_multi_page_in_flight : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
         output_durable_lsn(1);
@@ -377,23 +430,43 @@ public:
     }
 };
 
+/* Passing */
+TEST (RestartTest, MultiPageInFlightN) {
+    test_env->empty_logdata_dir();
+    restart_multi_page_in_flight context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 20), 0);  // false = no simulated crash
+                                                                  // 20 = recovery mode, m2 default concurrent mode, no wait
+                                                                  // minimal logging
+}
+/**/
+
+/* Not passing due to 'item not found', but this is normal shutdown so no recovery, need testing *
+TEST (RestartTest, MultiPageInFlightNF) {
+    test_env->empty_logdata_dir();
+    restart_multi_page_in_flight context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 24), 0);  // false = no simulated crash
+                                                                  // 24 = recovery mode, m2 default concurrent mode, no wait
+                                                                  // full logging
+}
+**/
+
 /* See btree_impl::_ux_traverse_recurse, the '_ux_traverse_try_opportunistic_adopt' call */
 /*    is returning eGOODRETRY and infinite loop, need further investigation, why?  A similar */
 /* test case 'restart_multi_concurrent_redo_crash' is passing */
-/* Not passing, WOD with minimum logging *
-TEST (RestartTest, MultiPageInFlightCrash) {
+/* Not passing, WOD with minimal logging *
+TEST (RestartTest, MultiPageInFlightC) {
     test_env->empty_logdata_dir();
-    restart_multi_page_in_flight_crash context;
+    restart_multi_page_in_flight context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 20), 0);   // true = simulated crash
                                                                   // 20 = recovery mode, m2 default concurrent mode, no wait
-                                                                  // minimum logging
+                                                                  // minimal logging
 }
 **/
 
 /* Need testing, full logging *
-TEST (RestartTest, MultiPageInFlightCrash) {
+TEST (RestartTest, MultiPageInFlightCF) {
     test_env->empty_logdata_dir();
-    restart_multi_page_in_flight_crash context;
+    restart_multi_page_in_flight context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 24), 0);   // true = simulated crash
                                                                   // 24 = recovery mode, m2 default concurrent mode, no wait
                                                                   // full logging
@@ -401,7 +474,7 @@ TEST (RestartTest, MultiPageInFlightCrash) {
 **/
 
 // Test case with simple transactions (1 in-flight) and crash shutdown, one concurrent chkpt
-class restart_concurrent_chkpt_crash : public restart_test_base  {
+class restart_concurrent_chkpt : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
         output_durable_lsn(1);
@@ -444,18 +517,48 @@ public:
 };
 
 /* Passing */
-TEST (RestartTest, ConcurrentChkptCrash) {
+TEST (RestartTest, ConcurrentChkptN) {
     test_env->empty_logdata_dir();
-    restart_concurrent_chkpt_crash context;
+    restart_concurrent_chkpt context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 21), 0);  // false = no simulated crash
+                                                                  // 21 = recovery mode, m2 concurrent mode with delay in REDO
+                                                                  // minimal logging
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, ConcurrentChkptNF) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_chkpt context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 25), 0);  // false = no simulated crash
+                                                                  // 25 = recovery mode, m2 concurrent mode with delay in REDO
+                                                                  // full logging
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, ConcurrentChkptC) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_chkpt context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 21), 0);   // true = simulated crash
                                                                   // 21 = recovery mode, m2 concurrent mode with delay in REDO
-                                                                  // minimum logging
+                                                                  // minimal logging
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, ConcurrentChkptCF) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_chkpt context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 25), 0);   // true = simulated crash
+                                                                  // 25 = recovery mode, m2 concurrent mode with delay in REDO
+                                                                  // full logging
 }
 /**/
 
 // Test case with simple transactions (1 in-flight) and crash shutdown, 
 // one concurrent txn with conflict during redo phase
-class restart_simple_concurrent_redo_crash : public restart_test_base  {
+class restart_simple_concurrent_redo : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
         output_durable_lsn(1);
@@ -487,7 +590,7 @@ public:
                                                      // read/scan txn, it should not be allowed
         if (rc.is_error())
         {
-            DBGOUT3(<<"restart_simple_concurrent_redo_crash: tree_scan error: " << rc);        
+            DBGOUT3(<<"restart_simple_concurrent_redo: tree_scan error: " << rc);        
 
             // Abort the failed scan txn
             test_env->abort_xct();
@@ -504,7 +607,7 @@ public:
         }
         else
         {
-            cerr << "restart_simple_concurrent_redo_crash: scan operation should not succeed"<< endl;         
+            cerr << "restart_simple_concurrent_redo: scan operation should not succeed"<< endl;         
             return RC(eINTERNAL);
         }
 
@@ -515,19 +618,54 @@ public:
     }
 };
 
-/* Passing */
-TEST (RestartTest, SimpleConcurrentRedoCrash) {
+/* Passing *
+* please re-design test case becasue normal shutdown does not have recovery, therefore the post-crash scan should succeed *
+
+TEST (RestartTest, SimpleConcurrentRedoN) {
     test_env->empty_logdata_dir();
-    restart_simple_concurrent_redo_crash context;
+    restart_simple_concurrent_redo context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 21), 0);  // false = no simulated crash
+                                                                  // 21 = recovery mode, m2 concurrent mode with delay in REDO
+                                                                  // minimal logging
+}
+**/
+
+/* Passing *
+* please re-design test case becasue normal shutdown does not have recovery, therefore the post-crash scan should succeed *
+
+TEST (RestartTest, SimpleConcurrentRedoNF) {
+    test_env->empty_logdata_dir();
+    restart_simple_concurrent_redo context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 25), 0);  // false = no simulated crash
+                                                                  // 25 = recovery mode, m2 concurrent mode with delay in REDO
+                                                                  // full logging
+}
+**/
+
+/* Passing */
+TEST (RestartTest, SimpleConcurrentRedoC) {
+    test_env->empty_logdata_dir();
+    restart_simple_concurrent_redo context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 21), 0);   // true = simulated crash
                                                                   // 21 = recovery mode, m2 concurrent mode with delay in REDO
-                                                                  // minimum logging
+                                                                  // minimal logging
 }
 /**/
 
+/* Passing */
+TEST (RestartTest, SimpleConcurrentRedoCF) {
+    test_env->empty_logdata_dir();
+    restart_simple_concurrent_redo context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 25), 0);   // true = simulated crash
+                                                                  // 25 = recovery mode, m2 concurrent mode with delay in REDO
+                                                                  // full logging
+}
+/**/
+
+
 // Test case with multi-page b-tree, simple transactions (1 in-flight) and crash shutdown, 
 // one concurrent txn with conflict during redo phase
-class restart_multi_concurrent_redo_crash : public restart_test_base  {
+class restart_multi_concurrent_redo : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
         output_durable_lsn(1);
@@ -589,20 +727,45 @@ public:
 };
 
 
-/* Passing, WOD with minimum logging, in-flight is in the first page, not splitted page */
-TEST (RestartTest, MultiConcurrentRedoCrash) {
+/* Passing, WOD with minimal logging, in-flight is in the first page *
+* please re-design test case becasue normal shutdown does not have recovery, therefore the post-crash scan should succeed *
+
+TEST (RestartTest, MultiConcurrentRedoN) {
     test_env->empty_logdata_dir();
-    restart_multi_concurrent_redo_crash context;
+    restart_multi_concurrent_redo context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 21), 0);  // false = no simulated crash
+                                                                  // 21 = recovery mode, m2 concurrent mode with delay in REDO
+                                                                  // minimal logging
+}
+**/
+
+/* Passing, full logging, in-flight is in the first page *
+* please re-design test case becasue normal shutdown does not have recovery, therefore the post-crash scan should succeed *
+
+TEST (RestartTest, MultiConcurrentRedoNF) {
+    test_env->empty_logdata_dir();
+    restart_multi_concurrent_redo context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 25), 0);  // false = simulated crash
+                                                                  // 25 = recovery mode, m2 concurrent mode with delay in REDO
+                                                                  // full logging
+}
+**/
+
+/* Passing, WOD with minimal logging, in-flight is in the first page */
+TEST (RestartTest, MultiConcurrentRedoC) {
+    test_env->empty_logdata_dir();
+    restart_multi_concurrent_redo context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 21), 0);   // true = simulated crash
                                                                   // 21 = recovery mode, m2 concurrent mode with delay in REDO
-                                                                  // minimum logging
+                                                                  // minimal logging
 }
 /**/
 
-/* Need testing, full logging, in-flight is in the first page, not splitted page *
-TEST (RestartTest, MultiConcurrentRedoCrash) {
+/* USE THIS ONE TO TEST FULL LOGGING */
+/* Need testing, full logging, in-flight is in the first page *
+TEST (RestartTest, MultiConcurrentRedoCF) {
     test_env->empty_logdata_dir();
-    restart_multi_concurrent_redo_crash context;
+    restart_multi_concurrent_redo context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 25), 0);   // true = simulated crash
                                                                   // 25 = recovery mode, m2 concurrent mode with delay in REDO
                                                                   // full logging
@@ -612,7 +775,7 @@ TEST (RestartTest, MultiConcurrentRedoCrash) {
 
 // Test case with simple transactions (1 in-flight) and crash shutdown, 
 // one concurrent txn with conflict during undo phase
-class restart_simple_concurrent_undo_crash : public restart_test_base  {
+class restart_simple_concurrent_undo : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
         output_durable_lsn(1);
@@ -646,7 +809,7 @@ public:
 
         if (rc.is_error())
         {
-            DBGOUT3(<<"restart_simple_concurrent_undo_crash: tree_scan error: " << rc);
+            DBGOUT3(<<"restart_simple_concurrent_undo: tree_scan error: " << rc);
 
             // Abort the failed scan txn
             test_env->abort_xct();
@@ -663,7 +826,7 @@ public:
         }
         else
         {
-            cerr << "restart_simple_concurrent_undo_crash: scan operation should not succeed"<< endl;         
+            cerr << "restart_simple_concurrent_undo: scan operation should not succeed"<< endl;         
             return RC(eINTERNAL);
         }
 
@@ -674,19 +837,53 @@ public:
     }
 };
 
-/* Passing */
-TEST (RestartTest, SimpleConcurrentUndoCrash) {
+/* Passing *
+* please re-design test case becasue normal shutdown does not have recovery, therefore the post-crash scan should succeed *
+
+TEST (RestartTest, SimpleConcurrentUndoN) {
     test_env->empty_logdata_dir();
-    restart_simple_concurrent_undo_crash context;
+    restart_simple_concurrent_undo context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 22), 0);  // false = no simulated crash
+                                                                  // 22 = recovery mode, m2 concurrent mode with delay in UNDO
+                                                                  // minimal logging
+}
+**/
+
+/* Passing *
+* please re-design test case becasue normal shutdown does not have recovery, therefore the post-crash scan should succeed *
+
+TEST (RestartTest, SimpleConcurrentUndoNF) {
+    test_env->empty_logdata_dir();
+    restart_simple_concurrent_undo context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 26), 0);  // false = simulated crash
+                                                                  // 26 = recovery mode, m2 concurrent mode with delay in UNDO
+                                                                  // full logging logging
+}
+**/
+
+/* Passing */
+TEST (RestartTest, SimpleConcurrentUndoC) {
+    test_env->empty_logdata_dir();
+    restart_simple_concurrent_undo context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 22), 0);   // true = simulated crash
                                                                   // 22 = recovery mode, m2 concurrent mode with delay in UNDO
-                                                                  // minimum logging
+                                                                  // minimal logging
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, SimpleConcurrentUndoCF) {
+    test_env->empty_logdata_dir();
+    restart_simple_concurrent_undo context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 26), 0);   // true = simulated crash
+                                                                  // 26 = recovery mode, m2 concurrent mode with delay in UNDO
+                                                                  // full logging logging
 }
 /**/
 
 // Test case with more than one page of data (1 in-flight) and crash shutdown, one concurrent txn to
 // access a non-dirty page so it should be allowed
-class restart_concurrent_no_conflict_crash : public restart_test_base  {
+class restart_concurrent_no_conflict : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
         output_durable_lsn(1);
@@ -729,13 +926,13 @@ public:
         if (rc.is_error())
         {
             // Conflict        
-            cerr << "restart_concurrent_no_conflict_crash: tree_insertion failed"<< endl;
+            cerr << "restart_concurrent_no_conflict: tree_insertion failed"<< endl;
             W_DO(test_env->abort_xct());
         }
         else
         {
             // Succeed
-            DBGOUT3(<<"restart_concurrent_no_conflict_crash: tree_insertion succeeded");           
+            DBGOUT3(<<"restart_concurrent_no_conflict: tree_insertion succeeded");           
             W_DO(test_env->commit_xct());
         }
 
@@ -762,23 +959,43 @@ public:
     }
 };
 
+/* Passing, WOD with minimal logging */
+TEST (RestartTest, ConcurrentNoConflictN) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_no_conflict context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 23), 0);  // false = no simulated crash
+                                                                  // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+                                                                  // minimal logging
+}
+/**/
+
+/* Passing, WOD with minimal logging */
+TEST (RestartTest, ConcurrentNoConflictNF) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_no_conflict context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 27), 0);  // false = no simulated crash
+                                                                  // 27 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+                                                                  // full logging
+}
+/**/
+
 /* During scan, fence key error from btree_impl_search.cpp:304: d > 0 */
 /* The in-flight is in the first page, not splitted page */
 /* if eliminates the page split, the code works */
-/* Not passing, WOD with minimum logging *
-TEST (RestartTest, ConcurrentNoConflictCrash) {
+/* Not passing, WOD with minimal logging *
+TEST (RestartTest, ConcurrentNoConflictC) {
     test_env->empty_logdata_dir();
-    restart_concurrent_no_conflict_crash context;
+    restart_concurrent_no_conflict context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 23), 0);   // true = simulated crash
                                                                   // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
-                                                                  // minimum logging
+                                                                  // minimal logging
 }
 **/
 
 /* Need testing, full logging *
-TEST (RestartTest, ConcurrentNoConflictCrash) {
+TEST (RestartTest, ConcurrentNoConflictCF) {
     test_env->empty_logdata_dir();
-    restart_concurrent_no_conflict_crash context;
+    restart_concurrent_no_conflict context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 27), 0);   // true = simulated crash
                                                                   // 27 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
                                                                   // full logging
@@ -788,7 +1005,7 @@ TEST (RestartTest, ConcurrentNoConflictCrash) {
 
 // Test case with more than one page of data (1 in-flight) and crash shutdown, one concurrent txn to
 // access an in_doubt page so it should not be allowed
-class restart_concurrent_conflict_crash : public restart_test_base  {
+class restart_concurrent_conflict : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
         output_durable_lsn(1);
@@ -857,22 +1074,46 @@ public:
     }
 };
 
+/* Passing, WOD with minimal logging *
+* please re-design test case becasue normal shutdown does not have recovery, therefore the post-crash scan should succeed *
+
+TEST (RestartTest, ConcurrentConflictN) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_conflict context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 23), 0);  // false = no simulated crash
+                                                                  // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+                                                                  // minimal logging
+}
+**/
+
+/* Passing, full logging *
+* please re-design test case becasue normal shutdown does not have recovery, therefore the post-crash scan should succeed *
+
+TEST (RestartTest, ConcurrentConflictNF) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_conflict context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 27), 0);  // false = simulated crash
+                                                                  // 27 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+                                                                  // full logging
+}
+**/
+
 /* UNDO phase, item not found, probably due to multiple splits */
 /* The in-flight is in the last page, splitted page */
-/* Not passing, WOD with minimum logging *
-TEST (RestartTest, ConcurrentConflictCrash) {
+/* Not passing, WOD with minimal logging *
+TEST (RestartTest, ConcurrentConflictC) {
     test_env->empty_logdata_dir();
-    restart_concurrent_conflict_crash context;
+    restart_concurrent_conflict context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 23), 0);   // true = simulated crash
                                                                   // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
-                                                                  // minimum logging
+                                                                  // minimal logging
 }
 **/
 
 /* Need testing, full logging *
-TEST (RestartTest, ConcurrentConflictCrash) {
+TEST (RestartTest, ConcurrentConflictCF) {
     test_env->empty_logdata_dir();
-    restart_concurrent_conflict_crash context;
+    restart_concurrent_conflict context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 27), 0);   // true = simulated crash
                                                                   // 27 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
                                                                   // full logging
@@ -882,7 +1123,7 @@ TEST (RestartTest, ConcurrentConflictCrash) {
 // Test case with more than one page of data (1 in-flight) and crash shutdown, multiple concurrent txns
 // some should succeeded (no conflict) while others failed (conflict), also one 'conflict' user transaction
 // after recovery which should succeed
-class restart_multi_concurrent_conflict_crash : public restart_test_base  {
+class restart_multi_concurrent_conflict : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
         output_durable_lsn(1);
@@ -949,7 +1190,7 @@ public:
         else
         {
             // Should not succeed
-            cerr << "restart_multi_concurrent_conflict_crash: tree_insertion should not succeed"<< endl;            
+            cerr << "restart_multi_concurrent_conflict: tree_insertion should not succeed"<< endl;            
             RC(eINTERNAL);
         }
 
@@ -975,15 +1216,39 @@ public:
     }
 };
 
+/* Passing, WOD with minimal logging *
+* please re-design test case becasue normal shutdown does not have recovery, therefore the post-crash scan should succeed *
+
+TEST (RestartTest, MultiConcurrentConflictN) {
+    test_env->empty_logdata_dir();
+    restart_multi_concurrent_conflict context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 23), 0);  // false = no simulated crash
+                                                                  // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+                                                                  // minimal logging
+}
+**/
+
+/* Passing, full logging *
+* please re-design test case becasue normal shutdown does not have recovery, therefore the post-crash scan should succeed *
+
+TEST (RestartTest, MultiConcurrentConflictNF) {
+    test_env->empty_logdata_dir();
+    restart_multi_concurrent_conflict context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 27), 0);  // false = no simulated crash
+                                                                  // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+                                                                  // full logging
+}
+**/
+
 /* UNDO phase, item not found, probably due to multiple splits */
 /* The in-flight is in the last page, splitted page */
-/* Not passing, WOD with minimum logging *
+/* Not passing, WOD with minimal logging *
 TEST (RestartTest, MultiConcurrentConflictCrash) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_conflict_crash context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 23), 0);   // true = simulated crash
                                                                   // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
-                                                                  // minimum logging
+                                                                  // minimal logging
 }
 **/
 

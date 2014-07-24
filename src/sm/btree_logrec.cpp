@@ -24,13 +24,13 @@
 #include "restart.h"
 
 /**
- * Page buffers used while SPR as scratch space.
- * \ingroup SPR
+ * Page buffers used while Single-Page-Recovery as scratch space.
+ * \ingroup Single-Page-Recovery
  */
 DECLARE_TLS(block_alloc<generic_page>, scratch_space_pool);
 /**
  * Automatically deletes generic_page obtained from scratch_space_pool.
- * \ingroup SPR
+ * \ingroup Single-Page-Recovery
  */
 struct SprScratchSpace {
     SprScratchSpace(volid_t vol, snum_t store, shpid_t pid) {
@@ -603,7 +603,8 @@ btree_foster_merge_log::btree_foster_merge_log (const btree_page_h& p, // destin
 }
 
 void btree_foster_merge_log::redo(fixable_page_h* p) {
-    // If log scan driven REDO, continue using minimum logging.
+    // TODO(Restart)...
+    // See detail comments in btree_foster_rebalance_log::redo
 
     // Two pages are involved:
     // first page: destination, foster parent in this case
@@ -625,8 +626,7 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
     if (true == restart_m::use_redo_full_logging_recovery())
     {
         // TODO(Restart)... milestone 2
-        // If using page driven REDO recovery, full logging was used for
-        // b-tree merge operation, the merge log record (system txn)
+        // If using full logging REDO recovery, the merge log record (system txn)
         // occurs before all the actual record move log records
 
         // For the merge REDO, the REDO is to delete records from 
@@ -672,21 +672,14 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
         return;
     }
 
-    // Two pages are involved:
-    // first page: destination, foster child in this case
-    // second page: source, foster parent in this case
-
     if (p->is_bufferpool_managed()) {
-        // this is in REDO, so fix_direct should be safe.
+        // Page is buffer pool managed, so fix_direct should be safe.
         btree_page_h another;
         W_COERCE(another.fix_direct(bp.vol(), another_pid, LATCH_EX));
         if (recovering_dest) {
             // we are recovering "page", which is foster-parent (dest).
             if (another.lsn() >= lsn_ck())
             {
-                // TODO(Restart)...
-                // See detail comments in btree_foster_rebalance_log::redo               
-
                 // If we get here, caller was not from page driven REDO phase but "page2" (src) has
                 // been recovered already, this is breaking WOD rule and cannot continue
 
@@ -719,17 +712,29 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
             }
         }
     } else {
-        // this is in SPR. we use scratch space for another page because bufferpool frame
-        // for another page is probably too recent for SPR.
-        DBGOUT1(<< "merge SPR! another=" << another_pid);
+        // Cannot be in full logging mode
+        w_assert1(false == restart_m::use_redo_full_logging_recovery());
+
+        // Minimal logging while the page is not buffer pool managed, no dependency on
+        // write-order-dependency
+
+        // TODO(Restart)...
+        // See detail comments in btree_foster_rebalance_log::redo
+
+// TODO(Restart)... page rebalance is not working in multiple test cases, either record not found or fence key comparision error
+//                          no test case covering page merge yet
+
+        // this is in Single-Page-Recovery. we use scratch space for another page because bufferpool frame
+        // for another page is probably too recent for Single-Page-Recovery.
+        DBGOUT1(<< "merge Single-Page-Recovery! another=" << another_pid);
         if (!recovering_dest) {
             // source page is simply deleted, so we don't have to do anything here
             DBGOUT1(<< "recovering source page in merge... nothing to do");
             return;
         }
-        DBGOUT1(<< "recovering dest page in merge. recursive SPR!");
+        DBGOUT1(<< "recovering dest page in merge. recursive Single-Page-Recovery!");
         SprScratchSpace frame(bp.vol(), bp.store(), another_pid);
-        // Here, we do "time travel", recursively invoking SPR.
+        // Here, we do "time travel", recursively invoking Single-Page-Recovery.
         lsn_t another_previous_lsn = recovering_dest ? dp->_page2_prv : page_prev_lsn();
         btree_page_h another;
         another.fix_nonbufferpool_page(frame.p);
@@ -795,48 +800,58 @@ btree_foster_rebalance_log::btree_foster_rebalance_log (const btree_page_h& p,
 
 void btree_foster_rebalance_log::redo(fixable_page_h* p) {
     // TODO(Restart)...
-    // The problem is that we are replying on "page2" (src, another) has the pre-rebalance 
-    // image so it contains all the records, therefore we can move records from 'another' (src) 
-    // into 'bp' (dest).
+    // The problem is that we are relying on "page2" (src, another) to contain the
+    // pre-rebalance image, therefore we can move records from 'another' (src) into 'bp' (dest).
     // If 'another' (src) has been recovered already (post-rebalance image), it does not 
-    // contain the records which should be moved to 'bp' (dest) anymore, therefore we lost
-    // the records we need to move in the source page at this point.
+    // contain all the pre-rebalance records, we lost the records we need to move into 
+    // the source page at this point, we cannot perform REDO with the post-image on source page.
     // Possible solutions:
     // 1. Record the page dependencies (Write Order Dependency) during Log Analysis,
-    //       and recover them in the correct order.  This solution becomes messy in a hurry
+    //       and recover the pages in the correct order.  This solution becomes messy in a hurry
     //       because the dependency gets complex when we have situations such as foster chain,
     //       multiple adoptions, multiple splits/merges, etc.  Also when REDOing the destination page,
     //       we need to recover the source page to the pre-rebalance/pre-merge image first, 
     //       recover the destination page, and then finish the recovery for the source page.
     //       If there are multiple rebalance and/or merge operations on the same source page,
     //       the recovery becomes tricky.
-    // 2. Have the rebalance/merge log record to contain all record movement information,
-    //       the size of the log record becomes large and potentially expand to multiple log 
+    // 2. Have the rebalance/merge log records containing all record movement information,
+    //       the size of the log records become large and potentially expand to multiple log 
     //       records.  Both rebalance and merge are system transactions while we only
     //       supoort single log record system transaction currently, it requires extra handling
-    //       in Recovery logic for multi-log system transactions, e.g. rolling forward.
-    // 3. Disable the minimum logging for rebalance and merge operations, in other words,
+    //       in Recovery logic to deal with multi-log system transactions, e.g. rolling forward.
+    // 3. Disable the minimal logging for rebalance and merge operations, in other words,
     //       log records for btree_foster_rebalance_log and btree_foster_merge_log
-    //       (currently one log record covers the entire operation) will not cover the actual
+    //       (currently one log record covers the entire operation) will not handle the actual
     //       record movements anymore, instead we will use full logging to generate deletion/insertion 
-    //       for all record movements.  Multiple log records will be generated:
+    //       log records for all record movements.  What would be generated:
     //       1. System transaction log record - contain information to set the destination page fence keys, 
-    //                                               including low and high fence keys and chain_high_key if it 
-    //                                               exists in source page (form a foster chain)
+    //                                               including low and high fence keys and chain_high_key (if it 
+    //                                               exists in source page form a foster chain)
     //                                               also the source page new high fence key which is the same as
     //                                               the destination page's low fence key
-    //       2. Delete/Insert pair for every record moved
+    //       2. Delete/Insert pair of log records for every record movement
+    // 4. Multiple recovery steps, in REDO operation, recover the source or destination page to 
+    //     immediatelly before the current load balance operation (pre-image), and then perform
+    //     the REDO operation on the target page (either source or destination).
+    //     The challenge in this solution is to handle complex operation, e.g. multiple load balance
+    //     operations on the same page before system crash.
 
     // TODO(Restart)...
-    // In milestone 2, we use solution #3 which disables the minimum logging and uses full logging
-    // instead, therefore if page driven REDO, btree_foster_rebalance_log and 
-    // btree_foster_merge_log log records are used to set page fence keys only.
-    // This implies that when Page Driven REDO flag is on, we will use full logging for all page
-    // rebalance and page merge operations, both page driven REDO and corruption SPR will 
-    // use the full logging logic for the REDO operations.
+    // In milestone 2:
+    //    If restart_m::use_redo_full_logging_recovery() is on, use solution #3 which disables 
+    //        the minimal logging and uses full logging instead, therefore btree_foster_rebalance_log
+    //        and btree_foster_merge_log log records are used to set page fence keys only.
+    //        In this code path, we will use full logging for all page rebalance and page merge 
+    //        operations, including both recovery REDO and normal page corruption Single-Page-Recovery
+    //        operations.
+    //    If restart_m::use_redo_page_recovery() is on, use solution #4 which is using minimum 
+    //        logging.  No separate full logging for record movements.
+    //        Recovery REDO mark the page as not-bufferpool-managed before calling Single-Page-Recovery
+    //        so the page-rebalance/page-merge REDO functions use code path for #4.  Recovery REDO
+    //        marks the page as bufferpool-managed after Single-Page-Recovery finished.
     //
     // Long-term solution (what it should be implemented eventually)...
-    // 1. Use minimum logging (one system transaction for the entire operation).
+    // 1. Use minimal logging (one system transaction for the entire operation).
     // 2. Page rebalance and page merge operations should share one generic system transaction
     //    log record (load-balance) instead of two different log records, while it is a multi-page single
     //    log system transaction, the first page is the destination page and the second page is the 
@@ -866,7 +881,8 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
     shpid_t another_pid = recovering_dest ? page2_id : page_id; // another_pid: data source
                                                                 // if 'p' is foster child, then another_pid is foster parent
                                                                 // if 'p' is foster parent, then another_pid is foster child
-                                                                // In the normal SPR case with WOD, another_pid (foster parent)
+                                                                // In the normal Single-Page-Recovery case with WOD, 
+                                                                // another_pid (foster parent)
                                                                 // must be recovered after foster child
 
     // recovering_dest == true: recovery foster child, assume foster parent has not been recovered
@@ -876,13 +892,12 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
     if (true == restart_m::use_redo_full_logging_recovery()) 
     {
         // TODO(Restart)... milestone 2
-        // If using page driven REDO recovery, use full logging for b-tree 
-        // rebalance operation, the rebalance log record (system txn) during REDO
-        // occurs before all the actual record move log records
+        // Using full logging for b-tree rebalance operation, the rebalance log record (system txn)
+        // during REDO occurs before all the actual record move log records
         //
-        // Even if called by the regular SPR due to page corruption (not from system recovery)
+        // Even if called by the regular Single-Page-Recovery due to page corruption (not from system recovery)
         // because the page driven flag was on, full logging was taken for page rebalance
-        // and merge operations, we cannot use the minimum logging code path for regular SPR either
+        // and merge operations, we cannot use the minimal logging code path for regular Single-Page-Recovery either
 
         w_keystr_t high_key, chain_high_key;
 
@@ -969,9 +984,9 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
     // first page: destination, foster child in this case
     // second page: source, foster parent in this case
 
-    // If not Page Drive REDO, use the optimized code path (no full logging)
+    // If not full logging REDO, use the optimized code path (no full logging)
     if (p->is_bufferpool_managed()) {
-        // this is in REDO, so fix_direct should be safe.
+        // If page is buffer pool managed (not from Recovery REDO), fix_direct should be safe.
         btree_page_h another;
         W_COERCE(another.fix_direct(bp.vol(), another_pid, LATCH_EX));
         if (recovering_dest) {
@@ -980,7 +995,7 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
             if (another.lsn() >= redo_lsn)
             {               
                 w_assert1(false == p->is_recovery_access());
-                // If we get here, this is not a page driven REDO therefore minimum logging, 
+                // If we get here, this is not a page driven REDO therefore minimal logging, 
                 // but "page2" (src) has been fully recovered already, it is breaking WOD rule and cannot continue
 
                 DBGOUT3 (<< "btree_foster_rebalance_log::redo: caller did not have page driven REDO, source (foster parent) has been recovered");               
@@ -988,7 +1003,7 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
             }
             else
             {
-                // Normal SPR operation (not from Recovery) or from Recovery but "page2" (src) 
+                // Normal Single-Page-Recovery operation (not from Recovery) or from Recovery but "page2" (src) 
                 // has not been recovered yet.
                 // thanks to WOD, "page2" (src) is also assured to be not recovered yet.
 
@@ -1030,31 +1045,37 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
         // Cannot be in full logging mode
         w_assert1(false == restart_m::use_redo_full_logging_recovery());
 
-        // If we are in restart_m::use_redo_page_recovery() mode (minimum logging)
-        // then the Recovery REDO via SPR comes here.  The REDO logic marks the
-        // page as not bufferpool_managed before SPR and mark it bufferpool_managed
-        // after SPR.
-        // If recoverying destination or destination, the following logic would recover the
-        // source page to immediately before the page rebalance operation (using a scratch page),
-        // so the source page has all the original records, and then move the records
-        // from source to destination.  Because this is a page rebalance operation, the
-        // destination page starts as an empty page.
+        // Minimal logging while the page is not buffer pool managed, no dependency on
+        // write-order-dependency
+        
+        // If we are here during Recovery, we are in restart_m::use_redo_page_recovery() 
+        // mode (minimal logging) via Single-Page-Recovery.       
+        // The REDO logic (caller) marks the page as not bufferpool_managed before calling 
+        // Single-Page-Recovery and marks the page as bufferpool_managed after Single-Page-Recovery.
+        
+        // For recoverying destination or destination page, the following logic recovers the
+        // source page to immediately before the page rebalance operation using a scratch page (pre-image),
+        // so the source page has all the original records, and then move records from source to destination. 
+        // Because this is a page rebalance operation, the destination page starts as an empty page.
         //
         // The logic probably works well with normal Single Page Recovery (do we have 
         // sufficient test?)
-        // but does it work well with Recovery REDO with minimum logging?  Especially if
+        // but does it work well with all scenarios from Recovery REDO?  Especially if
         // we have complex operations, such as multiple rebalance and merge operations
-        // on the same page, etc.  If we are doing log scan driven REDO then we are probably
-        // okay using this logic, but when using page driven REDO then we have problems if
-        // there are multiple load balance operations on the same page, the record movements
-        // might not be what we expected.
+        // on the same page before system crash, etc.  If we are doing log scan driven REDO then
+        // we are okay using this logic because we are recovery based on one log record at a time,
+        // but when using page driven REDO (one page at a time) then we might have issues if
+        // there are multiple load balance operations on the same page before system crash,
+        // the pre-image and record movements might not be what we expected.
+        
+// TODO(Restart)... not working in multiple test cases, either record not found or fence key comparision error
 
-        // this is in SPR. we use scratch space for another page because bufferpool frame
-        // for another page is probably too latest for SPR.
+        // this is in Single-Page-Recovery. we use scratch space for another page because bufferpool frame
+        // for another page is probably too latest for Single-Page-Recovery.
         SprScratchSpace frame(bp.vol(), bp.store(), another_pid);
-        // Here, we do "time travel", recursively invoking SPR.
+        // Here, we do "time travel", recursively invoking Single-Page-Recovery.
         lsn_t another_previous_lsn = recovering_dest ? dp->_page2_prv : page_prev_lsn();
-        DBGOUT1(<< "SPR for rebalance. recursive SPR! another=" << another_pid <<
+        DBGOUT1(<< "SPR for rebalance. recursive Single-Page-Recovery! another=" << another_pid <<
             ", another_previous_lsn=" << another_previous_lsn);
         btree_page_h another;
         another.fix_nonbufferpool_page(frame.p);

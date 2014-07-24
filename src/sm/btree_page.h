@@ -367,24 +367,24 @@ private:
 
 protected:
     // ======================================================================
-    //   BEGIN: SPR-related headers (placed at last so that frequently used
+    //   BEGIN: Single-Page-Recovery-related headers (placed at last so that frequently used
     //  headers like nitems are in the first 64 bytes (one cacheline).
     // ======================================================================
     /**
      * Expected-Minimum LSN for the first child pointer.
      * 0 if this page is leaf or left-most.
-     * \ingroup SPR
+     * \ingroup Single-Page-Recovery
      */
     lsn_t   btree_pid0_emlsn;   // +8 -> 40
 
     /**
      * Expected-Minimum LSN for the foster-child pointer.
      * 0 if this page doesn't have foster child.
-     * \ingroup SPR
+     * \ingroup Single-Page-Recovery
      */
     lsn_t   btree_foster_emlsn; // +8 -> 48
     // ======================================================================
-    //   END: SPR-related headers
+    //   END: Single-Page-Recovery-related headers
     // ======================================================================
 
 private:
