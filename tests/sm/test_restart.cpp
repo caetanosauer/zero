@@ -419,6 +419,56 @@ TEST (RestartTest, InflightCheckpointC) {
 }
 /**/
 
+/* Test case with an uncommitted transaction, no checkpoint */
+class restart_complic_inflight : public restart_test_base 
+{
+public:
+    w_rc_t pre_shutdown(ss_m *ssm) {
+        output_durable_lsn(1);
+        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        output_durable_lsn(2);
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa3", "data3"));
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa4", "data4"));
+        W_DO(test_env->btree_insert_and_commit(_stid, "aa1", "data1"));
+
+        // Start a transaction but no commit, normal shutdown
+        W_DO(test_env->begin_xct());
+        W_DO(test_env->btree_insert(_stid, "aa7", "data7"));
+        W_DO(test_env->btree_insert(_stid, "aa2", "data2"));
+        W_DO(test_env->btree_insert(_stid, "aa5", "data5"));
+        W_DO(test_env->btree_insert(_stid, "aa0", "data0"));
+        W_DO(test_env->btree_insert(_stid, "aa9", "data9"));
+        output_durable_lsn(3);
+        return RCOK;
+    }   
+
+    w_rc_t post_shutdown(ss_m *) {
+        output_durable_lsn(4);
+        x_btree_scan_result s;
+        W_DO(test_env->btree_scan(_stid, s));
+        EXPECT_EQ (3, s.rownum);
+        EXPECT_EQ (std::string("aa1"), s.minkey);
+        EXPECT_EQ (std::string("aa4"), s.maxkey);
+        return RCOK;
+    }   
+};
+
+/* Passing */
+TEST (RestartTest, ComplicInflightN) {
+    test_env->empty_logdata_dir();
+    restart_complic_inflight context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);  // false = no simulated crash
+}                                                                 // 10 = recovery mode, m1 default serial mode
+/**/
+
+/* Passing */
+TEST (RestartTest, ComplicInflightC) {
+    test_env->empty_logdata_dir();
+    restart_complic_inflight context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);  // true = simulated crash
+}                                                                // 10 = recovery mode, m1 default serial mode
+/**/
+
 
 // Test case with an uncommitted transaction, more than one page of data, no checkpoint, simulated crash shutdown
 class restart_inflight_many : public restart_test_base 
@@ -520,6 +570,52 @@ TEST (RestartTest, InflightCkptManyC) {
 }
 /**/
 
+/* Test case with a committed insert, an aborted removal and an aborted update */ 
+class restart_aborted_remove : public restart_test_base
+{
+public:
+    w_rc_t pre_shutdown(ss_m *ssm) {
+        output_durable_lsn(1);
+	W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+	output_durable_lsn(2);
+	W_DO(test_env->btree_insert_and_commit(_stid, "aa0", "data0"));
+	W_DO(test_env->begin_xct());
+        W_DO(test_env->btree_insert(_stid, "aa1", "data1"));
+	W_DO(test_env->btree_remove(_stid, "aa0"));
+        W_DO(test_env->abort_xct());
+	test_env->btree_update_and_commit(_stid, "aa0", "data0000");
+	output_durable_lsn(3);
+	return RCOK;
+    }
+
+    w_rc_t post_shutdown(ss_m *) {
+	output_durable_lsn(4);
+	x_btree_scan_result s;
+	W_DO(test_env->btree_scan(_stid, s));
+	EXPECT_EQ(1, s.rownum);
+	EXPECT_EQ(std::string("aa0"), s.maxkey);
+	std::string data;
+	test_env->btree_lookup_and_commit(_stid, "aa0", data);
+	EXPECT_EQ(std::string("data0000"), data);
+	return RCOK;
+    }
+};
+
+/* Passing */
+TEST (RestartTest, AbortedRemoveN) {
+    test_env->empty_logdata_dir();
+    restart_aborted_remove context;
+    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);  // false = no simulated crash;
+}                                                                 // 10 = recovery mode, m1 default serial mode
+/**/
+
+/* Passing */
+TEST (RestartTest, AbortedRemoveC) {
+    test_env->empty_logdata_dir();
+    restart_aborted_remove context;
+    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);   // true = simulated crash; 
+}                                                                 // 10 = recovery mode, m1 default serial mode
+/**/
 
 /* Multi-thread test cases from here on */
 
