@@ -446,8 +446,11 @@ public:
     
     ss_m* _ssm;
     bool _use_locks;
+    bool _fCrash;
     char log_dir[MAXPATHLEN];
     char vol_dir[MAXPATHLEN];
+    int32_t _recovery_mode;
+
 private:
     void assure_dir(const char *folder_name);
     void assure_empty_dir(const char *folder_name);

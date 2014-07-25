@@ -690,48 +690,50 @@ public:
     w_rc_t post_shutdown(ss_m *) {
         output_durable_lsn(4);
         x_btree_scan_result s;
-
+	bool fCrash = test_env->_fCrash;
+	int32_t recovery_mode = test_env->_recovery_mode;
+	int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5 + 1;
         // No wait in test code, but wait in recovery
         // This is to ensure concurrency
         
-        // Verify
-        w_rc_t rc = test_env->btree_scan(_stid, s);  // Should have multiple pages of data
-                                                     // the concurrent txn is a read/scan txn
-                                                     // should still not be allowed due to delay in REDO
+	if (fCrash && recovery_mode < 30) {	// if m2 crash shutdown
+	    // Verify
+	    w_rc_t rc = test_env->btree_scan(_stid, s); // Should have multiple pages of data
+							// the concurrent txn is a read/scan txn
+							// should still not be allowed due to delay in REDO in m2 crash shutdown
+	    if (rc.is_error()) {
+		DBGOUT3(<<"restart_multi_concurrent_redo: tree_scan error: " << rc);
 
-        if (rc.is_error())
-        {
-            DBGOUT3(<<"restart_multi_concurrent_redo_crash: tree_scan error: " << rc);
+		// Abort the failed scan txn
+		test_env->abort_xct();
 
-            // Abort the failed scan txn
-            test_env->abort_xct();
+		// Sleep to give Recovery sufficient time to finish
+		while (true == test_env->in_recovery()) {
+		    // Concurrent recovery is still going on, wait
+		    ::usleep(WAIT_TIME);
+		}
 
-            // Sleep to give Recovery sufficient time to finish
-            while (true == test_env->in_recovery())
-            {
-                // Concurrent recovery is still going on, wait
-                ::usleep(WAIT_TIME);
-            }
-
-            // Try again
-            W_DO(test_env->btree_scan(_stid, s));
-        }
-        else
-        {
-            cerr << "restart_multi_concurrent_redo_crash: scan operation should not succeed"<< endl;         
-            return RC(eINTERNAL);
-        }
-
-        int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5 + 1;
-        EXPECT_EQ (recordCount, s.rownum);
-        EXPECT_EQ (std::string("aa4"), s.minkey);
-        return RCOK;
-    }
+		// Try again
+		W_DO(test_env->btree_scan(_stid, s));
+		EXPECT_EQ (recordCount, s.rownum);
+		EXPECT_EQ (std::string("aa4"), s.minkey);
+		return RCOK;
+	    }
+	    else {
+		cerr << "restart_multi_concurrent_redo: scan operation should not succeed"<< endl;         
+		return RC(eINTERNAL);
+	    }
+	}
+	else {
+	    W_DO(test_env->btree_scan(_stid, s));
+	    EXPECT_EQ (recordCount, s.rownum);
+	    EXPECT_EQ(std::string("aa4"), s.minkey);
+	    return RCOK;
+	}
+    }    
 };
 
-/* Passing, WOD with minimal logging, in-flight is in the first page *
-* please re-design test case becasue normal shutdown does not have recovery, therefore the post-crash scan should succeed *
-
+/* Passing, WOD with minimal logging, in-flight is in the first page */
 TEST (RestartTest, MultiConcurrentRedoN) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_redo context;
@@ -739,11 +741,9 @@ TEST (RestartTest, MultiConcurrentRedoN) {
                                                                   // 21 = recovery mode, m2 concurrent mode with delay in REDO
                                                                   // minimal logging
 }
-**/
+/**/
 
-/* Passing, full logging, in-flight is in the first page *
-* please re-design test case becasue normal shutdown does not have recovery, therefore the post-crash scan should succeed *
-
+/* Passing, full logging, in-flight is in the first page */
 TEST (RestartTest, MultiConcurrentRedoNF) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_redo context;
@@ -751,7 +751,7 @@ TEST (RestartTest, MultiConcurrentRedoNF) {
                                                                   // 25 = recovery mode, m2 concurrent mode with delay in REDO
                                                                   // full logging
 }
-**/
+/**/
 
 /* Passing, WOD with minimal logging, in-flight is in the first page */
 TEST (RestartTest, MultiConcurrentRedoC) {
@@ -798,7 +798,8 @@ public:
     w_rc_t post_shutdown(ss_m *) {
         output_durable_lsn(4);
         x_btree_scan_result s;
-
+	bool fCrash = test_env->_fCrash;
+	int32_t recovery_mode = test_env->_recovery_mode;
         // Wiat a short time, this is to allow REDO to finish,
         // but hit the UNDO phase using specified recovery mode which waits before UNDO
         ::usleep(SHORT_WAIT_TIME);
@@ -808,40 +809,44 @@ public:
                                                       // while recovery is on for this page
                                                       // although REDO is done, UNDO is not
                                                       // therefore the concurrent txn should not be allowed
+	if (fCrash && recovery_mode < 30) {
+	    if (rc.is_error()) {
+		DBGOUT3(<<"restart_simple_concurrent_undo: tree_scan error: " << rc);
 
-        if (rc.is_error())
-        {
-            DBGOUT3(<<"restart_simple_concurrent_undo: tree_scan error: " << rc);
+		// Abort the failed scan txn
+		test_env->abort_xct();
 
-            // Abort the failed scan txn
-            test_env->abort_xct();
+		// Sleep to give Recovery sufficient time to finish
+		while (true == test_env->in_recovery()) {
+		    // Concurrent recovery is still going on, wait
+		    ::usleep(WAIT_TIME);
+		}
 
-            // Sleep to give Recovery sufficient time to finish
-            while (true == test_env->in_recovery())
-            {
-                // Concurrent recovery is still going on, wait
-                ::usleep(WAIT_TIME);
-            }
+		// Try again
+		W_DO(test_env->btree_scan(_stid, s));
+		
+		EXPECT_EQ (3, s.rownum);
+		EXPECT_EQ (std::string("aa1"), s.minkey);
+		EXPECT_EQ (std::string("aa3"), s.maxkey);
+		return RCOK;
+	    }
+	    else {
+		cerr << "restart_simple_concurrent_undo: scan operation should not succeed"<< endl;         
+		return RC(eINTERNAL);
+	    }
 
-            // Try again
-            W_DO(test_env->btree_scan(_stid, s));
         }
-        else
-        {
-            cerr << "restart_simple_concurrent_undo: scan operation should not succeed"<< endl;         
-            return RC(eINTERNAL);
-        }
-
-        EXPECT_EQ (3, s.rownum);
-        EXPECT_EQ (std::string("aa1"), s.minkey);
-        EXPECT_EQ (std::string("aa3"), s.maxkey);
-        return RCOK;
+	else {
+	    W_DO(test_env->btree_scan(_stid, s));
+	    EXPECT_EQ (3, s.rownum);
+	    EXPECT_EQ (std::string("aa1"), s.minkey);
+	    EXPECT_EQ (std::string("aa3"), s.maxkey);
+	    return RCOK;
+	}
     }
 };
 
-/* Passing *
-* please re-design test case becasue normal shutdown does not have recovery, therefore the post-crash scan should succeed *
-
+/* Passing */
 TEST (RestartTest, SimpleConcurrentUndoN) {
     test_env->empty_logdata_dir();
     restart_simple_concurrent_undo context;
@@ -849,11 +854,9 @@ TEST (RestartTest, SimpleConcurrentUndoN) {
                                                                   // 22 = recovery mode, m2 concurrent mode with delay in UNDO
                                                                   // minimal logging
 }
-**/
+/**/
 
-/* Passing *
-* please re-design test case becasue normal shutdown does not have recovery, therefore the post-crash scan should succeed *
-
+/* Passing */
 TEST (RestartTest, SimpleConcurrentUndoNF) {
     test_env->empty_logdata_dir();
     restart_simple_concurrent_undo context;
@@ -861,7 +864,7 @@ TEST (RestartTest, SimpleConcurrentUndoNF) {
                                                                   // 26 = recovery mode, m2 concurrent mode with delay in UNDO
                                                                   // full logging logging
 }
-**/
+/**/
 
 /* Passing */
 TEST (RestartTest, SimpleConcurrentUndoC) {
