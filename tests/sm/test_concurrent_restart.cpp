@@ -10,6 +10,19 @@ btree_test_env *test_env;
 
 const int WAIT_TIME = 1000; // Wait 1 second
 const int SHORT_WAIT_TIME = 100; // Wait 1/10 of a  second
+const int32_t m1_default_recovery = 10;
+const int32_t m2_default_recovery = 20;
+const int32_t m2_redo_delay_recovery = 21;
+const int32_t m2_undo_delay_recovery = 22;
+const int32_t m2_both_delay_recovery = 23;
+const int32_t m2_full_logging_recovery = 24;
+const int32_t m2_redo_fl_delay_recovery = 25;
+const int32_t m2_undo_fl_delay_recovery = 26;
+const int32_t m2_both_fl_delay_recovery = 27;
+const int32_t m3_default_recovery = 30;
+const int32_t m3_redo_delay_recovery = 31;
+const int32_t m3_undo_delay_recovery = 32;
+const int32_t m3_both_delay_recovery = 33;
 
 
 // Test cases to test concurrent restart.
@@ -582,37 +595,44 @@ public:
     w_rc_t post_shutdown(ss_m *) {
         output_durable_lsn(4);
         x_btree_scan_result s;
-
+	const bool fCrash = test_env->_fCrash;
+	const int32_t recovery_mode = test_env->_recovery_mode;
         // No wait in test code, but wait in recovery
         // This is to ensure concurrency
-        
-        // Verify
-        w_rc_t rc = test_env->btree_scan(_stid, s);  // Should have only one page of data
+       
+	 
+	if (fCrash && recovery_mode < 30) {    
+	    // Verify
+	    w_rc_t rc = test_env->btree_scan(_stid, s);  // Should have only one page of data
                                                      // while recovery is on for this page
                                                      // therefore even the concurrent txn is a
                                                      // read/scan txn, it should not be allowed
-        if (rc.is_error())
-        {
-            DBGOUT3(<<"restart_simple_concurrent_redo: tree_scan error: " << rc);        
+	    if (rc.is_error())
+	    {
+		DBGOUT3(<<"restart_simple_concurrent_redo: tree_scan error: " << rc);        
 
-            // Abort the failed scan txn
-            test_env->abort_xct();
+		// Abort the failed scan txn
+		test_env->abort_xct();
 
-            // Sleep to give Recovery sufficient time to finish
-            while (true == test_env->in_recovery())
-            {
-                // Concurrent recovery is still going on, wait
-                ::usleep(WAIT_TIME);            
-            }
+		// Sleep to give Recovery sufficient time to finish
+		while (true == test_env->in_recovery())
+		{
+		    // Concurrent recovery is still going on, wait
+		    ::usleep(WAIT_TIME);            
+		}
 
-            // Try again
-            W_DO(test_env->btree_scan(_stid, s));
-        }
-        else
-        {
-            cerr << "restart_simple_concurrent_redo: scan operation should not succeed"<< endl;         
-            return RC(eINTERNAL);
-        }
+		// Try again
+		W_DO(test_env->btree_scan(_stid, s));
+	    }
+	    else
+	    {
+		cerr << "restart_simple_concurrent_redo: scan operation should not succeed"<< endl;         
+		return RC(eINTERNAL);
+	    }
+	} 
+	else {
+	    W_DO(test_env->btree_scan(_stid, s));
+	}
 
         EXPECT_EQ (3, s.rownum);
         EXPECT_EQ (std::string("aa1"), s.minkey);
@@ -621,9 +641,7 @@ public:
     }
 };
 
-/* Passing *
-* please re-design test case becasue normal shutdown does not have recovery, therefore the post-crash scan should succeed *
-
+/* Passing */
 TEST (RestartTest, SimpleConcurrentRedoN) {
     test_env->empty_logdata_dir();
     restart_simple_concurrent_redo context;
@@ -631,11 +649,9 @@ TEST (RestartTest, SimpleConcurrentRedoN) {
                                                                   // 21 = recovery mode, m2 concurrent mode with delay in REDO
                                                                   // minimal logging
 }
-**/
+/**/
 
-/* Passing *
-* please re-design test case becasue normal shutdown does not have recovery, therefore the post-crash scan should succeed *
-
+/* Passing */
 TEST (RestartTest, SimpleConcurrentRedoNF) {
     test_env->empty_logdata_dir();
     restart_simple_concurrent_redo context;
@@ -643,7 +659,7 @@ TEST (RestartTest, SimpleConcurrentRedoNF) {
                                                                   // 25 = recovery mode, m2 concurrent mode with delay in REDO
                                                                   // full logging
 }
-**/
+/**/
 
 /* Passing */
 TEST (RestartTest, SimpleConcurrentRedoC) {
@@ -1040,6 +1056,8 @@ public:
     w_rc_t post_shutdown(ss_m *) {
         output_durable_lsn(4);
         x_btree_scan_result s;
+	const bool fCrash = test_env->_fCrash;
+	const int32_t recovery_mode = test_env->_recovery_mode;
 
         // Wait a while, this is to give REDO a chance to reload the root page
         // but still wait in REDO phase due to test mode
@@ -1049,14 +1067,14 @@ public:
         // Insert into the last page which should cause a conflict        
         W_DO(test_env->begin_xct());
         w_rc_t rc = test_env->btree_insert(_stid, "zz5", "data4");
-        if (rc.is_error()) 
+        if (rc.is_error() || !(fCrash && recovery_mode<30)) 
         {
             // Expected behavior
             W_DO(test_env->abort_xct());            
         }
         else
         {
-            cerr << "restart_concurrent_conflict_crash: tree_insertion should not succeed"<< endl;
+            cerr << "restart_concurrent_conflict: tree_insertion should not succeed"<< endl;
             // Should not succeed
             RC(eINTERNAL);
         }
@@ -1080,9 +1098,7 @@ public:
     }
 };
 
-/* Passing, WOD with minimal logging *
-* please re-design test case becasue normal shutdown does not have recovery, therefore the post-crash scan should succeed *
-
+/* Passing, WOD with minimal logging */
 TEST (RestartTest, ConcurrentConflictN) {
     test_env->empty_logdata_dir();
     restart_concurrent_conflict context;
@@ -1090,11 +1106,9 @@ TEST (RestartTest, ConcurrentConflictN) {
                                                                   // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
                                                                   // minimal logging
 }
-**/
+/**/
 
-/* Passing, full logging *
-* please re-design test case becasue normal shutdown does not have recovery, therefore the post-crash scan should succeed *
-
+/* Passing, full logging */
 TEST (RestartTest, ConcurrentConflictNF) {
     test_env->empty_logdata_dir();
     restart_concurrent_conflict context;
@@ -1102,7 +1116,7 @@ TEST (RestartTest, ConcurrentConflictNF) {
                                                                   // 27 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
                                                                   // full logging
 }
-**/
+/**/
 
 /* UNDO phase, item not found, probably due to multiple splits */
 /* The in-flight is in the last page, splitted page */
@@ -1158,7 +1172,8 @@ public:
     w_rc_t post_shutdown(ss_m *) {
         output_durable_lsn(4);
         x_btree_scan_result s;
-
+	const bool fCrash = test_env->_fCrash;
+	const bool m3_recovery = test_env->_recovery_mode >= 30; 
         // Wait a while, this is to give REDO a chance to reload the root page
         // but still wait in REDO phase due to test mode
         ::usleep(SHORT_WAIT_TIME*5);
@@ -1183,21 +1198,26 @@ public:
             W_DO(test_env->commit_xct());        
         }
 
-        W_DO(test_env->commit_xct());
+        //W_DO(test_env->commit_xct());
         
         // Insert into the last page which should cause a conflict        
         W_DO(test_env->begin_xct());
         rc = test_env->btree_insert(_stid, "zz5", "data4");
-        if (rc.is_error()) 
-        {
+        if ((rc.is_error() && fCrash && !m3_recovery) || (!rc.is_error() && (!fCrash || m3_recovery))) // Only m2 recovery mode with crash shutdown should fail,
+        {											    // m3 rm and m2 rm with normal shutdown should succeed
             // Expected behavior
             W_DO(test_env->abort_xct());            
         }
         else
         {
-            // Should not succeed
-            cerr << "restart_multi_concurrent_conflict: tree_insertion should not succeed"<< endl;            
-            RC(eINTERNAL);
+	    if (!fCrash || m3_recovery) { // Should have succeeded, did not
+		cerr << "restart_multi_concurrent_conflict: tree_insertion should have succeeded" << rc;
+		return RC(eINTERNAL);
+	    }
+            else { // Should not succeed, but did
+		cerr << "restart_multi_concurrent_conflict: tree_insertion should not succeed"<< endl;            
+		return RC(eINTERNAL);
+	    }
         }
 
         // Wait before the final verfication
@@ -1222,9 +1242,7 @@ public:
     }
 };
 
-/* Passing, WOD with minimal logging *
-* please re-design test case becasue normal shutdown does not have recovery, therefore the post-crash scan should succeed *
-
+/* Passing, WOD with minimal logging */
 TEST (RestartTest, MultiConcurrentConflictN) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_conflict context;
@@ -1232,11 +1250,9 @@ TEST (RestartTest, MultiConcurrentConflictN) {
                                                                   // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
                                                                   // minimal logging
 }
-**/
+/**/
 
-/* Passing, full logging *
-* please re-design test case becasue normal shutdown does not have recovery, therefore the post-crash scan should succeed *
-
+/* Passing, full logging */
 TEST (RestartTest, MultiConcurrentConflictNF) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_conflict context;
@@ -1244,12 +1260,12 @@ TEST (RestartTest, MultiConcurrentConflictNF) {
                                                                   // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
                                                                   // full logging
 }
-**/
+/**/
 
 /* UNDO phase, item not found, probably due to multiple splits */
 /* The in-flight is in the last page, splitted page */
 /* Not passing, WOD with minimal logging *
-TEST (RestartTest, MultiConcurrentConflictCrash) {
+TEST (RestartTest, MultiConcurrentConflictC) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_conflict context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 23), 0);   // true = simulated crash
@@ -1259,9 +1275,9 @@ TEST (RestartTest, MultiConcurrentConflictCrash) {
 **/
 
 /* Need testing, full logging *
-TEST (RestartTest, MultiConcurrentConflictCrash) {
+TEST (RestartTest, MultiConcurrentConflictCF) {
     test_env->empty_logdata_dir();
-    restart_multi_concurrent_conflict_crash context;
+    restart_multi_concurrent_conflict context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, 27), 0);   // true = simulated crash
                                                                   // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
                                                                   // full logging
