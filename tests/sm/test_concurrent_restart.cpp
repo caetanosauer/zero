@@ -601,7 +601,7 @@ public:
         // This is to ensure concurrency
        
 	 
-	if (fCrash && recovery_mode < 30) {    
+	if (fCrash && recovery_mode < m3_default_recovery) {    
 	    // Verify
 	    w_rc_t rc = test_env->btree_scan(_stid, s);  // Should have only one page of data
                                                      // while recovery is on for this page
@@ -1173,7 +1173,7 @@ public:
         output_durable_lsn(4);
         x_btree_scan_result s;
 	const bool fCrash = test_env->_fCrash;
-	const bool m3_recovery = test_env->_recovery_mode >= 30; 
+	const bool m3_recovery = test_env->_recovery_mode >= m3_default_recovery; 
         // Wait a while, this is to give REDO a chance to reload the root page
         // but still wait in REDO phase due to test mode
         ::usleep(SHORT_WAIT_TIME*5);
@@ -1198,8 +1198,6 @@ public:
             W_DO(test_env->commit_xct());        
         }
 
-        //W_DO(test_env->commit_xct());
-        
         // Insert into the last page which should cause a conflict        
         W_DO(test_env->begin_xct());
         rc = test_env->btree_insert(_stid, "zz5", "data4");
