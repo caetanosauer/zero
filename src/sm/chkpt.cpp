@@ -783,7 +783,7 @@ try
         // lastLSN (the LSN of the most recent log record for the transaction)
         // 'abort' flags (transaction state), and undo nxt (for rollback)
         // 'undo nxt' is needed because the UNDO is using a special reverse
-        // chronological order to roll back doom transactions
+        // chronological order to roll back loser transactions
 
         // Max is set to make chkpt_xct_tab_log fit in logrec_t::data_sz
         // chuck = how many txn information can fit into one chkpt_xct_tab_log log record
@@ -875,17 +875,17 @@ try
                     continue;
                 }
 
-                // If checkpoint comes in during recovery, we might see doomed transactions
+                // If checkpoint comes in during recovery, we might see loser transactions
                 // which are yet to be undone.
-                // If system starts with checkpoint containing doomed txns:
-                // 1. For a doomed txn in checkpoint, UNDO operation would generate an
-                //    'end transaction log record' after UNDO, which cancels out the doomed
+                // If system starts with checkpoint containing loser txns:
+                // 1. For a loser txn in checkpoint, UNDO operation would generate an
+                //    'end transaction log record' after UNDO, which cancels out the loser
                 //    txn in checkpoint log.
-                // 2. For a doomed txn in checkpoint, if system crashs before UNDO this
-                //    doomed txn, then no matching 'end transaction log record' so restart will
-                //    take care of this doomed txn again.
-                // No need to record the doomed_txn flag, because all in-flight txns in recovery
-                // will be marked as doomed.
+                // 2. For a loser txn in checkpoint, if system crashs before UNDO this
+                //    loser txn, then no matching 'end transaction log record' so restart will
+                //    take care of this loser txn again.
+                // No need to record the loser_txn flag, because all in-flight txns in recovery
+                // will be marked as loser.
 
                 // Transaction table is implemented in a descend list sorted by tid
                 // therefore the newest transaction goes to the beginning of the list
@@ -902,9 +902,9 @@ try
                     //     xct_active, xct_chaining, xct_committing, xct_aborting                   
                     // A transaction state can be xct_t::xct_aborting if
                     // 1. A normal aborting transaction
-                    // 2. Doom transaction - all transactions are marked as 
-                    //     aborting (doomed) by Log Analysys phase, UNDO phase 
-                    //     identifies the true doomed transactions.
+                    // 2. Loser transaction - all transactions are marked as 
+                    //     aborting (loser) by Log Analysys phase, UNDO phase 
+                    //     identifies the true loser transactions.
                     // A checkpoint will be taken at the end of Log Analysis phase
                     // therefore record all transaction state as is.
                     //

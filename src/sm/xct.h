@@ -256,7 +256,7 @@ private:
         const lsn_t&                 undo_nxt,
         bool                         sys_xct = false,
         bool                         single_log_sys_xct = false,
-        bool                         doomed_xct = false
+        bool                         loser_xct = false
                                       );
     NORET                       ~xct_t();
 
@@ -568,12 +568,12 @@ private:
     /** result and context of in-query verification. */
     inquery_verify_context_t     _inquery_verify_context;
 
-    // For a doomed transaction identified during Log Analysis phase in Recovery,
+    // For a loser transaction identified during Log Analysis phase in Recovery,
     // the transaction state is 'xct_active' so the standard roll back logic can be
-    // used.  In order to distingish a doomed transaction and normal active
-    // transaction, check the '_doomed_xct' flag, this is especially important
+    // used.  In order to distingish a loser transaction and normal active
+    // transaction, check the '_loser_xct' flag, this is especially important
     // for transaction driven UNDO logic.
-    bool                         _doomed_xct;
+    bool                         _loser_xct;
 
 public:
     void                         acquire_1thread_xct_mutex() const; // serialize
@@ -649,7 +649,7 @@ public:
     bool                         get_query_exlock_for_select() const {return _query_exlock_for_select;}
     void                         set_query_exlock_for_select(bool mode) {_query_exlock_for_select = mode;}
 
-    bool                        is_doomed_xct() const { return _doomed_xct; }
+    bool                        is_loser_xct() const { return _loser_xct; }
 
     ostream &                   dump_locks(ostream &) const;
 

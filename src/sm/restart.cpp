@@ -245,7 +245,7 @@ restart_m::restart(
     // Log Analysis phase, the store is not opened for new transaction during this phase
     // Populate transaction table for all in-flight transactions, mark them as 'active'
     // Populate buffer pool for 'in_doubt' pages, register but not loading the pages
-    // Populate the special heap with all the doomed transactions for UNDO purpose
+    // Populate the special heap with all the loser transactions for UNDO purpose
     CmpXctUndoLsns        cmp;
     XctPtrHeap            heap(cmp);
 ////////////////////////////////////////
@@ -260,7 +260,7 @@ restart_m::restart(
 
     int32_t xct_count = xct_t::num_active_xcts();
 
-    // xct_count: the number of doomed transactions in transaction table, 
+    // xct_count: the number of loser transactions in transaction table, 
     //                 all transactions shoul be marked as 'active', they would be
     //                 removed in the UNDO phase
     // in_doubt_count: the number of in_doubt pages in buffer pool,
@@ -275,7 +275,7 @@ restart_m::restart(
         smlevel_0::errlog->clog << info_prio 
             << "Log contains " << in_doubt_count
             << " in_doubt pages and " << xct_count
-            << " doomed transactions" << flushl;
+            << " loser transactions" << flushl;
     }
 
     // Take a synch checkpoint after the Log Analysis phase and before the REDO phase
@@ -303,7 +303,7 @@ restart_m::restart(
 
         // Return to caller (main thread), at this point, buffer pool contains all 'in_doubt' pages
         // but the actual pages are not loaded.
-        // Transaction table contains all doomed transactions (marked as 'active').
+        // Transaction table contains all loser transactions (marked as 'active').
         // This function returns sufficient information to caller, mainly to support 'Log driven REDO'
         // and concurrent txn validation
         // We do not persist the in-memory heap for UNDO, caller is using different
@@ -452,7 +452,7 @@ restart_m::analysis_pass(
                                            // which could be different from master
     uint32_t&             in_doubt_count,  // Counter for in_doubt page count in buffer pool
     lsn_t&                undo_lsn,        // Stopping point for UNDO backward log scan (if used)
-    XctPtrHeap&           heap,            // Heap to record all the doomed transactions,
+    XctPtrHeap&           heap,            // Heap to record all the loser transactions,
                                            // used only for reverse chronological order
                                            // UNDO phase (if used)
     lsn_t&                commit_lsn,      // Commit lsn for concurrent transaction (if used)
@@ -888,7 +888,7 @@ restart_m::analysis_pass(
                         // In such case during the forward log scan, we would encounter the
                         // end transaction log record first, and then the checkpoint t_chkpt_xct_tab
                         // log record.  We need to make sure we do not mark the ended transaction
-                        // as a doomed transaction by accident, therefore leave the ended 
+                        // as a loser transaction by accident, therefore leave the ended 
                         // transaction in the transaction table until we are done with the log scan,
                         // and then cleanup all the ended transaction table at the end.
 
@@ -922,7 +922,7 @@ restart_m::analysis_pass(
                     else
                     {
                        // Found in the transaction table, it must be marked as:
-                       // doomed transaction (active) - in-flight transaction during checkpoint
+                       // loser transaction (active) - in-flight transaction during checkpoint
                        // ended transaction - transaction ended before the checkpoint finished
                        w_assert1((xct_t::xct_active == xd->state()) || 
                                  (xct_t::xct_ended == xd->state()));
@@ -1108,7 +1108,7 @@ restart_m::analysis_pass(
             // the recovery log does not know whether the txn should be 
             // committed or abort, do not mark the txn to xct_ended when we 
             // see this log record, so if we do not see another log record to indicate
-            // txn commit or abort, the txn will be treated as a doomed txn and 
+            // txn commit or abort, the txn will be treated as a loser txn and 
             // rollback during UNDO phase
 
             w_assert1(xct_t::xct_ended != xd->state());
@@ -1422,8 +1422,8 @@ restart_m::analysis_pass(
     //    transactions are allowed
     // If commit_lsn <> lsn_t::null: 
     //    Recovery starts from an existing database, it does not mean we
-    //        have doomed txn or in_doubt page.  
-    //    If no doomed txn or in_doubt page, then commit_lsn == master
+    //        have loser txn or in_doubt page.  
+    //    If no loser txn or in_doubt page, then commit_lsn == master
     
     // If there were any mounts/dismounts that occured between redo_lsn and
     // begin chkpt, need to redo them
@@ -1499,13 +1499,13 @@ restart_m::analysis_pass(
     io_m::SetLastMountLSN(theLastMountLSNBeforeChkpt);
 
     // We are done with Log Analysis, at this point each transactions in the transaction
-    // table is either doomed (active) or ended; destroy the ended transactions
-    // if in serial mode, populate the special heap with doomed (active) transactions
+    // table is either loser (active) or ended; destroy the ended transactions
+    // if in serial mode, populate the special heap with loser (active) transactions
     // for the UNDO phase.
        
-    // After the following step, only doomed transactions are left in the transaction table   
-    // all of them should have state 'active' and marked as is_doomed_xct()
-    // these doomed transactions will be cleaned up in the UNDO phase.
+    // After the following step, only loser transactions are left in the transaction table   
+    // all of them should have state 'active' and marked as is_loser_xct()
+    // these loser transactions will be cleaned up in the UNDO phase.
         
     // We are not locking the transaction table during this process because 
     // we are in the Log Analysis phase and the system is not opened for new 
@@ -1530,21 +1530,21 @@ restart_m::analysis_pass(
             if (xct_t::xct_active == xd->state())  
             {
                 // The doomed_xct flag must be on
-                w_assert1(true == xd->is_doomed_xct());
+                w_assert1(true == xd->is_loser_xct());
 
                 // Determine the value for commit_lsn which is the minimum
-                // lsn of all doomed transactions
-                // For a doomed txn, the first lsn is the smallest lsn
+                // lsn of all loser transactions
+                // For a loser txn, the first lsn is the smallest lsn
                 if (commit_lsn > xd->first_lsn())
                     commit_lsn = xd->first_lsn();
                 
-                // Reset the first txn lsn of the doomed txn to null
+                // Reset the first txn lsn of the loser txn to null
                 // Current code is using first_lsn in log related operations
                 // and the value is not initialized (?), set to null
                 // to avoid accident side-effect in other code
                 xd->set_first_lsn(lsn_t::null);
 
-                // Doomed transaction
+                // Loser transaction
                 if (true == use_serial_restart())
                     heap.AddElementDontHeapify(xd);
 
@@ -1576,7 +1576,7 @@ restart_m::analysis_pass(
                 {
                     // We are not supposed to see transaction with other stats
                     W_FATAL_MSG(fcINTERNAL, 
-                        << "Transaction in the traction table is not doomed in Log Analysis phase, xd: "
+                        << "Transaction in the traction table is not loser in Log Analysis phase, xd: "
                         << xd->tid());                   
                 }
             }
@@ -2385,7 +2385,7 @@ void restart_m::_redo_log_with_pid(
  *********************************************************************/
 void 
 restart_m::undo_reverse_pass(
-    XctPtrHeap&        heap,      // Heap populated with doomed transactions
+    XctPtrHeap&        heap,      // Heap populated with loser transactions
     const lsn_t        curr_lsn,  // Current lsn, the starting point of backward scan
                                   // Not used currently
     const lsn_t        undo_lsn   // Undo_lsn, the end point of backward scan
@@ -2423,9 +2423,9 @@ restart_m::undo_reverse_pass(
             DBGOUT3( << "Transaction " << xd->tid() 
                      << " has state " << xd->state() );
 
-            if ((true == xd->is_doomed_xct()) && (xct_t::xct_active == xd->state()))
+            if ((true == xd->is_loser_xct()) && (xct_t::xct_active == xd->state()))
             {
-                // Found a doomed transaction
+                // Found a loser transaction
                 heap.AddElementDontHeapify(xd);
             }
             // Advance to the next transaction
@@ -2443,8 +2443,8 @@ restart_m::undo_reverse_pass(
         int xct_count = heap.NumElements();
         if (0 == xct_count)
         {
-            // No doomed transaction in transaction table, nothing to do in UNDO phase
-            DBGOUT3(<<"No doomed transaction to undo");
+            // No loser transaction in transaction table, nothing to do in UNDO phase
+            DBGOUT3(<<"No loser transaction to undo");
             return;
         }
 
@@ -2461,7 +2461,7 @@ restart_m::undo_reverse_pass(
 // and UNDO one log record at a time
 // The current log scan implementation is slow and probably could be improved.
 // Instead, we decided to use an enhanced version of the original Shore-MT
-// implementation which is using heap to record all the doom transactions
+// implementation which is using heap to record all the loser transactions
 // for UNDO purpose.
 // The backward scan of the recovery log has been implemented but
 // not used.  I am keeping the backward scan code just in case if we need
@@ -2543,13 +2543,13 @@ restart_m::undo_reverse_pass(
                     << " rolling back to " << heap.Second()->undo_nxt() 
                     );
 
-                // Note that this rollback/undo for doomed/in-flight transactions
+                // Note that this rollback/undo for loser/in-flight transactions
                 // which were marked as 'active' in the Log Analysis phase.
                 // These transactions are marked 'active' in the transaction table
                 // so the standard rooback/abort logic works.
                 // We will open the store for new transactions after Log Analysis,
                 // new incoming transaction should have different TID and not confused 
-                // with the doomed (marked as active) transactions
+                // with the loser (marked as active) transactions
             
                 // It behaves as if it were a rollback to a save_point where
                 // the save_point is 'undo_nxt' of the next transaction in the heap.
@@ -2601,7 +2601,7 @@ restart_m::undo_reverse_pass(
 
         while (heap.NumElements() > 0)  
         {
-            // For all the doom transactions in the heap
+            // For all the loser transactions in the heap
             // destroy them from the transaction table
         
             xd = heap.RemoveFirst();
@@ -2621,7 +2621,7 @@ restart_m::undo_reverse_pass(
             // which release locks (which was not involved in the roll back to save point operation),
             // generate an end transaction log record if any log has been generated by
             // this transaction (i.e. compensation records), and change state accordingly       
-            // Because we are using the standard abort logic, all the in-flight /doomed transactions
+            // Because we are using the standard abort logic, all the in-flight /loser transactions
             // were marked as 'active' so abort() works correctly
             W_COERCE( xd->abort() );
 
@@ -3195,7 +3195,7 @@ void restart_m::_undo_txn_pass()
     // If nothing in the transaction table, then nothing to process
     if (0 == xct_t::num_active_xcts())
     {
-        DBGOUT3(<<"No doomed transaction to undo");
+        DBGOUT3(<<"No loser transaction to undo");
         return;
     }
 
@@ -3210,7 +3210,7 @@ void restart_m::_undo_txn_pass()
     s << "restart concurrent undo_txn_pass";
     (void) log_comment(s.c_str());
 
-    // Loop through the transaction table and look for doomed txn   
+    // Loop through the transaction table and look for loser txn   
     // Do not lock the transaction table when looping through entries
     // in transaction table
     
@@ -3220,7 +3220,7 @@ void restart_m::_undo_txn_pass()
     // transaction table, so they won't affect the on-going loop operation
     // Also because new transaction is always insert into the beginning
     // of the transaction table, so when applying UNDO, we are actually
-    // undo the doomed transactions in the reverse order, which is the 
+    // undo the loser transactions in the reverse order, which is the 
     // order of execution we need
     
     xct_i iter(false); // not locking the transaction table list
@@ -3232,10 +3232,10 @@ void restart_m::_undo_txn_pass()
         DBGOUT3( << "Transaction " << xd->tid() 
                  << " has state " << xd->state() );
 
-        if ((true == xd->is_doomed_xct()) && (xct_t::xct_active == xd->state()))
+        if ((true == xd->is_loser_xct()) && (xct_t::xct_active == xd->state()))
         {
-            // Found a doomed txn
-            // Prepare to rollback this doomed transaction
+            // Found a loser txn
+            // Prepare to rollback this loser transaction
             curr = iter.curr();
             w_assert1(curr);
 
@@ -3270,10 +3270,10 @@ void restart_m::_undo_txn_pass()
                              << " with undo_nxt lsn " << curr->undo_nxt());
 
                     // Abort the transaction, this is using the standard transaction abort logic, 
-                    // which release locks if any were acquired for the doomed transaction
+                    // which release locks if any were acquired for the loser transaction
                     // generate an end transaction log record if any log has been generated by
                     // this transaction (i.e. compensation records), and change state accordingly
-                    // All the in-flight /doomed transactions were marked as 'active' so
+                    // All the in-flight /loser transactions were marked as 'active' so
                     // the standard abort() works correctly
                     //
                     // Note the 'abort' logic takes care of lock release if any, so the same logic 
@@ -3285,13 +3285,13 @@ void restart_m::_undo_txn_pass()
                     me()->attach_xct(curr);
                     W_COERCE( curr->abort() );
 
-                    // Then destroy the doomed transaction
+                    // Then destroy the loser transaction
                     xct_t::destroy_xct(curr);               
                 }
             }
             else
             {
-                // Doomed transaction but no undo_nxt, must be a compensation 
+                // Loser transaction but no undo_nxt, must be a compensation 
                 // operation, nothing to undo
             }
         }
@@ -3302,14 +3302,14 @@ void restart_m::_undo_txn_pass()
         }   
     }
 
-    // All doomed transactions have been taken care of now
+    // All loser transactions have been taken care of now
     // Force a recovery log flush, this would harden the log records 
     // generated by compensation operations
     
     W_COERCE( log->flush_all() );
 
     // TODO(Restart)... an optimization idea, while we roll back and
-    // delete each doomed txn from transaction table, we could adjust
+    // delete each loser txn from transaction table, we could adjust
     // commit_lsn accordingly, to open up for more user transactions
     // this optimization is not implemented
 

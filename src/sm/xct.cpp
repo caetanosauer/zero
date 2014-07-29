@@ -885,7 +885,7 @@ xct_t::xct_core::xct_core(tid_t const &t, state_t s, timeout_in_ms timeout)
  *********************************************************************/
 xct_t::xct_t(xct_core* core, sm_stats_info_t* stats,
            const lsn_t& last_lsn, const lsn_t& undo_nxt, bool sys_xct,
-           bool single_log_sys_xct, bool doomed_xct
+           bool single_log_sys_xct, bool loser_xct
             ) 
     :   
     __stats(stats),
@@ -902,7 +902,7 @@ xct_t::xct_t(xct_core* core, sm_stats_info_t* stats,
     _inquery_verify(false),
     _inquery_verify_keyorder(false),
     _inquery_verify_space(false),
-    _doomed_xct(doomed_xct),
+    _loser_xct(loser_xct),
     // _first_lsn, _last_lsn, _undo_nxt, 
     _last_lsn(last_lsn),
     _undo_nxt(undo_nxt),
@@ -1528,16 +1528,16 @@ xct_t::_abort()
 
     // The transaction abort function is shared by :
     // 1. Normal transaction abort, in such case the state would be in xct_active,
-    //     xct_committing, or xct_freeing_space, and the _doomed_xct flag off
+    //     xct_committing, or xct_freeing_space, and the _loser_xct flag off
     // 2. UNDO phase in Recovery, in such case the state would be in xct_active
-    //     but the _doomed_xct flag is on to indicating a doom transaction
+    //     but the _loser_xct flag is on to indicating a loser transaction
     // Note that if we open the store for new transaction during Recovery
     // we could encounter normal transaction abort while Recovery is going on, 
     // in such case the aborting transaction state would fall into case #1 above
     
-    if (false == in_recovery() && false == _doomed_xct)
+    if (false == in_recovery() && false == _loser_xct)
     {
-        // Not a doomed txn
+        // Not a loser txn
         w_assert1(_core->_state == xct_active
                 || _core->_state == xct_committing /* if it got an error in commit*/
                 || _core->_state == xct_freeing_space /* if it got an error in commit*/

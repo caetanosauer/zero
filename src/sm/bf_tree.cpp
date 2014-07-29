@@ -917,16 +917,16 @@ w_rc_t bf_tree_m::_validate_access(generic_page*& page)   // pointer to the unde
             // Accept a new transaction if the associated page met the following conditions:
             // REDO phase:
             //    1. Page is not an 'in_doubt' page - 'dirty' is okay. 
-            //    2. Page_LSN < Commit_LSN (minimum Txn LSN of all doomed transactions).
+            //    2. Page_LSN < Commit_LSN (minimum Txn LSN of all loser transactions).
             // UNDO phase:
-            //    Page_LSN < Commit_LSN (minimum Txn LSN of all doomed transactions).
+            //    Page_LSN < Commit_LSN (minimum Txn LSN of all loser transactions).
 
             // With the M2 limitation, user transaction does not load in_doubt page (raise error),
             // so we only need to validate one condition for the newly loaded page:
-            //    Page_LSN < Commit_LSN (minimum Txn LSN of all doomed transactions)
-            // The last write on the page was before the minimum TXN lsn of all doomed transactions
+            //    Page_LSN < Commit_LSN (minimum Txn LSN of all loser transactions)
+            // The last write on the page was before the minimum TXN lsn of all loser transactions
             // Note this is an over conserve policy mainly because we do not have
-            // lock acquisition to protect doomed transactions.
+            // lock acquisition to protect loser transactions.
             
             if (lsn_t::null == smlevel_0::commit_lsn)
             {

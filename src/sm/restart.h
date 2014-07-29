@@ -365,7 +365,7 @@ private:
 
     // Function used for reverse order UNDO operations, open system after the entire recovery process finished
     static void                 undo_reverse_pass(
-        XctPtrHeap&             heap,       // heap populated with doomed transactions
+        XctPtrHeap&             heap,       // heap populated with loser transactions
         const lsn_t             curr_lsn,   // current lsn, the starting point of backward scan
                                             // not used in current implementation
         const lsn_t             undo_lsn    // undo lsn, the end point of backward scan
