@@ -85,6 +85,9 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include <string>
 #include "sm_options.h"
+
+#include "sm_external.h"  // Include for caller to find the restart status
+
 /* DOXYGEN Documentation : */
 
 /**\addtogroup SSMOPT
@@ -1918,11 +1921,22 @@ public:
     );
 
     // Debugging function
-    // Returns true if recovery is still going on
-    // Serial recovery mode: always return false
-    // Concurrent recovery mode: return true if concurrent recovery 
+    // Returns true if restart is still going on
+    // Serial restart mode: always return false
+    // Concurrent restart mode: return true if concurrent restart
     //                                          (REDO and UNDO) is active
     static bool            in_recovery();
+
+    // Debugging function
+    // Returns the status of the specified restart phase
+    // t_restart_unknown - for on_demand REDO and UNDO
+    // t_restart_active - specified phase is on
+    // t_restart_not_active - specified phase has not not started yet
+    // t_restart_done - doen with the specified phase
+    //
+    static restart_phase_t in_log_analysis();
+    static restart_phase_t in_REDO();
+    static restart_phase_t in_UNDO();
 
 private:
 

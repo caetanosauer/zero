@@ -712,8 +712,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     // Clear the in_doubt flag so the page driven REDO phase 
                     // does not load this page again
                     w_assert1(0 != idx);       
-                    w_assert1(true == restart_m::use_redo_page_recovery() || 
-                              true == restart_m::use_redo_full_logging_recovery());
+                    w_assert1(true == restart_m::use_redo_page_restart() || 
+                              true == restart_m::use_redo_full_logging_restart());
                     force_load = false;
                     in_doubt_to_dirty(idx);        // Reset in_doubt and dirty flags accordingly
                 }
@@ -793,9 +793,9 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 ////////////////////////////////////////
                 
                     // Has parent, block if caller is not from recovery
-                    if ((true ==  restart_m::use_concurrent_log_recovery()) && (false == from_recovery))
+                    if ((true ==  restart_m::use_concurrent_log_restart()) && (false == from_recovery))
                         return RC(eACCESS_CONFLICT);
-                    else if (true ==  restart_m::use_concurrent_lock_recovery()) 
+                    else if (true ==  restart_m::use_concurrent_lock_restart()) 
                         return RC(eNOTIMPLEMENTED);
                     else if (true == from_recovery)
                     {
@@ -910,9 +910,9 @@ w_rc_t bf_tree_m::_validate_access(generic_page*& page)   // pointer to the unde
     // If the system is doing concurrent recovery and we are still in the middle
     // of recovery, it might not be safe to access the page
     if ((smlevel_1::recovery) &&   // The restart_m object is valid
-        (smlevel_1::recovery->recovery_in_progress())) // Recovery is in progress
+        (smlevel_1::recovery->restart_in_progress())) // Restart is in progress
     {    
-        if (true ==  restart_m::use_concurrent_log_recovery()) 
+        if (true ==  restart_m::use_concurrent_log_restart()) 
         {
             // Accept a new transaction if the associated page met the following conditions:
             // REDO phase:
@@ -955,7 +955,7 @@ w_rc_t bf_tree_m::_validate_access(generic_page*& page)   // pointer to the unde
                 }
             }
         }
-        else if (true == restart_m::use_concurrent_lock_recovery())
+        else if (true == restart_m::use_concurrent_lock_restart())
         {
 ////////////////////////////////////////
 // TODO(Restart)... concurrency through lock acquisition, NYI
@@ -1000,7 +1000,7 @@ void bf_tree_m::unpin_for_refix(bf_idx idx) {
 
 ///////////////////////////////////   Dirty Page Cleaner BEGIN       ///////////////////////////////////  
 w_rc_t bf_tree_m::force_all() {
-    if (false == smlevel_0::use_serial_recovery())
+    if (false == smlevel_0::use_serial_restart())
     {
 ////////////////////////////////////////
 // TODO(Restart)... this is because we might still
@@ -1013,10 +1013,10 @@ w_rc_t bf_tree_m::force_all() {
         // Open system after Log Analysis
         // Do not flush buffer pool as long as the recovery is still going on
         if ((smlevel_1::recovery) &&                       // The restart_m object is valid
-            (smlevel_1::recovery->recovery_in_progress())) // Recovery is in progress
+            (smlevel_1::recovery->restart_in_progress())) // Restart is in progress
         {
-            // Recovery child thread is still around
-            DBGOUT1( << "Block buffer pool flush because recovery is still on");
+            // Restart child thread is still around
+            DBGOUT1( << "Block buffer pool flush because restart is still on");
             return RCOK;
         }
         else
@@ -1033,7 +1033,7 @@ w_rc_t bf_tree_m::force_all() {
     }
 }
 w_rc_t bf_tree_m::force_until_lsn(lsndata_t lsn) {
-    if (false == smlevel_0::use_serial_recovery())
+    if (false == smlevel_0::use_serial_restart())
     {
 ////////////////////////////////////////
 // TODO(Restart)... this is because we might still
@@ -1046,10 +1046,10 @@ w_rc_t bf_tree_m::force_until_lsn(lsndata_t lsn) {
         // Open system after Log Analysis
         // Do not flush buffer pool as long as the recovery is still going on
         if ((smlevel_1::recovery) &&                       // The restart_m object is valid
-            (smlevel_1::recovery->recovery_in_progress())) // Recovery is in progress
+            (smlevel_1::recovery->restart_in_progress())) // Restart is in progress
         {
-            // Recovery child thread is still around        
-            DBGOUT1( << "Block buffer pool flush until lsn because recovery is still on");
+            // Restart child thread is still around        
+            DBGOUT1( << "Block buffer pool flush until lsn because restart is still on");
             return RCOK;
         }
         else

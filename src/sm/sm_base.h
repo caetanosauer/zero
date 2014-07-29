@@ -408,13 +408,25 @@ public:
         t_chkpt_async    // in the middle of asynchronous checkpoint
     };
 
-    // smlevel_0::recovery_internal is an internal setting, not exposed
+    // smlevel_0::concurrent_restart_mode_t is used for concurrent restart when
+    // the system is opened for user access after Log Analysis phase but the restart
+    // continue running concurrently.  It is to expose the active restart phase.
+    // It is not valid for pure on-demand restart operation (Instant Restart milestone 3).
+    // 
+    enum concurrent_restart_mode_t {
+        t_concurrent_before,  // before REDO and UNDO
+        t_concurrent_redo,    // working on REDO
+        t_concurrent_undo,    // working on UNDO
+        t_concurrent_done     // after REDO and UNDO        
+    };
+
+    // smlevel_0::restart_internal_mode_t is an internal setting, not exposed
     // to external callers.  It is used to control the internal logic in recovery
     // in order to test different implementations.
     // Multiple features could be turned on/off, so they are in bit-mast values. 
     //
     // Only the Recovery related operations should check these values.    
-    // The only place to get/set the value is in 'sm.cpp' (recovery_internal_mode),
+    // The only place to get/set the value is in 'sm.cpp' (restart_internal_mode),
     // the setting is determined during system startup and cannot be changed 
     // dynamiclly, because we cannot change restart behavior in the middle
     // of recovery process
@@ -423,101 +435,122 @@ public:
     // If the startup option is not set, the default setting is to use the initialization 
     // value set in sm.cpp
 
-    enum recovery_internal_mode_t {
-        t_recovery_serial = 0x1,            // M1 implementation:
-                                            //    System is not opened until Recovery completed
-        t_recovery_concurrent_log = 0x2,    // M2 implementation:
-                                            //    System is opened after Log Analysis.
-                                            //    Using commit_lsn for new transactions
-        t_recovery_concurrent_lock = 0x4,   // M3 implementation:
-                                            //    System is opened after Log Analysis.
-                                            //    Using lock acquisition for new transactions       
-        t_recovery_redo_log = 0x8,          // M1 traditional implementation:
-                                            //    REDO is forward log scan driven                                           
-        t_recovery_redo_page = 0x10,        // M2 implementation:
-                                            //    REDO is page driven using Single-Page-Recovery with minimal logging                
-        t_recovery_redo_demand = 0x20,      // M3 implementation:
-                                            //    REDO is on-demand using Single-Page-Recovery with minimal logging                
-        t_recovery_redo_mix = 0x40,         // M4 implementation:
-                                            //    REDO is using both page driven and
-                                            //    on-demand using Single-Page-Recovery with minimal logging                    
-        t_recovery_redo_full_logging = 0x80,// M2 implementation:
-                                            //    REDO is page driven using Single-Page-Recovery with full logging
-        t_recovery_undo_reverse = 0x100,     // M1 traditional implementation:
-                                            //    UNDO is using reverse order with heap
-        t_recovery_undo_txn = 0x200,        // M2 implementation:            
-                                            //    UNDO is transaction driven
-        t_recovery_redo_delay = 0x400,      // Testing hook:            
-                                            //    Internal delay before REDO phase
-                                            //    only if we have actual REDO work
-        t_recovery_undo_delay = 0x800,      // Testing hook:            
-                                            //    Internal delay before UNDO phase
-                                            //    only if we have actual UNDO work
+    enum restart_internal_mode_t {
+        t_restart_serial = 0x1,            // M1 implementation:
+                                           //    System is not opened until Recovery completed
+        t_restart_redo_log = 0x2,          // M1 traditional implementation:
+                                           //    REDO is forward log scan driven                                           
+        t_restart_undo_reverse = 0x4,      // M1 traditional implementation:
+                                           //    UNDO is using reverse order with heap
+                                           
+        t_restart_concurrent_log = 0x8,    // M2 implementation:
+                                           //    System is opened after Log Analysis.
+                                           //    Using commit_lsn for new transactions
+        t_restart_redo_page = 0x10,        // M2 implementation:
+                                           //    REDO is page driven using Single-Page-Recovery with minimal logging                
+        t_restart_redo_full_logging = 0x20,// M2 implementation:
+                                           //    REDO is page driven using Single-Page-Recovery with full logging
+        t_restart_undo_txn = 0x40,         // M2 implementation:            
+                                           //    UNDO is transaction driven
+        t_restart_redo_delay = 0x80,       // M2 Testing hook:            
+                                           //    Internal delay before REDO phase
+                                           //    only if we have actual REDO work
+        t_restart_undo_delay = 0x100,      // M2 Testing hook:            
+                                           //    Internal delay before UNDO phase
+                                           //    only if we have actual UNDO work
+                                           
+        t_restart_concurrent_lock = 0x200, // M3 implementation:
+                                           //    System is opened after Log Analysis.
+                                           //    Using lock acquisition for new transactions       
+        t_restart_redo_demand = 0x400,     // M3 implementation:
+                                           //    REDO is on-demand using Single-Page-Recovery with minimal logging                
+        t_restart_undo_demand = 0x800,     // M3 implementation:                                                       
+                                           //    UNDO is on-demand using user transaction driven
+                                           
+        t_restart_redo_mix = 0x1000,       // M4 implementation:
+                                           //    REDO is using both page driven and
+                                           //    on-demand using Single-Page-Recovery with minimal logging                    
+        t_restart_undo_mix = 0x2000,       // M4 implementation:
+                                           //    UNDO is using both transaction driven and
+                                           //    on-demand using user transaction driven                                          
+                                           
     };
-    static recovery_internal_mode_t recovery_internal_mode;
+    static restart_internal_mode_t restart_internal_mode;
 
     // Set of functions to check individual recovery implementations
     // No setting because the bit values are set staticlly, not dynamiclly
-    static bool use_serial_recovery()
+    static bool use_serial_restart()
     {
         // Recovery M1
-        return ((recovery_internal_mode & t_recovery_serial ) !=0); 
+        return ((restart_internal_mode & t_restart_serial ) !=0); 
     }
-    static bool use_concurrent_log_recovery() 
-    { 
-        // Recovery M2
-        return ((recovery_internal_mode & t_recovery_concurrent_log ) !=0);     
+    static bool use_redo_log_restart() 
+    {
+        // Recovery M1
+        return ((restart_internal_mode & t_restart_redo_log ) !=0);     
     }
-    static bool use_concurrent_lock_recovery() 
+    static bool use_undo_reverse_restart() 
     { 
-// TODO(Restart)... NYI, Recovery M3
-        return ((recovery_internal_mode & t_recovery_concurrent_lock ) !=0);     
+        // Recovery M1
+        return ((restart_internal_mode & t_restart_undo_reverse ) !=0);     
     }
 
-    static bool use_redo_log_recovery() 
-    {
-        // Recovery M1
-        return ((recovery_internal_mode & t_recovery_redo_log ) !=0);     
-    }
-    static bool use_redo_page_recovery() 
+    static bool use_concurrent_log_restart() 
     { 
         // Recovery M2
-        return ((recovery_internal_mode & t_recovery_redo_page ) !=0);     
+        return ((restart_internal_mode & t_restart_concurrent_log ) !=0);     
     }
-    static bool use_redo_demand_recovery() 
+    static bool use_redo_page_restart() 
     { 
-// TODO(Restart)... NYI, Recovery M3
-        return ((recovery_internal_mode & t_recovery_redo_demand ) !=0);     
+        // Recovery M2
+        return ((restart_internal_mode & t_restart_redo_page ) !=0);     
     }
-    static bool use_redo_mix_recovery() 
+    static bool use_redo_full_logging_restart() 
+    { 
+        // Recovery M2
+        return ((restart_internal_mode & t_restart_redo_full_logging ) !=0);     
+    }
+    static bool use_undo_txn_restart() 
+    { 
+        // Recovery M2
+        return ((restart_internal_mode & t_restart_undo_txn ) !=0);     
+    }
+    static bool use_redo_delay_restart() 
+    { 
+        // M2, testing purpose
+        return ((restart_internal_mode & t_restart_redo_delay ) !=0);     
+    }
+    static bool use_undo_delay_restart() 
+    { 
+        // M2, testing purpose
+        return ((restart_internal_mode & t_restart_undo_delay ) !=0);     
+    }
+
+    static bool use_concurrent_lock_restart() 
+    { 
+        // Recovery M3
+        return ((restart_internal_mode & t_restart_concurrent_lock ) !=0);     
+    }
+    static bool use_redo_demand_restart() 
+    { 
+        // Recovery M3
+        return ((restart_internal_mode & t_restart_redo_demand ) !=0);     
+    }
+    static bool use_undo_demand_restart() 
+    { 
+        // Recovery M3
+        return ((restart_internal_mode & t_restart_undo_demand ) !=0);     
+    }
+
+    static bool use_redo_mix_restart() 
     { 
 // TODO(Restart)... NYI, Recovery M4
-        return ((recovery_internal_mode & t_recovery_redo_mix ) !=0);     
+        return ((restart_internal_mode & t_restart_redo_mix ) !=0);     
     }
-    static bool use_redo_full_logging_recovery() 
+    static bool use_undo_mix_restart() 
     { 
-        // Recovery M2
-        return ((recovery_internal_mode & t_recovery_redo_full_logging ) !=0);     
-    }
-    static bool use_undo_reverse_recovery() 
-    { 
-        // Recovery M1
-        return ((recovery_internal_mode & t_recovery_undo_reverse ) !=0);     
-    }
-    static bool use_undo_txn_recovery() 
-    { 
-        // Recovery M2
-        return ((recovery_internal_mode & t_recovery_undo_txn ) !=0);     
-    }
-    static bool use_redo_delay_recovery() 
-    { 
-        // Testing purpose
-        return ((recovery_internal_mode & t_recovery_redo_delay ) !=0);     
-    }
-    static bool use_undo_delay_recovery() 
-    { 
-        // Testing purpose
-        return ((recovery_internal_mode & t_recovery_undo_delay ) !=0);     
+        // Recovery M4
+        return ((restart_internal_mode & t_restart_undo_demand ) !=0);     
     }
 
     static void  add_to_global_stats(const sm_stats_info_t &from);
@@ -550,7 +583,7 @@ public:
     static bool         do_prefetch;
     static bool         statistics_enabled;
 
-    static lsn_t        commit_lsn;      // commit_lsn is for use_concurrent_log_recovery() only
+    static lsn_t        commit_lsn;      // commit_lsn is for use_concurrent_log_restart() only
                                          // this is the validation lsn for all concurrent user txns
 
     // The following variables are used by concurrent recovery process only
@@ -569,8 +602,14 @@ public:
     static bool in_recovery_analysis() { 
         return ((operating_mode & t_in_analysis) !=0); }
     static bool in_recovery_undo() { 
+        // Valid for use_serial_restart() only
+        // If concurrent recovery, system is opened after Log Analysis
+        // and the operating mode changed to t_forward_processing after Log Analysis
         return ((operating_mode & t_in_undo ) !=0); }
     static bool in_recovery_redo() { 
+        // Valid for use_serial_restart() only
+        // If concurrent recovery, system is opened after Log Analysis
+        // and the operating mode changed to t_forward_processing after Log Analysis
         return ((operating_mode & t_in_redo ) !=0); }
 
     static bool before_recovery() { 

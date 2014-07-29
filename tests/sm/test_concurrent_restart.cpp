@@ -5,6 +5,8 @@
 #include "btcursor.h"
 #include "bf.h"
 #include "xct.h"
+#include "sm_base.h"
+#include "sm_external.h"
 
 btree_test_env *test_env;
 

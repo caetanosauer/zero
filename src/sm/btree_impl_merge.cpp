@@ -102,7 +102,7 @@ rc_t btree_impl::_sx_rebalance_foster(btree_page_h &page, btree_page_h &foster_p
     if (true == caller_commit)
         W_DO (sxs.end_sys_xct (ret));
 
-    if ((true == restart_m::use_redo_full_logging_recovery()) && (false == caller_commit))
+    if ((true == restart_m::use_redo_full_logging_restart()) && (false == caller_commit))
     {
         // Rebalance is a system transaction with single log normally,
         // but if we are doing full logging due to page driven REDO, 
@@ -142,7 +142,7 @@ rc_t btree_impl::_ux_rebalance_foster_core(
     // first, mark both dirty.
     page.set_dirty();
     foster_p.set_dirty();
-    if (true == restart_m::use_redo_full_logging_recovery())
+    if (true == restart_m::use_redo_full_logging_restart())
     {
         // If page driven REDO recovery, the recovery operation cannot
         // obey WOD for b-tree rebalance operation, disable minimal logging and
@@ -194,7 +194,7 @@ rc_t btree_impl::_ux_rebalance_foster_core(
                                      high_key /*high*/, chain_high_key /*chain_high*/);
     if (ret.is_error())
         return ret;
-    if (true == restart_m::use_redo_full_logging_recovery())
+    if (true == restart_m::use_redo_full_logging_restart())
     {
         // TODO(Restart)... If we need to move records for rebalance,
         // commit the current single log system transaction before the 
@@ -216,7 +216,7 @@ rc_t btree_impl::_ux_rebalance_foster_core(
     }
     // Record movements
     W_DO (_ux_rebalance_foster_apply(page, foster_p, move_count, mid_key, new_pid0,
-                                     new_pid0_emlsn, restart_m::use_redo_full_logging_recovery()));
+                                     new_pid0_emlsn, restart_m::use_redo_full_logging_restart()));
 
     return RCOK;
 }
@@ -390,7 +390,7 @@ rc_t btree_impl::_sx_merge_foster(btree_page_h &page)
     if (true == caller_commit)
         W_DO (sxs.end_sys_xct (ret));
 
-    if ((true == restart_m::use_redo_full_logging_recovery()) && (false == caller_commit))
+    if ((true == restart_m::use_redo_full_logging_restart()) && (false == caller_commit))
     {
         // Merge is a system transaction with single log normally,
         // but if we are doing full logging due to page driven REDO, 
@@ -447,7 +447,7 @@ rc_t btree_impl::_ux_merge_foster_core(btree_page_h &page, btree_page_h &foster_
     // first, mark them dirty.
     page.set_dirty();
     foster_p.set_dirty();
-    if (true == restart_m::use_redo_full_logging_recovery())
+    if (true == restart_m::use_redo_full_logging_restart())
     {
         // If page driven REDO during recovery, the recovery operation cannot
         // obey WOD for b-tree merge, disable minimal logging and
@@ -500,7 +500,7 @@ rc_t btree_impl::_ux_merge_foster_core(btree_page_h &page, btree_page_h &foster_
                                        foster_p.get_foster_emlsn() /* foster emlsn*/);
     if (ret.is_error())
         return ret;
-    if (true == restart_m::use_redo_full_logging_recovery())
+    if (true == restart_m::use_redo_full_logging_restart())
     {
         // TODO(Restart)... If we need to move records for merge, commit 
         // the current single log system transaction before the actual record 
@@ -517,7 +517,7 @@ rc_t btree_impl::_ux_merge_foster_core(btree_page_h &page, btree_page_h &foster_
     }
 
     // Move the records now
-    _ux_merge_foster_apply_parent(page, foster_p, restart_m::use_redo_full_logging_recovery());
+    _ux_merge_foster_apply_parent(page, foster_p, restart_m::use_redo_full_logging_restart());
     W_COERCE(foster_p.set_to_be_deleted(false));
     return RCOK;
 }

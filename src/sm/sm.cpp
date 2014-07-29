@@ -100,138 +100,10 @@ lsn_t        smlevel_0::last_lsn = lsn_t::null;
 uint32_t     smlevel_0::in_doubt_count = 0;
 
 
-////////////////////////////////////////
-// TODO(Restart)... 
-// Set the internal recovery mode to control which recovery
-// logic (mainly for REDO and UNDO phases) to use during 
-// the recovery process
-// These modes are for testing purpose only, the final code 
-// should use features based on test results and the most
-// stable implementations.
-////////////////////////////////////////
-
-// Define the supported modes for Recovery process
-// not all bit combinations would be supported or tested
-// use int64_t to make sure we have enough bits:
-
-// Basic modes:
-// Milestone 1
-const int64_t m1_default_recovery =         // sm_restart = 10 (default)
-    smlevel_0::t_recovery_serial |          // Serial operation
-    smlevel_0::t_recovery_redo_log |        // Log scan driven REDO
-    smlevel_0::t_recovery_undo_reverse;     // Reverse UNDO
-
-// Milestone 2 with minimal logging    
-const int64_t m2_default_recovery =         // sm_restart = 20
-    smlevel_0::t_recovery_concurrent_log |  // Concurrent operation using log                << new
-    smlevel_0::t_recovery_redo_page |       // Page driven REDO with minimal logging   << new
-    smlevel_0::t_recovery_undo_txn;         // Transaction driven UNDO                       << new   
-const int64_t m2_redo_delay_recovery =      // sm_restart = 21, concurrent testing purpose
-    smlevel_0::t_recovery_concurrent_log |  // Concurrent operation using log
-    smlevel_0::t_recovery_redo_page |       // Page driven REDO with minimal logging
-    smlevel_0::t_recovery_undo_txn |        // Transaction driven UNDO
-    smlevel_0::t_recovery_redo_delay;       // Delay before REDO                              << new
-const int64_t m2_undo_delay_recovery =      // sm_restart = 22, concurrent testing purpose
-    smlevel_0::t_recovery_concurrent_log |  // Concurrent operation using log
-    smlevel_0::t_recovery_redo_page |       // Page driven REDO with minimal logging
-    smlevel_0::t_recovery_undo_txn |        // Transaction driven UNDO
-    smlevel_0::t_recovery_undo_delay;       // Delay before UNDO                              << new    
-const int64_t m2_both_delay_recovery =      // sm_restart = 23, concurrent testing purpose
-    smlevel_0::t_recovery_concurrent_log |  // Concurrent operation using log
-    smlevel_0::t_recovery_redo_page |       // Page driven REDO with minimal logging
-    smlevel_0::t_recovery_undo_txn |        // Transaction driven UNDO
-    smlevel_0::t_recovery_redo_delay |      // Delay before REDO                              << new
-    smlevel_0::t_recovery_undo_delay;       // Delay before UNDO                              << new
-
-// Milestone 2 with full logging    
-const int64_t m2_full_logging_recovery =      // sm_restart = 24
-    smlevel_0::t_recovery_concurrent_log |    // Concurrent operation using log             << new
-    smlevel_0::t_recovery_redo_full_logging | // Page driven REDO with full logging       << new
-    smlevel_0::t_recovery_undo_txn;           // Transaction driven UNDO                    << new
-const int64_t m2_redo_fl_delay_recovery =     // sm_restart = 25, concurrent testing purpose
-    smlevel_0::t_recovery_concurrent_log |    // Concurrent operation using log
-    smlevel_0::t_recovery_redo_full_logging | // Page driven REDO with full logging
-    smlevel_0::t_recovery_undo_txn |          // Transaction driven UNDO
-    smlevel_0::t_recovery_redo_delay;         // Delay before REDO                              << new
-const int64_t m2_undo_fl_delay_recovery =     // sm_restart = 26, concurrent testing purpose
-    smlevel_0::t_recovery_concurrent_log |    // Concurrent operation using log
-    smlevel_0::t_recovery_redo_full_logging | // Page driven REDO with full logging
-    smlevel_0::t_recovery_undo_txn |          // Transaction driven UNDO
-    smlevel_0::t_recovery_undo_delay;         // Delay before UNDO                              << new    
-const int64_t m2_both_fl_delay_recovery =     // sm_restart = 27, concurrent testing purpose
-    smlevel_0::t_recovery_concurrent_log |    // Concurrent operation using log
-    smlevel_0::t_recovery_redo_full_logging | // Page driven REDO with full logging
-    smlevel_0::t_recovery_undo_txn |          // Transaction driven UNDO
-    smlevel_0::t_recovery_redo_delay |        // Delay before REDO                              << new
-    smlevel_0::t_recovery_undo_delay;         // Delay before UNDO                              << new
-
-// Milestone 3 with minimal logging        
-const int64_t m3_default_recovery =         // sm_restart = 30
-    smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock          << new
-    smlevel_0::t_recovery_redo_demand |     // On-demand driven REDO                  << new
-    smlevel_0::t_recovery_undo_txn;         // Transaction driven UNDO
-const int64_t m3_redo_delay_recovery =      // sm_restart = 31, concurrent testing purpose
-    smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
-    smlevel_0::t_recovery_redo_demand |     // On-demand driven REDO
-    smlevel_0::t_recovery_undo_txn |        // Transaction driven UNDO
-    smlevel_0::t_recovery_redo_delay;       // Delay before REDO                         << new    
-const int64_t m3_undo_delay_recovery =      // sm_restart = 32, concurrent testing purpose
-    smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
-    smlevel_0::t_recovery_redo_demand |     // On-demand driven REDO
-    smlevel_0::t_recovery_undo_txn |        // Transaction driven UNDO
-    smlevel_0::t_recovery_undo_delay;       // Delay before UNDO                         << new    
-const int64_t m3_both_delay_recovery =      // sm_restart = 33, concurrent testing purpose
-    smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
-    smlevel_0::t_recovery_redo_demand |     // On-demand driven REDO
-    smlevel_0::t_recovery_undo_txn |        // Transaction driven UNDO
-    smlevel_0::t_recovery_redo_delay |      // Delay before REDO                         << new
-    smlevel_0::t_recovery_undo_delay;       // Delay before UNDO                         << new
-
-// Milestone 4 with minimal logging        
-const int64_t m4_default_recovery =         // sm_restart = 40
-    smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
-    smlevel_0::t_recovery_redo_mix |        // Mixed REDO                                   << new
-    smlevel_0::t_recovery_undo_txn;         // Transaction driven UNDO
-const int64_t m4_redo_delay_recovery =      // sm_restart = 41, concurrent testing purpose
-    smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
-    smlevel_0::t_recovery_redo_mix |        // Mixed REDO                                   << new
-    smlevel_0::t_recovery_undo_txn |        // Transaction driven UNDO
-    smlevel_0::t_recovery_redo_delay;       // Delay before REDO                         << new        
-const int64_t m4_undo_delay_recovery =      // sm_restart = 42, concurrent testing purpose
-    smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
-    smlevel_0::t_recovery_redo_mix |        // Mixed REDO                                   << new
-    smlevel_0::t_recovery_undo_txn |        // Transaction driven UNDO
-    smlevel_0::t_recovery_undo_delay;       // Delay before UNDO                         << new        
-const int64_t m4_both_delay_recovery =      // sm_restart = 43, concurrent testing purpose
-    smlevel_0::t_recovery_concurrent_lock | // Concurrent operation using lock
-    smlevel_0::t_recovery_redo_mix |        // Mixed REDO                                   << new
-    smlevel_0::t_recovery_undo_txn |        // Transaction driven UNDO
-    smlevel_0::t_recovery_redo_delay |      // Delay before REDO                          << new
-    smlevel_0::t_recovery_undo_delay;       // Delay before REDO                          << new
-
-
-// Alternative modes:
-// Compare with m2_default_recovery, difference in REDO 
-const int64_t alternative_log_log_recovery =     // sm_restart = 70
-    smlevel_0::t_recovery_concurrent_log |       // Concurrent operation using log 
-    smlevel_0::t_recovery_redo_log |             // Log scan driven REDO             << compare with sm_restart 20
-    smlevel_0::t_recovery_undo_txn;              // Transaction driven UNDO
-// Compare with m2_default_recovery, difference in concurrent
-const int64_t alternative_lock_page_recovery =   // sm_restart = 80
-    smlevel_0::t_recovery_concurrent_lock |      // Concurrent operation using lock  << compare with sm_restart 20
-    smlevel_0::t_recovery_redo_page |            // Page driven REDO with minimal logging
-    smlevel_0::t_recovery_undo_txn;              // Transaction driven UNDO
-// Compare with alternative_log_log_recovery, difference in concurrent
-const int64_t alternative_lock_log_recovery =    // sm_restart = 90
-    smlevel_0::t_recovery_concurrent_lock |      // Concurrent operation using lock  << compare with sm_restart 70
-    smlevel_0::t_recovery_redo_log |             // Log scan driven REDO
-    smlevel_0::t_recovery_undo_txn;              // Transaction driven UNDO
-
-
-// This is the controlling variable to determine which mode to use at run time if user did not specify recovery mode:
-smlevel_0::recovery_internal_mode_t 
-           smlevel_0::recovery_internal_mode = 
-                 (smlevel_0::recovery_internal_mode_t)m1_default_recovery;
+// This is the controlling variable to determine which mode to use at run time if user did not specify restart mode:
+smlevel_0::restart_internal_mode_t 
+           smlevel_0::restart_internal_mode = 
+                 (smlevel_0::restart_internal_mode_t)m1_default_restart;
 
 
             //controlled by AutoTurnOffLogging:
@@ -777,10 +649,10 @@ ss_m::_construct_once()
      * mounted.  If not, we can skip the mount/dismount.
      */
 
-    lsn_t     verify_lsn = lsn_t::null;  // verify_lsn is for use_concurrent_log_recovery() only
-    lsn_t     redo_lsn = lsn_t::null;    // used if log driven REDO with use_concurrent_XXX_recovery()   
-    lsn_t     last_lsn = lsn_t::null;    // used if page driven REDO with use_concurrent_XXX_recovery()       
-    uint32_t  in_doubt_count = 0;        // used if log driven REDO with use_concurrent_XXX_recovery()   
+    lsn_t     verify_lsn = lsn_t::null;  // verify_lsn is for use_concurrent_log_restart() only
+    lsn_t     redo_lsn = lsn_t::null;    // used if log driven REDO with use_concurrent_XXX_restart()   
+    lsn_t     last_lsn = lsn_t::null;    // used if page driven REDO with use_concurrent_XXX_restart()       
+    uint32_t  in_doubt_count = 0;        // used if log driven REDO with use_concurrent_XXX_restart()   
     lsn_t     master = log->master_lsn();
 
     if (_options.get_bool_option("sm_logging", true))  
@@ -796,7 +668,7 @@ ss_m::_construct_once()
         // Recovery process, a checkpoint will be taken at the end of recovery
         // Make surethe current operating state is before recovery
         smlevel_0::operating_mode = t_not_started;
-        restart.recover(master, verify_lsn, redo_lsn, last_lsn, in_doubt_count);
+        restart.restart(master, verify_lsn, redo_lsn, last_lsn, in_doubt_count);
 
         // Perform the low level dismount, remount in higher level
         // and dismount again steps.
@@ -840,7 +712,7 @@ ss_m::_construct_once()
         DBG(<<"Dismount all volumes " << num_volumes_mounted);
         // now dismount all of them at the io level, the level where they
         // were mounted during recovery.
-        if (true == smlevel_0::use_serial_recovery())                        
+        if (true == smlevel_0::use_serial_restart())                        
             W_COERCE( io->dismount_all(true) ); // true: flush
         else
             W_COERCE( io->dismount_all(true, false) ); //true: flush
@@ -864,7 +736,7 @@ ss_m::_construct_once()
             else 
             {
                 // Dismount only if running in serial mode
-                if (true == smlevel_0::use_serial_recovery())                
+                if (true == smlevel_0::use_serial_restart())                
                     W_COERCE( _dismount_dev(dname[i]));
             }
         }
@@ -878,7 +750,7 @@ ss_m::_construct_once()
         // smlevel_0::redo_tid = 0;
     }
 
-    if (false == smlevel_0::use_serial_recovery())
+    if (false == smlevel_0::use_serial_restart())
     {
         // Log Analysis has completed but no REDO or UNDO yet
         // Start the recovery process child thread to carry out
@@ -894,7 +766,7 @@ ss_m::_construct_once()
             w_assert1(t_in_analysis == smlevel_0::operating_mode);
 
             // Store the information globally,
-            // concurrent txn will use commit_lsn only if use_concurrent_log_recovery()
+            // concurrent txn will use commit_lsn only if use_concurrent_log_restart()
             // REDO from child thread will use redo_lsn, last_lsn and in_doubt_count
             // to control the REDO phase
             smlevel_0::commit_lsn = verify_lsn;
@@ -979,100 +851,94 @@ void ss_m::_set_recovery_mode()
     // For Instant Restart testing purpose
     // which internal restart mode to use?
     int32_t restart_mode = _options.get_int_option("sm_restart", 1);
+
+// TODO(REstart)... 32 vs. 64
+//    smlevel_0::restart_internal_mode = (int364_t)restart_mode;
+
+/************************/    
     switch (restart_mode) 
     {
     case 10:   // M1, default
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)m1_default_recovery;
+        smlevel_0::restart_internal_mode = 
+             (smlevel_0::restart_internal_mode_t)m1_default_restart;
         break;
 
     case 20:   // M2, minimal logging
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)m2_default_recovery;
+        smlevel_0::restart_internal_mode = 
+             (smlevel_0::restart_internal_mode_t)m2_default_restart;
         break;
     case 21:   // M2, concurrent testing, minimal logging
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)m2_redo_delay_recovery;
+        smlevel_0::restart_internal_mode = 
+             (smlevel_0::restart_internal_mode_t)m2_redo_delay_restart;
         break;
     case 22:   // M2, concurrent testing, minimal logging
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)m2_undo_delay_recovery;
+        smlevel_0::restart_internal_mode = 
+             (smlevel_0::restart_internal_mode_t)m2_undo_delay_restart;
         break;
     case 23:   // M2, concurrent testing, minimal logging
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)m2_both_delay_recovery;
+        smlevel_0::restart_internal_mode = 
+             (smlevel_0::restart_internal_mode_t)m2_both_delay_restart;
         break;
 
     case 24:   // M2, full logging
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)m2_full_logging_recovery;
+        smlevel_0::restart_internal_mode = 
+             (smlevel_0::restart_internal_mode_t)m2_full_logging_restart;
         break;
     case 25:   // M2, concurrent testing, full logging
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)m2_redo_fl_delay_recovery;
+        smlevel_0::restart_internal_mode = 
+             (smlevel_0::restart_internal_mode_t)m2_redo_fl_delay_restart;
         break;
     case 26:   // M2, concurrent testing, full logging
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)m2_undo_fl_delay_recovery;
+        smlevel_0::restart_internal_mode = 
+             (smlevel_0::restart_internal_mode_t)m2_undo_fl_delay_restart;
         break;
     case 27:   // M2, concurrent testing, full logging
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)m2_both_fl_delay_recovery;
+        smlevel_0::restart_internal_mode = 
+             (smlevel_0::restart_internal_mode_t)m2_both_fl_delay_restart;
         break;
 
     case 30:   // M3, minimal logging
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)m3_default_recovery;
-        break;
-    case 31:   // M3, concurrent testing, minimal logging
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)m3_redo_delay_recovery;
-        break;
-    case 32:   // M3, concurrent testing, minimal logging
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)m3_undo_delay_recovery;
-        break;
-    case 33:   // M3, concurrent testing, minimal logging
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)m3_both_delay_recovery;
+        smlevel_0::restart_internal_mode = 
+             (smlevel_0::restart_internal_mode_t)m3_default_restart;
         break;
 
     case 40:   // M4, minimum logging, minimal logging
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)m4_default_recovery;
+        smlevel_0::restart_internal_mode = 
+             (smlevel_0::restart_internal_mode_t)m4_default_restart;
         break;
     case 41:   // M4, concurrent testing, minimal logging
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)m4_redo_delay_recovery;
+        smlevel_0::restart_internal_mode = 
+             (smlevel_0::restart_internal_mode_t)m4_redo_delay_restart;
         break;
     case 42:   // M4, concurrent testing, minimal logging
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)m4_undo_delay_recovery;
+        smlevel_0::restart_internal_mode = 
+             (smlevel_0::restart_internal_mode_t)m4_undo_delay_restart;
         break;
     case 43:   // M4, concurrent testing, minimal logging
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)m4_both_delay_recovery;
+        smlevel_0::restart_internal_mode = 
+             (smlevel_0::restart_internal_mode_t)m4_both_delay_restart;
         break;
 
     case 70:   // Alternative testing, log scan REDO, concurrent with LSN
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)alternative_log_log_recovery;
+        smlevel_0::restart_internal_mode = 
+             (smlevel_0::restart_internal_mode_t)alternative_log_log_restart;
         break;
     case 80:   // Alternative testing, page driven REDO with minimal logging, concurrent with lock
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)alternative_lock_page_recovery;
+        smlevel_0::restart_internal_mode = 
+             (smlevel_0::restart_internal_mode_t)alternative_lock_page_restart;
         break;
     case 90:   // Alternative testing, log scan REDO, concurrent with lock
-        smlevel_0::recovery_internal_mode = 
-             (smlevel_0::recovery_internal_mode_t)alternative_lock_log_recovery;
+        smlevel_0::restart_internal_mode = 
+             (smlevel_0::restart_internal_mode_t)alternative_lock_log_restart;
         break;
 
     default:
         // Either 'sm_restart' was not set or it was set to an invalid value
         // use the internal initialization setting and no overwrite
-        DBGOUT1( << "!!! WARNING... No setting for recovery mode, use default setting: m1_default_recovery !!!");       
+        DBGOUT1( << "!!! WARNING... No setting for recovery mode, use default setting: m1_default_restart !!!");       
         break;
     }
+/************************/    
 }
 
 ss_m::~ss_m()
@@ -1120,7 +986,7 @@ ss_m::_destruct_once()
     {
         // The recovery object is only inistantiated if open system for user
         // transactions during recovery
-        w_assert1(false == smlevel_0::use_serial_recovery());
+        w_assert1(false == smlevel_0::use_serial_restart());
        
         // The destructor of restart_m terminates (no wait if crash shutdown)
         // the child thread if the child thread is still active.
@@ -1246,31 +1112,124 @@ void ss_m::set_shutdown_flag(bool clean)
 }
 
 // Debugging function
-// Returns true if recovery is still going on
-// Serial recovery mode: always return false
-// Concurrent recovery mode: return true if concurrent recovery 
+// Returns true if restart is still going on
+// Serial restart mode: always return false
+// Concurrent restart mode: return true if concurrent restart 
 //                                          (REDO and UNDO) is active
 bool ss_m::in_recovery()
 {
     // This function can be called only after the system is opened
     // therefore the system is not in recovery when running in serial recovery mode
     
-    if (true == smlevel_0::use_serial_recovery())
+    if (true == smlevel_0::use_serial_restart())
     {
         return false;
     }
     else if (recovery)
     {
-        return recovery->recovery_in_progress();
+        // The restart object exists and we are not using serial mode
+        return recovery->restart_in_progress();
     }
     else
     {
-        w_assert1(false == smlevel_0::use_serial_recovery());
+        w_assert1(false == smlevel_0::use_serial_restart());
 
-        // Recovery object does not exist, this can happen if the system
+        // Restart object does not exist, this can happen if the system
         // was started from an empty database and nothing to recover
 
         return false;        
+    }
+}
+
+// Debugging function
+// Returns the status of the specified restart phase
+restart_phase_t ss_m::in_log_analysis()
+{
+    if (true == smlevel_0::use_serial_restart())
+    {
+        // If in serial mode, by time time caller calls this function
+        // we are done with restart already
+        return t_restart_phase_done;
+    }
+    else if (recovery)
+    {
+        // System is opened after Log Analysis phase
+        // If we have the restart object, are we still in Log Analysis?
+        if (true == smlevel_0::in_recovery_analysis())
+            return t_restart_phase_active;
+        else
+            return t_restart_phase_done;
+    }
+    else
+    {
+        // Restart object does not exist
+        return t_restart_phase_done;        
+    }
+}
+
+// Debugging function
+// Returns the status of the specified restart phase
+restart_phase_t ss_m::in_REDO()
+{
+    if (true == smlevel_0::use_serial_restart())
+    {
+        // If in serial mode, by time time caller calls this function
+        // we are done with restart already
+        return t_restart_phase_done;
+    }
+    else if (recovery)
+    {
+        // System is opened after Log Analysis phase
+        // If we have the restart object, are we still in REDO?
+
+        // If pure on-demand REDO, we don't know where we are
+        if (true == smlevel_0::use_redo_demand_restart())
+            return t_restart_phase_unknown;
+
+        // If concurrent REDO (M2 or M4)
+        if (true == recovery->redo_in_progress())
+            return t_restart_phase_active;  // In REDO
+        else
+            return t_restart_phase_done;    // Done with REDO
+    }
+    else
+    {
+        // Restart object does not exist
+        return t_restart_phase_done;
+    }
+}
+
+// Debugging function
+// Returns the status of the specified restart phase
+restart_phase_t ss_m::in_UNDO()
+{
+    if (true == smlevel_0::use_serial_restart())
+    {
+        // If in serial mode, by time time caller calls this function
+        // we are done with restart already
+        return t_restart_phase_done;
+    }
+    else if (recovery)
+    {
+        // System is opened after Log Analysis phase
+        // If we have the restart object, are we still in UNDO?
+
+        // If pure on-demand REDO, we don't know where we are
+        if (true == smlevel_0::use_undo_demand_restart())
+            return t_restart_phase_unknown;
+
+        // If concurrent REDO (M2 or M4)
+        if (true == recovery->undo_in_progress())
+            return t_restart_phase_active;       // In UNDO
+        else if (true == recovery->redo_in_progress())
+            return t_restart_phase_not_active;   // Still in REDO
+        else
+            return t_restart_phase_done;         // Done with UNDO
+    }
+    else
+    {
+        // Restart object does not exist
+        return t_restart_phase_done;
     }
 }
 
