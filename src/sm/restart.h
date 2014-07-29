@@ -94,7 +94,7 @@ public:
 
     // Main body of the child thread
     void run();
-    smlevel_0::concurrent_restart_mode_t in_recovery() { return working; }
+    smlevel_0::concurrent_restart_mode_t in_restart() { return working; }
 
 private:
 
@@ -140,12 +140,12 @@ public:
                 // This can happen in concurrent recovery mode because system is opened
                 // while the recovery is still going on
                 
-                if (smlevel_0::t_concurrent_done != _restart_thread->in_recovery())
+                if (smlevel_0::t_concurrent_done != _restart_thread->in_restart())
                 {
                     DBGOUT1(<< "Child thread is still busy, extra sleep");
                     g_me()->sleep(wait_interval*2); // 2 second, this is a very long time
                 }
-                if (smlevel_0::t_concurrent_done != _restart_thread->in_recovery())
+                if (smlevel_0::t_concurrent_done != _restart_thread->in_restart())
                 {
                     DBGOUT1(<< "Force a shutdown before restart child thread finished it work");               
                     smlevel_0::errlog->clog << info_prio 
@@ -245,7 +245,7 @@ public:
                 // if the child thread exists
                 if (_restart_thread)
                 {
-                    if (smlevel_0::t_concurrent_done != _restart_thread->in_recovery())
+                    if (smlevel_0::t_concurrent_done != _restart_thread->in_restart())
                         return true;
                     else
                         return false;
@@ -300,7 +300,7 @@ public:
         else
         {
             // M2 or M4
-            if (smlevel_0::t_concurrent_redo == _restart_thread->in_recovery())            
+            if (smlevel_0::t_concurrent_redo == _restart_thread->in_restart())            
                 return true;   // In REDO
             else 
                 return false;  // Not in REDO
@@ -326,7 +326,7 @@ public:
         else
         {
             // M2 or M4
-            if (smlevel_0::t_concurrent_undo == _restart_thread->in_recovery()) 
+            if (smlevel_0::t_concurrent_undo == _restart_thread->in_restart()) 
                 return true;   // In UNDO
             else 
                 return false;  // Not in UNDO

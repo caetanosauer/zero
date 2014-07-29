@@ -27,31 +27,31 @@ enum restart_phase_t {
 
 // Define the supported modes for Restart process
 // not all bit combinations would be supported or tested
-// use int64_t to make sure we have enough bits:
+// use int32_t, if not enough bits in the future, change it to int64_t
 
 // Basic modes:
 // Milestone 1
-const int64_t m1_default_restart =          // sm_restart = 10 (default)
+const int32_t m1_default_restart =          // sm_restart, serial and default (if caller did not specify mode)
     smlevel_0::t_restart_serial |           // Serial operation
     smlevel_0::t_restart_redo_log |         // Log scan driven REDO
     smlevel_0::t_restart_undo_reverse;      // Reverse UNDO
 
 // Milestone 2 with minimal logging    
-const int64_t m2_default_restart =          // sm_restart = 20
+const int32_t m2_default_restart =          // sm_restart, M2 minimal logging
     smlevel_0::t_restart_concurrent_log |   // Concurrent operation using log                << new
     smlevel_0::t_restart_redo_page |        // Page driven REDO with minimal logging   << new
     smlevel_0::t_restart_undo_txn;          // Transaction driven UNDO                       << new   
-const int64_t m2_redo_delay_restart =       // sm_restart = 21, concurrent testing purpose
+const int32_t m2_redo_delay_restart =       // sm_restart, concurrent testing purpose
     smlevel_0::t_restart_concurrent_log |   // Concurrent operation using log
     smlevel_0::t_restart_redo_page |        // Page driven REDO with minimal logging
     smlevel_0::t_restart_undo_txn |         // Transaction driven UNDO
     smlevel_0::t_restart_redo_delay;        // Delay before REDO                              << new
-const int64_t m2_undo_delay_restart =       // sm_restart = 22, concurrent testing purpose
+const int32_t m2_undo_delay_restart =       // sm_restart, concurrent testing purpose
     smlevel_0::t_restart_concurrent_log |   // Concurrent operation using log
     smlevel_0::t_restart_redo_page |        // Page driven REDO with minimal logging
     smlevel_0::t_restart_undo_txn |         // Transaction driven UNDO
     smlevel_0::t_restart_undo_delay;        // Delay before UNDO                              << new    
-const int64_t m2_both_delay_restart =       // sm_restart = 23, concurrent testing purpose
+const int32_t m2_both_delay_restart =       // sm_restart, concurrent testing purpose
     smlevel_0::t_restart_concurrent_log |   // Concurrent operation using log
     smlevel_0::t_restart_redo_page |        // Page driven REDO with minimal logging
     smlevel_0::t_restart_undo_txn |         // Transaction driven UNDO
@@ -59,21 +59,21 @@ const int64_t m2_both_delay_restart =       // sm_restart = 23, concurrent testi
     smlevel_0::t_restart_undo_delay;        // Delay before UNDO                              << new
 
 // Milestone 2 with full logging    
-const int64_t m2_full_logging_restart =      // sm_restart = 24
+const int32_t m2_full_logging_restart =      // sm_restart, M2 full logging
     smlevel_0::t_restart_concurrent_log |    // Concurrent operation using log             << new
     smlevel_0::t_restart_redo_full_logging | // Page driven REDO with full logging       << new
     smlevel_0::t_restart_undo_txn;           // Transaction driven UNDO                    << new
-const int64_t m2_redo_fl_delay_restart =     // sm_restart = 25, concurrent testing purpose
+const int32_t m2_redo_fl_delay_restart =     // sm_restart, concurrent testing purpose
     smlevel_0::t_restart_concurrent_log |    // Concurrent operation using log
     smlevel_0::t_restart_redo_full_logging | // Page driven REDO with full logging
     smlevel_0::t_restart_undo_txn |          // Transaction driven UNDO
     smlevel_0::t_restart_redo_delay;         // Delay before REDO                              << new
-const int64_t m2_undo_fl_delay_restart =     // sm_restart = 26, concurrent testing purpose
+const int32_t m2_undo_fl_delay_restart =     // sm_restart, concurrent testing purpose
     smlevel_0::t_restart_concurrent_log |    // Concurrent operation using log
     smlevel_0::t_restart_redo_full_logging | // Page driven REDO with full logging
     smlevel_0::t_restart_undo_txn |          // Transaction driven UNDO
     smlevel_0::t_restart_undo_delay;         // Delay before UNDO                              << new    
-const int64_t m2_both_fl_delay_restart =     // sm_restart = 27, concurrent testing purpose
+const int32_t m2_both_fl_delay_restart =     // sm_restart, concurrent testing purpose
     smlevel_0::t_restart_concurrent_log |    // Concurrent operation using log
     smlevel_0::t_restart_redo_full_logging | // Page driven REDO with full logging
     smlevel_0::t_restart_undo_txn |          // Transaction driven UNDO
@@ -82,43 +82,43 @@ const int64_t m2_both_fl_delay_restart =     // sm_restart = 27, concurrent test
 
 // Alternative modes:
 // Compare with m2_default_restart, difference in REDO 
-const int64_t alternative_log_log_restart =     // sm_restart = 70
+const int32_t alternative_log_log_restart =     // sm_restart, measurement purpose
     smlevel_0::t_restart_concurrent_log |       // Concurrent operation using log 
     smlevel_0::t_restart_redo_log |             // Log scan driven REDO             << compare with sm_restart 20
     smlevel_0::t_restart_undo_txn;              // Transaction driven UNDO
 // Compare with m2_default_restart, difference in concurrent
-const int64_t alternative_lock_page_restart =   // sm_restart = 80
+const int32_t alternative_lock_page_restart =   // sm_restart, measurement purpose
     smlevel_0::t_restart_concurrent_lock |      // Concurrent operation using lock  << compare with sm_restart 20
     smlevel_0::t_restart_redo_page |            // Page driven REDO with minimal logging
     smlevel_0::t_restart_undo_txn;              // Transaction driven UNDO
 // Compare with alternative_log_log_restart, difference in concurrent
-const int64_t alternative_lock_log_restart =    // sm_restart = 90
+const int32_t alternative_lock_log_restart =    // sm_restart, measurement purpose
     smlevel_0::t_restart_concurrent_lock |      // Concurrent operation using lock  << compare with sm_restart 70
     smlevel_0::t_restart_redo_log |             // Log scan driven REDO
     smlevel_0::t_restart_undo_txn;              // Transaction driven UNDO
 
 // Milestone 3 with minimal logging        
-const int64_t m3_default_restart =          // sm_restart = 30
+const int32_t m3_default_restart =          // sm_restart, M3
     smlevel_0::t_restart_concurrent_lock |  // Concurrent operation using lock          << new
     smlevel_0::t_restart_redo_demand |      // On-demand driven REDO                  << new
     smlevel_0::t_restart_undo_demand;       // On-demand driven UNDO
 
 // Milestone 4 with minimal logging        
-const int64_t m4_default_restart =          // sm_restart = 40
+const int32_t m4_default_restart =          // sm_restart, M4
     smlevel_0::t_restart_concurrent_lock |  // Concurrent operation using lock
     smlevel_0::t_restart_redo_mix |         // Mixed REDO                                   << new
     smlevel_0::t_restart_undo_mix;          // Mixed UNDO
-const int64_t m4_redo_delay_restart =       // sm_restart = 41, concurrent testing purpose
+const int32_t m4_redo_delay_restart =       // sm_restart, concurrent testing purpose
     smlevel_0::t_restart_concurrent_lock |  // Concurrent operation using lock
     smlevel_0::t_restart_redo_mix |         // Mixed REDO                                   << new
     smlevel_0::t_restart_undo_mix |         // Mixed UNDO
     smlevel_0::t_restart_redo_delay;        // Delay before REDO                         << new        
-const int64_t m4_undo_delay_restart =       // sm_restart = 42, concurrent testing purpose
+const int32_t m4_undo_delay_restart =       // sm_restart, concurrent testing purpose
     smlevel_0::t_restart_concurrent_lock |  // Concurrent operation using lock
     smlevel_0::t_restart_redo_mix |         // Mixed REDO                                   << new
     smlevel_0::t_restart_undo_mix |         // Mixed UNDO
     smlevel_0::t_restart_undo_delay;        // Delay before UNDO                         << new        
-const int64_t m4_both_delay_restart =       // sm_restart = 43, concurrent testing purpose
+const int32_t m4_both_delay_restart =       // sm_restart, concurrent testing purpose
     smlevel_0::t_restart_concurrent_lock |  // Concurrent operation using lock
     smlevel_0::t_restart_redo_mix |         // Mixed REDO                                   << new
     smlevel_0::t_restart_undo_mix |         // Mixed UNDO

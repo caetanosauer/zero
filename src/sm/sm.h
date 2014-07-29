@@ -1925,7 +1925,7 @@ public:
     // Serial restart mode: always return false
     // Concurrent restart mode: return true if concurrent restart
     //                                          (REDO and UNDO) is active
-    static bool            in_recovery();
+    static bool            in_restart();
 
     // Debugging function
     // Returns the status of the specified restart phase

@@ -12,20 +12,6 @@ btree_test_env *test_env;
 
 const int WAIT_TIME = 1000; // Wait 1 second
 const int SHORT_WAIT_TIME = 100; // Wait 1/10 of a  second
-const int32_t m1_default_recovery = 10;
-const int32_t m2_default_recovery = 20;
-const int32_t m2_redo_delay_recovery = 21;
-const int32_t m2_undo_delay_recovery = 22;
-const int32_t m2_both_delay_recovery = 23;
-const int32_t m2_full_logging_recovery = 24;
-const int32_t m2_redo_fl_delay_recovery = 25;
-const int32_t m2_undo_fl_delay_recovery = 26;
-const int32_t m2_both_fl_delay_recovery = 27;
-const int32_t m3_default_recovery = 30;
-const int32_t m3_redo_delay_recovery = 31;
-const int32_t m3_undo_delay_recovery = 32;
-const int32_t m3_both_delay_recovery = 33;
-
 
 // Test cases to test concurrent restart.
 // Depending on the recovery mode, the test results might vary and therefore tricky
@@ -152,8 +138,7 @@ public:
 TEST (RestartTest, EmptyN) {
     test_env->empty_logdata_dir();
     restart_empty context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 20), 0);  // false = no simulated crash, normal shutdown
-                                                                  // 20 = recovery mode, m2 default concurrent mode
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m2_default_restart), 0);  // false = no simulated crash, normal shutdown
                                                                   // minimal logging
 }
 /**/
@@ -162,8 +147,7 @@ TEST (RestartTest, EmptyN) {
 TEST (RestartTest, EmptyC) {
     test_env->empty_logdata_dir();
     restart_empty context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 20), 0);   // true = simulated crash
-                                                                  // 20 = recovery mode, m2 default concurrent mode
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m2_default_restart), 0);   // true = simulated crash
                                                                   // minimal logging
 }
 /**/
@@ -192,7 +176,7 @@ public:
         output_durable_lsn(4);
         x_btree_scan_result s;
 
-        while (true == test_env->in_recovery())
+        while (true == test_env->in_restart())
         {
             // Concurrent recovery is still going on, wait
             ::usleep(WAIT_TIME);            
@@ -211,8 +195,7 @@ public:
 TEST (RestartTest, SimpleN) {
     test_env->empty_logdata_dir();
     restart_simple context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 20), 0);  // false = no simulated crash, normal shutdown
-                                                                  // 20 = recovery mode, m2 default concurrent mode, no wait
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m2_default_restart), 0);  // false = no simulated crash, normal shutdown
                                                                   // minimal logging
 }
 /**/
@@ -221,8 +204,7 @@ TEST (RestartTest, SimpleN) {
 TEST (RestartTest, SimpleNF) {
     test_env->empty_logdata_dir();
     restart_simple context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 24), 0);  // false = no simulated crash, normal shutdown
-                                                                  // 24 = recovery mode, m2 default concurrent mode, no wait
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m2_full_logging_restart), 0);  // false = no simulated crash, normal shutdown
                                                                   // full logging
 }
 /**/
@@ -231,8 +213,7 @@ TEST (RestartTest, SimpleNF) {
 TEST (RestartTest, SimpleC) {
     test_env->empty_logdata_dir();
     restart_simple context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 20), 0);   // true = simulated crash
-                                                                  // 20 = recovery mode, m2 default concurrent mode, no wait
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m2_default_restart), 0);   // true = simulated crash
                                                                   // minimal logging
 }
 /**/
@@ -241,8 +222,7 @@ TEST (RestartTest, SimpleC) {
 TEST (RestartTest, SimpleCF) {
     test_env->empty_logdata_dir();
     restart_simple context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 24), 0);   // true = simulated crash
-                                                                  // 24 = recovery mode, m2 default concurrent mode, no wait
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m2_full_logging_restart), 0);   // true = simulated crash
                                                                   // full logging
 }
 /**/
@@ -274,7 +254,7 @@ public:
         output_durable_lsn(4);
         x_btree_scan_result s;
 
-        while (true == test_env->in_recovery())
+        while (true == test_env->in_restart())
         {
             // Concurrent recovery is still going on, wait
             ::usleep(WAIT_TIME);            
@@ -293,8 +273,7 @@ public:
 TEST (RestartTest, ComplexInFlightN) {
     test_env->empty_logdata_dir();
     restart_complex_in_flight context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 20), 0);  // false = no simulated crash
-                                                                  // 20 = recovery mode, m2 default concurrent mode, no wait
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m2_default_restart), 0);  // false = no simulated crash
                                                                   // minimal logging
 }
 /**/
@@ -303,8 +282,7 @@ TEST (RestartTest, ComplexInFlightN) {
 TEST (RestartTest, ComplexInFlightNF) {
     test_env->empty_logdata_dir();
     restart_complex_in_flight context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 24), 0);  // false = no simulated crash
-                                                                  // 24 = recovery mode, m2 default concurrent mode, no wait
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m2_full_logging_restart), 0);  // false = no simulated crash
                                                                   // full logging
 }
 /**/
@@ -313,8 +291,7 @@ TEST (RestartTest, ComplexInFlightNF) {
 TEST (RestartTest, ComplexInFlightC) {
     test_env->empty_logdata_dir();
     restart_complex_in_flight context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 20), 0);   // true = simulated crash
-                                                                  // 20 = recovery mode, m2 default concurrent mode, no wait
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m2_default_restart), 0);   // true = simulated crash
                                                                   // minimal logging
 }
 /**/
@@ -323,8 +300,7 @@ TEST (RestartTest, ComplexInFlightC) {
 TEST (RestartTest, ComplexInFlightCF) {
     test_env->empty_logdata_dir();
     restart_complex_in_flight context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 24), 0);   // true = simulated crash
-                                                                  // 24 = recovery mode, m2 default concurrent mode, no wait
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m2_full_logging_restart), 0);   // true = simulated crash
                                                                   // full logging
 }
 /**/
@@ -358,7 +334,7 @@ public:
         output_durable_lsn(4);
         x_btree_scan_result s;
 
-        while (true == test_env->in_recovery())
+        while (true == test_env->in_restart())
         {
             // Concurrent recovery is still going on, wait
             ::usleep(WAIT_TIME);            
@@ -377,8 +353,7 @@ public:
 TEST (RestartTest, ComplexInFlightChkptN) {
     test_env->empty_logdata_dir();
     restart_complex_in_flight_chkpt context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 20), 0);  // false = no simulated crash
-                                                                  // 20 = recovery mode, m2 default concurrent mode, no wait
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m2_default_restart), 0);  // false = no simulated crash
                                                                   // minimal logging
 }
 /**/
@@ -387,8 +362,7 @@ TEST (RestartTest, ComplexInFlightChkptN) {
 TEST (RestartTest, ComplexInFlightChkptNF) {
     test_env->empty_logdata_dir();
     restart_complex_in_flight_chkpt context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 24), 0);  // false = no simulated crash
-                                                                  // 24 = recovery mode, m2 default concurrent mode, no wait
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m2_full_logging_restart), 0);  // false = no simulated crash
                                                                   // full logging
 }
 /**/
@@ -397,8 +371,7 @@ TEST (RestartTest, ComplexInFlightChkptNF) {
 TEST (RestartTest, ComplexInFlightChkptC) {
     test_env->empty_logdata_dir();
     restart_complex_in_flight_chkpt context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 20), 0);   // true = simulated crash
-                                                                  // 20 = recovery mode, m2 default concurrent mode, no wait
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m2_default_restart), 0);   // true = simulated crash
                                                                   // minimal logging
 }
 /**/
@@ -407,8 +380,7 @@ TEST (RestartTest, ComplexInFlightChkptC) {
 TEST (RestartTest, ComplexInFlightChkptCF) {
     test_env->empty_logdata_dir();
     restart_complex_in_flight_chkpt context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 24), 0);   // true = simulated crash
-                                                                  // 24 = recovery mode, m2 default concurrent mode, no wait
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m2_full_logging_restart), 0);   // true = simulated crash
                                                                   // full logging
 }
 /**/
@@ -434,7 +406,7 @@ public:
         output_durable_lsn(4);
         x_btree_scan_result s;
 
-        while (true == test_env->in_recovery())
+        while (true == test_env->in_restart())
         {
             // Concurrent recovery is still going on, wait
             ::usleep(WAIT_TIME);            
@@ -451,8 +423,7 @@ public:
 TEST (RestartTest, MultiPageInFlightN) {
     test_env->empty_logdata_dir();
     restart_multi_page_in_flight context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 20), 0);  // false = no simulated crash
-                                                                  // 20 = recovery mode, m2 default concurrent mode, no wait
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m2_default_restart), 0);  // false = no simulated crash
                                                                   // minimal logging
 }
 /**/
@@ -461,8 +432,7 @@ TEST (RestartTest, MultiPageInFlightN) {
 TEST (RestartTest, MultiPageInFlightNF) {
     test_env->empty_logdata_dir();
     restart_multi_page_in_flight context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 24), 0);  // false = no simulated crash
-                                                                  // 24 = recovery mode, m2 default concurrent mode, no wait
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m2_full_logging_restart), 0);  // false = no simulated crash
                                                                   // full logging
 }
 **/
@@ -474,8 +444,7 @@ TEST (RestartTest, MultiPageInFlightNF) {
 TEST (RestartTest, MultiPageInFlightC) {
     test_env->empty_logdata_dir();
     restart_multi_page_in_flight context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 20), 0);   // true = simulated crash
-                                                                  // 20 = recovery mode, m2 default concurrent mode, no wait
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m2_default_restart), 0);   // true = simulated crash
                                                                   // minimal logging
 }
 **/
@@ -484,8 +453,7 @@ TEST (RestartTest, MultiPageInFlightC) {
 TEST (RestartTest, MultiPageInFlightCF) {
     test_env->empty_logdata_dir();
     restart_multi_page_in_flight context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 24), 0);   // true = simulated crash
-                                                                  // 24 = recovery mode, m2 default concurrent mode, no wait
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m2_full_logging_restart), 0);   // true = simulated crash
                                                                   // full logging
 }
 **/
@@ -515,7 +483,7 @@ public:
         // Concurrent chkpt
         W_DO(ss_m::checkpoint()); 
 
-        while (true == test_env->in_recovery())
+        while (true == test_env->in_restart())
         {
             // Concurrent recovery is still going on, wait
             ::usleep(WAIT_TIME);            
@@ -537,8 +505,7 @@ public:
 TEST (RestartTest, ConcurrentChkptN) {
     test_env->empty_logdata_dir();
     restart_concurrent_chkpt context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 21), 0);  // false = no simulated crash
-                                                                  // 21 = recovery mode, m2 concurrent mode with delay in REDO
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m2_redo_delay_restart), 0);  // false = no simulated crash
                                                                   // minimal logging
 }
 /**/
@@ -547,8 +514,7 @@ TEST (RestartTest, ConcurrentChkptN) {
 TEST (RestartTest, ConcurrentChkptNF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chkpt context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 25), 0);  // false = no simulated crash
-                                                                  // 25 = recovery mode, m2 concurrent mode with delay in REDO
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m2_redo_fl_delay_restart), 0);  // false = no simulated crash
                                                                   // full logging
 }
 /**/
@@ -557,8 +523,7 @@ TEST (RestartTest, ConcurrentChkptNF) {
 TEST (RestartTest, ConcurrentChkptC) {
     test_env->empty_logdata_dir();
     restart_concurrent_chkpt context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 21), 0);   // true = simulated crash
-                                                                  // 21 = recovery mode, m2 concurrent mode with delay in REDO
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m2_redo_delay_restart), 0);   // true = simulated crash
                                                                   // minimal logging
 }
 /**/
@@ -567,8 +532,7 @@ TEST (RestartTest, ConcurrentChkptC) {
 TEST (RestartTest, ConcurrentChkptCF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chkpt context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 25), 0);   // true = simulated crash
-                                                                  // 25 = recovery mode, m2 concurrent mode with delay in REDO
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m2_redo_fl_delay_restart), 0);   // true = simulated crash
                                                                   // full logging
 }
 /**/
@@ -597,44 +561,44 @@ public:
     w_rc_t post_shutdown(ss_m *) {
         output_durable_lsn(4);
         x_btree_scan_result s;
-	const bool fCrash = test_env->_fCrash;
-	const int32_t recovery_mode = test_env->_recovery_mode;
+        const bool fCrash = test_env->_fCrash;
+        const int32_t recovery_mode = test_env->_recovery_mode;
         // No wait in test code, but wait in recovery
         // This is to ensure concurrency
        
-	 
-	if (fCrash && recovery_mode < m3_default_recovery) {    
-	    // Verify
-	    w_rc_t rc = test_env->btree_scan(_stid, s);  // Should have only one page of data
+
+    if (fCrash && recovery_mode < m3_default_restart ) {
+        // Verify
+        w_rc_t rc = test_env->btree_scan(_stid, s);  // Should have only one page of data
                                                      // while recovery is on for this page
                                                      // therefore even the concurrent txn is a
                                                      // read/scan txn, it should not be allowed
-	    if (rc.is_error())
-	    {
-		DBGOUT3(<<"restart_simple_concurrent_redo: tree_scan error: " << rc);        
+        if (rc.is_error())
+        {
+        DBGOUT3(<<"restart_simple_concurrent_redo: tree_scan error: " << rc);        
 
-		// Abort the failed scan txn
-		test_env->abort_xct();
+        // Abort the failed scan txn
+        test_env->abort_xct();
 
-		// Sleep to give Recovery sufficient time to finish
-		while (true == test_env->in_recovery())
-		{
-		    // Concurrent recovery is still going on, wait
-		    ::usleep(WAIT_TIME);            
-		}
+        // Sleep to give Recovery sufficient time to finish
+        while (true == test_env->in_restart())
+        {
+            // Concurrent recovery is still going on, wait
+            ::usleep(WAIT_TIME);            
+        }
 
-		// Try again
-		W_DO(test_env->btree_scan(_stid, s));
-	    }
-	    else
-	    {
-		cerr << "restart_simple_concurrent_redo: scan operation should not succeed"<< endl;         
-		return RC(eINTERNAL);
-	    }
-	} 
-	else {
-	    W_DO(test_env->btree_scan(_stid, s));
-	}
+        // Try again
+        W_DO(test_env->btree_scan(_stid, s));
+        }
+        else
+        {
+        std::cerr << "restart_simple_concurrent_redo: scan operation should not succeed"<< std::endl;         
+        return RC(eINTERNAL);
+        }
+    } 
+    else {
+        W_DO(test_env->btree_scan(_stid, s));
+    }
 
         EXPECT_EQ (3, s.rownum);
         EXPECT_EQ (std::string("aa1"), s.minkey);
@@ -647,8 +611,7 @@ public:
 TEST (RestartTest, SimpleConcurrentRedoN) {
     test_env->empty_logdata_dir();
     restart_simple_concurrent_redo context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 21), 0);  // false = no simulated crash
-                                                                  // 21 = recovery mode, m2 concurrent mode with delay in REDO
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m2_redo_delay_restart), 0);  // false = no simulated crash
                                                                   // minimal logging
 }
 /**/
@@ -657,8 +620,7 @@ TEST (RestartTest, SimpleConcurrentRedoN) {
 TEST (RestartTest, SimpleConcurrentRedoNF) {
     test_env->empty_logdata_dir();
     restart_simple_concurrent_redo context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 25), 0);  // false = no simulated crash
-                                                                  // 25 = recovery mode, m2 concurrent mode with delay in REDO
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m2_redo_fl_delay_restart), 0);  // false = no simulated crash
                                                                   // full logging
 }
 /**/
@@ -667,8 +629,7 @@ TEST (RestartTest, SimpleConcurrentRedoNF) {
 TEST (RestartTest, SimpleConcurrentRedoC) {
     test_env->empty_logdata_dir();
     restart_simple_concurrent_redo context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 21), 0);   // true = simulated crash
-                                                                  // 21 = recovery mode, m2 concurrent mode with delay in REDO
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m2_redo_delay_restart), 0);   // true = simulated crash
                                                                   // minimal logging
 }
 /**/
@@ -677,8 +638,7 @@ TEST (RestartTest, SimpleConcurrentRedoC) {
 TEST (RestartTest, SimpleConcurrentRedoCF) {
     test_env->empty_logdata_dir();
     restart_simple_concurrent_redo context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 25), 0);   // true = simulated crash
-                                                                  // 25 = recovery mode, m2 concurrent mode with delay in REDO
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m2_redo_fl_delay_restart), 0);   // true = simulated crash
                                                                   // full logging
 }
 /**/
@@ -708,46 +668,46 @@ public:
     w_rc_t post_shutdown(ss_m *) {
         output_durable_lsn(4);
         x_btree_scan_result s;
-	bool fCrash = test_env->_fCrash;
-	int32_t recovery_mode = test_env->_recovery_mode;
-	int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5 + 1;
+        bool fCrash = test_env->_fCrash;
+        int32_t recovery_mode = test_env->_recovery_mode;
+        int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5 + 1;
         // No wait in test code, but wait in recovery
         // This is to ensure concurrency
         
-	if (fCrash && recovery_mode < 30) {	// if m2 crash shutdown
-	    // Verify
-	    w_rc_t rc = test_env->btree_scan(_stid, s); // Should have multiple pages of data
-							// the concurrent txn is a read/scan txn
-							// should still not be allowed due to delay in REDO in m2 crash shutdown
-	    if (rc.is_error()) {
-		DBGOUT3(<<"restart_multi_concurrent_redo: tree_scan error: " << rc);
+    if (fCrash && recovery_mode < m3_default_restart) {    // if m2 crash shutdown
+        // Verify
+        w_rc_t rc = test_env->btree_scan(_stid, s); // Should have multiple pages of data
+                            // the concurrent txn is a read/scan txn
+                            // should still not be allowed due to delay in REDO in m2 crash shutdown
+        if (rc.is_error()) {
+        DBGOUT3(<<"restart_multi_concurrent_redo: tree_scan error: " << rc);
 
-		// Abort the failed scan txn
-		test_env->abort_xct();
+        // Abort the failed scan txn
+        test_env->abort_xct();
 
-		// Sleep to give Recovery sufficient time to finish
-		while (true == test_env->in_recovery()) {
-		    // Concurrent recovery is still going on, wait
-		    ::usleep(WAIT_TIME);
-		}
+        // Sleep to give Recovery sufficient time to finish
+        while (true == test_env->in_restart()) {
+            // Concurrent recovery is still going on, wait
+            ::usleep(WAIT_TIME);
+        }
 
-		// Try again
-		W_DO(test_env->btree_scan(_stid, s));
-		EXPECT_EQ (recordCount, s.rownum);
-		EXPECT_EQ (std::string("aa4"), s.minkey);
-		return RCOK;
-	    }
-	    else {
-		cerr << "restart_multi_concurrent_redo: scan operation should not succeed"<< endl;         
-		return RC(eINTERNAL);
-	    }
-	}
-	else {
-	    W_DO(test_env->btree_scan(_stid, s));
-	    EXPECT_EQ (recordCount, s.rownum);
-	    EXPECT_EQ(std::string("aa4"), s.minkey);
-	    return RCOK;
-	}
+        // Try again
+        W_DO(test_env->btree_scan(_stid, s));
+        EXPECT_EQ (recordCount, s.rownum);
+        EXPECT_EQ (std::string("aa4"), s.minkey);
+        return RCOK;
+        }
+        else {
+        std::cerr << "restart_multi_concurrent_redo: scan operation should not succeed"<< std::endl;         
+        return RC(eINTERNAL);
+        }
+    }
+    else {
+        W_DO(test_env->btree_scan(_stid, s));
+        EXPECT_EQ (recordCount, s.rownum);
+        EXPECT_EQ(std::string("aa4"), s.minkey);
+        return RCOK;
+    }
     }    
 };
 
@@ -755,8 +715,7 @@ public:
 TEST (RestartTest, MultiConcurrentRedoN) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_redo context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 21), 0);  // false = no simulated crash
-                                                                  // 21 = recovery mode, m2 concurrent mode with delay in REDO
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m2_redo_delay_restart), 0);  // false = no simulated crash
                                                                   // minimal logging
 }
 /**/
@@ -765,8 +724,7 @@ TEST (RestartTest, MultiConcurrentRedoN) {
 TEST (RestartTest, MultiConcurrentRedoNF) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_redo context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 25), 0);  // false = simulated crash
-                                                                  // 25 = recovery mode, m2 concurrent mode with delay in REDO
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m2_redo_fl_delay_restart), 0);  // false = simulated crash
                                                                   // full logging
 }
 /**/
@@ -775,8 +733,7 @@ TEST (RestartTest, MultiConcurrentRedoNF) {
 TEST (RestartTest, MultiConcurrentRedoC) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_redo context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 21), 0);   // true = simulated crash
-                                                                  // 21 = recovery mode, m2 concurrent mode with delay in REDO
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m2_redo_delay_restart), 0);   // true = simulated crash
                                                                   // minimal logging
 }
 /**/
@@ -786,8 +743,7 @@ TEST (RestartTest, MultiConcurrentRedoC) {
 TEST (RestartTest, MultiConcurrentRedoCF) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_redo context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 25), 0);   // true = simulated crash
-                                                                  // 25 = recovery mode, m2 concurrent mode with delay in REDO
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m2_redo_fl_delay_restart), 0);   // true = simulated crash
                                                                   // full logging
 }
 **/
@@ -816,8 +772,8 @@ public:
     w_rc_t post_shutdown(ss_m *) {
         output_durable_lsn(4);
         x_btree_scan_result s;
-	bool fCrash = test_env->_fCrash;
-	int32_t recovery_mode = test_env->_recovery_mode;
+        bool fCrash = test_env->_fCrash;
+        int32_t recovery_mode = test_env->_recovery_mode;
         // Wiat a short time, this is to allow REDO to finish,
         // but hit the UNDO phase using specified recovery mode which waits before UNDO
         ::usleep(SHORT_WAIT_TIME);
@@ -827,40 +783,40 @@ public:
                                                       // while recovery is on for this page
                                                       // although REDO is done, UNDO is not
                                                       // therefore the concurrent txn should not be allowed
-	if (fCrash && recovery_mode < 30) {
-	    if (rc.is_error()) {
-		DBGOUT3(<<"restart_simple_concurrent_undo: tree_scan error: " << rc);
+    if (fCrash && recovery_mode < m3_default_restart) {
+        if (rc.is_error()) {
+        DBGOUT3(<<"restart_simple_concurrent_undo: tree_scan error: " << rc);
 
-		// Abort the failed scan txn
-		test_env->abort_xct();
+        // Abort the failed scan txn
+        test_env->abort_xct();
 
-		// Sleep to give Recovery sufficient time to finish
-		while (true == test_env->in_recovery()) {
-		    // Concurrent recovery is still going on, wait
-		    ::usleep(WAIT_TIME);
-		}
+        // Sleep to give Recovery sufficient time to finish
+        while (true == test_env->in_restart()) {
+            // Concurrent recovery is still going on, wait
+            ::usleep(WAIT_TIME);
+        }
 
-		// Try again
-		W_DO(test_env->btree_scan(_stid, s));
-		
-		EXPECT_EQ (3, s.rownum);
-		EXPECT_EQ (std::string("aa1"), s.minkey);
-		EXPECT_EQ (std::string("aa3"), s.maxkey);
-		return RCOK;
-	    }
-	    else {
-		cerr << "restart_simple_concurrent_undo: scan operation should not succeed"<< endl;         
-		return RC(eINTERNAL);
-	    }
+        // Try again
+        W_DO(test_env->btree_scan(_stid, s));
+
+        EXPECT_EQ (3, s.rownum);
+        EXPECT_EQ (std::string("aa1"), s.minkey);
+        EXPECT_EQ (std::string("aa3"), s.maxkey);
+        return RCOK;
+        }
+        else {
+        std::cerr << "restart_simple_concurrent_undo: scan operation should not succeed"<< std::endl;
+        return RC(eINTERNAL);
+        }
 
         }
-	else {
-	    W_DO(test_env->btree_scan(_stid, s));
-	    EXPECT_EQ (3, s.rownum);
-	    EXPECT_EQ (std::string("aa1"), s.minkey);
-	    EXPECT_EQ (std::string("aa3"), s.maxkey);
-	    return RCOK;
-	}
+    else {
+        W_DO(test_env->btree_scan(_stid, s));
+        EXPECT_EQ (3, s.rownum);
+        EXPECT_EQ (std::string("aa1"), s.minkey);
+        EXPECT_EQ (std::string("aa3"), s.maxkey);
+        return RCOK;
+    }
     }
 };
 
@@ -868,8 +824,7 @@ public:
 TEST (RestartTest, SimpleConcurrentUndoN) {
     test_env->empty_logdata_dir();
     restart_simple_concurrent_undo context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 22), 0);  // false = no simulated crash
-                                                                  // 22 = recovery mode, m2 concurrent mode with delay in UNDO
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m2_undo_delay_restart), 0);  // false = no simulated crash
                                                                   // minimal logging
 }
 /**/
@@ -878,8 +833,7 @@ TEST (RestartTest, SimpleConcurrentUndoN) {
 TEST (RestartTest, SimpleConcurrentUndoNF) {
     test_env->empty_logdata_dir();
     restart_simple_concurrent_undo context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 26), 0);  // false = simulated crash
-                                                                  // 26 = recovery mode, m2 concurrent mode with delay in UNDO
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m2_undo_fl_delay_restart), 0);  // false = simulated crash
                                                                   // full logging logging
 }
 /**/
@@ -888,8 +842,7 @@ TEST (RestartTest, SimpleConcurrentUndoNF) {
 TEST (RestartTest, SimpleConcurrentUndoC) {
     test_env->empty_logdata_dir();
     restart_simple_concurrent_undo context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 22), 0);   // true = simulated crash
-                                                                  // 22 = recovery mode, m2 concurrent mode with delay in UNDO
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m2_undo_delay_restart), 0);   // true = simulated crash
                                                                   // minimal logging
 }
 /**/
@@ -898,8 +851,7 @@ TEST (RestartTest, SimpleConcurrentUndoC) {
 TEST (RestartTest, SimpleConcurrentUndoCF) {
     test_env->empty_logdata_dir();
     restart_simple_concurrent_undo context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 26), 0);   // true = simulated crash
-                                                                  // 26 = recovery mode, m2 concurrent mode with delay in UNDO
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m2_undo_fl_delay_restart), 0);   // true = simulated crash
                                                                   // full logging logging
 }
 /**/
@@ -961,7 +913,7 @@ public:
         }
 
         // Wait before the final verfication
-        while (true == test_env->in_recovery())
+        while (true == test_env->in_restart())
         {
             // Concurrent recovery is still going on, wait
             ::usleep(WAIT_TIME);            
@@ -987,8 +939,7 @@ public:
 TEST (RestartTest, ConcurrentNoConflictN) {
     test_env->empty_logdata_dir();
     restart_concurrent_no_conflict context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 23), 0);  // false = no simulated crash
-                                                                  // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m2_both_delay_restart), 0);  // false = no simulated crash
                                                                   // minimal logging
 }
 /**/
@@ -997,8 +948,7 @@ TEST (RestartTest, ConcurrentNoConflictN) {
 TEST (RestartTest, ConcurrentNoConflictNF) {
     test_env->empty_logdata_dir();
     restart_concurrent_no_conflict context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 27), 0);  // false = no simulated crash
-                                                                  // 27 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m2_both_fl_delay_restart), 0);  // false = no simulated crash
                                                                   // full logging
 }
 /**/
@@ -1010,8 +960,7 @@ TEST (RestartTest, ConcurrentNoConflictNF) {
 TEST (RestartTest, ConcurrentNoConflictC) {
     test_env->empty_logdata_dir();
     restart_concurrent_no_conflict context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 23), 0);   // true = simulated crash
-                                                                  // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m2_both_delay_restart), 0);   // true = simulated crash
                                                                   // minimal logging
 }
 **/
@@ -1020,8 +969,7 @@ TEST (RestartTest, ConcurrentNoConflictC) {
 TEST (RestartTest, ConcurrentNoConflictCF) {
     test_env->empty_logdata_dir();
     restart_concurrent_no_conflict context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 27), 0);   // true = simulated crash
-                                                                  // 27 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m2_both_fl_delay_restart), 0);   // true = simulated crash
                                                                   // full logging
 }
 **/
@@ -1058,8 +1006,8 @@ public:
     w_rc_t post_shutdown(ss_m *) {
         output_durable_lsn(4);
         x_btree_scan_result s;
-	const bool fCrash = test_env->_fCrash;
-	const int32_t recovery_mode = test_env->_recovery_mode;
+        const bool fCrash = test_env->_fCrash;
+        const int32_t recovery_mode = test_env->_recovery_mode;
 
         // Wait a while, this is to give REDO a chance to reload the root page
         // but still wait in REDO phase due to test mode
@@ -1069,20 +1017,20 @@ public:
         // Insert into the last page which should cause a conflict        
         W_DO(test_env->begin_xct());
         w_rc_t rc = test_env->btree_insert(_stid, "zz5", "data4");
-        if (rc.is_error() || !(fCrash && recovery_mode<30)) 
+        if (rc.is_error() || !(fCrash && recovery_mode<m3_default_restart))
         {
             // Expected behavior
             W_DO(test_env->abort_xct());            
         }
         else
         {
-            cerr << "restart_concurrent_conflict: tree_insertion should not succeed"<< endl;
+            std::cerr << "restart_concurrent_conflict: tree_insertion should not succeed"<< std::endl;
             // Should not succeed
             RC(eINTERNAL);
         }
 
         // Wait before the final verfication
-        while (true == test_env->in_recovery())
+        while (true == test_env->in_restart())
         {
             // Concurrent recovery is still going on, wait
             ::usleep(WAIT_TIME);            
@@ -1104,8 +1052,7 @@ public:
 TEST (RestartTest, ConcurrentConflictN) {
     test_env->empty_logdata_dir();
     restart_concurrent_conflict context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 23), 0);  // false = no simulated crash
-                                                                  // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m2_both_delay_restart), 0);  // false = no simulated crash
                                                                   // minimal logging
 }
 /**/
@@ -1114,8 +1061,7 @@ TEST (RestartTest, ConcurrentConflictN) {
 TEST (RestartTest, ConcurrentConflictNF) {
     test_env->empty_logdata_dir();
     restart_concurrent_conflict context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 27), 0);  // false = simulated crash
-                                                                  // 27 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m2_both_fl_delay_restart), 0);  // false = simulated crash
                                                                   // full logging
 }
 /**/
@@ -1126,8 +1072,7 @@ TEST (RestartTest, ConcurrentConflictNF) {
 TEST (RestartTest, ConcurrentConflictC) {
     test_env->empty_logdata_dir();
     restart_concurrent_conflict context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 23), 0);   // true = simulated crash
-                                                                  // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m2_both_delay_restart), 0);   // true = simulated crash
                                                                   // minimal logging
 }
 **/
@@ -1136,8 +1081,7 @@ TEST (RestartTest, ConcurrentConflictC) {
 TEST (RestartTest, ConcurrentConflictCF) {
     test_env->empty_logdata_dir();
     restart_concurrent_conflict context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 27), 0);   // true = simulated crash
-                                                                  // 27 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m2_both_fl_delay_restart), 0);   // true = simulated crash
                                                                   // full logging
 }
 **/
@@ -1174,8 +1118,8 @@ public:
     w_rc_t post_shutdown(ss_m *) {
         output_durable_lsn(4);
         x_btree_scan_result s;
-	const bool fCrash = test_env->_fCrash;
-	const bool m3_recovery = test_env->_recovery_mode >= m3_default_recovery; 
+        const bool fCrash = test_env->_fCrash;
+        const bool m3_recovery = test_env->_recovery_mode >= m3_default_restart;
         // Wait a while, this is to give REDO a chance to reload the root page
         // but still wait in REDO phase due to test mode
         ::usleep(SHORT_WAIT_TIME*5);
@@ -1204,24 +1148,24 @@ public:
         W_DO(test_env->begin_xct());
         rc = test_env->btree_insert(_stid, "zz5", "data4");
         if ((rc.is_error() && fCrash && !m3_recovery) || (!rc.is_error() && (!fCrash || m3_recovery))) // Only m2 recovery mode with crash shutdown should fail,
-        {											    // m3 rm and m2 rm with normal shutdown should succeed
+        {    // m3 rm and m2 rm with normal shutdown should succeed
             // Expected behavior
             W_DO(test_env->abort_xct());            
         }
         else
         {
-	    if (!fCrash || m3_recovery) { // Should have succeeded, did not
-		cerr << "restart_multi_concurrent_conflict: tree_insertion should have succeeded" << rc;
-		return RC(eINTERNAL);
-	    }
+        if (!fCrash || m3_recovery) { // Should have succeeded, did not
+        std::cerr << "restart_multi_concurrent_conflict: tree_insertion should have succeeded" << rc;
+        return RC(eINTERNAL);
+        }
             else { // Should not succeed, but did
-		cerr << "restart_multi_concurrent_conflict: tree_insertion should not succeed"<< endl;            
-		return RC(eINTERNAL);
-	    }
+        std::cerr << "restart_multi_concurrent_conflict: tree_insertion should not succeed"<< std::endl;            
+        return RC(eINTERNAL);
+        }
         }
 
         // Wait before the final verfication
-        while (true == test_env->in_recovery())
+        while (true == test_env->in_restart())
         {
             // Concurrent recovery is still going on, wait
             ::usleep(WAIT_TIME);            
@@ -1246,8 +1190,7 @@ public:
 TEST (RestartTest, MultiConcurrentConflictN) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_conflict context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 23), 0);  // false = no simulated crash
-                                                                  // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m2_both_delay_restart), 0);  // false = no simulated crash
                                                                   // minimal logging
 }
 /**/
@@ -1256,8 +1199,7 @@ TEST (RestartTest, MultiConcurrentConflictN) {
 TEST (RestartTest, MultiConcurrentConflictNF) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_conflict context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 27), 0);  // false = no simulated crash
-                                                                  // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m2_both_fl_delay_restart), 0);  // false = no simulated crash
                                                                   // full logging
 }
 /**/
@@ -1268,8 +1210,7 @@ TEST (RestartTest, MultiConcurrentConflictNF) {
 TEST (RestartTest, MultiConcurrentConflictC) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_conflict context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 23), 0);   // true = simulated crash
-                                                                  // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m2_both_delay_restart), 0);   // true = simulated crash
                                                                   // minimal logging
 }
 **/
@@ -1278,8 +1219,7 @@ TEST (RestartTest, MultiConcurrentConflictC) {
 TEST (RestartTest, MultiConcurrentConflictCF) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_conflict context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 27), 0);   // true = simulated crash
-                                                                  // 23 = recovery mode, m2 concurrent mode with delay in REDO and UNDO
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m2_both_fl_delay_restart), 0);   // true = simulated crash
                                                                   // full logging
 }
 **/

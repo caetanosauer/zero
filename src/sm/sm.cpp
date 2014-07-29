@@ -849,96 +849,19 @@ ss_m::_construct_once()
 void ss_m::_set_recovery_mode()
 {
     // For Instant Restart testing purpose
-    // which internal restart mode to use?
-    int32_t restart_mode = _options.get_int_option("sm_restart", 1);
-
-// TODO(REstart)... 32 vs. 64
-//    smlevel_0::restart_internal_mode = (int364_t)restart_mode;
-
-/************************/    
-    switch (restart_mode) 
+    // which internal restart mode to use?  Default to serial restart (M1) if not specified
+    
+    int32_t restart_mode = _options.get_int_option("sm_restart", 1 /*default value*/);
+    if (1 == restart_mode)
     {
-    case 10:   // M1, default
-        smlevel_0::restart_internal_mode = 
-             (smlevel_0::restart_internal_mode_t)m1_default_restart;
-        break;
-
-    case 20:   // M2, minimal logging
-        smlevel_0::restart_internal_mode = 
-             (smlevel_0::restart_internal_mode_t)m2_default_restart;
-        break;
-    case 21:   // M2, concurrent testing, minimal logging
-        smlevel_0::restart_internal_mode = 
-             (smlevel_0::restart_internal_mode_t)m2_redo_delay_restart;
-        break;
-    case 22:   // M2, concurrent testing, minimal logging
-        smlevel_0::restart_internal_mode = 
-             (smlevel_0::restart_internal_mode_t)m2_undo_delay_restart;
-        break;
-    case 23:   // M2, concurrent testing, minimal logging
-        smlevel_0::restart_internal_mode = 
-             (smlevel_0::restart_internal_mode_t)m2_both_delay_restart;
-        break;
-
-    case 24:   // M2, full logging
-        smlevel_0::restart_internal_mode = 
-             (smlevel_0::restart_internal_mode_t)m2_full_logging_restart;
-        break;
-    case 25:   // M2, concurrent testing, full logging
-        smlevel_0::restart_internal_mode = 
-             (smlevel_0::restart_internal_mode_t)m2_redo_fl_delay_restart;
-        break;
-    case 26:   // M2, concurrent testing, full logging
-        smlevel_0::restart_internal_mode = 
-             (smlevel_0::restart_internal_mode_t)m2_undo_fl_delay_restart;
-        break;
-    case 27:   // M2, concurrent testing, full logging
-        smlevel_0::restart_internal_mode = 
-             (smlevel_0::restart_internal_mode_t)m2_both_fl_delay_restart;
-        break;
-
-    case 30:   // M3, minimal logging
-        smlevel_0::restart_internal_mode = 
-             (smlevel_0::restart_internal_mode_t)m3_default_restart;
-        break;
-
-    case 40:   // M4, minimum logging, minimal logging
-        smlevel_0::restart_internal_mode = 
-             (smlevel_0::restart_internal_mode_t)m4_default_restart;
-        break;
-    case 41:   // M4, concurrent testing, minimal logging
-        smlevel_0::restart_internal_mode = 
-             (smlevel_0::restart_internal_mode_t)m4_redo_delay_restart;
-        break;
-    case 42:   // M4, concurrent testing, minimal logging
-        smlevel_0::restart_internal_mode = 
-             (smlevel_0::restart_internal_mode_t)m4_undo_delay_restart;
-        break;
-    case 43:   // M4, concurrent testing, minimal logging
-        smlevel_0::restart_internal_mode = 
-             (smlevel_0::restart_internal_mode_t)m4_both_delay_restart;
-        break;
-
-    case 70:   // Alternative testing, log scan REDO, concurrent with LSN
-        smlevel_0::restart_internal_mode = 
-             (smlevel_0::restart_internal_mode_t)alternative_log_log_restart;
-        break;
-    case 80:   // Alternative testing, page driven REDO with minimal logging, concurrent with lock
-        smlevel_0::restart_internal_mode = 
-             (smlevel_0::restart_internal_mode_t)alternative_lock_page_restart;
-        break;
-    case 90:   // Alternative testing, log scan REDO, concurrent with lock
-        smlevel_0::restart_internal_mode = 
-             (smlevel_0::restart_internal_mode_t)alternative_lock_log_restart;
-        break;
-
-    default:
-        // Either 'sm_restart' was not set or it was set to an invalid value
-        // use the internal initialization setting and no overwrite
-        DBGOUT1( << "!!! WARNING... No setting for recovery mode, use default setting: m1_default_restart !!!");       
-        break;
+        // Caller did not specify restart mode, use default (serial mode)
+        smlevel_0::restart_internal_mode = (smlevel_0::restart_internal_mode_t)m1_default_restart;
     }
-/************************/    
+    else
+    {
+        // Set caller specified restart mode
+        smlevel_0::restart_internal_mode = (smlevel_0::restart_internal_mode_t)restart_mode;
+    }
 }
 
 ss_m::~ss_m()
@@ -1116,7 +1039,7 @@ void ss_m::set_shutdown_flag(bool clean)
 // Serial restart mode: always return false
 // Concurrent restart mode: return true if concurrent restart 
 //                                          (REDO and UNDO) is active
-bool ss_m::in_recovery()
+bool ss_m::in_restart()
 {
     // This function can be called only after the system is opened
     // therefore the system is not in recovery when running in serial recovery mode
