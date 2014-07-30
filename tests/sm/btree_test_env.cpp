@@ -19,6 +19,9 @@
 #include "sm_options.h"
 #include "xct.h"
 #include "backup.h"
+#include "sm_base.h"
+#include "sm_external.h"
+
 
 #include "../nullbuf.h"
 #if W_DEBUG_LEVEL <= 3
@@ -119,7 +122,8 @@ public:
                 _functor(functor) 
         {
             // Initialize using serial traditional recovery mode
-            do_construct(10);
+            // constructor used by test_crash.cpp which does not specify restart mode
+            do_construct(m1_default_restart);
         }
 
         testdriver_thread_t(test_functor *functor,
@@ -912,9 +916,10 @@ w_rc_t x_take_backup(ss_m* ssm, test_volume_t *test_volume) {
     return RCOK;
 }
 
-bool x_in_recovery(ss_m* ssm)
+bool x_in_restart(ss_m* ssm)
 {
-    return ssm->in_recovery();
+    // System is still in the process of 'restart'
+    return ssm->in_restart();
 }
 
 

@@ -5,11 +5,13 @@
 #include "btcursor.h"
 #include "bf.h"
 #include "xct.h"
+#include "sm_base.h"
+#include "sm_external.h"
 
 btree_test_env *test_env;
 
 // Test cases to test serial and traditional restart.
-// Due to its nature, these testcases are more tricky.
+// Caller does not specify restart mode, default to serial mode.
 
 class crash_empty : public crash_test_base {
 public:
@@ -356,6 +358,7 @@ TEST (CrashTest, InsertManyUnsorted) {
     EXPECT_EQ(test_env->runCrashTest(&context), 0);  // default to serial mode
 }
 /**/
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     test_env = new btree_test_env();

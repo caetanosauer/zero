@@ -398,7 +398,7 @@ btree_ghost_mark_log::redo(fixable_page_h *page)
         bool found;
         slotid_t slot;
         bp.search(key, found, slot);
-        if (false == restart_m::use_redo_full_logging_recovery()) 
+        if (false == restart_m::use_redo_full_logging_restart()) 
         {
             // If doing page driven REDO, page_rebalance initialized the
             // target page (foster child).
@@ -623,7 +623,7 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
     shpid_t another_pid = recovering_dest ? dp->_page2_pid : shpid();
     w_assert0(recovering_dest || target_pid == dp->_page2_pid);
 
-    if (true == restart_m::use_redo_full_logging_recovery())
+    if (true == restart_m::use_redo_full_logging_restart())
     {
         // TODO(Restart)... milestone 2
         // If using full logging REDO recovery, the merge log record (system txn)
@@ -713,7 +713,7 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
         }
     } else {
         // Cannot be in full logging mode
-        w_assert1(false == restart_m::use_redo_full_logging_recovery());
+        w_assert1(false == restart_m::use_redo_full_logging_restart());
 
         // Minimal logging while the page is not buffer pool managed, no dependency on
         // write-order-dependency
@@ -838,13 +838,13 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
 
     // TODO(Restart)...
     // In milestone 2:
-    //    If restart_m::use_redo_full_logging_recovery() is on, use solution #3 which disables 
+    //    If restart_m::use_redo_full_logging_restart() is on, use solution #3 which disables 
     //        the minimal logging and uses full logging instead, therefore btree_foster_rebalance_log
     //        and btree_foster_merge_log log records are used to set page fence keys only.
     //        In this code path, we will use full logging for all page rebalance and page merge 
     //        operations, including both recovery REDO and normal page corruption Single-Page-Recovery
     //        operations.
-    //    If restart_m::use_redo_page_recovery() is on, use solution #4 which is using minimum 
+    //    If restart_m::use_redo_page_restart() is on, use solution #4 which is using minimum 
     //        logging.  No separate full logging for record movements.
     //        Recovery REDO mark the page as not-bufferpool-managed before calling Single-Page-Recovery
     //        so the page-rebalance/page-merge REDO functions use code path for #4.  Recovery REDO
@@ -889,7 +889,7 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
     // recovering_dest == false: recover foster parent, assumed foster child has been recovered
     w_assert0(recovering_dest || target_pid == page2_id);
 
-    if (true == restart_m::use_redo_full_logging_recovery()) 
+    if (true == restart_m::use_redo_full_logging_restart()) 
     {
         // TODO(Restart)... milestone 2
         // Using full logging for b-tree rebalance operation, the rebalance log record (system txn)
@@ -1043,12 +1043,12 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
         }
     } else {
         // Cannot be in full logging mode
-        w_assert1(false == restart_m::use_redo_full_logging_recovery());
+        w_assert1(false == restart_m::use_redo_full_logging_restart());
 
         // Minimal logging while the page is not buffer pool managed, no dependency on
         // write-order-dependency
         
-        // If we are here during Recovery, we are in restart_m::use_redo_page_recovery() 
+        // If we are here during Recovery, we are in restart_m::use_redo_page_restart() 
         // mode (minimal logging) via Single-Page-Recovery.       
         // The REDO logic (caller) marks the page as not bufferpool_managed before calling 
         // Single-Page-Recovery and marks the page as bufferpool_managed after Single-Page-Recovery.

@@ -5,10 +5,13 @@
 #include "btcursor.h"
 #include "bf.h"
 #include "xct.h"
+#include "sm_base.h"
+#include "sm_external.h"
 
 btree_test_env *test_env;
 
 // Test cases to test serial and traditional restart.
+// Caller specify restart mode.
 
 lsn_t get_durable_lsn() {
     lsn_t ret;
@@ -117,8 +120,7 @@ public:
 TEST (RestartTest, EmptyN) {
     test_env->empty_logdata_dir();
     restart_empty context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);  // false = no simulated crash, normal shutdown
-                                                                  // 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);  // false = no simulated crash, normal shutdown
 }
 /**/
 
@@ -126,8 +128,7 @@ TEST (RestartTest, EmptyN) {
 TEST (RestartTest, EmptyC) {
     test_env->empty_logdata_dir();
     restart_empty context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);   // true = simulated crash
-                                                                  // 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);   // true = simulated crash
 }
 /**/
 
@@ -164,8 +165,7 @@ public:
 TEST (RestartTest, BasicN) {
     test_env->empty_logdata_dir();
     restart_basic context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);  // false = no simulated crash, normal shutdown
-                                                                  // 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);  // false = no simulated crash, normal shutdown
 }
 /**/
 
@@ -173,8 +173,7 @@ TEST (RestartTest, BasicN) {
 TEST (RestartTest, BasicC) {
     test_env->empty_logdata_dir();
     restart_basic context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);  // true = simulated crash
-                                                                 // 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);  // true = simulated crash
 }
 /**/
 
@@ -214,8 +213,7 @@ public:
 TEST (RestartTest, CheckpointN) {
     test_env->empty_logdata_dir();
     restart_checkpoint context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);  // false = no simulated crash, normal shutdown
-                                                                  // 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);  // false = no simulated crash, normal shutdown
 }
 /**/
 
@@ -223,8 +221,7 @@ TEST (RestartTest, CheckpointN) {
 TEST (RestartTest, CheckpointC) {
     test_env->empty_logdata_dir();
     restart_checkpoint context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);   // true = simulated crash
-                                                                  // 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);   // true = simulated crash
 }
 /**/
 
@@ -257,8 +254,7 @@ public:
 TEST (RestartTest, ManySimpleN) {
     test_env->empty_logdata_dir();
     restart_many context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);  // false = no simulated crash, normal shutdown
-                                                                  // 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);  // false = no simulated crash, normal shutdown
 }
 /**/
 
@@ -266,8 +262,7 @@ TEST (RestartTest, ManySimpleN) {
 TEST (RestartTest, ManySimpleC) {
     test_env->empty_logdata_dir();
     restart_many context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);   // true = simulated crash
-                                                                  // 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);   // true = simulated crash
 }
 /**/
 
@@ -304,8 +299,7 @@ public:
 TEST (RestartTest, ManyCheckpointN) {
     test_env->empty_logdata_dir();
     restart_many_checkpoint context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);  // false = no simulated crash, normal shutdown
-                                                                  // 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);  // false = no simulated crash, normal shutdown
 }
 /**/
 
@@ -313,8 +307,7 @@ TEST (RestartTest, ManyCheckpointN) {
 TEST (RestartTest, ManyCheckpointC) {
     test_env->empty_logdata_dir();
     restart_many_checkpoint context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);   // true = simulated crash
-                                                                  // 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);   // true = simulated crash
 }
 /**/
 
@@ -353,8 +346,7 @@ public:
 TEST (RestartTest, InflightN) {
     test_env->empty_logdata_dir();
     restart_inflight context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);  // false = no simulated crash, normal shutdown
-                                                                  // 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);  // false = no simulated crash, normal shutdown
 }
 /**/
 
@@ -362,8 +354,7 @@ TEST (RestartTest, InflightN) {
 TEST (RestartTest, InflightC) {
     test_env->empty_logdata_dir();
     restart_inflight context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);   // true = simulated crash
-                                                                  // 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);   // true = simulated crash
 }
 /**/
 
@@ -404,8 +395,7 @@ public:
 TEST (RestartTest, InflightCheckpointN) {
     test_env->empty_logdata_dir();
     restart_inflight_checkpoint context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);  // false = no simulated crash, normal shutdown
-                                                                  // 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);  // false = no simulated crash, normal shutdown
 }
 /**/
 
@@ -414,8 +404,7 @@ TEST (RestartTest, InflightCheckpointN) {
 TEST (RestartTest, InflightCheckpointC) {
     test_env->empty_logdata_dir();
     restart_inflight_checkpoint context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);   // true = simulated crash
-                                                                  // 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);   // true = simulated crash
 }
 /**/
 
@@ -457,16 +446,16 @@ public:
 TEST (RestartTest, ComplicInflightN) {
     test_env->empty_logdata_dir();
     restart_complic_inflight context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);  // false = no simulated crash
-}                                                                 // 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);  // false = no simulated crash
+}
 /**/
 
 /* Passing */
 TEST (RestartTest, ComplicInflightC) {
     test_env->empty_logdata_dir();
     restart_complic_inflight context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);  // true = simulated crash
-}                                                                // 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);  // true = simulated crash
+}
 /**/
 
 
@@ -504,8 +493,7 @@ public:
 TEST (RestartTest, InflightManyN) {
     test_env->empty_logdata_dir();
     restart_inflight_many context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0); // false = no simulated crash, normal shutdown
-                                                                 // 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0); // false = no simulated crash, normal shutdown
 }
 /**/
 
@@ -513,8 +501,7 @@ TEST (RestartTest, InflightManyN) {
 TEST (RestartTest, InflightManyC) {
     test_env->empty_logdata_dir();
     restart_inflight_many context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);  // true = simulated crash
-                                                                 // 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);  // true = simulated crash
 }
 /**/
 
@@ -556,8 +543,7 @@ public:
 TEST (RestartTest, InflightCkptManyN) {
     test_env->empty_logdata_dir();
     restart_inflight_ckpt_many context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0); // false = no simulated crash, normal shutdown
-                                                                 // 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0); // false = no simulated crash, normal shutdown
 }
 /**/
 
@@ -565,8 +551,7 @@ TEST (RestartTest, InflightCkptManyN) {
 TEST (RestartTest, InflightCkptManyC) {
     test_env->empty_logdata_dir();
     restart_inflight_ckpt_many context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);  // true = simulated crash
-                                                                 // 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);  // true = simulated crash
 }
 /**/
 
@@ -576,28 +561,28 @@ class restart_aborted_remove : public restart_test_base
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
         output_durable_lsn(1);
-	W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
-	output_durable_lsn(2);
-	W_DO(test_env->btree_insert_and_commit(_stid, "aa0", "data0"));
-	W_DO(test_env->begin_xct());
+    W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+    output_durable_lsn(2);
+    W_DO(test_env->btree_insert_and_commit(_stid, "aa0", "data0"));
+    W_DO(test_env->begin_xct());
         W_DO(test_env->btree_insert(_stid, "aa1", "data1"));
-	W_DO(test_env->btree_remove(_stid, "aa0"));
+    W_DO(test_env->btree_remove(_stid, "aa0"));
         W_DO(test_env->abort_xct());
-	test_env->btree_update_and_commit(_stid, "aa0", "data0000");
-	output_durable_lsn(3);
-	return RCOK;
+    test_env->btree_update_and_commit(_stid, "aa0", "data0000");
+    output_durable_lsn(3);
+    return RCOK;
     }
 
     w_rc_t post_shutdown(ss_m *) {
-	output_durable_lsn(4);
-	x_btree_scan_result s;
-	W_DO(test_env->btree_scan(_stid, s));
-	EXPECT_EQ(1, s.rownum);
-	EXPECT_EQ(std::string("aa0"), s.maxkey);
-	std::string data;
-	test_env->btree_lookup_and_commit(_stid, "aa0", data);
-	EXPECT_EQ(std::string("data0000"), data);
-	return RCOK;
+    output_durable_lsn(4);
+    x_btree_scan_result s;
+    W_DO(test_env->btree_scan(_stid, s));
+    EXPECT_EQ(1, s.rownum);
+    EXPECT_EQ(std::string("aa0"), s.maxkey);
+    std::string data;
+    test_env->btree_lookup_and_commit(_stid, "aa0", data);
+    EXPECT_EQ(std::string("data0000"), data);
+    return RCOK;
     }
 };
 
@@ -605,16 +590,16 @@ public:
 TEST (RestartTest, AbortedRemoveN) {
     test_env->empty_logdata_dir();
     restart_aborted_remove context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);  // false = no simulated crash;
-}                                                                 // 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);  // false = no simulated crash;
+}
 /**/
 
 /* Passing */
 TEST (RestartTest, AbortedRemoveC) {
     test_env->empty_logdata_dir();
     restart_aborted_remove context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);   // true = simulated crash; 
-}                                                                 // 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);   // true = simulated crash; 
+}
 /**/
 
 /* Multi-thread test cases from here on */
@@ -665,8 +650,7 @@ public:
 TEST (RestartTest, MultithrdBasicN) {
     test_env->empty_logdata_dir();
     restart_multithrd_basic context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0); 
-    // false = normal shutdown, 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);     // false = normal shutdown
 }
 /**/
 
@@ -674,8 +658,7 @@ TEST (RestartTest, MultithrdBasicN) {
 TEST (RestartTest, MultithrdBasicC) {
     test_env->empty_logdata_dir();
     restart_multithrd_basic context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0); 
-    // true = crash shutdown, 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);     // true = crash shutdown
 }
 /**/
 
@@ -730,8 +713,7 @@ public:
 TEST (RestartTest, MultithrdInflight1N) {
     test_env->empty_logdata_dir();
     restart_multithrd_inflight1 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0); 
-    // false = normal shutdown, 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);     // false = normal shutdown
 }
 /**/
 
@@ -739,8 +721,7 @@ TEST (RestartTest, MultithrdInflight1N) {
 TEST (RestartTest, MultithrdInflight1C) {
     test_env->empty_logdata_dir();
     restart_multithrd_inflight1 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0); 
-    // true = crash shutdown, 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);     // true = crash shutdown
 }
 /**/
 
@@ -800,8 +781,7 @@ public:
 TEST (RestartTest, MultithrdAbort1N) {
     test_env->empty_logdata_dir();
     restart_multithrd_abort1 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0); 
-    // false = normal shutdown, 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);     // false = normal shutdown
 }
 /**/
 
@@ -810,8 +790,7 @@ TEST (RestartTest, MultithrdAbort1N) {
 TEST (RestartTest, MultithrdAbort1C) {
     test_env->empty_logdata_dir();
     restart_multithrd_abort1 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0); 
-    // true = crash shutdown, 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);     // true = crash shutdown
 }
 /**/
 
@@ -881,8 +860,7 @@ public:
 TEST (RestartTest, MultithrdCheckpN) {
     test_env->empty_logdata_dir();
     restart_multithrd_chckp context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0); 
-    // false = normal shutdown, 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);     // false = normal shutdown
 }
 /**/
 
@@ -890,8 +868,7 @@ TEST (RestartTest, MultithrdCheckpN) {
 TEST (RestartTest, MultithrdCheckpC) {
     test_env->empty_logdata_dir();
     restart_multithrd_chckp context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
-    // true = crash shutdown, 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);    // true = crash shutdown
 }
 /**/
 
@@ -966,8 +943,7 @@ public:
 TEST (RestartTest, MultithrdInflightN) {
     test_env->empty_logdata_dir();
     restart_multithrd_inflight2 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);
-    // false = normal shutdown, 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);    // false = normal shutdown
 }
 /**/
 
@@ -976,8 +952,7 @@ TEST (RestartTest, MultithrdInflightN) {
 TEST (RestartTest, MultithrdInflightC) {
     test_env->empty_logdata_dir();
     restart_multithrd_inflight2 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
-    // true = crash shutdown, 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);    // true = crash shutdown
 }
 /**/
 
@@ -1075,8 +1050,7 @@ public:
 TEST (RestartTest, MultithrdAbort2N) {
     test_env->empty_logdata_dir();
     restart_multithrd_abort2 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);
-    // false = normal shutdown, 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);    // false = normal shutdown
     }
 /**/
 
@@ -1085,8 +1059,7 @@ TEST (RestartTest, MultithrdAbort2N) {
 TEST (RestartTest, MultithrdAbort2C) {
     test_env->empty_logdata_dir();
     restart_multithrd_abort2 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
-    // true = crash shutdown, 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);    // true = crash shutdown
 }
 /**/
 
@@ -1164,8 +1137,7 @@ public:
 TEST (RestartTest, MultithrdInflight3N) {
     test_env->empty_logdata_dir();
     restart_multithrd_inflight3 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);
-    // false = normal shutdown, 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);    // false = normal shutdown
 }
 /**/
 
@@ -1173,8 +1145,7 @@ TEST (RestartTest, MultithrdInflight3N) {
 TEST (RestartTest, MultithrdInflight3C) {
     test_env->empty_logdata_dir();
     restart_multithrd_inflight3 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
-    // true = crash shutdown, 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);    // true = crash shutdown
 }
 /**/
     
@@ -1250,8 +1221,7 @@ public:
 TEST (RestartTest, MultithrdInflightChckp1N) {
     test_env->empty_logdata_dir();
     restart_multithrd_inflight_chckp1 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);
-    // false = normal shutdown, 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);    // false = normal shutdown
 }
 /**/
 
@@ -1259,8 +1229,7 @@ TEST (RestartTest, MultithrdInflightChckp1N) {
 TEST (RestartTest, MultithrdInflightChckp1C) {
     test_env->empty_logdata_dir();
     restart_multithrd_inflight_chckp1 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
-    // true = crash shutdown, 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);    // true = crash shutdown
 }
 /**/
 
@@ -1311,16 +1280,14 @@ public:
 TEST (RestartTest, MultithrdLData1N) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata1 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);
-    // false = normal shutdown, 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);    // false = normal shutdown
 }
 
 /* Passing */
 TEST (RestartTest, MultithrdLData1C) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata1 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
-    // true = crash shutdown, 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);    // true = crash shutdown
 }
 /**/
 
@@ -1371,16 +1338,14 @@ public:
 TEST (RestartTest, MultithrdLData2N) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata2 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);
-    // false = normal shutdown, 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);    // false = normal shutdown
 }
 
 /* Passing */
 TEST (RestartTest, MultithrdLData2C) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata2 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
-    // true = crash shutdown, 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);    // true = crash shutdown
 }
 /**/
 
@@ -1432,16 +1397,14 @@ public:
 TEST (RestartTest, MultithrdLData3N) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata3 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);
-    // false = normal shutdown, 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);    // false = normal shutdown
 }
 
 /* Passing */
 TEST (RestartTest, MultithrdLData3C) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata3 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
-    // true = crash shutdown, 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);    // true = crash shutdown
 }
 /**/
 
@@ -1492,16 +1455,14 @@ public:
 TEST (RestartTest, MultithrdLData4N) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata4 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);
-    // false = normal shutdown, 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);    // false = normal shutdown
 }
 
 /* Passing */
 TEST (RestartTest, MultithrdLData4C) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata4 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
-    // true = crash shutdown, 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);    // true = crash shutdown
 }
 /**/
 
@@ -1555,8 +1516,7 @@ public:
 TEST (RestartTest, MultithrdLData5N) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata5 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, 10), 0);
-    // false = normal shutdown, 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);    // false = normal shutdown
 }
 /**/
 
@@ -1564,8 +1524,7 @@ TEST (RestartTest, MultithrdLData5N) {
 TEST (RestartTest, MultithrdLData5C) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata5 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, 10), 0);
-    // true = crash shutdown, 10 = recovery mode, m1 default serial mode
+    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);    // true = crash shutdown
 }
 /**/
 

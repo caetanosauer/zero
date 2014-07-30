@@ -74,6 +74,7 @@ typedef class Heap<xct_t*, CmpXctUndoLsns> XctPtrHeap;
 class restart_thread_t : public smthread_t  
 {
 public:
+
     NORET restart_thread_t() 
         : smthread_t(t_regular, "restart", WAIT_NOT_USED)
     {
@@ -82,9 +83,9 @@ public:
         // It performs the recovery work while concurrent user transactions
         // are coming in
         
-        w_assert1(false == smlevel_0::use_serial_recovery());
+        w_assert1(false == smlevel_0::use_serial_restart());
 
-        working = true;
+        working = smlevel_0::t_concurrent_before;
     };
     NORET ~restart_thread_t() 
     {
@@ -93,10 +94,11 @@ public:
 
     // Main body of the child thread
     void run();
-    inline bool in_recovery() { return working; }
+    smlevel_0::concurrent_restart_mode_t in_restart() { return working; }
 
 private:
-    bool working;  // true if the child thread is still working on recovery
+
+    smlevel_0::concurrent_restart_mode_t working;  // what is the child working on?
 
 private:
     // disabled
@@ -118,7 +120,7 @@ public:
         {
             // Child thread (for REDO and UNDO if open system early)
             // is still active
-            w_assert1(false == smlevel_0::use_serial_recovery());
+            w_assert1(false == smlevel_0::use_serial_restart());
 
             if (shutdown_clean)
             {
@@ -138,12 +140,12 @@ public:
                 // This can happen in concurrent recovery mode because system is opened
                 // while the recovery is still going on
                 
-                if (_restart_thread->in_recovery())
+                if (smlevel_0::t_concurrent_done != _restart_thread->in_restart())
                 {
                     DBGOUT1(<< "Child thread is still busy, extra sleep");
                     g_me()->sleep(wait_interval*2); // 2 second, this is a very long time
                 }
-                if (_restart_thread->in_recovery())
+                if (smlevel_0::t_concurrent_done != _restart_thread->in_restart())
                 {
                     DBGOUT1(<< "Force a shutdown before restart child thread finished it work");               
                     smlevel_0::errlog->clog << info_prio 
@@ -181,7 +183,7 @@ public:
         if (_restart_thread)
             return;
 
-        if (false == smlevel_0::use_serial_recovery())
+        if (false == smlevel_0::use_serial_restart())
         {
             DBGOUT1(<< "Spawn child recovery thread");
 
@@ -200,33 +202,64 @@ public:
         }
     }
 
-    // Return true if the recovery operation is still on-going
-    bool                        recovery_in_progress()
+    // Return true if the restart operation is still on-going
+    bool                        restart_in_progress()
     {
-        // Recovery is in progress if one of the conditions is true:
-        // Serial mode and still in recovery
-        // Concurrent mode and:
+        // This function is to find out whether the 'restart' is still on-goiing
+        // 
+        // M1 - serial recovery mode
+        // M2 - restart thread for REDO and UNDO
+        // M3 - on-demand driven by user transactions, no restart thread
+        // M4 - mixed mode, behaves the same for both M2 and M4
+        
+        // Restart is in progress if one of the conditions is true:
+        // Serial mode (M1) and 
+        //     Operating mode is not in t_forward_processing
+        // Concurrent mode (M2 and M4) and:
         //     Workign on Log Analysis
         //     or
         //     Child thread is alive
-        if (true == smlevel_0::use_serial_recovery())
+        // On-demand mode (M3):
+        //     Workign on Log Analysis
+        //     or
+        //     If passed Log Analysis phase, unknow whether we are still in REDO or UNDO phase
+        // 
+        if (true == smlevel_0::use_serial_restart())
         {
             // Serial mode
             return in_recovery();
         }
         else
-        {
+        {       
             // Concurrent mode        
+
+            // Log Analysis
             if (in_recovery_analysis())
                 return true;
 
-            // Child thread exists
-            if (_restart_thread)
+            // System is opened after Log Analysis, are we still in Restart?
+            if (false == smlevel_0::use_redo_demand_restart())
             {
-                if (_restart_thread->in_recovery())
-                    return true;
-                else
-                    return false;
+                // Not pure on-demand (M3)
+                // For M2 and M4, using child restart thread to determine the current status
+                // if the child thread exists
+                if (_restart_thread)
+                {
+                    if (smlevel_0::t_concurrent_done != _restart_thread->in_restart())
+                        return true;
+                    else
+                        return false;
+                }
+                // If child thread does not exist, fall through
+            }
+            else
+            {
+                // M3, on-demand, the only way to find out whether the Restart finished or 
+                // not is to scan both buffer pool and transaction table.  Due to concurrent access,
+                // the information would not be reliable even if we scan them.
+                // Return false (not in Restart) although this return code cannot be trusted
+                
+                return false;                
             }
 
             // Child thread does not exist, and the operating mode is 
@@ -236,21 +269,78 @@ public:
             // Corner case, if this function gets called after Log Analysis but
             // before the child thread was created, the operating mode would
             // be in Log Analysis            
+
+            // If operating mode is t_forward_processing and child restart thread does not exist
+            // we are not in 'restart'
             if (false == in_recovery())
                 return false;
 
+            // Child restart thread does not exist but the operating mode is 
+            // not in t_forward_processing.  A very corner case, we are still in 'restart'
             return true;
         }
     }
 
+    // Return true if the REDO operation is still on-going
+    bool                        redo_in_progress()
+    {
+        if (true == smlevel_0::use_serial_restart())
+        {
+            // Serial mode
+            return in_recovery_redo();
+        }
 
-    // Top function to start the recovery process
-    static void                 recover(
+        if (true == smlevel_0::use_redo_demand_restart())
+        {
+           // Pure on-demand REDO (M3), we don't know whether REDO is still on or not
+           // Return false (not in REDO) although this return code cannot be trusted
+
+           return false;
+        }
+        else
+        {
+            // M2 or M4
+            if (smlevel_0::t_concurrent_redo == _restart_thread->in_restart())            
+                return true;   // In REDO
+            else 
+                return false;  // Not in REDO
+        }
+    }
+
+    // Return true if the UNDO operation is still on-going
+    bool                        undo_in_progress()
+    {
+        if (true == smlevel_0::use_serial_restart())
+        {
+            // Serial mode
+            return in_recovery_undo();
+        }
+
+        if (true == smlevel_0::use_undo_demand_restart())
+        {
+            // Pure on-demand UNDO (M3), we don't know whether UNDO is still on or not
+            // Return false (not in UNDO) although this return code cannot be trusted
+
+            return false;
+        }
+        else
+        {
+            // M2 or M4
+            if (smlevel_0::t_concurrent_undo == _restart_thread->in_restart()) 
+                return true;   // In UNDO
+            else 
+                return false;  // Not in UNDO
+        }   
+    }
+
+
+    // Top function to start the restart process
+    static void                 restart(
         lsn_t                   master,         // In: Starting point for log scan
-        lsn_t&                  commit_lsn,     // Out: used if use_concurrent_log_recovery()
-        lsn_t&                  redo_lsn,       // Out: used if log driven REDO with use_concurrent_XXX_recovery()        
-        lsn_t&                  last_lsn,       // Out: used if page driven REDO with use_concurrent_XXX_recovery()                
-        uint32_t&               in_doubt_count  // Out: used if log driven REDO with use_concurrent_XXX_recovery()           
+        lsn_t&                  commit_lsn,     // Out: used if use_concurrent_log_restart()
+        lsn_t&                  redo_lsn,       // Out: used if log driven REDO with use_concurrent_XXX_restart()        
+        lsn_t&                  last_lsn,       // Out: used if page driven REDO with use_concurrent_XXX_restart()                
+        uint32_t&               in_doubt_count  // Out: used if log driven REDO with use_concurrent_XXX_restart()           
         );
 
 private:
@@ -275,7 +365,7 @@ private:
 
     // Function used for reverse order UNDO operations, open system after the entire recovery process finished
     static void                 undo_reverse_pass(
-        XctPtrHeap&             heap,       // heap populated with doomed transactions
+        XctPtrHeap&             heap,       // heap populated with loser transactions
         const lsn_t             curr_lsn,   // current lsn, the starting point of backward scan
                                             // not used in current implementation
         const lsn_t             undo_lsn    // undo lsn, the end point of backward scan

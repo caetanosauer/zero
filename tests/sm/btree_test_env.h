@@ -61,7 +61,7 @@ w_rc_t x_btree_update_and_commit(ss_m* ssm, const stid_t &stid, const char *keys
 w_rc_t x_btree_update(ss_m* ssm, const stid_t &stid, const char *keystr, const char *datastr);
 w_rc_t x_btree_overwrite_and_commit(ss_m* ssm, const stid_t &stid, const char *keystr, const char *datastr, smsize_t offset, bool use_locks = false);
 w_rc_t x_btree_overwrite(ss_m* ssm, const stid_t &stid, const char *keystr, const char *datastr, smsize_t offset);
-bool   x_in_recovery(ss_m* ssm);
+bool   x_in_restart(ss_m* ssm);
 
 
 /** Delete backup if exists. */
@@ -449,8 +449,8 @@ public:
     w_rc_t btree_scan(const stid_t &stid, x_btree_scan_result &result) {
         return x_btree_scan(_ssm, stid, result, _use_locks);
     }
-    bool in_recovery(){
-        return x_in_recovery(_ssm);
+    bool in_restart(){
+        return x_in_restart(_ssm);
     }
     
     ss_m* _ssm;

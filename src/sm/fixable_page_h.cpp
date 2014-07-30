@@ -106,7 +106,7 @@ w_rc_t fixable_page_h::fix_recovery_redo(bf_idx idx, lpid_t page_updated,
     if (false == managed)
     {
         // Page is not managed only if using minimal logging with page driven REDO
-        w_assert1(true == restart_m::use_redo_page_recovery());
+        w_assert1(true == restart_m::use_redo_page_restart());
     }
     _bufferpool_managed = managed;
     _mode = LATCH_EX;
@@ -121,7 +121,7 @@ w_rc_t fixable_page_h::fix_recovery_redo(const bool managed)
     // It is only used for page driven REDO (Single-Page-Recovery) with minimal logging and
     // the page has been recovered via Single-Page-Recovery already
     
-    w_assert1(true == restart_m::use_redo_page_recovery());
+    w_assert1(true == restart_m::use_redo_page_restart());
     _bufferpool_managed = managed;
     return RCOK;
 }
