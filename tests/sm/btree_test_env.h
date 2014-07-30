@@ -34,6 +34,8 @@ struct test_volume_t {
 const int default_quota_in_pages = 64;
 const int default_bufferpool_size_in_pages = 64;
 const int default_locktable_size = 1 << 6;
+const bool simulated_crash = true;
+const bool normal_shutdown = false;
 
 #ifdef DEFAULT_SWIZZLING_OFF
 const bool default_enable_swizzling = false;
@@ -100,6 +102,12 @@ public:
         return _functor (ssm, &_test_volume);
     }
     rc_t (*_functor)(ss_m*, test_volume_t*);
+};
+
+struct restart_test_options {
+    bool shutdown_mode;
+    int32_t restart_mode;
+    bool enable_checkpoints;
 };
 
 // Begin... for test_restart.cpp and test_concurrent_restart.cpp
@@ -317,8 +325,8 @@ public:
     * @see restart_test_base
     */
     int runRestartTest (restart_test_base *context,
-                      bool fCrash,
-                      int32_t recovery_mode,                      
+		      bool fCrash,
+		      int32_t recovery_mode,
                       bool use_locks = false,
                       int32_t lock_table_size = default_locktable_size,
                       int disk_quota_in_pages = default_quota_in_pages,
@@ -335,7 +343,8 @@ public:
     int runRestartTest (restart_test_base *context, bool fCrash, int32_t recovery_mode,
                           bool use_locks, int disk_quota_in_pages, const sm_options &options);
 
-
+    int runRestartTest (restart_test_base *context, restart_test_options *restart_options);
+    
     int runRestartTest (restart_test_base *context,
                       bool fCrash,
                       int32_t recovery_mode,                      
@@ -446,10 +455,11 @@ public:
     
     ss_m* _ssm;
     bool _use_locks;
+    restart_test_options* _restart_options;
     bool _fCrash;
+    int32_t _recovery_mode;
     char log_dir[MAXPATHLEN];
     char vol_dir[MAXPATHLEN];
-    int32_t _recovery_mode;
 
 private:
     void assure_dir(const char *folder_name);

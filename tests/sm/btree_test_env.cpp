@@ -437,6 +437,13 @@ int btree_test_env::runBtreeTest (w_rc_t (*func)(ss_m*, test_volume_t*),
     return rv;
 }
 
+int btree_test_env::runRestartTest (restart_test_base *context,
+    restart_test_options *restart_options) {
+    _restart_options = restart_options;
+    return runRestartTest(context, restart_options->shutdown_mode,
+	    restart_options->restart_mode);
+}
+
 // Begin... for test_restart.cpp, test_concurrent_restart.cpp
 int btree_test_env::runRestartTest (restart_test_base *context,
     bool fCrash,
