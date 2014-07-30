@@ -210,7 +210,7 @@ public:
         // M1 - serial recovery mode
         // M2 - restart thread for REDO and UNDO
         // M3 - on-demand driven by user transactions, no restart thread
-        // M4 - mixed mode, both M2 and M4
+        // M4 - mixed mode, behaves the same for both M2 and M4
         
         // Restart is in progress if one of the conditions is true:
         // Serial mode (M1) and 

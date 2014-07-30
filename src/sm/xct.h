@@ -221,7 +221,7 @@ public:
         timeout_in_ms                timeout = WAIT_SPECIFIED_BY_THREAD,
         bool                         sys_xct = false,
         bool                         single_log_sys_xct = false,
-        bool                         doomed_xct = false );
+        bool                         loser_xct = false );
     
     static
     xct_t*                       new_xct(
@@ -232,7 +232,7 @@ public:
         timeout_in_ms                timeout = WAIT_SPECIFIED_BY_THREAD,
         bool                         sys_xct = false,
         bool                         single_log_sys_xct = false,
-        bool                         doomed_xct = false );
+        bool                         loser_xct = false );
     static
     void                        destroy_xct(xct_t* xd);
 

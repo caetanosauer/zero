@@ -787,7 +787,7 @@ restart_m::analysis_pass(
                                 WAIT_SPECIFIED_BY_THREAD, // default timeout value
                                 false,                    // sys_xct
                                 false,                    // single_log_sys_xct
-                                true);                    // doomed_xct, set to true for recovery
+                                true);                    // loser_xct, set to true for recovery
             w_assert1(xd);
             xct_t::update_youngest_tid(r.tid());
 
@@ -906,7 +906,7 @@ restart_m::analysis_pass(
                                         WAIT_SPECIFIED_BY_THREAD, // default timeout value
                                         false,                    // sys_xct
                                         false,                    // single_log_sys_xct
-                                        true);                    // doomed_xct, set to true for recovery
+                                        true);                    // loser_xct, set to true for recovery
 
                             // Set the first LSN of the in-flight transaction
                             xd->set_first_lsn(dp->xrec[i].first_lsn);
@@ -1529,7 +1529,7 @@ restart_m::analysis_pass(
 
             if (xct_t::xct_active == xd->state())  
             {
-                // The doomed_xct flag must be on
+                // The loser_xct flag must be on
                 w_assert1(true == xd->is_loser_xct());
 
                 // Determine the value for commit_lsn which is the minimum
