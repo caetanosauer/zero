@@ -514,6 +514,9 @@ btree_impl::_ux_remove_core(volid_t vol, snum_t store, const w_keystr_t &key, co
     }
     else
     {
+// TODO(Restart)... 
+DBGOUT3( << "&&&& Log for deletion, key: " << key);
+    
         // log first
         vector<slotid_t> slots;
         slots.push_back(slot);
@@ -556,6 +559,10 @@ btree_impl::_ux_undo_ghost_mark(volid_t vol, snum_t store, const w_keystr_t &key
     smsize_t existing_element_len;
     const char *existing_element = leaf.element(slot, existing_element_len, ghost);
     cvec_t el (existing_element, existing_element_len);
+
+// TODO(Restart)... 
+DBGOUT3( << "&&&& Log for undo deletion, turn the ghost record into a valid record, key: " << key);
+
     W_DO(log_btree_insert_nonghost(leaf, key, el));
 
     leaf.unmark_ghost (slot);

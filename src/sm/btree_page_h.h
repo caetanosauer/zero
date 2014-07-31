@@ -367,9 +367,10 @@ public:
                       int                  steal_to2 = 0,
                       bool                 steal_src2_pid0 = false,
                       const bool           full_logging = false,  // True if doing full logging for record movement
-                      const bool           log_src_1 = false      // Use only if full_logging = true
+                      const bool           log_src_1 = false,     // Use only if full_logging = true
                                                                   // True if log movements from src1
                                                                   // False if log movements from src2                      
+                      const bool           ghost = false          // When _init the page, should the fence key record be a ghost                                  
         );
 
     /// Steal records from steal_src.  Called by format_steal.
@@ -685,7 +686,7 @@ public:
      * 'logically' no changes.
      * Context: System transaction.
      */
-    rc_t                         defrag();
+    rc_t                         defrag(const bool in_redo = false);
 
     /// stats for leaf nodes.
     rc_t             leaf_stats(btree_lf_stats_t& btree_lf);
@@ -954,7 +955,8 @@ private:
     void            _init(lsn_t lsn, lpid_t page_id,
         shpid_t root_pid, shpid_t pid0, lsn_t pid0_emlsn,
         shpid_t foster_pid, lsn_t foster_emlsn, int16_t btree_level,
-        const w_keystr_t &low, const w_keystr_t &high, const w_keystr_t &chain_fence_high);
+        const w_keystr_t &low, const w_keystr_t &high, 
+        const w_keystr_t &chain_fence_high, const bool ghost);
 };
 
 

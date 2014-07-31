@@ -428,7 +428,7 @@ TEST (RestartTest, MultiPageInFlightN) {
 }
 /**/
 
-/* Not passing due to 'item not found', but this is normal shutdown so no recovery, need testing *
+/* Not passing, full logging, btree_impl::_ux_undo_ghost_mark but the record is already a ghost *
 TEST (RestartTest, MultiPageInFlightNF) {
     test_env->empty_logdata_dir();
     restart_multi_page_in_flight context;
@@ -449,7 +449,7 @@ TEST (RestartTest, MultiPageInFlightC) {
 }
 **/
 
-/* Need testing, full logging *
+/* Failing, full logging, infinite loop *
 TEST (RestartTest, MultiPageInFlightCF) {
     test_env->empty_logdata_dir();
     restart_multi_page_in_flight context;
@@ -724,7 +724,7 @@ TEST (RestartTest, MultiConcurrentRedoN) {
 TEST (RestartTest, MultiConcurrentRedoNF) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_redo context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, m2_redo_fl_delay_restart), 0);  // false = simulated crash
+    EXPECT_EQ(test_env->runRestartTest(&context, false, m2_redo_fl_delay_restart), 0);  // false = no simulated crash
                                                                   // full logging
 }
 /**/
@@ -738,15 +738,14 @@ TEST (RestartTest, MultiConcurrentRedoC) {
 }
 /**/
 
-/* USE THIS ONE TO TEST FULL LOGGING */
-/* Need testing, full logging, in-flight is in the first page *
+/* Passing, full logging, in-flight is in the first page */
 TEST (RestartTest, MultiConcurrentRedoCF) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_redo context;
     EXPECT_EQ(test_env->runRestartTest(&context, true, m2_redo_fl_delay_restart), 0);   // true = simulated crash
                                                                   // full logging
 }
-**/
+/**/
 
 
 // Test case with simple transactions (1 in-flight) and crash shutdown, 
@@ -965,7 +964,7 @@ TEST (RestartTest, ConcurrentNoConflictC) {
 }
 **/
 
-/* Need testing, full logging *
+/* Failing: bfull logging, tree_impl_search.cpp:303, d > 0 *
 TEST (RestartTest, ConcurrentNoConflictCF) {
     test_env->empty_logdata_dir();
     restart_concurrent_no_conflict context;
@@ -1077,7 +1076,7 @@ TEST (RestartTest, ConcurrentConflictC) {
 }
 **/
 
-/* Need testing, full logging *
+/* Failing, full logging, btree_insert_log::undo *
 TEST (RestartTest, ConcurrentConflictCF) {
     test_env->empty_logdata_dir();
     restart_concurrent_conflict context;
@@ -1215,7 +1214,7 @@ TEST (RestartTest, MultiConcurrentConflictC) {
 }
 **/
 
-/* Need testing, full logging *
+/* Failing, full logging, btree_insert_log::undo *
 TEST (RestartTest, MultiConcurrentConflictCF) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_conflict context;

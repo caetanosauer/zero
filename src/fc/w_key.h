@@ -5,6 +5,7 @@
 #include <string.h> //#include <cstring>
 #include <string>
 #include <ostream>
+#include <iostream> // for cout
 #include <stdint.h>
 #include "w_endian.h"
 
@@ -276,9 +277,9 @@ inline bool w_keystr_t::construct_posinfkey() {
 
 // used only for asserts
 inline bool _valid_signbyte (const void *keystr) {
-    return ((const unsigned char*)keystr)[0] == SIGN_NEGINF
-        || ((const unsigned char*)keystr)[0] == SIGN_REGULAR
-        || ((const unsigned char*)keystr)[0] == SIGN_POSINF;
+    return ((const unsigned char*)keystr)[0] == SIGN_NEGINF  // *
+        || ((const unsigned char*)keystr)[0] == SIGN_REGULAR // +
+        || ((const unsigned char*)keystr)[0] == SIGN_POSINF; // ,
 }
 
 inline bool w_keystr_t::construct_from_keystr(const void *keystr, w_keystr_len_t length) {

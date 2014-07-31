@@ -394,7 +394,22 @@ btree_ghost_mark_log::redo(fixable_page_h *page)
     btree_ghost_t* dp = (btree_ghost_t*) data();
     for (size_t i = 0; i < dp->cnt; ++i) {
         w_keystr_t key (dp->get_key(i));
-        w_assert2(bp.fence_contains(key));
+
+// TODO(Restart)... 
+DBGOUT3( << "&&&& btree_ghost_mark_log::redo - key: " << key << ", bp low: " << bp.get_fence_low_key() << ", bp high no prefix: " << bp.get_fence_high_key_noprefix());
+
+        if (false == restart_m::use_redo_full_logging_restart())
+        {
+            // If full logging, data movement log records are generated to remove records 
+            // from source, we set the new fence keys for source page in page_rebalance
+            // log record which happens before the data movement log records.
+            // Which means the source page might contain records which will be moved
+            // out after the page_rebalance log records.  Do not validate the fence keys
+            // if full logging
+            
+            // Assert only if minmal logging
+            w_assert2(bp.fence_contains(key));
+        }
         bool found;
         slotid_t slot;
         bp.search(key, found, slot);
@@ -411,10 +426,24 @@ btree_ghost_mark_log::redo(fixable_page_h *page)
         }
         else
         {
+            // Full logging
             if (!found) 
             {        
 // TODO(Restart)...            
                 DBGOUT3( << "&&&& btree_ghost_mark_log::redo - page driven with full logging, key not found in page but it is okay");
+            }
+            else
+            {
+                bp.mark_ghost(slot);
+
+                // Delete a record by mark it ghost
+                // We are in REDO, no need to keep the ghost record for
+                // potential transaction abort/rollback
+                // Defrag and compact the page so it is ready for new insertions                
+                // the context is not system transaction and do not generate
+                // new log record during REDO
+                
+                bp.defrag(true /*in_redo*/);
             }
         }
     }
@@ -950,7 +979,8 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
                             NULL, 0, 0,       // no steal from src_2
                             false,            // src_2
                             false,            // No full logging
-                            false             // No logging
+                            false,            // No logging
+                            true              // fence key record is a ghost
                             ));
         }
         else
@@ -963,8 +993,9 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
 // TODO(Restart)...             
             DBGOUT3( << "&&&& btree_foster_rebalance_log: recover foster parent page, do not initialize the page, foster parent pid: " << bp.pid());
             DBGOUT3( << "&&&& Page had " << bp.nrecs() << " records");       
+            DBGOUT3( << "&&&& fence high: " << fence << ", high len: " << dp->_fence_len << ", chain: " << chain_high_key);
 
-            // Calling init_fence_keys to set the fence keys of the source page
+            // Calling init_fence_keys to set the new fence keys of the source page
             W_COERCE(bp.init_fence_keys(false /* set_low */, fence,                // Do not reset the low fence key
                                         true /* set_high */, fence,                // Reset the high key of the source page to fence key
                                         true /* set_chain */, chain_high_key,      // Reset the chain_high although it should be the same

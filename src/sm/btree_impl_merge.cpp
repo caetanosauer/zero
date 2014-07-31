@@ -189,6 +189,10 @@ rc_t btree_impl::_ux_rebalance_foster_core(
     //    the new information are in the log record.
     // No changes in the foster page id and foster emlsn of the destination page (foster child)
     //    because the assumption is that all these information in foster child page were already setup
+
+// TODO(Restart)...
+DBGOUT3( << "&&&& Generate foster_rebalance log record, fence:: " << mid_key << ", high: " << high_key << ", chain: " << chain_high_key);
+
     rc_t ret = log_btree_foster_rebalance(foster_p /*page, destination*/, page /*page2, source*/,
                                      move_count, mid_key /* fence*/, new_pid0, new_pid0_emlsn,
                                      high_key /*high*/, chain_high_key /*chain_high*/);

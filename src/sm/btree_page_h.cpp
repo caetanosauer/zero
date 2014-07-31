@@ -98,11 +98,12 @@ rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the 
                                 int               steal_to2,
                                 bool              steal_src2_pid0,
                                 const bool        full_logging,    // True if doing full logging for record movement
-                                const bool        log_src_1)       // Use only if full_logging = true
+                                const bool        log_src_1,       // Use only if full_logging = true
                                                                    // True if log movements from src1, used for
                                                                    // page rebalance
                                                                    // False if log movements from src2, used
                                                                    // for page merge
+                                const bool        ghost)           // Should the fence key record be a ghost
 {
     // Full logging for all record movements only if using page driven REDO operation
     // and we do not want to log the log_page_img_format log record
@@ -120,7 +121,7 @@ rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the 
     // this is actually the foster key) and chain_high_fence (actually the high fence) keys,
     // but do not log it, since the actual record movement will move all the records
     _init(new_lsn, pid, root, pid0, pid0_emlsn, foster, foster_emlsn,
-          l, fence_low, fence_high, chain_fence_high);
+          l, fence_low, fence_high, chain_fence_high, ghost);
 
     // steal records from old page
     if (steal_src1) {
@@ -348,6 +349,8 @@ DBGOUT3( << "&&&& Log for non-leaf insertion, key: " << keystr);
             // No difference between leaf or non-leaf page
             vector<slotid_t> slots;
             slots.push_back(i);    // Current 'i' is the slot for the deleted record
+// TODO(Restart)...
+DBGOUT3( << "&&&& Log for deletion, key: " << keystr);           
             rc = log_btree_ghost_mark(*steal_src, slots);
             if (rc.is_error()) 
             {
@@ -417,7 +420,7 @@ rc_t btree_page_h::init_fence_keys(
     else
     {
         // Get the low fence key from input parameter
-        low_fence.construct_from_keystr(&low, low.get_length_as_keystr());
+        low_fence.construct_from_keystr(low.buffer_as_keystr(), low.get_length_as_keystr());
         update_fence = true;
     }
 
@@ -430,7 +433,7 @@ rc_t btree_page_h::init_fence_keys(
     else
     {
         // Get the high key from input parameter    
-        high_key.construct_from_keystr(&high, high.get_length_as_keystr());
+        high_key.construct_from_keystr(high.buffer_as_keystr(), high.get_length_as_keystr());
         update_fence = true;
     }
 
@@ -441,7 +444,7 @@ rc_t btree_page_h::init_fence_keys(
     }
     else
     {
-        chain_fence_key.construct_from_keystr(&chain_high, chain_high.get_length_as_keystr());
+        chain_fence_key.construct_from_keystr(chain_high.buffer_as_keystr(), chain_high.get_length_as_keystr());
         update_fence = true;
     }
 
@@ -937,6 +940,9 @@ DBGOUT3( << "&&&& Incoming key: " << key << ", high fence key: " << get_fence_hi
     int16_t prefix_len       = get_prefix_length();
     int     trunc_key_length = key.get_length_as_keystr() - prefix_len;
 
+// TODO(Restart)...
+DBGOUT3( << "&&&& Incoming key length: " << trunc_key_length << ", element size: " << elem.size());
+
     w_assert1(check_space_for_insert_leaf(trunc_key_length, elem.size()));
 
     // where to insert?
@@ -1383,8 +1389,13 @@ bool btree_page_h::_is_consistent_poormankey() const {
 }
 
 
-rc_t btree_page_h::defrag() { 
-    w_assert1 (xct()->is_sys_xct());
+rc_t btree_page_h::defrag( const bool in_redo) { 
+    // defrag can be called from btree_ghost_mark_log::redo 
+    // when using full logging for page rebalance
+    // then the context is not system transaction and do not generate log record
+
+    if (false == in_redo)
+        w_assert1 (xct()->is_sys_xct());
     w_assert1 (is_fixed());
     w_assert1 (latch_mode() == LATCH_EX);
 
@@ -1396,7 +1407,7 @@ rc_t btree_page_h::defrag() {
         }
     }
     // defrag doesn't need log if there were no ghost records:
-    if (ghost_slots.size() > 0) {
+    if ((ghost_slots.size() > 0) && (false == in_redo)){
         W_DO (log_btree_ghost_reclaim(*this, ghost_slots));
     }
     
@@ -1419,8 +1430,9 @@ void btree_page_h::_init(lsn_t lsn, lpid_t page_id,
     int16_t btree_level,
     const w_keystr_t &low,                   // Low fence key
     const w_keystr_t &high,                  // High key, confusing naming, it is actually the foster key
-    const w_keystr_t &chain_fence_high) {    // Chain high fence key (if foster chain), 
+    const w_keystr_t &chain_fence_high,      // Chain high fence key (if foster chain), 
                                              // it is the high fence key for all foster child nodes
+    const bool ghost ) {                     // Should the fence key record be a ghost?                                             
 
     // Initialize the current page with fence keys and other information
 
@@ -1467,7 +1479,7 @@ void btree_page_h::_init(lsn_t lsn, lpid_t page_id,
     page()->btree_prefix_length = (int16_t) prefix_len;
 
     // fence-key record doesn't need poormkey; set to 0:
-    if (!page()->insert_item(nrecs() + 1, false /* ghost*/, 0, 0, fences)) {
+    if (!page()->insert_item(nrecs() + 1, ghost /* ghost*/, 0, 0, fences)) {
         w_assert0(false);
     }
 }
