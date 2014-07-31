@@ -1422,7 +1422,7 @@ TEST (RestartTest, ConcurrentSameInsertCF) {
      
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
-    options.restart_mode = m2_redo_fl_delay_restart; // minimal logging
+    options.restart_mode = m2_redo_fl_delay_restart; // full logging
     
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }

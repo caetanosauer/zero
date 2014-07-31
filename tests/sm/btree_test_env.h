@@ -107,7 +107,7 @@ public:
 struct restart_test_options {
     bool shutdown_mode;
     int32_t restart_mode;
-    bool enable_checkpoints;
+    bool enable_checkpoints = 'false';
 };
 
 // Begin... for test_restart.cpp and test_concurrent_restart.cpp
@@ -192,7 +192,7 @@ public:
 
     /**
      * This function is called after the simulated crash.
-     * This function is supposed to check if the recovery process did
+     * This function is supposed to check if the restart process did
      * a correct job.
      */
     virtual w_rc_t post_crash(ss_m *ssm) = 0;
@@ -319,14 +319,14 @@ public:
                       const std::vector<std::pair<const char*, const char*> > &additional_string_params);
 
     /**
-    * Runs a restart testcase in various recovery modes
-    * Caller specify the recovery mode through input parameter 'recovery_mode'
+    * Runs a restart testcase in various restart modes
+    * Caller specify the restart mode through input parameter 'restart_mode'
     * @param context the object to implement pre_shutdiwn(), post_shutdown().
     * @see restart_test_base
     */
     int runRestartTest (restart_test_base *context,
 		      bool fCrash,
-		      int32_t recovery_mode,
+		      int32_t restart_mode,
                       bool use_locks = false,
                       int32_t lock_table_size = default_locktable_size,
                       int disk_quota_in_pages = default_quota_in_pages,
@@ -340,14 +340,14 @@ public:
                       );
 
     /** This is most concise. New code should use this one. */
-    int runRestartTest (restart_test_base *context, bool fCrash, int32_t recovery_mode,
+    int runRestartTest (restart_test_base *context, bool fCrash, int32_t restart_mode,
                           bool use_locks, int disk_quota_in_pages, const sm_options &options);
 
     int runRestartTest (restart_test_base *context, restart_test_options *restart_options);
     
     int runRestartTest (restart_test_base *context,
                       bool fCrash,
-                      int32_t recovery_mode,                      
+                      int32_t restart_mode,                      
                       bool use_locks, int32_t lock_table_size,
                       int disk_quota_in_pages, int bufferpool_size_in_pages,
                       uint32_t cleaner_threads,
@@ -361,7 +361,7 @@ public:
                       const std::vector<std::pair<const char*, const char*> > &additional_string_params);
 
     /**
-     * Runs a crash testcase in serial traditional recovery mode
+     * Runs a crash testcase in serial traditional restart mode
      * @param context the object to implement pre_crash(), post_crash().
      * @see crash_test_base
      */
