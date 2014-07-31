@@ -499,8 +499,6 @@ int btree_test_env::runRestartTest (restart_test_base *context,
 int btree_test_env::runRestartTest (restart_test_base *context, bool fCrash, int32_t recovery_mode,  
                                       bool use_locks, int disk_quota_in_pages, const sm_options &options) {
     _use_locks = use_locks;
-    _fCrash = fCrash;
-    _recovery_mode = recovery_mode;
     // This function is called by restart test cases, while caller specify
     // the recovery mode via 'recovery_mode'
     // e.g., serial traditional, various concurrent combinations

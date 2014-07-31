@@ -456,8 +456,6 @@ public:
     ss_m* _ssm;
     bool _use_locks;
     restart_test_options* _restart_options;
-    bool _fCrash;
-    int32_t _recovery_mode;
     char log_dir[MAXPATHLEN];
     char vol_dir[MAXPATHLEN];
 
