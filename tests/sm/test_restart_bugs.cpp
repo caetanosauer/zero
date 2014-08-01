@@ -53,12 +53,7 @@ w_rc_t populate_multi_page_record(ss_m *ssm, stid_t &stid, bool fCommit)
     // One big transaction with multiple insertions
     
     W_DO(test_env->begin_xct());    
-
-//    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 1;       // Passing
-//    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 1 + 1;   // Passing
-//    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 1 + 2;   // Passing
-    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;   // Passing
-
+    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
 
     for (int i = 0; i < recordCount; ++i) 
     {
@@ -144,8 +139,8 @@ public:
         // Issue a checkpoint to make sure these committed txns are flushed
         W_DO(ss_m::checkpoint());         
 
-        // Now insert more records, make sure these records are at 
-        // the end of B-tree (append)
+        // Now insert more records, these records are at the beginning of B-tree
+        // therefore if these records cause a page rebalance, it would be in the parent page
         W_DO(test_env->btree_insert_and_commit(_stid, "aa3", "data3"));
         W_DO(test_env->btree_insert_and_commit(_stid, "aa1", "data1"));
         W_DO(test_env->btree_insert_and_commit(_stid, "aa2", "data2"));

@@ -898,8 +898,8 @@ public:
         // Issue a checkpoint to make sure these committed txns are flushed
         W_DO(ss_m::checkpoint());         
 
-        // Now insert more records, make sure these records are at 
-        // the end of B-tree (append)
+        // Now insert more records, these records are at the beginning of B-tree
+        // therefore if these records cause a page rebalance, it would be in the parent page        
         W_DO(test_env->btree_insert_and_commit(_stid, "aa3", "data3"));
         W_DO(test_env->btree_insert_and_commit(_stid, "aa1", "data1"));
         W_DO(test_env->btree_insert_and_commit(_stid, "aa2", "data2"));
@@ -1322,38 +1322,42 @@ public:
         // No wait in test code, but wait in restart
         // This is to ensure concurrency
         
-    if (fCrash && restart_mode < m3_default_restart) {    
-        W_DO(test_env->begin_xct());
-        w_rc_t rc = test_env->btree_insert(_stid, "aa4", "data4");  // Insert same record that was in-flight, should be possible.
+        if (fCrash && restart_mode < m3_default_restart)
+        {    
+            W_DO(test_env->begin_xct());
+            w_rc_t rc = test_env->btree_insert(_stid, "aa4", "data4");  // Insert same record that was in-flight, should be possible.
                                // Will fail in m2 due to conflict, should succeed in m3 (not immediately).
 
-        if (rc.is_error())
-        {
-        DBGOUT3(<<"restart_concurrent_same_insert: insert error: " << rc);        
+            if (rc.is_error())
+            {
+                DBGOUT3(<<"restart_concurrent_same_insert: insert error: " << rc);        
 
-        // Abort the failed scan txn
-        test_env->abort_xct();
+                // Abort the failed scan txn
+                test_env->abort_xct();
 
-        // Sleep to give Recovery sufficient time to finish
-        while (true == test_env->in_restart())
-        {
-            // Concurrent restart is still going on, wait
-            ::usleep(WAIT_TIME);            
-        }
+                // Sleep to give Recovery sufficient time to finish
+                while (true == test_env->in_restart())
+                {
+                    // Concurrent restart is still going on, wait
+                    ::usleep(WAIT_TIME);            
+                }
 
-            // Try again, should work now
-            W_DO(test_env->btree_insert(_stid, "aa4", "data4"));
-            W_DO(test_env->commit_xct());
-        }
-        else
+                // Try again, should work now
+                W_DO(test_env->begin_xct());                
+                W_DO(test_env->btree_insert(_stid, "aa4", "data4"));
+                W_DO(test_env->commit_xct());
+            }
+            else
+            {
+                std::cerr << "restart_concurrent_same_insert: insert operation should not succeed"<< std::endl;         
+                return RC(eINTERNAL);
+            }
+        } 
+        else 
         {
-            cerr << "restart_concurrent_same_insert: insert operation should not succeed"<< endl;         
-            return RC(eINTERNAL);
+            // M3 behavior
+            W_DO(test_env->btree_insert_and_commit(_stid, "aa4", "data4"));
         }
-    } 
-    else {
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa4", "data4"));
-    }
 
         W_DO(test_env->btree_scan(_stid, s));
         EXPECT_EQ (4, s.rownum);
@@ -1387,7 +1391,7 @@ TEST (RestartTest, ConcurrentSameInsertNF) {
 }
 /**/
 
-/* Failing (Internal error: REDO phase, restart_m::redo_pass() is valid for log driven REDO operation)*
+/* Passing */
 TEST (RestartTest, ConcurrentSameInsertC) {
     test_env->empty_logdata_dir();
     restart_concurrent_same_insert context;
@@ -1397,9 +1401,9 @@ TEST (RestartTest, ConcurrentSameInsertC) {
     options.restart_mode = m2_redo_delay_restart; // minimal logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
-/* Failing (same as above)* 
+/* Passing */
 TEST (RestartTest, ConcurrentSameInsertCF) {
     test_env->empty_logdata_dir();
     restart_concurrent_same_insert context;
@@ -1409,7 +1413,7 @@ TEST (RestartTest, ConcurrentSameInsertCF) {
     options.restart_mode = m2_redo_fl_delay_restart; // full logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-*/
+/**/
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
