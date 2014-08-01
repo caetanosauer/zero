@@ -291,6 +291,10 @@ void btree_impl::_ux_traverse_search(btree_impl::traverse_mode_t traverse_mode,
             slot_to_follow = t_follow_foster;
         }
     } else if (traverse_mode == t_fence_low_match) {
+
+// TODO(Restart)... 
+DBGOUT1 (<< "btree_impl::_ux_traverse_search - t_fence_low_match, key: " << key << ", current page: " << current->get_fence_low_key());
+
         int d = current->compare_with_fence_low(key);
         if (d == 0) {
             if (current->is_leaf()) {
@@ -299,7 +303,7 @@ void btree_impl::_ux_traverse_search(btree_impl::traverse_mode_t traverse_mode,
                 // follow left-most child.
                 slot_to_follow = t_follow_pid0;
             }
-        } else {
+        } else {       
             w_assert2(d > 0); // if d<0 (key<fence-low), we failed something
             if (current->compare_with_fence_high(key) >= 0) {
                 // key is even higher than fence-high, then there must be fostered page

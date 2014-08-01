@@ -202,7 +202,7 @@ public:
     }
 };
 
-/* Failing: bfull logging, tree_impl_search.cpp:303, d > 0 *
+/* Failing: bfull logging, btree_impl_search.cpp:303, d > 0 *
 TEST (RestartTest, ConcurrentNoConflictCF) {
     test_env->empty_logdata_dir();
     restart_concurrent_no_conflict context;
