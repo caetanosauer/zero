@@ -105,9 +105,10 @@ public:
 };
 
 struct restart_test_options {
+    restart_test_options() : enable_checkpoints(false) {}
     bool shutdown_mode;
     int32_t restart_mode;
-    bool enable_checkpoints = 'false';
+    bool enable_checkpoints;
 };
 
 // Begin... for test_restart.cpp and test_concurrent_restart.cpp
