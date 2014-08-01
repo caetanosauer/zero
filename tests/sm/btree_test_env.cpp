@@ -441,18 +441,10 @@ int btree_test_env::runBtreeTest (w_rc_t (*func)(ss_m*, test_volume_t*),
     return rv;
 }
 
-int btree_test_env::runRestartTest (restart_test_base *context,
-    restart_test_options *restart_options) {
-    _restart_options = restart_options;
-    return runRestartTest(context, restart_options->shutdown_mode,
-           restart_options->restart_mode);
-}
-
 // Begin... for test_restart.cpp, test_concurrent_restart.cpp
 int btree_test_env::runRestartTest (restart_test_base *context,
-    bool fCrash,
-    int32_t restart_mode,        
-    bool use_locks, int32_t lock_table_size,
+    restart_test_options *restart_options,
+	bool use_locks, int32_t lock_table_size,
     int disk_quota_in_pages, int bufferpool_size_in_pages,
     uint32_t cleaner_threads,
     uint32_t cleaner_interval_millisec_min,
@@ -460,7 +452,7 @@ int btree_test_env::runRestartTest (restart_test_base *context,
     uint32_t cleaner_write_buffer_pages,
     bool initially_enable_cleaners,
     bool enable_swizzling) {
-    return runRestartTest(context, fCrash, restart_mode, use_locks, disk_quota_in_pages,
+    return runRestartTest(context, restart_options, use_locks, disk_quota_in_pages,
             make_sm_options(lock_table_size,
                     bufferpool_size_in_pages,
                     cleaner_threads,
@@ -472,9 +464,8 @@ int btree_test_env::runRestartTest (restart_test_base *context,
 }
 
 int btree_test_env::runRestartTest (restart_test_base *context,
-    bool fCrash,
-    int32_t restart_mode,        
-    bool use_locks, int32_t lock_table_size,
+    restart_test_options *restart_options,
+	bool use_locks, int32_t lock_table_size,
     int disk_quota_in_pages, int bufferpool_size_in_pages,
     uint32_t cleaner_threads,
     uint32_t cleaner_interval_millisec_min,
@@ -485,7 +476,7 @@ int btree_test_env::runRestartTest (restart_test_base *context,
     const std::vector<std::pair<const char*, int64_t> > &additional_int_params,
     const std::vector<std::pair<const char*, bool> > &additional_bool_params,
     const std::vector<std::pair<const char*, const char*> > &additional_string_params) {
-    return runRestartTest(context, fCrash, restart_mode, use_locks, disk_quota_in_pages,
+    return runRestartTest(context, restart_options, use_locks, disk_quota_in_pages,
         make_sm_options(lock_table_size,
                     bufferpool_size_in_pages,
                     cleaner_threads,
@@ -496,7 +487,7 @@ int btree_test_env::runRestartTest (restart_test_base *context,
                     enable_swizzling,
                     additional_int_params, additional_bool_params, additional_string_params));
 }
-int btree_test_env::runRestartTest (restart_test_base *context, bool fCrash, int32_t restart_mode,  
+int btree_test_env::runRestartTest (restart_test_base *context, restart_test_options *restart_options,
                                       bool use_locks, int disk_quota_in_pages, const sm_options &options) {
     _use_locks = use_locks;
     // This function is called by restart test cases, while caller specify
@@ -507,11 +498,11 @@ int btree_test_env::runRestartTest (restart_test_base *context, bool fCrash, int
     int rv;
     w_rc_t e;
         {
-        if (true == fCrash)
+        if (restart_options->shutdown_mode == simulated_crash)
             {
             // Simulated crash
             restart_dirty_test_pre_functor functor(context);
-            testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options, restart_mode);  // User specified restart mode
+            testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options, restart_options->restart_mode);  // User specified restart mode
             e = smtu.fork();
             if(e.is_error()) 
                 {
@@ -536,7 +527,7 @@ int btree_test_env::runRestartTest (restart_test_base *context, bool fCrash, int
             {
             // Clean shutdown
             restart_clean_test_pre_functor functor(context);
-            testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options, restart_mode);  // User specified restart mode
+            testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options, restart_options->restart_mode);  // User specified restart mode
             e = smtu.fork();
             if(e.is_error()) 
                 {
@@ -561,7 +552,7 @@ int btree_test_env::runRestartTest (restart_test_base *context, bool fCrash, int
     DBGOUT2 ( << "Going to call post_shutdown()...");
         {
         restart_test_post_functor functor(context);
-        testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options, restart_mode);   // User specified restart mode
+        testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options, restart_options->restart_mode);   // User specified restart mode
 
         w_rc_t e = smtu.fork();
         if(e.is_error()) 

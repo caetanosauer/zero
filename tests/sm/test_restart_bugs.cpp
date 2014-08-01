@@ -216,8 +216,10 @@ public:
 TEST (RestartTest, ConcurrentNoConflictCF) {
     test_env->empty_logdata_dir();
     restart_concurrent_no_conflict context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, m2_both_fl_delay_restart), 0);   // true = simulated crash
-                                                                  // full logging
+    restart_test_options options;
+	options.shutdown_mode = simulated_crash;
+	options.restart_mode = m2_both_fl_delay_restart; // full logging
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 **/
 

@@ -326,8 +326,7 @@ public:
     * @see restart_test_base
     */
     int runRestartTest (restart_test_base *context,
-                      bool fCrash,
-                      int32_t restart_mode,
+					  restart_test_options *restart_options,	
                       bool use_locks = false,
                       int32_t lock_table_size = default_locktable_size,
                       int disk_quota_in_pages = default_quota_in_pages,
@@ -341,14 +340,11 @@ public:
                       );
 
     /** This is most concise. New code should use this one. */
-    int runRestartTest (restart_test_base *context, bool fCrash, int32_t restart_mode,
+    int runRestartTest (restart_test_base *context, restart_test_options *restart_options,
                           bool use_locks, int disk_quota_in_pages, const sm_options &options);
 
-    int runRestartTest (restart_test_base *context, restart_test_options *restart_options);
-    
     int runRestartTest (restart_test_base *context,
-                      bool fCrash,
-                      int32_t restart_mode,                      
+					  restart_test_options *restart_options,
                       bool use_locks, int32_t lock_table_size,
                       int disk_quota_in_pages, int bufferpool_size_in_pages,
                       uint32_t cleaner_threads,

@@ -120,7 +120,10 @@ public:
 TEST (RestartTest, EmptyN) {
     test_env->empty_logdata_dir();
     restart_empty context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);  // false = no simulated crash, normal shutdown
+	restart_test_options options;
+	options.shutdown_mode = normal_shutdown;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -128,7 +131,10 @@ TEST (RestartTest, EmptyN) {
 TEST (RestartTest, EmptyC) {
     test_env->empty_logdata_dir();
     restart_empty context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);   // true = simulated crash
+	restart_test_options options;
+	options.shutdown_mode = simulated_crash;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -165,7 +171,10 @@ public:
 TEST (RestartTest, BasicN) {
     test_env->empty_logdata_dir();
     restart_basic context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);  // false = no simulated crash, normal shutdown
+	restart_test_options options;
+	options.shutdown_mode = normal_shutdown;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -173,7 +182,10 @@ TEST (RestartTest, BasicN) {
 TEST (RestartTest, BasicC) {
     test_env->empty_logdata_dir();
     restart_basic context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);  // true = simulated crash
+	restart_test_options options;
+	options.shutdown_mode = simulated_crash;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -213,7 +225,10 @@ public:
 TEST (RestartTest, CheckpointN) {
     test_env->empty_logdata_dir();
     restart_checkpoint context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);  // false = no simulated crash, normal shutdown
+	restart_test_options options;
+	options.shutdown_mode = simulated_crash;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -221,7 +236,10 @@ TEST (RestartTest, CheckpointN) {
 TEST (RestartTest, CheckpointC) {
     test_env->empty_logdata_dir();
     restart_checkpoint context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);   // true = simulated crash
+	restart_test_options options;
+	options.shutdown_mode = simulated_crash;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -254,7 +272,10 @@ public:
 TEST (RestartTest, ManySimpleN) {
     test_env->empty_logdata_dir();
     restart_many context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);  // false = no simulated crash, normal shutdown
+	restart_test_options options;
+	options.shutdown_mode = normal_shutdown;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -262,7 +283,10 @@ TEST (RestartTest, ManySimpleN) {
 TEST (RestartTest, ManySimpleC) {
     test_env->empty_logdata_dir();
     restart_many context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);   // true = simulated crash
+	restart_test_options options;
+	options.shutdown_mode = simulated_crash;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -299,7 +323,10 @@ public:
 TEST (RestartTest, ManyCheckpointN) {
     test_env->empty_logdata_dir();
     restart_many_checkpoint context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);  // false = no simulated crash, normal shutdown
+	restart_test_options options;
+	options.shutdown_mode = normal_shutdown;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -307,7 +334,10 @@ TEST (RestartTest, ManyCheckpointN) {
 TEST (RestartTest, ManyCheckpointC) {
     test_env->empty_logdata_dir();
     restart_many_checkpoint context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);   // true = simulated crash
+	restart_test_options options;
+	options.shutdown_mode = simulated_crash;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -346,7 +376,10 @@ public:
 TEST (RestartTest, InflightN) {
     test_env->empty_logdata_dir();
     restart_inflight context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);  // false = no simulated crash, normal shutdown
+	restart_test_options options;
+	options.shutdown_mode = normal_shutdown;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -354,7 +387,10 @@ TEST (RestartTest, InflightN) {
 TEST (RestartTest, InflightC) {
     test_env->empty_logdata_dir();
     restart_inflight context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);   // true = simulated crash
+	restart_test_options options;
+	options.shutdown_mode = simulated_crash;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -395,7 +431,10 @@ public:
 TEST (RestartTest, InflightCheckpointN) {
     test_env->empty_logdata_dir();
     restart_inflight_checkpoint context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);  // false = no simulated crash, normal shutdown
+    restart_test_options options;
+	options.shutdown_mode = normal_shutdown;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -404,7 +443,10 @@ TEST (RestartTest, InflightCheckpointN) {
 TEST (RestartTest, InflightCheckpointC) {
     test_env->empty_logdata_dir();
     restart_inflight_checkpoint context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);   // true = simulated crash
+    restart_test_options options;
+	options.shutdown_mode = simulated_crash;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -446,7 +488,10 @@ public:
 TEST (RestartTest, ComplicInflightN) {
     test_env->empty_logdata_dir();
     restart_complic_inflight context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);  // false = no simulated crash
+    restart_test_options options;
+	options.shutdown_mode = normal_shutdown;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -454,7 +499,10 @@ TEST (RestartTest, ComplicInflightN) {
 TEST (RestartTest, ComplicInflightC) {
     test_env->empty_logdata_dir();
     restart_complic_inflight context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);  // true = simulated crash
+    restart_test_options options;
+	options.shutdown_mode = simulated_crash;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -493,7 +541,10 @@ public:
 TEST (RestartTest, InflightManyN) {
     test_env->empty_logdata_dir();
     restart_inflight_many context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0); // false = no simulated crash, normal shutdown
+    restart_test_options options;
+	options.shutdown_mode = normal_shutdown;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -501,7 +552,10 @@ TEST (RestartTest, InflightManyN) {
 TEST (RestartTest, InflightManyC) {
     test_env->empty_logdata_dir();
     restart_inflight_many context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);  // true = simulated crash
+    restart_test_options options;
+	options.shutdown_mode = simulated_crash;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -543,7 +597,10 @@ public:
 TEST (RestartTest, InflightCkptManyN) {
     test_env->empty_logdata_dir();
     restart_inflight_ckpt_many context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0); // false = no simulated crash, normal shutdown
+    restart_test_options options;
+	options.shutdown_mode = normal_shutdown;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -551,7 +608,10 @@ TEST (RestartTest, InflightCkptManyN) {
 TEST (RestartTest, InflightCkptManyC) {
     test_env->empty_logdata_dir();
     restart_inflight_ckpt_many context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);  // true = simulated crash
+    restart_test_options options;
+	options.shutdown_mode = simulated_crash;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -590,7 +650,10 @@ public:
 TEST (RestartTest, AbortedRemoveN) {
     test_env->empty_logdata_dir();
     restart_aborted_remove context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);  // false = no simulated crash;
+    restart_test_options options;
+	options.shutdown_mode = normal_shutdown;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -598,7 +661,10 @@ TEST (RestartTest, AbortedRemoveN) {
 TEST (RestartTest, AbortedRemoveC) {
     test_env->empty_logdata_dir();
     restart_aborted_remove context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);   // true = simulated crash; 
+    restart_test_options options;
+	options.shutdown_mode = simulated_crash;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -650,7 +716,10 @@ public:
 TEST (RestartTest, MultithrdBasicN) {
     test_env->empty_logdata_dir();
     restart_multithrd_basic context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);     // false = normal shutdown
+    restart_test_options options;
+	options.shutdown_mode = normal_shutdown;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -658,7 +727,10 @@ TEST (RestartTest, MultithrdBasicN) {
 TEST (RestartTest, MultithrdBasicC) {
     test_env->empty_logdata_dir();
     restart_multithrd_basic context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);     // true = crash shutdown
+    restart_test_options options;
+	options.shutdown_mode = simulated_crash;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -713,7 +785,10 @@ public:
 TEST (RestartTest, MultithrdInflight1N) {
     test_env->empty_logdata_dir();
     restart_multithrd_inflight1 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);     // false = normal shutdown
+    restart_test_options options;
+	options.shutdown_mode = normal_shutdown;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -721,7 +796,10 @@ TEST (RestartTest, MultithrdInflight1N) {
 TEST (RestartTest, MultithrdInflight1C) {
     test_env->empty_logdata_dir();
     restart_multithrd_inflight1 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);     // true = crash shutdown
+    restart_test_options options;
+	options.shutdown_mode = simulated_crash;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -781,7 +859,10 @@ public:
 TEST (RestartTest, MultithrdAbort1N) {
     test_env->empty_logdata_dir();
     restart_multithrd_abort1 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);     // false = normal shutdown
+    restart_test_options options;
+	options.shutdown_mode = normal_shutdown;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -790,7 +871,10 @@ TEST (RestartTest, MultithrdAbort1N) {
 TEST (RestartTest, MultithrdAbort1C) {
     test_env->empty_logdata_dir();
     restart_multithrd_abort1 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);     // true = crash shutdown
+    restart_test_options options;
+	options.shutdown_mode = simulated_crash;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -860,7 +944,10 @@ public:
 TEST (RestartTest, MultithrdCheckpN) {
     test_env->empty_logdata_dir();
     restart_multithrd_chckp context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);     // false = normal shutdown
+    restart_test_options options;
+	options.shutdown_mode = normal_shutdown;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -868,7 +955,10 @@ TEST (RestartTest, MultithrdCheckpN) {
 TEST (RestartTest, MultithrdCheckpC) {
     test_env->empty_logdata_dir();
     restart_multithrd_chckp context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);    // true = crash shutdown
+    restart_test_options options;
+	options.shutdown_mode = simulated_crash;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -943,7 +1033,10 @@ public:
 TEST (RestartTest, MultithrdInflightN) {
     test_env->empty_logdata_dir();
     restart_multithrd_inflight2 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);    // false = normal shutdown
+    restart_test_options options;
+	options.shutdown_mode = normal_shutdown;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -952,7 +1045,10 @@ TEST (RestartTest, MultithrdInflightN) {
 TEST (RestartTest, MultithrdInflightC) {
     test_env->empty_logdata_dir();
     restart_multithrd_inflight2 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);    // true = crash shutdown
+    restart_test_options options;
+	options.shutdown_mode = simulated_crash;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -1050,8 +1146,11 @@ public:
 TEST (RestartTest, MultithrdAbort2N) {
     test_env->empty_logdata_dir();
     restart_multithrd_abort2 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);    // false = normal shutdown
-    }
+    restart_test_options options;
+	options.shutdown_mode = normal_shutdown;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
 /**/
 
 /* Crash Shutdown scenario for restart_multithrd_abort2 */
@@ -1059,7 +1158,10 @@ TEST (RestartTest, MultithrdAbort2N) {
 TEST (RestartTest, MultithrdAbort2C) {
     test_env->empty_logdata_dir();
     restart_multithrd_abort2 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);    // true = crash shutdown
+    restart_test_options options;
+	options.shutdown_mode = simulated_crash;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -1137,7 +1239,10 @@ public:
 TEST (RestartTest, MultithrdInflight3N) {
     test_env->empty_logdata_dir();
     restart_multithrd_inflight3 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);    // false = normal shutdown
+    restart_test_options options;
+	options.shutdown_mode = normal_shutdown;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -1145,7 +1250,10 @@ TEST (RestartTest, MultithrdInflight3N) {
 TEST (RestartTest, MultithrdInflight3C) {
     test_env->empty_logdata_dir();
     restart_multithrd_inflight3 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);    // true = crash shutdown
+    restart_test_options options;
+	options.shutdown_mode = simulated_crash;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
     
@@ -1158,7 +1266,7 @@ public:
         test_env->begin_xct();
         test_env->btree_update(pstid, "aa0", "data00");
         test_env->btree_insert(pstid, "aa1", "data1");
-    ss_m::checkpoint();
+    	ss_m::checkpoint();
         test_env->btree_remove(pstid, "aa0");
         ss_m::detach_xct();
     }    
@@ -1180,7 +1288,7 @@ public:
         test_env->btree_remove(pstid, "aa5");
         test_env->btree_update(pstid, "aa6", "data66");
         test_env->btree_remove(pstid, "aa7");
-    ss_m::checkpoint();
+    	ss_m::checkpoint();
         test_env->btree_update(pstid, "aa6", "data666");
         test_env->btree_insert(pstid, "aa5", "data55");
         ss_m::detach_xct();
@@ -1205,7 +1313,7 @@ public:
 
     w_rc_t post_shutdown(ss_m *) {
         output_durable_lsn(4);
-    x_btree_scan_result s;
+    	x_btree_scan_result s;
         W_DO(test_env->btree_scan(_stid, s));
         EXPECT_EQ(5, s.rownum);
         EXPECT_EQ(std::string("aa0"), s.minkey);
@@ -1221,7 +1329,10 @@ public:
 TEST (RestartTest, MultithrdInflightChckp1N) {
     test_env->empty_logdata_dir();
     restart_multithrd_inflight_chckp1 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);    // false = normal shutdown
+    restart_test_options options;
+	options.shutdown_mode = normal_shutdown;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -1229,7 +1340,10 @@ TEST (RestartTest, MultithrdInflightChckp1N) {
 TEST (RestartTest, MultithrdInflightChckp1C) {
     test_env->empty_logdata_dir();
     restart_multithrd_inflight_chckp1 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);    // true = crash shutdown
+    restart_test_options options;
+	options.shutdown_mode = simulated_crash;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -1238,7 +1352,7 @@ class restart_multithrd_ldata1 : public restart_test_base
 {
 public:
     static void t1Run(stid_t pstid) {
-    populate_records(pstid, false, false, '1'); // Populate records without checkpoint, commit, keySuffix '1'
+    	populate_records(pstid, false, false, '1'); // Populate records without checkpoint, commit, keySuffix '1'
     }
     static void t2Run(stid_t pstid) {
         populate_records(pstid, false, false, '2');
@@ -1280,14 +1394,20 @@ public:
 TEST (RestartTest, MultithrdLData1N) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata1 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);    // false = normal shutdown
+    restart_test_options options;
+	options.shutdown_mode = normal_shutdown;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 
 /* Passing */
 TEST (RestartTest, MultithrdLData1C) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata1 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);    // true = crash shutdown
+    restart_test_options options;
+	options.shutdown_mode = simulated_crash;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -1338,14 +1458,20 @@ public:
 TEST (RestartTest, MultithrdLData2N) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata2 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);    // false = normal shutdown
+    restart_test_options options;
+	options.shutdown_mode = normal_shutdown;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 
 /* Passing */
 TEST (RestartTest, MultithrdLData2C) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata2 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);    // true = crash shutdown
+    restart_test_options options;
+	options.shutdown_mode = simulated_crash;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -1355,13 +1481,13 @@ class restart_multithrd_ldata3 : public restart_test_base
 {
 public:
     static void t1Run(stid_t pstid) {
-    populate_records(pstid, false, true, '1'); // Populate records without checkpoint, don't commit, keySuffix '1'
+    	populate_records(pstid, false, true, '1'); // Populate records without checkpoint, don't commit, keySuffix '1'
     }
     static void t2Run(stid_t pstid) {
-    populate_records(pstid, false, false, '2'); // Populate records without checkpoint, commit, keySuffix '2'
+    	populate_records(pstid, false, false, '2'); // Populate records without checkpoint, commit, keySuffix '2'
     }
     static void t3Run(stid_t pstid) {
-    populate_records(pstid, false, true, '3');
+    	populate_records(pstid, false, true, '3');
     }
     
     w_rc_t pre_shutdown(ss_m *ssm) {
@@ -1382,14 +1508,14 @@ public:
     }
     
     w_rc_t post_shutdown(ss_m *) {
-    output_durable_lsn(4);
+    	output_durable_lsn(4);
         x_btree_scan_result s;
         W_DO(test_env->btree_scan(_stid, s));
         const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
         EXPECT_EQ (recordCount, s.rownum); 
-    EXPECT_EQ(std::string("key002"), s.minkey);
-    EXPECT_EQ(getMaxKeyString('2'), s.maxkey);
-    return RCOK;
+    	EXPECT_EQ(std::string("key002"), s.minkey);
+    	EXPECT_EQ(getMaxKeyString('2'), s.maxkey);
+    	return RCOK;
     }
 };
 
@@ -1397,14 +1523,20 @@ public:
 TEST (RestartTest, MultithrdLData3N) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata3 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);    // false = normal shutdown
+    restart_test_options options;
+	options.shutdown_mode = normal_shutdown;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 
 /* Passing */
 TEST (RestartTest, MultithrdLData3C) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata3 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);    // true = crash shutdown
+    restart_test_options options;
+	options.shutdown_mode = simulated_crash;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -1455,14 +1587,20 @@ public:
 TEST (RestartTest, MultithrdLData4N) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata4 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);    // false = normal shutdown
+    restart_test_options options;
+	options.shutdown_mode = normal_shutdown;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 
 /* Passing */
 TEST (RestartTest, MultithrdLData4C) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata4 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);    // true = crash shutdown
+    restart_test_options options;
+	options.shutdown_mode = simulated_crash;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -1471,15 +1609,15 @@ class restart_multithrd_ldata5 : public restart_test_base
 {
 public:
     static void t1Run(stid_t pstid) {
-    populate_records(pstid, true, true, '1'); // Populate records w/ checkpoint, don't commit, keySuffix '1'
+    	populate_records(pstid, true, true, '1'); // Populate records w/ checkpoint, don't commit, keySuffix '1'
     }
     static void t2Run(stid_t pstid) {
-    populate_records(pstid, true, false, '2'); // Populate records w/ checkpoint, commit, keySuffix '2'
-    delete_records(pstid, false, false, '2');  // Delete half of those, w/o checkpoint, commit, keySuffix '2'
+    	populate_records(pstid, true, false, '2'); // Populate records w/ checkpoint, commit, keySuffix '2'
+    	delete_records(pstid, false, false, '2');  // Delete half of those, w/o checkpoint, commit, keySuffix '2'
     }
     static void t3Run(stid_t pstid) {
-    populate_records(pstid, false, false, '3'); // Populate records w/o checkpoint, commit, keySuffix '3'
-    delete_records(pstid, false, true, '3');    // Delete half of those, w/o checkpoint, don't commit, keySuffix '3'
+    	populate_records(pstid, false, false, '3'); // Populate records w/o checkpoint, commit, keySuffix '3'
+    	delete_records(pstid, false, true, '3');    // Delete half of those, w/o checkpoint, don't commit, keySuffix '3'
     }
     
     w_rc_t pre_shutdown(ss_m *ssm) {
@@ -1500,15 +1638,15 @@ public:
     }
     
     w_rc_t post_shutdown(ss_m *) {
-    output_durable_lsn(4);
+    	output_durable_lsn(4);
         x_btree_scan_result s;
         W_DO(test_env->btree_scan(_stid, s));
         int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5; // Inserts from t3 (not deleted)
         recordCount += ((SM_PAGESIZE / btree_m::max_entry_size()) * 5) / 2;  // Inserts from t2 (half deleted)
-    EXPECT_EQ (recordCount, s.rownum); 
-    EXPECT_EQ(std::string("key003"), s.minkey);
-    EXPECT_EQ(getMaxKeyString('3'), s.maxkey);
-    return RCOK;
+    	EXPECT_EQ (recordCount, s.rownum); 
+    	EXPECT_EQ(std::string("key003"), s.minkey);
+    	EXPECT_EQ(getMaxKeyString('3'), s.maxkey);
+    	return RCOK;
     }
 };
 
@@ -1516,7 +1654,10 @@ public:
 TEST (RestartTest, MultithrdLData5N) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata5 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, false, m1_default_restart), 0);    // false = normal shutdown
+    restart_test_options options;
+	options.shutdown_mode = normal_shutdown;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
@@ -1524,7 +1665,10 @@ TEST (RestartTest, MultithrdLData5N) {
 TEST (RestartTest, MultithrdLData5C) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata5 context;
-    EXPECT_EQ(test_env->runRestartTest(&context, true, m1_default_restart), 0);    // true = crash shutdown
+    restart_test_options options;
+	options.shutdown_mode = simulated_crash;
+	options.restart_mode = m1_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
 
