@@ -20,6 +20,8 @@
 #include "xct.h"
 #include "lock_s.h"
 #include <vector>
+#include "restart.h"
+
 
 rc_t
 btree_impl::_ux_insert(
