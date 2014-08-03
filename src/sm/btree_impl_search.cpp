@@ -120,7 +120,7 @@ btree_impl::_ux_traverse(volid_t vol, snum_t store, const w_keystr_t &key,
             --times; // We don't penalize this.  Do it again.
             continue;
         }
-        
+
         rc_t rc = _ux_traverse_recurse (root_p, key, traverse_mode, leaf_latch_mode, leaf, 
                                         leaf_pid_causing_failed_upgrade, from_undo);
         if (rc.is_error()) {
@@ -247,8 +247,7 @@ btree_impl::_ux_traverse_recurse(btree_page_h&                start,
        
         if (slot_to_follow != t_follow_foster && next->get_foster() != 0) {
             // We followed a real-child pointer and found that it has foster... let's adopt it! (but
-            // opportunistically).  Just like eager adoption, it returns eGOODRETRY and we will
-            // retry if it succeeded.  otherwise, go on.
+            // opportunistically).  Same as  eager adoption, retry if eGOODRETRY, otherwise go on
             W_DO(_ux_traverse_try_opportunistic_adopt(*current, *next));
         }
 
@@ -292,6 +291,10 @@ void btree_impl::_ux_traverse_search(btree_impl::traverse_mode_t traverse_mode,
             slot_to_follow = t_follow_foster;
         }
     } else if (traverse_mode == t_fence_low_match) {
+
+// TODO(Restart)... 
+DBGOUT1 (<< "btree_impl::_ux_traverse_search - t_fence_low_match, key: " << key << ", current page: " << current->get_fence_low_key());
+
         int d = current->compare_with_fence_low(key);
         if (d == 0) {
             if (current->is_leaf()) {
@@ -300,7 +303,7 @@ void btree_impl::_ux_traverse_search(btree_impl::traverse_mode_t traverse_mode,
                 // follow left-most child.
                 slot_to_follow = t_follow_pid0;
             }
-        } else {
+        } else {       
             w_assert2(d > 0); // if d<0 (key<fence-low), we failed something
             if (current->compare_with_fence_high(key) >= 0) {
                 // key is even higher than fence-high, then there must be fostered page

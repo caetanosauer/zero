@@ -69,12 +69,16 @@ void log_m::dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t 
 }
 
 rc_t log_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn, 
-                                    const bool validate) {
+                                    const bool actual_emlsn) {
+    // Single-Page-Recovery operation does not hold latch on the page to be recovered, because 
+    // it assumes the page is private until recovered.  It is not the case during
+    // recovery.  It is caller's responsibility to hold latch before accessing Single-Page-Recovery
+
     // First, retrieve the backup page we will be based on.
     // If this backup is enough recent, we have to apply only a few logs.
     w_assert1(p.is_fixed());
     lpid_t pid = p.pid();
-    DBGOUT1(<< "SPR on " << pid << ", EMLSN=" << emlsn);
+    DBGOUT1(<< "Single-Page-Recovery on " << pid << ", EMLSN=" << emlsn);
     if (smlevel_0::bk->page_exists(p.vol(), pid.page)) {
         W_DO(smlevel_0::bk->retrieve_page(*p.get_generic_page(), p.vol(), pid.page));
         w_assert1(pid == p.pid());
@@ -114,16 +118,16 @@ rc_t log_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
     std::vector<char> buffer(SPR_LOG_BUFSIZE); // TODO, we should have an object pool for this.
     std::vector<logrec_t*> ordered_entires;
     W_DO(log_core::THE_LOG->_collect_single_page_recovery_logs(pid, p.lsn(), emlsn,
-        &buffer[0], SPR_LOG_BUFSIZE, ordered_entires, validate));
+        &buffer[0], SPR_LOG_BUFSIZE, ordered_entires, actual_emlsn));
     DBGOUT1(<< "Collected log. About to apply " << ordered_entires.size() << " logs");
     W_DO(log_core::THE_LOG->_apply_single_page_recovery_logs(p, ordered_entires));
 
-    // after SPR, the page should be exactly the requested LSN, perform the validation only if
-    // it is told to do so.  Caller would set the validate to false if virgin or corrupted in_doubt page
-    // from recovery
-    if (true == validate)
+    // after Single-Page-Recovery, the page should be exactly the requested LSN, perform the validation only if
+    // caller is using an actual emlsn
+    // An estimated emlsn would be used for a corrupted page during recovery
+    if (true == actual_emlsn)
         w_assert0(p.lsn() == emlsn);
-    DBGOUT1(<< "SPR done!");
+    DBGOUT1(<< "Single-Page-Recovery done!");
     return RCOK;
 }
 
@@ -134,7 +138,7 @@ rc_t log_core::_collect_single_page_recovery_logs(
     char* log_copy_buffer, size_t buffer_size,
     std::vector<logrec_t*>& ordered_entries,
     const bool valid_start_emlan)              // In: true if emlsn is the last write of the page,
-                                               //     false if a assumed starting point
+                                               //     false if an assumed starting point
 {
     // When caller from recovery REDO phase on a virgin or corrupted page, we do not have
     // a valid emlsn and page last-write lsn has been set to lsn_t::null.
@@ -151,20 +155,23 @@ rc_t log_core::_collect_single_page_recovery_logs(
 
     if (false == valid_start_emlan)
     {
-        // The emlsn is not the actual last write on the page, most likely it is a corrupted page
+        // Failure on failure scenario    
+        // The emlsn is not the actual last write on the page, it is a corrupted page
         // during recovery, we do not have a parent page to retrieve the actual last write lsn,
-        // and we cannot trust the last write LSN due to corruption, using the last LSN 
+        // and we cannot trust the last write LSN due to page corruption, using the last LSN 
         // before system crash as the emlsn, therefore we need to find the actual emlsn first
-        //
-// TODO(Restart)... how to find the valid emlsn?  Need backward log scan and slow
 
-        
+////////////////////////////////////////
+// TODO(Restart)... NYI.  How to find the valid emlsn?  Need backward log scan and slow
+////////////////////////////////////////
+
+        DBGOUT1(<< "log_core::_collect_single_page_recovery_logs: search for the actual emlsn");
+        W_FATAL_MSG(fcINTERNAL, << "log_core::_collect_single_page_recovery_logs - failure on failure, NYI");       
     }
 
     for (lsn_t nxt = emlsn; current_lsn < nxt && nxt != lsn_t::null;) {
         logrec_t* record = NULL;
         lsn_t obtained = nxt;
-        DBGOUT1(<< "log_core::_collect_single_page_recovery_logs: fetch: " << obtained);
         rc_t rc = fetch(obtained, record, NULL, true); 
         release(); // release _partition_lock immediately
         if ((rc.is_error()) && (eEOF == rc.err_num()))
@@ -176,6 +183,8 @@ rc_t log_core::_collect_single_page_recovery_logs(
             ERROUT(<<"log_core::fetch() returned a different LSN, old log partition already"
                 " wiped?? nxt=" << nxt << ", obtained=" << obtained);
         }
+
+        DBGOUT1(<< "log_core::_collect_single_page_recovery_logs, log = " << *record);
 
         if (buffer_capacity < record->length()) {
             // This might happen when we have a really long page log chain,
@@ -216,12 +225,12 @@ rc_t log_core::_collect_single_page_recovery_logs(
 
 rc_t log_core::_apply_single_page_recovery_logs(fixable_page_h &p,
     const std::vector<logrec_t*>& ordered_entries) {
-    // So far, we assume the SPR target is a fixable page with latches.
+    // So far, we assume the Single-Page-Recovery target is a fixable page with latches.
     // So far no plan to extend it to non-fixable pages.
     for (std::vector<logrec_t*>::const_iterator it = ordered_entries.begin();
          it != ordered_entries.end(); ++it) {
         logrec_t *record = *it;
-        DBGOUT1(<< "Applying SPR. current page(" << p.pid() << ") LSN="
+        DBGOUT1(<< "Applying Single-Page-Recovery. current page(" << p.pid() << ") LSN="
             << p.lsn() << ", log=" << *record);
         w_assert1(record->is_redo());
         record->redo(&p);

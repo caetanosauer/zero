@@ -20,6 +20,8 @@
 #include "xct.h"
 #include "lock_s.h"
 #include <vector>
+#include "restart.h"
+
 
 rc_t
 btree_impl::_ux_insert(
@@ -116,6 +118,8 @@ btree_impl::_ux_insert_core(
         }
 
         // do it in one-go
+// TODO(Restart)...        
+DBGOUT3( << "&&&& Log for regular insertion, key: " << key);        
         W_DO(log_btree_insert_nonghost(leaf, key, el));
         leaf.insert_nonghost(key, el);
         // W_DO (_sx_reserve_ghost(leaf, key, el.size()));
@@ -506,17 +510,23 @@ btree_impl::_ux_remove_core(volid_t vol, snum_t store, const w_keystr_t &key, co
     }
 
     // it might be already ghost..
-    if (leaf.is_ghost(slot)) {
+    if (leaf.is_ghost(slot)) 
+    {
         return RC(eNOTFOUND);
     }
+    else
+    {
+// TODO(Restart)... 
+DBGOUT3( << "&&&& Log for deletion, key: " << key);
+    
+        // log first
+        vector<slotid_t> slots;
+        slots.push_back(slot);
+        W_DO(log_btree_ghost_mark (leaf, slots));
 
-    // log first
-    vector<slotid_t> slots;
-    slots.push_back(slot);
-    W_DO(log_btree_ghost_mark (leaf, slots));
-
-    // then mark it as ghost
-    leaf.mark_ghost (slot);
+        // then mark it as ghost
+        leaf.mark_ghost (slot);
+    }
     return RCOK;
 }
 
@@ -537,6 +547,26 @@ btree_impl::_ux_undo_ghost_mark(volid_t vol, snum_t store, const w_keystr_t &key
     if(!found) {
         return RC(eNOTFOUND);
     }
+
+    // Undo a remove (delete operation), which becomes an insert
+    // the ghost (deleted) record is available in page, so we only need to unmark the ghost
+    
+    // The undo operation (compensation) is used for 1) transaction abort, 2) recovery undo,
+    // generate an insert log record for the operation so the REDO phase
+    // handles the txn abort behavior correctly
+
+    // Get the existing data for logging purpose, because this is a transaction abort, proper lock
+    // should be held and the original record should still be intact
+    bool ghost;
+    smsize_t existing_element_len;
+    const char *existing_element = leaf.element(slot, existing_element_len, ghost);
+    cvec_t el (existing_element, existing_element_len);
+
+// TODO(Restart)... 
+DBGOUT3( << "&&&& Log for undo deletion, turn the ghost record into a valid record, key: " << key);
+
+    W_DO(log_btree_insert_nonghost(leaf, key, el));
+
     leaf.unmark_ghost (slot);
     return RCOK;
 }

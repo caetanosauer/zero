@@ -11,6 +11,7 @@
 #include "kvl_t.h"
 #include "btree_verify.h"
 #include "w_okvl.h"
+#include "xct.h"
 
 /**
  * \brief The internal implementation class which actually implements the
@@ -553,12 +554,12 @@ public:
     /** @see _sx_rebalance_foster() */
     static rc_t                 _ux_rebalance_foster_core(btree_page_h &page,
         btree_page_h &foster_p, int32_t move_count, const w_keystr_t &mid_key,
-        shpid_t new_pid0, lsn_t new_pid0_emlsn);
+        shpid_t new_pid0, lsn_t new_pid0_emlsn, bool &caller_commit, sys_xct_section_t& sxs);
 
     /** @see _ux_rebalance_foster_core() */
     static rc_t                 _ux_rebalance_foster_apply(btree_page_h &page,
         btree_page_h &foster_p, int32_t move_count, const w_keystr_t &mid_key,
-        shpid_t new_pid0, lsn_t new_pid0_emlsn);
+        shpid_t new_pid0, lsn_t new_pid0_emlsn, const bool full_logging = false);
 
     /** Special case that changes only fence key (for no-record-split). */
     static rc_t                 _ux_rebalance_foster_norec(btree_page_h &page,
@@ -579,11 +580,13 @@ public:
 
     /** @see _sx_merge_foster() */
     static rc_t                 _ux_merge_foster_core(btree_page_h &page,
-                                                      btree_page_h &foster_p);
+                                                      btree_page_h &foster_p,
+                                                      bool &caller_commit, sys_xct_section_t& sxs);
 
     /** @see _sx_merge_foster() */
     static void                 _ux_merge_foster_apply_parent(btree_page_h &page,
-                                                              btree_page_h &foster_p);
+                                                              btree_page_h &foster_p,
+                                                              const bool full_logging = false);
 
     /**
      * \brief Converts the right sibling of given page to be a foster-child of it.

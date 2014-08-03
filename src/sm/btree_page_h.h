@@ -66,7 +66,7 @@ private:
     shpid_t         _child;  // opaque pointer
     /**
      * Expected child LSN for the _child (only in interior node).
-     * \ingroup SPR
+     * \ingroup Single-Page-Recovery
      */
     lsn_t           _child_emlsn;
     cvec_t          _elem;
@@ -365,13 +365,31 @@ public:
                       btree_page_h*        steal_src2 = NULL,
                       int                  steal_from2 = 0,
                       int                  steal_to2 = 0,
-                      bool                 steal_src2_pid0 = false
+                      bool                 steal_src2_pid0 = false,
+                      const bool           full_logging = false,  // True if doing full logging for record movement
+                      const bool           log_src_1 = false,     // Use only if full_logging = true
+                                                                  // True if log movements from src1
+                                                                  // False if log movements from src2                      
+                      const bool           ghost = false          // When _init the page, should the fence key record be a ghost                                  
         );
 
     /// Steal records from steal_src.  Called by format_steal.
     void _steal_records(btree_page_h* steal_src,
                         int           steal_from,
-                        int           steal_to);
+                        int           steal_to,
+                        const bool    full_logging);
+
+    // Set the node fence keys, no change in data and other page information
+    // A special function used by Single-Page-Recovery REDO operation for page rebalance and page merge
+    // when full logging is on (no minimal logging), set the page fence key before the
+    // fully logged actual record movements
+    rc_t init_fence_keys(const bool set_low, const w_keystr_t &low,
+                           const bool set_high, const w_keystr_t &high,
+                           const bool set_chain, const w_keystr_t &chain_fence_high,
+                           const bool set_pid0, const shpid_t new_pid0,
+                           const bool set_emlsn, const lsn_t new_pid0_emlsn,
+                           const bool set_foster, const shpid_t foster_pid0,
+                           const bool set_foster_emlsn, const lsn_t foster_emlsn);
 
     /**
      * Called when we did a split from this page but didn't move any record to new page.
@@ -668,7 +686,7 @@ public:
      * 'logically' no changes.
      * Context: System transaction.
      */
-    rc_t                         defrag();
+    rc_t                         defrag(const bool in_redo = false);
 
     /// stats for leaf nodes.
     rc_t             leaf_stats(btree_lf_stats_t& btree_lf);
@@ -692,23 +710,23 @@ public:
      */
     bool             is_consistent (bool check_keyorder = false, bool check_space = false) const;
 
-    /** Returns the pointer to Expected Child LSN of pid0, foster-child, or real child. \ingroup SPR */
+    /** Returns the pointer to Expected Child LSN of pid0, foster-child, or real child. \ingroup Single-Page-Recovery */
     lsn_t*         emlsn_address(general_recordid_t pos);
     /** Returns the Expected Child LSN of pid0, foster-child, or real child. */
     const lsn_t&   get_emlsn_general(general_recordid_t pos) const;
     /**
      * \brief Sets the Expected Child LSN of pid0, foster-child, or real child.
-     * \ingroup SPR
+     * \ingroup Single-Page-Recovery
      * \details
      * This method is not protected by exclusive latch but still safe because EMLSN are not
      * viewed/updated by multi threads.
      */
     void           set_emlsn_general(general_recordid_t pos, const lsn_t &lsn);
 
-    /** Returns the Expected Child LSN of foster-child. \ingroup SPR */
+    /** Returns the Expected Child LSN of foster-child. \ingroup Single-Page-Recovery */
     const lsn_t&   get_foster_emlsn() const;
 
-    /** Returns the Expected Child LSN of pid0. \ingroup SPR */
+    /** Returns the Expected Child LSN of pid0. \ingroup Single-Page-Recovery */
     const lsn_t&   get_pid0_emlsn() const;
 
     /*
@@ -937,7 +955,8 @@ private:
     void            _init(lsn_t lsn, lpid_t page_id,
         shpid_t root_pid, shpid_t pid0, lsn_t pid0_emlsn,
         shpid_t foster_pid, lsn_t foster_emlsn, int16_t btree_level,
-        const w_keystr_t &low, const w_keystr_t &high, const w_keystr_t &chain_fence_high);
+        const w_keystr_t &low, const w_keystr_t &high, 
+        const w_keystr_t &chain_fence_high, const bool ghost);
 };
 
 
@@ -1353,7 +1372,7 @@ inline int btree_page_h::_robust_compare_key_noprefix(slotid_t slot, const void 
 }
 
 // ======================================================================
-//   BEGIN: SPR related EMLSN accessors implementation
+//   BEGIN: Single-Page-Recovery related EMLSN accessors implementation
 // ======================================================================
 
 inline lsn_t* btree_page_h::emlsn_address(general_recordid_t pos) {

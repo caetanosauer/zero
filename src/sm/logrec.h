@@ -106,7 +106,7 @@ struct baseLogHeader
      * For per-page chains of log-records.
      * Note that some types of log records (split, merge) impact two pages.
      * The page_prev_lsn is for the "primary" page.
-     * \ingroup SPR
+     * \ingroup Single-Page-Recovery
      */
     lsn_t               _page_prv;
     /* 16+8 = 24 */
@@ -197,12 +197,12 @@ public:
     const lsn_t&         undo_nxt() const;
     /**
      * Returns the LSN of previous log that modified this page.
-     * \ingroup SPR
+     * \ingroup Single-Page-Recovery
      */
     const lsn_t&         page_prev_lsn() const;
     /**
      * Sets the LSN of previous log that modified this page.
-     * \ingroup SPR
+     * \ingroup Single-Page-Recovery
      */
     void                 set_page_prev_lsn(const lsn_t &lsn);
     const lsn_t&         xid_prev() const;
@@ -316,7 +316,7 @@ protected:
 struct multi_page_log_t {
     /**
      * _page_prv for another page touched by the operation.
-     * \ingroup SPR
+     * \ingroup Single-Page-Recovery
      */
     lsn_t       _page2_prv; // +8
 

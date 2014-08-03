@@ -123,7 +123,14 @@ public:
      *
      * @param[in] idx          index into buffer pool
      */
-    w_rc_t fix_recovery_redo(bf_idx idx, lpid_t page_updated);
+    w_rc_t fix_recovery_redo(bf_idx idx, lpid_t page_updated, const bool managed = true);
+
+
+    /**
+     * Only used in the REDO phase of Recovery process
+     * with page driven REDO (Single-Page-Recovery) with minimal logging
+     */
+    w_rc_t fix_recovery_redo(const bool managed);
 
     /**
      * Adds an additional pin count for the given page.  This is used to re-fix the page

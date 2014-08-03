@@ -25,7 +25,7 @@ btree_test_env *test_env;
 
 /**
  * \file test_spr.cpp
- * Tests for Single-page recovery (SPR).
+ * Tests for Single-page recovery.
  */
 
 w_rc_t flush_and_evict(ss_m* ssm) {
@@ -80,7 +80,7 @@ w_rc_t prepare_test(ss_m* ssm, test_volume_t *test_volume, stid_t &stid, lpid_t 
     }
     W_DO(flush_and_evict(ssm));
 
-    // then take a backup. this is the page image to start SPR from.
+    // then take a backup. this is the page image to start Single-Page-Recovery from.
     x_delete_backup(ssm, test_volume);
     W_DO(x_take_backup(ssm, test_volume));
     return RCOK;
@@ -134,7 +134,7 @@ w_rc_t test_nochange(ss_m* ssm, test_volume_t *test_volume) {
     // no change after backup and immediately corrupt
     corrupt_page(test_volume, target_pid);
 
-    // this should invoke SPR with no REDO application
+    // this should invoke Single-Page-Recovery with no REDO application
     char buf[SM_PAGESIZE / 6];
     smsize_t buf_len = SM_PAGESIZE / 6;
     bool found;
@@ -175,7 +175,7 @@ w_rc_t test_one_change(ss_m* ssm, test_volume_t *test_volume) {
 
     corrupt_page(test_volume, target_pid);
 
-    // this should invoke SPR with one REDO application
+    // this should invoke Single-Page-Recovery with one REDO application
     W_DO(ssm->begin_xct());
     char buf[SM_PAGESIZE / 6];
     smsize_t buf_len = SM_PAGESIZE / 6;
@@ -217,7 +217,7 @@ w_rc_t test_two_changes(ss_m* ssm, test_volume_t *test_volume) {
 
     corrupt_page(test_volume, target_pid);
 
-    // this should invoke SPR with two REDO applications
+    // this should invoke Single-Page-Recovery with two REDO applications
     W_DO(ssm->begin_xct());
     char buf[SM_PAGESIZE / 6];
     smsize_t buf_len = SM_PAGESIZE / 6;
@@ -295,7 +295,7 @@ w_rc_t test_multi_pages(ss_m* ssm, test_volume_t *test_volume) {
         corrupt_page(test_volume, destination_pid);
     }
 
-    // this should invoke SPR with multi-page REDO applications (split/rebalance/adopt)
+    // this should invoke Single-Page-Recovery with multi-page REDO applications (split/rebalance/adopt)
     W_DO(ssm->begin_xct());
     W_DO(ssm->find_assoc(stid, target_key0, buf, buf_len, found));
     EXPECT_TRUE(found);

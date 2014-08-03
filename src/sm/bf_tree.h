@@ -618,7 +618,7 @@ public:
      * for some reason
      * \details
      * Our eviction is hierarchical because we might have to unswizzle the page before
-     * eviction and because SPR needs to touch parent to evict child.
+     * eviction and because Single-Page-Recovery needs to touch parent to evict child.
      * Below are the contracts of this method. In short, it's supposed to be thorough
      * but still best-effort (otherwise this method and other methods need too many locks).
      *
@@ -685,8 +685,8 @@ private:
 
     /**
      * \brief Checks validity of the page image that has been retrieved from disk,
-     * \e trying to recover the page via SPR if its has some issue.
-     * \ingroup SPR
+     * \e trying to recover the page via Single-Page-Recovery if its has some issue.
+     * \ingroup Single-Page-Recovery
      * @param[in,out] parent Parent page of the given page. Might be NULL.
      * @param[in] idx Bufferpool index of the page to check and recover.
      * @param[in] vol Volume ID
@@ -697,14 +697,14 @@ private:
                                  shpid_t shpid, const bool past_end);
 
     /**
-     * \brief Tries to recover the given page with some issue via SPR.
-     * \ingroup SPR
+     * \brief Tries to recover the given page with some issue via Single-Page-Recovery.
+     * \ingroup Single-Page-Recovery
      * @param[in,out] parent Parent page of the given page. Must not be NULL.
      * @param[in] idx Bufferpool index of the page to check and recover.
      * @param[in] vol Volume ID
      * @param[in] shpid Page ID
      * @param[in] corrupted Whether the page is corrupt (e.g., checksum
-     * did not match). Otherwise, the page is just a little stale and SPR is more efficient.
+     * did not match). Otherwise, the page is just a little stale and Single-Page-Recovery is more efficient.
      */
     w_rc_t _try_recover_page(generic_page* parent, bf_idx idx, volid_t vol,
                              shpid_t shpid, bool corrupted);
@@ -915,7 +915,7 @@ private:
     
     /**
      * \brief System transaction for upadting child EMLSN in parent
-     * \ingroup SPR
+     * \ingroup Single-Page-Recovery
      * @param[in,out] parent parent page
      * @param[in] child_slotid slot id of child
      * @param[in] child_emlsn new emlsn to store in parent
@@ -997,7 +997,7 @@ private:
      * The swizzled pointer is stored in the parent page, we need to
      * modify it back to a usual page ID. The hierarchical clockhand
      * tells what is the parent page without parent pointers.
-     * Also, eviction needs parent to apply EMLSN update for SPR.
+     * Also, eviction needs parent to apply EMLSN update for Single-Page-Recovery.
      * 
      * Like the usual clockhand, hierarchical clockhand can be imprecise
      * to avoid locks or other heavy-weight methods.

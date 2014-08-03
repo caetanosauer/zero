@@ -577,6 +577,13 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
     // we need to carefully follow the protocol to make it safe.
     uint64_t key = bf_key(vol, shpid);
 
+    // Force loading the data even if the page is in hash table already, this could happen
+    // during Recovery REDO phase, all 'in_doubt' pages are in hash table but not loaded
+    // an page REDO operation might need to access a second page (multi-page operations
+    // such as page rebalance and page merge), while the second page might still be in_doubt
+    // This flag is used for Recovery operation only
+    bool force_load = false;
+
     // note that the hashtable is separated from this bufferpool.
     // we need to make sure the returned block is still there, and retry otherwise.
 #if W_DEBUG_LEVEL>0
@@ -589,7 +596,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
         }
 #endif
         bf_idx idx = _hashtable->lookup(key);
-        if (idx == 0) {
+        if ((idx == 0) || (true == force_load)) {
             // the page is not in the bufferpool, and it is not an in_doubt page either.
             // we need to read it from disk
             W_DO(_grab_free_block(idx)); // get a frame that will be the new page
@@ -608,18 +615,21 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 
                 // Not checking 'past_end' (stSHORTIO), because if the page does not exist
                 // on disk (only if fix_direct from REDO operation), the page context will be zero out,
-                // and the following logic (_check_read_page) will fail in checksum and try SPR immediatelly
+                // and the following logic (_check_read_page) will fail in checksum and try Single-Page-Recovery immediatelly
                 // Note that for fix_direct from REDO, we do not have parent page pointer
 
                 if (read_rc.is_error()) {
                     DBGOUT3(<<"bf_tree_m: error while reading page " << shpid << " to frame " << idx << ". rc=" << read_rc);
                     _add_free_block(idx);
                     return read_rc;
-                    /* TODO: if this is an I/O error, we could try to do SPR on it. */
+                    /* TODO: if this is an I/O error, we could try to do Single-Page-Recovery on it. */
                 } else {
-                    // for each page retrieved from disk, check validity, possibly apply SPR.
+                    // for each page retrieved from disk, check validity, possibly apply Singel-Page-Recovery.
                     // this is not a virgin page so if the page does not exist on disk, we need to
                     // try the backup
+                    // Scenarios:
+                    // 1. Normal page loading due to user transaction accessing a page not in buffer pool
+                    // 2. Recovery REDO (force_load)
                     w_rc_t check_rc = _check_read_page(parent, idx, vol, shpid, past_end);
                     if (check_rc.is_error()) {
                         _add_free_block(idx);
@@ -640,6 +650,10 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 // If we are not able to latch the page for some reason, try again
                 DBGOUT2(<<"bf_tree_m: latch_acquire failed in buffer frame " << idx << ", rc= " << rc_latch);
                 _add_free_block(idx);
+
+                // Turn off the force_load flag before the retry
+                force_load = false;
+
                 continue;
             }
 
@@ -671,18 +685,43 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 #ifdef BP_MAINTAIN_REPLACEMENT_PRIORITY
             cb._replacement_priority = me()->get_workload_priority();
 #endif
+
             // finally, register the page to the hashtable.
             bool registered = _hashtable->insert_if_not_exists(key, idx);
-            if (!registered) {
-                // this pid already exists in bufferpool. this means another thread concurrently
-                // added the page to bufferpool. unlucky, but can happen.
-                DBGOUT1(<<"bf_tree_m: unlucky! another thread already added the page " << shpid << " to the bufferpool. discard my own work on frame " << idx);
-                cb.latch().latch_release();
-                cb.clear(); // well, it should be enough to clear _used, but this is anyway a rare event. wouldn't hurt to clear all.
-                _add_free_block(idx);
-                continue;
+            if (!registered) {               
+                if (false == force_load)
+                {
+                    // If force_load flag is off
+                    // this pid already exists in bufferpool. this means another thread concurrently
+                    // added the page to bufferpool. unlucky, but can happen.
+                    DBGOUT1(<<"bf_tree_m: unlucky! another thread already added the page " << shpid << " to the bufferpool. discard my own work on frame " << idx);
+                    cb.latch().latch_release();
+                    cb.clear(); // well, it should be enough to clear _used, but this is anyway a rare event. wouldn't hurt to clear all.
+                    _add_free_block(idx);
+                    continue;
+                }
+                else
+                {
+                    // If the force_load flag is on and the pid is already in hash table, 
+                    // this is a force load during Single-Page-Recovery REDO
+                    // In this case an in_doubt page is loaded as a side effect of the 
+                    // Single-Page-Recovery REDO operation, the page is not loaded by
+                    // Recovery page driven REDO phase.  Note Single-Page-Recovery 
+                    //has been performed on this newly
+                    // loaded page already
+                    // Clear the in_doubt flag so the page driven REDO phase 
+                    // does not load this page again
+                    w_assert1(0 != idx);       
+                    w_assert1(true == restart_m::use_redo_page_restart() || 
+                              true == restart_m::use_redo_full_logging_restart());
+                    force_load = false;
+                    in_doubt_to_dirty(idx);        // Reset in_doubt and dirty flags accordingly
+                }
             }
-            
+
+            // Clear the force_load flag since we are done
+            w_assert1(false == force_load); 
+           
             // okay, all done
 #ifdef BP_MAINTAIN_PARENT_PTR
             if (is_swizzling_enabled()) {
@@ -706,7 +745,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
         else
         {
             // Page index is registered in hash table
-                   
+            force_load = false; 
+
             // unlike swizzled case, we have to atomically pin it while verifying it's still there.
             if (parent) {
                 DBGOUT3(<<"swizzled case: parent = " << parent->pid << ", shpid = " << shpid << " frame=" << idx);
@@ -725,37 +765,50 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             
                 // bf_tree_m::_fix_nonswizzled iscalled by two different functions:
                 //   fix_direct: for REDO operation, rollback and cursor re-fix, both root
-                //                  and non-root page
+                //                  and non-root page, no parent
                 //   fix_nonroot: user txn and UNDO operations to traversal the tree
-                //                      only non-root pages               
+                //                      only non-root pages, has parent     
                 //
-                // Exception: root page is pre-loaded but in concurrent and page driven
-                // REDO recovery, the in_doubt flag would be turned on when pre-loading
-                // the root page, it is due to volume mount pre-loads the root page,
-                // while the code does a volume mount after the Log Analysis phase,
-                // which could erase the 'in_doubt' flag on the root page.  Therefore we
-                // always set the 'in_doubt' flag while pre-loading the root page to ensure
-                // a REDO on the root page (j.i.c.), the in_doubt flag would be turned off
-                // after the REDO on root page.
-                // Due to this implementation, if in_doubt flag is on for root page, the root
-                // page is in memory already.
-                
+                // Exception: root page is pre-loaded into buffer pool when mounting
+                // volume, although the root page could be either in_doubt or clean, but
+                // the root page is in memory already.
+              
+                DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: page in hash table but not in buffer pool, page: " 
+                        << shpid << ", root page: " << root_shpid);
+
+                // If caller is from fix_nonroot, block user txn, if caller is from fix_direct
+                // as part of REDO operation, load the page into buffer pool
+                if (NULL == parent)
+                {
+                    // No parent, caller is from fix_direct
+                    // Set force_load to cause the retry logic to load the page
+                    force_load = true;
+                    continue;                
+                }
+                else
+                {
 ////////////////////////////////////////
 // TODO(Restart)... M2 (concurrent log mode) - raise error and abort the user transaction
 //                          M3 (concurrent lock mode) - block user transaction until recovery is done
 ////////////////////////////////////////
-
-                DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: page in hash table but not in buffer pool, page: " 
-                        << shpid << ", root page: " << root_shpid);
-
-                if (true ==  restart_m::use_concurrent_log_recovery()) 
-                    return RC(eACCESS_CONFLICT);
-                else if (true ==  restart_m::use_concurrent_lock_recovery()) 
-                    return RC(eNOTIMPLEMENTED);
-                else
-                {
-                    // Unexpected mode
-                    W_FATAL_MSG(fcINTERNAL, << "bf_tree_m::_fix_nonswizzled: unexpected recovery mode");
+                
+                    // Has parent, block if caller is not from recovery
+                    if ((true ==  restart_m::use_concurrent_log_restart()) && (false == from_recovery))
+                        return RC(eACCESS_CONFLICT);
+                    else if (true ==  restart_m::use_concurrent_lock_restart()) 
+                        return RC(eNOTIMPLEMENTED);
+                    else if (true == from_recovery)
+                    {
+                        // If caller is from recovery (e.g. rollback), do not block
+                        // page is in_doubt, set force_load to cause the retry logic to load the page                        
+                        force_load = true;
+                        continue;
+                    }
+                    else
+                    {
+                        // Unexpected mode
+                        W_FATAL_MSG(fcINTERNAL, << "bf_tree_m::_fix_nonswizzled: unexpected recovery mode");
+                    }
                 }
             }
 
@@ -813,14 +866,14 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     //         page and also it has to traversal B-tree (visit multiple pages), so
                     //         it is relying on input parameter 'from_recovery'
 
-                    if ((false == from_recovery) && (false == cb._recovery_access))
+                    if ((true == from_recovery) || (true == cb._recovery_access))
                     {
-                        // Not from Recovery
-                        DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: an existing page from recovery, skip check for accessability: " << shpid);
+                        // From Recovery, no validation
+                        DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: an existing page from recovery, skip check for accessability, page: " << shpid);
                     }
                     else
                     {
-                        DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: an existing page from user txn, check for accessability: " << shpid);
+                        DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: an existing page from user txn, check for accessability, page: " << shpid);
                         rc = _validate_access(page);
                         if (rc.is_error()) 
                         {
@@ -857,23 +910,23 @@ w_rc_t bf_tree_m::_validate_access(generic_page*& page)   // pointer to the unde
     // If the system is doing concurrent recovery and we are still in the middle
     // of recovery, it might not be safe to access the page
     if ((smlevel_1::recovery) &&   // The restart_m object is valid
-        (smlevel_1::recovery->recovery_in_progress())) // Recovery is in progress
+        (smlevel_1::recovery->restart_in_progress())) // Restart is in progress
     {    
-        if (true ==  restart_m::use_concurrent_log_recovery()) 
+        if (true ==  restart_m::use_concurrent_log_restart()) 
         {
             // Accept a new transaction if the associated page met the following conditions:
             // REDO phase:
             //    1. Page is not an 'in_doubt' page - 'dirty' is okay. 
-            //    2. Page_LSN < Commit_LSN (minimum Txn LSN of all doomed transactions).
+            //    2. Page_LSN < Commit_LSN (minimum Txn LSN of all loser transactions).
             // UNDO phase:
-            //    Page_LSN < Commit_LSN (minimum Txn LSN of all doomed transactions).
+            //    Page_LSN < Commit_LSN (minimum Txn LSN of all loser transactions).
 
             // With the M2 limitation, user transaction does not load in_doubt page (raise error),
             // so we only need to validate one condition for the newly loaded page:
-            //    Page_LSN < Commit_LSN (minimum Txn LSN of all doomed transactions)
-            // The last write on the page was before the minimum TXN lsn of all doomed transactions
+            //    Page_LSN < Commit_LSN (minimum Txn LSN of all loser transactions)
+            // The last write on the page was before the minimum TXN lsn of all loser transactions
             // Note this is an over conserve policy mainly because we do not have
-            // lock acquisition to protect doomed transactions.
+            // lock acquisition to protect loser transactions.
             
             if (lsn_t::null == smlevel_0::commit_lsn)
             {
@@ -902,7 +955,7 @@ w_rc_t bf_tree_m::_validate_access(generic_page*& page)   // pointer to the unde
                 }
             }
         }
-        else if (true == restart_m::use_concurrent_lock_recovery())
+        else if (true == restart_m::use_concurrent_lock_restart())
         {
 ////////////////////////////////////////
 // TODO(Restart)... concurrency through lock acquisition, NYI
@@ -947,7 +1000,7 @@ void bf_tree_m::unpin_for_refix(bf_idx idx) {
 
 ///////////////////////////////////   Dirty Page Cleaner BEGIN       ///////////////////////////////////  
 w_rc_t bf_tree_m::force_all() {
-    if (false == smlevel_0::use_serial_recovery())
+    if (false == smlevel_0::use_serial_restart())
     {
 ////////////////////////////////////////
 // TODO(Restart)... this is because we might still
@@ -960,10 +1013,10 @@ w_rc_t bf_tree_m::force_all() {
         // Open system after Log Analysis
         // Do not flush buffer pool as long as the recovery is still going on
         if ((smlevel_1::recovery) &&                       // The restart_m object is valid
-            (smlevel_1::recovery->recovery_in_progress())) // Recovery is in progress
+            (smlevel_1::recovery->restart_in_progress())) // Restart is in progress
         {
-            // Recovery child thread is still around
-            DBGOUT1( << "Block buffer pool flush because recovery is still on");
+            // Restart child thread is still around
+            DBGOUT1( << "Block buffer pool flush because restart is still on");
             return RCOK;
         }
         else
@@ -980,7 +1033,7 @@ w_rc_t bf_tree_m::force_all() {
     }
 }
 w_rc_t bf_tree_m::force_until_lsn(lsndata_t lsn) {
-    if (false == smlevel_0::use_serial_recovery())
+    if (false == smlevel_0::use_serial_restart())
     {
 ////////////////////////////////////////
 // TODO(Restart)... this is because we might still
@@ -993,10 +1046,10 @@ w_rc_t bf_tree_m::force_until_lsn(lsndata_t lsn) {
         // Open system after Log Analysis
         // Do not flush buffer pool as long as the recovery is still going on
         if ((smlevel_1::recovery) &&                       // The restart_m object is valid
-            (smlevel_1::recovery->recovery_in_progress())) // Recovery is in progress
+            (smlevel_1::recovery->restart_in_progress())) // Restart is in progress
         {
-            // Recovery child thread is still around        
-            DBGOUT1( << "Block buffer pool flush until lsn because recovery is still on");
+            // Restart child thread is still around        
+            DBGOUT1( << "Block buffer pool flush until lsn because restart is still on");
             return RCOK;
         }
         else
@@ -1339,7 +1392,7 @@ bool bf_tree_m::_try_evict_block_update_emlsn(
     DBGOUT1(<<"evicting page idx = " << idx << " shpid = " << cb._pid_shpid
             << " pincnt = " << cb.pin_cnt());
 
-    // Output SPR log for updating EMLSN in parent.
+    // Output Single-Page-Recovery log for updating EMLSN in parent.
     // safe to disguise as LATCH_EX for the reason above.
     btree_page_h parent_h;
     generic_page *parent = &_buffer[parent_idx];
@@ -2007,6 +2060,7 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
         
         if (false == is_in_doubt(idx))        
             ++in_doubt_count;
+        // Set in_doubt flag, also update the initial (first dirty) and last write lsns
         set_in_doubt(idx, new_lsn);
 
         DBGOUT5(<<"Page is registered in buffer pool updated rec_lsn, idx: " << idx);
@@ -2041,6 +2095,8 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
         cb._recovery_access = false;
         cb._used = true;
         cb._refbit_approximate = BP_INITIAL_REFCOUNT; 
+        cb._dependency_idx = 0;        // In_doubt page, no dependency
+        cb._dependency_shpid = 0;      // In_doubt page, no dependency
 
         // For a page from disk,  get _rec_lsn from the physical page 
         // (cb._rec_lsn = _buffer[idx].lsn.data())
@@ -2048,8 +2104,9 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
         // which is the current log record LSN from log scan
         cb._rec_lsn = new_lsn.data();
 
-        // Store the last write LSN in _dependency_lsn, use the same value as the first lsn
-        cb._dependency_lsn = cb._rec_lsn;
+        // Store the 'last write LSN' in _dependency_lsn (overload this field because there is
+        // no dependency for in_doubt page), use the same value as the first lsn
+        cb._dependency_lsn = new_lsn.data();
 
         // Register the constructed 'key' into hash table so we can find this page cb later
         bool inserted = _hashtable->insert_if_not_exists(key, idx);
@@ -2597,14 +2654,16 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
 
     if ((true == past_end) && (parent == NULL))
     {
-        ERROUT(<<"bf_tree_m: page does not exist on disk and it is from REDO operation: " << shpid);
-        // Need to recover from scratch, no parent page pointer (from fix_direct)
+        ERROUT(<<"bf_tree_m: page does not exist on disk and it is from REDO operation, page: " << shpid);
+        // Special scenario from Recovery and REDO with multi-page log record
+        // loading the 2nd page via fix_direct.
+        // Failure on failure case, need to recover from scratch, no parent page pointer (from fix_direct)
         // therefore we cannot use the typical logic in this function
         // The page has already been zero'd out
         // Call recover_single_page() directly:
         //    page: page to recover
         //    emlsn:  Use the last LSN from pre-crash recovery log
-        //    validation: no validation
+        //    actual_emlsn: false because emlsn is not the actual emlsn
 
         _buffer[idx].lsn = lsn_t::null;
         snum_t store;
@@ -2617,7 +2676,7 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
 
         btree_page_h p;
         p.fix_nonbufferpool_page(_buffer + idx);
-        return (smlevel_0::log->recover_single_page(p, smlevel_0::last_lsn, false)); // No validation on emlsn
+        return (smlevel_0::log->recover_single_page(p, smlevel_0::last_lsn, false /*actual_emlsn*/));
     }
     else if (checksum != page.checksum) 
     {
@@ -2627,7 +2686,7 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
 
         if (parent == NULL) {
             // If parent page is not available (eg, via fix_direct),
-            // we can't apply SPR. Then we return error and let the caller
+            // we can't apply Single-Page-Recovery. Then we return error and let the caller
             // to decide what to do (e.g., re-traverse from root).
             return RC(eNO_PARENT_SPR);
         }
@@ -2660,13 +2719,13 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
         // We can update it here and have to do more I/O
         // or try to catch it again on eviction and risk being unlucky.
     } else if (emlsn > page.lsn) {
-        // Child is stale. Apply SPR
-        ERROUT(<< "Stale Child LSN found! Invoking SPR.. parent=" << parent->pid
+        // Child is stale. Apply Single-Page-Recovery
+        ERROUT(<< "Stale Child LSN found! Invoking Single-Page-Recovery.. parent=" << parent->pid
             << ", child pid=" << shpid << ", EMLSN=" << emlsn << " LSN=" << page.lsn);
 #if W_DEBUG_LEVEL>0
         debug_dump(std::cerr);
 #endif // W_DEBUG_LEVEL>0
-        W_DO(_try_recover_page(parent, idx, vol, shpid, false));
+        W_DO(_try_recover_page(parent, idx, vol, shpid, false /*corrupted*/));
     }
     // else child_emlsn == lsn. we are ok.
     return RCOK;

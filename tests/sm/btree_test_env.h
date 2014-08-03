@@ -34,6 +34,8 @@ struct test_volume_t {
 const int default_quota_in_pages = 64;
 const int default_bufferpool_size_in_pages = 64;
 const int default_locktable_size = 1 << 6;
+const bool simulated_crash = true;
+const bool normal_shutdown = false;
 
 #ifdef DEFAULT_SWIZZLING_OFF
 const bool default_enable_swizzling = false;
@@ -59,7 +61,7 @@ w_rc_t x_btree_update_and_commit(ss_m* ssm, const stid_t &stid, const char *keys
 w_rc_t x_btree_update(ss_m* ssm, const stid_t &stid, const char *keystr, const char *datastr);
 w_rc_t x_btree_overwrite_and_commit(ss_m* ssm, const stid_t &stid, const char *keystr, const char *datastr, smsize_t offset, bool use_locks = false);
 w_rc_t x_btree_overwrite(ss_m* ssm, const stid_t &stid, const char *keystr, const char *datastr, smsize_t offset);
-bool   x_in_recovery(ss_m* ssm);
+bool   x_in_restart(ss_m* ssm);
 
 
 /** Delete backup if exists. */
@@ -100,6 +102,13 @@ public:
         return _functor (ssm, &_test_volume);
     }
     rc_t (*_functor)(ss_m*, test_volume_t*);
+};
+
+struct restart_test_options {
+    restart_test_options() : enable_checkpoints(false) {}
+    bool shutdown_mode;
+    int32_t restart_mode;
+    bool enable_checkpoints;
 };
 
 // Begin... for test_restart.cpp and test_concurrent_restart.cpp
@@ -184,7 +193,7 @@ public:
 
     /**
      * This function is called after the simulated crash.
-     * This function is supposed to check if the recovery process did
+     * This function is supposed to check if the restart process did
      * a correct job.
      */
     virtual w_rc_t post_crash(ss_m *ssm) = 0;
@@ -311,14 +320,14 @@ public:
                       const std::vector<std::pair<const char*, const char*> > &additional_string_params);
 
     /**
-    * Runs a restart testcase in various recovery modes
-    * Caller specify the recovery mode through input parameter 'recovery_mode'
+    * Runs a restart testcase in various restart modes
+    * Caller specify the restart mode through input parameter 'restart_mode'
     * @param context the object to implement pre_shutdiwn(), post_shutdown().
     * @see restart_test_base
     */
     int runRestartTest (restart_test_base *context,
                       bool fCrash,
-                      int32_t recovery_mode,                      
+                      int32_t restart_mode,
                       bool use_locks = false,
                       int32_t lock_table_size = default_locktable_size,
                       int disk_quota_in_pages = default_quota_in_pages,
@@ -332,13 +341,14 @@ public:
                       );
 
     /** This is most concise. New code should use this one. */
-    int runRestartTest (restart_test_base *context, bool fCrash, int32_t recovery_mode,
+    int runRestartTest (restart_test_base *context, bool fCrash, int32_t restart_mode,
                           bool use_locks, int disk_quota_in_pages, const sm_options &options);
 
-
+    int runRestartTest (restart_test_base *context, restart_test_options *restart_options);
+    
     int runRestartTest (restart_test_base *context,
                       bool fCrash,
-                      int32_t recovery_mode,                      
+                      int32_t restart_mode,                      
                       bool use_locks, int32_t lock_table_size,
                       int disk_quota_in_pages, int bufferpool_size_in_pages,
                       uint32_t cleaner_threads,
@@ -352,7 +362,7 @@ public:
                       const std::vector<std::pair<const char*, const char*> > &additional_string_params);
 
     /**
-     * Runs a crash testcase in serial traditional recovery mode
+     * Runs a crash testcase in serial traditional restart mode
      * @param context the object to implement pre_crash(), post_crash().
      * @see crash_test_base
      */
@@ -440,14 +450,16 @@ public:
     w_rc_t btree_scan(const stid_t &stid, x_btree_scan_result &result) {
         return x_btree_scan(_ssm, stid, result, _use_locks);
     }
-    bool in_recovery(){
-        return x_in_recovery(_ssm);
+    bool in_restart(){
+        return x_in_restart(_ssm);
     }
     
     ss_m* _ssm;
     bool _use_locks;
+    restart_test_options* _restart_options;
     char log_dir[MAXPATHLEN];
     char vol_dir[MAXPATHLEN];
+
 private:
     void assure_dir(const char *folder_name);
     void assure_empty_dir(const char *folder_name);

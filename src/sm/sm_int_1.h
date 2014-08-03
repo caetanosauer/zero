@@ -63,9 +63,9 @@ public:
     enum xct_state_t {  xct_stale = 0x0,  
                         xct_active = 0x1,  // active or rolling back in
                                            // doing rollback_work
-                                           // It is also used in Recovery for doomed transaction
+                                           // It is also used in Recovery for loser transaction
                                            // because it is using the standard rollback logic
-                                           // for doom txn, check the _doomed_xct flag
+                                           // for loser txn, check the _loser_xct flag
                                            // in xct_t
                         xct_chaining = 0x3, 
                         xct_committing = 0x4, 
