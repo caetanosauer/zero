@@ -490,6 +490,7 @@ int btree_test_env::runRestartTest (restart_test_base *context,
 int btree_test_env::runRestartTest (restart_test_base *context, restart_test_options *restart_options,
                                       bool use_locks, int disk_quota_in_pages, const sm_options &options) {
     _use_locks = use_locks;
+    _restart_options = restart_options;
     // This function is called by restart test cases, while caller specify
     // the restart mode via 'restart_mode'
     // e.g., serial traditional, various concurrent combinations
