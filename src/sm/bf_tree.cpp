@@ -2023,7 +2023,8 @@ w_rc_t bf_tree_m::_evict_traverse_page(EvictionContext &context) {
 
 w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
                   lpid_t page_of_interest,
-                  lsn_t new_lsn,             // Current log record LSN from log scan
+                  lsn_t first_lsn,             // Initial LSN, the first LSN which makes the page dirty
+                  lsn_t last_lsn,              // Last LSN, last write to the page
                   uint32_t& in_doubt_count)
 {
     w_rc_t rc = RCOK;
@@ -2061,7 +2062,7 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
         if (false == is_in_doubt(idx))        
             ++in_doubt_count;
         // Set in_doubt flag, also update the initial (first dirty) and last write lsns
-        set_in_doubt(idx, new_lsn);
+        set_in_doubt(idx, first_lsn, last_lsn);
 
         DBGOUT5(<<"Page is registered in buffer pool updated rec_lsn, idx: " << idx);
     }
@@ -2100,13 +2101,13 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
 
         // For a page from disk,  get _rec_lsn from the physical page 
         // (cb._rec_lsn = _buffer[idx].lsn.data())
-        // But in Log Analysis, we don't load the page, so initialize _rec_lsn from new_lsn
+        // But in Log Analysis, we don't load the page, so initialize _rec_lsn from first_lsn
         // which is the current log record LSN from log scan
-        cb._rec_lsn = new_lsn.data();
+        cb._rec_lsn = first_lsn.data();
 
         // Store the 'last write LSN' in _dependency_lsn (overload this field because there is
-        // no dependency for in_doubt page), use the same value as the first lsn
-        cb._dependency_lsn = new_lsn.data();
+        // no dependency for in_doubt page)
+        cb._dependency_lsn = last_lsn.data();
 
         // Register the constructed 'key' into hash table so we can find this page cb later
         bool inserted = _hashtable->insert_if_not_exists(key, idx);

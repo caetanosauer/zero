@@ -160,8 +160,6 @@ rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the 
                 vec_t el;
                 cvec_t empty_key;
                 _pack_node_record(el, empty_key, stolen_pid0_emlsn.data());
-// TODO(Restart)...
-DBGOUT3( << "&&&& Log for src2 pid0 insertion, key: " << keystr);
                 rc = log_btree_insert_nonghost(*this, keystr, el);   // key: original key including prefix
                                                                      // el: non-key portion only
             }
@@ -301,9 +299,6 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
                 // Log the insertion into new page (leaf)
                 vec_t el;
                 el.put(data, data_length);
-// TODO(Restart)...
-DBGOUT3( << "&&&& Log for leaf insertion, key: " << keystr );
-
                 rc = log_btree_insert_nonghost(*this, keystr, el);   // key: original key including prefix
                                                                      // el: non-key portion only
                 // Clear the key string so it is ready for the next record
@@ -329,8 +324,6 @@ DBGOUT3( << "&&&& Log for leaf insertion, key: " << keystr );
                 // Log the insertion into new page (non-leaf)
                 vec_t el;
                 el.put(emlsn_ptr, sizeof(lsn_t));
-// TODO(Restart)...
-DBGOUT3( << "&&&& Log for non-leaf insertion, key: " << keystr);
                 rc = log_btree_insert_nonghost(*this, keystr, el);   // key: original key including prefix
                                                                      // el: non-key portion only                
                 // Clear the key string so it is ready for the next record
@@ -349,8 +342,6 @@ DBGOUT3( << "&&&& Log for non-leaf insertion, key: " << keystr);
             // No difference between leaf or non-leaf page
             vector<slotid_t> slots;
             slots.push_back(i);    // Current 'i' is the slot for the deleted record
-// TODO(Restart)...
-DBGOUT3( << "&&&& Log for deletion, key: " << keystr);           
             rc = log_btree_ghost_mark(*steal_src, slots);
             if (rc.is_error()) 
             {
@@ -450,6 +441,9 @@ rc_t btree_page_h::init_fence_keys(
 
     if (false == update_fence)
         return RCOK;
+
+    // Set the page dirty
+    set_dirty();
 
     // Prepare for updating the fence key slot
     cvec_t fences;
@@ -930,18 +924,11 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, size_t
 void btree_page_h::insert_nonghost(const w_keystr_t &key, const cvec_t &elem) {
     w_assert1 (is_leaf());
 
-// TODO(Restart)...
-DBGOUT3( << "&&&& Incoming key: " << key << ", low fence key: " << get_fence_low_key());
-DBGOUT3( << "&&&& Incoming key: " << key << ", high fence key: " << get_fence_high_key_noprefix());
-
     w_assert1(compare_with_fence_low(key) >= 0);
     w_assert1(compare_with_fence_high(key) < 0);
 
     int16_t prefix_len       = get_prefix_length();
     int     trunc_key_length = key.get_length_as_keystr() - prefix_len;
-
-// TODO(Restart)...
-DBGOUT3( << "&&&& Incoming key length: " << trunc_key_length << ", element size: " << elem.size());
 
     w_assert1(check_space_for_insert_leaf(trunc_key_length, elem.size()));
 

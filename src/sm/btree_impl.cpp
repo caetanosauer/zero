@@ -119,7 +119,8 @@ btree_impl::_ux_insert_core(
 
         // do it in one-go
 // TODO(Restart)...        
-DBGOUT3( << "&&&& Log for regular insertion, key: " << key);        
+DBGOUT3( << "&&&& Log for regular insertion, key: " << key);  
+
         W_DO(log_btree_insert_nonghost(leaf, key, el));
         leaf.insert_nonghost(key, el);
         // W_DO (_sx_reserve_ghost(leaf, key, el.size()));
@@ -561,9 +562,6 @@ btree_impl::_ux_undo_ghost_mark(volid_t vol, snum_t store, const w_keystr_t &key
     smsize_t existing_element_len;
     const char *existing_element = leaf.element(slot, existing_element_len, ghost);
     cvec_t el (existing_element, existing_element_len);
-
-// TODO(Restart)... 
-DBGOUT3( << "&&&& Log for undo deletion, turn the ghost record into a valid record, key: " << key);
 
     W_DO(log_btree_insert_nonghost(leaf, key, el));
 

@@ -400,9 +400,9 @@ public:
 
     /**
      * Mark the page in_doubt and used flags, the physical page is not in buffer pool
-     * also update the LSN (track when the page was made dirty initially)
+     * also update the LSNs (track when the page was made dirty initially and last update)
      */
-    void set_in_doubt(const bf_idx idx, lsn_t new_lsn);
+    void set_in_doubt(const bf_idx idx, lsn_t first_lsn, lsn_t last_sn);
 
     /**
      * Clear the page in_doubt flag, if page is no longer needed, clear the used flag and
@@ -651,11 +651,12 @@ public:
      * If the page does not exist in the buffer pool, find a free block in buffer pool
      * without evict, return error if the freelist is empty.
      * Populate the page cb but not loading the actual page
-     * Set in_doubt and used flags in cb to true, update lsn (where the page gor dirty)
+     * Set in_doubt and used flags in cb to true, update LSNs (where the page got dirty
+     * and the last write)
      * update the in_doubt page counter and return the index of the page
      */    
     w_rc_t register_and_mark(bf_idx& ret, lpid_t page_of_interest,
-           lsn_t new_lsn, uint32_t& in_doubt_count);
+           lsn_t first_lsn, lsn_t last_lsn, uint32_t& in_doubt_count);
 
 
     /**

@@ -642,6 +642,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(volid_t vol, size_t f
     for (size_t i = from; i < from + consecutive; ++i) {
         bf_idx idx = _write_buffer_indexes[i];
         bf_tree_cb_t &cb = _parent->_bufferpool->get_cb(idx);
+
         cb._dirty = false;
         cb._in_doubt = false;
         cb._recovery_access = false;
