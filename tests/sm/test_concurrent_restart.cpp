@@ -690,7 +690,8 @@ TEST (RestartTest, MultiConcurrentRedoNF) {
 }
 /**/
 
-/* Passing, WOD with minimal logging, in-flight is in the first page *
+/* Failing, WOD with minimal logging, in-flight is in the first page *
+ * Error detail: eWRONG_PAGE_LSNCHAIN(77)
 TEST (RestartTest, MultiConcurrentRedoC) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_redo context;

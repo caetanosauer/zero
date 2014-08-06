@@ -23,8 +23,8 @@ void output_durable_lsn(int W_IFDEBUG1(num)) {
 }
 
 w_rc_t delete_records(stid_t &stid, bool fCheckPoint, bool fInflight, char keyPrefix) {
-    const bool isMultiThrd = (keyPrefix!='\0');
-    const int key_size = isMultiThrd ? 6 : 5; // When this is used in multi-threaded tests, each thread needs to pass a different keyPrefix to prevent duplicate records
+    const bool isMulti = (keyPrefix!='\0');
+    const int key_size = isMulti ? 6 : 5; // When this is used in multi-threaded and/or multi-index tests, each thread needs to pass a different keyPrefix to prevent duplicate records
     char key_str[key_size];
     key_str[0] = 'k';
     key_str[1] = 'e';
@@ -35,14 +35,23 @@ w_rc_t delete_records(stid_t &stid, bool fCheckPoint, bool fInflight, char keyPr
     W_DO(test_env->begin_xct());
     const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
     for (int i=0; i < recordCount; i+=2) {
-    key_str[3] = ('0' + ((i / 10) % 10));
-    key_str[4] = ('0' + (i % 10));
-    if(isMultiThrd) key_str[5] = keyPrefix;
-    if (true == fCheckPoint && i == recordCount/2) {
-        // Take one checkpoint halfway through deletions
-        W_DO(ss_m::checkpoint());
-    }
-    W_DO(test_env->btree_remove(stid, key_str));
+    
+        key_str[3] = ('0' + ((i / 10) % 10));
+        key_str[4] = ('0' + (i % 10));
+        if(isMulti) {
+            key_str[3] = keyPrefix;
+            key_str[4] = ('0' + ((i / 10) % 10));
+            key_str[5] = ('0' + (i % 10));
+        }
+        else {
+            key_str[3] = ('0' + ((i / 10) % 10));
+            key_str[4] = ('0' + (i % 10));
+        }
+        if (true == fCheckPoint && i == recordCount/2) {
+            // Take one checkpoint halfway through deletions
+            W_DO(ss_m::checkpoint());
+        }
+        W_DO(test_env->btree_remove(stid, key_str));
     }
     if (true == fInflight) ss_m::detach_xct();
     else W_DO(test_env->commit_xct());
@@ -702,48 +711,47 @@ class restart_multithrd_inflight1 : public restart_test_base
 {
 public:
     static void t1Run(stid_t pstid) {
-    test_env->btree_insert_and_commit(pstid, "aa1", "data1");
+        test_env->btree_insert_and_commit(pstid, "aa1", "data1");
     }
     static void t2Run(stid_t pstid) {
-    test_env->begin_xct();
-    test_env->btree_insert(pstid, "aa2", "data2");
-    test_env->abort_xct();
+        test_env->begin_xct();
+        test_env->btree_insert(pstid, "aa2", "data2");
+        test_env->abort_xct();
     }
     static void t3Run(stid_t pstid) {
-    test_env->begin_xct();
-
-    test_env->btree_insert(pstid, "aa3", "data3");
-
-    ss_m::detach_xct();
+        test_env->begin_xct();
+        test_env->btree_insert(pstid, "aa3", "data3");
+        ss_m::detach_xct();
     }
 
     w_rc_t pre_shutdown(ss_m *ssm) {
-    output_durable_lsn(1);
-    W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
-    output_durable_lsn(2);
-    transact_thread_t t1 (_stid, t1Run);
-    transact_thread_t t2 (_stid, t2Run);
-    transact_thread_t t3 (_stid, t3Run);
-    output_durable_lsn(3);
-    W_DO(t1.fork());
-    W_DO(t2.fork());
-    W_DO(t3.fork());
-    W_DO(t1.join());
-    W_DO(t2.join());
-    return RCOK;
+        output_durable_lsn(1);
+        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        output_durable_lsn(2);
+        transact_thread_t t1 (_stid, t1Run);
+        transact_thread_t t2 (_stid, t2Run);
+        transact_thread_t t3 (_stid, t3Run);
+        output_durable_lsn(3);
+        W_DO(t1.fork());
+        W_DO(t2.fork());
+        W_DO(t3.fork());
+        W_DO(t1.join());
+        W_DO(t2.join());
+        return RCOK;
     }
     
     w_rc_t post_shutdown(ss_m *) {
-    output_durable_lsn(4);
-    x_btree_scan_result s;
-    W_DO(test_env->btree_scan(_stid, s));
-    EXPECT_EQ(1, s.rownum);
-    EXPECT_EQ(std::string("aa1"), s.minkey);
-    return RCOK;
+        output_durable_lsn(4);
+        x_btree_scan_result s;
+        W_DO(test_env->btree_scan(_stid, s));
+        EXPECT_EQ(1, s.rownum);
+        EXPECT_EQ(std::string("aa1"), s.minkey);
+        return RCOK;
     }
 };
 
-/* Failing since populate records changed
+/* Failing - t3 throws an error when destructing, seems transaction is still active. 
+ * This error previously existed for multiple test cases, was 'fixed' and now reappeared here
 TEST (RestartTest, MultithrdInflight1N) {
     test_env->empty_logdata_dir();
     restart_multithrd_inflight1 context;
@@ -754,7 +762,7 @@ TEST (RestartTest, MultithrdInflight1N) {
 }
 **/
 
-/* Failing since populate records changed
+/* Failing - see above
 TEST (RestartTest, MultithrdInflight1C) {
     test_env->empty_logdata_dir();
     restart_multithrd_inflight1 context;
@@ -763,7 +771,7 @@ TEST (RestartTest, MultithrdInflight1C) {
     options.restart_mode = m1_default_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-*/
+**/
 
 
 /* Test case with 3 threads, 1 insert&commit, 1 aborted, 1 with two inserts, one update and commit*/
@@ -1606,13 +1614,13 @@ public:
         int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5; // Inserts from t3 (not deleted)
         recordCount += ((SM_PAGESIZE / btree_m::max_entry_size()) * 5) / 2;  // Inserts from t2 (half deleted)
         EXPECT_EQ (recordCount, s.rownum); 
-        EXPECT_EQ(std::string("key300"), s.minkey);
+        EXPECT_EQ(std::string("key201"), s.minkey);
         EXPECT_EQ(getMaxKeyString('3'), s.maxkey);
         return RCOK;
     }
 };
 
-/* Failing since populate_records change 
+/* Passing */
 TEST (RestartTest, MultithrdLData5N) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata5 context;
@@ -1621,9 +1629,9 @@ TEST (RestartTest, MultithrdLData5N) {
     options.restart_mode = m1_default_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
-/* Failing since populate_records change
+/* Passing */
 TEST (RestartTest, MultithrdLData5C) {
     test_env->empty_logdata_dir();
     restart_multithrd_ldata5 context;
@@ -1632,7 +1640,7 @@ TEST (RestartTest, MultithrdLData5C) {
     options.restart_mode = m1_default_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 
 int main(int argc, char **argv) {
