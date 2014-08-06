@@ -374,7 +374,7 @@ TEST (RestartTest, MultiPageInFlightNF) {
 
 /* See btree_impl::_ux_traverse_recurse, the '_ux_traverse_try_opportunistic_adopt' call */
 /*    is returning eGOODRETRY and infinite loop, need further investigation, why?  A similar */
-/* test case 'restart_multi_concurrent_redo_crash' is passing */
+/* test case 'restart_multi_concurrent_redo' is passing but it commits the txn*/
 /* Not passing, WOD with minimal logging *
 TEST (RestartTest, MultiPageInFlightC) {
     test_env->empty_logdata_dir();
@@ -386,7 +386,7 @@ TEST (RestartTest, MultiPageInFlightC) {
 }
 **/
 
-/* Failing, full logging, infinite loop *
+/* Not passing, full logging, infinite loop, same issue as minimal logging *
 TEST (RestartTest, MultiPageInFlightCF) {
     test_env->empty_logdata_dir();
     restart_multi_page_in_flight context;
@@ -843,8 +843,7 @@ public:
         W_DO(test_env->btree_populate_records(_stid, false, true, true));  // flags: No checkpoint, commit, one transaction per insert
 
         // Issue a checkpoint to make sure these committed txns are flushed
-// TODO(Restart)... causing test failure        
-//        W_DO(ss_m::checkpoint());         
+        W_DO(ss_m::checkpoint());         
 
         // Now insert more records, these records are at the beginning of B-tree
         // therefore if these records cause a page rebalance, it would be in the parent page        
@@ -930,7 +929,7 @@ TEST (RestartTest, ConcurrentNoConflictNF) {
 }
 /**/
 
-/* Not passing, minimal logging, due to checkpoint in pre-crash */
+/* Passing, minimal logging */
 TEST (RestartTest, ConcurrentNoConflictC) {
     test_env->empty_logdata_dir();
     restart_concurrent_no_conflict context;
@@ -941,7 +940,7 @@ TEST (RestartTest, ConcurrentNoConflictC) {
 }
 /**/
 
-/* Failing: full logging, due to checkpoint in pre-crash */
+/* Passing, full logging */
 TEST (RestartTest, ConcurrentNoConflictCF) {
     test_env->empty_logdata_dir();
     restart_concurrent_no_conflict context;
@@ -966,8 +965,7 @@ public:
         W_DO(test_env->btree_populate_records(_stid, false, true, true));   // flags: No checkpoint, commit, one transaction per insert
 
         // Issue a checkpoint to make sure these committed txns are flushed
-// TODO(Restart)... causing test failure        
-//        W_DO(ss_m::checkpoint());
+        W_DO(ss_m::checkpoint());
 
         // Now insert more records, make sure these records are at 
         // the end of B-tree (append)
@@ -1049,7 +1047,7 @@ TEST (RestartTest, ConcurrentConflictNF) {
 }
 /**/
 
-/* Not passing, minimal logging, due to checkpoint in pre-crash */
+/* Passing, minimal logging */
 TEST (RestartTest, ConcurrentConflictC) {
     test_env->empty_logdata_dir();
     restart_concurrent_conflict context;
@@ -1060,7 +1058,7 @@ TEST (RestartTest, ConcurrentConflictC) {
 }
 /**/
 
-/* Failing, full logging, due to checkpoint in pre-crash */
+/* Passing, full logging */
 TEST (RestartTest, ConcurrentConflictCF) {
     test_env->empty_logdata_dir();
     restart_concurrent_conflict context;
@@ -1085,8 +1083,7 @@ public:
         W_DO(test_env->btree_populate_records(_stid, false, true, true));   // flags: No checkpoint, commit, one transaction per insert
 
         // Issue a checkpoint to make sure these committed txns are flushed
-// TODO(Restart)... causing test failure
-//        W_DO(ss_m::checkpoint());
+        W_DO(ss_m::checkpoint());
 
         // Now insert more records, make sure these records are at 
         // the end of B-tree (append)
@@ -1204,7 +1201,7 @@ TEST (RestartTest, MultiConcurrentConflictNF) {
 }
 /**/
 
-/* Not passing, minimal logging, due to checkpoint in pre-crash */
+/* Passing, minimal logging */
 TEST (RestartTest, MultiConcurrentConflictC) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_conflict context;
@@ -1216,7 +1213,7 @@ TEST (RestartTest, MultiConcurrentConflictC) {
 }
 /**/
 
-/* Failing, full logging, due to checkpoint in pre-crash */
+/* Passing, full logging */
 TEST (RestartTest, MultiConcurrentConflictCF) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_conflict context;

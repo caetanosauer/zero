@@ -159,14 +159,19 @@ rc_t btree_impl::_ux_rebalance_foster_core(
             // TODO in this case we should do full logging.
             DBGOUT1 (<< "oops, couldn't force write order dependency in rebalance. this should be treated with care");
 
-// TODO(Restart)...
-// This is an existing bug from Single-Page-Recovery, when a WOD cannot be generated, it should use full logging or other solution
-// but the current code continue the execution, therefore if system crash with this page rebalance log record
-// the recover code won't be able to recover this page rebalance operation
-// This scenario is not so difficult to encounter, at least one of the test cases in test_restart would trigger this error
-// comment out the fatal error for now, because milestone 1 is using log scan driven REDO, no Single-Page-Recovery
-// so this failure does not matter milestone 2 is using full logging which by-pass this error
-// we should address this issue if we want to turn on minimal logging with Single-Page-Recovery for recovery eventually
+// TODO(Restart)... NYI
+// This is an existing issue from Single-Page-Recovery, when a WOD cannot be generated during the execution
+// it has to use either 1) full logging or 2) flush the page to persistent device first
+// but the current code continue the execution although Write-Order-Dependency was not followed.
+// This scenario is not so difficult to encounter, at least one of the test cases in test_restart triggers this error.
+// Comment out the fatal error for now.
+// Possible solution:
+//    1. Add an extra field in the 'page rebalance log record' to indicate whether minimal or full logging for the associated page rebalance.
+//    2. If 'Write-Order-Dependency' cannot be followed, turn the full logging flag on in the log record, and use full logging for the operation
+//    3. If 'Write-Order-Dependency' can be followed, turn the full logging flag off in the log record, and use minimal logging for the operation
+//    4. In REDO, check the flag in log record to determine whether use minimal or full logging for the REDO operation.
+//    5. Once this is implemented, the system can use either minimal or full logging to handle page rebalance, no need to force one method only
+
 
 //            W_FATAL_MSG(fcINTERNAL, << "oops, couldn't force write order dependency in rebalance, full loggig required: NYI");
         }
@@ -190,9 +195,7 @@ rc_t btree_impl::_ux_rebalance_foster_core(
     // No changes in the foster page id and foster emlsn of the destination page (foster child)
     //    because the assumption is that all these information in foster child page were already setup
 
-// TODO(Restart)...
-DBGOUT3( << "&&&& Generate foster_rebalance log record, fence:: " << mid_key << ", high: " << high_key << ", chain: " << chain_high_key);
-
+    DBGOUT3( << "Generate foster_rebalance log record, fence:: " << mid_key << ", high: " << high_key << ", chain: " << chain_high_key);
     rc_t ret = log_btree_foster_rebalance(foster_p /*page, destination*/, page /*page2, source*/,
                                      move_count, mid_key /* fence*/, new_pid0, new_pid0_emlsn,
                                      high_key /*high*/, chain_high_key /*chain_high*/);
@@ -255,9 +258,6 @@ rc_t btree_impl::_ux_rebalance_foster_apply(
                                                          // this is actually the fence key, it should contains valid
                                                          // information only if the destination page has a foster child
     scratch_p.copy_chain_fence_high_key(chain_high_key); // High chain fence is from destination page
-
-// TODO(Restart)...
-DBGOUT3( << "&&&& btree_impl::_ux_rebalance_foster_apply, destination page low: " << mid_key << ", high: " << high_key << ", chain: " << chain_high_key);
 
     btrec_t lowest (page, page.nrecs() - move_count);
     if (foster_p.is_node()) {  // Non-leaf page

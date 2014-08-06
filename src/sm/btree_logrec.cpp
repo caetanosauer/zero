@@ -395,9 +395,6 @@ btree_ghost_mark_log::redo(fixable_page_h *page)
     for (size_t i = 0; i < dp->cnt; ++i) {
         w_keystr_t key (dp->get_key(i));
 
-// TODO(Restart)... 
-DBGOUT3( << "&&&& btree_ghost_mark_log::redo - key: " << key << ", bp low: " << bp.get_fence_low_key() << ", bp high no prefix: " << bp.get_fence_high_key_noprefix());
-
         if (false == restart_m::use_redo_full_logging_restart())
         {
             // If full logging, data movement log records are generated to remove records 
@@ -429,8 +426,7 @@ DBGOUT3( << "&&&& btree_ghost_mark_log::redo - key: " << key << ", bp low: " << 
             // Full logging
             if (!found) 
             {        
-// TODO(Restart)...            
-                DBGOUT3( << "&&&& btree_ghost_mark_log::redo - page driven with full logging, key not found in page but it is okay");
+                DBGOUT3( << "btree_ghost_mark_log::redo - page driven with full logging, key not found in page but it is okay");
             }
             else
             {
@@ -632,7 +628,6 @@ btree_foster_merge_log::btree_foster_merge_log (const btree_page_h& p, // destin
 }
 
 void btree_foster_merge_log::redo(fixable_page_h* p) {
-    // TODO(Restart)...
     // See detail comments in btree_foster_rebalance_log::redo
 
     // Two pages are involved:
@@ -654,7 +649,6 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
 
     if (true == restart_m::use_redo_full_logging_restart())
     {
-        // TODO(Restart)... milestone 2
         // If using full logging REDO recovery, the merge log record (system txn)
         // occurs before all the actual record move log records
 
@@ -747,11 +741,7 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
         // Minimal logging while the page is not buffer pool managed, no dependency on
         // write-order-dependency
 
-        // TODO(Restart)...
         // See detail comments in btree_foster_rebalance_log::redo
-
-// TODO(Restart)... page rebalance is not working in multiple test cases, either record not found or fence key comparision error
-//                          no test case covering page merge yet
 
         // this is in Single-Page-Recovery. we use scratch space for another page because bufferpool frame
         // for another page is probably too recent for Single-Page-Recovery.
@@ -828,9 +818,8 @@ btree_foster_rebalance_log::btree_foster_rebalance_log (const btree_page_h& p,
 }
 
 void btree_foster_rebalance_log::redo(fixable_page_h* p) {
-    // TODO(Restart)...
-    // The problem is that we are relying on "page2" (src, another) to contain the
-    // pre-rebalance image, therefore we can move records from 'another' (src) into 'bp' (dest).
+    // We are relying on "page2" (src, another) to contain the pre-rebalance image,
+    // therefore we can move records from 'another' (src) into 'bp' (dest).
     // If 'another' (src) has been recovered already (post-rebalance image), it does not 
     // contain all the pre-rebalance records, we lost the records we need to move into 
     // the source page at this point, we cannot perform REDO with the post-image on source page.
@@ -865,7 +854,6 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
     //     The challenge in this solution is to handle complex operation, e.g. multiple load balance
     //     operations on the same page before system crash.
 
-    // TODO(Restart)...
     // In milestone 2:
     //    If restart_m::use_redo_full_logging_restart() is on, use solution #3 which disables 
     //        the minimal logging and uses full logging instead, therefore btree_foster_rebalance_log
@@ -920,7 +908,6 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
 
     if (true == restart_m::use_redo_full_logging_restart()) 
     {
-        // TODO(Restart)... milestone 2
         // Using full logging for b-tree rebalance operation, the rebalance log record (system txn)
         // during REDO occurs before all the actual record move log records
         //
@@ -949,14 +936,13 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
            
             if (bp.is_leaf())
             {
-                DBGOUT3( << "&&&& Foster child page is a leaf page");
+                DBGOUT3( << "Foster child page is a leaf page");
             }
             else
             {
-                DBGOUT3( << "&&&& Foster child page is a non-leaf page");            
+                DBGOUT3( << "Foster child page is a non-leaf page");            
             }
-// TODO(Restart)... 
-            DBGOUT3( << "&&&& btree_foster_rebalance_log: recover foster child page, initialize it to an empty page, foster child pid: " 
+            DBGOUT3( << "btree_foster_rebalance_log: recover foster child page, initialize it to an empty page, foster child pid: " 
                      << bp.pid() << ", number of records (should be zero): " << bp.nrecs());
 
             // In a page split operation (this one), the assumption is the destination page is a 
@@ -990,10 +976,9 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
             // The following full logging (delete/insert) should remove records from 
             // the source (foster parent) page
 
-// TODO(Restart)...             
-            DBGOUT3( << "&&&& btree_foster_rebalance_log: recover foster parent page, do not initialize the page, foster parent pid: " << bp.pid());
-            DBGOUT3( << "&&&& Page had " << bp.nrecs() << " records");       
-            DBGOUT3( << "&&&& fence high: " << fence << ", high len: " << dp->_fence_len << ", chain: " << chain_high_key);
+            DBGOUT3( << "btree_foster_rebalance_log: recover foster parent page, do not initialize the page, foster parent pid: " << bp.pid());
+            DBGOUT3( << "Page had " << bp.nrecs() << " records");       
+            DBGOUT3( << "fence high: " << fence << ", high len: " << dp->_fence_len << ", chain: " << chain_high_key);
 
             // Calling init_fence_keys to set the new fence keys of the source page
             W_COERCE(bp.init_fence_keys(false /* set_low */, fence,                // Do not reset the low fence key
@@ -1089,18 +1074,15 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
         // so the source page has all the original records, and then move records from source to destination. 
         // Because this is a page rebalance operation, the destination page starts as an empty page.
         //
-        // The logic probably works well with normal Single Page Recovery (do we have 
-        // sufficient test?)
-        // but does it work well with all scenarios from Recovery REDO?  Especially if
-        // we have complex operations, such as multiple rebalance and merge operations
-        // on the same page before system crash, etc.  If we are doing log scan driven REDO then
-        // we are okay using this logic because we are recovery based on one log record at a time,
-        // but when using page driven REDO (one page at a time) then we might have issues if
-        // there are multiple load balance operations on the same page before system crash,
-        // the pre-image and record movements might not be what we expected.
+        // The logic shouldwork well with normal Single Page Recovery, does it work well with 
+        // all scenarios from Recovery REDO?  Especially if we have complex operations, such
+        // as multiple rebalance and merge operations on the same page before system crash, etc.
+        // If we are doing log scan driven REDO then we are okay using this logic because we are 
+        // recovery based on one log record at a time, but when using page driven REDO (one page
+        // at a time) then we need to be careful if there are multiple load balance operations on the 
+        // same page before system crash, the recursive call has to rebuild the pre-image for
+        // each page rebalance operation.
         
-// TODO(Restart)... not working in multiple test cases, either record not found or fence key comparision error
-
         // this is in Single-Page-Recovery. we use scratch space for another page because bufferpool frame
         // for another page is probably too latest for Single-Page-Recovery.
         SprScratchSpace frame(bp.vol(), bp.store(), another_pid);

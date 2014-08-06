@@ -465,7 +465,8 @@ inline void bf_tree_m::clear_recovery_access(const generic_page* p) {
     cb._recovery_access = false;
 }
 
-inline void bf_tree_m::set_in_doubt(const bf_idx idx, lsn_t new_lsn) {
+inline void bf_tree_m::set_in_doubt(const bf_idx idx, lsn_t first_lsn,
+                                      lsn_t last_lsn) {
     // Caller has latch on page
     // From Log Analysis phase in Recovery, page is not in buffer pool
     w_assert1 (_is_active_idx(idx));
@@ -475,14 +476,14 @@ inline void bf_tree_m::set_in_doubt(const bf_idx idx, lsn_t new_lsn) {
     cb._used = true;
 
     // _rec_lsn is the initial LSN which made the page dirty
-    // Update the earliest LSN only if new_lsn is earlier than the current one
-    if ((new_lsn.data() < cb._rec_lsn) || (0 == cb._rec_lsn))
-        cb._rec_lsn = new_lsn.data();
+    // Update the earliest LSN only if first_lsn is earlier than the current one
+    if ((first_lsn.data() < cb._rec_lsn) || (0 == cb._rec_lsn))
+        cb._rec_lsn = first_lsn.data();
 
     // During recovery, _dependency_lsn is used to store the last write lsn on 
-    // the in_doubt page.  Update it if the new lsn is later than the current one
-    if ((new_lsn.data() > cb._dependency_lsn) || (0 == cb._dependency_lsn))
-        cb._dependency_lsn = new_lsn.data();
+    // the in_doubt page.  Update it if the last lsn is later than the current one
+    if ((last_lsn.data() > cb._dependency_lsn) || (0 == cb._dependency_lsn))
+        cb._dependency_lsn = last_lsn.data();
 
 }
 

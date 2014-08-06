@@ -292,9 +292,6 @@ void btree_impl::_ux_traverse_search(btree_impl::traverse_mode_t traverse_mode,
         }
     } else if (traverse_mode == t_fence_low_match) {
 
-// TODO(Restart)... 
-DBGOUT1 (<< "btree_impl::_ux_traverse_search - t_fence_low_match, key: " << key << ", current page: " << current->get_fence_low_key());
-
         int d = current->compare_with_fence_low(key);
         if (d == 0) {
             if (current->is_leaf()) {

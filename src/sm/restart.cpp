@@ -672,7 +672,7 @@ restart_m::analysis_pass(
                         W_FATAL_MSG(fcINTERNAL, 
                             << "Page # = 0 from a system transaction log record");
                     rc = smlevel_0::bf->register_and_mark(idx, page_of_interest,
-                              lsn, in_doubt_count);
+                              lsn /*first_lsn*/, lsn /*last_lsn*/, in_doubt_count);
 
                     if (rc.is_error()) 
                     {
@@ -698,7 +698,7 @@ restart_m::analysis_pass(
                     //    btree_foster_deadopt_log
                     //
                     // TODO(Restart)... milestone 2
-                    // If page driven REDO with Single-Page-Recovery: b-tree rebalance and merge operations are doing
+                    // If full logging REDO with Single-Page-Recovery: b-tree rebalance and merge operations are doing
                     // full logging (log all the record movements).  We still have the log records for these
                     // system transactions, but the corresponding REDO operations are for 
                     // setting page fence keys only, not the actual record movements
@@ -724,7 +724,8 @@ restart_m::analysis_pass(
                                     << "Page # = 0 from a multi-record system transaction log record");
                             }
                         }
-                        rc = smlevel_0::bf->register_and_mark(idx, page2_of_interest, lsn, in_doubt_count);
+                        rc = smlevel_0::bf->register_and_mark(idx, page2_of_interest, lsn /*first_lsn*/,
+                                                              lsn /*last_lsn*/, in_doubt_count);
                         if (rc.is_error()) 
                         {
                             // Not able to get a free block in buffer pool without evict, cannot continue in M1
@@ -844,7 +845,8 @@ restart_m::analysis_pass(
                         W_FATAL_MSG(fcINTERNAL, 
                             << "Page # = 0 from a page in t_chkpt_bf_tab log record");
                     rc = smlevel_0::bf->register_and_mark(idx, dp->brec[i].pid,
-                            dp->brec[i].rec_lsn.data(), in_doubt_count);
+                            dp->brec[i].rec_lsn.data() /*first_lsn*/, 
+                            dp->brec[i].page_lsn.data() /*last_lsn*/, in_doubt_count);
                     if (rc.is_error()) 
                     {
                         // Not able to get a free block in buffer pool without evict, cannot continue in M1
@@ -1278,7 +1280,7 @@ restart_m::analysis_pass(
                             W_FATAL_MSG(fcINTERNAL, 
                                 << "Page # = 0 from a page in log record, log type = " << r.type());
                         rc = smlevel_0::bf->register_and_mark(idx, 
-                                  page_of_interest, lsn, in_doubt_count);
+                                  page_of_interest, lsn /*first_lsn*/, lsn /*last_lsn*/, in_doubt_count);
                         if (rc.is_error()) 
                         {
                             // Not able to get a free block in buffer pool without evict, cannot continue in M1
@@ -1336,7 +1338,7 @@ restart_m::analysis_pass(
                             W_FATAL_MSG(fcINTERNAL, 
                                 << "Page # = 0 from a page in compensation log record");
                         rc = smlevel_0::bf->register_and_mark(idx, 
-                                  page_of_interest, lsn, in_doubt_count);
+                                  page_of_interest, lsn /*first_lsn*/, lsn /*last_lsn*/, in_doubt_count);
                         if (rc.is_error()) 
                         {
                             // Not able to get a free block in buffer pool without evict, cannot continue in M1
@@ -2866,15 +2868,13 @@ void restart_m::_redo_page_pass()
     // Therefore special logic must be implemented in the 'redo' functions of 
     // these log records (Btree_logrec.cpp) when WOD is not being followed
 
-    // TODO(Restart)...    
-    // In milestone 2, a workaround has been implemented for page driven REDO 
-    // where we disable the minimal logging for b-tree rebalance and merge operations,
-    // in other words, for page rebalance and merge operations, full logging is used for 
-    // all record movements, while btree_foster_merge_log and btree_foster_rebalance_log
-    // log records are used to set page fence keys during the REDO operations.
+    // In milestone 2, two solutions have been implemented in page driven REDO to handle
+    // b-tree rebalance and merge operations:
+    // Minimal logging: system transaction log (single log) is used for the entire operation.
+    // Full logging: log all record movements, while btree_foster_merge_log and btree_foster_rebalance_log
+    //     log records are used to set page fence keys during the REDO operations.
     //
-    // Note that the workaround is only triggered when we are using page-driven REDO
-    // operation.  For log scan driven REDO operation, we will continue using minimal logging.
+    // For log scan driven REDO operation, we will continue using minimal logging.
     
     for (bf_idx i = 1; i < bfsz; ++i)
     {   
@@ -3347,6 +3347,9 @@ void restart_thread_t::run()
     // Done
     DBGOUT1(<< "restart_thread_t: Finished REDO and UNDO tasks");    
     working = smlevel_0::t_concurrent_done;
+
+    // Done with M2 restart, clear the global commit_lsn, allow all concurrent user transactions
+    smlevel_0::commit_lsn = lsn_t::null;
 
     return;
 };
