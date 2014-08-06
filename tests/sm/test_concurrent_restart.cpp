@@ -25,103 +25,6 @@ void output_durable_lsn(int W_IFDEBUG1(num)) {
     DBGOUT1( << num << ".durable LSN=" << get_durable_lsn());
 }
 
-w_rc_t populate_multi_page_record(ss_m *ssm, stid_t &stid, bool fCommit) 
-{
-    // One transaction, caller decide commit the txn or not
-
-    // Set the data size is the max_entry_size minus key size
-    // because the total size must be smaller than or equal to
-    // btree_m::max_entry_size()
-    const int key_size = 5;
-    const int data_size = btree_m::max_entry_size() - key_size;
-
-    vec_t data;
-    char data_str[data_size];
-    memset(data_str, 'D', data_size);
-    data.set(data_str, data_size);
-    w_keystr_t key;
-    char key_str[key_size];
-    key_str[0] = 'k';
-    key_str[1] = 'e';
-    key_str[2] = 'y';
-
-    // Insert enough records to ensure page split
-    // One big transaction with multiple insertions
-    
-    W_DO(test_env->begin_xct());    
-
-    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
-
-    for (int i = 0; i < recordCount; ++i) 
-    {
-        int num;
-        num = recordCount - 1 - i;
-
-        key_str[3] = ('0' + ((num / 10) % 10));
-        key_str[4] = ('0' + (num % 10));
-        key.construct_regularkey(key_str, key_size);
-
-        W_DO(ssm->create_assoc(stid, key, data));
-    }
-
-    // Commit the record only if told
-    if (true == fCommit)
-        W_DO(test_env->commit_xct());
-
-    return RCOK;
-}
-
-w_rc_t populate_records(ss_m *ssm, stid_t &stid, bool fCheckPoint) 
-{
-    // Multiple committed transactions, caller decide whether to include a checkpount or not
-
-    // Set the data size is the max_entry_size minus key size
-    // because the total size must be smaller than or equal to
-    // btree_m::max_entry_size()
-    const int key_size = 5;
-    const int data_size = btree_m::max_entry_size() - key_size;
-
-    vec_t data;
-    char data_str[data_size];
-    memset(data_str, 'D', data_size);
-    data.set(data_str, data_size);
-    w_keystr_t key;
-    char key_str[key_size];
-    key_str[0] = 'k';
-    key_str[1] = 'e';
-    key_str[2] = 'y';
-
-    // Insert enough records to ensure page split
-    // Multiple transactions with one insertion per transaction
-    // Commit all transactions
-    
-    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
-    for (int i = 0; i < recordCount; ++i) 
-    {
-        int num;
-        num = recordCount - 1 - i;
-
-        key_str[3] = ('0' + ((num / 10) % 10));
-        key_str[4] = ('0' + (num % 10));
-        key.construct_regularkey(key_str, key_size);
-
-        if (true == fCheckPoint) 
-        {
-            // Take one checkpoint half way through insertions
-            if (num == recordCount/2)
-                W_DO(ss_m::checkpoint()); 
-        }
-
-        W_DO(test_env->begin_xct());
-        W_DO(ssm->create_assoc(stid, key, data));
-        W_DO(test_env->commit_xct());
-    }
-
-    return RCOK;
-}
-
-
-
 // Test case without any operation, start and normal shutdown SM
 class restart_empty : public restart_test_base  {
 public:
@@ -138,9 +41,9 @@ public:
 TEST (RestartTest, EmptyN) {
     test_env->empty_logdata_dir();
     restart_empty context;
-	restart_test_options options;
-	options.shutdown_mode = normal_shutdown;
-	options.restart_mode = m2_default_restart; // minimal logging
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_default_restart; // minimal logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
@@ -149,9 +52,9 @@ TEST (RestartTest, EmptyN) {
 TEST (RestartTest, EmptyC) {
     test_env->empty_logdata_dir();
     restart_empty context;
-	restart_test_options options;
-	options.shutdown_mode = simulated_crash;
-	options.restart_mode = m2_default_restart; // minimal logging
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_default_restart; // minimal logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
@@ -199,9 +102,9 @@ public:
 TEST (RestartTest, SimpleN) {
     test_env->empty_logdata_dir();
     restart_simple context;
-	restart_test_options options;
-	options.shutdown_mode = normal_shutdown;
-	options.restart_mode = m2_default_restart; // minimal logging
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_default_restart; // minimal logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
@@ -210,9 +113,9 @@ TEST (RestartTest, SimpleN) {
 TEST (RestartTest, SimpleNF) {
     test_env->empty_logdata_dir();
     restart_simple context;
-	restart_test_options options;
-	options.shutdown_mode = normal_shutdown;
-	options.restart_mode = m2_full_logging_restart; // full logging
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_full_logging_restart; // full logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
@@ -221,9 +124,9 @@ TEST (RestartTest, SimpleNF) {
 TEST (RestartTest, SimpleC) {
     test_env->empty_logdata_dir();
     restart_simple context;
-	restart_test_options options;
-	options.shutdown_mode = simulated_crash;
-	options.restart_mode = m2_default_restart; // minimal logging
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_default_restart; // minimal logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
@@ -232,9 +135,9 @@ TEST (RestartTest, SimpleC) {
 TEST (RestartTest, SimpleCF) {
     test_env->empty_logdata_dir();
     restart_simple context;
-	restart_test_options options;
-	options.shutdown_mode = simulated_crash;
-	options.restart_mode = m2_full_logging_restart; // full logging
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_full_logging_restart; // full logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
@@ -285,9 +188,9 @@ public:
 TEST (RestartTest, ComplexInFlightN) {
     test_env->empty_logdata_dir();
     restart_complex_in_flight context;
-	restart_test_options options;
-	options.shutdown_mode = normal_shutdown;
-	options.restart_mode = m2_default_restart; // minimal logging
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_default_restart; // minimal logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
@@ -296,9 +199,9 @@ TEST (RestartTest, ComplexInFlightN) {
 TEST (RestartTest, ComplexInFlightNF) {
     test_env->empty_logdata_dir();
     restart_complex_in_flight context;
-	restart_test_options options;
-	options.shutdown_mode = normal_shutdown;
-	options.restart_mode = m2_full_logging_restart; // full logging
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_full_logging_restart; // full logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
@@ -307,9 +210,9 @@ TEST (RestartTest, ComplexInFlightNF) {
 TEST (RestartTest, ComplexInFlightC) {
     test_env->empty_logdata_dir();
     restart_complex_in_flight context;
-	restart_test_options options;
-	options.shutdown_mode = simulated_crash;
-	options.restart_mode = m2_default_restart; // minimal logging
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_default_restart; // minimal logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
@@ -318,9 +221,9 @@ TEST (RestartTest, ComplexInFlightC) {
 TEST (RestartTest, ComplexInFlightCF) {
     test_env->empty_logdata_dir();
     restart_complex_in_flight context;
-	restart_test_options options;
-	options.shutdown_mode = simulated_crash;
-	options.restart_mode = m2_full_logging_restart; // full logging
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_full_logging_restart; // full logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
@@ -373,9 +276,9 @@ public:
 TEST (RestartTest, ComplexInFlightChkptN) {
     test_env->empty_logdata_dir();
     restart_complex_in_flight_chkpt context;
-	restart_test_options options;
-	options.shutdown_mode = normal_shutdown;
-	options.restart_mode = m2_default_restart; // minimal logging
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_default_restart; // minimal logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
@@ -384,9 +287,9 @@ TEST (RestartTest, ComplexInFlightChkptN) {
 TEST (RestartTest, ComplexInFlightChkptNF) {
     test_env->empty_logdata_dir();
     restart_complex_in_flight_chkpt context;
-	restart_test_options options;
-	options.shutdown_mode = normal_shutdown;
-	options.restart_mode = m2_full_logging_restart; // full logging
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_full_logging_restart; // full logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
@@ -395,9 +298,9 @@ TEST (RestartTest, ComplexInFlightChkptNF) {
 TEST (RestartTest, ComplexInFlightChkptC) {
     test_env->empty_logdata_dir();
     restart_complex_in_flight_chkpt context;
-	restart_test_options options;
-	options.shutdown_mode = simulated_crash;
-	options.restart_mode = m2_default_restart; // minimal logging
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_default_restart; // minimal logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
@@ -406,9 +309,9 @@ TEST (RestartTest, ComplexInFlightChkptC) {
 TEST (RestartTest, ComplexInFlightChkptCF) {
     test_env->empty_logdata_dir();
     restart_complex_in_flight_chkpt context;
-	restart_test_options options;
-	options.shutdown_mode = simulated_crash;
-	options.restart_mode = m2_full_logging_restart; // full logging
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_full_logging_restart; // full logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
@@ -424,7 +327,7 @@ public:
         output_durable_lsn(2);
 
         // One big uncommitted txn
-        W_DO(populate_multi_page_record(ssm, _stid, false));  // false: Do not commit, in-flight
+        W_DO(test_env->btree_populate_records(_stid, false, false));  // false: No checkpoint; false: Do not commit, in-flight
         output_durable_lsn(3);
 
         return RCOK;
@@ -451,9 +354,9 @@ public:
 TEST (RestartTest, MultiPageInFlightN) {
     test_env->empty_logdata_dir();
     restart_multi_page_in_flight context;
-	restart_test_options options;
-	options.shutdown_mode = normal_shutdown;
-	options.restart_mode = m2_default_restart; // minimal logging
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_default_restart; // minimal logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
@@ -462,9 +365,9 @@ TEST (RestartTest, MultiPageInFlightN) {
 TEST (RestartTest, MultiPageInFlightNF) {
     test_env->empty_logdata_dir();
     restart_multi_page_in_flight context;
-	restart_test_options options;
-	options.shutdown_mode = normal_shutdown;
-	options.restart_mode = m2_full_logging_restart; // full logging
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_full_logging_restart; // full logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 **/
@@ -476,9 +379,9 @@ TEST (RestartTest, MultiPageInFlightNF) {
 TEST (RestartTest, MultiPageInFlightC) {
     test_env->empty_logdata_dir();
     restart_multi_page_in_flight context;
-	restart_test_options options;
-	options.shutdown_mode = simulated_crash;
-	options.restart_mode = m2_default_restart; // minimal logging
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_default_restart; // minimal logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 **/
@@ -487,9 +390,9 @@ TEST (RestartTest, MultiPageInFlightC) {
 TEST (RestartTest, MultiPageInFlightCF) {
     test_env->empty_logdata_dir();
     restart_multi_page_in_flight context;
-	restart_test_options options;
-	options.shutdown_mode = simulated_crash;
-	options.restart_mode = m2_full_logging_restart; // full logging
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_full_logging_restart; // full logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 **/
@@ -541,9 +444,9 @@ public:
 TEST (RestartTest, ConcurrentChkptN) {
     test_env->empty_logdata_dir();
     restart_concurrent_chkpt context;
-	restart_test_options options;
-	options.shutdown_mode = normal_shutdown;
-	options.restart_mode = m2_redo_delay_restart; // minimal logging
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_redo_delay_restart; // minimal logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
@@ -552,9 +455,9 @@ TEST (RestartTest, ConcurrentChkptN) {
 TEST (RestartTest, ConcurrentChkptNF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chkpt context;
-	restart_test_options options;
-	options.shutdown_mode = normal_shutdown;
-	options.restart_mode = m2_redo_fl_delay_restart; // full logging
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_redo_fl_delay_restart; // full logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
@@ -563,9 +466,9 @@ TEST (RestartTest, ConcurrentChkptNF) {
 TEST (RestartTest, ConcurrentChkptC) {
     test_env->empty_logdata_dir();
     restart_concurrent_chkpt context;
-	restart_test_options options;
-	options.shutdown_mode = simulated_crash;
-	options.restart_mode = m2_redo_delay_restart; // minimal logging
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_redo_delay_restart; // minimal logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
@@ -574,9 +477,9 @@ TEST (RestartTest, ConcurrentChkptC) {
 TEST (RestartTest, ConcurrentChkptCF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chkpt context;
-	restart_test_options options;
-	options.shutdown_mode = simulated_crash;
-	options.restart_mode = m2_redo_fl_delay_restart; // full logging
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_redo_fl_delay_restart; // full logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
@@ -706,7 +609,7 @@ public:
         output_durable_lsn(2);
 
         // One big committed txn
-        W_DO(populate_multi_page_record(ssm, _stid, true));  // true: commit
+        W_DO(test_env->btree_populate_records(_stid, false, true));  // flags: no checkpoint, commit
         
         W_DO(test_env->btree_insert_and_commit(_stid, "aa4", "data2"));
 
@@ -739,8 +642,8 @@ public:
 
                 // Sleep to give Recovery sufficient time to finish
                 while (true == test_env->in_restart()) {
-                	// Concurrent restart is still going on, wait
-                	::usleep(WAIT_TIME);
+                    // Concurrent restart is still going on, wait
+                    ::usleep(WAIT_TIME);
                 }
 
                 // Try again
@@ -855,8 +758,8 @@ public:
 
                 // Sleep to give Recovery sufficient time to finish
                 while (true == test_env->in_restart()) {
-                	// Concurrent restart is still going on, wait
-                	::usleep(WAIT_TIME);
+                    // Concurrent restart is still going on, wait
+                    ::usleep(WAIT_TIME);
                 }
 
                 // Try again
@@ -937,7 +840,7 @@ public:
         output_durable_lsn(2);
 
         // Multiple committed transactions with many pages
-        W_DO(populate_records(ssm, _stid, false));  // false: No checkpoint
+        W_DO(test_env->btree_populate_records(_stid, false, true, true));  // flags: No checkpoint, commit, one transaction per insert
 
         // Issue a checkpoint to make sure these committed txns are flushed
 // TODO(Restart)... causing test failure        
@@ -1010,9 +913,9 @@ public:
 TEST (RestartTest, ConcurrentNoConflictN) {
     test_env->empty_logdata_dir();
     restart_concurrent_no_conflict context;
-	restart_test_options options;
-	options.shutdown_mode = normal_shutdown;
-	options.restart_mode = m2_both_delay_restart; // minimal logging
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_both_delay_restart; // minimal logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
@@ -1021,9 +924,9 @@ TEST (RestartTest, ConcurrentNoConflictN) {
 TEST (RestartTest, ConcurrentNoConflictNF) {
     test_env->empty_logdata_dir();
     restart_concurrent_no_conflict context;
-	restart_test_options options;
-	options.shutdown_mode = normal_shutdown;
-	options.restart_mode = m2_both_fl_delay_restart; // full logging
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_both_fl_delay_restart; // full logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
@@ -1032,9 +935,9 @@ TEST (RestartTest, ConcurrentNoConflictNF) {
 TEST (RestartTest, ConcurrentNoConflictC) {
     test_env->empty_logdata_dir();
     restart_concurrent_no_conflict context;
-	restart_test_options options;
-	options.shutdown_mode = simulated_crash;
-	options.restart_mode = m2_both_delay_restart; // minimal logging
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_both_delay_restart; // minimal logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
@@ -1043,9 +946,9 @@ TEST (RestartTest, ConcurrentNoConflictC) {
 TEST (RestartTest, ConcurrentNoConflictCF) {
     test_env->empty_logdata_dir();
     restart_concurrent_no_conflict context;
-	restart_test_options options;
-	options.shutdown_mode = simulated_crash;
-	options.restart_mode = m2_both_fl_delay_restart; // full logging
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_both_fl_delay_restart; // full logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
@@ -1061,7 +964,7 @@ public:
         output_durable_lsn(2);
 
         // Multiple committed transactions with many pages
-        W_DO(populate_records(ssm, _stid, false));   // false: No checkpoint
+        W_DO(test_env->btree_populate_records(_stid, false, true, true));   // flags: No checkpoint, commit, one transaction per insert
 
         // Issue a checkpoint to make sure these committed txns are flushed
 // TODO(Restart)... causing test failure        
@@ -1180,7 +1083,7 @@ public:
         output_durable_lsn(2);
 
         // Multiple committed transactions with many pages
-        W_DO(populate_records(ssm, _stid, false));   // false: No checkpoint
+        W_DO(test_env->btree_populate_records(_stid, false, true, true));   // flags: No checkpoint, commit, one transaction per insert
 
         // Issue a checkpoint to make sure these committed txns are flushed
 // TODO(Restart)... causing test failure
@@ -1461,6 +1364,46 @@ TEST (RestartTest, ConcurrentSameInsertCF) {
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
+
+class restart_concurrent_chckpt_multi_index : public restart_test_base {
+public:
+    w_rc_t pre_shutdown(ss_m *ssm) {
+        _stid_list = new stid_t[3];
+        output_durable_lsn(1);
+        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
+        output_durable_lsn(2);
+        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[1], _root_pid));
+        output_durable_lsn(3);
+        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[2], _root_pid));
+        output_durable_lsn(4);
+
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, true, true, '0'));    // flags: no checkpoint, commit, one transaction per insert, keyPrefix '0'
+        W_DO(test_env->btree_populate_records(_stid_list[1], false, true, false, '1'));   // flags:                        all inserts in one transaction, keyPrefix '1'
+        W_DO(test_env->btree_populate_records(_stid_list[2], false, true, false, '2'));   // flags:                        all inserts in one transaction, keyPrefix '2'
+
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[1], "aa2", "data2"));
+        W_DO(test_env->btree_populate_records(_stid_list[2], false, false));
+        return RCOK;
+    }
+
+    w_rc_t post_shutdown(ss_m *) {
+        delete [] _stid_list;
+        return RCOK;
+    }
+};
+/*
+TEST (RestartTest, MultiIndexDummy) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_chckpt_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+*/
+
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

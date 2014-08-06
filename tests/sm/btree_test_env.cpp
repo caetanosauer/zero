@@ -444,7 +444,7 @@ int btree_test_env::runBtreeTest (w_rc_t (*func)(ss_m*, test_volume_t*),
 // Begin... for test_restart.cpp, test_concurrent_restart.cpp
 int btree_test_env::runRestartTest (restart_test_base *context,
     restart_test_options *restart_options,
-	bool use_locks, int32_t lock_table_size,
+    bool use_locks, int32_t lock_table_size,
     int disk_quota_in_pages, int bufferpool_size_in_pages,
     uint32_t cleaner_threads,
     uint32_t cleaner_interval_millisec_min,
@@ -465,7 +465,7 @@ int btree_test_env::runRestartTest (restart_test_base *context,
 
 int btree_test_env::runRestartTest (restart_test_base *context,
     restart_test_options *restart_options,
-	bool use_locks, int32_t lock_table_size,
+    bool use_locks, int32_t lock_table_size,
     int disk_quota_in_pages, int bufferpool_size_in_pages,
     uint32_t cleaner_threads,
     uint32_t cleaner_interval_millisec_min,
@@ -915,9 +915,9 @@ bool x_in_restart(ss_m* ssm)
 
 /* Thread-API to be used by tests to simulate multiple threads as sources of transactions.
  * Usage: 1) Construct thread object providing a pointer to the function to be executed when the thread is run.
- * 	     This function has to be a static function with an argument of type stid_t as the only one.
- * 	  2) Call fork() on the thread object to run the thread
- * 	 [3) Call join() on the thread to wait for it to finish or use  _finished to see if it has finished yet]
+ *       This function has to be a static function with an argument of type stid_t as the only one.
+ *    2) Call fork() on the thread object to run the thread
+ *   [3) Call join() on the thread to wait for it to finish or use  _finished to see if it has finished yet]
  */
 transact_thread_t::transact_thread_t(stid_t stid, void (*runfunc)(stid_t)) : smthread_t(t_regular, "transact_thread_t"), _stid(stid), _finished(false) {
     _runnerfunc = runfunc;
@@ -932,4 +932,67 @@ void transact_thread_t::run() {
     _runnerfunc(_stid);
     _finished = true;
     std::cout << ":T" << _thid << " finished.";
+}
+
+w_rc_t btree_test_env::btree_populate_records(stid_t &stid, bool fCheckPoint, bool fCommit, bool splitIntoSmallTrans, char keyPrefix) 
+{
+
+    // Set the data size is the max_entry_size minus key size
+    // because the total size must be smaller than or equal to
+    // btree_m::max_entry_size()
+    bool isMulti = keyPrefix != '\0';
+    const int key_size = isMulti ? 6 : 5;
+    const int data_size = btree_m::max_entry_size() - key_size - 1;
+
+    vec_t data;
+    char data_str[data_size];
+    memset(data_str, 'D', data_size);
+    w_keystr_t key;
+    char key_str[key_size];
+    key_str[0] = 'k';
+    key_str[1] = 'e';
+    key_str[2] = 'y';
+    if(isMulti) key_str[3] = keyPrefix;
+
+    // Insert enough records to ensure page split
+    // Multiple transactions with one insertion per transaction
+   
+    if(!splitIntoSmallTrans) W_DO(begin_xct());
+ 
+    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
+    for (int i = 0; i < recordCount; ++i) 
+    {
+        int num;
+        num = recordCount - 1 - i;
+        
+        key_str[key_size-2] = ('0' + ((num / 10) % 10));
+        key_str[key_size-1] = ('0' + (num % 10));
+
+        if (true == fCheckPoint) 
+        {
+            // Take one checkpoint half way through insertions
+            if (num == recordCount/2)
+                W_DO(ss_m::checkpoint()); 
+        }
+        
+        if(splitIntoSmallTrans) {
+            W_DO(begin_xct());
+            W_DO(btree_insert(stid, key_str, data_str));
+            if(fCommit)
+                W_DO(commit_xct());
+            else
+                ss_m::detach_xct();
+        }
+        else
+            W_DO(btree_insert(stid, key_str, data_str));
+    }
+   
+    if(!splitIntoSmallTrans) {
+        if(fCommit)
+            W_DO(commit_xct());
+        else
+            ss_m::detach_xct();
+    }
+
+    return RCOK;
 }

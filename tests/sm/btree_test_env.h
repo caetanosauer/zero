@@ -128,6 +128,7 @@ public:
     test_volume_t _volume;
 
     stid_t _stid;
+    stid_t* _stid_list;
     lpid_t _root_pid;
 };
 
@@ -449,7 +450,9 @@ public:
     bool in_restart(){
         return x_in_restart(_ssm);
     }
-    
+   
+    w_rc_t btree_populate_records(stid_t &stid, bool fCheckPoint, bool fCommit, bool splitIntoSmallTrans = false, char keyPrefix = '\0');
+ 
     ss_m* _ssm;
     bool _use_locks;
     restart_test_options* _restart_options;
@@ -471,6 +474,7 @@ public:
     virtual void run();
     static int next_thid; // Adopted from test_deadlock, assuming there is a reason
     stid_t _stid;
+    stid_t* _stid_list;
     int _thid;
     void (*_runnerfunc)(stid_t);
     bool _finished;

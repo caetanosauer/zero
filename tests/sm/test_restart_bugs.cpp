@@ -29,101 +29,6 @@ void output_durable_lsn(int W_IFDEBUG1(num)) {
     DBGOUT1( << num << ".durable LSN=" << get_durable_lsn());
 }
 
-w_rc_t populate_multi_page_record(ss_m *ssm, stid_t &stid, bool fCommit) 
-{
-    // One transaction, caller decide commit the txn or not
-
-    // Set the data size is the max_entry_size minus key size
-    // because the total size must be smaller than or equal to
-    // btree_m::max_entry_size()
-    const int key_size = 5;
-    const int data_size = btree_m::max_entry_size() - key_size;
-
-    vec_t data;
-    char data_str[data_size];
-    memset(data_str, 'D', data_size);
-    data.set(data_str, data_size);
-    w_keystr_t key;
-    char key_str[key_size];
-    key_str[0] = 'k';
-    key_str[1] = 'e';
-    key_str[2] = 'y';
-
-    // Insert enough records to ensure page split
-    // One big transaction with multiple insertions
-    
-    W_DO(test_env->begin_xct());    
-    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
-
-    for (int i = 0; i < recordCount; ++i) 
-    {
-        int num;
-        num = recordCount - 1 - i;
-
-        key_str[3] = ('0' + ((num / 10) % 10));
-        key_str[4] = ('0' + (num % 10));
-        key.construct_regularkey(key_str, key_size);
-
-        W_DO(ssm->create_assoc(stid, key, data));
-    }
-
-    // Commit the record only if told
-    if (true == fCommit)
-        W_DO(test_env->commit_xct());
-
-    return RCOK;
-}
-
-w_rc_t populate_records(ss_m *ssm, stid_t &stid, bool fCheckPoint) 
-{
-    // Multiple committed transactions, caller decide whether to include a checkpount or not
-
-    // Set the data size is the max_entry_size minus key size
-    // because the total size must be smaller than or equal to
-    // btree_m::max_entry_size()
-    const int key_size = 5;
-    const int data_size = btree_m::max_entry_size() - key_size;
-
-    vec_t data;
-    char data_str[data_size];
-    memset(data_str, 'D', data_size);
-    data.set(data_str, data_size);
-    w_keystr_t key;
-    char key_str[key_size];
-    key_str[0] = 'k';
-    key_str[1] = 'e';
-    key_str[2] = 'y';
-
-    // Insert enough records to ensure page split
-    // Multiple transactions with one insertion per transaction
-    // Commit all transactions
-    
-//    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
-    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 1;
-    for (int i = 0; i < recordCount; ++i) 
-    {
-        int num;
-        num = recordCount - 1 - i;
-
-        key_str[3] = ('0' + ((num / 10) % 10));
-        key_str[4] = ('0' + (num % 10));
-        key.construct_regularkey(key_str, key_size);
-
-        if (true == fCheckPoint) 
-        {
-            // Take one checkpoint half way through insertions
-            if (num == recordCount/2)
-                W_DO(ss_m::checkpoint()); 
-        }
-
-        W_DO(test_env->begin_xct());
-        W_DO(ssm->create_assoc(stid, key, data));
-        W_DO(test_env->commit_xct());
-    }
-
-    return RCOK;
-}
-
 
 // Test case with more than one page of data (1 in-flight), one concurrent txn to
 // access a non-dirty page so it should be allowed
@@ -135,7 +40,7 @@ public:
         output_durable_lsn(2);
 
         // Multiple committed transactions with many pages
-        W_DO(populate_records(ssm, _stid, false));  // false: No checkpoint
+        W_DO(test_env->btree_populate_records(_stid, false, true));  // flags: No checkpoint, commit
 
 
         // Issue a checkpoint to make sure these committed txns are flushed
