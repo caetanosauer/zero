@@ -118,9 +118,13 @@ struct restart_test_options {
 // @See btree_test_env::runRestartTest()
 class restart_test_base {
 public:
-    restart_test_base() {}
-    virtual ~restart_test_base() {}
-
+    restart_test_base() { _stid_list = NULL; }
+    virtual ~restart_test_base() {
+        if(_stid_list != NULL) {
+            delete [] _stid_list;
+            _stid_list = NULL;
+        } 
+    }
     virtual w_rc_t pre_shutdown(ss_m *ssm) = 0;
 
     virtual w_rc_t post_shutdown(ss_m *ssm) = 0;

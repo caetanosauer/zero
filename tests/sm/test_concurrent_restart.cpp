@@ -690,7 +690,7 @@ TEST (RestartTest, MultiConcurrentRedoNF) {
 }
 /**/
 
-/* Passing, WOD with minimal logging, in-flight is in the first page */
+/* Passing, WOD with minimal logging, in-flight is in the first page *
 TEST (RestartTest, MultiConcurrentRedoC) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_redo context;
@@ -700,7 +700,7 @@ TEST (RestartTest, MultiConcurrentRedoC) {
     options.restart_mode = m2_redo_delay_restart; // minimal logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-/**/
+**/
 
 /* Passing, full logging, in-flight is in the first page */
 TEST (RestartTest, MultiConcurrentRedoCF) {
@@ -895,8 +895,7 @@ public:
 
         // Verify
         W_DO(test_env->btree_scan(_stid, s));
-
-        int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;  // Count before checkpoint
+        int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
         recordCount += 3;  // Count after checkpoint
         if (!rc.is_error())        
             recordCount += 1;  // Count after concurrent insert
@@ -1383,16 +1382,57 @@ public:
 
         W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
         W_DO(test_env->btree_insert_and_commit(_stid_list[1], "aa2", "data2"));
-        W_DO(test_env->btree_populate_records(_stid_list[2], false, false));
+        W_DO(test_env->btree_populate_records(_stid_list[2], false, false, false, '3'));
         return RCOK;
     }
 
     w_rc_t post_shutdown(ss_m *) {
-        delete [] _stid_list;
+        output_durable_lsn(5);
+        int32_t restart_mode = test_env->_restart_options->restart_mode;
+        x_btree_scan_result s;
+
+        if(restart_mode < m3_default_restart) {
+            if(restart_mode == m2_redo_delay_restart || restart_mode == m2_redo_fl_delay_restart 
+                || restart_mode == m2_both_delay_restart || restart_mode == m2_both_fl_delay_restart) // Check if redo delay has been set in order to take a checkpoint
+            {
+                if(ss_m::in_REDO() == t_restart_phase_active) // Just a sanity check that the redo phase is truly active
+                    W_DO(ss_m::checkpoint());
+            }
+            
+            if(restart_mode == m2_undo_delay_restart || restart_mode == m2_undo_fl_delay_restart
+                || restart_mode == m2_both_delay_restart || restart_mode == m2_both_fl_delay_restart) // Check if undo delay has been set in order to take a checkpoint
+            {
+                while(ss_m::in_UNDO() == t_restart_phase_not_active) // Wait until undo phase is starting
+                    ::usleep(SHORT_WAIT_TIME);
+                if(ss_m::in_UNDO() == t_restart_phase_active) // Sanity check that undo is really active (instead of over) 
+                    W_DO(ss_m::checkpoint());
+            }
+            
+            while(ss_m::in_restart()) // Wait while restart is going on
+                ::usleep(WAIT_TIME); 
+        }
+        else    // m3 restart mode, no phases, just take a checkpoint randomly
+            W_DO(ss_m::checkpoint());
+        
+        output_durable_lsn(6);
+        const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;         
+        W_DO(test_env->btree_scan(_stid_list[0], s));
+        EXPECT_EQ(recordCount+1, s.rownum);
+        EXPECT_EQ(std::string("aa1"), s.minkey);
+        
+        W_DO(test_env->btree_scan(_stid_list[1], s));
+        EXPECT_EQ(recordCount+1, s.rownum);
+        EXPECT_EQ(std::string("aa2"), s.minkey);
+        
+        W_DO(test_env->btree_scan(_stid_list[2], s));
+        EXPECT_EQ(recordCount, s.rownum);
+        EXPECT_EQ(std::string("key200"), s.minkey);
+        
+
         return RCOK;
     }
 };
-/*
+/* Failing - infinite loop 
 TEST (RestartTest, MultiIndexDummy) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -1402,7 +1442,7 @@ TEST (RestartTest, MultiIndexDummy) {
     options.restart_mode = m2_default_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-*/
+**/
 
 
 int main(int argc, char **argv) {

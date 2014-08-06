@@ -943,6 +943,7 @@ w_rc_t btree_test_env::btree_populate_records(stid_t &stid, bool fCheckPoint, bo
     bool isMulti = keyPrefix != '\0';
     const int key_size = isMulti ? 6 : 5;
     const int data_size = btree_m::max_entry_size() - key_size - 1;
+    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
 
     vec_t data;
     char data_str[data_size];
@@ -959,7 +960,6 @@ w_rc_t btree_test_env::btree_populate_records(stid_t &stid, bool fCheckPoint, bo
    
     if(!splitIntoSmallTrans) W_DO(begin_xct());
  
-    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
     for (int i = 0; i < recordCount; ++i) 
     {
         int num;
