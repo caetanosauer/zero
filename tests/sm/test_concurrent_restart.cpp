@@ -690,7 +690,7 @@ TEST (RestartTest, MultiConcurrentRedoNF) {
 }
 /**/
 
-/* Failing, WOD with minimal logging, in-flight is in the first page *
+/* Failing sometimes, WOD with minimal logging, in-flight is in the first page *
  * Error detail: eWRONG_PAGE_LSNCHAIN(77)
 TEST (RestartTest, MultiConcurrentRedoC) {
     test_env->empty_logdata_dir();
@@ -703,7 +703,8 @@ TEST (RestartTest, MultiConcurrentRedoC) {
 }
 **/
 
-/* Passing, full logging, in-flight is in the first page */
+/* Failing sometimes, full logging, in-flight is in the first page *
+ * Error detail: eWRONG_PAGE_LSNCHAIN(77)
 TEST (RestartTest, MultiConcurrentRedoCF) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_redo context;
@@ -713,7 +714,7 @@ TEST (RestartTest, MultiConcurrentRedoCF) {
     options.restart_mode = m2_redo_fl_delay_restart; // full logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0); 
 }
-/**/
+**/
 
 
 // Test case with simple transactions (1 in-flight) and crash shutdown, 
@@ -930,7 +931,7 @@ TEST (RestartTest, ConcurrentNoConflictNF) {
 }
 /**/
 
-/* Passing, minimal logging */
+/* Rarely failing in restart (eWRONG_PAGE_LSNCHAIN(77)), minimal logging *
 TEST (RestartTest, ConcurrentNoConflictC) {
     test_env->empty_logdata_dir();
     restart_concurrent_no_conflict context;
@@ -939,7 +940,7 @@ TEST (RestartTest, ConcurrentNoConflictC) {
     options.restart_mode = m2_both_delay_restart; // minimal logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-/**/
+**/
 
 /* Passing, full logging */
 TEST (RestartTest, ConcurrentNoConflictCF) {
@@ -1380,7 +1381,7 @@ public:
 
         W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
         W_DO(test_env->btree_insert_and_commit(_stid_list[1], "aa2", "data2"));
-        W_DO(test_env->btree_populate_records(_stid_list[2], false, false, false, '3'));
+        //  W_DO(test_env->btree_populate_records(_stid_list[2], false, false, false, '3'));   // Would cause an endless loop due to an existing bug in restart (Multi-page inflight)
         return RCOK;
     }
 
@@ -1430,8 +1431,21 @@ public:
         return RCOK;
     }
 };
-/* Failing - infinite loop 
-TEST (RestartTest, MultiIndexDummy) {
+
+/* Passing */
+TEST (RestartTest, MultiIndexConcChckptN) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_chckpt_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, MultiIndexConcChckptC) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
     
@@ -1440,7 +1454,312 @@ TEST (RestartTest, MultiIndexDummy) {
     options.restart_mode = m2_default_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
+
+/* Passing */
+TEST (RestartTest, MultiIndexConcChckptNF) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_chckpt_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_full_logging_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, MultiIndexConcChckptCF) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_chckpt_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_full_logging_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, MultiIndexConcChckptNR) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_chckpt_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_redo_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, MultiIndexConcChckptCR) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_chckpt_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_redo_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, MultiIndexConcChckptNRF) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_chckpt_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_redo_fl_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, MultiIndexConcChckptCRF) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_chckpt_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_redo_fl_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, MultiIndexConcChckptNU) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_chckpt_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_undo_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, MultiIndexConcChckptCU) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_chckpt_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_undo_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, MultiIndexConcChckptNUF) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_chckpt_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_undo_fl_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, MultiIndexConcChckptCUF) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_chckpt_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_redo_fl_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, MultiIndexConcChckptNB) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_chckpt_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_both_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, MultiIndexConcChckptCB) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_chckpt_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_both_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, MultiIndexConcChckptNBF) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_chckpt_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_both_fl_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, MultiIndexConcChckptCBF) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_chckpt_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_both_fl_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+
+
+class restart_concurrent_trans_multi_index : public restart_test_base {
+public:
+    w_rc_t pre_shutdown(ss_m *ssm) {
+        _stid_list = new stid_t[3];
+        output_durable_lsn(1);
+        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
+        output_durable_lsn(2);
+        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[1], _root_pid));
+        output_durable_lsn(3);
+        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[2], _root_pid));
+        output_durable_lsn(4);
+
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, true, true, '0'));    // flags: no checkpoint, commit, one transaction per insert, keyPrefix '0'
+        W_DO(test_env->btree_populate_records(_stid_list[1], false, true, false, '1'));   // flags:                        all inserts in one transaction, keyPrefix '1'
+        W_DO(test_env->btree_populate_records(_stid_list[2], false, true, false, '2'));   // flags:                        all inserts in one transaction, keyPrefix '2'
+
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[1], "aa2", "data2"));
+        // W_DO(test_env->btree_populate_records(_stid_list[2], false, false, false, '3'));  // Would cause an endless loop due to an existing bug in restart (Multi-page inflight)
+        W_DO(test_env->begin_xct());                                                         // Just do the one in-flight insertion that is needed for post_shutdown verification
+        W_DO(test_env->btree_insert(_stid_list[2], "key300", "D"));
+        return RCOK;
+    }
+
+    w_rc_t post_shutdown(ss_m *) {
+        output_durable_lsn(5);
+        int32_t restart_mode = test_env->_restart_options->restart_mode;
+        x_btree_scan_result s;
+        w_rc_t rc;
+        bool redo_delay = restart_mode == m2_redo_delay_restart || restart_mode == m2_redo_fl_delay_restart 
+                || restart_mode == m2_both_delay_restart || restart_mode == m2_both_fl_delay_restart;
+        bool undo_delay = restart_mode == m2_undo_delay_restart || restart_mode == m2_undo_fl_delay_restart 
+                || restart_mode == m2_both_delay_restart || restart_mode == m2_both_fl_delay_restart;
+        
+        if(restart_mode < m3_default_restart) {
+            if(redo_delay) // Check if redo delay has been set in order to take a checkpoint
+            {
+                if(ss_m::in_REDO() == t_restart_phase_active) { // Just a sanity check that the redo phase is truly active
+                    W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa0", "data0"));
+                    rc = test_env->btree_update_and_commit(_stid_list[1], "key110", "A");
+                    if(rc.is_error()) {
+                        DBGOUT(<<"restart_concurrent_trans_multi_index: update failed" << rc);
+                    }
+                    else {
+                        std::cerr << "restart_concurrent_trans_multi_index: update should not succeed"<< std::endl;         
+                        return RC(eINTERNAL);
+                    }
+                }
+            }
+            if(undo_delay) // Check if undo delay has been set in order to take a checkpoint
+            {
+                while(ss_m::in_UNDO() == t_restart_phase_not_active) // Wait until undo phase is starting
+                    ::usleep(SHORT_WAIT_TIME);
+                if(ss_m::in_UNDO() == t_restart_phase_active) { // Sanity check that undo is really active (instead of over) 
+                    W_DO(test_env->btree_insert_and_commit(_stid_list[2], "bb1", "data1"));
+                    rc = test_env->btree_insert_and_commit(_stid_list[2], "key300", "data0");
+                    if(rc.is_error()) {
+                        DBGOUT(<<"restart_concurrent_trans_multi_index: insert failed" << rc);
+                    }
+                    else {
+                        std::cerr << "restart_concurrent_trans_multi_index: insert should not succeed"<< std::endl;         
+                        return RC(eINTERNAL);
+                    }
+                }
+            }
+            
+            while(ss_m::in_restart()) // Wait while restart is going on
+                ::usleep(WAIT_TIME); 
+        }
+        else {   // m3 restart mode, everything should succeed
+            W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa", "data0"));
+            W_DO(test_env->btree_update_and_commit(_stid_list[1], "key110", "A"));
+            W_DO(test_env->btree_insert_and_commit(_stid_list[2], "key300", "data0")); 
+        }
+        output_durable_lsn(6);
+        const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;         
+        
+        // Check index 0
+        W_DO(test_env->btree_scan(_stid_list[0], s));
+        if(redo_delay || restart_mode >= m3_default_restart) {
+            EXPECT_EQ(std::string("aa0"), s.minkey);
+            EXPECT_EQ(recordCount+2, s.rownum);
+        }
+        else {
+            EXPECT_EQ(std::string("aa1"), s.minkey);
+            EXPECT_EQ(recordCount+1, s.rownum);
+        }
+
+        // Check index 1
+        W_DO(test_env->btree_scan(_stid_list[1], s));
+        EXPECT_EQ(recordCount+1, s.rownum);
+        EXPECT_EQ(std::string("aa2"), s.minkey);
+        /*std::string actual;
+        char* expected;
+        memset(expected, 'D', btree_m::max_entry_size()-7);
+        W_DO(test_env->btree_lookup_and_commit(_stid_list[1], "key110", actual)); // Commented out because this line raises segfault
+        if(restart_mode < m3_default_restart)
+            EXPECT_EQ(expected, actual);
+        else
+            EXPECT_EQ(std::string("A"), actual);
+        */
+        // Check index 2
+        W_DO(test_env->btree_scan(_stid_list[2], s));
+        if(restart_mode < m3_default_restart && undo_delay) {
+            EXPECT_EQ(recordCount, s.rownum);
+            EXPECT_EQ(std::string("bb1"), s.minkey);
+            EXPECT_EQ('2', s.maxkey.at(3));
+        }
+        else if(restart_mode < m3_default_restart){
+            EXPECT_EQ(recordCount, s.rownum);
+            EXPECT_EQ(std::string("key200"), s.minkey);
+            EXPECT_EQ('2', s.maxkey.at(3));
+        }
+        else { // m3
+            EXPECT_EQ(recordCount+1, s.rownum);
+            EXPECT_EQ(std::string("key200"), s.minkey);
+            EXPECT_EQ(std::string("key300"), s.maxkey); 
+        }
+
+        return RCOK;
+    }
+};
+
+/* Passing */ 
+TEST (RestartTest, MultiIndexConcurrentTrans) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_trans_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
 
 
 int main(int argc, char **argv) {

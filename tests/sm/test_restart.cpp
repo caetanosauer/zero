@@ -737,6 +737,7 @@ public:
         W_DO(t3.fork());
         W_DO(t1.join());
         W_DO(t2.join());
+        W_DO(t3.join());
         return RCOK;
     }
     
@@ -750,8 +751,7 @@ public:
     }
 };
 
-/* Failing - t3 throws an error when destructing, seems transaction is still active. 
- * This error previously existed for multiple test cases, was 'fixed' and now reappeared here
+/* Passing */
 TEST (RestartTest, MultithrdInflight1N) {
     test_env->empty_logdata_dir();
     restart_multithrd_inflight1 context;
@@ -760,9 +760,9 @@ TEST (RestartTest, MultithrdInflight1N) {
     options.restart_mode = m1_default_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
-/* Failing - see above
+/* Passing */
 TEST (RestartTest, MultithrdInflight1C) {
     test_env->empty_logdata_dir();
     restart_multithrd_inflight1 context;
@@ -771,7 +771,7 @@ TEST (RestartTest, MultithrdInflight1C) {
     options.restart_mode = m1_default_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 
 /* Test case with 3 threads, 1 insert&commit, 1 aborted, 1 with two inserts, one update and commit*/
@@ -1145,33 +1145,33 @@ class restart_multithrd_inflight3 : public restart_test_base
 public:
     static void t1Run(stid_t pstid) {
         test_env->btree_insert_and_commit(pstid, "aa0", "data0");
-    test_env->begin_xct();
-    test_env->btree_update(pstid, "aa0", "data00");
-    test_env->btree_insert(pstid, "aa1", "data1");
-    test_env->btree_remove(pstid, "aa0");
-    ss_m::detach_xct();
+        test_env->begin_xct();
+        test_env->btree_update(pstid, "aa0", "data00");
+        test_env->btree_insert(pstid, "aa1", "data1");
+        test_env->btree_remove(pstid, "aa0");
+        ss_m::detach_xct();
     }   
     static void t2Run(stid_t pstid) {
-    test_env->btree_insert_and_commit(pstid, "aa2", "data2");
+        test_env->btree_insert_and_commit(pstid, "aa2", "data2");
         test_env->begin_xct();
-    test_env->btree_insert(pstid, "aa3", "data3");
-    test_env->btree_update(pstid, "aa3", "data33");
-    test_env->btree_insert(pstid, "aa4", "data4");
-    test_env->btree_update(pstid, "aa2", "data2");
-    test_env->btree_remove(pstid, "aa2");
-    ss_m::detach_xct();
+        test_env->btree_insert(pstid, "aa3", "data3");
+        test_env->btree_update(pstid, "aa3", "data33");
+        test_env->btree_insert(pstid, "aa4", "data4");
+        test_env->btree_update(pstid, "aa2", "data2");
+        test_env->btree_remove(pstid, "aa2");
+        ss_m::detach_xct();
     }   
     static void t3Run(stid_t pstid) {
         test_env->btree_insert_and_commit(pstid, "aa5", "data5");
         test_env->btree_insert_and_commit(pstid, "aa6", "data6");
         test_env->btree_insert_and_commit(pstid, "aa7", "data7");
-    test_env->begin_xct();
-    test_env->btree_remove(pstid, "aa5");
-    test_env->btree_update(pstid, "aa6", "data66");
-    test_env->btree_remove(pstid, "aa7");
-    test_env->btree_update(pstid, "aa6", "data666");
-    test_env->btree_insert(pstid, "aa5", "data55");
-    ss_m::detach_xct();
+        test_env->begin_xct();
+        test_env->btree_remove(pstid, "aa5");
+        test_env->btree_update(pstid, "aa6", "data66");
+        test_env->btree_remove(pstid, "aa7");
+        test_env->btree_update(pstid, "aa6", "data666");
+        test_env->btree_insert(pstid, "aa5", "data55");
+        ss_m::detach_xct();
     }   
 
     w_rc_t pre_shutdown(ss_m *ssm) {
@@ -1199,8 +1199,8 @@ public:
         EXPECT_EQ(std::string("aa0"), s.minkey);
         EXPECT_EQ(std::string("aa7"), s.maxkey);
         std::string data;
-    test_env->btree_lookup_and_commit(_stid, "aa0", data);
-    EXPECT_EQ(std::string("data0"), data);
+        test_env->btree_lookup_and_commit(_stid, "aa0", data);
+        EXPECT_EQ(std::string("data0"), data);
         return RCOK;
     }
 };
