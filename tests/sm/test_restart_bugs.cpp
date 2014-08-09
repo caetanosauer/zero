@@ -35,12 +35,13 @@ void output_durable_lsn(int W_IFDEBUG1(num)) {
 class restart_multi_page_in_flight : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
+        _stid_list = new stid_t[1];
         output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
         output_durable_lsn(2);
 
        // One big uncommitted txn
-        W_DO(test_env->btree_populate_records(_stid, false, false));  // flags: No checkpoint, don't commit
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, false));  // flags: No checkpoint, don't commit
         output_durable_lsn(3);
 
         return RCOK;
@@ -57,7 +58,7 @@ public:
         }
 
         // Verify
-        W_DO(test_env->btree_scan(_stid, s));
+        W_DO(test_env->btree_scan(_stid_list[0], s));
         EXPECT_EQ (0, s.rownum);
         return RCOK;
     }

@@ -131,7 +131,6 @@ public:
 
     test_volume_t _volume;
 
-    stid_t _stid;
     stid_t* _stid_list;
     lpid_t _root_pid;
 };
@@ -472,15 +471,14 @@ private:
 
 class transact_thread_t : public smthread_t {
 public:
-    transact_thread_t(stid_t stid, void (*runfunct)(stid_t));
+    transact_thread_t(stid_t* stid_list, void (*runfunct)(stid_t*));
     ~transact_thread_t();
 
     virtual void run();
     static int next_thid; // Adopted from test_deadlock, assuming there is a reason
-    stid_t _stid;
     stid_t* _stid_list;
     int _thid;
-    void (*_runnerfunc)(stid_t);
+    void (*_runnerfunc)(stid_t*);
     bool _finished;
 };
 

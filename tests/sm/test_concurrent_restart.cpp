@@ -64,16 +64,17 @@ TEST (RestartTest, EmptyC) {
 class restart_simple : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
+        _stid_list = new stid_t[1];
         output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
         output_durable_lsn(2);
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa3", "data3"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa3", "data3"));
 
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa1", "data1"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa2", "data2"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa2", "data2"));
 
         W_DO(test_env->begin_xct());
-        W_DO(test_env->btree_insert(_stid, "aa4", "data4"));             // in-flight
+        W_DO(test_env->btree_insert(_stid_list[0], "aa4", "data4"));             // in-flight
 
         output_durable_lsn(3);
         return RCOK;
@@ -90,7 +91,7 @@ public:
         }
 
         // Verify
-        W_DO(test_env->btree_scan(_stid, s));
+        W_DO(test_env->btree_scan(_stid_list[0], s));
         EXPECT_EQ (3, s.rownum);
         EXPECT_EQ (std::string("aa1"), s.minkey);
         EXPECT_EQ (std::string("aa3"), s.maxkey);
@@ -148,18 +149,19 @@ TEST (RestartTest, SimpleCF) {
 class restart_complex_in_flight : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
+        _stid_list = new stid_t[1];
         output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
         output_durable_lsn(2);
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa3", "data3"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa3", "data3"));
 
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa1", "data1"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa4", "data4"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa4", "data4"));
 
         W_DO(test_env->begin_xct());                                     // in-flight
-        W_DO(test_env->btree_insert(_stid, "aa7", "data5"));
-        W_DO(test_env->btree_insert(_stid, "aa2", "data2"));
-        W_DO(test_env->btree_insert(_stid, "aa5", "data7"));
+        W_DO(test_env->btree_insert(_stid_list[0], "aa7", "data5"));
+        W_DO(test_env->btree_insert(_stid_list[0], "aa2", "data2"));
+        W_DO(test_env->btree_insert(_stid_list[0], "aa5", "data7"));
 
         output_durable_lsn(3);
         return RCOK;
@@ -176,7 +178,7 @@ public:
         }
 
         // Verify
-        W_DO(test_env->btree_scan(_stid, s));
+        W_DO(test_env->btree_scan(_stid_list[0], s));
         EXPECT_EQ (3, s.rownum);
         EXPECT_EQ (std::string("aa1"), s.minkey);
         EXPECT_EQ (std::string("aa4"), s.maxkey);
@@ -234,19 +236,20 @@ TEST (RestartTest, ComplexInFlightCF) {
 class restart_complex_in_flight_chkpt : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
+        _stid_list = new stid_t[1];
         output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
         output_durable_lsn(2);
         W_DO(test_env->begin_xct());
-        W_DO(test_env->btree_insert(_stid, "aa3", "data3"));
-        W_DO(test_env->btree_insert(_stid, "aa1", "data1"));
-        W_DO(test_env->btree_insert(_stid, "aa4", "data4"));
+        W_DO(test_env->btree_insert(_stid_list[0], "aa3", "data3"));
+        W_DO(test_env->btree_insert(_stid_list[0], "aa1", "data1"));
+        W_DO(test_env->btree_insert(_stid_list[0], "aa4", "data4"));
         W_DO(test_env->commit_xct());
 
         W_DO(test_env->begin_xct());                                     // in-flight
-        W_DO(test_env->btree_insert(_stid, "aa5", "data5"));
-        W_DO(test_env->btree_insert(_stid, "aa2", "data2"));
-        W_DO(test_env->btree_insert(_stid, "aa7", "data7"));
+        W_DO(test_env->btree_insert(_stid_list[0], "aa5", "data5"));
+        W_DO(test_env->btree_insert(_stid_list[0], "aa2", "data2"));
+        W_DO(test_env->btree_insert(_stid_list[0], "aa7", "data7"));
         W_DO(ss_m::checkpoint()); 
 
         output_durable_lsn(3);
@@ -264,7 +267,7 @@ public:
         }
 
         // Verify
-        W_DO(test_env->btree_scan(_stid, s));
+        W_DO(test_env->btree_scan(_stid_list[0], s));
         EXPECT_EQ (3, s.rownum);
         EXPECT_EQ (std::string("aa1"), s.minkey);
         EXPECT_EQ (std::string("aa4"), s.maxkey);
@@ -322,12 +325,13 @@ TEST (RestartTest, ComplexInFlightChkptCF) {
 class restart_multi_page_in_flight : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
+        _stid_list = new stid_t[1];
         output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
         output_durable_lsn(2);
 
         // One big uncommitted txn
-        W_DO(test_env->btree_populate_records(_stid, false, false));  // false: No checkpoint; false: Do not commit, in-flight
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, false));  // false: No checkpoint; false: Do not commit, in-flight
         output_durable_lsn(3);
 
         return RCOK;
@@ -344,7 +348,7 @@ public:
         }
 
         // Verify
-        W_DO(test_env->btree_scan(_stid, s));
+        W_DO(test_env->btree_scan(_stid_list[0], s));
         EXPECT_EQ (0, s.rownum);
         return RCOK;
     }
@@ -401,16 +405,17 @@ TEST (RestartTest, MultiPageInFlightCF) {
 class restart_concurrent_chkpt : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
+        _stid_list = new stid_t[1];
         output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
         output_durable_lsn(2);
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa3", "data3"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa3", "data3"));
 
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa1", "data1"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa2", "data2"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa2", "data2"));
 
         W_DO(test_env->begin_xct());
-        W_DO(test_env->btree_insert(_stid, "aa4", "data4"));             // in-flight
+        W_DO(test_env->btree_insert(_stid_list[0], "aa4", "data4"));             // in-flight
 
         output_durable_lsn(3);
         return RCOK;
@@ -430,7 +435,7 @@ public:
 
         // Verify
         x_btree_scan_result s;        
-        W_DO(test_env->btree_scan(_stid, s));  // Should have only one page of data
+        W_DO(test_env->btree_scan(_stid_list[0], s));  // Should have only one page of data
                                                // while restart is on for this page
                                                // therefore the concurrent txn should not be allowed
         EXPECT_EQ (3, s.rownum);
@@ -490,16 +495,17 @@ TEST (RestartTest, ConcurrentChkptCF) {
 class restart_simple_concurrent_redo : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
+        _stid_list = new stid_t[1];
         output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
         output_durable_lsn(2);
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa3", "data3"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa3", "data3"));
 
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa1", "data1"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa2", "data2"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa2", "data2"));
 
         W_DO(test_env->begin_xct());
-        W_DO(test_env->btree_insert(_stid, "aa4", "data4"));             // in-flight
+        W_DO(test_env->btree_insert(_stid_list[0], "aa4", "data4"));             // in-flight
 
         output_durable_lsn(3);
         return RCOK;
@@ -512,41 +518,39 @@ public:
         const int32_t restart_mode = test_env->_restart_options->restart_mode;
         // No wait in test code, but wait in restart
         // This is to ensure concurrency
-       
 
-    if (fCrash && restart_mode < m3_default_restart ) {
-        // Verify
-        w_rc_t rc = test_env->btree_scan(_stid, s);  // Should have only one page of data
-                                                     // while restart is on for this page
-                                                     // therefore even the concurrent txn is a
-                                                     // read/scan txn, it should not be allowed
-        if (rc.is_error())
-        {
-        DBGOUT3(<<"restart_simple_concurrent_redo: tree_scan error: " << rc);        
+        if (fCrash && restart_mode < m3_default_restart ) {
+            // Verify
+            w_rc_t rc = test_env->btree_scan(_stid_list[0], s);  // Should have only one page of data
+                                                         // while restart is on for this page
+                                                         // therefore even the concurrent txn is a
+                                                         // read/scan txn, it should not be allowed
+            if (rc.is_error())
+            {
+            DBGOUT3(<<"restart_simple_concurrent_redo: tree_scan error: " << rc);        
 
-        // Abort the failed scan txn
-        test_env->abort_xct();
+            // Abort the failed scan txn
+            test_env->abort_xct();
 
-        // Sleep to give Recovery sufficient time to finish
-        while (true == test_env->in_restart())
-        {
-            // Concurrent restart is still going on, wait
-            ::usleep(WAIT_TIME);            
+            // Sleep to give Recovery sufficient time to finish
+            while (true == test_env->in_restart())
+            {
+                // Concurrent restart is still going on, wait
+                ::usleep(WAIT_TIME);            
+            }
+
+            // Try again
+            W_DO(test_env->btree_scan(_stid_list[0], s));
+            }
+            else
+            {
+            std::cerr << "restart_simple_concurrent_redo: scan operation should not succeed"<< std::endl;         
+            return RC(eINTERNAL);
+            }
+        } 
+        else {
+            W_DO(test_env->btree_scan(_stid_list[0], s));
         }
-
-        // Try again
-        W_DO(test_env->btree_scan(_stid, s));
-        }
-        else
-        {
-        std::cerr << "restart_simple_concurrent_redo: scan operation should not succeed"<< std::endl;         
-        return RC(eINTERNAL);
-        }
-    } 
-    else {
-        W_DO(test_env->btree_scan(_stid, s));
-    }
-
         EXPECT_EQ (3, s.rownum);
         EXPECT_EQ (std::string("aa1"), s.minkey);
         EXPECT_EQ (std::string("aa3"), s.maxkey);
@@ -604,17 +608,18 @@ TEST (RestartTest, SimpleConcurrentRedoCF) {
 class restart_multi_concurrent_redo : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
+        _stid_list = new stid_t[1];
         output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
         output_durable_lsn(2);
 
         // One big committed txn
-        W_DO(test_env->btree_populate_records(_stid, false, true));  // flags: no checkpoint, commit
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, true));  // flags: no checkpoint, commit
         
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa4", "data2"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa4", "data2"));
 
         W_DO(test_env->begin_xct());
-        W_DO(test_env->btree_insert(_stid, "aa2", "data4"));             // in-flight
+        W_DO(test_env->btree_insert(_stid_list[0], "aa2", "data4"));             // in-flight
 
         output_durable_lsn(3);
         return RCOK;
@@ -631,7 +636,7 @@ public:
         
         if (fCrash && restart_mode < m3_default_restart) {    // if m2 crash shutdown
             // Verify
-            w_rc_t rc = test_env->btree_scan(_stid, s); // Should have multiple pages of data
+            w_rc_t rc = test_env->btree_scan(_stid_list[0], s); // Should have multiple pages of data
                                                         // the concurrent txn is a read/scan txn
                                                         // should still not be allowed due to delay in REDO in m2 crash shutdown
             if (rc.is_error()) {
@@ -647,7 +652,7 @@ public:
                 }
 
                 // Try again
-                W_DO(test_env->btree_scan(_stid, s));
+                W_DO(test_env->btree_scan(_stid_list[0], s));
                 EXPECT_EQ (recordCount, s.rownum);
                 EXPECT_EQ (std::string("aa4"), s.minkey);
                 return RCOK;
@@ -658,7 +663,7 @@ public:
             }
         }
         else {
-            W_DO(test_env->btree_scan(_stid, s));
+            W_DO(test_env->btree_scan(_stid_list[0], s));
             EXPECT_EQ (recordCount, s.rownum);
             EXPECT_EQ(std::string("aa4"), s.minkey);
             return RCOK;
@@ -722,16 +727,17 @@ TEST (RestartTest, MultiConcurrentRedoCF) {
 class restart_simple_concurrent_undo : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
+        _stid_list = new stid_t[1];
         output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
         output_durable_lsn(2);
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa3", "data3"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa3", "data3"));
 
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa1", "data1"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa2", "data2"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa2", "data2"));
 
         W_DO(test_env->begin_xct());
-        W_DO(test_env->btree_insert(_stid, "aa4", "data4"));             // in-flight
+        W_DO(test_env->btree_insert(_stid_list[0], "aa4", "data4"));             // in-flight
 
         output_durable_lsn(3);
         return RCOK;
@@ -747,7 +753,7 @@ public:
         ::usleep(SHORT_WAIT_TIME);
 
         // Verify
-        w_rc_t rc = test_env->btree_scan(_stid, s);   // Should have only one page of data
+        w_rc_t rc = test_env->btree_scan(_stid_list[0], s);   // Should have only one page of data
                                                       // while restart is on for this page
                                                       // although REDO is done, UNDO is not
                                                       // therefore the concurrent txn should not be allowed
@@ -765,7 +771,7 @@ public:
                 }
 
                 // Try again
-                W_DO(test_env->btree_scan(_stid, s));
+                W_DO(test_env->btree_scan(_stid_list[0], s));
 
                 EXPECT_EQ (3, s.rownum);
                 EXPECT_EQ (std::string("aa1"), s.minkey);
@@ -778,7 +784,7 @@ public:
             }
         }
         else {
-            W_DO(test_env->btree_scan(_stid, s));
+            W_DO(test_env->btree_scan(_stid_list[0], s));
             EXPECT_EQ (3, s.rownum);
             EXPECT_EQ (std::string("aa1"), s.minkey);
             EXPECT_EQ (std::string("aa3"), s.maxkey);
@@ -837,24 +843,25 @@ TEST (RestartTest, SimpleConcurrentUndoCF) {
 class restart_concurrent_no_conflict : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
+        _stid_list = new stid_t[1];
         output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
         output_durable_lsn(2);
 
         // Multiple committed transactions with many pages
-        W_DO(test_env->btree_populate_records(_stid, false, true, true));  // flags: No checkpoint, commit, one transaction per insert
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, true, true));  // flags: No checkpoint, commit, one transaction per insert
 
         // Issue a checkpoint to make sure these committed txns are flushed
         W_DO(ss_m::checkpoint());         
 
         // Now insert more records, these records are at the beginning of B-tree
         // therefore if these records cause a page rebalance, it would be in the parent page        
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa3", "data3"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa1", "data1"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa2", "data2"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa3", "data3"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa2", "data2"));
 
         W_DO(test_env->begin_xct());
-        W_DO(test_env->btree_insert(_stid, "aa4", "data4"));             // in-flight
+        W_DO(test_env->btree_insert(_stid_list[0], "aa4", "data4"));             // in-flight
 
         output_durable_lsn(3);
         return RCOK;
@@ -873,7 +880,7 @@ public:
         // Insert into the first page, depending on how far the REDO goes,
         // the insertion might or might not succeed
         W_DO(test_env->begin_xct());
-        w_rc_t rc = test_env->btree_insert(_stid, "aa7", "data4");
+        w_rc_t rc = test_env->btree_insert(_stid_list[0], "aa7", "data4");
         if (rc.is_error())
         {
             // Conflict        
@@ -895,7 +902,7 @@ public:
         }
 
         // Verify
-        W_DO(test_env->btree_scan(_stid, s));
+        W_DO(test_env->btree_scan(_stid_list[0], s));
         int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
         recordCount += 3;  // Count after checkpoint
         if (!rc.is_error())        
@@ -959,24 +966,25 @@ TEST (RestartTest, ConcurrentNoConflictCF) {
 class restart_concurrent_conflict : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
+        _stid_list = new stid_t[1];
         output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
         output_durable_lsn(2);
 
         // Multiple committed transactions with many pages
-        W_DO(test_env->btree_populate_records(_stid, false, true, true));   // flags: No checkpoint, commit, one transaction per insert
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, true, true));   // flags: No checkpoint, commit, one transaction per insert
 
         // Issue a checkpoint to make sure these committed txns are flushed
         W_DO(ss_m::checkpoint());
 
         // Now insert more records, make sure these records are at 
         // the end of B-tree (append)
-        W_DO(test_env->btree_insert_and_commit(_stid, "zz3", "data3"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "zz1", "data1"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "zz2", "data2"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "zz3", "data3"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "zz1", "data1"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "zz2", "data2"));
 
         W_DO(test_env->begin_xct());
-        W_DO(test_env->btree_insert(_stid, "zz4", "data4"));     // in-flight
+        W_DO(test_env->btree_insert(_stid_list[0], "zz4", "data4"));     // in-flight
 
         output_durable_lsn(3);
         return RCOK;
@@ -995,7 +1003,7 @@ public:
         // Wait in restart, this is to ensure user transaction encounter concurrent restart
         // Insert into the last page which should cause a conflict        
         W_DO(test_env->begin_xct());
-        w_rc_t rc = test_env->btree_insert(_stid, "zz5", "data4");
+        w_rc_t rc = test_env->btree_insert(_stid_list[0], "zz5", "data4");
         if (rc.is_error() || !(fCrash && restart_mode<m3_default_restart))
         {
             // Expected behavior
@@ -1016,7 +1024,7 @@ public:
         }
 
         // Verify
-        W_DO(test_env->btree_scan(_stid, s));
+        W_DO(test_env->btree_scan(_stid_list[0], s));
 
         int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;  // Count before checkpoint
         recordCount += 3;  // Count after checkpoint
@@ -1077,24 +1085,25 @@ TEST (RestartTest, ConcurrentConflictCF) {
 class restart_multi_concurrent_conflict : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
+        _stid_list = new stid_t[1];
         output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
         output_durable_lsn(2);
 
         // Multiple committed transactions with many pages
-        W_DO(test_env->btree_populate_records(_stid, false, true, true));   // flags: No checkpoint, commit, one transaction per insert
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, true, true));   // flags: No checkpoint, commit, one transaction per insert
 
         // Issue a checkpoint to make sure these committed txns are flushed
         W_DO(ss_m::checkpoint());
 
         // Now insert more records, make sure these records are at 
         // the end of B-tree (append)
-        W_DO(test_env->btree_insert_and_commit(_stid, "zz3", "data3"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "zz1", "data1"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "zz2", "data2"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "zz3", "data3"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "zz1", "data1"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "zz2", "data2"));
 
         W_DO(test_env->begin_xct());
-        W_DO(test_env->btree_insert(_stid, "zz7", "data4"));     // in-flight
+        W_DO(test_env->btree_insert(_stid_list[0], "zz7", "data4"));     // in-flight
 
         if (test_env->_restart_options->enable_checkpoints)
             W_DO(ss_m::checkpoint());
@@ -1120,7 +1129,7 @@ public:
 
         // Insert into the first page which should not cause a conflict        
         W_DO(test_env->begin_xct());
-        w_rc_t rc = test_env->btree_insert(_stid, "aa1", "data4");
+        w_rc_t rc = test_env->btree_insert(_stid_list[0], "aa1", "data4");
         if (rc.is_error()) 
         {
             // Will failed if the REDO phase did not process far enough
@@ -1136,7 +1145,7 @@ public:
             W_DO(ss_m::checkpoint());
         // Insert into the last page which should cause a conflict        
         W_DO(test_env->begin_xct());
-        rc = test_env->btree_insert(_stid, "zz5", "data4");
+        rc = test_env->btree_insert(_stid_list[0], "zz5", "data4");
         if ((rc.is_error() && fCrash && !m3_restart) || (!rc.is_error() && (!fCrash || m3_restart))) // Only m2 restart mode with crash shutdown should fail,
         {    // m3 rm and m2 rm with normal shutdown should succeed
             // Expected behavior
@@ -1167,12 +1176,12 @@ public:
 
         // Tried the failed txn again and it should succeed this time
         W_DO(test_env->begin_xct());
-        W_DO(test_env->btree_insert(_stid, "zz5", "data4"));
+        W_DO(test_env->btree_insert(_stid_list[0], "zz5", "data4"));
         W_DO(test_env->commit_xct());
         recordCount += 1;
 
         // Verify
-        W_DO(test_env->btree_scan(_stid, s));
+        W_DO(test_env->btree_scan(_stid_list[0], s));
 
         EXPECT_EQ (recordCount, s.rownum);
         EXPECT_EQ (std::string("zz5"), s.maxkey);
@@ -1247,16 +1256,17 @@ TEST (RestartTest, MultiConcurrentConflictNFC) {
 class restart_concurrent_same_insert : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
+        _stid_list = new stid_t[1];
         output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
         output_durable_lsn(2);
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa3", "data3"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa3", "data3"));
 
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa1", "data1"));
-        W_DO(test_env->btree_insert_and_commit(_stid, "aa2", "data2"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa2", "data2"));
 
         W_DO(test_env->begin_xct());
-        W_DO(test_env->btree_insert(_stid, "aa4", "data4"));             // in-flight
+        W_DO(test_env->btree_insert(_stid_list[0], "aa4", "data4"));             // in-flight
 
         output_durable_lsn(3);
         return RCOK;
@@ -1273,7 +1283,7 @@ public:
         if (fCrash && restart_mode < m3_default_restart)
         {    
             W_DO(test_env->begin_xct());
-            w_rc_t rc = test_env->btree_insert(_stid, "aa4", "data4");  // Insert same record that was in-flight, should be possible.
+            w_rc_t rc = test_env->btree_insert(_stid_list[0], "aa4", "data4");  // Insert same record that was in-flight, should be possible.
                                // Will fail in m2 due to conflict, should succeed in m3 (not immediately).
 
             if (rc.is_error())
@@ -1292,7 +1302,7 @@ public:
 
                 // Try again, should work now
                 W_DO(test_env->begin_xct());                
-                W_DO(test_env->btree_insert(_stid, "aa4", "data4"));
+                W_DO(test_env->btree_insert(_stid_list[0], "aa4", "data4"));
                 W_DO(test_env->commit_xct());
             }
             else
@@ -1304,10 +1314,10 @@ public:
         else 
         {
             // M3 behavior
-            W_DO(test_env->btree_insert_and_commit(_stid, "aa4", "data4"));
+            W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa4", "data4"));
         }
 
-        W_DO(test_env->btree_scan(_stid, s));
+        W_DO(test_env->btree_scan(_stid_list[0], s));
         EXPECT_EQ (4, s.rownum);
         EXPECT_EQ (std::string("aa1"), s.minkey);
         EXPECT_EQ (std::string("aa4"), s.maxkey);
@@ -1624,8 +1634,7 @@ TEST (RestartTest, MultiIndexConcChckptCBF) {
 }
 /**/
 
-
-
+// Test case still in development, only 4/12 test calls enabled, need to figure out what exactly is supposed to get rejected and what accepted
 class restart_concurrent_trans_multi_index : public restart_test_base {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
@@ -1664,13 +1673,22 @@ public:
             if(redo_delay) // Check if redo delay has been set in order to take a checkpoint
             {
                 if(ss_m::in_REDO() == t_restart_phase_active) { // Just a sanity check that the redo phase is truly active
-                    W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa0", "data0"));
+                    rc = test_env->btree_insert_and_commit(_stid_list[0], "aa0", "data0"); 
+                    // Although there is no existing key "aa0", this should raise a conflict, because it would have to be inserted 
+                    // at the beginning of the first page, which is still dirty
+                    if(rc.is_error()) {
+                        DBGOUT(<<"restart_concurrent_trans_multi_index: insert failed" << rc);
+                    }
+                    else {
+                        std::cerr << "restart_concurrent_trans_multi_index: 'aa0' insert should not succeed"<< std::endl;         
+                        return RC(eINTERNAL);
+                    }
                     rc = test_env->btree_update_and_commit(_stid_list[1], "key110", "A");
                     if(rc.is_error()) {
                         DBGOUT(<<"restart_concurrent_trans_multi_index: update failed" << rc);
                     }
                     else {
-                        std::cerr << "restart_concurrent_trans_multi_index: update should not succeed"<< std::endl;         
+                        std::cerr << "restart_concurrent_trans_multi_index: 'key110' update should not succeed"<< std::endl;         
                         return RC(eINTERNAL);
                     }
                 }
@@ -1680,13 +1698,20 @@ public:
                 while(ss_m::in_UNDO() == t_restart_phase_not_active) // Wait until undo phase is starting
                     ::usleep(SHORT_WAIT_TIME);
                 if(ss_m::in_UNDO() == t_restart_phase_active) { // Sanity check that undo is really active (instead of over) 
-                    W_DO(test_env->btree_insert_and_commit(_stid_list[2], "bb1", "data1"));
+                    rc = test_env->btree_insert_and_commit(_stid_list[2], "zz1", "data1"); // Not sure why this is conflicting, probably due to lock simulation via timestamps in m2
+                    if(rc.is_error()) {
+                        DBGOUT(<<"restart_concurrent_trans_multi_index: insert failed" << rc);
+                    }
+                    else {
+                        std::cerr << "restart_concurrent_trans_multi_index: 'zz1' insert should not succeed"<< std::endl;         
+                        return RC(eINTERNAL);
+                    }
                     rc = test_env->btree_insert_and_commit(_stid_list[2], "key300", "data0");
                     if(rc.is_error()) {
                         DBGOUT(<<"restart_concurrent_trans_multi_index: insert failed" << rc);
                     }
                     else {
-                        std::cerr << "restart_concurrent_trans_multi_index: insert should not succeed"<< std::endl;         
+                        std::cerr << "restart_concurrent_trans_multi_index: 'key300' insert should not succeed"<< std::endl;         
                         return RC(eINTERNAL);
                     }
                 }
@@ -1696,7 +1721,9 @@ public:
                 ::usleep(WAIT_TIME); 
         }
         else {   // m3 restart mode, everything should succeed
-            W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa", "data0"));
+            std::cerr << "WRONG CODE PATH";
+            return RC(eINTERNAL);
+            W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa0", "data0"));
             W_DO(test_env->btree_update_and_commit(_stid_list[1], "key110", "A"));
             W_DO(test_env->btree_insert_and_commit(_stid_list[2], "key300", "data0")); 
         }
@@ -1705,13 +1732,13 @@ public:
         
         // Check index 0
         W_DO(test_env->btree_scan(_stid_list[0], s));
-        if(redo_delay || restart_mode >= m3_default_restart) {
-            EXPECT_EQ(std::string("aa0"), s.minkey);
-            EXPECT_EQ(recordCount+2, s.rownum);
-        }
-        else {
+        if(restart_mode < m3_default_restart) {
             EXPECT_EQ(std::string("aa1"), s.minkey);
             EXPECT_EQ(recordCount+1, s.rownum);
+        }
+        else {
+            EXPECT_EQ(std::string("aa0"), s.minkey);
+            EXPECT_EQ(recordCount+2, s.rownum);
         }
 
         // Check index 1
@@ -1729,12 +1756,7 @@ public:
         */
         // Check index 2
         W_DO(test_env->btree_scan(_stid_list[2], s));
-        if(restart_mode < m3_default_restart && undo_delay) {
-            EXPECT_EQ(recordCount, s.rownum);
-            EXPECT_EQ(std::string("bb1"), s.minkey);
-            EXPECT_EQ('2', s.maxkey.at(3));
-        }
-        else if(restart_mode < m3_default_restart){
+        if(restart_mode < m3_default_restart){ // Same with and without delay, because all user transactions conflict and get aborted
             EXPECT_EQ(recordCount, s.rownum);
             EXPECT_EQ(std::string("key200"), s.minkey);
             EXPECT_EQ('2', s.maxkey.at(3));
@@ -1749,8 +1771,22 @@ public:
     }
 };
 
-/* Passing */ 
-TEST (RestartTest, MultiIndexConcurrentTrans) {
+// First 4 test calls not really useful, they don't actually execute any concurrent transactions, maybe delete them
+
+/* Passing */
+TEST (RestartTest, MultiIndexConcTransN) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_trans_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_default_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, MultiIndexConcTransC) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
     
@@ -1760,6 +1796,174 @@ TEST (RestartTest, MultiIndexConcurrentTrans) {
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
+
+/* Passing */
+TEST (RestartTest, MultiIndexConcTransNF) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_trans_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_full_logging_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, MultiIndexConcTransCF) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_trans_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_full_logging_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Unknown *
+TEST (RestartTest, MultiIndexConcTransNR) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_trans_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_redo_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+/* Unknown *
+TEST (RestartTest, MultiIndexConcTransCR) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_trans_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_redo_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+/* Unknown *
+TEST (RestartTest, MultiIndexConcTransNRF) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_trans_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_redo_fl_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+/* Unknown *
+TEST (RestartTest, MultiIndexConcTransCRF) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_trans_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_redo_fl_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+/* Unknown *
+TEST (RestartTest, MultiIndexConcTransNU) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_trans_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_undo_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+/* Unknown *
+TEST (RestartTest, MultiIndexConcTransCU) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_trans_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_undo_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+/* Unknown *
+TEST (RestartTest, MultiIndexConcTransNUF) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_trans_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_undo_fl_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+/* Unknown *
+TEST (RestartTest, MultiIndexConcTransCUF) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_trans_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_redo_fl_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+/* Unknown *
+TEST (RestartTest, MultiIndexConcTransNB) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_trans_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_both_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+/* Unknown *
+TEST (RestartTest, MultiIndexConcTransCB) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_trans_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_both_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+/* Unknown *
+TEST (RestartTest, MultiIndexConcTransNBF) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_trans_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_both_fl_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+/* Unknown *
+TEST (RestartTest, MultiIndexConcTransCBF) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_trans_multi_index context;
+    
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_both_fl_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
 
 
 int main(int argc, char **argv) {
