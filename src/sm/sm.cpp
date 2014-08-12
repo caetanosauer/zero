@@ -713,10 +713,9 @@ ss_m::_construct_once()
         // now dismount all of them at the io level, the level where they
         // were mounted during recovery.
         if (true == smlevel_0::use_serial_restart())                        
-            W_COERCE( io->dismount_all(true) ); // true: flush
+            W_COERCE( io->dismount_all(true /*flush*/) );
         else
-            W_COERCE( io->dismount_all(true, false) ); //true: flush
-                                                       // false: do not clear cb if in concurrent recovery mode
+            W_COERCE( io->dismount_all(true /*flush*/, false /*clear_cb*/) ); // do not clear cb if in concurrent recovery mode
         // now mount all the volumes properly at the sm level.
         // then dismount them and free temp files only if there
         // are no locks held.
@@ -750,13 +749,20 @@ ss_m::_construct_once()
         // smlevel_0::redo_tid = 0;
     }
 
-    if (false == smlevel_0::use_serial_restart())
+    // Pure on-demand mode must be the same for REDO and UNDO phases
+    if (smlevel_0::use_redo_demand_restart() != smlevel_0::use_undo_demand_restart())
+    {
+        W_FATAL_MSG(fcINTERNAL, << "Inconsistent mode between on-demand REDO and UNDO");
+    }
+
+    if ((false == smlevel_0::use_serial_restart()) &&         // Not serial, so must be concurrent mode
+         (false == smlevel_0::use_redo_demand_restart()) &&   // Not pure on-demand redo, so need child thread
+         (false == smlevel_0::use_undo_demand_restart()))     // Not pure on-demand undo, so need child thread
+
     {
         // Log Analysis has completed but no REDO or UNDO yet
         // Start the recovery process child thread to carry out
-        // the REDO and UNDO phases.
-        // The Recovery child thread terminates itself after the
-        // recovery process is completed.
+        // the REDO and UNDO phases if not in serial or pure on-demand mode
 
         if (_options.get_bool_option("sm_logging", true))
         {
@@ -815,7 +821,10 @@ ss_m::_construct_once()
     }
     else
     {
-        // We are done with the entire recovery, change the state accordingly
+        // If in serial or pure on-demand mode, change the operating state
+        // to allow concurrent transactions to come in
+        // No child restart thread for these modes
+        
         smlevel_0::operating_mode = t_forward_processing;
 
         // Have the log initialize its reservation accounting.

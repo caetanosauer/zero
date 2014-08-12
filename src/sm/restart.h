@@ -45,10 +45,23 @@ class dirty_pages_tab_t;
 
 #include "sm_int_1.h"
 
+#include <map>
+
 // Used for:
 //    internal wait for testing purpose
 //    normal shutdown wait
 const uint32_t wait_interval = 1000;   // 1 seconds
+
+
+// Map data structure for undeterminstic in-flight transactions
+// key (first) is the associated transaction id (uint64_t)
+// data (second) is the counter for normal and compensation log records
+typedef std::map<uint64_t, signed int> tid_CLR_map;
+
+
+////////////////////////////
+// Heap for reverse UNDO phase
+////////////////////////////
 
 class CmpXctUndoLsns
 {
@@ -56,18 +69,50 @@ class CmpXctUndoLsns
         bool                        gt(const xct_t* x, const xct_t* y) const;
 };
 
-
 inline bool
 CmpXctUndoLsns::gt(const xct_t* x, const xct_t* y) const
 {
     return x->undo_nxt() > y->undo_nxt();
 }
 
-
 // Special heap for UNDO phase
 typedef class Heap<xct_t*, CmpXctUndoLsns> XctPtrHeap;
 
+
+////////////////////////////
+// Heap for mount operation
+////////////////////////////
+
+// Structure for mount heap
+struct comp_mount_log_t
+{
+    comp_mount_log_t(): mount_log_rec_buf(NULL) {};
+
+    logrec_t*  mount_log_rec_buf;   // log record of mount/un-mount
+    lsn_t      lsn;                 // LSN of the log record
+};
+
+// Heap for mount operation
+class CmpMountLsns
+{
+    public:
+        bool                        gt(const comp_mount_log_t* x, const comp_mount_log_t* y) const;
+};
+
+inline bool
+CmpMountLsns::gt(const comp_mount_log_t* x, const comp_mount_log_t* y) const
+{
+    return x->lsn > y->lsn;
+}
+
+// Special heap for mount operation
+typedef class Heap<comp_mount_log_t*, CmpMountLsns> MountPtrHeap;
+
+
+////////////////////////////
 // Class restart_thread_t
+////////////////////////////
+
 // Child thread created by restart_m for concurrent recovery operation
 // It is to carry out the REDO and UNDO phases while the system is
 // opened for user transactions
@@ -345,8 +390,10 @@ public:
 
 private:
 
-    // Shared by all recovery modes
-    static void                 analysis_pass(
+    // Shared by all restart modes
+
+    // Forward log scan without lock acquisition
+    static void                 analysis_pass_forward(
         const lsn_t             master,
         lsn_t&                  redo_lsn,
         uint32_t&               in_doubt_count,
@@ -356,14 +403,24 @@ private:
         lsn_t&                  last_lsn    // Last lsn in recovery log (forward scan)
         );
 
-    // Function used for log scan REDO operations, open system after the entire recovery process finished
+    // Backward log scan with lock acquisition
+    static void                 analysis_pass_backward(
+        const lsn_t             master,
+        lsn_t&                  redo_lsn,
+        uint32_t&               in_doubt_count,
+        lsn_t&                  undo_lsn,
+        XctPtrHeap&             heap,
+        lsn_t&                  last_lsn    // Last lsn in recovery log
+        );
+
+    // Function used for log scan REDO operations
     static void                 redo_log_pass(
         const lsn_t              redo_lsn, 
-        const lsn_t              &highest,  /* for debugging */
+        const lsn_t              &highest,       // for debugging
         const uint32_t           in_doubt_count  // How many in_doubt pages in buffer pool
         );
 
-    // Function used for reverse order UNDO operations, open system after the entire recovery process finished
+    // Function used for reverse order UNDO operations
     static void                 undo_reverse_pass(
         XctPtrHeap&             heap,       // heap populated with loser transactions
         const lsn_t             curr_lsn,   // current lsn, the starting point of backward scan
@@ -377,11 +434,11 @@ private:
     // will be performed with concurrent user transactions
     restart_thread_t*           _restart_thread;
 
-    // Function used for concurrent operations, open system after Log Analysis
-    static void                 redo_concurrent();
+    // Function used for concurrent REDO operations, page driven REDO
+    static void                 redo_concurrent_pass();
 
-    // Function used for concurrent operations, open system after Log Analysis
-    static void                 undo_concurrent();
+    // Function used for concurrent UNDO operations, transaction driven UNDO
+    static void                 undo_concurrent_pass();
 
 private:
     // TODO(Restart)... it was for a space-recovery hack, not needed
@@ -389,20 +446,45 @@ private:
     // for a horrid space-recovery handling hack
     // static tid_t                _redo_tid;
 
-    // Function used for serialized operations, open system after the entire recovery process finished
+    // Function used for serialized operations, open system after the entire restart process finished
     // brief sub-routine of redo_pass() for logs that have pid.    
     static void                 _redo_log_with_pid(
         logrec_t& r, lsn_t &lsn, const lsn_t &end_logscan_lsn,
         lpid_t page_updated, bool &redone, uint32_t &dirty_count);
 
     // Function used for concurrent operations, open system after Log Analysis
-    // The function could be used for serialized operation with some minor work
     // Transaction driven UNDO phase, it handles both commit_lsn and lock acquisition
     static void                 _undo_txn_pass();
 
     // Function used for concurrent operations, open system after Log Analysis
     // Page driven REDO phase, it handles both commit_lsn and lock acquisition
     static void                 _redo_page_pass();
+
+
+    // Helper function to process a system log record, called from Log Analysis pass
+    static bool                 _analysis_system_log(logrec_t& r, lsn_t lsn, uint32_t& in_doubt_count);
+
+    // Helper function to process the chkpt_bf_tab log record, called from Log Analysis pass
+    static void                 _analysis_ckpt_bf_log(logrec_t& r, uint32_t& in_doubt_count);
+
+    // Helper function to process the t_chkpt_dev_tab log record, called from Log Analysis pass
+    static void                 _analysis_ckpt_dev_log(logrec_t& r, bool& mount);
+
+    // Helper function to process the rest of meaningful log records, called from Log Analysis pass
+    static void                 _analysis_other_log(logrec_t& r, lsn_t lsn,
+                                                       uint32_t& in_doubt_count, xct_t *xd);
+
+    // Helper function to process the extra mount operation, called from Log Analysis pass
+    static void                 _analysis_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,
+                                                          lsn_t& redo_lsn, bool& mount);
+
+    // Helper function to process the compensation map , called from backward log analysis only
+    static void                 _analysis_process_compensation_map(tid_CLR_map& mapCLR);
+ 
+    // Helper function to process the transaction table after finished log scan, called from Log Analysis pass
+    static void                 _analysis_process_txn_table(XctPtrHeap& heap);
+
+
 
 public:
     // TODO(Restart)... it was for a space-recovery hack, not needed

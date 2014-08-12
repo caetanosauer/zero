@@ -459,7 +459,7 @@ public:
                                            //    Internal delay before UNDO phase
                                            //    only if we have actual UNDO work
                                            
-        t_restart_concurrent_lock = 0x200, // M3 implementation:
+        t_restart_concurrent_lock = 0x200, // M3 and M4 implementation:
                                            //    System is opened after Log Analysis.
                                            //    Using lock acquisition for new transactions       
         t_restart_redo_demand = 0x400,     // M3 implementation:
@@ -477,79 +477,79 @@ public:
     };
     static restart_internal_mode_t restart_internal_mode;
 
-    // Set of functions to check individual recovery implementations
+    // Set of functions to check individual Restart implementations
     // No setting because the bit values are set staticlly, not dynamiclly
     static bool use_serial_restart()
     {
-        // Recovery M1
+        // Restart M1
         return ((restart_internal_mode & t_restart_serial ) !=0); 
     }
     static bool use_redo_log_restart() 
     {
-        // Recovery M1
+        // Restart M1
         return ((restart_internal_mode & t_restart_redo_log ) !=0);     
     }
     static bool use_undo_reverse_restart() 
     { 
-        // Recovery M1
+        // Restart M1
         return ((restart_internal_mode & t_restart_undo_reverse ) !=0);     
     }
 
     static bool use_concurrent_log_restart() 
     { 
-        // Recovery M2
+        // Restart M2
         return ((restart_internal_mode & t_restart_concurrent_log ) !=0);     
     }
     static bool use_redo_page_restart() 
     { 
-        // Recovery M2
+        // Restart M2
         return ((restart_internal_mode & t_restart_redo_page ) !=0);     
     }
     static bool use_redo_full_logging_restart() 
     { 
-        // Recovery M2
+        // Restart M2
         return ((restart_internal_mode & t_restart_redo_full_logging ) !=0);     
     }
     static bool use_undo_txn_restart() 
     { 
-        // Recovery M2
+        // Restart M2
         return ((restart_internal_mode & t_restart_undo_txn ) !=0);     
     }
     static bool use_redo_delay_restart() 
     { 
-        // M2, testing purpose
+        // Restart M2, testing purpose
         return ((restart_internal_mode & t_restart_redo_delay ) !=0);     
     }
     static bool use_undo_delay_restart() 
     { 
-        // M2, testing purpose
+        // Restart M2, testing purpose
         return ((restart_internal_mode & t_restart_undo_delay ) !=0);     
     }
 
     static bool use_concurrent_lock_restart() 
     { 
-        // Recovery M3
+        // Restart M3 and M4
         return ((restart_internal_mode & t_restart_concurrent_lock ) !=0);     
     }
     static bool use_redo_demand_restart() 
     { 
-        // Recovery M3
+        // Restart M3
         return ((restart_internal_mode & t_restart_redo_demand ) !=0);     
     }
     static bool use_undo_demand_restart() 
     { 
-        // Recovery M3
+        // Restart M3
         return ((restart_internal_mode & t_restart_undo_demand ) !=0);     
     }
 
     static bool use_redo_mix_restart() 
     { 
-// TODO(Restart)... NYI, Recovery M4
+        // Restart M4
         return ((restart_internal_mode & t_restart_redo_mix ) !=0);     
     }
     static bool use_undo_mix_restart() 
     { 
-        // Recovery M4
+        // Restart M4
         return ((restart_internal_mode & t_restart_undo_demand ) !=0);     
     }
 

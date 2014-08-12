@@ -197,9 +197,28 @@ rc_t log_core::_collect_single_page_recovery_logs(
             nxt = record->page_prev_lsn();
         } else if (!record->is_multi_page()
             || pid.page != record->data_ssx_multi()->_page2_pid) {
+
+// TODO(Restart)... debugging output for eWRONG_PAGE_LSNCHAIN.  Non-consistent error
+//                          need more information to identify the root cause
+DBGOUT1(<< "!!!!   eWRONG_PAGE_LSNCHAIN error...."); 
+DBGOUT1(<< "log_core::_collect_single_page_recovery_logs: record type: " << *record);
+
+if (record->is_multi_page())
+{
+    DBGOUT1(<< "log_core::_collect_single_page_recovery_logs: multi-page");
+    DBGOUT1(<< "2nd page pid: " << record->data_ssx_multi()->_page2_pid);
+    DBGOUT1(<< "looking for pid: " << pid.page);
+}
+else
+{
+    DBGOUT1(<< "log_core::_collect_single_page_recovery_logs: not a multi-page");
+}
+
+
             W_RETURN_RC_MSG(eWRONG_PAGE_LSNCHAIN, << "PID= " << pid << ", CUR_LSN="
                 << current_lsn << ", EMLSN=" << emlsn << ", next_lsn=" << nxt
                 << ", obtained_lsn=" << obtained << ", log=" << *record);
+
         } else {
             w_assert0(record->data_ssx_multi()->_page2_pid == pid.page);
             nxt = record->data_ssx_multi()->_page2_prv;
