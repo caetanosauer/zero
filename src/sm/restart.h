@@ -285,7 +285,8 @@ public:
             // System is opened after Log Analysis, are we still in Restart?
             if (false == smlevel_0::use_redo_demand_restart())
             {
-                // Not pure on-demand (M3)
+                // Not pure on-demand (M3), only check redo mode since redo and undo
+                // must have the same 'on_demand' mode
                 // For M2 and M4, using child restart thread to determine the current status
                 // if the child thread exists
                 if (_restart_thread)
@@ -482,7 +483,7 @@ private:
     static void                 _analysis_process_compensation_map(tid_CLR_map& mapCLR);
  
     // Helper function to process the transaction table after finished log scan, called from Log Analysis pass
-    static void                 _analysis_process_txn_table(XctPtrHeap& heap);
+    static void                 _analysis_process_txn_table(XctPtrHeap& heap, lsn_t& commit_lsn);
 
 
 

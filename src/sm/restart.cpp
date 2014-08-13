@@ -443,7 +443,7 @@ restart_m::restart(
 
 /*********************************************************************
  *
- *  restart_m::analysis_pass_forward(master, redo_lsn, in_doubt_count, undo_lsn, heap, commit_lsn)
+ *  restart_m::analysis_pass_forward(master, redo_lsn, in_doubt_count, undo_lsn, heap, commit_lsn, last_lsn)
  *
  *  Scan log forward from master_lsn. Insert and update buffer pool, 
  *  insert transaction table.
@@ -1055,11 +1055,12 @@ restart_m::analysis_pass_forward(
     // table is either loser (active) or winner (ended);
 
     // Final process of the entries in transaction table
-    _analysis_process_txn_table(heap);
+    _analysis_process_txn_table(heap, commit_lsn);
 
     // Now we should have the final commit_lsn value
     // if it is the same as max_lsn (initial value), set commit_lsn to null
     // because we did not process anything which affects commit_lsn
+    // Note the commit_lsn is the minimum txn lsn from all in-flight transactions
     if (commit_lsn == max_lsn)
         commit_lsn = lsn_t::null;
 
@@ -1103,7 +1104,7 @@ restart_m::analysis_pass_forward(
 
 /*********************************************************************
  *
- *  restart_m::analysis_pass_backward(master, redo_lsn, in_doubt_count, undo_lsn, heap, commit_lsn)
+ *  restart_m::analysis_pass_backward(master, redo_lsn, in_doubt_count, undo_lsn, heap, last_lsn)
  *
  *  Scan log backward from master_lsn. Insert and update buffer pool, 
  *  insert transaction table.
@@ -1873,7 +1874,8 @@ restart_m::analysis_pass_backward(
     // on all loser transactions.
     
     // Final process of the entries in transaction table
-    _analysis_process_txn_table(heap);
+    lsn_t dummy_lsn = lsn_t::null;    
+    _analysis_process_txn_table(heap, dummy_lsn);
 
     w_base_t::base_stat_t f = GET_TSTAT(log_fetches);
     w_base_t::base_stat_t i = GET_TSTAT(log_inserts);
@@ -2575,7 +2577,7 @@ void restart_m::_analysis_process_compensation_map(tid_CLR_map& mapCLR)
 
 /*********************************************************************
  * 
- *  restart_m::_analysis_process_txn_table(heap)
+ *  restart_m::_analysis_process_txn_table(heap, commit_lsn)
  *
  *  Helper function to process the transaction table after we finished the log scan
  *  called by both analysis_pass_forward and analysis_pass_backward
@@ -2583,7 +2585,10 @@ void restart_m::_analysis_process_compensation_map(tid_CLR_map& mapCLR)
  *  System is not opened during Log Analysis phase
  *
  *********************************************************************/
-void restart_m::_analysis_process_txn_table(XctPtrHeap& heap) // Out: for serial mode only
+void restart_m::_analysis_process_txn_table(XctPtrHeap& heap,  // Out: for serial mode only
+                                                 lsn_t& commit_lsn) // In/Out: update commit_lsn value
+                                                                    // ignored if using lock acquisition
+
 {
     // Destroy the ended (winner) transactions
     // if in serial mode, populate the special heap with loser (active) transactions
@@ -2616,6 +2621,12 @@ void restart_m::_analysis_process_txn_table(XctPtrHeap& heap) // Out: for serial
         {
             // The loser_xct flag must be on
             w_assert1(true == xd->is_loser_xct());
+
+            // Determine the value for commit_lsn which is the minimum
+            // lsn of all loser transactions
+            // For a loser txn, the first lsn is the smallest lsn
+            if (commit_lsn > xd->first_lsn())
+                commit_lsn = xd->first_lsn();
 
             // Reset the first txn lsn of the loser txn to null
             // Current code is using first_lsn in log related operations
@@ -4376,9 +4387,6 @@ void restart_thread_t::run()
     // Done
     DBGOUT1(<< "restart_thread_t: Finished REDO and UNDO tasks");    
     working = smlevel_0::t_concurrent_done;
-
-    // Done with M2 restart, clear the global commit_lsn, allow all concurrent user transactions
-    smlevel_0::commit_lsn = lsn_t::null;
 
     return;
 };

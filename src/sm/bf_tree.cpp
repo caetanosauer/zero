@@ -910,7 +910,9 @@ w_rc_t bf_tree_m::_validate_access(generic_page*& page)   // pointer to the unde
     // If the system is doing concurrent recovery and we are still in the middle
     // of recovery, it might not be safe to access the page
     if ((smlevel_1::recovery) &&   // The restart_m object is valid
-        (smlevel_1::recovery->restart_in_progress())) // Restart is in progress
+        (smlevel_1::recovery->restart_in_progress())) // Restart is in progress, both serial and concurrent
+                                                      // if pure on_demand, then this function returns
+                                                      // false (not in restart) after Log Analysis phase
     {    
         if (true ==  restart_m::use_concurrent_log_restart()) 
         {
@@ -958,7 +960,7 @@ w_rc_t bf_tree_m::_validate_access(generic_page*& page)   // pointer to the unde
         else if (true == restart_m::use_concurrent_lock_restart())
         {
 ////////////////////////////////////////
-// TODO(Restart)... concurrency through lock acquisition, NYI
+// TODO(Restart)... concurrency through lock acquisition, M4 code path NYI
 ////////////////////////////////////////
 
             return RC(eNOTIMPLEMENTED);
@@ -968,6 +970,11 @@ w_rc_t bf_tree_m::_validate_access(generic_page*& page)   // pointer to the unde
     {
         // Serial recovery mode or concurrent recovery mode but recovery has completed
         // No need to validate for page accessability
+
+////////////////////////////////////////
+// TODO(Restart)... M3 pure on-demand concurrency through lock acquisition code path also
+//                          do need to validate in this caseNYI
+////////////////////////////////////////
     }
     return RCOK;
 }
@@ -1000,70 +1007,14 @@ void bf_tree_m::unpin_for_refix(bf_idx idx) {
 
 ///////////////////////////////////   Dirty Page Cleaner BEGIN       ///////////////////////////////////  
 w_rc_t bf_tree_m::force_all() {
-    if (false == smlevel_0::use_serial_restart())
-    {
-////////////////////////////////////////
-// TODO(Restart)... this is because we might still
-//                          have in_doubt pages in buffer
-//                          pool, we do not have a way to
-//                          flush buffer pool with in_doubt
-//                          pages currently
-////////////////////////////////////////
-
-        // Open system after Log Analysis
-        // Do not flush buffer pool as long as the recovery is still going on
-        if ((smlevel_1::recovery) &&                       // The restart_m object is valid
-            (smlevel_1::recovery->restart_in_progress())) // Restart is in progress
-        {
-            // Restart child thread is still around
-            DBGOUT1( << "Block buffer pool flush because restart is still on");
-            return RCOK;
-        }
-        else
-        {
-            return _cleaner->force_all();
-        }
-    }
-    else
-    {
-        // Using serial recovery, system is not opened until the entire
-        // recovery process is done
-        
-        return _cleaner->force_all();    
-    }
+    // Buffer pool flush, it flushes dirty pages
+    // It does not flush in_doubt pages
+    return _cleaner->force_all();    
 }
 w_rc_t bf_tree_m::force_until_lsn(lsndata_t lsn) {
-    if (false == smlevel_0::use_serial_restart())
-    {
-////////////////////////////////////////
-// TODO(Restart)... this is because we might still
-//                          have in_doubt pages in buffer
-//                          pool, we do not have a way to
-//                          flush buffer pool with in_doubt
-//                          pages currently
-////////////////////////////////////////
-
-        // Open system after Log Analysis
-        // Do not flush buffer pool as long as the recovery is still going on
-        if ((smlevel_1::recovery) &&                       // The restart_m object is valid
-            (smlevel_1::recovery->restart_in_progress())) // Restart is in progress
-        {
-            // Restart child thread is still around        
-            DBGOUT1( << "Block buffer pool flush until lsn because restart is still on");
-            return RCOK;
-        }
-        else
-        {
-            return _cleaner->force_until_lsn(lsn);        
-        }
-    }
-    else
-    {
-        // Using serial recovery , system is not opened until the entire
-        // recovery process is done
-        
-        return _cleaner->force_until_lsn(lsn);
-    }
+    // Buffer pool flush, it flushes dirty pages
+    // It does not flush in_doubt pages
+    return _cleaner->force_until_lsn(lsn);
 }
 w_rc_t bf_tree_m::force_volume(volid_t vol) {
     return _cleaner->force_volume(vol);
