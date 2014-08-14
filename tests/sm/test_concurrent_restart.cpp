@@ -458,7 +458,7 @@ TEST (RestartTest, MultiPageInFlightN) {
 }
 /**/
 
-/* Not passing, full logging, btree_impl::_ux_undo_ghost_mark but the record is already a ghost *
+/* Passing, full logging */
 TEST (RestartTest, MultiPageInFlightNF) {
     test_env->empty_logdata_dir();
     restart_multi_page_in_flight context;
@@ -467,7 +467,7 @@ TEST (RestartTest, MultiPageInFlightNF) {
     options.restart_mode = m2_full_logging_restart; // full logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 /* See btree_impl::_ux_traverse_recurse, the '_ux_traverse_try_opportunistic_adopt' call */
 /*    is returning eGOODRETRY and infinite loop, need further investigation, why?  A similar */

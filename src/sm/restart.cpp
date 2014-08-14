@@ -4388,6 +4388,10 @@ void restart_thread_t::run()
     DBGOUT1(<< "restart_thread_t: Finished REDO and UNDO tasks");    
     working = smlevel_0::t_concurrent_done;
 
+    // Set commit_lsn to NULL which allows all concurrent transaction to come in
+    // from now on (if using commit_lsn to validate concurrent user transactions)
+    smlevel_0::commit_lsn = lsn_t::null;
+
     return;
 };
 

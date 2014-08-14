@@ -121,7 +121,7 @@ btree_impl::_ux_insert_core(
 // TODO(Restart)...        
 DBGOUT3( << "&&&& Log for regular insertion, key: " << key);  
 
-        W_DO(log_btree_insert_nonghost(leaf, key, el));
+        W_DO(log_btree_insert_nonghost(leaf, key, el, false /*is_sys_txn*/));
         leaf.insert_nonghost(key, el);
         // W_DO (_sx_reserve_ghost(leaf, key, el.size()));
     }
@@ -481,6 +481,20 @@ btree_impl::_ux_remove(volid_t vol, snum_t store, const w_keystr_t &key, const b
 rc_t
 btree_impl::_ux_remove_core(volid_t vol, snum_t store, const w_keystr_t &key, const bool undo)
 {
+    // If called from 'remove_as_undo' to undo an insert operation, input parameter 'undo' ==  true.
+    // This could be either transaction rollback or restart undo.
+    
+    // If the original insert operation was from a page split with full logging, the fence keys 
+    // were changed during page split, so the record we found would come from the destination 
+    // page, not the source page.
+    // After page rebalance, the record in source page is a ghost and the record in destination page 
+    // is a non-ghost.
+    // Page split is a system transaction and we do not undo a system transaction operation,
+    // so we should leave both old and the new records intact, do not make any physical change
+    // and do not generate new log record during transaction abort/rollback.
+    // The insert log record knowns whether the insertion came for page rebalance operation or not
+    // so the 'undo' won't happen for those insertions.   
+
     bool need_lock = g_xct_does_need_lock();
     btree_page_h         leaf;
 
@@ -519,7 +533,7 @@ btree_impl::_ux_remove_core(volid_t vol, snum_t store, const w_keystr_t &key, co
     {
 // TODO(Restart)... 
 DBGOUT3( << "&&&& Log for deletion, key: " << key);
-    
+  
         // log first
         vector<slotid_t> slots;
         slots.push_back(slot);
@@ -563,7 +577,31 @@ btree_impl::_ux_undo_ghost_mark(volid_t vol, snum_t store, const w_keystr_t &key
     const char *existing_element = leaf.element(slot, existing_element_len, ghost);
     cvec_t el (existing_element, existing_element_len);
 
-    W_DO(log_btree_insert_nonghost(leaf, key, el));
+// TODO(Restart)... 
+DBGOUT3( << "btree_impl::_ux_undo_ghost_mark - undo a remove, key: " << key);
+
+    if (false == leaf.is_ghost(slot) && (true == restart_m::use_redo_full_logging_restart()))
+    {
+        // If the original delete operation was from a page split with full logging, the fence keys 
+        // were changed during page split, so the record we found would come from the destination 
+        // page, not the source page.
+        // After page rebalance, the record in source page is a ghost and the record in destination page 
+        // is a non-ghost.
+        // Page split is a system transaction and we do not undo a system transaction operation,
+        // so we should leave both old and the new records intact, do not make any physical change
+        // and do not want to generate new log record during transaction abort/rollback.
+        // The delete log record does not known whether the deletion came for page rebalance
+        // operation or not.  The only scenario the existing record is not a ghost is that the original 
+        // delete operation was from a page rebalance, skip the 'undo' operation.
+
+        // TODO(Restart)... it would be more efficient to modify the btree_ghost_mark_log 
+        // log record (see btree_insert_log), so we can skip the tree traversal and not relying
+        // on the ghost bit assumption here
+
+        return RCOK;    
+    }
+
+    W_DO(log_btree_insert_nonghost(leaf, key, el, false /*is_sys_txn*/));
 
     leaf.unmark_ghost (slot);
     return RCOK;
