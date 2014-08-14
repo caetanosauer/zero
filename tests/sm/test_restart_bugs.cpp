@@ -54,7 +54,7 @@ w_rc_t populate_multi_page_record(ss_m *ssm, stid_t &stid, bool fCommit)
     
     W_DO(test_env->begin_xct());    
 //    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
-    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 1;
+    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 1 -1;
 
     for (int i = 0; i < recordCount; ++i) 
     {
@@ -158,7 +158,7 @@ public:
     }
 };
 
-/* Passing */
+/* Passing *
 TEST (RestartTest, MultiPageInFlightN) {
     test_env->empty_logdata_dir();
     restart_multi_page_in_flight context;
@@ -167,9 +167,9 @@ TEST (RestartTest, MultiPageInFlightN) {
     options.restart_mode = m2_default_restart; // minimal logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-/**/
+**/
 
-/* Passing */
+/* Passing *
 TEST (RestartTest, MultiPageInFlightNF) {
     test_env->empty_logdata_dir();
     restart_multi_page_in_flight context;
@@ -178,12 +178,12 @@ TEST (RestartTest, MultiPageInFlightNF) {
     options.restart_mode = m2_full_logging_restart; // full logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-/**/
+**/
 
 /* See btree_impl::_ux_traverse_recurse, the '_ux_traverse_try_opportunistic_adopt' call */
 /*    is returning eGOODRETRY and infinite loop, need further investigation */
 /* Issue is related to page split, if reduce the size of record so no page split, then it works fine */
-/* Not passing, WOD with minimal logging *
+/* Not passing, WOD with minimal logging */
 TEST (RestartTest, MultiPageInFlightC) {
     test_env->empty_logdata_dir();
     restart_multi_page_in_flight context;
@@ -192,7 +192,7 @@ TEST (RestartTest, MultiPageInFlightC) {
     options.restart_mode = m2_default_restart; // minimal logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 /* Not passing, full logging, infinite loop, same issue as minimal logging *
 TEST (RestartTest, MultiPageInFlightCF) {

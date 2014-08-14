@@ -2628,12 +2628,6 @@ void restart_m::_analysis_process_txn_table(XctPtrHeap& heap,  // Out: for seria
             if (commit_lsn > xd->first_lsn())
                 commit_lsn = xd->first_lsn();
 
-            // Reset the first txn lsn of the loser txn to null
-            // Current code is using first_lsn in log related operations
-            // and the value is not initialized (?), set to null
-            // to avoid accident side-effect in other code
-            xd->set_first_lsn(lsn_t::null);
-
             // Loser transaction
             if (true == use_serial_restart())
                 heap.AddElementDontHeapify(xd);

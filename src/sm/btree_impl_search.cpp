@@ -181,7 +181,17 @@ btree_impl::_ux_traverse_recurse(btree_page_h&                start,
         // Should be able to search that:
         //  (this_is_the_leaf_page && slot_to_follow==t_follow_invalid) ||
         //  (!this_is_the_leaf_page && slot_to_follow=!=t_follow_invalid)
-        
+
+// TODO(Restart)...
+if (this_is_the_leaf_page)
+{
+    DBGOUT3(<< "!!!! LEAF PAGE");
+}
+else
+{
+    DBGOUT3(<< "!!!! Non-leaf page");
+}
+
         if (this_is_the_leaf_page) {
             leaf = *current;
             // re-fix to apply the given latch mode
@@ -192,9 +202,17 @@ btree_impl::_ux_traverse_recurse(btree_page_h&                start,
                             << ". need restart from root!");
                     leaf_pid_causing_failed_upgrade = leaf.pid().page;
                     leaf.unfix();
+
+// TODO(Restart)...
+DBGOUT3(<< "!!!! LEAF PAGE - return eRETRY");
+
                     return RC(eRETRY);
                 }
             }
+
+// TODO(Restart)...
+DBGOUT3(<< "!!!! LEAF PAGE - done");
+
             break; // done!
         }
         
@@ -249,6 +267,18 @@ btree_impl::_ux_traverse_recurse(btree_page_h&                start,
             // We followed a real-child pointer and found that it has foster... let's adopt it! (but
             // opportunistically).  Same as  eager adoption, retry if eGOODRETRY, otherwise go on
             W_DO(_ux_traverse_try_opportunistic_adopt(*current, *next));
+
+/**
+// TODO(Restart)...
+if (RCOK == _ux_traverse_try_opportunistic_adopt(*current, *next))
+{
+    DBGOUT3(<<"!!!! _ux_traverse_try_opportunistic_adopt, RC == RCOK");
+}
+else
+{
+    DBGOUT3(<<"!!!! _ux_traverse_try_opportunistic_adopt, RC == eGOODRETRY");
+}
+**/
         }
 
         current->unfix();
