@@ -1043,7 +1043,7 @@ restart_m::analysis_pass_forward(
     if ( 0 != in_doubt_count)
     {
         // Do we have more to mount?    
-        _analysis_extra_mount(theLastMountLSNBeforeChkpt, redo_lsn, mount);   
+        _analysis_process_extra_mount(theLastMountLSNBeforeChkpt, redo_lsn, mount);   
     } 
     // Now theLastMountLSNBeforeChkpt == redo_lsn
 
@@ -1106,7 +1106,8 @@ restart_m::analysis_pass_forward(
  *
  *  restart_m::analysis_pass_backward(master, redo_lsn, in_doubt_count, undo_lsn, heap, last_lsn)
  *
- *  Scan log backward from master_lsn. Insert and update buffer pool, 
+ *  Scan log backward from end of recovery log until the last completed checkpoint.
+ *  Insert and update buffer pool, 
  *  insert transaction table.
  *  Compute redo_lsn.
  *  Non-read-lock acquisition
@@ -1206,7 +1207,7 @@ restart_m::analysis_pass_backward(
 
     // Ready to process the logs from recovery log
     // Open a backward scan starting from the end of recovery log 
-    log_i         scan(*log, last_lsn, false /*forward*/);
+    log_i         scan(*log, last_lsn, false /*forward scan*/);
     logrec_t*     log_rec_buf;
     lsn_t         lsn;   // LSN of the retrieved log record
 
@@ -1403,7 +1404,7 @@ restart_m::analysis_pass_backward(
             }
             else
             {
-                // No matching 'end checkpoint' log record, , ignore
+                // No matching 'end checkpoint' log record, ignore
             }
             break;
 
@@ -1457,7 +1458,7 @@ restart_m::analysis_pass_backward(
                         {
                             // Checkpoint thinks this is an in-flight transaction
                             
-                            log_i scan_per_txn(*log, lsn, false /*forward*/);
+                            log_i scan_per_txn(*log, lsn, false /*forward scan*/);
                             logrec_t*  log_rec_buf_per_txn;
                             lsn_t      lsn_per_txn;           // LSN of the retrieved log record
                             bool       is_loser = false;
@@ -1858,7 +1859,7 @@ restart_m::analysis_pass_backward(
     if (0 != in_doubt_count)
     {
         // Do we have more to mount?    
-        _analysis_extra_mount(theLastMountLSNBeforeChkpt, redo_lsn, mount);   
+        _analysis_process_extra_mount(theLastMountLSNBeforeChkpt, redo_lsn, mount);   
     } 
     // Now theLastMountLSNBeforeChkpt == redo_lsn
 
@@ -2042,7 +2043,7 @@ bool restart_m::_analysis_system_log(logrec_t& r,             // In: Log record 
                 //      btree_foster_deadopt_log
 
                 if (r.is_multi_page()) 
-                {
+                {               
                     lpid_t page2_of_interest = r.construct_pid2();
                     DBGOUT3(<<" multi-page:" <<  page2_of_interest);
                     idx = 0;
@@ -2422,7 +2423,7 @@ void restart_m::_analysis_other_log(logrec_t& r,               // In: log record
 
 /*********************************************************************
  * 
- *  restart_m::_analysis_extra_mount(theLastMountLSNBeforeChkpt, redo_lsn, mount)
+ *  restart_m::_analysis_process_extra_mount(theLastMountLSNBeforeChkpt, redo_lsn, mount)
  *
  *  Helper function to process any extra mount operations occurred between 
  *  redo_lsn and the last completed checkpoint, called by both 
@@ -2431,7 +2432,7 @@ void restart_m::_analysis_other_log(logrec_t& r,               // In: log record
  *  System is not opened during Log Analysis phase
  *
  *********************************************************************/
-void restart_m::_analysis_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,  // In/Out
+void restart_m::_analysis_process_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,  // In/Out
                                           lsn_t& redo_lsn,                    // In
                                           bool& mount)                        // Out                                         
 {

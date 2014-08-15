@@ -169,7 +169,7 @@ w_rc_t merge_simple(ss_m* ssm, test_volume_t *test_volume) {
             slots.push_back(i);
             child_p.mark_ghost (i);
         }
-        W_DO(log_btree_ghost_mark (child_p, slots));
+        W_DO(log_btree_ghost_mark (child_p, slots, false /*is_sys_txn*/));
         cout << "now it is " << (child_p.used_space() * 100 / SM_PAGESIZE)
             << "% full. foster=" << child_p.get_foster() << endl;
     }
@@ -321,7 +321,7 @@ w_rc_t rebalance_simple(ss_m* ssm, test_volume_t *test_volume) {
             slots.push_back(i);
             foster_child_p.mark_ghost (i);
         }
-        W_DO(log_btree_ghost_mark (foster_child_p, slots));
+        W_DO(log_btree_ghost_mark (foster_child_p, slots, false /*is_sys_txn*/));
         W_DO(ssm->commit_xct());// commit the deletions
         W_DO(ssm->begin_xct());
         test_env->set_xct_query_lock();

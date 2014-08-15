@@ -183,6 +183,25 @@ btree_impl::_ux_traverse_recurse(btree_page_h&                start,
         //  (!this_is_the_leaf_page && slot_to_follow=!=t_follow_invalid)
 
 // TODO(Restart)...
+switch (traverse_mode) 
+{
+case t_fence_contain:
+    {
+    DBGOUT3(<< "!!!! traverse_mode: t_fence_contain");
+    break;
+    }
+case t_fence_low_match:
+    {
+    DBGOUT3(<< "!!!! traverse_mode: t_fence_low_match");
+    break;
+    }
+case t_fence_high_match:
+    {
+    DBGOUT3(<< "!!!! traverse_mode: t_fence_high_match");
+    break;
+    }
+}
+
 if (this_is_the_leaf_page)
 {
     DBGOUT3(<< "!!!! LEAF PAGE");
@@ -307,6 +326,9 @@ void btree_impl::_ux_traverse_search(btree_impl::traverse_mode_t traverse_mode,
                 } else {
                     slot_to_follow = (slot_follow_t) slot;
                 }
+// TODO(Restart)...
+DBGOUT3(<< "!!!! btree_impl::_ux_traverse_search: non-leaf, t_follow_foster = " << slot_to_follow);
+
             }
         } else {
             // this page can't contain the key.
@@ -316,7 +338,10 @@ void btree_impl::_ux_traverse_search(btree_impl::traverse_mode_t traverse_mode,
             // this page or one of its fosters have fence keys containing the search key.
             w_assert2(current->get_foster());
             w_assert2(current->compare_with_fence_high(key) >= 0);
-            
+
+// TODO(Restart)...
+DBGOUT3(<< "!!!! btree_impl::_ux_traverse_search: t_follow_foster");
+
             // let's follow foster
             slot_to_follow = t_follow_foster;
         }

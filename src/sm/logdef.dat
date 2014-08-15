@@ -164,7 +164,8 @@ btree_overwrite    1011001 1.00 (const btree_page_h& page, const w_keystr_t& key
     const char* old_el, const char* new_el, size_t offset, size_t elen);
 
 # ghost records. currently only for BTrees as their UNDO/REDO rely on BTree access.
-btree_ghost_mark    1011001 1.0  (const btree_page_h& page, const vector<slotid_t>& slots);
+# sys_txn is true if the delete log record was from a page rebalance full logging transaction
+btree_ghost_mark    1011001 1.0  (const btree_page_h& page, const vector<slotid_t>& slots, const bool sys_txn);
 btree_ghost_reclaim 1110000 1.0  (const btree_page_h& page, const vector<slotid_t>& slots);
 # ghost reservation is fused
 btree_ghost_reserve 1110000 1.0  (const btree_page_h& page, const w_keystr_t& key, int element_length);

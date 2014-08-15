@@ -171,7 +171,7 @@ rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the 
             // Now log the deletion from source next
             vector<slotid_t> slots;
             slots.push_back(0);  // Low fence key is in slot 0
-            rc = log_btree_ghost_mark(*steal_src2, slots);
+            rc = log_btree_ghost_mark(*steal_src2, slots, true /*is_sys_txn*/);
             if (rc.is_error()) 
             {
                 W_FATAL_MSG(fcINTERNAL, << "Failed to generate log_btree_ghost_mark log record during a full logging system transaction");
@@ -342,7 +342,7 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
             // No difference between leaf or non-leaf page
             vector<slotid_t> slots;
             slots.push_back(i);    // Current 'i' is the slot for the deleted record
-            rc = log_btree_ghost_mark(*steal_src, slots);
+            rc = log_btree_ghost_mark(*steal_src, slots, true /*is_sys_txn*/);
             if (rc.is_error()) 
             {
                 W_FATAL_MSG(fcINTERNAL, << "Failed to generate log_btree_ghost_mark log record during a full logging system transaction");

@@ -476,7 +476,7 @@ private:
                                                        uint32_t& in_doubt_count, xct_t *xd);
 
     // Helper function to process the extra mount operation, called from Log Analysis pass
-    static void                 _analysis_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,
+    static void                 _analysis_process_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,
                                                           lsn_t& redo_lsn, bool& mount);
 
     // Helper function to process the compensation map , called from backward log analysis only

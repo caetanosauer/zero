@@ -425,6 +425,11 @@ public:
 
         // One big uncommitted txn
         W_DO(populate_multi_page_record(ssm, _stid, false));  // false: Do not commit, in-flight
+
+        // If abort the transaction before shutdown, both normal and minimal logging crash shutdown works
+        // but full logging crash shutdown generates an assertion in 'btree_ghost_mark_log::redo'
+        //     test_env->abort_xct();        
+
         output_durable_lsn(3);
 
         return RCOK;
