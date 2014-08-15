@@ -40,8 +40,13 @@ public:
         W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
         output_durable_lsn(2);
 
-       // One big uncommitted txn
+        // One big uncommitted txn
         W_DO(test_env->btree_populate_records(_stid_list[0], false, false));  // flags: No checkpoint, don't commit
+
+        // If abort the transaction before shutdown, both normal and minimal logging crash shutdown works
+        // but full logging crash shutdown generates an assertion in 'btree_ghost_mark_log::redo'
+        //     test_env->abort_xct();        
+
         output_durable_lsn(3);
 
         return RCOK;
@@ -64,7 +69,7 @@ public:
     }
 };
 
-/* Passing *
+/* Passing */
 TEST (RestartTest, MultiPageInFlightN) {
     test_env->empty_logdata_dir();
     restart_multi_page_in_flight context;
@@ -73,10 +78,9 @@ TEST (RestartTest, MultiPageInFlightN) {
     options.restart_mode = m2_default_restart; // minimal logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
-/* Issue is related to page split, if reduce the size of record so no page split, then it works fine */
-/* Not passing, full logging, btree_impl::_ux_undo_ghost_mark but the record is already a ghost *
+/* Passing */
 TEST (RestartTest, MultiPageInFlightNF) {
     test_env->empty_logdata_dir();
     restart_multi_page_in_flight context;
@@ -85,7 +89,7 @@ TEST (RestartTest, MultiPageInFlightNF) {
     options.restart_mode = m2_full_logging_restart; // full logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 /* See btree_impl::_ux_traverse_recurse, the '_ux_traverse_try_opportunistic_adopt' call */
 /*    is returning eGOODRETRY and infinite loop, need further investigation */

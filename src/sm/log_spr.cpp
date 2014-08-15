@@ -197,9 +197,69 @@ rc_t log_core::_collect_single_page_recovery_logs(
             nxt = record->page_prev_lsn();
         } else if (!record->is_multi_page()
             || pid.page != record->data_ssx_multi()->_page2_pid) {
+
+// TODO(Restart)... debugging output for eWRONG_PAGE_LSNCHAIN.  Non-consistent error
+//                          need more information to identify the root cause
+DBGOUT1(<< "!!!!   eWRONG_PAGE_LSNCHAIN error...."); 
+DBGOUT1(<< "!!!!   log_core::_collect_single_page_recovery_logs: fetched record has different page id, record type: " << *record);
+
+if (record->is_multi_page())
+{
+    DBGOUT1(<< "!!!!   log_core::_collect_single_page_recovery_logs: multi-page log record");
+    DBGOUT1(<< "!!!!   2nd page pid: " << record->data_ssx_multi()->_page2_pid);
+    DBGOUT1(<< "!!!!   looking for pid: " << pid.page);
+}
+else
+{
+    DBGOUT1(<< "!!!!   log_core::_collect_single_page_recovery_logs: single page log record, looking for page id: "
+            << pid.page << ", fetched record page id: " << record->shpid());
+}
+if (record->null_pid()) 
+{
+    // Record does not contain a page id, meaning it does not impact buffer pool
+    DBGOUT1(<< "!!!!   record does not have a page id");
+    if (!record->is_single_sys_xct())
+    {
+        DBGOUT1(<< "!!!!   Not a system transaction");
+    }
+    else
+    {
+        DBGOUT1(<< "!!!!   It is a system transaction");
+    }
+
+    if (record->tid() != tid_t::null)                  
+    {
+        DBGOUT1(<< "!!!!   Has a transaction id, tid: " << record->tid());
+    }
+    else
+    {
+        DBGOUT1(<< "!!!!   No transaction id, note system transaction does not have tid");
+    }
+
+    if ((!record->is_single_sys_xct()) && (record->tid() == tid_t::null))
+    {
+        // Log record does not have page id and does not have tid
+        // It should either be mount or dismount log record
+        if (record->type() == logrec_t::t_dismount_vol)
+        {
+            DBGOUT1(<< "!!!!   Log record: dismount");
+        }
+        else if (record->type() == logrec_t::t_mount_vol)
+        {
+            DBGOUT1(<< "!!!!   Log record: mount");        
+        }
+        else
+        {
+            DBGOUT1(<< "!!!!   No page ID, not txn ID, not a system txn: unknown log record");    
+        }
+    }
+}
+
+
             W_RETURN_RC_MSG(eWRONG_PAGE_LSNCHAIN, << "PID= " << pid << ", CUR_LSN="
                 << current_lsn << ", EMLSN=" << emlsn << ", next_lsn=" << nxt
                 << ", obtained_lsn=" << obtained << ", log=" << *record);
+
         } else {
             w_assert0(record->data_ssx_multi()->_page2_pid == pid.page);
             nxt = record->data_ssx_multi()->_page2_prv;

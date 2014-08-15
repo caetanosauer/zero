@@ -332,6 +332,11 @@ public:
 
         // One big uncommitted txn
         W_DO(test_env->btree_populate_records(_stid_list[0], false, false));  // false: No checkpoint; false: Do not commit, in-flight
+
+        // If abort the transaction before shutdown, both normal and minimal logging crash shutdown works
+        // but full logging crash shutdown generates an assertion in 'btree_ghost_mark_log::redo'
+        //     test_env->abort_xct();        
+
         output_durable_lsn(3);
 
         return RCOK;
@@ -365,7 +370,7 @@ TEST (RestartTest, MultiPageInFlightN) {
 }
 /**/
 
-/* Not passing, full logging, btree_impl::_ux_undo_ghost_mark but the record is already a ghost *
+/* Passing, full logging */
 TEST (RestartTest, MultiPageInFlightNF) {
     test_env->empty_logdata_dir();
     restart_multi_page_in_flight context;
@@ -374,7 +379,7 @@ TEST (RestartTest, MultiPageInFlightNF) {
     options.restart_mode = m2_full_logging_restart; // full logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 /* See btree_impl::_ux_traverse_recurse, the '_ux_traverse_try_opportunistic_adopt' call */
 /*    is returning eGOODRETRY and infinite loop, need further investigation, why?  A similar */
@@ -519,19 +524,25 @@ public:
         // No wait in test code, but wait in restart
         // This is to ensure concurrency
 
-        if (fCrash && restart_mode < m3_default_restart ) {
-            // Verify
-            w_rc_t rc = test_env->btree_scan(_stid_list[0], s);  // Should have only one page of data
+        if (fCrash && (restart_mode < m3_default_restart))
+        {
+            // M2 crash shutdown
+            w_rc_t rc = test_env->btree_scan(_stid_list[0], s);  // Should have only one page of data (root)
                                                          // while restart is on for this page
-                                                         // therefore even the concurrent txn is a
-                                                         // read/scan txn, it should not be allowed
+                                                         // the wait only happens after root
+                                                         // page being recoverd
             if (rc.is_error())
             {
-            DBGOUT3(<<"restart_simple_concurrent_redo: tree_scan error: " << rc);        
+                DBGOUT3(<<"restart_simple_concurrent_redo: tree_scan error: " << rc);        
 
-            // Abort the failed scan txn
-            test_env->abort_xct();
-
+                // Abort the failed scan txn
+                test_env->abort_xct();
+            }
+            else
+            {
+                std::cerr << "restart_simple_concurrent_redo: scan operation should not succeed"<< std::endl;         
+                return RC(eINTERNAL);
+            }
             // Sleep to give Recovery sufficient time to finish
             while (true == test_env->in_restart())
             {
@@ -541,16 +552,12 @@ public:
 
             // Try again
             W_DO(test_env->btree_scan(_stid_list[0], s));
-            }
-            else
-            {
-            std::cerr << "restart_simple_concurrent_redo: scan operation should not succeed"<< std::endl;         
-            return RC(eINTERNAL);
-            }
+                
         } 
         else {
             W_DO(test_env->btree_scan(_stid_list[0], s));
         }
+            
         EXPECT_EQ (3, s.rownum);
         EXPECT_EQ (std::string("aa1"), s.minkey);
         EXPECT_EQ (std::string("aa3"), s.maxkey);
@@ -653,6 +660,7 @@ public:
 
                 // Try again
                 W_DO(test_env->btree_scan(_stid_list[0], s));
+                
                 EXPECT_EQ (recordCount, s.rownum);
                 EXPECT_EQ (std::string("aa4"), s.minkey);
                 return RCOK;
@@ -1003,19 +1011,44 @@ public:
         // Wait in restart, this is to ensure user transaction encounter concurrent restart
         // Insert into the last page which should cause a conflict        
         W_DO(test_env->begin_xct());
-        w_rc_t rc = test_env->btree_insert(_stid_list[0], "zz5", "data4");
-        if (rc.is_error() || !(fCrash && restart_mode<m3_default_restart))
+        w_rc_t rc = test_env->btree_insert(_stid_list[0], "zz5", "data5");
+        if (rc.is_error())
         {
-            // Expected behavior
-            W_DO(test_env->abort_xct());            
+            // Failed to insert
+            if (!fCrash)            
+            {
+                // Normal shutdown, we should not have failure
+                std::cerr << "restart_concurrent_conflict: tree_insertion failed on a normal shutdown, un-expected"<< std::endl;
+                return RC(eINTERNAL);
+            }
+            else
+            {
+                // Crash shutdown
+                if (restart_mode < m3_default_restart)
+                    W_DO(test_env->abort_xct());           // M2 behavior, expected
+                else
+                {
+                    // M3, we should not see failure
+                    std::cerr << "restart_concurrent_conflict: tree_insertion failed on a M3 crash shutdown, un-expected"<< std::endl;
+                    return RC(eINTERNAL);
+                }               
+            }
         }
         else
         {
-            std::cerr << "restart_concurrent_conflict: tree_insertion should not succeed"<< std::endl;
-            // Should not succeed
-            RC(eINTERNAL);
+            // Insertion succeeded
+            if ((fCrash) && (restart_mode < m3_default_restart))
+            {
+                // M2 crash shutdown, insertion should not succeed
+                std::cerr << "restart_concurrent_conflict: tree_insertion succeed on M2 crash shutdown, un-expected"<< std::endl;
+                return RC(eINTERNAL);               
+            }
+            else
+            {
+                // Roll it back so the record count stays the same
+                W_DO(test_env->abort_xct());
+            }           
         }
-
         // Wait before the final verfication
         while (true == test_env->in_restart())
         {
@@ -1024,7 +1057,19 @@ public:
         }
 
         // Verify
-        W_DO(test_env->btree_scan(_stid_list[0], s));
+        rc = test_env->btree_scan(_stid_list[0], s);
+        if (rc.is_error())
+        {
+            test_env->abort_xct();       
+            std::cerr << "restart_concurrent_conflict: failed to scan the tree, try again: " << rc << std::endl;        
+            ::usleep(WAIT_TIME);
+            rc = test_env->btree_scan(_stid_list[0], s);
+            if (rc.is_error())
+            {
+                std::cerr << "restart_concurrent_conflict: 2nd try failed again: " << rc << std::endl;                    
+                return RC(eINTERNAL);
+            }
+        }
 
         int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;  // Count before checkpoint
         recordCount += 3;  // Count after checkpoint
@@ -1153,16 +1198,19 @@ public:
         }
         else
         {
-            if (!fCrash || m3_restart)
-            { // Should have succeeded, did not
-                std::cerr << "restart_multi_concurrent_conflict: tree_insertion should have succeeded" << rc;
+            if ((!fCrash || m3_restart) && rc.is_error())
+            { // Normal shutdown or M3, should have succeeded, did not
+                std::cerr << "restart_multi_concurrent_conflict: tree_insertion should have succeeded but failed" << rc;
                 return RC(eINTERNAL);
             }
-            else
-            { // Should not succeed, but did
-                std::cerr << "restart_multi_concurrent_conflict: tree_insertion should not succeed"<< std::endl;            
+            else if (fCrash && !m3_restart && !rc.is_error())
+            { // Crash, not M3, insertion should failed but succeeded
+            
+                std::cerr << "restart_multi_concurrent_conflict: tree_insertion should failed but succeeded"<< std::endl;            
                 return RC(eINTERNAL);
             }
+        if (rc.is_error())
+            test_env->abort_xct();
         }
 
         // Wait before the final verfication
@@ -1171,6 +1219,7 @@ public:
             // Concurrent restart is still going on, wait
             ::usleep(WAIT_TIME);            
         }
+
         if(checkpoints_enabled)
             W_DO(ss_m::checkpoint());
 

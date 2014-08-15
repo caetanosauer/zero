@@ -492,7 +492,9 @@ logrec_t::construct_pid() const
 }
 
 inline lpid_t logrec_t::construct_pid2() const {
-    w_assert1(header._cat == (t_multi | t_single_sys_xct | t_redo));
+//    w_assert1(header._cat == (t_multi | t_single_sys_xct | t_redo));
+    w_assert1(0 != (header._cat & t_multi));
+
     const multi_page_log_t* multi_log = reinterpret_cast<const multi_page_log_t*> (data_ssx());
     return lpid_t(header._vid, header._snum, multi_log->_page2_pid);
 }

@@ -893,13 +893,18 @@ try
                 
                 if (xd->first_lsn().valid())  
                 {
+                    // Note that we will pick the rest of txns in transaction table as long as it
+                    // has a valid 'first_lsn', including both normal and loser transactions
+                    // from restart process
+                    
                     // Not all transactions have tid, i.e. system transaction
                     // does not have tid, device mount/dismount does not
                     // have tid
                     tid[per_chuck_txn_count] = xd->tid();
 
                     // Record the transactions in following states:
-                    //     xct_active, xct_chaining, xct_committing, xct_aborting                   
+                    //     xct_active (both normal and loser), xct_chaining, xct_committing,
+                    //     xct_aborting                   
                     // A transaction state can be xct_t::xct_aborting if
                     // 1. A normal aborting transaction
                     // 2. Loser transaction - all transactions are marked as 

@@ -160,8 +160,8 @@ rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the 
                 vec_t el;
                 cvec_t empty_key;
                 _pack_node_record(el, empty_key, stolen_pid0_emlsn.data());
-                rc = log_btree_insert_nonghost(*this, keystr, el);   // key: original key including prefix
-                                                                     // el: non-key portion only
+                rc = log_btree_insert_nonghost(*this, keystr, el, true /*is_sys_txn*/);   // key: original key including prefix
+                                                                                         // el: non-key portion only
             }
             else
             {
@@ -171,10 +171,10 @@ rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the 
             // Now log the deletion from source next
             vector<slotid_t> slots;
             slots.push_back(0);  // Low fence key is in slot 0
-            rc = log_btree_ghost_mark(*steal_src2, slots);
+            rc = log_btree_ghost_mark(*steal_src2, slots, true /*is_sys_txn*/);
             if (rc.is_error()) 
             {
-                W_FATAL_MSG(fcINTERNAL, << "Failed to generate log_btree_ghost_mark log record during a full logging system transaction");			  
+                W_FATAL_MSG(fcINTERNAL, << "Failed to generate log_btree_ghost_mark log record during a full logging system transaction");
             }           
         }
         // Now the actual movement
@@ -229,7 +229,7 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
     else
     {
         // Eigher minimal logging or full logging but caller asked not to log because no need for the current movement
-        DBGOUT3( << "btree_page_h::_steal_records for a system transaction - either minimal logging or no logging");
+        DBGOUT3( << "btree_page_h::_steal_records for a system transaction - either minimal logging or skip full logging");
     }
 
     key_length_t new_prefix_length = get_prefix_length();
@@ -299,8 +299,8 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
                 // Log the insertion into new page (leaf)
                 vec_t el;
                 el.put(data, data_length);
-                rc = log_btree_insert_nonghost(*this, keystr, el);   // key: original key including prefix
-                                                                     // el: non-key portion only
+                rc = log_btree_insert_nonghost(*this, keystr, el, true /*is_sys_txn*/);   // key: original key including prefix
+                                                                                          // el: non-key portion only
                 // Clear the key string so it is ready for the next record
                 keystr.clear();
                 if (rc.is_error()) 
@@ -324,8 +324,8 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
                 // Log the insertion into new page (non-leaf)
                 vec_t el;
                 el.put(emlsn_ptr, sizeof(lsn_t));
-                rc = log_btree_insert_nonghost(*this, keystr, el);   // key: original key including prefix
-                                                                     // el: non-key portion only                
+                rc = log_btree_insert_nonghost(*this, keystr, el, true /*is_sys_txn*/);   // key: original key including prefix
+                                                                                        // el: non-key portion only                
                 // Clear the key string so it is ready for the next record
                 keystr.clear();
                 if (rc.is_error()) 
@@ -342,7 +342,7 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
             // No difference between leaf or non-leaf page
             vector<slotid_t> slots;
             slots.push_back(i);    // Current 'i' is the slot for the deleted record
-            rc = log_btree_ghost_mark(*steal_src, slots);
+            rc = log_btree_ghost_mark(*steal_src, slots, true /*is_sys_txn*/);
             if (rc.is_error()) 
             {
                 W_FATAL_MSG(fcINTERNAL, << "Failed to generate log_btree_ghost_mark log record during a full logging system transaction");
@@ -823,7 +823,7 @@ rc_t btree_page_h::replace_ghost(const w_keystr_t &key,
 
     // log FIRST. note that this might apply the deferred ghost creation too.
     // so, this cannot be done later than any of following
-    W_DO (log_btree_insert (*this, key, elem));
+    W_DO (log_btree_insert (*this, key, elem, false /*is_sys_txn*/));
 
     // which slot to replace?
     bool found;
