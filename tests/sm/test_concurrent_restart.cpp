@@ -2071,6 +2071,261 @@ TEST (RestartTest, MultiIndexConcTransChckptCBF) {
 }
 **/
 
+class restart_multi_page_inflight_multithrd : public restart_test_base
+{
+public:
+    static void t1Run (stid_t* stid_list) {
+        test_env->btree_populate_records(stid_list[0], false, false, false, '1'); // flags: no checkpoint, don't commit, one big transaction
+    }
+
+    static void t2Run (stid_t* stid_list) {
+        test_env->btree_populate_records(stid_list[0], false, false, true, '2'); // flags: no checkpoint, don't commit, many small transactions
+    }
+
+    static void t3Run (stid_t* stid_list) {
+        test_env->btree_populate_records(stid_list[0], true, false, false, '3'); // flags: checkpoint, don't commit, one big transaction
+    }
+
+    w_rc_t pre_shutdown(ss_m *ssm) {
+        _stid_list = new stid_t[1];
+        output_durable_lsn(1);
+        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
+        output_durable_lsn(2);
+        transact_thread_t t1 (_stid_list, t1Run);
+        transact_thread_t t2 (_stid_list, t2Run);
+        transact_thread_t t3 (_stid_list, t3Run);
+        output_durable_lsn(3);
+        W_DO(t1.fork());
+        W_DO(t2.fork());
+        W_DO(t3.fork());
+        W_DO(t1.join());
+        W_DO(t2.join());
+        W_DO(t3.join());
+        return RCOK;
+    }
+    
+    w_rc_t post_shutdown(ss_m *) {
+        output_durable_lsn(4);
+        x_btree_scan_result s;
+        W_DO(test_env->btree_scan(_stid_list[0], s));
+        EXPECT_EQ(0, s.rownum);
+        return RCOK;
+    }
+};
+
+/* Passing *
+TEST (RestartTest, MultiPageInFlightMultithrdN) {
+    test_env->empty_logdata_dir();
+    restart_multi_page_inflight_multithrd context;
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_default_restart; // minimal logging
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+/* Failing, full logging *
+TEST (RestartTest, MultiPageInFlightMultithrdNF) {
+    test_env->empty_logdata_dir();
+    restart_multi_page_inflight_multithrd context;
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_full_logging_restart; // full logging
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+/* Failing, WOD with minimal logging *
+TEST (RestartTest, MultiPageInFlightMultithrdC) {
+    test_env->empty_logdata_dir();
+    restart_multi_page_inflight_multithrd context;
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_default_restart; // minimal logging
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+/* Failing, full logging, infinite loop, same issue as minimal logging *
+TEST (RestartTest, MultiPageInFlightMultithrdCF) {
+    test_env->empty_logdata_dir();
+    restart_multi_page_inflight_multithrd context;
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_full_logging_restart; // full logging
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+class restart_many_conflicts_multithrd : public restart_test_base {
+public:
+    static void t1Run(stid_t* stid_list) {
+        const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;         
+        char key_str[7] = "key100";
+        char data_str[8] = "data100";
+
+        for (int i = 0; i<recordCount; i++) {
+            key_str[4] = ('0' + ((i / 10) % 10));
+            key_str[5] = ('0' + (i % 10));
+            data_str[5] = key_str[4];
+            data_str[6] = key_str[5];
+            w_rc_t rc = test_env->btree_update_and_commit(stid_list[0], key_str, data_str);
+            EXPECT_TRUE(rc.is_error());
+        }
+    }
+
+    static void t2Run(stid_t* stid_list) {
+        const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;         
+        char key_str[7] = "key200";
+        char data_str[8] = "data200";
+
+        for (int i = 0; i<recordCount; i++) {
+            key_str[4] = ('0' + ((i / 10) % 10));
+            key_str[5] = ('0' + (i % 10));
+            data_str[5] = key_str[4];
+            data_str[6] = key_str[5];
+            w_rc_t rc = test_env->btree_update_and_commit(stid_list[0], key_str, data_str);
+            EXPECT_TRUE(rc.is_error());
+        }
+    }
+
+    static void t3Run(stid_t* stid_list) {
+        const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;         
+        char key_str[7] = "key300";
+        char data_str[8] = "data300";
+
+        for (int i = 0; i<recordCount; i++) {
+            key_str[4] = ('0' + ((i / 10) % 10));
+            key_str[5] = ('0' + (i % 10));
+            data_str[5] = key_str[4];
+            data_str[6] = key_str[5];
+            test_env->btree_update_and_commit(stid_list[0], key_str, data_str);
+        }
+    }
+
+    w_rc_t pre_shutdown(ss_m *ssm) {
+        output_durable_lsn(1);
+        _stid_list = new stid_t[1];
+        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
+        output_durable_lsn(2);
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, true, false, '1')); // flags: no checkpoint, commit, one big transaction
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, true, false, '2')); // flags: no checkpoint, commit, one big transaction
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, true, false, '3')); // flags: no checkpoint, commit, one big transaction
+        output_durable_lsn(3);
+        return RCOK;
+    }
+    
+    w_rc_t post_shutdown(ss_m *) {
+        output_durable_lsn(4);
+        
+        const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;         
+        int32_t restart_mode = test_env->_restart_options->restart_mode;
+        bool redo_delay = restart_mode == m2_redo_delay_restart || restart_mode == m2_redo_fl_delay_restart 
+                || restart_mode == m2_both_delay_restart || restart_mode == m2_both_fl_delay_restart;
+        bool undo_delay = restart_mode == m2_undo_delay_restart || restart_mode == m2_undo_fl_delay_restart 
+                || restart_mode == m2_both_delay_restart || restart_mode == m2_both_fl_delay_restart;
+
+        // Wait a while, this is to give REDO a chance to reload the root page
+        // but still wait in REDO phase due to test mode
+        ::usleep(SHORT_WAIT_TIME*5);
+        output_durable_lsn(5);
+
+        if(restart_mode < m3_default_restart) {
+            if(redo_delay) {
+                transact_thread_t t1 (_stid_list, t1Run);
+                transact_thread_t t2 (_stid_list, t2Run);
+                if(ss_m::in_REDO() == t_restart_phase_active) { // Just a sanity check that the redo phase is truly active
+                    W_DO(t1.fork()); 
+                    W_DO(t2.fork()); 
+                    W_DO(t1.join());
+                    W_DO(t2.join());
+                }
+            }
+            if(undo_delay) {
+                transact_thread_t t3 (_stid_list, t3Run);
+                while(ss_m::in_UNDO() == t_restart_phase_not_active) // Wait until undo phase is starting
+                    ::usleep(SHORT_WAIT_TIME);
+                if(ss_m::in_UNDO() == t_restart_phase_active) { // Sanity check that undo is really active (instead of over) 
+                    W_DO(t3.fork());
+                    W_DO(t3.join());
+                }
+            }
+            while(ss_m::in_restart()) // Wait while restart is going on
+                ::usleep(WAIT_TIME); 
+        }
+        else {
+            char key_str[7] = "key300";
+            char data_str[8] = "data300";
+
+            for (int i = 0; i<recordCount; i++) {
+                key_str[4] = ('0' + ((i / 10) % 10));
+                key_str[5] = ('0' + (i % 10));
+                data_str[5] = key_str[4];
+                data_str[6] = key_str[5];
+                W_DO(test_env->btree_update_and_commit(_stid_list[0], key_str, data_str));
+            }
+        }
+        output_durable_lsn(6);
+
+        x_btree_scan_result s;
+        W_DO(test_env->btree_scan(_stid_list[0], s));
+        EXPECT_EQ(3*recordCount, s.rownum);
+        if(undo_delay || restart_mode >= m3_default_restart) {
+            EXPECT_EQ(std::string("data000"), s.minkey);
+            EXPECT_EQ(std::string("key224"), s.maxkey);
+        }
+        else {
+            EXPECT_EQ(std::string("key100"), s.minkey);
+            EXPECT_EQ(std::string("key324"), s.maxkey);
+        }
+        return RCOK;
+    }
+};
+
+/* Passing */
+TEST (RestartTest, ManyConflictsMultithrdN) {
+    test_env->empty_logdata_dir();
+    restart_many_conflicts_multithrd context;
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_default_restart; // minimal logging
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, ManyConflictsMultithrdNF) {
+    test_env->empty_logdata_dir();
+    restart_many_conflicts_multithrd context;
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_full_logging_restart; // full logging
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, MultiPageInFlightMultithrdC) {
+    test_env->empty_logdata_dir();
+    restart_many_conflicts_multithrd context;
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_default_restart; // minimal logging
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Failing *
+TEST (RestartTest, MultiPageInFlightMultithrdCF) {
+    test_env->empty_logdata_dir();
+    restart_many_conflicts_multithrd context;
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_full_logging_restart; // full logging
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     test_env = new btree_test_env();
