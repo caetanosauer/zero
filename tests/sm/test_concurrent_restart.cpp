@@ -427,7 +427,12 @@ public:
         W_DO(populate_multi_page_record(ssm, _stid, false));  // false: Do not commit, in-flight
 
         // If abort the transaction before shutdown, both normal and minimal logging crash shutdown works
-        // but full logging crash shutdown generates an assertion in 'btree_ghost_mark_log::redo'
+        // but full logging crash shutdown generates an assertion in 'btree_ghost_mark_log::redo',
+        // the core dump was during Single Page Recovery of the destination (foster child) page, it 
+        // inserted records and then try to delete them, this is incorrect because the deletions should be
+        // on the source, not on the destination
+        // Also since the aborted occurred before system crash, we should not go through recovery
+        // for this already aborted transaction...
         //     test_env->abort_xct();        
 
         output_durable_lsn(3);
@@ -474,10 +479,7 @@ TEST (RestartTest, MultiPageInFlightNF) {
 }
 /**/
 
-/* See btree_impl::_ux_traverse_recurse, the '_ux_traverse_try_opportunistic_adopt' call */
-/*    is returning eGOODRETRY and infinite loop, need further investigation, why?  A similar */
-/* test case 'restart_multi_concurrent_redo' is passing but it commits the txn*/
-/* Not passing, WOD with minimal logging *
+/* Passing, minimal logging */
 TEST (RestartTest, MultiPageInFlightC) {
     test_env->empty_logdata_dir();
     restart_multi_page_in_flight context;
@@ -486,9 +488,9 @@ TEST (RestartTest, MultiPageInFlightC) {
     options.restart_mode = m2_default_restart; // minimal logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
-/* Not passing, full logging, infinite loop, same issue as minimal logging *
+/* Passing, full logging */
 TEST (RestartTest, MultiPageInFlightCF) {
     test_env->empty_logdata_dir();
     restart_multi_page_in_flight context;
@@ -497,7 +499,7 @@ TEST (RestartTest, MultiPageInFlightCF) {
     options.restart_mode = m2_full_logging_restart; // full logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 // Test case with simple transactions (1 in-flight) and crash shutdown, one concurrent chkpt
 class restart_concurrent_chkpt : public restart_test_base  {

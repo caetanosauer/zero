@@ -360,7 +360,7 @@ public:
      * and, false positive is fine. it's just one mutex call overhead.
      * See jira ticket:78 "Eager-Opportunistic Hybrid Latching" (originally trac ticket:80).
      */
-    static rc_t _ux_traverse_try_eager_adopt(btree_page_h &current, shpid_t next_pid);
+    static rc_t _ux_traverse_try_eager_adopt(btree_page_h &current, shpid_t next_pid, const bool from_recovery);
 
     /**
      * If next has foster pointer and real-parent wants to adopt it, call this function.
@@ -370,7 +370,7 @@ public:
      * will be called to do it.
      * See jira ticket:78 "Eager-Opportunistic Hybrid Latching" (originally trac ticket:80).
      */
-    static rc_t _ux_traverse_try_opportunistic_adopt(btree_page_h &current, btree_page_h &next);
+    static rc_t _ux_traverse_try_opportunistic_adopt(btree_page_h &current, btree_page_h &next, const bool from_recovery);
 
     /**
     *  Find key in btree. If found, copy up to elen bytes of the
@@ -472,7 +472,8 @@ public:
      * @param[in] child child page of the parent that (might) has foster-children.
      * @param[out] pushedup whether the adopt was done
      */
-    static rc_t                 _sx_opportunistic_adopt_foster(btree_page_h &parent, btree_page_h &child, bool &pushedup);
+    static rc_t _sx_opportunistic_adopt_foster(btree_page_h &parent, btree_page_h &child, 
+                                                    bool &pushedup, const bool from_recovery);
 
     /**
      * \brief Pushes up all foster-children of children to the parent.
@@ -489,7 +490,8 @@ public:
      * is that this function doesn't exactly check children have foster-child.
      * So, this is much faster but some foster-child might be not adopted!
      */
-    static rc_t _sx_adopt_foster_sweep_approximate (btree_page_h &parent, shpid_t surely_need_child_pid);
+    static rc_t _sx_adopt_foster_sweep_approximate (btree_page_h &parent, shpid_t surely_need_child_pid,
+                                                            const bool from_recovery);
 
     /** Applies the changes of one adoption on parent node. Used by both usual adoption and REDO. */
     static void _ux_adopt_foster_apply_parent (btree_page_h &parent_arg,

@@ -182,35 +182,6 @@ btree_impl::_ux_traverse_recurse(btree_page_h&                start,
         //  (this_is_the_leaf_page && slot_to_follow==t_follow_invalid) ||
         //  (!this_is_the_leaf_page && slot_to_follow=!=t_follow_invalid)
 
-// TODO(Restart)...
-switch (traverse_mode) 
-{
-case t_fence_contain:
-    {
-    DBGOUT3(<< "!!!! traverse_mode: t_fence_contain");
-    break;
-    }
-case t_fence_low_match:
-    {
-    DBGOUT3(<< "!!!! traverse_mode: t_fence_low_match");
-    break;
-    }
-case t_fence_high_match:
-    {
-    DBGOUT3(<< "!!!! traverse_mode: t_fence_high_match");
-    break;
-    }
-}
-
-if (this_is_the_leaf_page)
-{
-    DBGOUT3(<< "!!!! LEAF PAGE");
-}
-else
-{
-    DBGOUT3(<< "!!!! Non-leaf page");
-}
-
         if (this_is_the_leaf_page) {
             leaf = *current;
             // re-fix to apply the given latch mode
@@ -221,17 +192,9 @@ else
                             << ". need restart from root!");
                     leaf_pid_causing_failed_upgrade = leaf.pid().page;
                     leaf.unfix();
-
-// TODO(Restart)...
-DBGOUT3(<< "!!!! LEAF PAGE - return eRETRY");
-
                     return RC(eRETRY);
                 }
             }
-
-// TODO(Restart)...
-DBGOUT3(<< "!!!! LEAF PAGE - done");
-
             break; // done!
         }
         
@@ -257,7 +220,7 @@ DBGOUT3(<< "!!!! LEAF PAGE - done");
             && is_ex_recommended(pid_to_follow_opaqueptr)) { // next is VERY hot
             // note: is_ex_recommended is just a hint, so using opaque ptr is okay.
             // in most cases, the pid is always swizzled or always non-swizzled, thus accurate.
-            W_DO (_ux_traverse_try_eager_adopt(*current, pid_to_follow_opaqueptr));
+            W_DO (_ux_traverse_try_eager_adopt(*current, pid_to_follow_opaqueptr, from_undo /*from_recovery*/));
         }
         
         bool should_try_ex = false;
@@ -285,19 +248,7 @@ DBGOUT3(<< "!!!! LEAF PAGE - done");
         if (slot_to_follow != t_follow_foster && next->get_foster() != 0) {
             // We followed a real-child pointer and found that it has foster... let's adopt it! (but
             // opportunistically).  Same as  eager adoption, retry if eGOODRETRY, otherwise go on
-            W_DO(_ux_traverse_try_opportunistic_adopt(*current, *next));
-
-/**
-// TODO(Restart)...
-if (RCOK == _ux_traverse_try_opportunistic_adopt(*current, *next))
-{
-    DBGOUT3(<<"!!!! _ux_traverse_try_opportunistic_adopt, RC == RCOK");
-}
-else
-{
-    DBGOUT3(<<"!!!! _ux_traverse_try_opportunistic_adopt, RC == eGOODRETRY");
-}
-**/
+            W_DO(_ux_traverse_try_opportunistic_adopt(*current, *next, from_undo /*from_recovery*/));
         }
 
         current->unfix();
@@ -326,9 +277,6 @@ void btree_impl::_ux_traverse_search(btree_impl::traverse_mode_t traverse_mode,
                 } else {
                     slot_to_follow = (slot_follow_t) slot;
                 }
-// TODO(Restart)...
-DBGOUT3(<< "!!!! btree_impl::_ux_traverse_search: non-leaf, t_follow_foster = " << slot_to_follow);
-
             }
         } else {
             // this page can't contain the key.
@@ -338,10 +286,6 @@ DBGOUT3(<< "!!!! btree_impl::_ux_traverse_search: non-leaf, t_follow_foster = " 
             // this page or one of its fosters have fence keys containing the search key.
             w_assert2(current->get_foster());
             w_assert2(current->compare_with_fence_high(key) >= 0);
-
-// TODO(Restart)...
-DBGOUT3(<< "!!!! btree_impl::_ux_traverse_search: t_follow_foster");
-
             // let's follow foster
             slot_to_follow = t_follow_foster;
         }
@@ -405,7 +349,8 @@ DBGOUT3(<< "!!!! btree_impl::_ux_traverse_search: t_follow_foster");
         }
     }
 } 
-rc_t btree_impl::_ux_traverse_try_eager_adopt(btree_page_h &current, shpid_t next_pid) {
+rc_t btree_impl::_ux_traverse_try_eager_adopt(btree_page_h &current, 
+                                                   shpid_t next_pid, const bool from_recovery) {
     w_assert1(current.is_fixed());
     queue_based_lock_t *mutex = mutex_for_high_contention(next_pid);
     w_assert1(mutex);
@@ -419,7 +364,8 @@ rc_t btree_impl::_ux_traverse_try_eager_adopt(btree_page_h &current, shpid_t nex
             return RCOK;
         }
         btree_page_h next;
-        W_DO(next.fix_nonroot(current, current.vol(), next_pid, LATCH_EX));
+        W_DO(next.fix_nonroot(current, current.vol(), next_pid, LATCH_EX, false /*conditional*/,
+                               false /*virgin_page*/, from_recovery /*from_recovery*/));
         
         // okay, now we got EX latch, but..
         if (!is_ex_recommended(next_pid)) {
@@ -427,16 +373,17 @@ rc_t btree_impl::_ux_traverse_try_eager_adopt(btree_page_h &current, shpid_t nex
             return RCOK;
         } else {
             // this page has been requested for adoption many times.  Let's do it!
-            W_DO(_sx_adopt_foster_sweep_approximate(next, 0));
+            W_DO(_sx_adopt_foster_sweep_approximate(next, 0, from_recovery));
         }
     }
     return RC(eGOODRETRY); // to be safe, let's restart.  this is anyway rare event
 }
-rc_t btree_impl::_ux_traverse_try_opportunistic_adopt(btree_page_h &current, btree_page_h &next) {
+rc_t btree_impl::_ux_traverse_try_opportunistic_adopt(btree_page_h &current, 
+                                      btree_page_h &next, const bool from_recovery) {
     w_assert1(current.is_fixed());
     w_assert1(next.is_fixed());
     bool pushedup;
-    W_DO(_sx_opportunistic_adopt_foster(current, next, pushedup));
+    W_DO(_sx_opportunistic_adopt_foster(current, next, pushedup, from_recovery));
     // if it's pushed up, we restart the search from root
     // (we can keep searching with a bit complicated code..  but wouldn't worth it)
     if (pushedup) {

@@ -107,7 +107,7 @@ void
 btree_insert_log::redo(fixable_page_h* page) {
     borrowed_btree_page_h bp(page);
     btree_insert_t* dp = (btree_insert_t*) data();
-    
+  
     w_assert1(bp.is_leaf());
     w_keystr_t key;
     vec_t el;
@@ -120,6 +120,7 @@ btree_insert_log::redo(fixable_page_h* page) {
     // we already made sure the page has a ghost
     // record for the key that is enough spacious.
     // so, we just replace the record!
+    DBGOUT3( << "btree_insert_log::redo - key to replace ghost: " << key);    
     w_rc_t rc = bp.replace_ghost(key, el);
     if(rc.is_error()) { // can't happen. wtf?
         W_FATAL_MSG(fcINTERNAL, << "btree_insert_log::redo " );
@@ -143,6 +144,8 @@ void btree_insert_nonghost_log::redo(fixable_page_h* page) {
     vec_t el;
     key.construct_from_keystr(dp->data, dp->klen);
     el.put(dp->data + dp->klen, dp->elen);
+
+    DBGOUT3( << "btree_insert_nonghost_log::redo - key to insert: " << key);
     bp.insert_nonghost(key, el);
 }
 
@@ -415,8 +418,10 @@ btree_ghost_mark_log::redo(fixable_page_h *page)
     // REDO is physical. mark the record as ghost again.
     w_assert1(page);
     borrowed_btree_page_h bp(page);
+
     w_assert1(bp.is_leaf());
     btree_ghost_t* dp = (btree_ghost_t*) data();
+
     for (size_t i = 0; i < dp->cnt; ++i) {
         w_keystr_t key (dp->get_key(i));
 
@@ -451,10 +456,12 @@ btree_ghost_mark_log::redo(fixable_page_h *page)
             // Full logging
             if (!found) 
             {        
-                DBGOUT3( << "btree_ghost_mark_log::redo - page driven with full logging, key not found in page but it is okay");
+                DBGOUT3( << "btree_ghost_mark_log::redo - full logging, key not found in page but it is okay, key: " << key);
             }
             else
             {
+                DBGOUT3( << "btree_ghost_mark_log::redo - full logging, key to mark ghost: " << key);
+
                 bp.mark_ghost(slot);
 
                 // Delete a record by mark it ghost
