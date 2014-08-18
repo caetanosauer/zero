@@ -29,113 +29,18 @@ void output_durable_lsn(int W_IFDEBUG1(num)) {
     DBGOUT1( << num << ".durable LSN=" << get_durable_lsn());
 }
 
-w_rc_t populate_multi_page_record(ss_m *ssm, stid_t &stid, bool fCommit) 
-{
-    // One transaction, caller decide commit the txn or not
-
-    // Set the data size is the max_entry_size minus key size
-    // because the total size must be smaller than or equal to
-    // btree_m::max_entry_size()
-    const int key_size = 5;
-    const int data_size = btree_m::max_entry_size() - key_size;
-
-    vec_t data;
-    char data_str[data_size];
-    memset(data_str, 'D', data_size);
-    data.set(data_str, data_size);
-    w_keystr_t key;
-    char key_str[key_size];
-    key_str[0] = 'k';
-    key_str[1] = 'e';
-    key_str[2] = 'y';
-
-    // Insert enough records to ensure page split
-    // One big transaction with multiple insertions
-    
-    W_DO(test_env->begin_xct());    
-//    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
-  const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 1;
-
-    for (int i = 0; i < recordCount; ++i) 
-    {
-        int num;
-        num = recordCount - 1 - i;
-
-        key_str[3] = ('0' + ((num / 10) % 10));
-        key_str[4] = ('0' + (num % 10));
-        key.construct_regularkey(key_str, key_size);
-
-        W_DO(ssm->create_assoc(stid, key, data));
-    }
-
-    // Commit the record only if told
-    if (true == fCommit)
-        W_DO(test_env->commit_xct());
-
-    return RCOK;
-}
-
-w_rc_t populate_records(ss_m *ssm, stid_t &stid, bool fCheckPoint) 
-{
-    // Multiple committed transactions, caller decide whether to include a checkpount or not
-
-    // Set the data size is the max_entry_size minus key size
-    // because the total size must be smaller than or equal to
-    // btree_m::max_entry_size()
-    const int key_size = 5;
-    const int data_size = btree_m::max_entry_size() - key_size;
-
-    vec_t data;
-    char data_str[data_size];
-    memset(data_str, 'D', data_size);
-    data.set(data_str, data_size);
-    w_keystr_t key;
-    char key_str[key_size];
-    key_str[0] = 'k';
-    key_str[1] = 'e';
-    key_str[2] = 'y';
-
-    // Insert enough records to ensure page split
-    // Multiple transactions with one insertion per transaction
-    // Commit all transactions
-    
-    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
-    for (int i = 0; i < recordCount; ++i) 
-    {
-        int num;
-        num = recordCount - 1 - i;
-
-        key_str[3] = ('0' + ((num / 10) % 10));
-        key_str[4] = ('0' + (num % 10));
-        key.construct_regularkey(key_str, key_size);
-
-        if (true == fCheckPoint) 
-        {
-            // Take one checkpoint half way through insertions
-            if (num == recordCount/2)
-                W_DO(ss_m::checkpoint()); 
-        }
-
-        W_DO(test_env->begin_xct());
-        W_DO(ssm->create_assoc(stid, key, data));
-        W_DO(test_env->commit_xct());
-    }
-
-    return RCOK;
-}
-
-
 // Test case with 1 transaction (in-flight with more than one page of data)
 // no concurrent activities during restart
 class restart_multi_page_in_flight : public restart_test_base  {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
+        _stid_list = new stid_t[1];
         output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
         output_durable_lsn(2);
 
         // One big uncommitted txn
-        W_DO(populate_multi_page_record(ssm, _stid, false));  // false: Do not commit, in-flight
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, false));  // flags: No checkpoint, don't commit
 
         // If abort the transaction before shutdown, both normal and minimal logging crash shutdown works
         // but full logging crash shutdown generates an assertion in 'btree_ghost_mark_log::redo',
@@ -162,7 +67,7 @@ public:
         }
 
         // Verify
-        W_DO(test_env->btree_scan(_stid, s));
+        W_DO(test_env->btree_scan(_stid_list[0], s));
         EXPECT_EQ (0, s.rownum);
         return RCOK;
     }

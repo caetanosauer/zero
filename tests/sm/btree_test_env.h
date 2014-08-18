@@ -118,16 +118,20 @@ struct restart_test_options {
 // @See btree_test_env::runRestartTest()
 class restart_test_base {
 public:
-    restart_test_base() {}
-    virtual ~restart_test_base() {}
-
+    restart_test_base() { _stid_list = NULL; }
+    virtual ~restart_test_base() {
+        if(_stid_list != NULL) {
+            delete [] _stid_list;
+            _stid_list = NULL;
+        } 
+    }
     virtual w_rc_t pre_shutdown(ss_m *ssm) = 0;
 
     virtual w_rc_t post_shutdown(ss_m *ssm) = 0;
 
     test_volume_t _volume;
 
-    stid_t _stid;
+    stid_t* _stid_list;
     lpid_t _root_pid;
 };
 
@@ -449,7 +453,9 @@ public:
     bool in_restart(){
         return x_in_restart(_ssm);
     }
-    
+   
+    w_rc_t btree_populate_records(stid_t &stid, bool fCheckPoint, bool fCommit, bool splitIntoSmallTrans = false, char keyPrefix = '\0');
+ 
     ss_m* _ssm;
     bool _use_locks;
     restart_test_options* _restart_options;
@@ -465,14 +471,14 @@ private:
 
 class transact_thread_t : public smthread_t {
 public:
-    transact_thread_t(stid_t stid, void (*runfunct)(stid_t));
+    transact_thread_t(stid_t* stid_list, void (*runfunct)(stid_t*));
     ~transact_thread_t();
 
     virtual void run();
     static int next_thid; // Adopted from test_deadlock, assuming there is a reason
-    stid_t _stid;
+    stid_t* _stid_list;
     int _thid;
-    void (*_runnerfunc)(stid_t);
+    void (*_runnerfunc)(stid_t*);
     bool _finished;
 };
 
