@@ -334,7 +334,12 @@ public:
         W_DO(test_env->btree_populate_records(_stid_list[0], false, false));  // false: No checkpoint; false: Do not commit, in-flight
 
         // If abort the transaction before shutdown, both normal and minimal logging crash shutdown works
-        // but full logging crash shutdown generates an assertion in 'btree_ghost_mark_log::redo'
+        // but full logging crash shutdown generates an assertion in 'btree_ghost_mark_log::redo',
+        // the core dump was during Single Page Recovery of the destination (foster child) page, it 
+        // inserted records and then try to delete them, this is incorrect because the deletions should be
+        // on the source, not on the destination
+        // Also since the aborted occurred before system crash, we should not go through recovery
+        // for this already aborted transaction...
         //     test_env->abort_xct();        
 
         output_durable_lsn(3);
@@ -381,10 +386,7 @@ TEST (RestartTest, MultiPageInFlightNF) {
 }
 /**/
 
-/* See btree_impl::_ux_traverse_recurse, the '_ux_traverse_try_opportunistic_adopt' call */
-/*    is returning eGOODRETRY and infinite loop, need further investigation, why?  A similar */
-/* test case 'restart_multi_concurrent_redo' is passing but it commits the txn*/
-/* Not passing, WOD with minimal logging *
+/* Passing, minimal logging */
 TEST (RestartTest, MultiPageInFlightC) {
     test_env->empty_logdata_dir();
     restart_multi_page_in_flight context;
@@ -393,9 +395,9 @@ TEST (RestartTest, MultiPageInFlightC) {
     options.restart_mode = m2_default_restart; // minimal logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
-/* Not passing, full logging, infinite loop, same issue as minimal logging *
+/* Passing, full logging */
 TEST (RestartTest, MultiPageInFlightCF) {
     test_env->empty_logdata_dir();
     restart_multi_page_in_flight context;
@@ -404,7 +406,7 @@ TEST (RestartTest, MultiPageInFlightCF) {
     options.restart_mode = m2_full_logging_restart; // full logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 // Test case with simple transactions (1 in-flight) and crash shutdown, one concurrent chkpt
 class restart_concurrent_chkpt : public restart_test_base  {
@@ -1440,7 +1442,7 @@ public:
 
         W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
         W_DO(test_env->btree_insert_and_commit(_stid_list[1], "aa2", "data2"));
-        //  W_DO(test_env->btree_populate_records(_stid_list[2], false, false, false, '3'));   // Would cause an endless loop due to an existing bug in restart (Multi-page inflight)
+        W_DO(test_env->btree_populate_records(_stid_list[2], false, false, false, '3'));   // flags: no checkpoint, no commit, one big transaction which will include page split, keyPrefix '3'
         return RCOK;
     }
 
@@ -1527,7 +1529,7 @@ TEST (RestartTest, MultiIndexConcChckptNF) {
 }
 /**/
 
-/* Passing */
+/* Not passing, full logging, crash if crash with in-flight multiple statements, including page split *
 TEST (RestartTest, MultiIndexConcChckptCF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -1537,7 +1539,7 @@ TEST (RestartTest, MultiIndexConcChckptCF) {
     options.restart_mode = m2_full_logging_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-/**/
+**/
 
 /* Passing */
 TEST (RestartTest, MultiIndexConcChckptNR) {
@@ -1575,7 +1577,7 @@ TEST (RestartTest, MultiIndexConcChckptNRF) {
 }
 /**/
 
-/* Passing */
+/* Not passing, full logging, crash if crash with in-flight multiple statements, including page split *
 TEST (RestartTest, MultiIndexConcChckptCRF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -1585,7 +1587,7 @@ TEST (RestartTest, MultiIndexConcChckptCRF) {
     options.restart_mode = m2_redo_fl_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-/**/
+**/
 
 /* Passing */
 TEST (RestartTest, MultiIndexConcChckptNU) {
@@ -1623,7 +1625,7 @@ TEST (RestartTest, MultiIndexConcChckptNUF) {
 }
 /**/
 
-/* Passing */
+/* Not passing, full logging, crash if crash with in-flight multiple statements, including page split *
 TEST (RestartTest, MultiIndexConcChckptCUF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -1633,7 +1635,7 @@ TEST (RestartTest, MultiIndexConcChckptCUF) {
     options.restart_mode = m2_redo_fl_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-/**/
+**/
 
 /* Passing */
 TEST (RestartTest, MultiIndexConcChckptNB) {
@@ -1671,7 +1673,7 @@ TEST (RestartTest, MultiIndexConcChckptNBF) {
 }
 /**/
 
-/* Passing */
+/* Not passing, full logging, crash if crash with in-flight multiple statements, including page split *
 TEST (RestartTest, MultiIndexConcChckptCBF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -1681,7 +1683,7 @@ TEST (RestartTest, MultiIndexConcChckptCBF) {
     options.restart_mode = m2_both_fl_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-/**/
+**/
 
 // Test case that populates 3 indexes with committed records and one of them with some in-flights before shutdown
 // After shutdown, concurrent transactions are executed to test the rejection logic for concurrent transactions
@@ -1704,7 +1706,7 @@ public:
 
         W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
         W_DO(test_env->btree_insert_and_commit(_stid_list[1], "aa2", "data2"));
-        // W_DO(test_env->btree_populate_records(_stid_list[2], false, false, false, '3'));  // Would cause an endless loop due to an existing bug in restart (Multi-page inflight)
+        // W_DO(test_env->btree_populate_records(_stid_list[2], false, false, false, '3'));  // flags: no checkpoint, no commit, one big transaction which cause page split, keyPrefix '3'
         W_DO(ss_m::checkpoint());
         W_DO(test_env->begin_xct());                                                         // Just do the one in-flight insertion that is needed for post_shutdown verification
         W_DO(test_env->btree_insert(_stid_list[2], "key300", "D"));

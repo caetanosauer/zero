@@ -123,7 +123,7 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
     // the parent must be latched
     w_assert1(latch_mode(parent) == LATCH_SH || latch_mode(parent) == LATCH_EX);
     if((shpid & SWIZZLED_PID_BIT) == 0) {
-        // non-swizzled page. or even worse it might not exist in bufferpool yet!
+        // non-swizzled page. or even worse it might not exist in bufferpool yet!       
         W_DO (_fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page, from_recovery));
         // also try to swizzle this page
         // TODO so far we swizzle all pages as soon as we load them to bufferpool

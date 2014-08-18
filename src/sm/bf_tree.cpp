@@ -466,7 +466,9 @@ w_rc_t bf_tree_m::uninstall_volume(volid_t vid,
 // These functions are here are because called less frequently.
 
 w_rc_t bf_tree_m::fix_direct (generic_page*& page, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
-    return _fix_nonswizzled(NULL, page, vol, shpid, mode, conditional, virgin_page);
+    // fix_direct is for REDO operation, rollback and cursor re-fix, both root and non-root page, no parent
+    // mark it as from Recovery so we do not check access availability   
+    return _fix_nonswizzled(NULL, page, vol, shpid, mode, conditional, virgin_page, true /*from_recovery*/);
 }
 
 void bf_tree_m::associate_page(generic_page*&_pp, bf_idx idx, lpid_t page_updated)
