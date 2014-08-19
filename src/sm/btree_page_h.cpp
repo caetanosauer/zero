@@ -1376,12 +1376,13 @@ bool btree_page_h::_is_consistent_poormankey() const {
 }
 
 
-rc_t btree_page_h::defrag( const bool in_redo) { 
+rc_t btree_page_h::defrag( const bool full_logging_redo) { 
     // defrag can be called from btree_ghost_mark_log::redo 
-    // when using full logging for page rebalance
-    // then the context is not system transaction and do not generate log record
+    // if caller is a log record generated for full logging page rebalance
+    // then the context is not system transaction but it should be treated as a
+    // system transaction and do not generate new log record
 
-    if (false == in_redo)
+    if (false == full_logging_redo)
         w_assert1 (xct()->is_sys_xct());
     w_assert1 (is_fixed());
     w_assert1 (latch_mode() == LATCH_EX);
@@ -1394,7 +1395,7 @@ rc_t btree_page_h::defrag( const bool in_redo) {
         }
     }
     // defrag doesn't need log if there were no ghost records:
-    if ((ghost_slots.size() > 0) && (false == in_redo)){
+    if ((ghost_slots.size() > 0) && (false == full_logging_redo)){
         W_DO (log_btree_ghost_reclaim(*this, ghost_slots));
     }
     

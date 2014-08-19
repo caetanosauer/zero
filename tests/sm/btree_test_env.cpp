@@ -934,8 +934,17 @@ void transact_thread_t::run() {
     std::cout << ":T" << _thid << " finished.";
 }
 
-w_rc_t btree_test_env::btree_populate_records(stid_t &stid, bool fCheckPoint, bool fCommit, bool splitIntoSmallTrans, char keyPrefix) 
+w_rc_t btree_test_env::btree_populate_records(stid_t &stid,
+                                                  bool fCheckPoint,           // Issue checkpointt in the middle of insertion
+                                                  test_txn_state_t txnState,  // What to do with the transaction
+                                                  bool splitIntoSmallTrans,   // Default: false
+                                                                              // Ture if one insertion per transaction
+                                                  char keyPrefix)             // Default: '\0'
+                                                                              // Use as key prefix is not '\0'
 {
+    // If split into multiple transactions, caller cannot ask for in-flight transaction state
+    if (t_test_txn_in_flight == txnState)
+        w_assert1(false == splitIntoSmallTrans);
 
     // Set the data size is the max_entry_size minus key size
     // because the total size must be smaller than or equal to
@@ -946,19 +955,22 @@ w_rc_t btree_test_env::btree_populate_records(stid_t &stid, bool fCheckPoint, bo
     const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
 
     vec_t data;
-    char data_str[data_size];
+    char data_str[data_size+1];
+    data_str[data_size] = '\0';
     memset(data_str, 'D', data_size);
     w_keystr_t key;
     char key_str[key_size];
     key_str[0] = 'k';
     key_str[1] = 'e';
     key_str[2] = 'y';
-    if(isMulti) key_str[3] = keyPrefix;
+    if (isMulti)
+        key_str[3] = keyPrefix;
 
     // Insert enough records to ensure page split
     // Multiple transactions with one insertion per transaction
    
-    if(!splitIntoSmallTrans) W_DO(begin_xct());
+    if (!splitIntoSmallTrans)
+        W_DO(begin_xct());
  
     for (int i = 0; i < recordCount; ++i) 
     {
@@ -978,18 +990,22 @@ w_rc_t btree_test_env::btree_populate_records(stid_t &stid, bool fCheckPoint, bo
         if(splitIntoSmallTrans) {
             W_DO(begin_xct());
             W_DO(btree_insert(stid, key_str, data_str));
-            if(fCommit)
+            if(t_test_txn_commit == txnState)
                 W_DO(commit_xct());
+            else if (t_test_txn_abort == txnState)
+                W_DO(abort_xct());
             else
-                ss_m::detach_xct();
+                w_assert1(false);
         }
         else
             W_DO(btree_insert(stid, key_str, data_str));
     }
-   
+
     if(!splitIntoSmallTrans) {
-        if(fCommit)
+        if(t_test_txn_commit == txnState)
             W_DO(commit_xct());
+        else if (t_test_txn_abort == txnState)
+            W_DO(abort_xct());
         else
             ss_m::detach_xct();
     }

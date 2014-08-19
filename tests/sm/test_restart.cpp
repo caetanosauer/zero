@@ -22,7 +22,7 @@ void output_durable_lsn(int W_IFDEBUG1(num)) {
     DBGOUT1( << num << ".durable LSN=" << get_durable_lsn());
 }
 
-w_rc_t delete_records(stid_t &stid, bool fCheckPoint, bool fInflight, char keyPrefix) {
+w_rc_t delete_records(stid_t &stid, bool fCheckPoint, test_txn_state_t txnState, char keyPrefix) {
     const bool isMulti = (keyPrefix!='\0');
     const int key_size = isMulti ? 6 : 5; // When this is used in multi-threaded and/or multi-index tests, each thread needs to pass a different keyPrefix to prevent duplicate records
     char key_str[key_size];
@@ -53,8 +53,12 @@ w_rc_t delete_records(stid_t &stid, bool fCheckPoint, bool fInflight, char keyPr
         }
         W_DO(test_env->btree_remove(stid, key_str));
     }
-    if (true == fInflight) ss_m::detach_xct();
-    else W_DO(test_env->commit_xct());
+    if (t_test_txn_commit == txnState)
+        W_DO(test_env->commit_xct());
+    else if (t_test_txn_abort == txnState)
+        W_DO(test_env->abort_xct());
+    else
+        ss_m::detach_xct();
     return RCOK;
 }
 
@@ -227,7 +231,7 @@ public:
         W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
         output_durable_lsn(2);
 
-        W_DO(test_env->btree_populate_records(_stid_list[0], false, true));  // flags: No checkpoint, commit
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, t_test_txn_commit));  // flags: No checkpoint, commit
         output_durable_lsn(3);
         return RCOK;
     }
@@ -275,7 +279,7 @@ public:
         W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
         output_durable_lsn(2);
 
-        W_DO(test_env->btree_populate_records(_stid_list[0], true, true));  // flags: Checkpoint, commit
+        W_DO(test_env->btree_populate_records(_stid_list[0], true, t_test_txn_commit));  // flags: Checkpoint, commit
 
         // If enabled the 2nd checkpoint, it is passing also
         // W_DO(ss_m::checkpoint()); 
@@ -495,7 +499,7 @@ public:
         W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
         output_durable_lsn(2);
 
-        W_DO(test_env->btree_populate_records(_stid_list[0], false, true));  // flags: No checkpoint, commit
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, t_test_txn_commit));  // flags: No checkpoint, commit
         output_durable_lsn(3);
 
         // In-flight transaction, no commit
@@ -549,7 +553,7 @@ public:
         W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
         output_durable_lsn(2);
 
-        W_DO(test_env->btree_populate_records(_stid_list[0], true, true));  // flags: Checkpoint, commit
+        W_DO(test_env->btree_populate_records(_stid_list[0], true, t_test_txn_commit));  // flags: Checkpoint, commit
         output_durable_lsn(3);
 
         // 2nd checkpoint before the in-flight transaction
@@ -1341,13 +1345,13 @@ class restart_multithrd_ldata1 : public restart_test_base
 {
 public:
     static void t1Run(stid_t* stid_list) {
-        test_env->btree_populate_records(stid_list[0], false, true, false, '1');   // No checkpoint, commit, one big transaction, keyPrefix '1'
+        test_env->btree_populate_records(stid_list[0], false, t_test_txn_commit, false, '1');   // No checkpoint, commit, one big transaction, keyPrefix '1'
     }
     static void t2Run(stid_t* stid_list) {
-        test_env->btree_populate_records(stid_list[0], false, true, false, '2');   //                                             keyPrefix '2'
+        test_env->btree_populate_records(stid_list[0], false, t_test_txn_commit, false, '2');   //                                             keyPrefix '2'
     }
     static void t3Run(stid_t* stid_list) {
-        test_env->btree_populate_records(stid_list[0], false, true, false, '3');   //                                             keyPrefix '3'
+        test_env->btree_populate_records(stid_list[0], false, t_test_txn_commit, false, '3');   //                                             keyPrefix '3'
     }
 
     w_rc_t pre_shutdown(ss_m *ssm) {
@@ -1406,13 +1410,13 @@ class restart_multithrd_ldata2 : public restart_test_base
 {
 public:
     static void t1Run(stid_t* stid_list) {
-        test_env->btree_populate_records(stid_list[0], true, true, false, '1');    // with checkpoint, commit, one big transaction, keyPrefix '1'
+        test_env->btree_populate_records(stid_list[0], true, t_test_txn_commit, false, '1');    // with checkpoint, commit, one big transaction, keyPrefix '1'
     }
     static void t2Run(stid_t* stid_list) {
-        test_env->btree_populate_records(stid_list[0], false, true, false, '2');   // without checkpoint                            keyPrefix '2'
+        test_env->btree_populate_records(stid_list[0], false, t_test_txn_commit, false, '2');   // without checkpoint                            keyPrefix '2'
     }
     static void t3Run(stid_t* stid_list) {
-        test_env->btree_populate_records(stid_list[0], true, true, false, '3');    // with checkpoint                               keyPrefix '3'
+        test_env->btree_populate_records(stid_list[0], true, t_test_txn_commit, false, '3');    // with checkpoint                               keyPrefix '3'
     }
     
     w_rc_t pre_shutdown(ss_m *ssm) {
@@ -1472,13 +1476,13 @@ class restart_multithrd_ldata3 : public restart_test_base
 {
 public:
     static void t1Run(stid_t* stid_list) {
-        test_env->btree_populate_records(stid_list[0], false, false, false, '1'); // without checkpoint, don't commit, one big transaction, keyPrefix '1'
+        test_env->btree_populate_records(stid_list[0], false, t_test_txn_in_flight, false, '1'); // without checkpoint, don't commit, one big transaction, keyPrefix '1'
     }
     static void t2Run(stid_t* stid_list) {
-        test_env->btree_populate_records(stid_list[0], false, true, false, '2');  //                     commit                             keyPrefix '2'
+        test_env->btree_populate_records(stid_list[0], false, t_test_txn_commit, false, '2');  //                     commit                             keyPrefix '2'
     }
     static void t3Run(stid_t* stid_list) {
-        test_env->btree_populate_records(stid_list[0], false, false, false, '3'); //                     don't commit                       keyPrefix '3'
+        test_env->btree_populate_records(stid_list[0], false, t_test_txn_in_flight, false, '3'); //                     don't commit                       keyPrefix '3'
     }
     
     w_rc_t pre_shutdown(ss_m *ssm) {
@@ -1537,13 +1541,13 @@ class restart_multithrd_ldata4 : public restart_test_base
 {
 public:
     static void t1Run(stid_t* stid_list) {
-        test_env->btree_populate_records(stid_list[0], true, false, false, '1');   // with checkpoint, don't commit, one big transaction, keyPrefix '1'
+        test_env->btree_populate_records(stid_list[0], true, t_test_txn_in_flight, false, '1');   // with checkpoint, don't commit, one big transaction, keyPrefix '1'
     }
     static void t2Run(stid_t* stid_list) {
-        test_env->btree_populate_records(stid_list[0], true, true, false, '2');    //                  commit                             keyPrefix '2'
+        test_env->btree_populate_records(stid_list[0], true, t_test_txn_commit, false, '2');    //                  commit                             keyPrefix '2'
     }
     static void t3Run(stid_t* stid_list) {
-        test_env->btree_populate_records(stid_list[0], false, false, false, '3');  // without checkpoint                                  keyPrefix '3'
+        test_env->btree_populate_records(stid_list[0], false, t_test_txn_in_flight, false, '3');  // without checkpoint                                  keyPrefix '3'
     }
     
     w_rc_t pre_shutdown(ss_m *ssm) {
@@ -1602,15 +1606,15 @@ class restart_multithrd_ldata5 : public restart_test_base
 {
 public:
     static void t1Run(stid_t* stid_list) {
-        test_env->btree_populate_records(stid_list[0], true, false, false, '1'); // w/ checkpoint, don't commit, keyPrefix '1'
+        test_env->btree_populate_records(stid_list[0], true, t_test_txn_in_flight, false, '1'); // w/ checkpoint, don't commit, keyPrefix '1'
     }
     static void t2Run(stid_t* stid_list) {
-        test_env->btree_populate_records(stid_list[0], true, true, false, '2');  //                commit        keyPrefix '2'
-        delete_records(stid_list[0], false, false, '2');  // Delete half of those, w/o checkpoint, commit, keyPrefix '2'
+        test_env->btree_populate_records(stid_list[0], true, t_test_txn_commit, false, '2');  //                commit        keyPrefix '2'
+        delete_records(stid_list[0], false, t_test_txn_commit, '2');  // Delete half of those, w/o checkpoint, commit, keyPrefix '2'
     }
     static void t3Run(stid_t* stid_list) {
-        test_env->btree_populate_records(stid_list[0], false, true, false, '3'); // w/o checkpoint, commit, keyPrefix '3'
-        delete_records(stid_list[0], false, true, '3');    // Delete half of those, w/o checkpoint, don't commit, keyPrefix '3'
+        test_env->btree_populate_records(stid_list[0], false, t_test_txn_commit, false, '3'); // w/o checkpoint, commit, keyPrefix '3'
+        delete_records(stid_list[0], false, t_test_txn_in_flight, '3');    // Delete half of those, w/o checkpoint, don't commit, keyPrefix '3'
     }
     
     w_rc_t pre_shutdown(ss_m *ssm) {
