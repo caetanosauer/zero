@@ -21,6 +21,7 @@
 #include "backup.h"
 #include "sm_base.h"
 #include "sm_external.h"
+#include "srwlock.h"
 
 
 #include "../nullbuf.h"
@@ -33,6 +34,10 @@ namespace {
     char global_log_dir[MAXPATHLEN] = "./log";
     char global_backup_dir[MAXPATHLEN] = "./backups";
 }
+
+// For multiple thread access to btree_populate_records
+typedef srwlock_t sm_test_rwlock_t;
+static sm_test_rwlock_t    _test_begin_xct_mutex;
 
 sm_options btree_test_env::make_sm_options(
             int32_t locktable_size,
@@ -953,6 +958,7 @@ w_rc_t btree_test_env::btree_populate_records(stid_t &stid,
     const int key_size = isMulti ? 6 : 5;
     const int data_size = btree_m::max_entry_size() - key_size - 1;
     const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
+    int num;  
 
     vec_t data;
     char data_str[data_size+1];
@@ -968,26 +974,57 @@ w_rc_t btree_test_env::btree_populate_records(stid_t &stid,
 
     // Insert enough records to ensure page split
     // Multiple transactions with one insertion per transaction
-   
+
     if (!splitIntoSmallTrans)
+    {
+        // One big transaction
+
+        // Using mutex to make sure the entire transaction got executed together        
+        spinlock_write_critical_section cs(&_test_begin_xct_mutex);    
         W_DO(begin_xct());
  
-    for (int i = 0; i < recordCount; ++i) 
-    {
-        int num;
-        num = recordCount - 1 - i;
-        
-        key_str[key_size-2] = ('0' + ((num / 10) % 10));
-        key_str[key_size-1] = ('0' + (num % 10));
-
-        if (true == fCheckPoint) 
+        for (int i = 0; i < recordCount; ++i) 
         {
-            // Take one checkpoint half way through insertions
-            if (num == recordCount/2)
-                W_DO(ss_m::checkpoint()); 
-        }
+            num = recordCount - 1 - i;
         
-        if(splitIntoSmallTrans) {
+            key_str[key_size-2] = ('0' + ((num / 10) % 10));
+            key_str[key_size-1] = ('0' + (num % 10));
+
+            if (true == fCheckPoint) 
+            {
+                // Take one checkpoint half way through insertions
+                if (num == recordCount/2)
+                    W_DO(ss_m::checkpoint()); 
+            }
+
+            // Insert
+            W_DO(btree_insert(stid, key_str, data_str));
+        }
+
+        if(t_test_txn_commit == txnState)
+            W_DO(commit_xct());
+        else if (t_test_txn_abort == txnState)
+            W_DO(abort_xct());
+        else
+            ss_m::detach_xct();
+    }
+    else
+    {
+        // Multiple small transactions, one insertion per transaction
+        for (int i = 0; i < recordCount; ++i) 
+        {
+            num = recordCount - 1 - i;
+        
+            key_str[key_size-2] = ('0' + ((num / 10) % 10));
+            key_str[key_size-1] = ('0' + (num % 10));
+
+            if (true == fCheckPoint) 
+            {
+                // Take one checkpoint half way through insertions
+                if (num == recordCount/2)
+                    W_DO(ss_m::checkpoint()); 
+            }
+      
             W_DO(begin_xct());
             W_DO(btree_insert(stid, key_str, data_str));
             if(t_test_txn_commit == txnState)
@@ -996,18 +1033,7 @@ w_rc_t btree_test_env::btree_populate_records(stid_t &stid,
                 W_DO(abort_xct());
             else
                 w_assert1(false);
-        }
-        else
-            W_DO(btree_insert(stid, key_str, data_str));
-    }
-
-    if(!splitIntoSmallTrans) {
-        if(t_test_txn_commit == txnState)
-            W_DO(commit_xct());
-        else if (t_test_txn_abort == txnState)
-            W_DO(abort_xct());
-        else
-            ss_m::detach_xct();
+        }        
     }
 
     return RCOK;

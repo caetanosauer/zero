@@ -297,7 +297,6 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
     // this method is called during volume mount (even before recover), crash tests like
     // test_restart, test_crash might encounter this scenario, swallow the error
     if (_buffer[idx].checksum == 0) {
-        w_assert1(true == past_end);
         DBGOUT0(<<"empty check sum root page during volume mount. crash happened?"
             " pid=" << shpid << " of store " << store << " in volume "
             << vid << ". to buffer frame " << idx);
