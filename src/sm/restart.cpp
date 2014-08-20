@@ -1724,8 +1724,8 @@ restart_m::analysis_pass_backward(
 
                 if (true == acquire_lock)
                 {
-                    // New take care of non-read-locks acquisition for
-                    // in-flight transaction only (loser or un-determined)
+                    // Acquire non-read-locks for all update log records on
+                    // in-flight (loser or undeterministic) transactions
                     w_assert1(xct_t::xct_ended != xd->state());
 
                     if (r.is_page_update()) 
@@ -1736,27 +1736,59 @@ restart_m::analysis_pass_backward(
 
 
                         // Is this an undeterministic transaction?
+                        // An undeterministic transaction is an in-flight transaction
+                        // containing compensation log records but the transaction did not
+                        // end when the system crashed
+                        // Due to backward log scan, if the first log record retrieved for
+                        // a transaction is not an 'end' or 'abort' log record, then the transaction
+                        // is either a loser (no compensation) or undeterministic (with compensation)
+                        // transaction
+                        // Express supports save_point (see save_work() and rollback_work()),
+                        // when we encounter the first log record of an in-flight transaction and if
+                        // it is not a compensation log record, it still might be an undeterministic 
+                        // transaction because the transaction might had save_point(s) and also 
+                        // partial roll_back might occurred before the system crash
+                        //
+                        // Treat all in-flight transactions as undeterministic transactions initially by
+                        // adding all in-flight transactions into compensation map
+                        // After backward log scan finished, if an entry in the compensation map 
+                        // has more update count than compensation count, it is a loser transaction.
+                        // If an entry's update count equals to compensation count, it is a winner.
+                        
                         tid_CLR_map::iterator search = mapCLR.find(r.tid().as_int64());
                         if(search != mapCLR.end()) 
                         {
-                            // If tid exists in the map, this is an undetermistic in-flight transaction,
-                            // in other words, we have seen compensation log records for this
-                            // in-flight transaction, need to update the counter
+                            // If tid exists in the map, this is an existing undetermistic in-flight transaction,
+                            // in other words, we have seen log records from this in-flight transaction already,
+                            // need to update the counter
                             mapCLR[r.tid().as_int64()] += 1;                        
+                        }
+                        else
+                        {
+                            // Does not exist in map, insert the new tid with counter = 1 (first update log record)
+                            mapCLR.insert(std::make_pair(r.tid().as_int64(), 1));
+                            // emplace is a better method to use but it is for C++11 and after only, while Express
+                            // is not compiled for C++11 (determined by others early on)
+                            //     mapCLR.emplace(r.tid().as_int64(), -1);
+                        
                         }
                     }
 
                     if (r.is_cpsn()) 
                     {
-                        // If this is a compensation record and it is an in-flight transaction
-                        // the transaction was in the middle of aborting when system crash
+                        // If this is a compensation record and it is an in-flight transaction,
+                        // meaning the transaction did not end when system crashed
                         // This transaction requires special handling to determine whether it
                         // is a lower (active) or winner (ended) transaction, and also need
                         // to figure out whether to acquire non-read locks for the matching
-                        // log reocrd or not.  The matching log record for this compensation
-                        // log record has not been read from the backward log scan yet
-
-                        // If the associated xd is not in the heapCLR, then insert it first
+                        // update log reocrd or not.  The matching update log record for this
+                        // compensation log record has not been read from the backward 
+                        // log scan yet
+                        // To make the implementation simplier, always acquire non-read locks
+                        // on in-flight transactions when processing update log records.
+                        // If the transaction turns out to be a winner, release all locks on the
+                        // transaction at the end.  If the transaction turns out to be a loser, keep
+                        // the acquired locks for REDO/UNDO phases.
 
                         tid_CLR_map::iterator search = mapCLR.find(r.tid().as_int64());
                         if(search != mapCLR.end()) 
@@ -1767,7 +1799,7 @@ restart_m::analysis_pass_backward(
                         else 
                         {
                             // Does not exist in map, insert the new tid with counter = -1 (first compensation log record)
-                            mapCLR.insert(std::make_pair(r.tid().as_int64(),-1));
+                            mapCLR.insert(std::make_pair(r.tid().as_int64(), -1));
                             // emplace is a better method to use but it is for C++11 and after only, while Express
                             // is not compiled for C++11 (determined by others early on)
                             //     mapCLR.emplace(r.tid().as_int64(), -1);
@@ -2507,19 +2539,24 @@ void restart_m::_analysis_process_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,
  *********************************************************************/
 void restart_m::_analysis_process_compensation_map(tid_CLR_map& mapCLR)
 {
-    // Done with backward log scan, check the compensation list, these are the un-determined
-    // in-flight transactions which were rolling back when the system crash occurred, in other
-    // words, we did not see the 'abort' log reocrd, but we found compensation log records:
-    // 1. All normal log records have matching compensation log records - 
+    // Done with backward log scan, check the compensation list, these are the undeterministic
+    // in-flight transactions when the system crash occurred, in other words, we did not see
+    // the 'abort' or 'end' log reocrd, it might contain compensation log records:
+    // 1. All update log records have matching compensation log records - 
     //                 Transaction abort finished, but system crashed before the 'abort' log record came out
     //                 Mark the transaction as a winner (ended) transaction
     //                 Release all acquired locks on this transaction 
     //                 Need to insert a 'transaction abort' log record into recovery log
     //                 This transaction will be removed from txn table in '_analysis_process_txn_table'
-    // 2. Not all normal log records have matching compensation log records -
+    // 2. Existing compensation log records, but not all update log records have matching
+    //     compensation log records -
     //                 Transaction abort did not finish when system crashed
     //                 Mark the transaction as a loser (active) transaction
-    //                 Keep all the locks acquired when processing the normal log records
+    //                 Keep all the locks acquired when processing the update log records
+    // 3. Only update log records, no compensation log record:
+    //                 Typical in-flight Transaction when system crashed
+    //                 Mark the transaction as a loser (active) transaction
+    //                 Keep all the locks acquired when processing the update log records
 
     if (true == mapCLR.empty())
         return;
@@ -2567,6 +2604,7 @@ void restart_m::_analysis_process_compensation_map(tid_CLR_map& mapCLR)
         }
         else
         {
+            // Has more compensation log records than update log records
             // Not possible, raise error
             W_FATAL_MSG(fcINTERNAL, << "Incorrect compensation log record count for in-flight transaction, tid: "
                                     << it->first << ", count: " << it->second);

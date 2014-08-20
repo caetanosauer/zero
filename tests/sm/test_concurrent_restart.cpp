@@ -1601,7 +1601,7 @@ TEST (RestartTest, MultiIndexConcChckptNF) {
 }
 /**/
 
-/* Not passing, full logging, crash if crash with in-flight multiple statements, including page split *
+/* Not passing, full logging, core dump if crash with in-flight multiple statements, including page split *
 TEST (RestartTest, MultiIndexConcChckptCF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -1649,7 +1649,7 @@ TEST (RestartTest, MultiIndexConcChckptNRF) {
 }
 /**/
 
-/* Not passing, full logging, crash if crash with in-flight multiple statements, including page split *
+/* Not passing, full logging, core dump if crash with in-flight multiple statements, including page split *
 TEST (RestartTest, MultiIndexConcChckptCRF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -1697,7 +1697,7 @@ TEST (RestartTest, MultiIndexConcChckptNUF) {
 }
 /**/
 
-/* Not passing, full logging, crash if crash with in-flight multiple statements, including page split *
+/* Not passing, full logging, core dump if crash with in-flight multiple statements, including page split *
 TEST (RestartTest, MultiIndexConcChckptCUF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -1745,7 +1745,7 @@ TEST (RestartTest, MultiIndexConcChckptNBF) {
 }
 /**/
 
-/* Not passing, full logging, crash if crash with in-flight multiple statements, including page split *
+/* Not passing, full logging, core dump if crash with in-flight multiple statements, including page split *
 TEST (RestartTest, MultiIndexConcChckptCBF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -1778,7 +1778,10 @@ public:
 
         W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
         W_DO(test_env->btree_insert_and_commit(_stid_list[1], "aa2", "data2"));
+
+// TODO(Restart)... need to enable the following call which populate the index with many reocrds and page split in one transaction, in-flight transaction
         // W_DO(test_env->btree_populate_records(_stid_list[2], false, t_test_txn_in_flight, false, '3'));  // flags: no checkpoint, no commit, one big transaction which cause page split, keyPrefix '3'
+        
         W_DO(ss_m::checkpoint());
         W_DO(test_env->begin_xct());                                                         // Just do the one in-flight insertion that is needed for post_shutdown verification
         W_DO(test_env->btree_insert(_stid_list[2], "key300", "D"));

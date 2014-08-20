@@ -980,6 +980,13 @@ w_rc_t btree_test_env::btree_populate_records(stid_t &stid,
         // One big transaction
 
         // Using mutex to make sure the entire transaction got executed together        
+// TODO(Restart)... potentially there is an issue if multiple threads are calling this function
+//     with one big transaction, some are in-flight, some are commit.  
+//     Seeing core dump from 'begin_xct', we might have issues in the transaction 
+//     manager implementation with concurrent and longer lasting transactions from
+//     multiple threads, or maybe the usage of 'detach_xct' is not correct?
+//    Using mutex seems to work around the issue, need more investigation....
+
         spinlock_write_critical_section cs(&_test_begin_xct_mutex);    
         W_DO(begin_xct());
  
