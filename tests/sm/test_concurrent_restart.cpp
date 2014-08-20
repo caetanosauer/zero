@@ -2077,15 +2077,18 @@ class restart_multi_page_inflight_multithrd : public restart_test_base
 {
 public:
     static void t1Run (stid_t* stid_list) {
-        test_env->btree_populate_records(stid_list[0], false, false, false, '1'); // flags: no checkpoint, don't commit, one big transaction
+        w_rc_t rc = test_env->btree_populate_records(stid_list[0], false, false, false, '1'); // flags: no checkpoint, don't commit, one big transaction
+        EXPECT_FALSE(rc.is_error());
     }
 
     static void t2Run (stid_t* stid_list) {
-        test_env->btree_populate_records(stid_list[0], false, false, true, '2'); // flags: no checkpoint, don't commit, many small transactions
+        w_rc_t rc = test_env->btree_populate_records(stid_list[0], false, false, false, '2'); // flags: no checkpoint, don't commit, one big transaction
+        EXPECT_FALSE(rc.is_error());
     }
 
     static void t3Run (stid_t* stid_list) {
-        test_env->btree_populate_records(stid_list[0], true, false, false, '3'); // flags: checkpoint, don't commit, one big transaction
+        w_rc_t rc = test_env->btree_populate_records(stid_list[0], true, false, false, '3'); // flags: checkpoint, don't commit, one big transaction
+        EXPECT_FALSE(rc.is_error());
     }
 
     w_rc_t pre_shutdown(ss_m *ssm) {
@@ -2108,6 +2111,9 @@ public:
     
     w_rc_t post_shutdown(ss_m *) {
         output_durable_lsn(4);
+        while(ss_m::in_restart()) // Wait while restart is going on
+            ::usleep(WAIT_TIME); 
+
         x_btree_scan_result s;
         W_DO(test_env->btree_scan(_stid_list[0], s));
         EXPECT_EQ(0, s.rownum);
@@ -2115,7 +2121,7 @@ public:
     }
 };
 
-/* Passing *
+/* Passing */
 TEST (RestartTest, MultiPageInFlightMultithrdN) {
     test_env->empty_logdata_dir();
     restart_multi_page_inflight_multithrd context;
@@ -2124,9 +2130,9 @@ TEST (RestartTest, MultiPageInFlightMultithrdN) {
     options.restart_mode = m2_default_restart; // minimal logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
-/* Failing, full logging *
+/* Passing */
 TEST (RestartTest, MultiPageInFlightMultithrdNF) {
     test_env->empty_logdata_dir();
     restart_multi_page_inflight_multithrd context;
@@ -2135,9 +2141,9 @@ TEST (RestartTest, MultiPageInFlightMultithrdNF) {
     options.restart_mode = m2_full_logging_restart; // full logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
-/* Failing, WOD with minimal logging *
+/* Passing */
 TEST (RestartTest, MultiPageInFlightMultithrdC) {
     test_env->empty_logdata_dir();
     restart_multi_page_inflight_multithrd context;
@@ -2146,9 +2152,9 @@ TEST (RestartTest, MultiPageInFlightMultithrdC) {
     options.restart_mode = m2_default_restart; // minimal logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
-/* Failing, full logging, infinite loop, same issue as minimal logging *
+/* Failing - see Jira issue ZERO-186 *
 TEST (RestartTest, MultiPageInFlightMultithrdCF) {
     test_env->empty_logdata_dir();
     restart_multi_page_inflight_multithrd context;
@@ -2195,13 +2201,14 @@ public:
         const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;         
         char key_str[7] = "key300";
         char data_str[8] = "data300";
-
+        w_rc_t rc;
         for (int i = 0; i<recordCount; i++) {
             key_str[4] = ('0' + ((i / 10) % 10));
             key_str[5] = ('0' + (i % 10));
             data_str[5] = key_str[4];
             data_str[6] = key_str[5];
-            test_env->btree_update_and_commit(stid_list[0], key_str, data_str);
+            rc = test_env->btree_update_and_commit(stid_list[0], key_str, data_str);
+            EXPECT_FALSE(rc.is_error());
         }
     }
 
@@ -2247,10 +2254,8 @@ public:
                 transact_thread_t t3 (_stid_list, t3Run);
                 while(ss_m::in_UNDO() == t_restart_phase_not_active) // Wait until undo phase is starting
                     ::usleep(SHORT_WAIT_TIME);
-                if(ss_m::in_UNDO() == t_restart_phase_active) { // Sanity check that undo is really active (instead of over) 
-                    W_DO(t3.fork());
-                    W_DO(t3.join());
-                }
+                W_DO(t3.fork());
+                W_DO(t3.join());
             }
             while(ss_m::in_restart()) // Wait while restart is going on
                 ::usleep(WAIT_TIME); 
@@ -2267,18 +2272,24 @@ public:
                 W_DO(test_env->btree_update_and_commit(_stid_list[0], key_str, data_str));
             }
         }
-        output_durable_lsn(6);
 
+        output_durable_lsn(6);
         x_btree_scan_result s;
         W_DO(test_env->btree_scan(_stid_list[0], s));
         EXPECT_EQ(3*recordCount, s.rownum);
+        EXPECT_EQ(std::string("key100"), s.minkey);
+        EXPECT_EQ(std::string("key324"), s.maxkey);
+        
+        std::string actual;
+        char expected[btree_m::max_entry_size()-6];
+        memset(expected, 'D', btree_m::max_entry_size()-7);
+        expected[btree_m::max_entry_size()-7] = '\0';
+        W_DO(test_env->btree_lookup_and_commit(_stid_list[0], "key300", actual));
         if(undo_delay || restart_mode >= m3_default_restart) {
-            EXPECT_EQ(std::string("data000"), s.minkey);
-            EXPECT_EQ(std::string("key224"), s.maxkey);
+            EXPECT_EQ(std::string("data300"), actual);
         }
         else {
-            EXPECT_EQ(std::string("key100"), s.minkey);
-            EXPECT_EQ(std::string("key324"), s.maxkey);
+            EXPECT_EQ(std::string(expected), actual);
         }
         return RCOK;
     }
@@ -2307,7 +2318,7 @@ TEST (RestartTest, ManyConflictsMultithrdNF) {
 /**/
 
 /* Passing */
-TEST (RestartTest, MultiPageInFlightMultithrdC) {
+TEST (RestartTest, ManyConflictsMultihthrdC) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
     restart_test_options options;
@@ -2317,13 +2328,157 @@ TEST (RestartTest, MultiPageInFlightMultithrdC) {
 }
 /**/
 
-/* Failing *
-TEST (RestartTest, MultiPageInFlightMultithrdCF) {
+/* Failing - see Jira issue ZERO-186*
+TEST (RestartTest, ManyConflictsMultithrdCF) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_full_logging_restart; // full logging
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+/* Failing - infinite loop *
+TEST (RestartTest, ManyConflictsMultithrdNR) {
+    test_env->empty_logdata_dir();
+    restart_many_conflicts_multithrd context;
+    
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_redo_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+/* Passing */
+TEST (RestartTest, ManyConflictsMultithrdCR) {
+    test_env->empty_logdata_dir();
+    restart_many_conflicts_multithrd context;
+    
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_redo_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Failing - infinite loop *
+TEST (RestartTest, ManyConflictsMultithrdNRF) {
+    test_env->empty_logdata_dir();
+    restart_many_conflicts_multithrd context;
+    
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_redo_fl_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+/* Not passing, full logging, crash if crash with in-flight multiple statements, including page split *
+TEST (RestartTest, ManyConflictsMultithrdCRF) {
+    test_env->empty_logdata_dir();
+    restart_many_conflicts_multithrd context;
+    
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_redo_fl_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+/* Failing - infinite loop *
+TEST (RestartTest, ManyConflictsMultithrdNU) {
+    test_env->empty_logdata_dir();
+    restart_many_conflicts_multithrd context;
+    
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_undo_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+/* Passing */
+TEST (RestartTest, ManyConflictsMultithrdCU) {
+    test_env->empty_logdata_dir();
+    restart_many_conflicts_multithrd context;
+    
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_undo_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Failing - infinite loop *
+TEST (RestartTest, ManyConflictsMultithrdNUF) {
+    test_env->empty_logdata_dir();
+    restart_many_conflicts_multithrd context;
+    
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_undo_fl_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+/* Not passing, full logging, crash if crash with in-flight multiple statements, including page split *
+TEST (RestartTest, ManyConflictsMultithrdCUF) {
+    test_env->empty_logdata_dir();
+    restart_many_conflicts_multithrd context;
+    
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_redo_fl_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+/* Failing - infinite loop *
+TEST (RestartTest, ManyConflictsMultithrdNB) {
+    test_env->empty_logdata_dir();
+    restart_many_conflicts_multithrd context;
+    
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_both_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+/* Passing */
+TEST (RestartTest, ManyConflictsMultithrdCB) {
+    test_env->empty_logdata_dir();
+    restart_many_conflicts_multithrd context;
+    
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_both_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Failing - infinite loop *
+TEST (RestartTest, ManyConflictsMultithrdNBF) {
+    test_env->empty_logdata_dir();
+    restart_many_conflicts_multithrd context;
+    
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_both_fl_delay_restart;
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+/* Not passing, full logging, crash if crash with in-flight multiple statements, including page split *
+TEST (RestartTest, ManyConflictsMultithrdCBF) {
+    test_env->empty_logdata_dir();
+    restart_many_conflicts_multithrd context;
+    
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_both_fl_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 **/
