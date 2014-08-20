@@ -43,6 +43,12 @@ const bool default_enable_swizzling = false;
 const bool default_enable_swizzling = true;
 #endif //DEFAULT_SWIZZLING_OFF
 
+enum test_txn_state_t {
+    t_test_txn_commit,     // Commit the user transaction
+    t_test_txn_abort,      // Abort the user transaction
+    t_test_txn_in_flight   // Leave the user transaction as in-flight but detach from it
+};
+
 // a few convenient functions for testcases
 w_rc_t x_begin_xct(ss_m* ssm, bool use_locks);
 w_rc_t x_commit_xct(ss_m* ssm);
@@ -330,7 +336,7 @@ public:
     * @see restart_test_base
     */
     int runRestartTest (restart_test_base *context,
-					  restart_test_options *restart_options,	
+                      restart_test_options *restart_options,
                       bool use_locks = false,
                       int32_t lock_table_size = default_locktable_size,
                       int disk_quota_in_pages = default_quota_in_pages,
@@ -348,7 +354,7 @@ public:
                           bool use_locks, int disk_quota_in_pages, const sm_options &options);
 
     int runRestartTest (restart_test_base *context,
-					  restart_test_options *restart_options,
+                      restart_test_options *restart_options,
                       bool use_locks, int32_t lock_table_size,
                       int disk_quota_in_pages, int bufferpool_size_in_pages,
                       uint32_t cleaner_threads,
@@ -454,7 +460,8 @@ public:
         return x_in_restart(_ssm);
     }
    
-    w_rc_t btree_populate_records(stid_t &stid, bool fCheckPoint, bool fCommit, bool splitIntoSmallTrans = false, char keyPrefix = '\0');
+    w_rc_t btree_populate_records(stid_t &stid, bool fCheckPoint, test_txn_state_t txnState, bool splitIntoSmallTrans = false,
+                                      char keyPrefix = '\0');
  
     ss_m* _ssm;
     bool _use_locks;

@@ -686,7 +686,7 @@ public:
      * 'logically' no changes.
      * Context: System transaction.
      */
-    rc_t                         defrag(const bool in_redo = false);
+    rc_t                         defrag(const bool full_logging_redo = false);
 
     /// stats for leaf nodes.
     rc_t             leaf_stats(btree_lf_stats_t& btree_lf);

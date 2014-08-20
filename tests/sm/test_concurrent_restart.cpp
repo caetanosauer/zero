@@ -331,16 +331,7 @@ public:
         output_durable_lsn(2);
 
         // One big uncommitted txn
-        W_DO(test_env->btree_populate_records(_stid_list[0], false, false));  // false: No checkpoint; false: Do not commit, in-flight
-
-        // If abort the transaction before shutdown, both normal and minimal logging crash shutdown works
-        // but full logging crash shutdown generates an assertion in 'btree_ghost_mark_log::redo',
-        // the core dump was during Single Page Recovery of the destination (foster child) page, it 
-        // inserted records and then try to delete them, this is incorrect because the deletions should be
-        // on the source, not on the destination
-        // Also since the aborted occurred before system crash, we should not go through recovery
-        // for this already aborted transaction...
-        //     test_env->abort_xct();        
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, t_test_txn_in_flight));  // false: No checkpoint; false: Do not commit, in-flight
 
         output_durable_lsn(3);
 
@@ -407,6 +398,87 @@ TEST (RestartTest, MultiPageInFlightCF) {
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
 /**/
+
+// Test case with 1 aborted transaction (more than one page of data)
+// no concurrent activities during restart
+class restart_multi_page_abort : public restart_test_base  {
+public:
+    w_rc_t pre_shutdown(ss_m *ssm) {
+        _stid_list = new stid_t[1];
+        output_durable_lsn(1);
+        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
+        output_durable_lsn(2);
+
+        // One big uncommitted txn
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, t_test_txn_abort));  // false: No checkpoint;
+                                                                                         // t_test_txn_abort: abort the txn
+                                                                                         // one big transaction, no key prefix
+        output_durable_lsn(3);
+
+        return RCOK;
+    }
+
+    w_rc_t post_shutdown(ss_m *) {
+        output_durable_lsn(4);
+        x_btree_scan_result s;
+
+        while (true == test_env->in_restart())
+        {
+            // Concurrent restart is still going on, wait
+            ::usleep(WAIT_TIME);            
+        }
+
+        // Verify
+        W_DO(test_env->btree_scan(_stid_list[0], s));
+        EXPECT_EQ (0, s.rownum);
+        return RCOK;
+    }
+};
+
+/* Passing */
+TEST (RestartTest, MultiPageAbortN) {
+    test_env->empty_logdata_dir();
+    restart_multi_page_abort context;
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_default_restart; // minimal logging
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, MultiPageAbortNF) {
+    test_env->empty_logdata_dir();
+    restart_multi_page_abort context;
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_full_logging_restart; // full logging
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Passing */
+TEST (RestartTest, MultiPageAbortC) {
+    test_env->empty_logdata_dir();
+    restart_multi_page_abort context;
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_default_restart; // minimal logging
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Passing, full logging */
+TEST (RestartTest, MultiPageAbortCF) {
+    test_env->empty_logdata_dir();
+    restart_multi_page_abort context;
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_full_logging_restart; // full logging
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
 
 // Test case with simple transactions (1 in-flight) and crash shutdown, one concurrent chkpt
 class restart_concurrent_chkpt : public restart_test_base  {
@@ -623,7 +695,7 @@ public:
         output_durable_lsn(2);
 
         // One big committed txn
-        W_DO(test_env->btree_populate_records(_stid_list[0], false, true));  // flags: no checkpoint, commit
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, t_test_txn_commit));  // flags: no checkpoint, commit
         
         W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa4", "data2"));
 
@@ -859,7 +931,7 @@ public:
         output_durable_lsn(2);
 
         // Multiple committed transactions with many pages
-        W_DO(test_env->btree_populate_records(_stid_list[0], false, true, true));  // flags: No checkpoint, commit, one transaction per insert
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, t_test_txn_commit, true));  // flags: No checkpoint, commit, one transaction per insert
 
         // Issue a checkpoint to make sure these committed txns are flushed
         W_DO(ss_m::checkpoint());         
@@ -982,7 +1054,7 @@ public:
         output_durable_lsn(2);
 
         // Multiple committed transactions with many pages
-        W_DO(test_env->btree_populate_records(_stid_list[0], false, true, true));   // flags: No checkpoint, commit, one transaction per insert
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, t_test_txn_commit, true));   // flags: No checkpoint, commit, one transaction per insert
 
         // Issue a checkpoint to make sure these committed txns are flushed
         W_DO(ss_m::checkpoint());
@@ -1138,7 +1210,7 @@ public:
         output_durable_lsn(2);
 
         // Multiple committed transactions with many pages
-        W_DO(test_env->btree_populate_records(_stid_list[0], false, true, true));   // flags: No checkpoint, commit, one transaction per insert
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, t_test_txn_commit, true));   // flags: No checkpoint, commit, one transaction per insert
 
         // Issue a checkpoint to make sure these committed txns are flushed
         W_DO(ss_m::checkpoint());
@@ -1436,13 +1508,13 @@ public:
         W_DO(x_btree_create_index(ssm, &_volume, _stid_list[2], _root_pid));
         output_durable_lsn(4);
 
-        W_DO(test_env->btree_populate_records(_stid_list[0], false, true, true, '0'));    // flags: no checkpoint, commit, one transaction per insert, keyPrefix '0'
-        W_DO(test_env->btree_populate_records(_stid_list[1], false, true, false, '1'));   // flags:                        all inserts in one transaction, keyPrefix '1'
-        W_DO(test_env->btree_populate_records(_stid_list[2], false, true, false, '2'));   // flags:                        all inserts in one transaction, keyPrefix '2'
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, t_test_txn_commit, true, '0'));    // flags: no checkpoint, commit, one transaction per insert, keyPrefix '0'
+        W_DO(test_env->btree_populate_records(_stid_list[1], false, t_test_txn_commit, false, '1'));   // flags:                        all inserts in one transaction, keyPrefix '1'
+        W_DO(test_env->btree_populate_records(_stid_list[2], false, t_test_txn_commit, false, '2'));   // flags:                        all inserts in one transaction, keyPrefix '2'
 
         W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
         W_DO(test_env->btree_insert_and_commit(_stid_list[1], "aa2", "data2"));
-        W_DO(test_env->btree_populate_records(_stid_list[2], false, false, false, '3'));   // flags: no checkpoint, no commit, one big transaction which will include page split, keyPrefix '3'
+        W_DO(test_env->btree_populate_records(_stid_list[2], false, t_test_txn_in_flight, false, '3'));   // flags: no checkpoint, no commit, one big transaction which will include page split, keyPrefix '3'
         return RCOK;
     }
 
@@ -1700,13 +1772,13 @@ public:
         W_DO(x_btree_create_index(ssm, &_volume, _stid_list[2], _root_pid));
         output_durable_lsn(4);
 
-        W_DO(test_env->btree_populate_records(_stid_list[0], false, true, true, '0'));    // flags: no checkpoint, commit, one transaction per insert, keyPrefix '0'
-        W_DO(test_env->btree_populate_records(_stid_list[1], false, true, false, '1'));   // flags:                        all inserts in one transaction, keyPrefix '1'
-        W_DO(test_env->btree_populate_records(_stid_list[2], false, true, false, '2'));   // flags:                        all inserts in one transaction, keyPrefix '2'
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, t_test_txn_commit, true, '0'));    // flags: no checkpoint, commit, one transaction per insert, keyPrefix '0'
+        W_DO(test_env->btree_populate_records(_stid_list[1], false, t_test_txn_commit, false, '1'));   // flags:                        all inserts in one transaction, keyPrefix '1'
+        W_DO(test_env->btree_populate_records(_stid_list[2], false, t_test_txn_commit, false, '2'));   // flags:                        all inserts in one transaction, keyPrefix '2'
 
         W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
         W_DO(test_env->btree_insert_and_commit(_stid_list[1], "aa2", "data2"));
-        // W_DO(test_env->btree_populate_records(_stid_list[2], false, false, false, '3'));  // flags: no checkpoint, no commit, one big transaction which cause page split, keyPrefix '3'
+        // W_DO(test_env->btree_populate_records(_stid_list[2], false, t_test_txn_in_flight, false, '3'));  // flags: no checkpoint, no commit, one big transaction which cause page split, keyPrefix '3'
         W_DO(ss_m::checkpoint());
         W_DO(test_env->begin_xct());                                                         // Just do the one in-flight insertion that is needed for post_shutdown verification
         W_DO(test_env->btree_insert(_stid_list[2], "key300", "D"));
@@ -1788,13 +1860,18 @@ public:
         EXPECT_EQ(recordCount+1, s.rownum);
         EXPECT_EQ(std::string("aa2"), s.minkey);
         std::string actual;
+
+        // Data portion, because we are using prefix in btree_populate_records() call
+        // so the key size is 6 (instead of 5)
+        // the data size: btree_m::max_entry_size() - key_size - 1 = 7
         char expected[btree_m::max_entry_size()-7];
         memset(expected, 'D', btree_m::max_entry_size()-7);
+
         W_DO(test_env->btree_lookup_and_commit(_stid_list[1], "key110", actual));
         if(restart_mode > m3_default_restart)
             EXPECT_EQ(std::string("A"), actual);
         else
-            EXPECT_EQ(std::string(expected), actual);
+            EXPECT_EQ(std::string(expected, btree_m::max_entry_size()-7), actual);
         
         // Check index 2
         W_DO(test_env->btree_scan(_stid_list[2], s));
