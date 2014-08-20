@@ -2154,17 +2154,17 @@ class restart_multi_page_inflight_multithrd : public restart_test_base
 {
 public:
     static void t1Run (stid_t* stid_list) {
-        w_rc_t rc = test_env->btree_populate_records(stid_list[0], false, false, false, '1'); // flags: no checkpoint, don't commit, one big transaction
+        w_rc_t rc = test_env->btree_populate_records(stid_list[0], false, t_test_txn_in_flight, false, '1'); // flags: no checkpoint, don't commit, one big transaction
         EXPECT_FALSE(rc.is_error());
     }
 
     static void t2Run (stid_t* stid_list) {
-        w_rc_t rc = test_env->btree_populate_records(stid_list[0], false, false, false, '2'); // flags: no checkpoint, don't commit, one big transaction
+        w_rc_t rc = test_env->btree_populate_records(stid_list[0], false, t_test_txn_in_flight, false, '2'); // flags: no checkpoint, don't commit, one big transaction
         EXPECT_FALSE(rc.is_error());
     }
 
     static void t3Run (stid_t* stid_list) {
-        w_rc_t rc = test_env->btree_populate_records(stid_list[0], true, false, false, '3'); // flags: checkpoint, don't commit, one big transaction
+        w_rc_t rc = test_env->btree_populate_records(stid_list[0], true, t_test_txn_in_flight, false, '3'); // flags: checkpoint, don't commit, one big transaction
         EXPECT_FALSE(rc.is_error());
     }
 
@@ -2294,9 +2294,9 @@ public:
         _stid_list = new stid_t[1];
         W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
         output_durable_lsn(2);
-        W_DO(test_env->btree_populate_records(_stid_list[0], false, true, false, '1')); // flags: no checkpoint, commit, one big transaction
-        W_DO(test_env->btree_populate_records(_stid_list[0], false, true, false, '2')); // flags: no checkpoint, commit, one big transaction
-        W_DO(test_env->btree_populate_records(_stid_list[0], false, true, false, '3')); // flags: no checkpoint, commit, one big transaction
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, t_test_txn_commit, false, '1')); // flags: no checkpoint, commit, one big transaction
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, t_test_txn_commit, false, '2')); // flags: no checkpoint, commit, one big transaction
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, t_test_txn_commit, false, '3')); // flags: no checkpoint, commit, one big transaction
         output_durable_lsn(3);
         return RCOK;
     }
@@ -2428,7 +2428,7 @@ TEST (RestartTest, ManyConflictsMultithrdNR) {
 }
 **/
 
-/* Passing */
+/* Occasionally failing because of a assertion fail in btree_impl_split:335 *
 TEST (RestartTest, ManyConflictsMultithrdCR) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
@@ -2438,7 +2438,7 @@ TEST (RestartTest, ManyConflictsMultithrdCR) {
     options.restart_mode = m2_redo_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-/**/
+**/
 
 /* Failing - infinite loop *
 TEST (RestartTest, ManyConflictsMultithrdNRF) {
