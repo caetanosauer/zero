@@ -1349,8 +1349,15 @@ restart_m::analysis_pass_backward(
                                 lsn,                      // last LSN
                                 r.xid_prev(),             // undo_nxt: r.xid_prev() is previous logrec
                                                           //of this xct stored in log record, since
-                                                          // this is the first log record for this txn
-                                                          // r.xid_prev() should be lsn_t::null
+                                                          // this is the last log record for this txn
+                                                          // it could be either a update log record (loster)
+                                                          // or a commit or abort log record (winner)
+                                                          // use the lsn from r.xid_prev() which could be
+                                                          // the lsn of the second to last log record if 
+                                                          // loser transaction
+                                                          // when process the actual log record, undo_nxt()
+                                                          // will get updated again to the latest lsn
+                                                          // undo_nxt iss used for rollback/abort operation
                                 WAIT_SPECIFIED_BY_THREAD, // default timeout value
                                 false,                    // sys_xct
                                 false,                    // single_log_sys_xct
@@ -1880,7 +1887,7 @@ restart_m::analysis_pass_backward(
                         // If this is a compensation record and it is an in-flight transaction,
                         // meaning the transaction did not end when system crashed
                         // This transaction requires special handling to determine whether it
-                        // is a lower (active) or winner (ended) transaction, and also need
+                        // is a loser (active) or winner (ended) transaction, and also need
                         // to figure out whether to acquire non-read locks for the matching
                         // update log reocrd or not.  The matching update log record for this
                         // compensation log record has not been read from the backward 
@@ -1890,6 +1897,19 @@ restart_m::analysis_pass_backward(
                         // If the transaction turns out to be a winner, release all locks on the
                         // transaction at the end.  If the transaction turns out to be a loser, keep
                         // the acquired locks for REDO/UNDO phases.
+
+                        // TODO(Restart)... 
+                        //    The current counting solution is relying on the assumption that we 
+                        //    must have the same number of original and compensation log records
+                        //    it does not know how far the rollback went when the system crash.
+                        //
+                        //    An alternative implementation for this issue:
+                        //        1. If a compensation log record, then 'r.undo_nxt()' contains the
+                        //            lsn of the original update log record, which allows us to identify
+                        //            the pair of original and compensation log records
+                        //        2. Build a data structure to maintain all the pairs.
+                        //        3. It is a winner transaction if all the pairs are filled, which indicates
+                        //            the rollback has completed.
 
                         tid_CLR_map::iterator search = mapCLR.find(r.tid().as_int64());
                         if(search != mapCLR.end()) 
@@ -2400,9 +2420,14 @@ void restart_m::_analysis_other_log(logrec_t& r,               // In: log record
         // redoable, has a pid, and is not compensated.
         if (r.is_undo()) 
         {
-            // r is undoable. Update next undo lsn of xct
-            // Because this is a forward log scan, the current txn undo_nxt
+            // r is undoable.
+            // If forward log scan, the current txn undo_nxt
             // contains the information from previous log record
+            // the incoming lsn should be later than the existing one
+            // If backward log scan, undo_lsn should be later than the
+            // incoming one
+            // We want the transaction undo_lsn to be the latest lsn so
+            // it can be used in UNDO for rollback operation
 
             if (true == use_undo_reverse_restart())
             {
@@ -2411,14 +2436,16 @@ void restart_m::_analysis_other_log(logrec_t& r,               // In: log record
                 // UNDO is using reverse chronological order
                 // and the undo_lsn is used to stop the individual rollback
 
-                xd->set_undo_nxt(lsn);
+                if (xd->undo_nxt() < lsn)
+                    xd->set_undo_nxt(lsn);
             }
             else
             {
                 // If UNDO is txn driven, set undo_nxt lsn.  Abort operation use it
                 // to retrieve log record and follow the log record undo_next list
 
-                xd->set_undo_nxt(lsn);
+                if (xd->undo_nxt() < lsn)
+                    xd->set_undo_nxt(lsn);
             }
         }
 
