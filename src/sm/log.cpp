@@ -527,13 +527,22 @@ long log_m::max_chkpt_size() const
 {
     /* BUG: the number of transactions which might need to be
        checkpointed is potentially unbounded. However, it's rather
-       unlikely we'll ever see more than 10k at any one time...
+       unlikely we'll ever see more than 5k at any one time, especially
+       each active transaction uses an active user thread
+       
+       The number of granted locks per transaction is also potentially
+       unbounded.  Use a guess average value per active transaction,
+       it should be unusual to see maximum active transactions and every
+       transaction has the average number of locks
      */
-    static long const GUESS_MAX_XCT_COUNT = 10000;
+    static long const GUESS_MAX_XCT_COUNT = 5000;
+    static long const GUESS_EACH_XCT_LOCK_COUNT = 5;
     static long const FUDGE = sizeof(logrec_t);
     long bf_tab_size = bf->get_block_cnt()*sizeof(chkpt_bf_tab_t::brec_t);
     long xct_tab_size = GUESS_MAX_XCT_COUNT*sizeof(chkpt_xct_tab_t::xrec_t);
-    return FUDGE + bf_tab_size + xct_tab_size;
+    long xct_lock_size = GUESS_EACH_XCT_LOCK_COUNT*GUESS_MAX_XCT_COUNT*sizeof(chkpt_xct_lock_t::lockrec_t);
+    long dev_tab_size = max_vols*sizeof(chkpt_dev_tab_t::devrec_t);
+    return FUDGE + bf_tab_size + xct_tab_size + xct_lock_size + dev_tab_size;
 }
 
 w_rc_t

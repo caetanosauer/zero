@@ -70,6 +70,11 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "xct_dependent.h"
 #include <new>
 #include "sm.h"
+#include "lock_raw.h"      // Lock information gathering
+#include "w_okvl_inl.h"    // Lock information gathering
+struct RawLock;            // Lock information gathering
+#include "restart.h"
+
 
 #ifdef EXPLICIT_TEMPLATE
 template class w_auto_delete_array_t<lsn_t>;
@@ -297,7 +302,31 @@ void chkpt_m::synch_take()
     {
         // No need to acquire any mutex on checkpoint before calling the checkpoint function
         // The checkpoint function acqures the 'write' mutex internally
-        take(smlevel_0::t_chkpt_sync);
+        // Sync checkpoint and caller did not ask for lock information
+        CmpXctLockTids   lock_cmp;
+        XctLockHeap      dummy_heap(lock_cmp);
+        
+        take(smlevel_0::t_chkpt_sync, dummy_heap);
+        w_assert1(0 == dummy_heap.NumElements());
+    }
+    return;
+}
+
+/*********************************************************************
+*
+*  chkpt_m::synch_take(lock_heap)
+*  
+*  Issue an synch checkpoint request and record the lock information in heap
+*
+*********************************************************************/
+void chkpt_m::synch_take(XctLockHeap& lock_heap)
+{
+    if(log)
+    {
+        // No need to acquire any mutex on checkpoint before calling the checkpoint function
+        // The checkpoint function acqures the 'write' mutex internally
+        // Record lock information only from synch checkpoint and if caller asked for it
+        take(smlevel_0::t_chkpt_sync, lock_heap, true);
     }
     return;
 }
@@ -305,7 +334,7 @@ void chkpt_m::synch_take()
 
 /*********************************************************************
  *
- *  chkpt_m::take()
+ *  chkpt_m::take(chkpt_mode, lock_heap, record_lock)
  *
  *  This is the actual checkpoint function, which can be executed in two different ways:
  *    1. Asynch request: does not block caller thread, i.e. user-requested checkpoint
@@ -326,10 +355,14 @@ void chkpt_m::synch_take()
  *    3. Checkpoint Buffer Table Log(s)  (chkpt_bf_tab)
  *        -- dirty page entries in bf and their recovery lsn
  *        -- can have multiple such log records if many dirty pages
- *    4. Checkpoint Transaction Table Log(s) (chkpt_xct_tab)
+ *    4. Checkpoint per transaction lock info log(s) (chkpt_xct_lock)
+ *        -- granted locks on an active transactions
+ *        -- can have multiple such log records per active transaction 
+ *             if many granted locks
+ *    5. Checkpoint Transaction Table Log(s) (chkpt_xct_tab)
  *        -- active transactions and their first lsn
  *        -- can have multiple such log records if many active transactions
- *    5. Checkpoint End Log (chkpt_end)
+ *    6. Checkpoint End Log (chkpt_end)
  *
  *  Because a checkpoint can be executed either asynch or synch, it cannot return
  *  a return code to caller.
@@ -338,7 +371,9 @@ void chkpt_m::synch_take()
  *  A minor error (e.g., failed the initial validation) generates a debug output, 
  *  and cancel the checkpoint operation silently.
  *********************************************************************/
-void chkpt_m::take(chkpt_mode_t chkpt_mode)
+void chkpt_m::take(chkpt_mode_t chkpt_mode, 
+                    XctLockHeap& lock_heap,  // In: special heap to hold lock information
+                    const bool record_lock)  // In: True if need to record lock information into the heap
 {
     FUNC(chkpt_m::take);
 
@@ -358,6 +393,15 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode)
         // recovery facilities disabled ... do nothing
         return;
     }
+
+    if ((smlevel_0::t_chkpt_async == chkpt_mode) && (true == record_lock))
+    {
+        // Only synch checkpoint (internal) can ask for building lock information in the provided heap
+        // this is a coding error so raise error to stop the execution now
+        W_FATAL_MSG(fcINTERNAL, << "Only synch (internal) checkpoint can ask for building lock heap");
+        return;
+    }
+    w_assert1(0 == lock_heap.NumElements());   
 
     /*   
      * checkpoints are fuzzy
@@ -775,10 +819,6 @@ try
     //    2. Truncate log at the end of checkpoint, currently disabled.
     lsn_t min_xct_lsn = master;
     {
-////////////////////////////////////////
-// TODO(Restart)... we are not recording 'non-read-lock' during checkpoint in M1
-////////////////////////////////////////
-
         // For each transaction, record transaction ID,
         // lastLSN (the LSN of the most recent log record for the transaction)
         // 'abort' flags (transaction state), and undo nxt (for rollback)
@@ -792,13 +832,22 @@ try
         // tid is increasing, youngest tid has the largest value
         tid_t        youngest = xct_t::youngest_tid();  
 
-        // Each log record contains the following array, while each array element has information
-        // for one active transaction 
+        // Each t_chkpt_xct_tab log record contains the following array
+        // while each array element has information for one active transaction 
         w_auto_delete_array_t<tid_t> tid(new tid_t[chunk]);               // transaction ID
         w_auto_delete_array_t<xct_state_t> state(new xct_state_t[chunk]); // state
         w_auto_delete_array_t<lsn_t> last_lsn(new lsn_t[chunk]);          // most recent log record
         w_auto_delete_array_t<lsn_t> undo_nxt(new lsn_t[chunk]);          // undo next
         w_auto_delete_array_t<lsn_t> first_lsn(new lsn_t[chunk]);         // first lsn of the txn
+
+        // How many locks can fit into one chkpt_xct_lock_log log record
+        const int    lock_chunk = chkpt_xct_lock_t::max;        
+
+        // Each t_chkpt_xct_lock log record contains the following array
+        // while each array element has information for one granted lock 
+        // in the associated in-flight transaction
+        w_auto_delete_array_t<okvl_mode> lock_mode(new okvl_mode[lock_chunk]);  // lock mode
+        w_auto_delete_array_t<uint32_t> lock_hash(new uint32_t[lock_chunk]);    // lock hash
 
         xct_i x(false); // false -> do not acquire the mutex when accessing the transaction table
 
@@ -905,11 +954,8 @@ try
                     // Record the transactions in following states:
                     //     xct_active (both normal and loser), xct_chaining, xct_committing,
                     //     xct_aborting                   
-                    // A transaction state can be xct_t::xct_aborting if
-                    // 1. A normal aborting transaction
-                    // 2. Loser transaction - all transactions are marked as 
-                    //     aborting (loser) by Log Analysys phase, UNDO phase 
-                    //     identifies the true loser transactions.
+                    // A transaction state can be xct_t::xct_aborting if a
+                    // normal transaction in the middle of aborting
                     // A checkpoint will be taken at the end of Log Analysis phase
                     // therefore record all transaction state as is.
                     //
@@ -934,7 +980,98 @@ try
                     else
                         undo_nxt[per_chuck_txn_count] = xd->undo_nxt();
 
-                    w_assert1(lsn_t::null!= xd->first_lsn());                    
+                    if (false == xd->is_sys_xct())
+                    {
+                        // Now we have an active transaction and it is not a system transaction
+                        // Process the lock information
+                        
+                        RawXct* xct = xd->raw_lock_xct();
+
+                        // Record all dirty key locks from this transaction
+                        // note that IX is not a dirty lock, only X meets the criteria
+                        // also only X lock on key, not on gap
+                        // We are holding latch on the transaction so the txn state
+                        // cannot change (e.g. commit, abort) while we are gathering
+                        // lock information
+
+                        int per_chuck_lock_count = 0;
+                        RawLock* lock = xct->private_first;
+                        while (NULL != lock)
+                        {
+                            if (true == lock->mode.contains_dirty_key_lock())
+                            {
+                                // Only record the locks the transaction has acquired, 
+                                // not the ones it is waiting on which might time out or
+                                // conflict (no log record would be generated in such cases)
+                                if (RawLock::ACTIVE == lock->state)
+                                {
+                                    // Validate the owner of the lock
+                                    w_assert1(xct == lock->owner_xct);
+
+                                    // Add the hash value which was constructed using
+                                    // the key value, it is the only value needed to look
+                                    // into lock manager, 'stid_t' is not required and we
+                                    // do not have this information anyway
+                                    lock_hash[per_chuck_lock_count] = lock->hash;
+
+                                    // Add granted lock mode of this lock
+                                    lock_mode[per_chuck_lock_count] = xct->private_hash_map.get_granted_mode(lock->hash);
+
+                                    ++per_chuck_lock_count;
+
+                                    if (true == record_lock)
+                                    {
+                                        // Caller asked for lock information into a provided 
+                                        // heap structure, this is generated only for debug build
+#if W_DEBUG_LEVEL>0
+                                        // Add the lock information to heap for tracking purpose
+                                        comp_lock_info_t* lock_heap_elem = 
+                                                 new comp_lock_info_t(xct->private_hash_map.get_granted_mode(lock->hash));
+                                        if (! lock_heap_elem)
+                                            W_FATAL(eOUTOFMEMORY); 
+                                         // Fill in the rest of the lock information
+                                         lock_heap_elem->tid = xd->tid();
+                                         lock_heap_elem->lock_hash = lock->hash;
+
+                                         lock_heap.AddElementDontHeapify(lock_heap_elem);
+#endif
+                                    }
+                                }
+                            }
+
+                            if (per_chuck_lock_count >= lock_chunk)
+                            {
+                                // Generate a chkpt_xct_lock_log log record which fits in as many 
+                                // locks on the current transaction as possible
+
+                                // Generate a log record for the acquired locks on this in-flight transaction
+                                // it is safe to do so because we are holding latch on this transaction so the
+                                // state cannot change, the t_chkpt_xct_lock log record will be written before the 
+                                // t_chkpt_xct_tab log record (which consists multiple in-flight transactions)
+                                // During Log Analysis backward log scan, it will process t_chkpt_xct_tab
+                                // log record before it gets the t_chkpt_xct_lock log record which is the order we want
+
+                                LOG_INSERT(chkpt_xct_lock_log(xd->tid(), per_chuck_lock_count,
+                                           lock_mode, lock_hash), 0);
+
+                                per_chuck_lock_count = 0;
+                            }
+
+                            // Advance to the next lock
+                            lock = lock->xct_next;                        
+                        }
+                        w_assert1(NULL == lock);
+
+                        if (0 != per_chuck_lock_count)
+                        {
+                            // Pick up the last set
+                            LOG_INSERT(chkpt_xct_lock_log(xd->tid(), per_chuck_lock_count,
+                                       lock_mode, lock_hash), 0);
+                        }
+                    }
+
+                    // Keep track of the overall minimum xct lsn
+                    w_assert1(lsn_t::null!= xd->first_lsn());
                     if (min_xct_lsn > xd->first_lsn())
                         min_xct_lsn = xd->first_lsn();
 
@@ -1053,11 +1190,12 @@ try
             // Error in this step will bring down the server
             log->set_master(master, min_rec_lsn, min_xct_lsn);
 
-////////////////////////////////////////
-// TODO(Restart)...  Do not scaverge log space, because:
-//                     Single Page Recovery might need old log records
-////////////////////////////////////////
-            // Scavenge some log
+            // Do not scavenge log space because Single Page Recovery might need
+            // old log records.  Once log archieve has been implemented, the log truncation
+            // will be driven by the log archieve status, not from checkpoint
+            // With the current implementation (no log archieve yet), log->scavenge()
+            // is never called
+            //
             // W_COERCE( log->scavenge(min_rec_lsn, min_xct_lsn) );
 
             // Finished a completed checkpoint
@@ -1151,6 +1289,9 @@ chkpt_thread_t::~chkpt_thread_t()
 void
 chkpt_thread_t::run()
 {
+    CmpXctLockTids	 lock_cmp;
+    XctLockHeap      dummy_heap(lock_cmp);
+
     while(! _retire) 
     {
         {
@@ -1183,7 +1324,9 @@ chkpt_thread_t::run()
             break;
 
         // No need to acquire checkpoint mutex before calling the checkpoint operation
-        smlevel_1::chkpt->take(smlevel_0::t_chkpt_async);
+        // Asynch checkpoint should never record lock information
+        smlevel_1::chkpt->take(smlevel_0::t_chkpt_async, dummy_heap);
+        w_assert1(0 == dummy_heap.NumElements());
     }
 }
 

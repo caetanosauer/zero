@@ -655,6 +655,23 @@ public:
         bool                check_only
     );
 
+    // stid_d version, no latch and no retry, used by Log Analysis phase on individual log record
+    static rc_t _ux_lock_key(
+        const stid_t&       stid,
+        const w_keystr_t&   key,
+        const okvl_mode&    lock_mode,
+        bool                check_only,
+        xct_t*              xd
+    );
+
+    // hash version, no latch and no retry, used by Log Analysis phase on checkpoint log record
+    static rc_t _ux_lock_key(
+        const uint32_t&     hash,
+        const okvl_mode&    lock_mode,
+        bool                check_only,
+        xct_t*              xd
+    );
+
     /**
      * Lock gap containing nonexistent key key in page leaf with locking mode
      * miss_lock_mode; exception: if key equals the low fence key of leaf, instead lock

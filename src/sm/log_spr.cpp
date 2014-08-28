@@ -198,26 +198,26 @@ rc_t log_core::_collect_single_page_recovery_logs(
         } else if (!record->is_multi_page()
             || pid.page != record->data_ssx_multi()->_page2_pid) {
 
-// TODO(Restart)... debugging output for eWRONG_PAGE_LSNCHAIN.  Non-consistent error
-//                          need more information to identify the root cause
+////////////////////////////////////////////////////////////////////////////
+// TODO(Restart)... debugging output for eWRONG_PAGE_LSNCHAIN.... begin
+//                          Non-consistent error, need more information to identify the root cause
 DBGOUT1(<< "!!!!   eWRONG_PAGE_LSNCHAIN error...."); 
-DBGOUT1(<< "!!!!   log_core::_collect_single_page_recovery_logs: fetched record has different page id, record type: " << *record);
 
 if (record->is_multi_page())
 {
-    DBGOUT1(<< "!!!!   log_core::_collect_single_page_recovery_logs: multi-page log record");
-    DBGOUT1(<< "!!!!   2nd page pid: " << record->data_ssx_multi()->_page2_pid);
+    DBGOUT1(<< "!!!!   log_core::_collect_single_page_recovery_logs: fetched a multi-page log record");
+    DBGOUT1(<< "!!!!   2nd page pid in the fetched record: " << record->data_ssx_multi()->_page2_pid);
     DBGOUT1(<< "!!!!   looking for pid: " << pid.page);
 }
 else
 {
-    DBGOUT1(<< "!!!!   log_core::_collect_single_page_recovery_logs: single page log record, looking for page id: "
+    DBGOUT1(<< "!!!!   log_core::_collect_single_page_recovery_logs: fetched a single page log record, looking for page id: "
             << pid.page << ", fetched record page id: " << record->shpid());
 }
 if (record->null_pid()) 
 {
     // Record does not contain a page id, meaning it does not impact buffer pool
-    DBGOUT1(<< "!!!!   record does not have a page id");
+    DBGOUT1(<< "!!!!   fetched record does not have a page id");
     if (!record->is_single_sys_xct())
     {
         DBGOUT1(<< "!!!!   Not a system transaction");
@@ -254,7 +254,20 @@ if (record->null_pid())
         }
     }
 }
-
+else
+{
+    DBGOUT1(<< "!!!!   fetched record has a page id so it affects buffer pool, record pid: " << record->shpid());
+    if (record->tid() != tid_t::null)                  
+    {
+        DBGOUT1(<< "!!!!   Has a transaction id, tid: " << record->tid());    
+    }
+    else
+    {
+        DBGOUT1(<< "!!!!   No transaction id, note system transaction does not have tid");    
+    }
+}
+// TODO(Restart)... debugging output for eWRONG_PAGE_LSNCHAIN.... end
+////////////////////////////////////////////////////////////////////////////
 
             W_RETURN_RC_MSG(eWRONG_PAGE_LSNCHAIN, << "PID= " << pid << ", CUR_LSN="
                 << current_lsn << ", EMLSN=" << emlsn << ", next_lsn=" << nxt

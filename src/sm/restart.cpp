@@ -61,13 +61,15 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include "sm_int_1.h"
 #include "w_heap.h"
-#include "restart.h"
-// include crash.h for definition of LOGTRACE1
-#include "crash.h"
-#include "bf_tree.h"
-#include "sm_int_0.h"
-#include "bf_tree_inline.h"
 #include "chkpt.h"
+#include "crash.h"
+#include "sm_int_0.h"
+#include "sm_du_stats.h"
+#include "sm_int_2.h"
+#include "btree_impl.h"         // Lock re-acquisition
+#include "bf_tree_inline.h"
+#include "restart.h"
+#include "btree_logrec.h"       // Lock re-acquisition
 
 #ifdef EXPLICIT_TEMPLATE
 template class Heap<xct_t*, CmpXctUndoLsns>;
@@ -244,21 +246,30 @@ restart_m::restart(
     // Log Analysis phase, the store is not opened for new transaction during this phase
     // Populate transaction table for all in-flight transactions, mark them as 'active'
     // Populate buffer pool for 'in_doubt' pages, register but not loading the pages
-    // Populate the special heap with all the loser transactions for UNDO purpose
+    
+    // Populate a special heap with all the loser transactions for UNDO purpose (serial restart mode)
     CmpXctUndoLsns        cmp;
-    XctPtrHeap            heap(cmp);
+    XctPtrHeap            loser_heap(cmp);
+
+    // Two special heaps to record all the re-acquired locks (on-demand restart mode)
+    // First one is populated during Log Analysis phase
+    // Second one is populated during checkpoint after the Log Analysis phase
+    CmpXctLockTids        lock_cmp;
+    XctLockHeap           lock_heap1(lock_cmp);  // For Log Analysis
+    XctLockHeap           lock_heap2(lock_cmp);  // For Checkpoint
 
     if (false == use_concurrent_lock_restart())
     {
         // Not using locks (either serial or log mode) - M1 and M2
         // ignore 'non-read-lock' and forward log scan
-        analysis_pass_forward(master, redo_lsn, in_doubt_count, undo_lsn, heap, commit_lsn, last_lsn);
+        analysis_pass_forward(master, redo_lsn, in_doubt_count, undo_lsn, loser_heap, commit_lsn, last_lsn);
     }
     else
     {
         // Using locks - M3 and M4
         // Acquire non-read-locks and backward log scan
-        analysis_pass_backward(master, redo_lsn, in_doubt_count, undo_lsn, heap, last_lsn);        
+        // Also build a special heap for lock information (debug only)
+        analysis_pass_backward(master, redo_lsn, in_doubt_count, undo_lsn, loser_heap, last_lsn, lock_heap1);
     }
 
     // If nothing from Log Analysis, in other words, if both transaction table and buffer pool
@@ -287,8 +298,22 @@ restart_m::restart(
     }
 
     // Take a synch checkpoint after the Log Analysis phase and before the REDO phase
-    w_assert1(smlevel_1::chkpt);    
-    smlevel_1::chkpt->synch_take();
+    w_assert1(smlevel_1::chkpt);
+    if (false == use_concurrent_lock_restart())
+    {
+        // Do not build the heap for lock information
+        smlevel_1::chkpt->synch_take();
+    }
+    else
+    {
+        // Checkpoint always gather lock information, but it would build a heap
+        // on return only if asked for it (debug only)
+        smlevel_1::chkpt->synch_take(lock_heap2);
+
+        // Compare lock information in two heaps, the actual comparision is debug build only
+        _compare_lock_entries(lock_heap1, lock_heap2);
+    }
+
 
     if (false == use_serial_restart())
     {
@@ -412,7 +437,7 @@ restart_m::restart(
             //    the 'undo_lsn' is not used
             DBGOUT3(<<"starting UNDO phase, current lsn: " << curr_lsn << 
                     ", undo_lsn = " << undo_lsn);
-            undo_reverse_pass(heap, last_lsn, undo_lsn);
+            undo_reverse_pass(loser_heap, last_lsn, undo_lsn);
 
             smlevel_0::errlog->clog << info_prio << "Oldest active transaction is " 
                 << xct_t::oldest_tid() << flushl;
@@ -443,7 +468,7 @@ restart_m::restart(
 
 /*********************************************************************
  *
- *  restart_m::analysis_pass_forward(master, redo_lsn, in_doubt_count, undo_lsn, heap, commit_lsn, last_lsn)
+ *  restart_m::analysis_pass_forward(master, redo_lsn, in_doubt_count, undo_lsn, loser_heap, commit_lsn, last_lsn)
  *
  *  Scan log forward from master_lsn. Insert and update buffer pool, 
  *  insert transaction table.
@@ -461,7 +486,7 @@ restart_m::analysis_pass_forward(
                                            //       which could be different from master
     uint32_t&             in_doubt_count,  // Out: Counter for in_doubt page count in buffer pool
     lsn_t&                undo_lsn,        // Out: Stopping point for UNDO backward log scan (if used)
-    XctPtrHeap&           heap,            // Out: Heap to record all the loser transactions,
+    XctPtrHeap&           loser_heap,      // Out: Heap to record all the loser transactions,
                                            //       used only for reverse chronological order
                                            //       UNDO phase (if used)
     lsn_t&                commit_lsn,      // Out: Commit lsn for concurrent transaction (if used)
@@ -519,8 +544,8 @@ restart_m::analysis_pass_forward(
     // mount: for DBGOUT purpose to indicate any device was mounted
     bool mount = false;
 
-    // The UNDO heap must be empty initially
-    w_assert1(0 == heap.NumElements());
+    // The UNDO loser_heap must be empty initially
+    w_assert1(0 == loser_heap.NumElements());
 
     // Open a forward scan starting from master (the begin checkpoint LSN from the 
     // last completed checkpoint
@@ -542,7 +567,7 @@ restart_m::analysis_pass_forward(
         // The first record must be a 'begin checkpoint', otherwise we don't want to continue, error out 
         if (r.type() != logrec_t::t_chkpt_begin)
         {
-            DBGOUT3( << setiosflags(ios::right) << lsn
+            DBGOUT1( << setiosflags(ios::right) << lsn
                      << resetiosflags(ios::right) << " R: " << r);
             W_FATAL_MSG(fcINTERNAL, << "First log record in Log Analysis is not a begin checkpoint log: " << r.type());
         }
@@ -578,7 +603,7 @@ restart_m::analysis_pass_forward(
         logrec_t& r = *log_rec_buf;
 
         // Scan next record
-        DBGOUT5( << setiosflags(ios::right) << lsn 
+        DBGOUT3( << setiosflags(ios::right) << lsn 
                   << resetiosflags(ios::right) << " A: " << r );
 
         // If LSN is not intact, stop now
@@ -622,9 +647,9 @@ restart_m::analysis_pass_forward(
         // If log is transaction related, insert the transaction
         // into transaction table if it is not already there.
         if ((r.tid() != tid_t::null) && ! (xd = xct_t::look_up(r.tid()))
-                   && r.type()!=logrec_t::t_comment      // comments can be after xct has ended
-                   && r.type()!=logrec_t::t_skip         // skip
-                   && r.type()!=logrec_t::t_max_logrec)  // mark the end
+                   && r.type()!=logrec_t::t_comment         // comments can be after xct has ended
+                   && r.type()!=logrec_t::t_skip            // skip
+                   && r.type()!=logrec_t::t_max_logrec)    // mark the end
         {
             DBGOUT3(<<"analysis: inserting tx " << r.tid() << " active ");
             xd = xct_t::new_xct(r.tid(),                  // Use the tid from log record
@@ -691,7 +716,14 @@ restart_m::analysis_pass_forward(
                 // Not from the master checkpoint, ignore
             }
             break;
-                
+
+        case logrec_t::t_chkpt_xct_lock:
+            // Log record for per transaction lock information
+            // Skip in forward Log Analysis log scan because forward scan
+            // does not re-acquire locks
+            
+            break;
+
         case logrec_t::t_chkpt_xct_tab:
             // Transaction table entries from checkpoint
             if (num_chkpt_end_handled == 0)  
@@ -1055,7 +1087,7 @@ restart_m::analysis_pass_forward(
     // table is either loser (active) or winner (ended);
 
     // Final process of the entries in transaction table
-    _analysis_process_txn_table(heap, commit_lsn);
+    _analysis_process_txn_table(loser_heap, commit_lsn);
 
     // Now we should have the final commit_lsn value
     // if it is the same as max_lsn (initial value), set commit_lsn to null
@@ -1104,7 +1136,8 @@ restart_m::analysis_pass_forward(
 
 /*********************************************************************
  *
- *  restart_m::analysis_pass_backward(master, redo_lsn, in_doubt_count, undo_lsn, heap, last_lsn)
+ *  restart_m::analysis_pass_backward(master, redo_lsn, in_doubt_count, 
+                                                          undo_lsn, loser_heap, last_lsn, lock_heap)
  *
  *  Scan log backward from end of recovery log until the last completed checkpoint.
  *  Insert and update buffer pool, 
@@ -1136,10 +1169,11 @@ restart_m::analysis_pass_backward(
                                            //       which could be different from master
     uint32_t&             in_doubt_count,  // Out: Counter for in_doubt page count in buffer pool
     lsn_t&                undo_lsn,        // Out: Stopping point for UNDO backward log scan (if used)
-    XctPtrHeap&           heap,            // Out: Heap to record all the loser transactions,
+    XctPtrHeap&           loser_heap,      // Out: Heap to record all the loser transactions,
                                            //       used only for reverse chronological order
                                            //       UNDO phase (if used)
-    lsn_t&                last_lsn         // Out: Last lsn in the recovery log before system crash
+    lsn_t&                last_lsn,        // Out: Last lsn in the recovery log before system crash
+    XctLockHeap&          lock_heap        // Out: all re-acquired locks        
 )
 {
     FUNC(restart_m::analysis_pass_backward);
@@ -1190,8 +1224,11 @@ restart_m::analysis_pass_backward(
     lsn_t max_lsn = last_lsn + 1;
     w_assert1(master < max_lsn);
 
-    // The UNDO heap must be empty initially
-    w_assert1(0 == heap.NumElements());
+    // The UNDO loser_heap must be empty initially
+    w_assert1(0 == loser_heap.NumElements());
+
+    // The tracking lock_heap must be empty initially
+    w_assert1(0 == lock_heap.NumElements());
 
     // Initialize the in_doubt count
     in_doubt_count = 0;
@@ -1259,7 +1296,7 @@ restart_m::analysis_pass_backward(
         logrec_t& r = *log_rec_buf;
 
         // Scan next record
-        DBGOUT5( << setiosflags(ios::right) << lsn 
+        DBGOUT3( << setiosflags(ios::right) << lsn 
                   << resetiosflags(ios::right) << " A: " << r );
 
         // If LSN is not intact, stop now
@@ -1408,6 +1445,41 @@ restart_m::analysis_pass_backward(
             }
             break;
 
+        case logrec_t::t_chkpt_xct_lock:
+            // Log record for per transaction lock information
+            // Due to backward log scan, this log record (might have multiple log 
+            // records per active transaction) should be retrieved after the corresponding
+            // t_chkpt_xct_tab log record, in other words, it was generated prior the
+            // corresponding t_chkpt_xct_tab log record
+
+            // If the transaction tid specified in the log record exists in transaction table and
+            // it is an in-flight transaction, re-acquire locks on it
+            if (num_chkpt_end_handled == 1)  
+            {
+                chkpt_xct_lock_t* dp = (chkpt_xct_lock_t*) r.data();            
+                xd = xct_t::look_up(dp->tid);            
+                if (xd) 
+                {
+                    // Transaction exists and in-flight
+                    if (xct_t::xct_active == xd->state())                
+                    {
+                        // Re-acquire locks
+                        _analysis_acquire_ckpt_lock_log(r, xd, lock_heap);
+                    }
+                }
+                else
+                {
+                    // If transaction does not exist in transaction table
+                    // it is unexpected (due to backward log scan), raise an error
+                    W_FATAL_MSG(fcINTERNAL, << "Log record t_chkpt_xct_lock contains a transaction which does not exist, tid:" << dp->tid);
+                }
+            }
+            else
+            {
+                // No matching 'end checkpoint' log record, ignore
+            }
+            break;
+
         case logrec_t::t_chkpt_xct_tab:
             // Transaction table entries from checkpoint
             if (num_chkpt_end_handled == 1)  
@@ -1421,6 +1493,16 @@ restart_m::analysis_pass_backward(
                 for (uint i = 0; i < dp->count; i++)  
                 {
                     xd = xct_t::look_up(dp->xrec[i].tid);
+
+                    // We know the transaction was active when the checkpoint was taken, but
+                    // we do not know whether the transaction was in the middle of normal
+                    // processing or rollback.
+                    // If a transaction object did not exsit in the transaction table at this point,
+                    // create a loser transaction for it and do not add it to mapCLR.
+                    // If a transaction object exists in the transaction table at this point, 
+                    // it should be a loser transaction, update to the mapCLR to make sure
+                    // this is a loser transaction
+
                     if (!xd) 
                     {           
                         // Not found in the transaction table
@@ -1456,7 +1538,11 @@ restart_m::analysis_pass_backward(
                         if ((dp->xrec[i].state != xct_t::xct_committing) &&
                             (dp->xrec[i].state != xct_t::xct_aborting))
                         {
-                            // Checkpoint thinks this is an in-flight transaction
+                            // Checkpoint thinks this is an in-flight transaction but we have not seen
+                            // any log record from this in-flight transaction during the entire backward
+                            // log scan
+                            w_assert1((xct_t::xct_active == dp->xrec[i].state) || 
+                                      (xct_t::xct_chaining == dp->xrec[i].state));
                             
                             log_i scan_per_txn(*log, lsn, false /*forward scan*/);
                             logrec_t*  log_rec_buf_per_txn;
@@ -1487,6 +1573,13 @@ restart_m::analysis_pass_backward(
 
                             if (true == is_loser)
                             {
+                                // No log record on this transaction after this checkpoint was taken,
+                                // but we know this transaction was active when the checkpoint
+                                // was taken and it did not end before the checkpoint finished.
+                                // Since we do not analysis log records before this checkpoint
+                                // mark this transaction as a loser transaction regardless whether
+                                // the transaction was in the middle of rolling back or not                               
+                            
                                 // A true loser transaction, insert into the transaction table
                                 xd = xct_t::new_xct(dp->xrec[i].tid,
                                             xct_t::xct_active,        // Instead of using dp->xrec[i].state
@@ -1501,6 +1594,8 @@ restart_m::analysis_pass_backward(
                                             false,                    // single_log_sys_xct
                                             true);                    // loser_xct, set to true for recovery
 
+                                xct_t::update_youngest_tid(dp->xrec[i].tid);
+
                                 // Set the first LSN of the in-flight transaction
                                 xd->set_first_lsn(dp->xrec[i].first_lsn);
 
@@ -1509,13 +1604,7 @@ restart_m::analysis_pass_backward(
                                         << " last lsn " << dp->xrec[i].last_lsn
                                         << " undo " << dp->xrec[i].undo_nxt
                                         << ", first lsn " << dp->xrec[i].first_lsn);
-                                w_assert1(xd);
-
-// TODO(Restart)...
-// Gather non-read-locks for loser (active) transactions
-// Because no log record on this transaction after checkpoint, we do not need to worry about
-// the case that this transaction was in the middle of rolling back when the checkpoint was taken
-
+                                w_assert1(xd);                                
                             }
                         }
                     }
@@ -1535,12 +1624,23 @@ restart_m::analysis_pass_backward(
                        w_assert1((xct_t::xct_active == xd->state()) || 
                                  (xct_t::xct_ended == xd->state()));
                        if (xct_t::xct_active == xd->state())
-                       {
-// TODO(Restart)...
-// Gather non-read-locks for loser (active) transactions from checkpoint log record
-// also special handling for in-flight (rolling back/active) transactions
-
-                       
+                       {                                             
+                           tid_CLR_map::iterator search = mapCLR.find(r.tid().as_int64());
+                           if ((search != mapCLR.end()) && (0 == search->second))
+                           {
+                               // If tid exists in the map, this is an existing undetermistic in-flight
+                               // transaction, also we have seen the same amount of original and 
+                               // compensation log records from the backward log scan (0 == count)
+                               // but the transaction was active when the checkpoint was taken, which
+                               // means there were more activities on the transaction before checkpoint
+                               // was taken, increase the counter by 1 so it becomes to force a loser
+                               // transaction
+                               // Note that checkpoint is a non-blocking and potentially long lasting
+                               // operation which could generate multiple checkpoint log records, there
+                               // might be more log records inter-mixed with checkpoint log records
+                               
+                               mapCLR[r.tid().as_int64()] += 1;
+                           }                      
                        }
                     }
                 }
@@ -1731,9 +1831,10 @@ restart_m::analysis_pass_backward(
                     if (r.is_page_update()) 
                     {
                         // Not compensation log record and it affects buffer pool
-// TODO(Restart)...
-// Gather non-read-locks from loser (active) transactions log record
 
+                        // Re-acquire non-read-locks based on the log record and
+                        // record the acquired locks in this loser transaction object
+                        _analysis_acquire_lock_log(r, xd, lock_heap);
 
                         // Is this an undeterministic transaction?
                         // An undeterministic transaction is an in-flight transaction
@@ -1907,8 +2008,9 @@ restart_m::analysis_pass_backward(
     // on all loser transactions.
     
     // Final process of the entries in transaction table
+    // Backward log scan is using locks for concurrency control, no commit_lsn
     lsn_t dummy_lsn = lsn_t::null;    
-    _analysis_process_txn_table(heap, dummy_lsn);
+    _analysis_process_txn_table(loser_heap, dummy_lsn);
 
     w_base_t::base_stat_t f = GET_TSTAT(log_fetches);
     w_base_t::base_stat_t i = GET_TSTAT(log_inserts);
@@ -2292,7 +2394,7 @@ void restart_m::_analysis_other_log(logrec_t& r,               // In: log record
     {
         // Log record affects buffer pool, and it is not a compensation log record
         DBGOUT3(<<"is page update " );
-        DBGOUT5( << setiosflags(ios::right) << lsn 
+        DBGOUT3( << setiosflags(ios::right) << lsn 
             << resetiosflags(ios::right) << " A: " 
             << "is page update " << page_of_interest );
         // redoable, has a pid, and is not compensated.
@@ -2379,7 +2481,7 @@ void restart_m::_analysis_other_log(logrec_t& r,               // In: log record
         // Update undo_nxt lsn of xct
         if(r.is_undo()) 
         {
-            DBGOUT5(<<"is cpsn, undo " << " undo_nxt<--lsn " << lsn );
+            DBGOUT3(<<"is cpsn, undo " << " undo_nxt<--lsn " << lsn );
 
             // r is undoable. There is one possible case of
             // this (undoable compensation record)
@@ -2452,6 +2554,253 @@ void restart_m::_analysis_other_log(logrec_t& r,               // In: log record
 
     return;
 }
+
+/*********************************************************************
+* 
+*  restart_m::_analysis_acquire_lock_log(r, xd, lock_heap)
+*
+*  Helper function to process lock re-acquisition based on the log record
+*  called by analysis_pass_backward only
+*
+*  System is not opened during Log Analysis phase
+*
+*********************************************************************/
+void restart_m::_analysis_acquire_lock_log(logrec_t& r,            // In: log record
+                                               xct_t *xd,              // In/out: associated txn object
+                                               XctLockHeap& lock_heap) // Out: heap to gather lock info
+{
+    // A special function to re-acquire non-read locks based on a log record,
+    // when acquiring lock on key, it sets the intent mode on key also,    
+    // and add acquired lock information to the associated transaction object.
+    
+    // Called during Log Analysis phase for backward log scan, the 
+    // buffer pool pages were not loaded into buffer pool and the system
+    // was not opened for user transactions, therefore it is safe to access lock
+    // manager during Log Analysis phase, no latch would be held when
+    // accessing lock manager to re-acqure non-read locks.
+    // It should not encounter lock conflicts during lock re-acquisition, because
+    // if any conflicts, pre-crash transaction processing would have found them
+    
+    w_assert1(NULL != xd);                        // Valid transaction object
+    w_assert1(xct_t::xct_ended != xd->state());  // In-flight transaction
+    w_assert1(false == r.is_single_sys_xct());   // Not a system transaction
+    w_assert1(false == r.is_multi_page());       // Not a multi-page log record (system transaction)
+    w_assert1(false == r.is_cpsn());             // Not a compensation log record
+    w_assert1(false == r.null_pid());            // Has a valid pid, affecting buffer pool
+    w_assert1(r.is_page_update());               // It is a log recode affecting record data (not read)
+
+    // There are 3 types of intent locks
+    // 1. Intent lock on the given volume (intent_vol_lock) -
+    // 2. Intent lock on the given store (intent_store_lock) - store wide operation 
+    //                where need different lock modes for store and volum, for example,
+    //                create or destory an index, _get_du_statistics
+    // 3. Intent locks on the given store and its volume in the same mode (intent_vol_store_lock) - 
+    //                this is used in usual operations like create_assoc (open_store/index) and 
+    //                cursor lookup upon the first access
+    // No re-acquisition on the intent locks since no log records were generated for 
+    // these operations
+    
+    // Qualified log types:
+    //    logrec_t::t_btree_insert
+    //    logrec_t::t_btree_insert_nonghost
+    //    logrec_t::t_btree_update
+    //    logrec_t::t_btree_overwrite
+    //    logrec_t::t_btree_ghost_mark
+    //    logrec_t::t_btree_ghost_reserve
+
+    switch (r.type()) 
+    {
+        case logrec_t::t_btree_insert:
+            {
+                // Insert a record which has an existing ghost record with matching key
+                
+                btree_insert_t* dp = (btree_insert_t*) r.data();
+                w_assert1(false == dp->sys_txn);
+
+                // Get the key
+                w_keystr_t key;
+                key.construct_from_keystr(dp->data, dp->klen);
+                // Lock re-acquisition
+                DBGOUT3(<<"_analysis_acquire_lock_log - acquire X key lock for INSERT, key: " << key);                
+                okvl_mode mode = btree_impl::create_part_okvl(okvl_mode::X, key);
+                lockid_t lid (r.construct_pid().stid(), (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
+
+                _re_acquire_lock(lock_heap, mode, lid.hash(), xd);
+            }
+            break;
+        case logrec_t::t_btree_insert_nonghost:
+            {
+                // Insert a new distinct key, the original operation only need to test whether
+                // a key range lock exists, the key range lock is not needed for potential 
+                // rollback operation therefore it is not held for the remainder of the user transaction.
+                // Note that in order to acquire a key range lock, we will need to access data page
+                // for the neighboring key, but the buffer pool page is not loaded during Log
+                // Analysis phase, luckily we do not need key range lock for this scenario in Restart
+                
+                // In Restart, only need to re-acquire key lock, not key range lock
+                
+                btree_insert_t* dp = (btree_insert_t*) r.data();
+                if (true == dp->sys_txn)
+                {
+                    // The insertion log record was generated by a page rebalance full logging operation
+                    // Do not acquire locks on this log record
+                }
+                else
+                {
+                    // Get the key 
+                    w_keystr_t key;                    
+                    key.construct_from_keystr(dp->data, dp->klen);                
+                    // Lock re-acquisition
+                    DBGOUT3(<<"_analysis_acquire_lock_log - acquire X key lock for NON_GHOST_INSERT, key: " << key);
+                    okvl_mode mode = btree_impl::create_part_okvl(okvl_mode::X, key);
+                    lockid_t lid (r.construct_pid().stid(), (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
+
+                    _re_acquire_lock(lock_heap, mode, lid.hash(), xd);
+                }
+            }
+            break;
+        case logrec_t::t_btree_update:
+            {
+                btree_update_t* dp = (btree_update_t*) r.data();
+
+                // Get the key
+                w_keystr_t key;                
+                key.construct_from_keystr(dp->_data, dp->_klen);
+                // Lock re-acquisition
+                DBGOUT3(<<"_analysis_acquire_lock_log - acquire X key lock for UPDATE, key: " << key);
+                okvl_mode mode = btree_impl::create_part_okvl(okvl_mode::X, key);
+                lockid_t lid (r.construct_pid().stid(), (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
+
+                _re_acquire_lock(lock_heap, mode, lid.hash(), xd);
+            }
+            break;
+        case logrec_t::t_btree_overwrite:
+            {
+                btree_overwrite_t* dp = (btree_overwrite_t*) r.data();
+
+                // Get the key
+                w_keystr_t key;                
+                key.construct_from_keystr(dp->_data, dp->_klen);
+                // Lock re-acquisition
+                DBGOUT3(<<"_analysis_acquire_lock_log - acquire X key lock for OVERWRITE, key: " << key);
+                okvl_mode mode = btree_impl::create_part_okvl(okvl_mode::X, key);
+                lockid_t lid (r.construct_pid().stid(), (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
+
+                _re_acquire_lock(lock_heap, mode, lid.hash(), xd);
+            }
+            break;
+        case logrec_t::t_btree_ghost_mark:
+            {
+                // Delete operation only turn the valid record into a ghost record, while the system transaction
+                // will clean up the ghost after the user transaction commits and releases its locks, therefore
+                // only need a lock on the key value, not any key range
+                
+                btree_ghost_t* dp = (btree_ghost_t*) r.data();
+                if (1 == dp->sys_txn)
+                {
+                    // The deletion log record was generated by a page rebalance full logging operation
+                    // Do not acquire locks on this log record
+                }
+                else
+                {
+                    // Get the key
+                    for (size_t i = 0; i < dp->cnt; ++i)
+                    {
+                        // Get the key
+                        w_keystr_t key (dp->get_key(i));
+                        // Lock re-acquisition
+                        DBGOUT3(<<"_analysis_acquire_lock_log - acquire X key lock for DELETE, key: " << key);
+                        okvl_mode mode = btree_impl::create_part_okvl(okvl_mode::X, key);
+                        lockid_t lid (r.construct_pid().stid(), (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
+
+                        _re_acquire_lock(lock_heap, mode, lid.hash(), xd);
+                    }
+                }
+            }
+            break;
+        case logrec_t::t_btree_ghost_reserve:
+            {
+                // This is to insert a new record where the key did not exist as a ghost
+                // Similar to logrec_t::t_btree_insert_nonghost
+                
+                // In Restart, only need to re-acquire key lock, not key range lock
+                
+                btree_ghost_reserve_t* dp = (btree_ghost_reserve_t*) r.data();
+
+                // Get the key
+                w_keystr_t key;
+                key.construct_from_keystr(dp->data, dp->klen);
+                // Lock re-acquisition
+                DBGOUT3(<<"_analysis_acquire_lock_log - acquire X key lock for GHOST_RESERVE(INSERT), key: " << key);
+                okvl_mode mode = btree_impl::create_part_okvl(okvl_mode::X, key);
+                lockid_t lid (r.construct_pid().stid(), (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
+
+                _re_acquire_lock(lock_heap, mode, lid.hash(), xd);
+            }
+            break;
+        default:
+            {
+                W_FATAL_MSG(fcINTERNAL, << "restart_m::_analysis_acquire_lock_log - Unexpected log record type: " << r.type());
+            }
+            break;
+    }
+
+    return;
+}
+
+/*********************************************************************
+* 
+*  restart_m::_analysis_acquire_ckpt_lock_log(r, xd, lock_heap)
+*
+*  Helper function to process lock re-acquisition for an active transaction in 
+*  a checkpoint log record
+*  called by analysis_pass_backward only
+*
+*  System is not opened during Log Analysis phase
+*
+*********************************************************************/
+void restart_m::_analysis_acquire_ckpt_lock_log(logrec_t& r,            // In: log record
+                                                     xct_t *xd,              // In/Out: associated txn object
+                                                     XctLockHeap& lock_heap) // Out: heap to gather lock info                                                     
+{
+    // A special function to re-acquire non-read locks for an active transaction
+    // in a checkpoint log record and add acquired lock information to the associated
+    // transaction object.
+    
+    // Called during Log Analysis phase for backward log scan, the 
+    // buffer pool pages were not loaded into buffer pool and the system
+    // was not opened for user transactions, therefore it is safe to access lock
+    // manager during Log Analysis phase, no latch would be held when
+    // accessing lock manager to re-acqure non-read locks.
+    // It should not encounter lock conflicts during lock re-acquisition, because
+    // if any conflicts, pre-crash transaction processing would have found them
+    
+    w_assert1(NULL != xd);                             // Valid transaction object
+    w_assert1(xct_t::xct_ended != xd->state());        // In-flight transaction    
+    w_assert1(logrec_t::t_chkpt_xct_lock == r.type()); // Correct checkpoint log record
+
+    // Process all active locks  in the checkpoint log record
+    const chkpt_xct_lock_t* dp = (chkpt_xct_lock_t*) r.data();
+    if (0 == dp->count)
+    {
+        // No lock to process
+        return;
+    }
+
+//    w_rc_t rc = RCOK;
+
+    // Go through all the locks and re-acquire them on the transaction object
+    for (uint i = 0; i < dp->count; i++)  
+    {
+        DBGOUT3(<<"_analysis_acquire_ckpt_lock_log - acquire key lock, hash: " << dp->xrec[i].lock_hash
+                << ", key lock mode: " << dp->xrec[i].lock_mode.get_key_mode());
+
+        _re_acquire_lock(lock_heap, dp->xrec[i].lock_mode, dp->xrec[i].lock_hash, xd);       
+    }
+    
+    return;
+}
+
 
 /*********************************************************************
  * 
@@ -2529,7 +2878,7 @@ void restart_m::_analysis_process_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,
 
 /*********************************************************************
  * 
- *  restart_m::_analysis_process_compensation_heap(heapCLR)
+ *  restart_m::_analysis_process_compensation_map(mapCLR)
  *
  *  Helper function to process the compensation list for undeterministic transactions
  *  called by analysis_pass_backward only
@@ -2593,21 +2942,22 @@ void restart_m::_analysis_process_compensation_map(tid_CLR_map& mapCLR)
             if (xct_t::xct_ended != xd->state())
                 xd->change_state(xct_t::xct_ended);
         }
-        else if (0 < it->second)
+        else
         {
-            // Loser transaction, not enough compensation log record, keep all the acquired locks
+            // Two scenarios, both scenarios makes the transaction a loser transaction and 
+            // keep all the re-acquired non-read locks:
+            // 1. More origianl log records than the compensation log records
+            // 2. More compensation log records than update log records.  This can
+            //     happen only if when the last checkpoint was taken, the transaction was an 
+            //     in-flight transaction, and then the transaction started rolling back (or did at
+            //     lease one save point partial roll back) after the checkpoint, system crashed
+            //     before the transaction finished
+            
             tid_t t(it->first);
             xd = xct_t::look_up(t);          
             w_assert1(NULL != xd);
 
             w_assert1(xct_t::xct_active == xd->state());
-        }
-        else
-        {
-            // Has more compensation log records than update log records
-            // Not possible, raise error
-            W_FATAL_MSG(fcINTERNAL, << "Incorrect compensation log record count for in-flight transaction, tid: "
-                                    << it->first << ", count: " << it->second);
         }
     }
     return;
@@ -2648,7 +2998,7 @@ void restart_m::_analysis_process_txn_table(XctPtrHeap& heap,  // Out: for seria
     xct_t*    curr;
     if (true == use_serial_restart())
     {
-        DBGOUT3( << "Building heap...");
+        DBGOUT3( << "Building loser heap...");
     }
     xd = iter.next();
     while (xd)
@@ -2705,7 +3055,7 @@ void restart_m::_analysis_process_txn_table(XctPtrHeap& heap,  // Out: for seria
     if (true == use_serial_restart())
     {
         heap.Heapify();
-        DBGOUT3( << "Number of transaction entries in heap: " << heap.NumElements());
+        DBGOUT3( << "Number of transaction entries in loser heap: " << heap.NumElements());
     }
 
     DBGOUT3( << "Number of active transactions in transaction table: " << xct_t::num_active_xcts());
@@ -2713,6 +3063,275 @@ void restart_m::_analysis_process_txn_table(XctPtrHeap& heap,  // Out: for seria
     return;
 }
 
+/*********************************************************************
+ * 
+ *  restart_m::_re_acquire_lock(lock_heap, mode, hash, xd)
+ *
+ *  Helper function to add one lock entry information into a lock heap, this is tracking
+ *  and debugging purpose, therefore only does the work in debug build
+ *  called by analysis_pass_backward
+ *
+ *  System is not opened during Log Analysis phase
+ *
+ *********************************************************************/
+void restart_m::_re_acquire_lock(XctLockHeap& lock_heap,
+                                 const okvl_mode& mode,
+                                 const uint32_t hash,
+                                 xct_t* xd)
+{
+    w_assert1(0 <= lock_heap.NumElements());
+
+    // Re-acquire the lock
+    w_rc_t rc = RCOK;
+    rc = btree_impl::_ux_lock_key(hash, mode, false /*check_only*/, xd);
+    w_assert1(!rc.is_error());
+
+#if W_DEBUG_LEVEL>0
+
+    // Add the lock information to heap for tracking purpose
+    comp_lock_info_t* lock_heap_elem = new comp_lock_info_t(mode);
+    if (! lock_heap_elem)
+    {
+        W_FATAL(eOUTOFMEMORY); 
+    }
+    // Fill in the rest of the lock information
+    lock_heap_elem->tid = xd->tid();
+    lock_heap_elem->lock_hash = hash;
+
+    lock_heap.AddElementDontHeapify(lock_heap_elem);
+
+#endif
+
+    return;
+}
+
+/*********************************************************************
+ * 
+ *  restart_m::_compare_lock_entries(lock_heap1, lock_heap2)
+ *
+ *  Helper function to compare entries in two lock heaps, for tracking/debugging purpose
+ *  only used when doing backward log scan from Log Analysis
+ * Current usage:
+ *    Heap 1: from Log Analysis
+ *    Heap 2: from checkpoint after Log Analysis
+ *
+ *  System is not opened during Log Analysis phase
+ *
+ *********************************************************************/
+void restart_m::_compare_lock_entries(XctLockHeap& lock_heap1, XctLockHeap& lock_heap2)
+{
+    lock_heap1.Heapify();
+    lock_heap2.Heapify();
+
+    if (lock_heap1.NumElements() == lock_heap2.NumElements())
+    {
+        // Same amount of lock entries in both heaps, skip further comparision
+        DBGOUT1(<< "_compare_lock_entries: same amount of log entries");
+        return;
+    }
+    else
+    {
+        DBGOUT1(<< "_compare_lock_entries: different number of lock entries, lock_heap1: " 
+                << lock_heap1.NumElements() << ", lock_heap2: " << lock_heap2.NumElements());    
+
+        smlevel_0::errlog->clog << info_prio << "_compare_lock_entries: different number of lock entries, lock_heap1: " 
+                << lock_heap1.NumElements() << ", lock_heap2: " << lock_heap2.NumElements() << flushl;
+    }
+
+    // There are different number of entries in two heaps, print out
+    // the different entries for debugging purpose
+    // This is being done as part of Log Analysis phase while system 
+    // is not opened for concurrent user transactions, the process potentially 
+    // could take some time, so it is turned on for debug build only
+
+    // It is possible two heaps have different number of locks, one scenario:
+    // During Log Analysis, re-acquired locks on non-deterministic transaction
+    // which was in the middle of rolling back (abort), but determined the in-flight 
+    // transaction was actually completed, therefore deleted all the re-acquired 
+    // locks of this transaction from lock manager, but the lock information
+    // are in the heap already.  In such case, Log Analysis heap (lock_heap1) has
+    // more locks than the checkpoint heap (lock_heap2).
+    //
+    // Note that it would be unexpected if checkpoint heap (lock_heap2) has more
+    // locks than Log Analysis heap (lock_heap1).
+    
+    
+#if W_DEBUG_LEVEL>0
+
+    /////////////////////////////////////////////////////
+    // TODO(Restart)... Not an ideal implementation, consider 
+    //                          improving the logic to be more efficient later
+    /////////////////////////////////////////////////////
+
+    comp_lock_info_t* lock_entry1 = NULL;
+
+    DBGOUT3(<< "***** Print out differences from two heaps: heap1 - Log Analysis, heal2 - checkpoint *****");
+
+    if ((0 != lock_heap1.NumElements()) && (0 == lock_heap2.NumElements()))
+    {
+        // Print all entries from heap1
+        DBGOUT3(<< "Heap1 - ");
+        _print_lock_entries(lock_heap1);              
+    }
+    else if ((0 == lock_heap1.NumElements()) && (0 != lock_heap2.NumElements()))
+    {
+        // Print all entries from heap2
+        DBGOUT3(<< "***** Heap2 - ");
+        _print_lock_entries(lock_heap2);
+    }
+    else
+    {
+        w_assert1(0 != lock_heap1.NumElements());
+        w_assert1(0 != lock_heap2.NumElements());
+
+        comp_lock_info_t* lock_entry2 = NULL;
+
+        bool deleted_1 = true;
+        bool deleted_2 = true;
+
+        // Process lock entry
+        while (lock_heap1.NumElements() > 0)  
+        {      
+            // Take a new entry from heap1 if needed
+            if (true == deleted_1)
+                lock_entry1 = lock_heap1.RemoveFirst();
+
+            // Take a new entry from heap2 if needed
+            if (true == deleted_2)
+            {
+                // Heap 2 is empty, exit the loop
+                if (0 == lock_heap2.NumElements())
+                    break;
+                lock_entry2 = lock_heap2.RemoveFirst();
+            }
+            w_assert1(NULL != lock_entry1);
+            w_assert1(NULL != lock_entry2);
+
+            // Reset
+            deleted_1 = false;
+            deleted_2 = false;
+
+            // Compare two entries
+            if (lock_entry1->tid != lock_entry2->tid)
+            {
+                // Different tid, these two entries are different
+                if (lock_entry1->tid < lock_entry2->tid)
+                    deleted_1 = true;
+                else
+                    deleted_2 = true;
+            }
+            else
+            {
+                // Same tid
+                if (lock_entry1->lock_hash != lock_entry2->lock_hash)
+                {
+                    // Different hash, these two entries are different
+
+                    if (lock_entry1->lock_hash < lock_entry2->lock_hash)
+                        deleted_1 = true;
+                    else
+                        deleted_2 = true;
+                }
+                else
+                {
+                    // Same hash
+                    if (lock_entry1->lock_mode.get_key_mode() != lock_entry2->lock_mode.get_key_mode())
+                    {
+                        // Different key mode, these two entries are different
+                        if (lock_entry1->lock_mode.get_key_mode() < lock_entry2->lock_mode.get_key_mode())
+                            deleted_1 = true;
+                        else
+                            deleted_2 = true;
+                    }
+                    else
+                    {
+                        // Same key mode, conclude these two entries are identical
+                        // No need to print, move on to the next set of entries
+                        deleted_1 = true;
+                        deleted_2 = true;
+                    }
+                }
+            }
+            w_assert1((true == deleted_1) || (true == deleted_2));
+
+            if (deleted_1 != deleted_2)
+            {
+                // Print the difference
+                if (true == deleted_1)
+                {
+                    DBGOUT3(<< "Heap1 entry: tid: " << lock_entry1->tid << ", hash: " << lock_entry1->lock_hash
+                            << ", key mode: " << lock_entry1->lock_mode.get_key_mode());
+                    delete lock_entry1;
+                    lock_entry1 = NULL;
+                }
+                else if (true == deleted_2)
+                {
+                    DBGOUT3(<< "***** Heap2 entry: tid: " << lock_entry2->tid << ", hash: " << lock_entry2->lock_hash
+                            << ", key mode: " << lock_entry2->lock_mode.get_key_mode());
+                    delete lock_entry2;
+                    lock_entry2 = NULL;
+                }
+            }
+            else
+            {
+                // Two items are the same, no need to print
+                w_assert1(true == deleted_1);
+                delete lock_entry1;
+                lock_entry1 = NULL;
+                delete lock_entry2;
+                lock_entry2 = NULL;
+            }
+        }
+
+        // If anything left in heap 1, print them all
+        DBGOUT3(<< "Heap1 - ");
+        _print_lock_entries(lock_heap1);
+        
+        // If anything left in heap 2, print them all
+        DBGOUT3(<< "***** Heap2 - ");
+        _print_lock_entries(lock_heap2);       
+    }
+
+    w_assert1(0 == lock_heap1.NumElements());
+    w_assert1(0 == lock_heap2.NumElements());
+
+#endif
+
+    return;
+}
+
+/*********************************************************************
+ * 
+ *  restart_m::_print_lock_entries(lock_heap)
+ *
+ *  Helper function to print and cleanup all entries in a lock heap
+ *  only used when doing backward log scan from Log Analysis
+ *
+ *  System is not opened during Log Analysis phase
+ *
+ *********************************************************************/
+void restart_m::_print_lock_entries(XctLockHeap& lock_heap)
+{
+    comp_lock_info_t* lock_entry = NULL;
+
+    if (0 != lock_heap.NumElements())
+    {
+        // Print all entries from heap1
+        while (lock_heap.NumElements() > 0)  
+        {
+            lock_entry = lock_heap.RemoveFirst();
+            w_assert1(NULL != lock_entry);
+
+            DBGOUT3(<< "    Heap entry: tid: " << lock_entry->tid << ", hash: " << lock_entry->lock_hash
+                    << ", key mode: " << lock_entry->lock_mode.get_key_mode());
+
+            // Free the memory allocated for this entry
+            delete lock_entry;
+            lock_entry = NULL;
+        }
+        w_assert1(0 == lock_heap.NumElements());   
+    }
+}
 
 /*********************************************************************
  * 

@@ -44,6 +44,7 @@ class dirty_pages_tab_t;
 #endif
 
 #include "sm_int_1.h"
+#include "lock.h"               // Lock re-acquisition
 
 #include <map>
 
@@ -107,6 +108,68 @@ CmpMountLsns::gt(const comp_mount_log_t* x, const comp_mount_log_t* y) const
 
 // Special heap for mount operation
 typedef class Heap<comp_mount_log_t*, CmpMountLsns> MountPtrHeap;
+
+
+////////////////////////////
+// Heap for lock re-acquisition tracking
+////////////////////////////
+
+// Structure for lock heap
+struct comp_lock_info_t
+{
+    comp_lock_info_t(const okvl_mode& mode): lock_mode(mode) {};
+
+    tid_t      tid;          // Owning transaction id of the lock
+    okvl_mode  lock_mode;    // lock mode       
+    uint32_t   lock_hash;    // lock hash
+};
+
+class CmpXctLockTids
+{
+    public:
+        bool                        gt(const comp_lock_info_t* x, const comp_lock_info_t* y) const;
+};
+
+inline bool
+CmpXctLockTids::gt(const comp_lock_info_t* x, const comp_lock_info_t* y) const
+{
+    bool gt;
+    if (x->tid > y->tid)
+        gt = true;
+    else if (x->tid < y->tid)
+        gt = false;
+    else
+    {
+        // Two lock entries belong to the same transaction
+        // use hash value to compare
+        if (x->lock_hash > y->lock_hash)
+            gt = true;
+        else if (x->lock_hash < y->lock_hash)
+            gt = false;
+        else
+        {
+            // Same txn, same hash, check lock mode on key (ignore gap and partition)
+            // while X is the greater than the rest
+            //
+            // no lock                                    N = 0
+            // intention share (read)               IS = 1
+            // intention exclusive (write)         IX = 2
+            // share (read)                            S = 3 
+            // share with intention exclusive   SIX = 4
+            // exclusive (write)                      X = 5
+            
+            if (x->lock_mode.get_key_mode()> y->lock_mode.get_key_mode())
+                gt = true;
+            else
+                gt = false;
+        }
+    }
+
+    return gt;
+}
+
+// Special heap for lock re-acquisition in backward log scan Log Analysis phase
+typedef class Heap<comp_lock_info_t*, CmpXctLockTids> XctLockHeap;
 
 
 ////////////////////////////
@@ -399,7 +462,7 @@ private:
         lsn_t&                  redo_lsn,
         uint32_t&               in_doubt_count,
         lsn_t&                  undo_lsn,
-        XctPtrHeap&             heap,
+        XctPtrHeap&             loser_heap,
         lsn_t&                  commit_lsn, // Commit lsn for concurrent transaction (if used)        
         lsn_t&                  last_lsn    // Last lsn in recovery log (forward scan)
         );
@@ -410,8 +473,9 @@ private:
         lsn_t&                  redo_lsn,
         uint32_t&               in_doubt_count,
         lsn_t&                  undo_lsn,
-        XctPtrHeap&             heap,
-        lsn_t&                  last_lsn    // Last lsn in recovery log
+        XctPtrHeap&             loser_heap,
+        lsn_t&                  last_lsn,    // Last lsn in recovery log
+        XctLockHeap&            lock_heap    // all re-acquired locks    
         );
 
     // Function used for log scan REDO operations
@@ -475,6 +539,12 @@ private:
     static void                 _analysis_other_log(logrec_t& r, lsn_t lsn,
                                                        uint32_t& in_doubt_count, xct_t *xd);
 
+    // Helper function to process the lock re-acquisition based on the log record, called from backward log analysis only
+    static void                 _analysis_acquire_lock_log(logrec_t& r, xct_t *xd, XctLockHeap& lock_heap);
+
+    // Helper function to process the lock re-acquisition for one active transaction in checkpoint log record, called from backward log analysis only
+    static void                 _analysis_acquire_ckpt_lock_log(logrec_t& r, xct_t *xd, XctLockHeap& lock_heap);
+
     // Helper function to process the extra mount operation, called from Log Analysis pass
     static void                 _analysis_process_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,
                                                           lsn_t& redo_lsn, bool& mount);
@@ -485,7 +555,17 @@ private:
     // Helper function to process the transaction table after finished log scan, called from Log Analysis pass
     static void                 _analysis_process_txn_table(XctPtrHeap& heap, lsn_t& commit_lsn);
 
+    // Helper function to add one entry into the lock heap
+    static void                 _re_acquire_lock(XctLockHeap& lock_heap, const okvl_mode& mode, const uint32_t hash, xct_t* xd);
 
+    // Helper function to compare entries in two lock heaps, tracking and debugging purpose
+    // Current usage:
+    //     Heap 1: from Log Analysis
+    //     Heap 2: from checkpoint after Log Analysis
+    static void                 _compare_lock_entries(XctLockHeap& lock_heap1, XctLockHeap& lock_heap2);
+
+    // Helper function to print and clean up all entries in a heap
+    static void                 _print_lock_entries(XctLockHeap& lock_heap);
 
 public:
     // TODO(Restart)... it was for a space-recovery hack, not needed

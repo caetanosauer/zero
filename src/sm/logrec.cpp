@@ -14,6 +14,7 @@
 #include "vec_t.h"
 #include "alloc_cache.h"
 
+
 #include <iomanip>
 typedef        ios::fmtflags        ios_fmtflags;
 
@@ -537,6 +538,38 @@ chkpt_xct_tab_log::chkpt_xct_tab_log(
                                          last_lsn, undo_nxt, first_lsn))->size());
 }
 
+
+/*********************************************************************
+ *
+ *  chkpt_xct_lock_log
+ *
+ *  Data log to save acquired transaction locks for an active transaction at checkpoint.
+ *  Contains, each active lock, its hash and lock mode
+ *
+ *********************************************************************/
+chkpt_xct_lock_t::chkpt_xct_lock_t(
+    const tid_t&                        _tid,
+    int                                 cnt,
+    const okvl_mode*                    lock_mode,
+    const uint32_t*                     lock_hash)   
+    : tid(_tid), count(cnt)
+{
+    w_assert1(count <= max);
+    for (uint i = 0; i < count; i++)  {
+        xrec[i].lock_mode = lock_mode[i];
+        xrec[i].lock_hash = lock_hash[i];
+    }
+}
+    
+chkpt_xct_lock_log::chkpt_xct_lock_log(
+    const tid_t&                        tid,
+    int                                 cnt,
+    const okvl_mode*                    lock_mode,
+    const uint32_t*                     lock_hash)
+{
+    fill(0, 0, (new (_data) chkpt_xct_lock_t(tid, cnt, lock_mode,
+                                         lock_hash))->size());
+}
 
 
 

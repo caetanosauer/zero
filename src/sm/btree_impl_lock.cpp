@@ -34,6 +34,52 @@ btree_impl::_ux_lock_key(
                          latch_mode, lock_mode, check_only);
 }
 
+rc_t btree_impl::_ux_lock_key(
+    const stid_t&       stid,       // stid of the page which contains the key
+    const w_keystr_t&   key,        // Key to lock
+    const okvl_mode&    lock_mode,  // the lock mode to be acquired
+    bool                check_only, // whether the lock goes away right after grant
+    xct_t*              xd)         // associated transaction object
+{
+    // Only used by Reatart Log Analysis phase to re-acquire non-read locks
+    // No latch since the system is not open for user transaction so no concurrent access
+    // No conditional and no retry, no RawLock object
+
+    w_assert1(NULL != xd);
+    lockid_t lid (stid, (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
+
+    return _ux_lock_key(lid.hash(), lock_mode, check_only, xd);
+}
+
+rc_t btree_impl::_ux_lock_key(
+    const uint32_t&     hash,        // Lock hash
+    const okvl_mode&    lock_mode,   // the lock mode to be acquired
+    bool                check_only,  // whether the lock goes away right after grant
+    xct_t*              xd)          // associated transaction object
+{
+    // Only used by Reatart Log Analysis phase to re-acquire non-read locks
+    // No latch since the system is not open for user transaction so no concurrent access
+    // No conditional and no retry, no RawLock object
+
+    w_assert1(NULL != xd);
+
+    rc_t lock_rc = lm->lock(hash, lock_mode, check_only, xd, WAIT_IMMEDIATE);
+    if (!lock_rc.is_error()) {
+        // Got it immediately, just return.
+        return RCOK;
+    }
+    else
+    {
+        // Not able to get the lock, this is not expected, return the error code       
+        // Possible error code from lock:
+        //   eDEADLOCK        
+        //   eLOCKTIMEOUT
+        // None of them should happen in this lock request
+        W_FATAL_MSG(lock_rc.err_num(), << " ERROR: unexpected error from lock re-acquisition");
+        return lock_rc;
+    }   
+}
+
 rc_t
 btree_impl::_ux_lock_key(
     btree_page_h&            leaf,

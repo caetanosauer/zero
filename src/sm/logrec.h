@@ -425,6 +425,30 @@ struct chkpt_xct_tab_t {
     int             size() const;
 };
 
+struct chkpt_xct_lock_t {
+    struct lockrec_t {
+    okvl_mode            lock_mode;
+    uint32_t             lock_hash;
+    };
+
+    // max is set to make chkpt_xct_lock_t fit in logrec_t::data_sz
+    enum {     max = ((logrec_t::max_data_sz - sizeof(tid_t) -
+            2 * sizeof(uint32_t)) / sizeof(lockrec_t))
+    };
+
+    tid_t            tid;    // owning transaction tid
+    uint32_t         count;
+    fill4            filler;
+    lockrec_t        xrec[max];
+    
+    NORET            chkpt_xct_lock_t(
+    const tid_t&        tid,
+    int                 count,
+    const okvl_mode*    lock_mode,
+    const uint32_t*     lock_hash);
+    int             size() const;
+};
+
 struct chkpt_dev_tab_t 
 {
     struct devrec_t {
@@ -717,6 +741,12 @@ chkpt_bf_tab_t::size() const
 
 inline int
 chkpt_xct_tab_t::size() const
+{
+    return (char*) &xrec[count] - (char*) this; 
+}
+
+inline int
+chkpt_xct_lock_t::size() const
 {
     return (char*) &xrec[count] - (char*) this; 
 }
