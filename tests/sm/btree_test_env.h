@@ -462,7 +462,9 @@ public:
    
     w_rc_t btree_populate_records(stid_t &stid, bool fCheckPoint, test_txn_state_t txnState, bool splitIntoSmallTrans = false,
                                       char keyPrefix = '\0');
- 
+
+    w_rc_t delete_records(stid_t &stid, bool fCheckPoint, test_txn_state_t txnState, char keyPrefix = '\0');
+
     ss_m* _ssm;
     bool _use_locks;
     restart_test_options* _restart_options;

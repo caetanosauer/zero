@@ -22,46 +22,6 @@ void output_durable_lsn(int W_IFDEBUG1(num)) {
     DBGOUT1( << num << ".durable LSN=" << get_durable_lsn());
 }
 
-w_rc_t delete_records(stid_t &stid, bool fCheckPoint, test_txn_state_t txnState, char keyPrefix) {
-    const bool isMulti = (keyPrefix!='\0');
-    const int key_size = isMulti ? 6 : 5; // When this is used in multi-threaded and/or multi-index tests, each thread needs to pass a different keyPrefix to prevent duplicate records
-    char key_str[key_size];
-    key_str[0] = 'k';
-    key_str[1] = 'e';
-    key_str[2] = 'y';
-
-    // Delete every second record, will lead to page merge
-    // One big transaction with multiple deletions
-    W_DO(test_env->begin_xct());
-    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
-    for (int i=0; i < recordCount; i+=2) {
-    
-        key_str[3] = ('0' + ((i / 10) % 10));
-        key_str[4] = ('0' + (i % 10));
-        if(isMulti) {
-            key_str[3] = keyPrefix;
-            key_str[4] = ('0' + ((i / 10) % 10));
-            key_str[5] = ('0' + (i % 10));
-        }
-        else {
-            key_str[3] = ('0' + ((i / 10) % 10));
-            key_str[4] = ('0' + (i % 10));
-        }
-        if (true == fCheckPoint && i == recordCount/2) {
-            // Take one checkpoint halfway through deletions
-            W_DO(ss_m::checkpoint());
-        }
-        W_DO(test_env->btree_remove(stid, key_str));
-    }
-    if (t_test_txn_commit == txnState)
-        W_DO(test_env->commit_xct());
-    else if (t_test_txn_abort == txnState)
-        W_DO(test_env->abort_xct());
-    else
-        ss_m::detach_xct();
-    return RCOK;
-}
-
 std::string getMaxKeyString(char maxPrefix) {
     const int recordsPerThrd = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
     char a = '0' + (recordsPerThrd-1) / 10;
@@ -1610,11 +1570,11 @@ public:
     }
     static void t2Run(stid_t* stid_list) {
         test_env->btree_populate_records(stid_list[0], true, t_test_txn_commit, false, '2');  //                commit        keyPrefix '2'
-        delete_records(stid_list[0], false, t_test_txn_commit, '2');  // Delete half of those, w/o checkpoint, commit, keyPrefix '2'
+        test_env->delete_records(stid_list[0], false, t_test_txn_commit, '2');  // Delete half of those, w/o checkpoint, commit, keyPrefix '2'
     }
     static void t3Run(stid_t* stid_list) {
         test_env->btree_populate_records(stid_list[0], false, t_test_txn_commit, false, '3'); // w/o checkpoint, commit, keyPrefix '3'
-        delete_records(stid_list[0], false, t_test_txn_in_flight, '3');    // Delete half of those, w/o checkpoint, don't commit, keyPrefix '3'
+        test_env->delete_records(stid_list[0], false, t_test_txn_in_flight, '3');    // Delete half of those, w/o checkpoint, don't commit, keyPrefix '3'
     }
     
     w_rc_t pre_shutdown(ss_m *ssm) {

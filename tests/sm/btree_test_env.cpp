@@ -987,7 +987,7 @@ w_rc_t btree_test_env::btree_populate_records(stid_t &stid,
 //     multiple threads, or maybe the usage of 'detach_xct' is not correct?
 //    Using mutex seems to work around the issue, need more investigation....
 
-        spinlock_write_critical_section cs(&_test_begin_xct_mutex);    
+        spinlock_write_critical_section cs(&_test_begin_xct_mutex);
         W_DO(begin_xct());
  
         for (int i = 0; i < recordCount; ++i) 
@@ -1045,3 +1045,57 @@ w_rc_t btree_test_env::btree_populate_records(stid_t &stid,
 
     return RCOK;
 }
+
+w_rc_t btree_test_env::delete_records(stid_t &stid,
+                                        bool fCheckPoint,          // Issue checkpointt in the middle of deletion
+                                        test_txn_state_t txnState, // What to do with the transaction
+                                        char keyPrefix)            // Default: '\0'
+                                                                   // Use as key prefix is not '\0'
+{
+    // One big transaction with multiple deletions
+    // Currently this function does not support multiple small deletion transactions
+    
+    const bool isMulti = (keyPrefix!='\0');
+    const int key_size = isMulti ? 6 : 5; // When this is used in multi-threaded and/or multi-index tests,
+                                          // each thread needs to pass a different keyPrefix 
+                                          // to prevent duplicate records
+    char key_str[key_size];
+    key_str[0] = 'k';
+    key_str[1] = 'e';
+    key_str[2] = 'y';
+
+    // Delete every second record, will lead to page merge
+    
+    // Use spinlock to ensure all statements in the transaction got executed together   
+    spinlock_write_critical_section cs(&_test_begin_xct_mutex);
+
+    W_DO(begin_xct());
+    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
+    for (int i=0; i < recordCount; i+=2) {
+    
+        key_str[3] = ('0' + ((i / 10) % 10));
+        key_str[4] = ('0' + (i % 10));
+        if(isMulti) {
+            key_str[3] = keyPrefix;
+            key_str[4] = ('0' + ((i / 10) % 10));
+            key_str[5] = ('0' + (i % 10));
+        }
+        else {
+            key_str[3] = ('0' + ((i / 10) % 10));
+            key_str[4] = ('0' + (i % 10));
+        }
+        if (true == fCheckPoint && i == recordCount/2) {
+            // Take one checkpoint halfway through deletions
+            W_DO(ss_m::checkpoint());
+        }
+        W_DO(btree_remove(stid, key_str));
+    }
+    if (t_test_txn_commit == txnState)
+        W_DO(commit_xct());
+    else if (t_test_txn_abort == txnState)
+        W_DO(abort_xct());
+    else
+        ss_m::detach_xct();
+    return RCOK;
+}
+
