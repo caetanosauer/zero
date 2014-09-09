@@ -368,7 +368,9 @@ rc_t btree_page_h::init_fence_keys(
             const bool set_pid0, const shpid_t new_pid0,             // pid0, non-leaf node only
             const bool set_emlsn, const lsn_t new_pid0_emlsn,        // emlan,  non-leaf node only
             const bool set_foster, const shpid_t foster_pid0,        // foster page id 
-            const bool set_foster_emlsn, const lsn_t foster_emlsn)   // foster page emlsn
+            const bool set_foster_emlsn, const lsn_t foster_emlsn,   // foster page emlsn
+            const int remove_count)                                  // Number of records to be removed 
+                                                                     // Used only if reset fence key
 {
     // Reset the fence key and other information in an existing page, 
     // do not change existing record data in the page and no change to number of records
@@ -444,6 +446,13 @@ rc_t btree_page_h::init_fence_keys(
 
     // Set the page dirty
     set_dirty();
+
+    // Reset record count, number_of_items() is the actual record count including the 
+    // fence key record which is not an actual record
+    // 'remove_count' is used to reset the record count on source page of a page rebalance,
+    // by reseting the fence keys on the source page would eliminate existing records in the source page
+    w_assert1(page()->number_of_items() > remove_count);
+    page()->reset_item_counts(remove_count, 0);  // Reset the record count, no change in ghost count
 
     // Prepare for updating the fence key slot
     cvec_t fences;
@@ -672,7 +681,6 @@ btree_page_h::robust_search(const char *key_raw, size_t key_raw_len,
     return_slot = high;
     w_assert1(high>=0 && high<=number_of_records);
 }
-
 
 void btree_page_h::search_node(const w_keystr_t& key,
                                slotid_t&         return_slot) const {
@@ -1302,6 +1310,7 @@ bool btree_page_h::_is_consistent_keyorder() const {
         size_t curkey_len;
         const char *curkey = _leaf_key_noprefix(0, curkey_len);
         if (w_keystr_t::compare_bin_str(lowkey + prefix_len, lowkey_len - prefix_len, curkey, curkey_len) > 0) {
+
             w_assert3(false);
             return false;
         }
@@ -1388,6 +1397,7 @@ rc_t btree_page_h::defrag( const bool full_logging_redo) {
     w_assert1 (latch_mode() == LATCH_EX);
 
     vector<slotid_t> ghost_slots;
+
     for (int i=0; i<page()->number_of_items(); i++) {
         if (page()->is_ghost(i)) {
             w_assert1(i >= 1); // fence record can't be ghost
@@ -1398,7 +1408,7 @@ rc_t btree_page_h::defrag( const bool full_logging_redo) {
     if ((ghost_slots.size() > 0) && (false == full_logging_redo)){
         W_DO (log_btree_ghost_reclaim(*this, ghost_slots));
     }
-    
+
     page()->compact();
     set_dirty();
 

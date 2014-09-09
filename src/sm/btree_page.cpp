@@ -19,6 +19,20 @@ void btree_page_data::init_items() {
     w_assert3(_items_are_consistent());
 }
 
+void btree_page_data::reset_item_counts(const int item_count, 
+                                           const int ghost_count)
+{
+    // Reset item counts to smaller numbers, which would erase existing items
+    // therefore use this function with caution
+    
+    w_assert1(btree_level >= 1);
+    w_assert1(nitems > item_count);     // Must have at least one record which is the fency key record
+    w_assert1(nghosts >= ghost_count);
+
+    nitems      -= item_count;
+    nghosts     -= ghost_count;
+}
+
 
 void btree_page_data::set_ghost(int item) {
     w_assert1(item>=0 && item<nitems);

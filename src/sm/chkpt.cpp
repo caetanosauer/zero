@@ -757,7 +757,7 @@ try
         bf_idx     bfsz = bf->get_block_cnt();
 
         // One log record per block, max is set to make chkpt_bf_tab_t fit in logrec_t::data_sz
-        // chuck = how many dirty page information can fit into one chkpt_bf_tab_log log record
+        // chunk = how many dirty page information can fit into one chkpt_bf_tab_log log record
         const     uint32_t chunk = chkpt_bf_tab_t::max;
 
         // Each log record contains the following array, while each array element has information
@@ -826,7 +826,7 @@ try
         // chronological order to roll back loser transactions
 
         // Max is set to make chkpt_xct_tab_log fit in logrec_t::data_sz
-        // chuck = how many txn information can fit into one chkpt_xct_tab_log log record
+        // chunk = how many txn information can fit into one chkpt_xct_tab_log log record
         const int    chunk = chkpt_xct_tab_t::max;
 
         // tid is increasing, youngest tid has the largest value
@@ -856,8 +856,8 @@ try
 
         do 
         {
-            int per_chuck_txn_count = 0;
-            while (per_chuck_txn_count < chunk && (xd = x.next()))  
+            int per_chunk_txn_count = 0;
+            while (per_chunk_txn_count < chunk && (xd = x.next()))  
             {
                 // Loop over all transactions and record only
                 // xcts that dirtied something.
@@ -949,7 +949,7 @@ try
                     // Not all transactions have tid, i.e. system transaction
                     // does not have tid, device mount/dismount does not
                     // have tid
-                    tid[per_chuck_txn_count] = xd->tid();
+                    tid[per_chunk_txn_count] = xd->tid();
 
                     // Record the transactions in following states:
                     //     xct_active (both normal and loser), xct_chaining, xct_committing,
@@ -959,11 +959,11 @@ try
                     // A checkpoint will be taken at the end of Log Analysis phase
                     // therefore record all transaction state as is.
                     //
-                    state[per_chuck_txn_count] = xd->state();
+                    state[per_chunk_txn_count] = xd->state();
 
                     w_assert1(lsn_t::null!= xd->last_lsn());
-                    last_lsn[per_chuck_txn_count] = xd->last_lsn();  // most recent LSN
-                    first_lsn[per_chuck_txn_count] = xd->first_lsn();  // first LSN of the txn
+                    last_lsn[per_chunk_txn_count] = xd->last_lsn();  // most recent LSN
+                    first_lsn[per_chunk_txn_count] = xd->first_lsn();  // first LSN of the txn
 
                     // 'set_undo_nxt' is initiallized to NULL,
                     // 1. Set in Log_Analysis phase in Recovery for UNDO phase,
@@ -976,9 +976,9 @@ try
 
                     // System transaction is not undoable
                     if (xd->is_sys_xct())
-                        undo_nxt[per_chuck_txn_count] = lsn_t::null;
+                        undo_nxt[per_chunk_txn_count] = lsn_t::null;
                     else
-                        undo_nxt[per_chuck_txn_count] = xd->undo_nxt();
+                        undo_nxt[per_chunk_txn_count] = xd->undo_nxt();
 
                     if (false == xd->is_sys_xct())
                     {
@@ -994,7 +994,7 @@ try
                         // cannot change (e.g. commit, abort) while we are gathering
                         // lock information
 
-                        int per_chuck_lock_count = 0;
+                        int per_chunk_lock_count = 0;
                         RawLock* lock = xct->private_first;
                         while (NULL != lock)
                         {
@@ -1009,15 +1009,16 @@ try
                                     w_assert1(xct == lock->owner_xct);
 
                                     // Add the hash value which was constructed using
-                                    // the key value, it is the only value needed to look
-                                    // into lock manager, 'stid_t' is not required and we
-                                    // do not have this information anyway
-                                    lock_hash[per_chuck_lock_count] = lock->hash;
+                                    // the key value and store (index) value, it is the only 
+                                    // value needed to look into lock manager, 'stid_t' is 
+                                    // already included in hash value so it is not required here
+                                    // and we do not have this information at this point anyway
+                                    lock_hash[per_chunk_lock_count] = lock->hash;
 
                                     // Add granted lock mode of this lock
-                                    lock_mode[per_chuck_lock_count] = xct->private_hash_map.get_granted_mode(lock->hash);
+                                    lock_mode[per_chunk_lock_count] = xct->private_hash_map.get_granted_mode(lock->hash);
 
-                                    ++per_chuck_lock_count;
+                                    ++per_chunk_lock_count;
 
                                     if (true == record_lock)
                                     {
@@ -1039,7 +1040,7 @@ try
                                 }
                             }
 
-                            if (per_chuck_lock_count >= lock_chunk)
+                            if (per_chunk_lock_count == lock_chunk)
                             {
                                 // Generate a chkpt_xct_lock_log log record which fits in as many 
                                 // locks on the current transaction as possible
@@ -1051,10 +1052,15 @@ try
                                 // During Log Analysis backward log scan, it will process t_chkpt_xct_tab
                                 // log record before it gets the t_chkpt_xct_lock log record which is the order we want
 
-                                LOG_INSERT(chkpt_xct_lock_log(xd->tid(), per_chuck_lock_count,
+                                LOG_INSERT(chkpt_xct_lock_log(xd->tid(), per_chunk_lock_count,
                                            lock_mode, lock_hash), 0);
 
-                                per_chuck_lock_count = 0;
+                                per_chunk_lock_count = 0;
+                            }
+                            else if (per_chunk_lock_count > lock_chunk)
+                            {
+                                // Error, cannot happen
+                                W_FATAL(eOUTOFMEMORY);                                 
                             }
 
                             // Advance to the next lock
@@ -1062,10 +1068,10 @@ try
                         }
                         w_assert1(NULL == lock);
 
-                        if (0 != per_chuck_lock_count)
+                        if (0 != per_chunk_lock_count)
                         {
                             // Pick up the last set
-                            LOG_INSERT(chkpt_xct_lock_log(xd->tid(), per_chuck_lock_count,
+                            LOG_INSERT(chkpt_xct_lock_log(xd->tid(), per_chunk_lock_count,
                                        lock_mode, lock_hash), 0);
                         }
                     }
@@ -1075,7 +1081,7 @@ try
                     if (min_xct_lsn > xd->first_lsn())
                         min_xct_lsn = xd->first_lsn();
 
-                    ++per_chuck_txn_count;
+                    ++per_chunk_txn_count;
 
                     ++total_txn_count;
                 }
@@ -1085,7 +1091,7 @@ try
                     xd->latch().latch_release();
 
                 // Log record is full, need to write it out
-                if (per_chuck_txn_count >= chunk)
+                if (per_chunk_txn_count >= chunk)
                     break;
             }
 
@@ -1096,7 +1102,7 @@ try
                 // Filled up one log record, write a Transaction Table Log out
                 // before processing more transactions
 
-                LOG_INSERT(chkpt_xct_tab_log(youngest, per_chuck_txn_count,
+                LOG_INSERT(chkpt_xct_tab_log(youngest, per_chunk_txn_count,
                                    tid, state, last_lsn, undo_nxt, first_lsn), 0);
             }
         } while (xd);

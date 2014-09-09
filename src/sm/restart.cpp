@@ -1274,7 +1274,7 @@ restart_m::analysis_pass_backward(
     // Boolean to stop the backward log scan, set to true once we have a completed checkpoint
     bool scan_done = false;
 
-    // Special map to mange undeterministic in-flight transactions
+    // Special map to mange undecided in-flight transactions
     tid_CLR_map          mapCLR;
 
     // Boolean to indicate whether we need to acquire non-read lock for the current log record
@@ -1640,8 +1640,7 @@ restart_m::analysis_pass_backward(
                                // compensation log records from the backward log scan (0 == count)
                                // but the transaction was active when the checkpoint was taken, which
                                // means there were more activities on the transaction before checkpoint
-                               // was taken, increase the counter by 1 so it becomes to force a loser
-                               // transaction
+                               // was taken, increase the counter by 1 so it becomes a loser transaction
                                // Note that checkpoint is a non-blocking and potentially long lasting
                                // operation which could generate multiple checkpoint log records, there
                                // might be more log records inter-mixed with checkpoint log records
@@ -1832,7 +1831,7 @@ restart_m::analysis_pass_backward(
                 if (true == acquire_lock)
                 {
                     // Acquire non-read-locks for all update log records on
-                    // in-flight (loser or undeterministic) transactions
+                    // in-flight (loser or undecided) transactions
                     w_assert1(xct_t::xct_ended != xd->state());
 
                     if (r.is_page_update()) 
@@ -1843,21 +1842,21 @@ restart_m::analysis_pass_backward(
                         // record the acquired locks in this loser transaction object
                         _analysis_acquire_lock_log(r, xd, lock_heap);
 
-                        // Is this an undeterministic transaction?
-                        // An undeterministic transaction is an in-flight transaction
+                        // Is this an undecided transaction?
+                        // An undecided transaction is an in-flight transaction
                         // containing compensation log records but the transaction did not
                         // end when the system crashed
                         // Due to backward log scan, if the first log record retrieved for
                         // a transaction is not an 'end' or 'abort' log record, then the transaction
-                        // is either a loser (no compensation) or undeterministic (with compensation)
+                        // is either a loser (no compensation) or undecided (with compensation)
                         // transaction
                         // Express supports save_point (see save_work() and rollback_work()),
                         // when we encounter the first log record of an in-flight transaction and if
-                        // it is not a compensation log record, it still might be an undeterministic 
+                        // it is not a compensation log record, it still might be an undecided 
                         // transaction because the transaction might had save_point(s) and also 
                         // partial roll_back might occurred before the system crash
                         //
-                        // Treat all in-flight transactions as undeterministic transactions initially by
+                        // Treat all in-flight transactions as undecided transactions initially by
                         // adding all in-flight transactions into compensation map
                         // After backward log scan finished, if an entry in the compensation map 
                         // has more update count than compensation count, it is a loser transaction.
@@ -2814,8 +2813,6 @@ void restart_m::_analysis_acquire_ckpt_lock_log(logrec_t& r,            // In: l
         return;
     }
 
-//    w_rc_t rc = RCOK;
-
     // Go through all the locks and re-acquire them on the transaction object
     for (uint i = 0; i < dp->count; i++)  
     {
@@ -2907,7 +2904,7 @@ void restart_m::_analysis_process_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,
  * 
  *  restart_m::_analysis_process_compensation_map(mapCLR)
  *
- *  Helper function to process the compensation list for undeterministic transactions
+ *  Helper function to process the compensation list for undecided transactions
  *  called by analysis_pass_backward only
  *
  *  System is not opened during Log Analysis phase
@@ -2915,7 +2912,7 @@ void restart_m::_analysis_process_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,
  *********************************************************************/
 void restart_m::_analysis_process_compensation_map(tid_CLR_map& mapCLR)
 {
-    // Done with backward log scan, check the compensation list, these are the undeterministic
+    // Done with backward log scan, check the compensation list, these are the undecided
     // in-flight transactions when the system crash occurred, in other words, we did not see
     // the 'abort' or 'end' log reocrd, it might contain compensation log records:
     // 1. All update log records have matching compensation log records - 
@@ -2945,7 +2942,8 @@ void restart_m::_analysis_process_compensation_map(tid_CLR_map& mapCLR)
     {
         if (0 == it->second)
         {
-            // Winner transaction, release locks and generate an 'abort' log record        
+            // Change the undecided transaction into a winner transaction, 
+            // release locks and generate an 'abort' log record        
             tid_t t(it->first);
             xd = xct_t::look_up(t);
             w_assert1(NULL != xd);
@@ -2971,8 +2969,8 @@ void restart_m::_analysis_process_compensation_map(tid_CLR_map& mapCLR)
         }
         else
         {
-            // Two scenarios, both scenarios makes the transaction a loser transaction and 
-            // keep all the re-acquired non-read locks:
+            // Two scenarios, both scenarios make the undecided transaction into 
+            // a loser transaction, keep all the re-acquired non-read locks:
             // 1. More origianl log records than the compensation log records
             // 2. More compensation log records than update log records.  This can
             //     happen only if when the last checkpoint was taken, the transaction was an 
@@ -3108,7 +3106,7 @@ void restart_m::_re_acquire_lock(XctLockHeap& lock_heap,
 {
     w_assert1(0 <= lock_heap.NumElements());
 
-    // Re-acquire the lock
+    // Re-acquire the lock, hash value contains both index (store) and key information
     w_rc_t rc = RCOK;
     rc = btree_impl::_ux_lock_key(hash, mode, false /*check_only*/, xd);
     w_assert1(!rc.is_error());

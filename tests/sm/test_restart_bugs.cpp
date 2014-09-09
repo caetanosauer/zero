@@ -47,8 +47,73 @@ w_rc_t btree_populate_records_local(stid_t &stid,
     bool isMulti = keyPrefix != '\0';
     const int key_size = isMulti ? 6 : 5;
     const int data_size = btree_m::max_entry_size() - key_size - 1;
-    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
-//    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 1;
+//    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
+//    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 1 -1;    // 3 records, works, with 2 previous records, 5 total
+                                                                                 //       insert aa1
+                                                                                 //       insert aa2
+                                                                                 //       insert key302
+                                                                                 //       page split, moved aa2, key302
+                                                                                 //       insert key301
+                                                                                 //       insert key300
+                                                                                 //       crash
+                                                                                 //       5 in_doubt pages, 1 in-flight txn
+                                                                                 //       4th page, page index 6 - page rebalance followed by 4 insertions
+                                                                                 //            insert aa2
+                                                                                 //            insert key302
+                                                                                 //            insert key301
+                                                                                 //            insert key300
+                                                                                 //       rollback on page 6
+                                                                                 //            delete key300
+                                                                                 //            delete key301
+                                                                                 //            delete key300
+                                                                                 
+    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 1 - 1;  // 4 records, core dump, with 2 previous records, 6 total
+                                                                                //        insert aa1
+                                                                                //        insert aa2
+                                                                                //        insert key303
+                                                                                //        page split, moved aa2, key303
+                                                                                //        insert key302
+                                                                                //        insert key301
+                                                                                //        page split, moved key302, key303
+                                                                                //        insert key300
+                                                                                //        3 pages:
+                                                                                //            Page 1: aa1
+                                                                                //            Page 2: aa2, key300, key301
+                                                                                //            Page 3: key302, key303
+                                                                                //        System crash
+                                                                                //
+                                                                                //        6 in_doubt pages, 1 in-flight txn
+                                                                                //        REDO:
+                                                                                //          Page 3 - page format
+                                                                                //          Page 4 - page format
+                                                                                //          Page 5 - page format, foster adoption
+                                                                                //          Page 6 - page rebalance (child page) followed by 4 insertions
+                                                                                //                                             page rebalance (parent page) again
+                                                                                //                                             followed by 2 deletions 
+                                                                                //                                             and then 1 insertion
+                                                                                //              Rebalance - Recovery child page, empty
+                                                                                //              insert aa2
+                                                                                //              insert key303
+                                                                                //              insert key302
+                                                                                //              insert key301
+                                                                                //              Allocate a new page for page split
+                                                                                //              Rebalance - Recovery parent page, 4 existing records, move 2 of them
+                                                                                //              page split, new low aa2, new high key302
+                                                                                //              delete key302 but not found (btree_logrec.cpp, line 354)
+                                                                                //              delete key303 but not found (btree_logrec.cpp, line 354)                                                                                
+                                                                                //              insert key300
+                                                                                //        Page 7 - page format, foster adoption
+                                                                                //        Page 8 - page rebalance (child page) followed by 2 insertions
+                                                                                //              insert key302
+                                                                                //              insert key303
+                                                                                //      UNDO:
+                                                                                //        Page 6:
+                                                                                //              delete key300 -- failed in fence key checking of low fence key and first key 
+                                                                                //                                        (Btree_page.h.cpp, btree_page_h::_is_consistent_keyorder(), line 1312)
+                                                                                //              delete key301
+                                                                                //              delete key302
+                                                                                //              delete key303                                                                                
+                                                                                
 
     vec_t data;
     char data_str[data_size+1];
@@ -120,12 +185,23 @@ public:
         W_DO(x_btree_create_index(ssm, &_volume, _stid_list[2], _root_pid));
         output_durable_lsn(4);
 
-        W_DO(btree_populate_records_local(_stid_list[0], false, t_test_txn_commit, true, '0'));    // flags: no checkpoint, commit, one transaction per insert, keyPrefix '0'
-        W_DO(btree_populate_records_local(_stid_list[1], false, t_test_txn_commit, false, '1'));   // flags:                        all inserts in one transaction, keyPrefix '1'
-        W_DO(btree_populate_records_local(_stid_list[2], false, t_test_txn_commit, false, '2'));   // flags:                        all inserts in one transaction, keyPrefix '2'
+//        W_DO(btree_populate_records_local(_stid_list[0], false, t_test_txn_commit, true, '0'));    // flags: no checkpoint, commit, one transaction per insert, keyPrefix '0'
+//        W_DO(btree_populate_records_local(_stid_list[1], false, t_test_txn_commit, false, '1'));   // flags:                        all inserts in one transaction, keyPrefix '1'
+//        W_DO(btree_populate_records_local(_stid_list[2], false, t_test_txn_commit, false, '2'));   // flags:                        all inserts in one transaction, keyPrefix '2'
 
-        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
-        W_DO(test_env->btree_insert_and_commit(_stid_list[1], "aa2", "data2"));
+/**/
+        // These 2 insertions cause the AV, but 1 insertion works
+        const int data_size = btree_m::max_entry_size() - 4;
+        vec_t data;
+        char data_str[data_size+1];
+        data_str[data_size] = '\0';
+        memset(data_str, 'D', data_size);
+        W_DO(test_env->btree_insert_and_commit(_stid_list[2], "aa1", data_str));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[2], "aa2", data_str));
+/**/
+
+//        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
+//        W_DO(test_env->btree_insert_and_commit(_stid_list[1], "aa2", "data2"));
         W_DO(btree_populate_records_local(_stid_list[2], false, t_test_txn_in_flight, false, '3'));   // flags: no checkpoint, no commit, one big transaction which will include page split, keyPrefix '3'
         return RCOK;
     }
@@ -177,7 +253,7 @@ public:
     }
 };
 
-/* Passing */
+/* Passing *
 TEST (RestartTest, MultiIndexConcChckptN) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -187,9 +263,9 @@ TEST (RestartTest, MultiIndexConcChckptN) {
     options.restart_mode = m2_default_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-/**/
+**/
 
-/* Passing */
+/* Passing *
 TEST (RestartTest, MultiIndexConcChckptC) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -199,9 +275,9 @@ TEST (RestartTest, MultiIndexConcChckptC) {
     options.restart_mode = m2_default_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-/**/
+**/
 
-/* Passing */
+/* Passing *
 TEST (RestartTest, MultiIndexConcChckptNF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -211,8 +287,9 @@ TEST (RestartTest, MultiIndexConcChckptNF) {
     options.restart_mode = m2_full_logging_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-/**/
+**/
 
+// Enabled for testing purpose
 /* Not passing, full logging, crash if crash with in-flight multiple statements, including page split *
 TEST (RestartTest, MultiIndexConcChckptCF) {
     test_env->empty_logdata_dir();
@@ -225,7 +302,7 @@ TEST (RestartTest, MultiIndexConcChckptCF) {
 }
 **/
 
-/* Passing */
+/* Passing *
 TEST (RestartTest, MultiIndexConcChckptNR) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -235,9 +312,9 @@ TEST (RestartTest, MultiIndexConcChckptNR) {
     options.restart_mode = m2_redo_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-/**/
+**/
 
-/* Passing */
+/* Passing *
 TEST (RestartTest, MultiIndexConcChckptCR) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -247,9 +324,9 @@ TEST (RestartTest, MultiIndexConcChckptCR) {
     options.restart_mode = m2_redo_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-/**/
+**/
 
-/* Passing */
+/* Passing *
 TEST (RestartTest, MultiIndexConcChckptNRF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -259,7 +336,7 @@ TEST (RestartTest, MultiIndexConcChckptNRF) {
     options.restart_mode = m2_redo_fl_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-/**/
+**/
 
 /* Not passing, full logging, crash if crash with in-flight multiple statements, including page split *
 TEST (RestartTest, MultiIndexConcChckptCRF) {
@@ -273,7 +350,7 @@ TEST (RestartTest, MultiIndexConcChckptCRF) {
 }
 **/
 
-/* Passing */
+/* Passing *
 TEST (RestartTest, MultiIndexConcChckptNU) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -283,9 +360,9 @@ TEST (RestartTest, MultiIndexConcChckptNU) {
     options.restart_mode = m2_undo_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-/**/
+**/
 
-/* Passing */
+/* Passing *
 TEST (RestartTest, MultiIndexConcChckptCU) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -295,9 +372,9 @@ TEST (RestartTest, MultiIndexConcChckptCU) {
     options.restart_mode = m2_undo_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-/**/
+**/
 
-/* Passing */
+/* Passing *
 TEST (RestartTest, MultiIndexConcChckptNUF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -307,7 +384,7 @@ TEST (RestartTest, MultiIndexConcChckptNUF) {
     options.restart_mode = m2_undo_fl_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-/**/
+**/
 
 /* Not passing, full logging, crash if crash with in-flight multiple statements, including page split *
 TEST (RestartTest, MultiIndexConcChckptCUF) {
@@ -321,7 +398,7 @@ TEST (RestartTest, MultiIndexConcChckptCUF) {
 }
 **/
 
-/* Passing */
+/* Passing *
 TEST (RestartTest, MultiIndexConcChckptNB) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -331,9 +408,9 @@ TEST (RestartTest, MultiIndexConcChckptNB) {
     options.restart_mode = m2_both_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-/**/
+**/
 
-/* Passing */
+/* Passing *
 TEST (RestartTest, MultiIndexConcChckptCB) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -343,9 +420,9 @@ TEST (RestartTest, MultiIndexConcChckptCB) {
     options.restart_mode = m2_both_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-/**/
+**/
 
-/* Passing */
+/* Passing *
 TEST (RestartTest, MultiIndexConcChckptNBF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -355,7 +432,7 @@ TEST (RestartTest, MultiIndexConcChckptNBF) {
     options.restart_mode = m2_both_fl_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-/**/
+**/
 
 /* Not passing, full logging, crash if crash with in-flight multiple statements, including page split *
 TEST (RestartTest, MultiIndexConcChckptCBF) {

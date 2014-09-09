@@ -334,6 +334,7 @@ btree_ghost_mark_log::redo(fixable_page_h *page)
         }
         bool found;
         slotid_t slot;
+
         bp.search(key, found, slot);
         if (false == restart_m::use_redo_full_logging_restart()) 
         {
@@ -350,10 +351,35 @@ btree_ghost_mark_log::redo(fixable_page_h *page)
         {
             // Full logging
             if (!found) 
-            {        
-                DBGOUT3( << "btree_ghost_mark_log::redo - full logging, key not found in page but it is okay, key: " << key);
+            {
+                // Full logging is on and the key is not found, this could be valid in one scenario:
+                // the original operation was a page rebalance, the record was moved to the 
+                // destination page, and a delete log record was created in the source page.
+                // During a REDO operation, we REDO all log records and will try to delete
+                // this 'moved' record in the source page, but the fence keys were set to 
+                // the new fence keys already, therefore the 'moved' records are outside of
+                // the new fence keys, therefore not able to find it from search call
+                DBGOUT3( << "btree_ghost_mark_log::redo - full logging, key not found in page, key: " << key);
+
+                if (true == dp->sys_txn)
+                {
+                    // If this is the source page from a page rebalance operation, the fence keys
+                    // have been reset already, therefore we won't be able to find the key for 
+                    // full logging delete operation (out-of-boundary), this is not an error
+                    
+                    // Do the defrag which would compact the page
+                    bp.defrag(true /*full_logging_redo*/);
+                }
+                else
+                {
+                    // Delete was not from page rebalance and the record is not found
+                    // this is not expected but operation can go on
+                    cerr << " key=" << key << endl << " not found in btree_ghost_mark_log::redo while full logging was on," 
+                         << " log record was not from a page rebalance operation" << endl;
+                    w_assert1(false); // something unexpected, but can go on.                   
+                }
             }
-            else
+            else 
             {
                 DBGOUT3( << "btree_ghost_mark_log::redo - full logging, key to mark ghost: " << key);
 
@@ -835,7 +861,7 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
                             false,            // src_2
                             false,            // No full logging
                             false,            // No logging
-                            true              // fence key record is a ghost
+                            false             // fence key record is not a ghost
                             ));
         }
         else
@@ -846,8 +872,12 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
             // the source (foster parent) page
 
             DBGOUT3( << "btree_foster_rebalance_log: recover foster parent page, do not initialize the page, foster parent pid: " << bp.pid());
-            DBGOUT3( << "Page had " << bp.nrecs() << " records");       
+            DBGOUT3( << "Page had " << bp.nrecs() << " records, and ghost records: " << bp.nghosts());       
             DBGOUT3( << "fence high: " << fence << ", high len: " << dp->_fence_len << ", chain: " << chain_high_key);
+            DBGOUT3( << "move_count: " << dp->_move_count);
+
+            // bp.nrecs() is the actual record count, excluding the fence key record
+            w_assert1(dp->_move_count <= bp.nrecs()); 
 
             // Calling init_fence_keys to set the new fence keys of the source page
             W_COERCE(bp.init_fence_keys(false /* set_low */, fence,                // Do not reset the low fence key
@@ -856,8 +886,8 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
                                         false /* set_pid0*/, 0,                   // No change in source page of non-leaf pid
                                         false /* set_emlsn*/, lsn_t::null,        // No change in source page of non-leaf emlsn
                                         false /* set_foster*/, 0,                  // No change in source page of foster pid
-                                        false /* set_foster_emlsn*/, lsn_t::null)); // No change in source page of foster emlsn
-                                        
+                                        false /* set_foster_emlsn*/, lsn_t::null,  // No change in source page of foster emlsn
+                                        dp->_move_count));                      // How many records to move out
         }
 
         // Return now to skip the optimal code path

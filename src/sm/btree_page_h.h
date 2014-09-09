@@ -379,7 +379,7 @@ public:
                         int           steal_to,
                         const bool    full_logging);
 
-    // Set the node fence keys, no change in data and other page information
+    // Set the node fence keys, no change in data and other page information except record count (if move out)
     // A special function used by Single-Page-Recovery REDO operation for page rebalance and page merge
     // when full logging is on (no minimal logging), set the page fence key before the
     // fully logged actual record movements
@@ -389,7 +389,8 @@ public:
                            const bool set_pid0, const shpid_t new_pid0,
                            const bool set_emlsn, const lsn_t new_pid0_emlsn,
                            const bool set_foster, const shpid_t foster_pid0,
-                           const bool set_foster_emlsn, const lsn_t foster_emlsn);
+                           const bool set_foster_emlsn, const lsn_t foster_emlsn,
+                           const int remove_count = 0);
 
     /**
      * Called when we did a split from this page but didn't move any record to new page.
@@ -409,6 +410,9 @@ public:
 
      /// Returns the number of records in this page.
     int             nrecs() const;
+
+     /// Returns the number of ghosts records in this page.
+    int             nghosts() const;
 
     /// Returns if the specified record is a ghost record.
     bool            is_ghost(slotid_t slot) const;
@@ -495,6 +499,7 @@ public:
      */
     void            search(const char *key_raw, size_t key_raw_len,
                            bool& found_key, slotid_t& return_slot) const;
+
     /**
      * This method provides the same results as the normal search
      * method when our associated B-tree page is not being
@@ -1077,6 +1082,11 @@ inline const char* btree_page_h::get_prefix_key() const {
 inline int btree_page_h::nrecs() const {
     return page()->number_of_items() - 1;
 }
+
+inline int btree_page_h::nghosts() const {
+    return page()->number_of_ghosts();
+}
+
 inline int btree_page_h::compare_with_fence_low (const w_keystr_t &key) const {
     return key.compare_keystr(get_fence_low_key(), get_fence_low_length());
 }

@@ -134,6 +134,10 @@ protected:
      */
     void          init_items();
 
+    // Reset the item counts, both record and ghosts in the storage area
+    // to smaller numbers
+    // It would erase existing items therefore use with caution
+    void          reset_item_counts(const int item_count, const int ghost_count);
 
     int           number_of_items()  const { return nitems;}
 
