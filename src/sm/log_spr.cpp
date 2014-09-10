@@ -198,6 +198,18 @@ rc_t log_core::_collect_single_page_recovery_logs(
         } else if (!record->is_multi_page()
             || pid.page != record->data_ssx_multi()->_page2_pid) {
 
+            if (!record->is_multi_page())
+            {
+                // Not multi-page log record, and the page id is different
+                // but if the log record is one of the following, not an error
+                // simply break from log gathering
+                if (record->type() == logrec_t::t_btree_norec_alloc && pid.page != record->shpid())
+                    break; // child page allocated. this is the initial log, so no need to go further
+
+                if (record->type() == logrec_t::t_page_img_format)
+                    break; // root page allocated. initial log
+            }
+
 ////////////////////////////////////////////////////////////////////////////
 // TODO(Restart)... debugging output for eWRONG_PAGE_LSNCHAIN.... begin
 //                          Non-consistent error, need more information to identify the root cause
