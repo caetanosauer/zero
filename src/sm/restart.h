@@ -532,12 +532,19 @@ private:
     // Helper function to process the chkpt_bf_tab log record, called from Log Analysis pass
     static void                 _analysis_ckpt_bf_log(logrec_t& r, uint32_t& in_doubt_count);
 
+    // Helper function to process the chkpt_xct_tab log record, called from backward Log Analysis pass only
+    static void                 _analysis_ckpt_xct_log(logrec_t& r, lsn_t lsn, tid_CLR_map& mapCLR);
+
     // Helper function to process the t_chkpt_dev_tab log record, called from Log Analysis pass
     static void                 _analysis_ckpt_dev_log(logrec_t& r, bool& mount);
 
     // Helper function to process the rest of meaningful log records, called from Log Analysis pass
     static void                 _analysis_other_log(logrec_t& r, lsn_t lsn,
                                                        uint32_t& in_doubt_count, xct_t *xd);
+
+    // Helper function to process lock for the meaningful log records, called from backward Log Analysis pass only
+    static void                 _analysis_process_lock(logrec_t& r, tid_CLR_map& mapCLR,
+                                                        XctLockHeap& lock_heap, xct_t *xd);
 
     // Helper function to process the lock re-acquisition based on the log record, called from backward log analysis only
     static void                 _analysis_acquire_lock_log(logrec_t& r, xct_t *xd, XctLockHeap& lock_heap);

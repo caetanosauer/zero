@@ -1029,7 +1029,9 @@ try
                                         comp_lock_info_t* lock_heap_elem = 
                                                  new comp_lock_info_t(xct->private_hash_map.get_granted_mode(lock->hash));
                                         if (! lock_heap_elem)
+                                        {
                                             W_FATAL(eOUTOFMEMORY); 
+                                        }
                                          // Fill in the rest of the lock information
                                          lock_heap_elem->tid = xd->tid();
                                          lock_heap_elem->lock_hash = lock->hash;

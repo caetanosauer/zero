@@ -589,7 +589,7 @@ btree_impl::_ux_undo_ghost_mark(volid_t vol, snum_t store, const w_keystr_t &key
     cvec_t el (existing_element, existing_element_len);
 
 // TODO(Restart)... 
-DBGOUT3( << "btree_impl::_ux_undo_ghost_mark - undo a remove, key: " << key);
+DBGOUT3( << "&&&& btree_impl::_ux_undo_ghost_mark - undo a remove, key: " << key);
 
     W_DO(log_btree_insert_nonghost(leaf, key, el, false /*is_sys_txn*/));
 
