@@ -2017,7 +2017,8 @@ bool restart_m::_analysis_system_log(logrec_t& r,             // In: Log record 
  *  System is not opened during Log Analysis phase
  *
  *********************************************************************/
-void restart_m::_analysis_ckpt_bf_log(logrec_t& r, uint32_t& in_doubt_count)
+void restart_m::_analysis_ckpt_bf_log(logrec_t& r,              // In: Log record to process
+                                         uint32_t& in_doubt_count) // In/out: in_doubt count
 {
     bf_idx idx = 0;
     w_rc_t rc = RCOK;
@@ -2060,9 +2061,9 @@ void restart_m::_analysis_ckpt_bf_log(logrec_t& r, uint32_t& in_doubt_count)
  *  System is not opened during Log Analysis phase
  *
  *********************************************************************/
-void restart_m::_analysis_ckpt_xct_log(logrec_t& r,          // Current log record
-                                           lsn_t lsn,           // LSN of current log record
-                                           tid_CLR_map& mapCLR) // map to hold counters for in-flight transactions
+void restart_m::_analysis_ckpt_xct_log(logrec_t& r,          // In: Current log record
+                                           lsn_t lsn,           // In: LSN of current log record
+                                           tid_CLR_map& mapCLR) // In/Out: map to hold counters for in-flight transactions
 {
     // Received a t_chkpt_xct_tab log record from backward log scan
     // and there was a matching end checkpoint log record,
@@ -2270,7 +2271,8 @@ void restart_m::_analysis_ckpt_xct_log(logrec_t& r,          // Current log reco
  *  System is not opened during Log Analysis phase
  *
  *********************************************************************/
-void restart_m::_analysis_ckpt_dev_log(logrec_t& r, bool& mount)
+void restart_m::_analysis_ckpt_dev_log(logrec_t& r,  // In: Log record to process
+                                           bool& mount)  // Out: whether the mount occurred
 {
     // For each entry in the checkpoint related log, mount the device.
     // No dismount because t_chkpt_dev_tab only contain mounted devices
@@ -2556,10 +2558,10 @@ void restart_m::_analysis_other_log(logrec_t& r,               // In: log record
 *  System is not opened during Log Analysis phase
 *
 *********************************************************************/
-void restart_m::_analysis_process_lock(logrec_t& r,            // Current log record
-                                           tid_CLR_map& mapCLR,    // Map to track undecided in-flight transactions
-                                           XctLockHeap& lock_heap, // Heap to gather all re-acquired locks
-                                           xct_t *xd)              // Associated transaction
+void restart_m::_analysis_process_lock(logrec_t& r,            // In: Current log record
+                                           tid_CLR_map& mapCLR,    // In/Out: Map to track undecided in-flight transactions
+                                           XctLockHeap& lock_heap, // Out: Heap to gather all re-acquired locks
+                                           xct_t *xd)              // In: Associated transaction
                                            
 {
     // This is an undecided in-flight transaction and the log record
@@ -2764,7 +2766,7 @@ void restart_m::_analysis_process_lock(logrec_t& r,            // Current log re
 *
 *********************************************************************/
 void restart_m::_analysis_acquire_lock_log(logrec_t& r,            // In: log record
-                                               xct_t *xd,              // In/out: associated txn object
+                                               xct_t *xd,              // In: associated txn object
                                                XctLockHeap& lock_heap) // Out: heap to gather lock info
 {
     // A special function to re-acquire non-read locks based on a log record,
@@ -2958,7 +2960,7 @@ void restart_m::_analysis_acquire_lock_log(logrec_t& r,            // In: log re
 *
 *********************************************************************/
 void restart_m::_analysis_acquire_ckpt_lock_log(logrec_t& r,            // In: log record
-                                                     xct_t *xd,              // In/Out: associated txn object
+                                                     xct_t *xd,              // In: associated txn object
                                                      XctLockHeap& lock_heap) // Out: heap to gather lock info                                                     
 {
     // A special function to re-acquire non-read locks for an active transaction
@@ -3009,9 +3011,9 @@ void restart_m::_analysis_acquire_ckpt_lock_log(logrec_t& r,            // In: l
  *  System is not opened during Log Analysis phase
  *
  *********************************************************************/
-void restart_m::_analysis_process_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,  // In/Out
-                                          lsn_t& redo_lsn,                    // In
-                                          bool& mount)                        // Out                                         
+void restart_m::_analysis_process_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,  // In/Out: last LSN
+                                          lsn_t& redo_lsn,                              // In: starting point of REDO log scan
+                                          bool& mount)                                  // Out: whether mount occurred
 {
     logrec_t*  log_rec_buf;
     logrec_t*  __copy__buf = new logrec_t;
@@ -3082,7 +3084,8 @@ void restart_m::_analysis_process_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,
  *  System is not opened during Log Analysis phase
  *
  *********************************************************************/
-void restart_m::_analysis_process_compensation_map(tid_CLR_map& mapCLR)
+void restart_m::_analysis_process_compensation_map(
+                                tid_CLR_map& mapCLR) // In: map to track log record count for all undecided in-flight transaction
 {
     // Done with backward log scan, check the compensation list, these are the undecided
     // in-flight transactions when the system crash occurred, in other words, we did not see
@@ -3171,10 +3174,10 @@ void restart_m::_analysis_process_compensation_map(tid_CLR_map& mapCLR)
  *  System is not opened during Log Analysis phase
  *
  *********************************************************************/
-void restart_m::_analysis_process_txn_table(XctPtrHeap& heap,  // Out: for serial mode only
+void restart_m::_analysis_process_txn_table(XctPtrHeap& heap,  // Out: heap to store all in-flight transactions
+                                                                    //       for serial mode only
                                                  lsn_t& commit_lsn) // In/Out: update commit_lsn value
-                                                                    // ignored if using lock acquisition
-
+                                                                    //       ignored if using lock acquisition
 {
     // Destroy the ended (winner) transactions
     // if in serial mode, populate the special heap with loser (active) transactions
@@ -3271,10 +3274,10 @@ void restart_m::_analysis_process_txn_table(XctPtrHeap& heap,  // Out: for seria
  *  System is not opened during Log Analysis phase
  *
  *********************************************************************/
-void restart_m::_re_acquire_lock(XctLockHeap& lock_heap,
-                                 const okvl_mode& mode,
-                                 const uint32_t hash,
-                                 xct_t* xd)
+void restart_m::_re_acquire_lock(XctLockHeap& lock_heap, // In: heap to record all re-acquired locks
+                                 const okvl_mode& mode,     // In: lock mode to acquire
+                                 const uint32_t hash,       // In: hash value of the lock to acquire
+                                 xct_t* xd)                 // In: associated txn object
 {
     w_assert1(0 <= lock_heap.NumElements());
 
@@ -3315,7 +3318,9 @@ void restart_m::_re_acquire_lock(XctLockHeap& lock_heap,
  *  System is not opened during Log Analysis phase
  *
  *********************************************************************/
-void restart_m::_compare_lock_entries(XctLockHeap& lock_heap1, XctLockHeap& lock_heap2)
+void restart_m::_compare_lock_entries(
+                        XctLockHeap& lock_heap1, // In/out: first heap for the comparision, contains lock entries
+                        XctLockHeap& lock_heap2) // In/out: second heap for the comparision, contains lock entries
 {
     lock_heap1.Heapify();
     lock_heap2.Heapify();
@@ -3507,7 +3512,7 @@ void restart_m::_compare_lock_entries(XctLockHeap& lock_heap1, XctLockHeap& lock
  *  System is not opened during Log Analysis phase
  *
  *********************************************************************/
-void restart_m::_print_lock_entries(XctLockHeap& lock_heap)
+void restart_m::_print_lock_entries(XctLockHeap& lock_heap) // In: heap object contains lock entries
 {
     comp_lock_info_t* lock_entry = NULL;
 

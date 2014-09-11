@@ -458,40 +458,42 @@ private:
 
     // Forward log scan without lock acquisition
     static void                 analysis_pass_forward(
-        const lsn_t             master,
-        lsn_t&                  redo_lsn,
-        uint32_t&               in_doubt_count,
-        lsn_t&                  undo_lsn,
-        XctPtrHeap&             loser_heap,
-        lsn_t&                  commit_lsn, // Commit lsn for concurrent transaction (if used)        
-        lsn_t&                  last_lsn    // Last lsn in recovery log (forward scan)
+        const lsn_t             master,          // In: LSN for the starting point of the forward scan
+        lsn_t&                  redo_lsn,        // Out: Starting point for REDO forward scan
+        uint32_t&               in_doubt_count,  // Out: total in_doubt page count
+        lsn_t&                  undo_lsn,        // Out: Stopping point for UNDO backward log scan (if used)
+        XctPtrHeap&             loser_heap,      // Out: heap contains the loser transactions (for M1 traditional restart)
+        lsn_t&                  commit_lsn,      // Out: Commit lsn for concurrent transaction (for M2 concurrency control)
+        lsn_t&                  last_lsn         // Last lsn in recovery log (forward scan)
         );
 
     // Backward log scan with lock acquisition
     static void                 analysis_pass_backward(
-        const lsn_t             master,
-        lsn_t&                  redo_lsn,
-        uint32_t&               in_doubt_count,
-        lsn_t&                  undo_lsn,
-        XctPtrHeap&             loser_heap,
-        lsn_t&                  last_lsn,    // Last lsn in recovery log
-        XctLockHeap&            lock_heap    // all re-acquired locks    
+        const lsn_t             master,          // In: End point for backward log scan, for verification purpose only
+        lsn_t&                  redo_lsn,        // Out: Starting point for REDO forward log scan (if used),
+        uint32_t&               in_doubt_count,  // Out: Counter for in_doubt page count in buffer pool
+        lsn_t&                  undo_lsn,        // Out: Stopping point for UNDO backward log scan (if used)
+        XctPtrHeap&             loser_heap,      // Out: Heap to record all the loser transactions,
+                                                 //       used only for reverse chronological order
+                                                 //       UNDO phase (if used)
+        lsn_t&                  last_lsn,        // Out: Last lsn in recovery log
+        XctLockHeap&            lock_heap        // Out: all re-acquired locks    
         );
 
     // Function used for log scan REDO operations
     static void                 redo_log_pass(
-        const lsn_t              redo_lsn, 
-        const lsn_t              &highest,       // for debugging
-        const uint32_t           in_doubt_count  // How many in_doubt pages in buffer pool
+        const lsn_t              redo_lsn,       // In: Starting point for REDO forward log scan
+        const lsn_t              &highest,       // Out: for debugging
+        const uint32_t           in_doubt_count  // In: How many in_doubt pages in buffer pool
         );
 
     // Function used for reverse order UNDO operations
     static void                 undo_reverse_pass(
-        XctPtrHeap&             heap,       // heap populated with loser transactions
-        const lsn_t             curr_lsn,   // current lsn, the starting point of backward scan
-                                            // not used in current implementation
-        const lsn_t             undo_lsn    // undo lsn, the end point of backward scan
-                                            // not used in current implementation        
+        XctPtrHeap&             heap,       // In: heap populated with loser transactions
+        const lsn_t             curr_lsn,   // In: current lsn, the starting point of backward scan
+                                            //     not used in current implementation
+        const lsn_t             undo_lsn    // In: undo lsn, the end point of backward scan
+                                            //     not used in current implementation        
 
         );
 
@@ -514,8 +516,14 @@ private:
     // Function used for serialized operations, open system after the entire restart process finished
     // brief sub-routine of redo_pass() for logs that have pid.    
     static void                 _redo_log_with_pid(
-        logrec_t& r, lsn_t &lsn, const lsn_t &end_logscan_lsn,
-        lpid_t page_updated, bool &redone, uint32_t &dirty_count);
+                                logrec_t& r,                   // In: Incoming log record
+                                lsn_t &lsn,                    // In: LSN of the incoming log record
+                                const lsn_t &end_logscan_lsn,  // In: This is the current LSN, validation purpose
+                                lpid_t page_updated,           // In: Store ID (vol + store number) + page number
+                                                               //      mainly used for multi-page log
+                                bool &redone,                  // Out: did REDO occurred?  Validation purpose
+                                uint32_t &dirty_count);        // Out: dirty page count, validation purpose
+
 
     // Function used for concurrent operations, open system after Log Analysis
     // Transaction driven UNDO phase, it handles both commit_lsn and lock acquisition
@@ -527,52 +535,86 @@ private:
 
 
     // Helper function to process a system log record, called from Log Analysis pass
-    static bool                 _analysis_system_log(logrec_t& r, lsn_t lsn, uint32_t& in_doubt_count);
+    static bool                 _analysis_system_log(
+                                logrec_t& r,                 // In: Log record to process
+                                lsn_t lsn,                   // In: LSN of the log record
+                                uint32_t& in_doubt_count);   // In/out: in_doubt count
 
     // Helper function to process the chkpt_bf_tab log record, called from Log Analysis pass
-    static void                 _analysis_ckpt_bf_log(logrec_t& r, uint32_t& in_doubt_count);
+    static void                 _analysis_ckpt_bf_log(
+                                logrec_t& r,                 // In: Log record to process
+                                uint32_t& in_doubt_count);   // In/out: in_doubt count
 
     // Helper function to process the chkpt_xct_tab log record, called from backward Log Analysis pass only
-    static void                 _analysis_ckpt_xct_log(logrec_t& r, lsn_t lsn, tid_CLR_map& mapCLR);
+    static void                 _analysis_ckpt_xct_log(
+                                logrec_t& r,                // In: Log record to process
+                                lsn_t lsn,                  // In: LSN of current log record
+                                tid_CLR_map& mapCLR);       // In/Out: map to hold counters for in-flight transactions
 
     // Helper function to process the t_chkpt_dev_tab log record, called from Log Analysis pass
-    static void                 _analysis_ckpt_dev_log(logrec_t& r, bool& mount);
+    static void                 _analysis_ckpt_dev_log(
+                                logrec_t& r,                // In: Log record to process
+                                bool& mount);               // Out: whether the mount occurred
 
     // Helper function to process the rest of meaningful log records, called from Log Analysis pass
-    static void                 _analysis_other_log(logrec_t& r, lsn_t lsn,
-                                                       uint32_t& in_doubt_count, xct_t *xd);
+    static void                 _analysis_other_log(
+                                logrec_t& r,                // In: log record
+                                lsn_t lsn,                  // In: LSN for the log record
+                                uint32_t& in_doubt_count,   // Out: in_doubt_count
+                                xct_t *xd);                 // In: associated txn object
 
     // Helper function to process lock for the meaningful log records, called from backward Log Analysis pass only
-    static void                 _analysis_process_lock(logrec_t& r, tid_CLR_map& mapCLR,
-                                                        XctLockHeap& lock_heap, xct_t *xd);
-
+    static void                 _analysis_process_lock(
+                                logrec_t& r,                // In: Current log record
+                                tid_CLR_map& mapCLR,        // In/Out: Map to track undecided in-flight transactions
+                                XctLockHeap& lock_heap,     // Out: Heap to gather all re-acquired locks
+                                xct_t *xd);                 // In: Associated transaction
+                                
     // Helper function to process the lock re-acquisition based on the log record, called from backward log analysis only
-    static void                 _analysis_acquire_lock_log(logrec_t& r, xct_t *xd, XctLockHeap& lock_heap);
+    static void                 _analysis_acquire_lock_log(
+                                logrec_t& r,               // In: log record
+                                xct_t *xd,                 // In: associated txn object
+                                XctLockHeap& lock_heap);   // Out: heap to gather lock info
 
     // Helper function to process the lock re-acquisition for one active transaction in checkpoint log record, called from backward log analysis only
-    static void                 _analysis_acquire_ckpt_lock_log(logrec_t& r, xct_t *xd, XctLockHeap& lock_heap);
+    static void                 _analysis_acquire_ckpt_lock_log(
+                                logrec_t& r,              // In: log record
+                                xct_t *xd,                // In: associated txn object
+                                XctLockHeap& lock_heap);  // Out: heap to gather lock info
 
     // Helper function to process the extra mount operation, called from Log Analysis pass
-    static void                 _analysis_process_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,
-                                                          lsn_t& redo_lsn, bool& mount);
+    static void                 _analysis_process_extra_mount(
+                                lsn_t& theLastMountLSNBeforeChkpt,  // In/Out: last LSN
+                                lsn_t& redo_lsn,                    // In: starting point of REDO log scan
+                                bool& mount);                       // Out: whether mount occurred
 
     // Helper function to process the compensation map , called from backward log analysis only
-    static void                 _analysis_process_compensation_map(tid_CLR_map& mapCLR);
+    static void                 _analysis_process_compensation_map(
+                                tid_CLR_map& mapCLR);     // In: map to track log record count for all undecided in-flight transaction
  
     // Helper function to process the transaction table after finished log scan, called from Log Analysis pass
-    static void                 _analysis_process_txn_table(XctPtrHeap& heap, lsn_t& commit_lsn);
+    static void                 _analysis_process_txn_table(
+                                XctPtrHeap& heap,     // Out: heap to store all in-flight transactions, for serial mode only
+                                lsn_t& commit_lsn);   // In/Out: update commit_lsn value
 
     // Helper function to add one entry into the lock heap
-    static void                 _re_acquire_lock(XctLockHeap& lock_heap, const okvl_mode& mode, const uint32_t hash, xct_t* xd);
+    static void                 _re_acquire_lock(
+                                XctLockHeap& lock_heap, // In: heap to record all re-acquired locks
+                                const okvl_mode& mode,  // In: lock mode to acquire
+                                const uint32_t hash,    // In: hash value of the lock to acquire
+                                xct_t* xd);             // In: associated txn object
 
     // Helper function to compare entries in two lock heaps, tracking and debugging purpose
     // Current usage:
     //     Heap 1: from Log Analysis
     //     Heap 2: from checkpoint after Log Analysis
-    static void                 _compare_lock_entries(XctLockHeap& lock_heap1, XctLockHeap& lock_heap2);
+    static void                 _compare_lock_entries(
+                                XctLockHeap& lock_heap1,   // In/out: first heap for the comparision, contains lock entries
+                                XctLockHeap& lock_heap2);  // In/out: second heap for the comparision, contains lock entries
 
     // Helper function to print and clean up all entries in a heap
-    static void                 _print_lock_entries(XctLockHeap& lock_heap);
+    static void                 _print_lock_entries(
+                                XctLockHeap& lock_heap);   // In: heap object contains lock entries
 
 public:
     // TODO(Restart)... it was for a space-recovery hack, not needed
