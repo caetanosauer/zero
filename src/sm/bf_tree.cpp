@@ -543,22 +543,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
     // load the page (M2), in such case the page index is in hashtable but the actual page has
     // not been loaded into memory yet.
 
-////////////////////////////////////////
-// TODO(Restart)... in M2, only restart_m would load in_doubt pages
-//                          if a user transaction beats the REDO phase, the
-//                          user transaction does not load the page and it would 
-//                          raise error instead
-//                          This limitation will be addressed in M3.
-//
-//                          M2 is using commit_lsn to control access conflict from user txn, and abort
-//                          any conflicting user transactions.
-//                          M3 will use lock acquisition to control the access, and block the conflicting
-//                          user transactions until the recovery is done.
-////////////////////////////////////////
-
     // Note in 'restart_m', it does not use this function to load page into buffer pool, because
-    // restart_m is driven by in_doubt flag and has different requirements on loading pages.
-    
+    // restart_m is driven by in_doubt flag and has different requirements on loading pages.    
     
     w_assert1(vol != 0);
     w_assert1(shpid != 0);
@@ -597,12 +583,25 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
         }
 #endif
         bf_idx idx = _hashtable->lookup(key);
-        if ((idx == 0) || (true == force_load)) {
-            // the page is not in the bufferpool, and it is not an in_doubt page either.
-            // we need to read it from disk
-            W_DO(_grab_free_block(idx)); // get a frame that will be the new page
+        if ((idx == 0) || (true == force_load)) 
+        {
+            // 1. page is not registered in hash table therefore it is not an in_doubt page either
+            // 2. page is registered in hash table already but force loading, meaning it is an 
+            //    in_doubt page and the actual page has not been loaded into buffer pool yet
+            // We need to read it from disk
+            if (true == force_load)
+            {
+                // If force load, page is registered in hash table already but the
+                // actual page was not loaded
+                w_assert1(0 != idx);
+            }
+            else
+            {
+                W_DO(_grab_free_block(idx)); // get a frame that will be the new page
+            }
             w_assert1(idx != 0);
             bf_tree_cb_t &cb = get_cb(idx);
+
             DBGOUT3(<<"unswizzled case: load shpid = " << shpid << " into frame = " << idx);
             // after here, we must either succeed or release the free block
             if (virgin_page) {
@@ -630,7 +629,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     // try the backup
                     // Scenarios:
                     // 1. Normal page loading due to user transaction accessing a page not in buffer pool
-                    // 2. Recovery REDO (force_load)
+                    // 2. Traditional recovery UNDO or REDO (force_load)
+                    // 3. On-demand or mixed REDO triggered by user transaction (force_load)
                     w_rc_t check_rc = _check_read_page(parent, idx, vol, shpid, past_end);
                     if (check_rc.is_error()) {
                         _add_free_block(idx);
@@ -654,8 +654,29 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 
                 // Turn off the force_load flag before the retry
                 force_load = false;
-
                 continue;
+            }
+
+            if (true == force_load)
+            {
+                // Now we have latched the cb, if this is a force_load
+                // check the in_doubt flag in cb after we acquired the latch
+                // if the in_doubt flag is off, this means another thread concurrently
+                // loaded the page to buffer pool. unlucky, but can happen
+                // in such case, abandon the page we loaded and try again
+                if (false == cb._in_doubt)
+                {
+                    DBGOUT1(<<"bf_tree_m: unlucky! it was a force load and another thread already added the page "
+                            << shpid << " to the bufferpool. discard my own work on frame " << idx);
+
+                    // For the retry, simply release the latch but do not clear the context in cb
+                    // because this is a known idx exists in hash table and cb array already
+                    cb.latch().latch_release();
+                    _add_free_block(idx);
+
+                    force_load = false;
+                    continue;                
+                }
             }
 
             cb.clear_except_latch();
@@ -704,17 +725,14 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 else
                 {
                     // If the force_load flag is on and the pid is already in hash table, 
-                    // this is a force load during Single-Page-Recovery REDO
-                    // In this case an in_doubt page is loaded as a side effect of the 
-                    // Single-Page-Recovery REDO operation, the page is not loaded by
-                    // Recovery page driven REDO phase.  Note Single-Page-Recovery 
-                    //has been performed on this newly
-                    // loaded page already
-                    // Clear the in_doubt flag so the page driven REDO phase 
-                    // does not load this page again
+                    // this is a force load scenario
+                    // In this case an in_doubt page is loaded due to page driven 
+                    // Single-Page-Recovery REDO operation or on-demand user 
+                    // transaction triggered REDO operation
+                    // Clear the in_doubt flag on the page so we do not try to load
+                    // this page again
+                    DBGOUT1(<<"bf_tree_m: force_load with page in hash table already, mark page dirty, page id: " << shpid);
                     w_assert1(0 != idx);       
-                    w_assert1(true == restart_m::use_redo_page_restart() || 
-                              true == restart_m::use_redo_full_logging_restart());
                     force_load = false;
                     in_doubt_to_dirty(idx);        // Reset in_doubt and dirty flags accordingly
                 }
@@ -731,13 +749,12 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 #endif // BP_MAINTAIN_PARENT_PTR
             page = &(_buffer[idx]);
 
-            // Just loaded a page, not an in_doubt or dirty page, it was not involved
-            // in the crash recovery process
-            // The page loading was due to:
+            // Just loaded a page, the page loading was due to:
             // User transaction - page was not involved in the recovery operation
-            // UNDO operation - page was not in_doubt, the page is needed for
-            //                            b-tree search traversal of the UNDO operation, but
-            //                            it is not the page to apply UNDO operation on
+            // UNDO operation - the page is needed for b-tree search traversal of
+            //                            an UNDO operation
+            // REDO operation - on-demand or mixed REDO triggered by user transaction
+            //                            page was in_doubt (using lock for concurrency control)
             // Page is safe to access, not calling _validate_access(page) 
             // for page access validation purpose
             DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: retrieved a new page: " << shpid);
@@ -764,55 +781,97 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 // in buffer pool memory
                 // we do not have latch on the page at this point, okay to return
             
-                // bf_tree_m::_fix_nonswizzled iscalled by two different functions:
+                // bf_tree_m::_fix_nonswizzled is called by two different functions:
                 //   fix_direct: for REDO operation, rollback and cursor re-fix, both root
                 //                  and non-root page, no parent
                 //   fix_nonroot: user txn and UNDO operations to traversal the tree
                 //                      only non-root pages, has parent     
                 //
                 // Exception: root page is pre-loaded into buffer pool when mounting
-                // volume, although the root page could be either in_doubt or clean, but
+                // volume, although the root page could be either in_doubt or clean, 
                 // the root page is in memory already.
               
                 DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: page in hash table but not in buffer pool, page: " 
                         << shpid << ", root page: " << root_shpid);
 
-                // If caller is from fix_nonroot, block user txn, if caller is from fix_direct
-                // as part of REDO operation, load the page into buffer pool
                 if (NULL == parent)
                 {
-                    // No parent, caller is from fix_direct
+                    // No parent, caller is from fix_direct, do not block
                     // Set force_load to cause the retry logic to load the page
+                    DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: force load due to fix_direct");                   
                     force_load = true;
                     continue;                
                 }
                 else
-                {
-////////////////////////////////////////
-// TODO(Restart)... M2 (concurrent log mode) - raise error and abort the user transaction
-//                          M3 (concurrent lock mode) - block user transaction until recovery is done
-////////////////////////////////////////
-                
-                    // Has parent, block if caller is not from recovery
-                    if ((true ==  restart_m::use_concurrent_log_restart()) && (false == from_recovery))
-                        return RC(eACCESS_CONFLICT);
-                    else if (true ==  restart_m::use_concurrent_lock_restart()) 
-                        return RC(eNOTIMPLEMENTED);
-                    else if (true == from_recovery)
+                {               
+                    // Has parent, caller is from fix_nonroot, it is either a user transaction
+                    // tree traversal from UNDO recovery
+                    if (true == from_recovery)
                     {
                         // If caller is from recovery (e.g. rollback), do not block
                         // page is in_doubt, set force_load to cause the retry logic to load the page                        
+                        DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: force load due to rollback");
                         force_load = true;
                         continue;
+                    }
+                    else if (true == restart_m::use_concurrent_log_restart())  // Using commit_lsn
+                    {
+                        // User transaction
+                        // Concurrent log mode (M2) is using commit_lsn for concurrency control
+                        // M2 does not supportpure on-demand REDO, therefore
+                        // user transaction cannot load an in-doubt page
+                        
+                        w_assert1(false == restart_m::use_redo_demand_restart());                        
+                        w_assert1(false == restart_m::use_redo_mix_restart());
+
+                        return RC(eACCESS_CONFLICT);
+                    }
+                    else if (true == restart_m::use_concurrent_lock_restart())  // Using lock
+                    {
+                        // User transaction
+                        // This is the normal lock mode which is using lock for concurrency control                        
+                        
+                        if ((true == restart_m::use_redo_demand_restart()) ||  // pure on-demand
+                           (true == restart_m::use_redo_mix_restart()))        // midxed mode
+                        {
+                            // If either pure on-demand or mixed mode REDO, allow user transaction
+                            // to trigger in_doubt page loading
+                        
+                            // Set the force_load so we will load the in_doubt page and also trigger
+                            // Single Page Recovery on the page
+                            DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: force load triggered by on-demand user transaction and lock");
+                            force_load = true;
+                            continue;
+                        }
+                        else if ((false == restart_m::use_redo_demand_restart()) &&    // Not pure on-demand
+                                (false == restart_m::use_redo_mix_restart()))          // Not midxed mode
+                        {
+                            // Using lock for concurrency control but not on-demand REDO
+                            // This is a mode mainly for performance measurement purpose
+
+                            // User transaction cannot load an in_doubt page, only REDO can
+                            // load an in_doubt page
+
+                            return RC(eACCESS_CONFLICT);
+                        }
+                        else
+                        {
+                            // Unexpected mode
+                            W_FATAL_MSG(fcINTERNAL, 
+                                        << "bf_tree_m::_fix_nonswizzled: unexpected recovery mode under lock concurrency control mode");
+                        }
                     }
                     else
                     {
                         // Unexpected mode
-                        W_FATAL_MSG(fcINTERNAL, << "bf_tree_m::_fix_nonswizzled: unexpected recovery mode");
+                        W_FATAL_MSG(fcINTERNAL,
+                                    << "bf_tree_m::_fix_nonswizzled: unexpected concurrency control recovery mode");
                     }
                 }
             }
 
+            // Page is registered in hash table and it is not an in_doubt page, meaning the actual page is in buffer pool already
+            
             int32_t cur_cnt = cb.pin_cnt();
             if (cur_cnt < 0) {
                 w_assert1(cur_cnt == -1);
@@ -853,7 +912,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     //     Recovery operation - was an in_doubt page
                     // or 
                     //     Previous user transaction - was not an in_doubt page
-                    // we need to validate the page only if runnign in concurrent mode
+                    // we need to validate the page only if running in concurrent mode
                     // and the request coming from a user transaction
                     // 
                     // Two scenarios:
@@ -900,17 +959,24 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 w_rc_t bf_tree_m::_validate_access(generic_page*& page)   // pointer to the underlying page _pp
 {
     // Special function to validate whether a page is safe to be accessed by
-    // concurrent operation while the recovery is still going on
+    // concurrent user transaction while the recovery is still going on
     // Page is already loaded in buffer pool, and the page_lsn (last write)
     // is available.
 
-    // Validation is based on either commit_lsn or lock acquisition
-    //    Commit_lsn: raise error if conflict
-    //    Lock acquisition: block if conflict
+    // Validation is on only if using commit_lsn for concurrency control
+    //    Commit_lsn: raise error if falid the commit_lsn validation
+    //    Lock re-acquisition: block if lock conflict
+    
+    // If lock re-acquisition is used, if user transaction is trying to load an 
+    // in_doubt page, it triggers on-demand REDO, the code path should not
+    // come here.
+    // If user transaction is accessing an already loaded buffer pool page,
+    // the blocking happens during lock acquisition (which happens later),
+    // and there is no need to validate in the page level.
   
     // If the system is doing concurrent recovery and we are still in the middle
-    // of recovery, it might not be safe to access the page
-    if ((smlevel_1::recovery) &&   // The restart_m object is valid
+    // of recovery, need to validate whether a user transaction can access this page
+    if ((smlevel_1::recovery) &&                      // The restart_m object is valid
         (smlevel_1::recovery->restart_in_progress())) // Restart is in progress, both serial and concurrent
                                                       // if pure on_demand, then this function returns
                                                       // false (not in restart) after Log Analysis phase
@@ -960,22 +1026,14 @@ w_rc_t bf_tree_m::_validate_access(generic_page*& page)   // pointer to the unde
         }
         else if (true == restart_m::use_concurrent_lock_restart())
         {
-////////////////////////////////////////
-// TODO(Restart)... concurrency through lock acquisition, M4 code path NYI
-////////////////////////////////////////
-
-            return RC(eNOTIMPLEMENTED);
+            // Using lock for concurrency control, no need to validate page
+            // which is already loaded into buffer pool (not in_doubt)
         }
     }
     else
     {
         // Serial recovery mode or concurrent recovery mode but recovery has completed
         // No need to validate for page accessability
-
-////////////////////////////////////////
-// TODO(Restart)... M3 pure on-demand concurrency through lock acquisition code path also
-//                          do need to validate in this caseNYI
-////////////////////////////////////////
     }
     return RCOK;
 }

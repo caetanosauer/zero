@@ -125,8 +125,11 @@ rc_t alloc_cache_t::redo_allocate_one_page (shpid_t pid)
             }
         }
         if (!found) {
-            //weird, but the REDO is not needed
-            cerr << "REDO: page " << pid << " is already allocated??" << endl;
+            // Page might be allocated already due to Single Page Recovery 
+            // used during Restart operation, the REDO is not needed            
+            // generate a debug output instead of error log
+            DBGOUT1(<<"REDO: page  " << pid << " is already allocated??");            
+            // cerr << "REDO: page " << pid << " is already allocated??" << endl;
             return RCOK;
         }
     }

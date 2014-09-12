@@ -657,19 +657,19 @@ public:
 
     // stid_d version, no latch and no retry, used by Log Analysis phase on individual log record
     static rc_t _ux_lock_key(
-        const stid_t&       stid,
-        const w_keystr_t&   key,
-        const okvl_mode&    lock_mode,
-        bool                check_only,
-        xct_t*              xd
+        const stid_t&       stid,        // stid of the page which contains the key
+        const w_keystr_t&   key,         // Key to lock
+        const okvl_mode&    lock_mode,   // the lock mode to be acquired
+        bool                check_only,  // whether the lock goes away right after grant
+        xct_t*              xd           // associated transaction object
     );
 
     // hash version, no latch and no retry, used by Log Analysis phase on checkpoint log record
     static rc_t _ux_lock_key(
-        const uint32_t&     hash,
-        const okvl_mode&    lock_mode,
-        bool                check_only,
-        xct_t*              xd
+        const uint32_t&     hash,       // Lock hash
+        const okvl_mode&    lock_mode,  // the lock mode to be acquired
+        bool                check_only, // whether the lock goes away right after grant
+        xct_t*              xd          // associated transaction object
     );
 
     /**
