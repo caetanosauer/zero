@@ -10,7 +10,10 @@
 
 btree_test_env *test_env;
 
-// Test cases to test serial and traditional restart.
+// Test cases to test serial and traditional restart - system opens after the entire 'restart' finished
+//       Single thread
+//       Single index
+//       Multiple threads
 // Caller specify restart mode.
 
 lsn_t get_durable_lsn() {

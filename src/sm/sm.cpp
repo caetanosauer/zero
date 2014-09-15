@@ -932,6 +932,60 @@ ss_m::_destruct_once()
     // shutdown process
     w_assert1(!recovery);
 
+    // Failure on failure scenarios -
+    // Normal shutdown: 
+    //    Works correctly even if the 2nd shutdown request came in before the first restart
+    //    process finished.
+    //        Tranditional serial shutdown - System was not opened while restart is going on
+    //        Tranditional serial shutdown - The cleanup() call rolls back all in-flight transactions
+    //        Pure on-demand shutdown using commit_lsn - The cleanup() call rolls back all 
+    //                                                                            in-flight transactions
+    //        Pure on-demand shutdown using locks - The cleanup() call rolls back all 
+    //                                                                   in-flight transactions
+    //        Mixed mode using locks - The cleanup() call rolls back all in-flight transactions
+    //
+    // Simulated system crash through 'shutdown_clean flag:
+    //    Work correctly with failure on failure scenarions, including on_demand restart
+    //    with lock is used and the 2nd failure occurs before the first restart process finished.
+    //        Tranditional serial shutdown - System was not opened while restart is going on
+    //        Tranditional serial shutdown - The cleanup() call stops all in-flight transactions
+    //                                                    without rolling back
+    //        Pure on-demand shutdown using commit_lsn - The cleanup() call stops all in-flight
+    //                                                    transactions without rolling back
+    //        Pure on-demand shutdown using locks - If the 2nd system crash occurs during
+    //                                                    Log Analysis, no issue
+    //                                                    Otherwise, the cleanup() call stops all in-flight
+    //                                                    transactions without rolling them back.  
+    //                                                    If a user transaction has triggered an on_demand 
+    //                                                    UNDO and it was in the middle of rolling back the 
+    //                                                    loser transaction, potentially there might be other
+    //                                                    blocked user transactions due to lock conflicts, 
+    //                                                    and the 2nd system crash occurred, note at this
+    //                                                    point no log record generated for all user transactions
+    //                                                    bloced on lock conflicts.
+    //                                                    During 2nd restart backward log scan Log Analysis
+    //                                                    phase, all lock re-acquisions should succeed without
+    //                                                    conflicts because the previously blocked user 
+    //                                                    transactions did not generate log records therefore 
+    //                                                    no lock re-acquisition and nothing to rollback
+    //        Mixed mode using locks - Same as 'pure on-demand shutdown using locks'
+    //
+    // Genuine system crash:
+    //    Similar to simulated system crash, it should work correctly with on_demand restart using lock.
+    //        Pure on-demand shutdown using locks - If the 2nd system crash occurs during 
+    //                                                    Log Analysis, no issue
+    //                                                    Otherwise, if system crashed before the entire 
+    //                                                    on-demand REDO/UNDO finished, and if a user
+    //                                                    transaction triggered UNDO was in the middle of 
+    //                                                    rolling back (which blocked the associated user transaction)
+    //                                                    when the system crash occurred, then the lock 
+    //                                                    re-acquisition process during 2nd restart should not 
+    //                                                    encounter lock conflict because the previously blocked
+    //                                                    user transaction did not generate log record for its 
+    //                                                    blocked operation, therefore no lock re-acquision and 
+    //                                                    nothing to rollback
+    //        Mixed mode using locks - Same as 'pure on-demand shutdown using locks'
+
     // now it's safe to do the clean_up
     // The code for distributed txn (prepared xcts has been deleted, the input paramter
     // in cleanup() is not used

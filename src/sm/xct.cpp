@@ -902,7 +902,6 @@ xct_t::xct_t(xct_core* core, sm_stats_info_t* stats,
     _inquery_verify(false),
     _inquery_verify_keyorder(false),
     _inquery_verify_space(false),
-    _loser_xct(loser_xct),
     // _first_lsn, _last_lsn, _undo_nxt, 
     _last_lsn(last_lsn),
     _undo_nxt(undo_nxt),
@@ -929,6 +928,11 @@ xct_t::xct_t(xct_core* core, sm_stats_info_t* stats,
     w_assert3(tid() <= _nxt_tid);
     w_assert2(tid() <= _nxt_tid);
     w_assert1(tid() == core->_lock_info->tid());
+
+    if (true == loser_xct)
+        _loser_xct = loser_true;  // A loser transaction
+    else
+        _loser_xct = loser_false; // Not a loser transaction
 
 #if USE_BLOCK_ALLOC_FOR_LOGREC 
     _log_buf = new (*logrec_pool) logrec_t; // deleted when xct goes away
@@ -1535,7 +1539,7 @@ xct_t::_abort()
     // we could encounter normal transaction abort while Recovery is going on, 
     // in such case the aborting transaction state would fall into case #1 above
     
-    if (false == in_recovery() && false == _loser_xct)
+    if ((false == in_recovery()) && (false == is_loser_xct()))
     {
         // Not a loser txn
         w_assert1(_core->_state == xct_active
@@ -1545,6 +1549,12 @@ xct_t::_abort()
         if(_core->_state != xct_committing && _core->_state != xct_freeing_space) {
             w_assert1(_core->_xct_ended++ == 0);
         }
+    }
+
+    if (true == is_loser_xct())
+    {
+        // Loser transaction rolling back, set the flag to indicate the status
+        set_loser_xct_in_undo();
     }
 
 #if X_LOG_COMMENT_ON

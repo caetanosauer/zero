@@ -933,8 +933,12 @@ try
                 // 2. For a loser txn in checkpoint, if system crashs before UNDO this
                 //    loser txn, then no matching 'end transaction log record' so restart will
                 //    take care of this loser txn again.
-                // No need to record the loser_txn flag, because all in-flight txns in recovery
+                // No need to record the _loser_txn flag, because all in-flight txns in recovery
                 // will be marked as loser.
+                // For on_demand restart, if a loser transaction was in the middle of rolling
+                // back (_loser_xct flag is set to loser_undoing) when the checkpoint is being
+                // taken, still no need to record the _loser_txn flag, becaue an 'end transaction'
+                // log record would be generated at the end of rollback.
 
                 // Transaction table is implemented in a descend list sorted by tid
                 // therefore the newest transaction goes to the beginning of the list

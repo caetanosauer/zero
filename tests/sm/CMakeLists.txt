@@ -25,10 +25,11 @@ X_ADD_TESTCASE(test_btree_verify btree_test_env)
 X_ADD_TESTCASE(test_btree_page_h btree_test_env)
 X_ADD_TESTCASE(test_chain_xct btree_test_env)
 X_ADD_TESTCASE(test_checksum btree_test_env)
-X_ADD_TESTCASE(test_crash btree_test_env)               # Serial and traditional recovery test suite
-X_ADD_TESTCASE(test_restart btree_test_env)             # Serial and traditional recovery test suite
-X_ADD_TESTCASE(test_restart_bugs btree_test_env)	# Serial and traditional recovery test suite containing tests failing because of bugs
-X_ADD_TESTCASE(test_concurrent_restart btree_test_env)  # Concurrent recovery test suite
+X_ADD_TESTCASE(test_crash btree_test_env)                       # Serial and traditional recovery test suite
+X_ADD_TESTCASE(test_restart btree_test_env)                     # Serial and traditional recovery test suite
+X_ADD_TESTCASE(test_restart_bugs btree_test_env)                # Recovery test suite used for debugging purpose
+X_ADD_TESTCASE(test_concurrent_restart btree_test_env)          # Simple concurrent recovery test suite
+X_ADD_TESTCASE(test_concurrent_restart_complex btree_test_env)  # Complex concurrent recovery test suite
 X_ADD_TESTCASE(test_deadlock btree_test_env)
 X_ADD_TESTCASE(test_emlsn btree_test_env)
 X_ADD_TESTCASE(test_elr btree_test_env)

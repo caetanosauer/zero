@@ -19,6 +19,8 @@
 #include "w_key.h"
 #include "xct.h"
 #include "w_okvl_inl.h"
+#include "restart.h"       // Access restart mode
+
 struct RawLock;
 
 rc_t
@@ -30,6 +32,9 @@ btree_impl::_ux_lock_key(
     bool                check_only
     )        
 {
+    // Top level function used by I/U/D (EX) and search (SH) operations to acquire a lock
+    // Lock conflict is possible
+    
     return _ux_lock_key(leaf, key.buffer_as_keystr(), key.get_length_as_keystr(),
                          latch_mode, lock_mode, check_only);
 }
@@ -44,6 +49,7 @@ rc_t btree_impl::_ux_lock_key(
     // Only used by Reatart Log Analysis phase to re-acquire non-read locks
     // No latch since the system is not open for user transaction so no concurrent access
     // No conditional and no retry, no RawLock object
+    // We should not see lock conflict from this call
 
     w_assert1(NULL != xd);
     lockid_t lid (stid, (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
@@ -60,6 +66,7 @@ rc_t btree_impl::_ux_lock_key(
     // Only used by Reatart Log Analysis phase to re-acquire non-read locks
     // No latch since the system is not open for user transaction so no concurrent access
     // No conditional and no retry, no RawLock object
+    // We should not see lock conflict from this call
 
     w_assert1(NULL != xd);
 
@@ -90,6 +97,22 @@ btree_impl::_ux_lock_key(
     bool                check_only
     )        
 {
+    // Callers:
+    // 1. Top level _ux_lock_key() - I/U/D and search operations, lock conflict is possible
+    // 2. _ux_lock_range() - lock conflict is possible
+    //
+    // Lock conflict:
+    // 1. Deadlock - the asking lock is held by another transaction currently, and the 
+    //                      current transaction is holding other locks already, failed
+    // 2. Timeout -  the asking lock is held by another transaction currently, but the
+    //                     current transaction does not hold other locks, okay to retry
+
+    // For restart operation using lock re-acquisition:
+    // 1. On_demand or mixed UNDO - when lock conflict. it triggers UNDO transaction rollback
+    //                                                 this is a blocking operation, meaning the other concurrent
+    //                                                 transactions asking for the same lock are blocked, no deadlock
+    // 2. Traditional UNDO - original behavior, either deadlock error or timeout and retry
+    
     lockid_t lid (leaf.pid().stid(), (const unsigned char*) keystr, keylen);
     // first, try conditionally. we utilize the inserted lock entry even if it fails
     RawLock* entry = NULL;
@@ -99,10 +122,41 @@ btree_impl::_ux_lock_key(
         return RCOK;
     } else {
         // if it caused deadlock and it was chosen to be victim, give up! (not retry)
-        if (lock_rc.err_num() == eDEADLOCK) {
+        if (lock_rc.err_num() == eDEADLOCK) 
+        {
+            if (true == restart_m::use_concurrent_lock_restart())
+            {
+                if ((true == restart_m::use_undo_demand_restart()) ||  // pure on-demand
+                   (true == restart_m::use_undo_mix_restart()))        // midxed mode
+                {
+// TODO(Restart)...           
+//    xct.is_loser_xct()
+//    xct.is_loser_xct_in_undo()
+// How to find the transaction which is holding the lock currently?
+// Also need to get at that transaction to find out whether it is a loser txn or not
+
+                    // If using lock re-acquisition and on_demand or mixed UNDO
+                    // If the transaction which is holding the lock is a loser transaction
+                    // and not in the middle of rolling back, then chagne the transaction
+                    // to 'rolling back' state and trigger the rollback
+                    // this operation blocks the current transaction
+
+                    // If the transaction which is holding the lock is a loser transaction
+                    // and is in rolling back state already, retry
+                    // this operation blocks the current transaction
+
+                    // If the transaction which is holding the lock is not a loser transaction
+                    // raise the deadlock error
+                }
+                else
+                {
+                    // Not using on_demand or mixed UNDO, fall through to generate deadlock error
+                }            
+            }
             w_assert1(entry == NULL);
             return lock_rc;
         }
+
         // couldn't immediately get it. then we unlatch the page and wait.
         w_assert1(lock_rc.err_num() == eCONDLOCKTIMEOUT);
         w_assert1(entry != NULL);
@@ -116,7 +170,8 @@ btree_impl::_ux_lock_key(
         W_DO(lm->retry_lock(&entry, check_only));
         // now we got the lock.. but it might be changed because we unlatched.
         w_rc_t refix_rc = leaf.refix_direct(pin_holder.idx(), latch_mode);
-        if (refix_rc.is_error() || leaf.lsn() != prelsn) {
+        if (refix_rc.is_error() || leaf.lsn() != prelsn) 
+        {
             // release acquired lock
             if (entry != NULL) {
                 w_assert1(!check_only);
@@ -124,9 +179,12 @@ btree_impl::_ux_lock_key(
             } else {
                 w_assert1(check_only);
             }
-            if (refix_rc.is_error()) {
+            if (refix_rc.is_error()) 
+            {
                 return refix_rc;
-            } else {
+            }
+            else 
+            {
                 w_assert1(leaf.lsn() != prelsn); // unluckily, it's the case
                 return RC(eLOCKRETRY); // retry!
             }

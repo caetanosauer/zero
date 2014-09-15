@@ -209,6 +209,13 @@ class xct_t : public smlevel_1 {
 
 protected:
     enum commit_t { t_normal = 0, t_lazy = 1, t_chain = 2, t_group = 4 };
+
+    enum loser_xct_state_t {
+                 loser_false = 0x0,      // Not a loser transaction
+                 loser_true = 0x1,       // A loser transaction
+                 loser_undoing = 0x2};   // Loser transaction is being rolled back currently
+
+
 /**\endcond skip */
 
 /**\cond skip */
@@ -573,7 +580,9 @@ private:
     // used.  In order to distingish a loser transaction and normal active
     // transaction, check the '_loser_xct' flag, this is especially important
     // for transaction driven UNDO logic.
-    bool                         _loser_xct;
+    // For on_demand UNDO, this flag also indicate if the loser transaction
+    // is currently rolling back
+    loser_xct_state_t            _loser_xct;
 
 public:
     void                         acquire_1thread_xct_mutex() const; // serialize
@@ -649,7 +658,27 @@ public:
     bool                         get_query_exlock_for_select() const {return _query_exlock_for_select;}
     void                         set_query_exlock_for_select(bool mode) {_query_exlock_for_select = mode;}
 
-    bool                        is_loser_xct() const { return _loser_xct; }
+    bool                        is_loser_xct() const 
+        {
+            if (loser_false == _loser_xct)
+                return false;   // Not a loser transaction
+            else
+                return true;    // Loser transaction
+        }
+    bool                        is_loser_xct_in_undo() const 
+        {
+            if (true == is_loser_xct())
+            {
+                if (loser_undoing == _loser_xct)
+                    return true;   // Loser transaction and in the middle of undoing
+            }
+            return false;
+        }
+    void                        set_loser_xct_in_undo()
+        {
+            if (loser_false != _loser_xct)
+                _loser_xct = loser_undoing; 
+        }
 
     ostream &                   dump_locks(ostream &) const;
 
