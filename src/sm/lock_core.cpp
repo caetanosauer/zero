@@ -156,6 +156,15 @@ w_error_codes lock_core_m::acquire_lock(RawXct* xct, uint32_t hash, const okvl_m
     uint32_t idx = _table_bucket(hash);
     while (true) {
         w_error_codes er = _htab[idx].acquire(xct, hash, mode, timeout, conditional, check_only, out);
+        // Possible return codes:
+        //   eDEADLOCK - detected deadlock, released the lock entry,
+        //                         automaticlly retry here if caller does not own other locks
+        //                         otherwise, return to caller
+        //   eCONDLOCKTIMEOUT - there is a lock preventing the grant (compatibility),
+        //                         if true == conditional, keep the already inserted lock entry and return control to caller
+        //                         caller should retry using retry_acquire
+        //   w_error_ok - acquired lock, return to caller
+        
         if (er == eDEADLOCK && !xct->has_locks() && !check_only && timeout == WAIT_FOREVER) {
             // this was a failed lock aquisition, so it didn't get the new lock.
             // the transaction doesn't have any other lock, and waiting unconditionally.
@@ -174,6 +183,14 @@ w_error_codes lock_core_m::retry_acquire(RawLock** lock, bool check_only, int32_
     const okvl_mode& mode = (*lock)->mode;
     RawXct* xct = (*lock)->owner_xct;
     while (true) {
+        // Possible return codes:
+        //   eDEADLOCK - detected deadlock, released the lock entry,
+        //                         automaticlly retry here if caller does not own other locks
+        //                         otherwise, return to caller
+        //   eCONDLOCKTIMEOUT - there is a lock preventing the grant (compatibility),
+        //                         if true == conditional, keep the already inserted lock entry and return control to caller
+        //                         caller should retry using retry_acquire
+        //   w_error_ok - acquired lock, return to caller
         w_error_codes er = _htab[idx].retry_acquire(lock, check_only, timeout);
         if (er == eDEADLOCK && !xct->has_locks() && timeout == WAIT_FOREVER) {
             // same as above, but now the lock was removed. we have to switch to acquire_lock.

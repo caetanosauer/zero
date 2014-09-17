@@ -4800,7 +4800,8 @@ void restart_m::_redo_page_pass()
 //                          raise an internal error for now
 //
 //                          Page (m2): concurrent txn does not load page, no conflict 
-//                          Demand (m3): only concurrent txn load page, no conflict
+//                          Demand (m3): only concurrent txn can load page, this function
+//                                                does not get executed, no conflict
 //                          Mixed (m4): potential conflict, the failed one skip the page silently
 //                                             if (stTIMEOUT != latch_rc.err_num()
 ////////////////////////////////////////

@@ -59,7 +59,6 @@ const uint32_t wait_interval = 1000;   // 1 seconds
 // data (second) is the counter for normal and compensation log records
 typedef std::map<uint64_t, signed int> tid_CLR_map;
 
-
 ////////////////////////////
 // Heap for reverse UNDO phase
 ////////////////////////////
@@ -108,7 +107,6 @@ CmpMountLsns::gt(const comp_mount_log_t* x, const comp_mount_log_t* y) const
 
 // Special heap for mount operation
 typedef class Heap<comp_mount_log_t*, CmpMountLsns> MountPtrHeap;
-
 
 ////////////////////////////
 // Heap for lock re-acquisition tracking

@@ -54,7 +54,9 @@ public:
         int32_t restart_mode = test_env->_restart_options->restart_mode;
         x_btree_scan_result s;
 
-        if(restart_mode < m3_default_restart) {
+        if(restart_mode < m3_default_restart) 
+        {
+            // M2
             if(restart_mode == m2_redo_delay_restart || restart_mode == m2_redo_fl_delay_restart 
                 || restart_mode == m2_both_delay_restart || restart_mode == m2_both_fl_delay_restart) // Check if redo delay has been set in order to take a checkpoint
             {
@@ -74,8 +76,11 @@ public:
             while(ss_m::in_restart()) // Wait while restart is going on
                 ::usleep(WAIT_TIME); 
         }
-        else    // m3 restart mode, no phases, just take a checkpoint randomly
+        else 
+        {
+            // m3 restart mode, no phases, just take a checkpoint randomly
             W_DO(ss_m::checkpoint());
+        }
         
         output_durable_lsn(6);
         const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;         
@@ -335,10 +340,13 @@ public:
         // but still wait in REDO phase due to test mode
         ::usleep(SHORT_WAIT_TIME*5);
         
-        if(restart_mode < m3_default_restart) {
+        if(restart_mode < m3_default_restart) 
+        {
+            // M2
             if(redo_delay) // Check if redo delay has been set in order to take a checkpoint
             {
-                if(ss_m::in_REDO() == t_restart_phase_active) { // Just a sanity check that the redo phase is truly active
+                if(ss_m::in_REDO() == t_restart_phase_active) // Just a sanity check that the redo phase is truly active
+                {                   
                     rc = test_env->btree_insert_and_commit(_stid_list[0], "key0181", "data0"); 
                     // Although there is no existing key "key0181", this should raise a conflict, because it would have to be inserted 
                     // in the fourth page, which is still dirty
@@ -355,7 +363,8 @@ public:
             {
                 while(ss_m::in_UNDO() == t_restart_phase_not_active) // Wait until undo phase is starting
                     ::usleep(SHORT_WAIT_TIME);
-                if(ss_m::in_UNDO() == t_restart_phase_active) { // Sanity check that undo is really active (instead of over) 
+                if(ss_m::in_UNDO() == t_restart_phase_active) // Sanity check that undo is really active (instead of over) 
+                {
                     rc = test_env->btree_update_and_commit(_stid_list[2], "key300", "C"); // Does not make sure that the error is due to rejection by undo logic
                     EXPECT_TRUE(rc.is_error());                                           // Could also just be that undo is complete and the record thus doesn't exist anymore
                     
@@ -370,7 +379,9 @@ public:
             while(ss_m::in_restart()) // Wait while restart is going on
                 ::usleep(WAIT_TIME); 
         }
-        else {   // m3 restart mode, everything should succeed
+        else
+        {
+            // m3 restart mode, everything should succeed
             W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa0", "data0"));
             W_DO(test_env->btree_update_and_commit(_stid_list[1], "key110", "A"));
             W_DO(test_env->btree_insert_and_commit(_stid_list[2], "key300", "data0")); 
@@ -409,7 +420,9 @@ public:
         
         // Check index 2
         W_DO(test_env->btree_scan(_stid_list[2], s));
-        if(restart_mode < m3_default_restart){
+        if(restart_mode < m3_default_restart)
+        {
+            // M2, because some concurrent transaction might fail so the result set might be different
             if(s.maxkey.length()==6) // Make sure "zz1" hasn't been submitted by accident (at would get out of bounds). If so, the check in pre_shutdown will have failed.
                 EXPECT_EQ('2', s.maxkey.at(3));
             if(undo_delay) {
@@ -421,7 +434,9 @@ public:
                 EXPECT_EQ(recordCount, s.rownum);
             }
         }
-        else { // m3
+        else
+        {
+            // m3
             EXPECT_EQ(recordCount+1, s.rownum);
             EXPECT_EQ(std::string("key200"), s.minkey);
             EXPECT_EQ(std::string("key300"), s.maxkey); 
@@ -722,6 +737,11 @@ public:
     
     w_rc_t post_shutdown(ss_m *) {
         output_durable_lsn(4);
+
+        // Wait before the final verfication
+        // Note this 'in_restart' check is not reliable if on_demand restart (m3),
+        // but it is okay because with on_demand restart, it blocks concurrent 
+        // transactions instead of failing concurrent transactions       
         while(ss_m::in_restart()) // Wait while restart is going on
             ::usleep(WAIT_TIME); 
 
@@ -850,28 +870,34 @@ public:
         ::usleep(SHORT_WAIT_TIME*5);
         output_durable_lsn(5);
 
-        if(restart_mode < m3_default_restart) {
-            if(redo_delay) {
+        if(restart_mode < m3_default_restart) 
+        {
+            // M2
+            if(redo_delay) 
+            {
                 transact_thread_t t1 (_stid_list, t1Run);
                 transact_thread_t t2 (_stid_list, t2Run);
                 if(ss_m::in_REDO() == t_restart_phase_active) { // Just a sanity check that the redo phase is truly active
-                    W_DO(t1.fork()); 
-                    W_DO(t2.fork()); 
-                    W_DO(t1.join());
-                    W_DO(t2.join());
+                    W_DO(t1.fork());   // Start thread 1
+                    W_DO(t2.fork());   // Start thread 2
+                    W_DO(t1.join());   // Stop thread 1
+                    W_DO(t2.join());   // Stop thread 2
                 }
             }
-            if(undo_delay) {
+            if(undo_delay) 
+            {
                 transact_thread_t t3 (_stid_list, t3Run);
                 while(ss_m::in_UNDO() == t_restart_phase_not_active) // Wait until undo phase is starting
                     ::usleep(SHORT_WAIT_TIME);
-                W_DO(t3.fork());
-                W_DO(t3.join());
+                W_DO(t3.fork());  // Start thread 3
+                W_DO(t3.join());  // Stop thread 3
             }
             while(ss_m::in_restart()) // Wait while restart is going on
                 ::usleep(WAIT_TIME); 
         }
-        else {
+        else 
+        {
+            // M3, concurrent transactions should block and then succeed
             char key_str[7] = "key300";
             char data_str[8] = "data300";
 
@@ -886,6 +912,10 @@ public:
 
         output_durable_lsn(6);
         x_btree_scan_result s;
+
+        // If M2, the restart finished already
+        // If M3, concurrent transaction should be blocked and then succeed
+        // In other words, the following query should succeed anyway
         W_DO(test_env->btree_scan(_stid_list[0], s));
         EXPECT_EQ(3*recordCount, s.rownum);
         EXPECT_EQ(std::string("key100"), s.minkey);

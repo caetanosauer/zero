@@ -19,7 +19,6 @@
 #include "w_key.h"
 #include "xct.h"
 #include "w_okvl_inl.h"
-#include "restart.h"       // Access restart mode
 
 struct RawLock;
 
@@ -116,7 +115,20 @@ btree_impl::_ux_lock_key(
     lockid_t lid (leaf.pid().stid(), (const unsigned char*) keystr, keylen);
     // first, try conditionally. we utilize the inserted lock entry even if it fails
     RawLock* entry = NULL;
-    rc_t lock_rc = lm->lock(lid, lock_mode, true, check_only, WAIT_IMMEDIATE, &entry);
+
+    // The lock request does the following:
+    // If the lock() failed to acquire lock (trying to acquire lock while holding the latch) and
+    // if the transaction doesn't have any other locks, because 'condition' is true, lock()
+    // returns immediatelly with eCONDLOCKTIMEOUT which indicates it failed to 
+    // acquire lock but no deadlock worry and the lock entry has been created already.  
+    // In this case caller (this function) releases latch and try again using retry_lock()
+    // which is a blocking operation, this is because it is safe to forever retry without 
+    // risking deadlock
+    // If the lock() returns eDEADLOCK, it means lock acquisition failed and 
+    // the current transaction already held other locks, it is not safe to retry (will cause
+    // further deadlocks) therefore caller must abort the current transaction
+    rc_t lock_rc = lm->lock(lid, lock_mode, true /*condition*/, check_only, WAIT_IMMEDIATE, &entry);
+
     if (!lock_rc.is_error()) {
         // lucky! we got it immediately. just return.
         return RCOK;
@@ -124,35 +136,10 @@ btree_impl::_ux_lock_key(
         // if it caused deadlock and it was chosen to be victim, give up! (not retry)
         if (lock_rc.err_num() == eDEADLOCK) 
         {
-            if (true == restart_m::use_concurrent_lock_restart())
-            {
-                if ((true == restart_m::use_undo_demand_restart()) ||  // pure on-demand
-                   (true == restart_m::use_undo_mix_restart()))        // midxed mode
-                {
-// TODO(Restart)...           
-//    xct.is_loser_xct()
-//    xct.is_loser_xct_in_undo()
-// How to find the transaction which is holding the lock currently?
-// Also need to get at that transaction to find out whether it is a loser txn or not
-
-                    // If using lock re-acquisition and on_demand or mixed UNDO
-                    // If the transaction which is holding the lock is a loser transaction
-                    // and not in the middle of rolling back, then chagne the transaction
-                    // to 'rolling back' state and trigger the rollback
-                    // this operation blocks the current transaction
-
-                    // If the transaction which is holding the lock is a loser transaction
-                    // and is in rolling back state already, retry
-                    // this operation blocks the current transaction
-
-                    // If the transaction which is holding the lock is not a loser transaction
-                    // raise the deadlock error
-                }
-                else
-                {
-                    // Not using on_demand or mixed UNDO, fall through to generate deadlock error
-                }            
-            }
+            // The user transaction will abort and rollback itself upon deadlock detection.
+            // Because Express does not have a deadlock monitor and policy to determine
+            // which transaction to rollback during a deadlock (should abort the cheaper 
+            // transaction), the user transaction which detects deadlock will be aborted.
             w_assert1(entry == NULL);
             return lock_rc;
         }

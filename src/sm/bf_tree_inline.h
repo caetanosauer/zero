@@ -14,6 +14,11 @@
 #include "bf_hashtable.h"
 #include "fixable_page_h.h"
 
+// Following includes are to have the ability to check restart mode
+#include "sm_int_1.h"
+#include "xct.h"
+#include "restart.h"
+
 void swizzling_stat_swizzle();
 void swizzling_stat_print(const char* prefix);
 void swizzling_stat_reset();
@@ -309,17 +314,18 @@ inline w_rc_t bf_tree_m::fix_root (generic_page*& page, volid_t vol, snum_t stor
     
     if (true == get_cb(idx)._in_doubt)
     {
-        // Page still in_doubt, block the access if not from Recovery
         DBGOUT3(<<"bf_tree_m::fix_root: root page is still in_doubt");
 
         if ((false == from_undo) && (false == get_cb(idx)._recovery_access))
         {
-////////////////////////////////////////
-// TODO(Restart)... M2 (concurrent log mode) - raise error and abort the user transaction
-//                          M3 (concurrent lock mode) - block user transaction until recovery is done
-////////////////////////////////////////
+            // Page still in_doubt, caller is from concurrent transaction.
+            // if we are not using on_demand or mixed restart modes,
+            // raise error because concurrent transaction is not allowed 
+            // to load in_doubt page in traditional restart mode (not on_demand)
         
-            return RC(eACCESS_CONFLICT);
+            if ((false == restart_m::use_redo_demand_restart()) &&  // pure on-demand
+                (false == restart_m::use_redo_mix_restart()))       // midxed mode
+                return RC(eACCESS_CONFLICT);
         }
     }
 

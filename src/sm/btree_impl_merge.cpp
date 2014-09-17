@@ -159,18 +159,27 @@ rc_t btree_impl::_ux_rebalance_foster_core(
             // TODO in this case we should do full logging.
             DBGOUT1 (<< "oops, couldn't force write order dependency in rebalance. this should be treated with care");
 
+////////////////////////////////////////
 // TODO(Restart)... NYI
 // This is an existing issue from Single-Page-Recovery, when a WOD cannot be generated during the execution
 // it has to use either 1) full logging or 2) flush the page to persistent device first
 // but the current code continue the execution although Write-Order-Dependency was not followed.
 // This scenario is not so difficult to encounter, at least one of the test cases in test_restart triggers this error.
-// Comment out the fatal error for now.
+// Comment out the fatal error for now since we have not implement the proper solution yet
+// 
 // Possible solution:
 //    1. Add an extra field in the 'page rebalance log record' to indicate whether minimal or full logging for the associated page rebalance.
 //    2. If 'Write-Order-Dependency' cannot be followed, turn the full logging flag on in the log record, and use full logging for the operation
 //    3. If 'Write-Order-Dependency' can be followed, turn the full logging flag off in the log record, and use minimal logging for the operation
-//    4. In REDO, check the flag in log record to determine whether use minimal or full logging for the REDO operation.
-//    5. Once this is implemented, the system can use either minimal or full logging to handle page rebalance, no need to force one method only
+//    4. In REDO and UNDO, check the flag in log record to determine whether use minimal or full logging for the REDO/UNDO operation.
+//    5. Once this is implemented, the system can use either minimal or full logging to handle each page rebalance operation on demand,
+//        no need to force and limit to use one method for the entire system up time.
+//
+// Current situation:
+//   Both minimal and full logging are implemented (still need more stabilization work, especially full logging), but controlled by
+//   restart flags, in other words, we must pick one methond for the entire system up time, including before and after system crash.
+//   Also full logging flag is used in M2 test cases only.
+////////////////////////////////////////
 
 
 //            W_FATAL_MSG(fcINTERNAL, << "oops, couldn't force write order dependency in rebalance, full loggig required: NYI");

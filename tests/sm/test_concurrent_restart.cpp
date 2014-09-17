@@ -86,6 +86,10 @@ public:
         output_durable_lsn(4);
         x_btree_scan_result s;
 
+        // Wait before the final verfication
+        // Note this 'in_restart' check is not reliable if on_demand restart (m3),
+        // but it is okay because with on_demand restart, it blocks concurrent 
+        // transactions instead of failing concurrent transactions
         while (true == test_env->in_restart())
         {
             // Concurrent restart is still going on, wait
@@ -173,6 +177,10 @@ public:
         output_durable_lsn(4);
         x_btree_scan_result s;
 
+        // Wait before the final verfication
+        // Note this 'in_restart' check is not reliable if on_demand restart (m3),
+        // but it is okay because with on_demand restart, it blocks concurrent 
+        // transactions instead of failing concurrent transactions
         while (true == test_env->in_restart())
         {
             // Concurrent restart is still going on, wait
@@ -262,6 +270,10 @@ public:
         output_durable_lsn(4);
         x_btree_scan_result s;
 
+        // Wait before the final verfication
+        // Note this 'in_restart' check is not reliable if on_demand restart (m3),
+        // but it is okay because with on_demand restart, it blocks concurrent 
+        // transactions instead of failing concurrent transactions
         while (true == test_env->in_restart())
         {
             // Concurrent restart is still going on, wait
@@ -344,6 +356,10 @@ public:
         output_durable_lsn(4);
         x_btree_scan_result s;
 
+        // Wait before the final verfication
+        // Note this 'in_restart' check is not reliable if on_demand restart (m3),
+        // but it is okay because with on_demand restart, it blocks concurrent 
+        // transactions instead of failing concurrent transactions
         while (true == test_env->in_restart())
         {
             // Concurrent restart is still going on, wait
@@ -424,6 +440,10 @@ public:
         output_durable_lsn(4);
         x_btree_scan_result s;
 
+        // Wait before the final verfication
+        // Note this 'in_restart' check is not reliable if on_demand restart (m3),
+        // but it is okay because with on_demand restart, it blocks concurrent 
+        // transactions instead of failing concurrent transactions
         while (true == test_env->in_restart())
         {
             // Concurrent restart is still going on, wait
@@ -508,6 +528,10 @@ public:
         // Concurrent chkpt
         W_DO(ss_m::checkpoint()); 
 
+        // Wait before the final verfication
+        // Note this 'in_restart' check is not reliable if on_demand restart (m3),
+        // but it is okay because with on_demand restart, it blocks concurrent 
+        // transactions instead of failing concurrent transactions
         while (true == test_env->in_restart())
         {
             // Concurrent restart is still going on, wait
@@ -609,6 +633,7 @@ public:
                                                          // page being recoverd
             if (rc.is_error())
             {
+                // Expected
                 DBGOUT3(<<"restart_simple_concurrent_redo: tree_scan error: " << rc);        
 
                 // Abort the failed scan txn
@@ -619,6 +644,7 @@ public:
                 std::cerr << "restart_simple_concurrent_redo: scan operation should not succeed"<< std::endl;         
                 return RC(eINTERNAL);
             }
+
             // Sleep to give Recovery sufficient time to finish
             while (true == test_env->in_restart())
             {
@@ -630,7 +656,9 @@ public:
             W_DO(test_env->btree_scan(_stid_list[0], s));
                 
         } 
-        else {
+        else 
+        {
+            // M3 crash shutdown, blocking operation and it should succeed
             W_DO(test_env->btree_scan(_stid_list[0], s));
         }
             
@@ -717,12 +745,16 @@ public:
         // No wait in test code, but wait in restart
         // This is to ensure concurrency
         
-        if (fCrash && restart_mode < m3_default_restart) {    // if m2 crash shutdown
+        if (fCrash && restart_mode < m3_default_restart)
+        {
+            // if m2 crash shutdown
             // Verify
             w_rc_t rc = test_env->btree_scan(_stid_list[0], s); // Should have multiple pages of data
                                                         // the concurrent txn is a read/scan txn
                                                         // should still not be allowed due to delay in REDO in m2 crash shutdown
-            if (rc.is_error()) {
+            if (rc.is_error())
+            {
+                // Expected
                 DBGOUT3(<<"restart_multi_concurrent_redo: tree_scan error: " << rc);
 
                 // Abort the failed scan txn
@@ -741,12 +773,16 @@ public:
                 EXPECT_EQ (std::string("aa4"), s.minkey);
                 return RCOK;
             }
-            else {
+            else 
+            {
                 std::cerr << "restart_multi_concurrent_redo: scan operation should not succeed"<< std::endl;         
                 return RC(eINTERNAL);
             }
         }
-        else {
+        else
+        {
+            // M3, both crash and non-crash, it should block and succeed
+            
             W_DO(test_env->btree_scan(_stid_list[0], s));
             EXPECT_EQ (recordCount, s.rownum);
             EXPECT_EQ(std::string("aa4"), s.minkey);
@@ -841,9 +877,12 @@ public:
                                                       // while restart is on for this page
                                                       // although REDO is done, UNDO is not
                                                       // therefore the concurrent txn should not be allowed
-        if (fCrash && restart_mode < m3_default_restart) {
-            if (rc.is_error()) {
-                DBGOUT3(<<"restart_simple_concurrent_undo: tree_scan error: " << rc);
+        if (fCrash && restart_mode < m3_default_restart) 
+        {
+            // M2, error is expected
+            if (rc.is_error()) 
+            {
+                DBGOUT3(<<"restart_simple_concurrent_undo: tree_scan conflict: " << rc);
 
                 // Abort the failed scan txn
                 test_env->abort_xct();
@@ -862,12 +901,15 @@ public:
                 EXPECT_EQ (std::string("aa3"), s.maxkey);
                 return RCOK;
             }
-            else {
+            else 
+            {
                 std::cerr << "restart_simple_concurrent_undo: scan operation should not succeed"<< std::endl;
                 return RC(eINTERNAL);
             }
         }
-        else {
+        else 
+        {
+            // M3, blocking operation, it should succeed
             W_DO(test_env->btree_scan(_stid_list[0], s));
             EXPECT_EQ (3, s.rownum);
             EXPECT_EQ (std::string("aa1"), s.minkey);
@@ -967,8 +1009,11 @@ public:
         w_rc_t rc = test_env->btree_insert(_stid_list[0], "aa7", "data4");
         if (rc.is_error())
         {
-            // Conflict        
-            std::cerr << "restart_concurrent_no_conflict: tree_insertion failed"<< std::endl;
+            // Conflict
+            // In M2 restart mode using commit_lsn, conflict is possible if 
+            // the entire buffer pool was never flushed, the commit_lsn would
+            // be the earliest LSN, therefore it blocks all user transactions
+            DBGOUT3(<<"restart_concurrent_no_conflict: tree_insertion conflict");
             W_DO(test_env->abort_xct());
         }
         else
@@ -979,6 +1024,9 @@ public:
         }
 
         // Wait before the final verfication
+        // Note this 'in_restart' check is not reliable if on_demand restart (m3),
+        // but it is okay because with on_demand restart, it blocks concurrent 
+        // transactions instead of failing concurrent transactions       
         while (true == test_env->in_restart())
         {
             // Concurrent restart is still going on, wait
@@ -1101,7 +1149,10 @@ public:
             {
                 // Crash shutdown
                 if (restart_mode < m3_default_restart)
+                {
+                    // M2, error is expected, simply abort the transaction
                     W_DO(test_env->abort_xct());           // M2 behavior, expected
+                }
                 else
                 {
                     // M3, we should not see failure
@@ -1121,11 +1172,16 @@ public:
             }
             else
             {
+                // If normal shutdown or in M3 (both normal or crash)
+                // insertion should succeed
                 // Roll it back so the record count stays the same
                 W_DO(test_env->abort_xct());
             }           
         }
         // Wait before the final verfication
+        // Note this 'in_restart' check is not reliable if on_demand restart (m3),
+        // but it is okay because with on_demand restart, it blocks concurrent 
+        // transactions instead of failing concurrent transactions
         while (true == test_env->in_restart())
         {
             // Concurrent restart is still going on, wait
@@ -1248,12 +1304,16 @@ public:
         int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;  // Count before checkpoint
         recordCount += 3;  // Count after checkpoint
 
-        // Insert into the first page which should not cause a conflict        
+        // Insert into the first page which might or might not succeed depending 
+        // on the restart mode (M2 or M3, meaning commit_lsn or lock)
+        // if using commit_lsn and if the entire buffer pool was never flushed then
+        // commit_lsn would be the first lsn and no concurrent transactions would
+        // be allowed
         W_DO(test_env->begin_xct());
         w_rc_t rc = test_env->btree_insert(_stid_list[0], "aa1", "data4");
         if (rc.is_error()) 
         {
-            // Will failed if the REDO phase did not process far enough
+            // Will failed if the REDO phase did not process far enough, this is not an error
             W_DO(test_env->abort_xct());            
         }
         else
@@ -1274,13 +1334,16 @@ public:
         }
         else
         {
+            // The rest of the scenarios
             if ((!fCrash || m3_restart) && rc.is_error())
-            { // Normal shutdown or M3, should have succeeded, did not
+            {
+                // Normal shutdown or M3, should have succeeded, did not
                 std::cerr << "restart_multi_concurrent_conflict: tree_insertion should have succeeded but failed" << rc;
                 return RC(eINTERNAL);
             }
             else if (fCrash && !m3_restart && !rc.is_error())
-            { // Crash, not M3, insertion should failed but succeeded
+            { 
+                // Crash, not M3, insertion should failed but succeeded
             
                 std::cerr << "restart_multi_concurrent_conflict: tree_insertion should failed but succeeded"<< std::endl;            
                 return RC(eINTERNAL);
@@ -1290,6 +1353,9 @@ public:
         }
 
         // Wait before the final verfication
+        // Note this 'in_restart' check is not reliable if on_demand restart (m3),
+        // but it is okay because with on_demand restart, it blocks concurrent 
+        // transactions instead of failing concurrent transactions       
         while (true == test_env->in_restart())
         {
             // Concurrent restart is still going on, wait
@@ -1407,13 +1473,15 @@ public:
         
         if (fCrash && restart_mode < m3_default_restart)
         {    
+            // M2
             W_DO(test_env->begin_xct());
             w_rc_t rc = test_env->btree_insert(_stid_list[0], "aa4", "data4");  // Insert same record that was in-flight, should be possible.
-                               // Will fail in m2 due to conflict, should succeed in m3 (not immediately).
+            // Will fail in m2 due to conflict, should succeed in m3 (not immediately).
 
             if (rc.is_error())
             {
-                DBGOUT3(<<"restart_concurrent_same_insert: insert error: " << rc);        
+                // Expected failure
+                DBGOUT3(<<"restart_concurrent_same_insert: insert failed: " << rc);
 
                 // Abort the failed scan txn
                 test_env->abort_xct();
@@ -1438,7 +1506,7 @@ public:
         } 
         else 
         {
-            // M3 behavior
+            // M3 behavior, blocking and it should succeed
             W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa4", "data4"));
         }
 
