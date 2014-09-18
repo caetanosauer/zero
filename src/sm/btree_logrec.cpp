@@ -49,10 +49,25 @@ btree_insert_log::undo(fixable_page_h* page) {
     w_keystr_t key;
     key.construct_from_keystr(dp->data, dp->klen);
 
+// TODO(Restart)... 
+DBGOUT3( << "&&&& UNDO insertion, key: " << key);  
+
     // ***LOGICAL*** don't grab locks during undo
     rc_t rc = smlevel_2::bt->remove_as_undo(header._vid.vol, header._snum, key); 
-    if(rc.is_error()) {
-        W_FATAL(rc.err_num());
+    if(rc.is_error()) 
+    {
+        if (false == restart_m::use_redo_full_logging_restart())     
+        {
+            W_FATAL(rc.err_num());
+        }
+        else
+        {
+// TODO(Restart)...        
+            // If UNDO an insertion while full logging was used, and
+            // not able to locate the existing record, this is not a 
+            // valid situation
+DBGOUT3( << "&&&& UNDO insertion, not able to locate the key for UNDO: " << key);
+        }
     }
 }
 
@@ -66,6 +81,9 @@ btree_insert_log::redo(fixable_page_h* page) {
     vec_t el;
     key.construct_from_keystr(dp->data, dp->klen);
     el.put(dp->data + dp->klen, dp->elen);
+
+// TODO(Restart)... 
+DBGOUT3( << "&&&& REDO insertion by replace ghost, key: " << key);  
 
     // PHYSICAL redo
     // see btree_impl::_ux_insert()
@@ -98,6 +116,9 @@ void btree_insert_nonghost_log::redo(fixable_page_h* page) {
     vec_t el;
     key.construct_from_keystr(dp->data, dp->klen);
     el.put(dp->data + dp->klen, dp->elen);
+
+// TODO(Restart)... 
+DBGOUT3( << "&&&& REDO insertion, key: " << key);  
 
     DBGOUT3( << "btree_insert_nonghost_log::redo - key to insert: " << key);
     bp.insert_nonghost(key, el);
@@ -299,6 +320,10 @@ btree_ghost_mark_log::undo(fixable_page_h*)
 
     for (size_t i = 0; i < dp->cnt; ++i) {
         w_keystr_t key (dp->get_key(i));
+
+// TODO(Restart)... 
+DBGOUT3( << "&&&& UNDO deletion by remove ghost mark, key: " << key);  
+
         rc_t rc = smlevel_2::bt->undo_ghost_mark(header._vid.vol, header._snum, key);
         if(rc.is_error()) {
             cerr << " key=" << key << endl << " rc =" << rc << endl;
@@ -345,7 +370,12 @@ btree_ghost_mark_log::redo(fixable_page_h *page)
                 w_assert1(false); // something unexpected, but can go on.
             }
             else
+            {
+// TODO(Restart)... 
+DBGOUT3( << "&&&& REDO deletion, not part of full logging, key: " << key);  
+            
                 bp.mark_ghost(slot);
+            }
         }
         else
         {
@@ -382,6 +412,9 @@ btree_ghost_mark_log::redo(fixable_page_h *page)
             else 
             {
                 DBGOUT3( << "btree_ghost_mark_log::redo - full logging, key to mark ghost: " << key);
+
+// TODO(Restart)... 
+DBGOUT3( << "&&&& REDO deletion, part of full logging, key: " << key);  
 
                 // Delete a record by mark it ghost
                 bp.mark_ghost(slot);

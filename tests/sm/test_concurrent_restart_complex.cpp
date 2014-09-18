@@ -137,7 +137,9 @@ TEST (RestartTest, MultiIndexConcChckptNF) {
 }
 /**/
 
-/* Not passing, full logging, core dump if crash with in-flight multiple statements, including page split *
+/* core dump if crash with in-flight multiple statements, including page split 
+btree_insert_log::undo() - undo an insert operation by delete it, but record not found */
+/* Not passing, full logging *
 TEST (RestartTest, MultiIndexConcChckptCF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -185,7 +187,9 @@ TEST (RestartTest, MultiIndexConcChckptNRF) {
 }
 /**/
 
-/* Not passing, full logging, core dump if crash with in-flight multiple statements, including page split *
+/* core dump if crash with in-flight multiple statements, including page split 
+btree_insert_log::undo() - undo an insert operation by delete it, but record not found */
+/* Not passing, full logging *
 TEST (RestartTest, MultiIndexConcChckptCRF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -233,7 +237,9 @@ TEST (RestartTest, MultiIndexConcChckptNUF) {
 }
 /**/
 
-/* Not passing, full logging, core dump if crash with in-flight multiple statements, including page split *
+/* core dump if crash with in-flight multiple statements, including page split 
+btree_insert_log::undo() - undo an insert operation by delete it, but record not found */
+/* Not passing, full logging *
 TEST (RestartTest, MultiIndexConcChckptCUF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -281,7 +287,9 @@ TEST (RestartTest, MultiIndexConcChckptNBF) {
 }
 /**/
 
-/* Not passing, full logging, core dump if crash with in-flight multiple statements, including page split *
+/* core dump if crash with in-flight multiple statements, including page split 
+btree_insert_log::undo() - undo an insert operation by delete it, but record not found */
+/* Not passing, full logging *
 TEST (RestartTest, MultiIndexConcChckptCBF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -785,7 +793,10 @@ TEST (RestartTest, MultiPageInFlightMultithrdC) {
 }
 /**/
 
-/* Failing - see Jira issue ZERO-186 *
+/* Failing - see Jira issue ZERO-186 */
+/* core dump if crash with in-flight multiple statements, including page split 
+btree_insert_log::undo() - undo an insert operation by delete it, but record not found */
+/* Not passing, full logging *
 TEST (RestartTest, MultiPageInFlightMultithrdCF) {
     test_env->empty_logdata_dir();
     restart_multi_page_inflight_multithrd context;
@@ -969,7 +980,10 @@ TEST (RestartTest, ManyConflictsMultihthrdC) {
 }
 /**/
 
-/* Failing - see Jira issue ZERO-186*
+/* Failing - see Jira issue ZERO-186*/
+/* core dump if crash with in-flight multiple statements, including page split 
+btree_insert_log::undo() - undo an insert operation by delete it, but record not found */
+/* Not passing, full logging *
 TEST (RestartTest, ManyConflictsMultithrdCF) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
@@ -1016,7 +1030,9 @@ TEST (RestartTest, ManyConflictsMultithrdNRF) {
 }
 **/
 
-/* Not passing, full logging, crash if crash with in-flight multiple statements, including page split *
+/* core dump if crash with in-flight multiple statements, including page split 
+btree_insert_log::undo() - undo an insert operation by delete it, but record not found */
+/* Not passing, full logging *
 TEST (RestartTest, ManyConflictsMultithrdCRF) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
@@ -1064,7 +1080,9 @@ TEST (RestartTest, ManyConflictsMultithrdNUF) {
 }
 **/
 
-/* Not passing, full logging, crash if crash with in-flight multiple statements, including page split *
+/* core dump if crash with in-flight multiple statements, including page split 
+btree_insert_log::undo() - undo an insert operation by delete it, but record not found */
+/* Not passing, full logging *
 TEST (RestartTest, ManyConflictsMultithrdCUF) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
@@ -1112,7 +1130,9 @@ TEST (RestartTest, ManyConflictsMultithrdNBF) {
 }
 **/
 
-/* Not passing, full logging, crash if crash with in-flight multiple statements, including page split *
+/* core dump if crash with in-flight multiple statements, including page split 
+btree_insert_log::undo() - undo an insert operation by delete it, but record not found */
+/* Not passing, full logging *
 TEST (RestartTest, ManyConflictsMultithrdCBF) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;

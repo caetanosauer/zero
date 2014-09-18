@@ -447,12 +447,14 @@ rc_t btree_page_h::init_fence_keys(
     // Set the page dirty
     set_dirty();
 
-    // Reset record count, number_of_items() is the actual record count including the 
-    // fence key record which is not an actual record
-    // 'remove_count' is used to reset the record count on source page of a page rebalance,
-    // by reseting the fence keys on the source page would eliminate existing records in the source page
+    // Delete records from page, number_of_items() is the actual 
+    // record count including the fence key record which is not an actual record
+    // 'remove_count' is the number of records to remove from the page
+    // due to page rebalance, this is because we are resetting the fence keys
+    // which makes some of the existing records out-of-bound and they
+    // need to be remvoed
     w_assert1(page()->number_of_items() > remove_count);
-    page()->reset_item_counts(remove_count, 0);  // Reset the record count, no change in ghost count
+    page()->remove_items(remove_count);  // Remove items, it affects item count but not ghost count
 
     // Prepare for updating the fence key slot
     cvec_t fences;

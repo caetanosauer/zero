@@ -134,10 +134,11 @@ protected:
      */
     void          init_items();
 
-    // Reset the item counts, both record and ghosts in the storage area
-    // to smaller numbers
-    // It would erase existing items therefore use with caution
-    void          reset_item_counts(const int item_count, const int ghost_count);
+    // Remove the largest 'item_count' items from the storage area
+    // It erases existing items from storage therefore use with caution
+    // The function should only be called by full logging page rebalance
+    // restart operation to recovery the source page only
+    void          remove_items(const int item_count);
 
     int           number_of_items()  const { return nitems;}
 

@@ -514,6 +514,9 @@ btree_impl::_ux_remove_core(volid_t vol, snum_t store, const w_keystr_t &key, co
             W_DO(_ux_lock_range(leaf, key, slot,
                         LATCH_SH, create_part_okvl(okvl_mode::X, key), ALL_N_GAP_S, false));
         }
+// TODO(Restart)... 
+DBGOUT3( << "&&&& _ux_remove_core - not found");
+
         return RC(eNOTFOUND);
     }
 
@@ -527,6 +530,9 @@ btree_impl::_ux_remove_core(volid_t vol, snum_t store, const w_keystr_t &key, co
     // it might be already ghost..
     if (leaf.is_ghost(slot)) 
     {
+// TODO(Restart)... 
+DBGOUT3( << "&&&& _ux_remove_core - already ghost");
+    
         return RC(eNOTFOUND);
     }
     else
