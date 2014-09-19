@@ -61,6 +61,29 @@ TEST (RestartTest, EmptyC) {
 }
 /**/
 
+/* Passing */
+TEST (RestartTest, EmptyN3) {
+    test_env->empty_logdata_dir();
+    restart_empty context;
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m2_default_restart; // minimal logging, nothing to recover and does not get into backward log scan loop
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Passing *
+TEST (RestartTest, EmptyC3) {
+    test_env->empty_logdata_dir();
+    restart_empty context;
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m3_default_restart; // minimal logging, nothing to recover but 
+                                                                    // go through Log Analysis backward scan loop
+                                                                    // although only checkpoint log records to process
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
 
 // Test case with simple transactions (1 in-flight) and normal shutdown, no concurrent activities during restart
 class restart_simple : public restart_test_base  {
@@ -149,6 +172,29 @@ TEST (RestartTest, SimpleCF) {
 }
 /**/
 
+/* Passing *
+TEST (RestartTest, SimpleN3) {
+    test_env->empty_logdata_dir();
+    restart_simple context;
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m3_default_restart; // minimal logging, nothing to recover 
+                                                                    // but go through Log Analysis backward scan loop and 
+                                                                    // process log records
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+/* Passing *
+TEST (RestartTest, SimpleC3) {
+    test_env->empty_logdata_dir();
+    restart_simple context;
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m3_default_restart; // minimal logging, scan query triggers on_demand recovery
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
 
 // Test case with transactions (1 in-flight with multiple operations)
 // no concurrent activities during restart

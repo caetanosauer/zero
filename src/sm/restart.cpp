@@ -1706,13 +1706,23 @@ restart_m::analysis_pass_backward(
         }// switch
     }
 
-    // Finished backward log scan of all the recovery logs, we should have a minimum LSN 
-    // from the last completed checkpoint at this point, which is where the REDO phase
-    // should start for the in_doubt pages (if using log scan REDO)
+    // Finished backward log scan of all the recovery logs, we should 
+    // have a minimum LSN from the last completed checkpoint,
+    // which is where the REDO phase should start for the in_doubt 
+    // pages (if using log scan REDO)
 
-    // Error out if we don't have valid redo or undo LSN
-    // Generate error because the assumption is that we always end the backward log scan 
-    // with a completed checkpoint, so the redo and undo LSNs must exist.
+    DBGOUT3(<< "Log Analysis finished backward scan"
+            << ", begin LSN = " << begin_chkpt
+            << ", master = " << master 
+            << ", redo_lsn = " << redo_lsn
+            << ", undo_lsn = " << undo_lsn);
+
+    // If we do not have valid redo_lsn and undo_lsn, 
+    // generate error because the assumption is that we always stop the backward log scan 
+    // when reached a completed checkpoint, so the redo and undo LSNs must exist.
+    // In theory, if we do not have the redo and undo LSNs, we can alwasy start the recovery from 
+    // the very beginning of the recovery log, but we are not doing so in this implementation
+    // therefore raise error
     if (lsn_t::null == redo_lsn)
         W_FATAL_MSG(fcINTERNAL, << "Missing redo_lsn at the end of Log Analysis phase");
     if (lsn_t::null == undo_lsn)
@@ -4604,11 +4614,8 @@ void restart_m::redo_concurrent_pass()
     else if (true == use_redo_mix_restart())
     {
         // M4, Mixed mode REDO
-////////////////////////////////////////                
-// TODO(Restart)... NYI
-////////////////////////////////////////
-
-        w_assert1(false);   
+        // M4, mixed mode REDO, start the traditional page driven REDO        
+        _redo_page_pass();        
     }
     else
     {
@@ -4679,12 +4686,8 @@ void restart_m::undo_concurrent_pass()
     }
     else if (true == use_undo_mix_restart())
     {
-        // M4, mixed mode UNDO
-////////////////////////////////////////
-// TODO(Restart)... NYI
-////////////////////////////////////////
-
-        w_assert1(false);
+        // M4, mixed mode UNDO, start the traditional transaction driven UNDO
+        _undo_txn_pass();
     }
     else
     {
@@ -4806,12 +4809,22 @@ void restart_m::_redo_page_pass()
 //                                             if (stTIMEOUT != latch_rc.err_num()
 ////////////////////////////////////////
 
-            // Unable to acquire write latch, cannot continue, raise an internal error
-            // including timeout error which we should not encounter
-            DBGOUT1 (<< "Error when acquiring LATCH_EX for a buffer pool page. cb._pid_shpid = "
-                     << cb._pid_shpid << ", rc = " << latch_rc);
+            if (true == use_redo_mix_restart())
+            {
+                // Mixed mode and not able to latch this page
+                // Eat the error and skip this page. rely on concurrent transaction
+                // to trigger on_demand REDO
+                continue;
+            }
+            else
+            {
+                // Unable to acquire write latch, cannot continue, raise an internal error
+                // including timeout error which we should not encounter
+                DBGOUT1 (<< "Error when acquiring LATCH_EX for a buffer pool page. cb._pid_shpid = "
+                         << cb._pid_shpid << ", rc = " << latch_rc);
 
-            W_FATAL_MSG(fcINTERNAL, << "REDO (redo_page_pass()): unable to EX latch a buffer pool page ");
+                W_FATAL_MSG(fcINTERNAL, << "REDO (redo_page_pass()): unable to EX latch a buffer pool page ");
+            }
         }
 
         if ((cb._in_doubt))
@@ -5127,9 +5140,41 @@ void restart_m::_undo_txn_pass()
         DBGOUT3( << "Transaction " << xd->tid() 
                  << " has state " << xd->state() );
 
-        if ((true == xd->is_loser_xct()) && (xct_t::xct_active == xd->state()))
+        // Acquire latch before checking the loser status
+        // latch is not needed for traditional restart (M2) but
+        // required for mixed mode due to concurrent transaction
+        // on_demand UNDO
+        w_rc_t latch_rc = xd->latch().latch_acquire(LATCH_EX, WAIT_FOREVER);
+        if (latch_rc.is_error())
+        {
+            // Not able to acquire latch on this transaction for some reason
+            if (true == use_undo_mix_restart())
+            {
+                // If mixed mode, eat the error and skip this transaction
+                // if this is a loser transaction, relying on concurrent transaction
+                // to rollback this loser
+                xd = iter.next();
+                continue;
+            }
+            else
+            {
+                // Traditional UNDO, not able to acquire latch
+                // continue the processing of this transaction because
+                // latch is optional in this case
+            }
+        }
+
+        if ((xct_t::xct_active == xd->state()) && (true == xd->is_loser_xct())
+             && (false == xd->is_loser_xct_in_undo()))
         {
             // Found a loser txn
+            // Mark this loser transaction as in undo first
+            // and release latch
+            xd->set_loser_xct_in_undo();
+
+            if (xd->latch().held_by_me())
+                xd->latch().latch_release();
+
             // Prepare to rollback this loser transaction
             curr = iter.curr();
             w_assert1(curr);
@@ -5192,6 +5237,9 @@ void restart_m::_undo_txn_pass()
         }
         else
         {
+            if (xd->latch().held_by_me())        
+                xd->latch().latch_release();
+
             // All other transaction, ignore and advance to the next txn
             xd = iter.next();           
         }   

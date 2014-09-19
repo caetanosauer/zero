@@ -763,6 +763,7 @@ ss_m::_construct_once()
         // Log Analysis has completed but no REDO or UNDO yet
         // Start the recovery process child thread to carry out
         // the REDO and UNDO phases if not in serial or pure on-demand mode
+        // which means both M2 (traditional) and M4 (mixed) would start the child thread
 
         if (_options.get_bool_option("sm_logging", true))
         {
