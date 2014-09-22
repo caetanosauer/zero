@@ -105,8 +105,9 @@ w_rc_t fixable_page_h::fix_recovery_redo(bf_idx idx, lpid_t page_updated,
 
     if (false == managed)
     {
-        // Page is not managed only if using minimal logging with page driven REDO
-        w_assert1(true == restart_m::use_redo_page_restart());
+        // Set the page to be not managed if using minimal logging
+        // Page is managed if using full logging
+        w_assert1(false == restart_m::use_redo_full_logging_restart());
     }
     _bufferpool_managed = managed;
     _mode = LATCH_EX;
@@ -114,15 +115,25 @@ w_rc_t fixable_page_h::fix_recovery_redo(bf_idx idx, lpid_t page_updated,
     return RCOK;
 }
 
-w_rc_t fixable_page_h::fix_recovery_redo(const bool managed) 
+w_rc_t fixable_page_h::fix_recovery_redo_managed() 
 {
-    // Special function for Recovyer REDO phase
-    // Mark the page as buffer pool managed
-    // It is only used for page driven REDO (Single-Page-Recovery) with minimal logging and
-    // the page has been recovered via Single-Page-Recovery already
+    // Special function for Recovery REDO phase
     
-    w_assert1(true == restart_m::use_redo_page_restart());
-    _bufferpool_managed = managed;
+    // For normal operation, page should always be managed by buffer pool.
+    // During REDO pass:
+    // if we encounter a page rebalance operation (split, merge) and if page 
+    // is not managed by buffer pool, a different code path would be used
+    // to recovery from the page rebalance (via Single Page Recovery).
+    // If page is managed, then the code page does not use Single Page
+    // Recovery, in such case full logger must be used to recovery the page
+    
+    // This functionis only used for page driven REDO (Single-Page-Recovery) 
+    // with minimal logging, the page would be set to 'not managed'
+    // before the page recovery, and set to managed again (this function)
+    // after the recovery operation
+    
+    w_assert1(false == restart_m::use_redo_full_logging_restart());
+    _bufferpool_managed = true;
     return RCOK;
 }
 

@@ -129,8 +129,9 @@ public:
     /**
      * Only used in the REDO phase of Recovery process
      * with page driven REDO (Single-Page-Recovery) with minimal logging
+     * mark the page as a buffer pool managed page
      */
-    w_rc_t fix_recovery_redo(const bool managed);
+    w_rc_t fix_recovery_redo_managed();
 
     /**
      * Adds an additional pin count for the given page.  This is used to re-fix the page

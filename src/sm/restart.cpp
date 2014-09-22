@@ -1046,6 +1046,11 @@ restart_m::analysis_pass_forward(
     // undo_lsn is where the UNDO phase should stop for the backward scan (if used),
     // it must be the earliest LSN for all transactions, which could be earlier than
     // the begin checkpoint LSN
+    // begin_chkpt is retrieved from 'end checkpoint' log record, it must be set
+    // otherwise stop the execution since we must reached an 'end checkpoint' log record
+    if (lsn_t::null == begin_chkpt)
+        W_FATAL_MSG(fcINTERNAL, << "Missing begin_chkpt lsn at the end of Log Analysis phase");
+
     w_assert1(begin_chkpt == master);
     if (redo_lsn > master)
        redo_lsn = master;
@@ -1244,6 +1249,11 @@ restart_m::analysis_pass_backward(
 
     // Ready to process the logs from recovery log
     // Open a backward scan starting from the end of recovery log 
+
+///////////////////////////////////////////////////////    
+// TODO(Restart)... 'last_lsn' is the next available LSN, it is not the last LSN in log file, how to find the last LSN for backward log scan?
+///////////////////////////////////////////////////////    
+
     log_i         scan(*log, last_lsn, false /*forward scan*/);
     logrec_t*     log_rec_buf;
     lsn_t         lsn;   // LSN of the retrieved log record
@@ -1717,6 +1727,11 @@ restart_m::analysis_pass_backward(
             << ", redo_lsn = " << redo_lsn
             << ", undo_lsn = " << undo_lsn);
 
+    // The assumption is that we must scan a completed checkpoint, stop
+    // if the assumption failed
+    if (false == scan_done)
+        W_FATAL_MSG(fcINTERNAL, << "Did not scan a completed checkpoint");
+
     // If we do not have valid redo_lsn and undo_lsn, 
     // generate error because the assumption is that we always stop the backward log scan 
     // when reached a completed checkpoint, so the redo and undo LSNs must exist.
@@ -1734,6 +1749,10 @@ restart_m::analysis_pass_backward(
     // undo_lsn is where the UNDO phase should stop for the backward scan (if used),
     // it must be the earliest LSN for all transactions, which could be earlier than
     // the begin checkpoint LSN
+    // begin_chkpt is retrieved from 'end checkpoint' log record, it must be set
+    // otherwise stop the execution since we must reached an 'end checkpoint' log record
+    if (lsn_t::null == begin_chkpt)
+        W_FATAL_MSG(fcINTERNAL, << "Missing begin_chkpt lsn at the end of Log Analysis phase");   
     w_assert1(begin_chkpt >= master);
     if (redo_lsn > master)
        redo_lsn = master;
@@ -4613,7 +4632,6 @@ void restart_m::redo_concurrent_pass()
     }
     else if (true == use_redo_mix_restart())
     {
-        // M4, Mixed mode REDO
         // M4, mixed mode REDO, start the traditional page driven REDO        
         _redo_page_pass();        
     }
@@ -4717,7 +4735,8 @@ void restart_m::_redo_page_pass()
     //                             no lock operations during REDO
 
     w_assert1((true == use_concurrent_log_restart()) || (true == use_concurrent_lock_restart()));
-    w_assert1(true == use_redo_page_restart() || true == use_redo_full_logging_restart());
+    w_assert1(true == use_redo_page_restart() || true == use_redo_full_logging_restart() ||
+              true == use_redo_mix_restart());
 
     // If no in_doubt page in buffer pool, then nothing to process
     if (0 == smlevel_0::in_doubt_count)
@@ -4928,19 +4947,25 @@ void restart_m::_redo_page_pass()
             // Re-construct the lpid using several fields in cb
             vid_t vid(vol);
             lpid_t store_id(vid, store, shpid);           
-            if (true == use_redo_page_restart())
-            {
-                // Use minimal logging
-                // page is not buffer pool managed before Single-Page-Recovery
-                // only mark the page as buffer pool managed after Single-Page-Recovery
-                W_COERCE(page.fix_recovery_redo(idx, store_id, false /* managed*/));            
-            }
-            else if (true == use_redo_full_logging_restart())
+//            if (true == use_redo_page_restart())
+//            {
+//                // Use minimal logging
+//                // page is not buffer pool managed before Single-Page-Recovery
+//                // only mark the page as buffer pool managed after Single-Page-Recovery
+//                W_COERCE(page.fix_recovery_redo(idx, store_id, false /* managed*/));            
+//            }
+            if (true == use_redo_full_logging_restart())
             {
                 // Use full logging, page is buffer pool managed
                 W_COERCE(page.fix_recovery_redo(idx, store_id));                
             }
-
+            else
+            {
+                // Use minimal logging, this is for both M2 and M4
+                // page is not buffer pool managed before Single-Page-Recovery
+                // only mark the page as buffer pool managed after Single-Page-Recovery
+                W_COERCE(page.fix_recovery_redo(idx, store_id, false /* managed*/));            
+            }
 
             // We rely on pid/tag set correctly in individual redo() functions
             // set for all pages, both virgin and non-virgin
@@ -5019,11 +5044,11 @@ void restart_m::_redo_page_pass()
             W_COERCE(smlevel_0::log->recover_single_page(page, emlsn, true));   // we have the actual emlsn even if page corrupted
             page.clear_recovery_access();
 
-            if (true == use_redo_page_restart())
+            if (false == use_redo_full_logging_restart())
             {
                 // Use minimal logging
                 // Mark the page as buffer pool managed after Single-Page-Recovery REDO
-                W_COERCE(page.fix_recovery_redo(true /* managed*/));            
+                W_COERCE(page.fix_recovery_redo_managed());            
             }
 
             // After the page is loaded and recovered (Single-Page-Recovery), the page context should
@@ -5098,7 +5123,7 @@ void restart_m::_undo_txn_pass()
     //     lock acquisition: locks acquired during Log Analysis and release in UNDO
     
     w_assert1((true == use_concurrent_log_restart()) || (true == use_concurrent_lock_restart()));
-    w_assert1(true == use_undo_txn_restart());
+    w_assert1((true == use_undo_txn_restart()) || (true == use_undo_mix_restart()));
 
     // If nothing in the transaction table, then nothing to process
     if (0 == xct_t::num_active_xcts())
@@ -5169,7 +5194,7 @@ void restart_m::_undo_txn_pass()
         {
             // Found a loser txn
             // Mark this loser transaction as in undo first
-            // and release latch
+            // and then release latch
             xd->set_loser_xct_in_undo();
 
             if (xd->latch().held_by_me())
