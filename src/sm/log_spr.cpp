@@ -198,6 +198,8 @@ rc_t log_core::_collect_single_page_recovery_logs(
         } else if (!record->is_multi_page()
             || pid.page != record->data_ssx_multi()->_page2_pid) {
 
+// TODO(Restart)... it appears that 'logrec_t::t_btree_foster_adopt' is causing eWRONG_PAGE_LSNCHAIN error
+
             if (!record->is_multi_page())
             {
                 // Not multi-page log record, and the page id is different

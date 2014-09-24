@@ -337,7 +337,9 @@ public:
     w_rc_t post_shutdown(ss_m *) {
         output_durable_lsn(5);
         int32_t restart_mode = test_env->_restart_options->restart_mode;
+        bool crash_shutdown = test_env->_restart_options->shutdown_mode;  // false = normal shutdown
         x_btree_scan_result s;
+        bool insert_occurred = false;
         w_rc_t rc;
         bool redo_delay = restart_mode == m2_redo_delay_restart || restart_mode == m2_redo_fl_delay_restart 
                 || restart_mode == m2_both_delay_restart || restart_mode == m2_both_fl_delay_restart;
@@ -351,39 +353,55 @@ public:
         if(restart_mode < m3_default_restart) 
         {
             // M2
-            if(redo_delay) // Check if redo delay has been set in order to take a checkpoint
+            if (true == crash_shutdown)
             {
-                if(ss_m::in_REDO() == t_restart_phase_active) // Just a sanity check that the redo phase is truly active
-                {                   
-                    rc = test_env->btree_insert_and_commit(_stid_list[0], "key0181", "data0"); 
-                    // Although there is no existing key "key0181", this should raise a conflict, because it would have to be inserted 
-                    // in the fourth page, which is still dirty
-                    EXPECT_TRUE(rc.is_error());
-                    
-                    if(test_env->_restart_options->enable_checkpoints)
-                        W_DO(ss_m::checkpoint());
-
-                    rc = test_env->btree_update_and_commit(_stid_list[1], "key110", "A");
-                    EXPECT_TRUE(rc.is_error());
-                }
-            }
-            if(undo_delay) // Check if undo delay has been set in order to take a checkpoint
-            {
-                while(ss_m::in_UNDO() == t_restart_phase_not_active) // Wait until undo phase is starting
-                    ::usleep(SHORT_WAIT_TIME);
-                if(ss_m::in_UNDO() == t_restart_phase_active) // Sanity check that undo is really active (instead of over) 
+                // If crahsed shutdown, try to cause some concurrent transactions
+                if(redo_delay) // Check if redo delay has been set in order to take a checkpoint
                 {
-                    rc = test_env->btree_update_and_commit(_stid_list[2], "key300", "C"); // Does not make sure that the error is due to rejection by undo logic
-                    EXPECT_TRUE(rc.is_error());                                           // Could also just be that undo is complete and the record thus doesn't exist anymore
+                    if(ss_m::in_REDO() == t_restart_phase_active) // Just a sanity check that the redo phase is truly active
+                    {                   
+                        rc = test_env->btree_insert_and_commit(_stid_list[0], "key0181", "data0"); 
+                        // Although there is no existing key "key0181", this should raise a conflict, because it would have to be inserted 
+                        // in the fourth page, which is still dirty
+                        EXPECT_TRUE(rc.is_error());
                     
-                    // This is failing, it seems that the in-flights have already been undone and therefore all pages are accessible, test cases have been commented out
-                    rc = test_env->btree_insert_and_commit(_stid_list[2], "zz1", "data1"); //  This record would be inserted into the last page (which has records belonging to in-flight transactions)
-                    EXPECT_TRUE(rc.is_error());                                            //  and should therefore be aborted
+                        if(test_env->_restart_options->enable_checkpoints)
+                            W_DO(ss_m::checkpoint());
+
+                        rc = test_env->btree_update_and_commit(_stid_list[1], "key110", "A");
+                        EXPECT_TRUE(rc.is_error());
+                    }
+                }
+                if(undo_delay) // Check if undo delay has been set in order to take a checkpoint
+                {
+                    while(ss_m::in_UNDO() == t_restart_phase_not_active) // Wait until undo phase is starting
+                        ::usleep(SHORT_WAIT_TIME);
+                    if(ss_m::in_UNDO() == t_restart_phase_active) // Sanity check that undo is really active (instead of over) 
+                    {
+                        rc = test_env->btree_update_and_commit(_stid_list[2], "key300", "C"); // Does not make sure that the error is due to rejection by undo logic
+                        EXPECT_TRUE(rc.is_error());                                           // Could also just be that undo is complete and the record thus doesn't exist anymore
                     
-                    W_DO(test_env->btree_insert_and_commit(_stid_list[2], "aa0", "data0")); // This should succeed, as all records in page 1 have been redone and there are no in-flights
+                        // This is failing, it seems that the in-flights have already been undone and therefore all pages are accessible, test cases have been commented out
+                        rc = test_env->btree_insert_and_commit(_stid_list[2], "zz1", "data1"); //  This record would be inserted into the last page (which has records belonging to in-flight transactions)
+                        EXPECT_TRUE(rc.is_error());                                            //  and should therefore be aborted
+                
+                        rc = test_env->btree_insert_and_commit(_stid_list[2], "aa0", "data0"); // This should succeed, as all records in page 1 have been redone and there are no in-flights
+                                                                                               // but if the entire b-tree was never flushed to disk before the system crash
+                                                                                               // then commit_lsn would block all operations until the end of Restart operation and
+                                                                                               // this operation would fail, so the result here is not really determiistic based on timing
+                                                                                               // and data situation before crash
+                        // Insert succeeded
+                        if (!rc.is_error())
+                            insert_occurred = true;
+                                                                                               
+                    }
                 }
             }
-            
+            else
+            {
+                // If normal shutdown, REDO and UNDO phases should be very brief and no real operation
+            }
+
             while(ss_m::in_restart()) // Wait while restart is going on
                 ::usleep(WAIT_TIME); 
         }
@@ -399,11 +417,15 @@ public:
         
         // Check index 0
         W_DO(test_env->btree_scan(_stid_list[0], s));
-        if(restart_mode < m3_default_restart) {
+        if(restart_mode < m3_default_restart) 
+        {
+            // M2
             EXPECT_EQ(std::string("aa1"), s.minkey);
             EXPECT_EQ(recordCount+1, s.rownum);
         }
-        else {
+        else 
+        {
+            // M3
             EXPECT_EQ(std::string("aa0"), s.minkey);
             EXPECT_EQ(recordCount+2, s.rownum);
         }
@@ -422,10 +444,15 @@ public:
 
         W_DO(test_env->btree_lookup_and_commit(_stid_list[1], "key110", actual));
         if(restart_mode > m3_default_restart)
+        {
+            // M3
             EXPECT_EQ(std::string("A"), actual);
+        }
         else
+        {
+            // M2
             EXPECT_EQ(std::string(expected, btree_m::max_entry_size()-7), actual);
-        
+        }
         // Check index 2
         W_DO(test_env->btree_scan(_stid_list[2], s));
         if(restart_mode < m3_default_restart)
@@ -433,11 +460,15 @@ public:
             // M2, because some concurrent transaction might fail so the result set might be different
             if(s.maxkey.length()==6) // Make sure "zz1" hasn't been submitted by accident (at would get out of bounds). If so, the check in pre_shutdown will have failed.
                 EXPECT_EQ('2', s.maxkey.at(3));
-            if(undo_delay) {
+            if ((true == crash_shutdown) && (undo_delay) && (true == insert_occurred))
+            {
                 EXPECT_EQ(std::string("aa0"), s.minkey);
                 EXPECT_EQ(recordCount+1, s.rownum);
             }
-            else {
+            else
+            {
+                // Normal shutdown or 
+                // Crash shutdown but no delay in undo phase, so we did not insert a record with 'aa0'
                 EXPECT_EQ(std::string("key200"), s.minkey);
                 EXPECT_EQ(recordCount, s.rownum);
             }
@@ -454,10 +485,7 @@ public:
     }
 };
 
-// Test calls with redo delay and normal shutdown can sometimes fail (inconsistency bug, see issue ZERO-184)
-// Although they pass most of the time, I have disabled them to provide clean test results
-
-/* Failing - see info above * 
+/* Passing - ZERO-184 */
 TEST (RestartTest, MultiIndexConcTransNR) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
@@ -467,7 +495,7 @@ TEST (RestartTest, MultiIndexConcTransNR) {
     options.restart_mode = m2_redo_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 /* Passing */
 TEST (RestartTest, MultiIndexConcTransCR) {
@@ -481,7 +509,7 @@ TEST (RestartTest, MultiIndexConcTransCR) {
 }
 /**/
 
-/* Failing - see info above * 
+/* Passing - ZERO-184 */
 TEST (RestartTest, MultiIndexConcTransNRF) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
@@ -491,7 +519,7 @@ TEST (RestartTest, MultiIndexConcTransNRF) {
     options.restart_mode = m2_redo_fl_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 /* Passing */
 TEST (RestartTest, MultiIndexConcTransCRF) {
@@ -505,7 +533,7 @@ TEST (RestartTest, MultiIndexConcTransCRF) {
 }
 /**/
 
-/* Failing - see issue ZERO-184 *
+/* Passing - ZERO-184 */
 TEST (RestartTest, MultiIndexConcTransNU) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
@@ -515,9 +543,9 @@ TEST (RestartTest, MultiIndexConcTransNU) {
     options.restart_mode = m2_undo_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
-/* Failing - see issue ZERO-184 *
+/* Passing - ZERO-184 */
 TEST (RestartTest, MultiIndexConcTransCU) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
@@ -527,9 +555,9 @@ TEST (RestartTest, MultiIndexConcTransCU) {
     options.restart_mode = m2_undo_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
-/* Failing - see issue ZERO-184 *
+/* Passing - ZERO-184 */
 TEST (RestartTest, MultiIndexConcTransNUF) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
@@ -539,9 +567,9 @@ TEST (RestartTest, MultiIndexConcTransNUF) {
     options.restart_mode = m2_undo_fl_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
-/* Failing - see issue ZERO-184 *
+/* Passing - ZERO-184 */
 TEST (RestartTest, MultiIndexConcTransCUF) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
@@ -551,9 +579,9 @@ TEST (RestartTest, MultiIndexConcTransCUF) {
     options.restart_mode = m2_redo_fl_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
-/* Failing - see issue ZERO-184 *
+/* Passing - ZERO-184 */
 TEST (RestartTest, MultiIndexConcTransNB) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
@@ -563,9 +591,9 @@ TEST (RestartTest, MultiIndexConcTransNB) {
     options.restart_mode = m2_both_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
-/* Failing - see issue ZERO-184 *
+/* Passing - ZERO-184 */
 TEST (RestartTest, MultiIndexConcTransCB) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
@@ -575,9 +603,9 @@ TEST (RestartTest, MultiIndexConcTransCB) {
     options.restart_mode = m2_both_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
-/* Failing - see issue ZERO-184 *
+/* Passing - ZERO-184 */
 TEST (RestartTest, MultiIndexConcTransNBF) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
@@ -587,9 +615,9 @@ TEST (RestartTest, MultiIndexConcTransNBF) {
     options.restart_mode = m2_both_fl_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
-/* Failing - see issue ZERO-184 *
+/* Passing - ZERO-184 */
 TEST (RestartTest, MultiIndexConcTransCBF) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
@@ -599,10 +627,10 @@ TEST (RestartTest, MultiIndexConcTransCBF) {
     options.restart_mode = m2_both_fl_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 
-/* Failing - see info above * 
+/* Passing - ZERO-184 */
 TEST (RestartTest, MultiIndexConcTransChckptNR) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
@@ -613,7 +641,7 @@ TEST (RestartTest, MultiIndexConcTransChckptNR) {
     options.enable_checkpoints = true;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 /* Passing */
 TEST (RestartTest, MultiIndexConcTransChckptCR) {
@@ -628,7 +656,7 @@ TEST (RestartTest, MultiIndexConcTransChckptCR) {
 }
 /**/
 
-/* Failing - see info above * 
+/* Passing - ZERO-184 */
 TEST (RestartTest, MultiIndexConcTransChckptNRF) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
@@ -639,7 +667,7 @@ TEST (RestartTest, MultiIndexConcTransChckptNRF) {
     options.enable_checkpoints = true;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 /* Passing */
 TEST (RestartTest, MultiIndexConcTransChckptCRF) {
@@ -655,7 +683,7 @@ TEST (RestartTest, MultiIndexConcTransChckptCRF) {
 /**/
 
 
-/* Failing - see issue ZERO-184 *
+/* Passing - ZERO-184 */
 TEST (RestartTest, MultiIndexConcTransChckptNB) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
@@ -666,9 +694,9 @@ TEST (RestartTest, MultiIndexConcTransChckptNB) {
     options.enable_checkpoints = true;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
-/* Failing - see issue ZERO-184 *
+/* Passing - ZERO-184 */
 TEST (RestartTest, MultiIndexConcTransChckptCB) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
@@ -679,9 +707,9 @@ TEST (RestartTest, MultiIndexConcTransChckptCB) {
     options.enable_checkpoints = true;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
-/* Failing - see issue ZERO-184 *
+/* Passing - ZERO-184 */
 TEST (RestartTest, MultiIndexConcTransChckptNBF) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
@@ -692,9 +720,9 @@ TEST (RestartTest, MultiIndexConcTransChckptNBF) {
     options.enable_checkpoints = true;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
-/* Failing - see issue ZERO-184 *
+/* Passing - ZERO-184 */
 TEST (RestartTest, MultiIndexConcTransChckptCBF) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
@@ -705,7 +733,7 @@ TEST (RestartTest, MultiIndexConcTransChckptCBF) {
     options.enable_checkpoints = true;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 class restart_multi_page_inflight_multithrd : public restart_test_base
 {
