@@ -528,6 +528,8 @@ TEST (RestartTest, MultiIndexConcChckptCF) {
 }
 **/
 
+
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     test_env = new btree_test_env();

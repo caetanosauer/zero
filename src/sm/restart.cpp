@@ -4947,13 +4947,6 @@ void restart_m::_redo_page_pass()
             // Re-construct the lpid using several fields in cb
             vid_t vid(vol);
             lpid_t store_id(vid, store, shpid);           
-//            if (true == use_redo_page_restart())
-//            {
-//                // Use minimal logging
-//                // page is not buffer pool managed before Single-Page-Recovery
-//                // only mark the page as buffer pool managed after Single-Page-Recovery
-//                W_COERCE(page.fix_recovery_redo(idx, store_id, false /* managed*/));            
-//            }
             if (true == use_redo_full_logging_restart())
             {
                 // Use full logging, page is buffer pool managed

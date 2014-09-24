@@ -899,6 +899,7 @@ public:
         
         const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;         
         int32_t restart_mode = test_env->_restart_options->restart_mode;
+        bool crash_shutdown = test_env->_restart_options->shutdown_mode;   // false if normal shutdown
         bool redo_delay = restart_mode == m2_redo_delay_restart || restart_mode == m2_redo_fl_delay_restart 
                 || restart_mode == m2_both_delay_restart || restart_mode == m2_both_fl_delay_restart;
         bool undo_delay = restart_mode == m2_undo_delay_restart || restart_mode == m2_undo_fl_delay_restart 
@@ -912,24 +913,31 @@ public:
         if(restart_mode < m3_default_restart) 
         {
             // M2
-            if(redo_delay) 
+            if (true == crash_shutdown)
             {
-                transact_thread_t t1 (_stid_list, t1Run);
-                transact_thread_t t2 (_stid_list, t2Run);
-                if(ss_m::in_REDO() == t_restart_phase_active) { // Just a sanity check that the redo phase is truly active
-                    W_DO(t1.fork());   // Start thread 1
-                    W_DO(t2.fork());   // Start thread 2
-                    W_DO(t1.join());   // Stop thread 1
-                    W_DO(t2.join());   // Stop thread 2
+                // Fork the child threads if crash shutdown
+                // because if normal shutdown, there is no recovery work
+                if(redo_delay) 
+                {
+                    transact_thread_t t1 (_stid_list, t1Run);
+                    transact_thread_t t2 (_stid_list, t2Run);
+                    if(ss_m::in_REDO() == t_restart_phase_active) { // Just a sanity check that the redo phase is truly active
+                        W_DO(t1.fork());   // Start thread 1
+                        W_DO(t2.fork());   // Start thread 2
+                        W_DO(t1.join());   // Stop thread 1
+                        W_DO(t2.join());   // Stop thread 2
+                    }
                 }
-            }
-            if(undo_delay) 
-            {
-                transact_thread_t t3 (_stid_list, t3Run);
-                while(ss_m::in_UNDO() == t_restart_phase_not_active) // Wait until undo phase is starting
-                    ::usleep(SHORT_WAIT_TIME);
-                W_DO(t3.fork());  // Start thread 3
-                W_DO(t3.join());  // Stop thread 3
+                if(undo_delay) 
+                {
+                    transact_thread_t t3 (_stid_list, t3Run);
+                    // Do not come here for a normal shutdown 
+                    // becuase this state does not happen and the loop will wait forever
+                    while(ss_m::in_UNDO() == t_restart_phase_not_active) // Wait until undo phase is starting
+                        ::usleep(SHORT_WAIT_TIME);
+                    W_DO(t3.fork());  // Start thread 3
+                    W_DO(t3.join());  // Stop thread 3
+                }
             }
             while(ss_m::in_restart()) // Wait while restart is going on
                 ::usleep(WAIT_TIME); 
@@ -965,10 +973,14 @@ public:
         memset(expected, 'D', btree_m::max_entry_size()-7);
         expected[btree_m::max_entry_size()-7] = '\0';
         W_DO(test_env->btree_lookup_and_commit(_stid_list[0], "key300", actual));
-        if(undo_delay || restart_mode >= m3_default_restart) {
+        if((undo_delay && (true == crash_shutdown)) || restart_mode >= m3_default_restart) 
+        {
+            // M3 or M2 with delay undo on crash shutdown
             EXPECT_EQ(std::string("data300"), actual);
         }
-        else {
+        else
+        {
+            // M2
             EXPECT_EQ(std::string(expected), actual);
         }
         return RCOK;
@@ -1022,7 +1034,7 @@ TEST (RestartTest, ManyConflictsMultithrdCF) {
 }
 **/
 
-/* Failing - infinite loop *
+/* Passing */
 TEST (RestartTest, ManyConflictsMultithrdNR) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
@@ -1032,7 +1044,7 @@ TEST (RestartTest, ManyConflictsMultithrdNR) {
     options.restart_mode = m2_redo_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 /* Occasionally failing because of a assertion fail in btree_impl_split:335 *
 TEST (RestartTest, ManyConflictsMultithrdCR) {
@@ -1046,7 +1058,7 @@ TEST (RestartTest, ManyConflictsMultithrdCR) {
 }
 **/
 
-/* Failing - infinite loop *
+/* Passing */
 TEST (RestartTest, ManyConflictsMultithrdNRF) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
@@ -1056,7 +1068,7 @@ TEST (RestartTest, ManyConflictsMultithrdNRF) {
     options.restart_mode = m2_redo_fl_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 /* core dump if crash with in-flight multiple statements, including page split 
 btree_insert_log::undo() - undo an insert operation by delete it, but record not found */
@@ -1072,7 +1084,7 @@ TEST (RestartTest, ManyConflictsMultithrdCRF) {
 }
 **/
 
-/* Failing - infinite loop *
+/* Passing */
 TEST (RestartTest, ManyConflictsMultithrdNU) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
@@ -1082,7 +1094,7 @@ TEST (RestartTest, ManyConflictsMultithrdNU) {
     options.restart_mode = m2_undo_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 /* Passing */
 TEST (RestartTest, ManyConflictsMultithrdCU) {
@@ -1096,7 +1108,7 @@ TEST (RestartTest, ManyConflictsMultithrdCU) {
 }
 /**/
 
-/* Failing - infinite loop *
+/* Passing */
 TEST (RestartTest, ManyConflictsMultithrdNUF) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
@@ -1106,7 +1118,7 @@ TEST (RestartTest, ManyConflictsMultithrdNUF) {
     options.restart_mode = m2_undo_fl_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 /* core dump if crash with in-flight multiple statements, including page split 
 btree_insert_log::undo() - undo an insert operation by delete it, but record not found */
@@ -1122,7 +1134,7 @@ TEST (RestartTest, ManyConflictsMultithrdCUF) {
 }
 **/
 
-/* Failing - infinite loop *
+/* Passing */
 TEST (RestartTest, ManyConflictsMultithrdNB) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
@@ -1132,7 +1144,7 @@ TEST (RestartTest, ManyConflictsMultithrdNB) {
     options.restart_mode = m2_both_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 /* Passing */
 TEST (RestartTest, ManyConflictsMultithrdCB) {
@@ -1146,7 +1158,7 @@ TEST (RestartTest, ManyConflictsMultithrdCB) {
 }
 /**/
 
-/* Failing - infinite loop *
+/* Passing */
 TEST (RestartTest, ManyConflictsMultithrdNBF) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
@@ -1156,7 +1168,7 @@ TEST (RestartTest, ManyConflictsMultithrdNBF) {
     options.restart_mode = m2_both_fl_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 /* core dump if crash with in-flight multiple statements, including page split 
 btree_insert_log::undo() - undo an insert operation by delete it, but record not found */

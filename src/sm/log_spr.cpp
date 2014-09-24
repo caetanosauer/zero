@@ -198,8 +198,6 @@ rc_t log_core::_collect_single_page_recovery_logs(
         } else if (!record->is_multi_page()
             || pid.page != record->data_ssx_multi()->_page2_pid) {
 
-// TODO(Restart)... it appears that 'logrec_t::t_btree_foster_adopt' is causing eWRONG_PAGE_LSNCHAIN error
-
             if (!record->is_multi_page())
             {
                 // Not multi-page log record, and the page id is different
@@ -216,6 +214,25 @@ rc_t log_core::_collect_single_page_recovery_logs(
 // TODO(Restart)... debugging output for eWRONG_PAGE_LSNCHAIN.... begin
 //                          Non-consistent error, need more information to identify the root cause
 DBGOUT1(<< "!!!!   eWRONG_PAGE_LSNCHAIN error...."); 
+
+if (record->type() == logrec_t::t_btree_foster_adopt)
+{
+// TODO(Restart)... it appears that 'logrec_t::t_btree_foster_adopt' is causing eWRONG_PAGE_LSNCHAIN error
+//                          it is t_multi|t_single_sys_xct, page1 is parent, page2 is child
+if (true == smlevel_0::use_redo_full_logging_restart())
+{
+    DBGOUT1(<< "!!!!   Full logging is ON");
+}
+else
+{
+    DBGOUT1(<< "!!!!   Full logging is OFF");
+}
+
+DBGOUT1(<< "!!!!   Record type: t_btree_foster_adopt");
+DBGOUT1(<< "!!!!       First page id: " << record->shpid());
+DBGOUT1(<< "!!!!       Second page id: " << record->data_ssx_multi()->_page2_pid);
+DBGOUT1(<< "!!!!       looking for pid: " << pid.page);
+}
 
 if (record->is_multi_page())
 {
