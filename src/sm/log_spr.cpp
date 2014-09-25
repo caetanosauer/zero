@@ -189,6 +189,22 @@ rc_t log_core::_collect_single_page_recovery_logs(
         if (buffer_capacity < record->length()) {
             // This might happen when we have a really long page log chain,
             // but so far we don't handle this case. crash.
+// TODO(Restart)...
+if (true == smlevel_0::use_redo_full_logging_restart())
+{
+ERROUT(<< "!!!!   Full logging is ON");
+}
+else
+{
+ERROUT(<< "!!!!   Full logging is OFF");
+}
+
+            
+            ERROUT(<< "_collect_single_page_recovery_logs: out-of-memory.  Remaining buffer_capacity: "
+                   << buffer_capacity << ", current record length: " << record->length() 
+                   << ", initial buffer size: " << buffer_size << ", the number of records collected so far: "
+                   << ordered_entries.size());
+            
             W_FATAL(eOUTOFMEMORY);
         }
 

@@ -1249,11 +1249,6 @@ restart_m::analysis_pass_backward(
 
     // Ready to process the logs from recovery log
     // Open a backward scan starting from the end of recovery log 
-
-///////////////////////////////////////////////////////    
-// TODO(Restart)... 'last_lsn' is the next available LSN, it is not the last LSN in log file, how to find the last LSN for backward log scan?
-///////////////////////////////////////////////////////    
-
     log_i         scan(*log, last_lsn, false /*forward scan*/);
     logrec_t*     log_rec_buf;
     lsn_t         lsn;   // LSN of the retrieved log record
