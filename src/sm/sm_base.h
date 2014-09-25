@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 /* -*- mode:C++; c-basic-offset:4 -*-
@@ -79,6 +79,7 @@ class xct_i;
 
 class device_m;
 class io_m;
+class BackupManager;
 class bf_m;
 class bf_tree_m;
 class comm_m;
@@ -89,6 +90,8 @@ class tid_t;
 class option_t;
 
 class rid_t;
+
+class lsn_t;
 
 #ifndef        SM_EXTENTSIZE
 #define        SM_EXTENTSIZE        8
@@ -326,12 +329,12 @@ public:
         t_btree,                 // B+tree with duplicates
         t_uni_btree,             // Unique-key btree
         t_rtree,                  // R*tree
-    	t_mrbtree,       // Multi-rooted B+tree with regular heap files   
-    	t_uni_mrbtree,          
-    	t_mrbtree_l,          // Multi-rooted B+tree where a heap file is pointed by only one leaf page 
-    	t_uni_mrbtree_l,               
-    	t_mrbtree_p,     // Multi-rooted B+tree where a heap file belongs to only one partition
-    	t_uni_mrbtree_p
+        t_mrbtree,       // Multi-rooted B+tree with regular heap files   
+        t_uni_mrbtree,          
+        t_mrbtree_l,          // Multi-rooted B+tree where a heap file is pointed by only one leaf page 
+        t_uni_mrbtree_l,               
+        t_mrbtree_p,     // Multi-rooted B+tree where a heap file belongs to only one partition
+        t_uni_mrbtree_p
     };
 
 
@@ -393,19 +396,175 @@ public:
         t_in_analysis = 0x1,
         t_in_redo = 0x2,
         t_in_undo = 0x4,
-        t_forward_processing = 0x8
+        t_forward_processing = 0x8   // System is opened for transaction
     };
+
+    /*
+    * smlevel_0::chkpt_mode is always set to one of the mode
+     */
+    enum chkpt_mode_t {
+        t_chkpt_none,    // no on-going checkpoint
+        t_chkpt_sync,    // in the middle of synchronous checkpoint
+        t_chkpt_async    // in the middle of asynchronous checkpoint
+    };
+
+    // smlevel_0::concurrent_restart_mode_t is used for concurrent restart when
+    // the system is opened for user access after Log Analysis phase but the restart
+    // continue running concurrently.  It is to expose the active restart phase.
+    // It is not valid for pure on-demand restart operation (Instant Restart milestone 3).
+    // 
+    enum concurrent_restart_mode_t {
+        t_concurrent_before,  // before REDO and UNDO
+        t_concurrent_redo,    // working on REDO
+        t_concurrent_undo,    // working on UNDO
+        t_concurrent_done     // after REDO and UNDO        
+    };
+
+    // smlevel_0::restart_internal_mode_t is an internal setting, not exposed
+    // to external callers.  It is used to control the internal logic in recovery
+    // in order to test different implementations.
+    // Multiple features could be turned on/off, so they are in bit-mast values. 
+    //
+    // Only the Recovery related operations should check these values.    
+    // The only place to get/set the value is in 'sm.cpp' (restart_internal_mode),
+    // the setting is determined during system startup and cannot be changed 
+    // dynamiclly, because we cannot change restart behavior in the middle
+    // of recovery process
+    // The actual recovery mode is determined by startup option 'sm_restart',
+    // no recompile required. 
+    // If the startup option is not set, the default setting is to use the initialization 
+    // value set in sm.cpp
+
+    enum restart_internal_mode_t {
+        t_restart_serial = 0x1,            // M1 implementation:
+                                           //    System is not opened until Recovery completed
+        t_restart_redo_log = 0x2,          // M1 traditional implementation:
+                                           //    REDO is forward log scan driven                                           
+        t_restart_undo_reverse = 0x4,      // M1 traditional implementation:
+                                           //    UNDO is using reverse order with heap
+                                           
+        t_restart_concurrent_log = 0x8,    // M2 implementation:
+                                           //    System is opened after Log Analysis.
+                                           //    Using commit_lsn for new transactions
+        t_restart_redo_page = 0x10,        // M2 implementation:
+                                           //    REDO is page driven using Single-Page-Recovery with minimal logging                
+        t_restart_redo_full_logging = 0x20,// M2 implementation:
+                                           //    REDO is page driven using Single-Page-Recovery with full logging
+        t_restart_undo_txn = 0x40,         // M2 implementation:            
+                                           //    UNDO is transaction driven
+        t_restart_redo_delay = 0x80,       // M2 Testing hook:            
+                                           //    Internal delay before REDO phase
+                                           //    only if we have actual REDO work
+        t_restart_undo_delay = 0x100,      // M2 Testing hook:            
+                                           //    Internal delay before UNDO phase
+                                           //    only if we have actual UNDO work
+                                           
+        t_restart_concurrent_lock = 0x200, // M3 and M4 implementation:
+                                           //    System is opened after Log Analysis.
+                                           //    Using lock acquisition for new transactions       
+        t_restart_redo_demand = 0x400,     // M3 implementation:
+                                           //    REDO is on-demand using Single-Page-Recovery with minimal logging                
+        t_restart_undo_demand = 0x800,     // M3 implementation:                                                       
+                                           //    UNDO is on-demand using user transaction driven
+                                           
+        t_restart_redo_mix = 0x1000,       // M4 implementation:
+                                           //    REDO is using both page driven and
+                                           //    on-demand using Single-Page-Recovery with minimal logging                    
+        t_restart_undo_mix = 0x2000,       // M4 implementation:
+                                           //    UNDO is using both transaction driven and
+                                           //    on-demand using user transaction driven                                          
+                                           
+    };
+    static restart_internal_mode_t restart_internal_mode;
+
+    // Set of functions to check individual Restart implementations
+    // No setting because the bit values are set staticlly, not dynamiclly
+    static bool use_serial_restart()
+    {
+        // Restart M1
+        return ((restart_internal_mode & t_restart_serial ) !=0); 
+    }
+    static bool use_redo_log_restart() 
+    {
+        // Restart M1
+        return ((restart_internal_mode & t_restart_redo_log ) !=0);     
+    }
+    static bool use_undo_reverse_restart() 
+    { 
+        // Restart M1
+        return ((restart_internal_mode & t_restart_undo_reverse ) !=0);     
+    }
+
+    static bool use_concurrent_log_restart() 
+    { 
+        // Restart M2
+        return ((restart_internal_mode & t_restart_concurrent_log ) !=0);     
+    }
+    static bool use_redo_page_restart() 
+    { 
+        // Restart M2
+        return ((restart_internal_mode & t_restart_redo_page ) !=0);     
+    }
+    static bool use_redo_full_logging_restart() 
+    { 
+        // Restart M2
+        return ((restart_internal_mode & t_restart_redo_full_logging ) !=0);     
+    }
+    static bool use_undo_txn_restart() 
+    { 
+        // Restart M2
+        return ((restart_internal_mode & t_restart_undo_txn ) !=0);     
+    }
+    static bool use_redo_delay_restart() 
+    { 
+        // Restart M2, testing purpose
+        return ((restart_internal_mode & t_restart_redo_delay ) !=0);     
+    }
+    static bool use_undo_delay_restart() 
+    { 
+        // Restart M2, testing purpose
+        return ((restart_internal_mode & t_restart_undo_delay ) !=0);     
+    }
+
+    static bool use_concurrent_lock_restart() 
+    { 
+        // Restart M3 and M4
+        return ((restart_internal_mode & t_restart_concurrent_lock ) !=0);     
+    }
+    static bool use_redo_demand_restart() 
+    { 
+        // Restart M3
+        return ((restart_internal_mode & t_restart_redo_demand ) !=0);     
+    }
+    static bool use_undo_demand_restart() 
+    { 
+        // Restart M3
+        return ((restart_internal_mode & t_restart_undo_demand ) !=0);     
+    }
+
+    static bool use_redo_mix_restart() 
+    { 
+        // Restart M4
+        return ((restart_internal_mode & t_restart_redo_mix ) !=0);     
+    }
+    static bool use_undo_mix_restart() 
+    { 
+        // Restart M4
+        return ((restart_internal_mode & t_restart_undo_demand ) !=0);     
+    }
 
     static void  add_to_global_stats(const sm_stats_info_t &from);
     static void  add_from_global_stats(sm_stats_info_t &to);
 
+    static BackupManager* bk;
     static device_m* dev;
     static io_m* io;
     static bf_tree_m* bf;
     static lock_m* lm;
 
     static log_m* log;
-    static tid_t* redo_tid;
+    // TODO(Restart)... it was for a space-recovery hack, not needed
+    // static tid_t* redo_tid;
 
     static LOG_WARN_CALLBACK_FUNC log_warn_callback;
     static LOG_ARCHIVED_CALLBACK_FUNC log_archived_callback;
@@ -417,12 +576,24 @@ public:
 
     static ErrLog* errlog;
 
-    static bool        shutdown_clean;
-    static bool        shutting_down;
-    static bool        logging_enabled;
-    static bool        lock_caching_default;
-    static bool        do_prefetch;
-    static bool        statistics_enabled;
+    static bool         shutdown_clean;
+    static bool         shutting_down;
+    static bool         logging_enabled;
+    static bool         lock_caching_default;
+    static bool         do_prefetch;
+    static bool         statistics_enabled;
+
+    static lsn_t        commit_lsn;      // commit_lsn is for use_concurrent_log_restart() only
+                                         // this is the validation lsn for all concurrent user txns
+
+    // The following variables are used by concurrent recovery process only
+    // they should be stored in class 'restart_m'
+    // Currently resides here for prototype converient access only
+    static lsn_t        redo_lsn;        // redo_lsn is used by child thread as the start scanning point for redo
+    static lsn_t        last_lsn;        // last_lsn is used by page driven REDO operation Single-Page-Recovery emlsn if encounter
+                                         // a virgin or corrupted page
+    static uint32_t     in_doubt_count;  // in_doubt_count is used to child thread during the REDO phase   
+
 
     static operating_mode_t operating_mode;
     static bool in_recovery() { 
@@ -431,9 +602,22 @@ public:
     static bool in_recovery_analysis() { 
         return ((operating_mode & t_in_analysis) !=0); }
     static bool in_recovery_undo() { 
+        // Valid for use_serial_restart() only
+        // If concurrent recovery, system is opened after Log Analysis
+        // and the operating mode changed to t_forward_processing after Log Analysis
         return ((operating_mode & t_in_undo ) !=0); }
     static bool in_recovery_redo() { 
+        // Valid for use_serial_restart() only
+        // If concurrent recovery, system is opened after Log Analysis
+        // and the operating mode changed to t_forward_processing after Log Analysis
         return ((operating_mode & t_in_redo ) !=0); }
+
+    static bool before_recovery() { 
+        if (t_not_started == operating_mode)
+            return true;
+        else 
+            return false;
+        }
 
     // These variables control the size of the log.
     static fileoff_t max_logsz; // max log file size

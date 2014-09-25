@@ -65,7 +65,9 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 class logrec_t;
 class log_buf;
+class lpid_t;
 class generic_page;
+class fixable_page_h;
 class PoorMansOldestLsnTracker;
 /**
  * \defgroup SSMLOG Logging And Recovery
@@ -375,7 +377,7 @@ public:
     rc_t                compensate(const lsn_t& orig_lsn, 
                                const lsn_t& undo_lsn);
     // used by log_i and xct_impl
-    rc_t                fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt=NULL);
+    rc_t                fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt=NULL, const bool forward = true);
 
             // used in implementation also:
     virtual void        release(); // used by log_i
@@ -414,39 +416,65 @@ public:
 
     PoorMansOldestLsnTracker* get_oldest_lsn_tracker() { return _oldest_lsn_tracker; }
 
-public:
+    /**
+    * \brief Apply single-page-recovery to the given page.
+    * \ingroup Single-Page-Recovery
+    * Defined in log_spr.cpp.
+    * \NOTE This method returns an error if the user had truncated
+    * the transaction logs required for the recovery.
+    * @param[in, out] p the page to recover.
+    * @param[in] emlsn the LSN up to which we should recover the page.
+    * @param[in] actual_emlsn is set to false if we do not have the actual emlsn due to page corruption
+    *                         during recovery (no parent page)
+    * @pre p has a backup in the backup file
+    * @pre p.is_fixed() (could be bufferpool managed or non-bufferpool managed)
+    */
+    rc_t recover_single_page(fixable_page_h &p, const lsn_t &emlsn, 
+                                 const bool actual_emlsn = true);
+
     /**\brief used by partition */
     fileoff_t limit() const { return _partition_size; }
-    
+
+    /**
+     * \ingroup Single-Page-Recovery
+     * Defined in log_spr.cpp.
+     * @copydoc ss_m::dump_page_lsn_chain(std::ostream&, const lpid_t &, const lsn_t&)
+     */
+    void dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t &max_lsn);
+
 private:
     // no copying allowed
     log_m &operator=(log_m const &);
     log_m(log_m const &);
 }; // log_m
 
-/**\brief Log-scan iterator
+/**
+ * \brief Log-scan iterator
+ * \ingroup SSMLOG
  * \details
  * Used in restart to scan the log.
  */
 class log_i {
 public:
     /// start a scan of the given log a the given log sequence number.
-    NORET                        log_i(log_m& l, const lsn_t& lsn) ;
+    NORET                        log_i(log_m& l, const lsn_t& lsn, const bool forward = true) ;
     NORET                        ~log_i();
 
     /// Get the next log record for transaction, put its sequence number in argument \a lsn
     bool                         xct_next(lsn_t& lsn, logrec_t*& r);
+
     /// Get the return code from the last next() call.
     w_rc_t&                      get_last_rc();
 private:
     log_m&                       log;
     lsn_t                        cursor;
     w_rc_t                       last_rc;
+    bool                         forward_scan;
 }; // log_i
 
 inline NORET
-log_i::log_i(log_m& l, const lsn_t& lsn) 
-    : log(l), cursor(lsn)
+log_i::log_i(log_m& l, const lsn_t& lsn, const bool forward)  // Default: true for forward scan
+    : log(l), cursor(lsn), forward_scan(forward)
 { }
 
 inline

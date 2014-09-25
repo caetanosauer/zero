@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 /* -*- mode:C++; c-basic-offset:4 -*-
@@ -106,7 +106,7 @@ struct baseLogHeader
      * For per-page chains of log-records.
      * Note that some types of log records (split, merge) impact two pages.
      * The page_prev_lsn is for the "primary" page.
-     * \ingroup SPR
+     * \ingroup Single-Page-Recovery
      */
     lsn_t               _page_prv;
     /* 16+8 = 24 */
@@ -152,6 +152,8 @@ public:
     bool             is_page_update() const;
     bool             is_redo() const;
     bool             is_skip() const;
+    bool             is_page_allocate() const;
+    bool             is_page_deallocate() const;
     bool             is_undo() const;
     bool             is_cpsn() const;
     bool             is_multi_page() const;
@@ -195,12 +197,12 @@ public:
     const lsn_t&         undo_nxt() const;
     /**
      * Returns the LSN of previous log that modified this page.
-     * \ingroup SPR
+     * \ingroup Single-Page-Recovery
      */
     const lsn_t&         page_prev_lsn() const;
     /**
      * Sets the LSN of previous log that modified this page.
-     * \ingroup SPR
+     * \ingroup Single-Page-Recovery
      */
     void                 set_page_prev_lsn(const lsn_t &lsn);
     const lsn_t&         xid_prev() const;
@@ -314,7 +316,7 @@ protected:
 struct multi_page_log_t {
     /**
      * _page_prv for another page touched by the operation.
-     * \ingroup SPR
+     * \ingroup Single-Page-Recovery
      */
     lsn_t       _page2_prv; // +8
 
@@ -356,9 +358,10 @@ inline smsize_t logrec_t::header_size() const
 
 struct chkpt_bf_tab_t {
     struct brec_t {
-    lpid_t    pid;
-    fill4    fill; // for purify
-    lsn_t    rec_lsn;
+    lpid_t    pid;      // +12  -> 12
+    fill4    fill;      // for purify, +4 -> 16
+    lsn_t    rec_lsn;   // +8 -> 24, this is the minimum (earliest) LSN 
+    lsn_t    page_lsn;  // +8 -> 32, this is the latest (page) LSN 
     };
 
     // max is set to make chkpt_bf_tab_t fit in logrec_t::data_sz
@@ -370,7 +373,8 @@ struct chkpt_bf_tab_t {
     NORET            chkpt_bf_tab_t(
     int                 cnt, 
     const lpid_t*             p, 
-    const lsn_t*             l);
+    const lsn_t*             l,
+    const lsn_t*             pl);
     
     int                size() const;
 };
@@ -397,6 +401,7 @@ struct chkpt_xct_tab_t {
     tid_t                 tid;
     lsn_t                last_lsn;
     lsn_t                undo_nxt;
+    lsn_t                first_lsn;
     smlevel_1::xct_state_t        state;
     };
 
@@ -415,7 +420,32 @@ struct chkpt_xct_tab_t {
     const tid_t*             tid,
     const smlevel_1::xct_state_t* state,
     const lsn_t*             last_lsn,
-    const lsn_t*             undo_nxt);
+    const lsn_t*             undo_nxt,
+    const lsn_t*             first_lsn);
+    int             size() const;
+};
+
+struct chkpt_xct_lock_t {
+    struct lockrec_t {
+    okvl_mode            lock_mode;
+    uint32_t             lock_hash;
+    };
+
+    // max is set to make chkpt_xct_lock_t fit in logrec_t::data_sz
+    enum {     max = ((logrec_t::max_data_sz - sizeof(tid_t) -
+            2 * sizeof(uint32_t)) / sizeof(lockrec_t))
+    };
+
+    tid_t            tid;    // owning transaction tid
+    uint32_t         count;
+    fill4            filler;
+    lockrec_t        xrec[max];
+    
+    NORET            chkpt_xct_lock_t(
+    const tid_t&        tid,
+    int                 count,
+    const okvl_mode*    lock_mode,
+    const uint32_t*     lock_hash);
     int             size() const;
 };
 
@@ -486,7 +516,9 @@ logrec_t::construct_pid() const
 }
 
 inline lpid_t logrec_t::construct_pid2() const {
-    w_assert1(header._cat == (t_multi | t_single_sys_xct | t_redo));
+//    w_assert1(header._cat == (t_multi | t_single_sys_xct | t_redo));
+    w_assert1(0 != (header._cat & t_multi));
+
     const multi_page_log_t* multi_log = reinterpret_cast<const multi_page_log_t*> (data_ssx());
     return lpid_t(header._vid, header._snum, multi_log->_page2_pid);
 }
@@ -632,6 +664,19 @@ logrec_t::is_skip() const
     return type() == t_skip;
 }
 
+inline bool
+logrec_t::is_page_allocate() const
+{
+    return ((t_alloc_a_page == type()) || (t_alloc_consecutive_pages == type()));
+}
+
+inline bool
+logrec_t::is_page_deallocate() const
+{
+    // t_page_set_to_be_deleted - page might still in buffer pool and not evict yet
+    return ((t_dealloc_a_page == type()) || (t_page_set_to_be_deleted == type()));
+}
+
 
 inline bool
 logrec_t::is_undo() const
@@ -696,6 +741,12 @@ chkpt_bf_tab_t::size() const
 
 inline int
 chkpt_xct_tab_t::size() const
+{
+    return (char*) &xrec[count] - (char*) this; 
+}
+
+inline int
+chkpt_xct_lock_t::size() const
 {
     return (char*) &xrec[count] - (char*) this; 
 }

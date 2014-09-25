@@ -69,6 +69,13 @@ okvl_mode lock_m::get_granted_mode(uint32_t hash) {
 
 timeout_in_ms lock_m::_convert_timeout(timeout_in_ms timeout) {
     xct_t*                 xd = g_xct();
+
+    return _convert_timeout(timeout, xd);
+}
+
+timeout_in_ms lock_m::_convert_timeout(timeout_in_ms timeout, xct_t* xd) {
+    w_assert1(NULL != xd);
+
     switch (timeout) {
         case WAIT_SPECIFIED_BY_XCT:
             timeout = xd->timeout_c();
@@ -92,6 +99,7 @@ rc_t lock_m::lock(const lockid_t &n, const okvl_mode &m, bool conditional, bool 
                   timeout_in_ms timeout, RawLock** out) {
     return lock(n.hash(), m, conditional, check_only, timeout, out);
 }
+
 rc_t lock_m::lock(uint32_t hash, const okvl_mode &m, bool conditional, bool check_only,
                   timeout_in_ms timeout, RawLock** out) {
     xct_t*                 xd = g_xct();
@@ -125,6 +133,40 @@ rc_t lock_m::lock(uint32_t hash, const okvl_mode &m, bool conditional, bool chec
     }
     return rc;
 }
+
+rc_t lock_m::lock(uint32_t hash, const okvl_mode &m, bool check_only, xct_t* xd,
+                  timeout_in_ms timeout)
+{
+    // Acquire lock on the given transaction object
+    // No conditional and no RawLock
+    // This helper function is only used by lock re-acquisition from Log Analysis phase in restart
+    
+    w_assert1(NULL != xd);
+
+    // First, check the transaction-private hashmap to see if we already have the lock.
+    // This is quick because this involves no critical section.
+    if (m.is_implied_by(xd->raw_lock_xct()->private_hash_map.get_granted_mode(hash)))
+        return RCOK;
+
+    timeout = _convert_timeout(timeout, xd);
+
+    w_rc_t  rc; // == RCOK
+    RawLock *tmp = NULL;
+
+    RawXct* xct = xd->raw_lock_xct();
+    w_error_codes rce = _core->acquire_lock(xct, hash, m, false /*conditional*/, check_only, timeout, &tmp);
+    if (rce)
+    {
+        rc = RC(rce);
+    }
+    else 
+    {
+        // store the lock queue tag we observed. this is for Safe SX-ELR
+        xd->update_read_watermark (xct->read_watermark);
+    }
+    return rc;
+}
+
 rc_t lock_m::retry_lock(RawLock** lock, bool check_only, timeout_in_ms timeout) {
     w_assert1(lock != NULL && *lock != NULL);
     xct_t*                 xd = g_xct();

@@ -137,7 +137,7 @@ struct bf_tree_cb_t {
      */
     uint16_t                    _counter_approximate;// +2  -> 16
 
-    /// recovery lsn; protected by ??
+    /// recovery lsn; first lsn to make the page dirty; protected by ??
     lsndata_t _rec_lsn;       // +8 -> 24
 
     /// Pointer to the parent page.  zero for root pages; protected by ??
@@ -151,7 +151,20 @@ struct bf_tree_cb_t {
 
     /// replacement priority; protected by ??
     char                        _replacement_priority;      // +1 -> 31
-    fill8                       _fill8;        // +1 -> 32
+
+    // in_doubt flag; used in Recovery process, protected by our latch
+    // If in_doubt flag is ON (only set in Log Analysys phase', an in_doubt page
+    // is registered in the buffer pool but the page has not been loaded into the
+    // buffer pool yet.
+    // We need the long ID (volume number + store number + page number)
+    // to load the actual page, all the information are stored in cb but need to 
+    // re-construct the long ID:
+    // volume number - _pid_vol (overload for in_doubt purpose)
+    // store number    - _store_num (valid for Recovery only)
+    // page number    - _pid_shpid
+    // If _in_doubt == true, do not access 'bf_tree_m::_buffer'
+    //
+    bool                        _in_doubt;      // +1 -> 32
 
     /// if not zero, this page must be written out after this dependency page; protected by ??
     bf_idx _dependency_idx;// +4 -> 36
@@ -169,6 +182,14 @@ struct bf_tree_cb_t {
      * registration of the dependency.  So, if the _rec_lsn of the page is now strictly
      * larger than this value, it was flushed at least once after that, so the dependency
      * is resolved.  protected by ??
+     *
+     * Overload this field to use it as last_write_lsn for REDO Single-Page-Recovery purpose, we can 
+     * overload this field because last_write_lsn is only used during the initial recover
+     * of a page through Single-Page-Recovery (as the emlsn), it is not used once a page has been
+     * recovered through Single-Page-Recovery after the system crash recover
+     * The last write lsn is identified during Log Analysis phase, when used as
+     * last_write_lsn, it is written during Log Analysis phase and read during
+     * REDO phase
      */
     lsndata_t _dependency_lsn;// +8 -> 48
 
@@ -177,10 +198,21 @@ struct bf_tree_cb_t {
      */
     uint16_t                    _swizzled_ptr_cnt_hint; // +2 -> 50
 
-    fill16                      _fill16_52;     // +2 -> 52
-    fill32                      _fill32_56;     // +4 -> 56
-    fill32                      _fill32_60;     // +4 -> 60
-    fill8                       _fill8_61;      // +1 -> 61
+    fill8                       _fill56;          // +1 -> 51
+
+    // If _recovery_access == true, page is being accessed for recovery purpose
+    // this is a short duration flag which is only set when performing 
+    // recovery operation on this page
+    //
+    bool                       _recovery_access;       // +1 -> 52
+
+    // page store information, used for recovery purpose
+    //
+    snum_t                     _store_num;            // +4 -> 56
+
+
+    fill32                      _fill32_60;    // +4 -> 60
+    fill8                       _fill8_61;      // +1 -> 61   
     fill8                       _fill8_62;      // +1 -> 62
     fill8                       _fill8_63;      // +1 -> 63
 

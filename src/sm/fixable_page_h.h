@@ -63,6 +63,9 @@ public:
     /// associated page.
     void unfix();
 
+    /// Is this page really fixed in bufferpool or a psuedo-fix?
+    bool is_bufferpool_managed() const { return _bufferpool_managed; }
+
     /**
      * Fixes a non-root page in the bufferpool.  This method receives the parent page and
      * efficiently fixes the page if the shpid (pointer) is already swizzled by the parent
@@ -80,6 +83,7 @@ public:
      *                         failed).
      * @param[in] virgin_page  whether the page is a new page and thus doesn't have to be
      *                         read from disk.
+     * @param[in] from_recovery true if caller is from recovery
      * 
      * If parent.latch_mode() or mode is LATCH_Q, can return eLATCHQFAIL,
      * ePARENTLATCHQFAIL, or eNEEDREALLATCH.  The later occurs only when virgin_page is
@@ -87,7 +91,7 @@ public:
      */
     w_rc_t fix_nonroot(const fixable_page_h &parent, volid_t vol,
                        shpid_t shpid, latch_mode_t mode, bool conditional=false, 
-                       bool virgin_page=false);
+                       bool virgin_page=false, const bool from_recovery = false);
 
     /**
      * Fixes any page (root or non-root) in the bufferpool without pointer swizzling.  In
@@ -107,6 +111,26 @@ public:
      */
     w_rc_t fix_direct(volid_t vol, shpid_t shpid, latch_mode_t mode,
                       bool conditional=false, bool virgin_page=false);
+
+
+    /**
+     * Only used in the REDO phase of Recovery process
+     * The physical page has been loaded into buffer pooland the idx is known 
+     * when calling this function.  
+     * We associate the page in buffer pool with fixable_page.
+     * In this case we need to fix the page without fixing the parent.
+     * This method can be used only when pointer swizzling is off.
+     *
+     * @param[in] idx          index into buffer pool
+     */
+    w_rc_t fix_recovery_redo(bf_idx idx, lpid_t page_updated, const bool managed = true);
+
+
+    /**
+     * Only used in the REDO phase of Recovery process
+     * with page driven REDO (Single-Page-Recovery) with minimal logging
+     */
+    w_rc_t fix_recovery_redo(const bool managed);
 
     /**
      * Adds an additional pin count for the given page.  This is used to re-fix the page
@@ -138,11 +162,12 @@ public:
      * Fixes an existing (not virgin) root page for the given store.  This method doesn't
      * receive page ID because it's already known by bufferpool.
      */
-    w_rc_t fix_root(volid_t vol, snum_t store, latch_mode_t mode, bool conditional=false);
+    w_rc_t fix_root(volid_t vol, snum_t store, latch_mode_t mode, 
+                    bool conditional=false, const bool from_undo = false);
 
     /**
      * Imaginery 'fix' for a non-bufferpool-managed page.
-     * 
+     *
      * The resulting page is considered to be latched in EX mode.
      */
     void fix_nonbufferpool_page(generic_page* s);
@@ -167,6 +192,31 @@ public:
      */
     bool         is_dirty()  const;
 
+    /**
+     * Mark this page being accessed for recovery purpose, so the pagee access
+     * validation will let it go through if in concurrent log mode
+     * 
+     * @pre We do not hold current page's latch in Q mode
+     */
+    void         set_recovery_access() const;
+    /**
+     * Return true if this page is marked for recovery access.
+     * 
+     * @pre We do not hold current page's latch in Q mode
+     */
+    bool         is_recovery_access()  const;
+    /**
+     * Clear the flag so the page is no longer being accessed for recovery purpose
+     * 
+     * @pre We do not hold current page's latch in Q mode
+     */
+    void         clear_recovery_access() const;
+
+    // Update both initial dirty lsn (if needed) and last write lsn on page
+    void update_initial_and_last_lsn(const lsn_t & lsn) const;
+
+    // Update initial dirty lsn (if needed) on page
+    void update_initial_dirty_lsn(const lsn_t & lsn) const;
 
     /// Return flag for if this page to be deleted when bufferpool evicts it.
     /// @pre We do not hold current page's latch in Q mode

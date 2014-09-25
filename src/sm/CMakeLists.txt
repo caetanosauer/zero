@@ -2,6 +2,7 @@
 set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/alloc_cache.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/alloc_page.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/backup.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bf_fixed.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bf_hashtable.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bf_tree.cpp
@@ -36,6 +37,7 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/lock_x.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log_carray.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log_core.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/log_spr.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log_lsn_tracker.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/log.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/logrec.cpp
@@ -137,6 +139,7 @@ install(FILES
   ${GENFILES_H}
   ${CMAKE_CURRENT_SOURCE_DIR}/alloc_cache.h
   ${CMAKE_CURRENT_SOURCE_DIR}/alloc_page.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/backup.h
   ${CMAKE_CURRENT_SOURCE_DIR}/bf_fixed.h
   ${CMAKE_CURRENT_SOURCE_DIR}/bf.h
   ${CMAKE_CURRENT_SOURCE_DIR}/bf_hashtable.h
@@ -146,6 +149,7 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/btcursor.h
   ${CMAKE_CURRENT_SOURCE_DIR}/btree.h
   ${CMAKE_CURRENT_SOURCE_DIR}/btree_impl.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/btree_logrec.h  
   ${CMAKE_CURRENT_SOURCE_DIR}/btree_page.h
   ${CMAKE_CURRENT_SOURCE_DIR}/btree_page_h.h
   ${CMAKE_CURRENT_SOURCE_DIR}/chkpt.h
@@ -166,6 +170,7 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/lock_x.h
   ${CMAKE_CURRENT_SOURCE_DIR}/log_carray.h
   ${CMAKE_CURRENT_SOURCE_DIR}/log_core.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/log_spr.h
   ${CMAKE_CURRENT_SOURCE_DIR}/log_lsn_tracker.h
   ${CMAKE_CURRENT_SOURCE_DIR}/log.h
   ${CMAKE_CURRENT_SOURCE_DIR}/logrec.h
@@ -175,6 +180,7 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/restart.h
   ${CMAKE_CURRENT_SOURCE_DIR}/restart_s.h
   ${CMAKE_CURRENT_SOURCE_DIR}/sm_base.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/sm_external.h  
   ${CMAKE_CURRENT_SOURCE_DIR}/sm_du_stats.h
   ${CMAKE_CURRENT_SOURCE_DIR}/sm.h
   ${CMAKE_CURRENT_SOURCE_DIR}/sm_int_0.h

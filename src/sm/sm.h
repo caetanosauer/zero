@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 /* -*- mode:C++; c-basic-offset:4 -*-
@@ -85,11 +85,20 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include <string>
 #include "sm_options.h"
+
+#include "sm_external.h"  // Include for caller to find the restart status
+
 /* DOXYGEN Documentation : */
 
 /**\addtogroup SSMOPT
  *
  * These are the run-time options for the storage manager.
+ *
+ * -sm_backup_dir :
+ *      - type: string
+ *      - description: Path of the folder containing backup files.
+ *      - default: "."
+ *      - required?: no
  *
  * -sm_bufpoolsize : 
  *      - type: number
@@ -230,6 +239,14 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *      - description: Enables collecting statistics.
  *      - default: no
  *      - required?: no
+ *
+ * -sm_restart
+ *  - type: number
+ *  - description: control internal restart/recovery mode
+ *     this option is for internal testing purpose and must be used with caution
+ *     valid values: see sm.cpp
+ *  - default: see sm.cpp for initial setting
+ *  - required?: no
   */
 
 
@@ -499,7 +516,11 @@ public:
      *  \ref smlevel_0::LOG_ARCHIVED_CALLBACK_FUNC, and 
      *  \ref SSMLOG.
      */
-    ss_m(const sm_options &options, LOG_WARN_CALLBACK_FUNC warn=NULL, LOG_ARCHIVED_CALLBACK_FUNC get=NULL);
+    ss_m(const sm_options &options,
+           LOG_WARN_CALLBACK_FUNC warn=NULL, 
+           LOG_ARCHIVED_CALLBACK_FUNC get=NULL,
+           bool start = true);   // Default = True: start the store automaticlly
+                                 // this is for backward compatibility reason
 
     /**\brief  Shut down the storage manager.
      * \ingroup SSMINIT
@@ -509,6 +530,22 @@ public:
      * constructed.
      */
     ~ss_m();
+
+    // Manually start the store if the store is not running already.
+    // Only one instance of store can be running at any time.
+    // The function starts the store using the input parameters from sm constructor,
+    // no change allowed after the ss_m constructor
+    // Internal settings will be reset, i.e. shutting_down, shutdown_clean flags
+    // Return: true if store started successfully
+    //             false if store was running already
+    bool startup();
+
+    // Manually stop a running store.  If the store was not running, no-op.
+    // Only one instance of store can be running at any time.
+    // The shutdown process obeys the internal settings, 
+    // i.e. shutting_down, shutdown_clean flags
+    // Return: if store shutdown successfully or was not running
+    bool shutdown();
 
     /**\brief Cause the storage manager's shutting down do be done cleanly 
      * or to simulate a crash.
@@ -539,10 +576,12 @@ public:
     static rc_t         log_file_was_archived(const char * logfile);
 
 private:
-    void                _construct_once(LOG_WARN_CALLBACK_FUNC x=NULL,
-                                           LOG_ARCHIVED_CALLBACK_FUNC y=NULL);
+//    void                _construct_once(LOG_WARN_CALLBACK_FUNC x=NULL,
+//                                           LOG_ARCHIVED_CALLBACK_FUNC y=NULL);
+    void                _construct_once();
     void                _destruct_once();
 
+    void                _set_recovery_mode();
 
 public:
     /**\addtogroup SSMXCT
@@ -1049,6 +1088,32 @@ public:
      * \ingroup SSMLOG
      */
     static rc_t            get_durable_lsn(lsn_t& anlsn);
+
+    /**
+    * \brief Pretty-prints the content of log file to the given stream
+    * in a way we can easily debug single-page recovery.
+    * \ingroup Single-Page-Recovery
+    * \details
+    * This is for debugging, so performance is not guaranteed and also not thread-safe.
+    * @param[in] o   Stream to which to write the information.
+    * @param[in] pid If given, we only dump logs relevant to the page.
+    * @param[in] max_lsn If given, we only dump logs required to recover
+    * the page up to this LSN. We omit the logs after that.
+    */
+    static void             dump_page_lsn_chain(std::ostream &o, const lpid_t &pid,
+                                                const lsn_t &max_lsn);
+    /**
+     * Overload to receive only pid.
+     * \ingroup Single-Page-Recovery
+     * @copydoc dump_page_lsn_chain(std::ostream&, const lpid_t &, const lsn_t&)
+     */
+    static void             dump_page_lsn_chain(std::ostream &o, const lpid_t &pid);
+    /**
+     * Overload to receive neither.
+     * \ingroup Single-Page-Recovery
+     * @copydoc dump_page_lsn_chain(std::ostream&, const lpid_t &, const lsn_t&)
+     */
+    static void             dump_page_lsn_chain(std::ostream &o);
 
 
     /*
@@ -1855,6 +1920,24 @@ public:
         timeout_in_ms           timeout = WAIT_SPECIFIED_BY_XCT
     );
 
+    // Debugging function
+    // Returns true if restart is still going on
+    // Serial restart mode: always return false
+    // Concurrent restart mode: return true if concurrent restart
+    //                                          (REDO and UNDO) is active
+    static bool            in_restart();
+
+    // Debugging function
+    // Returns the status of the specified restart phase
+    // t_restart_unknown - for on_demand REDO and UNDO
+    // t_restart_active - specified phase is on
+    // t_restart_not_active - specified phase has not not started yet
+    // t_restart_done - doen with the specified phase
+    //
+    static restart_phase_t in_log_analysis();
+    static restart_phase_t in_REDO();
+    static restart_phase_t in_UNDO();
+
 private:
 
     static int _instance_cnt;
@@ -1885,8 +1968,8 @@ private:
         lsn_t* plastlsn);
 
     static rc_t            _commit_xct_group(
-		xct_t *               list[],
-		int                   listlen);
+        xct_t *               list[],
+        int                   listlen);
     static rc_t            _chain_xct(
         sm_stats_info_t*&      stats,
         bool                   lazy);

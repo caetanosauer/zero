@@ -34,6 +34,8 @@ struct test_volume_t {
 const int default_quota_in_pages = 64;
 const int default_bufferpool_size_in_pages = 64;
 const int default_locktable_size = 1 << 6;
+const bool simulated_crash = true;
+const bool normal_shutdown = false;
 
 #ifdef DEFAULT_SWIZZLING_OFF
 const bool default_enable_swizzling = false;
@@ -41,9 +43,16 @@ const bool default_enable_swizzling = false;
 const bool default_enable_swizzling = true;
 #endif //DEFAULT_SWIZZLING_OFF
 
+enum test_txn_state_t {
+    t_test_txn_commit,     // Commit the user transaction
+    t_test_txn_abort,      // Abort the user transaction
+    t_test_txn_in_flight   // Leave the user transaction as in-flight but detach from it
+};
+
 // a few convenient functions for testcases
 w_rc_t x_begin_xct(ss_m* ssm, bool use_locks);
 w_rc_t x_commit_xct(ss_m* ssm);
+w_rc_t x_abort_xct(ss_m* ssm);
 w_rc_t x_btree_create_index(ss_m* ssm, test_volume_t *test_volume, stid_t &stid, lpid_t &root_pid);
 w_rc_t x_btree_get_root_pid(ss_m* ssm, const stid_t &stid, lpid_t &root_pid);
 w_rc_t x_btree_adopt_foster_all(ss_m* ssm, const stid_t &stid);
@@ -58,6 +67,13 @@ w_rc_t x_btree_update_and_commit(ss_m* ssm, const stid_t &stid, const char *keys
 w_rc_t x_btree_update(ss_m* ssm, const stid_t &stid, const char *keystr, const char *datastr);
 w_rc_t x_btree_overwrite_and_commit(ss_m* ssm, const stid_t &stid, const char *keystr, const char *datastr, smsize_t offset, bool use_locks = false);
 w_rc_t x_btree_overwrite(ss_m* ssm, const stid_t &stid, const char *keystr, const char *datastr, smsize_t offset);
+bool   x_in_restart(ss_m* ssm);
+
+
+/** Delete backup if exists. */
+void x_delete_backup(ss_m* ssm, test_volume_t *test_volume);
+/** Take a backup of the test volume. */
+w_rc_t x_take_backup(ss_m* ssm, test_volume_t *test_volume);
 
 struct x_btree_scan_result {
     int rownum;
@@ -94,23 +110,34 @@ public:
     rc_t (*_functor)(ss_m*, test_volume_t*);
 };
 
-// Begin... for test_restart.cpp
+struct restart_test_options {
+    restart_test_options() : enable_checkpoints(false) {}
+    bool shutdown_mode;
+    int32_t restart_mode;
+    bool enable_checkpoints;
+};
+
+// Begin... for test_restart.cpp and test_concurrent_restart.cpp
 // The base class for all restart test cases.
 // Derived classes must implement two functions; pre_shutdown() and post_shutdown().
 // These are called before and after a normal or (simulated) crash shutdown
 // @See btree_test_env::runRestartTest()
 class restart_test_base {
 public:
-    restart_test_base() {}
-    virtual ~restart_test_base() {}
-
+    restart_test_base() { _stid_list = NULL; }
+    virtual ~restart_test_base() {
+        if(_stid_list != NULL) {
+            delete [] _stid_list;
+            _stid_list = NULL;
+        } 
+    }
     virtual w_rc_t pre_shutdown(ss_m *ssm) = 0;
 
     virtual w_rc_t post_shutdown(ss_m *ssm) = 0;
 
     test_volume_t _volume;
 
-    stid_t _stid;
+    stid_t* _stid_list;
     lpid_t _root_pid;
 };
 
@@ -153,7 +180,7 @@ public:
     }
     restart_test_base *_context;
 };
-// End... for test_restart.cpp
+// End... for test_restart.cpp and and test_concurrent_restart.cpp
 
 /**
  * The base class for all crash test cases.
@@ -176,7 +203,7 @@ public:
 
     /**
      * This function is called after the simulated crash.
-     * This function is supposed to check if the recovery process did
+     * This function is supposed to check if the restart process did
      * a correct job.
      */
     virtual w_rc_t post_crash(ss_m *ssm) = 0;
@@ -274,42 +301,10 @@ public:
     /** This is most concise. New code should use this one. */
     int runBtreeTest (w_rc_t (*functor)(ss_m*, test_volume_t*), bool use_locks, int disk_quota_in_pages, const sm_options &options);
 
-    /**
-    * Runs a restart testcase.
-    * @param context the object to implement pre_shutdiwn(), post_shutdown().
-    * @see restart_test_base
-    */
-    int runRestartTest (restart_test_base *context,
-                      bool fCrash,
-                      bool use_locks = false,
-                      int32_t lock_table_size = default_locktable_size,
-                      int disk_quota_in_pages = default_quota_in_pages,
-                      int bufferpool_size_in_pages = default_bufferpool_size_in_pages,
-                      uint32_t cleaner_threads = 1,
-                      uint32_t cleaner_interval_millisec_min	   = 1000,
-                      uint32_t cleaner_interval_millisec_max	   = 256000,
-                      uint32_t cleaner_write_buffer_pages          = 64,
-                      bool initially_enable_cleaners = true,
-                      bool enable_swizzling = default_enable_swizzling
-                      );
-
-    /** This is most concise. New code should use this one. */
-    int runRestartTest (restart_test_base *context, bool fCrash, bool use_locks, int disk_quota_in_pages, const sm_options &options);
-
-
-    int runRestartTest (restart_test_base *context,
-                      bool fCrash,
-                      bool use_locks, int32_t lock_table_size,
-                      int disk_quota_in_pages, int bufferpool_size_in_pages,
-                      uint32_t cleaner_threads,
-                      uint32_t cleaner_interval_millisec_min,
-                      uint32_t cleaner_interval_millisec_max,
-                      uint32_t cleaner_write_buffer_pages,
-                      bool initially_enable_cleaners,
-                      bool enable_swizzling,
-                      const std::vector<std::pair<const char*, int64_t> > &additional_int_params,
-                      const std::vector<std::pair<const char*, bool> > &additional_bool_params,
-                      const std::vector<std::pair<const char*, const char*> > &additional_string_params);
+    /** Overload for convenience. */
+    int runBtreeTest (w_rc_t (*functor)(ss_m*, test_volume_t*), const sm_options &options) {
+        return runBtreeTest(functor, false, default_quota_in_pages, options);
+    }
 
     /**
      * Overload to set additional parameters.
@@ -335,7 +330,45 @@ public:
                       const std::vector<std::pair<const char*, const char*> > &additional_string_params);
 
     /**
-     * Runs a crash testcase.
+    * Runs a restart testcase in various restart modes
+    * Caller specify the restart mode through input parameter 'restart_mode'
+    * @param context the object to implement pre_shutdiwn(), post_shutdown().
+    * @see restart_test_base
+    */
+    int runRestartTest (restart_test_base *context,
+                      restart_test_options *restart_options,
+                      bool use_locks = false,
+                      int32_t lock_table_size = default_locktable_size,
+                      int disk_quota_in_pages = default_quota_in_pages,
+                      int bufferpool_size_in_pages = default_bufferpool_size_in_pages,
+                      uint32_t cleaner_threads = 1,
+                      uint32_t cleaner_interval_millisec_min	   = 1000,
+                      uint32_t cleaner_interval_millisec_max	   = 256000,
+                      uint32_t cleaner_write_buffer_pages          = 64,
+                      bool initially_enable_cleaners = true,
+                      bool enable_swizzling = default_enable_swizzling
+                      );
+
+    /** This is most concise. New code should use this one. */
+    int runRestartTest (restart_test_base *context, restart_test_options *restart_options,
+                          bool use_locks, int disk_quota_in_pages, const sm_options &options);
+
+    int runRestartTest (restart_test_base *context,
+                      restart_test_options *restart_options,
+                      bool use_locks, int32_t lock_table_size,
+                      int disk_quota_in_pages, int bufferpool_size_in_pages,
+                      uint32_t cleaner_threads,
+                      uint32_t cleaner_interval_millisec_min,
+                      uint32_t cleaner_interval_millisec_max,
+                      uint32_t cleaner_write_buffer_pages,
+                      bool initially_enable_cleaners,
+                      bool enable_swizzling,
+                      const std::vector<std::pair<const char*, int64_t> > &additional_int_params,
+                      const std::vector<std::pair<const char*, bool> > &additional_bool_params,
+                      const std::vector<std::pair<const char*, const char*> > &additional_string_params);
+
+    /**
+     * Runs a crash testcase in serial traditional restart mode
      * @param context the object to implement pre_crash(), post_crash().
      * @see crash_test_base
      */
@@ -387,6 +420,9 @@ public:
     w_rc_t commit_xct() {
         return x_commit_xct(_ssm);
     }
+    w_rc_t abort_xct() {
+        return x_abort_xct(_ssm);
+    }
     w_rc_t btree_lookup_and_commit(const stid_t &stid, const char *keystr, std::string &data) {
         return x_btree_lookup_and_commit(_ssm, stid, keystr, data, _use_locks);
     }
@@ -420,16 +456,39 @@ public:
     w_rc_t btree_scan(const stid_t &stid, x_btree_scan_result &result) {
         return x_btree_scan(_ssm, stid, result, _use_locks);
     }
-    
+    bool in_restart(){
+        return x_in_restart(_ssm);
+    }
+   
+    w_rc_t btree_populate_records(stid_t &stid, bool fCheckPoint, test_txn_state_t txnState, bool splitIntoSmallTrans = false,
+                                      char keyPrefix = '\0');
+
+    w_rc_t delete_records(stid_t &stid, bool fCheckPoint, test_txn_state_t txnState, char keyPrefix = '\0');
+
     ss_m* _ssm;
     bool _use_locks;
+    restart_test_options* _restart_options;
     char log_dir[MAXPATHLEN];
     char vol_dir[MAXPATHLEN];
+
 private:
     void assure_dir(const char *folder_name);
     void assure_empty_dir(const char *folder_name);
     void empty_dir(const char *folder_name);
 
+};
+
+class transact_thread_t : public smthread_t {
+public:
+    transact_thread_t(stid_t* stid_list, void (*runfunct)(stid_t*));
+    ~transact_thread_t();
+
+    virtual void run();
+    static int next_thid; // Adopted from test_deadlock, assuming there is a reason
+    stid_t* _stid_list;
+    int _thid;
+    void (*_runnerfunc)(stid_t*);
+    bool _finished;
 };
 
 #endif // TESTS_BTREE_TEST_ENV_H

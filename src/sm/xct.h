@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 /* -*- mode:C++; c-basic-offset:4 -*-
@@ -82,6 +82,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <set>
 #include <Lintel/AtomicCounter.hpp>
 #include "w_key.h"
+
+#include "latch.h"
 
 class xct_dependent_t;
 struct okvl_mode;
@@ -218,8 +220,8 @@ public:
         sm_stats_info_t*             stats = 0,  // allocated by caller
         timeout_in_ms                timeout = WAIT_SPECIFIED_BY_THREAD,
         bool                         sys_xct = false,
-        bool single_log_sys_xct = false
-                                         );
+        bool                         single_log_sys_xct = false,
+        bool                         loser_xct = false );
     
     static
     xct_t*                       new_xct(
@@ -229,8 +231,8 @@ public:
         const lsn_t&                 undo_nxt,
         timeout_in_ms                timeout = WAIT_SPECIFIED_BY_THREAD,
         bool                         sys_xct = false,
-        bool single_log_sys_xct = false
-                                        );
+        bool                         single_log_sys_xct = false,
+        bool                         loser_xct = false );
     static
     void                        destroy_xct(xct_t* xd);
 
@@ -253,7 +255,8 @@ private:
         const lsn_t&                 last_lsn,
         const lsn_t&                 undo_nxt,
         bool                         sys_xct = false,
-        bool single_log_sys_xct = false
+        bool                         single_log_sys_xct = false,
+        bool                         loser_xct = false
                                       );
     NORET                       ~xct_t();
 
@@ -473,6 +476,7 @@ public:
     static void                  assert_xlist_mutex_is_mine();
     static bool                  xlist_mutex_is_mine();
 
+
     /* "poisons" the transaction so cannot block on locks (or remain
        blocked if already so), instead aborting the offending lock
        request with eDEADLOCK. We use eDEADLOCK instead of
@@ -563,7 +567,14 @@ private:
     
     /** result and context of in-query verification. */
     inquery_verify_context_t     _inquery_verify_context;
-    
+
+    // For a loser transaction identified during Log Analysis phase in Recovery,
+    // the transaction state is 'xct_active' so the standard roll back logic can be
+    // used.  In order to distingish a loser transaction and normal active
+    // transaction, check the '_loser_xct' flag, this is especially important
+    // for transaction driven UNDO logic.
+    bool                         _loser_xct;
+
 public:
     void                         acquire_1thread_xct_mutex() const; // serialize
     void                         release_1thread_xct_mutex() const; // concurrency ok
@@ -638,6 +649,8 @@ public:
     bool                         get_query_exlock_for_select() const {return _query_exlock_for_select;}
     void                         set_query_exlock_for_select(bool mode) {_query_exlock_for_select = mode;}
 
+    bool                        is_loser_xct() const { return _loser_xct; }
+
     ostream &                   dump_locks(ostream &) const;
 
     /////////////////////////////////////////////////////////////////
@@ -702,6 +715,9 @@ private:
 
         state_t                   _state;
         bool                      _read_only;
+
+        // Latch object mainly for checkpoint to access information in txn object
+        latch_t                   _latch;
 
         /*
          * List of stores which this xct will free after completion
@@ -849,6 +865,23 @@ public:
     }
     elr_mode_t                  get_elr_mode() const { return _elr_mode; }
     void                        set_elr_mode(elr_mode_t mode) { _elr_mode = mode; }
+
+    // Latch the xct object in order to access internal data
+    // it is to prevent data changing while reading them
+    // Mainly for checkpoint logging purpose
+    latch_t* latchp() const
+    {
+        // If _core is gone (txn is being destroyed), return NULL
+        if ( NULL == _core)
+            return (latch_t *)NULL;
+
+        return const_cast<latch_t*>(&(_core->_latch));
+    }
+    latch_t &latch()
+    {
+        return *latchp();
+    }
+
 };
 
 /**\cond skip */
@@ -1083,6 +1116,8 @@ inline
 xct_t::state_t
 xct_t::state() const
 {
+    if (NULL == _core)
+        return xct_ended;
     return _core->_state;
 }
 

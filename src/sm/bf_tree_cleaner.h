@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 #ifndef BF_TREE_CLEANER_H
@@ -89,7 +89,7 @@ public:
     /** Immediately writes out all dirty pages.*/
     w_rc_t force_all ();
 
-    /** Immediately writes out all dirty pages up to the given LSN. used while checkpointing. */
+    /** Immediately writes out all dirty pages up to the given LSN. */
     w_rc_t force_until_lsn (lsndata_t lsn);
 
 private:

@@ -18,6 +18,11 @@
 #include "btree_test_env.h"
 #include "sm_options.h"
 #include "xct.h"
+#include "backup.h"
+#include "sm_base.h"
+#include "sm_external.h"
+#include "srwlock.h"
+
 
 #include "../nullbuf.h"
 #if W_DEBUG_LEVEL <= 3
@@ -27,8 +32,12 @@ std::ostream vout (&null_obj);
 namespace {
     char device_name[MAXPATHLEN] = "./volumes/dev_test";
     char global_log_dir[MAXPATHLEN] = "./log";
-
+    char global_backup_dir[MAXPATHLEN] = "./backups";
 }
+
+// For multiple thread access to btree_populate_records
+typedef srwlock_t sm_test_rwlock_t;
+static sm_test_rwlock_t    _test_begin_xct_mutex;
 
 sm_options btree_test_env::make_sm_options(
             int32_t locktable_size,
@@ -115,17 +124,27 @@ public:
                 _options(options),
                 _disk_quota_in_pages(disk_quota_in_pages),
                 _retval(0),
-                _functor(functor) {
-            // complement required options if not set
-            std::string not_set("not_set");
-            int not_set_int = -1;
-            if (_options.get_string_option("sm_logdir", not_set) == not_set) {
-                _options.set_string_option("sm_logdir", global_log_dir);
-            }
-            if (_options.get_int_option("sm_bufpoolsize", not_set_int) == not_set_int) {
-                _options.set_int_option("sm_bufpoolsize",
-                            SM_PAGESIZE / 1024 * default_bufferpool_size_in_pages);
-            }
+                _functor(functor) 
+        {
+            // Initialize using serial traditional restart mode
+            // constructor used by test_crash.cpp which does not specify restart mode
+            do_construct(m1_default_restart);
+        }
+
+        testdriver_thread_t(test_functor *functor,
+            btree_test_env *env,
+            int disk_quota_in_pages,
+            const sm_options &options,
+            int32_t restart_mode)
+                : smthread_t(t_regular, "testdriver_thread_t"),
+                _env(env),
+                _options(options),
+                _disk_quota_in_pages(disk_quota_in_pages),
+                _retval(0),
+                _functor(functor) 
+        {
+            // Initialize using caller specified restart mode                
+            do_construct(restart_mode);    
         }
 
         ~testdriver_thread_t()  {}
@@ -135,6 +154,7 @@ public:
 
 
 private:
+        void   do_construct(int32_t restart_mode);
         w_rc_t do_init(ss_m &ssm);
     
         btree_test_env *_env;
@@ -143,6 +163,45 @@ private:
         int             _retval; // return value from run()
         test_functor*   _functor;// test functor object
 };
+
+void
+testdriver_thread_t::do_construct(int32_t restart_mode)
+{
+    // Private function called by testdriver_thread_t constructors to 
+    // complement required options if not set
+    // Also set up the restart mode per caller's request
+
+    std::string not_set("not_set");
+    int not_set_int = -1;
+    if (_options.get_string_option("sm_logdir", not_set) == not_set) {
+        _options.set_string_option("sm_logdir", global_log_dir);
+    }
+    if (_options.get_string_option("sm_backup_dir", not_set) == not_set) {
+        _options.set_string_option("sm_backup_dir", global_backup_dir);
+    }
+    if (_options.get_int_option("sm_bufpoolsize", not_set_int) == not_set_int) {
+        _options.set_int_option("sm_bufpoolsize",
+                 SM_PAGESIZE / 1024 * default_bufferpool_size_in_pages);
+    }
+
+    // Control which internal restart mode/setting to use.  This is the only place from test suites
+    // to set the value for 'sm_restart'.
+    // If not set, the internal default value is determined in sm.cpp (hard coded).
+    //
+    // This function is called by all constructors, while mode 1 (serial traditional restart)
+    // is for non-restart related test suites and serial traditional restart test suite
+    // (test_crash)
+    // Other restart modes are for target restart testing (e.g. test_restart, 
+    // test_concurrent_restart), not used by non-restart related test suites.
+    // 
+    // Valid modes are specified in sm.cpp, these are internal setting, see sm.cpp for
+    // detail information on each mode
+    // If an invalid restart_mode was specified, the system defaults to the internal
+    // default setting in sm.cpp
+    if (_options.get_int_option("sm_restart", not_set_int) == not_set_int) {
+        _options.set_int_option("sm_restart", restart_mode);
+    }   
+}
 
 rc_t
 testdriver_thread_t::do_init(ss_m &ssm)
@@ -387,9 +446,9 @@ int btree_test_env::runBtreeTest (w_rc_t (*func)(ss_m*, test_volume_t*),
     return rv;
 }
 
-// Begin... for test_restart.cpp
+// Begin... for test_restart.cpp, test_concurrent_restart.cpp
 int btree_test_env::runRestartTest (restart_test_base *context,
-    bool fCrash,
+    restart_test_options *restart_options,
     bool use_locks, int32_t lock_table_size,
     int disk_quota_in_pages, int bufferpool_size_in_pages,
     uint32_t cleaner_threads,
@@ -398,7 +457,7 @@ int btree_test_env::runRestartTest (restart_test_base *context,
     uint32_t cleaner_write_buffer_pages,
     bool initially_enable_cleaners,
     bool enable_swizzling) {
-    return runRestartTest(context, fCrash, use_locks, disk_quota_in_pages,
+    return runRestartTest(context, restart_options, use_locks, disk_quota_in_pages,
             make_sm_options(lock_table_size,
                     bufferpool_size_in_pages,
                     cleaner_threads,
@@ -410,7 +469,7 @@ int btree_test_env::runRestartTest (restart_test_base *context,
 }
 
 int btree_test_env::runRestartTest (restart_test_base *context,
-    bool fCrash,
+    restart_test_options *restart_options,
     bool use_locks, int32_t lock_table_size,
     int disk_quota_in_pages, int bufferpool_size_in_pages,
     uint32_t cleaner_threads,
@@ -422,7 +481,7 @@ int btree_test_env::runRestartTest (restart_test_base *context,
     const std::vector<std::pair<const char*, int64_t> > &additional_int_params,
     const std::vector<std::pair<const char*, bool> > &additional_bool_params,
     const std::vector<std::pair<const char*, const char*> > &additional_string_params) {
-    return runRestartTest(context, fCrash, use_locks, disk_quota_in_pages,
+    return runRestartTest(context, restart_options, use_locks, disk_quota_in_pages,
         make_sm_options(lock_table_size,
                     bufferpool_size_in_pages,
                     cleaner_threads,
@@ -433,18 +492,23 @@ int btree_test_env::runRestartTest (restart_test_base *context,
                     enable_swizzling,
                     additional_int_params, additional_bool_params, additional_string_params));
 }
-int btree_test_env::runRestartTest (restart_test_base *context, bool fCrash, bool use_locks, int disk_quota_in_pages, const sm_options &options) {
+int btree_test_env::runRestartTest (restart_test_base *context, restart_test_options *restart_options,
+                                      bool use_locks, int disk_quota_in_pages, const sm_options &options) {
     _use_locks = use_locks;
-
+    _restart_options = restart_options;
+    // This function is called by restart test cases, while caller specify
+    // the restart mode via 'restart_mode'
+    // e.g., serial traditional, various concurrent combinations
+    
     DBGOUT2 ( << "Going to call pre_shutdown()...");
     int rv;
     w_rc_t e;
         {
-        if (true == fCrash)
+        if (restart_options->shutdown_mode == simulated_crash)
             {
             // Simulated crash
             restart_dirty_test_pre_functor functor(context);
-            testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options);
+            testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options, restart_options->restart_mode);  // User specified restart mode
             e = smtu.fork();
             if(e.is_error()) 
                 {
@@ -469,7 +533,7 @@ int btree_test_env::runRestartTest (restart_test_base *context, bool fCrash, boo
             {
             // Clean shutdown
             restart_clean_test_pre_functor functor(context);
-            testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options);
+            testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options, restart_options->restart_mode);  // User specified restart mode
             e = smtu.fork();
             if(e.is_error()) 
                 {
@@ -494,7 +558,7 @@ int btree_test_env::runRestartTest (restart_test_base *context, bool fCrash, boo
     DBGOUT2 ( << "Going to call post_shutdown()...");
         {
         restart_test_post_functor functor(context);
-        testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options);
+        testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options, restart_options->restart_mode);   // User specified restart mode
 
         w_rc_t e = smtu.fork();
         if(e.is_error()) 
@@ -516,7 +580,7 @@ int btree_test_env::runRestartTest (restart_test_base *context, bool fCrash, boo
     return rv;
         
 }
-// End... for test_restart.cpp
+// End... for test_restart.cpp, test_concurrent_restart.cpp
 
 int btree_test_env::runCrashTest (crash_test_base *context,
     bool use_locks, int32_t lock_table_size,
@@ -568,7 +632,7 @@ int btree_test_env::runCrashTest (crash_test_base *context, bool use_locks, int 
     int rv;
     {
         crash_test_pre_functor functor(context);
-        testdriver_thread_t smtu(&functor, this,  disk_quota_in_pages, options);
+        testdriver_thread_t smtu(&functor, this,  disk_quota_in_pages, options);  // Use serial restart mode
 
         w_rc_t e = smtu.fork();
         if(e.is_error()) {
@@ -591,7 +655,7 @@ int btree_test_env::runCrashTest (crash_test_base *context, bool use_locks, int 
     DBGOUT2 ( << "Crash simulated! going to call post_crash()...");
     {
         crash_test_post_functor functor(context);
-        testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options);
+        testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options);  // Use serial restart mode
 
         w_rc_t e = smtu.fork();
         if(e.is_error()) {
@@ -611,7 +675,6 @@ int btree_test_env::runCrashTest (crash_test_base *context, bool use_locks, int 
     return rv;
     
 }
-
 
 void btree_test_env::set_xct_query_lock() {
     if (_use_locks) {
@@ -641,6 +704,12 @@ w_rc_t x_begin_xct(ss_m* ssm, bool use_locks)
 w_rc_t x_commit_xct(ss_m* ssm)
 {
     W_DO(ssm->commit_xct());
+    return RCOK;
+}
+
+w_rc_t x_abort_xct(ss_m* ssm)
+{
+    W_DO(ssm->abort_xct());
     return RCOK;
 }
 
@@ -819,3 +888,214 @@ w_rc_t x_btree_scan(ss_m* ssm, const stid_t &stid, x_btree_scan_result &result, 
     W_DO(ssm->commit_xct());
     return RCOK;
 }
+
+/** Delete backup if exists. */
+void x_delete_backup(ss_m* ssm, test_volume_t *test_volume) {
+    BackupManager *bk = ssm->bk;
+    std::string backup_path(bk->get_backup_path(test_volume->_vid));
+    std::remove(backup_path.c_str());
+}
+
+/** Take a backup of the test volume. */
+w_rc_t x_take_backup(ss_m* ssm, test_volume_t *test_volume) {
+    // Flush the volume before taking backup
+    W_DO(ssm->force_buffers());
+
+    BackupManager *bk = ssm->bk;
+    ::mkdir(bk->get_backup_folder().c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+    std::string backup_path(bk->get_backup_path(test_volume->_vid));
+    std::ifstream copy_from(test_volume->_device_name, std::ios::binary);
+    std::ofstream copy_to(backup_path.c_str(), std::ios::binary);
+    copy_to << copy_from.rdbuf();
+
+    return RCOK;
+}
+
+bool x_in_restart(ss_m* ssm)
+{
+    // System is still in the process of 'restart'
+    return ssm->in_restart();
+}
+
+
+/* Thread-API to be used by tests to simulate multiple threads as sources of transactions.
+ * Usage: 1) Construct thread object providing a pointer to the function to be executed when the thread is run.
+ *       This function has to be a static function with an argument of type stid_t as the only one.
+ *    2) Call fork() on the thread object to run the thread
+ *   [3) Call join() on the thread to wait for it to finish or use _finished to see if it has finished yet]
+ */
+transact_thread_t::transact_thread_t(stid_t* stid_list, void (*runfunc)(stid_t*)) : smthread_t(t_regular, "transact_thread_t"), _stid_list(stid_list), _finished(false) {
+    _runnerfunc = runfunc;
+    _thid = next_thid++;
+}
+transact_thread_t::~transact_thread_t() {}
+
+int transact_thread_t::next_thid = 10;
+
+void transact_thread_t::run() {
+    std::cout << ":T" << _thid << " starting..";
+    _runnerfunc(_stid_list);
+    _finished = true;
+    std::cout << ":T" << _thid << " finished.";
+}
+
+w_rc_t btree_test_env::btree_populate_records(stid_t &stid,
+                                                  bool fCheckPoint,           // Issue checkpointt in the middle of insertion
+                                                  test_txn_state_t txnState,  // What to do with the transaction
+                                                  bool splitIntoSmallTrans,   // Default: false
+                                                                              // Ture if one insertion per transaction
+                                                  char keyPrefix)             // Default: '\0'
+                                                                              // Use as key prefix is not '\0'
+{
+    // If split into multiple transactions, caller cannot ask for in-flight transaction state
+    if (t_test_txn_in_flight == txnState)
+        w_assert1(false == splitIntoSmallTrans);
+
+    // Set the data size is the max_entry_size minus key size
+    // because the total size must be smaller than or equal to
+    // btree_m::max_entry_size()
+    bool isMulti = keyPrefix != '\0';
+    const int key_size = isMulti ? 6 : 5;
+    const int data_size = btree_m::max_entry_size() - key_size - 1;
+    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
+    int num;  
+
+    vec_t data;
+    char data_str[data_size+1];
+    data_str[data_size] = '\0';
+    memset(data_str, 'D', data_size);
+    w_keystr_t key;
+    char key_str[key_size];
+    key_str[0] = 'k';
+    key_str[1] = 'e';
+    key_str[2] = 'y';
+    if (isMulti)
+        key_str[3] = keyPrefix;
+
+    // Insert enough records to ensure page split
+    // Multiple transactions with one insertion per transaction
+
+    if (!splitIntoSmallTrans)
+    {
+        // One big transaction
+
+        // Using mutex to make sure the entire transaction got executed together        
+// TODO(Restart)... potentially there is an issue if multiple threads are calling this function
+//     with one big transaction, some are in-flight, some are commit.  
+//     Seeing core dump from 'begin_xct', we might have issues in the transaction 
+//     manager implementation with concurrent and longer lasting transactions from
+//     multiple threads, or maybe the usage of 'detach_xct' is not correct?
+//    Using mutex seems to work around the issue, need more investigation....
+
+        spinlock_write_critical_section cs(&_test_begin_xct_mutex);
+        W_DO(begin_xct());
+ 
+        for (int i = 0; i < recordCount; ++i) 
+        {
+            num = recordCount - 1 - i;
+        
+            key_str[key_size-2] = ('0' + ((num / 10) % 10));
+            key_str[key_size-1] = ('0' + (num % 10));
+
+            if (true == fCheckPoint) 
+            {
+                // Take one checkpoint half way through insertions
+                if (num == recordCount/2)
+                    W_DO(ss_m::checkpoint()); 
+            }
+
+            // Insert
+            W_DO(btree_insert(stid, key_str, data_str));
+        }
+
+        if(t_test_txn_commit == txnState)
+            W_DO(commit_xct());
+        else if (t_test_txn_abort == txnState)
+            W_DO(abort_xct());
+        else
+            ss_m::detach_xct();
+    }
+    else
+    {
+        // Multiple small transactions, one insertion per transaction
+        for (int i = 0; i < recordCount; ++i) 
+        {
+            num = recordCount - 1 - i;
+        
+            key_str[key_size-2] = ('0' + ((num / 10) % 10));
+            key_str[key_size-1] = ('0' + (num % 10));
+
+            if (true == fCheckPoint) 
+            {
+                // Take one checkpoint half way through insertions
+                if (num == recordCount/2)
+                    W_DO(ss_m::checkpoint()); 
+            }
+      
+            W_DO(begin_xct());
+            W_DO(btree_insert(stid, key_str, data_str));
+            if(t_test_txn_commit == txnState)
+                W_DO(commit_xct());
+            else if (t_test_txn_abort == txnState)
+                W_DO(abort_xct());
+            else
+                w_assert1(false);
+        }        
+    }
+
+    return RCOK;
+}
+
+w_rc_t btree_test_env::delete_records(stid_t &stid,
+                                        bool fCheckPoint,          // Issue checkpointt in the middle of deletion
+                                        test_txn_state_t txnState, // What to do with the transaction
+                                        char keyPrefix)            // Default: '\0'
+                                                                   // Use as key prefix is not '\0'
+{
+    // One big transaction with multiple deletions
+    // Currently this function does not support multiple small deletion transactions
+    
+    const bool isMulti = (keyPrefix!='\0');
+    const int key_size = isMulti ? 6 : 5; // When this is used in multi-threaded and/or multi-index tests,
+                                          // each thread needs to pass a different keyPrefix 
+                                          // to prevent duplicate records
+    char key_str[key_size];
+    key_str[0] = 'k';
+    key_str[1] = 'e';
+    key_str[2] = 'y';
+
+    // Delete every second record, will lead to page merge
+    
+    // Use spinlock to ensure all statements in the transaction got executed together   
+    spinlock_write_critical_section cs(&_test_begin_xct_mutex);
+
+    W_DO(begin_xct());
+    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
+    for (int i=0; i < recordCount; i+=2) {
+    
+        key_str[3] = ('0' + ((i / 10) % 10));
+        key_str[4] = ('0' + (i % 10));
+        if(isMulti) {
+            key_str[3] = keyPrefix;
+            key_str[4] = ('0' + ((i / 10) % 10));
+            key_str[5] = ('0' + (i % 10));
+        }
+        else {
+            key_str[3] = ('0' + ((i / 10) % 10));
+            key_str[4] = ('0' + (i % 10));
+        }
+        if (true == fCheckPoint && i == recordCount/2) {
+            // Take one checkpoint halfway through deletions
+            W_DO(ss_m::checkpoint());
+        }
+        W_DO(btree_remove(stid, key_str));
+    }
+    if (t_test_txn_commit == txnState)
+        W_DO(commit_xct());
+    else if (t_test_txn_abort == txnState)
+        W_DO(abort_xct());
+    else
+        ss_m::detach_xct();
+    return RCOK;
+}
+

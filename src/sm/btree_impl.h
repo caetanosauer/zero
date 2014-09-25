@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 #ifndef BTREE_IMPL_H
@@ -11,6 +11,7 @@
 #include "kvl_t.h"
 #include "btree_verify.h"
 #include "w_okvl.h"
+#include "xct.h"
 
 /**
  * \brief The internal implementation class which actually implements the
@@ -131,12 +132,14 @@ public:
     static rc_t                        _ux_update(
         volid_t vol, snum_t store,
         const w_keystr_t&                 key,
-        const cvec_t&                     elem);
+        const cvec_t&                     elem,
+        const bool                        undo);
     /** _ux_update()'s internal function without retry by itself.*/
     static rc_t                        _ux_update_core(
         volid_t vol, snum_t store,
         const w_keystr_t&                 key,
-        const cvec_t&                     elem);
+        const cvec_t&                     elem,
+        const bool                        undo);
     /** Last half of _ux_update, after traversing, finding (or not) and ghost determination.*/
     static rc_t _ux_update_core_tail(
      volid_t vol, snum_t store,
@@ -181,12 +184,14 @@ public:
     static rc_t                        _ux_overwrite(
         volid_t vol, snum_t store,
         const w_keystr_t&                 key,
-        const char *el, smsize_t offset, smsize_t elen);
+        const char *el, smsize_t offset, smsize_t elen,
+        const bool undo);
     /** _ux_overwrite()'s internal function without retry by itself.*/
     static rc_t                        _ux_overwrite_core(
         volid_t vol, snum_t store,
         const w_keystr_t&                 key,
-        const char *el, smsize_t offset, smsize_t elen);
+        const char *el, smsize_t offset, smsize_t elen,
+        const bool undo);
 
     /**
      * \brief Creates a ghost record for the key as a preparation for insert.
@@ -212,10 +217,11 @@ public:
     */
     static rc_t                        _ux_remove(
         volid_t vol, snum_t store,
-        const w_keystr_t&                key);
+        const w_keystr_t&   key,
+        const bool          undo);
 
     /** _ux_remove()'s internal function without retry by itself.*/
-    static rc_t _ux_remove_core(volid_t vol, snum_t store, const w_keystr_t &key);
+    static rc_t _ux_remove_core(volid_t vol, snum_t store, const w_keystr_t &key, const bool undo);
 
     /**
     *  \brief Reverses the ghost record of specified key to regular state.
@@ -292,6 +298,7 @@ public:
     * @param[in] leaf_latch_mode EX for insert/remove, SH for lookup
     * @param[out] leaf leaf satisfying search
     * @param[in] allow_retry only when leaf_latch_mode=EX. whether to retry from root if latch upgrade fails
+    * @param[in] from_undo is true if caller is from an UNDO operation
     */
     static rc_t                 _ux_traverse(
         volid_t vol, snum_t store,
@@ -299,7 +306,8 @@ public:
         traverse_mode_t            traverse_mode,
         latch_mode_t               leaf_latch_mode,
         btree_page_h&                   leaf,
-        bool                       allow_retry = true
+        bool                       allow_retry = true,
+        const bool                 from_undo = false
         );
 
     /**
@@ -322,8 +330,9 @@ public:
         const w_keystr_t&          key,
         traverse_mode_t            traverse_mode,
         latch_mode_t               leaf_latch_mode,
-        btree_page_h&                   leaf,
-        shpid_t&                    leaf_pid_causing_failed_upgrade
+        btree_page_h&              leaf,
+        shpid_t&                   leaf_pid_causing_failed_upgrade,
+        const bool                 from_undo
         );
 
     /**
@@ -351,7 +360,7 @@ public:
      * and, false positive is fine. it's just one mutex call overhead.
      * See jira ticket:78 "Eager-Opportunistic Hybrid Latching" (originally trac ticket:80).
      */
-    static rc_t _ux_traverse_try_eager_adopt(btree_page_h &current, shpid_t next_pid);
+    static rc_t _ux_traverse_try_eager_adopt(btree_page_h &current, shpid_t next_pid, const bool from_recovery);
 
     /**
      * If next has foster pointer and real-parent wants to adopt it, call this function.
@@ -361,7 +370,7 @@ public:
      * will be called to do it.
      * See jira ticket:78 "Eager-Opportunistic Hybrid Latching" (originally trac ticket:80).
      */
-    static rc_t _ux_traverse_try_opportunistic_adopt(btree_page_h &current, btree_page_h &next);
+    static rc_t _ux_traverse_try_opportunistic_adopt(btree_page_h &current, btree_page_h &next, const bool from_recovery);
 
     /**
     *  Find key in btree. If found, copy up to elen bytes of the
@@ -463,7 +472,8 @@ public:
      * @param[in] child child page of the parent that (might) has foster-children.
      * @param[out] pushedup whether the adopt was done
      */
-    static rc_t                 _sx_opportunistic_adopt_foster(btree_page_h &parent, btree_page_h &child, bool &pushedup);
+    static rc_t _sx_opportunistic_adopt_foster(btree_page_h &parent, btree_page_h &child, 
+                                                    bool &pushedup, const bool from_recovery);
 
     /**
      * \brief Pushes up all foster-children of children to the parent.
@@ -480,11 +490,12 @@ public:
      * is that this function doesn't exactly check children have foster-child.
      * So, this is much faster but some foster-child might be not adopted!
      */
-    static rc_t _sx_adopt_foster_sweep_approximate (btree_page_h &parent, shpid_t surely_need_child_pid);
+    static rc_t _sx_adopt_foster_sweep_approximate (btree_page_h &parent, shpid_t surely_need_child_pid,
+                                                            const bool from_recovery);
 
     /** Applies the changes of one adoption on parent node. Used by both usual adoption and REDO. */
     static void _ux_adopt_foster_apply_parent (btree_page_h &parent_arg,
-        shpid_t new_child_pid, const w_keystr_t &new_child_key);
+        shpid_t new_child_pid, lsn_t new_child_emlsn, const w_keystr_t &new_child_key);
     /** Applies the changes of one adoption on child node. Used by both usual adoption and REDO. */
     static void _ux_adopt_foster_apply_child (btree_page_h &child);
 
@@ -539,15 +550,18 @@ public:
 
     /** Overload to specify how many records we move and the new fence key. */
     static rc_t                 _sx_rebalance_foster(btree_page_h &page,
-        btree_page_h &foster_p, int32_t move_count, const w_keystr_t &mid_key, shpid_t new_pid0);
+        btree_page_h &foster_p, int32_t move_count, const w_keystr_t &mid_key,
+        shpid_t new_pid0, lsn_t new_pid0_emlsn);
 
     /** @see _sx_rebalance_foster() */
     static rc_t                 _ux_rebalance_foster_core(btree_page_h &page,
-        btree_page_h &foster_p, int32_t move_count, const w_keystr_t &mid_key, shpid_t new_pid0);
+        btree_page_h &foster_p, int32_t move_count, const w_keystr_t &mid_key,
+        shpid_t new_pid0, lsn_t new_pid0_emlsn, bool &caller_commit, sys_xct_section_t& sxs);
 
     /** @see _ux_rebalance_foster_core() */
     static rc_t                 _ux_rebalance_foster_apply(btree_page_h &page,
-        btree_page_h &foster_p, int32_t move_count, const w_keystr_t &mid_key, shpid_t new_pid0);
+        btree_page_h &foster_p, int32_t move_count, const w_keystr_t &mid_key,
+        shpid_t new_pid0, lsn_t new_pid0_emlsn, const bool full_logging = false);
 
     /** Special case that changes only fence key (for no-record-split). */
     static rc_t                 _ux_rebalance_foster_norec(btree_page_h &page,
@@ -568,11 +582,13 @@ public:
 
     /** @see _sx_merge_foster() */
     static rc_t                 _ux_merge_foster_core(btree_page_h &page,
-                                                      btree_page_h &foster_p);
+                                                      btree_page_h &foster_p,
+                                                      bool &caller_commit, sys_xct_section_t& sxs);
 
     /** @see _sx_merge_foster() */
     static void                 _ux_merge_foster_apply_parent(btree_page_h &page,
-                                                              btree_page_h &foster_p);
+                                                              btree_page_h &foster_p,
+                                                              const bool full_logging = false);
 
     /**
      * \brief Converts the right sibling of given page to be a foster-child of it.
@@ -594,7 +610,8 @@ public:
         shpid_t foster_child_id, slotid_t foster_parent_slot);
     /** Applies data changes on foster-parent for De-Adopt operation. */
     static void _ux_deadopt_foster_apply_foster_parent(btree_page_h &foster_parent,
-        shpid_t foster_child_id, const w_keystr_t &low_key, const w_keystr_t &high_key);
+        shpid_t foster_child_id, lsn_t foster_child_emlsn,
+        const w_keystr_t &low_key, const w_keystr_t &high_key);
 
 #ifdef DOXYGEN_HIDE
 ///==========================================
@@ -636,6 +653,23 @@ public:
         latch_mode_t        latch_mode,
         const okvl_mode&       lock_mode,
         bool                check_only
+    );
+
+    // stid_d version, no latch and no retry, used by Log Analysis phase on individual log record
+    static rc_t _ux_lock_key(
+        const stid_t&       stid,
+        const w_keystr_t&   key,
+        const okvl_mode&    lock_mode,
+        bool                check_only,
+        xct_t*              xd
+    );
+
+    // hash version, no latch and no retry, used by Log Analysis phase on checkpoint log record
+    static rc_t _ux_lock_key(
+        const uint32_t&     hash,
+        const okvl_mode&    lock_mode,
+        bool                check_only,
+        xct_t*              xd
     );
 
     /**

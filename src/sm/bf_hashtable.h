@@ -51,6 +51,14 @@ public:
     bf_idx      lookup(uint64_t key) const;
 
     /**
+     * Imprecise-but-fast version of lookup().
+     * This method doesn't take latch, so it's much faster. However false-positives/negatives
+     * are possible. The caller must make sure false-positives/negatives won't cause an issue.
+     * This is so far used from eviction routine, which doesn't have to be precise.
+     */
+    bf_idx      lookup_imprecise(uint64_t key) const;
+
+    /**
     * Insert the key in the _table and link it with the given bf_idx.
     * if the given key already exists, this method doesn't change anything and returns false.
     */

@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 /* -*- mode:C++; c-basic-offset:4 -*-
@@ -62,6 +62,14 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 /*  -- do not edit anything above this line --   </std-header>*/
 
 #include "sm_int_1.h"
+#include "w_heap.h"
+
+// For checkpoint to gather lock information into heap if asked
+struct comp_lock_info_t;
+class CmpXctLockTids;
+typedef class Heap<comp_lock_info_t*, CmpXctLockTids> XctLockHeap;
+
+
 class chkpt_thread_t;
 
 /*********************************************************************
@@ -85,12 +93,14 @@ public:
     void             wakeup_and_take();
     void             spawn_chkpt_thread();
     void             retire_chkpt_thread();
-    void             take();
+    void             synch_take();
+    void             synch_take(XctLockHeap& lock_heap);  // Record lock information in heap
+    void             take(chkpt_mode_t chkpt_mode, XctLockHeap& lock_heap, const bool record_lock = false);
+
 
 private:
     chkpt_thread_t*  _chkpt_thread;
     long             _chkpt_count;
-
 
 public:
     // These functions are for the use of chkpt -- to serialize

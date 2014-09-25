@@ -161,6 +161,9 @@ struct okvl_mode {
      */
     bool contains_dirty_lock() const;
 
+    // Return whether this contains dirty lock on key, not gap
+    bool contains_dirty_key_lock() const;
+
     /** Sets an individual partition mode (and its intent mode on key). */
     void set_partition_mode(part_id partition, element_lock_mode mode);
     /** Sets the key mode. */

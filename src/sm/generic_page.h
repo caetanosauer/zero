@@ -153,7 +153,6 @@ public:
     const lsn_t&  lsn()   const { return _pp->lsn; }
     void          set_lsns(const lsn_t& lsn) { _pp->lsn = lsn; }
 
-
 protected:
     generic_page_h(generic_page* s, const lpid_t& pid, page_tag_t tag) : _pp(s) {
         ::memset(_pp, 0, sizeof(*_pp));

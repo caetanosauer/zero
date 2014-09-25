@@ -92,3 +92,13 @@ X(eWRITEORDERLOOP,            "Causes a loop in write order dependency")
 X(eLIL_TOOMANYVOL_XCT,        "Accessing too many volumes in one transaction")
 X(eLIL_TOOMANYST_XCT,         "Accessing too many stores in one transaction")
 X(eBF_DIRECTFIX_SWIZZLED_PTR, "Requested a direct page fix with swizzled pointer")
+X(eWRONG_PAGE_LSNCHAIN,       "Not the right per-page LSN chain to follow")
+X(eNO_PARENT_SPR,             "Parent page needed for Single-Page-Recovery")
+X(eNO_BACKUP_FILE,            "Backup file does not exist")
+X(eBACKUP_SHORTSEEK,          "Failed to seek in Backup file")
+X(eBACKUP_SHORTIO,            "Failed to read from Backup file")
+X(eBFFULL,                    "Buffer pool is full during Recovery operation")
+X(eACCESS_CONFLICT,           "User transaction is conflicting with Recovery task on a page access")
+X(eBAD_BACKUPPAGE,            "Retrieved page from backup file was incorrect")
+
+

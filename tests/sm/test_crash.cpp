@@ -5,13 +5,13 @@
 #include "btcursor.h"
 #include "bf.h"
 #include "xct.h"
+#include "sm_base.h"
+#include "sm_external.h"
 
 btree_test_env *test_env;
 
-/**
- * Testcases to test crash and recovery from logs.
- * Due to its nature, these testcases are more tricky.
- */
+// Test cases to test serial and traditional restart.
+// Caller does not specify restart mode, default to serial mode.
 
 class crash_empty : public crash_test_base {
 public:
@@ -23,11 +23,14 @@ public:
         return RCOK;
     }
 };
+
+/* Passing */
 TEST (CrashTest, Empty) {
     test_env->empty_logdata_dir();
     crash_empty context;
     EXPECT_EQ(test_env->runCrashTest(&context), 0);
 }
+/**/
 
 lsn_t get_durable_lsn() {
     lsn_t ret;
@@ -60,11 +63,13 @@ public:
     }
 };
 
+/* Passing */
 TEST (CrashTest, CreateIndexClean) {
     test_env->empty_logdata_dir();
     crash_createindex_clean context;
-    EXPECT_EQ(test_env->runCrashTest(&context), 0);
+    EXPECT_EQ(test_env->runCrashTest(&context), 0);  // default to serial mode
 }
+/**/
 
 class crash_createindex_dirty : public crash_test_base {
 public:
@@ -83,11 +88,14 @@ public:
         return RCOK;
     }
 };
+
+/* Passing */
 TEST (CrashTest, CreateIndexDirty) {
     test_env->empty_logdata_dir();
     crash_createindex_dirty context;
-    EXPECT_EQ(test_env->runCrashTest(&context), 0);
+    EXPECT_EQ(test_env->runCrashTest(&context), 0);  // default to serial mode
 }
+/**/
 
 class crash_insert_single : public crash_test_base {
 public:
@@ -110,11 +118,14 @@ public:
         return RCOK;
     }
 };
+
+/* Passing */
 TEST (CrashTest, InsertSingle) {
     test_env->empty_logdata_dir();
     crash_insert_single context;
-    EXPECT_EQ(test_env->runCrashTest(&context), 0);
+    EXPECT_EQ(test_env->runCrashTest(&context), 0);  // default to serial mode
 }
+/**/
 
 class crash_insert_multi : public crash_test_base {
 public:
@@ -139,11 +150,14 @@ public:
         return RCOK;
     }
 };
+
+/* Passing */
 TEST (CrashTest, InsertMulti) {
     test_env->empty_logdata_dir();
     crash_insert_multi context;
-    EXPECT_EQ(test_env->runCrashTest(&context), 0);
+    EXPECT_EQ(test_env->runCrashTest(&context), 0);  // default to serial mode
 }
+/**/
 
 class crash_insert_delete : public crash_test_base {
 public:
@@ -170,11 +184,14 @@ public:
         return RCOK;
     }
 };
+
+/* Passing */
 TEST (CrashTest, InsertDelete) {
     test_env->empty_logdata_dir();
     crash_insert_delete context;
-    EXPECT_EQ(test_env->runCrashTest(&context), 0);
+    EXPECT_EQ(test_env->runCrashTest(&context), 0);  // default to serial mode
 }
+/**/
 
 class crash_insert_update : public crash_test_base {
 public:
@@ -202,11 +219,15 @@ public:
         return RCOK;
     }
 };
+
+/* Passing */
 TEST (CrashTest, InsertUpdate) {
     test_env->empty_logdata_dir();
     crash_insert_update context;
-    EXPECT_EQ(test_env->runCrashTest(&context), 0);
+    EXPECT_EQ(test_env->runCrashTest(&context), 0);  // default to serial mode
 }
+/**/
+
 class crash_insert_overwrite : public crash_test_base {
 public:
     w_rc_t pre_crash(ss_m *ssm) {
@@ -233,11 +254,14 @@ public:
         return RCOK;
     }
 };
+
+/* Passing */
 TEST (CrashTest, InsertOverwrite) {
     test_env->empty_logdata_dir();
     crash_insert_overwrite context;
-    EXPECT_EQ(test_env->runCrashTest(&context), 0);
+    EXPECT_EQ(test_env->runCrashTest(&context), 0);  // default to serial mode
 }
+/**/
 
 class crash_insert_many : public crash_test_base {
 public:
@@ -302,35 +326,39 @@ public:
     bool _sorted;
     int _recs;
 };
+
+/* Passing */
 TEST (CrashTest, InsertFewSorted) {
     test_env->empty_logdata_dir();
     crash_insert_many context (true, 5);
-    EXPECT_EQ(test_env->runCrashTest(&context), 0);
+    EXPECT_EQ(test_env->runCrashTest(&context), 0);  // default to serial mode
 }
+/**/
+
+/* Passing */
 TEST (CrashTest, InsertFewUnsorted) {
     test_env->empty_logdata_dir();
     crash_insert_many context (false, 5);
-    EXPECT_EQ(test_env->runCrashTest(&context), 0);
+    EXPECT_EQ(test_env->runCrashTest(&context), 0);  // default to serial mode
 }
+/**/
 
+/* Passing */
 TEST (CrashTest, InsertManySorted) {
     test_env->empty_logdata_dir();
     crash_insert_many context (true, 30);
-    EXPECT_EQ(test_env->runCrashTest(&context), 0);
+    EXPECT_EQ(test_env->runCrashTest(&context), 0);  // default to serial mode
 }
-/*
- mmm, this testcase passes if run by itself, but fails when run after several testcases above.
- seems like REDO pass misses most of the insertion in that case.
- filesystem metadata sync issue? log file flush?
- couldn't figure it out, so tentatively commented out.
- */
-/**
+/**/
+
+/* Passing */
 TEST (CrashTest, InsertManyUnsorted) {
     test_env->empty_logdata_dir();
     crash_insert_many context (false, 7);
-    EXPECT_EQ(test_env->runCrashTest(&context), 0);
+    EXPECT_EQ(test_env->runCrashTest(&context), 0);  // default to serial mode
 }
-**/
+/**/
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     test_env = new btree_test_env();
