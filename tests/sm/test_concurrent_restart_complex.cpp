@@ -137,9 +137,7 @@ TEST (RestartTest, MultiIndexConcChckptNF) {
 }
 /**/
 
-/* core dump if crash with in-flight multiple statements, including page split 
-btree_insert_log::undo() - undo an insert operation by delete it, but record not found */
-/* Not passing, full logging *
+/* Passing, full logging */
 TEST (RestartTest, MultiIndexConcChckptCF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -149,7 +147,7 @@ TEST (RestartTest, MultiIndexConcChckptCF) {
     options.restart_mode = m2_full_logging_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 /* Passing */
 TEST (RestartTest, MultiIndexConcChckptNR) {
@@ -187,9 +185,7 @@ TEST (RestartTest, MultiIndexConcChckptNRF) {
 }
 /**/
 
-/* core dump if crash with in-flight multiple statements, including page split 
-btree_insert_log::undo() - undo an insert operation by delete it, but record not found */
-/* Not passing, full logging *
+/* Passing, full logging */
 TEST (RestartTest, MultiIndexConcChckptCRF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -199,7 +195,7 @@ TEST (RestartTest, MultiIndexConcChckptCRF) {
     options.restart_mode = m2_redo_fl_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 /* Passing */
 TEST (RestartTest, MultiIndexConcChckptNU) {
@@ -237,9 +233,7 @@ TEST (RestartTest, MultiIndexConcChckptNUF) {
 }
 /**/
 
-/* core dump if crash with in-flight multiple statements, including page split 
-btree_insert_log::undo() - undo an insert operation by delete it, but record not found */
-/* Not passing, full logging *
+/* Passing, full logging */
 TEST (RestartTest, MultiIndexConcChckptCUF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -249,7 +243,7 @@ TEST (RestartTest, MultiIndexConcChckptCUF) {
     options.restart_mode = m2_redo_fl_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 /* Passing */
 TEST (RestartTest, MultiIndexConcChckptNB) {
@@ -287,9 +281,7 @@ TEST (RestartTest, MultiIndexConcChckptNBF) {
 }
 /**/
 
-/* core dump if crash with in-flight multiple statements, including page split 
-btree_insert_log::undo() - undo an insert operation by delete it, but record not found */
-/* Not passing, full logging *
+/* Passing, full logging */
 TEST (RestartTest, MultiIndexConcChckptCBF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
@@ -299,7 +291,7 @@ TEST (RestartTest, MultiIndexConcChckptCBF) {
     options.restart_mode = m2_both_fl_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 // Test case that populates 3 indexes with committed records and one of them with some in-flights before shutdown
 // After shutdown, concurrent transactions are executed to test the rejection logic for concurrent transactions
@@ -324,6 +316,7 @@ public:
         W_DO(test_env->btree_insert_and_commit(_stid_list[1], "aa2", "data2"));
 
 // TODO(Restart)... need to enable the following call which populate the index with many reocrds and page split in one transaction, in-flight transaction
+//                           need to vertiy the test code to make sure it is correct, might need to change the expected result verification once enable this line
         // W_DO(test_env->btree_populate_records(_stid_list[2], false, t_test_txn_in_flight, false, '3'));  // flags: no checkpoint, no commit, one big transaction which cause page split, keyPrefix '3'
         
         W_DO(ss_m::checkpoint());
@@ -821,10 +814,7 @@ TEST (RestartTest, MultiPageInFlightMultithrdC) {
 }
 /**/
 
-/* Failing - see Jira issue ZERO-186 */
-/* core dump if crash with in-flight multiple statements, including page split 
-btree_insert_log::undo() - undo an insert operation by delete it, but record not found */
-/* Not passing, full logging *
+/* Not passing, full logging - incorrect result, want 0 but got 4*
 TEST (RestartTest, MultiPageInFlightMultithrdCF) {
     test_env->empty_logdata_dir();
     restart_multi_page_inflight_multithrd context;
@@ -1020,10 +1010,7 @@ TEST (RestartTest, ManyConflictsMultihthrdC) {
 }
 /**/
 
-/* Failing - see Jira issue ZERO-186*/
-/* core dump if crash with in-flight multiple statements, including page split 
-btree_insert_log::undo() - undo an insert operation by delete it, but record not found */
-/* Not passing, full logging *
+/* Passing, full logging - incorrect result, want 75 but got 71 *
 TEST (RestartTest, ManyConflictsMultithrdCF) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
@@ -1070,9 +1057,7 @@ TEST (RestartTest, ManyConflictsMultithrdNRF) {
 }
 /**/
 
-/* core dump if crash with in-flight multiple statements, including page split 
-btree_insert_log::undo() - undo an insert operation by delete it, but record not found */
-/* Not passing, full logging *
+/* Passing, full logging - incorrect result, want 75 but got 71 *
 TEST (RestartTest, ManyConflictsMultithrdCRF) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
@@ -1120,9 +1105,7 @@ TEST (RestartTest, ManyConflictsMultithrdNUF) {
 }
 /**/
 
-/* core dump if crash with in-flight multiple statements, including page split 
-btree_insert_log::undo() - undo an insert operation by delete it, but record not found */
-/* Not passing, full logging *
+/* Passing, full logging - incorrect result, want 75 but got 71 *
 TEST (RestartTest, ManyConflictsMultithrdCUF) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
@@ -1170,9 +1153,7 @@ TEST (RestartTest, ManyConflictsMultithrdNBF) {
 }
 /**/
 
-/* core dump if crash with in-flight multiple statements, including page split 
-btree_insert_log::undo() - undo an insert operation by delete it, but record not found */
-/* Not passing, full logging *
+/* Passing, full logging - incorrect result, want 75 but got 71 *
 TEST (RestartTest, ManyConflictsMultithrdCBF) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;

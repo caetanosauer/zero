@@ -454,7 +454,7 @@ rc_t btree_page_h::init_fence_keys(
     // which makes some of the existing records out-of-bound and they
     // need to be remvoed
     w_assert1(page()->number_of_items() > remove_count);
-    page()->remove_items(remove_count);  // Remove items, it affects item count but not ghost count
+    page()->remove_items(remove_count, high);  // Remove items, it affects item count but not ghost count
 
     // Prepare for updating the fence key slot
     cvec_t fences;

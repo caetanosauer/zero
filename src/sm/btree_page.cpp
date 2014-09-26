@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <memory>
 #include "w_debug.h"
+#include "w_key.h"
 
 
 void btree_page_data::init_items() {
@@ -19,7 +20,9 @@ void btree_page_data::init_items() {
     w_assert3(_items_are_consistent());
 }
 
-void btree_page_data::remove_items(const int item_count) 
+void btree_page_data::remove_items(
+                      const int item_count,    // In: Number of records to remove
+                      const w_keystr_t &high)  // In: high fence after record removal
 {
     // Use this function with caution
 
@@ -31,7 +34,7 @@ void btree_page_data::remove_items(const int item_count)
     // this function removes the largest 'item_count' items from the page
     // because they belong to destination page after the rebalance
     // After the removal, item count changed but no change to ghost count
-   
+
     w_assert1(btree_level >= 1);
     w_assert1(nitems > item_count);          // Must have at least one record which is the fency key record
     w_assert3(_items_are_consistent());
@@ -39,58 +42,44 @@ void btree_page_data::remove_items(const int item_count)
     if ((0 == item_count) || (1 == nitems))  // If 1 == nitems, we only have a fence key record
         return;
 
-// TODO(Restart)... temporary, it changes the item count but no actual deletion
-    nitems -= item_count;
+    DBGOUT3( << "btree_page_data::reset_item_count - before deletion item count: " << nitems
+             << ", new high fence key: " << high);
 
-//TODO(Restart)... actually delete the items from page, this is the right thing to do
-//                         but the logic does not work correctly now
-DBGOUT3( << "btree_page_data::reset_item_count - before deletion item count: " << nitems);
-
-/**
     int remaining = item_count;
+    char* high_key_p = (char *)high.buffer_as_keystr();
+    size_t high_key_length = (size_t)high.get_length_as_keystr();
     while (0 < remaining)
     {
         w_assert1(1 < nitems);
-        // Find the largest item to delete, because this is for
-        // source page page rebalance purpose, the largest n items 
-        // must be eliminated from the source page, they belong
-        // to the destination page now
+        // Find the records with key >= new high fence key and delete them
         int item_index = 1;  // Start with index 1 since 0 is for the fence key record
-        char* largest_p = item_data(item_index);
-        uint16_t* key_length = (uint16_t*)largest_p;
-        size_t largest_len = *key_length++;
-
-//TODO(Restart)...
-DBGOUT3( << "btree_page_data::reset_item_count - ititial item length: " << largest_len);
+        uint16_t* key_length;;
+        size_t item_len;
 
         int cmp;
-        for (int i = (item_index + 1); i < nitems; ++i)
+        const int data_offset = sizeof(uint16_t);  // To skipover the portion which contains the size of variable data
+        for (int i = item_index; i < nitems; ++i)
         {
             key_length = (uint16_t*)item_data(i);
-            size_t curr_len = *key_length++;       
-            cmp = ::memcmp(largest_p, item_data(i), (largest_len<=curr_len)? largest_len : curr_len);
-            if ((0 > cmp) || ((0 == cmp) && (largest_len < curr_len)))
+            item_len = *key_length++;       
+
+            cmp = ::memcmp(high_key_p, item_data(i)+data_offset, (high_key_length<=item_len)? high_key_length : item_len);
+            if ((0 > cmp) || ((0 == cmp) && (high_key_length <= item_len)))
             {
-                // Found a larger value
-                largest_p = item_data(i);  
-                largest_len = curr_len;
-                item_index = i;
+                // The item is larger than the new high fence key or the same as high fence key (high fence is ghost)
+                DBGOUT3( << "btree_page_data::reset_item_count - delete record index: " << i);
+
+                // Delete the item, which changes nitems but no change to nghosts
+                // therefore break out the loop and start the loop again if we have more items to remove
+                delete_item(i);
+                break;
             }
         }
-        // Delete the largest item, which changeds nitems but no change to nghosts
-//TODO(Restart)...
-        DBGOUT3( << "btree_page_data::reset_item_count - delete record index: " << item_index << ", record data: " << largest_p);
-
-        delete_item(item_index);
 
         --remaining;
     }
 
-**/
-
-//TODO(Restart)...
-DBGOUT3( << "btree_page_data::reset_item_count - after deletion item count: " << nitems);
-
+    DBGOUT3( << "btree_page_data::reset_item_count - after deletion item count: " << nitems);
     w_assert3(_items_are_consistent());
 }
 

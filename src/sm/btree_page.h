@@ -137,8 +137,10 @@ protected:
     // Remove the largest 'item_count' items from the storage area
     // It erases existing items from storage therefore use with caution
     // The function should only be called by full logging page rebalance
-    // restart operation to recovery the source page only
-    void          remove_items(const int item_count);
+    // restart operation to recovery the source page
+    // item_count - number of records to remove
+    // high - the new high fence after record removal
+    void          remove_items(const int item_count, const w_keystr_t &high);
 
     int           number_of_items()  const { return nitems;}
 

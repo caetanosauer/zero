@@ -253,7 +253,7 @@ public:
     }
 };
 
-// Enabled for testing purpose
+// Enabled for testing purpose, still not working with fix in remove_items, need to use the special test which insert 2 records first
 /* Not passing, full logging, crash if crash with in-flight multiple statements, including page split *
 TEST (RestartTest, MultiIndexConcChckptCF) {
     test_env->empty_logdata_dir();
@@ -447,15 +447,15 @@ public:
         W_DO(x_btree_create_index(ssm, &_volume, _stid_list[2], _root_pid));
         output_durable_lsn(4);
 
-//        W_DO(test_env->btree_populate_records(_stid_list[0], false, t_test_txn_commit, true, '0'));    // flags: no checkpoint, commit, one transaction per insert, keyPrefix '0'
-//        W_DO(test_env->btree_populate_records(_stid_list[1], false, t_test_txn_commit, false, '1'));   // flags:                        all inserts in one transaction, keyPrefix '1'
-//        W_DO(test_env->btree_populate_records(_stid_list[2], false, t_test_txn_commit, false, '2'));   // flags: no checkpoint, commit, one transaction, keyPrefix '2'        
-        W_DO(btree_populate_records_local2(_stid_list[2], false, t_test_txn_commit, false, '2'));   // flags: no checkpoint, commit, one transaction, keyPrefix '2'
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, t_test_txn_commit, true, '0'));    // flags: no checkpoint, commit, one transaction per insert, keyPrefix '0'
+        W_DO(test_env->btree_populate_records(_stid_list[1], false, t_test_txn_commit, false, '1'));   // flags:                        all inserts in one transaction, keyPrefix '1'
+        W_DO(test_env->btree_populate_records(_stid_list[2], false, t_test_txn_commit, false, '2'));   // flags: no checkpoint, commit, one transaction, keyPrefix '2'        
+//        W_DO(btree_populate_records_local2(_stid_list[2], false, t_test_txn_commit, false, '2'));   // flags: no checkpoint, commit, one transaction, keyPrefix '2'
 
-//        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
-//        W_DO(test_env->btree_insert_and_commit(_stid_list[1], "aa2", "data2"));
-//        W_DO(test_env->btree_populate_records(_stid_list[2], false, t_test_txn_in_flight, false, '3'));   // flags: no checkpoint, no commit, one big transaction which will include page split, keyPrefix '3'
-        W_DO(btree_populate_records_local2(_stid_list[2], false, t_test_txn_in_flight, false, '3'));   // flags: no checkpoint, no commit, one big transaction which will include page split, keyPrefix '3'
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[1], "aa2", "data2"));
+        W_DO(test_env->btree_populate_records(_stid_list[2], false, t_test_txn_in_flight, false, '3'));   // flags: no checkpoint, no commit, one big transaction which will include page split, keyPrefix '3'
+//        W_DO(btree_populate_records_local2(_stid_list[2], false, t_test_txn_in_flight, false, '3'));   // flags: no checkpoint, no commit, one big transaction which will include page split, keyPrefix '3'
         return RCOK;
     }
 
@@ -514,9 +514,7 @@ public:
     }
 };
 
-/* core dump if crash with in-flight multiple statements, including page split 
-btree_insert_log::undo() - undo an insert operation by delete it, but record not found */
-/* Not passing, full logging *
+/* Passing, full logging - working now with the fix in remove_items*/
 TEST (RestartTest, MultiIndexConcChckptCF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index2 context;
@@ -526,7 +524,7 @@ TEST (RestartTest, MultiIndexConcChckptCF) {
     options.restart_mode = m2_full_logging_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 
 

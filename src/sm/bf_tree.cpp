@@ -525,12 +525,6 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                                    bool virgin_page, 
                                    const bool from_recovery)  // True if caller is from recovery UNDO operation
 {
-////////////////////////////////////////
-// TODO(Restart)...   
-//    All the page checking and handling are done for nonswizzling code path only.
-//    The 'Instand Restart' project has disabled the swizzling logic.
-////////////////////////////////////////
-
     // Main function to set up a page in buffer pool before it can be used for various purposes.
     // Page index not in hashtable: loads a page from disk into buffer pool memory, setup proper
     //     fields in cb, register the page in hashtable, and then return page pointer to caller.

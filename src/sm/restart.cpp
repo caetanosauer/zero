@@ -4810,19 +4810,13 @@ void restart_m::_redo_page_pass()
         w_rc_t latch_rc = cb.latch().latch_acquire(LATCH_EX, WAIT_IMMEDIATE);
         if (latch_rc.is_error())
         {
-////////////////////////////////////////        
-// TODO(Restart)... if latch timeout, it should only happen if 
-//                          latch is held by concurrent txn
-//                          it should only happen in m4
-//                          raise an internal error for now
-//
-//                          Page (m2): concurrent txn does not load page, no conflict 
-//                          Demand (m3): only concurrent txn can load page, this function
-//                                                does not get executed, no conflict
-//                          Mixed (m4): potential conflict, the failed one skip the page silently
-//                                             if (stTIMEOUT != latch_rc.err_num()
-////////////////////////////////////////
-
+            // If failed to acquire latch (e.g., timeout)
+            // Page (m2): concurrent txn does not load page, restart should be able
+            //                  to acquire latch on a page
+            // Demand (m3): only concurrent txn can load page, this function
+            //                       should not get executed
+            // Mixed (m4): potential conflict because both restart and user transaction 
+            //                    can load and recover a page
             if (true == use_redo_mix_restart())
             {
                 // Mixed mode and not able to latch this page

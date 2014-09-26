@@ -114,7 +114,10 @@ rc_t log_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
 
     // Then, collect logs to apply. Depending on the recency of the backup and the
     // previous page-allocation operation on the page, we might have to collect many logs.
-    const size_t SPR_LOG_BUFSIZE = 1 << 17; // 1 << 14;
+    const size_t SPR_LOG_BUFSIZE = 1 << 18; // 1 << 14;    // 1<<18: 256 KB 
+                                                       // while the max. log record size is 3 pages = 24KB
+                                                       // A typical update log record should be must smaller
+                                                       // than 1 page (8K)
     std::vector<char> buffer(SPR_LOG_BUFSIZE); // TODO, we should have an object pool for this.
     std::vector<logrec_t*> ordered_entires;
     W_DO(log_core::THE_LOG->_collect_single_page_recovery_logs(pid, p.lsn(), emlsn,
