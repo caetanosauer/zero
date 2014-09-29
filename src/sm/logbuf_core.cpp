@@ -1187,25 +1187,45 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
 
             // handle skip record for backward scan (ll.lo == p->size())
             if ( forward == false ) {
+                // backward scan
                 if (ll.lo() == 0) {
-                    // let's go fetch the skip record in the previous partition
+                    // we have reached the beginning of a partition
+                    // let's go find the previous partition
                     p = _owner->_n_partition(ll.hi()-1);
-                    if(!p)
-                        p = _owner->_open_partition_for_read(ll.hi()-1, lsn_t::null, false, false);
-                    w_assert1(p!=NULL);
+                    if(p == (partition_t *)NULL) {
+                        // we are not sure if the previous partition exists or not
+                        // if it does exist, we want to know its size
+                        // if not, we have reached EOF
+                        p = _owner->_open_partition_for_read(ll.hi()-1, lsn_t::null, true, true);
+                        if(p == (partition_t *)NULL)
+                            // if open failed...
+                            return RC(eINTERNAL);
+                    }
+
                     if (p->size() == partition_t::nosize) {
                         // we have reached the "end" of the backward scan, 
                         // i.e., no more log records before this lsn
+                        // return EOF so that log_i will stop
                         return RC(eEOF);
                     }
-                    else {
-                        ll = lsn_t(ll.hi()-1, p->size());
-                    }
+                    if (p->size() == 0) {
+                        // this is a special case
+                        // when the partition does not exist, 
+                        // _open_partition_for_read->_open_partitionp->peek would create an empty file
+                        // we must remove this file immediately
+                        p->close(true);
+                        p->destroy();
+                        return RC(eEOF);
+                    }        
+
+                    // this partition is already opened
+                    ll = lsn_t(ll.hi()-1, p->size());
                 }
 
                 w_assert1(ll.lo()!=0);
             }
             else {
+                // forward scan
                 if ( ll.lo() >= p->size() ||
                      (p->size() == partition_t::nosize && ll.lo() >= _owner->limit()))  {
                     DBGTHRD(<<"seeking to " << ll.lo() << ";  beyond p->size() ... OR ...");
@@ -1229,6 +1249,7 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
         w_assert1(ll.lo()>=(int)sizeof(lsn_t));
 
         ll.advance(-(int)sizeof(lsn_t));
+
         W_COERCE(_get_lsn_for_backward_scan(ll, p));
 
         DBGOUT3(<< "BACKWARD fetch @ lsn: " << ll);
