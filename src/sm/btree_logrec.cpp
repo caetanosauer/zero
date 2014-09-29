@@ -64,7 +64,7 @@ DBGOUT3( << "&&&& UNDO insertion, key: " << key);
         {
 // TODO(Restart)...        
             // If UNDO an insertion while full logging was used, and
-            // not able to locate the existing record, this is okay
+            // not able to locate the existing record
             DBGOUT3( << "&&&& UNDO insertion, not able to locate the key for UNDO with full logging: " << key);
         }
     }

@@ -71,22 +71,27 @@ w_rc_t btree_populate_records_local(stid_t &stid,
                                                                                 //        insert aa1
                                                                                 //        insert aa2
                                                                                 //        insert key303
-                                                                                //        page split, moved aa2, key303
+                                                                                //        page split, low fence: +aa2, high: infinite
+                                                                                //            move  aa2
+                                                                                //            move  key303
                                                                                 //        insert key302
                                                                                 //        insert key301
-                                                                                //        page split, moved key302, key303
+                                                                                //        page split, low fence: +key302, high: infinite
+                                                                                //            move key302
+                                                                                //            move key303
                                                                                 //        insert key300
+                                                                                //
                                                                                 //        3 pages:
                                                                                 //            Page 1: aa1
                                                                                 //            Page 2: aa2, key300, key301
                                                                                 //            Page 3: key302, key303
-                                                                                //        System crash
+                                                                                //        System crash - all the key3XX records need to be rollback
                                                                                 //
                                                                                 //        6 in_doubt pages, 1 in-flight txn
                                                                                 //        REDO:
                                                                                 //          Page 3 - page format
                                                                                 //          Page 4 - page format
-                                                                                //          Page 5 - page format, foster adoption
+                                                                                //          Page 5 - page format, foster adoption (source page: 7, key: +aa2)
                                                                                 //          Page 6 - page rebalance (child page) followed by 4 insertions
                                                                                 //                                             page rebalance (parent page) again
                                                                                 //                                             followed by 2 deletions 
@@ -96,23 +101,31 @@ w_rc_t btree_populate_records_local(stid_t &stid,
                                                                                 //              insert key303
                                                                                 //              insert key302
                                                                                 //              insert key301
-                                                                                //              Allocate a new page for page split
+                                                                                //              Allocate a new page for page split, page 8
                                                                                 //              Rebalance - Recovery parent page, 4 existing records, move 2 of them
-                                                                                //              page split, new low aa2, new high key302
+                                                                                //              page split, new low aa2, new high key302, delete 2 records
                                                                                 //              delete key302 but not found (btree_logrec.cpp, line 354)
                                                                                 //              delete key303 but not found (btree_logrec.cpp, line 354)                                                                                
                                                                                 //              insert key300
-                                                                                //        Page 7 - page format, foster adoption
+                                                                                //        Page 7 - page format, foster adoption (source page: 7, key: +aa2)
                                                                                 //        Page 8 - page rebalance (child page) followed by 2 insertions
+                                                                                //              Rebalance - Recovery child page 8
                                                                                 //              insert key302
                                                                                 //              insert key303
+                                                                                //
                                                                                 //      UNDO:
                                                                                 //        Page 6:
-                                                                                //              delete key300 -- failed in fence key checking of low fence key and first key 
-                                                                                //                                        (Btree_page.h.cpp, btree_page_h::_is_consistent_keyorder(), line 1312)
-                                                                                //              delete key301
-                                                                                //              delete key302
-                                                                                //              delete key303                                                                                
+                                                                                //              delete key300 -- ok
+                                                                                //                     failed in btree_impl::_ux_adopt_foster_core() when checking
+                                                                                //                     child page consistency: child.is_consistent()
+                                                                                //              delete key301 -- not found (btree_impl.cpp, _ux_remove_core),
+                                                                                //                                        btree_logrec.cpp (line 68)
+                                                                                //                                        It was a generic search of the tree, why did it 
+                                                                                //                                        failed to find this key?  The incorrect result indicates
+                                                                                //                                        the record does exist but we failed to find it
+                                                                                // 
+                                                                                //              delete key302 -- ok
+                                                                                //              delete key303 -- ok                                                                       
                                                                                 
 
     vec_t data;
@@ -253,8 +266,10 @@ public:
     }
 };
 
-// Enabled for testing purpose, still not working with fix in remove_items, need to use the special test which insert 2 records first
-/* Not passing, full logging, crash if crash with in-flight multiple statements, including page split *
+// Not working, see control flow in btree_populate_records_local, need to use the special test which insert 2 records first
+// In retail, incorrect result because failed to UNDO an insertion (delete existing) but the actual record is there
+// All commented out test cases in test_concurrent_complex are due to this error, the test case below is another repro
+/* Not passing, full logging, crash if debug build, incorrect if retail build *
 TEST (RestartTest, MultiIndexConcChckptCF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
