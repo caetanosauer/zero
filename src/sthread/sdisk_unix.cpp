@@ -52,6 +52,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include "w_defines.h"
 
+#include <errno.h>
+
 /*  -- do not edit anything above this line --   </std-header>*/
 
 /**\cond skip */
@@ -279,8 +281,11 @@ w_rc_t    sdisk_unix_t::writev(const iovec_t *iov, int iovcnt, int &done)
     int    n;
 
     n = ::os_writev(_fd, (const struct iovec *)iov, iovcnt);
-    if (n == -1)
+    if (n == -1) {
+        int err = errno;
+        cout << "err " << err << endl;
         return RC(fcOS);
+    }
 
 #if defined(USING_VALGRIND)
     if(RUNNING_ON_VALGRIND)
@@ -303,6 +308,7 @@ w_rc_t    sdisk_unix_t::pread(void *buf, int count, fileoff_t pos, int &done)
     int    n;
 
     n = ::os_pread(_fd, buf, count, pos);
+
     if (n == -1)
         return RC(fcOS);
 

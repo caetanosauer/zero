@@ -1997,6 +1997,8 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
                     }
 
                     // most likely it's well aware, but just in case...
+                    DBGOUT3(<< "chkpt 4");
+                    
                     chkpt->wakeup_and_take();
                     W_IGNORE(log->wait_for_space(needed, 100));
                     if(!needed) {
@@ -2647,7 +2649,16 @@ xct_t::rollback(const lsn_t &save_pt)
 
     while (save_pt < nxt)  
     {
-        rc =  log->fetch(nxt, buf, 0);
+#ifdef LOG_BUFFER
+        // no hints
+        rc =  log->fetch(nxt, buf, 0, true);        
+
+        //// hints
+        ////rc =  log->fetch(nxt, __copy__buf, 0, SINGLE_PAGE_RECOVERY);
+        //rc =  log->fetch(nxt, buf, 0, SINGLE_PAGE_RECOVERY);
+#else
+        rc =  log->fetch(nxt, buf, 0, true);        
+#endif        
         if(rc.is_error() && rc.err_num()==eEOF) 
         {
             LOGTRACE2( << "U: end of log looking to fetch nxt=" << nxt);
@@ -2658,6 +2669,7 @@ xct_t::rollback(const lsn_t &save_pt)
         else
         {
              LOGTRACE2( << "U: fetch nxt=" << nxt << "  returns rc=" << rc);
+
              logrec_t& temp = *buf;
              w_assert3(!temp.is_skip());
           
@@ -2665,6 +2677,7 @@ xct_t::rollback(const lsn_t &save_pt)
               * the log record, then release it 
               */
              memcpy(__copy__buf, &temp, temp.length());
+
              log->release();
         }
 

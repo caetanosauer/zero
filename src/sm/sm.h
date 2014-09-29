@@ -134,8 +134,9 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *      (4 times the page size, 64 Kb)
  *      and less than or equal to
  *      128 times the page_size. This is the size of 
- *      the log buffer in Kb.
- *      - default: 128
+ *      the log buffer in byte.
+ *      - default: 128KB
+ *      - default with the new log buffer: 1MB
  *      - required?: no
  *
  * -sm_logsize
@@ -144,7 +145,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *      This is the maximum size of the log in Kb.  It is a function of
  *      the log buffer size, and  the default is the minimum allowable for
  *      the default sm_logbufsize.
- *      - default: 128
+ *      - default: 10000
+ *      - default with the new log buffer: 128*1024 (128MB)
  *      - required?: yes
  *
  * -sm_log_warn
@@ -987,6 +989,15 @@ public:
      * This is thread-safe.
      */
     static rc_t            checkpoint();
+
+
+    /**\brief Take a checkpoint.
+     * \ingroup SSMAPIDEBUG
+     * \note For debugging only!
+     *
+     * Force the storage manager to take a checkpoint synchronously.
+     */
+    static rc_t            checkpoint_sync();
 
     /**
      * \brief Force the buffer pool to flush its pages to disk.

@@ -84,6 +84,9 @@ class prologue_rc_t;
 #include "log_carray.h"
 #include "log_lsn_tracker.h"
 
+
+#include "logbuf_common.h"
+
 #ifdef EXPLICIT_TEMPLATE
 template class w_auto_delete_t<SmStoreMetaStats*>;
 #endif
@@ -222,8 +225,13 @@ void ss_m::_set_option_logsize() {
     // then don't set the option
     if (!_options.get_bool_option("sm_logging", true) || smlevel_0::log) return;
 
+#ifdef LOG_BUFFER
+    // the default log size for the new log buffer is 128M
+    // the unit of this parameter is KB
+    fileoff_t maxlogsize = fileoff_t(_options.get_int_option("sm_logsize", LOGBUF_PART_SIZE/1024));    
+#else
     fileoff_t maxlogsize = fileoff_t(_options.get_int_option("sm_logsize", 10000));
-
+#endif
     // The option is in units of KB; convert it to bytes.
     maxlogsize *= 1024;
 
@@ -494,7 +502,12 @@ ss_m::_construct_once()
         cleaner_interval_millisec_max = 256000;
     }
 
+#ifdef LOG_BUFFER
+    // the default segment size for the new log buffer is 1MB
+    uint64_t logbufsize = _options.get_int_option("sm_logbufsize", LOGBUF_SEG_SIZE); // at least 1024KB
+#else
     uint64_t logbufsize = _options.get_int_option("sm_logbufsize", 128 << 10); // at least 128KB
+#endif
     // pretty big limit -- really, the limit is imposed by the OS's
     // ability to read/write
     if (uint64_t(logbufsize) < (uint64_t) 4 * ss_m::page_sz) {
@@ -571,11 +584,18 @@ ss_m::_construct_once()
             W_FATAL(eCRASH);
         }
         w_rc_t e = log_m::new_log_m(log,
-                     logdir.c_str(),
-                     logbufsize, 
-                     _options.get_bool_option("sm_reformat_log", false),
-                     _options.get_int_option("sm_carray_slots",
-                                             ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT));
+                                    logdir.c_str(),
+                                    logbufsize,      // logbuf_segsize
+                                    _options.get_bool_option("sm_reformat_log", false),
+                                    _options.get_int_option("sm_carray_slots",
+                                             ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT)
+#ifdef LOG_BUFFER
+                                    ,
+                                    _options.get_int_option("sm_logbuf_seg_count", LOGBUF_SEG_COUNT),
+                                    _options.get_int_option("sm_logbuf_flush_trigger", LOGBUF_FLUSH_TRIGGER),
+                                    _options.get_int_option("sm_logbuf_block_size", LOGBUF_BLOCK_SIZE)
+#endif
+                                    );
         W_COERCE(e);
 
         int percent = _options.get_int_option("sm_log_warn", 0);
@@ -1419,6 +1439,20 @@ ss_m::checkpoint()
     chkpt->wakeup_and_take();
     return RCOK;
 }
+
+
+/*--------------------------------------------------------------*
+ *  ss_m::checkpoint()                                        
+ *  For log buffer testing
+ *--------------------------------------------------------------*/
+rc_t
+ss_m::checkpoint_sync()
+{
+    // Synch chekcpoint!
+    chkpt->synch_take();
+    return RCOK;
+}
+
 
 rc_t ss_m::force_buffers() {
     return bf->force_all();

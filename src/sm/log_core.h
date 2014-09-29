@@ -82,6 +82,11 @@ struct CArraySlot;
 #include "mcs_lock.h"
 #include "tatas.h"
 
+// LOG_BUFFER switch
+#include "logbuf_common.h"
+#include "logbuf_core.h"
+
+
 /**
  * \brief Core Implementation of Log Manager
  * \ingroup SSMLOG
@@ -93,6 +98,10 @@ struct CArraySlot;
  */
 class log_core : public log_m
 {
+    //#ifdef LOG_BUFFER
+    friend class logbuf_core;
+    //#endif
+
     struct waiting_xct {
         fileoff_t* needed;
         pthread_cond_t* cond;
@@ -102,12 +111,36 @@ class log_core : public log_m
         }
     };
     static std::deque<log_core::waiting_xct*> _log_space_waiters;
+
+#ifdef LOG_BUFFER
+public:
+    logbuf_core *_log_buffer; // the new log buffer
+#endif
+
 private:
     static bool          _initialized;
     bool                 _reservations_active;
 
+#ifdef LOG_BUFFER
+    // moved to logbuf_core
+#else
     bool _waiting_for_space; // protected by log_m::_insert_lock/_wait_flush_lock
     bool _waiting_for_flush; // protected by log_m::_wait_flush_lock
+#endif
+
+    enum { invalid_fhdl = -1 };
+
+#ifdef LOG_BUFFER
+    long                 start_byte() const { return _log_buffer->_start; } 
+    long                 end_byte() const { return _log_buffer->_end; } 
+
+    long                 _segsize; // log buffer size
+public:
+    long                 segsize() const { return _segsize; }
+private:
+    lsn_t                _flush_lsn;
+
+#else
     long _start; // byte number of oldest unwritten byte
     long                 start_byte() const { return _start; } 
 
@@ -119,8 +152,6 @@ private:
     // long                 _blocksize; uses constant BLOCK_SIZE
     char*                _buf; // log buffer: _segsize buffer into which
                          // inserts copy log records with log_core::insert
-
-    enum { invalid_fhdl = -1 };
 
     // Set of pointers into _buf (circular log buffer)
     // and associated lsns. See detailed comments at log_core::insert
@@ -148,6 +179,7 @@ private:
     epoch                _buf_epoch;
     epoch                _cur_epoch;
     epoch                _old_epoch;
+
     /*
      * See src/internals.h, section LOG_M_INTERNAL
     Divisions:
@@ -221,13 +253,19 @@ private:
      * \ingroup CARRAY
      */
     ConsolidationArray*  _carray;
+#endif // LOG_BUFFER
+
 
     // Data members:
     partition_index_t   _curr_index; // index of partition
     partition_number_t  _curr_num;   // partition number
     char*               _readbuf;
+#ifdef LOG_DIRECT_IO
+    char*               _writebuf;   // a temp buffer used by partition_t::flush to do alignment adjustment for direct IO
+#endif
 
     skip_log*           _skip_log;
+
     pthread_mutex_t     _scavenge_lock;
     pthread_cond_t      _scavenge_cond;
     partition_t         _part[PARTITION_COUNT];
@@ -251,7 +289,9 @@ public:
 #if SM_PAGESIZE < 8192
     enum { SEGMENT_SIZE= 256 * BLOCK_SIZE };
 #else
-    enum { SEGMENT_SIZE= 128 * BLOCK_SIZE };
+    //    enum { SEGMENT_SIZE= 128 * BLOCK_SIZE };
+    // debugging
+    enum { SEGMENT_SIZE= 128 * BLOCK_SIZE };    
 #endif
     
     // CONSTRUCTOR 
@@ -259,7 +299,15 @@ public:
                         log_m    *&the_log,
                         int        wrlogbufsize,
                         bool    reformat,
-                        int        carray_active_slot_count);
+                        int        carray_active_slot_count
+#ifdef LOG_BUFFER
+                 ,
+                 int logbuf_seg_count,
+                 int logbuf_flush_trigger,
+                 int logbuf_block_size
+#endif
+
+                             );
 
     // Exported to log_m
     static          log_core *THE_LOG;
@@ -270,14 +318,24 @@ public:
     // exported to partition_t
     static void     destroy_file(partition_number_t n, bool e);
     char *          readbuf() { return _readbuf; }
+#ifdef LOG_DIRECT_IO
+    char *          writebuf() { return _writebuf; }
+#endif
 
     // used by partition_t
     skip_log*       get_skip_log()  { return _skip_log; }
 
     NORET           log_core(
-                        long wrbufsize, 
-                        bool reformat,
-                        int carray_active_slot_count);
+                             long bsize, // segment size for the log buffer, set through "sm_logbufsize"
+                             bool reformat,
+                             int carray_active_slot_count
+#ifdef LOG_BUFFER
+                             ,
+                             int logbuf_seg_count,
+                             int logbuf_flush_trigger,
+                             int logbuf_block_size
+#endif
+                             );
     NORET           ~log_core();
     // do whatever needs to be done before destructor is callable
     void            shutdown(); 
@@ -290,7 +348,12 @@ public:
     rc_t            flush(const lsn_t &lsn, bool block=true, bool signal=true, bool *ret_flushed=NULL);
     rc_t            compensate(const lsn_t &orig_lsn, const lsn_t& undo_lsn);
     void            start_flush_daemon();
+#ifdef LOG_BUFFER
     rc_t            fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, const bool forward);
+    rc_t            fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, hints_op op);
+#else
+    rc_t            fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, const bool forward);
+#endif
     rc_t            scavenge(const lsn_t &min_rec_lsn, const lsn_t&min_xct_lsn);
     void            release_space(fileoff_t howmuch);
     void            activate_reservations() ;
@@ -311,13 +374,25 @@ public:
                                return pcount*(_partition_data_size - BLOCK_SIZE);
                             }
 
+#ifdef LOG_BUFFER
+    // moved to logbuf_core
+#else
     // for flush_daemon_thread_t
     void            flush_daemon();
     lsn_t           flush_daemon_work(lsn_t old_mark);
+#endif
+
 
 private:
+#ifdef LOG_BUFFER
+    partition_t *_flushX_get_partition(lsn_t start_lsn, 
+                                       long start1, long end1, long start2, 
+                                       long end2);
+    // _flushX is moved to logbuf_core
+#else
     void            _flushX(lsn_t base_lsn, long start1, 
                               long end1, long start2, long end2);
+#endif
     w_rc_t          _set_size(fileoff_t psize);
     fileoff_t       _get_min_size() const {
                         // Return minimum log size as a function of the
@@ -326,6 +401,10 @@ private:
                     }
     partition_t *   _partition(partition_index_t i) const;
 
+
+#ifdef LOG_BUFFER
+    // moved to logbuf_core
+#else
     /**
      * \ingroup CARRAY
      *  @{
@@ -334,6 +413,7 @@ private:
     lsn_t _copy_to_buffer(logrec_t &rec, long pos, long size, CArraySlot* info);
     bool _update_epochs(CArraySlot* info);
     /** @}*/
+#endif
 
 public:
     // for partition_t

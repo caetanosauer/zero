@@ -61,6 +61,9 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
+// LOG_BUFFER switch
+#include "logbuf_common.h"
+
 #undef ACQUIRE
 
 class logrec_t;
@@ -291,7 +294,14 @@ public:
                              const char   *path,
                              int          wrlogbufsize,
                              bool         reformat,
-                             int          carray_active_slot_count);
+                             int          carray_active_slot_count
+#ifdef LOG_BUFFER
+                             ,
+                             int logbuf_seg_count,
+                             int logbuf_flush_trigger,
+                             int logbuf_block_size
+#endif
+                                  );
 
     /**\brief log segment size; exported for use by ss_m::options processing 
      * \details
@@ -353,7 +363,6 @@ public:
                               // increasing value
                               return _curr_lsn;
                         }
-
     bool                squeezed_by(const lsn_t &)  const ;
 
 
@@ -363,6 +372,7 @@ public:
                             // else need to join the insert queue
                             return _durable_lsn;
                         }
+
     /**\brief used by restart.recover */
     lsn_t               master_lsn() const {
                             ASSERT_FITS_IN_POINTER(lsn_t);
@@ -376,9 +386,15 @@ public:
     rc_t                insert(logrec_t &r, lsn_t* ret);
     rc_t                compensate(const lsn_t& orig_lsn, 
                                const lsn_t& undo_lsn);
+
+#ifdef LOG_BUFFER
     // used by log_i and xct_impl
     rc_t                fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt=NULL, const bool forward = true);
-
+    rc_t                fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt=NULL, hints_op op=DEFAULT_HINTS);
+#else
+    // used by log_i and xct_impl
+    rc_t                fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt=NULL, const bool forward = true);
+#endif
             // used in implementation also:
     virtual void        release(); // used by log_i
     virtual rc_t        flush(const lsn_t& lsn, bool block=true, bool signal=true, bool *ret_flushed=NULL);

@@ -89,6 +89,10 @@
 #include "mcs_lock.h"
 #include "lsn.h"
 
+
+// LOG_BUFFER switch
+#include "logbuf_common.h"
+
 /**
  * Whether to enable \e Delegated-Buffer-Release.
  * \ingroup CARRAY
@@ -115,6 +119,10 @@ typedef int64_t carray_status_t;
  */
 typedef uint32_t carray_slotid_t;
 
+//#ifdef LOG_BUFFER
+class logbuf_seg;
+//#endif
+
 /**
  * \brief One slot in ConsolidationArray.
  * \ingroup CARRAY
@@ -130,6 +138,10 @@ struct CArraySlot {
     * See Section A.3 of Aether paper.
     */
     mcs_lock::qnode me2;                // +16 -> 16
+
+    //#ifdef LOG_BUFFER
+    logbuf_seg *start_seg;
+    //#endif
 
 // Logging information. Also useful as padding for cacheline (64 byte).
     /** where will we end up on disk? */
@@ -239,7 +251,9 @@ public:
      */
     static int32_t extract_carray_log_size(carray_status_t current_status) {
         w_assert1(current_status >= 0);
-        const carray_status_t THREAD_MASK = 0xFFFF;
+        // bug fixed: lower 32-bit is the size
+        //const carray_status_t THREAD_MASK = 0xFFFF;
+        const carray_status_t THREAD_MASK = 0xFFFFFFFF;
         return current_status & THREAD_MASK;
     }
 
