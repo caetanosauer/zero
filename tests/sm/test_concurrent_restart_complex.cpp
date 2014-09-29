@@ -315,15 +315,23 @@ public:
         W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
         W_DO(test_env->btree_insert_and_commit(_stid_list[1], "aa2", "data2"));
 
-// TODO(Restart)... need to enable the following call which populate the index with many reocrds and page split in one transaction, in-flight transaction
-//                           need to vertiy the test code to make sure it is correct, might need to change the expected result verification once enable this line
-        // W_DO(test_env->btree_populate_records(_stid_list[2], false, t_test_txn_in_flight, false, '3'));  // flags: no checkpoint, no commit, one big transaction which cause page split, keyPrefix '3'
+        // This in-flight transaction causes the current thread to detach from the in-flight transaction
+        // which is a brute force implementation to generate an in-flight transaction, while the
+        // current thread (this thread) thinks it is still in a transaction (lack of proper transaction handling)
+        // With this implementation, current thread cannot begin another transaction on this index
+        // because it thinks it is still in an active transaction (this type of transaction nesting is invalid)
+        // Although if using a different thread, the different thread can still access this index
+        W_DO(test_env->btree_populate_records(_stid_list[2], false, t_test_txn_in_flight, false, '3'));  // flags: no checkpoint, no commit, one big transaction which cause page split, keyPrefix '3'
         
         W_DO(ss_m::checkpoint());
-        W_DO(test_env->begin_xct());                                                         // Just do the one in-flight insertion that is needed for post_shutdown verification
-        W_DO(test_env->btree_insert(_stid_list[2], "key300", "D"));
-        W_DO(test_env->btree_insert(_stid_list[2], "key301", "D"));
-        W_DO(test_env->btree_update(_stid_list[2], "key223", "A"));
+
+        // Current thread detached already (see above in-flight transaction)
+        // current thread cannot access this index any more
+        // W_DO(test_env->begin_xct());                                                         // Just do the one in-flight insertion that is needed for post_shutdown verification
+        // W_DO(test_env->btree_insert(_stid_list[2], "key300", "D"));
+        // W_DO(test_env->btree_insert(_stid_list[2], "key301", "D"));
+        // W_DO(test_env->btree_update(_stid_list[2], "key223", "A"));
+
         return RCOK;
     }
 
@@ -814,7 +822,10 @@ TEST (RestartTest, MultiPageInFlightMultithrdC) {
 }
 /**/
 
-/* Not passing, full logging - incorrect result, want 0 but got 4*
+/* Incorrect result if running in retail, want 0 but got some reocrds, the result is inconsistent */
+/* sometimes 2 records, sometimes 4, and sometime it is passing (0 record) */
+/* if running in debug, core dump */
+/* Not passing, full logging *
 TEST (RestartTest, MultiPageInFlightMultithrdCF) {
     test_env->empty_logdata_dir();
     restart_multi_page_inflight_multithrd context;
@@ -1010,7 +1021,9 @@ TEST (RestartTest, ManyConflictsMultihthrdC) {
 }
 /**/
 
-/* Passing, full logging - incorrect result, want 75 but got 71 *
+/* Incorrect result if running in retail */
+/* if running in debug, core dump */
+/* Not passing, full logging *
 TEST (RestartTest, ManyConflictsMultithrdCF) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
@@ -1033,7 +1046,7 @@ TEST (RestartTest, ManyConflictsMultithrdNR) {
 }
 /**/
 
-/* Occasionally failing because of a assertion fail in btree_impl_split:335 *
+/* Passing */
 TEST (RestartTest, ManyConflictsMultithrdCR) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
@@ -1043,7 +1056,7 @@ TEST (RestartTest, ManyConflictsMultithrdCR) {
     options.restart_mode = m2_redo_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 /* Passing */
 TEST (RestartTest, ManyConflictsMultithrdNRF) {
@@ -1057,7 +1070,9 @@ TEST (RestartTest, ManyConflictsMultithrdNRF) {
 }
 /**/
 
-/* Passing, full logging - incorrect result, want 75 but got 71 *
+/* Incorrect result if running in retail */
+/* if running in debug, core dump */
+/* Not passing, full logging *
 TEST (RestartTest, ManyConflictsMultithrdCRF) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
@@ -1105,7 +1120,9 @@ TEST (RestartTest, ManyConflictsMultithrdNUF) {
 }
 /**/
 
-/* Passing, full logging - incorrect result, want 75 but got 71 *
+/* Incorrect result if running in retail */
+/* if running in debug, core dump */
+/* Not passing, full logging *
 TEST (RestartTest, ManyConflictsMultithrdCUF) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
@@ -1153,7 +1170,9 @@ TEST (RestartTest, ManyConflictsMultithrdNBF) {
 }
 /**/
 
-/* Passing, full logging - incorrect result, want 75 but got 71 *
+/* Incorrect result if running in retail */
+/* if running in debug, core dump */
+/* Not passing, full logging *
 TEST (RestartTest, ManyConflictsMultithrdCBF) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;

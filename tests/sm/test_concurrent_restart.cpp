@@ -72,7 +72,7 @@ TEST (RestartTest, EmptyN3) {
 }
 /**/
 
-/* Passing *
+/* Passing - M3 *
 TEST (RestartTest, EmptyC3) {
     test_env->empty_logdata_dir();
     restart_empty context;
@@ -172,7 +172,7 @@ TEST (RestartTest, SimpleCF) {
 }
 /**/
 
-/* Passing *
+/* Passing - M3 *
 TEST (RestartTest, SimpleN3) {
     test_env->empty_logdata_dir();
     restart_simple context;
@@ -185,7 +185,7 @@ TEST (RestartTest, SimpleN3) {
 }
 **/
 
-/* Passing *
+/* Passing - M3 *
 TEST (RestartTest, SimpleC3) {
     test_env->empty_logdata_dir();
     restart_simple context;
@@ -861,8 +861,7 @@ TEST (RestartTest, MultiConcurrentRedoNF) {
 }
 /**/
 
-/* Failing sometimes, WOD with minimal logging, in-flight is in the first page *
- * Error detail: eWRONG_PAGE_LSNCHAIN(77)
+/* Passing - minimal logging */
 TEST (RestartTest, MultiConcurrentRedoC) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_redo context;
@@ -872,10 +871,9 @@ TEST (RestartTest, MultiConcurrentRedoC) {
     options.restart_mode = m2_redo_delay_restart; // minimal logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
-/* Failing sometimes, full logging, in-flight is in the first page *
- * Error detail: eWRONG_PAGE_LSNCHAIN(77)
+/* Passing - full logging */
 TEST (RestartTest, MultiConcurrentRedoCF) {
     test_env->empty_logdata_dir();
     restart_multi_concurrent_redo context;
@@ -885,7 +883,7 @@ TEST (RestartTest, MultiConcurrentRedoCF) {
     options.restart_mode = m2_redo_fl_delay_restart; // full logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0); 
 }
-**/
+/**/
 
 
 // Test case with simple transactions (1 in-flight) and crash shutdown, 
@@ -1116,7 +1114,7 @@ TEST (RestartTest, ConcurrentNoConflictNF) {
 }
 /**/
 
-/* Rarely failing in restart (eWRONG_PAGE_LSNCHAIN(77)), minimal logging *
+/* Passing, minimal logging */
 TEST (RestartTest, ConcurrentNoConflictC) {
     test_env->empty_logdata_dir();
     restart_concurrent_no_conflict context;
@@ -1125,7 +1123,7 @@ TEST (RestartTest, ConcurrentNoConflictC) {
     options.restart_mode = m2_both_delay_restart; // minimal logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
 }
-**/
+/**/
 
 /* Passing, full logging */
 TEST (RestartTest, ConcurrentNoConflictCF) {
