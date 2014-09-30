@@ -1217,7 +1217,7 @@ log_core::log_core(
     // set partition_data_size
     _log_buffer->set_partition_data_size(_partition_data_size);
         
-    DBGOUT0(<< "SEG SIZE " << _segsize << " PARTITION DATA SIZE " << _partition_data_size);
+    DBGOUT3(<< "SEG SIZE " << _segsize << " PARTITION DATA SIZE " << _partition_data_size);
 
 
     // FRJ: we don't actually *need* this (no trx around yet), but we
@@ -2018,7 +2018,7 @@ log_core::log_core(
     // a legitimate value now.
     W_COERCE(_set_size(max_logsz));
 
-    DBGOUT0(<< "SEG SIZE " << _segsize << " PARTITION DATA SIZE " << _partition_data_size);
+    DBGOUT3(<< "SEG SIZE " << _segsize << " PARTITION DATA SIZE " << _partition_data_size);
 
 
     // FRJ: we don't actually *need* this (no trx around yet), but we

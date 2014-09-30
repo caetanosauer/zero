@@ -99,7 +99,8 @@ bool log_i::xct_next(lsn_t& lsn, logrec_t*& r)
     // 'cursor' is set to the starting point of the scan
     // After each xct_next call, 
     // 'cursor' is set to the lsn of the next log record if forward scan
-    // or the lsn of the previous log record if backward scan
+    // or the lsn of the fetched log record if backward scan
+    // log.fetch() returns eEOF when it reaches the end of the scan
     
     bool eof = (cursor == lsn_t::null);
 

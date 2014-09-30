@@ -184,7 +184,7 @@ logbuf_core::~logbuf_core() {
     if (IS_M1())
         shutdown();
 
-    logbuf_print_nolock("shutting down...", 0);
+    logbuf_print_nolock("shutting down...", 3);
 
     if (_seg_list != NULL) {
         logbuf_seg *cur = NULL;
@@ -575,7 +575,7 @@ void logbuf_core::_prime(
 void logbuf_core::logbuf_prime(lsn_t next) {
     DBGOUT3(<< "init");
     
-    _prime(NULL, NULL, next);
+    _prime(0, 0, next);
 
     start_flush_daemon();
 
@@ -1114,6 +1114,8 @@ int logbuf_core::fetch_for_test(lsn_t& lsn, logrec_t*& rp) {
  *  For forward scan (default direction), fetch the log record at ll, and return the next lsn to fetch in nxt
  *  For backward scan, fetch the log record before ll, and return the lsn of the fetched log record in nxt
  *
+ *  fetch would not return a skip log record to the caller
+ *
  *  NOTE:
  *  right now we are still using log_core's read buffer, because the mutex is still being held during fetches
  *  the mutex is acquired through _owner->_acquire()
@@ -1191,8 +1193,11 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
                 if (ll.lo() == 0) {
                     // we have reached the beginning of a partition
                     // let's go find the previous partition
+
+                    // first, see if the partition is already opened
                     p = _owner->_n_partition(ll.hi()-1);
                     if(p == (partition_t *)NULL) {
+                        // not opened
                         // we are not sure if the previous partition exists or not
                         // if it does exist, we want to know its size
                         // if not, we have reached EOF
@@ -1218,7 +1223,8 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
                         return RC(eEOF);
                     }        
 
-                    // this partition is already opened
+                    // now this partition is opened
+                    // ll points to the skip record
                     ll = lsn_t(ll.hi()-1, p->size());
                 }
 
@@ -2264,10 +2270,10 @@ void logbuf_core::_flushX(lsn_t start_lsn, uint64_t start, uint64_t end) {
     size_in_seg = _segsize - offset_in_seg;
     to_write = write_size = end - start + delta;
 
+#ifdef LOG_BUFFER
     uint64_t written;
     written = end - start;
-
-    //DBGOUT3(<< "delta " << delta << " write size " << write_size); 
+#endif
 
     // allocate iovecs
     // every iovec holds a full or partial segment
@@ -2768,14 +2774,15 @@ void logbuf_core::_get_more_space_for_insertion(CArraySlot *info) {
 logbuf_seg *logbuf_core::_replacement() {
 
     logbuf_seg *to_evict = NULL;
-    logbuf_seg *to_archive = NULL;
+    // 
+    //logbuf_seg *to_archive = NULL;
     logbuf_seg *to_flush = NULL;
 
     to_evict = NULL;
-    to_archive = _to_archive_seg;
+    //to_archive = _to_archive_seg;
     to_flush = _to_flush_seg;
 
-    // NOTE: disabling the free buffer for now
+    // NOTE: disable to_archive for now
     // // TODO: use LRU for the free buffer?
     // if (to_archive != NULL) {
     //     to_evict = _seg_list->top(); // evict the left-most segment 
