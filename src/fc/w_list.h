@@ -358,6 +358,16 @@ public:
         link_of(t)->attach(_tail.prev());
         return *this;
     }
+ 
+    // Insert t after pos (for log buffer)
+    void insert_after(T* t, T* pos) {
+        link_of(t)->attach(link_of(pos));
+    }
+
+    // Insert t before pos (for log buffer)
+    void insert_before(T* t, T* pos) {
+        link_of(t)->attach(link_of(pos)->prev());
+    }
 
     /// Remove
     T*                  pop()   {
@@ -367,6 +377,11 @@ public:
     /// Remove from rear
     T*                  chop()  {
         return _cnt ? base_of(_tail.prev()->detach()) : 0;
+    }
+
+    // Remove t (for log buffer)
+    void remove(T* t) {
+        link_of(t)->detach();
     }
 
     /// Get first but don't remove
@@ -390,6 +405,32 @@ public:
         w_assert1(p->member_of() == this);
         return base_of(p->prev());
     }
+
+    // Get next (for log buffer)
+    T*                next_of(T* t) {
+        w_link_t *p = link_of(t);
+        w_assert1(p->member_of() == this);
+        if (p->next() != &_tail)
+            return base_of(p->next());
+        else
+            return NULL;
+    }
+
+    // Get prev (for log buffer)
+    T*                prev_of(T* t) {
+        w_link_t *p = link_of(t);
+        w_assert1(p->member_of() == this);
+        if (p->prev() != &_tail)
+            return base_of(p->prev());
+        else
+            return NULL;
+    }
+
+    // Get count
+    uint32_t count() {
+        return this->_cnt;
+    }
+
 
     /// streams output
     friend ostream&        operator<< BIND_FRIEND_OPERATOR_PART_2(T, LOCK) (

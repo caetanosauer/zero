@@ -14,6 +14,13 @@
 #include "logrec.h"
 #include "backup.h"
 
+// LOG_BUFFER switch
+#include "logbuf_common.h"
+
+#ifdef LOG_BUFFER
+#include "logbuf_core.h"
+#endif
+
 page_evict_log::page_evict_log (const btree_page_h& p,
                                 general_recordid_t child_slot, lsn_t child_lsn) {
     new (_data) page_evict_t(child_lsn, child_slot);
@@ -175,7 +182,15 @@ rc_t log_core::_collect_single_page_recovery_logs(
     for (lsn_t nxt = emlsn; current_lsn < nxt && nxt != lsn_t::null;) {
         logrec_t* record = NULL;
         lsn_t obtained = nxt;
+#ifdef LOG_BUFFER
         rc_t rc = fetch(obtained, record, NULL, true); 
+
+        // use hints
+        // rc_t rc = fetch(obtained, tmp, NULL, SINGLE_PAGE_RECOVERY); 
+        // record = tmp;
+#else
+        rc_t rc = fetch(obtained, record, NULL, true); 
+#endif
         release(); // release _partition_lock immediately
         if ((rc.is_error()) && (eEOF == rc.err_num()))
         {
@@ -343,6 +358,11 @@ else
             break; // root page allocated. initial log
         }
     }
+#ifdef LOG_BUFFER
+//hints
+//delete tmp;
+#endif
+
     return RCOK;
 }
 

@@ -312,6 +312,7 @@ void chkpt_m::synch_take()
     return;
 }
 
+
 /*********************************************************************
 *
 *  chkpt_m::synch_take(lock_heap)
@@ -376,6 +377,8 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode,
                     const bool record_lock)  // In: True if need to record lock information into the heap
 {
     FUNC(chkpt_m::take);
+
+    DBGOUT3(<< "checkpoint! sync? " << chkpt_mode);
 
     // Note: on a clean system shutdown ends the log with a checkpoint, but this
     // checkpoint is empty excpet device information: no dirty page and 
