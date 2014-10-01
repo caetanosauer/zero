@@ -1249,6 +1249,11 @@ restart_m::analysis_pass_backward(
 
     // Ready to process the logs from recovery log
     // Open a backward scan starting from the end of recovery log 
+    // For backward log scan, during initialization of the iterator, the given
+    // lsn is the log record beyond the starting point, meaning when the fetch
+    // starts, the first log record returned is the (lsn -1) log record 
+    // we are using lsn from curr_lsn() which is the next available lsn, therefore
+    // the fetch returns the very last log record in the log file
     log_i         scan(*log, last_lsn, false /*forward scan*/);
     logrec_t*     log_rec_buf;
     lsn_t         lsn;   // LSN of the retrieved log record
@@ -2102,11 +2107,14 @@ void restart_m::_analysis_ckpt_xct_log(logrec_t& r,          // In: Current log 
     {
         xd = xct_t::look_up(dp->xrec[i].tid);
 
-        // We know the transaction was active when the checkpoint was taken, but
-        // we do not know whether the transaction was in the middle of normal
-        // processing or rollback.
+        // We know the transaction was active when the checkpoint was taken,
+        // but we do not know whether the transaction was in the middle of 
+        // normal processing or rollback, or already ended by the time checkpoint
+        // finished (because checkpoint is a non-blocking operation).
         // If a transaction object did not exsit in the transaction table at this point,
-        // create a loser transaction for it and do not add it to mapCLR.
+        // create a transaction for it.  If the transacter did not end during the checkpoint
+        // mark it as a loser transaction.  If the transaction ended during checkpoint,
+        // mark it as a winner transaction.  No need to update mapCLR in either case.
         // If a transaction object exists in the transaction table at this point, 
         // it should be a loser transaction, update to the mapCLR to make sure
         // this is a loser transaction
@@ -2152,6 +2160,9 @@ void restart_m::_analysis_ckpt_xct_log(logrec_t& r,          // In: Current log 
                 w_assert1((xct_t::xct_active == dp->xrec[i].state) || 
                           (xct_t::xct_chaining == dp->xrec[i].state));
 
+                // For backward log scan, during initialization of the iterator, the given
+                // lsn is the log record beyond the starting point, meaning when the fetch
+                // starts, the first log record returned is the (lsn -1) log record 
                 log_i scan_per_txn(*log, lsn, false /*forward scan*/);
                 logrec_t*  log_rec_buf_per_txn;
                 lsn_t      lsn_per_txn;         // LSN of the retrieved log record
