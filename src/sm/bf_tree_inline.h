@@ -325,17 +325,20 @@ inline w_rc_t bf_tree_m::fix_root (generic_page*& page, volid_t vol, snum_t stor
         
             if ((false == restart_m::use_redo_demand_restart()) &&  // pure on-demand
                 (false == restart_m::use_redo_mix_restart()))       // midxed mode
+            {
+                DBGOUT3(<<"bf_tree_m::fix_root: user transaction but not on_demand, cannot fix in_doubt root page");
                 return RC(eACCESS_CONFLICT);
+            }
         }
     }
 
     W_DO(_latch_root_page(page, idx, mode, conditional));
     w_assert1(_buffer[idx].pid.store() == store);
 
-    if ((false == from_undo) && (false == get_cb(idx)._recovery_access))
+    if ((false == get_cb(idx)._in_doubt) &&                                 // Page not in_doubt
+        (false == from_undo) && (false == get_cb(idx)._recovery_access))    // From concurrent user transaction
     {
-        // Page is not in_doubt and caller is not from Recovery
-        // validate the accessability of the page
+        // validate the accessability of the page (validation happens only if using commit_lsn)
         w_rc_t rc = _validate_access(page);
         if (rc.is_error()) 
         {

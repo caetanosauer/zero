@@ -61,29 +61,29 @@ TEST (RestartTest, EmptyC) {
 }
 /**/
 
-/* Passing */
+/* Passing - M3 */
 TEST (RestartTest, EmptyN3) {
     test_env->empty_logdata_dir();
     restart_empty context;
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
-    options.restart_mode = m2_default_restart; // minimal logging, nothing to recover and does not get into backward log scan loop
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+    options.restart_mode = m3_default_restart; // minimal logging, nothing to recover and does not get into backward log scan loop
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
 }
 /**/
 
-/* Passing - M3 *
+/* Passing - M3 */
 TEST (RestartTest, EmptyC3) {
     test_env->empty_logdata_dir();
     restart_empty context;
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m3_default_restart; // minimal logging, nothing to recover but 
-                                                                    // go through Log Analysis backward scan loop
-                                                                    // although only checkpoint log records to process
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+                                               // go through Log Analysis backward scan loop
+                                               // although only checkpoint log records to process
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
 }
-**/
+/**/
 
 // Test case with simple transactions (1 in-flight) and normal shutdown, no concurrent activities during restart
 class restart_simple : public restart_test_base  {
@@ -110,16 +110,18 @@ public:
         x_btree_scan_result s;
 
         // Wait before the final verfication
-        // Note this 'in_restart' check is not reliable if on_demand restart (m3),
+        // Note this 'in_restart' check is not reliable if on_demand restart (M3),
         // but it is okay because with on_demand restart, it blocks concurrent 
         // transactions instead of failing concurrent transactions
+        // If M2, recovery is done via a child restart thread
         while (true == test_env->in_restart())
         {
             // Concurrent restart is still going on, wait
             ::usleep(WAIT_TIME);            
         }
 
-        // Verify
+        // Verify, if M3, the scan query trigger the on_demand REDO (page loading)
+        // and UNDO (transaction rollback)
         W_DO(test_env->btree_scan(_stid_list[0], s));
         EXPECT_EQ (3, s.rownum);
         EXPECT_EQ (std::string("aa1"), s.minkey);
@@ -172,27 +174,27 @@ TEST (RestartTest, SimpleCF) {
 }
 /**/
 
-/* Passing - M3 *
+/* Passing - M3 */
 TEST (RestartTest, SimpleN3) {
     test_env->empty_logdata_dir();
     restart_simple context;
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m3_default_restart; // minimal logging, nothing to recover 
-                                                                    // but go through Log Analysis backward scan loop and 
-                                                                    // process log records
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+                                               // but go through Log Analysis backward scan loop and 
+                                               // process log records
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
 }
-**/
+/**/
 
-/* Passing - M3 *
+/* Not passing - M3 *
 TEST (RestartTest, SimpleC3) {
     test_env->empty_logdata_dir();
     restart_simple context;
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m3_default_restart; // minimal logging, scan query triggers on_demand recovery
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true), 0);
 }
 **/
 

@@ -497,7 +497,6 @@ io_m::mount(const char* device, vid_t vid,
     // Get ready to roll back to here if we get an error between
     // here and ... where this scope is closed.
     AUTO_ROLLBACK_work
-
     w_rc_t rc = v->mount(device, vid);
     if (rc.is_error())  {
         delete v;

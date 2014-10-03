@@ -127,7 +127,7 @@ rc_t vol_t::mount(const char* devname, vid_t vid)
 
     /*
      *  Check if device is raw, and open it.
-     */
+     */   
     W_DO(check_raw_device(devname, _is_raw));
 
     w_rc_t e;
@@ -189,7 +189,6 @@ rc_t vol_t::mount(const char* devname, vid_t vid)
     w_assert1(_stnode_cache);
 
     W_DO( bf->install_volume(this));
-
     return RCOK;
 }
 

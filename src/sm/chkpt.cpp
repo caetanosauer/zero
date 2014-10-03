@@ -378,7 +378,14 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode,
 {
     FUNC(chkpt_m::take);
 
-    DBGOUT3(<< "checkpoint! sync? " << chkpt_mode);
+    if (t_chkpt_async == chkpt_mode)
+    {
+        DBGOUT3(<< "Checkpoint request: asynch");
+    }
+    else
+    {
+        DBGOUT3(<< "Checkpoint request: synch");    
+    }
 
     // Note: on a clean system shutdown ends the log with a checkpoint, but this
     // checkpoint is empty excpet device information: no dirty page and 

@@ -942,7 +942,7 @@ void transact_thread_t::run() {
     std::cout << ":T" << _thid << " starting..";
     _runnerfunc(_stid_list);
     _finished = true;
-    std::cout << ":T" << _thid << " finished.";
+    std::cout << ":T" << _thid << " finished." << std::endl;
 }
 
 w_rc_t btree_test_env::btree_populate_records(stid_t &stid,

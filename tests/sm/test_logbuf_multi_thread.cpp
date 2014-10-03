@@ -34,8 +34,8 @@ char buf[BUF_SIZE];
 
 void itoa(int i, char *buf, int base) {
     // ignoring the base
-    base=10;
-    sprintf(buf, "%d", i);
+    if(base)
+        sprintf(buf, "%d", i);
 }
 
 // insert and flush a log record of size bytes

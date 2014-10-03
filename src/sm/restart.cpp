@@ -2362,8 +2362,9 @@ void restart_m::_analysis_ckpt_dev_log(logrec_t& r,  // In: Log record to proces
 
     const chkpt_dev_tab_t* dv = (chkpt_dev_tab_t*) r.data();
     DBGOUT3(<<"Log Analysis, number of devices in t_chkpt_dev_tab: " << dv->count);
+    uint count = dv->count;
 
-    for (uint i = 0; i < dv->count; i++)  
+    for (uint i = 0; i < count; ++i)  
     {
         smlevel_0::errlog->clog << info_prio 
             << "Device " << dv->devrec[i].dev_name 
@@ -2371,7 +2372,6 @@ void restart_m::_analysis_ckpt_dev_log(logrec_t& r,  // In: Log record to proces
              << flushl;
         W_COERCE(io_m::mount(dv->devrec[i].dev_name, 
                            dv->devrec[i].vid));
-
         w_assert9(io_m::is_mounted(dv->devrec[i].vid));
 
         // Signal the caller device mount occurred
@@ -3382,7 +3382,7 @@ void restart_m::_compare_lock_entries(
     if (lock_heap1.NumElements() == lock_heap2.NumElements())
     {
         // Same amount of lock entries in both heaps, skip further comparision
-        DBGOUT1(<< "_compare_lock_entries: same amount of log entries");
+        DBGOUT1(<< "_compare_lock_entries: same amount of log entries: " << lock_heap1.NumElements());
         return;
     }
     else

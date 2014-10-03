@@ -1308,15 +1308,20 @@ public:
     no_lock_section_t () {
         xct_t *x = xct();
         if (x) {
+            DBGOUT3( << "!!!! no_lock_section_t() - lock has been disabled");  
+
             org_cc = x->get_query_concurrency();
             x->set_query_concurrency(smlevel_0::t_cc_none);
         } else {
+            DBGOUT3( << "!!!! no_lock_section_t() - set original lock mode to t_cc_none"); 
+        
             org_cc = smlevel_0::t_cc_none;
         }
     }
     ~no_lock_section_t () {
         xct_t *x = xct();
         if (x) {
+            DBGOUT3( << "!!!! ~no_lock_section_t() - restored original lock mode: " << org_cc);  
             x->set_query_concurrency(org_cc);
         }
     }

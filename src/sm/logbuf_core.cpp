@@ -184,7 +184,8 @@ logbuf_core::~logbuf_core() {
     if (IS_M1())
         shutdown();
 
-    logbuf_print_nolock("shutting down...", 3);
+// TODO(Restart)... comment out for now, too much noise
+//    logbuf_print_nolock("shutting down...", 3);
 
     if (_seg_list != NULL) {
         logbuf_seg *cur = NULL;
@@ -486,7 +487,8 @@ void logbuf_core::_prime(
                      lsn_t next // IN: the next available lsn to insert to
 )
 {    
-    DBGOUT3(<< "_prime @ lsn " << next);
+// TODO(Restart)... comment out for now, too much noise
+//    DBGOUT3(<< "_prime @ lsn " << next);
 
     if (IS_M1()==false)
         w_assert1(_owner->_durable_lsn == _owner->_curr_lsn);    
@@ -522,8 +524,8 @@ void logbuf_core::_prime(
 
     w_assert0(first_seg != NULL);
 
-
-    DBGOUT3(<< "_prime: read seg " << seg_lsn);
+// TODO(Restart)... comment out for now, too much noise
+//    DBGOUT3(<< "_prime: read seg " << seg_lsn);
 
     int n = 0;
 
@@ -573,7 +575,8 @@ void logbuf_core::_prime(
  *
  *********************************************************************/
 void logbuf_core::logbuf_prime(lsn_t next) {
-    DBGOUT3(<< "init");
+// TODO(Restart)... comment out for now, too much noise
+//    DBGOUT3(<< "init");
     
     _prime(0, 0, next);
 
@@ -737,7 +740,8 @@ logbuf_core::fetch(
 
         W_COERCE(_get_lsn_for_backward_scan(ll, p));
 
-        DBGOUT3(<< "BACKWARD fetch @ lsn: " << ll);
+// TODO(Restart)... comment out for now, too much noise
+//        DBGOUT3(<< "BACKWARD fetch @ lsn: " << ll);
         W_COERCE(_fetch(rp, ll, p));
         if (nxt) {
             *nxt = ll;
@@ -745,7 +749,8 @@ logbuf_core::fetch(
     }
     else {
         // forward scan
-        DBGOUT3(<< "fetch @ lsn: " << ll);
+// TODO(Restart)... comment out for now, too much noise        
+//        DBGOUT3(<< "fetch @ lsn: " << ll);
         W_COERCE(_fetch(rp, ll, p));
         logrec_t        &r = *rp;
         if (r.type() == logrec_t::t_skip && r.get_lsn_ck() == ll) {                
@@ -759,7 +764,8 @@ logbuf_core::fetch(
                 p = _owner->_open_partition_for_read(ll.hi(), lsn_t::null, false, false);
             
             // re-read
-            DBGOUT3(<< "re-fetch @ lsn: " << ll);
+// TODO(Restart)... comment out for now, too much noise            
+//            DBGOUT3(<< "re-fetch @ lsn: " << ll);
             W_COERCE(_fetch(rp, ll, p));            
         }
         if (nxt) {
@@ -829,8 +835,9 @@ w_rc_t logbuf_core::_fetch(
         found = _hashtable->lookup(seg_lsn.data());
         if (found != NULL) {
             // hit            
-            DBGOUT3(<< " HIT " << found->base_lsn 
-                    << " " << offset); 
+// TODO(Restart)... comment out for now, too much noise            
+//            DBGOUT3(<< " HIT " << found->base_lsn 
+//                    << " " << offset); 
 
             hits++;
             if (rec != NULL) {
@@ -849,8 +856,9 @@ w_rc_t logbuf_core::_fetch(
         }
         else {            
             // miss
-            DBGOUT3(<< " MISS " << seg_lsn
-                    << " " << offset); 
+// TODO(Restart)... comment out for now, too much noise            
+//            DBGOUT3(<< " MISS " << seg_lsn
+//                    << " " << offset); 
 
             //logbuf_print("before MISS");
 
@@ -980,8 +988,8 @@ w_rc_t logbuf_core::_get_lsn_for_backward_scan(lsn_t &lsn, // IN/OUT: the positi
  *
  *********************************************************************/
 int logbuf_core::logbuf_fetch(lsn_t lsn) {
-
-    DBGOUT3(<< " logbuf_fetch: " << lsn.data());
+// TODO(Restart)... comment out for now, too much noise
+//    DBGOUT3(<< " logbuf_fetch: " << lsn.data());
 
     uint64_t offset = lsn.lo() % _segsize;
     lsn_t seg_lsn = lsn_t(lsn.data() - offset);
@@ -991,7 +999,8 @@ int logbuf_core::logbuf_fetch(lsn_t lsn) {
         _logbuf_lock.acquire();
 
         if (lsn >= _to_insert_lsn) {
-            DBGOUT3(<< "BUG??? invalid lsn in fetch");
+// TODO(Restart)... comment out for now, too much noise
+//            DBGOUT3(<< "BUG??? invalid lsn in fetch");
             _logbuf_lock.release();
             return -1;  // INVALID
         }
@@ -1001,8 +1010,9 @@ int logbuf_core::logbuf_fetch(lsn_t lsn) {
         found = _hashtable->lookup(seg_lsn.data());
         if (found != NULL) {
             // hit            
-            DBGOUT3(<< " HIT " << found->base_lsn 
-                    << " " << offset); 
+// TODO(Restart)... comment out for now, too much noise            
+//            DBGOUT3(<< " HIT " << found->base_lsn 
+//                    << " " << offset); 
 
             _logbuf_lock.release();
 
@@ -1010,8 +1020,9 @@ int logbuf_core::logbuf_fetch(lsn_t lsn) {
         }
         else {            
             // miss
-            DBGOUT3(<< " MISS " << seg_lsn
-                    << " " << offset); 
+// TODO(Restart)... comment out for now, too much noise            
+//            DBGOUT3(<< " MISS " << seg_lsn
+//                    << " " << offset); 
 
 
             found = _get_new_seg_for_fetch();
@@ -1258,7 +1269,8 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
 
         W_COERCE(_get_lsn_for_backward_scan(ll, p));
 
-        DBGOUT3(<< "BACKWARD fetch @ lsn: " << ll);
+// TODO(Restart)... comment out for now, too much noise
+//        DBGOUT3(<< "BACKWARD fetch @ lsn: " << ll);
         W_COERCE(_fetch(rp, ll, p, op));
         if (nxt) {
             *nxt = ll;
@@ -1266,7 +1278,8 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
     }
     else {
         // forward scan
-        DBGOUT3(<< "fetch @ lsn: " << ll);
+// TODO(Restart)... comment out for now, too much noise        
+//        DBGOUT3(<< "fetch @ lsn: " << ll);
         W_COERCE(_fetch(rp, ll, p, op));
         logrec_t        &r = *rp;
         if (r.type() == logrec_t::t_skip && r.get_lsn_ck() == ll) {                
@@ -1280,7 +1293,8 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
                 p = _owner->_open_partition_for_read(ll.hi(), lsn_t::null, false, false);
             
             // re-read
-            DBGOUT3(<< "re-fetch @ lsn: " << ll);
+// TODO(Restart)... comment out for now, too much noise            
+//            DBGOUT3(<< "re-fetch @ lsn: " << ll);
             W_COERCE(_fetch(rp, ll, p, op));            
         }
         if (nxt) {
@@ -1326,8 +1340,8 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
  *
  *********************************************************************/
 w_rc_t logbuf_core::_fetch(logrec_t* &rec, lsn_t &lsn, partition_t *p, hints_op op) {
-
-    DBGOUT3(<< " _fetch: " << lsn);
+// TODO(Restart)... comment out for now, too much noise
+//    DBGOUT3(<< " _fetch: " << lsn);
 
     // use the buffer provided by the caller
     //w_assert1(rec);
@@ -1348,8 +1362,9 @@ w_rc_t logbuf_core::_fetch(logrec_t* &rec, lsn_t &lsn, partition_t *p, hints_op 
         found = _hashtable->lookup(seg_lsn.data());
         if (found != NULL) {
             // hit            
-            DBGOUT3(<< " HIT " << found->base_lsn 
-                    << " " << offset); 
+// TODO(Restart)... comment out for now, too much noise            
+//            DBGOUT3(<< " HIT " << found->base_lsn 
+//                    << " " << offset); 
 
             hits++;
 
@@ -1370,14 +1385,16 @@ w_rc_t logbuf_core::_fetch(logrec_t* &rec, lsn_t &lsn, partition_t *p, hints_op 
         }
         else {            
             // miss
-            DBGOUT3(<< " MISS " << seg_lsn
-                    << " " << offset); 
+// TODO(Restart)... comment out for now, too much noise            
+//            DBGOUT3(<< " MISS " << seg_lsn
+//                    << " " << offset); 
 
             if (hints_profile[op].locality) {
 
                 //logbuf_print("before MISS");
 
-                DBGOUT3(<< "fetch entire seg");
+// TODO(Restart)... comment out for now, too much noise
+//                DBGOUT3(<< "fetch entire seg");
 
                 found = _get_new_seg_for_fetch();
 
@@ -1423,8 +1440,8 @@ w_rc_t logbuf_core::_fetch(logrec_t* &rec, lsn_t &lsn, partition_t *p, hints_op 
                 _logbuf_lock.release();
 
                 //logbuf_print("before MISS");
-
-                DBGOUT3(<< "fetch single log rec");
+// TODO(Restart)... comment out for now, too much noise
+//                DBGOUT3(<< "fetch single log rec");
 
 #ifdef LOG_BUFFER
                 // read the log record only (sizeof(logrec_t))
@@ -1652,7 +1669,8 @@ void logbuf_core::_acquire_buffer_space(CArraySlot* info, long recsize) {
     w_assert2(recsize > 0);
 
 
-    DBGOUT3(<< " insert: reserve buffer space! " << recsize);
+// TODO(Restart)... comment out for now, too much noise
+//    DBGOUT3(<< " insert: reserve buffer space! " << recsize);
     _reserve_buffer_space(info, recsize);
 
     lintel::atomic_thread_fence(lintel::memory_order_consume);
@@ -1700,7 +1718,8 @@ void logbuf_core::_acquire_buffer_space(CArraySlot* info, long recsize) {
 
     if ((_to_insert_lsn.lo() + recsize) <= _partition_data_size) {
         // curr partition
-        DBGOUT3(<< " insert: current partition! " << recsize);
+// TODO(Restart)... comment out for now, too much noise        
+//        DBGOUT3(<< " insert: current partition! " << recsize);
 
         // update _buf_epoch
         _buf_epoch.end = new_end;
@@ -1712,7 +1731,8 @@ void logbuf_core::_acquire_buffer_space(CArraySlot* info, long recsize) {
         // new partition
         // assuming the size of a combined insertion is << partition size
         // we don't open a new partition until more log space is required
-        DBGOUT3(<< " insert: new partition! " << recsize);
+// TODO(Restart)... comment out for now, too much noise        
+//        DBGOUT3(<< " insert: new partition! " << recsize);
 
         long leftovers = _partition_data_size - curr_lsn.lo();
 
@@ -2036,7 +2056,8 @@ rc_t logbuf_core::insert(
     if(rlsn) {
         *rlsn = rec_lsn;
     }
-    DBGOUT3(<< " insert @ lsn: " << rec_lsn << " type " << rec.type() << " length " << rec.length() );
+// TODO(Restart)... comment out for now, too much noise
+//    DBGOUT3(<< " insert @ lsn: " << rec_lsn << " type " << rec.type() << " length " << rec.length() );
 
     if(IS_M1()==false)
         ADD_TSTAT(log_bytes_generated,size);
@@ -2251,7 +2272,8 @@ void logbuf_core::_flushX(lsn_t start_lsn, uint64_t start, uint64_t end) {
     // total number of segments we are going to flush
     seg_cnt = ( _ceil(end, _segsize) - (start - offset_in_seg) ) / _segsize;    
 
-    DBGOUT3(<< "flushX: start_lsn " << start_lsn << " start " << start << " end " << end << " seg_cnt " << seg_cnt); 
+// TODO(Restart)... comment out for now, too much noise
+//    DBGOUT3(<< "flushX: start_lsn " << start_lsn << " start " << start << " end " << end << " seg_cnt " << seg_cnt); 
 
 
     // when _prime starts with an empty segment (offset_in_seg == 0 &&
@@ -2301,8 +2323,9 @@ void logbuf_core::_flushX(lsn_t start_lsn, uint64_t start, uint64_t end) {
     while (to_write > size_in_seg) {
         w_assert1(cur);
 
-        DBGOUT3(<< "IOV " << cur->base_lsn << " " << offset_in_seg << " " <<
-                size_in_seg); 
+// TODO(Restart)... comment out for now, too much noise
+//        DBGOUT3(<< "IOV " << cur->base_lsn << " " << offset_in_seg << " " <<
+//                size_in_seg); 
 
         iov[i] = iovec_t((char*)cur->buf + offset_in_seg, size_in_seg);
         to_write -= size_in_seg;
@@ -2324,8 +2347,9 @@ void logbuf_core::_flushX(lsn_t start_lsn, uint64_t start, uint64_t end) {
         w_assert1(cur);
         w_assert1(i==seg_cnt-1);
 
-        DBGOUT3(<< "IOV (last) " << cur->base_lsn << " " << offset_in_seg << " " <<
-                to_write); 
+// TODO(Restart)... comment out for now, too much noise
+//        DBGOUT3(<< "IOV (last) " << cur->base_lsn << " " << offset_in_seg << " " <<
+//                to_write); 
 
         iov[i] = iovec_t((char*)cur->buf + offset_in_seg, to_write);
 
@@ -2394,7 +2418,8 @@ lsn_t logbuf_core::flush_daemon_work(lsn_t old_mark)
             if (start == end)
                 return old_mark;
 
-            DBGOUT3(<< " flush: current partition!");
+// TODO(Restart)... comment out for now, too much noise
+//            DBGOUT3(<< " flush: current partition!");
 
             _cur_epoch.start = end;
 
@@ -2406,7 +2431,8 @@ lsn_t logbuf_core::flush_daemon_work(lsn_t old_mark)
             //    _old_epoch.base_lsn  _old_epoch.start to _old_epoch.end
             // the portion in the new partition (_cur_epoch) will be flushed in the
             // next flush  
-            DBGOUT3(<< " flush: new partition!");
+// TODO(Restart)... comment out for now, too much noise            
+//            DBGOUT3(<< " flush: new partition!");
 
             start_lsn = _old_epoch.base_lsn + _old_epoch.start;
             start = _old_epoch.start;
@@ -2461,8 +2487,8 @@ rc_t logbuf_core::flush(
 )
 {
     {
-        
-        DBGOUT3(<< " flush @ to_lsn: " << to_lsn);
+// TODO(Restart)... comment out for now, too much noise        
+//        DBGOUT3(<< " flush @ to_lsn: " << to_lsn);
 
         w_assert1(signal || !block); // signal=false can be used only when
                                      // block=false
@@ -2643,7 +2669,8 @@ logbuf_seg *logbuf_core::_get_new_seg_for_fetch() {
 
     if (_seg_count == _max_seg_count) {
         // already full
-        DBGOUT3("evict old seg");
+// TODO(Restart)... comment out for now, too much noise        
+//        DBGOUT3("evict old seg");
         do {
             cnt++;
 
@@ -2672,7 +2699,8 @@ logbuf_seg *logbuf_core::_get_new_seg_for_fetch() {
     else {
         // not full
         // allocate 3 more blocks as tails
-        DBGOUT3("allocate new seg");
+// TODO(Restart)... comment out for now, too much noise        
+//        DBGOUT3("allocate new seg");
         free_seg = new logbuf_seg(_actual_segsize);
         _seg_count++;
     }
@@ -2708,7 +2736,8 @@ void logbuf_core::_get_more_space_for_insertion(CArraySlot *info) {
 
     if (_seg_count == _max_seg_count) {
         // already full
-        DBGOUT3("evict old seg");
+// TODO(Restart)... comment out for now, too much noise        
+//        DBGOUT3("evict old seg");
 
         free_seg = _replacement();
 
@@ -2744,7 +2773,8 @@ void logbuf_core::_get_more_space_for_insertion(CArraySlot *info) {
     else {
         // not full
         // allocate 3 more blocks as tails
-        DBGOUT3("allocate new seg");
+// TODO(Restart)... comment out for now, too much noise        
+//        DBGOUT3("allocate new seg");
         free_seg = new logbuf_seg(_actual_segsize);
         _seg_count++;
 
@@ -2849,7 +2879,8 @@ logbuf_seg *logbuf_core::_replacement() {
 void logbuf_core::force_a_flush() {
 
     // last resort
-    DBGOUT3(<< "last resort: FORCE a flush");
+// TODO(Restart)... comment out for now, too much noise    
+//    DBGOUT3(<< "last resort: FORCE a flush");
 
     // when there are too many unflushed segments in the write buffer
     // force a flush

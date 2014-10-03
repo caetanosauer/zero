@@ -337,8 +337,8 @@ public:
     */
     int runRestartTest (restart_test_base *context,
                       restart_test_options *restart_options,
-                      bool use_locks = false,
-                      int32_t lock_table_size = default_locktable_size,
+                      bool use_locks = false,              // default to disable locking, M3/M4 test cases need to enable locking
+                      int32_t lock_table_size = default_locktable_size,  
                       int disk_quota_in_pages = default_quota_in_pages,
                       int bufferpool_size_in_pages = default_bufferpool_size_in_pages,
                       uint32_t cleaner_threads = 1,
