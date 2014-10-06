@@ -388,9 +388,12 @@ public:
         // Verify, if M3, the scan query trigger the on_demand REDO (page loading)
         // and UNDO (transaction rollback)
 
+        // Both normal and crash shutdown, the update should fail due to in-flight transaction rolled back alreadly
         rc = test_env->btree_update_and_commit(_stid_list[0], "aa4", "dataXXX");
         if (rc.is_error())
+        {
             std::cout << "!!!!! Update failed, expected behavior" << std::endl;
+        }
         else
         {
             std::cout << "!!!!! Update succeed, this is not expected behavior" << std::endl;
@@ -406,27 +409,27 @@ public:
 };
 
 
-/* Passing - M3 *
+/* Passing - M3 */
 TEST (RestartTest, SimpleN3) {
     test_env->empty_logdata_dir();
     restart_simple2 context;
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m3_default_restart; // minimal logging, scan query triggers on_demand recovery
-    EXPECT_EQ(test_env->runRestartTest(&context, &options, true), 0);
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true), 0);  // use lock
 }
-**/
+/**/
 
-/* Not passing - M3 *
+/* Not passing - M3 */
 TEST (RestartTest, SimpleC3) {
     test_env->empty_logdata_dir();
     restart_simple2 context;
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m3_default_restart; // minimal logging, scan query triggers on_demand recovery
-    EXPECT_EQ(test_env->runRestartTest(&context, &options, true), 0);
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true), 0);  // use lock
 }
-**/
+/**/
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

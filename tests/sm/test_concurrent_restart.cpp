@@ -108,6 +108,7 @@ public:
     w_rc_t post_shutdown(ss_m *) {
         output_durable_lsn(4);
         x_btree_scan_result s;
+        w_rc_t rc;
 
         // Wait before the final verfication
         // Note this 'in_restart' check is not reliable if on_demand restart (M3),
@@ -118,6 +119,22 @@ public:
         {
             // Concurrent restart is still going on, wait
             ::usleep(WAIT_TIME);            
+        }
+
+        // Verify, if M3, the scan query trigger the on_demand REDO (page loading)
+        // and UNDO (transaction rollback)
+
+        // Both normal and crash shutdown, regardling which Instart Restart milestone, 
+        // the update should fail due to in-flight transaction rolled back alreadly
+        rc = test_env->btree_update_and_commit(_stid_list[0], "aa4", "dataXXX");
+        if (rc.is_error())
+        {
+            std::cout << "Update failed, expected behavior" << std::endl;
+        }
+        else
+        {
+            std::cout << "Update succeed, this is not expected behavior" << std::endl;
+            EXPECT_FALSE(rc.is_error());   // It should trigger a rollback and record should not exist after rollback
         }
 
         // Verify, if M3, the scan query trigger the on_demand REDO (page loading)
@@ -187,16 +204,16 @@ TEST (RestartTest, SimpleN3) {
 }
 /**/
 
-/* Not passing - M3 *
+/* Passing - M3 */
 TEST (RestartTest, SimpleC3) {
     test_env->empty_logdata_dir();
     restart_simple context;
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
-    options.restart_mode = m3_default_restart; // minimal logging, scan query triggers on_demand recovery
-    EXPECT_EQ(test_env->runRestartTest(&context, &options, true), 0);
+    options.restart_mode = m3_default_restart; // minimal logging, update triggers on_demand recovery
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
 }
-**/
+/**/
 
 // Test case with transactions (1 in-flight with multiple operations)
 // no concurrent activities during restart
@@ -288,6 +305,29 @@ TEST (RestartTest, ComplexInFlightCF) {
 }
 /**/
 
+/* Passing - M3 */
+TEST (RestartTest, ComplexInFlightN3) {
+    test_env->empty_logdata_dir();
+    restart_simple context;
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m3_default_restart; // minimal logging, nothing to recover 
+                                               // but go through Log Analysis backward scan loop and 
+                                               // process log records
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
+}
+/**/
+
+/* Passing - M3 */
+TEST (RestartTest, ComplexInFlightC3) {
+    test_env->empty_logdata_dir();
+    restart_simple context;
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m3_default_restart; // minimal logging, scan query triggers on_demand recovery
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
+}
+/**/
 
 // Test case with transactions (1 in-flight) with checkpoint
 // no concurrent activities during restart

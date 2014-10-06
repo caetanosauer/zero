@@ -308,22 +308,7 @@ btree_impl::_ux_update(volid_t vol, snum_t store, const w_keystr_t &key, const c
 rc_t
 btree_impl::_ux_update_core(volid_t vol, snum_t store, const w_keystr_t &key, const cvec_t &el, const bool undo)
 {
-// TODO(Restart)...
-DBGOUT1(<< "!!!!!!!!!  btree_impl::_ux_update_core - enter");
-
-
     bool need_lock = g_xct_does_need_lock();
-
-// TODO(Restart)...
-if (true == need_lock)
-{
-    DBGOUT1(<< "!!!!!!!!!  btree_impl::_ux_update_core - need lock");
-}
-else
-{
-    DBGOUT1(<< "!!!!!!!!!  btree_impl::_ux_update_core - does not need lock... ?????");
-}
-
     btree_page_h         leaf;
 
     // find the leaf (potentially) containing the key
@@ -348,10 +333,6 @@ else
     // it's found (whether it's ghost or not)! so, let's just
     // lock the key.
     if (need_lock) {
-
-// TODO(Restart)...
-DBGOUT1(<< "!!!!!!!!!  btree_impl::_ux_update_core - found the key and acquire key lock");
-
         // only the key is locked (XN)
         W_DO (_ux_lock_key(leaf, key, LATCH_EX, create_part_okvl(okvl_mode::X, key), false));
     }
@@ -364,9 +345,6 @@ DBGOUT1(<< "!!!!!!!!!  btree_impl::_ux_update_core - found the key and acquire k
     if (ghost) {
         return RC(eNOTFOUND);
     }
-
-// TODO(Restart)...
-DBGOUT1(<< "!!!!!!!!!  btree_impl::_ux_update_core - updating");
 
     // are we expanding?
     if (old_element_len < el.size()) {

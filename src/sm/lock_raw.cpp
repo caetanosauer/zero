@@ -130,8 +130,7 @@ DBGOUT1(<< "!!!!!!!!!  RawLockQueue::acquire: entering acquire lock");
 
     if ((compatibility.deadlocked) || (!compatibility.can_be_granted))
     {
-// TODO(Restart)...
-DBGOUT1(<< "!!!!!!!!!  RawLockQueue::acquire: not able to acquire lock, check for UNDO");
+        DBGOUT1(<< "RawLockQueue::acquire: not able to acquire lock, check for UNDO");
     
         // Cannot grant the requested lock
         // Handle on_demand UNDO if we need one
@@ -725,7 +724,8 @@ bool RawLockQueue::trigger_UNDO(Compatibility& compatibility)
 
                                 // The blocker txn is a loser transaction and it is not in the middle of rolling back
                                 DBGOUT3( << "RawLockQueue::trigger_UNDO: blocker loser transaction needs UNDO,"
-                                         << " user txn: " << user_xd->tid() << ", loser txn: " << xd->tid());
+                                         << " user txn: " << user_xd->tid() << ", loser txn: " << xd->tid()
+                                         << ", detached from user transaction, start UNDO of loser transaction");
 
                                 // Attach to the loser transaction
                                 me()->attach_xct(xd);
@@ -734,7 +734,7 @@ bool RawLockQueue::trigger_UNDO(Compatibility& compatibility)
                                 // Done with rollback of loser transaction, destroy it
                                 xct_t::destroy_xct(xd);                                
 
-                                DBGOUT3( << "RawLockQueue::trigger_UNDO: blocker loser transaction aborted,"
+                                DBGOUT3( << "RawLockQueue::trigger_UNDO: blocker loser transaction successfully aborted,"
                                          << "re-attach to the original user transaction");
 
                                 // Re-attach to the original user transaction

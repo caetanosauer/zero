@@ -121,10 +121,15 @@ rc_t log_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
 
     // Then, collect logs to apply. Depending on the recency of the backup and the
     // previous page-allocation operation on the page, we might have to collect many logs.
-    const size_t SPR_LOG_BUFSIZE = 1 << 18; // 1 << 14;    // 1<<18: 256 KB 
-                                                       // while the max. log record size is 3 pages = 24KB
-                                                       // A typical update log record should be must smaller
-                                                       // than 1 page (8K)
+    size_t SPR_LOG_BUFSIZE = 1 << 18; // 1 << 14;    // 1<<18: 256 KB 
+                                                 // while the max. log record size is 3 pages = 24KB
+                                                 // A typical update log record should be much smaller
+                                                 // than 1 page (8K)
+    if (true == smlevel_0::use_redo_full_logging_restart())
+        SPR_LOG_BUFSIZE = 1 << 19;   // 1<<18: 512 KB, page rebalance full logging generates more log records
+                                     // use a bigger buffer size in such case although the current
+                                     // implementation (hard-coded fixed buffer size) does not prevent OOM
+        
     std::vector<char> buffer(SPR_LOG_BUFSIZE); // TODO, we should have an object pool for this.
     std::vector<logrec_t*> ordered_entires;
     W_DO(log_core::THE_LOG->_collect_single_page_recovery_logs(pid, p.lsn(), emlsn,
@@ -205,24 +210,29 @@ rc_t log_core::_collect_single_page_recovery_logs(
         DBGOUT1(<< "log_core::_collect_single_page_recovery_logs, log = " << *record);
 
         if (buffer_capacity < record->length()) {
+////////////////////////////////////////
+// TODO(Restart)... Single Page Recovery should handle this scenario better
+//                          currently buffer size is hard-coded fixed number
+////////////////////////////////////////
+
             // This might happen when we have a really long page log chain,
             // but so far we don't handle this case. crash.
-// TODO(Restart)...
-if (true == smlevel_0::use_redo_full_logging_restart())
-{
-ERROUT(<< "!!!!   Full logging is ON");
-}
-else
-{
-ERROUT(<< "!!!!   Full logging is OFF");
-}
-
             
+            // Provide information for OOM error            
             ERROUT(<< "_collect_single_page_recovery_logs: out-of-memory.  Remaining buffer_capacity: "
                    << buffer_capacity << ", current record length: " << record->length() 
                    << ", initial buffer size: " << buffer_size << ", the number of records collected so far: "
                    << ordered_entries.size());
-            
+            // FUll logging generates more log records and more likely to cause OOM
+            if (true == smlevel_0::use_redo_full_logging_restart())
+            {
+                ERROUT(<< "Full logging for page rebalance was ON");
+            }
+            else
+            {
+                ERROUT(<< "Full logging for page rebalance was OFF");
+            }
+
             W_FATAL(eOUTOFMEMORY);
         }
 
