@@ -293,6 +293,34 @@ TEST (RestartTest, MultiIndexConcChckptCBF) {
 }
 /**/
 
+/* Passing - M3 */
+TEST (RestartTest, MultiIndexConcChckptN3) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_chckpt_multi_index context;
+
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m3_default_restart; // minimal logging, nothing to recover 
+                                               // but go through Log Analysis backward scan loop and 
+                                               // process log records
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
+}
+/**/
+
+/* Passing - M3 */
+TEST (RestartTest, MultiIndexConcChckptC3) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_chckpt_multi_index context;
+
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m3_default_restart; // minimal logging, scan query triggers on_demand recovery
+                                               // No delay because no restart child thread
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
+}
+/**/
+
+
 // Test case that populates 3 indexes with committed records and one of them with some in-flights before shutdown
 // After shutdown, concurrent transactions are executed to test the rejection logic for concurrent transactions
 // Test case is suitable for calls with many different options, 20 in total 
@@ -346,11 +374,14 @@ public:
                 || restart_mode == m2_both_delay_restart || restart_mode == m2_both_fl_delay_restart;
         bool undo_delay = restart_mode == m2_undo_delay_restart || restart_mode == m2_undo_fl_delay_restart 
                 || restart_mode == m2_both_delay_restart || restart_mode == m2_both_fl_delay_restart;
-        
-        // Wait a while, this is to give REDO a chance to reload the root page
-        // but still wait in REDO phase due to test mode
-        ::usleep(SHORT_WAIT_TIME*5);
-        
+
+        if(restart_mode < m3_default_restart) 
+        {
+            // If M2, wait a while, this is to give REDO a chance to reload the root page
+            // but still wait in REDO phase due to test mode
+            ::usleep(SHORT_WAIT_TIME*5);
+        }
+
         if(restart_mode < m3_default_restart) 
         {
             // M2
@@ -444,15 +475,15 @@ public:
         memset(expected, 'D', btree_m::max_entry_size()-7);
 
         W_DO(test_env->btree_lookup_and_commit(_stid_list[1], "key110", actual));
-        if(restart_mode > m3_default_restart)
-        {
-            // M3
-            EXPECT_EQ(std::string("A"), actual);
-        }
-        else
+        if(restart_mode < m3_default_restart) 
         {
             // M2
             EXPECT_EQ(std::string(expected, btree_m::max_entry_size()-7), actual);
+        }
+        else
+        {
+            // M3
+            EXPECT_EQ(std::string("A"), actual);
         }
         // Check index 2
         W_DO(test_env->btree_scan(_stid_list[2], s));
@@ -736,6 +767,33 @@ TEST (RestartTest, MultiIndexConcTransChckptCBF) {
 }
 /**/
 
+/* Passing - M3 */
+TEST (RestartTest, MultiIndexConcTransChckptN3) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_trans_multi_index context;
+
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m3_default_restart; // minimal logging, nothing to recover 
+                                               // but go through Log Analysis backward scan loop and 
+                                               // process log records
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
+}
+/**/
+
+/* Passing - M3 */
+TEST (RestartTest, MultiIndexConcTransChckptC3) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_trans_multi_index context;
+
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m3_default_restart; // minimal logging, insert triggers on_demand recovery
+                                               // No delay because no restart child thread
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
+}
+/**/
+
 class restart_multi_page_inflight_multithrd : public restart_test_base
 {
 public:
@@ -833,6 +891,33 @@ TEST (RestartTest, MultiPageInFlightMultithrdCF) {
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_full_logging_restart; // full logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+/* Passing - M3 */
+TEST (RestartTest, MultiPageInFlightMultithrdN3) {
+    test_env->empty_logdata_dir();
+    restart_multi_page_inflight_multithrd context;
+
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m3_default_restart; // minimal logging, nothing to recover 
+                                               // but go through Log Analysis backward scan loop and 
+                                               // process log records
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
+}
+/**/
+
+/* Not passing - M3, Internal error:Log record t_chkpt_xct_lock contains a transaction which does not exist, tid:0.4958, restart.cpp:1501  *
+TEST (RestartTest, MultiPageInFlightMultithrdC3) {
+    test_env->empty_logdata_dir();
+    restart_multi_page_inflight_multithrd context;
+
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m3_default_restart; // minimal logging, scan query triggers on_demand recovery
+                                               // No delay because no restart child thread
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true), 0);  // use_locks
 }
 **/
 
@@ -945,17 +1030,18 @@ public:
         }
         else 
         {
-            // M3, concurrent transactions should block and then succeed
-            char key_str[7] = "key300";
-            char data_str[8] = "data300";
-
-            for (int i = 0; i<recordCount; i++) {
-                key_str[4] = ('0' + ((i / 10) % 10));
-                key_str[5] = ('0' + (i % 10));
-                data_str[5] = key_str[4];
-                data_str[6] = key_str[5];
-                W_DO(test_env->btree_update_and_commit(_stid_list[0], key_str, data_str));
-            }
+            // M3, handles both normal and crash shutdowns
+            
+            // Fork the child threads, regardless normal or crash shutdown
+            transact_thread_t t1 (_stid_list, t1Run);
+            transact_thread_t t2 (_stid_list, t2Run);
+            transact_thread_t t3 (_stid_list, t3Run);
+            W_DO(t1.fork());   // Start thread 1
+            W_DO(t2.fork());   // Start thread 2
+            W_DO(t3.fork());   // Start thread 3            
+            W_DO(t1.join());   // Stop thread 1
+            W_DO(t2.join());   // Stop thread 2
+            W_DO(t3.join());   // Stop thread 3
         }
 
         output_durable_lsn(6);
@@ -1181,6 +1267,33 @@ TEST (RestartTest, ManyConflictsMultithrdCBF) {
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_both_fl_delay_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+**/
+
+/* Passing - M3 */
+TEST (RestartTest, ManyConflictsMultithrdN3) {
+    test_env->empty_logdata_dir();
+    restart_multi_page_inflight_multithrd context;
+
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m3_default_restart; // minimal logging, nothing to recover 
+                                               // but go through Log Analysis backward scan loop and 
+                                               // process log records
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
+}
+/**/
+
+/* Not passing - M3, Internal error:Log record t_chkpt_xct_lock contains a transaction which does not exist, tid:0.4958, restart.cpp:1501  *
+TEST (RestartTest, ManyConflictsMultithrdC3) {
+    test_env->empty_logdata_dir();
+    restart_multi_page_inflight_multithrd context;
+
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m3_default_restart; // minimal logging, update triggers on_demand recovery
+                                               // No delay because no restart child thread
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true), 0);  // use_locks
 }
 **/
 

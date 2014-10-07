@@ -67,7 +67,10 @@ w_rc_t btree_populate_records_local(stid_t &stid,
                                                                                  //            delete key301
                                                                                  //            delete key300
                                                                                  
-    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 1 - 1;  // 4 records, core dump, with 2 previous records, 6 total
+    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 1 + 1;
+
+
+//    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 1 - 1;  // 4 records, core dump, with 2 previous records, 6 total
                                                                                 //        insert aa1
                                                                                 //        insert aa2
                                                                                 //        insert key303
@@ -285,17 +288,19 @@ class restart_multi_page_inflight_multithrd2 : public restart_test_base
 {
 public:
     static void t1Run (stid_t* stid_list) {
-        w_rc_t rc = test_env->btree_populate_records(stid_list[0], false, t_test_txn_in_flight, false, '1'); // flags: no checkpoint, don't commit, one big transaction
+        w_rc_t rc = btree_populate_records_local(stid_list[0], false, t_test_txn_in_flight, false, '1'); // flags: no checkpoint, don't commit, one big transaction
         EXPECT_FALSE(rc.is_error());
     }
 
     static void t2Run (stid_t* stid_list) {
-        w_rc_t rc = test_env->btree_populate_records(stid_list[0], false, t_test_txn_in_flight, false, '2'); // flags: no checkpoint, don't commit, one big transaction
+        w_rc_t rc = btree_populate_records_local(stid_list[0], false, t_test_txn_in_flight, false, '2'); // flags: no checkpoint, don't commit, one big transaction
         EXPECT_FALSE(rc.is_error());
     }
 
     static void t3Run (stid_t* stid_list) {
-        w_rc_t rc = test_env->btree_populate_records(stid_list[0], true, t_test_txn_in_flight, false, '3'); // flags: checkpoint, don't commit, one big transaction
+       w_rc_t rc = RCOK;
+//        w_rc_t rc = test_env->btree_populate_records(stid_list[0], true, t_test_txn_in_flight, false, '3'); // flags: checkpoint, don't commit, one big transaction
+        rc = btree_populate_records_local(stid_list[0], true, t_test_txn_in_flight, false, '3'); // flags: checkpoint, don't commit, one big transaction
         EXPECT_FALSE(rc.is_error());
     }
 
@@ -350,86 +355,32 @@ TEST (RestartTest, MultiPageInFlightMultithrdCF) {
 **/
 
 
-class restart_simple2 : public restart_test_base  {
-public:
-    w_rc_t pre_shutdown(ss_m *ssm) {
-        _stid_list = new stid_t[1];
-        output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
-        output_durable_lsn(2);
-        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa3", "data3"));
-
-        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
-        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa2", "data2"));
-
-        W_DO(test_env->begin_xct());
-        W_DO(test_env->btree_insert(_stid_list[0], "aa4", "data4"));             // in-flight
-
-        output_durable_lsn(3);
-        return RCOK;
-    }
-
-    w_rc_t post_shutdown(ss_m *) {
-        output_durable_lsn(4);
-        x_btree_scan_result s;
-        w_rc_t rc;
-
-        // Wait before the final verfication
-        // Note this 'in_restart' check is not reliable if on_demand restart (M3),
-        // but it is okay because with on_demand restart, it blocks concurrent 
-        // transactions instead of failing concurrent transactions
-        // If M2, recovery is done via a child restart thread
-        while (true == test_env->in_restart())
-        {
-            // Concurrent restart is still going on, wait
-            ::usleep(WAIT_TIME);            
-        }
-
-        // Verify, if M3, the scan query trigger the on_demand REDO (page loading)
-        // and UNDO (transaction rollback)
-
-        // Both normal and crash shutdown, the update should fail due to in-flight transaction rolled back alreadly
-        rc = test_env->btree_update_and_commit(_stid_list[0], "aa4", "dataXXX");
-        if (rc.is_error())
-        {
-            std::cout << "!!!!! Update failed, expected behavior" << std::endl;
-        }
-        else
-        {
-            std::cout << "!!!!! Update succeed, this is not expected behavior" << std::endl;
-            EXPECT_FALSE(rc.is_error());   // It should trigger a rollback and record should not exist after rollback
-        }
-
-        W_DO(test_env->btree_scan(_stid_list[0], s));
-        EXPECT_EQ (3, s.rownum);
-        EXPECT_EQ (std::string("aa1"), s.minkey);
-        EXPECT_EQ (std::string("aa3"), s.maxkey);
-        return RCOK;
-    }
-};
-
-
-/* Passing - M3 */
-TEST (RestartTest, SimpleN3) {
+/* Passing - M3 *
+TEST (RestartTest, MultiPageInFlightMultithrdN3) {
     test_env->empty_logdata_dir();
-    restart_simple2 context;
+    restart_multi_page_inflight_multithrd2 context;
+
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
-    options.restart_mode = m3_default_restart; // minimal logging, scan query triggers on_demand recovery
-    EXPECT_EQ(test_env->runRestartTest(&context, &options, true), 0);  // use lock
+    options.restart_mode = m3_default_restart; // minimal logging, nothing to recover 
+                                               // but go through Log Analysis backward scan loop and 
+                                               // process log records
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true), 0); // use_locks
 }
-/**/
+**/
 
-/* Not passing - M3 */
-TEST (RestartTest, SimpleC3) {
+/* Not passing - M3: xct.cpp (630) put_in_order, breaks in retail build but fine in debug build, timing????  *
+TEST (RestartTest, MultiPageInFlightMultithrdC3) {
     test_env->empty_logdata_dir();
-    restart_simple2 context;
+    restart_multi_page_inflight_multithrd2 context;
+
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m3_default_restart; // minimal logging, scan query triggers on_demand recovery
-    EXPECT_EQ(test_env->runRestartTest(&context, &options, true), 0);  // use lock
+                                               // No delay because no restart child thread
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true), 0);  // use_locks
 }
-/**/
+**/
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

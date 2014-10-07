@@ -2789,7 +2789,8 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
         _buffer[idx].tag = t_btree_p;
 
         btree_page_h p;
-        p.fix_nonbufferpool_page(_buffer + idx);
+        p.fix_nonbufferpool_page(_buffer + idx);    // Page is marked as not buffer pool managed through this call
+                                                    // This is important for minimal logging of page rebalance operation        
         if (lsn_t::null != page_emlsn)
             return (smlevel_0::log->recover_single_page(p, page_emlsn, true /*actual_emlsn*/));
         else
@@ -2797,14 +2798,25 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
     }
     else if (checksum != page.checksum) 
     {
-        ERROUT(<<"bf_tree_m: bad page checksum in page " << shpid);
+        if (lsn_t::null == page_emlsn)    
+        {
+            // User transaction encounter a page corruption during normal page loading
+            ERROUT(<<"bf_tree_m: bad page checksum in page " << shpid << ", recovery via Single Page REcovery");
+        }
+        else
+        {
+            // Force page load due to recovery
+            DBGOUT3(<<"bf_tree_m: force load with incorrect page checksum in page " << shpid << ", recovery via Single Page REcovery");            
+        }
         // Checksum didn't agree! this page image is completely
         // corrupted and we have to recover the page from scratch.
 
         if (parent == NULL) 
         {
+            // No parent page, caller is not a user transaction
             if (lsn_t::null != page_emlsn)
             {
+                DBGOUT3(<<"_check_read_page(): use emlsn gathered from Log Analysis for recovery: " << page_emlsn);            
                 // We have the LSN identified during Log Analysis,
                 // try the Single Page Recovery in this case even the
                 // parent page is not available
@@ -2819,7 +2831,8 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
                 _buffer[idx].pid = pid;
                 _buffer[idx].tag = t_btree_p;               
                 btree_page_h p;
-                p.fix_nonbufferpool_page(_buffer + idx);
+                p.fix_nonbufferpool_page(_buffer + idx);  // Page is marked as not buffer pool managed through this call
+                                                          // This is important for minimal logging of page rebalance operation                
                 W_DO(smlevel_0::log->recover_single_page(p, page_emlsn, true /*actual_emlsn*/));
             }
             else
@@ -2830,7 +2843,16 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
                 return RC(eNO_PARENT_SPR);
             }
         }
-        W_DO(_try_recover_page(parent, idx, vol, shpid, true));
+        else
+        {
+            // Has parent page, caller is a user transaction
+            // Check the input parameter page_emlsn
+            // Valid page_emlsn: force loading a page while page_emlsn was from Log Analysis, use it to recover
+            // Invalid page_emlsn: normal page loading due to user transaction, use emlsn from parent to recover
+
+            DBGOUT3(<<"_check_read_page(): Caller is a user transaction, recovery with known parent page");
+            W_DO(_try_recover_page(parent, idx, vol, shpid, true, page_emlsn));
+        }
     }
 
     // Then, page ID must match.
@@ -2865,14 +2887,17 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
 #if W_DEBUG_LEVEL>0
         debug_dump(std::cerr);
 #endif // W_DEBUG_LEVEL>0
-        W_DO(_try_recover_page(parent, idx, vol, shpid, false /*corrupted*/));
+
+        DBGOUT3(<<"bf_tree_m::_check_read_page: After recovery, targert page emlsn < parent emlsn"
+                << ", recover again without page_emlsn (From Log Analysis)");
+        W_DO(_try_recover_page(parent, idx, vol, shpid, false /*corrupted*/, lsn_t::null));
     }
     // else child_emlsn == lsn. we are ok.
     return RCOK;
 }
 
 w_rc_t bf_tree_m::_try_recover_page(generic_page* parent, bf_idx idx, volid_t vol,
-                                    shpid_t shpid, bool corrupted) {
+                                    shpid_t shpid, bool corrupted, const lsn_t page_emlsn) {
     if (corrupted) {
         ::memset(&_buffer[idx], '\0', sizeof(generic_page));
         _buffer[idx].lsn = lsn_t::null;
@@ -2883,10 +2908,29 @@ w_rc_t bf_tree_m::_try_recover_page(generic_page* parent, bf_idx idx, volid_t vo
     btree_page_h parent_h;
     parent_h.fix_nonbufferpool_page(parent);
     lsn_t emlsn = parent_h.get_emlsn_general(recordid);
-    if (emlsn == lsn_t::null) {
+
+    // Has a valid page_emlsn from Log Analysis phase, use it instead
+    if (lsn_t::null != page_emlsn)
+    {
+        DBGOUT3(<<"bf_tree_m::_try_recover_page: Recovery a page with parent node, parent emlsn:"
+                << emlsn << ", page_emlsn (from Log Analysis): " << page_emlsn << ", use page_emlsn for recovery");    
+        emlsn = page_emlsn;
+    }
+    else
+    {
+        DBGOUT3(<<"bf_tree_m::_try_recover_page: Recovery a page with parent node, parent emlsn:"
+                << emlsn << ", no page_emlsn (from Log Analysis), use parent for recovery");        
+    }
+
+    if (emlsn == lsn_t::null) 
+    {
+        // Parent page does not have emlsn, and no page_emlsn from Log Analysis
+        // Nothing we can do at this point
         return RCOK; // this can happen when the page has been just created.
     }
+
     btree_page_h p;
-    p.fix_nonbufferpool_page(_buffer + idx);
+    p.fix_nonbufferpool_page(_buffer + idx);    // Page is marked as not buffer pool managed through this call
+                                                // This is important for minimal logging of page rebalance operation
     return smlevel_0::log->recover_single_page(p, emlsn);
 }

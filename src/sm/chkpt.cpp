@@ -910,7 +910,8 @@ try
                 }
 
                 if ((xd->state() == xct_t::xct_ended) ||
-                    (xd->state() == xct_t::xct_freeing_space))
+                    (xd->state() == xct_t::xct_freeing_space) ||
+                    (xd->state() == xct_t::xct_stale))
                 {
                     // In xct_t::_commit(), the txn state was changed to xct_freeing_space
                     // first, then log the free space log recorsd, followed by the txn complete
@@ -1085,7 +1086,7 @@ try
                         w_assert1(NULL == lock);
 
                         if (0 != per_chunk_lock_count)
-                        {
+                        {                      
                             // Pick up the last set
                             LOG_INSERT(chkpt_xct_lock_log(xd->tid(), per_chunk_lock_count,
                                        lock_mode, lock_hash), 0);
@@ -1117,7 +1118,6 @@ try
             {
                 // Filled up one log record, write a Transaction Table Log out
                 // before processing more transactions
-
                 LOG_INSERT(chkpt_xct_tab_log(youngest, per_chunk_txn_count,
                                    tid, state, last_lsn, undo_nxt, first_lsn), 0);
             }

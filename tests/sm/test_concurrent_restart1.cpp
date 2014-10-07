@@ -18,6 +18,11 @@ const int SHORT_WAIT_TIME = 100; // Wait 1/10 of a  second
 //       Single index
 // Depending on the restart mode, the test results might vary and therefore tricky
 
+// Due to the number of test cases, broke them into 2 suites:
+// Test_concurrent_restart1 - this file
+// Test_concurrent_restart2
+
+
 lsn_t get_durable_lsn() {
     lsn_t ret;
     ss_m::get_durable_lsn(ret);
@@ -121,10 +126,10 @@ public:
             ::usleep(WAIT_TIME);            
         }
 
-        // Verify, if M3, the scan query trigger the on_demand REDO (page loading)
+        // Verify, if M3, the update query triggers on_demand REDO (page loading)
         // and UNDO (transaction rollback)
 
-        // Both normal and crash shutdown, regardling which Instart Restart milestone, 
+        // Both normal and crash shutdowns, regardless Instart Restart milestone, 
         // the update should fail due to in-flight transaction rolled back alreadly
         rc = test_env->btree_update_and_commit(_stid_list[0], "aa4", "dataXXX");
         if (rc.is_error())
@@ -308,7 +313,7 @@ TEST (RestartTest, ComplexInFlightCF) {
 /* Passing - M3 */
 TEST (RestartTest, ComplexInFlightN3) {
     test_env->empty_logdata_dir();
-    restart_simple context;
+    restart_complex_in_flight context;
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m3_default_restart; // minimal logging, nothing to recover 
@@ -321,7 +326,7 @@ TEST (RestartTest, ComplexInFlightN3) {
 /* Passing - M3 */
 TEST (RestartTest, ComplexInFlightC3) {
     test_env->empty_logdata_dir();
-    restart_simple context;
+    restart_complex_in_flight context;
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m3_default_restart; // minimal logging, scan query triggers on_demand recovery
@@ -421,6 +426,29 @@ TEST (RestartTest, ComplexInFlightChkptCF) {
 }
 /**/
 
+/* Passing - M3 */
+TEST (RestartTest, ComplexInFlightChkptN3) {
+    test_env->empty_logdata_dir();
+    restart_complex_in_flight_chkpt context;
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m3_default_restart; // minimal logging, nothing to recover 
+                                               // but go through Log Analysis backward scan loop and 
+                                               // process log records
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
+}
+/**/
+
+/* Passing - M3 */
+TEST (RestartTest, ComplexInFlightChkptC3) {
+    test_env->empty_logdata_dir();
+    restart_complex_in_flight_chkpt context;
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m3_default_restart; // minimal logging, scan query triggers on_demand recovery
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
+}
+/**/
 
 // Test case with 1 transaction (in-flight with more than one page of data)
 // no concurrent activities during restart
@@ -443,6 +471,7 @@ public:
     w_rc_t post_shutdown(ss_m *) {
         output_durable_lsn(4);
         x_btree_scan_result s;
+        w_rc_t rc;
 
         // Wait before the final verfication
         // Note this 'in_restart' check is not reliable if on_demand restart (m3),
@@ -454,9 +483,25 @@ public:
             ::usleep(WAIT_TIME);            
         }
 
+        // Verify, if M3, the insert query triggers on_demand REDO (page loading)
+        // and UNDO (transaction rollback)
+
+        // Both normal and crash shutdowns, regardless Instart Restart milestone, 
+        // the insert should succeed due to in-flight transaction rolled back alreadly
+        rc = test_env->btree_insert_and_commit(_stid_list[0], "aa4", "dataXXX");
+        if (rc.is_error())
+        {
+            std::cout << "Insertion failed, not expected behavior" << std::endl;
+            EXPECT_TRUE(rc.is_error());   // In M3, insert operation should trigger UNDO
+        }
+        else
+        {
+            std::cout << "Insertion succeed, this is expected behavior" << std::endl;
+        }
+
         // Verify
         W_DO(test_env->btree_scan(_stid_list[0], s));
-        EXPECT_EQ (0, s.rownum);
+        EXPECT_EQ (1, s.rownum);
         return RCOK;
     }
 };
@@ -502,6 +547,30 @@ TEST (RestartTest, MultiPageInFlightCF) {
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_full_logging_restart; // full logging
     EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Passing - M3 */
+TEST (RestartTest, MultiPageInFlightN3) {
+    test_env->empty_logdata_dir();
+    restart_multi_page_in_flight context;
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m3_default_restart; // minimal logging, nothing to recover 
+                                               // but go through Log Analysis backward scan loop and 
+                                               // process log records
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
+}
+/**/
+
+/* Passing - M3 */
+TEST (RestartTest, MultiPageInFlightC3) {
+    test_env->empty_logdata_dir();
+    restart_multi_page_in_flight context;
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m3_default_restart; // minimal logging, insert triggers on_demand recovery
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
 }
 /**/
 
@@ -589,6 +658,29 @@ TEST (RestartTest, MultiPageAbortCF) {
 }
 /**/
 
+/* Passing - M3 */
+TEST (RestartTest, MultiPageAbortN3) {
+    test_env->empty_logdata_dir();
+    restart_multi_page_abort context;
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m3_default_restart; // minimal logging, nothing to recover 
+                                               // but go through Log Analysis backward scan loop and 
+                                               // process log records
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
+}
+/**/
+
+/* Passing - M3 */
+TEST (RestartTest, MultiPageAbortC3) {
+    test_env->empty_logdata_dir();
+    restart_multi_page_abort context;
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m3_default_restart; // minimal logging, scan query triggers on_demand recovery
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
+}
+/**/
 
 // Test case with simple transactions (1 in-flight) and crash shutdown, one concurrent chkpt
 class restart_concurrent_chkpt : public restart_test_base  {
@@ -682,6 +774,29 @@ TEST (RestartTest, ConcurrentChkptCF) {
 }
 /**/
 
+/* Passing - M3 */
+TEST (RestartTest, ConcurrentChkptN3) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_chkpt context;
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m3_default_restart; // minimal logging, nothing to recover 
+                                               // but go through Log Analysis backward scan loop and 
+                                               // process log records
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
+}
+/**/
+
+/* Passing - M3 */
+TEST (RestartTest, ConcurrentChkptC3) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_chkpt context;
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m3_default_restart; // minimal logging, scan query triggers on_demand recovery
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
+}
+/**/
 
 // Test case with simple transactions (1 in-flight)
 // one concurrent txn with conflict during redo phase
@@ -801,6 +916,30 @@ TEST (RestartTest, SimpleConcurrentRedoCF) {
 }
 /**/
 
+/* Passing - M3 */
+TEST (RestartTest, SimpleConcurrentRedoN3) {
+    test_env->empty_logdata_dir();
+    restart_simple_concurrent_redo context;
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m3_default_restart; // minimal logging, nothing to recover 
+                                               // but go through Log Analysis backward scan loop and 
+                                               // process log records
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
+}
+/**/
+
+/* Passing - M3 */
+TEST (RestartTest, SimpleConcurrentRedoC3) {
+    test_env->empty_logdata_dir();
+    restart_simple_concurrent_redo context;
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m3_default_restart; // minimal logging, scan query triggers on_demand recovery
+                                               // No delay in redo because no restart child thread
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
+}
+/**/
 
 // Test case with multi-page b-tree, simple transactions (1 in-flight)
 // one concurrent txn with conflict during redo phase
@@ -927,728 +1066,28 @@ TEST (RestartTest, MultiConcurrentRedoCF) {
 }
 /**/
 
-
-// Test case with simple transactions (1 in-flight) and crash shutdown, 
-// one concurrent txn with conflict during undo phase
-class restart_simple_concurrent_undo : public restart_test_base  {
-public:
-    w_rc_t pre_shutdown(ss_m *ssm) {
-        _stid_list = new stid_t[1];
-        output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
-        output_durable_lsn(2);
-        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa3", "data3"));
-
-        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
-        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa2", "data2"));
-
-        W_DO(test_env->begin_xct());
-        W_DO(test_env->btree_insert(_stid_list[0], "aa4", "data4"));             // in-flight
-
-        output_durable_lsn(3);
-        return RCOK;
-    }
-
-    w_rc_t post_shutdown(ss_m *) {
-        output_durable_lsn(4);
-        x_btree_scan_result s;
-        bool fCrash = test_env->_restart_options->shutdown_mode;
-        int32_t restart_mode = test_env->_restart_options->restart_mode;
-        // Wiat a short time, this is to allow REDO to finish,
-        // but hit the UNDO phase using specified restart mode which waits before UNDO
-        ::usleep(SHORT_WAIT_TIME);
-
-        // Verify
-        w_rc_t rc = test_env->btree_scan(_stid_list[0], s);   // Should have only one page of data
-                                                      // while restart is on for this page
-                                                      // although REDO is done, UNDO is not
-                                                      // therefore the concurrent txn should not be allowed
-        if (fCrash && restart_mode < m3_default_restart) 
-        {
-            // M2, error is expected
-            if (rc.is_error()) 
-            {
-                DBGOUT3(<<"restart_simple_concurrent_undo: tree_scan conflict: " << rc);
-
-                // Abort the failed scan txn
-                test_env->abort_xct();
-
-                // Sleep to give Recovery sufficient time to finish
-                while (true == test_env->in_restart()) {
-                    // Concurrent restart is still going on, wait
-                    ::usleep(WAIT_TIME);
-                }
-
-                // Try again
-                W_DO(test_env->btree_scan(_stid_list[0], s));
-
-                EXPECT_EQ (3, s.rownum);
-                EXPECT_EQ (std::string("aa1"), s.minkey);
-                EXPECT_EQ (std::string("aa3"), s.maxkey);
-                return RCOK;
-            }
-            else 
-            {
-                std::cerr << "restart_simple_concurrent_undo: scan operation should not succeed"<< std::endl;
-                return RC(eINTERNAL);
-            }
-        }
-        else 
-        {
-            // M3, blocking operation, it should succeed
-            W_DO(test_env->btree_scan(_stid_list[0], s));
-            EXPECT_EQ (3, s.rownum);
-            EXPECT_EQ (std::string("aa1"), s.minkey);
-            EXPECT_EQ (std::string("aa3"), s.maxkey);
-            return RCOK;
-        }
-    }
-};
-
-/* Passing */
-TEST (RestartTest, SimpleConcurrentUndoN) {
+/* Passing - M3 */
+TEST (RestartTest, MultiConcurrentRedoN3) {
     test_env->empty_logdata_dir();
-    restart_simple_concurrent_undo context;
+    restart_multi_concurrent_redo context;
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
-    options.restart_mode = m2_undo_delay_restart; // minimal logging
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0); 
+    options.restart_mode = m3_default_restart; // minimal logging, nothing to recover 
+                                               // but go through Log Analysis backward scan loop and 
+                                               // process log records
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
 }
 /**/
 
-/* Passing */
-TEST (RestartTest, SimpleConcurrentUndoNF) {
+/* Passing - M3 */
+TEST (RestartTest, MultiConcurrentRedoC3) {
     test_env->empty_logdata_dir();
-    restart_simple_concurrent_undo context;
-    restart_test_options options;
-    options.shutdown_mode = normal_shutdown;
-    options.restart_mode = m2_undo_fl_delay_restart; // minimal logging
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0); 
-}
-/**/
-
-/* Passing */
-TEST (RestartTest, SimpleConcurrentUndoC) {
-    test_env->empty_logdata_dir();
-    restart_simple_concurrent_undo context;
+    restart_multi_concurrent_redo context;
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
-    options.restart_mode = m2_undo_delay_restart; // minimal logging
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0); 
-}
-/**/
-
-/* Passing */
-TEST (RestartTest, SimpleConcurrentUndoCF) {
-    test_env->empty_logdata_dir();
-    restart_simple_concurrent_undo context;
-    restart_test_options options;
-    options.shutdown_mode = simulated_crash;
-    options.restart_mode = m2_undo_fl_delay_restart; // minimal logging
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
-}
-/**/
-
-
-// Test case with more than one page of data (1 in-flight), one concurrent txn to
-// access a non-dirty page so it should be allowed
-class restart_concurrent_no_conflict : public restart_test_base  {
-public:
-    w_rc_t pre_shutdown(ss_m *ssm) {
-        _stid_list = new stid_t[1];
-        output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
-        output_durable_lsn(2);
-
-        // Multiple committed transactions with many pages
-        W_DO(test_env->btree_populate_records(_stid_list[0], false, t_test_txn_commit, true));  // flags: No checkpoint, commit, one transaction per insert
-
-        // Issue a checkpoint to make sure these committed txns are flushed
-        W_DO(ss_m::checkpoint());         
-
-        // Now insert more records, these records are at the beginning of B-tree
-        // therefore if these records cause a page rebalance, it would be in the parent page        
-        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa3", "data3"));
-        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
-        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa2", "data2"));
-
-        W_DO(test_env->begin_xct());
-        W_DO(test_env->btree_insert(_stid_list[0], "aa4", "data4"));             // in-flight
-
-        output_durable_lsn(3);
-        return RCOK;
-    }
-
-    w_rc_t post_shutdown(ss_m *) {
-        output_durable_lsn(4);
-        x_btree_scan_result s;
-
-        // Wait a while, this is to give REDO a chance to reload the root page
-        // but still wait in REDO phase due to test mode
-        ::usleep(SHORT_WAIT_TIME*5);
-
-        // Wait in restart both REDO and UNDO, this is to ensure 
-        // user transaction encounter concurrent restart
-        // Insert into the first page, depending on how far the REDO goes,
-        // the insertion might or might not succeed
-        W_DO(test_env->begin_xct());
-        w_rc_t rc = test_env->btree_insert(_stid_list[0], "aa7", "data4");
-        if (rc.is_error())
-        {
-            // Conflict
-            // In M2 restart mode using commit_lsn, conflict is possible if 
-            // the entire buffer pool was never flushed, the commit_lsn would
-            // be the earliest LSN, therefore it blocks all user transactions
-            DBGOUT3(<<"restart_concurrent_no_conflict: tree_insertion conflict");
-            W_DO(test_env->abort_xct());
-        }
-        else
-        {
-            // Succeed
-            DBGOUT3(<<"restart_concurrent_no_conflict: tree_insertion succeeded");           
-            W_DO(test_env->commit_xct());
-        }
-
-        // Wait before the final verfication
-        // Note this 'in_restart' check is not reliable if on_demand restart (m3),
-        // but it is okay because with on_demand restart, it blocks concurrent 
-        // transactions instead of failing concurrent transactions       
-        while (true == test_env->in_restart())
-        {
-            // Concurrent restart is still going on, wait
-            ::usleep(WAIT_TIME);            
-        }
-
-        // Verify
-        W_DO(test_env->btree_scan(_stid_list[0], s));
-        int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
-        recordCount += 3;  // Count after checkpoint
-        if (!rc.is_error())        
-            recordCount += 1;  // Count after concurrent insert
-
-        EXPECT_EQ (recordCount, s.rownum);
-        if (!rc.is_error())
-            EXPECT_EQ (std::string("aa1"), s.minkey);
-
-        return RCOK;
-    }
-};
-
-/* Passing, WOD with minimal logging */
-TEST (RestartTest, ConcurrentNoConflictN) {
-    test_env->empty_logdata_dir();
-    restart_concurrent_no_conflict context;
-    restart_test_options options;
-    options.shutdown_mode = normal_shutdown;
-    options.restart_mode = m2_both_delay_restart; // minimal logging
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
-}
-/**/
-
-/* Passing, WOD with minimal logging */
-TEST (RestartTest, ConcurrentNoConflictNF) {
-    test_env->empty_logdata_dir();
-    restart_concurrent_no_conflict context;
-    restart_test_options options;
-    options.shutdown_mode = normal_shutdown;
-    options.restart_mode = m2_both_fl_delay_restart; // full logging
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
-}
-/**/
-
-/* Passing, minimal logging */
-TEST (RestartTest, ConcurrentNoConflictC) {
-    test_env->empty_logdata_dir();
-    restart_concurrent_no_conflict context;
-    restart_test_options options;
-    options.shutdown_mode = simulated_crash;
-    options.restart_mode = m2_both_delay_restart; // minimal logging
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
-}
-/**/
-
-/* Passing, full logging */
-TEST (RestartTest, ConcurrentNoConflictCF) {
-    test_env->empty_logdata_dir();
-    restart_concurrent_no_conflict context;
-    restart_test_options options;
-    options.shutdown_mode = simulated_crash;
-    options.restart_mode = m2_both_fl_delay_restart; // full logging
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
-}
-/**/
-
-
-// Test case with more than one page of data (1 in-flight) and crash shutdown, one concurrent txn to
-// access an in_doubt page so it should not be allowed
-class restart_concurrent_conflict : public restart_test_base  {
-public:
-    w_rc_t pre_shutdown(ss_m *ssm) {
-        _stid_list = new stid_t[1];
-        output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
-        output_durable_lsn(2);
-
-        // Multiple committed transactions with many pages
-        W_DO(test_env->btree_populate_records(_stid_list[0], false, t_test_txn_commit, true));   // flags: No checkpoint, commit, one transaction per insert
-
-        // Issue a checkpoint to make sure these committed txns are flushed
-        W_DO(ss_m::checkpoint());
-
-        // Now insert more records, make sure these records are at 
-        // the end of B-tree (append)
-        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "zz3", "data3"));
-        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "zz1", "data1"));
-        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "zz2", "data2"));
-
-        W_DO(test_env->begin_xct());
-        W_DO(test_env->btree_insert(_stid_list[0], "zz4", "data4"));     // in-flight
-
-        output_durable_lsn(3);
-        return RCOK;
-    }
-
-    w_rc_t post_shutdown(ss_m *) {
-        output_durable_lsn(4);
-        x_btree_scan_result s;
-        const bool fCrash = test_env->_restart_options->shutdown_mode;
-        const int32_t restart_mode = test_env->_restart_options->restart_mode;
-
-        // Wait a while, this is to give REDO a chance to reload the root page
-        // but still wait in REDO phase due to test mode
-        ::usleep(SHORT_WAIT_TIME*5);
-
-        // Wait in restart, this is to ensure user transaction encounter concurrent restart
-        // Insert into the last page which should cause a conflict        
-        W_DO(test_env->begin_xct());
-        w_rc_t rc = test_env->btree_insert(_stid_list[0], "zz5", "data5");
-        if (rc.is_error())
-        {
-            // Failed to insert
-            if (!fCrash)            
-            {
-                // Normal shutdown, we should not have failure
-                std::cerr << "restart_concurrent_conflict: tree_insertion failed on a normal shutdown, un-expected"<< std::endl;
-                return RC(eINTERNAL);
-            }
-            else
-            {
-                // Crash shutdown
-                if (restart_mode < m3_default_restart)
-                {
-                    // M2, error is expected, simply abort the transaction
-                    W_DO(test_env->abort_xct());           // M2 behavior, expected
-                }
-                else
-                {
-                    // M3, we should not see failure
-                    std::cerr << "restart_concurrent_conflict: tree_insertion failed on a M3 crash shutdown, un-expected"<< std::endl;
-                    return RC(eINTERNAL);
-                }               
-            }
-        }
-        else
-        {
-            // Insertion succeeded
-            if ((fCrash) && (restart_mode < m3_default_restart))
-            {
-                // M2 crash shutdown, insertion should not succeed
-                std::cerr << "restart_concurrent_conflict: tree_insertion succeed on M2 crash shutdown, un-expected"<< std::endl;
-                return RC(eINTERNAL);               
-            }
-            else
-            {
-                // If normal shutdown or in M3 (both normal or crash)
-                // insertion should succeed
-                // Roll it back so the record count stays the same
-                W_DO(test_env->abort_xct());
-            }           
-        }
-        // Wait before the final verfication
-        // Note this 'in_restart' check is not reliable if on_demand restart (m3),
-        // but it is okay because with on_demand restart, it blocks concurrent 
-        // transactions instead of failing concurrent transactions
-        while (true == test_env->in_restart())
-        {
-            // Concurrent restart is still going on, wait
-            ::usleep(WAIT_TIME);            
-        }
-
-        // Verify
-        rc = test_env->btree_scan(_stid_list[0], s);
-        if (rc.is_error())
-        {
-            test_env->abort_xct();       
-            std::cerr << "restart_concurrent_conflict: failed to scan the tree, try again: " << rc << std::endl;        
-            ::usleep(WAIT_TIME);
-            rc = test_env->btree_scan(_stid_list[0], s);
-            if (rc.is_error())
-            {
-                std::cerr << "restart_concurrent_conflict: 2nd try failed again: " << rc << std::endl;                    
-                return RC(eINTERNAL);
-            }
-        }
-
-        int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;  // Count before checkpoint
-        recordCount += 3;  // Count after checkpoint
-
-        EXPECT_EQ (recordCount, s.rownum);
-        EXPECT_EQ (std::string("zz3"), s.maxkey);
-        return RCOK;
-    }
-};
-
-/* Passing, WOD with minimal logging */
-TEST (RestartTest, ConcurrentConflictN) {
-    test_env->empty_logdata_dir();
-    restart_concurrent_conflict context;
-    restart_test_options options;
-    options.shutdown_mode = normal_shutdown;
-    options.restart_mode = m2_both_delay_restart; // minimal logging
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
-}
-/**/
-
-/* Passing, full logging */
-TEST (RestartTest, ConcurrentConflictNF) {
-    test_env->empty_logdata_dir();
-    restart_concurrent_conflict context;
-    restart_test_options options;
-    options.shutdown_mode = normal_shutdown;
-    options.restart_mode = m2_both_fl_delay_restart; // full logging
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0); 
-}
-/**/
-
-/* Passing, minimal logging */
-TEST (RestartTest, ConcurrentConflictC) {
-    test_env->empty_logdata_dir();
-    restart_concurrent_conflict context;
-    restart_test_options options;
-    options.shutdown_mode = simulated_crash;
-    options.restart_mode = m2_both_delay_restart; // minimal logging
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
-}
-/**/
-
-/* Passing, full logging */
-TEST (RestartTest, ConcurrentConflictCF) {
-    test_env->empty_logdata_dir();
-    restart_concurrent_conflict context;
-    restart_test_options options;
-    options.shutdown_mode = simulated_crash;
-    options.restart_mode = m2_both_fl_delay_restart; // full logging
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
-}
-/**/
-
-// Test case with more than one page of data (1 in-flight) and crash shutdown, multiple concurrent txns
-// some should succeeded (no conflict) while others failed (conflict), also one 'conflict' user transaction
-// after restart which should succeed
-class restart_multi_concurrent_conflict : public restart_test_base  {
-public:
-    w_rc_t pre_shutdown(ss_m *ssm) {
-        _stid_list = new stid_t[1];
-        output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
-        output_durable_lsn(2);
-
-        // Multiple committed transactions with many pages
-        W_DO(test_env->btree_populate_records(_stid_list[0], false, t_test_txn_commit, true));   // flags: No checkpoint, commit, one transaction per insert
-
-        // Issue a checkpoint to make sure these committed txns are flushed
-        W_DO(ss_m::checkpoint());
-
-        // Now insert more records, make sure these records are at 
-        // the end of B-tree (append)
-        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "zz3", "data3"));
-        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "zz1", "data1"));
-        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "zz2", "data2"));
-
-        W_DO(test_env->begin_xct());
-        W_DO(test_env->btree_insert(_stid_list[0], "zz7", "data4"));     // in-flight
-
-        if (test_env->_restart_options->enable_checkpoints)
-            W_DO(ss_m::checkpoint());
-
-        output_durable_lsn(3);
-        return RCOK;
-    }
-
-    w_rc_t post_shutdown(ss_m *) {
-        output_durable_lsn(4);
-        x_btree_scan_result s;
-        bool fCrash = test_env->_restart_options->shutdown_mode;
-        bool m3_restart = test_env->_restart_options->restart_mode >= m3_default_restart;
-        bool checkpoints_enabled = test_env->_restart_options->enable_checkpoints;
-        // Wait a while, this is to give REDO a chance to reload the root page
-        // but still wait in REDO phase due to test mode
-        ::usleep(SHORT_WAIT_TIME*5);
-
-        // Wait in restart, this is to ensure user transaction encounter concurrent restart
-
-        int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;  // Count before checkpoint
-        recordCount += 3;  // Count after checkpoint
-
-        // Insert into the first page which might or might not succeed depending 
-        // on the restart mode (M2 or M3, meaning commit_lsn or lock)
-        // if using commit_lsn and if the entire buffer pool was never flushed then
-        // commit_lsn would be the first lsn and no concurrent transactions would
-        // be allowed
-        W_DO(test_env->begin_xct());
-        w_rc_t rc = test_env->btree_insert(_stid_list[0], "aa1", "data4");
-        if (rc.is_error()) 
-        {
-            // Will failed if the REDO phase did not process far enough, this is not an error
-            W_DO(test_env->abort_xct());            
-        }
-        else
-        {
-            // Succeeded
-            recordCount += 1;
-            W_DO(test_env->commit_xct());        
-        }
-        if(checkpoints_enabled)
-            W_DO(ss_m::checkpoint());
-        // Insert into the last page which should cause a conflict        
-        W_DO(test_env->begin_xct());
-        rc = test_env->btree_insert(_stid_list[0], "zz5", "data4");
-        if ((rc.is_error() && fCrash && !m3_restart) || (!rc.is_error() && (!fCrash || m3_restart))) // Only m2 restart mode with crash shutdown should fail,
-        {    // m3 rm and m2 rm with normal shutdown should succeed
-            // Expected behavior
-            W_DO(test_env->abort_xct());            
-        }
-        else
-        {
-            // The rest of the scenarios
-            if ((!fCrash || m3_restart) && rc.is_error())
-            {
-                // Normal shutdown or M3, should have succeeded, did not
-                std::cerr << "restart_multi_concurrent_conflict: tree_insertion should have succeeded but failed" << rc;
-                return RC(eINTERNAL);
-            }
-            else if (fCrash && !m3_restart && !rc.is_error())
-            { 
-                // Crash, not M3, insertion should failed but succeeded
-            
-                std::cerr << "restart_multi_concurrent_conflict: tree_insertion should failed but succeeded"<< std::endl;            
-                return RC(eINTERNAL);
-            }
-        if (rc.is_error())
-            test_env->abort_xct();
-        }
-
-        // Wait before the final verfication
-        // Note this 'in_restart' check is not reliable if on_demand restart (m3),
-        // but it is okay because with on_demand restart, it blocks concurrent 
-        // transactions instead of failing concurrent transactions       
-        while (true == test_env->in_restart())
-        {
-            // Concurrent restart is still going on, wait
-            ::usleep(WAIT_TIME);            
-        }
-
-        if(checkpoints_enabled)
-            W_DO(ss_m::checkpoint());
-
-        // Tried the failed txn again and it should succeed this time
-        W_DO(test_env->begin_xct());
-        W_DO(test_env->btree_insert(_stid_list[0], "zz5", "data4"));
-        W_DO(test_env->commit_xct());
-        recordCount += 1;
-
-        // Verify
-        W_DO(test_env->btree_scan(_stid_list[0], s));
-
-        EXPECT_EQ (recordCount, s.rownum);
-        EXPECT_EQ (std::string("zz5"), s.maxkey);
-        return RCOK;
-    }
-};
-
-/* Passing, WOD with minimal logging */
-TEST (RestartTest, MultiConcurrentConflictN) {
-    test_env->empty_logdata_dir();
-    restart_multi_concurrent_conflict context;
-    restart_test_options options;
-    options.shutdown_mode = normal_shutdown;
-    options.restart_mode = m2_both_delay_restart; // minimal logging
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
-}
-/**/
-
-/* Passing, full logging */
-TEST (RestartTest, MultiConcurrentConflictNF) {
-    test_env->empty_logdata_dir();
-    restart_multi_concurrent_conflict context;
-
-    restart_test_options options;
-    options.shutdown_mode = normal_shutdown;
-    options.restart_mode = m2_both_fl_delay_restart; // full logging
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0); 
-}
-/**/
-
-/* Passing, minimal logging */
-TEST (RestartTest, MultiConcurrentConflictC) {
-    test_env->empty_logdata_dir();
-    restart_multi_concurrent_conflict context;
- 
-    restart_test_options options;
-    options.shutdown_mode = simulated_crash;
-    options.restart_mode = m2_both_delay_restart; // minimal logging
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0); 
-}
-/**/
-
-/* Passing, full logging */
-TEST (RestartTest, MultiConcurrentConflictCF) {
-    test_env->empty_logdata_dir();
-    restart_multi_concurrent_conflict context;
- 
-    restart_test_options options;
-    options.shutdown_mode = simulated_crash;
-    options.restart_mode = m2_both_fl_delay_restart; // minimal logging
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);   // true = simulated crash
-                                                                  // full logging
-}
-/**/
-
-/* Passing, full logging, checkpoints */
-TEST (RestartTest, MultiConcurrentConflictNFC) {
-    test_env->empty_logdata_dir();
-    restart_multi_concurrent_conflict context;
-
-    restart_test_options options;
-    options.shutdown_mode = normal_shutdown;
-    options.restart_mode = m2_both_fl_delay_restart; // full logging
-    options.enable_checkpoints = true;
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0); 
-}
-/**/
-
-
-// Test case with simple transactions (1 in-flight)
-// one concurrent txn with exact same insert during redo phase
-class restart_concurrent_same_insert : public restart_test_base  {
-public:
-    w_rc_t pre_shutdown(ss_m *ssm) {
-        _stid_list = new stid_t[1];
-        output_durable_lsn(1);
-        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
-        output_durable_lsn(2);
-        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa3", "data3"));
-
-        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
-        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa2", "data2"));
-
-        W_DO(test_env->begin_xct());
-        W_DO(test_env->btree_insert(_stid_list[0], "aa4", "data4"));             // in-flight
-
-        output_durable_lsn(3);
-        return RCOK;
-    }
-
-    w_rc_t post_shutdown(ss_m *) {
-        output_durable_lsn(4);
-        const bool fCrash = test_env->_restart_options->shutdown_mode;
-        const int32_t restart_mode = test_env->_restart_options->restart_mode;
-        x_btree_scan_result s;
-        // No wait in test code, but wait in restart
-        // This is to ensure concurrency
-        
-        if (fCrash && restart_mode < m3_default_restart)
-        {    
-            // M2
-            W_DO(test_env->begin_xct());
-            w_rc_t rc = test_env->btree_insert(_stid_list[0], "aa4", "data4");  // Insert same record that was in-flight, should be possible.
-            // Will fail in m2 due to conflict, should succeed in m3 (not immediately).
-
-            if (rc.is_error())
-            {
-                // Expected failure
-                DBGOUT3(<<"restart_concurrent_same_insert: insert failed: " << rc);
-
-                // Abort the failed scan txn
-                test_env->abort_xct();
-
-                // Sleep to give Recovery sufficient time to finish
-                while (true == test_env->in_restart())
-                {
-                    // Concurrent restart is still going on, wait
-                    ::usleep(WAIT_TIME);            
-                }
-
-                // Try again, should work now
-                W_DO(test_env->begin_xct());                
-                W_DO(test_env->btree_insert(_stid_list[0], "aa4", "data4"));
-                W_DO(test_env->commit_xct());
-            }
-            else
-            {
-                std::cerr << "restart_concurrent_same_insert: insert operation should not succeed"<< std::endl;         
-                return RC(eINTERNAL);
-            }
-        } 
-        else 
-        {
-            // M3 behavior, blocking and it should succeed
-            W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa4", "data4"));
-        }
-
-        W_DO(test_env->btree_scan(_stid_list[0], s));
-        EXPECT_EQ (4, s.rownum);
-        EXPECT_EQ (std::string("aa1"), s.minkey);
-        EXPECT_EQ (std::string("aa4"), s.maxkey);
-        return RCOK;
-    }
-};
-
-/* Passing */
-TEST (RestartTest, ConcurrentSameInsertN) {
-    test_env->empty_logdata_dir();
-    restart_concurrent_same_insert context;
-    
-    restart_test_options options;
-    options.shutdown_mode = normal_shutdown;
-    options.restart_mode = m2_redo_delay_restart; // minimal logging
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
-}
-/**/
-
-/* Passing */
-TEST (RestartTest, ConcurrentSameInsertNF) {
-    test_env->empty_logdata_dir();
-    restart_concurrent_same_insert context;
-     
-    restart_test_options options;
-    options.shutdown_mode = normal_shutdown;
-    options.restart_mode = m2_redo_fl_delay_restart; // full logging
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
-}
-/**/
-
-/* Passing */
-TEST (RestartTest, ConcurrentSameInsertC) {
-    test_env->empty_logdata_dir();
-    restart_concurrent_same_insert context;
-     
-    restart_test_options options;
-    options.shutdown_mode = simulated_crash;
-    options.restart_mode = m2_redo_delay_restart; // minimal logging
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
-}
-/**/
-
-/* Passing */
-TEST (RestartTest, ConcurrentSameInsertCF) {
-    test_env->empty_logdata_dir();
-    restart_concurrent_same_insert context;
-     
-    restart_test_options options;
-    options.shutdown_mode = simulated_crash;
-    options.restart_mode = m2_redo_fl_delay_restart; // full logging
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+    options.restart_mode = m3_default_restart; // minimal logging, scan query triggers on_demand recovery
+                                               // No delay in redo because no restart child thread
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
 }
 /**/
 

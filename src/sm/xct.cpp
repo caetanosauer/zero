@@ -614,7 +614,11 @@ xct_t::put_in_order() {
     _oldest_tid = _xlist.last()->_tid;
     release_xlist_mutex();
 
-#if W_DEBUG_LEVEL > 2
+// TODO(Restart)... enable the checking in retail build, also generate error in retail
+//                           this is to prevent missing something in retail and weird error 
+//                           shows up in retail build much later
+
+// #if W_DEBUG_LEVEL > 2
     W_COERCE(acquire_xlist_mutex());
     {
         // make sure that _xlist is in order
@@ -622,12 +626,16 @@ xct_t::put_in_order() {
         tid_t t = tid_t::null;
         xct_t* xd;
         while ((xd = i.next()))  {
+            if (t >= xd->_tid)
+                ERROUT(<<"put_in_order: failed to satisfy t < xd->_tid, t: " << t << ", xd->tid: " << xd->_tid);
             w_assert1(t < xd->_tid);
         }
+        if (t > _nxt_tid)
+            ERROUT(<<"put_in_order: failed to satisfy t <= _nxt_tid, t: " << t << ", _nxt_tid: " << _nxt_tid);
         w_assert1(t <= _nxt_tid);
     }
     release_xlist_mutex();
-#endif 
+// #endif 
 }
 
 

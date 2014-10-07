@@ -103,10 +103,6 @@ bool RawLockQueue::delink(RawLock* predecessor, RawLock* target, RawLock* succes
 
 w_error_codes RawLockQueue::acquire(RawXct* xct, uint32_t hash, const okvl_mode& mode,
                 int32_t timeout_in_ms, bool conditional, bool check_only, RawLock** out) {
-
-// TODO(Restart)...
-DBGOUT1(<< "!!!!!!!!!  RawLockQueue::acquire: entering acquire lock");
-
     w_assert1(out != NULL);
     *out = NULL;
     if (check_only) {

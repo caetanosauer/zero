@@ -708,9 +708,10 @@ private:
      * @param[in] shpid Page ID
      * @param[in] corrupted Whether the page is corrupt (e.g., checksum
      * did not match). Otherwise, the page is just a little stale and Single-Page-Recovery is more efficient.
+     * @param[in] page_emlsn If not NULL, it is the last LSN gathered during Log Analysis     
      */
     w_rc_t _try_recover_page(generic_page* parent, bf_idx idx, volid_t vol,
-                             shpid_t shpid, bool corrupted);
+                             shpid_t shpid, bool corrupted, const lsn_t page_emlsn);
 
     /** used by fix_root and fix_virgin_root. */
     w_rc_t _latch_root_page(generic_page*& page, bf_idx idx, latch_mode_t mode, bool conditional);
