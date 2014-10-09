@@ -210,7 +210,7 @@ public:
      */
 
     /// Number of acquires.  A thread may hold more than once.
-    int                     latch_cnt() const { return _total_count; }
+    int                     latch_cnt() const {return _total_count;}
 
     /// How many threads hold the R/W lock.
     int                     num_holders() const;

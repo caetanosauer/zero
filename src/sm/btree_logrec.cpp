@@ -64,7 +64,8 @@ DBGOUT3( << "&&&& UNDO insertion, key: " << key);
         {
 // TODO(Restart)...        
             // If UNDO an insertion while full logging was used, and
-            // not able to locate the existing record, bug?
+            // not able to locate the existing record, bug?  
+            // See tese case 'MultiPageInFlightMultithrdCF' in test_restart_bugs
             DBGOUT3( << "&&&& UNDO insertion, not able to locate the key for UNDO with full logging: " << key);
         }
     }

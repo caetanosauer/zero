@@ -47,7 +47,7 @@ w_rc_t btree_populate_records_local(stid_t &stid,
     bool isMulti = keyPrefix != '\0';
     const int key_size = isMulti ? 6 : 5;
     const int data_size = btree_m::max_entry_size() - key_size - 1;
-//    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
+    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
 //    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 1 -2;    // 3 records, works, with 2 previous records, 5 total
                                                                                  //       insert aa1
                                                                                  //       insert aa2
@@ -67,7 +67,7 @@ w_rc_t btree_populate_records_local(stid_t &stid,
                                                                                  //            delete key301
                                                                                  //            delete key300
                                                                                  
-    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 1 + 1;
+//    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 1 + 1;
 
 
 //    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 1 - 1;  // 4 records, core dump, with 2 previous records, 6 total
@@ -288,19 +288,20 @@ class restart_multi_page_inflight_multithrd2 : public restart_test_base
 {
 public:
     static void t1Run (stid_t* stid_list) {
-        w_rc_t rc = btree_populate_records_local(stid_list[0], false, t_test_txn_in_flight, false, '1'); // flags: no checkpoint, don't commit, one big transaction
+        w_rc_t rc = test_env->btree_populate_records(stid_list[0], false, t_test_txn_in_flight, false, '1'); // flags: no checkpoint, don't commit, one big transaction
+//        w_rc_t rc = btree_populate_records_local(stid_list[0], false, t_test_txn_in_flight, false, '1'); // flags: no checkpoint, don't commit, one big transaction
         EXPECT_FALSE(rc.is_error());
     }
 
     static void t2Run (stid_t* stid_list) {
-        w_rc_t rc = btree_populate_records_local(stid_list[0], false, t_test_txn_in_flight, false, '2'); // flags: no checkpoint, don't commit, one big transaction
+        w_rc_t rc = test_env->btree_populate_records(stid_list[0], false, t_test_txn_in_flight, false, '2'); // flags: no checkpoint, don't commit, one big transaction
+//        w_rc_t rc = btree_populate_records_local(stid_list[0], false, t_test_txn_in_flight, false, '2'); // flags: no checkpoint, don't commit, one big transaction
         EXPECT_FALSE(rc.is_error());
     }
 
     static void t3Run (stid_t* stid_list) {
-       w_rc_t rc = RCOK;
-//        w_rc_t rc = test_env->btree_populate_records(stid_list[0], true, t_test_txn_in_flight, false, '3'); // flags: checkpoint, don't commit, one big transaction
-        rc = btree_populate_records_local(stid_list[0], true, t_test_txn_in_flight, false, '3'); // flags: checkpoint, don't commit, one big transaction
+       w_rc_t rc = test_env->btree_populate_records(stid_list[0], true, t_test_txn_in_flight, false, '3'); // flags: checkpoint, don't commit, one big transaction
+//        rc = btree_populate_records_local(stid_list[0], true, t_test_txn_in_flight, false, '3'); // flags: checkpoint, don't commit, one big transaction
         EXPECT_FALSE(rc.is_error());
     }
 
@@ -355,7 +356,7 @@ TEST (RestartTest, MultiPageInFlightMultithrdCF) {
 **/
 
 
-/* Passing - M3 *
+/* Passing - M3 */
 TEST (RestartTest, MultiPageInFlightMultithrdN3) {
     test_env->empty_logdata_dir();
     restart_multi_page_inflight_multithrd2 context;
@@ -367,9 +368,9 @@ TEST (RestartTest, MultiPageInFlightMultithrdN3) {
                                                // process log records
     EXPECT_EQ(test_env->runRestartTest(&context, &options, true), 0); // use_locks
 }
-**/
+/**/
 
-/* Not passing - M3: xct.cpp (630) put_in_order, breaks in retail build but fine in debug build, timing????  *
+/* Passing - M3 */
 TEST (RestartTest, MultiPageInFlightMultithrdC3) {
     test_env->empty_logdata_dir();
     restart_multi_page_inflight_multithrd2 context;
@@ -380,7 +381,7 @@ TEST (RestartTest, MultiPageInFlightMultithrdC3) {
                                                // No delay because no restart child thread
     EXPECT_EQ(test_env->runRestartTest(&context, &options, true), 0);  // use_locks
 }
-**/
+/**/
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

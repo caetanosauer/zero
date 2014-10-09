@@ -1049,7 +1049,10 @@ xct_t::~xct_t()
         _core = NULL;
 
         if (false == latch_rc.is_error())
-            latch().latch_release();
+        {
+            if (latch().held_by_me())                        
+                latch().latch_release();
+        }
     }
 }
 

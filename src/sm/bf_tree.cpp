@@ -767,7 +767,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 
                     // For the retry, simply release the latch but do not clear the context in cb
                     // because this is a known idx exists in hash table and cb array already
-                    cb.latch().latch_release();
+                    if (cb.latch().held_by_me())                    
+                        cb.latch().latch_release();
                     _add_free_block(idx);
 
                     force_load = false;
@@ -813,7 +814,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     // this pid already exists in bufferpool. this means another thread concurrently
                     // added the page to bufferpool. unlucky, but can happen.
                     DBGOUT1(<<"bf_tree_m: unlucky! another thread already added the page " << shpid << " to the bufferpool. discard my own work on frame " << idx);
-                    cb.latch().latch_release();
+                    if (cb.latch().held_by_me())
+                        cb.latch().latch_release();
                     cb.clear(); // well, it should be enough to clear _used, but this is anyway a rare event. wouldn't hurt to clear all.
                     _add_free_block(idx);
                     continue;
@@ -1033,8 +1035,9 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                         rc = _validate_access(page);
                         if (rc.is_error()) 
                         {
-                            ++cb._refbit_approximate;                        
-                            cb.latch().latch_release();
+                            ++cb._refbit_approximate;     
+                            if (cb.latch().held_by_me())
+                                cb.latch().latch_release();
                         }
                     }
 
@@ -2798,16 +2801,30 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
     }
     else if (checksum != page.checksum) 
     {
-        if (lsn_t::null == page_emlsn)    
+        if (NULL != parent)
         {
             // User transaction encounter a page corruption during normal page loading
-            ERROUT(<<"bf_tree_m: bad page checksum in page " << shpid << ", recovery via Single Page REcovery");
+            // This is not necessary a corruption, it could be the page was not flushed before system crash
+            if(true == past_end)
+            {
+                DBGOUT3(<<"bf_tree_m: user transaction, non-existing page " << shpid << ", recovery via Single Page Recovery");
+            }
+            else
+            {
+                ERROUT(<<"bf_tree_m: user transaction, bad page checksum in page " << shpid << ", recovery via Single Page Recovery");
+            }
+        }
+        else if ((NULL == parent) && (lsn_t::null != page_emlsn))
+        {
+            // Not a user transaction, it is a forced page load due to recovery
+            DBGOUT3(<<"bf_tree_m: force load with page emlsn in page " << shpid << ", recovery via Single Page Recovery");
         }
         else
         {
-            // Force page load due to recovery
-            DBGOUT3(<<"bf_tree_m: force load with incorrect page checksum in page " << shpid << ", recovery via Single Page REcovery");            
+            // No parent and no page_emlsn, it should not happen,  j.i.c.
+            ERROUT(<<"bf_tree_m: force load but no page emlsn in page " << shpid << ", not able to recover via Single Page Recovery");        
         }
+
         // Checksum didn't agree! this page image is completely
         // corrupted and we have to recover the page from scratch.
 
@@ -2896,8 +2913,14 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
     return RCOK;
 }
 
-w_rc_t bf_tree_m::_try_recover_page(generic_page* parent, bf_idx idx, volid_t vol,
-                                    shpid_t shpid, bool corrupted, const lsn_t page_emlsn) {
+w_rc_t bf_tree_m::_try_recover_page(generic_page* parent,     // In: parent page
+                                        bf_idx idx,              // In: index of the target page to be recovered
+                                        volid_t vol,
+                                        shpid_t shpid,
+                                        bool corrupted,          // In: true if page was corrupted, need to zero out the page
+                                        const lsn_t page_emlsn)  // In: If non-null, it is the page emlsn 
+                                                                 //     gathered from Log Analysis, 
+{
     if (corrupted) {
         ::memset(&_buffer[idx], '\0', sizeof(generic_page));
         _buffer[idx].lsn = lsn_t::null;
@@ -2909,9 +2932,12 @@ w_rc_t bf_tree_m::_try_recover_page(generic_page* parent, bf_idx idx, volid_t vo
     parent_h.fix_nonbufferpool_page(parent);
     lsn_t emlsn = parent_h.get_emlsn_general(recordid);
 
-    // Has a valid page_emlsn from Log Analysis phase, use it instead
     if (lsn_t::null != page_emlsn)
     {
+        // If we have a valid page_emlsn from Log Analysis phase, this is a user transaction
+        // which triggers a page REDO operation, use the page_emlsn from Log Analysis phase
+        // to recover the page, not the parent page emlsn
+    
         DBGOUT3(<<"bf_tree_m::_try_recover_page: Recovery a page with parent node, parent emlsn:"
                 << emlsn << ", page_emlsn (from Log Analysis): " << page_emlsn << ", use page_emlsn for recovery");    
         emlsn = page_emlsn;

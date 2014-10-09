@@ -908,7 +908,7 @@ TEST (RestartTest, MultiPageInFlightMultithrdN3) {
 }
 /**/
 
-/* Not passing - M3, Internal error:Log record t_chkpt_xct_lock contains a transaction which does not exist, tid:0.4958, restart.cpp:1501  *
+/* Passing - M3  */
 TEST (RestartTest, MultiPageInFlightMultithrdC3) {
     test_env->empty_logdata_dir();
     restart_multi_page_inflight_multithrd context;
@@ -917,9 +917,9 @@ TEST (RestartTest, MultiPageInFlightMultithrdC3) {
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m3_default_restart; // minimal logging, scan query triggers on_demand recovery
                                                // No delay because no restart child thread
-    EXPECT_EQ(test_env->runRestartTest(&context, &options, true), 0);  // use_locks
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
 }
-**/
+/**/
 
 class restart_many_conflicts_multithrd : public restart_test_base {
 public:
@@ -1284,7 +1284,7 @@ TEST (RestartTest, ManyConflictsMultithrdN3) {
 }
 /**/
 
-/* Not passing - M3, Internal error:Log record t_chkpt_xct_lock contains a transaction which does not exist, tid:0.4958, restart.cpp:1501  *
+/* Passing - M3 */
 TEST (RestartTest, ManyConflictsMultithrdC3) {
     test_env->empty_logdata_dir();
     restart_multi_page_inflight_multithrd context;
@@ -1293,9 +1293,9 @@ TEST (RestartTest, ManyConflictsMultithrdC3) {
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m3_default_restart; // minimal logging, update triggers on_demand recovery
                                                // No delay because no restart child thread
-    EXPECT_EQ(test_env->runRestartTest(&context, &options, true), 0);  // use_locks
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
 }
-**/
+/**/
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

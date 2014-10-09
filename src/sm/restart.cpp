@@ -597,7 +597,10 @@ restart_m::analysis_pass_forward(
     // At the beginning of the Recovery from a system crash, both the transaction table
     // and buffer pool should be initialized with the information from the specified checkpoint,
     // and then modified according to the following log records in the recovery log
-    
+
+    // The buffer 'log_rec_buf' for log record was not allocated in caller, therefore it is 
+    // using a local buffer in the log buffer.  Do not nest the log scan iternator because it
+    // would overwrite the data in log_rec_buf
     while (scan.xct_next(lsn, log_rec_buf)) 
     {
         logrec_t& r = *log_rec_buf;
@@ -1293,6 +1296,9 @@ restart_m::analysis_pass_backward(
     // no lock acquisition on a finished (commit or aborted) user transaction
     bool acquire_lock = true;
 
+    // The buffer 'log_rec_buf' for log record was not allocated in caller, therefore it is 
+    // using a local buffer in the log buffer.  Do not nest the log scan iternator because it
+    // would overwrite the data in log_rec_buf
     while (scan.xct_next(lsn, log_rec_buf)) 
     {
         if (true == scan_done)
@@ -2103,14 +2109,15 @@ void restart_m::_analysis_ckpt_bf_log(logrec_t& r,              // In: Log recor
  *
  *********************************************************************/
 void restart_m::_analysis_ckpt_xct_log(logrec_t& r,          // In: Current log record
-                                           lsn_t lsn,           // In: LSN of current log record
-                                           tid_CLR_map& mapCLR) // In/Out: map to hold counters for in-flight transactions
+                                          lsn_t lsn,             // In: LSN of current log record
+                                          tid_CLR_map& mapCLR)   // In/Out: map to hold counters for in-flight transactions
 {
     // Received a t_chkpt_xct_tab log record from backward log scan
     // and there was a matching end checkpoint log record,
     // meaning we are processing the last completed checkpoint
     // go ahead and process this log record
 
+    w_assert1(lsn.valid());
     xct_t* xd = 0;    
     const chkpt_xct_tab_t* dp = (chkpt_xct_tab_t*) r.data();
 
@@ -2120,9 +2127,12 @@ void restart_m::_analysis_ckpt_xct_log(logrec_t& r,          // In: Current log 
         xct_t::update_youngest_tid(dp->youngest);
 
     // For each entry in the log, it is possible we do not have any transaction entry
-    for (uint i = 0; i < dp->count; i++)  
+    uint iCount = 0;
+    uint iTotal = dp->count;
+    for (iCount = 0; iCount < iTotal; ++iCount)  
     {
-        xd = xct_t::look_up(dp->xrec[i].tid);
+        w_assert1(tid_t::null != dp->xrec[iCount].tid);    
+        xd = xct_t::look_up(dp->xrec[iCount].tid);
 
         // We know the transaction was active when the checkpoint was taken,
         // but we do not know whether the transaction was in the middle of 
@@ -2150,116 +2160,66 @@ void restart_m::_analysis_ckpt_xct_log(logrec_t& r,          // In: Current log 
             //      Need to insert this in-flight (loser) transaction into transaction table
             //
             // 2. Corner case: A transaction was active when the checkpoint was
-            //      gathering transaction information, but it ended before the checkpoint 
-            //      finished its work, therefore the 'end transaction' log record for this transaction
-            //      actually occurred before the checkpoint log record.	This is not a problem
-            //      for forward log scan, but for backward log scan, we will see the transaction
-            //      information in checkpoint log record, we have not seen the 'end transaction'
-            //      log record at this point.
-            //      Because the 'begin checkpoint' marks the end of backward log scan,
-            //      we will not see the 'end transaction' log record for this transaction, therefore
-            //      we will treat this 'already committed\aborted' tranaaction as an 'in-flight' 
-            //      transaction and roll it back.  This is not an expected behavior.
-            //      To solve this issue: use a separate backward scan starts from the current
-            //      LSN, and find the previous log record on this transaction, if it is 
-            //      a 'end/abort transaction' log record, then ignore this transaction, otherwise,
-            //      it is a loser transaction (case #1 above).
-            //      Note the backward scan has to do a sequential scan and cannot use undo_nxt
-            //      or page_prev_lsn, because they are pointing to the previous log record when
-            //      the checkpoint was taken.
+            //      gathering transaction information, it is possible an active transaction ended
+            //      before the checkpoint finished its work (it could take some time to gather
+            //      transaction information, especially if there are many active transactions),
+            //      therefore the 'end transaction' log record for this transaction would be generated
+            //      before the checkpoint transaction log record.
+            //      If a transaction ended before this checkpoint transaction log record was written,
+            //      the 'end transaction' log record can only occur between 'begin checkpoint' 
+            //      log record and the current checkpoint transaction log record. 
+            //      For backward log scan (this function), we will see the 'end transaction' log 
+            //      record after this checkpoint transaction log record and will be able to mark 
+            //      the transaction status (winner or loser) correctly.  Therefore if a transaction
+            //      does not exist in transaction table currently (no activity after the current checkpoint
+            //      transaction log record), insert the transaction as a loser transaction into 
+            //      the transaction table, which is the correct transaction status.
 
             // Checkpoint thinks this is an in-flight transaction (including transaction
             // in the middle of commiting or aborting) but we have not seen
-            // any log record from this in-flight transaction during the entire backward
-            // log scan
-            w_assert1((xct_t::xct_active == dp->xrec[i].state) || 
-                      (xct_t::xct_chaining == dp->xrec[i].state) ||
-                      (xct_t::xct_t::xct_committing == dp->xrec[i].state) ||
-                      (xct_t::xct_t::xct_aborting == dp->xrec[i].state));
-
-            // For backward log scan, during initialization of the iterator, the given
-            // lsn is the log record beyond the starting point, meaning when the fetch
-            // starts, the first log record returned is the (lsn -1) log record 
-            log_i scan_per_txn(*log, lsn, false /*true if forward scan*/);
-            logrec_t*  log_rec_buf_per_txn;
-            lsn_t      lsn_per_txn;         // LSN of the retrieved log record
-            bool       is_loser = false;
-            while (scan_per_txn.xct_next(lsn_per_txn, log_rec_buf_per_txn)) 
-            {
-                logrec_t& r_per_txn = *log_rec_buf_per_txn;
-                if (r_per_txn.is_single_sys_xct()) 
-                    continue;
-                if ((r_per_txn.tid() != tid_t::null) && (r_per_txn.tid() == dp->xrec[i].tid))
-                {
-                    // Found a log record with the same tid
-                    if ((logrec_t::t_xct_end_group == r.type()) ||
-                       (logrec_t::t_xct_abort == r.type()) ||
-                       (logrec_t::t_xct_end == r.type()))
-                    {
-                        // Transaction ended
-                        is_loser = false;
-                    }
-                    else
-                    {
-                        // Transaction did not end, it is a loser transaction
-                        is_loser = true;
-                    }
-                    // Stop this local backward scan now
-                    break;
-                }
-            }
+            // any log record from this in-flight transaction during the backward
+            // log scan so far
+            w_assert1((xct_t::xct_active == dp->xrec[iCount].state) || 
+                      (xct_t::xct_chaining == dp->xrec[iCount].state) ||
+                      (xct_t::xct_t::xct_committing == dp->xrec[iCount].state) ||
+                      (xct_t::xct_t::xct_aborting == dp->xrec[iCount].state));
 
             // Since the transaction does not exist in transaction yet
             // create it into the transaction table first
-            xd = xct_t::new_xct(dp->xrec[i].tid,
-                        xct_t::xct_active,        // Instead of using dp->xrec[i].state
-                                                  // gathered in checkpoint log,
-                                                  // mark transaction active to 
-                                                  // indicate this transaction
-                                                  // might need UNDO
-                        dp->xrec[i].last_lsn,     // last_LSN
-                        dp->xrec[i].undo_nxt,     // next_undo
-                        WAIT_SPECIFIED_BY_THREAD, // default timeout value
-                        false,                    // sys_xct
-                        false,                    // single_log_sys_xct
-                        true);                    // loser_xct, set to true for recovery
+            xd = xct_t::new_xct(dp->xrec[iCount].tid,
+                                xct_t::xct_active,         // Instead of using dp->xrec[i].state
+                                                           // gathered in checkpoint log,
+                                                           // mark transaction active to 
+                                                           // indicate this transaction
+                                                           // might need UNDO
+                                dp->xrec[iCount].last_lsn, // last_LSN
+                                dp->xrec[iCount].undo_nxt, // next_undo
+                                WAIT_SPECIFIED_BY_THREAD,  // default timeout value
+                                false,                     // sys_xct
+                                false,                     // single_log_sys_xct
+                                true);                     // loser_xct, set to true for recovery
             w_assert1(xd);
 
-            if (true == is_loser)
-            {
-                // No log record on this transaction after this checkpoint was taken,
-                // but we know this transaction was active when the checkpoint
-                // was taken and it did not end before the checkpoint finished.
-                // Since we do not analysis log records before this checkpoint
-                // mark this transaction as a loser transaction regardless whether
-                // the transaction was in the middle of rolling back or not
+            if (dp->xrec[iCount].tid > xct_t::youngest_tid())
+                xct_t::update_youngest_tid(dp->xrec[iCount].tid);
 
-                if (dp->xrec[i].tid > xct_t::youngest_tid())
-                    xct_t::update_youngest_tid(dp->xrec[i].tid);
+            // No log record on this transaction after this checkpoint was taken,
+            // but we know this transaction was active when the checkpoint
+            // started and it did not end after the checkpoint finished.
+            // Mark this transaction as a loser transaction regardless whether
+            // the transaction was in the middle of rolling back or not
 
-                // Set the first LSN of the in-flight transaction
-                xd->set_first_lsn(dp->xrec[i].first_lsn);
+            // Set the first LSN of the in-flight transaction
+            xd->set_first_lsn(dp->xrec[iCount].first_lsn);
 
-                DBGOUT3(<<"add xct " << dp->xrec[i].tid
-                        << " state " << dp->xrec[i].state
-                        << " last lsn " << dp->xrec[i].last_lsn
-                        << " undo " << dp->xrec[i].undo_nxt
-                        << ", first lsn " << dp->xrec[i].first_lsn);
-            }
-            else
-            {
-                // Transaction ended before checkpoint finished, it is a winner transaction
-                // because it existed in t_chkpt_xct_tab log record, we might
-                // see this transaction in t_chkpt_xct_lock log records,
-                // mark it as a winner immediatelly so we can handle it through
-                // t_chkpt_xct_lock log record correctly
-
-                w_assert1(xct_t::xct_active == xd->state());
-                xd->change_state(xct_t::xct_ended);
-            }
+            DBGOUT3(<<"add xct " << dp->xrec[iCount].tid
+                    << " state " << dp->xrec[iCount].state
+                    << " last lsn " << dp->xrec[iCount].last_lsn
+                    << " undo " << dp->xrec[iCount].undo_nxt
+                    << ", first lsn " << dp->xrec[iCount].first_lsn);
         }
         else
-        {
+        {      
            // Found in the transaction table, it must be marked as:
            // undecided in-flight transaction (active) - active transaction during checkpoint
            //                                                                     and was either active when system crashed or 
@@ -2309,6 +2269,13 @@ void restart_m::_analysis_ckpt_xct_log(logrec_t& r,          // In: Current log 
                // Transaction ended (winner), no op
            }
         }
+    }
+
+    if (iCount != iTotal)
+    {
+        // Failed to process all the transactions in log record, error out
+        W_FATAL_MSG(fcINTERNAL, << "restart_m::_analysis_ckpt_xct_log: log record has " << iTotal
+                    << " transactions but only processed " << iCount << " transactions");
     }
 
     return;
@@ -2452,7 +2419,8 @@ void restart_m::_analysis_other_log(logrec_t& r,               // In: log record
             if (true == use_undo_reverse_restart())
             {
                 // If UNDO is using reverse chronological order (use_undo_reverse_restart())
-                // Set the undo_nxt lsn to the current log record lsn because 
+                // this is forward log scan in Log Analysis, set the undo_nxt lsn 
+                // to the current log record lsn because 
                 // UNDO is using reverse chronological order
                 // and the undo_lsn is used to stop the individual rollback
 
@@ -2461,8 +2429,10 @@ void restart_m::_analysis_other_log(logrec_t& r,               // In: log record
             }
             else
             {
-                // If UNDO is txn driven, set undo_nxt lsn.  Abort operation use it
-                // to retrieve log record and follow the log record undo_next list
+                // If UNDO is txn driven, set undo_nxt lsn to the largest (latest) lsn.
+                // Abort operation use it to retrieve log record and follow the log 
+                // record undo_next list
+                // This is for both forward and backward log scan in Log Analysis
 
                 if (xd->undo_nxt() < lsn)
                     xd->set_undo_nxt(lsn);
@@ -3406,8 +3376,8 @@ void restart_m::_compare_lock_entries(
     }
     else
     {
-        DBGOUT1(<< "_compare_lock_entries: different number of lock entries, lock_heap1: " 
-                << lock_heap1.NumElements() << ", lock_heap2: " << lock_heap2.NumElements());    
+        ERROUT(<< "_compare_lock_entries: different number of lock entries, lock_heap1 (Log Analysis): " 
+                << lock_heap1.NumElements() << ", lock_heap2 (Checkpoint): " << lock_heap2.NumElements());    
 
         smlevel_0::errlog->clog << info_prio << "_compare_lock_entries: different number of lock entries, lock_heap1: " 
                 << lock_heap1.NumElements() << ", lock_heap2: " << lock_heap2.NumElements() << flushl;
@@ -4055,14 +4025,16 @@ void restart_m::_redo_log_with_pid(
                     // page format log record for a dirty page which was not on disk.
                     // Raise error becasue we should not hit this error
 
-                    cb.latch().latch_release();
+                    if (cb.latch().held_by_me())
+                        cb.latch().latch_release();
                     W_FATAL_MSG(fcINTERNAL, 
                                 << "REDO phase, expected page does not exist on disk.  Page: "
                                 << page_updated.page);
                 }
                 if (rc.is_error()) 
                 {
-                    cb.latch().latch_release();                
+                    if (cb.latch().held_by_me())                
+                        cb.latch().latch_release();                
                     if (eBADCHECKSUM == rc.err_num())
                     {
                         // Corrupted page, allow it to continue and we will
@@ -4220,7 +4192,8 @@ void restart_m::_redo_log_with_pid(
                          << " has lsn " << page_lsn
                          << " end of log is record prior to " << end_logscan_lsn);
 
-                cb.latch().latch_release();
+                if (cb.latch().held_by_me())
+                    cb.latch().latch_release();
                 W_FATAL_MSG(fcINTERNAL, 
                     << "Page LSN > current recovery log LSN, page corruption detected in REDO phase, page: "
                     << page_updated.page);
@@ -4285,7 +4258,8 @@ void restart_m::_redo_log_with_pid(
             else if (true == r.is_page_deallocate())
             {
                 // The idx should not be in hashtable
-                cb.latch().latch_release();                
+                if (cb.latch().held_by_me())                
+                    cb.latch().latch_release();                
                 W_FATAL_MSG(fcINTERNAL, 
                     << "Deallocated page should not exist in hashtable in REDO phase, page: " 
                     << page_updated.page);                
@@ -4296,7 +4270,8 @@ void restart_m::_redo_log_with_pid(
                 {
                     // If the page 'used' flag is set but none of the other flags are on, and the log record
                     // is not page allocation or deallocation, we should not have this case
-                    cb.latch().latch_release();                
+                    if (cb.latch().held_by_me())                    
+                        cb.latch().latch_release();                
                     W_FATAL_MSG(fcINTERNAL, 
                         << "Incorrect in_doubt and dirty flags in REDO phase, page: " 
                         << page_updated.page);
@@ -4892,7 +4867,8 @@ void restart_m::_redo_page_pass()
             bf_idx idx = smlevel_0::bf->lookup_in_doubt(key);
             if (0 == idx)
             {
-                cb.latch().latch_release();
+                if (cb.latch().held_by_me())            
+                    cb.latch().latch_release();
 
                 // In_doubt page but not in hasktable, this should not happen               
                 W_FATAL_MSG(fcINTERNAL, << "REDO (redo_page_pass()): in_doubt page not in hash table");
@@ -4963,7 +4939,8 @@ void restart_m::_redo_page_pass()
                 }
                 else
                 {
-                    cb.latch().latch_release();
+                    if (cb.latch().held_by_me())                
+                        cb.latch().latch_release();
 
                     // All other errors
                     W_FATAL_MSG(fcINTERNAL, 

@@ -839,9 +839,6 @@ try
         // chunk = how many txn information can fit into one chkpt_xct_tab_log log record
         const int    chunk = chkpt_xct_tab_t::max;
 
-        // tid is increasing, youngest tid has the largest value
-        tid_t        youngest = xct_t::youngest_tid();  
-
         // Each t_chkpt_xct_tab log record contains the following array
         // while each array element has information for one active transaction 
         w_auto_delete_array_t<tid_t> tid(new tid_t[chunk]);               // transaction ID
@@ -930,8 +927,9 @@ try
                     //     but the window for this scenario to occur is so small, is it even possible?
                     // 2. Checkpoint aborted - the transaction would be rollback during recover
                     //     because the 'end txn' log record was not flushed.
-                    
-                    xd->latch().latch_release();                
+
+                    if (xd->latch().held_by_me())                                    
+                        xd->latch().latch_release();                
                     continue;
                 }
 
@@ -960,7 +958,7 @@ try
                     // Note that we will pick the rest of txns in transaction table as long as it
                     // has a valid 'first_lsn', including both normal and loser transactions
                     // from restart process
-                    
+                   
                     // Not all transactions have tid, i.e. system transaction
                     // does not have tid, device mount/dismount does not
                     // have tid
@@ -1086,7 +1084,7 @@ try
                         w_assert1(NULL == lock);
 
                         if (0 != per_chunk_lock_count)
-                        {                      
+                        {                                             
                             // Pick up the last set
                             LOG_INSERT(chkpt_xct_lock_log(xd->tid(), per_chunk_lock_count,
                                        lock_mode, lock_hash), 0);
@@ -1116,6 +1114,9 @@ try
             // in such case, we will write out 1 log record, this is because we want to 
             // record the youndgest xct (with the largest tid)
             {
+                // tid is increasing, youngest tid has the largest value
+                tid_t  youngest = xct_t::youngest_tid();
+           
                 // Filled up one log record, write a Transaction Table Log out
                 // before processing more transactions
                 LOG_INSERT(chkpt_xct_tab_log(youngest, per_chunk_txn_count,

@@ -708,7 +708,8 @@ bool RawLockQueue::trigger_UNDO(Compatibility& compatibility)
                                 // blocking operation
                                 
                                 xd->set_loser_xct_in_undo();
-                                xd->latch().latch_release();
+                                if (xd->latch().held_by_me())
+                                    xd->latch().latch_release();
 
                                 // Only one transaction may be attached to a thread at any time
                                 // The current running thread has the user transaction so 
@@ -741,7 +742,8 @@ bool RawLockQueue::trigger_UNDO(Compatibility& compatibility)
                             }
                             else
                             {
-                                xd->latch().latch_release();
+                                if (xd->latch().held_by_me())                            
+                                    xd->latch().latch_release();
 
                                 // The blocker txn is a loser transaction but it is in the middle of rolling back already
                                 DBGOUT3( << "RawLockQueue::trigger_UNDO: blocker loser transaction already in the middle of UNDO");
