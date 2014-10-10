@@ -54,48 +54,48 @@ public:
         int32_t restart_mode = test_env->_restart_options->restart_mode;
         x_btree_scan_result s;
 
-        if(restart_mode < m3_default_restart) 
+        if(restart_mode < m3_default_restart)
         {
             // M2
-            if(restart_mode == m2_redo_delay_restart || restart_mode == m2_redo_fl_delay_restart 
+            if(restart_mode == m2_redo_delay_restart || restart_mode == m2_redo_fl_delay_restart
                 || restart_mode == m2_both_delay_restart || restart_mode == m2_both_fl_delay_restart) // Check if redo delay has been set in order to take a checkpoint
             {
                 if(ss_m::in_REDO() == t_restart_phase_active) // Just a sanity check that the redo phase is truly active
                     W_DO(ss_m::checkpoint());
             }
-            
+
             if(restart_mode == m2_undo_delay_restart || restart_mode == m2_undo_fl_delay_restart
                 || restart_mode == m2_both_delay_restart || restart_mode == m2_both_fl_delay_restart) // Check if undo delay has been set in order to take a checkpoint
             {
                 while(ss_m::in_UNDO() == t_restart_phase_not_active) // Wait until undo phase is starting
                     ::usleep(SHORT_WAIT_TIME);
-                if(ss_m::in_UNDO() == t_restart_phase_active) // Sanity check that undo is really active (instead of over) 
+                if(ss_m::in_UNDO() == t_restart_phase_active) // Sanity check that undo is really active (instead of over)
                     W_DO(ss_m::checkpoint());
             }
-            
+
             while(ss_m::in_restart()) // Wait while restart is going on
-                ::usleep(WAIT_TIME); 
+                ::usleep(WAIT_TIME);
         }
-        else 
+        else
         {
             // m3 restart mode, no phases, just take a checkpoint randomly
             W_DO(ss_m::checkpoint());
         }
-        
+
         output_durable_lsn(6);
-        const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;         
+        const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
         W_DO(test_env->btree_scan(_stid_list[0], s));
         EXPECT_EQ(recordCount+1, s.rownum);
         EXPECT_EQ(std::string("aa1"), s.minkey);
-        
+
         W_DO(test_env->btree_scan(_stid_list[1], s));
         EXPECT_EQ(recordCount+1, s.rownum);
         EXPECT_EQ(std::string("aa2"), s.minkey);
-        
+
         W_DO(test_env->btree_scan(_stid_list[2], s));
         EXPECT_EQ(recordCount, s.rownum);
         EXPECT_EQ(std::string("key200"), s.minkey);
-        
+
 
         return RCOK;
     }
@@ -105,7 +105,7 @@ public:
 TEST (RestartTest, MultiIndexConcChckptN) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m2_default_restart;
@@ -117,7 +117,7 @@ TEST (RestartTest, MultiIndexConcChckptN) {
 TEST (RestartTest, MultiIndexConcChckptC) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_default_restart;
@@ -129,7 +129,7 @@ TEST (RestartTest, MultiIndexConcChckptC) {
 TEST (RestartTest, MultiIndexConcChckptNF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m2_full_logging_restart;
@@ -141,7 +141,7 @@ TEST (RestartTest, MultiIndexConcChckptNF) {
 TEST (RestartTest, MultiIndexConcChckptCF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_full_logging_restart;
@@ -153,7 +153,7 @@ TEST (RestartTest, MultiIndexConcChckptCF) {
 TEST (RestartTest, MultiIndexConcChckptNR) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m2_redo_delay_restart;
@@ -165,7 +165,7 @@ TEST (RestartTest, MultiIndexConcChckptNR) {
 TEST (RestartTest, MultiIndexConcChckptCR) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_redo_delay_restart;
@@ -177,7 +177,7 @@ TEST (RestartTest, MultiIndexConcChckptCR) {
 TEST (RestartTest, MultiIndexConcChckptNRF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m2_redo_fl_delay_restart;
@@ -189,7 +189,7 @@ TEST (RestartTest, MultiIndexConcChckptNRF) {
 TEST (RestartTest, MultiIndexConcChckptCRF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_redo_fl_delay_restart;
@@ -201,7 +201,7 @@ TEST (RestartTest, MultiIndexConcChckptCRF) {
 TEST (RestartTest, MultiIndexConcChckptNU) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m2_undo_delay_restart;
@@ -213,7 +213,7 @@ TEST (RestartTest, MultiIndexConcChckptNU) {
 TEST (RestartTest, MultiIndexConcChckptCU) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_undo_delay_restart;
@@ -225,7 +225,7 @@ TEST (RestartTest, MultiIndexConcChckptCU) {
 TEST (RestartTest, MultiIndexConcChckptNUF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m2_undo_fl_delay_restart;
@@ -237,7 +237,7 @@ TEST (RestartTest, MultiIndexConcChckptNUF) {
 TEST (RestartTest, MultiIndexConcChckptCUF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_redo_fl_delay_restart;
@@ -249,7 +249,7 @@ TEST (RestartTest, MultiIndexConcChckptCUF) {
 TEST (RestartTest, MultiIndexConcChckptNB) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m2_both_delay_restart;
@@ -261,7 +261,7 @@ TEST (RestartTest, MultiIndexConcChckptNB) {
 TEST (RestartTest, MultiIndexConcChckptCB) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_both_delay_restart;
@@ -273,7 +273,7 @@ TEST (RestartTest, MultiIndexConcChckptCB) {
 TEST (RestartTest, MultiIndexConcChckptNBF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m2_both_fl_delay_restart;
@@ -285,7 +285,7 @@ TEST (RestartTest, MultiIndexConcChckptNBF) {
 TEST (RestartTest, MultiIndexConcChckptCBF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_both_fl_delay_restart;
@@ -300,8 +300,8 @@ TEST (RestartTest, MultiIndexConcChckptN3) {
 
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
-    options.restart_mode = m3_default_restart; // minimal logging, nothing to recover 
-                                               // but go through Log Analysis backward scan loop and 
+    options.restart_mode = m3_default_restart; // minimal logging, nothing to recover
+                                               // but go through Log Analysis backward scan loop and
                                                // process log records
     EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
 }
@@ -323,7 +323,7 @@ TEST (RestartTest, MultiIndexConcChckptC3) {
 
 // Test case that populates 3 indexes with committed records and one of them with some in-flights before shutdown
 // After shutdown, concurrent transactions are executed to test the rejection logic for concurrent transactions
-// Test case is suitable for calls with many different options, 20 in total 
+// Test case is suitable for calls with many different options, 20 in total
 class restart_concurrent_trans_multi_index : public restart_test_base {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
@@ -350,7 +350,7 @@ public:
         // because it thinks it is still in an active transaction (this type of transaction nesting is invalid)
         // Although if using a different thread, the different thread can still access this index
         W_DO(test_env->btree_populate_records(_stid_list[2], false, t_test_txn_in_flight, false, '3'));  // flags: no checkpoint, no commit, one big transaction which cause page split, keyPrefix '3'
-        
+
         W_DO(ss_m::checkpoint());
 
         // Current thread detached already (see above in-flight transaction)
@@ -370,19 +370,19 @@ public:
         x_btree_scan_result s;
         bool insert_occurred = false;
         w_rc_t rc;
-        bool redo_delay = restart_mode == m2_redo_delay_restart || restart_mode == m2_redo_fl_delay_restart 
+        bool redo_delay = restart_mode == m2_redo_delay_restart || restart_mode == m2_redo_fl_delay_restart
                 || restart_mode == m2_both_delay_restart || restart_mode == m2_both_fl_delay_restart;
-        bool undo_delay = restart_mode == m2_undo_delay_restart || restart_mode == m2_undo_fl_delay_restart 
+        bool undo_delay = restart_mode == m2_undo_delay_restart || restart_mode == m2_undo_fl_delay_restart
                 || restart_mode == m2_both_delay_restart || restart_mode == m2_both_fl_delay_restart;
 
-        if(restart_mode < m3_default_restart) 
+        if(restart_mode < m3_default_restart)
         {
             // If M2, wait a while, this is to give REDO a chance to reload the root page
             // but still wait in REDO phase due to test mode
             ::usleep(SHORT_WAIT_TIME*5);
         }
 
-        if(restart_mode < m3_default_restart) 
+        if(restart_mode < m3_default_restart)
         {
             // M2
             if (true == crash_shutdown)
@@ -391,12 +391,12 @@ public:
                 if(redo_delay) // Check if redo delay has been set in order to take a checkpoint
                 {
                     if(ss_m::in_REDO() == t_restart_phase_active) // Just a sanity check that the redo phase is truly active
-                    {                   
-                        rc = test_env->btree_insert_and_commit(_stid_list[0], "key0181", "data0"); 
-                        // Although there is no existing key "key0181", this should raise a conflict, because it would have to be inserted 
+                    {
+                        rc = test_env->btree_insert_and_commit(_stid_list[0], "key0181", "data0");
+                        // Although there is no existing key "key0181", this should raise a conflict, because it would have to be inserted
                         // in the fourth page, which is still dirty
                         EXPECT_TRUE(rc.is_error());
-                    
+
                         if(test_env->_restart_options->enable_checkpoints)
                             W_DO(ss_m::checkpoint());
 
@@ -408,15 +408,15 @@ public:
                 {
                     while(ss_m::in_UNDO() == t_restart_phase_not_active) // Wait until undo phase is starting
                         ::usleep(SHORT_WAIT_TIME);
-                    if(ss_m::in_UNDO() == t_restart_phase_active) // Sanity check that undo is really active (instead of over) 
+                    if(ss_m::in_UNDO() == t_restart_phase_active) // Sanity check that undo is really active (instead of over)
                     {
                         rc = test_env->btree_update_and_commit(_stid_list[2], "key300", "C"); // Does not make sure that the error is due to rejection by undo logic
                         EXPECT_TRUE(rc.is_error());                                           // Could also just be that undo is complete and the record thus doesn't exist anymore
-                    
+
                         // This is failing, it seems that the in-flights have already been undone and therefore all pages are accessible, test cases have been commented out
                         rc = test_env->btree_insert_and_commit(_stid_list[2], "zz1", "data1"); //  This record would be inserted into the last page (which has records belonging to in-flight transactions)
                         EXPECT_TRUE(rc.is_error());                                            //  and should therefore be aborted
-                
+
                         rc = test_env->btree_insert_and_commit(_stid_list[2], "aa0", "data0"); // This should succeed, as all records in page 1 have been redone and there are no in-flights
                                                                                                // but if the entire b-tree was never flushed to disk before the system crash
                                                                                                // then commit_lsn would block all operations until the end of Restart operation and
@@ -425,7 +425,7 @@ public:
                         // Insert succeeded
                         if (!rc.is_error())
                             insert_occurred = true;
-                                                                                               
+
                     }
                 }
             }
@@ -435,27 +435,27 @@ public:
             }
 
             while(ss_m::in_restart()) // Wait while restart is going on
-                ::usleep(WAIT_TIME); 
+                ::usleep(WAIT_TIME);
         }
         else
         {
-            // m3 restart mode, everything should succeed
+            // m3 or m4 restart mode, everything should succeed
             W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa0", "data0"));
             W_DO(test_env->btree_update_and_commit(_stid_list[1], "key110", "A"));
-            W_DO(test_env->btree_insert_and_commit(_stid_list[2], "key300", "data0")); 
+            W_DO(test_env->btree_insert_and_commit(_stid_list[2], "key300", "data0"));
         }
         output_durable_lsn(6);
-        const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;         
-        
+        const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
+
         // Check index 0
         W_DO(test_env->btree_scan(_stid_list[0], s));
-        if(restart_mode < m3_default_restart) 
+        if(restart_mode < m3_default_restart)
         {
             // M2
             EXPECT_EQ(std::string("aa1"), s.minkey);
             EXPECT_EQ(recordCount+1, s.rownum);
         }
-        else 
+        else
         {
             // M3
             EXPECT_EQ(std::string("aa0"), s.minkey);
@@ -475,7 +475,7 @@ public:
         memset(expected, 'D', btree_m::max_entry_size()-7);
 
         W_DO(test_env->btree_lookup_and_commit(_stid_list[1], "key110", actual));
-        if(restart_mode < m3_default_restart) 
+        if(restart_mode < m3_default_restart)
         {
             // M2
             EXPECT_EQ(std::string(expected, btree_m::max_entry_size()-7), actual);
@@ -499,7 +499,7 @@ public:
             }
             else
             {
-                // Normal shutdown or 
+                // Normal shutdown or
                 // Crash shutdown but no delay in undo phase, so we did not insert a record with 'aa0'
                 EXPECT_EQ(std::string("key200"), s.minkey);
                 EXPECT_EQ(recordCount, s.rownum);
@@ -510,7 +510,7 @@ public:
             // m3
             EXPECT_EQ(recordCount+1, s.rownum);
             EXPECT_EQ(std::string("key200"), s.minkey);
-            EXPECT_EQ(std::string("key300"), s.maxkey); 
+            EXPECT_EQ(std::string("key300"), s.maxkey);
         }
 
         return RCOK;
@@ -521,7 +521,7 @@ public:
 TEST (RestartTest, MultiIndexConcTransNR) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m2_redo_delay_restart;
@@ -533,7 +533,7 @@ TEST (RestartTest, MultiIndexConcTransNR) {
 TEST (RestartTest, MultiIndexConcTransCR) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_redo_delay_restart;
@@ -545,7 +545,7 @@ TEST (RestartTest, MultiIndexConcTransCR) {
 TEST (RestartTest, MultiIndexConcTransNRF) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m2_redo_fl_delay_restart;
@@ -557,7 +557,7 @@ TEST (RestartTest, MultiIndexConcTransNRF) {
 TEST (RestartTest, MultiIndexConcTransCRF) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_redo_fl_delay_restart;
@@ -569,7 +569,7 @@ TEST (RestartTest, MultiIndexConcTransCRF) {
 TEST (RestartTest, MultiIndexConcTransNU) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m2_undo_delay_restart;
@@ -581,7 +581,7 @@ TEST (RestartTest, MultiIndexConcTransNU) {
 TEST (RestartTest, MultiIndexConcTransCU) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_undo_delay_restart;
@@ -593,7 +593,7 @@ TEST (RestartTest, MultiIndexConcTransCU) {
 TEST (RestartTest, MultiIndexConcTransNUF) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m2_undo_fl_delay_restart;
@@ -605,7 +605,7 @@ TEST (RestartTest, MultiIndexConcTransNUF) {
 TEST (RestartTest, MultiIndexConcTransCUF) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_redo_fl_delay_restart;
@@ -617,7 +617,7 @@ TEST (RestartTest, MultiIndexConcTransCUF) {
 TEST (RestartTest, MultiIndexConcTransNB) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m2_both_delay_restart;
@@ -629,7 +629,7 @@ TEST (RestartTest, MultiIndexConcTransNB) {
 TEST (RestartTest, MultiIndexConcTransCB) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_both_delay_restart;
@@ -641,7 +641,7 @@ TEST (RestartTest, MultiIndexConcTransCB) {
 TEST (RestartTest, MultiIndexConcTransNBF) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m2_both_fl_delay_restart;
@@ -653,7 +653,7 @@ TEST (RestartTest, MultiIndexConcTransNBF) {
 TEST (RestartTest, MultiIndexConcTransCBF) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_both_fl_delay_restart;
@@ -666,7 +666,7 @@ TEST (RestartTest, MultiIndexConcTransCBF) {
 TEST (RestartTest, MultiIndexConcTransChckptNR) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m2_redo_delay_restart;
@@ -679,7 +679,7 @@ TEST (RestartTest, MultiIndexConcTransChckptNR) {
 TEST (RestartTest, MultiIndexConcTransChckptCR) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_redo_delay_restart;
@@ -692,7 +692,7 @@ TEST (RestartTest, MultiIndexConcTransChckptCR) {
 TEST (RestartTest, MultiIndexConcTransChckptNRF) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m2_redo_fl_delay_restart;
@@ -705,7 +705,7 @@ TEST (RestartTest, MultiIndexConcTransChckptNRF) {
 TEST (RestartTest, MultiIndexConcTransChckptCRF) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_redo_fl_delay_restart;
@@ -719,7 +719,7 @@ TEST (RestartTest, MultiIndexConcTransChckptCRF) {
 TEST (RestartTest, MultiIndexConcTransChckptNB) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m2_both_delay_restart;
@@ -732,7 +732,7 @@ TEST (RestartTest, MultiIndexConcTransChckptNB) {
 TEST (RestartTest, MultiIndexConcTransChckptCB) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_both_delay_restart;
@@ -745,7 +745,7 @@ TEST (RestartTest, MultiIndexConcTransChckptCB) {
 TEST (RestartTest, MultiIndexConcTransChckptNBF) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m2_both_fl_delay_restart;
@@ -758,7 +758,7 @@ TEST (RestartTest, MultiIndexConcTransChckptNBF) {
 TEST (RestartTest, MultiIndexConcTransChckptCBF) {
     test_env->empty_logdata_dir();
     restart_concurrent_trans_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_both_fl_delay_restart;
@@ -774,8 +774,8 @@ TEST (RestartTest, MultiIndexConcTransChckptN3) {
 
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
-    options.restart_mode = m3_default_restart; // minimal logging, nothing to recover 
-                                               // but go through Log Analysis backward scan loop and 
+    options.restart_mode = m3_default_restart; // minimal logging, nothing to recover
+                                               // but go through Log Analysis backward scan loop and
                                                // process log records
     EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
 }
@@ -829,16 +829,21 @@ public:
         W_DO(t3.join());
         return RCOK;
     }
-    
+
     w_rc_t post_shutdown(ss_m *) {
         output_durable_lsn(4);
+        int32_t restart_mode = test_env->_restart_options->restart_mode;
 
         // Wait before the final verfication
         // Note this 'in_restart' check is not reliable if on_demand restart (m3),
-        // but it is okay because with on_demand restart, it blocks concurrent 
-        // transactions instead of failing concurrent transactions       
-        while(ss_m::in_restart()) // Wait while restart is going on
-            ::usleep(WAIT_TIME); 
+        // but it is okay because with on_demand restart, it blocks concurrent
+        // transactions instead of failing concurrent transactions
+        if (restart_mode < m3_default_restart)
+        {
+            // Not wait if M3 or M4
+            while(ss_m::in_restart()) // Wait while restart is going on
+                ::usleep(WAIT_TIME);
+        }
 
         x_btree_scan_result s;
         W_DO(test_env->btree_scan(_stid_list[0], s));
@@ -901,8 +906,8 @@ TEST (RestartTest, MultiPageInFlightMultithrdN3) {
 
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
-    options.restart_mode = m3_default_restart; // minimal logging, nothing to recover 
-                                               // but go through Log Analysis backward scan loop and 
+    options.restart_mode = m3_default_restart; // minimal logging, nothing to recover
+                                               // but go through Log Analysis backward scan loop and
                                                // process log records
     EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
 }
@@ -924,7 +929,7 @@ TEST (RestartTest, MultiPageInFlightMultithrdC3) {
 class restart_many_conflicts_multithrd : public restart_test_base {
 public:
     static void t1Run(stid_t* stid_list) {
-        const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;         
+        const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
         char key_str[7] = "key100";
         char data_str[8] = "data100";
 
@@ -939,7 +944,7 @@ public:
     }
 
     static void t2Run(stid_t* stid_list) {
-        const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;         
+        const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
         char key_str[7] = "key200";
         char data_str[8] = "data200";
 
@@ -954,7 +959,7 @@ public:
     }
 
     static void t3Run(stid_t* stid_list) {
-        const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;         
+        const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
         char key_str[7] = "key300";
         char data_str[8] = "data300";
         w_rc_t rc;
@@ -979,31 +984,35 @@ public:
         output_durable_lsn(3);
         return RCOK;
     }
-    
+
     w_rc_t post_shutdown(ss_m *) {
         output_durable_lsn(4);
-        
-        const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;         
+
+        const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
         int32_t restart_mode = test_env->_restart_options->restart_mode;
         bool crash_shutdown = test_env->_restart_options->shutdown_mode;   // false if normal shutdown
-        bool redo_delay = restart_mode == m2_redo_delay_restart || restart_mode == m2_redo_fl_delay_restart 
+        bool redo_delay = restart_mode == m2_redo_delay_restart || restart_mode == m2_redo_fl_delay_restart
                 || restart_mode == m2_both_delay_restart || restart_mode == m2_both_fl_delay_restart;
-        bool undo_delay = restart_mode == m2_undo_delay_restart || restart_mode == m2_undo_fl_delay_restart 
+        bool undo_delay = restart_mode == m2_undo_delay_restart || restart_mode == m2_undo_fl_delay_restart
                 || restart_mode == m2_both_delay_restart || restart_mode == m2_both_fl_delay_restart;
 
         // Wait a while, this is to give REDO a chance to reload the root page
         // but still wait in REDO phase due to test mode
-        ::usleep(SHORT_WAIT_TIME*5);
+        if (restart_mode < m3_default_restart)
+        {
+            // Not wait if M3 or M4
+            ::usleep(SHORT_WAIT_TIME*5);
+        }
         output_durable_lsn(5);
 
-        if(restart_mode < m3_default_restart) 
+        if(restart_mode < m3_default_restart)
         {
             // M2
             if (true == crash_shutdown)
             {
                 // Fork the child threads if crash shutdown
                 // because if normal shutdown, there is no recovery work
-                if(redo_delay) 
+                if(redo_delay)
                 {
                     transact_thread_t t1 (_stid_list, t1Run);
                     transact_thread_t t2 (_stid_list, t2Run);
@@ -1014,10 +1023,10 @@ public:
                         W_DO(t2.join());   // Stop thread 2
                     }
                 }
-                if(undo_delay) 
+                if(undo_delay)
                 {
                     transact_thread_t t3 (_stid_list, t3Run);
-                    // Do not come here for a normal shutdown 
+                    // Do not come here for a normal shutdown
                     // becuase this state does not happen and the loop will wait forever
                     while(ss_m::in_UNDO() == t_restart_phase_not_active) // Wait until undo phase is starting
                         ::usleep(SHORT_WAIT_TIME);
@@ -1026,19 +1035,19 @@ public:
                 }
             }
             while(ss_m::in_restart()) // Wait while restart is going on
-                ::usleep(WAIT_TIME); 
+                ::usleep(WAIT_TIME);
         }
-        else 
+        else
         {
             // M3, handles both normal and crash shutdowns
-            
+
             // Fork the child threads, regardless normal or crash shutdown
             transact_thread_t t1 (_stid_list, t1Run);
             transact_thread_t t2 (_stid_list, t2Run);
             transact_thread_t t3 (_stid_list, t3Run);
             W_DO(t1.fork());   // Start thread 1
             W_DO(t2.fork());   // Start thread 2
-            W_DO(t3.fork());   // Start thread 3            
+            W_DO(t3.fork());   // Start thread 3
             W_DO(t1.join());   // Stop thread 1
             W_DO(t2.join());   // Stop thread 2
             W_DO(t3.join());   // Stop thread 3
@@ -1054,13 +1063,13 @@ public:
         EXPECT_EQ(3*recordCount, s.rownum);
         EXPECT_EQ(std::string("key100"), s.minkey);
         EXPECT_EQ(std::string("key324"), s.maxkey);
-        
+
         std::string actual;
         char expected[btree_m::max_entry_size()-6];
         memset(expected, 'D', btree_m::max_entry_size()-7);
         expected[btree_m::max_entry_size()-7] = '\0';
         W_DO(test_env->btree_lookup_and_commit(_stid_list[0], "key300", actual));
-        if((undo_delay && (true == crash_shutdown)) || restart_mode >= m3_default_restart) 
+        if((undo_delay && (true == crash_shutdown)) || restart_mode >= m3_default_restart)
         {
             // M3 or M2 with delay undo on crash shutdown
             EXPECT_EQ(std::string("data300"), actual);
@@ -1124,7 +1133,7 @@ TEST (RestartTest, ManyConflictsMultithrdCF) {
 TEST (RestartTest, ManyConflictsMultithrdNR) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
-    
+
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m2_redo_delay_restart;
@@ -1136,7 +1145,7 @@ TEST (RestartTest, ManyConflictsMultithrdNR) {
 TEST (RestartTest, ManyConflictsMultithrdCR) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
-    
+
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_redo_delay_restart;
@@ -1148,7 +1157,7 @@ TEST (RestartTest, ManyConflictsMultithrdCR) {
 TEST (RestartTest, ManyConflictsMultithrdNRF) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
-    
+
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m2_redo_fl_delay_restart;
@@ -1162,7 +1171,7 @@ TEST (RestartTest, ManyConflictsMultithrdNRF) {
 TEST (RestartTest, ManyConflictsMultithrdCRF) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
-    
+
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_redo_fl_delay_restart;
@@ -1174,7 +1183,7 @@ TEST (RestartTest, ManyConflictsMultithrdCRF) {
 TEST (RestartTest, ManyConflictsMultithrdNU) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
-    
+
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m2_undo_delay_restart;
@@ -1186,7 +1195,7 @@ TEST (RestartTest, ManyConflictsMultithrdNU) {
 TEST (RestartTest, ManyConflictsMultithrdCU) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
-    
+
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_undo_delay_restart;
@@ -1198,7 +1207,7 @@ TEST (RestartTest, ManyConflictsMultithrdCU) {
 TEST (RestartTest, ManyConflictsMultithrdNUF) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
-    
+
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m2_undo_fl_delay_restart;
@@ -1212,7 +1221,7 @@ TEST (RestartTest, ManyConflictsMultithrdNUF) {
 TEST (RestartTest, ManyConflictsMultithrdCUF) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
-    
+
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_redo_fl_delay_restart;
@@ -1224,7 +1233,7 @@ TEST (RestartTest, ManyConflictsMultithrdCUF) {
 TEST (RestartTest, ManyConflictsMultithrdNB) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
-    
+
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m2_both_delay_restart;
@@ -1236,7 +1245,7 @@ TEST (RestartTest, ManyConflictsMultithrdNB) {
 TEST (RestartTest, ManyConflictsMultithrdCB) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
-    
+
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_both_delay_restart;
@@ -1248,7 +1257,7 @@ TEST (RestartTest, ManyConflictsMultithrdCB) {
 TEST (RestartTest, ManyConflictsMultithrdNBF) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
-    
+
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m2_both_fl_delay_restart;
@@ -1262,7 +1271,7 @@ TEST (RestartTest, ManyConflictsMultithrdNBF) {
 TEST (RestartTest, ManyConflictsMultithrdCBF) {
     test_env->empty_logdata_dir();
     restart_many_conflicts_multithrd context;
-    
+
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_both_fl_delay_restart;
@@ -1277,8 +1286,8 @@ TEST (RestartTest, ManyConflictsMultithrdN3) {
 
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
-    options.restart_mode = m3_default_restart; // minimal logging, nothing to recover 
-                                               // but go through Log Analysis backward scan loop and 
+    options.restart_mode = m3_default_restart; // minimal logging, nothing to recover
+                                               // but go through Log Analysis backward scan loop and
                                                // process log records
     EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
 }

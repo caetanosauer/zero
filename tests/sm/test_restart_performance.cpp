@@ -7,6 +7,9 @@
 #include "xct.h"
 #include "sm_base.h"
 #include "sm_external.h"
+#include <cstdlib>
+#include <vector>
+#include <algorithm>
 
 btree_test_env *test_env;
 
@@ -18,7 +21,7 @@ btree_test_env *test_env;
 // M3 - On_demand restart, open system after Log Analysis phase,
 //         concurrency check based on lock acquisition
 //         restart carried out by user transaction threads
-// M4 - Mixed restart, open system after Log Analysis phase, 
+// M4 - Mixed restart, open system after Log Analysis phase,
 //         concurrency check based on lock acquisition
 //         restart carried out by both restart child thread and user thransaction threads
 
@@ -27,8 +30,8 @@ btree_test_env *test_env;
 //     Data - insert 3000 records
 //     Key - 1 - 3000
 //     Key - for key ending with 3, 5 or 7, skip the insertions
-// 2. Start the system with existing data from phase 1, 
-//     use multiple worker threads to generate many user transactions, 
+// 2. Start the system with existing data from phase 1,
+//     use multiple worker threads to generate many user transactions,
 //     including commit and in-flight (maybe abort)
 //     Key - for key ending with 3 or 7, insert the record
 //         Key - if the key ending with 7, in-flight insertions
@@ -43,6 +46,21 @@ btree_test_env *test_env;
 //     Key - if key ending with 3, update
 //     Measure and draw a curve that shows the numbers of completed transactions over time
 
+static __inline__ unsigned long long rdtsc(void)
+{
+    unsigned int hi, lo;
+    __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
+    return ( (unsigned long long)lo)|( ((unsigned long long)hi)<<32 );
+}
+
+/**
+unsigned long long totalCycles = 0;
+unsigned long long start = rdtsc();
+
+unsigned long long end = rdtsc();
+totalCycles += (end - start);
+**/
+
 
 lsn_t get_durable_lsn() {
     lsn_t ret;
@@ -54,35 +72,35 @@ void output_durable_lsn(int W_IFDEBUG1(num)) {
 }
 
 
-class restart_multi_performance : public restart_test_base  
+class restart_multi_performance : public restart_test_base
 {
 public:
 
-    w_rc_t initial_shutdown(ss_m *ssm) 
+    w_rc_t initial_shutdown(ss_m *ssm)
     {
 //////////////////////////////////////////////////
 // TODO(Restart)... phase 1, build the base and normal shutdown
 //////////////////////////////////////////////////
-    
+
         return RCOK;
     }
 
-    w_rc_t pre_shutdown(ss_m *ssm) 
+    w_rc_t pre_shutdown(ss_m *ssm)
     {
 //////////////////////////////////////////////////
 // TODO(Restart)... phase 2, in-flights and crash
 //////////////////////////////////////////////////
-    
+
         return RCOK;
     }
 
-    w_rc_t post_shutdown(ss_m *) 
+    w_rc_t post_shutdown(ss_m *)
     {
 //////////////////////////////////////////////////
-// TODO(Restart)... phase 3, concurrent 
+// TODO(Restart)... phase 3, concurrent
 //////////////////////////////////////////////////
-    
-        return RCOK;    
+
+        return RCOK;
     }
 }
 
@@ -114,7 +132,7 @@ public:
 
         uint64_t key_int = 0;
 
-        uint64_t *keys = new uint64_t[total];  // store the keys 
+        uint64_t *keys = new uint64_t[total];  // store the keys
 
         // insert
         for (int i=1; i<=total; i++) {
@@ -143,7 +161,7 @@ public:
 
             //W_DO(consume(4096,ssm));
 
-            W_DO(test_env->begin_xct());        
+            W_DO(test_env->begin_xct());
             if(key_int%1000==0) {
                 // overwrite records whose key % 1000 == 0
                 buf[0]='z';
@@ -192,9 +210,9 @@ public:
 
         delete []keys;
 
-            
+
         std::cout << "Worker-" << _thid << " done" << std::endl;
-        
+
         return RCOK;
     }
 
@@ -245,7 +263,7 @@ w_rc_t restart_multi_performance(ss_m *ssm, test_volume_t *volume) {
             test_env->btree_lookup_and_commit(stid, key, result);
             // abort if the second to last character is 9
             if (key[strlen(key)-2]=='9') {
-                EXPECT_EQ(std::string(key), result);                    
+                EXPECT_EQ(std::string(key), result);
             }
             else {
                 EXPECT_EQ('z', result[result.length()-1]);
@@ -259,7 +277,7 @@ w_rc_t restart_multi_performance(ss_m *ssm, test_volume_t *volume) {
                 test_env->btree_lookup_and_commit(stid, key, result);
                 // abort if the second to last character is 9
                 if (key[strlen(key)-2]=='9') {
-                    EXPECT_EQ(std::string(key), result);                    
+                    EXPECT_EQ(std::string(key), result);
                 }
                 else {
                     itoa(i+1, buf, 10);
@@ -273,7 +291,7 @@ w_rc_t restart_multi_performance(ss_m *ssm, test_volume_t *volume) {
                     result="data";
                     test_env->btree_lookup_and_commit(stid, key, result);
                     if (key[strlen(key)-2]=='9') {
-                        EXPECT_EQ(std::string(key), result);                    
+                        EXPECT_EQ(std::string(key), result);
                     }
                     else {
                         // if not found, the result would become empty
@@ -305,7 +323,7 @@ w_rc_t restart_multi_performance(ss_m *ssm, test_volume_t *volume) {
 int runRestartTest (restart_test_base *context,
   restart_test_options *restart_options,
   bool use_locks = false,            // Disable locking by default, M3/M4 need to enable locking
-  int32_t lock_table_size = default_locktable_size,  
+  int32_t lock_table_size = default_locktable_size,
   int disk_quota_in_pages = default_quota_in_pages,
   int bufferpool_size_in_pages = default_bufferpool_size_in_pages,
   uint32_t cleaner_threads = 1,
@@ -315,7 +333,7 @@ int runRestartTest (restart_test_base *context,
   bool initially_enable_cleaners = true,
   bool enable_swizzling = default_enable_swizzling
   );
- **/ 
+ **/
 // TODO(Restart)...   for M3/M4 suign raw lock, might need to set other stuff, see test_lock_raw.cpp
 /**
 sm_options options;
