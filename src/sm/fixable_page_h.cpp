@@ -24,7 +24,7 @@ void fixable_page_h::unfix() {
 }
 
 w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent, volid_t vol,
-                                   shpid_t shpid, latch_mode_t mode, 
+                                   shpid_t shpid, latch_mode_t mode,
                                    bool conditional, bool virgin_page,
                                    const bool from_recovery) {
     w_assert1(parent.is_fixed());
@@ -64,7 +64,7 @@ w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent, volid_t vol,
 }
 
 w_rc_t fixable_page_h::fix_direct(volid_t vol, shpid_t shpid,
-                                  latch_mode_t mode, bool conditional, 
+                                  latch_mode_t mode, bool conditional,
                                   bool virgin_page) {
     w_assert1(shpid != 0);
     w_assert1(mode >= LATCH_SH);
@@ -83,9 +83,9 @@ w_rc_t fixable_page_h::fix_recovery_redo(bf_idx idx, lpid_t page_updated,
 
     // Special function for Recovery REDO phase
     // Caller of this function is responsible for acquire and release EX latch on this page
-      
+
     // This is a newly loaded page during REDO phase in Recovery
-    // The idx is already in hashtable, all we need to do is to associate it with 
+    // The idx is already in hashtable, all we need to do is to associate it with
     // fixable page data structure.
     // Swizzling must be off when calling this function.
 
@@ -115,23 +115,23 @@ w_rc_t fixable_page_h::fix_recovery_redo(bf_idx idx, lpid_t page_updated,
     return RCOK;
 }
 
-w_rc_t fixable_page_h::fix_recovery_redo_managed() 
+w_rc_t fixable_page_h::fix_recovery_redo_managed()
 {
     // Special function for Recovery REDO phase
-    
+
     // For normal operation, page should always be managed by buffer pool.
     // During REDO pass:
-    // if we encounter a page rebalance operation (split, merge) and if page 
+    // if we encounter a page rebalance operation (split, merge) and if page
     // is not managed by buffer pool, a different code path would be used
     // to recovery from the page rebalance (via Single Page Recovery).
     // If page is managed, then the code page does not use Single Page
     // Recovery, in such case full logger must be used to recovery the page
-    
-    // This functionis only used for page driven REDO (Single-Page-Recovery) 
+
+    // This function is only used for page driven REDO (Single-Page-Recovery)
     // with minimal logging, the page would be set to 'not managed'
     // before the page recovery, and set to managed again (this function)
     // after the recovery operation
-    
+
     w_assert1(false == restart_m::use_redo_full_logging_restart());
     _bufferpool_managed = true;
     return RCOK;
@@ -169,7 +169,7 @@ w_rc_t fixable_page_h::fix_virgin_root (volid_t vol, snum_t store, shpid_t shpid
     return RCOK;
 }
 
-w_rc_t fixable_page_h::fix_root (volid_t vol, snum_t store, latch_mode_t mode, 
+w_rc_t fixable_page_h::fix_root (volid_t vol, snum_t store, latch_mode_t mode,
                                  bool conditional, const bool from_undo) {
     w_assert1(mode != LATCH_NL);
 
@@ -219,70 +219,70 @@ bool fixable_page_h::is_dirty() const {
     }
 }
 
-void fixable_page_h::set_recovery_access() const 
+void fixable_page_h::set_recovery_access() const
 {
     // Set a flag in cb to indicate this page is being
     // accessed for recovery purpose
-    
+
     w_assert1(_pp);
     w_assert1(_mode != LATCH_Q);
 
-    if (_bufferpool_managed) 
+    if (_bufferpool_managed)
     {
         smlevel_0::bf->set_recovery_access(_pp);
     }
 }
 
-bool fixable_page_h::is_recovery_access() const 
+bool fixable_page_h::is_recovery_access() const
 {
     // Is this page being accessed recovery purpose?
 
     w_assert1(_mode != LATCH_Q);
 
-    if (_bufferpool_managed) 
+    if (_bufferpool_managed)
     {
         return smlevel_0::bf->is_recovery_access(_pp);
     }
-    else 
+    else
     {
         return false;
     }
 }
 
-void fixable_page_h::clear_recovery_access() const 
+void fixable_page_h::clear_recovery_access() const
 {
     // Set a flag in cb to indicate this page is being
     // accessed for recovery purpose
-    
+
     w_assert1(_pp);
     w_assert1(_mode != LATCH_Q);
 
-    if (_bufferpool_managed) 
+    if (_bufferpool_managed)
     {
         smlevel_0::bf->clear_recovery_access(_pp);
     }
 }
 
-void fixable_page_h::update_initial_and_last_lsn(const lsn_t & lsn) const 
+void fixable_page_h::update_initial_and_last_lsn(const lsn_t & lsn) const
 {
     // Update both initial dirty lsn (if needed) and last write lsn
     // Caller should have latch on the page
     if (_pp)
     {
-        ((generic_page_h*)this)->set_lsns(lsn);    
+        ((generic_page_h*)this)->set_lsns(lsn);
         update_initial_dirty_lsn(lsn);
     }
 }
 
-void fixable_page_h::update_initial_dirty_lsn(const lsn_t & lsn) const 
+void fixable_page_h::update_initial_dirty_lsn(const lsn_t & lsn) const
 {
     // Whenever updating a page lsn (last write through set_lsns())
     // caller should update the initial dirty lsn on the page also
-    
+
     w_assert1(_pp);
     w_assert1(_mode != LATCH_Q);
 
-    if (_bufferpool_managed) 
+    if (_bufferpool_managed)
     {
         smlevel_0::bf->update_initial_dirty_lsn(_pp, lsn);
     }
@@ -290,7 +290,7 @@ void fixable_page_h::update_initial_dirty_lsn(const lsn_t & lsn) const
 
 bool fixable_page_h::is_to_be_deleted() {
     w_assert1(_mode != LATCH_Q);
-    return (_pp->page_flags&t_to_be_deleted) != 0; 
+    return (_pp->page_flags&t_to_be_deleted) != 0;
 }
 
 rc_t fixable_page_h::set_to_be_deleted (bool log_it) {
@@ -340,7 +340,7 @@ bool fixable_page_h::upgrade_latch_conditional(latch_mode_t mode) {
             _mode = LATCH_EX;
         }
         return success;
-        
+
     } else {
         w_assert1(_mode == LATCH_Q);
         return false; // later need to call latch operation and appropriately set _mode <<<>>>
@@ -351,7 +351,7 @@ bool fixable_page_h::upgrade_latch_conditional(latch_mode_t mode) {
 
 
 
-// <<<>>> 
+// <<<>>>
 
 #include "btree_page_h.h"
 

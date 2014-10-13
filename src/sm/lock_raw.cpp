@@ -27,8 +27,9 @@
 ////
 ////////////////////////////////////////////////////////////////////////////////////////
 
-// Initialized to a non-zero value
-int RawLockQueue::loser_count = 999;
+// Initialized to a non-zero value to ensure we do not skip the the first RawLockQueue::trigger_UNDO() call
+const int INITIAL__FAKE_COUNT = 999;
+int RawLockQueue::loser_count = INITIAL__FAKE_COUNT;
 
 RawLockQueue::Iterator::Iterator(const RawLockQueue* enclosure_arg, RawLock* start_from)
     : enclosure(enclosure_arg), predecessor(start_from) {
@@ -127,7 +128,7 @@ w_error_codes RawLockQueue::acquire(RawXct* xct, uint32_t hash, const okvl_mode&
     if ((compatibility.deadlocked) || (!compatibility.can_be_granted))
     {
         DBGOUT1(<< "RawLockQueue::acquire: not able to acquire lock, check for UNDO");
-    
+
         // Cannot grant the requested lock
         // Handle on_demand UNDO if we need one
         // note the on_demand UNDO is a blocking operation to the
@@ -140,8 +141,8 @@ w_error_codes RawLockQueue::acquire(RawXct* xct, uint32_t hash, const okvl_mode&
             // The user transaction (this thread) triggered an on_demand UNDO which
             // rolled back a loser transaction, check the compatibility again since
             // the lock manager entries changed due to loser transaction rollback
-            DBGOUT3(<< "RawLockQueue::acquire(): current thread triggered UNDO");            
-            compatibility = check_compatiblity(new_lock); // A4-A5        
+            DBGOUT3(<< "RawLockQueue::acquire(): current thread triggered UNDO");
+            compatibility = check_compatiblity(new_lock); // A4-A5
         }
         else
         {
@@ -169,7 +170,7 @@ w_error_codes RawLockQueue::acquire(RawXct* xct, uint32_t hash, const okvl_mode&
             // This return value tells the caller to increment the pin count and then
             // release latch on the page, so the page does not get evicted and others
             // can access the page, and then retry the lock acquisition while the
-            // retry is a blocking operation for the transaction           
+            // retry is a blocking operation for the transaction
             DBGOUT3(<<"RawLockQueue::acquire() failed conditional locking:" << *this);
             *out = new_lock;
             return eCONDLOCKTIMEOUT;
@@ -216,7 +217,7 @@ w_error_codes RawLockQueue::retry_acquire(RawLock** lock, bool check_only, int32
 w_error_codes RawLockQueue::complete_acquire(RawLock** lock, bool check_only, int32_t timeout_in_ms) {
     // if we get here, the lock can be granted, but we might need
     // to wait for the lock to be available, it happens in 'wait_for'
-    
+
     RawXct *xct = (*lock)->owner_xct;
     if ((*lock)->state == RawLock::WAITING) {
         w_error_codes err_code = wait_for(*lock, timeout_in_ms);
@@ -303,11 +304,11 @@ RawLockQueue::Compatibility RawLockQueue::check_compatiblity(RawLock *lock) cons
                 // Log Analysis phase and we should not run into deadlock or lock conflict
                 // therefore as part of 'restart' process, the only time we might fall into here
                 // is during on_demand UNDO and caller is a user transaction, in this case
-                // the user transaction has to trigger on_demand UNDO for the loser 
+                // the user transaction has to trigger on_demand UNDO for the loser
                 // transaction (blocker)
                 // Rolling back the loser transaction would affect lock manager (lock queue),
-                // therefore the operation cannot be performed in this loop, it is caller's 
-                // responsibility to trigger the UNDO operation based on the return from 
+                // therefore the operation cannot be performed in this loop, it is caller's
+                // responsibility to trigger the UNDO operation based on the return from
                 // this function.
                 // If deadlock, set blocker to the current owning transaction of the lock, this
                 // value would be used only if on_demand UNDO
@@ -348,7 +349,7 @@ w_error_codes RawLockQueue::wait_for(RawLock* new_lock, int32_t timeout_in_ms) {
     // In this function we go into the sleep-wake-up-recheck cycle,
     // it breaks out from the sleep loop if
     // 1) encounter new deadlock, 2) acquired lock, 3) timeout, 4) unexpected error
-    
+
     w_assert1(timeout_in_ms >= 0 || timeout_in_ms < 0); // to suppress warning
     RawXct *xct = new_lock->owner_xct;
 #ifndef PURE_SPIN_RAWLOCK
@@ -609,26 +610,26 @@ bool RawLockQueue::trigger_UNDO(Compatibility& compatibility)
         if (true == restart_m::use_concurrent_lock_restart())
         {
             // If using lock re-acquisition for restart concurrency control
-            
+
             if ((true == restart_m::use_undo_demand_restart()) ||  // pure on-demand
                 (true == restart_m::use_undo_mix_restart()))       // midxed mode
             {
-                DBGOUT3(<< "RawLockQueue::trigger_UNDO(): on_demand or mixed UNDO with loc, check for loser transaction...");                        
+                DBGOUT3(<< "RawLockQueue::trigger_UNDO(): on_demand or mixed UNDO with loc, check for loser transaction...");
 
-                // If we did not find any loser transaction in the transaction table 
+                // If we did not find any loser transaction in the transaction table
                 // previously, fast return
                 // this is because loser transactions were inserted into transaction
-                // during Log Analysis phase only, once the system is opened for 
-                // user transactions, we will not create more loser transactions 
+                // during Log Analysis phase only, once the system is opened for
+                // user transactions, we will not create more loser transactions
                 // into transaction table
                 if ( 0 == loser_count)
                 {
                     DBGOUT3( << "RawLockQueue::trigger_UNDO: skip due to no loser transaction found in transaction table previously");
                     return false;
                 }
-            
+
                 DBGOUT3( << "RawLockQueue::trigger_UNDO: Is the blocking transaction a loser transaction???");
-            
+
                 // Using lock re-acquisition and on_demand or mixed UNDO
                 // to rollback loser transactions
 
@@ -640,17 +641,17 @@ bool RawLockQueue::trigger_UNDO(Compatibility& compatibility)
 
                 // If the transaction which is holding the lock (compatibility.blocker)
                 // is a loser transaction but it is in rolling back state already (another
-                // user transaction has triggered the UNDO operation), fall through 
+                // user transaction has triggered the UNDO operation), fall through
                 // and no-op
 
                 // If the transaction which is holding the lock is not a loser transaction
                 // fall through and no-op
 
-                // Note all we have is a RawXct, which is a member of xct_core and 
+                // Note all we have is a RawXct, which is a member of xct_core and
                 // we don't have an easy way to identify the owning xct_t object
                 // Loop through the transaction table to find the owner of the RawXct first
-                
-                xct_i iter(false); // not locking the transaction table list, we only need to 
+
+                xct_i iter(false); // not locking the transaction table list, we only need to
                                    // look at existing transactions for loser transactions,
                                    // no need to look into the new incoming transactions
                 xct_t* xd = 0;
@@ -667,38 +668,38 @@ bool RawLockQueue::trigger_UNDO(Compatibility& compatibility)
                         // Found the blocker transaction
                         if (true == xd->is_loser_xct())
                         {
-                            w_assert1(false == xd->is_sys_xct());                        
+                            w_assert1(false == xd->is_sys_xct());
                             DBGOUT3( << "RawLockQueue::trigger_UNDO: blocker transaction is a loser transaction, txn: "
                                      << xd->tid());
-                        
+
                             // Acquire latch before checking the loser status
                             w_rc_t latch_rc = xd->latch().latch_acquire(LATCH_EX, WAIT_SPECIFIED_BY_XCT);
                             if (latch_rc.is_error())
-                            {                           
+                            {
                                 // Failed to acquire latch on the transaction
-                                // this is the loser transaction we are looking for but we 
+                                // this is the loser transaction we are looking for but we
                                 // are not able to latch the txn, to be safe we skip this time
                                 // and wait for next opportunity for the on_demand UNDO
 
                                 if (stTIMEOUT == latch_rc.err_num())
                                 {
-                                    // There is a small possibility that another concurrent 
+                                    // There is a small possibility that another concurrent
                                     // transaction is checking for loser status on the same
                                     // transaction at this moment
-                                    // Eat the error and skip UNDO this time, caller must retry                               
+                                    // Eat the error and skip UNDO this time, caller must retry
                                     DBGOUT0( << "RawLockQueue::trigger_UNDO: failed to latch the loser txn object to check rollback status,"
-                                             << " this is due to latch time out, skip the on_demand UNDO");                               
+                                             << " this is due to latch time out, skip the on_demand UNDO");
                                     return false;
                                 }
                                 else
                                 {
-                                    W_FATAL_MSG(fcINTERNAL, 
+                                    W_FATAL_MSG(fcINTERNAL,
                                                 << "RawLockQueue::trigger_UNDO: failed to latch the loser txn object due to unknown reason,"
                                                 << " this is un-expected error, error out");
                                 }
 
                             }
-                        
+
                             if (false == xd->is_loser_xct_in_undo())
                             {
                                 // Loser transaction has not been rollback at this point,
@@ -706,13 +707,13 @@ bool RawLockQueue::trigger_UNDO(Compatibility& compatibility)
                                 // set the loser transaction state first to indicate the current
                                 // thread is handling the loser transaction UNDO which is a
                                 // blocking operation
-                                
+
                                 xd->set_loser_xct_in_undo();
                                 if (xd->latch().held_by_me())
                                     xd->latch().latch_release();
 
                                 // Only one transaction may be attached to a thread at any time
-                                // The current running thread has the user transaction so 
+                                // The current running thread has the user transaction so
                                 // it cannot attach to the loser transaction without detach from the
                                 // user transaction first
                                 xct_t* user_xd = g_xct();
@@ -729,20 +730,20 @@ bool RawLockQueue::trigger_UNDO(Compatibility& compatibility)
                                 W_COERCE(xd->abort());
 
                                 // Done with rollback of loser transaction, destroy it
-                                xct_t::destroy_xct(xd);                                
+                                xct_t::destroy_xct(xd);
 
                                 DBGOUT3( << "RawLockQueue::trigger_UNDO: blocker loser transaction successfully aborted,"
                                          << "re-attach to the original user transaction");
 
                                 // Re-attach to the original user transaction
-                                me()->attach_xct(user_xd);                     
+                                me()->attach_xct(user_xd);
 
                                 // Notify caller an on_demand UNDO has been performed
                                 return true;
                             }
                             else
                             {
-                                if (xd->latch().held_by_me())                            
+                                if (xd->latch().held_by_me())
                                     xd->latch().latch_release();
 
                                 // The blocker txn is a loser transaction but it is in the middle of rolling back already
@@ -765,7 +766,7 @@ bool RawLockQueue::trigger_UNDO(Compatibility& compatibility)
 
                     // Fetch next transaction object
                     xd = iter.next();
-                }                           
+                }
 
                 // Done with the loop through transaction table and did not find a match
                 // If we did not find any loser transaction in transaction table
@@ -778,7 +779,7 @@ bool RawLockQueue::trigger_UNDO(Compatibility& compatibility)
                 }
                 else
                 {
-                    DBGOUT3(<< "RawLockQueue::trigger_UNDO(): have more loser transactions in transaction table");                
+                    DBGOUT3(<< "RawLockQueue::trigger_UNDO(): have more loser transactions in transaction table");
                 }
 
             }
@@ -806,7 +807,7 @@ bool RawLockQueue::trigger_UNDO(Compatibility& compatibility)
     }
 
     // On_demand UNDO did not happen
-    DBGOUT3(<< "RawLockQueue::trigger_UNDO(): on_demand UNDO did not happen in this function");    
+    DBGOUT3(<< "RawLockQueue::trigger_UNDO(): on_demand UNDO did not happen in this function");
     return false;
 }
 

@@ -23,8 +23,8 @@ class ss_m;
  * Details of the test data volume.
  */
 struct test_volume_t {
-    /** persistent volume id to give the volume. */ 
-    lvid_t      _lvid;   
+    /** persistent volume id to give the volume. */
+    lvid_t      _lvid;
     /** short (integer) volume id. */
     vid_t       _vid;
     /** path of the devise. */
@@ -129,7 +129,7 @@ public:
         if(_stid_list != NULL) {
             delete [] _stid_list;
             _stid_list = NULL;
-        } 
+        }
     }
     virtual w_rc_t pre_shutdown(ss_m *ssm) = 0;
 
@@ -210,7 +210,7 @@ public:
 
 // objects that can be used in pre_crash() and post_crash()
     test_volume_t _volume;
-    
+
     // these two are used in many crash testcases, so defined here although some test might not use them.
     stid_t _stid;
     lpid_t _root_pid;
@@ -338,7 +338,7 @@ public:
     int runRestartTest (restart_test_base *context,
                       restart_test_options *restart_options,
                       bool use_locks = false,              // default to disable locking, M3/M4 test cases need to enable locking
-                      int32_t lock_table_size = default_locktable_size,  
+                      int32_t lock_table_size = default_locktable_size,
                       int disk_quota_in_pages = default_quota_in_pages,
                       int bufferpool_size_in_pages = default_bufferpool_size_in_pages,
                       uint32_t cleaner_threads = 1,
@@ -354,6 +354,44 @@ public:
                           bool use_locks, int disk_quota_in_pages, const sm_options &options);
 
     int runRestartTest (restart_test_base *context,
+                      restart_test_options *restart_options,
+                      bool use_locks, int32_t lock_table_size,
+                      int disk_quota_in_pages, int bufferpool_size_in_pages,
+                      uint32_t cleaner_threads,
+                      uint32_t cleaner_interval_millisec_min,
+                      uint32_t cleaner_interval_millisec_max,
+                      uint32_t cleaner_write_buffer_pages,
+                      bool initially_enable_cleaners,
+                      bool enable_swizzling,
+                      const std::vector<std::pair<const char*, int64_t> > &additional_int_params,
+                      const std::vector<std::pair<const char*, bool> > &additional_bool_params,
+                      const std::vector<std::pair<const char*, const char*> > &additional_string_params);
+
+    /**
+    * Runs a restart performance test case in various restart modes
+    * Caller specify the restart mode through input parameter 'restart_option'
+    * @param context the object to implement 3 phases: initial_shutdown(), pre_shutdiwn(), post_shutdown().
+    * @see restart_test_base
+    */
+    int runRestartPerfTest (restart_test_base *context,
+                      restart_test_options *restart_options,
+                      bool use_locks = false,              // default to disable locking, M3/M4 test cases need to enable locking
+                      int32_t lock_table_size = default_locktable_size,
+                      int disk_quota_in_pages = default_quota_in_pages,
+                      int bufferpool_size_in_pages = default_bufferpool_size_in_pages,
+                      uint32_t cleaner_threads = 1,
+                      uint32_t cleaner_interval_millisec_min	   = 1000,
+                      uint32_t cleaner_interval_millisec_max	   = 256000,
+                      uint32_t cleaner_write_buffer_pages          = 64,
+                      bool initially_enable_cleaners = true,
+                      bool enable_swizzling = default_enable_swizzling
+                      );
+
+    /** This is most concise. New code should use this one. */
+    int runRestartPerfTest (restart_test_base *context, restart_test_options *restart_options,
+                          bool use_locks, int disk_quota_in_pages, const sm_options &options);
+
+    int runRestartPerfTest (restart_test_base *context,
                       restart_test_options *restart_options,
                       bool use_locks, int32_t lock_table_size,
                       int disk_quota_in_pages, int bufferpool_size_in_pages,
@@ -384,7 +422,7 @@ public:
                       bool initially_enable_cleaners = true,
                       bool enable_swizzling = default_enable_swizzling
                      );
-    
+
     /**
      * Overload for additional params.
      */
@@ -405,10 +443,10 @@ public:
     int runCrashTest (crash_test_base *context, bool use_locks, int disk_quota_in_pages, const sm_options &options);
 
     void empty_logdata_dir();
-    
+
     bool get_use_locks () const { return _use_locks;}
     void set_use_locks (bool value) { _use_locks = value;}
-    
+
     // set query concurrency according to _use_locks
     void set_xct_query_lock();
 
@@ -459,7 +497,7 @@ public:
     bool in_restart(){
         return x_in_restart(_ssm);
     }
-   
+
     w_rc_t btree_populate_records(stid_t &stid, bool fCheckPoint, test_txn_state_t txnState, bool splitIntoSmallTrans = false,
                                       char keyPrefix = '\0');
 

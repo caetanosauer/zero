@@ -78,19 +78,19 @@ inline uint64_t bf_key(const lpid_t &pid) {
 
 // A flag whether the bufferpool should alternate location of latches and control blocks
 // starting at an odd multiple of 64B as follows: |CB0|L0|L1|CB1|CB2|L2|L3|CB3|...
-// This layout addresses a pathology that we attribute to the hardware spatial prefetcher. 
-// The default layout allocates a latch right after a control block so that 
-// the control block and latch live in adjacent cache lines (in the same 128B sector). 
-// The pathology happens because when we write-access the latch, the processor prefetches 
-// the control block in read-exclusive mode even if we late really only read-access the 
-// control block. This causes unnecessary coherence traffic. With the new layout, we avoid 
+// This layout addresses a pathology that we attribute to the hardware spatial prefetcher.
+// The default layout allocates a latch right after a control block so that
+// the control block and latch live in adjacent cache lines (in the same 128B sector).
+// The pathology happens because when we write-access the latch, the processor prefetches
+// the control block in read-exclusive mode even if we late really only read-access the
+// control block. This causes unnecessary coherence traffic. With the new layout, we avoid
 // having a control block and latch in the same 128B sector.
 #define BP_ALTERNATE_CB_LATCH
 
-// A flag whether the bufferpool maintains a per-frame counter that tracks how many 
-// swizzled pointers are in each frame. This counter is a conservative hint rather than 
+// A flag whether the bufferpool maintains a per-frame counter that tracks how many
+// swizzled pointers are in each frame. This counter is a conservative hint rather than
 // an accurate counter as the bufferpool does not track removals of pointers from a page
-// which can happen during merges. 
+// which can happen during merges.
 #define BP_TRACK_SWIZZLED_PTR_CNT
 
 // Use the new layout with swizzling
@@ -101,7 +101,7 @@ inline uint64_t bf_key(const lpid_t &pid) {
 
 #ifndef PAUSE_SWIZZLING_ON
 const bool _bf_pause_swizzling = false; // compiler will strip this out from if clauses. so, no overhead.
-#endif // PAUSE_SWIZZLING_ON    
+#endif // PAUSE_SWIZZLING_ON
 
 /**
  * recursive clockhand's maximum depth used while choosing a page to evict/unswizzle.
@@ -126,24 +126,24 @@ const uint32_t EVICT_BATCH_SIZE = 1000;
 */
 const uint16_t EVICT_MAX_ROUNDS = 20;
 
-/** 
+/**
  * Maximum value of the per-frame refcount (reference counter).
- * We cap the refcount to avoid contention on the cacheline of the frame's control 
- * block (due to ping-pongs between sockets) when multiple sockets read-access the same frame. 
- * The refcount max value should have enough granularity to separate cold from hot pages. 
+ * We cap the refcount to avoid contention on the cacheline of the frame's control
+ * block (due to ping-pongs between sockets) when multiple sockets read-access the same frame.
+ * The refcount max value should have enough granularity to separate cold from hot pages.
  */
 const uint16_t BP_MAX_REFCOUNT = 16;
 
-/** 
+/**
  * Initial value of the per-frame refcount (reference counter).
  */
 const uint16_t BP_INITIAL_REFCOUNT = 0;
 
- 
-/**\enum replacement_policy_t 
+
+/**\enum replacement_policy_t
  * \brief Page replacement policy.
  */
-enum replacement_policy_t { 
+enum replacement_policy_t {
     POLICY_CLOCK = 0,
     POLICY_CLOCK_PRIORITY,
     POLICY_RANDOM
@@ -158,15 +158,15 @@ enum replacement_policy_t {
  * This is the new buffer manager in Foster B-tree which only deals with
  * tree-structured stores such as B-trees.
  * This class and bf_fixed_m effectively replace the old bf_core_m.
- * 
+ *
  * \section{Pointer-Swizzling}
  * See bufferpool_design.docx.
- * 
+ *
  * \section{Hierarchical-Bufferpool}
  * This bufferpool assumes hierarchical data dastucture like B-trees.
  * fix() receives the already-latched parent pointer and uses it to find
  * the requested page. Especially when the pointer to the child is swizzled,
- * 
+ *
  */
 class bf_tree_m {
     friend class test_bf_tree; // for testcases
@@ -179,7 +179,7 @@ public:
     static bool _bf_pause_swizzling; // this can be turned on/off from any place. ugly, but it's just for an experiment.
     static uint64_t _bf_swizzle_ex; // approximate statistics. how many times ex-latch were taken on page swizzling
     static uint64_t _bf_swizzle_ex_fails; // approximate statistics. how many times ex-latch upgrade failed on page swizzling
-#endif // PAUSE_SWIZZLING_ON    
+#endif // PAUSE_SWIZZLING_ON
 
     /** constructs the buffer pool. */
     bf_tree_m (bf_idx block_cnt, uint32_t cleaner_threads = 1,
@@ -192,7 +192,7 @@ public:
               );
     /** destructs the buffer pool.  */
     ~bf_tree_m ();
-    
+
     /** returns the total number of blocks in this bufferpool. */
     inline bf_idx get_block_cnt() const {return _block_cnt;}
 
@@ -207,7 +207,7 @@ public:
      * this method should be used only when it has to be, such as before/after REDO recovery.
      */
     w_rc_t set_swizzling_enabled(bool enabled);
-    
+
     /** does additional initialization that might return error codes (thus can't be done in constructor). */
     w_rc_t init ();
     /** does additional clean-up that might return error codes (thus can't be done in destructor). */
@@ -240,7 +240,7 @@ public:
      * fixes the page if the shpid (pointer) is already swizzled by the parent page.
      * The optimization is transparent for most of the code because the shpid stored in the parent
      * page is automatically (and atomically) changed to a swizzled pointer by the bufferpool.
-     * 
+     *
      * @param[out] page         the fixed page.
      * @param[in]  parent       parent of the page to be fixed. has to be already latched. if you can't provide this,
      *                          use fix_direct() though it can't exploit pointer swizzling.
@@ -249,11 +249,11 @@ public:
      * @param[in]  mode         latch mode.  has to be SH or EX.
      * @param[in]  conditional  whether the fix is conditional (returns immediately even if failed).
      * @param[in]  virgin_page  whether the page is a new page thus doesn't have to be read from disk.
-     * @param[in]  from_recovery true if caller is from recovery.     
-     * 
+     * @param[in]  from_recovery true if caller is from recovery.
+     *
      * To use this method, you need to include bf_tree_inline.h.
      */
-    w_rc_t fix_nonroot (generic_page*& page, generic_page *parent, volid_t vol, shpid_t shpid, 
+    w_rc_t fix_nonroot (generic_page*& page, generic_page *parent, volid_t vol, shpid_t shpid,
                           latch_mode_t mode, bool conditional, bool virgin_page,
                           const bool from_recovery = false);
 
@@ -261,15 +261,15 @@ public:
      * Fixes a non-root page in the bufferpool given a swizzled pointer that may be stale.
      * Because of the possibility of staleness, the actual page fixed may be different
      * from the page ID given.
-     * 
+     *
      * @param[out] page         the fixed page.
      * @param[in]  shpid        ID of the page to fix
      * @param[in]  mode         latch mode.  has to be Q, SH, or EX.
      * @param[in]  conditional  whether the fix is conditional (returns immediately even if failed).
      * @param[out] ticket       the resulting Q ticket if mode is LATCH_Q
-     * 
+     *
      * @pre shpid is a swizzled pointer
-     * 
+     *
      * To use this method, you need to include bf_tree_inline.h.
      */
     w_rc_t fix_unsafely_nonroot(generic_page*& page, shpid_t shpid, latch_mode_t mode, bool conditional, q_ticket_t& ticket);
@@ -299,7 +299,7 @@ public:
      * The page has been loaded into buffer pool and in the hashtable with known idx
      * This function associates the page in buffer pool with fixable_page data structure.
      * also store the vol and store number into the buffer (store number is not in cb)
-     * There is no parent involved, and swizzling must be disabled.    
+     * There is no parent involved, and swizzling must be disabled.
      * @param[out] page the fixed page.
      * @param[in] idx idx of the page.
      */
@@ -313,7 +313,7 @@ public:
      * @return slot index of the page in this bufferpool. Use this value to the subsequent refix_direct() and unpin_for_refix() call.
      */
     bf_idx pin_for_refix(const generic_page* page);
-    
+
     /**
      * Removes the additional pin count added by pin_for_refix().
      */
@@ -346,7 +346,7 @@ public:
      */
     w_rc_t fix_with_Q_root(generic_page*& page, volid_t vol, snum_t store, q_ticket_t& ticket);
 
-    
+
     /** returns the current latch mode of the page. */
     latch_mode_t latch_mode(const generic_page* p);
 
@@ -470,7 +470,7 @@ public:
      */
     void switch_parent (generic_page* page, generic_page* new_parent);
 #endif // BP_MAINTAIN_PARENT_PTR
-    
+
     /**
      * Swizzle a child pointer in the parent page to speed-up accesses on the child.
      * @param[in] parent parent of the requested page. this has to be latched (but SH latch is enough).
@@ -504,11 +504,11 @@ public:
      * It returns a bogus result in that case (or asserts).
      */
     bool is_swizzled (const generic_page* page) const;
-    
-    /** Normalizes the page identifier to a disk page identifier. 
-      * If the page identifier is a memory frame index (in case of swizzling) 
-      * then it returns the disk page index, otherwise it returns the page 
-      * identifier as it is. 
+
+    /** Normalizes the page identifier to a disk page identifier.
+      * If the page identifier is a memory frame index (in case of swizzling)
+      * then it returns the disk page index, otherwise it returns the page
+      * identifier as it is.
       * Do NOT call this method without a latch.
       */
     shpid_t normalize_shpid(shpid_t shpid) const;
@@ -566,7 +566,7 @@ public:
                        lsn_t *page_lsn, lsn_t &min_rec_lsn,
                        const lsn_t master, const lsn_t current_lsn,
                        lsn_t last_mount_lsn);
-    
+
     /**
     *  Ensures the buffer pool's rec_lsn for this page is no larger than
     *  the page lsn. If not repaired, the faulty rec_lsn can lead to
@@ -577,23 +577,23 @@ public:
     *  end of the log but the lsn on the page reflects something earlier.
     *  At least in this case, we should expect the bfcb_t to say the
     *  page isn't dirty.
-    *  3) when a st_tmp page is fixed in EX mode and an update is 
+    *  3) when a st_tmp page is fixed in EX mode and an update is
     *  made and the page is unfixed.  Now the rec_lsn reflects the tail
     *  end of the log but the lsn on the page reflects something earlier.
     *  In this case, the page IS dirty.
     *
     *  FRJ: I don't see any evidence that this function is actually
     *  called because of (3) above...
-    * 
+    *
     */
     void repair_rec_lsn (generic_page *page, bool was_dirty, const lsn_t &new_rlsn);
 
     /**
      * Returns true if the node has any swizzled pointers to its children.
      * In constrast to the swizzled_ptr_cnt_hint counter, which is just a
-     * a hint, this method is accurate as it scans the node * and counts 
+     * a hint, this method is accurate as it scans the node * and counts
      * its swizzled pointers. It requires the caller to have the node latched.
-     */ 
+     */
     bool has_swizzled_child(bf_idx node_idx);
 
 
@@ -654,7 +654,7 @@ public:
      * Set in_doubt and used flags in cb to true, update LSNs (where the page got dirty
      * and the last write)
      * update the in_doubt page counter and return the index of the page
-     */    
+     */
     w_rc_t register_and_mark(bf_idx& ret, lpid_t page_of_interest,
            lsn_t first_lsn, lsn_t last_lsn, uint32_t& in_doubt_count);
 
@@ -664,7 +664,7 @@ public:
      * The specified page has cb in buffer pool, also registered in hashtable
      * but the actual page is not in buffer pool yet
      * Load the actual page into buffer pool
-     */    
+     */
     w_rc_t load_for_redo(bf_idx idx, volid_t vid, shpid_t shpid, bool& past_end);
 
 
@@ -693,7 +693,7 @@ private:
      * @param[in] vol Volume ID
      * @param[in] shpid Page ID
      * @param[in] past_end true if page not on disk
-     * @param[in] page_emlsn if != 0, it is the page last update LSN identified duringLog Analysis
+     * @param[in] page_emlsn if != 0, it is the page last update LSN identified during Log Analysis
      */
     w_rc_t _check_read_page(generic_page* parent, bf_idx idx, volid_t vol,
                                  shpid_t shpid, const bool past_end,
@@ -708,7 +708,7 @@ private:
      * @param[in] shpid Page ID
      * @param[in] corrupted Whether the page is corrupt (e.g., checksum
      * did not match). Otherwise, the page is just a little stale and Single-Page-Recovery is more efficient.
-     * @param[in] page_emlsn If not NULL, it is the last LSN gathered during Log Analysis     
+     * @param[in] page_emlsn If not NULL, it is the last LSN gathered during Log Analysis
      */
     w_rc_t _try_recover_page(generic_page* parent, bf_idx idx, volid_t vol,
                              shpid_t shpid, bool corrupted, const lsn_t page_emlsn);
@@ -728,7 +728,7 @@ private:
     void   _convert_to_disk_page (generic_page* page) const;
     /** if the shpid is a swizzled pointer, convert it to the original page id. */
     void   _convert_to_pageid (shpid_t* shpid) const;
-    
+
 #ifdef BP_MAINTAIN_PARENT_PTR
     /**
      * Newly adds the speficied block to the head of swizzled-pages LRU.
@@ -752,7 +752,7 @@ private:
 
     /** finds a free block and returns its index. if free list is empty and 'evict' = true, it evicts some page. */
     w_rc_t _grab_free_block(bf_idx& ret, bool evict = true);
-    
+
     /**
      * evict some number of blocks.
      */
@@ -783,10 +783,10 @@ private:
 
     /// returns true iff idx is in the valid range.  for assertion.
     bool   _is_valid_idx (bf_idx idx) const;
-    
+
     /**
      * returns true if idx is in the valid range and also the block is used.  for assertion.
-     * 
+     *
      * @pre hold get_cb(idx).latch() in read or write mode
      */
     bool   _is_active_idx (bf_idx idx) const;
@@ -875,21 +875,21 @@ private:
     bool   _unswizzle_a_frame(bf_idx parent_idx, uint32_t child_slot);
 
     bool   _are_there_many_swizzled_pages() const;
-    
+
     /**
      * Increases the pin_cnt of the given block and makes sure the block is not being evicted or invalid.
      * This method assumes no knowledge of the current state of the block, so this might be costly.
      * Also, this might fail (the block is being evicted or invalid), in which case this returns false.
      */
     bool   _increment_pin_cnt_no_assumption (bf_idx idx);
-    
+
     /**
      * Releases one pin. This method must be used only for decreasing pin_cnt from n+1 to n where n>=0.
      * In other words, setting -1 to pin_cnt must not happen in this method.
      * Assuming it, this function is just an atomic_dec().
      */
     void   _decrement_pin_cnt_assume_positive (bf_idx idx);
-    
+
     /**
      * Deletes the given block from this buffer pool. This method must be called when
      *  1. there is no concurrent accesses on the page (thus no latch)
@@ -898,14 +898,14 @@ private:
      * Used from the dirty page cleaner to delete a page with "tobedeleted" flag.
      */
     void   _delete_block (bf_idx idx);
-    
+
     /**
      * Returns if the dependency FROM cb is still active.
      * If it turns out that the dependency is no longer active, it also clears _dependency_xxx to speed up future function call.
      * cb must be pinned.
      */
     bool   _check_dependency_still_active (bf_tree_cb_t &cb);
-    
+
     bool   _check_dependency_cycle(bf_idx source, bf_idx start_idx);
 
     bool   _compare_dependency_lsn(const bf_tree_cb_t& cb, const bf_tree_cb_t &dependency_cb) const;
@@ -916,7 +916,7 @@ private:
     w_rc_t _install_volume_mainmemorydb(vol_t* volume);
     w_rc_t _fix_nonswizzled_mainmemorydb(generic_page* parent, generic_page*& page, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page);
 
-    
+
     /**
      * \brief System transaction for upadting child EMLSN in parent
      * \ingroup Single-Page-Recovery
@@ -938,26 +938,26 @@ private:
     /**
      * Array of pointers to root page descriptors of all currently mounted volumes.
      * The array index is volume ID.
-     * 
+     *
      * All pointers are initially NULL.
      * When a volume is mounted, a bf_tree_vol_t is instantiated
      * in this array. When the volume is unmounted, the object is revoked
      * and the pointer is reset to NULL.
-     * 
+     *
      * Because there is no race condition in loading a volume,
      * this array does not have to be protected by mutex or spinlocks.
      */
     bf_tree_vol_t*       _volumes[MAX_VOL_COUNT];
-    
+
     /** Array of control blocks. array size is _block_cnt. index 0 is never used (means NULL). */
     bf_tree_cb_t*        _control_blocks;
 
     /** Array of page contents. array size is _block_cnt. index 0 is never used (means NULL). */
     generic_page*              _buffer;
-    
+
     /** hashtable to locate a page in this bufferpool. swizzled pages are removed from bufferpool. */
     bf_hashtable*        _hashtable;
-    
+
     /**
      * singly-linked freelist. index is same as _buffer/_control_blocks. zero means no link.
      * This logically belongs to _control_blocks, but is an array by itself for efficiency.
@@ -969,7 +969,7 @@ private:
     uint32_t _freelist_len;
 
 // Be VERY careful on deadlock to use the following.
-    
+
     /** spin lock to protect all freelist related stuff. */
     tatas_lock           _freelist_lock;
 
@@ -995,14 +995,14 @@ private:
      * The first element is the volume to check,
      * the second element is the store to check,
      * the third element is the ordinal in the root page (0=first child,1=second child),...
-     * 
+     *
      * We need this hierarchical clockhand because we must
      * go _back_ to the parent page to evict/unswizzle the child.
      * The swizzled pointer is stored in the parent page, we need to
      * modify it back to a usual page ID. The hierarchical clockhand
      * tells what is the parent page without parent pointers.
      * Also, eviction needs parent to apply EMLSN update for Single-Page-Recovery.
-     * 
+     *
      * Like the usual clockhand, hierarchical clockhand can be imprecise
      * to avoid locks or other heavy-weight methods.
      *   If we skip over some node, that's fine. We will visit it later anyways.
@@ -1032,10 +1032,10 @@ private:
     uint32_t             _swizzle_clockhand_threshold;
 
     // queue_based_lock_t   _eviction_mutex;
-    
+
     /** the dirty page cleaner. */
     bf_tree_cleaner*     _cleaner;
-    
+
     /**
      * Unreliable count of dirty pages in this bufferpool.
      * The value is incremented and decremented without atomic operations.
@@ -1048,7 +1048,7 @@ private:
      * So, this should be only used as statistics.
      */
     int32_t              _swizzled_page_count_approximate;
-    
+
     /** page replacement policy */
     replacement_policy_t _replacement_policy;
     /** whether to swizzle non-root pages. */
@@ -1092,7 +1092,7 @@ public:
     }
     bf_idx idx() const { return _idx;}
     void release ();
-    
+
 private:
     bf_idx _idx;
 };

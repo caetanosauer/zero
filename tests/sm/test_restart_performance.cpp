@@ -349,6 +349,18 @@ options.set_int_option("sm_rawlock_gc_max_segment_count", 3);
 **/
 
 
+TEST (RestartPerfTest, MultiPerformanceNormal) {
+    test_env->empty_logdata_dir();
+    restart_multi_performance context;
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m1_default_restart;
+
+//////////////////////////////////////////////////////////////////
+// TODO(Restart)... Need to call a different function which has 3 phases
+//////////////////////////////////////////////////////////////////
+    EXPECT_EQ(test_env->runRestartPerfTest(&context, &options, true /*use_locks*/), 0);   // Turn locking on
+}
 
 TEST (RestartPerfTest, MultiPerformanceM1) {
     test_env->empty_logdata_dir();
@@ -358,9 +370,9 @@ TEST (RestartPerfTest, MultiPerformanceM1) {
     options.restart_mode = m1_default_restart;
 
 //////////////////////////////////////////////////////////////////
-// TODO(Restart)... Need to call a different function which has 3 phases, not runRestartTest
+// TODO(Restart)... Need to call a different function which has 3 phases
 //////////////////////////////////////////////////////////////////
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+    EXPECT_EQ(test_env->runRestartPerfTest(&context, &options, false /*use_locks*/), 0);   // Turn locking off
 }
 
 TEST (RestartPerfTest, MultiPerformanceM2) {
@@ -371,9 +383,9 @@ TEST (RestartPerfTest, MultiPerformanceM2) {
     options.restart_mode = m2_default_restart;
 
 //////////////////////////////////////////////////////////////////
-// TODO(Restart)... Need to call a different function which has 3 phases, not runRestartTest
+// TODO(Restart)... Need to call a different function which has 3 phases
 //////////////////////////////////////////////////////////////////
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+    EXPECT_EQ(test_env->runRestartPerfTest(&context, &options, false /*use_locks*/), 0);   // Turn locking off
 }
 
 TEST (RestartPerfTest, MultiPerformanceM3) {
@@ -384,9 +396,9 @@ TEST (RestartPerfTest, MultiPerformanceM3) {
     options.restart_mode = m3_default_restart;
 
 //////////////////////////////////////////////////////////////////
-// TODO(Restart)... Need to call a different function which has 3 phases, not runRestartTest
+// TODO(Restart)... Need to call a different function which has 3 phases
 //////////////////////////////////////////////////////////////////
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+    EXPECT_EQ(test_env->runRestartPerfTest(&context, &options, true /*use_locks*/), 0);     // Turn locking on
 }
 
 TEST (RestartPerfTest, MultiPerformanceM4) {
@@ -397,9 +409,9 @@ TEST (RestartPerfTest, MultiPerformanceM4) {
     options.restart_mode = m4_default_restart;
 
 //////////////////////////////////////////////////////////////////
-// TODO(Restart)... Need to call a different function which has 3 phases, not runRestartTest
+// TODO(Restart)... Need to call a different function which has 3 phases
 //////////////////////////////////////////////////////////////////
-    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+    EXPECT_EQ(test_env->runRestartPerfTest(&context, &options, true /*use_locks*/), 0);    // Turn locking on
 }
 
 int main(int argc, char **argv) {
