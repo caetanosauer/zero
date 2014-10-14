@@ -117,8 +117,103 @@ struct restart_test_options {
     bool enable_checkpoints;
 };
 
+// Begin... for test_restart_performance.cpp
+// The base class for all restart performance test cases.
+// Derived classes must implement three functions; initial_shutdown(), pre_shutdown() and post_shutdown().
+// These are called before and after a normal or (simulated) crash shutdown
+// @See btree_test_env::runRestartTest()
+
+class restart_performance_test_base
+{
+public:
+    restart_performance_test_base() {}
+    virtual ~restart_performance_test_base() {}
+
+    virtual w_rc_t initial_shutdown(ss_m *ssm) = 0;  // Phase 1, populate the store, normal shutdown
+
+    virtual w_rc_t pre_shutdown(ss_m *ssm) = 0;    // Phase 2, update the store, either normal or crash shutdown
+
+    virtual w_rc_t post_shutdown(ss_m *ssm) = 0;   // Phase 3, validate and concurrent access the store, normal shutdown
+
+    test_volume_t _volume;
+
+    stid_t _stid;       // Only one index
+    lpid_t _root_pid;
+};
+
+class restart_performance_initial_functor : public test_functor
+{
+public:
+    restart_performance_initial_functor(restart_performance_test_base *context)
+    {
+        _context = context;
+        _need_init = true;         // Start from scratch
+        _clean_shutdown = true;    // Clean shutdown
+    }
+    w_rc_t run_test(ss_m *ssm)
+    {
+        _context->_volume = _test_volume;          // remember the volume for use in post_shutdown
+        return _context->initial_shutdown (ssm);   // no crash
+    }
+    restart_performance_test_base *_context;
+};
+
+class restart_performance_dirty_pre_functor : public test_functor
+{
+public:
+    restart_performance_dirty_pre_functor(restart_performance_test_base *context)
+    {
+        _context = context;
+        _need_init = false;                // Use data from phase 1
+        _clean_shutdown = false;           // Simulate a crash shutdown
+        _test_volume = context->_volume;   //pre-set the volume we already made
+    }
+    w_rc_t run_test(ss_m *ssm)
+    {
+        return _context->pre_shutdown (ssm);  // crash
+    }
+    restart_performance_test_base *_context;
+};
+
+class restart_performance_clean_pre_functor : public test_functor
+{
+public:
+    restart_performance_clean_pre_functor(restart_performance_test_base *context)
+    {
+        _context = context;
+        _need_init = false;                // Use data from phase 1
+        _clean_shutdown = true;            // clean shutdown
+        _test_volume = context->_volume;   //pre-set the volume we already made
+    }
+    w_rc_t run_test(ss_m *ssm)
+    {
+        return _context->pre_shutdown (ssm);   // no crash
+    }
+    restart_performance_test_base *_context;
+};
+
+class restart_performance_post_functor : public test_functor
+{
+public:
+    restart_performance_post_functor(restart_performance_test_base *context)
+    {
+        _context = context;
+        _need_init = false;                // Use data from phase 2
+        _clean_shutdown = true;            // clean shutdown
+        _test_volume = context->_volume;   //pre-set the volume we already made
+    }
+    w_rc_t run_test(ss_m *ssm)
+    {
+        return _context->post_shutdown (ssm);  // no crash
+    }
+    restart_performance_test_base *_context;
+};
+
+// End... for test_restart_performance.cpp
+
+
 // Begin... for test_restart.cpp and test_concurrent_restart.cpp
-// The base class for all restart test cases.
+// The base class for all restart functional test cases.
 // Derived classes must implement two functions; pre_shutdown() and post_shutdown().
 // These are called before and after a normal or (simulated) crash shutdown
 // @See btree_test_env::runRestartTest()
@@ -371,11 +466,13 @@ public:
     * Runs a restart performance test case in various restart modes
     * Caller specify the restart mode through input parameter 'restart_option'
     * @param context the object to implement 3 phases: initial_shutdown(), pre_shutdiwn(), post_shutdown().
-    * @see restart_test_base
+    * @see restart_performance_test_base
     */
-    int runRestartPerfTest (restart_test_base *context,
-                      restart_test_options *restart_options,
-                      bool use_locks = false,              // default to disable locking, M3/M4 test cases need to enable locking
+    // Top level API for caller to start the test
+    int runRestartPerfTest (
+                      restart_performance_test_base *context,
+                      restart_test_options *restart_options,  // Restart options, e.g. milestone setting
+                      bool use_locks,                         // True: enable locking, false: disable locking, M3/M4 test cases need to enable locking
                       int32_t lock_table_size = default_locktable_size,
                       int disk_quota_in_pages = default_quota_in_pages,
                       int bufferpool_size_in_pages = default_bufferpool_size_in_pages,
@@ -387,11 +484,15 @@ public:
                       bool enable_swizzling = default_enable_swizzling
                       );
 
-    /** This is most concise. New code should use this one. */
-    int runRestartPerfTest (restart_test_base *context, restart_test_options *restart_options,
-                          bool use_locks, int disk_quota_in_pages, const sm_options &options);
+    // Internal API to carry out the test
+    int runRestartPerfTest (restart_performance_test_base *context,
+                          restart_test_options *restart_options,
+                          bool use_locks,
+                          int disk_quota_in_pages,
+                          const sm_options &options);
 
-    int runRestartPerfTest (restart_test_base *context,
+    // Alternative top level API, not used currently for restart performance test
+    int runRestartPerfTest (restart_performance_test_base *context,
                       restart_test_options *restart_options,
                       bool use_locks, int32_t lock_table_size,
                       int disk_quota_in_pages, int bufferpool_size_in_pages,
@@ -502,6 +603,13 @@ public:
                                       char keyPrefix = '\0');
 
     w_rc_t delete_records(stid_t &stid, bool fCheckPoint, test_txn_state_t txnState, char keyPrefix = '\0');
+
+    void itoa(int i, char *buf, int base)
+    {
+        //  ignoring the base
+        if(base)
+            sprintf(buf, "%d", i);
+    }
 
     ss_m* _ssm;
     bool _use_locks;

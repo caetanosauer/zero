@@ -28,8 +28,9 @@
 ////////////////////////////////////////////////////////////////////////////////////////
 
 // Initialized to a non-zero value to ensure we do not skip the the first RawLockQueue::trigger_UNDO() call
-const int INITIAL__FAKE_COUNT = 999;
-int RawLockQueue::loser_count = INITIAL__FAKE_COUNT;
+const int HAS_LOSER_COUNT = 999;                     // Has loser transaction in transaction table
+const int NO_LOSER_COUNT = 0;                        // No more loser transaction in transaction table
+int RawLockQueue::loser_count = HAS_LOSER_COUNT;
 
 RawLockQueue::Iterator::Iterator(const RawLockQueue* enclosure_arg, RawLock* start_from)
     : enclosure(enclosure_arg), predecessor(start_from) {
@@ -622,7 +623,7 @@ bool RawLockQueue::trigger_UNDO(Compatibility& compatibility)
                 // during Log Analysis phase only, once the system is opened for
                 // user transactions, we will not create more loser transactions
                 // into transaction table
-                if ( 0 == loser_count)
+                if ( NO_LOSER_COUNT == loser_count)
                 {
                     DBGOUT3( << "RawLockQueue::trigger_UNDO: skip due to no loser transaction found in transaction table previously");
                     return false;
@@ -775,7 +776,7 @@ bool RawLockQueue::trigger_UNDO(Compatibility& compatibility)
                 if (false == has_loser)
                 {
                     DBGOUT3(<< "RawLockQueue::trigger_UNDO(): no existing loser transaction in transaction table");
-                    loser_count = 0;
+                    loser_count = NO_LOSER_COUNT;
                 }
                 else
                 {

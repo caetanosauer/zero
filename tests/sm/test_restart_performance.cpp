@@ -7,6 +7,7 @@
 #include "xct.h"
 #include "sm_base.h"
 #include "sm_external.h"
+
 #include <cstdlib>
 #include <vector>
 #include <algorithm>
@@ -25,26 +26,12 @@ btree_test_env *test_env;
 //         concurrency check based on lock acquisition
 //         restart carried out by both restart child thread and user thransaction threads
 
-// Three phases in the test run:
-// 1. Populate the base database, follow by a normal shutdown to persist data on disk
-//     Data - insert 3000 records
-//     Key - 1 - 3000
-//     Key - for key ending with 3, 5 or 7, skip the insertions
-// 2. Start the system with existing data from phase 1,
-//     use multiple worker threads to generate many user transactions,
-//     including commit and in-flight (maybe abort)
-//     Key - for key ending with 3 or 7, insert the record
-//         Key - if the key ending with 7, in-flight insertions
-//         Key - if the key ending with 3, commit
-//     Key - all other keys, update
-//         Key - if the key ending with 2 or 9, in-flight updates
-//     simulate system crash
-// 3. Restart the system, start concurrent user transactions
-//     measuer the time required to finish 1000 concurrent transactions
-//     Key - insert records ending with 5
-//     Key - delete if key ending with 2 or 0 (all the 2's should roll back first)
-//     Key - if key ending with 3, update
-//     Measure and draw a curve that shows the numbers of completed transactions over time
+
+// Define constants
+const int TOTAL_THREAD = 100;     // Worker threads
+const int TOTAL_RECORDS = 3000;   // Total record count
+const int key_size = 10;          // Record key size
+const int data_size = 10;         // Record data size
 
 static __inline__ unsigned long long rdtsc(void)
 {
@@ -52,6 +39,145 @@ static __inline__ unsigned long long rdtsc(void)
     __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
     return ( (unsigned long long)lo)|( ((unsigned long long)hi)<<32 );
 }
+
+lsn_t get_durable_lsn()
+{
+    lsn_t ret;
+    ss_m::get_durable_lsn(ret);
+    return ret;
+}
+void output_durable_lsn(int W_IFDEBUG1(num))
+{
+    DBGOUT1( << num << ".durable LSN=" << get_durable_lsn());
+}
+
+w_rc_t populate_performance_records(stid_t &stid)
+{
+    // Insert TOTAL_RECORDS records into the store
+    //   Key - 1 - TOTAL_RECORDS
+    //   Key - for key ending with 3, 5 or 7, skip the insertions
+
+    char key_buf[key_size+1];
+    char data_buf[data_size+1];
+    memset(data_buf, '\0', data_size+1);
+    memset(data_buf, 'D', data_size);
+
+    uint64_t key_int = 0;
+
+    // Insert
+    for (int i=0; i < TOTAL_RECORDS; ++i)
+    {
+        // Prepare the record first
+        ++key_int;
+        memset(key_buf, '\0', key_size+1);
+        test_env->itoa(key_int, key_buf, 10);   // Fill the key portion with integer converted to string
+
+        int last_digit = strlen(key_buf)-1;
+        if (('3' == key_buf[last_digit]) || ('5' == key_buf[last_digit]) || ('7' == key_buf[last_digit]))
+        {
+            // Skip records with keys ending in 3, 5, or 7
+        }
+        else
+        {
+            W_DO(test_env->btree_insert_and_commit(stid, key_buf, data_buf));
+        }
+    }
+    return RCOK;
+}
+
+w_rc_t insert_performance_records()
+//                                  stid_t &stid,
+//                                  test_txn_state_t txnState,  // What to do with the transaction
+//                                  bool splitIntoSmallTrans)   // Default: false
+                                                              // Ture if one insertion per transaction
+{
+
+    return RCOK;
+}
+
+
+w_rc_t delete_performance_records()
+//                                        stid_t &stid,
+//                                        test_txn_state_t txnState) // What to do with the transaction
+{
+
+    return RCOK;
+}
+
+w_rc_t update_performance_records()
+//                                        stid_t &stid,
+//                                        test_txn_state_t txnState)  // What to do with the transaction
+{
+
+    return RCOK;
+}
+
+// Main performance test case used by:
+//    Normal shutdown - using M1 code path, due to normal shutdown, minor differences in milestone code path
+//    M1 crash shutdown
+//    M2 crash shutdown
+//    M3 crash shutdown
+//    M4 crash shutdown
+class restart_multi_performance : public restart_performance_test_base
+{
+public:
+
+    w_rc_t initial_shutdown(ss_m *ssm)
+    {
+        // Populate the base database, follow by a normal shutdown to persist data on disk
+        // Single thread, single index
+        //     Data - insert TOTAL_RECORDS records
+        //     Key - 1 - 3000
+        //     Key - for key ending with 3, 5 or 7, skip the insertions
+
+        output_durable_lsn(1);
+        W_DO(x_btree_create_index(ssm, &_volume, _stid, _root_pid));
+        populate_performance_records(_stid);
+        output_durable_lsn(2);
+        return RCOK;
+    }
+
+    w_rc_t pre_shutdown(ss_m *ssm)
+    {
+//////////////////////////////////////////////////
+// TODO(Restart)... phase 2, in-flights and crash
+//////////////////////////////////////////////////
+        // Start the system with existing data from phase 1,
+        // Use multiple worker threads to generate many user transactions,
+        // including commit and in-flight (maybe abort) transactions
+        // Only up to TOTAL_THREAD in-flight transactions due to Express implementation
+        // limitation and the number of worker threads in test code.  In order to
+        // generate an in-flight transaction, the worker thread detach from the active
+        // transaction, but the worker thread would not be able to start a new transaction
+        // once it detached from an active transaction
+        //       Key - insert
+        //                Key - if the key ending with 3, commit
+        //                Key - if the key ending with 5, skip
+        //                Key - if the key ending with 7, in-flight insertions
+        //       Key - all other keys, update the existing records
+        //                Key - if the key ending with 2 or 9, in-flight updates
+        // Simulate system crash
+
+        w_assert1(NULL != ssm);
+
+        output_durable_lsn(3);
+
+        output_durable_lsn(4);
+        return RCOK;
+    }
+
+    w_rc_t post_shutdown(ss_m *ssm)
+    {
+//////////////////////////////////////////////////
+// TODO(Restart)... phase 3, concurrent
+//////////////////////////////////////////////////
+        // Restart the system, start concurrent user transactions
+        // Measuer the time required to finish 1000 concurrent transactions
+        //       Key - insert records with key ending in 5
+        //       Key - delete if key ending with 2 or 0 (all the 2's should rollback first)
+        //       Key - if key ending with 3, update
+        //       Key - if key ending with 7, update (rollback first)
+        // Measure and draw a curve that shows the numbers of completed transactions over time
 
 /**
 unsigned long long totalCycles = 0;
@@ -61,57 +187,16 @@ unsigned long long end = rdtsc();
 totalCycles += (end - start);
 **/
 
+       w_assert1(NULL != ssm);
 
-lsn_t get_durable_lsn() {
-    lsn_t ret;
-    ss_m::get_durable_lsn(ret);
-    return ret;
-}
-void output_durable_lsn(int W_IFDEBUG1(num)) {
-    DBGOUT1( << num << ".durable LSN=" << get_durable_lsn());
-}
+        output_durable_lsn(5);
 
-
-class restart_multi_performance : public restart_test_base
-{
-public:
-
-    w_rc_t initial_shutdown(ss_m *ssm)
-    {
-//////////////////////////////////////////////////
-// TODO(Restart)... phase 1, build the base and normal shutdown
-//////////////////////////////////////////////////
-
+        output_durable_lsn(6);
         return RCOK;
     }
-
-    w_rc_t pre_shutdown(ss_m *ssm)
-    {
-//////////////////////////////////////////////////
-// TODO(Restart)... phase 2, in-flights and crash
-//////////////////////////////////////////////////
-
-        return RCOK;
-    }
-
-    w_rc_t post_shutdown(ss_m *)
-    {
-//////////////////////////////////////////////////
-// TODO(Restart)... phase 3, concurrent
-//////////////////////////////////////////////////
-
-        return RCOK;
-    }
-}
+};
 
 /******** from test_logbuf_multi_thread.cpp, use it as an example
-void itoa(int i, char *buf, int base) {
-    // ignoring the base
-    if(base)
-        sprintf(buf, "%d", i);
-}
-
-
 class op_worker_t : public smthread_t {
 public:
     static const int total = REC_COUNT; // number of records inserted per thread
@@ -349,72 +434,68 @@ options.set_int_option("sm_rawlock_gc_max_segment_count", 3);
 **/
 
 
-TEST (RestartPerfTest, MultiPerformanceNormal) {
+TEST (RestartPerfTest, MultiPerformanceNormal)
+{
     test_env->empty_logdata_dir();
     restart_multi_performance context;
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;
 
-//////////////////////////////////////////////////////////////////
-// TODO(Restart)... Need to call a different function which has 3 phases
-//////////////////////////////////////////////////////////////////
-    EXPECT_EQ(test_env->runRestartPerfTest(&context, &options, true /*use_locks*/), 0);   // Turn locking on
+    // Normal shutdown
+    EXPECT_EQ(test_env->runRestartPerfTest(&context, &options, true), 0);   // Turn locking on
 }
 
-TEST (RestartPerfTest, MultiPerformanceM1) {
+TEST (RestartPerfTest, MultiPerformanceM1)
+{
     test_env->empty_logdata_dir();
     restart_multi_performance context;
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m1_default_restart;
 
-//////////////////////////////////////////////////////////////////
-// TODO(Restart)... Need to call a different function which has 3 phases
-//////////////////////////////////////////////////////////////////
-    EXPECT_EQ(test_env->runRestartPerfTest(&context, &options, false /*use_locks*/), 0);   // Turn locking off
+    // M1 crash shutdown
+    EXPECT_EQ(test_env->runRestartPerfTest(&context, &options, false), 0);   // Turn locking off
 }
 
-TEST (RestartPerfTest, MultiPerformanceM2) {
+TEST (RestartPerfTest, MultiPerformanceM2)
+{
     test_env->empty_logdata_dir();
     restart_multi_performance context;
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_default_restart;
 
-//////////////////////////////////////////////////////////////////
-// TODO(Restart)... Need to call a different function which has 3 phases
-//////////////////////////////////////////////////////////////////
-    EXPECT_EQ(test_env->runRestartPerfTest(&context, &options, false /*use_locks*/), 0);   // Turn locking off
+    // M2 crash shutdown
+    EXPECT_EQ(test_env->runRestartPerfTest(&context, &options, false), 0);   // Turn locking off
 }
 
-TEST (RestartPerfTest, MultiPerformanceM3) {
+TEST (RestartPerfTest, MultiPerformanceM3)
+{
     test_env->empty_logdata_dir();
     restart_multi_performance context;
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m3_default_restart;
 
-//////////////////////////////////////////////////////////////////
-// TODO(Restart)... Need to call a different function which has 3 phases
-//////////////////////////////////////////////////////////////////
-    EXPECT_EQ(test_env->runRestartPerfTest(&context, &options, true /*use_locks*/), 0);     // Turn locking on
+    // M3 crash shutdown
+    EXPECT_EQ(test_env->runRestartPerfTest(&context, &options, true), 0);     // Turn locking on
 }
 
-TEST (RestartPerfTest, MultiPerformanceM4) {
+TEST (RestartPerfTest, MultiPerformanceM4)
+{
     test_env->empty_logdata_dir();
     restart_multi_performance context;
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m4_default_restart;
 
-//////////////////////////////////////////////////////////////////
-// TODO(Restart)... Need to call a different function which has 3 phases
-//////////////////////////////////////////////////////////////////
-    EXPECT_EQ(test_env->runRestartPerfTest(&context, &options, true /*use_locks*/), 0);    // Turn locking on
+    // M4 crash shutdown
+    EXPECT_EQ(test_env->runRestartPerfTest(&context, &options, true), 0);    // Turn locking on
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
     ::testing::InitGoogleTest(&argc, argv);
     test_env = new btree_test_env();
     ::testing::AddGlobalTestEnvironment(test_env);

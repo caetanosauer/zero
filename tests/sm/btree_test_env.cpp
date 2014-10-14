@@ -683,56 +683,74 @@ int btree_test_env::runCrashTest (crash_test_base *context, bool use_locks, int 
 }
 
 // Begin... for Instant Restart performance tests
-int btree_test_env::runRestartPerfTest (restart_test_base *context,
-    restart_test_options *restart_options,
-    bool use_locks, int32_t lock_table_size,
-    int disk_quota_in_pages, int bufferpool_size_in_pages,
-    uint32_t cleaner_threads,
-    uint32_t cleaner_interval_millisec_min,
-    uint32_t cleaner_interval_millisec_max,
-    uint32_t cleaner_write_buffer_pages,
-    bool initially_enable_cleaners,
-    bool enable_swizzling) {
+// Main API for caller to start the test
+int btree_test_env::runRestartPerfTest (
+    restart_performance_test_base *context,             // Required, specify the basic setup
+    restart_test_options *restart_options,              // Required, specify restart options (e.g. milestone)
+    bool use_locks,                                     // Required, true (locking), false (no locking)
+    int32_t lock_table_size,                            // Optional, default: default_locktable_size
+    int disk_quota_in_pages,                            // Optional, default: default_quota_in_pages
+    int bufferpool_size_in_pages,                       // Optional, default: default_bufferpool_size_in_pages
+    uint32_t cleaner_threads,                           // Optional, default: 1
+    uint32_t cleaner_interval_millisec_min,             // Optional, default: 1000
+    uint32_t cleaner_interval_millisec_max,             // Optional, default: 256000
+    uint32_t cleaner_write_buffer_pages,                // Optional, default: 64
+    bool initially_enable_cleaners,                     // Optional, default: true
+    bool enable_swizzling)                              // Optional, default: default_enable_swizzling
+{
     return runRestartPerfTest(context, restart_options, use_locks, disk_quota_in_pages,
-            make_sm_options(lock_table_size,
-                    bufferpool_size_in_pages,
-                    cleaner_threads,
-                    cleaner_interval_millisec_min,
-                    cleaner_interval_millisec_max,
-                    cleaner_write_buffer_pages,
-                    initially_enable_cleaners,
-                    enable_swizzling));
+                              make_sm_options(lock_table_size,
+                                              bufferpool_size_in_pages,
+                                              cleaner_threads,
+                                              cleaner_interval_millisec_min,
+                                              cleaner_interval_millisec_max,
+                                              cleaner_write_buffer_pages,
+                                              initially_enable_cleaners,
+                                              enable_swizzling));
 }
 
-int btree_test_env::runRestartPerfTest (restart_test_base *context,
-    restart_test_options *restart_options,
-    bool use_locks, int32_t lock_table_size,
-    int disk_quota_in_pages, int bufferpool_size_in_pages,
-    uint32_t cleaner_threads,
-    uint32_t cleaner_interval_millisec_min,
-    uint32_t cleaner_interval_millisec_max,
-    uint32_t cleaner_write_buffer_pages,
-    bool initially_enable_cleaners,
-    bool enable_swizzling,
-    const std::vector<std::pair<const char*, int64_t> > &additional_int_params,
-    const std::vector<std::pair<const char*, bool> > &additional_bool_params,
-    const std::vector<std::pair<const char*, const char*> > &additional_string_params) {
+// Optional API, not used for prestart performance test currently
+int btree_test_env::runRestartPerfTest (
+    restart_performance_test_base *context,                // Required, specify the basic setup
+    restart_test_options *restart_options,                 // Required, specify restart options (e.g. milestone)
+    bool use_locks,                                        // Required, true (locking), false (no locking)
+    int32_t lock_table_size,                               // Required
+    int disk_quota_in_pages, int bufferpool_size_in_pages, // Required
+    uint32_t cleaner_threads,                              // Required
+    uint32_t cleaner_interval_millisec_min,                // Required
+    uint32_t cleaner_interval_millisec_max,                // Required
+    uint32_t cleaner_write_buffer_pages,                   // Required
+    bool initially_enable_cleaners,                        // Required
+    bool enable_swizzling,                                 // Required
+    const std::vector<std::pair<const char*, int64_t> > &additional_int_params,         // Required
+    const std::vector<std::pair<const char*, bool> > &additional_bool_params,           // Required
+    const std::vector<std::pair<const char*, const char*> > &additional_string_params)  // Required
+{
     return runRestartPerfTest(context, restart_options, use_locks, disk_quota_in_pages,
-        make_sm_options(lock_table_size,
-                    bufferpool_size_in_pages,
-                    cleaner_threads,
-                    cleaner_interval_millisec_min,
-                    cleaner_interval_millisec_max,
-                    cleaner_write_buffer_pages,
-                    initially_enable_cleaners,
-                    enable_swizzling,
-                    additional_int_params, additional_bool_params, additional_string_params));
+                              make_sm_options(lock_table_size,
+                                              bufferpool_size_in_pages,
+                                              cleaner_threads,
+                                              cleaner_interval_millisec_min,
+                                              cleaner_interval_millisec_max,
+                                              cleaner_write_buffer_pages,
+                                              initially_enable_cleaners,
+                                              enable_swizzling,
+                                              additional_int_params,
+                                              additional_bool_params,
+                                              additional_string_params));
 }
 
-int btree_test_env::runRestartPerfTest (restart_test_base *context, restart_test_options *restart_options,
-                                      bool use_locks, int disk_quota_in_pages, const sm_options &options) {
+// Internal API to start the restart performance test
+int btree_test_env::runRestartPerfTest (
+    restart_performance_test_base *context,  // In: specify the basic setup, e.g. start from scratch or not
+    restart_test_options *restart_options,   // In: specify restart options, e.g. milestone
+    bool use_locks,                          // In: ture if enable locking (M3, M4), false if disable locking (M1, M2)
+    int disk_quota_in_pages,                 // In: how much disk space is allowed
+    const sm_options &options)               // In: other settings
+{
     _use_locks = use_locks;
     _restart_options = restart_options;
+
     // This function is called by restart performance test cases, while caller specify
     // the restart mode via 'restart_option'
     // e.g., serial traditional, various concurrent combinations
@@ -748,114 +766,114 @@ int btree_test_env::runRestartPerfTest (restart_test_base *context, restart_test
     int rv;
     w_rc_t e;
     DBGOUT2 ( << "Going to call initial_shutdown()...");
+    {
+        // Start from a new database and populate it
+        // Only clean shutdown from this phase
+        restart_performance_initial_functor functor(context);
+        testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options, restart_options->restart_mode);  // User specified restart mode
+        e = smtu.fork();
+        if (e.is_error())
         {
-            // Only clean shutdown in this phase
-// TODO(Restart)...     what is 'restart_clean_test_pre_functor'?  Need to initialize a clean database...
-
-            restart_clean_test_pre_functor functor(context);
-            testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options, restart_options->restart_mode);  // User specified restart mode
-            e = smtu.fork();
-            if(e.is_error())
-                {
-                cerr << "Error forking thread while pre_shutdown: " << e <<endl;
-                return 1;
-                }
-            e = smtu.join();
-            if(e.is_error())
-                {
-                cerr << "Error joining thread while pre_shutdown: " << e <<endl;
-                return 1;
-                }
-
-            rv = smtu.return_value();
-            if (rv != 0)
-                {
-                cerr << "Error while pre_shutdown rv= " << rv <<endl;
-                return rv;
-                }
+            std::cerr << "Error forking thread while initial_shutdown: " << e << std::endl;
+            return 1;
         }
+        e = smtu.join();
+        if (e.is_error())
+        {
+            std::cerr << "Error joining thread while initial_shutdown: " << e << std::endl;
+            return 1;
+        }
+
+        rv = smtu.return_value();
+        if (rv != 0)
+        {
+            std::cerr << "Error while initial_shutdown rv= " << rv << std::endl;
+            return rv;
+        }
+    }
 
     DBGOUT2 ( << "Going to call pre_shutdown()...");
-        {
-// TODO(Restart)...     need to use the already populated database from phase 1
-
+    {
         if (restart_options->shutdown_mode == simulated_crash)
-            {
+        {
+            // Start from an existing database created in phase 1
             // Simulated crash
-            restart_dirty_test_pre_functor functor(context);
+            restart_performance_dirty_pre_functor functor(context);
             testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options, restart_options->restart_mode);  // User specified restart mode
             e = smtu.fork();
-            if(e.is_error())
-                {
-                cerr << "Error forking thread while pre_shutdown: " << e <<endl;
-                return 1;
-                }
-            e = smtu.join();
-            if(e.is_error())
-                {
-                cerr << "Error joining thread while pre_shutdown: " << e <<endl;
-                return 1;
-                }
-
-            rv = smtu.return_value();
-            if (rv != 0)
-                {
-                cerr << "Error while pre_shutdown rv= " << rv <<endl;
-                return rv;
-                }
-            }
-        else
+            if (e.is_error())
             {
-            // Clean shutdown
-            restart_clean_test_pre_functor functor(context);
-            testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options, restart_options->restart_mode);  // User specified restart mode
-            e = smtu.fork();
-            if(e.is_error())
-                {
-                cerr << "Error forking thread while pre_shutdown: " << e <<endl;
+                std::cerr << "Error forking thread while pre_shutdown: " << e << std::endl;
                 return 1;
-                }
+            }
             e = smtu.join();
-            if(e.is_error())
-                {
-                cerr << "Error joining thread while pre_shutdown: " << e <<endl;
+            if (e.is_error())
+            {
+                std::cerr << "Error joining thread while pre_shutdown: " << e << std::endl;
                 return 1;
-                }
+            }
 
             rv = smtu.return_value();
             if (rv != 0)
-                {
-                cerr << "Error while pre_shutdown rv= " << rv <<endl;
+            {
+                std::cerr << "Error while pre_shutdown rv= " << rv << std::endl;
                 return rv;
-                }
             }
         }
-    DBGOUT2 ( << "Going to call post_shutdown()...");
+        else
         {
-        restart_test_post_functor functor(context);
+            // Start from an existing database created in phase 1
+            // Clean shutdown
+            restart_performance_clean_pre_functor functor(context);
+            testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options, restart_options->restart_mode);  // User specified restart mode
+            e = smtu.fork();
+            if (e.is_error())
+            {
+                std::cerr << "Error forking thread while pre_shutdown: " << e << std::endl;
+                return 1;
+            }
+            e = smtu.join();
+            if (e.is_error())
+            {
+                std::cerr << "Error joining thread while pre_shutdown: " << e << std::endl;
+                return 1;
+            }
+
+            rv = smtu.return_value();
+            if (rv != 0)
+            {
+                std::cerr << "Error while pre_shutdown rv= " << rv << std::endl;
+                return rv;
+            }
+        }
+    }
+    DBGOUT2 ( << "Going to call post_shutdown()...");
+    {
+        // Start from an existing database from phase 2
+        // Clean shutdown
+        restart_performance_post_functor functor(context);
         testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options, restart_options->restart_mode);   // User specified restart mode
 
         w_rc_t e = smtu.fork();
-        if(e.is_error())
-            {
-            cerr << "Error forking thread while post_shutdown: " << e <<endl;
+        if (e.is_error())
+        {
+            std::cerr << "Error forking thread while post_shutdown: " << e << std::endl;
             return 1;
-            }
-
-        e = smtu.join();
-        if(e.is_error())
-            {
-            cerr << "Error joining thread while post_shutdown: " << e <<endl;
-            return 1;
-            }
-
-        rv = smtu.return_value();
         }
 
-    return rv;
+        e = smtu.join();
+        if (e.is_error())
+        {
+            std::cerr << "Error joining thread while post_shutdown: " << e << std::endl;
+            return 1;
+        }
 
+        rv = smtu.return_value();
+    }
+
+    return rv;
 }
-// End... for test_restart.cpp, test_concurrent_restart.cpp
+// End... for Instant Restart performance tests
 
 void btree_test_env::set_xct_query_lock() {
     if (_use_locks) {

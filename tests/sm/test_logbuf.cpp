@@ -39,20 +39,13 @@ btree_test_env *test_env;
 const int SEG_SIZE = 1024*1024; // _segsize 1MB
 const int PART_SIZE = 15*1024*1024; // _partition_data_size 15MB
 
-const int LOG_SIZE =  16*1024*8; // so that _partition_data_size is 15MB 
-                                        // (see log_core::_set_size)   
+const int LOG_SIZE =  16*1024*8; // so that _partition_data_size is 15MB
+                                        // (see log_core::_set_size)
 
 // some utility functions that are used by the following test cases
 
 const int BUF_SIZE = 4096*5;
 char buf[BUF_SIZE];
-
-void itoa(int i, char *buf, int base) {
-    //    ignoring the base
-    if(base)
-        sprintf(buf, "%d", i);
-}
-
 
 // insert and flush a log record of size bytes
 // use this function to stress the log buffer
@@ -91,7 +84,7 @@ rc_t consume(int size, ss_m *ssm) {
     (log_buffer->logbuf_prime(lsn))
 
 #define INSERT(size)\
-    (log_buffer->logbuf_insert(size)) 
+    (log_buffer->logbuf_insert(size))
 
 #define FLUSH(lsn)\
     (log_buffer->logbuf_flush(lsn))
@@ -106,9 +99,9 @@ rc_t consume(int size, ss_m *ssm) {
 class logbuf_tester {
 public:
     logbuf_tester(uint32_t count = LOGBUF_SEG_COUNT, uint32_t flush_trigger =
-              LOGBUF_FLUSH_TRIGGER, uint32_t block_size = 
+              LOGBUF_FLUSH_TRIGGER, uint32_t block_size =
               LOGBUF_BLOCK_SIZE, uint32_t seg_size = LOGBUF_SEG_SIZE, uint32_t part_size
-              = LOGBUF_PART_SIZE);  
+              = LOGBUF_PART_SIZE);
     ~logbuf_tester();
 
     w_rc_t test_init(int case_no);
@@ -128,7 +121,7 @@ logbuf_tester *tester = NULL;
 
 
 logbuf_tester::logbuf_tester(uint32_t count, uint32_t flush_trigger, uint32_t
-                     block_size, uint32_t seg_size, uint32_t part_size) {   
+                     block_size, uint32_t seg_size, uint32_t part_size) {
     log_buffer = new logbuf_core(count, flush_trigger, block_size, seg_size,
                              part_size, ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT);
 }
@@ -141,13 +134,13 @@ logbuf_tester::~logbuf_tester() {
 w_rc_t logbuf_tester::test_init(int case_no) {
     switch(case_no) {
     case 1: {
-        // case 1: the log starts at offset 0 in a partition    
+        // case 1: the log starts at offset 0 in a partition
         PRIME(lsn_t(1,0));
-        EXPECT_EQ(0, log_buffer->_start);    
+        EXPECT_EQ(0, log_buffer->_start);
         EXPECT_EQ(0, log_buffer->_end);
         EXPECT_EQ(1000, log_buffer->_free);
-        EXPECT_EQ(lsn_t(1,0), log_buffer->_to_insert_lsn);    
-        EXPECT_EQ(lsn_t(1,0), log_buffer->_to_flush_lsn);    
+        EXPECT_EQ(lsn_t(1,0), log_buffer->_to_insert_lsn);
+        EXPECT_EQ(lsn_t(1,0), log_buffer->_to_flush_lsn);
         EXPECT_EQ(lsn_t(0,0), log_buffer->_old_epoch.base_lsn);
         EXPECT_EQ(0, log_buffer->_old_epoch.base);
         EXPECT_EQ(0, log_buffer->_old_epoch.start);
@@ -163,14 +156,14 @@ w_rc_t logbuf_tester::test_init(int case_no) {
         break;
     }
     case 2: {
-        // case 2: the log starts at offset 0 in a segment, 
-        // but not at offset 0 in a partition    
+        // case 2: the log starts at offset 0 in a segment,
+        // but not at offset 0 in a partition
         PRIME(lsn_t(1,1000));
-        EXPECT_EQ(1000, log_buffer->_start);    
+        EXPECT_EQ(1000, log_buffer->_start);
         EXPECT_EQ(1000, log_buffer->_end);
         EXPECT_EQ(0, log_buffer->_free);
-        EXPECT_EQ(lsn_t(1,1000), log_buffer->_to_insert_lsn);    
-        EXPECT_EQ(lsn_t(1,1000), log_buffer->_to_flush_lsn);    
+        EXPECT_EQ(lsn_t(1,1000), log_buffer->_to_insert_lsn);
+        EXPECT_EQ(lsn_t(1,1000), log_buffer->_to_flush_lsn);
         EXPECT_EQ(lsn_t(0,0), log_buffer->_old_epoch.base_lsn);
         EXPECT_EQ(0, log_buffer->_old_epoch.base);
         EXPECT_EQ(0, log_buffer->_old_epoch.start);
@@ -188,10 +181,10 @@ w_rc_t logbuf_tester::test_init(int case_no) {
     case 3: {
         // case 3: the log starts in the middle of a segment
         PRIME(lsn_t(2,1250));
-        EXPECT_EQ(1250, log_buffer->_start);    
+        EXPECT_EQ(1250, log_buffer->_start);
         EXPECT_EQ(1250, log_buffer->_end);
         EXPECT_EQ(750, log_buffer->_free);
-        EXPECT_EQ(lsn_t(2,1250), log_buffer->_to_insert_lsn);    
+        EXPECT_EQ(lsn_t(2,1250), log_buffer->_to_insert_lsn);
         EXPECT_EQ(lsn_t(2,1250), log_buffer->_to_flush_lsn);
         EXPECT_EQ(lsn_t(0,0), log_buffer->_old_epoch.base_lsn);
         EXPECT_EQ(0, log_buffer->_old_epoch.base);
@@ -216,17 +209,17 @@ w_rc_t logbuf_tester::test_init(int case_no) {
 w_rc_t logbuf_tester::test_insert() {
     PRIME(lsn_t(1,0));
 
-    // case 1: to_insert starts at offset 0 in a partition    
-    EXPECT_EQ(lsn_t(1,0), log_buffer->_to_insert_lsn);    
+    // case 1: to_insert starts at offset 0 in a partition
+    EXPECT_EQ(lsn_t(1,0), log_buffer->_to_insert_lsn);
 
     W_DO(INSERT(300));
-    EXPECT_EQ(0, log_buffer->_start);    
+    EXPECT_EQ(0, log_buffer->_start);
     EXPECT_EQ(300, log_buffer->_end);
     EXPECT_EQ(700, log_buffer->_free);
-    EXPECT_EQ(lsn_t(1,300), log_buffer->_to_insert_lsn);    
-    EXPECT_EQ(lsn_t(1,0), log_buffer->_to_flush_lsn);    
-    EXPECT_EQ(lsn_t(1,0), log_buffer->_to_flush_seg->base_lsn);    
-    EXPECT_EQ(lsn_t(1,0), log_buffer->_to_insert_seg->base_lsn);    
+    EXPECT_EQ(lsn_t(1,300), log_buffer->_to_insert_lsn);
+    EXPECT_EQ(lsn_t(1,0), log_buffer->_to_flush_lsn);
+    EXPECT_EQ(lsn_t(1,0), log_buffer->_to_flush_seg->base_lsn);
+    EXPECT_EQ(lsn_t(1,0), log_buffer->_to_insert_seg->base_lsn);
     EXPECT_EQ(lsn_t(0,0), log_buffer->_old_epoch.base_lsn);
     EXPECT_EQ(0, log_buffer->_old_epoch.base);
     EXPECT_EQ(0, log_buffer->_old_epoch.start);
@@ -240,21 +233,21 @@ w_rc_t logbuf_tester::test_insert() {
     EXPECT_EQ(0, log_buffer->_buf_epoch.start);
     EXPECT_EQ(300, log_buffer->_buf_epoch.end);
 
-    // case 2: to_insert starts at offset 0 in a segment, 
+    // case 2: to_insert starts at offset 0 in a segment,
     // but not at offset 0 in a partition
     W_DO(INSERT(300));
     W_DO(INSERT(400));
 
-    EXPECT_EQ(lsn_t(1,1000), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(1,1000), log_buffer->_to_insert_lsn);
 
     W_DO(INSERT(200));
-    EXPECT_EQ(0, log_buffer->_start);    
+    EXPECT_EQ(0, log_buffer->_start);
     EXPECT_EQ(1200, log_buffer->_end);
     EXPECT_EQ(800, log_buffer->_free);
-    EXPECT_EQ(lsn_t(1,1200), log_buffer->_to_insert_lsn);    
-    EXPECT_EQ(lsn_t(1,0), log_buffer->_to_flush_lsn);    
-    EXPECT_EQ(lsn_t(1,0), log_buffer->_to_flush_seg->base_lsn);    
-    EXPECT_EQ(lsn_t(1,1000), log_buffer->_to_insert_seg->base_lsn);    
+    EXPECT_EQ(lsn_t(1,1200), log_buffer->_to_insert_lsn);
+    EXPECT_EQ(lsn_t(1,0), log_buffer->_to_flush_lsn);
+    EXPECT_EQ(lsn_t(1,0), log_buffer->_to_flush_seg->base_lsn);
+    EXPECT_EQ(lsn_t(1,1000), log_buffer->_to_insert_seg->base_lsn);
     EXPECT_EQ(lsn_t(0,0), log_buffer->_old_epoch.base_lsn);
     EXPECT_EQ(0, log_buffer->_old_epoch.base);
     EXPECT_EQ(0, log_buffer->_old_epoch.start);
@@ -269,17 +262,17 @@ w_rc_t logbuf_tester::test_insert() {
     EXPECT_EQ(1200, log_buffer->_buf_epoch.end);
 
     // case 3: to_insert starts in the middle of a segment
-    EXPECT_EQ(lsn_t(1,1200), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(1,1200), log_buffer->_to_insert_lsn);
 
     // 3.1: a log record is entirely stored within a segment
     W_DO(INSERT(300));
-    EXPECT_EQ(0, log_buffer->_start);    
+    EXPECT_EQ(0, log_buffer->_start);
     EXPECT_EQ(1500, log_buffer->_end);
     EXPECT_EQ(500, log_buffer->_free);
-    EXPECT_EQ(lsn_t(1,1500), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(1,1500), log_buffer->_to_insert_lsn);
     EXPECT_EQ(lsn_t(1,0), log_buffer->_to_flush_lsn);
-    EXPECT_EQ(lsn_t(1,0), log_buffer->_to_flush_seg->base_lsn);    
-    EXPECT_EQ(lsn_t(1,1000), log_buffer->_to_insert_seg->base_lsn);    
+    EXPECT_EQ(lsn_t(1,0), log_buffer->_to_flush_seg->base_lsn);
+    EXPECT_EQ(lsn_t(1,1000), log_buffer->_to_insert_seg->base_lsn);
     EXPECT_EQ(lsn_t(0,0), log_buffer->_old_epoch.base_lsn);
     EXPECT_EQ(0, log_buffer->_old_epoch.base);
     EXPECT_EQ(0, log_buffer->_old_epoch.start);
@@ -296,16 +289,16 @@ w_rc_t logbuf_tester::test_insert() {
     // 3.2: a log record spans two segments
     W_DO(INSERT(300));
 
-    EXPECT_EQ(lsn_t(1,1800), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(1,1800), log_buffer->_to_insert_lsn);
 
     W_DO(INSERT(300));
-    EXPECT_EQ(0, log_buffer->_start);    
+    EXPECT_EQ(0, log_buffer->_start);
     EXPECT_EQ(2100, log_buffer->_end);
     EXPECT_EQ(900, log_buffer->_free);
-    EXPECT_EQ(lsn_t(1,2100), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(1,2100), log_buffer->_to_insert_lsn);
     EXPECT_EQ(lsn_t(1,0), log_buffer->_to_flush_lsn);
-    EXPECT_EQ(lsn_t(1,0), log_buffer->_to_flush_seg->base_lsn);    
-    EXPECT_EQ(lsn_t(1,2000), log_buffer->_to_insert_seg->base_lsn);    
+    EXPECT_EQ(lsn_t(1,0), log_buffer->_to_flush_seg->base_lsn);
+    EXPECT_EQ(lsn_t(1,2000), log_buffer->_to_insert_seg->base_lsn);
     EXPECT_EQ(lsn_t(0,0), log_buffer->_old_epoch.base_lsn);
     EXPECT_EQ(0, log_buffer->_old_epoch.base);
     EXPECT_EQ(0, log_buffer->_old_epoch.start);
@@ -320,21 +313,21 @@ w_rc_t logbuf_tester::test_insert() {
     EXPECT_EQ(2100, log_buffer->_buf_epoch.end);
 
     // 3.3: a log record does not fit in the current partition
-    EXPECT_EQ(lsn_t(1,2100), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(1,2100), log_buffer->_to_insert_lsn);
     for(int i=1; i<=9; i++) {
         W_DO(INSERT(300));
     }
     W_DO(FLUSH(lsn_t(1,4800)));
-    EXPECT_EQ(lsn_t(1,4800), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(1,4800), log_buffer->_to_insert_lsn);
 
     W_DO(INSERT(300));
-    EXPECT_EQ(4800, log_buffer->_start);    
+    EXPECT_EQ(4800, log_buffer->_start);
     EXPECT_EQ(5300, log_buffer->_end);
     EXPECT_EQ(700, log_buffer->_free);
-    EXPECT_EQ(lsn_t(2,300), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(2,300), log_buffer->_to_insert_lsn);
     EXPECT_EQ(lsn_t(1,4800), log_buffer->_to_flush_lsn);
-    EXPECT_EQ(lsn_t(1,4000), log_buffer->_to_flush_seg->base_lsn);    
-    EXPECT_EQ(lsn_t(2,0), log_buffer->_to_insert_seg->base_lsn);    
+    EXPECT_EQ(lsn_t(1,4000), log_buffer->_to_flush_seg->base_lsn);
+    EXPECT_EQ(lsn_t(2,0), log_buffer->_to_insert_seg->base_lsn);
     EXPECT_EQ(lsn_t(1,0), log_buffer->_old_epoch.base_lsn);
     EXPECT_EQ(0, log_buffer->_old_epoch.base);
     EXPECT_EQ(4800, log_buffer->_old_epoch.start);
@@ -355,16 +348,16 @@ w_rc_t logbuf_tester::test_insert() {
 // flush log records
 w_rc_t logbuf_tester::test_flush() {
     lsn_t lsn(1,0);
-    
+
     PRIME(lsn_t(1,0));
 
     // case 1: there is no unflushed log record
     W_DO(FLUSH(lsn));
-    EXPECT_EQ(0, log_buffer->_start);    
+    EXPECT_EQ(0, log_buffer->_start);
     EXPECT_EQ(0, log_buffer->_end);
     EXPECT_EQ(1000, log_buffer->_free);
-    EXPECT_EQ(lsn_t(1,0), log_buffer->_to_insert_lsn);    
-    EXPECT_EQ(lsn_t(1,0), log_buffer->_to_flush_lsn);    
+    EXPECT_EQ(lsn_t(1,0), log_buffer->_to_insert_lsn);
+    EXPECT_EQ(lsn_t(1,0), log_buffer->_to_flush_lsn);
     EXPECT_EQ(lsn_t(0,0), log_buffer->_old_epoch.base_lsn);
     EXPECT_EQ(0, log_buffer->_old_epoch.base);
     EXPECT_EQ(0, log_buffer->_old_epoch.start);
@@ -386,13 +379,13 @@ w_rc_t logbuf_tester::test_flush() {
 
     lsn = lsn_t(1, 900);
     W_DO(FLUSH(lsn));
-    EXPECT_EQ(900, log_buffer->_start);    
+    EXPECT_EQ(900, log_buffer->_start);
     EXPECT_EQ(900, log_buffer->_end);
     EXPECT_EQ(100, log_buffer->_free);
-    EXPECT_EQ(lsn_t(1,900), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(1,900), log_buffer->_to_insert_lsn);
     EXPECT_EQ(lsn_t(1,900), log_buffer->_to_flush_lsn);
-    EXPECT_EQ(lsn_t(1,0), log_buffer->_to_flush_seg->base_lsn);    
-    EXPECT_EQ(lsn_t(1,0), log_buffer->_to_insert_seg->base_lsn);    
+    EXPECT_EQ(lsn_t(1,0), log_buffer->_to_flush_seg->base_lsn);
+    EXPECT_EQ(lsn_t(1,0), log_buffer->_to_insert_seg->base_lsn);
     EXPECT_EQ(lsn_t(0,0), log_buffer->_old_epoch.base_lsn);
     EXPECT_EQ(0, log_buffer->_old_epoch.base);
     EXPECT_EQ(0, log_buffer->_old_epoch.start);
@@ -415,13 +408,13 @@ w_rc_t logbuf_tester::test_flush() {
 
     lsn = lsn_t(1, 4500);
     W_DO(FLUSH(lsn));
-    EXPECT_EQ(4500, log_buffer->_start);    
+    EXPECT_EQ(4500, log_buffer->_start);
     EXPECT_EQ(4500, log_buffer->_end);
     EXPECT_EQ(500, log_buffer->_free);
-    EXPECT_EQ(lsn_t(1,4500), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(1,4500), log_buffer->_to_insert_lsn);
     EXPECT_EQ(lsn_t(1,4500), log_buffer->_to_flush_lsn);
-    EXPECT_EQ(lsn_t(1,4000), log_buffer->_to_flush_seg->base_lsn);    
-    EXPECT_EQ(lsn_t(1,4000), log_buffer->_to_insert_seg->base_lsn);    
+    EXPECT_EQ(lsn_t(1,4000), log_buffer->_to_flush_seg->base_lsn);
+    EXPECT_EQ(lsn_t(1,4000), log_buffer->_to_insert_seg->base_lsn);
     EXPECT_EQ(lsn_t(0,0), log_buffer->_old_epoch.base_lsn);
     EXPECT_EQ(0, log_buffer->_old_epoch.base);
     EXPECT_EQ(0, log_buffer->_old_epoch.start);
@@ -445,13 +438,13 @@ w_rc_t logbuf_tester::test_flush() {
 
     lsn = lsn_t(2, 1200);
     W_DO(FLUSH(lsn));
-    EXPECT_EQ(6200, log_buffer->_start);    
+    EXPECT_EQ(6200, log_buffer->_start);
     EXPECT_EQ(6200, log_buffer->_end);
     EXPECT_EQ(800, log_buffer->_free);
-    EXPECT_EQ(lsn_t(2,1200), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(2,1200), log_buffer->_to_insert_lsn);
     EXPECT_EQ(lsn_t(2,1200), log_buffer->_to_flush_lsn);
-    EXPECT_EQ(lsn_t(2,1000), log_buffer->_to_flush_seg->base_lsn);    
-    EXPECT_EQ(lsn_t(2,1000), log_buffer->_to_insert_seg->base_lsn);    
+    EXPECT_EQ(lsn_t(2,1000), log_buffer->_to_flush_seg->base_lsn);
+    EXPECT_EQ(lsn_t(2,1000), log_buffer->_to_insert_seg->base_lsn);
     EXPECT_EQ(lsn_t(1,0), log_buffer->_old_epoch.base_lsn);
     EXPECT_EQ(0, log_buffer->_old_epoch.base);
     EXPECT_EQ(4900, log_buffer->_old_epoch.start);
@@ -469,17 +462,17 @@ w_rc_t logbuf_tester::test_flush() {
     // corner case 1: the specified lsn is greater than to_insert
     // all log records up to to_insert should have been flushed when FLUSH returns
     W_DO(INSERT(300));
-    EXPECT_EQ(lsn_t(2,1500), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(2,1500), log_buffer->_to_insert_lsn);
 
     lsn = lsn_t(2, 2000);
     W_DO(FLUSH(lsn));
-    EXPECT_EQ(6500, log_buffer->_start);    
+    EXPECT_EQ(6500, log_buffer->_start);
     EXPECT_EQ(6500, log_buffer->_end);
     EXPECT_EQ(500, log_buffer->_free);
-    EXPECT_EQ(lsn_t(2,1500), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(2,1500), log_buffer->_to_insert_lsn);
     EXPECT_EQ(lsn_t(2,1500), log_buffer->_to_flush_lsn);
-    EXPECT_EQ(lsn_t(2,1000), log_buffer->_to_flush_seg->base_lsn);    
-    EXPECT_EQ(lsn_t(2,1000), log_buffer->_to_insert_seg->base_lsn);    
+    EXPECT_EQ(lsn_t(2,1000), log_buffer->_to_flush_seg->base_lsn);
+    EXPECT_EQ(lsn_t(2,1000), log_buffer->_to_insert_seg->base_lsn);
     EXPECT_EQ(lsn_t(1,0), log_buffer->_old_epoch.base_lsn);
     EXPECT_EQ(0, log_buffer->_old_epoch.base);
     EXPECT_EQ(4900, log_buffer->_old_epoch.start);
@@ -496,23 +489,23 @@ w_rc_t logbuf_tester::test_flush() {
 
     // corner case 2: the specified lsn is less than to_insert but greater than to_flush
     // all log records up to the specified lsn must have been flushed when FLUSH returns
-    // at the same time, the flush daemon in the background would keep flushing until 
+    // at the same time, the flush daemon in the background would keep flushing until
     // there is no unflushed portion in the log; we use EXPECT_LE to catch changes made by
     // the flush daemon
     W_DO(INSERT(100));
     W_DO(INSERT(100));
-    EXPECT_EQ(lsn_t(2,1700), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(2,1700), log_buffer->_to_insert_lsn);
     EXPECT_EQ(lsn_t(2,1500), log_buffer->_to_flush_lsn);
 
     lsn = lsn_t(2, 1600);
     W_DO(FLUSH(lsn));
-    EXPECT_LE(6600, log_buffer->_start);    
+    EXPECT_LE(6600, log_buffer->_start);
     EXPECT_EQ(6700, log_buffer->_end);
     EXPECT_EQ(300, log_buffer->_free);
-    EXPECT_EQ(lsn_t(2,1700), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(2,1700), log_buffer->_to_insert_lsn);
     EXPECT_LE(lsn_t(2,1600), log_buffer->_to_flush_lsn);
-    EXPECT_EQ(lsn_t(2,1000), log_buffer->_to_flush_seg->base_lsn);    
-    EXPECT_EQ(lsn_t(2,1000), log_buffer->_to_insert_seg->base_lsn);    
+    EXPECT_EQ(lsn_t(2,1000), log_buffer->_to_flush_seg->base_lsn);
+    EXPECT_EQ(lsn_t(2,1000), log_buffer->_to_insert_seg->base_lsn);
     EXPECT_EQ(lsn_t(1,0), log_buffer->_old_epoch.base_lsn);
     EXPECT_EQ(0, log_buffer->_old_epoch.base);
     EXPECT_EQ(4900, log_buffer->_old_epoch.start);
@@ -534,21 +527,21 @@ w_rc_t logbuf_tester::test_flush() {
     // before the actual test, make sure everything is flushed!
     lsn = lsn_t(2, 1700);
     W_DO(FLUSH(lsn));
-    EXPECT_EQ(lsn_t(2,1700), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(2,1700), log_buffer->_to_insert_lsn);
     EXPECT_EQ(lsn_t(2,1700), log_buffer->_to_flush_lsn);
 
     // the actual test
     W_DO(INSERT(100));
-    EXPECT_EQ(lsn_t(2,1800), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(2,1800), log_buffer->_to_insert_lsn);
     lsn = lsn_t(2, 1600);
     W_DO(FLUSH(lsn));
-    EXPECT_EQ(6700, log_buffer->_start);    
+    EXPECT_EQ(6700, log_buffer->_start);
     EXPECT_EQ(6800, log_buffer->_end);
     EXPECT_EQ(200, log_buffer->_free);
-    EXPECT_EQ(lsn_t(2,1800), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(2,1800), log_buffer->_to_insert_lsn);
     EXPECT_EQ(lsn_t(2,1700), log_buffer->_to_flush_lsn);
-    EXPECT_EQ(lsn_t(2,1000), log_buffer->_to_flush_seg->base_lsn);    
-    EXPECT_EQ(lsn_t(2,1000), log_buffer->_to_insert_seg->base_lsn);    
+    EXPECT_EQ(lsn_t(2,1000), log_buffer->_to_flush_seg->base_lsn);
+    EXPECT_EQ(lsn_t(2,1000), log_buffer->_to_insert_seg->base_lsn);
     EXPECT_EQ(lsn_t(1,0), log_buffer->_old_epoch.base_lsn);
     EXPECT_EQ(0, log_buffer->_old_epoch.base);
     EXPECT_EQ(4900, log_buffer->_old_epoch.start);
@@ -563,7 +556,7 @@ w_rc_t logbuf_tester::test_flush() {
     EXPECT_EQ(1800, log_buffer->_buf_epoch.end);
 
 
-    // // corner case: when the unflushed log records span two partitions 
+    // // corner case: when the unflushed log records span two partitions
     // // and the specified lsn is in the first partition:
     // // all log records up to to_insert should be flushed
 
@@ -575,13 +568,13 @@ w_rc_t logbuf_tester::test_flush() {
 
     // lsn = lsn_t(2, 3000);
     // W_DO(FLUSH(lsn));
-    // EXPECT_EQ(10300, log_buffer->_start);    
+    // EXPECT_EQ(10300, log_buffer->_start);
     // EXPECT_EQ(10300, log_buffer->_end);
     // EXPECT_EQ(700, log_buffer->_free);
-    // EXPECT_EQ(lsn_t(3,300), log_buffer->_to_insert_lsn);    
+    // EXPECT_EQ(lsn_t(3,300), log_buffer->_to_insert_lsn);
     // EXPECT_EQ(lsn_t(3,300), log_buffer->_to_flush_lsn);
-    // EXPECT_EQ(lsn_t(3,0), log_buffer->_to_flush_seg->base_lsn);    
-    // EXPECT_EQ(lsn_t(3,0), log_buffer->_to_insert_seg->base_lsn);    
+    // EXPECT_EQ(lsn_t(3,0), log_buffer->_to_flush_seg->base_lsn);
+    // EXPECT_EQ(lsn_t(3,0), log_buffer->_to_insert_seg->base_lsn);
     // EXPECT_EQ(lsn_t(2,0), log_buffer->_old_epoch.base_lsn);
     // EXPECT_EQ(5000, log_buffer->_old_epoch.base);
     // EXPECT_EQ(4800, log_buffer->_old_epoch.start);
@@ -636,16 +629,16 @@ w_rc_t logbuf_tester::test_fetch() {
     // now the buffer looks like this
     // (2,0) (2,1000), (2,2000), (2,3000), (2,4000)
     PRINT();
-    
 
-    // case 1: lsn is at offset 0 in a partition    
+
+    // case 1: lsn is at offset 0 in a partition
     // hit
     EXPECT_EQ(1, FETCH(lsn_t(2,0)));
     // miss
-    EXPECT_EQ(0, FETCH(lsn_t(1,0))); 
+    EXPECT_EQ(0, FETCH(lsn_t(1,0)));
 
 
-    // case 2: lsn is at offset 0 in a segment, 
+    // case 2: lsn is at offset 0 in a segment,
     // but not at offset 0 in a partition
     // miss
     EXPECT_EQ(0, FETCH(lsn_t(1,1000)));
@@ -663,7 +656,7 @@ w_rc_t logbuf_tester::test_fetch() {
     // corner case 1
     // the lsn is greater than or equal to to_insert
     // invalid
-    EXPECT_EQ(lsn_t(2,4900), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(2,4900), log_buffer->_to_insert_lsn);
     EXPECT_EQ(-1, FETCH(lsn_t(2,4900)));
     EXPECT_EQ(-1, FETCH(lsn_t(3,0)));
 
@@ -671,8 +664,8 @@ w_rc_t logbuf_tester::test_fetch() {
     // corner case 2
     // the lsn is less than to_insert but greater than or equal to to_flush
     // hit
-    EXPECT_EQ(lsn_t(2,4900), log_buffer->_to_insert_lsn);    
-    EXPECT_EQ(lsn_t(2,4000), log_buffer->_to_flush_lsn);    
+    EXPECT_EQ(lsn_t(2,4900), log_buffer->_to_insert_lsn);
+    EXPECT_EQ(lsn_t(2,4000), log_buffer->_to_flush_lsn);
     EXPECT_EQ(1, FETCH(lsn_t(2,4000)));
     EXPECT_EQ(1, FETCH(lsn_t(2,4300)));
 
@@ -688,17 +681,17 @@ w_rc_t logbuf_tester::test_fetch() {
 // this test case is policy-specific
 w_rc_t logbuf_tester::test_replacement() {
     // N=5, M=3
-    
 
-    
-    // assuming segments (1, 0-3500) is valid 
+
+
+    // assuming segments (1, 0-3500) is valid
     PRIME(lsn_t(1,3500));
-    
+
     // case 1: not full
     // initially only one segment
-    EXPECT_EQ((uint32_t)1, log_buffer->_seg_list->count()); 
-    EXPECT_EQ(log_buffer->_to_insert_seg, log_buffer->_to_flush_seg);    
-    EXPECT_EQ(lsn_t(1,3000), log_buffer->_to_flush_seg->base_lsn);    
+    EXPECT_EQ((uint32_t)1, log_buffer->_seg_list->count());
+    EXPECT_EQ(log_buffer->_to_insert_seg, log_buffer->_to_flush_seg);
+    EXPECT_EQ(lsn_t(1,3000), log_buffer->_to_flush_seg->base_lsn);
 
 
     // insert
@@ -711,28 +704,28 @@ w_rc_t logbuf_tester::test_replacement() {
     W_DO(INSERT(100)); // (1, 5000)
 
     // 2 segments now
-    EXPECT_EQ((uint32_t)2, log_buffer->_seg_list->count()); 
+    EXPECT_EQ((uint32_t)2, log_buffer->_seg_list->count());
     // the list looks like this: (1,3000) -> (1,4000)
     EXPECT_EQ(log_buffer->_to_flush_seg,
-              log_buffer->_seg_list->prev_of(log_buffer->_to_insert_seg));    
-    EXPECT_EQ(lsn_t(1,3000), log_buffer->_to_flush_seg->base_lsn);    
-    EXPECT_EQ(lsn_t(1,4000), log_buffer->_to_insert_seg->base_lsn);    
-             
+              log_buffer->_seg_list->prev_of(log_buffer->_to_insert_seg));
+    EXPECT_EQ(lsn_t(1,3000), log_buffer->_to_flush_seg->base_lsn);
+    EXPECT_EQ(lsn_t(1,4000), log_buffer->_to_insert_seg->base_lsn);
+
     // fetch
     // miss
     EXPECT_EQ(0, FETCH(lsn_t(1,500)));
 
     // 3 segments now
-    EXPECT_EQ((uint32_t)3, log_buffer->_seg_list->count()); 
+    EXPECT_EQ((uint32_t)3, log_buffer->_seg_list->count());
     // the list looks like this: (1,0) -> (1,3000) -> (1,4000)
     EXPECT_EQ(log_buffer->_seg_list->top(),
-              log_buffer->_seg_list->prev_of(log_buffer->_to_flush_seg));    
+              log_buffer->_seg_list->prev_of(log_buffer->_to_flush_seg));
     EXPECT_EQ(log_buffer->_to_flush_seg,
-              log_buffer->_seg_list->prev_of(log_buffer->_to_insert_seg));    
+              log_buffer->_seg_list->prev_of(log_buffer->_to_insert_seg));
     EXPECT_EQ(lsn_t(1,0), log_buffer->_seg_list->top()->base_lsn);
-    EXPECT_EQ(lsn_t(1,3000), log_buffer->_to_flush_seg->base_lsn);    
-    EXPECT_EQ(lsn_t(1,4000), log_buffer->_to_insert_seg->base_lsn);    
-              
+    EXPECT_EQ(lsn_t(1,3000), log_buffer->_to_flush_seg->base_lsn);
+    EXPECT_EQ(lsn_t(1,4000), log_buffer->_to_insert_seg->base_lsn);
+
 
     // case 3: full, and forced flush
 
@@ -747,25 +740,25 @@ w_rc_t logbuf_tester::test_replacement() {
     }
 
     // 5 segments now
-    EXPECT_EQ((uint32_t)5, log_buffer->_seg_list->count()); 
-    // the list looks like this: 
+    EXPECT_EQ((uint32_t)5, log_buffer->_seg_list->count());
+    // the list looks like this:
     // (1,3000) -> (1,4000) -> (2,0) -> (2,1000) -> (2,2000)
-    EXPECT_EQ(log_buffer->_seg_list->top(), log_buffer->_to_flush_seg);    
-    EXPECT_EQ(lsn_t(1,3000), log_buffer->_to_flush_seg->base_lsn);    
-    EXPECT_EQ(lsn_t(2,2000), log_buffer->_to_insert_seg->base_lsn);    
-    
+    EXPECT_EQ(log_buffer->_seg_list->top(), log_buffer->_to_flush_seg);
+    EXPECT_EQ(lsn_t(1,3000), log_buffer->_to_flush_seg->base_lsn);
+    EXPECT_EQ(lsn_t(2,2000), log_buffer->_to_insert_seg->base_lsn);
+
     // insert
     W_DO(INSERT(300)); // (2,3300)
-    
+
     // 5 segments now
-    EXPECT_EQ((uint32_t)5, log_buffer->_seg_list->count()); 
+    EXPECT_EQ((uint32_t)5, log_buffer->_seg_list->count());
     // (1,4000) -> (2,0) -> (2,1000) -> (2,2000) -> (2,3000)
-    EXPECT_EQ(log_buffer->_seg_list->bottom(), log_buffer->_to_insert_seg);    
+    EXPECT_EQ(log_buffer->_seg_list->bottom(), log_buffer->_to_insert_seg);
     // the forced flush returns after flushing (1,3000)
     // but the flush daemon continues flushing in the background
     // so the _to_flush_seg is changing...
-    EXPECT_LE(lsn_t(1,3000), log_buffer->_to_flush_seg->base_lsn);    
-    EXPECT_EQ(lsn_t(2,3000), log_buffer->_to_insert_seg->base_lsn);    
+    EXPECT_LE(lsn_t(1,3000), log_buffer->_to_flush_seg->base_lsn);
+    EXPECT_EQ(lsn_t(2,3000), log_buffer->_to_insert_seg->base_lsn);
 
 
     // case 2: full, and no forced flush
@@ -777,12 +770,12 @@ w_rc_t logbuf_tester::test_replacement() {
     W_DO(INSERT(300)); // (2,4200)
 
     // 5 segments now
-    EXPECT_EQ((uint32_t)5, log_buffer->_seg_list->count()); 
+    EXPECT_EQ((uint32_t)5, log_buffer->_seg_list->count());
     // (2,0) -> (2,1000) -> (2,2000) -> (2,3000) -> (2,4000)
-    EXPECT_EQ(log_buffer->_seg_list->bottom(), log_buffer->_to_insert_seg);    
-    EXPECT_EQ(lsn_t(2,0), log_buffer->_seg_list->top()->base_lsn);    
-    EXPECT_EQ(lsn_t(2,3000), log_buffer->_to_flush_seg->base_lsn);    
-    EXPECT_EQ(lsn_t(2,4000), log_buffer->_to_insert_seg->base_lsn);    
+    EXPECT_EQ(log_buffer->_seg_list->bottom(), log_buffer->_to_insert_seg);
+    EXPECT_EQ(lsn_t(2,0), log_buffer->_seg_list->top()->base_lsn);
+    EXPECT_EQ(lsn_t(2,3000), log_buffer->_to_flush_seg->base_lsn);
+    EXPECT_EQ(lsn_t(2,4000), log_buffer->_to_insert_seg->base_lsn);
     //PRINT();
 
     // fetch
@@ -790,15 +783,15 @@ w_rc_t logbuf_tester::test_replacement() {
     EXPECT_EQ(0, FETCH(lsn_t(1,500)));
 
     // 5 segments now
-    EXPECT_EQ((uint32_t)5, log_buffer->_seg_list->count()); 
+    EXPECT_EQ((uint32_t)5, log_buffer->_seg_list->count());
     // (1,0) -> (2,1000) -> (2,2000) -> (2,3000) -> (2,4000)
-    EXPECT_EQ(log_buffer->_seg_list->bottom(), log_buffer->_to_insert_seg);    
-    EXPECT_EQ(lsn_t(1,0), log_buffer->_seg_list->top()->base_lsn);    
-    EXPECT_EQ(lsn_t(2,3000), log_buffer->_to_flush_seg->base_lsn);    
-    EXPECT_EQ(lsn_t(2,4000), log_buffer->_to_insert_seg->base_lsn);    
+    EXPECT_EQ(log_buffer->_seg_list->bottom(), log_buffer->_to_insert_seg);
+    EXPECT_EQ(lsn_t(1,0), log_buffer->_seg_list->top()->base_lsn);
+    EXPECT_EQ(lsn_t(2,3000), log_buffer->_to_flush_seg->base_lsn);
+    EXPECT_EQ(lsn_t(2,4000), log_buffer->_to_insert_seg->base_lsn);
 
     //PRINT();
-    
+
 
     return RCOK;
 }
@@ -815,7 +808,7 @@ TEST (LogBufferTest, Init) {
 
     for (int i=1; i<=3; i++) {
         tester = new logbuf_tester(seg_count, flush_trigger, block_size, seg_size,
-                               part_size); 
+                               part_size);
         tester->test_init(i);
         delete tester;
     }
@@ -829,7 +822,7 @@ TEST (LogBufferTest, Insert) {
     uint32_t part_size = 5000;
 
     tester = new logbuf_tester(seg_count, flush_trigger, block_size, seg_size,
-                           part_size); 
+                           part_size);
 
 
     tester->test_insert();
@@ -847,7 +840,7 @@ TEST (LogBufferTest, Flush) {
     uint32_t part_size = 5000;
 
     tester = new logbuf_tester(seg_count, flush_trigger, block_size, seg_size,
-                           part_size); 
+                           part_size);
 
 
     tester->test_flush();
@@ -865,7 +858,7 @@ TEST (LogBufferTest, Fetch) {
     uint32_t part_size = 5000;
 
     tester = new logbuf_tester(seg_count, flush_trigger, block_size, seg_size,
-                           part_size); 
+                           part_size);
 
 
     tester->test_fetch();
@@ -883,7 +876,7 @@ TEST (LogBufferTest, Replacement) {
     uint32_t part_size = 5000;
 
     tester = new logbuf_tester(seg_count, flush_trigger, block_size, seg_size,
-                           part_size); 
+                           part_size);
 
 
     tester->test_replacement();
@@ -910,7 +903,7 @@ TEST (LogBufferTest, Replacement) {
 #define FETCH(lsn) \
     (log_buffer->fetch_for_test(lsn, rp))
 
-// #define FETCH(lsn) 
+// #define FETCH(lsn)
 //     (log_buffer->logbuf_fetch(lsn))
 
 #define PRINT()\
@@ -941,24 +934,24 @@ rc_t flush(ss_m *ssm) {
 
 // test_init
 
-// case 1: the log starts at offset 0 in a partition    
+// case 1: the log starts at offset 0 in a partition
 // unfortunately, we cannot verify the internal state immediately after _prime
 // when starting from an empty log, there are several log records inserted during startup
 // 2*chkpt, abort, dismount, chkpt
 // (56 + 64 + 88)*2 + 320 + 320 + 320 + (56 + 320 + 64 + 88) = 1904
 // so we can only verify the internal state after the entire startup process is done
-class init_test_case1  : public restart_test_base 
+class init_test_case1  : public restart_test_base
 {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
 
         logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
 
-        EXPECT_EQ(1904, log_buffer->_start);    
+        EXPECT_EQ(1904, log_buffer->_start);
         EXPECT_EQ(1904, log_buffer->_end);
         EXPECT_EQ(SEG_SIZE-1904, log_buffer->_free);
-        EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);    
-        EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_flush_lsn);    
+        EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);
+        EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_flush_lsn);
         EXPECT_EQ(lsn_t(0,0), log_buffer->_old_epoch.base_lsn);
         EXPECT_EQ(0, log_buffer->_old_epoch.base);
         EXPECT_EQ(0, log_buffer->_old_epoch.start);
@@ -972,7 +965,7 @@ public:
         EXPECT_EQ(0, log_buffer->_buf_epoch.start);
         EXPECT_EQ(1904, log_buffer->_buf_epoch.end);
 
-        
+
         return RCOK;
     }
 
@@ -983,11 +976,11 @@ public:
 
 
 
-// case 2: the log starts at offset 0 in a segment, 
-// but not at offset 0 in a partition    
+// case 2: the log starts at offset 0 in a segment,
+// but not at offset 0 in a partition
 // consume one segment during pre_shutdown
 // verify internal state during post_shutdown
-class init_test_case2  : public restart_test_base 
+class init_test_case2  : public restart_test_base
 {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
@@ -995,20 +988,20 @@ public:
         logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
 
         // after startup
-        EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);    
+        EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);
 
         // consume the entire segment
         // one checkpoint will be taken during shutdown (56 + 320 + 64 + 88) = 528
         W_DO(consume(4096-1904-528,ssm));
         for (int i=1; i<=SEG_SIZE/4096-1; i++) {
-            W_DO(consume(4096,ssm));            
+            W_DO(consume(4096,ssm));
         }
 
-        EXPECT_EQ(SEG_SIZE-528, log_buffer->_start);    
+        EXPECT_EQ(SEG_SIZE-528, log_buffer->_start);
         EXPECT_EQ(SEG_SIZE-528, log_buffer->_end);
         EXPECT_EQ(528, log_buffer->_free);
-        EXPECT_EQ(lsn_t(1,SEG_SIZE-528), log_buffer->_to_insert_lsn);    
-        EXPECT_EQ(lsn_t(1,SEG_SIZE-528), log_buffer->_to_flush_lsn);    
+        EXPECT_EQ(lsn_t(1,SEG_SIZE-528), log_buffer->_to_insert_lsn);
+        EXPECT_EQ(lsn_t(1,SEG_SIZE-528), log_buffer->_to_flush_lsn);
         EXPECT_EQ(lsn_t(0,0), log_buffer->_old_epoch.base_lsn);
         EXPECT_EQ(0, log_buffer->_old_epoch.base);
         EXPECT_EQ(0, log_buffer->_old_epoch.start);
@@ -1039,11 +1032,11 @@ public:
         sleep(5);
 
         // after startup
-        EXPECT_EQ(SEG_SIZE+2224, log_buffer->_start);    
+        EXPECT_EQ(SEG_SIZE+2224, log_buffer->_start);
         EXPECT_EQ(SEG_SIZE+2224, log_buffer->_end);
         EXPECT_EQ(SEG_SIZE-2224, log_buffer->_free);
-        EXPECT_EQ(lsn_t(1,SEG_SIZE+2224), log_buffer->_to_insert_lsn);    
-        EXPECT_EQ(lsn_t(1,SEG_SIZE+2224), log_buffer->_to_flush_lsn);    
+        EXPECT_EQ(lsn_t(1,SEG_SIZE+2224), log_buffer->_to_insert_lsn);
+        EXPECT_EQ(lsn_t(1,SEG_SIZE+2224), log_buffer->_to_flush_lsn);
         EXPECT_EQ(lsn_t(0,0), log_buffer->_old_epoch.base_lsn);
         EXPECT_EQ(0, log_buffer->_old_epoch.base);
         EXPECT_EQ(0, log_buffer->_old_epoch.start);
@@ -1066,7 +1059,7 @@ public:
 // case 3: the log starts in the middle of a segment
 // consume one segment during pre_shutdown
 // verify internal state during post_shutdown
-class init_test_case3  : public restart_test_base 
+class init_test_case3  : public restart_test_base
 {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
@@ -1074,7 +1067,7 @@ public:
         logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
 
         // after startup
-        EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);    
+        EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);
 
         // to consume 4096 bytes
         int size = 4096;
@@ -1082,11 +1075,11 @@ public:
         // one checkpoint will be taken during shutdown (56 + 320 + 64 + 88) = 528
         W_DO(consume(size-1904-528,ssm));
 
-        EXPECT_EQ(size-528, log_buffer->_start);    
+        EXPECT_EQ(size-528, log_buffer->_start);
         EXPECT_EQ(size-528, log_buffer->_end);
         EXPECT_EQ(SEG_SIZE-(size-528), log_buffer->_free);
-        EXPECT_EQ(lsn_t(1,size-528), log_buffer->_to_insert_lsn);    
-        EXPECT_EQ(lsn_t(1,size-528), log_buffer->_to_flush_lsn);    
+        EXPECT_EQ(lsn_t(1,size-528), log_buffer->_to_insert_lsn);
+        EXPECT_EQ(lsn_t(1,size-528), log_buffer->_to_flush_lsn);
         EXPECT_EQ(lsn_t(0,0), log_buffer->_old_epoch.base_lsn);
         EXPECT_EQ(0, log_buffer->_old_epoch.base);
         EXPECT_EQ(0, log_buffer->_old_epoch.start);
@@ -1119,11 +1112,11 @@ public:
         int size = 4096;
 
         // after startup
-        EXPECT_EQ(size+2224, log_buffer->_start);    
+        EXPECT_EQ(size+2224, log_buffer->_start);
         EXPECT_EQ(size+2224, log_buffer->_end);
         EXPECT_EQ(SEG_SIZE-(size+2224), log_buffer->_free);
-        EXPECT_EQ(lsn_t(1,size+2224), log_buffer->_to_insert_lsn);    
-        EXPECT_EQ(lsn_t(1,size+2224), log_buffer->_to_flush_lsn);    
+        EXPECT_EQ(lsn_t(1,size+2224), log_buffer->_to_insert_lsn);
+        EXPECT_EQ(lsn_t(1,size+2224), log_buffer->_to_flush_lsn);
         EXPECT_EQ(lsn_t(0,0), log_buffer->_old_epoch.base_lsn);
         EXPECT_EQ(0, log_buffer->_old_epoch.base);
         EXPECT_EQ(0, log_buffer->_old_epoch.start);
@@ -1151,7 +1144,7 @@ TEST (LogBufferTest2, Init1) {
 
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
-    sm_options.set_int_option("sm_logsize", LOG_SIZE); 
+    sm_options.set_int_option("sm_logsize", LOG_SIZE);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;
@@ -1192,26 +1185,26 @@ w_rc_t test_insert(ss_m *ssm, test_volume_t *) {
     logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
 
     // after startup
-    EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);
 
-    // case 1: to_insert starts at offset 0 in a partition    
+    // case 1: to_insert starts at offset 0 in a partition
     // consume the entire partition
     W_DO(consume(4096-1904,ssm));
     for (int i=1; i<=PART_SIZE/4096-1; i++) {
-        W_DO(consume(4096,ssm));            
+        W_DO(consume(4096,ssm));
     }
-    EXPECT_EQ(lsn_t(1,PART_SIZE), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(1,PART_SIZE), log_buffer->_to_insert_lsn);
 
     W_DO(x_begin_xct(ssm,true));
     W_DO(INSERT(128));
 
-    EXPECT_EQ(PART_SIZE, log_buffer->_start);    
+    EXPECT_EQ(PART_SIZE, log_buffer->_start);
     EXPECT_EQ(PART_SIZE+128, log_buffer->_end);
     EXPECT_EQ(SEG_SIZE-128, log_buffer->_free);
-    EXPECT_EQ(lsn_t(2,128), log_buffer->_to_insert_lsn);    
-    EXPECT_EQ(lsn_t(1,PART_SIZE), log_buffer->_to_flush_lsn);    
-    EXPECT_EQ(lsn_t(1,PART_SIZE-SEG_SIZE), log_buffer->_to_flush_seg->base_lsn);    
-    EXPECT_EQ(lsn_t(2,0), log_buffer->_to_insert_seg->base_lsn);    
+    EXPECT_EQ(lsn_t(2,128), log_buffer->_to_insert_lsn);
+    EXPECT_EQ(lsn_t(1,PART_SIZE), log_buffer->_to_flush_lsn);
+    EXPECT_EQ(lsn_t(1,PART_SIZE-SEG_SIZE), log_buffer->_to_flush_seg->base_lsn);
+    EXPECT_EQ(lsn_t(2,0), log_buffer->_to_insert_seg->base_lsn);
     EXPECT_EQ(lsn_t(1,0), log_buffer->_old_epoch.base_lsn);
     EXPECT_EQ(0, log_buffer->_old_epoch.base);
     EXPECT_EQ(PART_SIZE, log_buffer->_old_epoch.start);
@@ -1226,7 +1219,7 @@ w_rc_t test_insert(ss_m *ssm, test_volume_t *) {
     EXPECT_EQ(128, log_buffer->_buf_epoch.end);
 
 
-    // case 2: to_insert starts at offset 0 in a segment, 
+    // case 2: to_insert starts at offset 0 in a segment,
     // but not at offset 0 in a partition
     W_DO(x_commit_xct(ssm)); // adding 48*2 bytes due to the commit
     // this commit triggers two async checkpoints for opening a new partition for append
@@ -1238,20 +1231,20 @@ w_rc_t test_insert(ss_m *ssm, test_volume_t *) {
     // one checkpoint (56 + 320 + 64 + 88) = 528
     W_DO(consume(4096-128-48*2-528*2,ssm));
     for (int i=1; i<=SEG_SIZE/4096-1; i++) {
-        W_DO(consume(4096,ssm));            
+        W_DO(consume(4096,ssm));
     }
-    EXPECT_EQ(lsn_t(2,SEG_SIZE), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(2,SEG_SIZE), log_buffer->_to_insert_lsn);
 
     W_DO(x_begin_xct(ssm,true));
     W_DO(INSERT(128));
 
-    EXPECT_EQ(PART_SIZE+SEG_SIZE, log_buffer->_start);    
+    EXPECT_EQ(PART_SIZE+SEG_SIZE, log_buffer->_start);
     EXPECT_EQ(PART_SIZE+SEG_SIZE+128, log_buffer->_end);
     EXPECT_EQ(SEG_SIZE-128, log_buffer->_free);
-    EXPECT_EQ(lsn_t(2,SEG_SIZE+128), log_buffer->_to_insert_lsn);    
-    EXPECT_EQ(lsn_t(2,SEG_SIZE), log_buffer->_to_flush_lsn);    
-    EXPECT_EQ(lsn_t(2,0), log_buffer->_to_flush_seg->base_lsn);    
-    EXPECT_EQ(lsn_t(2,SEG_SIZE), log_buffer->_to_insert_seg->base_lsn);    
+    EXPECT_EQ(lsn_t(2,SEG_SIZE+128), log_buffer->_to_insert_lsn);
+    EXPECT_EQ(lsn_t(2,SEG_SIZE), log_buffer->_to_flush_lsn);
+    EXPECT_EQ(lsn_t(2,0), log_buffer->_to_flush_seg->base_lsn);
+    EXPECT_EQ(lsn_t(2,SEG_SIZE), log_buffer->_to_insert_seg->base_lsn);
     EXPECT_EQ(lsn_t(1,0), log_buffer->_old_epoch.base_lsn);
     EXPECT_EQ(0, log_buffer->_old_epoch.base);
     EXPECT_EQ(PART_SIZE, log_buffer->_old_epoch.start);
@@ -1270,13 +1263,13 @@ w_rc_t test_insert(ss_m *ssm, test_volume_t *) {
     // 3.1: a log record is entirely stored within a segment
     W_DO(INSERT(128));
 
-    EXPECT_EQ(PART_SIZE+SEG_SIZE, log_buffer->_start);    
+    EXPECT_EQ(PART_SIZE+SEG_SIZE, log_buffer->_start);
     EXPECT_EQ(PART_SIZE+SEG_SIZE+128+128, log_buffer->_end);
     EXPECT_EQ(SEG_SIZE-(128+128), log_buffer->_free);
-    EXPECT_EQ(lsn_t(2,SEG_SIZE+128+128), log_buffer->_to_insert_lsn);    
-    EXPECT_EQ(lsn_t(2,SEG_SIZE), log_buffer->_to_flush_lsn);    
-    EXPECT_EQ(lsn_t(2,0), log_buffer->_to_flush_seg->base_lsn);    
-    EXPECT_EQ(lsn_t(2,SEG_SIZE), log_buffer->_to_insert_seg->base_lsn);    
+    EXPECT_EQ(lsn_t(2,SEG_SIZE+128+128), log_buffer->_to_insert_lsn);
+    EXPECT_EQ(lsn_t(2,SEG_SIZE), log_buffer->_to_flush_lsn);
+    EXPECT_EQ(lsn_t(2,0), log_buffer->_to_flush_seg->base_lsn);
+    EXPECT_EQ(lsn_t(2,SEG_SIZE), log_buffer->_to_insert_seg->base_lsn);
     EXPECT_EQ(lsn_t(1,0), log_buffer->_old_epoch.base_lsn);
     EXPECT_EQ(0, log_buffer->_old_epoch.base);
     EXPECT_EQ(PART_SIZE, log_buffer->_old_epoch.start);
@@ -1295,19 +1288,19 @@ w_rc_t test_insert(ss_m *ssm, test_volume_t *) {
     W_DO(x_commit_xct(ssm)); // adding 48*2 bytes due to the commit
     W_DO(consume(4096-128-128-48*2,ssm));
     for (int i=1; i<=SEG_SIZE/4096-1-1; i++) {
-        W_DO(consume(4096,ssm));            
+        W_DO(consume(4096,ssm));
     }
-    EXPECT_EQ(lsn_t(2,SEG_SIZE+SEG_SIZE-4096), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(2,SEG_SIZE+SEG_SIZE-4096), log_buffer->_to_insert_lsn);
 
-    W_DO(x_begin_xct(ssm,true));    
+    W_DO(x_begin_xct(ssm,true));
     W_DO(INSERT(4096*2));
-    EXPECT_EQ(PART_SIZE+SEG_SIZE*2-4096, log_buffer->_start);    
+    EXPECT_EQ(PART_SIZE+SEG_SIZE*2-4096, log_buffer->_start);
     EXPECT_EQ(PART_SIZE+SEG_SIZE*2+4096, log_buffer->_end);
     EXPECT_EQ(SEG_SIZE-4096, log_buffer->_free);
-    EXPECT_EQ(lsn_t(2,SEG_SIZE*2+4096), log_buffer->_to_insert_lsn);    
-    EXPECT_EQ(lsn_t(2,SEG_SIZE*2-4096), log_buffer->_to_flush_lsn);    
-    EXPECT_EQ(lsn_t(2,SEG_SIZE), log_buffer->_to_flush_seg->base_lsn);    
-    EXPECT_EQ(lsn_t(2,SEG_SIZE*2), log_buffer->_to_insert_seg->base_lsn);    
+    EXPECT_EQ(lsn_t(2,SEG_SIZE*2+4096), log_buffer->_to_insert_lsn);
+    EXPECT_EQ(lsn_t(2,SEG_SIZE*2-4096), log_buffer->_to_flush_lsn);
+    EXPECT_EQ(lsn_t(2,SEG_SIZE), log_buffer->_to_flush_seg->base_lsn);
+    EXPECT_EQ(lsn_t(2,SEG_SIZE*2), log_buffer->_to_insert_seg->base_lsn);
     EXPECT_EQ(lsn_t(1,0), log_buffer->_old_epoch.base_lsn);
     EXPECT_EQ(0, log_buffer->_old_epoch.base);
     EXPECT_EQ(PART_SIZE, log_buffer->_old_epoch.start);
@@ -1326,19 +1319,19 @@ w_rc_t test_insert(ss_m *ssm, test_volume_t *) {
     W_DO(x_commit_xct(ssm)); // adding 48*2 bytes due to the commit
     W_DO(consume(4096-48*2,ssm));
     for (int i=1; i<=(PART_SIZE-SEG_SIZE*2-4096*2)/4096-1; i++) {
-        W_DO(consume(4096,ssm));            
+        W_DO(consume(4096,ssm));
     }
-    EXPECT_EQ(lsn_t(2,PART_SIZE-4096), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(2,PART_SIZE-4096), log_buffer->_to_insert_lsn);
 
-    W_DO(x_begin_xct(ssm,true));    
+    W_DO(x_begin_xct(ssm,true));
     W_DO(INSERT(4096*2));
-    EXPECT_EQ(PART_SIZE*2-4096, log_buffer->_start);    
+    EXPECT_EQ(PART_SIZE*2-4096, log_buffer->_start);
     EXPECT_EQ(PART_SIZE*2+4096*2, log_buffer->_end);
     EXPECT_EQ(SEG_SIZE-4096*2, log_buffer->_free);
-    EXPECT_EQ(lsn_t(3,4096*2), log_buffer->_to_insert_lsn);    
-    EXPECT_EQ(lsn_t(2,PART_SIZE-4096), log_buffer->_to_flush_lsn);    
-    EXPECT_EQ(lsn_t(2,PART_SIZE-SEG_SIZE), log_buffer->_to_flush_seg->base_lsn);    
-    EXPECT_EQ(lsn_t(3,0), log_buffer->_to_insert_seg->base_lsn);    
+    EXPECT_EQ(lsn_t(3,4096*2), log_buffer->_to_insert_lsn);
+    EXPECT_EQ(lsn_t(2,PART_SIZE-4096), log_buffer->_to_flush_lsn);
+    EXPECT_EQ(lsn_t(2,PART_SIZE-SEG_SIZE), log_buffer->_to_flush_seg->base_lsn);
+    EXPECT_EQ(lsn_t(3,0), log_buffer->_to_insert_seg->base_lsn);
     EXPECT_EQ(lsn_t(2,0), log_buffer->_old_epoch.base_lsn);
     EXPECT_EQ(PART_SIZE, log_buffer->_old_epoch.base);
     EXPECT_EQ(PART_SIZE-4096, log_buffer->_old_epoch.start);
@@ -1362,7 +1355,7 @@ TEST (LogBufferTest2, Insert) {
     test_env->empty_logdata_dir();
     sm_options sm_options;
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
-    sm_options.set_int_option("sm_logsize", LOG_SIZE); 
+    sm_options.set_int_option("sm_logsize", LOG_SIZE);
     EXPECT_EQ(test_env->runBtreeTest(test_insert, true, 1<<16, sm_options), 0);
 }
 
@@ -1372,16 +1365,16 @@ w_rc_t test_flush(ss_m *ssm, test_volume_t *) {
     logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
 
     // after startup
-    EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);
 
     // case 1: there is no unflushed log record
     W_DO(FLUSH(lsn_t(1,1904)));
 
-    EXPECT_EQ(1904, log_buffer->_start);    
+    EXPECT_EQ(1904, log_buffer->_start);
     EXPECT_EQ(1904, log_buffer->_end);
     EXPECT_EQ(SEG_SIZE-1904, log_buffer->_free);
-    EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);    
-    EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_flush_lsn);    
+    EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);
+    EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_flush_lsn);
     EXPECT_EQ(lsn_t(0,0), log_buffer->_old_epoch.base_lsn);
     EXPECT_EQ(0, log_buffer->_old_epoch.base);
     EXPECT_EQ(0, log_buffer->_old_epoch.start);
@@ -1400,11 +1393,11 @@ w_rc_t test_flush(ss_m *ssm, test_volume_t *) {
     W_DO(INSERT(128));
     W_DO(x_commit_xct(ssm)); // adding 48*2 bytes due to the commit
 
-    EXPECT_EQ(1904+128+48*2, log_buffer->_start);    
+    EXPECT_EQ(1904+128+48*2, log_buffer->_start);
     EXPECT_EQ(1904+128+48*2, log_buffer->_end);
     EXPECT_EQ(SEG_SIZE-1904-128-48*2, log_buffer->_free);
-    EXPECT_EQ(lsn_t(1,1904+128+48*2), log_buffer->_to_insert_lsn);    
-    EXPECT_EQ(lsn_t(1,1904+128+48*2), log_buffer->_to_flush_lsn);    
+    EXPECT_EQ(lsn_t(1,1904+128+48*2), log_buffer->_to_insert_lsn);
+    EXPECT_EQ(lsn_t(1,1904+128+48*2), log_buffer->_to_flush_lsn);
     EXPECT_EQ(lsn_t(0,0), log_buffer->_old_epoch.base_lsn);
     EXPECT_EQ(0, log_buffer->_old_epoch.base);
     EXPECT_EQ(0, log_buffer->_old_epoch.start);
@@ -1423,16 +1416,16 @@ w_rc_t test_flush(ss_m *ssm, test_volume_t *) {
 
     // (1, 4096) to (1, SEG_SIZE+4096)
     W_DO(x_begin_xct(ssm,true));
-    for (int i=1; i<=(SEG_SIZE)/4096; i++) {    
+    for (int i=1; i<=(SEG_SIZE)/4096; i++) {
         W_DO(INSERT(4096));
     }
     W_DO(x_commit_xct(ssm)); // adding 48*2 bytes due to the commit
 
-    EXPECT_EQ(SEG_SIZE+4096+48*2, log_buffer->_start);    
+    EXPECT_EQ(SEG_SIZE+4096+48*2, log_buffer->_start);
     EXPECT_EQ(SEG_SIZE+4096+48*2, log_buffer->_end);
     EXPECT_EQ(SEG_SIZE-4096-48*2, log_buffer->_free);
-    EXPECT_EQ(lsn_t(1,SEG_SIZE+4096+48*2), log_buffer->_to_insert_lsn);    
-    EXPECT_EQ(lsn_t(1,SEG_SIZE+4096+48*2), log_buffer->_to_flush_lsn);    
+    EXPECT_EQ(lsn_t(1,SEG_SIZE+4096+48*2), log_buffer->_to_insert_lsn);
+    EXPECT_EQ(lsn_t(1,SEG_SIZE+4096+48*2), log_buffer->_to_flush_lsn);
     EXPECT_EQ(lsn_t(0,0), log_buffer->_old_epoch.base_lsn);
     EXPECT_EQ(0, log_buffer->_old_epoch.base);
     EXPECT_EQ(0, log_buffer->_old_epoch.start);
@@ -1445,14 +1438,14 @@ w_rc_t test_flush(ss_m *ssm, test_volume_t *) {
     EXPECT_EQ(0, log_buffer->_buf_epoch.base);
     EXPECT_EQ(0, log_buffer->_buf_epoch.start);
     EXPECT_EQ(SEG_SIZE+4096+48*2, log_buffer->_buf_epoch.end);
-   
+
     // case 4: the unflushed log records span two partitions
     // let's move towards the end of this partition
     W_DO(consume(4096-48*2,ssm));
     for (int i=1; i<=(PART_SIZE-SEG_SIZE-4096*2)/4096-1; i++) {
-        W_DO(consume(4096,ssm));            
+        W_DO(consume(4096,ssm));
     }
-    EXPECT_EQ(lsn_t(1,PART_SIZE-4096), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(1,PART_SIZE-4096), log_buffer->_to_insert_lsn);
 
     // (1, PART_SIZE-4096) to (2, 4096)
     W_DO(x_begin_xct(ssm,true));
@@ -1466,11 +1459,11 @@ w_rc_t test_flush(ss_m *ssm, test_volume_t *) {
     // TODO: how to avoid this sleep?
     sleep(5);
 
-    EXPECT_EQ(PART_SIZE+4096+48*2+528*2, log_buffer->_start);    
+    EXPECT_EQ(PART_SIZE+4096+48*2+528*2, log_buffer->_start);
     EXPECT_EQ(PART_SIZE+4096+48*2+528*2, log_buffer->_end);
     EXPECT_EQ(SEG_SIZE-4096-48*2-528*2, log_buffer->_free);
-    EXPECT_EQ(lsn_t(2,4096+48*2+528*2), log_buffer->_to_insert_lsn);    
-    EXPECT_EQ(lsn_t(2,4096+48*2+528*2), log_buffer->_to_flush_lsn);    
+    EXPECT_EQ(lsn_t(2,4096+48*2+528*2), log_buffer->_to_insert_lsn);
+    EXPECT_EQ(lsn_t(2,4096+48*2+528*2), log_buffer->_to_flush_lsn);
     EXPECT_EQ(lsn_t(1,0), log_buffer->_old_epoch.base_lsn);
     EXPECT_EQ(0, log_buffer->_old_epoch.base);
     EXPECT_EQ(PART_SIZE-4096+128, log_buffer->_old_epoch.start);
@@ -1490,15 +1483,15 @@ w_rc_t test_flush(ss_m *ssm, test_volume_t *) {
     W_DO(consume(4096-528*2-48*2,ssm));
     W_DO(x_begin_xct(ssm,true));
     W_DO(INSERT(4096));
-    EXPECT_EQ(lsn_t(2,4096*3), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(2,4096*3), log_buffer->_to_insert_lsn);
 
     W_DO(FLUSH(lsn_t(2,4096*4)));
 
-    EXPECT_EQ(PART_SIZE+4096*3, log_buffer->_start);    
+    EXPECT_EQ(PART_SIZE+4096*3, log_buffer->_start);
     EXPECT_EQ(PART_SIZE+4096*3, log_buffer->_end);
     EXPECT_EQ(SEG_SIZE-4096*3, log_buffer->_free);
-    EXPECT_EQ(lsn_t(2,4096*3), log_buffer->_to_insert_lsn);    
-    EXPECT_EQ(lsn_t(2,4096*3), log_buffer->_to_flush_lsn);    
+    EXPECT_EQ(lsn_t(2,4096*3), log_buffer->_to_insert_lsn);
+    EXPECT_EQ(lsn_t(2,4096*3), log_buffer->_to_flush_lsn);
     EXPECT_EQ(lsn_t(1,0), log_buffer->_old_epoch.base_lsn);
     EXPECT_EQ(0, log_buffer->_old_epoch.base);
     EXPECT_EQ(PART_SIZE-4096+128, log_buffer->_old_epoch.start);
@@ -1515,23 +1508,23 @@ w_rc_t test_flush(ss_m *ssm, test_volume_t *) {
 
     // corner case 2: the specified lsn is less than to_insert but greater than to_flush
     // all log records up to the specified lsn must have been flushed when FLUSH returns
-    // at the same time, the flush daemon in the background would keep flushing until 
+    // at the same time, the flush daemon in the background would keep flushing until
     // there is no unflushed portion in the log; we use EXPECT_LE to catch changes made by
     // the flush daemon
     W_DO(x_commit_xct(ssm));
     W_DO(consume(4096-48*2,ssm));
     W_DO(x_begin_xct(ssm,true));
     W_DO(INSERT(4096*2));
-    EXPECT_EQ(lsn_t(2,4096*6), log_buffer->_to_insert_lsn);    
-    EXPECT_EQ(lsn_t(2,4096*4), log_buffer->_to_flush_lsn);    
+    EXPECT_EQ(lsn_t(2,4096*6), log_buffer->_to_insert_lsn);
+    EXPECT_EQ(lsn_t(2,4096*4), log_buffer->_to_flush_lsn);
 
     W_DO(FLUSH(lsn_t(2,4096*5)));
 
-    EXPECT_LE(PART_SIZE+4096*5, log_buffer->_start);    
+    EXPECT_LE(PART_SIZE+4096*5, log_buffer->_start);
     EXPECT_EQ(PART_SIZE+4096*6, log_buffer->_end);
     EXPECT_EQ(SEG_SIZE-4096*6, log_buffer->_free);
-    EXPECT_EQ(lsn_t(2,4096*6), log_buffer->_to_insert_lsn);    
-    EXPECT_LE(lsn_t(2,4096*5), log_buffer->_to_flush_lsn);    
+    EXPECT_EQ(lsn_t(2,4096*6), log_buffer->_to_insert_lsn);
+    EXPECT_LE(lsn_t(2,4096*5), log_buffer->_to_flush_lsn);
     EXPECT_EQ(lsn_t(1,0), log_buffer->_old_epoch.base_lsn);
     EXPECT_EQ(0, log_buffer->_old_epoch.base);
     EXPECT_EQ(PART_SIZE-4096+128, log_buffer->_old_epoch.start);
@@ -1552,16 +1545,16 @@ w_rc_t test_flush(ss_m *ssm, test_volume_t *) {
     W_DO(consume(4096-48*2,ssm));
     W_DO(x_begin_xct(ssm,true));
     W_DO(INSERT(4096));
-    EXPECT_EQ(lsn_t(2,4096*8), log_buffer->_to_insert_lsn);    
-    EXPECT_EQ(lsn_t(2,4096*7), log_buffer->_to_flush_lsn);    
+    EXPECT_EQ(lsn_t(2,4096*8), log_buffer->_to_insert_lsn);
+    EXPECT_EQ(lsn_t(2,4096*7), log_buffer->_to_flush_lsn);
 
     W_DO(FLUSH(lsn_t(2,4096*6)));
 
-    EXPECT_LE(PART_SIZE+4096*7, log_buffer->_start);    
+    EXPECT_LE(PART_SIZE+4096*7, log_buffer->_start);
     EXPECT_EQ(PART_SIZE+4096*8, log_buffer->_end);
     EXPECT_EQ(SEG_SIZE-4096*8, log_buffer->_free);
-    EXPECT_EQ(lsn_t(2,4096*8), log_buffer->_to_insert_lsn);    
-    EXPECT_LE(lsn_t(2,4096*7), log_buffer->_to_flush_lsn);    
+    EXPECT_EQ(lsn_t(2,4096*8), log_buffer->_to_insert_lsn);
+    EXPECT_LE(lsn_t(2,4096*7), log_buffer->_to_flush_lsn);
     EXPECT_EQ(lsn_t(1,0), log_buffer->_old_epoch.base_lsn);
     EXPECT_EQ(0, log_buffer->_old_epoch.base);
     EXPECT_EQ(PART_SIZE-4096+128, log_buffer->_old_epoch.start);
@@ -1587,7 +1580,7 @@ TEST (LogBufferTest2, Flush) {
     test_env->empty_logdata_dir();
     sm_options sm_options;
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
-    sm_options.set_int_option("sm_logsize", LOG_SIZE); 
+    sm_options.set_int_option("sm_logsize", LOG_SIZE);
     EXPECT_EQ(test_env->runBtreeTest(test_flush, true, 1<<16, sm_options), 0);
 }
 
@@ -1598,38 +1591,38 @@ TEST (LogBufferTest2, Flush) {
 w_rc_t test_fetch(ss_m *ssm, test_volume_t *) {
 
     logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
-    
+
     // after startup
-    EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);
 
     // fill up the first segment, except the last 4096 bytes
     W_DO(consume(4096-1904,ssm));
     for (int i=1; i<=SEG_SIZE/4096-1-1; i++) {
-        W_DO(consume(4096,ssm));            
+        W_DO(consume(4096,ssm));
     }
-    
+
     // insert a log record that spans two segments (1, SEG_SIZE-4096)
     W_DO(consume(4096*2,ssm));
 
     // fill up the second segment
     for (int i=1; i<=SEG_SIZE/4096-1; i++) {
-        W_DO(consume(4096,ssm));            
+        W_DO(consume(4096,ssm));
     }
 
     // fill up the entire partition 1, except the last 4096 bytes
     for (int i=1; i<=(PART_SIZE-SEG_SIZE*2)/4096-1; i++) {
-        W_DO(consume(4096,ssm));            
+        W_DO(consume(4096,ssm));
     }
 
     // insert an 2048-byte log record so that the skip record is at (1, PART_SIZE-2048)
-    W_DO(consume(2048,ssm)); 
+    W_DO(consume(2048,ssm));
 
     // fill up partition 2
     // there are two async checkpoints
     W_DO(consume(4096-528*2,ssm));
     sleep(5);
     for (int i=1; i<=PART_SIZE/4096-1; i++) {
-        W_DO(consume(4096,ssm));            
+        W_DO(consume(4096,ssm));
     }
 
     // fill up partition 3, , except the last segment
@@ -1637,7 +1630,7 @@ w_rc_t test_fetch(ss_m *ssm, test_volume_t *) {
     W_DO(consume(4096-528*2,ssm));
     sleep(5);
     for (int i=1; i<=(PART_SIZE-SEG_SIZE)/4096-1; i++) {
-        W_DO(consume(4096,ssm));            
+        W_DO(consume(4096,ssm));
     }
     // the skip record for partition 3 is at (3, PART_SIZE)
 
@@ -1650,26 +1643,26 @@ w_rc_t test_fetch(ss_m *ssm, test_volume_t *) {
 
     PRINT();
     // now the buffer looks like this
-    // (3,SEG_SIZE*5) -> 
+    // (3,SEG_SIZE*5) ->
     // (3,SEG_SIZE*6) -> (3,SEG_SIZE*7) -> (3,SEG_SIZE*8) -> (3,SEG_SIZE*9) -> (3,SEG_SIZE*10) ->
     // (3,SEG_SIZE*11) -> (3,SEG_SIZE*12) -> (3,SEG_SIZE*13) -> (3,SEG_SIZE*14)
     //PRINT();
-    
+
 
     lsn_t ll;
     logrec_t *rp = NULL;
 
-    // case 1: lsn is at offset 0 in a partition    
+    // case 1: lsn is at offset 0 in a partition
     // miss
     ll = lsn_t(2,0);
     EXPECT_EQ(0, FETCH(ll));
 
     // hit
     ll = lsn_t(2,0);
-    EXPECT_EQ(1, FETCH(ll));    
+    EXPECT_EQ(1, FETCH(ll));
 
 
-    // case 2: lsn is at offset 0 in a segment, 
+    // case 2: lsn is at offset 0 in a segment,
     // but not at offset 0 in a partition
     // miss
     ll = lsn_t(2,SEG_SIZE);
@@ -1677,18 +1670,18 @@ w_rc_t test_fetch(ss_m *ssm, test_volume_t *) {
 
     // hit
     ll = lsn_t(3,SEG_SIZE*13);
-    EXPECT_EQ(1, FETCH(ll));    
+    EXPECT_EQ(1, FETCH(ll));
 
 
     // case 3: lsn is in the middle of a segment
-    // 3.1: the log record is entirely contained within a segment 
+    // 3.1: the log record is entirely contained within a segment
     // miss
     ll = lsn_t(2,SEG_SIZE*2+4096);
     EXPECT_EQ(0, FETCH(ll));
 
     // hit
     ll = lsn_t(3,SEG_SIZE*13+4096);
-    EXPECT_EQ(1, FETCH(ll));    
+    EXPECT_EQ(1, FETCH(ll));
 
     // 3.2: the log record spans two segments
     // miss
@@ -1697,7 +1690,7 @@ w_rc_t test_fetch(ss_m *ssm, test_volume_t *) {
 
     // hit
     ll = lsn_t(1,SEG_SIZE-4096);
-    EXPECT_EQ(1, FETCH(ll));    
+    EXPECT_EQ(1, FETCH(ll));
 
     // 3.3: the log record is a skip record
     // miss
@@ -1708,15 +1701,15 @@ w_rc_t test_fetch(ss_m *ssm, test_volume_t *) {
     // still miss due to fetch_for_test
     // internally it's a hit (see fetch)
     ll = lsn_t(1,PART_SIZE-2048);
-    EXPECT_EQ(0, FETCH(ll));    
+    EXPECT_EQ(0, FETCH(ll));
     EXPECT_EQ(lsn_t(2,0), ll);
 
 
     // corner case 2
     // the lsn is less than to_insert but greater than or equal to to_flush
     // hit
-    EXPECT_EQ(lsn_t(3,SEG_SIZE*14+3*4096), log_buffer->_to_insert_lsn);    
-    EXPECT_EQ(lsn_t(3,SEG_SIZE*14), log_buffer->_to_flush_lsn);    
+    EXPECT_EQ(lsn_t(3,SEG_SIZE*14+3*4096), log_buffer->_to_insert_lsn);
+    EXPECT_EQ(lsn_t(3,SEG_SIZE*14), log_buffer->_to_flush_lsn);
 
     ll = lsn_t(3,SEG_SIZE*14);
     EXPECT_EQ(1, FETCH(ll));
@@ -1728,7 +1721,7 @@ w_rc_t test_fetch(ss_m *ssm, test_volume_t *) {
     // corner case 1
     // the lsn is greater than or equal to to_insert
     // invalid
-    EXPECT_EQ(lsn_t(3,SEG_SIZE*14+3*4096), log_buffer->_to_insert_lsn);    
+    EXPECT_EQ(lsn_t(3,SEG_SIZE*14+3*4096), log_buffer->_to_insert_lsn);
 
     ll = lsn_t(3,SEG_SIZE*14+3*4096);
     EXPECT_EQ(-1, FETCH(ll));
@@ -1753,7 +1746,7 @@ w_rc_t test_fetch(ss_m *ssm, test_volume_t *) {
 
 
     W_DO(x_commit_xct(ssm));
-    
+
 
     return RCOK;
 }
@@ -1763,7 +1756,7 @@ TEST (LogBufferTest2, Fetch) {
     test_env->empty_logdata_dir();
     sm_options sm_options;
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
-    sm_options.set_int_option("sm_logsize", LOG_SIZE); 
+    sm_options.set_int_option("sm_logsize", LOG_SIZE);
     EXPECT_EQ(test_env->runBtreeTest(test_fetch, true, 1<<16, sm_options), 0);
 }
 
@@ -1771,7 +1764,7 @@ TEST (LogBufferTest2, Fetch) {
 
 // test_replacement
 // this test case is policy-specific
-class replacement_test_case  : public restart_test_base 
+class replacement_test_case  : public restart_test_base
 {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
@@ -1779,22 +1772,22 @@ public:
         logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
 
         // after startup
-        EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);    
-    
+        EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);
+
         // fill up one segment 0
         W_DO(consume(4096-1904,ssm));
         for (int i=1; i<=SEG_SIZE/4096-1; i++) {
-            W_DO(consume(4096,ssm));            
+            W_DO(consume(4096,ssm));
         }
 
         // fill up one segment 1
         for (int i=1; i<=SEG_SIZE/4096; i++) {
-            W_DO(consume(4096,ssm));            
+            W_DO(consume(4096,ssm));
         }
 
         // fill up one segment 2
         for (int i=1; i<=SEG_SIZE/4096; i++) {
-            W_DO(consume(4096,ssm));            
+            W_DO(consume(4096,ssm));
         }
 
         // then add some records to the lastest segment
@@ -1821,7 +1814,7 @@ public:
 
         // after startup
         sleep(5);
-        EXPECT_EQ(lsn_t(1,SEG_SIZE*3+4096+2224), log_buffer->_to_insert_lsn);    
+        EXPECT_EQ(lsn_t(1,SEG_SIZE*3+4096+2224), log_buffer->_to_insert_lsn);
 
         // N=10, M=8
 
@@ -1829,14 +1822,14 @@ public:
         // initially only one segment
         W_DO(consume(4096-2224,ssm));
         for (int i=1; i<=(SEG_SIZE-4096*2)/4096-1; i++) {
-            W_DO(consume(4096,ssm));            
+            W_DO(consume(4096,ssm));
         }
 
-        //EXPECT_EQ(lsn_t(1,SEG_SIZE*4-4096), log_buffer->_to_insert_lsn);    
+        //EXPECT_EQ(lsn_t(1,SEG_SIZE*4-4096), log_buffer->_to_insert_lsn);
 
-        EXPECT_EQ((uint32_t)1, log_buffer->_seg_list->count()); 
-        EXPECT_EQ(log_buffer->_to_insert_seg, log_buffer->_to_flush_seg);    
-        EXPECT_EQ(lsn_t(1,SEG_SIZE*3), log_buffer->_to_flush_seg->base_lsn);    
+        EXPECT_EQ((uint32_t)1, log_buffer->_seg_list->count());
+        EXPECT_EQ(log_buffer->_to_insert_seg, log_buffer->_to_flush_seg);
+        EXPECT_EQ(lsn_t(1,SEG_SIZE*3), log_buffer->_to_flush_seg->base_lsn);
 
 
         // insert
@@ -1844,12 +1837,12 @@ public:
         W_DO(INSERT(4096*2));
 
         // 2 segments now
-        EXPECT_EQ((uint32_t)2, log_buffer->_seg_list->count()); 
+        EXPECT_EQ((uint32_t)2, log_buffer->_seg_list->count());
         // the list looks like this: (1,SEG_SIZE*3) -> (1,SEG_SIZE*4)
         EXPECT_EQ(log_buffer->_to_flush_seg,
-                  log_buffer->_seg_list->prev_of(log_buffer->_to_insert_seg));    
-        EXPECT_EQ(lsn_t(1,SEG_SIZE*3), log_buffer->_to_flush_seg->base_lsn);    
-        EXPECT_EQ(lsn_t(1,SEG_SIZE*4), log_buffer->_to_insert_seg->base_lsn);    
+                  log_buffer->_seg_list->prev_of(log_buffer->_to_insert_seg));
+        EXPECT_EQ(lsn_t(1,SEG_SIZE*3), log_buffer->_to_flush_seg->base_lsn);
+        EXPECT_EQ(lsn_t(1,SEG_SIZE*4), log_buffer->_to_insert_seg->base_lsn);
 
 
         // fetch
@@ -1857,56 +1850,56 @@ public:
         ll = lsn_t(1,4096);
         EXPECT_EQ(0, FETCH(ll));
         // 3 segments now
-        EXPECT_EQ((uint32_t)3, log_buffer->_seg_list->count()); 
+        EXPECT_EQ((uint32_t)3, log_buffer->_seg_list->count());
         // the list looks like this: (1,0) -> (1,SEG_SIZE*3) -> (1,SEG_SIZE*4)
         EXPECT_EQ(log_buffer->_seg_list->top(),
-                  log_buffer->_seg_list->prev_of(log_buffer->_to_flush_seg));    
+                  log_buffer->_seg_list->prev_of(log_buffer->_to_flush_seg));
         EXPECT_EQ(log_buffer->_to_flush_seg,
-                  log_buffer->_seg_list->prev_of(log_buffer->_to_insert_seg));    
+                  log_buffer->_seg_list->prev_of(log_buffer->_to_insert_seg));
         EXPECT_EQ(lsn_t(1,0), log_buffer->_seg_list->top()->base_lsn);
-        EXPECT_EQ(lsn_t(1,SEG_SIZE*3), log_buffer->_to_flush_seg->base_lsn);    
-        EXPECT_EQ(lsn_t(1,SEG_SIZE*4), log_buffer->_to_insert_seg->base_lsn);    
-              
+        EXPECT_EQ(lsn_t(1,SEG_SIZE*3), log_buffer->_to_flush_seg->base_lsn);
+        EXPECT_EQ(lsn_t(1,SEG_SIZE*4), log_buffer->_to_insert_seg->base_lsn);
+
 
         // case 3: full, and forced flush
 
         // fill up the current segment
         for (int i=1; i<=SEG_SIZE/4096-1; i++) {
-            W_DO(INSERT(4096));            
+            W_DO(INSERT(4096));
         }
 
         // fill up 8 more segments
         for (int j=1; j<=8; j++) {
             for (int i=1; i<=SEG_SIZE/4096; i++) {
-                W_DO(INSERT(4096));            
+                W_DO(INSERT(4096));
             }
             //PRINT();
         }
         // 10 segments now
-        EXPECT_EQ((uint32_t)10, log_buffer->_seg_list->count()); 
-        // the list looks like this: 
+        EXPECT_EQ((uint32_t)10, log_buffer->_seg_list->count());
+        // the list looks like this:
         // (1,SEG_SIZE*3) -> (1,SEG_SIZE*4) -> (1,SEG_SIZE*5) -> (1,SEG_SIZE*6)  -> (1,SEG_SIZE*7) ->
         // (1,SEG_SIZE*8) -> (1,SEG_SIZE*9) -> (1,SEG_SIZE*10) -> (1,SEG_SIZE*11)  -> (1,SEG_SIZE*12)
-        
-        EXPECT_EQ(log_buffer->_seg_list->top(), log_buffer->_to_flush_seg);    
-        EXPECT_EQ(lsn_t(1,SEG_SIZE*3), log_buffer->_to_flush_seg->base_lsn);    
-        EXPECT_EQ(lsn_t(1,SEG_SIZE*12), log_buffer->_to_insert_seg->base_lsn);    
+
+        EXPECT_EQ(log_buffer->_seg_list->top(), log_buffer->_to_flush_seg);
+        EXPECT_EQ(lsn_t(1,SEG_SIZE*3), log_buffer->_to_flush_seg->base_lsn);
+        EXPECT_EQ(lsn_t(1,SEG_SIZE*12), log_buffer->_to_insert_seg->base_lsn);
 
         // insert
         W_DO(INSERT(4096));
-    
+
         // 10 segments now
-        EXPECT_EQ((uint32_t)10, log_buffer->_seg_list->count()); 
-        // the list looks like this: 
-        // (1,SEG_SIZE*4) -> (1,SEG_SIZE*5) -> (1,SEG_SIZE*6)  -> (1,SEG_SIZE*7) -> (1,SEG_SIZE*8) -> 
+        EXPECT_EQ((uint32_t)10, log_buffer->_seg_list->count());
+        // the list looks like this:
+        // (1,SEG_SIZE*4) -> (1,SEG_SIZE*5) -> (1,SEG_SIZE*6)  -> (1,SEG_SIZE*7) -> (1,SEG_SIZE*8) ->
         // (1,SEG_SIZE*9) -> (1,SEG_SIZE*10) -> (1,SEG_SIZE*11)  -> (1,SEG_SIZE*12) -> (1,SEG_SIZE*13)
 
-        EXPECT_EQ(log_buffer->_seg_list->bottom(), log_buffer->_to_insert_seg);    
+        EXPECT_EQ(log_buffer->_seg_list->bottom(), log_buffer->_to_insert_seg);
         // the forced flush returns after flushing (1,SEG_SIZE*3)
         // but the flush daemon continues flushing in the background
         // so the _to_flush_seg is changing...
-        EXPECT_LE(lsn_t(1,SEG_SIZE*3), log_buffer->_to_flush_seg->base_lsn);    
-        EXPECT_EQ(lsn_t(1,SEG_SIZE*13), log_buffer->_to_insert_seg->base_lsn);    
+        EXPECT_LE(lsn_t(1,SEG_SIZE*3), log_buffer->_to_flush_seg->base_lsn);
+        EXPECT_EQ(lsn_t(1,SEG_SIZE*13), log_buffer->_to_insert_seg->base_lsn);
 
 
         // case 2: full, and no forced flush
@@ -1914,21 +1907,21 @@ public:
 
         // fill up the current segment
         for (int i=1; i<=SEG_SIZE/4096-1; i++) {
-            W_DO(INSERT(4096));            
+            W_DO(INSERT(4096));
         }
 
         // insert
         W_DO(INSERT(4096));
 
         // 10 segments now
-        EXPECT_EQ((uint32_t)10, log_buffer->_seg_list->count()); 
-        //(1,SEG_SIZE*5) -> (1,SEG_SIZE*6)  -> (1,SEG_SIZE*7) -> (1,SEG_SIZE*8) -> (1,SEG_SIZE*9) -> 
+        EXPECT_EQ((uint32_t)10, log_buffer->_seg_list->count());
+        //(1,SEG_SIZE*5) -> (1,SEG_SIZE*6)  -> (1,SEG_SIZE*7) -> (1,SEG_SIZE*8) -> (1,SEG_SIZE*9) ->
         //(1,SEG_SIZE*10) -> (1,SEG_SIZE*11)  -> (1,SEG_SIZE*12) -> (1,SEG_SIZE*13) -> (1,SEG_SIZE*14)
 
-        EXPECT_EQ(log_buffer->_seg_list->bottom(), log_buffer->_to_insert_seg);    
-        EXPECT_EQ(lsn_t(1,SEG_SIZE*5), log_buffer->_seg_list->top()->base_lsn);    
-        EXPECT_EQ(lsn_t(1,SEG_SIZE*13), log_buffer->_to_flush_seg->base_lsn);    
-        EXPECT_EQ(lsn_t(1,SEG_SIZE*14), log_buffer->_to_insert_seg->base_lsn);    
+        EXPECT_EQ(log_buffer->_seg_list->bottom(), log_buffer->_to_insert_seg);
+        EXPECT_EQ(lsn_t(1,SEG_SIZE*5), log_buffer->_seg_list->top()->base_lsn);
+        EXPECT_EQ(lsn_t(1,SEG_SIZE*13), log_buffer->_to_flush_seg->base_lsn);
+        EXPECT_EQ(lsn_t(1,SEG_SIZE*14), log_buffer->_to_insert_seg->base_lsn);
 
         // fetch
         // miss
@@ -1936,14 +1929,14 @@ public:
         EXPECT_EQ(0, FETCH(ll));
 
         // 10 segments now
-        EXPECT_EQ((uint32_t)10, log_buffer->_seg_list->count()); 
-        //(1,0) -> (1,SEG_SIZE*6)  -> (1,SEG_SIZE*7) -> (1,SEG_SIZE*8) -> (1,SEG_SIZE*9) -> 
+        EXPECT_EQ((uint32_t)10, log_buffer->_seg_list->count());
+        //(1,0) -> (1,SEG_SIZE*6)  -> (1,SEG_SIZE*7) -> (1,SEG_SIZE*8) -> (1,SEG_SIZE*9) ->
         //(1,SEG_SIZE*10) -> (1,SEG_SIZE*11)  -> (1,SEG_SIZE*12) -> (1,SEG_SIZE*13) -> (1,SEG_SIZE*14)
 
-        EXPECT_EQ(log_buffer->_seg_list->bottom(), log_buffer->_to_insert_seg);    
-        EXPECT_EQ(lsn_t(1,0), log_buffer->_seg_list->top()->base_lsn);    
-        EXPECT_EQ(lsn_t(1,SEG_SIZE*13), log_buffer->_to_flush_seg->base_lsn);    
-        EXPECT_EQ(lsn_t(1,SEG_SIZE*14), log_buffer->_to_insert_seg->base_lsn);    
+        EXPECT_EQ(log_buffer->_seg_list->bottom(), log_buffer->_to_insert_seg);
+        EXPECT_EQ(lsn_t(1,0), log_buffer->_seg_list->top()->base_lsn);
+        EXPECT_EQ(lsn_t(1,SEG_SIZE*13), log_buffer->_to_flush_seg->base_lsn);
+        EXPECT_EQ(lsn_t(1,SEG_SIZE*14), log_buffer->_to_insert_seg->base_lsn);
 
 
         W_DO(x_commit_xct(ssm));
@@ -1959,7 +1952,7 @@ TEST (LogBufferTest2, Replacement) {
     sm_options sm_options;
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
-    sm_options.set_int_option("sm_logsize", LOG_SIZE); 
+    sm_options.set_int_option("sm_logsize", LOG_SIZE);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;
@@ -1974,7 +1967,7 @@ TEST (LogBufferTest2, Replacement) {
 
 
 // test operations that mostly write regular log records
-class test_writes : public restart_test_base 
+class test_writes : public restart_test_base
 {
 public:
     // total number of insert attempts
@@ -1991,14 +1984,14 @@ public:
 
         // insert
         for (int i=1; i<=total; i++) {
-            itoa(i, key, 10);
-            itoa(i, buf, 10);
+            test_env->itoa(i, key, 10);
+            test_env->itoa(i, buf, 10);
             W_DO(test_env->btree_insert_and_commit(_stid_list[0], key, buf));
             W_DO(consume(4096,ssm));
         }
 
         for (int i=1; i<=total; i++) {
-            itoa(i, key, 10);
+            test_env->itoa(i, key, 10);
             W_DO(consume(4096,ssm));
 
             if(i%1000==0) {
@@ -2010,7 +2003,7 @@ public:
             else {
                 // update records whose key % 100 == 0 && key % 1000 != 0
                 if(i%100==0) {
-                    itoa(i+1, buf, 10);
+                    test_env->itoa(i+1, buf, 10);
                     W_DO(test_env->btree_update_and_commit(_stid_list[0], key, buf));
                 }
                 else {
@@ -2037,7 +2030,7 @@ public:
 
         for (int i=1; i<=total; i++) {
             std::string result="";
-            itoa(i, key, 10);
+            test_env->itoa(i, key, 10);
             if(i%1000==0) {
                 // overwrite records whose key % 1000 == 0
                 test_env->btree_lookup_and_commit(_stid_list[0], key, result);
@@ -2049,7 +2042,7 @@ public:
                 if(i%100==0) {
                     // update records whose key % 100 == 0 && key % 1000 != 0
                     test_env->btree_lookup_and_commit(_stid_list[0], key, result);
-                    itoa(i+1, buf, 10);
+                    test_env->itoa(i+1, buf, 10);
                     EXPECT_EQ(std::string(buf), result);
                 }
                 else {
@@ -2069,7 +2062,7 @@ public:
                 }
             }
         }
-        
+
         return RCOK;
     }
 };
@@ -2081,7 +2074,7 @@ TEST (LogBufferTest3, Write) {
     sm_options sm_options;
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
-    sm_options.set_int_option("sm_logsize", LOG_SIZE); 
+    sm_options.set_int_option("sm_logsize", LOG_SIZE);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;
@@ -2095,7 +2088,7 @@ TEST (LogBufferTest3, Write) {
 // test transaction abort
 
 // rollback transactions with only one operation
-class test_abort_simple : public restart_test_base 
+class test_abort_simple : public restart_test_base
 {
 public:
     // total number of insert attempts
@@ -2112,8 +2105,8 @@ public:
 
         // insert
         for (int i=1; i<=total; i++) {
-            itoa(i, key, 10);
-            itoa(i, buf, 10);
+            test_env->itoa(i, key, 10);
+            test_env->itoa(i, buf, 10);
 
             //W_DO(consume(4096,ssm));
 
@@ -2131,11 +2124,11 @@ public:
         }
 
         for (int i=1; i<=total; i++) {
-            itoa(i, key, 10);
+            test_env->itoa(i, key, 10);
 
             //W_DO(consume(4096,ssm));
 
-            W_DO(test_env->begin_xct());        
+            W_DO(test_env->begin_xct());
             if(i%1000==0) {
                 // overwrite records whose key % 1000 == 0
                 buf[0]='z';
@@ -2152,7 +2145,7 @@ public:
             else {
                 // update records whose key % 100 == 0 && key % 1000 != 0
                 if(i%100==0) {
-                    itoa(i+1, buf, 10);
+                    test_env->itoa(i+1, buf, 10);
                     W_DO(test_env->btree_update(_stid_list[0], key, buf));
                     // abort if the second to last character is 9
                     if (key[strlen(key)-2]=='9') {
@@ -2176,7 +2169,7 @@ public:
                         }
                     }
                     else {
-                        W_DO(test_env->commit_xct());                        
+                        W_DO(test_env->commit_xct());
                     }
                 }
             }
@@ -2195,13 +2188,13 @@ public:
 
         for (int i=1; i<=total; i++) {
             std::string result="";
-            itoa(i, key, 10);
+            test_env->itoa(i, key, 10);
             if(i%1000==0) {
                 // overwrite records whose key % 1000 == 0
                 test_env->btree_lookup_and_commit(_stid_list[0], key, result);
                 // abort if the second to last character is 9
                 if (key[strlen(key)-2]=='9') {
-                    EXPECT_EQ(std::string(key), result);                    
+                    EXPECT_EQ(std::string(key), result);
                 }
                 else {
                     EXPECT_EQ('z', result[result.length()-1]);
@@ -2215,10 +2208,10 @@ public:
                     test_env->btree_lookup_and_commit(_stid_list[0], key, result);
                     // abort if the second to last character is 9
                     if (key[strlen(key)-2]=='9') {
-                        EXPECT_EQ(std::string(key), result);                    
+                        EXPECT_EQ(std::string(key), result);
                     }
                     else {
-                        itoa(i+1, buf, 10);
+                        test_env->itoa(i+1, buf, 10);
                         EXPECT_EQ(std::string(buf), result);
                     }
                 }
@@ -2229,7 +2222,7 @@ public:
                         result="data";
                         test_env->btree_lookup_and_commit(_stid_list[0], key, result);
                         if (key[strlen(key)-2]=='9') {
-                            EXPECT_EQ(std::string(key), result);                    
+                            EXPECT_EQ(std::string(key), result);
                         }
                         else {
                             // if not found, the result would become empty
@@ -2251,7 +2244,7 @@ public:
                 }
             }
         }
-        
+
         return RCOK;
     }
 };
@@ -2263,7 +2256,7 @@ TEST (LogBufferTest3, AbortSimple) {
     sm_options sm_options;
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
-    sm_options.set_int_option("sm_logsize", LOG_SIZE); 
+    sm_options.set_int_option("sm_logsize", LOG_SIZE);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;
@@ -2272,7 +2265,7 @@ TEST (LogBufferTest3, AbortSimple) {
 
 
 // rollback a big running transaction
-class test_abort_big : public restart_test_base 
+class test_abort_big : public restart_test_base
 {
 public:
     // total number of insert attempts
@@ -2292,13 +2285,13 @@ public:
 
         // insert
         for (int i=1; i<=total; i++) {
-            itoa(i, key, 10);
-            itoa(i, buf, 10);
+            test_env->itoa(i, key, 10);
+            test_env->itoa(i, buf, 10);
             W_DO(test_env->btree_insert(_stid_list[0], key, buf));
         }
 
         for (int i=1; i<=total; i++) {
-            itoa(i, key, 10);
+            test_env->itoa(i, key, 10);
 
             if(i%1000==0) {
                 // overwrite records whose key % 1000 == 0
@@ -2309,7 +2302,7 @@ public:
             else {
                 // update records whose key % 100 == 0 && key % 1000 != 0
                 if(i%100==0) {
-                    itoa(i+1, buf, 10);
+                    test_env->itoa(i+1, buf, 10);
                     W_DO(test_env->btree_update(_stid_list[0], key, buf));
                 }
                 else {
@@ -2347,7 +2340,7 @@ TEST (LogBufferTest3, AbortBig) {
     sm_options sm_options;
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
-    sm_options.set_int_option("sm_logsize", LOG_SIZE); 
+    sm_options.set_int_option("sm_logsize", LOG_SIZE);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;
@@ -2381,13 +2374,13 @@ class log_comment_thread_t : public smthread_t {
 public:
     log_comment_thread_t(test_abort_long *owner_)
         : smthread_t(t_regular, "log_comment_thread_t"), active(true), owner(owner_)
-    { 
+    {
     }
     virtual void run() {
         _rc = run_core();
         active = false;
     }
-    
+
     rc_t run_core();
 
     int  return_value() const { return 0; }
@@ -2401,7 +2394,7 @@ public:
 
 
 
-class test_abort_long : public restart_test_base 
+class test_abort_long : public restart_test_base
 {
 public:
     static const int total = 100;  //better be small
@@ -2437,14 +2430,14 @@ public:
 
         // insert
         for (int i=1; i<=total; i++) {
-            itoa(i, key, 10);
-            itoa(i, buf, 10);
+            test_env->itoa(i, key, 10);
+            test_env->itoa(i, buf, 10);
             W_DO(test_env->btree_insert(_stid_list[0], key, buf));
             WAIT_FOR_COMMENT_THREAD();
         }
 
         for (int i=1; i<=total; i++) {
-            itoa(i, key, 10);
+            test_env->itoa(i, key, 10);
 
             if(i%1000==0) {
                 // overwrite records whose key % 1000 == 0
@@ -2456,7 +2449,7 @@ public:
             else {
                 // update records whose key % 100 == 0 && key % 1000 != 0
                 if(i%100==0) {
-                    itoa(i+1, buf, 10);
+                    test_env->itoa(i+1, buf, 10);
                     W_DO(test_env->btree_update(_stid_list[0], key, buf));
                     WAIT_FOR_COMMENT_THREAD();
                 }
@@ -2479,7 +2472,7 @@ public:
         while (shutting_down == true) {
             DO_PTHREAD(pthread_cond_broadcast(&comment_cond));
         }
-        
+
         comment->join();
         delete comment;
 
@@ -2503,12 +2496,12 @@ public:
 
 rc_t log_comment_thread_t::run_core() {
 
-    int interval = owner->interval; 
+    int interval = owner->interval;
 
 
     bool done = false;
     uint64_t total = 0;
-    
+
     int buf_size = 4; // KB
     int buf_bytes = 4*1024; // Bytes
     char buf[buf_bytes];
@@ -2524,7 +2517,7 @@ rc_t log_comment_thread_t::run_core() {
                 done = false;
                 DO_PTHREAD(pthread_cond_broadcast(&wait_cond));
             }
-            
+
             if (shutting_down) {
                 shutting_down = false;
                 break;
@@ -2533,7 +2526,7 @@ rc_t log_comment_thread_t::run_core() {
             if (waiting_for_comment == false) {
                 DO_PTHREAD(pthread_cond_wait(&comment_cond, &wait_comment_lock));
             }
-            
+
         }
 
         int goal = interval;
@@ -2548,7 +2541,7 @@ rc_t log_comment_thread_t::run_core() {
             goal-=buf_size;
         }
         W_DO(ss_m::commit_xct());
-        
+
         done = true;
 
     }
@@ -2569,7 +2562,7 @@ TEST (LogBufferTest3, AbortLong) {
     sm_options sm_options;
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
-    sm_options.set_int_option("sm_logsize", LOG_SIZE); 
+    sm_options.set_int_option("sm_logsize", LOG_SIZE);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;

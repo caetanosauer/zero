@@ -32,12 +32,6 @@ const int LOG_SIZE =  1024*8*1024; // log size 8G, so every partition is about 1
 const int BUF_SIZE = 4096*5;
 char buf[BUF_SIZE];
 
-void itoa(int i, char *buf, int base) {
-    // ignoring the base
-    if(base)
-        sprintf(buf, "%d", i);
-}
-
 // insert and flush a log record of size bytes
 // use this function to stress the log buffer
 rc_t consume(int size, ss_m *ssm) {
@@ -83,14 +77,14 @@ public:
 
         uint64_t key_int = 0;
 
-        uint64_t *keys = new uint64_t[total];  // store the keys 
+        uint64_t *keys = new uint64_t[total];  // store the keys
 
         // insert
         for (int i=1; i<=total; i++) {
             key_int = lintel::unsafe::atomic_fetch_add<uint64_t>(&next_history, 1);
             keys[i-1] = key_int;
-            itoa(key_int, key, 10);
-            itoa(key_int, buf, 10);
+            test_env->itoa(key_int, key, 10);
+            test_env->itoa(key_int, buf, 10);
 
             //W_DO(consume(4096,ssm));
 
@@ -108,11 +102,11 @@ public:
 
         for (int i=1; i<=total; i++) {
             key_int = keys[i-1];
-            itoa(key_int, key, 10);
+            test_env->itoa(key_int, key, 10);
 
             //W_DO(consume(4096,ssm));
 
-            W_DO(test_env->begin_xct());        
+            W_DO(test_env->begin_xct());
             if(key_int%1000==0) {
                 // overwrite records whose key % 1000 == 0
                 buf[0]='z';
@@ -129,7 +123,7 @@ public:
             else {
                 // update records whose key % 100 == 0 && key % 1000 != 0
                 if(key_int%100==0) {
-                    itoa(key_int+1, buf, 10);
+                    test_env->itoa(key_int+1, buf, 10);
                     W_DO(test_env->btree_update(stid, key, buf));
                     // abort if the second to last character is 9
                     if (key[strlen(key)-2]=='9') {
@@ -161,9 +155,9 @@ public:
 
         delete []keys;
 
-            
+
         std::cout << "Worker-" << _thid << " done" << std::endl;
-        
+
         return RCOK;
     }
 
@@ -210,13 +204,13 @@ w_rc_t parallel_ops(ss_m *ssm, test_volume_t *volume) {
 
     for (int i=1; i<=total; i++) {
         std::string result="";
-        itoa(i, key, 10);
+        test_env->itoa(i, key, 10);
         if(i%1000==0) {
             // overwrite records whose key % 1000 == 0
             test_env->btree_lookup_and_commit(stid, key, result);
             // abort if the second to last character is 9
             if (key[strlen(key)-2]=='9') {
-                EXPECT_EQ(std::string(key), result);                    
+                EXPECT_EQ(std::string(key), result);
             }
             else {
                 EXPECT_EQ('z', result[result.length()-1]);
@@ -230,10 +224,10 @@ w_rc_t parallel_ops(ss_m *ssm, test_volume_t *volume) {
                 test_env->btree_lookup_and_commit(stid, key, result);
                 // abort if the second to last character is 9
                 if (key[strlen(key)-2]=='9') {
-                    EXPECT_EQ(std::string(key), result);                    
+                    EXPECT_EQ(std::string(key), result);
                 }
                 else {
-                    itoa(i+1, buf, 10);
+                    test_env->itoa(i+1, buf, 10);
                     EXPECT_EQ(std::string(buf), result);
                 }
             }
@@ -244,7 +238,7 @@ w_rc_t parallel_ops(ss_m *ssm, test_volume_t *volume) {
                     result="data";
                     test_env->btree_lookup_and_commit(stid, key, result);
                     if (key[strlen(key)-2]=='9') {
-                        EXPECT_EQ(std::string(key), result);                    
+                        EXPECT_EQ(std::string(key), result);
                     }
                     else {
                         // if not found, the result would become empty
@@ -266,7 +260,7 @@ w_rc_t parallel_ops(ss_m *ssm, test_volume_t *volume) {
             }
         }
     }
-        
+
 
 
     return RCOK;
