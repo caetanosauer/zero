@@ -126,7 +126,7 @@ struct restart_test_options {
 class restart_performance_test_base
 {
 public:
-    restart_performance_test_base() {}
+    restart_performance_test_base(): _start(0), _end(0) {}
     virtual ~restart_performance_test_base() {}
 
     virtual w_rc_t initial_shutdown(ss_m *ssm) = 0;  // Phase 1, populate the store, normal shutdown
@@ -135,10 +135,12 @@ public:
 
     virtual w_rc_t post_shutdown(ss_m *ssm) = 0;   // Phase 3, validate and concurrent access the store, normal shutdown
 
-    test_volume_t _volume;
+    test_volume_t      _volume;
 
-    stid_t _stid;       // Only one index
-    lpid_t _root_pid;
+    stid_t             _stid;              // Only one index for performance tests
+    lpid_t             _root_pid;          // root page id
+    unsigned long long _start;             // Performance measurement counter start
+    unsigned long long _end;               // Performance measurement counter end
 };
 
 class restart_performance_initial_functor : public test_functor

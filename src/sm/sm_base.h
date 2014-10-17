@@ -550,7 +550,7 @@ public:
     static bool use_undo_mix_restart()
     {
         // Restart M4
-        return ((restart_internal_mode & t_restart_undo_demand ) !=0);
+        return ((restart_internal_mode & t_restart_undo_mix ) !=0);
     }
 
     static void  add_to_global_stats(const sm_stats_info_t &from);
