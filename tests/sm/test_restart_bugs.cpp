@@ -14,8 +14,8 @@ const int SHORT_WAIT_TIME = 100; // Wait 1/10 of a  second
 
 /* This class contains only test cases that are failing at the time.
  * The issues that cause the test cases to fail are tracked in the bug reporting system,
- * the associated issue ID is noted beside each test case. 
- * Since they would block the check-in process, all test cases are disabled. 
+ * the associated issue ID is noted beside each test case.
+ * Since they would block the check-in process, all test cases are disabled.
  */
 
 btree_test_env *test_env;
@@ -66,7 +66,7 @@ w_rc_t btree_populate_records_local(stid_t &stid,
                                                                                  //            delete key300
                                                                                  //            delete key301
                                                                                  //            delete key300
-                                                                                 
+
 //    const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 1 + 1;
 
 
@@ -97,7 +97,7 @@ w_rc_t btree_populate_records_local(stid_t &stid,
                                                                                 //          Page 5 - page format, foster adoption (source page: 7, key: +aa2)
                                                                                 //          Page 6 - page rebalance (child page) followed by 4 insertions
                                                                                 //                                             page rebalance (parent page) again
-                                                                                //                                             followed by 2 deletions 
+                                                                                //                                             followed by 2 deletions
                                                                                 //                                             and then 1 insertion
                                                                                 //              Rebalance - Recovery child page, empty
                                                                                 //              insert aa2
@@ -108,7 +108,7 @@ w_rc_t btree_populate_records_local(stid_t &stid,
                                                                                 //              Rebalance - Recovery parent page, 4 existing records, move 2 of them
                                                                                 //              page split, new low aa2, new high key302, delete 2 records
                                                                                 //              delete key302 but not found (btree_logrec.cpp, line 354)
-                                                                                //              delete key303 but not found (btree_logrec.cpp, line 354)                                                                                
+                                                                                //              delete key303 but not found (btree_logrec.cpp, line 354)
                                                                                 //              insert key300
                                                                                 //        Page 7 - page format, foster adoption (source page: 7, key: +aa2)
                                                                                 //        Page 8 - page rebalance (child page) followed by 2 insertions
@@ -123,13 +123,13 @@ w_rc_t btree_populate_records_local(stid_t &stid,
                                                                                 //                     child page consistency: child.is_consistent()
                                                                                 //              delete key301 -- not found (btree_impl.cpp, _ux_remove_core),
                                                                                 //                                        btree_logrec.cpp (line 68)
-                                                                                //                                        It was a generic search of the tree, why did it 
+                                                                                //                                        It was a generic search of the tree, why did it
                                                                                 //                                        failed to find this key?  The incorrect result indicates
                                                                                 //                                        the record does exist but we failed to find it
-                                                                                // 
+                                                                                //
                                                                                 //              delete key302 -- ok
-                                                                                //              delete key303 -- ok                                                                       
-                                                                                
+                                                                                //              delete key303 -- ok
+
 
     vec_t data;
     char data_str[data_size+1];
@@ -144,24 +144,24 @@ w_rc_t btree_populate_records_local(stid_t &stid,
 
     // Insert enough records to ensure page split
     // Multiple transactions with one insertion per transaction
-   
+
     if(!splitIntoSmallTrans) W_DO(test_env->begin_xct());
- 
-    for (int i = 0; i < recordCount; ++i) 
+
+    for (int i = 0; i < recordCount; ++i)
     {
         int num;
         num = recordCount - 1 - i;
-        
+
         key_str[key_size-2] = ('0' + ((num / 10) % 10));
         key_str[key_size-1] = ('0' + (num % 10));
 
-        if (true == fCheckPoint) 
+        if (true == fCheckPoint)
         {
             // Take one checkpoint half way through insertions
             if (num == recordCount/2)
-                W_DO(ss_m::checkpoint()); 
+                W_DO(ss_m::checkpoint());
         }
-        
+
         if(splitIntoSmallTrans) {
             W_DO(test_env->begin_xct());
             W_DO(test_env->btree_insert(stid, key_str, data_str));
@@ -228,42 +228,42 @@ public:
         x_btree_scan_result s;
 
         if(restart_mode < m3_default_restart) {
-            if(restart_mode == m2_redo_delay_restart || restart_mode == m2_redo_fl_delay_restart 
+            if(restart_mode == m2_redo_delay_restart || restart_mode == m2_redo_fl_delay_restart
                 || restart_mode == m2_both_delay_restart || restart_mode == m2_both_fl_delay_restart) // Check if redo delay has been set in order to take a checkpoint
             {
                 if(ss_m::in_REDO() == t_restart_phase_active) // Just a sanity check that the redo phase is truly active
                     W_DO(ss_m::checkpoint());
             }
-            
+
             if(restart_mode == m2_undo_delay_restart || restart_mode == m2_undo_fl_delay_restart
                 || restart_mode == m2_both_delay_restart || restart_mode == m2_both_fl_delay_restart) // Check if undo delay has been set in order to take a checkpoint
             {
                 while(ss_m::in_UNDO() == t_restart_phase_not_active) // Wait until undo phase is starting
                     ::usleep(SHORT_WAIT_TIME);
-                if(ss_m::in_UNDO() == t_restart_phase_active) // Sanity check that undo is really active (instead of over) 
+                if(ss_m::in_UNDO() == t_restart_phase_active) // Sanity check that undo is really active (instead of over)
                     W_DO(ss_m::checkpoint());
             }
-            
+
             while(ss_m::in_restart()) // Wait while restart is going on
-                ::usleep(WAIT_TIME); 
+                ::usleep(WAIT_TIME);
         }
         else    // m3 restart mode, no phases, just take a checkpoint randomly
             W_DO(ss_m::checkpoint());
-        
+
         output_durable_lsn(6);
-        const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;         
+        const int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;
         W_DO(test_env->btree_scan(_stid_list[0], s));
         EXPECT_EQ(recordCount+1, s.rownum);
         EXPECT_EQ(std::string("aa1"), s.minkey);
-        
+
         W_DO(test_env->btree_scan(_stid_list[1], s));
         EXPECT_EQ(recordCount+1, s.rownum);
         EXPECT_EQ(std::string("aa2"), s.minkey);
-        
+
         W_DO(test_env->btree_scan(_stid_list[2], s));
         EXPECT_EQ(recordCount, s.rownum);
         EXPECT_EQ(std::string("key200"), s.minkey);
-        
+
 
         return RCOK;
     }
@@ -276,7 +276,7 @@ public:
 TEST (RestartTest, MultiIndexConcChckptCF) {
     test_env->empty_logdata_dir();
     restart_concurrent_chckpt_multi_index context;
-    
+
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m2_full_logging_restart;
@@ -322,16 +322,16 @@ public:
         W_DO(t3.join());
         return RCOK;
     }
-    
+
     w_rc_t post_shutdown(ss_m *) {
         output_durable_lsn(4);
 
         // Wait before the final verfication
         // Note this 'in_restart' check is not reliable if on_demand restart (m3),
-        // but it is okay because with on_demand restart, it blocks concurrent 
-        // transactions instead of failing concurrent transactions       
+        // but it is okay because with on_demand restart, it blocks concurrent
+        // transactions instead of failing concurrent transactions
         while(ss_m::in_restart()) // Wait while restart is going on
-            ::usleep(WAIT_TIME); 
+            ::usleep(WAIT_TIME);
 
         x_btree_scan_result s;
         W_DO(test_env->btree_scan(_stid_list[0], s));
@@ -363,8 +363,8 @@ TEST (RestartTest, MultiPageInFlightMultithrdN3) {
 
     restart_test_options options;
     options.shutdown_mode = normal_shutdown;
-    options.restart_mode = m3_default_restart; // minimal logging, nothing to recover 
-                                               // but go through Log Analysis backward scan loop and 
+    options.restart_mode = m3_default_restart; // minimal logging, nothing to recover
+                                               // but go through Log Analysis backward scan loop and
                                                // process log records
     EXPECT_EQ(test_env->runRestartTest(&context, &options, true), 0); // use_locks
 }

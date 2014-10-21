@@ -45,89 +45,78 @@
 // #define MEASURE_PERFORMANCE 1
 
 // Define constants
-const int TOTAL_IN_FLIGHT_THREADS    = 400;                 // Worker threads for in-flight transactions, tested up to 400
-const uint64_t TOTAL_RECORDS         = 5000;                // Total record count of the pre-populated store, tested up to 5000
-                                                            // M2 crash
-                                                            //    1000 - okay with 300 threads and 700 transactions
-                                                            //    1000 - failed with 10 threads and 800 transactions
-                                                            //    950 - dump with 10 threads and 800 transactions
-                                                            //              assertion failure: sep_key != NULL
-                                                            //              error in /home/weyg/projects/Zero/src/sm/btree_page_h.cpp:1127 Assertion failed
-                                                            // M3:
-                                                            //    1000 - got the time with 200 threads and 700 transactions, but core dump at the end with eNOTFOUND
-                                                            //    5000 - dump with 200 threads and 1000 transactions, see error above
-
+const int TOTAL_IN_FLIGHT_THREADS    = 20;                  // Worker threads for in-flight transactions, tested up to 400
+const uint64_t TOTAL_RECORDS         = 60000;               // Total record count of the pre-populated store, 20000 records
+                                                            // with data_buf_size based on max. record size/4,
+                                                            // the B-tree would need something around 7500 pages
+                                                            // if we don't skip any records based on key ending number
+const uint64_t TOTAL_RECOVERY_TRANSACTION = 5000;           // Total transactions from phase 2 (pre_shutdown)
 const int TOTAL_SUCCESS_TRANSACTIONS = 1000;                // Target total completed concurrent transaction count, tested up to 1000
                                                             // during Instant Restart (post_shutdown)
 
-const int RECORD_FREQUENCY           = 10;                  // Record the CPU cycles every RECORD_FREQUENCY successful transactions
+const int RECORD_FREQUENCY           = 100;                 // Record the CPU cycles every RECORD_FREQUENCY successful transactions
 const int TOTAL_CYCLE_SLOTS = TOTAL_SUCCESS_TRANSACTIONS/RECORD_FREQUENCY+1; // Total avaliable slots to record CPU cycles
 const int OUT_OF_BOUND_FREQUENCY     = 5;                   // During concurrent update, how often to use out_of_bound record
 const uint32_t SHORT_SLEEP_MICROSEC  = 20000;               // Sleep time before start a child thread, this is allow thread manager to catch up
 const int64_t DISK_QUOTA_IN_KB       = ((int64_t) 1 << 21); // 2GB
 
 const int key_buf_size               = 10;                  // Max. key size of the record
-const int data_buf_size              = 20;                  // Data size of the record, max record size would be 30 bytes or less
-                                                            // because the size of key field might be < 10 bytes
-                                                            // therefore a page (8192) probably could hold couple
-                                                            // hundred records
+const int data_buf_size              = btree_m::max_entry_size()/4; // Express max. record size is calculated as 1620 bytes currently
+                                                            // because a 8K page must have room to hold at least 2 user
+                                                            // records plus space needed for internal data structures
+                                                            // (include overhead and 3 max. size reocrds for high, low
+                                                            // and fence records)
+                                                            // For performance testing purpose, we want the B-tree to
+                                                            // span over many pages, therefore we are using larger
+                                                            // record size and many records (TOTAL_RECORDS)
+                                                            // in the B-tree
+                                                            // The current setting, record size is ~ 415 (key + data although
+                                                            // key size might vary), so each page could hold around 8 records
 
 // Test environment
 btree_test_env *test_env;
 
-
 /**
-// TODO -
-//             lower the in-flights (20), and each in-flight does a big transaction which touches many pages ~5 pages
-//             we should have thousands of dirty pages in the buffer pool upon restart
-//             phase 2 has couple thousand transactions, some committed, some in-flights
-//             Record size must be larger, and the B-tree contains many pages
+Setup:
+  One index with ~45000 records, more than 5000 pages
+  20 in-flights each touches ~5 pages in phase 2 (pre_shutdown)
+  Around 5000 committed transactions in phase 2 (pre_shutdown)
+  1000 successful concurrent transactions in phase 3 (post_shutdown)
+  The total time includes the shutdown time in pre_shutdown
+  No user checkpoint
+  Set to measure performance, in other words, do not output error or message (e.g. duplicate key, key does not exist, etc.)
 
-
-One index with ~1000 records, 300 in-flights, and 700 successful concurrent transactions, the total time includes the shutdown time in pre_shutdown:
     M1 (Normal) -
-              Total started transactions: 700
-              Total completed transactions: 700
-              Existing record count in B-tree: 1032
-              Total CPU cycles for 700 successful user transactions: 110234014
-              Time in milliseconds: 69
+              Total started transactions: 1146                      <<<< some transactions failed due to duplicate key, this is expected
+              Total completed transactions: 1000
+              Existing record count in B-tree: 43230             <<<< only a few of the '5' would be inserted, while some of the '0' and '2' would be deleted
+              Total CPU cycles for 1000 successful user transactions: 116446639
+              Time in milliseconds: 72
     M1 (Crash)   -
-              Total started transactions: 700
-              Total completed transactions: 700
-              Existing record count in B-tree: 1032
-              Total CPU cycles for 700 successful user transactions: 89380094
-              Time in milliseconds: 56
-    M2 (Crash)   -                                                           <<<<  conflict error (expected), many duplicate errors on records with key > 1000
-              Total started transactions: 1259
-              Total completed transactions: 700
-              Existing record count in B-tree: 594
-              Total CPU cycles for 700 successful user transactions: 110017388
-              Time in milliseconds: 68
-    M3 (Crash)   -                                                           <<<<  ending with '3', item not found
-              Total started transactions: 781
-              Total completed transactions: 700
-              Existing record count in B-tree: 412
-              Total CPU cycles for 700 successful user transactions: 134411594
-              Time in milliseconds: 84
-    M4 (Crash)   -                                                           <<<<  not working
-
-
-One index with ~5000 records, 400 in-flights, and 1000 successful concurrent transactions, the total time icludes the shutdown time in pre_shutdown:
-     M1 (Normal) -
-              Total started transactions: 1000
+              Total started transactions: 1146
               Total completed transactions: 1000
-              Existing record count in B-tree: 4699
-              Total CPU cycles for 1000 successful user transactions: 127423700
-              Time in milliseconds: 79
-     M1 (Crash) -
-              Total started transactions: 1000
+              Existing record count in B-tree: 43230
+              Total CPU cycles for 1000 successful user transactions: 100857544
+              Time in milliseconds: 63
+    M2 (Crash)   -                                                         <<<<  core dump: btree_logrec.cpp:61 (btree_insert_log::undo), try to undo an insertion but key not found
+                                                                                  <<<<  core dump: btree_logrec.cpp:151 (btree_update_log::undo), try to undo an update but not able to find the object
+              Total started transactions: 3119
               Total completed transactions: 1000
-              Existing record count in B-tree: 4699
-              Total CPU cycles for 1000 successful user transactions: 172504660
-              Time in milliseconds: 108
-    M2 (Crash) -                                                             <<<< infinite loop on no parent emlsn to recover from
-    M3 (Crash) -                                                             <<<< sep_key != NULL and '3' key not found
-    M4 (Crash) -                                                             <<<< not working
+              Existing record count in B-tree: 42336
+              Total CPU cycles for 1000 successful user transactions: 183360693
+              Time in milliseconds: 114
+    M3 (Crash)   -                                                        <<<<  many records ending with '3', item not found???? Might have the saem core dump as M2
+              Total started transactions: 1154
+              Total completed transactions: 1000
+              Existing record count in B-tree: 42382
+              Total CPU cycles for 1000 successful user transactions: 130153238
+              Time in milliseconds: 81
+    M4 (Crash)   -                                                        <<<<  many records ending with '3', item not found???? Might have the saem core dump as M2
+              Total started transactions: 1154
+              Total completed transactions: 1000
+              Existing record count in B-tree: 42382
+              Total CPU cycles for 1000 successful user transactions: 115066375
+              Time in milliseconds: 59
 **/
 
 // Operation type for the in-flight worker thread
@@ -148,15 +137,15 @@ sm_options make_perf_options()
     sm_options options;
 
     // Buffer pool
-    options.set_int_option("sm_bufpoolsize", (1 << 21));               // 2GB, while the test machine has 6GB of memory
+    options.set_int_option("sm_bufpoolsize", (1 << 21));               // in KB, 2GB, while the test machine has 6GB of memory
 
     // Log, do not set 'sm_logdir' so we would use default
     // options.set_string_option("sm_logdir", global_log_dir);
-    options.set_int_option("sm_logbufsize",  (1 << 20));               // 1MB
-    options.set_int_option("sm_logsize", (1 << 23));                   // 8GB
+    options.set_int_option("sm_logbufsize",  (1 << 20));               // In bytes, 1MB
+    options.set_int_option("sm_logsize", (1 << 23));                   // In KB, 8GB
 
     // Lock
-    options.set_int_option("sm_locktablesize", (1 << 15));             // 16KB
+    options.set_int_option("sm_locktablesize", (1 << 15));             // 32KB
     options.set_int_option("sm_rawlock_lockpool_initseg", (1 << 7));   // 128 bytes
     options.set_int_option("sm_rawlock_lockpool_segsize", (1 << 12));  // 4KB
     options.set_int_option("sm_rawlock_gc_generation_count", 100);
@@ -263,7 +252,9 @@ w_rc_t insert_performance_records(stid_t &stid,
     else if (t_test_txn_abort == txnState)
         W_DO(test_env->abort_xct());
     else // t_test_txn_in_flight
-        ss_m::detach_xct();
+    {
+        // If in-flight, it is caller's responsibility to detach from the active transaction
+    }
 
     return RCOK;
 }
@@ -289,7 +280,9 @@ w_rc_t delete_performance_records(stid_t &stid,
     else if (t_test_txn_abort == txnState)
         W_DO(test_env->abort_xct());
     else // t_test_txn_in_flight
-        ss_m::detach_xct();
+    {
+        // If in-flight, it is caller's responsibility to detach from the active transaction
+    }
 
     return RCOK;
 }
@@ -317,7 +310,51 @@ w_rc_t update_performance_records(stid_t &stid,
     else if (t_test_txn_abort == txnState)
         W_DO(test_env->abort_xct());
     else // t_test_txn_in_flight
-        ss_m::detach_xct();
+    {
+        // If in-flight, it is caller's responsibility to detach from the active transaction
+    }
+
+    return RCOK;
+}
+
+// Helper function to update multiple records as part of an existing in-flight transaction
+w_rc_t update_in_flight(stid_t &stid,
+                          uint64_t seed_key_int)   // Strting point of the key value to update
+{
+    // Caller has an existing in_flight transaction
+    // do not begin, commit, abort or detach from the current in_flight transaction
+
+    const int SEED_INCREMENT = 10;         // Starting from the seed_key_int, set the next key value
+    const int IN_FLIGHT_UPDATE_COUNT = 5;  // How many update operations to generate for the current in-flight transaction
+    w_rc_t rc;
+
+    char key_buf[key_buf_size+1];
+    char data_buf[data_buf_size+1];
+    // Update operation uses the key to locate existing record
+    // and then update the data field, no change in the key field
+    memset(data_buf, '\0', data_buf_size+1);
+    memset(data_buf, 'C', data_buf_size);
+
+    for (int i = 0; i < IN_FLIGHT_UPDATE_COUNT; ++i)
+    {
+        memset(key_buf, '\0', key_buf_size+1);
+        test_env->itoa(seed_key_int, key_buf, 10);  // Fill the key portion with integer converted to string
+
+        // Update only change the data filed, not the key field
+        rc = test_env->btree_update(stid, key_buf, data_buf);
+        if (rc.is_error())
+        {
+            // If the update failed (e.g. key does not exist, which is possible if
+            // the given seed was out-of-bound, or the ending key value does not exist yet),
+            // simply ignore it, because these are extra operations to make multiple
+            // dirty pages in an in_flight transaction, no big deal
+            // Do not abort the transaction because we want the current transaction to
+            // remain in_flight
+        }
+
+        // Set the new key value
+        seed_key_int += SEED_INCREMENT;
+    }
 
     return RCOK;
 }
@@ -341,19 +378,53 @@ public:
 
     rc_t run_core()
     {
-        // Perform the specified operation, make it an in-flight transaction
+        // Perform the specified operation during phase 2 (pre_shutdown)
+        // all transactions are in-flight transactions
+        // The key seeding are apart from each other to avoid deadlocks
+
         if (t_op_insert == op_type)
         {
+            // If insert operation, insert the specified key_int first, and then
+            // update multiple existing records with key seeding, so the in-flight
+            // transaction touches multiple pages (~ 5 pages)
+
+            // Perform the insertion first
             W_DO(insert_performance_records(stid, key_int, t_test_txn_in_flight));
+
+            // then update multiple records with key seeding 4
+            W_DO(update_in_flight(stid, seed_key_int));
+
+            // Cause in-flight transaction
+            ss_m::detach_xct();
         }
         else if (t_op_delete == op_type)
         {
+            // If delete operation, delete the specified key_int first, and then
+            // update multiple existing records with key seeding, so the in-flight
+            // transaction touches multiple pages (~ 5 pages)
+
             W_DO(delete_performance_records(stid, key_int, t_test_txn_in_flight));
+
+            // then update multiple records with key seeding 606
+            W_DO(update_in_flight(stid, seed_key_int));
+
+            // Cause in-flight transaction
+            ss_m::detach_xct();
         }
         else
         {
+            // If update operation, update the specified key_int first, and then
+            // update multiple existing records with key seeding, so the in-flight
+            // transaction touches multiple pages (~ 5 pages)
+
             w_assert1(t_op_update == op_type);
             W_DO(update_performance_records(stid, key_int, t_test_txn_in_flight));
+
+            // then update multiple records with key seeding 2008
+            W_DO(update_in_flight(stid, seed_key_int));
+
+            // Cause in-flight transaction
+            ss_m::detach_xct();
         }
 
         // Now we are done
@@ -365,6 +436,7 @@ public:
     ss_m *ssm;               // Set by caller before thread started
     stid_t stid;             // Set by caller before thread started
     uint64_t key_int;        // Key value, set by caller before thread started
+    uint64_t seed_key_int;   // Seed key value for updates, set by caller before thread started
     test_op_type_t op_type;  // Operation type, set by caller before thread started
     int _thid;               // Thread id
 
@@ -427,8 +499,9 @@ public:
         //                Key - if the key ending with 3, commit
         //                Key - if the key ending with 5, skip
         //                Key - if the key ending with 7, in-flight insertions
-        //       Key - all other keys, update the existing records
+        //       Key - update
         //                Key - if the key ending with 2 or 9, in-flight updates
+        //                Key - if the key ending with 0, 1 commit
         // Either normal shutdown or simulate system crash
 
         w_assert1(NULL != ssm);
@@ -447,8 +520,22 @@ public:
             workers[i].stid = _stid;
         }
 
-        for (uint64_t i=0; i < TOTAL_RECORDS; ++i)
+        // Make sure the transaction count is not too high, beause in case of
+        // crash shutdown without checkpoint, each transaction here will cause
+        // a new transaction being created during Log Analysis phase, we will run
+        // out of memory if the transaction count is too high, or other weird
+        // error occurs, such as cb cannot be found in hash table, etc.
+        // while 5000 transactions is a reason number that we can handle
+
+        uint64_t transaction_count = (TOTAL_RECORDS > TOTAL_RECOVERY_TRANSACTION)
+                                     ? TOTAL_RECOVERY_TRANSACTION : TOTAL_RECORDS;
+
+        for (uint64_t i=0; i < transaction_count; ++i)
         {
+            // Execute TOTAL_RECORDS/10*6 operations (= 36000)
+            // pretty much touched more than half of the pages in B-tree
+            // therefore we should have thousdands of dirty pages upon shutdown
+
             // Prepare the record first
             ++key_int;                              // Key starts from 1 and ends with TOTAL_RECORDS
             memset(key_buf, '\0', key_buf_size+1);
@@ -457,7 +544,8 @@ public:
             int last_digit = strlen(key_buf)-1;
             if ('3' == key_buf[last_digit])
             {
-                // Insert and commit using main thread
+                // Insert and commit one record using main thread
+                // only touch one page per transaction
                 rc = insert_performance_records(_stid, key_int, t_test_txn_commit);
                 EXPECT_FALSE(rc.is_error());
             }
@@ -469,12 +557,20 @@ public:
             {
                 // Insert and in-flight using child threads up to
                 // TOTAL_IN_FLIGHT_THREADS
+                // The child thread touches many pages via update
+                // and insert one record ending with '7', so the in-flight
+                // transaction touched multiple pages
+                //
                 // After TOTAL_IN_FLIGHT_THREADS, insert and commit
                 // using main thread
                 if (current_in_flight__count < TOTAL_IN_FLIGHT_THREADS)
                 {
                     // Prepare the worker thread
                     workers[current_in_flight__count].key_int = key_int;
+                    // Set the seed value for update operations in in_flight
+                    // the seed in each iteration is at least 200 away from the previous seed
+                    // to prevent deadlock
+                    workers[current_in_flight__count].seed_key_int = 4 + (current_in_flight__count*200);   // Seed ending with 4
                     workers[current_in_flight__count].op_type = t_op_insert;
 
                     // Sleep for a short duration before start the thread,
@@ -487,24 +583,33 @@ public:
                 }
                 else
                 {
-                    // Used up all the threads, commit the rest using main thread
+                    // Used up all the threads, insert and commit one record for
+                    // the rest using main thread, only touch one page per transaction
                     rc = insert_performance_records(_stid, key_int, t_test_txn_commit);
                     EXPECT_FALSE(rc.is_error());
                 }
             }
             else
             {
-                // For the rest, update operation
+                // For the rest
                 if (('2' == key_buf[last_digit]) || ('9' == key_buf[last_digit]))
                 {
                     // Update and in-flight using child threads up to
                     // TOTAL_IN_FLIGHT_THREADS
+                    // The child thread touches many pages via update
+                    // start with key ending with key_int ('2' or '9'), and then many
+                    // updates, so the in-flight transaction touched multiple pages
+                    //
                     // After TOTAL_IN_FLIGHT_THREADS, update and commit
                     // using main thread
                     if (current_in_flight__count < TOTAL_IN_FLIGHT_THREADS)
                     {
                         // Prepare the worker thread
                         workers[current_in_flight__count].key_int = key_int;
+                        // Set the seed value for update operations in in_flight
+                        // the seed in each iteration is at least 100 away from the previous seed
+                        // to prevent deadlock
+                        workers[current_in_flight__count].seed_key_int = 8 + (current_in_flight__count*100);   // Seed ending with 8
                         workers[current_in_flight__count].op_type = t_op_update;
 
                         // Sleep for a short duration before start the thread,
@@ -517,29 +622,44 @@ public:
                     }
                     else
                     {
-                        // Used up all the threads, commit the rest using main thread
+                        // Used up all the threads, update and commit one record for
+                        // the rest using main thread, only touch one page per transaction
                         rc = update_performance_records(_stid, key_int, t_test_txn_commit);
                         EXPECT_FALSE(rc.is_error());
                     }
                 }
-                else
+                else if (('0' == key_buf[last_digit]) || ('1' == key_buf[last_digit]))
                 {
-                    // Update and commit using main thread
+                    // Update and commit one record using main thread
+                    // only touch one page per transaction
                     rc = update_performance_records(_stid, key_int, t_test_txn_commit);
                     EXPECT_FALSE(rc.is_error());
+                }
+                else
+                {
+                    // For record ending with '4' and '6', no change
                 }
             }
         }
 
         // Terminate the started in-flight worker threads, sleep for a while first
         ::usleep(SHORT_SLEEP_MICROSEC*100);
-        w_assert1(current_in_flight__count < TOTAL_IN_FLIGHT_THREADS);
+        if (current_in_flight__count < TOTAL_IN_FLIGHT_THREADS)
+            std::cerr << "!!!!! Expected " << TOTAL_IN_FLIGHT_THREADS
+                      << " in-flight transactions but only created "
+                      << current_in_flight__count << std::endl;
+
         for (int i=0; i < current_in_flight__count; ++i)
         {
             W_DO(workers[i].join());
             EXPECT_FALSE(workers[i]._running) << i;
             EXPECT_FALSE(workers[i]._rc.is_error()) << i;
         }
+
+        // Do a checkpoint before shutdown (normal or crash)
+        // In the case of crash shutdwon, restart Log Analysis only need to
+        // start from the last completed checkpoint
+//        W_DO(ss_m::checkpoint());
 
         // Now we are done, ready to shutdown (either normal or crash)
         // At this point, we should have TOTAL_RECORDS/10*9 records (= 2700)
@@ -559,6 +679,7 @@ public:
 
         // Start the timer to measure time from before test code shutdown (normal or crash)
         // to finish TOTAL_SUCCESS_TRANSACTIONS user transactions
+        ::usleep(SHORT_SLEEP_MICROSEC*100);
         _start = rdtsc();
 
         return RCOK;
@@ -569,12 +690,14 @@ public:
         // Restart the system, start concurrent user transactions
         // Measuer the time required to finish TOTAL_SUCCESS_TRANSACTIONS concurrent transactions
         //       Key - insert records with key ending in 5
-        //       Key - delete if key ending with 2 or 0 (all the 2's should rollback first)
+        //       Key - delete if key ending with 2 or 0 (if in_flight with 2 should rollback first)
         //       Key - if key ending with 3, update
-        //       Key - if key ending with 7, update (rollback first)
-        //       Key - if key ending with 9
+        //       Key - if key ending with 7, update (if in_flight with 7, they should rollback first
+        //                and the record does not exist after rollback)
+        //       Key - if key ending with 9, some of them were in_flight updates from phase 2
+        //                while others were committed updates from phase 2
         //                M2, M4 - all transactions rolled back
-        //                M3 - - these transactions won't be rolled back due to on-demand
+        //                M3 - these transactions won't be rolled back due to on-demand rollback
         // Measure and draw a curve that shows the numbers of completed transactions over time
 
         // Measure and record the amount of time took for system to shutdown and restart (no recovery)
@@ -652,8 +775,8 @@ public:
             else if (('7' == key_buf[last_digit]) && (actual_key < TOTAL_RECORDS))
             {
                 // Some of the keys ending with 7 might be in-flight insertions from phase 2,
-                // they would be rollback so those records do not exist anymore,
-                // while some of the insertions were committed, so the records do exist.
+                // they would be rollback so those records do not exist anymore after rollback,
+                // while some of the insertions were committed during phase 2, those records do exist.
                 rc = insert_performance_records(_stid, actual_key, t_test_txn_commit);
                 if (rc.is_error())
                 {
@@ -664,8 +787,8 @@ public:
                     }
                     else
                     {
-                        // If record was an in-flight during phase 2, we should be able to insert
-                        // this record, so the error is un-expected
+                        // If record was an in-flight insertion during phase 2, we should be able
+                        // to insert this record again, so the error is un-expected
                         // Except that in M2, it might fail due to commitLsn check
 
                         std::cout << "Insert error with key ending in 7, key: " << actual_key << ", error: " << rc.get_message() << std::endl;
@@ -696,7 +819,9 @@ public:
             else if ((('2' == key_buf[last_digit]) || ('0' == key_buf[last_digit])) && (actual_key < TOTAL_RECORDS))
             {
                 // This key should exist already, delete
-                // Key ending with '2' was an in-flight update from phase 2, it has to be rollback first
+                // Some of the key ending with '2' were in-flight updates from phase 2
+                // these records must be rollback first and tehn they can be deleted
+                // Others were commmited updates from phase 2, no need to rollback
                 rc = delete_performance_records(_stid, actual_key, t_test_txn_commit);
                 if (rc.is_error())
                 {
@@ -715,8 +840,8 @@ public:
             }
             else if (actual_key > TOTAL_RECORDS)
             {
-                // If key value is out of the original bound, and we don't have
-                // enough user transactions yet, insert
+                // If key value is out of the original total record bound, and we don't have
+                // enough successful user transactions yet, insert the key value
                 rc = insert_performance_records(_stid, actual_key, t_test_txn_commit);
                 if (rc.is_error())
                 {
@@ -836,11 +961,12 @@ public:
     }
 };
 
-//////////////////////////////////////////////////////////////////////////
-// TODO(Restart).... see TODO in 'runRestartPerfTest' for potentially adjusting raw lock options
-//////////////////////////////////////////////////////////////////////////
 
-/**/
+///////////////////////////
+// Testing
+///////////////////////////
+
+/**
 // Passing - M1
 TEST (RestartPerfTest, MultiPerformanceNormal)
 {
@@ -858,7 +984,7 @@ TEST (RestartPerfTest, MultiPerformanceNormal)
                                            make_perf_options()), // Other options
                                            0);
 }
-/**/
+**/
 
 /**
 // Passing - M1
@@ -881,7 +1007,7 @@ TEST (RestartPerfTest, MultiPerformanceM1)
 **/
 
 /**
-// Not passing - M2
+// Passing - M2
 TEST (RestartPerfTest, MultiPerformanceM2)
 {
     test_env->empty_logdata_dir();
@@ -902,8 +1028,8 @@ TEST (RestartPerfTest, MultiPerformanceM2)
 }
 **/
 
-/**
-// Not passing - M3
+/**/
+// Passing - M3
 TEST (RestartPerfTest, MultiPerformanceM3)
 {
     test_env->empty_logdata_dir();
@@ -920,10 +1046,10 @@ TEST (RestartPerfTest, MultiPerformanceM3)
                                            make_perf_options()),  // Other options
                                            0);
 }
-**/
+/**/
 
 /**
-// Not passing - M4
+// Passing - M4
 TEST (RestartPerfTest, MultiPerformanceM4)
 {
     test_env->empty_logdata_dir();

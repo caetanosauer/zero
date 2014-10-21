@@ -140,8 +140,8 @@ rc_t log_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
     // after Single-Page-Recovery, the page should be exactly the requested LSN, perform the validation only if
     // caller is using an actual emlsn
     // An estimated emlsn would be used for a corrupted page during recovery
-    // if (true == actual_emlsn)
-    //    w_assert0(p.lsn() == emlsn);
+    if (true == actual_emlsn)
+        w_assert0(p.lsn() == emlsn);
     DBGOUT1(<< "Single-Page-Recovery done!");
     return RCOK;
 }

@@ -4298,7 +4298,7 @@ void restart_m::_redo_log_with_pid(
         if (false == r.is_page_deallocate())
         {
             W_FATAL_MSG(fcINTERNAL,
-                << "Unable to find page in buffer pool hashtable during REDO phase.  Vol: "
+                << "Unable to find page in buffer pool hash table during REDO phase.  Vol: "
                 << page_updated.vol().vol << ", page number: "
                 << page_updated.page);
         }
