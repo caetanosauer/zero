@@ -65,7 +65,7 @@ void log_m::dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t 
     // after the dumping, recovers the original master_lsn because log_i increased it.
     // of course, this is not safe if there are other transactions going.
     // but, this method is for debugging.
-    _master_lsn = master;
+    log_core::THE_LOG->_master_lsn = master;
 }
 
 rc_t log_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn) {

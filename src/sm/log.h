@@ -156,66 +156,11 @@ class PoorMansOldestLsnTracker;
  */
 class log_m : public smlevel_0 
 {
-    static uint32_t const _version_major;
-    static uint32_t const _version_minor;
-    static const char    _master_prefix[];
-    static const char    _log_prefix[];
-    static char          _logdir[max_devname];
-
-protected: 
-    static const char    _SLASH; 
-    // give implementation class access to these.
-    // partition and checkpoint management
-    mutable queue_based_block_lock_t _partition_lock;
-    lsn_t                   _curr_lsn;
-    lsn_t                   _durable_lsn;
-    lsn_t                   _master_lsn;
-    lsn_t                   _min_chkpt_rec_lsn;
-    fileoff_t       _space_available; // how many unreserved bytes left
-    fileoff_t       _space_rsvd_for_chkpt; // can we run a chkpt now?
-    fileoff_t               _partition_size;
-    fileoff_t               _partition_data_size;
-    bool                    _log_corruption;
-    bool                    _waiting_for_space; 
-    pthread_mutex_t         _space_lock; // tied to _space_cond
-    pthread_cond_t          _space_cond; // tied to _space_lock
-    PoorMansOldestLsnTracker* _oldest_lsn_tracker;
-
 protected:
     log_m();
-    // needed by log_core
-    static const char *master_prefix() { return _master_prefix; }
-    static const char *log_prefix() { return _log_prefix; }
-    fileoff_t           partition_data_size() const { 
-                            return _partition_data_size; }
-    // used by implementation
-    w_rc_t              _read_master( 
-                            const char *fname,
-                            int prefix_len,
-                            lsn_t &tmp,
-                            lsn_t& tmp1,
-                            lsn_t* lsnlist,
-                            int&   listlength,
-                            bool&  old_style
-                            );
-    void                _make_master_name(
-                            const lsn_t&        master_lsn, 
-                            const lsn_t&        min_chkpt_rec_lsn,
-                            char*               buf,
-                            int                 bufsz,
-                            bool                old_style = false);
 
 public:
-    // public for use in xct_impl in log-full handling... 
-    /**\brief 
-     * \details 
-     * Set at constructor time and when a new master is created (set_master)
-     */
-    lsn_t               min_chkpt_rec_lsn() const {
-                            ASSERT_FITS_IN_POINTER(lsn_t);
-                            // else need to grab the partition mutex
-                            return _min_chkpt_rec_lsn;
-                        }
+    lsn_t               min_chkpt_rec_lsn() const ;
 
     rc_t                file_was_archived(const char *file);
 
@@ -252,11 +197,28 @@ private:
                             bool&         old_style
                             );
 
+    static rc_t         _read_master( 
+                            const char *fname,
+                            int prefix_len,
+                            lsn_t &tmp,
+                            lsn_t& tmp1,
+                            lsn_t* lsnlist,
+                            int&   listlength,
+                            bool&  old_style
+                        );
+
     /**\brief Helper for parse_master_chkpt_string */
     static rc_t         _check_version(
                             uint32_t        major,
                             uint32_t        minor
                             );
+    void                _make_master_name(
+                            const lsn_t&         master_lsn, 
+                            const lsn_t&        min_chkpt_rec_lsn,
+                            char*                 buf,
+                            int                        bufsz,
+                            bool                old_style);
+
     // helper for set_master
     void                _write_master(const lsn_t &l, const lsn_t &min);
 
@@ -306,14 +268,14 @@ public:
      * \details
      * Used by xct_t for error reporting, callback-handling.
      */
-    static const char * dir_name() { return _logdir; }
+    static const char * dir_name();
 
     /**\brief  Return the amount of space left in the log.
      * \details
      * Used by xct_impl for error-reporting. 
      */
-    fileoff_t           space_left() const { return *&_space_available; }
-    fileoff_t           space_for_chkpt() const { return *&_space_rsvd_for_chkpt ; }
+    fileoff_t           space_left() const;
+    fileoff_t           space_for_chkpt() const;
 
     /**\brief Return name of log file for given partition number.
      * \details
@@ -332,7 +294,7 @@ public:
      * hit; this should cause a crash and recovery.
      * Corruption is turned off right after the log record is corrupted.
      */
-    void                start_log_corruption() { _log_corruption = true; }
+    void                start_log_corruption();
 
     /**\brief Return first lsn of a given partition. 
      * \details
@@ -348,27 +310,13 @@ public:
      * Used by restart.
      * Used by crash to flush log to the end.
      */
-    lsn_t               curr_lsn()  const  {
-                              // no lock needed -- atomic read of a monotonically 
-                              // increasing value
-                              return _curr_lsn;
-                        }
+    lsn_t               curr_lsn()  const;
 
     bool                squeezed_by(const lsn_t &)  const ;
 
 
-    /**\brief used by crash.cpp, but only for assertions */
-    lsn_t               durable_lsn() const {
-                            ASSERT_FITS_IN_POINTER(lsn_t);
-                            // else need to join the insert queue
-                            return _durable_lsn;
-                        }
-    /**\brief used by restart.recover */
-    lsn_t               master_lsn() const {
-                            ASSERT_FITS_IN_POINTER(lsn_t);
-                            // else need to grab the partition mutex
-                            return _master_lsn;
-                        }
+    lsn_t               durable_lsn() const;
+    lsn_t               master_lsn() const;
 
     // not called from the implementation:
     rc_t                scavenge(const lsn_t &min_rec_lsn, 
@@ -414,7 +362,7 @@ public:
     rc_t    flush_all(bool block=true) { 
                           return flush(curr_lsn().advance(-1), block); }
 
-    PoorMansOldestLsnTracker* get_oldest_lsn_tracker() { return _oldest_lsn_tracker; }
+    PoorMansOldestLsnTracker* get_oldest_lsn_tracker();
 
     /**
     * \brief Apply single-page-recovery to the given page.
@@ -430,7 +378,7 @@ public:
     rc_t recover_single_page(fixable_page_h &p, const lsn_t &emlsn);
 
     /**\brief used by partition */
-    fileoff_t limit() const { return _partition_size; }
+    fileoff_t limit() const;
 
     /**
      * \ingroup SPR

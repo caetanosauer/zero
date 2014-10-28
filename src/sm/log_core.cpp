@@ -73,6 +73,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "logrec.h"
 #include "log_core.h"
 #include "log_carray.h"
+#include "log_lsn_tracker.h"
 
 // chkpt.h needed to kick checkpoint thread
 #include "chkpt.h"
@@ -86,22 +87,137 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 // needed for skip_log
 #include "logdef_gen.cpp"
 
+typedef smlevel_0::fileoff_t fileoff_t;
+
 bool       log_core::_initialized = false;
+
+/*********************************************************************
+ *
+ * log_core::_version_major
+ * log_core::_version_minor
+ *
+ * increment version_minor if a new log record is appended to the
+ * list of log records and the semantics, ids and formats of existing
+ * log records remains unchanged.
+ *
+ * for all other changes to log records or their semantics
+ * _version_major should be incremented and version_minor set to 0.
+ *
+ *********************************************************************/
+uint32_t const log_core::_version_major = 6;
+uint32_t const log_core::_version_minor = 0;
+const char log_core::_SLASH = '/';
+const char log_core::_master_prefix[] = "chk."; // same size as _log_prefix
+const char log_core::_log_prefix[] = "log.";
+char       log_core::_logdir[max_devname];
 
 // Once the log is created, this points to it. This is the
 // implementation of log_m.
 log_core *log_core::THE_LOG(NULL); // me
 
-long         
+fileoff_t         
 log_core::partition_size(long psize) {
      long p = psize - BLOCK_SIZE;
      return _floor(p, SEGMENT_SIZE) + BLOCK_SIZE; 
 }
 
-long         
+fileoff_t         
 log_core::min_partition_size() { 
      return _floor(SEGMENT_SIZE, SEGMENT_SIZE) + BLOCK_SIZE; 
 }
+
+fileoff_t         
+log_core::max_partition_size() { 
+    fileoff_t tmp = sthread_t::max_os_file_size;
+    tmp = tmp > lsn_t::max.lo() ? lsn_t::max.lo() : tmp;
+    return  partition_size(tmp);
+}
+
+void log_core::set_master(const lsn_t& mlsn, const lsn_t  & min_rec_lsn, 
+        const lsn_t &min_xct_lsn) 
+{
+    CRITICAL_SECTION(cs, _partition_lock);
+    lsn_t min_lsn = std::min(min_rec_lsn, min_xct_lsn);
+
+    // This used to descend to raw_log or unix_log:
+    w_assert1(log_core::THE_LOG != NULL);
+    _write_master(mlsn, min_lsn);
+
+    _master_lsn = mlsn;
+    _min_chkpt_rec_lsn = min_lsn;
+}
+
+void
+log_core::_make_master_name(
+    const lsn_t&         master_lsn, 
+    const lsn_t&        min_chkpt_rec_lsn,
+    char*                 buf,
+    int                        bufsz,
+    bool                old_style)
+{
+    w_ostrstream s(buf, (int) bufsz);
+
+    s << _logdir << _SLASH << _master_prefix;
+    lsn_t         array[2];
+    array[0] = master_lsn;
+    array[1] = min_chkpt_rec_lsn;
+
+    _create_master_chkpt_string(s, 2, array, old_style);
+    s << ends;
+    w_assert1(s);
+}
+
+void
+log_core::_write_master(const lsn_t &l, const lsn_t &min) 
+{
+    /*
+     *  create new master record
+     */
+    char _chkpt_meta_buf[CHKPT_META_BUF];
+    _make_master_name(l, min, _chkpt_meta_buf, CHKPT_META_BUF);
+    DBGTHRD(<< "writing checkpoint master: " << _chkpt_meta_buf);
+
+    FILE* f = fopen(_chkpt_meta_buf, "a");
+    if (! f) {
+        w_rc_t e = RC(eOS);    
+        smlevel_0::errlog->clog << fatal_prio 
+            << "ERROR: could not open a new log checkpoint file: "
+            << _chkpt_meta_buf << flushl;
+        W_COERCE(e);
+    }
+
+    {        /* write ending lsns into the master chkpt record */
+        lsn_t         array[PARTITION_COUNT];
+        int j = log_core::THE_LOG->get_last_lsns(array);
+        if(j > 0) {
+            w_ostrstream s(_chkpt_meta_buf, CHKPT_META_BUF);
+            _create_master_chkpt_contents(s, j, array);
+        } else {
+            memset(_chkpt_meta_buf, '\0', 1);
+        }
+        int length = strlen(_chkpt_meta_buf) + 1;
+        DBG(<< " #lsns=" << j
+            << " write this to master checkpoint record: " <<
+                _chkpt_meta_buf);
+
+        if(fwrite(_chkpt_meta_buf, length, 1, f) != 1) {
+            w_rc_t e = RC(eOS);    
+            smlevel_0::errlog->clog << fatal_prio 
+                << "ERROR: could not write log checkpoint file contents"
+                << _chkpt_meta_buf << flushl;
+            W_COERCE(e);
+        }
+    }
+    fclose(f);
+
+    /*
+     *  destroy old master record
+     */
+    _make_master_name(_master_lsn, 
+                _min_chkpt_rec_lsn, _chkpt_meta_buf, CHKPT_META_BUF);
+    (void) unlink(_chkpt_meta_buf);
+}
+
 /*********************************************************************
  *
  *  log_core *log_core::new_log_m(logdir,segid,reformat,carray_active_slot_count)
@@ -112,6 +228,7 @@ log_core::min_partition_size() {
 
 w_rc_t
 log_core::new_log_m(
+    const char* path,
     log_m        *&log_p,
     int          wrbufsize,
     bool         reformat,
@@ -119,6 +236,9 @@ log_core::new_log_m(
 )
 {
     rc_t        rc;
+
+    w_assert1(strlen(path) < sizeof(_logdir));
+    strcpy(_logdir, path);
 
     if(THE_LOG != NULL) {
         // not mt-safe
@@ -195,6 +315,24 @@ log_core::curr_partition() const
 {
     w_assert3(partition_index() >= 0);
     return _partition(partition_index());
+}
+
+/*********************************************************************
+ *
+ *  log_core::make_log_name(idx, buf, bufsz)
+ *
+ *  Make up the name of a log file in buf.
+ *
+ *********************************************************************/
+const char *
+log_core::make_log_name(uint32_t idx, char* buf, int bufsz)
+{
+    // this is a static function w_assert2(_partition_lock.is_mine()==true);
+    w_ostrstream s(buf, (int) bufsz);
+    s << _logdir << _SLASH
+      << _log_prefix << idx << ends;
+    w_assert1(s);
+    return buf;
 }
 
 /*********************************************************************
@@ -991,6 +1129,10 @@ log_core::shutdown()
     _flush_daemon_running = false;
     delete _flush_daemon;
     _flush_daemon=NULL;
+
+    delete THE_LOG; // side effect: sets THE_LOG to NULL
+    delete _oldest_lsn_tracker;
+    _oldest_lsn_tracker = NULL;
 }
 
 /*********************************************************************
@@ -1025,10 +1167,16 @@ log_core::log_core(
       _shutting_down(false),
       _flush_daemon_running(false),
       _carray(new ConsolidationArray(carray_active_slot_count)),
+      _log_corruption(false),
       _curr_index(-1),
       _curr_num(1),
       _readbuf(NULL),
-      _skip_log(NULL)
+      _skip_log(NULL),
+      _min_chkpt_rec_lsn(first_lsn(1)), 
+      _space_available(0),
+      _space_rsvd_for_chkpt(0), 
+      _partition_size(0), 
+      _partition_data_size(0)
 {
     FUNC(log_core::log_core);
     DO_PTHREAD(pthread_mutex_init(&_wait_flush_lock, NULL));
@@ -1036,6 +1184,8 @@ log_core::log_core(
     DO_PTHREAD(pthread_cond_init(&_flush_cond, NULL));
     DO_PTHREAD(pthread_mutex_init(&_scavenge_lock, NULL));
     DO_PTHREAD(pthread_cond_init(&_scavenge_cond, NULL));
+    DO_PTHREAD(pthread_mutex_init(&_space_lock, 0));
+    DO_PTHREAD(pthread_cond_init(&_space_cond, 0));
 
     _buf = new char[_segsize];
     // NOTE: GROT must make this a function of page size, and of xfer size,
@@ -1052,6 +1202,9 @@ log_core::log_core(
 
     /* Create thread o flush the log */
     _flush_daemon = new flush_daemon_thread_t(this);
+
+    _oldest_lsn_tracker = new PoorMansOldestLsnTracker(1 << 20);
+    w_assert1(_oldest_lsn_tracker);
 
     if (bsize < 64 * 1024) {
         // not mt-safe, but this is not going to happen in 
@@ -2208,6 +2361,17 @@ bool log_core::_update_epochs(CArraySlot* info) {
 }
 
 rc_t log_core::insert(logrec_t &rec, lsn_t* rlsn) {
+    // If log corruption is turned on,  zero out
+    // important parts of the log to fake crash (by making the
+    // log appear to end here).
+    if (_log_corruption) {
+        smlevel_0::errlog->clog << error_prio 
+        << "Generating corrupt log record at lsn: " << curr_lsn() << flushl;
+        rec.corrupt();
+        // Now turn it off.
+        _log_corruption = false;
+    }
+
     w_assert1(rec.length() <= sizeof(logrec_t));
     int32_t size = rec.length();
 
@@ -2728,4 +2892,303 @@ log_core::file_was_archived(const char * /*file*/)
     // and that we indeed asked for it to be archived.
     _space_available += recoverable_space(1);
     return RCOK;
+}
+
+void
+log_core::_create_master_chkpt_string(
+                ostream&        s,
+                int                arraysize,
+                const lsn_t*        array,
+                bool                old_style)
+{
+    w_assert1(arraysize >= 2);
+    if (old_style)  {
+        s << array[0] << '.' << array[1];
+
+    }  else  {
+        s << 'v' << _version_major << '.' << _version_minor ;
+        for(int i=0; i< arraysize; i++) {
+                s << '_' << array[i];
+        }
+    }
+}
+
+rc_t
+log_core::_check_version(uint32_t major, uint32_t minor)
+{
+        if (major == _version_major && minor <= _version_minor)
+                return RCOK;
+
+        w_error_codes err = (major < _version_major)
+                        ? eLOGVERSIONTOOOLD : eLOGVERSIONTOONEW;
+
+        smlevel_0::errlog->clog << fatal_prio 
+            << "ERROR: log version too "
+            << ((err == eLOGVERSIONTOOOLD) ? "old" : "new")
+            << " sm ("
+            << _version_major << " . " << _version_minor
+            << ") log ("
+            << major << " . " << minor
+            << flushl;
+
+        return RC(err);
+}
+
+void
+log_core::_create_master_chkpt_contents(
+                ostream&        s,
+                int                arraysize,
+                const lsn_t*        array
+                )
+{
+    for(int i=0; i< arraysize; i++) {
+            s << '_' << array[i];
+    }
+    s << ends;
+}
+
+rc_t
+log_core::_parse_master_chkpt_contents(
+                istream&            s,
+                int&                    listlength,
+                lsn_t*                    lsnlist
+                )
+{
+    listlength = 0;
+    char separator;
+    while(!s.eof()) {
+        s >> separator;
+        if(!s.eof()) {
+            w_assert9(separator == '_' || separator == '.');
+            s >> lsnlist[listlength];
+            DBG(<< listlength << ": extra lsn = " << 
+                lsnlist[listlength]);
+            if(!s.fail()) {
+                listlength++;
+            }
+        }
+    }
+    return RCOK;
+}
+
+rc_t
+log_core::_parse_master_chkpt_string(
+                istream&            s,
+                lsn_t&              master_lsn,
+                lsn_t&              min_chkpt_rec_lsn,
+                int&                    number_of_others,
+                lsn_t*                    others,
+                bool&                    old_style)
+{
+    uint32_t major = 1;
+    uint32_t minor = 0;
+    char separator;
+
+    s >> separator;
+
+    if (separator == 'v')  {                // has version, otherwise default to 1.0
+        old_style = false;
+        s >> major >> separator >> minor;
+        w_assert9(separator == '.');
+        s >> separator;
+        w_assert9(separator == '_');
+    }  else  {
+        old_style = true;
+        s.putback(separator);
+    }
+
+    s >> master_lsn >> separator >> min_chkpt_rec_lsn;
+    w_assert9(separator == '_' || separator == '.');
+
+    if (!s)  {
+        return RC(eBADMASTERCHKPTFORMAT);
+    }
+
+    number_of_others = 0;
+    while(!s.eof()) {
+        s >> separator;
+        if(separator == '\0') break; // end of string
+
+        if(!s.eof()) {
+            w_assert9(separator == '_' || separator == '.');
+            s >> others[number_of_others];
+            DBG(<< number_of_others << ": extra lsn = " << 
+                others[number_of_others]);
+            if(!s.fail()) {
+                number_of_others++;
+            }
+        }
+    }
+
+    return _check_version(major, minor);
+}
+
+/* Compute size of the biggest checkpoint we ever risk having to take...
+ */
+long log_core::max_chkpt_size() const 
+{
+    /* BUG: the number of transactions which might need to be
+       checkpointed is potentially unbounded. However, it's rather
+       unlikely we'll ever see more than 10k at any one time...
+     */
+    static long const GUESS_MAX_XCT_COUNT = 10000;
+    static long const FUDGE = sizeof(logrec_t);
+    long bf_tab_size = bf->get_block_cnt()*sizeof(chkpt_bf_tab_t::brec_t);
+    long xct_tab_size = GUESS_MAX_XCT_COUNT*sizeof(chkpt_xct_tab_t::xrec_t);
+    return FUDGE + bf_tab_size + xct_tab_size;
+}
+
+w_rc_t
+log_core::_read_master( 
+        const char *fname,
+        int prefix_len,
+        lsn_t &tmp,
+        lsn_t& tmp1,
+        lsn_t* lsnlist,
+        int&   listlength,
+        bool&  old_style
+)
+{
+    rc_t         rc;
+    {
+        /* make a copy */
+        int        len = strlen(fname+prefix_len) + 1;
+        char *buf = new char[len];
+        memcpy(buf, fname+prefix_len, len);
+        w_istrstream s(buf);
+
+        rc = _parse_master_chkpt_string(s, tmp, tmp1, 
+                                       listlength, lsnlist, old_style);
+        delete [] buf;
+        if (rc.is_error()) {
+            smlevel_0::errlog->clog << fatal_prio 
+            << "bad master log file \"" << fname << "\"" << flushl;
+            W_COERCE(rc);
+        }
+        DBG(<<"_parse_master_chkpt_string returns tmp= " << tmp
+            << " tmp1=" << tmp1
+            << " old_style=" << old_style);
+    }
+
+    /*  
+     * read the file for the rest of the lsn list
+     */
+    {
+        char*         buf = new char[smlevel_0::max_devname];
+        if (!buf)
+            W_FATAL(fcOUTOFMEMORY);
+        w_auto_delete_array_t<char> ad_fname(buf);
+        w_ostrstream s(buf, int(smlevel_0::max_devname));
+        s << _logdir << _SLASH << fname << ends;
+
+        FILE* f = fopen(buf, "r");
+        if(f) {
+            char _chkpt_meta_buf[CHKPT_META_BUF];
+            int n = fread(_chkpt_meta_buf, 1, CHKPT_META_BUF, f);
+            if(n  > 0) {
+                /* Be paranoid about checking for the null, since a lack
+                   of it could send the istrstream driving through memory
+                   trying to parse the information. */
+                void *null = memchr(_chkpt_meta_buf, '\0', CHKPT_META_BUF);
+                if (!null) {
+                    smlevel_0::errlog->clog << fatal_prio 
+                        << "invalid master log file format \"" 
+                        << buf << "\"" << flushl;
+                    W_FATAL(eINTERNAL);
+                }
+                    
+                w_istrstream s(_chkpt_meta_buf);
+                rc = _parse_master_chkpt_contents(s, listlength, lsnlist);
+                if (rc.is_error())  {
+                    smlevel_0::errlog->clog << fatal_prio 
+                        << "bad master log file contents \"" 
+                        << buf << "\"" << flushl;
+                    W_COERCE(rc);
+                }
+            }
+            fclose(f);
+        } else {
+            /* backward compatibility with minor version 0: 
+             * treat empty file ok
+             */
+            w_rc_t e = RC(eOS);
+            smlevel_0::errlog->clog << fatal_prio
+                << "ERROR: could not open existing log checkpoint file: "
+                << buf << flushl;
+            W_COERCE(e);
+        }
+    }
+    return RCOK;
+}
+
+fileoff_t log_core::take_space(fileoff_t *ptr, int amt) 
+{
+    BOOST_STATIC_ASSERT(sizeof(fileoff_t) == sizeof(int64_t));
+    fileoff_t ov = lintel::unsafe::atomic_load(const_cast<int64_t*>(ptr));
+    // fileoff_t ov = *ptr;
+#if W_DEBUG_LEVEL > 0
+    DBGTHRD("take_space " << amt << " old value of ? " << ov);
+#endif
+    while(1) {
+        if (ov < amt) {
+            return 0;
+        }
+	fileoff_t nv = ov - amt;
+	if (lintel::unsafe::atomic_compare_exchange_strong(const_cast<int64_t*>(ptr), &ov, nv)) {
+	    return amt;
+        }
+    }
+}
+
+fileoff_t log_core::reserve_space(fileoff_t amt) 
+{
+    return (amt > 0)? take_space(&_space_available, amt) : 0;
+}
+
+fileoff_t log_core::consume_chkpt_reservation(fileoff_t amt) {
+    if(operating_mode != t_forward_processing)
+       return amt; // not yet active -- pretend it worked
+
+    return (amt > 0)? 
+        take_space(&_space_rsvd_for_chkpt, amt) : 0;
+}
+
+// make sure we have enough log reservation (conservative)
+// NOTE: this has to be compared with the size of a partition,
+// which _set_size does (it knows the size of a partition)
+bool log_core::verify_chkpt_reservation() 
+{
+    fileoff_t space_needed = max_chkpt_size();
+    while(*&_space_rsvd_for_chkpt < 2*space_needed) {
+        if(reserve_space(space_needed)) {
+            // abuse take_space...
+            take_space(&_space_rsvd_for_chkpt, -space_needed);
+        } else if(*&_space_rsvd_for_chkpt < space_needed) {
+            /* oops...
+
+               can't even guarantee the minimum of one checkpoint
+               needed to reclaim log space and solve the problem
+             */
+            W_FATAL(eOUTOFLOGSPACE);
+        } else {
+            // must reclaim a log partition
+            return false;
+        }
+    }
+    return true;
+}
+
+// Determine if this lsn is holding up scavenging of logs by (being 
+// on a presumably hot page, and) being a rec_lsn that's in the oldest open
+// log partition and that oldest partition being sufficiently aged....
+bool                
+log_core::squeezed_by(const lsn_t &self)  const 
+{
+    // many partitions are open
+    return 
+    ((curr_lsn().file() - global_min_lsn().file()) >=  (PARTITION_COUNT-2))
+        &&
+    (self.file() == global_min_lsn().file())  // the given lsn 
+                                              // is in the oldest file
+    ;
 }
