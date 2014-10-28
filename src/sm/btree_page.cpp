@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <memory>
 #include "w_debug.h"
+#include "w_key.h"
 
 
 void btree_page_data::init_items() {
@@ -16,6 +17,69 @@ void btree_page_data::init_items() {
     nghosts         = 0;
     first_used_body = max_bodies;
 
+    w_assert3(_items_are_consistent());
+}
+
+void btree_page_data::remove_items(
+                      const int item_count,    // In: Number of records to remove
+                      const w_keystr_t &high)  // In: high fence after record removal
+{
+    // Use this function with caution
+
+    // A special helper function to remove 'item_count' largest items from the storage
+    // this function is only used by full logging page rebalance restart operation
+    // to recover the source page after a system crash
+    // the caller resets the fence keys on source page which eliminate some
+    // of the records from source page
+    // this function removes the largest 'item_count' items from the page
+    // because they belong to destination page after the rebalance
+    // After the removal, item count changed but no change to ghost count
+
+    w_assert1(btree_level >= 1);
+    w_assert1(nitems > item_count);          // Must have at least one record which is the fency key record
+    w_assert3(_items_are_consistent());
+
+    if ((0 == item_count) || (1 == nitems))  // If 1 == nitems, we only have a fence key record
+        return;
+
+    DBGOUT3( << "btree_page_data::reset_item_count - before deletion item count: " << nitems
+             << ", new high fence key: " << high);
+
+    int remaining = item_count;
+    char* high_key_p = (char *)high.buffer_as_keystr();
+    size_t high_key_length = (size_t)high.get_length_as_keystr();
+    while (0 < remaining)
+    {
+        w_assert1(1 < nitems);
+        // Find the records with key >= new high fence key and delete them
+        int item_index = 1;  // Start with index 1 since 0 is for the fence key record
+        uint16_t* key_length;;
+        size_t item_len;
+
+        int cmp;
+        const int data_offset = sizeof(uint16_t);  // To skipover the portion which contains the size of variable data
+        for (int i = item_index; i < nitems; ++i)
+        {
+            key_length = (uint16_t*)item_data(i);
+            item_len = *key_length++;       
+
+            cmp = ::memcmp(high_key_p, item_data(i)+data_offset, (high_key_length<=item_len)? high_key_length : item_len);
+            if ((0 > cmp) || ((0 == cmp) && (high_key_length <= item_len)))
+            {
+                // The item is larger than the new high fence key or the same as high fence key (high fence is ghost)
+                DBGOUT3( << "btree_page_data::reset_item_count - delete record index: " << i);
+
+                // Delete the item, which changes nitems but no change to nghosts
+                // therefore break out the loop and start the loop again if we have more items to remove
+                delete_item(i);
+                break;
+            }
+        }
+
+        --remaining;
+    }
+
+    DBGOUT3( << "btree_page_data::reset_item_count - after deletion item count: " << nitems);
     w_assert3(_items_are_consistent());
 }
 

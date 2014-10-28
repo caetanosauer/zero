@@ -10,8 +10,8 @@ btree_test_env *test_env;
 
 /**
  * \file test_page_lsn_chain.cpp
- * \brief Unit tests for SPR's Page LSN Chain.
- * \ingroup SPR
+ * \brief Unit tests for Single-Page-Recovery's Page LSN Chain.
+ * \ingroup Single-Page-Recovery
  */
 
 w_rc_t prepare_test(ss_m* ssm, test_volume_t *test_volume, stid_t &stid, lpid_t &root_pid) {

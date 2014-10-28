@@ -754,8 +754,23 @@ bool w_keystr_t::construct_from_vec(const cvec_t &vect) {
     }
     _data[0] = SIGN_REGULAR;
     vect.copy_to(_data + 1, vect.size());
+    _strlen = vect.size() + 1;
     return true;
 }
 
+bool w_keystr_t::copy_from_vec(const cvec_t &vect) {
+    // Different from construct_from_vec
+    // this function copies the data from cvec_t into w_keystr only,
+    // it does not add the leading type byte
+    clear();
+
+    _data = new unsigned char[vect.size()];
+    if (_data == NULL) {
+        return false;
+    }
+    vect.copy_to(_data, vect.size());
+    _strlen = vect.size();
+    return true;
+}
 
 /**\endcond skip */

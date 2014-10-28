@@ -74,7 +74,16 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <boost/static_assert.hpp>
 #include <vector>
 
+// LOG_BUFFER switch
+#include "logbuf_common.h"
+
+#ifdef LOG_BUFFER
+enum hints_op;
+#endif
+
+
 typedef smlevel_0::fileoff_t fileoff_t;
+
 
 /*********************************************************************
  *
@@ -90,7 +99,8 @@ bool log_i::xct_next(lsn_t& lsn, logrec_t*& r)
     // 'cursor' is set to the starting point of the scan
     // After each xct_next call, 
     // 'cursor' is set to the lsn of the next log record if forward scan
-    // or the lsn of the previous log record if backward scan
+    // or the lsn of the fetched log record if backward scan
+    // log.fetch() returns eEOF when it reaches the end of the scan
     
     bool eof = (cursor == lsn_t::null);
 
@@ -164,14 +174,28 @@ void log_m::set_master(const lsn_t& mlsn, const lsn_t  & min_rec_lsn,
 
 rc_t  
 log_m::new_log_m(log_m   *&the_log,
-                         const char *path,
-                         int wrbufsize,
-                         bool  reformat,
-                         int carray_active_slot_count)
+                 const char *path,
+                 int wrbufsize,
+                 bool  reformat,
+                 int carray_active_slot_count
+#ifdef LOG_BUFFER
+                 ,
+                 int logbuf_seg_count,
+                 int logbuf_flush_trigger,
+                 int logbuf_block_size
+#endif
+)
 {
     FUNC(log_m::new_log_m);
 
-    rc_t rc = log_core::new_log_m(path, the_log, wrbufsize, reformat, carray_active_slot_count);
+    rc_t rc = log_core::new_log_m(path, the_log, wrbufsize, reformat, carray_active_slot_count
+#ifdef LOG_BUFFER
+                                  ,
+                                  logbuf_seg_count,
+                                  logbuf_flush_trigger,
+                                  logbuf_block_size
+#endif
+);
 
     w_assert1(the_log != NULL);
 
@@ -195,9 +219,18 @@ void
 log_m:: release()  
     { log_core::THE_LOG->release(); }
 
+#ifdef LOG_BUFFER
 rc_t 
 log_m::fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, bool forward) 
     { return log_core::THE_LOG->fetch(lsn, rec, nxt, forward); }
+rc_t 
+log_m::fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, hints_op op) 
+    { return log_core::THE_LOG->fetch(lsn, rec, nxt, op); }
+#else
+rc_t 
+log_m::fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, bool forward) 
+    { return log_core::THE_LOG->fetch(lsn, rec, nxt, forward); }
+#endif
 
 rc_t 
 log_m::insert(logrec_t &r, lsn_t* ret)

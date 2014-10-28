@@ -17,6 +17,7 @@
 #include "w_key.h"
 #include <string>
 #include <algorithm>
+#include "restart.h"
 
 
 btrec_t& 
@@ -46,13 +47,16 @@ btrec_t::set(const btree_page_h& page, slotid_t slot) {
     return *this;
 }
 
-void btree_page_h::accept_empty_child(lsn_t new_lsn, shpid_t new_page_id) {
+void btree_page_h::accept_empty_child(lsn_t new_lsn, shpid_t new_page_id, const bool f_redo) {
     // If called from Recovery, i.e. btree_norec_alloc_log::redo, do not check for
     // is_single_log_sys_xct(), the transaction flags are not setup properly
-    //if (false == smlevel_0::in_recovery())
-    //    w_assert1(g_xct()->is_single_log_sys_xct());
-    //FIXME: Why is this now an assertion for non-Recovery? -stan
-    
+
+    // Base the checking on passed in parameter instead of system flag smlevel_0::in_recovery(),
+    // because we will be doing on-demand redo/undo during recovery,
+    // therefore the system flag itself is not sufficient to indicate the type of the caller
+    if (false == f_redo)
+        w_assert1(g_xct()->is_single_log_sys_xct());   
+
     w_assert1(new_lsn != lsn_t::null || !smlevel_0::logging_enabled);
 
     // Slight change in foster-parent, touching only foster link and chain-high.
@@ -72,36 +76,60 @@ void btree_page_h::accept_empty_child(lsn_t new_lsn, shpid_t new_page_id) {
     }
 }
 
-rc_t btree_page_h::format_steal(lsn_t             new_lsn,
-                                const lpid_t&     pid,
+rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the operation that creates this new page
+                                const lpid_t&     pid,             // Destination page pid
                                 shpid_t           root, 
-                                int               l,
-                                shpid_t           pid0,
-                                lsn_t             pid0_emlsn,
-                                shpid_t           foster,
+                                int               l,               // Level of the destination page
+                                shpid_t           pid0,            // Destination page pid0 value, non-leaf only
+                                lsn_t             pid0_emlsn,      // Destination page emlsn value, non-leaf only 
+                                shpid_t           foster,          // Page ID of the foster-child (if exist)
                                 lsn_t             foster_emlsn,
-                                const w_keystr_t& fence_low,
-                                const w_keystr_t& fence_high,
-                                const w_keystr_t& chain_fence_high,
-                                bool              log_it,
-                                btree_page_h*     steal_src1,
+                                const w_keystr_t& fence_low,       // Low fence key of the destination page
+                                const w_keystr_t& fence_high,      // Hig key of the destination page, confusing naming
+                                                                   //this is actually the foster key
+                                const w_keystr_t& chain_fence_high,// High fence chian key, does not exist if no foster chain
+                                                                   // this is the high fence key for all foster child pages
+                                bool              log_it,          // True if log the log_page_img_format log record
+                                btree_page_h*     steal_src1,      // Source 1 to get records from
                                 int               steal_from1,
                                 int               steal_to1,
-                                btree_page_h*     steal_src2,
+                                btree_page_h*     steal_src2,      // Source 2 to get records from
                                 int               steal_from2,
                                 int               steal_to2,
-                                bool              steal_src2_pid0) {
+                                bool              steal_src2_pid0,
+                                const bool        full_logging,    // True if doing full logging for record movement
+                                const bool        log_src_1,       // Use only if full_logging = true
+                                                                   // True if log movements from src1, used for
+                                                                   // page rebalance
+                                                                   // False if log movements from src2, used
+                                                                   // for page merge
+                                const bool        ghost)           // Should the fence key record be a ghost
+{
+    // Full logging for all record movements only if using page driven REDO operation
+    // and we do not want to log the log_page_img_format log record
+    if (true == full_logging)
+    {
+       w_assert1(true == restart_m::use_redo_full_logging_restart());
+       w_assert1(false == log_it);
+    }
 
     // Note that the method receives a copy, not reference, of pid/lsn here.
-    // pid might point to a part of this page itself!
+    // pid might point to a part of this page itself!   
+    // Initialize the whole image of the destination page page as an empty page.
+    // it sets the fence keys (prefix, low and high, all in one slot, slot 0)
+    // The _init inserts into slot 0 which contains the low, high (confusing nameing, 
+    // this is actually the foster key) and chain_high_fence (actually the high fence) keys,
+    // but do not log it, since the actual record movement will move all the records
     _init(new_lsn, pid, root, pid0, pid0_emlsn, foster, foster_emlsn,
-          l, fence_low, fence_high, chain_fence_high);
+          l, fence_low, fence_high, chain_fence_high, ghost);
 
     // steal records from old page
     if (steal_src1) {
-        _steal_records (steal_src1, steal_from1, steal_to1);
+        _steal_records (steal_src1, steal_from1, steal_to1, 
+              ((true == full_logging) && (true == log_src_1))? true : false);  // Turn on full logging if need to log src 1
     }
     if (steal_src2_pid0) {
+        // For non-leaf page only
         w_assert1(steal_src2);
         w_assert1(is_node());
         w_assert1(steal_src2->pid0() != pid0);
@@ -114,13 +142,50 @@ rc_t btree_page_h::format_steal(lsn_t             new_lsn,
         shpid_t      stolen_pid0 = steal_src2->pid0();
         lsn_t        stolen_pid0_emlsn = steal_src2->get_pid0_emlsn();
         cvec_t v;
+        rc_t rc;
         _pack_node_record(v, stolen_key, stolen_pid0_emlsn.data());
-        if (!page()->insert_item(nrecs()+1, false, poormkey, stolen_pid0, v)) {
+        if ((true == full_logging) && (false == log_src_1))
+        {
+            // Need to log for src2, this is for page merge and non-leaf pages only
+            // Log deletion from source(steal_src2), and insertion into target (page())
+            // This is the low fence key from source(steal_src2) before the merge
+            // which become a regular record in the merged page (page())
+
+            // Log the insertion into destination first
+            w_keystr_t keystr;   // Used for insertion log record if full logging
+            // For logging purpose, it is the whole key, including prefix and PMNK
+            cvec_t  whole_key(steal_src2->get_fence_low_key(), steal_src2->get_fence_low_length());  
+            if (true == keystr.copy_from_vec(whole_key))
+            {
+                vec_t el;
+                cvec_t empty_key;
+                _pack_node_record(el, empty_key, stolen_pid0_emlsn.data());
+                rc = log_btree_insert_nonghost(*this, keystr, el, true /*is_sys_txn*/);   // key: original key including prefix
+                                                                                         // el: non-key portion only
+            }
+            else
+            {
+                W_FATAL_MSG(fcOUTOFMEMORY, << "Failed to generate log_btree_insert_nonghost log record due to OOM");            
+            }
+
+            // Now log the deletion from source next
+            vector<slotid_t> slots;
+            slots.push_back(0);  // Low fence key is in slot 0
+            rc = log_btree_ghost_mark(*steal_src2, slots, true /*is_sys_txn*/);
+            if (rc.is_error()) 
+            {
+                W_FATAL_MSG(fcINTERNAL, << "Failed to generate log_btree_ghost_mark log record during a full logging system transaction");
+            }           
+        }
+        // Now the actual movement
+        if (!page()->insert_item(nrecs()+1, false /*ghost*/, poormkey, stolen_pid0, v)) {
             w_assert0(false);
         }
     }
+
     if (steal_src2) {
-        _steal_records (steal_src2, steal_from2, steal_to2);
+        _steal_records (steal_src2, steal_from2, steal_to2, 
+              ((true == full_logging) && (false == log_src_1))? true : false);  // Turn on full logging if need to log src 2
     }
 
     // log as one record
@@ -134,21 +199,38 @@ rc_t btree_page_h::format_steal(lsn_t             new_lsn,
     // the _init() function only set the last write LSN, but not the initial dirty LSN in page cb
     // For system crash recovery purpose, we need the initial dirty LSN to trace back to the
     // page format log record so everything can be REDO
-    // Set the _rec_lsn using the new_lan (which is the last write LSN) if _rec_lsn is later than 
+    // Set the _rec_lsn using the new_lsn (which is the last write LSN) if _rec_lsn is later than 
     // new_lsn.
     smlevel_0::bf->set_initial_rec_lsn(pid, new_lsn, smlevel_0::log->curr_lsn());
 
-    
     return RCOK;
 }
 
 void btree_page_h::_steal_records(btree_page_h* steal_src,
                                   int           steal_from,
-                                  int           steal_to) {
+                                  int           steal_to,
+                                  const bool    full_logging) {  // True if turn on full logging for the record
+                                                                 // movement, both deletion and insertion
     w_assert2(steal_src);
     w_assert2(steal_from <= steal_to);
     w_assert2(steal_from >= 0);
     w_assert2(steal_to <= steal_src->nrecs());
+    w_rc_t rc = RCOK;
+    w_keystr_t keystr;   // Used for insertion log record if full logging
+
+    if (true == full_logging)
+    {
+        // Currently using full logging only if we are using page driven REDO recovery
+        // The full logging flag is on when we are moving new records into destination page
+        // not when we are re-copy existing (old) records into destination page
+        w_assert1(true == restart_m::use_redo_full_logging_restart());
+        DBGOUT3( << "btree_page_h::_steal_records for a system transaction - need full logging");
+    }
+    else
+    {
+        // Eigher minimal logging or full logging but caller asked not to log because no need for the current movement
+        DBGOUT3( << "btree_page_h::_steal_records for a system transaction - either minimal logging or skip full logging");
+    }
 
     key_length_t new_prefix_length = get_prefix_length();
     for (int i = steal_from; i < steal_to; ++i) {
@@ -162,7 +244,7 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
             trunc_key_data = steal_src->_node_key_noprefix(i, trunc_key_length);
         }
         key.put(trunc_key_data, trunc_key_length);
-        
+
         // split off part after new_prefix_length into new_trunc_key:
         cvec_t dummy, new_trunc_key;
         key.split(new_prefix_length, dummy, new_trunc_key);
@@ -170,20 +252,104 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
         cvec_t         v;
         pack_scratch_t v_scratch; // this needs to stay in scope until v goes out of scope...
         shpid_t        child;
-        if (is_leaf()) {
+
+        // If ask for full logging, generate record movement log records before
+        // each insertion
+        // Caller 'format_steal' is constructing a new page by copying existing
+        // records from 1 page into 2 pages (rebalance) or from 2 pages 
+        // into 1 page (merge).  We only need to log the record movement for
+        // the records actually got moved to a different page.
+        //
+        // For each record movement, log both record deletion (ghost) from 
+        // old page (source, steal_src) and record insertion into 
+        // new page (destination, page())
+        //
+        // Note that there is no actual 'delete (ghost)' operation, this is 
+        // because we are copying the needed records into new page, 
+        // skip the not needed records, which is the same effect as delete 
+        // from the original page, but we need to log the delete (ghost) operation
+        // although there is no actual operation
+
+        if (true == full_logging)
+        {
+            // Construct the key field for the insertion log record below, there is a
+            // different behavior whether the page is a leaf or non-leaf node
+            // For logging purpose, it is the whole key including prefix and PMNK
+            // Log insertion first and then deletion
+            if (false == keystr.copy_from_vec(key))
+            {
+                W_FATAL_MSG(fcOUTOFMEMORY, << "Failed to generate log_btree_insert_nonghost log record due to OOM");
+            }
+            else
+            {
+                DBGOUT3( << "btree_page_h::_steal_records, log insertion, key: " << keystr);
+            }
+        }
+
+        if (is_leaf()) 
+        {
             smsize_t data_length;
             bool is_ghost;
             const char* data = steal_src->element(i, data_length, is_ghost);
             _pack_leaf_record(v, v_scratch, new_trunc_key, data, data_length);
             child = 0;
-        } else {
+
+            if (true == full_logging)
+            {
+                // Log the insertion into new page (leaf)
+                vec_t el;
+                el.put(data, data_length);
+                rc = log_btree_insert_nonghost(*this, keystr, el, true /*is_sys_txn*/);   // key: original key including prefix
+                                                                                          // el: non-key portion only
+                // Clear the key string so it is ready for the next record
+                keystr.clear();
+                if (rc.is_error()) 
+                {
+                    W_FATAL_MSG(fcINTERNAL, 
+                        << "Failed to generate log_btree_insert_nonghost log record for a leaf page during a full logging system transaction");
+                }                                                                 
+            }
+        }
+        else 
+        {
+            // Non-leaf node
             // EMLSN is after the key data
             const lsn_t* emlsn_ptr = reinterpret_cast<const lsn_t*>(
                 trunc_key_data + trunc_key_length);
             _pack_node_record(v, new_trunc_key, *emlsn_ptr);
             child = steal_src->child_opaqueptr(i);
+
+            if (true == full_logging)
+            {
+                // Log the insertion into new page (non-leaf)
+                vec_t el;
+                el.put(emlsn_ptr, sizeof(lsn_t));
+                rc = log_btree_insert_nonghost(*this, keystr, el, true /*is_sys_txn*/);   // key: original key including prefix
+                                                                                        // el: non-key portion only                
+                // Clear the key string so it is ready for the next record
+                keystr.clear();
+                if (rc.is_error()) 
+                {
+                    W_FATAL_MSG(fcINTERNAL,
+                        << "Failed to generate log_btree_insert_nonghost log record for a non-leaf page during a full logging system transaction");
+                }                                                                 
+            }
         }
 
+        if (true == full_logging)
+        {
+            // Log the deletion from src page next
+            // No difference between leaf or non-leaf page
+            vector<slotid_t> slots;
+            slots.push_back(i);    // Current 'i' is the slot for the deleted record
+            rc = log_btree_ghost_mark(*steal_src, slots, true /*is_sys_txn*/);
+            if (rc.is_error()) 
+            {
+                W_FATAL_MSG(fcINTERNAL, << "Failed to generate log_btree_ghost_mark log record during a full logging system transaction");
+            }
+        }
+
+        // Now the actual insertion into the new page
         if (!page()->insert_item(nrecs()+1, steal_src->is_ghost(i), 
                                  _extract_poor_man_key(new_trunc_key), 
                                  child, v)) {
@@ -194,6 +360,115 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
         w_assert5(_is_consistent_keyorder());
     }
 }
+
+rc_t btree_page_h::init_fence_keys(
+            const bool set_low, const w_keystr_t &low,               // Low fence key
+            const bool set_high, const w_keystr_t &high,             // High key (foster)
+            const bool set_chain, const w_keystr_t &chain_high,      // Chain high fence key
+            const bool set_pid0, const shpid_t new_pid0,             // pid0, non-leaf node only
+            const bool set_emlsn, const lsn_t new_pid0_emlsn,        // emlan,  non-leaf node only
+            const bool set_foster, const shpid_t foster_pid0,        // foster page id 
+            const bool set_foster_emlsn, const lsn_t foster_emlsn,   // foster page emlsn
+            const int remove_count)                                  // Number of records to be removed 
+                                                                     // Used only if reset fence key
+{
+    // Reset the fence key and other information in an existing page, 
+    // do not change existing record data in the page and no change to number of records
+    // This is a special function currently only used by Single-Page-Recovery REDO operation for 
+    // page rebalance and page merge when full logging is on and the target page
+    // contains data already (not an empty page)
+
+    bool update_fence = false;
+
+    if (true == set_pid0)
+    {
+        // This information is for non-leaf page only
+        page()->btree_pid0 = new_pid0;       
+    }
+    if (true == set_emlsn)
+    {
+        // This information is for non-leaf page only
+        page()->btree_pid0_emlsn = new_pid0_emlsn;        
+    }
+    if (true == set_foster)
+    {
+        // Foster page id
+        page()->btree_foster = foster_pid0;        
+    }
+    if (true == set_foster_emlsn)
+    {
+        // Foster page emlsn
+        page()->btree_foster_emlsn = foster_emlsn;
+    }
+
+    w_keystr_t low_fence;
+    w_keystr_t high_key;
+    w_keystr_t chain_fence_key;
+
+    if (false == set_low)
+    {
+        // Get the existing low fence key
+        copy_fence_low_key(low_fence);
+    }
+    else
+    {
+        // Get the low fence key from input parameter
+        low_fence.construct_from_keystr(low.buffer_as_keystr(), low.get_length_as_keystr());
+        update_fence = true;
+    }
+
+    if (false == set_high)
+    {
+        // Get the existing high key (foster)
+        copy_fence_high_key(high_key);
+
+    }
+    else
+    {
+        // Get the high key from input parameter    
+        high_key.construct_from_keystr(high.buffer_as_keystr(), high.get_length_as_keystr());
+        update_fence = true;
+    }
+
+    if (false == set_chain)
+    {
+        // Get the existing chain high fence key
+        copy_chain_fence_high_key(chain_fence_key);
+    }
+    else
+    {
+        chain_fence_key.construct_from_keystr(chain_high.buffer_as_keystr(), chain_high.get_length_as_keystr());
+        update_fence = true;
+    }
+
+    if (false == update_fence)
+        return RCOK;
+
+    // Set the page dirty
+    set_dirty();
+
+    // Delete records from page, number_of_items() is the actual 
+    // record count including the fence key record which is not an actual record
+    // 'remove_count' is the number of records to remove from the page
+    // due to page rebalance, this is because we are resetting the fence keys
+    // which makes some of the existing records out-of-bound and they
+    // need to be remvoed
+    w_assert1(page()->number_of_items() > remove_count);
+    page()->remove_items(remove_count, high);  // Remove items, it affects item count but not ghost count
+
+    // Prepare for updating the fence key slot
+    cvec_t fences;
+    size_t prefix_len = _pack_fence_rec(fences, low_fence, high_key, chain_fence_key, -1);
+    w_assert1(prefix_len <= low_fence.get_length_as_keystr());
+    w_assert1(prefix_len <= max_key_length);
+    page()->btree_prefix_length = (int16_t) prefix_len;
+
+    // Update the original fence key slot which is the first slot
+    DBGOUT3( << "btree_page_h::init_fence_keys - new fence keys.  Low: " 
+             << low_fence << ", high key: " << high_key << ", chain high: " << chain_fence_key);    
+    return replace_fence_rec_nolog_may_defrag(low_fence, high_key, chain_fence_key, prefix_len);
+}
+
 rc_t btree_page_h::norecord_split (shpid_t foster, lsn_t foster_emlsn,
                                 const w_keystr_t& fence_high, const w_keystr_t& chain_fence_high) {
     w_assert1(compare_with_fence_low(fence_high) > 0);
@@ -409,7 +684,6 @@ btree_page_h::robust_search(const char *key_raw, size_t key_raw_len,
     w_assert1(high>=0 && high<=number_of_records);
 }
 
-
 void btree_page_h::search_node(const w_keystr_t& key,
                                slotid_t&         return_slot) const {
     w_assert1(!is_leaf());
@@ -559,7 +833,7 @@ rc_t btree_page_h::replace_ghost(const w_keystr_t &key,
 
     // log FIRST. note that this might apply the deferred ghost creation too.
     // so, this cannot be done later than any of following
-    W_DO (log_btree_insert (*this, key, elem));
+    W_DO (log_btree_insert (*this, key, elem, false /*is_sys_txn*/));
 
     // which slot to replace?
     bool found;
@@ -659,6 +933,7 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, size_t
 }
 void btree_page_h::insert_nonghost(const w_keystr_t &key, const cvec_t &elem) {
     w_assert1 (is_leaf());
+
     w_assert1(compare_with_fence_low(key) >= 0);
     w_assert1(compare_with_fence_high(key) < 0);
 
@@ -1037,6 +1312,7 @@ bool btree_page_h::_is_consistent_keyorder() const {
         size_t curkey_len;
         const char *curkey = _leaf_key_noprefix(0, curkey_len);
         if (w_keystr_t::compare_bin_str(lowkey + prefix_len, lowkey_len - prefix_len, curkey, curkey_len) > 0) {
+
             w_assert3(false);
             return false;
         }
@@ -1111,12 +1387,19 @@ bool btree_page_h::_is_consistent_poormankey() const {
 }
 
 
-rc_t btree_page_h::defrag() { 
-    w_assert1 (xct()->is_sys_xct());
+rc_t btree_page_h::defrag( const bool full_logging_redo) { 
+    // defrag can be called from btree_ghost_mark_log::redo 
+    // if caller is a log record generated for full logging page rebalance
+    // then the context is not system transaction but it should be treated as a
+    // system transaction and do not generate new log record
+
+    if (false == full_logging_redo)
+        w_assert1 (xct()->is_sys_xct());
     w_assert1 (is_fixed());
     w_assert1 (latch_mode() == LATCH_EX);
 
     vector<slotid_t> ghost_slots;
+
     for (int i=0; i<page()->number_of_items(); i++) {
         if (page()->is_ghost(i)) {
             w_assert1(i >= 1); // fence record can't be ghost
@@ -1124,10 +1407,10 @@ rc_t btree_page_h::defrag() {
         }
     }
     // defrag doesn't need log if there were no ghost records:
-    if (ghost_slots.size() > 0) {
+    if ((ghost_slots.size() > 0) && (false == full_logging_redo)){
         W_DO (log_btree_ghost_reclaim(*this, ghost_slots));
     }
-    
+
     page()->compact();
     set_dirty();
 
@@ -1141,9 +1424,30 @@ bool btree_page_h::_check_space_for_insert(size_t data_length) {
 
 
 void btree_page_h::_init(lsn_t lsn, lpid_t page_id,
-    shpid_t root_pid, shpid_t pid0, lsn_t pid0_emlsn,
-    shpid_t foster_pid, lsn_t foster_emlsn, int16_t btree_level,
-    const w_keystr_t &low, const w_keystr_t &high, const w_keystr_t &chain_fence_high) {
+    shpid_t root_pid, 
+    shpid_t pid0, lsn_t pid0_emlsn,          // Non-leaf page only
+    shpid_t foster_pid, lsn_t foster_emlsn,  // If foster child exists for this page
+    int16_t btree_level,
+    const w_keystr_t &low,                   // Low fence key
+    const w_keystr_t &high,                  // High key, confusing naming, it is actually the foster key
+    const w_keystr_t &chain_fence_high,      // Chain high fence key (if foster chain), 
+                                             // it is the high fence key for all foster child nodes
+    const bool ghost ) {                     // Should the fence key record be a ghost?                                             
+
+    // Initialize the current page with fence keys and other information
+
+    // A node contains low fence, high fence and foster key if a foster child exists
+    // When a foster child or foster chain (multiple foster child nodes) exists, all
+    // the foster child nodes have the same high fence key, which is the same as 
+    // the foster parent's high fence key (chain_fence_high), while the foster key (high)
+    // is different in each foster child node and it is used to determine record 
+    // boundaries (same purpose  as a regular high fence key.
+    // 
+    // The naming in existing Express code is confusing:
+    // Low - low fence key
+    // High - foster key
+    // chain_fence_high - high fence key in foster relationship, both foster parent
+    //                             and foster child nodes
 
 #ifdef ZERO_INIT
     // because we do this, note that we shouldn't receive any arguments
@@ -1175,7 +1479,7 @@ void btree_page_h::_init(lsn_t lsn, lpid_t page_id,
     page()->btree_prefix_length = (int16_t) prefix_len;
 
     // fence-key record doesn't need poormkey; set to 0:
-    if (!page()->insert_item(nrecs() + 1, false, 0, 0, fences)) {
+    if (!page()->insert_item(nrecs() + 1, ghost /* ghost*/, 0, 0, fences)) {
         w_assert0(false);
     }
 }

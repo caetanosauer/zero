@@ -19,6 +19,7 @@
 #include "w_key.h"
 #include "xct.h"
 #include "w_okvl_inl.h"
+
 struct RawLock;
 
 rc_t
@@ -30,8 +31,59 @@ btree_impl::_ux_lock_key(
     bool                check_only
     )        
 {
+    // Top level function used by I/U/D (EX) and search (SH) operations to acquire a lock
+    // Lock conflict is possible
+    
     return _ux_lock_key(leaf, key.buffer_as_keystr(), key.get_length_as_keystr(),
                          latch_mode, lock_mode, check_only);
+}
+
+rc_t btree_impl::_ux_lock_key(
+    const stid_t&       stid,       // stid of the page which contains the key
+    const w_keystr_t&   key,        // Key to lock
+    const okvl_mode&    lock_mode,  // the lock mode to be acquired
+    bool                check_only, // whether the lock goes away right after grant
+    xct_t*              xd)         // associated transaction object
+{
+    // Only used by Reatart Log Analysis phase to re-acquire non-read locks
+    // No latch since the system is not open for user transaction so no concurrent access
+    // No conditional and no retry, no RawLock object
+    // We should not see lock conflict from this call
+
+    w_assert1(NULL != xd);
+    lockid_t lid (stid, (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
+
+    return _ux_lock_key(lid.hash(), lock_mode, check_only, xd);
+}
+
+rc_t btree_impl::_ux_lock_key(
+    const uint32_t&     hash,        // Lock hash
+    const okvl_mode&    lock_mode,   // the lock mode to be acquired
+    bool                check_only,  // whether the lock goes away right after grant
+    xct_t*              xd)          // associated transaction object
+{
+    // Only used by Reatart Log Analysis phase to re-acquire non-read locks
+    // No latch since the system is not open for user transaction so no concurrent access
+    // No conditional and no retry, no RawLock object
+    // We should not see lock conflict from this call
+
+    w_assert1(NULL != xd);
+
+    rc_t lock_rc = lm->lock(hash, lock_mode, check_only, xd, WAIT_IMMEDIATE);
+    if (!lock_rc.is_error()) {
+        // Got it immediately, just return.
+        return RCOK;
+    }
+    else
+    {
+        // Not able to get the lock, this is not expected, return the error code       
+        // Possible error code from lock:
+        //   eDEADLOCK        
+        //   eLOCKTIMEOUT
+        // None of them should happen in this lock request
+        W_FATAL_MSG(lock_rc.err_num(), << " ERROR: unexpected error from lock re-acquisition");
+        return lock_rc;
+    }   
 }
 
 rc_t
@@ -44,19 +96,54 @@ btree_impl::_ux_lock_key(
     bool                check_only
     )        
 {
+    // Callers:
+    // 1. Top level _ux_lock_key() - I/U/D and search operations, lock conflict is possible
+    // 2. _ux_lock_range() - lock conflict is possible
+    //
+    // Lock conflict:
+    // 1. Deadlock - the asking lock is held by another transaction currently, and the 
+    //                      current transaction is holding other locks already, failed
+    // 2. Timeout -  the asking lock is held by another transaction currently, but the
+    //                     current transaction does not hold other locks, okay to retry
+
+    // For restart operation using lock re-acquisition:
+    // 1. On_demand or mixed UNDO - when lock conflict. it triggers UNDO transaction rollback
+    //                                                 this is a blocking operation, meaning the other concurrent
+    //                                                 transactions asking for the same lock are blocked, no deadlock
+    // 2. Traditional UNDO - original behavior, either deadlock error or timeout and retry
+    
     lockid_t lid (leaf.pid().stid(), (const unsigned char*) keystr, keylen);
     // first, try conditionally. we utilize the inserted lock entry even if it fails
     RawLock* entry = NULL;
-    rc_t lock_rc = lm->lock(lid, lock_mode, true, check_only, WAIT_IMMEDIATE, &entry);
+
+    // The lock request does the following:
+    // If the lock() failed to acquire lock (trying to acquire lock while holding the latch) and
+    // if the transaction doesn't have any other locks, because 'condition' is true, lock()
+    // returns immediatelly with eCONDLOCKTIMEOUT which indicates it failed to 
+    // acquire lock but no deadlock worry and the lock entry has been created already.  
+    // In this case caller (this function) releases latch and try again using retry_lock()
+    // which is a blocking operation, this is because it is safe to forever retry without 
+    // risking deadlock
+    // If the lock() returns eDEADLOCK, it means lock acquisition failed and 
+    // the current transaction already held other locks, it is not safe to retry (will cause
+    // further deadlocks) therefore caller must abort the current transaction
+    rc_t lock_rc = lm->lock(lid, lock_mode, true /*condition*/, check_only, WAIT_IMMEDIATE, &entry);
+
     if (!lock_rc.is_error()) {
         // lucky! we got it immediately. just return.
         return RCOK;
     } else {
         // if it caused deadlock and it was chosen to be victim, give up! (not retry)
-        if (lock_rc.err_num() == eDEADLOCK) {
+        if (lock_rc.err_num() == eDEADLOCK) 
+        {
+            // The user transaction will abort and rollback itself upon deadlock detection.
+            // Because Express does not have a deadlock monitor and policy to determine
+            // which transaction to rollback during a deadlock (should abort the cheaper 
+            // transaction), the user transaction which detects deadlock will be aborted.
             w_assert1(entry == NULL);
             return lock_rc;
         }
+
         // couldn't immediately get it. then we unlatch the page and wait.
         w_assert1(lock_rc.err_num() == eCONDLOCKTIMEOUT);
         w_assert1(entry != NULL);
@@ -70,7 +157,8 @@ btree_impl::_ux_lock_key(
         W_DO(lm->retry_lock(&entry, check_only));
         // now we got the lock.. but it might be changed because we unlatched.
         w_rc_t refix_rc = leaf.refix_direct(pin_holder.idx(), latch_mode);
-        if (refix_rc.is_error() || leaf.lsn() != prelsn) {
+        if (refix_rc.is_error() || leaf.lsn() != prelsn) 
+        {
             // release acquired lock
             if (entry != NULL) {
                 w_assert1(!check_only);
@@ -78,9 +166,12 @@ btree_impl::_ux_lock_key(
             } else {
                 w_assert1(check_only);
             }
-            if (refix_rc.is_error()) {
+            if (refix_rc.is_error()) 
+            {
                 return refix_rc;
-            } else {
+            }
+            else 
+            {
                 w_assert1(leaf.lsn() != prelsn); // unluckily, it's the case
                 return RC(eLOCKRETRY); // retry!
             }

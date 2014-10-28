@@ -5,13 +5,13 @@
 #include "btcursor.h"
 #include "bf.h"
 #include "xct.h"
+#include "sm_base.h"
+#include "sm_external.h"
 
 btree_test_env *test_env;
 
-/**
- * Testcases to test crash and recovery from logs.
- * Due to its nature, these testcases are more tricky.
- */
+// Test cases to test serial and traditional restart.
+// Caller does not specify restart mode, default to serial mode.
 
 class crash_empty : public crash_test_base {
 public:
@@ -67,7 +67,7 @@ public:
 TEST (CrashTest, CreateIndexClean) {
     test_env->empty_logdata_dir();
     crash_createindex_clean context;
-    EXPECT_EQ(test_env->runCrashTest(&context), 0);
+    EXPECT_EQ(test_env->runCrashTest(&context), 0);  // default to serial mode
 }
 /**/
 
@@ -93,7 +93,7 @@ public:
 TEST (CrashTest, CreateIndexDirty) {
     test_env->empty_logdata_dir();
     crash_createindex_dirty context;
-    EXPECT_EQ(test_env->runCrashTest(&context), 0);
+    EXPECT_EQ(test_env->runCrashTest(&context), 0);  // default to serial mode
 }
 /**/
 
@@ -123,7 +123,7 @@ public:
 TEST (CrashTest, InsertSingle) {
     test_env->empty_logdata_dir();
     crash_insert_single context;
-    EXPECT_EQ(test_env->runCrashTest(&context), 0);
+    EXPECT_EQ(test_env->runCrashTest(&context), 0);  // default to serial mode
 }
 /**/
 
@@ -155,7 +155,7 @@ public:
 TEST (CrashTest, InsertMulti) {
     test_env->empty_logdata_dir();
     crash_insert_multi context;
-    EXPECT_EQ(test_env->runCrashTest(&context), 0);
+    EXPECT_EQ(test_env->runCrashTest(&context), 0);  // default to serial mode
 }
 /**/
 
@@ -189,7 +189,7 @@ public:
 TEST (CrashTest, InsertDelete) {
     test_env->empty_logdata_dir();
     crash_insert_delete context;
-    EXPECT_EQ(test_env->runCrashTest(&context), 0);
+    EXPECT_EQ(test_env->runCrashTest(&context), 0);  // default to serial mode
 }
 /**/
 
@@ -224,7 +224,7 @@ public:
 TEST (CrashTest, InsertUpdate) {
     test_env->empty_logdata_dir();
     crash_insert_update context;
-    EXPECT_EQ(test_env->runCrashTest(&context), 0);
+    EXPECT_EQ(test_env->runCrashTest(&context), 0);  // default to serial mode
 }
 /**/
 
@@ -259,7 +259,7 @@ public:
 TEST (CrashTest, InsertOverwrite) {
     test_env->empty_logdata_dir();
     crash_insert_overwrite context;
-    EXPECT_EQ(test_env->runCrashTest(&context), 0);
+    EXPECT_EQ(test_env->runCrashTest(&context), 0);  // default to serial mode
 }
 /**/
 
@@ -331,7 +331,7 @@ public:
 TEST (CrashTest, InsertFewSorted) {
     test_env->empty_logdata_dir();
     crash_insert_many context (true, 5);
-    EXPECT_EQ(test_env->runCrashTest(&context), 0);
+    EXPECT_EQ(test_env->runCrashTest(&context), 0);  // default to serial mode
 }
 /**/
 
@@ -339,7 +339,7 @@ TEST (CrashTest, InsertFewSorted) {
 TEST (CrashTest, InsertFewUnsorted) {
     test_env->empty_logdata_dir();
     crash_insert_many context (false, 5);
-    EXPECT_EQ(test_env->runCrashTest(&context), 0);
+    EXPECT_EQ(test_env->runCrashTest(&context), 0);  // default to serial mode
 }
 /**/
 
@@ -347,7 +347,7 @@ TEST (CrashTest, InsertFewUnsorted) {
 TEST (CrashTest, InsertManySorted) {
     test_env->empty_logdata_dir();
     crash_insert_many context (true, 30);
-    EXPECT_EQ(test_env->runCrashTest(&context), 0);
+    EXPECT_EQ(test_env->runCrashTest(&context), 0);  // default to serial mode
 }
 /**/
 
@@ -355,9 +355,10 @@ TEST (CrashTest, InsertManySorted) {
 TEST (CrashTest, InsertManyUnsorted) {
     test_env->empty_logdata_dir();
     crash_insert_many context (false, 7);
-    EXPECT_EQ(test_env->runCrashTest(&context), 0);
+    EXPECT_EQ(test_env->runCrashTest(&context), 0);  // default to serial mode
 }
 /**/
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     test_env = new btree_test_env();

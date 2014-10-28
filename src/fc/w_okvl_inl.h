@@ -175,6 +175,16 @@ inline uint64_t& okvl_mode::_get_batch64_ref(part_id part) {
 }
 
 inline bool okvl_mode::contains_dirty_lock() const {
+    bool ret = contains_dirty_key_lock();
+
+    // If no X lock on key, check gap
+    if (false == ret)
+        return (X == get_gap_mode());
+
+    return ret;
+}
+
+inline bool okvl_mode::contains_dirty_key_lock() const {
     if (get_key_mode() == X) {
         return true;
     } else if (get_key_mode() == IX || get_key_mode() == SIX) {
@@ -189,7 +199,7 @@ inline bool okvl_mode::contains_dirty_lock() const {
             }
         }
     }
-    return (get_gap_mode() == X);
+    return false;
 }
 
 inline void okvl_mode::set_partition_mode(part_id partition, element_lock_mode mode) {

@@ -4,20 +4,20 @@
 
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -91,6 +91,8 @@ class option_t;
 
 class rid_t;
 
+class lsn_t;
+
 #ifndef        SM_EXTENTSIZE
 #define        SM_EXTENTSIZE        8
 #endif
@@ -110,7 +112,7 @@ typedef   w_rc_t        rc_t;
  *
  * We're defining the CHECK_NESTING_VARIABLES macro b/c
  * this work is spread out and we want to have 1 place to
- * determine whether it's turned on or off; don't want to 
+ * determine whether it's turned on or off; don't want to
  * make the mistake of changing the debug level (on which
  * it depends) in only one of several places.
  *
@@ -139,8 +141,8 @@ struct check_compensated_op_nesting {
     static int compensated_op_depth(xct_t* xd, int dflt);
 
     check_compensated_op_nesting(xct_t* xd, int line, const char *const file)
-    : _xd(xd), 
-    _depth(_xd? compensated_op_depth(_xd, 0) : 0), 
+    : _xd(xd),
+    _depth(_xd? compensated_op_depth(_xd, 0) : 0),
     _line(line),
     _file(file)
     {
@@ -149,7 +151,7 @@ struct check_compensated_op_nesting {
     ~check_compensated_op_nesting() {
         if(_xd) {
             if( _depth != compensated_op_depth(_xd, _depth) ) {
-                fprintf(stderr, 
+                fprintf(stderr,
                     "th.%d check_compensated_op_nesting(%d,%s) depth was %d is %d\n",
                     sthread_t::me()->id,
                     _line, _file, _depth, compensated_op_depth(_xd, _depth));
@@ -170,7 +172,7 @@ class smlevel_0 : public w_base_t {
 public:
     // Give these enums names for doxygen purposes:
     enum error_constant_t { eNOERROR = 0, eFAILURE = -1 };
-    enum sm_constant_t { 
+    enum sm_constant_t {
         page_sz = SM_PAGESIZE,        // page size (SM_PAGESIZE is set by makemake)
         ext_sz = SM_EXTENTSIZE,        // extent size
 #if defined(_POSIX_PATH_MAX)
@@ -181,7 +183,7 @@ public:
 #elif defined(MAXPATHLEN)
         max_devname = MAXPATHLEN,
 #else
-        max_devname = 1024,        
+        max_devname = 1024,
 #endif
         max_vols = 20,                // max mounted volumes
         max_xct_thread = 20,        // max threads in a xct
@@ -212,7 +214,7 @@ public:
      * Note: a different type was used for added type checking.
      */
     typedef sthread_t::fileoff_t smksize_t;
-    typedef w_base_t::base_stat_t base_stat_t; 
+    typedef w_base_t::base_stat_t base_stat_t;
 
     /**\endcond skip */
 
@@ -224,25 +226,25 @@ public:
      * - return value == RCOK --> proceed
      * - return value == eUSERABORT --> victim to abort is given in the argument
      *
-     * The server has the responsibility for choosing a victim and 
-     * for aborting the victim transaction. 
+     * The server has the responsibility for choosing a victim and
+     * for aborting the victim transaction.
      *
      */
 
-    /**\brief Log space warning callback function type.  
+    /**\brief Log space warning callback function type.
      *
      * For more details of how this is used, see the constructor ss_m::ss_m().
      *
-     * Storage manager methods check the available log space. 
+     * Storage manager methods check the available log space.
      * If the log is in danger of filling to the point that it will be
      * impossible to abort a transaction, a
      * callback is made to the server.  The callback function is of this type.
-     * The danger point is a threshold determined by the option sm_log_warn. 
+     * The danger point is a threshold determined by the option sm_log_warn.
      *
      * The callback
-     * function is meant to choose a victim xct and 
+     * function is meant to choose a victim xct and
      * tell if the xct should be
-     * aborted by returning RC(eUSERABORT).  
+     * aborted by returning RC(eUSERABORT).
      *
      * Any other RC value is returned to the server through the call stack.
      *
@@ -252,11 +254,11 @@ public:
      * paramter and is initially populated with the transaction that is
      * attached to the running thread.
      * @param[in] curr    Bytes of log consumed by active transactions.
-     * @param[in] thresh   Threshhold just exceeded. 
+     * @param[in] thresh   Threshhold just exceeded.
      * @param[in] logfile   Character string name of oldest file to archive.
-     *                     
+     *
      *  This function must be careful not to return the same victim more
-     *  than once, even though the callback may be called many 
+     *  than once, even though the callback may be called many
      *  times before the victim is completely aborted.
      *
      *  When this function has archived the given log file, it needs
@@ -264,10 +266,10 @@ public:
      *  ss_m::log_file_was_archived(logfile)
      */
     typedef w_rc_t (*LOG_WARN_CALLBACK_FUNC) (
-            xct_i*      iter,     
-            xct_t *&    victim, 
-            fileoff_t   curr, 
-            fileoff_t   thresh, 
+            xct_i*      iter,
+            xct_t *&    victim,
+            fileoff_t   curr,
+            fileoff_t   thresh,
             const char *logfile
         );
     /**\brief Callback function type for restoring an archived log file.
@@ -278,11 +280,11 @@ public:
      *  An alternative to aborting a transaction (when the log fills)
      *  is to archive log files.
      *  The server can use the log directory name to locate these files,
-     *  and may use the iterator and the static methods of xct_t to 
+     *  and may use the iterator and the static methods of xct_t to
      *  determine which log file(s) to archive.
      *
      *  Archiving and removing the older log files will work only if
-     *  the server also provides a LOG_ARCHIVED_CALLBACK_FUNCTION 
+     *  the server also provides a LOG_ARCHIVED_CALLBACK_FUNCTION
      *  to restore the
      *  archived log files when the storage manager needs them for
      *  rollback.
@@ -291,16 +293,16 @@ public:
      *  The function must locate the archived log file containing for the
      *  partition number \a num, which was a suffix of the original log file's
      *  name.
-     *  The log file must be restored with its original name.  
+     *  The log file must be restored with its original name.
      */
-    typedef    uint32_t partition_number_t; 
+    typedef    uint32_t partition_number_t;
     typedef w_rc_t (*LOG_ARCHIVED_CALLBACK_FUNC) (
             const char *fname,
             partition_number_t num
         );
 
     typedef w_rc_t (*RELOCATE_RECORD_CALLBACK_FUNC) (
-	   vector<rid_t>&    old_rids, 
+	   vector<rid_t>&    old_rids,
            vector<rid_t>&    new_rids
        );
 
@@ -327,19 +329,19 @@ public:
         t_btree,                 // B+tree with duplicates
         t_uni_btree,             // Unique-key btree
         t_rtree,                  // R*tree
-    	t_mrbtree,       // Multi-rooted B+tree with regular heap files   
-    	t_uni_mrbtree,          
-    	t_mrbtree_l,          // Multi-rooted B+tree where a heap file is pointed by only one leaf page 
-    	t_uni_mrbtree_l,               
-    	t_mrbtree_p,     // Multi-rooted B+tree where a heap file belongs to only one partition
-    	t_uni_mrbtree_p
+        t_mrbtree,       // Multi-rooted B+tree with regular heap files
+        t_uni_mrbtree,
+        t_mrbtree_l,          // Multi-rooted B+tree where a heap file is pointed by only one leaf page
+        t_uni_mrbtree_l,
+        t_mrbtree_p,     // Multi-rooted B+tree where a heap file belongs to only one partition
+        t_uni_mrbtree_p
     };
 
 
 
-    /**\enum concurrency_t 
-     * \brief 
-     * Lock granularities 
+    /**\enum concurrency_t
+     * \brief
+     * Lock granularities
      * \details
      * - t_cc_bad Illegal
      * - t_cc_none No locking
@@ -356,8 +358,8 @@ public:
         t_cc_append
     };
 
-    /**\enum pg_policy_t 
-     * \brief 
+    /**\enum pg_policy_t
+     * \brief
      * File-compaction policy for creating records.
      * \details
      * - t_append : append new record to file (preserve order)
@@ -370,31 +372,31 @@ public:
      * These are masks - the following combinations are sensible:
      *
      * - t_append                        -- preserve sort order
-     * - t_cache | t_append              -- check the cache first, 
+     * - t_cache | t_append              -- check the cache first,
      *                                      append if no luck
      * - t_cache | t_compact | t_append  -- append to file as a last resort
      */
     enum pg_policy_t {
         t_append        = 0x01, // retain sort order (cache 0 pages)
-        t_cache        = 0x02, // look in n cached pgs 
-        t_compact        = 0x04 // scan file for space in pages 
-        
+        t_cache        = 0x02, // look in n cached pgs
+        t_compact        = 0x04 // scan file for space in pages
+
     };
 
 
 /**\cond skip */
 
-    /* 
-     * smlevel_0::operating_mode is always set to 
+    /*
+     * smlevel_0::operating_mode is always set to
      * ONE of these, but the function in_recovery() tests for
      * any of them, so we'll give them bit-mask values
      */
     enum operating_mode_t {
-        t_not_started = 0, 
+        t_not_started = 0,
         t_in_analysis = 0x1,
         t_in_redo = 0x2,
         t_in_undo = 0x4,
-        t_forward_processing = 0x8
+        t_forward_processing = 0x8   // System is opened for transaction
     };
 
     /*
@@ -406,6 +408,151 @@ public:
         t_chkpt_async    // in the middle of asynchronous checkpoint
     };
 
+    // smlevel_0::concurrent_restart_mode_t is used for concurrent restart when
+    // the system is opened for user access after Log Analysis phase but the restart
+    // continue running concurrently.  It is to expose the active restart phase.
+    // It is not valid for pure on-demand restart operation (Instant Restart milestone 3).
+    //
+    enum concurrent_restart_mode_t {
+        t_concurrent_before,  // before REDO and UNDO
+        t_concurrent_redo,    // working on REDO
+        t_concurrent_undo,    // working on UNDO
+        t_concurrent_done     // after REDO and UNDO
+    };
+
+    // smlevel_0::restart_internal_mode_t is an internal setting, not exposed
+    // to external callers.  It is used to control the internal logic in recovery
+    // in order to test different implementations.
+    // Multiple features could be turned on/off, so they are in bit-mast values.
+    //
+    // Only the Recovery related operations should check these values.
+    // The only place to get/set the value is in 'sm.cpp' (restart_internal_mode),
+    // the setting is determined during system startup and cannot be changed
+    // dynamiclly, because we cannot change restart behavior in the middle
+    // of recovery process
+    // The actual recovery mode is determined by startup option 'sm_restart',
+    // no recompile required.
+    // If the startup option is not set, the default setting is to use the initialization
+    // value set in sm.cpp
+
+    enum restart_internal_mode_t {
+        t_restart_serial = 0x1,            // M1 implementation:
+                                           //    System is not opened until Recovery completed
+        t_restart_redo_log = 0x2,          // M1 traditional implementation:
+                                           //    REDO is forward log scan driven
+        t_restart_undo_reverse = 0x4,      // M1 traditional implementation:
+                                           //    UNDO is using reverse order with heap
+
+        t_restart_concurrent_log = 0x8,    // M2 implementation:
+                                           //    System is opened after Log Analysis.
+                                           //    Using commit_lsn for new transactions
+        t_restart_redo_page = 0x10,        // M2 implementation:
+                                           //    REDO is page driven using Single-Page-Recovery with minimal logging
+        t_restart_redo_full_logging = 0x20,// M2 implementation:
+                                           //    REDO is page driven using Single-Page-Recovery with full logging
+        t_restart_undo_txn = 0x40,         // M2 implementation:
+                                           //    UNDO is transaction driven
+        t_restart_redo_delay = 0x80,       // M2 Testing hook:
+                                           //    Internal delay before REDO phase
+                                           //    only if we have actual REDO work
+        t_restart_undo_delay = 0x100,      // M2 Testing hook:
+                                           //    Internal delay before UNDO phase
+                                           //    only if we have actual UNDO work
+
+        t_restart_concurrent_lock = 0x200, // M3 and M4 implementation:
+                                           //    System is opened after Log Analysis.
+                                           //    Using lock acquisition for new transactions
+        t_restart_redo_demand = 0x400,     // M3 implementation:
+                                           //    REDO is on-demand using Single-Page-Recovery with minimal logging
+        t_restart_undo_demand = 0x800,     // M3 implementation:
+                                           //    UNDO is on-demand using user transaction driven
+
+        t_restart_redo_mix = 0x1000,       // M4 implementation:
+                                           //    REDO is using both page driven and
+                                           //    on-demand using Single-Page-Recovery with minimal logging
+        t_restart_undo_mix = 0x2000,       // M4 implementation:
+                                           //    UNDO is using both transaction driven and
+                                           //    on-demand using user transaction driven
+
+    };
+    static restart_internal_mode_t restart_internal_mode;
+
+    // Set of functions to check individual Restart implementations
+    // No setting because the bit values are set staticlly, not dynamiclly
+    static bool use_serial_restart()
+    {
+        // Restart M1
+        return ((restart_internal_mode & t_restart_serial ) !=0);
+    }
+    static bool use_redo_log_restart()
+    {
+        // Restart M1
+        return ((restart_internal_mode & t_restart_redo_log ) !=0);
+    }
+    static bool use_undo_reverse_restart()
+    {
+        // Restart M1
+        return ((restart_internal_mode & t_restart_undo_reverse ) !=0);
+    }
+
+    static bool use_concurrent_commit_restart()
+    {
+        // Restart M2
+        return ((restart_internal_mode & t_restart_concurrent_log ) !=0);
+    }
+    static bool use_redo_page_restart()
+    {
+        // Restart M2
+        return ((restart_internal_mode & t_restart_redo_page ) !=0);
+    }
+    static bool use_redo_full_logging_restart()
+    {
+        // Restart M2
+        return ((restart_internal_mode & t_restart_redo_full_logging ) !=0);
+    }
+    static bool use_undo_txn_restart()
+    {
+        // Restart M2
+        return ((restart_internal_mode & t_restart_undo_txn ) !=0);
+    }
+    static bool use_redo_delay_restart()
+    {
+        // Restart M2, testing purpose
+        return ((restart_internal_mode & t_restart_redo_delay ) !=0);
+    }
+    static bool use_undo_delay_restart()
+    {
+        // Restart M2, testing purpose
+        return ((restart_internal_mode & t_restart_undo_delay ) !=0);
+    }
+
+    static bool use_concurrent_lock_restart()
+    {
+        // Restart M3 and M4
+        return ((restart_internal_mode & t_restart_concurrent_lock ) !=0);
+    }
+    static bool use_redo_demand_restart()
+    {
+        // Restart M3
+        return ((restart_internal_mode & t_restart_redo_demand ) !=0);
+    }
+    static bool use_undo_demand_restart()
+    {
+        // Restart M3
+        return ((restart_internal_mode & t_restart_undo_demand ) !=0);
+    }
+
+    static bool use_redo_mix_restart()
+    {
+        // Restart M4
+        return ((restart_internal_mode & t_restart_redo_mix ) !=0);
+    }
+    static bool use_undo_mix_restart()
+    {
+        // Restart M4
+        return ((restart_internal_mode & t_restart_undo_mix ) !=0);
+    }
+
     static void  add_to_global_stats(const sm_stats_info_t &from);
     static void  add_from_global_stats(sm_stats_info_t &to);
 
@@ -416,12 +563,13 @@ public:
     static lock_m* lm;
 
     static log_m* log;
-    static tid_t* redo_tid;
+    // TODO(Restart)... it was for a space-recovery hack, not needed
+    // static tid_t* redo_tid;
 
     static LOG_WARN_CALLBACK_FUNC log_warn_callback;
     static LOG_ARCHIVED_CALLBACK_FUNC log_archived_callback;
-    static fileoff_t              log_warn_trigger; 
-    static int                    log_warn_exceed_percent; 
+    static fileoff_t              log_warn_trigger;
+    static int                    log_warn_exceed_percent;
 
     static int    dcommit_timeout; // to convey option to coordinator,
                                    // if it is created by VAS
@@ -435,21 +583,39 @@ public:
     static bool         do_prefetch;
     static bool         statistics_enabled;
 
+    static lsn_t        commit_lsn;      // commit_lsn is for use_concurrent_commit_restart() only
+                                         // this is the validation lsn for all concurrent user txns
+
+    // The following variables are used by concurrent recovery process only
+    // they should be stored in class 'restart_m'
+    // Currently resides here for prototype converient access only
+    static lsn_t        redo_lsn;        // redo_lsn is used by child thread as the start scanning point for redo
+    static lsn_t        last_lsn;        // last_lsn is used by page driven REDO operation Single-Page-Recovery emlsn if encounter
+                                         // a virgin or corrupted page
+    static uint32_t     in_doubt_count;  // in_doubt_count is used to child thread during the REDO phase
+
+
     static operating_mode_t operating_mode;
-    static bool in_recovery() { 
-        return ((operating_mode & 
+    static bool in_recovery() {
+        return ((operating_mode &
                 (t_in_redo | t_in_undo | t_in_analysis)) !=0); }
-    static bool in_recovery_analysis() { 
+    static bool in_recovery_analysis() {
         return ((operating_mode & t_in_analysis) !=0); }
-    static bool in_recovery_undo() { 
+    static bool in_recovery_undo() {
+        // Valid for use_serial_restart() only
+        // If concurrent recovery, system is opened after Log Analysis
+        // and the operating mode changed to t_forward_processing after Log Analysis
         return ((operating_mode & t_in_undo ) !=0); }
-    static bool in_recovery_redo() { 
+    static bool in_recovery_redo() {
+        // Valid for use_serial_restart() only
+        // If concurrent recovery, system is opened after Log Analysis
+        // and the operating mode changed to t_forward_processing after Log Analysis
         return ((operating_mode & t_in_redo ) !=0); }
 
-    static bool before_recovery() { 
+    static bool before_recovery() {
         if (t_not_started == operating_mode)
             return true;
-        else 
+        else
             return false;
         }
 
@@ -479,9 +645,9 @@ public:
         st_unallocated = 0,
 
         st_regular     = 0x01, // fully logged
-        st_tmp         = 0x02, // space logging only, 
+        st_tmp         = 0x02, // space logging only,
                                // file destroy on dismount/restart
-        st_load_file   = 0x04, // not stored in the stnode_t, 
+        st_load_file   = 0x04, // not stored in the stnode_t,
                                // only passed down to io_m and then
                                // converted to tmp and added to the
                                // list of load files for the xct.  no
@@ -496,20 +662,20 @@ public:
                                // doesn't conflict with them.
     };
 
-    /* 
-     * for use by set_store_deleting_log; 
-     * type of operation to perform on the stnode 
+    /*
+     * for use by set_store_deleting_log;
+     * type of operation to perform on the stnode
      */
     enum store_operation_t {
-            t_delete_store, 
-            t_create_store, 
-            t_set_deleting, 
-            t_set_store_flags, 
+            t_delete_store,
+            t_create_store,
+            t_set_deleting,
+            t_set_store_flags,
             t_set_root};
 
     enum store_deleting_t  {
             t_not_deleting_store = 0,  // must be 0: code assumes it
-            t_deleting_store, 
+            t_deleting_store,
             t_unknown_deleting};
 /**\endcond skip */
 };

@@ -27,6 +27,9 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/device.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/fixable_page_h.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/generic_page.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_core.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_hashtable.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_seg.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lid.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock_core.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock.cpp
@@ -149,6 +152,7 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/btcursor.h
   ${CMAKE_CURRENT_SOURCE_DIR}/btree.h
   ${CMAKE_CURRENT_SOURCE_DIR}/btree_impl.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/btree_logrec.h  
   ${CMAKE_CURRENT_SOURCE_DIR}/btree_page.h
   ${CMAKE_CURRENT_SOURCE_DIR}/btree_page_h.h
   ${CMAKE_CURRENT_SOURCE_DIR}/chkpt.h
@@ -157,6 +161,12 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/device.h
   ${CMAKE_CURRENT_SOURCE_DIR}/fixable_page_h.h
   ${CMAKE_CURRENT_SOURCE_DIR}/generic_page.h
+
+  ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_common.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_core.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_hashtable.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_seg.h
+
   ${CMAKE_CURRENT_SOURCE_DIR}/lid.h
   ${CMAKE_CURRENT_SOURCE_DIR}/lock_bucket.h
   ${CMAKE_CURRENT_SOURCE_DIR}/lock_cache.h
@@ -179,6 +189,7 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/restart.h
   ${CMAKE_CURRENT_SOURCE_DIR}/restart_s.h
   ${CMAKE_CURRENT_SOURCE_DIR}/sm_base.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/sm_external.h  
   ${CMAKE_CURRENT_SOURCE_DIR}/sm_du_stats.h
   ${CMAKE_CURRENT_SOURCE_DIR}/sm.h
   ${CMAKE_CURRENT_SOURCE_DIR}/sm_int_0.h

@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 #include "w_defines.h"
@@ -20,6 +20,8 @@
 #include "xct.h"
 #include "lock_s.h"
 #include <vector>
+#include "restart.h"
+
 
 rc_t
 btree_impl::_ux_insert(
@@ -116,7 +118,10 @@ btree_impl::_ux_insert_core(
         }
 
         // do it in one-go
-        W_DO(log_btree_insert_nonghost(leaf, key, el));
+// TODO(Restart)...        
+DBGOUT3( << "&&&& Log for regular insertion, key: " << key);  
+
+        W_DO(log_btree_insert_nonghost(leaf, key, el, false /*is_sys_txn*/));
         leaf.insert_nonghost(key, el);
         // W_DO (_sx_reserve_ghost(leaf, key, el.size()));
     }
@@ -288,10 +293,10 @@ rc_t btree_impl::_ux_reserve_ghost_core(btree_page_h &leaf, const w_keystr_t &ke
 }
 
 rc_t
-btree_impl::_ux_update(volid_t vol, snum_t store, const w_keystr_t &key, const cvec_t &el)
+btree_impl::_ux_update(volid_t vol, snum_t store, const w_keystr_t &key, const cvec_t &el, const bool undo)
 {
     while (true) {
-        rc_t rc = _ux_update_core (vol, store, key, el);
+        rc_t rc = _ux_update_core (vol, store, key, el, undo);
         if (rc.is_error() && rc.err_num() == eLOCKRETRY) {
             continue;
         }
@@ -301,13 +306,13 @@ btree_impl::_ux_update(volid_t vol, snum_t store, const w_keystr_t &key, const c
 }
 
 rc_t
-btree_impl::_ux_update_core(volid_t vol, snum_t store, const w_keystr_t &key, const cvec_t &el)
+btree_impl::_ux_update_core(volid_t vol, snum_t store, const w_keystr_t &key, const cvec_t &el, const bool undo)
 {
     bool need_lock = g_xct_does_need_lock();
     btree_page_h         leaf;
 
     // find the leaf (potentially) containing the key
-    W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf));
+    W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf, true /*allow retry*/, undo /*from undo*/));
 
     w_assert3(leaf.is_fixed());
     w_assert3(leaf.is_leaf());
@@ -346,7 +351,7 @@ btree_impl::_ux_update_core(volid_t vol, snum_t store, const w_keystr_t &key, co
         if (!leaf.check_space_for_insert_leaf(key, el)) {
             // this page needs split. As this is a rare case,
             // we just call remove and then insert to simplify the code
-            W_DO(_ux_remove(vol, store, key));
+            W_DO(_ux_remove(vol, store, key, undo));
             W_DO(_ux_insert(vol, store, key, el));
             return RCOK;
         }
@@ -384,7 +389,7 @@ btree_impl::_ux_update_core_tail(volid_t vol, snum_t store,
         if (!leaf.check_space_for_insert_leaf(key, el)) {
             // this page needs split. As this is a rare case,
             // we just call remove and then insert to simplify the code
-            W_DO(_ux_remove(vol, store, key));
+            W_DO(_ux_remove(vol, store, key, false));  // Not from UNDO
             W_DO(_ux_insert(vol, store, key, el));
             return RCOK;
         }
@@ -399,10 +404,11 @@ btree_impl::_ux_update_core_tail(volid_t vol, snum_t store,
 rc_t btree_impl::_ux_overwrite(
         volid_t vol, snum_t store,
         const w_keystr_t&                 key,
-        const char *el, smsize_t offset, smsize_t elen)
+        const char *el, smsize_t offset, smsize_t elen,
+        const bool undo)
 {
     while (true) {
-        rc_t rc = _ux_overwrite_core (vol, store, key, el, offset, elen);
+        rc_t rc = _ux_overwrite_core (vol, store, key, el, offset, elen, undo);
         if (rc.is_error() && rc.err_num() == eLOCKRETRY) {
             continue;
         }
@@ -414,13 +420,13 @@ rc_t btree_impl::_ux_overwrite(
 rc_t btree_impl::_ux_overwrite_core(
         volid_t vol, snum_t store,
         const w_keystr_t& key,
-        const char *el, smsize_t offset, smsize_t elen)
+        const char *el, smsize_t offset, smsize_t elen, const bool undo)
 {
     // basically same as ux_update
     bool need_lock = g_xct_does_need_lock();
     btree_page_h leaf;
 
-    W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf));
+    W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf, true /*allow retry*/, undo /*from undo*/));
 
     w_assert3(leaf.is_fixed());
     w_assert3(leaf.is_leaf());
@@ -458,12 +464,12 @@ rc_t btree_impl::_ux_overwrite_core(
 }
 
 rc_t
-btree_impl::_ux_remove(volid_t vol, snum_t store, const w_keystr_t &key)
+btree_impl::_ux_remove(volid_t vol, snum_t store, const w_keystr_t &key, const bool undo)
 {
     FUNC(btree_impl::_ux_remove);
     INC_TSTAT(bt_remove_cnt);
     while (true) {
-        rc_t rc = _ux_remove_core (vol, store, key);
+        rc_t rc = _ux_remove_core (vol, store, key, undo);
         if (rc.is_error() && rc.err_num() == eLOCKRETRY) {
             continue;
         }
@@ -473,13 +479,27 @@ btree_impl::_ux_remove(volid_t vol, snum_t store, const w_keystr_t &key)
 }
 
 rc_t
-btree_impl::_ux_remove_core(volid_t vol, snum_t store, const w_keystr_t &key)
+btree_impl::_ux_remove_core(volid_t vol, snum_t store, const w_keystr_t &key, const bool undo)
 {
+    // If called from 'remove_as_undo' to undo an insert operation, input parameter 'undo' ==  true.
+    // This could be either transaction rollback or restart undo.
+    
+    // If the original insert operation was from a page split with full logging, the fence keys 
+    // were changed during page split, so the record we found would come from the destination 
+    // page, not the source page.
+    // After page rebalance, the record in source page is a ghost and the record in destination page 
+    // is a non-ghost.
+    // Page split is a system transaction and we do not undo a system transaction operation,
+    // so we should leave both old and the new records intact, do not make any physical change
+    // and do not generate new log record during transaction abort/rollback.
+    // The insert log record knowns whether the insertion came for page rebalance operation or not
+    // so the 'undo' won't happen for those insertions.   
+
     bool need_lock = g_xct_does_need_lock();
     btree_page_h         leaf;
 
     // find the leaf (potentially) containing the key
-    W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf));
+    W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf, true /*allow retry*/, undo /*from undo*/));
 
     w_assert3(leaf.is_fixed());
     w_assert3(leaf.is_leaf());
@@ -494,6 +514,9 @@ btree_impl::_ux_remove_core(volid_t vol, snum_t store, const w_keystr_t &key)
             W_DO(_ux_lock_range(leaf, key, slot,
                         LATCH_SH, create_part_okvl(okvl_mode::X, key), ALL_N_GAP_S, false));
         }
+// TODO(Restart)... 
+DBGOUT3( << "&&&& _ux_remove_core - not found");
+
         return RC(eNOTFOUND);
     }
 
@@ -505,27 +528,47 @@ btree_impl::_ux_remove_core(volid_t vol, snum_t store, const w_keystr_t &key)
     }
 
     // it might be already ghost..
-    if (leaf.is_ghost(slot)) {
+    if (leaf.is_ghost(slot)) 
+    {
+// TODO(Restart)... 
+DBGOUT3( << "&&&& _ux_remove_core - already ghost");
+    
         return RC(eNOTFOUND);
     }
+    else
+    {
+// TODO(Restart)... 
+DBGOUT3( << "&&&& Log for deletion, key: " << key);
+  
+        // log first
+        vector<slotid_t> slots;
+        slots.push_back(slot);
+        W_DO(log_btree_ghost_mark (leaf, slots, false /*is_sys_txn*/));
 
-    // log first
-    vector<slotid_t> slots;
-    slots.push_back(slot);
-    W_DO(log_btree_ghost_mark (leaf, slots));
-
-    // then mark it as ghost
-    leaf.mark_ghost (slot);
+        // then mark it as ghost
+        leaf.mark_ghost (slot);
+    }
     return RCOK;
 }
 
 rc_t
 btree_impl::_ux_undo_ghost_mark(volid_t vol, snum_t store, const w_keystr_t &key)
 {
+    // If the original delete operation was from a page split with full logging, the fence keys 
+    // were changed during page split, so the record we found would come from the destination 
+    // page, not the source page.
+    // After page rebalance, the record in source page is a ghost and the record in destination page 
+    // is a non-ghost.
+    // Page split is a system transaction and we do not undo a system transaction operation,
+    // so we should leave both old and the new records intact, do not make any physical change
+    // and do not want to generate new log record during transaction abort/rollback.
+    // The delete log record knowns whether the insertion came for page rebalance operation or not
+    // so the 'undo' won't happen for those deletions.   
+
     FUNC(btree_impl::_ux_undo_ghost_mark);
     w_assert1(key.is_regular());
     btree_page_h         leaf;
-    W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf));
+    W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf, true/*allow retry*/, true /*from undo*/));
     w_assert3(leaf.is_fixed());
     w_assert3(leaf.is_leaf());
 
@@ -536,6 +579,26 @@ btree_impl::_ux_undo_ghost_mark(volid_t vol, snum_t store, const w_keystr_t &key
     if(!found) {
         return RC(eNOTFOUND);
     }
+
+    // Undo a remove (delete operation), which becomes an insert
+    // the ghost (deleted) record is available in page, so we only need to unmark the ghost
+    
+    // The undo operation (compensation) is used for 1) transaction abort, 2) recovery undo,
+    // generate an insert log record for the operation so the REDO phase
+    // handles the txn abort behavior correctly
+
+    // Get the existing data for logging purpose, because this is a transaction abort, proper lock
+    // should be held and the original record should still be intact
+    bool ghost;
+    smsize_t existing_element_len;
+    const char *existing_element = leaf.element(slot, existing_element_len, ghost);
+    cvec_t el (existing_element, existing_element_len);
+
+// TODO(Restart)... 
+DBGOUT3( << "&&&& btree_impl::_ux_undo_ghost_mark - undo a remove, key: " << key);
+
+    W_DO(log_btree_insert_nonghost(leaf, key, el, false /*is_sys_txn*/));
+
     leaf.unmark_ghost (slot);
     return RCOK;
 }

@@ -187,9 +187,12 @@ io_m::is_mounted(vid_t vid)
  *  to flush dirty pages to disk. Otherwise, ask bf to simply
  *  invalidate the buffer pool.
  *
+ * clear_cb - true if clear out all information in buffer pool 'cb'
+ *                if running in concurrent recovery mode, the dismount_all after
+ *                log analysis phase does not want to clear 'cb'
  *********************************************************************/
 rc_t
-io_m::_dismount_all(bool flush)
+io_m::_dismount_all(bool flush, const bool clear_cb)
 {
     for (int i = 0; i < max_vols; i++)  {
         if (vol[i])        {
@@ -199,7 +202,7 @@ io_m::_dismount_all(bool flush)
                     << "warning: volume " << vol[i]->vid() << " still mounted\n"
                 << "         automatic dismount" << flushl;
             }
-            W_DO(_dismount(vol[i]->vid(), flush));
+            W_DO(_dismount(vol[i]->vid(), flush, clear_cb));
         }
     }
     
@@ -494,7 +497,6 @@ io_m::mount(const char* device, vid_t vid,
     // Get ready to roll back to here if we get an error between
     // here and ... where this scope is closed.
     AUTO_ROLLBACK_work
-
     w_rc_t rc = v->mount(device, vid);
     if (rc.is_error())  {
         delete v;
@@ -558,14 +560,14 @@ io_m::dismount(vid_t vid, bool flush)
 
 
 rc_t
-io_m::_dismount(vid_t vid, bool flush)
+io_m::_dismount(vid_t vid, bool flush, const bool clear_cb)
 {
     FUNC(io_m::_dismount);
     DBG( << "_dismount(" << "vid=" << vid << ")");
     int i = _find(vid); 
     if (i < 0) return RC(eBADVOL);
 
-    W_COERCE(vol[i]->dismount(flush));
+    W_COERCE(vol[i]->dismount(flush, clear_cb));
 
     if (log && smlevel_0::logging_enabled)  {
         logrec_t* logrec = new logrec_t; //deleted at end of scope
@@ -739,8 +741,8 @@ rc_t io_m::read_page(const lpid_t& pid, generic_page& buf) {
     if (i < 0) {
         return RC(eBADVOL);
     }
-    bool passed_end;
-    W_DO( vol[i]->read_page(pid.page, buf, passed_end) );
+    bool past_end;
+    W_DO( vol[i]->read_page(pid.page, buf, past_end) );
     return RCOK;
 }
 

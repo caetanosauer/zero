@@ -59,6 +59,10 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define PARTITION_H
 #include "w_defines.h"
 
+// LOG_BUFFER switch
+#include "logbuf_common.h"
+
+
 /*  -- do not edit anything above this line --   </std-header>*/
 
 typedef enum    {  /* partition_t::_mask values */
@@ -154,6 +158,18 @@ public:
                             long end1, 
                             long start2, 
                             long end2);
+#ifdef LOG_BUFFER
+    // new flush, which can flush multiple segments
+    void  flush(int fd, lsn_t lsn, int64_t size, int64_t write_size, 
+                sdisk_base_t::iovec_t *iov, uint32_t seg_cnt);
+    // read an entire segment
+    w_rc_t read_seg(lsn_t ll, char *buf, uint32_t size, int fd = invalid_fhdl);
+    // read one log record
+    w_rc_t read_logrec(logrec_t *&rp, lsn_t &ll, int fd = invalid_fhdl);
+
+#endif
+
+
     const lsn_t&       last_skip_lsn() const { return _last_skip_lsn; }
 #if W_DEBUG_LEVEL > 2
     void               check_fhdl_rd() const ;
@@ -185,6 +201,10 @@ public:
 
 private:
     char *             _readbuf();
+#ifdef LOG_DIRECT_IO
+    char *             _writebuf();
+#endif
+
     void               _set_state(uint32_t m) { _mask |= m ; }
     void               _clr_state(uint32_t m) { _mask &= ~m ; }
     void               _skip(const lsn_t &ll, int fd);

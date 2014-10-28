@@ -508,6 +508,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 continue;
             }
             bf_tree_cb_t &cb = _parent->_bufferpool->get_cb(idx);
+            // Not checking in_doubt flag, because if in_doubt flag is on then cb._used flag must be on
             if (!cb._dirty || !cb._used) {
                 continue;
             }
@@ -641,8 +642,10 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(volid_t vol, size_t f
     for (size_t i = from; i < from + consecutive; ++i) {
         bf_idx idx = _write_buffer_indexes[i];
         bf_tree_cb_t &cb = _parent->_bufferpool->get_cb(idx);
+
         cb._dirty = false;
         cb._in_doubt = false;
+        cb._recovery_access = false;
         --_parent->_bufferpool->_dirty_page_count_approximate;
 
         cb._rec_lsn = _write_buffer[i].lsn.data();
@@ -689,9 +692,16 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
     generic_page* pages = _parent->_bufferpool->_buffer;
     for (bf_idx idx = 1; idx < block_cnt; ++idx) {
         bf_tree_cb_t &cb = _parent->_bufferpool->get_cb(idx);
+        // If page is not dirty or not in use, no need to flush
         if (!cb._dirty || !cb._used) {
             continue;
         }
+
+        // If page is in_doubt (still need to be recovery by the restart process), do not flush it
+        if (cb._in_doubt && cb._used) {
+            continue;
+        }
+
         // the following check is approximate (without latch).
         // we check for real later, so that's fine.
         volid_t vol = cb._pid_vol;

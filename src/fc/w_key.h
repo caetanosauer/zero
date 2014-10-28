@@ -5,6 +5,7 @@
 #include <string.h> //#include <cstring>
 #include <string>
 #include <ostream>
+#include <iostream> // for cout
 #include <stdint.h>
 #include "w_endian.h"
 
@@ -111,6 +112,12 @@ str1.construct_regularkey ("your_key", 8);\endverbatim
      * So, link to libcommon if you want to use this method.
      */
     bool construct_from_vec(const cvec_t &vect);    
+
+    /**
+     * Copy data from cvec_t without inserting the type byte. This is implemented in vec_t.cpp.
+     * So, link to libcommon if you want to use this method.
+     */
+    bool copy_from_vec(const cvec_t &vect);    
 
     /**
      *  This class does NOT throw exceptions on out-of-memory.
@@ -270,9 +277,9 @@ inline bool w_keystr_t::construct_posinfkey() {
 
 // used only for asserts
 inline bool _valid_signbyte (const void *keystr) {
-    return ((const unsigned char*)keystr)[0] == SIGN_NEGINF
-        || ((const unsigned char*)keystr)[0] == SIGN_REGULAR
-        || ((const unsigned char*)keystr)[0] == SIGN_POSINF;
+    return ((const unsigned char*)keystr)[0] == SIGN_NEGINF  // *
+        || ((const unsigned char*)keystr)[0] == SIGN_REGULAR // +
+        || ((const unsigned char*)keystr)[0] == SIGN_POSINF; // ,
 }
 
 inline bool w_keystr_t::construct_from_keystr(const void *keystr, w_keystr_len_t length) {

@@ -14,6 +14,11 @@
 #include "bf_hashtable.h"
 #include "fixable_page_h.h"
 
+// Following includes are to have the ability to check restart mode
+#include "sm_int_1.h"
+#include "xct.h"
+#include "restart.h"
+
 void swizzling_stat_swizzle();
 void swizzling_stat_print(const char* prefix);
 void swizzling_stat_reset();
@@ -64,6 +69,18 @@ inline shpid_t bf_tree_m::get_root_page_id(volid_t vol, snum_t store) {
     return page->pid.page;
 }
 
+inline bf_idx bf_tree_m::get_root_page_idx(volid_t vol, snum_t store) {
+    if (_volumes[vol] == NULL)
+        return 0;
+
+    // root-page index is always kept in the volume descriptor:
+    bf_idx idx = _volumes[vol]->_root_pages[store];
+    if (!_is_valid_idx(idx)) 
+        return 0;
+    else
+        return idx;
+}
+
 ///////////////////////////////////   Page fix/unfix BEGIN         ///////////////////////////////////  
 
 const uint32_t SWIZZLED_LRU_UPDATE_INTERVAL = 1000;
@@ -85,7 +102,8 @@ inline w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
 inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent, 
                                      volid_t vol, shpid_t shpid, 
                                      latch_mode_t mode, bool conditional, 
-                                     bool virgin_page) {
+                                     bool virgin_page,
+                                     const bool from_recovery) {
     INC_TSTAT(bf_fix_nonroot_count);
 #ifdef SIMULATE_MAINMEMORYDB
     if (virgin_page) {
@@ -104,14 +122,14 @@ inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent,
 #endif // SIMULATE_MAINMEMORYDB
     w_assert1(parent !=  NULL);
     if (!is_swizzling_enabled()) {
-        return _fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page);
+        return _fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page, from_recovery);
     }
     
     // the parent must be latched
     w_assert1(latch_mode(parent) == LATCH_SH || latch_mode(parent) == LATCH_EX);
     if((shpid & SWIZZLED_PID_BIT) == 0) {
-        // non-swizzled page. or even worse it might not exist in bufferpool yet!
-        W_DO (_fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page));
+        // non-swizzled page. or even worse it might not exist in bufferpool yet!       
+        W_DO (_fix_nonswizzled(parent, page, vol, shpid, mode, conditional, virgin_page, from_recovery));
         // also try to swizzle this page
         // TODO so far we swizzle all pages as soon as we load them to bufferpool
         // but, we might want to consider a more advanced policy.
@@ -261,6 +279,7 @@ inline w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, volid_t vol, snum
     get_cb(idx)._used = true;
     get_cb(idx)._dirty = true;
     get_cb(idx)._in_doubt = false;
+    get_cb(idx)._recovery_access = false;
     ++_dirty_page_count_approximate;
     get_cb(idx)._swizzled = true;
     bool inserted = _hashtable->insert_if_not_exists(bf_key(vol, shpid), idx); // for some type of caller (e.g., redo) we still need hashtable entry for root
@@ -271,7 +290,8 @@ inline w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, volid_t vol, snum
     return _latch_root_page(page, idx, LATCH_EX, false);
 }
 
-inline w_rc_t bf_tree_m::fix_root (generic_page*& page, volid_t vol, snum_t store, latch_mode_t mode, bool conditional) {
+inline w_rc_t bf_tree_m::fix_root (generic_page*& page, volid_t vol, snum_t store, 
+                                   latch_mode_t mode, bool conditional, const bool from_undo) {
     w_assert1(vol != 0);
     w_assert1(store != 0);
     bf_tree_vol_t *volume = _volumes[vol];
@@ -281,12 +301,51 @@ inline w_rc_t bf_tree_m::fix_root (generic_page*& page, volid_t vol, snum_t stor
     bf_idx idx = volume->_root_pages[store];
     w_assert1(_is_valid_idx(idx));
 
-    W_DO(_latch_root_page(page, idx, mode, conditional));
-
     w_assert1(_is_active_idx(idx));
     w_assert1(get_cb(idx)._pid_vol == vol);
-    w_assert1(false == get_cb(idx)._in_doubt);
+
+    w_assert1(true == get_cb(idx)._used);
+
+    // Root page is pre-loaded into buffer pool when loading volume
+    // this function is called for both normal and Recovery operations
+    // In concurrent recovery mode, the root page might still be in_doubt
+    // when called, need to block user txn in such case, but allow recovery
+    // operation to go through
+    
+    if (true == get_cb(idx)._in_doubt)
+    {
+        DBGOUT3(<<"bf_tree_m::fix_root: root page is still in_doubt");
+
+        if ((false == from_undo) && (false == get_cb(idx)._recovery_access))
+        {
+            // Page still in_doubt, caller is from concurrent transaction.
+            // if we are not using on_demand or mixed restart modes,
+            // raise error because concurrent transaction is not allowed 
+            // to load in_doubt page in traditional restart mode (not on_demand)
+        
+            if ((false == restart_m::use_redo_demand_restart()) &&  // pure on-demand
+                (false == restart_m::use_redo_mix_restart()))       // midxed mode
+            {
+                DBGOUT3(<<"bf_tree_m::fix_root: user transaction but not on_demand, cannot fix in_doubt root page");
+                return RC(eACCESS_CONFLICT);
+            }
+        }
+    }
+
+    W_DO(_latch_root_page(page, idx, mode, conditional));
     w_assert1(_buffer[idx].pid.store() == store);
+
+    if ((false == get_cb(idx)._in_doubt) &&                                 // Page not in_doubt
+        (false == from_undo) && (false == get_cb(idx)._recovery_access))    // From concurrent user transaction
+    {
+        // validate the accessability of the page (validation happens only if using commit_lsn)
+        w_rc_t rc = _validate_access(page);
+        if (rc.is_error()) 
+        {
+            get_cb(idx).latch().latch_release();
+            return rc;
+        }
+    }
 
 #ifndef SIMULATE_MAINMEMORYDB
     /*
@@ -317,7 +376,6 @@ inline w_rc_t bf_tree_m::_latch_root_page(generic_page*& page, bf_idx idx, latch
     // root page is always swizzled. thus we don't need to increase pin. just take latch.
     W_DO(get_cb(idx).latch().latch_acquire(mode, conditional ? sthread_t::WAIT_IMMEDIATE : sthread_t::WAIT_FOREVER));
     // also, doesn't have to unpin whether there happens an error or not. easy!
-    w_assert1(false == get_cb(idx)._in_doubt);    
     page = &(_buffer[idx]);
 
 #ifdef SIMULATE_NO_SWIZZLING
@@ -397,7 +455,27 @@ inline void bf_tree_m::update_initial_dirty_lsn(const generic_page* p,
         cb._rec_lsn = new_lsn.data();
 }
 
-inline void bf_tree_m::set_in_doubt(const bf_idx idx, lsn_t new_lsn) {
+inline void bf_tree_m::set_recovery_access(const generic_page* p) {
+    uint32_t idx = p - _buffer;
+    w_assert1 (_is_active_idx(idx));
+    bf_tree_cb_t &cb = get_cb(idx);
+    cb._recovery_access = true;
+}
+inline bool bf_tree_m::is_recovery_access(const generic_page* p) const {
+    uint32_t idx = p - _buffer;
+    w_assert1 (_is_active_idx(idx));
+    return get_cb(idx)._recovery_access;
+}
+
+inline void bf_tree_m::clear_recovery_access(const generic_page* p) {
+    uint32_t idx = p - _buffer;
+    w_assert1 (_is_active_idx(idx));
+    bf_tree_cb_t &cb = get_cb(idx);
+    cb._recovery_access = false;
+}
+
+inline void bf_tree_m::set_in_doubt(const bf_idx idx, lsn_t first_lsn,
+                                      lsn_t last_lsn) {
     // Caller has latch on page
     // From Log Analysis phase in Recovery, page is not in buffer pool
     w_assert1 (_is_active_idx(idx));
@@ -407,9 +485,15 @@ inline void bf_tree_m::set_in_doubt(const bf_idx idx, lsn_t new_lsn) {
     cb._used = true;
 
     // _rec_lsn is the initial LSN which made the page dirty
-    // Update the earliest LSN only if new_lsn is earlier than the current one
-    if ((new_lsn.data() < cb._rec_lsn) || (0 == cb._rec_lsn))
-        cb._rec_lsn = new_lsn.data();
+    // Update the earliest LSN only if first_lsn is earlier than the current one
+    if ((first_lsn.data() < cb._rec_lsn) || (0 == cb._rec_lsn))
+        cb._rec_lsn = first_lsn.data();
+
+    // During recovery, _dependency_lsn is used to store the last write lsn on 
+    // the in_doubt page.  Update it if the last lsn is later than the current one
+    if ((last_lsn.data() > cb._dependency_lsn) || (0 == cb._dependency_lsn))
+        cb._dependency_lsn = last_lsn.data();
+
 }
 
 inline void bf_tree_m::clear_in_doubt(const bf_idx idx, bool still_used, uint64_t key) {
@@ -458,6 +542,11 @@ inline void bf_tree_m::in_doubt_to_dirty(const bf_idx idx) {
     cb._dirty = true;
     cb._used = true;
     cb._refbit_approximate = BP_INITIAL_REFCOUNT; 
+
+    // Page has been loaded into buffer pool, no need for the
+    // last write LSN any more (only used for Single-Page-Recovery during system crash restart 
+    // purpose), stop overloading this field
+    cb._dependency_lsn = 0;
 }
 
 
@@ -486,7 +575,8 @@ inline void bf_tree_m::set_initial_rec_lsn(const lpid_t& pid,
 {
     // Caller has latch on page
     // Special function called from btree_page_h::format_steal() when the
-    // page format log record was generated
+    // page format log record was generated, this can happen during a b-tree
+    // operation or from redo during recovery
     
     // Reset the _rec_lsn in page cb (when the page was dirtied initially) if
     // it is later than the new_lsn, we want the earliest lsn in _rec_lsn
@@ -512,6 +602,9 @@ inline void bf_tree_m::set_initial_rec_lsn(const lpid_t& pid,
             cb._rec_lsn = new_lsn.data();
         cb._used = true;
         cb._dirty = true;
+
+        // Either from regular b-tree operation or from redo during recovery
+        // do not change the in_doubt flag setting, caller handles it
     }
     else
     {

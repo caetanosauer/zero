@@ -187,7 +187,7 @@ public:
          const bool                   apply_fake_io_latency = false, 
          const int                    fake_disk_latency = 0);
     static rc_t                 dismount(vid_t vid, bool flush = true);
-    static rc_t                 dismount_all(bool flush = true);
+    static rc_t                 dismount_all(bool flush = true, const bool clear_cb = true);
     static rc_t                 sync_all_disks();
     
     /** flushes bf_fixed of all volumes currently mounted. */
@@ -369,8 +369,8 @@ private:
     
     static vid_t                _get_vid(const lvid_t& lvid);
     static lvid_t               _get_lvid(const vid_t vid);
-    static rc_t                 _dismount(vid_t vid, bool flush);
-    static rc_t                 _dismount_all(bool flush);
+    static rc_t                 _dismount(vid_t vid, bool flush, const bool clear_cb = true);
+    static rc_t                 _dismount_all(bool flush, const bool clear_cb = true);
     static rc_t                 _create_store(
         vid_t                           vid, 
         store_flag_t                    flags,
@@ -427,10 +427,10 @@ io_m::get_volume_quota(
 
 
 inline rc_t 
-io_m::dismount_all(bool flush)
+io_m::dismount_all(bool flush, const bool clear_cb)
 {
     auto_leave_t enter;
-    return _dismount_all(flush);
+    return _dismount_all(flush, clear_cb);
 }
 
 inline rc_t

@@ -79,6 +79,12 @@ public:
         bool check_only, timeout_in_ms timeout = WAIT_SPECIFIED_BY_XCT, RawLock** out = NULL);
     rc_t                        lock(uint32_t hash, const okvl_mode &m, bool conditional,
         bool check_only, timeout_in_ms timeout = WAIT_SPECIFIED_BY_XCT, RawLock** out = NULL);
+
+    // Special lock function used to re-acquire non-read locks from Restart Log Analysis phase
+    // the transaction object is given
+    rc_t                        lock(uint32_t hash, const okvl_mode &m, bool check_only, xct_t* xd,
+       timeout_in_ms timeout = WAIT_SPECIFIED_BY_XCT);
+
     /** @copydoc RawLockQueue::retry_acquire() */
     rc_t                        retry_lock(RawLock** lock, bool check_only,
                                            timeout_in_ms timeout = WAIT_SPECIFIED_BY_XCT);
@@ -119,6 +125,7 @@ public:
 
 private:
     timeout_in_ms               _convert_timeout(timeout_in_ms timeout);
+    timeout_in_ms               _convert_timeout(timeout_in_ms timeout, xct_t* xd);
     lock_core_m*                core() const { return _core; }
 
     lock_core_m*                _core;

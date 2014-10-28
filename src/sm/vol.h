@@ -9,12 +9,14 @@
 
 #include <list>
 #include "stnode_page.h"
-
+#include <time.h>
+#include <stdlib.h>
 
 struct volume_hdr_stats_t;
 class alloc_cache_t;
 class stnode_cache_t;
 class bf_fixed_m;
+
 
 class volhdr_t {
     // For compatibility checking, we record a version number
@@ -28,6 +30,9 @@ class volhdr_t {
     uint32_t            _num_pages;
     shpid_t             _hdr_pages;   // # pages in hdr includes entire store 0
     uint32_t            _page_sz;    // page size in bytes
+    struct timespec     _ctime;     //creation time of volume, set at formatting
+    int                 _ctime_salt;
+    
 public:
     uint32_t   format_version() const { 
                             return _format_version; }
@@ -57,8 +62,25 @@ public:
 
     uint32_t         page_sz() const {  return _page_sz; }
     void             set_page_sz(uint32_t n) {  _page_sz = n; }
+    
+    void             get_ctime(struct timespec& ctime, int& salt) const { 
+                            ctime.tv_sec = _ctime.tv_sec; 
+                            ctime.tv_nsec = _ctime.tv_nsec; 
+                            salt = _ctime_salt; 
+                     }
+    void             set_ctime(struct timespec ctime){ 
+                        _ctime.tv_sec = ctime.tv_sec;
+                        _ctime.tv_nsec = ctime.tv_nsec;
+                     }
+    void             set_ctime_salt(int salt) { _ctime_salt = salt; }
+    int              get_ctime_salt() { return _ctime_salt; }
 
+    
+    
 };
+
+
+
 
 #include <vector>
 #include <set>
@@ -79,7 +101,7 @@ public:
     rc_t                mount(const char* devname, vid_t vid);
 
     /** Dismount the volume. */
-    rc_t                dismount(bool flush = true);
+    rc_t                dismount(bool flush = true, const bool clear_cb = true);
 
     /**
     * Print out meta info about the volume.
@@ -117,7 +139,7 @@ public:
     rc_t                read_page(
         shpid_t             page,
         generic_page&       buf,
-        bool&               passed_end);
+        bool&               past_end);
 
     rc_t            alloc_a_page(const stid_t &stid, lpid_t &pid);
     rc_t            alloc_consecutive_pages(const stid_t &stid, size_t page_count, lpid_t &pid_begin);
@@ -180,6 +202,12 @@ public:
         vid_t                vid,
         shpid_t              num_pages,
         bool                 skip_raw_init);
+    static rc_t            reformat_vol(
+        const char*          devname,
+        lvid_t               lvid,
+        vid_t                vid,
+        shpid_t              num_pages,
+        bool                 skip_raw_init);
 
     static rc_t            read_vhdr(const char* devname, volhdr_t& vhdr);
     static rc_t            read_vhdr(int fd, volhdr_t& vhdr);
@@ -188,6 +216,8 @@ public:
         int                  fd, 
         volhdr_t&            vhdr, 
         bool                 raw_device);
+    
+    rc_t                   get_vol_ctime(struct timespec& ctime, int& salt);
 
     /**
     * Check if "devname" is a raw device. Return result in "raw".
@@ -287,6 +317,8 @@ inline bool vol_t::is_valid_store(snum_t f) const
 {
     return (f < stnode_page_h::max);
 }
+
+
     
 /*<std-footer incl-file-exclusion='VOL_H'>  -- do not edit anything below this line -- */
 

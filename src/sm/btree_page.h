@@ -134,6 +134,13 @@ protected:
      */
     void          init_items();
 
+    // Remove the largest 'item_count' items from the storage area
+    // It erases existing items from storage therefore use with caution
+    // The function should only be called by full logging page rebalance
+    // restart operation to recovery the source page
+    // item_count - number of records to remove
+    // high - the new high fence after record removal
+    void          remove_items(const int item_count, const w_keystr_t &high);
 
     int           number_of_items()  const { return nitems;}
 
@@ -367,24 +374,24 @@ private:
 
 protected:
     // ======================================================================
-    //   BEGIN: SPR-related headers (placed at last so that frequently used
+    //   BEGIN: Single-Page-Recovery-related headers (placed at last so that frequently used
     //  headers like nitems are in the first 64 bytes (one cacheline).
     // ======================================================================
     /**
      * Expected-Minimum LSN for the first child pointer.
      * 0 if this page is leaf or left-most.
-     * \ingroup SPR
+     * \ingroup Single-Page-Recovery
      */
     lsn_t   btree_pid0_emlsn;   // +8 -> 40
 
     /**
      * Expected-Minimum LSN for the foster-child pointer.
      * 0 if this page doesn't have foster child.
-     * \ingroup SPR
+     * \ingroup Single-Page-Recovery
      */
     lsn_t   btree_foster_emlsn; // +8 -> 48
     // ======================================================================
-    //   END: SPR-related headers
+    //   END: Single-Page-Recovery-related headers
     // ======================================================================
 
 private:

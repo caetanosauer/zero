@@ -23,8 +23,8 @@ class ss_m;
  * Details of the test data volume.
  */
 struct test_volume_t {
-    /** persistent volume id to give the volume. */ 
-    lvid_t      _lvid;   
+    /** persistent volume id to give the volume. */
+    lvid_t      _lvid;
     /** short (integer) volume id. */
     vid_t       _vid;
     /** path of the devise. */
@@ -34,6 +34,8 @@ struct test_volume_t {
 const int default_quota_in_pages = 64;
 const int default_bufferpool_size_in_pages = 64;
 const int default_locktable_size = 1 << 6;
+const bool simulated_crash = true;
+const bool normal_shutdown = false;
 
 #ifdef DEFAULT_SWIZZLING_OFF
 const bool default_enable_swizzling = false;
@@ -41,9 +43,16 @@ const bool default_enable_swizzling = false;
 const bool default_enable_swizzling = true;
 #endif //DEFAULT_SWIZZLING_OFF
 
+enum test_txn_state_t {
+    t_test_txn_commit,     // Commit the user transaction
+    t_test_txn_abort,      // Abort the user transaction
+    t_test_txn_in_flight   // Leave the user transaction as in-flight but detach from it
+};
+
 // a few convenient functions for testcases
 w_rc_t x_begin_xct(ss_m* ssm, bool use_locks);
 w_rc_t x_commit_xct(ss_m* ssm);
+w_rc_t x_abort_xct(ss_m* ssm);
 w_rc_t x_btree_create_index(ss_m* ssm, test_volume_t *test_volume, stid_t &stid, lpid_t &root_pid);
 w_rc_t x_btree_get_root_pid(ss_m* ssm, const stid_t &stid, lpid_t &root_pid);
 w_rc_t x_btree_adopt_foster_all(ss_m* ssm, const stid_t &stid);
@@ -58,6 +67,8 @@ w_rc_t x_btree_update_and_commit(ss_m* ssm, const stid_t &stid, const char *keys
 w_rc_t x_btree_update(ss_m* ssm, const stid_t &stid, const char *keystr, const char *datastr);
 w_rc_t x_btree_overwrite_and_commit(ss_m* ssm, const stid_t &stid, const char *keystr, const char *datastr, smsize_t offset, bool use_locks = false);
 w_rc_t x_btree_overwrite(ss_m* ssm, const stid_t &stid, const char *keystr, const char *datastr, smsize_t offset);
+bool   x_in_restart(ss_m* ssm);
+
 
 /** Delete backup if exists. */
 void x_delete_backup(ss_m* ssm, test_volume_t *test_volume);
@@ -99,23 +110,131 @@ public:
     rc_t (*_functor)(ss_m*, test_volume_t*);
 };
 
-// Begin... for test_restart.cpp
-// The base class for all restart test cases.
+struct restart_test_options {
+    restart_test_options() : enable_checkpoints(false) {}
+    bool shutdown_mode;
+    int32_t restart_mode;
+    bool enable_checkpoints;
+};
+
+// Begin... for test_restart_performance.cpp
+// The base class for all restart performance test cases.
+// Derived classes must implement three functions; initial_shutdown(), pre_shutdown() and post_shutdown().
+// These are called before and after a normal or (simulated) crash shutdown
+// @See btree_test_env::runRestartTest()
+
+class restart_performance_test_base
+{
+public:
+    restart_performance_test_base(): _start(0), _end(0) {}
+    virtual ~restart_performance_test_base() {}
+
+    virtual w_rc_t initial_shutdown(ss_m *ssm) = 0;  // Phase 1, populate the store, normal shutdown
+
+    virtual w_rc_t pre_shutdown(ss_m *ssm) = 0;    // Phase 2, update the store, either normal or crash shutdown
+
+    virtual w_rc_t post_shutdown(ss_m *ssm) = 0;   // Phase 3, validate and concurrent access the store, normal shutdown
+
+    test_volume_t      _volume;
+
+    stid_t             _stid;              // Only one index for performance tests
+    lpid_t             _root_pid;          // root page id
+    unsigned long long _start;             // Performance measurement counter start
+    unsigned long long _end;               // Performance measurement counter end
+};
+
+class restart_performance_initial_functor : public test_functor
+{
+public:
+    restart_performance_initial_functor(restart_performance_test_base *context)
+    {
+        _context = context;
+        _need_init = true;         // Start from scratch
+        _clean_shutdown = true;    // Clean shutdown
+    }
+    w_rc_t run_test(ss_m *ssm)
+    {
+        _context->_volume = _test_volume;          // remember the volume for use in post_shutdown
+        return _context->initial_shutdown (ssm);   // no crash
+    }
+    restart_performance_test_base *_context;
+};
+
+class restart_performance_dirty_pre_functor : public test_functor
+{
+public:
+    restart_performance_dirty_pre_functor(restart_performance_test_base *context)
+    {
+        _context = context;
+        _need_init = false;                // Use data from phase 1
+        _clean_shutdown = false;           // Simulate a crash shutdown
+        _test_volume = context->_volume;   //pre-set the volume we already made
+    }
+    w_rc_t run_test(ss_m *ssm)
+    {
+        return _context->pre_shutdown (ssm);  // crash
+    }
+    restart_performance_test_base *_context;
+};
+
+class restart_performance_clean_pre_functor : public test_functor
+{
+public:
+    restart_performance_clean_pre_functor(restart_performance_test_base *context)
+    {
+        _context = context;
+        _need_init = false;                // Use data from phase 1
+        _clean_shutdown = true;            // clean shutdown
+        _test_volume = context->_volume;   //pre-set the volume we already made
+    }
+    w_rc_t run_test(ss_m *ssm)
+    {
+        return _context->pre_shutdown (ssm);   // no crash
+    }
+    restart_performance_test_base *_context;
+};
+
+class restart_performance_post_functor : public test_functor
+{
+public:
+    restart_performance_post_functor(restart_performance_test_base *context)
+    {
+        _context = context;
+        _need_init = false;                // Use data from phase 2
+        _clean_shutdown = true;            // clean shutdown
+        _test_volume = context->_volume;   //pre-set the volume we already made
+    }
+    w_rc_t run_test(ss_m *ssm)
+    {
+        return _context->post_shutdown (ssm);  // no crash
+    }
+    restart_performance_test_base *_context;
+};
+
+// End... for test_restart_performance.cpp
+
+
+// Begin... for test_restart.cpp and test_concurrent_restart.cpp
+// The base class for all restart functional test cases.
 // Derived classes must implement two functions; pre_shutdown() and post_shutdown().
 // These are called before and after a normal or (simulated) crash shutdown
 // @See btree_test_env::runRestartTest()
 class restart_test_base {
 public:
-    restart_test_base() {}
-    virtual ~restart_test_base() {}
-
+    restart_test_base() { _stid_list = NULL; }
+    virtual ~restart_test_base() {
+        if(_stid_list != NULL) {
+            delete [] _stid_list;
+            _stid_list = NULL;
+        }
+    }
     virtual w_rc_t pre_shutdown(ss_m *ssm) = 0;
 
     virtual w_rc_t post_shutdown(ss_m *ssm) = 0;
 
     test_volume_t _volume;
 
-    stid_t _stid;
+    stid_t* _stid_list;
     lpid_t _root_pid;
 };
 
@@ -158,7 +277,7 @@ public:
     }
     restart_test_base *_context;
 };
-// End... for test_restart.cpp
+// End... for test_restart.cpp and and test_concurrent_restart.cpp
 
 /**
  * The base class for all crash test cases.
@@ -181,14 +300,14 @@ public:
 
     /**
      * This function is called after the simulated crash.
-     * This function is supposed to check if the recovery process did
+     * This function is supposed to check if the restart process did
      * a correct job.
      */
     virtual w_rc_t post_crash(ss_m *ssm) = 0;
 
 // objects that can be used in pre_crash() and post_crash()
     test_volume_t _volume;
-    
+
     // these two are used in many crash testcases, so defined here although some test might not use them.
     stid_t _stid;
     lpid_t _root_pid;
@@ -285,43 +404,6 @@ public:
     }
 
     /**
-    * Runs a restart testcase.
-    * @param context the object to implement pre_shutdiwn(), post_shutdown().
-    * @see restart_test_base
-    */
-    int runRestartTest (restart_test_base *context,
-                      bool fCrash,
-                      bool use_locks = false,
-                      int32_t lock_table_size = default_locktable_size,
-                      int disk_quota_in_pages = default_quota_in_pages,
-                      int bufferpool_size_in_pages = default_bufferpool_size_in_pages,
-                      uint32_t cleaner_threads = 1,
-                      uint32_t cleaner_interval_millisec_min	   = 1000,
-                      uint32_t cleaner_interval_millisec_max	   = 256000,
-                      uint32_t cleaner_write_buffer_pages          = 64,
-                      bool initially_enable_cleaners = true,
-                      bool enable_swizzling = default_enable_swizzling
-                      );
-
-    /** This is most concise. New code should use this one. */
-    int runRestartTest (restart_test_base *context, bool fCrash, bool use_locks, int disk_quota_in_pages, const sm_options &options);
-
-
-    int runRestartTest (restart_test_base *context,
-                      bool fCrash,
-                      bool use_locks, int32_t lock_table_size,
-                      int disk_quota_in_pages, int bufferpool_size_in_pages,
-                      uint32_t cleaner_threads,
-                      uint32_t cleaner_interval_millisec_min,
-                      uint32_t cleaner_interval_millisec_max,
-                      uint32_t cleaner_write_buffer_pages,
-                      bool initially_enable_cleaners,
-                      bool enable_swizzling,
-                      const std::vector<std::pair<const char*, int64_t> > &additional_int_params,
-                      const std::vector<std::pair<const char*, bool> > &additional_bool_params,
-                      const std::vector<std::pair<const char*, const char*> > &additional_string_params);
-
-    /**
      * Overload to set additional parameters.
      * @param use_locks whether to use locks
      * @param lock_table_size from 2^6 to 2^23. default 2^6 in testcases.
@@ -345,7 +427,89 @@ public:
                       const std::vector<std::pair<const char*, const char*> > &additional_string_params);
 
     /**
-     * Runs a crash testcase.
+    * Runs a restart testcase in various restart modes
+    * Caller specify the restart mode through input parameter 'restart_mode'
+    * @param context the object to implement pre_shutdiwn(), post_shutdown().
+    * @see restart_test_base
+    */
+    int runRestartTest (restart_test_base *context,
+                      restart_test_options *restart_options,
+                      bool use_locks = false,              // default to disable locking, M3/M4 test cases need to enable locking
+                      int32_t lock_table_size = default_locktable_size,
+                      int disk_quota_in_pages = default_quota_in_pages,
+                      int bufferpool_size_in_pages = default_bufferpool_size_in_pages,
+                      uint32_t cleaner_threads = 1,
+                      uint32_t cleaner_interval_millisec_min	   = 1000,
+                      uint32_t cleaner_interval_millisec_max	   = 256000,
+                      uint32_t cleaner_write_buffer_pages          = 64,
+                      bool initially_enable_cleaners = true,
+                      bool enable_swizzling = default_enable_swizzling
+                      );
+
+    /** This is most concise. New code should use this one. */
+    int runRestartTest (restart_test_base *context, restart_test_options *restart_options,
+                          bool use_locks, int disk_quota_in_pages, const sm_options &options);
+
+    int runRestartTest (restart_test_base *context,
+                      restart_test_options *restart_options,
+                      bool use_locks, int32_t lock_table_size,
+                      int disk_quota_in_pages, int bufferpool_size_in_pages,
+                      uint32_t cleaner_threads,
+                      uint32_t cleaner_interval_millisec_min,
+                      uint32_t cleaner_interval_millisec_max,
+                      uint32_t cleaner_write_buffer_pages,
+                      bool initially_enable_cleaners,
+                      bool enable_swizzling,
+                      const std::vector<std::pair<const char*, int64_t> > &additional_int_params,
+                      const std::vector<std::pair<const char*, bool> > &additional_bool_params,
+                      const std::vector<std::pair<const char*, const char*> > &additional_string_params);
+
+    /**
+    * Runs a restart performance test case in various restart modes
+    * Caller specify the restart mode through input parameter 'restart_option'
+    * @param context the object to implement 3 phases: initial_shutdown(), pre_shutdiwn(), post_shutdown().
+    * @see restart_performance_test_base
+    */
+    // Top level API for caller to start the test
+    int runRestartPerfTest (
+                      restart_performance_test_base *context,
+                      restart_test_options *restart_options,  // Restart options, e.g. milestone setting
+                      bool use_locks,                         // True: enable locking, false: disable locking, M3/M4 test cases need to enable locking
+                      int32_t lock_table_size = default_locktable_size,
+                      int disk_quota_in_pages = default_quota_in_pages,
+                      int bufferpool_size_in_pages = default_bufferpool_size_in_pages,
+                      uint32_t cleaner_threads = 1,
+                      uint32_t cleaner_interval_millisec_min	   = 1000,
+                      uint32_t cleaner_interval_millisec_max	   = 256000,
+                      uint32_t cleaner_write_buffer_pages          = 64,
+                      bool initially_enable_cleaners = true,
+                      bool enable_swizzling = default_enable_swizzling
+                      );
+
+    // Internal API to carry out the test
+    int runRestartPerfTest (restart_performance_test_base *context,
+                          restart_test_options *restart_options,
+                          bool use_locks,
+                          int disk_quota_in_pages,
+                          const sm_options &options);
+
+    // Alternative top level API, not used currently for restart performance test
+    int runRestartPerfTest (restart_performance_test_base *context,
+                      restart_test_options *restart_options,
+                      bool use_locks, int32_t lock_table_size,
+                      int disk_quota_in_pages, int bufferpool_size_in_pages,
+                      uint32_t cleaner_threads,
+                      uint32_t cleaner_interval_millisec_min,
+                      uint32_t cleaner_interval_millisec_max,
+                      uint32_t cleaner_write_buffer_pages,
+                      bool initially_enable_cleaners,
+                      bool enable_swizzling,
+                      const std::vector<std::pair<const char*, int64_t> > &additional_int_params,
+                      const std::vector<std::pair<const char*, bool> > &additional_bool_params,
+                      const std::vector<std::pair<const char*, const char*> > &additional_string_params);
+
+    /**
+     * Runs a crash testcase in serial traditional restart mode
      * @param context the object to implement pre_crash(), post_crash().
      * @see crash_test_base
      */
@@ -361,7 +525,7 @@ public:
                       bool initially_enable_cleaners = true,
                       bool enable_swizzling = default_enable_swizzling
                      );
-    
+
     /**
      * Overload for additional params.
      */
@@ -382,10 +546,10 @@ public:
     int runCrashTest (crash_test_base *context, bool use_locks, int disk_quota_in_pages, const sm_options &options);
 
     void empty_logdata_dir();
-    
+
     bool get_use_locks () const { return _use_locks;}
     void set_use_locks (bool value) { _use_locks = value;}
-    
+
     // set query concurrency according to _use_locks
     void set_xct_query_lock();
 
@@ -396,6 +560,9 @@ public:
     }
     w_rc_t commit_xct() {
         return x_commit_xct(_ssm);
+    }
+    w_rc_t abort_xct() {
+        return x_abort_xct(_ssm);
     }
     w_rc_t btree_lookup_and_commit(const stid_t &stid, const char *keystr, std::string &data) {
         return x_btree_lookup_and_commit(_ssm, stid, keystr, data, _use_locks);
@@ -430,16 +597,46 @@ public:
     w_rc_t btree_scan(const stid_t &stid, x_btree_scan_result &result) {
         return x_btree_scan(_ssm, stid, result, _use_locks);
     }
-    
+    bool in_restart(){
+        return x_in_restart(_ssm);
+    }
+
+    w_rc_t btree_populate_records(stid_t &stid, bool fCheckPoint, test_txn_state_t txnState, bool splitIntoSmallTrans = false,
+                                      char keyPrefix = '\0');
+
+    w_rc_t delete_records(stid_t &stid, bool fCheckPoint, test_txn_state_t txnState, char keyPrefix = '\0');
+
+    void itoa(int i, char *buf, int base)
+    {
+        //  ignoring the base
+        if(base)
+            sprintf(buf, "%d", i);
+    }
+
     ss_m* _ssm;
     bool _use_locks;
+    restart_test_options* _restart_options;
     char log_dir[MAXPATHLEN];
     char vol_dir[MAXPATHLEN];
+
 private:
     void assure_dir(const char *folder_name);
     void assure_empty_dir(const char *folder_name);
     void empty_dir(const char *folder_name);
 
+};
+
+class transact_thread_t : public smthread_t {
+public:
+    transact_thread_t(stid_t* stid_list, void (*runfunct)(stid_t*));
+    ~transact_thread_t();
+
+    virtual void run();
+    static int next_thid; // Adopted from test_deadlock, assuming there is a reason
+    stid_t* _stid_list;
+    int _thid;
+    void (*_runnerfunc)(stid_t*);
+    bool _finished;
 };
 
 #endif // TESTS_BTREE_TEST_ENV_H

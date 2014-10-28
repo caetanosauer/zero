@@ -1,5 +1,5 @@
 /*
- * (c) Copyright 2011-2013, Hewlett-Packard Development Company, LP
+ * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
 #include "w_defines.h"
@@ -13,6 +13,7 @@
 #include "logdef_gen.cpp"
 #include "vec_t.h"
 #include "alloc_cache.h"
+
 
 #include <iomanip>
 typedef        ios::fmtflags        ios_fmtflags;
@@ -198,9 +199,28 @@ void logrec_t::redo(fixable_page_h* page)
     DBG( << "Redo  log rec: " << *this 
         << " size: " << header._len << " xid_prevlsn: " << (is_single_sys_xct() ? lsn_t::null : xid_prev()) );
 
+    // Could be either user transaction or compensation operatio,
+    // not system transaction because currently all system transactions
+    // are single log
+    
+    // This is used by both Single-Page-Recovery and serial recovery REDO phase
+
+    // Not all REDO operations have associated page
+    // If there is a page, mark the page for recovery access
+    // this is for page access validation purpose to allow recovery
+    // operation to by-pass the page concurrent access check
+    
+    if(page) 
+        page->set_recovery_access();
+
     switch (header._type)  {
 #include "redo_gen.cpp"
     }
+
+    // If we have a page, clear the recovery flag on the page after
+    // we are done with undo operation
+    if(page) 
+        page->clear_recovery_access();
     
     /*
      *  Page is dirty after redo.
@@ -234,10 +254,34 @@ logrec_t::undo(fixable_page_h* page)
     FUNC(logrec_t::undo);
     DBG( << "Undo  log rec: " << *this 
         << " size: " << header._len  << " xid_prevlsn: " << xid_prev());
+
+    // Only system transactions involve multiple pages, while there
+    // is no UNDO for system transactions, so we only need to mark
+    // recovery flag for the current UNDO page
+
+    // If there is a page, mark the page for recovery, this is for page access 
+    // validation purpose to allow recovery operation to by-pass the 
+    // page concurrent access check
+    // In most cases we do not have a page from caller, therefore
+    // we need to go to individual undo function to mark the recovery flag.
+    // All the page related operations are in Btree_logrec.cpp, including
+    // operations for system and user transactions, note that operations 
+    // for system transaction have REDO but no UNDO
+    // The actual UNDO implementation in Btree_impl.cpp   
+    if(page) 
+        page->set_recovery_access();
+
     switch (header._type) {
 #include "undo_gen.cpp"
     }
+
     xct()->compensate_undo(xid_prev());
+
+    // If we have a page, clear the recovery flag on the page after
+    // we are done with undo operation
+    if(page) 
+        page->clear_recovery_access();
+
     undoing_context = logrec_t::t_max_logrec;
 }
 
@@ -467,7 +511,8 @@ chkpt_xct_tab_t::chkpt_xct_tab_t(
     const tid_t*                         tid,
     const smlevel_1::xct_state_t*         state,
     const lsn_t*                         last_lsn,
-    const lsn_t*                         undo_nxt)
+    const lsn_t*                         undo_nxt,
+    const lsn_t*                         first_lsn)
     : youngest(_youngest), count(cnt)
 {
     w_assert1(count <= max);
@@ -476,6 +521,7 @@ chkpt_xct_tab_t::chkpt_xct_tab_t(
         xrec[i].state = state[i];
         xrec[i].last_lsn = last_lsn[i];
         xrec[i].undo_nxt = undo_nxt[i];
+        xrec[i].first_lsn = first_lsn[i];
     }
 }
     
@@ -485,12 +531,45 @@ chkpt_xct_tab_log::chkpt_xct_tab_log(
     const tid_t*                         tid,
     const smlevel_1::xct_state_t*         state,
     const lsn_t*                         last_lsn,
-    const lsn_t*                         undo_nxt)
+    const lsn_t*                         undo_nxt,
+    const lsn_t*                         first_lsn)
 {
     fill(0, 0, (new (_data) chkpt_xct_tab_t(youngest, cnt, tid, state,
-                                         last_lsn, undo_nxt))->size());
+                                         last_lsn, undo_nxt, first_lsn))->size());
 }
 
+
+/*********************************************************************
+ *
+ *  chkpt_xct_lock_log
+ *
+ *  Data log to save acquired transaction locks for an active transaction at checkpoint.
+ *  Contains, each active lock, its hash and lock mode
+ *
+ *********************************************************************/
+chkpt_xct_lock_t::chkpt_xct_lock_t(
+    const tid_t&                        _tid,
+    int                                 cnt,
+    const okvl_mode*                    lock_mode,
+    const uint32_t*                     lock_hash)   
+    : tid(_tid), count(cnt)
+{
+    w_assert1(count <= max);
+    for (uint i = 0; i < count; i++)  {
+        xrec[i].lock_mode = lock_mode[i];
+        xrec[i].lock_hash = lock_hash[i];
+    }
+}
+    
+chkpt_xct_lock_log::chkpt_xct_lock_log(
+    const tid_t&                        tid,
+    int                                 cnt,
+    const okvl_mode*                    lock_mode,
+    const uint32_t*                     lock_hash)
+{
+    fill(0, 0, (new (_data) chkpt_xct_lock_t(tid, cnt, lock_mode,
+                                         lock_hash))->size());
+}
 
 
 

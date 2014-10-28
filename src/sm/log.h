@@ -61,6 +61,9 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
+// LOG_BUFFER switch
+#include "logbuf_common.h"
+
 #undef ACQUIRE
 
 class logrec_t;
@@ -253,7 +256,14 @@ public:
                              const char   *path,
                              int          wrlogbufsize,
                              bool         reformat,
-                             int          carray_active_slot_count);
+                             int          carray_active_slot_count
+#ifdef LOG_BUFFER
+                             ,
+                             int logbuf_seg_count,
+                             int logbuf_flush_trigger,
+                             int logbuf_block_size
+#endif
+                                  );
 
     /**\brief log segment size; exported for use by ss_m::options processing 
      * \details
@@ -324,9 +334,15 @@ public:
     rc_t                insert(logrec_t &r, lsn_t* ret);
     rc_t                compensate(const lsn_t& orig_lsn, 
                                const lsn_t& undo_lsn);
+
+#ifdef LOG_BUFFER
     // used by log_i and xct_impl
     rc_t                fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt=NULL, const bool forward = true);
-
+    rc_t                fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt=NULL, hints_op op=DEFAULT_HINTS);
+#else
+    // used by log_i and xct_impl
+    rc_t                fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt=NULL, const bool forward = true);
+#endif
             // used in implementation also:
     virtual void        release(); // used by log_i
     virtual rc_t        flush(const lsn_t& lsn, bool block=true, bool signal=true, bool *ret_flushed=NULL);
@@ -366,22 +382,25 @@ public:
 
     /**
     * \brief Apply single-page-recovery to the given page.
-    * \ingroup SPR
+    * \ingroup Single-Page-Recovery
     * Defined in log_spr.cpp.
     * \NOTE This method returns an error if the user had truncated
     * the transaction logs required for the recovery.
     * @param[in, out] p the page to recover.
     * @param[in] emlsn the LSN up to which we should recover the page.
+    * @param[in] actual_emlsn is set to false if we do not have the actual emlsn due to page corruption
+    *                         during recovery (no parent page)
     * @pre p has a backup in the backup file
     * @pre p.is_fixed() (could be bufferpool managed or non-bufferpool managed)
     */
-    rc_t recover_single_page(fixable_page_h &p, const lsn_t &emlsn);
+    rc_t recover_single_page(fixable_page_h &p, const lsn_t &emlsn, 
+                                 const bool actual_emlsn = true);
 
     /**\brief used by partition */
     fileoff_t limit() const;
 
     /**
-     * \ingroup SPR
+     * \ingroup Single-Page-Recovery
      * Defined in log_spr.cpp.
      * @copydoc ss_m::dump_page_lsn_chain(std::ostream&, const lpid_t &, const lsn_t&)
      */

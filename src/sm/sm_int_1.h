@@ -48,6 +48,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 
 class chkpt_m;
+class restart_m;
 
 /* xct_freeing_space implies that the xct is completed, but not yet freed stores and
    extents.  xct_ended implies completed and freeing space completed */
@@ -57,20 +58,27 @@ public:
     /**\todo xct_state_t */
     // The numeric equivalents of state are not significant; they are
     // given here only for convenience in debugging/grepping
-	// Well, their ORDER is significant, so that you can only
-	// change state to a larger state with change_state().
+    // Well, their ORDER is significant, so that you can only
+    // change state to a larger state with change_state().
     enum xct_state_t {  xct_stale = 0x0,  
                         xct_active = 0x1,  // active or rolling back in
                                            // doing rollback_work
-                                           // also used in Recovery for doomed transaction
+                                           // It is also used in Recovery for loser transaction
                                            // because it is using the standard rollback logic
+                                           // for loser txn, check the _loser_xct flag
+                                           // in xct_t
                         xct_chaining = 0x3, 
                         xct_committing = 0x4, 
                         xct_aborting = 0x5,  // normal transaction abort
                         xct_freeing_space = 0x6, 
                         xct_ended = 0x7
     };
+
+    // Checkpoint manager
     static chkpt_m*    chkpt;
+
+    // Recovery manager
+    static restart_m*  recovery;
 };
 
 #if (SM_LEVEL >= 1)

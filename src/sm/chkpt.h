@@ -62,6 +62,14 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 /*  -- do not edit anything above this line --   </std-header>*/
 
 #include "sm_int_1.h"
+#include "w_heap.h"
+
+// For checkpoint to gather lock information into heap if asked
+struct comp_lock_info_t;
+class CmpXctLockTids;
+typedef class Heap<comp_lock_info_t*, CmpXctLockTids> XctLockHeap;
+
+
 class chkpt_thread_t;
 
 /*********************************************************************
@@ -86,7 +94,8 @@ public:
     void             spawn_chkpt_thread();
     void             retire_chkpt_thread();
     void             synch_take();
-    void             take(chkpt_mode_t chkpt_mode);
+    void             synch_take(XctLockHeap& lock_heap);  // Record lock information in heap
+    void             take(chkpt_mode_t chkpt_mode, XctLockHeap& lock_heap, const bool record_lock = false);
 
 
 private:

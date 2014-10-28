@@ -348,6 +348,12 @@ struct RawLockQueue {
      */
     bool        delink(RawLock* predecessor, RawLock* target, RawLock* successor) const;
 
+    // Helper function called by RawLockQueue::acquire
+    // Based on the information in Compatibility, if the blocker txn is a loser txn and it is not
+    // in the middle of rolling back, trigger the on_demand UNDO for the loser transaction
+    // Return true if an on_demand UNDO operation was triggered and completed
+    bool        trigger_UNDO(Compatibility& compatibility);  // In: the current compatibility status of the requested lock
+
     /**
      * The always-existing dummy entry as head.
      * _head is never marked for death.
@@ -360,6 +366,9 @@ struct RawLockQueue {
      * queue; holds lsn_t::null if no such transaction exists; protected by _requests_latch.
      */
     lsn_t                       x_lock_tag;
+
+    // For on_demand and mixed UNDO counting purpose   
+    static int                  loser_count;
 };
 std::ostream& operator<<(std::ostream& o, const RawLockQueue& v);
 

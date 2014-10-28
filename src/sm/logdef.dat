@@ -35,8 +35,8 @@
 #                                                                       #
 #    WARNING: if you add, delete or change any of the log records,      #
 #    or their data members, or their semantics you also need to         #
-#    update log_base::version_major and/or log_base::version_minor      #
-#    in log_base.cpp.                                                   #
+#    update log_m::_version_major and/or log_m::_version_minor      #
+#    in log.cpp.                                                   #
 #                                                                       #
 #       For every log record type, the perl script generates a class    #
 #       class <type>_log {                                              #
@@ -104,7 +104,9 @@ chkpt_bf_tab       0000000 0.0 (int cnt, const lpid_t* pid,
 chkpt_xct_tab      0000000 0.0 (const tid_t& youngest, 
                             int cnt, const tid_t* tid, 
                             const smlevel_1::xct_state_t* state,
-                            const lsn_t* last_lsn, const lsn_t* undo_nxt);
+                            const lsn_t* last_lsn, const lsn_t* undo_nxt, const lsn_t* first_lsn);               
+# per active transaction granted lock log
+chkpt_xct_lock      0000000 0.0 (const tid_t& tid, int cnt, const okvl_mode* lock_mode, const uint32_t* lock_hash);
 chkpt_dev_tab      0000000 0.0 (int cnt, const char** dev_name, const vid_t* vid);
 chkpt_end          0000000 0.0 (const lsn_t& master, const lsn_t& min_rec_lsn, const lsn_t& min_xct_lsn);
 mount_vol          0010010 0.0 (const char *dev_name, const vid_t &vid);
@@ -151,10 +153,11 @@ page_evict        1110000 1.0 (const btree_page_h& page,
 btree_norec_alloc  1110110 1.0 (const btree_page_h& page, const btree_page_h& page2,
     shpid_t new_page_id, const w_keystr_t& fence, const w_keystr_t& chain_fence_high);
 
+# sys_txn is true if the insert log record was from a page rebalance full logging transaction
 btree_insert       1011001 1.42 (const btree_page_h& page,
-                            const w_keystr_t& key, const cvec_t& el);
+                            const w_keystr_t& key, const cvec_t& el, const bool sys_txn);
 btree_insert_nonghost 1011001 1.42 (const btree_page_h& page,
-                            const w_keystr_t& key, const cvec_t& el);
+                            const w_keystr_t& key, const cvec_t& el, const bool sys_txn);
 
 btree_update       1011001 1.42 (const btree_page_h& page, const w_keystr_t& key,
     const char* old_el, int old_elen, const cvec_t& new_el);
@@ -163,7 +166,8 @@ btree_overwrite    1011001 1.00 (const btree_page_h& page, const w_keystr_t& key
     const char* old_el, const char* new_el, size_t offset, size_t elen);
 
 # ghost records. currently only for BTrees as their UNDO/REDO rely on BTree access.
-btree_ghost_mark    1011001 1.0  (const btree_page_h& page, const vector<slotid_t>& slots);
+# sys_txn is true if the delete log record was from a page rebalance full logging transaction
+btree_ghost_mark    1011001 1.0  (const btree_page_h& page, const vector<slotid_t>& slots, const bool sys_txn);
 btree_ghost_reclaim 1110000 1.0  (const btree_page_h& page, const vector<slotid_t>& slots);
 # ghost reservation is fused
 btree_ghost_reserve 1110000 1.0  (const btree_page_h& page, const w_keystr_t& key, int element_length);
@@ -174,12 +178,22 @@ btree_foster_adopt  1110100 1.0 (const btree_page_h& page, const btree_page_h& p
 
 # page is foster-parent (dest), page2 is foster_child (src) which will disappear.
 # Non-self contained log. So, page=dest, page2=src.
-btree_foster_merge  1110100 1.0 (const btree_page_h& page, const btree_page_h& page2);
+# high - high key of the destination page (foster key if exists)
+# chain_high - high fence key of all foster nodes (parent and child nodes)
+# foster_pid0 - page id of the foster page in destination page
+# foster_emlsn - emlsn of the foster page in destination page
+btree_foster_merge  1110100 1.0 (const btree_page_h& page, const btree_page_h& page2, 
+    const w_keystr_t& high, const w_keystr_t& chain_high, shpid_t foster_pid0, lsn_t foster_emlsn);
 
 # "page" is the foster-child (dest). "page2" is the foster-parent (src).
 # Non-self contained log. So, page=dest, page2=src.
+# fence - low fence key of the destination page, also foster key (high) of the source page
+# high - high key of the destination page (foster key if exists)
+# chain_high - high fence key of all foster nodes (parent and child nodes)
 btree_foster_rebalance       1110100 1.0 (const btree_page_h& page, const btree_page_h& page2,
-    int32_t move_count, const w_keystr_t& fence, shpid_t new_pid0, lsn_t pid0_emlsn);
+    int32_t move_count, const w_keystr_t& fence, shpid_t new_pid0, lsn_t pid0_emlsn, 
+    const w_keystr_t& high, const w_keystr_t& chain_high);
+
 btree_foster_rebalance_norec 1110100 1.0 (const btree_page_h& page, const btree_page_h& page2,
     const w_keystr_t& fence);
 

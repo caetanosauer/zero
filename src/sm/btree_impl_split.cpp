@@ -69,7 +69,7 @@ rc_t btree_impl::_ux_norec_alloc_core(btree_page_h &page, lpid_t &new_page_id) {
                                   page.level(), 0, lsn_t::null,
                                   page.get_foster(), page.get_foster_emlsn(),
                                   fence, fence, chain_high, false);
-            page.accept_empty_child(page.lsn(), new_page_id.page);
+            page.accept_empty_child(page.lsn(), new_page_id.page, false /*not from redo*/);
         }
 
         // in this operation, the log contains everything we need to recover without any
@@ -212,7 +212,9 @@ rc_t btree_impl::_ux_adopt_foster_core (btree_page_h &parent, btree_page_h &chil
     return RCOK;
 }
 
-rc_t btree_impl::_sx_opportunistic_adopt_foster (btree_page_h &parent, btree_page_h &child, bool &pushedup)
+rc_t btree_impl::_sx_opportunistic_adopt_foster (btree_page_h &parent, 
+                                                      btree_page_h &child, bool &pushedup,
+                                                      const bool from_recovery)
 {
     FUNC(btree_impl::_sx_opportunistic_adopt_foster);
     w_assert1 (parent.is_fixed());
@@ -239,13 +241,15 @@ rc_t btree_impl::_sx_opportunistic_adopt_foster (btree_page_h &parent, btree_pag
 
     // this is a VERY good chance. So, why not sweep all (but a few unlucky execptions)
     // foster-children.
-    W_DO(_sx_adopt_foster_sweep_approximate(parent, surely_need_child_pid));
+    W_DO(_sx_adopt_foster_sweep_approximate(parent, surely_need_child_pid, from_recovery));
     // note, this function might switch parent upon its split.
     // so, the caller is really responsible to restart search on seeing pushedup == true
     return RCOK;
 }
 
-rc_t btree_impl::_sx_adopt_foster_sweep_approximate (btree_page_h &parent, shpid_t surely_need_child_pid)
+rc_t btree_impl::_sx_adopt_foster_sweep_approximate (btree_page_h &parent, 
+                                                             shpid_t surely_need_child_pid,
+                                                             const bool from_recovery)
 {
     w_assert1 (parent.is_fixed());
     w_assert1 (parent.latch_mode() == LATCH_EX);
@@ -259,7 +263,8 @@ rc_t btree_impl::_sx_adopt_foster_sweep_approximate (btree_page_h &parent, shpid
                 continue; // then doesn't matter (this could be false in low probability, but it's fine)
             }
             btree_page_h child;
-            rc_t rc = child.fix_nonroot(parent, parent.vol(), shpid_opaqueptr, LATCH_EX, true);
+            rc_t rc = child.fix_nonroot(parent, parent.vol(), shpid_opaqueptr, LATCH_EX, true /*conditional*/,
+                                        false /*virgin_page*/, from_recovery);
             // if we can't instantly get latch, just skip it. we can defer it arbitrary
             if (rc.is_error()) {
                 continue;
@@ -274,7 +279,8 @@ rc_t btree_impl::_sx_adopt_foster_sweep_approximate (btree_page_h &parent, shpid
             break;
         }
         btree_page_h foster_p;
-        W_DO(foster_p.fix_nonroot(parent, parent.vol(), parent.get_foster_opaqueptr(), LATCH_EX));// latch coupling
+        W_DO(foster_p.fix_nonroot(parent, parent.vol(), parent.get_foster_opaqueptr(), LATCH_EX,
+                                  false /*conditional*/, false /*virgin_page*/, from_recovery));// latch coupling
         parent.unfix();
         parent = foster_p;
     }

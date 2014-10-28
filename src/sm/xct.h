@@ -209,6 +209,13 @@ class xct_t : public smlevel_1 {
 
 protected:
     enum commit_t { t_normal = 0, t_lazy = 1, t_chain = 2, t_group = 4 };
+
+    enum loser_xct_state_t {
+                 loser_false = 0x0,      // Not a loser transaction
+                 loser_true = 0x1,       // A loser transaction
+                 loser_undoing = 0x2};   // Loser transaction is being rolled back currently
+
+
 /**\endcond skip */
 
 /**\cond skip */
@@ -220,8 +227,8 @@ public:
         sm_stats_info_t*             stats = 0,  // allocated by caller
         timeout_in_ms                timeout = WAIT_SPECIFIED_BY_THREAD,
         bool                         sys_xct = false,
-        bool single_log_sys_xct = false
-                                         );
+        bool                         single_log_sys_xct = false,
+        bool                         loser_xct = false );
     
     static
     xct_t*                       new_xct(
@@ -231,8 +238,8 @@ public:
         const lsn_t&                 undo_nxt,
         timeout_in_ms                timeout = WAIT_SPECIFIED_BY_THREAD,
         bool                         sys_xct = false,
-        bool single_log_sys_xct = false
-                                        );
+        bool                         single_log_sys_xct = false,
+        bool                         loser_xct = false );
     static
     void                        destroy_xct(xct_t* xd);
 
@@ -255,7 +262,8 @@ private:
         const lsn_t&                 last_lsn,
         const lsn_t&                 undo_nxt,
         bool                         sys_xct = false,
-        bool single_log_sys_xct = false
+        bool                         single_log_sys_xct = false,
+        bool                         loser_xct = false
                                       );
     NORET                       ~xct_t();
 
@@ -566,7 +574,16 @@ private:
     
     /** result and context of in-query verification. */
     inquery_verify_context_t     _inquery_verify_context;
-    
+
+    // For a loser transaction identified during Log Analysis phase in Recovery,
+    // the transaction state is 'xct_active' so the standard roll back logic can be
+    // used.  In order to distingish a loser transaction and normal active
+    // transaction, check the '_loser_xct' flag, this is especially important
+    // for transaction driven UNDO logic.
+    // For on_demand UNDO, this flag also indicate if the loser transaction
+    // is currently rolling back
+    loser_xct_state_t            _loser_xct;
+
 public:
     void                         acquire_1thread_xct_mutex() const; // serialize
     void                         release_1thread_xct_mutex() const; // concurrency ok
@@ -640,6 +657,28 @@ public:
     void                         set_query_concurrency(concurrency_t mode) { _query_concurrency = mode; }
     bool                         get_query_exlock_for_select() const {return _query_exlock_for_select;}
     void                         set_query_exlock_for_select(bool mode) {_query_exlock_for_select = mode;}
+
+    bool                        is_loser_xct() const 
+        {
+            if (loser_false == _loser_xct)
+                return false;   // Not a loser transaction
+            else
+                return true;    // Loser transaction
+        }
+    bool                        is_loser_xct_in_undo() const 
+        {
+            if (true == is_loser_xct())
+            {
+                if (loser_undoing == _loser_xct)
+                    return true;   // Loser transaction and in the middle of undoing
+            }
+            return false;
+        }
+    void                        set_loser_xct_in_undo()
+        {
+            if (loser_false != _loser_xct)
+                _loser_xct = loser_undoing; 
+        }
 
     ostream &                   dump_locks(ostream &) const;
 
@@ -1269,15 +1308,20 @@ public:
     no_lock_section_t () {
         xct_t *x = xct();
         if (x) {
+            DBGOUT3( << "!!!! no_lock_section_t() - lock has been disabled");  
+
             org_cc = x->get_query_concurrency();
             x->set_query_concurrency(smlevel_0::t_cc_none);
         } else {
+            DBGOUT3( << "!!!! no_lock_section_t() - set original lock mode to t_cc_none"); 
+        
             org_cc = smlevel_0::t_cc_none;
         }
     }
     ~no_lock_section_t () {
         xct_t *x = xct();
         if (x) {
+            DBGOUT3( << "!!!! ~no_lock_section_t() - restored original lock mode: " << org_cc);  
             x->set_query_concurrency(org_cc);
         }
     }
