@@ -315,6 +315,10 @@ public:
 #endif
 
                              );
+
+    // CS: initialization by reading log directory has been moved to this
+    // separate method, implemented in log_storage
+    void initialize_storage(bool reformat);
                      
     void                set_master(const lsn_t& master_lsn, 
                             const lsn_t& min_lsn, 
