@@ -154,7 +154,6 @@ private:
     // long                 _blocksize; uses constant BLOCK_SIZE
     char*                _buf; // log buffer: _segsize buffer into which
                          // inserts copy log records with log_core::insert
-    PoorMansOldestLsnTracker* _oldest_lsn_tracker;
 
     // Set of pointers into _buf (circular log buffer)
     // and associated lsns. See detailed comments at log_core::insert
@@ -257,6 +256,8 @@ private:
      */
     ConsolidationArray*  _carray;
 #endif // LOG_BUFFER
+
+    PoorMansOldestLsnTracker* _oldest_lsn_tracker;
 
 
     bool                    _log_corruption;

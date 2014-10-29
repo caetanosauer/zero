@@ -2063,14 +2063,6 @@ log_core::log_core(
             << "Old epoch  end " << _log_buffer->_old_epoch.end
             << endl;
     }
-    _flush_daemon->join();
-    _flush_daemon_running = false;
-    delete _flush_daemon;
-    _flush_daemon=NULL;
-
-    delete THE_LOG; // side effect: sets THE_LOG to NULL
-    delete _oldest_lsn_tracker;
-    _oldest_lsn_tracker = NULL;
 }
 #else
 NORET
@@ -2946,6 +2938,14 @@ log_core::~log_core()
         delete [] _buf;
 #endif
         _buf = NULL;
+
+        _flush_daemon->join();
+        _flush_daemon_running = false;
+        delete _flush_daemon;
+        _flush_daemon=NULL;
+
+        delete _oldest_lsn_tracker;
+        _oldest_lsn_tracker = NULL;
 
         DO_PTHREAD(pthread_mutex_destroy(&_wait_flush_lock));
         DO_PTHREAD(pthread_cond_destroy(&_wait_cond));
