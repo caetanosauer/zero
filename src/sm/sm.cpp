@@ -85,7 +85,9 @@ class prologue_rc_t;
 #include "log_lsn_tracker.h"
 
 
-#include "logbuf_common.h"
+#include "logbuf_common.h" // sets LOG_BUFFER flag
+#include "log_core.h"
+#include "logbuf_core.h"
 
 #ifdef EXPLICIT_TEMPLATE
 template class w_auto_delete_t<SmStoreMetaStats*>;
@@ -220,6 +222,7 @@ ss_m* smlevel_4::SSM = 0;
 int ss_m::_instance_cnt = 0;
 //ss_m::param_t ss_m::curr_param;
 
+// TODO: why isn't this in the log_core constructor?
 void ss_m::_set_option_logsize() {
     // the logging system should not be running.  if it is
     // then don't set the option
@@ -246,7 +249,7 @@ void ss_m::_set_option_logsize() {
     fileoff_t psize = maxlogsize / smlevel_0::max_openlog;
 
     // convert partition size to partition data size: (remove overhead)
-    psize = log_m::partition_size(psize);
+    psize = log_core::partition_size(psize);
 
     /* Enforce the built-in shore limit that a log partition can only
        be as long as the file address in a lsn_t allows for...
@@ -255,13 +258,13 @@ void ss_m::_set_option_logsize() {
        Also that it can't be larger than the os allows
    */
 
-    if (psize > log_m::max_partition_size()) {
+    if (psize > log_core::max_partition_size()) {
         // we might not be able to do this:
-        fileoff_t tmp = log_m::max_partition_size();
+        fileoff_t tmp = log_core::max_partition_size();
         tmp /= 1024;
 
         std::cerr << "Partition data size " << psize
-                << " exceeds limit (" << log_m::max_partition_size() << ") "
+                << " exceeds limit (" << log_core::max_partition_size() << ") "
                 << " imposed by the size of an lsn."
                 << std::endl;
         std::cerr << " Choose a smaller sm_logsize." << std::endl;
@@ -269,15 +272,15 @@ void ss_m::_set_option_logsize() {
         W_FATAL(eCRASH);
     }
 
-    if (psize < log_m::min_partition_size()) {
-        fileoff_t tmp = fileoff_t(log_m::min_partition_size());
+    if (psize < log_core::min_partition_size()) {
+        fileoff_t tmp = fileoff_t(log_core::min_partition_size());
         tmp *= smlevel_0::max_openlog;
         tmp /= 1024;
         std::cerr
             << "Partition data size (" << psize
             << ") is too small for " << endl
             << " a segment ("
-            << log_m::min_partition_size()   << ")" << endl
+            << log_core::min_partition_size()   << ")" << endl
             << "Partition data size is computed from sm_logsize;"
             << " minimum sm_logsize is " << tmp << endl;
         W_FATAL(eCRASH);
@@ -290,7 +293,7 @@ void ss_m::_set_option_logsize() {
     // cerr << "Resulting max_logsz " << max_logsz << " bytes" << endl;
 
     // take check points every 3 log file segments.
-    smlevel_0::chkpt_displacement = log_m::segment_size() * 3;
+    smlevel_0::chkpt_displacement = log_core::segment_size() * 3;
 }
 
 /*
@@ -583,20 +586,26 @@ ss_m::_construct_once()
             errlog->clog << fatal_prio  << "ERROR: sm_logdir must be set to enable logging." << flushl;
             W_FATAL(eCRASH);
         }
-        w_rc_t e = log_m::new_log_m(log,
+#ifdef LOG_BUFFER
+        log = new logbuf_core(
+                                    logdir.c_str(),
+                                    logbufsize,      // logbuf_segsize
+                                    _options.get_bool_option("sm_reformat_log", false),
+                                    _options.get_int_option("sm_carray_slots",
+                                             ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT),
+                                    _options.get_int_option("sm_logbuf_seg_count", LOGBUF_SEG_COUNT),
+                                    _options.get_int_option("sm_logbuf_flush_trigger", LOGBUF_FLUSH_TRIGGER),
+                                    _options.get_int_option("sm_logbuf_block_size", LOGBUF_BLOCK_SIZE)
+                                    );
+#else
+        log = new log_core(
                                     logdir.c_str(),
                                     logbufsize,      // logbuf_segsize
                                     _options.get_bool_option("sm_reformat_log", false),
                                     _options.get_int_option("sm_carray_slots",
                                              ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT)
-#ifdef LOG_BUFFER
-                                    ,
-                                    _options.get_int_option("sm_logbuf_seg_count", LOGBUF_SEG_COUNT),
-                                    _options.get_int_option("sm_logbuf_flush_trigger", LOGBUF_FLUSH_TRIGGER),
-                                    _options.get_int_option("sm_logbuf_block_size", LOGBUF_BLOCK_SIZE)
+                );
 #endif
-                                    );
-        W_COERCE(e);
 
         int percent = _options.get_int_option("sm_log_warn", 0);
 

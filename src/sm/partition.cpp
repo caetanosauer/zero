@@ -1034,7 +1034,7 @@ partition_t::open_for_read(
                 W_FATAL(fcOUTOFMEMORY);
         w_auto_delete_array_t<char> ad_fname(fname);
 
-        log_m::make_log_name(__num, fname, smlevel_0::max_devname);
+        _owner->make_log_name(__num, fname, smlevel_0::max_devname);
 
         int fd;
         w_rc_t e;
@@ -1187,7 +1187,7 @@ partition_t::destroy()
         w_assert3(! is_open_for_read() );
         w_assert3(! is_open_for_append() );
 
-        log_core::destroy_file(num(), true);
+        _owner->destroy_file(num(), true);
         _clr_state(m_exists);
         // _num = 0;
         DBG(<< " calling clear");
@@ -1230,7 +1230,7 @@ partition_t::peek(
     if (!fname)
         W_FATAL(fcOUTOFMEMORY);
     w_auto_delete_array_t<char> ad_fname(fname);        
-    log_m::make_log_name(__num, fname, smlevel_0::max_devname);
+    _owner->make_log_name(__num, fname, smlevel_0::max_devname);
 
     smlevel_0::fileoff_t part_size = fileoff_t(0);
 

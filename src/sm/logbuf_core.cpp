@@ -37,6 +37,7 @@
 #include <memory.h>
 #include <Lintel/AtomicCounter.hpp>
 #include "log_carray.h"
+#include "log_lsn_tracker.h"
 
 #include "sdisk.h"
 
@@ -70,12 +71,6 @@ hints_t hints_profile[] = {
     {DEFAULT_HINTS, false, false, false},
 };   
 
-
-// check in which mode the log buffer runs
-#define IS_M1()\
-    (_owner == NULL)
-
-
 /*********************************************************************
  *  
  *  logbuf_core::logbuf_core(uint32_t count, uint32_t flush_trigger, uint32_t block_size,
@@ -88,6 +83,9 @@ hints_t hints_profile[] = {
  *
  *********************************************************************/
 logbuf_core::logbuf_core(
+                   const char* path,
+                   long bsize, // segment size for the log buffer, set through "sm_logbufsize"
+                   bool reformat,
                  uint32_t count, // IN: max number of segments in the log buffer
                  uint32_t flush_trigger, // IN: max number of unflushed segments in the write buffer
                                          //     before a forced flush
@@ -97,6 +95,40 @@ logbuf_core::logbuf_core(
                  int active_slot_count // IN: slot number in ConsolidationArray
 ) 
 {
+    FUNC(logbuf_core::logbuf_core);
+
+    w_assert1(strlen(path) < sizeof(_logdir));
+    strcpy(_logdir, path);
+
+    _reservations_active = false;
+    _segsize = _ceil(bsize, SEGMENT_SIZE); // actual segment size for the log buffer;
+    _log_corruption = false;
+    _curr_index = -1;
+    _curr_num = 1;
+    _readbuf = NULL;
+#ifdef LOG_DIRECT_IO
+    _writebuf = NULL;
+#endif
+    _skip_log = new skip_log;
+    _min_chkpt_rec_lsn = first_lsn(1);
+    _space_available = 0;
+    _space_rsvd_for_chkpt = 0; 
+    _partition_size = 0; 
+    _partition_data_size = 0;
+
+    DO_PTHREAD(pthread_mutex_init(&_scavenge_lock, NULL));
+    DO_PTHREAD(pthread_cond_init(&_scavenge_cond, NULL));
+    DO_PTHREAD(pthread_mutex_init(&_wait_flush_lock, NULL));
+    DO_PTHREAD(pthread_cond_init(&_wait_cond, NULL));
+    DO_PTHREAD(pthread_cond_init(&_flush_cond, NULL));
+    DO_PTHREAD(pthread_mutex_init(&_space_lock, 0));
+    DO_PTHREAD(pthread_cond_init(&_space_cond, 0));
+
+    /* Create thread o flush the log */
+    _flush_daemon = new flush_daemon_thread_t(this);
+
+    _oldest_lsn_tracker = new PoorMansOldestLsnTracker(1 << 20);
+    w_assert1(_oldest_lsn_tracker);
 
     DBGOUT3(<< "log buffer: constructor");
 
@@ -128,6 +160,12 @@ logbuf_core::logbuf_core(
         W_FATAL(fcOUTOFMEMORY);
     }
 
+    // it will be updated through set_partition_data_size()
+    _partition_data_size = part_size;
+    _waiting_for_space = false;
+    _waiting_for_flush = false;
+    _flush_daemon_running = false;
+    _shutting_down = false;
 
     _to_insert_seg = NULL;
     _to_flush_seg = NULL;
@@ -137,37 +175,60 @@ logbuf_core::logbuf_core(
     _to_flush_lsn = lsn_t::null;
     _to_archive_lsn = lsn_t::null;
 
-
-    // it will be updated through set_partition_data_size()
-    _partition_data_size = part_size;
-
-    // for M1, there is no integration, so_owner == NULL
-    // _owner != NULL for M2 & M3
-    _owner = NULL;
-
-
-    // see log_core::wait_for_space
-    _waiting_for_space = false;
-
-    // waiting for flush daemon
-    _waiting_for_flush = false;
-
-
-    DO_PTHREAD(pthread_mutex_init(&_wait_flush_lock, NULL));
-    DO_PTHREAD(pthread_cond_init(&_wait_cond, NULL));
-    DO_PTHREAD(pthread_cond_init(&_flush_cond, NULL));
-
-    _flush_daemon_running = false;
-    _shutting_down = false;
-
-    _flush_daemon = new flush_daemon_thread_t(this);
-    
-    // aether
     _carray = new ConsolidationArray(active_slot_count);
 
     // performance stats
     hits = 0;
     reads = 0;
+
+    // NOTE: GROT must make this a function of page size, and of xfer size,
+    // since xfer size is fixed (8K).
+    // It has to big enough to read the maximum-sized log record, clearly
+    // more than a page.
+#ifdef LOG_DIRECT_IO
+#if SM_PAGESIZE < 8192
+    posix_memalign((void**)&_readbuf, LOG_DIO_ALIGN, BLOCK_SIZE*4);
+    //_readbuf = new char[BLOCK_SIZE*4];
+    // we need two blocks for the write buffer because the skip log record may span two blocks
+    posix_memalign((void**)&_writebuf, LOG_DIO_ALIGN, BLOCK_SIZE*2);
+#else
+    posix_memalign((void**)&_readbuf, LOG_DIO_ALIGN, SM_PAGESIZE*4);
+    //_readbuf = new char[SM_PAGESIZE*4];
+    posix_memalign((void**)&_writebuf, LOG_DIO_ALIGN, SM_PAGESIZE*2);
+#endif
+#else
+#if SM_PAGESIZE < 8192
+    _readbuf = new char[BLOCK_SIZE*4];
+#else
+    _readbuf = new char[SM_PAGESIZE*4];
+#endif
+#endif // LOG_DIRECT_IO
+
+    w_assert1(is_aligned(_readbuf));
+
+    // this function calculates _partition_data_size
+    // the total log size, max_logsz, is set through this option "sm_logsize"
+    // the default value of sm_logsize is increased from the original 128KB to 128MB
+    W_COERCE(_set_size(max_logsz));
+
+    // the log buffer (the epochs) is designed to hold log records from at most two partitions
+    // so its capacity cannot exceed the partition size
+    // otherwise, there could be log records from three parttitions in the buffer
+    if(LOGBUF_SEG_COUNT*_segsize > _partition_data_size) {
+        errlog->clog << error_prio 
+                     << "Log buf seg count too big or total log size (sm_logsize) too small: "  
+                     << " LOGBUF_SEG_COUNT=" <<  LOGBUF_SEG_COUNT
+                     << " _segsize=" << _segsize
+                     << " _partition_data_size=" << _partition_data_size
+                     << " max_logsz=" << max_logsz
+                     << endl; 
+        errlog->clog << error_prio << endl;
+        fprintf(stderr, "Log buf seg count too big or total log size (sm_logsize) too small ");
+        W_FATAL(eINTERNAL);
+    }
+
+    initialize_storage(reformat);
+    start_flush_daemon();
 }
 
 /*********************************************************************
@@ -178,11 +239,6 @@ logbuf_core::logbuf_core(
  *
  *********************************************************************/
 logbuf_core::~logbuf_core() {
-
-    // for M1, we have to call shutdown() by ourselves
-    // for M2 and M3, shutdown is called by log_core
-    if (IS_M1())
-        shutdown();
 
 // TODO(Restart)... comment out for now, too much noise
 //    logbuf_print_nolock("shutting down...", 3);
@@ -490,8 +546,7 @@ void logbuf_core::_prime(
 // TODO(Restart)... comment out for now, too much noise
 //    DBGOUT3(<< "_prime @ lsn " << next);
 
-    if (IS_M1()==false)
-        w_assert1(_owner->_durable_lsn == _owner->_curr_lsn);    
+    w_assert1(_durable_lsn == _curr_lsn);    
 
     w_assert1(_flush_daemon_running == false);
 
@@ -530,19 +585,17 @@ void logbuf_core::_prime(
     int n = 0;
 
     // there is no physical I/O in M1
-    if(IS_M1()==false) {
-        // read in the valid portion (0 - size)
+    // read in the valid portion (0 - size)
 #ifdef LOG_DIRECT_IO
-        w_rc_t e = me()->pread(fd, first_seg->buf, aligned_size, start + seg_lsn.lo());
+    w_rc_t e = me()->pread(fd, first_seg->buf, aligned_size, start + seg_lsn.lo());
 #else
-        w_rc_t e = me()->pread(fd, first_seg->buf, size, start + seg_lsn.lo());
+    w_rc_t e = me()->pread(fd, first_seg->buf, size, start + seg_lsn.lo());
 #endif
-        if (e.is_error()) {
-                W_FATAL_MSG(e.err_num(), 
-                            << "cannot read log: lsn " << seg_lsn 
-                            << "pread(): " << e 
-                            << "pread() returns " << n << endl);
-        }
+    if (e.is_error()) {
+        W_FATAL_MSG(e.err_num(), 
+                << "cannot read log: lsn " << seg_lsn 
+                << "pread(): " << e 
+                << "pread() returns " << n << endl);
     }
 
     first_seg->base_lsn = seg_lsn;        
@@ -553,8 +606,7 @@ void logbuf_core::_prime(
     _to_archive_seg = _to_insert_seg = _to_flush_seg = first_seg;    
     _to_archive_lsn = _to_insert_lsn = _to_flush_lsn = next;
 
-    if(IS_M1()==false)
-        _owner->_durable_lsn = _owner->_curr_lsn = _owner->_flush_lsn = next;
+    _durable_lsn = _curr_lsn = _flush_lsn = next;
 
 
     // this is the first log partition, base = 0
@@ -602,7 +654,7 @@ void logbuf_core::logbuf_prime(lsn_t next) {
  *
  *  NOTE:
  *  right now we are still using log_core's read buffer, because the mutex is still being held during fetches
- *  the mutex is acquired through _owner->_acquire()
+ *  the mutex is acquired through _acquire()
  *  the caller must release it when it is done with the fetched log record
  *
  *********************************************************************/
@@ -615,8 +667,6 @@ logbuf_core::fetch(
 )
 {
     FUNC(log_core::fetch);
-
-    w_assert1(IS_M1()==false);
    
     DBGTHRD(<<"fetching lsn " << ll 
             << " , _curr_lsn = " << _to_insert_lsn
@@ -624,7 +674,7 @@ logbuf_core::fetch(
 
 
 #if W_DEBUG_LEVEL > 0
-    _owner->_sanity_check();
+    _sanity_check();
 #endif 
 
     // it's not sufficient to flush to ll, since
@@ -632,14 +682,14 @@ logbuf_core::fetch(
     // to read...
     // force a flush when necessary
     lsn_t must_be_durable = ll + sizeof(logrec_t);
-    if(must_be_durable > _owner->_durable_lsn) {
+    if(must_be_durable > _durable_lsn) {
         W_DO(flush(must_be_durable));
     }
 
 
     // open partition to read
     // protect against double-acquire
-    _owner->_acquire(); // caller must release the _partition_lock mutex
+    _acquire(); // caller must release the _partition_lock mutex
 
     /*
      *  Find and open the partition
@@ -669,7 +719,7 @@ logbuf_core::fetch(
 
         DBG(<<" about to open " << ll.hi());
         //                                 part#, end_hint, existing, recovery
-        if ((p = _owner->_open_partition_for_read(ll.hi(), lsn_t::null, true, false))) {
+        if ((p = _open_partition_for_read(ll.hi(), lsn_t::null, true, false))) {
 
             // opened one... is it the right one?
             DBGTHRD(<<"opened... p->size()=" << p->size());
@@ -679,12 +729,12 @@ logbuf_core::fetch(
                 if (ll.lo() == 0) {
                     // we have reached the beginning of a partition
                     // let's go find the previous partition
-                    p = _owner->_n_partition(ll.hi()-1);
+                    p = _n_partition(ll.hi()-1);
                     if(p == (partition_t *)NULL) {
                         // we are not sure if the previous partition exists or not
                         // if it does exist, we want to know its size
                         // if not, we have reached EOF
-                        p = _owner->_open_partition_for_read(ll.hi()-1, lsn_t::null, true, true);
+                        p = _open_partition_for_read(ll.hi()-1, lsn_t::null, true, true);
                         if(p == (partition_t *)NULL)
                             // if open failed...
                             return RC(eINTERNAL);
@@ -715,12 +765,12 @@ logbuf_core::fetch(
             else {
                 // forward scan
                 if ( ll.lo() >= p->size() ||
-                     (p->size() == partition_t::nosize && ll.lo() >= _owner->limit()))  {
+                     (p->size() == partition_t::nosize && ll.lo() >= limit()))  {
                     DBGTHRD(<<"seeking to " << ll.lo() << ";  beyond p->size() ... OR ...");
-                    DBGTHRD(<<"limit()=" << _owner->limit() << " & p->size()==" 
+                    DBGTHRD(<<"limit()=" << limit() << " & p->size()==" 
                             << int(partition_t::nosize));
 
-                    ll = _owner->first_lsn(ll.hi() + 1);
+                    ll = first_lsn(ll.hi() + 1);
                     DBGTHRD(<<"getting next partition: " << ll);
                     p = 0; continue;
                 }
@@ -756,12 +806,12 @@ logbuf_core::fetch(
         if (r.type() == logrec_t::t_skip && r.get_lsn_ck() == ll) {                
             DBGTHRD(<<"seeked to skip" << ll );
             DBGTHRD(<<"getting next partition.");
-            ll = _owner->first_lsn(ll.hi() + 1);
+            ll = first_lsn(ll.hi() + 1);
             // FRJ: BUG? Why are we so certain this partition is even
             // open, let alone open for read?
-            p = _owner->_n_partition(ll.hi());
+            p = _n_partition(ll.hi());
             if(!p)
-                p = _owner->_open_partition_for_read(ll.hi(), lsn_t::null, false, false);
+                p = _open_partition_for_read(ll.hi(), lsn_t::null, false, false);
             
             // re-read
 // TODO(Restart)... comment out for now, too much noise            
@@ -791,7 +841,7 @@ logbuf_core::fetch(
 
     DBGTHRD(<<"fetch at lsn " << ll  << " returns " << r);
 #if W_DEBUG_LEVEL > 2
-    _owner->_sanity_check();
+    _sanity_check();
 #endif 
 
     // caller must release the _partition_lock mutex
@@ -819,7 +869,7 @@ w_rc_t logbuf_core::_fetch(
 {
 
     // use the log manager's read buffer for now
-    rec = (logrec_t *)_owner->_readbuf;
+    rec = (logrec_t *)_readbuf;
 
     reads++;
 
@@ -1102,7 +1152,7 @@ int logbuf_core::fetch_for_test(lsn_t& lsn, logrec_t*& rp) {
     }
 
     // important! release the lock....
-    _owner->release(); 
+    release(); 
 
 
     return ret;
@@ -1129,7 +1179,7 @@ int logbuf_core::fetch_for_test(lsn_t& lsn, logrec_t*& rp) {
  *
  *  NOTE:
  *  right now we are still using log_core's read buffer, because the mutex is still being held during fetches
- *  the mutex is acquired through _owner->_acquire()
+ *  the mutex is acquired through _acquire()
  *  the caller must release it when it is done with the fetched log record
  *
  *********************************************************************/
@@ -1138,8 +1188,6 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
 {
     FUNC(log_core::fetch);
 
-    w_assert1(IS_M1()==false);
-   
     DBGTHRD(<<"fetching lsn " << ll 
             << " , _curr_lsn = " << _to_insert_lsn
             << " , _durable_lsn = " << _to_flush_lsn);
@@ -1148,7 +1196,7 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
     bool forward = hints_profile[op].forward;
 
 #if W_DEBUG_LEVEL > 0
-    _owner->_sanity_check();
+    _sanity_check();
 #endif 
 
     // it's not sufficient to flush to ll, since
@@ -1156,14 +1204,14 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
     // to read...
     // force a flush when necessary
     lsn_t must_be_durable = ll + sizeof(logrec_t);
-    if(must_be_durable > _owner->_durable_lsn) {
+    if(must_be_durable > _durable_lsn) {
         W_DO(flush(must_be_durable));
     }
 
 
     // open partition to read
     // protect against double-acquire
-    _owner->_acquire(); // caller must release the _partition_lock mutex
+    _acquire(); // caller must release the _partition_lock mutex
 
     /*
      *  Find and open the partition
@@ -1193,7 +1241,7 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
 
         DBG(<<" about to open " << ll.hi());
         //                                 part#, end_hint, existing, recovery
-        if ((p = _owner->_open_partition_for_read(ll.hi(), lsn_t::null, true, false))) {
+        if ((p = _open_partition_for_read(ll.hi(), lsn_t::null, true, false))) {
 
             // opened one... is it the right one?
             DBGTHRD(<<"opened... p->size()=" << p->size());
@@ -1206,13 +1254,13 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
                     // let's go find the previous partition
 
                     // first, see if the partition is already opened
-                    p = _owner->_n_partition(ll.hi()-1);
+                    p = _n_partition(ll.hi()-1);
                     if(p == (partition_t *)NULL) {
                         // not opened
                         // we are not sure if the previous partition exists or not
                         // if it does exist, we want to know its size
                         // if not, we have reached EOF
-                        p = _owner->_open_partition_for_read(ll.hi()-1, lsn_t::null, true, true);
+                        p = _open_partition_for_read(ll.hi()-1, lsn_t::null, true, true);
                         if(p == (partition_t *)NULL)
                             // if open failed...
                             return RC(eINTERNAL);
@@ -1244,12 +1292,12 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
             else {
                 // forward scan
                 if ( ll.lo() >= p->size() ||
-                     (p->size() == partition_t::nosize && ll.lo() >= _owner->limit()))  {
+                     (p->size() == partition_t::nosize && ll.lo() >= limit()))  {
                     DBGTHRD(<<"seeking to " << ll.lo() << ";  beyond p->size() ... OR ...");
-                    DBGTHRD(<<"limit()=" << _owner->limit() << " & p->size()==" 
+                    DBGTHRD(<<"limit()=" << limit() << " & p->size()==" 
                             << int(partition_t::nosize));
 
-                    ll = _owner->first_lsn(ll.hi() + 1);
+                    ll = first_lsn(ll.hi() + 1);
                     DBGTHRD(<<"getting next partition: " << ll);
                     p = 0; continue;
                 }
@@ -1285,12 +1333,12 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
         if (r.type() == logrec_t::t_skip && r.get_lsn_ck() == ll) {                
             DBGTHRD(<<"seeked to skip" << ll );
             DBGTHRD(<<"getting next partition.");
-            ll = _owner->first_lsn(ll.hi() + 1);
+            ll = first_lsn(ll.hi() + 1);
             // FRJ: BUG? Why are we so certain this partition is even
             // open, let alone open for read?
-            p = _owner->_n_partition(ll.hi());
+            p = _n_partition(ll.hi());
             if(!p)
-                p = _owner->_open_partition_for_read(ll.hi(), lsn_t::null, false, false);
+                p = _open_partition_for_read(ll.hi(), lsn_t::null, false, false);
             
             // re-read
 // TODO(Restart)... comment out for now, too much noise            
@@ -1320,7 +1368,7 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
 
     DBGTHRD(<<"fetch at lsn " << ll  << " returns " << r);
 #if W_DEBUG_LEVEL > 2
-    _owner->_sanity_check();
+    _sanity_check();
 #endif 
 
     // caller must release the _partition_lock mutex
@@ -1347,7 +1395,7 @@ w_rc_t logbuf_core::_fetch(logrec_t* &rec, lsn_t &lsn, partition_t *p, hints_op 
     //w_assert1(rec);
 
     // use the log manager's log buffer for now
-    rec = (logrec_t *)(_owner->_readbuf);
+    rec = (logrec_t *)(_readbuf);
 
     reads++;
 
@@ -1489,24 +1537,23 @@ rc_t logbuf_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn) {
 
     // FRJ: this assertion wasn't there originally, but I don't see
     // how the situation could possibly be correct
-    if (IS_M1()==false)
-        w_assert1(orig_lsn <= _owner->_curr_lsn);
+    w_assert1(orig_lsn <= _curr_lsn);
     
     // no need to grab a mutex if it's too late
-    if(orig_lsn < _owner->_flush_lsn)
+    if(orig_lsn < _flush_lsn)
     {
         DBGOUT3( << "BAD log_core::compensate (already flushed) - orig_lsn: " << orig_lsn 
-                 << ", flush_lsn: " << _owner->_flush_lsn << ", undo_lsn: " 
+                 << ", flush_lsn: " << _flush_lsn << ", undo_lsn: " 
                  << undo_lsn);   
         return RC(eBADCOMPENSATION);
     }
     
     CRITICAL_SECTION(cs, _comp_lock);
     // check again; did we just miss it?
-    lsn_t flsn = _owner->_flush_lsn;
+    lsn_t flsn = _flush_lsn;
     if(orig_lsn < flsn) {
         DBGOUT3( << "BAD log_core::compensate (already flushed) - orig_lsn: " << orig_lsn 
-                 << ", flush_lsn: " << _owner->_flush_lsn << ", undo_lsn: " 
+                 << ", flush_lsn: " << _flush_lsn << ", undo_lsn: " 
                  << undo_lsn);   
         return RC(eBADCOMPENSATION);
     }
@@ -1542,7 +1589,7 @@ rc_t logbuf_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn) {
 
     if(pos >= segsize() - logrec_t::hdr_non_ssx_sz) {
         DBGOUT3( << "BAD log_core::compensate (split record) - orig_lsn: " << orig_lsn 
-                 << ", flush_lsn: " << _owner->_flush_lsn << ", undo_lsn: " 
+                 << ", flush_lsn: " << _flush_lsn << ", undo_lsn: " 
                  << undo_lsn);   
 
         return RC(eBADCOMPENSATION); // split record. forget it.
@@ -1573,7 +1620,7 @@ rc_t logbuf_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn) {
             << __LINE__ << " " __FILE__ << " "
             << "log rec is  " << *s << endl;
         DBGOUT3( << "BAD log_core::compensate (bug?) - orig_lsn: " << orig_lsn 
-                 << ", flush_lsn: " << _owner->_flush_lsn << ", undo_lsn: " 
+                 << ", flush_lsn: " << _flush_lsn << ", undo_lsn: " 
                  << undo_lsn);   
 
                 return RC(eBADCOMPENSATION);
@@ -1583,7 +1630,7 @@ rc_t logbuf_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn) {
 
         if(s->is_undoable_clr()) {
             DBGOUT3( << "BAD log_core::compensate (undoable_clr) - orig_lsn: " << orig_lsn 
-                     << ", flush_lsn: " << _owner->_flush_lsn << ", undo_lsn: " 
+                     << ", flush_lsn: " << _flush_lsn << ", undo_lsn: " 
                      << undo_lsn);   
             return RC(eBADCOMPENSATION);
         }
@@ -1592,7 +1639,7 @@ rc_t logbuf_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn) {
         DBGTHRD(<<"COMPENSATING LOG RECORD " << undo_lsn << " : " << *s);
         s->set_clr(undo_lsn);
         // DBGOUT3( << "GOOD log_core::compensate - orig_lsn: " << orig_lsn 
-        //          << ", flush_lsn: " << _owner->_flush_lsn << ", undo_lsn: " 
+        //          << ", flush_lsn: " << _flush_lsn << ", undo_lsn: " 
         //          << undo_lsn << ", to_insert: " << _to_insert_lsn);   
 
     }
@@ -1683,8 +1730,7 @@ void logbuf_core::_acquire_buffer_space(CArraySlot* info, long recsize) {
      * the next byte of the log to be written
      */
     /* _cur_epoch.end is the offset into the log buffer of the _curr_lsn */
-    if (IS_M1()==false)
-        w_assert2(_buf_epoch.end % segsize() == _owner->_curr_lsn.lo() % segsize());
+    w_assert2(_buf_epoch.end % segsize() == _curr_lsn.lo() % segsize());
 
     w_assert2(end_byte() >= start_byte());
 
@@ -1736,7 +1782,7 @@ void logbuf_core::_acquire_buffer_space(CArraySlot* info, long recsize) {
 
         long leftovers = _partition_data_size - curr_lsn.lo();
 
-        if(leftovers && _owner && !_owner->reserve_space(leftovers)) {
+        if(leftovers && !reserve_space(leftovers)) {
             std::cerr << "WARNING WARNING: OUTOFLOGSPACE in update_epochs" << std::endl;
             info->error = eOUTOFLOGSPACE;
             _insert_lock.release(&info->me);
@@ -1817,8 +1863,7 @@ void logbuf_core::_acquire_buffer_space(CArraySlot* info, long recsize) {
     w_assert1(_free>=0);
 
 
-    if (IS_M1()==false)
-        _owner->_curr_lsn = _to_insert_lsn;
+    _curr_lsn = _to_insert_lsn;
 
 
     _carray->join_expose(info);
@@ -2059,8 +2104,7 @@ rc_t logbuf_core::insert(
 // TODO(Restart)... comment out for now, too much noise
 //    DBGOUT3(<< " insert @ lsn: " << rec_lsn << " type " << rec.type() << " length " << rec.length() );
 
-    if(IS_M1()==false)
-        ADD_TSTAT(log_bytes_generated,size);
+    ADD_TSTAT(log_bytes_generated,size);
     return RCOK;
 }
 
@@ -2108,22 +2152,6 @@ rc_t logbuf_core::logbuf_insert(long recsize) {
 
 
 // =================== flush =========================
-
-/*********************************************************************
- *  
- *  void logbuf_core::start_flush_daemon()
- *
- *  Start the flush daemon
- *  
- *  Same as log_core::start_flush_daemon
- *
- *********************************************************************/
-void logbuf_core::start_flush_daemon() {
-    DBGOUT3(<< "starting the flush daemon");
-    _flush_daemon_running = true;
-    _flush_daemon->fork();
-}
-
 
 /*********************************************************************
  *  
@@ -2257,9 +2285,7 @@ void logbuf_core::_flushX(lsn_t start_lsn, uint64_t start, uint64_t end) {
     // TODO: hacky...
     // locate the current partition
     // open a new partition when necessary
-    if (IS_M1()==false) {
-        p = _owner->_flushX_get_partition(start_lsn, 0,0,0,0);
-    }
+    p = _flushX_get_partition(start_lsn, 0,0,0,0);
 #endif
 
 
@@ -2363,11 +2389,9 @@ void logbuf_core::_flushX(lsn_t start_lsn, uint64_t start, uint64_t end) {
 
 #ifdef LOG_BUFFER
     // finally flush all iovs
-    if(IS_M1()==false)
-        p->flush(p->fhdl_app(), start_lsn, written, write_size, iov, seg_cnt);
+    p->flush(p->fhdl_app(), start_lsn, written, write_size, iov, seg_cnt);
 
-    if (IS_M1()==false)
-        p->set_size(start_lsn.lo() + written);
+    p->set_size(start_lsn.lo() + written);
 #endif
 
     // update _to_flush_seg
@@ -2379,7 +2403,7 @@ void logbuf_core::_flushX(lsn_t start_lsn, uint64_t start, uint64_t end) {
         _to_flush_seg = cur;
     }
 
-    delete iov;
+    delete[] iov;
 
 }
 
@@ -2449,8 +2473,7 @@ lsn_t logbuf_core::flush_daemon_work(lsn_t old_mark)
     {
         // Avoid interference with compensations.
         CRITICAL_SECTION(cs, _comp_lock);
-        if (IS_M1()==false)
-            _owner->_flush_lsn = end_lsn;
+        _flush_lsn = end_lsn;
     }
 
     // flush
@@ -2461,8 +2484,7 @@ lsn_t logbuf_core::flush_daemon_work(lsn_t old_mark)
     // _to_flush_seg is updated in _flushX
     w_assert1(_to_flush_seg);
     _to_flush_lsn = end_lsn;
-    if(IS_M1()==false)
-        _owner->_durable_lsn = end_lsn;
+    _durable_lsn = end_lsn;
     _start = new_start;
 
 
@@ -2521,8 +2543,7 @@ rc_t logbuf_core::flush(
                 if (ret_flushed) *ret_flushed = true;// now flushed!
             }
         } else {
-            if(IS_M1()==false)
-                INC_TSTAT(log_dup_sync_cnt);
+            INC_TSTAT(log_dup_sync_cnt);
             if (ret_flushed) *ret_flushed = true; // already flushed
         }
     }
@@ -2726,9 +2747,7 @@ logbuf_seg *logbuf_core::_get_new_seg_for_fetch() {
 void logbuf_core::_get_more_space_for_insertion(CArraySlot *info) {
     logbuf_seg *free_seg = NULL;
 
-    if(IS_M1()==false) {
-        w_assert1(info!=NULL);
-    }
+    w_assert1(info!=NULL);
 
     //logbuf_print("_get_more_space_for_insertion");
 

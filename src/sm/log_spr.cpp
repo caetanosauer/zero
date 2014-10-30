@@ -33,7 +33,7 @@ void page_evict_log::redo(fixable_page_h* page) {
     bp.set_emlsn_general(dp->_child_slot, dp->_child_lsn);
 }
 
-void log_m::dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t &max_lsn) {
+void log_core::dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t &max_lsn) {
     lsn_t master = master_lsn();
     o << "Dumping Page LSN Chain for PID=" << pid << ", MAXLSN=" << max_lsn
         << ", MasterLSN=" << master << "..." << std::endl;
@@ -72,10 +72,10 @@ void log_m::dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t 
     // after the dumping, recovers the original master_lsn because log_i increased it.
     // of course, this is not safe if there are other transactions going.
     // but, this method is for debugging.
-    log_core::THE_LOG->_master_lsn = master;
+    _master_lsn = master;
 }
 
-rc_t log_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
+rc_t log_core::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
                                     const bool actual_emlsn) {
     // Single-Page-Recovery operation does not hold latch on the page to be recovered, because
     // it assumes the page is private until recovered.  It is not the case during
@@ -132,10 +132,10 @@ rc_t log_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
 
     std::vector<char> buffer(SPR_LOG_BUFSIZE); // TODO, we should have an object pool for this.
     std::vector<logrec_t*> ordered_entires;
-    W_DO(log_core::THE_LOG->_collect_single_page_recovery_logs(pid, p.lsn(), emlsn,
+    W_DO(_collect_single_page_recovery_logs(pid, p.lsn(), emlsn,
         &buffer[0], SPR_LOG_BUFSIZE, ordered_entires, actual_emlsn));
     DBGOUT1(<< "Collected log. About to apply " << ordered_entires.size() << " logs");
-    W_DO(log_core::THE_LOG->_apply_single_page_recovery_logs(p, ordered_entires));
+    W_DO(_apply_single_page_recovery_logs(p, ordered_entires));
 
     // after Single-Page-Recovery, the page should be exactly the requested LSN, perform the validation only if
     // caller is using an actual emlsn

@@ -748,7 +748,7 @@ xct_log_warn_check_t::check(xct_t *& _victim)
                     xct_i i(true);
                     lsn_t l = smlevel_1::log->global_min_lsn();
                     char  buf[max_devname];
-                    log_m::make_log_name(l.file(), buf, max_devname);
+                    log->make_log_name(l.file(), buf, max_devname);
                     w_rc_t rc = (*log_warn_callback)(
                         &i,   // iterator
                         v,    // victim

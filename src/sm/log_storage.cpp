@@ -10,7 +10,15 @@
 #include "sm_int_1.h"
 #include "chkpt.h"
 
+#include <cstdio>        /* XXX for log recovery */
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <os_interface.h>
+#include <largefile_aware.h>
+
 #include "log_core.h"
+
+#include "logbuf_common.h"
 
 // needed for skip_log (TODO fix this)
 #include "logdef_gen.cpp"
@@ -702,62 +710,6 @@ void log_core::initialize_storage(bool reformat)
 
     cs.exit();
     if(1){
-#ifdef LOG_BUFFER
-        // Print various interesting info to the log:
-        errlog->clog << debug_prio 
-            << "Log max_partition_size (based on OS max file size)" 
-            << max_partition_size() << endl
-            << "Log max_partition_size * PARTITION_COUNT " 
-                    << max_partition_size() * PARTITION_COUNT << endl
-            << "Log min_partition_size (based on fixed segment size and fixed block size) "
-                    << min_partition_size() << endl
-            << "Log min_partition_size*PARTITION_COUNT " 
-                    << min_partition_size() * PARTITION_COUNT << endl;
-
-        errlog->clog << debug_prio 
-            << "Log BLOCK_SIZE (log write size) " << BLOCK_SIZE
-            << endl
-            << "Log segsize() (log buffer size) " << segsize()
-            << endl
-            << "Log segsize()/BLOCK_SIZE " << double(segsize())/double(BLOCK_SIZE)
-            << endl;
-
-        errlog->clog << debug_prio 
-            << "User-option smlevel_0::max_logsz " << max_logsz << endl
-            << "Log _partition_data_size " << _partition_data_size 
-            << endl
-            << "Log _partition_data_size/segsize() " 
-                << double(_partition_data_size)/double(segsize())
-            << endl
-            << "Log _partition_data_size/segsize()+BLOCK_SIZE " 
-                << _partition_data_size + BLOCK_SIZE
-            << endl;
-
-        errlog->clog << debug_prio 
-            << "Log _start " << start_byte() << " end_byte() " << end_byte()
-            << endl
-                     << "Log _curr_lsn " << curr_lsn()
-                     << " _durable_lsn " << durable_lsn()
-            << endl; 
-        errlog->clog << debug_prio 
-            << "Curr epoch  base_lsn " << _log_buffer->_cur_epoch.base_lsn
-            << endl
-            << "Curr epoch  base " << _log_buffer->_cur_epoch.base
-            << endl
-            << "Curr epoch  start " << _log_buffer->_cur_epoch.start
-            << endl
-            << "Curr epoch  end " << _log_buffer->_cur_epoch.end
-            << endl;
-        errlog->clog << debug_prio 
-            << "Old epoch  base_lsn " << _log_buffer->_old_epoch.base_lsn
-            << endl
-            << "Old epoch  base " << _log_buffer->_old_epoch.base
-            << endl
-            << "Old epoch  start " << _log_buffer->_old_epoch.start
-            << endl
-            << "Old epoch  end " << _log_buffer->_old_epoch.end
-            << endl;
-#else
         // Print various interesting info to the log:
         errlog->clog << debug_prio 
             << "Log max_partition_size (based on OS max file size)" 
@@ -812,7 +764,6 @@ void log_core::initialize_storage(bool reformat)
             << endl
             << "Old epoch  end " << _old_epoch.end
             << endl;
-#endif // LOG_BUFFER
     }
 }
 
@@ -1303,8 +1254,6 @@ void log_core::set_master(const lsn_t& mlsn, const lsn_t  & min_rec_lsn,
     CRITICAL_SECTION(cs, _partition_lock);
     lsn_t min_lsn = std::min(min_rec_lsn, min_xct_lsn);
 
-    // This used to descend to raw_log or unix_log:
-    w_assert1(log_core::THE_LOG != NULL);
     _write_master(mlsn, min_lsn);
 
     _master_lsn = mlsn;
@@ -1350,7 +1299,7 @@ void log_core::_write_master(const lsn_t &l, const lsn_t &min)
 
     {        /* write ending lsns into the master chkpt record */
         lsn_t         array[PARTITION_COUNT];
-        int j = log_core::THE_LOG->get_last_lsns(array);
+        int j = get_last_lsns(array);
         if(j > 0) {
             w_ostrstream s(_chkpt_meta_buf, CHKPT_META_BUF);
             _create_master_chkpt_contents(s, j, array);
@@ -1411,11 +1360,7 @@ rc_t log_core::wait_for_space(fileoff_t &amt, timeout_in_ms timeout)
     pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
     waiting_xct* wait = new waiting_xct(&amt, &cond);
     DO_PTHREAD(pthread_mutex_lock(&_space_lock));
-#ifdef LOG_BUFFER
-    _log_buffer->_waiting_for_space = true;
-#else
     _waiting_for_space = true;
-#endif
     _log_space_waiters.push_back(wait);
     while(amt) {
         /* First time through, someone could have freed up space
@@ -1471,11 +1416,7 @@ void log_core::release_space(fileoff_t amt)
        out set their need to -1 leave it for release_space to clean
        it up.
      */
-#ifdef LOG_BUFFER
-    if(_log_buffer->_waiting_for_space) {
-#else
     if(_waiting_for_space) {
-#endif
         DO_PTHREAD(pthread_mutex_lock(&_space_lock));
         while(amt > 0 && _log_space_waiters.size()) {
             bool finished_one = false;
@@ -1499,11 +1440,7 @@ void log_core::release_space(fileoff_t amt)
             }
         }
         if(_log_space_waiters.empty()) {
-#ifdef LOG_BUFFER
-            _log_buffer->_waiting_for_space = false;
-#else
             _waiting_for_space = false;
-#endif
         }
         
         DO_PTHREAD(pthread_mutex_unlock(&_space_lock));

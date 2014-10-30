@@ -83,10 +83,6 @@ class PoorMansOldestLsnTracker;
 #include "mcs_lock.h"
 #include "tatas.h"
 
-// LOG_BUFFER switch
-#include "logbuf_common.h"
-#include "logbuf_core.h"
-
 
 /**
  * \brief Core Implementation of Log Manager
@@ -114,35 +110,106 @@ class log_core : public log_m
     };
     static std::deque<log_core::waiting_xct*> _log_space_waiters;
 
-#ifdef LOG_BUFFER
+    // INTERFACE METHODS BEGIN
 public:
-    logbuf_core *_log_buffer; // the new log buffer
-#endif
+    // do whatever needs to be done before destructor is callable
+    virtual void            shutdown(); 
 
-private:
+    // for log_m :
+    static fileoff_t             segment_size() { return SEGMENT_SIZE; }
+
+    // returns lsn where data were written 
+    virtual rc_t            insert(logrec_t &r, lsn_t* l); 
+    virtual rc_t            flush(const lsn_t &lsn, bool block=true, bool signal=true, bool *ret_flushed=NULL);
+    virtual rc_t            compensate(const lsn_t &orig_lsn, const lsn_t& undo_lsn);
+    virtual rc_t            fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, const bool forward);
+    virtual rc_t            fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, hints_op op);
+    virtual rc_t            scavenge(const lsn_t &min_rec_lsn, const lsn_t&min_xct_lsn);
+    virtual void            release_space(fileoff_t howmuch);
+    virtual void            activate_reservations() ;
+    virtual fileoff_t       consume_chkpt_reservation(fileoff_t howmuch);
+    virtual rc_t            wait_for_space(fileoff_t &amt, timeout_in_ms timeout);
+    virtual bool            reservations_active() const { return _reservations_active; }
+    virtual rc_t            file_was_archived(const char * /*file*/);
+
+    virtual void                set_master(const lsn_t& master_lsn, 
+                            const lsn_t& min_lsn, 
+                            const lsn_t& min_xct_lsn);
+
+    virtual lsn_t               master_lsn() const {
+                            ASSERT_FITS_IN_POINTER(lsn_t);
+                            // else need to grab the partition mutex
+                            return _master_lsn;
+                        }
+    virtual lsn_t               durable_lsn() const {
+                            ASSERT_FITS_IN_POINTER(lsn_t);
+                            // else need to join the insert queue
+                            return _durable_lsn;
+                        }
+    
+    // public for use in xct_impl in log-full handling... 
+    /**\brief 
+     * \details 
+     * Set at constructor time and when a new master is created (set_master)
+     */
+    virtual lsn_t               min_chkpt_rec_lsn() const {
+                            ASSERT_FITS_IN_POINTER(lsn_t);
+                            // else need to grab the partition mutex
+                            return _min_chkpt_rec_lsn;
+                        }
+
+    virtual fileoff_t           reserve_space(fileoff_t howmuch);
+
+    virtual long                max_chkpt_size() const;
+    virtual bool                verify_chkpt_reservation();
+
+    /**\brief  Return the amount of space left in the log.
+     * \details
+     * Used by xct_impl for error-reporting. 
+     */
+    virtual fileoff_t           space_left() const { return *&_space_available; }
+    virtual fileoff_t           space_for_chkpt() const { return *&_space_rsvd_for_chkpt ; }
+
+    /**\brief Return name of log file for given partition number.
+     * \details
+     * Used by xct for error-reporting and callback-handling.
+     */
+    virtual const char * make_log_name(uint32_t n,
+                        char*              buf,
+                        int                bufsz);
+
+    /**\brief Return current lsn of the log (for insert purposes)
+     * \details
+     * Used by xct_impl.cpp in handling of emergency log flush.
+     * Used by force_until_lsn all pages after recovery in
+     *   ss_m constructor and destructor.
+     * Used by restart.
+     * Used by crash to flush log to the end.
+     */
+    virtual lsn_t               curr_lsn()  const  {
+                              // no lock needed -- atomic read of a monotonically 
+                              // increasing value
+                              return _curr_lsn;
+                        }
+
+    virtual bool                squeezed_by(const lsn_t &self)  const ;
+
+    // INTERFACE METHODS END
+
+    static fileoff_t    take_space(fileoff_t *ptr, int amt) ;
+    static fileoff_t          partition_size(long psize);
+    static fileoff_t          min_partition_size();
+    static fileoff_t          max_partition_size();
+
+protected:
     static bool          _initialized;
     bool                 _reservations_active;
 
-#ifdef LOG_BUFFER
-    // moved to logbuf_core
-#else
     bool _waiting_for_space; // protected by log_m::_insert_lock/_wait_flush_lock
     bool _waiting_for_flush; // protected by log_m::_wait_flush_lock
-#endif
 
     enum { invalid_fhdl = -1 };
 
-#ifdef LOG_BUFFER
-    long                 start_byte() const { return _log_buffer->_start; } 
-    long                 end_byte() const { return _log_buffer->_end; } 
-
-    long                 _segsize; // log buffer size
-public:
-    long                 segsize() const { return _segsize; }
-private:
-    lsn_t                _flush_lsn;
-
-#else
     long _start; // byte number of oldest unwritten byte
     long                 start_byte() const { return _start; } 
 
@@ -152,6 +219,8 @@ private:
     long                 _segsize; // log buffer size
     long                 segsize() const { return _segsize; }
     // long                 _blocksize; uses constant BLOCK_SIZE
+
+    lsn_t                _flush_lsn;
     char*                _buf; // log buffer: _segsize buffer into which
                          // inserts copy log records with log_core::insert
 
@@ -229,8 +298,6 @@ private:
        mutexen and srv_log acquires the partition mutex.
      */
 
-    lsn_t                _flush_lsn;
-
     /** @cond */ char    _padding[CACHELINE_SIZE]; /** @endcond */
     tatas_lock           _flush_lock;
     /** @cond */ char    _padding2[CACHELINE_TATAS_PADDING]; /** @endcond */
@@ -255,7 +322,6 @@ private:
      * \ingroup CARRAY
      */
     ConsolidationArray*  _carray;
-#endif // LOG_BUFFER
 
     PoorMansOldestLsnTracker* _oldest_lsn_tracker;
 
@@ -299,61 +365,15 @@ public:
     // debugging
     enum { SEGMENT_SIZE= 128 * BLOCK_SIZE };    
 #endif
-    
-    // CONSTRUCTOR 
-    static rc_t    new_log_m(
-                        const char* logdir,
-                        log_m    *&the_log,
-                        int        wrlogbufsize,
-                        bool    reformat,
-                        int        carray_active_slot_count
-#ifdef LOG_BUFFER
-                 ,
-                 int logbuf_seg_count,
-                 int logbuf_flush_trigger,
-                 int logbuf_block_size
-#endif
-
-                             );
 
     // CS: initialization by reading log directory has been moved to this
     // separate method, implemented in log_storage
     void initialize_storage(bool reformat);
                      
-    void                set_master(const lsn_t& master_lsn, 
-                            const lsn_t& min_lsn, 
-                            const lsn_t& min_xct_lsn);
-
-    lsn_t               master_lsn() const {
-                            ASSERT_FITS_IN_POINTER(lsn_t);
-                            // else need to grab the partition mutex
-                            return _master_lsn;
-                        }
-    lsn_t               durable_lsn() const {
-                            ASSERT_FITS_IN_POINTER(lsn_t);
-                            // else need to join the insert queue
-                            return _durable_lsn;
-                        }
-    
-    // public for use in xct_impl in log-full handling... 
-    /**\brief 
-     * \details 
-     * Set at constructor time and when a new master is created (set_master)
-     */
-    lsn_t               min_chkpt_rec_lsn() const {
-                            ASSERT_FITS_IN_POINTER(lsn_t);
-                            // else need to grab the partition mutex
-                            return _min_chkpt_rec_lsn;
-                        }
-
-    // Exported to log_m
-    static          log_core *THE_LOG;
-
-
     int             get_last_lsns(lsn_t* array);
     
     // exported to partition_t
-    static void     destroy_file(partition_number_t n, bool e);
+    void     destroy_file(partition_number_t n, bool e);
     char *          readbuf() { return _readbuf; }
 #ifdef LOG_DIRECT_IO
     char *          writebuf() { return _writebuf; }
@@ -365,41 +385,14 @@ public:
     void            start_log_corruption() { _log_corruption = true; }
 
     NORET           log_core(
+                             const char* path,
                              long bsize, // segment size for the log buffer, set through "sm_logbufsize"
                              bool reformat,
                              int carray_active_slot_count
-#ifdef LOG_BUFFER
-                             ,
-                             int logbuf_seg_count,
-                             int logbuf_flush_trigger,
-                             int logbuf_block_size
-#endif
                              );
-    NORET           ~log_core();
-    // do whatever needs to be done before destructor is callable
-    void            shutdown(); 
-
-    // for log_m :
-    int             segment_size() const { return SEGMENT_SIZE; }
-
-    // returns lsn where data were written 
-    rc_t            insert(logrec_t &r, lsn_t* l); 
-    rc_t            flush(const lsn_t &lsn, bool block=true, bool signal=true, bool *ret_flushed=NULL);
-    rc_t            compensate(const lsn_t &orig_lsn, const lsn_t& undo_lsn);
+    virtual           ~log_core();
     void            start_flush_daemon();
-#ifdef LOG_BUFFER
-    rc_t            fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, const bool forward);
-    rc_t            fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, hints_op op);
-#else
-    rc_t            fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, const bool forward);
-#endif
-    rc_t            scavenge(const lsn_t &min_rec_lsn, const lsn_t&min_xct_lsn);
-    void            release_space(fileoff_t howmuch);
-    void            activate_reservations() ;
-    fileoff_t       consume_chkpt_reservation(fileoff_t howmuch);
-    rc_t            wait_for_space(fileoff_t &amt, timeout_in_ms timeout);
-    bool            reservations_active() const { return _reservations_active; }
-    rc_t            file_was_archived(const char * /*file*/);
+
 
     /* Q: how much reservable space does scavenging pcount partitions
           give back?
@@ -413,13 +406,9 @@ public:
                                return pcount*(_partition_data_size - BLOCK_SIZE);
                             }
 
-#ifdef LOG_BUFFER
-    // moved to logbuf_core
-#else
     // for flush_daemon_thread_t
-    void            flush_daemon();
-    lsn_t           flush_daemon_work(lsn_t old_mark);
-#endif
+    virtual void            flush_daemon();
+    virtual lsn_t           flush_daemon_work(lsn_t old_mark);
 
 
     PoorMansOldestLsnTracker* get_oldest_lsn_tracker() { return _oldest_lsn_tracker; }
@@ -433,45 +422,10 @@ public:
      */
     static const char * dir_name() { return _logdir; }
 
-
-    fileoff_t           reserve_space(fileoff_t howmuch);
-    static fileoff_t    take_space(fileoff_t *ptr, int amt) ;
-
-    long                max_chkpt_size() const;
-    bool                verify_chkpt_reservation();
-
-    /**\brief  Return the amount of space left in the log.
-     * \details
-     * Used by xct_impl for error-reporting. 
-     */
-    fileoff_t           space_left() const { return *&_space_available; }
-    fileoff_t           space_for_chkpt() const { return *&_space_rsvd_for_chkpt ; }
-
-    /**\brief Return name of log file for given partition number.
-     * \details
-     * Used by xct for error-reporting and callback-handling.
-     */
-    static const char * make_log_name(uint32_t n,
-                        char*              buf,
-                        int                bufsz);
-
-    /**\brief Return current lsn of the log (for insert purposes)
-     * \details
-     * Used by xct_impl.cpp in handling of emergency log flush.
-     * Used by force_until_lsn all pages after recovery in
-     *   ss_m constructor and destructor.
-     * Used by restart.
-     * Used by crash to flush log to the end.
-     */
-    lsn_t               curr_lsn()  const  {
-                              // no lock needed -- atomic read of a monotonically 
-                              // increasing value
-                              return _curr_lsn;
-                        }
-
-    bool                squeezed_by(const lsn_t &self)  const ;
-
 protected:
+    // required by logbuf_core for now
+    log_core() {};
+
     // give implementation class access to these.
     // partition and checkpoint management
     mutable queue_based_block_lock_t _partition_lock;
@@ -486,7 +440,7 @@ protected:
     pthread_mutex_t         _space_lock; // tied to _space_cond
     pthread_cond_t          _space_cond; // tied to _space_lock
 
-private:
+protected:
     static const char    _SLASH; 
     static uint32_t const _version_major;
     static uint32_t const _version_minor;
@@ -499,33 +453,12 @@ protected:
     static const char *log_prefix() { return _log_prefix; }
     fileoff_t           partition_data_size() const { 
                             return _partition_data_size; }
-    // used by implementation
-    w_rc_t              _read_master( 
-                            const char *fname,
-                            int prefix_len,
-                            lsn_t &tmp,
-                            lsn_t& tmp1,
-                            lsn_t* lsnlist,
-                            int&   listlength,
-                            bool&  old_style
-                            );
-    void                _make_master_name(
-                            const lsn_t&        master_lsn, 
-                            const lsn_t&        min_chkpt_rec_lsn,
-                            char*               buf,
-                            int                 bufsz,
-                            bool                old_style = false);
-
-private:
-#ifdef LOG_BUFFER
-    partition_t *_flushX_get_partition(lsn_t start_lsn, 
+protected:
+    virtual partition_t *_flushX_get_partition(lsn_t start_lsn, 
                                        long start1, long end1, long start2, 
                                        long end2);
-    // _flushX is moved to logbuf_core
-#else
-    void            _flushX(lsn_t base_lsn, long start1, 
+    virtual void            _flushX(lsn_t base_lsn, long start1, 
                               long end1, long start2, long end2);
-#endif
     w_rc_t          _set_size(fileoff_t psize);
     fileoff_t       _get_min_size() const {
                         // Return minimum log size as a function of the
@@ -535,44 +468,36 @@ private:
     partition_t *   _partition(partition_index_t i) const;
 
 
-#ifdef LOG_BUFFER
-    // moved to logbuf_core
-#else
     /**
      * \ingroup CARRAY
      *  @{
      */
-    void _acquire_buffer_space(CArraySlot* info, long size);
-    lsn_t _copy_to_buffer(logrec_t &rec, long pos, long size, CArraySlot* info);
-    bool _update_epochs(CArraySlot* info);
+    virtual void _acquire_buffer_space(CArraySlot* info, long size);
+    virtual lsn_t _copy_to_buffer(logrec_t &rec, long pos, long size, CArraySlot* info);
+    virtual bool _update_epochs(CArraySlot* info);
     /** @}*/
-#endif
 
 public:
     // for partition_t
     void                unset_current(); 
     void                set_current(partition_index_t, partition_number_t); 
     partition_index_t   partition_index() const { return _curr_index; }
-    partition_number_t  partition_num() const { return _curr_num; }
+    virtual partition_number_t  partition_num() const { return _curr_num; }
     static long         floor2(long offset, long block_size) 
                             { return offset & -block_size; }
     static long         ceil2(long offset, long block_size) 
                            { return 
                                floor2(offset + block_size - 1, block_size); }
-    static fileoff_t    partition_size(long psize);
-    static fileoff_t    min_partition_size();
-    static fileoff_t    max_partition_size();
-
     // exposted to partition_t:
     static long         prime(char* buf, int fd, fileoff_t start, lsn_t next);
-private:
-    void                _prime(int fd, fileoff_t start, lsn_t next); 
+protected:
+    virtual void                _prime(int fd, fileoff_t start, lsn_t next); 
     static long         _floor(long offset, long block_size) 
                             { return (offset/block_size)*block_size; }
     static long         _ceil(long offset, long block_size) 
                             { return _floor(offset + block_size - 1, block_size); }
 
-private:
+protected:
     /**\brief Helper for _write_master */
     static void         _create_master_chkpt_contents(
                             ostream&        s,
@@ -612,15 +537,31 @@ private:
                             );
     // helper for set_master
     void                _write_master(const lsn_t &l, const lsn_t &min);
+    
+    // used by implementation
+    w_rc_t              _read_master( 
+                            const char *fname,
+                            int prefix_len,
+                            lsn_t &tmp,
+                            lsn_t& tmp1,
+                            lsn_t* lsnlist,
+                            int&   listlength,
+                            bool&  old_style
+                            );
+    void                _make_master_name(
+                            const lsn_t&        master_lsn, 
+                            const lsn_t&        min_chkpt_rec_lsn,
+                            char*               buf,
+                            int                 bufsz,
+                            bool                old_style = false);
 
 public:
     void   release(); 
-private:
+protected:
     void   _acquire();
 public:
 
-
-private:
+protected:
     // helper for _open()
     partition_t *       _close_min(partition_number_t n);
                                 // the defaults are for the case
@@ -695,7 +636,12 @@ public:
     rc_t _apply_single_page_recovery_logs(fixable_page_h &p,
         const std::vector<logrec_t*> &ordered_entries);
 
-private:
+    virtual void dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t &max_lsn);
+
+    rc_t recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
+                                    const bool actual_emlsn);
+
+protected:
     void                _sanity_check() const;
     partition_index_t   _get_index(partition_number_t)const; 
 
