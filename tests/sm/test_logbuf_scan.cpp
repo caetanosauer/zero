@@ -76,7 +76,7 @@ class forward_scan1  : public restart_test_base
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
 
-        logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+        logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
         // after startup
         // (64 + 72 + 96)*2 + 328 + 328 + 328 + (64 + 328 + 72 + 96) = 2008
@@ -103,7 +103,6 @@ public:
     // 1696 + (56 + 320 + 64 + 88) = 2224
     w_rc_t post_shutdown(ss_m *) {
 
-        //        logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
 
         // there is an async checkpoint going on, so let's wait a couple of seconds
         // TODO: how to avoid this sleep?
@@ -128,7 +127,7 @@ class forward_scan2  : public restart_test_base
 {
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
-        logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+        logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
         // after startup
         EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);    
@@ -206,7 +205,7 @@ class backward_scan1 : public restart_test_base
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
 
-        logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+        logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
         // after startup
         // (64 + 72 + 96)*2 + 328 + 328 + 328 + (64 + 328 + 72 + 96) = 2008
@@ -228,7 +227,7 @@ public:
 
     w_rc_t post_shutdown(ss_m *ssm) {
 
-        logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+        logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
         // there is an async checkpoint going on, so let's wait a couple of seconds
         // TODO: how to avoid this sleep?
@@ -256,7 +255,7 @@ class backward_scan2 : public restart_test_base
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
 
-        logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+        logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
         // after startup
         EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);    
@@ -279,7 +278,7 @@ public:
 
     w_rc_t post_shutdown(ss_m *ssm) {
 
-        logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+        logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
         // there is an async checkpoint going on, so let's wait a couple of seconds
         // TODO: how to avoid this sleep?
@@ -309,7 +308,7 @@ class backward_scan3 : public restart_test_base
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
 
-        logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+        logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
         // after startup
         EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);    
@@ -331,7 +330,7 @@ public:
 
     w_rc_t post_shutdown(ss_m *ssm) {
 
-        logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+        logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
         // there is an async checkpoint going on, so let's wait a couple of seconds
         // TODO: how to avoid this sleep?

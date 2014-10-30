@@ -2,6 +2,14 @@
  * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
+/*
+ * CS: this is a hack to allow access to private members of logbuf_core.
+ * I think this solution is better than converting the members to public
+ * in the header file.
+ */
+#define private public 
+#define protected public 
+
 #include "btree_test_env.h"
 #include "gtest/gtest.h"
 #include "sm_vas.h"
@@ -945,7 +953,7 @@ class init_test_case1  : public restart_test_base
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
 
-        logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+        logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
         EXPECT_EQ(1904, log_buffer->_start);
         EXPECT_EQ(1904, log_buffer->_end);
@@ -985,7 +993,7 @@ class init_test_case2  : public restart_test_base
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
 
-        logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+        logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
         // after startup
         EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);
@@ -1025,7 +1033,7 @@ public:
     // 1696 + (56 + 320 + 64 + 88) = 2224
     w_rc_t post_shutdown(ss_m *ssm) {
 
-        logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+        logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
         // there is an async checkpoint going on, so let's wait a couple of seconds
         // TODO: how to avoid this sleep?
@@ -1064,7 +1072,7 @@ class init_test_case3  : public restart_test_base
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
 
-        logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+        logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
         // after startup
         EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);
@@ -1103,7 +1111,7 @@ public:
     // 1696 + (56 + 320 + 64 + 88) = 2224
     w_rc_t post_shutdown(ss_m *ssm) {
 
-        logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+        logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
         // there is an async checkpoint going on, so let's wait a couple of seconds
         // TODO: how to avoid this sleep?
@@ -1182,7 +1190,7 @@ TEST (LogBufferTest2, Init3) {
 
 // test_insert
 w_rc_t test_insert(ss_m *ssm, test_volume_t *) {
-    logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+    logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
     // after startup
     EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);
@@ -1362,7 +1370,7 @@ TEST (LogBufferTest2, Insert) {
 
 // test_flush
 w_rc_t test_flush(ss_m *ssm, test_volume_t *) {
-    logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+    logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
     // after startup
     EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);
@@ -1590,7 +1598,7 @@ TEST (LogBufferTest2, Flush) {
 // TODO: assuming N=10
 w_rc_t test_fetch(ss_m *ssm, test_volume_t *) {
 
-    logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+    logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
     // after startup
     EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);
@@ -1769,7 +1777,7 @@ class replacement_test_case  : public restart_test_base
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
 
-        logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+        logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
         // after startup
         EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);
@@ -1805,7 +1813,7 @@ public:
     // 1696 + (56 + 320 + 64 + 88) = 2224
     w_rc_t post_shutdown(ss_m *ssm) {
 
-        logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+        logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
         lsn_t ll;
         logrec_t *rp = NULL;
