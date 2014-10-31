@@ -44,9 +44,6 @@ const char log_storage::_SLASH = '/';
 const char log_storage::_master_prefix[] = "chk."; // same size as _log_prefix
 const char log_storage::_log_prefix[] = "log.";
 
-ErrLog* log_storage::errlog = smlevel_0::errlog;
-
-
 /*
  * Opens log files in logdir and initializes partitions as well as the
  * given LSN's. The buffer given in prime_buf is primed with the contents
@@ -65,7 +62,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
       _segsize(segsize)
 {
 
-    w_assert1(strlen(path) < sizeof(_logdir));
+    _logdir = new char[strlen(path)];
     strcpy(_logdir, path);
 
     _skip_log = new skip_log;
@@ -746,7 +743,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
     cs.exit();
     if(1){
         // Print various interesting info to the log:
-        errlog->clog << debug_prio 
+        smlevel_0::errlog->clog << debug_prio 
             << "Log max_partition_size (based on OS max file size)" 
             << max_partition_size() << endl
             << "Log max_partition_size * PARTITION_COUNT " 
@@ -756,7 +753,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
             << "Log min_partition_size*PARTITION_COUNT " 
                     << min_partition_size() * PARTITION_COUNT << endl;
 
-        errlog->clog << debug_prio 
+        smlevel_0::errlog->clog << debug_prio 
             << "Log BLOCK_SIZE (log write size) " << BLOCK_SIZE
             << endl
             << "Log segsize() (log buffer size) " << _segsize
@@ -764,7 +761,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
             << "Log segsize()/BLOCK_SIZE " << double(_segsize)/double(BLOCK_SIZE)
             << endl;
 
-        errlog->clog << debug_prio 
+        smlevel_0::errlog->clog << debug_prio 
             << "User-option smlevel_0::max_logsz " << smlevel_0::max_logsz << endl
             << "Log _partition_data_size " << _partition_data_size 
             << endl
@@ -792,6 +789,7 @@ log_storage::~log_storage()
     DO_PTHREAD(pthread_cond_destroy(&_scavenge_cond));
 
     delete _skip_log;
+    delete _logdir;
 }
 
 partition_t *

@@ -178,7 +178,9 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
 #if W_DEBUG_LEVEL > 0
     _sanity_check();
 #endif 
-    w_assert0(ll >= curr_lsn());
+
+    // protect against double-acquire
+    _storage->acquire_partition_lock(); // caller must release it
 
     // it's not sufficient to flush to ll, since ll is at the *beginning* of
     // what we want to read, so force a flush when necessary
@@ -186,9 +188,11 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
     if(must_be_durable > _durable_lsn) {
         W_DO(flush(must_be_durable));
     }
-
-    // protect against double-acquire
-    _storage->acquire_partition_lock(); // caller must release it
+    if (ll >= curr_lsn()) {
+        w_assert0(ll == curr_lsn());
+        // exception/error should not be used for control flow (TODO)
+        return RC(eEOF);
+    }
 
     // Find and open the partition
     partition_t* p = _storage->find_partition(ll, true, false, forward);
@@ -1334,7 +1338,6 @@ rc_t
 log_core::scavenge(const lsn_t &min_rec_lsn, const lsn_t& min_xct_lsn)
 {
     FUNC(log_core::scavenge);
-    //CRITICAL_SECTION(cs, _partition_lock);
     _storage->acquire_partition_lock();
     _storage->acquire_scavenge_lock();
 

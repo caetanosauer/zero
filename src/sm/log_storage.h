@@ -304,8 +304,6 @@ private:
     log_storage& operator=(const log_storage&);
 
 public:
-    static ErrLog* errlog;
-
     enum { BLOCK_SIZE=partition_t::XFERSIZE };
 
     void sanity_check() const;

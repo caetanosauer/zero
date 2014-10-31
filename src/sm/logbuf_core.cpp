@@ -595,7 +595,9 @@ logbuf_core::fetch(
 #if W_DEBUG_LEVEL > 0
     _sanity_check();
 #endif 
-    w_assert0(ll >= curr_lsn());
+
+    // protect against double-acquire
+    _storage->acquire_partition_lock(); // caller must release it
 
     // it's not sufficient to flush to ll, since ll is at the *beginning* of
     // what we want to read, so force a flush when necessary
@@ -603,9 +605,11 @@ logbuf_core::fetch(
     if(must_be_durable > _durable_lsn) {
         W_DO(flush(must_be_durable));
     }
-
-    // protect against double-acquire
-    _storage->acquire_partition_lock(); // caller must release it
+    if (ll >= curr_lsn()) {
+        w_assert0(ll == curr_lsn());
+        // exception/error should not be used for control flow (TODO)
+        return RC(eEOF);
+    }
 
     // Find and open the partition
     partition_t* p = _storage->find_partition(ll, true, false, forward);
@@ -1032,7 +1036,9 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
 #if W_DEBUG_LEVEL > 0
     _sanity_check();
 #endif 
-    w_assert0(ll >= curr_lsn());
+
+    // protect against double-acquire
+    _storage->acquire_partition_lock(); // caller must release it
 
     // it's not sufficient to flush to ll, since ll is at the *beginning* of
     // what we want to read, so force a flush when necessary
@@ -1040,9 +1046,11 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
     if(must_be_durable > _durable_lsn) {
         W_DO(flush(must_be_durable));
     }
-
-    // protect against double-acquire
-    _storage->acquire_partition_lock(); // caller must release it
+    if (ll >= curr_lsn()) {
+        w_assert0(ll == curr_lsn());
+        // exception/error should not be used for control flow (TODO)
+        return RC(eEOF);
+    }
 
     bool forward = hints_profile[op].forward;
 
