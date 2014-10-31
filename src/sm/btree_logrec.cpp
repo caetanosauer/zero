@@ -58,6 +58,7 @@ DBGOUT3( << "&&&& UNDO insertion, key: " << key);
     {
         if (false == restart_m::use_redo_full_logging_restart())
         {
+// TODO(Restart)... comment out for performance test purpose only
             W_FATAL(rc.err_num());
         }
         else
@@ -148,6 +149,7 @@ btree_update_log::undo(fixable_page_h*)
     // ***LOGICAL*** don't grab locks during undo
     rc_t rc = smlevel_2::bt->update_as_undo(header._vid.vol, header._snum, key, old_el);
     if(rc.is_error()) {
+// TODO(Restart)... comment out for performance test purpose only
         W_FATAL(rc.err_num());
     }
 }

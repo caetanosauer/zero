@@ -1124,7 +1124,8 @@ restart_m::analysis_pass_forward(
              << master << ", redo_lsn: " << redo_lsn
              << ", undo lsn: " << undo_lsn << ", commit_lsn: " << commit_lsn);
 
-    DBGOUT3( << "Number of in_doubt pages: " << in_doubt_count);
+// TODO(Restart)... performance
+    DBGOUT1( << "Number of in_doubt pages: " << in_doubt_count);
 
     if ((false == mount))
     {
@@ -1848,7 +1849,8 @@ restart_m::analysis_pass_backward(
              << master << ", redo_lsn: " << redo_lsn
              << ", undo lsn: " << undo_lsn);
 
-    DBGOUT3( << "Number of in_doubt pages: " << in_doubt_count);
+// TODO(Restart)... performance
+    DBGOUT1( << "Number of in_doubt pages: " << in_doubt_count);
 
     if (false == mount)
     {
@@ -3305,7 +3307,8 @@ void restart_m::_analysis_process_txn_table(XctPtrHeap& heap,  // Out: heap to s
         DBGOUT3( << "Number of transaction entries in loser heap: " << heap.NumElements());
     }
 
-    DBGOUT3( << "Number of active transactions in transaction table: " << xct_t::num_active_xcts());
+// TODO(Restart)... performance
+    DBGOUT1( << "Number of active transactions in transaction table: " << xct_t::num_active_xcts());
 
     return;
 }
@@ -4840,7 +4843,7 @@ void restart_m::_redo_page_pass()
         {
             // If failed to acquire latch (e.g., timeout)
             // Page (m2): concurrent txn does not load page, restart should be able
-            //                  to acquire latch on a page
+            //                  to acquire latch on a page if it is in_doubt
             // Demand (m3): only concurrent txn can load page, this function
             //                       should not get executed
             // Mixed (m4): potential conflict because both restart and user transaction
@@ -4854,12 +4857,16 @@ void restart_m::_redo_page_pass()
             }
             else
             {
-                // Unable to acquire write latch, cannot continue, raise an internal error
-                // including timeout error which we should not encounter
+                // Unable to acquire write latch, it should not happen if page was in_doubt
+                // but it could happen if page was not in_doubt
                 DBGOUT1 (<< "Error when acquiring LATCH_EX for a buffer pool page. cb._pid_shpid = "
                          << cb._pid_shpid << ", rc = " << latch_rc);
 
-                W_FATAL_MSG(fcINTERNAL, << "REDO (redo_page_pass()): unable to EX latch a buffer pool page ");
+                // Only raise error if page was in_doubt
+                if ((cb._in_doubt))
+                    W_FATAL_MSG(fcINTERNAL, << "REDO (redo_page_pass()): unable to EX latch a buffer pool page ");
+                else
+                    continue;
             }
         }
 
@@ -5181,27 +5188,37 @@ void restart_m::_undo_txn_pass()
         // latch is not needed for traditional restart (M2) but
         // required for mixed mode due to concurrent transaction
         // on_demand UNDO
-        w_rc_t latch_rc = xd->latch().latch_acquire(LATCH_EX, WAIT_FOREVER);
-        if (latch_rc.is_error())
+        try
         {
-            // Not able to acquire latch on this transaction for some reason
-            if (true == use_undo_mix_restart())
+            w_rc_t latch_rc = xd->latch().latch_acquire(LATCH_EX, WAIT_FOREVER);
+            if (latch_rc.is_error())
             {
-                // If mixed mode, it is possible and valid if failed to acquire
-                // latch on a transaction, because a concurrent user transaction
-                // might be checking or triggered a rollback on this transaction
-                // (if it is a loser transaction)
-                // Eat the error and skip this transaction, if thi sis a loser transaction
-                // rely on concurrent transaction to rollback this loser transaction
-                xd = iter.next();
-                continue;
+                // Not able to acquire latch on this transaction for some reason
+                if (true == use_undo_mix_restart())
+                {
+                    // If mixed mode, it is possible and valid if failed to acquire
+                    // latch on a transaction, because a concurrent user transaction
+                    // might be checking or triggered a rollback on this transaction
+                    // (if it is a loser transaction)
+                    // Eat the error and skip this transaction, if thi sis a loser transaction
+                    // rely on concurrent transaction to rollback this loser transaction
+                    xd = iter.next();
+                    continue;
+                }
+                else
+                {
+                    // Traditional UNDO, not able to acquire latch
+                    // continue the processing of this transaction because
+                    // latch is optional in this case
+                }
             }
-            else
-            {
-                // Traditional UNDO, not able to acquire latch
-                // continue the processing of this transaction because
-                // latch is optional in this case
-            }
+        }
+        catch (...)
+        {
+            // It is possible a race condition occurred, the transaction object is being
+            // destroyed, go to the next transaction
+            xd = iter.next();
+            continue;
         }
 
         if ((xct_t::xct_active == xd->state()) && (true == xd->is_loser_xct())
@@ -5319,6 +5336,11 @@ void restart_thread_t::run()
 
     DBGOUT1(<< "restart_thread_t: Starts REDO and UNDO tasks");
 
+struct timeval tm;
+gettimeofday( &tm, NULL );
+// Store in millisecs seconds
+double begin_time = ((double)tm.tv_sec * 1000.0) + ((double)tm.tv_usec / (1000.0));
+
     // REDO, call back to restart_m to carry out the concurrent REDO
     working = smlevel_0::t_concurrent_redo;
     smlevel_1::recovery->redo_concurrent_pass();
@@ -5334,6 +5356,12 @@ void restart_thread_t::run()
     // Set commit_lsn to NULL which allows all concurrent transaction to come in
     // from now on (if using commit_lsn to validate concurrent user transactions)
     smlevel_0::commit_lsn = lsn_t::null;
+
+gettimeofday( &tm, NULL );
+// Store in millisecs seconds
+double end_time = ((double)tm.tv_sec * 1000.0) + ((double)tm.tv_usec / (1000.0));
+std::cout << std::endl << "**** Restart REDO/UNDO time consumed: " << (end_time - begin_time) << std::endl << std::endl;
+
 
     return;
 };

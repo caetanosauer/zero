@@ -18,7 +18,7 @@
 #define SM_LEVEL 0
 #include "sm_int_1.h"
 
-#if USE_BLOCK_ALLOC_FOR_LOGREC 
+#if USE_BLOCK_ALLOC_FOR_LOGREC
 #include "block_alloc.h"
 #endif
 #include "tls.h"
@@ -61,21 +61,21 @@ template class w_auto_delete_array_t<stid_t>;
 
 // If we run into btree shrinking activity, we'll bump up the
 // fudge factor, b/c to undo a lot of btree removes (incremental
-// tree removes) takes about 4X the logging... 
+// tree removes) takes about 4X the logging...
 extern double logfudge_factors[logrec_t::t_max_logrec]; // in logstub.cpp
 #define UNDO_FUDGE_FACTOR(t, nbytes) int((logfudge_factors[t])*(nbytes))
 
 #ifdef W_TRACE
 extern "C" void debugflags(const char *);
 void
-debugflags(const char *a) 
+debugflags(const char *a)
 {
    _w_debug.setflags(a);
 }
 #endif /* W_TRACE */
 
 SPECIALIZE_CS(xct_t, int _dummy, (_dummy=0),
-            _mutex->acquire_1thread_xct_mutex(), 
+            _mutex->acquire_1thread_xct_mutex(),
             _mutex->release_1thread_xct_mutex());
 
 int auto_rollback_t::_count = 0;
@@ -92,46 +92,46 @@ int auto_rollback_t::_count = 0;
 
 queue_based_lock_t        xct_t::_xlist_mutex;
 
-w_descend_list_t<xct_t, queue_based_lock_t, tid_t>   
+w_descend_list_t<xct_t, queue_based_lock_t, tid_t>
         xct_t::_xlist(W_KEYED_ARG(xct_t, _tid,_xlink), &_xlist_mutex);
 
-bool xct_t::xlist_mutex_is_mine() 
+bool xct_t::xlist_mutex_is_mine()
 {
      bool is =
-        me()->get_xlist_mutex_node()._held 
-        && 
+        me()->get_xlist_mutex_node()._held
+        &&
         (me()->get_xlist_mutex_node()._held->
             is_mine(&me()->get_xlist_mutex_node()));
      return is;
 }
-void xct_t::assert_xlist_mutex_not_mine() 
+void xct_t::assert_xlist_mutex_not_mine()
 {
     w_assert1(
             (me()->get_xlist_mutex_node()._held == 0)
-           || 
+           ||
            (me()->get_xlist_mutex_node()._held->
                is_mine(&me()->get_xlist_mutex_node())==false));
 }
-void xct_t::assert_xlist_mutex_is_mine() 
+void xct_t::assert_xlist_mutex_is_mine()
 {
 #if W_DEBUG_LEVEL > 1
-    bool res = 
-     me()->get_xlist_mutex_node()._held 
+    bool res =
+     me()->get_xlist_mutex_node()._held
         && (me()->get_xlist_mutex_node()._held->
             is_mine(&me()->get_xlist_mutex_node()));
     if(!res) {
-        fprintf(stderr, "held: %p\n", 
+        fprintf(stderr, "held: %p\n",
              me()->get_xlist_mutex_node()._held );
         if ( me()->get_xlist_mutex_node()._held  )
         {
-        fprintf(stderr, "ismine: %d\n", 
+        fprintf(stderr, "ismine: %d\n",
             me()->get_xlist_mutex_node()._held->
             is_mine(&me()->get_xlist_mutex_node()));
         }
         w_assert1(0);
     }
 #else
-     w_assert1(me()->get_xlist_mutex_node()._held 
+     w_assert1(me()->get_xlist_mutex_node()._held
         && (me()->get_xlist_mutex_node()._held->
             is_mine(&me()->get_xlist_mutex_node())));
 #endif
@@ -171,7 +171,7 @@ tid_t                                 xct_t::_nxt_tid = tid_t::null;
  *********************************************************************/
 tid_t                                xct_t::_oldest_tid = tid_t::null;
 
-inline bool   xct_t::should_consume_rollback_resv(int t) const 
+inline bool   xct_t::should_consume_rollback_resv(int t) const
 {
      if(state() == xct_aborting) {
          w_assert0(_rolling_back);
@@ -180,7 +180,7 @@ inline bool   xct_t::should_consume_rollback_resv(int t) const
      // _core->xct_aborted means we called abort but
      // we might be in freeing_space state right now, in
      // which case, _rolling_back isn't true.
-    return 
+    return
         // _rolling_back means in rollback(),
         // which can be in abort or in
         // rollback_work.
@@ -211,14 +211,14 @@ DECLARE_TLS(block_alloc<xct_t::xct_core>, core_pool);
 
 xct_t*
 xct_t::new_xct(
-        sm_stats_info_t* stats, 
+        sm_stats_info_t* stats,
         timeout_in_ms timeout,
         bool sys_xct,
         bool single_log_sys_xct,
         bool loser_xct)
 {
     // For normal user transaction
-    
+
     xct_core* core = NEW_CORE xct_core(_nxt_tid.atomic_incr(),
                        xct_active, timeout);
     xct_t* xd = NEW_XCT xct_t(core, stats, lsn_t(), lsn_t(),
@@ -230,7 +230,7 @@ xct_t::new_xct(
 xct_t*
 xct_t::new_xct(const tid_t& t, state_t s, const lsn_t& last_lsn,
              const lsn_t& undo_nxt, timeout_in_ms timeout, bool sys_xct,
-             bool single_log_sys_xct, bool loser_xct) 
+             bool single_log_sys_xct, bool loser_xct)
 {
     // For transaction from Log Analysis phase in Recovery
 
@@ -239,14 +239,14 @@ xct_t::new_xct(const tid_t& t, state_t s, const lsn_t& last_lsn,
     xct_core* core = NEW_CORE xct_core(t, s, timeout);
     xct_t* xd = NEW_XCT xct_t(core, 0, last_lsn, undo_nxt,
         sys_xct, single_log_sys_xct, loser_xct);
-    
+
     /// Don't attach
     w_assert1(me()->xct() == 0);
     return xd;
 }
 
 void
-xct_t::destroy_xct(xct_t* xd) 
+xct_t::destroy_xct(xct_t* xd)
 {
     if (!xd->_sys_xct && smlevel_0::log) {
         smlevel_0::log->get_oldest_lsn_tracker()->leave(reinterpret_cast<uintptr_t>(xd));
@@ -281,16 +281,16 @@ void PrintSmthreadById::operator()(const smthread_t& smthread)
 }
 
 /* debugger-callable */
-extern "C" void 
-dumpThreadById(int i) { 
+extern "C" void
+dumpThreadById(int i) {
     PrintSmthreadById f(cout, i);
     smthread_t::for_each_smthread(f);
 }
-#endif 
+#endif
 
 /*
  * Clean up existing transactions at ssm shutdown.
- * -- called from ~ss_m, so this should never be 
+ * -- called from ~ss_m, so this should never be
  * subject to multiple threads using the xct list.
  *
  * Must abort the transactions as if they had been
@@ -336,12 +336,12 @@ xct_t::cleanup(bool /*dispose_prepared*/)
                     xd->destroy_xct(xd);
                     // delete xd;
                     changed_list = true;
-                } 
+                }
                 break;
 
             case xct_freeing_space:
             case xct_ended: {
-                    DBG(<< xd->tid() <<"deleting " 
+                    DBG(<< xd->tid() <<"deleting "
                             << " w/ state=" << xd->state() );
                     xd->destroy_xct(xd);
                     // delete xd;
@@ -350,11 +350,11 @@ xct_t::cleanup(bool /*dispose_prepared*/)
                 break;
 
             default: {
-                    DBG(<< xd->tid() <<"skipping " 
+                    DBG(<< xd->tid() <<"skipping "
                             << " w/ state=" << xd->state() );
                 }
                 break;
-            
+
             } // switch on xct state
             W_COERCE(acquire_xlist_mutex());
         } // xd not null
@@ -393,7 +393,7 @@ xct_t::num_active_xcts()
  *  Find the record for tid and return it. If not found, return 0.
  *
  *********************************************************************/
-xct_t* 
+xct_t*
 xct_t::look_up(const tid_t& tid)
 {
     xct_t* xd;
@@ -505,7 +505,7 @@ rc_t
 xct_t::group_commit(const xct_t *list[], int listlen)
 {
     // can we fit this list into the log record?
-    if(listlen > xct_list_t::max) 
+    if(listlen > xct_list_t::max)
         return RC(eLISTTOOLONG);
 
     // Log the whole bunch.
@@ -519,10 +519,10 @@ xct_t::chain(bool lazy)
     return _commit(t_chain | (lazy ? t_lazy : t_chain));
 }
 
-xct_log_t*          
+xct_log_t*
 xct_t::new_xct_log_t()
 {
-    xct_log_t*  l = new xct_log_t; 
+    xct_log_t*  l = new xct_log_t;
     if (!l) W_FATAL(eOUTOFMEMORY);
     return l;
 }
@@ -533,7 +533,7 @@ xct_t::new_xct_log_t()
  * If the xct has a stashed copy of the caches, hand them over to the
  * calling smthread. If not, allocate some off the stack.
  */
-void                        
+void
 xct_t::steal(xct_log_t*&x)
 {
     /* See comments in smthread_t::new_xct() */
@@ -555,7 +555,7 @@ xct_t::steal(xct_log_t*&x)
  * passed in, otherwise, hang onto them to hand over to the next
  * thread that attaches to this xct.
  */
-void                        
+void
 xct_t::stash(xct_log_t*&x)
 {
     /* See comments in smthread_t::new_xct() */
@@ -563,7 +563,7 @@ xct_t::stash(xct_log_t*&x)
 
     if(__saved_xct_log_t) {
         DBGX(<<"stash: delete " << x);
-        delete x; 
+        delete x;
     }
     else { __saved_xct_log_t = x; }
     x = 0;
@@ -572,8 +572,8 @@ xct_t::stash(xct_log_t*&x)
 
 /**\brief Set the log state for this xct/thread pair to the value \e s.
  */
-smlevel_0::switch_t 
-xct_t::set_log_state(switch_t s) 
+smlevel_0::switch_t
+xct_t::set_log_state(switch_t s)
 {
     xct_log_t *mine = me()->xct_log();
 
@@ -587,7 +587,7 @@ xct_t::set_log_state(switch_t s)
 }
 
 void
-xct_t::restore_log_state(switch_t s) 
+xct_t::restore_log_state(switch_t s)
 {
     (void) set_log_state(s);
 }
@@ -607,7 +607,7 @@ xct_t::update_youngest_tid(const tid_t &t)
 }
 
 
-void 
+void
 xct_t::put_in_order() {
     W_COERCE(acquire_xlist_mutex());
     _xlist.put_in_order(this);
@@ -615,7 +615,7 @@ xct_t::put_in_order() {
     release_xlist_mutex();
 
 // TODO(Restart)... enable the checking in retail build, also generate error in retail
-//                           this is to prevent missing something in retail and weird error 
+//                           this is to prevent missing something in retail and weird error
 //                           shows up in retail build much later
 
 // #if W_DEBUG_LEVEL > 2
@@ -635,7 +635,7 @@ xct_t::put_in_order() {
         w_assert1(t <= _nxt_tid);
     }
     release_xlist_mutex();
-// #endif 
+// #endif
 }
 
 
@@ -667,7 +667,7 @@ xct_t::wait_for_log_space(fileoff_t amt) {
             //rc = RC(eOUTOFLOGSPACE);
             }
         }
-        
+
         // update our reservation with whatever we got
         _log_bytes_ready += amt - still_needed;
     }
@@ -675,7 +675,7 @@ xct_t::wait_for_log_space(fileoff_t amt) {
 }
 
 void
-xct_t::dump(ostream &out) 
+xct_t::dump(ostream &out)
 {
     W_COERCE(acquire_xlist_mutex());
     out << "xct_t: "
@@ -690,14 +690,14 @@ xct_t::dump(ostream &out)
     release_xlist_mutex();
 }
 
-void                        
-xct_t::set_timeout(timeout_in_ms t) 
-{ 
-    _core->_timeout = t; 
+void
+xct_t::set_timeout(timeout_in_ms t)
+{
+    _core->_timeout = t;
 }
 
-w_rc_t 
-xct_log_warn_check_t::check(xct_t *& _victim) 
+w_rc_t
+xct_log_warn_check_t::check(xct_t *& _victim)
 {
     /* FRJ: TODO: use this with the new log reservation code. One idea
        would be to return eLOGSPACEWARN if this transaction (or some
@@ -707,7 +707,7 @@ xct_log_warn_check_t::check(xct_t *& _victim)
        to hook in with the checkpoint thread and see if it feels
        stressed...
      */
-    /* 
+    /*
      * NEH In the meantime, we do this crude check in prologues
      * to sm routines, if for no other reason than to test
      * the callbacks.  User can turn off log_warn_check at will with option:
@@ -716,11 +716,11 @@ xct_log_warn_check_t::check(xct_t *& _victim)
 
     DBG(<<"generate_log_warnings " <<  me()->generate_log_warnings());
 
-    // default is true 
+    // default is true
     // User can turn it off, too
-    if (me()->generate_log_warnings() && 
+    if (me()->generate_log_warnings() &&
             smlevel_0::log &&
-            smlevel_0::log_warn_trigger > 0)  
+            smlevel_0::log_warn_trigger > 0)
     {
         _victim = NULL;
         w_assert1(smlevel_1::log != NULL);
@@ -733,12 +733,12 @@ xct_log_warn_check_t::check(xct_t *& _victim)
                 << " segment_size " << log->segment_size()
                 );
 
-        if( left < smlevel_0::log_warn_trigger ) 
+        if( left < smlevel_0::log_warn_trigger )
         {
             // Try to force the log first
             log->flush(log->curr_lsn());
         }
-        if( left < smlevel_0::log_warn_trigger ) 
+        if( left < smlevel_0::log_warn_trigger )
         {
             if(log_warn_callback) {
                 xct_t *v = xct();
@@ -752,7 +752,7 @@ xct_log_warn_check_t::check(xct_t *& _victim)
                     w_rc_t rc = (*log_warn_callback)(
                         &i,   // iterator
                         v,    // victim
-                        left, // space left  
+                        left, // space left
                         smlevel_0::log_warn_trigger, // threshold
                         buf
                     );
@@ -771,9 +771,9 @@ xct_log_warn_check_t::check(xct_t *& _victim)
 
 struct lock_info_ptr {
     xct_lock_info_t* _ptr;
-    
+
     lock_info_ptr() : _ptr(0) { }
-    
+
     xct_lock_info_t* take() {
         if(xct_lock_info_t* rval = _ptr) {
             _ptr = 0;
@@ -786,7 +786,7 @@ struct lock_info_ptr {
             delete _ptr;
         _ptr = ptr? ptr->reset_for_reuse() : 0;
     }
-    
+
     ~lock_info_ptr() { put(0); }
 };
 
@@ -794,9 +794,9 @@ DECLARE_TLS(lock_info_ptr, agent_lock_info);
 
 struct lil_lock_info_ptr {
     lil_private_table* _ptr;
-    
+
     lil_lock_info_ptr() : _ptr(0) { }
-    
+
     lil_private_table* take() {
         if(lil_private_table* rval = _ptr) {
             _ptr = 0;
@@ -812,7 +812,7 @@ struct lil_lock_info_ptr {
         }
         _ptr = ptr;
     }
-    
+
     ~lil_lock_info_ptr() { put(0); }
 };
 
@@ -848,19 +848,19 @@ operator<<(ostream& o, const xct_t& x)
     return o;
 }
 
-#if USE_BLOCK_ALLOC_FOR_LOGREC 
+#if USE_BLOCK_ALLOC_FOR_LOGREC
 // Pool from which the xct_t allocates logrec_t for
-// the _log_buf. There is one per xct.  
+// the _log_buf. There is one per xct.
 DECLARE_TLS(block_alloc<logrec_t>, logrec_pool);
 #endif
 
 xct_t::xct_core::xct_core(tid_t const &t, state_t s, timeout_in_ms timeout)
     :
-    _tid(t), 
+    _tid(t),
     _timeout(timeout),
     _warn_on(true),
-    _lock_info(agent_lock_info->take()),    
-    _lil_lock_info(agent_lil_lock_info->take()),    
+    _lock_info(agent_lock_info->take()),
+    _lil_lock_info(agent_lil_lock_info->take()),
     _raw_lock_xct(NULL),
     _updating_operations(0),
     _threads_attached(0),
@@ -894,12 +894,12 @@ xct_t::xct_core::xct_core(tid_t const &t, state_t s, timeout_in_ms timeout)
 xct_t::xct_t(xct_core* core, sm_stats_info_t* stats,
            const lsn_t& last_lsn, const lsn_t& undo_nxt, bool sys_xct,
            bool single_log_sys_xct, bool loser_xct
-            ) 
-    :   
+            )
+    :
     __stats(stats),
     __saved_lockid_t(0),
     __saved_xct_log_t(0),
-    _tid(core->_tid), 
+    _tid(core->_tid),
     _xct_chain_len(0),
     _ssx_chain_len(0),
     _query_concurrency (smlevel_0::t_cc_none),
@@ -910,7 +910,7 @@ xct_t::xct_t(xct_core* core, sm_stats_info_t* stats,
     _inquery_verify(false),
     _inquery_verify_keyorder(false),
     _inquery_verify_space(false),
-    // _first_lsn, _last_lsn, _undo_nxt, 
+    // _first_lsn, _last_lsn, _undo_nxt,
     _last_lsn(last_lsn),
     _undo_nxt(undo_nxt),
     _read_watermark(lsn_t::null),
@@ -942,7 +942,7 @@ xct_t::xct_t(xct_core* core, sm_stats_info_t* stats,
     else
         _loser_xct = loser_false; // Not a loser transaction
 
-#if USE_BLOCK_ALLOC_FOR_LOGREC 
+#if USE_BLOCK_ALLOC_FOR_LOGREC
     _log_buf = new (*logrec_pool) logrec_t; // deleted when xct goes away
     _log_buf_for_piggybacked_ssx = new (*logrec_pool) logrec_t;
 #else
@@ -986,15 +986,15 @@ xct_t::xct_core::~xct_core()
  *
  *  xct_t::~xct_t()
  *
- *  Clean up and free up memory used by the transaction. The 
- *  transaction has normally ended (committed or aborted) 
+ *  Clean up and free up memory used by the transaction. The
+ *  transaction has normally ended (committed or aborted)
  *  when this routine is called.
  *
  *********************************************************************/
 xct_t::~xct_t()
 {
     FUNC(xct_t::~xct_t);
-    DBGX( << " ended: _log_bytes_rsvd " << _log_bytes_rsvd  
+    DBGX( << " ended: _log_bytes_rsvd " << _log_bytes_rsvd
             << " _log_bytes_ready " << _log_bytes_ready
             << " _log_bytes_used " << _log_bytes_used
             );
@@ -1017,7 +1017,7 @@ xct_t::~xct_t()
 
         while (_dependent_list.pop()) ;
 
-#if USE_BLOCK_ALLOC_FOR_LOGREC 
+#if USE_BLOCK_ALLOC_FOR_LOGREC
         logrec_pool->destroy_object(_log_buf);
         logrec_pool->destroy_object(_log_buf_for_piggybacked_ssx);
 #else
@@ -1028,29 +1028,30 @@ xct_t::~xct_t()
         me()->no_xct(this);
     }
 
-    if(__saved_lockid_t)  { 
-        delete[] __saved_lockid_t; 
-        __saved_lockid_t=0; 
+    if(__saved_lockid_t)  {
+        delete[] __saved_lockid_t;
+        __saved_lockid_t=0;
     }
 
-    if(__saved_xct_log_t) { 
-        delete __saved_xct_log_t; 
-        __saved_xct_log_t=0; 
+    if(__saved_xct_log_t) {
+        delete __saved_xct_log_t;
+        __saved_xct_log_t=0;
     }
 
     if (LATCH_NL != latch().mode())
     {
-        // Someone is accessing the core of this txn, wait until it finished
-        w_rc_t latch_rc = latch().latch_acquire(LATCH_EX, WAIT_SPECIFIED_BY_XCT);
+        // Someone is accessing this txn, wait until it finished
+        w_rc_t latch_rc = latch().latch_acquire(LATCH_EX, WAIT_FOREVER);
 
-        // Now we can delete the core
-        if(_core) 
+        // Now we can delete the core, no one can acquire latch on this txn after this point
+        // since transaction is being destroyed
+        if(_core)
             DELETE_CORE(_core);
         _core = NULL;
 
         if (false == latch_rc.is_error())
         {
-            if (latch().held_by_me())                        
+            if (latch().held_by_me())
                 latch().latch_release();
         }
     }
@@ -1068,13 +1069,13 @@ xct_t::_teardown(bool is_chaining) {
         // lock_x and in core
         _xlist.put_in_order(this);
     }
-    
+
     // find the new oldest xct
     xct_t* xd = _xlist.last();
     _oldest_tid = xd ? xd->_tid : _nxt_tid;
     release_xlist_mutex();
 
-    DBGX( << " commit: _log_bytes_rsvd " << _log_bytes_rsvd  
+    DBGX( << " commit: _log_bytes_rsvd " << _log_bytes_rsvd
          << " _log_bytes_ready " << _log_bytes_ready
          << " _log_bytes_used " << _log_bytes_used
          );
@@ -1092,14 +1093,14 @@ xct_t::_teardown(bool is_chaining) {
     };
     _log_bytes_reserved_space =
     _log_bytes_rsvd = _log_bytes_ready = _log_bytes_used = 0;
-    
+
 }
 
 /*********************************************************************
  *
  *  xct_t::change_state(new_state)
  *
- *  Change the status of the transaction to new_state. All 
+ *  Change the status of the transaction to new_state. All
  *  dependents are informed of the change.
  *
  *********************************************************************/
@@ -1124,7 +1125,7 @@ xct_t::change_state(state_t new_state)
     w_assert1(is_1thread_xct_mutex_mine());
 
     w_assert2(_core->_state != new_state);
-    w_assert2((new_state > _core->_state) || 
+    w_assert2((new_state > _core->_state) ||
             (_core->_state == xct_chaining && new_state == xct_active));
 
     state_t old_state = _core->_state;
@@ -1177,23 +1178,23 @@ xct_t::attach_update_thread()
 {
     w_assert2(_core->_updating_operations >= 0);
     int res = _core->_updating_operations++ + 1;
-    me()->set_is_update_thread(true); 
+    me()->set_is_update_thread(true);
     return res;
 }
 
 void
 xct_t::detach_update_thread()
 {
-    me()->set_is_update_thread(false); 
+    me()->set_is_update_thread(false);
     _core->_updating_operations--;
     w_assert2(_core->_updating_operations >= 0);
 }
 
 int
 xct_t::update_threads() const
-{ 
+{
     return _core->_updating_operations;
-} 
+}
 
 /*********************************************************************
  *
@@ -1209,7 +1210,7 @@ xct_t::add_dependent(xct_dependent_t* dependent)
     FUNC(xct_t::add_dependent);
     CRITICAL_SECTION(xctstructure, *this);
     w_assert9(dependent->_link.member_of() == 0);
-    
+
     w_assert1(is_1thread_xct_mutex_mine());
     _dependent_list.push(dependent);
     dependent->xct_state_changed(_core->_state, _core->_state);
@@ -1221,7 +1222,7 @@ xct_t::remove_dependent(xct_dependent_t* dependent)
     FUNC(xct_t::remove_dependent);
     CRITICAL_SECTION(xctstructure, *this);
     w_assert9(dependent->_link.member_of() != 0);
-    
+
     w_assert1(is_1thread_xct_mutex_mine());
     dependent->_link.detach(); // is protected
     return RCOK;
@@ -1232,7 +1233,7 @@ xct_t::remove_dependent(xct_dependent_t* dependent)
  *  xct_t::find_dependent(d)
  *
  *  Return true iff a given dependent(ptr) is in the transaction's
- *  list.   This must cleanly return false (rather than crashing) 
+ *  list.   This must cleanly return false (rather than crashing)
  *  if d is a garbage pointer, so it cannot dereference d
  *
  *  **** Used by value-added servers. ****
@@ -1270,7 +1271,7 @@ xct_t::find_dependent(xct_dependent_t* ptr)
 rc_t
 xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
 {
-    DBGX( << " commit: _log_bytes_rsvd " << _log_bytes_rsvd  
+    DBGX( << " commit: _log_bytes_rsvd " << _log_bytes_rsvd
             << " _log_bytes_ready " << _log_bytes_ready
             << " _log_bytes_used " << _log_bytes_used
             );
@@ -1292,7 +1293,7 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
     change_state(flags & xct_t::t_chain ? xct_chaining : xct_committing);
 
     // when chaining, we inherit the read_watermark from the previous xct
-    // in case the next transaction are read-only.    
+    // in case the next transaction are read-only.
     lsn_t inherited_read_watermark;
 
     if (_last_lsn.valid() || !smlevel_1::log)  {
@@ -1300,14 +1301,14 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
          *  If xct generated some log, write a synchronous
          *  Xct End Record.
          *  Do this if logging is turned off. If it's turned off,
-         *  we won't have a _last_lsn, but we still have to do 
+         *  we won't have a _last_lsn, but we still have to do
          *  some work here to complete the tx; in particular, we
          *  have to destroy files...
-         * 
+         *
          *  Logging a commit must be serialized with logging
          *  prepares (done by chkpt).
          */
-        
+
         // Does not wait for the checkpoint to finish, checkpoint is a non-blocking operation
         // chkpt_serial_m::read_acquire();
 
@@ -1316,8 +1317,8 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
         // can't avoid such server errors.
         W_DO(check_one_thread_attached());
 
-        // OLD: don't allow a chkpt to occur between changing the 
-        // state and writing the log record, 
+        // OLD: don't allow a chkpt to occur between changing the
+        // state and writing the log record,
         // since otherwise it might try to change the state
         // to the current state (which causes an assertion failure).
         // NEW: had to allow this below, because the freeing of
@@ -1325,7 +1326,7 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
         //
         // Note freeing the locks and log flush occur after 'log_xct_end',
         // and then change state.
-        // if the logic changes here, need to visit chkpt logic which is 
+        // if the logic changes here, need to visit chkpt logic which is
         // depending on the logic here when recording active transactions
 
         state_t old_state = _core->_state;
@@ -1337,7 +1338,7 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
 
         // Does not wait for the checkpoint to finish, checkpoint is a non-blocking operation
         // chkpt_serial_m::read_release();
-        
+
         if(rc.is_error()) {
             // Log insert failed.
             // restore the state.
@@ -1352,7 +1353,7 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
         if(individual && !is_single_log_sys_xct()) { // is commit record fused?
             W_COERCE(log_xct_end());
         }
-        // now we have xct_end record though it might not be flushed yet. so,        
+        // now we have xct_end record though it might not be flushed yet. so,
         // let's do ELR
         W_DO(early_lock_release());
 
@@ -1388,7 +1389,7 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
             // okay (ELR for S-lock is anyway okay) we need to make
             // sure this read-only xct (no-log=read-only) didn't read
             // anything not yet durable. Thus,
-            if ((_elr_mode==elr_sx || _elr_mode==elr_clv) && 
+            if ((_elr_mode==elr_sx || _elr_mode==elr_clv) &&
                 _query_concurrency != t_cc_none && _query_concurrency != t_cc_bad && _read_watermark.valid()) {
                 // to avoid infinite sleep because of dirty pages changed by aborted xct,
                 // we really output a log and flush it
@@ -1416,10 +1417,10 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
                     }
                     ::usleep(ELR_READONLY_WAIT_USEC);
                 }
-                
+
                 if (!flushed) {
                     // now we suspect that we might saw a bogus tag for some reason.
-                    // so, let's output a real xct_end log and flush it. 
+                    // so, let's output a real xct_end log and flush it.
                     // See jira ticket:99 "ELR for X-lock" (originally trac ticket:101).
                     // NOTE this should not be needed now that our algorithm is based
                     // on lock bucket tag, which is always exact, not too conservative.
@@ -1437,7 +1438,7 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
             W_DO(early_lock_release());
         }
     }
-    
+
     INC_TSTAT(commit_xct_cnt);
 
     me()->detach_xct(this);        // no transaction for this thread
@@ -1538,7 +1539,7 @@ xct_t::_abort()
     // If there are too many threads attached, tell the VAS and let it
     // ensure that only one does this.
     // W_DO(check_one_thread_attached()); // now done in the prologues.
-    
+
     w_assert1(one_thread_attached());
 
     // The transaction abort function is shared by :
@@ -1547,9 +1548,9 @@ xct_t::_abort()
     // 2. UNDO phase in Recovery, in such case the state would be in xct_active
     //     but the _loser_xct flag is on to indicating a loser transaction
     // Note that if we open the store for new transaction during Recovery
-    // we could encounter normal transaction abort while Recovery is going on, 
+    // we could encounter normal transaction abort while Recovery is going on,
     // in such case the aborting transaction state would fall into case #1 above
-    
+
     if ((false == in_recovery()) && (false == is_loser_xct()))
     {
         // Not a loser txn
@@ -1589,7 +1590,7 @@ xct_t::_abort()
     //ClearAllLoadStores();
 
     W_DO( rollback(lsn_t::null) );
-    
+
     // if this is not part of chain or both-SX-ELR mode,
     // we can safely release all locks at this point.
     bool all_lock_released = false;
@@ -1605,22 +1606,22 @@ xct_t::_abort()
     if (_last_lsn.valid()) {
         LOGREC_ACCOUNT_END_XCT(true); // see logrec.h
         /*
-         *  If xct generated some log, write a Xct End Record. 
+         *  If xct generated some log, write a Xct End Record.
          *  We flush because if this was a prepared
-         *  transaction, it really must be synchronous 
+         *  transaction, it really must be synchronous
          */
 
         // don't allow a chkpt to occur between changing the state and writing
         // the log record, since otherwise it might try to change the state
         // to the current state (which causes an assertion failure).
-        
+
         // NOTE: you cannot insert a log comment here; it'll break
         // on an assertion having to do with the xct state. Wait until
         // state is changed from aborting to something else.
 
         // Does not wait for the checkpoint to finish, checkpoint is a non-blocking operation
         // chkpt_serial_m::read_acquire();
-        
+
         change_state(xct_freeing_space);
         rc_t rc = log_xct_freeing_space();
 
@@ -1701,7 +1702,7 @@ xct_t::dispose()
 {
     delete __stats;
     __stats = 0;
-    
+
     W_DO(check_one_thread_attached());
     W_COERCE( commit_free_locks());
     ClearAllStoresToFree();
@@ -1721,7 +1722,7 @@ xct_t::dispose()
 w_rc_t
 xct_t::_flush_logbuf()
 {
-    DBGX( << " _flush_logbuf: _log_bytes_rsvd " << _log_bytes_rsvd  
+    DBGX( << " _flush_logbuf: _log_bytes_rsvd " << _log_bytes_rsvd
             << " _log_bytes_ready " << _log_bytes_ready
             << " _log_bytes_used " << _log_bytes_used);
     // ASSUMES ALREADY PROTECTED BY MUTEX
@@ -1740,11 +1741,11 @@ xct_t::_flush_logbuf()
         // debugging prints a * if this record was written
         // during rollback
         //
-        DBGX( << " " 
+        DBGX( << " "
                 << ((char *)(state()==xct_aborting)?"RB":"FW")
-                << " approx lsn:" << log->curr_lsn() 
-                << " rec:" << *_last_log 
-                << " size:" << _last_log->length()  
+                << " approx lsn:" << log->curr_lsn()
+                << " rec:" << *_last_log
+                << " size:" << _last_log->length()
                 << " xid_prevlsn:" << (_last_log->is_single_sys_xct() ? lsn_t::null : _last_log->xid_prev() )
                 );
 
@@ -1759,7 +1760,7 @@ xct_t::_flush_logbuf()
                       );
 
             LOGREC_ACCOUNT(*l, !consuming); // see logrec.h
-            
+
             /* LOG_RESERVATIONS
 
                Now that we know the size of the log record which was
@@ -1769,7 +1770,7 @@ xct_t::_flush_logbuf()
                reserve an additional /length/ bytes against future
                rollbacks; undo records consume /length/ previously
                reserved bytes and leave available bytes unchanged..
-               
+
                NOTE: we only track reservations during forward
                processing. The SM can no longer run out of log space,
                so during recovery we can assume that the log was not
@@ -1783,13 +1784,13 @@ xct_t::_flush_logbuf()
                 {
                     ADD_TSTAT(log_bytes_generated_rb,bytes_used);
                     DBG(<<"_log_bytes_rsvd " << _log_bytes_rsvd
-                            << "(about to subtract bytes_used " << bytes_used 
+                            << "(about to subtract bytes_used " << bytes_used
                             << ") _log_bytes_used " << _log_bytes_used
                             );
 
                     // NOTE: this assert can fail when we are rolling
                     // back a btree activity and find that we need to
-                    // perform a compensating SMO 
+                    // perform a compensating SMO
                     // that wasn't done by this xct.
                     // So I've added the OR consuming here, and
                     // and for safety, don't let the _log_bytes_rsvd
@@ -1804,14 +1805,14 @@ xct_t::_flush_logbuf()
                     if(_log_bytes_rsvd < 0) {
                         // print some useful info
                         w_ostrstream out;
-                        out 
+                        out
                         << " _log_bytes_rsvd " << _log_bytes_rsvd
                         << " bytes_used " << bytes_used
                         << " _rolling_back " << _rolling_back
                         << " consuming " << consuming
                         << "\n"
                         << " xct state " << state()
-                        << " fudge factor is " 
+                        << " fudge factor is "
                         << UNDO_FUDGE_FACTOR(l->type(),1)
                         ;
 
@@ -1829,12 +1830,12 @@ xct_t::_flush_logbuf()
                     w_assert0(_log_bytes_ready >= bytes_used + to_reserve);
                     DBG(<<"_log_bytes_ready " << _log_bytes_ready
                             << "(about to subtract bytes_used "
-                            << bytes_used << " + to_reserve(undo fudge) " << to_reserve 
+                            << bytes_used << " + to_reserve(undo fudge) " << to_reserve
                             << ") "
                             );
                     _log_bytes_ready -= bytes_used + to_reserve;
                     DBG(<<"_log_bytes_rsvd " << _log_bytes_rsvd
-                            << "(about to subtract to_reserve " << to_reserve 
+                            << "(about to subtract to_reserve " << to_reserve
                             << ") "
                             );
                     _log_bytes_rsvd += to_reserve;
@@ -1845,7 +1846,7 @@ xct_t::_flush_logbuf()
             // log insert effectively set_lsn to the lsn of the *next* byte of
             // the log.
             if ( ! _first_lsn.valid())  _first_lsn = _last_lsn;
-        
+
             if (!l->is_single_sys_xct()) {
                 _undo_nxt = ( l->is_undoable_clr() ? _last_lsn :
                            l->is_cpsn() ? l->undo_nxt() : _last_lsn);
@@ -1905,13 +1906,13 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
     if(smlevel_0::operating_mode == t_forward_processing) {
     /* LOG_RESERVATIONS
     // logrec_t is 3 pages, even though the real record is shorter.
-    
+
        The log keeps its idea what space is available and as long
        as every xct calls log->reserve_space(amt) before inserting, to
        make sure there is adequate space for the insertion, we're ok.
        The xct, for its part, "carves" up the amt and puts in in one
        of two "pools": ready space -- for log insertions prior to
-       rollback, and rsvd space -- for rolling back if needed. 
+       rollback, and rsvd space -- for rolling back if needed.
        When the xct ends, it gives back to the log that which it
        no longer needs.
 
@@ -1921,7 +1922,7 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
        and prepared transactions may reserve some of that during redo
        and end-of-recovery checkpoint; then the sm "activates " reservations,
        meaning simply that the log then figures out how much space it
-       has left, and then we go into forward_processing mode. From then 
+       has left, and then we go into forward_processing mode. From then
        on, the xcts have the responsibility for making log reservations.
 
        -----------------
@@ -1949,7 +1950,7 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
        top-level actions generated unexpectedly during rollback.
      */
 
-    static u_int const MIN_BYTES_READY = 2*sizeof(logrec_t) + 
+    static u_int const MIN_BYTES_READY = 2*sizeof(logrec_t) +
                                          UNDO_FUDGE_FACTOR(t,sizeof(logrec_t));
     static u_int const MIN_BYTES_RSVD =  sizeof(logrec_t);
     DBGX(<<" get_logbuf: START reserved for rollback " << _log_bytes_reserved_space
@@ -1976,13 +1977,13 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
              */
             INC_TSTAT(log_full);
             bool badnews=false;
-            if(_first_lsn.valid() && _first_lsn.hi() == 
+            if(_first_lsn.valid() && _first_lsn.hi() ==
                     log->global_min_lsn().hi()) {
                 INC_TSTAT(log_full_old_xct);
                 badnews = true;
             }
 
-            DBGX(<<" no luck: forcing my dirty pages " 
+            DBGX(<<" no luck: forcing my dirty pages "
                     << " badnews " << badnews);
             if(!badnews) {
                 /* Now it's safe to wait for more log space to open up
@@ -1996,7 +1997,7 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
                 // chkpt_serial_m::read_release();
 
                 static queue_based_block_lock_t emergency_log_flush_mutex;
-                CRITICAL_SECTION(cs, emergency_log_flush_mutex);                
+                CRITICAL_SECTION(cs, emergency_log_flush_mutex);
                 for(int tries_left=3; tries_left > 0; tries_left--) {
                     DBGX(<<" wait for more log space tries_left " << tries_left);
                     if(tries_left == 1) {
@@ -2011,7 +2012,7 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
                         extern void dump_all_sm_stats();
                         dump_all_sm_stats();
 #endif
-                        if(rc.err_num() == eBPFORCEFAILED) 
+                        if(rc.err_num() == eBPFORCEFAILED)
                         return RC(eOUTOFLOGSPACE);
                         return rc;
                     }
@@ -2019,7 +2020,7 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
 
                     // most likely it's well aware, but just in case...
                     DBGOUT3(<< "chkpt 4");
-                    
+
                     chkpt->wakeup_and_take();
                     W_IGNORE(log->wait_for_space(needed, 100));
                     if(!needed) {
@@ -2031,22 +2032,22 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
                         }
                         goto success;
                     }
-                    
+
                     // try again...
                 }
 
                 if(!log->reserve_space(needed)) {
                     // won't do any good now...
-                    log->release_space(MIN_BYTES_READY - needed); 
+                    log->release_space(MIN_BYTES_READY - needed);
                     _log_bytes_reserved_space -= (MIN_BYTES_READY - needed);
                     w_assert1(_log_bytes_reserved_space >= 0);
-                    
+
                     // nothing's working... give up and abort
                     stringstream tmp;
                     tmp << "Log too full. me=" << me()->id
                     << " pthread=" << pthread_self()
                     << ": min_chkpt_rec_lsn=" << log->min_chkpt_rec_lsn()
-                    << ", curr_lsn=" << log->curr_lsn() 
+                    << ", curr_lsn=" << log->curr_lsn()
                     // also print info that shows why we didn't croak
                     // on the first check
                     << "; space left " << log->space_left()
@@ -2065,10 +2066,10 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
                 tmp << "Log too full. " << __LINE__ << " " << __FILE__
                 << "\n";
                 tmp << "Thread: me=" << me()->id
-                << " pthread=" << pthread_self()  
+                << " pthread=" << pthread_self()
                 << "\n";
                 tmp
-                << " xct() " << tid() 
+                << " xct() " << tid()
                 << " _rolling_back " << _rolling_back
                 << " _core->_xct_aborting " << _core->_xct_aborting
                 << " _state " << _core->_state
@@ -2076,7 +2077,7 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
                 << " log bytes needed " << needed
                 << "\n";
 
-                tmp 
+                tmp
                 << " _log_bytes_used for fwd " << _log_bytes_used
                 << " _log_bytes_rsvd for rollback " << _log_bytes_rsvd
                 << " rollback/used= " << double(_log_bytes_rsvd)/
@@ -2084,17 +2085,17 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
                 << " fudge factor is " << UNDO_FUDGE_FACTOR(t, 1)
                 << "\n";
 
-                tmp 
+                tmp
                     << " first_lsn="  << _first_lsn
                 << "\n";
-                tmp 
+                tmp
                 << "Log: min_chkpt_rec_lsn=" << log->min_chkpt_rec_lsn()
                 << ", curr_lsn=" << log->curr_lsn() << "\n";
 
-                tmp 
-                << "; master_lsn " << log->master_lsn() 
-                << "; durable_lsn " << log->durable_lsn() 
-                << "; curr_lsn " << log->curr_lsn() 
+                tmp
+                << "; master_lsn " << log->master_lsn()
+                << "; durable_lsn " << log->durable_lsn()
+                << "; curr_lsn " << log->curr_lsn()
                 << ", global_min_lsn=" << log->global_min_lsn()
                 << "\n";
 
@@ -2102,8 +2103,8 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
                 // also print info that shows why we didn't croak
                 // on the first check
                 << "; space left " << log->space_left()
-                << "; rsvd for checkpoint " << log->space_for_chkpt() 
-                << "; max checkpoint size " << log->max_chkpt_size() 
+                << "; rsvd for checkpoint " << log->space_for_chkpt()
+                << "; max checkpoint size " << log->max_chkpt_size()
                 << "\n";
 
                 tmp
@@ -2112,7 +2113,7 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
                 << "\n";
 
                 if(errlog) {
-                    errlog->clog << error_prio 
+                    errlog->clog << error_prio
                     << tmp.str().c_str()
                     << flushl;
                 } else {
@@ -2130,7 +2131,7 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
         DBGX( << " get_logbuf: now "
             << " _log_bytes_ready " << _log_bytes_ready
             << " _log_bytes_used " << _log_bytes_used
-            << " _log_bytes_reserved_space (for rollback)" 
+            << " _log_bytes_reserved_space (for rollback)"
             << _log_bytes_reserved_space
             );
     }
@@ -2150,13 +2151,13 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
         // transfer bytes from the ready pool to the reserved pool
         _log_bytes_ready -= MIN_BYTES_RSVD;
         _log_bytes_rsvd += MIN_BYTES_RSVD;
-        DBGX(<< " get_logbuf: NEAR END transferred from ready to rsvd " 
+        DBGX(<< " get_logbuf: NEAR END transferred from ready to rsvd "
                 << MIN_BYTES_RSVD
-                << " bytes because _log_bytes_rsvd < MIN_BYTES_RSVD " 
+                << " bytes because _log_bytes_rsvd < MIN_BYTES_RSVD "
                 );
     }
-    
-    DBGX( << " get_logbuf: END _log_bytes_rsvd " << _log_bytes_rsvd  
+
+    DBGX( << " get_logbuf: END _log_bytes_rsvd " << _log_bytes_rsvd
             << " _log_bytes_ready " << _log_bytes_ready
             << " _log_bytes_used " << _log_bytes_used
             );
@@ -2165,7 +2166,7 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
 
 
 #if W_DEBUG_LEVEL > 0
-    DBG( 
+    DBG(
             << " state() " << state()
             << " _rolling_back " << _rolling_back
             << " _core->_xct_aborting " << _core->_xct_aborting
@@ -2186,7 +2187,7 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
     w_assert1(_log_bytes_reserved_space >= 0);
     w_assert1(_log_bytes_ready <= _log_bytes_reserved_space);
     w_assert1(_log_bytes_rsvd <= _log_bytes_reserved_space);
-    w_assert1((_log_bytes_used <= _log_bytes_reserved_space) || 
+    w_assert1((_log_bytes_used <= _log_bytes_reserved_space) ||
             should_consume_rollback_resv(t)
             );
 
@@ -2194,14 +2195,14 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
     if(should_reserve_for_rollback(t))
     {
         // Must be reserving for rollback
-        w_assert1(_log_bytes_rsvd >= rsvd); // monotonically increasing here 
-        w_assert1(_log_bytes_used == used); // consumed in _flush_logbuf 
+        w_assert1(_log_bytes_rsvd >= rsvd); // monotonically increasing here
+        w_assert1(_log_bytes_used == used); // consumed in _flush_logbuf
         w_assert1(_log_bytes_reserved_space >= requested); //monotonically incr
-    } 
+    }
     else
     {
         // Must be consuming rollback space
-        w_assert1(_log_bytes_rsvd == rsvd); // strictly decreasing, in 
+        w_assert1(_log_bytes_rsvd == rsvd); // strictly decreasing, in
                                             // _flush_logbuf
         w_assert1(_log_bytes_used == used); // increasing,  in _flush_logbuf
         w_assert1(_log_bytes_reserved_space >= requested); //monotonically incr
@@ -2209,10 +2210,10 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
     }
     else
     {
-        w_assert1(_log_bytes_reserved_space == requested); 
-        w_assert1(_log_bytes_rsvd == rsvd); 
-        w_assert1(_log_bytes_used == used); 
-        w_assert1(_log_bytes_ready == ready); 
+        w_assert1(_log_bytes_reserved_space == requested);
+        w_assert1(_log_bytes_rsvd == rsvd);
+        w_assert1(_log_bytes_used == used);
+        w_assert1(_log_bytes_ready == ready);
     }
 #endif
 
@@ -2283,12 +2284,12 @@ xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page, const fixable_page_h
     w_assert1(_log_bytes_reserved_space >= 0);
 #endif
     DBGX(<<"_last_log contains: "   << *l );
-        
+
     // ALREADY PROTECTED from get_logbuf() call
 
     w_assert1(l == _last_log);
 
-    rc_t rc = _flush_logbuf(); 
+    rc_t rc = _flush_logbuf();
                       // stuffs tid, _last_lsn into our record,
                       // then inserts it into the log, getting _last_lsn
     if(!rc.is_error()) {
@@ -2337,12 +2338,12 @@ xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page, const fixable_page_h
             w_assert1(_log_bytes_reserved_space >= requested); //monotonically incr
         }
     }
-    else 
+    else
     {
-        w_assert1(_log_bytes_reserved_space == requested); 
-        w_assert1(_log_bytes_rsvd == rsvd); 
-        w_assert1(_log_bytes_used == used); 
-        w_assert1(_log_bytes_ready == ready); 
+        w_assert1(_log_bytes_reserved_space == requested);
+        w_assert1(_log_bytes_rsvd == rsvd);
+        w_assert1(_log_bytes_used == used);
+        w_assert1(_log_bytes_ready == ready);
     }
 
 #endif
@@ -2366,15 +2367,15 @@ xct_t::release_anchor( bool and_compensate ADD_LOG_COMMENT_SIG )
 #if X_LOG_COMMENT_ON
     if(and_compensate) {
         w_ostrstream s;
-        s << "release_anchor at " 
+        s << "release_anchor at "
             << debugmsg;
         W_COERCE(log_comment(s.c_str()));
     }
 #endif
-    DBGX(    
-            << " RELEASE ANCHOR " 
+    DBGX(
+            << " RELEASE ANCHOR "
             << " in compensated op==" << _in_compensated_op
-            << " holds xct_mutex_1==" 
+            << " holds xct_mutex_1=="
             /*<< (const char *)(_1thread_xct.is_mine()? "true" : "false"*)*/
     );
 
@@ -2405,7 +2406,7 @@ xct_t::release_anchor( bool and_compensate ADD_LOG_COMMENT_SIG )
            } else {
                DBGX(<<"no _last_log:" << _anchor);
                /* Can we update the log record in the log buffer ? */
-               if( log && 
+               if( log &&
                    !log->compensate(_last_lsn, _anchor).is_error()) {
                    // Yup.
                     INC_TSTAT(compensate_in_log);
@@ -2416,8 +2417,8 @@ xct_t::release_anchor( bool and_compensate ADD_LOG_COMMENT_SIG )
                    // check for eBADCOMPENSATION here and
                    // return all other errors  from the
                    // above log->compensate(...)
-                   
-                   // compensations use _log_bytes_rsvd, 
+
+                   // compensations use _log_bytes_rsvd,
                    // not _log_bytes_ready
                    W_COERCE(log_compensate(_anchor));
                    INC_TSTAT(compensate_records);
@@ -2428,12 +2429,12 @@ xct_t::release_anchor( bool and_compensate ADD_LOG_COMMENT_SIG )
         _anchor = lsn_t::null;
 
     }
-    // UN-PROTECT 
+    // UN-PROTECT
     _in_compensated_op -- ;
 
-    DBGX(    
+    DBGX(
         << " out compensated op=" << _in_compensated_op
-        << " holds xct_mutex_1==" 
+        << " holds xct_mutex_1=="
         /*        << (const char *)(_1thread_xct.is_mine()? "true" : "false")*/
     );
 }
@@ -2445,21 +2446,21 @@ xct_t::release_anchor( bool and_compensate ADD_LOG_COMMENT_SIG )
  *  Return a log anchor (begin a top level action).
  *
  *  If argument==true (most of the time), it stores
- *  the anchor for use with compensations.  
+ *  the anchor for use with compensations.
  *
  *  When the  argument==false, this is used (by I/O monitor) not
  *  for compensations, but only for concurrency control.
  *
  *********************************************************************/
-const lsn_t& 
+const lsn_t&
 xct_t::anchor(bool grabit)
 {
     // PROTECT
     _in_compensated_op ++;
 
     INC_TSTAT(anchors);
-    DBGX(    
-            << " GRAB ANCHOR " 
+    DBGX(
+            << " GRAB ANCHOR "
             << " in compensated op==" << _in_compensated_op
     );
 
@@ -2484,7 +2485,7 @@ xct_t::anchor(bool grabit)
  *  the gist of it is the same, but the assertions differ, and
  *  we have to acquire the mutex first
  *********************************************************************/
-void 
+void
 xct_t::compensate_undo(const lsn_t& lsn)
 {
     DBGX(    << " compensate_undo (" << lsn << ") -- state=" << state());
@@ -2500,12 +2501,12 @@ xct_t::compensate_undo(const lsn_t& lsn)
  *
  *  xct_t::compensate(lsn, bool undoable)
  *
- *  Generate a compensation log record to compensate actions 
+ *  Generate a compensation log record to compensate actions
  *  started at "lsn" (commit a top level action).
  *  Generates a new log record only if it has to do so.
  *
  *********************************************************************/
-void 
+void
 xct_t::compensate(const lsn_t& lsn, bool undoable ADD_LOG_COMMENT_SIG)
 {
     DBGX(    << " compensate(" << lsn << ") -- state=" << state());
@@ -2521,8 +2522,8 @@ xct_t::compensate(const lsn_t& lsn, bool undoable ADD_LOG_COMMENT_SIG)
  *
  *  xct_t::_compensate(lsn, bool undoable)
  *
- *  
- *  Generate a compensation log record to compensate actions 
+ *
+ *  Generate a compensation log record to compensate actions
  *  started at "lsn" (commit a top level action).
  *  Generates a new log record only if it has to do so.
  *
@@ -2544,7 +2545,7 @@ xct_t::compensate(const lsn_t& lsn, bool undoable ADD_LOG_COMMENT_SIG)
  *  immediately now (which was precluded for undoable_clrs ).
  *
  *********************************************************************/
-void 
+void
 xct_t::_compensate(const lsn_t& lsn, bool undoable)
 {
     DBGX(    << "_compensate(" << lsn << ") -- state=" << state());
@@ -2570,7 +2571,7 @@ xct_t::_compensate(const lsn_t& lsn, bool undoable)
         INC_TSTAT(compensate_in_xct);
         done = true;
     } else {
-        /* 
+        /*
         // Log record has already been inserted into the buffer.
         // Perhaps we can update the log record in the log buffer.
         // However,  it's conceivable that nothing's been written
@@ -2592,9 +2593,9 @@ xct_t::_compensate(const lsn_t& lsn, bool undoable)
     if( !done && (lsn < _last_lsn) ) {
         /*
         // If we've actually written some log records since
-        // this anchor (lsn) was grabbed, 
+        // this anchor (lsn) was grabbed,
         // force it to write a compensation-only record
-        // either because there's no record on which to 
+        // either because there's no record on which to
         // piggy-back the compensation, or because the record
         // that's there is an undoable/compensation and will be
         // undone (and we *really* want to compensate around it)
@@ -2626,10 +2627,10 @@ xct_t::rollback(const lsn_t &save_pt)
     // attached
     w_assert0(update_threads()<=1);
 
-    if(!log) { 
+    if(!log) {
         ss_m::errlog->clog  << emerg_prio
-        << "Cannot roll back with logging turned off. " 
-        << flushl; 
+        << "Cannot roll back with logging turned off. "
+        << flushl;
         return RC(eNOABORT);
     }
 
@@ -2647,15 +2648,15 @@ xct_t::rollback(const lsn_t &save_pt)
     _in_compensated_op++;
 
     // rollback is only one type of compensated op, and it doesn't nest
-    w_assert0(!_rolling_back); 
-    _rolling_back = true; 
+    w_assert0(!_rolling_back);
+    _rolling_back = true;
 
     // undo_nxt is the lsn of last recovery log for this txn
     lsn_t nxt = _undo_nxt;
 
     DBGOUT3(<<"Initial rollback, from: " << nxt << " to: " << save_pt);
     LOGTRACE( << setiosflags(ios::right) << nxt
-              << resetiosflags(ios::right) 
+              << resetiosflags(ios::right)
               << " Roll back " << " " << tid()
               << " to " << save_pt );
     _log_bytes_used_fwd  = _log_bytes_used; // for debugging
@@ -2668,23 +2669,23 @@ xct_t::rollback(const lsn_t &save_pt)
     w_auto_delete_t<logrec_t> auto_del(__copy__buf);
     logrec_t&         r = *__copy__buf;
 
-    while (save_pt < nxt)  
+    while (save_pt < nxt)
     {
 #ifdef LOG_BUFFER
         // no hints
-        rc =  log->fetch(nxt, buf, 0, true);        
+        rc =  log->fetch(nxt, buf, 0, true);
 
         //// hints
         ////rc =  log->fetch(nxt, __copy__buf, 0, SINGLE_PAGE_RECOVERY);
         //rc =  log->fetch(nxt, buf, 0, SINGLE_PAGE_RECOVERY);
 #else
-        rc =  log->fetch(nxt, buf, 0, true);        
-#endif        
-        if(rc.is_error() && rc.err_num()==eEOF) 
+        rc =  log->fetch(nxt, buf, 0, true);
+#endif
+        if(rc.is_error() && rc.err_num()==eEOF)
         {
             LOGTRACE2( << "U: end of log looking to fetch nxt=" << nxt);
             DBGX(<< " fetch returns EOF" );
-            log->release(); 
+            log->release();
             goto done;
         }
         else
@@ -2693,9 +2694,9 @@ xct_t::rollback(const lsn_t &save_pt)
 
              logrec_t& temp = *buf;
              w_assert3(!temp.is_skip());
-          
-             /* Only copy the valid portion of 
-              * the log record, then release it 
+
+             /* Only copy the valid portion of
+              * the log record, then release it
               */
              memcpy(__copy__buf, &temp, temp.length());
 
@@ -2704,10 +2705,10 @@ xct_t::rollback(const lsn_t &save_pt)
 
         DBGOUT1(<<"Rollback, current undo lsn: " << nxt);
 
-        if (r.is_undo()) 
+        if (r.is_undo())
         {
            w_assert1(nxt == r.lsn_ck());
-            // r is undoable 
+            // r is undoable
             w_assert1(!r.is_single_sys_xct());
             w_assert1(!r.is_multi_page()); // All multi-page logs are SSX, so no UNDO.
             /*
@@ -2718,18 +2719,18 @@ xct_t::rollback(const lsn_t &save_pt)
 
 #if W_DEBUG_LEVEL > 2
             u_int    was_rsvd = _log_bytes_rsvd;
-#endif 
+#endif
             lpid_t pid = r.construct_pid();
             fixable_page_h page;
 
-            if (! r.is_logical()) 
+            if (! r.is_logical())
             {
                 // Operations such as foster adoption, load balance, etc.
-                
+
                 DBGOUT3 (<<"physical UNDO.. which is not quite good");
                 // tentatively use fix_direct for this. eventually all physical UNDOs should go away
                 rc = page.fix_direct(pid.vol().vol, pid.page, LATCH_EX);
-                if(rc.is_error()) 
+                if(rc.is_error())
                 {
                     goto done;
                 }
@@ -2744,8 +2745,8 @@ xct_t::rollback(const lsn_t &save_pt)
                   LOGTRACE2(<< "U: len=" << r.length() << " B= " <<
                           (was_rsvd - _log_bytes_rsvd));
             }
-#endif 
-            if(r.is_cpsn()) 
+#endif
+            if(r.is_cpsn())
             {
                 // A compensation log record
                 w_assert1(r.is_undoable_clr());
@@ -2761,30 +2762,30 @@ xct_t::rollback(const lsn_t &save_pt)
                 nxt = r.xid_prev();
                 DBGOUT1(<<"Rollback, log record is not compensation, xid_prev: " << nxt);
             }
-        } 
-        else  if (r.is_cpsn())  
+        }
+        else  if (r.is_cpsn())
         {
             LOGTRACE2( << setiosflags(ios::right) << nxt
-                      << resetiosflags(ios::right) << " U: " << r 
+                      << resetiosflags(ios::right) << " U: " << r
                       << " compensating to " << r.undo_nxt() );
-            if (r.is_single_sys_xct()) 
+            if (r.is_single_sys_xct())
             {
                 nxt = lsn_t::null;
             }
-            else 
+            else
             {
                 nxt = r.undo_nxt();
             }
             // r.xid_prev() could just as well be null
 
-        } 
+        }
         else
         {
-            // r is not undoable         
+            // r is not undoable
             LOGTRACE2( << setiosflags(ios::right) << nxt
-               << resetiosflags(ios::right) << " U: " << r 
+               << resetiosflags(ios::right) << " U: " << r
                << " skipping to " << r.xid_prev());
-            if (r.is_single_sys_xct()) 
+            if (r.is_single_sys_xct())
             {
                 nxt = lsn_t::null;
             }
@@ -2840,7 +2841,7 @@ void xct_t::AddLoadStore(const stid_t& stid)
  * proper list of stores to be freed.
  *
  * don't *really* need mutex since only called when aborting => 1 thread
- * but we have the acquire here for internal documentation 
+ * but we have the acquire here for internal documentation
  */
 void
 xct_t::ClearAllStoresToFree()
@@ -2899,7 +2900,7 @@ class VolidCnt {
                 for (int i = 0; i < unique_vols; i++)
                     if (vol_map[i] == vol)
                         return i;
-                
+
                 w_assert9(unique_vols < xct_t::max_vols);
                 vol_map[unique_vols] = vol;
                 vol_cnts[unique_vols] = 0;
@@ -2920,7 +2921,7 @@ class VolidCnt {
                 for (int i = 0; i < unique_vols; i ++)
                     w_assert9(vol_cnts[i] == 0);
             };
-#endif 
+#endif
 };
 
 rc_t
@@ -2931,20 +2932,20 @@ xct_t::ConvertAllLoadStoresToRegularStores()
     {
         static int uniq=0;
         static int last_uniq=0;
-	
+
         // int    nv =  atomic_inc_nv(uniq);
         int nv =  lintel::unsafe::atomic_fetch_add(&uniq, 1);
         //Even if someone else slips in here, the
-        //values should never match. 
+        //values should never match.
         w_assert1(last_uniq != nv);
         *&last_uniq = nv;
 
         // this is to help us figure out if we
         // are issuing duplicate commits/log entries or
         // if the problem is in the log code or the
-        // grabbing of the 1thread log mutex 
+        // grabbing of the 1thread log mutex
         w_ostrstream s;
-        s << "ConvertAllLoadStores uniq=" << uniq 
+        s << "ConvertAllLoadStores uniq=" << uniq
             << " xct state " << _core->_state
             << " xct aborted " << _core->_xct_aborting
             << " xct ended " << _core->_xct_ended
@@ -2996,15 +2997,15 @@ xct_t::ClearAllLoadStores()
     w_assert3(_core->_loadStores.is_empty());
 }
 
-void 
-xct_t::attach_thread() 
+void
+xct_t::attach_thread()
 {
     FUNC(xct_t::attach_thread);
     smthread_t *thr = g_me();
     CRITICAL_SECTION(xctstructure, *this);
 
     w_assert2(is_1thread_xct_mutex_mine());
-    
+
     if (_core->_threads_attached++ > 0) {
         INC_TSTAT(mpl_attach_cnt);
     }
@@ -3016,7 +3017,7 @@ xct_t::attach_thread()
 
 
 void
-xct_t::detach_thread() 
+xct_t::detach_thread()
 {
     FUNC(xct_t::detach_thread);
     CRITICAL_SECTION(xctstructure, *this);
@@ -3051,7 +3052,7 @@ xct_t::one_thread_attached() const
     // The current code commented out the read mutex on checkpoint, in other words,
     // checkpoint is not a blocking operation anymore, but when checkpoint gathering
     // the txn data, it reads stable txn data by grabing a latch on txn object
-    // 
+    //
     if( _core->_threads_attached > 1) {
         // Does not wait for checkpoint to finish, checkpoint is a non-blocking operation
         // chkpt_serial_m::read_acquire();
@@ -3059,7 +3060,7 @@ xct_t::one_thread_attached() const
             // chkpt_serial_m::read_release();
 
 #if W_DEBUG_LEVEL > 2
-            fprintf(stderr, 
+            fprintf(stderr,
                     "Fatal VAS or SSM error: %s %d %s %d.%d \n",
                     "Only one thread allowed in this operation at any time.",
                     _core->_threads_attached.load(),
@@ -3096,7 +3097,7 @@ xct_t::acquire_1thread_xct_mutex() const // default: true
     // free or held; the w_pthread_lock_t cannot,
     // and always returns false.
     bool was_contended = _core->_1thread_xct.acquire(&me()->get_1thread_xct_me());
-    if(was_contended) 
+    if(was_contended)
         INC_TSTAT(await_1thread_xct);
     DBGX(    << " acquireD xct mutex");
     w_assert2(is_1thread_xct_mutex_mine());
@@ -3120,8 +3121,8 @@ xct_t::dump_locks(ostream &out) const
 }
 
 
-smlevel_0::switch_t 
-xct_t::set_log_state(switch_t s, bool &) 
+smlevel_0::switch_t
+xct_t::set_log_state(switch_t s, bool &)
 {
     xct_log_t *mine = me()->xct_log();
     switch_t old = (mine->xct_log_is_off()? OFF: ON);
@@ -3131,7 +3132,7 @@ xct_t::set_log_state(switch_t s, bool &)
 }
 
 void
-xct_t::restore_log_state(switch_t s, bool n ) 
+xct_t::restore_log_state(switch_t s, bool n )
 {
     (void) set_log_state(s, n);
 }

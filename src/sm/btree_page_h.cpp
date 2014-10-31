@@ -20,13 +20,13 @@
 #include "restart.h"
 
 
-btrec_t& 
+btrec_t&
 btrec_t::set(const btree_page_h& page, slotid_t slot) {
     FUNC(btrec_t::set);
     w_assert3(slot >= 0 && slot < page.nrecs());
 
     _elem.reset();
-    
+
     if (page.is_leaf())  {
         page.get_key(slot, _key);
         smsize_t element_len;
@@ -55,7 +55,7 @@ void btree_page_h::accept_empty_child(lsn_t new_lsn, shpid_t new_page_id, const 
     // because we will be doing on-demand redo/undo during recovery,
     // therefore the system flag itself is not sufficient to indicate the type of the caller
     if (false == f_redo)
-        w_assert1(g_xct()->is_single_log_sys_xct());   
+        w_assert1(g_xct()->is_single_log_sys_xct());
 
     w_assert1(new_lsn != lsn_t::null || !smlevel_0::logging_enabled);
 
@@ -78,10 +78,10 @@ void btree_page_h::accept_empty_child(lsn_t new_lsn, shpid_t new_page_id, const 
 
 rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the operation that creates this new page
                                 const lpid_t&     pid,             // Destination page pid
-                                shpid_t           root, 
+                                shpid_t           root,
                                 int               l,               // Level of the destination page
                                 shpid_t           pid0,            // Destination page pid0 value, non-leaf only
-                                lsn_t             pid0_emlsn,      // Destination page emlsn value, non-leaf only 
+                                lsn_t             pid0_emlsn,      // Destination page emlsn value, non-leaf only
                                 shpid_t           foster,          // Page ID of the foster-child (if exist)
                                 lsn_t             foster_emlsn,
                                 const w_keystr_t& fence_low,       // Low fence key of the destination page
@@ -114,10 +114,10 @@ rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the 
     }
 
     // Note that the method receives a copy, not reference, of pid/lsn here.
-    // pid might point to a part of this page itself!   
+    // pid might point to a part of this page itself!
     // Initialize the whole image of the destination page page as an empty page.
     // it sets the fence keys (prefix, low and high, all in one slot, slot 0)
-    // The _init inserts into slot 0 which contains the low, high (confusing nameing, 
+    // The _init inserts into slot 0 which contains the low, high (confusing nameing,
     // this is actually the foster key) and chain_high_fence (actually the high fence) keys,
     // but do not log it, since the actual record movement will move all the records
     _init(new_lsn, pid, root, pid0, pid0_emlsn, foster, foster_emlsn,
@@ -125,7 +125,7 @@ rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the 
 
     // steal records from old page
     if (steal_src1) {
-        _steal_records (steal_src1, steal_from1, steal_to1, 
+        _steal_records (steal_src1, steal_from1, steal_to1,
               ((true == full_logging) && (true == log_src_1))? true : false);  // Turn on full logging if need to log src 1
     }
     if (steal_src2_pid0) {
@@ -154,7 +154,7 @@ rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the 
             // Log the insertion into destination first
             w_keystr_t keystr;   // Used for insertion log record if full logging
             // For logging purpose, it is the whole key, including prefix and PMNK
-            cvec_t  whole_key(steal_src2->get_fence_low_key(), steal_src2->get_fence_low_length());  
+            cvec_t  whole_key(steal_src2->get_fence_low_key(), steal_src2->get_fence_low_length());
             if (true == keystr.copy_from_vec(whole_key))
             {
                 vec_t el;
@@ -165,17 +165,17 @@ rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the 
             }
             else
             {
-                W_FATAL_MSG(fcOUTOFMEMORY, << "Failed to generate log_btree_insert_nonghost log record due to OOM");            
+                W_FATAL_MSG(fcOUTOFMEMORY, << "Failed to generate log_btree_insert_nonghost log record due to OOM");
             }
 
             // Now log the deletion from source next
             vector<slotid_t> slots;
             slots.push_back(0);  // Low fence key is in slot 0
             rc = log_btree_ghost_mark(*steal_src2, slots, true /*is_sys_txn*/);
-            if (rc.is_error()) 
+            if (rc.is_error())
             {
                 W_FATAL_MSG(fcINTERNAL, << "Failed to generate log_btree_ghost_mark log record during a full logging system transaction");
-            }           
+            }
         }
         // Now the actual movement
         if (!page()->insert_item(nrecs()+1, false /*ghost*/, poormkey, stolen_pid0, v)) {
@@ -184,7 +184,7 @@ rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the 
     }
 
     if (steal_src2) {
-        _steal_records (steal_src2, steal_from2, steal_to2, 
+        _steal_records (steal_src2, steal_from2, steal_to2,
               ((true == full_logging) && (false == log_src_1))? true : false);  // Turn on full logging if need to log src 2
     }
 
@@ -194,12 +194,12 @@ rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the 
         w_assert1(lsn().valid() || !smlevel_0::logging_enabled);
     }
 
-    // This is the only place where a page format log record is being generated, 
+    // This is the only place where a page format log record is being generated,
     // although the function can be called from multiple places (mostly from B-tree functions)
     // the _init() function only set the last write LSN, but not the initial dirty LSN in page cb
     // For system crash recovery purpose, we need the initial dirty LSN to trace back to the
     // page format log record so everything can be REDO
-    // Set the _rec_lsn using the new_lsn (which is the last write LSN) if _rec_lsn is later than 
+    // Set the _rec_lsn using the new_lsn (which is the last write LSN) if _rec_lsn is later than
     // new_lsn.
     smlevel_0::bf->set_initial_rec_lsn(pid, new_lsn, smlevel_0::log->curr_lsn());
 
@@ -256,17 +256,17 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
         // If ask for full logging, generate record movement log records before
         // each insertion
         // Caller 'format_steal' is constructing a new page by copying existing
-        // records from 1 page into 2 pages (rebalance) or from 2 pages 
+        // records from 1 page into 2 pages (rebalance) or from 2 pages
         // into 1 page (merge).  We only need to log the record movement for
         // the records actually got moved to a different page.
         //
-        // For each record movement, log both record deletion (ghost) from 
-        // old page (source, steal_src) and record insertion into 
+        // For each record movement, log both record deletion (ghost) from
+        // old page (source, steal_src) and record insertion into
         // new page (destination, page())
         //
-        // Note that there is no actual 'delete (ghost)' operation, this is 
-        // because we are copying the needed records into new page, 
-        // skip the not needed records, which is the same effect as delete 
+        // Note that there is no actual 'delete (ghost)' operation, this is
+        // because we are copying the needed records into new page,
+        // skip the not needed records, which is the same effect as delete
         // from the original page, but we need to log the delete (ghost) operation
         // although there is no actual operation
 
@@ -286,7 +286,7 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
             }
         }
 
-        if (is_leaf()) 
+        if (is_leaf())
         {
             smsize_t data_length;
             bool is_ghost;
@@ -303,14 +303,14 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
                                                                                           // el: non-key portion only
                 // Clear the key string so it is ready for the next record
                 keystr.clear();
-                if (rc.is_error()) 
+                if (rc.is_error())
                 {
-                    W_FATAL_MSG(fcINTERNAL, 
+                    W_FATAL_MSG(fcINTERNAL,
                         << "Failed to generate log_btree_insert_nonghost log record for a leaf page during a full logging system transaction");
-                }                                                                 
+                }
             }
         }
-        else 
+        else
         {
             // Non-leaf node
             // EMLSN is after the key data
@@ -325,14 +325,14 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
                 vec_t el;
                 el.put(emlsn_ptr, sizeof(lsn_t));
                 rc = log_btree_insert_nonghost(*this, keystr, el, true /*is_sys_txn*/);   // key: original key including prefix
-                                                                                        // el: non-key portion only                
+                                                                                        // el: non-key portion only
                 // Clear the key string so it is ready for the next record
                 keystr.clear();
-                if (rc.is_error()) 
+                if (rc.is_error())
                 {
                     W_FATAL_MSG(fcINTERNAL,
                         << "Failed to generate log_btree_insert_nonghost log record for a non-leaf page during a full logging system transaction");
-                }                                                                 
+                }
             }
         }
 
@@ -343,15 +343,15 @@ void btree_page_h::_steal_records(btree_page_h* steal_src,
             vector<slotid_t> slots;
             slots.push_back(i);    // Current 'i' is the slot for the deleted record
             rc = log_btree_ghost_mark(*steal_src, slots, true /*is_sys_txn*/);
-            if (rc.is_error()) 
+            if (rc.is_error())
             {
                 W_FATAL_MSG(fcINTERNAL, << "Failed to generate log_btree_ghost_mark log record during a full logging system transaction");
             }
         }
 
         // Now the actual insertion into the new page
-        if (!page()->insert_item(nrecs()+1, steal_src->is_ghost(i), 
-                                 _extract_poor_man_key(new_trunc_key), 
+        if (!page()->insert_item(nrecs()+1, steal_src->is_ghost(i),
+                                 _extract_poor_man_key(new_trunc_key),
                                  child, v)) {
             w_assert0(false);
         }
@@ -367,14 +367,14 @@ rc_t btree_page_h::init_fence_keys(
             const bool set_chain, const w_keystr_t &chain_high,      // Chain high fence key
             const bool set_pid0, const shpid_t new_pid0,             // pid0, non-leaf node only
             const bool set_emlsn, const lsn_t new_pid0_emlsn,        // emlan,  non-leaf node only
-            const bool set_foster, const shpid_t foster_pid0,        // foster page id 
+            const bool set_foster, const shpid_t foster_pid0,        // foster page id
             const bool set_foster_emlsn, const lsn_t foster_emlsn,   // foster page emlsn
-            const int remove_count)                                  // Number of records to be removed 
+            const int remove_count)                                  // Number of records to be removed
                                                                      // Used only if reset fence key
 {
-    // Reset the fence key and other information in an existing page, 
+    // Reset the fence key and other information in an existing page,
     // do not change existing record data in the page and no change to number of records
-    // This is a special function currently only used by Single-Page-Recovery REDO operation for 
+    // This is a special function currently only used by Single-Page-Recovery REDO operation for
     // page rebalance and page merge when full logging is on and the target page
     // contains data already (not an empty page)
 
@@ -383,17 +383,17 @@ rc_t btree_page_h::init_fence_keys(
     if (true == set_pid0)
     {
         // This information is for non-leaf page only
-        page()->btree_pid0 = new_pid0;       
+        page()->btree_pid0 = new_pid0;
     }
     if (true == set_emlsn)
     {
         // This information is for non-leaf page only
-        page()->btree_pid0_emlsn = new_pid0_emlsn;        
+        page()->btree_pid0_emlsn = new_pid0_emlsn;
     }
     if (true == set_foster)
     {
         // Foster page id
-        page()->btree_foster = foster_pid0;        
+        page()->btree_foster = foster_pid0;
     }
     if (true == set_foster_emlsn)
     {
@@ -425,7 +425,7 @@ rc_t btree_page_h::init_fence_keys(
     }
     else
     {
-        // Get the high key from input parameter    
+        // Get the high key from input parameter
         high_key.construct_from_keystr(high.buffer_as_keystr(), high.get_length_as_keystr());
         update_fence = true;
     }
@@ -447,7 +447,7 @@ rc_t btree_page_h::init_fence_keys(
     // Set the page dirty
     set_dirty();
 
-    // Delete records from page, number_of_items() is the actual 
+    // Delete records from page, number_of_items() is the actual
     // record count including the fence key record which is not an actual record
     // 'remove_count' is the number of records to remove from the page
     // due to page rebalance, this is because we are resetting the fence keys
@@ -464,8 +464,8 @@ rc_t btree_page_h::init_fence_keys(
     page()->btree_prefix_length = (int16_t) prefix_len;
 
     // Update the original fence key slot which is the first slot
-    DBGOUT3( << "btree_page_h::init_fence_keys - new fence keys.  Low: " 
-             << low_fence << ", high key: " << high_key << ", chain high: " << chain_fence_key);    
+    DBGOUT3( << "btree_page_h::init_fence_keys - new fence keys.  Low: "
+             << low_fence << ", high key: " << high_key << ", chain high: " << chain_fence_key);
     return replace_fence_rec_nolog_may_defrag(low_fence, high_key, chain_fence_key, prefix_len);
 }
 
@@ -543,7 +543,7 @@ btree_page_h::search(const char *key_raw, size_t key_raw_len,
 
     const void* key_noprefix  = key_raw     + prefix_length;
     size_t      key_len       = key_raw_len - prefix_length;
-    
+
     poor_man_key poormkey = _extract_poor_man_key(key_noprefix, key_len);
 
 
@@ -585,7 +585,7 @@ btree_page_h::search(const char *key_raw, size_t key_raw_len,
         low++;
     }
 #endif
-    
+
     while (low+1 < high) {
         int mid = (low + high) / 2;
         w_assert1(low<mid && mid<high);
@@ -621,7 +621,7 @@ btree_page_h::robust_search(const char *key_raw, size_t key_raw_len,
 
     const void* key_noprefix  = key_raw     + prefix_length;
     size_t      key_len       = key_raw_len - prefix_length;
-    
+
     poor_man_key poormkey = _extract_poor_man_key(key_noprefix, key_len);
 
 
@@ -663,7 +663,7 @@ btree_page_h::robust_search(const char *key_raw, size_t key_raw_len,
         low++;
     }
 #endif
-    
+
     while (low+1 < high) {
         int mid = (low + high) / 2;
         w_assert1(low<mid && mid<high);
@@ -689,7 +689,7 @@ void btree_page_h::search_node(const w_keystr_t& key,
     w_assert1(!is_leaf());
     FUNC(btree_page_h::_search_node);
 
-    bool found_key; 
+    bool found_key;
     search(key, found_key, return_slot);
     if (!found_key) {
         return_slot--;
@@ -728,7 +728,7 @@ void btree_page_h::_update_btree_consecutive_skewed_insertions(slotid_t slot) {
 rc_t btree_page_h::insert_node(const w_keystr_t &key, slotid_t slot, shpid_t child,
     const lsn_t& child_emlsn) {
     FUNC(btree_page_h::insert);
-    
+
     w_assert1(is_node());
     w_assert1(slot >= 0 && slot <= nrecs()); // <= intentional to allow appending
     w_assert1(child);
@@ -788,7 +788,7 @@ rc_t btree_page_h::replace_fence_rec_nolog_may_defrag(const w_keystr_t& low,
 }
 
 rc_t btree_page_h::replace_fence_rec_nolog_no_defrag(const w_keystr_t& low,
-                                           const w_keystr_t& high, 
+                                           const w_keystr_t& high,
                                            const w_keystr_t& chain, int new_prefix_len) {
     w_assert1(page()->number_of_items() > 0);
 
@@ -858,7 +858,7 @@ rc_t btree_page_h::replace_el_nolog(slotid_t slot, const cvec_t &elem) {
     w_assert2( is_fixed());
     w_assert2( is_leaf());
     w_assert1(!is_ghost(slot));
-    
+
     if (!page()->replace_item_data(slot+1, _element_offset(slot), elem)) {
         return RC(eRECWONTFIT);
     }
@@ -914,7 +914,7 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, size_t
         w_assert1(_compare_key_noprefix(slot,key_raw+prefix_len,trunc_key_length) > 0);
     }
 #endif // W_DEBUG_LEVEL>1
-    
+
     cvec_t trunc_key(key_raw + prefix_len, trunc_key_length);
     poor_man_key poormkey = _extract_poor_man_key(trunc_key);
 
@@ -1026,12 +1026,12 @@ bool btree_page_h::check_chance_for_norecord_split(const w_keystr_t& key_to_inse
     int key_to_insert_len = key_to_insert.get_length_as_keystr();
     int prefix_len = get_prefix_length();
     w_assert1(key_to_insert_len >= prefix_len && ::memcmp(get_prefix_key(), key_to_insert_raw, prefix_len) == 0); // otherwise why to insert to this page?
-    
+
     int d = _compare_key_noprefix(nrecs() - 1, key_to_insert_raw + prefix_len, key_to_insert_len - prefix_len);
     if (d <= 0) {
         return false; // not hitting highest. norecord-split will be useless
     }
-    
+
     // we need some space for updated fence-high and chain-high
     smsize_t space_for_split = get_fence_low_length() + key_to_insert.get_length_as_keystr();
     if (get_chain_fence_high_length() == 0) {
@@ -1064,12 +1064,12 @@ void btree_page_h::suggest_fence_for_split(w_keystr_t &mid,
             mid = triggering_key;
         }
         return;
-    }    
+    }
 #endif // NORECORD_SPLIT_ENABLE
-    
+
     w_assert1 (nrecs() >= 2);
     // pick the best separator key as follows.
-    
+
     // first, pick the center point according to the skewness of past insertions to this page.
     slotid_t center_point = (nrecs() / 2); // usually just in the middle
     if (is_insertion_skewed_right()) {
@@ -1079,7 +1079,7 @@ void btree_page_h::suggest_fence_for_split(w_keystr_t &mid,
         // last 5 inserts were on left-most, so let split on left-skewed point (10%)
         center_point = (nrecs() * 1 / 10);
     }
-    
+
     // second, consider boundaries around the center point to pick the shortest separator key
     slotid_t start_point = (center_point - (nrecs() / 10) > 0) ? center_point - (nrecs() / 10) : 1;
     slotid_t end_point = (center_point + (nrecs() / 10) + 1 <= nrecs()) ? center_point + (nrecs() / 10) + 1 : nrecs();
@@ -1100,14 +1100,14 @@ void btree_page_h::suggest_fence_for_split(w_keystr_t &mid,
             //   FF, FEB, FFBC but not FFC or FEAR.
             // the newkey should send entries exclusively smaller than it to left,
             // inclusively larger than it to right. (remember, low fence key is inclusive (>=))
-            
+
             // take common leading bytes +1 from right.
             // in above example, "FF". (common leading bytes=1)
             size_t common_bytes = w_keystr_t::common_leading_bytes((const unsigned char *) k1, len1, (const unsigned char *) k2, len2);
             w_assert1(common_bytes < len2); // otherwise the two keys are the same.
             // Note, we assume unique indexes, so the two keys are always different
             if (common_bytes + 1 < sep_length
-                || (common_bytes + 1 == sep_length && boundary == center_point)) { // if tie, give a credit to center_point 
+                || (common_bytes + 1 == sep_length && boundary == center_point)) { // if tie, give a credit to center_point
                 right_begins_from = boundary;
                 sep_length = common_bytes + 1;
                 sep_key = k2;
@@ -1117,7 +1117,7 @@ void btree_page_h::suggest_fence_for_split(w_keystr_t &mid,
             size_t len;
             const char *k = _node_key_noprefix (boundary, len);
             if (len < sep_length
-                || (len == sep_length && boundary == center_point)) { // if tie, give a credit to center_point 
+                || (len == sep_length && boundary == center_point)) { // if tie, give a credit to center_point
                 right_begins_from = boundary;
                 sep_length = len;
                 sep_key = k;
@@ -1137,7 +1137,7 @@ w_keystr_t btree_page_h::recalculate_fence_for_split(slotid_t right_begins_from)
     if (is_leaf()) {
         size_t len1, len2;
         const char* k1 = _leaf_key_noprefix (right_begins_from - 1, len1);
-        const char* k2 = _leaf_key_noprefix (right_begins_from, len2);        
+        const char* k2 = _leaf_key_noprefix (right_begins_from, len2);
         size_t common_bytes = w_keystr_t::common_leading_bytes((const unsigned char *) k1, len1, (const unsigned char *) k2, len2);
         w_assert1(common_bytes < len2); // otherwise the two keys are the same.
         mid.construct_from_keystr(get_prefix_key(), get_prefix_length(), k2, common_bytes + 1);
@@ -1204,7 +1204,7 @@ btree_page_h::leaf_stats(btree_lf_stats_t& _stats) {
         rec.set(*this, i);
         ++_stats.unique_cnt; // always unique (otherwise a bug)
         _stats.key_bs            += rec.key().get_length_as_keystr() - prefix_length;
-        _stats.data_bs           += rec.elen(); 
+        _stats.data_bs           += rec.elen();
         _stats.entry_overhead_bs += page()->item_space(n+1) - (rec.key().get_length_as_keystr()-prefix_length) - rec.elen();
     }
     return RCOK;
@@ -1218,8 +1218,8 @@ btree_page_h::int_stats(btree_int_stats_t& _stats) {
 }
 
 
-smsize_t         
-btree_page_h::max_entry_size = 
+smsize_t
+btree_page_h::max_entry_size =
     // must be able to fit 2 entries to a page; data_sz must hold:
     //    fence record:                   max_item_overhead + (max_entry_size+1)*3   (low, high, chain keys)
     //    each of 2 regular leaf entries: max_item_overhead + max_entry_size+1 + sizeof(key_length_t) [key len]
@@ -1259,7 +1259,7 @@ btree_page_h::print(bool print_elem) {
 bool btree_page_h::is_consistent (bool check_keyorder, bool check_space) const {
     // does NOT check check-sum. the check can be done only by bufferpool
     // with seeing fresh data from the disk.
-    
+
     // check poor-man's normalized key
     if (!_is_consistent_poormankey()) {
         w_assert1(false);
@@ -1306,7 +1306,7 @@ bool btree_page_h::_is_consistent_keyorder() const {
         return true;
     }
     // now we know that first key exists
-    
+
     if (is_leaf()) {
         // first key might be equal to low-fence which is inclusive
         size_t curkey_len;
@@ -1329,7 +1329,7 @@ bool btree_page_h::_is_consistent_keyorder() const {
             prevkey     = curkey;
             prevkey_len = curkey_len;
         }
-        
+
         // last record is also compared with high-fence
         if (compare_with_fence_high_noprefix(prevkey, prevkey_len) > 0) {
             w_assert3(false);
@@ -1354,13 +1354,13 @@ bool btree_page_h::_is_consistent_keyorder() const {
             prevkey = curkey;
             prevkey_len = curkey_len;
         }
-        
+
         if (compare_with_fence_high_noprefix(prevkey, prevkey_len) > 0) {
             w_assert3(false);
             return false;
         }
     }
-    
+
     return true;
 }
 bool btree_page_h::_is_consistent_poormankey() const {
@@ -1382,13 +1382,13 @@ bool btree_page_h::_is_consistent_poormankey() const {
             return false;
         }
     }
-    
+
     return true;
 }
 
 
-rc_t btree_page_h::defrag( const bool full_logging_redo) { 
-    // defrag can be called from btree_ghost_mark_log::redo 
+rc_t btree_page_h::defrag( const bool full_logging_redo) {
+    // defrag can be called from btree_ghost_mark_log::redo
     // if caller is a log record generated for full logging page rebalance
     // then the context is not system transaction but it should be treated as a
     // system transaction and do not generate new log record
@@ -1424,25 +1424,25 @@ bool btree_page_h::_check_space_for_insert(size_t data_length) {
 
 
 void btree_page_h::_init(lsn_t lsn, lpid_t page_id,
-    shpid_t root_pid, 
+    shpid_t root_pid,
     shpid_t pid0, lsn_t pid0_emlsn,          // Non-leaf page only
     shpid_t foster_pid, lsn_t foster_emlsn,  // If foster child exists for this page
     int16_t btree_level,
     const w_keystr_t &low,                   // Low fence key
     const w_keystr_t &high,                  // High key, confusing naming, it is actually the foster key
-    const w_keystr_t &chain_fence_high,      // Chain high fence key (if foster chain), 
+    const w_keystr_t &chain_fence_high,      // Chain high fence key (if foster chain),
                                              // it is the high fence key for all foster child nodes
-    const bool ghost ) {                     // Should the fence key record be a ghost?                                             
+    const bool ghost ) {                     // Should the fence key record be a ghost?
 
     // Initialize the current page with fence keys and other information
 
     // A node contains low fence, high fence and foster key if a foster child exists
     // When a foster child or foster chain (multiple foster child nodes) exists, all
-    // the foster child nodes have the same high fence key, which is the same as 
+    // the foster child nodes have the same high fence key, which is the same as
     // the foster parent's high fence key (chain_fence_high), while the foster key (high)
-    // is different in each foster child node and it is used to determine record 
+    // is different in each foster child node and it is used to determine record
     // boundaries (same purpose  as a regular high fence key.
-    // 
+    //
     // The naming in existing Express code is confusing:
     // Low - low fence key
     // High - foster key

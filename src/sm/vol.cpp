@@ -30,11 +30,11 @@ template class w_auto_delete_array_t<stnode_t>;
 #endif
 
 /** sector_size : reserved space at beginning of volume. */
-static const int sector_size = 512; 
+static const int sector_size = 512;
 
 /*
 Volume layout:
-   volume header 
+   volume header
    alloc_page pages -- Starts on page 1.
    stnode_page -- only one page
    data pages -- rest of volume
@@ -55,18 +55,18 @@ Volume layout:
  * After that, for each file created, 2 stores are used, one for
  * small objects, one for large objects.
  *
- * Each index(btree) uses one store. 
+ * Each index(btree) uses one store.
  */
-vol_t::vol_t(const bool apply_fake_io_latency, const int fake_disk_latency) 
+vol_t::vol_t(const bool apply_fake_io_latency, const int fake_disk_latency)
              : _unix_fd(-1),
-               _apply_fake_disk_latency(apply_fake_io_latency), 
+               _apply_fake_disk_latency(apply_fake_io_latency),
                _fake_disk_latency(fake_disk_latency),
                _alloc_cache(NULL), _stnode_cache(NULL), _fixed_bf(NULL)
 {}
 
-vol_t::~vol_t() { 
+vol_t::~vol_t() {
     shutdown();
-    w_assert1(_unix_fd == -1); 
+    w_assert1(_unix_fd == -1);
 }
 
 void vol_t::clear_caches() {
@@ -91,6 +91,8 @@ void vol_t::shutdown() {
 
 rc_t vol_t::sync()
 {
+std::cout << "!!!!!!!!!!!!!!!! NO-op sync -- 4" << std::endl;
+
     smthread_t* t = me();
     W_DO_MSG(t->fsync(_unix_fd), << "volume id=" << vid());
     return RCOK;
@@ -114,7 +116,7 @@ vol_t::check_raw_device(const char* devname, bool& raw)
 
     return e;
 }
-    
+
 rc_t vol_t::mount(const char* devname, vid_t vid)
 {
     if (_unix_fd >= 0) return RC(eALREADYMOUNTED);
@@ -127,7 +129,7 @@ rc_t vol_t::mount(const char* devname, vid_t vid)
 
     /*
      *  Check if device is raw, and open it.
-     */   
+     */
     W_DO(check_raw_device(devname, _is_raw));
 
     w_rc_t e;
@@ -139,6 +141,7 @@ rc_t vol_t::mount(const char* devname, vid_t vid)
         else if (s && s[0] && atoi(s) == 0)
             open_flags &= ~smthread_t::OPEN_RAW;
     }
+
     e = me()->open(devname, open_flags, 0666, _unix_fd);
     if (e.is_error()) {
         _unix_fd = -1;
@@ -157,19 +160,19 @@ rc_t vol_t::mount(const char* devname, vid_t vid)
     }
     //  Save info on the device
     _vid = vid;
-    
+
 #if W_DEBUG_LEVEL > 4
     w_ostrstream_buf sbuf(64);                /* XXX magic number */
     sbuf << "vol(vid=" << (int) _vid.vol << ")" << ends;
     //_mutex.rename("m:", sbuf.c_str());
     /* XXX how about restoring the old mutex name when done? */
-#endif 
+#endif
     _lvid = vhdr.lvid();
     _num_pages =  vhdr.num_pages();
     _apid = lpid_t(vid, 0, vhdr.apid()); // 0 if no volumes formatted yet
     _spid = lpid_t(vid, 0, vhdr.spid()); // 0 if no volumes formatted yet
     _hdr_pages = vhdr.hdr_pages(); // 0 if no volumes formatted yet
-    
+
     clear_caches();
     _fixed_bf = new bf_fixed_m();
     w_assert1(_fixed_bf);
@@ -213,7 +216,7 @@ vol_t::dismount(bool /* flush */, const bool clear_cb)
             return e;
 
     _unix_fd = -1;
-    
+
     clear_caches();
 
     return RCOK;
@@ -225,26 +228,26 @@ rc_t vol_t::check_disk()
     volhdr_t vhdr;
     W_DO( read_vhdr(_devname, vhdr));
     smlevel_0::errlog->clog << info_prio << "vol_t::check_disk()\n";
-    smlevel_0::errlog->clog << info_prio 
+    smlevel_0::errlog->clog << info_prio
         << "\tvolid      : " << vhdr.lvid() << flushl;
-    smlevel_0::errlog->clog << info_prio 
+    smlevel_0::errlog->clog << info_prio
         << "\tnum_pages   : " << vhdr.num_pages() << flushl;
-    smlevel_0::errlog->clog << info_prio 
+    smlevel_0::errlog->clog << info_prio
         << "\thdr_pages   : " << vhdr.hdr_pages() << flushl;
 
-    smlevel_0::errlog->clog << info_prio 
+    smlevel_0::errlog->clog << info_prio
         << "\tstore  #   flags   status: [ extent-list ]" << "." << endl;
     for (shpid_t i = 1; i < stnode_page_h::max; i++)  {
         stnode_t stnode;
         _stnode_cache->get_stnode(i, stnode);
         if (stnode.root)  {
-            smlevel_0::errlog->clog << info_prio 
+            smlevel_0::errlog->clog << info_prio
                 << "\tstore " << i << "(root=" << stnode.root << ")\t flags " << stnode.flags;
             if(stnode.deleting) {
-                smlevel_0::errlog->clog << info_prio 
+                smlevel_0::errlog->clog << info_prio
                 << " is deleting: ";
             } else {
-                smlevel_0::errlog->clog << info_prio 
+                smlevel_0::errlog->clog << info_prio
                 << " is active: ";
             }
             smlevel_0::errlog->clog << info_prio << " ]" << flushl;
@@ -347,7 +350,7 @@ vol_t::set_store_flags(snum_t snum, store_flag_t flags, bool /* sync_volume */)
     return RCOK;
 }
 
-    
+
 /*********************************************************************
  *
  *  vol_t::get_store_flags(snum, flags, bool ok_if_deleting)
@@ -415,7 +418,7 @@ vol_t::alloc_store(snum_t snum, store_flag_t flags)
         DBG(<<"alloc_store: BADSTID");
         return RC(eBADSTID);
     }
-    
+
     // Fill in the store node
     store_operation_param param(snum, t_create_store, flags);
     W_DO( store_operation(param) );
@@ -493,9 +496,9 @@ shpid_t vol_t::get_store_root(snum_t f) const {
  *  in the batch are not actually contiguous. Close enough...
  *
  *********************************************************************/
-void 
-vol_t::fake_disk_latency(long start) 
-{  
+void
+vol_t::fake_disk_latency(long start)
+{
   if(!_apply_fake_disk_latency)
     return;
   long delta = gethrtime() - start;
@@ -504,7 +507,7 @@ vol_t::fake_disk_latency(long start)
     return;
   int max= 99999999;
   if(delta > max) delta = max;
-  
+
   struct timespec req, rem;
   req.tv_sec = 0;
   w_assert0(delta > 0);
@@ -518,19 +521,19 @@ vol_t::fake_disk_latency(long start)
 }
 
 // IP: assuming no concurrent requests. No thread-safe.
-void                        
+void
 vol_t::enable_fake_disk_latency(void)
 {
   _apply_fake_disk_latency = true;
 }
 
-void                        
+void
 vol_t::disable_fake_disk_latency(void)
 {
   _apply_fake_disk_latency = false;
 }
 
-bool                        
+bool
 vol_t::set_fake_disk_latency(const int adelay)
 {
   if (adelay<0) {
@@ -565,13 +568,13 @@ vol_t::read_page(shpid_t pnum, generic_page& page, bool& past_end)
 
 #ifdef ZERO_INIT
     /*
-     * When a write into the buffer pool of potentially uninitialized 
+     * When a write into the buffer pool of potentially uninitialized
      * memory occurs (such as padding)
      * there is a purify/valgrind supression to keep the SM from being gigged
      * for the SM-using application's legitimate behavior.  However, this
      * uninitialized memory writes to a page in the buffer pool
-     * colors the corresponding bytes in the buffer pool with the 
-     * "uninitialized" memory color.  When a new page is read in from 
+     * colors the corresponding bytes in the buffer pool with the
+     * "uninitialized" memory color.  When a new page is read in from
      * disk, nothing changes the color of the page back to "initialized",
      * and you suddenly see UMR or UMC errors from valid buffer pool pages.
      */
@@ -631,8 +634,8 @@ vol_t::write_many_pages(shpid_t pnum, const generic_page* const pages, int cnt)
 
     // do the actual write now
     W_COERCE_MSG(t->pwrite(_unix_fd, pages, sizeof(generic_page)*cnt, offset), << "volume id=" << vid());
-    
-    fake_disk_latency(start);    
+
+    fake_disk_latency(start);
     ADD_TSTAT(vol_blks_written, cnt);
     INC_TSTAT(vol_writes);
 
@@ -665,7 +668,7 @@ vol_t::format_dev(
 
     // WHOLE FUNCTION is a critical section
     xct_log_switch_t log_off(OFF);
-    
+
     DBG( << "formating device " << devname);
     int flags = smthread_t::OPEN_CREATE | smthread_t::OPEN_RDWR
             | (force ? smthread_t::OPEN_TRUNC : smthread_t::OPEN_EXCL);
@@ -676,7 +679,7 @@ vol_t::format_dev(
         DBG(<<" open " << devname <<  " failed " << e);
         return e;
     }
-    
+
     volhdr_t vhdr;
     vhdr.set_format_version(volume_format_version);
     vhdr.set_device_quota_KB(num_pages*(page_sz/1024));
@@ -685,7 +688,7 @@ vol_t::format_dev(
     vhdr.set_apid(0); // first extent-map page
     vhdr.set_spid(0); // first store-map page
     vhdr.set_page_sz(page_sz);
-   
+
     // determine if the volume is on a raw device
     bool raw;
     rc_t rc = me()->fisraw(fd, raw);
@@ -711,7 +714,7 @@ vol_t::format_dev(
 
 /*********************************************************************
  *
- *  vol_t::format_vol(devname, lvid, num_pages, skip_raw_init, 
+ *  vol_t::format_vol(devname, lvid, num_pages, skip_raw_init,
  *                    apply_fake_io_latency, fake_disk_latency)
  *
  *  Format the volume "devname" for long volume id "lvid" and
@@ -741,7 +744,7 @@ vol_t::format_vol(
     volhdr_t vhdr;
     W_DO(read_vhdr(devname, vhdr));
     if (vhdr.lvid() == lvid) return RC(eVOLEXISTS);
-    if (vhdr.lvid() != lvid_t::null) return RC(eDEVICEVOLFULL); 
+    if (vhdr.lvid() != lvid_t::null) return RC(eDEVICEVOLFULL);
 
     /* XXX possible bit loss */
     uint quota_pages = (uint) (vhdr.device_quota_KB()/(page_sz/1024));
@@ -770,7 +773,7 @@ vol_t::format_vol(
         DBG(<<" open " << devname << " failed " << rc );
         return rc;
     }
-    
+
     shpid_t alloc_pages = num_pages / alloc_page_h::bits_held + 1; // # alloc_page_h pages
     shpid_t hdr_pages = alloc_pages + 1 + 1; // +1 for stnode_page, +1 for volume header
 
@@ -792,7 +795,7 @@ vol_t::format_vol(
     ::srand(ctime.tv_nsec);
     vhdr.set_ctime(ctime);
     vhdr.set_ctime_salt(::rand());
-   
+
     /*
      *  Write volume header
      */
@@ -807,7 +810,7 @@ vol_t::format_vol(
      *
      * FRJ: this seek is safe because no other thread can access the
      * file descriptor we just opened.
-     */    
+     */
     rc = me()->lseek(fd, sizeof(generic_page), sthread_t::SEEK_AT_SET);
     if (rc.is_error()) {
         W_IGNORE(me()->close(fd));
@@ -848,7 +851,7 @@ vol_t::format_vol(
         DBG(<<" done formatting extent region");
 
         // Format stnode_page
-        { 
+        {
             DBG(<<" formatting stnode_page");
             DBGTHRD(<<"stnode_page page " << spid.page);
             stnode_page_h fp(&buf, spid);  // formatting...
@@ -902,7 +905,7 @@ vol_t::format_vol(
 
 /*********************************************************************
  *
- *  vol_t::reformat_vol(devname, lvid, num_pages, skip_raw_init, 
+ *  vol_t::reformat_vol(devname, lvid, num_pages, skip_raw_init,
  *                    apply_fake_io_latency, fake_disk_latency)
  *
  *  Reformat the volume "devname" for long volume id "lvid" and
@@ -959,7 +962,7 @@ vol_t::reformat_vol(
         DBG(<<" open " << devname << " failed " << rc );
         return rc;
     }
-    
+
     shpid_t alloc_pages = num_pages / alloc_page_h::bits_held + 1; // # alloc_page_h pages
     shpid_t hdr_pages = alloc_pages + 1 + 1; // +1 for stnode_page, +1 for volume header
 
@@ -981,7 +984,7 @@ vol_t::reformat_vol(
     ::srand(ctime.tv_nsec);
     vhdr.set_ctime(ctime);
     vhdr.set_ctime_salt(::rand());
-   
+
     /*
      *  Write volume header
      */
@@ -996,7 +999,7 @@ vol_t::reformat_vol(
      *
      * FRJ: this seek is safe because no other thread can access the
      * file descriptor we just opened.
-     */    
+     */
     rc = me()->lseek(fd, sizeof(generic_page), sthread_t::SEEK_AT_SET);
     if (rc.is_error()) {
         W_IGNORE(me()->close(fd));
@@ -1037,7 +1040,7 @@ vol_t::reformat_vol(
         DBG(<<" done formatting extent region");
 
         // Format stnode_page
-        { 
+        {
             DBG(<<" formatting stnode_page");
             DBGTHRD(<<"stnode_page page " << spid.page);
             stnode_page_h fp(&buf, spid);  // formatting...
@@ -1104,9 +1107,9 @@ vol_t::write_vhdr(int fd, volhdr_t& vhdr, bool raw_device)
      *  page 0.
      *  This is necessary for raw disk devices since disk labels
      *  are often placed on the first sector.  By not writing on
-     *  the first 512bytes of the volume we avoid accidentally 
+     *  the first 512bytes of the volume we avoid accidentally
      *  corrupting the disk label.
-     *  
+     *
      *  However, for debugging its nice to be able to "cat" the
      *  first few bytes (sector) of the disk (since the volume header is
      *  human-readable).  So, on volumes stored in a unix file,
@@ -1200,18 +1203,18 @@ vol_t::read_vhdr(int fd, volhdr_t& vhdr)
     // for (int i = 0; i < tmpsz; i++) tmp[i] = '\0';
         memset(tmp, 0, tmpsz);
 
-    /* 
+    /*
      *  Read in first page of volume into tmp.
      */
     W_DO(me()->pread(fd, tmp, tmpsz, sector_size));
-         
+
     /*
      *  Read the header strings from tmp using an istream.
      */
     w_istrstream s(tmp, tmpsz);
     s.seekg(0, ios::beg);
     if (!s)  {
-            /* XXX c library */ 
+            /* XXX c library */
         return RC(eOS);
     }
 
@@ -1271,8 +1274,8 @@ vol_t::read_vhdr(int fd, volhdr_t& vhdr)
 
     return RCOK;
 }
-    
-    
+
+
 
 /*********************************************************************
  *
@@ -1290,7 +1293,7 @@ vol_t::read_vhdr(const char* devname, volhdr_t& vhdr)
     e = me()->open(devname, smthread_t::OPEN_RDONLY, 0, fd);
     if (e.is_error())
         return e;
-    
+
     e = read_vhdr(fd, vhdr);
 
     W_IGNORE(me()->close(fd));
@@ -1303,19 +1306,19 @@ vol_t::read_vhdr(const char* devname, volhdr_t& vhdr)
 }
 
 /*--------------------------------------------------------------*
- *  vol_t::get_vol_ctime(ctime)          
+ *  vol_t::get_vol_ctime(ctime)
  *--------------------------------------------------------------*/
-rc_t            
+rc_t
 vol_t::get_vol_ctime(struct timespec& ctime, int& salt)
 {
     volhdr_t vhdr;
-    
+
     rc_t rc = vol_t::read_vhdr(_unix_fd, vhdr);
     if (rc.is_error())  {
         W_DO_MSG(rc, << "bad device name=" << _devname);
         return RC_AUGMENT(rc);
     }
-    vhdr.get_ctime(ctime, salt); 
+    vhdr.get_ctime(ctime, salt);
     return RCOK;
 }
 
@@ -1335,7 +1338,7 @@ rc_t vol_t::get_du_statistics(struct volume_hdr_stats_t& st, bool)
 
     /*
     if (audit) {
-        if (!(new_stats.alloc_ext_cnt + new_stats.hdr_ext_cnt + 
+        if (!(new_stats.alloc_ext_cnt + new_stats.hdr_ext_cnt +
                     new_stats.unalloc_ext_cnt == _num_exts)) {
             // return RC(fcINTERNAL);
             W_FATAL(eINTERNAL);
@@ -1351,21 +1354,21 @@ rc_t vol_t::get_du_statistics(struct volume_hdr_stats_t& st, bool)
  * Use attempt at first so we can get a rough idea of
  * the contention on this mutex.
  */
-void                        
-vol_t::acquire_mutex(vol_t::lock_state* _me, bool for_write) 
+void
+vol_t::acquire_mutex(vol_t::lock_state* _me, bool for_write)
 {
     assert_mutex_notmine(_me);
     if(for_write) {
-        INC_TSTAT(need_vol_lock_w);  
+        INC_TSTAT(need_vol_lock_w);
         if(_mutex.attempt_write() ) {
-            INC_TSTAT(nowait_vol_lock_w);  
+            INC_TSTAT(nowait_vol_lock_w);
             return;
         }
         _mutex.acquire_write();
     } else {
-        INC_TSTAT(need_vol_lock_r);  
+        INC_TSTAT(need_vol_lock_r);
         if(_mutex.attempt_read() ) {
-            INC_TSTAT(nowait_vol_lock_r);  
+            INC_TSTAT(nowait_vol_lock_r);
             return;
         }
         _mutex.acquire_read();

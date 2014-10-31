@@ -1170,6 +1170,7 @@ try
             //  3. min_xct_lsn: minimum lsn of all in-flight (including aborting) transactions
 
             LOG_INSERT(chkpt_end_log (master, min_rec_lsn, min_xct_lsn), 0);
+// TODO(Restart)... performance
             DBGOUT1(<<"chkpt_m::take completed - total dirty page count = "
                     << total_page_count << ", total txn count = "
                     << total_txn_count << ", total vol count = "
