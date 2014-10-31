@@ -61,9 +61,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
-// LOG_BUFFER switch
-#include "logbuf_common.h"
-
 #undef ACQUIRE
 
 class logrec_t;
@@ -167,6 +164,21 @@ public:
     log_m() {};
     virtual ~log_m() {};
 
+    // hints for fetch, not used for now
+    enum hints_op {
+        LOG_ARCHIVING=0, 
+        SINGLE_PAGE_RECOVERY, 
+        TRANSACTION_ROLLBACK, 
+        LOG_ANALYSIS_FORWARD,
+        LOG_ANALYSIS_BACKWARD,
+        TRADITIONAL_REDO,
+        TRADITIONAL_UNDO,
+        PAGE_DRIVEN_REDO,
+        TRANSACTION_DRIVEN_UNDO,
+        ON_DEMAND_REDO,
+        ON_DEMAND_UNDO,
+        DEFAULT_HINTS,
+    };
 
     virtual lsn_t               min_chkpt_rec_lsn() const = 0;
 
@@ -174,78 +186,12 @@ public:
 
     typedef    smlevel_0::partition_number_t partition_number_t; 
 
-private:
-
-#if 0 // moved to log_core.h
-    /**\brief Helper for _write_master */
-    static void         _create_master_chkpt_contents(
-                            ostream&        s,
-                            int             arraysize,
-                            const lsn_t*    array
-                            );
-
-    /**\brief Helper for _make_master_name */
-    static void         _create_master_chkpt_string(
-                            ostream&        o,
-                            int             arraysize,
-                            const lsn_t*    array,
-                            bool            old_style = false
-                            );
-
-    /**\brief Helper for _read_master */
-    static rc_t         _parse_master_chkpt_contents(
-                            istream&      s,
-                            int&          listlength,
-                            lsn_t*        lsnlist
-                            );
-
-    /**\brief Helper for _read_master */
-    static rc_t         _parse_master_chkpt_string(
-                            istream&      s,
-                            lsn_t&        master_lsn,
-                            lsn_t&        min_chkpt_rec_lsn,
-                            int&          number_of_others,
-                            lsn_t*        others,
-                            bool&         old_style
-                            );
-
-    static rc_t         _read_master( 
-                            const char *fname,
-                            int prefix_len,
-                            lsn_t &tmp,
-                            lsn_t& tmp1,
-                            lsn_t* lsnlist,
-                            int&   listlength,
-                            bool&  old_style
-                        );
-
-    /**\brief Helper for parse_master_chkpt_string */
-    static rc_t         _check_version(
-                            uint32_t        major,
-                            uint32_t        minor
-                            );
-    void                _make_master_name(
-                            const lsn_t&         master_lsn, 
-                            const lsn_t&        min_chkpt_rec_lsn,
-                            char*                 buf,
-                            int                        bufsz,
-                            bool                old_style);
-
-    // helper for set_master
-    void                _write_master(const lsn_t &l, const lsn_t &min);
-#endif
-
-
-public:
     /**\brief Do whatever needs to be done before destructor is called, then destruct.
      *\details
      * Shutdown calls the desctructor; the server, after calling shutdown,
      * nulls out its pointer.
      */
     virtual void           shutdown() = 0; 
-
-public:
-
 
     /**\brief Return name of directory holding log files 
      * \details
@@ -308,14 +254,9 @@ public:
     virtual rc_t                compensate(const lsn_t& orig_lsn, 
                                const lsn_t& undo_lsn) = 0;
 
-#ifdef LOG_BUFFER
     // used by log_i and xct_impl
     virtual rc_t                fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt=NULL, const bool forward = true) = 0;
     virtual rc_t                fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt=NULL, hints_op op=DEFAULT_HINTS) = 0;
-#else
-    // used by log_i and xct_impl
-    virtual rc_t                fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt=NULL, const bool forward = true) = 0;
-#endif
             // used in implementation also:
     virtual void        release() = 0; // used by log_i
     virtual rc_t        flush(const lsn_t& lsn, bool block=true, bool signal=true, bool *ret_flushed=NULL) = 0;

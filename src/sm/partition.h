@@ -61,6 +61,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 // LOG_BUFFER switch
 #include "logbuf_common.h"
+#include "logrec.h"
 
 
 /*  -- do not edit anything above this line --   </std-header>*/
@@ -172,16 +173,25 @@ public:
                             long end1, 
                             long start2, 
                             long end2);
-#ifdef LOG_BUFFER
+
+    /*
+     * Methods used by logbuf_core
+     */
     // new flush, which can flush multiple segments
-    void  flush(char* writebuf, int fd, lsn_t lsn, int64_t size, int64_t write_size, 
-                sdisk_base_t::iovec_t *iov, uint32_t seg_cnt);
+    void  flush(
+#ifdef LOG_DIRECT_IO
+                char* writebuf,
+#endif
+                int fd,
+                lsn_t lsn,
+                int64_t size,
+                int64_t write_size, 
+                sdisk_base_t::iovec_t *iov,
+                uint32_t seg_cnt);
     // read an entire segment
     w_rc_t read_seg(lsn_t ll, char *buf, uint32_t size, int fd = invalid_fhdl);
     // read one log record
     w_rc_t read_logrec(char* readbuf, logrec_t *&rp, lsn_t &ll, int fd = invalid_fhdl);
-
-#endif
 
 
     const lsn_t&       last_skip_lsn() const { return _last_skip_lsn; }

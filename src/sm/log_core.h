@@ -377,9 +377,8 @@ protected:
     /** @}*/
 
 public:
-    void   release(); 
-protected:
-    void   _acquire();
+    // used by log_i and xct
+    virtual void   release(); 
 
 protected:
     // helper for _open()

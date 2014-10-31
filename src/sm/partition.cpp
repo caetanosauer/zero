@@ -69,9 +69,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 // needed for skip_log
 #include "logdef_gen.cpp"
 
-// LOG_BUFFER and LOG_DIRECT_IO switch
-#include "logbuf_common.h"
-
 
 #ifdef LOG_DIRECT_IO
 // use the log manager's write buffer as a temp buffer to store the last block of 
@@ -1410,7 +1407,6 @@ partition_t::close_for_read()
  *  Flush log records in the io vectors to physical log partition
  *
  *********************************************************************/
-#ifdef LOG_BUFFER
 #ifdef LOG_DIRECT_IO
 void 
 partition_t::flush(
@@ -1938,5 +1934,3 @@ partition_t::read_logrec(char* readbuf, logrec_t *&rp, lsn_t &ll, int fd)
     return RCOK;
 
 }
-
-#endif // LOG_BUFFER

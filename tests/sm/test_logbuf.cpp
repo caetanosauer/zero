@@ -38,6 +38,7 @@
 
 
 btree_test_env *test_env;
+char* log_dir;
 
 
 #ifdef LOG_BUFFER
@@ -130,7 +131,9 @@ logbuf_tester *tester = NULL;
 
 logbuf_tester::logbuf_tester(uint32_t count, uint32_t flush_trigger, uint32_t
                      block_size, uint32_t seg_size, uint32_t part_size) {
-    log_buffer = new logbuf_core(count, flush_trigger, block_size, seg_size,
+    // TODO move initialization to btree_test_env (CS)
+    log_buffer = new logbuf_core(
+            log_dir, count, flush_trigger, block_size, seg_size,
                              part_size, ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT);
 }
 
@@ -2584,6 +2587,8 @@ TEST (LogBufferTest3, AbortLong) {
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     test_env = new btree_test_env();
+    // TODO tmeporary (CS)
+    log_dir = test_env->log_dir;
     ::testing::AddGlobalTestEnvironment(test_env);
     return RUN_ALL_TESTS();
 }

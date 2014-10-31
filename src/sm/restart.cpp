@@ -3060,7 +3060,8 @@ void restart_m::_analysis_process_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,
         // last mount occurred between redo_lsn and checkpoint
 #ifdef LOG_BUFFER
         // fetch without hints
-        W_COERCE(log->fetch(theLastMountLSNBeforeChkpt, log_rec_buf, 0, true));
+        W_COERCE(log->fetch(theLastMountLSNBeforeChkpt, log_rec_buf, 
+                    (lsn_t*) NULL, true));
 
         // HAVE THE LOG_M MUTEX
         // We have to release it in order to do the mount/dismounts
@@ -3076,7 +3077,8 @@ void restart_m::_analysis_process_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,
         // W_COERCE(log->fetch(theLastMountLSNBeforeChkpt, __copy__buf, 0,
         //                     LOG_ANALYSIS_FORWARD));
 #else
-        W_COERCE(log->fetch(theLastMountLSNBeforeChkpt, log_rec_buf, 0));
+        W_COERCE(log->fetch(theLastMountLSNBeforeChkpt, log_rec_buf, 
+                    (lsn_t*) NULL, true));
 
         // HAVE THE LOG_M MUTEX
         // We have to release it in order to do the mount/dismounts

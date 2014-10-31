@@ -166,6 +166,9 @@ log_core::_prime(long prime_offset)
 rc_t
 log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
 {
+    /*
+     * STEP 1: Open the partition
+     */
     FUNC(log_core::fetch);
 
     DBGTHRD(<<"fetching lsn " << ll 
@@ -175,10 +178,10 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
 #if W_DEBUG_LEVEL > 0
     _sanity_check();
 #endif 
+    w_assert0(ll >= curr_lsn());
 
-    // it's not sufficient to flush to ll, since
-    // ll is at the *beginning* of what we want
-    // to read...
+    // it's not sufficient to flush to ll, since ll is at the *beginning* of
+    // what we want to read, so force a flush when necessary
     lsn_t must_be_durable = ll + sizeof(logrec_t);
     if(must_be_durable > _durable_lsn) {
         W_DO(flush(must_be_durable));
@@ -187,20 +190,12 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
     // protect against double-acquire
     _storage->acquire_partition_lock(); // caller must release it
 
-    /*
-     *  Find and open the partition
-     */
-    if (ll >= curr_lsn())  {
-        /*
-         *  This would constitute a
-         *  read beyond the end of the log
-         */
-        DBGTHRD(<<"fetch at lsn " << ll  << " returns eof -- _curr_lsn=" 
-                << curr_lsn());
-        return RC(eEOF);
-    }
+    // Find and open the partition
     partition_t* p = _storage->find_partition(ll, true, false, forward);
 
+    /*
+     * STEP 2: Read log record from the partition
+     */
     bool first_record = false;  // True if target record is the first record in a partition
 
     DBGOUT3(<< "fetch @ lsn: " << ll);    
@@ -230,25 +225,24 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
                 first_record = true;
             }
 
+            // CS: BUG? backward scan should open previous partition
             DBGTHRD(<<"seeked to skip" << ll );
             DBGTHRD(<<"getting next partition.");
             ll = first_lsn(ll.hi() + 1);
-            // FRJ: BUG? Why are we so certain this partition is even
-            // open, let alone open for read?
+
             p = _storage->get_partition(ll.hi());
             if(!p) {
                 //p = _open_partition_for_read(ll.hi(), lsn_t::null, false, false);
                 p = _storage->find_partition(ll, false, false, forward);
             }
 
-
             // re-read
             DBGOUT3(<< "fetch @ lsn: " << ll);                
             W_COERCE(p->read(readbuf(), rp, ll));
         } 
     }
-    logrec_t        &r = *rp;
 
+    logrec_t        &r = *rp;
     if (r.lsn_ck().hi() != ll.hi()) {
         W_FATAL_MSG(fcINTERNAL,
             << "Fatal error: log record " << ll 
@@ -294,7 +288,9 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
 
 rc_t log_core::fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, hints_op op)
 {
-    return RC(eNOTIMPLEMENTED);
+    // This should only be used in logbuf_core, but just invoking the
+    // other (regular) fetch with forward=true should work just as well
+    return fetch(lsn, rec, nxt, true);
 }
 
 class flush_daemon_thread_t : public smthread_t {
@@ -310,6 +306,11 @@ void log_core::start_flush_daemon()
 {
     _flush_daemon_running = true;
     _flush_daemon->fork();
+}
+
+void log_core::release()
+{
+    _storage->release_partition_lock();
 }
 
 void log_core::shutdown() 
@@ -397,8 +398,6 @@ log_core::log_core(
     _buf = new char[_segsize];
 #endif
 
-//#endif // LOG_BUFFER
-
 
     // NOTE: GROT must make this a function of page size, and of xfer size,
     // since xfer size is fixed (8K).
@@ -444,8 +443,12 @@ log_core::log_core(
             _flush_lsn, prime_offset, _buf, _segsize);
     
     // CS: stuff we can only do once storage is initialized
+    // TODO: perhaps this should be invoked separetly, so that
+    // log_core implementations (logbuf_core) can initialize properly
+    // before priming and starting flush daemon
 
     _prime(prime_offset);
+
     // initial free space estimate... refined once log recovery is complete 
     // release_space(PARTITION_COUNT*_partition_data_size);
     release_space(_storage->recoverable_space(PARTITION_COUNT));

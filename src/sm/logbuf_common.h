@@ -52,21 +52,5 @@ const uint32_t LOGBUF_SEG_SIZE = 128 * LOGBUF_BLOCK_SIZE;
 // it must be an integral number of _segsize
 const uint32_t LOGBUF_PART_SIZE = 128 * LOGBUF_SEG_SIZE;  
 
-// hints for fetch, not used for now
-enum hints_op {
-    LOG_ARCHIVING=0, 
-    SINGLE_PAGE_RECOVERY, 
-    TRANSACTION_ROLLBACK, 
-    LOG_ANALYSIS_FORWARD,
-    LOG_ANALYSIS_BACKWARD,
-    TRADITIONAL_REDO,
-    TRADITIONAL_UNDO,
-    PAGE_DRIVEN_REDO,
-    TRANSACTION_DRIVEN_UNDO,
-    ON_DEMAND_REDO,
-    ON_DEMAND_UNDO,
-    DEFAULT_HINTS,
-};
-
 
 #endif // LOGBUF_COMMON_H

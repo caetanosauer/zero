@@ -41,9 +41,6 @@
 
 #include "sdisk.h"
 
-#if 0 // CS: disable until refactoring is done for log_core
-
-
 // flush daemon
 // same as the flush daemon in log_core
 class flush_daemon_thread_t : public smthread_t {
@@ -59,18 +56,18 @@ public:
 // hard-coded hints, not used for now
 hints_t hints_profile[] = {
     // op, locality, prefetch, forward?
-    {LOG_ARCHIVING, true, true, true},
-    {SINGLE_PAGE_RECOVERY, false, false, false},
-    {TRANSACTION_ROLLBACK, true, false, false},
-    {LOG_ANALYSIS_FORWARD, true, true, true},
-    {LOG_ANALYSIS_BACKWARD, true, true, false},
-    {TRADITIONAL_REDO, true, true, true},
-    {TRADITIONAL_UNDO, true, true, false},
-    {PAGE_DRIVEN_REDO, false, false, true},
-    {TRANSACTION_DRIVEN_UNDO, true, false, false},
-    {ON_DEMAND_REDO, false, false, false},
-    {ON_DEMAND_UNDO, true, false, false},
-    {DEFAULT_HINTS, false, false, false},
+    {log_m::LOG_ARCHIVING, true, true, true},
+    {log_m::SINGLE_PAGE_RECOVERY, false, false, false},
+    {log_m::TRANSACTION_ROLLBACK, true, false, false},
+    {log_m::LOG_ANALYSIS_FORWARD, true, true, true},
+    {log_m::LOG_ANALYSIS_BACKWARD, true, true, false},
+    {log_m::TRADITIONAL_REDO, true, true, true},
+    {log_m::TRADITIONAL_UNDO, true, true, false},
+    {log_m::PAGE_DRIVEN_REDO, false, false, true},
+    {log_m::TRANSACTION_DRIVEN_UNDO, true, false, false},
+    {log_m::ON_DEMAND_REDO, false, false, false},
+    {log_m::ON_DEMAND_UNDO, true, false, false},
+    {log_m::DEFAULT_HINTS, false, false, false},
 };   
 
 /*********************************************************************
@@ -96,32 +93,9 @@ logbuf_core::logbuf_core(
                  uint32_t part_size, // IN: usable partition size
                  int active_slot_count // IN: slot number in ConsolidationArray
 ) 
+    : log_core(path, bsize, reformat, active_slot_count)
 {
     FUNC(logbuf_core::logbuf_core);
-
-    _reservations_active = false;
-    _segsize = _ceil(bsize, SEGMENT_SIZE); // actual segment size for the log buffer;
-    _log_corruption = false;
-    _readbuf = NULL;
-#ifdef LOG_DIRECT_IO
-    _writebuf = NULL;
-#endif
-    _space_available = 0;
-    _space_rsvd_for_chkpt = 0; 
-
-    DO_PTHREAD(pthread_mutex_init(&_scavenge_lock, NULL));
-    DO_PTHREAD(pthread_cond_init(&_scavenge_cond, NULL));
-    DO_PTHREAD(pthread_mutex_init(&_wait_flush_lock, NULL));
-    DO_PTHREAD(pthread_cond_init(&_wait_cond, NULL));
-    DO_PTHREAD(pthread_cond_init(&_flush_cond, NULL));
-    DO_PTHREAD(pthread_mutex_init(&_space_lock, 0));
-    DO_PTHREAD(pthread_cond_init(&_space_cond, 0));
-
-    /* Create thread o flush the log */
-    _flush_daemon = new flush_daemon_thread_t(this);
-
-    _oldest_lsn_tracker = new PoorMansOldestLsnTracker(1 << 20);
-    w_assert1(_oldest_lsn_tracker);
 
     DBGOUT3(<< "log buffer: constructor");
 
@@ -153,50 +127,9 @@ logbuf_core::logbuf_core(
         W_FATAL(fcOUTOFMEMORY);
     }
 
-    // it will be updated through set_partition_data_size()
-    _waiting_for_space = false;
-    _waiting_for_flush = false;
-    _flush_daemon_running = false;
-    _shutting_down = false;
-
-    _to_insert_seg = NULL;
-    _to_flush_seg = NULL;
-    _to_archive_seg = NULL;
-
-    _to_insert_lsn = lsn_t::null;
-    _to_flush_lsn = lsn_t::null;
-    _to_archive_lsn = lsn_t::null;
-
-    _carray = new ConsolidationArray(active_slot_count);
-
     // performance stats
     hits = 0;
     reads = 0;
-
-    // NOTE: GROT must make this a function of page size, and of xfer size,
-    // since xfer size is fixed (8K).
-    // It has to big enough to read the maximum-sized log record, clearly
-    // more than a page.
-#ifdef LOG_DIRECT_IO
-#if SM_PAGESIZE < 8192
-    posix_memalign((void**)&_readbuf, LOG_DIO_ALIGN, BLOCK_SIZE*4);
-    //_readbuf = new char[BLOCK_SIZE*4];
-    // we need two blocks for the write buffer because the skip log record may span two blocks
-    posix_memalign((void**)&_writebuf, LOG_DIO_ALIGN, BLOCK_SIZE*2);
-#else
-    posix_memalign((void**)&_readbuf, LOG_DIO_ALIGN, SM_PAGESIZE*4);
-    //_readbuf = new char[SM_PAGESIZE*4];
-    posix_memalign((void**)&_writebuf, LOG_DIO_ALIGN, SM_PAGESIZE*2);
-#endif
-#else
-#if SM_PAGESIZE < 8192
-    _readbuf = new char[BLOCK_SIZE*4];
-#else
-    _readbuf = new char[SM_PAGESIZE*4];
-#endif
-#endif // LOG_DIRECT_IO
-
-    w_assert1(is_aligned(_readbuf));
 
     // the log buffer (the epochs) is designed to hold log records from at most two partitions
     // so its capacity cannot exceed the partition size
@@ -213,9 +146,6 @@ logbuf_core::logbuf_core(
         fprintf(stderr, "Log buf seg count too big or total log size (sm_logsize) too small ");
         W_FATAL(eINTERNAL);
     }
-
-    //_storage->initialize_storage();
-    start_flush_daemon();
 }
 
 /*********************************************************************
@@ -653,46 +583,40 @@ logbuf_core::fetch(
                const bool forward // IN: forward or backward scan
 )
 {
+    /*
+     * STEP 1: Open the partition
+     */
     FUNC(log_core::fetch);
-   
-    DBGTHRD(<<"fetching lsn " << ll 
-            << " , _curr_lsn = " << _to_insert_lsn
-            << " , _durable_lsn = " << _to_flush_lsn);
 
+    DBGTHRD(<<"fetching lsn " << ll 
+        << " , _curr_lsn = " << curr_lsn()
+        << " , _durable_lsn = " << durable_lsn());
 
 #if W_DEBUG_LEVEL > 0
     _sanity_check();
 #endif 
+    w_assert0(ll >= curr_lsn());
 
-    // it's not sufficient to flush to ll, since
-    // ll is at the *beginning* of what we want
-    // to read...
-    // force a flush when necessary
+    // it's not sufficient to flush to ll, since ll is at the *beginning* of
+    // what we want to read, so force a flush when necessary
     lsn_t must_be_durable = ll + sizeof(logrec_t);
     if(must_be_durable > _durable_lsn) {
         W_DO(flush(must_be_durable));
     }
 
-
-    // open partition to read
     // protect against double-acquire
     _storage->acquire_partition_lock(); // caller must release it
 
-    /*
-     *  Find and open the partition
-     */
-    if (ll >= curr_lsn())  {
-        /*
-         *  This would constitute a
-         *  read beyond the end of the log
-         */
-        DBGTHRD(<<"fetch at lsn " << ll  << " returns eof -- _curr_lsn=" 
-                << curr_lsn());
-        return RC(eEOF);
-    }
+    // Find and open the partition
     partition_t* p = _storage->find_partition(ll, true, false, forward);
 
-
+    /*
+     * STEP 2: Read log record from the partition
+     * - Read log record contents into buffer
+     * - Advance LSN in ll
+     * - Set next pointer accordingly
+     * - If reading forward and skip was fetched, fetch again from next partition
+     */
     if (false == forward) {
         // backward scan
         // we want to fetch the log record preceding lsn
@@ -718,12 +642,11 @@ logbuf_core::fetch(
             DBGTHRD(<<"seeked to skip" << ll );
             DBGTHRD(<<"getting next partition.");
             ll = first_lsn(ll.hi() + 1);
-            // FRJ: BUG? Why are we so certain this partition is even
-            // open, let alone open for read?
-            p = _n_partition(ll.hi());
+
+            p = _storage->get_partition(ll.hi());
             if(!p) {
                 //p = _open_partition_for_read(ll.hi(), lsn_t::null, false, false);
-                p = _storage->find_partition(ll, false, false);
+                p = _storage->find_partition(ll, false, false, forward);
             }
             
             // re-read
@@ -1097,124 +1020,34 @@ int logbuf_core::fetch_for_test(lsn_t& lsn, logrec_t*& rp) {
 rc_t
 logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
 {
-    FUNC(log_core::fetch);
+    /*
+     * STEP 1: Open the partition
+     */
+    FUNC(logbuf_core::fetch);
 
     DBGTHRD(<<"fetching lsn " << ll 
-            << " , _curr_lsn = " << _to_insert_lsn
-            << " , _durable_lsn = " << _to_flush_lsn);
-
-
-    bool forward = hints_profile[op].forward;
+        << " , _curr_lsn = " << curr_lsn()
+        << " , _durable_lsn = " << durable_lsn());
 
 #if W_DEBUG_LEVEL > 0
     _sanity_check();
 #endif 
+    w_assert0(ll >= curr_lsn());
 
-    // it's not sufficient to flush to ll, since
-    // ll is at the *beginning* of what we want
-    // to read...
-    // force a flush when necessary
+    // it's not sufficient to flush to ll, since ll is at the *beginning* of
+    // what we want to read, so force a flush when necessary
     lsn_t must_be_durable = ll + sizeof(logrec_t);
     if(must_be_durable > _durable_lsn) {
         W_DO(flush(must_be_durable));
     }
 
-
-    // open partition to read
     // protect against double-acquire
-    _acquire(); // caller must release the _partition_lock mutex
+    _storage->acquire_partition_lock(); // caller must release it
 
-    /*
-     *  Find and open the partition
-     */
+    bool forward = hints_profile[op].forward;
 
-    partition_t        *p = 0;
-    uint32_t        last_hi=0;
-    while (!p) {
-        if(last_hi == ll.hi()) {
-            // can happen on the 2nd or subsequent round
-            // but not first
-            DBGTHRD(<<"no such partition " << ll  );
-            return RC(eEOF);
-        }
-
-        // during restart, backward log scan starts with _to_insert_lsn!
-        if (forward == true && ll >= _to_insert_lsn)  {
-            /*
-             *  This would constitute a
-             *  read beyond the end of the log
-             */
-            DBGTHRD(<<"fetch at lsn " << ll  << " returns eof -- _curr_lsn=" 
-                    << _to_insert_lsn);
-            return RC(eEOF);
-        }
-        last_hi = ll.hi();
-
-        DBG(<<" about to open " << ll.hi());
-        //                                 part#, end_hint, existing, recovery
-        if ((p = _open_partition_for_read(ll.hi(), lsn_t::null, true, false))) {
-
-            // opened one... is it the right one?
-            DBGTHRD(<<"opened... p->size()=" << p->size());
-
-            // handle skip record for backward scan (ll.lo == p->size())
-            if ( forward == false ) {
-                // backward scan
-                if (ll.lo() == 0) {
-                    // we have reached the beginning of a partition
-                    // let's go find the previous partition
-
-                    // first, see if the partition is already opened
-                    p = _n_partition(ll.hi()-1);
-                    if(p == (partition_t *)NULL) {
-                        // not opened
-                        // we are not sure if the previous partition exists or not
-                        // if it does exist, we want to know its size
-                        // if not, we have reached EOF
-                        p = _open_partition_for_read(ll.hi()-1, lsn_t::null, true, true);
-                        if(p == (partition_t *)NULL)
-                            // if open failed...
-                            return RC(eINTERNAL);
-                    }
-
-                    if (p->size() == partition_t::nosize) {
-                        // we have reached the "end" of the backward scan, 
-                        // i.e., no more log records before this lsn
-                        // return EOF so that log_i will stop
-                        return RC(eEOF);
-                    }
-                    if (p->size() == 0) {
-                        // this is a special case
-                        // when the partition does not exist, 
-                        // _open_partition_for_read->_open_partitionp->peek would create an empty file
-                        // we must remove this file immediately
-                        p->close(true);
-                        p->destroy();
-                        return RC(eEOF);
-                    }        
-
-                    // now this partition is opened
-                    // ll points to the skip record
-                    ll = lsn_t(ll.hi()-1, p->size());
-                }
-
-                w_assert1(ll.lo()!=0);
-            }
-            else {
-                // forward scan
-                if ( ll.lo() >= p->size() ||
-                     (p->size() == partition_t::nosize && ll.lo() >= limit()))  {
-                    DBGTHRD(<<"seeking to " << ll.lo() << ";  beyond p->size() ... OR ...");
-                    DBGTHRD(<<"limit()=" << limit() << " & p->size()==" 
-                            << int(partition_t::nosize));
-
-                    ll = first_lsn(ll.hi() + 1);
-                    DBGTHRD(<<"getting next partition: " << ll);
-                    p = 0; continue;
-                }
-            }
-        }
-    }
+    // Find and open the partition
+    partition_t* p = _storage->find_partition(ll, true, false, forward);
 
     if (false == forward) {
         // backward scan
@@ -1228,8 +1061,7 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
 
         W_COERCE(_get_lsn_for_backward_scan(ll, p));
 
-// TODO(Restart)... comment out for now, too much noise
-//        DBGOUT3(<< "BACKWARD fetch @ lsn: " << ll);
+        DBGOUT5(<< "BACKWARD fetch @ lsn: " << ll);
         W_COERCE(_fetch(rp, ll, p, op));
         if (nxt) {
             *nxt = ll;
@@ -1237,23 +1069,22 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
     }
     else {
         // forward scan
-// TODO(Restart)... comment out for now, too much noise        
-//        DBGOUT3(<< "fetch @ lsn: " << ll);
+        DBGOUT5(<< "fetch @ lsn: " << ll);
         W_COERCE(_fetch(rp, ll, p, op));
         logrec_t        &r = *rp;
         if (r.type() == logrec_t::t_skip && r.get_lsn_ck() == ll) {                
             DBGTHRD(<<"seeked to skip" << ll );
             DBGTHRD(<<"getting next partition.");
             ll = first_lsn(ll.hi() + 1);
-            // FRJ: BUG? Why are we so certain this partition is even
-            // open, let alone open for read?
-            p = _n_partition(ll.hi());
-            if(!p)
-                p = _open_partition_for_read(ll.hi(), lsn_t::null, false, false);
+
+            p = _storage->get_partition(ll.hi());
+            if(!p) {
+                //p = _open_partition_for_read(ll.hi(), lsn_t::null, false, false);
+                p = _storage->find_partition(ll, false, false, forward);
+            }
             
             // re-read
-// TODO(Restart)... comment out for now, too much noise            
-//            DBGOUT3(<< "re-fetch @ lsn: " << ll);
+            DBGOUT5(<< "re-fetch @ lsn: " << ll);
             W_COERCE(_fetch(rp, ll, p, op));            
         }
         if (nxt) {
@@ -1299,8 +1130,7 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
  *
  *********************************************************************/
 w_rc_t logbuf_core::_fetch(logrec_t* &rec, lsn_t &lsn, partition_t *p, hints_op op) {
-// TODO(Restart)... comment out for now, too much noise
-//    DBGOUT3(<< " _fetch: " << lsn);
+    DBGOUT5(<< " _fetch: " << lsn);
 
     // use the buffer provided by the caller
     //w_assert1(rec);
@@ -1320,14 +1150,9 @@ w_rc_t logbuf_core::_fetch(logrec_t* &rec, lsn_t &lsn, partition_t *p, hints_op 
         _logbuf_lock.acquire();
         found = _hashtable->lookup(seg_lsn.data());
         if (found != NULL) {
-            // hit            
-// TODO(Restart)... comment out for now, too much noise            
-//            DBGOUT3(<< " HIT " << found->base_lsn 
-//                    << " " << offset); 
+            DBGOUT5(<< " HIT " << found->base_lsn  << " " << offset); 
 
             hits++;
-
-
             if (rec != NULL) {
                 // we don't have to worry about whether the log record is spanning
                 // across two segments because if that's the case, the record
@@ -1343,29 +1168,20 @@ w_rc_t logbuf_core::_fetch(logrec_t* &rec, lsn_t &lsn, partition_t *p, hints_op 
             _logbuf_lock.release();
         }
         else {            
-            // miss
-// TODO(Restart)... comment out for now, too much noise            
-//            DBGOUT3(<< " MISS " << seg_lsn
-//                    << " " << offset); 
+            DBGOUT3(<< " MISS " << seg_lsn << " " << offset); 
 
             if (hints_profile[op].locality) {
-
                 //logbuf_print("before MISS");
-
-// TODO(Restart)... comment out for now, too much noise
-//                DBGOUT3(<< "fetch entire seg");
+                DBGOUT3(<< "fetch entire seg");
 
                 found = _get_new_seg_for_fetch();
-
                 _logbuf_lock.release();
 
                 // avoid warnings about unused parameter
                 if (p) {
-#ifdef LOG_BUFFER
                     // read the entire seg
                     // read 3 extra blocks as tails
                     W_COERCE(p->read_seg(seg_lsn, found->buf, _actual_segsize));
-#endif
                 }
 
                 {
@@ -1385,30 +1201,18 @@ w_rc_t logbuf_core::_fetch(logrec_t* &rec, lsn_t &lsn, partition_t *p, hints_op 
                 }
 
                 _logbuf_lock.acquire();
-
-            
                 _insert_seg_for_fetch(found);
-                
-
                 _logbuf_lock.release();
-
-
             }
             else {
-
                 _logbuf_lock.release();
 
                 //logbuf_print("before MISS");
-// TODO(Restart)... comment out for now, too much noise
-//                DBGOUT3(<< "fetch single log rec");
+                DBGOUT5(<< "fetch single log rec");
 
-#ifdef LOG_BUFFER
                 // read the log record only (sizeof(logrec_t))
-                W_COERCE(p->read_logrec(rec, lsn));
-#endif
-
+                W_COERCE(p->read_logrec(readbuf(), rec, lsn));
             }
-            
             //logbuf_print("after MISS");
         }
 
@@ -2818,5 +2622,3 @@ void logbuf_core::force_a_flush() {
     }
         
 }
-
-#endif

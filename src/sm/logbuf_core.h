@@ -22,12 +22,6 @@
 
 #include "log_core.h"
 
-
-
-// M1: standalone log buffer
-// M2: integrated log buffer with write
-// M3: integrated log buffer with both read and write
-
 class logrec_t;
 class partition_t;
 
@@ -38,7 +32,7 @@ typedef w_list_t<logbuf_seg, tatas_lock> logbuf_seg_list_t;
 
 // information stored in hints, not used for now
 typedef struct hints {
-    hints_op op;
+    log_m::hints_op op;
     bool locality;
     bool prefetch;
     bool forward;
@@ -59,12 +53,8 @@ public:
     virtual rc_t            insert(logrec_t &r, lsn_t* l); 
     virtual rc_t            flush(const lsn_t &lsn, bool block=true, bool signal=true, bool *ret_flushed=NULL);
     virtual rc_t            compensate(const lsn_t &orig_lsn, const lsn_t& undo_lsn);
-#ifdef LOG_BUFFER
     virtual rc_t            fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, const bool forward);
-    virtual rc_t            fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, hints_op op);
-#else
-    virtual rc_t            fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, const bool forward);
-#endif
+    virtual rc_t            fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, log_m::hints_op op);
 
     // INTERFACE METHODS END
 public:
@@ -128,7 +118,7 @@ public:
 
     // for fetch
     w_rc_t _fetch(logrec_t* &rec, lsn_t &lsn, partition_t *p);
-    w_rc_t _fetch(logrec_t* &rec, lsn_t &lsn, partition_t *p, hints_op op);
+    w_rc_t _fetch(logrec_t* &rec, lsn_t &lsn, partition_t *p, log_m::hints_op op);
 
     // helper for backward scan
     w_rc_t _get_lsn_for_backward_scan(lsn_t &lsn, partition_t *p);
