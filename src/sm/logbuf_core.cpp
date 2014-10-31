@@ -41,6 +41,8 @@
 
 #include "sdisk.h"
 
+#if 0 // CS: disable until refactoring is done for log_core
+
 
 // flush daemon
 // same as the flush daemon in log_core
@@ -97,24 +99,15 @@ logbuf_core::logbuf_core(
 {
     FUNC(logbuf_core::logbuf_core);
 
-    w_assert1(strlen(path) < sizeof(_logdir));
-    strcpy(_logdir, path);
-
     _reservations_active = false;
     _segsize = _ceil(bsize, SEGMENT_SIZE); // actual segment size for the log buffer;
     _log_corruption = false;
-    _curr_index = -1;
-    _curr_num = 1;
     _readbuf = NULL;
 #ifdef LOG_DIRECT_IO
     _writebuf = NULL;
 #endif
-    _skip_log = new skip_log;
-    _min_chkpt_rec_lsn = first_lsn(1);
     _space_available = 0;
     _space_rsvd_for_chkpt = 0; 
-    _partition_size = 0; 
-    _partition_data_size = 0;
 
     DO_PTHREAD(pthread_mutex_init(&_scavenge_lock, NULL));
     DO_PTHREAD(pthread_cond_init(&_scavenge_cond, NULL));
@@ -161,7 +154,6 @@ logbuf_core::logbuf_core(
     }
 
     // it will be updated through set_partition_data_size()
-    _partition_data_size = part_size;
     _waiting_for_space = false;
     _waiting_for_flush = false;
     _flush_daemon_running = false;
@@ -206,20 +198,15 @@ logbuf_core::logbuf_core(
 
     w_assert1(is_aligned(_readbuf));
 
-    // this function calculates _partition_data_size
-    // the total log size, max_logsz, is set through this option "sm_logsize"
-    // the default value of sm_logsize is increased from the original 128KB to 128MB
-    W_COERCE(_set_size(max_logsz));
-
     // the log buffer (the epochs) is designed to hold log records from at most two partitions
     // so its capacity cannot exceed the partition size
     // otherwise, there could be log records from three parttitions in the buffer
-    if(LOGBUF_SEG_COUNT*_segsize > _partition_data_size) {
+    if(LOGBUF_SEG_COUNT*_segsize > _storage->partition_data_size()) {
         errlog->clog << error_prio 
                      << "Log buf seg count too big or total log size (sm_logsize) too small: "  
                      << " LOGBUF_SEG_COUNT=" <<  LOGBUF_SEG_COUNT
                      << " _segsize=" << _segsize
-                     << " _partition_data_size=" << _partition_data_size
+                     << " _partition_data_size=" << _storage->partition_data_size()
                      << " max_logsz=" << max_logsz
                      << endl; 
         errlog->clog << error_prio << endl;
@@ -227,7 +214,7 @@ logbuf_core::logbuf_core(
         W_FATAL(eINTERNAL);
     }
 
-    initialize_storage(reformat);
+    //_storage->initialize_storage();
     start_flush_daemon();
 }
 
@@ -689,94 +676,22 @@ logbuf_core::fetch(
 
     // open partition to read
     // protect against double-acquire
-    _acquire(); // caller must release the _partition_lock mutex
+    _storage->acquire_partition_lock(); // caller must release it
 
     /*
      *  Find and open the partition
      */
-
-    partition_t        *p = 0;
-    uint32_t        last_hi=0;
-    while (!p) {
-        if(last_hi == ll.hi()) {
-            // can happen on the 2nd or subsequent round
-            // but not first
-            DBGTHRD(<<"no such partition " << ll  );
-            return RC(eEOF);
-        }
-
-        // during restart, backward log scan starts with _to_insert_lsn!
-        if (forward == true && ll >= _to_insert_lsn)  {
-            /*
-             *  This would constitute a
-             *  read beyond the end of the log
-             */
-            DBGTHRD(<<"fetch at lsn " << ll  << " returns eof -- _curr_lsn=" 
-                    << _to_insert_lsn);
-            return RC(eEOF);
-        }
-        last_hi = ll.hi();
-
-        DBG(<<" about to open " << ll.hi());
-        //                                 part#, end_hint, existing, recovery
-        if ((p = _open_partition_for_read(ll.hi(), lsn_t::null, true, false))) {
-
-            // opened one... is it the right one?
-            DBGTHRD(<<"opened... p->size()=" << p->size());
-
-            if ( forward == false ) {
-                // backward scan
-                if (ll.lo() == 0) {
-                    // we have reached the beginning of a partition
-                    // let's go find the previous partition
-                    p = _n_partition(ll.hi()-1);
-                    if(p == (partition_t *)NULL) {
-                        // we are not sure if the previous partition exists or not
-                        // if it does exist, we want to know its size
-                        // if not, we have reached EOF
-                        p = _open_partition_for_read(ll.hi()-1, lsn_t::null, true, true);
-                        if(p == (partition_t *)NULL)
-                            // if open failed...
-                            return RC(eINTERNAL);
-                    }
-
-                    if (p->size() == partition_t::nosize) {
-                        // we have reached the "end" of the backward scan, 
-                        // i.e., no more log records before this lsn
-                        // return EOF so that log_i will stop
-                        return RC(eEOF);
-                    }
-                    if (p->size() == 0) {
-                        // this is a special case
-                        // when the partition does not exist, 
-                        // _open_partition_for_read->_open_partitionp->peek would create an empty file
-                        // we must remove this file immediately
-                        p->close(true);
-                        p->destroy();
-                        return RC(eEOF);
-                    }        
-
-                    // this partition is already opened
-                    ll = lsn_t(ll.hi()-1, p->size());
-                }
-
-                w_assert1(ll.lo()!=0);
-            }
-            else {
-                // forward scan
-                if ( ll.lo() >= p->size() ||
-                     (p->size() == partition_t::nosize && ll.lo() >= limit()))  {
-                    DBGTHRD(<<"seeking to " << ll.lo() << ";  beyond p->size() ... OR ...");
-                    DBGTHRD(<<"limit()=" << limit() << " & p->size()==" 
-                            << int(partition_t::nosize));
-
-                    ll = first_lsn(ll.hi() + 1);
-                    DBGTHRD(<<"getting next partition: " << ll);
-                    p = 0; continue;
-                }
-            }
-        }
+    if (ll >= curr_lsn())  {
+        /*
+         *  This would constitute a
+         *  read beyond the end of the log
+         */
+        DBGTHRD(<<"fetch at lsn " << ll  << " returns eof -- _curr_lsn=" 
+                << curr_lsn());
+        return RC(eEOF);
     }
+    partition_t* p = _storage->find_partition(ll, true, false, forward);
+
 
     if (false == forward) {
         // backward scan
@@ -790,8 +705,6 @@ logbuf_core::fetch(
 
         W_COERCE(_get_lsn_for_backward_scan(ll, p));
 
-// TODO(Restart)... comment out for now, too much noise
-//        DBGOUT3(<< "BACKWARD fetch @ lsn: " << ll);
         W_COERCE(_fetch(rp, ll, p));
         if (nxt) {
             *nxt = ll;
@@ -799,8 +712,6 @@ logbuf_core::fetch(
     }
     else {
         // forward scan
-// TODO(Restart)... comment out for now, too much noise        
-//        DBGOUT3(<< "fetch @ lsn: " << ll);
         W_COERCE(_fetch(rp, ll, p));
         logrec_t        &r = *rp;
         if (r.type() == logrec_t::t_skip && r.get_lsn_ck() == ll) {                
@@ -810,12 +721,12 @@ logbuf_core::fetch(
             // FRJ: BUG? Why are we so certain this partition is even
             // open, let alone open for read?
             p = _n_partition(ll.hi());
-            if(!p)
-                p = _open_partition_for_read(ll.hi(), lsn_t::null, false, false);
+            if(!p) {
+                //p = _open_partition_for_read(ll.hi(), lsn_t::null, false, false);
+                p = _storage->find_partition(ll, false, false);
+            }
             
             // re-read
-// TODO(Restart)... comment out for now, too much noise            
-//            DBGOUT3(<< "re-fetch @ lsn: " << ll);
             W_COERCE(_fetch(rp, ll, p));            
         }
         if (nxt) {
@@ -1668,7 +1579,7 @@ void logbuf_core::_reserve_buffer_space(CArraySlot *info, long recsize) {
 
         // calculate the actual free space
         // new partition is the special case
-        if ((_to_insert_lsn.lo() + needed) > _partition_data_size) {
+        if ((_to_insert_lsn.lo() + needed) > _storage->partition_data_size()) {
             // new partition, cannot use the remaining free space
             uint64_t offset = _to_insert_lsn.lo() - _to_insert_seg->base_lsn.lo();
             uint64_t free_in_seg = _segsize - offset;
@@ -1762,7 +1673,7 @@ void logbuf_core::_acquire_buffer_space(CArraySlot* info, long recsize) {
     uint64_t free_in_seg = _segsize - offset;
     uint64_t needed = recsize;
 
-    if ((_to_insert_lsn.lo() + recsize) <= _partition_data_size) {
+    if ((_to_insert_lsn.lo() + recsize) <= _storage->partition_data_size()) {
         // curr partition
 // TODO(Restart)... comment out for now, too much noise        
 //        DBGOUT3(<< " insert: current partition! " << recsize);
@@ -1780,7 +1691,7 @@ void logbuf_core::_acquire_buffer_space(CArraySlot* info, long recsize) {
 // TODO(Restart)... comment out for now, too much noise        
 //        DBGOUT3(<< " insert: new partition! " << recsize);
 
-        long leftovers = _partition_data_size - curr_lsn.lo();
+        long leftovers = _storage->partition_data_size() - curr_lsn.lo();
 
         if(leftovers && !reserve_space(leftovers)) {
             std::cerr << "WARNING WARNING: OUTOFLOGSPACE in update_epochs" << std::endl;
@@ -1794,7 +1705,7 @@ void logbuf_core::_acquire_buffer_space(CArraySlot* info, long recsize) {
         next_lsn = curr_lsn + recsize;
 
         // new epoch covers the new partition
-        new_base = _buf_epoch.base + _partition_data_size;  
+        new_base = _buf_epoch.base + _storage->partition_data_size();  
         start_pos = 0;
         _buf_epoch = epoch(curr_lsn, new_base, 0, new_end=recsize);
 
@@ -2278,15 +2189,7 @@ void logbuf_core::_flushX(lsn_t start_lsn, uint64_t start, uint64_t end) {
 
     w_assert1(end >= start);
 
-    // for M2 and M3
-#ifdef LOG_BUFFER
-    partition_t *p = NULL;
-
-    // TODO: hacky...
-    // locate the current partition
-    // open a new partition when necessary
-    p = _flushX_get_partition(start_lsn, 0,0,0,0);
-#endif
+    partition_t *p = _storage->get_partition_for_flush(start_lsn, 0,0,0,0);
 
 
     logbuf_seg *cur = _to_flush_seg;
@@ -2916,4 +2819,4 @@ void logbuf_core::force_a_flush() {
         
 }
 
-
+#endif

@@ -87,6 +87,7 @@ class prologue_rc_t;
 
 #include "logbuf_common.h" // sets LOG_BUFFER flag
 #include "log_core.h"
+#include "log_storage.h"
 #include "logbuf_core.h"
 
 #ifdef EXPLICIT_TEMPLATE
@@ -249,7 +250,7 @@ void ss_m::_set_option_logsize() {
     fileoff_t psize = maxlogsize / smlevel_0::max_openlog;
 
     // convert partition size to partition data size: (remove overhead)
-    psize = log_core::partition_size(psize);
+    psize = log_storage::partition_size(psize);
 
     /* Enforce the built-in shore limit that a log partition can only
        be as long as the file address in a lsn_t allows for...
@@ -258,13 +259,13 @@ void ss_m::_set_option_logsize() {
        Also that it can't be larger than the os allows
    */
 
-    if (psize > log_core::max_partition_size()) {
+    if (psize > log_storage::max_partition_size()) {
         // we might not be able to do this:
-        fileoff_t tmp = log_core::max_partition_size();
+        fileoff_t tmp = log_storage::max_partition_size();
         tmp /= 1024;
 
         std::cerr << "Partition data size " << psize
-                << " exceeds limit (" << log_core::max_partition_size() << ") "
+                << " exceeds limit (" << log_storage::max_partition_size() << ") "
                 << " imposed by the size of an lsn."
                 << std::endl;
         std::cerr << " Choose a smaller sm_logsize." << std::endl;
@@ -272,15 +273,15 @@ void ss_m::_set_option_logsize() {
         W_FATAL(eCRASH);
     }
 
-    if (psize < log_core::min_partition_size()) {
-        fileoff_t tmp = fileoff_t(log_core::min_partition_size());
+    if (psize < log_storage::min_partition_size()) {
+        fileoff_t tmp = fileoff_t(log_storage::min_partition_size());
         tmp *= smlevel_0::max_openlog;
         tmp /= 1024;
         std::cerr
             << "Partition data size (" << psize
             << ") is too small for " << endl
             << " a segment ("
-            << log_core::min_partition_size()   << ")" << endl
+            << log_storage::min_partition_size()   << ")" << endl
             << "Partition data size is computed from sm_logsize;"
             << " minimum sm_logsize is " << tmp << endl;
         W_FATAL(eCRASH);

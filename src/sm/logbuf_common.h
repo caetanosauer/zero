@@ -9,7 +9,7 @@
 // define LOG_BUFFER when using the new log buffer
 // disable LOG_BUFFER when using the original buffer
 // disable LOG_BUFFER when testing the standalone log buffer
-#define LOG_BUFFER
+//#define LOG_BUFFER // CS: disabled until refactoring is complete
 
 
 // direct IO switch

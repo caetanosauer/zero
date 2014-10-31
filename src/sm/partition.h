@@ -72,7 +72,7 @@ typedef enum    {  /* partition_t::_mask values */
     m_flushed=0x10    // has no data cached
 } partition_mask_values;
 
-class log_core; // forward
+class log_storage; // forward
 class partition_t {
 public:
     typedef smlevel_0::fileoff_t          fileoff_t;
@@ -96,9 +96,15 @@ public:
                             _eop(0), 
                             _owner(0),
                             _fhdl_rd(invalid_fhdl),
-                            _fhdl_app(invalid_fhdl) {}
+                            _fhdl_app(invalid_fhdl)
+    {
+        _peekbuf = new char[sizeof(logrec_t)];
+    }
 
-                      ~partition_t(){}
+    ~partition_t()
+    {
+        delete _peekbuf;
+    }
 
 
     /////////////////// DATA
@@ -112,11 +118,14 @@ private:
     fileoff_t             _size;
     // physical end of partition
     fileoff_t             _eop; 
-    log_core*             _owner;
+    log_storage*             _owner;
     lsn_t                 _last_skip_lsn;
     // Read and append file handles
     int                   _fhdl_rd;
     int                   _fhdl_app;
+    // buffer to read log records in the _peek function
+    // used to be readbuf() of log_core
+    char*               _peekbuf;
 
 private: 
     /* store end lsn at the beginning of each partition; updated
@@ -127,7 +136,7 @@ private:
 
 public:
     // exported for unix_log
-    void               init(log_core *owner);
+    void               init(log_storage *owner);
     void               init_index(partition_index_t i) { _index=i; }
     void               clear();
 
@@ -150,8 +159,13 @@ public:
                             const lsn_t&    end_hint,
                             bool, 
                             int* fd=0);
-    w_rc_t             read(logrec_t *&r, lsn_t &ll, int fd = invalid_fhdl);
-    void               flush(int fd,
+    w_rc_t             read(char* readbuf,
+            logrec_t *&r, lsn_t &ll, int fd = invalid_fhdl);
+    void               flush(
+#ifdef LOG_DIRECT_IO
+                            char* writebuf,
+#endif
+                            int fd,
                             lsn_t lsn, 
                             const char* const buf, 
                             long start1, 
@@ -160,12 +174,12 @@ public:
                             long end2);
 #ifdef LOG_BUFFER
     // new flush, which can flush multiple segments
-    void  flush(int fd, lsn_t lsn, int64_t size, int64_t write_size, 
+    void  flush(char* writebuf, int fd, lsn_t lsn, int64_t size, int64_t write_size, 
                 sdisk_base_t::iovec_t *iov, uint32_t seg_cnt);
     // read an entire segment
     w_rc_t read_seg(lsn_t ll, char *buf, uint32_t size, int fd = invalid_fhdl);
     // read one log record
-    w_rc_t read_logrec(logrec_t *&rp, lsn_t &ll, int fd = invalid_fhdl);
+    w_rc_t read_logrec(char* readbuf, logrec_t *&rp, lsn_t &ll, int fd = invalid_fhdl);
 
 #endif
 
