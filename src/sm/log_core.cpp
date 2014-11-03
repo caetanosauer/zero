@@ -190,7 +190,11 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
     }
     if (forward && ll >= curr_lsn()) {
         w_assert0(ll == curr_lsn());
+        // reading the curr_lsn during recovery yields a skip log record,
+        // but since there is no next partition to open, scan must stop
+        // here, without handling skip below
         // exception/error should not be used for control flow (TODO)
+        return RC(eEOF);
     }
     if (!forward && ll == lsn_t::null) {
         // for a backward scan, nxt pointer is set to null
