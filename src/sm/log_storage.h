@@ -84,7 +84,7 @@ public:
 
     partition_t*    get_partition_for_flush(lsn_t start_lsn, 
                             long start1, long end1, long start2, long end2);
-    partition_t*    find_partition(lsn_t, bool existing, bool recovery, bool forward);
+    partition_t*    find_partition(lsn_t&, bool existing, bool recovery, bool forward);
     rc_t last_lsn_in_partition(partition_number_t pnum, lsn_t& lsn);
     partition_t*    curr_partition() const;
     int             delete_old_partitions(lsn_t);

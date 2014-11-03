@@ -1043,7 +1043,7 @@ log_storage::prime(char* buf, int fd, fileoff_t start, lsn_t next)
 }
 
 partition_t*
-log_storage::find_partition(lsn_t ll, bool existing, bool recovery, bool forward)
+log_storage::find_partition(lsn_t& ll, bool existing, bool recovery, bool forward)
 {
     partition_t        *p = 0;
     uint32_t        last_hi=0;
@@ -1062,16 +1062,9 @@ log_storage::find_partition(lsn_t ll, bool existing, bool recovery, bool forward
             // opened one... is it the right one?
             DBGTHRD(<<"opened... p->size()=" << p->size());
 
-            if (!forward) {
-                // backward scan
-                if (ll.lo() == 0) {
-                }
-
-                w_assert1(ll.lo()!=0);
-            }
-            else if (recovery && 
-                    (ll.lo() >= p->size() ||
-                     (p->size() == partition_t::nosize && ll.lo() >= limit())))
+            if (forward && recovery) {
+            if (ll.lo() >= p->size() ||
+                     (p->size() == partition_t::nosize && ll.lo() >= limit()))
             {
                 DBGTHRD(<<"seeking to " << ll.lo() << ";  beyond p->size() ... OR ...");
                 DBGTHRD(<<"limit()=" << limit() << " & p->size()==" 
@@ -1080,6 +1073,7 @@ log_storage::find_partition(lsn_t ll, bool existing, bool recovery, bool forward
                 ll = log_m::first_lsn(ll.hi() + 1);
                 DBGTHRD(<<"getting next partition: " << ll);
                 p = 0; continue;
+            }
             }
         }
     }
