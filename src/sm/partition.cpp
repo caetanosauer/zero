@@ -885,7 +885,11 @@ partition_t::_skip(const lsn_t &ll, int fd)
     long offset = _owner->prime(_skipbuf, fd, start(), ll);
     
     // Make sure that flush writes a skip record
-    this->flush(fd, ll, _skipbuf, offset, offset, offset, offset);
+    this->flush(
+#ifdef LOG_DIRECT_IO
+            _skipbuf,
+#endif
+            fd, ll, _skipbuf, offset, offset, offset, offset);
 
 #ifdef LOG_DIRECT_IO
     free(_skipbuf);
@@ -970,8 +974,19 @@ partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll, int fd)
                 /* accept the short I/O error for now */
                 smlevel_0::errlog->clog << fatal_prio 
                         << "read(" << int(XFERSIZE) << ")" << flushl;
+                /*
+                 * CS: short IO when reading the log is not necessarily an
+                 * error. In fact, after a system crash, it is quite likely
+                 * that the last write to the log was interrupted, and thus
+                 * a short IO is actually expected.
+                 * The error condition can be verified by checking if the
+                 * lsn_ck() field of logrec_t matches the offset from which
+                 * the log record was read. However, this logic belongs in the
+                 * log scanner code.
+                 */
                 W_COERCE(e);
         }
+        // TODO CS: If there was a short IO above, the increment should not be XFERSIZE
         b += XFERSIZE;
 
         // 

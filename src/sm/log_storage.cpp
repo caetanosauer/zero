@@ -1065,36 +1065,6 @@ log_storage::find_partition(lsn_t ll, bool existing, bool recovery, bool forward
             if (!forward) {
                 // backward scan
                 if (ll.lo() == 0) {
-                    // we have reached the beginning of a partition
-                    // let's go find the previous partition
-                    p = get_partition(ll.hi()-1);
-                    if(p == (partition_t *)NULL) {
-                        // we are not sure if the previous partition exists or not
-                        // if it does exist, we want to know its size
-                        // if not, we have reached EOF
-                        p = _open_partition_for_read(ll.hi()-1, lsn_t::null, true, true);
-                        if(p == (partition_t *)NULL)
-                            W_FATAL_MSG(eINTERNAL, << "Open partition failed");
-                    }
-
-                    if (p->size() == partition_t::nosize) {
-                        // we have reached the "end" of the backward scan, 
-                        // i.e., no more log records before this lsn
-                        // return EOF so that log_i will stop
-                        W_FATAL_MSG(eEOF, << "Partition not found");
-                    }
-                    if (p->size() == 0) {
-                        // this is a special case
-                        // when the partition does not exist, 
-                        // _open_partition_for_read->_open_partitionp->peek would create an empty file
-                        // we must remove this file immediately
-                        p->close(true);
-                        p->destroy();
-                        W_FATAL_MSG(eEOF, << "Partition not found");
-                    }        
-
-                    // this partition is already opened
-                    ll = lsn_t(ll.hi()-1, p->size());
                 }
 
                 w_assert1(ll.lo()!=0);
@@ -1115,6 +1085,38 @@ log_storage::find_partition(lsn_t ll, bool existing, bool recovery, bool forward
     }
 
     return p;
+}
+
+rc_t log_storage::last_lsn_in_partition(partition_number_t pnum, lsn_t& lsn)
+{
+    partition_t* p = get_partition(pnum);
+    if(!p) {
+        // we are not sure if the previous partition exists or not
+        // if it does exist, we want to know its size
+        // if not, we have reached EOF
+        bool recovery = false;
+        p = _open_partition_for_read(pnum, lsn_t::null, false, recovery);
+        if(!p)
+            W_FATAL_MSG(eINTERNAL, << "Open partition failed");
+    }
+
+    if (p->size() == partition_t::nosize) {
+        lsn = lsn_t::null;
+        return RCOK;
+    }
+    if (p->size() == 0) {
+        // this is a special case
+        // when the partition does not exist, 
+        // _open_partition_for_read->_open_partitionp->peek would create an empty file
+        // we must remove this file immediately
+        p->close(true);
+        p->destroy();
+        lsn = lsn_t::null;
+        return RCOK;
+    }        
+
+    // this partition is already opened
+    lsn = lsn_t(pnum, p->size());
 }
 
 /*********************************************************************
