@@ -208,8 +208,10 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
     /*
      * STEP 2: Read log record from the partition
      */
+    lsn_t prev_lsn = lsn_t::null;
     DBGOUT3(<< "fetch @ lsn: " << ll);    
-    W_COERCE(p->read(readbuf(), rp, ll));
+    W_COERCE(p->read(readbuf(), rp, ll, forward ? NULL : &prev_lsn,
+            partition_t::invalid_fhdl));
     w_assert0(rp->get_lsn_ck() == ll);
 
     // handle skip log record
@@ -232,11 +234,13 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
             w_assert0(rp->get_lsn_ck() == ll);
         }
         else { // backward scan
-            // just get previous log record
-            w_assert0(ll.lo() - rp->length() >= 0);
-            ll.advance(-rp->length());                
+            // just get previous log record using prev_lsn which was set inside
+            // the first call to p->read()
+            w_assert0(prev_lsn != lsn_t::null);
+            ll = prev_lsn;
             DBGOUT3(<< "fetch @ lsn: " << ll);                
-            W_COERCE(p->read(readbuf(), rp, ll));
+            W_COERCE(p->read(readbuf(), rp, ll, &prev_lsn,
+                        partition_t::invalid_fhdl));
             w_assert0(rp->get_lsn_ck() == ll);
         }
     } 
@@ -247,8 +251,13 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
             W_DO(_storage->last_lsn_in_partition(ll.hi() - 1, *nxt));
         }
         else {
-            *nxt = ll;
-            nxt->advance(forward ? rp->length() : -rp->length());
+            if (forward) {
+                *nxt = ll;
+                nxt->advance(rp->length());
+            }
+            else {
+                *nxt = prev_lsn;
+            }
         }
     }
 

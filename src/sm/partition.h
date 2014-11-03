@@ -161,7 +161,9 @@ public:
                             bool, 
                             int* fd=0);
     w_rc_t             read(char* readbuf,
-            logrec_t *&r, lsn_t &ll, int fd = invalid_fhdl);
+                            logrec_t *&r, lsn_t &ll,
+                            lsn_t* prev_lsn = NULL,
+                            int fd = invalid_fhdl);
     void               flush(
 #ifdef LOG_DIRECT_IO
                             char* writebuf,

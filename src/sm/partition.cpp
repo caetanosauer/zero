@@ -675,7 +675,7 @@ again:
         DBGTHRD( <<"reading pos=" << pos <<" eop=" << this->_eop);
 
         // CS: TODO not sure if _peekbuf will work!
-        rc = read(_peekbuf, l, pos, fd);
+        rc = read(_peekbuf, l, pos, NULL, fd);
         DBGTHRD(<<"POS " << pos << ": tx." << *l);
 
         if(rc.err_num() == eEOF) {
@@ -918,7 +918,8 @@ partition_t::_skip(const lsn_t &ll, int fd)
  */
 // MUTEX: partition
 w_rc_t
-partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll, int fd)
+partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
+        lsn_t* prev_lsn, int fd)
 {
     FUNC(partition::read);
 
@@ -1003,6 +1004,20 @@ partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll, int fd)
             first_time = false;
             leftover = rp->length() - (b - off);
             DBGTHRD(<<" leftover now=" << leftover);
+
+            // Try to get lsn of previous log record (for backward scan)
+            if (prev_lsn) {
+                if (off >= sizeof(lsn_t)) {
+                    // most common and easy case -- prev_lsn is on the
+                    // same block
+                    *prev_lsn = *((lsn_t*) (readbuf + off - sizeof(lsn_t)));
+                }
+                else {
+                    // we were unlucky -- extra IO required to fetch prev_lsn
+                    W_COERCE(me()->pread(fd, (void*) prev_lsn, sizeof(lsn_t),
+                                start() + lower + b - XFERSIZE - sizeof(lsn_t)));
+                }
+            }
         } else {
             leftover -= XFERSIZE;
             w_assert3(leftover == (int)rp->length() - (b - off));
