@@ -41,6 +41,8 @@
 
 #include "sdisk.h"
 
+const std::string logbuf_core::IMPL_NAME = "logbuf";
+
 // flush daemon
 // same as the flush daemon in log_core
 class flush_daemon_thread_t : public smthread_t {
@@ -83,7 +85,6 @@ hints_t hints_profile[] = {
  *********************************************************************/
 logbuf_core::logbuf_core(
                    const char* path,
-                   long bsize, // segment size for the log buffer, set through "sm_logbufsize"
                    bool reformat,
                  uint32_t count, // IN: max number of segments in the log buffer
                  uint32_t flush_trigger, // IN: max number of unflushed segments in the write buffer
@@ -93,7 +94,10 @@ logbuf_core::logbuf_core(
                  uint32_t part_size, // IN: usable partition size
                  int active_slot_count // IN: slot number in ConsolidationArray
 ) 
-    : log_core(path, bsize, reformat, active_slot_count)
+    : log_core(path, log_core::SEGMENT_SIZE, reformat, active_slot_count),
+    _to_archive_seg(NULL),
+    _to_insert_seg(NULL),
+    _to_flush_seg(NULL)
 {
     FUNC(logbuf_core::logbuf_core);
 
@@ -155,11 +159,8 @@ logbuf_core::logbuf_core(
  *  Destroy the log buffer
  *
  *********************************************************************/
-logbuf_core::~logbuf_core() {
-
-// TODO(Restart)... comment out for now, too much noise
-//    logbuf_print_nolock("shutting down...", 3);
-
+logbuf_core::~logbuf_core()
+{
     if (_seg_list != NULL) {
         logbuf_seg *cur = NULL;
         while((cur=_seg_list->pop())!=NULL) {
@@ -179,9 +180,6 @@ logbuf_core::~logbuf_core() {
         delete _hashtable;
         _hashtable = NULL;
     }
-
-    delete _carray;
-
 }
 
 /*********************************************************************
@@ -546,7 +544,12 @@ void logbuf_core::_prime(
 void logbuf_core::logbuf_prime(lsn_t next) {
 // TODO(Restart)... comment out for now, too much noise
 //    DBGOUT3(<< "init");
-    
+
+    if (_flush_daemon_running) {
+        shutdown();
+        _flush_daemon = new flush_daemon_thread_t(this);
+    }
+        
     _prime(0, 0, next);
 
     start_flush_daemon();
@@ -1480,6 +1483,7 @@ void logbuf_core::_acquire_buffer_space(CArraySlot* info, long recsize) {
     long new_base = -1;
     long start_pos = end % segsize();  // offset in the starting segment
 
+    w_assert1(_to_insert_seg);
     logbuf_seg *cur_seg = _to_insert_seg;
     uint64_t offset = _to_insert_lsn.lo() - _to_insert_seg->base_lsn.lo();
     uint64_t free_in_seg = _segsize - offset;
@@ -1487,7 +1491,6 @@ void logbuf_core::_acquire_buffer_space(CArraySlot* info, long recsize) {
 
     if ((_to_insert_lsn.lo() + recsize) <= _storage->partition_data_size()) {
         // curr partition
-// TODO(Restart)... comment out for now, too much noise        
 //        DBGOUT3(<< " insert: current partition! " << recsize);
 
         // update _buf_epoch

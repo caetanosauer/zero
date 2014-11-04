@@ -24,6 +24,7 @@
 #include "logbuf_core.h"
 #include "logbuf_seg.h"
 #include "log_core.h"
+#include "log_storage.h"
 
 #include "logrec.h"
 #include "lsn.h"
@@ -38,10 +39,7 @@
 
 
 btree_test_env *test_env;
-char* log_dir;
 
-
-#ifdef LOG_BUFFER
 
 // some parameters for the new log buffer
 
@@ -73,15 +71,11 @@ rc_t consume(int size, ss_m *ssm) {
 
     return RCOK;
 }
-#endif // LOG_BUFFER
 
 
 
 // ========== test the standalone log buffer (internal states, single thread) ==========
 
-#ifdef LOG_BUFFER
-
-#else
 #ifdef LOG_DIRECT_IO
 
 #else
@@ -105,7 +99,7 @@ rc_t consume(int size, ss_m *ssm) {
     (log_buffer->logbuf_print())
 
 
-class logbuf_tester {
+class logbuf_tester : private smthread_t {
 public:
     logbuf_tester(uint32_t count = LOGBUF_SEG_COUNT, uint32_t flush_trigger =
               LOGBUF_FLUSH_TRIGGER, uint32_t block_size =
@@ -118,10 +112,16 @@ public:
     w_rc_t test_flush();
     w_rc_t test_fetch();
     w_rc_t test_replacement();
+    virtual void run();
 
 public:
     logbuf_core *log_buffer;
-
+private:
+    uint32_t _count;
+    uint32_t _flush_trigger;
+    uint32_t _block_size;
+    uint32_t _seg_size;
+    uint32_t _part_size;
 };
 
 // test module
@@ -130,14 +130,37 @@ logbuf_tester *tester = NULL;
 
 
 logbuf_tester::logbuf_tester(uint32_t count, uint32_t flush_trigger, uint32_t
-                     block_size, uint32_t seg_size, uint32_t part_size) {
-    // TODO move initialization to btree_test_env (CS)
+                     block_size, uint32_t seg_size, uint32_t part_size)
+    : smthread_t(t_regular, "logbuf_tester"),
+    _count(count),
+    _flush_trigger(flush_trigger),
+    _block_size(block_size),
+    _seg_size(seg_size),
+    _part_size(part_size)
+{
+    if (!smlevel_0::errlog) 
+        smlevel_0::errlog = new ErrLog("logbuf_tester", log_to_unix_file, "-");
+    smlevel_0::max_logsz = 1024 * 1024 * 100;
+    fork();
+    join();
+}
+
+// CS: constructor must be invoked from an smthread, so we use this little hack
+void logbuf_tester::run()
+{
     log_buffer = new logbuf_core(
-            log_dir, count, flush_trigger, block_size, seg_size,
-                             part_size, ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT);
+            test_env->log_dir,
+            LOGBUF_SEG_SIZE,
+            _count, 
+            _flush_trigger,
+            _block_size,
+            _seg_size,
+            _part_size,
+            ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT);
 }
 
 logbuf_tester::~logbuf_tester() {
+    log_buffer->shutdown();
     delete log_buffer;
 }
 
@@ -896,12 +919,6 @@ TEST (LogBufferTest, Replacement) {
     delete tester;
 }
 #endif // LOG_DIRECT_IO
-#endif // LOG_BUFFER
-
-
-// ========== test the entire system with the new log buffer (internal states, single thread) ==========
-#ifdef LOG_BUFFER
-
 
 // size % 8 == 0
 #define INSERT(size)\
@@ -1156,6 +1173,7 @@ TEST (LogBufferTest2, Init1) {
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;
@@ -1170,6 +1188,7 @@ TEST (LogBufferTest2, Init2) {
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;
@@ -1184,6 +1203,7 @@ TEST (LogBufferTest2, Init3) {
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;
@@ -1367,6 +1387,7 @@ TEST (LogBufferTest2, Insert) {
     sm_options sm_options;
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
     EXPECT_EQ(test_env->runBtreeTest(test_insert, true, 1<<16, sm_options), 0);
 }
 
@@ -1592,6 +1613,7 @@ TEST (LogBufferTest2, Flush) {
     sm_options sm_options;
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
     EXPECT_EQ(test_env->runBtreeTest(test_flush, true, 1<<16, sm_options), 0);
 }
 
@@ -1768,6 +1790,7 @@ TEST (LogBufferTest2, Fetch) {
     sm_options sm_options;
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
     EXPECT_EQ(test_env->runBtreeTest(test_fetch, true, 1<<16, sm_options), 0);
 }
 
@@ -1964,17 +1987,16 @@ TEST (LogBufferTest2, Replacement) {
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options, true, 1<<16, sm_options), 0);
 }
-#endif // LOG_BUFFER
 
 
 
 // ========== test the entire system with the new log buffer (external states, single thread) ==========
-#ifdef LOG_BUFFER
 
 
 // test operations that mostly write regular log records
@@ -2086,6 +2108,7 @@ TEST (LogBufferTest3, Write) {
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;
@@ -2268,6 +2291,7 @@ TEST (LogBufferTest3, AbortSimple) {
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;
@@ -2352,6 +2376,7 @@ TEST (LogBufferTest3, AbortBig) {
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;
@@ -2574,21 +2599,16 @@ TEST (LogBufferTest3, AbortLong) {
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options, true, 1<<16, sm_options), 0);
 }
 
-#endif // LOG_BUFFER
-
-
-
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     test_env = new btree_test_env();
-    // TODO tmeporary (CS)
-    log_dir = test_env->log_dir;
     ::testing::AddGlobalTestEnvironment(test_env);
     return RUN_ALL_TESTS();
 }

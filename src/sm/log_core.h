@@ -136,6 +136,7 @@ public:
     fileoff_t           space_left() const { return *&_space_available; }
     fileoff_t           space_for_chkpt() const { return *&_space_rsvd_for_chkpt ; }
 
+    static const std::string IMPL_NAME;
 
     /**\brief Return current lsn of the log (for insert purposes)
      * \details

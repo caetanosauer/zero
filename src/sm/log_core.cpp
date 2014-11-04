@@ -78,8 +78,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <sstream>
 #include <w_strstream.h>
 
-// LOG_BUFFER switch
-#include "logbuf_common.h"
+const std::string log_core::IMPL_NAME = "traditional";
 
 typedef smlevel_0::fileoff_t fileoff_t;
 
@@ -411,11 +410,11 @@ log_core::log_core(
     if (bsize < 64 * 1024) {
         // not mt-safe, but this is not going to happen in 
         // concurrency scenario
-        errlog->clog << error_prio 
+        smlevel_0::errlog->clog << error_prio 
         << "Log buf size (sm_logbufsize) too small: "
         << bsize << ", require at least " << 64 * 1024 
         << endl; 
-        errlog->clog << error_prio << endl;
+        smlevel_0::errlog->clog << error_prio << endl;
         fprintf(stderr,
             "Log buf size (sm_logbufsize) too small: %ld, need %d\n",
             bsize, 64*1024);
@@ -423,6 +422,7 @@ log_core::log_core(
     }
 
     w_assert1(is_aligned(_readbuf));
+    w_assert1(_curr_lsn == _durable_lsn);
 
     long prime_offset = 0;
     _storage = new log_storage(path, reformat, _curr_lsn, _durable_lsn,
@@ -438,27 +438,29 @@ log_core::log_core(
     // initial free space estimate... refined once log recovery is complete 
     // release_space(PARTITION_COUNT*_partition_data_size);
     release_space(_storage->recoverable_space(PARTITION_COUNT));
-    if(!verify_chkpt_reservation() 
-            || _space_rsvd_for_chkpt > _storage->partition_data_size()) {
-        cerr<<
-        "log partitions too small compared to buffer pool:"<<endl
-        <<"    "<<_storage->partition_data_size()
-        <<" bytes per partition available"<<endl
-        <<"    "<<_space_rsvd_for_chkpt
-        <<" bytes needed for checkpointing dirty pages"<<endl;
-        W_FATAL(eOUTOFLOGSPACE);
+    if (smlevel_0::bf) {
+        if(!verify_chkpt_reservation() 
+                || _space_rsvd_for_chkpt > _storage->partition_data_size()) {
+            cerr<<
+                "log partitions too small compared to buffer pool:"<<endl
+                <<"    "<<_storage->partition_data_size()
+                <<" bytes per partition available"<<endl
+                <<"    "<<_space_rsvd_for_chkpt
+                <<" bytes needed for checkpointing dirty pages"<<endl;
+            W_FATAL(eOUTOFLOGSPACE);
+        }
     }
 
     start_flush_daemon();
 
     if (1) {
-        errlog->clog << debug_prio 
+        smlevel_0::errlog->clog << debug_prio 
             << "Log _start " << start_byte() << " end_byte() " << end_byte()
             << endl
             << "Log _curr_lsn " << _curr_lsn 
             << " _durable_lsn " << _durable_lsn
             << endl; 
-        errlog->clog << debug_prio 
+        smlevel_0::errlog->clog << debug_prio 
             << "Curr epoch  base_lsn " << _cur_epoch.base_lsn
             << endl
             << "Curr epoch  base " << _cur_epoch.base
@@ -467,7 +469,7 @@ log_core::log_core(
             << endl
             << "Curr epoch  end " << _cur_epoch.end
             << endl;
-        errlog->clog << debug_prio 
+        smlevel_0::errlog->clog << debug_prio 
             << "Old epoch  base_lsn " << _old_epoch.base_lsn
             << endl
             << "Old epoch  base " << _old_epoch.base
@@ -1420,7 +1422,7 @@ log_core::activate_reservations()
     // happen during recovery.
     
     // not mt-safe
-    errlog->clog << info_prio 
+    smlevel_0::errlog->clog << info_prio 
         << "Activating reservations: # full partitions " 
             << full_partitions
             << ", space available " << space_left()

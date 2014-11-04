@@ -60,7 +60,6 @@ public:
 public:
     logbuf_core(
             const char* path,
-            long bsize,
             bool reformat,
             uint32_t count = LOGBUF_SEG_COUNT, 
             uint32_t flush_trigger = LOGBUF_FLUSH_TRIGGER, 
@@ -70,6 +69,8 @@ public:
             int avtive_slot_count = ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT);
 
     ~logbuf_core();
+
+    static const std::string IMPL_NAME;
 
     // for test and debug
     // print current buffer state for debugging

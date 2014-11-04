@@ -85,9 +85,8 @@ class prologue_rc_t;
 #include "log_lsn_tracker.h"
 
 
-#include "logbuf_common.h" // sets LOG_BUFFER flag
+#include "logbuf_common.h"
 #include "log_core.h"
-#include "log_storage.h"
 #include "logbuf_core.h"
 
 #ifdef EXPLICIT_TEMPLATE
@@ -229,13 +228,9 @@ void ss_m::_set_option_logsize() {
     // then don't set the option
     if (!_options.get_bool_option("sm_logging", true) || smlevel_0::log) return;
 
-#ifdef LOG_BUFFER
-    // the default log size for the new log buffer is 128M
-    // the unit of this parameter is KB
-    fileoff_t maxlogsize = fileoff_t(_options.get_int_option("sm_logsize", LOGBUF_PART_SIZE/1024));
-#else
-    fileoff_t maxlogsize = fileoff_t(_options.get_int_option("sm_logsize", 10000));
-#endif
+    std::string logimpl = _options.get_string_option("sm_log_impl", log_core::IMPL_NAME);
+    fileoff_t maxlogsize = fileoff_t(_options.get_int_option("sm_logsize",
+                logimpl == logbuf_core::IMPL_NAME ? LOGBUF_PART_SIZE/1024 : 10000));
     // The option is in units of KB; convert it to bytes.
     maxlogsize *= 1024;
 
@@ -506,12 +501,11 @@ ss_m::_construct_once()
         cleaner_interval_millisec_max = 256000;
     }
 
-#ifdef LOG_BUFFER
-    // the default segment size for the new log buffer is 1MB
-    uint64_t logbufsize = _options.get_int_option("sm_logbufsize", LOGBUF_SEG_SIZE); // at least 1024KB
-#else
-    uint64_t logbufsize = _options.get_int_option("sm_logbufsize", 128 << 10); // at least 128KB
-#endif
+    // choose log manager implementation
+    std::string logimpl = _options.get_string_option("sm_log_impl", log_core::IMPL_NAME);
+    uint64_t def_logbufsize = (logimpl == logbuf_core::IMPL_NAME) ? LOGBUF_SEG_SIZE : 128 << 10;
+    uint64_t logbufsize = _options.get_int_option("sm_logbufsize", def_logbufsize); // at least 1024KB
+
     // pretty big limit -- really, the limit is imposed by the OS's
     // ability to read/write
     if (uint64_t(logbufsize) < (uint64_t) 4 * ss_m::page_sz) {
@@ -587,26 +581,28 @@ ss_m::_construct_once()
             errlog->clog << fatal_prio  << "ERROR: sm_logdir must be set to enable logging." << flushl;
             W_FATAL(eCRASH);
         }
-#ifdef LOG_BUFFER
-        log = new logbuf_core(
-                                    logdir.c_str(),
-                                    logbufsize,      // logbuf_segsize
-                                    _options.get_bool_option("sm_reformat_log", false),
-                                    _options.get_int_option("sm_carray_slots",
-                                             ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT),
-                                    _options.get_int_option("sm_logbuf_seg_count", LOGBUF_SEG_COUNT),
-                                    _options.get_int_option("sm_logbuf_flush_trigger", LOGBUF_FLUSH_TRIGGER),
-                                    _options.get_int_option("sm_logbuf_block_size", LOGBUF_BLOCK_SIZE)
-                                    );
-#else
-        log = new log_core(
-                                    logdir.c_str(),
-                                    logbufsize,      // logbuf_segsize
-                                    _options.get_bool_option("sm_reformat_log", false),
-                                    _options.get_int_option("sm_carray_slots",
-                                             ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT)
-                );
-#endif
+
+        if (logimpl == logbuf_core::IMPL_NAME) {
+            log = new logbuf_core(
+                    logdir.c_str(),
+                    _options.get_bool_option("sm_reformat_log", false),
+                    _options.get_int_option("sm_logbuf_seg_count", LOGBUF_SEG_COUNT),
+                    _options.get_int_option("sm_logbuf_flush_trigger", LOGBUF_FLUSH_TRIGGER),
+                    _options.get_int_option("sm_logbuf_block_size", LOGBUF_BLOCK_SIZE),
+                    logbufsize,      // logbuf_segsize
+                    _options.get_int_option("sm_carray_slots",
+                        ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT)
+                    );
+        }
+        else { // traditional
+            log = new log_core(
+                    logdir.c_str(),
+                    logbufsize,      // logbuf_segsize
+                    _options.get_bool_option("sm_reformat_log", false),
+                    _options.get_int_option("sm_carray_slots",
+                        ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT)
+                    );
+        }
 
         int percent = _options.get_int_option("sm_log_warn", 0);
 
