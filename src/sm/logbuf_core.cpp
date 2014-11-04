@@ -454,34 +454,17 @@ void logbuf_core::logbuf_print_nolock(const char *string, int level) {
  *********************************************************************/
 void logbuf_core::_prime(
                      int fd, // IN: the file descriptor of the current partition
-                     smlevel_0::fileoff_t start, // IN: current position in the file
                      lsn_t next // IN: the next available lsn to insert to
 )
 {    
-// TODO(Restart)... comment out for now, too much noise
-//    DBGOUT3(<< "_prime @ lsn " << next);
-
-    w_assert1(_durable_lsn == _curr_lsn);    
-
-    w_assert1(_flush_daemon_running == false);
-
-    uint64_t size;
-
-    if(next.lo() == 0) {
-        // fresh start! the log is brand new
-        size = 0;
-    }
-    else {
-        // if next is the end of a segment/the start of a new segment, 
-        // we should read the current segment, instead of the new one
-        size = (next.lo()-1) % _segsize+1;
-    }
-
+    // if next is the end of a segment/the start of a new segment, 
+    // we should read the current segment, instead of the new one
+    uint64_t size = next.lo() == 0 ? 0 : (next.lo()-1) % _segsize+1;
     uint64_t base = next.lo() - size;
     lsn_t seg_lsn = lsn_t(next.hi(), base);
 
 #ifdef LOG_DIRECT_IO
-    uint64_t aligned_size = _ceil(size, _block_size);
+    size = _ceil(size, _block_size);
 #endif
 
     logbuf_seg *first_seg = NULL;
@@ -494,26 +477,17 @@ void logbuf_core::_prime(
 
     w_assert0(first_seg != NULL);
 
-// TODO(Restart)... comment out for now, too much noise
 //    DBGOUT3(<< "_prime: read seg " << seg_lsn);
 
     int n = 0;
 
     // there is no physical I/O in M1
-    // read in the valid portion (0 - size)
-#ifdef LOG_DIRECT_IO
-    w_rc_t e = me()->pread(fd, first_seg->buf, aligned_size, start + seg_lsn.lo());
-#else
-    w_rc_t e = me()->pread(fd, first_seg->buf, size, start + seg_lsn.lo());
-#endif
-    if (e.is_error()) {
-        W_FATAL_MSG(e.err_num(), 
-                << "cannot read log: lsn " << seg_lsn 
-                << "pread(): " << e 
-                << "pread() returns " << n << endl);
+    if (fd) {
+        // read in the valid portion (0 - size)
+        W_COERCE(me()->pread(fd, first_seg->buf, size, base));
     }
 
-    first_seg->base_lsn = seg_lsn;        
+    first_seg->base_lsn = lsn_t(next.hi(), base);
 
     _insert_seg_to_list_for_insertion(first_seg);
     _insert_seg_to_hashtable_for_insertion(first_seg);
@@ -550,7 +524,7 @@ void logbuf_core::logbuf_prime(lsn_t next) {
         _flush_daemon = new flush_daemon_thread_t(this);
     }
         
-    _prime(0, 0, next);
+    _prime(0, next);
 
     start_flush_daemon();
 

@@ -121,32 +121,6 @@ log_core::_flushX(lsn_t start_lsn,
 #endif 
 }
 
-// See that the log buffer contains whatever partial log record
-// might have been written to the tail of the file fd.
-// Used when recovery finds a not-full partition file.
-void
-log_core::_prime(long prime_offset) 
-{
-    /* FRJ: the new code assumes that the buffer is always aligned
-       with some buffer-sized multiple of the partition, so we need to
-       return how far into the current segment we are.
-     */
-    long offset = _durable_lsn.lo() % segsize();
-    long base = _durable_lsn.lo() - offset;
-    lsn_t start_lsn(_durable_lsn.hi(), base);
-
-    // This should happend only in recovery/startup case.  So let's assert
-    // that there is no log daemon running yet. If we ever fire this
-    // assert, we'd better see why and it means we might have to protect
-    // _cur_epoch and _start/_end with a critical section on _insert_lock.
-    w_assert1(_flush_daemon_running == false);
-    _buf_epoch = _cur_epoch = epoch(start_lsn, base, offset, offset);
-    _end = _start = _durable_lsn.lo();
-
-    // move the primed data where it belongs (watch out, it might overlap)
-    memmove(_buf + offset - prime_offset, _buf, prime_offset);
-}
-
 /*********************************************************************
  *
  *  log_core::fetch(lsn, rec, nxt, forward)
@@ -433,7 +407,25 @@ log_core::log_core(
     // log_core implementations (logbuf_core) can initialize properly
     // before priming and starting flush daemon
 
-    _prime(prime_offset);
+    /* FRJ: the new code assumes that the buffer is always aligned
+       with some buffer-sized multiple of the partition, so we need to
+       return how far into the current segment we are.
+        CS: moved this code from the _prime method
+     */
+    long offset = _durable_lsn.lo() % segsize();
+    long base = _durable_lsn.lo() - offset;
+    lsn_t start_lsn(_durable_lsn.hi(), base);
+
+    // This should happend only in recovery/startup case.  So let's assert
+    // that there is no log daemon running yet. If we ever fire this
+    // assert, we'd better see why and it means we might have to protect
+    // _cur_epoch and _start/_end with a critical section on _insert_lock.
+    w_assert1(_flush_daemon_running == false);
+    _buf_epoch = _cur_epoch = epoch(start_lsn, base, offset, offset);
+    _end = _start = _durable_lsn.lo();
+
+    // move the primed data where it belongs (watch out, it might overlap)
+    memmove(_buf + offset - prime_offset, _buf, prime_offset);
 
     // initial free space estimate... refined once log recovery is complete 
     // release_space(PARTITION_COUNT*_partition_data_size);

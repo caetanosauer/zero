@@ -89,7 +89,6 @@ public:
     enum { nosize = -1 };
 
     NORET             partition_t() :
-                            _start(0),
                             _index(0), 
                             _num(0), 
                             _mask(0), 
@@ -111,7 +110,6 @@ public:
     /////////////////// DATA
     static int            _artificial_flush_delay;  // in microseconds
 private: 
-    fileoff_t             _start;
     partition_index_t     _index; 
     partition_number_t    _num;
     uint32_t     _mask;
@@ -140,10 +138,6 @@ public:
     void               init(log_storage *owner);
     void               init_index(partition_index_t i) { _index=i; }
     void               clear();
-
-    // _start is zero for partitions that are not on raw devices.
-    // Since we are no longer supporting raw devices for logs, assert:
-    fileoff_t          start() const { w_assert1(_start==0); return _start; }
 
     fileoff_t          size() const   { return _size; }
     void               set_size(fileoff_t v) { _size =  v; }

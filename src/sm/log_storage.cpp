@@ -720,10 +720,9 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
                 last_partition_exists, true);
         w_assert1(durable_lsn == curr_lsn); // better be startup/recovery!
 
-        prime_offset = prime(prime_buf, p->fhdl_app(), p->start(), durable_lsn);
+        prime_offset = prime(prime_buf, p->fhdl_app(), durable_lsn);
         w_assert1(durable_lsn == curr_lsn);
 
-        /* XXX error info lost */
         if(!p) {
             smlevel_0::errlog->clog << fatal_prio 
             << "ERROR: could not open log file for partition "
@@ -1012,34 +1011,19 @@ log_storage::_close_min(partition_number_t n)
 // It is called from the private _prime to prime the segment-sized
 // log buffer _buf.
 long                 
-log_storage::prime(char* buf, int fd, fileoff_t start, lsn_t next)
+log_storage::prime(char* buf, int fd, lsn_t next)
 {
     FUNC(log_storage::prime);
 
-    w_assert1(start == 0); // unless we are on a raw device, which is
-    // no longer supported for the log.
-
-    fileoff_t b = _floor(next.lo(), log_storage::BLOCK_SIZE);
-    // get the first lsn in the block to which "next" belongs.
-    lsn_t first = lsn_t(uint32_t(next.hi()), sm_diskaddr_t(b));
+    // get offset of block that contains "next"
+    sm_diskaddr_t b = sm_diskaddr_t(_floor(next.lo(), log_storage::BLOCK_SIZE));
 
     // if the "next" lsn is in the middle of a block...
-    if(first != next) {
-        w_assert3(first.lo() < next.lo());
-        fileoff_t offset = start + first.lo();
-
-        DBG(<<" reading " << int(log_storage::BLOCK_SIZE) << " on fd " << fd );
-        int n = 0;
-        w_rc_t e = me()->pread(fd, buf, log_storage::BLOCK_SIZE, offset);
-        if (e.is_error()) {
-            // Not mt-safe, but it's a fatal error anyway
-            W_FATAL_MSG(e.err_num(), 
-                        << "cannot read log: lsn " << first 
-                        << "pread(): " << e 
-                        << "pread() returns " << n << endl);
-        }
+    if(b != next.lo()) {
+        w_assert3(b < next.lo());
+        W_COERCE(me()->pread(fd, buf, log_storage::BLOCK_SIZE, b));
     }
-    return next.lo() - first.lo();
+    return next.lo() - b;
 }
 
 partition_t*

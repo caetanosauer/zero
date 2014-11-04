@@ -192,7 +192,6 @@ partition_t::clear()
 void              
 partition_t::init(log_storage *owner) 
 {
-    _start = 0; // always
     _owner = owner;
     _eop = owner->limit(); // always
     DBGTHRD(<< "partition_t::init setting _eop to " << _eop );
@@ -497,12 +496,11 @@ partition_t::flush(
            can flush at a time and all other accesses to the file use
            pread/pwrite (which doesn't change the file pointer).
          */
-        fileoff_t where = start() + file_offset;
+        fileoff_t where = file_offset;
         w_rc_t e = me()->lseek(fd, where, sthread_t::SEEK_AT_SET);
         if (e.is_error()) {
             W_FATAL_MSG(e.err_num(), << "ERROR: could not seek to "
                                     << file_offset
-                                    << " + " << start()
                                     << " to write log record"
                                     << endl);
         }
@@ -882,7 +880,7 @@ partition_t::_skip(const lsn_t &ll, int fd)
 #endif
     // FRJ: We always need to prime() partition ops (peek, open, etc)
     // always use a different buffer than log inserts.
-    long offset = _owner->prime(_skipbuf, fd, start(), ll);
+    long offset = _owner->prime(_skipbuf, fd, ll);
     
     // Make sure that flush writes a skip record
     this->flush(
@@ -967,7 +965,7 @@ partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
 
         DBGTHRD(<<"leftover=" << int(leftover) << " b=" << b);
 
-        w_rc_t e = me()->pread(fd, (void *)(readbuf + b), XFERSIZE, start() + lower + b);
+        w_rc_t e = me()->pread(fd, (void *)(readbuf + b), XFERSIZE, lower + b);
         DBGTHRD(<<"after me()->read() size= " << int(XFERSIZE));
 
 
@@ -1015,7 +1013,7 @@ partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
                 else {
                     // we were unlucky -- extra IO required to fetch prev_lsn
                     W_COERCE(me()->pread(fd, (void*) prev_lsn, sizeof(lsn_t),
-                                start() + lower + b - XFERSIZE - sizeof(lsn_t)));
+                                lower + b - XFERSIZE - sizeof(lsn_t)));
                 }
             }
         } else {
@@ -1616,12 +1614,11 @@ partition_t::flush(int fd, lsn_t lsn, int64_t size, int64_t write_size,
            can flush at a time and all other accesses to the file use
            pread/pwrite (which doesn't change the file pointer).
          */
-        fileoff_t where = start() + file_offset;
+        fileoff_t where = file_offset;
         w_rc_t e = me()->lseek(fd, where, sthread_t::SEEK_AT_SET);
         if (e.is_error()) {
             W_FATAL_MSG(e.err_num(), << "ERROR: could not seek to "
                                     << file_offset
-                                    << " + " << start()
                                     << " to write log record"
                                     << endl);
         }
@@ -1742,7 +1739,7 @@ partition_t::read_seg(
     );
 
 
-    w_rc_t e = me()->pread(fd, buf, size, start() + pos);
+    w_rc_t e = me()->pread(fd, buf, size, pos);
 
     if (e.is_error()) {
         /* accept the short I/O error for now */
@@ -1921,7 +1918,7 @@ partition_t::read_logrec(char* readbuf, logrec_t *&rp, lsn_t &ll, int fd)
 
         DBGTHRD(<<"leftover=" << int(leftover) << " b=" << b);
 
-        w_rc_t e = me()->pread(fd, (void *)(readbuf + b), XFERSIZE, start() + lower + b);
+        w_rc_t e = me()->pread(fd, (void *)(readbuf + b), XFERSIZE, lower + b);
         DBGTHRD(<<"after me()->read() size= " << int(XFERSIZE));
 
 

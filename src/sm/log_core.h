@@ -182,7 +182,6 @@ protected:
 
     enum { invalid_fhdl = -1 };
 
-    void                _prime(long prime_offset);
     long _start; // byte number of oldest unwritten byte
     long                 start_byte() const { return _start; } 
 

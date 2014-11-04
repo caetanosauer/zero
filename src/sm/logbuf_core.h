@@ -105,7 +105,7 @@ public:
 
     // for prime
     // called during startup
-    virtual void _prime(int fd, smlevel_0::fileoff_t start, lsn_t next);
+    virtual void _prime(int fd, lsn_t next);
 
     // for insert
     // the four functions below are modified from their implementation in log_core
