@@ -52,15 +52,14 @@
 // TODO(Restart)...
 //    Might need to change the report frequency
 //
-//    Restart - in_doubt page and transaction count reporting, change from DBGOUT0 back to DBGOUT1 (3 locations)
+//    Restart - in_doubt page and transaction count reporting, change from DBGOUT0 back to DBGOUT1 (2 - 3 locations)
 //
 //    chkpt - change from DBGOUT0 back to DBGOUT1 (1 locations) for reporting
 //
-//    Uncomment out the assertion in UNDO (two locations) - btree_logrec.cpp, lines 61 and 153
+//    Uncomment out the assertion in UNDO (two locations) - btree_logrec.cpp, lines 61 and 153  <-- M3/M4 only
 //
 //    restart.cpp - remove output to indicate restart finished, also the timing
 //
-//    Bug: key ending with 3 not found in M2, M3 and M4
 //    Bug: bf_tree.cpp (3020) bf_tree_m::_try_recover_page: Parent page does not have emlsn, no recovery  <-- infinite loop?
 //    Bug: btree_page_h::suggest_fence_for_split (btree_page_h.cpp:1127) - when spliting a page to create a foster relation,
 //                try to find the key for split, it does not exist, it appears that a synch() call at the beginning of pre_shutdown causes this error consistently
@@ -83,7 +82,7 @@ const uint64_t POPULATE_RECORDS           = 60000;          // Record count per 
 const uint64_t TOTAL_RECOVERY_TRANSACTION = 10000;          // Total transactions during phase 2 (pre_shutdown), all these transactions needed
                                                             // to be recovered after system crash, 10000 is about as high as I can go without
                                                             // hittning weird bugs
-const int      TOTAL_SUCCESS_TRANSACTIONS = 1000;           // Target total completed concurrent transaction count in phase 3 (post_shutdown),
+const int      TOTAL_SUCCESS_TRANSACTIONS = 2000;           // Target total completed concurrent transaction count in phase 3 (post_shutdown),
                                                             // the time measurement is based on this transaction count
                                                             // We want the recovery to complete for M1, M2 and M4, but not necessary for
                                                             // M3 (pure on_demand which potentially would have a very long tail)
@@ -809,8 +808,9 @@ public:
         // Performance test on raw I/O, simulate the same amount of dirty page I/Os:
         //    dd if=/home/weyg/build/opt-ubuntu-12.04-x86_64/Zero/tests/sm/test.core of=/dev/null bs=8k count=10000                   // okay to use system cache
         //    dd if=/home/weyg/build/opt-ubuntu-12.04-x86_64/Zero/tests/sm/test.core of=/dev/null bs=8k count=10000 iflag=direct  // force direct I/O
-        // Hard code the path and name of the data file:
-        i = system("dd if=/home/weyg/test.core of=/dev/null bs=8k count=10000 iflag=direct");
+        // Hard code the path and name of the test input file:
+        // The actual data file for this test program is in: /dev/shm/weyg/btree_test_env/volumes/dev_test
+        //    i = system("dd if=/home/weyg/test.core of=/dev/null bs=8k count=10000 iflag=direct");
 
         // Get hard drive speed information on the system:
         // sudo hdparm -tT /dev/sda
@@ -836,7 +836,6 @@ public:
         gettimeofday( &tm, NULL );
         _start_time = ((double)tm.tv_sec*MILLISECS_IN_SECOND) +
                       ((double)tm.tv_usec/(MICROSECONDS_IN_SECOND/MILLISECS_IN_SECOND));
-
         return RCOK;
     }
 
@@ -940,7 +939,7 @@ public:
 #endif
 
                     // Go to the next key value, do not increase succeed_txn_count
-                    W_DO(test_env->abort_xct());
+                    test_env->abort_xct();
                     ++started_txn_count;
                     continue;
                 }
@@ -960,13 +959,15 @@ public:
                     // If record was committed insertion during phase 2, we should not be able
                     // to insert it again, so duplicate error is expected.
                     // Except that in M2 which might fail due to commit_lsn check
+                    // 34 - duplicate key
+                    // 83 - commit_lsn conflict
                     if (34 != rc.err_num())
                         std::cout << "Insert error with key ending in 7, key: " << actual_key
                                   << ", error no: " << rc.err_num() << ", error: " << rc.get_message() << std::endl;
 #endif
 
                     // Go to the next key value, do not increase succeed_txn_count
-                    W_DO(test_env->abort_xct());
+                    test_env->abort_xct();
                     ++started_txn_count;
                     continue;
                 }
@@ -984,12 +985,14 @@ public:
                     // Because some of these records were inserted during phase 2, we should not
                     // be able to insert it again, so duplicate error is expected.
                     // Also M2 might fail due to commit_lsn error
+                    // 34 - duplicate key
+                    // 83 - commit_lsn conflict
                     if (34 != rc.err_num())
                         std::cout << "Update error with key ending in 3, key: " << actual_key
                                   << ", error no: " << rc.err_num() << ", error: " << rc.get_message() << std::endl;
 #endif
                     // Go to the next key value, do not increase succeed_txn_count
-                    W_DO(test_env->abort_xct());
+                    test_env->abort_xct();
                     ++started_txn_count;
                     continue;
                 }
@@ -1014,7 +1017,7 @@ public:
 #endif
 
                     // Go to the next key value, do not increase succeed_txn_count
-                    W_DO(test_env->abort_xct());
+                    test_env->abort_xct();
                     ++started_txn_count;
                     continue;
                 }
@@ -1034,7 +1037,7 @@ public:
 #endif
 
                     // Go to the next key value, do not increase succeed_txn_count
-                    W_DO(test_env->abort_xct());
+                    test_env->abort_xct();
                     ++started_txn_count;
                     continue;
                 }
@@ -1240,7 +1243,7 @@ TEST (RestartPerfTest, MultiPerformanceM2)
     // M2 crash shutdown
     EXPECT_EQ(test_env->runRestartPerfTest(&context,
                                            &options,         // Restart option, which milestone, normal or crash shutdown
-                                           true,             // Turn locking ON  <= using commit lsn, recovery is done
+                                           false,            // Turn locking OFF  <= using commit lsn, recovery is done
                                                              // through the child thread without lock acquisition
                                                              // Locking on with user transaction does not affect recovery
                                            DISK_QUOTA_IN_KB, // 2GB, disk_quota_in_pages, how much disk space is allowed,
@@ -1249,7 +1252,7 @@ TEST (RestartPerfTest, MultiPerformanceM2)
 }
 **/
 
-/**
+/**/
 // Passing - M3
 TEST (RestartPerfTest, MultiPerformanceM3)
 {
@@ -1267,9 +1270,9 @@ TEST (RestartPerfTest, MultiPerformanceM3)
                                            make_perf_options()),  // Other options
                                            0);
 }
-**/
-
 /**/
+
+/**
 // Passing - M4
 TEST (RestartPerfTest, MultiPerformanceM4)
 {
@@ -1287,7 +1290,7 @@ TEST (RestartPerfTest, MultiPerformanceM4)
                                            make_perf_options()),  // Other options
                                            0);
 }
-/**/
+**/
 
 int main(int argc, char **argv)
 {

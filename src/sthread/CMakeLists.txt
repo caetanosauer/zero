@@ -22,7 +22,7 @@ set(STHREAD_GENFILES_CPP sthread_stats_collect_gen.cpp sthread_stats_dec_gen.cpp
 set(STHREAD_GENFILES_FILES ${STHREAD_GENFILES_H} ${STHREAD_GENFILES_CPP})
 foreach(_file ${STHREAD_GENFILES_FILES})
     add_custom_command(OUTPUT ${_file}
-       COMMAND perl ${CMAKE_SOURCE_DIR}/tools/stats.pl ${CMAKE_CURRENT_SOURCE_DIR}/sthread_stats.dat 
+       COMMAND perl ${CMAKE_SOURCE_DIR}/tools/stats.pl ${CMAKE_CURRENT_SOURCE_DIR}/sthread_stats.dat
        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/sthread_stats.dat
     )
     set(STHREAD_GENFILES_FILES_B ${STHREAD_GENFILES_FILES_B} ${CMAKE_CURRENT_BINARY_DIR}/${_file})
@@ -52,6 +52,7 @@ install(FILES ${GENFILES_B_H}
   ${CMAKE_CURRENT_SOURCE_DIR}/sthread.h
   ${CMAKE_CURRENT_SOURCE_DIR}/sthread_stats.h
   ${CMAKE_CURRENT_SOURCE_DIR}/sthread_vtable_enum.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/tatas.h
   ${CMAKE_CURRENT_SOURCE_DIR}/w_debug.h
   DESTINATION include)
 

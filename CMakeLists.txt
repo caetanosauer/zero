@@ -58,9 +58,9 @@ IF(GOOGLEPERFTOOLS_FOUND)
   ENDIF()
 ENDIF(GOOGLEPERFTOOLS_FOUND)
 
-# MUTrace profiles user-mode mutex locks 
+# MUTrace profiles user-mode mutex locks
 # SET(ENABLE_MUTRACE_PROFILER 'ON')
-IF(ENABLE_MUTRACE_PROFILER) 
+IF(ENABLE_MUTRACE_PROFILER)
   LINTEL_REQUIRED_HEADER(MUTRACE MUTrace/mutrace.h)
   SET (COMPILE_MUTRACE "-fPIC -fno-omit-frame-pointer -DMUTRACE_ENABLED_H")
 ENDIF(ENABLE_MUTRACE_PROFILER)
@@ -71,15 +71,15 @@ ENABLE_TESTING() # we use CTest all over the project. run "make test" after cmak
 
 # compiler options. ported from Makefile.generic of original ShoreMT.
 # W_DEBUG_LEVEL enables various check logics and asserts. higher is more verbose.
-SET(CMAKE_CXX_FLAGS_TRACE  "-O0 -g -DDEBUG -DW_DEBUG_LEVEL=5 ${LINK_GOOGLEPROFILER}")
-SET(CMAKE_CXX_FLAGS_DEBUG  "-O0 -g -DDEBUG -DW_DEBUG_LEVEL=3 ${LINK_GOOGLEPROFILER}")
+SET(CMAKE_CXX_FLAGS_TRACE  "-Og -g -DDEBUG -DW_DEBUG_LEVEL=5 ${LINK_GOOGLEPROFILER}")
+SET(CMAKE_CXX_FLAGS_DEBUG  "-Og -g -DDEBUG -DW_DEBUG_LEVEL=3 ${LINK_GOOGLEPROFILER}")
 ##  SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DW_DEBUG_LEVEL=1 ${LINK_GOOGLEPROFILER}")
 ## Below is better for performance analysis; above is better for debugging
 SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DW_DEBUG_LEVEL=0 -DNDEBUG -fPIC ${LINK_GOOGLEPROFILER} ${COMPILE_MUTRACE}")
 #  SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O0 -g -DW_DEBUG_LEVEL=3 -DDEBUG ${LINK_GOOGLEPROFILER}")
 SET(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -fexpensive-optimizations -finline-functions -DW_DEBUG_LEVEL=0 ${LINK_GOOGLEPROFILER}")
 
-## _REENTRANT and _POSIX_PTHREAD_SEMANTICS are needed on Solaris to ensure 
+## _REENTRANT and _POSIX_PTHREAD_SEMANTICS are needed on Solaris to ensure
 # that the posix-compliant clib interfaces are there (e.g., ctime_r)
 # (Actually, you're supposed to get them both with _POSIX_C_SOURCE > 199506L
 # but I'm not that trusting.)
@@ -87,13 +87,13 @@ SET(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -fexpensive-optimizations -finline-fun
 SET (MANDATORY_FLAGS "-D_REENTRANT -D_POSIX_PTHREAD_SEMANTICS")
 
 # -pedantic requires -Wno-long-long
-# 
+#
 SET (ALWAYS_FLAGS "-Wall -Wextra -Woverloaded-virtual -fno-strict-aliasing -Wpointer-arith -Wwrite-strings -pthread")
 # NO_INLINE_FLAGS =  -fno-inline
 SET (NO_INLINE_FLAGS "")
 SET (YES_INLINE_FLAGS "-finline-functions")
 
-## enabled by config option (default) 
+## enabled by config option (default)
 ## Now try to find out the compiler arguments needed
 SET(TUNE_FLAGS "-mtune=nocona")
 # TUNE_FLAGS = -mtune=generic

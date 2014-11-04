@@ -521,7 +521,7 @@ TEST (RestartTest, ConcurrentSameInsertC3) {
     options.shutdown_mode = simulated_crash;
     options.restart_mode = m3_default_restart; // minimal logging, insert triggers on_demand recovery
                                                // No delay because no restart child thread
-    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true ), 0);   // use_locks
 }
 /**/
 

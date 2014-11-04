@@ -1,34 +1,34 @@
 /*
  * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
- 
+
      /*<std-header orig-src='shore' incl-file-exclusion='RESTART_H'>
-        
+
         $Id: restart.h,v 1.27 2010/07/01 00:08:22 nhall Exp $
-        
+
         SHORE -- Scalable Heterogeneous Object REpository
-        
+
         Copyright (c) 1994-99 Computer Sciences Department, University of
                                              Wisconsin -- Madison
         All Rights Reserved.
-        
+
         Permission to use, copy, modify and distribute this software and its
         documentation is hereby granted, provided that both the copyright
         notice and this permission notice appear in all copies of the
         software, derivative works or modified versions, and any portions
         thereof, and that both notices appear in supporting documentation.
-        
+
         THE AUTHORS AND THE COMPUTER SCIENCES DEPARTMENT OF THE UNIVERSITY
         OF WISCONSIN - MADISON ALLOW FREE USE OF THIS SOFTWARE IN ITS
         "AS IS" CONDITION, AND THEY DISCLAIM ANY LIABILITY OF ANY KIND
         FOR ANY DAMAGES WHATSOEVER RESULTING FROM THE USE OF THIS SOFTWARE.
-        
+
         This software was developed with support by the Advanced Research
         Project Agency, ARPA order number 018 (formerly 8230), monitored by
         the U.S. Army Research Laboratory under contract DAAB07-91-C-Q518.
         Further funding for this work was provided by DARPA through
         Rome Research Laboratory Contract No. F30602-97-2-0247.
-        
+
         */
 
 #ifndef RESTART_H
@@ -118,7 +118,7 @@ struct comp_lock_info_t
     comp_lock_info_t(const okvl_mode& mode): lock_mode(mode) {};
 
     tid_t      tid;          // Owning transaction id of the lock
-    okvl_mode  lock_mode;    // lock mode       
+    okvl_mode  lock_mode;    // lock mode
     uint32_t   lock_hash;    // lock hash
 };
 
@@ -152,10 +152,10 @@ CmpXctLockTids::gt(const comp_lock_info_t* x, const comp_lock_info_t* y) const
             // no lock                                    N = 0
             // intention share (read)               IS = 1
             // intention exclusive (write)         IX = 2
-            // share (read)                            S = 3 
+            // share (read)                            S = 3
             // share with intention exclusive   SIX = 4
             // exclusive (write)                      X = 5
-            
+
             if (x->lock_mode.get_key_mode()> y->lock_mode.get_key_mode())
                 gt = true;
             else
@@ -177,23 +177,23 @@ typedef class Heap<comp_lock_info_t*, CmpXctLockTids> XctLockHeap;
 // Child thread created by restart_m for concurrent recovery operation
 // It is to carry out the REDO and UNDO phases while the system is
 // opened for user transactions
-class restart_thread_t : public smthread_t  
+class restart_thread_t : public smthread_t
 {
 public:
 
-    NORET restart_thread_t() 
+    NORET restart_thread_t()
         : smthread_t(t_regular, "restart", WAIT_NOT_USED)
     {
-        // Construct the restart thread to perform the REDO and UNDO work, 
+        // Construct the restart thread to perform the REDO and UNDO work,
         // Give the thread priority as t_regular instead of t_time_critical
         // It performs the recovery work while concurrent user transactions
         // are coming in
-        
+
         w_assert1(false == smlevel_0::use_serial_restart());
 
         working = smlevel_0::t_concurrent_before;
     };
-    NORET ~restart_thread_t() 
+    NORET ~restart_thread_t()
     {
         DBGOUT1(<< "restart_thread_t: Exiting child thread");
     };
@@ -218,11 +218,11 @@ class restart_m : public smlevel_1 {
 
 public:
     NORET                        restart_m():_restart_thread(0){};
-    NORET                        ~restart_m() 
+    NORET                        ~restart_m()
     {
         // If we are still in Log Analysis phase, no child thread yet, go ahead and terminate
-        
-        if (_restart_thread) 
+
+        if (_restart_thread)
         {
             // Child thread (for REDO and UNDO if open system early)
             // is still active
@@ -231,21 +231,21 @@ public:
             if (shutdown_clean)
             {
                 // Clean shutdown, try to let the child thread finish its work
-                // This would happen only if user shutdowns the system 
-                // as soon as the system is open (concurrent recovery just started) 
+                // This would happen only if user shutdowns the system
+                // as soon as the system is open (concurrent recovery just started)
                 DBGOUT2(<< "waiting for recovery child thread to finish...");
 
-                // Wait for the child thread to join, we want to give the child thread some time to 
+                // Wait for the child thread to join, we want to give the child thread some time to
                 // finish its work but we don't want to wait forever, so we are giving
                 // some time to the child thread
                 // If the child thread did not have enough time to finish the recovery
-                // work (e.g., a lot of recovery work to do) after the wait, terminate the 
+                // work (e.g., a lot of recovery work to do) after the wait, terminate the
                 // child thread with a message
                 // In this case, the normal shutdown becomes a force shutdown, meaning
                 // the next server startup will need to recovery again
                 // This can happen in concurrent recovery mode because system is opened
                 // while the recovery is still going on
-                
+
                 if (smlevel_0::t_concurrent_done != _restart_thread->in_restart())
                 {
                     DBGOUT1(<< "Child thread is still busy, extra sleep");
@@ -253,8 +253,8 @@ public:
                 }
                 if (smlevel_0::t_concurrent_done != _restart_thread->in_restart())
                 {
-                    DBGOUT1(<< "Force a shutdown before restart child thread finished it work");               
-                    smlevel_0::errlog->clog << info_prio 
+                    DBGOUT1(<< "Force a shutdown before restart child thread finished it work");
+                    smlevel_0::errlog->clog << info_prio
                         << "Force a shutdown before restart child thread finished it work" << flushl;
                 }
 
@@ -262,13 +262,13 @@ public:
                 if (rc.is_error())
                 {
                     DBGOUT1(<< "Normal shutdown - child thread join error: " << rc);
-                    smlevel_0::errlog->clog << info_prio 
+                    smlevel_0::errlog->clog << info_prio
                         << "Normal shutdown - child thread join error: " << rc << flushl;
                 }
             }
             else
             {
-                // Simulated crash, just kill the child thread, no wait            
+                // Simulated crash, just kill the child thread, no wait
             }
 
             // Terminate the child thread
@@ -281,7 +281,7 @@ public:
     };
 
     // Function used for concurrent operations, open system after Log Analysis
-    // we need a child thread to carry out the REDO and UNDO operations 
+    // we need a child thread to carry out the REDO and UNDO operations
     // while concurrent user transactions are coming in
     void                        spawn_recovery_thread()
     {
@@ -304,7 +304,7 @@ public:
         {
             // If open system after Recovery (serialized operations)
             // do not create a child thread, simply return
-            w_assert1(!_restart_thread);        
+            w_assert1(!_restart_thread);
         }
     }
 
@@ -312,14 +312,14 @@ public:
     bool                        restart_in_progress()
     {
         // This function is to find out whether the 'restart' is still on-goiing
-        // 
+        //
         // M1 - serial recovery mode
         // M2 - restart thread for REDO and UNDO
         // M3 - on-demand driven by user transactions, no restart thread
         // M4 - mixed mode, behaves the same for both M2 and M4
-        
+
         // Restart is in progress if one of the conditions is true:
-        // Serial mode (M1) and 
+        // Serial mode (M1) and
         //     Operating mode is not in t_forward_processing
         // Concurrent mode (M2 and M4) and:
         //     Workign on Log Analysis
@@ -329,15 +329,15 @@ public:
         //     Workign on Log Analysis
         //     or
         //     If passed Log Analysis phase, unknow whether we are still in REDO or UNDO phase
-        // 
+        //
         if (true == smlevel_0::use_serial_restart())
         {
             // Serial mode
             return in_recovery();
         }
         else
-        {       
-            // Concurrent mode        
+        {
+            // Concurrent mode
 
             // Log Analysis
             if (in_recovery_analysis())
@@ -361,28 +361,28 @@ public:
             }
             else
             {
-                // M3, on-demand, the only way to find out whether the Restart finished or 
+                // M3, on-demand, the only way to find out whether the Restart finished or
                 // not is to scan both buffer pool and transaction table.  Due to concurrent access,
                 // the information would not be reliable even if we scan them.
                 // Return false (not in Restart) although this return code cannot be trusted
-                
-                return false;                
+
+                return false;
             }
 
-            // Child thread does not exist, and the operating mode is 
+            // Child thread does not exist, and the operating mode is
             // not in recovery anymore
             // For concurrent mode, the operating mode changes to
             // t_forward_processing after the child thread has been spawn
             // Corner case, if this function gets called after Log Analysis but
             // before the child thread was created, the operating mode would
-            // be in Log Analysis            
+            // be in Log Analysis
 
             // If operating mode is t_forward_processing and child restart thread does not exist
             // we are not in 'restart'
             if (false == in_recovery())
                 return false;
 
-            // Child restart thread does not exist but the operating mode is 
+            // Child restart thread does not exist but the operating mode is
             // not in t_forward_processing.  A very corner case, we are still in 'restart'
             return true;
         }
@@ -407,9 +407,9 @@ public:
         else
         {
             // M2 or M4
-            if (smlevel_0::t_concurrent_redo == _restart_thread->in_restart())            
+            if (smlevel_0::t_concurrent_redo == _restart_thread->in_restart())
                 return true;   // In REDO
-            else 
+            else
                 return false;  // Not in REDO
         }
     }
@@ -433,11 +433,11 @@ public:
         else
         {
             // M2 or M4
-            if (smlevel_0::t_concurrent_undo == _restart_thread->in_restart()) 
+            if (smlevel_0::t_concurrent_undo == _restart_thread->in_restart())
                 return true;   // In UNDO
-            else 
+            else
                 return false;  // Not in UNDO
-        }   
+        }
     }
 
 
@@ -445,16 +445,18 @@ public:
     static void                 restart(
         lsn_t                   master,         // In: Starting point for log scan
         lsn_t&                  commit_lsn,     // Out: used if use_concurrent_log_restart()
-        lsn_t&                  redo_lsn,       // Out: used if log driven REDO with use_concurrent_XXX_restart()        
-        lsn_t&                  last_lsn,       // Out: used if page driven REDO with use_concurrent_XXX_restart()                
-        uint32_t&               in_doubt_count  // Out: used if log driven REDO with use_concurrent_XXX_restart()           
+        lsn_t&                  redo_lsn,       // Out: used if log driven REDO with use_concurrent_XXX_restart()
+        lsn_t&                  last_lsn,       // Out: used if page driven REDO with use_concurrent_XXX_restart()
+        uint32_t&               in_doubt_count  // Out: used if log driven REDO with use_concurrent_XXX_restart()
         );
 
 private:
 
     // Shared by all restart modes
 
-    // Forward log scan without lock acquisition
+    // Forward log scan without lock acquisition and use commit_lsn (M2)
+    // Warning: currently this forward scan Log Analysis is NOT beging used,
+    // all Instarnt Restart methods (M1 - M4) are using backward log scan.
     static void                 analysis_pass_forward(
         const lsn_t             master,          // In: LSN for the starting point of the forward scan
         lsn_t&                  redo_lsn,        // Out: Starting point for REDO forward scan
@@ -465,17 +467,19 @@ private:
         lsn_t&                  last_lsn         // Last lsn in recovery log (forward scan)
         );
 
-    // Backward log scan with lock acquisition
+    // Backward log scan with lock acquisition (used if M3/M4) and commit_lsn (used for M2 only)
     static void                 analysis_pass_backward(
-        const lsn_t             master,          // In: End point for backward log scan, for verification purpose only
-        lsn_t&                  redo_lsn,        // Out: Starting point for REDO forward log scan (if used),
-        uint32_t&               in_doubt_count,  // Out: Counter for in_doubt page count in buffer pool
-        lsn_t&                  undo_lsn,        // Out: Stopping point for UNDO backward log scan (if used)
-        XctPtrHeap&             loser_heap,      // Out: Heap to record all the loser transactions,
-                                                 //       used only for reverse chronological order
-                                                 //       UNDO phase (if used)
-        lsn_t&                  last_lsn,        // Out: Last lsn in recovery log
-        XctLockHeap&            lock_heap        // Out: all re-acquired locks    
+        const lsn_t             master,            // In: End point for backward log scan, for verification purpose only
+        lsn_t&                  redo_lsn,          // Out: Starting point for REDO forward log scan (if used),
+        uint32_t&               in_doubt_count,    // Out: Counter for in_doubt page count in buffer pool
+        lsn_t&                  undo_lsn,          // Out: Stopping point for UNDO backward log scan (if used)
+        XctPtrHeap&             loser_heap,        // Out: Heap to record all the loser transactions,
+                                                   //       used only for reverse chronological order
+                                                   //       UNDO phase (if used)
+        lsn_t&                  commit_lsn,        // Out: Commit lsn for concurrent transaction (for M2 concurrency control)
+        lsn_t&                  last_lsn,          // Out: Last lsn in recovery log
+        const bool              restart_with_lock, // In: true to acquire lock (M3/M4), false to use commit_lsn (M2) or no early open (M1)
+        XctLockHeap&            lock_heap          // Out: all re-acquired locks (M3 and M4 only)
         );
 
     // Function used for log scan REDO operations
@@ -491,7 +495,7 @@ private:
         const lsn_t             curr_lsn,   // In: current lsn, the starting point of backward scan
                                             //     not used in current implementation
         const lsn_t             undo_lsn    // In: undo lsn, the end point of backward scan
-                                            //     not used in current implementation        
+                                            //     not used in current implementation
 
         );
 
@@ -512,7 +516,7 @@ private:
     // static tid_t                _redo_tid;
 
     // Function used for serialized operations, open system after the entire restart process finished
-    // brief sub-routine of redo_pass() for logs that have pid.    
+    // brief sub-routine of redo_pass() for logs that have pid.
     static void                 _redo_log_with_pid(
                                 logrec_t& r,                   // In: Incoming log record
                                 lsn_t &lsn,                    // In: LSN of the incoming log record
@@ -567,7 +571,7 @@ private:
                                 tid_CLR_map& mapCLR,        // In/Out: Map to track undecided in-flight transactions
                                 XctLockHeap& lock_heap,     // Out: Heap to gather all re-acquired locks
                                 xct_t *xd);                 // In: Associated transaction
-                                
+
     // Helper function to process the lock re-acquisition based on the log record, called from backward log analysis only
     static void                 _analysis_acquire_lock_log(
                                 logrec_t& r,               // In: log record
@@ -589,7 +593,7 @@ private:
     // Helper function to process the compensation map , called from backward log analysis only
     static void                 _analysis_process_compensation_map(
                                 tid_CLR_map& mapCLR);     // In: map to track log record count for all undecided in-flight transaction
- 
+
     // Helper function to process the transaction table after finished log scan, called from Log Analysis pass
     static void                 _analysis_process_txn_table(
                                 XctPtrHeap& heap,     // Out: heap to store all in-flight transactions, for serial mode only
