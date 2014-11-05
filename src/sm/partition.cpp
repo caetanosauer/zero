@@ -880,7 +880,7 @@ partition_t::_skip(const lsn_t &ll, int fd)
 #endif
     // FRJ: We always need to prime() partition ops (peek, open, etc)
     // always use a different buffer than log inserts.
-    long offset = _owner->prime(_skipbuf, fd, ll);
+    long offset = _owner->prime(_skipbuf, ll, log_storage::BLOCK_SIZE);
     
     // Make sure that flush writes a skip record
     this->flush(

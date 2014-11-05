@@ -84,7 +84,7 @@ rc_t consume(int size, ss_m *ssm) {
 // macros
 
 #define PRIME(lsn)\
-    (log_buffer->_prime(0, lsn))
+    (log_buffer->_prime(lsn))
 
 #define INSERT(size)\
     (log_buffer->logbuf_insert(size))

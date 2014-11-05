@@ -51,8 +51,7 @@ const char log_storage::_log_prefix[] = "log.";
  * from the various prime methods of the old log_core.
  */
 log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
-        lsn_t& durable_lsn, lsn_t& flush_lsn, long& prime_offset,
-        char* prime_buf, long segsize)
+        lsn_t& durable_lsn, lsn_t& flush_lsn, long segsize)
     :
       _min_chkpt_rec_lsn(log_m::first_lsn(1)), 
       _partition_size(0), 
@@ -720,9 +719,6 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
                 last_partition_exists, true);
         w_assert1(durable_lsn == curr_lsn); // better be startup/recovery!
 
-        prime_offset = prime(prime_buf, p->fhdl_app(), durable_lsn);
-        w_assert1(durable_lsn == curr_lsn);
-
         if(!p) {
             smlevel_0::errlog->clog << fatal_prio 
             << "ERROR: could not open log file for partition "
@@ -1011,17 +1007,18 @@ log_storage::_close_min(partition_number_t n)
 // It is called from the private _prime to prime the segment-sized
 // log buffer _buf.
 long                 
-log_storage::prime(char* buf, int fd, lsn_t next)
+log_storage::prime(char* buf, lsn_t next, size_t block_size)
 {
     FUNC(log_storage::prime);
 
     // get offset of block that contains "next"
-    sm_diskaddr_t b = sm_diskaddr_t(_floor(next.lo(), log_storage::BLOCK_SIZE));
+    sm_diskaddr_t b = sm_diskaddr_t(_floor(next.lo(), block_size));
 
     // if the "next" lsn is in the middle of a block...
     if(b != next.lo()) {
         w_assert3(b < next.lo());
-        W_COERCE(me()->pread(fd, buf, log_storage::BLOCK_SIZE, b));
+        partition_t* p = curr_partition();
+        W_COERCE(me()->pread(p->fhdl_app(), buf, block_size, b));
     }
     return next.lo() - b;
 }

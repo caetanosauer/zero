@@ -137,6 +137,10 @@ logbuf_core::logbuf_core(
         fprintf(stderr, "Log buf seg count too big or total log size (sm_logsize) too small ");
         W_FATAL(eINTERNAL);
     }
+
+    _storage = new log_storage(path, reformat, _curr_lsn, _durable_lsn,
+            _flush_lsn, _segsize);
+    _prime(_durable_lsn);
 }
 
 /*********************************************************************
@@ -440,16 +444,16 @@ void logbuf_core::logbuf_print_nolock(const char *string, int level) {
  *
  *********************************************************************/
 void logbuf_core::_prime(
-                     int fd, // IN: the file descriptor of the current partition
                      lsn_t next // IN: the next available lsn to insert to
 )
 {    
     // if next is the end of a segment/the start of a new segment, 
     // we should read the current segment, instead of the new one
-    uint64_t size = next.lo() == 0 ? 0 : (next.lo()-1) % _segsize+1;
-    uint64_t base = next.lo() - size;
-    lsn_t seg_lsn = lsn_t(next.hi(), base);
+    //uint64_t size = next.lo() == 0 ? 0 : (next.lo()-1) % _segsize+1;
+    //uint64_t base = next.lo() - size;
+    //lsn_t seg_lsn = lsn_t(next.hi(), base);
 
+    size_t size = _segsize;
 #ifdef LOG_DIRECT_IO
     size = _ceil(size, _block_size);
 #endif
@@ -468,13 +472,14 @@ void logbuf_core::_prime(
 
     int n = 0;
 
-    // there is no physical I/O in M1
-    if (fd) {
-        // read in the valid portion (0 - size)
-        W_COERCE(me()->pread(fd, first_seg->buf, size, base));
+    // read in the valid portion (0 - size)
+    //W_COERCE(me()->pread(fd, first_seg->buf, size, base));
+    long prime_offset = 0;
+    if (next != lsn_t::null) {
+        prime_offset = _storage->prime(first_seg->buf, next, size);
     }
 
-    first_seg->base_lsn = lsn_t(next.hi(), base);
+    first_seg->base_lsn = lsn_t(next.hi(), next.lo() - prime_offset);
 
     _insert_seg_to_list_for_insertion(first_seg);
     _insert_seg_to_hashtable_for_insertion(first_seg);

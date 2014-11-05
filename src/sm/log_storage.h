@@ -78,8 +78,7 @@ class log_storage {
 
 public:
     log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
-        lsn_t& durable_lsn, lsn_t& flush_lsn, long& prime_offset,
-        char* prime_buf, long segsize);
+        lsn_t& durable_lsn, lsn_t& flush_lsn, long segsize);
     virtual ~log_storage();
 
     partition_t*    get_partition_for_flush(lsn_t start_lsn, 
@@ -88,7 +87,7 @@ public:
     rc_t last_lsn_in_partition(partition_number_t pnum, lsn_t& lsn);
     partition_t*    curr_partition() const;
     int             delete_old_partitions(lsn_t);
-    long            prime(char* buf, int fd, lsn_t next);
+    long            prime(char* buf, lsn_t next, size_t block_size);
     void            acquire_partition_lock();
     void            release_partition_lock();
     void            set_master(const lsn_t& master_lsn, const lsn_t& min_lsn,

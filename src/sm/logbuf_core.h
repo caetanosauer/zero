@@ -87,7 +87,7 @@ public:
 
     // for prime
     // called during startup
-    virtual void _prime(int fd, lsn_t next);
+    virtual void _prime(lsn_t next);
 
     virtual lsn_t flush_daemon_work(lsn_t old_mark);
 

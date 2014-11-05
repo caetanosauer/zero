@@ -391,14 +391,9 @@ log_core::log_core(
     _buf = new char[_segsize];
 #endif
 
-    long prime_offset = 0;
     _storage = new log_storage(path, reformat, _curr_lsn, _durable_lsn,
-            _flush_lsn, prime_offset, _buf, _segsize);
-    
-    // CS: stuff we can only do once storage is initialized
-    // TODO: perhaps this should be invoked separetly, so that
-    // log_core implementations (logbuf_core) can initialize properly
-    // before priming and starting flush daemon
+            _flush_lsn, _segsize);
+    long prime_offset = _storage->prime(_buf, _durable_lsn, log_storage::BLOCK_SIZE);
 
     /* FRJ: the new code assumes that the buffer is always aligned
        with some buffer-sized multiple of the partition, so we need to
