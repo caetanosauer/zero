@@ -2103,7 +2103,7 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
                 // on the first check
                 << "; space left " << log->space_left()
                 << "; rsvd for checkpoint " << log->space_for_chkpt() 
-                << "; max checkpoint size " << log->max_chkpt_size() 
+                //<< "; max checkpoint size " << log->max_chkpt_size() 
                 << "\n";
 
                 tmp

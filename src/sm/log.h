@@ -241,7 +241,7 @@ public:
      */
     virtual lsn_t               curr_lsn()  const = 0;
 
-    virtual bool                squeezed_by(const lsn_t &)  const  = 0;
+    //virtual bool                squeezed_by(const lsn_t &)  const  = 0;
 
 
     virtual lsn_t               durable_lsn() const = 0;
@@ -264,10 +264,6 @@ public:
     virtual fileoff_t           reserve_space(fileoff_t howmuch) = 0;
     virtual void                release_space(fileoff_t howmuch) = 0;
     virtual rc_t                wait_for_space(fileoff_t &amt, int32_t timeout) = 0;
-    static fileoff_t    take_space(fileoff_t *ptr, int amt) ;
-
-    virtual long                max_chkpt_size() const = 0;
-    virtual bool                verify_chkpt_reservation() = 0;
     virtual fileoff_t           consume_chkpt_reservation(fileoff_t howmuch) = 0;
     virtual void                activate_reservations()  = 0;
                      

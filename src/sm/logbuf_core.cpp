@@ -1918,8 +1918,11 @@ void logbuf_core::flush_daemon()
         // flush.
         {
             CRITICAL_SECTION(cs, _wait_flush_lock);
-            if(success && (*&_waiting_for_space || *&_waiting_for_flush)) {
-                _waiting_for_flush = _waiting_for_space = false;
+            // CS: commented out check for waiting_for_space -- don't know why it was here?
+            //if(success && (*&_waiting_for_space || *&_waiting_for_flush)) {
+            if(success && (*&_waiting_for_flush)) {
+                //_waiting_for_flush = _waiting_for_space = false;
+                _waiting_for_flush = false;
                 DO_PTHREAD(pthread_cond_broadcast(&_wait_cond));
                 // wake up anyone waiting on log flush
             }
@@ -1934,7 +1937,8 @@ void logbuf_core::flush_daemon()
             // this happens in the background
 
             // sleep. We don't care if we get a spurious wakeup
-            if(!success && !*&_waiting_for_space && !*&_waiting_for_flush) {
+            //if(!success && !*&_waiting_for_space && !*&_waiting_for_flush) {
+            if(!success && !*&_waiting_for_flush) {
                 // Use signal since the only thread that should be waiting
                 // on the _flush_cond is the log flush daemon.
                 DO_PTHREAD(pthread_cond_wait(&_flush_cond, &_wait_flush_lock));
@@ -2590,7 +2594,6 @@ logbuf_seg *logbuf_core::_replacement() {
 void logbuf_core::force_a_flush() {
 
     // last resort
-// TODO(Restart)... comment out for now, too much noise    
 //    DBGOUT3(<< "last resort: FORCE a flush");
 
     // when there are too many unflushed segments in the write buffer
@@ -2598,7 +2601,10 @@ void logbuf_core::force_a_flush() {
 
     {
         CRITICAL_SECTION(cs, _wait_flush_lock);
-        *&_waiting_for_space = true;
+
+        // CS: commented out -- was it necessary? (TODO)
+        //*&_waiting_for_space = true;
+
         // Use signal since the only thread that should be waiting
         // on the _flush_cond is the log flush daemon.
         DO_PTHREAD(pthread_cond_signal(&_flush_cond));

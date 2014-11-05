@@ -170,12 +170,12 @@ public:
     // TODO fix dump function and delete this -- not thread safe!
     void reset_master_lsn(lsn_t master) { _master_lsn = master; }
 
+    lsn_t               global_min_lsn() const
+        {  return std::min(_master_lsn, _min_chkpt_rec_lsn); }
+
 private:
     void                _prime(int fd, fileoff_t start, lsn_t next); 
     void     destroy_file(partition_number_t n, bool e);
-
-    lsn_t               global_min_lsn() const
-        {  return std::min(_master_lsn, _min_chkpt_rec_lsn); }
 
     partition_index_t   _get_index(partition_number_t)const; 
 

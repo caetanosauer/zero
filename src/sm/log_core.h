@@ -75,10 +75,10 @@ struct CArraySlot;
 class PoorMansOldestLsnTracker;
 
 #include <partition.h>
-#include <deque>
 #include "mcs_lock.h"
 #include "tatas.h"
 #include "log_storage.h"
+#include "log_resv.h"
 
 /**
  * \brief Core Implementation of Log Manager
@@ -96,16 +96,6 @@ class log_core : public log_m
     friend class logbuf_core;
     //#endif
 
-    struct waiting_xct {
-        fileoff_t* needed;
-        pthread_cond_t* cond;
-        NORET waiting_xct(fileoff_t *amt, pthread_cond_t* c)
-            : needed(amt), cond(c)
-        {
-        }
-    };
-    static std::deque<log_core::waiting_xct*> _log_space_waiters;
-
     // INTERFACE METHODS BEGIN
 public:
     // do whatever needs to be done before destructor is callable
@@ -117,24 +107,6 @@ public:
     virtual rc_t            compensate(const lsn_t &orig_lsn, const lsn_t& undo_lsn);
     virtual rc_t            fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, const bool forward);
     virtual rc_t            fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, hints_op op);
-
-    fileoff_t           reserve_space(fileoff_t howmuch);
-    long                max_chkpt_size() const;
-    bool                verify_chkpt_reservation();
-    rc_t            scavenge(const lsn_t &min_rec_lsn, const lsn_t&min_xct_lsn);
-    void            release_space(fileoff_t howmuch);
-    void            activate_reservations() ;
-    fileoff_t       consume_chkpt_reservation(fileoff_t howmuch);
-    rc_t            wait_for_space(fileoff_t &amt, timeout_in_ms timeout);
-    bool            reservations_active() const { return _reservations_active; }
-    rc_t            file_was_archived(const char * /*file*/);
-
-    /**\brief  Return the amount of space left in the log.
-     * \details
-     * Used by xct_impl for error-reporting. 
-     */
-    fileoff_t           space_left() const { return *&_space_available; }
-    fileoff_t           space_for_chkpt() const { return *&_space_rsvd_for_chkpt ; }
 
     static const std::string IMPL_NAME;
 
@@ -158,27 +130,34 @@ public:
                             return _durable_lsn;
                         }
 
-    virtual bool                squeezed_by(const lsn_t &self)  const ;
+    //bool                squeezed_by(const lsn_t &self)  const ;
 
     // INTERFACE METHODS END
 
-    static fileoff_t    take_space(fileoff_t *ptr, int amt) ;
-
     static fileoff_t    segment_size() { return SEGMENT_SIZE; }
 
+    /* TODO move all methods that delegate to storage or rsvd into
+     * an abstract log_common class
+     *
+     * Unify activate_reservations and prime into some init() method,
+     * to be called by sm after construction.
+     */
+    virtual fileoff_t           reserve_space(fileoff_t howmuch)
+        { return _resv->reserve_space(howmuch); }
+    virtual void                release_space(fileoff_t howmuch)
+        { _resv->release_space(howmuch); }
+    virtual rc_t                wait_for_space(fileoff_t &amt, int32_t timeout)
+        { return _resv->wait_for_space(amt, timeout); }
+    virtual fileoff_t           consume_chkpt_reservation(fileoff_t howmuch)
+        { return _resv->consume_chkpt_reservation(howmuch); }
+    virtual void                activate_reservations() 
+        { _resv->activate_reservations(curr_lsn()); }
+
 protected:
-    log_storage* _storage;
+    log_storage*    _storage;
+    log_resv*       _resv;
 
     static bool          _initialized;
-    bool                 _reservations_active;
-    fileoff_t       _space_available; // how many unreserved bytes left
-    fileoff_t       _space_rsvd_for_chkpt; // can we run a chkpt now?
-
-    bool _waiting_for_space; // protected by log_m::_insert_lock/_wait_flush_lock
-    bool _waiting_for_flush; // protected by log_m::_wait_flush_lock
-
-    pthread_mutex_t         _space_lock; // tied to _space_cond
-    pthread_cond_t          _space_cond; // tied to _space_lock
 
     enum { invalid_fhdl = -1 };
 
@@ -283,6 +262,8 @@ protected:
     pthread_mutex_t      _wait_flush_lock; 
     pthread_cond_t       _wait_cond;  // paired with _wait_flush_lock
     pthread_cond_t       _flush_cond;  // paird with _wait_flush_lock
+
+    bool _waiting_for_flush; // protected by log_m::_wait_flush_lock
 
     sthread_t*           _flush_daemon;
     /// @todo both of the below should become std::atomic_flag's at some time
@@ -438,6 +419,16 @@ public:
     virtual void set_master(const lsn_t&, const lsn_t&, const lsn_t&);
     virtual partition_number_t partition_num() const;
     virtual smlevel_0::fileoff_t limit() const;
+
+    // exported from log_resv
+    virtual rc_t file_was_archived(const char *file)
+        { return _resv->file_was_archived(file); }
+    virtual fileoff_t space_left() const
+        { return _resv->space_left(); }
+    virtual fileoff_t space_for_chkpt() const
+        { return _resv->space_for_chkpt(); }
+    virtual rc_t  scavenge(const lsn_t &min_rec_lsn, const lsn_t &min_xct_lsn)
+        { return _resv->scavenge(min_rec_lsn, min_xct_lsn); }
 
 protected:
     void                _sanity_check() const;
