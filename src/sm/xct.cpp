@@ -730,7 +730,7 @@ xct_log_warn_check_t::check(xct_t *& _victim)
         DBG(<<"left " << left << " trigger " << smlevel_0::log_warn_trigger
                 << " log durable_lsn " << log->durable_lsn()
                 << " log curr_lsn " << log->curr_lsn()
-                << " segment_size " << log->segment_size()
+                //<< " segment_size " << log->segment_size()
                 );
 
         if( left < smlevel_0::log_warn_trigger ) 

@@ -67,7 +67,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "logrec.h"
 #include "log_core.h"
 #include "log_carray.h"
-#include "log_lsn_tracker.h"
 
 #include "bf_tree.h"
 
@@ -80,43 +79,129 @@ const std::string log_core::IMPL_NAME = "traditional";
 
 typedef smlevel_0::fileoff_t fileoff_t;
 
-bool       log_core::_initialized = false;
+class flush_daemon_thread_t : public smthread_t {
+    log_common* _log;
+public:
+    flush_daemon_thread_t(log_common* log) : 
+         smthread_t(t_regular, "flush_daemon", WAIT_NOT_USED), _log(log) { }
 
+    virtual void run() { _log->flush_daemon(); }
+};
 
-/*********************************************************************
- *
- *  log_core::_flush(start_lsn, start1, end1, start2, end2)
- *  @param[in] start_lsn    starting lsn: tells us destination file 
- *  @param[in] start1 
- *  @param[in] end1 
- *  @param[in] start2 
- *  @param[in] end2 
- *
- *  helper for flush_daemon_work
- *
- *
- *********************************************************************/
-void
-log_core::_flushX(lsn_t start_lsn, 
-        long start1, long end1, long start2, long end2)
-{
-    partition_t* p = _storage->get_partition_for_flush(start_lsn, start1, end1,
-            start2, end2);
-
-    // Flush the log buffer
-    p->flush(
+log_common::log_common(
+                   long bsize, // segment size for the log buffer, set through "sm_logbufsize"
+                   int carray_active_slot_count
+                   )
+    : 
+      _segsize(log_storage::_ceil(bsize, SEGMENT_SIZE)), // actual segment size for the log buffer,
+      _shutting_down(false),
+      _flush_daemon_running(false),
+      _log_corruption(false),
+      _readbuf(NULL),
 #ifdef LOG_DIRECT_IO
-            writebuf(),
+      _writebuf(NULL),
 #endif
-            p->fhdl_app(), start_lsn, _buf, start1, end1, start2, end2
-    );
+      _start(0), 
+      _end(0),
+      _waiting_for_flush(false),
+      _carray(new ConsolidationArray(carray_active_slot_count))
+{
+    FUNC(log_common::log_common);
 
-    long written = (end2 - start2) + (end1 - start1);
-    p->set_size(start_lsn.lo()+written);
+    DO_PTHREAD(pthread_mutex_init(&_wait_flush_lock, NULL));
+    DO_PTHREAD(pthread_cond_init(&_wait_cond, NULL));
+    DO_PTHREAD(pthread_cond_init(&_flush_cond, NULL));
 
-#if W_DEBUG_LEVEL > 2
-    _sanity_check();
-#endif 
+    /* Create thread o flush the log */
+    _flush_daemon = new flush_daemon_thread_t(this);
+
+    // NOTE: GROT must make this a function of page size, and of xfer size,
+    // since xfer size is fixed (8K).
+    // It has to big enough to read the maximum-sized log record, clearly
+    // more than a page.
+#ifdef LOG_DIRECT_IO
+#if SM_PAGESIZE < 8192
+    posix_memalign((void**)&_readbuf, LOG_DIO_ALIGN, log_storage::BLOCK_SIZE*4);
+    //_readbuf = new char[BLOCK_SIZE*4];
+    // we need two blocks for the write buffer because the skip log record may span two blocks
+    posix_memalign((void**)&_writebuf, LOG_DIO_ALIGN, log_storage::BLOCK_SIZE*2);
+#else
+    posix_memalign((void**)&_readbuf, LOG_DIO_ALIGN, SM_PAGESIZE*4);
+    //_readbuf = new char[SM_PAGESIZE*4];
+    posix_memalign((void**)&_writebuf, LOG_DIO_ALIGN, SM_PAGESIZE*2);
+#endif
+#else
+#if SM_PAGESIZE < 8192
+    _readbuf = new char[log_storage::BLOCK_SIZE*4];
+#else
+    _readbuf = new char[SM_PAGESIZE*4];
+#endif
+#endif // LOG_DIRECT_IO
+
+    if (bsize < 64 * 1024) {
+        // not mt-safe, but this is not going to happen in 
+        // concurrency scenario
+        smlevel_0::errlog->clog << error_prio 
+        << "Log buf size (sm_logbufsize) too small: "
+        << bsize << ", require at least " << 64 * 1024 
+        << endl; 
+        smlevel_0::errlog->clog << error_prio << endl;
+        fprintf(stderr,
+            "Log buf size (sm_logbufsize) too small: %ld, need %d\n",
+            bsize, 64*1024);
+        W_FATAL(eINTERNAL);
+    }
+
+    w_assert1(is_aligned(_readbuf));
+    w_assert1(_curr_lsn == _durable_lsn);
+    if (1) {
+        smlevel_0::errlog->clog << debug_prio 
+            << "Log _start " << start_byte() << " end_byte() " << end_byte()
+            << endl
+            << "Log _curr_lsn " << _curr_lsn 
+            << " _durable_lsn " << _durable_lsn
+            << endl; 
+        smlevel_0::errlog->clog << debug_prio 
+            << "Curr epoch  base_lsn " << _cur_epoch.base_lsn
+            << endl
+            << "Curr epoch  base " << _cur_epoch.base
+            << endl
+            << "Curr epoch  start " << _cur_epoch.start
+            << endl
+            << "Curr epoch  end " << _cur_epoch.end
+            << endl;
+        smlevel_0::errlog->clog << debug_prio 
+            << "Old epoch  base_lsn " << _old_epoch.base_lsn
+            << endl
+            << "Old epoch  base " << _old_epoch.base
+            << endl
+            << "Old epoch  start " << _old_epoch.start
+            << endl
+            << "Old epoch  end " << _old_epoch.end
+            << endl;
+    }
+}
+
+log_common::~log_common() 
+{
+    delete _resv;
+    delete _storage;
+    w_assert1(_durable_lsn == _curr_lsn);
+
+#ifdef LOG_DIRECT_IO
+    free(_readbuf);
+    free(_writebuf);
+    _writebuf = NULL;
+#else
+    delete [] _readbuf;
+#endif
+    _readbuf = NULL;
+
+    delete _carray;
+
+    DO_PTHREAD(pthread_mutex_destroy(&_wait_flush_lock));
+    DO_PTHREAD(pthread_cond_destroy(&_wait_cond));
+    DO_PTHREAD(pthread_cond_destroy(&_flush_cond));
 }
 
 /*********************************************************************
@@ -250,26 +335,6 @@ rc_t log_core::fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, hints_op op)
     return fetch(lsn, rec, nxt, true);
 }
 
-class flush_daemon_thread_t : public smthread_t {
-    log_core* _log;
-public:
-    flush_daemon_thread_t(log_core* log) : 
-         smthread_t(t_regular, "flush_daemon", WAIT_NOT_USED), _log(log) { }
-
-    virtual void run() { _log->flush_daemon(); }
-};
-
-void log_core::start_flush_daemon() 
-{
-    _flush_daemon_running = true;
-    _flush_daemon->fork();
-}
-
-void log_core::release()
-{
-    _storage->release_partition_lock();
-}
-
 void log_core::shutdown() 
 { 
     // gnats 52:  RACE: We set _shutting_down and signal between the time
@@ -307,7 +372,6 @@ void log_core::shutdown()
  *  from the last log file.
  *
  *********************************************************************/
-
 NORET
 log_core::log_core(
                    const char* path,
@@ -316,79 +380,16 @@ log_core::log_core(
                    int carray_active_slot_count
                    )
     : 
-      _waiting_for_flush(false),
-      _start(0), 
-      _end(0),
-      _segsize(log_storage::_ceil(bsize, SEGMENT_SIZE)), // actual segment size for the log buffer,
-      _buf(NULL),
-      _shutting_down(false),
-      _flush_daemon_running(false),
-      _carray(new ConsolidationArray(carray_active_slot_count)),
-      _log_corruption(false),
-#ifdef LOG_DIRECT_IO
-      _writebuf(NULL),
-#endif
-      _readbuf(NULL)
+      log_common(bsize, carray_active_slot_count),
+      _buf(NULL)
 {
     FUNC(log_core::log_core);
-
-    DO_PTHREAD(pthread_mutex_init(&_wait_flush_lock, NULL));
-    DO_PTHREAD(pthread_cond_init(&_wait_cond, NULL));
-    DO_PTHREAD(pthread_cond_init(&_flush_cond, NULL));
-
-    /* Create thread o flush the log */
-    _flush_daemon = new flush_daemon_thread_t(this);
-
-    _oldest_lsn_tracker = new PoorMansOldestLsnTracker(1 << 20);
-    w_assert1(_oldest_lsn_tracker);
-
 
 #ifdef LOG_DIRECT_IO
     posix_memalign((void**)&_buf, LOG_DIO_ALIGN, _segsize);    
 #else
     _buf = new char[_segsize];
 #endif
-
-
-    // NOTE: GROT must make this a function of page size, and of xfer size,
-    // since xfer size is fixed (8K).
-    // It has to big enough to read the maximum-sized log record, clearly
-    // more than a page.
-#ifdef LOG_DIRECT_IO
-#if SM_PAGESIZE < 8192
-    posix_memalign((void**)&_readbuf, LOG_DIO_ALIGN, log_storage::BLOCK_SIZE*4);
-    //_readbuf = new char[BLOCK_SIZE*4];
-    // we need two blocks for the write buffer because the skip log record may span two blocks
-    posix_memalign((void**)&_writebuf, LOG_DIO_ALIGN, log_storage::BLOCK_SIZE*2);
-#else
-    posix_memalign((void**)&_readbuf, LOG_DIO_ALIGN, SM_PAGESIZE*4);
-    //_readbuf = new char[SM_PAGESIZE*4];
-    posix_memalign((void**)&_writebuf, LOG_DIO_ALIGN, SM_PAGESIZE*2);
-#endif
-#else
-#if SM_PAGESIZE < 8192
-    _readbuf = new char[log_storage::BLOCK_SIZE*4];
-#else
-    _readbuf = new char[SM_PAGESIZE*4];
-#endif
-#endif // LOG_DIRECT_IO
-
-    if (bsize < 64 * 1024) {
-        // not mt-safe, but this is not going to happen in 
-        // concurrency scenario
-        smlevel_0::errlog->clog << error_prio 
-        << "Log buf size (sm_logbufsize) too small: "
-        << bsize << ", require at least " << 64 * 1024 
-        << endl; 
-        smlevel_0::errlog->clog << error_prio << endl;
-        fprintf(stderr,
-            "Log buf size (sm_logbufsize) too small: %ld, need %d\n",
-            bsize, 64*1024);
-        W_FATAL(eINTERNAL);
-    }
-
-    w_assert1(is_aligned(_readbuf));
-    w_assert1(_curr_lsn == _durable_lsn);
 
     long prime_offset = 0;
     _storage = new log_storage(path, reformat, _curr_lsn, _durable_lsn,
@@ -471,33 +472,12 @@ log_core::log_core(
 
 log_core::~log_core() 
 {
-    delete _resv;
-    delete _storage;
-    w_assert1(_durable_lsn == _curr_lsn);
-
-#ifdef LOG_DIRECT_IO
-    free(_readbuf);
-    free(_writebuf);
-    _writebuf = NULL;
-#else
-    delete [] _readbuf;
-#endif
-    _readbuf = NULL;
-
-    delete _carray;
 #ifdef LOG_DIRECT_IO
     free(_buf);
 #else
     delete [] _buf;
 #endif
     _buf = NULL;
-
-    delete _oldest_lsn_tracker;
-    _oldest_lsn_tracker = NULL;
-
-    DO_PTHREAD(pthread_mutex_destroy(&_wait_flush_lock));
-    DO_PTHREAD(pthread_cond_destroy(&_wait_cond));
-    DO_PTHREAD(pthread_cond_destroy(&_flush_cond));
 }
 
 void log_core::_acquire_buffer_space(CArraySlot* info, long recsize)
@@ -949,7 +929,7 @@ rc_t log_core::flush(const lsn_t &to_lsn, bool block, bool signal, bool *ret_flu
  * This method handles the wait/block of the daemon thread,
  * and when awake, calls its main-work method, flush_daemon_work.
  */
-void log_core::flush_daemon() 
+void log_common::flush_daemon() 
 {
     /* Algorithm: attempt to flush non-durable portion of the buffer.
      * If we empty out the buffer, block until either enough
@@ -964,6 +944,7 @@ void log_core::flush_daemon()
         // flush.
         {
             CRITICAL_SECTION(cs, _wait_flush_lock);
+            // CS: commented out check for waiting_for_space -- don't know why it was here?
             //if(success && (*&_waiting_for_space || *&_waiting_for_flush)) {
             if(success && *&_waiting_for_flush) {
                 //_waiting_for_flush = _waiting_for_space = false;
@@ -975,6 +956,11 @@ void log_core::flush_daemon()
                 _shutting_down = false;
                 break;
             }
+
+            // NOTE: right now the thread waiting for a flush has woken up or will woke up, but...
+            // this thread, as long as success is true (it just flushed something in the previous 
+            // flush_daemon_work), will keep calling flush_daemon_work until there is nothing to flush....
+            // this happens in the background
 
             // sleep. We don't care if we get a spurious wakeup
             //if(!success && !*&_waiting_for_space && !*&_waiting_for_flush) {
@@ -999,6 +985,13 @@ void log_core::flush_daemon()
         (lsn=flush_daemon_work(last_completed_flush_lsn)) != 
                 last_completed_flush_lsn; 
         last_completed_flush_lsn=lsn) ;
+}
+
+void log_common::_sanity_check() const
+{
+    w_assert1(durable_lsn() <= curr_lsn());
+    w_assert1(durable_lsn() >= first_lsn(1));
+    _storage->sanity_check();
 }
 
 /**\brief Flush unflushed-portion of log buffer.
@@ -1098,11 +1091,28 @@ lsn_t log_core::flush_daemon_work(lsn_t old_mark)
     w_assert1(end_lsn == first_lsn(start_lsn.hi()+1)
           || end_lsn.lo() - start_lsn.lo() == (end1-start1) + (end2-start2));
 
-    // start_lsn.file() determines partition # and whether _flushX
+    // start_lsn.file() determines partition # and whether code
     // will open a new partition into which to flush.
     // That, in turn, is determined by whether the _old_epoch.base_lsn.file()
     // matches the _cur_epoch.base_lsn.file()
-    _flushX(start_lsn, start1, end1, start2, end2);
+    // CS: This code used to be on the method _flushX
+    partition_t* p = _storage->get_partition_for_flush(start_lsn, start1, end1,
+            start2, end2);
+
+    // Flush the log buffer
+    p->flush(
+#ifdef LOG_DIRECT_IO
+            writebuf(),
+#endif
+            p->fhdl_app(), start_lsn, _buf, start1, end1, start2, end2
+    );
+
+    long written = (end2 - start2) + (end1 - start1);
+    p->set_size(start_lsn.lo()+written);
+
+#if W_DEBUG_LEVEL > 2
+    _sanity_check();
+#endif 
 
     _durable_lsn = end_lsn;
     _start = new_start;
@@ -1199,48 +1209,3 @@ rc_t log_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn)
                                               //// is in the oldest file
     //;
 //}
-
-void log_core::_sanity_check() const
-{
-    if(!_initialized) return;
-
-    w_assert1(durable_lsn() <= curr_lsn());
-    w_assert1(durable_lsn() >= first_lsn(1));
-    _storage->sanity_check();
-}
-
-lsn_t log_core::min_chkpt_rec_lsn() const 
-{
-    return _storage->min_chkpt_rec_lsn();
-}
-
-
-const char* log_core::make_log_name(uint32_t n, char* buf, int bufsz) 
-{
-    return _storage->make_log_name(n, buf, bufsz);
-}
-
-
-lsn_t log_core::master_lsn() const 
-{
-    return _storage->master_lsn();
-}
-
-
-void log_core::set_master(const lsn_t& master_lsn, const lsn_t& min_lsn,
-        const lsn_t& min_xct_lsn) 
-{
-    return _storage->set_master(master_lsn, min_lsn, min_xct_lsn);
-}
-
-
-log_core::partition_number_t log_core::partition_num() const 
-{
-    return _storage->partition_num();
-}
-
-
-smlevel_0::fileoff_t log_core::limit() const 
-{
-    return _storage->limit();
-}

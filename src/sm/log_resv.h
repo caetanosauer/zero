@@ -64,6 +64,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 typedef smlevel_0::fileoff_t fileoff_t;
 
+class PoorMansOldestLsnTracker;
+
 class log_resv {
 private:
     struct waiting_xct {
@@ -107,6 +109,8 @@ public:
     fileoff_t           space_left() const { return *&_space_available; }
     fileoff_t           space_for_chkpt() const { return *&_space_rsvd_for_chkpt ; }
 
+    PoorMansOldestLsnTracker* get_oldest_lsn_tracker() { return _oldest_lsn_tracker; }
+
 protected:
     log_storage*    _storage;
     bool            _reservations_active;
@@ -117,6 +121,8 @@ protected:
 
     pthread_mutex_t         _space_lock; // tied to _space_cond
     pthread_cond_t          _space_cond; // tied to _space_lock
+
+    PoorMansOldestLsnTracker* _oldest_lsn_tracker;
 };
 
 

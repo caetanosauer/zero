@@ -289,7 +289,7 @@ void ss_m::_set_option_logsize() {
     // cerr << "Resulting max_logsz " << max_logsz << " bytes" << endl;
 
     // take check points every 3 log file segments.
-    smlevel_0::chkpt_displacement = log_core::segment_size() * 3;
+    smlevel_0::chkpt_displacement = log_core::SEGMENT_SIZE * 3;
 }
 
 /*

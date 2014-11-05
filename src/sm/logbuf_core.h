@@ -39,22 +39,15 @@ typedef struct hints {
 } hints_t;
     
 // the lob buffer class
-class logbuf_core : public log_core { // TODO inherit log_m once log_storage class is pulled out of log_core
-
-    // a hacky way to add this "stand-alone" log buffer to the existing log manager
-    // TODO: merge the log buffer code into log_core
-    friend class log_core; 
-
+class logbuf_core : public log_common {
     // INTERFACE METHODS BEGIN
 public:
-    // do whatever needs to be done before destructor is callable
-    virtual void            shutdown(); 
-    // returns lsn where data were written 
     virtual rc_t            insert(logrec_t &r, lsn_t* l); 
     virtual rc_t            flush(const lsn_t &lsn, bool block=true, bool signal=true, bool *ret_flushed=NULL);
     virtual rc_t            compensate(const lsn_t &orig_lsn, const lsn_t& undo_lsn);
     virtual rc_t            fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, const bool forward);
     virtual rc_t            fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, log_m::hints_op op);
+    virtual void            shutdown(); 
 
     // INTERFACE METHODS END
 public:
@@ -79,7 +72,7 @@ public:
 
       
     // fake operations for M1
-    void logbuf_prime(lsn_t next);
+    //void logbuf_prime(lsn_t next);
     int logbuf_fetch(lsn_t lsn); 
     rc_t logbuf_insert(long recsize);
     rc_t logbuf_flush(const lsn_t &to_lsn, bool block = true, bool signal = true, bool
@@ -87,17 +80,6 @@ public:
     void logbuf_archive();
 
     logrec_t *logbuf_fake_logrec(uint32_t recsize); 
-    
-
-    // real operations for M2 and M3
-    // called by xct
-    // all of them are modified from their implementation in log_core
-    //rc_t insert(logrec_t &rec, lsn_t* rlsn);
-    //rc_t compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn);
-    //rc_t flush(const lsn_t &to_lsn, bool block = true, bool signal = true, bool
-                  //*ret_flushed = NULL);
-    //rc_t fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward);
-    //rc_t fetch(lsn_t& ll, logrec_t* &rp, lsn_t* nxt, hints_op op);
 
     // spacial fetch function for test and debugging only
     int fetch_for_test(lsn_t& ll, logrec_t*& rp);
@@ -107,6 +89,10 @@ public:
     // called during startup
     virtual void _prime(int fd, lsn_t next);
 
+    virtual lsn_t flush_daemon_work(lsn_t old_mark);
+
+protected:
+
     // for insert
     // the four functions below are modified from their implementation in log_core
     virtual void _reserve_buffer_space(CArraySlot *info, long recsize);
@@ -115,6 +101,7 @@ public:
     info);
     virtual bool _update_epochs(CArraySlot* info);
 
+private:
     logbuf_seg *_lookup_for_compensate(lsn_t lsn);
 
     // for fetch
@@ -124,18 +111,7 @@ public:
     // helper for backward scan
     w_rc_t _get_lsn_for_backward_scan(lsn_t &lsn, partition_t *p);
 
-    //void shutdown();
-    void flush_daemon();
-    lsn_t flush_daemon_work(lsn_t old_mark);
-    virtual void _flushX(lsn_t start_lsn, uint64_t start, uint64_t end);
-
-    // for log_core to access our private members
-    // these variables are originally in log_core but are now moved here
-    long start_byte() const { return _start; }
-    long end_byte() const { return _end; }
-    //long segsize() const { return _segsize; }
-    
-private:
+    void _flushX(lsn_t start_lsn, uint64_t start, uint64_t end);
 
     // functions that manipulate log buffer structures
 

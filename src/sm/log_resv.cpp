@@ -64,6 +64,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "chkpt.h"
 #include "log_resv.h"
 #include "log_storage.h"
+#include "log_lsn_tracker.h"
 
 log_resv::log_resv(log_storage* storage)
     :
@@ -75,12 +76,18 @@ log_resv::log_resv(log_storage* storage)
 {
     DO_PTHREAD(pthread_mutex_init(&_space_lock, 0));
     DO_PTHREAD(pthread_cond_init(&_space_cond, 0));
+
+    _oldest_lsn_tracker = new PoorMansOldestLsnTracker(1 << 20);
+    w_assert1(_oldest_lsn_tracker);
 }
 
 log_resv::~log_resv()
 {
     DO_PTHREAD(pthread_mutex_destroy(&_space_lock));
     DO_PTHREAD(pthread_cond_destroy(&_space_cond));
+
+    delete _oldest_lsn_tracker;
+    _oldest_lsn_tracker = NULL;
 }
 
 
