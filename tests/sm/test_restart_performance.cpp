@@ -60,9 +60,15 @@
 //
 //    restart.cpp - remove output to indicate restart finished, also the timing
 //
-//    Bug: bf_tree.cpp (3020) bf_tree_m::_try_recover_page: Parent page does not have emlsn, no recovery  <-- infinite loop?
+//    CMakeLists.txt - comment out test_restart_performance for the regular build
+//
+//    CMakeLists.txt - test_logbuf and test_logbuf_scan are not passing, why?  Currently commented out
+//
+//    Bug: bf_tree.cpp (3020) bf_tree_m::_try_recover_page: Parent page does not have emlsn, no recovery  <-- infinite loop sometimes but not consistent
+//
 //    Bug: btree_page_h::suggest_fence_for_split (btree_page_h.cpp:1127) - when spliting a page to create a foster relation,
 //                try to find the key for split, it does not exist, it appears that a synch() call at the beginning of pre_shutdown causes this error consistently
+//
 //    Bug: for M2, if I do a scan at the end of post_shutdown to get record count, infinite loop.
 //                This infinite loop was not reproduced when I use a different calculation to access various indexes.
 

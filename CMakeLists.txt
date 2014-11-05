@@ -72,7 +72,7 @@ ENABLE_TESTING() # we use CTest all over the project. run "make test" after cmak
 # compiler options. ported from Makefile.generic of original ShoreMT.
 # W_DEBUG_LEVEL enables various check logics and asserts. higher is more verbose.
 SET(CMAKE_CXX_FLAGS_TRACE  "-Og -g -DDEBUG -DW_DEBUG_LEVEL=5 ${LINK_GOOGLEPROFILER}")
-SET(CMAKE_CXX_FLAGS_DEBUG  "-Og -g -DDEBUG -DW_DEBUG_LEVEL=3 ${LINK_GOOGLEPROFILER}")
+SET(CMAKE_CXX_FLAGS_DEBUG  "-O0 -g -DDEBUG -DW_DEBUG_LEVEL=3 ${LINK_GOOGLEPROFILER}")
 ##  SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DW_DEBUG_LEVEL=1 ${LINK_GOOGLEPROFILER}")
 ## Below is better for performance analysis; above is better for debugging
 SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DW_DEBUG_LEVEL=0 -DNDEBUG -fPIC ${LINK_GOOGLEPROFILER} ${COMPILE_MUTRACE}")
