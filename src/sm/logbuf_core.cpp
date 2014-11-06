@@ -10,7 +10,6 @@
 #include "w_findprime.h"
 
 
-// LOG_BUFFER switch
 #include "logbuf_common.h"
 
 // in order to include log_core.h
@@ -84,7 +83,8 @@ logbuf_core::logbuf_core(
     : log_common(log_core::SEGMENT_SIZE, active_slot_count),
     _to_archive_seg(NULL),
     _to_insert_seg(NULL),
-    _to_flush_seg(NULL)
+    _to_flush_seg(NULL),
+    _part_size(part_size)
 {
     FUNC(logbuf_core::logbuf_core);
 
@@ -122,15 +122,25 @@ logbuf_core::logbuf_core(
     hits = 0;
     reads = 0;
 
+    _storage = new log_storage(path, reformat, _curr_lsn, _durable_lsn,
+            _flush_lsn, _segsize);
+    if (!reformat) {
+        // CS: prime was initially called when oppening a partition for append
+        // during recovery -- I believe this is equivalent (TODO - verify)
+        _prime(_durable_lsn);
+    }
+
+    _resv = new log_resv(_storage);
+
     // the log buffer (the epochs) is designed to hold log records from at most two partitions
     // so its capacity cannot exceed the partition size
     // otherwise, there could be log records from three parttitions in the buffer
-    if(LOGBUF_SEG_COUNT*_segsize > _storage->partition_data_size()) {
+    if(_max_seg_count * _segsize > _partition_data_size()) {
         errlog->clog << error_prio 
                      << "Log buf seg count too big or total log size (sm_logsize) too small: "  
                      << " LOGBUF_SEG_COUNT=" <<  LOGBUF_SEG_COUNT
                      << " _segsize=" << _segsize
-                     << " _partition_data_size=" << _storage->partition_data_size()
+                     << " _partition_data_size=" << _partition_data_size()
                      << " max_logsz=" << max_logsz
                      << endl; 
         errlog->clog << error_prio << endl;
@@ -138,9 +148,7 @@ logbuf_core::logbuf_core(
         W_FATAL(eINTERNAL);
     }
 
-    _storage = new log_storage(path, reformat, _curr_lsn, _durable_lsn,
-            _flush_lsn, _segsize);
-    _prime(_durable_lsn);
+    start_flush_daemon();
 }
 
 /*********************************************************************
@@ -171,6 +179,9 @@ logbuf_core::~logbuf_core()
         delete _hashtable;
         _hashtable = NULL;
     }
+
+    delete _resv;
+    delete _storage;
 }
 
 /*********************************************************************
@@ -476,7 +487,7 @@ void logbuf_core::_prime(
     //W_COERCE(me()->pread(fd, first_seg->buf, size, base));
     long prime_offset = 0;
     if (next != lsn_t::null) {
-        prime_offset = _storage->prime(first_seg->buf, next, size);
+        prime_offset = _storage->prime(first_seg->buf, next, size, false);
     }
 
     first_seg->base_lsn = lsn_t(next.hi(), next.lo() - prime_offset);
@@ -495,7 +506,7 @@ void logbuf_core::_prime(
 
     _start = _end = next.lo();
 
-    _free = _segsize - size;
+    _free = _segsize - prime_offset;
 
 }
 
@@ -712,10 +723,8 @@ w_rc_t logbuf_core::_fetch(
 
             // avoid warnings about unused parameter
             if (p) {
-#ifdef LOG_BUFFER
                 // read the entire segment and 3 extra blocks as tails
                 W_COERCE(p->read_seg(seg_lsn, found->buf, _actual_segsize));
-#endif
             }
 
             {
@@ -786,10 +795,8 @@ w_rc_t logbuf_core::_get_lsn_for_backward_scan(lsn_t &lsn, // IN/OUT: the positi
 
             // avoid warnings about unused parameter
             if (p) {
-#ifdef LOG_BUFFER
                 // read the entire segment and 3 extra blocks as tails
                 W_COERCE(p->read_seg(seg_lsn, found->buf, _actual_segsize));
-#endif
             }
             
             found->base_lsn = seg_lsn;        
@@ -1331,7 +1338,7 @@ void logbuf_core::_reserve_buffer_space(CArraySlot *info, long recsize) {
 
         // calculate the actual free space
         // new partition is the special case
-        if ((_to_insert_lsn.lo() + needed) > _storage->partition_data_size()) {
+        if ((_to_insert_lsn.lo() + needed) > _partition_data_size()) {
             // new partition, cannot use the remaining free space
             uint64_t offset = _to_insert_lsn.lo() - _to_insert_seg->base_lsn.lo();
             uint64_t free_in_seg = _segsize - offset;
@@ -1425,7 +1432,7 @@ void logbuf_core::_acquire_buffer_space(CArraySlot* info, long recsize) {
     uint64_t free_in_seg = _segsize - offset;
     uint64_t needed = recsize;
 
-    if ((_to_insert_lsn.lo() + recsize) <= _storage->partition_data_size()) {
+    if ((_to_insert_lsn.lo() + recsize) <= _partition_data_size()) {
         // curr partition
 //        DBGOUT3(<< " insert: current partition! " << recsize);
 
@@ -1441,7 +1448,7 @@ void logbuf_core::_acquire_buffer_space(CArraySlot* info, long recsize) {
         // we don't open a new partition until more log space is required
 //        DBGOUT3(<< " insert: new partition! " << recsize);
 
-        long leftovers = _storage->partition_data_size() - curr_lsn.lo();
+        long leftovers = _partition_data_size() - curr_lsn.lo();
 
         if(leftovers && !reserve_space(leftovers)) {
             std::cerr << "WARNING WARNING: OUTOFLOGSPACE in update_epochs" << std::endl;
@@ -1455,7 +1462,7 @@ void logbuf_core::_acquire_buffer_space(CArraySlot* info, long recsize) {
         next_lsn = curr_lsn + recsize;
 
         // new epoch covers the new partition
-        new_base = _buf_epoch.base + _storage->partition_data_size();  
+        new_base = _buf_epoch.base + _partition_data_size();  
         start_pos = 0;
         _buf_epoch = epoch(curr_lsn, new_base, 0, new_end=recsize);
 
@@ -1894,10 +1901,8 @@ void logbuf_core::_flushX(lsn_t start_lsn, uint64_t start, uint64_t end) {
     size_in_seg = _segsize - offset_in_seg;
     to_write = write_size = end - start + delta;
 
-#ifdef LOG_BUFFER
     uint64_t written;
     written = end - start;
-#endif
 
     // allocate iovecs
     // every iovec holds a full or partial segment
@@ -1961,12 +1966,9 @@ void logbuf_core::_flushX(lsn_t start_lsn, uint64_t start, uint64_t end) {
     }
 
 
-#ifdef LOG_BUFFER
     // finally flush all iovs
     p->flush(p->fhdl_app(), start_lsn, written, write_size, iov, seg_cnt);
-
     p->set_size(start_lsn.lo() + written);
-#endif
 
     // update _to_flush_seg
     // _to_flush_seg always points to the last flushed seg
@@ -2473,8 +2475,8 @@ void logbuf_core::force_a_flush() {
     {
         CRITICAL_SECTION(cs, _wait_flush_lock);
 
-        // CS: commented out -- was it necessary? (TODO)
-        //*&_waiting_for_space = true;
+        // CS: switched from waiting_for_space to waiting_for_flush
+        *&_waiting_for_flush = true;
 
         // Use signal since the only thread that should be waiting
         // on the _flush_cond is the log flush daemon.

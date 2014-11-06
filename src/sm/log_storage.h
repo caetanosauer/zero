@@ -87,7 +87,8 @@ public:
     rc_t last_lsn_in_partition(partition_number_t pnum, lsn_t& lsn);
     partition_t*    curr_partition() const;
     int             delete_old_partitions(lsn_t);
-    long            prime(char* buf, lsn_t next, size_t block_size);
+    long            prime(char* buf, lsn_t next, size_t block_size,
+                            bool read_whole_block = true);
     void            acquire_partition_lock();
     void            release_partition_lock();
     void            set_master(const lsn_t& master_lsn, const lsn_t& min_lsn,

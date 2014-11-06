@@ -86,16 +86,16 @@ rc_t consume(int size, ss_m *ssm) {
 #define PRIME(lsn)\
     (log_buffer->_prime(lsn))
 
-#define INSERT(size)\
+#define M1_INSERT(size)\
     (log_buffer->logbuf_insert(size))
 
-#define FLUSH(lsn)\
+#define M1_FLUSH(lsn)\
     (log_buffer->logbuf_flush(lsn))
 
-#define FETCH(lsn)\
+#define M1_FETCH(lsn)\
     (log_buffer->logbuf_fetch(lsn))
 
-#define PRINT()\
+#define M1_PRINT()\
     (log_buffer->logbuf_print())
 
 
@@ -246,7 +246,7 @@ w_rc_t logbuf_tester::test_insert() {
     // case 1: to_insert starts at offset 0 in a partition
     EXPECT_EQ(lsn_t(1,0), log_buffer->_to_insert_lsn);
 
-    W_DO(INSERT(300));
+    W_DO(M1_INSERT(300));
     EXPECT_EQ(0, log_buffer->_start);
     EXPECT_EQ(300, log_buffer->_end);
     EXPECT_EQ(700, log_buffer->_free);
@@ -269,12 +269,12 @@ w_rc_t logbuf_tester::test_insert() {
 
     // case 2: to_insert starts at offset 0 in a segment,
     // but not at offset 0 in a partition
-    W_DO(INSERT(300));
-    W_DO(INSERT(400));
+    W_DO(M1_INSERT(300));
+    W_DO(M1_INSERT(400));
 
     EXPECT_EQ(lsn_t(1,1000), log_buffer->_to_insert_lsn);
 
-    W_DO(INSERT(200));
+    W_DO(M1_INSERT(200));
     EXPECT_EQ(0, log_buffer->_start);
     EXPECT_EQ(1200, log_buffer->_end);
     EXPECT_EQ(800, log_buffer->_free);
@@ -299,7 +299,7 @@ w_rc_t logbuf_tester::test_insert() {
     EXPECT_EQ(lsn_t(1,1200), log_buffer->_to_insert_lsn);
 
     // 3.1: a log record is entirely stored within a segment
-    W_DO(INSERT(300));
+    W_DO(M1_INSERT(300));
     EXPECT_EQ(0, log_buffer->_start);
     EXPECT_EQ(1500, log_buffer->_end);
     EXPECT_EQ(500, log_buffer->_free);
@@ -321,11 +321,11 @@ w_rc_t logbuf_tester::test_insert() {
     EXPECT_EQ(1500, log_buffer->_buf_epoch.end);
 
     // 3.2: a log record spans two segments
-    W_DO(INSERT(300));
+    W_DO(M1_INSERT(300));
 
     EXPECT_EQ(lsn_t(1,1800), log_buffer->_to_insert_lsn);
 
-    W_DO(INSERT(300));
+    W_DO(M1_INSERT(300));
     EXPECT_EQ(0, log_buffer->_start);
     EXPECT_EQ(2100, log_buffer->_end);
     EXPECT_EQ(900, log_buffer->_free);
@@ -349,12 +349,12 @@ w_rc_t logbuf_tester::test_insert() {
     // 3.3: a log record does not fit in the current partition
     EXPECT_EQ(lsn_t(1,2100), log_buffer->_to_insert_lsn);
     for(int i=1; i<=9; i++) {
-        W_DO(INSERT(300));
+        W_DO(M1_INSERT(300));
     }
-    W_DO(FLUSH(lsn_t(1,4800)));
+    W_DO(M1_FLUSH(lsn_t(1,4800)));
     EXPECT_EQ(lsn_t(1,4800), log_buffer->_to_insert_lsn);
 
-    W_DO(INSERT(300));
+    W_DO(M1_INSERT(300));
     EXPECT_EQ(4800, log_buffer->_start);
     EXPECT_EQ(5300, log_buffer->_end);
     EXPECT_EQ(700, log_buffer->_free);
@@ -375,6 +375,8 @@ w_rc_t logbuf_tester::test_insert() {
     EXPECT_EQ(0, log_buffer->_buf_epoch.start);
     EXPECT_EQ(300, log_buffer->_buf_epoch.end);
 
+    W_DO(M1_FLUSH(lsn_t(2,300)));
+
     return RCOK;
 }
 
@@ -386,7 +388,7 @@ w_rc_t logbuf_tester::test_flush() {
     PRIME(lsn_t(1,0));
 
     // case 1: there is no unflushed log record
-    W_DO(FLUSH(lsn));
+    W_DO(M1_FLUSH(lsn));
     EXPECT_EQ(0, log_buffer->_start);
     EXPECT_EQ(0, log_buffer->_end);
     EXPECT_EQ(1000, log_buffer->_free);
@@ -407,12 +409,12 @@ w_rc_t logbuf_tester::test_flush() {
 
 
     // case 2: the unflushed log records are within one segment
-    W_DO(INSERT(300));
-    W_DO(INSERT(300));
-    W_DO(INSERT(300));
+    W_DO(M1_INSERT(300));
+    W_DO(M1_INSERT(300));
+    W_DO(M1_INSERT(300));
 
     lsn = lsn_t(1, 900);
-    W_DO(FLUSH(lsn));
+    W_DO(M1_FLUSH(lsn));
     EXPECT_EQ(900, log_buffer->_start);
     EXPECT_EQ(900, log_buffer->_end);
     EXPECT_EQ(100, log_buffer->_free);
@@ -437,11 +439,11 @@ w_rc_t logbuf_tester::test_flush() {
     // case 3: the unflushed log records span two or more segments
     // (1, 900) to (1, 4500)
     for (int i=1; i<=12; i++) {
-        W_DO(INSERT(300));
+        W_DO(M1_INSERT(300));
     }
 
     lsn = lsn_t(1, 4500);
-    W_DO(FLUSH(lsn));
+    W_DO(M1_FLUSH(lsn));
     EXPECT_EQ(4500, log_buffer->_start);
     EXPECT_EQ(4500, log_buffer->_end);
     EXPECT_EQ(500, log_buffer->_free);
@@ -467,11 +469,11 @@ w_rc_t logbuf_tester::test_flush() {
     // (1, 4500) to (2, 1200)
     // 2*200 + 6*200
     for (int i=1; i<=8; i++) {
-        W_DO(INSERT(200));
+        W_DO(M1_INSERT(200));
     }
 
     lsn = lsn_t(2, 1200);
-    W_DO(FLUSH(lsn));
+    W_DO(M1_FLUSH(lsn));
     EXPECT_EQ(6200, log_buffer->_start);
     EXPECT_EQ(6200, log_buffer->_end);
     EXPECT_EQ(800, log_buffer->_free);
@@ -494,12 +496,12 @@ w_rc_t logbuf_tester::test_flush() {
 
 
     // corner case 1: the specified lsn is greater than to_insert
-    // all log records up to to_insert should have been flushed when FLUSH returns
-    W_DO(INSERT(300));
+    // all log records up to to_insert should have been flushed when M1_FLUSH returns
+    W_DO(M1_INSERT(300));
     EXPECT_EQ(lsn_t(2,1500), log_buffer->_to_insert_lsn);
 
     lsn = lsn_t(2, 2000);
-    W_DO(FLUSH(lsn));
+    W_DO(M1_FLUSH(lsn));
     EXPECT_EQ(6500, log_buffer->_start);
     EXPECT_EQ(6500, log_buffer->_end);
     EXPECT_EQ(500, log_buffer->_free);
@@ -522,17 +524,17 @@ w_rc_t logbuf_tester::test_flush() {
 
 
     // corner case 2: the specified lsn is less than to_insert but greater than to_flush
-    // all log records up to the specified lsn must have been flushed when FLUSH returns
+    // all log records up to the specified lsn must have been flushed when M1_FLUSH returns
     // at the same time, the flush daemon in the background would keep flushing until
     // there is no unflushed portion in the log; we use EXPECT_LE to catch changes made by
     // the flush daemon
-    W_DO(INSERT(100));
-    W_DO(INSERT(100));
+    W_DO(M1_INSERT(100));
+    W_DO(M1_INSERT(100));
     EXPECT_EQ(lsn_t(2,1700), log_buffer->_to_insert_lsn);
     EXPECT_EQ(lsn_t(2,1500), log_buffer->_to_flush_lsn);
 
     lsn = lsn_t(2, 1600);
-    W_DO(FLUSH(lsn));
+    W_DO(M1_FLUSH(lsn));
     EXPECT_LE(6600, log_buffer->_start);
     EXPECT_EQ(6700, log_buffer->_end);
     EXPECT_EQ(300, log_buffer->_free);
@@ -560,15 +562,15 @@ w_rc_t logbuf_tester::test_flush() {
 
     // before the actual test, make sure everything is flushed!
     lsn = lsn_t(2, 1700);
-    W_DO(FLUSH(lsn));
+    W_DO(M1_FLUSH(lsn));
     EXPECT_EQ(lsn_t(2,1700), log_buffer->_to_insert_lsn);
     EXPECT_EQ(lsn_t(2,1700), log_buffer->_to_flush_lsn);
 
     // the actual test
-    W_DO(INSERT(100));
+    W_DO(M1_INSERT(100));
     EXPECT_EQ(lsn_t(2,1800), log_buffer->_to_insert_lsn);
     lsn = lsn_t(2, 1600);
-    W_DO(FLUSH(lsn));
+    W_DO(M1_FLUSH(lsn));
     EXPECT_EQ(6700, log_buffer->_start);
     EXPECT_EQ(6800, log_buffer->_end);
     EXPECT_EQ(200, log_buffer->_free);
@@ -597,11 +599,11 @@ w_rc_t logbuf_tester::test_flush() {
     // // (2, 1800) to (3, 300)
     // // 10*300 + 1*300
     // for (int i=1; i<=11; i++) {
-    //     W_DO(INSERT(300));
+    //     W_DO(M1_INSERT(300));
     // }
 
     // lsn = lsn_t(2, 3000);
-    // W_DO(FLUSH(lsn));
+    // W_DO(M1_FLUSH(lsn));
     // EXPECT_EQ(10300, log_buffer->_start);
     // EXPECT_EQ(10300, log_buffer->_end);
     // EXPECT_EQ(700, log_buffer->_free);
@@ -636,63 +638,63 @@ w_rc_t logbuf_tester::test_fetch() {
 
     // fill up one partition first
     for (i=1, size=0; i<=5; i++) {
-        W_DO(INSERT(300));
-        W_DO(INSERT(300));
-        W_DO(INSERT(300));
-        W_DO(INSERT(100));
+        W_DO(M1_INSERT(300));
+        W_DO(M1_INSERT(300));
+        W_DO(M1_INSERT(300));
+        W_DO(M1_INSERT(100));
         size+=1000;
     }
-    W_DO(FLUSH(lsn_t(1,size)));
+    W_DO(M1_FLUSH(lsn_t(1,size)));
 
     // fill up another partition, except the last segment
     for (i=1, size=0; i<=4; i++) {
-        W_DO(INSERT(300));
-        W_DO(INSERT(300));
-        W_DO(INSERT(300));
-        W_DO(INSERT(100));
+        W_DO(M1_INSERT(300));
+        W_DO(M1_INSERT(300));
+        W_DO(M1_INSERT(300));
+        W_DO(M1_INSERT(100));
         size+=1000;
     }
-    W_DO(FLUSH(lsn_t(1,size)));
+    W_DO(M1_FLUSH(lsn_t(1,size)));
 
     // then add some records to the lastest segment
-    W_DO(INSERT(300));
-    W_DO(INSERT(300));
-    W_DO(INSERT(300));
+    W_DO(M1_INSERT(300));
+    W_DO(M1_INSERT(300));
+    W_DO(M1_INSERT(300));
 
 
     // now the buffer looks like this
     // (2,0) (2,1000), (2,2000), (2,3000), (2,4000)
-    PRINT();
+    M1_PRINT();
 
 
     // case 1: lsn is at offset 0 in a partition
     // hit
-    EXPECT_EQ(1, FETCH(lsn_t(2,0)));
+    EXPECT_EQ(1, M1_FETCH(lsn_t(2,0)));
     // miss
-    EXPECT_EQ(0, FETCH(lsn_t(1,0)));
+    EXPECT_EQ(0, M1_FETCH(lsn_t(1,0)));
 
 
     // case 2: lsn is at offset 0 in a segment,
     // but not at offset 0 in a partition
     // miss
-    EXPECT_EQ(0, FETCH(lsn_t(1,1000)));
+    EXPECT_EQ(0, M1_FETCH(lsn_t(1,1000)));
     // hit
-    EXPECT_EQ(1, FETCH(lsn_t(2,4000)));
+    EXPECT_EQ(1, M1_FETCH(lsn_t(2,4000)));
 
 
     // case 3: lsn is in the middle of a segment
     // miss
-    EXPECT_EQ(0, FETCH(lsn_t(1,2200)));
+    EXPECT_EQ(0, M1_FETCH(lsn_t(1,2200)));
     // hit
-    EXPECT_EQ(1, FETCH(lsn_t(2,4200)));
+    EXPECT_EQ(1, M1_FETCH(lsn_t(2,4200)));
 
 
     // corner case 1
     // the lsn is greater than or equal to to_insert
     // invalid
     EXPECT_EQ(lsn_t(2,4900), log_buffer->_to_insert_lsn);
-    EXPECT_EQ(-1, FETCH(lsn_t(2,4900)));
-    EXPECT_EQ(-1, FETCH(lsn_t(3,0)));
+    EXPECT_EQ(-1, M1_FETCH(lsn_t(2,4900)));
+    EXPECT_EQ(-1, M1_FETCH(lsn_t(3,0)));
 
 
     // corner case 2
@@ -700,8 +702,8 @@ w_rc_t logbuf_tester::test_fetch() {
     // hit
     EXPECT_EQ(lsn_t(2,4900), log_buffer->_to_insert_lsn);
     EXPECT_EQ(lsn_t(2,4000), log_buffer->_to_flush_lsn);
-    EXPECT_EQ(1, FETCH(lsn_t(2,4000)));
-    EXPECT_EQ(1, FETCH(lsn_t(2,4300)));
+    EXPECT_EQ(1, M1_FETCH(lsn_t(2,4000)));
+    EXPECT_EQ(1, M1_FETCH(lsn_t(2,4300)));
 
 
     // corner case 3
@@ -729,13 +731,13 @@ w_rc_t logbuf_tester::test_replacement() {
 
 
     // insert
-    W_DO(INSERT(300));
-    W_DO(INSERT(200)); // (1, 4000)
+    W_DO(M1_INSERT(300));
+    W_DO(M1_INSERT(200)); // (1, 4000)
 
-    W_DO(INSERT(300));
-    W_DO(INSERT(300));
-    W_DO(INSERT(300));
-    W_DO(INSERT(100)); // (1, 5000)
+    W_DO(M1_INSERT(300));
+    W_DO(M1_INSERT(300));
+    W_DO(M1_INSERT(300));
+    W_DO(M1_INSERT(100)); // (1, 5000)
 
     // 2 segments now
     EXPECT_EQ((uint32_t)2, log_buffer->_seg_list->count());
@@ -747,7 +749,7 @@ w_rc_t logbuf_tester::test_replacement() {
 
     // fetch
     // miss
-    EXPECT_EQ(0, FETCH(lsn_t(1,500)));
+    EXPECT_EQ(0, M1_FETCH(lsn_t(1,500)));
 
     // 3 segments now
     EXPECT_EQ((uint32_t)3, log_buffer->_seg_list->count());
@@ -766,10 +768,10 @@ w_rc_t logbuf_tester::test_replacement() {
     int i=0, size=0;
     // fill up 4 segments
     for (i=1, size=0; i<=3; i++) {
-        W_DO(INSERT(300));
-        W_DO(INSERT(300));
-        W_DO(INSERT(300));
-        W_DO(INSERT(100));
+        W_DO(M1_INSERT(300));
+        W_DO(M1_INSERT(300));
+        W_DO(M1_INSERT(300));
+        W_DO(M1_INSERT(100));
         size+=1000;
     }
 
@@ -782,7 +784,7 @@ w_rc_t logbuf_tester::test_replacement() {
     EXPECT_EQ(lsn_t(2,2000), log_buffer->_to_insert_seg->base_lsn);
 
     // insert
-    W_DO(INSERT(300)); // (2,3300)
+    W_DO(M1_INSERT(300)); // (2,3300)
 
     // 5 segments now
     EXPECT_EQ((uint32_t)5, log_buffer->_seg_list->count());
@@ -796,12 +798,12 @@ w_rc_t logbuf_tester::test_replacement() {
 
 
     // case 2: full, and no forced flush
-    W_DO(FLUSH(lsn_t(2,3300)));
+    W_DO(M1_FLUSH(lsn_t(2,3300)));
 
     // insert
-    W_DO(INSERT(300)); // (2,3600)
-    W_DO(INSERT(300)); // (2,3900)
-    W_DO(INSERT(300)); // (2,4200)
+    W_DO(M1_INSERT(300)); // (2,3600)
+    W_DO(M1_INSERT(300)); // (2,3900)
+    W_DO(M1_INSERT(300)); // (2,4200)
 
     // 5 segments now
     EXPECT_EQ((uint32_t)5, log_buffer->_seg_list->count());
@@ -810,11 +812,11 @@ w_rc_t logbuf_tester::test_replacement() {
     EXPECT_EQ(lsn_t(2,0), log_buffer->_seg_list->top()->base_lsn);
     EXPECT_EQ(lsn_t(2,3000), log_buffer->_to_flush_seg->base_lsn);
     EXPECT_EQ(lsn_t(2,4000), log_buffer->_to_insert_seg->base_lsn);
-    //PRINT();
+    //M1_PRINT();
 
     // fetch
     // miss
-    EXPECT_EQ(0, FETCH(lsn_t(1,500)));
+    EXPECT_EQ(0, M1_FETCH(lsn_t(1,500)));
 
     // 5 segments now
     EXPECT_EQ((uint32_t)5, log_buffer->_seg_list->count());
@@ -824,7 +826,7 @@ w_rc_t logbuf_tester::test_replacement() {
     EXPECT_EQ(lsn_t(2,3000), log_buffer->_to_flush_seg->base_lsn);
     EXPECT_EQ(lsn_t(2,4000), log_buffer->_to_insert_seg->base_lsn);
 
-    //PRINT();
+    //M1_PRINT();
 
 
     return RCOK;
@@ -1758,8 +1760,11 @@ w_rc_t test_fetch(ss_m *ssm, test_volume_t *) {
 
     ll = lsn_t(3,SEG_SIZE*14+3*4096);
     EXPECT_EQ(-1, FETCH(ll));
-    ll = lsn_t(4,0);
-    EXPECT_EQ(-1, FETCH(ll));
+
+    // CS: commented out because of assertion I added in log_core::fetch.
+    // Reading beyond _curr_lsn now causes failure instead of EOF.
+    //ll = lsn_t(4,0);
+    //EXPECT_EQ(-1, FETCH(ll));
 
 
     // corner case 3

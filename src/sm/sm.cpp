@@ -590,6 +590,7 @@ ss_m::_construct_once()
                     _options.get_int_option("sm_logbuf_flush_trigger", LOGBUF_FLUSH_TRIGGER),
                     _options.get_int_option("sm_logbuf_block_size", LOGBUF_BLOCK_SIZE),
                     logbufsize,      // logbuf_segsize
+                    0, // part_size to be determined internally
                     _options.get_int_option("sm_carray_slots",
                         ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT)
                     );

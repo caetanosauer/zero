@@ -200,6 +200,14 @@ public:
         
 private:
 
+    // _part_size and this method are only here for test purposes (LogBufferTest)
+    fileoff_t _part_size;
+    fileoff_t _partition_data_size() 
+    {
+        if (_part_size > 0) return _part_size;
+        return _storage->partition_data_size();
+    }
+
     // performance stats
     uint64_t reads;
     uint64_t hits;

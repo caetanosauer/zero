@@ -79,6 +79,22 @@ log_resv::log_resv(log_storage* storage)
 
     _oldest_lsn_tracker = new PoorMansOldestLsnTracker(1 << 20);
     w_assert1(_oldest_lsn_tracker);
+
+    // initial free space estimate... refined once log recovery is complete 
+    release_space(_storage->recoverable_space(PARTITION_COUNT));
+
+    if (smlevel_0::bf) {
+        if(!verify_chkpt_reservation() 
+                || space_for_chkpt() > _storage->partition_data_size()) {
+            cerr<<
+                "log partitions too small compared to buffer pool:"<<endl
+                <<"    "<<_storage->partition_data_size()
+                <<" bytes per partition available"<<endl
+                <<"    "<<space_for_chkpt()
+                <<" bytes needed for checkpointing dirty pages"<<endl;
+            W_FATAL(eOUTOFLOGSPACE);
+        }
+    }
 }
 
 log_resv::~log_resv()

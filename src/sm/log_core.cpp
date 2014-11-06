@@ -184,8 +184,6 @@ log_common::log_common(
 
 log_common::~log_common() 
 {
-    delete _resv;
-    delete _storage;
     w_assert1(_durable_lsn == _curr_lsn);
 
 #ifdef LOG_DIRECT_IO
@@ -417,23 +415,6 @@ log_core::log_core(
 
     _resv = new log_resv(_storage);
 
-    // initial free space estimate... refined once log recovery is complete 
-    // release_space(PARTITION_COUNT*_partition_data_size);
-    // CS: TODO maybe this can be moved to log_resv init code
-    _resv->release_space(_storage->recoverable_space(PARTITION_COUNT));
-    if (smlevel_0::bf) {
-        if(!_resv->verify_chkpt_reservation() 
-                || _resv->space_for_chkpt() > _storage->partition_data_size()) {
-            cerr<<
-                "log partitions too small compared to buffer pool:"<<endl
-                <<"    "<<_storage->partition_data_size()
-                <<" bytes per partition available"<<endl
-                <<"    "<<_resv->space_for_chkpt()
-                <<" bytes needed for checkpointing dirty pages"<<endl;
-            W_FATAL(eOUTOFLOGSPACE);
-        }
-    }
-
     start_flush_daemon();
 
     if (1) {
@@ -467,6 +448,9 @@ log_core::log_core(
 
 log_core::~log_core() 
 {
+    delete _storage;
+    delete _resv;
+
 #ifdef LOG_DIRECT_IO
     free(_buf);
 #else

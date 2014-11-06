@@ -446,6 +446,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
 
         const lsn_t &seek_lsn = _master_lsn;
 
+        bool seeked_to_master = false;
         if (f && seek_lsn.hi() == last_partition) {
             start_pos = seek_lsn.lo();
 
@@ -457,8 +458,10 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
                     << endl;
                 start_pos = pos;
             }
-            else
+            else {
                 pos = start_pos;
+                seeked_to_master = true;
+            }
         }
         DBGOUT5(<<" pos is now " << pos);
 
@@ -1007,20 +1010,35 @@ log_storage::_close_min(partition_number_t n)
 // It is called from the private _prime to prime the segment-sized
 // log buffer _buf.
 long                 
-log_storage::prime(char* buf, lsn_t next, size_t block_size)
+log_storage::prime(char* buf, lsn_t next, size_t block_size, bool read_whole_block)
 {
     FUNC(log_storage::prime);
 
     // get offset of block that contains "next"
     sm_diskaddr_t b = sm_diskaddr_t(_floor(next.lo(), block_size));
 
-    // if the "next" lsn is in the middle of a block...
-    if(b != next.lo()) {
-        w_assert3(b < next.lo());
-        partition_t* p = curr_partition();
-        W_COERCE(me()->pread(p->fhdl_app(), buf, block_size, b));
+    long prime_offset = next.lo() - b;
+    /*
+     * CS: Handle case where next is exactly at a block border.
+     * This is used by logbuf_core, where read_whole_block == false.
+     * In that case, we must read the whole segment.
+     * Another way to think of this is that we did not explicitly
+     * require reading the whole block, but the position of next is
+     * telling us to read a whole block.
+     */
+    if (!read_whole_block && prime_offset == 0 && next.lo() > 0) {
+        prime_offset = block_size;
+        b -= block_size;
     }
-    return next.lo() - b;
+
+    w_assert3(prime_offset >= 0);
+    if(prime_offset > 0) {
+        size_t read_size = read_whole_block ? block_size : prime_offset;
+        w_assert3(read_size > 0);
+        partition_t* p = curr_partition();
+        W_COERCE(me()->pread(p->fhdl_app(), buf, read_size, b));
+    }
+    return prime_offset;
 }
 
 partition_t*
