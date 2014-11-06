@@ -509,7 +509,8 @@ void log_core::_acquire_buffer_space(CArraySlot* info, long recsize)
             CRITICAL_SECTION(cs, _wait_flush_lock);
             while(end_byte() - start_byte() + recsize > segsize() - 2* log_storage::BLOCK_SIZE)
             {
-                //_waiting_for_space = true;
+                // CS: changed from waiting_for_space to waiting_for_flush
+                _waiting_for_flush = true;
                 // Use signal since the only thread that should be waiting 
                 // on the _flush_cond is the log flush daemon.
                 DO_PTHREAD(pthread_cond_signal(&_flush_cond));
