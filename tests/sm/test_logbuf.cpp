@@ -101,10 +101,22 @@ rc_t consume(int size, ss_m *ssm) {
 
 class logbuf_tester : private smthread_t {
 public:
+
+    /*
+     * CS: Introduced this enum mechanism so that the basic tests for the
+     * standalone log buffer (a.k.a. M1) can run inside an smthread.
+     * This is required (at least) so failures don't occur when using TSTATs.
+     * However there may be other issues when running outside an smthread
+     * which we are not aware of yet.
+     */
+    enum WhichTest {
+        INIT1, INIT2, INIT3, FETCH, FLUSH, INSERT, REPLACEMENT
+    };
+
     logbuf_tester(uint32_t count = LOGBUF_SEG_COUNT, uint32_t flush_trigger =
               LOGBUF_FLUSH_TRIGGER, uint32_t block_size =
               LOGBUF_BLOCK_SIZE, uint32_t seg_size = LOGBUF_SEG_SIZE, uint32_t part_size
-              = LOGBUF_PART_SIZE);
+              = LOGBUF_PART_SIZE, WhichTest t = INIT1);
     ~logbuf_tester();
 
     w_rc_t test_init(int case_no);
@@ -113,6 +125,7 @@ public:
     w_rc_t test_fetch();
     w_rc_t test_replacement();
     virtual void run();
+        
 
 public:
     logbuf_core *log_buffer;
@@ -122,6 +135,7 @@ private:
     uint32_t _block_size;
     uint32_t _seg_size;
     uint32_t _part_size;
+    WhichTest _test;
 };
 
 // test module
@@ -130,13 +144,14 @@ logbuf_tester *tester = NULL;
 
 
 logbuf_tester::logbuf_tester(uint32_t count, uint32_t flush_trigger, uint32_t
-                     block_size, uint32_t seg_size, uint32_t part_size)
+                     block_size, uint32_t seg_size, uint32_t part_size, WhichTest t)
     : smthread_t(t_regular, "logbuf_tester"),
     _count(count),
     _flush_trigger(flush_trigger),
     _block_size(block_size),
     _seg_size(seg_size),
-    _part_size(part_size)
+    _part_size(part_size),
+    _test(t)
 {
     if (!smlevel_0::errlog) 
         smlevel_0::errlog = new ErrLog("logbuf_tester", log_to_unix_file, "-");
@@ -157,6 +172,30 @@ void logbuf_tester::run()
             _seg_size,
             _part_size,
             ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT);
+    
+    switch(_test) {
+        case INIT1:
+            test_init(1);
+            break;
+        case INIT2:
+            test_init(2);
+            break;
+        case INIT3:
+            test_init(3);
+            break;
+        case FETCH:
+            test_fetch();
+            break;
+        case FLUSH:
+            test_flush();
+            break;
+        case INSERT:
+            test_insert();
+            break;
+        case REPLACEMENT:
+            test_replacement();
+            break;
+    }
 }
 
 logbuf_tester::~logbuf_tester() {
@@ -842,12 +881,17 @@ TEST (LogBufferTest, Init) {
     uint32_t seg_size = 1000;
     uint32_t part_size = 5000;
 
-    for (int i=1; i<=3; i++) {
-        tester = new logbuf_tester(seg_count, flush_trigger, block_size, seg_size,
-                               part_size);
-        tester->test_init(i);
-        delete tester;
-    }
+    tester = new logbuf_tester(seg_count, flush_trigger, block_size, seg_size,
+                               part_size, logbuf_tester::INIT1);
+    delete tester;
+
+    tester = new logbuf_tester(seg_count, flush_trigger, block_size, seg_size,
+                               part_size, logbuf_tester::INIT2);
+    delete tester;
+
+    tester = new logbuf_tester(seg_count, flush_trigger, block_size, seg_size,
+                               part_size, logbuf_tester::INIT3);
+    delete tester;
 }
 
 TEST (LogBufferTest, Insert) {
@@ -858,12 +902,7 @@ TEST (LogBufferTest, Insert) {
     uint32_t part_size = 5000;
 
     tester = new logbuf_tester(seg_count, flush_trigger, block_size, seg_size,
-                           part_size);
-
-
-    tester->test_insert();
-
-
+                           part_size, logbuf_tester::INSERT);
     delete tester;
 }
 
@@ -876,12 +915,7 @@ TEST (LogBufferTest, Flush) {
     uint32_t part_size = 5000;
 
     tester = new logbuf_tester(seg_count, flush_trigger, block_size, seg_size,
-                           part_size);
-
-
-    tester->test_flush();
-
-
+                           part_size, logbuf_tester::FLUSH);
     delete tester;
 }
 
@@ -894,12 +928,7 @@ TEST (LogBufferTest, Fetch) {
     uint32_t part_size = 5000;
 
     tester = new logbuf_tester(seg_count, flush_trigger, block_size, seg_size,
-                           part_size);
-
-
-    tester->test_fetch();
-
-
+                           part_size, logbuf_tester::FETCH);
     delete tester;
 }
 
@@ -912,12 +941,7 @@ TEST (LogBufferTest, Replacement) {
     uint32_t part_size = 5000;
 
     tester = new logbuf_tester(seg_count, flush_trigger, block_size, seg_size,
-                           part_size);
-
-
-    tester->test_replacement();
-
-
+                           part_size, logbuf_tester::REPLACEMENT);
     delete tester;
 }
 #endif // LOG_DIRECT_IO
