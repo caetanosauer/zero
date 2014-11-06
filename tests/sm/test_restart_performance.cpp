@@ -88,10 +88,13 @@ const uint64_t POPULATE_RECORDS           = 60000;          // Record count per 
 const uint64_t TOTAL_RECOVERY_TRANSACTION = 10000;          // Total transactions during phase 2 (pre_shutdown), all these transactions needed
                                                             // to be recovered after system crash, 10000 is about as high as I can go without
                                                             // hittning weird bugs
-const int      TOTAL_SUCCESS_TRANSACTIONS = 2000;           // Target total completed concurrent transaction count in phase 3 (post_shutdown),
+const int      TOTAL_SUCCESS_TRANSACTIONS = 4500;           // Target total completed concurrent transaction count in phase 3 (post_shutdown),
                                                             // the time measurement is based on this transaction count
-                                                            // We want the recovery to complete for M1, M2 and M4, but not necessary for
-                                                            // M3 (pure on_demand which potentially would have a very long tail)
+                                                            // For M4 has bugs related to memory, can oly go as high as 500
+                                                            // For M2, if set it higher than 4500, cannot get to the asked successful transaction
+                                                            //    count, recovery finished but core dump at the end
+const int      M4_SUCCESS_TRANSACTIONS    = 500;            // M4 target total completed concurrent transaction count in phase 3 (post_shutdown)
+                                                            // lower number due to bugs
 const int      RECORD_FREQUENCY           = TOTAL_SUCCESS_TRANSACTIONS/10; // Record the time every RECORD_FREQUENCY successful transactions,
                                                             // so we get 10 reports.  Ignore failure transactions
 const int      TOTAL_CYCLE_SLOTS          = TOTAL_SUCCESS_TRANSACTIONS/RECORD_FREQUENCY+1; // Total avaliable slots to store time information,
@@ -866,6 +869,9 @@ public:
 
         std::cout << std::endl << "Start post_shutdown (phase 3)..." << std::endl << std::endl;
 
+        int32_t restart_mode = test_env->_restart_options->restart_mode;
+        bool crash_shutdown = test_env->_restart_options->shutdown_mode;  // false = normal shutdown
+
         // Now start measuring the Instant Restart duration based on the
         // first TOTAL_SUCCESS_TRANSACTIONS successful transactions
         // All concurrent transactions are coming in using the main thread (single threaded)
@@ -885,15 +891,24 @@ public:
         int out_of_bound = 0;                           // Frequency to use an out-of-bound record (OUT_OF_BOUND_FREQUENCY)
         int index_count = 0;                            // Which index to use for the operation?
 
+
+        // Determine how many successful transactions to reach
+        // M4 has a much lower number due to bugs
+        int target_count;
+        if (restart_mode == m4_default_restart)
+            target_count = M4_SUCCESS_TRANSACTIONS;
+        else
+            target_count = TOTAL_SUCCESS_TRANSACTIONS;
+
         // Spread out the operations to all indexes
-        for (succeed_txn_count=0; succeed_txn_count < TOTAL_SUCCESS_TRANSACTIONS;)
+        for (succeed_txn_count=0; succeed_txn_count < target_count;)
         {
             // User transactions in M2 might fail due to commit_lsn check,
             // in such case the failed transactions are not counted toward
             // the total successful transaction count
 
             // A safety to prevent infinite loop (bug) in code
-            if (key_int > (POPULATE_RECORDS * DIRTY_INDEX_COUNT * 5))
+            if (key_int > (POPULATE_RECORDS * DIRTY_INDEX_COUNT * 100))
             {
                 failed = true;
                 break;
@@ -1083,23 +1098,20 @@ public:
             // We did not have enough successful user transaction due to too many failures
             // this is unexpected behavior, report it
             std::cerr << std::endl << "ERROR..." << std::endl;
-            std::cerr << "Failed to complete " << TOTAL_SUCCESS_TRANSACTIONS << " transactions, potential infinite loop." << std::endl;
+            std::cerr << "Failed to complete " << target_count << " transactions, potential infinite loop." << std::endl;
             std::cerr << "Total started transactions: " << started_txn_count << std::endl;
             std::cerr << "Total completed transactions: " << succeed_txn_count << std::endl;
         }
         else
         {
             // Reporting:
-            int32_t restart_mode = test_env->_restart_options->restart_mode;
-            bool crash_shutdown = test_env->_restart_options->shutdown_mode;  // false = normal shutdown
-
             // Report performance information
             //     _total_cycles[0] - from shutdown to the beginning of restart, no recovery
             //     ...
             //     _total_cycles[i] - record information every RECORD_FREQUENCY successful user transactions
             //     ...
             //     _total_cycles[TOTAL_CYCLE_SLOTS] - from shutdown to finish
-            //                                                              TOTAL_SUCCESS_TRANSACTIONS user transactions
+            //                                                              target_count user transactions
 #ifdef MEASURE_PERFORMANCE
             int count = 0;
             std::cout << std::endl << "Successful transaction count, elapse time(milliseconds) and CPU cycles: " << std::endl;
@@ -1171,7 +1183,7 @@ public:
             unsigned long long duration_CPU = (_total_cycles[_cycle_slot_index - 1] - _total_cycles[0]);
             double duration_time = (_total_elapse[_cycle_slot_index - 1] - _total_elapse[0]);
 
-            std::cout << std::endl << "Total CPU cycles for " << TOTAL_SUCCESS_TRANSACTIONS << " successful user transactions: "
+            std::cout << std::endl << "Total CPU cycles for " << target_count << " successful user transactions: "
                       << duration_CPU << std::endl;
 
             // Convert from CPU cycles to time
@@ -1236,7 +1248,7 @@ TEST (RestartPerfTest, MultiPerformanceM1)
 }
 **/
 
-/**
+/**/
 // Passing - M2
 TEST (RestartPerfTest, MultiPerformanceM2)
 {
@@ -1256,9 +1268,9 @@ TEST (RestartPerfTest, MultiPerformanceM2)
                                            make_perf_options()),  // Other options
                                            0);
 }
-**/
-
 /**/
+
+/**
 // Passing - M3
 TEST (RestartPerfTest, MultiPerformanceM3)
 {
@@ -1276,7 +1288,7 @@ TEST (RestartPerfTest, MultiPerformanceM3)
                                            make_perf_options()),  // Other options
                                            0);
 }
-/**/
+**/
 
 /**
 // Passing - M4
