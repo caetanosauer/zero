@@ -310,55 +310,6 @@ protected:
      * \ingroup CARRAY
      */
     ConsolidationArray*  _carray;
-
-    // TODO MOVE THIS BACK TO RESTART_M ONCE WEY APPROVES IT
-public:
-    /**
-    * \brief Collect relevant logs to recover the given page.
-    * \ingroup Single-Page-Recovery
-    * \details
-    * This method starts from the log record at EMLSN and follows
-    * the page-log-chain to go backward in the log file until
-    * it hits a page-img log from which we can reconstruct the
-    * page or it reaches the current_lsn.
-    * Defined in log_spr.cpp.
-    * \NOTE This method returns an error if the user had truncated
-    * the transaction logs required for the recovery.
-    * @param[in] pid ID of the page to recover.
-    * @param[in] current_lsn the LSN the page is currently at.
-    * @param[in] emlsn the LSN up to which we should recover the page.
-    * @param[out] log_copy_buffer the collected logs will be contiguously
-    * copied in to this buffer in the \b reverse order of the log.
-    * For example, the first entry would be the log record with EMLSN.
-    * @param[in] buffer_size size of log_copy_buffer.
-    * If we need a bigger buffer, we return an error.
-    * @param[out] ordered_entries point to each log
-    * record in log_copy_buffer in the order of the log.
-    * This is easier to use for the purpose of applying them.
-    * @pre current_lsn < emlsn
-    */
-    rc_t _collect_single_page_recovery_logs(
-        const lpid_t& pid, const lsn_t &current_lsn, const lsn_t &emlsn,
-        char* log_copy_buffer, size_t buffer_size,
-        std::vector<logrec_t*> &ordered_entries,
-        const bool valid_start_emlan = true);
-
-    /**
-    * \brief Apply the given logs to the given page.
-    * \ingroup Single-Page-Recovery
-    * Defined in log_spr.cpp.
-    * @param[in, out] p the page to recover.
-    * @param[in] ordered_entries the log records to apply
-    * in the order of the log.
-    * @pre p is already fixed with exclusive latch
-    */
-    rc_t _apply_single_page_recovery_logs(fixable_page_h &p,
-        const std::vector<logrec_t*> &ordered_entries);
-
-    virtual void dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t &max_lsn);
-
-    rc_t recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
-                                    const bool actual_emlsn);
 };
 
 /**

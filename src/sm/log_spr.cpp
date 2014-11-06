@@ -9,17 +9,10 @@
 #include "logdef_gen.cpp"
 
 #include "log.h"
-#include "log_core.h"
+#include "restart.h"
 #include "log_spr.h"
 #include "logrec.h"
 #include "backup.h"
-
-// LOG_BUFFER switch
-#include "logbuf_common.h"
-
-#ifdef LOG_BUFFER
-#include "logbuf_core.h"
-#endif
 
 page_evict_log::page_evict_log (const btree_page_h& p,
                                 general_recordid_t child_slot, lsn_t child_lsn) {
@@ -33,12 +26,12 @@ void page_evict_log::redo(fixable_page_h* page) {
     bp.set_emlsn_general(dp->_child_slot, dp->_child_lsn);
 }
 
-void log_common::dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t &max_lsn) {
-    lsn_t master = master_lsn();
+void restart_m::dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t &max_lsn) {
+    lsn_t master = log->master_lsn();
     o << "Dumping Page LSN Chain for PID=" << pid << ", MAXLSN=" << max_lsn
         << ", MasterLSN=" << master << "..." << std::endl;
 
-    log_i           scan(*this, master);
+    log_i           scan(*log, master);
     logrec_t*       buf;
     lsn_t           lsn;
     // Scan all log entries until EMLSN
@@ -72,10 +65,11 @@ void log_common::dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const l
     // after the dumping, recovers the original master_lsn because log_i increased it.
     // of course, this is not safe if there are other transactions going.
     // but, this method is for debugging.
-    _storage->reset_master_lsn(master);
+    // CS: commented out -- tests seem fine without this
+    //_storage->reset_master_lsn(master);
 }
 
-rc_t log_common::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
+rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
                                     const bool actual_emlsn) {
     // Single-Page-Recovery operation does not hold latch on the page to be recovered, because
     // it assumes the page is private until recovered.  It is not the case during
@@ -146,7 +140,7 @@ rc_t log_common::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
     return RCOK;
 }
 
-rc_t log_common::_collect_single_page_recovery_logs(
+rc_t restart_m::_collect_single_page_recovery_logs(
     const lpid_t& pid,
     const lsn_t& current_lsn,
     const lsn_t& emlsn,                        // In: starting point of the log chain
@@ -165,7 +159,7 @@ rc_t log_common::_collect_single_page_recovery_logs(
     ordered_entries.clear();
     size_t buffer_capacity = buffer_size;
 
-    DBGOUT1(<< "log_common::_collect_single_page_recovery_logs: current_lsn (end): " << current_lsn
+    DBGOUT1(<< "restart_m::_collect_single_page_recovery_logs: current_lsn (end): " << current_lsn
             << ", emlsn (begin): " << emlsn );
 
     if (false == valid_start_emlan)
@@ -180,34 +174,28 @@ rc_t log_common::_collect_single_page_recovery_logs(
 // TODO(Restart)... NYI.  How to find the valid emlsn?  Need backward log scan and slow
 ////////////////////////////////////////
 
-        DBGOUT1(<< "log_common::_collect_single_page_recovery_logs: search for the actual emlsn");
-        W_FATAL_MSG(fcINTERNAL, << "log_common::_collect_single_page_recovery_logs - failure on failure, NYI");
+        DBGOUT1(<< "restart_m::_collect_single_page_recovery_logs: search for the actual emlsn");
+        W_FATAL_MSG(fcINTERNAL, << "restart_m::_collect_single_page_recovery_logs - failure on failure, NYI");
     }
 
     for (lsn_t nxt = emlsn; current_lsn < nxt && nxt != lsn_t::null;) {
         logrec_t* record = NULL;
         lsn_t obtained = nxt;
-#ifdef LOG_BUFFER
-        rc_t rc = fetch(obtained, record, NULL, true);
 
-        // use hints
-        // rc_t rc = fetch(obtained, tmp, NULL, SINGLE_PAGE_RECOVERY);
-        // record = tmp;
-#else
-        rc_t rc = fetch(obtained, record, NULL, true);
-#endif
-        release(); // release _partition_lock immediately
+        rc_t rc = log->fetch(obtained, record, NULL, true);
+        log->release(); // release _partition_lock immediately
+
         if ((rc.is_error()) && (eEOF == rc.err_num()))
         {
             // End of Log, cannot go further
             break;
         }
         if (obtained != nxt) {
-            ERROUT(<<"log_common::fetch() returned a different LSN, old log partition already"
+            ERROUT(<<"restart_m::fetch() returned a different LSN, old log partition already"
                 " wiped?? nxt=" << nxt << ", obtained=" << obtained);
         }
 
-        DBGOUT1(<< "log_common::_collect_single_page_recovery_logs, log = " << *record);
+        DBGOUT1(<< "restart_m::_collect_single_page_recovery_logs, log = " << *record);
 
         if (buffer_capacity < record->length()) {
 ////////////////////////////////////////
@@ -286,7 +274,7 @@ rc_t log_common::_collect_single_page_recovery_logs(
     return RCOK;
 }
 
-rc_t log_common::_apply_single_page_recovery_logs(fixable_page_h &p,
+rc_t restart_m::_apply_single_page_recovery_logs(fixable_page_h &p,
     const std::vector<logrec_t*>& ordered_entries) {
     // So far, we assume the Single-Page-Recovery target is a fixable page with latches.
     // So far no plan to extend it to non-fixable pages.

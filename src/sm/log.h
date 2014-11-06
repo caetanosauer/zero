@@ -292,31 +292,8 @@ public:
 
     virtual partition_number_t  partition_num() const = 0;
 
-    /**
-    * \brief Apply single-page-recovery to the given page.
-    * \ingroup Single-Page-Recovery
-    * Defined in log_spr.cpp.
-    * \NOTE This method returns an error if the user had truncated
-    * the transaction logs required for the recovery.
-    * @param[in, out] p the page to recover.
-    * @param[in] emlsn the LSN up to which we should recover the page.
-    * @param[in] actual_emlsn is set to false if we do not have the actual emlsn due to page corruption
-    *                         during recovery (no parent page)
-    * @pre p has a backup in the backup file
-    * @pre p.is_fixed() (could be bufferpool managed or non-bufferpool managed)
-    */
-    virtual rc_t recover_single_page(fixable_page_h &p, const lsn_t &emlsn, 
-                                 const bool actual_emlsn = true) = 0;
-
     /**\brief used by partition */
     virtual fileoff_t limit() const = 0;
-
-    /**
-     * \ingroup Single-Page-Recovery
-     * Defined in log_spr.cpp.
-     * @copydoc ss_m::dump_page_lsn_chain(std::ostream&, const lpid_t &, const lsn_t&)
-     */
-    virtual void dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t &max_lsn) = 0;
 
 private:
     // no copying allowed
