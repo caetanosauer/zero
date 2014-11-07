@@ -9,6 +9,7 @@
 
 #include "sm_int_1.h"
 #include "chkpt.h"
+#include <sys/stat.h>
 
 #include "log_core.h"
 
