@@ -1,19 +1,19 @@
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -160,7 +160,7 @@ w_rc_t    sdisk_t::writev(const iovec_t *iov, int iovcnt, int &transfered)
 /* Emulate positioned I/O operations on thos boxes which don't
    support it.  It isn't "race safe", that is a difficult problem
    to deal with.  Pread/Pwrite don't move the file pointer, but
-   that is difficult to do if the OS doens't support them.  We 
+   that is difficult to do if the OS doens't support them.  We
    seek to where the I/O is supposed to be, execute it, and
    then restore the old position.  */
 

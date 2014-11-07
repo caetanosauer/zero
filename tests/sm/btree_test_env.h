@@ -137,10 +137,12 @@ public:
 
     test_volume_t      _volume;
 
-    stid_t             _stid;              // Only one index for performance tests
+    stid_t*            _stid_list;         // array of stid so we can have multiple indexes
     lpid_t             _root_pid;          // root page id
-    unsigned long long _start;             // Performance measurement counter start
-    unsigned long long _end;               // Performance measurement counter end
+    unsigned long long _start;             // CPU cycle counter start
+    unsigned long long _end;               // CPU cycle counter end
+    double             _start_time;        // Elapse time counter start
+    double             _end_time;          // Elapse time counter start
 };
 
 class restart_performance_initial_functor : public test_functor

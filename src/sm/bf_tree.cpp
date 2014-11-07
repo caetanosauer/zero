@@ -668,7 +668,9 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 #if W_DEBUG_LEVEL>0
     int retry_count = 0;
 #endif
-    while (true) {
+    while (true)
+    {
+        const uint32_t ONE_MICROSEC = 10000;
 #if W_DEBUG_LEVEL>0
         if (++retry_count % 10000 == 0) {
             DBGOUT1(<<"keep trying to fix.. " << shpid << ". current retry count=" << retry_count);
@@ -740,11 +742,13 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                         if (check_rc.is_error())
                         {
                             // Cannot latch cb, probably a concurrent user transaction is trying to load this
-                            // page also, rare but possible, try again
+                            // page, or in M4 (mixed mode) the page is being recoverd, rare but possible, try again
                             ERROUT(<<"bf_tree_m: unlucky! not able to acquire cb on a force load page "
                                    << shpid << ". Discard my own work and try again.");
 
                             force_load = false;
+                            // Sleep a while to give the other process time to finish its work
+                            ::usleep(ONE_MICROSEC);
                             continue;
                         }
                         else
@@ -771,6 +775,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                                 if (cb.latch().held_by_me())
                                     cb.latch().latch_release();
                                 force_load = false;
+                                // Sleep a while to give the other process time to finish its work
+                                ::usleep(ONE_MICROSEC);
                                 continue;
                             }
                         }
@@ -807,6 +813,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 
                 // Turn off the force_load flag before the retry
                 force_load = false;
+                // Sleep a while to give the other process time to finish its work
+                ::usleep(ONE_MICROSEC);
                 continue;
             }
 
@@ -829,6 +837,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     // Do not free the block since we did not allocated it initially
 
                     force_load = false;
+                    // Sleep a while to give the other process time to finish its work
+                    ::usleep(ONE_MICROSEC);
                     continue;
                 }
             }

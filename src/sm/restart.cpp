@@ -257,20 +257,20 @@ restart_m::restart(
     CmpXctLockTids        lock_cmp;
     XctLockHeap           lock_heap1(lock_cmp);  // For Log Analysis
     XctLockHeap           lock_heap2(lock_cmp);  // For Checkpoint
+    bool                  restart_with_lock;     // Whether to acquire lock during Log Analysis
 
     if (false == use_concurrent_lock_restart())
     {
         // Not using locks (either serial or log mode) - M1 and M2
-        // ignore 'non-read-lock' and forward log scan
-        analysis_pass_forward(master, redo_lsn, in_doubt_count, undo_lsn, loser_heap, commit_lsn, last_lsn);
+        restart_with_lock = false;
     }
     else
     {
         // Using locks - M3 and M4
-        // Acquire non-read-locks and backward log scan
-        // Also build a special heap for lock information (debug only)
-        analysis_pass_backward(master, redo_lsn, in_doubt_count, undo_lsn, loser_heap, last_lsn, lock_heap1);
+        restart_with_lock = true;
     }
+    analysis_pass_backward(master, redo_lsn, in_doubt_count, undo_lsn, loser_heap,
+                           commit_lsn, last_lsn, restart_with_lock, lock_heap1);
 
     // If nothing from Log Analysis, in other words, if both transaction table and buffer pool
     // are empty, there is nothing to do in REDO and UNDO phases, but we still want to
@@ -299,12 +299,12 @@ restart_m::restart(
 
     // Take a synch checkpoint after the Log Analysis phase and before the REDO phase
     w_assert1(smlevel_1::chkpt);
-    if (false == use_concurrent_lock_restart())
+    if ((false == use_concurrent_lock_restart()) && (0 != in_doubt_count))
     {
         // Do not build the heap for lock information
         smlevel_1::chkpt->synch_take();
     }
-    else
+    else if (0 != in_doubt_count)
     {
         // Checkpoint always gather lock information, but it would build a heap
         // on return only if asked for it (debug only)
@@ -313,7 +313,6 @@ restart_m::restart(
         // Compare lock information in two heaps, the actual comparision is debug build only
         _compare_lock_entries(lock_heap1, lock_heap2);
     }
-
 
     if (false == use_serial_restart())
     {
@@ -494,6 +493,10 @@ restart_m::analysis_pass_forward(
 )
 {
     FUNC(restart_m::analysis_pass_forward);
+
+    W_FATAL_MSG(fcINTERNAL,
+                << "Log Analysis with forward log scan -- not used anymore with the in_doubt page implementation"
+                << ", all restart methods are using backward log scan");
 
     // Actually turn off logging during Log Analysis phase, there is no possibility
     // to add new log records by accident during this phase
@@ -905,9 +908,7 @@ restart_m::analysis_pass_forward(
             // Done with the master checkpoint log records. Update 'num_chkpt_end_handled'
             // to avoid processing incomplete or extra completed checkpoints
             num_chkpt_end_handled++;
-
             break;
-
 
         case logrec_t::t_xct_freeing_space:
 
@@ -1124,7 +1125,7 @@ restart_m::analysis_pass_forward(
              << master << ", redo_lsn: " << redo_lsn
              << ", undo lsn: " << undo_lsn << ", commit_lsn: " << commit_lsn);
 
-    DBGOUT3( << "Number of in_doubt pages: " << in_doubt_count);
+    DBGOUT1( << "Number of in_doubt pages: " << in_doubt_count);
 
     if ((false == mount))
     {
@@ -1157,16 +1158,17 @@ restart_m::analysis_pass_forward(
  *  insert transaction table.
  *  Compute redo_lsn.
  *  Non-read-lock acquisition
+ * compute commit_lsn
  *
- *  This function is used in all situations after M2, because system is not opened during
+ *  This function is used in all situations from M1 - M4, system is not opened during
  *  Log Analysis phase
  *
  * The main difference between analysis_pass_backward and analysis_pass_forward
  * functions are the following:
  *     1. Log scan direction
- *     2. Lock acquisition
+ *     2. Lock acquisition for M3/M4
  * At the end of Log Analysis, the results in buffer pool and transaction table should be
- * identical except the lock acquisitions in backward log scan.
+ * identical except the lock acquisitions if needed.
  *
  * Implementing two different functions (one for forward and one for backward scan)
  * because although some of the code are very similar, there are sufficient differences
@@ -1174,19 +1176,22 @@ restart_m::analysis_pass_forward(
  *********************************************************************/
 void
 restart_m::analysis_pass_backward(
-    const lsn_t           master,          // In: End point for backward log scan
-                                           //      The backward scan stops at the beginning
-                                           //      of the last completed checkpoint, the passed-in
-                                           //      'master' is mainly for verification purpose
-    lsn_t&                redo_lsn,        // Out: Starting point for REDO forward log scan (if used),
-                                           //       which could be different from master
-    uint32_t&             in_doubt_count,  // Out: Counter for in_doubt page count in buffer pool
-    lsn_t&                undo_lsn,        // Out: Stopping point for UNDO backward log scan (if used)
-    XctPtrHeap&           loser_heap,      // Out: Heap to record all the loser transactions,
-                                           //       used only for reverse chronological order
-                                           //       UNDO phase (if used)
-    lsn_t&                last_lsn,        // Out: Last lsn in the recovery log before system crash
-    XctLockHeap&          lock_heap        // Out: all re-acquired locks
+    const lsn_t           master,            // In: End point for backward log scan
+                                             //      The backward scan stops at the beginning
+                                             //      of the last completed checkpoint, the passed-in
+                                             //      'master' is mainly for verification purpose
+    lsn_t&                redo_lsn,          // Out: Starting point for REDO forward log scan (if used),
+                                             //       which could be different from master
+    uint32_t&             in_doubt_count,    // Out: Counter for in_doubt page count in buffer pool
+    lsn_t&                undo_lsn,          // Out: Stopping point for UNDO backward log scan (if used)
+    XctPtrHeap&           loser_heap,        // Out: Heap to record all the loser transactions,
+                                             //       used only for reverse chronological order
+                                             //       UNDO phase (if used)
+    lsn_t&                commit_lsn,        // Out: Commit lsn for concurrent transaction (if used), M2 only
+    lsn_t&                last_lsn,          // Out: Last lsn in the recovery log before system crash
+    const bool            restart_with_lock, // In:  true to acquire lock (M3/4), false to use commit_lsn (M2)
+                                             //       or no early open (M1)
+    XctLockHeap&          lock_heap          // Out: all re-acquired locks (form M3 and M4 only
 )
 {
     FUNC(restart_m::analysis_pass_backward);
@@ -1236,6 +1241,10 @@ restart_m::analysis_pass_backward(
     // the max_lsn is used to initialize various lsn values
     lsn_t max_lsn = last_lsn + 1;
     w_assert1(master < max_lsn);
+
+    // Initialize commit_lsn to a value larger than the current log lsn
+    // this is to ensure we have the largest LSN value to begin with
+    commit_lsn = max_lsn;
 
     // The UNDO loser_heap must be empty initially
     w_assert1(0 == loser_heap.NumElements());
@@ -1483,10 +1492,11 @@ restart_m::analysis_pass_backward(
             // t_chkpt_xct_tab log record, in other words, it was generated prior the
             // corresponding t_chkpt_xct_tab log record
 
-            if (num_chkpt_end_handled == 1)
+            if ((num_chkpt_end_handled == 1) && (true == restart_with_lock))
             {
                 // Process it only if we have seen a matching 'end checkpoint' log record
                 // meaning we are processing the last completed checkpoint
+                // Also if we need to acquire locks (M3/M4)
 
                 chkpt_xct_lock_t* dp = (chkpt_xct_lock_t*) r.data();
                 // If the transaction tid specified in the log record exists in transaction table and
@@ -1706,9 +1716,10 @@ restart_m::analysis_pass_backward(
                 // Take care of common stuff among forward and backward log scan first
                 _analysis_other_log(r, lsn, in_doubt_count, xd);
 
-                if (true == acquire_lock)
+                if ((true == acquire_lock) && (true == restart_with_lock))
                 {
-                    // This is an undecided in-flight transaction, process lock for this log record
+                    // We need to acquire locks (M3/M4) and this is an
+                    // undecided in-flight transaction, process lock for this log record
                     _analysis_process_lock(r, mapCLR,lock_heap,xd);
                 }
                 else
@@ -1780,6 +1791,17 @@ restart_m::analysis_pass_backward(
     if (undo_lsn > master)
        undo_lsn = master;
 
+    // Commit_lsn is the validation point for concurrent user transaction if
+    // we open the system after Log Analysis phase and use the commit_lsn
+    // implementation instead of lock acquisition implementation.
+    // If commit_lsn == lsn_t::null, which is the smallest value:
+    //    Start from empty database and no recovery: all concurrent user
+    //    transactions are allowed
+    // If commit_lsn <> lsn_t::null:
+    //    Recovery starts from an existing database, it does not mean we
+    //        have loser txn or in_doubt page.
+    //    If no loser txn or in_doubt page, then commit_lsn == master
+
     // If we had delayed operation from mount or dismount log records, apply it now
     heapMount.Heapify();
     if ( 0 != heapMount.NumElements())
@@ -1831,9 +1853,16 @@ restart_m::analysis_pass_backward(
     // on all loser transactions.
 
     // Final process of the entries in transaction table
-    // Backward log scan is using locks for concurrency control, no commit_lsn
-    lsn_t dummy_lsn = lsn_t::null;
-    _analysis_process_txn_table(loser_heap, dummy_lsn);
+    _analysis_process_txn_table(loser_heap, commit_lsn);
+
+    // Now we should have the final commit_lsn value
+    // if it is the same as max_lsn (initial value), set commit_lsn to null
+    // because we did not process anything which affects commit_lsn
+    // Note the commit_lsn is the minimum txn lsn from all in-flight transactions
+    // If we are doing lock acquisition (M3/M4), set the commit_lsn to null because
+    // we do not want to use it for concurrent tranaactions
+    if ((commit_lsn == max_lsn) || (true == restart_with_lock))
+        commit_lsn = lsn_t::null;
 
     w_base_t::base_stat_t f = GET_TSTAT(log_fetches);
     w_base_t::base_stat_t i = GET_TSTAT(log_inserts);
@@ -1842,13 +1871,16 @@ restart_m::analysis_pass_backward(
         << f << " log_fetches, "
         << i << " log_inserts "
         << " redo_lsn is " << redo_lsn
-        << " undo_lsn is " << undo_lsn << flushl;
+        << " undo_lsn is " << undo_lsn
+        << " commit_lsn is " << commit_lsn
+        << flushl;
 
     DBGOUT3 (<< "End of Log Analysis phase.  Master: "
              << master << ", redo_lsn: " << redo_lsn
-             << ", undo lsn: " << undo_lsn);
+             << ", undo lsn: " << undo_lsn << ", commit_lsn: " << commit_lsn);
 
-    DBGOUT3( << "Number of in_doubt pages: " << in_doubt_count);
+// TODO(Restart)... performance
+    DBGOUT1( << "Number of in_doubt pages: " << in_doubt_count);
 
     if (false == mount)
     {
@@ -3054,8 +3086,8 @@ void restart_m::_analysis_process_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,
 
     // theLastMountLSNBeforeChkpt was from the begin checkpoint log record
     // it was the lsn of the last mount before the begin checkpoint
-    while (theLastMountLSNBeforeChkpt != lsn_t::null
-        && theLastMountLSNBeforeChkpt > redo_lsn)
+    while ((theLastMountLSNBeforeChkpt != lsn_t::null)
+        && (theLastMountLSNBeforeChkpt > redo_lsn))
     {
         // last mount occurred between redo_lsn and checkpoint
 #ifdef LOG_BUFFER
@@ -3106,12 +3138,25 @@ void restart_m::_analysis_process_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,
         // done/undone to this volume so it doesn't matter.
         if (copy.type() == logrec_t::t_dismount_vol)
         {
+            // TODO(Restart)... the existing (previous) buffer pool in_doubt information
+            // was from the previous volume, does the 'mounting' of new volume
+            // causing issue in buffer pool in_doubt page information?  Most likely yes.
+            // An un-resolved issue with Instant Restart 'in_doubt' page implementation
+
+            // Mount a new volume
+            DBGOUT0( << "Extra mounting at the end of Log Analysis phase" );
             W_IGNORE(io_m::mount(dp->devrec[0].dev_name, dp->devrec[0].vid));
             mount = true;
         }
-        else
+        else if (copy.type() == logrec_t::t_mount_vol)
         {
-            W_IGNORE(io_m::dismount(dp->devrec[0].vid));
+            // Dismount the current volume
+            // This is happening at the end of Log Analysys phase while
+            // we have marked all the in_doubt page information in
+            // buffer pool.  If we flush the buffer pool then all the in_doubt
+            // page information would be erased, not good
+            DBGOUT0( << "Extra dismounting at the end of Log Analysis phase" );
+            W_IGNORE(io_m::dismount(dp->devrec[0].vid, false));  // Do not flush buffer pool
         }
 
         theLastMountLSNBeforeChkpt = copy.xid_prev();
@@ -3305,7 +3350,8 @@ void restart_m::_analysis_process_txn_table(XctPtrHeap& heap,  // Out: heap to s
         DBGOUT3( << "Number of transaction entries in loser heap: " << heap.NumElements());
     }
 
-    DBGOUT3( << "Number of active transactions in transaction table: " << xct_t::num_active_xcts());
+// TODO(Restart)... performance
+    DBGOUT1( << "Number of active transactions in transaction table: " << xct_t::num_active_xcts());
 
     return;
 }
@@ -4663,9 +4709,6 @@ void restart_m::redo_concurrent_pass()
         W_FATAL_MSG(fcINTERNAL, << "REDO phase, missing execution mode setting for REDO");
     }
 
-    // Take a synch checkpoint after REDO phase, even if there was no REDO work
-    smlevel_1::chkpt->synch_take();
-
     return;
 }
 
@@ -4734,10 +4777,6 @@ void restart_m::undo_concurrent_pass()
     {
         W_FATAL_MSG(fcINTERNAL, << "UNDO phase, missing execution mode setting for UNDO");
     }
-
-    // Take a synch checkpoint after UNDO phase but before existing the Recovery operation
-    // Checkpoint will be taken even if there was no UNDO work
-    smlevel_1::chkpt->synch_take();
 
     return;
 }
@@ -4814,8 +4853,8 @@ void restart_m::_redo_page_pass()
     //     log records are used to set page fence keys during the REDO operations.
     //
     // For log scan driven REDO operation, we will continue using minimal logging.
-
-    for (bf_idx i = 1; i < bfsz; ++i)
+    bf_idx current_page;
+    for (current_page = 1; current_page < bfsz; ++current_page)
     {
         // Loop through all pages in buffer pool and redo in_doubt pages
         // In_doubt pages could be recovered in multiple situations:
@@ -4831,7 +4870,7 @@ void restart_m::_redo_page_pass()
         rc = RCOK;
         past_end = false;
 
-        bf_tree_cb_t &cb = smlevel_0::bf->get_cb(i);
+        bf_tree_cb_t &cb = smlevel_0::bf->get_cb(current_page);
         // Need to acquire traditional EX latch for each page, it is to
         // protect the page from concurrent txn access
         // WAIT_IMMEDIATE to prevent deadlock with concurrent user transaction
@@ -4840,7 +4879,7 @@ void restart_m::_redo_page_pass()
         {
             // If failed to acquire latch (e.g., timeout)
             // Page (m2): concurrent txn does not load page, restart should be able
-            //                  to acquire latch on a page
+            //                  to acquire latch on a page if it is in_doubt
             // Demand (m3): only concurrent txn can load page, this function
             //                       should not get executed
             // Mixed (m4): potential conflict because both restart and user transaction
@@ -4854,12 +4893,21 @@ void restart_m::_redo_page_pass()
             }
             else
             {
-                // Unable to acquire write latch, cannot continue, raise an internal error
-                // including timeout error which we should not encounter
+                // Unable to acquire write latch, it should not happen if page was in_doubt
+                // but it could happen if page was not in_doubt
                 DBGOUT1 (<< "Error when acquiring LATCH_EX for a buffer pool page. cb._pid_shpid = "
                          << cb._pid_shpid << ", rc = " << latch_rc);
 
-                W_FATAL_MSG(fcINTERNAL, << "REDO (redo_page_pass()): unable to EX latch a buffer pool page ");
+                // Only raise error if page was in_doubt
+                if ((cb._in_doubt))
+                {
+                    // Try latch again
+                    latch_rc = cb.latch().latch_acquire(LATCH_EX, WAIT_SPECIFIED_BY_THREAD);
+                    if (latch_rc.is_error())
+                        W_FATAL_MSG(fcINTERNAL, << "REDO (redo_page_pass()): unable to EX latch a buffer pool page ");
+                }
+                else
+                    continue;
             }
         }
 
@@ -5103,7 +5151,7 @@ void restart_m::_redo_page_pass()
         if (cb.latch().held_by_me())
             cb.latch().latch_release();
 
-        if ((i == root_idx) && (true == use_redo_delay_restart()))
+        if ((current_page == root_idx) && (true == use_redo_delay_restart()))
         {
             // Just re-loaded the root page
 
@@ -5116,6 +5164,10 @@ void restart_m::_redo_page_pass()
     }
 
     // Done with REDO phase
+
+    // Take a synch checkpoint after REDO phase only if there were REDO work
+    smlevel_1::chkpt->synch_take();
+
     return;
 }
 
@@ -5181,27 +5233,37 @@ void restart_m::_undo_txn_pass()
         // latch is not needed for traditional restart (M2) but
         // required for mixed mode due to concurrent transaction
         // on_demand UNDO
-        w_rc_t latch_rc = xd->latch().latch_acquire(LATCH_EX, WAIT_FOREVER);
-        if (latch_rc.is_error())
+        try
         {
-            // Not able to acquire latch on this transaction for some reason
-            if (true == use_undo_mix_restart())
+            w_rc_t latch_rc = xd->latch().latch_acquire(LATCH_EX, WAIT_FOREVER);
+            if (latch_rc.is_error())
             {
-                // If mixed mode, it is possible and valid if failed to acquire
-                // latch on a transaction, because a concurrent user transaction
-                // might be checking or triggered a rollback on this transaction
-                // (if it is a loser transaction)
-                // Eat the error and skip this transaction, if thi sis a loser transaction
-                // rely on concurrent transaction to rollback this loser transaction
-                xd = iter.next();
-                continue;
+                // Not able to acquire latch on this transaction for some reason
+                if (true == use_undo_mix_restart())
+                {
+                    // If mixed mode, it is possible and valid if failed to acquire
+                    // latch on a transaction, because a concurrent user transaction
+                    // might be checking or triggered a rollback on this transaction
+                    // (if it is a loser transaction)
+                    // Eat the error and skip this transaction, if thi sis a loser transaction
+                    // rely on concurrent transaction to rollback this loser transaction
+                    xd = iter.next();
+                    continue;
+                }
+                else
+                {
+                    // Traditional UNDO, not able to acquire latch
+                    // continue the processing of this transaction because
+                    // latch is optional in this case
+                }
             }
-            else
-            {
-                // Traditional UNDO, not able to acquire latch
-                // continue the processing of this transaction because
-                // latch is optional in this case
-            }
+        }
+        catch (...)
+        {
+            // It is possible a race condition occurred, the transaction object is being
+            // destroyed, go to the next transaction
+            xd = iter.next();
+            continue;
         }
 
         if ((xct_t::xct_active == xd->state()) && (true == xd->is_loser_xct())
@@ -5303,6 +5365,11 @@ void restart_m::_undo_txn_pass()
     smlevel_0::commit_lsn = lsn_t::null;
 
     // Done with UNDO phase
+
+    // Take a synch checkpoint after UNDO phase but before existing the Recovery operation
+    // Checkpoint will be taken only if there were UNDO work
+    smlevel_1::chkpt->synch_take();
+
     return;
 }
 
@@ -5319,6 +5386,10 @@ void restart_thread_t::run()
 
     DBGOUT1(<< "restart_thread_t: Starts REDO and UNDO tasks");
 
+// TODO(Restart)... Performance
+struct timeval tm_before;
+gettimeofday( &tm_before, NULL );
+
     // REDO, call back to restart_m to carry out the concurrent REDO
     working = smlevel_0::t_concurrent_redo;
     smlevel_1::recovery->redo_concurrent_pass();
@@ -5334,6 +5405,12 @@ void restart_thread_t::run()
     // Set commit_lsn to NULL which allows all concurrent transaction to come in
     // from now on (if using commit_lsn to validate concurrent user transactions)
     smlevel_0::commit_lsn = lsn_t::null;
+
+// TODO(Restart)... Performance
+struct timeval tm_after;
+gettimeofday( &tm_after, NULL );
+double elapse = (((double)tm_after.tv_sec - (double)tm_before.tv_sec) * 1000.0) + (double)tm_after.tv_usec/1000.0 - (double)tm_before.tv_usec/1000.0;
+DBGOUT0(<< "**** Restart REDO/UNDO time elpase time (milliseconds): " << elapse);
 
     return;
 };

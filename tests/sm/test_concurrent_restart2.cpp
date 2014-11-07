@@ -926,6 +926,149 @@ TEST (RestartTest, ConcurrentSameInsertC3) {
 }
 /**/
 
+// Test case with simple transactions (1 in-flight)
+// one concurrent txn with an existing commited record which should fail
+class restart_concurrent_duplicate_insert : public restart_test_base  {
+public:
+    w_rc_t pre_shutdown(ss_m *ssm) {
+        _stid_list = new stid_t[1];
+        output_durable_lsn(1);
+        W_DO(x_btree_create_index(ssm, &_volume, _stid_list[0], _root_pid));
+        output_durable_lsn(2);
+        W_DO(test_env->btree_populate_records(_stid_list[0], false, t_test_txn_commit, true));   // flags: No checkpoint, commit, one transaction per insert
+
+        // Enough inserts to cause more page split
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "qq3", "data3"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "qq1", "data1"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "qq2", "data2"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "qq7", "data1"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "qq9", "data1"));
+        W_DO(test_env->btree_insert_and_commit(_stid_list[0], "qq0", "data1"));
+
+        W_DO(test_env->begin_xct());
+        W_DO(test_env->btree_insert(_stid_list[0], "qq4", "data4"));             // in-flight
+
+        output_durable_lsn(3);
+        return RCOK;
+    }
+
+    w_rc_t post_shutdown(ss_m *) {
+        output_durable_lsn(4);
+        const bool fCrash = test_env->_restart_options->shutdown_mode;
+        const int32_t restart_mode = test_env->_restart_options->restart_mode;
+        x_btree_scan_result s;
+        // No wait in test code, but wait in restart if M2
+        // This is to ensure concurrency
+
+        if (fCrash && restart_mode < m3_default_restart)
+        {
+            // M2
+            w_rc_t rc = test_env->btree_insert_and_commit(_stid_list[0], "qq1", "data1");  // Should error on duplicate
+            // Will fail in m2 due to conflict, should succeed in m3 (not immediately).
+
+            if (rc.is_error())
+            {
+                // Expected failure
+                DBGOUT3(<<"restart_concurrent_same_insert: insert failed: " << rc);
+
+                // Abort the failed scan txn
+                test_env->abort_xct();
+
+                // Sleep to give Recovery sufficient time to finish
+                while (true == test_env->in_restart())
+                {
+                    // Concurrent restart is still going on, wait
+                    ::usleep(WAIT_TIME);
+                }
+
+                // Try again, should work now
+                rc = test_env->btree_insert_and_commit(_stid_list[0], "qq1", "data1");  // should error on duplicate
+                if (rc.is_error())
+                {
+                    if (34 == rc.err_num())
+                    {
+                        // Correct behavior
+                    }
+                    else
+                    {
+                        // Unexpected error
+                        std::cerr << "Unexpected error on insertion, error:" << rc.get_message() << std::endl;
+                        return RC(eINTERNAL);
+                    }
+                }
+                else
+                {
+                    // Should not succeed
+                    std::cerr << "Insertion of duplicated key should not succeed" << std::endl;
+                    return RC(eINTERNAL);
+                }
+            }
+            else
+            {
+                std::cerr << "restart_concurrent_same_insert: insert operation should not succeed"<< std::endl;
+                return RC(eINTERNAL);
+            }
+        }
+        else
+        {
+            // M3 behavior, either normal or crash shutdown
+            // blocking and insertion should succeed
+            w_rc_t rc = test_env->btree_insert_and_commit(_stid_list[0], "qq1", "data1");  // Should error on duplicate
+            if (rc.is_error())
+            {
+                if (34 == rc.err_num())
+                {
+                    // Correct behavior
+                }
+                else
+                {
+                    // Unexpected error
+                    std::cerr << "Unexpected error on insertion, error:" << rc.get_message() << std::endl;
+                    return RC(eINTERNAL);
+                }
+            }
+            else
+            {
+                // Should not succeed
+                std::cerr << "Insertion of duplicated key should not succeed" << std::endl;
+                return RC(eINTERNAL);
+            }
+        }
+
+        W_DO(test_env->btree_scan(_stid_list[0], s));
+        int recordCount = (SM_PAGESIZE / btree_m::max_entry_size()) * 5;  // Count through big population
+        recordCount += 6;
+        EXPECT_EQ (recordCount, s.rownum);
+        EXPECT_EQ (std::string("qq9"), s.maxkey);
+        return RCOK;
+    }
+};
+
+/* Passing - M2 */
+TEST (RestartTest, ConcurrentDuplicateInsertC) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_duplicate_insert context;
+
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m2_redo_delay_restart; // minimal logging
+    EXPECT_EQ(test_env->runRestartTest(&context, &options), 0);
+}
+/**/
+
+/* Passing - M3 */
+TEST (RestartTest, ConcurrentDuplicateInsertC3) {
+    test_env->empty_logdata_dir();
+    restart_concurrent_duplicate_insert context;
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m3_default_restart; // minimal logging, insert triggers on_demand recovery
+                                               // No delay because no restart child thread
+    EXPECT_EQ(test_env->runRestartTest(&context, &options, true /*use_locks*/), 0);
+}
+/**/
+
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     test_env = new btree_test_env();

@@ -1,19 +1,19 @@
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -50,6 +50,15 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 */
 
+#if defined(linux) && !defined(_GNU_SOURCE)
+/*
+ *  XXX this done to make O_DIRECT available as an I/O choice.
+ *  Unfortunately, it needs to pollute the other headers, otw
+ *  the features will be set and access won't be possible
+ */
+#define _GNU_SOURCE
+#endif
+
 #include "w_defines.h"
 
 #include <errno.h>
@@ -68,15 +77,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *   to the above author(s) and the above copyright is maintained.
  */
 
-#if defined(linux) && !defined(_GNU_SOURCE)
-/*
- *  XXX this done to make O_DIRECT available as an I/O choice.
- *  Unfortunately, it needs to pollute the other headers, otw
- *  the features will be set and access won't be possible
- */
-#define _GNU_SOURCE
-#endif
-
 #include <w.h>
 #include <sthread.h>
 #include <sdisk.h>
@@ -92,11 +92,10 @@ extern class sthread_stats SthreadStats;
 
 #define    HAVE_IO_VECTOR
 
-// TODO deal with these HAVE_IO* 
+// TODO deal with these HAVE_IO*
 // TODO : is vector i/o ok with pthreads?
 
 #include <os_interface.h>
-
 
 int    sdisk_unix_t::convert_flags(int sflags)
 {
@@ -166,7 +165,7 @@ w_rc_t    sdisk_unix_t::make(const char *name, int flags, int mode,
     w_rc_t        e;
 
     disk = 0;    /* default value*/
-    
+
     ud = new sdisk_unix_t(name);
     if (!ud)
         return RC(fcOUTOFMEMORY);

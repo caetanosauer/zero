@@ -49,7 +49,7 @@ bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, uint32_t cleaner_threads
     _initially_wakeup_workers(initially_wakeup_workers)
 {
     w_assert1(cleaner_threads >= 1);
-    
+
     // assign volumes to workers in a round robin fashion.
     // this assignment is totally static.
     _volume_assignments[0] = 0;
@@ -59,7 +59,7 @@ bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, uint32_t cleaner_threads
             _volume_assignments[vol] = 1;
         }
     }
-    
+
     ::memset (_requested_volumes, 0, sizeof(bool) * MAX_VOL_COUNT);
 
     _slave_threads[0] = NULL;
@@ -87,6 +87,7 @@ w_rc_t bf_tree_cleaner::start_cleaners()
         w_assert1(_slave_threads[id] != NULL);
         _slave_threads[id]->_start_requested = _initially_wakeup_workers;
         W_DO(_slave_threads[id]->fork());
+        _slave_threads[id]->_running = true; // otherwise it races with thread start...
     }
     DBGOUT1(<<"bf_tree_cleaner: started cleaner threads");
     return RCOK;
@@ -123,7 +124,7 @@ w_rc_t bf_tree_cleaner::_wakeup_a_cleaner(bf_cleaner_slave_id_t id)
         DBGOUT1(<<"bf_tree_cleaner: wakeup_cleaners: cleaner thread " << id << " hasn't been activated. it's now activated");
         _slave_threads[id]->_start_requested = true;
     }
-    
+
     _slave_threads[id]->wakeup();
     return RCOK;
 }
@@ -289,7 +290,7 @@ bf_tree_cleaner_slave_thread_t::bf_tree_cleaner_slave_thread_t(bf_tree_cleaner* 
     w_assert0(::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * (parent->_cleaner_write_buffer_pages + 1))==0); // +1 margin for switching to next batch
     w_assert0(buf != NULL);
     _write_buffer = reinterpret_cast<generic_page*>(buf);
-    
+
     _write_buffer_indexes = new bf_idx[parent->_cleaner_write_buffer_pages + 1];
 }
 
@@ -302,7 +303,7 @@ bf_tree_cleaner_slave_thread_t::~bf_tree_cleaner_slave_thread_t()
     void *buf = reinterpret_cast<void*>(_write_buffer);
     // note we use free(), not delete[], which corresponds to posix_memalign
     ::free (buf);
-    
+
     delete[] _write_buffer_indexes;
 }
 
@@ -332,14 +333,14 @@ bool bf_tree_cleaner_slave_thread_t::_cond_timedwait (uint64_t timeout_microsec)
     ::clock_gettime(CLOCK_REALTIME, &ts);
     ts.tv_nsec += timeout_microsec * 1000;
     ts.tv_sec += ts.tv_nsec / 1000000000;
-    ts.tv_nsec = ts.tv_nsec % 1000000000;    
+    ts.tv_nsec = ts.tv_nsec % 1000000000;
 
 #if W_DEBUG_LEVEL>=2
     timespec   ts_init;
     ::clock_gettime(CLOCK_REALTIME, &ts_init);
     DBGOUT2(<< "bf_tree_cleaner_slave_thread_t: waiting for " << timeout_microsec << " us..");
 #endif // W_DEBUG_LEVEL>=2
-    
+
     bool timeouted = false;
     while (!_wakeup_requested) {
         int rc_wait =
@@ -391,7 +392,6 @@ void bf_tree_cleaner_slave_thread_t::wakeup()
 void bf_tree_cleaner_slave_thread_t::run()
 {
     DBGOUT1(<<"bf_tree_cleaner_slave_thread_t: cleaner- " << _id << " has been created");
-    _running = true;
     while (!_start_requested) {
         _take_interval();
     }
@@ -423,14 +423,14 @@ bool bf_tree_cleaner_slave_thread_t::_exists_requested_work()
     if (_parent->_requested_lsn > _completed_lsn) {
         return true;
     }
-    
+
     // the cleaner is requested to flush out all dirty pages for assigned volume. let's do it immediately
     for (volid_t vol = 1; vol < MAX_VOL_COUNT; ++vol) {
         if (_parent->_volume_assignments[vol] == _id && _parent->_requested_volumes[vol]) {
             return true;
         }
     }
-    
+
     // otherwise let's take a sleep
     return false;
 }
@@ -444,8 +444,8 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
 
     // Don't clean the buffer pool if in the middle of recovery of Log Analysis or REDO,
     // because we are using buffer pool for the Recovery REDO purpose
-    if (smlevel_0::before_recovery() || 
-        (smlevel_0::in_recovery() && 
+    if (smlevel_0::before_recovery() ||
+        (smlevel_0::in_recovery() &&
         (smlevel_0::in_recovery_analysis() || smlevel_0::in_recovery_redo())))
         return RCOK;
 
@@ -481,7 +481,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
     DBGOUT2(<<"_clean_volume(cleaner=" << _id << "): sorting " << sort_buf_used << " entries..");
     std::sort(_sort_buffer, _sort_buffer + sort_buf_used);
     DBGOUT2(<<"_clean_volume(cleaner=" << _id << "): done sorting");
-    
+
     // now, write them out as sequentially as possible.
     // Note that
     // 1) at this point we need to take SH latch while copying the page and doing the real check
@@ -527,7 +527,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
             if (page.is_to_be_deleted()) {
                 tobedeleted = true;
             } else {
-                ::memcpy(_write_buffer + write_buffer_cur, page_buffer + idx, sizeof (generic_page)); 
+                ::memcpy(_write_buffer + write_buffer_cur, page_buffer + idx, sizeof (generic_page));
                 // if the page contains a swizzled pointer, we need to convert the data back to the original pointer.
                 // we need to do this before releasing SH latch because the pointer might be unswizzled by other threads.
                 _parent->_bufferpool->_convert_to_disk_page(_write_buffer + write_buffer_cur);// convert swizzled data.
@@ -535,7 +535,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 w_assert1(_write_buffer[write_buffer_cur].pid.page > 0);
             }
             cb.latch().latch_release();
-            
+
             // then, re-calculate the checksum:
             _write_buffer[write_buffer_cur].checksum = _write_buffer[write_buffer_cur].calculate_checksum();
             // also copy the new checksum to make the original (bufferpool) page consistent.
@@ -561,7 +561,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 }
                 shpid_t shpid = _write_buffer[write_buffer_cur].pid.page;
                 _write_buffer_indexes[write_buffer_cur] = idx;
-                
+
                 // if next page is not consecutive, flush it out
                 if (write_buffer_from < write_buffer_cur && shpid != prev_shpid + 1) {
                     // flush up to _previous_ entry (before incrementing write_buffer_cur)
@@ -569,7 +569,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                     write_buffer_from = write_buffer_cur;
                 }
                 ++write_buffer_cur;
-                        
+
                 prev_idx = idx;
                 prev_shpid = shpid;
             }
@@ -598,7 +598,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
         write_buffer_from = 0; // not required, but to make sure
         write_buffer_cur = 0;
     }
-    
+
     DBGOUT1(<<"_clean_volume(cleaner=" << _id << "): done volume " << vol);
     return RCOK;
 }
@@ -612,7 +612,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(volid_t vol, size_t f
     }
     DBGOUT2(<<"_flush_write_buffer(cleaner=" << _id << "): writing " << consecutive << " consecutive pages..");
     // we'll compute the highest lsn of the pages, and do one log flush to that lsn.
-    lsndata_t max_page_lsn = lsndata_null; 
+    lsndata_t max_page_lsn = lsndata_null;
     for (size_t i = from; i < from + consecutive; ++i) {
         w_assert1(_write_buffer[i].pid.vol().vol == vol);
         if (i > from) {
@@ -668,17 +668,17 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
     bool requested_volumes[MAX_VOL_COUNT];
     ::memcpy (requested_volumes, _parent->_requested_volumes, sizeof(bool) * MAX_VOL_COUNT); // this does NOT have to be atomic.
     DBGOUT1(<<"_do_work(cleaner=" << _id << "): requested_lsn=" << lsn_t(requested_lsn));
-    
+
     for (volid_t vol = 1; vol < MAX_VOL_COUNT; ++vol) {
         // I'm hoping this doesn't revoke the buffer, leaving the capacity for reuse.
         // but in some STL implementation this might make the capacity zero. even in that case it shouldn't be a big issue..
         _candidates_buffer[vol].clear();
     }
-    
-    // if the dirty page's lsn is same or smaller than durable lsn, 
+
+    // if the dirty page's lsn is same or smaller than durable lsn,
     // we can write it out without log flush overheads.
     lsndata_t durable_lsn = smlevel_0::log == NULL ? lsndata_null : smlevel_0::log->durable_lsn().data();
-    
+
     bf_idx block_cnt = _parent->_bufferpool->_block_cnt;
 
     // do we have lots of dirty pages? (note, these are approximate statistics)
@@ -720,7 +720,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
         }
         if (clean_it) {
             _candidates_buffer[vol].push_back (idx);
-            
+
             // also add dependent pages. note that this might cause a duplicate. we deal with duplicates in _clean_volume()
             bf_idx didx = cb._dependency_idx;
             if (didx != 0) {
@@ -737,8 +737,8 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
             W_DO(_clean_volume(vol, _candidates_buffer[vol], requested_volumes[vol], requested_lsn));
         }
     }
-    
-    
+
+
     if (requested_lsn != lsndata_null) {
         w_assert1(_completed_lsn < requested_lsn);
         _completed_lsn = requested_lsn;
