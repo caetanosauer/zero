@@ -154,7 +154,7 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/btcursor.h
   ${CMAKE_CURRENT_SOURCE_DIR}/btree.h
   ${CMAKE_CURRENT_SOURCE_DIR}/btree_impl.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/btree_logrec.h  
+  ${CMAKE_CURRENT_SOURCE_DIR}/btree_logrec.h
   ${CMAKE_CURRENT_SOURCE_DIR}/btree_page.h
   ${CMAKE_CURRENT_SOURCE_DIR}/btree_page_h.h
   ${CMAKE_CURRENT_SOURCE_DIR}/chkpt.h
@@ -191,7 +191,7 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/restart.h
   ${CMAKE_CURRENT_SOURCE_DIR}/restart_s.h
   ${CMAKE_CURRENT_SOURCE_DIR}/sm_base.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/sm_external.h  
+  ${CMAKE_CURRENT_SOURCE_DIR}/sm_external.h
   ${CMAKE_CURRENT_SOURCE_DIR}/sm_du_stats.h
   ${CMAKE_CURRENT_SOURCE_DIR}/sm.h
   ${CMAKE_CURRENT_SOURCE_DIR}/sm_int_0.h
@@ -200,6 +200,7 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/sm_int_3.h
   ${CMAKE_CURRENT_SOURCE_DIR}/sm_int_4.h
   ${CMAKE_CURRENT_SOURCE_DIR}/sm_io.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/sm_options.h
   ${CMAKE_CURRENT_SOURCE_DIR}/sm_s.h
   ${CMAKE_CURRENT_SOURCE_DIR}/smstats.h
   ${CMAKE_CURRENT_SOURCE_DIR}/smthread.h

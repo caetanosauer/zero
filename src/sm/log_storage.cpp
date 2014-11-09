@@ -9,6 +9,7 @@
 
 #include "sm_int_1.h"
 #include "chkpt.h"
+#include <sys/stat.h>
 
 #include <cstdio>        /* XXX for log recovery */
 #include <sys/types.h>

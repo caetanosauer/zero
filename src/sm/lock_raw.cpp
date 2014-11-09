@@ -674,31 +674,39 @@ bool RawLockQueue::trigger_UNDO(Compatibility& compatibility)
                                      << xd->tid());
 
                             // Acquire latch before checking the loser status
-                            w_rc_t latch_rc = xd->latch().latch_acquire(LATCH_EX, WAIT_SPECIFIED_BY_XCT);
-                            if (latch_rc.is_error())
+                            try
                             {
-                                // Failed to acquire latch on the transaction
-                                // this is the loser transaction we are looking for but we
-                                // are not able to latch the txn, to be safe we skip this time
-                                // and wait for next opportunity for the on_demand UNDO
-
-                                if (stTIMEOUT == latch_rc.err_num())
+                                w_rc_t latch_rc = xd->latch().latch_acquire(LATCH_EX, WAIT_SPECIFIED_BY_XCT);
+                                if (latch_rc.is_error())
                                 {
-                                    // There is a small possibility that another concurrent
-                                    // transaction is checking for loser status on the same
-                                    // transaction at this moment
-                                    // Eat the error and skip UNDO this time, caller must retry
-                                    DBGOUT0( << "RawLockQueue::trigger_UNDO: failed to latch the loser txn object to check rollback status,"
-                                             << " this is due to latch time out, skip the on_demand UNDO");
-                                    return false;
-                                }
-                                else
-                                {
-                                    W_FATAL_MSG(fcINTERNAL,
-                                                << "RawLockQueue::trigger_UNDO: failed to latch the loser txn object due to unknown reason,"
-                                                << " this is un-expected error, error out");
-                                }
+                                    // Failed to acquire latch on the transaction
+                                    // this is the loser transaction we are looking for but we
+                                    // are not able to latch the txn, to be safe we skip this time
+                                    // and wait for next opportunity for the on_demand UNDO
 
+                                    if (stTIMEOUT == latch_rc.err_num())
+                                    {
+                                        // There is a small possibility that another concurrent
+                                        // transaction is checking for loser status on the same
+                                        // transaction at this moment
+                                        // Eat the error and skip UNDO this time, caller must retry
+                                        DBGOUT0( << "RawLockQueue::trigger_UNDO: failed to latch the loser txn object to check rollback status,"
+                                                << " this is due to latch time out, skip the on_demand UNDO");
+                                        return false;
+                                    }
+                                    else
+                                    {
+                                        W_FATAL_MSG(fcINTERNAL,
+                                                    << "RawLockQueue::trigger_UNDO: failed to latch the loser txn object due to unknown reason,"
+                                                    << " this is un-expected error, error out");
+                                    }
+                                }
+                            }
+                            catch (...)
+                            {
+                                // Race condition while the transaction is being destroyed?
+                                // Skip UNDO
+                                return false;
                             }
 
                             if (false == xd->is_loser_xct_in_undo())

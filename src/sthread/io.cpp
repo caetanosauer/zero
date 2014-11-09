@@ -1,19 +1,19 @@
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -101,8 +101,8 @@ unsigned        sthread_t::open_count = 0;
 
 static          queue_based_lock_t    protectFDs;
 
-int       sthread_t:: _disk_buffer_disalignment(0); 
-size_t    sthread_t:: _disk_buffer_size(0); 
+int       sthread_t:: _disk_buffer_disalignment(0);
+size_t    sthread_t:: _disk_buffer_size(0);
 char *    sthread_t:: _disk_buffer (NULL);
 
 int sthread_t::do_unmap()
@@ -112,7 +112,7 @@ int sthread_t::do_unmap()
     // process-end
 
 #ifdef WITHOUT_MMAP
-    ::free( _disk_buffer - _disk_buffer_disalignment ); 
+    ::free( _disk_buffer - _disk_buffer_disalignment );
     _disk_buffer = NULL;
     _disk_buffer_disalignment = 0;
     return 0;
@@ -120,9 +120,9 @@ int sthread_t::do_unmap()
 
 #if 0
     fprintf(stderr, "%d: munmap disalignment %d addr %p, size %lu\n",
-            __LINE__, 
-            _disk_buffer_disalignment,  
-            ( _disk_buffer -  _disk_buffer_disalignment),  
+            __LINE__,
+            _disk_buffer_disalignment,
+            ( _disk_buffer -  _disk_buffer_disalignment),
             _disk_buffer_size);
 #endif
 
@@ -130,7 +130,7 @@ int sthread_t::do_unmap()
         munmap( _disk_buffer -  _disk_buffer_disalignment,  _disk_buffer_size);
 
     if(err) {
-        cerr << "munmap returns " << err 
+        cerr << "munmap returns " << err
             << " errno is " <<  errno  << " " << strerror(errno)
             << endl;
         w_assert1(!err);
@@ -146,12 +146,12 @@ int sthread_t::do_unmap()
 void sthread_t::align_for_sm(size_t requested_size)
 {
     char * _disk_buffer2  = (char *)alignon( _disk_buffer, SM_PAGESIZE);
-    if( _disk_buffer2 !=  _disk_buffer) 
+    if( _disk_buffer2 !=  _disk_buffer)
     {
         // We made the size big enough that we can align it here
         _disk_buffer_disalignment = ( _disk_buffer2 -  _disk_buffer);
         w_assert1( _disk_buffer_disalignment < SM_PAGESIZE);
-        w_assert1( _disk_buffer_size -  _disk_buffer_disalignment 
+        w_assert1( _disk_buffer_size -  _disk_buffer_disalignment
             >= requested_size);
 
          _disk_buffer =  _disk_buffer2;
@@ -170,7 +170,7 @@ long sthread_t::get_max_page_size(long system_page_size)
             int err = getpagesizes (pagesize, nelem);
             if(err >= 0) {
                 for(int i=0; i < nelem; i++) {
-                   if ( pagesize[i] > max_page_size) { 
+                   if ( pagesize[i] > max_page_size) {
                        max_page_size = pagesize[i];
            }
                 }
@@ -192,7 +192,7 @@ long sthread_t::get_max_page_size(long system_page_size)
     /*
     cerr << "Max    page size is " << max_page_size
         << "( " << int(max_page_size/1024) << " KB) " << endl;
-    cerr << "System page size is " << system_page_size 
+    cerr << "System page size is " << system_page_size
         << "( " << int(system_page_size/1024) << " KB) " << endl;
     */
     return max_page_size;
@@ -220,9 +220,9 @@ void sthread_t::align_bufsize(size_t size, long system_page_size,
     w_assert1(_disk_buffer_size >= size); // goes without saying
 
     // should now be aligned on both page sizes
-    w_assert1(size_t(alignon(_disk_buffer_size, max_page_size)) 
+    w_assert1(size_t(alignon(_disk_buffer_size, max_page_size))
         == _disk_buffer_size);
-    w_assert1(size_t(alignon(_disk_buffer_size, system_page_size)) 
+    w_assert1(size_t(alignon(_disk_buffer_size, system_page_size))
         == _disk_buffer_size);
 }
 
@@ -236,19 +236,19 @@ void clear(char *buf_start, size_t requested_size)
         for(size_t i=0; i < SM_PAGESIZE; i++) {
             size_t offset = j*SM_PAGESIZE + i;
             size_t hugepagenum =  offset / (HUGEPAGESIZE*1024);
-            size_t hugepageoffset =  offset - (hugepagenum * 
+            size_t hugepageoffset =  offset - (hugepagenum *
                     (HUGEPAGESIZE*1024));
             char x = buf_start[offset];
-            
+
             // shut the compiler up:
             if(int(i) < 0) fprintf(stderr, "0x%d 0x%x, 0x%x, 0x%x", x,
-                    int(hugepagenum), int(hugepageoffset), int(requested_huge_pages));    
+                    int(hugepagenum), int(hugepageoffset), int(requested_huge_pages));
         }
     }
-    
+
 #if W_DEBUG_LEVEL > 4
-    fprintf(stderr, "clearing %ld bytes starting at %p\n", 
-            requested_size, buf_start); 
+    fprintf(stderr, "clearing %ld bytes starting at %p\n",
+            requested_size, buf_start);
 #endif
     memset(buf_start, 0, requested_size);
 }
@@ -271,7 +271,7 @@ w_rc_t sthread_t::set_bufsize_normal(
     //
     // ***********************************************************
     long max_page_size = get_max_page_size(system_page_size);
-    w_assert1(system_page_size <= max_page_size); 
+    w_assert1(system_page_size <= max_page_size);
 
     // ***********************************************************
     //
@@ -344,28 +344,28 @@ w_rc_t sthread_t::set_bufsize_normal(
                );
 
     if (_disk_buffer == MAP_FAILED) {
-        cerr 
-            << __LINE__ << " " 
-            << "mmap (size=" << _disk_buffer_size 
+        cerr
+            << __LINE__ << " "
+            << "mmap (size=" << _disk_buffer_size
             << " = " << int(_disk_buffer_size/1024)
             << " KB ) returns " << long(_disk_buffer)
             << " errno is " <<  errno  << " " << strerror(errno)
-            << " flags " <<  flags1  
-            << " fd " <<  fd  
+            << " flags " <<  flags1
+            << " fd " <<  fd
             << endl;
         return RC(fcMMAPFAILED);
     }
 #if W_DEBUG_LEVEL > 4
     else
     {
-        cerr 
-            << __LINE__ << " " 
-            << "mmap SUCCESS! (size=" << _disk_buffer_size 
+        cerr
+            << __LINE__ << " "
+            << "mmap SUCCESS! (size=" << _disk_buffer_size
             << " = " << int(_disk_buffer_size/1024)
             << " KB ) returns " << long(_disk_buffer)
             << " errno is " <<  errno  << " " << strerror(errno)
-            << " flags " <<  flags1  
-            << " fd " <<  fd  
+            << " flags " <<  flags1
+            << " fd " <<  fd
             << endl;
     }
 #endif
@@ -383,8 +383,8 @@ w_rc_t sthread_t::set_bufsize_normal(
 
     for(int i=0; i < nchunks; i++)
     {
-        char *addr = _disk_buffer + (i * max_page_size); 
-        char *sub_buffer = (char*) mmap(addr, 
+        char *addr = _disk_buffer + (i * max_page_size);
+        char *sub_buffer = (char*) mmap(addr,
                max_page_size,
                        PROT_READ | PROT_WRITE, /* prot */
                        flags2,
@@ -393,13 +393,13 @@ w_rc_t sthread_t::set_bufsize_normal(
                        );
 
         if (sub_buffer == MAP_FAILED) {
-            cerr 
-                << __LINE__ << " " 
+            cerr
+                << __LINE__ << " "
                 << "mmap (addr=" << long(addr )
                 << ", size=" << max_page_size << ") returns -1;"
                 << " errno is " <<  errno  << " " << strerror(errno)
-                << " flags " <<  flags2  
-                << " fd " <<  fd  
+                << " flags " <<  flags2
+                << " fd " <<  fd
                 << endl;
             do_unmap();
             return RC(fcMMAPFAILED);
@@ -412,7 +412,7 @@ w_rc_t sthread_t::set_bufsize_normal(
         info.mha_pagesize = max_page_size;
         // Ask the kernel to use the max page size here
         if(memcntl(sub_buffer, max_page_size, MC_HAT_ADVISE, (char *)&info, 0, 0) < 0)
-       
+
         {
             cerr << "memcntl (chunk " << i << ") returns -1;"
                 << " errno is " <<  errno  << " " << strerror(errno)
@@ -430,7 +430,7 @@ w_rc_t sthread_t::set_bufsize_normal(
 }
 
 #ifdef WITHOUT_MMAP
-w_rc_t 
+w_rc_t
 sthread_t::set_bufsize_memalign(size_t size, char *&buf_start /* in/out*/,
     long system_page_size)
 {
@@ -466,9 +466,9 @@ sthread_t::set_bufsize_memalign(size_t size, char *&buf_start /* in/out*/,
     _disk_buffer =  malloc(size);
 #endif
     if (_disk_buffer == 0) {
-        cerr 
-            << __LINE__ << " " 
-            << "could not allocate memory (alignment=" << SM_PAGESIZE 
+        cerr
+            << __LINE__ << " "
+            << "could not allocate memory (alignment=" << SM_PAGESIZE
         << "," << size << ") returns -error;"
             << " errno is " << strerror(errno)
             << endl;
@@ -490,9 +490,9 @@ sthread_t::set_bufsize_memalign(size_t size, char *&buf_start /* in/out*/,
 #endif
 
 static const char *hugefs_path(NULL);
-w_rc_t 
-sthread_t::set_hugetlbfs_path(const char *what) 
-{ 
+w_rc_t
+sthread_t::set_hugetlbfs_path(const char *what)
+{
     if(strcmp(what, "NULL")==0) {
         // Do not use tlbfs
         hugefs_path = NULL;
@@ -513,14 +513,14 @@ sthread_t::set_hugetlbfs_path(const char *what)
             cerr << " created " << what << endl;
         }
     }
-    hugefs_path = what; 
+    hugefs_path = what;
     // fprintf(stderr, "path is %s\n", hugefs_path);
     return RCOK;
 }
 
-w_rc_t 
+w_rc_t
 sthread_t::set_bufsize_huge(
-    size_t size, 
+    size_t size,
     char *&buf_start /* in/out*/,
     long system_page_size)
 {
@@ -532,10 +532,10 @@ sthread_t::set_bufsize_huge(
     //
     // ***********************************************************
 
-    long max_page_size = 1024 * HUGEPAGESIZE; 
+    long max_page_size = 1024 * HUGEPAGESIZE;
     // I don't know how to get this programatically
 
-    w_assert1(system_page_size <= max_page_size); 
+    w_assert1(system_page_size <= max_page_size);
 
     // ***********************************************************
     //
@@ -549,7 +549,7 @@ sthread_t::set_bufsize_huge(
     if(hugefs_path == NULL)
     {
         fprintf(stderr, "path is %s\n", hugefs_path);
-        fprintf(stderr, 
+        fprintf(stderr,
             "Need path to huge fs. Use ::set_hugetlbfs_path(path)\n");
         return RC(fcMMAPFAILED);
     }
@@ -574,7 +574,7 @@ sthread_t::set_bufsize_huge(
     // checks for each of these flags.
     //
     // ***********************************************************
-    int flags = 
+    int flags =
         MAP_PRIVATE;
 
     /* NOTE: cannot use ANONYMOUS for hugetlbfs*/
@@ -611,30 +611,30 @@ sthread_t::set_bufsize_huge(
                );
 
     if (_disk_buffer == MAP_FAILED) {
-        cerr 
-            << __LINE__ << " " 
+        cerr
+            << __LINE__ << " "
             << "mmap (size=" << _disk_buffer_size << ") returns "
             <<  long(_disk_buffer)
             << " errno is " <<  errno  << " " << strerror(errno)
             << " prot " <<  (PROT_READ | PROT_WRITE)
             << " flags " <<  flags
-            << " fd " <<  fd  
+            << " fd " <<  fd
             << endl;
-        close(fd); 
+        close(fd);
         return RC(fcMMAPFAILED);
     }
 #if W_DEBUG_LEVEL > 4
     else
     {
-        fprintf(stderr, 
+        fprintf(stderr,
     "%d mmap SUCCESS! (size= %lu, %lu KB) returns %p errno %d/%s prot 0x%x flags 0x%x fd %d\n",
-        __LINE__, 
+        __LINE__,
         _disk_buffer_size,
         _disk_buffer_size/1024,
-        _disk_buffer, errno, strerror(errno), 
+        _disk_buffer, errno, strerror(errno),
         (PROT_READ | PROT_WRITE),
         flags, fd);
-        fprintf(stderr, 
+        fprintf(stderr,
     "%d mmap (size= %lu, %lu KB) (requested_size %d, %d KB) buf-requested is %d\n",
         __LINE__,
         _disk_buffer_size,
@@ -670,8 +670,8 @@ If not, do the following:
 2) remap in chunks of max page size.
 2-a) If we have memcntl, use it to request the largest page size to be used
 2-b) re-map sections using largest page size available
-    with the protection PROT_READ | PROT_WRITE, 
-    and flags MAP_FIXED 
+    with the protection PROT_READ | PROT_WRITE,
+    and flags MAP_FIXED
 
 To find out the max page size available:
 
@@ -680,16 +680,16 @@ it gives us.
 
 If not, and we have getpagesizes() use it to
 get the largest page size we have on this machine,
-else 
+else
 use sysconf(_SC_PHYS_PAGES).
 
-For whatever page size we come up with, make sure the size we request is 
+For whatever page size we come up with, make sure the size we request is
 a multiple of the system pages size and of the page size we are trying
 to use and the SM page size.
 
 The resulting buffer address must be aligned wrt the SM page size as
-well as the page size we are trying to use.  To ensure that: 
-if the system doesn't give us a MAP_ALIGN option, we'll 
+well as the page size we are trying to use.  To ensure that:
+if the system doesn't give us a MAP_ALIGN option, we'll
 add one SM_PAGESIZE to the requested size and and then do the
 alignment ourselves at the end.
 
@@ -701,9 +701,9 @@ and just alloc the memory using posix_memalign, memalign,or valloc.
 
 ********************************************************************/
 
-w_rc_t 
+w_rc_t
 sthread_t::set_bufsize(size_t size, char *&buf_start /* in/out*/,
-    bool 
+    bool
 #if defined(HAVE_HUGETLBFS)
     // This argument is used only by the unit tests.
     use_normal_if_huge_fails /*=false*/
@@ -726,7 +726,7 @@ sthread_t::set_bufsize(size_t size, char *&buf_start /* in/out*/,
     long system_page_size = sysconf(_SC_PAGESIZE);
 
 #ifdef WITHOUT_MMAP
-    // If the user configured --without-mmap, then don't even 
+    // If the user configured --without-mmap, then don't even
     // bother with the mmap attempts below.
     return set_bufsize_memalign(size, buf_start, system_page_size);
 #endif
@@ -736,7 +736,7 @@ sthread_t::set_bufsize(size_t size, char *&buf_start /* in/out*/,
     // have set a path for it.  If we have no path string,
     // we have chosen not to use hugetlbfs.  This is the result
     // of setting run-time options sm_hugetlbfs_path to "NULL".
-    // So if we've set the path to "NULL", we will just use the 
+    // So if we've set the path to "NULL", we will just use the
     // "normal way".
     if(hugefs_path != NULL) {
         w_rc_t rc =  set_bufsize_huge(size, buf_start, system_page_size);
@@ -802,10 +802,10 @@ sthread_t::open(const char* path, int flags, int mode, int &ret_fd)
     if (open_count >= open_max) {
         // This was originally done because when we used a separate
         // process for blocking i/o, we could
-        // have many more open files than sthread_t::open_max.  
-        // But with threading, we are stuck with the the os limit O(1024). 
+        // have many more open files than sthread_t::open_max.
+        // But with threading, we are stuck with the the os limit O(1024).
         // For now, we use the original code because open_max starts out 0.
-        // TODO : We need to use os limit here, acquire the array once.  
+        // TODO : We need to use os limit here, acquire the array once.
         // I suppose it's worth doing this dynamically for several reasons.
         // Not all threads do I/O, for one thing.
         //
@@ -847,7 +847,7 @@ sthread_t::open(const char* path, int flags, int mode, int &ret_fd)
     open_count++;
 
     ret_fd = fd_base + disk;
-    
+
     return RCOK;
 }
 
@@ -856,7 +856,7 @@ sthread_t::open(const char* path, int flags, int mode, int &ret_fd)
 /*
  *  sthread_t::close(fd)
  *
- *  Close a file previously opened with sthread_t::open(). 
+ *  Close a file previously opened with sthread_t::open().
  */
 
 w_rc_t sthread_t::close(int fd)
@@ -914,7 +914,7 @@ w_rc_t sthread_t::close(int fd)
 w_rc_t    sthread_t::read(int fd, void* buf, int n)
 {
     fd -= fd_base;
-    if (fd < 0 || fd >= (int)open_max || !_disks[fd]) 
+    if (fd < 0 || fd >= (int)open_max || !_disks[fd])
         return RC(stBADFD);
 
     int    done = 0;
@@ -931,7 +931,7 @@ w_rc_t    sthread_t::read(int fd, void* buf, int n)
 w_rc_t    sthread_t::write(int fd, const void* buf, int n)
 {
     fd -= fd_base;
-    if (fd < 0 || fd >= (int)open_max || !_disks[fd]) 
+    if (fd < 0 || fd >= (int)open_max || !_disks[fd])
         return RC(stBADFD);
 
     int    done = 0;
@@ -948,7 +948,7 @@ w_rc_t    sthread_t::write(int fd, const void* buf, int n)
 w_rc_t    sthread_t::readv(int fd, const iovec_t *iov, size_t iovcnt)
 {
     fd -= fd_base;
-    if (fd < 0 || fd >= (int)open_max || !_disks[fd]) 
+    if (fd < 0 || fd >= (int)open_max || !_disks[fd])
         return RC(stBADFD);
 
     int    done = 0;
@@ -968,7 +968,7 @@ w_rc_t    sthread_t::readv(int fd, const iovec_t *iov, size_t iovcnt)
 w_rc_t    sthread_t::writev(int fd, const iovec_t *iov, size_t iovcnt)
 {
     fd -= fd_base;
-    if (fd < 0 || fd >= (int)open_max || !_disks[fd]) 
+    if (fd < 0 || fd >= (int)open_max || !_disks[fd])
         return RC(stBADFD);
 
     int    done = 0;
@@ -988,7 +988,7 @@ w_rc_t    sthread_t::writev(int fd, const iovec_t *iov, size_t iovcnt)
 w_rc_t    sthread_t::pread(int fd, void *buf, int n, fileoff_t pos)
 {
     fd -= fd_base;
-    if (fd < 0 || fd >= (int)open_max || !_disks[fd]) 
+    if (fd < 0 || fd >= (int)open_max || !_disks[fd])
         return RC(stBADFD);
 
     int    done = 0;
@@ -1007,7 +1007,7 @@ w_rc_t    sthread_t::pread(int fd, void *buf, int n, fileoff_t pos)
 w_rc_t    sthread_t::pwrite(int fd, const void *buf, int n, fileoff_t pos)
 {
     fd -= fd_base;
-    if (fd < 0 || fd >= (int)open_max || !_disks[fd]) 
+    if (fd < 0 || fd >= (int)open_max || !_disks[fd])
         return RC(stBADFD);
 
     int    done = 0;
@@ -1024,7 +1024,7 @@ w_rc_t    sthread_t::pwrite(int fd, const void *buf, int n, fileoff_t pos)
 w_rc_t    sthread_t::fsync(int fd)
 {
     fd -= fd_base;
-    if (fd < 0 || fd >= (int)open_max || !_disks[fd]) 
+    if (fd < 0 || fd >= (int)open_max || !_disks[fd])
         return RC(stBADFD);
 
     w_rc_t        e;
@@ -1036,7 +1036,7 @@ w_rc_t    sthread_t::fsync(int fd)
 w_rc_t    sthread_t::ftruncate(int fd, fileoff_t n)
 {
     fd -= fd_base;
-    if (fd < 0 || fd >= (int)open_max || !_disks[fd]) 
+    if (fd < 0 || fd >= (int)open_max || !_disks[fd])
         return RC(stBADFD);
 
     w_rc_t        e;
@@ -1049,7 +1049,7 @@ w_rc_t    sthread_t::ftruncate(int fd, fileoff_t n)
 w_rc_t sthread_t::lseek(int fd, fileoff_t pos, int whence, fileoff_t& ret)
 {
     fd -= fd_base;
-    if (fd < 0 || fd >= (int)open_max || !_disks[fd]) 
+    if (fd < 0 || fd >= (int)open_max || !_disks[fd])
         return RC(stBADFD);
 
     w_rc_t    e = _disks[fd]->seek(pos, whence, ret);
@@ -1074,7 +1074,7 @@ w_rc_t sthread_t::lseek(int fd, fileoff_t offset, int whence)
 w_rc_t    sthread_t::fstat(int fd, filestat_t &st)
 {
     fd -= fd_base;
-    if (fd < 0 || fd >= (int)open_max || !_disks[fd]) 
+    if (fd < 0 || fd >= (int)open_max || !_disks[fd])
         return RC(stBADFD);
 
     w_rc_t    e;
@@ -1105,7 +1105,7 @@ void    sthread_t::dump_io(ostream &s)
     s << endl;
 }
 
-extern "C" void dump_io() 
+extern "C" void dump_io()
 {
     sthread_t::dump_io(cout);
     cout << flush;
