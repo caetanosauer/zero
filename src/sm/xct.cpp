@@ -2670,16 +2670,7 @@ xct_t::rollback(const lsn_t &save_pt)
 
     while (save_pt < nxt)  
     {
-#ifdef LOG_BUFFER
-        // no hints
         rc =  log->fetch(nxt, buf, 0, true);        
-
-        //// hints
-        ////rc =  log->fetch(nxt, __copy__buf, 0, SINGLE_PAGE_RECOVERY);
-        //rc =  log->fetch(nxt, buf, 0, SINGLE_PAGE_RECOVERY);
-#else
-        rc =  log->fetch(nxt, buf, 0, true);        
-#endif        
         if(rc.is_error() && rc.err_num()==eEOF) 
         {
             LOGTRACE2( << "U: end of log looking to fetch nxt=" << nxt);
