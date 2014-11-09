@@ -46,7 +46,7 @@
 class flush_daemon_thread_t : public smthread_t {
     logbuf_core* _log;
 public:
-    flush_daemon_thread_t(logbuf_core* log) :
+    flush_daemon_thread_t(logbuf_core* log) : 
          smthread_t(t_regular, "flush_daemon", WAIT_NOT_USED), _log(log) { }
 
     virtual void run() { _log->flush_daemon(); }
@@ -68,7 +68,7 @@ hints_t hints_profile[] = {
     {ON_DEMAND_REDO, false, false, false},
     {ON_DEMAND_UNDO, true, false, false},
     {DEFAULT_HINTS, false, false, false},
-};
+};   
 
 
 // check in which mode the log buffer runs
@@ -77,13 +77,13 @@ hints_t hints_profile[] = {
 
 
 /*********************************************************************
- *
+ *  
  *  logbuf_core::logbuf_core(uint32_t count, uint32_t flush_trigger, uint32_t block_size,
- *                 uint32_t seg_size, uint32_t part_size, int active_slot_count)
+ *                 uint32_t seg_size, uint32_t part_size, int active_slot_count) 
  *
  *  Initialize the log buffer
  *
- *  NOTE: _partition_data_size will be updated with the actual value in
+ *  NOTE: _partition_data_size will be updated with the actual value in 
  *  log_core::set_partition_data_size()
  *
  *********************************************************************/
@@ -92,10 +92,10 @@ logbuf_core::logbuf_core(
                  uint32_t flush_trigger, // IN: max number of unflushed segments in the write buffer
                                          //     before a forced flush
                  uint32_t block_size, // IN: block size in the log partition
-                 uint32_t seg_size,  // IN: segment size
+                 uint32_t seg_size,  // IN: segment size 
                  uint32_t part_size, // IN: usable partition size
                  int active_slot_count // IN: slot number in ConsolidationArray
-)
+) 
 {
 
     DBGOUT3(<< "log buffer: constructor");
@@ -161,7 +161,7 @@ logbuf_core::logbuf_core(
     _shutting_down = false;
 
     _flush_daemon = new flush_daemon_thread_t(this);
-
+    
     // aether
     _carray = new ConsolidationArray(active_slot_count);
 
@@ -171,7 +171,7 @@ logbuf_core::logbuf_core(
 }
 
 /*********************************************************************
- *
+ *  
  *  logbuf_core::~logbuf_core()
  *
  *  Destroy the log buffer
@@ -212,7 +212,7 @@ logbuf_core::~logbuf_core() {
 }
 
 /*********************************************************************
- *
+ *  
  *  void logbuf_core::logbuf_print(const char *string, int level)
  *
  *  Print current state of the log buffer (thread-safe)
@@ -230,7 +230,7 @@ void logbuf_core::logbuf_print(const char *string, int level) {
         if (_seg_list != NULL) {
             {
                 DBGOUT3(<< " Log Buffer State (" << _seg_count <<
-                        "/" << _max_seg_count << ")");
+                        "/" << _max_seg_count << ")"); 
 
                 DBGOUT3(<< "     _start: " << _start);
                 DBGOUT3(<< "     _end: " << _end);
@@ -241,22 +241,22 @@ void logbuf_core::logbuf_print(const char *string, int level) {
                 DBGOUT3(<< "     _to_insert: " << _to_insert_lsn);
 
                 DBGOUT3(<< "     _buf_epoch: " <<
-                        _buf_epoch.base_lsn << " " <<
-                        _buf_epoch.base << " " << _buf_epoch.start << " " <<
-                        _buf_epoch.end);
+                        _buf_epoch.base_lsn << " " << 
+                        _buf_epoch.base << " " << _buf_epoch.start << " " << 
+                        _buf_epoch.end); 
                 DBGOUT3(<< "     _cur_epoch: " <<
-                        _cur_epoch.base_lsn << " " <<
+                        _cur_epoch.base_lsn << " " << 
                         _cur_epoch.base << " " << _cur_epoch.start << " " <<
-                        _cur_epoch.end);
+                        _cur_epoch.end); 
                 DBGOUT3(<< "     _old_epoch: " <<
-                        _old_epoch.base_lsn << " " <<
+                        _old_epoch.base_lsn << " " << 
                         _old_epoch.base << " " << _old_epoch.start << " " <<
-                        _old_epoch.end);
+                        _old_epoch.end); 
 
 
                 DBGOUT3(<< " Log Buffer Seg List (" <<
-                        _seg_list->count() << "/"
-                        <<_max_seg_count << ")");
+                        _seg_list->count() << "/" 
+                        <<_max_seg_count << ")"); 
 
                 logbuf_seg *cur = _seg_list->top();
                 int i=0;
@@ -266,7 +266,7 @@ void logbuf_core::logbuf_print(const char *string, int level) {
                     cur = _seg_list->next_of(cur);
                     i++;
                 }
-                DBGOUT3(<< " Log Buffer Hit Rate");
+                DBGOUT3(<< " Log Buffer Hit Rate"); 
                 DBGOUT3(<< "     fetches: " << reads);
                 DBGOUT3(<< "     hits: " << hits);
                 DBGOUT3(<< "     hit rate: " << ((float)hits)/reads);
@@ -288,7 +288,7 @@ void logbuf_core::logbuf_print(const char *string, int level) {
         if (_seg_list != NULL) {
             {
                 DBGOUT0(<< " Log Buffer State (" << _seg_count <<
-                        "/" << _max_seg_count << ")");
+                        "/" << _max_seg_count << ")"); 
 
                 DBGOUT0(<< "     _start: " << _start);
                 DBGOUT0(<< "     _end: " << _end);
@@ -299,22 +299,22 @@ void logbuf_core::logbuf_print(const char *string, int level) {
                 DBGOUT0(<< "     _to_insert: " << _to_insert_lsn);
 
                 DBGOUT0(<< "     _buf_epoch: " <<
-                        _buf_epoch.base_lsn << " " <<
-                        _buf_epoch.base << " " << _buf_epoch.start << " " <<
-                        _buf_epoch.end);
+                        _buf_epoch.base_lsn << " " << 
+                        _buf_epoch.base << " " << _buf_epoch.start << " " << 
+                        _buf_epoch.end); 
                 DBGOUT0(<< "     _cur_epoch: " <<
-                        _cur_epoch.base_lsn << " " <<
+                        _cur_epoch.base_lsn << " " << 
                         _cur_epoch.base << " " << _cur_epoch.start << " " <<
-                        _cur_epoch.end);
+                        _cur_epoch.end); 
                 DBGOUT0(<< "     _old_epoch: " <<
-                        _old_epoch.base_lsn << " " <<
+                        _old_epoch.base_lsn << " " << 
                         _old_epoch.base << " " << _old_epoch.start << " " <<
-                        _old_epoch.end);
+                        _old_epoch.end); 
 
 
                 DBGOUT0(<< " Log Buffer Seg List (" <<
-                        _seg_list->count() << "/"
-                        <<_max_seg_count << ")");
+                        _seg_list->count() << "/" 
+                        <<_max_seg_count << ")"); 
 
                 logbuf_seg *cur = _seg_list->top();
                 int i=0;
@@ -325,7 +325,7 @@ void logbuf_core::logbuf_print(const char *string, int level) {
                     i++;
                 }
 
-                DBGOUT0(<< " Log Buffer Hit Rate");
+                DBGOUT0(<< " Log Buffer Hit Rate"); 
                 DBGOUT0(<< "     fetches: " << reads);
                 DBGOUT0(<< "     hits: " << hits);
                 DBGOUT0(<< "     hit rate: " << ((float)hits)/reads);
@@ -342,7 +342,7 @@ void logbuf_core::logbuf_print(const char *string, int level) {
 
 
 /*********************************************************************
- *
+ *  
  *  void logbuf_core::logbuf_print_nolock(const char *string, int level)
  *
  *  Print current state of the log buffer without holding the lock
@@ -359,7 +359,7 @@ void logbuf_core::logbuf_print_nolock(const char *string, int level) {
         if (_seg_list != NULL) {
             {
                 DBGOUT3(<< " Log Buffer State (" << _seg_count <<
-                        "/" << _max_seg_count << ")");
+                        "/" << _max_seg_count << ")"); 
 
                 DBGOUT3(<< "     _start: " << _start);
                 DBGOUT3(<< "     _end: " << _end);
@@ -370,22 +370,22 @@ void logbuf_core::logbuf_print_nolock(const char *string, int level) {
                 DBGOUT3(<< "     _to_insert: " << _to_insert_lsn);
 
                 DBGOUT3(<< "     _buf_epoch: " <<
-                        _buf_epoch.base_lsn << " " <<
-                        _buf_epoch.base << " " << _buf_epoch.start << " " <<
-                        _buf_epoch.end);
+                        _buf_epoch.base_lsn << " " << 
+                        _buf_epoch.base << " " << _buf_epoch.start << " " << 
+                        _buf_epoch.end); 
                 DBGOUT3(<< "     _cur_epoch: " <<
-                        _cur_epoch.base_lsn << " " <<
+                        _cur_epoch.base_lsn << " " << 
                         _cur_epoch.base << " " << _cur_epoch.start << " " <<
-                        _cur_epoch.end);
+                        _cur_epoch.end); 
                 DBGOUT3(<< "     _old_epoch: " <<
-                        _old_epoch.base_lsn << " " <<
+                        _old_epoch.base_lsn << " " << 
                         _old_epoch.base << " " << _old_epoch.start << " " <<
-                        _old_epoch.end);
+                        _old_epoch.end); 
 
 
                 DBGOUT3(<< " Log Buffer Seg List (" <<
-                        _seg_list->count() << "/"
-                        <<_max_seg_count << ")");
+                        _seg_list->count() << "/" 
+                        <<_max_seg_count << ")"); 
 
                 logbuf_seg *cur = _seg_list->top();
                 int i=0;
@@ -396,7 +396,7 @@ void logbuf_core::logbuf_print_nolock(const char *string, int level) {
                     i++;
                 }
 
-                DBGOUT3(<< " Log Buffer Hit Rate");
+                DBGOUT3(<< " Log Buffer Hit Rate"); 
                 DBGOUT3(<< "     fetches: " << reads);
                 DBGOUT3(<< "     hits: " << hits);
                 DBGOUT3(<< "     hit rate: " << ((float)hits)/reads);
@@ -416,7 +416,7 @@ void logbuf_core::logbuf_print_nolock(const char *string, int level) {
         if (_seg_list != NULL) {
             {
                 DBGOUT0(<< " Log Buffer State (" << _seg_count <<
-                        "/" << _max_seg_count << ")");
+                        "/" << _max_seg_count << ")"); 
 
                 DBGOUT0(<< "     _start: " << _start);
                 DBGOUT0(<< "     _end: " << _end);
@@ -427,22 +427,22 @@ void logbuf_core::logbuf_print_nolock(const char *string, int level) {
                 DBGOUT0(<< "     _to_insert: " << _to_insert_lsn);
 
                 DBGOUT0(<< "     _buf_epoch: " <<
-                        _buf_epoch.base_lsn << " " <<
-                        _buf_epoch.base << " " << _buf_epoch.start << " " <<
-                        _buf_epoch.end);
+                        _buf_epoch.base_lsn << " " << 
+                        _buf_epoch.base << " " << _buf_epoch.start << " " << 
+                        _buf_epoch.end); 
                 DBGOUT0(<< "     _cur_epoch: " <<
-                        _cur_epoch.base_lsn << " " <<
+                        _cur_epoch.base_lsn << " " << 
                         _cur_epoch.base << " " << _cur_epoch.start << " " <<
-                        _cur_epoch.end);
+                        _cur_epoch.end); 
                 DBGOUT0(<< "     _old_epoch: " <<
-                        _old_epoch.base_lsn << " " <<
+                        _old_epoch.base_lsn << " " << 
                         _old_epoch.base << " " << _old_epoch.start << " " <<
-                        _old_epoch.end);
+                        _old_epoch.end); 
 
 
                 DBGOUT0(<< " Log Buffer Seg List (" <<
-                        _seg_list->count() << "/"
-                        <<_max_seg_count << ")");
+                        _seg_list->count() << "/" 
+                        <<_max_seg_count << ")"); 
 
                 logbuf_seg *cur = _seg_list->top();
                 int i=0;
@@ -453,7 +453,7 @@ void logbuf_core::logbuf_print_nolock(const char *string, int level) {
                     i++;
                 }
 
-                DBGOUT0(<< " Log Buffer Hit Rate");
+                DBGOUT0(<< " Log Buffer Hit Rate"); 
                 DBGOUT0(<< "     fetches: " << reads);
                 DBGOUT0(<< "     hits: " << hits);
                 DBGOUT0(<< "     hit rate: " << ((float)hits)/reads);
@@ -473,10 +473,10 @@ void logbuf_core::logbuf_print_nolock(const char *string, int level) {
 // =================== prime =========================
 
 /*********************************************************************
- *
+ *  
  *  void logbuf_core::_prime(int fd, smlevel_0::fileoff_t start, lsn_t next)
  *
- *  Initialize various pointers in the log buffer based on the log
+ *  Initialize various pointers in the log buffer based on the log 
  *
  *  Modified from log_core::_prime. For M2 and M3.
  *
@@ -486,12 +486,12 @@ void logbuf_core::_prime(
                      smlevel_0::fileoff_t start, // IN: current position in the file
                      lsn_t next // IN: the next available lsn to insert to
 )
-{
+{    
 // TODO(Restart)... comment out for now, too much noise
 //    DBGOUT3(<< "_prime @ lsn " << next);
 
     if (IS_M1()==false)
-        w_assert1(_owner->_durable_lsn == _owner->_curr_lsn);
+        w_assert1(_owner->_durable_lsn == _owner->_curr_lsn);    
 
     w_assert1(_flush_daemon_running == false);
 
@@ -502,7 +502,7 @@ void logbuf_core::_prime(
         size = 0;
     }
     else {
-        // if next is the end of a segment/the start of a new segment,
+        // if next is the end of a segment/the start of a new segment, 
         // we should read the current segment, instead of the new one
         size = (next.lo()-1) % _segsize+1;
     }
@@ -519,7 +519,7 @@ void logbuf_core::_prime(
     {
         _logbuf_lock.acquire();
         first_seg = _get_new_seg_for_fetch();
-        _logbuf_lock.release();
+        _logbuf_lock.release();        
     }
 
     w_assert0(first_seg != NULL);
@@ -538,19 +538,19 @@ void logbuf_core::_prime(
         w_rc_t e = me()->pread(fd, first_seg->buf, size, start + seg_lsn.lo());
 #endif
         if (e.is_error()) {
-                W_FATAL_MSG(e.err_num(),
-                            << "cannot read log: lsn " << seg_lsn
-                            << "pread(): " << e
+                W_FATAL_MSG(e.err_num(), 
+                            << "cannot read log: lsn " << seg_lsn 
+                            << "pread(): " << e 
                             << "pread() returns " << n << endl);
         }
     }
 
-    first_seg->base_lsn = seg_lsn;
+    first_seg->base_lsn = seg_lsn;        
 
     _insert_seg_to_list_for_insertion(first_seg);
     _insert_seg_to_hashtable_for_insertion(first_seg);
-
-    _to_archive_seg = _to_insert_seg = _to_flush_seg = first_seg;
+    
+    _to_archive_seg = _to_insert_seg = _to_flush_seg = first_seg;    
     _to_archive_lsn = _to_insert_lsn = _to_flush_lsn = next;
 
     if(IS_M1()==false)
@@ -568,7 +568,7 @@ void logbuf_core::_prime(
 
 
 /*********************************************************************
- *
+ *  
  *  void logbuf_core::logbuf_prime(lsn_t next)
  *
  *  Fake _prime for M1
@@ -577,7 +577,7 @@ void logbuf_core::_prime(
 void logbuf_core::logbuf_prime(lsn_t next) {
 // TODO(Restart)... comment out for now, too much noise
 //    DBGOUT3(<< "init");
-
+    
     _prime(0, 0, next);
 
     start_flush_daemon();
@@ -589,13 +589,13 @@ void logbuf_core::logbuf_prime(lsn_t next) {
 
 
 /*********************************************************************
- *
+ *  
  *  rc_t logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
  *
  *  Fetch a log record from a specified lsn
  *
  *  For M2 and M3. Modified from log_core::fetch.
- *  It calls logbuf_core::_fetch instead of partition_t::read
+ *  It calls logbuf_core::_fetch instead of partition_t::read  
  *
  *  For forward scan (default direction), fetch the log record at ll, and return the next lsn to fetch in nxt
  *  For backward scan, fetch the log record before ll, and return the lsn of the fetched log record in nxt
@@ -617,15 +617,15 @@ logbuf_core::fetch(
     FUNC(log_core::fetch);
 
     w_assert1(IS_M1()==false);
-
-    DBGTHRD(<<"fetching lsn " << ll
+   
+    DBGTHRD(<<"fetching lsn " << ll 
             << " , _curr_lsn = " << _to_insert_lsn
             << " , _durable_lsn = " << _to_flush_lsn);
 
 
 #if W_DEBUG_LEVEL > 0
     _owner->_sanity_check();
-#endif
+#endif 
 
     // it's not sufficient to flush to ll, since
     // ll is at the *beginning* of what we want
@@ -661,7 +661,7 @@ logbuf_core::fetch(
              *  This would constitute a
              *  read beyond the end of the log
              */
-            DBGTHRD(<<"fetch at lsn " << ll  << " returns eof -- _curr_lsn="
+            DBGTHRD(<<"fetch at lsn " << ll  << " returns eof -- _curr_lsn=" 
                     << _to_insert_lsn);
             return RC(eEOF);
         }
@@ -691,20 +691,20 @@ logbuf_core::fetch(
                     }
 
                     if (p->size() == partition_t::nosize) {
-                        // we have reached the "end" of the backward scan,
+                        // we have reached the "end" of the backward scan, 
                         // i.e., no more log records before this lsn
                         // return EOF so that log_i will stop
                         return RC(eEOF);
                     }
                     if (p->size() == 0) {
                         // this is a special case
-                        // when the partition does not exist,
+                        // when the partition does not exist, 
                         // _open_partition_for_read->_open_partitionp->peek would create an empty file
                         // we must remove this file immediately
                         p->close(true);
                         p->destroy();
                         return RC(eEOF);
-                    }
+                    }        
 
                     // this partition is already opened
                     ll = lsn_t(ll.hi()-1, p->size());
@@ -717,7 +717,7 @@ logbuf_core::fetch(
                 if ( ll.lo() >= p->size() ||
                      (p->size() == partition_t::nosize && ll.lo() >= _owner->limit()))  {
                     DBGTHRD(<<"seeking to " << ll.lo() << ";  beyond p->size() ... OR ...");
-                    DBGTHRD(<<"limit()=" << _owner->limit() << " & p->size()=="
+                    DBGTHRD(<<"limit()=" << _owner->limit() << " & p->size()==" 
                             << int(partition_t::nosize));
 
                     ll = _owner->first_lsn(ll.hi() + 1);
@@ -749,11 +749,11 @@ logbuf_core::fetch(
     }
     else {
         // forward scan
-// TODO(Restart)... comment out for now, too much noise
+// TODO(Restart)... comment out for now, too much noise        
 //        DBGOUT3(<< "fetch @ lsn: " << ll);
         W_COERCE(_fetch(rp, ll, p));
         logrec_t        &r = *rp;
-        if (r.type() == logrec_t::t_skip && r.get_lsn_ck() == ll) {
+        if (r.type() == logrec_t::t_skip && r.get_lsn_ck() == ll) {                
             DBGTHRD(<<"seeked to skip" << ll );
             DBGTHRD(<<"getting next partition.");
             ll = _owner->first_lsn(ll.hi() + 1);
@@ -762,11 +762,11 @@ logbuf_core::fetch(
             p = _owner->_n_partition(ll.hi());
             if(!p)
                 p = _owner->_open_partition_for_read(ll.hi(), lsn_t::null, false, false);
-
+            
             // re-read
-// TODO(Restart)... comment out for now, too much noise
+// TODO(Restart)... comment out for now, too much noise            
 //            DBGOUT3(<< "re-fetch @ lsn: " << ll);
-            W_COERCE(_fetch(rp, ll, p));
+            W_COERCE(_fetch(rp, ll, p));            
         }
         if (nxt) {
             lsn_t tmp = ll;
@@ -774,17 +774,17 @@ logbuf_core::fetch(
         }
     }
 
-    logrec_t        &r = *rp;
+    logrec_t        &r = *rp;      
     if (r.lsn_ck().hi() != ll.hi()) {
         W_FATAL_MSG(fcINTERNAL,
-            << "Fatal error: log record " << ll
-            << " is corrupt in lsn_ck().hi() "
+            << "Fatal error: log record " << ll 
+            << " is corrupt in lsn_ck().hi() " 
             << r.get_lsn_ck()
             << endl);
     } else if (r.lsn_ck().lo() != ll.lo()) {
         W_FATAL_MSG(fcINTERNAL,
-            << "Fatal error: log record " << ll
-            << "is corrupt in lsn_ck().lo()"
+            << "Fatal error: log record " << ll 
+            << "is corrupt in lsn_ck().lo()" 
             << r.get_lsn_ck()
             << endl);
     }
@@ -792,7 +792,7 @@ logbuf_core::fetch(
     DBGTHRD(<<"fetch at lsn " << ll  << " returns " << r);
 #if W_DEBUG_LEVEL > 2
     _owner->_sanity_check();
-#endif
+#endif 
 
     // caller must release the _partition_lock mutex
     return RCOK;
@@ -801,10 +801,10 @@ logbuf_core::fetch(
 
 
 /*********************************************************************
- *
+ *  
  *  w_rc_t logbuf_core::_fetch(logrec_t* &rec, lsn_t &lsn, partition_t *p)
  *
- *  Fetch a log record from the log buffer.
+ *  Fetch a log record from the log buffer. 
  *
  *  This is the internal read function for every fetch
  *  It looks up the hashtable for every requested lsn
@@ -834,19 +834,19 @@ w_rc_t logbuf_core::_fetch(
 
         found = _hashtable->lookup(seg_lsn.data());
         if (found != NULL) {
-            // hit
-// TODO(Restart)... comment out for now, too much noise
-//            DBGOUT3(<< " HIT " << found->base_lsn
-//                    << " " << offset);
+            // hit            
+// TODO(Restart)... comment out for now, too much noise            
+//            DBGOUT3(<< " HIT " << found->base_lsn 
+//                    << " " << offset); 
 
             hits++;
             if (rec != NULL) {
                 // we don't have to worry about whether the log record is spanning
                 // across two segments because if that's the case, the record
-                // will be in the tail blocks
+                // will be in the tail blocks 
 
                 rp = (logrec_t*)(found->buf+offset);
-                if( rp->length() > sizeof(logrec_t) ||
+                if( rp->length() > sizeof(logrec_t) || 
                     rp->length() < rp->header_size() ) {
                     W_FATAL_MSG(fcINTERNAL, << "HIT: BUG? or corrupted log record");
                 }
@@ -854,22 +854,22 @@ w_rc_t logbuf_core::_fetch(
             }
             _logbuf_lock.release();
         }
-        else {
+        else {            
             // miss
-// TODO(Restart)... comment out for now, too much noise
+// TODO(Restart)... comment out for now, too much noise            
 //            DBGOUT3(<< " MISS " << seg_lsn
-//                    << " " << offset);
+//                    << " " << offset); 
 
             //logbuf_print("before MISS");
 
             /**
              *
              *  _get_new_seg_for_fetch() always returns a valid in-memory segment descriptor (non-NULL)
-             *  and the memory buffer in the segment descriptor is always free.
+             *  and the memory buffer in the segment descriptor is always free. 
              *  _get_new_seg_for_fetch() does not care about which segment/lsn we want to fetch
-             *  it just returns a free in-mem segment descriptor.
-             *  Then, _fetch() call read_seg to read the entire segment from the log file/partition
-             *  and store it in the segment descriptor.
+             *  it just returns a free in-mem segment descriptor.  
+             *  Then, _fetch() call read_seg to read the entire segment from the log file/partition 
+             *  and store it in the segment descriptor. 
              *  It sets the segment descriptor's base_lsn to be the lsn we are fetching for.
              *
              */
@@ -887,15 +887,15 @@ w_rc_t logbuf_core::_fetch(
             }
 
             {
-                found->base_lsn = seg_lsn;
-
+                found->base_lsn = seg_lsn;        
+            
                 if (rec != NULL) {
                     // we don't have to worry about whether the log record is spanning
                     // across two segments because if that's the case, the record
-                    // will be in the tail blocks
+                    // will be in the tail blocks 
 
                     rp = (logrec_t*)(found->buf+offset);
-                    if( rp->length() > sizeof(logrec_t) ||
+                    if( rp->length() > sizeof(logrec_t) || 
                         rp->length() < rp->header_size() ) {
                         W_FATAL_MSG(fcINTERNAL, << "MISS: BUG? or corrupted log record");
                     }
@@ -909,7 +909,7 @@ w_rc_t logbuf_core::_fetch(
 
             _logbuf_lock.release();
 
-
+            
             //logbuf_print("after MISS");
         }
 
@@ -919,7 +919,7 @@ w_rc_t logbuf_core::_fetch(
 }
 
 /*********************************************************************
- *
+ *  
  *  w_rc_t logbuf_core::_get_lsn_for_backward_scan(lsn_t &lsn, partition_t *p)
  *
  *  Find out the lsn of the previous log record
@@ -942,11 +942,11 @@ w_rc_t logbuf_core::_get_lsn_for_backward_scan(lsn_t &lsn, // IN/OUT: the positi
 
         found = _hashtable->lookup(seg_lsn.data());
         if (found != NULL) {
-            // hit
+            // hit            
             lsn = *((lsn_t*)(found->buf+offset));
             _logbuf_lock.release();
         }
-        else {
+        else {            
             // miss
             found = _get_new_seg_for_fetch();
 
@@ -959,10 +959,10 @@ w_rc_t logbuf_core::_get_lsn_for_backward_scan(lsn_t &lsn, // IN/OUT: the positi
                 W_COERCE(p->read_seg(seg_lsn, found->buf, _actual_segsize));
 #endif
             }
-
-            found->base_lsn = seg_lsn;
+            
+            found->base_lsn = seg_lsn;        
             lsn = *((lsn_t*)(found->buf+offset));
-
+            
 
             _logbuf_lock.acquire();
             _insert_seg_for_fetch(found);
@@ -977,11 +977,11 @@ w_rc_t logbuf_core::_get_lsn_for_backward_scan(lsn_t &lsn, // IN/OUT: the positi
 
 
 /*********************************************************************
- *
+ *  
  *  int logbuf_core::logbuf_fetch(lsn_t lsn)
  *
  *  Fetch function for M1
- *
+ *  
  *  For testing
  *  It does not return any log record
  *  It only returns the state of the buffer lookup: MISS, HIT, or INVALID lsn
@@ -1009,20 +1009,20 @@ int logbuf_core::logbuf_fetch(lsn_t lsn) {
 
         found = _hashtable->lookup(seg_lsn.data());
         if (found != NULL) {
-            // hit
-// TODO(Restart)... comment out for now, too much noise
-//            DBGOUT3(<< " HIT " << found->base_lsn
-//                    << " " << offset);
+            // hit            
+// TODO(Restart)... comment out for now, too much noise            
+//            DBGOUT3(<< " HIT " << found->base_lsn 
+//                    << " " << offset); 
 
             _logbuf_lock.release();
 
             return 1; // HIT
         }
-        else {
+        else {            
             // miss
-// TODO(Restart)... comment out for now, too much noise
+// TODO(Restart)... comment out for now, too much noise            
 //            DBGOUT3(<< " MISS " << seg_lsn
-//                    << " " << offset);
+//                    << " " << offset); 
 
 
             found = _get_new_seg_for_fetch();
@@ -1030,7 +1030,7 @@ int logbuf_core::logbuf_fetch(lsn_t lsn) {
             _logbuf_lock.release();
 
             // read
-            found->base_lsn = seg_lsn;
+            found->base_lsn = seg_lsn;        
 
             _logbuf_lock.acquire();
 
@@ -1046,17 +1046,17 @@ int logbuf_core::logbuf_fetch(lsn_t lsn) {
 
 
 /*********************************************************************
- *
+ *  
  * int logbuf_core::fetch_for_test(lsn_t& lsn, logrec_t*& rp) {
  *
  *  A fetch function for testing M2 and M3
- *
+ *   
  *  It calls the actual fetch and releases the mutex properly
  *  It also returns the state of the buffer lookup: MISS, HIT, or INVALID lsn
  *
  *********************************************************************/
 int logbuf_core::fetch_for_test(lsn_t& lsn, logrec_t*& rp) {
-
+    
     uint64_t offset = lsn.lo() % _segsize;
     lsn_t seg_lsn = lsn_t(lsn.data() - offset);
     logbuf_seg *found = NULL;
@@ -1075,18 +1075,18 @@ int logbuf_core::fetch_for_test(lsn_t& lsn, logrec_t*& rp) {
         else {
             found = _hashtable->lookup(seg_lsn.data());
             if (found != NULL) {
-                // hit
-                // DBGOUT3(<< " HIT " << found->base_lsn
-                //         << " " << offset);
+                // hit            
+                // DBGOUT3(<< " HIT " << found->base_lsn 
+                //         << " " << offset); 
 
                 _logbuf_lock.release();
 
                 ret =  1; // HIT
             }
-            else {
+            else {            
                 // miss
                 // DBGOUT3(<< " MISS " << seg_lsn
-                //         << " " << offset);
+                //         << " " << offset); 
 
                 _logbuf_lock.release();
 
@@ -1102,7 +1102,7 @@ int logbuf_core::fetch_for_test(lsn_t& lsn, logrec_t*& rp) {
     }
 
     // important! release the lock....
-    _owner->release();
+    _owner->release(); 
 
 
     return ret;
@@ -1114,13 +1114,13 @@ int logbuf_core::fetch_for_test(lsn_t& lsn, logrec_t*& rp) {
 // =================== fetch (with hints) =========================
 
 /*********************************************************************
- *
+ *  
  *  rc_t logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
  *
  *  Fetch a log record from a specified lsn. Hints are provided.
  *
  *  For M2 and M3. Modified from log_core::fetch.
- *  It calls logbuf_core::_fetch instead of partition_t::read
+ *  It calls logbuf_core::_fetch instead of partition_t::read  
  *
  *  For forward scan (default direction), fetch the log record at ll, and return the next lsn to fetch in nxt
  *  For backward scan, fetch the log record before ll, and return the lsn of the fetched log record in nxt
@@ -1139,8 +1139,8 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
     FUNC(log_core::fetch);
 
     w_assert1(IS_M1()==false);
-
-    DBGTHRD(<<"fetching lsn " << ll
+   
+    DBGTHRD(<<"fetching lsn " << ll 
             << " , _curr_lsn = " << _to_insert_lsn
             << " , _durable_lsn = " << _to_flush_lsn);
 
@@ -1149,7 +1149,7 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
 
 #if W_DEBUG_LEVEL > 0
     _owner->_sanity_check();
-#endif
+#endif 
 
     // it's not sufficient to flush to ll, since
     // ll is at the *beginning* of what we want
@@ -1185,7 +1185,7 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
              *  This would constitute a
              *  read beyond the end of the log
              */
-            DBGTHRD(<<"fetch at lsn " << ll  << " returns eof -- _curr_lsn="
+            DBGTHRD(<<"fetch at lsn " << ll  << " returns eof -- _curr_lsn=" 
                     << _to_insert_lsn);
             return RC(eEOF);
         }
@@ -1219,20 +1219,20 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
                     }
 
                     if (p->size() == partition_t::nosize) {
-                        // we have reached the "end" of the backward scan,
+                        // we have reached the "end" of the backward scan, 
                         // i.e., no more log records before this lsn
                         // return EOF so that log_i will stop
                         return RC(eEOF);
                     }
                     if (p->size() == 0) {
                         // this is a special case
-                        // when the partition does not exist,
+                        // when the partition does not exist, 
                         // _open_partition_for_read->_open_partitionp->peek would create an empty file
                         // we must remove this file immediately
                         p->close(true);
                         p->destroy();
                         return RC(eEOF);
-                    }
+                    }        
 
                     // now this partition is opened
                     // ll points to the skip record
@@ -1246,7 +1246,7 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
                 if ( ll.lo() >= p->size() ||
                      (p->size() == partition_t::nosize && ll.lo() >= _owner->limit()))  {
                     DBGTHRD(<<"seeking to " << ll.lo() << ";  beyond p->size() ... OR ...");
-                    DBGTHRD(<<"limit()=" << _owner->limit() << " & p->size()=="
+                    DBGTHRD(<<"limit()=" << _owner->limit() << " & p->size()==" 
                             << int(partition_t::nosize));
 
                     ll = _owner->first_lsn(ll.hi() + 1);
@@ -1278,11 +1278,11 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
     }
     else {
         // forward scan
-// TODO(Restart)... comment out for now, too much noise
+// TODO(Restart)... comment out for now, too much noise        
 //        DBGOUT3(<< "fetch @ lsn: " << ll);
         W_COERCE(_fetch(rp, ll, p, op));
         logrec_t        &r = *rp;
-        if (r.type() == logrec_t::t_skip && r.get_lsn_ck() == ll) {
+        if (r.type() == logrec_t::t_skip && r.get_lsn_ck() == ll) {                
             DBGTHRD(<<"seeked to skip" << ll );
             DBGTHRD(<<"getting next partition.");
             ll = _owner->first_lsn(ll.hi() + 1);
@@ -1291,11 +1291,11 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
             p = _owner->_n_partition(ll.hi());
             if(!p)
                 p = _owner->_open_partition_for_read(ll.hi(), lsn_t::null, false, false);
-
+            
             // re-read
-// TODO(Restart)... comment out for now, too much noise
+// TODO(Restart)... comment out for now, too much noise            
 //            DBGOUT3(<< "re-fetch @ lsn: " << ll);
-            W_COERCE(_fetch(rp, ll, p, op));
+            W_COERCE(_fetch(rp, ll, p, op));            
         }
         if (nxt) {
             lsn_t tmp = ll;
@@ -1303,17 +1303,17 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
         }
     }
 
-    logrec_t        &r = *rp;
+    logrec_t        &r = *rp;      
     if (r.lsn_ck().hi() != ll.hi()) {
         W_FATAL_MSG(fcINTERNAL,
-            << "Fatal error: log record " << ll
-            << " is corrupt in lsn_ck().hi() "
+            << "Fatal error: log record " << ll 
+            << " is corrupt in lsn_ck().hi() " 
             << r.get_lsn_ck()
             << endl);
     } else if (r.lsn_ck().lo() != ll.lo()) {
         W_FATAL_MSG(fcINTERNAL,
-            << "Fatal error: log record " << ll
-            << "is corrupt in lsn_ck().lo()"
+            << "Fatal error: log record " << ll 
+            << "is corrupt in lsn_ck().lo()" 
             << r.get_lsn_ck()
             << endl);
     }
@@ -1321,7 +1321,7 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
     DBGTHRD(<<"fetch at lsn " << ll  << " returns " << r);
 #if W_DEBUG_LEVEL > 2
     _owner->_sanity_check();
-#endif
+#endif 
 
     // caller must release the _partition_lock mutex
     return RCOK;
@@ -1329,11 +1329,11 @@ logbuf_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, hints_op op)
 
 
 /*********************************************************************
- *
+ *  
  *  w_rc_t logbuf_core::_fetch(logrec_t* &rec, lsn_t &lsn, partition_t *p, hints_op op) {
  *
  *  Fetch a log record from the log buffer with hints
- *
+ * 
  *  At this moment, only the hint about locality is handled:
  *  If there is locality in the same segment, an entire segment is read and added to the log buffer on a miss
  *  If there is NO locality, only the requested log record is read on a miss
@@ -1355,16 +1355,16 @@ w_rc_t logbuf_core::_fetch(logrec_t* &rec, lsn_t &lsn, partition_t *p, hints_op 
     lsn_t seg_lsn = lsn_t(lsn.data() - offset);
     logbuf_seg *found = NULL;
     logrec_t *rp = NULL;
-
+   
     {
         // TODO: use seg_lock?
         _logbuf_lock.acquire();
         found = _hashtable->lookup(seg_lsn.data());
         if (found != NULL) {
-            // hit
-// TODO(Restart)... comment out for now, too much noise
-//            DBGOUT3(<< " HIT " << found->base_lsn
-//                    << " " << offset);
+            // hit            
+// TODO(Restart)... comment out for now, too much noise            
+//            DBGOUT3(<< " HIT " << found->base_lsn 
+//                    << " " << offset); 
 
             hits++;
 
@@ -1372,10 +1372,10 @@ w_rc_t logbuf_core::_fetch(logrec_t* &rec, lsn_t &lsn, partition_t *p, hints_op 
             if (rec != NULL) {
                 // we don't have to worry about whether the log record is spanning
                 // across two segments because if that's the case, the record
-                // will be in the tail blocks
+                // will be in the tail blocks 
 
                 rp = (logrec_t*)(found->buf+offset);
-                if( rp->length() > sizeof(logrec_t) ||
+                if( rp->length() > sizeof(logrec_t) || 
                     rp->length() < rp->header_size() ) {
                     W_FATAL_MSG(fcINTERNAL, << "MISS: BUG? or corrupted log record");
                 }
@@ -1383,11 +1383,11 @@ w_rc_t logbuf_core::_fetch(logrec_t* &rec, lsn_t &lsn, partition_t *p, hints_op 
             }
             _logbuf_lock.release();
         }
-        else {
+        else {            
             // miss
-// TODO(Restart)... comment out for now, too much noise
+// TODO(Restart)... comment out for now, too much noise            
 //            DBGOUT3(<< " MISS " << seg_lsn
-//                    << " " << offset);
+//                    << " " << offset); 
 
             if (hints_profile[op].locality) {
 
@@ -1410,14 +1410,14 @@ w_rc_t logbuf_core::_fetch(logrec_t* &rec, lsn_t &lsn, partition_t *p, hints_op 
                 }
 
                 {
-                    found->base_lsn = seg_lsn;
+                    found->base_lsn = seg_lsn;        
                     if (rec != NULL) {
                         // we don't have to worry about whether the log record is spanning
                         // across two segments because if that's the case, the record
-                        // will be in the tail blocks
+                        // will be in the tail blocks 
 
                         rp = (logrec_t*)(found->buf+offset);
-                        if( rp->length() > sizeof(logrec_t) ||
+                        if( rp->length() > sizeof(logrec_t) || 
                             rp->length() < rp->header_size() ) {
                             W_FATAL_MSG(fcINTERNAL, << "MISS: BUG? or corrupted log record");
                         }
@@ -1427,9 +1427,9 @@ w_rc_t logbuf_core::_fetch(logrec_t* &rec, lsn_t &lsn, partition_t *p, hints_op 
 
                 _logbuf_lock.acquire();
 
-
+            
                 _insert_seg_for_fetch(found);
-
+                
 
                 _logbuf_lock.release();
 
@@ -1449,7 +1449,7 @@ w_rc_t logbuf_core::_fetch(logrec_t* &rec, lsn_t &lsn, partition_t *p, hints_op 
 #endif
 
             }
-
+            
             //logbuf_print("after MISS");
         }
 
@@ -1462,24 +1462,24 @@ w_rc_t logbuf_core::_fetch(logrec_t* &rec, lsn_t &lsn, partition_t *p, hints_op 
 // =================== insert =========================
 
 /*********************************************************************
- *
+ *  
  *  logbuf_seg *logbuf_core::_lookup_for_compensate(lsn_t lsn)
  *
- *  Special lookup for compensate
- *
+ *  Special lookup for compensate 
+ * 
  *********************************************************************/
 logbuf_seg *logbuf_core::_lookup_for_compensate(lsn_t lsn) {
     return _hashtable->lookup(lsn.data());
 }
 
 /*********************************************************************
- *
+ *  
  *  rc_t logbuf_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn)
  *
  *  Find the log record at orig_lsn and turn it into a compensation back to undo_lsn
  *
  *  Modified from log_core::compensate
- *
+ * 
  *********************************************************************/
 rc_t logbuf_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn) {
     // somewhere in the calling code, we didn't actually log anything.
@@ -1491,23 +1491,23 @@ rc_t logbuf_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn) {
     // how the situation could possibly be correct
     if (IS_M1()==false)
         w_assert1(orig_lsn <= _owner->_curr_lsn);
-
+    
     // no need to grab a mutex if it's too late
     if(orig_lsn < _owner->_flush_lsn)
     {
-        DBGOUT3( << "BAD log_core::compensate (already flushed) - orig_lsn: " << orig_lsn
-                 << ", flush_lsn: " << _owner->_flush_lsn << ", undo_lsn: "
-                 << undo_lsn);
+        DBGOUT3( << "BAD log_core::compensate (already flushed) - orig_lsn: " << orig_lsn 
+                 << ", flush_lsn: " << _owner->_flush_lsn << ", undo_lsn: " 
+                 << undo_lsn);   
         return RC(eBADCOMPENSATION);
     }
-
+    
     CRITICAL_SECTION(cs, _comp_lock);
     // check again; did we just miss it?
     lsn_t flsn = _owner->_flush_lsn;
     if(orig_lsn < flsn) {
-        DBGOUT3( << "BAD log_core::compensate (already flushed) - orig_lsn: " << orig_lsn
-                 << ", flush_lsn: " << _owner->_flush_lsn << ", undo_lsn: "
-                 << undo_lsn);
+        DBGOUT3( << "BAD log_core::compensate (already flushed) - orig_lsn: " << orig_lsn 
+                 << ", flush_lsn: " << _owner->_flush_lsn << ", undo_lsn: " 
+                 << undo_lsn);   
         return RC(eBADCOMPENSATION);
     }
 
@@ -1522,12 +1522,12 @@ rc_t logbuf_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn) {
     //    overwritten until we release the mutex.
     //  */
     // long pos = orig_lsn.lo() % segsize();
-    // if(pos >= segsize() - logrec_t::hdr_non_ssx_sz)
+    // if(pos >= segsize() - logrec_t::hdr_non_ssx_sz) 
     //     return RC(eBADCOMPENSATION); // split record. forget it.
 
     // // aligned?
     // w_assert1((pos & 0x7) == 0);
-
+    
     // // grab the record and make sure it's valid
     // logrec_t* s = (logrec_t*) &_buf[pos];
     // //
@@ -1536,14 +1536,14 @@ rc_t logbuf_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn) {
     int64_t pos = orig_lsn.lo() % segsize();
     lsn_t seg_lsn = lsn_t(orig_lsn.data() - pos);
     logbuf_seg *found = NULL;
-
-    logrec_t* s;
+    
+    logrec_t* s; 
 
 
     if(pos >= segsize() - logrec_t::hdr_non_ssx_sz) {
-        DBGOUT3( << "BAD log_core::compensate (split record) - orig_lsn: " << orig_lsn
-                 << ", flush_lsn: " << _owner->_flush_lsn << ", undo_lsn: "
-                 << undo_lsn);
+        DBGOUT3( << "BAD log_core::compensate (split record) - orig_lsn: " << orig_lsn 
+                 << ", flush_lsn: " << _owner->_flush_lsn << ", undo_lsn: " 
+                 << undo_lsn);   
 
         return RC(eBADCOMPENSATION); // split record. forget it.
     }
@@ -1564,7 +1564,7 @@ rc_t logbuf_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn) {
     // split after the log header? don't mess with it
     if(pos + long(s->length()) > segsize())
         return RC(eBADCOMPENSATION);
-
+    
     lsn_t lsn_ck = s->get_lsn_ck();
     if(lsn_ck != orig_lsn) {
         // this is a pretty rare occurrence, and I haven't been able
@@ -1572,9 +1572,9 @@ rc_t logbuf_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn) {
         cerr << endl << "lsn_ck = "<<lsn_ck.hi()<<"."<<lsn_ck.lo()<<", orig_lsn = "<<orig_lsn.hi()<<"."<<orig_lsn.lo()<<endl
             << __LINE__ << " " __FILE__ << " "
             << "log rec is  " << *s << endl;
-        DBGOUT3( << "BAD log_core::compensate (bug?) - orig_lsn: " << orig_lsn
-                 << ", flush_lsn: " << _owner->_flush_lsn << ", undo_lsn: "
-                 << undo_lsn);
+        DBGOUT3( << "BAD log_core::compensate (bug?) - orig_lsn: " << orig_lsn 
+                 << ", flush_lsn: " << _owner->_flush_lsn << ", undo_lsn: " 
+                 << undo_lsn);   
 
                 return RC(eBADCOMPENSATION);
     }
@@ -1582,32 +1582,32 @@ rc_t logbuf_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn) {
         w_assert1(s->xid_prev() == lsn_t::null || s->xid_prev() >= undo_lsn);
 
         if(s->is_undoable_clr()) {
-            DBGOUT3( << "BAD log_core::compensate (undoable_clr) - orig_lsn: " << orig_lsn
-                     << ", flush_lsn: " << _owner->_flush_lsn << ", undo_lsn: "
-                     << undo_lsn);
+            DBGOUT3( << "BAD log_core::compensate (undoable_clr) - orig_lsn: " << orig_lsn 
+                     << ", flush_lsn: " << _owner->_flush_lsn << ", undo_lsn: " 
+                     << undo_lsn);   
             return RC(eBADCOMPENSATION);
         }
 
         // success!
         DBGTHRD(<<"COMPENSATING LOG RECORD " << undo_lsn << " : " << *s);
         s->set_clr(undo_lsn);
-        // DBGOUT3( << "GOOD log_core::compensate - orig_lsn: " << orig_lsn
-        //          << ", flush_lsn: " << _owner->_flush_lsn << ", undo_lsn: "
-        //          << undo_lsn << ", to_insert: " << _to_insert_lsn);
+        // DBGOUT3( << "GOOD log_core::compensate - orig_lsn: " << orig_lsn 
+        //          << ", flush_lsn: " << _owner->_flush_lsn << ", undo_lsn: " 
+        //          << undo_lsn << ", to_insert: " << _to_insert_lsn);   
 
     }
-    return RCOK;
+    return RCOK;    
 }
 
 
 /*********************************************************************
- *
+ *  
  *  void logbuf_core::_reserve_buffer_space(CArraySlot *info, long recsize)
  *
  *  Help function to reserve free space from the log buffer for the insertion
  *
  *  NOTE: the caller must hold _insert_lock
- *
+ * 
  *********************************************************************/
 void logbuf_core::_reserve_buffer_space(CArraySlot *info, long recsize) {
 
@@ -1631,7 +1631,7 @@ void logbuf_core::_reserve_buffer_space(CArraySlot *info, long recsize) {
             // current partition
             // just use free
         }
-
+    
         w_assert1(free>=0);
 
         // allocate new segments when necessary
@@ -1653,7 +1653,7 @@ void logbuf_core::_reserve_buffer_space(CArraySlot *info, long recsize) {
 }
 
 /*********************************************************************
- *
+ *  
  *  void logbuf_core::_acquire_buffer_space(CArraySlot* info, long recsize)
  *
  *  Acquire free space from the log buffer for the insertion
@@ -1675,11 +1675,11 @@ void logbuf_core::_acquire_buffer_space(CArraySlot* info, long recsize) {
 
     lintel::atomic_thread_fence(lintel::memory_order_consume);
 
-    /* end_byte() is the byte-offset-from-start-of-log-file
+    /* end_byte() is the byte-offset-from-start-of-log-file 
      * version of _cur_epoch.end */
     w_assert2(_buf_epoch.end % segsize() == end_byte() % segsize());
 
-    /* _curr_lsn is the lsn of the next-to-be-inserted log record, i.e.,
+    /* _curr_lsn is the lsn of the next-to-be-inserted log record, i.e., 
      * the next byte of the log to be written
      */
     /* _cur_epoch.end is the offset into the log buffer of the _curr_lsn */
@@ -1690,22 +1690,22 @@ void logbuf_core::_acquire_buffer_space(CArraySlot* info, long recsize) {
 
 
     // the following is similar to the original implementation, but there are a
-    // few differences:
-    // - the new log buffer does not wrap, so there are only two cases:
+    // few differences: 
+    // - the new log buffer does not wrap, so there are only two cases: 
     // insertion to the same partition or to new partition
     // - the epoch now covers one or more segments in the same partition
     // - CArraySlot (info) now stores the starting segment of this combined
     // insertion. It helps, during _copy_to_buffer, to locate the actual segment
     // for a single insertion quickly by walking the list, instead of doing
-    // hashtable lookups
+    // hashtable lookups 
     // TODO: is it really faster than hashtable lookup?
-
+    
     long end = _buf_epoch.end;
 
     long old_end = _buf_epoch.base + end;
     long new_end = end + recsize;
 
-
+        
     lsn_t curr_lsn = _to_insert_lsn;
     lsn_t next_lsn = _buf_epoch.base_lsn + new_end;
     long new_base = -1;
@@ -1718,7 +1718,7 @@ void logbuf_core::_acquire_buffer_space(CArraySlot* info, long recsize) {
 
     if ((_to_insert_lsn.lo() + recsize) <= _partition_data_size) {
         // curr partition
-// TODO(Restart)... comment out for now, too much noise
+// TODO(Restart)... comment out for now, too much noise        
 //        DBGOUT3(<< " insert: current partition! " << recsize);
 
         // update _buf_epoch
@@ -1731,7 +1731,7 @@ void logbuf_core::_acquire_buffer_space(CArraySlot* info, long recsize) {
         // new partition
         // assuming the size of a combined insertion is << partition size
         // we don't open a new partition until more log space is required
-// TODO(Restart)... comment out for now, too much noise
+// TODO(Restart)... comment out for now, too much noise        
 //        DBGOUT3(<< " insert: new partition! " << recsize);
 
         long leftovers = _partition_data_size - curr_lsn.lo();
@@ -1742,13 +1742,13 @@ void logbuf_core::_acquire_buffer_space(CArraySlot* info, long recsize) {
             _insert_lock.release(&info->me);
             return;
         }
-
+            
         // update _buf_epoch
         curr_lsn = lsn_t(next_lsn.hi()+1, 0);
         next_lsn = curr_lsn + recsize;
 
         // new epoch covers the new partition
-        new_base = _buf_epoch.base + _partition_data_size;
+        new_base = _buf_epoch.base + _partition_data_size;  
         start_pos = 0;
         _buf_epoch = epoch(curr_lsn, new_base, 0, new_end=recsize);
 
@@ -1765,7 +1765,7 @@ void logbuf_core::_acquire_buffer_space(CArraySlot* info, long recsize) {
 
     // special case: current seg is already full
     if (free_in_seg == 0) {
-        // grab a new seg
+        // grab a new seg 
         // we just follow the list because we have already reserved enough free
         // space (or segments) for this insertion
         cur_seg = _seg_list->next_of(cur_seg);
@@ -1830,7 +1830,7 @@ void logbuf_core::_acquire_buffer_space(CArraySlot* info, long recsize) {
     info->old_end = old_end; // lets us serialize with our predecessor after memcpy
     info->start_pos = start_pos; // starting position of this "combined" insertion
     info->pos = start_pos + recsize; // coordinates groups of threads sharing a log allocation
-    info->new_end = new_end; // eventually assigned to _cur_epoch
+    info->new_end = new_end; // eventually assigned to _cur_epoch 
     info->new_base = new_base; // positive if we started a new partition
     info->error = w_error_ok;
 
@@ -1838,7 +1838,7 @@ void logbuf_core::_acquire_buffer_space(CArraySlot* info, long recsize) {
 
 
 /*********************************************************************
- *
+ *  
  *  void logbuf_core::_acquire_buffer_space(CArraySlot* info, long recsize)
  *
  *  Copy individual log record to the log buffer
@@ -1849,7 +1849,7 @@ void logbuf_core::_acquire_buffer_space(CArraySlot* info, long recsize) {
  *********************************************************************/
 lsn_t logbuf_core::_copy_to_buffer(
                                logrec_t &rec, // IN: the log record in a transaction
-                               long pos, // IN: the relative position of the insertion wrt
+                               long pos, // IN: the relative position of the insertion wrt 
                                          //     the group / "combined" insertion
                                long recsize, // IN: the size of the log record
                                CArraySlot* info // IN: the slot of the group insertion
@@ -1878,7 +1878,7 @@ lsn_t logbuf_core::_copy_to_buffer(
     long spillsize = pos + recsize - _segsize;
 
     //DBGOUT3(<< "lsn " << cur->base_lsn << " pos " << pos << " recsize " << recsize);
-
+    
     if(spillsize <= 0) {
         // normal insert (within one segment)
         memcpy(cur->buf+pos, data, recsize);
@@ -1906,7 +1906,7 @@ lsn_t logbuf_core::_copy_to_buffer(
 
 
 /*********************************************************************
- *
+ *  
  *  bool logbuf_core::_update_epochs(CArraySlot* info)
  *
  *  Update epochs to reflect the latest insertion
@@ -1928,9 +1928,9 @@ bool logbuf_core::_update_epochs(CArraySlot* info) {
         }
     } else {
         // If delegated-buffer-release is off, we simply spin until predecessors
-        // complete.
+        // complete. 
         lintel::atomic_thread_fence(lintel::memory_order_seq_cst);
-        while(*&_cur_epoch.vthis()->end + *&_cur_epoch.vthis()->base != info->old_end);
+        while(*&_cur_epoch.vthis()->end + *&_cur_epoch.vthis()->base != info->old_end);  
     }
 
     // now update the epoch(s)
@@ -1963,7 +1963,7 @@ bool logbuf_core::_update_epochs(CArraySlot* info) {
 
 
 /*********************************************************************
- *
+ *  
  *  rc_t logbuf_core::insert(logrec_t &rec, lsn_t* rlsn) {
  *
  *  Insert function for M2 and M3
@@ -2017,7 +2017,7 @@ rc_t logbuf_core::insert(
             &info->count, ConsolidationArray::SLOT_PENDING);
         long combined_size = ConsolidationArray::extract_carray_log_size(old_count);
 
-
+        
 
         // grab space for everyone in one go (releases the lock)
         _acquire_buffer_space(info, combined_size);
@@ -2067,7 +2067,7 @@ rc_t logbuf_core::insert(
 
 
 /*********************************************************************
- *
+ *  
  *  logrec_t *logbuf_core::logbuf_fake_logrec(uint32_t recsize)
  *
  *  Helper function to create a fake log record for M1 testing
@@ -2082,10 +2082,10 @@ logrec_t *logbuf_core::logbuf_fake_logrec(uint32_t recsize) {
 
 
 /*********************************************************************
- *
+ *  
  *  rc_t logbuf_core::logbuf_insert(long recsize)
  *
- *  Fake insertion function for M1 testing
+ *  Fake insertion function for M1 testing 
  *
  *********************************************************************/
 rc_t logbuf_core::logbuf_insert(long recsize) {
@@ -2110,11 +2110,11 @@ rc_t logbuf_core::logbuf_insert(long recsize) {
 // =================== flush =========================
 
 /*********************************************************************
- *
+ *  
  *  void logbuf_core::start_flush_daemon()
  *
  *  Start the flush daemon
- *
+ *  
  *  Same as log_core::start_flush_daemon
  *
  *********************************************************************/
@@ -2126,11 +2126,11 @@ void logbuf_core::start_flush_daemon() {
 
 
 /*********************************************************************
- *
+ *  
  *  void logbuf_core::shutdown()
  *
  *  Shutdown the flush daemon
- *
+ *  
  *  Same as log_core::shutdown()
  *
  *********************************************************************/
@@ -2149,7 +2149,7 @@ void logbuf_core::shutdown() {
     _shutting_down = true;
     while (*&_shutting_down) {
         CRITICAL_SECTION(cs, _wait_flush_lock);
-        // The only thread that should be waiting
+        // The only thread that should be waiting 
         // on the _flush_cond is the log flush daemon.
         // Yet somehow we wedge here.
         DO_PTHREAD(pthread_cond_broadcast(&_flush_cond));
@@ -2161,11 +2161,11 @@ void logbuf_core::shutdown() {
 }
 
 /*********************************************************************
- *
- *  void logbuf_core::flush_daemon()
+ *  
+ *  void logbuf_core::flush_daemon() 
  *
  *  Log flush daemon
- *
+ *  
  *  Same as log_core::flush_daemon()
  *
  *********************************************************************/
@@ -2174,7 +2174,7 @@ void logbuf_core::shutdown() {
  * This method handles the wait/block of the daemon thread,
  * and when awake, calls its main-work method, flush_daemon_work.
  */
-void logbuf_core::flush_daemon()
+void logbuf_core::flush_daemon() 
 {
 
     /* Algorithm: attempt to flush non-durable portion of the buffer.
@@ -2201,7 +2201,7 @@ void logbuf_core::flush_daemon()
             }
 
             // NOTE: right now the thread waiting for a flush has woken up or will woke up, but...
-            // this thread, as long as success is true (it just flushed something in the previous
+            // this thread, as long as success is true (it just flushed something in the previous 
             // flush_daemon_work), will keep calling flush_daemon_work until there is nothing to flush....
             // this happens in the background
 
@@ -2214,7 +2214,7 @@ void logbuf_core::flush_daemon()
         }
 
         // flush all records later than last_completed_flush_lsn
-        // and return the resulting last durable lsn
+        // and return the resulting last durable lsn 
 
         lsn_t lsn = flush_daemon_work(last_completed_flush_lsn);
 
@@ -2226,9 +2226,9 @@ void logbuf_core::flush_daemon()
     }
 
     // make sure the buffer is completely empty before leaving...
-    for(lsn_t lsn;
-        (lsn=flush_daemon_work(last_completed_flush_lsn)) !=
-                last_completed_flush_lsn;
+    for(lsn_t lsn; 
+        (lsn=flush_daemon_work(last_completed_flush_lsn)) != 
+                last_completed_flush_lsn; 
         last_completed_flush_lsn=lsn) ;
 }
 
@@ -2236,11 +2236,11 @@ void logbuf_core::flush_daemon()
 
 
 /*********************************************************************
- *
+ *  
  *  void logbuf_core::_flushX(lsn_t start_lsn, uint64_t start, uint64_t end)
  *
  *  Flush log records starting at start_lsn
- *
+ *  
  *  Modified from log_core::_flushX
  *  Called by flush_daemon_work
  *  It is now able to flush multiple segments
@@ -2270,10 +2270,10 @@ void logbuf_core::_flushX(lsn_t start_lsn, uint64_t start, uint64_t end) {
     offset_in_seg = start % _segsize;
 
     // total number of segments we are going to flush
-    seg_cnt = ( _ceil(end, _segsize) - (start - offset_in_seg) ) / _segsize;
+    seg_cnt = ( _ceil(end, _segsize) - (start - offset_in_seg) ) / _segsize;    
 
 // TODO(Restart)... comment out for now, too much noise
-//    DBGOUT3(<< "flushX: start_lsn " << start_lsn << " start " << start << " end " << end << " seg_cnt " << seg_cnt);
+//    DBGOUT3(<< "flushX: start_lsn " << start_lsn << " start " << start << " end " << end << " seg_cnt " << seg_cnt); 
 
 
     // when _prime starts with an empty segment (offset_in_seg == 0 &&
@@ -2301,20 +2301,20 @@ void logbuf_core::_flushX(lsn_t start_lsn, uint64_t start, uint64_t end) {
     // every iovec holds a full or partial segment
     typedef sdisk_base_t::iovec_t iovec_t;
 
-    // TODO: use a static array in partition_t or logbuf_core?
+    // TODO: use a static array in partition_t or logbuf_core?   
 #ifdef LOG_DIRECT_IO
     // one more iovec will be filled later by p->flush
     // the last partial block of the log buffer + skip log record + paddings
     iovec_t *iov = new iovec_t[seg_cnt+1];
 #else
     // two more iovecs will be filled later by p->flush
-    // one for the skip record, and the other for the padding 0's
+    // one for the skip record, and the other for the padding 0's 
     iovec_t *iov = new iovec_t[seg_cnt+2];
 #endif
 
     if (iov == NULL) {
         ERROUT("Out of memory when allocating iovecs");
-        W_FATAL(eINTERNAL);
+        W_FATAL(eINTERNAL);        
     }
 
     // multiple segments
@@ -2325,7 +2325,7 @@ void logbuf_core::_flushX(lsn_t start_lsn, uint64_t start, uint64_t end) {
 
 // TODO(Restart)... comment out for now, too much noise
 //        DBGOUT3(<< "IOV " << cur->base_lsn << " " << offset_in_seg << " " <<
-//                size_in_seg);
+//                size_in_seg); 
 
         iov[i] = iovec_t((char*)cur->buf + offset_in_seg, size_in_seg);
         to_write -= size_in_seg;
@@ -2349,7 +2349,7 @@ void logbuf_core::_flushX(lsn_t start_lsn, uint64_t start, uint64_t end) {
 
 // TODO(Restart)... comment out for now, too much noise
 //        DBGOUT3(<< "IOV (last) " << cur->base_lsn << " " << offset_in_seg << " " <<
-//                to_write);
+//                to_write); 
 
         iov[i] = iovec_t((char*)cur->buf + offset_in_seg, to_write);
 
@@ -2375,24 +2375,24 @@ void logbuf_core::_flushX(lsn_t start_lsn, uint64_t start, uint64_t end) {
     // even when the seg has already been flushed completely
     {
         //CRITICAL_SECTION(cs, _logbuf_lock);
-
+        
         _to_flush_seg = cur;
     }
 
-    delete [] iov;
+    delete iov;
 
 }
 
 /*********************************************************************
- *
- *  lsn_t logbuf_core::flush_daemon_work(lsn_t old_mark)
+ *  
+ *  lsn_t logbuf_core::flush_daemon_work(lsn_t old_mark) 
  *
  *  Flush new log records from the log buffer
- *
+ *  
  *  Modified from log_core::flush_daemon_work
  *
  *********************************************************************/
-lsn_t logbuf_core::flush_daemon_work(lsn_t old_mark)
+lsn_t logbuf_core::flush_daemon_work(lsn_t old_mark) 
 {
 
     lsn_t start_lsn;
@@ -2400,7 +2400,7 @@ lsn_t logbuf_core::flush_daemon_work(lsn_t old_mark)
     uint64_t end;
     lsn_t end_lsn;
     long new_start; // start after flush
-
+    
     {
         CRITICAL_SECTION(cs, _flush_lock);
 
@@ -2430,8 +2430,8 @@ lsn_t logbuf_core::flush_daemon_work(lsn_t old_mark)
             // flush
             //    _old_epoch.base_lsn  _old_epoch.start to _old_epoch.end
             // the portion in the new partition (_cur_epoch) will be flushed in the
-            // next flush
-// TODO(Restart)... comment out for now, too much noise
+            // next flush  
+// TODO(Restart)... comment out for now, too much noise            
 //            DBGOUT3(<< " flush: new partition!");
 
             start_lsn = _old_epoch.base_lsn + _old_epoch.start;
@@ -2471,11 +2471,11 @@ lsn_t logbuf_core::flush_daemon_work(lsn_t old_mark)
 
 
 /*********************************************************************
- *
+ *  
  * rc_t logbuf_core::flush(const lsn_t &to_lsn, bool block, bool signal, bool *ret_flushed)
  *
  *  Flush function for M2 and M3
- *
+ *  
  *  Modified from log_core::flush
  *
  *********************************************************************/
@@ -2487,7 +2487,7 @@ rc_t logbuf_core::flush(
 )
 {
     {
-// TODO(Restart)... comment out for now, too much noise
+// TODO(Restart)... comment out for now, too much noise        
 //        DBGOUT3(<< " flush @ to_lsn: " << to_lsn);
 
         w_assert1(signal || !block); // signal=false can be used only when
@@ -2497,7 +2497,7 @@ rc_t logbuf_core::flush(
 
         // don't try to flush past end of log -- we might wait forever...
         lsn_t lsn = std::min(to_lsn, (*&_to_insert_lsn)+ -1);
-
+    
         if(lsn >= *&_to_flush_lsn) {
             if (!block) {
                 *&_waiting_for_flush = true;
@@ -2531,23 +2531,23 @@ rc_t logbuf_core::flush(
 
 
 /*********************************************************************
- *
+ *  
  *  rc_t logbuf_core::logbuf_flush(const lsn_t &to_lsn, bool block, bool signal, bool *ret_flushed)
  *
  *  Fake flush function for M1
  *
  *********************************************************************/
 rc_t logbuf_core::logbuf_flush(const lsn_t &to_lsn, bool block, bool signal, bool
-                       *ret_flushed) {
+                       *ret_flushed) { 
     return flush (to_lsn, block, signal, ret_flushed);
 }
 
 
 // =================== archive =========================
-// any variable or function that is related to archive is not used for now and is not tested
+// any variable or function that is related to archive is not used for now and is not tested 
 
 /*********************************************************************
- *
+ *  
  *  void logbuf_core::logbuf_archive()
  *
  *  Fake archive for M1
@@ -2577,15 +2577,15 @@ void logbuf_core::logbuf_archive() {
         }
         else {
             _to_archive_seg = found;
-        }
-
-    }
+        }        
+        
+    }       
 }
 
 
 // =================== internal functions =========================
 /*********************************************************************
- *
+ *  
  *  void logbuf_core::_insert_seg_for_fetch(logbuf_seg *seg)
  *
  *  Insert a segment descriptor to the log buffer for fetches
@@ -2595,10 +2595,10 @@ void logbuf_core::_insert_seg_for_fetch(logbuf_seg *seg) {
     {
         // NOTE: disabling to_archive for now
         // // insert the seg immediately before _to_archive_seg
-        //_seg_list->insert_before(seg, _to_archive_seg);
+        //_seg_list->insert_before(seg, _to_archive_seg);    
 
         // insert it to the head when to_archive is disabled
-        _seg_list->push(seg);
+        _seg_list->push(seg);            
 
         // add it to the hash table
         _hashtable->insert_if_not_exists(seg->base_lsn.data(), seg);
@@ -2607,7 +2607,7 @@ void logbuf_core::_insert_seg_for_fetch(logbuf_seg *seg) {
 }
 
 /*********************************************************************
- *
+ *  
  *  void logbuf_core::_insert_seg_to_list_for_insertion(logbuf_seg *seg)
  *
  *  Insert a segment descriptor to the list for insertions
@@ -2616,12 +2616,12 @@ void logbuf_core::_insert_seg_for_fetch(logbuf_seg *seg) {
 void logbuf_core::_insert_seg_to_list_for_insertion(logbuf_seg *seg) {
     {
         // always append it at tail
-        _seg_list->append(seg);
+        _seg_list->append(seg);  
     }
 }
 
 /*********************************************************************
- *
+ *  
  *  void logbuf_core::_insert_seg_to_hashtable_for_insertion(logbuf_seg *seg)
  *
  *  Insert a segment descriptor to the hashtable for insertions
@@ -2635,7 +2635,7 @@ void logbuf_core::_insert_seg_to_hashtable_for_insertion(logbuf_seg *seg) {
 }
 
 /*********************************************************************
- *
+ *  
  *  void logbuf_core::_remove_seg(logbuf_seg *seg)
  *
  *  Remove the segment descriptor from the log buffer
@@ -2651,7 +2651,7 @@ void logbuf_core::_remove_seg(logbuf_seg *seg) {
 
 
 /*********************************************************************
- *
+ *  
  *  logbuf_seg *logbuf_core::_get_new_seg_for_fetch()
  *
  *  Get a free segment for a missed fetch request
@@ -2669,13 +2669,13 @@ logbuf_seg *logbuf_core::_get_new_seg_for_fetch() {
 
     if (_seg_count == _max_seg_count) {
         // already full
-// TODO(Restart)... comment out for now, too much noise
+// TODO(Restart)... comment out for now, too much noise        
 //        DBGOUT3("evict old seg");
         do {
             cnt++;
 
             free_seg = _replacement();
-
+            
             // looks like all segments are used for insertions
             if (free_seg == NULL) {
 
@@ -2686,7 +2686,7 @@ logbuf_seg *logbuf_core::_get_new_seg_for_fetch() {
                 if (used/_segsize + 1 >= _flush_trigger) {
                     force_a_flush();
                 }
-                else {
+                else {                    
                     // this is impossible... just in case
                     DBGOUT0(<< "BUG @ _get_new_seg_for_fetch " << cnt);
                 }
@@ -2699,7 +2699,7 @@ logbuf_seg *logbuf_core::_get_new_seg_for_fetch() {
     else {
         // not full
         // allocate 3 more blocks as tails
-// TODO(Restart)... comment out for now, too much noise
+// TODO(Restart)... comment out for now, too much noise        
 //        DBGOUT3("allocate new seg");
         free_seg = new logbuf_seg(_actual_segsize);
         _seg_count++;
@@ -2713,7 +2713,7 @@ logbuf_seg *logbuf_core::_get_new_seg_for_fetch() {
 
 
 /*********************************************************************
- *
+ *  
  *  void logbuf_core::_get_more_space_for_insertion(CArraySlot *info)
  *
  *  Get more log buffer space for current insertion
@@ -2736,7 +2736,7 @@ void logbuf_core::_get_more_space_for_insertion(CArraySlot *info) {
 
     if (_seg_count == _max_seg_count) {
         // already full
-// TODO(Restart)... comment out for now, too much noise
+// TODO(Restart)... comment out for now, too much noise        
 //        DBGOUT3("evict old seg");
 
         free_seg = _replacement();
@@ -2773,7 +2773,7 @@ void logbuf_core::_get_more_space_for_insertion(CArraySlot *info) {
     else {
         // not full
         // allocate 3 more blocks as tails
-// TODO(Restart)... comment out for now, too much noise
+// TODO(Restart)... comment out for now, too much noise        
 //        DBGOUT3("allocate new seg");
         free_seg = new logbuf_seg(_actual_segsize);
         _seg_count++;
@@ -2788,12 +2788,12 @@ void logbuf_core::_get_more_space_for_insertion(CArraySlot *info) {
     }
 
     //logbuf_print("_get_more_space_for_insertion");
-
+   
 }
 
 
 /*********************************************************************
- *
+ *  
  *  logbuf_seg *logbuf_core::_replacement()
  *
  *  Evict segments to make space for new insertions or fetches
@@ -2804,7 +2804,7 @@ void logbuf_core::_get_more_space_for_insertion(CArraySlot *info) {
 logbuf_seg *logbuf_core::_replacement() {
 
     logbuf_seg *to_evict = NULL;
-    //
+    // 
     //logbuf_seg *to_archive = NULL;
     logbuf_seg *to_flush = NULL;
 
@@ -2815,15 +2815,15 @@ logbuf_seg *logbuf_core::_replacement() {
     // NOTE: disable to_archive for now
     // // TODO: use LRU for the free buffer?
     // if (to_archive != NULL) {
-    //     to_evict = _seg_list->top(); // evict the left-most segment
+    //     to_evict = _seg_list->top(); // evict the left-most segment 
     //     if (to_archive != to_evict) {
-    //         DBGOUT3(<< "evict seg " << to_evict->base_lsn << " in archived buffer");
+    //         DBGOUT3(<< "evict seg " << to_evict->base_lsn << " in archived buffer"); 
     //         _remove_seg(to_evict);
     //         return to_evict;
     //     }
     //     else {
     //         DBGOUT3(<< "cannot find a replacement seg in archived buffer");
-    //     }
+    //     }        
     // }
     // else {
     //     ERROUT("_to_archive_seg is NULL");
@@ -2836,7 +2836,7 @@ logbuf_seg *logbuf_core::_replacement() {
 
             // orignal policy with to_archive disabled
             //to_evict = _seg_list->prev_of(to_flush);
-
+            
             // current policy with to_archive disabled
             // always evict the head of the list
             to_evict = _seg_list->top();
@@ -2847,7 +2847,7 @@ logbuf_seg *logbuf_core::_replacement() {
 
             // NOTE: disabling to_archive for now
             // if (to_evict != to_archive) {
-            //     DBGOUT3(<< "evict seg " << to_evict->base_lsn << " in read buffer");
+            //     DBGOUT3(<< "evict seg " << to_evict->base_lsn << " in read buffer"); 
             //     _remove_seg(to_evict);
             //     return to_evict;
             // }
@@ -2859,7 +2859,7 @@ logbuf_seg *logbuf_core::_replacement() {
             DBGOUT3(<< "cannot find a replacement seg in read buffer");
             return NULL;
         }
-    }
+    }    
     else {
         ERROUT("_to_flush_seg is NULL");
         W_FATAL(eINTERNAL);
@@ -2868,7 +2868,7 @@ logbuf_seg *logbuf_core::_replacement() {
 }
 
 /*********************************************************************
- *
+ *  
  *  void logbuf_core::force_a_flush()
  *
  *  Helper function to signal the flush daemon to perform a flush
@@ -2879,7 +2879,7 @@ logbuf_seg *logbuf_core::_replacement() {
 void logbuf_core::force_a_flush() {
 
     // last resort
-// TODO(Restart)... comment out for now, too much noise
+// TODO(Restart)... comment out for now, too much noise    
 //    DBGOUT3(<< "last resort: FORCE a flush");
 
     // when there are too many unflushed segments in the write buffer
@@ -2894,7 +2894,7 @@ void logbuf_core::force_a_flush() {
         DO_PTHREAD(pthread_cond_wait(&_wait_cond,
                                      &_wait_flush_lock));
     }
-
+        
 }
 
 
