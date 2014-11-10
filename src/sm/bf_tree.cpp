@@ -697,12 +697,48 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             w_assert1(idx != 0);
             bf_tree_cb_t &cb = get_cb(idx);
 
+            // Acquire latch before loading the page, this is necessary for 'force load' on in_doubt
+            // page, because restart thread (M2/M4) or concurrent transactions (M4) might be
+            // loading the same page at this moment
+            w_rc_t check_rc = cb.latch().latch_acquire(mode, sthread_t::WAIT_IMMEDIATE);
+            if (check_rc.is_error())
+            {
+                // Cannot latch cb, probably a concurrent user transaction is trying to load this
+                // page, or in M4 (mixed mode) the page is being recoverd, rare but possible, try again
+                if (false == force_load)
+                    _add_free_block(idx);
+
+                ERROUT(<<"bf_tree_m: unlucky! not able to acquire cb on a force load page "
+                        << shpid << ". Discard my own work and try again.");
+
+                force_load = false;
+                // Sleep a while to give the other process time to finish its work and then retry
+                ::usleep(ONE_MICROSEC);
+                continue;
+            }
+
+            // Now we have a latch on page cb
+            if ((true == force_load) && (false == cb._in_doubt))
+            {
+                // Someone beat us on loading the page so the page is no longer in_doubt
+                // we do not want to reload the page, therfore stop the current load and retry
+                // Do not free the block since we did not allocated it initially
+                if (cb.latch().held_by_me())
+                    cb.latch().latch_release();
+
+                force_load = false;
+                continue;
+            }
+
             DBGOUT3(<<"unswizzled case: load shpid = " << shpid << " into frame = " << idx);
             // after here, we must either succeed or release the free block
-            if (virgin_page) {
+            if (virgin_page)
+            {
                 // except a virgin page. then the page is anyway empty
                 DBGOUT3(<<"bf_tree_m: adding a virgin page ("<<vol<<"."<<shpid<<")to bufferpool.");
-            } else {
+            }
+            else
+            {
                 DBGOUT3(<<"bf_tree_m: cache miss. reading page "<<vol<<"." << shpid << " to frame " << idx);
                 INC_TSTAT(bf_fix_nonroot_miss_count);
                 bool past_end;
@@ -716,6 +752,10 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 if (read_rc.is_error())
                 {
                     DBGOUT3(<<"bf_tree_m: error while reading page " << shpid << " to frame " << idx << ". rc=" << read_rc);
+
+                    if (cb.latch().held_by_me())
+                        cb.latch().latch_release();
+
                     if (false == force_load)
                         _add_free_block(idx);
                     return read_rc;
@@ -723,6 +763,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 }
                 else
                 {
+                    // Loaded the page from disk successfully
                     // for each page retrieved from disk, check validity, possibly apply Single-Page-Recovery.
                     // this is not a virgin page so if the page does not exist on disk, we need to
                     // try the backup
@@ -731,58 +772,35 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     // 2. Traditional recovery UNDO or REDO (force_load)
                     // 3. On-demand or mixed REDO triggered by user transaction (force_load)
 
-                    w_rc_t check_rc;
                     if (true == force_load)
                     {
-                        // If this is a force load, get the last page update lsn from page cb
-
-                        // Latch the cb first, because we might have concurrent user transactions
-                        // loading this page also
-                        check_rc = cb.latch().latch_acquire(mode, sthread_t::WAIT_IMMEDIATE);
-                        if (check_rc.is_error())
+                        // If this is a force load, get the last page update lsn from page cb for recovery purpose
+                        if (0 != cb._dependency_lsn)
                         {
-                            // Cannot latch cb, probably a concurrent user transaction is trying to load this
-                            // page, or in M4 (mixed mode) the page is being recoverd, rare but possible, try again
-                            ERROUT(<<"bf_tree_m: unlucky! not able to acquire cb on a force load page "
-                                   << shpid << ". Discard my own work and try again.");
+                            // Copy over the last update lsn if it is valid lsn
+                            // and reset it to 0 after copied it, this is to prevent other
+                            // user transaction using this value for recovery purpose
+                            // (note the last update lsn is gone after this reset)
+                            // This is needed because the slot in buffer pool is already decided,
+                            // we cannot have multiple user transactions recoverying the same
+                            // page in buffer pool slot, it would corrupt the page context
+                            page_emlsn = cb._dependency_lsn;
+                            cb._dependency_lsn = 0;
+                        }
+                        else
+                        {
+                            // Someone else beat us in recoverying this page, try again
+                            ERROUT(<<"bf_tree_m: unlucky! it was a force load and no last update lsn"
+                                    << ", most likely another thread is loading this page "
+                                    << shpid << " to buffer pool currently. Discard my own work and try again.");
 
+                            if (cb.latch().held_by_me())
+                                cb.latch().latch_release();
                             force_load = false;
                             // Sleep a while to give the other process time to finish its work
                             ::usleep(ONE_MICROSEC);
                             continue;
                         }
-                        else
-                        {
-                            if (0 != cb._dependency_lsn)
-                            {
-                                // Copy over the last update lsn if it is valid lsn
-                                // and reset it to 0 after copied it, this is to prevent other
-                                // user transaction using this value for recovery purpose
-                                // (note the last update lsn is gone after this reset)
-                                // This is needed because the slot in buffer pool is already decided,
-                                // we cannot have multiple user transactions recoverying the same
-                                // page in buffer pool slot, it would corrupt the page context
-                                page_emlsn = cb._dependency_lsn;
-                                cb._dependency_lsn = 0;
-                            }
-                            else
-                            {
-                                // Someone else beat us in recoverying this page, try again
-                                ERROUT(<<"bf_tree_m: unlucky! it was a force load and no last update lsn"
-                                        << ", most likely another thread is loading this page "
-                                        << shpid << " to buffer pool currently. Discard my own work and try again.");
-
-                                if (cb.latch().held_by_me())
-                                    cb.latch().latch_release();
-                                force_load = false;
-                                // Sleep a while to give the other process time to finish its work
-                                ::usleep(ONE_MICROSEC);
-                                continue;
-                            }
-                        }
-                        // Free acquired latch
-                        if (cb.latch().held_by_me())
-                            cb.latch().latch_release();
                         w_assert1(lsn_t::null != page_emlsn);
                     }
 
@@ -792,6 +810,9 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                         // Free the block even if we did not acquire it in the first place (force load), this is
                         // because we are erroring out
                         _add_free_block(idx);
+
+                        if (cb.latch().held_by_me())
+                            cb.latch().latch_release();
                         return check_rc;
                     }
                 }
@@ -800,6 +821,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             // initialize control block
             // we don't have to atomically pin it because it's not referenced by any other yet
 
+/**
             // latch the page. (not conditional because this thread will be the only thread touching it)
             cb.clear_latch();
             w_rc_t rc_latch = cb.latch().latch_acquire(mode, sthread_t::WAIT_IMMEDIATE);
@@ -817,31 +839,15 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 ::usleep(ONE_MICROSEC);
                 continue;
             }
+**/
 
+            // We should still have the latch at this point
+            w_assert1(cb.latch().held_by_me());
+
+            // Before we clear the page cb, check again because if force load
+            // the in_doubt flag should still be on at this point
             if (true == force_load)
-            {
-                // Now we have latched the cb, if this is a force_load
-                // check the in_doubt flag in cb after we acquired the latch
-                // if the in_doubt flag is off, this means another thread concurrently
-                // loaded the page to buffer pool. unlucky, but can happen
-                // in such case, abandon the page we loaded and try again
-                if (false == cb._in_doubt)
-                {
-                    ERROUT(<<"bf_tree_m: unlucky! it was a force load and another thread already loaded the page "
-                            << shpid << " to the bufferpool. discard my own work on frame " << idx);
-
-                    // For the retry, simply release the latch but do not clear the context in cb
-                    // because this is a known idx exists in hash table and cb array already
-                    if (cb.latch().held_by_me())
-                        cb.latch().latch_release();
-                    // Do not free the block since we did not allocated it initially
-
-                    force_load = false;
-                    // Sleep a while to give the other process time to finish its work
-                    ::usleep(ONE_MICROSEC);
-                    continue;
-                }
-            }
+                w_assert1(true == cb._in_doubt);
 
             cb.clear_except_latch();
             cb._pid_vol = vol;
@@ -854,11 +860,14 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 cb._parent = parent_idx;
             }
 #endif // BP_MAINTAIN_PARENT_PTR
-            if (!virgin_page) {
+            if (!virgin_page)
+            {
                 // if the page is read from disk, at least it's sure that
                 // the page is flushed as of the page LSN (otherwise why we can read it!)
                 cb._rec_lsn = _buffer[idx].lsn.data();
-            } else {
+            }
+            else
+            {
                 // Virgin page, we are not setting _rec_lsn (initial dirty)
                 // Page format would set the _rec_lsn
                 cb._dirty = true;
@@ -874,7 +883,8 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
 
             // finally, register the page to the hashtable.
             bool registered = _hashtable->insert_if_not_exists(key, idx);
-            if (!registered) {
+            if (!registered)
+            {
                 if (false == force_load)
                 {
                     // If force_load flag is off

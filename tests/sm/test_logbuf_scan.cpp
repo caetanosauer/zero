@@ -78,12 +78,10 @@ public:
 
         logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
 
-        // after startup
-        // (64 + 72 + 96)*2 + 328 + 328 + 328 + (64 + 328 + 72 + 96) = 2008
-        EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);    
+        EXPECT_EQ(lsn_t(1,1696), log_buffer->_to_insert_lsn);    
 
         // consume 4096 bytes
-        W_DO(consume(4096-1904,ssm));
+        W_DO(consume(4096-1696,ssm));
 
         // consume the entire segment other than the last 4096 bytes
         for (int i=1; i<=(SEG_SIZE-4096)/4096-1; i++) {
@@ -97,10 +95,8 @@ public:
     }
 
     // when starting from an non-empty log, there are several log records inserted during startup
-    // chkpt, mount/dismount, chkpt
-    // (56 + 320 + 64 + 88) + 320 + 320 + (56 + 320 + 64 + 88) = 1696
-    // one more async chkpt
-    // 1696 + (56 + 320 + 64 + 88) = 2224
+    // mount/dismount, chkpt + one more async chkpt
+    // 320 + 320 + (56 + 320 + 64 + 88)*2 = 1696
     w_rc_t post_shutdown(ss_m *) {
 
         //        logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
@@ -113,11 +109,11 @@ public:
         logrec_t *log_rec_buf;
         lsn_t lsn;
 
-        std::cout << "START " << std::endl;
+        //std::cout << "START " << std::endl;
         while (scan.xct_next(lsn, log_rec_buf)) {
             EXPECT_EQ(lsn, log_rec_buf->get_lsn_ck());
         }
-        std::cout << "END " << std::endl;
+        //std::cout << "END " << std::endl;
 
         return RCOK;
     }
@@ -131,10 +127,10 @@ public:
         logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
 
         // after startup
-        EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);    
+        EXPECT_EQ(lsn_t(1,1696), log_buffer->_to_insert_lsn);    
 
         // consume 4096 bytes
-        W_DO(consume(4096-1904,ssm));
+        W_DO(consume(4096-1696,ssm));
 
         // consume the entire partition other than the last 4096 bytes
         for (int i=1; i<=(PART_SIZE-4096)/4096-1; i++) {
@@ -159,11 +155,11 @@ public:
         logrec_t *log_rec_buf;
         lsn_t lsn;
 
-        std::cout << "START " << std::endl;
+        //std::cout << "START " << std::endl;
         while (scan.xct_next(lsn, log_rec_buf)) {
             EXPECT_EQ(lsn, log_rec_buf->get_lsn_ck());
         }
-        std::cout << "END " << std::endl;
+        //std::cout << "END " << std::endl;
 
         return RCOK;
     }
@@ -210,10 +206,10 @@ public:
 
         // after startup
         // (64 + 72 + 96)*2 + 328 + 328 + 328 + (64 + 328 + 72 + 96) = 2008
-        EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);    
+        EXPECT_EQ(lsn_t(1,1696), log_buffer->_to_insert_lsn);    
 
         // consume 4096 bytes
-        W_DO(consume(4096-1904,ssm));
+        W_DO(consume(4096-1696,ssm));
 
         // consume the entire segment other than the last 4096 bytes
         for (int i=1; i<=(SEG_SIZE-4096)/4096-1; i++) {
@@ -238,13 +234,13 @@ public:
         logrec_t *log_rec_buf;
         lsn_t lsn;
 
-        std::cout << "START " << std::endl;
+        //std::cout << "START " << std::endl;
         while (scan.xct_next(lsn, log_rec_buf)) {
             EXPECT_EQ(lsn, log_rec_buf->get_lsn_ck());
         }
         EXPECT_EQ(lsn, lsn_t(1,0));
 
-        std::cout << "END " << std::endl;
+        //std::cout << "END " << std::endl;
 
         return RCOK;
     }
@@ -259,10 +255,10 @@ public:
         logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
 
         // after startup
-        EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);    
+        EXPECT_EQ(lsn_t(1,1696), log_buffer->_to_insert_lsn);    
 
         // consume 4096 bytes
-        W_DO(consume(4096-1904,ssm));
+        W_DO(consume(4096-1696,ssm));
 
         // consume the entire partition other than the last 4096 bytes
         for (int i=1; i<=(PART_SIZE-4096)/4096-1; i++) {
@@ -289,12 +285,12 @@ public:
         logrec_t *log_rec_buf;
         lsn_t lsn;
 
-        std::cout << "START " << std::endl;
+        //std::cout << "START " << std::endl;
         while (scan.xct_next(lsn, log_rec_buf)) {
             EXPECT_EQ(lsn, log_rec_buf->get_lsn_ck());
         }
         EXPECT_EQ(lsn, lsn_t(1,0));
-        std::cout << "END " << std::endl;
+        //std::cout << "END " << std::endl;
 
         return RCOK;
     }
@@ -312,10 +308,10 @@ public:
         logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
 
         // after startup
-        EXPECT_EQ(lsn_t(1,1904), log_buffer->_to_insert_lsn);    
+        EXPECT_EQ(lsn_t(1,1696), log_buffer->_to_insert_lsn);    
 
         // consume 4096 bytes
-        W_DO(consume(4096-1904,ssm));
+        W_DO(consume(4096-1696,ssm));
 
         // consume the entire partition other than the last 4096 bytes
         for (int i=1; i<=(PART_SIZE-4096)/4096-1; i++) {
@@ -341,14 +337,14 @@ public:
         logrec_t *log_rec_buf;
         lsn_t lsn;
 
-        std::cout << "START " << std::endl;
+        //std::cout << "START " << std::endl;
         while (scan.xct_next(lsn, log_rec_buf)) {
             EXPECT_EQ(lsn, log_rec_buf->get_lsn_ck());
         }
         // the scan ends with lsn_t(2,0)
         // partition 1 was deleted during the shutdown
         EXPECT_EQ(lsn, lsn_t(2,0));
-        std::cout << "END " << std::endl;
+        //std::cout << "END " << std::endl;
 
         return RCOK;
     }

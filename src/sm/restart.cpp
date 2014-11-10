@@ -347,6 +347,9 @@ restart_m::restart(
     }
     else
     {
+        struct timeval tm_before;
+        gettimeofday( &tm_before, NULL );
+
         // System is not opened during the entire Recovery process
         // carry on the operations
 
@@ -456,6 +459,12 @@ restart_m::restart(
 
         smlevel_0::errlog->clog << info_prio << "Restart successful." << flushl;
         DBGOUT1(<<"Recovery ended");
+
+        struct timeval tm_after;
+        gettimeofday( &tm_after, NULL );
+        double elapse = (((double)tm_after.tv_sec - (double)tm_before.tv_sec) * 1000.0) + (double)tm_after.tv_usec/1000.0 - (double)tm_before.tv_usec/1000.0;
+// TODO(Restart)... Performance
+        DBGOUT0(<< "**** Restart traditional REDO/UNDO, elpase time (milliseconds): " << elapse);
 
         // Exiting from the Recovery operation, caller of the Recovery operation is
         // responsible of changing the 'operating_mode' to 'smlevel_0::t_forward_processing',
@@ -3138,13 +3147,16 @@ void restart_m::_analysis_process_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,
         // done/undone to this volume so it doesn't matter.
         if (copy.type() == logrec_t::t_dismount_vol)
         {
-            // TODO(Restart)... the existing (previous) buffer pool in_doubt information
+            // TODO(Restart)...
+            // the existing (previous) buffer pool in_doubt information
             // was from the previous volume, does the 'mounting' of new volume
             // causing issue in buffer pool in_doubt page information?  Most likely yes.
-            // An un-resolved issue with Instant Restart 'in_doubt' page implementation
+            // This is an un-resolved issue with Instant Restart 'in_doubt' page
+            // implementation, because we are relying on in memory in_dobut page
+            // information and buffer pool cannot be flushed during Restart time
 
             // Mount a new volume
-            DBGOUT0( << "Extra mounting at the end of Log Analysis phase" );
+            W_FATAL_MSG(fcINTERNAL, << "Extra mounting at the end of Log Analysis phase");
             W_IGNORE(io_m::mount(dp->devrec[0].dev_name, dp->devrec[0].vid));
             mount = true;
         }
@@ -3155,7 +3167,7 @@ void restart_m::_analysis_process_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,
             // we have marked all the in_doubt page information in
             // buffer pool.  If we flush the buffer pool then all the in_doubt
             // page information would be erased, not good
-            DBGOUT0( << "Extra dismounting at the end of Log Analysis phase" );
+            W_FATAL_MSG(fcINTERNAL, << "Extra dismounting at the end of Log Analysis phase");
             W_IGNORE(io_m::dismount(dp->devrec[0].vid, false));  // Do not flush buffer pool
         }
 
@@ -4893,6 +4905,7 @@ void restart_m::_redo_page_pass()
             }
             else
             {
+                // M2, REDO is being done by the restart child thread only
                 // Unable to acquire write latch, it should not happen if page was in_doubt
                 // but it could happen if page was not in_doubt
                 DBGOUT1 (<< "Error when acquiring LATCH_EX for a buffer pool page. cb._pid_shpid = "
@@ -5386,9 +5399,8 @@ void restart_thread_t::run()
 
     DBGOUT1(<< "restart_thread_t: Starts REDO and UNDO tasks");
 
-// TODO(Restart)... Performance
-struct timeval tm_before;
-gettimeofday( &tm_before, NULL );
+    struct timeval tm_before;
+    gettimeofday( &tm_before, NULL );
 
     // REDO, call back to restart_m to carry out the concurrent REDO
     working = smlevel_0::t_concurrent_redo;
@@ -5406,11 +5418,11 @@ gettimeofday( &tm_before, NULL );
     // from now on (if using commit_lsn to validate concurrent user transactions)
     smlevel_0::commit_lsn = lsn_t::null;
 
+    struct timeval tm_after;
+    gettimeofday( &tm_after, NULL );
+    double elapse = (((double)tm_after.tv_sec - (double)tm_before.tv_sec) * 1000.0) + (double)tm_after.tv_usec/1000.0 - (double)tm_before.tv_usec/1000.0;
 // TODO(Restart)... Performance
-struct timeval tm_after;
-gettimeofday( &tm_after, NULL );
-double elapse = (((double)tm_after.tv_sec - (double)tm_before.tv_sec) * 1000.0) + (double)tm_after.tv_usec/1000.0 - (double)tm_before.tv_usec/1000.0;
-DBGOUT0(<< "**** Restart REDO/UNDO time elpase time (milliseconds): " << elapse);
+    DBGOUT0(<< "**** Restart child thread REDO/UNDO, elpase time (milliseconds): " << elapse);
 
     return;
 };

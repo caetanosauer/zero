@@ -54,15 +54,14 @@
 //
 //    Restart - in_doubt page and transaction count reporting, change from DBGOUT0 back to DBGOUT1 (2 - 3 locations)
 //
+//    restart.cpp - change from DBGOUT0 back to DBGOUT1 for restart finished timing (2 locations)
+//
 //    chkpt - change from DBGOUT0 back to DBGOUT1 (1 locations) for reporting
 //
 //    Uncomment out the assertion in UNDO (two locations) - btree_logrec.cpp, lines 61 and 153  <-- M3/M4 only
 //
-//    restart.cpp - remove output to indicate restart finished, also the timing
-//
 //    CMakeLists.txt - comment out test_restart_performance for the regular build
 //
-//    CMakeLists.txt - test_logbuf and test_logbuf_scan are not passing, why?  Currently commented out
 //
 //    Bug: bf_tree.cpp (3020) bf_tree_m::_try_recover_page: Parent page does not have emlsn, no recovery  <-- infinite loop sometimes but not consistent
 //
@@ -74,6 +73,7 @@
 
 
 // Define constants
+const double   TARGET_EXECUTION_TIME      = 60000.0;        // Duration of the post_shutdown execution time
 const int      TOTAL_INDEX_COUNT          = 5;              // Number of indexes.  Each index would have around 9000 pages (probably more),
                                                             // with 8K page, each index would take up at least ~70MB of space, while
                                                             // we have 1GB buffer pool space
@@ -878,9 +878,8 @@ public:
 
         w_rc_t rc;
         char key_buf[KEY_BUF_SIZE+1];
-        bool failed = false;        // Safety net to break out from infinite loop (in case of bug)
-        int started_txn_count = 0;  // Started transactions
-        int succeed_txn_count = 0;  // Completed transaction
+        double started_txn_count = 0;  // Started transactions
+        double succeed_txn_count = 0;  // Completed transaction
 
         // Mix up the record for user transactions, some of the operations are on the
         // existing records, while some are on non-existing (out-of-bound) records which should
@@ -890,6 +889,31 @@ public:
         uint64_t actual_key;                            // Key value used for the current operation
         int out_of_bound = 0;                           // Frequency to use an out-of-bound record (OUT_OF_BOUND_FREQUENCY)
         int index_count = 0;                            // Which index to use for the operation?
+
+        // Elapse time in millisecs seconds
+        double begin_time;      // Time when the concurrent transactions start
+        double current_time;    // Current time of the concurrent transaction
+        double execution_time; // Elapse time of the concurrent transactions
+        struct timeval tm;
+        gettimeofday( &tm, NULL );
+        begin_time = ((double)tm.tv_sec*MILLISECS_IN_SECOND) +
+                     ((double)tm.tv_usec/(MICROSECONDS_IN_SECOND/MILLISECS_IN_SECOND));
+
+
+// TODO(Restart)...
+//   1. target_count does not work anymore becasue we need 60 seconds
+//   2. record_cycles() need fixing because we might need to take more time slots, use a different data structure
+/**
+std::vector < Tree::Record * >records;
+records.push_back (record);
+records.at(i);
+for (i = 0; i < records.size (); ++i)
+{
+    delete[](records.at(i)->m_binaryArray);
+    delete records.at(i);
+}
+**/
+
 
 
         // Determine how many successful transactions to reach
@@ -901,16 +925,26 @@ public:
             target_count = TOTAL_SUCCESS_TRANSACTIONS;
 
         // Spread out the operations to all indexes
-        for (succeed_txn_count=0; succeed_txn_count < target_count;)
+        for (succeed_txn_count=0; succeed_txn_count < target_count;)    // Exit on successful transaction count
+//        while (true)           // Exit on time-out
         {
             // User transactions in M2 might fail due to commit_lsn check,
             // in such case the failed transactions are not counted toward
             // the total successful transaction count
 
-            // A safety to prevent infinite loop (bug) in code
-            if (key_int > (POPULATE_RECORDS * DIRTY_INDEX_COUNT * 100))
+            // Once we reached the target execution time, break out from the loop
+            // Note this is the only official way out of the main loop
+            gettimeofday( &tm, NULL );
+            current_time = ((double)tm.tv_sec*MILLISECS_IN_SECOND) +
+                           ((double)tm.tv_usec/(MICROSECONDS_IN_SECOND/MILLISECS_IN_SECOND));
+            execution_time = current_time - begin_time;
+            if (TARGET_EXECUTION_TIME <= execution_time)
+                break;
+            // A safe guard to prevent infinite loop
+            if (started_txn_count > (1 << 21))  // > 2G
             {
-                failed = true;
+                std::cout << std::endl << "Executed more than " << (1<< 21)
+                          << "transactions, break!!!!!" << std::endl << std::endl;
                 break;
             }
 
@@ -919,7 +953,7 @@ public:
             // Note we are using the started count, not success count
             // therefore we will keep looping through all indexes even
             // if transaction failed
-            index_count = started_txn_count%(DIRTY_INDEX_COUNT+1);   // 0 -5, so we only update on the first 5 index
+            index_count = (int)started_txn_count%(DIRTY_INDEX_COUNT+1);   // 0 -5, so we only update on the first 5 index
             if (index_count >= DIRTY_INDEX_COUNT)
                 index_count = 0;
 
@@ -928,7 +962,14 @@ public:
             ++out_of_bound;
             if (out_of_bound >= OUT_OF_BOUND_FREQUENCY)
             {
-                // The operation is an insert operation for a non-existing out-of-bound key record
+                // The operation is an insert operation for a non-existing
+                // out-of-bound key record, if the key value is overlapping
+                // with the inbound key value, reset it to the original out-of-bound
+                // value.  We need this reset because we need to keep the
+                // concurrent operation running for 60 seconds, and we do not
+                // want the out-of-bound value get into the in-bound range
+                if (POPULATE_RECORDS >= high_key_int)
+                    high_key_int = POPULATE_RECORDS * 60;
                 test_env->itoa(high_key_int, key_buf, 10);  // Fill the key portion with integer converted to string
                 actual_key = high_key_int;
                 --high_key_int;                             // Key starts from POPULATE_RECORDS*60 and decreasing
@@ -936,8 +977,14 @@ public:
             }
             else
             {
-                // The operation is on a record with in-bound key value which should exist already,
-                // need to decide insert/update or delete operation
+                // The operation is on a record with in-bound key value,
+                // if the key is hitting the boundary, reset it so the key value
+                // does not go out-of-bound
+                // We need this reset because we need to keep the concurrent
+                // operation running for 60 seconds and we cannot let the key value
+                // continue going up which would increase the size of index too much
+                if (POPULATE_RECORDS <= key_int)
+                    key_int = 1;
                 test_env->itoa(key_int, key_buf, 10);  // Fill the key portion with integer converted to string
                 actual_key = key_int;
                 ++key_int;                             // Key starts from 1 and increasing
@@ -962,6 +1009,13 @@ public:
                     // Go to the next key value, do not increase succeed_txn_count
                     test_env->abort_xct();
                     ++started_txn_count;
+                    // If duplicate or not found error, it is a successful transaction,
+                    // because we only consider blocking (M2) or unknown error as a failure
+                    // eDUPLICATE = 34
+                    // eACCESS_CONFLICT = 83 (commit_lsn error)
+                    // eNOTFOUND = 22
+                    if ((eDUPLICATE == rc.err_num()) || (eNOTFOUND == rc.err_num()))
+                        ++succeed_txn_count;
                     continue;
                 }
             }
@@ -980,8 +1034,6 @@ public:
                     // If record was committed insertion during phase 2, we should not be able
                     // to insert it again, so duplicate error is expected.
                     // Except that in M2 which might fail due to commit_lsn check
-                    // 34 - duplicate key
-                    // 83 - commit_lsn conflict
                     if (34 != rc.err_num())
                         std::cout << "Insert error with key ending in 7, key: " << actual_key
                                   << ", error no: " << rc.err_num() << ", error: " << rc.get_message() << std::endl;
@@ -990,6 +1042,10 @@ public:
                     // Go to the next key value, do not increase succeed_txn_count
                     test_env->abort_xct();
                     ++started_txn_count;
+                    // If duplicate or not found error, it is a successful transaction,
+                    // because we only consider blocking (M2) or unknown error as a failure
+                    if ((eDUPLICATE == rc.err_num()) || (eNOTFOUND == rc.err_num()))
+                        ++succeed_txn_count;
                     continue;
                 }
             }
@@ -1015,6 +1071,10 @@ public:
                     // Go to the next key value, do not increase succeed_txn_count
                     test_env->abort_xct();
                     ++started_txn_count;
+                    // If duplicate or not found error, it is a successful transaction,
+                    // because we only consider blocking (M2) or unknown error as a failure
+                    if ((eDUPLICATE == rc.err_num()) || (eNOTFOUND == rc.err_num()))
+                        ++succeed_txn_count;
                     continue;
                 }
             }
@@ -1040,6 +1100,10 @@ public:
                     // Go to the next key value, do not increase succeed_txn_count
                     test_env->abort_xct();
                     ++started_txn_count;
+                    // If duplicate or not found error, it is a successful transaction,
+                    // because we only consider blocking (M2) or unknown error as a failure
+                    if ((eDUPLICATE == rc.err_num()) || (eNOTFOUND == rc.err_num()))
+                        ++succeed_txn_count;
                     continue;
                 }
             }
@@ -1060,6 +1124,10 @@ public:
                     // Go to the next key value, do not increase succeed_txn_count
                     test_env->abort_xct();
                     ++started_txn_count;
+                    // If duplicate or not found error, it is a successful transaction,
+                    // because we only consider blocking (M2) or unknown error as a failure
+                    if ((eDUPLICATE == rc.err_num()) || (eNOTFOUND == rc.err_num()))
+                        ++succeed_txn_count;
                     continue;
                 }
             }
@@ -1081,7 +1149,7 @@ public:
             // Is it time to record the performance information?
             // Note we are recording information based on succeed transactions
             // it ignores the failed transactions
-            if (0 == (succeed_txn_count % RECORD_FREQUENCY))
+            if (0 == ((int)succeed_txn_count % RECORD_FREQUENCY))
             {
                 // Record cycles
                 record_cycles();
@@ -1093,111 +1161,99 @@ public:
         // If M3, some of the in-flight transactions (ending with 9)
         // and in_doubt pages might not have been recovered at this point (long tail)
 
-        if (true == failed)
-        {
-            // We did not have enough successful user transaction due to too many failures
-            // this is unexpected behavior, report it
-            std::cerr << std::endl << "ERROR..." << std::endl;
-            std::cerr << "Failed to complete " << target_count << " transactions, potential infinite loop." << std::endl;
-            std::cerr << "Total started transactions: " << started_txn_count << std::endl;
-            std::cerr << "Total completed transactions: " << succeed_txn_count << std::endl;
-        }
-        else
-        {
-            // Reporting:
-            // Report performance information
-            //     _total_cycles[0] - from shutdown to the beginning of restart, no recovery
-            //     ...
-            //     _total_cycles[i] - record information every RECORD_FREQUENCY successful user transactions
-            //     ...
-            //     _total_cycles[TOTAL_CYCLE_SLOTS] - from shutdown to finish
-            //                                                              target_count user transactions
+        // Reporting:
+        // Report performance information
+        //     _total_cycles[0] - from shutdown to the beginning of restart, no recovery
+        //     ...
+        //     _total_cycles[i] - record information every RECORD_FREQUENCY successful user transactions
+        //     ...
+        //     _total_cycles[TOTAL_CYCLE_SLOTS] - from shutdown to finish
+        //                                                              succeed_txn_count user transactions
 #ifdef MEASURE_PERFORMANCE
-            int count = 0;
-            std::cout << std::endl << "Successful transaction count, elapse time(milliseconds) and CPU cycles: " << std::endl;
-            for (int iIndex = 0; iIndex < _cycle_slot_index; ++iIndex)
+        int count = 0;
+        std::cout << std::endl << "Successful transaction count, elapse time(milliseconds) and CPU cycles: " << std::endl;
+        for (int iIndex = 0; iIndex < _cycle_slot_index; ++iIndex)
+        {
+            std::cout << " Count: " << count << ", elapse time: " << (_total_elapse[iIndex] - _start_time)
+                      << ", CPU cycles: " << (_total_cycles[iIndex] - _start);
+            if (0 < iIndex)
             {
-                std::cout << " Count: " << count << ", elapse time: " << (_total_elapse[iIndex] - _start_time)
-                          << ", CPU cycles: " << (_total_cycles[iIndex] - _start);
-                if (0 < iIndex)
-                {
-                    std::cout << ", elapse delta: " << (_total_elapse[iIndex] - _total_elapse[iIndex-1]);
-                    std::cout << ", cycle delta: " << (_total_cycles[iIndex] - _total_cycles[iIndex-1]) << std::endl;
-                }
+                std::cout << ", elapse delta: " << (_total_elapse[iIndex] - _total_elapse[iIndex-1]);
+                std::cout << ", cycle delta: " << (_total_cycles[iIndex] - _total_cycles[iIndex-1]) << std::endl;
+            }
+            else
+            {
+                // First one, this is the duration from system crash to store open
+                // Clean shutdown - including rollback
+                // M1 - including the entire Restart
+                // M2 - M4 - Log Analysis only
+                std::cout << ", elapse delta: " << (_total_elapse[iIndex] - _start_time);
+                std::cout << ", cycle delta: " << (_total_cycles[iIndex] - _start);
+                if (false == crash_shutdown)
+                    std::cout << ", normal cleanup time" << std::endl;
                 else
                 {
-                    // First one, this is the duration from system crash to store open
-                    // Clean shutdown - including rollback
-                    // M1 - including the entire Restart
-                    // M2 - M4 - Log Analysis only
-                    std::cout << ", elapse delta: " << (_total_elapse[iIndex] - _start_time);
-                    std::cout << ", cycle delta: " << (_total_cycles[iIndex] - _start);
-                    if (false == crash_shutdown)
-                        std::cout << ", normal cleanup time" << std::endl;
+                    if (m1_default_restart == restart_mode)
+                        std::cout << ", restart process completed" << std::endl;
                     else
-                    {
-                        if (m1_default_restart == restart_mode)
-                            std::cout << ", restart process completed" << std::endl;
-                        else
-                            std::cout << ", Log Analysis completed" << std::endl;
-                    }
+                        std::cout << ", Log Analysis completed" << std::endl;
                 }
-
-                count += RECORD_FREQUENCY;
             }
+
+            count += RECORD_FREQUENCY;
+        }
 #endif
-            if (m1_default_restart == restart_mode)
-                std::cout << std::endl << "M1 ...";
-            else if (m2_default_restart == restart_mode)
-                std::cout << std::endl << "M2...";
-            else if (m3_default_restart == restart_mode)
-                std::cout << std::endl << "M3...";
-            else if (m4_default_restart == restart_mode)
-                std::cout << std::endl << "M4...";
-            else
-                std::cerr << std::endl << "UNKNOWN RESTART MODE, ERROR...";
+        if (m1_default_restart == restart_mode)
+            std::cout << std::endl << "M1 ...";
+        else if (m2_default_restart == restart_mode)
+            std::cout << std::endl << "M2...";
+        else if (m3_default_restart == restart_mode)
+            std::cout << std::endl << "M3...";
+        else if (m4_default_restart == restart_mode)
+            std::cout << std::endl << "M4...";
+        else
+            std::cerr << std::endl << "UNKNOWN RESTART MODE, ERROR...";
 
-            if (true == crash_shutdown)
-                std::cout << " CRASH SHUTDOWN..." << std::endl;
-            else
-                std::cout << " NORMAL SHUTDOWN..." << std::endl;
+        if (true == crash_shutdown)
+            std::cout << " CRASH SHUTDOWN..." << std::endl;
+        else
+            std::cout << " NORMAL SHUTDOWN..." << std::endl;
 
-            std::cout << "Total started transactions: " << started_txn_count << std::endl;
-            std::cout << "Total completed transactions: " << succeed_txn_count << std::endl;
+        std::cout << "Total started transactions: " << started_txn_count << std::endl;
+        std::cout << "Total completed transactions: " << succeed_txn_count << std::endl;
 
 #ifndef MEASURE_PERFORMANCE
-            // Get record count from each index, we are not measuring
-            // performance number for the scan operation
-            int recordCountTotal = 0;
-            x_btree_scan_result s;
-            for (int i = 0; i < TOTAL_INDEX_COUNT; ++i)
-            {
-                W_DO(test_env->btree_scan(_stid_list[index_count], s));
-                recordCountTotal += s.rownum;
-                std::cout << "Index " << i << " record count: " << s.rownum << std::endl;
-            }
-            std::cout << "Existing record count in B-tree: " << recordCountTotal << std::endl;
+        // Get record count from each index, we are not measuring
+        // performance number for the scan operation
+        int recordCountTotal = 0;
+        x_btree_scan_result s;
+        for (int i = 0; i < TOTAL_INDEX_COUNT; ++i)
+        {
+            W_DO(test_env->btree_scan(_stid_list[index_count], s));
+            recordCountTotal += s.rownum;
+            std::cout << "Index " << i << " record count: " << s.rownum << std::endl;
+        }
+        std::cout << "Existing record count in B-tree: " << recordCountTotal << std::endl;
 #endif
 
-            // Duration starts from 'store open', so if normal shutdown or M1, recovery has completed already
-            unsigned long long duration_CPU = (_total_cycles[_cycle_slot_index - 1] - _total_cycles[0]);
-            double duration_time = (_total_elapse[_cycle_slot_index - 1] - _total_elapse[0]);
+        // Duration starts from 'store open', so if normal shutdown or M1, recovery has completed already
+        unsigned long long duration_CPU = (_total_cycles[_cycle_slot_index - 1] - _total_cycles[0]);
+        double duration_time = (_total_elapse[_cycle_slot_index - 1] - _total_elapse[0]);
 
-            std::cout << std::endl << "Total CPU cycles for " << target_count << " successful user transactions: "
-                      << duration_CPU << std::endl;
+        std::cout << std::endl << "Total CPU cycles for " << succeed_txn_count << " successful user transactions: "
+                  << duration_CPU << std::endl;
 
-            // Convert from CPU cycles to time
-            // Note the magic conversion number below is from 'cat /proc/cpuinfo: cpu MHz'
-            // the value is machine dependent so run it on the machine which is doing
-            // the performance tests, also the magic number is the current cpu efficency
-            // when /proc/cpuinfo' was executed, while the cpu usage might be very low
-            // therefore not reliable
-            // unsigned time =0;
-            // time = (duration_CPU/1596000);
-            // std::cout << "CPU Time in milliseconds(after store opened): " << time << std::endl;
+        // Convert from CPU cycles to time
+        // Note the magic conversion number below is from 'cat /proc/cpuinfo: cpu MHz'
+        // the value is machine dependent so run it on the machine which is doing
+        // the performance tests, also the magic number is the current cpu efficency
+        // when /proc/cpuinfo' was executed, while the cpu usage might be very low
+        // therefore not reliable
+        // unsigned time =0;
+        // time = (duration_CPU/1596000);
+        // std::cout << "CPU Time in milliseconds(after store opened): " << time << std::endl;
 
-            std::cout << std::endl << "Total elapsed time (after store opened) in milliseconds: " << duration_time << std::endl << std::endl;
-        }
+        std::cout << std::endl << "Total elapsed time (after store opened) in milliseconds: " << duration_time << std::endl << std::endl;
 
         return RCOK;
     }
