@@ -84,7 +84,7 @@ class prologue_rc_t;
 #include "log_carray.h"
 #include "log_lsn_tracker.h"
 
-
+#include "plog_xct.h"
 #include "logbuf_common.h"
 #include "log_core.h"
 #include "logbuf_core.h"
@@ -210,7 +210,8 @@ lid_m* smlevel_4::lid = 0;
 
 ss_m* smlevel_4::SSM = 0;
 
-
+smlevel_1::xct_impl_t smlevel_1::xct_impl
+    = smlevel_1::XCT_TRADITIONAL;
 
 /*
  *  Class ss_m code
@@ -505,6 +506,17 @@ ss_m::_construct_once()
     std::string logimpl = _options.get_string_option("sm_log_impl", log_core::IMPL_NAME);
     uint64_t def_logbufsize = (logimpl == logbuf_core::IMPL_NAME) ? LOGBUF_SEG_SIZE : 128 << 10;
     uint64_t logbufsize = _options.get_int_option("sm_logbufsize", def_logbufsize); // at least 1024KB
+
+    // Initialize xct implementation
+    std::string xctimpl = _options.get_string_option("sm_log_impl", xct_t::IMPL_NAME);
+    if (xctimpl == plog_xct_t::IMPL_NAME) {
+        smlevel_1::xct_impl = XCT_PLOG;
+        // TODO use sm option to select ext mgr implementation
+        plog_xct_t::ext_mgr = new plog_ext_naive();
+    }
+    else {
+        smlevel_1::xct_impl = XCT_TRADITIONAL;
+    }
 
     // pretty big limit -- really, the limit is imposed by the OS's
     // ability to read/write
@@ -2099,6 +2111,20 @@ ss_m::_begin_xct(sm_stats_info_t *_stats, tid_t& tid, timeout_in_ms timeout, boo
     tid = x->tid();
 
     return RCOK;
+}
+
+xct_t* ss_m::_new_xct(
+        sm_stats_info_t* stats,
+        timeout_in_ms timeout,
+        bool sys_xct,
+        bool single_log_sys_xct)
+{
+    switch (xct_impl) {
+    case XCT_TRADITIONAL:
+        return plog_xct_t::new_xct(stats, timeout, sys_xct, single_log_sys_xct);
+    default:
+        return xct_t::new_xct(stats, timeout, sys_xct, single_log_sys_xct, false);
+    }
 }
 
 /*--------------------------------------------------------------*

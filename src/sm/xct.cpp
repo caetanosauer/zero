@@ -42,6 +42,8 @@
 #include "lock_raw.h"
 #include "log_lsn_tracker.h"
 
+const std::string xct_t::IMPL_NAME = "traditional";
+
 #ifdef EXPLICIT_TEMPLATE
 template class w_list_t<xct_t, queue_based_lock_t>;
 template class w_list_i<xct_t, queue_based_lock_t>;

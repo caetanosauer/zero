@@ -207,6 +207,9 @@ class xct_t : public smlevel_1 {
     friend class lock_request_t;
     friend class xct_log_switch_t;
 
+public:
+    static const std::string IMPL_NAME;
+
 protected:
     enum commit_t { t_normal = 0, t_lazy = 1, t_chain = 2, t_group = 4 };
 
@@ -252,10 +255,10 @@ public:
 #if defined(USE_BLOCK_ALLOC_FOR_XCT_IMPL) && (USE_BLOCK_ALLOC_FOR_XCT_IMPL==1)
 public:
 #else
-private:
+protected:
 #endif
     struct xct_core;            // forward
-private:
+protected:
     NORET                        xct_t(
         xct_core*                     core,
         sm_stats_info_t*             stats,  // allocated by caller
@@ -418,7 +421,7 @@ public:
     * @param[out] ret the acquired log buffer
     * @param[in] t bytes to reserve
     */
-    rc_t                        get_logbuf(logrec_t* &ret, int t);
+    virtual rc_t                        get_logbuf(logrec_t* &ret, int t);
 
     /**
      * \brief Returns the log buffer acquired by get_logbuf().
@@ -429,7 +432,7 @@ public:
      * @param[in] p the main page the log updated
      * @param[in] p2 the second page the log updated
      */
-    rc_t                        give_logbuf(logrec_t* l,
+    virtual rc_t                        give_logbuf(logrec_t* l,
         const fixable_page_h *p = NULL, const fixable_page_h *p2 = NULL);
 
     //
@@ -508,16 +511,16 @@ protected:
     w_link_t                      _xlink;
     static w_descend_list_t<xct_t, queue_based_lock_t, tid_t> _xlist;
     void                         put_in_order();
+
+    static tid_t                 _nxt_tid;// only safe for pre-emptive
+                                        // threads on 64-bit platforms
+    static tid_t                 _oldest_tid;
 private:
     static queue_based_lock_t    _xlist_mutex;
 
     sm_stats_info_t*             __stats; // allocated by user
     lockid_t*                    __saved_lockid_t;
     xct_log_t*                   __saved_xct_log_t;
-
-    static tid_t                 _nxt_tid;// only safe for pre-emptive
-                                        // threads on 64-bit platforms
-    static tid_t                 _oldest_tid;
 
     // NB: must replicate because _xlist keys off it...
     // NB: can't be const because we might chain...
@@ -617,8 +620,9 @@ private:
     bool                         is_1thread_xct_mutex_mine() const;
     void                         assert_1thread_xct_mutex_free()const;
 
-    rc_t                         _abort();
-    rc_t                         _commit(uint32_t flags,
+protected:
+    virtual rc_t                _abort();
+    virtual rc_t                _commit(uint32_t flags,
                                                  lsn_t* plastlsn=NULL);
 
 protected:
@@ -705,7 +709,7 @@ private:
 #if defined(USE_BLOCK_ALLOC_FOR_XCT_IMPL) && (USE_BLOCK_ALLOC_FOR_XCT_IMPL==1)
 public:
 #else
-private:
+protected:
 #endif
     /* A nearly-POD struct whose only job is to enable a N:1
        relationship between the log streams of a transaction (xct_t)
@@ -797,7 +801,7 @@ public:
         elr_clv
     };
 
-private: // all data members private
+protected: // all data members protected
     // the 1thread_xct mutex is used to ensure that only one thread
     // is using the xct structure on behalf of a transaction
     // It protects a number of things, including the xct_dependents list

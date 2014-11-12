@@ -585,6 +585,13 @@ private:
 
     void                _set_recovery_mode();
 
+    // Used for cosntructing xct object depending on chosen implementation
+    xct_t* _new_xct(
+            sm_stats_info_t* stats,
+            timeout_in_ms timeout,
+            bool sys_xct,
+            bool single_log_sys_xct);
+
 public:
     /**\addtogroup SSMXCT
      *
