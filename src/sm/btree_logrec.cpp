@@ -1008,14 +1008,17 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
         // so the source page has all the original records, and then move records from source to destination.
         // Because this is a page rebalance operation, the destination page starts as an empty page.
         //
-        // The logic shouldwork well with normal Single Page Recovery, does it work well with
+        // The logic should work well with normal Single Page Recovery, does it work well with
         // all scenarios from Recovery REDO?  Especially if we have complex operations, such
         // as multiple rebalance and merge operations on the same page before system crash, etc.
-        // If we are doing log scan driven REDO then we are okay using this logic because we are
+        // If we are doing log scan driven REDO then we do not come into this code path because we are
         // recovery based on one log record at a time, but when using page driven REDO (one page
         // at a time) then we need to be careful if there are multiple load balance operations on the
         // same page before system crash, the recursive call has to rebuild the pre-image for
-        // each page rebalance operation.
+        // each page rebalance operation which could be quite expensive, especially if no page backup
+        // then the source page had to go all the way back to the initial page allocation log and play
+        // back, and it can resursively invoke many Single-Page-Recovery operations if the source page
+        // was rebalanced many times since the allocation.
 
         // this is in Single-Page-Recovery. we use scratch space for another page because bufferpool frame
         // for another page is probably too latest for Single-Page-Recovery.
