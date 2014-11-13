@@ -259,6 +259,33 @@ restart_m::restart(
     XctLockHeap           lock_heap2(lock_cmp);  // For Checkpoint
     bool                  restart_with_lock;     // Whether to acquire lock during Log Analysis
 
+    // Measuer time for Log Analysis phase
+    struct timeval tm_before;
+    gettimeofday( &tm_before, NULL );
+
+// TODO(Restart)... performance, determine whether to use forward scan or not
+//                          based on milestone, this is for performance test only
+//                          For normal usage, all milestones are using backward log scan in Log Analysis
+/**
+    // Using forward scan for M1/M2, backward scan for M3/M4
+    if (false == use_concurrent_lock_restart())
+    {
+        // Forward log scan
+        restart_with_lock = false; // Only used in 'analysis_pass_backward()'
+        analysis_pass_forward(master, redo_lsn, in_doubt_count, undo_lsn, loser_heap,
+                              commit_lsn, last_lsn);
+    }
+    else
+    {
+        // Backward log scan
+        restart_with_lock = true;
+        analysis_pass_backward(master, redo_lsn, in_doubt_count, undo_lsn, loser_heap,
+                               commit_lsn, last_lsn, restart_with_lock, lock_heap1);
+    }
+**/
+
+/* Normal code path, always backward scan during Log Analysis */
+    // Using backward scan for all M1 - M4
     if (false == use_concurrent_lock_restart())
     {
         // Not using locks (either serial or log mode) - M1 and M2
@@ -269,8 +296,17 @@ restart_m::restart(
         // Using locks - M3 and M4
         restart_with_lock = true;
     }
+
     analysis_pass_backward(master, redo_lsn, in_doubt_count, undo_lsn, loser_heap,
                            commit_lsn, last_lsn, restart_with_lock, lock_heap1);
+/**/
+
+    struct timeval tm_after;
+    gettimeofday( &tm_after, NULL );
+// TODO(Restart)... Performance
+    DBGOUT1(<< "**** Restart Log Analysis, elpase time (milliseconds): "
+            << (((double)tm_after.tv_sec - (double)tm_before.tv_sec) * 1000.0)
+            + (double)tm_after.tv_usec/1000.0 - (double)tm_before.tv_usec/1000.0);
 
     // If nothing from Log Analysis, in other words, if both transaction table and buffer pool
     // are empty, there is nothing to do in REDO and UNDO phases, but we still want to
@@ -347,6 +383,7 @@ restart_m::restart(
     }
     else
     {
+        // Measure time for M1 REDO/UNDO phases
         struct timeval tm_before;
         gettimeofday( &tm_before, NULL );
 
@@ -462,9 +499,10 @@ restart_m::restart(
 
         struct timeval tm_after;
         gettimeofday( &tm_after, NULL );
-        double elapse = (((double)tm_after.tv_sec - (double)tm_before.tv_sec) * 1000.0) + (double)tm_after.tv_usec/1000.0 - (double)tm_before.tv_usec/1000.0;
 // TODO(Restart)... Performance
-        DBGOUT0(<< "**** Restart traditional REDO/UNDO, elpase time (milliseconds): " << elapse);
+        DBGOUT1(<< "**** Restart traditional REDO/UNDO, elpase time (milliseconds): "
+                << (((double)tm_after.tv_sec - (double)tm_before.tv_sec) * 1000.0)
+                + (double)tm_after.tv_usec/1000.0 - (double)tm_before.tv_usec/1000.0);
 
         // Exiting from the Recovery operation, caller of the Recovery operation is
         // responsible of changing the 'operating_mode' to 'smlevel_0::t_forward_processing',
@@ -502,10 +540,6 @@ restart_m::analysis_pass_forward(
 )
 {
     FUNC(restart_m::analysis_pass_forward);
-
-    W_FATAL_MSG(fcINTERNAL,
-                << "Log Analysis with forward log scan -- not used anymore with the in_doubt page implementation"
-                << ", all restart methods are using backward log scan");
 
     // Actually turn off logging during Log Analysis phase, there is no possibility
     // to add new log records by accident during this phase
@@ -1153,7 +1187,6 @@ restart_m::analysis_pass_forward(
     {
         W_FATAL_MSG(eNOTIMPLEMENTED, << "restart_m::analysis_pass_back - no Lock acquisition");
     }
-
     return;
 }
 
@@ -1417,8 +1450,7 @@ restart_m::analysis_pass_backward(
             xd->set_first_lsn(lsn);             // initialize first lsn to the same value as last_lsn
             w_assert1( xd->tid() == r.tid() );
         }
-        else if ((r.tid() != tid_t::null)                 // Has a transaction ID
-                 && (xd = xct_t::look_up(r.tid())))        // already exist in transaction table
+        else if (r.tid() != tid_t::null)            // Has a transaction ID
         {
             // Transaction exists in transaction table already
 
@@ -1427,8 +1459,7 @@ restart_m::analysis_pass_backward(
             // ended either normally or aborted, we can safely ingore
             // lock acquisition on all related log records
             // but we still need to process the log record for 'in-doubt' pages
-
-            if (xct_t::xct_ended == xd->state())
+            if ((xd) && (xct_t::xct_ended == xd->state()))
             {
                 // Do not acquire non-read-locks from this log record
                 acquire_lock = false;
@@ -1456,7 +1487,6 @@ restart_m::analysis_pass_backward(
         switch (r.type())
         {
         case logrec_t::t_chkpt_begin:
-
             if (1 == num_chkpt_end_handled)
             {
                 // We have seen a matching 'end checkpoint' log reocrd
@@ -1500,7 +1530,6 @@ restart_m::analysis_pass_backward(
             // records per active transaction) should be retrieved after the corresponding
             // t_chkpt_xct_tab log record, in other words, it was generated prior the
             // corresponding t_chkpt_xct_tab log record
-
             if ((num_chkpt_end_handled == 1) && (true == restart_with_lock))
             {
                 // Process it only if we have seen a matching 'end checkpoint' log record
@@ -1569,7 +1598,6 @@ restart_m::analysis_pass_backward(
 
         case logrec_t::t_dismount_vol:
         case logrec_t::t_mount_vol:
-
             // Perform all mounts and dismounts up to the minimum redo lsn,
             // so that the system has the right volumes mounted during
             // the redo phase.  The only time this should be redone is
@@ -1647,7 +1675,6 @@ restart_m::analysis_pass_backward(
             break;
 
         case logrec_t::t_xct_freeing_space:
-
             // A t_xct_freeing_space log record is generated when entering
             // txn state 'xct_freeing_space' which is before txn commit or abort.
             // If system crashed before the final txn commit or abort occurred,
@@ -1734,6 +1761,21 @@ restart_m::analysis_pass_backward(
                 else
                 {
                     // winner transaction, no need to acquire locks
+                }
+
+                if ((r.tid() != tid_t::null) && (xd) &&
+                    (r.is_page_update()) && (lsn_t::null == r.xid_prev())
+                    && (xct_t::xct_ended == xd->state()))
+                {
+                    // If this is an update log record, and we have already seen the
+                    // transaction end/abort log record for this transaction (backward scan),
+                    // and the current log record is the very first log record of this transaction
+                    // it is safe to remove this transaction from transaction table now.
+
+                    // Delete the transaction from transaction table because it
+                    // reduces the size of llinked-list transaction table and improve
+                    // the xct_t::look_up performance of the transaction table
+                    xct_t::destroy_xct(xd);
                 }
             }
             break;
@@ -1903,7 +1945,6 @@ restart_m::analysis_pass_backward(
 
         DBGOUT1( << "Log Analysis phase: no device mounting occurred.");
     }
-
     return;
 }
 
@@ -2322,7 +2363,6 @@ void restart_m::_analysis_ckpt_xct_log(logrec_t& r,          // In: Current log 
                     << dp->count << " transactions but only processed "
                     << iCount << " transactions");
     }
-
     return;
 }
 
@@ -3260,10 +3300,10 @@ void restart_m::_analysis_process_compensation_map(
             tid_t t(it->first);
             xd = xct_t::look_up(t);
             w_assert1(NULL != xd);
-
             w_assert1(xct_t::xct_active == xd->state());
         }
     }
+
     return;
 }
 
@@ -5420,9 +5460,10 @@ void restart_thread_t::run()
 
     struct timeval tm_after;
     gettimeofday( &tm_after, NULL );
-    double elapse = (((double)tm_after.tv_sec - (double)tm_before.tv_sec) * 1000.0) + (double)tm_after.tv_usec/1000.0 - (double)tm_before.tv_usec/1000.0;
 // TODO(Restart)... Performance
-    DBGOUT0(<< "**** Restart child thread REDO/UNDO, elpase time (milliseconds): " << elapse);
+    DBGOUT1(<< "**** Restart child thread REDO/UNDO, elpase time (milliseconds): "
+            << (((double)tm_after.tv_sec - (double)tm_before.tv_sec) * 1000.0)
+            + (double)tm_after.tv_usec/1000.0 - (double)tm_before.tv_usec/1000.0);
 
     return;
 };

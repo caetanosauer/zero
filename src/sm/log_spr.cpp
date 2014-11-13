@@ -289,7 +289,6 @@ rc_t log_core::_collect_single_page_recovery_logs(
 //hints
 //delete tmp;
 #endif
-
     return RCOK;
 }
 

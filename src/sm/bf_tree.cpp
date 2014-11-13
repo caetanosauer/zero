@@ -821,26 +821,6 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             // initialize control block
             // we don't have to atomically pin it because it's not referenced by any other yet
 
-/**
-            // latch the page. (not conditional because this thread will be the only thread touching it)
-            cb.clear_latch();
-            w_rc_t rc_latch = cb.latch().latch_acquire(mode, sthread_t::WAIT_IMMEDIATE);
-            if (rc_latch.is_error())
-            {
-                // We load the page so we should be the only one wanting to latch this page
-                // If we are not able to latch the page for some reason, try again
-                DBGOUT2(<<"bf_tree_m: latch_acquire failed in buffer frame " << idx << ", rc= " << rc_latch);
-                if (false == force_load)
-                    _add_free_block(idx);
-
-                // Turn off the force_load flag before the retry
-                force_load = false;
-                // Sleep a while to give the other process time to finish its work
-                ::usleep(ONE_MICROSEC);
-                continue;
-            }
-**/
-
             // We should still have the latch at this point
             w_assert1(cb.latch().held_by_me());
 

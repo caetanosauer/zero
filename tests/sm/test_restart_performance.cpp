@@ -20,6 +20,8 @@
 #include <time.h>      // clock_gettime(), time()
 #include <sys/time.h>  // gethrtime(), gettimeofday()
 
+#include <limits>       // std::numeric_limits
+
 // Restart performance test to compare various restart methods
 // M1 -traditional restart, open system after Restart finished
 //        all operations in post_shutdown should succeed
@@ -45,12 +47,10 @@
 //       RAM 6GB (free -mt) with 6M of swap space (swap space is used when the physical RAM is full)
 
 
-// Uncomment the following line  to run CPU cycle performance measurment...
-//
-#define MEASURE_PERFORMANCE 1
-
 // TODO(Restart)...
 //    Might need to change the report frequency
+//
+//    Look for 'TODO(Restart)... performance', these are the special changes for performance measurement purpose
 //
 //    Restart - in_doubt page and transaction count reporting, change from DBGOUT0 back to DBGOUT1 (2 - 3 locations)
 //
@@ -58,18 +58,42 @@
 //
 //    chkpt - change from DBGOUT0 back to DBGOUT1 (1 locations) for reporting
 //
-//    Uncomment out the assertion in UNDO (two locations) - btree_logrec.cpp, lines 61 and 153  <-- M3/M4 only
+//    Bug: Uncomment out the assertion in UNDO (two locations) - btree_logrec.cpp, lines 61 and 153  <-- M3/M4 only
 //
 //    CMakeLists.txt - comment out test_restart_performance for the regular build
 //
+//    Backward log scan code from Caetano - do not check in Caetano's code
+//
+//    logbuf_common.h - disable #define LOG_BUFFER to use the original log scan
+//    partition.h
+//    partition.cpp
+//    log_core.cpp
 //
 //    Bug: bf_tree.cpp (3020) bf_tree_m::_try_recover_page: Parent page does not have emlsn, no recovery  <-- infinite loop sometimes but not consistent
 //
 //    Bug: btree_page_h::suggest_fence_for_split (btree_page_h.cpp:1127) - when spliting a page to create a foster relation,
 //                try to find the key for split, it does not exist, it appears that a synch() call at the beginning of pre_shutdown causes this error consistently
 //
-//    Bug: for M2, if I do a scan at the end of post_shutdown to get record count, infinite loop.
-//                This infinite loop was not reproduced when I use a different calculation to access various indexes.
+
+
+// Control concurrent transactions exit criteria in post_shutdown (phase 3)
+enum concurrent_xct_exit_t
+{
+    no_txn    = 0x0,   // Do not execute any user transaction
+    txn_count = 0x1,   // Based on successful transaction count
+    txn_time  = 0x2    // Based on execution time
+};
+
+// TODO(Restart)... begin
+
+// Uncomment the following line  to run CPU cycle performance measurment...
+//
+#define MEASURE_PERFORMANCE 1
+
+// !!! Determine exit criteria of concurrent transactions !!!
+const concurrent_xct_exit_t EXEC_TYPE     = txn_count;
+
+// TODO(Restart)... end
 
 
 // Define constants
@@ -95,8 +119,9 @@ const int      TOTAL_SUCCESS_TRANSACTIONS = 4500;           // Target total comp
                                                             //    count, recovery finished but core dump at the end
 const int      M4_SUCCESS_TRANSACTIONS    = 500;            // M4 target total completed concurrent transaction count in phase 3 (post_shutdown)
                                                             // lower number due to bugs
-const int      RECORD_FREQUENCY           = TOTAL_SUCCESS_TRANSACTIONS/10; // Record the time every RECORD_FREQUENCY successful transactions,
-                                                            // so we get 10 reports.  Ignore failure transactions
+const int      REPORT_COUNT               = 10;             // How many times to take the execution time information
+const int      RECORD_FREQUENCY           = TOTAL_SUCCESS_TRANSACTIONS/REPORT_COUNT; // Record the time every RECORD_FREQUENCY successful
+                                                            // transactions, so we get REPORT_COUNT reports.  Ignore failure transactions
 const int      TOTAL_CYCLE_SLOTS          = TOTAL_SUCCESS_TRANSACTIONS/RECORD_FREQUENCY+1; // Total avaliable slots to store time information,
                                                             // this is only for information and graph dwaring purposes, to show the behavior of
                                                             // different methods/milestones
@@ -132,6 +157,15 @@ const int      DATA_BUF_SIZE              = 800;            // btree_m::max_entr
                                                             // With the current setting, record size is ~ 810 (key + data although
                                                             // key size might vary, but at most 10), so each page could hold ~ 6 records
 
+// Data structure for the execution elapse time information for reporting purpose
+struct elapse_info_t
+{
+    unsigned long long _total_cycles; // record CPU cycles
+    double             _total_elapse; // record elapse time
+    double             _total_txn_count;
+    double             _successful_txn_count;
+};
+
 // Test environment
 btree_test_env *test_env;
 
@@ -154,6 +188,7 @@ sm_options make_perf_options()
 
     // Buffer pool
     options.set_int_option("sm_bufpoolsize", (1 << 20));               // in KB, 1GB, while the test machine has 6GB of memory
+//    options.set_int_option("sm_bufpoolsize", (1 << 18));               // in KB, 256MB, while the test machine has 6GB of memory
 
     // Log, do not set 'sm_logdir' so we would use default
     // options.set_string_option("sm_logdir", global_log_dir);
@@ -524,17 +559,22 @@ class restart_multi_performance : public restart_performance_test_base
 {
 public:
     int                _cycle_slot_index;                // Index into cycle slots
+/**
     unsigned long long _total_cycles[TOTAL_CYCLE_SLOTS]; // Structure to record CPU cycles
     double             _total_elapse[TOTAL_CYCLE_SLOTS]; // Structure to record elapse time
                                                          //record it every RECORD_FREQUENCY
                                                          // successful transactions
+    double             _total_txn_count[TOTAL_CYCLE_SLOTS];
+    double             _successful_txn_count[TOTAL_CYCLE_SLOTS];
+**/
+    elapse_info_t      elapse_info[TOTAL_CYCLE_SLOTS];
 
-    void record_cycles()
+    void record_cycles(const double total, const double success)
     {
         // Record the CPU cycle into the next slot
         w_assert1(_cycle_slot_index < TOTAL_CYCLE_SLOTS);
         _end = rdtsc();
-        _total_cycles[_cycle_slot_index] = _end;
+        elapse_info[_cycle_slot_index]._total_cycles = _end;
 
         // Record the elapse time information into the next slot
         // (do not use actual execution time because it excludes the disk I/O wait time)
@@ -550,7 +590,11 @@ public:
         // Store in millisecs seconds
         _end_time = ((double)tm.tv_sec * MILLISECS_IN_SECOND) +
                     ((double)tm.tv_usec / (MICROSECONDS_IN_SECOND/MILLISECS_IN_SECOND));
-        _total_elapse[_cycle_slot_index] = _end_time;
+        elapse_info[_cycle_slot_index]._total_elapse = _end_time;
+
+        // Record the transaction information
+        elapse_info[_cycle_slot_index]._total_txn_count = total;
+        elapse_info[_cycle_slot_index]._successful_txn_count = success;
 
         // Advance to the next slot
         ++_cycle_slot_index;
@@ -743,13 +787,14 @@ public:
                     else
                     {
                         // Used up all the threads, update and commit the rest using main thread
+                        // extra updates
                         rc = update_performance_records(_stid_list[index_count], key_int, t_test_txn_commit, key_int + TOTAL_RECOVERY_TRANSACTION);
                         EXPECT_FALSE(rc.is_error());
                     }
                 }
                 else if (('0' == key_buf[last_digit]) || ('1' == key_buf[last_digit]))
                 {
-                    // Update using main thread
+                    // Update using main thread, extra updates
                     rc = update_performance_records(_stid_list[index_count], key_int, t_test_txn_commit, key_int + TOTAL_RECOVERY_TRANSACTION);
                     EXPECT_FALSE(rc.is_error());
                 }
@@ -797,8 +842,10 @@ public:
         _cycle_slot_index = 0;
         for (int i = 0; i < TOTAL_CYCLE_SLOTS; ++i)
         {
-            _total_cycles[i] = 0;
-            _total_elapse[i] = 0.0;
+            elapse_info[i]._total_cycles = 0;
+            elapse_info[i]._total_elapse = 0.0;
+            elapse_info[i]._total_txn_count = 0.0;
+            elapse_info[i]._successful_txn_count = 0.0;
         }
 
         // Force a flush of system cache before shutdown, the goal is to
@@ -864,8 +911,13 @@ public:
         //                M3 - these records won't be rolled back due to pure on-demand rollback
         // Measure and draw a curve that shows the numbers of completed transactions over time
 
+        // If using execution time, we need to determine reporting interval
+        double time_interval = TARGET_EXECUTION_TIME/REPORT_COUNT;
+        double current_interval = 0.0;  // recording point
+
         // Measure and record the amount of time took for system to shutdown and restart (no recovery)
-        record_cycles();
+        record_cycles(0, 0);
+        current_interval += time_interval;  // Increase the recording point
 
         std::cout << std::endl << "Start post_shutdown (phase 3)..." << std::endl << std::endl;
 
@@ -899,51 +951,46 @@ public:
         begin_time = ((double)tm.tv_sec*MILLISECS_IN_SECOND) +
                      ((double)tm.tv_usec/(MICROSECONDS_IN_SECOND/MILLISECS_IN_SECOND));
 
-
-// TODO(Restart)...
-//   1. target_count does not work anymore becasue we need 60 seconds
-//   2. record_cycles() need fixing because we might need to take more time slots, use a different data structure
-/**
-std::vector < Tree::Record * >records;
-records.push_back (record);
-records.at(i);
-for (i = 0; i < records.size (); ++i)
-{
-    delete[](records.at(i)->m_binaryArray);
-    delete records.at(i);
-}
-**/
-
-
-
         // Determine how many successful transactions to reach
         // M4 has a much lower number due to bugs
-        int target_count;
+        double target_count;
         if (restart_mode == m4_default_restart)
             target_count = M4_SUCCESS_TRANSACTIONS;
         else
             target_count = TOTAL_SUCCESS_TRANSACTIONS;
 
+        if (no_txn == EXEC_TYPE)
+            target_count = 0;  // disable concurrent transactions
+        else if (txn_time == EXEC_TYPE)
+            target_count = std::numeric_limits<double>::max();  // disable concurrent transactions
+
         // Spread out the operations to all indexes
-        for (succeed_txn_count=0; succeed_txn_count < target_count;)    // Exit on successful transaction count
-//        while (true)           // Exit on time-out
+        for (succeed_txn_count=0; succeed_txn_count < target_count;)
         {
             // User transactions in M2 might fail due to commit_lsn check,
             // in such case the failed transactions are not counted toward
             // the total successful transaction count
 
             // Once we reached the target execution time, break out from the loop
-            // Note this is the only official way out of the main loop
+            // no matter whether we are using transaction cout or time out as exit criteria
             gettimeofday( &tm, NULL );
             current_time = ((double)tm.tv_sec*MILLISECS_IN_SECOND) +
                            ((double)tm.tv_usec/(MICROSECONDS_IN_SECOND/MILLISECS_IN_SECOND));
             execution_time = current_time - begin_time;
-            if (TARGET_EXECUTION_TIME <= execution_time)
-                break;
-            // A safe guard to prevent infinite loop
-            if (started_txn_count > (1 << 21))  // > 2G
+
+            if ((txn_time == EXEC_TYPE) && ((target_count - 1) == started_txn_count))
+                std::cout << std::endl << "!!! Execution time: Transaction count overflow !!!" << std::endl << std::endl;
+
+            if ((txn_time == EXEC_TYPE) && (TARGET_EXECUTION_TIME <= execution_time))
             {
-                std::cout << std::endl << "Executed more than " << (1<< 21)
+                std::cout << std::endl << "Exit on time out, transaction count: " << started_txn_count
+                          << std::endl << std::endl;
+                break;
+            }
+            // A safe guard to prevent infinite loop if we are using transaction count as exit criteria
+            if ((txn_count == EXEC_TYPE) && (started_txn_count > (1 << 21)))  // > 2G
+            {
+                std::cout << std::endl << "Exit on transaction count, executed more than " << (1<< 21)
                           << "transactions, break!!!!!" << std::endl << std::endl;
                 break;
             }
@@ -1002,8 +1049,9 @@ for (i = 0; i < records.size (); ++i)
                 if (rc.is_error())
                 {
 #ifndef MEASURE_PERFORMANCE
-                    std::cout << "Insert error with key ending in 5, key: "
-                              << ", error no: " << rc.err_num() << actual_key << ", error: " << rc.get_message() << std::endl;
+                    if ((eDUPLICATE != rc.err_num()) && (eNOTFOUND != rc.err_num()))
+                        std::cout << "Insert error with key ending in 5, key: "
+                                  << ", error no: " << rc.err_num() << actual_key << ", error: " << rc.get_message() << std::endl;
 #endif
 
                     // Go to the next key value, do not increase succeed_txn_count
@@ -1034,7 +1082,7 @@ for (i = 0; i < records.size (); ++i)
                     // If record was committed insertion during phase 2, we should not be able
                     // to insert it again, so duplicate error is expected.
                     // Except that in M2 which might fail due to commit_lsn check
-                    if (34 != rc.err_num())
+                    if ((eDUPLICATE != rc.err_num()) && (eNOTFOUND != rc.err_num()))
                         std::cout << "Insert error with key ending in 7, key: " << actual_key
                                   << ", error no: " << rc.err_num() << ", error: " << rc.get_message() << std::endl;
 #endif
@@ -1064,8 +1112,8 @@ for (i = 0; i < records.size (); ++i)
                     // Also M2 might fail due to commit_lsn error
                     // 34 - duplicate key
                     // 83 - commit_lsn conflict
-                    if (34 != rc.err_num())
-                        std::cout << "Update error with key ending in 3, key: " << actual_key
+                    if ((eDUPLICATE != rc.err_num()) && (eNOTFOUND != rc.err_num()))
+                        std::cout << "Insert error with key ending in 3, key: " << actual_key
                                   << ", error no: " << rc.err_num() << ", error: " << rc.get_message() << std::endl;
 #endif
                     // Go to the next key value, do not increase succeed_txn_count
@@ -1089,12 +1137,15 @@ for (i = 0; i < records.size (); ++i)
                 {
 #ifndef MEASURE_PERFORMANCE
                     // We should not encounter error except M2 due to commit_lsn check
+                    if ((eDUPLICATE != rc.err_num()) && (eNOTFOUND != rc.err_num()))
+                    {
                     if ('2' == key_buf[last_digit])
                         std::cout << "Delete error with key ending in 2, key: " << actual_key
                                   << ", error no: " << rc.err_num() << ", error: " << rc.get_message() << std::endl;
                     else
                         std::cout << "Delete error with key ending in 0, key: " << actual_key
                                   << ", error no: " << rc.err_num() << ", error: " << rc.get_message() << std::endl;
+                    }
 #endif
 
                     // Go to the next key value, do not increase succeed_txn_count
@@ -1117,8 +1168,9 @@ for (i = 0; i < records.size (); ++i)
                 {
 #ifndef MEASURE_PERFORMANCE
                     // We should not encounter error except M2 due to commit_lsn check
-                    std::cout << "Insert error with out-of-bound key value, key: " << actual_key
-                              << ", error no: " << rc.err_num() << ", error: " << rc.get_message() << std::endl;
+                    if ((eDUPLICATE != rc.err_num()) && (eNOTFOUND != rc.err_num()))
+                        std::cout << "Insert error with out-of-bound key value, key: " << actual_key
+                                  << ", error no: " << rc.err_num() << ", error: " << rc.get_message() << std::endl;
 #endif
 
                     // Go to the next key value, do not increase succeed_txn_count
@@ -1149,10 +1201,25 @@ for (i = 0; i < records.size (); ++i)
             // Is it time to record the performance information?
             // Note we are recording information based on succeed transactions
             // it ignores the failed transactions
-            if (0 == ((int)succeed_txn_count % RECORD_FREQUENCY))
+            if (txn_count == EXEC_TYPE)
             {
-                // Record cycles
-                record_cycles();
+                if (0 == ((int)succeed_txn_count % RECORD_FREQUENCY))
+                {
+                    // Record cycles based on successful transaction count, we wll
+                    // take 10 slots
+                    record_cycles(started_txn_count, succeed_txn_count);
+                }
+            }
+            else if (txn_time == EXEC_TYPE)
+            {
+                // Based on execution time, the transaction count can get very high
+                // take one slot every 1/10 of execution time
+                if (execution_time > current_interval)
+                {
+                    // Time to record information
+                    record_cycles(started_txn_count, succeed_txn_count);
+                    current_interval += time_interval;  // Increase the recording point
+                }
             }
         }
 
@@ -1166,20 +1233,22 @@ for (i = 0; i < records.size (); ++i)
         //     _total_cycles[0] - from shutdown to the beginning of restart, no recovery
         //     ...
         //     _total_cycles[i] - record information every RECORD_FREQUENCY successful user transactions
+        //                              or every time interval
         //     ...
-        //     _total_cycles[TOTAL_CYCLE_SLOTS] - from shutdown to finish
-        //                                                              succeed_txn_count user transactions
+        //     _total_cycles[TOTAL_CYCLE_SLOTS] - from shutdown to exit the main loop, either based on
+        //                                                              succeed_txn_count user transactions or time limit
 #ifdef MEASURE_PERFORMANCE
-        int count = 0;
         std::cout << std::endl << "Successful transaction count, elapse time(milliseconds) and CPU cycles: " << std::endl;
         for (int iIndex = 0; iIndex < _cycle_slot_index; ++iIndex)
         {
-            std::cout << " Count: " << count << ", elapse time: " << (_total_elapse[iIndex] - _start_time)
-                      << ", CPU cycles: " << (_total_cycles[iIndex] - _start);
+            std::cout << " Total txn: " << elapse_info[iIndex]._total_txn_count
+                      << ", successful txn: " << elapse_info[iIndex]._successful_txn_count
+                      << ", elapse time: " << (elapse_info[iIndex]._total_elapse - _start_time)
+                      << ", CPU cycles: " << (elapse_info[iIndex]._total_cycles - _start);
             if (0 < iIndex)
             {
-                std::cout << ", elapse delta: " << (_total_elapse[iIndex] - _total_elapse[iIndex-1]);
-                std::cout << ", cycle delta: " << (_total_cycles[iIndex] - _total_cycles[iIndex-1]) << std::endl;
+                std::cout << ", elapse delta: " << (elapse_info[iIndex]._total_elapse - elapse_info[iIndex-1]._total_elapse);
+                std::cout << ", cycle delta: " << (elapse_info[iIndex]._total_cycles - elapse_info[iIndex-1]._total_cycles) << std::endl;
             }
             else
             {
@@ -1187,8 +1256,8 @@ for (i = 0; i < records.size (); ++i)
                 // Clean shutdown - including rollback
                 // M1 - including the entire Restart
                 // M2 - M4 - Log Analysis only
-                std::cout << ", elapse delta: " << (_total_elapse[iIndex] - _start_time);
-                std::cout << ", cycle delta: " << (_total_cycles[iIndex] - _start);
+                std::cout << ", elapse delta: " << (elapse_info[iIndex]._total_elapse - _start_time);
+                std::cout << ", cycle delta: " << (elapse_info[iIndex]._total_cycles - _start);
                 if (false == crash_shutdown)
                     std::cout << ", normal cleanup time" << std::endl;
                 else
@@ -1199,8 +1268,6 @@ for (i = 0; i < records.size (); ++i)
                         std::cout << ", Log Analysis completed" << std::endl;
                 }
             }
-
-            count += RECORD_FREQUENCY;
         }
 #endif
         if (m1_default_restart == restart_mode)
@@ -1237,8 +1304,8 @@ for (i = 0; i < records.size (); ++i)
 #endif
 
         // Duration starts from 'store open', so if normal shutdown or M1, recovery has completed already
-        unsigned long long duration_CPU = (_total_cycles[_cycle_slot_index - 1] - _total_cycles[0]);
-        double duration_time = (_total_elapse[_cycle_slot_index - 1] - _total_elapse[0]);
+        unsigned long long duration_CPU = (elapse_info[_cycle_slot_index - 1]._total_cycles - elapse_info[0]._total_cycles);
+        double duration_time = (elapse_info[_cycle_slot_index - 1]._total_elapse - elapse_info[0]._total_elapse);
 
         std::cout << std::endl << "Total CPU cycles for " << succeed_txn_count << " successful user transactions: "
                   << duration_CPU << std::endl;
