@@ -207,6 +207,78 @@ class xct_t : public smlevel_1 {
     friend class lock_request_t;
     friend class xct_log_switch_t;
 
+#if defined(USE_BLOCK_ALLOC_FOR_XCT_IMPL) && (USE_BLOCK_ALLOC_FOR_XCT_IMPL==1)
+public:
+#else
+protected:
+#endif
+    typedef xct_state_t           state_t;
+
+    /* A nearly-POD struct whose only job is to enable a N:1
+       relationship between the log streams of a transaction (xct_t)
+       and its core functionality such as locking and 2PC (xct_core).
+
+       Any transaction state which should not eventually be replicated
+       per-thread goes here. Usually such state is protected by the
+       1-thread-xct-mutex.
+
+       Static data members can stay in xct_t, since they're not even
+       duplicated per-xct, let alone per-thread.
+     */
+    struct xct_core
+    {
+        xct_core(tid_t const &t, state_t s, timeout_in_ms timeout);
+        ~xct_core();
+
+        //-- from xct.h ----------------------------------------------------
+        tid_t                  _tid;
+        timeout_in_ms          _timeout; // default timeout value for lock reqs
+        bool                   _warn_on;
+        xct_lock_info_t*       _lock_info;
+        lil_private_table*     _lil_lock_info;
+
+        /** RAW-style lock manager's shadow transaction object. Garbage collected. */
+        RawXct*                _raw_lock_xct;
+
+        // the 1thread_xct mutex is used to ensure that only one thread
+        // is using the xct structure on behalf of a transaction
+        // TBD whether this should be a spin- or block- lock:
+        queue_based_lock_t     _1thread_xct;
+
+        // Count of number of threads are doing update operations.
+        // Used by start_crit and stop_crit.
+        lintel::Atomic<int> _updating_operations;
+
+        // to be manipulated only by smthread funcs
+        lintel::Atomic<int> _threads_attached;
+
+        state_t                   _state;
+        bool                      _read_only;
+
+        /*
+         * List of stores which this xct will free after completion
+         * Protected by _1thread_xct.
+         */
+        w_list_t<stid_list_elem_t,queue_based_lock_t>    _storesToFree;
+
+        /*
+         * List of load stores:  converted to regular on xct commit,
+         *                act as a temp files during xct
+         */
+        w_list_t<stid_list_elem_t,queue_based_lock_t>    _loadStores;
+
+        lintel::Atomic<int> _xct_ended; // used for self-checking (assertions) only
+        bool              _xct_aborting; // distinguish abort()ing xct from
+        // commit()ing xct when they are in state xct_freeing_space
+
+        // CS: Using these instead of the old new_xct and destroy_xct methods
+        void* operator new(size_t s);
+        void operator delete(void* p, size_t s);
+    };
+
+private:
+    xct_core* _core;
+
 public:
     static const std::string IMPL_NAME;
 
@@ -223,52 +295,33 @@ protected:
 
 /**\cond skip */
 public:
-    typedef xct_state_t           state_t;
-
-    static
-    xct_t*                        new_xct(
-        sm_stats_info_t*             stats = 0,  // allocated by caller
-        timeout_in_ms                timeout = WAIT_SPECIFIED_BY_THREAD,
-        bool                         sys_xct = false,
-        bool                         single_log_sys_xct = false,
-        bool                         loser_xct = false );
-
-    static
-    xct_t*                       new_xct(
-        const tid_t&                 tid,
-        state_t                      s,
-        const lsn_t&                 last_lsn,
-        const lsn_t&                 undo_nxt,
-        timeout_in_ms                timeout = WAIT_SPECIFIED_BY_THREAD,
-        bool                         sys_xct = false,
-        bool                         single_log_sys_xct = false,
-        bool                         loser_xct = false );
-    static
-    void                        destroy_xct(xct_t* xd);
-
     static
     rc_t                      group_commit(const xct_t *list[], int number);
 
     rc_t                      commit_free_locks(bool read_lock_only = false, lsn_t commit_lsn = lsn_t::null);
     rc_t                      early_lock_release();
 
+    // CS: Using these instead of the old new_xct and destroy_xct methods
+    void* operator new(size_t s);
+    void operator delete(void* p, size_t s);
+
 #if defined(USE_BLOCK_ALLOC_FOR_XCT_IMPL) && (USE_BLOCK_ALLOC_FOR_XCT_IMPL==1)
 public:
 #else
 protected:
 #endif
-    struct xct_core;            // forward
-protected:
-    NORET                        xct_t(
-        xct_core*                     core,
-        sm_stats_info_t*             stats,  // allocated by caller
-        const lsn_t&                 last_lsn,
-        const lsn_t&                 undo_nxt,
-        bool                         sys_xct = false,
-        bool                         single_log_sys_xct = false,
-        bool                         loser_xct = false
-                                      );
-    NORET                       ~xct_t();
+public:
+    NORET                       xct_t(
+            sm_stats_info_t*    stats = NULL,
+            timeout_in_ms       timeout = WAIT_SPECIFIED_BY_THREAD,
+            bool                sys_xct = false,
+            bool                single_log_sys_xct = false,
+            const tid_t&        tid = tid_t::null,
+            const lsn_t&        last_lsn = lsn_t::null,
+            const lsn_t&        undo_nxt = lsn_t::null,
+            bool                loser_xct = false
+            );
+    virtual                     ~xct_t();
 
 public:
 
@@ -706,69 +759,6 @@ private:
     w_rc_t                     _sync_logbuf(bool block=true, bool signal=true);
     void                       _teardown(bool is_chaining);
 
-#if defined(USE_BLOCK_ALLOC_FOR_XCT_IMPL) && (USE_BLOCK_ALLOC_FOR_XCT_IMPL==1)
-public:
-#else
-protected:
-#endif
-    /* A nearly-POD struct whose only job is to enable a N:1
-       relationship between the log streams of a transaction (xct_t)
-       and its core functionality such as locking and 2PC (xct_core).
-
-       Any transaction state which should not eventually be replicated
-       per-thread goes here. Usually such state is protected by the
-       1-thread-xct-mutex.
-
-       Static data members can stay in xct_t, since they're not even
-       duplicated per-xct, let alone per-thread.
-     */
-    struct xct_core
-    {
-        xct_core(tid_t const &t, state_t s, timeout_in_ms timeout);
-        ~xct_core();
-
-        //-- from xct.h ----------------------------------------------------
-        tid_t                  _tid;
-        timeout_in_ms          _timeout; // default timeout value for lock reqs
-        bool                   _warn_on;
-        xct_lock_info_t*       _lock_info;
-        lil_private_table*     _lil_lock_info;
-
-        /** RAW-style lock manager's shadow transaction object. Garbage collected. */
-        RawXct*                _raw_lock_xct;
-
-        // the 1thread_xct mutex is used to ensure that only one thread
-        // is using the xct structure on behalf of a transaction
-        // TBD whether this should be a spin- or block- lock:
-        queue_based_lock_t     _1thread_xct;
-
-        // Count of number of threads are doing update operations.
-        // Used by start_crit and stop_crit.
-        lintel::Atomic<int> _updating_operations;
-
-        // to be manipulated only by smthread funcs
-        lintel::Atomic<int> _threads_attached;
-
-        state_t                   _state;
-        bool                      _read_only;
-
-        /*
-         * List of stores which this xct will free after completion
-         * Protected by _1thread_xct.
-         */
-        w_list_t<stid_list_elem_t,queue_based_lock_t>    _storesToFree;
-
-        /*
-         * List of load stores:  converted to regular on xct commit,
-         *                act as a temp files during xct
-         */
-        w_list_t<stid_list_elem_t,queue_based_lock_t>    _loadStores;
-
-        lintel::Atomic<int> _xct_ended; // used for self-checking (assertions) only
-        bool              _xct_aborting; // distinguish abort()ing xct from
-        // commit()ing xct when they are in state xct_freeing_space
-    };
-
 public:
     /**
      * Early Lock Release mode.
@@ -867,7 +857,6 @@ private:
     lintel::Atomic<int> _in_compensated_op; // in the midst of a compensated operation
                                             // use an int because they can be nested.
     lsn_t                       _anchor; // the anchor for the outermost compensated op
-    xct_core*                   _core;
 
 public:
     bool                        rolling_back() const { return _rolling_back; }
@@ -1159,7 +1148,7 @@ xct_t::state() const
 // apply to local volumes only.
 class xct_auto_abort_t : public smlevel_1 {
 public:
-    xct_auto_abort_t() : _xct(xct_t::new_xct()) {
+    xct_auto_abort_t() : _xct(new xct_t()) {
         (void)  _xct->attach_update_thread();
     }
     ~xct_auto_abort_t() {
@@ -1177,7 +1166,7 @@ public:
             W_FATAL(eINTERNAL);
         }
         (void)  _xct->detach_update_thread();
-        xct_t::destroy_xct(_xct);
+        delete _xct;
     }
     rc_t commit() {
         W_DO(_xct->commit());

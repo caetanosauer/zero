@@ -739,7 +739,7 @@ bool RawLockQueue::trigger_UNDO(Compatibility& compatibility)
                                 W_COERCE(xd->abort());
 
                                 // Done with rollback of loser transaction, destroy it
-                                xct_t::destroy_xct(xd);
+                                delete xd;
 
                                 DBGOUT3( << "RawLockQueue::trigger_UNDO: blocker loser transaction successfully aborted,"
                                          << "re-attach to the original user transaction");

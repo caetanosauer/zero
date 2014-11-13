@@ -2092,10 +2092,10 @@ ss_m::_begin_xct(sm_stats_info_t *_stats, tid_t& tid, timeout_in_ms timeout, boo
         }
         // system transaction doesn't need synchronization with create_vol etc
         // TODO might need to reconsider. but really needs this change now
-        x = xct_t::new_xct(_stats, timeout, sys_xct, single_log_sys_xct);
+        x = _new_xct(_stats, timeout, sys_xct, single_log_sys_xct);
     } else {
         spinlock_read_critical_section cs(&_begin_xct_mutex);
-        x = xct_t::new_xct(_stats, timeout, sys_xct);
+        x = _new_xct(_stats, timeout, sys_xct);
         if(log) {
             // This transaction will make no events related to LSN
             // smaller than this. Used to control garbage collection, etc.
@@ -2120,10 +2120,10 @@ xct_t* ss_m::_new_xct(
         bool single_log_sys_xct)
 {
     switch (xct_impl) {
-    case XCT_TRADITIONAL:
-        return plog_xct_t::new_xct(stats, timeout, sys_xct, single_log_sys_xct);
+    case XCT_PLOG:
+        return new plog_xct_t(stats, timeout, sys_xct, single_log_sys_xct);
     default:
-        return xct_t::new_xct(stats, timeout, sys_xct, single_log_sys_xct, false);
+        return new xct_t(stats, timeout, sys_xct, single_log_sys_xct, false);
     }
 }
 
@@ -2135,7 +2135,8 @@ ss_m::_commit_xct(sm_stats_info_t*& _stats, bool lazy,
                   lsn_t* plastlsn)
 {
     w_assert3(xct() != 0);
-    xct_t& x = *xct();
+    xct_t* xp = xct();
+    xct_t& x = *xp;
     DBG(<<"commit " << ((char *)lazy?" LAZY":"") << x );
 
     if (x.is_piggy_backed_single_log_sys_xct()) {
@@ -2159,7 +2160,7 @@ ss_m::_commit_xct(sm_stats_info_t*& _stats, bool lazy,
         _stats->compute();
     }
     bool was_sys_xct W_IFDEBUG3(= x.is_sys_xct());
-    xct_t::destroy_xct(&x);
+    delete xp;
     w_assert3(was_sys_xct || xct() == 0);
 
     return RCOK;
@@ -2235,7 +2236,7 @@ ss_m::_commit_xct_group(xct_t *list[], int listlen)
         me()->attach_xct(x);
         W_DO(x->commit_free_locks());
         me()->detach_xct(x);
-        xct_t::destroy_xct(x);
+        delete x;
     }
     return RCOK;
 }
@@ -2270,7 +2271,8 @@ rc_t
 ss_m::_abort_xct(sm_stats_info_t*&             _stats)
 {
     w_assert3(xct() != 0);
-    xct_t& x = *xct();
+    xct_t* xp = xct();
+    xct_t& x = *xp;
 
     // if this is "piggy-backed" ssx, just end the status
     if (x.is_piggy_backed_single_log_sys_xct()) {
@@ -2286,7 +2288,7 @@ ss_m::_abort_xct(sm_stats_info_t*&             _stats)
         _stats->compute();
     }
 
-    xct_t::destroy_xct(&x);
+    delete xp;
     w_assert3(was_sys_xct || xct() == 0);
 
     return RCOK;

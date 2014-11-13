@@ -291,8 +291,7 @@ prologue_rc_t::~prologue_rc_t()
         // should always be able to abort.
         W_COERCE(_victim->abort());
         INC_TSTAT(log_warn_abort_cnt);
-        // delete _victim;
-        xct_t::destroy_xct(_victim);
+        delete _victim;
         delete stats; 
         _victim = 0;
     }
