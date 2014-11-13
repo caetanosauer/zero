@@ -1025,7 +1025,17 @@ restart_m::analysis_pass_forward(
             // Log record indicated this txn has ended or aborted
             // It is safe to remove it from transaction table
             if (xct_t::xct_ended != xd->state())
+            {
                 xd->change_state(xct_t::xct_ended);
+
+                // Now we have reached the end of this transaction (commit or abort)
+                // it is safe to remove this transaction from transaction table now.
+
+                // Delete the transaction from transaction table because it
+                // reduces the size of llinked-list transaction table and improve
+                // the xct_t::look_up performance of the transaction table
+                xct_t::destroy_xct(xd);
+            }
             break;
 
         case logrec_t::t_compensate:

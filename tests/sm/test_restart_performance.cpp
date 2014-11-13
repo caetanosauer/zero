@@ -91,7 +91,7 @@ enum concurrent_xct_exit_t
 #define MEASURE_PERFORMANCE 1
 
 // !!! Determine exit criteria of concurrent transactions !!!
-const concurrent_xct_exit_t EXEC_TYPE     = txn_count;
+const concurrent_xct_exit_t EXEC_TYPE     = no_txn;
 
 // TODO(Restart)... end
 
