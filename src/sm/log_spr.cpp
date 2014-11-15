@@ -277,6 +277,7 @@ rc_t restart_m::_collect_single_page_recovery_logs(
 //hints
 //delete tmp;
 #endif
+
     return RCOK;
 }
 
