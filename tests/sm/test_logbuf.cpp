@@ -2,6 +2,14 @@
  * (c) Copyright 2011-2014, Hewlett-Packard Development Company, LP
  */
 
+/*
+ * CS: this is a hack to allow access to private members of logbuf_core.
+ * I think this solution is better than converting the members to public
+ * in the header file.
+ */
+#define private public 
+#define protected public 
+
 #include "btree_test_env.h"
 #include "gtest/gtest.h"
 #include "sm_vas.h"
@@ -16,6 +24,7 @@
 #include "logbuf_core.h"
 #include "logbuf_seg.h"
 #include "log_core.h"
+#include "log_storage.h"
 
 #include "logrec.h"
 #include "lsn.h"
@@ -31,8 +40,6 @@
 
 btree_test_env *test_env;
 
-
-#ifdef LOG_BUFFER
 
 // some parameters for the new log buffer
 
@@ -64,15 +71,11 @@ rc_t consume(int size, ss_m *ssm) {
 
     return RCOK;
 }
-#endif // LOG_BUFFER
 
 
 
 // ========== test the standalone log buffer (internal states, single thread) ==========
 
-#ifdef LOG_BUFFER
-
-#else
 #ifdef LOG_DIRECT_IO
 
 #else
@@ -81,27 +84,39 @@ rc_t consume(int size, ss_m *ssm) {
 // macros
 
 #define PRIME(lsn)\
-    (log_buffer->logbuf_prime(lsn))
+    (log_buffer->_prime(lsn))
 
-#define INSERT(size)\
+#define M1_INSERT(size)\
     (log_buffer->logbuf_insert(size))
 
-#define FLUSH(lsn)\
+#define M1_FLUSH(lsn)\
     (log_buffer->logbuf_flush(lsn))
 
-#define FETCH(lsn)\
+#define M1_FETCH(lsn)\
     (log_buffer->logbuf_fetch(lsn))
 
-#define PRINT()\
+#define M1_PRINT()\
     (log_buffer->logbuf_print())
 
 
-class logbuf_tester {
+class logbuf_tester : private smthread_t {
 public:
+
+    /*
+     * CS: Introduced this enum mechanism so that the basic tests for the
+     * standalone log buffer (a.k.a. M1) can run inside an smthread.
+     * This is required (at least) so failures don't occur when using TSTATs.
+     * However there may be other issues when running outside an smthread
+     * which we are not aware of yet.
+     */
+    enum WhichTest {
+        INIT1, INIT2, INIT3, FETCH, FLUSH, INSERT, REPLACEMENT
+    };
+
     logbuf_tester(uint32_t count = LOGBUF_SEG_COUNT, uint32_t flush_trigger =
               LOGBUF_FLUSH_TRIGGER, uint32_t block_size =
               LOGBUF_BLOCK_SIZE, uint32_t seg_size = LOGBUF_SEG_SIZE, uint32_t part_size
-              = LOGBUF_PART_SIZE);
+              = LOGBUF_PART_SIZE, WhichTest t = INIT1);
     ~logbuf_tester();
 
     w_rc_t test_init(int case_no);
@@ -109,10 +124,18 @@ public:
     w_rc_t test_flush();
     w_rc_t test_fetch();
     w_rc_t test_replacement();
+    virtual void run();
+        
 
 public:
     logbuf_core *log_buffer;
-
+private:
+    uint32_t _count;
+    uint32_t _flush_trigger;
+    uint32_t _block_size;
+    uint32_t _seg_size;
+    uint32_t _part_size;
+    WhichTest _test;
 };
 
 // test module
@@ -121,12 +144,62 @@ logbuf_tester *tester = NULL;
 
 
 logbuf_tester::logbuf_tester(uint32_t count, uint32_t flush_trigger, uint32_t
-                     block_size, uint32_t seg_size, uint32_t part_size) {
-    log_buffer = new logbuf_core(count, flush_trigger, block_size, seg_size,
-                             part_size, ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT);
+                     block_size, uint32_t seg_size, uint32_t part_size, WhichTest t)
+    : smthread_t(t_regular, "logbuf_tester"),
+    _count(count),
+    _flush_trigger(flush_trigger),
+    _block_size(block_size),
+    _seg_size(seg_size),
+    _part_size(part_size),
+    _test(t)
+{
+    if (!smlevel_0::errlog) 
+        smlevel_0::errlog = new ErrLog("logbuf_tester", log_to_unix_file, "-");
+    smlevel_0::max_logsz = 1024 * 1024 * 100;
+    fork();
+    join();
+}
+
+// CS: constructor must be invoked from an smthread, so we use this little hack
+void logbuf_tester::run()
+{
+    log_buffer = new logbuf_core(
+            test_env->log_dir,
+            LOGBUF_SEG_SIZE,
+            _count, 
+            _flush_trigger,
+            _block_size,
+            _seg_size,
+            _part_size,
+            ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT);
+    
+    switch(_test) {
+        case INIT1:
+            test_init(1);
+            break;
+        case INIT2:
+            test_init(2);
+            break;
+        case INIT3:
+            test_init(3);
+            break;
+        case FETCH:
+            test_fetch();
+            break;
+        case FLUSH:
+            test_flush();
+            break;
+        case INSERT:
+            test_insert();
+            break;
+        case REPLACEMENT:
+            test_replacement();
+            break;
+    }
 }
 
 logbuf_tester::~logbuf_tester() {
+    log_buffer->shutdown();
     delete log_buffer;
 }
 
@@ -212,7 +285,7 @@ w_rc_t logbuf_tester::test_insert() {
     // case 1: to_insert starts at offset 0 in a partition
     EXPECT_EQ(lsn_t(1,0), log_buffer->_to_insert_lsn);
 
-    W_DO(INSERT(300));
+    W_DO(M1_INSERT(300));
     EXPECT_EQ(0, log_buffer->_start);
     EXPECT_EQ(300, log_buffer->_end);
     EXPECT_EQ(700, log_buffer->_free);
@@ -235,12 +308,12 @@ w_rc_t logbuf_tester::test_insert() {
 
     // case 2: to_insert starts at offset 0 in a segment,
     // but not at offset 0 in a partition
-    W_DO(INSERT(300));
-    W_DO(INSERT(400));
+    W_DO(M1_INSERT(300));
+    W_DO(M1_INSERT(400));
 
     EXPECT_EQ(lsn_t(1,1000), log_buffer->_to_insert_lsn);
 
-    W_DO(INSERT(200));
+    W_DO(M1_INSERT(200));
     EXPECT_EQ(0, log_buffer->_start);
     EXPECT_EQ(1200, log_buffer->_end);
     EXPECT_EQ(800, log_buffer->_free);
@@ -265,7 +338,7 @@ w_rc_t logbuf_tester::test_insert() {
     EXPECT_EQ(lsn_t(1,1200), log_buffer->_to_insert_lsn);
 
     // 3.1: a log record is entirely stored within a segment
-    W_DO(INSERT(300));
+    W_DO(M1_INSERT(300));
     EXPECT_EQ(0, log_buffer->_start);
     EXPECT_EQ(1500, log_buffer->_end);
     EXPECT_EQ(500, log_buffer->_free);
@@ -287,11 +360,11 @@ w_rc_t logbuf_tester::test_insert() {
     EXPECT_EQ(1500, log_buffer->_buf_epoch.end);
 
     // 3.2: a log record spans two segments
-    W_DO(INSERT(300));
+    W_DO(M1_INSERT(300));
 
     EXPECT_EQ(lsn_t(1,1800), log_buffer->_to_insert_lsn);
 
-    W_DO(INSERT(300));
+    W_DO(M1_INSERT(300));
     EXPECT_EQ(0, log_buffer->_start);
     EXPECT_EQ(2100, log_buffer->_end);
     EXPECT_EQ(900, log_buffer->_free);
@@ -315,12 +388,12 @@ w_rc_t logbuf_tester::test_insert() {
     // 3.3: a log record does not fit in the current partition
     EXPECT_EQ(lsn_t(1,2100), log_buffer->_to_insert_lsn);
     for(int i=1; i<=9; i++) {
-        W_DO(INSERT(300));
+        W_DO(M1_INSERT(300));
     }
-    W_DO(FLUSH(lsn_t(1,4800)));
+    W_DO(M1_FLUSH(lsn_t(1,4800)));
     EXPECT_EQ(lsn_t(1,4800), log_buffer->_to_insert_lsn);
 
-    W_DO(INSERT(300));
+    W_DO(M1_INSERT(300));
     EXPECT_EQ(4800, log_buffer->_start);
     EXPECT_EQ(5300, log_buffer->_end);
     EXPECT_EQ(700, log_buffer->_free);
@@ -341,6 +414,8 @@ w_rc_t logbuf_tester::test_insert() {
     EXPECT_EQ(0, log_buffer->_buf_epoch.start);
     EXPECT_EQ(300, log_buffer->_buf_epoch.end);
 
+    W_DO(M1_FLUSH(lsn_t(2,300)));
+
     return RCOK;
 }
 
@@ -352,7 +427,7 @@ w_rc_t logbuf_tester::test_flush() {
     PRIME(lsn_t(1,0));
 
     // case 1: there is no unflushed log record
-    W_DO(FLUSH(lsn));
+    W_DO(M1_FLUSH(lsn));
     EXPECT_EQ(0, log_buffer->_start);
     EXPECT_EQ(0, log_buffer->_end);
     EXPECT_EQ(1000, log_buffer->_free);
@@ -373,12 +448,12 @@ w_rc_t logbuf_tester::test_flush() {
 
 
     // case 2: the unflushed log records are within one segment
-    W_DO(INSERT(300));
-    W_DO(INSERT(300));
-    W_DO(INSERT(300));
+    W_DO(M1_INSERT(300));
+    W_DO(M1_INSERT(300));
+    W_DO(M1_INSERT(300));
 
     lsn = lsn_t(1, 900);
-    W_DO(FLUSH(lsn));
+    W_DO(M1_FLUSH(lsn));
     EXPECT_EQ(900, log_buffer->_start);
     EXPECT_EQ(900, log_buffer->_end);
     EXPECT_EQ(100, log_buffer->_free);
@@ -403,11 +478,11 @@ w_rc_t logbuf_tester::test_flush() {
     // case 3: the unflushed log records span two or more segments
     // (1, 900) to (1, 4500)
     for (int i=1; i<=12; i++) {
-        W_DO(INSERT(300));
+        W_DO(M1_INSERT(300));
     }
 
     lsn = lsn_t(1, 4500);
-    W_DO(FLUSH(lsn));
+    W_DO(M1_FLUSH(lsn));
     EXPECT_EQ(4500, log_buffer->_start);
     EXPECT_EQ(4500, log_buffer->_end);
     EXPECT_EQ(500, log_buffer->_free);
@@ -433,11 +508,11 @@ w_rc_t logbuf_tester::test_flush() {
     // (1, 4500) to (2, 1200)
     // 2*200 + 6*200
     for (int i=1; i<=8; i++) {
-        W_DO(INSERT(200));
+        W_DO(M1_INSERT(200));
     }
 
     lsn = lsn_t(2, 1200);
-    W_DO(FLUSH(lsn));
+    W_DO(M1_FLUSH(lsn));
     EXPECT_EQ(6200, log_buffer->_start);
     EXPECT_EQ(6200, log_buffer->_end);
     EXPECT_EQ(800, log_buffer->_free);
@@ -460,12 +535,12 @@ w_rc_t logbuf_tester::test_flush() {
 
 
     // corner case 1: the specified lsn is greater than to_insert
-    // all log records up to to_insert should have been flushed when FLUSH returns
-    W_DO(INSERT(300));
+    // all log records up to to_insert should have been flushed when M1_FLUSH returns
+    W_DO(M1_INSERT(300));
     EXPECT_EQ(lsn_t(2,1500), log_buffer->_to_insert_lsn);
 
     lsn = lsn_t(2, 2000);
-    W_DO(FLUSH(lsn));
+    W_DO(M1_FLUSH(lsn));
     EXPECT_EQ(6500, log_buffer->_start);
     EXPECT_EQ(6500, log_buffer->_end);
     EXPECT_EQ(500, log_buffer->_free);
@@ -488,17 +563,17 @@ w_rc_t logbuf_tester::test_flush() {
 
 
     // corner case 2: the specified lsn is less than to_insert but greater than to_flush
-    // all log records up to the specified lsn must have been flushed when FLUSH returns
+    // all log records up to the specified lsn must have been flushed when M1_FLUSH returns
     // at the same time, the flush daemon in the background would keep flushing until
     // there is no unflushed portion in the log; we use EXPECT_LE to catch changes made by
     // the flush daemon
-    W_DO(INSERT(100));
-    W_DO(INSERT(100));
+    W_DO(M1_INSERT(100));
+    W_DO(M1_INSERT(100));
     EXPECT_EQ(lsn_t(2,1700), log_buffer->_to_insert_lsn);
     EXPECT_EQ(lsn_t(2,1500), log_buffer->_to_flush_lsn);
 
     lsn = lsn_t(2, 1600);
-    W_DO(FLUSH(lsn));
+    W_DO(M1_FLUSH(lsn));
     EXPECT_LE(6600, log_buffer->_start);
     EXPECT_EQ(6700, log_buffer->_end);
     EXPECT_EQ(300, log_buffer->_free);
@@ -526,15 +601,15 @@ w_rc_t logbuf_tester::test_flush() {
 
     // before the actual test, make sure everything is flushed!
     lsn = lsn_t(2, 1700);
-    W_DO(FLUSH(lsn));
+    W_DO(M1_FLUSH(lsn));
     EXPECT_EQ(lsn_t(2,1700), log_buffer->_to_insert_lsn);
     EXPECT_EQ(lsn_t(2,1700), log_buffer->_to_flush_lsn);
 
     // the actual test
-    W_DO(INSERT(100));
+    W_DO(M1_INSERT(100));
     EXPECT_EQ(lsn_t(2,1800), log_buffer->_to_insert_lsn);
     lsn = lsn_t(2, 1600);
-    W_DO(FLUSH(lsn));
+    W_DO(M1_FLUSH(lsn));
     EXPECT_EQ(6700, log_buffer->_start);
     EXPECT_EQ(6800, log_buffer->_end);
     EXPECT_EQ(200, log_buffer->_free);
@@ -563,11 +638,11 @@ w_rc_t logbuf_tester::test_flush() {
     // // (2, 1800) to (3, 300)
     // // 10*300 + 1*300
     // for (int i=1; i<=11; i++) {
-    //     W_DO(INSERT(300));
+    //     W_DO(M1_INSERT(300));
     // }
 
     // lsn = lsn_t(2, 3000);
-    // W_DO(FLUSH(lsn));
+    // W_DO(M1_FLUSH(lsn));
     // EXPECT_EQ(10300, log_buffer->_start);
     // EXPECT_EQ(10300, log_buffer->_end);
     // EXPECT_EQ(700, log_buffer->_free);
@@ -602,63 +677,63 @@ w_rc_t logbuf_tester::test_fetch() {
 
     // fill up one partition first
     for (i=1, size=0; i<=5; i++) {
-        W_DO(INSERT(300));
-        W_DO(INSERT(300));
-        W_DO(INSERT(300));
-        W_DO(INSERT(100));
+        W_DO(M1_INSERT(300));
+        W_DO(M1_INSERT(300));
+        W_DO(M1_INSERT(300));
+        W_DO(M1_INSERT(100));
         size+=1000;
     }
-    W_DO(FLUSH(lsn_t(1,size)));
+    W_DO(M1_FLUSH(lsn_t(1,size)));
 
     // fill up another partition, except the last segment
     for (i=1, size=0; i<=4; i++) {
-        W_DO(INSERT(300));
-        W_DO(INSERT(300));
-        W_DO(INSERT(300));
-        W_DO(INSERT(100));
+        W_DO(M1_INSERT(300));
+        W_DO(M1_INSERT(300));
+        W_DO(M1_INSERT(300));
+        W_DO(M1_INSERT(100));
         size+=1000;
     }
-    W_DO(FLUSH(lsn_t(1,size)));
+    W_DO(M1_FLUSH(lsn_t(1,size)));
 
     // then add some records to the lastest segment
-    W_DO(INSERT(300));
-    W_DO(INSERT(300));
-    W_DO(INSERT(300));
+    W_DO(M1_INSERT(300));
+    W_DO(M1_INSERT(300));
+    W_DO(M1_INSERT(300));
 
 
     // now the buffer looks like this
     // (2,0) (2,1000), (2,2000), (2,3000), (2,4000)
-    PRINT();
+    M1_PRINT();
 
 
     // case 1: lsn is at offset 0 in a partition
     // hit
-    EXPECT_EQ(1, FETCH(lsn_t(2,0)));
+    EXPECT_EQ(1, M1_FETCH(lsn_t(2,0)));
     // miss
-    EXPECT_EQ(0, FETCH(lsn_t(1,0)));
+    EXPECT_EQ(0, M1_FETCH(lsn_t(1,0)));
 
 
     // case 2: lsn is at offset 0 in a segment,
     // but not at offset 0 in a partition
     // miss
-    EXPECT_EQ(0, FETCH(lsn_t(1,1000)));
+    EXPECT_EQ(0, M1_FETCH(lsn_t(1,1000)));
     // hit
-    EXPECT_EQ(1, FETCH(lsn_t(2,4000)));
+    EXPECT_EQ(1, M1_FETCH(lsn_t(2,4000)));
 
 
     // case 3: lsn is in the middle of a segment
     // miss
-    EXPECT_EQ(0, FETCH(lsn_t(1,2200)));
+    EXPECT_EQ(0, M1_FETCH(lsn_t(1,2200)));
     // hit
-    EXPECT_EQ(1, FETCH(lsn_t(2,4200)));
+    EXPECT_EQ(1, M1_FETCH(lsn_t(2,4200)));
 
 
     // corner case 1
     // the lsn is greater than or equal to to_insert
     // invalid
     EXPECT_EQ(lsn_t(2,4900), log_buffer->_to_insert_lsn);
-    EXPECT_EQ(-1, FETCH(lsn_t(2,4900)));
-    EXPECT_EQ(-1, FETCH(lsn_t(3,0)));
+    EXPECT_EQ(-1, M1_FETCH(lsn_t(2,4900)));
+    EXPECT_EQ(-1, M1_FETCH(lsn_t(3,0)));
 
 
     // corner case 2
@@ -666,8 +741,8 @@ w_rc_t logbuf_tester::test_fetch() {
     // hit
     EXPECT_EQ(lsn_t(2,4900), log_buffer->_to_insert_lsn);
     EXPECT_EQ(lsn_t(2,4000), log_buffer->_to_flush_lsn);
-    EXPECT_EQ(1, FETCH(lsn_t(2,4000)));
-    EXPECT_EQ(1, FETCH(lsn_t(2,4300)));
+    EXPECT_EQ(1, M1_FETCH(lsn_t(2,4000)));
+    EXPECT_EQ(1, M1_FETCH(lsn_t(2,4300)));
 
 
     // corner case 3
@@ -695,13 +770,13 @@ w_rc_t logbuf_tester::test_replacement() {
 
 
     // insert
-    W_DO(INSERT(300));
-    W_DO(INSERT(200)); // (1, 4000)
+    W_DO(M1_INSERT(300));
+    W_DO(M1_INSERT(200)); // (1, 4000)
 
-    W_DO(INSERT(300));
-    W_DO(INSERT(300));
-    W_DO(INSERT(300));
-    W_DO(INSERT(100)); // (1, 5000)
+    W_DO(M1_INSERT(300));
+    W_DO(M1_INSERT(300));
+    W_DO(M1_INSERT(300));
+    W_DO(M1_INSERT(100)); // (1, 5000)
 
     // 2 segments now
     EXPECT_EQ((uint32_t)2, log_buffer->_seg_list->count());
@@ -713,7 +788,7 @@ w_rc_t logbuf_tester::test_replacement() {
 
     // fetch
     // miss
-    EXPECT_EQ(0, FETCH(lsn_t(1,500)));
+    EXPECT_EQ(0, M1_FETCH(lsn_t(1,500)));
 
     // 3 segments now
     EXPECT_EQ((uint32_t)3, log_buffer->_seg_list->count());
@@ -732,10 +807,10 @@ w_rc_t logbuf_tester::test_replacement() {
     int i=0, size=0;
     // fill up 4 segments
     for (i=1, size=0; i<=3; i++) {
-        W_DO(INSERT(300));
-        W_DO(INSERT(300));
-        W_DO(INSERT(300));
-        W_DO(INSERT(100));
+        W_DO(M1_INSERT(300));
+        W_DO(M1_INSERT(300));
+        W_DO(M1_INSERT(300));
+        W_DO(M1_INSERT(100));
         size+=1000;
     }
 
@@ -748,7 +823,7 @@ w_rc_t logbuf_tester::test_replacement() {
     EXPECT_EQ(lsn_t(2,2000), log_buffer->_to_insert_seg->base_lsn);
 
     // insert
-    W_DO(INSERT(300)); // (2,3300)
+    W_DO(M1_INSERT(300)); // (2,3300)
 
     // 5 segments now
     EXPECT_EQ((uint32_t)5, log_buffer->_seg_list->count());
@@ -762,12 +837,12 @@ w_rc_t logbuf_tester::test_replacement() {
 
 
     // case 2: full, and no forced flush
-    W_DO(FLUSH(lsn_t(2,3300)));
+    W_DO(M1_FLUSH(lsn_t(2,3300)));
 
     // insert
-    W_DO(INSERT(300)); // (2,3600)
-    W_DO(INSERT(300)); // (2,3900)
-    W_DO(INSERT(300)); // (2,4200)
+    W_DO(M1_INSERT(300)); // (2,3600)
+    W_DO(M1_INSERT(300)); // (2,3900)
+    W_DO(M1_INSERT(300)); // (2,4200)
 
     // 5 segments now
     EXPECT_EQ((uint32_t)5, log_buffer->_seg_list->count());
@@ -776,11 +851,11 @@ w_rc_t logbuf_tester::test_replacement() {
     EXPECT_EQ(lsn_t(2,0), log_buffer->_seg_list->top()->base_lsn);
     EXPECT_EQ(lsn_t(2,3000), log_buffer->_to_flush_seg->base_lsn);
     EXPECT_EQ(lsn_t(2,4000), log_buffer->_to_insert_seg->base_lsn);
-    //PRINT();
+    //M1_PRINT();
 
     // fetch
     // miss
-    EXPECT_EQ(0, FETCH(lsn_t(1,500)));
+    EXPECT_EQ(0, M1_FETCH(lsn_t(1,500)));
 
     // 5 segments now
     EXPECT_EQ((uint32_t)5, log_buffer->_seg_list->count());
@@ -790,7 +865,7 @@ w_rc_t logbuf_tester::test_replacement() {
     EXPECT_EQ(lsn_t(2,3000), log_buffer->_to_flush_seg->base_lsn);
     EXPECT_EQ(lsn_t(2,4000), log_buffer->_to_insert_seg->base_lsn);
 
-    //PRINT();
+    //M1_PRINT();
 
 
     return RCOK;
@@ -806,12 +881,17 @@ TEST (LogBufferTest, Init) {
     uint32_t seg_size = 1000;
     uint32_t part_size = 5000;
 
-    for (int i=1; i<=3; i++) {
-        tester = new logbuf_tester(seg_count, flush_trigger, block_size, seg_size,
-                               part_size);
-        tester->test_init(i);
-        delete tester;
-    }
+    tester = new logbuf_tester(seg_count, flush_trigger, block_size, seg_size,
+                               part_size, logbuf_tester::INIT1);
+    delete tester;
+
+    tester = new logbuf_tester(seg_count, flush_trigger, block_size, seg_size,
+                               part_size, logbuf_tester::INIT2);
+    delete tester;
+
+    tester = new logbuf_tester(seg_count, flush_trigger, block_size, seg_size,
+                               part_size, logbuf_tester::INIT3);
+    delete tester;
 }
 
 TEST (LogBufferTest, Insert) {
@@ -822,12 +902,7 @@ TEST (LogBufferTest, Insert) {
     uint32_t part_size = 5000;
 
     tester = new logbuf_tester(seg_count, flush_trigger, block_size, seg_size,
-                           part_size);
-
-
-    tester->test_insert();
-
-
+                           part_size, logbuf_tester::INSERT);
     delete tester;
 }
 
@@ -840,12 +915,7 @@ TEST (LogBufferTest, Flush) {
     uint32_t part_size = 5000;
 
     tester = new logbuf_tester(seg_count, flush_trigger, block_size, seg_size,
-                           part_size);
-
-
-    tester->test_flush();
-
-
+                           part_size, logbuf_tester::FLUSH);
     delete tester;
 }
 
@@ -858,12 +928,7 @@ TEST (LogBufferTest, Fetch) {
     uint32_t part_size = 5000;
 
     tester = new logbuf_tester(seg_count, flush_trigger, block_size, seg_size,
-                           part_size);
-
-
-    tester->test_fetch();
-
-
+                           part_size, logbuf_tester::FETCH);
     delete tester;
 }
 
@@ -876,21 +941,10 @@ TEST (LogBufferTest, Replacement) {
     uint32_t part_size = 5000;
 
     tester = new logbuf_tester(seg_count, flush_trigger, block_size, seg_size,
-                           part_size);
-
-
-    tester->test_replacement();
-
-
+                           part_size, logbuf_tester::REPLACEMENT);
     delete tester;
 }
 #endif // LOG_DIRECT_IO
-#endif // LOG_BUFFER
-
-
-// ========== test the entire system with the new log buffer (internal states, single thread) ==========
-#ifdef LOG_BUFFER
-
 
 // size % 8 == 0
 #define INSERT(size)\
@@ -945,7 +999,7 @@ class init_test_case1  : public restart_test_base
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
 
-        logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+        logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
         EXPECT_EQ(1696, log_buffer->_start);
         EXPECT_EQ(1696, log_buffer->_end);
@@ -985,7 +1039,7 @@ class init_test_case2  : public restart_test_base
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
 
-        logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+        logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
         // after startup
         EXPECT_EQ(lsn_t(1,1696), log_buffer->_to_insert_lsn);
@@ -1023,7 +1077,7 @@ public:
     // 320 + 320 + (56 + 320 + 64 + 88)*2 = 1696
     w_rc_t post_shutdown(ss_m *ssm) {
 
-        logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+        logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
         // there is an async checkpoint going on, so let's wait a couple of seconds
         // TODO: how to avoid this sleep?
@@ -1062,7 +1116,7 @@ class init_test_case3  : public restart_test_base
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
 
-        logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+        logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
         // after startup
         EXPECT_EQ(lsn_t(1,1696), log_buffer->_to_insert_lsn);
@@ -1099,7 +1153,7 @@ public:
     // 320 + 320 + (56 + 320 + 64 + 88)*2 = 1696
     w_rc_t post_shutdown(ss_m *ssm) {
 
-        logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+        logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
         // there is an async checkpoint going on, so let's wait a couple of seconds
         // TODO: how to avoid this sleep?
@@ -1141,6 +1195,7 @@ TEST (LogBufferTest2, Init1) {
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;
@@ -1155,6 +1210,7 @@ TEST (LogBufferTest2, Init2) {
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;
@@ -1169,6 +1225,7 @@ TEST (LogBufferTest2, Init3) {
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;
@@ -1178,7 +1235,7 @@ TEST (LogBufferTest2, Init3) {
 
 // test_insert
 w_rc_t test_insert(ss_m *ssm, test_volume_t *) {
-    logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+    logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
     // after startup
     EXPECT_EQ(lsn_t(1,1696), log_buffer->_to_insert_lsn);
@@ -1352,13 +1409,14 @@ TEST (LogBufferTest2, Insert) {
     sm_options sm_options;
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
     EXPECT_EQ(test_env->runBtreeTest(test_insert, true, 1<<16, sm_options), 0);
 }
 
 
 // test_flush
 w_rc_t test_flush(ss_m *ssm, test_volume_t *) {
-    logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+    logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
     // after startup
     EXPECT_EQ(lsn_t(1,1696), log_buffer->_to_insert_lsn);
@@ -1577,6 +1635,7 @@ TEST (LogBufferTest2, Flush) {
     sm_options sm_options;
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
     EXPECT_EQ(test_env->runBtreeTest(test_flush, true, 1<<16, sm_options), 0);
 }
 
@@ -1586,7 +1645,7 @@ TEST (LogBufferTest2, Flush) {
 // TODO: assuming N=10
 w_rc_t test_fetch(ss_m *ssm, test_volume_t *) {
 
-    logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+    logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
     // after startup
     EXPECT_EQ(lsn_t(1,1696), log_buffer->_to_insert_lsn);
@@ -1721,8 +1780,11 @@ w_rc_t test_fetch(ss_m *ssm, test_volume_t *) {
 
     ll = lsn_t(3,SEG_SIZE*14+3*4096);
     EXPECT_EQ(-1, FETCH(ll));
-    ll = lsn_t(4,0);
-    EXPECT_EQ(-1, FETCH(ll));
+
+    // CS: commented out because of assertion I added in log_core::fetch.
+    // Reading beyond _curr_lsn now causes failure instead of EOF.
+    //ll = lsn_t(4,0);
+    //EXPECT_EQ(-1, FETCH(ll));
 
 
     // corner case 3
@@ -1753,6 +1815,7 @@ TEST (LogBufferTest2, Fetch) {
     sm_options sm_options;
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
     EXPECT_EQ(test_env->runBtreeTest(test_fetch, true, 1<<16, sm_options), 0);
 }
 
@@ -1765,7 +1828,7 @@ class replacement_test_case  : public restart_test_base
 public:
     w_rc_t pre_shutdown(ss_m *ssm) {
 
-        logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+        logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
         // after startup
         EXPECT_EQ(lsn_t(1,1696), log_buffer->_to_insert_lsn);
@@ -1799,7 +1862,7 @@ public:
     // 320 + 320 + (56 + 320 + 64 + 88)*2 = 1696
     w_rc_t post_shutdown(ss_m *ssm) {
 
-        logbuf_core *log_buffer = ((log_core*)ssm->log)->_log_buffer;
+        logbuf_core *log_buffer = ((logbuf_core*)ssm->log);
 
         lsn_t ll;
         logrec_t *rp = NULL;
@@ -1947,17 +2010,16 @@ TEST (LogBufferTest2, Replacement) {
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options, true, 1<<16, sm_options), 0);
 }
-#endif // LOG_BUFFER
 
 
 
 // ========== test the entire system with the new log buffer (external states, single thread) ==========
-#ifdef LOG_BUFFER
 
 
 // test operations that mostly write regular log records
@@ -2069,6 +2131,7 @@ TEST (LogBufferTest3, Write) {
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;
@@ -2251,6 +2314,7 @@ TEST (LogBufferTest3, AbortSimple) {
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;
@@ -2335,6 +2399,7 @@ TEST (LogBufferTest3, AbortBig) {
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;
@@ -2557,15 +2622,12 @@ TEST (LogBufferTest3, AbortLong) {
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;
     EXPECT_EQ(test_env->runRestartTest(&context, &options, true, 1<<16, sm_options), 0);
 }
-
-#endif // LOG_BUFFER
-
-
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

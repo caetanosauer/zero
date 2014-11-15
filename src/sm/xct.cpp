@@ -730,7 +730,7 @@ xct_log_warn_check_t::check(xct_t *& _victim)
         DBG(<<"left " << left << " trigger " << smlevel_0::log_warn_trigger
                 << " log durable_lsn " << log->durable_lsn()
                 << " log curr_lsn " << log->curr_lsn()
-                << " segment_size " << log->segment_size()
+                //<< " segment_size " << log->segment_size()
                 );
 
         if( left < smlevel_0::log_warn_trigger )
@@ -748,7 +748,7 @@ xct_log_warn_check_t::check(xct_t *& _victim)
                     xct_i i(true);
                     lsn_t l = smlevel_1::log->global_min_lsn();
                     char  buf[max_devname];
-                    log_m::make_log_name(l.file(), buf, max_devname);
+                    log->make_log_name(l.file(), buf, max_devname);
                     w_rc_t rc = (*log_warn_callback)(
                         &i,   // iterator
                         v,    // victim
@@ -2106,8 +2106,8 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
                 // also print info that shows why we didn't croak
                 // on the first check
                 << "; space left " << log->space_left()
-                << "; rsvd for checkpoint " << log->space_for_chkpt()
-                << "; max checkpoint size " << log->max_chkpt_size()
+                << "; rsvd for checkpoint " << log->space_for_chkpt() 
+                //<< "; max checkpoint size " << log->max_chkpt_size() 
                 << "\n";
 
                 tmp
@@ -2674,17 +2674,8 @@ xct_t::rollback(const lsn_t &save_pt)
 
     while (save_pt < nxt)
     {
-#ifdef LOG_BUFFER
-        // no hints
-        rc =  log->fetch(nxt, buf, 0, true);
-
-        //// hints
-        ////rc =  log->fetch(nxt, __copy__buf, 0, SINGLE_PAGE_RECOVERY);
-        //rc =  log->fetch(nxt, buf, 0, SINGLE_PAGE_RECOVERY);
-#else
-        rc =  log->fetch(nxt, buf, 0, true);
-#endif
-        if(rc.is_error() && rc.err_num()==eEOF)
+        rc =  log->fetch(nxt, buf, 0, true);        
+        if(rc.is_error() && rc.err_num()==eEOF) 
         {
             LOGTRACE2( << "U: end of log looking to fetch nxt=" << nxt);
             DBGX(<< " fetch returns EOF" );

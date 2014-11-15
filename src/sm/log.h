@@ -61,9 +61,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
-// LOG_BUFFER switch
-#include "logbuf_common.h"
-
 #undef ACQUIRE
 
 class logrec_t;
@@ -159,120 +156,42 @@ class PoorMansOldestLsnTracker;
  */
 class log_m : public smlevel_0 
 {
-protected:
-    log_m();
-
 public:
-    lsn_t               min_chkpt_rec_lsn() const ;
+    /*
+     * Constructor required for proper linking. Direct construction of log_m
+     * is not allowed because it is an abstract class.
+     */
+    log_m() {};
+    virtual ~log_m() {};
 
-    rc_t                file_was_archived(const char *file);
+    // hints for fetch, not used for now
+    enum hints_op {
+        LOG_ARCHIVING=0, 
+        SINGLE_PAGE_RECOVERY, 
+        TRANSACTION_ROLLBACK, 
+        LOG_ANALYSIS_FORWARD,
+        LOG_ANALYSIS_BACKWARD,
+        TRADITIONAL_REDO,
+        TRADITIONAL_UNDO,
+        PAGE_DRIVEN_REDO,
+        TRANSACTION_DRIVEN_UNDO,
+        ON_DEMAND_REDO,
+        ON_DEMAND_UNDO,
+        DEFAULT_HINTS,
+    };
 
-private:
-    /**\brief Helper for _write_master */
-    static void         _create_master_chkpt_contents(
-                            ostream&        s,
-                            int             arraysize,
-                            const lsn_t*    array
-                            );
+    virtual lsn_t               min_chkpt_rec_lsn() const = 0;
 
-    /**\brief Helper for _make_master_name */
-    static void         _create_master_chkpt_string(
-                            ostream&        o,
-                            int             arraysize,
-                            const lsn_t*    array,
-                            bool            old_style = false
-                            );
+    virtual rc_t                file_was_archived(const char *file) = 0;
 
-    /**\brief Helper for _read_master */
-    static rc_t         _parse_master_chkpt_contents(
-                            istream&      s,
-                            int&          listlength,
-                            lsn_t*        lsnlist
-                            );
+    typedef    smlevel_0::partition_number_t partition_number_t; 
 
-    /**\brief Helper for _read_master */
-    static rc_t         _parse_master_chkpt_string(
-                            istream&      s,
-                            lsn_t&        master_lsn,
-                            lsn_t&        min_chkpt_rec_lsn,
-                            int&          number_of_others,
-                            lsn_t*        others,
-                            bool&         old_style
-                            );
-
-    static rc_t         _read_master( 
-                            const char *fname,
-                            int prefix_len,
-                            lsn_t &tmp,
-                            lsn_t& tmp1,
-                            lsn_t* lsnlist,
-                            int&   listlength,
-                            bool&  old_style
-                        );
-
-    /**\brief Helper for parse_master_chkpt_string */
-    static rc_t         _check_version(
-                            uint32_t        major,
-                            uint32_t        minor
-                            );
-    void                _make_master_name(
-                            const lsn_t&         master_lsn, 
-                            const lsn_t&        min_chkpt_rec_lsn,
-                            char*                 buf,
-                            int                        bufsz,
-                            bool                old_style);
-
-    // helper for set_master
-    void                _write_master(const lsn_t &l, const lsn_t &min);
-
-
-public:
     /**\brief Do whatever needs to be done before destructor is called, then destruct.
      *\details
      * Shutdown calls the desctructor; the server, after calling shutdown,
      * nulls out its pointer.
      */
-    void           shutdown(); 
-
-protected:
-    /// shutdown must be used instead.
-    virtual NORET  ~log_m();
-public:
-
-
-    /**\brief Create a log manager
-     * @param[out] the_log
-     * @param[in] path  Absolute or relative path name for directory of 
-     * log files.
-     * @param[in] wrlogbufsize  Size of log buffer, see ss_m run-time options.
-     * @param[in] reformat  If true, the manager will blow away the log and start over.
-     * This precludes recovery.
-     * @param[in] carray_active_slot_count Max number of Consolidation Array slots that
-     * can be active at the same time.
-     * \todo explain the logbuf size and log size options
-     */
-    static rc_t         new_log_m(
-                             log_m        *&the_log,
-                             const char   *path,
-                             int          wrlogbufsize,
-                             bool         reformat,
-                             int          carray_active_slot_count
-#ifdef LOG_BUFFER
-                             ,
-                             int logbuf_seg_count,
-                             int logbuf_flush_trigger,
-                             int logbuf_block_size
-#endif
-                                  );
-
-    /**\brief log segment size; exported for use by ss_m::options processing 
-     * \details
-     * \todo explain log_m::segment_size
-     */
-    static fileoff_t          segment_size();
-    static fileoff_t          partition_size(long psize);
-    static fileoff_t          min_partition_size();
-    static fileoff_t          max_partition_size();
+    virtual void           shutdown() = 0; 
 
     /**\brief Return name of directory holding log files 
      * \details
@@ -284,16 +203,16 @@ public:
      * \details
      * Used by xct_impl for error-reporting. 
      */
-    fileoff_t           space_left() const;
-    fileoff_t           space_for_chkpt() const;
+    virtual fileoff_t           space_left() const = 0;
+    virtual fileoff_t           space_for_chkpt() const = 0;
 
     /**\brief Return name of log file for given partition number.
      * \details
      * Used by xct for error-reporting and callback-handling.
      */
-    static const char * make_log_name(uint32_t n,
+    virtual const char * make_log_name(uint32_t n,
                         char*              buf,
-                        int                bufsz);
+                        int                bufsz) = 0;
     
     /**\brief Infect the log.
      * \details
@@ -304,7 +223,7 @@ public:
      * hit; this should cause a crash and recovery.
      * Corruption is turned off right after the log record is corrupted.
      */
-    void                start_log_corruption();
+    virtual void                start_log_corruption() = 0;
 
     /**\brief Return first lsn of a given partition. 
      * \details
@@ -320,46 +239,37 @@ public:
      * Used by restart.
      * Used by crash to flush log to the end.
      */
-    lsn_t               curr_lsn()  const;
+    virtual lsn_t               curr_lsn()  const = 0;
 
-    bool                squeezed_by(const lsn_t &)  const ;
+    //virtual bool                squeezed_by(const lsn_t &)  const  = 0;
 
 
-    lsn_t               durable_lsn() const;
-    lsn_t               master_lsn() const;
+    virtual lsn_t               durable_lsn() const = 0;
+    virtual lsn_t               master_lsn() const = 0;
 
     // not called from the implementation:
-    rc_t                scavenge(const lsn_t &min_rec_lsn, 
-                               const lsn_t &min_xct_lsn);
-    rc_t                insert(logrec_t &r, lsn_t* ret);
-    rc_t                compensate(const lsn_t& orig_lsn, 
-                               const lsn_t& undo_lsn);
+    virtual rc_t                scavenge(const lsn_t &min_rec_lsn, 
+                               const lsn_t &min_xct_lsn) = 0;
+    virtual rc_t                insert(logrec_t &r, lsn_t* ret) = 0;
+    virtual rc_t                compensate(const lsn_t& orig_lsn, 
+                               const lsn_t& undo_lsn) = 0;
 
-#ifdef LOG_BUFFER
     // used by log_i and xct_impl
-    rc_t                fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt=NULL, const bool forward = true);
-    rc_t                fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt=NULL, hints_op op=DEFAULT_HINTS);
-#else
-    // used by log_i and xct_impl
-    rc_t                fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt=NULL, const bool forward = true);
-#endif
+    virtual rc_t                fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt=NULL, const bool forward = true) = 0;
+    virtual rc_t                fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt=NULL, hints_op op=DEFAULT_HINTS) = 0;
             // used in implementation also:
-    virtual void        release(); // used by log_i
-    virtual rc_t        flush(const lsn_t& lsn, bool block=true, bool signal=true, bool *ret_flushed=NULL);
+    virtual void        release() = 0; // used by log_i
+    virtual rc_t        flush(const lsn_t& lsn, bool block=true, bool signal=true, bool *ret_flushed=NULL) = 0;
 
-    fileoff_t           reserve_space(fileoff_t howmuch);
-    void                release_space(fileoff_t howmuch);
-    rc_t                wait_for_space(fileoff_t &amt, int32_t timeout);
-    static fileoff_t    take_space(fileoff_t *ptr, int amt) ;
-
-    long                max_chkpt_size() const;
-    bool                verify_chkpt_reservation();
-    fileoff_t           consume_chkpt_reservation(fileoff_t howmuch);
-    void                activate_reservations() ;
+    virtual fileoff_t           reserve_space(fileoff_t howmuch) = 0;
+    virtual void                release_space(fileoff_t howmuch) = 0;
+    virtual rc_t                wait_for_space(fileoff_t &amt, int32_t timeout) = 0;
+    virtual fileoff_t           consume_chkpt_reservation(fileoff_t howmuch) = 0;
+    virtual void                activate_reservations()  = 0;
                      
-    void                set_master(const lsn_t& master_lsn, 
+    virtual void                set_master(const lsn_t& master_lsn, 
                             const lsn_t& min_lsn, 
-                            const lsn_t& min_xct_lsn);
+                            const lsn_t& min_xct_lsn) = 0;
 
 
     // used by bf_m
@@ -378,33 +288,12 @@ public:
     rc_t    flush_all(bool block=true) { 
                           return flush(curr_lsn().advance(-1), block); }
 
-    PoorMansOldestLsnTracker* get_oldest_lsn_tracker();
+    virtual PoorMansOldestLsnTracker* get_oldest_lsn_tracker() = 0;
 
-    /**
-    * \brief Apply single-page-recovery to the given page.
-    * \ingroup Single-Page-Recovery
-    * Defined in log_spr.cpp.
-    * \NOTE This method returns an error if the user had truncated
-    * the transaction logs required for the recovery.
-    * @param[in, out] p the page to recover.
-    * @param[in] emlsn the LSN up to which we should recover the page.
-    * @param[in] actual_emlsn is set to false if we do not have the actual emlsn due to page corruption
-    *                         during recovery (no parent page)
-    * @pre p has a backup in the backup file
-    * @pre p.is_fixed() (could be bufferpool managed or non-bufferpool managed)
-    */
-    rc_t recover_single_page(fixable_page_h &p, const lsn_t &emlsn, 
-                                 const bool actual_emlsn = true);
+    virtual partition_number_t  partition_num() const = 0;
 
     /**\brief used by partition */
-    fileoff_t limit() const;
-
-    /**
-     * \ingroup Single-Page-Recovery
-     * Defined in log_spr.cpp.
-     * @copydoc ss_m::dump_page_lsn_chain(std::ostream&, const lpid_t &, const lsn_t&)
-     */
-    void dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t &max_lsn);
+    virtual fileoff_t limit() const = 0;
 
 private:
     // no copying allowed
