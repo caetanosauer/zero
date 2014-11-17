@@ -562,9 +562,17 @@ logbuf_core::fetch(
     if(must_be_durable > _durable_lsn) {
         W_DO(flush(must_be_durable));
     }
-    if (ll >= curr_lsn()) {
+    if (forward && ll >= curr_lsn()) {
         w_assert0(ll == curr_lsn());
+        // reading the curr_lsn during recovery yields a skip log record,
+        // but since there is no next partition to open, scan must stop
+        // here, without handling skip below
         // exception/error should not be used for control flow (TODO)
+        return RC(eEOF);
+    }
+    if (!forward && ll == lsn_t::null) {
+        // for a backward scan, nxt pointer is set to null
+        // when the first log record in the first partition is set
         return RC(eEOF);
     }
 
