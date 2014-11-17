@@ -280,6 +280,7 @@ TEST (LbStressTest, ParallelAppends) {
     sm_options options = make_options_huge(false);
     options.set_int_option("sm_logbufsize", 128 << 10);
     options.set_int_option("sm_logsize", 8192 << 10);
+    options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
     EXPECT_EQ(test_env->runBtreeTest(parallel_appends, true, 1 << 16, options), 0);
 }
 

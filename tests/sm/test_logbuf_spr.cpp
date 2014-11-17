@@ -11,6 +11,7 @@
 #include "btree_page_h.h"
 #include "btree_impl.h"
 #include "log.h"
+#include "logbuf_core.h"
 #include "w_error.h"
 #include "backup.h"
 
@@ -177,6 +178,7 @@ TEST (LogBufferTest_Spr, NoChange) {
     sm_options options;
     options.set_int_option("sm_logbufsize", SEG_SIZE);
     options.set_int_option("sm_logsize", LOG_SIZE);
+    options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
     EXPECT_EQ(0, test_env->runBtreeTest(test_nochange, options));
 }
 
@@ -238,6 +240,7 @@ TEST (LogBufferTest_Spr, OneChange) {
     sm_options options;
     options.set_int_option("sm_logbufsize", SEG_SIZE);
     options.set_int_option("sm_logsize", LOG_SIZE);
+    options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
 
     EXPECT_EQ(0, test_env->runBtreeTest(test_one_change, options));
 }
@@ -301,6 +304,7 @@ TEST (LogBufferTest_Spr, TwoChanges) {
     sm_options options;
     options.set_int_option("sm_logbufsize", SEG_SIZE);
     options.set_int_option("sm_logsize", LOG_SIZE);
+    options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
 
     EXPECT_EQ(0, test_env->runBtreeTest(test_two_changes, options));
 }
@@ -417,6 +421,7 @@ TEST (LogBufferTest_Spr, MultiPagesNone) {
     sm_options options;
     options.set_int_option("sm_logbufsize", SEG_SIZE);
     options.set_int_option("sm_logsize", LOG_SIZE);
+    options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
     EXPECT_EQ(0, test_env->runBtreeTest(test_multi_pages, options));
 }
 TEST (LogBufferTest_Spr, MultiPagesSourceOnly) {
@@ -426,6 +431,7 @@ TEST (LogBufferTest_Spr, MultiPagesSourceOnly) {
     sm_options options;
     options.set_int_option("sm_logbufsize", SEG_SIZE);
     options.set_int_option("sm_logsize", LOG_SIZE);
+    options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
     EXPECT_EQ(0, test_env->runBtreeTest(test_multi_pages, options));
 }
 TEST (LogBufferTest_Spr, MultiPagesDestinationOnly) {
@@ -435,6 +441,7 @@ TEST (LogBufferTest_Spr, MultiPagesDestinationOnly) {
     sm_options options;
     options.set_int_option("sm_logbufsize", SEG_SIZE);
     options.set_int_option("sm_logsize", LOG_SIZE);
+    options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
     EXPECT_EQ(0, test_env->runBtreeTest(test_multi_pages, options));
 }
 TEST (LogBufferTest_Spr, MultiPagesDestinationBoth) {
@@ -444,6 +451,7 @@ TEST (LogBufferTest_Spr, MultiPagesDestinationBoth) {
     sm_options options;
     options.set_int_option("sm_logbufsize", SEG_SIZE);
     options.set_int_option("sm_logsize", LOG_SIZE);
+    options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
     EXPECT_EQ(0, test_env->runBtreeTest(test_multi_pages, options));
 }
 

@@ -173,6 +173,7 @@ TEST (LogBufferTest, ForwardScan1) {
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;
@@ -188,6 +189,7 @@ TEST (LogBufferTest, ForwardScan2) {
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;
@@ -358,6 +360,7 @@ TEST (LogBufferTest, BackwardScan1) {
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;
@@ -373,6 +376,7 @@ TEST (LogBufferTest, BackwardScan2) {
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;
@@ -388,6 +392,7 @@ TEST (LogBufferTest, BackwardScan3) {
 
     sm_options.set_int_option("sm_logbufsize", SEG_SIZE);
     sm_options.set_int_option("sm_logsize", LOG_SIZE);
+    sm_options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
 
     options.shutdown_mode = normal_shutdown;
     options.restart_mode = m1_default_restart;

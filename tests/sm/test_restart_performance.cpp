@@ -195,6 +195,9 @@ sm_options make_perf_options()
     options.set_int_option("sm_logbufsize",  (1 << 20));               // In bytes, 1MB
     options.set_int_option("sm_logsize", (1 << 23));                   // In KB, 8GB
 
+    // The following setting enable the new log manager implementation (using big log read and log buffer
+    options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
+
     // Lock
     options.set_int_option("sm_locktablesize", (1 << 16));             // 64KB
     options.set_int_option("sm_rawlock_lockpool_initseg", (1 << 8));   // 256 bytes
