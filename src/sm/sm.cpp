@@ -84,6 +84,7 @@ class prologue_rc_t;
 #include "log_carray.h"
 #include "log_lsn_tracker.h"
 
+#include "allocator.h"
 #include "plog_xct.h"
 #include "logbuf_common.h"
 #include "log_core.h"
@@ -103,6 +104,12 @@ lsn_t        smlevel_0::commit_lsn = lsn_t::null;
 lsn_t        smlevel_0::redo_lsn = lsn_t::null;
 lsn_t        smlevel_0::last_lsn = lsn_t::null;
 uint32_t     smlevel_0::in_doubt_count = 0;
+
+#ifdef USE_TLS_ALLOCATOR
+    sm_tls_allocator smlevel_0::allocator;
+#else
+    sm_naive_allocator smlevel_0::allocator;
+#endif
 
 
 // This is the controlling variable to determine which mode to use at run time if user did not specify restart mode:

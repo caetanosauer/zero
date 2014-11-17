@@ -196,9 +196,6 @@ class stid_list_elem_t  {
  */
 class xct_t : public smlevel_1 {
 /**\cond skip */
-#if USE_BLOCK_ALLOC_FOR_LOGREC
-    friend class block_alloc<xct_t>;
-#endif
     friend class xct_i;
     friend class smthread_t;
     friend class restart_m;
@@ -207,11 +204,7 @@ class xct_t : public smlevel_1 {
     friend class lock_request_t;
     friend class xct_log_switch_t;
 
-#if defined(USE_BLOCK_ALLOC_FOR_XCT_IMPL) && (USE_BLOCK_ALLOC_FOR_XCT_IMPL==1)
 public:
-#else
-protected:
-#endif
     typedef xct_state_t           state_t;
 
     /* A nearly-POD struct whose only job is to enable a N:1
@@ -305,11 +298,6 @@ public:
     void* operator new(size_t s);
     void operator delete(void* p, size_t s);
 
-#if defined(USE_BLOCK_ALLOC_FOR_XCT_IMPL) && (USE_BLOCK_ALLOC_FOR_XCT_IMPL==1)
-public:
-#else
-protected:
-#endif
 public:
     NORET                       xct_t(
             sm_stats_info_t*    stats = NULL,

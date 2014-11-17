@@ -1,37 +1,15 @@
-
 #include "w_defines.h"
 
 #define SM_SOURCE
 #define PLOG_XCT_C
 
 #include "plog_xct.h"
+#include "allocator.h"
 
 const std::string plog_xct_t::IMPL_NAME = "plog";
 plog_ext_m* plog_xct_t::ext_mgr = NULL;
 
-#if defined(USE_BLOCK_ALLOC_FOR_XCT_IMPL) && (USE_BLOCK_ALLOC_FOR_XCT_IMPL==1)
-DECLARE_TLS(block_pool<xct_t>, plog_xct_pool);
-#endif
-
-void* plog_xct_t::operator new(size_t s)
-{
-#if defined(USE_BLOCK_ALLOC_FOR_XCT_IMPL) && (USE_BLOCK_ALLOC_FOR_XCT_IMPL==1)
-    w_assert1(s == sizeof(plog_xct_t));
-    return xct_pool->acquire();
-#else
-    return malloc(s);
-#endif
-}
-
-void plog_xct_t::operator delete(void* p, size_t s)
-{
-#if defined(USE_BLOCK_ALLOC_FOR_XCT_IMPL) && (USE_BLOCK_ALLOC_FOR_XCT_IMPL==1)
-    w_assert1(s == sizeof(plog_xct_t));
-    xct_pool->release(p);
-#else
-    free(p);
-#endif
-}
+DEFINE_SM_ALLOC(plog_xct_t);
 
 plog_xct_t::plog_xct_t(
     sm_stats_info_t*             stats,  // allocated by caller

@@ -6,28 +6,17 @@
 
 #define SM_SOURCE
 #define XCT_C
-// These #defines must precede inclusion of xct.h
-// USE_BLOCK_ALLOC_FOR_LOGREC is in xct.h only for the purpose
-// of a friend declaration.
-// USE_BLOCK_ALLOC_FOR_XCT_IMPL is in xct.h only for the purpose
-// of private/public declaration of xct_core.
-#define USE_BLOCK_ALLOC_FOR_LOGREC 1
-#define USE_BLOCK_ALLOC_FOR_XCT_IMPL 1
 
 #include <new>
 #define SM_LEVEL 0
 #include "sm_int_1.h"
 
-#if USE_BLOCK_ALLOC_FOR_LOGREC
-#include "block_alloc.h"
-#endif
 #include "tls.h"
 
 #include "lock.h"
 #include <sm_int_4.h>
 #include "xct_dependent.h"
 #include "xct.h"
-#include "logrec.h"
 #include "lock_x.h"
 #include "lock_lil.h"
 #include <w_strstream.h>
@@ -38,9 +27,12 @@
 #include <sstream>
 #include "crash.h"
 #include "chkpt.h"
+#include "logrec.h"
 #include "bf_tree.h"
 #include "lock_raw.h"
 #include "log_lsn_tracker.h"
+
+#include "allocator.h"
 
 const std::string xct_t::IMPL_NAME = "traditional";
 
@@ -192,12 +184,6 @@ inline bool   xct_t::should_consume_rollback_resv(int t) const
         || t == logrec_t::t_compensate ;
  }
 
-#if USE_BLOCK_ALLOC_FOR_LOGREC
-// Pool from which the xct_t allocates logrec_t for
-// the _log_buf. There is one per xct.
-DECLARE_TLS(block_alloc<logrec_t>, logrec_pool);
-#endif
-
 struct lock_info_ptr {
     xct_lock_info_t* _ptr;
 
@@ -247,56 +233,9 @@ struct lil_lock_info_ptr {
 
 DECLARE_TLS(lil_lock_info_ptr, agent_lil_lock_info);
 
-
-/*********************************************************************
- *
- *  Constructors and destructor
- *
- *********************************************************************/
-#if defined(USE_BLOCK_ALLOC_FOR_XCT_IMPL) && (USE_BLOCK_ALLOC_FOR_XCT_IMPL==1)
-DECLARE_TLS(block_pool<xct_t>, xct_pool);
-DECLARE_TLS(block_pool<xct_t::xct_core>, core_pool);
-#endif
-
-void* xct_t::operator new(size_t s)
-{
-#if defined(USE_BLOCK_ALLOC_FOR_XCT_IMPL) && (USE_BLOCK_ALLOC_FOR_XCT_IMPL==1)
-    w_assert1(s == sizeof(xct_t));
-    return xct_pool->acquire();
-#else
-    return malloc(s);
-#endif
-}
-
-void xct_t::operator delete(void* p, size_t s)
-{
-#if defined(USE_BLOCK_ALLOC_FOR_XCT_IMPL) && (USE_BLOCK_ALLOC_FOR_XCT_IMPL==1)
-    w_assert1(s == sizeof(xct_t));
-    xct_pool->release(p);
-#else
-    free(p);
-#endif
-}
-
-void* xct_t::xct_core::operator new(size_t s)
-{
-#if defined(USE_BLOCK_ALLOC_FOR_XCT_IMPL) && (USE_BLOCK_ALLOC_FOR_XCT_IMPL==1)
-    w_assert1(s == sizeof(xct_core));
-    return xct_pool->acquire();
-#else
-    return malloc(s);
-#endif
-}
-
-void xct_t::xct_core::operator delete(void* p, size_t s)
-{
-#if defined(USE_BLOCK_ALLOC_FOR_XCT_IMPL) && (USE_BLOCK_ALLOC_FOR_XCT_IMPL==1)
-    w_assert1(s == sizeof(xct_core));
-    xct_pool->release(p);
-#else
-    free(p);
-#endif
-}
+// Define customized new and delete operators for sm allocation
+DEFINE_SM_ALLOC(xct_t);
+DEFINE_SM_ALLOC(xct_t::xct_core);
 
 xct_t::xct_core::xct_core(tid_t const &t, state_t s, timeout_in_ms timeout)
     :
@@ -393,14 +332,8 @@ xct_t::xct_t(sm_stats_info_t* stats, timeout_in_ms timeout, bool sys_xct,
     else
         _loser_xct = loser_false; // Not a loser transaction
 
-    // CS TODO: not required for plog_xct
-#if USE_BLOCK_ALLOC_FOR_LOGREC
-    _log_buf = new (*logrec_pool) logrec_t; // deleted when xct goes away
-    _log_buf_for_piggybacked_ssx = new (*logrec_pool) logrec_t;
-#else
     _log_buf = new logrec_t; // deleted when xct goes away
     _log_buf_for_piggybacked_ssx = new logrec_t;
-#endif
 
 #ifdef ZERO_INIT
     memset(_log_buf, '\0', sizeof(logrec_t));
@@ -482,13 +415,9 @@ xct_t::~xct_t()
 
         while (_dependent_list.pop()) ;
 
-#if USE_BLOCK_ALLOC_FOR_LOGREC
-        logrec_pool->destroy_object(_log_buf);
-        logrec_pool->destroy_object(_log_buf_for_piggybacked_ssx);
-#else
         delete _log_buf;
         delete _log_buf_for_piggybacked_ssx;
-#endif
+
         // clean up what's stored in the thread
         me()->no_xct(this);
     }

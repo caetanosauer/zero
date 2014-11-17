@@ -13,12 +13,15 @@
 #include "logdef_gen.cpp"
 #include "vec_t.h"
 #include "alloc_cache.h"
+#include "allocator.h"
 
 
 #include <iomanip>
 typedef        ios::fmtflags        ios_fmtflags;
 
 #include <new>
+
+DEFINE_SM_ALLOC(logrec_t);
 
 /*********************************************************************
  *

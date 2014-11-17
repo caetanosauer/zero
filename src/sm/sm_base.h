@@ -88,10 +88,11 @@ class lock_m;
 
 class tid_t;
 class option_t;
-
 class rid_t;
-
 class lsn_t;
+
+class sm_naive_allocator;
+class sm_tls_allocator;
 
 #ifndef        SM_EXTENTSIZE
 #define        SM_EXTENTSIZE        8
@@ -575,6 +576,15 @@ public:
                                    // if it is created by VAS
 
     static ErrLog* errlog;
+
+    // TODO: allocator flag should be specified by cmake
+#define USE_TLS_ALLOCATOR
+
+#ifdef USE_TLS_ALLOCATOR
+    static sm_tls_allocator allocator;
+#else
+    static sm_naive_allocator allocator;
+#endif
 
     static bool         shutdown_clean;
     static bool         shutting_down;
