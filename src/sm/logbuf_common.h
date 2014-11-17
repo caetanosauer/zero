@@ -9,10 +9,7 @@
 // define LOG_BUFFER when using the new log buffer
 // disable LOG_BUFFER when using the original buffer
 // disable LOG_BUFFER when testing the standalone log buffer
-
-// TODO(Restart)... performance, disable to use the original logbuf with backward scan fix
-#define LOG_BUFFER
-
+//#define LOG_BUFFER // CS: disabled until refactoring is complete
 
 // direct IO switch
 // works for both org and new log buffer
@@ -53,22 +50,5 @@ const uint32_t LOGBUF_SEG_SIZE = 128 * LOGBUF_BLOCK_SIZE;
 // it's actually calculated in log_core::_set_size
 // it must be an integral number of _segsize
 const uint32_t LOGBUF_PART_SIZE = 128 * LOGBUF_SEG_SIZE;
-
-// hints for fetch, not used for now
-enum hints_op {
-    LOG_ARCHIVING=0,
-    SINGLE_PAGE_RECOVERY,
-    TRANSACTION_ROLLBACK,
-    LOG_ANALYSIS_FORWARD,
-    LOG_ANALYSIS_BACKWARD,
-    TRADITIONAL_REDO,
-    TRADITIONAL_UNDO,
-    PAGE_DRIVEN_REDO,
-    TRANSACTION_DRIVEN_UNDO,
-    ON_DEMAND_REDO,
-    ON_DEMAND_UNDO,
-    DEFAULT_HINTS,
-};
-
 
 #endif // LOGBUF_COMMON_H

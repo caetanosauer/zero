@@ -64,23 +64,15 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "sm_int_1.h"
 #include "logtype_gen.h"
 #include "log.h"
-#include "log_core.h"
+#include "log_storage.h"
 
 // needed for skip_log
 #include "logdef_gen.cpp"
 
-// LOG_BUFFER and LOG_DIRECT_IO switch
-#include "logbuf_common.h"
-
-
-char *
-partition_t::_readbuf() { return _owner->readbuf(); }
-
 #ifdef LOG_DIRECT_IO
 // use the log manager's write buffer as a temp buffer to store the last block of
 // the unflushed log records and a skip record
-char *
-partition_t::_writebuf() { return _owner->writebuf(); }
+//char *             partition_t::writebuf { return _owner->writebuf(); }
 #endif
 
 #if W_DEBUG_LEVEL > 2
@@ -196,10 +188,9 @@ partition_t::clear()
     _fhdl_app = invalid_fhdl;
 }
 
-void
-partition_t::init(log_core *owner)
+void              
+partition_t::init(log_storage *owner) 
 {
-    _start = 0; // always
     _owner = owner;
     _eop = owner->limit(); // always
     DBGTHRD(<< "partition_t::init setting _eop to " << _eop );
@@ -211,10 +202,10 @@ partition_t::init(log_core *owner)
 // block to be cleared upon first use.
 class block_of_zeroes {
 private:
-    char _block[log_core::BLOCK_SIZE];
+    char _block[log_storage::BLOCK_SIZE];
 public:
     NORET block_of_zeroes() {
-        memset(&_block[0], 0, log_core::BLOCK_SIZE);
+        memset(&_block[0], 0, log_storage::BLOCK_SIZE);
     }
     char *block() { return _block; }
 };
@@ -237,6 +228,7 @@ char *block_of_zeros() {
  */
 void
 partition_t::flush(
+        char* writebuf,
         int fd, // not necessarily fhdl_app() since flush is called from
         // skip, when peeking and this might be in recovery.
         lsn_t lsn,  // needed so that we can set the lsn in the skip_log record
@@ -258,9 +250,9 @@ partition_t::flush(
                 << " end2 " << end2 );
 
     // This change per e-mail from Ippokratis, 16 Jun 09:
-    // long file_offset = _owner->floor(lsn.lo(), log_core::BLOCK_SIZE);
+    // long file_offset = _owner->floor(lsn.lo(), log_storage::BLOCK_SIZE);
     // works because BLOCK_SIZE is always a power of 2
-    long file_offset = log_core::floor2(lsn.lo(), log_core::BLOCK_SIZE);
+    long file_offset = log_storage::floor2(lsn.lo(), log_storage::BLOCK_SIZE);
     // offset is rounded down to a block_size
     long delta = lsn.lo() - file_offset;
 
@@ -285,8 +277,8 @@ partition_t::flush(
     else {
         if (start2 != end2) {
             // case 2: wrapped, flush both start1 to end1 and start2 to end2
-            w_assert1(start2 == 0);
-            w_assert1(end1 % log_core::BLOCK_SIZE == 0); // already aligned
+            w_assert1(start2 == 0); 
+            w_assert1(end1 % log_storage::BLOCK_SIZE == 0); // already aligned
 
             // adjust down to the nearest full block
             w_assert1(start1 >= delta);
@@ -333,16 +325,16 @@ partition_t::flush(
     long total = write_size + s->length();
 
     // This change per e-mail from Ippokratis, 16 Jun 09:
-    // long grand_total = _owner->ceil(total, log_core::BLOCK_SIZE);
+    // long grand_total = _owner->ceil(total, log_storage::BLOCK_SIZE);
     // works because BLOCK_SIZE is always a power of 2
-    long grand_total = log_core::ceil2(total, log_core::BLOCK_SIZE);
+    long grand_total = log_storage::ceil2(total, log_storage::BLOCK_SIZE);
     // take it up to multiple of block size
-    w_assert2(grand_total % log_core::BLOCK_SIZE == 0);
+    w_assert2(grand_total % log_storage::BLOCK_SIZE == 0);
 
     uint64_t zeros = grand_total - total;
 
 
-    if(grand_total == log_core::BLOCK_SIZE) {
+    if(grand_total == log_storage::BLOCK_SIZE) {
         // 1-block flush
         INC_TSTAT(log_short_flush);
     } else {
@@ -360,19 +352,19 @@ partition_t::flush(
     if (handle_end1 == false) {
         // case 1 & 2
         // handle end2
-        offset = end2 % log_core::BLOCK_SIZE;
+        offset = end2 % log_storage::BLOCK_SIZE;
         end2 -= offset;
 
         // copy the last unaligned portion from log buffer to the temp write buffer
-        memcpy(_writebuf(), (char*)buf+end2, offset);
+        memcpy(writebuf, (char*)buf+end2, offset);
         temp_end += offset;
 
         // copy the skip record to the temp write buffer
-        memcpy(_writebuf()+temp_end, (char*)s, s->length());
+        memcpy(writebuf+temp_end, (char*)s, s->length()); 
         temp_end += s->length();
 
-        // pad zero to make the real end
-        memcpy(_writebuf()+temp_end, block_of_zeros(), zeros);
+        // pad zero to make the real end 
+        memcpy(writebuf+temp_end, block_of_zeros(), zeros); 
         temp_end += zeros;
     }
     else {
@@ -380,19 +372,19 @@ partition_t::flush(
         w_assert1(start1 != end1);
 
         // handle end1
-        offset = end1 % log_core::BLOCK_SIZE;
+        offset = end1 % log_storage::BLOCK_SIZE;
         end1 -= offset;
 
         // copy the last unaligned portion from log buffer to the temp write buffer
-        memcpy(_writebuf(), (char*)buf+end1, offset);
+        memcpy(writebuf, (char*)buf+end1, offset);
         temp_end += offset;
 
         // copy the skip record to the temp write buffer
-        memcpy(_writebuf()+temp_end, (char*)s, s->length());
+        memcpy(writebuf+temp_end, (char*)s, s->length()); 
         temp_end += s->length();
 
-        // pad zero to make the real end
-        memcpy(_writebuf()+temp_end, block_of_zeros(), zeros);
+        // pad zero to make the real end 
+        memcpy(writebuf+temp_end, block_of_zeros(), zeros); 
         temp_end += zeros;
     }
 
@@ -403,13 +395,13 @@ partition_t::flush(
 
         iovec_t iov[] = {
             iovec_t((char*)buf+start1,                end1-start1),
-            iovec_t((char*)buf+start2,                end2-start2),
-            iovec_t((char*)_writebuf(), temp_end),
+            iovec_t((char*)buf+start2,                end2-start2), 
+            iovec_t((char*)writebuf, temp_end),
         };
 
         w_assert1((long)(buf+start1)%LOG_DIO_ALIGN == 0);
         w_assert1((long)(buf+start2)%LOG_DIO_ALIGN == 0);
-        w_assert1((long)(_writebuf())%LOG_DIO_ALIGN == 0);
+        w_assert1((long)(writebuf)%LOG_DIO_ALIGN == 0);
 
         w_assert1((end1-start1)%LOG_DIO_ALIGN == 0);
         w_assert1((end2-start2)%LOG_DIO_ALIGN == 0);
@@ -422,9 +414,9 @@ partition_t::flush(
             smlevel_0::errlog->clog << fatal_prio
                                     << "ERROR: could not flush log buf:"
                                     << " fd=" << fd
-                                    << " xfersize="
-                                    << log_core::BLOCK_SIZE
-                                    << " vec parts: "
+                                    << " xfersize=" 
+                                    << log_storage::BLOCK_SIZE
+                                    << " vec parts: " 
                                     << " " << iov[0].iov_len
                                     << " " << iov[1].iov_len
                                     << " " << iov[2].iov_len
@@ -434,9 +426,9 @@ partition_t::flush(
             cerr
                 << "ERROR: could not flush log buf:"
                 << " fd=" << fd
-                << " xfersize=" << log_core::BLOCK_SIZE
-                << log_core::BLOCK_SIZE
-                << " vec parts: "
+                << " xfersize=" << log_storage::BLOCK_SIZE
+                << log_storage::BLOCK_SIZE
+                << " vec parts: " 
                 << " " << iov[0].iov_len
                 << " " << iov[1].iov_len
                 << " " << iov[2].iov_len
@@ -486,9 +478,9 @@ partition_t::flush(
                 << " end2 " << end2 );
 
         // This change per e-mail from Ippokratis, 16 Jun 09:
-        // long file_offset = _owner->floor(lsn.lo(), log_core::BLOCK_SIZE);
+        // long file_offset = _owner->floor(lsn.lo(), log_storage::BLOCK_SIZE);
         // works because BLOCK_SIZE is always a power of 2
-        long file_offset = log_core::floor2(lsn.lo(), log_core::BLOCK_SIZE);
+        long file_offset = log_storage::floor2(lsn.lo(), log_storage::BLOCK_SIZE);
         // offset is rounded down to a block_size
 
         long delta = lsn.lo() - file_offset;
@@ -503,12 +495,11 @@ partition_t::flush(
            can flush at a time and all other accesses to the file use
            pread/pwrite (which doesn't change the file pointer).
          */
-        fileoff_t where = start() + file_offset;
+        fileoff_t where = file_offset;
         w_rc_t e = me()->lseek(fd, where, sthread_t::SEEK_AT_SET);
         if (e.is_error()) {
             W_FATAL_MSG(e.err_num(), << "ERROR: could not seek to "
                                     << file_offset
-                                    << " + " << start()
                                     << " to write log record"
                                     << endl);
         }
@@ -530,13 +521,13 @@ partition_t::flush(
         long total = write_size + s->length();
 
         // This change per e-mail from Ippokratis, 16 Jun 09:
-        // long grand_total = _owner->ceil(total, log_core::BLOCK_SIZE);
+        // long grand_total = _owner->ceil(total, log_storage::BLOCK_SIZE);
         // works because BLOCK_SIZE is always a power of 2
-        long grand_total = log_core::ceil2(total, log_core::BLOCK_SIZE);
+        long grand_total = log_storage::ceil2(total, log_storage::BLOCK_SIZE);
         // take it up to multiple of block size
-        w_assert2(grand_total % log_core::BLOCK_SIZE == 0);
+        w_assert2(grand_total % log_storage::BLOCK_SIZE == 0);
 
-        if(grand_total == log_core::BLOCK_SIZE) {
+        if(grand_total == log_storage::BLOCK_SIZE) {
             // 1-block flush
             INC_TSTAT(log_short_flush);
         } else {
@@ -560,9 +551,9 @@ partition_t::flush(
             smlevel_0::errlog->clog << fatal_prio
                                     << "ERROR: could not flush log buf:"
                                     << " fd=" << fd
-                                << " xfersize="
-                                << log_core::BLOCK_SIZE
-                                << " vec parts: "
+                                << " xfersize=" 
+                                << log_storage::BLOCK_SIZE
+                                << " vec parts: " 
                                 << " " << iov[0].iov_len
                                 << " " << iov[1].iov_len
                                 << " " << iov[2].iov_len
@@ -573,9 +564,9 @@ partition_t::flush(
             cerr
                                     << "ERROR: could not flush log buf:"
                                     << " fd=" << fd
-                                    << " xfersize=" << log_core::BLOCK_SIZE
-                                << log_core::BLOCK_SIZE
-                                << " vec parts: "
+                                    << " xfersize=" << log_storage::BLOCK_SIZE
+                                << log_storage::BLOCK_SIZE
+                                << " vec parts: " 
                                 << " " << iov[0].iov_len
                                 << " " << iov[1].iov_len
                                 << " " << iov[2].iov_len
@@ -680,7 +671,8 @@ again:
         }
         DBGTHRD( <<"reading pos=" << pos <<" eop=" << this->_eop);
 
-        rc = read(l, pos, fd);
+        // CS: TODO not sure if _peekbuf will work!
+        rc = read(_peekbuf, l, pos, NULL, fd);
         DBGTHRD(<<"POS " << pos << ": tx." << *l);
 
         if(rc.err_num() == eEOF) {
@@ -881,16 +873,20 @@ partition_t::_skip(const lsn_t &ll, int fd)
 
 #ifdef LOG_DIRECT_IO
     char * _skipbuf = NULL;
-    posix_memalign((void**)&_skipbuf, LOG_DIO_ALIGN, log_core::BLOCK_SIZE*2);
+    posix_memalign((void**)&_skipbuf, LOG_DIO_ALIGN, log_storage::BLOCK_SIZE*2);    
 #else
-    char* _skipbuf = new char[log_core::BLOCK_SIZE*2];
+    char* _skipbuf = new char[log_storage::BLOCK_SIZE*2];
 #endif
     // FRJ: We always need to prime() partition ops (peek, open, etc)
     // always use a different buffer than log inserts.
-    long offset = _owner->prime(_skipbuf, fd, start(), ll);
-
+    long offset = _owner->prime(_skipbuf, ll, log_storage::BLOCK_SIZE);
+    
     // Make sure that flush writes a skip record
-    this->flush(fd, ll, _skipbuf, offset, offset, offset, offset);
+    this->flush(
+#ifdef LOG_DIRECT_IO
+            _skipbuf,
+#endif
+            fd, ll, _skipbuf, offset, offset, offset, offset);
 
 #ifdef LOG_DIRECT_IO
     free(_skipbuf);
@@ -919,7 +915,8 @@ partition_t::_skip(const lsn_t &ll, int fd)
  */
 // MUTEX: partition
 w_rc_t
-partition_t::read(logrec_t *&rp, lsn_t &ll, int fd)
+partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
+        lsn_t* prev_lsn, int fd)
 {
     FUNC(partition::read);
 
@@ -955,10 +952,10 @@ partition_t::read(logrec_t *&rp, lsn_t &ll, int fd)
     int b = 0;
     bool first_time = true;
 
-    rp = (logrec_t *)(_readbuf() + off);
+    rp = (logrec_t *)(readbuf + off);
 
     DBGTHRD(<< "off= " << ((int)off)
-        << "_readbuf()@ " << W_ADDR(_readbuf())
+        << "readbuf@ " << W_ADDR(readbuf)
         << " rp@ " << W_ADDR(rp)
     );
     fileoff_t leftover = 0;
@@ -967,7 +964,7 @@ partition_t::read(logrec_t *&rp, lsn_t &ll, int fd)
 
         DBGTHRD(<<"leftover=" << int(leftover) << " b=" << b);
 
-        w_rc_t e = me()->pread(fd, (void *)(_readbuf() + b), XFERSIZE, start() + lower + b);
+        w_rc_t e = me()->pread(fd, (void *)(readbuf + b), XFERSIZE, lower + b);
         DBGTHRD(<<"after me()->read() size= " << int(XFERSIZE));
 
 
@@ -975,8 +972,19 @@ partition_t::read(logrec_t *&rp, lsn_t &ll, int fd)
                 /* accept the short I/O error for now */
                 smlevel_0::errlog->clog << fatal_prio
                         << "read(" << int(XFERSIZE) << ")" << flushl;
+                /*
+                 * CS: short IO when reading the log is not necessarily an
+                 * error. In fact, after a system crash, it is quite likely
+                 * that the last write to the log was interrupted, and thus
+                 * a short IO is actually expected.
+                 * The error condition can be verified by checking if the
+                 * lsn_ck() field of logrec_t matches the offset from which
+                 * the log record was read. However, this logic belongs in the
+                 * log scanner code.
+                 */
                 W_COERCE(e);
         }
+        // TODO CS: If there was a short IO above, the increment should not be XFERSIZE
         b += XFERSIZE;
 
         //
@@ -993,18 +1001,32 @@ partition_t::read(logrec_t *&rp, lsn_t &ll, int fd)
             first_time = false;
             leftover = rp->length() - (b - off);
             DBGTHRD(<<" leftover now=" << leftover);
+
+            // Try to get lsn of previous log record (for backward scan)
+            if (prev_lsn) {
+                if (off >= (int64_t)sizeof(lsn_t)) {
+                    // most common and easy case -- prev_lsn is on the
+                    // same block
+                    *prev_lsn = *((lsn_t*) (readbuf + off - sizeof(lsn_t)));
+                }
+                else {
+                    // we were unlucky -- extra IO required to fetch prev_lsn
+                    W_COERCE(me()->pread(fd, (void*) prev_lsn, sizeof(lsn_t),
+                                lower + b - XFERSIZE - sizeof(lsn_t)));
+                }
+            }
         } else {
             leftover -= XFERSIZE;
             w_assert3(leftover == (int)rp->length() - (b - off));
             DBGTHRD(<<" leftover now=" << leftover);
         }
     }
-    DBGTHRD( << "_readbuf()@ " << W_ADDR(_readbuf())
+    DBGTHRD( << "readbuf@ " << W_ADDR(readbuf)
         << " first 4 chars are: "
-        << (int)(*((char *)_readbuf()))
-        << (int)(*((char *)_readbuf()+1))
-        << (int)(*((char *)_readbuf()+2))
-        << (int)(*((char *)_readbuf()+3))
+        << (int)(*((char *)readbuf))
+        << (int)(*((char *)readbuf+1))
+        << (int)(*((char *)readbuf+2))
+        << (int)(*((char *)readbuf+3))
     );
     w_assert1(rp != NULL);
     return RCOK;
@@ -1034,7 +1056,7 @@ partition_t::open_for_read(
                 W_FATAL(fcOUTOFMEMORY);
         w_auto_delete_array_t<char> ad_fname(fname);
 
-        log_m::make_log_name(__num, fname, smlevel_0::max_devname);
+        _owner->make_log_name(__num, fname, smlevel_0::max_devname);
 
         int fd;
         w_rc_t e;
@@ -1187,7 +1209,7 @@ partition_t::destroy()
         w_assert3(! is_open_for_read() );
         w_assert3(! is_open_for_append() );
 
-        log_core::destroy_file(num(), true);
+        _owner->destroy_file(num(), true);
         _clr_state(m_exists);
         // _num = 0;
         DBG(<< " calling clear");
@@ -1229,8 +1251,8 @@ partition_t::peek(
     char *fname = new char[smlevel_0::max_devname];
     if (!fname)
         W_FATAL(fcOUTOFMEMORY);
-    w_auto_delete_array_t<char> ad_fname(fname);
-    log_m::make_log_name(__num, fname, smlevel_0::max_devname);
+    w_auto_delete_array_t<char> ad_fname(fname);        
+    _owner->make_log_name(__num, fname, smlevel_0::max_devname);
 
     smlevel_0::fileoff_t part_size = fileoff_t(0);
 
@@ -1287,7 +1309,7 @@ partition_t::peek(
         DBGTHRD(<<" peek DESTROYING PARTITION " << __num << "  on fd " << fd);
 
         // First: write any-old junk
-        e = me()->ftruncate(fd,  log_core::BLOCK_SIZE );
+        e = me()->ftruncate(fd,  log_storage::BLOCK_SIZE );
         if (e.is_error())        {
              smlevel_0::errlog->clog << fatal_prio
                 << "cannot write garbage block " << flushl;
@@ -1412,11 +1434,11 @@ partition_t::close_for_read()
  *  Flush log records in the io vectors to physical log partition
  *
  *********************************************************************/
-#ifdef LOG_BUFFER
 #ifdef LOG_DIRECT_IO
 void
 partition_t::flush(
-                   int fd, // IN: the file descriptor of the current log partition
+                char* writebuf,
+                   int fd, // IN: the file descriptor of the current log partition 
                    lsn_t lsn, // IN: the lsn of the first log record we want to flush
                    int64_t size, // IN: the total size of log records
                    int64_t write_size,  // IN: the aligned total size
@@ -1430,9 +1452,9 @@ partition_t::flush(
              << " seg_cnt " << seg_cnt );
 
     // This change per e-mail from Ippokratis, 16 Jun 09:
-    // long file_offset = _owner->floor(lsn.lo(), log_core::BLOCK_SIZE);
+    // long file_offset = _owner->floor(lsn.lo(), log_storage::BLOCK_SIZE);
     // works because BLOCK_SIZE is always a power of 2
-    long file_offset = log_core::floor2(lsn.lo(), log_core::BLOCK_SIZE);
+    long file_offset = log_storage::floor2(lsn.lo(), log_storage::BLOCK_SIZE);
     // offset is rounded down to a block_size
 
 
@@ -1455,16 +1477,16 @@ partition_t::flush(
     long total = write_size + s->length();
 
     // This change per e-mail from Ippokratis, 16 Jun 09:
-    // long grand_total = _owner->ceil(total, log_core::BLOCK_SIZE);
+    // long grand_total = _owner->ceil(total, log_storage::BLOCK_SIZE);
     // works because BLOCK_SIZE is always a power of 2
-    long grand_total = log_core::ceil2(total, log_core::BLOCK_SIZE);
+    long grand_total = log_storage::ceil2(total, log_storage::BLOCK_SIZE);
     // take it up to multiple of block size
-    w_assert2(grand_total % log_core::BLOCK_SIZE == 0);
+    w_assert2(grand_total % log_storage::BLOCK_SIZE == 0);
 
     uint64_t zeros = grand_total - total;
 
 
-    if(grand_total == log_core::BLOCK_SIZE) {
+    if(grand_total == log_storage::BLOCK_SIZE) {
         // 1-block flush
         INC_TSTAT(log_short_flush);
     } else {
@@ -1481,25 +1503,25 @@ partition_t::flush(
     int64_t offset = 0;    // offset of end into a block
     int64_t temp_end = 0;  // end offset inside the temp write buffer
 
-    offset = end % log_core::BLOCK_SIZE;
+    offset = end % log_storage::BLOCK_SIZE;
     end -= offset;
 
     // copy the last unaligned portion from log buffer to the temp write buffer
-    memcpy(_writebuf(), buf+end, offset);
+    memcpy(writebuf, buf+end, offset);
     temp_end += offset;
 
     // copy the skip record to the temp write buffer
-    memcpy(_writebuf()+temp_end, (char*)s, s->length());
+    memcpy(writebuf+temp_end, (char*)s, s->length()); 
     temp_end += s->length();
 
     // pad zero to make the real end aligned to blocksize
-    memcpy(_writebuf()+temp_end, block_of_zeros(), zeros);
+    memcpy(writebuf+temp_end, block_of_zeros(), zeros); 
     temp_end += zeros;
 
     typedef sdisk_base_t::iovec_t iovec_t;
 
     // new iovec: skip record + zeros
-    iov[seg_cnt] = iovec_t((char*)_writebuf(), temp_end);
+    iov[seg_cnt] = iovec_t((char*)writebuf, temp_end);
 
 
     // finally, we write the iovecs
@@ -1511,16 +1533,16 @@ partition_t::flush(
             smlevel_0::errlog->clog << fatal_prio
                                     << "ERROR: could not flush log buf:"
                                     << " fd=" << fd
-                                << " xfersize="
-                                << log_core::BLOCK_SIZE
+                                << " xfersize=" 
+                                << log_storage::BLOCK_SIZE
                                     << ":" << endl
                                     << e
                                     << flushl;
             cerr
                                     << "ERROR: could not flush log buf:"
                                     << " fd=" << fd
-                                    << " xfersize=" << log_core::BLOCK_SIZE
-                                << log_core::BLOCK_SIZE
+                                    << " xfersize=" << log_storage::BLOCK_SIZE
+                                << log_storage::BLOCK_SIZE
                                     << ":" << endl
                                     << e
                                     << flushl;
@@ -1581,9 +1603,9 @@ partition_t::flush(int fd, lsn_t lsn, int64_t size, int64_t write_size,
                  << " seg_cnt " << seg_cnt );
 
         // This change per e-mail from Ippokratis, 16 Jun 09:
-        // long file_offset = _owner->floor(lsn.lo(), log_core::BLOCK_SIZE);
+        // long file_offset = _owner->floor(lsn.lo(), log_storage::BLOCK_SIZE);
         // works because BLOCK_SIZE is always a power of 2
-        long file_offset = log_core::floor2(lsn.lo(), log_core::BLOCK_SIZE);
+        long file_offset = log_storage::floor2(lsn.lo(), log_storage::BLOCK_SIZE);
         // offset is rounded down to a block_size
 
 
@@ -1591,12 +1613,11 @@ partition_t::flush(int fd, lsn_t lsn, int64_t size, int64_t write_size,
            can flush at a time and all other accesses to the file use
            pread/pwrite (which doesn't change the file pointer).
          */
-        fileoff_t where = start() + file_offset;
+        fileoff_t where = file_offset;
         w_rc_t e = me()->lseek(fd, where, sthread_t::SEEK_AT_SET);
         if (e.is_error()) {
             W_FATAL_MSG(e.err_num(), << "ERROR: could not seek to "
                                     << file_offset
-                                    << " + " << start()
                                     << " to write log record"
                                     << endl);
         }
@@ -1619,13 +1640,13 @@ partition_t::flush(int fd, lsn_t lsn, int64_t size, int64_t write_size,
         long total = write_size + s->length();
 
         // This change per e-mail from Ippokratis, 16 Jun 09:
-        // long grand_total = _owner->ceil(total, log_core::BLOCK_SIZE);
+        // long grand_total = _owner->ceil(total, log_storage::BLOCK_SIZE);
         // works because BLOCK_SIZE is always a power of 2
-        long grand_total = log_core::ceil2(total, log_core::BLOCK_SIZE);
+        long grand_total = log_storage::ceil2(total, log_storage::BLOCK_SIZE);
         // take it up to multiple of block size
-        w_assert2(grand_total % log_core::BLOCK_SIZE == 0);
+        w_assert2(grand_total % log_storage::BLOCK_SIZE == 0);
 
-        if(grand_total == log_core::BLOCK_SIZE) {
+        if(grand_total == log_storage::BLOCK_SIZE) {
             // 1-block flush
             INC_TSTAT(log_short_flush);
         } else {
@@ -1651,16 +1672,16 @@ partition_t::flush(int fd, lsn_t lsn, int64_t size, int64_t write_size,
             smlevel_0::errlog->clog << fatal_prio
                                     << "ERROR: could not flush log buf:"
                                     << " fd=" << fd
-                                << " xfersize="
-                                << log_core::BLOCK_SIZE
+                                << " xfersize=" 
+                                << log_storage::BLOCK_SIZE
                                     << ":" << endl
                                     << e
                                     << flushl;
             cerr
                                     << "ERROR: could not flush log buf:"
                                     << " fd=" << fd
-                                    << " xfersize=" << log_core::BLOCK_SIZE
-                                << log_core::BLOCK_SIZE
+                                    << " xfersize=" << log_storage::BLOCK_SIZE
+                                << log_storage::BLOCK_SIZE
                                     << ":" << endl
                                     << e
                                     << flushl;
@@ -1717,7 +1738,7 @@ partition_t::read_seg(
     );
 
 
-    w_rc_t e = me()->pread(fd, buf, size, start() + pos);
+    w_rc_t e = me()->pread(fd, buf, size, pos);
 
     if (e.is_error()) {
         /* accept the short I/O error for now */
@@ -1743,7 +1764,7 @@ partition_t::read_seg(
  *
  *********************************************************************/
 w_rc_t
-partition_t::read_logrec(logrec_t *&rp, lsn_t &ll, int fd)
+partition_t::read_logrec(char* readbuf, logrec_t *&rp, lsn_t &ll, int fd)
 {
 
 //     // not aligned
@@ -1835,12 +1856,12 @@ partition_t::read_logrec(logrec_t *&rp, lsn_t &ll, int fd)
 
 //         }
 //     }
-//     DBGTHRD( << "_readbuf()@ " << W_ADDR(_readbuf())
+//     DBGTHRD( << "readbuf@ " << W_ADDR(readbuf)
 //         << " first 4 chars are: "
-//         << (int)(*((char *)_readbuf()))
-//         << (int)(*((char *)_readbuf()+1))
-//         << (int)(*((char *)_readbuf()+2))
-//         << (int)(*((char *)_readbuf()+3))
+//         << (int)(*((char *)readbuf))
+//         << (int)(*((char *)readbuf+1))
+//         << (int)(*((char *)readbuf+2))
+//         << (int)(*((char *)readbuf+3))
 //     );
 //     w_assert1(rp != NULL);
 
@@ -1884,10 +1905,10 @@ partition_t::read_logrec(logrec_t *&rp, lsn_t &ll, int fd)
     int b = 0;
     bool first_time = true;
 
-    rp = (logrec_t *)(_readbuf() + off);
+    rp = (logrec_t *)(readbuf + off);
 
     DBGTHRD(<< "off= " << ((int)off)
-        << "_readbuf()@ " << W_ADDR(_readbuf())
+        << "readbuf@ " << W_ADDR(readbuf)
         << " rp@ " << W_ADDR(rp)
     );
     fileoff_t leftover = 0;
@@ -1896,7 +1917,7 @@ partition_t::read_logrec(logrec_t *&rp, lsn_t &ll, int fd)
 
         DBGTHRD(<<"leftover=" << int(leftover) << " b=" << b);
 
-        w_rc_t e = me()->pread(fd, (void *)(_readbuf() + b), XFERSIZE, start() + lower + b);
+        w_rc_t e = me()->pread(fd, (void *)(readbuf + b), XFERSIZE, lower + b);
         DBGTHRD(<<"after me()->read() size= " << int(XFERSIZE));
 
 
@@ -1928,16 +1949,14 @@ partition_t::read_logrec(logrec_t *&rp, lsn_t &ll, int fd)
             DBGTHRD(<<" leftover now=" << leftover);
         }
     }
-    DBGTHRD( << "_readbuf()@ " << W_ADDR(_readbuf())
+    DBGTHRD( << "readbuf@ " << W_ADDR(readbuf)
         << " first 4 chars are: "
-        << (int)(*((char *)_readbuf()))
-        << (int)(*((char *)_readbuf()+1))
-        << (int)(*((char *)_readbuf()+2))
-        << (int)(*((char *)_readbuf()+3))
+        << (int)(*((char *)readbuf))
+        << (int)(*((char *)readbuf+1))
+        << (int)(*((char *)readbuf+2))
+        << (int)(*((char *)readbuf+3))
     );
     w_assert1(rp != NULL);
     return RCOK;
 
 }
-
-#endif // LOG_BUFFER

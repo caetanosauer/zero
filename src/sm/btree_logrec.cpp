@@ -704,7 +704,7 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
         lsn_t another_previous_lsn = recovering_dest ? dp->_page2_prv : page_prev_lsn();
         btree_page_h another;
         another.fix_nonbufferpool_page(frame.p);
-        W_COERCE(smlevel_0::log->recover_single_page(another, another_previous_lsn));
+        W_COERCE(smlevel_1::recovery->recover_single_page(another, another_previous_lsn));
         btree_impl::_ux_merge_foster_apply_parent(bp, another);
     }
 }
@@ -1029,7 +1029,7 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
             ", another_previous_lsn=" << another_previous_lsn);
         btree_page_h another;
         another.fix_nonbufferpool_page(frame.p);
-        W_COERCE(smlevel_0::log->recover_single_page(another, another_previous_lsn));
+        W_COERCE(smlevel_1::recovery->recover_single_page(another, another_previous_lsn));
         W_COERCE(btree_impl::_ux_rebalance_foster_apply(
             recovering_dest ? another : bp, recovering_dest ? bp : another,
             dp->_move_count, fence, dp->_new_pid0, dp->_new_pid0_emlsn));

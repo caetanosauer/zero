@@ -25,9 +25,9 @@
    RESULTING FROM THE USE OF THIS SOFTWARE.
 */
 
-/*<std-header orig-src='shore'>
+/*<std-header orig-src='shore' incl-file-exclusion='SRV_LOG_H'>
 
- $Id: log.cpp,v 1.137 2010/12/08 17:37:42 nhall Exp $
+ $Id: log_core.h,v 1.11 2010/09/21 14:26:19 nhall Exp $
 
 SHORE -- Scalable Heterogeneous Object REpository
 
@@ -54,76 +54,76 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 */
 
+#ifndef LOG_RESV_H
+#define LOG_RESV_H
 #include "w_defines.h"
 
-/*  -- do not edit anything above this line --   </std-header>*/
+#include <deque>
 
-#define SM_SOURCE
-#define LOG_C
-
-#include "sm_int_1.h"
-#include "logdef_gen.cpp"
-#include "log.h"
-#include "log_core.h"
-#include "log_lsn_tracker.h"
-#include "crash.h"
-#include "lock_raw.h"
-#include "bf_tree.h"
-#include <algorithm> // for std::swap
-#include <stdio.h> // snprintf
-#include <boost/static_assert.hpp>
-#include <vector>
-
-// LOG_BUFFER switch
-#include "logbuf_common.h"
-
-#ifdef LOG_BUFFER
-enum hints_op;
-#endif
-
+#include "log_storage.h"
 
 typedef smlevel_0::fileoff_t fileoff_t;
 
+class PoorMansOldestLsnTracker;
 
-/*********************************************************************
- *
- *  log_i::xct_next(lsn, r)
- *
- *  Read the next record into r and return its lsn in lsn.
- *  Return false if EOF reached. true otherwise.
- *
- *********************************************************************/
-bool log_i::xct_next(lsn_t& lsn, logrec_t*& r)  
-{
-    // Initially (before the first xct_next call, 
-    // 'cursor' is set to the starting point of the scan
-    // After each xct_next call, 
-    // 'cursor' is set to the lsn of the next log record if forward scan
-    // or the lsn of the fetched log record if backward scan
-    // log.fetch() returns eEOF when it reaches the end of the scan
-    
-    bool eof = (cursor == lsn_t::null);
-
-    if (! eof) {
-        lsn = cursor;
-        rc_t rc = log.fetch(lsn, r, &cursor, forward_scan);  // Either forward or backward scan
-        
-        // release right away, since this is only
-        // used in recovery.
-        log.release();
-
-        if (rc.is_error())  {
-            last_rc = RC_AUGMENT(rc);
-            RC_APPEND_MSG(last_rc, << "trying to fetch lsn " << cursor);
-            
-            if (last_rc.err_num() == eEOF)
-                eof = true;
-            else  {
-                smlevel_0::errlog->clog << fatal_prio 
-                << "Fatal error : " << last_rc << flushl;
-            }
+class log_resv {
+private:
+    struct waiting_xct {
+        fileoff_t* needed;
+        pthread_cond_t* cond;
+        NORET waiting_xct(fileoff_t *amt, pthread_cond_t* c)
+            : needed(amt), cond(c)
+        {
         }
-    }
+    };
+    std::deque<waiting_xct*> _log_space_waiters;
 
-    return ! eof;
-}
+public:
+    log_resv(log_storage* storage);
+    virtual ~log_resv();
+
+    fileoff_t           reserve_space(fileoff_t howmuch);
+    long                max_chkpt_size() const;
+    bool                verify_chkpt_reservation();
+    rc_t            scavenge(const lsn_t &min_rec_lsn, const lsn_t&min_xct_lsn);
+    void            release_space(fileoff_t howmuch);
+    void            activate_reservations(const lsn_t& curr_lsn) ;
+    fileoff_t       consume_chkpt_reservation(fileoff_t howmuch);
+    rc_t            wait_for_space(fileoff_t &amt, timeout_in_ms timeout);
+    bool            reservations_active() const { return _reservations_active; }
+    rc_t            file_was_archived(const char * /*file*/);
+
+    /*
+     * STATIC METHODS
+     */
+    static fileoff_t    take_space(fileoff_t *ptr, int amt) ;
+
+    /*
+     * INLINED
+     */
+
+    /**\brief  Return the amount of space left in the log.
+     * \details
+     * Used by xct_impl for error-reporting. 
+     */
+    fileoff_t           space_left() const { return *&_space_available; }
+    fileoff_t           space_for_chkpt() const { return *&_space_rsvd_for_chkpt ; }
+
+    PoorMansOldestLsnTracker* get_oldest_lsn_tracker() { return _oldest_lsn_tracker; }
+
+protected:
+    log_storage*    _storage;
+    bool            _reservations_active;
+    fileoff_t       _space_available; // how many unreserved bytes left
+    fileoff_t       _space_rsvd_for_chkpt; // can we run a chkpt now?
+
+    bool _waiting_for_space; // protected by log_m::_insert_lock/_wait_flush_lock
+
+    pthread_mutex_t         _space_lock; // tied to _space_cond
+    pthread_cond_t          _space_cond; // tied to _space_lock
+
+    PoorMansOldestLsnTracker* _oldest_lsn_tracker;
+};
+
+
+#endif

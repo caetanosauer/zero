@@ -61,12 +61,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define SM_SOURCE
 #define LOG_CORE_C
 
-#include <cstdio>        /* XXX for log recovery */
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <os_interface.h>
-#include <largefile_aware.h>
-
 #include "sm_int_1.h"
 #include "logtype_gen.h"
 #include "log.h"
@@ -74,8 +68,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "log_core.h"
 #include "log_carray.h"
 
-// chkpt.h needed to kick checkpoint thread
-#include "chkpt.h"
 #include "bf_tree.h"
 
 #include "fixable_page_h.h"
@@ -83,549 +75,133 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <sstream>
 #include <w_strstream.h>
 
-// needed for skip_log
-#include "logdef_gen.cpp"
+const std::string log_core::IMPL_NAME = "traditional";
 
+typedef smlevel_0::fileoff_t fileoff_t;
 
-// LOG_BUFFER switch
-#include "logbuf_common.h"
+class flush_daemon_thread_t : public smthread_t {
+    log_common* _log;
+public:
+    flush_daemon_thread_t(log_common* log) : 
+         smthread_t(t_regular, "flush_daemon", WAIT_NOT_USED), _log(log) { }
 
+    virtual void run() { _log->flush_daemon(); }
+};
 
-bool       log_core::_initialized = false;
-
-// Once the log is created, this points to it. This is the
-// implementation of log_m.
-log_core *log_core::THE_LOG(NULL); // me
-
-long
-log_core::partition_size(long psize) {
-     long p = psize - BLOCK_SIZE;
-     return _floor(p, SEGMENT_SIZE) + BLOCK_SIZE;
-}
-
-long
-log_core::min_partition_size() {
-     return _floor(SEGMENT_SIZE, SEGMENT_SIZE) + BLOCK_SIZE;
-}
-/*********************************************************************
- *
- *  log_core *log_core::new_log_m(logdir,segid,reformat,carray_active_slot_count)
- *
- *  CONSTRUCTOR.  Returns one or the other log types.
- *
- *********************************************************************/
-
-w_rc_t
-log_core::new_log_m(
-    log_m        *&log_p,
-    int          wrbufsize,
-    bool         reformat,
-    int          carray_active_slot_count
-#ifdef LOG_BUFFER
-                 ,
-                 int logbuf_seg_count,
-                 int logbuf_flush_trigger,
-                 int logbuf_block_size
-#endif
-)
+log_common::log_common(
+                   long bsize, // segment size for the log buffer, set through "sm_logbufsize"
+                   int carray_active_slot_count
+                   )
+    : 
+      _log_corruption(false),          
+      _readbuf(NULL),
+#ifdef LOG_DIRECT_IO
+      _writebuf(NULL),
+#endif     
+      _start(0), 
+      _end(0),     
+      _segsize(log_storage::_ceil(bsize, SEGMENT_SIZE)), // actual segment size for the log buffer,
+      _waiting_for_flush(false),     
+      _shutting_down(false),
+      _flush_daemon_running(false),
+      _carray(new ConsolidationArray(carray_active_slot_count))
 {
-    rc_t        rc;
+    FUNC(log_common::log_common);
 
-    if(THE_LOG != NULL) {
-        // not mt-safe
-        smlevel_0::errlog->clog << error_prio  << "Log already created. "
-                << endl << flushl;
-        return RC(eINTERNAL); // server programming error
-    }
+    DO_PTHREAD(pthread_mutex_init(&_wait_flush_lock, NULL));
+    DO_PTHREAD(pthread_cond_init(&_wait_cond, NULL));
+    DO_PTHREAD(pthread_cond_init(&_flush_cond, NULL));
 
-    if(rc.is_error()) {
-        // not mt-safe, but this is not going to happen in concurrency scenario
-        smlevel_0::errlog->clog << error_prio
-                << "Error: cannot open the log file(s) " << dir_name()
-                << ":" << endl << rc << flushl;
-        return rc;
-    }
+    /* Create thread o flush the log */
+    _flush_daemon = new flush_daemon_thread_t(this);
 
-    /* The log created here is deleted by the ss_m. */
-    log_core *l = 0;
-    {
-        DBGTHRD(<<" log is unix file" );
-        if (max_logsz == 0)  {
-            // not mt-safe, but this is not going to happen in
-            // concurrency scenario
-            smlevel_0::errlog->clog << fatal_prio
-                << "Error: log size must be non-zero for log devices"
-                << flushl;
-            /* XXX should genertae invalid log size of something instead? */
-            return RC(eOUTOFLOGSPACE);
-        }
-
-        l = new log_core(wrbufsize, reformat, carray_active_slot_count
-#ifdef LOG_BUFFER
-                                  ,
-                                  logbuf_seg_count,
-                                  logbuf_flush_trigger,
-                                  logbuf_block_size
-#endif
-                         );
-    }
-    if (rc.is_error())
-        return rc;
-
-    log_p = l;
-    THE_LOG = l;
-    return RCOK;
-}
-
-void
-log_core::_acquire()
-{
-    _partition_lock.acquire(&me()->get_log_me_node());
-}
-void
-log_core::release()
-{
-    _partition_lock.release(me()->get_log_me_node());
-}
-
-
-partition_index_t
-log_core::_get_index(uint32_t n) const
-{
-    const partition_t        *p;
-    for(int i=0; i<PARTITION_COUNT; i++) {
-        p = _partition(i);
-        if(p->num()==n) return i;
-    }
-    return -1;
-}
-
-partition_t *
-log_core::_n_partition(partition_number_t n) const
-{
-    partition_index_t i = _get_index(n);
-    return (i<0)? (partition_t *)0 : _partition(i);
-}
-
-
-partition_t *
-log_core::curr_partition() const
-{
-    w_assert3(partition_index() >= 0);
-    return _partition(partition_index());
-}
-
-/*********************************************************************
- *
- *  log_core::scavenge(min_rec_lsn, min_xct_lsn)
- *
- *  Scavenge (free, reclaim) unused log files.
- *  We can scavenge all log files with index less
- *  than the minimum of the three lsns:
- *  the two arguments
- *  min_rec_lsn,  : minimum recovery lsn computed by checkpoint
- *  min_xct_lsn,  : first log record written by any uncommitted xct
- *  and
- *  global_min_lsn: the smaller of :
- *     min chkpt rec lsn: min_rec_lsn computed by the last checkpoint
- *     master_lsn: lsn of the last completed checkpoint-begin
- * (so the min chkpt rec lsn is in here twice - that's ok)
- *
- *********************************************************************/
-rc_t
-log_core::scavenge(const lsn_t &min_rec_lsn, const lsn_t& min_xct_lsn)
-{
-    FUNC(log_core::scavenge);
-    CRITICAL_SECTION(cs, _partition_lock);
-    DO_PTHREAD(pthread_mutex_lock(&_scavenge_lock));
-
-#if W_DEBUG_LEVEL > 2
-    _sanity_check();
-#endif
-    partition_t        *p;
-
-    lsn_t lsn = global_min_lsn(min_rec_lsn,min_xct_lsn);
-    partition_number_t min_num;
-    {
-        /*
-         *  find min_num -- the lowest of all the partitions
-         */
-        min_num = partition_num();
-        for (uint i = 0; i < PARTITION_COUNT; i++)  {
-            p = _partition(i);
-            if( p->num() > 0 &&  p->num() < min_num )
-                min_num = p->num();
-        }
-    }
-
-    DBGTHRD( << "scavenge until lsn " << lsn << ", min_num is "
-         << min_num << endl );
-
-    /*
-     *  recycle all partitions  whose num is less than
-     *  lsn.hi().
-     */
-    int count=0;
-    for ( ; min_num < lsn.hi(); ++min_num)  {
-        p = _n_partition(min_num);
-        w_assert3(p);
-        if (durable_lsn() < p->first_lsn() )  {
-            W_FATAL(fcINTERNAL); // why would this ever happen?
-            //            set_durable(first_lsn(p->num() + 1));
-        }
-        w_assert3(durable_lsn() >= p->first_lsn());
-        DBGTHRD( << "scavenging log " << p->num() << endl );
-        count++;
-        p->close(true);
-        p->destroy();
-    }
-    if(count > 0) {
-        /* LOG_RESERVATIONS
-
-           reinstate the log space from the reclaimed partitions. We
-           can put back the entire partition size because every log
-           insert which finishes off a partition will consume whatever
-           unused space was left at the end.
-
-           Skim off the top of the released space whatever it takes to
-           top up the log checkpoint reservation.
-         */
-        fileoff_t reclaimed = recoverable_space(count);
-        fileoff_t max_chkpt = max_chkpt_size();
-        while(!verify_chkpt_reservation() && reclaimed > 0) {
-            long skimmed = std::min(max_chkpt, reclaimed);
-            lintel::unsafe::atomic_fetch_add(const_cast<int64_t*>(&_space_rsvd_for_chkpt), skimmed);
-            reclaimed -= skimmed;
-        }
-        release_space(reclaimed);
-        DO_PTHREAD(pthread_cond_signal(&_scavenge_cond));
-    }
-    DO_PTHREAD(pthread_mutex_unlock(&_scavenge_lock));
-
-    return RCOK;
-}
-
-#ifdef LOG_BUFFER
-// this is just the first portion of the original _flushX
-// called from logbuf_core::_flushX
-// It's hacky, but if we want to merge this piece of code into logbuf_core::_flushX(), we have to
-// move a lot of variables/functions from log_core to logbuf_core,
-// all of which are not that essential for the log buffer logic.
-partition_t *
-log_core::_flushX_get_partition(lsn_t start_lsn,
-        long start1, long end1, long start2, long end2)
-{
-    w_assert1(end1 >= start1);
-    w_assert1(end2 >= start2);
-    // time to open a new partition? (used to be in log_core::insert,
-    // now called by log flush daemon)
-    // This will open a new file when the given start_lsn has a
-    // different file() portion from the current partition()'s
-    // partition number, so the start_lsn is the clue.
-    partition_t* p = curr_partition();
-    if(start_lsn.file() != p->num()) {
-        partition_number_t n = p->num();
-        w_assert3(start_lsn.file() == n+1);
-        w_assert3(n != 0);
-
-        {
-            /* FRJ: before starting into the CS below we have to be
-               sure an empty partition waits for us (otherwise we
-               deadlock because partition scavenging is protected by
-               the _partition_lock as well).
-             */
-            DO_PTHREAD(pthread_mutex_lock(&_scavenge_lock));
-        retry:
-            // need predicates, lest we be in shutdown()
-            if(bf) bf->wakeup_cleaners();
-            DBGOUT3(<< "chkpt 1");
-            if(smlevel_1::chkpt != NULL) smlevel_1::chkpt->wakeup_and_take();
-            u_int oldest = global_min_lsn().hi();
-            if(oldest + PARTITION_COUNT == start_lsn.file()) {
-                fprintf(stderr,
-                "Cannot open partition %d until partition %d is reclaimed\n",
-                    start_lsn.file(), oldest);
-                fprintf(stderr,
-                "Waiting for reclamation.\n");
-                DO_PTHREAD(pthread_cond_wait(&_scavenge_cond, &_scavenge_lock));
-                goto retry;
-            }
-            DO_PTHREAD(pthread_mutex_unlock(&_scavenge_lock));
-
-            // grab the lock -- we're about to mess with partitions
-            CRITICAL_SECTION(cs, _partition_lock);
-            p->close();
-            unset_current();
-            DBG(<<" about to open " << n+1);
-            //                                  end_hint, existing, recovery
-            p = _open_partition_for_append(n+1, lsn_t::null, false, false);
-        }
-
-        // it's a new partition -- size is now 0
-        w_assert3(curr_partition()->size()== 0);
-        w_assert3(partition_num() != 0);
-    }
-
-    return p;
-}
+    // NOTE: GROT must make this a function of page size, and of xfer size,
+    // since xfer size is fixed (8K).
+    // It has to big enough to read the maximum-sized log record, clearly
+    // more than a page.
+#ifdef LOG_DIRECT_IO
+#if SM_PAGESIZE < 8192
+    posix_memalign((void**)&_readbuf, LOG_DIO_ALIGN, log_storage::BLOCK_SIZE*4);
+    //_readbuf = new char[BLOCK_SIZE*4];
+    // we need two blocks for the write buffer because the skip log record may span two blocks
+    posix_memalign((void**)&_writebuf, LOG_DIO_ALIGN, log_storage::BLOCK_SIZE*2);
 #else
-/*********************************************************************
- *
- *  log_core::_flush(start_lsn, start1, end1, start2, end2)
- *  @param[in] start_lsn    starting lsn: tells us destination file
- *  @param[in] start1
- *  @param[in] end1
- *  @param[in] start2
- *  @param[in] end2
- *
- *  helper for flush_daemon_work
- *
- *
- *********************************************************************/
-void
-log_core::_flushX(lsn_t start_lsn,
-        long start1, long end1, long start2, long end2)
-{
-    w_assert1(end1 >= start1);
-    w_assert1(end2 >= start2);
-    // time to open a new partition? (used to be in log_core::insert,
-    // now called by log flush daemon)
-    // This will open a new file when the given start_lsn has a
-    // different file() portion from the current partition()'s
-    // partition number, so the start_lsn is the clue.
-    partition_t* p = curr_partition();
-    if(start_lsn.file() != p->num()) {
-        partition_number_t n = p->num();
-        w_assert3(start_lsn.file() == n+1);
-        w_assert3(n != 0);
-
-        {
-            /* FRJ: before starting into the CS below we have to be
-               sure an empty partition waits for us (otherwise we
-               deadlock because partition scavenging is protected by
-               the _partition_lock as well).
-             */
-            DO_PTHREAD(pthread_mutex_lock(&_scavenge_lock));
-        retry:
-            // need predicates, lest we be in shutdown()
-            if(bf) bf->wakeup_cleaners();
-            if(smlevel_1::chkpt != NULL) smlevel_1::chkpt->wakeup_and_take();
-            u_int oldest = global_min_lsn().hi();
-            if(oldest + PARTITION_COUNT == start_lsn.file()) {
-                fprintf(stderr,
-                "Cannot open partition %d until partition %d is reclaimed\n",
-                    start_lsn.file(), oldest);
-                fprintf(stderr,
-                "Waiting for reclamation.\n");
-                DO_PTHREAD(pthread_cond_wait(&_scavenge_cond, &_scavenge_lock));
-                goto retry;
-            }
-            DO_PTHREAD(pthread_mutex_unlock(&_scavenge_lock));
-
-            // grab the lock -- we're about to mess with partitions
-            CRITICAL_SECTION(cs, _partition_lock);
-            p->close();
-            unset_current();
-            DBG(<<" about to open " << n+1);
-            //                                  end_hint, existing, recovery
-            p = _open_partition_for_append(n+1, lsn_t::null, false, false);
-        }
-
-        // it's a new partition -- size is now 0
-        w_assert3(curr_partition()->size()== 0);
-        w_assert3(partition_num() != 0);
-    }
-
-    // Flush the log buffer
-    p->flush(p->fhdl_app(), start_lsn, _buf, start1, end1, start2, end2);
-    long written = (end2 - start2) + (end1 - start1);
-    p->set_size(start_lsn.lo()+written);
-
-#if W_DEBUG_LEVEL > 2
-    _sanity_check();
+    posix_memalign((void**)&_readbuf, LOG_DIO_ALIGN, SM_PAGESIZE*4);
+    //_readbuf = new char[SM_PAGESIZE*4];
+    posix_memalign((void**)&_writebuf, LOG_DIO_ALIGN, SM_PAGESIZE*2);
 #endif
-}
-#endif // LOG_BUFFER
-
-// See that the log buffer contains whatever partial log record
-// might have been written to the tail of the file fd.
-// Used when recovery finds a not-full partition file.
-#ifdef LOG_BUFFER
-void
-log_core::_prime(int fd, fileoff_t start, lsn_t next)
-{
-    // initilize the log buffer
-    _log_buffer->_prime(fd, start, next);
-}
 #else
-void
-log_core::_prime(int fd, fileoff_t start, lsn_t next)
-{
-
-    DBGOUT3(<< "_prime @ lsn " << next);
-
-    w_assert1(_durable_lsn == _curr_lsn); // better be startup/recovery!
-    long boffset = prime(_buf, fd, start, next);
-
-
-    _durable_lsn = _flush_lsn = _curr_lsn = next;
-
-    /* FRJ: the new code assumes that the buffer is always aligned
-       with some buffer-sized multiple of the partition, so we need to
-       return how far into the current segment we are.
-     */
-    long offset = next.lo() % segsize();
-    long base = next.lo() - offset;
-    lsn_t start_lsn(next.hi(), base);
-
-    // This should happend only in recovery/startup case.  So let's assert
-    // that there is no log daemon running yet. If we ever fire this
-    // assert, we'd better see why and it means we might have to protect
-    // _cur_epoch and _start/_end with a critical section on _insert_lock.
-    w_assert1(_flush_daemon_running == false);
-    _buf_epoch = _cur_epoch = epoch(start_lsn, base, offset, offset);
-    _end = _start = next.lo();
-
-    // move the primed data where it belongs (watch out, it might overlap)
-    memmove(_buf+offset-boffset, _buf, boffset);
-}
-#endif // LOG_BUFFER
-
-// Prime buf with the partial block ending at 'next';
-// return the size of that partial block (possibly 0)
-//
-// We are about to write a record for a certain lsn(next).
-// If we haven't been appending to this file (e.g., it's
-// startup), we need to make sure the first part of the buffer
-// contains the last partial block in the file, so that when
-// we append that block to the file, we aren't clobbering the
-// tail of the file (partition).
-//
-// This reads from the given file descriptor, the necessary
-// block to cover the lsn.
-//
-// The start argument (offset from beginning of file (fd) of
-// start of partition) is for support on raw devices; for unix
-// files, it's always zero, since the beginning of the partition
-// is the beginning of the file (fd).
-//
-// This method is public to allow calling from partition_t, which
-// uses this to prime its own buffer for writing a skip record.
-// It is called from the private _prime to prime the segment-sized
-// log buffer _buf.
-long
-log_core::prime(char* buf, int fd, fileoff_t start, lsn_t next)
-{
-    FUNC(log_core::prime);
-
-    w_assert1(start == 0); // unless we are on a raw device, which is
-    // no longer supported for the log.
-
-    fileoff_t b = _floor(next.lo(), BLOCK_SIZE);
-    // get the first lsn in the block to which "next" belongs.
-    lsn_t first = lsn_t(uint32_t(next.hi()), sm_diskaddr_t(b));
-
-    // if the "next" lsn is in the middle of a block...
-    if(first != next) {
-        w_assert3(first.lo() < next.lo());
-        fileoff_t offset = start + first.lo();
-
-        DBG(<<" reading " << int(BLOCK_SIZE) << " on fd " << fd );
-        int n = 0;
-        w_rc_t e = me()->pread(fd, buf, BLOCK_SIZE, offset);
-        if (e.is_error()) {
-            // Not mt-safe, but it's a fatal error anyway
-            W_FATAL_MSG(e.err_num(),
-                        << "cannot read log: lsn " << first
-                        << "pread(): " << e
-                        << "pread() returns " << n << endl);
-        }
-    }
-    return next.lo() - first.lo();
-}
-
-void
-log_core::_sanity_check() const
-{
-    if(!_initialized) return;
-
-#if W_DEBUG_LEVEL > 1
-    partition_index_t   i;
-    const partition_t*  p;
-    bool                found_current=false;
-    bool                found_min_lsn=false;
-
-    // we should not be calling this when
-    // we're in any intermediate state, i.e.,
-    // while there's no current index
-
-    if( _curr_index >= 0 ) {
-        w_assert1(_curr_num > 0);
-    } else {
-        // initial state: _curr_num == 1
-        w_assert1(_curr_num == 1);
-    }
-    w_assert1(durable_lsn() <= curr_lsn());
-    w_assert1(durable_lsn() >= first_lsn(1));
-
-    for(i=0; i<PARTITION_COUNT; i++) {
-        p = _partition(i);
-        p->sanity_check();
-
-        w_assert1(i ==  p->index());
-
-        // at most one open for append at any time
-        if(p->num()>0) {
-            w_assert1(p->exists());
-            w_assert1(i ==  _get_index(p->num()));
-            w_assert1(p ==  _n_partition(p->num()));
-
-            if(p->is_current()) {
-                w_assert1(!found_current);
-                found_current = true;
-
-                w_assert1(p ==  curr_partition());
-                w_assert1(p->num() ==  partition_num());
-                w_assert1(i ==  partition_index());
-
-                w_assert1(p->is_open_for_append());
-            } else if(p->is_open_for_append()) {
-                // FRJ: not always true with concurrent inserts
-                //w_assert1(p->flushed());
-            }
-
-            // look for global_min_lsn
-            if(global_min_lsn().hi() == p->num()) {
-                //w_assert1(!found_min_lsn);
-                // don't die in case global_min_lsn() is null lsn
-                found_min_lsn = true;
-            }
-        } else {
-            w_assert1(!p->is_current());
-            w_assert1(!p->exists());
-        }
-    }
-    w_assert1(found_min_lsn || (global_min_lsn()== lsn_t::null));
+#if SM_PAGESIZE < 8192
+    _readbuf = new char[log_storage::BLOCK_SIZE*4];
+#else
+    _readbuf = new char[SM_PAGESIZE*4];
 #endif
+#endif // LOG_DIRECT_IO
+
+    if (bsize < 64 * 1024) {
+        // not mt-safe, but this is not going to happen in 
+        // concurrency scenario
+        smlevel_0::errlog->clog << error_prio 
+        << "Log buf size (sm_logbufsize) too small: "
+        << bsize << ", require at least " << 64 * 1024 
+        << endl; 
+        smlevel_0::errlog->clog << error_prio << endl;
+        fprintf(stderr,
+            "Log buf size (sm_logbufsize) too small: %ld, need %d\n",
+            bsize, 64*1024);
+        W_FATAL(eINTERNAL);
+    }
+
+    w_assert1(is_aligned(_readbuf));
+    w_assert1(_curr_lsn == _durable_lsn);
+    if (1) {
+        smlevel_0::errlog->clog << debug_prio 
+            << "Log _start " << start_byte() << " end_byte() " << end_byte()
+            << endl
+            << "Log _curr_lsn " << _curr_lsn 
+            << " _durable_lsn " << _durable_lsn
+            << endl; 
+        smlevel_0::errlog->clog << debug_prio 
+            << "Curr epoch  base_lsn " << _cur_epoch.base_lsn
+            << endl
+            << "Curr epoch  base " << _cur_epoch.base
+            << endl
+            << "Curr epoch  start " << _cur_epoch.start
+            << endl
+            << "Curr epoch  end " << _cur_epoch.end
+            << endl;
+        smlevel_0::errlog->clog << debug_prio 
+            << "Old epoch  base_lsn " << _old_epoch.base_lsn
+            << endl
+            << "Old epoch  base " << _old_epoch.base
+            << endl
+            << "Old epoch  start " << _old_epoch.start
+            << endl
+            << "Old epoch  end " << _old_epoch.end
+            << endl;
+    }
 }
 
-#ifdef LOG_BUFFER
-rc_t
-log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
+log_common::~log_common() 
 {
-    FUNC(log_core::fetch);
+    w_assert1(_durable_lsn == _curr_lsn);
 
-    return _log_buffer->fetch(ll, rp, nxt, forward);
-}
-
-rc_t
-log_core::fetch(lsn_t& ll, logrec_t* &rp, lsn_t* nxt, hints_op op)
-{
-    FUNC(log_core::fetch);
-
-    return _log_buffer->fetch(ll, rp, nxt, op);
-}
+#ifdef LOG_DIRECT_IO
+    free(_readbuf);
+    free(_writebuf);
+    _writebuf = NULL;
 #else
+    delete [] _readbuf;
+#endif
+    _readbuf = NULL;
+
+    delete _carray;
+
+    DO_PTHREAD(pthread_mutex_destroy(&_wait_flush_lock));
+    DO_PTHREAD(pthread_cond_destroy(&_wait_cond));
+    DO_PTHREAD(pthread_cond_destroy(&_flush_cond));
+}
+
 /*********************************************************************
  *
  *  log_core::fetch(lsn, rec, nxt, forward)
@@ -645,6 +221,9 @@ log_core::fetch(lsn_t& ll, logrec_t* &rp, lsn_t* nxt, hints_op op)
 rc_t
 log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
 {
+    /*
+     * STEP 1: Open the partition
+     */
     FUNC(log_core::fetch);
 
     DBGTHRD(<<"fetching lsn " << ll
@@ -655,448 +234,108 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
     _sanity_check();
 #endif
 
-    // it's not sufficient to flush to ll, since
-    // ll is at the *beginning* of what we want
-    // to read...
+    // protect against double-acquire
+    _storage->acquire_partition_lock(); // caller must release it
+
+    // it's not sufficient to flush to ll, since ll is at the *beginning* of
+    // what we want to read, so force a flush when necessary
     lsn_t must_be_durable = ll + sizeof(logrec_t);
     if(must_be_durable > _durable_lsn) {
         W_DO(flush(must_be_durable));
     }
-
-    // protect against double-acquire
-    _acquire(); // caller must release the _partition_lock mutex
-
-    /*
-     *  Find and open the partition
-     */
-
-    partition_t        *p = 0;
-    uint32_t        last_hi=0;
-    while (!p) {
-        if(last_hi == ll.hi()) {
-            // can happen on the 2nd or subsequent round
-            // but not first
-            DBGTHRD(<<"no such partition " << ll  );
-            return RC(eEOF);
-        }
-        if (ll >= curr_lsn())  {
-            /*
-             *  This would constitute a
-             *  read beyond the end of the log
-             */
-            DBGTHRD(<<"fetch at lsn " << ll  << " returns eof -- _curr_lsn="
-                    << curr_lsn());
-            return RC(eEOF);
-        }
-        last_hi = ll.hi();
-
-        DBG(<<" about to open " << ll.hi());
-        //                                 part#, end_hint, existing, recovery
-        if ((p = _open_partition_for_read(ll.hi(), lsn_t::null, true, false))) {
-
-            // opened one... is it the right one?
-            DBGTHRD(<<"opened... p->size()=" << p->size());
-
-            if ( ll.lo() >= p->size() ||
-                (p->size() == partition_t::nosize && ll.lo() >= limit()))  {
-                DBGTHRD(<<"seeking to " << ll.lo() << ";  beyond p->size() ... OR ...");
-                DBGTHRD(<<"limit()=" << limit() << " & p->size()=="
-                        << int(partition_t::nosize));
-
-                ll = first_lsn(ll.hi() + 1);
-                DBGTHRD(<<"getting next partition: " << ll);
-                p = 0; continue;
-            }
-        }
+    if (forward && ll >= curr_lsn()) {
+        w_assert0(ll == curr_lsn());
+        // reading the curr_lsn during recovery yields a skip log record,
+        // but since there is no next partition to open, scan must stop
+        // here, without handling skip below
+        // exception/error should not be used for control flow (TODO)
+        return RC(eEOF);
+    }
+    if (!forward && ll == lsn_t::null) {
+        // for a backward scan, nxt pointer is set to null
+        // when the first log record in the first partition is set
+        return RC(eEOF);
     }
 
-    bool first_record = false;  // True if target record is the first record in a partition
+    // Find and open the partition
+    partition_t* p = _storage->find_partition(ll, true, false, forward);
 
-    DBGOUT3(<< "fetch @ lsn: " << ll);
-    W_COERCE(p->read(rp, ll));
+    /*
+     * STEP 2: Read log record from the partition
+     */
+    lsn_t prev_lsn = lsn_t::null;
+    DBGOUT3(<< "fetch @ lsn: " << ll);    
+    W_COERCE(p->read(readbuf(), rp, ll, forward ? NULL : &prev_lsn,
+            partition_t::invalid_fhdl));
+    w_assert0(rp->get_lsn_ck() == ll);
+
+    // handle skip log record
+    if (rp->type() == logrec_t::t_skip)
     {
-        logrec_t        &r = *rp;
-
-        if (r.type() == logrec_t::t_skip && r.get_lsn_ck() == ll) {
-
-            // The log record we want to read is at the end of one partition
-            // therefore the actual log record is in the next partition
-            // Everything is good except if caller is asking for a backward scan
-            // then the 'nxt' is in the current partition, not the next partition which
-            // we are about to go to
-
-            if ((false == forward) && (nxt))
-            {
-                // If backward scan, save the 'nxt' before moving to the next partition
-                // Note the parameter for 'advance' is a signed int, so we are using
-                // negative number to get the lsn from previous log record
-                lsn_t tmp = ll;
-                int distance = 0 - (int)(r.length());
-                *nxt = tmp.advance(distance);
-
-                // The target record is the first record in the next partition
-                // we recorded the lsn for 'nxt' before we move to the next partition
-                first_record = true;
-            }
-
+        if (forward) {
             DBGTHRD(<<"seeked to skip" << ll );
             DBGTHRD(<<"getting next partition.");
             ll = first_lsn(ll.hi() + 1);
-            // FRJ: BUG? Why are we so certain this partition is even
-            // open, let alone open for read?
-            p = _n_partition(ll.hi());
-            if(!p)
-                p = _open_partition_for_read(ll.hi(), lsn_t::null, false, false);
+
+            p = _storage->get_partition(ll.hi());
+            if(!p) {
+                //p = _open_partition_for_read(ll.hi(), lsn_t::null, false, false);
+                p = _storage->find_partition(ll, false, false, forward);
+            }
 
             // re-read
-            DBGOUT3(<< "fetch @ lsn: " << ll);
-            W_COERCE(p->read(rp, ll));
+            DBGOUT3(<< "fetch @ lsn: " << ll);                
+            W_COERCE(p->read(readbuf(), rp, ll));
+            w_assert0(rp->get_lsn_ck() == ll);
+        }
+        else { // backward scan
+            // just get previous log record using prev_lsn which was set inside
+            // the first call to p->read()
+            w_assert0(prev_lsn != lsn_t::null);
+            ll = prev_lsn;
+            DBGOUT3(<< "fetch @ lsn: " << ll);                
+            W_COERCE(p->read(readbuf(), rp, ll, &prev_lsn,
+                        partition_t::invalid_fhdl));
+            w_assert0(rp->get_lsn_ck() == ll);
+        }
+    } 
+
+    // set nxt pointer accordingly
+    if (nxt) {
+        if (!forward && ll.lo() - rp->length() < 0) {
+            W_DO(_storage->last_lsn_in_partition(ll.hi() - 1, *nxt));
+        }
+        else {
+            if (forward) {
+                *nxt = ll;
+                nxt->advance(rp->length());
+            }
+            else {
+                *nxt = prev_lsn;
+            }
         }
     }
-    logrec_t        &r = *rp;
 
-    if (r.lsn_ck().hi() != ll.hi()) {
-        W_FATAL_MSG(fcINTERNAL,
-            << "Fatal error: log record " << ll
-            << " is corrupt in lsn_ck().hi() "
-            << r.get_lsn_ck()
-            << endl);
-    } else if (r.lsn_ck().lo() != ll.lo()) {
-        W_FATAL_MSG(fcINTERNAL,
-            << "Fatal error: log record " << ll
-            << "is corrupt in lsn_ck().lo()"
-            << r.get_lsn_ck()
-            << endl);
-    }
+    DBGTHRD(<<"fetch at lsn " << ll  << " returns " << *rp
+            << " with next " << *nxt);
 
-    if ((nxt) && (false == first_record))
-    {
-        // Get the lsn for next/previous log record
-        // If backward scan, the target record might be the first one in the partition
-        // so the previous record would be in a different partition
-        // we don't need to worry about this special case because:
-        // The logic would go to the previous partition first, realized the actual log record
-        // is the first record of the next partition, record the 'nxt' and then move
-        // to the next partition, so the 'nxt' has been taken care of if the target is the first
-        // record in a partition (true == first_record)
-
-        lsn_t tmp = ll;
-        int distance;
-        if (true == forward)
-            distance = (int)(r.length());
-        else
-            distance = 0 - (int)(r.length());
-        *nxt = tmp.advance(distance);
-    }
-
-    DBGTHRD(<<"fetch at lsn " << ll  << " returns " << r);
 #if W_DEBUG_LEVEL > 2
     _sanity_check();
-#endif
+#endif 
 
     // caller must release the _partition_lock mutex
     return RCOK;
 }
 
-#endif
-
-/*********************************************************************
- *
- *  log_core::close_min(n)
- *
- *  Close the partition with the smallest index(num) or an unused
- *  partition, and
- *  return a ptr to the partition
- *
- *  The argument n is the partition number for which we are going
- *  to use the free partition.
- *
- *********************************************************************/
-// MUTEX: partition
-partition_t        *
-log_core::_close_min(partition_number_t n)
+rc_t log_core::fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, hints_op /*parameter not used */)
 {
-    // kick the cleaner thread(s)
-    if(bf) bf->wakeup_cleaners();
-
-    FUNC(log_core::close_min);
-
-    /*
-     *  If a free partition exists, return it.
-     */
-
-    /*
-     * first try the slot that is n % PARTITION_COUNT
-     * That one should be free.
-     */
-    int tries=0;
- again:
-    partition_index_t    i =  (int)((n-1) % PARTITION_COUNT);
-    partition_number_t   min = min_chkpt_rec_lsn().hi();
-    partition_t         *victim;
-
-    victim = _partition(i);
-    if((victim->num() == 0)  ||
-        (victim->num() < min)) {
-        // found one -- doesn't matter if it's the "lowest"
-        // but it should be
-    } else {
-        victim = 0;
-    }
-
-    if (victim)  {
-        w_assert3( victim->index() == (partition_index_t)((n-1) % PARTITION_COUNT));
-    }
-    /*
-     *  victim is the chosen victim partition.
-     */
-    if(!victim) {
-        /*
-         * uh-oh, no space left. Kick the page cleaners, wait a bit, and
-         * try again. Do this no more than 8 times.
-         *
-         */
-        {
-            w_ostrstream msg;
-            msg << error_prio
-            << "Thread " << me()->id << " "
-            << "Out of log space  ("
-            << space_left()
-            << "); No empty partitions."
-            << endl;
-            fprintf(stderr, "%s\n", msg.c_str());
-        }
-
-        if(tries++ > 8) W_FATAL(eOUTOFLOGSPACE);
-        if(bf) bf->wakeup_cleaners();
-        me()->sleep(1000);
-        goto again;
-    }
-    w_assert1(victim);
-    // num could be 0
-
-    /*
-     *  Close it.
-     */
-    if(victim->exists()) {
-        /*
-         * Cannot close it if we need it for recovery.
-         */
-        if(victim->num() >= min_chkpt_rec_lsn().hi()) {
-            w_ostrstream msg;
-            msg << " Cannot close min partition -- still in use!" << endl;
-            // not mt-safe
-            smlevel_0::errlog->clog << error_prio  << msg.c_str() << flushl;
-        }
-        w_assert1(victim->num() < min_chkpt_rec_lsn().hi());
-
-        victim->close(true);
-        victim->destroy();
-
-    } else {
-        w_assert3(! victim->is_open_for_append());
-        w_assert3(! victim->is_open_for_read());
-    }
-    w_assert1(! victim->is_current() );
-
-    victim->clear();
-
-    return victim;
+    // This should only be used in logbuf_core, but just invoking the
+    // other (regular) fetch with forward=true should work just as well
+    return fetch(lsn, rec, nxt, true);
 }
 
-/*********************************************************************
- *
- *  log_core::_open_partition_for_append() calls _open_partition with
- *                            forappend=true)
- *  log_core::_open_partition_for_read() calls _open_partition with
- *                            forappend=false)
- *
- *  log_core::_open_partition(num, end_hint, existing,
- *                           forappend, during_recovery)
- *
- *  This partition structure is free and usable.
- *  Open it as partition num.
- *
- *  if existing==true, the partition "num" had better already exist,
- *  else it had better not already exist.
- *
- *  if forappend==true, making this the new current partition.
- *    and open it for appending was well as for reading
- *
- *  if during_recovery==true, make sure the entire partition is
- *   checked and its size is recorded accurately.
- *
- *  end_hint is used iff during_recovery is true.
- *
- *********************************************************************/
-
-// MUTEX: partition
-partition_t        *
-log_core::_open_partition(partition_number_t  __num,
-        const lsn_t&  end_hint,
-        bool existing,
-        bool forappend,
-        bool during_recovery
-)
-{
-    w_assert3(__num > 0);
-
-#if W_DEBUG_LEVEL > 2
-    // sanity checks for arguments:
-    {
-        // bool case1 = (existing  && forappend && during_recovery);
-        bool case2 = (existing  && forappend && !during_recovery);
-        // bool case3 = (existing  && !forappend && during_recovery);
-        // bool case4 = (existing  && !forappend && !during_recovery);
-        // bool case5 = (!existing  && forappend && during_recovery);
-        // bool case6 = (!existing  && forappend && !during_recovery);
-        bool case7 = (!existing  && !forappend && during_recovery);
-        bool case8 = (!existing  && !forappend && !during_recovery);
-
-        w_assert3( ! case2);
-        w_assert3( ! case7);
-        w_assert3( ! case8);
-    }
-
-#endif
-
-    // see if one's already opened with the given __num
-    partition_t *p = _n_partition(__num);
-
-#if W_DEBUG_LEVEL > 2
-    if(forappend) {
-        w_assert3(partition_index() == -1);
-        // there should now be *no open partition*
-        partition_t *c;
-        int i;
-        for (i = 0; i < PARTITION_COUNT; i++)  {
-            c = _partition(i);
-            w_assert3(! c->is_current());
-        }
-    }
-#endif
-
-    if(!p) {
-        /*
-         * find an empty partition to use
-         */
-        DBG(<<"find a new partition structure  to use " );
-        p = _close_min(__num);
-        w_assert1(p);
-        p->peek(__num, end_hint, during_recovery);
-    }
-
-
-    if(existing && !forappend) {
-        DBG(<<"about to open for read");
-        w_rc_t err = p->open_for_read(__num);
-        if(err.is_error()) {
-            // Try callback to recover this file
-            if(smlevel_0::log_archived_callback) {
-                static char buf[max_devname];
-                make_log_name(__num, buf, max_devname);
-                err = (*smlevel_0::log_archived_callback)(
-                        buf,
-                        __num
-                        );
-                if(!err.is_error()) {
-                    // Try again, just once.
-                    err = p->open_for_read(__num);
-                }
-            }
-        }
-        if(err.is_error()) {
-            fprintf(stderr,
-                    "Could not open partition %d for reading.\n",
-                    __num);
-            W_FATAL(eINTERNAL);
-        }
-
-
-        w_assert3(p->is_open_for_read());
-        w_assert3(p->num() == __num);
-        w_assert3(p->exists());
-    }
-
-
-    if(forappend) {
-        /*
-         *  This becomes the current partition.
-         */
-        p->open_for_append(__num, end_hint);
-        if(during_recovery) {
-          // We will eventually want to write a record with the durable
-          // lsn.  But if this is start-up and we've initialized
-          // with a partial partition, we have to prime the
-          // buf with the last block in the partition.
-          w_assert1(durable_lsn() == curr_lsn());
-          _prime(p->fhdl_app(), p->start(), durable_lsn());
-        }
-        w_assert3(p->exists());
-        w_assert3(p->is_open_for_append());
-
-        // The idea here is to checkpoint at the beginning of every
-        // new partition because it seems we aren't taking enough
-        // checkpoints; then we were making the user threads do an emergency
-        // checkpoint to scavenge log space.  Short-tx workloads should never
-        // encounter this.    Don't do this if shutting down or starting
-        // up because in those 2 cases, the chkpt_m might not exist yet/anymore
-        DBGOUT3(<< "chkpt 2");
-        if(smlevel_1::chkpt != NULL) smlevel_1::chkpt->wakeup_and_take();
-    }
-    return p;
-}
-
-void
-log_core::unset_current()
-{
-    _curr_index = -1;
-    _curr_num = 0;
-}
-
-void
-log_core::set_current(
-        partition_index_t i,
-        partition_number_t num
-)
-{
-    w_assert3(_curr_index == -1);
-    w_assert3(_curr_num  == 0 || _curr_num == 1);
-    _curr_index = i;
-    _curr_num = num;
-}
-
-#ifdef LOG_BUFFER
-void log_core::start_flush_daemon()
-{
-    _log_buffer->start_flush_daemon();
-}
-
-void log_core::shutdown()
-{
-    _log_buffer->shutdown();
-}
-#else
-class flush_daemon_thread_t : public smthread_t {
-    log_core* _log;
-public:
-    flush_daemon_thread_t(log_core* log) :
-         smthread_t(t_regular, "flush_daemon", WAIT_NOT_USED), _log(log) { }
-
-    virtual void run() { _log->flush_daemon(); }
-};
-
-// Does not get called until after the
-// log is fully constructed:
-void log_core::start_flush_daemon()
-{
-    _flush_daemon_running = true;
-    _flush_daemon->fork();
-}
-
-void
-log_core::shutdown()
-{
+void log_core::shutdown() 
+{ 
     // gnats 52:  RACE: We set _shutting_down and signal between the time
     // the daemon checks _shutting_down (false) and waits.
     //
@@ -1109,7 +348,7 @@ log_core::shutdown()
     _shutting_down = true;
     while (*&_shutting_down) {
         CRITICAL_SECTION(cs, _wait_flush_lock);
-        // The only thread that should be waiting
+        // The only thread that should be waiting 
         // on the _flush_cond is the log flush daemon.
         // Yet somehow we wedge here.
         DO_PTHREAD(pthread_cond_broadcast(&_flush_cond));
@@ -1119,1590 +358,74 @@ log_core::shutdown()
     delete _flush_daemon;
     _flush_daemon=NULL;
 }
-#endif // LOG_BUFFER
 
 /*********************************************************************
  *
  *  log_core::log_core(bufsize, reformat)
  *
- *  Hidden constructor.
+ *  Hidden constructor. 
  *  Create log flush daemon thread.
  *
- *  Open and scan logdir for master lsn and last log file.
+ *  Open and scan logdir for master lsn and last log file. 
  *  Truncate last incomplete log record (if there is any)
  *  from the last log file.
  *
  *********************************************************************/
-
-#ifdef LOG_BUFFER
 NORET
 log_core::log_core(
+                   const char* path,
                    long bsize, // segment size for the log buffer, set through "sm_logbufsize"
                    bool reformat,
-                   int carray_active_slot_count,
-                   int logbuf_seg_count,
-                   int logbuf_flush_trigger,
-                   int logbuf_block_size
+                   int carray_active_slot_count
                    )
-
-    :
-      _reservations_active(false),
-      _segsize(_ceil(bsize, SEGMENT_SIZE)), // actual segment size for the log buffer,
-      _curr_index(-1),
-      _curr_num(1),
-      _readbuf(NULL),
-#ifdef LOG_DIRECT_IO
-      _writebuf(NULL),
-#endif
-      _skip_log(NULL)
+    : 
+      log_common(bsize, carray_active_slot_count),
+      _buf(NULL)
 {
     FUNC(log_core::log_core);
 
-    DO_PTHREAD(pthread_mutex_init(&_scavenge_lock, NULL));
-    DO_PTHREAD(pthread_cond_init(&_scavenge_cond, NULL));
-
-    // create the log buffer
-    // _log_buffer->_partition_data_size is not set at this moment
-    _log_buffer = new logbuf_core(logbuf_seg_count, logbuf_flush_trigger, logbuf_block_size, _segsize,
-                              0, carray_active_slot_count);
-    _log_buffer->logbuf_set_owner(this);
-
-
-    // NOTE: GROT must make this a function of page size, and of xfer size,
-    // since xfer size is fixed (8K).
-    // It has to big enough to read the maximum-sized log record, clearly
-    // more than a page.
 #ifdef LOG_DIRECT_IO
-#if SM_PAGESIZE < 8192
-    posix_memalign((void**)&_readbuf, LOG_DIO_ALIGN, BLOCK_SIZE*4);
-    //_readbuf = new char[BLOCK_SIZE*4];
-    posix_memalign((void**)&_writebuf, LOG_DIO_ALIGN, BLOCK_SIZE*2);
-#else
-    posix_memalign((void**)&_readbuf, LOG_DIO_ALIGN, SM_PAGESIZE*4);
-    //_readbuf = new char[SM_PAGESIZE*4];
-    // we need two blocks for the write buffer because the skip log record may span two blocks
-    posix_memalign((void**)&_writebuf, LOG_DIO_ALIGN, SM_PAGESIZE*2);
-#endif
-#else
-#if SM_PAGESIZE < 8192
-    _readbuf = new char[BLOCK_SIZE*4];
-#else
-    _readbuf = new char[SM_PAGESIZE*4];
-#endif
-#endif // LOG_DIRECT_IO
-
-    _skip_log = new skip_log;
-
-    w_assert1(is_aligned(_readbuf));
-
-    // this function calculates _partition_data_size
-    // the total log size, max_logsz, is set through this option "sm_logsize"
-    // the default value of sm_logsize is increased from the original 128KB to 128MB
-    W_COERCE(_set_size(max_logsz));
-
-    // the log buffer (the epochs) is designed to hold log records from at most two partitions
-    // so its capacity cannot exceed the partition size
-    // otherwise, there could be log records from three parttitions in the buffer
-    if(LOGBUF_SEG_COUNT*_segsize > _partition_data_size) {
-        errlog->clog << error_prio
-                     << "Log buf seg count too big or total log size (sm_logsize) too small: "
-                     << "LOGBUF_SEG_COUNT " <<  LOGBUF_SEG_COUNT
-                     << "_segsize " << _segsize
-                     << "_partition_data_size " << _partition_data_size
-                     << "max_logsz" << max_logsz
-                     << endl;
-        errlog->clog << error_prio << endl;
-        fprintf(stderr, "Log buf seg count too big or total log size (sm_logsize) too small ");
-        W_FATAL(eINTERNAL);
-    }
-
-    // set partition_data_size
-    _log_buffer->set_partition_data_size(_partition_data_size);
-
-    DBGOUT3(<< "SEG SIZE " << _segsize << " PARTITION DATA SIZE " << _partition_data_size);
-
-
-    // FRJ: we don't actually *need* this (no trx around yet), but we
-    // don't want to trip the assertions that watch for it.
-    CRITICAL_SECTION(cs, _partition_lock);
-
-    partition_number_t  last_partition = partition_num();
-    bool                last_partition_exists = false;
-    /*
-     * make sure there's room for the log names
-     */
-    fileoff_t eof= fileoff_t(0);
-
-    os_dirent_t *dd=0;
-    os_dir_t ldir = os_opendir(dir_name());
-    if (! ldir)
-    {
-        w_rc_t e = RC(eOS);
-        smlevel_0::errlog->clog << fatal_prio
-            << "Error: could not open the log directory " << dir_name() <<flushl;
-        fprintf(stderr, "Error: could not open the log directory %s\n",
-                    dir_name());
-
-        smlevel_0::errlog->clog << fatal_prio
-            << "\tNote: the log directory is specified using\n"
-            "\t      the sm_logdir option." << flushl;
-
-        smlevel_0::errlog->clog << flushl;
-
-        W_COERCE(e);
-    }
-    DBGTHRD(<<"opendir " << dir_name() << " succeeded");
-
-    /*
-     *  scan directory for master lsn and last log file
-     */
-
-    _master_lsn = lsn_t::null;
-
-    uint32_t min_index = max_uint4;
-
-    char *fname = new char [smlevel_0::max_devname];
-    if (!fname)
-        W_FATAL(fcOUTOFMEMORY);
-    w_auto_delete_array_t<char> ad_fname(fname);
-
-    /* Create a list of lsns for the partitions - this
-     * will be used to store any hints about the last
-     * lsns of the partitions (stored with checkpoint meta-info
-     */
-    lsn_t lsnlist[PARTITION_COUNT];
-    int   listlength=0;
-    {
-        /*
-         *  initialize partition table
-         */
-        partition_index_t i;
-        for (i = 0; i < PARTITION_COUNT; i++)  {
-            _part[i].init_index(i);
-            _part[i].init(this);
-        }
-    }
-
-    DBGTHRD(<<"reformat= " << reformat
-            << " last_partition "  << last_partition
-            << " last_partition_exists "  << last_partition_exists
-            );
-    if (reformat)
-    {
-        smlevel_0::errlog->clog << emerg_prio
-            << "Reformatting logs..." << endl;
-
-        while ((dd = os_readdir(ldir)))
-        {
-            DBGTHRD(<<"master_prefix= " << master_prefix());
-
-            unsigned int namelen = strlen(log_prefix());
-            namelen = namelen > strlen(master_prefix())? namelen :
-                                        strlen(master_prefix());
-
-            const char *d = dd->d_name;
-            unsigned int orig_namelen = strlen(d);
-            namelen = namelen > orig_namelen ? namelen : orig_namelen;
-
-            char *name = new char [namelen+1];
-            w_auto_delete_array_t<char>  cleanup(name);
-
-            memset(name, '\0', namelen+1);
-            strncpy(name, d, orig_namelen);
-            DBGTHRD(<<"name= " << name);
-
-            bool parse_ok = (strncmp(name,master_prefix(),strlen(master_prefix()))==0);
-            if(!parse_ok) {
-                parse_ok = (strncmp(name,log_prefix(),strlen(log_prefix()))==0);
-            }
-            if(parse_ok) {
-                smlevel_0::errlog->clog << debug_prio
-                    << "\t" << name << "..." << endl;
-
-                {
-                    w_ostrstream s(fname, (int) smlevel_0::max_devname);
-                    s << dir_name() << _SLASH << name << ends;
-                    w_assert1(s);
-                    if( unlink(fname) < 0) {
-                        w_rc_t e = RC(fcOS);
-                        smlevel_0::errlog->clog << debug_prio
-                            << "unlink(" << fname << "):"
-                            << endl << e << endl;
-                    }
-                }
-            }
-        }
-
-        //  os_closedir(ldir);
-        w_assert3(!last_partition_exists);
-    }
-
-    DBGOUT5(<<"about to readdir"
-            << " last_partition "  << last_partition
-            << " last_partition_exists "  << last_partition_exists
-            );
-
-    while ((dd = os_readdir(ldir)))
-    {
-        DBGOUT5(<<"dd->d_name=" << dd->d_name);
-
-        // XXX should abort on name too long earlier, or size buffer to fit
-        const unsigned int prefix_len = strlen(master_prefix());
-        w_assert3(prefix_len < smlevel_0::max_devname);
-
-        char *buf = new char[smlevel_0::max_devname+1];
-        if (!buf)
-                W_FATAL(fcOUTOFMEMORY);
-        w_auto_delete_array_t<char>  ad_buf(buf);
-
-        unsigned int         namelen = prefix_len;
-        const char *         dn = dd->d_name;
-        unsigned int         orig_namelen = strlen(dn);
-
-        namelen = namelen > orig_namelen ? namelen : orig_namelen;
-        char *                name = new char [namelen+1];
-        w_auto_delete_array_t<char>  cleanup(name);
-
-        memset(name, '\0', namelen+1);
-        strncpy(name, dn, orig_namelen);
-
-        strncpy(buf, name, prefix_len);
-        buf[prefix_len] = '\0';
-
-        DBGOUT5(<<"name= " << name);
-
-        bool parse_ok = ((strlen(buf)) == prefix_len);
-
-        DBGOUT5(<<"parse_ok  = " << parse_ok
-                << " buf = " << buf
-                << " prefix_len = " << prefix_len
-                << " strlen(buf) = " << strlen(buf));
-        if (parse_ok) {
-            lsn_t tmp;
-            if (strcmp(buf, master_prefix()) == 0)
-            {
-                DBGOUT5(<<"found log file " << buf);
-                /*
-                 *  File name matches master prefix.
-                 *  Extract master lsn & lsns of skip-records
-                 */
-                lsn_t tmp1;
-                bool old_style=false;
-                rc_t rc = _read_master(name, prefix_len,
-                        tmp, tmp1, lsnlist, listlength,
-                        old_style);
-                W_COERCE(rc);
-
-                if (tmp < master_lsn())  {
-                    /*
-                     *  Swap tmp <-> _master_lsn, tmp1 <-> _min_chkpt_rec_lsn
-                     */
-                    std::swap(_master_lsn, tmp);
-                    std::swap(_min_chkpt_rec_lsn, tmp1);
-                }
-                /*
-                 *  Remove the older master record.
-                 */
-                if (_master_lsn != lsn_t::null) {
-                    _make_master_name(_master_lsn,
-                                      _min_chkpt_rec_lsn,
-                                      fname,
-                                      smlevel_0::max_devname);
-                    (void) unlink(fname);
-                }
-                /*
-                 *  Save the new master record
-                 */
-                _master_lsn = tmp;
-                _min_chkpt_rec_lsn = tmp1;
-                DBGOUT5(<<" _master_lsn=" << _master_lsn
-                 <<" _min_chkpt_rec_lsn=" << _min_chkpt_rec_lsn);
-
-                DBGOUT5(<<"parse_ok = " << parse_ok);
-
-            } else if (strcmp(buf, log_prefix()) == 0)  {
-                DBGOUT5(<<"found log file " << buf);
-                /*
-                 *  File name matches log prefix
-                 */
-
-                w_istrstream s(name + prefix_len);
-                uint32_t curr;
-                if (! (s >> curr))  {
-                    smlevel_0::errlog->clog << fatal_prio
-                    << "bad log file \"" << name << "\"" << flushl;
-                    W_FATAL(eINTERNAL);
-                }
-
-                DBGOUT5(<<"curr " << curr
-                        << " partition_num()==" << partition_num()
-                        << " last_partition_exists " << last_partition_exists
-                        );
-
-                if (curr >= last_partition) {
-                    last_partition = curr;
-                    last_partition_exists = true;
-                    DBGOUT5(<<"new last_partition " << curr
-                        << " exits=true" );
-                }
-                if (curr < min_index) {
-                    min_index = curr;
-                }
-            } else {
-                DBGOUT5(<<"NO MATCH");
-                DBGOUT5(<<"_master_prefix= " << master_prefix());
-                DBGOUT5(<<"_log_prefix= " << log_prefix());
-                DBGOUT5(<<"buf= " << buf);
-                parse_ok = false;
-            }
-        }
-
-        /*
-         *  if we couldn't parse the file name and it was not "." or ..
-         *  then print an error message
-         */
-        if (!parse_ok && ! (strcmp(name, ".") == 0 ||
-                                strcmp(name, "..") == 0)) {
-            smlevel_0::errlog->clog << fatal_prio
-                                    << "log_core: cannot parse filename \""
-                                    << name << "\".  Maybe a data volume in the logging directory?"
-                                    << flushl;
-            W_FATAL(fcINTERNAL);
-        }
-    }
-    os_closedir(ldir);
-
-    DBGOUT5(<<"after closedir  "
-            << " last_partition "  << last_partition
-            << " last_partition_exists "  << last_partition_exists
-            );
-
-#if W_DEBUG_LEVEL > 2
-    if(reformat) {
-        w_assert3(partition_num() == 1);
-        w_assert3(_min_chkpt_rec_lsn.hi() == 1);
-        w_assert3(_min_chkpt_rec_lsn.lo() == first_lsn(1).lo());
-    } else {
-       // ??
-    }
-    w_assert3(partition_index() == -1);
-#endif
-
-    DBGOUT5(<<"Last partition is " << last_partition
-        << " existing = " << last_partition_exists
-     );
-
-    /*
-     *  Destroy all partitions less than _min_chkpt_rec_lsn
-     *  Open the rest and close them.
-     *  There might not be an existing last_partition,
-     *  regardless of the value of "reformat"
-     */
-    {
-        partition_number_t n;
-        partition_t        *p;
-
-        DBGOUT5(<<" min_chkpt_rec_lsn " << min_chkpt_rec_lsn()
-                << " last_partition " << last_partition);
-        w_assert3(min_chkpt_rec_lsn().hi() <= last_partition);
-
-        for (n = min_index; n < min_chkpt_rec_lsn().hi(); n++)  {
-            // not an error if we can't unlink (probably doesn't exist)
-            DBGOUT5(<<" destroy_file " << n << "false");
-            destroy_file(n, false);
-        }
-        for (n = _min_chkpt_rec_lsn.hi(); n <= last_partition; n++)  {
-            // Find out if there's a hint about the length of the
-            // partition (from the checkpoint).  This lsn serves as a
-            // starting point from which to search for the skip_log record
-            // in the file.  It's a performance thing...
-            lsn_t lasthint;
-            for(int q=0; q<listlength; q++) {
-                if(lsnlist[q].hi() == n) {
-                    lasthint = lsnlist[q];
-                }
-            }
-
-            // open and check each file (get its size)
-            DBGOUT5(<<" open " << n << "true, false, true");
-
-            // last argument indicates "in_recovery" more accurately,
-            // we should say "at-startup"
-            p = _open_partition_for_read(n, lasthint, true, true);
-            w_assert3(p == _n_partition(n));
-            p->close();
-            unset_current();
-            DBGOUT5(<<" done w/ open " << n );
-        }
-    }
-
-    /* XXXX :  Don't have a static method on
-     * partition_t for start()
-    */
-    /* end of the last valid log record / start of invalid record */
-    fileoff_t pos = 0;
-
-    { // Truncate at last complete log rec
-    DBGOUT5(<<" truncate last complete log rec ");
-
-    /*
-     *
-        The goal of this code is to determine where is the last complete
-        log record in the log file and truncate the file at the
-        end of that record.  It detects this by scanning the file and
-        either reaching eof or else detecting an incomplete record.
-        If it finds an incomplete record then the end of the preceding
-        record is where it will truncate the file.
-
-        The file is scanned by attempting to fread the length of a log
-        record header.        If this fread does not read enough bytes, then
-        we've reached an incomplete log record.  If it does read enough,
-        then the buffer should contain a valid log record header and
-        it is checked to determine the complete length of the record.
-        Fseek is then called to advance to the end of the record.
-        If the fseek fails then it indicates an incomplete record.
-
-     *  NB:
-        This is done here rather than in peek() since in the unix-file
-        case, we only check the *last* partition opened, not each
-        one read.
-     *
-     */
-    make_log_name(last_partition, fname, smlevel_0::max_devname);
-    DBGOUT5(<<" checking " << fname);
-
-    FILE *f =  fopen(fname, "r");
-    DBGOUT5(<<" opened " << fname << " fp " << f << " pos " << pos);
-
-    fileoff_t start_pos = pos;
-
-    /* If the master checkpoint is in the current partition, seek
-       to its position immediately, instead of scanning from the
-       beginning of the log.   If the current partition doesn't have
-       a checkpoint, must read entire paritition until the skip
-       record is found. */
-
-    const lsn_t &seek_lsn = _master_lsn;
-
-    if (f && seek_lsn.hi() == last_partition) {
-            start_pos = seek_lsn.lo();
-
-            DBGOUT5(<<" seeking to start_pos " << start_pos);
-            if (fseek(f, start_pos, SEEK_SET)) {
-                smlevel_0::errlog->clog  << error_prio
-                    << "log read: can't seek to " << start_pos
-                     << " starting log scan at origin"
-                     << endl;
-                start_pos = pos;
-            }
-            else
-                pos = start_pos;
-    }
-    DBGOUT5(<<" pos is now " << pos);
-
-
-
-    if (f)  {
-        allocaN<logrec_t::hdr_non_ssx_sz> buf;
-
-        // this is now a bit more complicated because some log record
-        // is ssx log, which has a shorter header.
-        // (see hdr_non_ssx_sz/hdr_single_sys_xct_sz in logrec_t)
-        int n;
-        // this might be ssx log, so read only minimal size (hdr_single_sys_xct_sz) first
-        const int log_peek_size = logrec_t::hdr_single_sys_xct_sz;
-        DBGOUT5(<<"fread " << fname << " log_peek_size= " << log_peek_size);
-        while ((n = fread(buf, 1, log_peek_size, f)) == log_peek_size)
-        {
-            DBGOUT5(<<" pos is now " << pos);
-            logrec_t  *l = (logrec_t*) (void*) buf;
-
-            if( l->type() == logrec_t::t_skip) {
-                break;
-            }
-
-            smsize_t len = l->length();
-            DBGOUT5(<<"scanned log rec type=" << int(l->type())
-                    << " length=" << l->length());
-
-            if(len < l->header_size()) {
-                // Must be garbage and we'll have to truncate this
-                // partition to size 0
-                w_assert1(pos == start_pos);
-            } else {
-                w_assert1(len >= l->header_size());
-
-                DBGOUT5(<<"hdr_sz " << l->header_size() );
-                DBGOUT5(<<"len " << len );
-                // seek to lsn_ck at end of record
-                // Subtract out log_peek_size because we already
-                // read that (thus we have seeked past it)
-                // Subtract out lsn_t to find beginning of lsn_ck.
-                len -= (log_peek_size + sizeof(lsn_t));
-
-                //NB: this is a RELATIVE seek
-                DBGOUT5(<<" pos is now " << pos);
-                DBGOUT5(<<"seek additional +" << len << " for lsn_ck");
-                if (fseek(f, len, SEEK_CUR))  {
-                    if (feof(f))  break;
-                }
-                DBGOUT5(<<"ftell says pos is " << ftell(f));
-
-                lsn_t lsn_ck;
-                n = fread(&lsn_ck, 1, sizeof(lsn_ck), f);
-                DBGOUT5(<<"read lsn_ck return #bytes=" << n );
-                if (n != sizeof(lsn_ck))  {
-                    w_rc_t        e = RC(eOS);
-                    // reached eof
-                    if (! feof(f))  {
-                        smlevel_0::errlog->clog << fatal_prio
-                        << "ERROR: unexpected log file inconsistency." << flushl;
-                        W_COERCE(e);
-                    }
-                    break;
-                }
-                DBGOUT5(<<"pos = " <<  pos
-                    << " lsn_ck = " <<lsn_ck);
-
-                // make sure log record's lsn matched its position in file
-                if ( (lsn_ck.lo() != pos) ||
-                    (lsn_ck.hi() != (uint32_t) last_partition ) ) {
-                    // found partial log record, end of log is previous record
-                    smlevel_0::errlog->clog << error_prio <<
-        "Found unexpected end of log -- probably due to a previous crash."
-                    << flushl;
-                    smlevel_0::errlog->clog << error_prio <<
-                    "   Recovery will continue ..." << flushl;
-                    break;
-                }
-
-                pos = ftell(f) ;
-            }
-        }
-        fclose(f);
-
-
-
-        {
-            DBGOUT5(<<"explicit truncating " << fname << " to " << pos);
-            w_assert0(os_truncate(fname, pos )==0);
-
-            //
-            // but we can't just use truncate() --
-            // we have to truncate to a size that's a mpl
-            // of the page size. First append a skip record
-            DBGOUT5(<<"explicit opening  " << fname );
-            f =  fopen(fname, "a");
-            if (!f) {
-                w_rc_t e = RC(fcOS);
-                smlevel_0::errlog->clog  << fatal_prio
-                    << "fopen(" << fname << "):" << endl << e << endl;
-                W_COERCE(e);
-            }
-            skip_log *s = new skip_log; // deleted below
-            s->set_lsn_ck( lsn_t(uint32_t(last_partition), sm_diskaddr_t(pos)) );
-
-
-            DBGOUT5(<<"writing skip_log at pos " << pos << " with lsn "
-                << s->get_lsn_ck()
-                << "and size " << s->length()
-                );
-#ifdef W_TRACE
-            {
-                fileoff_t eof2 = ftell(f);
-                DBGOUT5(<<"eof is now " << eof2);
-            }
-#endif
-
-            if ( fwrite(s, s->length(), 1, f) != 1)  {
-                w_rc_t        e = RC(eOS);
-                smlevel_0::errlog->clog << fatal_prio <<
-                    "   fwrite: can't write skip rec to log ..." << flushl;
-                W_COERCE(e);
-            }
-#ifdef W_TRACE
-            {
-                fileoff_t eof2 = ftell(f);
-                DBGTHRD(<<"eof is now " << eof2);
-            }
-#endif
-            fileoff_t o = pos;
-            o += s->length();
-            o = o % BLOCK_SIZE;
-            DBGOUT5(<<"BLOCK_SIZE " << int(BLOCK_SIZE));
-            if(o > 0) {
-                o = BLOCK_SIZE - o;
-                char *junk = new char[int(o)]; // delete[] at close scope
-                if (!junk)
-                        W_FATAL(fcOUTOFMEMORY);
-#ifdef ZERO_INIT
-#if W_DEBUG_LEVEL > 4
-                fprintf(stderr, "ZERO_INIT: Clearing before write %d %s\n",
-                        __LINE__
-                        , __FILE__);
-#endif
-                memset(junk,'\0', int(o));
-#endif
-
-                DBGOUT5(<<"writing junk of length " << o);
-#ifdef W_TRACE
-                {
-                    fileoff_t eof2 = ftell(f);
-                    DBGOUT5(<<"eof is now " << eof2);
-                }
-#endif
-                n = fwrite(junk, int(o), 1, f);
-                if ( n != 1)  {
-                    w_rc_t e = RC(eOS);
-                    smlevel_0::errlog->clog << fatal_prio <<
-                    "   fwrite: can't round out log block size ..." << flushl;
-                    W_COERCE(e);
-                }
-
-#ifdef W_TRACE
-                {
-                    fileoff_t eof2 = ftell(f);
-                    DBGOUT5(<<"eof is now " << eof2);
-                }
-#endif
-                delete[] junk;
-                o = 0;
-            }
-            delete s; // skip_log
-
-            eof = ftell(f);
-            w_rc_t e = RC(eOS);        /* collect the error in case it is needed */
-            DBGOUT5(<<"eof is now " << eof);
-
-
-            if(((eof) % BLOCK_SIZE) != 0) {
-                smlevel_0::errlog->clog << fatal_prio <<
-                    "   ftell: can't write skip rec to log ..." << flushl;
-                W_COERCE(e);
-            }
-            W_IGNORE(e);        /* error not used */
-
-            if (os_fsync(fileno(f)) < 0) {
-                e = RC(eOS);
-                smlevel_0::errlog->clog << fatal_prio <<
-                    "   fsync: can't sync fsync truncated log ..." << flushl;
-                W_COERCE(e);
-            }
-
-#if W_DEBUG_LEVEL > 2
-            {
-                os_stat_t statbuf;
-                if (os_fstat(fileno(f), &statbuf) == -1) {
-                    e = RC(eOS);
-                } else {
-                    e = RCOK;
-                }
-                if (e.is_error()) {
-                    smlevel_0::errlog->clog << fatal_prio
-                            << " Cannot stat fd " << fileno(f)
-                            << ":" << endl << e << endl << flushl;
-                    W_COERCE(e);
-                }
-                DBGOUT5(<< "size of " << fname << " is " << statbuf.st_size);
-            }
-#endif
-            fclose(f);
-        }
-
-    } else {
-        w_assert3(!last_partition_exists);
-    }
-    } // End truncate at last complete log rec
-
-    /*
-     *  initialize current and durable lsn for
-     *  the purpose of sanity checks in open*()
-     *  and elsewhere
-     */
-    DBGOUT5( << "partition num = " << partition_num()
-        <<" current_lsn " << curr_lsn()
-        <<" durable_lsn " << durable_lsn());
-
-    lsn_t new_lsn(last_partition, pos);
-
-
-    _curr_lsn = _durable_lsn = _flush_lsn = new_lsn;
-
-
-
-    DBGOUT2( << "partition num = " << partition_num()
-            <<" current_lsn " << curr_lsn()
-            <<" durable_lsn " << durable_lsn());
-
-    {
-        /*
-         *  create/open the "current" partition
-         *  "current" could be new or existing
-         *  Check its size and all the records in it
-         *  by passing "true" for the last argument to open()
-         */
-
-        // Find out if there's a hint about the length of the
-        // partition (from the checkpoint).  This lsn serves as a
-        // starting point from which to search for the skip_log record
-        // in the file.  It's a performance thing...
-        lsn_t lasthint;
-        for(int q=0; q<listlength; q++) {
-            if(lsnlist[q].hi() == last_partition) {
-                lasthint = lsnlist[q];
-            }
-        }
-        partition_t *p = _open_partition_for_append(last_partition, lasthint,
-                last_partition_exists, true);
-
-        /* XXX error info lost */
-        if(!p) {
-            smlevel_0::errlog->clog << fatal_prio
-            << "ERROR: could not open log file for partition "
-            << last_partition << flushl;
-            W_FATAL(eINTERNAL);
-        }
-
-        w_assert3(p->num() == last_partition);
-        w_assert3(partition_num() == last_partition);
-        w_assert3(partition_index() == p->index());
-
-    }
-    DBGOUT2( << "partition num = " << partition_num()
-            <<" current_lsn " << curr_lsn()
-            <<" durable_lsn " << durable_lsn());
-
-    cs.exit();
-    if(1){
-        // Print various interesting info to the log:
-        errlog->clog << debug_prio
-            << "Log max_partition_size (based on OS max file size)"
-            << max_partition_size() << endl
-            << "Log max_partition_size * PARTITION_COUNT "
-                    << max_partition_size() * PARTITION_COUNT << endl
-            << "Log min_partition_size (based on fixed segment size and fixed block size) "
-                    << min_partition_size() << endl
-            << "Log min_partition_size*PARTITION_COUNT "
-                    << min_partition_size() * PARTITION_COUNT << endl;
-
-        errlog->clog << debug_prio
-            << "Log BLOCK_SIZE (log write size) " << BLOCK_SIZE
-            << endl
-            << "Log segsize() (log buffer size) " << segsize()
-            << endl
-            << "Log segsize()/BLOCK_SIZE " << double(segsize())/double(BLOCK_SIZE)
-            << endl;
-
-        errlog->clog << debug_prio
-            << "User-option smlevel_0::max_logsz " << max_logsz << endl
-            << "Log _partition_data_size " << _partition_data_size
-            << endl
-            << "Log _partition_data_size/segsize() "
-                << double(_partition_data_size)/double(segsize())
-            << endl
-            << "Log _partition_data_size/segsize()+BLOCK_SIZE "
-                << _partition_data_size + BLOCK_SIZE
-            << endl;
-
-        errlog->clog << debug_prio
-            << "Log _start " << start_byte() << " end_byte() " << end_byte()
-            << endl
-                     << "Log _curr_lsn " << curr_lsn()
-                     << " _durable_lsn " << durable_lsn()
-            << endl;
-        errlog->clog << debug_prio
-            << "Curr epoch  base_lsn " << _log_buffer->_cur_epoch.base_lsn
-            << endl
-            << "Curr epoch  base " << _log_buffer->_cur_epoch.base
-            << endl
-            << "Curr epoch  start " << _log_buffer->_cur_epoch.start
-            << endl
-            << "Curr epoch  end " << _log_buffer->_cur_epoch.end
-            << endl;
-        errlog->clog << debug_prio
-            << "Old epoch  base_lsn " << _log_buffer->_old_epoch.base_lsn
-            << endl
-            << "Old epoch  base " << _log_buffer->_old_epoch.base
-            << endl
-            << "Old epoch  start " << _log_buffer->_old_epoch.start
-            << endl
-            << "Old epoch  end " << _log_buffer->_old_epoch.end
-            << endl;
-    }
-}
-#else
-NORET
-log_core::log_core(
-    long bsize,
-    bool reformat,
-    int carray_active_slot_count)
-
-    :
-      _reservations_active(false),
-      _waiting_for_space(false),
-      _waiting_for_flush(false),
-      _start(0),
-      _end(0),
-      _segsize(_ceil(bsize, SEGMENT_SIZE)),
-      // _blocksize(BLOCK_SIZE),
-      _buf(NULL),
-      _shutting_down(false),
-      _flush_daemon_running(false),
-      _carray(new ConsolidationArray(carray_active_slot_count)),
-      _curr_index(-1),
-      _curr_num(1),
-      _readbuf(NULL),
-#ifdef LOG_DIRECT_IO
-      _writebuf(NULL),
-#endif
-      _skip_log(NULL)
-{
-    FUNC(log_core::log_core);
-    DO_PTHREAD(pthread_mutex_init(&_wait_flush_lock, NULL));
-    DO_PTHREAD(pthread_cond_init(&_wait_cond, NULL));
-    DO_PTHREAD(pthread_cond_init(&_flush_cond, NULL));
-    DO_PTHREAD(pthread_mutex_init(&_scavenge_lock, NULL));
-    DO_PTHREAD(pthread_cond_init(&_scavenge_cond, NULL));
-
-#ifdef LOG_DIRECT_IO
-    posix_memalign((void**)&_buf, LOG_DIO_ALIGN, _segsize);
-    //_buf = new char[_segsize];
+    posix_memalign((void**)&_buf, LOG_DIO_ALIGN, _segsize);    
 #else
     _buf = new char[_segsize];
 #endif
 
-    // NOTE: GROT must make this a function of page size, and of xfer size,
-    // since xfer size is fixed (8K).
-    // It has to big enough to read the maximum-sized log record, clearly
-    // more than a page.
-#ifdef LOG_DIRECT_IO
-#if SM_PAGESIZE < 8192
-    posix_memalign((void**)&_readbuf, LOG_DIO_ALIGN, BLOCK_SIZE*4);
-    //_readbuf = new char[BLOCK_SIZE*4];
-    // we need two blocks for the write buffer because the skip log record may span two blocks
-    posix_memalign((void**)&_writebuf, LOG_DIO_ALIGN, BLOCK_SIZE*2);
-#else
-    posix_memalign((void**)&_readbuf, LOG_DIO_ALIGN, SM_PAGESIZE*4);
-    //_readbuf = new char[SM_PAGESIZE*4];
-    posix_memalign((void**)&_writebuf, LOG_DIO_ALIGN, SM_PAGESIZE*2);
-#endif
-#else
-#if SM_PAGESIZE < 8192
-    _readbuf = new char[BLOCK_SIZE*4];
-#else
-    _readbuf = new char[SM_PAGESIZE*4];
-#endif
-#endif // LOG_DIRECT_IO
+    _storage = new log_storage(path, reformat, _curr_lsn, _durable_lsn,
+            _flush_lsn, _segsize);
+    long prime_offset = _storage->prime(_buf, _durable_lsn, log_storage::BLOCK_SIZE);
 
-    _skip_log = new skip_log;
-
-    /* Create thread o flush the log */
-    _flush_daemon = new flush_daemon_thread_t(this);
-
-    if (bsize < 64 * 1024) {
-        // not mt-safe, but this is not going to happen in
-        // concurrency scenario
-        errlog->clog << error_prio
-        << "Log buf size (sm_logbufsize) too small: "
-        << bsize << ", require at least " << 64 * 1024
-        << endl;
-        errlog->clog << error_prio << endl;
-        fprintf(stderr,
-            "Log buf size (sm_logbufsize) too small: %ld, need %d\n",
-            bsize, 64*1024);
-        W_FATAL(eINTERNAL);
-    }
-
-    w_assert1(is_aligned(_readbuf));
-
-    // By the time we get here, the max_logsize should already have been
-    // adjusted by the sm options-handling code, so it should be
-    // a legitimate value now.
-    W_COERCE(_set_size(max_logsz));
-
-    DBGOUT3(<< "SEG SIZE " << _segsize << " PARTITION DATA SIZE " << _partition_data_size);
-
-
-    // FRJ: we don't actually *need* this (no trx around yet), but we
-    // don't want to trip the assertions that watch for it.
-    CRITICAL_SECTION(cs, _partition_lock);
-
-    partition_number_t  last_partition = partition_num();
-    bool                last_partition_exists = false;
-    /*
-     * make sure there's room for the log names
+    /* FRJ: the new code assumes that the buffer is always aligned
+       with some buffer-sized multiple of the partition, so we need to
+       return how far into the current segment we are.
+        CS: moved this code from the _prime method
      */
-    fileoff_t eof= fileoff_t(0);
-
-    os_dirent_t *dd=0;
-    os_dir_t ldir = os_opendir(dir_name());
-    if (! ldir)
-    {
-        w_rc_t e = RC(eOS);
-        smlevel_0::errlog->clog << fatal_prio
-            << "Error: could not open the log directory " << dir_name() <<flushl;
-        fprintf(stderr, "Error: could not open the log directory %s\n",
-                    dir_name());
-
-        smlevel_0::errlog->clog << fatal_prio
-            << "\tNote: the log directory is specified using\n"
-            "\t      the sm_logdir option." << flushl;
-
-        smlevel_0::errlog->clog << flushl;
-
-        W_COERCE(e);
-    }
-    DBGTHRD(<<"opendir " << dir_name() << " succeeded");
-
-    /*
-     *  scan directory for master lsn and last log file
-     */
-
-    _master_lsn = lsn_t::null;
-
-    uint32_t min_index = max_uint4;
-
-    char *fname = new char [smlevel_0::max_devname];
-    if (!fname)
-        W_FATAL(fcOUTOFMEMORY);
-    w_auto_delete_array_t<char> ad_fname(fname);
-
-    /* Create a list of lsns for the partitions - this
-     * will be used to store any hints about the last
-     * lsns of the partitions (stored with checkpoint meta-info
-     */
-    lsn_t lsnlist[PARTITION_COUNT];
-    int   listlength=0;
-    {
-        /*
-         *  initialize partition table
-         */
-        partition_index_t i;
-        for (i = 0; i < PARTITION_COUNT; i++)  {
-            _part[i].init_index(i);
-            _part[i].init(this);
-        }
-    }
-
-    DBGTHRD(<<"reformat= " << reformat
-            << " last_partition "  << last_partition
-            << " last_partition_exists "  << last_partition_exists
-            );
-    if (reformat)
-    {
-        smlevel_0::errlog->clog << emerg_prio
-            << "Reformatting logs..." << endl;
-
-        while ((dd = os_readdir(ldir)))
-        {
-            DBGTHRD(<<"master_prefix= " << master_prefix());
-
-            unsigned int namelen = strlen(log_prefix());
-            namelen = namelen > strlen(master_prefix())? namelen :
-                                        strlen(master_prefix());
-
-            const char *d = dd->d_name;
-            unsigned int orig_namelen = strlen(d);
-            namelen = namelen > orig_namelen ? namelen : orig_namelen;
-
-            char *name = new char [namelen+1];
-            w_auto_delete_array_t<char>  cleanup(name);
-
-            memset(name, '\0', namelen+1);
-            strncpy(name, d, orig_namelen);
-            DBGTHRD(<<"name= " << name);
-
-            bool parse_ok = (strncmp(name,master_prefix(),strlen(master_prefix()))==0);
-            if(!parse_ok) {
-                parse_ok = (strncmp(name,log_prefix(),strlen(log_prefix()))==0);
-            }
-            if(parse_ok) {
-                smlevel_0::errlog->clog << debug_prio
-                    << "\t" << name << "..." << endl;
-
-                {
-                    w_ostrstream s(fname, (int) smlevel_0::max_devname);
-                    s << dir_name() << _SLASH << name << ends;
-                    w_assert1(s);
-                    if( unlink(fname) < 0) {
-                        w_rc_t e = RC(fcOS);
-                        smlevel_0::errlog->clog << debug_prio
-                            << "unlink(" << fname << "):"
-                            << endl << e << endl;
-                    }
-                }
-            }
-        }
-
-        //  os_closedir(ldir);
-        w_assert3(!last_partition_exists);
-    }
-
-    DBGOUT5(<<"about to readdir"
-            << " last_partition "  << last_partition
-            << " last_partition_exists "  << last_partition_exists
-            );
-
-    while ((dd = os_readdir(ldir)))
-    {
-        DBGOUT5(<<"dd->d_name=" << dd->d_name);
-
-        // XXX should abort on name too long earlier, or size buffer to fit
-        const unsigned int prefix_len = strlen(master_prefix());
-        w_assert3(prefix_len < smlevel_0::max_devname);
-
-        char *buf = new char[smlevel_0::max_devname+1];
-        if (!buf)
-                W_FATAL(fcOUTOFMEMORY);
-        w_auto_delete_array_t<char>  ad_buf(buf);
-
-        unsigned int         namelen = prefix_len;
-        const char *         dn = dd->d_name;
-        unsigned int         orig_namelen = strlen(dn);
-
-        namelen = namelen > orig_namelen ? namelen : orig_namelen;
-        char *                name = new char [namelen+1];
-        w_auto_delete_array_t<char>  cleanup(name);
-
-        memset(name, '\0', namelen+1);
-        strncpy(name, dn, orig_namelen);
-
-        strncpy(buf, name, prefix_len);
-        buf[prefix_len] = '\0';
-
-        DBGOUT5(<<"name= " << name);
-
-        bool parse_ok = ((strlen(buf)) == prefix_len);
-
-        DBGOUT5(<<"parse_ok  = " << parse_ok
-                << " buf = " << buf
-                << " prefix_len = " << prefix_len
-                << " strlen(buf) = " << strlen(buf));
-        if (parse_ok) {
-            lsn_t tmp;
-            if (strcmp(buf, master_prefix()) == 0)
-            {
-                DBGOUT5(<<"found log file " << buf);
-                /*
-                 *  File name matches master prefix.
-                 *  Extract master lsn & lsns of skip-records
-                 */
-                lsn_t tmp1;
-                bool old_style=false;
-                rc_t rc = _read_master(name, prefix_len,
-                        tmp, tmp1, lsnlist, listlength,
-                        old_style);
-                W_COERCE(rc);
-
-                if (tmp < master_lsn())  {
-                    /*
-                     *  Swap tmp <-> _master_lsn, tmp1 <-> _min_chkpt_rec_lsn
-                     */
-                    std::swap(_master_lsn, tmp);
-                    std::swap(_min_chkpt_rec_lsn, tmp1);
-                }
-                /*
-                 *  Remove the older master record.
-                 */
-                if (_master_lsn != lsn_t::null) {
-                    _make_master_name(_master_lsn,
-                                      _min_chkpt_rec_lsn,
-                                      fname,
-                                      smlevel_0::max_devname);
-                    (void) unlink(fname);
-                }
-                /*
-                 *  Save the new master record
-                 */
-                _master_lsn = tmp;
-                _min_chkpt_rec_lsn = tmp1;
-                DBGOUT5(<<" _master_lsn=" << _master_lsn
-                 <<" _min_chkpt_rec_lsn=" << _min_chkpt_rec_lsn);
-
-                DBGOUT5(<<"parse_ok = " << parse_ok);
-
-            } else if (strcmp(buf, log_prefix()) == 0)  {
-                DBGOUT5(<<"found log file " << buf);
-                /*
-                 *  File name matches log prefix
-                 */
-
-                w_istrstream s(name + prefix_len);
-                uint32_t curr;
-                if (! (s >> curr))  {
-                    smlevel_0::errlog->clog << fatal_prio
-                    << "bad log file \"" << name << "\"" << flushl;
-                    W_FATAL(eINTERNAL);
-                }
-
-                DBGOUT5(<<"curr " << curr
-                        << " partition_num()==" << partition_num()
-                        << " last_partition_exists " << last_partition_exists
-                        );
-
-                if (curr >= last_partition) {
-                    last_partition = curr;
-                    last_partition_exists = true;
-                    DBGOUT5(<<"new last_partition " << curr
-                        << " exits=true" );
-                }
-                if (curr < min_index) {
-                    min_index = curr;
-                }
-            } else {
-                DBGOUT5(<<"NO MATCH");
-                DBGOUT5(<<"_master_prefix= " << master_prefix());
-                DBGOUT5(<<"_log_prefix= " << log_prefix());
-                DBGOUT5(<<"buf= " << buf);
-                parse_ok = false;
-            }
-        }
-
-        /*
-         *  if we couldn't parse the file name and it was not "." or ..
-         *  then print an error message
-         */
-        if (!parse_ok && ! (strcmp(name, ".") == 0 ||
-                                strcmp(name, "..") == 0)) {
-            smlevel_0::errlog->clog << fatal_prio
-                                    << "log_core: cannot parse filename \""
-                                    << name << "\".  Maybe a data volume in the logging directory?"
-                                    << flushl;
-            W_FATAL(fcINTERNAL);
-        }
-    }
-    os_closedir(ldir);
-
-    DBGOUT5(<<"after closedir  "
-            << " last_partition "  << last_partition
-            << " last_partition_exists "  << last_partition_exists
-            );
-
-#if W_DEBUG_LEVEL > 2
-    if(reformat) {
-        w_assert3(partition_num() == 1);
-        w_assert3(_min_chkpt_rec_lsn.hi() == 1);
-        w_assert3(_min_chkpt_rec_lsn.lo() == first_lsn(1).lo());
-    } else {
-       // ??
-    }
-    w_assert3(partition_index() == -1);
-#endif
-
-    DBGOUT5(<<"Last partition is " << last_partition
-        << " existing = " << last_partition_exists
-     );
-
-    /*
-     *  Destroy all partitions less than _min_chkpt_rec_lsn
-     *  Open the rest and close them.
-     *  There might not be an existing last_partition,
-     *  regardless of the value of "reformat"
-     */
-    {
-        partition_number_t n;
-        partition_t        *p;
-
-        DBGOUT5(<<" min_chkpt_rec_lsn " << min_chkpt_rec_lsn()
-                << " last_partition " << last_partition);
-        w_assert3(min_chkpt_rec_lsn().hi() <= last_partition);
-
-        for (n = min_index; n < min_chkpt_rec_lsn().hi(); n++)  {
-            // not an error if we can't unlink (probably doesn't exist)
-            DBGOUT5(<<" destroy_file " << n << "false");
-            destroy_file(n, false);
-        }
-        for (n = _min_chkpt_rec_lsn.hi(); n <= last_partition; n++)  {
-            // Find out if there's a hint about the length of the
-            // partition (from the checkpoint).  This lsn serves as a
-            // starting point from which to search for the skip_log record
-            // in the file.  It's a performance thing...
-            lsn_t lasthint;
-            for(int q=0; q<listlength; q++) {
-                if(lsnlist[q].hi() == n) {
-                    lasthint = lsnlist[q];
-                }
-            }
-
-            // open and check each file (get its size)
-            DBGOUT5(<<" open " << n << "true, false, true");
-
-            // last argument indicates "in_recovery" more accurately,
-            // we should say "at-startup"
-            p = _open_partition_for_read(n, lasthint, true, true);
-            w_assert3(p == _n_partition(n));
-            p->close();
-            unset_current();
-            DBGOUT5(<<" done w/ open " << n );
-        }
-    }
-
-    /* XXXX :  Don't have a static method on
-     * partition_t for start()
-    */
-    /* end of the last valid log record / start of invalid record */
-    fileoff_t pos = 0;
-
-    { // Truncate at last complete log rec
-    DBGOUT5(<<" truncate last complete log rec ");
-
-    /*
-     *
-        The goal of this code is to determine where is the last complete
-        log record in the log file and truncate the file at the
-        end of that record.  It detects this by scanning the file and
-        either reaching eof or else detecting an incomplete record.
-        If it finds an incomplete record then the end of the preceding
-        record is where it will truncate the file.
-
-        The file is scanned by attempting to fread the length of a log
-        record header.        If this fread does not read enough bytes, then
-        we've reached an incomplete log record.  If it does read enough,
-        then the buffer should contain a valid log record header and
-        it is checked to determine the complete length of the record.
-        Fseek is then called to advance to the end of the record.
-        If the fseek fails then it indicates an incomplete record.
-
-     *  NB:
-        This is done here rather than in peek() since in the unix-file
-        case, we only check the *last* partition opened, not each
-        one read.
-     *
-     */
-    make_log_name(last_partition, fname, smlevel_0::max_devname);
-    DBGOUT5(<<" checking " << fname);
-
-    FILE *f =  fopen(fname, "r");
-    DBGOUT5(<<" opened " << fname << " fp " << f << " pos " << pos);
-
-    fileoff_t start_pos = pos;
-
-    /* If the master checkpoint is in the current partition, seek
-       to its position immediately, instead of scanning from the
-       beginning of the log.   If the current partition doesn't have
-       a checkpoint, must read entire paritition until the skip
-       record is found. */
-
-    const lsn_t &seek_lsn = _master_lsn;
-
-    if (f && seek_lsn.hi() == last_partition) {
-            start_pos = seek_lsn.lo();
-
-            DBGOUT5(<<" seeking to start_pos " << start_pos);
-            if (fseek(f, start_pos, SEEK_SET)) {
-                smlevel_0::errlog->clog  << error_prio
-                    << "log read: can't seek to " << start_pos
-                     << " starting log scan at origin"
-                     << endl;
-                start_pos = pos;
-            }
-            else
-                pos = start_pos;
-    }
-    DBGOUT5(<<" pos is now " << pos);
-
-    if (f)  {
-        allocaN<logrec_t::hdr_non_ssx_sz> buf;
-
-        // this is now a bit more complicated because some log record
-        // is ssx log, which has a shorter header.
-        // (see hdr_non_ssx_sz/hdr_single_sys_xct_sz in logrec_t)
-        int n;
-        // this might be ssx log, so read only minimal size (hdr_single_sys_xct_sz) first
-        const int log_peek_size = logrec_t::hdr_single_sys_xct_sz;
-        DBGOUT5(<<"fread " << fname << " log_peek_size= " << log_peek_size);
-        while ((n = fread(buf, 1, log_peek_size, f)) == log_peek_size)
-        {
-            DBGOUT5(<<" pos is now " << pos);
-            logrec_t  *l = (logrec_t*) (void*) buf;
-
-            if( l->type() == logrec_t::t_skip) {
-                break;
-            }
-
-            smsize_t len = l->length();
-            DBGOUT5(<<"scanned log rec type=" << int(l->type())
-                    << " length=" << l->length());
-
-            if(len < l->header_size()) {
-                // Must be garbage and we'll have to truncate this
-                // partition to size 0
-                w_assert1(pos == start_pos);
-            } else {
-                w_assert1(len >= l->header_size());
-
-                DBGOUT5(<<"hdr_sz " << l->header_size() );
-                DBGOUT5(<<"len " << len );
-                // seek to lsn_ck at end of record
-                // Subtract out log_peek_size because we already
-                // read that (thus we have seeked past it)
-                // Subtract out lsn_t to find beginning of lsn_ck.
-                len -= (log_peek_size + sizeof(lsn_t));
-
-                //NB: this is a RELATIVE seek
-                DBGOUT5(<<" pos is now " << pos);
-                DBGOUT5(<<"seek additional +" << len << " for lsn_ck");
-                if (fseek(f, len, SEEK_CUR))  {
-                    if (feof(f))  break;
-                }
-                DBGOUT5(<<"ftell says pos is " << ftell(f));
-
-                lsn_t lsn_ck;
-                n = fread(&lsn_ck, 1, sizeof(lsn_ck), f);
-                DBGOUT5(<<"read lsn_ck return #bytes=" << n );
-                if (n != sizeof(lsn_ck))  {
-                    w_rc_t        e = RC(eOS);
-                    // reached eof
-                    if (! feof(f))  {
-                        smlevel_0::errlog->clog << fatal_prio
-                        << "ERROR: unexpected log file inconsistency." << flushl;
-                        W_COERCE(e);
-                    }
-                    break;
-                }
-                DBGOUT5(<<"pos = " <<  pos
-                    << " lsn_ck = " <<lsn_ck);
-
-                // make sure log record's lsn matched its position in file
-                if ( (lsn_ck.lo() != pos) ||
-                    (lsn_ck.hi() != (uint32_t) last_partition ) ) {
-                    // found partial log record, end of log is previous record
-                    smlevel_0::errlog->clog << error_prio <<
-        "Found unexpected end of log -- probably due to a previous crash."
-                    << flushl;
-                    smlevel_0::errlog->clog << error_prio <<
-                    "   Recovery will continue ..." << flushl;
-                    break;
-                }
-
-                // remember current position
-                pos = ftell(f) ;
-            }
-        }
-        fclose(f);
-
-        {
-            DBGOUT5(<<"explicit truncating " << fname << " to " << pos);
-            w_assert0(os_truncate(fname, pos )==0);
-
-            //
-            // but we can't just use truncate() --
-            // we have to truncate to a size that's a mpl
-            // of the page size. First append a skip record
-            DBGOUT5(<<"explicit opening  " << fname );
-            f =  fopen(fname, "a");
-            if (!f) {
-                w_rc_t e = RC(fcOS);
-                smlevel_0::errlog->clog  << fatal_prio
-                    << "fopen(" << fname << "):" << endl << e << endl;
-                W_COERCE(e);
-            }
-            skip_log *s = new skip_log; // deleted below
-            s->set_lsn_ck( lsn_t(uint32_t(last_partition), sm_diskaddr_t(pos)) );
-
-            DBGOUT5(<<"writing skip_log at pos " << pos << " with lsn "
-                << s->get_lsn_ck()
-                << "and size " << s->length()
-                );
-#ifdef W_TRACE
-            {
-                fileoff_t eof2 = ftell(f);
-                DBGOUT5(<<"eof is now " << eof2);
-            }
-#endif
-
-            if ( fwrite(s, s->length(), 1, f) != 1)  {
-                w_rc_t        e = RC(eOS);
-                smlevel_0::errlog->clog << fatal_prio <<
-                    "   fwrite: can't write skip rec to log ..." << flushl;
-                W_COERCE(e);
-            }
-#ifdef W_TRACE
-            {
-                fileoff_t eof2 = ftell(f);
-                DBGTHRD(<<"eof is now " << eof2);
-            }
-#endif
-            fileoff_t o = pos;
-            o += s->length();
-            o = o % BLOCK_SIZE;
-            DBGOUT5(<<"BLOCK_SIZE " << int(BLOCK_SIZE));
-            if(o > 0) {
-                o = BLOCK_SIZE - o;
-                char *junk = new char[int(o)]; // delete[] at close scope
-                if (!junk)
-                        W_FATAL(fcOUTOFMEMORY);
-#ifdef ZERO_INIT
-#if W_DEBUG_LEVEL > 4
-                fprintf(stderr, "ZERO_INIT: Clearing before write %d %s\n",
-                        __LINE__
-                        , __FILE__);
-#endif
-                memset(junk,'\0', int(o));
-#endif
-
-                DBGOUT5(<<"writing junk of length " << o);
-#ifdef W_TRACE
-                {
-                    fileoff_t eof2 = ftell(f);
-                    DBGOUT5(<<"eof is now " << eof2);
-                }
-#endif
-                n = fwrite(junk, int(o), 1, f);
-                if ( n != 1)  {
-                    w_rc_t e = RC(eOS);
-                    smlevel_0::errlog->clog << fatal_prio <<
-                    "   fwrite: can't round out log block size ..." << flushl;
-                    W_COERCE(e);
-                }
-#ifdef W_TRACE
-                {
-                    fileoff_t eof2 = ftell(f);
-                    DBGOUT5(<<"eof is now " << eof2);
-                }
-#endif
-                delete[] junk;
-                o = 0;
-            }
-            delete s; // skip_log
-
-            eof = ftell(f);
-            w_rc_t e = RC(eOS);        /* collect the error in case it is needed */
-            DBGOUT5(<<"eof is now " << eof);
-
-
-            if(((eof) % BLOCK_SIZE) != 0) {
-                smlevel_0::errlog->clog << fatal_prio <<
-                    "   ftell: can't write skip rec to log ..." << flushl;
-                W_COERCE(e);
-            }
-            W_IGNORE(e);        /* error not used */
-
-            if (os_fsync(fileno(f)) < 0) {
-                e = RC(eOS);
-                smlevel_0::errlog->clog << fatal_prio <<
-                    "   fsync: can't sync fsync truncated log ..." << flushl;
-                W_COERCE(e);
-            }
-
-#if W_DEBUG_LEVEL > 2
-            {
-                os_stat_t statbuf;
-                if (os_fstat(fileno(f), &statbuf) == -1) {
-                    e = RC(eOS);
-                } else {
-                    e = RCOK;
-                }
-                if (e.is_error()) {
-                    smlevel_0::errlog->clog << fatal_prio
-                            << " Cannot stat fd " << fileno(f)
-                            << ":" << endl << e << endl << flushl;
-                    W_COERCE(e);
-                }
-                DBGOUT5(<< "size of " << fname << " is " << statbuf.st_size);
-            }
-#endif
-            fclose(f);
-        }
-
-    } else {
-        w_assert3(!last_partition_exists);
-    }
-    } // End truncate at last complete log rec
-
-    /*
-     *  initialize current and durable lsn for
-     *  the purpose of sanity checks in open*()
-     *  and elsewhere
-     */
-    DBGOUT5( << "partition num = " << partition_num()
-        <<" current_lsn " << curr_lsn()
-        <<" durable_lsn " << durable_lsn());
-
-    lsn_t new_lsn(last_partition, pos);
-    _curr_lsn = _durable_lsn = _flush_lsn = new_lsn;
-
-    DBGOUT2( << "partition num = " << partition_num()
-            <<" current_lsn " << curr_lsn()
-            <<" durable_lsn " << durable_lsn());
-
-    {
-        /*
-         *  create/open the "current" partition
-         *  "current" could be new or existing
-         *  Check its size and all the records in it
-         *  by passing "true" for the last argument to open()
-         */
-
-        // Find out if there's a hint about the length of the
-        // partition (from the checkpoint).  This lsn serves as a
-        // starting point from which to search for the skip_log record
-        // in the file.  It's a performance thing...
-        lsn_t lasthint;
-        for(int q=0; q<listlength; q++) {
-            if(lsnlist[q].hi() == last_partition) {
-                lasthint = lsnlist[q];
-            }
-        }
-        partition_t *p = _open_partition_for_append(last_partition, lasthint,
-                last_partition_exists, true);
-
-        /* XXX error info lost */
-        if(!p) {
-            smlevel_0::errlog->clog << fatal_prio
-            << "ERROR: could not open log file for partition "
-            << last_partition << flushl;
-            W_FATAL(eINTERNAL);
-        }
-
-        w_assert3(p->num() == last_partition);
-        w_assert3(partition_num() == last_partition);
-        w_assert3(partition_index() == p->index());
-
-    }
-    DBGOUT2( << "partition num = " << partition_num()
-            <<" current_lsn " << curr_lsn()
-            <<" durable_lsn " << durable_lsn());
-
-    cs.exit();
-    if(1){
-        // Print various interesting info to the log:
-        errlog->clog << debug_prio
-            << "Log max_partition_size (based on OS max file size)"
-            << max_partition_size() << endl
-            << "Log max_partition_size * PARTITION_COUNT "
-                    << max_partition_size() * PARTITION_COUNT << endl
-            << "Log min_partition_size (based on fixed segment size and fixed block size) "
-                    << min_partition_size() << endl
-            << "Log min_partition_size*PARTITION_COUNT "
-                    << min_partition_size() * PARTITION_COUNT << endl;
-
-        errlog->clog << debug_prio
-            << "Log BLOCK_SIZE (log write size) " << BLOCK_SIZE
-            << endl
-            << "Log segsize() (log buffer size) " << segsize()
-            << endl
-            << "Log segsize()/BLOCK_SIZE " << double(segsize())/double(BLOCK_SIZE)
-            << endl;
-
-        errlog->clog << debug_prio
-            << "User-option smlevel_0::max_logsz " << max_logsz << endl
-            << "Log _partition_data_size " << _partition_data_size
-            << endl
-            << "Log _partition_data_size/segsize() "
-                << double(_partition_data_size)/double(segsize())
-            << endl
-            << "Log _partition_data_size/segsize()+BLOCK_SIZE "
-                << _partition_data_size + BLOCK_SIZE
-            << endl;
-
-        errlog->clog << debug_prio
+    long offset = _durable_lsn.lo() % segsize();
+    long base = _durable_lsn.lo() - offset;
+    lsn_t start_lsn(_durable_lsn.hi(), base);
+
+    // This should happend only in recovery/startup case.  So let's assert
+    // that there is no log daemon running yet. If we ever fire this
+    // assert, we'd better see why and it means we might have to protect
+    // _cur_epoch and _start/_end with a critical section on _insert_lock.
+    w_assert1(_flush_daemon_running == false);
+    _buf_epoch = _cur_epoch = epoch(start_lsn, base, offset, offset);
+    _end = _start = _durable_lsn.lo();
+
+    // move the primed data where it belongs (watch out, it might overlap)
+    memmove(_buf + offset - prime_offset, _buf, prime_offset);
+
+    _resv = new log_resv(_storage);
+
+    start_flush_daemon();
+
+    if (1) {
+        smlevel_0::errlog->clog << debug_prio 
             << "Log _start " << start_byte() << " end_byte() " << end_byte()
             << endl
             << "Log _curr_lsn " << _curr_lsn
             << " _durable_lsn " << _durable_lsn
-            << endl;
-        errlog->clog << debug_prio
+            << endl; 
+        smlevel_0::errlog->clog << debug_prio 
             << "Curr epoch  base_lsn " << _cur_epoch.base_lsn
             << endl
             << "Curr epoch  base " << _cur_epoch.base
@@ -2711,7 +434,7 @@ log_core::log_core(
             << endl
             << "Curr epoch  end " << _cur_epoch.end
             << endl;
-        errlog->clog << debug_prio
+        smlevel_0::errlog->clog << debug_prio 
             << "Old epoch  base_lsn " << _old_epoch.base_lsn
             << endl
             << "Old epoch  base " << _old_epoch.base
@@ -2722,183 +445,21 @@ log_core::log_core(
             << endl;
     }
 }
-#endif // LOG_BUFFER
 
 
-#ifdef LOG_BUFFER
-log_core::~log_core()
+log_core::~log_core() 
 {
-    if(THE_LOG != NULL)
-    {
-        partition_t        *p;
-        for (uint i = 0; i < PARTITION_COUNT; i++) {
-            p = _partition(i);
-            p->close_for_read();
-            p->close_for_append();
-            DBG(<< " calling clear");
-            p->clear();
-        }
-        w_assert1(_durable_lsn == _curr_lsn);
+    delete _storage;
+    delete _resv;
 
 #ifdef LOG_DIRECT_IO
-        free(_readbuf);
-        free(_writebuf);
-        _writebuf = NULL;
+    free(_buf);
 #else
-        delete [] _readbuf;
+    delete [] _buf;
 #endif
-        _readbuf = NULL;
-        delete _skip_log;
-        _skip_log = NULL;
-
-
-        delete _log_buffer;
-
-        DO_PTHREAD(pthread_mutex_destroy(&_scavenge_lock));
-        DO_PTHREAD(pthread_cond_destroy(&_scavenge_cond));
-        THE_LOG = NULL;
-    }
-}
-#else
-log_core::~log_core()
-{
-    if(THE_LOG != NULL)
-    {
-        partition_t        *p;
-        for (uint i = 0; i < PARTITION_COUNT; i++) {
-            p = _partition(i);
-            p->close_for_read();
-            p->close_for_append();
-            DBG(<< " calling clear");
-            p->clear();
-        }
-        w_assert1(_durable_lsn == _curr_lsn);
-
-        delete _carray;
-
-#ifdef LOG_DIRECT_IO
-        free(_readbuf);
-        free(_writebuf);
-        _writebuf = NULL;
-#else
-        delete [] _readbuf;
-#endif
-        _readbuf = NULL;
-        delete _skip_log;
-        _skip_log = NULL;
-
-#ifdef LOG_DIRECT_IO
-        free(_buf);
-#else
-        delete [] _buf;
-#endif
-        _buf = NULL;
-
-        DO_PTHREAD(pthread_mutex_destroy(&_wait_flush_lock));
-        DO_PTHREAD(pthread_cond_destroy(&_wait_cond));
-        DO_PTHREAD(pthread_cond_destroy(&_flush_cond));
-        DO_PTHREAD(pthread_mutex_destroy(&_scavenge_lock));
-        DO_PTHREAD(pthread_cond_destroy(&_scavenge_cond));
-        THE_LOG = NULL;
-    }
-}
-#endif // LOG_BUFFER
-
-partition_t *
-log_core::_partition(partition_index_t i) const
-{
-    return i<0 ? (partition_t *)0: (partition_t *) &_part[i];
+    _buf = NULL;
 }
 
-
-void
-log_core::destroy_file(partition_number_t n, bool pmsg)
-{
-    char        *fname = new char[smlevel_0::max_devname];
-    if (!fname)
-        W_FATAL(fcOUTOFMEMORY);
-    w_auto_delete_array_t<char> ad_fname(fname);
-    make_log_name(n, fname, smlevel_0::max_devname);
-    if (unlink(fname) == -1)  {
-        w_rc_t e = RC(eOS);
-        smlevel_0::errlog->clog  << error_prio
-            << "destroy_file " << n << " " << fname << ":" <<endl
-             << e << endl;
-        if(pmsg) {
-            smlevel_0::errlog->clog << error_prio
-            << "warning : cannot free log file \""
-            << fname << '\"' << flushl;
-            smlevel_0::errlog->clog << error_prio
-            << "          " << e << flushl;
-        }
-    }
-}
-
-/**\brief compute size of partition from given max-open-log-bytes size
- * \details
- * PARTITION_COUNT == smlevel_0::max_openlog is fixed.
- * SEGMENT_SIZE  is fixed.
- * BLOCK_SIZE  is fixed.
- * Only the partition size is determinable by the user; it's the
- * size of a partition file and PARTITION_COUNT*partition-size is
- * therefore the maximum amount of log space openable at one time.
- */
-w_rc_t log_core::_set_size(fileoff_t size)
-{
-    /* The log consists of at most PARTITION_COUNT open files,
-     * each with space for some integer number of segments (log buffers)
-     * plus one extra block for writing skip records.
-     *
-     * Each segment is an integer number of blocks (BLOCK_SIZE), which
-     * is the size of an I/O.  An I/O is padded, if necessary, to BLOCK_SIZE.
-     */
-    fileoff_t usable_psize = size/PARTITION_COUNT - BLOCK_SIZE;
-
-    // partition must hold at least one buffer...
-    if (usable_psize < _segsize) {
-        W_FATAL(eOUTOFLOGSPACE);
-    }
-
-    // largest integral multiple of segsize() not greater than usable_psize:
-    _partition_data_size = _floor(usable_psize, (segsize()));
-
-    if(_partition_data_size == 0)
-    {
-        cerr << "log size is too small: size "<<size<<" usable_psize "<<usable_psize
-        <<", segsize() "<<segsize()<<", blocksize "<<BLOCK_SIZE<< endl
-        <<"need at least "<<_get_min_size()<<" ("<<(_get_min_size()/1024)<<" * 1024 = "<<(1024 *(_get_min_size()/1024))<<") "<< endl;
-        W_FATAL(eOUTOFLOGSPACE);
-    }
-    _partition_size = _partition_data_size + BLOCK_SIZE;
-    DBGTHRD(<< "log_core::_set_size setting _partition_size (limit LIMIT) "
-            << _partition_size);
-    /*
-    fprintf(stderr,
-"size %ld usable_psize %ld segsize() %ld _part_data_size %ld _part_size %ld\n",
-            size,
-            usable_psize,
-            segsize(),
-            _partition_data_size,
-            _partition_size
-           );
-    */
-    // initial free space estimate... refined once log recovery is complete
-    // release_space(PARTITION_COUNT*_partition_data_size);
-    release_space(recoverable_space(PARTITION_COUNT));
-    if(!verify_chkpt_reservation()
-            || _space_rsvd_for_chkpt > _partition_data_size) {
-        cerr<<
-        "log partitions too small compared to buffer pool:"<<endl
-        <<"    "<<_partition_data_size<<" bytes per partition available"<<endl
-        <<"    "<<_space_rsvd_for_chkpt<<" bytes needed for checkpointing dirty pages"<<endl;
-        return RC(eOUTOFLOGSPACE);
-    }
-    return RCOK;
-}
-
-#ifdef LOG_BUFFER
-// see logbuf_core::_acquire_buffer_space(CArraySlot* info, long recsize)
-#else
 void log_core::_acquire_buffer_space(CArraySlot* info, long recsize)
 {
     w_assert2(recsize > 0);
@@ -2939,16 +500,19 @@ void log_core::_acquire_buffer_space(CArraySlot* info, long recsize)
     *
     * If not, kick the flush daemon to make space.
     */
-    while(*&_waiting_for_space ||
-            end_byte() - start_byte() + recsize > segsize() - 2*BLOCK_SIZE)
+    // CS: TODO commented out waiting-for-space stuff
+    //while(*&_waiting_for_space ||
+    while(
+            end_byte() - start_byte() + recsize > segsize() - 2* log_storage::BLOCK_SIZE) 
     {
         _insert_lock.release(&info->me);
         {
             CRITICAL_SECTION(cs, _wait_flush_lock);
-            while(end_byte() - start_byte() + recsize > segsize() - 2*BLOCK_SIZE)
+            while(end_byte() - start_byte() + recsize > segsize() - 2* log_storage::BLOCK_SIZE)
             {
-                _waiting_for_space = true;
-                // Use signal since the only thread that should be waiting
+                // CS: changed from waiting_for_space to waiting_for_flush
+                _waiting_for_flush = true;
+                // Use signal since the only thread that should be waiting 
                 // on the _flush_cond is the log flush daemon.
                 DO_PTHREAD(pthread_cond_signal(&_flush_cond));
                 DO_PTHREAD(pthread_cond_wait(&_wait_cond, &_wait_flush_lock));
@@ -3045,7 +609,7 @@ void log_core::_acquire_buffer_space(CArraySlot* info, long recsize)
     // The following should be true since we waited on a condition
     // variable while
     // end_byte() - start_byte() + recsize > segsize() - 2*BLOCK_SIZE
-    w_assert2(end_byte() - start_byte() <= segsize() - 2*BLOCK_SIZE);
+    w_assert2(end_byte() - start_byte() <= segsize() - 2* log_storage::BLOCK_SIZE);
 
 
     long end = _buf_epoch.end;
@@ -3064,7 +628,7 @@ void log_core::_acquire_buffer_space(CArraySlot* info, long recsize)
         _buf_epoch.end = new_end;
     }
     // next_lsn is first byte after the tail of the log.
-    else if(next_lsn.lo() <= _partition_data_size) {
+    else if(next_lsn.lo() <= _storage->partition_data_size()) {
         // wrap within a partition
         _buf_epoch.base_lsn += _segsize;
         _buf_epoch.base += _segsize;
@@ -3073,7 +637,7 @@ void log_core::_acquire_buffer_space(CArraySlot* info, long recsize)
     }
     else {
         // new partition! need to update next_lsn/new_end to reflect this
-        long leftovers = _partition_data_size - curr_lsn.lo();
+        long leftovers = _storage->partition_data_size() - curr_lsn.lo();
         w_assert2(leftovers >= 0);
         if(leftovers && !reserve_space(leftovers)) {
             std::cerr << "WARNING WARNING: OUTOFLOGSPACE in update_epochs" << std::endl;
@@ -3104,12 +668,7 @@ void log_core::_acquire_buffer_space(CArraySlot* info, long recsize)
     info->new_base = new_base; // positive if we started a new partition
     info->error = w_error_ok;
 }
-#endif // LOG_BUFFER
 
-
-#ifdef LOG_BUFFER
-// see logbuf_core::_copy_to_buffer(logrec_t &rec, long pos, long recsize, CArraySlot* info)
-#else
 lsn_t log_core::_copy_to_buffer(logrec_t &rec, long pos, long recsize, CArraySlot* info)
 {
     /*
@@ -3152,12 +711,7 @@ lsn_t log_core::_copy_to_buffer(logrec_t &rec, long pos, long recsize, CArraySlo
 
     return rlsn;
 }
-#endif // LOG_BUFFER
 
-
-#ifdef LOG_BUFFER
-// see logbuf_core::_update_epochs(CArraySlot* info)
-#else
 bool log_core::_update_epochs(CArraySlot* info) {
     w_assert1(info->vthis()->count == ConsolidationArray::SLOT_FINISHED);
     // Wait for our predecessor to catch up if we're ahead.
@@ -3216,14 +770,20 @@ bool log_core::_update_epochs(CArraySlot* info) {
 
     return false;
 }
-#endif // LOG_BUFFER
 
-#ifdef LOG_BUFFER
-rc_t log_core::insert(logrec_t &rec, lsn_t* rlsn) {
-    return _log_buffer->insert(rec, rlsn);
-}
-#else
-rc_t log_core::insert(logrec_t &rec, lsn_t* rlsn) {
+rc_t log_core::insert(logrec_t &rec, lsn_t* rlsn)
+{
+    // If log corruption is turned on,  zero out
+    // important parts of the log to fake crash (by making the
+    // log appear to end here).
+    if (_log_corruption) {
+        smlevel_0::errlog->clog << error_prio 
+        << "Generating corrupt log record at lsn: " << curr_lsn() << flushl;
+        rec.corrupt();
+        // Now turn it off.
+        _log_corruption = false;
+    }
+
     w_assert1(rec.length() <= sizeof(logrec_t));
     int32_t size = rec.length();
 
@@ -3304,22 +864,13 @@ rc_t log_core::insert(logrec_t &rec, lsn_t* rlsn) {
     ADD_TSTAT(log_bytes_generated,size);
     return RCOK;
 }
-#endif // LOG_BUFFER
 
 
-#ifdef LOG_BUFFER
-rc_t log_core::flush(const lsn_t &to_lsn, bool block, bool signal, bool *ret_flushed)
-{
-    return _log_buffer->flush(to_lsn, block, signal, ret_flushed);
-}
-#else
 // Return when we know that the given lsn is durable. Wait for the
 // log flush daemon to ensure that it's durable.
 rc_t log_core::flush(const lsn_t &to_lsn, bool block, bool signal, bool *ret_flushed)
 {
     DBGOUT3(<< " flush @ to_lsn: " << to_lsn);
-
-
 
     w_assert1(signal || !block); // signal=false can be used only when block=false
     ASSERT_FITS_IN_POINTER(lsn_t);
@@ -3353,17 +904,13 @@ rc_t log_core::flush(const lsn_t &to_lsn, bool block, bool signal, bool *ret_flu
     }
     return RCOK;
 }
-#endif // LOG_BUFFER
 
-#ifdef LOG_BUFFER
-// see logbuf_core::flush_daemon()
-#else
 /**\brief Log-flush daemon driver.
  * \details
  * This method handles the wait/block of the daemon thread,
  * and when awake, calls its main-work method, flush_daemon_work.
  */
-void log_core::flush_daemon()
+void log_common::flush_daemon() 
 {
     /* Algorithm: attempt to flush non-durable portion of the buffer.
      * If we empty out the buffer, block until either enough
@@ -3378,8 +925,11 @@ void log_core::flush_daemon()
         // flush.
         {
             CRITICAL_SECTION(cs, _wait_flush_lock);
-            if(success && (*&_waiting_for_space || *&_waiting_for_flush)) {
-                _waiting_for_flush = _waiting_for_space = false;
+            // CS: commented out check for waiting_for_space -- don't know why it was here?
+            //if(success && (*&_waiting_for_space || *&_waiting_for_flush)) {
+            if(success && *&_waiting_for_flush) {
+                //_waiting_for_flush = _waiting_for_space = false;
+                _waiting_for_flush = false;
                 DO_PTHREAD(pthread_cond_broadcast(&_wait_cond));
                 // wake up anyone waiting on log flush
             }
@@ -3388,8 +938,14 @@ void log_core::flush_daemon()
                 break;
             }
 
+            // NOTE: right now the thread waiting for a flush has woken up or will woke up, but...
+            // this thread, as long as success is true (it just flushed something in the previous 
+            // flush_daemon_work), will keep calling flush_daemon_work until there is nothing to flush....
+            // this happens in the background
+
             // sleep. We don't care if we get a spurious wakeup
-            if(!success && !*&_waiting_for_space && !*&_waiting_for_flush) {
+            //if(!success && !*&_waiting_for_space && !*&_waiting_for_flush) {
+            if(!success && !*&_waiting_for_flush) {
                 // Use signal since the only thread that should be waiting
                 // on the _flush_cond is the log flush daemon.
                 DO_PTHREAD(pthread_cond_wait(&_flush_cond, &_wait_flush_lock));
@@ -3410,6 +966,13 @@ void log_core::flush_daemon()
         (lsn=flush_daemon_work(last_completed_flush_lsn)) !=
                 last_completed_flush_lsn;
         last_completed_flush_lsn=lsn) ;
+}
+
+void log_common::_sanity_check() const
+{
+    w_assert1(durable_lsn() <= curr_lsn());
+    w_assert1(durable_lsn() >= first_lsn(1));
+    _storage->sanity_check();
 }
 
 /**\brief Flush unflushed-portion of log buffer.
@@ -3509,26 +1072,35 @@ lsn_t log_core::flush_daemon_work(lsn_t old_mark)
     w_assert1(end_lsn == first_lsn(start_lsn.hi()+1)
           || end_lsn.lo() - start_lsn.lo() == (end1-start1) + (end2-start2));
 
-    // start_lsn.file() determines partition # and whether _flushX
+    // start_lsn.file() determines partition # and whether code
     // will open a new partition into which to flush.
     // That, in turn, is determined by whether the _old_epoch.base_lsn.file()
     // matches the _cur_epoch.base_lsn.file()
-    _flushX(start_lsn, start1, end1, start2, end2);
+    // CS: This code used to be on the method _flushX
+    partition_t* p = _storage->get_partition_for_flush(start_lsn, start1, end1,
+            start2, end2);
+
+    // Flush the log buffer
+    p->flush(
+#ifdef LOG_DIRECT_IO
+            writebuf(),
+#endif
+            p->fhdl_app(), start_lsn, _buf, start1, end1, start2, end2
+    );
+
+    long written = (end2 - start2) + (end1 - start1);
+    p->set_size(start_lsn.lo()+written);
+
+#if W_DEBUG_LEVEL > 2
+    _sanity_check();
+#endif 
 
     _durable_lsn = end_lsn;
     _start = new_start;
 
     return end_lsn;
 }
-#endif // LOG_BUFFER
 
-
-#ifdef LOG_BUFFER
-rc_t log_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn)
-{
-    return _log_buffer->compensate(orig_lsn, undo_lsn);
-}
-#else
 // Find the log record at orig_lsn and turn it into a compensation
 // back to undo_lsn
 rc_t log_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn)
@@ -3601,192 +1173,20 @@ rc_t log_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn)
     }
     return RCOK;
 }
-#endif // LOG_BUFFER
 
-
-int
-log_core::get_last_lsns(lsn_t *array)
-{
-    int j=0;
-    for(int i=0; i < PARTITION_COUNT; i++) {
-        const partition_t *p = this->_partition(i);
-        DBGTHRD(<<"last skip lsn for " << p->num()
-                                       << " " << p->last_skip_lsn());
-        if(p->num() > 0 && (p->last_skip_lsn().hi() == p->num())) {
-            array[j++] = p->last_skip_lsn();
-        }
-    }
-    return j;
-}
-
-
-std::deque<log_core::waiting_xct*> log_core::_log_space_waiters;
-
-rc_t log_core::wait_for_space(fileoff_t &amt, timeout_in_ms timeout)
-{
-    DBG(<<"log_core::wait_for_space " << amt);
-    // if they're asking too much don't even bother
-    if(amt > _partition_data_size) {
-        return RC(eOUTOFLOGSPACE);
-    }
-
-    // wait for a signal or 100ms, whichever is longer...
-    w_assert1(amt > 0);
-    struct timespec when;
-    if(timeout != WAIT_FOREVER)
-        sthread_t::timeout_to_timespec(timeout, when);
-
-    pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
-    waiting_xct* wait = new waiting_xct(&amt, &cond);
-    DO_PTHREAD(pthread_mutex_lock(&_space_lock));
-#ifdef LOG_BUFFER
-    _log_buffer->_waiting_for_space = true;
-#else
-    _waiting_for_space = true;
-#endif
-    _log_space_waiters.push_back(wait);
-    while(amt) {
-        /* First time through, someone could have freed up space
-           before we acquired this mutex. 2+ times through, maybe our
-           previous rounds got us enough that the normal log
-           reservation can supply what we still need.
-         */
-        if(reserve_space(amt)) {
-            amt = 0;
-
-            // nullify our entry. Non-racy beause amt > 0 and we hold the mutex
-            wait->needed = 0;
-
-            // clean up in case it's pure false alarms
-            while(_log_space_waiters.size() && ! _log_space_waiters.back()->needed) {
-                delete _log_space_waiters.back();
-                _log_space_waiters.pop_back();
-            }
-            break;
-        }
-        DBGOUT3(<< "chkpt 3");
-
-        if(smlevel_1::chkpt != NULL) smlevel_1::chkpt->wakeup_and_take();
-        if(timeout == WAIT_FOREVER) {
-            cerr<<
-            "* - * - * tid "<<xct()->tid().get_hi()<<"."<<xct()->tid().get_lo()<<" waiting forever for "<<amt<<" bytes of log" <<endl;
-            DO_PTHREAD(pthread_cond_wait(&cond, &_space_lock));
-        } else {
-            cerr<<
-                "* - * - * tid "<<xct()->tid().get_hi()<<"."<<xct()->tid().get_lo()<<" waiting with timeout for "<<amt<<" bytes of log"<<endl;
-                int err = pthread_cond_timedwait(&cond, &_space_lock, &when);
-                if(err == ETIMEDOUT)
-                break;
-        }
-    }
-    cerr<<"* - * - * tid "<<xct()->tid().get_hi()<<"."<<xct()->tid().get_lo()<<" done waiting ("<<amt<<" bytes still needed)" <<endl;
-
-    DO_PTHREAD(pthread_mutex_unlock(&_space_lock));
-    return amt? RC(stTIMEOUT) : RCOK;
-}
-
-void log_core::release_space(fileoff_t amt)
-{
-    DBG(<<"log_core::release_space " << amt);
-    w_assert1(amt >= 0);
-    /* NOTE: The use of _waiting_for_space is purposefully racy
-       because we don't want to pay the cost of a mutex for every
-       space release (which should happen every transaction
-       commit...). Instead waiters use a timeout in case they fall
-       through the cracks.
-
-       Waiting transactions are served in FIFO order; those which time
-       out set their need to -1 leave it for release_space to clean
-       it up.
-     */
-#ifdef LOG_BUFFER
-    if(_log_buffer->_waiting_for_space) {
-#else
-    if(_waiting_for_space) {
-#endif
-        DO_PTHREAD(pthread_mutex_lock(&_space_lock));
-        while(amt > 0 && _log_space_waiters.size()) {
-            bool finished_one = false;
-            waiting_xct* wx = _log_space_waiters.front();
-            if( ! wx->needed) {
-                finished_one = true;
-            }
-            else {
-                fileoff_t can_give = std::min(amt, *wx->needed);
-                *wx->needed -= can_give;
-                amt -= can_give;
-                if(! *wx->needed) {
-                    DO_PTHREAD(pthread_cond_signal(wx->cond));
-                    finished_one = true;
-                }
-            }
-
-            if(finished_one) {
-                delete wx;
-                _log_space_waiters.pop_front();
-            }
-        }
-        if(_log_space_waiters.empty()) {
-#ifdef LOG_BUFFER
-            _log_buffer->_waiting_for_space = false;
-#else
-            _waiting_for_space = false;
-#endif
-        }
-
-        DO_PTHREAD(pthread_mutex_unlock(&_space_lock));
-    }
-
-    lintel::unsafe::atomic_fetch_add<fileoff_t>(&_space_available, amt);
-}
-
-void
-log_core::activate_reservations()
-{
-    /* With recovery complete we now activate log reservations.
-
-       In fact, the activation should be as simple as setting the mode to
-       t_forward_processing, but we also have to account for any space
-       the log already occupies. We don't have to double-count
-       anything because nothing will be undone should a crash occur at
-       this point.
-     */
-    w_assert1(operating_mode == t_forward_processing);
-    // FRJ: not true if any logging occurred during recovery
-    // w_assert1(PARTITION_COUNT*_partition_data_size ==
-    //       _space_available + _space_rsvd_for_chkpt);
-    w_assert1(!_reservations_active);
-
-    // knock off space used by full partitions
-    long oldest_pnum = _min_chkpt_rec_lsn.hi();
-    long newest_pnum = curr_lsn().hi();
-    long full_partitions = newest_pnum - oldest_pnum; // can be zero
-    _space_available -= recoverable_space(full_partitions);
-
-    // and knock off the space used so far in the current partition
-    _space_available -= curr_lsn().lo();
-    _reservations_active = true;
-    // NOTE: _reservations_active does not get checked in the
-    // methods that reserve or release space, so reservations *CAN*
-    // happen during recovery.
-
-    // not mt-safe
-    errlog->clog << info_prio
-        << "Activating reservations: # full partitions "
-            << full_partitions
-            << ", space available " << space_left()
-        << endl
-            << ", oldest partition " << oldest_pnum
-            << ", newest partition " << newest_pnum
-            << ", # partitions " << PARTITION_COUNT
-        << endl ;
-}
-
-rc_t
-log_core::file_was_archived(const char * /*file*/)
-{
-    // TODO: should check that this is the oldest,
-    // and that we indeed asked for it to be archived.
-    _space_available += recoverable_space(1);
-    return RCOK;
-}
+// Determine if this lsn is holding up scavenging of logs by (being 
+// on a presumably hot page, and) being a rec_lsn that's in the oldest open
+// log partition and that oldest partition being sufficiently aged....
+/*
+ * CS: does not seem to be used -- commented out for now.
+ */
+//bool log_core::squeezed_by(const lsn_t &self)  const 
+//{
+    //// many partitions are open
+    //return 
+    //((curr_lsn().file() - global_min_lsn().file()) >=  (PARTITION_COUNT-2))
+        //&&
+    //(self.file() == global_min_lsn().file())  // the given lsn 
+                                              //// is in the oldest file
+    //;
+//}

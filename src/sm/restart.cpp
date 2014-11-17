@@ -3151,7 +3151,8 @@ void restart_m::_analysis_process_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,
         // last mount occurred between redo_lsn and checkpoint
 #ifdef LOG_BUFFER
         // fetch without hints
-        W_COERCE(log->fetch(theLastMountLSNBeforeChkpt, log_rec_buf, 0, true));
+        W_COERCE(log->fetch(theLastMountLSNBeforeChkpt, log_rec_buf, 
+                    (lsn_t*) NULL, true));
 
         // HAVE THE LOG_M MUTEX
         // We have to release it in order to do the mount/dismounts
@@ -3167,7 +3168,8 @@ void restart_m::_analysis_process_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,
         // W_COERCE(log->fetch(theLastMountLSNBeforeChkpt, __copy__buf, 0,
         //                     LOG_ANALYSIS_FORWARD));
 #else
-        W_COERCE(log->fetch(theLastMountLSNBeforeChkpt, log_rec_buf, 0));
+        W_COERCE(log->fetch(theLastMountLSNBeforeChkpt, log_rec_buf, 
+                    (lsn_t*) NULL, true));
 
         // HAVE THE LOG_M MUTEX
         // We have to release it in order to do the mount/dismounts
@@ -4216,7 +4218,8 @@ void restart_m::_redo_log_with_pid(
                 // the last write lsn from page context
                 // use the log record lsn for Single-Page-Recovery, which is the the actual emlsn
 
-                W_COERCE(smlevel_0::log->recover_single_page(page, lsn, true));
+                // CS: since this method is static, we refer to restart_m indirectly
+                W_COERCE(smlevel_1::recovery->recover_single_page(page, lsn, true));
             }
 
             /// page.lsn() is the last write to this page
@@ -4996,7 +4999,7 @@ void restart_m::_redo_page_pass()
             // a virgin page, then nothing to load and just initialize the page.
             // If non-pvirgin page, load the page so we have the page_lsn (last write)
             //
-            // Single-Page-Recovery API smlevel_0::log->recover_single_page(p, page_lsn) requires target
+            // Single-Page-Recovery API recover_single_page(p, page_lsn) requires target
             // page pointer in fixable_page_h format and page_lsn (last write to the page).
             // After the page is in buffer pool memory, we can use Single-Page-Recovery to perform
             // the REDO operation
@@ -5164,7 +5167,7 @@ void restart_m::_redo_page_pass()
             // it assumes the page is private until recovered.  It is not the case during
             // recovery.  It is caller's responsibility to hold latch before accessing Single-Page-Recovery
             page.set_recovery_access();
-            W_COERCE(smlevel_0::log->recover_single_page(page, emlsn, true));   // we have the actual emlsn even if page corrupted
+            W_COERCE(smlevel_1::recovery->recover_single_page(page, emlsn, true));   // we have the actual emlsn even if page corrupted
             page.clear_recovery_access();
 
             if (false == use_redo_full_logging_restart())

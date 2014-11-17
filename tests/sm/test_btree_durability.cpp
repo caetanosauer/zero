@@ -50,7 +50,7 @@ w_rc_t dosome(ss_m* ssm, test_volume_t *test_volume) {
     // for checking log partition files
     partition_number_t cur_partition_number; 
     partition_number_t prev_partition_number, initial_partition_number;
-    cur_partition_number = log_core::THE_LOG->partition_num();
+    cur_partition_number = smlevel_0::log->partition_num();
     prev_partition_number = cur_partition_number;
     initial_partition_number = cur_partition_number;
     (void) initial_partition_number; // Used in an assert
@@ -61,7 +61,7 @@ w_rc_t dosome(ss_m* ssm, test_volume_t *test_volume) {
     char *fname = new char [smlevel_0::max_devname];
 
     // Get initial size of current log partition
-    log_core::THE_LOG->make_log_name(cur_partition_number, fname, smlevel_0::max_devname);  
+    smlevel_0::log->make_log_name(cur_partition_number, fname, smlevel_0::max_devname);  
     assert (0 == stat( fname, &filestatus ));
     logsize = filestatus.st_size;
     std::cout << "Initial log [" << fname << "] " << logsize << " bytes\n";
@@ -94,10 +94,10 @@ w_rc_t dosome(ss_m* ssm, test_volume_t *test_volume) {
 	W_DO(ssm->commit_xct());
 
         // Check for roll-over  
-        cur_partition_number = log_core::THE_LOG->partition_num();
+        cur_partition_number = smlevel_0::log->partition_num();
         if (cur_partition_number != prev_partition_number) 
         {
-          log_core::THE_LOG->make_log_name(cur_partition_number, fname, smlevel_0::max_devname);  
+          smlevel_0::log->make_log_name(cur_partition_number, fname, smlevel_0::max_devname);  
           std::cout << "Log rolled over. " << test_env->log_dir 
                     << " now contains " 
                     << fname << "\n"; 
