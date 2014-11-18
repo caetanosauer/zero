@@ -1029,7 +1029,7 @@ restart_m::analysis_pass_forward(
                 // Delete the transaction from transaction table because it
                 // reduces the size of llinked-list transaction table and improve
                 // the xct_t::look_up performance of the transaction table
-                xct_t::destroy_xct(xd);
+                delete xd;
             }
             break;
 
@@ -1778,7 +1778,7 @@ restart_m::analysis_pass_backward(
                     // Delete the transaction from transaction table because it
                     // reduces the size of llinked-list transaction table and improve
                     // the xct_t::look_up performance of the transaction table
-                    xct_t::destroy_xct(xd);
+                    delete xd;
                 }
             }
             break;
