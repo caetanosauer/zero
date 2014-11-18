@@ -8,6 +8,9 @@ cmake_minimum_required(VERSION 2.6)
 
 PROJECT(fbtree) # Foster B-Trees
 
+# generate clang compilation database
+set( CMAKE_EXPORT_COMPILE_COMMANDS 1 )
+
 SET(CMAKE_MODULE_PATH "${CMAKE_INSTALL_PREFIX}/share/cmake-modules" ${CMAKE_MODULE_PATH})
 
 SET(LINTEL_FIND_REQUIRED ON)
