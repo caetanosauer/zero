@@ -15,7 +15,7 @@ public:
         return malloc(n);
     }
 
-    void release(void* p, size_t n)
+    void release(void* p, size_t n = 0)
     {
         free(p);
     }
@@ -30,7 +30,7 @@ public:
     T* allocate(size_t n);
 
     template<typename T>
-    void release(T* p, size_t n);
+    void release(T* p, size_t n = 0);
 
 };
 

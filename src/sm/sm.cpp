@@ -518,8 +518,6 @@ ss_m::_construct_once()
     std::string xctimpl = _options.get_string_option("sm_log_impl", xct_t::IMPL_NAME);
     if (xctimpl == plog_xct_t::IMPL_NAME) {
         smlevel_1::xct_impl = XCT_PLOG;
-        // TODO use sm option to select ext mgr implementation
-        plog_xct_t::ext_mgr = new plog_ext_naive();
     }
     else {
         smlevel_1::xct_impl = XCT_TRADITIONAL;

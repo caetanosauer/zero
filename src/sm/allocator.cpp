@@ -60,14 +60,12 @@ void sm_tls_allocator::release(plog_xct_t* p, size_t n)
 template<typename T>
 T* sm_tls_allocator::allocate(size_t n)
 {
-    W_FATAL_MSG(eINTERNAL, <<
-        "Cannot allocate memory on given template context");
-    return NULL;
+    return (T*) malloc(n);
 }
 
 template<typename T>
 void sm_tls_allocator::release(T* p, size_t n)
 {
-    W_FATAL_MSG(eINTERNAL, <<
-        "Cannot release memory on given template context");
+    // fallback to naive allocation
+    free(p);
 }

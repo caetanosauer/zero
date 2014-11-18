@@ -4,7 +4,7 @@
 #include "sm_int_1.h"
 #include "logrec.h"
 #include "xct.h"
-#include "plog_ext.h"
+#include "plog.h"
 
 class plog_xct_t : public xct_t
 {
@@ -24,25 +24,22 @@ public:
         const lsn_t&                 undo_nxt = lsn_t::null,
         bool                         loser_xct = false
     );
-    virtual ~plog_xct_t() {};
     
-    // initialized by constructor in ss_m
-    static plog_ext_m* ext_mgr;
+    virtual ~plog_xct_t() {
+        //w_assert1(!curr_ext);
+        //w_assert1(!first_ext);
+    };
 
     void* operator new(size_t s);
     void operator delete(void* p, size_t s);
 
 protected:
+    plog_t plog;
+
     virtual rc_t _abort();
     virtual rc_t _commit(uint32_t flags, lsn_t* plastlsn=NULL);
 
     enum { NEW_EXT_THRESHOLD = sizeof(logrec_t) };
-
-    plog_ext_m::extent_t* curr_ext;
-    plog_ext_m::extent_t* first_ext;
-
-    void link_new_ext();
-    void free_extents();
 };
 
 #endif
