@@ -1512,7 +1512,10 @@ xct_t::_abort()
     {
         w_ostrstream s;
         s << "aborting... ";
-        W_DO(log_comment(s.c_str()));
+        // TODO, bug... commenting this out, it appears
+        // Single Page Recovery when collecting log records
+        // it might have bugs dealing with this log record (before txn aborting)
+//        W_DO(log_comment(s.c_str()));
     }
 #endif
 

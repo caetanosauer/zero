@@ -134,7 +134,7 @@ rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
     // after Single-Page-Recovery, the page should be exactly the requested LSN, perform the validation only if
     // caller is using an actual emlsn
     // An estimated emlsn would be used for a corrupted page during recovery
-    if (true == actual_emlsn)
+    if ((true == actual_emlsn) && (0 != ordered_entires.size()))
         w_assert0(p.lsn() == emlsn);
     DBGOUT1(<< "Single-Page-Recovery done!");
     return RCOK;
@@ -240,6 +240,13 @@ rc_t restart_m::_collect_single_page_recovery_logs(
 
                 if (record->type() == logrec_t::t_page_img_format)
                     break; // root page allocated. initial log
+
+                if (record->type() == logrec_t::t_comment)
+                {
+                    // Log record is a comment, skip and get the next log record in the chain
+                    nxt = record->page_prev_lsn();
+                    continue;
+                }
             }
 
             W_RETURN_RC_MSG(eWRONG_PAGE_LSNCHAIN, << "PID= " << pid << ", CUR_LSN="
@@ -270,7 +277,6 @@ rc_t restart_m::_collect_single_page_recovery_logs(
 //hints
 //delete tmp;
 #endif
-
     return RCOK;
 }
 

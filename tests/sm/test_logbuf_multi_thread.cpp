@@ -13,6 +13,7 @@
 #include "sm_base.h"
 #include "log.h"
 #include "log_lsn_tracker.h"
+#include "logbuf_core.h"
 #include "lock.h"
 #include "w_okvl_inl.h"
 #include "w_endian.h"
@@ -271,6 +272,7 @@ TEST (LogBufferTest, MultiThread) {
     sm_options options;
     options.set_int_option("sm_logbufsize", SEG_SIZE);
     options.set_int_option("sm_logsize", LOG_SIZE);
+    options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
     EXPECT_EQ(test_env->runBtreeTest(parallel_ops, true, 1 << 16, options), 0);
 }
 

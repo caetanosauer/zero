@@ -5,20 +5,20 @@
 
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -78,7 +78,7 @@ class partition_t {
 public:
     typedef smlevel_0::fileoff_t          fileoff_t;
     typedef int                           partition_index_t;
-    typedef smlevel_0::partition_number_t partition_number_t; 
+    typedef smlevel_0::partition_number_t partition_number_t;
 #if SM_PAGESIZE < 8192
     enum { XFERSIZE = 8192 };
 #else
@@ -126,9 +126,9 @@ private:
     // used to be readbuf() of log_core
     char*               _peekbuf;
 
-private: 
+private:
     /* store end lsn at the beginning of each partition; updated
-    * when partition closed 
+    * when partition closed
     */
     void             flush(int fd);
     lsn_t            first_lsn(uint32_t pnum) const { return lsn_t( pnum, 0); }
@@ -143,16 +143,16 @@ public:
     void               set_size(fileoff_t v) { _size =  v; }
     partition_number_t num() const   { return _num; }
     partition_index_t  index() const {  return _index; }
-    lsn_t              first_lsn() const { return 
+    lsn_t              first_lsn() const { return
                                     first_lsn(uint32_t(_num)); }
     void               open_for_append(partition_number_t n, const lsn_t& hint);
     w_rc_t             open_for_read(partition_number_t n, bool err=true);
     void               close_for_append();
     void               close_for_read();
     bool               is_current() const;
-    void               peek(partition_number_t n, 
+    void               peek(partition_number_t n,
                             const lsn_t&    end_hint,
-                            bool, 
+                            bool,
                             int* fd=0);
     w_rc_t             read(char* readbuf,
                             logrec_t *&r, lsn_t &ll,
@@ -204,7 +204,7 @@ public:
                            bool res = (_mask & m_exists) != 0;
 #if W_DEBUG_LEVEL > 2
                            if(res) { w_assert3(num() != 0); }
-#endif 
+#endif
                            return res;
                        }
     bool               is_open_for_read() const {
@@ -229,7 +229,7 @@ private:
     void               _clr_state(uint32_t m) { _mask &= ~m ; }
     void               _skip(const lsn_t &ll, int fd);
     // helper for peek()
-    void              _peek(partition_number_t n, 
+    void              _peek(partition_number_t n,
                             fileoff_t startloc,
                             fileoff_t wholesize,
                             bool, int fd);
@@ -242,4 +242,4 @@ private:
                       }
 public:
 }; // partition_t
-#endif 
+#endif

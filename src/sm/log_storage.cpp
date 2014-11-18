@@ -54,12 +54,12 @@ const char log_storage::_log_prefix[] = "log.";
 log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
         lsn_t& durable_lsn, lsn_t& flush_lsn, long segsize)
     :
-      _min_chkpt_rec_lsn(log_m::first_lsn(1)), 
+      _segsize(segsize),
       _partition_size(0), 
       _partition_data_size(0),
+      _min_chkpt_rec_lsn(log_m::first_lsn(1)), 
       _curr_index(-1),
-      _curr_num(1),
-      _segsize(segsize)
+      _curr_num(1)
 {
 
     _logdir = new char[strlen(path)];
@@ -447,7 +447,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
 
         const lsn_t &seek_lsn = _master_lsn;
 
-        bool seeked_to_master = false;
+        // bool seeked_to_master = false;
         if (f && seek_lsn.hi() == last_partition) {
             start_pos = seek_lsn.lo();
 
@@ -461,7 +461,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
             }
             else {
                 pos = start_pos;
-                seeked_to_master = true;
+                // seeked_to_master = true;
             }
         }
         DBGOUT5(<<" pos is now " << pos);
@@ -1111,6 +1111,7 @@ rc_t log_storage::last_lsn_in_partition(partition_number_t pnum, lsn_t& lsn)
 
     // this partition is already opened
     lsn = lsn_t(pnum, p->size());
+    return RCOK;
 }
 
 /*********************************************************************

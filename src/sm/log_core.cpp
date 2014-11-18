@@ -4,20 +4,20 @@
 
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -93,17 +93,17 @@ log_common::log_common(
                    int carray_active_slot_count
                    )
     : 
-      _segsize(log_storage::_ceil(bsize, SEGMENT_SIZE)), // actual segment size for the log buffer,
-      _shutting_down(false),
-      _flush_daemon_running(false),
-      _log_corruption(false),
+      _log_corruption(false),          
       _readbuf(NULL),
 #ifdef LOG_DIRECT_IO
       _writebuf(NULL),
-#endif
+#endif     
       _start(0), 
-      _end(0),
-      _waiting_for_flush(false),
+      _end(0),     
+      _segsize(log_storage::_ceil(bsize, SEGMENT_SIZE)), // actual segment size for the log buffer,
+      _waiting_for_flush(false),     
+      _shutting_down(false),
+      _flush_daemon_running(false),
       _carray(new ConsolidationArray(carray_active_slot_count))
 {
     FUNC(log_common::log_common);
@@ -205,7 +205,7 @@ log_common::~log_common()
 /*********************************************************************
  *
  *  log_core::fetch(lsn, rec, nxt, forward)
- * 
+ *
  *  used in rollback and log_i
  *
  *  Fetch a record at lsn, and return it in rec. Optionally, return
@@ -215,8 +215,9 @@ log_common::~log_common()
  *  that points to the end of a log file and therefore is actually
  *  the first log record in the next file.
  *
- * NOTE: caller must call release() 
+ * NOTE: caller must call release()
  *********************************************************************/
+
 rc_t
 log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
 {
@@ -225,13 +226,13 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
      */
     FUNC(log_core::fetch);
 
-    DBGTHRD(<<"fetching lsn " << ll 
+    DBGTHRD(<<"fetching lsn " << ll
         << " , _curr_lsn = " << curr_lsn()
         << " , _durable_lsn = " << durable_lsn());
 
 #if W_DEBUG_LEVEL > 0
     _sanity_check();
-#endif 
+#endif
 
     // protect against double-acquire
     _storage->acquire_partition_lock(); // caller must release it
@@ -326,7 +327,7 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
     return RCOK;
 }
 
-rc_t log_core::fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, hints_op op)
+rc_t log_core::fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, hints_op /*parameter not used */)
 {
     // This should only be used in logbuf_core, but just invoking the
     // other (regular) fetch with forward=true should work just as well
@@ -421,7 +422,7 @@ log_core::log_core(
         smlevel_0::errlog->clog << debug_prio 
             << "Log _start " << start_byte() << " end_byte() " << end_byte()
             << endl
-            << "Log _curr_lsn " << _curr_lsn 
+            << "Log _curr_lsn " << _curr_lsn
             << " _durable_lsn " << _durable_lsn
             << endl; 
         smlevel_0::errlog->clog << debug_prio 
@@ -464,16 +465,16 @@ void log_core::_acquire_buffer_space(CArraySlot* info, long recsize)
     w_assert2(recsize > 0);
 
 
-  /* Copy our data into the log buffer and update/create epochs. 
-   * Re: Racing flush daemon over 
+  /* Copy our data into the log buffer and update/create epochs.
+   * Re: Racing flush daemon over
    * epochs, _start, _end, _curr_lsn, _durable_lsn :
    *
-   * _start is set by  _prime at startup (no log flush daemon yet) 
+   * _start is set by  _prime at startup (no log flush daemon yet)
    *                   and flush_daemon_work, not by insert
-   * _end is set by  _prime at startup (no log flush daemon yet) 
+   * _end is set by  _prime at startup (no log flush daemon yet)
    *                   and insert, not by log flush daemon
    * _old_epoch is  protected by _flush_lock
-   * _cur_epoch is  protected by _flush_lock EXCEPT 
+   * _cur_epoch is  protected by _flush_lock EXCEPT
    *                when insert does not wrap, it sets _cur_epoch.end,
    *                which is only read by log flush daemon
    *                The _end is only set after the memcopy is done,
@@ -481,7 +482,7 @@ void log_core::_acquire_buffer_space(CArraySlot* info, long recsize)
    * _curr_lsn is set by  insert (and at startup)
    * _durable_lsn is set by flush daemon
    *
-   * NOTE: _end, _start, epochs updated in 
+   * NOTE: _end, _start, epochs updated in
    * _prime(), but that is called only for
    * opening a partition for append in startup/recovery case,
    * in which case there is no race to be had.
@@ -489,9 +490,9 @@ void log_core::_acquire_buffer_space(CArraySlot* info, long recsize)
    * It is also updated below.
    */
 
-    /* 
+    /*
     * Make sure there's actually space available in the
-    * log buffer, 
+    * log buffer,
     * accounting for the fact that flushes (by the daemon)
     * always work with full blocks. (they round down start of
     * flush to beginning of block and round up/pad end of flush to
@@ -523,7 +524,7 @@ void log_core::_acquire_buffer_space(CArraySlot* info, long recsize)
     lintel::atomic_thread_fence(lintel::memory_order_consume);
     // Having ics now should mean that even if another insert snuck in here,
     // we're ok since we recheck the condition. However, we *could* starve here.
- 
+
 
   /* _curr_lsn, _cur_epoch.end, and end_byte() are all strongly related.
    *
@@ -537,20 +538,20 @@ void log_core::_acquire_buffer_space(CArraySlot* info, long recsize)
    * (lsn of next record to be inserted):
    *
    * _cur_epoch.end is the position of the current lsn relative to the
-   *    segsize() log buffer.  
+   *    segsize() log buffer.
    *    It is relative to the log buffer, and it wraps (modulo the
    *    segment size, which is the log buffer size). ("spill")
    *
-   * end_byte()/_end is the non-wrapping version of _cur_epoch.end: 
-   *     at log init time it is set to a value in the range [0, segsize()) 
-   *     and is  incremented by every log insert for the lifetime of 
+   * end_byte()/_end is the non-wrapping version of _cur_epoch.end:
+   *     at log init time it is set to a value in the range [0, segsize())
+   *     and is  incremented by every log insert for the lifetime of
    *     the database.
    *     It is a byte-offset from the beginning of the log, considering that
    *     partitions are not "contiguous" in this sense.  Each partition has
    *     a lot of byte-offsets that aren't really in the log because
    *     we limit the size of a partition.
    *
-   * _durable_lsn is the lsn of the first byte past the last 
+   * _durable_lsn is the lsn of the first byte past the last
    *     log record written to the file (not counting the skip log record).
    *
    * _cur_epoch.start and start_byte() are convenience variables to avoid doing
@@ -577,7 +578,7 @@ void log_core::_acquire_buffer_space(CArraySlot* info, long recsize)
    *     of the log buffer.
    *
    * start_byte()/_start is the non-wrapping version of _cur_epoch.start:
-   *     At log init time it is set to 0 
+   *     At log init time it is set to 0
    *     and is bumped to match the durable lsn by every log flush.
    *     It is a byte-offset from the beginning of the log, considering that
    *     partitions are not "contiguous" in this sense.  Each partition has
@@ -591,22 +592,22 @@ void log_core::_acquire_buffer_space(CArraySlot* info, long recsize)
   /* An epoch fits within a segment */
     w_assert2(_buf_epoch.end >= 0 && _buf_epoch.end <= segsize());
 
-  /* end_byte() is the byte-offset-from-start-of-log-file 
+  /* end_byte() is the byte-offset-from-start-of-log-file
    * version of _cur_epoch.end */
     w_assert2(_buf_epoch.end % segsize() == end_byte() % segsize());
 
-  /* _curr_lsn is the lsn of the next-to-be-inserted log record, i.e., 
+  /* _curr_lsn is the lsn of the next-to-be-inserted log record, i.e.,
    * the next byte of the log to be written
    */
   /* _cur_epoch.end is the offset into the log buffer of the _curr_lsn */
     w_assert2(_buf_epoch.end % segsize() == _curr_lsn.lo() % segsize());
   /* _curr_epoch.end should never be > segsize at this point;
-   * that would indicate a wraparound is in progress when we entered this 
+   * that would indicate a wraparound is in progress when we entered this
    */
     w_assert2(end_byte() >= start_byte());
 
-    // The following should be true since we waited on a condition 
-    // variable while 
+    // The following should be true since we waited on a condition
+    // variable while
     // end_byte() - start_byte() + recsize > segsize() - 2*BLOCK_SIZE
     w_assert2(end_byte() - start_byte() <= segsize() - 2* log_storage::BLOCK_SIZE);
 
@@ -663,7 +664,7 @@ void log_core::_acquire_buffer_space(CArraySlot* info, long recsize)
     info->old_end = old_end; // lets us serialize with our predecessor after memcpy
     info->start_pos = start_pos; // != old_end when partitions wrap
     info->pos = start_pos + recsize; // coordinates groups of threads sharing a log allocation
-    info->new_end = new_end; // eventually assigned to _cur_epoch 
+    info->new_end = new_end; // eventually assigned to _cur_epoch
     info->new_base = new_base; // positive if we started a new partition
     info->error = w_error_ok;
 }
@@ -688,8 +689,8 @@ lsn_t log_core::_copy_to_buffer(logrec_t &rec, long pos, long recsize, CArraySlo
         memcpy(_buf+pos, data, recsize);
     }
     else {
-        // spillsize > 0 so we are wrapping. 
-        // The wrap is within a partition. 
+        // spillsize > 0 so we are wrapping.
+        // The wrap is within a partition.
         // next_lsn is still valid but not new_end
         //
         // Old epoch becomes valid for the flush daemon to
@@ -698,7 +699,7 @@ lsn_t log_core::_copy_to_buffer(logrec_t &rec, long pos, long recsize, CArraySlo
         // New epoch holds the rest of the log record that we're trying
         // to insert.
         //
-        // spillsize is the portion that wraps around 
+        // spillsize is the portion that wraps around
         // partsize is the portion that doesn't wrap.
         long partsize = recsize - spillsize;
 
@@ -877,7 +878,7 @@ rc_t log_core::flush(const lsn_t &to_lsn, bool block, bool signal, bool *ret_flu
 
     // don't try to flush past end of log -- we might wait forever...
     lsn_t lsn = std::min(to_lsn, (*&_curr_lsn)+ -1);
-    
+
     // already durable?
     if(lsn >= *&_durable_lsn) {
         if (!block) {
@@ -952,7 +953,7 @@ void log_common::flush_daemon()
         }
 
         // flush all records later than last_completed_flush_lsn
-        // and return the resulting last durable lsn 
+        // and return the resulting last durable lsn
         lsn_t lsn = flush_daemon_work(last_completed_flush_lsn);
 
         // success=true if we wrote anything
@@ -961,9 +962,9 @@ void log_common::flush_daemon()
     }
 
     // make sure the buffer is completely empty before leaving...
-    for(lsn_t lsn; 
-        (lsn=flush_daemon_work(last_completed_flush_lsn)) != 
-                last_completed_flush_lsn; 
+    for(lsn_t lsn;
+        (lsn=flush_daemon_work(last_completed_flush_lsn)) !=
+                last_completed_flush_lsn;
         last_completed_flush_lsn=lsn) ;
 }
 
@@ -989,7 +990,7 @@ void log_common::_sanity_check() const
  * \return Latest durable lsn resulting from this flush
  *
  */
-lsn_t log_core::flush_daemon_work(lsn_t old_mark) 
+lsn_t log_core::flush_daemon_work(lsn_t old_mark)
 {
     lsn_t base_lsn_before, base_lsn_after;
     long base, start1, end1, start2, end2;
@@ -1001,7 +1002,7 @@ lsn_t log_core::flush_daemon_work(lsn_t old_mark)
 
         // The old_epoch is valid (needs flushing) iff its end > start.
         // The old_epoch is valid id two cases, both when
-        // insert wrapped thelog buffer 
+        // insert wrapped thelog buffer
         // 1) by doing so reached the end of the partition,
         //     In this case, the old epoch might not be an entire
         //     even segment size
@@ -1012,7 +1013,7 @@ lsn_t log_core::flush_daemon_work(lsn_t old_mark)
             // no wrap -- flush only the new
             w_assert1(_cur_epoch.end >= _cur_epoch.start);
             start2 = _cur_epoch.start;
-            end2 = _cur_epoch.end;            
+            end2 = _cur_epoch.end;
             w_assert1(end2 >= start2);
             // false alarm?
             if(start2 == end2) {
@@ -1022,7 +1023,7 @@ lsn_t log_core::flush_daemon_work(lsn_t old_mark)
 
             start1 = start2; // fake start1 so the start_lsn calc below works
             end1 = start2;
-            
+
             base_lsn_before = base_lsn_after;
         }
         else if(base_lsn_before.file() == base_lsn_after.file()) {
@@ -1031,13 +1032,13 @@ lsn_t log_core::flush_daemon_work(lsn_t old_mark)
             // race here with insert setting _curr_epoch.end, but
             // it won't matter. Since insert already did the memcpy,
             // we are safe and can flush the entire amount.
-            end2 = _cur_epoch.end;            
+            end2 = _cur_epoch.end;
             _cur_epoch.start = end2;
 
             start1 = _old_epoch.start;
             end1 = _old_epoch.end;
             _old_epoch.start = end1;
-            
+
             w_assert1(base_lsn_before + segsize() == base_lsn_after);
         }
         else {
@@ -1045,7 +1046,7 @@ lsn_t log_core::flush_daemon_work(lsn_t old_mark)
             // two epochs target different files. Let the next
             // flush handle the new epoch.
             start2 = 0;
-            end2 = 0; // don't fake end2 because end_lsn needs to see '0' 
+            end2 = 0; // don't fake end2 because end_lsn needs to see '0'
 
             start1 = _old_epoch.start;
             end1 = _old_epoch.end;
@@ -1102,7 +1103,7 @@ lsn_t log_core::flush_daemon_work(lsn_t old_mark)
 
 // Find the log record at orig_lsn and turn it into a compensation
 // back to undo_lsn
-rc_t log_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn) 
+rc_t log_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn)
 {
     // somewhere in the calling code, we didn't actually log anything.
     // so this would be a compensate to myself.  i.e. a no-op
@@ -1112,21 +1113,21 @@ rc_t log_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn)
     // FRJ: this assertion wasn't there originally, but I don't see
     // how the situation could possibly be correct
     w_assert1(orig_lsn <= _curr_lsn);
-    
+
     // no need to grab a mutex if it's too late
     if(orig_lsn < _flush_lsn)
     {
-        DBGOUT3( << "log_core::compensate - orig_lsn: " << orig_lsn 
-                 << ", flush_lsn: " << _flush_lsn << ", undo_lsn: " << undo_lsn);  
+        DBGOUT3( << "log_core::compensate - orig_lsn: " << orig_lsn
+                 << ", flush_lsn: " << _flush_lsn << ", undo_lsn: " << undo_lsn);
         return RC(eBADCOMPENSATION);
     }
-    
+
     CRITICAL_SECTION(cs, _comp_lock);
     // check again; did we just miss it?
     lsn_t flsn = _flush_lsn;
     if(orig_lsn < flsn)
         return RC(eBADCOMPENSATION);
-    
+
     /* where does it live? the buffer is always aligned with a
        buffer-sized chunk of the partition, so all we need to do is
        take a modulus of the lsn to get its buffer position. It may be
@@ -1135,22 +1136,22 @@ rc_t log_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn)
        overwritten until we release the mutex.
      */
     long pos = orig_lsn.lo() % segsize();
-    if(pos >= segsize() - logrec_t::hdr_non_ssx_sz) 
+    if(pos >= segsize() - logrec_t::hdr_non_ssx_sz)
         return RC(eBADCOMPENSATION); // split record. forget it.
 
     // aligned?
     w_assert1((pos & 0x7) == 0);
-    
+
     // grab the record and make sure it's valid
     logrec_t* s = (logrec_t*) &_buf[pos];
 
     // valid length?
     w_assert1((s->length() & 0x7) == 0);
-    
+
     // split after the log header? don't mess with it
     if(pos + long(s->length()) > segsize())
         return RC(eBADCOMPENSATION);
-    
+
     lsn_t lsn_ck = s->get_lsn_ck();
     if(lsn_ck != orig_lsn) {
         // this is a pretty rare occurrence, and I haven't been able
@@ -1163,7 +1164,7 @@ rc_t log_core::compensate(const lsn_t& orig_lsn, const lsn_t& undo_lsn)
     if (!s->is_single_sys_xct()) {
         w_assert1(s->xid_prev() == lsn_t::null || s->xid_prev() >= undo_lsn);
 
-        if(s->is_undoable_clr()) 
+        if(s->is_undoable_clr())
             return RC(eBADCOMPENSATION);
 
         // success!
