@@ -38,6 +38,7 @@ void init()
 rc_t test_insert(ss_m* ssm, test_volume_t* vol)
 {
     init();
+    W_DO(log_comment("test"));
     return RCOK;
 }
 

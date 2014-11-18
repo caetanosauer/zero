@@ -22,19 +22,19 @@ plog_xct_t::plog_xct_t(
     : xct_t(stats, timeout, sys_xct, single_log_sys_xct, tid_t::null,
             last_lsn, undo_nxt, loser_xct)
 {
+    // original _log_buf should not be used
+    delete _log_buf;
+    _log_buf = NULL;
+}
+
+plog_xct_t::~plog_xct_t()
+{
+    // avoid xct_t destructor trying to deallocate plog's memory
+    _log_buf = NULL;
 }
 
 rc_t plog_xct_t::get_logbuf(logrec_t*& lr, int nbytes)
 {
-    //if (!curr_ext) {
-        //curr_ext = ext_mgr->alloc_extent();
-    //}
-    //if (curr_ext->size >= NEW_EXT_THRESHOLD) {
-        //link_new_ext();
-    //}
-    //w_assert3(curr_ext->size < NEW_EXT_THRESHOLD);
-    //w_assert1(!curr_ext->committed);
-    
     char* data = plog.get();
 
     // In the current milestone (M1), log records are replicated into
@@ -45,7 +45,7 @@ rc_t plog_xct_t::get_logbuf(logrec_t*& lr, int nbytes)
 
     // The replication also means we need to invoke log reservations,
     // which is done in the traditional get_logbuf
-    xct_t::get_logbuf(_log_buf, nbytes);
+    xct_t::get_logbuf(lr, nbytes);
 
     return RCOK;
 }
@@ -53,12 +53,6 @@ rc_t plog_xct_t::get_logbuf(logrec_t*& lr, int nbytes)
 rc_t plog_xct_t::give_logbuf(logrec_t* lr, const fixable_page_h* p,
                     const fixable_page_h* p2)
 {
-    // If this ever happens, then memory exception should have been thrown
-    // already anyway. This is the drawback of not knowing the logrec size
-    // before insertion. The only solution is to use an extent size that
-    // can accommodate the largest possible logrec.
-    //w_assert1(curr_ext->space_available() >= lr->length());
-
     // replicate logic on traditional log, i.e., call log->insert and set LSN
     xct_t::give_logbuf(lr, p, p2);
     plog.give(lr);

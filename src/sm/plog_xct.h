@@ -25,10 +25,7 @@ public:
         bool                         loser_xct = false
     );
     
-    virtual ~plog_xct_t() {
-        //w_assert1(!curr_ext);
-        //w_assert1(!first_ext);
-    };
+    virtual ~plog_xct_t();
 
     void* operator new(size_t s);
     void operator delete(void* p, size_t s);

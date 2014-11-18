@@ -415,8 +415,8 @@ xct_t::~xct_t()
 
         while (_dependent_list.pop()) ;
 
-        delete _log_buf;
-        delete _log_buf_for_piggybacked_ssx;
+        if (_log_buf) delete _log_buf;
+        if (_log_buf_for_piggybacked_ssx) delete _log_buf_for_piggybacked_ssx;
 
         // clean up what's stored in the thread
         me()->no_xct(this);
