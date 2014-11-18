@@ -54,3 +54,4 @@ X_ADD_TESTCASE(test_logbuf_multi_thread btree_test_env)
 X_ADD_TESTCASE(test_logbuf_spr btree_test_env)
 X_ADD_TESTCASE(test_logbuf_scan btree_test_env)
 
+X_ADD_TESTCASE(test_plog btree_test_env)
