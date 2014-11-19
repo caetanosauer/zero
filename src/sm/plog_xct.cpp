@@ -29,8 +29,6 @@ plog_xct_t::plog_xct_t(
 
 plog_xct_t::~plog_xct_t()
 {
-    // avoid xct_t destructor trying to deallocate plog's memory
-    _log_buf = NULL;
 }
 
 rc_t plog_xct_t::get_logbuf(logrec_t*& lr, int nbytes)
@@ -56,18 +54,12 @@ rc_t plog_xct_t::give_logbuf(logrec_t* lr, const fixable_page_h* p,
     // replicate logic on traditional log, i.e., call log->insert and set LSN
     xct_t::give_logbuf(lr, p, p2);
     plog.give(lr);
+
+    // avoid xct_t destructor trying to deallocate plog's memory
+    _log_buf = NULL;
+
     return RCOK;
 }
-
-//void plog_xct_t::free_extents()
-//{
-    //plog_ext_m::extent_t* prev = curr_ext;
-    //while(curr_ext) {
-        //prev = curr_ext->prev;
-        //ext_mgr->free_extent(curr_ext);
-        //curr_ext = prev;
-    //}
-//}
 
 rc_t plog_xct_t::_abort()
 {
@@ -82,11 +74,3 @@ rc_t plog_xct_t::_commit(uint32_t flags, lsn_t* plastlsn)
     plog.set_state(plog_t::COMMITTED);
     return RCOK;
 }
-
-//void plog_xct_t::link_new_ext()
-//{
-    //plog_ext_m::extent_t* n = ext_mgr->alloc_extent();
-    //w_assert1(curr_ext->next == NULL);
-    //curr_ext->next = n;
-    //curr_ext = n;
-//}

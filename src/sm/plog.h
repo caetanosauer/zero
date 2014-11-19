@@ -43,14 +43,18 @@ public:
     class plog_iter_t {
     private:
         plog_t* plog;
-        uint16_t pos;
+        uint32_t pos;
         bool forward;
+        bool finished;
 
     public:
         plog_iter_t(plog_t* plog, bool forward) :
-            plog(plog), pos(0), forward(forward)
+            plog(plog), pos(0), forward(forward), finished(false)
         {
             plog->lock();
+            if (!forward) {
+                pos = plog->used_size();
+            }
         }
 
         ~plog_iter_t()
@@ -59,6 +63,9 @@ public:
         }
 
         bool next(logrec_t*& lr);
+
+    private:
+        inline void move_pos_backwards(uint32_t& pos);
     };
 
     plog_iter_t* iterate_backwards()

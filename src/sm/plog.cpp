@@ -56,20 +56,38 @@ void plog_t::give(logrec_t* lr)
 
 bool plog_t::plog_iter_t::next(logrec_t*& lr)
 {
-    if (forward && pos >= plog->_used_size) return false;
-    if (!forward && pos == 0) return false;
+    if (finished) {
+        return false;
+    }
+
+    if (!forward && pos == plog->used_size()) {
+        // backward iterator starts ater last logrec
+        move_pos_backwards(pos);
+    }
 
     lr = (logrec_t*) (plog->data + pos);
     if (forward) {
         pos += lr->length();
+        if (pos >= plog->used_size()) {
+            finished = true;
+        }
+    }
+    else if (pos > 0) {
+        w_assert0(pos >= lr->length());
+        move_pos_backwards(pos);
     }
     else {
-        w_assert0(pos >= lr->length());
-        pos = *((uint16_t*) (plog->data + pos - sizeof(lsn_t)));
+        finished = true;
     }
     // TODO merge my Shore-MT code
     //w_assert1(lr->valid_header());
     return true;
+}
+
+void plog_t::plog_iter_t::move_pos_backwards(uint32_t& pos)
+{
+    w_assert1(pos > sizeof(lsn_t));
+    pos = *((uint32_t*) (plog->data + pos - sizeof(lsn_t)));
 }
 
 // CS: Implementation of non-specialized templates must be included
