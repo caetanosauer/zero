@@ -600,6 +600,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(generic_page* parent, generic_pa
         cb._dirty = true;
         cb._in_doubt = false;
         cb._recovery_access = false;
+        cb._uncommitted_cnt = 0;
         ++_dirty_page_count_approximate;
         bf_idx parent_idx = parent - _buffer;
         cb._pid_vol = get_cb(parent_idx)._pid_vol;
@@ -852,6 +853,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 cb._dirty = true;
                 cb._in_doubt = false;
                 cb._recovery_access = false;
+                cb._uncommitted_cnt = 0;
                 ++_dirty_page_count_approximate;
             }
             cb._used = true;
@@ -1598,6 +1600,7 @@ void bf_tree_m::_delete_block(bf_idx idx) {
     cb._used = false; // clear _used BEFORE _dirty so that eviction thread will ignore this block.
     cb._dirty = false;
     cb._in_doubt = false; // always set in_doubt bit to false
+    cb._uncommitted_cnt = 0;
 
     DBGOUT1(<<"delete block: remove page shpid = " << cb._pid_shpid);
     bool removed = _hashtable->remove(bf_key(cb._pid_vol, cb._pid_shpid));

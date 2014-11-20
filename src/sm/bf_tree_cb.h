@@ -210,8 +210,21 @@ struct bf_tree_cb_t {
     //
     snum_t                     _store_num;            // +4 -> 56
 
+    /*
+     * Counter of uncommitted updates in this page (Caetano).
+     * This gets incremented every time someone marks the page dirty.
+     * It gets decremented when a transaction goes through the atomic commit
+     * protocol, for each log record and thus for each update. The end effect
+     * is that a page is guaranteed to contain no committed updates if the
+     * counter value is zero. By writing back to disk only the pages that
+     * satisfy this condition, we essentially achieve a no-steal policy
+     * without page locks.
+     *
+     * For now, access to the counter is protected by the cb latch.
+     */
+    uint16_t                    _uncommitted_cnt; // +2 -> 58
+    fill16                      _fill16_60;      // +2 -> 60
 
-    fill32                      _fill32_60;    // +4 -> 60
     fill8                       _fill8_61;      // +1 -> 61   
     fill8                       _fill8_62;      // +1 -> 62
     fill8                       _fill8_63;      // +1 -> 63
