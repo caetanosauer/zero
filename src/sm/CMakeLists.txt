@@ -2,7 +2,7 @@
 set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/alloc_cache.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/alloc_page.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/allocator.cpp
+    #${CMAKE_CURRENT_SOURCE_DIR}/allocator.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/backup.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bf_fixed.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bf_hashtable.cpp
