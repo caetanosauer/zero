@@ -3,7 +3,6 @@
 #include "sm_vas.h"
 #include "btree.h"
 #include "btcursor.h"
-#include "bf.h"
 
 #include "sm_base.h"
 #include "sm_external.h"
@@ -41,12 +40,17 @@ void finish()
     delete _xct;
 }
 
-rc_t test_scan(ss_m* ssm, test_volume_t* vol)
+void fill_with_comments()
+{
+    W_COERCE(log_comment("test1"));
+    W_COERCE(log_comment("test2"));
+    W_COERCE(log_comment("test3"));
+}
+
+rc_t test_scan(ss_m* , test_volume_t* )
 {
     init();
-    W_DO(log_comment("test1"));
-    W_DO(log_comment("test2"));
-    W_DO(log_comment("test3"));
+    fill_with_comments();
 
     { // forward scan
         plog_t::plog_iter_t* iter = _xct->plog.iterate_forwards();
@@ -80,6 +84,24 @@ rc_t test_scan(ss_m* ssm, test_volume_t* vol)
         delete iter;
     }
 
+    _xct->commit();
+
+    finish();
+    return RCOK;
+}
+
+rc_t test_commit(ss_m* , test_volume_t* )
+{
+    init();
+    fill_with_comments();
+
+    // in M4: insert logrecs, then verify that clog contains
+    // no logrecs of this TA. Then, commit and verify that logrecs
+    // are there.
+    //
+    // TODO: should we verify that they are contiguous? It depends
+    // on how we implement the copy operation
+    //
     _xct->commit();
 
     finish();

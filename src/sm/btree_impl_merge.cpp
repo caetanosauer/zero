@@ -17,7 +17,6 @@
 #include "btree_impl.h"
 #include "w_key.h"
 #include "xct.h"
-#include "bf.h"
 #include "bf_tree.h"
 #include "restart.h"
 

@@ -13,7 +13,6 @@
 #include "w_autodel.h"
 #include "generic_page.h"
 #include "fixable_page_h.h"  // just for get_cb in bf_tree_inline.h
-#include "bf.h"
 #include "sm_io.h"
 #include "log.h"
 #include "vol.h"

@@ -1,5 +1,4 @@
 #include "btree_test_env.h"
-#include "bf.h"
 #include "btree.h"
 #include "btree_impl.h"
 #include "xct.h"

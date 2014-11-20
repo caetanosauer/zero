@@ -9,7 +9,6 @@
 #include "sm_vas.h"
 #include "sm_base.h"
 #include "generic_page.h"
-#include "bf.h"
 #include "smthread.h"
 #include "btree.h"
 #include "btcursor.h"

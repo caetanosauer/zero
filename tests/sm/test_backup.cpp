@@ -3,7 +3,6 @@
 #include "sm_vas.h"
 #include "generic_page.h"
 #include "fixable_page_h.h"
-#include "bf.h"
 #include "sm_io.h"
 #include "backup.h"
 #include "vol.h"

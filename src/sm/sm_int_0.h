@@ -58,7 +58,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "smstats.h"
 
 #if defined(SM_SOURCE) && (SM_LEVEL >= 0) 
-#    include <bf.h>
 #    include <fixable_page_h.h>
 #    include <pmap.h>
 #    include <sm_io.h>
