@@ -196,6 +196,7 @@ device_m* smlevel_0::dev = 0;
 io_m* smlevel_0::io = 0;
 bf_tree_m* smlevel_0::bf = 0;
 log_m* smlevel_0::log = 0;
+log_m* smlevel_0::clog = 0;
 
 // TODO(Restart)... it was for a space-recovery hack, not needed
 //tid_t *smlevel_0::redo_tid = 0;
@@ -593,6 +594,7 @@ ss_m::_construct_once()
             "WARNING: Log buffer is bigger than 1/8 partition (probably safe to make it smaller)."
                    << flushl;
         }
+
         std::string logdir = _options.get_string_option("sm_logdir", "");
         if (logdir.empty()) {
             errlog->clog << fatal_prio  << "ERROR: sm_logdir must be set to enable logging." << flushl;
@@ -615,6 +617,22 @@ ss_m::_construct_once()
         else { // traditional
             log = new log_core(
                     logdir.c_str(),
+                    logbufsize,      // logbuf_segsize
+                    _options.get_bool_option("sm_reformat_log", false),
+                    _options.get_int_option("sm_carray_slots",
+                        ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT)
+                    );
+        }
+
+        /*
+         * Centralized log used for atomic commit protocol (by Caetano).
+         * See comments in plog.h
+         */
+        std::string clogdir = _options.get_string_option("sm_clogdir", "");
+        if (!clogdir.empty()) {
+            DBG(<< "Initializing clog for atomic commit protocol");
+            clog = new log_core(
+                    clogdir.c_str(),
                     logbufsize,      // logbuf_segsize
                     _options.get_bool_option("sm_reformat_log", false),
                     _options.get_int_option("sm_carray_slots",

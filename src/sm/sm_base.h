@@ -564,6 +564,7 @@ public:
     static lock_m* lm;
 
     static log_m* log;
+    static log_m* clog;
     // TODO(Restart)... it was for a space-recovery hack, not needed
     // static tid_t* redo_tid;
 

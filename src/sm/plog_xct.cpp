@@ -73,7 +73,21 @@ rc_t plog_xct_t::_abort()
 
 rc_t plog_xct_t::_commit(uint32_t flags, lsn_t* plastlsn)
 {
-    xct_t::_commit(flags, plastlsn);
+    bool individual = ! (flags & xct_t::t_group);
+    if(individual && !is_single_log_sys_xct()) { // is commit record required?
+        W_COERCE(log_xct_end());
+    }
+
+    plog_t::iter_t* iter = plog.iterate_forwards();
+    logrec_t* lr = NULL;
+    while(iter->next(lr)) {
+        W_DO(smlevel_0::clog->insert(*lr, NULL));
+    }
     plog.set_state(plog_t::COMMITTED);
+
+    delete iter; // releases latch on plog
+
+    // lock release and other sutff handled by normal xct commit
+    xct_t::_commit(flags, plastlsn);
     return RCOK;
 }
