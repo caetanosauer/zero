@@ -53,7 +53,7 @@ rc_t test_scan(ss_m* , test_volume_t* )
     fill_with_comments();
 
     { // forward scan
-        plog_t::plog_iter_t* iter = _xct->plog.iterate_forwards();
+        plog_t::iter_t* iter = _xct->plog.iterate_forwards();
         logrec_t* lr = NULL;
         EXPECT_EQ(iter->next(lr), true);
         EXPECT_EQ(lr->type(), logrec_t::t_comment);
@@ -69,7 +69,7 @@ rc_t test_scan(ss_m* , test_volume_t* )
     }
     
     { // backward scan
-        plog_t::plog_iter_t* iter = _xct->plog.iterate_backwards();
+        plog_t::iter_t* iter = _xct->plog.iterate_backwards();
         logrec_t* lr = NULL;
         EXPECT_EQ(iter->next(lr), true);
         EXPECT_EQ(lr->type(), logrec_t::t_comment);
