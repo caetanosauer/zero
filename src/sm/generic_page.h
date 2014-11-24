@@ -54,17 +54,20 @@ public:
     /// LSN (Log Sequence Number) of the last write to this page
     lsn_t            lsn;          // +8 -> 24
 
+    /// LSN in centralized log of atomic commit protocol
+    lsn_t            clsn;         // +8 -> 32
+
     /// Page type (a page_tag_t)
-    uint16_t         tag;          // +2 -> 26
+    uint16_t         tag;          // +2 -> 34
 
 protected:
     friend class fixable_page_h;   // for access to page_flags&t_to_be_deleted
 
     /// Page flags (an OR of page_flag_t's)
-    uint16_t         page_flags;   //  +2 -> 28
+    uint16_t         page_flags;   //  +2 -> 36
 
     /// Reserved for subclass usage
-    uint32_t         reserved;     //  +4 -> 32
+    uint32_t         reserved;     //  +4 -> 40
 
 
 public:
@@ -72,7 +75,7 @@ public:
     uint32_t    calculate_checksum () const;
 };
 // verify compiler tightly packed all of generic_page_header's fields:
-BOOST_STATIC_ASSERT(sizeof(generic_page_header) == 32);
+BOOST_STATIC_ASSERT(sizeof(generic_page_header) == 40);
 
 
 /**
