@@ -22,6 +22,9 @@ plog_xct_t::plog_xct_t(
     : xct_t(stats, timeout, sys_xct, single_log_sys_xct, tid_t::null,
             last_lsn, undo_nxt, loser_xct)
 {
+    w_assert1(smlevel_0::clog);
+    w_assert1(!loser_xct); // UNDO recovery not supported for plog transactions
+
     // original _log_buf should not be used
     delete _log_buf;
     _log_buf = NULL;

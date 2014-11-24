@@ -6,7 +6,7 @@
 
 class plog_t
 {
-    friend class plog_iter_t;
+    friend class iter_t;
 public:
     enum {
         INITIAL_SIZE = 16384
@@ -40,7 +40,7 @@ public:
     char* get();
     void give(logrec_t*);
 
-    class plog_iter_t {
+    class iter_t {
     private:
         plog_t* plog;
         uint32_t pos;
@@ -48,7 +48,7 @@ public:
         bool finished;
 
     public:
-        plog_iter_t(plog_t* plog, bool forward) :
+        iter_t(plog_t* plog, bool forward) :
             plog(plog), pos(0), forward(forward), finished(false)
         {
             plog->lock();
@@ -57,7 +57,7 @@ public:
             }
         }
 
-        ~plog_iter_t()
+        ~iter_t()
         {
             plog->unlock();
         }
@@ -68,14 +68,14 @@ public:
         inline void move_pos_backwards(uint32_t& pos);
     };
 
-    plog_iter_t* iterate_backwards()
+    iter_t* iterate_backwards()
     {
-        return new plog_iter_t(this, false);
+        return new iter_t(this, false);
     }
 
-    plog_iter_t* iterate_forwards()
+    iter_t* iterate_forwards()
     {
-        return new plog_iter_t(this, true);
+        return new iter_t(this, true);
     }
 
 private:

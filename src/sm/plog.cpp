@@ -54,7 +54,7 @@ void plog_t::give(logrec_t* lr)
     unlock();
 }
 
-bool plog_t::plog_iter_t::next(logrec_t*& lr)
+bool plog_t::iter_t::next(logrec_t*& lr)
 {
     if (finished) {
         return false;
@@ -84,7 +84,7 @@ bool plog_t::plog_iter_t::next(logrec_t*& lr)
     return true;
 }
 
-void plog_t::plog_iter_t::move_pos_backwards(uint32_t& pos)
+void plog_t::iter_t::move_pos_backwards(uint32_t& pos)
 {
     w_assert1(pos > sizeof(lsn_t));
     pos = *((uint32_t*) (plog->data + pos - sizeof(lsn_t)));
@@ -96,8 +96,6 @@ void plog_t::plog_iter_t::move_pos_backwards(uint32_t& pos)
 // the only solution is to include the cpp file after the template usage.
 // This solution is even shown in Stroustroup's book (Section 23.7 of 4th
 // edition). What's really bad about it is that we need to include the 
-// file in every translation unit (i.e., every main function) that uses
-// the plog. For us, this means including it in every test or experiment.
-// (I know, I know. That's just how C++ works...)
+// file in every translation unit.
 // One option may be to use external linkage of templates (TODO)
 #include "allocator.cpp"
