@@ -521,17 +521,23 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 skipped_something = true;
                 continue;
             }
-            fixable_page_h page;
-            page.fix_nonbufferpool_page(const_cast<generic_page*>(&page_buffer[idx])); // <<<>>>
-            if (page.is_to_be_deleted()) {
-                tobedeleted = true;
-            } else {
-                ::memcpy(_write_buffer + write_buffer_cur, page_buffer + idx, sizeof (generic_page));
-                // if the page contains a swizzled pointer, we need to convert the data back to the original pointer.
-                // we need to do this before releasing SH latch because the pointer might be unswizzled by other threads.
-                _parent->_bufferpool->_convert_to_disk_page(_write_buffer + write_buffer_cur);// convert swizzled data.
-                w_assert1(_write_buffer[write_buffer_cur].pid.vol().vol > 0);
-                w_assert1(_write_buffer[write_buffer_cur].pid.page > 0);
+
+            // CS: No-steal policy for atomic commit protocol:
+            // Only flush pages without uncommitted updates
+            if (!smlevel_0::clog || cb._uncommitted_cnt == 0) {
+                fixable_page_h page;
+                page.fix_nonbufferpool_page(const_cast<generic_page*>(&page_buffer[idx])); // <<<>>>
+                if (page.is_to_be_deleted()) {
+                    tobedeleted = true;
+                } else {
+                    w_assert1(!smlevel_0::clog || cb._uncommitted_cnt == 0);
+                    ::memcpy(_write_buffer + write_buffer_cur, page_buffer + idx, sizeof (generic_page));
+                    // if the page contains a swizzled pointer, we need to convert the data back to the original pointer.
+                    // we need to do this before releasing SH latch because the pointer might be unswizzled by other threads.
+                    _parent->_bufferpool->_convert_to_disk_page(_write_buffer + write_buffer_cur);// convert swizzled data.
+                    w_assert1(_write_buffer[write_buffer_cur].pid.vol().vol > 0);
+                    w_assert1(_write_buffer[write_buffer_cur].pid.page > 0);
+                }
             }
             cb.latch().latch_release();
 
