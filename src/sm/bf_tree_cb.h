@@ -220,7 +220,9 @@ struct bf_tree_cb_t {
      * satisfy this condition, we essentially achieve a no-steal policy
      * without page locks.
      *
-     * For now, access to the counter is protected by the cb latch.
+     * During commit, the page is latched in shared mode, which means there
+     * may be multiple threads racing on the decrement operation. Therefore,
+     * it must be done atomically with lintel::unsafe::atomic_fetch_sub
      */
     uint16_t                    _uncommitted_cnt; // +2 -> 58
     fill16                      _fill16_60;      // +2 -> 60

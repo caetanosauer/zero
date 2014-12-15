@@ -665,6 +665,7 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
                 btree_impl::_ux_merge_foster_apply_parent(bp /*dest*/, another /*src*/);
                 another.set_dirty();
                 another.update_initial_and_last_lsn(lsn_ck());
+                another.update_clsn(lsn_ck());
                 W_COERCE(another.set_to_be_deleted(false));
             }
         } else {
@@ -679,6 +680,7 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
                 btree_impl::_ux_merge_foster_apply_parent(another /*dest*/, bp /*src*/);
                 another.set_dirty();
                 another.update_initial_and_last_lsn(lsn_ck());
+                another.update_clsn(lsn_ck());
             }
         }
     } else {
@@ -962,6 +964,7 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
                                                 fence, dp->_new_pid0, dp->_new_pid0_emlsn));
                 another.set_dirty();
                 another.update_initial_and_last_lsn(redo_lsn);
+                another.update_clsn(lsn_ck());
             }
         } else {
             // we are recovering "page2", which is foster-parent (src).
@@ -988,6 +991,7 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
                                                 fence, dp->_new_pid0, dp->_new_pid0_emlsn));
                 another.set_dirty();
                 another.update_initial_and_last_lsn(redo_lsn);
+                another.update_clsn(lsn_ck());
             }
 
         }

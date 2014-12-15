@@ -4257,6 +4257,7 @@ void restart_m::_redo_log_with_pid(
                 // Set the 'lsn' of this page (page lsn) to the log record lsn
                 // which is the last write to this page
                 page.update_initial_and_last_lsn(lsn);
+                page.update_clsn(lsn);
 
                 // The _rec_lsn in page cb is the earliest lsn which made the page dirty
                 // the _rec_lsn (earliest lns) must be earlier than the page lsn

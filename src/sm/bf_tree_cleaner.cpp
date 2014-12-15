@@ -51,6 +51,9 @@ bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, uint32_t cleaner_threads
 
     // assign volumes to workers in a round robin fashion.
     // this assignment is totally static.
+    // CS: It would be easier to just do a mod operation to get the cleaner
+    // responsible for a volume. E.g.: (TODO)
+    // cleaner_id_for_vol = vol_id % _slave_threads_size;
     _volume_assignments[0] = 0;
     for (volid_t vol = 1; vol < MAX_VOL_COUNT; ++vol) {
         _volume_assignments[vol] = _volume_assignments[vol - 1] + 1;

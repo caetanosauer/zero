@@ -154,6 +154,7 @@ public:
     page_tag_t    tag()   const { return (page_tag_t) _pp->tag; }
 
     const lsn_t&  lsn()   const { return _pp->lsn; }
+    const lsn_t&  clsn()   const { return _pp->clsn; }
     void          set_lsns(const lsn_t& lsn) { _pp->lsn = lsn; }
 
 protected:

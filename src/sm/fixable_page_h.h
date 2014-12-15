@@ -219,6 +219,8 @@ public:
     // Update initial dirty lsn (if needed) on page
     void update_initial_dirty_lsn(const lsn_t & lsn) const;
 
+    void update_clsn(const lsn_t& lsn);
+
     /// Return flag for if this page to be deleted when bufferpool evicts it.
     /// @pre We do not hold current page's latch in Q mode
     bool         is_to_be_deleted();

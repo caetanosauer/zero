@@ -263,6 +263,7 @@ void fixable_page_h::clear_recovery_access() const
     }
 }
 
+// CS: a function that updates a field should NOT be declared const (TODO)
 void fixable_page_h::update_initial_and_last_lsn(const lsn_t & lsn) const
 {
     // Update both initial dirty lsn (if needed) and last write lsn
@@ -271,6 +272,13 @@ void fixable_page_h::update_initial_and_last_lsn(const lsn_t & lsn) const
     {
         ((generic_page_h*)this)->set_lsns(lsn);
         update_initial_dirty_lsn(lsn);
+    }
+}
+
+void fixable_page_h::update_clsn(const lsn_t& lsn)
+{
+    if (_pp) {
+        _pp->clsn = lsn;
     }
 }
 
