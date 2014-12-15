@@ -196,7 +196,7 @@ device_m* smlevel_0::dev = 0;
 io_m* smlevel_0::io = 0;
 bf_tree_m* smlevel_0::bf = 0;
 log_m* smlevel_0::log = 0;
-log_m* smlevel_0::clog = 0;
+log_core* smlevel_0::clog = 0;
 
 // TODO(Restart)... it was for a space-recovery hack, not needed
 //tid_t *smlevel_0::redo_tid = 0;

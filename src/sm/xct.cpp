@@ -1818,6 +1818,9 @@ rc_t
 xct_t::get_logbuf(logrec_t*& ret, int t)
 {
     // then , use tentative log buffer.
+    // CS: system transactions should also go through log reservation,
+    // since they are consuming space which user transactions think
+    // is available for rollback. This is probably a bug.
     if (is_piggy_backed_single_log_sys_xct()) {
         ret = _log_buf_for_piggybacked_ssx;
         return RCOK;

@@ -84,6 +84,7 @@ class bf_m;
 class bf_tree_m;
 class comm_m;
 class log_m;
+class log_core;
 class lock_m;
 
 class tid_t;
@@ -564,7 +565,7 @@ public:
     static lock_m* lm;
 
     static log_m* log;
-    static log_m* clog;
+    static log_core* clog;
     // TODO(Restart)... it was for a space-recovery hack, not needed
     // static tid_t* redo_tid;
 
