@@ -15,7 +15,7 @@ public:
         return malloc(n);
     }
 
-    void release(void* p, size_t n = 0)
+    void release(void* p, size_t)
     {
         free(p);
     }

@@ -279,6 +279,9 @@ xct_t::xct_t(sm_stats_info_t* stats, timeout_in_ms timeout, bool sys_xct,
            const lsn_t& undo_nxt, bool loser_xct
             )
     :
+    _core(new xct_core(
+                given_tid == tid_t::null ? _nxt_tid.atomic_incr() : given_tid,
+                xct_active, timeout)),
     __stats(stats),
     __saved_lockid_t(0),
     __saved_xct_log_t(0),
@@ -300,18 +303,15 @@ xct_t::xct_t(sm_stats_info_t* stats, timeout_in_ms timeout, bool sys_xct,
     _elr_mode (elr_none),
     _dependent_list(W_LIST_ARG(xct_dependent_t, _link), &_core->_1thread_xct),
     _last_log(0),
+#if CHECK_NESTING_VARIABLES
+#endif
     _log_buf(0),
     _log_bytes_rsvd(0),
     _log_bytes_ready(0),
     _log_bytes_used(0),
     _log_bytes_reserved_space(0),
     _rolling_back(false),
-#if CHECK_NESTING_VARIABLES
-#endif
-    _in_compensated_op(0),
-    _core(new xct_core(
-                given_tid == tid_t::null ? _nxt_tid.atomic_incr() : given_tid,
-                xct_active, timeout))
+    _in_compensated_op(0)
 #if W_DEBUG_LEVEL > 2
     ,
     _had_error(false)
