@@ -33,6 +33,7 @@ std::ostream vout (&null_obj);
 namespace {
     char device_name[MAXPATHLEN] = "./volumes/dev_test";
     char global_log_dir[MAXPATHLEN] = "./log";
+    char global_clog_dir[MAXPATHLEN] = "./clog";
     char global_backup_dir[MAXPATHLEN] = "./backups";
 }
 
@@ -354,19 +355,24 @@ void btree_test_env::SetUp()
     strcat(tests_dir, "/btree_test_env");
     assure_dir(tests_dir);
     strcpy(log_dir, tests_dir);
+    strcpy(clog_dir, tests_dir);
     strcpy(vol_dir, tests_dir);
     strcat(log_dir, "/log");
+    strcat(clog_dir, "/clog");
     strcat(vol_dir, "/volumes");
     assure_empty_dir(log_dir);
+    assure_empty_dir(clog_dir);
     assure_empty_dir(vol_dir);
     strcpy(device_name, vol_dir);
     strcat(device_name, "/dev_test");
     strcpy(global_log_dir, log_dir);
+    strcpy(global_clog_dir, clog_dir);
     _use_locks = false;
 }
 void btree_test_env::empty_logdata_dir()
 {
     empty_dir(log_dir);
+    empty_dir(clog_dir);
     empty_dir(vol_dir);
 }
 
