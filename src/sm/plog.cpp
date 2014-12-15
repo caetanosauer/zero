@@ -32,14 +32,15 @@ char* plog_t::get()
 {
     lock();
     if (space_available() < sizeof(logrec_t)) {
-        // grow allocated extent with factor 1.5
-        _alloc_size *= 3 / 2;
+        // grow allocated extent with factor 2
+        _alloc_size = _alloc_size << 2;
         char* data_new =
             smlevel_0::allocator.allocate<char>(_alloc_size);
         memcpy(data_new, data, _used_size);
         smlevel_0::allocator.release<char>(data);
         data = data_new;
     }
+    w_assert1(space_available() >= sizeof(logrec_t));
     return data + _used_size;
 }
 
@@ -60,11 +61,6 @@ bool plog_t::iter_t::next(logrec_t*& lr)
         return false;
     }
 
-    if (!forward && pos == plog->used_size()) {
-        // backward iterator starts ater last logrec
-        move_pos_backwards(pos);
-    }
-
     lr = (logrec_t*) (plog->data + pos);
     if (forward) {
         pos += lr->length();
@@ -82,6 +78,18 @@ bool plog_t::iter_t::next(logrec_t*& lr)
     // TODO merge my Shore-MT code
     //w_assert1(lr->valid_header());
     return true;
+}
+
+void plog_t::iter_t::reset()
+{
+    finished = false;
+    if (forward) {
+        pos = 0;
+    }
+    else {
+        pos = plog->used_size();
+        move_pos_backwards(pos);
+    }
 }
 
 void plog_t::iter_t::move_pos_backwards(uint32_t& pos)

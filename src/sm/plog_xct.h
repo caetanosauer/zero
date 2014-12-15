@@ -34,9 +34,20 @@ protected:
     plog_t plog;
 
     virtual rc_t _abort();
-    virtual rc_t _commit(uint32_t flags, lsn_t* plastlsn=NULL);
+    virtual rc_t _commit(uint32_t flags, lsn_t* plastlsn=NULL)
+    {
+        // TODO add compiler flag
+        return _commit_nochains(flags, plastlsn);
+    }
 
     enum { NEW_EXT_THRESHOLD = sizeof(logrec_t) };
+
+private:
+    rc_t _commit_nochains(uint32_t flags, lsn_t* plastlsn=NULL);
+    rc_t _commit_xlatch(uint32_t flags, lsn_t* plastlsn=NULL);
+
+    rc_t _update_page_cas(logrec_t*);
+    rc_t _update_page_xlatch(logrec_t*);
 };
 
 #endif

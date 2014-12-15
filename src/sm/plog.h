@@ -9,7 +9,7 @@ class plog_t
     friend class iter_t;
 public:
     enum {
-        INITIAL_SIZE = 16384
+        INITIAL_SIZE = 49152 // 48KB
     };
 
     enum state_t {
@@ -34,6 +34,7 @@ public:
     uint32_t alloc_size() { return _alloc_size; }
     uint32_t used_size() { return _used_size; }
     uint32_t space_available() { return alloc_size() - used_size(); }
+    char* get_data() { return data; }
 
     void set_state(state_t s) { state = s; }
 
@@ -52,9 +53,7 @@ public:
             plog(plog), pos(0), forward(forward), finished(false)
         {
             plog->lock();
-            if (!forward) {
-                pos = plog->used_size();
-            }
+            reset();
         }
 
         ~iter_t()
@@ -63,6 +62,7 @@ public:
         }
 
         bool next(logrec_t*& lr);
+        void reset();
 
     private:
         inline void move_pos_backwards(uint32_t& pos);
