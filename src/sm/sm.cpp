@@ -219,7 +219,11 @@ lid_m* smlevel_4::lid = 0;
 ss_m* smlevel_4::SSM = 0;
 
 smlevel_1::xct_impl_t smlevel_1::xct_impl
+#ifndef USE_ATOMIC_COMMIT
     = smlevel_1::XCT_TRADITIONAL;
+#else
+    = smlevel_1::XCT_PLOG;
+#endif
 
 /*
  *  Class ss_m code
@@ -515,15 +519,6 @@ ss_m::_construct_once()
     uint64_t def_logbufsize = (logimpl == logbuf_core::IMPL_NAME) ? LOGBUF_SEG_SIZE : 128 << 10;
     uint64_t logbufsize = _options.get_int_option("sm_logbufsize", def_logbufsize); // at least 1024KB
 
-    // Initialize xct implementation
-    std::string xctimpl = _options.get_string_option("sm_log_impl", xct_t::IMPL_NAME);
-    if (xctimpl == plog_xct_t::IMPL_NAME) {
-        smlevel_1::xct_impl = XCT_PLOG;
-    }
-    else {
-        smlevel_1::xct_impl = XCT_TRADITIONAL;
-    }
-
     // pretty big limit -- really, the limit is imposed by the OS's
     // ability to read/write
     if (uint64_t(logbufsize) < (uint64_t) 4 * ss_m::page_sz) {
@@ -638,6 +633,13 @@ ss_m::_construct_once()
                     _options.get_int_option("sm_carray_slots",
                         ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT)
                     );
+        }
+        if (xct_impl == XCT_PLOG && !clog)
+        {
+            errlog->clog << error_prio <<
+            "Atomic commit protocol (plog_xct_t) requires clogdir option!"
+            << flushl;
+            W_FATAL(eCRASH);
         }
 
         int percent = _options.get_int_option("sm_log_warn", 0);

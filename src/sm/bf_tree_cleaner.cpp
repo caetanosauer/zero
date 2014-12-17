@@ -635,7 +635,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(volid_t vol, size_t f
     // WAL: ensure that the log is durable to this lsn
     if (max_page_lsn != lsndata_null) {
         if (smlevel_0::log == NULL) {
-            ERROUT (<<"cannot flush logs before flushing data. probably dirty shutdown?");
+            ERROUT (<< "Cleaner encountered null log manager. Probably dirty shutdown?");
             return RC(eINTERNAL);
         }
         W_COERCE( smlevel_0::log->flush(lsn_t(max_page_lsn)) );
