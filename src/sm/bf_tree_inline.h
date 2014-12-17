@@ -441,7 +441,7 @@ inline void bf_tree_m::set_dirty(const generic_page* p) {
      */
     cb._uncommitted_cnt++;
     // assert that transaction attached is of type plog_xct_t*
-    w_assert1(me->xct() && dynamic_cast<plog_xct_t*>(me()->xct()) != 0);
+    w_assert1(smlevel_1::xct_impl == smlevel_1::XCT_PLOG);
 #endif
 }
 inline bool bf_tree_m::is_dirty(const generic_page* p) const {
