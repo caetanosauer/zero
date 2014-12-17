@@ -431,6 +431,7 @@ inline void bf_tree_m::set_dirty(const generic_page* p) {
         ++_dirty_page_count_approximate;
     }
     cb._used = true;
+#ifdef USE_ATOMIC_COMMIT
     /*
      * CS: We assume that all updates made by transactions go through
      * this method (usually via the methods in logrec_t but also in
@@ -439,6 +440,9 @@ inline void bf_tree_m::set_dirty(const generic_page* p) {
      * uncommitted updates is incrementes.
      */
     cb._uncommitted_cnt++;
+    // assert that transaction attached is of type plog_xct_t*
+    w_assert1(me->xct() && dynamic_cast<plog_xct_t*>(me()->xct()) != 0);
+#endif
 }
 inline bool bf_tree_m::is_dirty(const generic_page* p) const {
     uint32_t idx = p - _buffer;

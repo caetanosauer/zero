@@ -1131,6 +1131,11 @@ ss_m::_destruct_once()
     }
     log = 0;
 
+    if(clog) {
+        clog->shutdown(); // log joins any subsidiary threads
+    }
+    clog = 0;
+
     delete io; io = 0; // io manager
     delete dev; dev = 0; // device manager
     {
