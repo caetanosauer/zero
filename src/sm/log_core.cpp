@@ -849,7 +849,7 @@ rc_t log_core::insert(logrec_t &rec, lsn_t* rlsn)
     return RCOK;
 }
 
-inline void log_core::_copy_raw(CArraySlot* info, long& pos, const char* data,
+void log_core::_copy_raw(CArraySlot* info, long& pos, const char* data,
         size_t size)
 {
     // are we the ones that actually wrap? (do this *after* computing the lsn!)
