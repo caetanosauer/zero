@@ -665,6 +665,9 @@ protected:
     virtual rc_t                _abort();
     virtual rc_t                _commit(uint32_t flags,
                                                  lsn_t* plastlsn=NULL);
+    // CS: decoupled from _commit to allow reuse in plog_xct_t
+    rc_t _commit_read_only(uint32_t flags, lsn_t& inherited_read_watermark);
+    rc_t _pre_commit(uint32_t flags);
 
 protected:
     // for xct_log_switch_t:

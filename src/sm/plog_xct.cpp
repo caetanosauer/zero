@@ -106,6 +106,18 @@ rc_t plog_xct_t::_abort()
 
 rc_t plog_xct_t::_commit_nochains(uint32_t flags, lsn_t* plastlsn)
 {
+    if (flags & xct_t::t_chain)  {
+        W_FATAL_MSG(fcINTERNAL, <<
+                "plog_xct_t does not support chained transactions");
+    }
+
+    W_DO(_pre_commit(flags));
+
+    lsn_t watermark;
+    if (!_last_lsn.valid())  {
+        _commit_read_only(flags, watermark);
+    }
+
     if (!is_piggy_backed_single_log_sys_xct()) {
         // add commit log record (if required)
         bool individual = ! (flags & xct_t::t_group);
@@ -146,13 +158,23 @@ rc_t plog_xct_t::_commit_nochains(uint32_t flags, lsn_t* plastlsn)
             _update_page_cas(lr);
         }
 
+        change_state(xct_ended);
+        if (plastlsn != NULL) *plastlsn = _last_lsn;
+
+        // Free all locks. Do not free locks if chaining.
+        if(individual && ! (flags & xct_t::t_chain) && _elr_mode != elr_sx)  {
+            W_DO(commit_free_locks());
+        }
+
         plog.set_state(plog_t::COMMITTED);
 
         delete iter; // releases latch on plog
     }
 
-    // lock release and other sutff handled by normal xct commit
-    xct_t::_commit(flags, plastlsn);
+    INC_TSTAT(commit_xct_cnt);
+
+    me()->detach_xct(this);        // no transaction for this thread
+
     return RCOK;
 }
 

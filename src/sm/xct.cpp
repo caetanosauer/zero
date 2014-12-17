@@ -1189,26 +1189,9 @@ xct_t::find_dependent(xct_dependent_t* ptr)
     return false;
 }
 
-
-/*********************************************************************
- *
- *  xct_t::commit(flags)
- *
- *  Commit the transaction. If flag t_lazy, log is not synced.
- *  If flag t_chain, a new transaction is instantiated inside
- *  this one, and inherits all its locks.
- *
- *  In *plastlsn it returns the lsn of the last log record for this
- *  xct.
- *
- *********************************************************************/
 rc_t
-xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
+xct_t::_pre_commit(uint32_t flags)
 {
-    DBGX( << " commit: _log_bytes_rsvd " << _log_bytes_rsvd
-            << " _log_bytes_ready " << _log_bytes_ready
-            << " _log_bytes_used " << _log_bytes_used
-            );
     // W_DO(check_one_thread_attached()); // now checked in prologue
     w_assert1(one_thread_attached());
 
@@ -1225,10 +1208,6 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
 //    W_DO( ConvertAllLoadStoresToRegularStores() );
 
     change_state(flags & xct_t::t_chain ? xct_chaining : xct_committing);
-
-    // when chaining, we inherit the read_watermark from the previous xct
-    // in case the next transaction are read-only.
-    lsn_t inherited_read_watermark;
 
     if (_last_lsn.valid() || !smlevel_1::log)  {
         /*
@@ -1290,7 +1269,38 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
         // now we have xct_end record though it might not be flushed yet. so,
         // let's do ELR
         W_DO(early_lock_release());
+    }
 
+    return RCOK;
+}
+
+/*********************************************************************
+ *
+ *  xct_t::commit(flags)
+ *
+ *  Commit the transaction. If flag t_lazy, log is not synced.
+ *  If flag t_chain, a new transaction is instantiated inside
+ *  this one, and inherits all its locks.
+ *
+ *  In *plastlsn it returns the lsn of the last log record for this
+ *  xct.
+ *
+ *********************************************************************/
+rc_t
+xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
+{
+    DBGX( << " commit: _log_bytes_rsvd " << _log_bytes_rsvd
+            << " _log_bytes_ready " << _log_bytes_ready
+            << " _log_bytes_used " << _log_bytes_used
+            );
+
+    // when chaining, we inherit the read_watermark from the previous xct
+    // in case the next transaction are read-only.
+    lsn_t inherited_read_watermark;
+
+    W_DO(_pre_commit(flags));
+
+    if (_last_lsn.valid() || !smlevel_1::log)  {
         if (!(flags & xct_t::t_lazy))  {
             _sync_logbuf();
         }
@@ -1304,6 +1314,7 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
         change_state(xct_ended);
 
         // Free all locks. Do not free locks if chaining.
+        bool individual = ! (flags & xct_t::t_group);
         if(individual && ! (flags & xct_t::t_chain) && _elr_mode != elr_sx)  {
             W_DO(commit_free_locks());
         }
@@ -1313,64 +1324,7 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
             inherited_read_watermark = _last_lsn;
         }
     }  else  {
-        // Nothing logged; no need to write a log record.
-        change_state(xct_ended);
-
-        if(individual && !is_sys_xct() && ! (flags & xct_t::t_chain)) {
-            W_DO(commit_free_locks());
-
-            // however, to make sure the ELR for X-lock and CLV is
-            // okay (ELR for S-lock is anyway okay) we need to make
-            // sure this read-only xct (no-log=read-only) didn't read
-            // anything not yet durable. Thus,
-            if ((_elr_mode==elr_sx || _elr_mode==elr_clv) &&
-                _query_concurrency != t_cc_none && _query_concurrency != t_cc_bad && _read_watermark.valid()) {
-                // to avoid infinite sleep because of dirty pages changed by aborted xct,
-                // we really output a log and flush it
-                bool flushed = false;
-                timeval start, now, result;
-                ::gettimeofday(&start,NULL);
-                while (true) {
-                    W_DO(log->flush(_read_watermark, false, true, &flushed));
-                    if (flushed) {
-                        break;
-                    }
-
-                    // in some OS, usleep() has a very low accuracy.
-                    // So, we check the current time rather than assuming
-                    // elapsed time = ELR_READONLY_WAIT_MAX_COUNT * ELR_READONLY_WAIT_USEC.
-                    ::gettimeofday(&now,NULL);
-                    timersub(&now, &start, &result);
-                    int elapsed = (result.tv_sec * 1000000 + result.tv_usec);
-                    if (elapsed > ELR_READONLY_WAIT_MAX_COUNT * ELR_READONLY_WAIT_USEC) {
-#if W_DEBUG_LEVEL>0
-                        // this is NOT an error. it's fine.
-                        cout << "ELR timeout happened in readonly xct's watermark check. outputting xct_end log..." << endl;
-#endif // W_DEBUG_LEVEL>0
-                        break; // timeout
-                    }
-                    ::usleep(ELR_READONLY_WAIT_USEC);
-                }
-
-                if (!flushed) {
-                    // now we suspect that we might saw a bogus tag for some reason.
-                    // so, let's output a real xct_end log and flush it.
-                    // See jira ticket:99 "ELR for X-lock" (originally trac ticket:101).
-                    // NOTE this should not be needed now that our algorithm is based
-                    // on lock bucket tag, which is always exact, not too conservative.
-                    // should consider removing this later, but for now keep it.
-                    W_COERCE(log_xct_end());
-                    _sync_logbuf();
-                }
-                _read_watermark = lsn_t::null;
-            }
-        } else {
-            if(flags & xct_t::t_chain)  {
-                inherited_read_watermark = _read_watermark;
-            }
-            // even if chaining or grouped xct, we can do ELR
-            W_DO(early_lock_release());
-        }
+        W_DO(_commit_read_only(flags, inherited_read_watermark));
     }
 
     INC_TSTAT(commit_xct_cnt);
@@ -1384,7 +1338,7 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
     if (flags & xct_t::t_chain)  {
         w_assert0(!is_sys_xct()); // system transaction cannot chain (and never has to)
 
-        w_assert1(individual==true);
+        w_assert1(! (flags & xct_t::t_group));
 
         ++_xct_chain_len;
         /*
@@ -1412,6 +1366,75 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
         change_state(xct_active);
     } else {
         _xct_chain_len = 0;
+    }
+
+    return RCOK;
+}
+
+rc_t
+xct_t::_commit_read_only(uint32_t flags, lsn_t& inherited_read_watermark)
+{
+    // Nothing logged; no need to write a log record.
+    change_state(xct_ended);
+
+    bool individual = ! (flags & xct_t::t_group);
+    if(individual && !is_sys_xct() && ! (flags & xct_t::t_chain)) {
+        W_DO(commit_free_locks());
+
+        // however, to make sure the ELR for X-lock and CLV is
+        // okay (ELR for S-lock is anyway okay) we need to make
+        // sure this read-only xct (no-log=read-only) didn't read
+        // anything not yet durable. Thus,
+        if ((_elr_mode==elr_sx || _elr_mode==elr_clv) &&
+                _query_concurrency != t_cc_none && _query_concurrency != t_cc_bad && _read_watermark.valid()) {
+            // to avoid infinite sleep because of dirty pages changed by aborted xct,
+            // we really output a log and flush it
+            bool flushed = false;
+            timeval start, now, result;
+            ::gettimeofday(&start,NULL);
+            while (true) {
+                W_DO(log->flush(_read_watermark, false, true, &flushed));
+                if (flushed) {
+                    break;
+                }
+
+                // in some OS, usleep() has a very low accuracy.
+                // So, we check the current time rather than assuming
+                // elapsed time = ELR_READONLY_WAIT_MAX_COUNT * ELR_READONLY_WAIT_USEC.
+                ::gettimeofday(&now,NULL);
+                timersub(&now, &start, &result);
+                int elapsed = (result.tv_sec * 1000000 + result.tv_usec);
+                if (elapsed > ELR_READONLY_WAIT_MAX_COUNT * ELR_READONLY_WAIT_USEC) {
+#if W_DEBUG_LEVEL>0
+                    // this is NOT an error. it's fine.
+                    cout << "ELR timeout happened in readonly xct's watermark check. outputting xct_end log..." << endl;
+#endif // W_DEBUG_LEVEL>0
+                    break; // timeout
+                }
+                ::usleep(ELR_READONLY_WAIT_USEC);
+            }
+
+            if (!flushed) {
+                // now we suspect that we might saw a bogus tag for some reason.
+                // so, let's output a real xct_end log and flush it.
+                // See jira ticket:99 "ELR for X-lock" (originally trac ticket:101).
+                // NOTE this should not be needed now that our algorithm is based
+                // on lock bucket tag, which is always exact, not too conservative.
+                // should consider removing this later, but for now keep it.
+                //W_COERCE(log_xct_end());
+                //_sync_logbuf();
+                W_FATAL_MSG(fcINTERNAL,
+                        << "Reached part of the code that was supposed to be dead."
+                        << " Please uncomment the lines and remove this error");
+            }
+            _read_watermark = lsn_t::null;
+        }
+    } else {
+        if(flags & xct_t::t_chain)  {
+            inherited_read_watermark = _read_watermark;
+        }
+        // even if chaining or grouped xct, we can do ELR
+        W_DO(early_lock_release());
     }
 
     return RCOK;
