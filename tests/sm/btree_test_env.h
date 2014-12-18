@@ -141,8 +141,8 @@ public:
     lpid_t             _root_pid;          // root page id
     unsigned long long _start;             // CPU cycle counter start
     unsigned long long _end;               // CPU cycle counter end
-    double             _start_time;        // Elapse time counter start
-    double             _end_time;          // Elapse time counter start
+    double             _start_time;        // Elapsed time counter start
+    double             _end_time;          // Elapsed time counter start
 };
 
 class restart_performance_initial_functor : public test_functor
@@ -509,6 +509,95 @@ public:
                       const std::vector<std::pair<const char*, int64_t> > &additional_int_params,
                       const std::vector<std::pair<const char*, bool> > &additional_bool_params,
                       const std::vector<std::pair<const char*, const char*> > &additional_string_params);
+
+    /**
+    * Runs a restart performance 'before' test case in various restart modes
+    * Caller specify the restart mode through input parameter 'restart_option'
+    * @param context the object to implement 2 phases: initial_shutdown(), pre_shutdiwn().
+    * @see restart_performance_test_base
+    */
+    // Top level API for caller to start the test
+    int runRestartPerfTestBefore(
+                      restart_performance_test_base *context,
+                      restart_test_options *restart_options,  // Restart options, e.g. milestone setting
+                      bool use_locks,                         // True: enable locking, false: disable locking, M3/M4 test cases need to enable locking
+                      int32_t lock_table_size = default_locktable_size,
+                      int disk_quota_in_pages = default_quota_in_pages,
+                      int bufferpool_size_in_pages = default_bufferpool_size_in_pages,
+                      uint32_t cleaner_threads = 1,
+                      uint32_t cleaner_interval_millisec_min	   = 1000,
+                      uint32_t cleaner_interval_millisec_max	   = 256000,
+                      uint32_t cleaner_write_buffer_pages          = 64,
+                      bool initially_enable_cleaners = true,
+                      bool enable_swizzling = default_enable_swizzling
+                      );
+
+    // Internal API to carry out the test
+    int runRestartPerfTestBefore (restart_performance_test_base *context,
+                          restart_test_options *restart_options,
+                          bool use_locks,
+                          int disk_quota_in_pages,
+                          const sm_options &options);
+
+    // Alternative top level API, not used currently for restart performance test
+    int runRestartPerfTestBefore (restart_performance_test_base *context,
+                      restart_test_options *restart_options,
+                      bool use_locks, int32_t lock_table_size,
+                      int disk_quota_in_pages, int bufferpool_size_in_pages,
+                      uint32_t cleaner_threads,
+                      uint32_t cleaner_interval_millisec_min,
+                      uint32_t cleaner_interval_millisec_max,
+                      uint32_t cleaner_write_buffer_pages,
+                      bool initially_enable_cleaners,
+                      bool enable_swizzling,
+                      const std::vector<std::pair<const char*, int64_t> > &additional_int_params,
+                      const std::vector<std::pair<const char*, bool> > &additional_bool_params,
+                      const std::vector<std::pair<const char*, const char*> > &additional_string_params);
+
+    /**
+    * Runs a restart performance 'before' test case in various restart modes
+    * Caller specify the restart mode through input parameter 'restart_option'
+    * @param context the object to implement 1 phases: post_shutdown().
+    * @see restart_performance_test_base
+    */
+    // Top level API for caller to start the test
+    int runRestartPerfTestAfter(
+                      restart_performance_test_base *context,
+                      restart_test_options *restart_options,  // Restart options, e.g. milestone setting
+                      bool use_locks,                         // True: enable locking, false: disable locking, M3/M4 test cases need to enable locking
+                      int32_t lock_table_size = default_locktable_size,
+                      int disk_quota_in_pages = default_quota_in_pages,
+                      int bufferpool_size_in_pages = default_bufferpool_size_in_pages,
+                      uint32_t cleaner_threads = 1,
+                      uint32_t cleaner_interval_millisec_min	   = 1000,
+                      uint32_t cleaner_interval_millisec_max	   = 256000,
+                      uint32_t cleaner_write_buffer_pages          = 64,
+                      bool initially_enable_cleaners = true,
+                      bool enable_swizzling = default_enable_swizzling
+                      );
+
+    // Internal API to carry out the test
+    int runRestartPerfTestAfter (restart_performance_test_base *context,
+                          restart_test_options *restart_options,
+                          bool use_locks,
+                          int disk_quota_in_pages,
+                          const sm_options &options);
+
+    // Alternative top level API, not used currently for restart performance test
+    int runRestartPerfTestAfter (restart_performance_test_base *context,
+                      restart_test_options *restart_options,
+                      bool use_locks, int32_t lock_table_size,
+                      int disk_quota_in_pages, int bufferpool_size_in_pages,
+                      uint32_t cleaner_threads,
+                      uint32_t cleaner_interval_millisec_min,
+                      uint32_t cleaner_interval_millisec_max,
+                      uint32_t cleaner_write_buffer_pages,
+                      bool initially_enable_cleaners,
+                      bool enable_swizzling,
+                      const std::vector<std::pair<const char*, int64_t> > &additional_int_params,
+                      const std::vector<std::pair<const char*, bool> > &additional_bool_params,
+                      const std::vector<std::pair<const char*, const char*> > &additional_string_params);
+
 
     /**
      * Runs a crash testcase in serial traditional restart mode

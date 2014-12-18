@@ -9,6 +9,7 @@
 #include "sm_external.h"
 #include "sthread.h"
 #include "../fc/local_random.h"
+#include "logbuf_core.h"
 
 // For CPU cycle measurement
 #include <cstdlib>
@@ -39,6 +40,12 @@
 //        restart carried out by both restart child thread and user thransaction threads
 //        all operations in post_shutdown should succeed although some
 //        operations might take longer (on_demand recovery)
+// M5 -ARIES implementation, open system after REDO phase,
+//        concurrency check based on lock acquisition
+//        restart carried out by both restart child thread and user thransaction threads
+//        all operations in post_shutdown should succeed although some
+//        operations might take longer (on_demand recovery)
+
 
 // Test machine:
 //       Xeon CPU X5550 @ 2.67GHz
@@ -48,31 +55,24 @@
 
 
 // TODO(Restart)...
-//    Might need to change the report frequency
-//
 //    Look for 'TODO(Restart)... performance', these are the special changes for performance measurement purpose
 //
-//    Restart - in_doubt page and transaction count reporting, change from DBGOUT0 back to DBGOUT1 (2 - 3 locations)
+//    Restart.cpp - in_doubt page and transaction count reporting, REDO/UNDO elapsed time, etc.  
+//                        change from DBGOUT1 to DBGOUT0 for reporting purpose
 //
-//    restart.cpp - change from DBGOUT0 back to DBGOUT1 for restart finished timing (2 locations)
-//
-//    chkpt - change from DBGOUT0 back to DBGOUT1 (1 locations) for reporting
-//
-//    Bug: Uncomment out the assertion in UNDO (two locations) - btree_logrec.cpp, lines 61 and 153  <-- M3/M4 only
+//    chkpt.cpp   - dirty and in-flight counts, change from DBGOUT1 to DBGOUT0 for reporting
 //
 //    CMakeLists.txt - comment out test_restart_performance for the regular build
 //
-//    Backward log scan code from Caetano - do not check in Caetano's code
+//    Post_shutdown concurrent queries - M4 is using 'update' while all other phases are using 'insert', due to bug
 //
-//    logbuf_common.h - disable #define LOG_BUFFER to use the original log scan
-//    partition.h
-//    partition.cpp
-//    log_core.cpp
+//    Post_shuitdown without concurrent transaction - only M1/M2 are issuing full scan
 //
-//    Bug: bf_tree.cpp (3020) bf_tree_m::_try_recover_page: Parent page does not have emlsn, no recovery  <-- infinite loop sometimes but not consistent
+//    btree_logrec.cpp - btree_insert_log::undo() and btree_update_log::undo() - possible assertion on 'not found' if M3 and M4
 //
-//    Bug: btree_page_h::suggest_fence_for_split (btree_page_h.cpp:1127) - when spliting a page to create a foster relation,
-//                try to find the key for split, it does not exist, it appears that a synch() call at the beginning of pre_shutdown causes this error consistently
+//    Non-deterministic infinite loop on recoverying page 0 with index 0 (no recovery) - M4
+//
+//    M2 - if using alt_rebalance_restart, error at the end of post_shutdown
 //
 
 
@@ -86,21 +86,22 @@ enum concurrent_xct_exit_t
 
 // TODO(Restart)... begin
 
-// Uncomment the following line  to run CPU cycle performance measurment...
+// Uncomment the following line  to run performance measurment...
 //
 #define MEASURE_PERFORMANCE 1
-
-// !!! Determine exit criteria of concurrent transactions !!!
-const concurrent_xct_exit_t EXEC_TYPE     = no_txn;
 
 // TODO(Restart)... end
 
 
+// !!! Determine exit criteria of concurrent transactions !!!
+const concurrent_xct_exit_t EXEC_TYPE     = no_txn;
+
+
 // Define constants
 const double   TARGET_EXECUTION_TIME      = 60000.0;        // Duration of the post_shutdown execution time
-const int      TOTAL_INDEX_COUNT          = 5;              // Number of indexes.  Each index would have around 9000 pages (probably more),
-                                                            // with 8K page, each index would take up at least ~70MB of space, while
-                                                            // we have 1GB buffer pool space
+const int      TOTAL_INDEX_COUNT          = 7;              // Number of indexes to populate initially.  Each index would have around 9000
+                                                            // pages (probably more), with 8K page, each index would take up
+                                                            // more than 78MB of space, while we have 1GB buffer pool space
                                                             // On the test machine, during the initial population phase, it starts hitting
                                                             // the hard drive after the first 5 indexes (file system cache was full)
 const int      DIRTY_INDEX_COUNT          = 5;              // Number of indexes to be updated after the initial population
@@ -117,7 +118,7 @@ const int      TOTAL_SUCCESS_TRANSACTIONS = 4500;           // Target total comp
                                                             // For M4 has bugs related to memory, can oly go as high as 500
                                                             // For M2, if set it higher than 4500, cannot get to the asked successful transaction
                                                             //    count, recovery finished but core dump at the end
-const int      M4_SUCCESS_TRANSACTIONS    = 500;            // M4 target total completed concurrent transaction count in phase 3 (post_shutdown)
+const int      M4_SUCCESS_TRANSACTIONS    = 9000;           // M4 target total completed concurrent transaction count in phase 3 (post_shutdown)
                                                             // lower number due to bugs
 const int      REPORT_COUNT               = 10;             // How many times to take the execution time information
 const int      RECORD_FREQUENCY           = TOTAL_SUCCESS_TRANSACTIONS/REPORT_COUNT; // Record the time every RECORD_FREQUENCY successful
@@ -157,11 +158,11 @@ const int      DATA_BUF_SIZE              = 800;            // btree_m::max_entr
                                                             // With the current setting, record size is ~ 810 (key + data although
                                                             // key size might vary, but at most 10), so each page could hold ~ 6 records
 
-// Data structure for the execution elapse time information for reporting purpose
+// Data structure for the execution elapsed time information for reporting purpose
 struct elapse_info_t
 {
     unsigned long long _total_cycles; // record CPU cycles
-    double             _total_elapse; // record elapse time
+    double             _total_elapse; // record elapsed time
     double             _total_txn_count;
     double             _successful_txn_count;
 };
@@ -195,7 +196,10 @@ sm_options make_perf_options()
     options.set_int_option("sm_logbufsize",  (1 << 20));               // In bytes, 1MB
     options.set_int_option("sm_logsize", (1 << 23));                   // In KB, 8GB
 
-    // The following setting enable the new log manager implementation (using big log read and log buffer
+    // Log manager decision
+    // The following setting enables the new log manager (using big log read and log buffer)
+    // by commenting this line out, the default uses the traditional (original) log manager which
+    // goes to disk for every fetch request.
     options.set_string_option("sm_log_impl", logbuf_core::IMPL_NAME);
 
     // Lock
@@ -246,8 +250,9 @@ static __inline__ unsigned long long rdtsc(void)
 w_rc_t populate_performance_records(stid_t &stid,
                                           bool one_txn,           // True if one big txn for all insertions
                                           uint64_t seed_key_int,  // Starting key value
-                                          const uint64_t count)   // Number of records to insert
-{
+                                          const uint64_t count,   // Number of records to insert
+                                          const bool is_forward)  // true if forward population
+{ 
     // Insert POPULATE_RECORDS records into the store
     //   Key - seed_key_int - (POPULATE_RECORDS + seed_key_int)
     //   Key - for key ending with 3, 5 or 7, skip the insertions
@@ -263,13 +268,21 @@ w_rc_t populate_performance_records(stid_t &stid,
     memset(data_buf, '\0', DATA_BUF_SIZE+1);
     memset(data_buf, 'D', DATA_BUF_SIZE);
 
+    // If backward population, update the seed key
+    if (false == is_forward)
+        seed_key_int += count;
+
     if (true == one_txn)
         W_DO(test_env->begin_xct());
 
     for (uint64_t i=0; i < count; ++i)
     {
         // Prepare the record first
-        ++seed_key_int;                          // Key starts from 1 and ends with POPULATE_RECORDS
+        if (true == is_forward)
+            ++seed_key_int;                          // Key starts from 1 and ends with POPULATE_RECORDS
+        else
+            --seed_key_int;                          // Backward population
+            
         memset(key_buf, '\0', KEY_BUF_SIZE+1);
         test_env->itoa(seed_key_int, key_buf, 10);   // Fill the key portion with integer converted to string
 
@@ -295,7 +308,7 @@ w_rc_t populate_performance_records(stid_t &stid,
     recordCount += count/10*7;    // From empty sotre, skip all the 3, 5 and 7s
 
     EXPECT_EQ(recordCount, s.rownum);
-    std::cout << "Large population, record count in current B-tree: " << s.rownum << std::endl;
+    std::cout << "Initial population, record count in current B-tree: " << s.rownum << std::endl;
 
     return RCOK;
 }
@@ -503,8 +516,13 @@ public:
             // then update multiple records with seeding key (ending with 4)
             W_DO(update_for_dirty_page(stid, seed_key_int));
 
-            // Cause in-flight transaction
-            ss_m::detach_xct();
+            // Cause in-flight transaction if needed
+            if (t_test_txn_in_flight == commit_type)
+                ss_m::detach_xct();
+            else if (t_test_txn_commit == commit_type)
+                W_DO(test_env->commit_xct());
+            else
+                W_DO(test_env->abort_xct());
         }
         else if (t_op_delete == op_type)
         {
@@ -517,8 +535,13 @@ public:
             // then update multiple records with seeding key (ending with 6)
             W_DO(update_for_dirty_page(stid, seed_key_int));
 
-            // Cause in-flight transaction
-            ss_m::detach_xct();
+            // Cause in-flight transaction if needed
+            if (t_test_txn_in_flight == commit_type)
+                ss_m::detach_xct();
+            else if (t_test_txn_commit == commit_type)
+                W_DO(test_env->commit_xct());
+            else
+                W_DO(test_env->abort_xct());
         }
         else
         {
@@ -532,8 +555,13 @@ public:
             // then update multiple records with seeding key (ending with 8)
             W_DO(update_for_dirty_page(stid, seed_key_int));
 
-            // Cause in-flight transaction
-            ss_m::detach_xct();
+            // Cause in-flight transaction if needed
+            if (t_test_txn_in_flight == commit_type)
+                ss_m::detach_xct();
+            else if (t_test_txn_commit == commit_type)
+                W_DO(test_env->commit_xct());
+            else
+                W_DO(test_env->abort_xct());
         }
 
         // Now we are done
@@ -541,13 +569,14 @@ public:
     }
 
     rc_t _rc;
-    bool _running;           // Indicate whether the thread is still running or not
-    ss_m *ssm;               // Set by caller before thread started
-    stid_t stid;             // Set by caller before thread started
-    uint64_t key_int;        // Key value for the primary operation, set by caller before thread started
-    uint64_t seed_key_int;   // Seeding key value for extra updates, set by caller before thread started
-    test_op_type_t op_type;  // Operation type, set by caller before thread started
-    int _thid;               // Thread id
+    bool _running;                 // Indicate whether the thread is still running or not
+    ss_m *ssm;                     // Set by caller before thread started
+    stid_t stid;                   // Set by caller before thread started
+    uint64_t key_int;              // Key value for the primary operation, set by caller before thread started
+    uint64_t seed_key_int;         // Seeding key value for extra updates, set by caller before thread started
+    test_op_type_t op_type;        // Operation type, set by caller before thread started
+    test_txn_state_t commit_type;  // Commit type for worker thread
+    int _thid;                     // Thread id
 
 };
 
@@ -558,19 +587,12 @@ public:
 //    M2 crash shutdown
 //    M3 crash shutdown
 //    M4 crash shutdown
+//    M5 crash shutdown
 class restart_multi_performance : public restart_performance_test_base
 {
 public:
-    int                _cycle_slot_index;                // Index into cycle slots
-/**
-    unsigned long long _total_cycles[TOTAL_CYCLE_SLOTS]; // Structure to record CPU cycles
-    double             _total_elapse[TOTAL_CYCLE_SLOTS]; // Structure to record elapse time
-                                                         //record it every RECORD_FREQUENCY
-                                                         // successful transactions
-    double             _total_txn_count[TOTAL_CYCLE_SLOTS];
-    double             _successful_txn_count[TOTAL_CYCLE_SLOTS];
-**/
-    elapse_info_t      elapse_info[TOTAL_CYCLE_SLOTS];
+    int                _cycle_slot_index;                     // Index into cycle slots
+    elapse_info_t      elapse_info[100+TOTAL_CYCLE_SLOTS*2];  // Plenty of extra slots
 
     void record_cycles(const double total, const double success)
     {
@@ -579,7 +601,7 @@ public:
         _end = rdtsc();
         elapse_info[_cycle_slot_index]._total_cycles = _end;
 
-        // Record the elapse time information into the next slot
+        // Record the elapsed time information into the next slot
         // (do not use actual execution time because it excludes the disk I/O wait time)
         // 1. gettimeofday() to get microseconds, although it
         // does not exclude CPU sleep time
@@ -617,16 +639,23 @@ public:
         w_assert1(NULL != ssm);
         std::cout << std::endl << "Start initial_shutdown (phase 1)..." << std::endl << std::endl;
 
-        // Create and populate each index
-        // have one extra index slot but do not create or populate it in the initial phase
+        // Create and populate each index, populate the index in reverse order
+        // while during phase 2 (pre_shutdown), we only update DIRTY_INDEX_COUNT indexes
         _stid_list = new stid_t[TOTAL_INDEX_COUNT];
-        for (int i = 0; i < TOTAL_INDEX_COUNT; ++i)
+        bool is_forward = true;
+        for (int i = TOTAL_INDEX_COUNT-1; i >= 0; --i)
         {
             W_DO(x_btree_create_index(ssm, &_volume, _stid_list[i], _root_pid));
-            populate_performance_records(_stid_list[i], false, 0, POPULATE_RECORDS);  // Multiple small transactions
-                                                                                      // seed = 0 so the first key = 1
-                                                                                      // Insert POPULATE_RECORDS records
+            populate_performance_records(_stid_list[i], 
+                                         false,              // Multiple small transactions
+                                         0,                  // seed = 0 so the first key = 1, usedif forward population
+                                         POPULATE_RECORDS,   // Insert POPULATE_RECORDS records
+                                         is_forward);        // Backward population
         }
+
+        // Find out how many dirty pages at the end of phase 1       
+        W_DO(ss_m::checkpoint());
+
         return RCOK;
     }
 
@@ -652,7 +681,7 @@ public:
         //                Key - 6,  if in-flight contains delete operations, then some of the 6s would be affected
         // Either normal shutdown or simulate system crash
 
-        // With TOTAL_INDEX_COUNT (7) indexes, the mail loop generated more than 10000 in_doubt pages
+        // With TOTAL_INDEX_COUNT indexes, the mail loop generated more than 10000 in_doubt pages
         // which require REDOs, TOTAL_IN_FLIGHT_THREADS (20) in_flight transactions which require UNDOs
 
         w_assert1(NULL != ssm);
@@ -669,9 +698,6 @@ public:
             workers[i].ssm = ssm;
         }
 
-        // Set the initial for key_int which starts from the beginning
-        uint64_t key_int = 0;
-
         // Make sure the transaction count is not too high, beause in case of
         // crash shutdown without checkpoint, each transaction before the crash
         // will cause a new transaction being created during Log Analysis phase,
@@ -683,7 +709,14 @@ public:
         uint64_t transaction_count = (POPULATE_RECORDS > TOTAL_RECOVERY_TRANSACTION)
                                      ? TOTAL_RECOVERY_TRANSACTION : POPULATE_RECORDS;
 
+        // Seed the key value
+        uint64_t key_int = ::rand()%500;  // value from 0 - 499
+        DBGOUT0(<< "**** Phase2 (pre_shutdown) seed value: " << key_int);
+
         int index_count = 0;
+
+        struct timeval tm_before;
+        gettimeofday( &tm_before, NULL );
 
         // Main loop, perform 'transaction_count' transactions but spread out to all indexes
         // also generates in_flight transactions across all indexes to cause UNDO during recovery
@@ -692,16 +725,27 @@ public:
             // Each committed transaction contains one operation only
             // while each in_flight transaction contains multiple operations (multiple pages)
 
-            // Prepare the record first
-            ++key_int;                              // Key starts from 1
+            // Prepare the record key first
+            ++key_int;
+
+            // Give a random push once in a while
+            if (0 == (i%50))
+               key_int += ::rand()%100;             // Randomly increase a value from 0 - 99
+
+            // Reset to a lower value if the key is beyond the current limit
+            if (key_int >= POPULATE_RECORDS)
+                key_int = ::rand()%TOTAL_RECOVERY_TRANSACTION;
+
+            // Now prepare the key
             memset(key_buf, '\0', KEY_BUF_SIZE+1);
             test_env->itoa(key_int, key_buf, 10);   // Fill the key portion with integer converted to string
 
-            // Determine which index to use, purpose use (DIRTY_INDEX_COUNT+1)
-            // so the first index gets more operations
-            index_count = i%(DIRTY_INDEX_COUNT+1);   // 0 -5, so we only update on the first 5 index
-            if (index_count >= DIRTY_INDEX_COUNT)
-                index_count = 0;
+            // Determine which index to use
+            index_count = i%(DIRTY_INDEX_COUNT);    // Always in sequencial order
+            
+            // Once in a while, do a random pick
+            if (0 == (i%200))
+                index_count = ::rand()%DIRTY_INDEX_COUNT;    // Pick a random index
 
             int last_digit = strlen(key_buf)-1;
             if ('3' == key_buf[last_digit])
@@ -738,6 +782,8 @@ public:
                     workers[current_in_flight__count].seed_key_int = 4 + (current_in_flight__count*200);   // Seed ending with 4
                     workers[current_in_flight__count].op_type = t_op_insert;
                     workers[current_in_flight__count].stid = _stid_list[index_count];
+
+                    workers[current_in_flight__count].commit_type = t_test_txn_in_flight;
 
                     // Sleep for a short duration before start the thread,
                     // so the thread manager can catch up
@@ -779,6 +825,8 @@ public:
                         workers[current_in_flight__count].op_type = t_op_update;
                         workers[current_in_flight__count].stid = _stid_list[index_count];
 
+                        workers[current_in_flight__count].commit_type = t_test_txn_in_flight;
+
                         // Sleep for a short duration before start the thread,
                         // so the thread manager can catch up
                         ::usleep(SHORT_SLEEP_MICROSEC);
@@ -812,6 +860,13 @@ public:
             // Next transaction
             ++i;
         }
+
+        struct timeval tm_after;
+        gettimeofday( &tm_after, NULL );
+        DBGOUT0(<< "**** Phase2 (pre_shutdown) elapsed time (milliseconds): "
+                << (((double)tm_after.tv_sec - (double)tm_before.tv_sec) * 1000.0)
+                + (double)tm_after.tv_usec/1000.0 - (double)tm_before.tv_usec/1000.0);
+
 
         if (current_in_flight__count < TOTAL_IN_FLIGHT_THREADS)
             std::cerr << "!!!!! Expected " << TOTAL_IN_FLIGHT_THREADS
@@ -851,25 +906,31 @@ public:
             elapse_info[i]._successful_txn_count = 0.0;
         }
 
+        //////////////////////////////////////////////////////////////////////////
+        // See btree_test_env::runRestartPerfTest ....
         // Force a flush of system cache before shutdown, the goal is to
         // make sure after the simulated system crash, the recovery process
         // has to get data from disk, not file system cache
-        int i;
-        i = system("free -m");  // before free cache
-        i = system("/bin/sync");  // flush but not free the page cache
-        i = system("echo 3 | sudo tee /proc/sys/vm/drop_caches");  // free page cache and inode cache
-        i = system("free -m");  // after free cache
+        // int i;
+        //        i = system("free -m");  // before free cache
+        //        i = system("/bin/sync");  // flush but not free the page cache
+        //        i = system("echo 3 | sudo tee /proc/sys/vm/drop_caches");  // free page cache and inode cache
+        //        i = system("sudo sh -c 'echo 3 >/proc/sys/vm/drop_caches'");  // free page cache and inode cache                
+        //        i = system("free -m");  // after free cache
 
         // Populate the system cache with some random data
         //   i = system("cat /home/weyg/build/opt-ubuntu-12.04-x86_64/Zero/tests/sm/test.core > /dev/null");
         //   i = system("free -m");  // after free cache
 
         // Performance test on raw I/O, simulate the same amount of dirty page I/Os:
-        //    dd if=/home/weyg/build/opt-ubuntu-12.04-x86_64/Zero/tests/sm/test.core of=/dev/null bs=8k count=10000                   // okay to use system cache
-        //    dd if=/home/weyg/build/opt-ubuntu-12.04-x86_64/Zero/tests/sm/test.core of=/dev/null bs=8k count=10000 iflag=direct  // force direct I/O
+        //    dd if=/home/weyg/test.core of=/dev/null bs=8k count=10000                                     // okay to use system cache
+        //    dd if=/home/weyg/test.core of=/dev/null bs=8k count=10000 iflag=direct                   // force direct I/O
         // Hard code the path and name of the test input file:
         // The actual data file for this test program is in: /dev/shm/weyg/btree_test_env/volumes/dev_test
         //    i = system("dd if=/home/weyg/test.core of=/dev/null bs=8k count=10000 iflag=direct");
+        //
+        //            i = system("dd if=/home/weyg/test.core of=/home/weyg/test2.core bs=100k count=10000");  // Read and write 1G of data, using cache
+        //            i = system("rm /home/weyg/test2.core");
 
         // Get hard drive speed information on the system:
         // sudo hdparm -tT /dev/sda
@@ -881,20 +942,35 @@ public:
         //Commnad to watch for disk I/O, only watch program from 'weyg', and update interval = 0.1 second:
         //       sudo iotop -u weyg -a -o -d .1
 
-        std::cout << "Return value from system command: " << i << std::endl;
+        // To see device information
+        //      sudo fdisk -l
+        
+        // To see whether write-back caching is enabled on the hard drive:
+        //     sudo hdparm -W /dev/sda1
+        //     sudo hdparm -W /dev/sda2
 
-        // Start the timer to measure time from before test code shutdown (normal or crash)
-        // to finish TOTAL_SUCCESS_TRANSACTIONS user transactions
+        // To disable write-back caching
+        //     sudo hdparm -W0 /dev/sda1
+        //     sudo hdparm -W0 /dev/sda2        
+        // Alternative
+        //     sudo emacs /etc/hdparm.conf   <-- uncomment the line '#write_cache = off' line so it becomes 'write_cache = off'
+
+        // To flush the on-drive write cache buffer
+        //     sudo hdparm -F /dev/sda1
+        //     sudo hdparm -F /dev/sda2        
+
+        // To sync and flush the buffer cache
+        //     sudo hdparm -f /dev/sda1
+        //     sudo hdparm -f /dev/sda2        
+
+        // See all the informatio, including write-cache information
+        //     sudo hdparm -i /dev/sda1
+        //     sudo hdparm -i /dev/sda2        
+
+        //  std::cout << "Return value from system command: " << i << std::endl;
+        //////////////////////////////////////////////////////////////////////////
+
         ::usleep(SHORT_SLEEP_MICROSEC*100);
-
-        // CUP cycles
-        _start = rdtsc();
-
-        // Elapse time in millisecs seconds
-        struct timeval tm;
-        gettimeofday( &tm, NULL );
-        _start_time = ((double)tm.tv_sec*MILLISECS_IN_SECOND) +
-                      ((double)tm.tv_usec/(MICROSECONDS_IN_SECOND/MILLISECS_IN_SECOND));
         return RCOK;
     }
 
@@ -910,7 +986,7 @@ public:
         //       Key - if key ending with 9, some of them were in_flight updates from phase 2
         //                while others were committed updates from phase 2
         //                Not using these records, therefore
-        //                M1, M2, M4 - all transactions rolled back, so these records would be recovered
+        //                M1, M2, M4, M5 - all transactions rolled back, so these records would be recovered
         //                M3 - these records won't be rolled back due to pure on-demand rollback
         // Measure and draw a curve that shows the numbers of completed transactions over time
 
@@ -945,19 +1021,19 @@ public:
         int out_of_bound = 0;                           // Frequency to use an out-of-bound record (OUT_OF_BOUND_FREQUENCY)
         int index_count = 0;                            // Which index to use for the operation?
 
-        // Elapse time in millisecs seconds
+        // Elapsed time in millisecs seconds
         double begin_time;      // Time when the concurrent transactions start
         double current_time;    // Current time of the concurrent transaction
-        double execution_time; // Elapse time of the concurrent transactions
+        double execution_time; // Elapsed time of the concurrent transactions
         struct timeval tm;
         gettimeofday( &tm, NULL );
         begin_time = ((double)tm.tv_sec*MILLISECS_IN_SECOND) +
                      ((double)tm.tv_usec/(MICROSECONDS_IN_SECOND/MILLISECS_IN_SECOND));
 
         // Determine how many successful transactions to reach
-        // M4 has a much lower number due to bugs
+        // M4 has a higher number to allow more overlap between recovery and concurrent transactions
         double target_count;
-        if (restart_mode == m4_default_restart)
+        if ((restart_mode == m4_default_restart) || (restart_mode == m4_alt_rebalance_restart))
             target_count = M4_SUCCESS_TRANSACTIONS;
         else
             target_count = TOTAL_SUCCESS_TRANSACTIONS;
@@ -968,6 +1044,7 @@ public:
             target_count = std::numeric_limits<double>::max();  // disable concurrent transactions
 
         // Spread out the operations to all indexes
+        bool isError = false;
         for (succeed_txn_count=0; succeed_txn_count < target_count;)
         {
             // User transactions in M2 might fail due to commit_lsn check,
@@ -993,10 +1070,14 @@ public:
             // A safe guard to prevent infinite loop if we are using transaction count as exit criteria
             if ((txn_count == EXEC_TYPE) && (started_txn_count > (1 << 21)))  // > 2G
             {
+                record_cycles(started_txn_count, succeed_txn_count);            
                 std::cout << std::endl << "Exit on transaction count, executed more than " << (1<< 21)
-                          << "transactions, break!!!!!" << std::endl << std::endl;
+                          << " transactions, break!!!!!" << std::endl << std::endl;
                 break;
             }
+
+            // Reset the error flag
+            isError = false;
 
             // Determine which index to use, purposely use (DIRTY_INDEX_COUNT+1)
             // so first index gets more operations
@@ -1047,8 +1128,12 @@ public:
                 // Insert, this should be okay regardless we are in or out of bound (POPULATE_RECORDS)
                 // because it does not exist in the store
                 // In M2 it might fail due to commit_lsn checking, in such case, skip
-                rc = insert_performance_records(_stid_list[index_count], actual_key,
-                                                t_test_txn_commit, NO_EXTRA_UPDATE, false);  // no extra update
+                if ((m4_default_restart == restart_mode) || (m4_alt_rebalance_restart == restart_mode))
+                    rc = update_performance_records(_stid_list[index_count], actual_key,         // Update if M4
+                                                    t_test_txn_commit, NO_EXTRA_UPDATE);
+                else
+                    rc = insert_performance_records(_stid_list[index_count], actual_key,
+                                                    t_test_txn_commit, NO_EXTRA_UPDATE, false);  // no extra update
                 if (rc.is_error())
                 {
 #ifndef MEASURE_PERFORMANCE
@@ -1059,15 +1144,13 @@ public:
 
                     // Go to the next key value, do not increase succeed_txn_count
                     test_env->abort_xct();
-                    ++started_txn_count;
                     // If duplicate or not found error, it is a successful transaction,
                     // because we only consider blocking (M2) or unknown error as a failure
                     // eDUPLICATE = 34
                     // eACCESS_CONFLICT = 83 (commit_lsn error)
                     // eNOTFOUND = 22
-                    if ((eDUPLICATE == rc.err_num()) || (eNOTFOUND == rc.err_num()))
-                        ++succeed_txn_count;
-                    continue;
+                    if ((eDUPLICATE != rc.err_num()) && (eNOTFOUND != rc.err_num()))
+                        isError = true;
                 }
             }
             else if (('7' == key_buf[last_digit]) && (actual_key < POPULATE_RECORDS))
@@ -1077,8 +1160,12 @@ public:
                 // while some of the 7 were inserted and committed during phase 2 and they do exist.
                 // Due to multiple indexes and we only insert some of the 7s, most of the '7' do not exist.
                 // Therefore doing insertions in all cases, some of them might fail (duplicate)
-                rc = insert_performance_records(_stid_list[index_count], actual_key,
-                                                t_test_txn_commit, NO_EXTRA_UPDATE, false);  // no extra update
+                if ((m4_default_restart == restart_mode) || (m4_alt_rebalance_restart == restart_mode))
+                    rc = update_performance_records(_stid_list[index_count], actual_key,         // Update if M4
+                                                    t_test_txn_commit, NO_EXTRA_UPDATE);
+                else               
+                    rc = insert_performance_records(_stid_list[index_count], actual_key,
+                                                    t_test_txn_commit, NO_EXTRA_UPDATE, false);  // no extra update
                 if (rc.is_error())
                 {
 #ifndef MEASURE_PERFORMANCE
@@ -1092,12 +1179,10 @@ public:
 
                     // Go to the next key value, do not increase succeed_txn_count
                     test_env->abort_xct();
-                    ++started_txn_count;
                     // If duplicate or not found error, it is a successful transaction,
                     // because we only consider blocking (M2) or unknown error as a failure
-                    if ((eDUPLICATE == rc.err_num()) || (eNOTFOUND == rc.err_num()))
-                        ++succeed_txn_count;
-                    continue;
+                    if ((eDUPLICATE != rc.err_num()) && (eNOTFOUND != rc.err_num()))
+                        isError = true;
                 }
             }
             else if (('3' == key_buf[last_digit]) && (actual_key < POPULATE_RECORDS))
@@ -1105,8 +1190,12 @@ public:
                 // Some of the key was inserted during pre_shutdown (phase 2), but there are
                 // multiple index, so a lot of 7s do not exist.
                 // Therefore doing insertions in all cases, some of them might fail (duplicate)
-                rc = insert_performance_records(_stid_list[index_count], actual_key,
-                                                t_test_txn_commit, NO_EXTRA_UPDATE, false);  // no extra update
+                if ((m4_default_restart == restart_mode) || (m4_alt_rebalance_restart == restart_mode))
+                    rc = update_performance_records(_stid_list[index_count], actual_key,         // Update if M4
+                                                    t_test_txn_commit, NO_EXTRA_UPDATE);
+                else                              
+                    rc = insert_performance_records(_stid_list[index_count], actual_key,
+                                                    t_test_txn_commit, NO_EXTRA_UPDATE, false);  // no extra update
                 if (rc.is_error())
                 {
 #ifndef MEASURE_PERFORMANCE
@@ -1121,12 +1210,10 @@ public:
 #endif
                     // Go to the next key value, do not increase succeed_txn_count
                     test_env->abort_xct();
-                    ++started_txn_count;
                     // If duplicate or not found error, it is a successful transaction,
                     // because we only consider blocking (M2) or unknown error as a failure
-                    if ((eDUPLICATE == rc.err_num()) || (eNOTFOUND == rc.err_num()))
-                        ++succeed_txn_count;
-                    continue;
+                    if ((eDUPLICATE != rc.err_num()) && (eNOTFOUND != rc.err_num()))
+                        isError = true;
                 }
             }
             else if ((('2' == key_buf[last_digit]) || ('0' == key_buf[last_digit])) && (actual_key < POPULATE_RECORDS))
@@ -1153,20 +1240,19 @@ public:
 
                     // Go to the next key value, do not increase succeed_txn_count
                     test_env->abort_xct();
-                    ++started_txn_count;
                     // If duplicate or not found error, it is a successful transaction,
                     // because we only consider blocking (M2) or unknown error as a failure
-                    if ((eDUPLICATE == rc.err_num()) || (eNOTFOUND == rc.err_num()))
-                        ++succeed_txn_count;
-                    continue;
+                    if ((eDUPLICATE != rc.err_num()) && (eNOTFOUND != rc.err_num()))
+                        isError = true;
                 }
             }
             else if (actual_key > POPULATE_RECORDS)
             {
                 // If key value is out of bound (does not exist), and we don't have
-                // enough successful user transactions yet, insert the key value
-                rc = insert_performance_records(_stid_list[index_count], actual_key,
-                                                t_test_txn_commit, NO_EXTRA_UPDATE, false);  // no extra update
+                // enough successful user transactions yet, update a random key value
+                actual_key = ::rand()%POPULATE_RECORDS;
+                rc = update_performance_records(_stid_list[index_count], actual_key,
+                                                t_test_txn_commit, NO_EXTRA_UPDATE);  // no extra update
                 if (rc.is_error())
                 {
 #ifndef MEASURE_PERFORMANCE
@@ -1178,12 +1264,10 @@ public:
 
                     // Go to the next key value, do not increase succeed_txn_count
                     test_env->abort_xct();
-                    ++started_txn_count;
                     // If duplicate or not found error, it is a successful transaction,
                     // because we only consider blocking (M2) or unknown error as a failure
-                    if ((eDUPLICATE == rc.err_num()) || (eNOTFOUND == rc.err_num()))
-                        ++succeed_txn_count;
-                    continue;
+                    if ((eDUPLICATE != rc.err_num()) && (eNOTFOUND != rc.err_num()))
+                        isError = true;
                 }
             }
             else
@@ -1196,10 +1280,10 @@ public:
                 continue;
             }
 
-            // If we get here, the current transaction succeeded
             // Update both transaction counters
             ++started_txn_count;       // Started counter
-            ++succeed_txn_count;       // Succeeded counter
+            if (false == isError)            
+                ++succeed_txn_count;       // Succeeded counter
 
             // Is it time to record the performance information?
             // Note we are recording information based on succeed transactions
@@ -1241,16 +1325,16 @@ public:
         //     _total_cycles[TOTAL_CYCLE_SLOTS] - from shutdown to exit the main loop, either based on
         //                                                              succeed_txn_count user transactions or time limit
 #ifdef MEASURE_PERFORMANCE
-        std::cout << std::endl << "Successful transaction count, elapse time(milliseconds) and CPU cycles: " << std::endl;
+        std::cout << std::endl << "Successful transaction count, elapsed time(milliseconds) and CPU cycles: " << std::endl;
         for (int iIndex = 0; iIndex < _cycle_slot_index; ++iIndex)
         {
             std::cout << " Total txn: " << elapse_info[iIndex]._total_txn_count
                       << ", successful txn: " << elapse_info[iIndex]._successful_txn_count
-                      << ", elapse time: " << (elapse_info[iIndex]._total_elapse - _start_time)
+                      << ", elapsed time: " << (elapse_info[iIndex]._total_elapse - _start_time)
                       << ", CPU cycles: " << (elapse_info[iIndex]._total_cycles - _start);
             if (0 < iIndex)
             {
-                std::cout << ", elapse delta: " << (elapse_info[iIndex]._total_elapse - elapse_info[iIndex-1]._total_elapse);
+                std::cout << ", elapsed delta: " << (elapse_info[iIndex]._total_elapse - elapse_info[iIndex-1]._total_elapse);
                 std::cout << ", cycle delta: " << (elapse_info[iIndex]._total_cycles - elapse_info[iIndex-1]._total_cycles) << std::endl;
             }
             else
@@ -1259,7 +1343,7 @@ public:
                 // Clean shutdown - including rollback
                 // M1 - including the entire Restart
                 // M2 - M4 - Log Analysis only
-                std::cout << ", elapse delta: " << (elapse_info[iIndex]._total_elapse - _start_time);
+                std::cout << ", elapsed delta: " << (elapse_info[iIndex]._total_elapse - _start_time);
                 std::cout << ", cycle delta: " << (elapse_info[iIndex]._total_cycles - _start);
                 if (false == crash_shutdown)
                     std::cout << ", normal cleanup time" << std::endl;
@@ -1276,11 +1360,21 @@ public:
         if (m1_default_restart == restart_mode)
             std::cout << std::endl << "M1 ...";
         else if (m2_default_restart == restart_mode)
-            std::cout << std::endl << "M2...";
+            std::cout << std::endl << "M2 recursive...";
+        else if (m2_alt_rebalance_restart == restart_mode)
+            std::cout << std::endl << "M2 self_contained...";
         else if (m3_default_restart == restart_mode)
-            std::cout << std::endl << "M3...";
+            std::cout << std::endl << "M3 recursive...";
+        else if (m3_alt_rebalance_restart == restart_mode)
+            std::cout << std::endl << "M3 self_contained...";
         else if (m4_default_restart == restart_mode)
-            std::cout << std::endl << "M4...";
+            std::cout << std::endl << "M4 recursive...";
+        else if (m4_alt_rebalance_restart == restart_mode)
+            std::cout << std::endl << "M4 self_contained...";
+        else if (m5_default_restart == restart_mode)
+            std::cout << std::endl << "M5 recursive...";
+        else if (m5_alt_rebalance_restart == restart_mode)
+            std::cout << std::endl << "M5 self_contained...";
         else
             std::cerr << std::endl << "UNKNOWN RESTART MODE, ERROR...";
 
@@ -1292,19 +1386,55 @@ public:
         std::cout << "Total started transactions: " << started_txn_count << std::endl;
         std::cout << "Total completed transactions: " << succeed_txn_count << std::endl;
 
-#ifndef MEASURE_PERFORMANCE
-        // Get record count from each index, we are not measuring
-        // performance number for the scan operation
-        int recordCountTotal = 0;
-        x_btree_scan_result s;
-        for (int i = 0; i < TOTAL_INDEX_COUNT; ++i)
+
+        if (no_txn == EXEC_TYPE)
         {
-            W_DO(test_env->btree_scan(_stid_list[index_count], s));
-            recordCountTotal += s.rownum;
-            std::cout << "Index " << i << " record count: " << s.rownum << std::endl;
+            // If no concurrent transaction, measure time to recovery and load normal pages
+            
+            if ((m2_default_restart == restart_mode) || (m2_alt_rebalance_restart == restart_mode))
+            {
+                // Need to wait until the recovery completed, otherwise the scan would fail
+                while (true == test_env->in_restart())
+                {
+                    // Concurrent restart is still going on, wait
+                    ::usleep(SHORT_SLEEP_MICROSEC);
+                }
+            }
+            else
+            {
+                // No wait for M1, M3, M4 and M5
+            }
+
+            // If no concurrent transaction, measure the elapsed time for 'select *' 
+            // only if on_demand restart was not involved (M3, M4 or M5)
+            // because the 'select *' statement would help recovery to finish in M3, M4 and M5
+            // from user transaction side, which is not what we want.  We want the child recovery
+            // thread performance only
+            if ((m3_default_restart != restart_mode) && (m4_default_restart != restart_mode) && 
+               (m5_default_restart != restart_mode) && (m3_alt_rebalance_restart != restart_mode) &&
+               (m4_alt_rebalance_restart != restart_mode) && (m5_alt_rebalance_restart != restart_mode))
+            {
+                struct timeval tm_before;
+                gettimeofday( &tm_before, NULL );
+
+                // Get record count from each index, which is 'select *'
+                int recordCountTotal = 0;
+                x_btree_scan_result s;
+                for (int i = 0; i < TOTAL_INDEX_COUNT; ++i)
+                {
+                    W_DO(test_env->btree_scan(_stid_list[i], s));
+                    recordCountTotal += s.rownum;
+                    std::cout << "Index " << i << " record count: " << s.rownum << std::endl;
+                }
+                std::cout << "Existing record count in B-tree: " << recordCountTotal << std::endl;
+
+                struct timeval tm_after;
+                gettimeofday( &tm_after, NULL );
+                DBGOUT0(<< "**** SELECT ALL without concurrent transaction, elapsed time (milliseconds): "
+                        << (((double)tm_after.tv_sec - (double)tm_before.tv_sec) * MILLISECS_IN_SECOND)
+                        + (double)tm_after.tv_usec/MILLISECS_IN_SECOND - (double)tm_before.tv_usec/MILLISECS_IN_SECOND);
+            }
         }
-        std::cout << "Existing record count in B-tree: " << recordCountTotal << std::endl;
-#endif
 
         // Duration starts from 'store open', so if normal shutdown or M1, recovery has completed already
         unsigned long long duration_CPU = (elapse_info[_cycle_slot_index - 1]._total_cycles - elapse_info[0]._total_cycles);
@@ -1330,9 +1460,13 @@ public:
 };
 
 
-///////////////////////////
-// Testing
-///////////////////////////
+/////////////////////////////////////////////////////////////
+// Normal testing using simulated crash shutdown in ONE executable
+// !!! Note !!! - must do
+//    0. Make sure btree_test_env.cpp clean up log and data files logic in 5 locations
+//    1. Make sure the correct test case is enabled
+//    2. Compile the new executable
+/////////////////////////////////////////////////////////////
 
 /**
 // Passing - M1
@@ -1351,6 +1485,7 @@ TEST (RestartPerfTest, MultiPerformanceNormal)
                                            DISK_QUOTA_IN_KB,     // 2GB, disk_quota_in_pages, how much disk space is allowed,
                                            make_perf_options()), // Other options
                                            0);
+    std::cout << std::endl << "**** All-in-One Instant Restart"<< std::endl << std::endl;    
 }
 **/
 
@@ -1371,6 +1506,7 @@ TEST (RestartPerfTest, MultiPerformanceM1)
                                            DISK_QUOTA_IN_KB, // 2GB, disk_quota_in_pages, how much disk space is allowed,
                                            make_perf_options()),  // Other options
                                            0);
+    std::cout << std::endl << "**** All-in-One Instant Restart"<< std::endl << std::endl;
 }
 **/
 
@@ -1382,7 +1518,8 @@ TEST (RestartPerfTest, MultiPerformanceM2)
     restart_multi_performance context;
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
-    options.restart_mode = m2_default_restart;
+//    options.restart_mode = m2_default_restart;        // Recursive SPR
+    options.restart_mode = m2_alt_rebalance_restart;  // Self_contained SPR    
 
     // M2 crash shutdown
     EXPECT_EQ(test_env->runRestartPerfTest(&context,
@@ -1393,6 +1530,7 @@ TEST (RestartPerfTest, MultiPerformanceM2)
                                            DISK_QUOTA_IN_KB, // 2GB, disk_quota_in_pages, how much disk space is allowed,
                                            make_perf_options()),  // Other options
                                            0);
+    std::cout << std::endl << "**** All-in-One Instant Restart"<< std::endl << std::endl;
 }
 /**/
 
@@ -1404,7 +1542,8 @@ TEST (RestartPerfTest, MultiPerformanceM3)
     restart_multi_performance context;
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
-    options.restart_mode = m3_default_restart;
+//    options.restart_mode = m3_default_restart;           // Rcursive SPR
+    options.restart_mode = m3_alt_rebalance_restart;  // Self_contained SPR    
 
     // M3 crash shutdown
     EXPECT_EQ(test_env->runRestartPerfTest(&context,
@@ -1413,6 +1552,7 @@ TEST (RestartPerfTest, MultiPerformanceM3)
                                            DISK_QUOTA_IN_KB, // 2GB, disk_quota_in_pages, how much disk space is allowed,
                                            make_perf_options()),  // Other options
                                            0);
+    std::cout << std::endl << "**** All-in-One Instant Restart"<< std::endl << std::endl;
 }
 **/
 
@@ -1424,7 +1564,8 @@ TEST (RestartPerfTest, MultiPerformanceM4)
     restart_multi_performance context;
     restart_test_options options;
     options.shutdown_mode = simulated_crash;
-    options.restart_mode = m4_default_restart;
+//    options.restart_mode = m4_default_restart;           // Rcursive SPR
+    options.restart_mode = m4_alt_rebalance_restart;  // Self_contained SPR    
 
     // M4 crash shutdown
     EXPECT_EQ(test_env->runRestartPerfTest(&context,
@@ -1433,6 +1574,329 @@ TEST (RestartPerfTest, MultiPerformanceM4)
                                            DISK_QUOTA_IN_KB, // 2GB, disk_quota_in_pages, how much disk space is allowed,
                                            make_perf_options()),  // Other options
                                            0);
+    std::cout << std::endl << "**** All-in-One Instant Restart"<< std::endl << std::endl;
+}
+**/
+
+/**
+// Passing - M5
+TEST (RestartPerfTest, MultiPerformanceM5)
+{
+    test_env->empty_logdata_dir();
+    restart_multi_performance context;
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+//    options.restart_mode = m5_default_restart;           // Rcursive SPR
+    options.restart_mode = m5_alt_rebalance_restart;  // Self_contained SPR    
+
+    // M5 crash shutdown
+    EXPECT_EQ(test_env->runRestartPerfTest(&context,
+                                           &options,         // Restart option, which milestone, normal or crash shutdown
+                                           true,             // Turn locking ON
+                                           DISK_QUOTA_IN_KB, // 2GB, disk_quota_in_pages, how much disk space is allowed,
+                                           make_perf_options()),  // Other options
+                                           0);
+    std::cout << std::endl << "**** All-in-One Instant Restart"<< std::endl << std::endl;
+}
+**/
+
+
+/////////////////////////////////////////////////////////////
+// Testing using simulated crash shutdown with before and after executables
+// This is the BEFORE portion
+// !!! Note !!! - must do
+//    0. Make sure btree_test_env.cpp clean up log and data files logic in 5 locations
+//    1. Make sure the correct 'before' test case is enabled
+//    2. Compile the new executable
+//    3. After the program finished, execute /home/weyg/dosave to keep data and log files
+/////////////////////////////////////////////////////////////
+
+/**
+// Passing - M1
+TEST (RestartPerfTestBefore, MultiPerformanceNormal)
+{
+    test_env->empty_logdata_dir();
+    restart_multi_performance context;
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m1_default_restart;
+
+    // Normal shutdown
+    EXPECT_EQ(test_env->runRestartPerfTestBefore(&context,
+                                           &options,             // Restart option, which milestone, normal or crash shutdown
+                                           true,                 // Turn locking ON
+                                           DISK_QUOTA_IN_KB,     // 2GB, disk_quota_in_pages, how much disk space is allowed,
+                                           make_perf_options()), // Other options
+                                           0);
+    std::cout << std::endl << "**** BEFORE Instant Restart"<< std::endl << std::endl;
+}
+**/
+
+/**
+// Passing - M1
+TEST (RestartPerfTestBefore, MultiPerformanceM1)
+{
+    test_env->empty_logdata_dir();
+    restart_multi_performance context;
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m1_default_restart;
+
+    // M1 crash shutdown
+    EXPECT_EQ(test_env->runRestartPerfTestBefore(&context,
+                                           &options,         // Restart option, which milestone, normal or crash shutdown
+                                           true,             // Turn locking ON
+                                           DISK_QUOTA_IN_KB, // 2GB, disk_quota_in_pages, how much disk space is allowed,
+                                           make_perf_options()),  // Other options
+                                           0);
+    std::cout << std::endl << "**** BEFORE Instant Restart"<< std::endl << std::endl;
+}
+**/
+
+/**
+// Passing - M2
+TEST (RestartPerfTestBefore, MultiPerformanceM2)
+{
+    test_env->empty_logdata_dir();
+    restart_multi_performance context;
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+//    options.restart_mode = m2_default_restart;           // Rcursive SPR
+    options.restart_mode = m2_alt_rebalance_restart;  // Self_contained SPR    
+
+    // M2 crash shutdown
+    EXPECT_EQ(test_env->runRestartPerfTestBefore(&context,
+                                           &options,         // Restart option, which milestone, normal or crash shutdown
+                                           false,            // Turn locking OFF  <= using commit lsn, recovery is done
+                                                             // through the child thread without lock acquisition
+                                                             // Locking on with user transaction does not affect recovery
+                                           DISK_QUOTA_IN_KB, // 2GB, disk_quota_in_pages, how much disk space is allowed,
+                                           make_perf_options()),  // Other options
+                                           0);
+    std::cout << std::endl << "**** BEFORE Instant Restart"<< std::endl << std::endl;
+}
+**/
+
+/**
+// Passing - M3
+TEST (RestartPerfTestBefore, MultiPerformanceM3)
+{
+    test_env->empty_logdata_dir();
+    restart_multi_performance context;
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+//    options.restart_mode = m3_default_restart;           // Rcursive SPR
+    options.restart_mode = m3_alt_rebalance_restart;  // Self_contained SPR    
+
+    // M3 crash shutdown
+    EXPECT_EQ(test_env->runRestartPerfTestBefore(&context,
+                                           &options,         // Restart option, which milestone, normal or crash shutdown
+                                           true,             // Turn locking ON
+                                           DISK_QUOTA_IN_KB, // 2GB, disk_quota_in_pages, how much disk space is allowed,
+                                           make_perf_options()),  // Other options
+                                           0);
+    std::cout << std::endl << "**** BEFORE Instant Restart"<< std::endl << std::endl;
+}
+**/
+
+/**
+// Passing - M4
+TEST (RestartPerfTestBefore, MultiPerformanceM4)
+{
+    test_env->empty_logdata_dir();
+    restart_multi_performance context;
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+//    options.restart_mode = m4_default_restart;           // Rcursive SPR
+    options.restart_mode = m4_alt_rebalance_restart;  // Self_contained SPR    
+
+    // M4 crash shutdown
+    EXPECT_EQ(test_env->runRestartPerfTestBefore(&context,
+                                           &options,         // Restart option, which milestone, normal or crash shutdown
+                                           true,             // Turn locking ON
+                                           DISK_QUOTA_IN_KB, // 2GB, disk_quota_in_pages, how much disk space is allowed,
+                                           make_perf_options()),  // Other options
+                                           0);
+    std::cout << std::endl << "**** BEFORE Instant Restart"<< std::endl << std::endl;
+}
+**/
+
+/**
+// Passing - M5
+TEST (RestartPerfTest, MultiPerformanceM5)
+{
+    test_env->empty_logdata_dir();
+    restart_multi_performance context;
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+//    options.restart_mode = m5_default_restart;           // Rcursive SPR
+    options.restart_mode = m5_alt_rebalance_restart;  // Self_contained SPR    
+
+    // M5 crash shutdown
+    EXPECT_EQ(test_env->runRestartPerfTestBefore(&context,
+                                           &options,         // Restart option, which milestone, normal or crash shutdown
+                                           true,             // Turn locking ON
+                                           DISK_QUOTA_IN_KB, // 2GB, disk_quota_in_pages, how much disk space is allowed,
+                                           make_perf_options()),  // Other options
+                                           0);
+    std::cout << std::endl << "**** BEFORE Instant Restart"<< std::endl << std::endl;
+}
+**/
+
+/////////////////////////////////////////////////////////////
+// Testing using simulated crash shutdown with before and after executables
+// This is the AFTER portion
+// !!! Note !!! - must do
+//    0. Make sure btree_test_env.cpp in 5 locations, so we do not 
+//        erase existing data and log files when starting a new executable
+//        also be able to mount the device
+//    1. Make sure 'dosave' was executed to save log and data files from 'BEFORE'
+//    2. Make sure the code is in no_txn (no concurrent transaction) mode
+//    3. Make sure the correct 'after' test case is enabled
+//    4. Compile the new executable
+//    5. Shut down and reboot the machine
+//    6. Execute '/home/weyg/docopy' to copy over data and log files
+//    7. Run the test program, it will fail at the end because not able to
+//        write the new data and log files
+/////////////////////////////////////////////////////////////
+
+/**
+// Passing - M1
+TEST (RestartPerfTestAfter, MultiPerformanceNormal)
+{
+    // Do not clean up data and log files
+    
+    restart_multi_performance context;
+    restart_test_options options;
+    options.shutdown_mode = normal_shutdown;
+    options.restart_mode = m1_default_restart;
+
+    // Normal shutdown
+    EXPECT_EQ(test_env->runRestartPerfTestAfter(&context,
+                                           &options,             // Restart option, which milestone, normal or crash shutdown
+                                           true,                 // Turn locking ON
+                                           DISK_QUOTA_IN_KB,     // 2GB, disk_quota_in_pages, how much disk space is allowed,
+                                           make_perf_options()), // Other options
+                                           0);
+    std::cout << std::endl << "**** AFTER Instant Restart"<< std::endl << std::endl;
+}
+**/
+
+/**
+// Passing - M1
+TEST (RestartPerfTestAfter, MultiPerformanceM1)
+{
+    // Do not clean up data and log files
+
+    restart_multi_performance context;
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+    options.restart_mode = m1_default_restart;
+
+    // M1 crash shutdown
+    EXPECT_EQ(test_env->runRestartPerfTestAfter(&context,
+                                           &options,         // Restart option, which milestone, normal or crash shutdown
+                                           true,             // Turn locking ON
+                                           DISK_QUOTA_IN_KB, // 2GB, disk_quota_in_pages, how much disk space is allowed,
+                                           make_perf_options()),  // Other options
+                                           0);
+    std::cout << std::endl << "**** AFTER Instant Restart"<< std::endl << std::endl;
+}
+**/
+
+/**
+// Passing - M2
+TEST (RestartPerfTestAfter, MultiPerformanceM2)
+{
+    // Do not clean up data and log files
+
+    restart_multi_performance context;
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+//    options.restart_mode = m2_default_restart;           // Rcursive SPR
+    options.restart_mode = m2_alt_rebalance_restart;  // Self_contained SPR    
+
+    // M2 crash shutdown
+    EXPECT_EQ(test_env->runRestartPerfTestAfter(&context,
+                                           &options,         // Restart option, which milestone, normal or crash shutdown
+                                           false,            // Turn locking OFF  <= using commit lsn, recovery is done
+                                                             // through the child thread without lock acquisition
+                                                             // Locking on with user transaction does not affect recovery
+                                           DISK_QUOTA_IN_KB, // 2GB, disk_quota_in_pages, how much disk space is allowed,
+                                           make_perf_options()),  // Other options
+                                           0);
+    std::cout << std::endl << "**** AFTER Instant Restart"<< std::endl << std::endl;
+}
+**/
+
+/**
+// Passing - M3
+TEST (RestartPerfTestAfter, MultiPerformanceM3)
+{
+    // Do not clean up data and log files
+
+    restart_multi_performance context;
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+//    options.restart_mode = m3_default_restart;           // Rcursive SPR
+    options.restart_mode = m3_alt_rebalance_restart;  // Self_contained SPR    
+
+    // M3 crash shutdown
+    EXPECT_EQ(test_env->runRestartPerfTestAfter(&context,
+                                           &options,         // Restart option, which milestone, normal or crash shutdown
+                                           true,             // Turn locking ON
+                                           DISK_QUOTA_IN_KB, // 2GB, disk_quota_in_pages, how much disk space is allowed,
+                                           make_perf_options()),  // Other options
+                                           0);
+    std::cout << std::endl << "**** AFTER Instant Restart"<< std::endl << std::endl;
+}
+**/
+
+/**
+// Passing - M4
+TEST (RestartPerfTestAfter, MultiPerformanceM4)
+{
+    // Do not clean up data and log files
+
+    restart_multi_performance context;
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+//    options.restart_mode = m4_default_restart;           // Rcursive SPR
+    options.restart_mode = m4_alt_rebalance_restart;  // Self_contained SPR    
+
+    // M4 crash shutdown
+    EXPECT_EQ(test_env->runRestartPerfTestAfter(&context,
+                                           &options,         // Restart option, which milestone, normal or crash shutdown
+                                           true,             // Turn locking ON
+                                           DISK_QUOTA_IN_KB, // 2GB, disk_quota_in_pages, how much disk space is allowed,
+                                           make_perf_options()),  // Other options
+                                           0);
+                                               
+    std::cout << std::endl << "**** AFTER Instant Restart"<< std::endl << std::endl;
+}
+**/
+
+/**
+// Passing - M5
+TEST (RestartPerfTest, MultiPerformanceM5)
+{
+    // Do not clean up data and log files
+
+    test_env->empty_logdata_dir();
+    restart_multi_performance context;
+    restart_test_options options;
+    options.shutdown_mode = simulated_crash;
+//    options.restart_mode = m5_default_restart;           // Rcursive SPR
+    options.restart_mode = m5_alt_rebalance_restart;  // Self_contained SPR    
+
+    // M5 crash shutdown
+    EXPECT_EQ(test_env->runRestartPerfTestAfter(&context,
+                                      &options, // Restart option, which milestone, normal or crash shutdown
+                                      true, // Turn locking ON
+                                      DISK_QUOTA_IN_KB, // 2GB, disk_quota_in_pages, how much disk space is allowed,
+                                      make_perf_options()),  // Other options
+                                      0);
+    std::cout << std::endl << "**** AFTER Instant Restart"<< std::endl << std::endl;
 }
 **/
 

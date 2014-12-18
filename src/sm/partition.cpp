@@ -1010,7 +1010,7 @@ partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
                     *prev_lsn = *((lsn_t*) (readbuf + off - sizeof(lsn_t)));
                 }
                 else {
-                    // we were unlucky -- extra IO required to fetch prev_lsn
+                    // we were unlucky -- extra IO required to fetch prev_lsn                   
                     W_COERCE(me()->pread(fd, (void*) prev_lsn, sizeof(lsn_t),
                                 lower + b - XFERSIZE - sizeof(lsn_t)));
                 }
@@ -1737,7 +1737,6 @@ partition_t::read_seg(
         << size
     );
 
-
     w_rc_t e = me()->pread(fd, buf, size, pos);
 
     if (e.is_error()) {
@@ -1916,7 +1915,6 @@ partition_t::read_logrec(char* readbuf, logrec_t *&rp, lsn_t &ll, int fd)
     while (first_time || leftover > 0) {
 
         DBGTHRD(<<"leftover=" << int(leftover) << " b=" << b);
-
         w_rc_t e = me()->pread(fd, (void *)(readbuf + b), XFERSIZE, lower + b);
         DBGTHRD(<<"after me()->read() size= " << int(XFERSIZE));
 

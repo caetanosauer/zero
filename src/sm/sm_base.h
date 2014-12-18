@@ -459,7 +459,7 @@ public:
                                            //    Internal delay before UNDO phase
                                            //    only if we have actual UNDO work
 
-        t_restart_concurrent_lock = 0x200, // M3 and M4 implementation:
+        t_restart_concurrent_lock = 0x200, // M3, M4 and M5 implementation:
                                            //    System is opened after Log Analysis.
                                            //    Using lock acquisition for new transactions
         t_restart_redo_demand = 0x400,     // M3 implementation:
@@ -467,13 +467,21 @@ public:
         t_restart_undo_demand = 0x800,     // M3 implementation:
                                            //    UNDO is on-demand using user transaction driven
 
-        t_restart_redo_mix = 0x1000,       // M4 implementation:
+        t_restart_redo_mix = 0x1000,       // M4 and M5 implementation:
                                            //    REDO is using both page driven and
                                            //    on-demand using Single-Page-Recovery with minimal logging
-        t_restart_undo_mix = 0x2000,       // M4 implementation:
+        t_restart_undo_mix = 0x2000,       // M4 and M5 implementation:
                                            //    UNDO is using both transaction driven and
                                            //    on-demand using user transaction driven
-
+                                           
+        t_restart_aries_open = 0x4000,     // M5 implementation:
+                                           // ARIES implementation, using lock conflict
+                                           // open the system after REDO but before UNDO
+        t_restart_alt_rebalance = 0x8000,  // Alternative implementation for page driven REDO with 
+                                           // page rebalance operation using Singe Page Recovery (M2 - M5)
+                                           // The alternative implementation uses self-contained
+                                           // log record instead of recursive calls
+                                           
     };
     static restart_internal_mode_t restart_internal_mode;
 
@@ -528,7 +536,7 @@ public:
 
     static bool use_concurrent_lock_restart()
     {
-        // Restart M3 and M4
+        // Restart M3, M4 and M5
         return ((restart_internal_mode & t_restart_concurrent_lock ) !=0);
     }
     static bool use_redo_demand_restart()
@@ -544,14 +552,27 @@ public:
 
     static bool use_redo_mix_restart()
     {
-        // Restart M4
+        // Restart M4 and M5
         return ((restart_internal_mode & t_restart_redo_mix ) !=0);
     }
     static bool use_undo_mix_restart()
     {
-        // Restart M4
+        // Restart M4 and M5
         return ((restart_internal_mode & t_restart_undo_mix ) !=0);
     }
+
+    static bool use_aries_restart()
+    {
+        // Restart M5
+        return ((restart_internal_mode & t_restart_aries_open ) !=0);
+    }
+
+    static bool use_alt_rebalance()
+    {
+        // Restart M2 - M5
+        return ((restart_internal_mode & t_restart_alt_rebalance ) !=0);
+    }
+
 
     static void  add_to_global_stats(const sm_stats_info_t &from);
     static void  add_from_global_stats(sm_stats_info_t &to);

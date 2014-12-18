@@ -721,7 +721,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             if ((true == force_load) && (false == cb._in_doubt))
             {
                 // Someone beat us on loading the page so the page is no longer in_doubt
-                // we do not want to reload the page, therfore stop the current load and retry
+                // we do not want to reload the page, therefore stop the current load and retry
                 // Do not free the block since we did not allocated it initially
                 if (cb.latch().held_by_me())
                     cb.latch().latch_release();
@@ -785,7 +785,6 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                             // we cannot have multiple user transactions recoverying the same
                             // page in buffer pool slot, it would corrupt the page context
                             page_emlsn = cb._dependency_lsn;
-                            cb._dependency_lsn = 0;
                         }
                         else
                         {
@@ -803,6 +802,24 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                         }
                         w_assert1(lsn_t::null != page_emlsn);
                     }
+
+                    if (true == force_load)
+                    {
+                        DBGOUT3(<< "Force load - caller ask for page: " << shpid);
+                    }
+                    else
+                    {
+                        shpid_t root_shpid = smlevel_0::bf->get_root_page_id(vol, cb._store_num);                    
+                        DBGOUT3(<< "User load - Root page ID: " << root_shpid << ", caller ask for page: " << shpid);
+                        if (root_shpid == shpid)
+                        {
+                            DBGOUT0(<< "User load - Root page is the same as asked page ID: " << root_shpid);
+// TODO(Restart)... infinite loop when we encounter this situation, it is timing related issue, what is causing it?
+//                            W_FATAL(fcINTERNAL);
+                        }
+
+                    }
+
 
                     check_rc = _check_read_page(parent, idx, vol, shpid, past_end, page_emlsn);
                     if (check_rc.is_error())
@@ -832,6 +849,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             cb.clear_except_latch();
             cb._pid_vol = vol;
             cb._pid_shpid = shpid;
+            cb._dependency_lsn = 0;
 #ifdef BP_MAINTAIN_PARENT_PTR
             bf_idx parent_idx = 0;
             if (is_swizzling_enabled()) {
@@ -913,6 +931,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             // Page is safe to access, not calling _validate_access(page)
             // for page access validation purpose
             DBGOUT3(<<"bf_tree_m::_fix_nonswizzled: retrieved a new page: " << shpid);
+
             return RCOK;
         }
         else
@@ -2819,6 +2838,7 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
     w_assert1(shpid != 0);
     generic_page &page = _buffer[idx];
     uint32_t checksum = page.calculate_checksum();
+    
     if (checksum == 0) {
         DBGOUT0(<<"_check_read_page(): empty checksum?? PID=" << shpid);
     }
@@ -2839,6 +2859,7 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
         //    last_lsn:  the last LSN from pre-crash recovery log
         //    actual_emlsn: false because emlsn is not the actual emlsn
 
+        // Force a complete recovery
         _buffer[idx].lsn = lsn_t::null;
         snum_t store;
         if (NULL != parent)
@@ -2868,7 +2889,7 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
             }
             else
             {
-                ERROUT(<<"bf_tree_m: user transaction, bad page checksum in page " << shpid << ", recovery via Single Page Recovery");
+                DBGOUT3(<<"bf_tree_m: user transaction, bad page checksum in page " << shpid << ", recovery via Single Page Recovery");
             }
         }
         else if ((NULL == parent) && (lsn_t::null != page_emlsn))
@@ -2879,7 +2900,7 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
         else
         {
             // No parent and no page_emlsn, it should not happen,  j.i.c.
-            ERROUT(<<"bf_tree_m: force load but no page emlsn in page " << shpid << ", not able to recover via Single Page Recovery");
+            DBGOUT3(<<"bf_tree_m: force load but no page emlsn in page " << shpid << ", not able to recover via Single Page Recovery");
         }
 
         // Checksum didn't agree! this page image is completely
@@ -2901,6 +2922,7 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
 
                 // Wipe out the page so we recover from scratch
                 ::memset(&_buffer[idx], '\0', sizeof(generic_page));
+                // Force a complete recovery
                 _buffer[idx].lsn = lsn_t::null;
                 _buffer[idx].pid = pid;
                 _buffer[idx].tag = t_btree_p;
@@ -3003,26 +3025,48 @@ w_rc_t bf_tree_m::_try_recover_page(generic_page* parent,     // In: parent page
         // involved during the recovery
         w_assert1(page_emlsn >= emlsn);
 
-        DBGOUT3(<<"bf_tree_m::_try_recover_page: Recovery a page with parent node, parent emlsn:"
+        DBGOUT1(<<"bf_tree_m::_try_recover_page: Recovery a page with parent node, parent emlsn:"
                 << emlsn << ", page_emlsn (from Log Analysis): " << page_emlsn << ", use page_emlsn for recovery");
         emlsn = page_emlsn;
     }
+    else if ((lsn_t::null != page_emlsn) && (lsn_t::null == emlsn))
+    {
+        DBGOUT1(<<"bf_tree_m::_try_recover_page: Recovery a page with parent node, parent emlsn is NULL"
+                << ", page_emlsn (from Log Analysis): " << page_emlsn << ", use parent_emlsn which is NULL");
+        //        emlsn = page_emlsn;
+    }
+    else if (lsn_t::null != emlsn)
+    {
+        DBGOUT0(<<"bf_tree_m::_try_recover_page: Recovery a page with parent node, parent emlsn:"
+                << emlsn << ", no page_emlsn (from Log Analysis), use parent for recovery");        
+    }
     else
     {
-        ERROUT(<<"bf_tree_m::_try_recover_page: Recovery a page with parent node, parent emlsn:"
-                << emlsn << ", no page_emlsn (from Log Analysis), use parent for recovery");
+        DBGOUT0(<<"bf_tree_m::_try_recover_page: Recovery a page with parent node, parent emlsn is NULL"
+                << ", no page_emlsn (from Log Analysis)");
     }
 
     if (emlsn == lsn_t::null)
     {
         // Parent page does not have emlsn, and no page_emlsn from Log Analysis
         // Nothing we can do at this point
-        ERROUT(<<"bf_tree_m::_try_recover_page: Parent page does not have emlsn, no recovery");
+        DBGOUT0(<<"bf_tree_m::_try_recover_page: Parent page does not have emlsn, no recovery");
         return RCOK; // this can happen when the page has been just created.
     }
 
     btree_page_h p;
     p.fix_nonbufferpool_page(_buffer + idx);    // Page is marked as not buffer pool managed through this call
                                                 // This is important for minimal logging of page rebalance operation
-    return smlevel_1::recovery->recover_single_page(p, emlsn);
+
+    if (lsn_t::null != page_emlsn)
+    {
+        // From Restart, use the last write lsn on the page for recovery (not complete recovery)
+        return smlevel_1::recovery->recover_single_page(p, emlsn, true, true);
+    }
+    else
+    {
+        // Not from Restart
+        return smlevel_1::recovery->recover_single_page(p, emlsn);
+    }
+
 }

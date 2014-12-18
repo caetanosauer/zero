@@ -317,18 +317,19 @@ public:
         // M2 - restart thread for REDO and UNDO
         // M3 - on-demand driven by user transactions, no restart thread
         // M4 - mixed mode, behaves the same for both M2 and M4
+        // M5 - ARIES mode, behaves the same for both M2 and M4        
 
         // Restart is in progress if one of the conditions is true:
         // Serial mode (M1) and
         //     Operating mode is not in t_forward_processing
-        // Concurrent mode (M2 and M4) and:
+        // Concurrent mode (M2, M4 and M5) and:
         //     Workign on Log Analysis
         //     or
         //     Child thread is alive
         // On-demand mode (M3):
         //     Workign on Log Analysis
         //     or
-        //     If passed Log Analysis phase, unknow whether we are still in REDO or UNDO phase
+        //     If passed Log Analysis phase, unknown whether we are still in REDO or UNDO phase
         //
         if (true == smlevel_0::use_serial_restart())
         {
@@ -348,7 +349,7 @@ public:
             {
                 // Not pure on-demand (M3), only check redo mode since redo and undo
                 // must have the same 'on_demand' mode
-                // For M2 and M4, using child restart thread to determine the current status
+                // For M2, M4 and M5, using child restart thread to determine the current status
                 // if the child thread exists
                 if (_restart_thread)
                 {
@@ -432,7 +433,7 @@ public:
         }
         else
         {
-            // M2 or M4
+            // M2 or M4 or M5
             if (smlevel_0::t_concurrent_undo == _restart_thread->in_restart())
                 return true;   // In UNDO
             else
@@ -577,11 +578,14 @@ public:
     * @param[in] emlsn the LSN up to which we should recover the page.
     * @param[in] actual_emlsn is set to false if we do not have the actual emlsn due to page corruption
     *                         during recovery (no parent page)
+    * @param[in] from_lsn is set to true if we can use the last write lsn on the page as the starting
+    *                         point for recovery, do not rely on backup file only
+    *                         if this is set to false (default) then if no backup, then complete recovery
     * @pre p has a backup in the backup file
     * @pre p.is_fixed() (could be bufferpool managed or non-bufferpool managed)
     */
     static rc_t recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
-                                    const bool actual_emlsn = true);
+                                    const bool actual_emlsn = true, const bool from_lsn = false);
 
 private:
     // TODO(Restart)... it was for a space-recovery hack, not needed

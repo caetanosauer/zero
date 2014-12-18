@@ -89,12 +89,18 @@ rc_t btree_impl::_ux_norec_alloc_core(btree_page_h &page, lpid_t &new_page_id) {
     return RCOK;
 }
 
-rc_t btree_impl::_sx_split_foster(btree_page_h &page, lpid_t &new_page_id, const w_keystr_t &triggering_key)
+rc_t btree_impl::_sx_split_foster(btree_page_h &page,                // In: source page, foster parent
+                                   lpid_t &new_page_id,               // Out: page id of the destination page, foster child
+                                   const w_keystr_t &triggering_key)  // Out: spliting key, used if NORECORD_SPLIT_ENABLE defined
 {
     // Split consits of two SSXs; empty-split and rebalance.
+
+    // On return of the following call, the foster child page (destination) was allocated
+    // as an empty page, the fence keys and foster high have been 
+    // set up in the new page and the foster relationship has been adjusted
     W_DO(_sx_norec_alloc(page, new_page_id));
 
-    // get new fence key in the middle
+    // get new fence key in the middle from the source page
     w_keystr_t mid_key;
     slotid_t right_begins_from;
     page.suggest_fence_for_split(mid_key, right_begins_from, triggering_key);
@@ -102,19 +108,30 @@ rc_t btree_impl::_sx_split_foster(btree_page_h &page, lpid_t &new_page_id, const
 
     shpid_t new_pid0;
     lsn_t   new_pid0_emlsn;
-    if (page.is_node()) {
+    if (page.is_node())
+    {
+        // Non-leaf page, find the new lowest key with emlsn (Single 
+        // Page Recovery of its child page)
         btrec_t lowest (page, page.nrecs() - move_count);
         w_assert1(lowest.key().compare(mid_key) == 0);
         new_pid0 = lowest.child();
         new_pid0_emlsn = lowest.child_emlsn();
-    } else {
+    }
+    else 
+    {
+        // Leaf page, no emlsn (no child page)
         new_pid0 = 0;
         new_pid0_emlsn = lsn_t::null;
     }
 
-    btree_page_h foster_p;
+    btree_page_h foster_p;  // Destination page, foster child
+    
+    // Load the destination page into buffer pool (if not in buffer pool already) with proper latching
     W_DO(foster_p.fix_nonroot(page, page.vol(), page.get_foster_opaqueptr(), LATCH_EX));
+
+    // Perform the actual record movement and also generate the log record of page split operation
     W_DO(_sx_rebalance_foster(page, foster_p, move_count, mid_key, new_pid0, new_pid0_emlsn));
+
     increase_forster_child(page.pid().page); // give hint to subsequent accesses
     return RCOK;
 }

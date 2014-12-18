@@ -157,14 +157,21 @@ struct btree_foster_merge_t : multi_page_log_t {
     shpid_t         _foster_pid0;        // +4 => 4, foster page ID (destination page)
     lsn_t           _foster_pid0_emlsn;  // +8 => 12, foster emlsn (destination page)
     uint16_t        _high_len;           // +2 => 14, high key length    
-    uint16_t        _chain_high_len;     // +2 => 16, chain_high key length        
-    // _data contains high and chain_high
-    char            _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) - 16];
+    uint16_t        _chain_high_len;     // +2 => 16, chain_high key length
+    int32_t         _move_count;         // +4 => 20, number of records to move    
+    uint16_t        _record_data_len;    // +2 => 22, length of record data
+    uint16_t        _prefix_len;         // +2 => 24, source page prefix length
+    
+    // _data contains high and chain_high, and then followed by moved user records
+    // in the case of merging, it means all the records from source (foster child) page
+    // The max_data_sz of log record is 3 pages so we should have suffice space in
+    // one log record
+    char            _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) - 24];
 
-    btree_foster_merge_t(shpid_t page2_id,
-        const w_keystr_t& high, const w_keystr_t& chain_high,
-        shpid_t foster_pid0, lsn_t foster_pid0_emlsn);
-    int size() const { return sizeof(multi_page_log_t) + 16 + _high_len + _chain_high_len; }
+    btree_foster_merge_t(shpid_t page2_id, const w_keystr_t& high, const w_keystr_t& chain_high,
+        shpid_t foster_pid0, lsn_t foster_pid0_emlsn, const int16_t prefix_len,
+        const int32_t move_count, const smsize_t record_data_len, const cvec_t& record_data);
+    int size() const { return sizeof(multi_page_log_t) + 24 + _high_len + _chain_high_len + _record_data_len; }
 };
 
 /**
@@ -172,20 +179,26 @@ struct btree_foster_merge_t : multi_page_log_t {
  * This log is \b NOT-self-contained, so it assumes WOD (foster-parent is written later).
  */
 struct btree_foster_rebalance_t : multi_page_log_t {
-    int32_t         _move_count;         // +4 => 4
+    int32_t         _move_count;         // +4 => 4, number of records to move
     shpid_t         _new_pid0;           // +4 => 8, non-leaf node only  
     lsn_t           _new_pid0_emlsn;     // +8 => 16, non-leaf node only
     uint16_t        _fence_len;          // +2 => 18, fence key length
     uint16_t        _high_len;           // +2 => 20, high key length    
     uint16_t        _chain_high_len;     // +2 => 22, chain_high key length        
+    uint16_t        _record_data_len;    // +2 => 24, length of record data
+    uint16_t        _prefix_len;         // +2 => 26, source page prefix length
     
-    // _data contains fence, high and chain_high
-    char            _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) - 22];
+    // _data contains fence, high and chain_high, and then followed by moved user records
+    // in the case of spliting, it means some of the records from source (foster parent)
+    // page.  The max_data_size of log record is 3 pages so we should have sufficient
+    // space in one log record
+    char            _data[logrec_t::max_data_sz - sizeof(multi_page_log_t) - 26];
 
-    btree_foster_rebalance_t(shpid_t page2_id, int32_t move_count,
-            const w_keystr_t& fence, shpid_t new_pid0, lsn_t new_pid0_emlsn,
-            const w_keystr_t& high, const w_keystr_t& chain_high);
-    int size() const { return sizeof(multi_page_log_t) + 22 + _fence_len + _high_len + _chain_high_len; }
+    btree_foster_rebalance_t(shpid_t page2_id, const w_keystr_t& fence,
+            shpid_t new_pid0, lsn_t new_pid0_emlsn, const w_keystr_t& high, const w_keystr_t& chain_high,
+            const int16_t prefix_len, const int32_t move_count,
+            const smsize_t record_data_len, const cvec_t& record_data);
+    int size() const { return sizeof(multi_page_log_t) + 26 + _fence_len + _high_len + _chain_high_len + _record_data_len; }
 };
 
 /**

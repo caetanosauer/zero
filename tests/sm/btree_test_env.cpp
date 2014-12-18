@@ -3,6 +3,11 @@
 #include <sys/stat.h>
 #include <dirent.h>
 
+#include <fcntl.h>
+#include <unistd.h>
+#include <sstream>
+
+
 #include "w_stream.h"
 #include "w.h"
 #include "w_strstream.h"
@@ -224,7 +229,25 @@ testdriver_thread_t::do_init(ss_m &ssm)
     vout << "Mounting device: " << _functor->_test_volume._device_name  << endl;
     // mount the new device
     u_int        vol_cnt;
-    W_DO(ssm.mount_dev(_functor->_test_volume._device_name, vol_cnt, devid));
+
+    rc_t rc;
+    if (0 != strlen(_functor->_test_volume._device_name))
+    {
+// TODO(Restart)... performance, print out the device name
+        DBGOUT1(<< "***** Mount device, device name: " << _functor->_test_volume._device_name);
+        rc_t rc = ssm.mount_dev(_functor->_test_volume._device_name, vol_cnt, devid);
+    }
+    else
+    {
+// TODO(Restart)... performance, hard code the data file path and name if nothing is available, this is for an 'AFTER' case only
+        DBGOUT1(<< "***** Mount device, device name: " << "/dev/shm/weyg/btree_test_env/volumes/dev_test");    
+        rc_t rc = ssm.mount_dev("/dev/shm/weyg/btree_test_env/volumes/dev_test", vol_cnt, devid);
+    }
+    if (rc.is_error())
+    {
+        DBGOUT0(<< "**** Failed to ssm.mount_dev, error: " << rc.get_message());
+        return rc;
+    }
 
     vout << "Mounted device: " << _functor->_test_volume._device_name
             << " volume count " << vol_cnt
@@ -232,6 +255,7 @@ testdriver_thread_t::do_init(ss_m &ssm)
             << endl;
 
     if (_functor->_need_init) {
+
         // generate a volume ID for the new volume we are about to
         // create on the device
         vout << "Generating new lvid: " << endl;
@@ -246,6 +270,7 @@ testdriver_thread_t::do_init(ss_m &ssm)
                         quota_in_kb, false, _functor->_test_volume._vid));
         vout << "    with local handle(phys volid) " << _functor->_test_volume._vid << endl;
     } else {
+// TODO(Restart)... performance, for an AFTER case
         w_assert0(_functor->_test_volume._vid != vid_t::null);
         w_assert0(_functor->_test_volume._lvid != lvid_t::null);
     }
@@ -308,6 +333,7 @@ btree_test_env::~btree_test_env()
 
 void btree_test_env::assure_empty_dir(const char *folder_name)
 {
+// TODO(Restart)... performance, for AFTER testing
     assure_dir(folder_name);
     empty_dir(folder_name);
 }
@@ -328,6 +354,8 @@ void btree_test_env::assure_dir(const char *folder_name)
 
 void btree_test_env::empty_dir(const char *folder_name)
 {
+// TODO(Restart)... performance, for AFTER testing
+/**/
     // want to use boost::filesystem... but let's keep this project boost-free.
     vout << "removing existing files..." << endl;
     DIR *d = opendir(folder_name);
@@ -342,7 +370,9 @@ void btree_test_env::empty_dir(const char *folder_name)
         std::remove (buf.str().c_str());
     }
     ASSERT_EQ(closedir (d), 0);
+/**/    
 }
+
 void btree_test_env::SetUp()
 {
 #ifdef LOG_DIRECT_IO
@@ -367,6 +397,7 @@ void btree_test_env::SetUp()
 }
 void btree_test_env::empty_logdata_dir()
 {
+// TODO(Restart)... performance, for AFTER testing
     empty_dir(log_dir);
     empty_dir(vol_dir);
 }
@@ -850,7 +881,146 @@ int btree_test_env::runRestartPerfTest (
     DBGOUT2 ( << "Going to call post_shutdown()...");
     {
         // Start from an existing database from phase 2
-        // Clean shutdown
+
+        // Flush system cache first
+        // Force a flush of system cache before shutdown, the goal is to
+        // make sure after the simulated system crash, the recovery process
+        // has to get data from disk, not file system cache
+/**/        
+        int i;
+        i = system("free -m");  // before free cache
+        i = system("/bin/sync");  // flush but not free the page cache
+        i = system("sudo sh -c 'echo 3 >/proc/sys/vm/drop_caches'");  // free page cache and inode cache        
+        i = system("free -m");  // after free cache
+        // Force read/write a big file
+        i = system("dd if=/home/weyg/test.core of=/home/weyg/test2.core bs=100k count=10000 conv=fdatasync"); // Read and write 1G of data using cache
+        i = system("rm /home/weyg/test2.core");
+
+        std::cout << "Return value from system command: " << i << std::endl;
+/**/
+        struct timeval tm_before;
+        gettimeofday( &tm_before, NULL );
+
+        std::cout << "More read... " << std::endl;
+        int pfd;
+//        pfd = ::open("/home/weyg/more.core", O_RDONLY);      // 6.4 GB
+//        long source_size = 6385741824;
+        pfd = ::open("/home/weyg/dev_test", O_RDONLY);   // 549.9 MB
+//        long source_size = 549928960;
+//        pfd = ::open("/home/weyg/large.core", O_RDONLY); 	 // 25.5 GB
+//        long source_size = 25542967296;
+
+        if (-1 == pfd)
+        {
+            // Not able to open the specified file, continue...
+            std::cout << "Failed to open file for read: " << pfd << std::endl;
+        }
+        else
+        {
+            // Read a lot to fill the system and/or device cache
+            const int per_read_size = 8192;
+            char buffer[per_read_size];
+            int offset = per_read_size * 10;  // Starting offset
+            for (int i = 0; i < 30000; ++i)
+            {
+/* Relative seek  *
+                offset = ::rand()%1000+99;
+                // Move to a new location
+                __off_t seeked = ::lseek(pfd, offset, SEEK_CUR);
+                w_assert0(-1 != seeked);
+                // Read some bytes
+                int read_bytes = ::read(pfd, buffer, sizeof(buffer));
+                w_assert0(-1 != read_bytes);
+**/
+
+/* Re-seek from the beginning each time *
+                offset += per_read_size + ::rand()%1000+99;
+                // Move to a new location
+                __off_t seeked = ::lseek(pfd, offset, SEEK_SET);
+                w_assert0(-1 != seeked);
+               // Read some bytes
+               int read_bytes = ::read(pfd, buffer, sizeof(buffer));
+               w_assert0(-1 != read_bytes);
+**/
+
+/* One call with re-seek from the beginning each time */
+                offset += per_read_size + ::rand()%1000+99;
+                int read_bytes = ::pread(pfd, buffer, sizeof(buffer), offset);
+                w_assert0(-1 != read_bytes);
+/**/                
+
+/* Relative seek with offset on multiple of 8192 *
+                offset = (::rand()%10+1) * per_read_size;
+                // Move to a new location
+                __off_t seeked = ::lseek(pfd, offset, SEEK_CUR);
+                w_assert0(-1 != seeked);
+                // Read some bytes
+                int read_bytes = ::read(pfd, buffer, sizeof(buffer));
+                w_assert0(-1 != read_bytes);
+**/
+
+/* One call with re-seek. offset on multiple of 8192 *
+                offset += (::rand()%4+1) * per_read_size;
+                int read_bytes = ::pread(pfd, buffer, sizeof(buffer), offset);
+                w_assert0(-1 != read_bytes);
+**/
+
+/* Re-seek with offset on 8192, backward *
+                offset += per_read_size;
+                int real_offset = 0 - offset;  // make negative offset to go backward
+                // Move to a new location
+                __off_t seeked = ::lseek(pfd, real_offset, SEEK_END);
+                w_assert0(-1 != seeked);
+                // Read some bytes
+                int read_bytes = ::read(pfd, buffer, sizeof(buffer));
+                w_assert0(-1 != read_bytes);
+**/
+
+/* One call with re-seek. backward read, !!!! only work with 6GB source  !!!!*
+                offset += per_read_size + (::rand()%10+1) * per_read_size;
+                __off_t new_offset = (__off_t)(source_size - offset);
+                int read_bytes = ::pread(pfd, buffer, sizeof(buffer), new_offset);
+                w_assert0(-1 != read_bytes);
+**/
+
+/* One call with re-seek. backward read, !!!! only work with 25.5GB source  !!!!*
+                offset += per_read_size + (::rand()%20+1) * per_read_size;
+                __off_t new_offset = (__off_t)(source_size - offset);
+                int read_bytes = ::pread(pfd, buffer, sizeof(buffer), new_offset);
+                w_assert0(-1 != read_bytes);
+**/
+
+
+            }
+            // Done, close the file
+            ::close(pfd);        
+            std::cout << "Done with extra read" << std::endl;
+
+            struct timeval tm_after;
+            gettimeofday( &tm_after, NULL );
+            DBGOUT0(<< "**** Random reads, elapsed time (milliseconds): "
+                    << (((double)tm_after.tv_sec - (double)tm_before.tv_sec) * 1000.0)
+                    + (double)tm_after.tv_usec/1000.0 - (double)tm_before.tv_usec/1000.0);
+        }
+/**/
+
+        // Setup timer first
+        // CUP cycles
+        unsigned int hi, lo;
+        __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));       
+        context->_start = ((unsigned long long)lo)|( ((unsigned long long)hi)<<32);
+
+        // Elapsed time in millisecs seconds
+        struct timeval tm;
+        gettimeofday( &tm, NULL );
+
+        const double   MICROSECONDS_IN_SECOND  = 1000000.0; // microseconds in a second
+        const double   MILLISECS_IN_SECOND     = 1000.0;    // millisecs in a second
+
+        context->_start_time = ((double)tm.tv_sec*MILLISECS_IN_SECOND) +
+                              ((double)tm.tv_usec/(MICROSECONDS_IN_SECOND/MILLISECS_IN_SECOND));
+
+        // Specify clean shutdown at the end of this phase
         restart_performance_post_functor functor(context);
         testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options, restart_options->restart_mode);   // User specified restart mode
 
@@ -874,6 +1044,307 @@ int btree_test_env::runRestartPerfTest (
     return rv;
 }
 // End... for Instant Restart performance tests
+
+// Begin... for Instant Restart performance before tests
+// Main API for caller to start the test
+int btree_test_env::runRestartPerfTestBefore (
+    restart_performance_test_base *context,             // Required, specify the basic setup
+    restart_test_options *restart_options,              // Required, specify restart options (e.g. milestone)
+    bool use_locks,                                     // Required, true (locking), false (no locking)
+    int32_t lock_table_size,                            // Optional, default: default_locktable_size
+    int disk_quota_in_pages,                            // Optional, default: default_quota_in_pages
+    int bufferpool_size_in_pages,                       // Optional, default: default_bufferpool_size_in_pages
+    uint32_t cleaner_threads,                           // Optional, default: 1
+    uint32_t cleaner_interval_millisec_min,             // Optional, default: 1000
+    uint32_t cleaner_interval_millisec_max,             // Optional, default: 256000
+    uint32_t cleaner_write_buffer_pages,                // Optional, default: 64
+    bool initially_enable_cleaners,                     // Optional, default: true
+    bool enable_swizzling)                              // Optional, default: default_enable_swizzling
+{
+    return runRestartPerfTestBefore(context, restart_options, use_locks, disk_quota_in_pages,
+                              make_sm_options(lock_table_size,
+                                              bufferpool_size_in_pages,
+                                              cleaner_threads,
+                                              cleaner_interval_millisec_min,
+                                              cleaner_interval_millisec_max,
+                                              cleaner_write_buffer_pages,
+                                              initially_enable_cleaners,
+                                              enable_swizzling));
+}
+
+// Optional API, not used for prestart performance test currently
+int btree_test_env::runRestartPerfTestBefore (
+    restart_performance_test_base *context,                // Required, specify the basic setup
+    restart_test_options *restart_options,                 // Required, specify restart options (e.g. milestone)
+    bool use_locks,                                        // Required, true (locking), false (no locking)
+    int32_t lock_table_size,                               // Required
+    int disk_quota_in_pages, int bufferpool_size_in_pages, // Required
+    uint32_t cleaner_threads,                              // Required
+    uint32_t cleaner_interval_millisec_min,                // Required
+    uint32_t cleaner_interval_millisec_max,                // Required
+    uint32_t cleaner_write_buffer_pages,                   // Required
+    bool initially_enable_cleaners,                        // Required
+    bool enable_swizzling,                                 // Required
+    const std::vector<std::pair<const char*, int64_t> > &additional_int_params,         // Required
+    const std::vector<std::pair<const char*, bool> > &additional_bool_params,           // Required
+    const std::vector<std::pair<const char*, const char*> > &additional_string_params)  // Required
+{
+    return runRestartPerfTestBefore(context, restart_options, use_locks, disk_quota_in_pages,
+                              make_sm_options(lock_table_size,
+                                              bufferpool_size_in_pages,
+                                              cleaner_threads,
+                                              cleaner_interval_millisec_min,
+                                              cleaner_interval_millisec_max,
+                                              cleaner_write_buffer_pages,
+                                              initially_enable_cleaners,
+                                              enable_swizzling,
+                                              additional_int_params,
+                                              additional_bool_params,
+                                              additional_string_params));
+}
+
+// Internal API to start the restart performance test
+int btree_test_env::runRestartPerfTestBefore (
+    restart_performance_test_base *context,  // In: specify the basic setup, e.g. start from scratch or not
+    restart_test_options *restart_options,   // In: specify restart options, e.g. milestone
+    bool use_locks,                          // In: ture if enable locking (M3, M4), false if disable locking (M1, M2)
+    int disk_quota_in_pages,                 // In: how much disk space is allowed
+    const sm_options &options)               // In: other settings
+{
+    _use_locks = use_locks;
+    _restart_options = restart_options;
+
+    // This function is called by restart performance 'before' test cases, while caller specify
+    // the restart mode via 'restart_option'
+    // e.g., serial traditional, various concurrent combinations
+
+    // Performance test has 2 phases:
+    //   Initial_shutdow - populate database and then clean shutdown
+    //                            same operation for all milestones
+    //   pre_shutdown - update the existing database from phase 1 (initial_shutdown)
+    //                           caller specifies either clean or crash (in-flight transactions) shutdown
+
+    int rv;
+    w_rc_t e;
+    DBGOUT2 ( << "Going to call initial_shutdown()...");
+    {
+        // Start from a new database and populate it
+        // Only clean shutdown from this phase
+        restart_performance_initial_functor functor(context);
+        testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options, restart_options->restart_mode);  // User specified restart mode
+        e = smtu.fork();
+        if (e.is_error())
+        {
+            std::cerr << "Error forking thread while initial_shutdown: " << e << std::endl;
+            return 1;
+        }
+        e = smtu.join();
+        if (e.is_error())
+        {
+            std::cerr << "Error joining thread while initial_shutdown: " << e << std::endl;
+            return 1;
+        }
+
+        rv = smtu.return_value();
+        if (rv != 0)
+        {
+            std::cerr << "Error while initial_shutdown rv= " << rv << std::endl;
+            return rv;
+        }
+    }
+
+    DBGOUT2 ( << "Going to call pre_shutdown()...");
+    {
+        if (restart_options->shutdown_mode == simulated_crash)
+        {
+            // Start from an existing database created in phase 1
+            // Simulated crash
+            restart_performance_dirty_pre_functor functor(context);
+            testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options, restart_options->restart_mode);  // User specified restart mode
+            e = smtu.fork();
+            if (e.is_error())
+            {
+                std::cerr << "Error forking thread while pre_shutdown: " << e << std::endl;
+                return 1;
+            }
+            e = smtu.join();
+            if (e.is_error())
+            {
+                std::cerr << "Error joining thread while pre_shutdown: " << e << std::endl;
+                return 1;
+            }
+
+            rv = smtu.return_value();
+            if (rv != 0)
+            {
+                std::cerr << "Error while pre_shutdown rv= " << rv << std::endl;
+                return rv;
+            }
+        }
+        else
+        {
+            // Start from an existing database created in phase 1
+            // Clean shutdown
+            restart_performance_clean_pre_functor functor(context);
+            testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options, restart_options->restart_mode);  // User specified restart mode
+            e = smtu.fork();
+            if (e.is_error())
+            {
+                std::cerr << "Error forking thread while pre_shutdown: " << e << std::endl;
+                return 1;
+            }
+            e = smtu.join();
+            if (e.is_error())
+            {
+                std::cerr << "Error joining thread while pre_shutdown: " << e << std::endl;
+                return 1;
+            }
+
+            rv = smtu.return_value();
+            if (rv != 0)
+            {
+                std::cerr << "Error while pre_shutdown rv= " << rv << std::endl;
+                return rv;
+            }
+        }
+    }
+
+    return rv;
+}
+// End... for Instant Restart performance 'before' tests
+
+// Begin... for Instant Restart performance 'after' tests
+// Main API for caller to start the test
+int btree_test_env::runRestartPerfTestAfter (
+    restart_performance_test_base *context,             // Required, specify the basic setup
+    restart_test_options *restart_options,              // Required, specify restart options (e.g. milestone)
+    bool use_locks,                                     // Required, true (locking), false (no locking)
+    int32_t lock_table_size,                            // Optional, default: default_locktable_size
+    int disk_quota_in_pages,                            // Optional, default: default_quota_in_pages
+    int bufferpool_size_in_pages,                       // Optional, default: default_bufferpool_size_in_pages
+    uint32_t cleaner_threads,                           // Optional, default: 1
+    uint32_t cleaner_interval_millisec_min,             // Optional, default: 1000
+    uint32_t cleaner_interval_millisec_max,             // Optional, default: 256000
+    uint32_t cleaner_write_buffer_pages,                // Optional, default: 64
+    bool initially_enable_cleaners,                     // Optional, default: true
+    bool enable_swizzling)                              // Optional, default: default_enable_swizzling
+{
+    return runRestartPerfTestAfter(context, restart_options, use_locks, disk_quota_in_pages,
+                              make_sm_options(lock_table_size,
+                                              bufferpool_size_in_pages,
+                                              cleaner_threads,
+                                              cleaner_interval_millisec_min,
+                                              cleaner_interval_millisec_max,
+                                              cleaner_write_buffer_pages,
+                                              initially_enable_cleaners,
+                                              enable_swizzling));
+}
+
+// Optional API, not used for prestart performance test currently
+int btree_test_env::runRestartPerfTestAfter (
+    restart_performance_test_base *context,                // Required, specify the basic setup
+    restart_test_options *restart_options,                 // Required, specify restart options (e.g. milestone)
+    bool use_locks,                                        // Required, true (locking), false (no locking)
+    int32_t lock_table_size,                               // Required
+    int disk_quota_in_pages, int bufferpool_size_in_pages, // Required
+    uint32_t cleaner_threads,                              // Required
+    uint32_t cleaner_interval_millisec_min,                // Required
+    uint32_t cleaner_interval_millisec_max,                // Required
+    uint32_t cleaner_write_buffer_pages,                   // Required
+    bool initially_enable_cleaners,                        // Required
+    bool enable_swizzling,                                 // Required
+    const std::vector<std::pair<const char*, int64_t> > &additional_int_params,         // Required
+    const std::vector<std::pair<const char*, bool> > &additional_bool_params,           // Required
+    const std::vector<std::pair<const char*, const char*> > &additional_string_params)  // Required
+{
+    return runRestartPerfTestAfter(context, restart_options, use_locks, disk_quota_in_pages,
+                              make_sm_options(lock_table_size,
+                                              bufferpool_size_in_pages,
+                                              cleaner_threads,
+                                              cleaner_interval_millisec_min,
+                                              cleaner_interval_millisec_max,
+                                              cleaner_write_buffer_pages,
+                                              initially_enable_cleaners,
+                                              enable_swizzling,
+                                              additional_int_params,
+                                              additional_bool_params,
+                                              additional_string_params));
+}
+
+// Internal API to start the restart performance test
+int btree_test_env::runRestartPerfTestAfter (
+    restart_performance_test_base *context,  // In: specify the basic setup, e.g. start from scratch or not
+    restart_test_options *restart_options,   // In: specify restart options, e.g. milestone
+    bool use_locks,                          // In: ture if enable locking (M3, M4), false if disable locking (M1, M2)
+    int disk_quota_in_pages,                 // In: how much disk space is allowed
+    const sm_options &options)               // In: other settings
+{
+    _use_locks = use_locks;
+    _restart_options = restart_options;
+
+    // This function is called by restart performance test cases, while caller specify
+    // the restart mode via 'restart_option'
+    // e.g., serial traditional, various concurrent combinations
+
+    // Performance test has 1 phase:
+    //   post_shutdown - using the existing database from phase 2 (pre_shutdown)
+    //                            performance measurement on 1000 successful user transactions, clean shutdown
+
+    int rv;
+    w_rc_t e;
+
+    DBGOUT2 ( << "Going to call post_shutdown()...");
+    {
+        // Start from an existing database from phase 2 with existing log and data files
+        // Existing data file:
+        // /dev/shm/weyg/btree_test_env/volumes/dev_test        
+        
+        // Caller should do a manual system shutdown before calling this test case
+        // to ensure all caches are clean
+
+        // Setup timer first
+        // CUP cycles
+        unsigned int hi, lo;
+        __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));       
+        context->_start = ((unsigned long long)lo)|( ((unsigned long long)hi)<<32);
+
+        // Elapsed time in millisecs seconds
+        struct timeval tm;
+        gettimeofday( &tm, NULL );
+
+        const double   MICROSECONDS_IN_SECOND  = 1000000.0; // microseconds in a second
+        const double   MILLISECS_IN_SECOND     = 1000.0;    // millisecs in a second
+
+        context->_start_time = ((double)tm.tv_sec*MILLISECS_IN_SECOND) +
+                              ((double)tm.tv_usec/(MICROSECONDS_IN_SECOND/MILLISECS_IN_SECOND));
+
+
+        // Initialize and also specify starting from existing data file and clean shutdown at the end
+        restart_performance_post_functor functor(context);
+        testdriver_thread_t smtu(&functor, this, disk_quota_in_pages, options, restart_options->restart_mode);   // User specified restart mode
+
+        // Start the recovery
+        w_rc_t e = smtu.fork();
+        if (e.is_error())
+        {
+            std::cerr << "Error forking thread while post_shutdown: " << e << std::endl;
+            return 1;
+        }
+
+        e = smtu.join();
+        if (e.is_error())
+        {
+            std::cerr << "Error joining thread while post_shutdown: " << e << std::endl;
+            return 1;
+        }
+
+        rv = smtu.return_value();
+    }
+
+    return rv;
+}
+// End... for Instant Restart performance 'after' tests
+
 
 void btree_test_env::set_xct_query_lock() {
     if (_use_locks) {
@@ -1081,6 +1552,10 @@ w_rc_t x_btree_scan(ss_m* ssm, const stid_t &stid, x_btree_scan_result &result, 
             first_key = false;
             result.minkey.assign((const char*)cursor.key().serialize_as_nonkeystr().data(), cursor.key().get_length_as_nonkeystr());
         }
+
+// TODO(Restart)...
+//std::cout << "%%%%% Key: " << cursor.key().serialize_as_nonkeystr().data() << std::endl;
+
         result.maxkey.assign((const char*)cursor.key().serialize_as_nonkeystr().data(), cursor.key().get_length_as_nonkeystr());
         ++result.rownum;
     } while (true);

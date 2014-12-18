@@ -30,13 +30,13 @@ enum restart_phase_t {
 // use int32_t, if not enough bits in the future, change it to int64_t
 
 // Basic modes:
-// Milestone 1
+// Milestone 1, log driven REDO, reverse txn UNDO
 const int32_t m1_default_restart =          // sm_restart, serial and default (if caller did not specify mode)
     smlevel_0::t_restart_serial |           // Serial operation
     smlevel_0::t_restart_redo_log |         // Log scan driven REDO
     smlevel_0::t_restart_undo_reverse;      // Reverse UNDO
 
-// Milestone 2 with minimal logging    
+// Milestone 2 with minimal logging, page driven REDO, txn driven UNDO, commit_lsn
 const int32_t m2_default_restart =          // sm_restart, M2 minimal logging
     smlevel_0::t_restart_concurrent_log |   // Concurrent operation using log                << new
     smlevel_0::t_restart_redo_page |        // Page driven REDO with minimal logging   << new
@@ -58,7 +58,14 @@ const int32_t m2_both_delay_restart =       // sm_restart, concurrent testing pu
     smlevel_0::t_restart_redo_delay |       // Delay before REDO                              << new
     smlevel_0::t_restart_undo_delay;        // Delay before UNDO                              << new
 
-// Milestone 2 with full logging    
+// Milestone 2 with self_contained logging, page driven REDO, txn driven UNDO, commit_lsn
+const int32_t m2_alt_rebalance_restart =    // sm_restart, M2 minimal logging
+    smlevel_0::t_restart_concurrent_log |   // Concurrent operation using log                << new
+    smlevel_0::t_restart_redo_page |        // Page driven REDO with minimal logging   << new
+    smlevel_0::t_restart_undo_txn |         // Transaction driven UNDO                       << new   
+    smlevel_0::t_restart_alt_rebalance;     // Use self_contained log record for page rebalance  << new
+
+// Milestone 2 with full logging, page driven REDO, txn driven UNDO, commit_lsn
 const int32_t m2_full_logging_restart =      // sm_restart, M2 full logging
     smlevel_0::t_restart_concurrent_log |    // Concurrent operation using log             << new
     smlevel_0::t_restart_redo_full_logging | // Page driven REDO with full logging       << new
@@ -97,13 +104,20 @@ const int32_t alternative_lock_log_restart =    // sm_restart, measurement purpo
     smlevel_0::t_restart_redo_log |             // Log scan driven REDO
     smlevel_0::t_restart_undo_txn;              // Transaction driven UNDO
 
-// Milestone 3 with minimal logging        
+// Milestone 3 with minimal logging, pure on_demand REDO and UNDO, lock conflict
 const int32_t m3_default_restart =          // sm_restart, M3
     smlevel_0::t_restart_concurrent_lock |  // Concurrent operation using lock          << new
     smlevel_0::t_restart_redo_demand |      // On-demand driven REDO                  << new
     smlevel_0::t_restart_undo_demand;       // On-demand driven UNDO
 
-// Milestone 4 with minimal logging        
+// Milestone 3 with self_contained logging, pure on_demand REDO and UNDO, lock conflict
+const int32_t m3_alt_rebalance_restart =    // sm_restart, M3 minimal logging
+    smlevel_0::t_restart_concurrent_lock |  // Concurrent operation using lock          << new
+    smlevel_0::t_restart_redo_demand |      // On-demand driven REDO                  << new
+    smlevel_0::t_restart_undo_demand |      // On-demand driven UNDO
+    smlevel_0::t_restart_alt_rebalance;     // Use self_contained log record for page rebalance  << new
+
+// Milestone 4 with minimal logging, page driven REDO, txn driven UNDO, on_demand REDO/UNDO, lock conflict
 const int32_t m4_default_restart =          // sm_restart, M4
     smlevel_0::t_restart_concurrent_lock |  // Concurrent operation using lock
     smlevel_0::t_restart_redo_mix |         // Mixed REDO                                   << new
@@ -124,6 +138,28 @@ const int32_t m4_both_delay_restart =       // sm_restart, concurrent testing pu
     smlevel_0::t_restart_undo_mix |         // Mixed UNDO
     smlevel_0::t_restart_redo_delay |       // Delay before REDO                          << new
     smlevel_0::t_restart_undo_delay;        // Delay before REDO                          << new
+
+// Milestone 4 with self_contained logging, page driven REDO, txn driven UNDO, on_demand REDO/UNDO, lock conflict
+const int32_t m4_alt_rebalance_restart =    // sm_restart, M4
+    smlevel_0::t_restart_concurrent_lock |  // Concurrent operation using lock
+    smlevel_0::t_restart_redo_mix |         // Mixed REDO                                   << new
+    smlevel_0::t_restart_undo_mix |         // Mixed UNDO
+    smlevel_0::t_restart_alt_rebalance;     // Use self_contained log record for page rebalance  << new
+
+// Milestone 5 ARIES method - page driven REDO, txn driven UNDO, lock conflict, open after REDO before UNDO
+const int32_t m5_default_restart =          // sm_restart, M3
+    smlevel_0::t_restart_concurrent_lock |  // Concurrent operation using lock
+    smlevel_0::t_restart_redo_mix |         // Mixed REDO
+    smlevel_0::t_restart_undo_mix |         // Mixed UNDO            
+    smlevel_0::t_restart_aries_open;        // Open system after REDO                  << new
+
+// Milestone 5 ARIES method with self_contained logging, page driven REDO, txn driven UNDO, lock conflict, open after REDO before UNDO
+const int32_t m5_alt_rebalance_restart =    // sm_restart, M3
+    smlevel_0::t_restart_concurrent_lock |  // Concurrent operation using lock
+    smlevel_0::t_restart_redo_mix |         // Mixed REDO
+    smlevel_0::t_restart_undo_mix |         // Mixed UNDO            
+    smlevel_0::t_restart_aries_open |       // Open system after REDO                  << new
+    smlevel_0::t_restart_alt_rebalance;     // Use self_contained log record for page rebalance  << new
 
 
 #endif          /*</std-footer>*/

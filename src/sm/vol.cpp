@@ -580,6 +580,7 @@ vol_t::read_page(shpid_t pnum, generic_page& page, bool& past_end)
      */
     memset(&page, '\0', sizeof(page));
 #endif
+
     w_rc_t err = t->pread(_unix_fd, (char *) &page, sizeof(page), offset);
     if(err.err_num() == stSHORTIO) {
         DBGOUT3 (<< "vol_t::read_page, read passed the end, zero out the page");
@@ -1205,7 +1206,7 @@ vol_t::read_vhdr(int fd, volhdr_t& vhdr)
 
     /*
      *  Read in first page of volume into tmp.
-     */
+     */   
     W_DO(me()->pread(fd, tmp, tmpsz, sector_size));
 
     /*

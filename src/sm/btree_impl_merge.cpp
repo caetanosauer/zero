@@ -23,6 +23,11 @@
 
 rc_t btree_impl::_sx_rebalance_foster(btree_page_h &page)
 {
+    // This function is to split the source page (input parameter), while
+    // the destination (foster child) page has been allocated already
+    // It is only called from test code to perform direct functional test,
+    // it is not used from normal B-tree call path
+    
     w_assert1 (page.latch_mode() == LATCH_EX);
     if (page.get_foster() == 0) {
         return RCOK; // nothing to rebalance
@@ -83,9 +88,17 @@ rc_t btree_impl::_sx_rebalance_foster(btree_page_h &page)
     W_DO(_sx_rebalance_foster(page, foster_p, move_count, mid_key, new_pid0, new_pid0_emlsn));
     return RCOK;
 }
-rc_t btree_impl::_sx_rebalance_foster(btree_page_h &page, btree_page_h &foster_p,
-            int32_t move_count, const w_keystr_t &mid_key, shpid_t new_pid0,
-            lsn_t new_pid0_emlsn) {
+rc_t btree_impl::_sx_rebalance_foster(btree_page_h &page,        // In/Out: source page, foster parent
+                                         btree_page_h &foster_p,    // In/Out: destination page, foster child
+                                         int32_t move_count,        // In: how many records to move
+                                         const w_keystr_t &mid_key, // In: separation key
+                                         shpid_t new_pid0,          // In: if source page is non-leaf, child page ID
+                                         lsn_t new_pid0_emlsn) {    // In: if source page is non-leaf, child page emlsn
+
+    // Function used for page split purpose, the destination page (foster_p) 
+    // has been allocated and fency keys setup, including the new foster relationship,
+    // but empty otherwise. Foster parent (page) has the pre-split image
+    
     // assure foster-child page has an entry same as fence-low for locking correctness.
     // See jira ticket:84 "Key Range Locking" (originally trac ticket:86).
     W_DO(_ux_assure_fence_low_entry(foster_p)); // this might be another SSX
@@ -115,15 +128,17 @@ rc_t btree_impl::_sx_rebalance_foster(btree_page_h &page, btree_page_h &foster_p
 }
 
 rc_t btree_impl::_ux_rebalance_foster_core(
-            btree_page_h &page,             // Source
-            btree_page_h &foster_p,         // Destination
-            int32_t move_count, 
+            btree_page_h &page,             // Source, foster parent
+            btree_page_h &foster_p,         // Destination, foster child
+            int32_t move_count,             // Number of records to move
             const w_keystr_t &mid_key,      // Fence key for destination, also the new foster key in source
             shpid_t new_pid0,               // Non-leaf only
             lsn_t new_pid0_emlsn,           // Non-leaf only
             bool &caller_commit,            // Out: true if caller has to commit the system transaction, not full logging
                                             //       false if callee commits the system transaction, full logging
-            sys_xct_section_t& sxs) {
+            sys_xct_section_t& sxs)         // Handle to the current system transaction, page split is 
+                                            //performed inside of a system transaction
+{
     w_assert1 (g_xct()->is_single_log_sys_xct());
     w_assert1 (page.latch_mode() == LATCH_EX);
     w_assert1 (foster_p.latch_mode() == LATCH_EX);
@@ -132,6 +147,8 @@ rc_t btree_impl::_ux_rebalance_foster_core(
 
     if (move_count == 0) {
         // this means no-record rebalance, which is easier.
+        // It generates an log record for page split, update the fency keys and
+        // chain high for both source and destination pages
         W_DO (_ux_rebalance_foster_norec(page, foster_p, mid_key));
         // No record movement occurred, tell caller to commit the single log system transaction
         caller_commit = true;
@@ -190,8 +207,8 @@ rc_t btree_impl::_ux_rebalance_foster_core(
     // TODO(Restart)... see the same fence key setting code in btree_impl::_ux_rebalance_foster_apply
     // the assumption is the fence keys in destination page has been set up already    
     w_keystr_t high_key, chain_high_key;
-    foster_p.copy_fence_high_key(high_key);          // High (foster) is from destination page, confusing naming, we are assuming the 
-                                                     // destination (foster child) page has the proper fence and foster key setup already
+    foster_p.copy_fence_high_key(high_key);          // High (foster) is from destination page, confusing naming, the assumption is
+                                                     // caller has setup the fence and foster keys on the destination (foster child) page
     foster_p.copy_chain_fence_high_key(chain_high_key);  // Get chain high fence from destination page, all foster nodes have the same chain_high
 
     // Note: log_ receives pages in reverse order. "page" is the foster-child (dest),
@@ -204,10 +221,35 @@ rc_t btree_impl::_ux_rebalance_foster_core(
     // No changes in the foster page id and foster emlsn of the destination page (foster child)
     //    because the assumption is that all these information in foster child page were already setup
 
-    DBGOUT3( << "Generate foster_rebalance log record, fence:: " << mid_key << ", high: " << high_key << ", chain: " << chain_high_key);
-    rc_t ret = log_btree_foster_rebalance(foster_p /*page, destination*/, page /*page2, source*/,
-                                     move_count, mid_key /* fence*/, new_pid0, new_pid0_emlsn,
-                                     high_key /*high*/, chain_high_key /*chain_high*/);
+    // The page split log record needs to store record data from all records being moved
+    // in other words, the page split log record won't be minimum logging, but it is not full logging either
+    // with this extra information, the page split log record is a self contain log record for the 
+    // REDO operation, the same log record must be used for both source and destination pages
+    // therefore with Single Page Recovery REDO operation, we can use this self-contained log record
+    // to perform page split operation, no need to use recursive single page recovery logic which 
+    // has extremely slow performance due to a lot of wasted work   
+    rc_t ret;
+    char data_buffer[sizeof(generic_page)*2];    // Allocate 2 pages worth of data buffer
+    smsize_t len = sizeof(data_buffer);
+    ret = page.copy_records(move_count, data_buffer, len);   
+    if (ret.is_error())
+        return ret;
+    // Put record data into vector
+    cvec_t record_data(data_buffer, len);
+
+    // Calculate prefix length for the destination page (foster child)
+    int16_t prefix_length = 0;
+    prefix_length = page.calculate_prefix_length(page.get_prefix_length(),
+                                                 mid_key /*low fence*/, high_key /*high fence*/);
+
+    DBGOUT3( << "Generate foster_rebalance log record, fence:: " << mid_key << ", high: " << high_key
+             << ", chain: " << chain_high_key << ", record data length: " << len);
+    ret = log_btree_foster_rebalance(foster_p /*page, destination*/, page /*page2, source*/,
+                                     mid_key /* fence*/, new_pid0, new_pid0_emlsn,
+                                     high_key /*high*/, chain_high_key /*chain_high*/,
+                                     prefix_length, move_count, len /*user record data length*/,
+                                     record_data /*user reocrd data*/);
+
     if (ret.is_error())
         return ret;
     if (true == restart_m::use_redo_full_logging_restart())
@@ -377,13 +419,18 @@ rc_t btree_impl::_ux_rebalance_foster_norec(btree_page_h &page,
 
 rc_t btree_impl::_sx_merge_foster(btree_page_h &page)
 {
+    // Page merge operation, while the input parameter 'page' is the destination (foster parent)
+    // It appears that this page merge function is only called from test program, 
+    // it does not get called from normal B-tree operation, in fact, it appears that 
+    // the normal B-tree operation does not perform page merge currently (feature is not enabled)
+    
     FUNC(btree_impl::_sx_merge_foster);
     w_assert1 (page.latch_mode() == LATCH_EX);
     if (page.get_foster() == 0) {
         return RCOK; // nothing to rebalance
     }
 
-    btree_page_h foster_p;  // source
+    btree_page_h foster_p;  // source, foster child
     W_DO(foster_p.fix_nonroot(page, page.vol(), page.get_foster_opaqueptr(), LATCH_EX));
 
     // assure foster-child page has an entry same as fence-low for locking correctness.
@@ -441,8 +488,13 @@ smsize_t estimate_required_space_to_merge (btree_page_h &page, btree_page_h &mer
     return ret;
 }
 
-rc_t btree_impl::_ux_merge_foster_core(btree_page_h &page, btree_page_h &foster_p, 
-                                            bool &caller_commit, sys_xct_section_t& sxs) {
+rc_t btree_impl::_ux_merge_foster_core(btree_page_h &page,      // In/Out: destination, foster parent page
+                                            btree_page_h &foster_p,  // In/Out: source, foster child page
+                                            bool &caller_commit,
+                                            sys_xct_section_t& sxs)  // Current system transaction, the page merge
+                                                                     // operation is performed inside of a
+                                                                     // system transaction
+{
     w_assert1 (xct()->is_single_log_sys_xct());
     w_assert1 (page.latch_mode() == LATCH_EX);
     w_assert1 (foster_p.latch_mode() == LATCH_EX);
@@ -507,12 +559,40 @@ rc_t btree_impl::_ux_merge_foster_core(btree_page_h &page, btree_page_h &foster_
     // In a merge case, no change in the pid0 and pid_emlsn of the destination page (foster parent, non-leaf)
     // Changes in the foster page id and foster emlsn of the destination page (foster parent)
     //    the new information are taken from the source (foster child page) and stored the log record.    
-    rc_t ret = log_btree_foster_merge (page /*destination*/, foster_p /*source*/, 
-                                       high_key /*high*/, chain_high_key/*chain_high*/,
-                                       foster_p.get_foster() /* foster pid*/,
-                                       foster_p.get_foster_emlsn() /* foster emlsn*/);
+
+    // The page merge log record needs to store record data from all records being moved
+    // in other words, the page merge log record won't be minimum logging, but it is not full logging either
+    // with this extra information, the page merge log record is a self contain log record for the 
+    // REDO operation, the same log record must be used for both source and destination pages
+    // therefore with Single Page Recovery REDO operation, we can use this self-contained log record
+    // to perform page merge operation, no need to use recursive single page recovery logic which 
+    // has extremely slow performance due to a lot of wasted work
+    rc_t ret;
+    char data_buffer[sizeof(generic_page)*2];    // Allocate 2 pages worth of data buffer    
+    smsize_t len = sizeof(data_buffer);
+    ret = foster_p.copy_records(foster_p.nrecs(), data_buffer, len);   
     if (ret.is_error())
         return ret;
+    // Put record data into vector
+    cvec_t record_data(data_buffer, len);
+
+    // Calculate prefix length for the destination page (foster parent)
+    w_keystr_t low_key;    
+    page.copy_fence_low_key(low_key);    
+    const int16_t prefix_length = page.calculate_prefix_length(page.get_prefix_length(),
+                                                          low_key /*low fence*/, high_key /*high fence*/);
+
+    ret = log_btree_foster_merge (page /*destination*/, foster_p /*source*/, 
+                                  high_key /*high*/, chain_high_key/*chain_high*/,
+                                  foster_p.get_foster() /* foster pid*/,
+                                  foster_p.get_foster_emlsn() /* foster emlsn*/,
+                                  prefix_length, foster_p.nrecs() /*move count*/,
+                                  len /*user record data length*/,
+                                  record_data /*user reocrd data*/);
+
+    if (ret.is_error())
+        return ret;
+
     if (true == restart_m::use_redo_full_logging_restart())
     {
         // TODO(Restart)... If we need to move records for merge, commit 

@@ -70,7 +70,11 @@ void restart_m::dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const ls
 }
 
 rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
-                                    const bool actual_emlsn) {
+                                    const bool actual_emlsn,
+                                    const bool from_lsn)  // True if use page lsn as the start point
+                                                          // mainly from Restart using Single Pge Recovery
+                                                          // in REDO phase where the page is not corrupted
+{
     // Single-Page-Recovery operation does not hold latch on the page to be recovered, because
     // it assumes the page is private until recovered.  It is not the case during
     // recovery.  It is caller's responsibility to hold latch before accessing Single-Page-Recovery
@@ -80,7 +84,8 @@ rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
     w_assert1(p.is_fixed());
     lpid_t pid = p.pid();
     DBGOUT1(<< "Single-Page-Recovery on " << pid << ", EMLSN=" << emlsn);
-    if (smlevel_0::bk->page_exists(p.vol(), pid.page)) {
+    if (smlevel_0::bk->page_exists(p.vol(), pid.page)) 
+    {
         W_DO(smlevel_0::bk->retrieve_page(*p.get_generic_page(), p.vol(), pid.page));
         w_assert1(pid == p.pid());
         DBGOUT1(<< "Backup page retrieved. Backup-LSN=" << p.lsn());
@@ -106,11 +111,35 @@ rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
             DBGOUT1(<< "Backup page last write LSN > emlsn");
             W_FATAL(eBAD_BACKUPPAGE);
         }
-    } else {
-        // if the page is not in the backup (possible if the page was created after the
-        // backup), we need to recover the page purely from the log. So, current_lsn=0.
-        p.set_lsns(lsn_t::null);
+    } 
+    else 
+    {
         DBGOUT1(<< "No backup page. Recovering from log only");
+
+        // if the page is not in the backup (possible if the page was created after the
+        // backup) or no backup file at all, we need to recover the page purely from the log.
+        // If caller specify 'from_lsn', then use the last write LSN on the page as the starting point
+        // of the recovery, otherwise set page lsn to NULL to force a complete recovery
+        
+        if (false == from_lsn)
+        {
+            // Complete recovery
+            DBGOUT1(<< "Force a complete recovery");
+            p.set_lsns(lsn_t::null);
+        }
+        else
+        {
+            if (lsn_t::null == p.lsn())
+            {
+                // Page does not have last write LSN
+                DBGOUT1(<< "Recovery from page last write LSN but it is NULL, a complete recovery");
+            }
+            else
+            {
+                // Page has last write LSN, use it as the starting point so it is not a complete recovery
+                DBGOUT1(<< "Recovery from page last write LSN: " << p.lsn());
+            }
+        }
     }
 
     // Then, collect logs to apply. Depending on the recency of the backup and the
@@ -141,8 +170,8 @@ rc_t restart_m::recover_single_page(fixable_page_h &p, const lsn_t& emlsn,
 }
 
 rc_t restart_m::_collect_single_page_recovery_logs(
-    const lpid_t& pid,
-    const lsn_t& current_lsn,
+    const lpid_t& pid,                         // In: page ID of the page to work on
+    const lsn_t& current_lsn,                  // In: known last write to the page, this is where recovery starts
     const lsn_t& emlsn,                        // In: starting point of the log chain
     char* log_copy_buffer, size_t buffer_size,
     std::vector<logrec_t*>& ordered_entries,
@@ -150,7 +179,7 @@ rc_t restart_m::_collect_single_page_recovery_logs(
                                                //     false if an assumed starting point
 {
     // When caller from recovery REDO phase on a virgin or corrupted page, we do not have
-    // a valid emlsn and page last-write lsn has been set to lsn_t::null.
+    // a valid emlsn and page last-write lsn (current_lsn) has been set to lsn_t::null.
     // The pre-crash last log lsn was used instead for emlsn, therefore passed in emlsn
     // is not a valid starting point for log chain, need to find the starting point for the valid
     // page log chain
@@ -225,11 +254,15 @@ rc_t restart_m::_collect_single_page_recovery_logs(
         }
 
         // follow next pointer. This log might touch multi-pages. So, check both cases.
-        if (pid.page == record->shpid()) {
+        if (pid.page == record->shpid()) 
+        {
+            // Target pid matches the first page ID in the log recoredd
             nxt = record->page_prev_lsn();
-        } else if (!record->is_multi_page()
-            || pid.page != record->data_ssx_multi()->_page2_pid) {
-
+        }
+        else if (!record->is_multi_page()
+            || pid.page != record->data_ssx_multi()->_page2_pid) 
+        {
+            // No match to either the first pid or the 2nd pid (if exists)
             if (!record->is_multi_page())
             {
                 // Not multi-page log record, and the page id is different
@@ -253,7 +286,13 @@ rc_t restart_m::_collect_single_page_recovery_logs(
                 << current_lsn << ", EMLSN=" << emlsn << ", next_lsn=" << nxt
                 << ", obtained_lsn=" << obtained << ", log=" << *record);
 
-        } else {
+        }
+        else 
+        {
+            // Multi-page log record, this is a page rebalance log record (split or merge)
+            // while the 2nd page is the source page
+            // In this case, the page we are trying to recover was the source page during
+            // a page rebalance operation, follow the proper log chain
             w_assert0(record->data_ssx_multi()->_page2_pid == pid.page);
             nxt = record->data_ssx_multi()->_page2_prv;
         }

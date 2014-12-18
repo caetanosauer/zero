@@ -40,7 +40,7 @@ typedef smlevel_0::fileoff_t fileoff_t;
  *
  *********************************************************************/
 uint32_t const log_storage::_version_major = 6;
-uint32_t const log_storage::_version_minor = 0;
+uint32_t const log_storage::_version_minor = 1;
 const char log_storage::_SLASH = '/';
 const char log_storage::_master_prefix[] = "chk."; // same size as _log_prefix
 const char log_storage::_log_prefix[] = "log.";

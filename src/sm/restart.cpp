@@ -70,6 +70,11 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "bf_tree_inline.h"
 #include "restart.h"
 #include "btree_logrec.h"       // Lock re-acquisition
+#include "sm.h"                 // Check system shutdown status
+
+#include <fcntl.h>              // Performance reporting
+#include <unistd.h>
+#include <sstream>
 
 #ifdef EXPLICIT_TEMPLATE
 template class Heap<xct_t*, CmpXctUndoLsns>;
@@ -285,7 +290,7 @@ restart_m::restart(
 **/
 
 /* Normal code path, always backward scan during Log Analysis */
-    // Using backward scan for all M1 - M4
+    // Using backward scan for all M1 - M5
     if (false == use_concurrent_lock_restart())
     {
         // Not using locks (either serial or log mode) - M1 and M2
@@ -293,7 +298,7 @@ restart_m::restart(
     }
     else
     {
-        // Using locks - M3 and M4
+        // Using locks - M3 - M5
         restart_with_lock = true;
     }
 
@@ -304,7 +309,7 @@ restart_m::restart(
     struct timeval tm_after;
     gettimeofday( &tm_after, NULL );
 // TODO(Restart)... Performance
-    DBGOUT1(<< "**** Restart Log Analysis, elpase time (milliseconds): "
+    DBGOUT1(<< "**** Restart Log Analysis, elapsed time (milliseconds): "
             << (((double)tm_after.tv_sec - (double)tm_before.tv_sec) * 1000.0)
             + (double)tm_after.tv_usec/1000.0 - (double)tm_before.tv_usec/1000.0);
 
@@ -363,14 +368,42 @@ restart_m::restart(
 //                          if we open the system after Log Analysis phase
 ////////////////////////////////////////
 
-            // Do not turn on szizzling
+            // Do not turn on swizzling
         }
 
         smlevel_0::errlog->clog << info_prio << "Restart Log Analysis successful." << flushl;
         DBGOUT1(<<"Restart Log Analysis ended");
 
-        // Return to caller (main thread), at this point, buffer pool contains all 'in_doubt' pages
-        // but the actual pages are not loaded.
+        if (true == use_aries_restart())
+        {
+            // If M5 (ARIES), we need to finish REDO before open the system for user transactions
+            struct timeval tm_before;
+            gettimeofday( &tm_before, NULL );
+
+            // REDO
+            // Copy information to global variables first
+            smlevel_0::commit_lsn = commit_lsn;
+            smlevel_0::redo_lsn = redo_lsn;      // Log driven REDO, starting point for forward log scan
+            smlevel_0::last_lsn = last_lsn;      // page driven REDO, last LSN in Recovery log before system crash
+            smlevel_0::in_doubt_count = in_doubt_count;
+
+            // Start REDO            
+            redo_concurrent_pass();
+
+            // Set in_doubt count to 0 so we do not try to REDO again
+            smlevel_0::in_doubt_count = 0;
+
+            struct timeval tm_after;
+            gettimeofday( &tm_after, NULL );
+// TODO(Restart)... Performance
+            DBGOUT1(<< "**** ARIES restart REDO, elapsed time (milliseconds): "
+                    << (((double)tm_after.tv_sec - (double)tm_before.tv_sec) * 1000.0)
+                    + (double)tm_after.tv_usec/1000.0 - (double)tm_before.tv_usec/1000.0);
+        }
+
+        // Return to caller (main thread), at this point:
+        // M3/M4 - buffer pool contains all 'in_doubt' pages but the actual pages are not loaded.
+        // M5 - buffer pool contains loaded dirty pages, in_doubt count = 0
         // Transaction table contains all loser transactions (marked as 'active').
         // This function returns sufficient information to caller, mainly to support 'Log driven REDO'
         // and concurrent txn validation
@@ -451,6 +484,13 @@ restart_m::restart(
             W_COERCE(bf->force_all());
         }
 
+        struct timeval tm_after;
+        gettimeofday( &tm_after, NULL );
+// TODO(Restart)... Performance
+        DBGOUT1(<< "**** Restart traditional REDO, elapsed time (milliseconds): "
+            << (((double)tm_after.tv_sec - (double)tm_before.tv_sec) * 1000.0)
+            + (double)tm_after.tv_usec/1000.0 - (double)tm_before.tv_usec/1000.0);
+
         // Change mode to UNDO outside of the UNDO phase, this is for serialize process only
         smlevel_0::operating_mode = smlevel_0::t_in_undo;
 
@@ -497,12 +537,12 @@ restart_m::restart(
         smlevel_0::errlog->clog << info_prio << "Restart successful." << flushl;
         DBGOUT1(<<"Recovery ended");
 
-        struct timeval tm_after;
-        gettimeofday( &tm_after, NULL );
+        struct timeval tm_done;
+        gettimeofday( &tm_done, NULL );
 // TODO(Restart)... Performance
-        DBGOUT1(<< "**** Restart traditional REDO/UNDO, elpase time (milliseconds): "
-                << (((double)tm_after.tv_sec - (double)tm_before.tv_sec) * 1000.0)
-                + (double)tm_after.tv_usec/1000.0 - (double)tm_before.tv_usec/1000.0);
+        DBGOUT1(<< "**** Restart traditional UNDO, elapsed time (milliseconds): "
+                << (((double)tm_done.tv_sec - (double)tm_after.tv_sec) * 1000.0)
+                + (double)tm_done.tv_usec/1000.0 - (double)tm_after.tv_usec/1000.0);
 
         // Exiting from the Recovery operation, caller of the Recovery operation is
         // responsible of changing the 'operating_mode' to 'smlevel_0::t_forward_processing',
@@ -1212,13 +1252,13 @@ restart_m::analysis_pass_forward(
  *  Non-read-lock acquisition
  * compute commit_lsn
  *
- *  This function is used in all situations from M1 - M4, system is not opened during
+ *  This function is used in all situations from M1 - M5, system is not opened during
  *  Log Analysis phase
  *
  * The main difference between analysis_pass_backward and analysis_pass_forward
  * functions are the following:
  *     1. Log scan direction
- *     2. Lock acquisition for M3/M4
+ *     2. Lock acquisition for M3/M4/M5
  * At the end of Log Analysis, the results in buffer pool and transaction table should be
  * identical except the lock acquisitions if needed.
  *
@@ -1243,7 +1283,7 @@ restart_m::analysis_pass_backward(
     lsn_t&                last_lsn,          // Out: Last lsn in the recovery log before system crash
     const bool            restart_with_lock, // In:  true to acquire lock (M3/4), false to use commit_lsn (M2)
                                              //       or no early open (M1)
-    XctLockHeap&          lock_heap          // Out: all re-acquired locks (form M3 and M4 only
+    XctLockHeap&          lock_heap          // Out: all re-acquired locks (form M3, M4 and M5 only
 )
 {
     FUNC(restart_m::analysis_pass_backward);
@@ -1544,7 +1584,7 @@ restart_m::analysis_pass_backward(
             {
                 // Process it only if we have seen a matching 'end checkpoint' log record
                 // meaning we are processing the last completed checkpoint
-                // Also if we need to acquire locks (M3/M4)
+                // Also if we need to acquire locks (M3/M4/M5)
 
                 chkpt_xct_lock_t* dp = (chkpt_xct_lock_t*) r.data();
                 // If the transaction tid specified in the log record exists in transaction table and
@@ -1764,7 +1804,7 @@ restart_m::analysis_pass_backward(
 
                 if ((true == acquire_lock) && (true == restart_with_lock))
                 {
-                    // We need to acquire locks (M3/M4) and this is an
+                    // We need to acquire locks (M3/M4/M5) and this is an
                     // undecided in-flight transaction, process lock for this log record
                     _analysis_process_lock(r, mapCLR,lock_heap,xd);
                 }
@@ -1920,7 +1960,7 @@ restart_m::analysis_pass_backward(
     // if it is the same as max_lsn (initial value), set commit_lsn to null
     // because we did not process anything which affects commit_lsn
     // Note the commit_lsn is the minimum txn lsn from all in-flight transactions
-    // If we are doing lock acquisition (M3/M4), set the commit_lsn to null because
+    // If we are doing lock acquisition (M3/M4/M5), set the commit_lsn to null because
     // we do not want to use it for concurrent tranaactions
     if ((commit_lsn == max_lsn) || (true == restart_with_lock))
         commit_lsn = lsn_t::null;
@@ -3714,7 +3754,6 @@ restart_m::redo_log_pass(
                                        // for validation purpose
 )
 {
-
     // Log driven Redo phase for both serial and concurrent modes
 
     FUNC(restart_m::redo_pass);
@@ -3985,6 +4024,8 @@ restart_m::redo_log_pass(
                 << f << " log_fetches, "
                 << i << " log_inserts " << flushl;
         }
+// TODO(Restart)... performance
+DBGOUT1(<<"redo - dirty count: " << dirty_count);
     }
 
     return;
@@ -4032,6 +4073,7 @@ void restart_m::_redo_log_with_pid(
     // 'is_redo()' covers regular transaction but not compensation transaction
     w_assert1(r.is_redo());
     w_assert1(r.shpid());
+    w_assert1(false == redone);
 
     // Because we are loading the page into buffer pool directly
     // we cannot have swizzling on
@@ -4058,6 +4100,7 @@ void restart_m::_redo_log_with_pid(
         //                 Page (m2): concurrent txn does not load page, no conflict
         //                 On-demand (m3): only concurrent txn load page, no conflict
         //                 Mixed (m4): potential conflict, the failed one skip the page silently
+        //                 ARIES (m5): no conflict because system is not opened
         rc = cb.latch().latch_acquire(LATCH_EX, WAIT_IMMEDIATE);
         if (rc.is_error())
         {
@@ -4219,6 +4262,8 @@ void restart_m::_redo_log_with_pid(
                 // use the log record lsn for Single-Page-Recovery, which is the the actual emlsn
 
                 // CS: since this method is static, we refer to restart_m indirectly
+                // For corrupted page, set the last write to force a complete recovery
+                page.get_generic_page()->lsn = lsn_t::null;                
                 W_COERCE(smlevel_1::recovery->recover_single_page(page, lsn, true));
             }
 
@@ -4231,7 +4276,7 @@ void restart_m::_redo_log_with_pid(
                      << " will redo if 1: " << int(page_lsn < lsn));
 
             if (page_lsn < lsn)
-            {
+            {          
                 // The last write to this page was before the log record LSN
                 // Need to REDO
                 // REDO phase is for buffer pool in_doubt pages, the process is
@@ -4714,11 +4759,12 @@ restart_m::undo_reverse_pass(
 //     Lock:              use_concurrent_lock_restart()        <-- Milestone 3
 //
 // REDO is performed using one of the following:
-//    Log driven:      use_redo_log_restart()              <-- Milestone 1 default, see redo_pass
-//    Page driven:    use_redo_page_restart()           <-- Milestone 2, minimal logging
-//    Page driven:    use_redo_full_logging_restart()  <-- Milestone 2, full logging
-//    Demand driven:     use_redo_demand_restart() <-- Milestone 3
-//    Mixed driven:   use_redo_mix_restarty()           <-- Milestone 4
+//    Log driven:      use_redo_log_restart()                         <-- Milestone 1 default, see redo_pass
+//    Page driven:    use_redo_page_restart()                      <-- Milestone 2, minimal logging
+//    Page driven:    use_redo_full_logging_restart()             <-- Milestone 2, full logging
+//    Demand driven:     use_redo_demand_restart()            <-- Milestone 3
+//    Mixed driven:   use_redo_mix_restart()                        <-- Milestone 4
+//    ARIES:            same as mixed mode except late open   <-- Milestone 5
 //*********************************************************************
 void restart_m::redo_concurrent_pass()
 {
@@ -4761,12 +4807,20 @@ void restart_m::redo_concurrent_pass()
     }
     else if (true == use_redo_demand_restart())
     {
-        // M3, On-demand Single-Page-Recovery, should not get here
-        W_FATAL_MSG(fcINTERNAL, << "REDO phase, on-demand REDO should not come to Restart thread");
+        if ((ss_m::shutting_down) && (ss_m::shutdown_clean))
+        {
+            // During a clean shutdown, it is okay to call child thread REDO
+            _redo_page_pass();            
+        }
+        else
+        {
+            // M3, On-demand Single-Page-Recovery, should not get here
+            W_FATAL_MSG(fcINTERNAL, << "REDO phase, on-demand REDO should not come to Restart thread");
+        }
     }
     else if (true == use_redo_mix_restart())
     {
-        // M4, mixed mode REDO, start the traditional page driven REDO
+        // M4/M5 mixed mode REDO, start the page driven REDO
         _redo_page_pass();
     }
     else
@@ -4788,10 +4842,11 @@ void restart_m::redo_concurrent_pass()
 //     Lock:                    use_concurrent_lock_restart()       <-- Milestone 3
 //
 // UNDO is performed using one of the following:
-//    Reverse driven:      use_undo_reverse_restart()   <-- Milestone 1 default, see undo_pass
-//    Transaction driven: use_undo_txn_restart()          <-- Milestone 2
-//    Demand driven:     use_undo_demand_restart()    <-- Milestone 3
-//    Mixed driven:   use_undo_mix_restarty()              <-- Milestone 4
+//    Reverse driven:      use_undo_reverse_restart()           <-- Milestone 1 default, see undo_pass
+//    Transaction driven: use_undo_txn_restart()                  <-- Milestone 2
+//    Demand driven:     use_undo_demand_restart()            <-- Milestone 3
+//    Mixed driven:   use_undo_mix_restart()                        <-- Milestone 4
+//    ARIES:            same as mixed mode except late open   <-- Milestone 5
 //*********************************************************************
 void restart_m::undo_concurrent_pass()
 {
@@ -4830,12 +4885,20 @@ void restart_m::undo_concurrent_pass()
     }
     else if (true == use_undo_demand_restart())
     {
-        // M3, On-demand UNDO, should not get here
-        W_FATAL_MSG(fcINTERNAL, << "UNDO phase, on-demand UNDO should not come to Restart thread");
+        if ((ss_m::shutting_down) && (ss_m::shutdown_clean))
+        {
+            // During a clean shutdown, it is okay to call child thread UNDO
+            _redo_page_pass();            
+        }
+        else
+        {
+            // M3, On-demand UNDO, should not get here
+            W_FATAL_MSG(fcINTERNAL, << "UNDO phase, on-demand UNDO should not come to Restart thread");
+        }
     }
     else if (true == use_undo_mix_restart())
     {
-        // M4, mixed mode UNDO, start the traditional transaction driven UNDO
+        // M4/M5 mixed mode UNDO, start the transaction driven UNDO
         _undo_txn_pass();
     }
     else
@@ -4862,8 +4925,6 @@ void restart_m::_redo_page_pass()
     //                             no lock operations during REDO
 
     w_assert1((true == use_concurrent_commit_restart()) || (true == use_concurrent_lock_restart()));
-    w_assert1(true == use_redo_page_restart() || true == use_redo_full_logging_restart() ||
-              true == use_redo_mix_restart());
 
     // If no in_doubt page in buffer pool, then nothing to process
     if (0 == smlevel_0::in_doubt_count)
@@ -4875,6 +4936,9 @@ void restart_m::_redo_page_pass()
     {
         DBGOUT3( << "restart_m::_redo_page_pass() - Number of in_doubt pages: " << smlevel_0::in_doubt_count);
     }
+
+// TODO(Restart)... performance
+DBGOUT1(<<"Start child thread REDO phase");
 
     w_ostrstream s;
     s << "restart concurrent redo_page_pass";
@@ -4949,6 +5013,8 @@ void restart_m::_redo_page_pass()
             //                       should not get executed
             // Mixed (m4): potential conflict because both restart and user transaction
             //                    can load and recover a page
+            // ARIES (m5): system is not open, restart should be able to acquire latch
+            //                    can load and recover a page           
             if (true == use_redo_mix_restart())
             {
                 // Mixed mode and not able to latch this page
@@ -5087,7 +5153,7 @@ void restart_m::_redo_page_pass()
             }
             else
             {
-                // Use minimal logging, this is for both M2 and M4
+                // Use minimal logging, this is for M2/M4/M5
                 // page is not buffer pool managed before Single-Page-Recovery
                 // only mark the page as buffer pool managed after Single-Page-Recovery
                 W_COERCE(page.fix_recovery_redo(idx, store_id, false /* managed*/));
@@ -5143,14 +5209,17 @@ void restart_m::_redo_page_pass()
             if (emlsn != page.lsn())
             {
                 // page.lsn() is different from last write lsn recorded during Log Analysis
-                // must ber either virgin or corrupted page
+                // must be either virgin or corrupted page
 
                 if ((false == virgin_page) && (false == corrupted_page))
                 {
                     DBGOUT3(<< "REDO (redo_page_pass()): page lsn != last_write lsn, page lsn: " << page.lsn()
                             << ", last_write_lsn: " << emlsn);
                 }
-                page.set_lsns(lsn_t::null);  // set last write lsn to null to force a complete recovery
+                // Otherwise, we need to recover this page on-page last write to emlsn
+                // If we set the page LSN to NULL, it would force a complete recovery
+                // from page allocation (if no backup), which is not necessary
+                //    page.set_lsns(lsn_t::null);  // set last write lsn to null to force a complete recovery
             }
 
             // Using Single-Page-Recovery for the REDO operation, which is based on
@@ -5167,7 +5236,10 @@ void restart_m::_redo_page_pass()
             // it assumes the page is private until recovered.  It is not the case during
             // recovery.  It is caller's responsibility to hold latch before accessing Single-Page-Recovery
             page.set_recovery_access();
-            W_COERCE(smlevel_1::recovery->recover_single_page(page, emlsn, true));   // we have the actual emlsn even if page corrupted
+            W_COERCE(smlevel_1::recovery->recover_single_page(page,    // page to recover
+                                                              emlsn,   // emlsn which is the end point of recovery
+                                                              true,    // actual_emlsn
+                                                              true));  // from_lsn because this is not a corrupted page
             page.clear_recovery_access();
 
             if (false == use_redo_full_logging_restart())
@@ -5253,7 +5325,6 @@ void restart_m::_undo_txn_pass()
     //     lock acquisition: locks acquired during Log Analysis and release in UNDO
 
     w_assert1((true == use_concurrent_commit_restart()) || (true == use_concurrent_lock_restart()));
-    w_assert1((true == use_undo_txn_restart()) || (true == use_undo_mix_restart()));
 
     // If nothing in the transaction table, then nothing to process
     if (0 == xct_t::num_active_xcts())
@@ -5453,11 +5524,29 @@ void restart_thread_t::run()
     DBGOUT1(<< "restart_thread_t: Starts REDO and UNDO tasks");
 
     struct timeval tm_before;
-    gettimeofday( &tm_before, NULL );
+    struct timeval tm_after;
+    struct timeval tm_done;
 
-    // REDO, call back to restart_m to carry out the concurrent REDO
-    working = smlevel_0::t_concurrent_redo;
-    smlevel_1::recovery->redo_concurrent_pass();
+    if (true == restart_m::use_aries_restart())
+    {
+        // No REDO, only UNDO
+        gettimeofday(&tm_after, NULL);
+    }
+    else
+    {
+        // Both REDO and UNDO
+        gettimeofday(&tm_before, NULL);
+
+        // REDO, call back to restart_m to carry out the concurrent REDO
+        working = smlevel_0::t_concurrent_redo;
+        smlevel_1::recovery->redo_concurrent_pass();
+
+        gettimeofday(&tm_after, NULL);
+// TODO(Restart)... Performance
+        DBGOUT1(<< "**** Restart child thread REDO, elapsed time (milliseconds): "
+                << (((double)tm_after.tv_sec - (double)tm_before.tv_sec) * 1000.0)
+                + (double)tm_after.tv_usec/1000.0 - (double)tm_before.tv_usec/1000.0);
+    }
 
     // UNDO, call back to restart_m to carry out the concurrent UNDO
     working = smlevel_0::t_concurrent_undo;
@@ -5471,12 +5560,11 @@ void restart_thread_t::run()
     // from now on (if using commit_lsn to validate concurrent user transactions)
     smlevel_0::commit_lsn = lsn_t::null;
 
-    struct timeval tm_after;
-    gettimeofday( &tm_after, NULL );
+    gettimeofday( &tm_done, NULL );
 // TODO(Restart)... Performance
-    DBGOUT1(<< "**** Restart child thread REDO/UNDO, elpase time (milliseconds): "
-            << (((double)tm_after.tv_sec - (double)tm_before.tv_sec) * 1000.0)
-            + (double)tm_after.tv_usec/1000.0 - (double)tm_before.tv_usec/1000.0);
+    DBGOUT1(<< "**** Restart child thread UNDO, elapsed time (milliseconds): "
+            << (((double)tm_done.tv_sec - (double)tm_after.tv_sec) * 1000.0)
+            + (double)tm_done.tv_usec/1000.0 - (double)tm_after.tv_usec/1000.0);
 
     return;
 };

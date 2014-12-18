@@ -89,6 +89,7 @@ class prologue_rc_t;
 #include "log_core.h"
 #include "logbuf_core.h"
 
+
 #ifdef EXPLICIT_TEMPLATE
 template class w_auto_delete_t<SmStoreMetaStats*>;
 #endif
@@ -782,15 +783,26 @@ ss_m::_construct_once()
         W_FATAL_MSG(fcINTERNAL, << "Inconsistent mode between on-demand REDO and UNDO");
     }
 
+    // Store some information globally in all cases, because although M3 does not use
+    // child restart thread initially, it uses child restart thread during normal shutdown
+    // REDO from child thread will use redo_lsn, last_lsn and in_doubt_count
+    // to control the REDO phase
+    smlevel_0::redo_lsn = redo_lsn;              // Log driven REDO, starting point for forward log scan
+    smlevel_0::last_lsn = last_lsn;              // page driven REDO, last LSN in Recovery log before system crash
+    smlevel_0::in_doubt_count = in_doubt_count;
+
     if ((false == smlevel_0::use_serial_restart()) &&         // Not serial, so must be concurrent mode
          (false == smlevel_0::use_redo_demand_restart()) &&   // Not pure on-demand redo, so need child thread
          (false == smlevel_0::use_undo_demand_restart()))     // Not pure on-demand undo, so need child thread
 
     {
         // Log Analysis has completed but no REDO or UNDO yet
+        // exception: M5 (ARIES) did the REDO already, but no UNDO
         // Start the recovery process child thread to carry out
         // the REDO and UNDO phases if not in serial or pure on-demand mode
-        // which means both M2 (traditional) and M4 (mixed) would start the child thread
+        // which means M2 (traditional), M4 (mixed) and M5 (ARIES) would start the child thread
+        // Child thread will carry out both REDO and UNDO
+        // for M5 (ARIES), in_doubt count is already 0 therefore no need to REDO again
 
         if (_options.get_bool_option("sm_logging", true))
         {
@@ -799,14 +811,9 @@ ss_m::_construct_once()
             // Check the operating mode
             w_assert1(t_in_analysis == smlevel_0::operating_mode);
 
-            // Store the information globally,
-            // concurrent txn will use commit_lsn only if use_concurrent_commit_restart()
-            // REDO from child thread will use redo_lsn, last_lsn and in_doubt_count
-            // to control the REDO phase
+            // Store commit_lsn globally, concurrent txn uses commit_lsn
+            // only if use_concurrent_commit_restart (M2)
             smlevel_0::commit_lsn = verify_lsn;
-            smlevel_0::redo_lsn = redo_lsn;      // Log driven REDO, starting point for forward log scan
-            smlevel_0::last_lsn = last_lsn;      // page driven REDO, last LSN in Recovery log before system crash
-            smlevel_0::in_doubt_count = in_doubt_count;
 
             if (lsn_t::null != master)
             {
@@ -935,6 +942,22 @@ ss_m::_destruct_once()
     // Set shutting_down so that when we disable bg flushing, if the
     // log flush daemon is running, it won't just try to re-activate it.
     shutting_down = true;
+
+
+    if ((shutdown_clean) && (true == smlevel_0::use_redo_demand_restart()))
+    {
+        // If we have a clean shutdown and the current system is using
+        // pure on-demand recovery (no child restart thread), we might 
+        // still have a lot of recovery work to do at this point
+        // Because we are doing a clean shutdown, we do not want to have
+        // leftover restart work, spawn the restart child thread to finish up
+        // the restart work first and then shutdown
+        
+        w_assert1(!recovery);
+        recovery = new restart_m();
+        if (recovery)
+            recovery->spawn_recovery_thread();
+    }
 
     // get rid of all non-prepared transactions
     // First... disassociate me from any tx

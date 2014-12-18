@@ -147,6 +147,7 @@ int    sdisk_unix_t::convert_flags(int sflags)
         flags |= O_DIRECT;
 #endif
 
+
     return flags;
 }
 
@@ -262,7 +263,6 @@ w_rc_t    sdisk_unix_t::readv(const iovec_t *iov, int iovcnt, int &done)
         return RC(stBADFD);
 
     int    n;
-
     n = ::os_readv(_fd, (const struct iovec *)iov, iovcnt);
     if (n == -1)
         return RC(fcOS);
@@ -305,7 +305,6 @@ w_rc_t    sdisk_unix_t::pread(void *buf, int count, fileoff_t pos, int &done)
         return RC(stBADFD);
 
     int    n;
-
     n = ::os_pread(_fd, buf, count, pos);
 
     if (n == -1)

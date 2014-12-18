@@ -184,6 +184,21 @@ class btree_page_h : public fixable_page_h {
         hdr_sz  = btree_page::hdr_sz,
     };
 
+    // Used for page rebalance log record generation purpose
+    union record_info_int16_convert
+    {
+        char    c[sizeof(int16_t)];// int16 = 2 bytes, enough for max. record size in current implementation
+        int16_t is_ghost:1,        // 1 = ghost, 0 = non-ghost
+                len:15;            // record length
+    };
+
+    // Used for page rebalance log record generation purpose
+    union record_info_shpid_convert
+    {
+        char	c[sizeof(shpid_t)];// int32 = 4 bytes
+        shpid_t i;
+    };
+
 public:
     // ======================================================================
     //   BEGIN: Struct/Enum/Constructor
@@ -471,6 +486,30 @@ public:
      * slot being occupied).
      */
     size_t              get_rec_space(int slot) const;
+
+
+    // Determine the prefix length for a page rebalance operation
+    int16_t calculate_prefix_length(int16_t existing_prefix_len,  // Existing prefix length
+                                      w_keystr_t low_key,           // New low fence
+                                      w_keystr_t high_key);         // New high fence
+
+    // Copy the specified number of records into provided buffer (no ghost)
+    // each record must be reconstructed back to the original format (key+data)
+    // Assumption - this function is for page split and page merge purpose, 
+    // therefore copy the last 'rec_count' records in the page, in page merge case
+    // 'rec_count' == nrecs()
+    rc_t copy_records(const int       rec_count,          // In: number of records to copy
+                         char            *data_buffer,       // Out: caller provided data buffer
+                         smsize_t        &len);              // In: buffer size
+                                                             // out: data length
+
+    // Function to insert records into a page, this is used for page rebalance purpose only
+    // while the incoming buffer contains all the record data plus whatever extra information
+    // per record
+    rc_t insert_records_dest_redo(const int16_t prefix_len,      // In: source page prefix length
+                                      const int32_t move_count,      //In: how many records to insert
+                                      const int16_t record_data_len, // In: total length of data with extra info
+                                      const char *record_data);      // In: Data buffer
 
 
     // ======================================================================
