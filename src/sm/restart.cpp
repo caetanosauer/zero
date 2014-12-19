@@ -309,7 +309,7 @@ restart_m::restart(
     struct timeval tm_after;
     gettimeofday( &tm_after, NULL );
 // TODO(Restart)... Performance
-    DBGOUT1(<< "**** Restart Log Analysis, elapsed time (milliseconds): "
+    DBGOUT0(<< "**** Restart Log Analysis, elapsed time (milliseconds): "
             << (((double)tm_after.tv_sec - (double)tm_before.tv_sec) * 1000.0)
             + (double)tm_after.tv_usec/1000.0 - (double)tm_before.tv_usec/1000.0);
 
@@ -396,7 +396,7 @@ restart_m::restart(
             struct timeval tm_after;
             gettimeofday( &tm_after, NULL );
 // TODO(Restart)... Performance
-            DBGOUT1(<< "**** ARIES restart REDO, elapsed time (milliseconds): "
+            DBGOUT0(<< "**** ARIES restart REDO, elapsed time (milliseconds): "
                     << (((double)tm_after.tv_sec - (double)tm_before.tv_sec) * 1000.0)
                     + (double)tm_after.tv_usec/1000.0 - (double)tm_before.tv_usec/1000.0);
         }
@@ -487,7 +487,7 @@ restart_m::restart(
         struct timeval tm_after;
         gettimeofday( &tm_after, NULL );
 // TODO(Restart)... Performance
-        DBGOUT1(<< "**** Restart traditional REDO, elapsed time (milliseconds): "
+        DBGOUT0(<< "**** Restart traditional REDO, elapsed time (milliseconds): "
             << (((double)tm_after.tv_sec - (double)tm_before.tv_sec) * 1000.0)
             + (double)tm_after.tv_usec/1000.0 - (double)tm_before.tv_usec/1000.0);
 
@@ -540,7 +540,7 @@ restart_m::restart(
         struct timeval tm_done;
         gettimeofday( &tm_done, NULL );
 // TODO(Restart)... Performance
-        DBGOUT1(<< "**** Restart traditional UNDO, elapsed time (milliseconds): "
+        DBGOUT0(<< "**** Restart traditional UNDO, elapsed time (milliseconds): "
                 << (((double)tm_done.tv_sec - (double)tm_after.tv_sec) * 1000.0)
                 + (double)tm_done.tv_usec/1000.0 - (double)tm_after.tv_usec/1000.0);
 
@@ -1981,7 +1981,7 @@ restart_m::analysis_pass_backward(
              << ", undo lsn: " << undo_lsn << ", commit_lsn: " << commit_lsn);
 
 // TODO(Restart)... performance
-    DBGOUT1( << "Number of in_doubt pages: " << in_doubt_count);
+    DBGOUT0( << "Number of in_doubt pages: " << in_doubt_count);
 
     if (false == mount)
     {
@@ -3455,7 +3455,7 @@ void restart_m::_analysis_process_txn_table(XctPtrHeap& heap,  // Out: heap to s
     }
 
 // TODO(Restart)... performance
-    DBGOUT1( << "Number of active transactions in transaction table: " << xct_t::num_active_xcts());
+    DBGOUT0( << "Number of active transactions in transaction table: " << xct_t::num_active_xcts());
 
     return;
 }
@@ -4025,7 +4025,7 @@ restart_m::redo_log_pass(
                 << i << " log_inserts " << flushl;
         }
 // TODO(Restart)... performance
-DBGOUT1(<<"redo - dirty count: " << dirty_count);
+DBGOUT0(<<"redo - dirty count: " << dirty_count);
     }
 
     return;
@@ -4938,7 +4938,7 @@ void restart_m::_redo_page_pass()
     }
 
 // TODO(Restart)... performance
-DBGOUT1(<<"Start child thread REDO phase");
+DBGOUT0(<<"Start child thread REDO phase");
 
     w_ostrstream s;
     s << "restart concurrent redo_page_pass";
@@ -5543,7 +5543,7 @@ void restart_thread_t::run()
 
         gettimeofday(&tm_after, NULL);
 // TODO(Restart)... Performance
-        DBGOUT1(<< "**** Restart child thread REDO, elapsed time (milliseconds): "
+        DBGOUT0(<< "**** Restart child thread REDO, elapsed time (milliseconds): "
                 << (((double)tm_after.tv_sec - (double)tm_before.tv_sec) * 1000.0)
                 + (double)tm_after.tv_usec/1000.0 - (double)tm_before.tv_usec/1000.0);
     }
@@ -5562,7 +5562,7 @@ void restart_thread_t::run()
 
     gettimeofday( &tm_done, NULL );
 // TODO(Restart)... Performance
-    DBGOUT1(<< "**** Restart child thread UNDO, elapsed time (milliseconds): "
+    DBGOUT0(<< "**** Restart child thread UNDO, elapsed time (milliseconds): "
             << (((double)tm_done.tv_sec - (double)tm_after.tv_sec) * 1000.0)
             + (double)tm_done.tv_usec/1000.0 - (double)tm_after.tv_usec/1000.0);
 

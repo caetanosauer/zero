@@ -64,16 +64,18 @@
 //
 //    CMakeLists.txt - comment out test_restart_performance for the regular build
 //
-//    Post_shutdown concurrent queries - M4 is using 'update' while all other phases are using 'insert', due to bug
+//    Bugs:
+//        Post_shutdown concurrent queries - M4 is using 'update' while all other phases are using 'insert', due to bug
 //
-//    Post_shuitdown without concurrent transaction - only M1/M2 are issuing full scan
+//        btree_logrec.cpp - btree_insert_log::undo() and btree_update_log::undo() - assertion on 'not found' if M3 and M4
 //
-//    btree_logrec.cpp - btree_insert_log::undo() and btree_update_log::undo() - possible assertion on 'not found' if M3 and M4
+//        Non-deterministic infinite loop on recoverying page 0 with index 0 (no recovery) - M4
 //
-//    Non-deterministic infinite loop on recoverying page 0 with index 0 (no recovery) - M4
+//        M2 - if using alt_rebalance_restart, error at the end of post_shutdown
 //
-//    M2 - if using alt_rebalance_restart, error at the end of post_shutdown
+//        logbuf_core.cpp - logbuf_core::fetch(), need to comment out line 'll == curr_lsn()'
 //
+//        Post_shuitdown without concurrent transaction - only M1/M2 are issuing full scan
 
 
 // Control concurrent transactions exit criteria in post_shutdown (phase 3)
@@ -1489,7 +1491,7 @@ TEST (RestartPerfTest, MultiPerformanceNormal)
 }
 **/
 
-/**
+/**/
 // Passing - M1
 TEST (RestartPerfTest, MultiPerformanceM1)
 {
@@ -1508,9 +1510,9 @@ TEST (RestartPerfTest, MultiPerformanceM1)
                                            0);
     std::cout << std::endl << "**** All-in-One Instant Restart"<< std::endl << std::endl;
 }
-**/
-
 /**/
+
+/**
 // Passing - M2
 TEST (RestartPerfTest, MultiPerformanceM2)
 {
@@ -1532,7 +1534,7 @@ TEST (RestartPerfTest, MultiPerformanceM2)
                                            0);
     std::cout << std::endl << "**** All-in-One Instant Restart"<< std::endl << std::endl;
 }
-/**/
+**/
 
 /**
 // Passing - M3
