@@ -611,13 +611,26 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 prev_shpid = shpid;
             }
         }
-        if (!skipped_something) {
-            break;
-        }
-        if (!requested_volume && requested_lsn == lsndata_null) {
-            // then, page cleaning is just opportunistic. we can quit.
-            break;
-        } else {
+        if (skipped_something &&
+                (requested_volume && requested_lsn != lsndata_null))
+        {
+            // CS: TODO instead of waiting forever, cleaner should have a
+            // "best effort" approach, meaning that it cannot guarantee either:
+            // 1) that all pages of a volume are flushed; or
+            // 2) that all updates up to a certain LSN are propagated.
+            // Instead, the cleaner should simply report back the highest LSN
+            // guaranteed to be persistent and whether all requested pages of
+            // a volume were flushed or not. If guarantees are required, then
+            // the caller should keep invoking the cleaner until its reported
+            // result is satisfying.
+            //
+            // Note that using the naive no-steal policy of the current
+            // implementation of the atomic commit protocol, this wait will
+            // depend on transaction activity, because pages cannot be cleaned
+            // until all transactions modifying it either commit or abort.
+            // The caller should also be aware of the new semantics of LSNs,
+            // which refers only to committed updates.
+
             // umm, we really need to make sure all of these are flushed out.
             ++rounds;
             if (rounds > 2) {
@@ -628,6 +641,9 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 }
                 g_me()->sleep(rounds > 5 ? 100 : 20);
             }
+        }
+        else {
+            break;
         }
     }
     if (write_buffer_cur > write_buffer_from) {
