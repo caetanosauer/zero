@@ -122,20 +122,6 @@ struct test_sys_xct_single : public restart_test_base
             EXPECT_EQ(count, 2);
         }
         
-        // M1: same log record should also be in the old log
-        {
-            log_i iter(*smlevel_0::log, lsn_t(1,0), true /* forward */);
-            lsn_t lsn = lsn_t::null;
-            logrec_t* lr = NULL;
-            int count = 0;
-            while (iter.xct_next(lsn, lr)) {
-                if (lr->type() == logrec_t::t_alloc_a_page) {
-                    count++;
-                }
-            }
-            EXPECT_EQ(count, 2);
-        }
-
         return RCOK;
     }
 
@@ -147,7 +133,7 @@ struct test_sys_xct_single : public restart_test_base
 struct test_sys_xct_multi : public restart_test_base
 {
     rc_t pre_shutdown(ss_m*) {
-        sys_xct_section_t ssx(false);
+        sys_xct_section_t sx(false);
 
         _stid_list = new stid_t[1];
         W_DO(smlevel_0::io->create_store(_volume._vid, 
@@ -156,35 +142,24 @@ struct test_sys_xct_multi : public restart_test_base
         lpid_t root_pid;
         W_DO(smlevel_2::bt->create(_stid_list[0], root_pid));
 
-        ssx.end_sys_xct(RCOK);
+        sx.end_sys_xct(RCOK);
 
         {
             log_i iter(*smlevel_0::clog, lsn_t(1,0), true /* forward */);
             lsn_t lsn = lsn_t::null;
             logrec_t* lr = NULL;
             int count = 0;
+            int total = 0;
             while (iter.xct_next(lsn, lr)) {
+                DBGOUT3(<< "Scanned: " << *lr << endl);
                 if (lr->type() == logrec_t::t_store_operation) {
                     count++;
                 }
+                total++;
             }
             // there should be two store ops: creation and root assignment
-            EXPECT_EQ(count, 2);
-        }
-        
-        // M1: same log record should also be in the old log
-        {
-            log_i iter(*smlevel_0::log, lsn_t(1,0), true /* forward */);
-            lsn_t lsn = lsn_t::null;
-            logrec_t* lr = NULL;
-            int count = 0;
-            while (iter.xct_next(lsn, lr)) {
-                cout << *lr << endl;
-                if (lr->type() == logrec_t::t_store_operation) {
-                    count++;
-                }
-            }
-            EXPECT_EQ(count, 2);
+            EXPECT_EQ(2, count);
+            DBGOUT3(<< "Scanned " << total << " logrecs" << endl);
         }
 
         return RCOK;
@@ -225,7 +200,7 @@ struct test_sys_xct_nested_abort : public restart_test_base
             logrec_t* lr = NULL;
             int count = 0;
             while (iter.xct_next(lsn, lr)) {
-                cout << *lr << endl;
+                DBGOUT3(<< "Scanned: " << *lr << endl);
                 if (lr->type() == logrec_t::t_store_operation) {
                     count++;
                 }
@@ -267,7 +242,7 @@ struct test_sys_xct_nested_abort_implicit : public restart_test_base
             logrec_t* lr = NULL;
             int count = 0;
             while (iter.xct_next(lsn, lr)) {
-                cout << *lr << endl;
+                DBGOUT3(<< "Scanned: " << *lr << endl);
                 // index creation allocates a page in a nested SSX,
                 // so the allocation must be in the log even though the
                 // user transaction aborted
@@ -527,7 +502,7 @@ struct test_page_clsn : public restart_test_base
         test_class the_test; \
         restart_test_options options; \
         options.shutdown_mode = normal_shutdown; \
-        options.restart_mode = m1_default_restart; \
+        options.restart_mode = smlevel_0::t_restart_disable; \
         EXPECT_EQ(test_env->runRestartTest(&the_test, \
                     &options, \
                     true, \

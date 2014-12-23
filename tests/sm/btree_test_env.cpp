@@ -566,6 +566,11 @@ int btree_test_env::runRestartTest (restart_test_base *context, restart_test_opt
                 }
             }
         }
+
+    if (restart_options->restart_mode == smlevel_0::t_restart_disable) {
+        return rv;
+    }
+
     DBGOUT2 ( << "Going to call post_shutdown()...");
         {
         restart_test_post_functor functor(context);

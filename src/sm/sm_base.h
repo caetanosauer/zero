@@ -438,6 +438,7 @@ public:
     // value set in sm.cpp
 
     enum restart_internal_mode_t {
+        t_restart_disable = 0,
         t_restart_serial = 0x1,            // M1 implementation:
                                            //    System is not opened until Recovery completed
         t_restart_redo_log = 0x2,          // M1 traditional implementation:
