@@ -941,7 +941,7 @@ partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
     DBGTHRD(<<"seek to lsn " << ll
         << " index=" << _index << " fd=" << fd
         << " pos=" << pos
-        << " lower=" << lower  << " + " << start()
+        //<< " lower=" << lower  << " + " << start()
         << " fd=" << fd
     );
 
@@ -1894,7 +1894,7 @@ partition_t::read_logrec(char* readbuf, logrec_t *&rp, lsn_t &ll, int fd)
     DBGTHRD(<<"seek to lsn " << ll
         << " index=" << _index << " fd=" << fd
         << " pos=" << pos
-        << " lower=" << lower  << " + " << start()
+        //<< " lower=" << lower  << " + " << start()
         << " fd=" << fd
     );
 
