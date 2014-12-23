@@ -4399,6 +4399,16 @@ void restart_m::_redo_log_with_pid(
 
         // Note that once a page is marked 'in_doubt', it cannot be evicted so
         // the page cb must be in the buffer pool (hashtable)
+
+        // CS: Commented the code below. Pages not marked in-doubt during log
+        // analysis are actually pages that are up-to-date on disk and thus
+        // do not require any REDO. Therefore, it is perfectly reasonable and
+        // even quite likely that we end up in this "else" block with a regular
+        // page update log record. The solution should be to simply ignore it.
+        DBGOUT3(<< "Skipped logrec " << r.lsn_ck()
+                << " -- page " << r.construct_pid() << " not in doubt");
+
+        /*
         if (false == r.is_page_deallocate())
         {
             W_FATAL_MSG(fcINTERNAL,
@@ -4406,6 +4416,7 @@ void restart_m::_redo_log_with_pid(
                 << page_updated.vol().vol << ", page number: "
                 << page_updated.page);
         }
+        */
     }
 
     return;
