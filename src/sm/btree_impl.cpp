@@ -121,7 +121,14 @@ btree_impl::_ux_insert_core(
 // TODO(Restart)...        
 DBGOUT3( << "&&&& Log for regular insertion, key: " << key);  
 
+#ifdef USE_ATOMIC_COMMIT
+        // Since an undo flag is not available here, this seems to be
+        // the only alternative at the moment. Perhaps this logic should
+        // be moved to the log stubs. (TODO)
+        if (!me()->xct()->rolling_back())
+#endif
         W_DO(log_btree_insert_nonghost(leaf, key, el, false /*is_sys_txn*/));
+
         leaf.insert_nonghost(key, el);
         // W_DO (_sx_reserve_ghost(leaf, key, el.size()));
     }
@@ -357,7 +364,14 @@ btree_impl::_ux_update_core(volid_t vol, snum_t store, const w_keystr_t &key, co
         }
     }
 
+#ifdef USE_ATOMIC_COMMIT
+    if (!undo) {
+#endif
     W_DO(log_btree_update (leaf, key, old_element, old_element_len, el));
+#ifdef USE_ATOMIC_COMMIT
+    }
+#endif
+
 
     W_DO(leaf.replace_el_nolog(slot, el));
     return RCOK;
@@ -395,6 +409,12 @@ btree_impl::_ux_update_core_tail(volid_t vol, snum_t store,
         }
     }
 
+#ifdef USE_ATOMIC_COMMIT
+    // Since an undo flag is not available here, this seems to be
+    // the only alternative at the moment. Perhaps this logic should
+    // be moved to the log stubs. (TODO)
+    if (!me()->xct()->rolling_back())
+#endif
     W_DO(log_btree_update (leaf, key, old_element, old_element_len, el));
 
     W_DO(leaf.replace_el_nolog(slot, el));
@@ -458,6 +478,9 @@ rc_t btree_impl::_ux_overwrite_core(
         return RC(eRECWONTFIT);
     }
 
+#ifdef USE_ATOMIC_COMMIT
+    if (!undo)
+#endif
     W_DO(log_btree_overwrite (leaf, key, old_element, el, offset, elen));
     leaf.overwrite_el_nolog(slot, offset, el, elen);
     return RCOK;
@@ -539,11 +562,18 @@ DBGOUT3( << "&&&& _ux_remove_core - already ghost");
     {
 // TODO(Restart)... 
 DBGOUT3( << "&&&& Log for deletion, key: " << key);
-  
+
+#ifdef USE_ATOMIC_COMMIT
+        if (!undo) {
+#endif
         // log first
         vector<slotid_t> slots;
         slots.push_back(slot);
         W_DO(log_btree_ghost_mark (leaf, slots, false /*is_sys_txn*/));
+
+#ifdef USE_ATOMIC_COMMIT
+        }
+#endif
 
         // then mark it as ghost
         leaf.mark_ghost (slot);
@@ -597,7 +627,9 @@ btree_impl::_ux_undo_ghost_mark(volid_t vol, snum_t store, const w_keystr_t &key
 // TODO(Restart)... 
 DBGOUT3( << "&&&& btree_impl::_ux_undo_ghost_mark - undo a remove, key: " << key);
 
+#ifndef USE_ATOMIC_COMMIT
     W_DO(log_btree_insert_nonghost(leaf, key, el, false /*is_sys_txn*/));
+#endif
 
     leaf.unmark_ghost (slot);
     return RCOK;

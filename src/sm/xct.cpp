@@ -1482,16 +1482,8 @@ rc_t xct_t::early_lock_release() {
 }
 
 
-
-/*********************************************************************
- *
- *  xct_t::abort()
- *
- *  Abort the transaction by calling rollback().
- *
- *********************************************************************/
 rc_t
-xct_t::_abort()
+xct_t::_pre_abort()
 {
     // If there are too many threads attached, tell the VAS and let it
     // ensure that only one does this.
@@ -1543,6 +1535,21 @@ xct_t::_abort()
 #endif
 
     change_state(xct_aborting);
+
+    return RCOK;
+}
+
+/*********************************************************************
+ *
+ *  xct_t::abort()
+ *
+ *  Abort the transaction by calling rollback().
+ *
+ *********************************************************************/
+rc_t
+xct_t::_abort()
+{
+    W_DO(_pre_abort());
 
     /*
      * clear the list of load stores as they are going to be destroyed
@@ -1622,6 +1629,7 @@ xct_t::_abort()
     }
 
     _core->_xct_aborting = false; // couldn't have xct_ended do this, arg
+                                  // CS: why not???
     _xct_chain_len = 0;
 
     me()->detach_xct(this);        // no transaction for this thread
@@ -2183,11 +2191,12 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
     return RCOK;
 }
 
-void _update_page_lsns(const fixable_page_h *page, const lsn_t &new_lsn) {
+void xct_t::_update_page_lsns(const fixable_page_h *page, const lsn_t &new_lsn) {
     if (page != NULL) {
         if (page->latch_mode() == LATCH_EX) {
             const_cast<fixable_page_h*>(page)->update_initial_and_last_lsn(new_lsn);
-            const_cast<fixable_page_h*>(page)->set_dirty();
+            // CS: already setting dirty below
+            //const_cast<fixable_page_h*>(page)->set_dirty();
         } else {
             // In some log type (so far only log_page_evict), we might update LSN only with
             // SH latch. In that case, we might have a race to update the LSN.
@@ -2451,13 +2460,14 @@ xct_t::anchor(bool grabit)
 void
 xct_t::compensate_undo(const lsn_t& lsn)
 {
+#ifndef USE_ATOMIC_COMMIT
     DBGX(    << " compensate_undo (" << lsn << ") -- state=" << state());
 
     w_assert3(_in_compensated_op);
     // w_assert9(state() == xct_aborting); it's active if in sm::rollback_work
 
     _compensate(lsn, _last_log?_last_log->is_undoable_clr() : false);
-
+#endif
 }
 
 /*********************************************************************
@@ -2583,6 +2593,14 @@ rc_t
 xct_t::rollback(const lsn_t &save_pt)
 {
     FUNC(xct_t::rollback);
+
+#ifdef USE_ATOMIC_COMMIT
+    ss_m::errlog->clog  << emerg_prio
+    << "Rollback to a save point not yet supported in atomic commit protocol"
+    << flushl;
+    return RC(eNOABORT);
+#endif
+
     DBGTHRD(<< "xct_t::rollback to " << save_pt);
     // W_DO(check_one_thread_attached()); // now checked in prologue
     // w_assert1(one_thread_attached());

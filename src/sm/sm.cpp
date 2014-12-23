@@ -590,9 +590,11 @@ ss_m::_construct_once()
                    << flushl;
         }
 
+#ifndef USE_ATOMIC_COMMIT // otherwise, log and clog will point to the same log object
         std::string logdir = _options.get_string_option("sm_logdir", "");
         if (logdir.empty()) {
-            errlog->clog << fatal_prio  << "ERROR: sm_logdir must be set to enable logging." << flushl;
+            errlog->clog << fatal_prio
+                << "ERROR: sm_logdir must be set to enable logging." << flushl;
             W_FATAL(eCRASH);
         }
 
@@ -618,6 +620,7 @@ ss_m::_construct_once()
                         ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT)
                     );
         }
+#endif
 
         /*
          * Centralized log used for atomic commit protocol (by Caetano).
@@ -641,6 +644,10 @@ ss_m::_construct_once()
             << flushl;
             W_FATAL(eCRASH);
         }
+#ifdef USE_ATOMIC_COMMIT
+        log = clog;
+        w_assert0(log);
+#endif
 
         int percent = _options.get_int_option("sm_log_warn", 0);
 
@@ -1131,9 +1138,11 @@ ss_m::_destruct_once()
     }
     log = 0;
 
+#ifndef USE_ATOMIC_COMMIT // otherwise clog and log point to the same object
     if(clog) {
         clog->shutdown(); // log joins any subsidiary threads
     }
+#endif
     clog = 0;
 
     delete io; io = 0; // io manager

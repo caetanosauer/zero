@@ -191,7 +191,9 @@ rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the 
     // log as one record
     if (log_it) {
         W_DO(log_page_img_format(*this));
+#ifndef USE_ATOMIC_COMMIT // otherwise LSN is only set at commit time
         w_assert1(lsn().valid() || !smlevel_0::logging_enabled);
+#endif
     }
 
     // This is the only place where a page format log record is being generated,

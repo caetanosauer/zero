@@ -269,7 +269,7 @@ public:
         void operator delete(void* p, size_t s);
     };
 
-private:
+protected:
     xct_core* _core;
 
 public:
@@ -436,6 +436,9 @@ public:
     void                         log_warn_disable();
     void                         log_warn_resume();
     bool                         log_warn_is_on() const;
+
+protected:
+    void _update_page_lsns(const fixable_page_h *page, const lsn_t &new_lsn);
 
 public:
     // used in sm.cpp
@@ -668,6 +671,7 @@ protected:
     // CS: decoupled from _commit to allow reuse in plog_xct_t
     rc_t _commit_read_only(uint32_t flags, lsn_t& inherited_read_watermark);
     rc_t _pre_commit(uint32_t flags);
+    rc_t _pre_abort();
 
 protected:
     // for xct_log_switch_t:

@@ -527,7 +527,12 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
 
             // CS: No-steal policy for atomic commit protocol:
             // Only flush pages without uncommitted updates
-            if (!smlevel_0::clog || cb._uncommitted_cnt == 0) {
+            bool flush_it = true;
+#ifdef USE_ATOMIC_COMMIT
+            flush_it = cb._uncommitted_cnt == 0;
+#endif
+
+            if (flush_it) {
                 fixable_page_h page;
                 page.fix_nonbufferpool_page(const_cast<generic_page*>(&page_buffer[idx])); // <<<>>>
                 if (page.is_to_be_deleted()) {
@@ -541,8 +546,24 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                     w_assert1(_write_buffer[write_buffer_cur].pid.vol().vol > 0);
                     w_assert1(_write_buffer[write_buffer_cur].pid.page > 0);
                 }
+                cb.latch().latch_release();
             }
-            cb.latch().latch_release();
+            else {
+                DBGOUT3(<< "ACP: skipped flush of uncommitted page "
+                        << cb._pid_shpid);
+                cb.latch().latch_release();
+                continue;
+            }
+
+#ifdef USE_ATOMIC_COMMIT
+            // In order for recovery to work properly with ACP,
+            // the CLSN field must be used instead of the old PageLSN.
+            // Instead of changing restart.cpp in a thousand places,
+            // we simply duplicate the fields before writing to disk.
+            _write_buffer[write_buffer_cur].lsn =
+                _write_buffer[write_buffer_cur].clsn;
+
+#endif
 
             // then, re-calculate the checksum:
             _write_buffer[write_buffer_cur].checksum = _write_buffer[write_buffer_cur].calculate_checksum();

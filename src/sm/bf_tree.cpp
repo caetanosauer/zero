@@ -2266,6 +2266,7 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
         cb._refbit_approximate = BP_INITIAL_REFCOUNT;
         cb._dependency_idx = 0;        // In_doubt page, no dependency
         cb._dependency_shpid = 0;      // In_doubt page, no dependency
+        cb._uncommitted_cnt = 0;
 
         // For a page from disk,  get _rec_lsn from the physical page
         // (cb._rec_lsn = _buffer[idx].lsn.data())
@@ -2754,8 +2755,21 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid,
                     lsn = last_mount_lsn;
                 }
                 rec_lsn[i] = lsn;
+#ifdef USE_ATOMIC_COMMIT // use clsn instead
+                // If page was not fetched from disk initially, but recently
+                // allocated, then its CLSN is null, until its first update
+                // (normally a page format) commits.
+                if(_buffer[start].clsn == lsn_t::null) {
+                    w_assert1(lsn_t::null != lsn);
+                    page_lsn[i] = lsn;
+                }
+                else {
+                    page_lsn[i] = _buffer[start].clsn.data();
+                }
+#else
                 w_assert1(lsn_t::null!= _buffer[start].lsn.data());
                 page_lsn[i] = _buffer[start].lsn.data();
+#endif
             }
 
             // Update min_rec_lsn if necessary

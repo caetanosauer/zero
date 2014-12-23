@@ -461,12 +461,15 @@ inline void bf_tree_m::update_initial_dirty_lsn(const generic_page* p,
                                                 const lsn_t new_lsn)
 {
     // Update the initial dirty lsn (if needed) for the page regardless page is dirty or not
-
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
+    (void) new_lsn; // avoid compiler warning of unused var
+
+#ifndef USE_ATOMIC_COMMIT // otherwise rec_lsn is only set when fetching page
     bf_tree_cb_t &cb = get_cb(idx);
     if ((new_lsn.data() < cb._rec_lsn) || (0 == cb._rec_lsn))
         cb._rec_lsn = new_lsn.data();
+#endif
 }
 
 inline void bf_tree_m::set_recovery_access(const generic_page* p) {

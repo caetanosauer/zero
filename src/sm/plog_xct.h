@@ -44,10 +44,7 @@ protected:
 
 private:
     rc_t _commit_nochains(uint32_t flags, lsn_t* plastlsn=NULL);
-    rc_t _commit_xlatch(uint32_t flags, lsn_t* plastlsn=NULL);
-
     rc_t _update_page_cas(logrec_t*);
-    rc_t _update_page_xlatch(logrec_t*);
 };
 
 #endif

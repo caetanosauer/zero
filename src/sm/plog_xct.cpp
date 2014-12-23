@@ -27,37 +27,25 @@ plog_xct_t::plog_xct_t(
             last_lsn, undo_nxt, loser_xct)
 {
     w_assert1(smlevel_0::clog);
-    w_assert1(!loser_xct); // UNDO recovery not supported for plog transactions
+    w_assert1(!loser_xct); // UNDO recovery never happens with plog transactions
 
     // original _log_buf should not be used (user transactions only for now)
-    if (!is_single_log_sys_xct()) {
-        delete _log_buf;
-        _log_buf = NULL;
-    }
+    delete _log_buf;
+    _log_buf = NULL;
 }
 
 plog_xct_t::~plog_xct_t()
 {
 }
 
-rc_t plog_xct_t::get_logbuf(logrec_t*& lr, int nbytes)
+rc_t plog_xct_t::get_logbuf(logrec_t*& lr, int /* type */)
 {
-    // At the current development milestone, system transactions
-    // do not use private logs. Instead, they log directly to the
-    // centralized log.
-    if (!is_piggy_backed_single_log_sys_xct()) {
-        char* data = plog.get();
-
-        // In the current milestone (M1), log records are replicated into
-        // both the private log and the traditional ARIES log. To achieve that,
-        // we simply use the logrec pointer in the current extent as the xct
-        // logbuf in the traditional implementation.
-        _log_buf = (logrec_t*) data;
+    if (is_piggy_backed_single_log_sys_xct()) {
+        lr = _log_buf_for_piggybacked_ssx;
     }
-
-    // The replication also means we need to invoke log reservations,
-    // which is done in the traditional get_logbuf
-    xct_t::get_logbuf(lr, nbytes);
+    else {
+        lr = (logrec_t*) plog.get();
+    }
 
     return RCOK;
 }
@@ -65,46 +53,118 @@ rc_t plog_xct_t::get_logbuf(logrec_t*& lr, int nbytes)
 rc_t plog_xct_t::give_logbuf(logrec_t* lr, const fixable_page_h* p,
                     const fixable_page_h* p2)
 {
-    // replicate logic on traditional log, i.e., call log->insert and set LSN
-    xct_t::give_logbuf(lr, p, p2);
-    
-    // set page LSN chain once again, since it's different in clog
+    FUNC(plog_xct_t::give_logbuf);
+
     if (p != NULL) {
-        lr->set_page_prev_lsn(p->clsn());
+        lr->set_page_prev_lsn(lsn_t::null);
         if (p2 != NULL) {
             // For multi-page log, also set LSN chain with a branch.
             w_assert1(lr->is_multi_page());
             w_assert1(lr->is_single_sys_xct());
             multi_page_log_t *multi = lr->data_ssx_multi();
             w_assert1(multi->_page2_pid != 0);
-            multi->_page2_prv = p2->clsn();
+            multi->_page2_prv = lsn_t::null;
         }
     }
 
-    if (!is_piggy_backed_single_log_sys_xct()) {
-        plog.give(lr);
-        // avoid xct_t destructor trying to deallocate plog's memory
-        _log_buf = NULL;
+    //if (p != NULL) {
+        //lr->set_page_prev_lsn(p->lsn());
+        //if (p2 != NULL) {
+            //// For multi-page log, also set LSN chain with a branch.
+            //w_assert1(lr->is_multi_page());
+            //w_assert1(lr->is_single_sys_xct());
+            //multi_page_log_t *multi = lr->data_ssx_multi();
+            //w_assert1(multi->_page2_pid != 0);
+            //multi->_page2_prv = p2->lsn();
+        //}
+    //}
+
+    lsn_t lsn = lsn_t::null;
+    if (is_piggy_backed_single_log_sys_xct()) {
+        // For single-log system transactions, we need to manually insert each
+        // log record in the clog.
+        w_assert1(lr->is_single_sys_xct());
+        w_assert1(lr == _log_buf_for_piggybacked_ssx);
+        smlevel_0::clog->insert(*lr, &lsn);
+        w_assert1(lr->lsn_ck().hi() > 0);
     }
     else {
-        // For system transactions, we need to manually insert each log
-        // record in the clog, since otherwise they would go only to the
-        // old log_core.
-        w_assert1(lr->lsn_ck().hi() > 0);
-        smlevel_0::clog->insert(*lr, NULL);
+        if (!lr->is_single_sys_xct()) { // single-log sys xct doesn't have xid/xid_prev
+            lr->fill_xct_attr(tid(), lsn_t::null);
+        }
+        plog.give(lr);
     }
+
+    // setting the (old) page lsn field is not strictly necessary,
+    // because the clsn field is used instead. However, this method
+    // is still responsible for marking the page dirty, so we leave
+    // it here for now. In fact, the value of 'lsn' here is only
+    // valid for SSX's. It is up to the page cleaner to set
+    // PageLSN = CLSN prior to flushing. Only then will recovery
+    // work properly.
+    _update_page_lsns(p, lsn);
+    _update_page_lsns(p2, lsn);
 
     return RCOK;
 }
 
 rc_t plog_xct_t::_abort()
 {
-    xct_t::_abort();
+    W_DO(_pre_abort());
+
+    w_assert0(!_rolling_back);
+    _rolling_back = true;
+
+    // rollback simply by iterating plog backwards calling undo()
+    plog_t::iter_t* iter = plog.iterate_forwards(); // acquires plog latch
+    logrec_t* lr = NULL;
+
+    while(iter->next(lr))
+    {
+        w_assert1(!lr->is_cpsn()); // CLRs don't exist with plog
+        if (lr->is_undo()) {
+            w_assert1(!lr->is_single_sys_xct());
+            w_assert1(!lr->is_multi_page()); // All multi-page logs are SSX, so no UNDO.
+
+            lpid_t pid = lr->construct_pid();
+            fixable_page_h page;
+
+            if (!lr->is_logical())
+            {
+                // Operations such as foster adoption, load balance, etc.
+                DBGOUT3 (<<"physical UNDO.. which is not quite good");
+                // tentatively use fix_direct for this
+                // eventually all physical UNDOs should go away
+                W_DO(page.fix_direct(pid.vol().vol, pid.page, LATCH_EX));
+                w_assert1(page.pid() == pid);
+            }
+
+
+            lr->undo(page.is_fixed() ? &page : 0);
+        }
+    }
+
+    // release locks
+    // ELR concept does not apply because no flush is required
+    // There is also no need to generate abort log records
+    W_COERCE( commit_free_locks());
+
+    _rolling_back = false;
+    change_state(xct_ended);
     plog.set_state(plog_t::ABORTED);
+    delete iter;
+
+    // CS: don't know why this isn't done in change_state (see xct_t::_abort)
+    _core->_xct_aborting = false;
+
+    me()->detach_xct(this);        // no transaction for this thread
+    INC_TSTAT(abort_xct_cnt);
+
     return RCOK;
 }
 
-rc_t plog_xct_t::_commit_nochains(uint32_t flags, lsn_t* plastlsn)
+// TODO: is there any part of the code that relies on plastlsn being set?
+rc_t plog_xct_t::_commit_nochains(uint32_t flags, lsn_t* /* plastlsn */)
 {
     if (flags & xct_t::t_chain)  {
         W_FATAL_MSG(fcINTERNAL, <<
@@ -113,12 +173,15 @@ rc_t plog_xct_t::_commit_nochains(uint32_t flags, lsn_t* plastlsn)
 
     W_DO(_pre_commit(flags));
 
-    lsn_t watermark;
-    if (!_last_lsn.valid())  {
-        _commit_read_only(flags, watermark);
-    }
+    // SSX don't go through the standard commit
+    w_assert1(!is_piggy_backed_single_log_sys_xct());
 
-    if (!is_piggy_backed_single_log_sys_xct()) {
+    lsn_t watermark;
+    if (plog.used_size() == 0)  { // read-only xct
+        // _last_lsn cannot be used because we never set it
+        W_DO(_commit_read_only(flags, watermark));
+    }
+    else {
         // add commit log record (if required)
         bool individual = ! (flags & xct_t::t_group);
         if(individual && !is_single_log_sys_xct()) {
@@ -159,7 +222,7 @@ rc_t plog_xct_t::_commit_nochains(uint32_t flags, lsn_t* plastlsn)
         }
 
         change_state(xct_ended);
-        if (plastlsn != NULL) *plastlsn = _last_lsn;
+        //if (plastlsn != NULL) *plastlsn = _last_lsn;
 
         // Free all locks. Do not free locks if chaining.
         if(individual && ! (flags & xct_t::t_chain) && _elr_mode != elr_sx)  {
@@ -279,16 +342,4 @@ rc_t plog_xct_t::_update_page_cas(logrec_t* lr)
 
 
     return RCOK;
-}
-
-rc_t plog_xct_t::_commit_xlatch(uint32_t flags, lsn_t* plastlsn)
-{
-    // currently not working -- additional synchronization
-    // needed so that page CLSN is updated in LSN order
-    return RC(eNOTIMPLEMENTED);
-}
-
-rc_t plog_xct_t::_update_page_xlatch(logrec_t* lr)
-{
-    return RC(eNOTIMPLEMENTED);
 }
