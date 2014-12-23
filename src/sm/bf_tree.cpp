@@ -1687,6 +1687,8 @@ bool bf_tree_m::register_write_order_dependency(const generic_page* page, const 
             // let's check the old dependency is still active
             if  (_check_dependency_still_active(cb)) {
                 // the old dependency is still active. we can't make another dependency
+                DBGOUT3(<< "WOD failed on " << page->pid << "->" << dependency->pid
+                        << " because dependency still active on CB");
                 return false;
             }
         }
@@ -1708,6 +1710,8 @@ bool bf_tree_m::register_write_order_dependency(const generic_page* page, const 
     cb._dependency_idx = dependency_idx;
     cb._dependency_shpid = dependency_cb._pid_shpid;
     cb._dependency_lsn = dependency_cb._rec_lsn;
+    DBGOUT3(<< "WOD registered: " << page->pid << "->" << dependency->pid);
+
     return true;
 }
 
@@ -2351,7 +2355,9 @@ w_rc_t bf_tree_m::load_for_redo(bf_idx idx, volid_t vid,
         uint32_t checksum = _buffer[idx].calculate_checksum();
         if (checksum != _buffer[idx].checksum)
         {
-            ERROUT(<<"bf_tree_m: bad page checksum in page " << shpid);
+            ERROUT(<<"bf_tree_m: bad page checksum in page " << shpid
+                    << " -- expected " << checksum
+                    << " got " << _buffer[idx].checksum);
             return RC (eBADCHECKSUM);
         }
 

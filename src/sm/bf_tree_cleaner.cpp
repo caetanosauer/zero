@@ -499,6 +499,8 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
         for (size_t i = 0; i < sort_buf_used; ++i) {
             if (write_buffer_cur == _parent->_cleaner_write_buffer_pages) {
                 // now the buffer is full. flush it out and also reset the buffer
+                DBGOUT3(<< "Write buffer full. Flushing from " << write_buffer_from
+                        << " to " << write_buffer_cur);
                 W_DO(_flush_write_buffer (vol, write_buffer_from, write_buffer_cur - write_buffer_from));
                 write_buffer_from = 0;
                 write_buffer_cur = 0;
@@ -566,11 +568,15 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
 #endif
 
             // then, re-calculate the checksum:
-            _write_buffer[write_buffer_cur].checksum = _write_buffer[write_buffer_cur].calculate_checksum();
+            _write_buffer[write_buffer_cur].checksum
+                = _write_buffer[write_buffer_cur].calculate_checksum();
             // also copy the new checksum to make the original (bufferpool) page consistent.
             // we can do this out of latch scope because it's never used in race condition.
             // this is mainly for testcases and such.
             page_buffer[idx].checksum = _write_buffer[write_buffer_cur].checksum;
+            DBGOUT3(<< "Checksum for " << _write_buffer[write_buffer_cur].pid
+                    << " is " << _write_buffer[write_buffer_cur].checksum);
+
 
             if (tobedeleted) {
                 // as it's deleted, no one should be accessing it now. we can do everything without latch
@@ -594,6 +600,8 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 // if next page is not consecutive, flush it out
                 if (write_buffer_from < write_buffer_cur && shpid != prev_shpid + 1) {
                     // flush up to _previous_ entry (before incrementing write_buffer_cur)
+                    DBGOUT3(<< "Next page not consecutive. Flushing from " <<
+                            write_buffer_from << " to " << write_buffer_cur);
                     W_DO(_flush_write_buffer (vol, write_buffer_from, write_buffer_cur - write_buffer_from));
                     write_buffer_from = write_buffer_cur;
                 }
@@ -623,6 +631,8 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
         }
     }
     if (write_buffer_cur > write_buffer_from) {
+        DBGOUT3(<< "Finished cleaning round. Flushing from " << write_buffer_from
+                << " to " << write_buffer_cur);
         W_DO(_flush_write_buffer (vol, write_buffer_from, write_buffer_cur - write_buffer_from));
         write_buffer_from = 0; // not required, but to make sure
         write_buffer_cur = 0;
@@ -749,6 +759,9 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
         }
         if (clean_it) {
             _candidates_buffer[vol].push_back (idx);
+            DBGOUT3(<< "Picked page for cleaning: idx = " << idx
+                    << " vol = " << cb._pid_vol
+                    << " shpid = " << cb._pid_shpid);
 
             // also add dependent pages. note that this might cause a duplicate. we deal with duplicates in _clean_volume()
             bf_idx didx = cb._dependency_idx;

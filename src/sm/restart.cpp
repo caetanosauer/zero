@@ -2181,6 +2181,8 @@ void restart_m::_analysis_ckpt_bf_log(logrec_t& r,              // In: Log recor
                 << "Failed to record an in_doubt page in t_chkpt_bf_tab during Log Analysis" << rc);
         }
         w_assert1(0 != idx);
+        DBGOUT3(<< "Page marked in_doubt in the buffer pool: "
+                    << dp->brec[i].pid);
     }
     return;
 }
