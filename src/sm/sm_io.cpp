@@ -505,9 +505,14 @@ io_m::mount(const char* device, vid_t vid,
 
     int j = _find(vid);
     if (j >= 0)  {
-        W_DO( v->dismount(false) );
-        delete v;
-        return RC(eALREADYMOUNTED);
+        // CS: just ignore this for now, so that recovery works with ACP
+        // TODO -- not sure if this is permanent solution
+        // (see BitBucket ticket #3)
+        return RCOK;
+
+        //W_DO( v->dismount(false) );
+        //delete v;
+        //return RC(eALREADYMOUNTED);
     }
     
     ++vol_cnt;

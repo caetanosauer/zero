@@ -217,6 +217,14 @@ w_rc_t bf_tree_m::install_volume(vol_t* volume) {
     volid_t vid = volume->vid().vol;
     w_assert1(vid != 0);
     w_assert1(vid < MAX_VOL_COUNT);
+
+    // CS: introduced this check for now
+    // See comment on io_m::mount and BitBucket ticket #3
+    if (_volumes[vid] != NULL) {
+        // already mounted
+        return RCOK;
+    }
+
     w_assert1(_volumes[vid] == NULL);
     DBGOUT1(<<"installing volume " << vid << " to buffer pool...");
 #ifdef SIMULATE_MAINMEMORYDB
