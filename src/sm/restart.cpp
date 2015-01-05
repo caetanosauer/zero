@@ -4445,19 +4445,14 @@ void restart_m::_redo_log_with_pid(
     }
     else
     {
-        // The page cb is not in hashtable, the only valid case is if it is
-        // a page deallocation log, in such case the page has been removed from hashtable
-        // all other cases are un-expected
-
-        // Note that once a page is marked 'in_doubt', it cannot be evicted so
-        // the page cb must be in the buffer pool (hashtable)
-        if (false == r.is_page_deallocate())
-        {
-            W_FATAL_MSG(fcINTERNAL,
-                << "Unable to find page in buffer pool hash table during REDO phase.  Vol: "
-                << page_updated.vol().vol << ", page number: "
-                << page_updated.page);
-        }
+        // The page cb is not in hashtable, 2 possibilities:
+        // 1. A deallocation log to remove the page (r.is_page_deallocate())
+        // 2. The REDO LSN is before the checkpoint, it is possible the current log record
+        //     is somewhere between REDO LSN and checkpoint, it is referring to a page
+        //     which was not dirty (not in_doubt) therefore this page does not require 
+        //     a REDO operation, this might be a rather common scenario
+        //
+        // NOOP if we get here since the log record does not require REDO       
     }
 
     return;
