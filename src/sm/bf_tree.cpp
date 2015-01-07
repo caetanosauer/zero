@@ -2754,29 +2754,63 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid,
                 // cb._rec_lsn is the minimum LSN
                 // buffer[start].lsn.data() is the Page LSN, which is the last write LSN
 
-                pid[i] = _buffer[start].pid;
-                w_assert1(0 != pid[i].page);   // Page number cannot be 0
-
                 if ((lsn_t::null == lsn) || (0 == lsn.data()))
                 {
                     // If we have a dirty page but _rec_lsn (initial dirty) is 0
                     // someone forgot to set it for the dirty page (most likely a
-                    // newly allocated page and it does not exist on disk yet).
+                    // newly allocated page and it has not been formatted yet, therefore 
+                    // the page does not exist on disk and does not contain any change yet).
                     // In this case we won't be able to trace the history of the dirty
-                    // page during a crahs recovery.
-                    // In order to be more defensive, we use the mount lsn so
-                    // during Recovery REDO phase, we will start the log scan
-                    // from the mount lsn
+                    // page during a crash recovery.
+////////////////////////////////////////
+// TODO(Restart)... 
+// Solution #1:
+// We could use the last_mount_lsn as the LSN for this page as a defensive 
+// approach, so the Recovery REDO would start the log scan from the mount lsn
+// but several issues with this approach
+//  1. Last mount LSN might be very old, which would cause REDO LSN
+//      to go far back in time, wasted effort if using log driven REDO but
+//      it should not cause functional impact.
+//  2. If system crashes immediatelly after the checkpoint while the page was not
+//      formated, the Log Analysis phase will mark this page as 'in_doubt', but if
+//      log-driven REDO was used, there is nothing to recovery for this page and
+//      causes a REDO count mis-match even there was no error.
+//  3. If there was a second device mount just before the checkpoint,
+//      this last mount LSN might not be correct, this would cause a functional
+//      impact.
+//      In general, multiple device mounting/dismounting was not taken care of
+//      in the current 'Restart' implementation, see TODO in restart.cpp Log Analysis
+//
+// Solution #2:
+// Simply ignore this allocated but not formatted page, since there is nothing to recover
+//
+// Use solution #2, the solution is based on the assumption that
+// once a page format log record arrived after the page allocation log record, we will have
+// a valid LSN for the page, so this is an extreme corner case
+////////////////////////////////////////
+
                     w_assert1(0 != last_mount_lsn.data());
+                    // Solution #1: use last mount lsn
                     lsn = last_mount_lsn;
+                    
+                    // Solution #2: ignore this page
+                    if (cb.latch().held_by_me())
+                        cb.latch().latch_release();
+                    continue;
                 }
+
+                // Now we have a page we want to record               
+                pid[i] = _buffer[start].pid;
+                w_assert1(0 != pid[i].page);   // Page number cannot be 0
+
+                w_assert1(lsn_t::null != lsn);   // Must have a vliad first lsn
                 rec_lsn[i] = lsn;
-                w_assert1(lsn_t::null!= _buffer[start].lsn.data());
+                w_assert1(lsn_t::null != _buffer[start].lsn.data());
                 page_lsn[i] = _buffer[start].lsn.data();
             }
 
-            // Update min_rec_lsn if necessary
-            if(min_rec_lsn.data() > lsn.data())
+            // Update min_rec_lsn if necessary (if lsn != NULL)
+            if (min_rec_lsn.data() > lsn.data())
             {
                 min_rec_lsn = lsn;
             }

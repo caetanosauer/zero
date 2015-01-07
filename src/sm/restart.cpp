@@ -2219,8 +2219,8 @@ void restart_m::_analysis_ckpt_bf_log(logrec_t& r,              // In: Log recor
             W_FATAL_MSG(fcINTERNAL,
                 << "Page # = 0 from a page in t_chkpt_bf_tab log record");
         rc = smlevel_0::bf->register_and_mark(idx, dp->brec[i].pid,
-                dp->brec[i].rec_lsn.data() /*first_lsn*/,
-                dp->brec[i].page_lsn.data() /*last_lsn*/, in_doubt_count);
+                    dp->brec[i].rec_lsn.data() /*first_lsn*/,
+                    dp->brec[i].page_lsn.data() /*last_lsn*/, in_doubt_count);
         if (rc.is_error())
         {
             // Not able to get a free block in buffer pool without evict, cannot continue
@@ -4413,7 +4413,7 @@ void restart_m::_redo_log_with_pid(
                 // (t_page_img_format ) will update the dirty_page count
 
                 // The 'used' flag of the page should be set
-                w_assert1(false == smlevel_0::bf->is_used(idx));
+                // w_assert1(true == smlevel_0::bf->is_used(idx));
             }
             else if (true == r.is_page_deallocate())
             {
