@@ -45,6 +45,7 @@ protected:
 private:
     rc_t _commit_nochains(uint32_t flags, lsn_t* plastlsn=NULL);
     rc_t _update_page_cas(logrec_t*);
+    void _update_page_lsns(const fixable_page_h *page);
 };
 
 #endif

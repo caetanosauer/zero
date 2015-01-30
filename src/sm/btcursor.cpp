@@ -203,14 +203,8 @@ rc_t bt_cursor_t::_locate_first() {
 
 rc_t bt_cursor_t::_check_page_update(btree_page_h &p)
 {
-#ifdef USE_ATOMIC_COMMIT
-    // TODO
-    bool changed = true;
-#else
-    bool changed = p.lsn() != _lsn;
-#endif
     // was the page changed?
-    if (_pid != p.pid().page || changed) {
+    if (_pid != p.pid().page || p.lsn() != _lsn) {
         // check if the page still contains the key we are based on
         bool found = false;
         if (p.fence_contains(_key)) {

@@ -102,10 +102,29 @@ rc_t plog_xct_t::give_logbuf(logrec_t* lr, const fixable_page_h* p,
     // valid for SSX's. It is up to the page cleaner to set
     // PageLSN = CLSN prior to flushing. Only then will recovery
     // work properly.
-    _update_page_lsns(p, lsn);
-    _update_page_lsns(p2, lsn);
+    _update_page_lsns(p);
+    _update_page_lsns(p2);
 
     return RCOK;
+}
+
+// Increment PageLSN by one. In the atomic commit protocol, the PageLSN
+// is used simply to detect whether the page changed during a B-tree
+// traversal (see bt_cursor_t::_check_page_update)
+void plog_xct_t::_update_page_lsns(const fixable_page_h *page)
+{
+    if (page != NULL) {
+        lsn_t old_lsn = page->lsn();
+        if (page->latch_mode() == LATCH_EX) {
+            page->update_initial_and_last_lsn(old_lsn.advance(1));
+        } else {
+            DBGOUT3(<<"Update LSN without EX latch -- using atomic increment");
+            lsndata_t *addr = reinterpret_cast<lsndata_t*>(&page->get_generic_page()->lsn);
+            lintel::unsafe::atomic_fetch_add(addr, 1);
+            w_assert1(page->lsn() > old_lsn);
+        }
+        page->set_dirty();
+    }
 }
 
 rc_t plog_xct_t::_abort()
