@@ -58,10 +58,8 @@ rc_t btree_impl::_ux_norec_alloc_core(btree_page_h &page, lpid_t &new_page_id) {
 #endif //W_DEBUG_LEVEL
 
         rc = log_btree_norec_alloc(page, new_page, new_page_id.page, fence, chain_high);
-#if W_DEBUG_LEVEL >= 3
-        std::cout << "btree_impl::_ux_norec_alloc_core, fence=" << fence << ", old-LSN="
-            << old_lsn << "new-LSN=" << page.lsn() << ", PID=" << new_page_id << std::endl;
-#endif //W_DEBUG_LEVEL
+        DBGOUT3(<< "btree_impl::_ux_norec_alloc_core, fence=" << fence << ", old-LSN="
+            << old_lsn << ", new-LSN=" << page.lsn() << ", PID=" << new_page_id);
         if (!rc.is_error()) {
             // initialize as an empty child:
             new_page.format_steal(page.lsn(), new_page_id, page.root().page,

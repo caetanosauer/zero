@@ -149,9 +149,7 @@ btree_impl::_ux_grow_tree_core(btree_page_h& rp, const lpid_t &cp_pid)
     if (rp.get_foster () == 0) {
         return RCOK; // other concurrent thread might have done it
     }
-#if W_DEBUG_LEVEL > 0
-    cout << "TREE grow" <<endl;
-#endif 
+    DBGOUT1("TREE grow");
 
     // create a new page that will take over all entries currently in the root.
     // this page will be the left-most child (pid0) of the root

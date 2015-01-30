@@ -41,12 +41,9 @@ rc_t alloc_cache_t::load_by_scan (shpid_t max_pid) {
             break;
         }
     }
-#if W_DEBUG_LEVEL > 1
-    cout << "init alloc_cache: _contiguous_free_pages_begin=" << _contiguous_free_pages_begin
+    DBGOUT1(<< "init alloc_cache: _contiguous_free_pages_begin=" << _contiguous_free_pages_begin
         << ", _contiguous_free_pages_end=" << _contiguous_free_pages_end
-        << ", _non_contiguous_free_pages.size()=" << _non_contiguous_free_pages.size()
-    << endl;
-#endif // W_DEBUG_LEVEL > 1
+        << ", _non_contiguous_free_pages.size()=" << _non_contiguous_free_pages.size());
     return RCOK;
 }
 

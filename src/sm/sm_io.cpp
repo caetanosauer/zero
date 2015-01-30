@@ -791,9 +791,7 @@ rc_t io_m::alloc_a_page(const stid_t &stid, lpid_t &pid)
     if (i < 0) return RC(eBADVOL);
     vol_t *v = vol[i];
     W_DO(v->alloc_a_page(stid, pid));
-#if W_DEBUG_LEVEL > 2
-    cout << "allocated page:" << pid << endl;
-#endif // W_DEBUG_LEVEL > 2
+    DBGOUT3(<< "allocated page:" << pid);
     return RCOK;
 }
 
