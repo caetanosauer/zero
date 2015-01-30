@@ -96,8 +96,14 @@
 /**
  * Whether to enable \e Delegated-Buffer-Release.
  * \ingroup CARRAY
+ *
+ * CS: in plog approach (Atomic Commit Protocol), delegated buffer releases
+ * become crucial, since the total log volume of each transactions is more
+ * likely to vary considerably. In the old approach, the technique is only
+ * important in individual log record size (and not the sum of all log
+ * records of a transaction) varies too much.
  */
-const bool CARRAY_RELEASE_DELEGATION = false;
+const bool CARRAY_RELEASE_DELEGATION = true;
 
 /**
  * \brief An integer to represents the status of one C-Array slot.
