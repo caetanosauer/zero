@@ -419,6 +419,7 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
     // if the page does not exist on disk, the page would be zero out already
     // so the cb._rec_lsn (initial dirty lsn) would be 0
     cb._rec_lsn = _buffer[idx].lsn.data();
+    w_assert3(_buffer[idx].lsn.hi() > 0);
     cb.pin_cnt_set(1); // root page's pin count is always positive
     cb._swizzled = true;
 
@@ -487,6 +488,7 @@ w_rc_t bf_tree_m::_install_volume_mainmemorydb(vol_t* volume) {
             cb._pid_vol = vid;
             cb._pid_shpid = idx;
             cb._rec_lsn = _buffer[idx].lsn.data();
+            w_assert3(_buffer[idx].lsn.hi() > 0);
             cb.pin_cnt_set(1);
             cb._in_doubt = false;
             cb._recovery_access = false;
@@ -853,6 +855,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 // if the page is read from disk, at least it's sure that
                 // the page is flushed as of the page LSN (otherwise why we can read it!)
                 cb._rec_lsn = _buffer[idx].lsn.data();
+                w_assert3(_buffer[idx].lsn.hi() > 0);
             }
             else
             {
@@ -2285,6 +2288,7 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
         // But in Log Analysis, we don't load the page, so initialize _rec_lsn from first_lsn
         // which is the current log record LSN from log scan
         cb._rec_lsn = first_lsn.data();
+        w_assert3(first_lsn.hi() > 0);
 
         // Store the 'last write LSN' in _dependency_lsn (overload this field because there is
         // no dependency for in_doubt page)
@@ -2711,6 +2715,7 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid,
 
         // The earliest LSN which made this page dirty
         lsn_t lsn(cb._rec_lsn);
+        w_assert3(lsn == lsn_t::null || lsn.hi() > 0);
 
         // If a page is in use and dirty, or is in_doubt (only marked by Log Analysis phase)
         if ((cb._used && cb._dirty) || (cb._in_doubt))
@@ -2790,6 +2795,7 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid,
             if(min_rec_lsn.data() > lsn.data())
             {
                 min_rec_lsn = lsn;
+                w_assert3(lsn.hi() > 0);
             }
 
             // Increment counter

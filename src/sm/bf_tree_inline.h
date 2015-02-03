@@ -460,6 +460,7 @@ inline bool bf_tree_m::is_dirty(const bf_idx idx) const {
 inline void bf_tree_m::update_initial_dirty_lsn(const generic_page* p,
                                                 const lsn_t new_lsn)
 {
+    w_assert3(new_lsn.hi() > 0);
     // Update the initial dirty lsn (if needed) for the page regardless page is dirty or not
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
@@ -613,6 +614,7 @@ inline void bf_tree_m::set_initial_rec_lsn(const lpid_t& pid,
         {
            lsn = current_lsn;
            w_assert1(0 != lsn.data());
+           w_assert3(lsn.hi() > 0);
         }
 
         // Update the initial LSN which is when the page got dirty initially

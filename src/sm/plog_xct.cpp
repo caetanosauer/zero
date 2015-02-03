@@ -110,19 +110,29 @@ rc_t plog_xct_t::give_logbuf(logrec_t* lr, const fixable_page_h* p,
 
 // Increment PageLSN by one. In the atomic commit protocol, the PageLSN
 // is used simply to detect whether the page changed during a B-tree
-// traversal (see bt_cursor_t::_check_page_update)
+// traversal (see bt_cursor_t::_check_page_update).
+// UPDATE: Instead of incrementing, just set it to curr_lsn. This is done
+// so that the partition containing the page LSN is guaranteed to exist,
+// thus allowing the sanity check on log_storage to pass.
+// Recall that recovery in the atomic commit protocol uses the clsn field,
+// so the value stored in the old page lsn field is irrelevant for restart.
 void plog_xct_t::_update_page_lsns(const fixable_page_h *page)
 {
     if (page != NULL) {
-        lsn_t old_lsn = page->lsn();
-        if (page->latch_mode() == LATCH_EX) {
-            page->update_initial_and_last_lsn(old_lsn.advance(1));
-        } else {
-            DBGOUT3(<<"Update LSN without EX latch -- using atomic increment");
-            lsndata_t *addr = reinterpret_cast<lsndata_t*>(&page->get_generic_page()->lsn);
-            lintel::unsafe::atomic_fetch_add(addr, 1);
-            w_assert1(page->lsn() > old_lsn);
-        }
+        lsn_t new_lsn = log->curr_lsn();
+        page->update_initial_and_last_lsn(new_lsn.advance(1));
+        //lsn_t old_lsn = page->lsn();
+        //if (old_lsn == lsn_t::null) {
+            //old_lsn = lsn_t(1,0);
+        //}
+        //if (page->latch_mode() == LATCH_EX) {
+            //page->update_initial_and_last_lsn(new_lsn);
+        //} else {
+            //DBGOUT3(<<"Update LSN without EX latch -- using atomic increment");
+            //lsndata_t *addr = reinterpret_cast<lsndata_t*>(&page->get_generic_page()->lsn);
+            //lintel::unsafe::atomic_fetch_add(addr, 1);
+            //w_assert1(page->lsn() > old_lsn);
+        //}
         page->set_dirty();
     }
 }
