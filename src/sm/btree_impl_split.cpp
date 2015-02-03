@@ -223,9 +223,8 @@ rc_t btree_impl::_sx_opportunistic_adopt_foster (btree_page_h &parent,
     // so let's do it here to avoid system transaction creation cost.
     // we start from parent because EX latch on child is assured to be available in this order
     if (!parent.upgrade_latch_conditional()) {
-#if W_DEBUG_LEVEL>1
-        cout << "opportunistic_adopt gave it up because of parent. " << parent.pid() << ". do nothing." << endl;
-#endif
+        DBGOUT1(<< "opportunistic_adopt gave it up because of parent. "
+                << parent.pid() << ". do nothing.");
         increase_ex_need(parent.pid().page); // give a hint to subsequent accesses
         return RCOK;
     }

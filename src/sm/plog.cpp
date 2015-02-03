@@ -82,7 +82,7 @@ bool plog_t::iter_t::next(logrec_t*& lr)
 
 void plog_t::iter_t::reset()
 {
-    finished = false;
+    finished = (plog->used_size() == 0);
     if (forward) {
         pos = 0;
     }
