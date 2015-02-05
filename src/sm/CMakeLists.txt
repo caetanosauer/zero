@@ -68,8 +68,6 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/vtable_smthread.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/vtable_xct.cpp)
 
-# CS: New targets while working with atomic commit protocol
-
 add_library(sm STATIC ${sm_STAT_SRCS})
 target_link_libraries(sm fc sthread common numa)
 # Swizzling off by default
@@ -77,44 +75,37 @@ target_link_libraries(sm fc sthread common numa)
 #set(SM_COMPILEDEF "SIMULATE_NO_SWIZZLING")
 #set_target_properties (sm PROPERTIES COMPILE_DEFINITIONS "${SM_COMPILEDEF}")
 
-# target that uses plog_xct, i.e., atomic commit protocol
+# CS: target that uses plog_xct, i.e., atomic commit protocol
 add_library(sm_plog STATIC ${sm_STAT_SRCS})
 target_link_libraries(sm_plog fc sthread common numa)
-# Swizzling off by default
 get_target_property (SM_PLOG_COMPILEDEF sm_plog COMPILE_DEFINITIONS)
 #set(SM_PLOG_COMPILEDEF "SIMULATE_NO_SWIZZLING;USE_ATOMIC_COMMIT")
 set(SM_PLOG_COMPILEDEF "USE_ATOMIC_COMMIT")
 set_target_properties (sm_plog PROPERTIES COMPILE_DEFINITIONS "${SM_PLOG_COMPILEDEF}")
 
+# generate a library that performs swizzling but no pin_cnt increments/decrements
+add_library(sm_swizzling_nopincntincdec STATIC ${sm_STAT_SRCS})
+target_link_libraries(sm_swizzling_nopincntincdec fc sthread common numa)
+# make sure we don't override any previous value of COMPILE_DEFINITIONS
+get_target_property (SM_SWIZZLING_NOPINCNTINCDEC_COMPILEDEF sm_swizzling_nopincntincdec COMPILE_DEFINITIONS)
+set(SM_SWIZZLING_NOPINCNTINCDEC_COMPILEDEF "NO_PINCNT_INCDEC")
+set_target_properties (sm_swizzling_nopincntincdec PROPERTIES COMPILE_DEFINITIONS "${SM_SWIZZLING_NOPINCNTINCDEC_COMPILEDEF}")
 
-# CS: old tragets (uncomment to get older version back)
+# generate a library that simulates no swizzling
+add_library(sm_noswizzling STATIC ${sm_STAT_SRCS})
+target_link_libraries(sm_noswizzling fc sthread common numa)
+# make sure we don't override any previous value of COMPILE_DEFINITIONS
+get_target_property (SM_NOSWIZZLING_COMPILEDEF sm_noswizzling COMPILE_DEFINITIONS)
+set(SM_NOSWIZZLING_COMPILEDEF "SIMULATE_NO_SWIZZLING")
+set_target_properties (sm_noswizzling PROPERTIES COMPILE_DEFINITIONS "${SM_NOSWIZZLING_COMPILEDEF}")
 
-#add_library(sm STATIC ${sm_STAT_SRCS})
-#target_link_libraries(sm fc sthread common numa)
-
-## generate a library that performs swizzling but no pin_cnt increments/decrements
-#add_library(sm_swizzling_nopincntincdec STATIC ${sm_STAT_SRCS})
-#target_link_libraries(sm_swizzling_nopincntincdec fc sthread common numa)
-## make sure we don't override any previous value of COMPILE_DEFINITIONS
-#get_target_property (SM_SWIZZLING_NOPINCNTINCDEC_COMPILEDEF sm_swizzling_nopincntincdec COMPILE_DEFINITIONS)
-#set(SM_SWIZZLING_NOPINCNTINCDEC_COMPILEDEF "NO_PINCNT_INCDEC")
-#set_target_properties (sm_swizzling_nopincntincdec PROPERTIES COMPILE_DEFINITIONS "${SM_SWIZZLING_NOPINCNTINCDEC_COMPILEDEF}")
-
-## generate a library that simulates no swizzling
-#add_library(sm_noswizzling STATIC ${sm_STAT_SRCS})
-#target_link_libraries(sm_noswizzling fc sthread common numa)
-## make sure we don't override any previous value of COMPILE_DEFINITIONS
-#get_target_property (SM_NOSWIZZLING_COMPILEDEF sm_noswizzling COMPILE_DEFINITIONS)
-#set(SM_NOSWIZZLING_COMPILEDEF "SIMULATE_NO_SWIZZLING")
-#set_target_properties (sm_noswizzling PROPERTIES COMPILE_DEFINITIONS "${SM_NOSWIZZLING_COMPILEDEF}")
-
-## generate a library that simulates an in-memory DB
-#add_library(sm_mainmemory STATIC ${sm_STAT_SRCS})
-#target_link_libraries(sm_mainmemory fc sthread common numa)
-## make sure we don't override any previous value of COMPILE_DEFINITIONS
-#get_target_property (SM_MAINMEMORY_COMPILEDEF sm_mainmemory COMPILE_DEFINITIONS)
-#set(SM_MAINMEMORY_COMPILEDEF "SIMULATE_MAINMEMORYDB")
-#set_target_properties (sm_mainmemory PROPERTIES COMPILE_DEFINITIONS "${SM_MAINMEMORY_COMPILEDEF}")
+# generate a library that simulates an in-memory DB
+add_library(sm_mainmemory STATIC ${sm_STAT_SRCS})
+target_link_libraries(sm_mainmemory fc sthread common numa)
+# make sure we don't override any previous value of COMPILE_DEFINITIONS
+get_target_property (SM_MAINMEMORY_COMPILEDEF sm_mainmemory COMPILE_DEFINITIONS)
+set(SM_MAINMEMORY_COMPILEDEF "SIMULATE_MAINMEMORYDB")
+set_target_properties (sm_mainmemory PROPERTIES COMPILE_DEFINITIONS "${SM_MAINMEMORY_COMPILEDEF}")
 
 # generate stat header files with tools/stats.pl (sm_stat)
 set(SM_STATS_GENFILES_H sm_stats_t_collect_enum_gen.h sm_stats_t_msg_gen.h sm_stats_t_struct_gen.h )
