@@ -20,7 +20,6 @@
 
 #include "sm_int_0.h"
 #include "sm_int_1.h"
-#include "bf.h"
 #include "sm_io.h"
 #include "vol.h"
 #include "alloc_cache.h"
@@ -218,6 +217,14 @@ w_rc_t bf_tree_m::install_volume(vol_t* volume) {
     volid_t vid = volume->vid().vol;
     w_assert1(vid != 0);
     w_assert1(vid < MAX_VOL_COUNT);
+
+    // CS: introduced this check for now
+    // See comment on io_m::mount and BitBucket ticket #3
+    if (_volumes[vid] != NULL) {
+        // already mounted
+        return RCOK;
+    }
+
     w_assert1(_volumes[vid] == NULL);
     DBGOUT1(<<"installing volume " << vid << " to buffer pool...");
 #ifdef SIMULATE_MAINMEMORYDB
@@ -412,6 +419,7 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
     // if the page does not exist on disk, the page would be zero out already
     // so the cb._rec_lsn (initial dirty lsn) would be 0
     cb._rec_lsn = _buffer[idx].lsn.data();
+    w_assert3(_buffer[idx].lsn.hi() > 0);
     cb.pin_cnt_set(1); // root page's pin count is always positive
     cb._swizzled = true;
 
@@ -480,6 +488,7 @@ w_rc_t bf_tree_m::_install_volume_mainmemorydb(vol_t* volume) {
             cb._pid_vol = vid;
             cb._pid_shpid = idx;
             cb._rec_lsn = _buffer[idx].lsn.data();
+            w_assert3(_buffer[idx].lsn.hi() > 0);
             cb.pin_cnt_set(1);
             cb._in_doubt = false;
             cb._recovery_access = false;
@@ -601,6 +610,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(generic_page* parent, generic_pa
         cb._dirty = true;
         cb._in_doubt = false;
         cb._recovery_access = false;
+        cb._uncommitted_cnt = 0;
         ++_dirty_page_count_approximate;
         bf_idx parent_idx = parent - _buffer;
         cb._pid_vol = get_cb(parent_idx)._pid_vol;
@@ -863,6 +873,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 // if the page is read from disk, at least it's sure that
                 // the page is flushed as of the page LSN (otherwise why we can read it!)
                 cb._rec_lsn = _buffer[idx].lsn.data();
+                w_assert3(_buffer[idx].lsn.hi() > 0);
             }
             else
             {
@@ -871,6 +882,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                 cb._dirty = true;
                 cb._in_doubt = false;
                 cb._recovery_access = false;
+                cb._uncommitted_cnt = 0;
                 ++_dirty_page_count_approximate;
             }
             cb._used = true;
@@ -1618,6 +1630,7 @@ void bf_tree_m::_delete_block(bf_idx idx) {
     cb._used = false; // clear _used BEFORE _dirty so that eviction thread will ignore this block.
     cb._dirty = false;
     cb._in_doubt = false; // always set in_doubt bit to false
+    cb._uncommitted_cnt = 0;
 
     DBGOUT1(<<"delete block: remove page shpid = " << cb._pid_shpid);
     bool removed = _hashtable->remove(bf_key(cb._pid_vol, cb._pid_shpid));
@@ -1704,6 +1717,8 @@ bool bf_tree_m::register_write_order_dependency(const generic_page* page, const 
             // let's check the old dependency is still active
             if  (_check_dependency_still_active(cb)) {
                 // the old dependency is still active. we can't make another dependency
+                DBGOUT3(<< "WOD failed on " << page->pid << "->" << dependency->pid
+                        << " because dependency still active on CB");
                 return false;
             }
         }
@@ -1725,6 +1740,8 @@ bool bf_tree_m::register_write_order_dependency(const generic_page* page, const 
     cb._dependency_idx = dependency_idx;
     cb._dependency_shpid = dependency_cb._pid_shpid;
     cb._dependency_lsn = dependency_cb._rec_lsn;
+    DBGOUT3(<< "WOD registered: " << page->pid << "->" << dependency->pid);
+
     return true;
 }
 
@@ -2283,12 +2300,14 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
         cb._refbit_approximate = BP_INITIAL_REFCOUNT;
         cb._dependency_idx = 0;        // In_doubt page, no dependency
         cb._dependency_shpid = 0;      // In_doubt page, no dependency
+        cb._uncommitted_cnt = 0;
 
         // For a page from disk,  get _rec_lsn from the physical page
         // (cb._rec_lsn = _buffer[idx].lsn.data())
         // But in Log Analysis, we don't load the page, so initialize _rec_lsn from first_lsn
         // which is the current log record LSN from log scan
         cb._rec_lsn = first_lsn.data();
+        w_assert3(first_lsn.hi() > 0);
 
         // Store the 'last write LSN' in _dependency_lsn (overload this field because there is
         // no dependency for in_doubt page)
@@ -2367,7 +2386,9 @@ w_rc_t bf_tree_m::load_for_redo(bf_idx idx, volid_t vid,
         uint32_t checksum = _buffer[idx].calculate_checksum();
         if (checksum != _buffer[idx].checksum)
         {
-            ERROUT(<<"bf_tree_m: bad page checksum in page " << shpid);
+            ERROUT(<<"bf_tree_m: bad page checksum in page " << shpid
+                    << " -- expected " << checksum
+                    << " got " << _buffer[idx].checksum);
             return RC (eBADCHECKSUM);
         }
 
@@ -2713,6 +2734,7 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid,
 
         // The earliest LSN which made this page dirty
         lsn_t lsn(cb._rec_lsn);
+        w_assert3(lsn == lsn_t::null || lsn.hi() > 0);
 
         // If a page is in use and dirty, or is in_doubt (only marked by Log Analysis phase)
         if ((cb._used && cb._dirty) || (cb._in_doubt))
@@ -2805,14 +2827,28 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid,
 
                 w_assert1(lsn_t::null != lsn);   // Must have a vliad first lsn
                 rec_lsn[i] = lsn;
+#ifdef USE_ATOMIC_COMMIT // use clsn instead
+                // If page was not fetched from disk initially, but recently
+                // allocated, then its CLSN is null, until its first update
+                // (normally a page format) commits.
+                if(_buffer[start].clsn == lsn_t::null) {
+                    w_assert1(lsn_t::null != lsn);
+                    page_lsn[i] = lsn;
+                }
+                else {
+                    page_lsn[i] = _buffer[start].clsn.data();
+                }
+#else
                 w_assert1(lsn_t::null != _buffer[start].lsn.data());
                 page_lsn[i] = _buffer[start].lsn.data();
+#endif
             }
 
             // Update min_rec_lsn if necessary (if lsn != NULL)
             if (min_rec_lsn.data() > lsn.data())
             {
                 min_rec_lsn = lsn;
+                w_assert3(lsn.hi() > 0);
             }
 
             // Increment counter

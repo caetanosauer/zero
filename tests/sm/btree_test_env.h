@@ -708,6 +708,7 @@ public:
     bool _use_locks;
     restart_test_options* _restart_options;
     char log_dir[MAXPATHLEN];
+    char clog_dir[MAXPATHLEN];
     char vol_dir[MAXPATHLEN];
 
 private:

@@ -3,7 +3,6 @@
 #include "gtest/gtest.h"
 #include "sm_vas.h"
 #include "btree.h"
-#include "bf.h"
 #include "btree_page_h.h"
 
 // lots of non-sense to do REDO from testcase.

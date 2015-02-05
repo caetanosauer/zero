@@ -57,6 +57,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
+#include "sthread.h"
+
 #ifndef W_BASE_H
 /* NB: DO NOT make this include w.h -- not yet */
 #include <w_base.h>
@@ -138,12 +140,16 @@ typedef    ios::fmtflags    w_dbg_fmtflags;
 
 #ifdef W_TRACE
 
-#define _strip_filename(f) f
+// Turns full path from __FILE__ macro into just name of the file
+// CS: This was not necessary in Shore-MT because gcc was invoked
+// not on the full path, but on the file directly
+#define _strip_filename(f) \
+    (strrchr(f, '/') ? strrchr(f, '/') + 1 : f)
 
 
 #define FUNC(fn)\
   do { \
-    if(_w_debug.flag_on(__func__,__FILE__)) {              \
+    if(_w_debug.flag_on(__func__,_strip_filename(__FILE__))) {              \
         _w_debug.clog << __LINE__ << " "                   \
         << _strip_filename(__FILE__) << ": " << __func__   \
         << flushl;                                         \
@@ -152,7 +158,7 @@ typedef    ios::fmtflags    w_dbg_fmtflags;
 
 #define RETURN \
                 do { \
-            if(_w_debug.flag_on(__func__,__FILE__)) {\
+            if(_w_debug.flag_on(__func__,_strip_filename(__FILE__))) {\
             w_dbg_fmtflags old = _w_debug.clog.setf(ios::dec, ios::basefield); \
             _w_debug.clog  << __LINE__ << " " << _strip_filename(__FILE__) << ":" ; \
             _w_debug.clog.setf(old, ios::basefield); \
@@ -217,11 +223,21 @@ extern w_debug _w_debug;
 // takes time. So, currently it's just std::cout.
 #define ERROUT(a) std::cerr << "[" << hex << pthread_self() << dec << "] " << __FILE__ << " (" << __LINE__ << ") " a << flushl;
 //#define DBGOUT(a) std::cout << "[" << pthread_self() << "] " << __FILE__ << " (" << __LINE__ << ") " a << flushl;
-#define DBGOUT(a)  \
- do { \
-   std::stringstream ss; \
-   ss << "[" << hex << pthread_self() << dec << "] " << __FILE__ << " (" << __LINE__ << ") " a; \
-   std::cout << ss.str() << flushl; \
+
+// CS: reverted back to shore's old debug mechanism, which allows us
+// to select only output from certain source files. The current mechanism
+// dumps way to much debug information, which makes it hard to perform
+// actual debugging focused only on certain components.
+#define DBGPRINT(a, file, line) \
+       std::stringstream ss; \
+       ss << "[" << hex << pthread_self() << dec << "] " \
+            << _strip_filename(file) << " (" << line << ") " a; \
+       std::cerr << ss.str() << flushl;
+
+#define DBGOUT(a) do { \
+    if(_w_debug.flag_on(__func__,_strip_filename(__FILE__))) { \
+        DBGPRINT(a, __FILE__, __LINE__); \
+    } \
  } while (0);
 
 #define DBGOUT0(a) DBGOUT(a)
@@ -302,9 +318,8 @@ extern w_debug _w_debug;
 
 #endif
 
-// the old "DBG" idiom is level=5
-#define DBG(a) DBGOUT5(a)
-
+// the old "DBG" idiom is level=3
+#define DBG(a) DBGOUT3(a)
 /*
 #if defined(W_TRACE)
 
@@ -323,9 +338,10 @@ extern w_debug _w_debug;
 
 #else
 #    define DBG(a) 
-#endif */ /* defined(W_TRACE) */
+#endif *//* defined(W_TRACE) */
 /* ************************************************************************  */
 
+#define DBG2(a,f,l) DBGPRINT(a,f,l) // used by smthread.h
 
 #define DBGTHRD(arg) DBG(<<" th."<<sthread_t::me()->id << " " arg)
 

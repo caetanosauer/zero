@@ -94,7 +94,9 @@ void bt_cursor_t::_set_current_page(btree_page_h &page) {
     // pin this page for subsequent refix()
     _pid_bfidx.set(page.pin_for_refix());
     _lsn = page.lsn();
+#ifndef USE_ATOMIC_COMMIT
     w_assert1(_lsn.valid()); // must have a valid LSN for _check_page_update to work
+#endif
 }
 
 rc_t bt_cursor_t::_locate_first() {

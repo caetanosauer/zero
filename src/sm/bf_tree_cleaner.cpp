@@ -13,7 +13,6 @@
 #include "w_autodel.h"
 #include "generic_page.h"
 #include "fixable_page_h.h"  // just for get_cb in bf_tree_inline.h
-#include "bf.h"
 #include "sm_io.h"
 #include "log.h"
 #include "vol.h"
@@ -52,6 +51,9 @@ bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, uint32_t cleaner_threads
 
     // assign volumes to workers in a round robin fashion.
     // this assignment is totally static.
+    // CS: It would be easier to just do a mod operation to get the cleaner
+    // responsible for a volume. E.g.: (TODO)
+    // cleaner_id_for_vol = vol_id % _slave_threads_size;
     _volume_assignments[0] = 0;
     for (volid_t vol = 1; vol < MAX_VOL_COUNT; ++vol) {
         _volume_assignments[vol] = _volume_assignments[vol - 1] + 1;
@@ -497,6 +499,8 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
         for (size_t i = 0; i < sort_buf_used; ++i) {
             if (write_buffer_cur == _parent->_cleaner_write_buffer_pages) {
                 // now the buffer is full. flush it out and also reset the buffer
+                DBGOUT3(<< "Write buffer full. Flushing from " << write_buffer_from
+                        << " to " << write_buffer_cur);
                 W_DO(_flush_write_buffer (vol, write_buffer_from, write_buffer_cur - write_buffer_from));
                 write_buffer_from = 0;
                 write_buffer_cur = 0;
@@ -522,26 +526,57 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 skipped_something = true;
                 continue;
             }
-            fixable_page_h page;
-            page.fix_nonbufferpool_page(const_cast<generic_page*>(&page_buffer[idx])); // <<<>>>
-            if (page.is_to_be_deleted()) {
-                tobedeleted = true;
-            } else {
-                ::memcpy(_write_buffer + write_buffer_cur, page_buffer + idx, sizeof (generic_page));
-                // if the page contains a swizzled pointer, we need to convert the data back to the original pointer.
-                // we need to do this before releasing SH latch because the pointer might be unswizzled by other threads.
-                _parent->_bufferpool->_convert_to_disk_page(_write_buffer + write_buffer_cur);// convert swizzled data.
-                w_assert1(_write_buffer[write_buffer_cur].pid.vol().vol > 0);
-                w_assert1(_write_buffer[write_buffer_cur].pid.page > 0);
+
+            // CS: No-steal policy for atomic commit protocol:
+            // Only flush pages without uncommitted updates
+            bool flush_it = true;
+#ifdef USE_ATOMIC_COMMIT
+            flush_it = cb._uncommitted_cnt == 0;
+#endif
+
+            if (flush_it) {
+                fixable_page_h page;
+                page.fix_nonbufferpool_page(const_cast<generic_page*>(&page_buffer[idx])); // <<<>>>
+                if (page.is_to_be_deleted()) {
+                    tobedeleted = true;
+                } else {
+                    w_assert1(!smlevel_0::clog || cb._uncommitted_cnt == 0);
+                    ::memcpy(_write_buffer + write_buffer_cur, page_buffer + idx, sizeof (generic_page));
+                    // if the page contains a swizzled pointer, we need to convert the data back to the original pointer.
+                    // we need to do this before releasing SH latch because the pointer might be unswizzled by other threads.
+                    _parent->_bufferpool->_convert_to_disk_page(_write_buffer + write_buffer_cur);// convert swizzled data.
+                    w_assert1(_write_buffer[write_buffer_cur].pid.vol().vol > 0);
+                    w_assert1(_write_buffer[write_buffer_cur].pid.page > 0);
+                }
+                cb.latch().latch_release();
             }
-            cb.latch().latch_release();
+            else {
+                DBGOUT3(<< "ACP: skipped flush of uncommitted page "
+                        << cb._pid_shpid);
+                cb.latch().latch_release();
+                continue;
+            }
+
+#ifdef USE_ATOMIC_COMMIT
+            // In order for recovery to work properly with ACP,
+            // the CLSN field must be used instead of the old PageLSN.
+            // Instead of changing restart.cpp in a thousand places,
+            // we simply duplicate the fields before writing to disk.
+            _write_buffer[write_buffer_cur].lsn =
+                _write_buffer[write_buffer_cur].clsn;
+
+#endif
 
             // then, re-calculate the checksum:
-            _write_buffer[write_buffer_cur].checksum = _write_buffer[write_buffer_cur].calculate_checksum();
+            _write_buffer[write_buffer_cur].checksum
+                = _write_buffer[write_buffer_cur].calculate_checksum();
             // also copy the new checksum to make the original (bufferpool) page consistent.
             // we can do this out of latch scope because it's never used in race condition.
             // this is mainly for testcases and such.
             page_buffer[idx].checksum = _write_buffer[write_buffer_cur].checksum;
+            DBGOUT3(<< "Checksum for " << _write_buffer[write_buffer_cur].pid
+                    << " is " << _write_buffer[write_buffer_cur].checksum);
+
 
             if (tobedeleted) {
                 // as it's deleted, no one should be accessing it now. we can do everything without latch
@@ -565,6 +600,8 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 // if next page is not consecutive, flush it out
                 if (write_buffer_from < write_buffer_cur && shpid != prev_shpid + 1) {
                     // flush up to _previous_ entry (before incrementing write_buffer_cur)
+                    DBGOUT3(<< "Next page not consecutive. Flushing from " <<
+                            write_buffer_from << " to " << write_buffer_cur);
                     W_DO(_flush_write_buffer (vol, write_buffer_from, write_buffer_cur - write_buffer_from));
                     write_buffer_from = write_buffer_cur;
                 }
@@ -574,13 +611,26 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 prev_shpid = shpid;
             }
         }
-        if (!skipped_something) {
-            break;
-        }
-        if (!requested_volume && requested_lsn == lsndata_null) {
-            // then, page cleaning is just opportunistic. we can quit.
-            break;
-        } else {
+        if (skipped_something &&
+                (requested_volume && requested_lsn != lsndata_null))
+        {
+            // CS: TODO instead of waiting forever, cleaner should have a
+            // "best effort" approach, meaning that it cannot guarantee either:
+            // 1) that all pages of a volume are flushed; or
+            // 2) that all updates up to a certain LSN are propagated.
+            // Instead, the cleaner should simply report back the highest LSN
+            // guaranteed to be persistent and whether all requested pages of
+            // a volume were flushed or not. If guarantees are required, then
+            // the caller should keep invoking the cleaner until its reported
+            // result is satisfying.
+            //
+            // Note that using the naive no-steal policy of the current
+            // implementation of the atomic commit protocol, this wait will
+            // depend on transaction activity, because pages cannot be cleaned
+            // until all transactions modifying it either commit or abort.
+            // The caller should also be aware of the new semantics of LSNs,
+            // which refers only to committed updates.
+
             // umm, we really need to make sure all of these are flushed out.
             ++rounds;
             if (rounds > 2) {
@@ -592,8 +642,13 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 g_me()->sleep(rounds > 5 ? 100 : 20);
             }
         }
+        else {
+            break;
+        }
     }
     if (write_buffer_cur > write_buffer_from) {
+        DBGOUT3(<< "Finished cleaning round. Flushing from " << write_buffer_from
+                << " to " << write_buffer_cur);
         W_DO(_flush_write_buffer (vol, write_buffer_from, write_buffer_cur - write_buffer_from));
         write_buffer_from = 0; // not required, but to make sure
         write_buffer_cur = 0;
@@ -627,7 +682,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(volid_t vol, size_t f
     // WAL: ensure that the log is durable to this lsn
     if (max_page_lsn != lsndata_null) {
         if (smlevel_0::log == NULL) {
-            ERROUT (<<"cannot flush logs before flushing data. probably dirty shutdown?");
+            ERROUT (<< "Cleaner encountered null log manager. Probably dirty shutdown?");
             return RC(eINTERNAL);
         }
         W_COERCE( smlevel_0::log->flush(lsn_t(max_page_lsn)) );
@@ -720,6 +775,9 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
         }
         if (clean_it) {
             _candidates_buffer[vol].push_back (idx);
+            DBGOUT3(<< "Picked page for cleaning: idx = " << idx
+                    << " vol = " << cb._pid_vol
+                    << " shpid = " << cb._pid_shpid);
 
             // also add dependent pages. note that this might cause a duplicate. we deal with duplicates in _clean_volume()
             bf_idx didx = cb._dependency_idx;

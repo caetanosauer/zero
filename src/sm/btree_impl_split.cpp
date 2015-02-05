@@ -20,7 +20,6 @@
 #include "w_key.h"
 #include "sm.h"
 #include "xct.h"
-#include "bf.h"
 #include "bf_tree.h"
 #include "sm_int_0.h"
 
@@ -59,10 +58,8 @@ rc_t btree_impl::_ux_norec_alloc_core(btree_page_h &page, lpid_t &new_page_id) {
 #endif //W_DEBUG_LEVEL
 
         rc = log_btree_norec_alloc(page, new_page, new_page_id.page, fence, chain_high);
-#if W_DEBUG_LEVEL >= 3
-        std::cout << "btree_impl::_ux_norec_alloc_core, fence=" << fence << ", old-LSN="
-            << old_lsn << "new-LSN=" << page.lsn() << ", PID=" << new_page_id << std::endl;
-#endif //W_DEBUG_LEVEL
+        DBGOUT3(<< "btree_impl::_ux_norec_alloc_core, fence=" << fence << ", old-LSN="
+            << old_lsn << ", new-LSN=" << page.lsn() << ", PID=" << new_page_id);
         if (!rc.is_error()) {
             // initialize as an empty child:
             new_page.format_steal(page.lsn(), new_page_id, page.root().page,
@@ -243,9 +240,8 @@ rc_t btree_impl::_sx_opportunistic_adopt_foster (btree_page_h &parent,
     // so let's do it here to avoid system transaction creation cost.
     // we start from parent because EX latch on child is assured to be available in this order
     if (!parent.upgrade_latch_conditional()) {
-#if W_DEBUG_LEVEL>1
-        cout << "opportunistic_adopt gave it up because of parent. " << parent.pid() << ". do nothing." << endl;
-#endif
+        DBGOUT1(<< "opportunistic_adopt gave it up because of parent. "
+                << parent.pid() << ". do nothing.");
         increase_ex_need(parent.pid().page); // give a hint to subsequent accesses
         return RCOK;
     }

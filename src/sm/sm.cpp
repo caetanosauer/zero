@@ -84,7 +84,8 @@ class prologue_rc_t;
 #include "log_carray.h"
 #include "log_lsn_tracker.h"
 
-
+#include "allocator.h"
+#include "plog_xct.h"
 #include "logbuf_common.h"
 #include "log_core.h"
 #include "logbuf_core.h"
@@ -104,6 +105,12 @@ lsn_t        smlevel_0::commit_lsn = lsn_t::null;
 lsn_t        smlevel_0::redo_lsn = lsn_t::null;
 lsn_t        smlevel_0::last_lsn = lsn_t::null;
 uint32_t     smlevel_0::in_doubt_count = 0;
+
+#ifdef USE_TLS_ALLOCATOR
+    sm_tls_allocator smlevel_0::allocator;
+#else
+    sm_naive_allocator smlevel_0::allocator;
+#endif
 
 
 // This is the controlling variable to determine which mode to use at run time if user did not specify restart mode:
@@ -190,6 +197,7 @@ device_m* smlevel_0::dev = 0;
 io_m* smlevel_0::io = 0;
 bf_tree_m* smlevel_0::bf = 0;
 log_m* smlevel_0::log = 0;
+log_core* smlevel_0::clog = 0;
 
 // TODO(Restart)... it was for a space-recovery hack, not needed
 //tid_t *smlevel_0::redo_tid = 0;
@@ -211,7 +219,12 @@ lid_m* smlevel_4::lid = 0;
 
 ss_m* smlevel_4::SSM = 0;
 
-
+smlevel_1::xct_impl_t smlevel_1::xct_impl
+#ifndef USE_ATOMIC_COMMIT
+    = smlevel_1::XCT_TRADITIONAL;
+#else
+    = smlevel_1::XCT_PLOG;
+#endif
 
 /*
  *  Class ss_m code
@@ -577,9 +590,12 @@ ss_m::_construct_once()
             "WARNING: Log buffer is bigger than 1/8 partition (probably safe to make it smaller)."
                    << flushl;
         }
+
+#ifndef USE_ATOMIC_COMMIT // otherwise, log and clog will point to the same log object
         std::string logdir = _options.get_string_option("sm_logdir", "");
         if (logdir.empty()) {
-            errlog->clog << fatal_prio  << "ERROR: sm_logdir must be set to enable logging." << flushl;
+            errlog->clog << fatal_prio
+                << "ERROR: sm_logdir must be set to enable logging." << flushl;
             W_FATAL(eCRASH);
         }
 
@@ -605,6 +621,34 @@ ss_m::_construct_once()
                         ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT)
                     );
         }
+#endif
+
+        /*
+         * Centralized log used for atomic commit protocol (by Caetano).
+         * See comments in plog.h
+         */
+        std::string clogdir = _options.get_string_option("sm_clogdir", "");
+        if (!clogdir.empty()) {
+            DBG(<< "Initializing clog for atomic commit protocol");
+            clog = new log_core(
+                    clogdir.c_str(),
+                    logbufsize,      // logbuf_segsize
+                    _options.get_bool_option("sm_reformat_log", false),
+                    _options.get_int_option("sm_carray_slots",
+                        ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT)
+                    );
+        }
+        if (xct_impl == XCT_PLOG && !clog)
+        {
+            errlog->clog << error_prio <<
+            "Atomic commit protocol (plog_xct_t) requires clogdir option!"
+            << flushl;
+            W_FATAL(eCRASH);
+        }
+#ifdef USE_ATOMIC_COMMIT
+        log = clog;
+        w_assert0(log);
+#endif
 
         int percent = _options.get_int_option("sm_log_warn", 0);
 
@@ -1116,6 +1160,13 @@ ss_m::_destruct_once()
         // We do not delete the log now; shutdown takes care of that. delete log;
     }
     log = 0;
+
+#ifndef USE_ATOMIC_COMMIT // otherwise clog and log point to the same object
+    if(clog) {
+        clog->shutdown(); // log joins any subsidiary threads
+    }
+#endif
+    clog = 0;
 
     delete io; io = 0; // io manager
     delete dev; dev = 0; // device manager
@@ -2103,10 +2154,10 @@ ss_m::_begin_xct(sm_stats_info_t *_stats, tid_t& tid, timeout_in_ms timeout, boo
         }
         // system transaction doesn't need synchronization with create_vol etc
         // TODO might need to reconsider. but really needs this change now
-        x = xct_t::new_xct(_stats, timeout, sys_xct, single_log_sys_xct);
+        x = _new_xct(_stats, timeout, sys_xct, single_log_sys_xct);
     } else {
         spinlock_read_critical_section cs(&_begin_xct_mutex);
-        x = xct_t::new_xct(_stats, timeout, sys_xct);
+        x = _new_xct(_stats, timeout, sys_xct);
         if(log) {
             // This transaction will make no events related to LSN
             // smaller than this. Used to control garbage collection, etc.
@@ -2124,6 +2175,20 @@ ss_m::_begin_xct(sm_stats_info_t *_stats, tid_t& tid, timeout_in_ms timeout, boo
     return RCOK;
 }
 
+xct_t* ss_m::_new_xct(
+        sm_stats_info_t* stats,
+        timeout_in_ms timeout,
+        bool sys_xct,
+        bool single_log_sys_xct)
+{
+    switch (xct_impl) {
+    case XCT_PLOG:
+        return new plog_xct_t(stats, timeout, sys_xct, single_log_sys_xct);
+    default:
+        return new xct_t(stats, timeout, sys_xct, single_log_sys_xct, false);
+    }
+}
+
 /*--------------------------------------------------------------*
  *  ss_m::_commit_xct()                                *
  *--------------------------------------------------------------*/
@@ -2132,7 +2197,8 @@ ss_m::_commit_xct(sm_stats_info_t*& _stats, bool lazy,
                   lsn_t* plastlsn)
 {
     w_assert3(xct() != 0);
-    xct_t& x = *xct();
+    xct_t* xp = xct();
+    xct_t& x = *xp;
     DBG(<<"commit " << ((char *)lazy?" LAZY":"") << x );
 
     if (x.is_piggy_backed_single_log_sys_xct()) {
@@ -2156,7 +2222,7 @@ ss_m::_commit_xct(sm_stats_info_t*& _stats, bool lazy,
         _stats->compute();
     }
     bool was_sys_xct W_IFDEBUG3(= x.is_sys_xct());
-    xct_t::destroy_xct(&x);
+    delete xp;
     w_assert3(was_sys_xct || xct() == 0);
 
     return RCOK;
@@ -2232,7 +2298,7 @@ ss_m::_commit_xct_group(xct_t *list[], int listlen)
         me()->attach_xct(x);
         W_DO(x->commit_free_locks());
         me()->detach_xct(x);
-        xct_t::destroy_xct(x);
+        delete x;
     }
     return RCOK;
 }
@@ -2267,7 +2333,8 @@ rc_t
 ss_m::_abort_xct(sm_stats_info_t*&             _stats)
 {
     w_assert3(xct() != 0);
-    xct_t& x = *xct();
+    xct_t* xp = xct();
+    xct_t& x = *xp;
 
     // if this is "piggy-backed" ssx, just end the status
     if (x.is_piggy_backed_single_log_sys_xct()) {
@@ -2283,7 +2350,7 @@ ss_m::_abort_xct(sm_stats_info_t*&             _stats)
         _stats->compute();
     }
 
-    xct_t::destroy_xct(&x);
+    delete xp;
     w_assert3(was_sys_xct || xct() == 0);
 
     return RCOK;

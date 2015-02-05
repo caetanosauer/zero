@@ -39,7 +39,7 @@
 #define PACKAGE_VERSION "1.0"
 
 /* include tracing code? */
-#define TRACECODE 0
+#define TRACECODE 1
 
 /* Version number of package */
 #define VERSION "1.0"

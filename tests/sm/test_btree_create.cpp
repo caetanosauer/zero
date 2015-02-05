@@ -2,7 +2,6 @@
 #include "gtest/gtest.h"
 #include "sm_vas.h"
 #include "btree.h"
-#include "bf.h"
 #include "sm_io.h"
 #include "btree_page_h.h"
 

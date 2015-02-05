@@ -7,7 +7,6 @@
 #include "sm_vas.h"
 #include "btree.h"
 #include "btcursor.h"
-#include "bf.h"
 #include "xct.h"
 #include <sys/time.h>
 

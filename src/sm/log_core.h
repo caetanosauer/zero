@@ -73,6 +73,7 @@ class      partition_t ; // forward
 class ConsolidationArray;
 struct CArraySlot;
 class PoorMansOldestLsnTracker;
+class plog_xct_t;
 
 #include <partition.h>
 #include "mcs_lock.h"
@@ -323,6 +324,9 @@ protected:
  */
 class log_core : public log_common
 {
+    // CArray interface needs to be exposed to plog_xct_t to implement
+    // atomic commit protocol.
+    friend class plog_xct_t;
 public:
     NORET           log_core(
                              const char* path,
@@ -358,9 +362,12 @@ protected:
      * \ingroup CARRAY
      *  @{
      */
-    virtual void _acquire_buffer_space(CArraySlot* info, long size);
-    virtual lsn_t _copy_to_buffer(logrec_t &rec, long pos, long size, CArraySlot* info);
-    virtual bool _update_epochs(CArraySlot* info);
+    void _acquire_buffer_space(CArraySlot* info, long size);
+    lsn_t _copy_to_buffer(logrec_t &rec, long pos, long size, CArraySlot* info);
+    bool _update_epochs(CArraySlot* info);
+    rc_t _join_carray(CArraySlot*& info, long& pos, int32_t size);
+    rc_t _leave_carray(CArraySlot* info, int32_t size);
+    void _copy_raw(CArraySlot* info, long& pos, const char* data, size_t size);
     /** @}*/
 
 }; // log_core

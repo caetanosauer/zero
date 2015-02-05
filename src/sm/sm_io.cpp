@@ -505,9 +505,14 @@ io_m::mount(const char* device, vid_t vid,
 
     int j = _find(vid);
     if (j >= 0)  {
-        W_DO( v->dismount(false) );
-        delete v;
-        return RC(eALREADYMOUNTED);
+        // CS: just ignore this for now, so that recovery works with ACP
+        // TODO -- not sure if this is permanent solution
+        // (see BitBucket ticket #3)
+        return RCOK;
+
+        //W_DO( v->dismount(false) );
+        //delete v;
+        //return RC(eALREADYMOUNTED);
     }
     
     ++vol_cnt;
@@ -786,9 +791,7 @@ rc_t io_m::alloc_a_page(const stid_t &stid, lpid_t &pid)
     if (i < 0) return RC(eBADVOL);
     vol_t *v = vol[i];
     W_DO(v->alloc_a_page(stid, pid));
-#if W_DEBUG_LEVEL > 2
-    cout << "allocated page:" << pid << endl;
-#endif // W_DEBUG_LEVEL > 2
+    DBGOUT3(<< "allocated page:" << pid);
     return RCOK;
 }
 

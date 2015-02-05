@@ -62,7 +62,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
       _curr_num(1)
 {
 
-    _logdir = new char[strlen(path)];
+    _logdir = new char[strlen(path) + 1]; // +1 for \0 byte
     strcpy(_logdir, path);
 
     _skip_log = new skip_log;

@@ -298,6 +298,15 @@ protected:
         const char* this_ptr = reinterpret_cast<const char*>(this);
         return reinterpret_cast<const lsn_t*>(this_ptr + header._len - sizeof(lsn_t));
     }
+
+public:
+    // overloaded new/delete operators for tailored memory management
+    void* operator new(size_t);
+    void operator delete(void*, size_t);
+
+    // CS: apparently we have to define placement new as well if the standard
+    // new is overloaded
+    void* operator new(size_t, void* p) { return p; }
 };
 
 /**

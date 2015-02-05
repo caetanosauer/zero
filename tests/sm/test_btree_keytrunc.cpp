@@ -1,7 +1,6 @@
 #include "btree_test_env.h"
 #include "gtest/gtest.h"
 #include "sm_vas.h"
-#include "bf.h"
 #include "btree.h"
 #include "btree_page_h.h"
 #include "btree_impl.h"

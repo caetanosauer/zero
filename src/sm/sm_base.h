@@ -84,14 +84,16 @@ class bf_m;
 class bf_tree_m;
 class comm_m;
 class log_m;
+class log_core;
 class lock_m;
 
 class tid_t;
 class option_t;
-
 class rid_t;
-
 class lsn_t;
+
+class sm_naive_allocator;
+class sm_tls_allocator;
 
 #ifndef        SM_EXTENTSIZE
 #define        SM_EXTENTSIZE        8
@@ -436,6 +438,7 @@ public:
     // value set in sm.cpp
 
     enum restart_internal_mode_t {
+        t_restart_disable = 0,
         t_restart_serial = 0x1,            // M1 implementation:
                                            //    System is not opened until Recovery completed
         t_restart_redo_log = 0x2,          // M1 traditional implementation:
@@ -584,6 +587,7 @@ public:
     static lock_m* lm;
 
     static log_m* log;
+    static log_core* clog;
     // TODO(Restart)... it was for a space-recovery hack, not needed
     // static tid_t* redo_tid;
 
@@ -596,6 +600,15 @@ public:
                                    // if it is created by VAS
 
     static ErrLog* errlog;
+
+    // TODO: allocator flag should be specified by cmake
+#define USE_TLS_ALLOCATOR
+
+#ifdef USE_TLS_ALLOCATOR
+    static sm_tls_allocator allocator;
+#else
+    static sm_naive_allocator allocator;
+#endif
 
     static bool         shutdown_clean;
     static bool         shutting_down;

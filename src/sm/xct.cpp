@@ -6,28 +6,17 @@
 
 #define SM_SOURCE
 #define XCT_C
-// These #defines must precede inclusion of xct.h
-// USE_BLOCK_ALLOC_FOR_LOGREC is in xct.h only for the purpose
-// of a friend declaration.
-// USE_BLOCK_ALLOC_FOR_XCT_IMPL is in xct.h only for the purpose
-// of private/public declaration of xct_core.
-#define USE_BLOCK_ALLOC_FOR_LOGREC 1
-#define USE_BLOCK_ALLOC_FOR_XCT_IMPL 1
 
 #include <new>
 #define SM_LEVEL 0
 #include "sm_int_1.h"
 
-#if USE_BLOCK_ALLOC_FOR_LOGREC
-#include "block_alloc.h"
-#endif
 #include "tls.h"
 
 #include "lock.h"
 #include <sm_int_4.h>
 #include "xct_dependent.h"
 #include "xct.h"
-#include "logrec.h"
 #include "lock_x.h"
 #include "lock_lil.h"
 #include <w_strstream.h>
@@ -38,9 +27,14 @@
 #include <sstream>
 #include "crash.h"
 #include "chkpt.h"
+#include "logrec.h"
 #include "bf_tree.h"
 #include "lock_raw.h"
 #include "log_lsn_tracker.h"
+
+#include "allocator.h"
+
+const std::string xct_t::IMPL_NAME = "traditional";
 
 #ifdef EXPLICIT_TEMPLATE
 template class w_list_t<xct_t, queue_based_lock_t>;
@@ -190,71 +184,271 @@ inline bool   xct_t::should_consume_rollback_resv(int t) const
         || t == logrec_t::t_compensate ;
  }
 
+struct lock_info_ptr {
+    xct_lock_info_t* _ptr;
+
+    lock_info_ptr() : _ptr(0) { }
+
+    xct_lock_info_t* take() {
+        if(xct_lock_info_t* rval = _ptr) {
+            _ptr = 0;
+            return rval;
+        }
+        return new xct_lock_info_t;
+    }
+    void put(xct_lock_info_t* ptr) {
+        if(_ptr)
+            delete _ptr;
+        _ptr = ptr? ptr->reset_for_reuse() : 0;
+    }
+
+    ~lock_info_ptr() { put(0); }
+};
+
+DECLARE_TLS(lock_info_ptr, agent_lock_info);
+
+struct lil_lock_info_ptr {
+    lil_private_table* _ptr;
+
+    lil_lock_info_ptr() : _ptr(0) { }
+
+    lil_private_table* take() {
+        if(lil_private_table* rval = _ptr) {
+            _ptr = 0;
+            return rval;
+        }
+        return new lil_private_table;
+    }
+    void put(lil_private_table* ptr) {
+        if(_ptr)
+            delete _ptr;
+        if (ptr) {
+            ptr->clear();
+        }
+        _ptr = ptr;
+    }
+
+    ~lil_lock_info_ptr() { put(0); }
+};
+
+DECLARE_TLS(lil_lock_info_ptr, agent_lil_lock_info);
+
+// Define customized new and delete operators for sm allocation
+DEFINE_SM_ALLOC(xct_t);
+DEFINE_SM_ALLOC(xct_t::xct_core);
+
+xct_t::xct_core::xct_core(tid_t const &t, state_t s, timeout_in_ms timeout)
+    :
+    _tid(t),
+    _timeout(timeout),
+    _warn_on(true),
+    _lock_info(agent_lock_info->take()),
+    _lil_lock_info(agent_lil_lock_info->take()),
+    _raw_lock_xct(NULL),
+    _updating_operations(0),
+    _threads_attached(0),
+    _state(s),
+    _read_only(false),
+    _storesToFree(stid_list_elem_t::link_offset(), &_1thread_xct),
+    _loadStores(stid_list_elem_t::link_offset(), &_1thread_xct),
+    _xct_ended(0), // for assertions
+    _xct_aborting(0)
+{
+    _lock_info->set_tid(_tid);
+    w_assert1(_tid == _lock_info->tid());
+
+    w_assert1(_lil_lock_info);
+    if (smlevel_0::lm) {
+        _raw_lock_xct = smlevel_0::lm->allocate_xct();
+    }
+
+    INC_TSTAT(begin_xct_cnt);
+
+}
+
 /*********************************************************************
  *
- *  Constructors and destructor
+ *  xct_t::xct_t(that, type)
+ *
+ *  Begin a transaction. The transaction id is assigned automatically,
+ *  and the xct record is inserted into _xlist.
  *
  *********************************************************************/
-#if defined(USE_BLOCK_ALLOC_FOR_XCT_IMPL) && (USE_BLOCK_ALLOC_FOR_XCT_IMPL==1)
-DECLARE_TLS(block_alloc<xct_t>, xct_pool);
-DECLARE_TLS(block_alloc<xct_t::xct_core>, core_pool);
-#define NEW_XCT new (*xct_pool)
-#define DELETE_XCT(xd) xct_pool->destroy_object(xd)
-#define NEW_CORE new (*core_pool)
-#define DELETE_CORE(c) core_pool->destroy_object(c)
-#else
-#define NEW_XCT new
-#define DELETE_XCT(xd) delete xd
-#define NEW_CORE new
-#define DELETE_CORE(c) delete c
+xct_t::xct_t(sm_stats_info_t* stats, timeout_in_ms timeout, bool sys_xct,
+           bool single_log_sys_xct, const tid_t& given_tid, const lsn_t& last_lsn,
+           const lsn_t& undo_nxt, bool loser_xct
+            )
+    :
+    _core(new xct_core(
+                given_tid == tid_t::null ? _nxt_tid.atomic_incr() : given_tid,
+                xct_active, timeout)),
+    __stats(stats),
+    __saved_lockid_t(0),
+    __saved_xct_log_t(0),
+    _tid(_core->_tid),
+    _xct_chain_len(0),
+    _ssx_chain_len(0),
+    _query_concurrency (smlevel_0::t_cc_none),
+    _query_exlock_for_select(false),
+    _piggy_backed_single_log_sys_xct(false),
+    _sys_xct (sys_xct),
+    _single_log_sys_xct (single_log_sys_xct),
+    _inquery_verify(false),
+    _inquery_verify_keyorder(false),
+    _inquery_verify_space(false),
+    // _first_lsn, _last_lsn, _undo_nxt,
+    _last_lsn(last_lsn),
+    _undo_nxt(undo_nxt),
+    _read_watermark(lsn_t::null),
+    _elr_mode (elr_none),
+    _dependent_list(W_LIST_ARG(xct_dependent_t, _link), &_core->_1thread_xct),
+    _last_log(0),
+#if CHECK_NESTING_VARIABLES
+#endif
+    _log_buf(0),
+    _log_bytes_rsvd(0),
+    _log_bytes_ready(0),
+    _log_bytes_used(0),
+    _log_bytes_reserved_space(0),
+    _rolling_back(false),
+    _in_compensated_op(0)
+#if W_DEBUG_LEVEL > 2
+    ,
+    _had_error(false)
+#endif
+{
+    if (given_tid != tid_t::null) {
+        // tid is given if transaction is being built during restart
+        _nxt_tid.atomic_assign_max(given_tid);
+    }
+
+    w_assert1(tid() == _core->_tid);
+    w_assert3(tid() <= _nxt_tid);
+    w_assert2(tid() <= _nxt_tid);
+    w_assert1(tid() == _core->_lock_info->tid());
+
+    if (true == loser_xct)
+        _loser_xct = loser_true;  // A loser transaction
+    else
+        _loser_xct = loser_false; // Not a loser transaction
+
+    _log_buf = new logrec_t; // deleted when xct goes away
+    _log_buf_for_piggybacked_ssx = new logrec_t;
+
+#ifdef ZERO_INIT
+    memset(_log_buf, '\0', sizeof(logrec_t));
+    memset(_log_buf_for_piggybacked_ssx, '\0', sizeof(logrec_t));
 #endif
 
-xct_t*
-xct_t::new_xct(
-        sm_stats_info_t* stats,
-        timeout_in_ms timeout,
-        bool sys_xct,
-        bool single_log_sys_xct,
-        bool loser_xct)
-{
-    // For normal user transaction
+    if (!_log_buf || !_log_buf_for_piggybacked_ssx)  {
+        W_FATAL(eOUTOFMEMORY);
+    }
 
-    xct_core* core = NEW_CORE xct_core(_nxt_tid.atomic_incr(),
-                       xct_active, timeout);
-    xct_t* xd = NEW_XCT xct_t(core, stats, lsn_t(), lsn_t(),
-                              sys_xct, single_log_sys_xct, loser_xct);
-    me()->attach_xct(xd);
-    return xd;
+    if (timeout_c() == WAIT_SPECIFIED_BY_THREAD) {
+        // override in this case
+        set_timeout(me()->lock_timeout());
+    }
+    w_assert9(timeout_c() >= 0 || timeout_c() == WAIT_FOREVER);
+
+    put_in_order();
+
+    if (given_tid == tid_t::null) {
+        me()->attach_xct(this);
+    }
+    else {
+        w_assert1(me()->xct() == 0);
+    }
 }
 
-xct_t*
-xct_t::new_xct(const tid_t& t, state_t s, const lsn_t& last_lsn,
-             const lsn_t& undo_nxt, timeout_in_ms timeout, bool sys_xct,
-             bool single_log_sys_xct, bool loser_xct)
+
+xct_t::xct_core::~xct_core()
 {
-    // For transaction from Log Analysis phase in Recovery
-
-    // Uses user(recovery)-provided tid
-    _nxt_tid.atomic_assign_max(t);
-    xct_core* core = NEW_CORE xct_core(t, s, timeout);
-    xct_t* xd = NEW_XCT xct_t(core, 0, last_lsn, undo_nxt,
-        sys_xct, single_log_sys_xct, loser_xct);
-
-    /// Don't attach
-    w_assert1(me()->xct() == 0);
-    return xd;
+    w_assert3(_state == xct_ended);
+    if(_lock_info) {
+        agent_lock_info->put(_lock_info);
+    }
+    if (_lil_lock_info) {
+        agent_lil_lock_info->put(_lil_lock_info);
+    }
+    if (_raw_lock_xct) {
+        smlevel_0::lm->deallocate_xct(_raw_lock_xct);
+    }
 }
-
-void
-xct_t::destroy_xct(xct_t* xd)
+/*********************************************************************
+ *
+ *  xct_t::~xct_t()
+ *
+ *  Clean up and free up memory used by the transaction. The
+ *  transaction has normally ended (committed or aborted)
+ *  when this routine is called.
+ *
+ *********************************************************************/
+xct_t::~xct_t()
 {
-    if (!xd->_sys_xct && smlevel_0::log) {
-        smlevel_0::log->get_oldest_lsn_tracker()->leave(reinterpret_cast<uintptr_t>(xd));
+    FUNC(xct_t::~xct_t);
+    DBGX( << " ended: _log_bytes_rsvd " << _log_bytes_rsvd
+            << " _log_bytes_ready " << _log_bytes_ready
+            << " _log_bytes_used " << _log_bytes_used
+            );
+
+    w_assert9(__stats == 0);
+
+    if (!_sys_xct && smlevel_0::log) {
+        smlevel_0::log->get_oldest_lsn_tracker()->leave(
+                reinterpret_cast<uintptr_t>(this));
     }
     LOGREC_ACCOUNTING_PRINT // see logrec.h
-    // xct_core* core = xd->_core;
-    DELETE_XCT(xd);
-   //  DELETE_CORE(core);
+
+    _teardown(false);
+    w_assert3(_in_compensated_op==0);
+
+    if (shutdown_clean)  {
+        // if this transaction is system transaction,
+        // the thread might be still conveying another thread
+        w_assert1(is_sys_xct() || me()->xct() == 0);
+    }
+
+    w_assert1(one_thread_attached());
+    {
+        CRITICAL_SECTION(xctstructure, *this);
+        // w_assert1(is_1thread_xct_mutex_mine());
+
+        while (_dependent_list.pop()) ;
+
+        if (_log_buf) delete _log_buf;
+        if (_log_buf_for_piggybacked_ssx) delete _log_buf_for_piggybacked_ssx;
+
+        // clean up what's stored in the thread
+        me()->no_xct(this);
+    }
+
+    if(__saved_lockid_t)  {
+        delete[] __saved_lockid_t;
+        __saved_lockid_t=0;
+    }
+
+    if(__saved_xct_log_t) {
+        delete __saved_xct_log_t;
+        __saved_xct_log_t=0;
+    }
+
+    if (LATCH_NL != latch().mode())
+    {
+        // Someone is accessing this txn, wait until it finished
+        w_rc_t latch_rc = latch().latch_acquire(LATCH_EX, WAIT_FOREVER);
+
+        // Now we can delete the core, no one can acquire latch on this txn after this point
+        // since transaction is being destroyed
+        if(_core)
+            delete _core;
+        _core = NULL;
+
+        if (false == latch_rc.is_error())
+        {
+            if (latch().held_by_me())
+                latch().latch_release();
+        }
+    }
 }
 
 #if W_DEBUG_LEVEL > 2
@@ -333,8 +527,7 @@ xct_t::cleanup(bool /*dispose_prepared*/)
                     } else {
                         W_COERCE( xd->dispose() );
                     }
-                    xd->destroy_xct(xd);
-                    // delete xd;
+                    delete xd;
                     changed_list = true;
                 }
                 break;
@@ -343,8 +536,7 @@ xct_t::cleanup(bool /*dispose_prepared*/)
             case xct_ended: {
                     DBG(<< xd->tid() <<"deleting "
                             << " w/ state=" << xd->state() );
-                    xd->destroy_xct(xd);
-                    // delete xd;
+                    delete xd;
                     changed_list = true;
                 }
                 break;
@@ -769,55 +961,6 @@ xct_log_warn_check_t::check(xct_t *& _victim)
     return RCOK;
 }
 
-struct lock_info_ptr {
-    xct_lock_info_t* _ptr;
-
-    lock_info_ptr() : _ptr(0) { }
-
-    xct_lock_info_t* take() {
-        if(xct_lock_info_t* rval = _ptr) {
-            _ptr = 0;
-            return rval;
-        }
-        return new xct_lock_info_t;
-    }
-    void put(xct_lock_info_t* ptr) {
-        if(_ptr)
-            delete _ptr;
-        _ptr = ptr? ptr->reset_for_reuse() : 0;
-    }
-
-    ~lock_info_ptr() { put(0); }
-};
-
-DECLARE_TLS(lock_info_ptr, agent_lock_info);
-
-struct lil_lock_info_ptr {
-    lil_private_table* _ptr;
-
-    lil_lock_info_ptr() : _ptr(0) { }
-
-    lil_private_table* take() {
-        if(lil_private_table* rval = _ptr) {
-            _ptr = 0;
-            return rval;
-        }
-        return new lil_private_table;
-    }
-    void put(lil_private_table* ptr) {
-        if(_ptr)
-            delete _ptr;
-        if (ptr) {
-            ptr->clear();
-        }
-        _ptr = ptr;
-    }
-
-    ~lil_lock_info_ptr() { put(0); }
-};
-
-DECLARE_TLS(lil_lock_info_ptr, agent_lil_lock_info);
-
 
 
 /*********************************************************************
@@ -846,215 +989,6 @@ operator<<(ostream& o, const xct_t& x)
     }
 
     return o;
-}
-
-#if USE_BLOCK_ALLOC_FOR_LOGREC
-// Pool from which the xct_t allocates logrec_t for
-// the _log_buf. There is one per xct.
-DECLARE_TLS(block_alloc<logrec_t>, logrec_pool);
-#endif
-
-xct_t::xct_core::xct_core(tid_t const &t, state_t s, timeout_in_ms timeout)
-    :
-    _tid(t),
-    _timeout(timeout),
-    _warn_on(true),
-    _lock_info(agent_lock_info->take()),
-    _lil_lock_info(agent_lil_lock_info->take()),
-    _raw_lock_xct(NULL),
-    _updating_operations(0),
-    _threads_attached(0),
-    _state(s),
-    _read_only(false),
-    _storesToFree(stid_list_elem_t::link_offset(), &_1thread_xct),
-    _loadStores(stid_list_elem_t::link_offset(), &_1thread_xct),
-    _xct_ended(0), // for assertions
-    _xct_aborting(0)
-{
-    _lock_info->set_tid(_tid);
-    w_assert1(_tid == _lock_info->tid());
-
-    w_assert1(_lil_lock_info);
-    if (smlevel_0::lm) {
-        _raw_lock_xct = smlevel_0::lm->allocate_xct();
-    }
-
-    INC_TSTAT(begin_xct_cnt);
-
-}
-
-/*********************************************************************
- *
- *  xct_t::xct_t(that, type)
- *
- *  Begin a transaction. The transaction id is assigned automatically,
- *  and the xct record is inserted into _xlist.
- *
- *********************************************************************/
-xct_t::xct_t(xct_core* core, sm_stats_info_t* stats,
-           const lsn_t& last_lsn, const lsn_t& undo_nxt, bool sys_xct,
-           bool single_log_sys_xct, bool loser_xct
-            )
-    :
-    __stats(stats),
-    __saved_lockid_t(0),
-    __saved_xct_log_t(0),
-    _tid(core->_tid),
-    _xct_chain_len(0),
-    _ssx_chain_len(0),
-    _query_concurrency (smlevel_0::t_cc_none),
-    _query_exlock_for_select(false),
-    _piggy_backed_single_log_sys_xct(false),
-    _sys_xct (sys_xct),
-    _single_log_sys_xct (single_log_sys_xct),
-    _inquery_verify(false),
-    _inquery_verify_keyorder(false),
-    _inquery_verify_space(false),
-    // _first_lsn, _last_lsn, _undo_nxt,
-    _last_lsn(last_lsn),
-    _undo_nxt(undo_nxt),
-    _read_watermark(lsn_t::null),
-    _elr_mode (elr_none),
-    _dependent_list(W_LIST_ARG(xct_dependent_t, _link), &core->_1thread_xct),
-    _last_log(0),
-    _log_buf(0),
-    _log_bytes_rsvd(0),
-    _log_bytes_ready(0),
-    _log_bytes_used(0),
-    _log_bytes_reserved_space(0),
-    _rolling_back(false),
-#if CHECK_NESTING_VARIABLES
-#endif
-    _in_compensated_op(0),
-    _core(core)
-#if W_DEBUG_LEVEL > 2
-    ,
-    _had_error(false)
-#endif
-{
-    w_assert1(tid() == core->_tid);
-    w_assert3(tid() <= _nxt_tid);
-    w_assert2(tid() <= _nxt_tid);
-    w_assert1(tid() == core->_lock_info->tid());
-
-    if (true == loser_xct)
-        _loser_xct = loser_true;  // A loser transaction
-    else
-        _loser_xct = loser_false; // Not a loser transaction
-
-#if USE_BLOCK_ALLOC_FOR_LOGREC
-    _log_buf = new (*logrec_pool) logrec_t; // deleted when xct goes away
-    _log_buf_for_piggybacked_ssx = new (*logrec_pool) logrec_t;
-#else
-    _log_buf = new logrec_t; // deleted when xct goes away
-    _log_buf_for_piggybacked_ssx = new logrec_t;
-#endif
-
-#ifdef ZERO_INIT
-    memset(_log_buf, '\0', sizeof(logrec_t));
-    memset(_log_buf_for_piggybacked_ssx, '\0', sizeof(logrec_t));
-#endif
-
-    if (!_log_buf || !_log_buf_for_piggybacked_ssx)  {
-        W_FATAL(eOUTOFMEMORY);
-    }
-
-    if (timeout_c() == WAIT_SPECIFIED_BY_THREAD) {
-        // override in this case
-        set_timeout(me()->lock_timeout());
-    }
-    w_assert9(timeout_c() >= 0 || timeout_c() == WAIT_FOREVER);
-
-    put_in_order();
-}
-
-
-xct_t::xct_core::~xct_core()
-{
-    w_assert3(_state == xct_ended);
-    if(_lock_info) {
-        agent_lock_info->put(_lock_info);
-    }
-    if (_lil_lock_info) {
-        agent_lil_lock_info->put(_lil_lock_info);
-    }
-    if (_raw_lock_xct) {
-        smlevel_0::lm->deallocate_xct(_raw_lock_xct);
-    }
-}
-/*********************************************************************
- *
- *  xct_t::~xct_t()
- *
- *  Clean up and free up memory used by the transaction. The
- *  transaction has normally ended (committed or aborted)
- *  when this routine is called.
- *
- *********************************************************************/
-xct_t::~xct_t()
-{
-    FUNC(xct_t::~xct_t);
-    DBGX( << " ended: _log_bytes_rsvd " << _log_bytes_rsvd
-            << " _log_bytes_ready " << _log_bytes_ready
-            << " _log_bytes_used " << _log_bytes_used
-            );
-
-    w_assert9(__stats == 0);
-
-    _teardown(false);
-    w_assert3(_in_compensated_op==0);
-
-    if (shutdown_clean)  {
-        // if this transaction is system transaction,
-        // the thread might be still conveying another thread
-        w_assert1(is_sys_xct() || me()->xct() == 0);
-    }
-
-    w_assert1(one_thread_attached());
-    {
-        CRITICAL_SECTION(xctstructure, *this);
-        // w_assert1(is_1thread_xct_mutex_mine());
-
-        while (_dependent_list.pop()) ;
-
-#if USE_BLOCK_ALLOC_FOR_LOGREC
-        logrec_pool->destroy_object(_log_buf);
-        logrec_pool->destroy_object(_log_buf_for_piggybacked_ssx);
-#else
-        delete _log_buf;
-        delete _log_buf_for_piggybacked_ssx;
-#endif
-        // clean up what's stored in the thread
-        me()->no_xct(this);
-    }
-
-    if(__saved_lockid_t)  {
-        delete[] __saved_lockid_t;
-        __saved_lockid_t=0;
-    }
-
-    if(__saved_xct_log_t) {
-        delete __saved_xct_log_t;
-        __saved_xct_log_t=0;
-    }
-
-    if (LATCH_NL != latch().mode())
-    {
-        // Someone is accessing this txn, wait until it finished
-        w_rc_t latch_rc = latch().latch_acquire(LATCH_EX, WAIT_FOREVER);
-
-        // Now we can delete the core, no one can acquire latch on this txn after this point
-        // since transaction is being destroyed
-        if(_core)
-            DELETE_CORE(_core);
-        _core = NULL;
-
-        if (false == latch_rc.is_error())
-        {
-            if (latch().held_by_me())
-                latch().latch_release();
-        }
-    }
 }
 
 // common code needed by _commit(t_chain) and ~xct_t()
@@ -1255,26 +1189,9 @@ xct_t::find_dependent(xct_dependent_t* ptr)
     return false;
 }
 
-
-/*********************************************************************
- *
- *  xct_t::commit(flags)
- *
- *  Commit the transaction. If flag t_lazy, log is not synced.
- *  If flag t_chain, a new transaction is instantiated inside
- *  this one, and inherits all its locks.
- *
- *  In *plastlsn it returns the lsn of the last log record for this
- *  xct.
- *
- *********************************************************************/
 rc_t
-xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
+xct_t::_pre_commit(uint32_t flags)
 {
-    DBGX( << " commit: _log_bytes_rsvd " << _log_bytes_rsvd
-            << " _log_bytes_ready " << _log_bytes_ready
-            << " _log_bytes_used " << _log_bytes_used
-            );
     // W_DO(check_one_thread_attached()); // now checked in prologue
     w_assert1(one_thread_attached());
 
@@ -1291,10 +1208,6 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
 //    W_DO( ConvertAllLoadStoresToRegularStores() );
 
     change_state(flags & xct_t::t_chain ? xct_chaining : xct_committing);
-
-    // when chaining, we inherit the read_watermark from the previous xct
-    // in case the next transaction are read-only.
-    lsn_t inherited_read_watermark;
 
     if (_last_lsn.valid() || !smlevel_1::log)  {
         /*
@@ -1356,7 +1269,38 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
         // now we have xct_end record though it might not be flushed yet. so,
         // let's do ELR
         W_DO(early_lock_release());
+    }
 
+    return RCOK;
+}
+
+/*********************************************************************
+ *
+ *  xct_t::commit(flags)
+ *
+ *  Commit the transaction. If flag t_lazy, log is not synced.
+ *  If flag t_chain, a new transaction is instantiated inside
+ *  this one, and inherits all its locks.
+ *
+ *  In *plastlsn it returns the lsn of the last log record for this
+ *  xct.
+ *
+ *********************************************************************/
+rc_t
+xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
+{
+    DBGX( << " commit: _log_bytes_rsvd " << _log_bytes_rsvd
+            << " _log_bytes_ready " << _log_bytes_ready
+            << " _log_bytes_used " << _log_bytes_used
+            );
+
+    // when chaining, we inherit the read_watermark from the previous xct
+    // in case the next transaction are read-only.
+    lsn_t inherited_read_watermark;
+
+    W_DO(_pre_commit(flags));
+
+    if (_last_lsn.valid() || !smlevel_1::log)  {
         if (!(flags & xct_t::t_lazy))  {
             _sync_logbuf();
         }
@@ -1370,6 +1314,7 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
         change_state(xct_ended);
 
         // Free all locks. Do not free locks if chaining.
+        bool individual = ! (flags & xct_t::t_group);
         if(individual && ! (flags & xct_t::t_chain) && _elr_mode != elr_sx)  {
             W_DO(commit_free_locks());
         }
@@ -1379,64 +1324,7 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
             inherited_read_watermark = _last_lsn;
         }
     }  else  {
-        // Nothing logged; no need to write a log record.
-        change_state(xct_ended);
-
-        if(individual && !is_sys_xct() && ! (flags & xct_t::t_chain)) {
-            W_DO(commit_free_locks());
-
-            // however, to make sure the ELR for X-lock and CLV is
-            // okay (ELR for S-lock is anyway okay) we need to make
-            // sure this read-only xct (no-log=read-only) didn't read
-            // anything not yet durable. Thus,
-            if ((_elr_mode==elr_sx || _elr_mode==elr_clv) &&
-                _query_concurrency != t_cc_none && _query_concurrency != t_cc_bad && _read_watermark.valid()) {
-                // to avoid infinite sleep because of dirty pages changed by aborted xct,
-                // we really output a log and flush it
-                bool flushed = false;
-                timeval start, now, result;
-                ::gettimeofday(&start,NULL);
-                while (true) {
-                    W_DO(log->flush(_read_watermark, false, true, &flushed));
-                    if (flushed) {
-                        break;
-                    }
-
-                    // in some OS, usleep() has a very low accuracy.
-                    // So, we check the current time rather than assuming
-                    // elapsed time = ELR_READONLY_WAIT_MAX_COUNT * ELR_READONLY_WAIT_USEC.
-                    ::gettimeofday(&now,NULL);
-                    timersub(&now, &start, &result);
-                    int elapsed = (result.tv_sec * 1000000 + result.tv_usec);
-                    if (elapsed > ELR_READONLY_WAIT_MAX_COUNT * ELR_READONLY_WAIT_USEC) {
-#if W_DEBUG_LEVEL>0
-                        // this is NOT an error. it's fine.
-                        cout << "ELR timeout happened in readonly xct's watermark check. outputting xct_end log..." << endl;
-#endif // W_DEBUG_LEVEL>0
-                        break; // timeout
-                    }
-                    ::usleep(ELR_READONLY_WAIT_USEC);
-                }
-
-                if (!flushed) {
-                    // now we suspect that we might saw a bogus tag for some reason.
-                    // so, let's output a real xct_end log and flush it.
-                    // See jira ticket:99 "ELR for X-lock" (originally trac ticket:101).
-                    // NOTE this should not be needed now that our algorithm is based
-                    // on lock bucket tag, which is always exact, not too conservative.
-                    // should consider removing this later, but for now keep it.
-                    W_COERCE(log_xct_end());
-                    _sync_logbuf();
-                }
-                _read_watermark = lsn_t::null;
-            }
-        } else {
-            if(flags & xct_t::t_chain)  {
-                inherited_read_watermark = _read_watermark;
-            }
-            // even if chaining or grouped xct, we can do ELR
-            W_DO(early_lock_release());
-        }
+        W_DO(_commit_read_only(flags, inherited_read_watermark));
     }
 
     INC_TSTAT(commit_xct_cnt);
@@ -1450,7 +1338,7 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
     if (flags & xct_t::t_chain)  {
         w_assert0(!is_sys_xct()); // system transaction cannot chain (and never has to)
 
-        w_assert1(individual==true);
+        w_assert1(! (flags & xct_t::t_group));
 
         ++_xct_chain_len;
         /*
@@ -1478,6 +1366,75 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
         change_state(xct_active);
     } else {
         _xct_chain_len = 0;
+    }
+
+    return RCOK;
+}
+
+rc_t
+xct_t::_commit_read_only(uint32_t flags, lsn_t& inherited_read_watermark)
+{
+    // Nothing logged; no need to write a log record.
+    change_state(xct_ended);
+
+    bool individual = ! (flags & xct_t::t_group);
+    if(individual && !is_sys_xct() && ! (flags & xct_t::t_chain)) {
+        W_DO(commit_free_locks());
+
+        // however, to make sure the ELR for X-lock and CLV is
+        // okay (ELR for S-lock is anyway okay) we need to make
+        // sure this read-only xct (no-log=read-only) didn't read
+        // anything not yet durable. Thus,
+        if ((_elr_mode==elr_sx || _elr_mode==elr_clv) &&
+                _query_concurrency != t_cc_none && _query_concurrency != t_cc_bad && _read_watermark.valid()) {
+            // to avoid infinite sleep because of dirty pages changed by aborted xct,
+            // we really output a log and flush it
+            bool flushed = false;
+            timeval start, now, result;
+            ::gettimeofday(&start,NULL);
+            while (true) {
+                W_DO(log->flush(_read_watermark, false, true, &flushed));
+                if (flushed) {
+                    break;
+                }
+
+                // in some OS, usleep() has a very low accuracy.
+                // So, we check the current time rather than assuming
+                // elapsed time = ELR_READONLY_WAIT_MAX_COUNT * ELR_READONLY_WAIT_USEC.
+                ::gettimeofday(&now,NULL);
+                timersub(&now, &start, &result);
+                int elapsed = (result.tv_sec * 1000000 + result.tv_usec);
+                if (elapsed > ELR_READONLY_WAIT_MAX_COUNT * ELR_READONLY_WAIT_USEC) {
+#if W_DEBUG_LEVEL>0
+                    // this is NOT an error. it's fine.
+                    cout << "ELR timeout happened in readonly xct's watermark check. outputting xct_end log..." << endl;
+#endif // W_DEBUG_LEVEL>0
+                    break; // timeout
+                }
+                ::usleep(ELR_READONLY_WAIT_USEC);
+            }
+
+            if (!flushed) {
+                // now we suspect that we might saw a bogus tag for some reason.
+                // so, let's output a real xct_end log and flush it.
+                // See jira ticket:99 "ELR for X-lock" (originally trac ticket:101).
+                // NOTE this should not be needed now that our algorithm is based
+                // on lock bucket tag, which is always exact, not too conservative.
+                // should consider removing this later, but for now keep it.
+                //W_COERCE(log_xct_end());
+                //_sync_logbuf();
+                W_FATAL_MSG(fcINTERNAL,
+                        << "Reached part of the code that was supposed to be dead."
+                        << " Please uncomment the lines and remove this error");
+            }
+            _read_watermark = lsn_t::null;
+        }
+    } else {
+        if(flags & xct_t::t_chain)  {
+            inherited_read_watermark = _read_watermark;
+        }
+        // even if chaining or grouped xct, we can do ELR
+        W_DO(early_lock_release());
     }
 
     return RCOK;
@@ -1525,16 +1482,8 @@ rc_t xct_t::early_lock_release() {
 }
 
 
-
-/*********************************************************************
- *
- *  xct_t::abort()
- *
- *  Abort the transaction by calling rollback().
- *
- *********************************************************************/
 rc_t
-xct_t::_abort()
+xct_t::_pre_abort()
 {
     // If there are too many threads attached, tell the VAS and let it
     // ensure that only one does this.
@@ -1586,6 +1535,21 @@ xct_t::_abort()
 #endif
 
     change_state(xct_aborting);
+
+    return RCOK;
+}
+
+/*********************************************************************
+ *
+ *  xct_t::abort()
+ *
+ *  Abort the transaction by calling rollback().
+ *
+ *********************************************************************/
+rc_t
+xct_t::_abort()
+{
+    W_DO(_pre_abort());
 
     /*
      * clear the list of load stores as they are going to be destroyed
@@ -1665,6 +1629,7 @@ xct_t::_abort()
     }
 
     _core->_xct_aborting = false; // couldn't have xct_ended do this, arg
+                                  // CS: why not???
     _xct_chain_len = 0;
 
     me()->detach_xct(this);        // no transaction for this thread
@@ -1884,6 +1849,9 @@ rc_t
 xct_t::get_logbuf(logrec_t*& ret, int t)
 {
     // then , use tentative log buffer.
+    // CS: system transactions should also go through log reservation,
+    // since they are consuming space which user transactions think
+    // is available for rollback. This is probably a bug.
     if (is_piggy_backed_single_log_sys_xct()) {
         ret = _log_buf_for_piggybacked_ssx;
         return RCOK;
@@ -2223,11 +2191,12 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
     return RCOK;
 }
 
-void _update_page_lsns(const fixable_page_h *page, const lsn_t &new_lsn) {
+void xct_t::_update_page_lsns(const fixable_page_h *page, const lsn_t &new_lsn) {
     if (page != NULL) {
         if (page->latch_mode() == LATCH_EX) {
             const_cast<fixable_page_h*>(page)->update_initial_and_last_lsn(new_lsn);
-            const_cast<fixable_page_h*>(page)->set_dirty();
+            // CS: already setting dirty below
+            //const_cast<fixable_page_h*>(page)->set_dirty();
         } else {
             // In some log type (so far only log_page_evict), we might update LSN only with
             // SH latch. In that case, we might have a race to update the LSN.
@@ -2491,13 +2460,14 @@ xct_t::anchor(bool grabit)
 void
 xct_t::compensate_undo(const lsn_t& lsn)
 {
+#ifndef USE_ATOMIC_COMMIT
     DBGX(    << " compensate_undo (" << lsn << ") -- state=" << state());
 
     w_assert3(_in_compensated_op);
     // w_assert9(state() == xct_aborting); it's active if in sm::rollback_work
 
     _compensate(lsn, _last_log?_last_log->is_undoable_clr() : false);
-
+#endif
 }
 
 /*********************************************************************
@@ -2623,6 +2593,14 @@ rc_t
 xct_t::rollback(const lsn_t &save_pt)
 {
     FUNC(xct_t::rollback);
+
+#ifdef USE_ATOMIC_COMMIT
+    ss_m::errlog->clog  << emerg_prio
+    << "Rollback to a save point not yet supported in atomic commit protocol"
+    << flushl;
+    return RC(eNOABORT);
+#endif
+
     DBGTHRD(<< "xct_t::rollback to " << save_pt);
     // W_DO(check_one_thread_attached()); // now checked in prologue
     // w_assert1(one_thread_attached());

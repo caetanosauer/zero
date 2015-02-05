@@ -402,7 +402,7 @@ inline w_rc_t::w_rc_t(const char* filename, uint32_t linenum, w_error_codes erro
     assert(error_code != w_error_ok);
     _filenames[0] = filename;
     _linenums[0] = linenum;
-#if W_DEBUG_LEVEL>=3
+#if W_DEBUG_LEVEL>=5
     std::cout << "Error instantiated: " << *this << std::endl;
 #endif //W_DEBUG_LEVEL>=3
 }
@@ -451,7 +451,7 @@ inline w_rc_t::w_rc_t(const w_rc_t &other, const char* filename, uint32_t linenu
     if (more_custom_message != NULL) {
         append_custom_message(more_custom_message);
     }
-#if W_DEBUG_LEVEL>=3
+#if W_DEBUG_LEVEL>=5
     std::cout << "Error augmented: " << *this << std::endl;
 #endif //W_DEBUG_LEVEL>=3
 }

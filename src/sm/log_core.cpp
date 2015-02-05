@@ -677,37 +677,7 @@ lsn_t log_core::_copy_to_buffer(logrec_t &rec, long pos, long recsize, CArraySlo
     lsn_t rlsn = info->lsn + pos;
     rec.set_lsn_ck(rlsn);
 
-    // are we the ones that actually wrap? (do this *after* computing the lsn!)
-    pos += info->start_pos;
-    if(pos >= _segsize)
-        pos -= _segsize;
-
-    char const* data = (char const*) &rec;
-    long spillsize = pos + recsize - _segsize;
-    if(spillsize <= 0) {
-        // normal insert
-        memcpy(_buf+pos, data, recsize);
-    }
-    else {
-        // spillsize > 0 so we are wrapping.
-        // The wrap is within a partition.
-        // next_lsn is still valid but not new_end
-        //
-        // Old epoch becomes valid for the flush daemon to
-        // flush and "close".  It contains the first part of
-        // this log record that we're trying to insert.
-        // New epoch holds the rest of the log record that we're trying
-        // to insert.
-        //
-        // spillsize is the portion that wraps around
-        // partsize is the portion that doesn't wrap.
-        long partsize = recsize - spillsize;
-
-        // Copy log record to buffer
-        // memcpy : areas do not overlap
-        memcpy(_buf+pos, data, partsize);
-        memcpy(_buf, data+partsize, spillsize);
-    }
+    _copy_raw(info, pos, (char const*) &rec, recsize);
 
     return rlsn;
 }
@@ -771,22 +741,8 @@ bool log_core::_update_epochs(CArraySlot* info) {
     return false;
 }
 
-rc_t log_core::insert(logrec_t &rec, lsn_t* rlsn)
+rc_t log_core::_join_carray(CArraySlot*& info, long& pos, int32_t size)
 {
-    // If log corruption is turned on,  zero out
-    // important parts of the log to fake crash (by making the
-    // log appear to end here).
-    if (_log_corruption) {
-        smlevel_0::errlog->clog << error_prio 
-        << "Generating corrupt log record at lsn: " << curr_lsn() << flushl;
-        rec.corrupt();
-        // Now turn it off.
-        _log_corruption = false;
-    }
-
-    w_assert1(rec.length() <= sizeof(logrec_t));
-    int32_t size = rec.length();
-
     /* Copy our data into the buffer and update/create epochs. Note
        that, while we may race the flush daemon to update the epoch
        record, it will not touch the buffer until after we succeed so
@@ -795,9 +751,6 @@ rc_t log_core::insert(logrec_t &rec, lsn_t* rlsn)
        equal old_epoch.end. The mutex ensures we don't race with any
        other inserts.
     */
-    lsn_t rec_lsn;
-    CArraySlot* info = 0;
-    long pos = 0;
 
     // consolidate
     carray_slotid_t idx;
@@ -834,12 +787,11 @@ rc_t log_core::insert(logrec_t &rec, lsn_t* rlsn)
         w_assert1(old_count > ConsolidationArray::SLOT_AVAILABLE);
         _carray->wait_for_leader(info);
     }
+    return RCOK;
+}
 
-    // insert my value
-    if(!info->error) {
-        rec_lsn = _copy_to_buffer(rec, pos, size, info);
-    }
-
+rc_t log_core::_leave_carray(CArraySlot* info, int32_t size)
+{
     // last one to leave cleans up
     carray_status_t end_count = lintel::unsafe::atomic_fetch_add<carray_status_t>(
         &info->count, size);
@@ -856,6 +808,38 @@ rc_t log_core::insert(logrec_t &rec, lsn_t* rlsn)
         return RC(info->error);
     }
 
+    return RCOK;
+}
+
+rc_t log_core::insert(logrec_t &rec, lsn_t* rlsn)
+{
+    // If log corruption is turned on,  zero out
+    // important parts of the log to fake crash (by making the
+    // log appear to end here).
+    if (_log_corruption) {
+        smlevel_0::errlog->clog << error_prio 
+        << "Generating corrupt log record at lsn: " << curr_lsn() << flushl;
+        rec.corrupt();
+        // Now turn it off.
+        _log_corruption = false;
+    }
+
+    w_assert1(rec.length() <= sizeof(logrec_t));
+    int32_t size = rec.length();
+
+    CArraySlot* info = NULL;
+    long pos = 0;
+    W_DO(_join_carray(info, pos, size));
+    w_assert1(info);
+
+    // insert my value
+    lsn_t rec_lsn;
+    if(!info->error) {
+        rec_lsn = _copy_to_buffer(rec, pos, size, info);
+    }
+
+    W_DO(_leave_carray(info, size));
+
     if(rlsn) {
         *rlsn = rec_lsn;
     }
@@ -864,6 +848,65 @@ rc_t log_core::insert(logrec_t &rec, lsn_t* rlsn)
     ADD_TSTAT(log_bytes_generated,size);
     return RCOK;
 }
+
+void log_core::_copy_raw(CArraySlot* info, long& pos, const char* data,
+        size_t size)
+{
+    // are we the ones that actually wrap? (do this *after* computing the lsn!)
+    pos += info->start_pos;
+    if(pos >= _segsize)
+        pos -= _segsize;
+
+    long spillsize = pos + size - _segsize;
+    if(spillsize <= 0) {
+        // normal insert
+        memcpy(_buf+pos, data, size);
+    }
+    else {
+        // spillsize > 0 so we are wrapping.
+        // The wrap is within a partition.
+        // next_lsn is still valid but not new_end
+        //
+        // Old epoch becomes valid for the flush daemon to
+        // flush and "close".  It contains the first part of
+        // this log record that we're trying to insert.
+        // New epoch holds the rest of the log record that we're trying
+        // to insert.
+        //
+        // spillsize is the portion that wraps around
+        // partsize is the portion that doesn't wrap.
+        long partsize = size - spillsize;
+
+        // Copy log record to buffer
+        // memcpy : areas do not overlap
+        memcpy(_buf+pos, data, partsize);
+        memcpy(_buf, data+partsize, spillsize);
+    }
+}
+
+/*
+ * Inserts an arbitrary block of memory (a bulk of log records from plog) into
+ * the log buffer, returning the LSN of the first byte in rlsn. This is used
+ * by the atomic commit protocol (see plog_xct_t::_commit) (Caetano).
+ */
+/*rc_t log_core::insert_bulk(char* data, size_t size, lsn_t*& rlsn)
+{
+    CArraySlot* info = NULL;
+    long pos = 0;
+    W_DO(_join_carray(info, pos, size));
+    w_assert1(info);
+
+    // copy to buffer (similar logic of _copy_to_buffer, but for bulk use)
+    if(!info->error) {
+        *rlsn = info->lsn + pos;
+
+
+    W_DO(_leave_carray(info, size));
+
+    ADD_TSTAT(log_bytes_generated,size);
+    return RCOK;
+}
+*/
 
 
 // Return when we know that the given lsn is durable. Wait for the

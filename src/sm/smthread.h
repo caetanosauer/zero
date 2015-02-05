@@ -734,13 +734,13 @@ public:
         ++depth;
         entered=true;
         DBG2(<< " th." << smthread_t::me()->id << " " << name
-                << " " << depth << "-{", line,file);
+                << " " << depth << "-{", file, line);
         }
     }
     ~func_helper() {
         if(entered) {
             DBG2(<< " th." << smthread_t::me()->id << " " << depth << "-}",
-                line,file);
+                file, line);
             depth--;
         }
     }

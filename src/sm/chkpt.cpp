@@ -1224,6 +1224,8 @@ try
             // It reocrds the begin checkpoint LSN (master) and the
             // minimum LSN (std::min(min_rec_lsn, min_xct_lsn))
             // Error in this step will bring down the server
+            w_assert3(min_rec_lsn.hi() > 0);
+            w_assert3(min_xct_lsn.hi() > 0);
             log->set_master(master, min_rec_lsn, min_xct_lsn);
 
             // Do not scavenge log space because Single Page Recovery might need

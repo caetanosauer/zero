@@ -191,7 +191,9 @@ rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the 
     // log as one record
     if (log_it) {
         W_DO(log_page_img_format(*this));
+#ifndef USE_ATOMIC_COMMIT // otherwise LSN is only set at commit time
         w_assert1(lsn().valid() || !smlevel_0::logging_enabled);
+#endif
     }
 
     // This is the only place where a page format log record is being generated,
@@ -841,6 +843,7 @@ rc_t btree_page_h::norecord_split (shpid_t foster, lsn_t foster_emlsn,
                           &scratch_p, 0, scratch_p.nrecs()
         ));
         update_initial_and_last_lsn(scratch.lsn); // format_steal() also clears lsn, so recover it from the copied page
+        update_clsn(scratch.lsn);
     } else {
         // otherwise, just sets the fence keys and headers
         //sets new fence
@@ -1804,6 +1807,8 @@ void btree_page_h::_init(lsn_t lsn, lpid_t page_id,
 #endif //ZERO_INIT
 
     page()->lsn          = lsn;
+    // CS: clsn set to null here -- committing TA will update it properly
+    page()->clsn = lsn_t::null;
     page()->pid          = page_id;
     page()->tag          = t_btree_p;
     page()->page_flags   = 0;

@@ -39,10 +39,6 @@
 
 class dirty_pages_tab_t;
 
-#ifndef BF_S_H
-#include <bf_s.h>
-#endif
-
 #include "sm_int_1.h"
 #include "lock.h"               // Lock re-acquisition
 

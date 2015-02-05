@@ -5,6 +5,9 @@ ENABLE_TESTING()
 add_library(btree_test_env STATIC ${CMAKE_CURRENT_SOURCE_DIR}/btree_test_env.cpp)
 target_link_libraries(btree_test_env gtest common fc sthread sm)
 
+add_library(btree_test_env_plog STATIC ${CMAKE_CURRENT_SOURCE_DIR}/btree_test_env.cpp)
+target_link_libraries(btree_test_env_plog gtest common fc sthread sm_plog)
+
 #################################################
 # To add alternate configurations to be tested,
 # edit both ../testutil.cmake and also btree_test_env.h
@@ -54,3 +57,4 @@ X_ADD_TESTCASE(test_logbuf_multi_thread btree_test_env)
 X_ADD_TESTCASE(test_logbuf_spr btree_test_env)
 X_ADD_TESTCASE(test_logbuf_scan btree_test_env)
 
+X_ADD_TESTCASE(test_plog btree_test_env_plog)

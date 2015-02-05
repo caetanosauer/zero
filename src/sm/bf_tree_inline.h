@@ -263,6 +263,7 @@ inline w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, volid_t vol, snum
     cb.pin_cnt_set(1); // root page's pin count is always positive
     cb._used = true;
     cb._dirty = true;
+    cb._uncommitted_cnt = 0;
     get_cb(idx)._in_doubt = false;
     if (true) return _latch_root_page(page, idx, LATCH_EX, false);
 #endif // SIMULATE_MAINMEMORYDB
@@ -280,6 +281,7 @@ inline w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, volid_t vol, snum
     get_cb(idx)._dirty = true;
     get_cb(idx)._in_doubt = false;
     get_cb(idx)._recovery_access = false;
+    get_cb(idx)._uncommitted_cnt = 0;
     ++_dirty_page_count_approximate;
     get_cb(idx)._swizzled = true;
     bool inserted = _hashtable->insert_if_not_exists(bf_key(vol, shpid), idx); // for some type of caller (e.g., redo) we still need hashtable entry for root
@@ -429,6 +431,18 @@ inline void bf_tree_m::set_dirty(const generic_page* p) {
         ++_dirty_page_count_approximate;
     }
     cb._used = true;
+#ifdef USE_ATOMIC_COMMIT
+    /*
+     * CS: We assume that all updates made by transactions go through
+     * this method (usually via the methods in logrec_t but also in
+     * B-tree maintenance code).
+     * Therefore, it is the only place where the count of
+     * uncommitted updates is incrementes.
+     */
+    cb._uncommitted_cnt++;
+    // assert that transaction attached is of type plog_xct_t*
+    w_assert1(smlevel_1::xct_impl == smlevel_1::XCT_PLOG);
+#endif
 }
 inline bool bf_tree_m::is_dirty(const generic_page* p) const {
     uint32_t idx = p - _buffer;
@@ -446,13 +460,17 @@ inline bool bf_tree_m::is_dirty(const bf_idx idx) const {
 inline void bf_tree_m::update_initial_dirty_lsn(const generic_page* p,
                                                 const lsn_t new_lsn)
 {
+    w_assert3(new_lsn.hi() > 0);
     // Update the initial dirty lsn (if needed) for the page regardless page is dirty or not
-
     uint32_t idx = p - _buffer;
     w_assert1 (_is_active_idx(idx));
+    (void) new_lsn; // avoid compiler warning of unused var
+
+#ifndef USE_ATOMIC_COMMIT // otherwise rec_lsn is only set when fetching page
     bf_tree_cb_t &cb = get_cb(idx);
     if ((new_lsn.data() < cb._rec_lsn) || (0 == cb._rec_lsn))
         cb._rec_lsn = new_lsn.data();
+#endif
 }
 
 inline void bf_tree_m::set_recovery_access(const generic_page* p) {
@@ -483,6 +501,7 @@ inline void bf_tree_m::set_in_doubt(const bf_idx idx, lsn_t first_lsn,
     cb._in_doubt = true;
     cb._dirty = false;
     cb._used = true;
+    cb._uncommitted_cnt = 0;
 
     // _rec_lsn is the initial LSN which made the page dirty
     // Update the earliest LSN only if first_lsn is earlier than the current one
@@ -515,6 +534,7 @@ inline void bf_tree_m::clear_in_doubt(const bf_idx idx, bool still_used, uint64_
     // Clear both 'in_doubt' and 'used' flags, no change to _dirty flag
     cb._in_doubt = false;
     cb._dirty = false;
+    cb._uncommitted_cnt = 0;
 
     // Page is no longer needed, caller is from de-allocating a page log record
     if (false == still_used)
@@ -542,6 +562,7 @@ inline void bf_tree_m::in_doubt_to_dirty(const bf_idx idx) {
     cb._dirty = true;
     cb._used = true;
     cb._refbit_approximate = BP_INITIAL_REFCOUNT; 
+    cb._uncommitted_cnt = 0;
 
     // Page has been loaded into buffer pool, no need for the
     // last write LSN any more (only used for Single-Page-Recovery during system crash restart 
@@ -593,6 +614,7 @@ inline void bf_tree_m::set_initial_rec_lsn(const lpid_t& pid,
         {
            lsn = current_lsn;
            w_assert1(0 != lsn.data());
+           w_assert3(lsn.hi() > 0);
         }
 
         // Update the initial LSN which is when the page got dirty initially
@@ -602,6 +624,7 @@ inline void bf_tree_m::set_initial_rec_lsn(const lpid_t& pid,
             cb._rec_lsn = new_lsn.data();
         cb._used = true;
         cb._dirty = true;
+        cb._uncommitted_cnt = 0;
 
         // Either from regular b-tree operation or from redo during recovery
         // do not change the in_doubt flag setting, caller handles it

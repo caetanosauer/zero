@@ -6,7 +6,6 @@
 
 #include "btree_test_env.h"
 #include "generic_page.h"
-#include "bf.h"
 #include "btree.h"
 #include "btree_page_h.h"
 #include "btree_impl.h"

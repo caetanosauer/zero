@@ -46,7 +46,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "sm_int_0.h"
 #endif
 
-
 class chkpt_m;
 class restart_m;
 
@@ -73,6 +72,14 @@ public:
                         xct_freeing_space = 0x6, 
                         xct_ended = 0x7
     };
+
+    // xct implementation
+    enum xct_impl_t {
+        XCT_TRADITIONAL = 0,
+        XCT_PLOG = 1
+    };
+
+    static xct_impl_t xct_impl;
 
     // Checkpoint manager
     static chkpt_m*    chkpt;
