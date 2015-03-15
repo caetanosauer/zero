@@ -87,7 +87,7 @@
 #include <stdint.h>
 #include <ostream>
 #include <pthread.h>
-#include <Lintel/AtomicCounter.hpp>
+#include <AtomicCounter.hpp>
 #include "w_defines.h"
 #include "w_okvl.h"
 #include "w_rc.h"

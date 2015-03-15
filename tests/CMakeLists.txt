@@ -6,6 +6,7 @@ INCLUDE_DIRECTORIES (
   ${CMAKE_SOURCE_DIR}/src/sthread
   ${CMAKE_SOURCE_DIR}/src/sm
   ${CMAKE_SOURCE_DIR}/src/latches
+  ${CMAKE_SOURCE_DIR}/src/Lintel
 ) 
 
 # to look for generated headers
@@ -15,8 +16,7 @@ INCLUDE_DIRECTORIES (
   ${CMAKE_BINARY_DIR}/src/common
   ${CMAKE_BINARY_DIR}/src/sthread
   ${CMAKE_BINARY_DIR}/src/sm
-
-  ${LINTEL_INCLUDE_DIR}
+  ${CMAKE_BINARY_DIR}/src/Lintel
 )
 
 INCLUDE_DIRECTORIES (${CMAKE_SOURCE_DIR}/gtest-1.7.0/include)

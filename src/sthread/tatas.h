@@ -1,7 +1,7 @@
 #ifndef TATAS_H
 #define TATAS_H
 
-#include "Lintel/AtomicCounter.hpp"
+#include "AtomicCounter.hpp"
 #include "os_interface.h"
 #include "w_defines.h"
 

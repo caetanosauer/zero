@@ -8,7 +8,7 @@
 #include "log_carray.h"
 #include "log_core.h"
 
-#include "Lintel/AtomicCounter.hpp" // for CAS
+#include "AtomicCounter.hpp" // for CAS
 
 const std::string plog_xct_t::IMPL_NAME = "plog";
 

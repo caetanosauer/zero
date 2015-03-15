@@ -6,7 +6,7 @@
 
 #include <stdint.h>
 #include <memory>
-#include <Lintel/AtomicCounter.hpp>
+#include <AtomicCounter.hpp>
 #include "w_defines.h"
 #include "w_debug.h"
 #include "lsn.h"

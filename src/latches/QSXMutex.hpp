@@ -1,7 +1,7 @@
 #ifndef QSXMUTEX_HPP
 #define QSXMUTEX_HPP
 #include <inttypes.h>
-#include "Lintel/AtomicCounter.hpp"
+#include "AtomicCounter.hpp"
 
 class QSXMutex {
   typedef uint64_t rwcount_t;

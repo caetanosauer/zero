@@ -14,7 +14,7 @@
 #include "btree_page_h.h"
 #include "smthread.h"
 
-#include <Lintel/AtomicCounter.hpp>
+#include <AtomicCounter.hpp>
 
 btree_test_env *test_env;
 

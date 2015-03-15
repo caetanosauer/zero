@@ -5,7 +5,7 @@
 #include "lock_compt.h"
 #include "w_defines.h"
 #include "w_debug.h"
-#include <Lintel/AtomicCounter.hpp>
+#include <AtomicCounter.hpp>
 
 PoorMansOldestLsnTracker::PoorMansOldestLsnTracker(uint32_t buckets) {
     // same logic as in lock_core(). yes, stupid prime hashing. but see the name of this class.

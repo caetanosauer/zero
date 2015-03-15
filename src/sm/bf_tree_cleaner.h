@@ -11,7 +11,7 @@
 #include "vid_t.h"
 #include "bf_idx.h"
 #include "lsn.h"
-#include <Lintel/AtomicCounter.hpp>
+#include <AtomicCounter.hpp>
 #include <vector>
 
 /** ID of cleaner worker thread. zero means no corresponding worker thread. */

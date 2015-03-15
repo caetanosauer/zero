@@ -8,7 +8,7 @@
 #include <ostream>
 #include <vector>
 #include <set>
-#include <Lintel/AtomicCounter.hpp>
+#include <AtomicCounter.hpp>
 #include "w_markable_pointer.h"
 
 /**

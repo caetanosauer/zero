@@ -52,7 +52,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #ifndef ATOMIC_CONTAINER_H
 #define ATOMIC_CONTAINER_H
 
-#include "Lintel/AtomicCounter.hpp"
+#include "AtomicCounter.hpp"
 
 // for placement new support, which users need
 #include <boost/static_assert.hpp>

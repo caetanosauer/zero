@@ -14,7 +14,7 @@
 
 #include "w_strstream.h"
 #include <sstream>
-#include <Lintel/AtomicCounter.hpp>
+#include <AtomicCounter.hpp>
 
 /** implementation of dump/output/other debug utility functions in lock_core,lock_m. */
 

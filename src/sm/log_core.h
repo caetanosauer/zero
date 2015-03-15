@@ -61,7 +61,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
-#include <Lintel/AtomicCounter.hpp>
+#include <AtomicCounter.hpp>
 #include <log.h>
 #include <vector> // only for _collect_single_page_recovery_logs()
 

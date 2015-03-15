@@ -32,7 +32,7 @@
 
 #include <pthread.h>
 #include <memory.h>
-#include <Lintel/AtomicCounter.hpp>
+#include <AtomicCounter.hpp>
 
 #include "log_carray.h"
 

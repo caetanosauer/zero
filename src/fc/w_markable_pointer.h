@@ -8,7 +8,7 @@
 #include <stdint.h>
 #include <cassert>
 #include <iostream>
-#include <Lintel/AtomicCounter.hpp>
+#include <AtomicCounter.hpp>
 
 /**
  * \brief Lock-Free Data Structures and Algorithm

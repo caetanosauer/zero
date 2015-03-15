@@ -1,5 +1,5 @@
 #include "w_markable_pointer.h"
-#include <Lintel/AtomicCounter.hpp>
+#include <AtomicCounter.hpp>
 #include "gtest/gtest.h"
 #include "local_random.h"
 

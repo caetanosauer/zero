@@ -80,7 +80,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #endif
 
 #include <set>
-#include <Lintel/AtomicCounter.hpp>
+#include <AtomicCounter.hpp>
 #include "w_key.h"
 
 #include "latch.h"

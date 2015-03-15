@@ -88,7 +88,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #include "w_defines.h"
 #include "w_rc.h"
-#include "Lintel/AtomicCounter.hpp"
+#include "AtomicCounter.hpp"
 #include "w_strstream.h"
 #include "stime.h"
 #include "gethrtime.h"
