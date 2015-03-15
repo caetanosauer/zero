@@ -227,10 +227,6 @@ add_subdirectory(src) # main source codes
 add_subdirectory(config) # to be eliminated
 add_subdirectory(gtest-1.7.0) # google-test library
 add_subdirectory(tests) # unit testcases
-# TODO: experiments should be compiled only when the user wants... maybe optional cmake argument?
-add_subdirectory(experiments) # benchmarks and other performance tests
-# "examples" folder is deleted. experiments/tpcc or tpcb serves that role now.
-add_subdirectory(publications)
 # not needed so far, and causes a warning
 # add_library(shore)
 # target_link_libraries(shore fc sthread common sm)
