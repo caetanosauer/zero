@@ -64,6 +64,9 @@ struct vid_t {
     friend bool operator!=(const vid_t& v1, const vid_t& v2)  {
         return v1.vol != v2.vol;
     }
+    friend bool operator>(const vid_t& v1, const vid_t& v2)  {
+        return v1.vol > v2.vol;
+    }
 };
 
 inline std::ostream& operator<<(std::ostream& o, const vid_t& v)
