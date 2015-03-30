@@ -177,6 +177,11 @@ w_rc_t    sdisk_t::pwrite(const void *, int , fileoff_t ,
   return RC(fcNOTIMPLEMENTED);
 }
 
+w_rc_t    sdisk_t::rename(const char*, const char*)
+{
+    return RC(fcNOTIMPLEMENTED);
+}
+
 
 /* a no-op file-sync if the underlying implementation doesn't support it. */
 w_rc_t    sdisk_t::sync()

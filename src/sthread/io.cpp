@@ -1003,6 +1003,20 @@ w_rc_t    sthread_t::pread(int fd, void *buf, int n, fileoff_t pos)
     return e;
 }
 
+/*
+ * A version of pread that tolerates short IO, i.e., less bytes being read
+ * than requested in n. Number of bytes read is returned in 'done'.
+ */
+w_rc_t sthread_t::pread_short(int fd, void *buf, int n, fileoff_t pos,
+       int& done)
+{
+    fd -= fd_base;
+    if (fd < 0 || fd >= (int)open_max || !_disks[fd]) 
+        return RC(stBADFD);
+
+    return _disks[fd]->pread(buf, n, pos, done);
+}
+
 
 w_rc_t    sthread_t::pwrite(int fd, const void *buf, int n, fileoff_t pos)
 {
@@ -1045,6 +1059,18 @@ w_rc_t    sthread_t::ftruncate(int fd, fileoff_t n)
     return e;
 }
 
+w_rc_t sthread_t::frename(int fd, const char* oldname, const char* newname)
+{
+    fd -= fd_base;
+    if (fd < 0 || fd >= (int)open_max || !_disks[fd]) 
+        return RC(stBADFD);
+
+    w_rc_t    e;
+
+    e = _disks[fd]->rename(oldname, newname);
+
+    return e;
+}
 
 w_rc_t sthread_t::lseek(int fd, fileoff_t pos, int whence, fileoff_t& ret)
 {

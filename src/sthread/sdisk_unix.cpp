@@ -366,6 +366,16 @@ w_rc_t    sdisk_unix_t::seek(fileoff_t pos, int origin, fileoff_t &newpos)
     return RCOK;
 }
 
+w_rc_t    sdisk_unix_t::rename(const char* oldname, const char* newname)
+{
+    int n = ::os_rename(oldname, newname);
+
+    if (n == -1)
+        return RC(fcOS);
+
+    return RCOK;
+}
+
 w_rc_t    sdisk_unix_t::truncate(fileoff_t size)
 {
     if (_fd == FD_NONE)

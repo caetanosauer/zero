@@ -733,6 +733,8 @@ public:
                             size_t                 iovcnt);
 
     static w_rc_t        pread(int fd, void *buf, int n, fileoff_t pos);
+    static w_rc_t        pread_short(int fd, void *buf, int n, fileoff_t pos,
+                            int& done);
     static w_rc_t        pwrite(int fd, const void *buf, int n,
                            fileoff_t pos);
     static w_rc_t        lseek(
@@ -747,6 +749,7 @@ public:
                             int                whence);
     static w_rc_t        fsync(int fd);
     static w_rc_t        ftruncate(int fd, fileoff_t sz);
+    static w_rc_t        frename(int fd, const char* o, const char* n);
     static w_rc_t        fstat(int fd, filestat_t &sb);
     static w_rc_t        fisraw(int fd, bool &raw);
 

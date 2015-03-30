@@ -165,6 +165,8 @@ public:
 
     virtual w_rc_t    seek(fileoff_t pos, int origin, fileoff_t &newpos) = 0;
 
+    virtual w_rc_t    rename(const char* oldname, const char* newname) = 0;
+
     virtual w_rc_t    truncate(fileoff_t size) = 0;
     virtual w_rc_t    sync();
 

@@ -68,6 +68,10 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define    os_close(d)    close(d)
 #endif
 
+#ifndef os_rename
+#define    os_rename(o,n)  rename(o,n)
+#endif
+
 #define    os_read(d,b,c)    read(d,b,c)
 #define    os_write(d,b,c)    write(d,b,c)
 #define    os_readv(d,v,c)    readv(d,v,c)

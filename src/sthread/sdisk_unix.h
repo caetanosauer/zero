@@ -81,6 +81,8 @@ public:
 
     w_rc_t    seek(fileoff_t pos, int origin, fileoff_t &newpos);
 
+    w_rc_t    rename(const char* oldname, const char* newname);
+
     w_rc_t    truncate(fileoff_t size);
 
     w_rc_t    sync();
