@@ -92,6 +92,7 @@ public:
 #    include <lock.h>
 #    include <logrec.h>
 #    include <xct.h>
+#    include <logarchiver.h>
 
 #endif
 class xct_log_warn_check_t : public smlevel_0 {

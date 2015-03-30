@@ -249,6 +249,55 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *     valid values: see sm.cpp
  *  - default: see sm.cpp for initial setting
  *  - required?: no
+ *
+ *  -sm_archdir;
+ *      - type: string
+ *      - description: directory in which to store log archive runs
+ *      - default: none
+ *      - required?: no (only if archiving is activated below)
+ *      
+ *  -sm_archiving;
+ *      - type: Boolean
+ *      - description: Activates log archiving, but just instatiates a
+ *      LogArchiver object without sending it an activation signal. See the SM
+ *      method activate_archiver for that.
+ *      - default: no
+ *      - required?: no
+ *
+ *  -sm_async_merging;
+ *      - type: Boolean
+ *      - description: Activates asynchronous merging of log archive runs
+ *      - default: no
+ *      - required?: no
+ *      
+ *  -sm_sort_archive;
+ *      - type: Boolean
+ *      - description: Whether to partially-sort the log archive, resulting in
+ *      run files. If turned off, the archiver thread simply copies blocks from
+ *      log files to the log archive. The purpose is to simulate a traditional
+ *      log archiving operation in experiments.
+ *      - default: yes
+ *      - required?: no
+ *      
+ *  -sm_merge_factor;
+ *      - type: int
+ *      - description: Maximum merge factor (or fan-in) to be used by the log 
+ *      archive merger
+ *      - default: 100
+ *      - required?: no
+ *      
+ *  -sm_merge_blocksize;
+ *      - type: int (>=8192) 
+ *      - description: Size in bytes of the IO unit used by the archive merger
+ *      - default: 1048576 (1MB)
+ *      - required?: no
+ *      
+ *  -sm_archiver_workspace_size;
+ *      - type:  int
+ *      - description: Size of sort workspace of log archiver
+ *      - default: 104857600 (100 MB)
+ *      - required?: no
+ *      
   */
 
 
@@ -1916,6 +1965,9 @@ public:
     static restart_phase_t in_log_analysis();
     static restart_phase_t in_REDO();
     static restart_phase_t in_UNDO();
+
+    static rc_t            activate_archiver();
+    static rc_t            activate_merger();
 
 private:
 

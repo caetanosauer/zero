@@ -198,6 +198,8 @@ io_m* smlevel_0::io = 0;
 bf_tree_m* smlevel_0::bf = 0;
 log_m* smlevel_0::log = 0;
 log_core* smlevel_0::clog = 0;
+LogArchiver* smlevel_0::logArchiver = 0;
+ArchiveMerger* smlevel_0::archiveMerger = 0;
 
 // TODO(Restart)... it was for a space-recovery hack, not needed
 //tid_t *smlevel_0::redo_tid = 0;
@@ -649,6 +651,35 @@ ss_m::_construct_once()
         log = clog;
         w_assert0(log);
 #endif
+
+        // LOG ARCHIVER
+        bool archiving = _options.get_bool_option("sm_archiving", false);
+        if (archiving) {
+            std::string archdir = _options.get_string_option("sm_archdir", "");
+            bool sort = _options.get_bool_option("sm_sort_archive", true);
+            size_t workspaceSize =
+                _options.get_int_option("sm_archiver_workspace_size", 10240*10240);
+
+            if (archdir.empty()) {
+                errlog->clog << fatal_prio <<
+                    "Option for archive directory must be specified" << flushl;
+                W_FATAL(eINTERNAL);
+            }
+            W_COERCE(LogArchiver::constructOnce(logArchiver, archdir.c_str(),
+                    sort, workspaceSize));
+            logArchiver->fork();
+
+            bool merging = _options.get_bool_option("sm_async_merging", false);
+            if (sort && merging)
+            {
+                int factor = _options.get_int_option("sm_merge_factor", 100);
+                int bsize = _options.get_int_option("sm_merge_blocksize", 1024*1024);
+                W_COERCE(ArchiveMerger::constructOnce(archiveMerger,
+                        archdir.c_str(), factor, bsize));
+                archiveMerger->fork();
+            }
+        }
+
 
         int percent = _options.get_int_option("sm_log_warn", 0);
 

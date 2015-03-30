@@ -86,6 +86,8 @@ class comm_m;
 class log_m;
 class log_core;
 class lock_m;
+class LogArchiver;
+class ArchiveMerger;
 
 class tid_t;
 class option_t;
@@ -570,6 +572,8 @@ public:
 
     static log_m* log;
     static log_core* clog;
+    static LogArchiver* logArchiver;
+    static ArchiveMerger* archiveMerger;
     // TODO(Restart)... it was for a space-recovery hack, not needed
     // static tid_t* redo_tid;
 
