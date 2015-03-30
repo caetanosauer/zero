@@ -524,11 +524,11 @@ template<class T, class Cmp>
 void Heap<T, Cmp>::PrintRoot(ostream& out, int rootElem, int indentLevel) const
 {
     if (rootElem < NumElements())  {
+        cout << elements[rootElem] << endl;
         PrintRoot(out, LeftChild(rootElem), indentLevel + 1);
         for (int i = 0; i < indentLevel; i++)  {
             out << '\t';
         }
-        out << elements[rootElem] << '\n';
         PrintRoot(out, RightChild(rootElem), indentLevel + 1);
     }
 }
