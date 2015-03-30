@@ -114,7 +114,15 @@ void BackupFile::close() {
         
     }
 }
-w_rc_t BackupFile::read_page(AlignedMemory& buffer, shpid_t shpid) {
+
+w_rc_t BackupFile::read_page(AlignedMemory& buffer, shpid_t shpid)
+{
+    /*
+     * TODO CS: What's the point of doing direct I/O if we read into a separate,
+     * newly allocated buffer every time, only to then copy it into the page?
+     * Indirect I/O does exactly the same and it may be more efficient since
+     * it is subject to the Kernel's I/O scheduler.
+     */
     w_assert1(buffer.get_size() >= sizeof(generic_page));
     char* memory = buffer.get_buffer();
     __off_t seeked = ::lseek(_fd, shpid * sizeof(generic_page), SEEK_SET);
