@@ -1620,6 +1620,24 @@ ss_m::checkpoint_sync()
     return RCOK;
 }
 
+rc_t
+ss_m::activate_archiver()
+{
+    if (logArchiver) {
+        logArchiver->activate(lsn_t::null, false);
+    }
+    return RCOK;
+}
+
+rc_t
+ss_m::activate_merger()
+{
+    if (archiveMerger) {
+        archiveMerger->activate(false);
+    }
+    return RCOK;
+}
+
 
 rc_t ss_m::force_buffers() {
     return bf->force_all();

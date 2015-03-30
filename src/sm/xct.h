@@ -983,8 +983,8 @@ public:
         return RC_AUGMENT(__e); \
     } \
 }
-#define to_string(x) # x
-#define X_DO(x,anchor) X_DO1(x,anchor, to_string(x))
+#define X_to_string(x) # x
+#define X_DO(x,anchor) X_DO1(x,anchor, X_to_string(x))
 
 #else
 
