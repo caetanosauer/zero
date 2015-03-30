@@ -45,3 +45,10 @@
  * (split out for different page types).
  */
 #define EXPENSIVE_LATCH_COUNTS 0
+
+/* CS: Define this to keep the log files for later inspection or debug.
+   If set, partitions are cleaned normally, but the call to unlink is
+   skipped. Thus, the log manager should behave the exact same way, but
+   the files will be kept.
+ */
+#define KEEP_LOG_PARTITIONS
