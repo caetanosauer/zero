@@ -323,24 +323,6 @@ public:
     enum cmp_t { bad_cmp_t=badOp, eq=eqOp,
                  gt=gtOp, ge=geOp, lt=ltOp, le=leOp };
 
-    //TODO: SHORE-KITS-API
-    //Define the right types (include foster btree type?)
-    /**\brief Index types */
-    enum ndx_t {
-        t_bad_ndx_t,             // illegal value
-        t_btree,                 // B+tree with duplicates
-        t_uni_btree,             // Unique-key btree
-        t_rtree,                  // R*tree
-        t_mrbtree,       // Multi-rooted B+tree with regular heap files
-        t_uni_mrbtree,
-        t_mrbtree_l,          // Multi-rooted B+tree where a heap file is pointed by only one leaf page
-        t_uni_mrbtree_l,
-        t_mrbtree_p,     // Multi-rooted B+tree where a heap file belongs to only one partition
-        t_uni_mrbtree_p
-    };
-
-
-
     /**\enum concurrency_t
      * \brief
      * Lock granularities

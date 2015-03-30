@@ -434,7 +434,6 @@ public:
 
     typedef smlevel_0::LOG_WARN_CALLBACK_FUNC LOG_WARN_CALLBACK_FUNC;
     typedef smlevel_0::LOG_ARCHIVED_CALLBACK_FUNC LOG_ARCHIVED_CALLBACK_FUNC;
-    typedef smlevel_0::ndx_t ndx_t;
     typedef smlevel_0::concurrency_t concurrency_t;
     typedef smlevel_1::xct_state_t xct_state_t;
 
@@ -1690,44 +1689,6 @@ public:
      */
     static rc_t            create_index(
                 vid_t                 vid, 
-                stid_t&               stid
-    );
-
-    /**\brief Create a B+-Tree index.
-     * \ingroup SSMBTREE
-     * @param[in] vid   Volume on which to create the index.
-     * @param[in] ntype   Type of index. Legitimate values are: 
-     *  - t_btree : B+-Tree with duplicate keys allowed
-     *  - t_uni_btree : B+-Tree without duplicate keys 
-     * @param[in] property Logging level of store. Legitimate values are:
-     *  - t_regular
-     *  - t_load_file
-     *  - t_insert_file
-     *  See sm_store_property_t for details.
-     * @param[in] key_desc Description of key type.
-     *  See \ref key_description for details.
-     * @param[in] cc The locking protocol to use with this index. See
-     * smlevel_0::concurrency_t and \ref SSMBTREE.
-     * @param[out] stid New store ID will be returned here.
-     */
-    static rc_t            create_index(
-                vid_t                 vid, 
-                ndx_t                 ntype, 
-                store_property_t      property,
-                const char*           key_desc,
-                concurrency_t         cc, 
-                stid_t&               stid
-    );
-
-    /**\brief Create a B+-Tree or R*-Tree index.
-     * \ingroup SSMBTREE
-     *\attention For backward compatibility. Will be deprecated later.
-     */
-    static rc_t            create_index(
-                vid_t                 vid, 
-                ndx_t                 ntype, 
-                store_property_t      property,
-                const char*           key_desc,
                 stid_t&               stid
     );
 

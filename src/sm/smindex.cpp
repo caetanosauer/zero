@@ -28,46 +28,6 @@ rc_t ss_m::create_index(vid_t vid, stid_t &stid)
     return RCOK;
 }
 
-/*********************************************************************
- *
- *  ss_m::create_index(vid, ntype, property, key_desc, stid)
- *  ss_m::create_index(vid, ntype, property, key_desc, cc, stid)
- *
- *********************************************************************/
-rc_t
-ss_m::create_index(
-    vid_t                   vid, 
-    ndx_t                   ntype, 
-    store_property_t        property,
-    const char*             key_desc,
-    stid_t&                 stid
-    )
-{
-    //TODO: SHORE-KITS-API: pass t_cc_kvl instead of t_cc_none
-    assert(0);
-    return 
-    //create_index(vid, ntype, property, key_desc, t_cc_kvl, stid);
-    create_index(vid, ntype, property, key_desc, t_cc_none, stid);
-}
-
-rc_t
-ss_m::create_index(
-    vid_t                 vid, 
-    ndx_t                 ntype, 
-    store_property_t      property,
-    const char*           key_desc,
-    concurrency_t         cc, 
-    stid_t&               stid
-    )
-{
-    SUPPRESS_UNUSED_5(vid, ntype, property, key_desc, cc);
-    SUPPRESS_UNUSED(stid);
-    //TODO: SHORE-KITS-API
-    assert(0);
-    SUPPRESS_NON_RETURN(rc_t);
-}
-
-
 rc_t ss_m::destroy_index(const stid_t& stid)
 {
     // take IX on volume, X on the index
@@ -99,14 +59,6 @@ rc_t ss_m::create_assoc(stid_t stid, const w_keystr_t& key, const vec_t& el)
     W_DO(open_store (stid, root_pid, true));
     W_DO( bt->insert(stid.vol.vol, stid.store, key, el) );
     return RCOK;
-}
-
-rc_t ss_m::create_assoc(stid_t stid, const vec_t& key, const vec_t& el)
-{
-    SUPPRESS_UNUSED_3(stid, key, el);
-    //TODO: SHORE-KITS-API
-    assert(0);
-    SUPPRESS_NON_RETURN(rc_t);
 }
 
 rc_t ss_m::update_assoc(stid_t stid, const w_keystr_t& key, const vec_t& el)
