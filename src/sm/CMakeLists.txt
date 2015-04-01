@@ -28,6 +28,9 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/device.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/fixable_page_h.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/generic_page.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/logarchiver.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/logfactory.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/mem_mgmt.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_core.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_hashtable.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_seg.cpp
