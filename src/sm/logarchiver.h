@@ -233,9 +233,6 @@ private:
     lsn_t nextLSN;
     LogScanner* logScanner;
 
-    size_t totalAlloc;
-    size_t totalUsed;
-
     bool shutdown;
     rc_t returnRC;
     ArchiverControl control;
@@ -243,8 +240,6 @@ private:
 
     LogArchiver(const char* archdir, bool sort, size_t workspaceSize);
     ~LogArchiver();
-
-    void checkDefrag();
 
     bool replacement();
     bool selection();
