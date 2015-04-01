@@ -33,7 +33,6 @@ ArchiveMerger* ArchiveMerger::INSTANCE;
 const char* LogArchiver::RUN_PREFIX = "archive_";
 const char* LogArchiver::CURR_RUN_FILE = "current_run";
 const char* LogArchiver::CURR_MERGE_FILE = "current_merge";
-const float LogArchiver::DEFRAG_THRESHOLD = 0.7;
 const size_t LogArchiver::MAX_LOGREC_SIZE = 3 * log_storage::BLOCK_SIZE;
 // TODO this does not work because of bug with invalid xtc objects in smthread
 //const logrec_t* WriterThread::SKIP_LOGREC = new skip_log();
@@ -459,9 +458,15 @@ void LogArchiver::WriterThread::run()
         
         DBGTHRD(<< "Picked block for write " << (void*) src);
 
-        BlockHeader* h = (BlockHeader*) src;
-        if (firstLSN == lsn_t::null || currentRun != h->run) {
-            w_assert1((h->run == 0 && currentRun == 0) || h->run == currentRun + 1);
+        // CS: changed writer behavior to write raw blocks instead of a
+        // contiguous stream of log records, as done in log partitions.
+        // TODO: restore code should consider block format when reading
+        // from the log archive!
+        
+        //BlockHeader* h = (BlockHeader*) src;
+        int run = BlockAssembly::getRunFromBlock(src);
+        if (firstLSN == lsn_t::null || currentRun != run) {
+            w_assert1((run == 0 && currentRun == 0) || run == currentRun + 1);
             /*
              * Selection (producer) guarantees that logrec fits in block.
              * lastLSN is the LSN of the first log record in the new block
@@ -473,17 +478,17 @@ void LogArchiver::WriterThread::run()
             DBGTHRD(<< "Opening file for new run " << (int) h->run
                     << " starting on LSN " << firstLSN);
             CHECK_ERROR(openNewRun());
-            currentRun = h->run;
+            currentRun = run;
         }
 
-        fileoff_t dataLength = h->end - sizeof(BlockHeader);
-        char const* dataBegin = src + sizeof(BlockHeader);
+        //fileoff_t dataLength = h->end - sizeof(BlockHeader);
+        //char const* dataBegin = src + sizeof(BlockHeader);
 
-        CHECK_ERROR(me()->pwrite(currentFd, dataBegin, dataLength, pos));
+        CHECK_ERROR(me()->pwrite(currentFd, 0, blockSize, pos));
 
         DBGTHRD(<< "Wrote out block " << (void*) src << " with size " << dataLength);
 
-        pos += dataLength;
+        pos += blockSize;
         buf->consumerRelease();
     }
 
@@ -570,11 +575,9 @@ LogArchiver::LogArchiver(const char* archdir, bool sort, size_t workspaceSize)
     //reader = new FactoryThread(readbuf, startLSN);
 
 
-    writebuf = new AsyncRingBuffer(IO_BLOCK_SIZE, IO_BLOCK_COUNT); 
-    writer = new WriterThread(writebuf, archdir);
-
+    blk = new BlockAssembly(archdir);
     // first run will begin with startLSN
-    writer->enqueueRun(startLSN);
+    blk->newRunBoundary(startLSN);
 
     workspace = new fixed_lists_mem_t(workspaceSize);
     logScanner = new LogScanner(reader->getBlockSize());
@@ -632,12 +635,11 @@ LogArchiver::~LogArchiver()
     if (!shutdown) {
         start_shutdown();
         reader->join();
-        writer->join();
+        blk->shutdown();
     }
     delete reader;
-    delete writer;
     delete readbuf;
-    delete writebuf;
+    delete blk;
     delete logScanner;
     delete INSTANCE;
 }
@@ -708,26 +710,15 @@ bool LogArchiver::selection()
     if (heap.NumElements() == 0) {
         // if there are no elements in the heap, we have nothing to write
         // -> return and wait for next activation
-        writebuf->set_finished();
         DBGTHRD(<< "Selection got empty heap -- sleeping");
+        blk->shutdown();
         return false;
     }
 
-    DBGTHRD(<< "Requesting write block for selection");
-    char* dest = writebuf->producerRequest();
-    if (!dest) {
-        if (!shutdown) {
-            DBGTHRD(<< "ERROR: write ring buffer refused produce request");
-            returnRC = RC(fcINTERNAL);
-        }
-        else {
-            returnRC = RCOK;
-        }
+    if (!blk->start()) {
         return false;
     }
-    DBGTHRD(<< "Picked block for selection " << (void*) dest);
 
-    size_t pos = sizeof(WriterThread::BlockHeader);
     int run = heap.First().run;
     while (true) {
         if (heap.NumElements() == 0) {
@@ -735,30 +726,103 @@ bool LogArchiver::selection()
         }
 
         HeapEntry k = heap.First();
-        logrec_t* lr = (logrec_t*) k.slot.address;
-        if (run != k.run || lr->length() > writer->getBlockSize() - pos) {
+        if (run != k.run) {
             break;
         }
 
-        // selection guarantees that whole log record fits in a block
-        memcpy(dest + pos, k.slot.address, lr->length());
-        pos += lr->length();
+        if (blk->add((logrec_t*) k.slot.address)) {
+            //DBGTHRD(<< "Selecting for output: " << k);
+            workspace->free(k.slot);
+            heap.RemoveFirst();
+        }
+        else {
+            break;
+        }
+    }
+    blk->finish(run);
 
-        //DBGTHRD(<< "Selecting for output: " << k);
-        workspace->free(k.slot);
-        heap.RemoveFirst();
+    return true;
+}
+
+LogArchiver::BlockAssembly::BlockAssembly(const char* archdir)
+    : writerForked(false), pos(sizeof(BlockHeader))
+{
+    writebuf = new AsyncRingBuffer(IO_BLOCK_SIZE, IO_BLOCK_COUNT); 
+    writer = new WriterThread(writebuf, archdir);
+
+    blockSize = writer->getBlockSize();
+}
+
+LogArchiver::BlockAssembly::~BlockAssembly()
+{
+    shutdown();
+    delete writebuf;
+    delete writer;
+}
+
+void LogArchiver::BlockAssembly::newRunBoundary(lsn_t lsn)
+{
+    writer->enqueueRun(lsn);
+}
+
+int LogArchiver::BlockAssembly::getRunFromBlock(const char* b)
+{
+    BlockHeader* h = (BlockHeader*) b;
+    return h->run;
+}
+
+bool LogArchiver::BlockAssembly::start()
+{
+    DBGTHRD(<< "Requesting write block for selection");
+    char* dest = writebuf->producerRequest();
+    if (!dest) {
+        if (writerForked) {
+            W_FATAL_MSG(fcINTERNAL,
+                    << "ERROR: write ring buffer refused produce request");
+        }
+        return false;
+    }
+    DBGTHRD(<< "Picked block for selection " << (void*) dest);
+
+    pos = sizeof(BlockHeader);
+    return true;
+}
+
+bool LogArchiver::BlockAssembly::add(logrec_t* lr)
+{
+    if (lr->length() > blockSize - pos) {
+        return false;
     }
 
+    // guarantees that whole log record fits in a block
+    memcpy(dest + pos, lr, lr->length());
+    pos += lr->length();
+    return true;
+}
+
+void LogArchiver::BlockAssembly::finish(int run)
+{
+    if (!writerForked) {
+        writer->fork();
+        writerForked = true;
+    }
 
     DBGTHRD("Selection produced block for writing " << (void*) dest <<
             " in run " << (int) run << " with end " << pos);
+
     // write run number and block end
-    WriterThread::BlockHeader* h = (WriterThread::BlockHeader*) dest;
+    BlockHeader* h = (BlockHeader*) dest;
     h->run = run;
     h->end = pos;
 
     writebuf->producerRelease();
-    return true;
+}
+
+void LogArchiver::BlockAssembly::shutdown()
+{
+    writebuf->set_finished();
+    writer->join();
+    writerForked = false;
 }
 
 /**
@@ -797,7 +861,7 @@ bool LogArchiver::replacement()
             // --> finish triggered by reader, no by control.endLSN
             //
             // TODO does this ever happen???
-            writer->enqueueRun(lastSkipLSN);
+            blk->newRunBoundary(lastSkipLSN);
             DBGTHRD(<< "Consume request failed!");
             return false;
         }
@@ -867,7 +931,7 @@ bool LogArchiver::replacement()
                     heap.Heapify();
                     filledFirst = true;
                     firstJustFilled = true;
-                    writer->enqueueRun(lr->lsn_ck());
+                    blk->newRunBoundary(lr->lsn_ck());
                     DBGTHRD(<< "Heap full for the first time; start run 1");
                 }
                 if (!selection()) {
@@ -890,7 +954,7 @@ bool LogArchiver::replacement()
             DBGTHRD(<< "Replacement starting new run " << (int) currentRun
                     << " on LSN " << lr->lsn_ck());
             // add new LSN run boundary to writer
-            writer->enqueueRun(lr->lsn_ck());
+            blk->newRunBoundary(lr->lsn_ck());
         }
 
         //DBGTHRD(<< "Processing logrec " << lr->lsn_ck() << ", type " <<
@@ -925,21 +989,18 @@ bool LogArchiver::copy()
 
     // get a block from the reader thread
     char *const src = readbuf->consumerRequest();
-    char *const dest = writebuf->producerRequest();
-    if (!src || !dest) {
+    if (!src | !blk->start()) {
         if (!shutdown) {
             DBGTHRD(<< "Block request failed!");
             returnRC =  RC(eINTERNAL);
             return false;
         }
+        blk->shutdown();
         returnRC = RCOK;
         return false;
     }
-    DBGTHRD(<< "Picked blocks for copy " << (void*) src << " -> " 
-            << (void*) dest);
     
     size_t pos = 0;
-    uint32_t dpos = 5; // write blocks have a 5-byte header
     while(pos < blockSize) {
         if (nextLSN >= control.endLSN) {
             DBGTHRD(<< "Replacement reached end LSN on " << nextLSN);
@@ -966,10 +1027,12 @@ bool LogArchiver::copy()
          * WARNING: We assume that all logrecs in a read block will fit in a
          * write block, which is not necessarily true because write blocks
          * need to reserve 5 bytes for a header. It is, however, very unlikely,
-         * because many log record types are fitered by the log scanner.
+         * because many log record types are fitered by the log scanner. If that
+         * happens (i.e., add method returns false), we simply ignore it and drop
+         * that one log record). This is OK because this method is just for
+         * performance analysis.
          */
-        memcpy(dest + dpos, lr, lr->length());
-        dpos += lr->length();
+        blk->add(lr);
 
         // nextLSN is updated by log scanner, so we must check again
         if (nextLSN >= control.endLSN) {
@@ -977,12 +1040,8 @@ bool LogArchiver::copy()
         }
     }
 
-    uint8_t run = 0;
-    memcpy(dest, &run, 1);
-    memcpy(dest + 1, &dpos, 4);
-
     readbuf->consumerRelease();
-    writebuf->producerRelease();
+    blk->finish(0);
     DBGTHRD(<< "Released block for copy " << (void*) src);
 
     return nextLSN < control.endLSN;
@@ -1000,7 +1059,6 @@ bool LogArchiver::activate(lsn_t endLSN, bool wait)
 void LogArchiver::run()
 {
     reader->fork();
-    writer->fork();
 
     while(true) {
         CRITICAL_SECTION(cs, control.mutex);
@@ -1059,14 +1117,14 @@ void LogArchiver::run()
     DBGTHRD(<< "Archiver exiting -- last round of selection to empty heap");
     // nextLSN contains the next LSN that would be consumed by replacement,
     // i.e., it is the end boundary of the current run
-    writer->enqueueRun(nextLSN);
+    blk->newRunBoundary(nextLSN);
     while (selection()) {}
     W_COERCE(returnRC);
 
     w_assert0(heap.NumElements() == 0);
 
     reader->join();
-    writer->join();
+    blk->shutdown();
 }
 
 /**

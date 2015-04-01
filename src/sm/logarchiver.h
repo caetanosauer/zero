@@ -187,11 +187,6 @@ public:
         rc_t openNewRun();
 
     public:
-        struct BlockHeader {
-            uint8_t run;
-            uint32_t end;
-        };
-
 
         virtual void run();
         void enqueueRun(lsn_t lsn);
@@ -212,18 +207,39 @@ public:
         }
     };
 
+    class BlockAssembly {
+    public:
+        BlockAssembly(const char* archdir);
+        virtual ~BlockAssembly();
+
+        bool start();
+        bool add(logrec_t* lr);
+        void finish(int run);
+        void shutdown();
+        void newRunBoundary(lsn_t lsn);
+        static int getRunFromBlock(const char* b);
+    private:
+        char* dest;
+        AsyncRingBuffer* writebuf;
+        WriterThread* writer;
+        bool writerForked;
+        size_t blockSize;
+        size_t pos;
+    public:
+        struct BlockHeader {
+            uint8_t run;
+            uint32_t end;
+        };
+
+    };
+
 private:
     static LogArchiver* INSTANCE;
-    
-    // Defragmentation will be invoked in the heap workspace when this
-    // threshold is reached for the ratio of used/allocated space
-    static const float DEFRAG_THRESHOLD;
 
     mem_mgmt_t* workspace;
     ReaderThread* reader;
-    WriterThread* writer;
     AsyncRingBuffer* readbuf;
-    AsyncRingBuffer* writebuf;
+    BlockAssembly* blk;
 
     uint8_t currentRun;
     const char * archdir;
