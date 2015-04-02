@@ -137,6 +137,12 @@ fixed_lists_mem_t::fixed_lists_mem_t(size_t bufsize, size_t incr, size_t max)
     MM_VERIFY(verify_blocks());
 }
 
+fixed_lists_mem_t::~fixed_lists_mem_t()
+{
+    delete _lists;
+    delete _buf;
+}
+
 /**
  * Allocate space for a record/object of size 'length'. The address and the
  * actual block size are returned in 'slot'. If the slot is larger than the

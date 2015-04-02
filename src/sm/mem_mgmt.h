@@ -19,6 +19,8 @@ public:
     virtual rc_t allocate(size_t length, slot_t& slot) = 0;
     virtual rc_t free(slot_t slot) = 0;
     virtual rc_t defrag() = 0;
+
+    virtual ~mem_mgmt_t() {};
 };
 
 /**
@@ -150,6 +152,7 @@ public:
             size_t bufsize = 8192 * 10240,
             size_t incr = 32,
             size_t max = 8192);
+    virtual ~fixed_lists_mem_t();
     rc_t allocate(size_t length, slot_t& slot);
     rc_t free(slot_t slot);
     rc_t defrag();
