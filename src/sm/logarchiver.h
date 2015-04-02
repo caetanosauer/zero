@@ -296,17 +296,80 @@ public:
 
     };
 
+    class ArchiverHeap {
+    public:
+        ArchiverHeap(BlockAssembly* blkAssemb, size_t workspaceSize);
+        virtual ~ArchiverHeap();
+
+        bool push(logrec_t* lr);
+        logrec_t* top();
+        void pop();
+
+        int topRun() { return w_heap.First().run; }
+        size_t size() { return w_heap.NumElements(); }
+    private:
+        uint8_t currentRun;
+        bool filledFirst;
+        mem_mgmt_t* workspace;
+
+        /*
+         * Access to BlockAssembly is required to enqueue new run boundaries.
+         * TODO -- see if queue method can be replaced by a more decoupled
+         * mechanism.
+         */
+        BlockAssembly* blkAssemb;
+
+        struct HeapEntry {
+            uint8_t run;
+            lpid_t pid;
+            lsn_t lsn;
+            mem_mgmt_t::slot_t slot;
+
+            HeapEntry(uint8_t run, lpid_t pid, lsn_t lsn, mem_mgmt_t::slot_t slot)
+                : run(run), pid(pid), lsn(lsn), slot(slot)
+            {}
+
+            HeapEntry()
+                : run(0), pid(lpid_t::null), lsn(lsn_t::null), slot(NULL, 0)
+            {}
+
+            friend std::ostream& operator<<(std::ostream& os, const HeapEntry& e)
+            {
+                os << "[run " << e.run << ", " << e.pid << ", " << e.lsn <<
+                    ", slot(" << e.slot.address << ", " << e.slot.length << ")]";
+                return os;
+            }
+        };
+
+        struct Cmp {
+            /*
+             * gt is actually a less than function, to produce ascending order
+             */
+            bool gt(const HeapEntry& a, const HeapEntry& b) const {
+                if (a.run != b.run) {
+                    return a.run < b.run;
+                }
+                // TODO no support for multiple volumes
+                if (a.pid.page != b.pid.page) {
+                    return a.pid.page < b.pid.page;
+                }
+                return a.lsn < b.lsn;
+            }
+        };
+
+        Cmp heapCmp;
+        Heap<HeapEntry, Cmp> w_heap;
+    };
+
 private:
     static LogArchiver* INSTANCE;
 
-    mem_mgmt_t* workspace;
+    ArchiverHeap* heap;
     ReaderThread* reader;
     AsyncRingBuffer* readbuf;
     BlockAssembly* blkAssemb;
 
-    uint8_t currentRun;
     const char * archdir;
-    bool filledFirst;
     lsn_t startLSN;
     lsn_t lastSkipLSN;
     lsn_t nextLSN;
@@ -324,46 +387,6 @@ private:
     bool selection();
     bool copy();
 
-    struct HeapEntry {
-        uint8_t run;
-        lpid_t pid;
-        lsn_t lsn;
-        mem_mgmt_t::slot_t slot;
-
-        HeapEntry(uint8_t run, lpid_t pid, lsn_t lsn, mem_mgmt_t::slot_t slot)
-            : run(run), pid(pid), lsn(lsn), slot(slot)
-        {}
-
-        HeapEntry()
-            : run(0), pid(lpid_t::null), lsn(lsn_t::null), slot(NULL, 0)
-        {}
-
-        friend std::ostream& operator<<(std::ostream& os, const HeapEntry& e)
-        {
-            os << "[run " << e.run << ", " << e.pid << ", " << e.lsn <<
-                ", slot(" << e.slot.address << ", " << e.slot.length << ")]";
-            return os;
-        }
-    };
-
-    struct Cmp {
-        /*
-         * gt is actually a less than function, to produce ascending order
-         */
-        bool gt(const HeapEntry& a, const HeapEntry& b) const {
-            if (a.run != b.run) {
-                return a.run < b.run;
-            }
-            // TODO no support for multiple volumes
-            if (a.pid.page != b.pid.page) {
-                return a.pid.page < b.pid.page;
-            }
-            return a.lsn < b.lsn;
-        }
-    };
-
-    Cmp heapCmp;
-    Heap<HeapEntry, Cmp> heap;
 };
 
 class LogScanner {
