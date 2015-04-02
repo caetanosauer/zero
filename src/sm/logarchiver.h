@@ -174,8 +174,65 @@ public:
     };
 
 
+    /**
+     * Simple implementation of a (naive) log archive index.
+     * No caching and  one single mutex for all operations.
+     * When log archiver is initialized, the information of every
+     * run is loaded in main memory.
+     */
+    class ArchiveIndex {
+    public:
+        ArchiveIndex(size_t blockSize);
+        virtual ~ArchiveIndex();
+
+        struct ProbeResult {
+            lpid_t pid;
+            lsn_t runBegin;
+            lsn_t runEnd;
+            fileoff_t offset;
+            size_t runIndex; // used internally for probeNext
+        };
+
+
+        void newBlock(lpid_t first, lpid_t last);
+        rc_t finishRun(lsn_t first, lsn_t last, int fd, fileoff_t);
+        ProbeResult* probeFirst(lpid_t pid, lsn_t lsn);
+        void probeNext(ProbeResult* prev, lsn_t endLSN = lsn_t::null);
+
+    private:
+        struct BlockEntry {
+            fileoff_t offset;
+            lpid_t pid;
+        };
+        struct BlockHeader {
+            uint32_t entries;
+            uint8_t blockNumber;
+        };
+        struct RunInfo {
+            lsn_t firstLSN;
+            // one entry reserved for last pid with offset = block size
+            std::vector<BlockEntry> entries;
+        };
+
+        size_t blockSize;
+        std::vector<RunInfo> runs;
+        lpid_t lastPID;
+        lsn_t lastLSN;
+        pthread_mutex_t mutex;
+        char* writeBuffer;
+
+        size_t findRun(lsn_t lsn);
+        void probeInRun(ProbeResult*);
+        // binary search
+        fileoff_t findEntry(RunInfo* run, lpid_t pid,
+                size_t from = 0, size_t to = 0);
+        rc_t serializeRunInfo(RunInfo&, int fd, fileoff_t);
+
+    };
+
     class WriterThread : public BaseThread {
     private:
+        ArchiveIndex* archIndex;
         uint8_t currentRun;
         const char* archdir;
         lsn_t firstLSN;
@@ -194,8 +251,11 @@ public:
 
         static const logrec_t* SKIP_LOGREC;
 
-        WriterThread(AsyncRingBuffer* writebuf, const char* archdir) :
+        WriterThread(AsyncRingBuffer* writebuf, ArchiveIndex* archIndex,
+                const char* archdir)
+            :
               BaseThread(writebuf, "LogArchiver_WriterThread"),
+              archIndex(archIndex),
               currentRun(0), archdir(archdir), firstLSN(lsn_t::null)
         {
             // set name of current run file
@@ -222,9 +282,12 @@ public:
         char* dest;
         AsyncRingBuffer* writebuf;
         WriterThread* writer;
+        ArchiveIndex* archIndex;
         bool writerForked;
         size_t blockSize;
         size_t pos;
+        lpid_t firstPID;
+        lpid_t lastPID;
     public:
         struct BlockHeader {
             uint8_t run;
@@ -239,7 +302,7 @@ private:
     mem_mgmt_t* workspace;
     ReaderThread* reader;
     AsyncRingBuffer* readbuf;
-    BlockAssembly* blk;
+    BlockAssembly* blkAssemb;
 
     uint8_t currentRun;
     const char * archdir;
@@ -291,6 +354,7 @@ private:
             if (a.run != b.run) {
                 return a.run < b.run;
             }
+            // TODO no support for multiple volumes
             if (a.pid.page != b.pid.page) {
                 return a.pid.page < b.pid.page;
             }

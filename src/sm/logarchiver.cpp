@@ -248,6 +248,7 @@ void LogArchiver::ReaderThread::run()
                     DBGTHRD(<< "Reader setting skip logrec manually on block "
                             << " offset " << skipPos << " LSN "
                             << control.endLSN);
+                    // TODO -- get rid of fake logrec
                     memcpy(lr, FAKE_SKIP_LOGREC, 3);
                 }
                 w_assert0(lr->type() == logrec_t::t_skip);
@@ -377,10 +378,6 @@ void LogArchiver::FactoryThread::run() {
 rc_t LogArchiver::WriterThread::openNewRun()
 {
     if (currentFd != -1) {
-        // append skip log record -- TODO get rid of fake
-        W_DO(me()->pwrite(currentFd, FAKE_SKIP_LOGREC,
-                    3, pos));
-
         lsn_t lastLSN = dequeueRun();
         w_assert1(lastLSN != lsn_t::null);
 
@@ -392,6 +389,9 @@ rc_t LogArchiver::WriterThread::openNewRun()
         w_ostrstream s(fname, smlevel_0::max_devname);
         s << archdir << "/" << LogArchiver::RUN_PREFIX
             << firstLSN << "-" << lastLSN << ends;
+
+        // register index information and write it on end of file
+        archIndex->finishRun(firstLSN, lastLSN, currentFd, pos);
 
         W_DO(me()->frename(currentFd, currentFName, fname));
         W_DO(me()->close(currentFd));
@@ -575,9 +575,9 @@ LogArchiver::LogArchiver(const char* archdir, bool sort, size_t workspaceSize)
     //reader = new FactoryThread(readbuf, startLSN);
 
 
-    blk = new BlockAssembly(archdir);
+    blkAssemb = new BlockAssembly(archdir);
     // first run will begin with startLSN
-    blk->newRunBoundary(startLSN);
+    blkAssemb->newRunBoundary(startLSN);
 
     workspace = new fixed_lists_mem_t(workspaceSize);
     logScanner = new LogScanner(reader->getBlockSize());
@@ -635,11 +635,11 @@ LogArchiver::~LogArchiver()
     if (!shutdown) {
         start_shutdown();
         reader->join();
-        blk->shutdown();
+        blkAssemb->shutdown();
     }
     delete reader;
     delete readbuf;
-    delete blk;
+    delete blkAssemb;
     delete logScanner;
     delete INSTANCE;
 }
@@ -711,11 +711,11 @@ bool LogArchiver::selection()
         // if there are no elements in the heap, we have nothing to write
         // -> return and wait for next activation
         DBGTHRD(<< "Selection got empty heap -- sleeping");
-        blk->shutdown();
+        blkAssemb->shutdown();
         return false;
     }
 
-    if (!blk->start()) {
+    if (!blkAssemb->start()) {
         return false;
     }
 
@@ -730,7 +730,7 @@ bool LogArchiver::selection()
             break;
         }
 
-        if (blk->add((logrec_t*) k.slot.address)) {
+        if (blkAssemb->add((logrec_t*) k.slot.address)) {
             //DBGTHRD(<< "Selecting for output: " << k);
             workspace->free(k.slot);
             heap.RemoveFirst();
@@ -739,18 +739,18 @@ bool LogArchiver::selection()
             break;
         }
     }
-    blk->finish(run);
+    blkAssemb->finish(run);
 
     return true;
 }
 
 LogArchiver::BlockAssembly::BlockAssembly(const char* archdir)
-    : writerForked(false), pos(sizeof(BlockHeader))
+    : dest(NULL), writerForked(false)
 {
-    writebuf = new AsyncRingBuffer(IO_BLOCK_SIZE, IO_BLOCK_COUNT); 
-    writer = new WriterThread(writebuf, archdir);
-
-    blockSize = writer->getBlockSize();
+    blockSize = IO_BLOCK_SIZE;
+    archIndex = new ArchiveIndex(blockSize);
+    writebuf = new AsyncRingBuffer(blockSize, IO_BLOCK_COUNT); 
+    writer = new WriterThread(writebuf, archIndex, archdir);
 }
 
 LogArchiver::BlockAssembly::~BlockAssembly()
@@ -790,9 +790,16 @@ bool LogArchiver::BlockAssembly::start()
 
 bool LogArchiver::BlockAssembly::add(logrec_t* lr)
 {
+    w_assert0(dest);
+
     if (lr->length() > blockSize - pos) {
         return false;
     }
+
+    if (firstPID.is_null()) {
+        firstPID = lr->construct_pid();
+    }
+    lastPID = lr->construct_pid();
 
     // guarantees that whole log record fits in a block
     memcpy(dest + pos, lr, lr->length());
@@ -809,6 +816,10 @@ void LogArchiver::BlockAssembly::finish(int run)
 
     DBGTHRD("Selection produced block for writing " << (void*) dest <<
             " in run " << (int) run << " with end " << pos);
+
+    archIndex->newBlock(firstPID, lastPID);
+    firstPID = lpid_t::null;
+    lastPID = lpid_t::null;
 
     // write run number and block end
     BlockHeader* h = (BlockHeader*) dest;
@@ -861,7 +872,7 @@ bool LogArchiver::replacement()
             // --> finish triggered by reader, no by control.endLSN
             //
             // TODO does this ever happen???
-            blk->newRunBoundary(lastSkipLSN);
+            blkAssemb->newRunBoundary(lastSkipLSN);
             DBGTHRD(<< "Consume request failed!");
             return false;
         }
@@ -931,7 +942,7 @@ bool LogArchiver::replacement()
                     heap.Heapify();
                     filledFirst = true;
                     firstJustFilled = true;
-                    blk->newRunBoundary(lr->lsn_ck());
+                    blkAssemb->newRunBoundary(lr->lsn_ck());
                     DBGTHRD(<< "Heap full for the first time; start run 1");
                 }
                 if (!selection()) {
@@ -954,7 +965,7 @@ bool LogArchiver::replacement()
             DBGTHRD(<< "Replacement starting new run " << (int) currentRun
                     << " on LSN " << lr->lsn_ck());
             // add new LSN run boundary to writer
-            blk->newRunBoundary(lr->lsn_ck());
+            blkAssemb->newRunBoundary(lr->lsn_ck());
         }
 
         //DBGTHRD(<< "Processing logrec " << lr->lsn_ck() << ", type " <<
@@ -989,13 +1000,13 @@ bool LogArchiver::copy()
 
     // get a block from the reader thread
     char *const src = readbuf->consumerRequest();
-    if (!src | !blk->start()) {
+    if (!src | !blkAssemb->start()) {
         if (!shutdown) {
             DBGTHRD(<< "Block request failed!");
             returnRC =  RC(eINTERNAL);
             return false;
         }
-        blk->shutdown();
+        blkAssemb->shutdown();
         returnRC = RCOK;
         return false;
     }
@@ -1032,7 +1043,7 @@ bool LogArchiver::copy()
          * that one log record). This is OK because this method is just for
          * performance analysis.
          */
-        blk->add(lr);
+        blkAssemb->add(lr);
 
         // nextLSN is updated by log scanner, so we must check again
         if (nextLSN >= control.endLSN) {
@@ -1041,7 +1052,7 @@ bool LogArchiver::copy()
     }
 
     readbuf->consumerRelease();
-    blk->finish(0);
+    blkAssemb->finish(0);
     DBGTHRD(<< "Released block for copy " << (void*) src);
 
     return nextLSN < control.endLSN;
@@ -1117,14 +1128,14 @@ void LogArchiver::run()
     DBGTHRD(<< "Archiver exiting -- last round of selection to empty heap");
     // nextLSN contains the next LSN that would be consumed by replacement,
     // i.e., it is the end boundary of the current run
-    blk->newRunBoundary(nextLSN);
+    blkAssemb->newRunBoundary(nextLSN);
     while (selection()) {}
     W_COERCE(returnRC);
 
     w_assert0(heap.NumElements() == 0);
 
     reader->join();
-    blk->shutdown();
+    blkAssemb->shutdown();
 }
 
 /**
@@ -1237,6 +1248,206 @@ tryagain:
     return true;
 }
 
+/*
+ * TODO initialize from existing runs at startup
+ */
+LogArchiver::ArchiveIndex::ArchiveIndex(size_t blockSize)
+    : blockSize(blockSize), lastPID(lpid_t::null), lastLSN(lsn_t::null)
+{
+    DO_PTHREAD(pthread_mutex_init(&mutex, NULL));
+    writeBuffer = new char[blockSize];
+}
+
+LogArchiver::ArchiveIndex::~ArchiveIndex()
+{
+    DO_PTHREAD(pthread_mutex_destroy(&mutex));
+}
+
+void LogArchiver::ArchiveIndex::newBlock(lpid_t first, lpid_t last)
+{
+    CRITICAL_SECTION(cs, mutex);
+
+    BlockEntry e;
+    e.offset = blockSize * (runs.back().entries.size() - 1);
+    e.pid = first;
+    lastPID = last;
+    runs.back().entries.push_back(e);
+}
+
+rc_t LogArchiver::ArchiveIndex::finishRun(lsn_t first, lsn_t last, int fd,
+        fileoff_t offset)
+{
+    CRITICAL_SECTION(cs, mutex);
+
+    w_assert0(runs.back().firstLSN == first);
+    w_assert0(lastLSN == first);
+
+    W_DO(serializeRunInfo(runs.back(), fd, offset));
+
+    RunInfo newRun;
+    newRun.firstLSN = last;
+    runs.push_back(newRun);
+    lastLSN = last;
+
+    return RCOK;
+}
+
+// TODO implement deserialize at startup
+rc_t LogArchiver::ArchiveIndex::serializeRunInfo(RunInfo& run, int fd, fileoff_t offset)
+{
+    // Assumption: mutex is held by caller
+    
+    int entriesPerBlock =
+        (blockSize - sizeof(BlockHeader)) / sizeof(BlockEntry);
+    int remaining = run.entries.size();
+    int i = 0;
+
+    while (remaining > 0) {
+        int j = 0;
+        while (j < entriesPerBlock && remaining > 0)
+        {
+            memcpy(writeBuffer + (j * sizeof(BlockEntry)), &run.entries[i+j],
+                        sizeof(BlockEntry));
+            j++;
+            remaining--;
+        }
+        BlockHeader* h = (BlockHeader*) writeBuffer;
+        h->entries = j;
+        h->blockNumber = i;
+
+        W_COERCE(me()->pwrite(fd, writeBuffer, blockSize, offset));
+        i++;
+    }
+
+    return RCOK;
+}
+
+size_t LogArchiver::ArchiveIndex::findRun(lsn_t lsn)
+{
+    // Assumption: mutex is held by caller
+    
+    // CS: requests are more likely to access the last runs, so
+    // we do a linear search instead of binary search.
+    for (int i = runs.size() - 2; i >= 0; i--) {
+        if (runs[i].firstLSN > lsn) {
+            return i+1;
+        }
+    }
+    // caller must check if returned index is valid
+    return runs.size();
+}
+
+smlevel_0::fileoff_t LogArchiver::ArchiveIndex::findEntry(RunInfo* run,
+        lpid_t pid, size_t from, size_t to)
+{
+    // Assumption: mutex is held by caller
+
+    // binary search for page ID within run
+
+    if (from > to) {
+        // pid is either lower than first or greater than last
+        // This should not happen because probes must not consider
+        // this run if that's the case
+        W_FATAL_MSG(fcINTERNAL, << "Invalid probe on archiver index! "
+                << " PID = " << pid << " run = " << run->firstLSN);
+    }
+
+    size_t i;
+    if (to == 0) {
+        // last entry is artificial -- to hold last PID of run
+        i = (run->entries.size() - 1) / 2;
+    }
+    else if (from == to) {
+        i = from;
+    }
+    else {
+        i = from/2 + to/2;
+    }
+
+    w_assert0(i < run->entries.size() - 1);
+
+    /*
+     * CS comparisons use just page number instead of whole lpid_t, which
+     * means that multiple volumes are not supported (TODO)
+     * To fix this, we ought to look for usages of the lpid_t operators
+     * in sm_s.h and see what the semantics is.
+     */
+    if (run->entries[i].pid.page < pid.page &&
+            run->entries[i+1].pid.page > pid.page)
+    {
+        // found it! must first check if previous does not contain same pid
+        while (i > 0 && run->entries[i].pid.page == pid.page &&
+                run->entries[i].pid.page == run->entries[i-1].pid.page)
+        {
+            i--;
+        }
+        return run->entries[i].offset;
+    }
+
+    // not found: recurse down
+    if (run->entries[i].pid.page > pid.page) {
+        return findEntry(run, pid, from, i-1);
+    }
+    else {
+        return findEntry(run, pid, i+1, to);
+    }
+}
+
+typedef LogArchiver::ArchiveIndex::ProbeResult ProbeResult;
+
+void LogArchiver::ArchiveIndex::probeInRun(ProbeResult* result)
+{
+    // Assmuptions: mutex is held; run index and pid are set in given result
+    size_t index = result->runIndex;
+    result->runBegin = runs[index].firstLSN;
+    if (index < runs.size() - 1) { // last run is the current one (unavailable)
+        result->runEnd = runs[index + 1].firstLSN;
+    }
+    else {
+        result->runEnd = lastLSN;
+    }
+    result->offset = findEntry(&runs[index], result->pid);
+}
+
+ProbeResult* LogArchiver::ArchiveIndex::probeFirst(lpid_t pid, lsn_t lsn)
+{
+    CRITICAL_SECTION(cs, mutex);
+
+    lsn_t runEndLSN;
+    size_t index = findRun(lsn);
+
+    if (index <= runs.size() - 1) {
+        // last run is the current one, thus unavailable for probing
+        return NULL;
+    }
+
+    ProbeResult* result = new ProbeResult();
+    result->pid = pid;
+    result->runIndex = index;
+    probeInRun(result);
+
+    return result;
+}
+
+void LogArchiver::ArchiveIndex::probeNext(ProbeResult* prev, lsn_t endLSN)
+{
+    CRITICAL_SECTION(cs, mutex);
+
+    size_t index = prev->runIndex + 1;
+    if (
+        (endLSN != lsn_t::null && endLSN < prev->runEnd) || // passed given end
+        (index >= runs.size() - 1) // no more runs (last is current)
+       )
+    {
+        delete prev;
+        prev = NULL;
+        return;
+    }
+
+    prev->runIndex = index;
+    probeInRun(prev);
+}
+
 ArchiveMerger::ArchiveMerger(const char* archdir, int mergeFactor,
         size_t blockSize)
     : smthread_t(t_regular, "ArchiveMerger"),
@@ -1303,7 +1514,7 @@ void ArchiveMerger::run()
                 W_COERCE(me()->pwrite(fd, lrbuf, pos, fpos));
                 fpos += pos;
                 // Append skip log record
-                W_COERCE(me()->pwrite(fd, FAKE_SKIP_LOGREC, 3, fpos));
+                //W_COERCE(me()->pwrite(fd, FAKE_SKIP_LOGREC, 3, fpos));
             }
             delete lrbuf;
 
