@@ -69,6 +69,8 @@ bool ArchiverControl::activate(bool wait, lsn_t lsn)
     // now we hold the mutex -- signal archiver thread and set endLSN
 
     DBGTHRD(<< "Sending activate signal to controlled thread");
+    // activation may not decrease the endLSN
+    w_assert0(lsn >= endLSN);
     endLSN = lsn;
     activated = true;
     DO_PTHREAD(pthread_cond_signal(&activateCond));
@@ -497,9 +499,132 @@ void LogArchiver::WriterThread::run()
 
 LogArchiver::LogArchiver(const char* archdir, bool sort, size_t workspaceSize)
     : smthread_t(t_regular, "LogArchiver"),
-    archdir(archdir),
-    startLSN(lsn_t::null), lastSkipLSN(lsn_t::null),
+    archdir(archdir), //lastSkipLSN(lsn_t::null),
     shutdown(false), control(&shutdown), sortArchive(sort)
+{
+    blkAssemb = new BlockAssembly(archdir);
+    consumer = new LogConsumer(archdir, blkAssemb, IO_BLOCK_SIZE);
+    heap = new ArchiverHeap(blkAssemb, workspaceSize);
+}
+
+void LogArchiver::initLogScanner(LogScanner* logScanner)
+{
+    // Commented out logrecs that have not been ported to Zero yet
+    logScanner->setIgnore(logrec_t::t_comment);
+    logScanner->setIgnore(logrec_t::t_compensate);
+    logScanner->setIgnore(logrec_t::t_chkpt_begin);
+    logScanner->setIgnore(logrec_t::t_chkpt_bf_tab);
+    logScanner->setIgnore(logrec_t::t_chkpt_xct_tab);
+    logScanner->setIgnore(logrec_t::t_chkpt_dev_tab);
+    logScanner->setIgnore(logrec_t::t_chkpt_end);
+    logScanner->setIgnore(logrec_t::t_mount_vol);
+    logScanner->setIgnore(logrec_t::t_dismount_vol);
+    //logScanner->setIgnore(logrec_t::t_page_flush);
+    //logScanner->setIgnore(logrec_t::t_app_custom);
+    //logScanner->setIgnore(logrec_t::t_cleaner_begin);
+    //logScanner->setIgnore(logrec_t::t_cleaner_end);
+    logScanner->setIgnore(logrec_t::t_xct_abort);
+    logScanner->setIgnore(logrec_t::t_xct_end);
+    logScanner->setIgnore(logrec_t::t_xct_freeing_space);
+    //logScanner->setIgnore(logrec_t::t_tick);
+}
+
+/*
+ * Shutdown sets the finished flag on read and write buffers, which makes
+ * the reader and writer threads finish processing the current block and 
+ * then exit. The replacement-selection will exit as soon as it requests
+ * a block and receives a null pointer. If the shutdown flag is set, the
+ * method exits without error.
+ *
+ * Thread safety: since all we do with the shutdown flag is set it to true,
+ * we do not worry about race conditions. A memory barrier is also not
+ * required, because other threads don't have to immediately see that
+ * the flag was set. As long as it is eventually set, it is OK.
+ */
+void LogArchiver::start_shutdown()
+{
+    DBGTHRD(<< "LOG ARCHIVER SHUTDOWN STARTING");
+    // this flag indicates that reader and writer threads delivering null
+    // blocks is not an error, but a termination condition
+    shutdown = true;
+    // TODO review shutdown process with new classes
+    //reader->start_shutdown();
+    // If archiver thread is not running, it is woken up and terminated
+    // imediately afterwards due to shutdown flag being set
+    DO_PTHREAD(pthread_cond_signal(&control.activateCond));
+}
+
+LogArchiver::~LogArchiver()
+{
+    if (!shutdown) {
+        start_shutdown();
+        // TODO implement consumer shutdown
+        //reader->join();
+        blkAssemb->shutdown();
+    }
+    delete blkAssemb;
+    delete consumer;
+    delete heap;
+    delete INSTANCE;
+}
+
+rc_t LogArchiver::constructOnce(LogArchiver*& la, const char* archdir,
+        bool sort, size_t workspaceSize)
+{
+    if (INSTANCE) {
+        smlevel_0::errlog->clog << error_prio
+            << "Archiver already created" << endl;
+        return RC(eINTERNAL);
+    }
+    INSTANCE = new LogArchiver(archdir, sort, workspaceSize);
+    la = INSTANCE;
+    return RCOK;
+}
+
+/**
+ * Extracts one LSN from a run's file name.
+ * If end == true, get the end LSN (the upper bound), otherwise
+ * get the begin LSN.
+ */
+lsn_t LogArchiver::parseLSN(const char* str, bool end)
+{
+    char delim = end ? '-' : '_';
+    const char* hpos = strchr(str, delim) + 1;
+    const char* lpos = strchr(hpos, '.') + 1;
+
+    char* hstr = new char[11]; // the highest 32-bit integer has 10 digits
+    strncpy(hstr, hpos, lpos - hpos - 1);
+    char* lstr = (char*) lpos;
+    if (!end) {
+        lstr = new char[11];
+        const char* lend = strchr(lpos, '-');
+        strncpy(lstr, lpos, lend - lpos);
+    }
+    // use atol to avoid overflow in atoi, which generates signed int
+    return lsn_t(atol(hstr), atol(lstr));
+}
+
+os_dirent_t* LogArchiver::scanDir(const char* archdir, os_dir_t& dir)
+{
+    if (dir == NULL) {
+        dir = os_opendir(archdir);
+        if (!dir) {
+            smlevel_0::errlog->clog << fatal_prio <<
+                "Error: could not open log archive dir: " <<
+                archdir << flushl;
+            W_COERCE(RC(eOS));
+        }
+        //DBGTHRD(<< "Opened log archive directory " << archdir);
+    }
+
+    return os_readdir(dir);
+}
+
+LogArchiver::LogConsumer::LogConsumer(const char* archdir,
+        BlockAssembly* blkAssemb, size_t blockSize)
+    :
+    blkAssemb(blkAssemb), endLSN(lsn_t::null), currentBlock(NULL),
+    blockSize(blockSize), pos(0)
 {
     // open archdir and extract last archived LSN
     {
@@ -569,130 +694,102 @@ LogArchiver::LogArchiver(const char* archdir, bool sort, size_t workspaceSize)
     nextLSN = startLSN;
     DBGTHRD(<< "Starting log archiver at LSN " << startLSN);
 
-    readbuf = new AsyncRingBuffer(IO_BLOCK_SIZE, IO_BLOCK_COUNT);
+    readbuf = new AsyncRingBuffer(blockSize, IO_BLOCK_COUNT);
     reader = new ReaderThread(readbuf, startLSN);
     //reader = new FactoryThread(readbuf, startLSN);
-
-
-    blkAssemb = new BlockAssembly(archdir);
+    logScanner = new LogScanner(reader->getBlockSize());
+    
+    initLogScanner(logScanner);
+    reader->fork();    
+    
     // first run will begin with startLSN
     blkAssemb->newRunBoundary(startLSN);
-
-    heap = new ArchiverHeap(blkAssemb, workspaceSize);
-    logScanner = new LogScanner(reader->getBlockSize());
-    initLogScanner(logScanner);
 }
 
-void LogArchiver::initLogScanner(LogScanner* logScanner)
+LogArchiver::LogConsumer::~LogConsumer()
 {
-    // Commented out logrecs that have not been ported to Zero yet
-    logScanner->setIgnore(logrec_t::t_comment);
-    logScanner->setIgnore(logrec_t::t_compensate);
-    logScanner->setIgnore(logrec_t::t_chkpt_begin);
-    logScanner->setIgnore(logrec_t::t_chkpt_bf_tab);
-    logScanner->setIgnore(logrec_t::t_chkpt_xct_tab);
-    logScanner->setIgnore(logrec_t::t_chkpt_dev_tab);
-    logScanner->setIgnore(logrec_t::t_chkpt_end);
-    logScanner->setIgnore(logrec_t::t_mount_vol);
-    logScanner->setIgnore(logrec_t::t_dismount_vol);
-    //logScanner->setIgnore(logrec_t::t_page_flush);
-    //logScanner->setIgnore(logrec_t::t_app_custom);
-    //logScanner->setIgnore(logrec_t::t_cleaner_begin);
-    //logScanner->setIgnore(logrec_t::t_cleaner_end);
-    logScanner->setIgnore(logrec_t::t_xct_abort);
-    logScanner->setIgnore(logrec_t::t_xct_end);
-    logScanner->setIgnore(logrec_t::t_xct_freeing_space);
-    //logScanner->setIgnore(logrec_t::t_tick);
-}
-
-/*
- * Shutdown sets the finished flag on read and write buffers, which makes
- * the reader and writer threads finish processing the current block and 
- * then exit. The replacement-selection will exit as soon as it requests
- * a block and receives a null pointer. If the shutdown flag is set, the
- * method exits without error.
- *
- * Thread safety: since all we do with the shutdown flag is set it to true,
- * we do not worry about race conditions. A memory barrier is also not
- * required, because other threads don't have to immediately see that
- * the flag was set. As long as it is eventually set, it is OK.
- */
-void LogArchiver::start_shutdown()
-{
-    DBGTHRD(<< "LOG ARCHIVER SHUTDOWN STARTING");
-    // this flag indicates that reader and writer threads delivering null
-    // blocks is not an error, but a termination condition
-    shutdown = true;
-    reader->start_shutdown();
-    // If archiver thread is not running, it is woken up and terminated
-    // imediately afterwards due to shutdown flag being set
-    DO_PTHREAD(pthread_cond_signal(&control.activateCond));
-}
-
-LogArchiver::~LogArchiver()
-{
-    if (!shutdown) {
-        start_shutdown();
-        reader->join();
-        blkAssemb->shutdown();
-    }
     delete reader;
     delete readbuf;
-    delete blkAssemb;
-    delete logScanner;
-    delete INSTANCE;
 }
 
-rc_t LogArchiver::constructOnce(LogArchiver*& la, const char* archdir,
-        bool sort, size_t workspaceSize)
+void LogArchiver::LogConsumer::open(lsn_t endLSN)
 {
-    if (INSTANCE) {
-        smlevel_0::errlog->clog << error_prio
-            << "Archiver already created" << endl;
-        return RC(eINTERNAL);
+    this->endLSN = endLSN;
+    do {
+        reader->activate(startLSN, endLSN);
+    } while (!reader->isActive());
+}
+
+bool LogArchiver::LogConsumer::nextBlock()
+{
+    if (currentBlock) {
+        readbuf->consumerRelease();
+        currentBlock = NULL;
+        DBGTHRD(<< "Released block for replacement " << (void*) src);
     }
-    INSTANCE = new LogArchiver(archdir, sort, workspaceSize);
-    la = INSTANCE;
-    return RCOK;
-}
 
-/**
- * Extracts one LSN from a run's file name.
- * If end == true, get the end LSN (the upper bound), otherwise
- * get the begin LSN.
- */
-lsn_t LogArchiver::parseLSN(const char* str, bool end)
-{
-    char delim = end ? '-' : '_';
-    const char* hpos = strchr(str, delim) + 1;
-    const char* lpos = strchr(hpos, '.') + 1;
-
-    char* hstr = new char[11]; // the highest 32-bit integer has 10 digits
-    strncpy(hstr, hpos, lpos - hpos - 1);
-    char* lstr = (char*) lpos;
-    if (!end) {
-        lstr = new char[11];
-        const char* lend = strchr(lpos, '-');
-        strncpy(lstr, lpos, lend - lpos);
+    // get a block from the reader thread
+    currentBlock = readbuf->consumerRequest();
+    if (!currentBlock) {
+        //if (!shutdown) { // TODO handle shutdown
+            // This happens if log scanner finds a skip logrec, but
+            // then the next partition does not exist. This would be a bug,
+            // because endLSN should always be an existing LSN, or one
+            // immediately after an existing LSN but in the same partition.
+            W_FATAL_MSG(fcINTERNAL, << "Consume request failed!");
+        //}
+        //returnRC = RCOK;
+        return false;
     }
-    // use atol to avoid overflow in atoi, which generates signed int
-    return lsn_t(atol(hstr), atol(lstr));
+    DBGTHRD(<< "Picked block for replacement " << (void*) src);
+    
+    return true;
 }
 
-os_dirent_t* LogArchiver::scanDir(const char* archdir, os_dir_t& dir)
+bool LogArchiver::LogConsumer::next(logrec_t*& lr)
 {
-    if (dir == NULL) {
-        dir = os_opendir(archdir);
-        if (!dir) {
-            smlevel_0::errlog->clog << fatal_prio <<
-                "Error: could not open log archive dir: " <<
-                archdir << flushl;
-            W_COERCE(RC(eOS));
+    if (nextLSN >= endLSN) {
+        DBGTHRD(<< "Replacement reached end LSN on " << nextLSN);
+        /*
+         * On the next activation, replacement must start on this LSN,
+         * which will likely be in the middle of the block currently
+         * being processed. However, we don't have to worry about that
+         * because reader thread will start reading from this LSN on the
+         * next activation.
+         */
+        return false;
+    }
+
+    if (!logScanner->nextLogrec(currentBlock, pos, lr, &nextLSN))
+    {
+        if (lr->type() == logrec_t::t_skip) {
+            /*
+             * Skip log record does not necessarily mean we should read
+             * a new partition. The durable_lsn read from the log manager
+             * is always a skip log record (at least for a brief moment),
+             * since the flush daemon ends every flush with it. In this
+             * case, however, the skip would have the same LSN as endLSN.
+             */
+            if (nextLSN < endLSN) {
+                //lastSkipLSN = lr->lsn_ck();
+                nextLSN = lsn_t(lr->lsn_ck().hi() + 1, 0);
+                DBGTHRD(<< "Replacement got skip logrec on " << lr->lsn_ck()
+                       << " setting nextLSN " << nextLSN);
+            }
         }
-        //DBGTHRD(<< "Opened log archive directory " << archdir);
+        if (!nextBlock()) {
+            // reader thread finished and consume request failed
+            return false;
+        }
+        return next(lr);
+    }
+    
+    // nextLSN is updated by log scanner, so we must check again
+    if (nextLSN >= endLSN) {
+        return false;
     }
 
-    return os_readdir(dir);
+    return true;
 }
 
 /**
@@ -773,6 +870,7 @@ bool LogArchiver::BlockAssembly::start()
     DBGTHRD(<< "Requesting write block for selection");
     char* dest = writebuf->producerRequest();
     if (!dest) {
+        DBGTHRD(<< "Block request failed!");
         if (writerForked) {
             W_FATAL_MSG(fcINTERNAL,
                     << "ERROR: write ring buffer refused produce request");
@@ -835,7 +933,7 @@ void LogArchiver::BlockAssembly::shutdown()
 
 LogArchiver::ArchiverHeap::ArchiverHeap(BlockAssembly* blkAssemb,
         size_t workspaceSize)
-    : currentRun(0), filledFirst(false), w_heap(heapCmp), blkAssemb(blkAssemb)
+    : currentRun(0), filledFirst(false), blkAssemb(blkAssemb), w_heap(heapCmp)
 {
     workspace = new fixed_lists_mem_t(workspaceSize);
 }
@@ -927,83 +1025,23 @@ logrec_t* LogArchiver::ArchiverHeap::top()
  * To start, initial input records are assigned to run 1 until the workspace
  * is full, after which incoming records are assigned to run 2.
  */
-bool LogArchiver::replacement()
+void LogArchiver::replacement()
 {
-    size_t blockSize = reader->getBlockSize();
-
-    // get a block from the reader thread
-    char* src = readbuf->consumerRequest();
-    if (!src) {
-        if (!shutdown) {
-            // TODO reader may finish because last partition was processed
-            // better solution? reader check for endLSN? it could check if
-            // pos >= endLSN.lo()
-            // THIS also happens if log scanner finds a skip logrec, but
-            // then the next partition does not exist
-            // --> finish triggered by reader, no by control.endLSN
-            //
-            // TODO does this ever happen???
-            blkAssemb->newRunBoundary(lastSkipLSN);
-            DBGTHRD(<< "Consume request failed!");
-            return false;
-        }
-        returnRC = RCOK;
-        return false;
-    }
-    DBGTHRD(<< "Picked block for replacement " << (void*) src);
-    
-    size_t pos = 0;
-    while(pos < blockSize) {
-        if (nextLSN >= control.endLSN) {
-            DBGTHRD(<< "Replacement reached end LSN on " << nextLSN);
-            // nextLSN may be greater than endLSN due to skip
-            control.endLSN = nextLSN;
-            /*
-             * On the next activation, replacement must start on this LSN,
-             * which will likely be in the middle of the block currently
-             * being processed. However, we don't have to worry about that
-             * because reader thread will start reading from this LSN on the
-             * next activation.
-             */
-            break;
-        }
-
+    while(true) {
         logrec_t* lr;
-        if (!logScanner->nextLogrec(src, pos, lr, &nextLSN))
-        {
-            if (lr->type() == logrec_t::t_skip) {
-                /*
-                 * Skip log record does not necessarily mean we should read
-                 * a new partition. The durable_lsn read from the log manager
-                 * is always a skip log record (at least for a brief moment),
-                 * since the flush daemon ends every flush with it. In this
-                 * case, however, the skip would have the same LSN as endLSN.
-                 */
-                if (nextLSN < control.endLSN) {
-                    lastSkipLSN = lr->lsn_ck();
-                    nextLSN = lsn_t(lr->lsn_ck().hi() + 1, 0);
-                    DBGTHRD(<< "Replacement got skip logrec on " << lastSkipLSN
-                           << " setting nextLSN " << nextLSN);
-                }
+        if (!consumer->next(lr)) {
+            w_assert0(control.endLSN <= consumer->getNextLSN());
+            if (control.endLSN < consumer->getNextLSN()) {
+                // nextLSN may be greater than endLSN due to skip
+                control.endLSN = consumer->getNextLSN();
             }
-            break; // must fetch next block
-        }
-
-        // nextLSN is updated by log scanner, so we must check again
-        if (nextLSN >= control.endLSN) {
-            continue;
+            return;
         }
     
         if (!heap->push(lr)) {
             // heap full -- invoke selection and try again
-            if (!selection()) {
-                // If w_heap is empty and workspace is full, we need a defrag
-                // Otherwise, selection could not reserve a block for writing,
-                // which means that an error ocurred or finished flag was set.
-                // In those cases, we could just set the same returnRC
-                W_FATAL_MSG(fcINTERNAL,
-                        << "Selection returned false -- aborting!");
-            }
+            // method returns bool, but result is not used for now (TODO)
+            selection();
             // Try push once again
             if (!heap->push(lr)) {
                 // this must be an error -- selection was invoked to free up
@@ -1016,11 +1054,6 @@ bool LogArchiver::replacement()
             }
         }
     }
-
-    readbuf->consumerRelease();
-    DBGTHRD(<< "Released block for replacement " << (void*) src);
-
-    return nextLSN < control.endLSN;
 }
 
 /**
@@ -1031,64 +1064,64 @@ bool LogArchiver::replacement()
  */
 bool LogArchiver::copy()
 {
-    size_t blockSize = reader->getBlockSize();
-
-    // get a block from the reader thread
-    char *const src = readbuf->consumerRequest();
-    if (!src | !blkAssemb->start()) {
-        if (!shutdown) {
-            DBGTHRD(<< "Block request failed!");
-            returnRC =  RC(eINTERNAL);
-            return false;
-        }
-        blkAssemb->shutdown();
-        returnRC = RCOK;
-        return false;
-    }
-    
-    size_t pos = 0;
-    while(pos < blockSize) {
-        if (nextLSN >= control.endLSN) {
-            DBGTHRD(<< "Replacement reached end LSN on " << nextLSN);
-            control.endLSN = nextLSN;
-            break;
-        }
-
-        logrec_t* lr;
-        if (!logScanner->nextLogrec(src, pos, lr, &nextLSN))
-        {
-            if (lr->type() == logrec_t::t_skip) {
-                if (nextLSN < control.endLSN) {
-                    lastSkipLSN = lr->lsn_ck();
-                    nextLSN = lsn_t(lr->lsn_ck().hi() + 1, 0);
-                    DBGTHRD(<< "Replacement got skip logrec on " << lastSkipLSN
-                           << " setting nextLSN " << nextLSN);
-                }
-            }
-            break; // must fetch next block
-        }
-        
-        /*
-         * copy logrec to write buffer
-         * WARNING: We assume that all logrecs in a read block will fit in a
-         * write block, which is not necessarily true because write blocks
-         * need to reserve 5 bytes for a header. It is, however, very unlikely,
-         * because many log record types are fitered by the log scanner. If that
-         * happens (i.e., add method returns false), we simply ignore it and drop
-         * that one log record). This is OK because this method is just for
-         * performance analysis.
-         */
-        blkAssemb->add(lr);
-
-        // nextLSN is updated by log scanner, so we must check again
-        if (nextLSN >= control.endLSN) {
-            continue;
-        }
-    }
-
-    readbuf->consumerRelease();
-    blkAssemb->finish(0);
-    DBGTHRD(<< "Released block for copy " << (void*) src);
+//    size_t blockSize = reader->getBlockSize();
+//
+//    // get a block from the reader thread
+//    char *const src = readbuf->consumerRequest();
+//    if (!src | !blkAssemb->start()) {
+//        if (!shutdown) {
+//            DBGTHRD(<< "Block request failed!");
+//            returnRC =  RC(eINTERNAL);
+//            return false;
+//        }
+//        blkAssemb->shutdown();
+//        returnRC = RCOK;
+//        return false;
+//    }
+//    
+//    size_t pos = 0;
+//    while(pos < blockSize) {
+//        if (nextLSN >= control.endLSN) {
+//            DBGTHRD(<< "Replacement reached end LSN on " << nextLSN);
+//            control.endLSN = nextLSN;
+//            break;
+//        }
+//
+//        logrec_t* lr;
+//        if (!logScanner->nextLogrec(src, pos, lr, &nextLSN))
+//        {
+//            if (lr->type() == logrec_t::t_skip) {
+//                if (nextLSN < control.endLSN) {
+//                    lastSkipLSN = lr->lsn_ck();
+//                    nextLSN = lsn_t(lr->lsn_ck().hi() + 1, 0);
+//                    DBGTHRD(<< "Replacement got skip logrec on " << lastSkipLSN
+//                           << " setting nextLSN " << nextLSN);
+//                }
+//            }
+//            break; // must fetch next block
+//        }
+//        
+//        /*
+//         * copy logrec to write buffer
+//         * WARNING: We assume that all logrecs in a read block will fit in a
+//         * write block, which is not necessarily true because write blocks
+//         * need to reserve 5 bytes for a header. It is, however, very unlikely,
+//         * because many log record types are fitered by the log scanner. If that
+//         * happens (i.e., add method returns false), we simply ignore it and drop
+//         * that one log record). This is OK because this method is just for
+//         * performance analysis.
+//         */
+//        blkAssemb->add(lr);
+//
+//        // nextLSN is updated by log scanner, so we must check again
+//        if (nextLSN >= control.endLSN) {
+//            continue;
+//        }
+//    }
+//
+//    readbuf->consumerRelease();
+//    blkAssemb->finish(0);
+//    DBGTHRD(<< "Released block for copy " << (void*) src);
 
     return nextLSN < control.endLSN;
 }
@@ -1104,8 +1137,6 @@ bool LogArchiver::activate(lsn_t endLSN, bool wait)
 
 void LogArchiver::run()
 {
-    reader->fork();
-
     while(true) {
         CRITICAL_SECTION(cs, control.mutex);
         bool activated = control.waitForActivation();
@@ -1113,27 +1144,28 @@ void LogArchiver::run()
             break;
         }
 
-        if (control.endLSN == lsn_t::null || control.endLSN <= startLSN) {
+        if (control.endLSN == lsn_t::null
+                || control.endLSN <= consumer->getStartLSN())
+        {
             continue;
         }
-        w_assert1(control.endLSN > startLSN);
+        w_assert1(control.endLSN > consumer->getStartLSN());
         
-        DBGTHRD(<< "Log archiver activated from " << startLSN << " to "
+        DBGTHRD(<< "Log archiver activated from " << consumer->getStartLSN() << " to "
                 << control.endLSN);
 
-        while (!reader->isActive()) {
-            reader->activate(startLSN, control.endLSN);
-        }
-        // writer thread doesn't need to be activated
+        consumer->open(control.endLSN);
 
         if (sortArchive) {
-            while (replacement() && !shutdown) {}
+            replacement();
             W_COERCE(returnRC);
         }
         else {
             while (copy() && !shutdown) {}
             W_COERCE(returnRC);
         }
+
+        w_assert1(consumer->getNextLSN() >= control.endLSN);
 
         /*
          * Selection is not invoked here because log archiving should be a
@@ -1152,7 +1184,7 @@ void LogArchiver::run()
                 << control.endLSN);
 
         // TODO assert that last run filename contains this endlsn
-        startLSN = control.endLSN;
+        consumer->getStartLSN() = control.endLSN;
         control.endLSN = lsn_t::null;
         // TODO use a "done" method that also asserts I hold the mutex
         control.activated = false;
@@ -1168,9 +1200,8 @@ void LogArchiver::run()
     W_COERCE(returnRC);
 
     w_assert0(heap->size() == 0);
-
-    reader->join();
     blkAssemb->shutdown();
+    // TODO shut down consumer
 }
 
 /**

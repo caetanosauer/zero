@@ -74,7 +74,6 @@ public:
 
     const char * getArchiveDir() { return archdir; }
     rc_t getRC() { return returnRC; }
-    lsn_t getLastArchivedLSN() { return startLSN; }
 
     virtual void run();
     bool activate(lsn_t endLSN = lsn_t::null, bool wait = true);
@@ -361,19 +360,43 @@ public:
         Heap<HeapEntry, Cmp> w_heap;
     };
 
+    class LogConsumer {
+    public:
+        LogConsumer(const char* archdir, BlockAssembly* blkAssemb,
+                size_t blockSize);
+        virtual ~LogConsumer();
+
+        void open(lsn_t endLSN);
+        bool next(logrec_t*& lr);
+        lsn_t getNextLSN() { return nextLSN; }
+        lsn_t getStartLSN() { return startLSN; }
+    private:
+        AsyncRingBuffer* readbuf;
+        ReaderThread* reader;
+        LogScanner* logScanner;
+        BlockAssembly* blkAssemb;
+
+        lsn_t startLSN;
+        lsn_t nextLSN;
+        lsn_t endLSN;
+
+        char* currentBlock;
+        size_t blockSize;
+        size_t pos;
+
+        bool nextBlock();
+    };
+
 private:
     static LogArchiver* INSTANCE;
 
+    LogConsumer* consumer;
     ArchiverHeap* heap;
-    ReaderThread* reader;
-    AsyncRingBuffer* readbuf;
     BlockAssembly* blkAssemb;
 
     const char * archdir;
-    lsn_t startLSN;
-    lsn_t lastSkipLSN;
+    //lsn_t lastSkipLSN;
     lsn_t nextLSN;
-    LogScanner* logScanner;
 
     bool shutdown;
     rc_t returnRC;
@@ -383,7 +406,7 @@ private:
     LogArchiver(const char* archdir, bool sort, size_t workspaceSize);
     ~LogArchiver();
 
-    bool replacement();
+    void replacement();
     bool selection();
     bool copy();
 
