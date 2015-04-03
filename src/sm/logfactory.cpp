@@ -190,6 +190,7 @@ int LogFactory::loadRecordStats(string file_name) {
 }
 
 void LogFactory::printLogRecord(const logrec_t& lr) {
+    (void) lr; // avoid unused warning
 	/*
 	cout << "[" << lr._len << ", "
 			         << lr.type_str() << ", ("

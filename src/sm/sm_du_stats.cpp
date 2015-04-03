@@ -548,6 +548,7 @@ sm_du_stats_t::audit() const
              btree.unlink_pg_cnt + // unlinked in user btrees
              volume_map.unlink_pg_cnt() // unlinked in root dir and store dir
              ;
+    (void) unlink_pg_cnt3;
 #endif
 
     base_stat_t alloc_and_unalloc_cnt = alloc_pg_cnt2 + unalloc_pg_cnt;

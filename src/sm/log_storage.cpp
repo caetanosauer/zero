@@ -575,8 +575,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
                        );
 #ifdef W_TRACE
                 {
-                    fileoff_t eof2 = ftell(f);
-                    DBGOUT5(<<"eof is now " << eof2);
+                    DBGOUT5(<<"eof is now " << ftell(f));
                 }
 #endif
 
@@ -588,8 +587,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
                 }
 #ifdef W_TRACE
                 {
-                    fileoff_t eof2 = ftell(f);
-                    DBGTHRD(<<"eof is now " << eof2);
+                    DBGTHRD(<<"eof is now " << ftell(f));
                 }
 #endif
                 fileoff_t o = pos;
@@ -613,8 +611,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
                     DBGOUT5(<<"writing junk of length " << o);
 #ifdef W_TRACE
                     {
-                        fileoff_t eof2 = ftell(f);
-                        DBGOUT5(<<"eof is now " << eof2);
+                        DBGOUT5(<<"eof is now " << ftell(f));
                     }
 #endif
                     n = fwrite(junk, int(o), 1, f);
@@ -627,8 +624,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
 
 #ifdef W_TRACE
                     {
-                        fileoff_t eof2 = ftell(f);
-                        DBGOUT5(<<"eof is now " << eof2);
+                        DBGOUT5(<<"eof is now " << ftell(f));
                     }
 #endif
                     delete[] junk;
