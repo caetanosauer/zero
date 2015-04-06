@@ -1162,13 +1162,13 @@ void LogArchiver::run()
         }
 
         if (control.endLSN == lsn_t::null
-                || control.endLSN <= directory->getStartLSN())
+                || control.endLSN <= directory->getLastLSN())
         {
             continue;
         }
-        w_assert1(control.endLSN > directory->getStartLSN());
+        w_assert1(control.endLSN > directory->getLastLSN());
         
-        DBGTHRD(<< "Log archiver activated from " << directory->getStartLSN() << " to "
+        DBGTHRD(<< "Log archiver activated from " << directory->getLastLSN() << " to "
                 << control.endLSN);
 
         consumer->open(control.endLSN);
