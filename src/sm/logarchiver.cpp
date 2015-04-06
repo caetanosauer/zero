@@ -366,59 +366,6 @@ void LogArchiver::FactoryThread::run() {
 	returnRC = RCOK;
 }
 
-/**
- * Opens a new run file of the log archive, closing the current run
- * if it exists. Upon closing, the file is renamed to contain the LSN
- * range of the log records contained in that run. The upper boundary
- * (lastLSN) is exclusive, meaning that it will be found on the beginning
- * of the following run. This also allows checking the filenames for any
- * any range of the LSNs which was "lost" when archiving.
- *
- * We assume the rename operation is atomic, even in case of OS crashes.
- *
- */
-rc_t LogArchiver::WriterThread::openNewRun()
-{
-    if (currentFd != -1) {
-        lsn_t lastLSN = dequeueRun();
-        w_assert1(lastLSN != lsn_t::null);
-
-        char *const fname = new char[smlevel_0::max_devname];
-        if (!fname) {
-            W_FATAL(fcOUTOFMEMORY);
-        }
-        w_auto_delete_array_t<char> ad_fname(fname);        
-        w_ostrstream s(fname, smlevel_0::max_devname);
-        s << archdir << "/" << LogArchiver::RUN_PREFIX
-            << firstLSN << "-" << lastLSN << ends;
-
-        // register index information and write it on end of file
-        archIndex->finishRun(firstLSN, lastLSN, currentFd, pos);
-
-        W_DO(me()->frename(currentFd, currentFName, fname));
-        W_DO(me()->close(currentFd));
-        DBGTHRD(<< "Closed current output run: " << fname);
-
-        firstLSN = lastLSN;
-    }
-    else {
-        // start LSN is enqueued when log archiver is initialized
-        firstLSN = dequeueRun();
-        w_assert1(firstLSN != lsn_t::null);
-    }
-
-    int flags = smthread_t::OPEN_WRONLY | smthread_t::OPEN_SYNC
-        | smthread_t::OPEN_CREATE;
-    int fd;
-    // 0744 is the mode_t for the file permissions (like in chmod)
-    W_DO(me()->open(currentFName, flags, 0744, fd));
-    DBGTHRD(<< "Opened new output run");
-
-    currentFd = fd;
-    pos = 0;
-    return RCOK;
-}
-
 void LogArchiver::WriterThread::enqueueRun(lsn_t lsn)
 {
     CRITICAL_SECTION(cs, queueMutex);
@@ -441,6 +388,8 @@ lsn_t LogArchiver::WriterThread::dequeueRun()
 void LogArchiver::WriterThread::run()
 {
     DBGTHRD(<< "Writer thread activated");
+    directory->openNewRun();
+
     while(true) {
         char const* src = buf->consumerRequest();
         if (!src) {
@@ -453,8 +402,7 @@ void LogArchiver::WriterThread::run()
              * is marked finished, which is done in start_shutdown().
              */
             DBGTHRD(<< "Finished flag set on writer thread");
-            // call openNewRun to rename current_run file
-            returnRC = openNewRun();
+            returnRC = directory->closeCurrentRun(dequeueRun());
             return; // finished is set on buf
         }
         
@@ -467,8 +415,8 @@ void LogArchiver::WriterThread::run()
         
         //BlockHeader* h = (BlockHeader*) src;
         int run = BlockAssembly::getRunFromBlock(src);
-        if (firstLSN == lsn_t::null || currentRun != run) {
-            w_assert1((run == 0 && currentRun == 0) || run == currentRun + 1);
+        if (currentRun != run) {
+            w_assert1(run == currentRun + 1);
             /*
              * Selection (producer) guarantees that logrec fits in block.
              * lastLSN is the LSN of the first log record in the new block
@@ -477,33 +425,31 @@ void LogArchiver::WriterThread::run()
              *  bound on the next run, which allows us to verify whether
              *  holes exist in the archive.
              */
-            DBGTHRD(<< "Opening file for new run " << (int) h->run
-                    << " starting on LSN " << firstLSN);
+            CHECK_ERROR(directory->closeCurrentRun(dequeueRun()));
             CHECK_ERROR(openNewRun());
             currentRun = run;
+            DBGTHRD(<< "Opening file for new run " << run
+                    << " starting on LSN " << directory->getLastLSN());
         }
 
-        //fileoff_t dataLength = h->end - sizeof(BlockHeader);
-        //char const* dataBegin = src + sizeof(BlockHeader);
+        CHECK_ERROR(directory->append(src, blockSize));
 
-        CHECK_ERROR(me()->pwrite(currentFd, 0, blockSize, pos));
+        DBGTHRD(<< "Wrote out block " << (void*) src);
 
-        DBGTHRD(<< "Wrote out block " << (void*) src << " with size " << dataLength);
-
-        pos += blockSize;
         buf->consumerRelease();
     }
-
-    returnRC = RCOK;
 }
 
 LogArchiver::LogArchiver(const char* archdir, bool sort, size_t workspaceSize)
     : smthread_t(t_regular, "LogArchiver"),
-    archdir(archdir), //lastSkipLSN(lsn_t::null),
     shutdown(false), control(&shutdown), sortArchive(sort)
 {
-    blkAssemb = new BlockAssembly(archdir);
-    consumer = new LogConsumer(archdir, blkAssemb, IO_BLOCK_SIZE);
+    // TODO refactor parameters and use configuration options
+    // TODO index needs to be properly deleted on destruction
+    ArchiveIndex* archIndex = new ArchiveIndex(IO_BLOCK_SIZE);
+    directory = new ArchiveDirectory(archdir, archIndex);
+    consumer = new LogConsumer(directory->getStartLSN(), IO_BLOCK_SIZE);
+    blkAssemb = new BlockAssembly(directory);
     heap = new ArchiverHeap(blkAssemb, workspaceSize);
 }
 
@@ -586,7 +532,7 @@ rc_t LogArchiver::constructOnce(LogArchiver*& la, const char* archdir,
  * If end == true, get the end LSN (the upper bound), otherwise
  * get the begin LSN.
  */
-lsn_t LogArchiver::parseLSN(const char* str, bool end)
+lsn_t LogArchiver::ArchiveDirectory::parseLSN(const char* str, bool end)
 {
     char delim = end ? '-' : '_';
     const char* hpos = strchr(str, delim) + 1;
@@ -604,7 +550,7 @@ lsn_t LogArchiver::parseLSN(const char* str, bool end)
     return lsn_t(atol(hstr), atol(lstr));
 }
 
-os_dirent_t* LogArchiver::scanDir(const char* archdir, os_dir_t& dir)
+os_dirent_t* LogArchiver::ArchiveDirectory::scanDir(os_dir_t& dir)
 {
     if (dir == NULL) {
         dir = os_opendir(archdir);
@@ -620,17 +566,16 @@ os_dirent_t* LogArchiver::scanDir(const char* archdir, os_dir_t& dir)
     return os_readdir(dir);
 }
 
-LogArchiver::LogConsumer::LogConsumer(const char* archdir,
-        BlockAssembly* blkAssemb, size_t blockSize)
-    :
-    blkAssemb(blkAssemb), endLSN(lsn_t::null), currentBlock(NULL),
-    blockSize(blockSize), pos(0)
+LogArchiver::ArchiveDirectory::ArchiveDirectory(const char* archdir,
+        ArchiveIndex* archIndex)
+    : archIndex(archIndex), archdir(archdir),
+    appendFd(-1), mergeFd(-1), appendPos(0)
 {
     // open archdir and extract last archived LSN
     {
         lsn_t highestLSN = lsn_t::null;
         os_dir_t dir = NULL;
-        os_dirent_t* entry = scanDir(archdir, dir);
+        os_dirent_t* entry = scanDir(dir);
         while (entry != NULL) {
             const char* runName = entry->d_name;
             if (strncmp(RUN_PREFIX, runName, strlen(RUN_PREFIX)) == 0) {
@@ -655,7 +600,7 @@ LogArchiver::LogConsumer::LogConsumer(const char* archdir,
                     W_FATAL(fcOS);
                 }
             }
-            entry = scanDir(archdir, dir);
+            entry = scanDir(dir);
         }
         startLSN = highestLSN;
         os_closedir(dir);
@@ -691,8 +636,86 @@ LogArchiver::LogConsumer::LogConsumer(const char* archdir,
 
         startLSN = lsn_t(nextPartition, 0);
     }
-    nextLSN = startLSN;
-    DBGTHRD(<< "Starting log archiver at LSN " << startLSN);
+
+    // lastLSN is the end LSN of the last generated initial run
+    lastLSN = startLSN;
+
+    // set name of current run file
+    const char * suffix = "/current_run";
+    currentFName = new char[smlevel_0::max_devname];
+    strncpy(currentFName, archdir, strlen(archdir));
+    strcat(currentFName, suffix);
+}
+
+/**
+ * Opens a new run file of the log archive, closing the current run
+ * if it exists. Upon closing, the file is renamed to contain the LSN
+ * range of the log records contained in that run. The upper boundary
+ * (lastLSN) is exclusive, meaning that it will be found on the beginning
+ * of the following run. This also allows checking the filenames for any
+ * any range of the LSNs which was "lost" when archiving.
+ *
+ * We assume the rename operation is atomic, even in case of OS crashes.
+ *
+ */
+rc_t LogArchiver::ArchiveDirectory::openNewRun()
+{
+    if (appendFd >= 0) {
+        return RC(fcINTERNAL);
+    }
+
+    int flags = smthread_t::OPEN_WRONLY | smthread_t::OPEN_SYNC
+        | smthread_t::OPEN_CREATE;
+    int fd;
+    // 0744 is the mode_t for the file permissions (like in chmod)
+    W_DO(me()->open(currentFName, flags, 0744, fd));
+    DBGTHRD(<< "Opened new output run");
+
+    appendFd = fd;
+    appendPos = 0;
+    return RCOK;
+}
+
+rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN)
+{
+    if (appendFd >= 0) {
+        return RC(fcINTERNAL);
+    }
+    w_assert1(runEndLSN != lsn_t::null);
+
+    char *const fname = new char[smlevel_0::max_devname];
+    if (!fname) {
+        W_FATAL(fcOUTOFMEMORY);
+    }
+    w_auto_delete_array_t<char> ad_fname(fname);        
+    w_ostrstream s(fname, smlevel_0::max_devname);
+    s << archdir << "/" << LogArchiver::RUN_PREFIX
+        << lastLSN << "-" << runEndLSN << ends;
+
+    // register index information and write it on end of file
+    archIndex->finishRun(lastLSN, runEndLSN, appendFd, appendPos);
+
+    W_DO(me()->frename(appendFd, currentFName, fname));
+    W_DO(me()->close(appendFd));
+    DBGTHRD(<< "Closed current output run: " << fname);
+
+    lastLSN = runEndLSN;
+
+    return RCOK;
+}
+
+rc_t LogArchiver::ArchiveDirectory::append(const char* data, size_t length)
+{
+    W_COERCE(me()->pwrite(appendFd, data, length, appendPos));
+    appendPos += length;
+    return RCOK;
+}
+
+LogArchiver::LogConsumer::LogConsumer(lsn_t startLSN, size_t blockSize)
+    : nextLSN(startLSN), endLSN(lsn_t::null), currentBlock(NULL),
+    blockSize(blockSize), pos(0)
+{
+    DBGTHRD(<< "Starting log archiver at LSN " << nextLSN);
 
     readbuf = new AsyncRingBuffer(blockSize, IO_BLOCK_COUNT);
     reader = new ReaderThread(readbuf, startLSN);
@@ -701,9 +724,6 @@ LogArchiver::LogConsumer::LogConsumer(const char* archdir,
     
     initLogScanner(logScanner);
     reader->fork();    
-    
-    // first run will begin with startLSN
-    blkAssemb->newRunBoundary(startLSN);
 }
 
 LogArchiver::LogConsumer::~LogConsumer()
@@ -716,7 +736,7 @@ void LogArchiver::LogConsumer::open(lsn_t endLSN)
 {
     this->endLSN = endLSN;
     do {
-        reader->activate(startLSN, endLSN);
+        reader->activate(nextLSN, endLSN);
     } while (!reader->isActive());
 }
 
@@ -817,11 +837,7 @@ bool LogArchiver::selection()
 
     int run = heap->topRun();
     while (true) {
-        if (heap->size() == 0) {
-            break;
-        }
-
-        if (run != heap->topRun()) {
+        if (heap->size() == 0 || run != heap->topRun()) {
             break;
         }
 
@@ -838,13 +854,13 @@ bool LogArchiver::selection()
     return true;
 }
 
-LogArchiver::BlockAssembly::BlockAssembly(const char* archdir)
+LogArchiver::BlockAssembly::BlockAssembly(ArchiveDirectory* directory)
     : dest(NULL), writerForked(false)
 {
+    archIndex = directory->getIndex();
     blockSize = IO_BLOCK_SIZE;
-    archIndex = new ArchiveIndex(blockSize);
     writebuf = new AsyncRingBuffer(blockSize, IO_BLOCK_COUNT); 
-    writer = new WriterThread(writebuf, archIndex, archdir);
+    writer = new WriterThread(writebuf, directory);
 }
 
 LogArchiver::BlockAssembly::~BlockAssembly()
@@ -1122,8 +1138,9 @@ bool LogArchiver::copy()
 //    readbuf->consumerRelease();
 //    blkAssemb->finish(0);
 //    DBGTHRD(<< "Released block for copy " << (void*) src);
-
-    return nextLSN < control.endLSN;
+//
+//    return nextLSN < control.endLSN;
+    return true;
 }
 
 bool LogArchiver::activate(lsn_t endLSN, bool wait)
@@ -1145,13 +1162,13 @@ void LogArchiver::run()
         }
 
         if (control.endLSN == lsn_t::null
-                || control.endLSN <= consumer->getStartLSN())
+                || control.endLSN <= directory->getStartLSN())
         {
             continue;
         }
-        w_assert1(control.endLSN > consumer->getStartLSN());
+        w_assert1(control.endLSN > directory->getStartLSN());
         
-        DBGTHRD(<< "Log archiver activated from " << consumer->getStartLSN() << " to "
+        DBGTHRD(<< "Log archiver activated from " << directory->getStartLSN() << " to "
                 << control.endLSN);
 
         consumer->open(control.endLSN);
@@ -1184,7 +1201,6 @@ void LogArchiver::run()
                 << control.endLSN);
 
         // TODO assert that last run filename contains this endlsn
-        consumer->getStartLSN() = control.endLSN;
         control.endLSN = lsn_t::null;
         // TODO use a "done" method that also asserts I hold the mutex
         control.activated = false;
@@ -1195,7 +1211,7 @@ void LogArchiver::run()
     DBGTHRD(<< "Archiver exiting -- last round of selection to empty heap");
     // nextLSN contains the next LSN that would be consumed by replacement,
     // i.e., it is the end boundary of the current run
-    blkAssemb->newRunBoundary(nextLSN);
+    blkAssemb->newRunBoundary(consumer->getNextLSN());
     while (selection()) {}
     W_COERCE(returnRC);
 
@@ -1678,62 +1694,63 @@ void ArchiveMerger::MergeInput::next()
 char** ArchiveMerger::pickRunsToMerge(int& count, lsn_t& firstLSN,
         lsn_t& lastLSN, bool async)
 {
-    RunKeyCmp runCmp;
-    Heap<RunKey, RunKeyCmp> runHeap(runCmp);
-    os_dir_t dir = NULL;
-    os_dirent_t* dent = LogArchiver::scanDir(archdir, dir);
-    count = 0;
-
-    while(dent != NULL) {
-        char *const fname = new char[smlevel_0::max_devname];
-        strcpy(fname, dent->d_name);
-        if (strncmp(LogArchiver::RUN_PREFIX, fname,
-                    strlen(LogArchiver::RUN_PREFIX)) == 0)
-        {
-            RunKey k(LogArchiver::parseLSN(fname, false), fname);
-            if (count < mergeFactor) {
-                runHeap.AddElement(k);
-                count++;
-            }
-            else {
-                // replace if current is smaller than largest in the heap
-                if (k.lsn < runHeap.First().lsn) {
-                    delete runHeap.First().filename;
-                    runHeap.RemoveFirst();
-                    runHeap.AddElement(k);
-                }
-            }
-        }
-        dent = LogArchiver::scanDir(archdir, dir);
-    }
-    os_closedir(dir);
-
-    if (count == 0) {
-        return NULL;
-    }
-
-    // Heuristic: only start merging if there are at least mergeFactor/2 runs available
-    if (!async || count >= mergeFactor/2) {
-        // Now the heap contains the oldest runs in descending order (newest first)
-        lastLSN = LogArchiver::parseLSN(runHeap.First().filename, true);
-        char** files = new char*[count];
-        for (int i = 0; i < count; i++) {
-            char *const fname = new char[smlevel_0::max_devname];
-            if (!fname) { W_FATAL(fcOUTOFMEMORY); }
-            w_ostrstream s(fname, smlevel_0::max_devname);
-            s << archdir << "/" << 
-                runHeap.First().filename << ends;
-            DBGTHRD(<< "Picked run for merge: "
-                    << runHeap.First().filename);
-            delete runHeap.First().filename;
-            files[i] = fname;
-            runHeap.RemoveFirst();
-            if (runHeap.NumElements() == 1) {
-                firstLSN = runHeap.First().lsn;
-            }
-        }
-        return files;
-    }
+    // TODO reimplement for new ArchiveDirectory
+//    RunKeyCmp runCmp;
+//    Heap<RunKey, RunKeyCmp> runHeap(runCmp);
+//    os_dir_t dir = NULL;
+//    os_dirent_t* dent = LogArchiver::scanDir(archdir, dir);
+//    count = 0;
+//
+//    while(dent != NULL) {
+//        char *const fname = new char[smlevel_0::max_devname];
+//        strcpy(fname, dent->d_name);
+//        if (strncmp(LogArchiver::RUN_PREFIX, fname,
+//                    strlen(LogArchiver::RUN_PREFIX)) == 0)
+//        {
+//            RunKey k(LogArchiver::parseLSN(fname, false), fname);
+//            if (count < mergeFactor) {
+//                runHeap.AddElement(k);
+//                count++;
+//            }
+//            else {
+//                // replace if current is smaller than largest in the heap
+//                if (k.lsn < runHeap.First().lsn) {
+//                    delete runHeap.First().filename;
+//                    runHeap.RemoveFirst();
+//                    runHeap.AddElement(k);
+//                }
+//            }
+//        }
+//        dent = LogArchiver::scanDir(archdir, dir);
+//    }
+//    os_closedir(dir);
+//
+//    if (count == 0) {
+//        return NULL;
+//    }
+//
+//    // Heuristic: only start merging if there are at least mergeFactor/2 runs available
+//    if (!async || count >= mergeFactor/2) {
+//        // Now the heap contains the oldest runs in descending order (newest first)
+//        lastLSN = LogArchiver::parseLSN(runHeap.First().filename, true);
+//        char** files = new char*[count];
+//        for (int i = 0; i < count; i++) {
+//            char *const fname = new char[smlevel_0::max_devname];
+//            if (!fname) { W_FATAL(fcOUTOFMEMORY); }
+//            w_ostrstream s(fname, smlevel_0::max_devname);
+//            s << archdir << "/" << 
+//                runHeap.First().filename << ends;
+//            DBGTHRD(<< "Picked run for merge: "
+//                    << runHeap.First().filename);
+//            delete runHeap.First().filename;
+//            files[i] = fname;
+//            runHeap.RemoveFirst();
+//            if (runHeap.NumElements() == 1) {
+//                firstLSN = runHeap.First().lsn;
+//            }
+//        }
+//        return files;
+//    }
 
     return NULL;
 }

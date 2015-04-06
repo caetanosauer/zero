@@ -72,7 +72,6 @@ public:
             bool sort, size_t workspaceSize);
 
 
-    const char * getArchiveDir() { return archdir; }
     rc_t getRC() { return returnRC; }
 
     virtual void run();
@@ -80,8 +79,6 @@ public:
     void start_shutdown();
 
     static void initLogScanner(LogScanner* logScanner);
-    static lsn_t parseLSN(const char* str, bool end = true);
-    static os_dirent_t* scanDir(const char* archdir, os_dir_t& dir);
 
     /*
      * IMPORTANT: the block size must be a multiple of the log
@@ -229,13 +226,39 @@ public:
 
     };
 
+    class ArchiveDirectory {
+    public:
+        ArchiveDirectory(const char* archdir, ArchiveIndex* archIndex);
+        virtual ~ArchiveDirectory();
+
+        lsn_t getStartLSN() { return startLSN; }
+        lsn_t getLastLSN() { return lastLSN; }
+        ArchiveIndex* getIndex() { return archIndex; }
+
+        rc_t append(const char* data, size_t length);
+        rc_t closeCurrentRun(lsn_t runEndLSN);
+        rc_t openNewRun();
+    private:
+        ArchiveIndex* archIndex;
+        const char* archdir;
+        lsn_t startLSN;
+        lsn_t lastLSN;
+        int appendFd;
+        int mergeFd;
+        fileoff_t appendPos;
+
+        static lsn_t parseLSN(const char* str, bool end = true);
+        os_dirent_t* scanDir(os_dir_t& dir);
+
+        // TODO this should be const and static
+        char * currentFName;
+    };
+
     class WriterThread : public BaseThread {
     private:
         ArchiveIndex* archIndex;
+        ArchiveDirectory* directory;
         uint8_t currentRun;
-        const char* archdir;
-        lsn_t firstLSN;
-        char * currentFName;
 
         queue<lsn_t> lsnQueue;
         pthread_mutex_t queueMutex;
@@ -250,25 +273,18 @@ public:
 
         static const logrec_t* SKIP_LOGREC;
 
-        WriterThread(AsyncRingBuffer* writebuf, ArchiveIndex* archIndex,
-                const char* archdir)
+        WriterThread(AsyncRingBuffer* writebuf, ArchiveDirectory* directory)
             :
               BaseThread(writebuf, "LogArchiver_WriterThread"),
-              archIndex(archIndex),
-              currentRun(0), archdir(archdir), firstLSN(lsn_t::null)
+              directory(directory), currentRun(0)
         {
-            // set name of current run file
-            const char * suffix = "/current_run";
-            currentFName = new char[smlevel_0::max_devname];
-            strncpy(currentFName, archdir, strlen(archdir));
-            strcat(currentFName, suffix);
             DO_PTHREAD(pthread_mutex_init(&queueMutex, NULL));
         }
     };
 
     class BlockAssembly {
     public:
-        BlockAssembly(const char* archdir);
+        BlockAssembly(ArchiveDirectory* directory);
         virtual ~BlockAssembly();
 
         bool start();
@@ -362,21 +378,18 @@ public:
 
     class LogConsumer {
     public:
-        LogConsumer(const char* archdir, BlockAssembly* blkAssemb,
-                size_t blockSize);
+        LogConsumer(lsn_t startLSN, size_t blockSize);
         virtual ~LogConsumer();
 
         void open(lsn_t endLSN);
         bool next(logrec_t*& lr);
         lsn_t getNextLSN() { return nextLSN; }
-        lsn_t getStartLSN() { return startLSN; }
     private:
+        ArchiveDirectory* directory;
         AsyncRingBuffer* readbuf;
         ReaderThread* reader;
         LogScanner* logScanner;
-        BlockAssembly* blkAssemb;
 
-        lsn_t startLSN;
         lsn_t nextLSN;
         lsn_t endLSN;
 
@@ -390,13 +403,10 @@ public:
 private:
     static LogArchiver* INSTANCE;
 
+    ArchiveDirectory* directory;
     LogConsumer* consumer;
     ArchiverHeap* heap;
     BlockAssembly* blkAssemb;
-
-    const char * archdir;
-    //lsn_t lastSkipLSN;
-    lsn_t nextLSN;
 
     bool shutdown;
     rc_t returnRC;
