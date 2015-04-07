@@ -1,70 +1,75 @@
+#include "btree_test_env.h"
+
+#include <sstream>
+
 #include "logarchiver.h"
 
-#include <cstdlib>
-#include <sm_vas.h>
-#include <sm.h>
-#include <sm_s.h>
-#include <pmap.h>
-#include <sm_io.h>
-#include <pmap.h>
-#include <logrec.h>
-#include <log.h>
-#include <log_core.h>
-#include <log_carray.h>
-#include <xct.h>
-#include <restart.h>
-#include <stdexcept>
+btree_test_env* test_env;
+stid_t stid;
+lpid_t root_pid;
+char HUNDRED_BYTES[100];
 
-char * archdir;
-char * logdir;
-size_t bsize = 8192;
-size_t bcount = 16;
+const size_t BLOCK_SIZE = LogArchiver::DFT_BLOCK_SIZE;
 
-static const int logbufsize = 81920 * 1024; // 80 MB
-static const long max_logsz = 11811160064L; // 11GB -- enough for 128 open partitions
-static rc_t rc;
+class ArchiverTest {
+private:
+    LogArchiver::ReaderThread* reader;
+    AsyncRingBuffer* readbuf;
+};
 
-void initLog()
+typedef w_rc_t rc_t;
+
+rc_t populateBtree(ss_m* ssm, test_volume_t *test_volume, int count)
 {
+    W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
-    // initialization stuff
-    sthread_t::initialize_sthreads_package();
-    smthread_t::init_fingerprint_map();
-    //smlevel_0::init_errorcodes();
-    smlevel_0::errlog = new ErrLog("logarchiver_test", log_to_stderr, "-");
-    smlevel_0::max_logsz = max_logsz;
-    smlevel_0::shutting_down = true;
+    std::stringstream ss("key");
 
-    // instantiate log manager
-    log_m * log = new log_core(
-                    logdir,
-                    logbufsize,      // logbuf_segsize
-                    true,
-                    ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT
-                    );
-    if (rc.is_error()) {
-        throw runtime_error("Failure initializing log_m");
+    W_DO(test_env->begin_xct());
+    for (int i = 0; i < count; i++) {
+        ss.seekp(3);
+        ss << i;
+        W_DO(test_env->btree_insert(stid, ss.str().c_str(), HUNDRED_BYTES));
     }
-    // force log scan to start at the given LSN,
-    // even if it is earlier than master_lsn
-    //log_m::set_inspecting(true);
-    (void) log;
+    W_DO(test_env->commit_xct());
+    return RCOK;
 }
 
-int main(int argc, char ** argv)
+rc_t consumerTest(ss_m* ssm, test_volume_t* test_vol)
 {
-    if (argc < 3) {
-        cout << "Usage: " << argv[0] << " <logdir> <archdir>" << endl;
-        return 1;
+    unsigned howManyToInsert = 1000;
+    W_DO(populateBtree(ssm, test_vol, howManyToInsert));
+    lsn_t lastLSN = ssm->log->durable_lsn();
+
+    lsn_t prevLSN = lsn_t(1,0);
+    LogArchiver::LogConsumer cons(prevLSN, BLOCK_SIZE);
+    cons.open(lastLSN);
+
+    logrec_t* lr;
+    unsigned int insertCount = 0;
+    while (cons.next(lr)) {
+        if (lr->type() == logrec_t::t_btree_insert ||
+                lr->type() == logrec_t::t_btree_insert_nonghost)
+        {
+            insertCount++;
+        }
+        EXPECT_TRUE(lr->lsn_ck() > prevLSN);
+        prevLSN = lr->lsn_ck();
     }
-    logdir = argv[1];
-    archdir = argv[2];
 
-    initLog();
+    EXPECT_EQ(howManyToInsert, insertCount);
 
-    LogArchiver* la;
-    LogArchiver::constructOnce(la, archdir, true, 100 * 1024 * 1024);
-    la->fork();
-    la->start_shutdown();
-    la->join();
+    return RCOK;
+}
+
+TEST (LogArchiverTest, ConsumerTest) {
+    test_env->empty_logdata_dir();
+    EXPECT_EQ(test_env->runBtreeTest(consumerTest), 0);
+}
+
+int main(int argc, char **argv) {
+    ::testing::InitGoogleTest(&argc, argv);
+    test_env = new btree_test_env();
+    ::testing::AddGlobalTestEnvironment(test_env);
+    return RUN_ALL_TESTS();
 }
