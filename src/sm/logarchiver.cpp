@@ -406,7 +406,7 @@ void LogArchiver::WriterThread::run()
              *  holes exist in the archive.
              */
             CHECK_ERROR(directory->closeCurrentRun(lastLSN));
-            CHECK_ERROR(openNewRun());
+            CHECK_ERROR(directory->openNewRun());
             currentRun = run;
             DBGTHRD(<< "Opening file for new run " << run
                     << " starting on LSN " << directory->getLastLSN());
@@ -629,6 +629,11 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(std::string archdir,
     archIndex = new ArchiveIndex(blockSize);
 }
 
+LogArchiver::ArchiveDirectory::~ArchiveDirectory()
+{
+    delete archIndex;
+}
+
 /**
  * Opens a new run file of the log archive, closing the current run
  * if it exists. Upon closing, the file is renamed to contain the LSN
@@ -711,6 +716,8 @@ LogArchiver::LogConsumer::LogConsumer(lsn_t startLSN, size_t blockSize)
 
 LogArchiver::LogConsumer::~LogConsumer()
 {
+    reader->start_shutdown();
+    reader->join();
     delete reader;
     delete readbuf;
 }
@@ -721,6 +728,8 @@ void LogArchiver::LogConsumer::open(lsn_t endLSN)
     do {
         reader->activate(nextLSN, endLSN);
     } while (!reader->isActive());
+
+    nextBlock();
 }
 
 bool LogArchiver::LogConsumer::nextBlock()
@@ -728,7 +737,7 @@ bool LogArchiver::LogConsumer::nextBlock()
     if (currentBlock) {
         readbuf->consumerRelease();
         currentBlock = NULL;
-        DBGTHRD(<< "Released block for replacement " << (void*) src);
+        DBGTHRD(<< "Released block for replacement " << (void*) currentBlock);
     }
 
     // get a block from the reader thread
@@ -744,7 +753,7 @@ bool LogArchiver::LogConsumer::nextBlock()
         //returnRC = RCOK;
         return false;
     }
-    DBGTHRD(<< "Picked block for replacement " << (void*) src);
+    DBGTHRD(<< "Picked block for replacement " << (void*) currentBlock);
     
     return true;
 }
@@ -779,6 +788,10 @@ bool LogArchiver::LogConsumer::next(logrec_t*& lr)
                 DBGTHRD(<< "Replacement got skip logrec on " << lr->lsn_ck()
                        << " setting nextLSN " << nextLSN);
             }
+        }
+        if (nextLSN >= endLSN) {
+            DBGTHRD(<< "Replacement reached end LSN on " << nextLSN);
+            return false;
         }
         if (!nextBlock()) {
             // reader thread finished and consume request failed
@@ -1546,7 +1559,7 @@ void ArchiveMerger::MergeInput::fetchFromNextBlock()
     }
 
 #if W_DEBUG_LEVEL>=1
-    if (howmuch < scanner->getBlockSize()) {
+    if (howmuch < (int) scanner->getBlockSize()) {
         DBGTHRD(<< "SHORT IO on fetchFromNextBlock. fpos = " << fpos
                 << " fd = " << fd << " howmuch = " << howmuch);
     }
