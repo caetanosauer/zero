@@ -5,6 +5,7 @@
 
 #include "logarchiver.h"
 #include "logfactory.h"
+#include "sm_options.h"
 
 #include <sm_int_1.h>
 #include <sstream>
@@ -28,8 +29,6 @@
 typedef mem_mgmt_t::slot_t slot_t;
 
 // definition of static members
-LogArchiver* LogArchiver::INSTANCE;
-ArchiveMerger* ArchiveMerger::INSTANCE;
 const char* LogArchiver::RUN_PREFIX = "archive_";
 const char* LogArchiver::CURR_RUN_FILE = "current_run";
 const char* LogArchiver::CURR_MERGE_FILE = "current_merge";
@@ -422,17 +421,34 @@ void LogArchiver::WriterThread::run()
     }
 }
 
-LogArchiver::LogArchiver(const char* archdir, size_t workspaceSize)
+LogArchiver::LogArchiver(
+        ArchiveDirectory* d, LogConsumer* c, ArchiverHeap* h, BlockAssembly* b)
+    :
+    smthread_t(t_regular, "LogArchiver"),
+    directory(d), consumer(c), heap(h), blkAssemb(b),
+    shutdown(false), control(&shutdown)
+{
+}
+
+LogArchiver::LogArchiver(const sm_options& options)
     : smthread_t(t_regular, "LogArchiver"),
     shutdown(false), control(&shutdown)
 {
-    // TODO refactor parameters and use configuration options
-    // TODO index needs to be properly deleted on destruction
-    ArchiveIndex* archIndex = new ArchiveIndex(IO_BLOCK_SIZE);
-    directory = new ArchiveDirectory(archdir, archIndex);
-    consumer = new LogConsumer(directory->getStartLSN(), IO_BLOCK_SIZE);
-    blkAssemb = new BlockAssembly(directory);
+    std::string archdir = options.get_string_option("sm_archdir", "");
+    size_t workspaceSize =
+        options.get_int_option("sm_archiver_workspace_size", DFT_WSPACE_SIZE);
+    size_t blockSize =
+        options.get_int_option("sm_archiver_block_size", DFT_BLOCK_SIZE);
+
+    if (archdir.empty()) {
+        W_FATAL_MSG(fcINTERNAL, 
+                << "Option for archive directory must be specified");
+    }
+
+    directory = new ArchiveDirectory(archdir, blockSize);
+    consumer = new LogConsumer(directory->getStartLSN(), blockSize);
     heap = new ArchiverHeap(workspaceSize);
+    blkAssemb = new BlockAssembly(directory);
 }
 
 void LogArchiver::initLogScanner(LogScanner* logScanner)
@@ -493,20 +509,7 @@ LogArchiver::~LogArchiver()
     delete blkAssemb;
     delete consumer;
     delete heap;
-    delete INSTANCE;
-}
-
-rc_t LogArchiver::constructOnce(LogArchiver*& la, const char* archdir,
-        size_t workspaceSize)
-{
-    if (INSTANCE) {
-        smlevel_0::errlog->clog << error_prio
-            << "Archiver already created" << endl;
-        return RC(eINTERNAL);
-    }
-    INSTANCE = new LogArchiver(archdir, workspaceSize);
-    la = INSTANCE;
-    return RCOK;
+    delete directory;
 }
 
 /**
@@ -535,7 +538,7 @@ lsn_t LogArchiver::ArchiveDirectory::parseLSN(const char* str, bool end)
 os_dirent_t* LogArchiver::ArchiveDirectory::scanDir(os_dir_t& dir)
 {
     if (dir == NULL) {
-        dir = os_opendir(archdir);
+        dir = os_opendir(archdir.c_str());
         if (!dir) {
             smlevel_0::errlog->clog << fatal_prio <<
                 "Error: could not open log archive dir: " <<
@@ -548,10 +551,10 @@ os_dirent_t* LogArchiver::ArchiveDirectory::scanDir(os_dir_t& dir)
     return os_readdir(dir);
 }
 
-LogArchiver::ArchiveDirectory::ArchiveDirectory(const char* archdir,
-        ArchiveIndex* archIndex)
-    : archIndex(archIndex), archdir(archdir),
-    appendFd(-1), mergeFd(-1), appendPos(0)
+LogArchiver::ArchiveDirectory::ArchiveDirectory(std::string archdir,
+        size_t blockSize)
+    : archdir(archdir),
+    appendFd(-1), mergeFd(-1), appendPos(0), blockSize(blockSize)
 {
     // open archdir and extract last archived LSN
     {
@@ -574,7 +577,7 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(const char* archdir,
                     || strcmp(CURR_MERGE_FILE, runName) == 0)
             {
                 DBGTHRD(<< "Found unfinished log archive run. Deleting");
-                string path = string(archdir) + "/" + runName;
+                string path = archdir + "/" + runName;
                 if (unlink(path.c_str()) < 0) {
                     smlevel_0::errlog->clog << fatal_prio
                         << "Log archiver: failed to delete "
@@ -622,11 +625,8 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(const char* archdir,
     // lastLSN is the end LSN of the last generated initial run
     lastLSN = startLSN;
 
-    // set name of current run file
-    const char * suffix = "/current_run";
-    currentFName = new char[smlevel_0::max_devname];
-    strncpy(currentFName, archdir, strlen(archdir));
-    strcat(currentFName, suffix);
+    // create index
+    archIndex = new ArchiveIndex(blockSize);
 }
 
 /**
@@ -650,7 +650,8 @@ rc_t LogArchiver::ArchiveDirectory::openNewRun()
         | smthread_t::OPEN_CREATE;
     int fd;
     // 0744 is the mode_t for the file permissions (like in chmod)
-    W_DO(me()->open(currentFName, flags, 0744, fd));
+    std::string fname = archdir + "/" + CURR_RUN_FILE;
+    W_DO(me()->open(fname.c_str(), flags, 0744, fd));
     DBGTHRD(<< "Opened new output run");
 
     appendFd = fd;
@@ -670,21 +671,16 @@ rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN)
     }
     w_assert1(runEndLSN != lsn_t::null);
 
-    char *const fname = new char[smlevel_0::max_devname];
-    if (!fname) {
-        W_FATAL(fcOUTOFMEMORY);
-    }
-    w_auto_delete_array_t<char> ad_fname(fname);        
-    w_ostrstream s(fname, smlevel_0::max_devname);
-    s << archdir << "/" << LogArchiver::RUN_PREFIX
-        << lastLSN << "-" << runEndLSN << ends;
+    std::stringstream fname(archdir);
+    fname << "/" << LogArchiver::RUN_PREFIX << lastLSN << "-" << runEndLSN;
 
     // register index information and write it on end of file
     archIndex->finishRun(lastLSN, runEndLSN, appendFd, appendPos);
 
-    W_DO(me()->frename(appendFd, currentFName, fname));
+    std::string currentFName = archdir + "/" + CURR_RUN_FILE;
+    W_DO(me()->frename(appendFd, currentFName.c_str(), fname.str().c_str()));
     W_DO(me()->close(appendFd));
-    DBGTHRD(<< "Closed current output run: " << fname);
+    DBGTHRD(<< "Closed current output run: " << fname.str());
 
     lastLSN = runEndLSN;
 
@@ -846,7 +842,7 @@ LogArchiver::BlockAssembly::BlockAssembly(ArchiveDirectory* directory)
     lastPID(lpid_t::null), lastLSN(lsn_t::null)
 {
     archIndex = directory->getIndex();
-    blockSize = IO_BLOCK_SIZE;
+    blockSize = directory->getBlockSize();
     writebuf = new AsyncRingBuffer(blockSize, IO_BLOCK_COUNT); 
     writer = new WriterThread(writebuf, directory);
 }
@@ -1437,24 +1433,14 @@ void LogArchiver::ArchiveIndex::probeNext(ProbeResult* prev, lsn_t endLSN)
     probeInRun(prev);
 }
 
-ArchiveMerger::ArchiveMerger(const char* archdir, int mergeFactor,
-        size_t blockSize)
+ArchiveMerger::ArchiveMerger(const sm_options& options)
     : smthread_t(t_regular, "ArchiveMerger"),
-      archdir(archdir), mergeFactor(mergeFactor), blockSize(blockSize),
       shutdown(false), control(&shutdown)
-{}
-
-rc_t ArchiveMerger::constructOnce(ArchiveMerger*& ret, const char* archdir,
-        int mergeFactor, size_t blockSize)
 {
-    if (INSTANCE) {
-        smlevel_0::errlog->clog << error_prio
-            << "Merger already created" << endl;
-        return RC(eINTERNAL);
-    }
-    INSTANCE = new ArchiveMerger(archdir, mergeFactor, blockSize);
-    ret = INSTANCE;
-    return RCOK;
+    archdir = options.get_string_option("sm_archdir", "");
+    mergeFactor = options.get_int_option("sm_merge_factor", DFT_MERGE_FACTOR);
+    blockSize = options.get_int_option("sm_archiving_blocksize",
+            LogArchiver::DFT_BLOCK_SIZE);
 }
 
 bool ArchiveMerger::activate(bool wait)

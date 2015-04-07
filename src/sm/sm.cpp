@@ -655,26 +655,13 @@ ss_m::_construct_once()
         // LOG ARCHIVER
         bool archiving = _options.get_bool_option("sm_archiving", false);
         if (archiving) {
-            std::string archdir = _options.get_string_option("sm_archdir", "");
-            size_t workspaceSize =
-                _options.get_int_option("sm_archiver_workspace_size", 10240*10240);
-
-            if (archdir.empty()) {
-                errlog->clog << fatal_prio <<
-                    "Option for archive directory must be specified" << flushl;
-                W_FATAL(eINTERNAL);
-            }
-            W_COERCE(LogArchiver::constructOnce(logArchiver, archdir.c_str(),
-                    workspaceSize));
+            logArchiver = new LogArchiver(_options);
             logArchiver->fork();
 
             bool merging = _options.get_bool_option("sm_async_merging", false);
             if (merging)
             {
-                int factor = _options.get_int_option("sm_merge_factor", 100);
-                int bsize = _options.get_int_option("sm_merge_blocksize", 1024*1024);
-                W_COERCE(ArchiveMerger::constructOnce(archiveMerger,
-                        archdir.c_str(), factor, bsize));
+                archiveMerger = new ArchiveMerger(_options);
                 archiveMerger->fork();
             }
         }

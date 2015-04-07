@@ -15,6 +15,7 @@
 #include <bitset>
 #include <queue>
 
+class sm_options;
 class LogFactory;
 class LogScanner;
 
@@ -67,30 +68,6 @@ struct ArchiverControl {
 class LogArchiver : public smthread_t {
     friend class ArchiveMerger;
 public:
-
-    static rc_t constructOnce(LogArchiver*& la, const char* archdir,
-            size_t workspaceSize);
-
-
-    rc_t getRC() { return returnRC; }
-
-    virtual void run();
-    bool activate(lsn_t endLSN = lsn_t::null, bool wait = true);
-    void start_shutdown();
-
-    static void initLogScanner(LogScanner* logScanner);
-
-    /*
-     * IMPORTANT: the block size must be a multiple of the log
-     * page size to ensure that logrec headers are not truncated
-     */
-    const static int IO_BLOCK_SIZE = 1024 * 1024; // 1MB = 128 pages
-    const static int IO_BLOCK_COUNT = 8; // total buffer = 8MB
-    const static char* RUN_PREFIX;
-    const static char* CURR_RUN_FILE;
-    const static char* CURR_MERGE_FILE;
-    const static size_t MAX_LOGREC_SIZE;
-   
     // abstract class
     class BaseThread : public smthread_t {
     protected:
@@ -228,35 +205,33 @@ public:
 
     class ArchiveDirectory {
     public:
-        ArchiveDirectory(const char* archdir, ArchiveIndex* archIndex);
+        ArchiveDirectory(std::string archdir, size_t blockSize);
         virtual ~ArchiveDirectory();
 
         lsn_t getStartLSN() { return startLSN; }
         lsn_t getLastLSN() { return lastLSN; }
         ArchiveIndex* getIndex() { return archIndex; }
+        size_t getBlockSize() { return blockSize; }
 
         rc_t append(const char* data, size_t length);
         rc_t closeCurrentRun(lsn_t runEndLSN);
         rc_t openNewRun();
     private:
         ArchiveIndex* archIndex;
-        const char* archdir;
+        std::string archdir;
         lsn_t startLSN;
         lsn_t lastLSN;
         int appendFd;
         int mergeFd;
         fileoff_t appendPos;
+        size_t blockSize;
 
         static lsn_t parseLSN(const char* str, bool end = true);
         os_dirent_t* scanDir(os_dir_t& dir);
-
-        // TODO this should be const and static
-        char * currentFName;
     };
 
     class WriterThread : public BaseThread {
     private:
-        ArchiveIndex* archIndex;
         ArchiveDirectory* directory;
         uint8_t currentRun;
         lsn_t lastLSN;
@@ -389,9 +364,38 @@ public:
         bool nextBlock();
     };
 
-private:
-    static LogArchiver* INSTANCE;
+public:
+    LogArchiver(const sm_options& options);
+    LogArchiver(
+            ArchiveDirectory*,
+            LogConsumer*,
+            ArchiverHeap*,
+            BlockAssembly*
+    );
 
+    virtual ~LogArchiver();
+
+    rc_t getRC() { return returnRC; }
+
+    virtual void run();
+    bool activate(lsn_t endLSN = lsn_t::null, bool wait = true);
+    void start_shutdown();
+
+    static void initLogScanner(LogScanner* logScanner);
+
+    /*
+     * IMPORTANT: the block size must be a multiple of the log
+     * page size to ensure that logrec headers are not truncated
+     */
+    const static int DFT_BLOCK_SIZE = 1024 * 1024; // 1MB = 128 pages
+    const static int DFT_WSPACE_SIZE= 10240 * 10240; // 100MB
+    const static int IO_BLOCK_COUNT = 8; // total buffer = 8MB
+    const static char* RUN_PREFIX;
+    const static char* CURR_RUN_FILE;
+    const static char* CURR_MERGE_FILE;
+    const static size_t MAX_LOGREC_SIZE;
+   
+private:
     ArchiveDirectory* directory;
     LogConsumer* consumer;
     ArchiverHeap* heap;
@@ -400,9 +404,6 @@ private:
     bool shutdown;
     rc_t returnRC;
     ArchiverControl control;
-
-    LogArchiver(const char* archdir, size_t workspaceSize);
-    ~LogArchiver();
 
     void replacement();
     bool selection();
@@ -453,9 +454,10 @@ private:
 class ArchiveMerger : public smthread_t {
     friend class LogArchiver;
 public:
-
     class MergeOutput; // forward
-    static rc_t constructOnce(ArchiveMerger*&, const char*, int, size_t);
+
+    ArchiveMerger(const sm_options&);
+    virtual ~ArchiveMerger() {};
 
     virtual void run();
     MergeOutput* offlineMerge(bool async = false);
@@ -463,19 +465,17 @@ public:
     void start_shutdown();
 
 private:
-    static ArchiveMerger* INSTANCE;
-
-    const char* archdir;
+    std::string archdir;
     int mergeFactor;
     size_t blockSize;
 
     bool shutdown;
     ArchiverControl control;
 
-    ArchiveMerger(const char* archdir, int mergeFactor, size_t blockSize);
-
     char** pickRunsToMerge(int& count, lsn_t& firstLSN, lsn_t& lastLSN,
             bool async = false);
+
+    const static int DFT_MERGE_FACTOR = 10; // total buffer = 8MB
 
     struct MergeInput {
         logrec_t* logrec;
