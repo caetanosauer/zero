@@ -656,7 +656,6 @@ ss_m::_construct_once()
         bool archiving = _options.get_bool_option("sm_archiving", false);
         if (archiving) {
             std::string archdir = _options.get_string_option("sm_archdir", "");
-            bool sort = _options.get_bool_option("sm_sort_archive", true);
             size_t workspaceSize =
                 _options.get_int_option("sm_archiver_workspace_size", 10240*10240);
 
@@ -666,11 +665,11 @@ ss_m::_construct_once()
                 W_FATAL(eINTERNAL);
             }
             W_COERCE(LogArchiver::constructOnce(logArchiver, archdir.c_str(),
-                    sort, workspaceSize));
+                    workspaceSize));
             logArchiver->fork();
 
             bool merging = _options.get_bool_option("sm_async_merging", false);
-            if (sort && merging)
+            if (merging)
             {
                 int factor = _options.get_int_option("sm_merge_factor", 100);
                 int bsize = _options.get_int_option("sm_merge_blocksize", 1024*1024);

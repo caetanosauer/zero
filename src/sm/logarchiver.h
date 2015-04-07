@@ -69,7 +69,7 @@ class LogArchiver : public smthread_t {
 public:
 
     static rc_t constructOnce(LogArchiver*& la, const char* archdir,
-            bool sort, size_t workspaceSize);
+            size_t workspaceSize);
 
 
     rc_t getRC() { return returnRC; }
@@ -400,14 +400,12 @@ private:
     bool shutdown;
     rc_t returnRC;
     ArchiverControl control;
-    bool sortArchive;
 
-    LogArchiver(const char* archdir, bool sort, size_t workspaceSize);
+    LogArchiver(const char* archdir, size_t workspaceSize);
     ~LogArchiver();
 
     void replacement();
     bool selection();
-    bool copy();
 
 };
 
