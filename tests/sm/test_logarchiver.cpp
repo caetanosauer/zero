@@ -9,7 +9,8 @@ stid_t stid;
 lpid_t root_pid;
 char HUNDRED_BYTES[100];
 
-const size_t BLOCK_SIZE = LogArchiver::DFT_BLOCK_SIZE;
+// use small block to test boundaries
+const size_t BLOCK_SIZE = 8192;
 
 class ArchiverTest {
 private:

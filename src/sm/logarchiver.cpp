@@ -736,8 +736,8 @@ bool LogArchiver::LogConsumer::nextBlock()
 {
     if (currentBlock) {
         readbuf->consumerRelease();
-        currentBlock = NULL;
         DBGTHRD(<< "Released block for replacement " << (void*) currentBlock);
+        currentBlock = NULL;
     }
 
     // get a block from the reader thread
@@ -754,6 +754,7 @@ bool LogArchiver::LogConsumer::nextBlock()
         return false;
     }
     DBGTHRD(<< "Picked block for replacement " << (void*) currentBlock);
+    pos = 0;
     
     return true;
 }
