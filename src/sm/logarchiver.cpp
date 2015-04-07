@@ -471,6 +471,11 @@ void LogArchiver::initLogScanner(LogScanner* logScanner)
     logScanner->setIgnore(logrec_t::t_xct_end);
     logScanner->setIgnore(logrec_t::t_xct_freeing_space);
     //logScanner->setIgnore(logrec_t::t_tick);
+
+    // alloc_a_page contains a "dummy" page ID and it is 
+    // actually not required for current mrestore
+    // (TODO: implement restore of allocated pages and test this)
+    logScanner->setIgnore(logrec_t::t_alloc_a_page);
 }
 
 /*
@@ -985,7 +990,7 @@ bool LogArchiver::ArchiverHeap::push(logrec_t* lr)
 
     // if all records of the current run are gone, start new run
     if (filledFirst && !firstJustFilled &&
-            (w_heap.NumElements() == 0 || w_heap.First().run == currentRun)) {
+            (size() == 0 || w_heap.First().run == currentRun)) {
         currentRun++;
         DBGTHRD(<< "Replacement starting new run " << (int) currentRun
                 << " on LSN " << lr->lsn_ck());
@@ -1011,6 +1016,10 @@ void LogArchiver::ArchiverHeap::pop()
 {
     workspace->free(w_heap.First().slot);
     w_heap.RemoveFirst();
+
+    if (size() == 0) {
+        filledFirst = false;
+    }
 }
 
 logrec_t* LogArchiver::ArchiverHeap::top()
