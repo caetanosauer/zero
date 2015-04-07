@@ -366,25 +366,6 @@ void LogArchiver::FactoryThread::run() {
 	returnRC = RCOK;
 }
 
-void LogArchiver::WriterThread::enqueueRun(lsn_t lsn)
-{
-    CRITICAL_SECTION(cs, queueMutex);
-    lsnQueue.push(lsn);
-    DBGTHRD(<< "New run boundary enqueued: " << lsn);
-}
-
-lsn_t LogArchiver::WriterThread::dequeueRun()
-{
-    CRITICAL_SECTION(cs, queueMutex);
-    if (lsnQueue.empty()) {
-        return lsn_t::null;
-    }
-    lsn_t res = lsnQueue.front();
-    lsnQueue.pop();
-    DBGTHRD(<< "Run boundary dequeued: " << res);
-    return res;
-}
-
 void LogArchiver::WriterThread::run()
 {
     DBGTHRD(<< "Writer thread activated");
@@ -402,7 +383,7 @@ void LogArchiver::WriterThread::run()
              * is marked finished, which is done in start_shutdown().
              */
             DBGTHRD(<< "Finished flag set on writer thread");
-            returnRC = directory->closeCurrentRun(dequeueRun());
+            returnRC = directory->closeCurrentRun(lastLSN);
             return; // finished is set on buf
         }
         
@@ -425,13 +406,14 @@ void LogArchiver::WriterThread::run()
              *  bound on the next run, which allows us to verify whether
              *  holes exist in the archive.
              */
-            CHECK_ERROR(directory->closeCurrentRun(dequeueRun()));
+            CHECK_ERROR(directory->closeCurrentRun(lastLSN));
             CHECK_ERROR(openNewRun());
             currentRun = run;
             DBGTHRD(<< "Opening file for new run " << run
                     << " starting on LSN " << directory->getLastLSN());
         }
 
+        lastLSN = BlockAssembly::getLSNFromBlock(src);
         CHECK_ERROR(directory->append(src, blockSize));
 
         DBGTHRD(<< "Wrote out block " << (void*) src);
@@ -450,7 +432,7 @@ LogArchiver::LogArchiver(const char* archdir, bool sort, size_t workspaceSize)
     directory = new ArchiveDirectory(archdir, archIndex);
     consumer = new LogConsumer(directory->getStartLSN(), IO_BLOCK_SIZE);
     blkAssemb = new BlockAssembly(directory);
-    heap = new ArchiverHeap(blkAssemb, workspaceSize);
+    heap = new ArchiverHeap(workspaceSize);
 }
 
 void LogArchiver::initLogScanner(LogScanner* logScanner)
@@ -681,6 +663,11 @@ rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN)
     if (appendFd >= 0) {
         return RC(fcINTERNAL);
     }
+    if (appendPos == 0) {
+        // nothing was appended -- just close file and return
+        w_assert0(runEndLSN == lsn_t::null);
+        W_DO(me()->close(appendFd));
+    }
     w_assert1(runEndLSN != lsn_t::null);
 
     char *const fname = new char[smlevel_0::max_devname];
@@ -855,7 +842,8 @@ bool LogArchiver::selection()
 }
 
 LogArchiver::BlockAssembly::BlockAssembly(ArchiveDirectory* directory)
-    : dest(NULL), writerForked(false)
+    : dest(NULL), writerForked(false), firstPID(lpid_t::null),
+    lastPID(lpid_t::null), lastLSN(lsn_t::null)
 {
     archIndex = directory->getIndex();
     blockSize = IO_BLOCK_SIZE;
@@ -870,15 +858,16 @@ LogArchiver::BlockAssembly::~BlockAssembly()
     delete writer;
 }
 
-void LogArchiver::BlockAssembly::newRunBoundary(lsn_t lsn)
-{
-    writer->enqueueRun(lsn);
-}
-
 int LogArchiver::BlockAssembly::getRunFromBlock(const char* b)
 {
     BlockHeader* h = (BlockHeader*) b;
     return h->run;
+}
+
+lsn_t LogArchiver::BlockAssembly::getLSNFromBlock(const char* b)
+{
+    BlockHeader* h = (BlockHeader*) b;
+    return h->lsn;
 }
 
 bool LogArchiver::BlockAssembly::start()
@@ -911,6 +900,7 @@ bool LogArchiver::BlockAssembly::add(logrec_t* lr)
         firstPID = lr->construct_pid();
     }
     lastPID = lr->construct_pid();
+    lastLSN = lr->lsn_ck();
 
     // guarantees that whole log record fits in a block
     memcpy(dest + pos, lr, lr->length());
@@ -932,10 +922,11 @@ void LogArchiver::BlockAssembly::finish(int run)
     firstPID = lpid_t::null;
     lastPID = lpid_t::null;
 
-    // write run number and block end
+    // write block header info
     BlockHeader* h = (BlockHeader*) dest;
     h->run = run;
     h->end = pos;
+    h->lsn = lastLSN;
 
     writebuf->producerRelease();
 }
@@ -947,9 +938,8 @@ void LogArchiver::BlockAssembly::shutdown()
     writerForked = false;
 }
 
-LogArchiver::ArchiverHeap::ArchiverHeap(BlockAssembly* blkAssemb,
-        size_t workspaceSize)
-    : currentRun(0), filledFirst(false), blkAssemb(blkAssemb), w_heap(heapCmp)
+LogArchiver::ArchiverHeap::ArchiverHeap(size_t workspaceSize)
+    : currentRun(0), filledFirst(false), w_heap(heapCmp)
 {
     workspace = new fixed_lists_mem_t(workspaceSize);
 }
@@ -977,7 +967,6 @@ bool LogArchiver::ArchiverHeap::push(logrec_t* lr)
             w_heap.Heapify();
             filledFirst = true;
             firstJustFilled = true;
-            blkAssemb->newRunBoundary(lr->lsn_ck());
             DBGTHRD(<< "Heap full for the first time; start run 1");
         }
         return false;
@@ -990,8 +979,6 @@ bool LogArchiver::ArchiverHeap::push(logrec_t* lr)
         currentRun++;
         DBGTHRD(<< "Replacement starting new run " << (int) currentRun
                 << " on LSN " << lr->lsn_ck());
-        // add new LSN run boundary to writer
-        blkAssemb->newRunBoundary(lr->lsn_ck());
     }
 
     //DBGTHRD(<< "Processing logrec " << lr->lsn_ck() << ", type " <<
@@ -1209,9 +1196,6 @@ void LogArchiver::run()
     // Perform selection until all remaining entries are flushed out of
     // the heap into runs. Last run boundary is also enqueued.
     DBGTHRD(<< "Archiver exiting -- last round of selection to empty heap");
-    // nextLSN contains the next LSN that would be consumed by replacement,
-    // i.e., it is the end boundary of the current run
-    blkAssemb->newRunBoundary(consumer->getNextLSN());
     while (selection()) {}
     W_COERCE(returnRC);
 

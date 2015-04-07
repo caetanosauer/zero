@@ -259,26 +259,21 @@ public:
         ArchiveIndex* archIndex;
         ArchiveDirectory* directory;
         uint8_t currentRun;
-
-        queue<lsn_t> lsnQueue;
-        pthread_mutex_t queueMutex;
+        lsn_t lastLSN;
 
         rc_t openNewRun();
 
     public:
 
         virtual void run();
-        void enqueueRun(lsn_t lsn);
-        lsn_t dequeueRun();
 
         static const logrec_t* SKIP_LOGREC;
 
         WriterThread(AsyncRingBuffer* writebuf, ArchiveDirectory* directory)
             :
               BaseThread(writebuf, "LogArchiver_WriterThread"),
-              directory(directory), currentRun(0)
+              directory(directory), currentRun(0), lastLSN(lsn_t::null)
         {
-            DO_PTHREAD(pthread_mutex_init(&queueMutex, NULL));
         }
     };
 
@@ -291,8 +286,8 @@ public:
         bool add(logrec_t* lr);
         void finish(int run);
         void shutdown();
-        void newRunBoundary(lsn_t lsn);
         static int getRunFromBlock(const char* b);
+        static lsn_t getLSNFromBlock(const char* b);
     private:
         char* dest;
         AsyncRingBuffer* writebuf;
@@ -303,17 +298,19 @@ public:
         size_t pos;
         lpid_t firstPID;
         lpid_t lastPID;
+        lsn_t lastLSN;
     public:
         struct BlockHeader {
             uint8_t run;
             uint32_t end;
+            lsn_t lsn;
         };
 
     };
 
     class ArchiverHeap {
     public:
-        ArchiverHeap(BlockAssembly* blkAssemb, size_t workspaceSize);
+        ArchiverHeap(size_t workspaceSize);
         virtual ~ArchiverHeap();
 
         bool push(logrec_t* lr);
@@ -326,13 +323,6 @@ public:
         uint8_t currentRun;
         bool filledFirst;
         mem_mgmt_t* workspace;
-
-        /*
-         * Access to BlockAssembly is required to enqueue new run boundaries.
-         * TODO -- see if queue method can be replaced by a more decoupled
-         * mechanism.
-         */
-        BlockAssembly* blkAssemb;
 
         struct HeapEntry {
             uint8_t run;
@@ -385,7 +375,6 @@ public:
         bool next(logrec_t*& lr);
         lsn_t getNextLSN() { return nextLSN; }
     private:
-        ArchiveDirectory* directory;
         AsyncRingBuffer* readbuf;
         ReaderThread* reader;
         LogScanner* logScanner;
