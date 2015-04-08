@@ -426,13 +426,13 @@ LogArchiver::LogArchiver(
     :
     smthread_t(t_regular, "LogArchiver"),
     directory(d), consumer(c), heap(h), blkAssemb(b),
-    shutdown(false), control(&shutdown)
+    shutdown(false), control(&shutdown), selfManaged(false)
 {
 }
 
 LogArchiver::LogArchiver(const sm_options& options)
     : smthread_t(t_regular, "LogArchiver"),
-    shutdown(false), control(&shutdown)
+    shutdown(false), control(&shutdown), selfManaged(true)
 {
     std::string archdir = options.get_string_option("sm_archdir", "");
     size_t workspaceSize =
@@ -496,8 +496,8 @@ void LogArchiver::start_shutdown()
     // this flag indicates that reader and writer threads delivering null
     // blocks is not an error, but a termination condition
     shutdown = true;
-    // TODO review shutdown process with new classes
-    //reader->start_shutdown();
+    // make other threads see new shutdown value
+    lintel::atomic_thread_fence(lintel::memory_order_release);
     // If archiver thread is not running, it is woken up and terminated
     // imediately afterwards due to shutdown flag being set
     DO_PTHREAD(pthread_cond_signal(&control.activateCond));
@@ -507,14 +507,13 @@ LogArchiver::~LogArchiver()
 {
     if (!shutdown) {
         start_shutdown();
-        // TODO implement consumer shutdown
-        //reader->join();
-        blkAssemb->shutdown();
     }
-    delete blkAssemb;
-    delete consumer;
-    delete heap;
-    delete directory;
+    if (selfManaged) {
+        delete blkAssemb;
+        delete consumer;
+        delete heap;
+        delete directory;
+    }
 }
 
 /**

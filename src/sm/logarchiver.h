@@ -404,6 +404,7 @@ private:
     bool shutdown;
     rc_t returnRC;
     ArchiverControl control;
+    bool selfManaged;
 
     void replacement();
     bool selection();
