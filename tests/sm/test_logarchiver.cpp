@@ -113,6 +113,37 @@ rc_t heapTestReal(ss_m* ssm, test_volume_t* test_vol)
     return RCOK;
 }
 
+rc_t fullPipelineTest(ss_m* ssm, test_volume_t* test_vol)
+{
+    unsigned howManyToInsert = 1000;
+    W_DO(populateBtree(ssm, test_vol, howManyToInsert));
+
+    LogArchiver::LogConsumer cons(lsn_t(1,0), BLOCK_SIZE);
+    LogArchiver::ArchiverHeap heap(BLOCK_SIZE);
+    LogArchiver::ArchiveDirectory dir(test_env->archive_dir, BLOCK_SIZE);
+    LogArchiver::BlockAssembly assemb(&dir);
+
+    LogArchiver la(&dir, &cons, &heap, &assemb);
+    la.fork();
+    la.activate(lsn_t::null, true /* wait */);
+    
+    // by sending another activation signal with blocking,
+    // we wait for logarchiver to consume up to durable LSN,
+    // which is used by default when lsn_t::null is given above
+    la.activate(lsn_t::null, true);
+
+    la.start_shutdown();
+    la.join();
+    W_DO(la.getRC());
+
+    // TODO use archive scanner to verify:
+    // 1) integrity of archive
+    // 2) if no logrecs are missing (scan log with same ignores as log archiver
+    // and check if each logrec is in archiver -- random access, NL join)
+
+    return RCOK;
+}
+
 TEST (LogArchiverTest, ConsumerTest) {
     test_env->empty_logdata_dir();
     EXPECT_EQ(test_env->runBtreeTest(consumerTest), 0);
@@ -121,6 +152,11 @@ TEST (LogArchiverTest, ConsumerTest) {
 TEST (LogArchiverTest, HeapTestReal) {
     test_env->empty_logdata_dir();
     EXPECT_EQ(test_env->runBtreeTest(heapTestReal), 0);
+}
+
+TEST (LogArchiverTest, FullPipelineTest) {
+    test_env->empty_logdata_dir();
+    EXPECT_EQ(test_env->runBtreeTest(fullPipelineTest), 0);
 }
 
 int main(int argc, char **argv) {
