@@ -39,6 +39,7 @@ namespace {
     char device_name[MAXPATHLEN] = "./volumes/dev_test";
     char global_log_dir[MAXPATHLEN] = "./log";
     char global_clog_dir[MAXPATHLEN] = "./clog";
+    char global_archive_dir[MAXPATHLEN] = "./archive";
     char global_backup_dir[MAXPATHLEN] = "./backups";
 }
 
@@ -71,6 +72,7 @@ sm_options btree_test_env::make_sm_options(
     // to not throw away active generations, just increase threashold.
     options.set_int_option("sm_rawlock_gc_generation_count", 100);
     options.set_string_option("sm_logdir", global_log_dir);
+    options.set_string_option("sm_archdir", global_archive_dir);
     options.set_int_option("sm_num_page_writers", cleaner_threads);
     options.set_int_option("sm_cleaner_interval_millisec_min", cleaner_interval_millisec_min);
     options.set_int_option("sm_cleaner_interval_millisec_max", cleaner_interval_millisec_max);
@@ -182,6 +184,9 @@ testdriver_thread_t::do_construct(int32_t restart_mode)
     int not_set_int = -1;
     if (_options.get_string_option("sm_logdir", not_set) == not_set) {
         _options.set_string_option("sm_logdir", global_log_dir);
+    }
+    if (_options.get_string_option("sm_archdir", not_set) == not_set) {
+        _options.set_string_option("sm_archdir", global_archive_dir);
     }
     if (_options.get_string_option("sm_backup_dir", not_set) == not_set) {
         _options.set_string_option("sm_backup_dir", global_backup_dir);
@@ -386,17 +391,21 @@ void btree_test_env::SetUp()
     assure_dir(tests_dir);
     strcpy(log_dir, tests_dir);
     strcpy(clog_dir, tests_dir);
+    strcpy(archive_dir, tests_dir);
     strcpy(vol_dir, tests_dir);
     strcat(log_dir, "/log");
     strcat(clog_dir, "/clog");
+    strcat(archive_dir, "/archive");
     strcat(vol_dir, "/volumes");
     assure_empty_dir(log_dir);
     assure_empty_dir(clog_dir);
+    assure_empty_dir(archive_dir);
     assure_empty_dir(vol_dir);
     strcpy(device_name, vol_dir);
     strcat(device_name, "/dev_test");
     strcpy(global_log_dir, log_dir);
     strcpy(global_clog_dir, clog_dir);
+    strcpy(global_archive_dir, archive_dir);
     _use_locks = false;
 }
 void btree_test_env::empty_logdata_dir()
@@ -404,6 +413,7 @@ void btree_test_env::empty_logdata_dir()
 // TODO(Restart)... performance, for AFTER testing
     empty_dir(log_dir);
     empty_dir(clog_dir);
+    empty_dir(archive_dir);
     empty_dir(vol_dir);
 }
 
