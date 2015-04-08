@@ -155,7 +155,7 @@ public:
      */
     class ArchiveIndex {
     public:
-        ArchiveIndex(size_t blockSize);
+        ArchiveIndex(size_t blockSize, lsn_t startLSN);
         virtual ~ArchiveIndex();
 
         struct ProbeResult {

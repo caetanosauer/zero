@@ -630,7 +630,7 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(std::string archdir,
     lastLSN = startLSN;
 
     // create index
-    archIndex = new ArchiveIndex(blockSize);
+    archIndex = new ArchiveIndex(blockSize, startLSN);
 }
 
 LogArchiver::ArchiveDirectory::~ArchiveDirectory()
@@ -670,18 +670,21 @@ rc_t LogArchiver::ArchiveDirectory::openNewRun()
 
 rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN)
 {
-    if (appendFd >= 0) {
-        return RC(fcINTERNAL);
+    if (appendFd < 0) {
+        W_FATAL_MSG(fcINTERNAL,
+            << "Attempt to close unopened run");
     }
     if (appendPos == 0) {
         // nothing was appended -- just close file and return
         w_assert0(runEndLSN == lsn_t::null);
         W_DO(me()->close(appendFd));
+        appendFd = -1;
     }
     w_assert1(runEndLSN != lsn_t::null);
 
-    std::stringstream fname(archdir);
-    fname << "/" << LogArchiver::RUN_PREFIX << lastLSN << "-" << runEndLSN;
+    std::stringstream fname;
+    fname << archdir << "/" << LogArchiver::RUN_PREFIX
+        << lastLSN << "-" << runEndLSN;
 
     // register index information and write it on end of file
     archIndex->finishRun(lastLSN, runEndLSN, appendFd, appendPos);
@@ -689,6 +692,7 @@ rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN)
     std::string currentFName = archdir + "/" + CURR_RUN_FILE;
     W_DO(me()->frename(appendFd, currentFName.c_str(), fname.str().c_str()));
     W_DO(me()->close(appendFd));
+    appendFd = -1;
     DBGTHRD(<< "Closed current output run: " << fname.str());
 
     lastLSN = runEndLSN;
@@ -887,7 +891,7 @@ lsn_t LogArchiver::BlockAssembly::getLSNFromBlock(const char* b)
 bool LogArchiver::BlockAssembly::start()
 {
     DBGTHRD(<< "Requesting write block for selection");
-    char* dest = writebuf->producerRequest();
+    dest = writebuf->producerRequest();
     if (!dest) {
         DBGTHRD(<< "Block request failed!");
         if (writerForked) {
@@ -1258,11 +1262,16 @@ tryagain:
 /*
  * TODO initialize from existing runs at startup
  */
-LogArchiver::ArchiveIndex::ArchiveIndex(size_t blockSize)
-    : blockSize(blockSize), lastPID(lpid_t::null), lastLSN(lsn_t::null)
+LogArchiver::ArchiveIndex::ArchiveIndex(size_t blockSize, lsn_t startLSN)
+    : blockSize(blockSize), lastPID(lpid_t::null), lastLSN(startLSN)
 {
     DO_PTHREAD(pthread_mutex_init(&mutex, NULL));
     writeBuffer = new char[blockSize];
+
+    // last run in the array is always the one being currently generated
+    RunInfo r;
+    r.firstLSN = startLSN;
+    runs.push_back(r);
 }
 
 LogArchiver::ArchiveIndex::~ArchiveIndex()
@@ -1273,6 +1282,8 @@ LogArchiver::ArchiveIndex::~ArchiveIndex()
 void LogArchiver::ArchiveIndex::newBlock(lpid_t first, lpid_t last)
 {
     CRITICAL_SECTION(cs, mutex);
+    
+    w_assert1(runs.size() > 0);
 
     BlockEntry e;
     e.offset = blockSize * (runs.back().entries.size() - 1);
