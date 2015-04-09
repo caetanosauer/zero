@@ -16,7 +16,6 @@
 #include <queue>
 
 class sm_options;
-class LogFactory;
 class LogScanner;
 
 /**
@@ -135,17 +134,6 @@ public:
 
         bool isActive() { return control.activated; }
     };
-
-
-    class FactoryThread : public ReaderThread {
-    private:
-    	LogFactory* lf;
-    public:
-    	virtual void run();
-
-    	FactoryThread(AsyncRingBuffer* readbuf, lsn_t startLSN);
-    };
-
 
     /**
      * Simple implementation of a (naive) log archive index.
