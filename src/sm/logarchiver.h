@@ -204,6 +204,8 @@ public:
         rc_t append(const char* data, size_t length);
         rc_t closeCurrentRun(lsn_t runEndLSN);
         rc_t openNewRun();
+
+        static lsn_t parseLSN(const char* str, bool end = true);
     private:
         ArchiveIndex* archIndex;
         std::string archdir;
@@ -214,7 +216,6 @@ public:
         fileoff_t appendPos;
         size_t blockSize;
 
-        static lsn_t parseLSN(const char* str, bool end = true);
         os_dirent_t* scanDir(os_dir_t& dir);
     };
 

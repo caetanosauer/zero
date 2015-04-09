@@ -171,7 +171,7 @@ public:
     // return an unused vid_t
     static rc_t                 get_new_vid(vid_t& vid);
     static bool                 is_mounted(vid_t vid);
-    static vol_t*               get_volume(vid_t vid); // so far only for testing and debugging
+    static vol_t*               get_volume(vid_t vid);
     static vid_t                get_vid(const lvid_t& lvid);
     static lvid_t               get_lvid(const vid_t vid);
     static const char*          dev_name(vid_t vid);
