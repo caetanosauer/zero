@@ -605,6 +605,43 @@ rc_t LogArchiver::ArchiveDirectory::append(const char* data, size_t length)
     return RCOK;
 }
 
+rc_t LogArchiver::ArchiveDirectory::openForScan(int& fd, lsn_t runBegin,
+        lsn_t runEnd)
+{
+    std::stringstream fname;
+    fname << archdir << "/" << LogArchiver::RUN_PREFIX
+        << runBegin << "-" << runEnd;
+
+    int flags = smthread_t::OPEN_RDONLY;
+    W_DO(me()->open(fname.str().c_str(), flags, 0744, fd));
+
+    return RCOK;
+}
+
+rc_t LogArchiver::ArchiveDirectory::readBlock(int fd, char* buf,
+        fileoff_t& offset)
+{
+    rc_t rc = (me()->pread(fd, buf, blockSize, offset));
+    if (rc.is_error()) {
+        if (rc.err_num() == stSHORTIO) {
+            // EOF is signalized by setting offset to zero
+            offset = 0;
+            return RCOK;
+        }
+        return rc;
+    }
+
+    offset += blockSize;
+    return RCOK;
+}
+
+rc_t LogArchiver::ArchiveDirectory::closeScan(int& fd)
+{
+    W_DO(me()->close(fd));
+    fd = -1;
+    return RCOK;
+}
+
 LogArchiver::LogConsumer::LogConsumer(lsn_t startLSN, size_t blockSize)
     : nextLSN(startLSN), endLSN(lsn_t::null), currentBlock(NULL),
     blockSize(blockSize), pos(0)
@@ -786,6 +823,12 @@ lsn_t LogArchiver::BlockAssembly::getLSNFromBlock(const char* b)
     return h->lsn;
 }
 
+size_t LogArchiver::BlockAssembly::getEndOfBlock(const char* b)
+{
+    BlockHeader* h = (BlockHeader*) b;
+    return h->end;
+}
+
 bool LogArchiver::BlockAssembly::start()
 {
     DBGTHRD(<< "Requesting write block for selection");
@@ -852,6 +895,142 @@ void LogArchiver::BlockAssembly::shutdown()
     writebuf->set_finished();
     writer->join();
     writerForked = false;
+}
+
+LogArchiver::ArchiveScanner::ArchiveScanner(ArchiveDirectory* directory)
+    : directory(directory), archIndex(directory->getIndex())
+{
+}
+
+LogArchiver::ArchiveScanner::RunMerger*
+LogArchiver::ArchiveScanner::open(lpid_t startPID, lpid_t endPID,
+        lsn_t startLSN, lsn_t endLSN)
+{
+    RunMerger* merger = new RunMerger();
+
+    // probe for runs
+    ArchiveIndex::ProbeResult* runProbe = 
+        archIndex->probeFirst(startPID, startLSN);
+
+    while (runProbe) {
+        RunScanner* runScanner = new RunScanner(
+                runProbe->runBegin,
+                runProbe->runEnd,
+                startPID,
+                endPID,
+                runProbe->offset,
+                directory
+        );
+
+        // bring scanner up to starting point
+        logrec_t* lr;
+        bool hasNext = false;
+        while ((hasNext = runScanner->next(lr)) &&
+                lr->construct_pid().page < startPID.page &&
+                lr->lsn_ck() < startLSN)
+        {}
+        
+        // if pid and lsn don't match search criteria, run is not needed
+        if (hasNext &&
+            lr->construct_pid().page >= startPID.page &&
+            lr->construct_pid().page < endPID.page &&
+                lr->lsn_ck() >= startLSN &&
+                lr->lsn_ck() <= endLSN)
+        {
+            merger->addInput(runScanner);
+        }
+        else {
+            delete runScanner;
+        }
+
+        archIndex->probeNext(runProbe, endLSN);
+    }
+
+    return merger;
+}
+
+bool LogArchiver::ArchiveScanner::RunScanner::nextBlock()
+{
+    if (fd < 0) {
+        W_COERCE(directory->openForScan(fd, runBegin, runEnd));
+    }
+    // offset is updated by readBlock
+    W_COERCE(directory->readBlock(fd, buffer, offset));
+
+    // offset set to zero indicates EOF
+    if (offset == 0) {
+        W_COERCE(directory->closeScan(fd));
+        return false;
+    }
+
+    bpos = sizeof(BlockAssembly::BlockHeader);
+    blockEnd = BlockAssembly::getEndOfBlock(buffer);
+    w_assert1(blockEnd > bpos);
+
+    return true;
+}
+
+bool LogArchiver::ArchiveScanner::RunScanner::next(logrec_t*& lr)
+{
+    if (bpos >= blockEnd) {
+        if (!nextBlock()) {
+            return false;
+        }
+    }
+
+    if (lr) {
+        lr = (logrec_t*) (buffer + bpos);
+        // TODO verify logrec integrity
+    }
+    bpos += lr->length();
+
+    return true;
+}
+
+void LogArchiver::ArchiveScanner::RunMerger::addInput(RunScanner* r)
+{
+    w_assert0(!started);
+    MergeHeapEntry entry(r->firstPID, r);
+    heap.AddElementDontHeapify(entry);
+}
+
+bool LogArchiver::ArchiveScanner::RunMerger::next(logrec_t*& lr)
+{
+    if (!heap.First().active) {
+        // if top is inactive, then all runs are and scan is done
+        return false;
+    }
+    if (!started) {
+        heap.Heapify();
+        started = true;
+    }
+    else {
+        // On first invocation, heap is ready for consumption.
+        // On further invocations, however, the top element must
+        // be first recomputed by advancing the corresponding
+        // RunScanner object. This can't be done during the previous
+        // invocation because the log record pointer must remain
+        // intact. If we invoke next before the pointer is used,
+        // another block may be read from the run and the pointer
+        // is invalidated.
+        MergeHeapEntry& e = heap.First();
+        if (e.runScan->next(e.lr)) {
+            e.pid = e.lr->construct_pid();
+            e.lsn = e.lr->lsn_ck();
+        }
+        else {
+            e.active = false;
+        }
+        heap.ReplacedFirst();
+    }
+
+    lr = heap.First().lr;
+    return true;
+}
+
+void LogArchiver::ArchiveScanner::RunMerger::dumpHeap(ostream& out)
+{
+    heap.Print(out);
 }
 
 LogArchiver::ArchiverHeap::ArchiverHeap(size_t workspaceSize)
@@ -1345,7 +1524,7 @@ ProbeResult* LogArchiver::ArchiveIndex::probeFirst(lpid_t pid, lsn_t lsn)
     return result;
 }
 
-void LogArchiver::ArchiveIndex::probeNext(ProbeResult* prev, lsn_t endLSN)
+void LogArchiver::ArchiveIndex::probeNext(ProbeResult*& prev, lsn_t endLSN)
 {
     CRITICAL_SECTION(cs, mutex);
 

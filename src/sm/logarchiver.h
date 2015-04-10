@@ -158,7 +158,7 @@ public:
         void newBlock(lpid_t first, lpid_t last);
         rc_t finishRun(lsn_t first, lsn_t last, int fd, fileoff_t);
         ProbeResult* probeFirst(lpid_t pid, lsn_t lsn);
-        void probeNext(ProbeResult* prev, lsn_t endLSN = lsn_t::null);
+        void probeNext(ProbeResult*& prev, lsn_t endLSN = lsn_t::null);
 
     private:
         struct BlockEntry {
@@ -201,9 +201,15 @@ public:
         ArchiveIndex* getIndex() { return archIndex; }
         size_t getBlockSize() { return blockSize; }
 
+        // run generation methods
         rc_t append(const char* data, size_t length);
         rc_t closeCurrentRun(lsn_t runEndLSN);
         rc_t openNewRun();
+
+        // run scanning methods
+        rc_t openForScan(int& fd, lsn_t runBegin, lsn_t runEnd);
+        rc_t readBlock(int fd, char* buf, fileoff_t& offset);
+        rc_t closeScan(int& fd);
 
         static lsn_t parseLSN(const char* str, bool end = true);
     private:
@@ -250,8 +256,11 @@ public:
         bool add(logrec_t* lr);
         void finish(int run);
         void shutdown();
+
+        // methods that abstract block metadata
         static int getRunFromBlock(const char* b);
         static lsn_t getLSNFromBlock(const char* b);
+        static size_t getEndOfBlock(const char* b);
     private:
         char* dest;
         AsyncRingBuffer* writebuf;
@@ -270,6 +279,132 @@ public:
             lsn_t lsn;
         };
 
+    };
+
+    class ArchiveScanner {
+    public:
+        ArchiveScanner(ArchiveDirectory*);
+        virtual ~ArchiveScanner();
+
+        struct RunMerger;
+
+        RunMerger* open(lpid_t startPID, lpid_t endPID,
+                lsn_t startLSN, lsn_t endLSN = lsn_t::null);
+
+        void close (RunMerger* merger)
+        {
+            delete merger;
+        }
+    private:
+        ArchiveDirectory* directory;
+        ArchiveIndex* archIndex;
+
+        struct RunScanner {
+            const lsn_t runBegin;
+            const lsn_t runEnd;
+            const lpid_t firstPID;
+            const lpid_t lastPID;
+
+            fileoff_t offset;
+            char* buffer;
+            size_t bpos;
+            size_t blockEnd;
+            ArchiveDirectory* directory;
+            int fd;
+
+            RunScanner(lsn_t b, lsn_t e, lpid_t f, lpid_t l, fileoff_t o,
+                    ArchiveDirectory* directory)
+                : runBegin(b), runEnd(e), firstPID(f), lastPID(l), offset(o),
+                directory(directory), fd(-1)
+            {
+                buffer = new char[directory->getBlockSize()];
+                bpos = 0;
+                blockEnd = 0;
+            }
+
+            virtual ~RunScanner()
+            {
+                delete buffer;
+            }
+
+            bool next(logrec_t*& lr);
+
+            friend std::ostream& operator<< (ostream& os, const RunScanner& m)
+            {
+                os << m.runBegin << "-" << m.runEnd;
+                return os;
+            }
+
+        private:
+            bool nextBlock();
+        };
+
+        struct MergeHeapEntry {
+            // store pid and lsn here to speed up comparisons
+            bool active;
+            lpid_t pid;
+            lsn_t lsn;
+            logrec_t* lr;
+            RunScanner* runScan;
+
+            MergeHeapEntry(lpid_t pid, RunScanner* runScan)
+                : active(true), pid(pid), runScan(runScan)
+            {
+                lr = (logrec_t*) (runScan->buffer + runScan->bpos);
+                // TODO assert integirty of logrec
+                w_assert1(pid.page == lr->construct_pid().page);
+                w_assert1(pid.vol() == lr->construct_pid().vol());
+                lsn = lr->lsn_ck();
+            }
+
+            // required by w_heap
+            MergeHeapEntry() {};
+
+            virtual ~MergeHeapEntry()
+            {
+                // runScan is constructed by caller and destructed here
+                delete runScan;
+            }
+
+            friend std::ostream& operator<<(std::ostream& os, const MergeHeapEntry& e)
+            {
+                os << "[run " << *(e.runScan) << ", " << e.pid << ", " << e.lsn <<
+                    ", logrec :" << *(e.lr) << ")]";
+                return os;
+            }
+        };
+
+        struct MergeHeapCmp {
+            // actually a less-than, because we want lowest first
+            bool gt(const MergeHeapEntry& a, const MergeHeapEntry& b) const
+            {
+                if (!a.runScan->buffer) return false;
+                if (!b.runScan->buffer) return false;
+                if (a.pid.page != b.pid.page) {
+                    return a.pid.page < b.pid.page;
+                }
+                return a.lsn < b.lsn;
+            }
+        };
+
+    public:
+        // Scan interface exposed to caller
+        struct RunMerger {
+            RunMerger()
+                : heap(cmp), started(false)
+            {}
+
+            virtual ~RunMerger();
+
+            void addInput(RunScanner* r);
+            bool next(logrec_t*& lr);
+            void dumpHeap(ostream& out);
+
+        private:
+            MergeHeapCmp cmp;
+            Heap<MergeHeapEntry, MergeHeapCmp> heap;
+            bool started;
+        };
     };
 
     class ArchiverHeap {
