@@ -4,7 +4,6 @@
 #define LOGARCHIVER_C
 
 #include "logarchiver.h"
-#include "logfactory.h"
 #include "sm_options.h"
 
 #include <sm_int_1.h>
@@ -262,107 +261,6 @@ void LogArchiver::ReaderThread::run()
     }
 
     returnRC = RCOK;
-}
-
-LogArchiver::FactoryThread::FactoryThread(AsyncRingBuffer* readbuf, lsn_t startLSN) :
-		ReaderThread(readbuf, startLSN) {
-	lf = new LogFactory(readbuf->getBlockSize(), "tpcc_log_records", 1048576, 100000, 1.05);
-}
-
-/*
- * IMPORTANT: This code was copied from ReaderThread::run() and barely adapted. Factory does not
- * read from a file, so the variable  nextPartition does not make sense. Here the value of
- * nextPartition will be the "current partition" (so no -1 required).
- */
-void LogArchiver::FactoryThread::run() {
-	while(true) {
-		CRITICAL_SECTION(cs, control.mutex);
-		bool activated = control.waitForActivation();
-		if (!activated) {
-			break;
-		}
-
-		DBGTHRD(<< "Factory thread activated until " << control.endLSN);
-
-
-		/*
-		 * CS: The code was changed to not rely on the file size anymore,
-		 * because we may read from a file that is still being appended to.
-		 * The correct behavior is to rely on the given endLSN, which must
-		 * be guaranteed to be persistent on the file. Therefore, we cannot
-		 * read past the end of the file if we only read until endLSN.
-		 * A physical read past the end is OK because we use pread_short().
-		 * The position from which the first logrec will be read is set in pos
-		 * by the activate method, which takes the startLSN as parameter.
-		 */
-
-		while(true) {
-			if (control.endLSN.hi() == nextPartition
-					&& pos >= control.endLSN.lo())
-			{
-				/*
-				 * The requested endLSN is within a block which was already
-				 * read. Stop and wait for next activation, which must start
-				 * reading from endLSN, since anything beyond that might
-				 * have been updated alread (usually, endLSN is the current
-				 * end of log). Hence, we update pos with it.
-				 */
-				pos = control.endLSN.lo();
-				DBGTHRD(<< "Reader thread reached endLSN -- sleeping."
-						<< " New pos = " << pos);
-				break;
-			}
-
-			// get buffer space to read into
-			char* dest = buf->producerRequest();
-			if (!dest) {
-				W_FATAL_MSG(fcINTERNAL,
-					 << "Error requesting block on reader thread");
-				break;
-			}
-
-			int bytesRead = 0;
-
-			char* src = lf->nextBlock();
-			memcpy(dest, src, blockSize);
-			bytesRead = blockSize;
-
-			DBGTHRD(<< "Read block " << (void*) dest << " from fpos " << pos <<
-					" with size " << bytesRead);
-
-			pos += bytesRead;
-			if (control.endLSN.hi() == nextPartition
-					&& pos >= control.endLSN.lo())
-			{
-				/*
-				 * CS: If we've just read the block containing the endLSN,
-				 * manually insert a fake skip logrec at the endLSN position,
-				 * to guarantee that replacement will not read beyond it, even
-				 * if archiver gets activated multiple times while the reader
-				 * thread is still running (i.e., reader "misses" some
-				 * activations) [Bug of Sep 26, 2014]
-				 */
-				// amount read from file in this current activation
-				size_t readSoFar = control.endLSN.lo() - prevPos;
-				w_assert1(readSoFar > 0);
-				size_t skipPos = readSoFar % blockSize;
-				logrec_t* lr = (logrec_t*) (dest + skipPos);
-				if (lr->type() != logrec_t::t_skip) {
-					DBGTHRD(<< "Reader setting skip logrec manually on block "
-							<< " offset " << skipPos << " LSN "
-							<< control.endLSN);
-					memcpy(lr, FAKE_SKIP_LOGREC, 3);
-				}
-				w_assert0(lr->type() == logrec_t::t_skip);
-			}
-
-			buf->producerRelease();
-		}
-
-		control.activated = false;
-	}
-
-	returnRC = RCOK;
 }
 
 void LogArchiver::WriterThread::run()

@@ -279,7 +279,6 @@ private:
     void                     shutdown();
     void                     shutdown(snum_t s);
     
-    /** USED ONLY FROM TESTCASES!. */
     alloc_cache_t*           get_alloc_cache() {return _alloc_cache;}
     stnode_cache_t*          get_stnode_cache() {return _stnode_cache;}
     bf_fixed_m*              get_fixed_bf() {return _fixed_bf;}

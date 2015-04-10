@@ -16,7 +16,6 @@
 #include <queue>
 
 class sm_options;
-class LogFactory;
 class LogScanner;
 
 /**
@@ -136,17 +135,6 @@ public:
         bool isActive() { return control.activated; }
     };
 
-
-    class FactoryThread : public ReaderThread {
-    private:
-    	LogFactory* lf;
-    public:
-    	virtual void run();
-
-    	FactoryThread(AsyncRingBuffer* readbuf, lsn_t startLSN);
-    };
-
-
     /**
      * Simple implementation of a (naive) log archive index.
      * No caching and  one single mutex for all operations.
@@ -216,6 +204,8 @@ public:
         rc_t append(const char* data, size_t length);
         rc_t closeCurrentRun(lsn_t runEndLSN);
         rc_t openNewRun();
+
+        static lsn_t parseLSN(const char* str, bool end = true);
     private:
         ArchiveIndex* archIndex;
         std::string archdir;
@@ -226,7 +216,6 @@ public:
         fileoff_t appendPos;
         size_t blockSize;
 
-        static lsn_t parseLSN(const char* str, bool end = true);
         os_dirent_t* scanDir(os_dir_t& dir);
     };
 
