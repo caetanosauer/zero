@@ -12,9 +12,11 @@
 class LogFactory {
 private:
 	/* Every incr_th records generated, increase the maxPageId by a ratio of incr_ratio */
-	const uint4_t INCR_TH;
+	const unsigned INCR_TH;
 	const float INCR_RATIO;
-	uint4_t max_page_id;
+
+        bool sorted;
+	unsigned max_page_id;
 	vector<lsn_t> prev_lsn;	/* Keep track of previous log record on same page */
 	uint4_t generatedCount;	/* Keep track of how many log records were generated */
 	uint4_t currentFile;
@@ -24,16 +26,16 @@ private:
 	boost::random::uniform_real_distribution<double> dDist; //[min,max)
 	boost::random::discrete_distribution<> dd_type;
 
-	uint4_t nextType();
-	uint4_t nextLength(uint4_t type);
-	uint4_t nextZipf();
+	unsigned nextType();
+	unsigned nextLength(uint4_t type);
+	unsigned nextZipf();
 
 	class fake_logrec_t {
 	public:
 		fake_logrec_t();
 		const lsn_t&	lsn_ck() const {  return *_lsn_ck(); }
 		enum {
-			max_sz = 3 * sizeof(page_s),
+			max_sz = 3 * sizeof(generic_page),
 			hdr_sz = (
 				sizeof(uint2_t) +   // _len
 				sizeof(u_char) +    // _type
@@ -76,11 +78,15 @@ private:
 	/* Stats of TPCC, SF=10, 4 threads, 90s */
 	class TPCC_Stats {
 	public:
-		vector<float> probType;							/* probType[i] = probability of type i */
-		vector<vector<float> > probLengthIndex;			/* probLengthIndex[i][j] = probability of length with index j for type i */
-		vector<vector<uint4_t> > lengthIndexToLength;	/* lengthIndexToLength[i][j] = translate length index j of type i to actual length */
+                /* probType[i] = probability of type i */
+		vector<float> probType;
+                /* probLengthIndex[i][j] = probability of length with index j for type i */
+		vector<vector<float> > probLengthIndex;
+                /* lengthIndexToLength[i][j] = translate length index j of type i
+                 * to actual length */
+		vector<vector<uint4_t> > lengthIndexToLength;
 
-		 Stats() : probType(logrec_t::t_max_logrec,0),
+		 TPCC_Stats() : probType(logrec_t::t_max_logrec,0),
 			    probLengthIndex(logrec_t::t_max_logrec, vector<float>(5,0.0)),
 			    lengthIndexToLength(logrec_t::t_max_logrec, vector<uint4_t>(5,0)) {
 			probType[0] = 0.0001183;
@@ -237,12 +243,17 @@ public:
 	/*
 	 * max_page_id = 233220, similar to a TPCC with SF=10 (~2GB with 8KB pages).
 	 * th(increase_threshold) = increase database every 1000 log records generated.
-	 * ratio = increase the number of pages by 1% every time.
+	 * ratio = increment on number of pages at the threshold above
 	 */
-	LogFactory(uint_t max_page_id = 233220, uint4_t th = 1000, float ratio = 1.01);
+	LogFactory(
+                bool sorted = false, // generates sorted log archive
+                unsigned max_page_id = 233220,
+                unsigned th = 100,
+                unsigned increment = 10
+        );
 	~LogFactory();
 
-	void nextRecord(char* addr);
+	void nextRecord(void* addr);
 };
 
 #endif
