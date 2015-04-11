@@ -295,9 +295,6 @@ public:
         {
             delete merger;
         }
-    private:
-        ArchiveDirectory* directory;
-        ArchiveIndex* archIndex;
 
         struct RunScanner {
             const lsn_t runBegin;
@@ -338,6 +335,10 @@ public:
         private:
             bool nextBlock();
         };
+
+    private:
+        ArchiveDirectory* directory;
+        ArchiveIndex* archIndex;
 
         struct MergeHeapEntry {
             // store pid and lsn here to speed up comparisons
