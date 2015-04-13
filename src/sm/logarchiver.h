@@ -99,29 +99,10 @@ public:
         virtual void run();
 
         ReaderThread(AsyncRingBuffer* readbuf, lsn_t startLSN);
+        virtual ~ReaderThread() {}
 
-        void start_shutdown()
-        {
-            shutdown = true;
-            // if finished is set, the ring buffer denies producer requests
-            buf->set_finished();
-        }
-
-        void activate(lsn_t startLSN, lsn_t endLSN)
-        {
-            if (currentFd == -1) { // first activation
-                w_assert0(nextPartition == (uint) startLSN.hi());
-            }
-            else {
-                w_assert0(nextPartition - 1 == (uint) startLSN.hi());
-            }
-            // ignore if invoking activate on the same LSN repeatedly
-            if (control.endLSN > startLSN) {
-                pos = startLSN.lo();
-                prevPos = pos;
-            }
-            control.activate(true, endLSN);
-        }
+        void start_shutdown();
+        void activate(lsn_t startLSN, lsn_t endLSN);
 
         bool isActive() { return control.activated; }
     };
@@ -301,27 +282,12 @@ public:
             int fd;
 
             RunScanner(lsn_t b, lsn_t e, lpid_t f, lpid_t l, fileoff_t o,
-                    ArchiveDirectory* directory)
-                : runBegin(b), runEnd(e), firstPID(f), lastPID(l), offset(o),
-                directory(directory), fd(-1)
-            {
-                buffer = new char[directory->getBlockSize()];
-                bpos = 0;
-                blockEnd = 0;
-            }
-
-            virtual ~RunScanner()
-            {
-                delete buffer;
-            }
+                    ArchiveDirectory* directory);
+            virtual ~RunScanner();
 
             bool next(logrec_t*& lr);
 
-            friend std::ostream& operator<< (ostream& os, const RunScanner& m)
-            {
-                os << m.runBegin << "-" << m.runEnd;
-                return os;
-            }
+            friend std::ostream& operator<< (ostream& os, const RunScanner& m);
 
         private:
             bool nextBlock();
@@ -339,44 +305,19 @@ public:
             logrec_t* lr;
             RunScanner* runScan;
 
-            MergeHeapEntry(lpid_t pid, RunScanner* runScan)
-                : active(true), pid(pid), runScan(runScan)
-            {
-                lr = (logrec_t*) (runScan->buffer + runScan->bpos);
-                // TODO assert integirty of logrec
-                w_assert1(pid.page == lr->construct_pid().page);
-                w_assert1(pid.vol() == lr->construct_pid().vol());
-                lsn = lr->lsn_ck();
-            }
+            MergeHeapEntry(lpid_t pid, RunScanner* runScan);
 
             // required by w_heap
             MergeHeapEntry() {};
 
-            virtual ~MergeHeapEntry()
-            {
-                // runScan is constructed by caller and destructed here
-                delete runScan;
-            }
+            virtual ~MergeHeapEntry();
 
-            friend std::ostream& operator<<(std::ostream& os, const MergeHeapEntry& e)
-            {
-                os << "[run " << *(e.runScan) << ", " << e.pid << ", " << e.lsn <<
-                    ", logrec :" << *(e.lr) << ")]";
-                return os;
-            }
+            friend std::ostream& operator<<(std::ostream& os,
+                    const MergeHeapEntry& e);
         };
 
         struct MergeHeapCmp {
-            // actually a less-than, because we want lowest first
-            bool gt(const MergeHeapEntry& a, const MergeHeapEntry& b) const
-            {
-                if (!a.runScan->buffer) return false;
-                if (!b.runScan->buffer) return false;
-                if (a.pid.page != b.pid.page) {
-                    return a.pid.page < b.pid.page;
-                }
-                return a.lsn < b.lsn;
-            }
+            bool gt(const MergeHeapEntry& a, const MergeHeapEntry& b) const;
         };
 
     public:
@@ -421,7 +362,8 @@ public:
             lsn_t lsn;
             mem_mgmt_t::slot_t slot;
 
-            HeapEntry(uint8_t run, lpid_t pid, lsn_t lsn, mem_mgmt_t::slot_t slot)
+            HeapEntry(uint8_t run, lpid_t pid, lsn_t lsn,
+                    mem_mgmt_t::slot_t slot)
                 : run(run), pid(pid), lsn(lsn), slot(slot)
             {}
 
@@ -429,28 +371,12 @@ public:
                 : run(0), pid(lpid_t::null), lsn(lsn_t::null), slot(NULL, 0)
             {}
 
-            friend std::ostream& operator<<(std::ostream& os, const HeapEntry& e)
-            {
-                os << "[run " << e.run << ", " << e.pid << ", " << e.lsn <<
-                    ", slot(" << e.slot.address << ", " << e.slot.length << ")]";
-                return os;
-            }
+            friend std::ostream& operator<<(std::ostream& os,
+                    const HeapEntry& e);
         };
 
         struct Cmp {
-            /*
-             * gt is actually a less than function, to produce ascending order
-             */
-            bool gt(const HeapEntry& a, const HeapEntry& b) const {
-                if (a.run != b.run) {
-                    return a.run < b.run;
-                }
-                // TODO no support for multiple volumes
-                if (a.pid.page != b.pid.page) {
-                    return a.pid.page < b.pid.page;
-                }
-                return a.lsn < b.lsn;
-            }
+            bool gt(const HeapEntry& a, const HeapEntry& b) const;
         };
 
         Cmp heapCmp;

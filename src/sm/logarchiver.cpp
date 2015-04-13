@@ -100,6 +100,31 @@ LogArchiver::ReaderThread::ReaderThread(AsyncRingBuffer* readbuf, lsn_t startLSN
     nextPartition = startLSN.hi();
 }
 
+void LogArchiver::ReaderThread::start_shutdown()
+{
+    shutdown = true;
+    // make other threads see new shutdown value
+    lintel::atomic_thread_fence(lintel::memory_order_release);
+    // if finished is set, the ring buffer denies producer requests
+    buf->set_finished();
+}
+
+void LogArchiver::ReaderThread::activate(lsn_t startLSN, lsn_t endLSN)
+{
+    if (currentFd == -1) { // first activation
+        w_assert0(nextPartition == (uint) startLSN.hi());
+    }
+    else {
+        w_assert0(nextPartition - 1 == (uint) startLSN.hi());
+    }
+    // ignore if invoking activate on the same LSN repeatedly
+    if (control.endLSN > startLSN) {
+        pos = startLSN.lo();
+        prevPos = pos;
+    }
+    control.activate(true, endLSN);
+}
+
 rc_t LogArchiver::ReaderThread::openPartition()
 {
     if (currentFd != -1) {
@@ -934,6 +959,21 @@ LogArchiver::ArchiveScanner::open(lpid_t startPID, lpid_t endPID,
     return merger;
 }
 
+LogArchiver::ArchiveScanner::RunScanner(lsn_t b, lsn_t e, lpid_t f, lpid_t l,
+        fileoff_t o, ArchiveDirectory* directory)
+: runBegin(b), runEnd(e), firstPID(f), lastPID(l), offset(o),
+    directory(directory), fd(-1)
+{
+    buffer = new char[directory->getBlockSize()];
+    bpos = 0;
+    blockEnd = 0;
+}
+
+virtual LogArchiver::ArchiveScanner::~RunScanner()
+{
+    delete buffer;
+}
+
 bool LogArchiver::ArchiveScanner::RunScanner::nextBlock()
 {
     if (fd < 0) {
@@ -970,6 +1010,49 @@ bool LogArchiver::ArchiveScanner::RunScanner::next(logrec_t*& lr)
     bpos += lr->length();
 
     return true;
+}
+
+std::ostream& operator<< (ostream& os,
+        const LogArchiver::ArchiveScanner::RunScanner& m)
+{
+    os << m.runBegin << "-" << m.runEnd;
+    return os;
+}
+
+LogArchiver::ArchiveScanner::MergeHeapEntry(lpid_t pid, RunScanner* runScan)
+    : active(true), pid(pid), runScan(runScan)
+{
+    lr = (logrec_t*) (runScan->buffer + runScan->bpos);
+    // TODO assert integrity of logrec
+    w_assert1(pid.page == lr->construct_pid().page);
+    w_assert1(pid.vol() == lr->construct_pid().vol());
+    lsn = lr->lsn_ck();
+}
+
+LogArchiver::ArchiveScanner::~MergeHeapEntry()
+{
+    // runScan is constructed by caller and destructed here
+    delete runScan;
+}
+
+std::ostream& operator<<(std::ostream& os,
+        const LogArchiver::ArchiveScanner::MergeHeapEntry& e)
+{
+    os << "[run " << *(e.runScan) << ", " << e.pid << ", " << e.lsn <<
+        ", logrec :" << *(e.lr) << ")]";
+    return os;
+}
+
+// actually a less-than, because we want lowest first
+bool LogArchiver::MergeHeapCmp::gt(const MergeHeapEntry& a,
+        const MergeHeapEntry& b)
+{
+    if (!a.runScan->buffer) return false;
+    if (!b.runScan->buffer) return false;
+    if (a.pid.page != b.pid.page) {
+        return a.pid.page < b.pid.page;
+    }
+    return a.lsn < b.lsn;
 }
 
 void LogArchiver::ArchiveScanner::RunMerger::addInput(RunScanner* r)
@@ -1090,6 +1173,28 @@ void LogArchiver::ArchiverHeap::pop()
 logrec_t* LogArchiver::ArchiverHeap::top()
 {
     return (logrec_t*) w_heap.First().slot.address;
+}
+
+std::ostream& operator<<(std::ostream& os,
+        const LogArchiver::ArchiverHeap::HeapEntry& e)
+{
+    os << "[run " << e.run << ", " << e.pid << ", " << e.lsn <<
+        ", slot(" << e.slot.address << ", " << e.slot.length << ")]";
+    return os;
+}
+
+// gt is actually a less than function, to produce ascending order
+bool LogArchiver::ArchiverHeap::Cmp::gt(const HeapEntry& a,
+        const HeapEntry& b)
+{
+    if (a.run != b.run) {
+        return a.run < b.run;
+    }
+    // TODO no support for multiple volumes
+    if (a.pid.page != b.pid.page) {
+        return a.pid.page < b.pid.page;
+    }
+    return a.lsn < b.lsn;
 }
 
 /**
