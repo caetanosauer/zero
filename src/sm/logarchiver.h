@@ -284,7 +284,7 @@ public:
     class ArchiveScanner {
     public:
         ArchiveScanner(ArchiveDirectory*);
-        virtual ~ArchiveScanner();
+        virtual ~ArchiveScanner() {};
 
         struct RunMerger;
 
@@ -395,7 +395,7 @@ public:
                 : heap(cmp), started(false)
             {}
 
-            virtual ~RunMerger();
+            virtual ~RunMerger() {};
 
             void addInput(RunScanner* r);
             bool next(logrec_t*& lr);
@@ -566,6 +566,10 @@ public:
     
     void unsetIgnore(logrec_t::kind_t type) {
         ignore.reset(type);
+    }
+
+    bool isIgnored(logrec_t::kind_t type) {
+        return ignore[type];
     }
 
 private:
