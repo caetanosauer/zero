@@ -478,11 +478,24 @@ public:
             virtual ~MergeHeapEntry();
 
             friend std::ostream& operator<<(std::ostream& os,
-                    const MergeHeapEntry& e);
+                    const MergeHeapEntry& e)
+            {
+                os << "[run " << *(e.runScan) << ", " << e.pid << ", " << e.lsn <<
+                    ", logrec :" << *(e.lr) << ")]";
+                return os;
+            }
         };
 
         struct MergeHeapCmp {
-            bool gt(const MergeHeapEntry& a, const MergeHeapEntry& b) const;
+            bool gt(const MergeHeapEntry& a, const MergeHeapEntry& b) const
+            {
+                if (!a.runScan->buffer) return false;
+                if (!b.runScan->buffer) return false;
+                if (a.pid.page != b.pid.page) {
+                    return a.pid.page < b.pid.page;
+                }
+                return a.lsn < b.lsn;
+            }
         };
 
     public:
@@ -566,7 +579,12 @@ public:
             {}
 
             friend std::ostream& operator<<(std::ostream& os,
-                    const HeapEntry& e);
+                    const HeapEntry& e)
+            {
+                os << "[run " << e.run << ", " << e.pid << ", " << e.lsn <<
+                    ", slot(" << e.slot.address << ", " << e.slot.length << ")]";
+                return os;
+            }
         };
 
         struct Cmp {

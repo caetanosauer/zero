@@ -959,8 +959,8 @@ LogArchiver::ArchiveScanner::open(lpid_t startPID, lpid_t endPID,
     return merger;
 }
 
-LogArchiver::ArchiveScanner::RunScanner(lsn_t b, lsn_t e, lpid_t f, lpid_t l,
-        fileoff_t o, ArchiveDirectory* directory)
+LogArchiver::ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e,
+        lpid_t f, lpid_t l, fileoff_t o, ArchiveDirectory* directory)
 : runBegin(b), runEnd(e), firstPID(f), lastPID(l), offset(o),
     directory(directory), fd(-1)
 {
@@ -969,7 +969,7 @@ LogArchiver::ArchiveScanner::RunScanner(lsn_t b, lsn_t e, lpid_t f, lpid_t l,
     blockEnd = 0;
 }
 
-virtual LogArchiver::ArchiveScanner::~RunScanner()
+LogArchiver::ArchiveScanner::RunScanner::~RunScanner()
 {
     delete buffer;
 }
@@ -1019,7 +1019,8 @@ std::ostream& operator<< (ostream& os,
     return os;
 }
 
-LogArchiver::ArchiveScanner::MergeHeapEntry(lpid_t pid, RunScanner* runScan)
+LogArchiver::ArchiveScanner::MergeHeapEntry::MergeHeapEntry(lpid_t pid,
+        RunScanner* runScan)
     : active(true), pid(pid), runScan(runScan)
 {
     lr = (logrec_t*) (runScan->buffer + runScan->bpos);
@@ -1029,30 +1030,10 @@ LogArchiver::ArchiveScanner::MergeHeapEntry(lpid_t pid, RunScanner* runScan)
     lsn = lr->lsn_ck();
 }
 
-LogArchiver::ArchiveScanner::~MergeHeapEntry()
+LogArchiver::ArchiveScanner::MergeHeapEntry::~MergeHeapEntry()
 {
     // runScan is constructed by caller and destructed here
     delete runScan;
-}
-
-std::ostream& operator<<(std::ostream& os,
-        const LogArchiver::ArchiveScanner::MergeHeapEntry& e)
-{
-    os << "[run " << *(e.runScan) << ", " << e.pid << ", " << e.lsn <<
-        ", logrec :" << *(e.lr) << ")]";
-    return os;
-}
-
-// actually a less-than, because we want lowest first
-bool LogArchiver::MergeHeapCmp::gt(const MergeHeapEntry& a,
-        const MergeHeapEntry& b)
-{
-    if (!a.runScan->buffer) return false;
-    if (!b.runScan->buffer) return false;
-    if (a.pid.page != b.pid.page) {
-        return a.pid.page < b.pid.page;
-    }
-    return a.lsn < b.lsn;
 }
 
 void LogArchiver::ArchiveScanner::RunMerger::addInput(RunScanner* r)
@@ -1175,17 +1156,9 @@ logrec_t* LogArchiver::ArchiverHeap::top()
     return (logrec_t*) w_heap.First().slot.address;
 }
 
-std::ostream& operator<<(std::ostream& os,
-        const LogArchiver::ArchiverHeap::HeapEntry& e)
-{
-    os << "[run " << e.run << ", " << e.pid << ", " << e.lsn <<
-        ", slot(" << e.slot.address << ", " << e.slot.length << ")]";
-    return os;
-}
-
 // gt is actually a less than function, to produce ascending order
 bool LogArchiver::ArchiverHeap::Cmp::gt(const HeapEntry& a,
-        const HeapEntry& b)
+        const HeapEntry& b) const
 {
     if (a.run != b.run) {
         return a.run < b.run;
