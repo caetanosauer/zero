@@ -13,18 +13,6 @@
 // needed for skip_log
 //#include "logdef_gen.cpp"
 
-#define CHECK_ERROR_BASE(x, y) \
-    do { \
-        w_rc_t rc = x; \
-        if (rc.is_error()) { \
-            returnRC = rc; \
-            y; \
-        } \
-    } while (false);
-#define CHECK_ERROR(x) CHECK_ERROR_BASE(x, return);
-#define CHECK_ERROR_BOOL(x) CHECK_ERROR_BASE(x, return false);
-
-
 typedef mem_mgmt_t::slot_t slot_t;
 
 // definition of static members
@@ -203,19 +191,19 @@ void LogArchiver::ReaderThread::run()
 
 
             if (currentFd == -1) {
-                CHECK_ERROR(openPartition());
+                W_COERCE(openPartition());
             }
 
 
             int bytesRead = 0;
-            CHECK_ERROR(me()->pread_short(
+            W_COERCE(me()->pread_short(
                         currentFd, dest, blockSize, pos, bytesRead));
 
             if (bytesRead == 0) {
                 // Reached EOF -- open new file and try again
-                CHECK_ERROR(openPartition());
+                W_COERCE(openPartition());
                 pos = 0;
-                CHECK_ERROR(me()->pread_short(
+                W_COERCE(me()->pread_short(
                             currentFd, dest, blockSize, pos, bytesRead));
                 if (bytesRead == 0) {
                     W_FATAL_MSG(fcINTERNAL,
@@ -259,8 +247,6 @@ void LogArchiver::ReaderThread::run()
 
         control.activated = false;
     }
-
-    returnRC = RCOK;
 }
 
 void LogArchiver::WriterThread::run()
@@ -280,7 +266,7 @@ void LogArchiver::WriterThread::run()
              * is marked finished, which is done in start_shutdown().
              */
             DBGTHRD(<< "Finished flag set on writer thread");
-            returnRC = directory->closeCurrentRun(lastLSN);
+            W_COERCE(directory->closeCurrentRun(lastLSN));
             return; // finished is set on buf
         }
         
@@ -303,15 +289,15 @@ void LogArchiver::WriterThread::run()
              *  bound on the next run, which allows us to verify whether
              *  holes exist in the archive.
              */
-            CHECK_ERROR(directory->closeCurrentRun(lastLSN));
-            CHECK_ERROR(directory->openNewRun());
+            W_COERCE(directory->closeCurrentRun(lastLSN));
+            W_COERCE(directory->openNewRun());
             currentRun = run;
             DBGTHRD(<< "Opening file for new run " << run
                     << " starting on LSN " << directory->getLastLSN());
         }
 
         lastLSN = BlockAssembly::getLSNFromBlock(src);
-        CHECK_ERROR(directory->append(src, blockSize));
+        W_COERCE(directory->append(src, blockSize));
 
         DBGTHRD(<< "Wrote out block " << (void*) src);
 
@@ -693,7 +679,6 @@ bool LogArchiver::LogConsumer::nextBlock()
             // immediately after an existing LSN but in the same partition.
             W_FATAL_MSG(fcINTERNAL, << "Consume request failed!");
         //}
-        //returnRC = RCOK;
         return false;
     }
     DBGTHRD(<< "Picked block for replacement " << (void*) currentBlock);
@@ -1189,7 +1174,6 @@ void LogArchiver::run()
         consumer->open(control.endLSN);
 
         replacement();
-        W_COERCE(returnRC);
 
         w_assert1(consumer->getNextLSN() >= control.endLSN);
 
@@ -1219,7 +1203,6 @@ void LogArchiver::run()
     // the heap into runs. Last run boundary is also enqueued.
     DBGTHRD(<< "Archiver exiting -- last round of selection to empty heap");
     while (selection()) {}
-    W_COERCE(returnRC);
 
     w_assert0(heap->size() == 0);
     blkAssemb->shutdown();

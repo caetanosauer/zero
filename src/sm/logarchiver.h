@@ -73,12 +73,10 @@ public:
         AsyncRingBuffer* buf;
         int currentFd;
         off_t pos;
-        rc_t returnRC;
         size_t blockSize;
 
     public:
         size_t getBlockSize() { return blockSize; }
-        rc_t getReturnRC() { return returnRC; }
 
 
         BaseThread(AsyncRingBuffer* buf, const char* tname)
@@ -86,13 +84,6 @@ public:
               buf(buf), currentFd(-1), pos(0)
         {
             blockSize = buf->getBlockSize();
-        }
-
-        virtual void after_run()
-        {
-            if (returnRC.is_error()) {
-                W_COERCE(returnRC);
-            }
         }
     };
 
@@ -500,8 +491,6 @@ public:
 
     virtual ~LogArchiver();
 
-    rc_t getRC() { return returnRC; }
-
     virtual void run();
     bool activate(lsn_t endLSN = lsn_t::null, bool wait = true);
     void start_shutdown();
@@ -527,7 +516,6 @@ private:
     BlockAssembly* blkAssemb;
 
     bool shutdown;
-    rc_t returnRC;
     ArchiverControl control;
     bool selfManaged;
 
