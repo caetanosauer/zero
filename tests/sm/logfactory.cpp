@@ -1,5 +1,8 @@
 #include "logfactory.h"
 
+const uint32_t LogFactory::factory_version_major = 6;
+const uint32_t LogFactory::factory_version_minor = 1;
+
 /**
  *	params:
  *		max_page_id: self-explained
@@ -13,38 +16,52 @@ LogFactory::LogFactory(bool sorted, unsigned max_page_id, unsigned th,
     max_page_id(max_page_id), prev_lsn(max_page_id, lsn_t::null),
     generatedCount(0), gen(1729), dDist(0.0,1.0)
 {
+	if (factory_version_major != log_storage::_version_major 
+		|| 
+		factory_version_minor > log_storage::_version_minor) {
+		DBGTHRD(<< "FACTORY VERSION ERROR");
+	}
+	if (Stats::stats_version_major != factory_version_major
+		|| 
+		Stats::stats_version_minor > factory_version_minor) {
+		DBGTHRD(<< "STATS VERSION ERROR");
+	}
 }
 
 LogFactory::~LogFactory() {
 }
 
-LogFactory::fake_logrec_t::fake_logrec_t() { }
-
 bool LogFactory::next(fake_logrec_t*& lr) {
 	new (lr) fake_logrec_t;
 
-	lr->_type = stats.nextType();
-	lr->_len = stats.nextLength(lr->_type);
-	lr->_cat = 1;
-	lr->_shpid = nextZipf();
-	lr->_tid = 1;	// transaction id
-	lr->_vid = 1;	// volume id
-	lr->_page_tag = 0;
-	lr->_snum = 1;	// storage number
-	lr->_prev = lsn_t::null;
-	lr->_prev_page = prev_lsn[lr->_shpid];
-        // TODO: do we need to differentiate between SSX and non-SSX logrecs?
+	lr->header._type = stats.nextType();
+	lr->header._len = stats.nextLength(lr->header._type);
+	lr->header._cat = fake_logrec_t::t_status;
+	lr->header._shpid = nextZipf();
+	lr->header._vid = 1;	// volume id
+	lr->header._page_tag = 1;
+	lr->header._snum = 1;	// storage number
+	lr->header._page_prv = prev_lsn[lr->header._shpid];
+
+	lr->xidInfo._xid = 1;	// transaction id
+	lr->xidInfo._xid_prv = lsn_t::null;
+
+    // TODO: do we need to differentiate between SSX and non-SSX logrecs?
+	/* No. The only difference is that SSX records do not have the xidInfo
+	 * structure. Since the LogFactory is not interested in these fields, we
+	 * can treat SSX as normal log records. */
+
 	/* Fill the data portion of the log record with 6s (luck number) */
-	memset(lr->_data, 6, lr->_len - (logrec_t::hdr_non_ssx_sz + sizeof(lsn_t)));
+	memset(lr->_data, 6, lr->header._len - (logrec_t::hdr_non_ssx_sz + sizeof(lsn_t)));
 
 	/* Check if currentLSN will overflow */
-	if((nextLSN.rba()+lr->_len) > lsn_t::max.rba()) {
+	if((nextLSN.rba()+lr->header._len) > lsn_t::max.rba()) {
 		nextLSN = lsn_t(nextLSN.file()+1, 0);
 	}
 
-	*(lr->_lsn_ck()) = nextLSN;
-	prev_lsn[lr->_shpid] = *(lr->_lsn_ck());
-	nextLSN += lr->_len;
+	lr->set_lsn_ck(nextLSN); // set lsn in the last 8 bytes
+	prev_lsn[lr->header._shpid] = lr->get_lsn_ck();
+	nextLSN += lr->header._len;
 
 	generatedCount++;
 

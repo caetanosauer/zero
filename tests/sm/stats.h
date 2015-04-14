@@ -17,6 +17,9 @@ public:
     unsigned nextType();
     unsigned nextLength(unsigned _type);
 
+    static const uint32_t  stats_version_major;
+    static const uint32_t  stats_version_minor;
+
 protected:
     Stats(unsigned _lengthDim);
     

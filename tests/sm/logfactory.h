@@ -13,13 +13,10 @@
 
 class LogFactory {
 private:
-	/* fake_logrec_t used to have access to private members of logrec_t. We 
-	 * need to change this to reflect Zero log records.
+	/* fake_logrec_t used to have access to private members of logrec_t.
 	 */
-	class fake_logrec_t {
+	class shore_fake_logrec_t {
 	public:
-		fake_logrec_t();
-		const lsn_t&	lsn_ck() const {  return *_lsn_ck(); }
 		enum {
 			max_sz = 3 * sizeof(generic_page),
 			hdr_sz = (
@@ -53,12 +50,73 @@ private:
 		lsn_t       _prev_page;
 		char       _data[data_sz + sizeof(lsn_t)];
 
-		lsn_t*	_lsn_ck() const {
-			size_t lo_offset = _len - (hdr_sz + sizeof(lsn_t));
-		    w_assert3(alignon(_data+lo_offset, 8));
-		    lsn_t *where = (lsn_t*)(_data+lo_offset);
-		    return where;
-		}
+		const lsn_t     get_lsn_ck() const { 
+                        	lsn_t    tmp = *_lsn_ck();
+                            return tmp;
+                        }
+    	void            set_lsn_ck(const lsn_t &lsn_ck) {
+                            lsn_t& where = *_lsn_ck();
+                            where = lsn_ck;
+                        }
+    private:
+    	lsn_t*          _lsn_ck() const {
+        					size_t lo_offset = _len - (hdr_sz + sizeof(lsn_t));
+        					w_assert3(alignon(_data+lo_offset, 8));
+        					lsn_t *where = (lsn_t*)(_data+lo_offset);
+        					return where;
+						}
+	};
+
+	class fake_logrec_t {
+	public:
+		#include "logtype_gen.h"
+	    enum {
+	        max_sz = 3 * sizeof(generic_page),
+	        hdr_non_ssx_sz = sizeof(baseLogHeader) + sizeof(xidChainLogHeader),
+	        hdr_single_sys_xct_sz = sizeof(baseLogHeader),
+	        max_data_sz = max_sz - hdr_non_ssx_sz - sizeof(lsn_t)
+	    };
+
+	    BOOST_STATIC_ASSERT(hdr_non_ssx_sz == 40);
+	    BOOST_STATIC_ASSERT(hdr_single_sys_xct_sz == 40 - 16);
+
+	    enum category_t {
+	    t_bad_cat   = 0x00,
+	    t_status    = 0x01,
+	    t_undo      = 0x02,
+	    t_redo      = 0x04,
+	    t_multi     = 0x08,
+	    t_logical   = 0x10,
+	    t_cpsn      = 0x20,
+	    t_rollback  = 0x40,
+	    t_single_sys_xct    = 0x80
+	    };
+
+	    baseLogHeader header;
+	    xidChainLogHeader xidInfo;
+	    char _data[max_sz - sizeof(baseLogHeader) - sizeof(xidChainLogHeader)];
+
+	    const lsn_t          get_lsn_ck() const { 
+	                                lsn_t    tmp = *_lsn_ck();
+	                                return tmp;
+	                         }
+	    void                 set_lsn_ck(const lsn_t &lsn_ck) {
+	                                // put lsn in last bytes of data
+	                                lsn_t& where = *_lsn_ck();
+	                                where = lsn_ck;
+	                         }
+
+	private:
+		lsn_t*            _lsn_ck() {
+	        w_assert3(alignon(header._len, 8));
+	        char* this_ptr = reinterpret_cast<char*>(this);
+	        return reinterpret_cast<lsn_t*>(this_ptr + header._len - sizeof(lsn_t));
+	    }
+	    const lsn_t*            _lsn_ck() const {
+	        w_assert3(alignon(header._len, 8));
+	        const char* this_ptr = reinterpret_cast<const char*>(this);
+	        return reinterpret_cast<const lsn_t*>(this_ptr + header._len - sizeof(lsn_t));
+	    }	    
 	};
 
 	Stats stats;
@@ -79,6 +137,9 @@ private:
 	boost::random::uniform_real_distribution<double> dDist; //[min,max)
 
 	unsigned nextZipf();
+
+	static const uint32_t  factory_version_major;
+    static const uint32_t  factory_version_minor;
 
 public:
 	/* max_page_id = 233220, similar to a TPCC with SF=10 (~2GB with 8KB pages).
