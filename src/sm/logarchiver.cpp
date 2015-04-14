@@ -13,18 +13,6 @@
 // needed for skip_log
 //#include "logdef_gen.cpp"
 
-#define CHECK_ERROR_BASE(x, y) \
-    do { \
-        w_rc_t rc = x; \
-        if (rc.is_error()) { \
-            returnRC = rc; \
-            y; \
-        } \
-    } while (false);
-#define CHECK_ERROR(x) CHECK_ERROR_BASE(x, return);
-#define CHECK_ERROR_BOOL(x) CHECK_ERROR_BASE(x, return false);
-
-
 typedef mem_mgmt_t::slot_t slot_t;
 
 // definition of static members
@@ -110,6 +98,31 @@ LogArchiver::ReaderThread::ReaderThread(AsyncRingBuffer* readbuf, lsn_t startLSN
     // position initialized to startLSN
     pos = startLSN.lo();
     nextPartition = startLSN.hi();
+}
+
+void LogArchiver::ReaderThread::start_shutdown()
+{
+    shutdown = true;
+    // make other threads see new shutdown value
+    lintel::atomic_thread_fence(lintel::memory_order_release);
+    // if finished is set, the ring buffer denies producer requests
+    buf->set_finished();
+}
+
+void LogArchiver::ReaderThread::activate(lsn_t startLSN, lsn_t endLSN)
+{
+    if (currentFd == -1) { // first activation
+        w_assert0(nextPartition == (uint) startLSN.hi());
+    }
+    else {
+        w_assert0(nextPartition - 1 == (uint) startLSN.hi());
+    }
+    // ignore if invoking activate on the same LSN repeatedly
+    if (control.endLSN > startLSN) {
+        pos = startLSN.lo();
+        prevPos = pos;
+    }
+    control.activate(true, endLSN);
 }
 
 rc_t LogArchiver::ReaderThread::openPartition()
@@ -203,19 +216,19 @@ void LogArchiver::ReaderThread::run()
 
 
             if (currentFd == -1) {
-                CHECK_ERROR(openPartition());
+                W_COERCE(openPartition());
             }
 
 
             int bytesRead = 0;
-            CHECK_ERROR(me()->pread_short(
+            W_COERCE(me()->pread_short(
                         currentFd, dest, blockSize, pos, bytesRead));
 
             if (bytesRead == 0) {
                 // Reached EOF -- open new file and try again
-                CHECK_ERROR(openPartition());
+                W_COERCE(openPartition());
                 pos = 0;
-                CHECK_ERROR(me()->pread_short(
+                W_COERCE(me()->pread_short(
                             currentFd, dest, blockSize, pos, bytesRead));
                 if (bytesRead == 0) {
                     W_FATAL_MSG(fcINTERNAL,
@@ -259,8 +272,6 @@ void LogArchiver::ReaderThread::run()
 
         control.activated = false;
     }
-
-    returnRC = RCOK;
 }
 
 void LogArchiver::WriterThread::run()
@@ -280,7 +291,7 @@ void LogArchiver::WriterThread::run()
              * is marked finished, which is done in start_shutdown().
              */
             DBGTHRD(<< "Finished flag set on writer thread");
-            returnRC = directory->closeCurrentRun(lastLSN);
+            W_COERCE(directory->closeCurrentRun(lastLSN));
             return; // finished is set on buf
         }
         
@@ -303,15 +314,15 @@ void LogArchiver::WriterThread::run()
              *  bound on the next run, which allows us to verify whether
              *  holes exist in the archive.
              */
-            CHECK_ERROR(directory->closeCurrentRun(lastLSN));
-            CHECK_ERROR(directory->openNewRun());
+            W_COERCE(directory->closeCurrentRun(lastLSN));
+            W_COERCE(directory->openNewRun());
             currentRun = run;
             DBGTHRD(<< "Opening file for new run " << run
                     << " starting on LSN " << directory->getLastLSN());
         }
 
         lastLSN = BlockAssembly::getLSNFromBlock(src);
-        CHECK_ERROR(directory->append(src, blockSize));
+        W_COERCE(directory->append(src, blockSize));
 
         DBGTHRD(<< "Wrote out block " << (void*) src);
 
@@ -693,7 +704,6 @@ bool LogArchiver::LogConsumer::nextBlock()
             // immediately after an existing LSN but in the same partition.
             W_FATAL_MSG(fcINTERNAL, << "Consume request failed!");
         //}
-        //returnRC = RCOK;
         return false;
     }
     DBGTHRD(<< "Picked block for replacement " << (void*) currentBlock);
@@ -949,6 +959,21 @@ LogArchiver::ArchiveScanner::open(lpid_t startPID, lpid_t endPID,
     return merger;
 }
 
+LogArchiver::ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e,
+        lpid_t f, lpid_t l, fileoff_t o, ArchiveDirectory* directory)
+: runBegin(b), runEnd(e), firstPID(f), lastPID(l), offset(o),
+    directory(directory), fd(-1)
+{
+    buffer = new char[directory->getBlockSize()];
+    bpos = 0;
+    blockEnd = 0;
+}
+
+LogArchiver::ArchiveScanner::RunScanner::~RunScanner()
+{
+    delete buffer;
+}
+
 bool LogArchiver::ArchiveScanner::RunScanner::nextBlock()
 {
     if (fd < 0) {
@@ -985,6 +1010,30 @@ bool LogArchiver::ArchiveScanner::RunScanner::next(logrec_t*& lr)
     bpos += lr->length();
 
     return true;
+}
+
+std::ostream& operator<< (ostream& os,
+        const LogArchiver::ArchiveScanner::RunScanner& m)
+{
+    os << m.runBegin << "-" << m.runEnd;
+    return os;
+}
+
+LogArchiver::ArchiveScanner::MergeHeapEntry::MergeHeapEntry(lpid_t pid,
+        RunScanner* runScan)
+    : active(true), pid(pid), runScan(runScan)
+{
+    lr = (logrec_t*) (runScan->buffer + runScan->bpos);
+    // TODO assert integrity of logrec
+    w_assert1(pid.page == lr->construct_pid().page);
+    w_assert1(pid.vol() == lr->construct_pid().vol());
+    lsn = lr->lsn_ck();
+}
+
+LogArchiver::ArchiveScanner::MergeHeapEntry::~MergeHeapEntry()
+{
+    // runScan is constructed by caller and destructed here
+    delete runScan;
 }
 
 void LogArchiver::ArchiveScanner::RunMerger::addInput(RunScanner* r)
@@ -1107,6 +1156,20 @@ logrec_t* LogArchiver::ArchiverHeap::top()
     return (logrec_t*) w_heap.First().slot.address;
 }
 
+// gt is actually a less than function, to produce ascending order
+bool LogArchiver::ArchiverHeap::Cmp::gt(const HeapEntry& a,
+        const HeapEntry& b) const
+{
+    if (a.run != b.run) {
+        return a.run < b.run;
+    }
+    // TODO no support for multiple volumes
+    if (a.pid.page != b.pid.page) {
+        return a.pid.page < b.pid.page;
+    }
+    return a.lsn < b.lsn;
+}
+
 /**
  * Replacement part of replacement-selection algorithm. Fetches log records 
  * from the read buffer into the sort workspace and adds a correspondent
@@ -1189,7 +1252,6 @@ void LogArchiver::run()
         consumer->open(control.endLSN);
 
         replacement();
-        W_COERCE(returnRC);
 
         w_assert1(consumer->getNextLSN() >= control.endLSN);
 
@@ -1219,7 +1281,6 @@ void LogArchiver::run()
     // the heap into runs. Last run boundary is also enqueued.
     DBGTHRD(<< "Archiver exiting -- last round of selection to empty heap");
     while (selection()) {}
-    W_COERCE(returnRC);
 
     w_assert0(heap->size() == 0);
     blkAssemb->shutdown();
