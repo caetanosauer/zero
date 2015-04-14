@@ -101,4 +101,26 @@ X(eBFFULL,                    "Buffer pool is full during Recovery operation")
 X(eACCESS_CONFLICT,           "User transaction is conflicting with Recovery task on a page access")
 X(eBAD_BACKUPPAGE,            "Retrieved page from backup file was incorrect")
 
-
+/*
+ * CS: The old Shore-MT RC used a simple integer as error code, which allowed
+ * any application to define its own codes. This was done in Shore-Kits to
+ * represent errors in tables, indices, etc.
+ *
+ * Since extending error codes is not possible with the new Zero design, I've
+ * simply copied the Kits error codes below.
+ */
+X(se_NOT_FOUND                , "se_NOT_FOUND")
+X(se_VOLUME_NOT_FOUND         , "se_VOLUME_NOT_FOUND")
+X(se_INDEX_NOT_FOUND          , "se_INDEX_NOT_FOUND")
+X(se_TABLE_NOT_FOUND          , "se_TABLE_NOT_FOUND")
+X(se_TUPLE_NOT_FOUND          , "se_TUPLE_NOT_FOUND")
+X(se_NO_CURRENT_TUPLE         , "se_NO_CURRENT_TUPLE")
+X(se_CANNOT_INSERT_TUPLE      , "se_CANNOT_INSERT_TUPLE")
+X(se_SCAN_OPEN_ERROR          , "se_SCAN_OPEN_ERROR")
+X(se_INCONSISTENT_INDEX       , "se_INCONSISTENT_INDEX")
+X(se_OPEN_SCAN_ERROR          , "se_OPEN_SCAN_ERROR")
+X(se_LOAD_NOT_EXCLUSIVE       , "se_LOAD_NOT_EXCLUSIVE")
+X(se_ERROR_IN_LOAD            , "se_ERROR_IN_LOAD")
+X(se_ERROR_IN_IDX_LOAD        , "se_ERROR_IN_IDX_LOAD")
+X(se_WRONG_DISK_DATA          , "se_WRONG_DISK_DATA")
+X(se_INVALID_INPUT            , "se_INVALID_INPUT")
