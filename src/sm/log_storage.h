@@ -291,21 +291,20 @@ private:
     int             get_last_lsns(lsn_t* array);
 
 private:
-    static const char    _SLASH; 
-    static uint32_t const _version_major;
-    static uint32_t const _version_minor;
-    static const char    _master_prefix[];
-    static const char    _log_prefix[];
-
-    static const char *master_prefix() { return _master_prefix; }
-    static const char *log_prefix() { return _log_prefix; }
-
     // forbid copy
     log_storage(const log_storage&);
     log_storage& operator=(const log_storage&);
 
 public:
     enum { BLOCK_SIZE=partition_t::XFERSIZE };
+
+    static const char    _SLASH; 
+    static const uint32_t  _version_major;
+    static const uint32_t  _version_minor;
+    static const char    _master_prefix[];
+    static const char    _log_prefix[];
+    static const char *master_prefix() { return _master_prefix; }
+    static const char *log_prefix() { return _log_prefix; }
 
     void sanity_check() const;
 };

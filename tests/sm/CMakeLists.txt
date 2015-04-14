@@ -8,7 +8,7 @@ target_link_libraries(btree_test_env gtest common fc sthread sm)
 add_library(btree_test_env_plog STATIC ${CMAKE_CURRENT_SOURCE_DIR}/btree_test_env.cpp)
 target_link_libraries(btree_test_env_plog gtest common fc sthread sm_plog)
 
-add_library(logfactory STATIC ${CMAKE_CURRENT_SOURCE_DIR}/logfactory.cpp)
+add_library(logfactory STATIC ${CMAKE_CURRENT_SOURCE_DIR}/logfactory.cpp ${CMAKE_CURRENT_SOURCE_DIR}/stats.cpp)
 target_link_libraries(logfactory btree_test_env)
 
 #################################################
