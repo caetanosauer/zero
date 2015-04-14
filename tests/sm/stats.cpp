@@ -1,5 +1,8 @@
 #include "stats.h"
 
+const uint32_t Stats::stats_version_major = 4;
+const uint32_t Stats::stats_version_minor = 2;
+
 /* Each type has the same probability.
  * For any type, 241 length possibilities: [80, 320].
  * For any type, all lengths have the same probability: 1 / 241

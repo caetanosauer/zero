@@ -3,6 +3,7 @@
 #include <sstream>
 
 #include "logarchiver.h"
+#include "logfactory.h"
 
 btree_test_env* test_env;
 stid_t stid;
@@ -134,7 +135,6 @@ rc_t fullPipelineTest(ss_m* ssm, test_volume_t* test_vol)
 
     la.start_shutdown();
     la.join();
-    W_DO(la.getRC());
 
     // TODO use archive scanner to verify:
     // 1) integrity of archive
@@ -144,20 +144,50 @@ rc_t fullPipelineTest(ss_m* ssm, test_volume_t* test_vol)
     return RCOK;
 }
 
-TEST (LogArchiverTest, ConsumerTest) {
-    test_env->empty_logdata_dir();
-    EXPECT_EQ(test_env->runBtreeTest(consumerTest), 0);
+rc_t runScannerTest(ss_m* /* ssm */, test_volume_t* /* test_vol */)
+{
+    // generate ~8 blocks of archive
+    const unsigned bytesToGenerate = 8 * BLOCK_SIZE;
+
+    LogFactory factory(true, // sorted
+            1, // start with this page ID
+            10, // new page ID every 10 logrecs
+            1 // increment max pade ID one by one
+    );
+    logrec_t lr;
+    unsigned bytesGen = 0;
+
+    // create LogScanner to know which logrecs are ignored
+    LogScanner scanner(BLOCK_SIZE);
+    LogArchiver::initLogScanner(&scanner);
+
+    while (bytesGen < bytesToGenerate) {
+        factory.next(&lr);
+
+        if (scanner.isIgnored(lr.type())) {
+            continue;
+        }
+        
+        // TODO test does not work because Stats on log factory are
+        // still based on Shore-MT
+
+        bytesGen += lr.length();
+    }
+
+    return RCOK;
 }
 
-TEST (LogArchiverTest, HeapTestReal) {
-    test_env->empty_logdata_dir();
-    EXPECT_EQ(test_env->runBtreeTest(heapTestReal), 0);
-}
 
-TEST (LogArchiverTest, FullPipelineTest) {
-    test_env->empty_logdata_dir();
-    EXPECT_EQ(test_env->runBtreeTest(fullPipelineTest), 0);
-}
+#define DEFAULT_TEST(test, function) \
+    TEST (test, function) { \
+        test_env->empty_logdata_dir(); \
+        EXPECT_EQ(test_env->runBtreeTest(function), 0); \
+    }
+
+//DEFAULT_TEST (LogArchiverTest, consumerTest);
+//DEFAULT_TEST (LogArchiverTest, heapTestReal);
+//DEFAULT_TEST (LogArchiverTest, fullPipelineTest);
+DEFAULT_TEST (LogArchiverTest, runScannerTest);
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

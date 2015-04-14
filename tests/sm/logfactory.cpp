@@ -31,8 +31,8 @@ LogFactory::LogFactory(bool sorted, unsigned max_page_id, unsigned th,
 LogFactory::~LogFactory() {
 }
 
-bool LogFactory::next(fake_logrec_t*& lr) {
-	new (lr) fake_logrec_t;
+bool LogFactory::next(void* addr) {
+	fake_logrec_t* lr = new (addr) fake_logrec_t;
 
 	lr->header._type = stats.nextType();
 	lr->header._len = stats.nextLength(lr->header._type);

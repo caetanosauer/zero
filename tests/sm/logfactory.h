@@ -12,6 +12,23 @@
 #include "stats.h"
 
 class LogFactory {
+public:
+	/* max_page_id = 233220, similar to a TPCC with SF=10 (~2GB with 8KB pages).
+	 * th(increase_threshold) = increase database every 1000 log records generated.
+	 * ratio = increment on number of pages at the threshold above
+	 */
+	LogFactory(
+                bool sorted = false, // generates sorted log archive
+                unsigned max_page_id = 233220,
+                unsigned th = 100,
+                unsigned increment = 10
+        );
+	~LogFactory();
+
+	//void open(lsn_t endLSN); SHOULD THIS BE IMPLEMENTED?
+        bool next(void* addr);
+        lsn_t getNextLSN() { return nextLSN; }
+
 private:
 	/* fake_logrec_t used to have access to private members of logrec_t.
 	 */
@@ -140,23 +157,6 @@ private:
 
 	static const uint32_t  factory_version_major;
     static const uint32_t  factory_version_minor;
-
-public:
-	/* max_page_id = 233220, similar to a TPCC with SF=10 (~2GB with 8KB pages).
-	 * th(increase_threshold) = increase database every 1000 log records generated.
-	 * ratio = increment on number of pages at the threshold above
-	 */
-	LogFactory(
-                bool sorted = false, // generates sorted log archive
-                unsigned max_page_id = 233220,
-                unsigned th = 100,
-                unsigned increment = 10
-        );
-	~LogFactory();
-
-	//void open(lsn_t endLSN); SHOULD THIS BE IMPLEMENTED?
-    bool next(fake_logrec_t*& lr);
-    lsn_t getNextLSN() { return nextLSN; }
 
 };
 
