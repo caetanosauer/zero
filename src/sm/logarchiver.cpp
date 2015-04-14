@@ -926,10 +926,16 @@ void LogArchiver::BlockAssembly::finish(int run)
     h->lsn = lastLSN;
 
     writebuf->producerRelease();
+    dest = NULL;
 }
 
 void LogArchiver::BlockAssembly::shutdown()
 {
+    if (dest) {
+        W_FATAL_MSG(fcINTERNAL,
+                << "BlockAssembly shutting down with an active block!")
+    }
+
     writebuf->set_finished();
     writer->join();
     writerForked = false;
