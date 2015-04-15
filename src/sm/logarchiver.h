@@ -285,13 +285,15 @@ public:
      */
     class ArchiveDirectory {
     public:
-        ArchiveDirectory(std::string archdir, size_t blockSize);
+        ArchiveDirectory(std::string archdir, size_t blockSize,
+                bool createIndex = true);
         virtual ~ArchiveDirectory();
 
         lsn_t getStartLSN() { return startLSN; }
         lsn_t getLastLSN() { return lastLSN; }
         ArchiveIndex* getIndex() { return archIndex; }
         size_t getBlockSize() { return blockSize; }
+        std::string getArchDir() { return archdir; }
 
         // run generation methods
         rc_t append(const char* data, size_t length);
@@ -302,6 +304,8 @@ public:
         rc_t openForScan(int& fd, lsn_t runBegin, lsn_t runEnd);
         rc_t readBlock(int fd, char* buf, fileoff_t& offset);
         rc_t closeScan(int& fd);
+
+        rc_t listFiles(std::vector<std::string>* list);
 
         static lsn_t parseLSN(const char* str, bool end = true);
     private:

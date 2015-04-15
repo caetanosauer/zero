@@ -465,7 +465,7 @@ os_dirent_t* LogArchiver::ArchiveDirectory::scanDir(os_dir_t& dir)
 }
 
 LogArchiver::ArchiveDirectory::ArchiveDirectory(std::string archdir,
-        size_t blockSize)
+        size_t blockSize, bool createIndex)
     : archdir(archdir),
     appendFd(-1), mergeFd(-1), appendPos(0), blockSize(blockSize)
 {
@@ -539,12 +539,36 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(std::string archdir,
     lastLSN = startLSN;
 
     // create index
-    archIndex = new ArchiveIndex(blockSize, startLSN);
+    if (createIndex) {
+        archIndex = new ArchiveIndex(blockSize, startLSN);
+    }
+    else {
+        archIndex = NULL;
+    }
 }
 
 LogArchiver::ArchiveDirectory::~ArchiveDirectory()
 {
-    delete archIndex;
+    if(archIndex) {
+        delete archIndex;
+    }
+}
+
+rc_t LogArchiver::ArchiveDirectory::listFiles(std::vector<std::string>* list)
+{
+    w_assert0(list && list->size() == 0);
+    os_dir_t dir = NULL;
+    os_dirent_t* entry = scanDir(dir);
+    while (entry != NULL) {
+        const char* runName = entry->d_name;
+        if (strncmp(RUN_PREFIX, runName, strlen(RUN_PREFIX)) == 0) {
+            list->push_back(std::string(runName));
+        }
+        entry = scanDir(dir);
+    }
+    os_closedir(dir);
+
+    return RCOK;
 }
 
 /**
@@ -596,7 +620,9 @@ rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN)
         << lastLSN << "-" << runEndLSN;
 
     // register index information and write it on end of file
-    archIndex->finishRun(lastLSN, runEndLSN, appendFd, appendPos);
+    if (archIndex) {
+        archIndex->finishRun(lastLSN, runEndLSN, appendFd, appendPos);
+    }
 
     std::string currentFName = archdir + "/" + CURR_RUN_FILE;
     W_DO(me()->frename(appendFd, currentFName.c_str(), fname.str().c_str()));
@@ -887,7 +913,9 @@ void LogArchiver::BlockAssembly::finish(int run)
     DBGTHRD("Selection produced block for writing " << (void*) dest <<
             " in run " << (int) run << " with end " << pos);
 
-    archIndex->newBlock(firstPID, lastPID);
+    if (archIndex) {
+        archIndex->newBlock(firstPID, lastPID);
+    }
     firstPID = lpid_t::null;
     lastPID = lpid_t::null;
 
@@ -898,10 +926,16 @@ void LogArchiver::BlockAssembly::finish(int run)
     h->lsn = lastLSN;
 
     writebuf->producerRelease();
+    dest = NULL;
 }
 
 void LogArchiver::BlockAssembly::shutdown()
 {
+    if (dest) {
+        W_FATAL_MSG(fcINTERNAL,
+                << "BlockAssembly shutting down with an active block!")
+    }
+
     writebuf->set_finished();
     writer->join();
     writerForked = false;
@@ -910,6 +944,10 @@ void LogArchiver::BlockAssembly::shutdown()
 LogArchiver::ArchiveScanner::ArchiveScanner(ArchiveDirectory* directory)
     : directory(directory), archIndex(directory->getIndex())
 {
+    if (!archIndex) {
+        W_FATAL_MSG(fcINTERNAL,
+                << "ArchiveScanner requires a valid archive index!");
+    }
 }
 
 LogArchiver::ArchiveScanner::RunMerger*
@@ -1005,7 +1043,7 @@ bool LogArchiver::ArchiveScanner::RunScanner::next(logrec_t*& lr)
 
     if (lr) {
         lr = (logrec_t*) (buffer + bpos);
-        // TODO verify logrec integrity
+        w_assert1(lr->valid_header(lr->lsn_ck()));
     }
     bpos += lr->length();
 

@@ -1,6 +1,7 @@
 #include "btree_test_env.h"
 
 #include <sstream>
+#include <fstream>
 
 #include "logarchiver.h"
 #include "logfactory.h"
@@ -21,6 +22,10 @@ private:
 
 typedef w_rc_t rc_t;
 
+/******************************************************************************
+ * Auxiliary functions
+ */
+
 rc_t populateBtree(ss_m* ssm, test_volume_t *test_volume, int count)
 {
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
@@ -36,6 +41,61 @@ rc_t populateBtree(ss_m* ssm, test_volume_t *test_volume, int count)
     W_DO(test_env->commit_xct());
     return RCOK;
 }
+
+rc_t generateFakeArchive(unsigned bytesPerRun, unsigned runCount,
+        bool createIndex, unsigned& total)
+{
+    total = 0;
+
+    LogFactory factory(true, // sorted
+            1, // start with this page ID
+            10, // new page ID every 10 logrecs
+            1 // increment max pade ID one by one
+    );
+    logrec_t lr;
+    unsigned runsGen = 0;
+
+    // create LogScanner to know which logrecs are ignored
+    LogScanner scanner(BLOCK_SIZE);
+    LogArchiver::initLogScanner(&scanner);
+
+    LogArchiver::ArchiveDirectory dir(test_env->archive_dir, BLOCK_SIZE,
+            createIndex);
+    LogArchiver::BlockAssembly assemb(&dir);
+
+    while (runsGen < runCount) {
+        unsigned bytesGen = 0;
+        assemb.start();
+        while (bytesGen < bytesPerRun) {
+            factory.next(&lr);
+
+            if (scanner.isIgnored(lr.type())) {
+                continue;
+            }
+            assert(lr.valid_header(lr.lsn_ck()));
+
+            if (!assemb.add(&lr)) {
+                assemb.finish(runsGen);
+                assemb.start();
+                assert(assemb.add(&lr));
+            }
+
+            bytesGen += lr.length();
+            total++;
+        }
+
+        assemb.finish(runsGen);
+        runsGen++;
+    }
+
+    assemb.shutdown();
+
+    return RCOK;
+}
+
+/******************************************************************************
+ * TESTS
+ */
 
 rc_t consumerTest(ss_m* ssm, test_volume_t* test_vol)
 {
@@ -146,33 +206,37 @@ rc_t fullPipelineTest(ss_m* ssm, test_volume_t* test_vol)
 
 rc_t runScannerTest(ss_m* /* ssm */, test_volume_t* /* test_vol */)
 {
-    // generate ~8 blocks of archive
-    const unsigned bytesToGenerate = 8 * BLOCK_SIZE;
+    unsigned total = 0;
+    generateFakeArchive(BLOCK_SIZE*8, 1, false, total);
 
-    LogFactory factory(true, // sorted
-            1, // start with this page ID
-            10, // new page ID every 10 logrecs
-            1 // increment max pade ID one by one
-    );
-    logrec_t lr;
-    unsigned bytesGen = 0;
+    LogArchiver::ArchiveDirectory dir(test_env->archive_dir, BLOCK_SIZE,
+            false /* createIndex */);
+    EXPECT_EQ(NULL, dir.getIndex());
+    std::vector<string> files;
+    W_DO(dir.listFiles(&files));
 
-    // create LogScanner to know which logrecs are ignored
-    LogScanner scanner(BLOCK_SIZE);
-    LogArchiver::initLogScanner(&scanner);
+    EXPECT_EQ(1, files.size());
 
-    while (bytesGen < bytesToGenerate) {
-        factory.next(&lr);
+    std::string fname = dir.getArchDir() + files[0];
+    lsn_t beginLSN = LogArchiver::ArchiveDirectory::parseLSN(files[0].c_str(),
+            false);
+    lsn_t endLSN = LogArchiver::ArchiveDirectory::parseLSN(files[0].c_str(),
+            true);
 
-        if (scanner.isIgnored(lr.type())) {
-            continue;
-        }
-        
-        // TODO test does not work because Stats on log factory are
-        // still based on Shore-MT
+    LogArchiver::ArchiveScanner::RunScanner rs
+        (beginLSN, endLSN, lpid_t::null, lpid_t::null, 0, &dir);
 
-        bytesGen += lr.length();
+    lpid_t prevPID = lpid_t::null;
+    unsigned count = 0;
+    logrec_t* lr;
+    while (rs.next(lr)) {
+        EXPECT_TRUE(lr->valid_header(lr->lsn_ck()));
+        EXPECT_TRUE(lr->construct_pid().page >= prevPID.page);
+        prevPID = lr->construct_pid();
+        count++;
     }
+
+    EXPECT_EQ(total, count);
 
     return RCOK;
 }
