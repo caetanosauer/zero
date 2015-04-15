@@ -14,17 +14,19 @@ LogFactory::LogFactory(bool sorted, unsigned max_page_id, unsigned th,
     :
     INCR_TH(th), INCR_RATIO(increment), sorted(sorted),
     max_page_id(max_page_id), prev_lsn(max_page_id, lsn_t::null),
-    generatedCount(0), gen(1729), dDist(0.0,1.0)
+    generatedCount(0), nextLSN(1,0), gen(1729), dDist(0.0,1.0)
 {
     if (factory_version_major != log_storage::_version_major 
         || 
         factory_version_minor > log_storage::_version_minor) {
-        DBGTHRD(<< "FACTORY VERSION ERROR");
+        W_FATAL_MSG(fcINTERNAL,
+                << "Version of LogFactory does not match");
     }
     if (Stats::stats_version_major != factory_version_major
         || 
         Stats::stats_version_minor > factory_version_minor) {
-        DBGTHRD(<< "STATS VERSION ERROR");
+        W_FATAL_MSG(fcINTERNAL,
+                << "Version of LogFactory Stats does not match");
     }
 }
 

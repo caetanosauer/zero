@@ -1,7 +1,7 @@
 #include "stats.h"
 
-const uint32_t Stats::stats_version_major = 4;
-const uint32_t Stats::stats_version_minor = 2;
+const uint32_t Stats::stats_version_major = 6;
+const uint32_t Stats::stats_version_minor = 1;
 
 /* Each type has the same probability.
  * For any type, 241 length possibilities: [80, 320].
