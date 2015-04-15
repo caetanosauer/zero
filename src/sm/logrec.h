@@ -161,7 +161,7 @@ public:
     bool             is_undoable_clr() const;
     bool             is_logical() const;
     bool             is_single_sys_xct() const;
-    bool             valid_header(const lsn_t & lsn_ck) const;
+    bool             valid_header(const lsn_t & lsn_ck = lsn_t::null) const;
     smsize_t         header_size() const;
 
     void             redo(fixable_page_h*);
