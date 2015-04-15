@@ -406,6 +406,7 @@ public:
         lpid_t firstPID;
         lpid_t lastPID;
         lsn_t lastLSN;
+        int lastLength;
     public:
         struct BlockHeader {
             uint8_t run;
@@ -475,11 +476,11 @@ public:
             RunScanner* runScan;
 
             MergeHeapEntry(lpid_t pid, RunScanner* runScan);
-
             // required by w_heap
             MergeHeapEntry() {};
+            virtual ~MergeHeapEntry() {};
 
-            virtual ~MergeHeapEntry();
+            void moveToNext();
 
             friend std::ostream& operator<<(std::ostream& os,
                     const MergeHeapEntry& e)
@@ -493,8 +494,8 @@ public:
         struct MergeHeapCmp {
             bool gt(const MergeHeapEntry& a, const MergeHeapEntry& b) const
             {
-                if (!a.runScan->buffer) return false;
-                if (!b.runScan->buffer) return false;
+                if (!a.active) return false;
+                if (!b.active) return true;
                 if (a.pid.page != b.pid.page) {
                     return a.pid.page < b.pid.page;
                 }

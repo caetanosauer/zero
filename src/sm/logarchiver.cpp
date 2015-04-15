@@ -832,7 +832,7 @@ bool LogArchiver::selection()
 
 LogArchiver::BlockAssembly::BlockAssembly(ArchiveDirectory* directory)
     : dest(NULL), writerForked(false), firstPID(lpid_t::null),
-    lastPID(lpid_t::null), lastLSN(lsn_t::null)
+    lastPID(lpid_t::null), lastLSN(lsn_t::null), lastLength(0)
 {
     archIndex = directory->getIndex();
     blockSize = directory->getBlockSize();
@@ -896,6 +896,7 @@ bool LogArchiver::BlockAssembly::add(logrec_t* lr)
     }
     lastPID = lr->construct_pid();
     lastLSN = lr->lsn_ck();
+    lastLength = lr->length();
 
     // guarantees that whole log record fits in a block
     memcpy(dest + pos, lr, lr->length());
@@ -923,7 +924,16 @@ void LogArchiver::BlockAssembly::finish(int run)
     BlockHeader* h = (BlockHeader*) dest;
     h->run = run;
     h->end = pos;
-    h->lsn = lastLSN;
+    /*
+     * CS: end LSN of a block/run has to be an exclusive boundary, whereas
+     * lastLSN is an inclusive one (i.e., the LSN of the last logrec in this
+     * block). To fix that, we simply add the length of the last log record to
+     * its LSN, which yields the LSN of the following record in the recovery
+     * log. It doesn't matter if this following record does not get archived or
+     * if it is a skip log record, since the property that must be respected is
+     * simply that run boundaries must match (i.e., endLSN(n) == beginLSN(n+1)
+     */
+    h->lsn = lastLSN.advance(lastLength);
 
     writebuf->producerRelease();
     dest = NULL;
@@ -933,7 +943,7 @@ void LogArchiver::BlockAssembly::shutdown()
 {
     if (dest) {
         W_FATAL_MSG(fcINTERNAL,
-                << "BlockAssembly shutting down with an active block!")
+                << "BlockAssembly shutting down with an active block!");
     }
 
     writebuf->set_finished();
@@ -970,27 +980,7 @@ LogArchiver::ArchiveScanner::open(lpid_t startPID, lpid_t endPID,
                 directory
         );
 
-        // bring scanner up to starting point
-        logrec_t* lr;
-        bool hasNext = false;
-        while ((hasNext = runScanner->next(lr)) &&
-                lr->construct_pid().page < startPID.page &&
-                lr->lsn_ck() < startLSN)
-        {}
-        
-        // if pid and lsn don't match search criteria, run is not needed
-        if (hasNext &&
-            lr->construct_pid().page >= startPID.page &&
-            lr->construct_pid().page < endPID.page &&
-                lr->lsn_ck() >= startLSN &&
-                lr->lsn_ck() <= endLSN)
-        {
-            merger->addInput(runScanner);
-        }
-        else {
-            delete runScanner;
-        }
-
+        merger->addInput(runScanner);
         archIndex->probeNext(runProbe, endLSN);
     }
 
@@ -1057,60 +1047,90 @@ std::ostream& operator<< (ostream& os,
     return os;
 }
 
-LogArchiver::ArchiveScanner::MergeHeapEntry::MergeHeapEntry(lpid_t pid,
+LogArchiver::ArchiveScanner::MergeHeapEntry::MergeHeapEntry(lpid_t startPID,
         RunScanner* runScan)
-    : active(true), pid(pid), runScan(runScan)
+    : active(true), runScan(runScan)
 {
-    lr = (logrec_t*) (runScan->buffer + runScan->bpos);
-    // TODO assert integrity of logrec
-    w_assert1(pid.page == lr->construct_pid().page);
-    w_assert1(pid.vol() == lr->construct_pid().vol());
+    // bring scanner up to starting point
+    logrec_t* next;
+    bool hasNext = false;
+    bool matches = false;
+    do {
+        hasNext = runScan->next(next);
+        if (hasNext) {
+            matches = next->construct_pid().page >= startPID.page;
+        }
+    } while (!matches && hasNext);
+    
+    // if all PIDs are lower than search criterion, run is not needed
+    if (!hasNext)
+    {
+        active = false;
+    }
+    lr = next;
+
+    w_assert1(lr->valid_header(lr->lsn_ck()));
+    w_assert1(startPID.page <= lr->construct_pid().page);
+    w_assert1(startPID == lpid_t::null ||
+            startPID.vol() == lr->construct_pid().vol());
+    
     lsn = lr->lsn_ck();
+    pid = lr->construct_pid();
+    
 }
 
-LogArchiver::ArchiveScanner::MergeHeapEntry::~MergeHeapEntry()
+void LogArchiver::ArchiveScanner::MergeHeapEntry::moveToNext()
 {
-    // runScan is constructed by caller and destructed here
-    delete runScan;
+    if (runScan->next(lr)) {
+        pid = lr->construct_pid();
+        lsn = lr->lsn_ck();
+    }
+    else {
+        active = false;
+    }
 }
 
 void LogArchiver::ArchiveScanner::RunMerger::addInput(RunScanner* r)
 {
     w_assert0(!started);
     MergeHeapEntry entry(r->firstPID, r);
-    heap.AddElementDontHeapify(entry);
+    if (entry.active) {
+        heap.AddElementDontHeapify(entry);
+    }
 }
 
 bool LogArchiver::ArchiveScanner::RunMerger::next(logrec_t*& lr)
 {
-    if (!heap.First().active) {
-        // if top is inactive, then all runs are and scan is done
-        return false;
-    }
     if (!started) {
         heap.Heapify();
         started = true;
     }
     else {
-        // On first invocation, heap is ready for consumption.
-        // On further invocations, however, the top element must
-        // be first recomputed by advancing the corresponding
-        // RunScanner object. This can't be done during the previous
-        // invocation because the log record pointer must remain
-        // intact. If we invoke next before the pointer is used,
-        // another block may be read from the run and the pointer
-        // is invalidated.
-        MergeHeapEntry& e = heap.First();
-        if (e.runScan->next(e.lr)) {
-            e.pid = e.lr->construct_pid();
-            e.lsn = e.lr->lsn_ck();
-        }
-        else {
-            e.active = false;
-        }
+        /* 
+         * CS: Before returning the next log record, the scanner at the top of
+         * the heap must be recomputed and the heap re-organized. This is
+         * because the caller maintains a pointer into the scanner's buffer,
+         * and calling next before the log record is consumed may cause the
+         * pointer to be invalidated if a new block is read into the buffer.
+         */
+        heap.First().moveToNext();
         heap.ReplacedFirst();
     }
 
+    if (!heap.First().active) {
+        /*
+         * CS: If top run is inactive, then all runs are and scan is done
+         * Memory of each scanner must be released here instead of when
+         * destructing heap, because the heap internally copies entries and
+         * destructs these copies in operations like SiftDown(). Therefore the
+         * underlying buffer may get wrongly deleted
+         */
+        while (heap.NumElements() > 0) {
+            delete heap.RemoveFirst().runScan;
+        }
+        return false;
+    }
+    
     lr = heap.First().lr;
     return true;
 }
@@ -1133,11 +1153,7 @@ LogArchiver::ArchiverHeap::~ArchiverHeap()
 
 bool LogArchiver::ArchiverHeap::push(logrec_t* lr)
 {
-    bool firstJustFilled = false;
     slot_t dest(NULL, 0);
-    // This is required to detect the case where the w_heap becomes empty
-    // after the first invocation of selection(). In the old code, the
-    // same log record would cause the increment of currentRun twice below.
     W_COERCE(workspace->allocate(lr->length(), dest));
 
     if (!dest.address) {
@@ -1148,7 +1164,6 @@ bool LogArchiver::ArchiverHeap::push(logrec_t* lr)
             currentRun++;
             w_heap.Heapify();
             filledFirst = true;
-            firstJustFilled = true;
             DBGTHRD(<< "Heap full for the first time; start run 1");
         }
         return false;
@@ -1156,7 +1171,7 @@ bool LogArchiver::ArchiverHeap::push(logrec_t* lr)
     memcpy(dest.address, lr, lr->length());
 
     // if all records of the current run are gone, start new run
-    if (filledFirst && !firstJustFilled &&
+    if (filledFirst &&
             (size() == 0 || w_heap.First().run == currentRun)) {
         currentRun++;
         DBGTHRD(<< "Replacement starting new run " << (int) currentRun
