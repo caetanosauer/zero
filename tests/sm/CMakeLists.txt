@@ -61,6 +61,7 @@ X_ADD_TESTCASE(test_logbuf_spr btree_test_env)
 X_ADD_TESTCASE(test_logbuf_scan btree_test_env)
 
 X_ADD_TESTCASE(test_logarchiver logfactory)
+X_ADD_TESTCASE(test_logfactory logfactory)
 X_ADD_TESTCASE(test_mem_mgmt btree_test_env)
 X_ADD_TESTCASE(test_ringbuffer btree_test_env)
 
