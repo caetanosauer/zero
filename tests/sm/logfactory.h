@@ -6,7 +6,6 @@
 #define SM_SOURCE
 #include "sm_int_1.h"
 
-#include <sstream>
 #include <boost/random.hpp>
 
 #include "stats.h"
@@ -14,7 +13,7 @@
 class LogFactory {
 public:
     /* max_page_id = 233220, similar to a TPCC with SF=10 (~2GB with 8KB pages).
-     * th(increase_threshold) = increase database every 1000 log records generated.
+     * th(increase_threshold) = increase database every 100 log records generated.
      * ratio = increment on number of pages at the threshold above
      */
     LogFactory(
@@ -26,8 +25,8 @@ public:
     ~LogFactory();
 
     //void open(lsn_t endLSN); SHOULD THIS BE IMPLEMENTED?
-        bool next(void* addr);
-        lsn_t getNextLSN() { return nextLSN; }
+    bool next(void* addr);
+    lsn_t getNextLSN() { return nextLSN; }
 
 private:
     /* fake_logrec_t used to have access to private members of logrec_t.
