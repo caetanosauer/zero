@@ -226,7 +226,7 @@ public:
         };
 
 
-        void newBlock(lpid_t first, lpid_t last);
+        void newBlock(lpid_t first);
         rc_t finishRun(lsn_t first, lsn_t last, int fd, fileoff_t);
         ProbeResult* probeFirst(lpid_t pid, lsn_t lsn);
         void probeNext(ProbeResult*& prev, lsn_t endLSN = lsn_t::null);
@@ -406,7 +406,6 @@ public:
         size_t blockSize;
         size_t pos;
         lpid_t firstPID;
-        lpid_t lastPID;
         lsn_t lastLSN;
         int lastLength;
     public:

@@ -832,7 +832,7 @@ bool LogArchiver::selection()
 
 LogArchiver::BlockAssembly::BlockAssembly(ArchiveDirectory* directory)
     : dest(NULL), writerForked(false), firstPID(lpid_t::null),
-    lastPID(lpid_t::null), lastLSN(lsn_t::null), lastLength(0)
+    lastLSN(lsn_t::null), lastLength(0)
 {
     archIndex = directory->getIndex();
     blockSize = directory->getBlockSize();
@@ -894,7 +894,6 @@ bool LogArchiver::BlockAssembly::add(logrec_t* lr)
     if (firstPID.is_null()) {
         firstPID = lr->construct_pid();
     }
-    lastPID = lr->construct_pid();
     lastLSN = lr->lsn_ck();
     lastLength = lr->length();
 
@@ -914,10 +913,9 @@ void LogArchiver::BlockAssembly::finish(int run)
             " in run " << (int) run << " with end " << pos);
 
     if (archIndex) {
-        archIndex->newBlock(firstPID, lastPID);
+        archIndex->newBlock(firstPID);
     }
     firstPID = lpid_t::null;
-    lastPID = lpid_t::null;
 
     // write block header info
     BlockHeader* h = (BlockHeader*) dest;
@@ -1481,7 +1479,7 @@ LogArchiver::ArchiveIndex::~ArchiveIndex()
     DO_PTHREAD(pthread_mutex_destroy(&mutex));
 }
 
-void LogArchiver::ArchiveIndex::newBlock(lpid_t first, lpid_t last)
+void LogArchiver::ArchiveIndex::newBlock(lpid_t first)
 {
     CRITICAL_SECTION(cs, mutex);
     
@@ -1490,7 +1488,6 @@ void LogArchiver::ArchiveIndex::newBlock(lpid_t first, lpid_t last)
     BlockEntry e;
     e.offset = blockSize * runs.back().entries.size();
     e.pid = first;
-    lastPID = last;
     runs.back().entries.push_back(e);
 }
 
