@@ -24,8 +24,9 @@ class LogScanner;
  * The background thread calls waitForActivation() while it waits for an
  * activation from an orchestrating thread. Before calling this method,
  * however, it must acquire the mutex, in order to obey the pthread wait
- * protocol. Once its work is complete, the mutex must be released. In practice,
- * therefore, waitForActivation() is usually invoked as follows.
+ * protocol.  Once its work is complete, the activated state is unsed and the
+ * mutex must be released. In practice, therefore, waitForActivation() is
+ * usually invoked as follows.
  *
  * \code{.cpp}
     while (true) {
@@ -66,6 +67,7 @@ struct ArchiverControl {
     pthread_cond_t activateCond;
     lsn_t endLSN;
     bool activated;
+    bool listening;
     bool* shutdown;
 
     ArchiverControl(bool* shutdown);
@@ -157,7 +159,6 @@ public:
 
     public:
         size_t getBlockSize() { return blockSize; }
-
 
         BaseThread(AsyncRingBuffer* buf, const char* tname)
             : smthread_t(t_regular, tname),
@@ -352,6 +353,8 @@ public:
               directory(directory), currentRun(0), lastLSN(lsn_t::null)
         {
         }
+
+        virtual ~WriterThread() {}
     };
 
     /** \brief Component that consumes a partially-sorted log record stream and
@@ -392,6 +395,8 @@ public:
         bool add(logrec_t* lr);
         void finish(int run);
         void shutdown();
+
+        lsn_t getLastLSN() { return lastLSN; }
 
         // methods that abstract block metadata
         static int getRunFromBlock(const char* b);
@@ -623,6 +628,7 @@ public:
     public:
         LogConsumer(lsn_t startLSN, size_t blockSize);
         virtual ~LogConsumer();
+        void shutdown();
 
         void open(lsn_t endLSN);
         bool next(logrec_t*& lr);
@@ -654,7 +660,7 @@ public:
     virtual ~LogArchiver();
 
     virtual void run();
-    bool activate(lsn_t endLSN = lsn_t::null, bool wait = true);
+    void activate(lsn_t endLSN = lsn_t::null, bool wait = true);
     void start_shutdown();
 
     static void initLogScanner(LogScanner* logScanner);

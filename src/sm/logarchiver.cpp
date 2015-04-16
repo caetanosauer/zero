@@ -30,7 +30,7 @@ const size_t LogArchiver::MAX_LOGREC_SIZE = 3 * log_storage::BLOCK_SIZE;
 const char FAKE_SKIP_LOGREC [3] = { 0x03, 0x00, (char) logrec_t::t_skip };
 
 ArchiverControl::ArchiverControl(bool* shutdown)
-    : endLSN(lsn_t::null), activated(false), shutdown(shutdown)
+    : endLSN(lsn_t::null), activated(false), listening(false), shutdown(shutdown)
 {
     DO_PTHREAD(pthread_mutex_init(&mutex, NULL));
     DO_PTHREAD(pthread_cond_init(&activateCond, NULL));
@@ -53,13 +53,16 @@ bool ArchiverControl::activate(bool wait, lsn_t lsn)
         }
     }
     // now we hold the mutex -- signal archiver thread and set endLSN
-
-    DBGTHRD(<< "Sending activate signal to controlled thread");
-    // activation may not decrease the endLSN
-    w_assert0(lsn >= endLSN);
-    endLSN = lsn;
-    activated = true;
-    DO_PTHREAD(pthread_cond_signal(&activateCond));
+    
+    // make sure signal is sent only if thread is listening
+    if (!wait || listening) {
+        // activation may not decrease the endLSN
+        w_assert0(lsn >= endLSN);
+        endLSN = lsn;
+        activated = true;
+        DBGTHRD(<< "Sending activate signal to controlled thread");
+        DO_PTHREAD(pthread_cond_signal(&activateCond));
+    }
     DO_PTHREAD(pthread_mutex_unlock(&mutex));
 
     /*
@@ -69,12 +72,13 @@ bool ArchiverControl::activate(bool wait, lsn_t lsn)
      * another endLSN. In fact, it does not even mean that the signal was
      * received, since the thread may not be listening yet.
      */
-    return true;
+    return activated;
 }
 
 bool ArchiverControl::waitForActivation()
 {
     // WARNING: mutex must be held by caller!
+    listening = true;
     while(!activated) {
         struct timespec timeout;
         sthread_t::timeout_to_timespec(100, timeout); // 100ms
@@ -88,6 +92,7 @@ bool ArchiverControl::waitForActivation()
         }
         DO_PTHREAD_TIMED(code);
     }
+    listening = false;
     return true;
 }
 
@@ -105,8 +110,6 @@ void LogArchiver::ReaderThread::start_shutdown()
     shutdown = true;
     // make other threads see new shutdown value
     lintel::atomic_thread_fence(lintel::memory_order_release);
-    // if finished is set, the ring buffer denies producer requests
-    buf->set_finished();
 }
 
 void LogArchiver::ReaderThread::activate(lsn_t startLSN, lsn_t endLSN)
@@ -289,6 +292,9 @@ void LogArchiver::WriterThread::run()
              * because it runs indefinitely, just waiting for blocks to be
              * written. The only stop condition is when the write buffer itself
              * is marked finished, which is done in start_shutdown().
+             * Nevertheless, a null block is only returned once the finished 
+             * flag is set AND there are no more blocks. Thus, we gaurantee
+             * that all pending blocks are written out before shutdown.
              */
             DBGTHRD(<< "Finished flag set on writer thread");
             W_COERCE(directory->closeCurrentRun(lastLSN));
@@ -407,9 +413,9 @@ void LogArchiver::start_shutdown()
     shutdown = true;
     // make other threads see new shutdown value
     lintel::atomic_thread_fence(lintel::memory_order_release);
-    // If archiver thread is not running, it is woken up and terminated
-    // imediately afterwards due to shutdown flag being set
-    DO_PTHREAD(pthread_cond_signal(&control.activateCond));
+
+    consumer->shutdown();
+    blkAssemb->shutdown();
 }
 
 LogArchiver::~LogArchiver()
@@ -696,10 +702,16 @@ LogArchiver::LogConsumer::LogConsumer(lsn_t startLSN, size_t blockSize)
 
 LogArchiver::LogConsumer::~LogConsumer()
 {
-    reader->start_shutdown();
-    reader->join();
+    shutdown();
     delete reader;
     delete readbuf;
+}
+
+void LogArchiver::LogConsumer::shutdown()
+{
+    readbuf->set_finished();
+    reader->start_shutdown();
+    reader->join();
 }
 
 void LogArchiver::LogConsumer::open(lsn_t endLSN)
@@ -803,7 +815,6 @@ bool LogArchiver::selection()
         // if there are no elements in the heap, we have nothing to write
         // -> return and wait for next activation
         DBGTHRD(<< "Selection got empty heap -- sleeping");
-        blkAssemb->shutdown();
         return false;
     }
 
@@ -843,8 +854,8 @@ LogArchiver::BlockAssembly::BlockAssembly(ArchiveDirectory* directory)
 LogArchiver::BlockAssembly::~BlockAssembly()
 {
     shutdown();
-    delete writebuf;
     delete writer;
+    delete writebuf;
 }
 
 int LogArchiver::BlockAssembly::getRunFromBlock(const char* b)
@@ -1061,7 +1072,7 @@ LogArchiver::ArchiveScanner::MergeHeapEntry::MergeHeapEntry(lpid_t startPID,
     : active(true), runScan(runScan)
 {
     // bring scanner up to starting point
-    logrec_t* next;
+    logrec_t* next = NULL;
     bool hasNext = false;
     bool matches = false;
     do {
@@ -1283,13 +1294,15 @@ void LogArchiver::replacement()
     }
 }
 
-bool LogArchiver::activate(lsn_t endLSN, bool wait)
+void LogArchiver::activate(lsn_t endLSN, bool wait)
 {
     w_assert0(smlevel_0::log);
     if (endLSN == lsn_t::null) {
         endLSN = smlevel_0::log->durable_lsn();
     }
-    return control.activate(wait, endLSN);
+    while (!control.activate(wait, endLSN)) {
+        if (!wait) break;
+    }
 }
 
 void LogArchiver::run()
@@ -1345,8 +1358,6 @@ void LogArchiver::run()
     while (selection()) {}
 
     w_assert0(heap->size() == 0);
-    blkAssemb->shutdown();
-    // TODO shut down consumer
 }
 
 /**
