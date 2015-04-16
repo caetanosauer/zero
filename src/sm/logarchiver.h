@@ -231,6 +231,8 @@ public:
         ProbeResult* probeFirst(lpid_t pid, lsn_t lsn);
         void probeNext(ProbeResult*& prev, lsn_t endLSN = lsn_t::null);
 
+        rc_t getBlockCounts(int fd, size_t* indexBlocks, size_t* dataBlocks);
+
     private:
         struct BlockEntry {
             fileoff_t offset;
@@ -450,6 +452,7 @@ public:
             size_t blockEnd;
             ArchiveDirectory* directory;
             int fd;
+            size_t blockCount;
 
             RunScanner(lsn_t b, lsn_t e, lpid_t f, lpid_t l, fileoff_t o,
                     ArchiveDirectory* directory);

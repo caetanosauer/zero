@@ -898,7 +898,6 @@ bool LogArchiver::BlockAssembly::add(logrec_t* lr)
     lastLSN = lr->lsn_ck();
     lastLength = lr->length();
 
-    // guarantees that whole log record fits in a block
     memcpy(dest + pos, lr, lr->length());
     pos += lr->length();
     return true;
@@ -990,7 +989,7 @@ LogArchiver::ArchiveScanner::open(lpid_t startPID, lpid_t endPID,
 LogArchiver::ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e,
         lpid_t f, lpid_t l, fileoff_t o, ArchiveDirectory* directory)
 : runBegin(b), runEnd(e), firstPID(f), lastPID(l), offset(o),
-    directory(directory), fd(-1)
+    directory(directory), fd(-1), blockCount(0)
 {
     buffer = new char[directory->getBlockSize()];
     bpos = 0;
@@ -1006,7 +1005,20 @@ bool LogArchiver::ArchiveScanner::RunScanner::nextBlock()
 {
     if (fd < 0) {
         W_COERCE(directory->openForScan(fd, runBegin, runEnd));
+
+        if (directory->getIndex()) {
+            directory->getIndex()->getBlockCounts(fd, NULL, &blockCount);
+        }
     }
+
+    // do not read past data blocks into index blocks
+    if (blockCount > 0 &&
+            (offset / directory->getBlockSize()) >= blockCount)
+    {
+        W_COERCE(directory->closeScan(fd));
+        return false;
+    }
+    
     // offset is updated by readBlock
     W_COERCE(directory->readBlock(fd, buffer, offset));
 
@@ -1019,6 +1031,7 @@ bool LogArchiver::ArchiveScanner::RunScanner::nextBlock()
     bpos = sizeof(BlockAssembly::BlockHeader);
     blockEnd = BlockAssembly::getEndOfBlock(buffer);
     w_assert1(blockEnd > bpos);
+    w_assert1(blockEnd <= directory->getBlockSize());
 
     return true;
 }
@@ -1031,10 +1044,8 @@ bool LogArchiver::ArchiveScanner::RunScanner::next(logrec_t*& lr)
         }
     }
 
-    if (lr) {
-        lr = (logrec_t*) (buffer + bpos);
-        w_assert1(lr->valid_header(lr->lsn_ck()));
-    }
+    lr = (logrec_t*) (buffer + bpos);
+    w_assert1(lr->valid_header(lr->lsn_ck()));
     bpos += lr->length();
 
     return true;
@@ -1526,6 +1537,27 @@ rc_t LogArchiver::ArchiveIndex::serializeRunInfo(RunInfo& run, int fd, fileoff_t
 
         W_COERCE(me()->pwrite(fd, writeBuffer, blockSize, offset));
         i++;
+    }
+
+    return RCOK;
+}
+
+rc_t LogArchiver::ArchiveIndex::getBlockCounts(int fd, size_t* indexBlocks,
+        size_t* dataBlocks)
+{
+    filestat_t fs;
+    W_DO(me()->fstat(fd, fs));
+    fileoff_t fsize = fs.st_size;
+    w_assert1(fsize % blockSize == 0);
+    
+    // read header of last block in file -- its number is the block count
+    BlockHeader header;
+    W_DO(me()->pread(fd, &header, sizeof(BlockHeader), fsize - blockSize));
+    if (indexBlocks) {
+        *indexBlocks = header.blockNumber + 1;
+    }
+    if (dataBlocks) {
+        *dataBlocks = (fsize / blockSize) - (header.blockNumber + 1);
     }
 
     return RCOK;
