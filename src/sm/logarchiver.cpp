@@ -1628,7 +1628,7 @@ smlevel_0::fileoff_t LogArchiver::ArchiveIndex::findEntry(RunInfo* run,
      * in sm_s.h and see what the semantics is.
      */
     if (run->entries[i].pid.page <= pid.page &&
-            run->entries[i+1].pid.page >= pid.page)
+            (i == run->entries.size() - 1 || run->entries[i+1].pid.page >= pid.page))
     {
         // found it! must first check if previous does not contain same pid
         while (i > 0 && run->entries[i].pid.page == pid.page)
