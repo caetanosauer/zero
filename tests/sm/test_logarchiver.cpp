@@ -42,8 +42,8 @@ rc_t populateBtree(ss_m* ssm, test_volume_t *test_volume, int count)
     return RCOK;
 }
 
-rc_t generateFakeArchive(unsigned bytesPerRun, unsigned runCount,
-        bool createIndex, unsigned& total)
+rc_t generateFakeArchive(LogArchiver::ArchiveDirectory* dir, 
+        unsigned bytesPerRun, unsigned runCount, unsigned& total)
 {
     total = 0;
 
@@ -59,9 +59,7 @@ rc_t generateFakeArchive(unsigned bytesPerRun, unsigned runCount,
     LogScanner scanner(BLOCK_SIZE);
     LogArchiver::initLogScanner(&scanner);
 
-    LogArchiver::ArchiveDirectory dir(test_env->archive_dir, BLOCK_SIZE,
-            createIndex);
-    LogArchiver::BlockAssembly assemb(&dir);
+    LogArchiver::BlockAssembly assemb(dir);
 
     while (runsGen < runCount) {
         unsigned bytesGen = 0;
@@ -230,13 +228,14 @@ rc_t fullPipelineTest(ss_m* ssm, test_volume_t* test_vol)
 
 rc_t runScannerTest(ss_m* /* ssm */, test_volume_t* /* test_vol */)
 {
-    unsigned total = 0;
-    generateFakeArchive(BLOCK_SIZE*8, 1, false, total);
-
     // TODO: runScanner does not work with index because index blocks are read at the end
     LogArchiver::ArchiveDirectory dir(test_env->archive_dir, BLOCK_SIZE,
             false /* createIndex */);
     EXPECT_EQ(NULL, dir.getIndex());
+
+    unsigned total = 0;
+    generateFakeArchive(&dir, BLOCK_SIZE*8, 1, total);
+
     std::vector<string> files;
     W_DO(dir.listFiles(&files));
 
@@ -270,15 +269,52 @@ rc_t runScannerTest(ss_m* /* ssm */, test_volume_t* /* test_vol */)
     return RCOK;
 }
 
+rc_t runScannerWithIndex(ss_m*, test_volume_t*)
+{
+    LogArchiver::ArchiveDirectory dir(test_env->archive_dir, BLOCK_SIZE,
+            true /* createIndex */);
+    EXPECT_TRUE(dir.getIndex());
+
+    unsigned total = 0;
+    generateFakeArchive(&dir, BLOCK_SIZE*8, 1, total);
+
+    std::vector<string> files;
+    W_DO(dir.listFiles(&files));
+    EXPECT_EQ(1, files.size());
+    lsn_t beginLSN = LogArchiver::ArchiveDirectory::parseLSN(files[0].c_str(),
+            false);
+    lsn_t endLSN = LogArchiver::ArchiveDirectory::parseLSN(files[0].c_str(),
+            true);
+
+    LogArchiver::ArchiveScanner::RunScanner rs
+        (beginLSN, endLSN, lpid_t::null, lpid_t::null, 0, &dir);
+
+    lpid_t prevPID = lpid_t::null;
+    lsn_t prevLSN = lsn_t::null;
+    unsigned count = 0;
+    logrec_t* lr;
+    while (rs.next(lr)) {
+        EXPECT_TRUE(lr->valid_header(lr->lsn_ck()));
+        EXPECT_TRUE(lr->construct_pid().page >= prevPID.page);
+        EXPECT_TRUE(lr->lsn_ck() != prevLSN);
+        EXPECT_TRUE(lr->lsn_ck() >= rs.runBegin);
+        EXPECT_TRUE(lr->lsn_ck() < rs.runEnd);
+        prevPID = lr->construct_pid();
+        prevLSN = lr->lsn_ck();
+        count++;
+    }
+    
+    return RCOK;
+}
+
 rc_t runMergerSeqTest(ss_m* /* ssm */, test_volume_t* /* test_vol */)
 {
-    unsigned total = 0;
-    generateFakeArchive(BLOCK_SIZE*8, 8, false, total);
-
     LogArchiver::ArchiveDirectory dir(test_env->archive_dir, BLOCK_SIZE,
             false /* createIndex */);
     EXPECT_EQ(NULL, dir.getIndex());
 
+    unsigned total = 0;
+    generateFakeArchive(&dir, BLOCK_SIZE*8, 8, total);
 
     LogArchiver::ArchiveScanner::RunMerger* merger =
         buildRunMergerFromDirectory(dir);
@@ -338,18 +374,83 @@ rc_t runMergerFullTest(ss_m* ssm, test_volume_t* test_vol)
 }
 
 
+rc_t archIndexTestSingle(ss_m*, test_volume_t*)
+{
+    LogArchiver::ArchiveDirectory dir(test_env->archive_dir, BLOCK_SIZE,
+            true /* createIndex */);
+    EXPECT_TRUE(dir.getIndex());
+    size_t blockSize = dir.getBlockSize();
+
+    unsigned total = 0;
+    generateFakeArchive(&dir, BLOCK_SIZE*8, 1, total);
+
+    std::vector<string> files;
+    W_DO(dir.listFiles(&files));
+    EXPECT_EQ(1, files.size());
+    lsn_t beginLSN = LogArchiver::ArchiveDirectory::parseLSN(files[0].c_str(),
+            false);
+    lsn_t endLSN = LogArchiver::ArchiveDirectory::parseLSN(files[0].c_str(),
+            true);
+
+    LogArchiver::ArchiveScanner::RunScanner rs
+        (beginLSN, endLSN, lpid_t::null, lpid_t::null, 0, &dir);
+
+    LogArchiver::ArchiveIndex* index = dir.getIndex();
+    LogArchiver::ArchiveIndex::ProbeResult* result;
+
+    size_t bpos = sizeof(LogArchiver::BlockAssembly::BlockHeader);
+    size_t currBlock = 0;
+    lpid_t firstPIDinBlock = lpid_t::null;
+    size_t lastBlockWithSamePID = 0;
+    logrec_t* lr = NULL;
+    while (rs.next(lr)) {
+        lpid_t pid = lr->construct_pid();
+        if (bpos + lr->length() > blockSize) {
+            currBlock++;
+            bpos = sizeof(LogArchiver::BlockAssembly::BlockHeader);
+            firstPIDinBlock = pid;
+        }
+        if (firstPIDinBlock.page != pid.page) {
+            lastBlockWithSamePID = currBlock;
+        }
+        bpos += lr->length();
+
+        result = index->probeFirst(pid, lr->lsn_ck());
+        EXPECT_TRUE(result);
+
+        EXPECT_EQ(pid, result->pid);
+        EXPECT_EQ(beginLSN, result->runBegin);
+        EXPECT_EQ(endLSN, result->runEnd);
+        if (pid.page != firstPIDinBlock.page) {
+            EXPECT_EQ(currBlock * blockSize, result->offset);
+        }
+        else {
+            EXPECT_EQ(lastBlockWithSamePID * blockSize, result->offset);
+        }
+
+        // only one run -- no further results expected
+        index->probeNext(result);
+        EXPECT_TRUE(!result);
+    }
+    
+    return RCOK;
+}
+
+
 #define DEFAULT_TEST(test, function) \
     TEST (test, function) { \
         test_env->empty_logdata_dir(); \
         EXPECT_EQ(test_env->runBtreeTest(function), 0); \
     }
 
-DEFAULT_TEST (LogArchiverTest, consumerTest);
-DEFAULT_TEST (LogArchiverTest, heapTestReal);
-DEFAULT_TEST (LogArchiverTest, fullPipelineTest);
-DEFAULT_TEST (ArchiveScannerTest, runScannerTest);
-DEFAULT_TEST (ArchiveScannerTest, runMergerSeqTest);
-DEFAULT_TEST (ArchiveScannerTest, runMergerFullTest);
+//DEFAULT_TEST (LogArchiverTest, consumerTest);
+//DEFAULT_TEST (LogArchiverTest, heapTestReal);
+//DEFAULT_TEST (LogArchiverTest, fullPipelineTest);
+//DEFAULT_TEST (ArchiveScannerTest, runScannerTest);
+//DEFAULT_TEST (ArchiveScannerTest, runScannerWithIndex);
+//DEFAULT_TEST (ArchiveScannerTest, runMergerSeqTest);
+//DEFAULT_TEST (ArchiveScannerTest, runMergerFullTest);
+DEFAULT_TEST (ArchiveIndexTest, archIndexTestSingle);
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
