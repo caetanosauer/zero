@@ -75,7 +75,8 @@ rc_t generateFakeArchive(LogArchiver::ArchiveDirectory* dir,
             if (!assemb.add(&lr)) {
                 assemb.finish(runsGen);
                 assemb.start();
-                assert(assemb.add(&lr));
+                bool worked = assemb.add(&lr);
+                EXPECT_TRUE(worked);
             }
 
             bytesGen += lr.length();
@@ -210,10 +211,13 @@ rc_t fullPipelineTest(ss_m* ssm, test_volume_t* test_vol)
     la.fork();
     la.activate(lsn_t::null, true /* wait */);
     
-    // by sending another activation signal with blocking,
-    // we wait for logarchiver to consume up to durable LSN,
-    // which is used by default when lsn_t::null is given above
-    la.activate(lsn_t::null, true);
+    // nextLSN of consumer tells us that all logrecs up (and excluding) that
+    // LSN were added to the heap. When shutdown is invoked, heap is then emptied
+    // using the selection method, thus also gauaranteeing that the archive is persistent
+    // up to nextLSN
+    while (cons.getNextLSN() < ssm->log->durable_lsn()) {
+        usleep(100 * 1000); // 100ms
+    }
 
     la.start_shutdown();
     la.join();
@@ -351,7 +355,9 @@ rc_t runMergerFullTest(ss_m* ssm, test_volume_t* test_vol)
     la.fork();
     la.activate(lsn_t::null, true /* wait */);
     // wait for logarchiver to consume up to durable LSN,
-    la.activate(lsn_t::null, true);
+    while (cons.getNextLSN() < ssm->log->durable_lsn()) {
+        usleep(100 * 1000); // 100ms
+    }
 
     LogArchiver::ArchiveScanner::RunMerger* merger =
         buildRunMergerFromDirectory(dir);
@@ -436,6 +442,7 @@ rc_t archIndexTestSingle(ss_m*, test_volume_t*)
     return RCOK;
 }
 
+// NEXT TESTS: spread-out page ids, corner cases (think of any?), using multiple run scanners, using merger
 
 #define DEFAULT_TEST(test, function) \
     TEST (test, function) { \
@@ -443,13 +450,13 @@ rc_t archIndexTestSingle(ss_m*, test_volume_t*)
         EXPECT_EQ(test_env->runBtreeTest(function), 0); \
     }
 
-//DEFAULT_TEST (LogArchiverTest, consumerTest);
-//DEFAULT_TEST (LogArchiverTest, heapTestReal);
-//DEFAULT_TEST (LogArchiverTest, fullPipelineTest);
-//DEFAULT_TEST (ArchiveScannerTest, runScannerTest);
-//DEFAULT_TEST (ArchiveScannerTest, runScannerWithIndex);
-//DEFAULT_TEST (ArchiveScannerTest, runMergerSeqTest);
-//DEFAULT_TEST (ArchiveScannerTest, runMergerFullTest);
+DEFAULT_TEST (LogArchiverTest, consumerTest);
+DEFAULT_TEST (LogArchiverTest, heapTestReal);
+DEFAULT_TEST (LogArchiverTest, fullPipelineTest);
+DEFAULT_TEST (ArchiveScannerTest, runScannerTest);
+DEFAULT_TEST (ArchiveScannerTest, runScannerWithIndex);
+DEFAULT_TEST (ArchiveScannerTest, runMergerSeqTest);
+DEFAULT_TEST (ArchiveScannerTest, runMergerFullTest);
 DEFAULT_TEST (ArchiveIndexTest, archIndexTestSingle);
 
 int main(int argc, char **argv) {
