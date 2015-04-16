@@ -259,7 +259,7 @@ public:
         void probeInRun(ProbeResult*);
         // binary search
         fileoff_t findEntry(RunInfo* run, lpid_t pid,
-                size_t from = 0, size_t to = 0);
+                int from = -1, int to = -1);
         rc_t serializeRunInfo(RunInfo&, int fd, fileoff_t);
 
     };

@@ -1488,7 +1488,7 @@ void LogArchiver::ArchiveIndex::newBlock(lpid_t first, lpid_t last)
     w_assert1(runs.size() > 0);
 
     BlockEntry e;
-    e.offset = blockSize * (runs.back().entries.size() - 1);
+    e.offset = blockSize * runs.back().entries.size();
     e.pid = first;
     lastPID = last;
     runs.back().entries.push_back(e);
@@ -1567,19 +1567,21 @@ size_t LogArchiver::ArchiveIndex::findRun(lsn_t lsn)
 {
     // Assumption: mutex is held by caller
     
-    // CS: requests are more likely to access the last runs, so
-    // we do a linear search instead of binary search.
-    for (int i = runs.size() - 2; i >= 0; i--) {
-        if (runs[i].firstLSN > lsn) {
-            return i+1;
-        }
+    /* 
+     * CS: requests are more likely to access the last runs, so
+     * we do a linear search instead of binary search.
+     */
+    int result = runs.size() - 2;
+    while (result > 0 && runs[result].firstLSN >= lsn) {
+        result--;
     }
+
     // caller must check if returned index is valid
-    return runs.size();
+    return result >= 0 ? result : runs.size();
 }
 
 smlevel_0::fileoff_t LogArchiver::ArchiveIndex::findEntry(RunInfo* run,
-        lpid_t pid, size_t from, size_t to)
+        lpid_t pid, int from, int to)
 {
     // Assumption: mutex is held by caller
 
@@ -1593,19 +1595,23 @@ smlevel_0::fileoff_t LogArchiver::ArchiveIndex::findEntry(RunInfo* run,
                 << " PID = " << pid << " run = " << run->firstLSN);
     }
 
-    size_t i;
-    if (to == 0) {
-        // last entry is artificial -- to hold last PID of run
-        i = (run->entries.size() - 1) / 2;
+    w_assert1(run);
+    w_assert1(run->entries.size() > 0);
+
+    if (to < 0) { // negative value indicates first invocation
+        from = 0;
+        to = run->entries.size() - 1;
     }
-    else if (from == to) {
+    
+    size_t i;
+    if (from == to) {
         i = from;
     }
     else {
         i = from/2 + to/2;
     }
 
-    w_assert0(i < run->entries.size() - 1);
+    w_assert0(i < run->entries.size());
 
     /*
      * CS comparisons use just page number instead of whole lpid_t, which
@@ -1613,12 +1619,12 @@ smlevel_0::fileoff_t LogArchiver::ArchiveIndex::findEntry(RunInfo* run,
      * To fix this, we ought to look for usages of the lpid_t operators
      * in sm_s.h and see what the semantics is.
      */
-    if (run->entries[i].pid.page < pid.page &&
-            run->entries[i+1].pid.page > pid.page)
+    if (run->entries[i].pid.page <= pid.page &&
+            run->entries[i+1].pid.page >= pid.page)
     {
         // found it! must first check if previous does not contain same pid
-        while (i > 0 && run->entries[i].pid.page == pid.page &&
-                run->entries[i].pid.page == run->entries[i-1].pid.page)
+        while (i > 0 && run->entries[i].pid.page == pid.page)
+                //&& run->entries[i].pid.page == run->entries[i-1].pid.page)
         {
             i--;
         }
@@ -1657,7 +1663,7 @@ ProbeResult* LogArchiver::ArchiveIndex::probeFirst(lpid_t pid, lsn_t lsn)
     lsn_t runEndLSN;
     size_t index = findRun(lsn);
 
-    if (index <= runs.size() - 1) {
+    if (index == runs.size() - 1) {
         // last run is the current one, thus unavailable for probing
         return NULL;
     }
