@@ -72,10 +72,6 @@ set(sm_STAT_SRCS
 
 add_library(sm STATIC ${sm_STAT_SRCS})
 target_link_libraries(sm fc sthread common numa)
-# Swizzling off by default
-#get_target_property (SM_COMPILEDEF sm COMPILE_DEFINITIONS)
-#set(SM_COMPILEDEF "SIMULATE_NO_SWIZZLING")
-#set_target_properties (sm PROPERTIES COMPILE_DEFINITIONS "${SM_COMPILEDEF}")
 
 # CS: target that uses plog_xct, i.e., atomic commit protocol
 add_library(sm_plog STATIC ${sm_STAT_SRCS})
@@ -83,7 +79,10 @@ target_link_libraries(sm_plog fc sthread common numa)
 get_target_property (SM_PLOG_COMPILEDEF sm_plog COMPILE_DEFINITIONS)
 #set(SM_PLOG_COMPILEDEF "SIMULATE_NO_SWIZZLING;USE_ATOMIC_COMMIT")
 set(SM_PLOG_COMPILEDEF "USE_ATOMIC_COMMIT")
-set_target_properties (sm_plog PROPERTIES COMPILE_DEFINITIONS "${SM_PLOG_COMPILEDEF}")
+set_target_properties (sm_plog PROPERTIES
+    COMPILE_DEFINITIONS "${SM_PLOG_COMPILEDEF}"
+    EXCLUDE_FROM_ALL  ON
+)
 
 # generate a library that performs swizzling but no pin_cnt increments/decrements
 add_library(sm_swizzling_nopincntincdec STATIC ${sm_STAT_SRCS})
@@ -91,7 +90,10 @@ target_link_libraries(sm_swizzling_nopincntincdec fc sthread common numa)
 # make sure we don't override any previous value of COMPILE_DEFINITIONS
 get_target_property (SM_SWIZZLING_NOPINCNTINCDEC_COMPILEDEF sm_swizzling_nopincntincdec COMPILE_DEFINITIONS)
 set(SM_SWIZZLING_NOPINCNTINCDEC_COMPILEDEF "NO_PINCNT_INCDEC")
-set_target_properties (sm_swizzling_nopincntincdec PROPERTIES COMPILE_DEFINITIONS "${SM_SWIZZLING_NOPINCNTINCDEC_COMPILEDEF}")
+set_target_properties (sm_swizzling_nopincntincdec
+    PROPERTIES COMPILE_DEFINITIONS "${SM_SWIZZLING_NOPINCNTINCDEC_COMPILEDEF}"
+    EXCLUDE_FROM_ALL ON
+)
 
 # generate a library that simulates no swizzling
 add_library(sm_noswizzling STATIC ${sm_STAT_SRCS})
@@ -99,7 +101,10 @@ target_link_libraries(sm_noswizzling fc sthread common numa)
 # make sure we don't override any previous value of COMPILE_DEFINITIONS
 get_target_property (SM_NOSWIZZLING_COMPILEDEF sm_noswizzling COMPILE_DEFINITIONS)
 set(SM_NOSWIZZLING_COMPILEDEF "SIMULATE_NO_SWIZZLING")
-set_target_properties (sm_noswizzling PROPERTIES COMPILE_DEFINITIONS "${SM_NOSWIZZLING_COMPILEDEF}")
+set_target_properties (sm_noswizzling
+    PROPERTIES COMPILE_DEFINITIONS "${SM_NOSWIZZLING_COMPILEDEF}"
+    EXCLUDE_FROM_ALL ON
+)
 
 # generate a library that simulates an in-memory DB
 add_library(sm_mainmemory STATIC ${sm_STAT_SRCS})
@@ -107,7 +112,10 @@ target_link_libraries(sm_mainmemory fc sthread common numa)
 # make sure we don't override any previous value of COMPILE_DEFINITIONS
 get_target_property (SM_MAINMEMORY_COMPILEDEF sm_mainmemory COMPILE_DEFINITIONS)
 set(SM_MAINMEMORY_COMPILEDEF "SIMULATE_MAINMEMORYDB")
-set_target_properties (sm_mainmemory PROPERTIES COMPILE_DEFINITIONS "${SM_MAINMEMORY_COMPILEDEF}")
+set_target_properties (sm_mainmemory
+    PROPERTIES COMPILE_DEFINITIONS "${SM_MAINMEMORY_COMPILEDEF}"
+    EXCLUDE_FROM_ALL ON
+)
 
 # generate stat header files with tools/stats.pl (sm_stat)
 set(SM_STATS_GENFILES_H sm_stats_t_collect_enum_gen.h sm_stats_t_msg_gen.h sm_stats_t_struct_gen.h )
@@ -157,75 +165,75 @@ SET (GENFILES_H ${SM_STATS_GENFILES_B_H} ${BF_HTAB_STATS_GENFILES_B_H} ${LOGDEF_
 
 ########### install files ###############
 
-install(FILES
-  ${GENFILES_H}
-  ${CMAKE_CURRENT_SOURCE_DIR}/alloc_cache.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/alloc_page.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/backup.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/bf_fixed.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/bf.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/bf_hashtable.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/bf_s.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/bf_transit_bucket.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/bf_tree.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/btcursor.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/btree.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/btree_impl.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/btree_logrec.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/btree_page.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/btree_page_h.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/chkpt.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/chkpt_serial.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/crash.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/device.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/fixable_page_h.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/generic_page.h
+# install(FILES
+#   ${GENFILES_H}
+#   ${CMAKE_CURRENT_SOURCE_DIR}/alloc_cache.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/alloc_page.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/backup.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/bf_fixed.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/bf.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/bf_hashtable.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/bf_s.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/bf_transit_bucket.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/bf_tree.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/btcursor.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/btree.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/btree_impl.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/btree_logrec.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/btree_page.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/btree_page_h.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/chkpt.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/chkpt_serial.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/crash.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/device.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/fixable_page_h.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/generic_page.h
 
-  ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_common.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_core.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_hashtable.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_seg.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_common.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_core.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_hashtable.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_seg.h
 
-  ${CMAKE_CURRENT_SOURCE_DIR}/lid.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/lock_bucket.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/lock_cache.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/lock_compt.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/lock_core.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/lock.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/lock_lil.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/lock_raw.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/lock_s.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/lock_x.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/log_carray.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/log_core.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/log_spr.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/log_lsn_tracker.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/log.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/logrec.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/partition.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/pmap.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/prologue.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/restart.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/restart_s.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/sm_base.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/sm_external.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/sm_du_stats.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/sm.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/sm_int_0.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/sm_int_1.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/sm_int_2.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/sm_int_3.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/sm_int_4.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/sm_io.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/sm_options.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/sm_s.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/smstats.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/smthread.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/sm_vtable_enum.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/stnode_page.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/sysdefs.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/vol.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/xct_dependent.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/xct.h
-  DESTINATION include)
+#   ${CMAKE_CURRENT_SOURCE_DIR}/lid.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/lock_bucket.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/lock_cache.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/lock_compt.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/lock_core.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/lock.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/lock_lil.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/lock_raw.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/lock_s.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/lock_x.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/log_carray.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/log_core.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/log_spr.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/log_lsn_tracker.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/log.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/logrec.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/partition.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/pmap.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/prologue.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/restart.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/restart_s.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/sm_base.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/sm_external.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/sm_du_stats.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/sm.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/sm_int_0.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/sm_int_1.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/sm_int_2.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/sm_int_3.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/sm_int_4.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/sm_io.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/sm_options.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/sm_s.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/smstats.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/smthread.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/sm_vtable_enum.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/stnode_page.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/sysdefs.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/vol.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/xct_dependent.h
+#   ${CMAKE_CURRENT_SOURCE_DIR}/xct.h
+#   DESTINATION include)
 
