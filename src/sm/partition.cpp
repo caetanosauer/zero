@@ -1011,8 +1011,14 @@ partition_t::read(char* readbuf, logrec_t *&rp, lsn_t &ll,
                 }
                 else {
                     // we were unlucky -- extra IO required to fetch prev_lsn                   
-                    W_COERCE(me()->pread(fd, (void*) prev_lsn, sizeof(lsn_t),
-                                lower + b - XFERSIZE - sizeof(lsn_t)));
+                    int prev_offset = lower + b - XFERSIZE - sizeof(lsn_t);
+                    if (prev_offset < 0) {
+                        *prev_lsn = lsn_t::null;
+                    }
+                    else {
+                        W_COERCE(me()->pread(fd, (void*) prev_lsn, sizeof(lsn_t),
+                                    prev_offset));
+                    }
                 }
             }
         } else {
