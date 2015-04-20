@@ -52,13 +52,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * - Device
  */
 
-/*
-    Physical volume IDs (vid_t) are currently used to make unique
-    long volume IDs.  This is a temporary hack which we support with
-    this typedef:
-*/
-typedef uint16_t VID_T;
-
 /**\brief long volume ID.  See \ref IDS. 
  *\ingroup IDS
  *

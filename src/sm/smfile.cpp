@@ -64,7 +64,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "w.h"
 #include "sm_int_4.h"
 #include "btcursor.h"
-#include "device.h"
 #include "sm.h"
 #include "suppress_unused.h"
 

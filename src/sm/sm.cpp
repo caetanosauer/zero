@@ -72,7 +72,6 @@ class prologue_rc_t;
 #include "sm.h"
 #include "sm_vtable_enum.h"
 #include "prologue.h"
-#include "device.h"
 #include "vol.h"
 #include "bf_tree.h"
 #include "crash.h"
@@ -193,7 +192,6 @@ typedef srwlock_t sm_vol_rwlock_t;
 static sm_vol_rwlock_t          _begin_xct_mutex;
 
 BackupManager* smlevel_0::bk = 0;
-device_m* smlevel_0::dev = 0;
 io_m* smlevel_0::io = 0;
 bf_tree_m* smlevel_0::bf = 0;
 log_m* smlevel_0::log = 0;
@@ -571,11 +569,6 @@ ss_m::_construct_once()
         W_FATAL(eOUTOFMEMORY);
     }
 
-    dev = new device_m;
-    if (! dev) {
-        W_FATAL(eOUTOFMEMORY);
-    }
-
     io = new io_m;
     if (! io) {
         W_FATAL(eOUTOFMEMORY);
@@ -810,10 +803,9 @@ ss_m::_construct_once()
         // are no locks held.
         for (i = 0; i < num_volumes_mounted; i++)
         {
-            uint vol_cnt;
             rc_t rc;
             DBG(<<"Remount volume " << dname[i]);
-            rc =  _mount_dev(dname[i], vol_cnt, vid[i]) ;
+            rc =  _mount_dev(dname[i], vid[i]) ;
             if (rc.is_error())
             {
                 ss_m::errlog->clog  << warning_prio
@@ -824,8 +816,11 @@ ss_m::_construct_once()
             else
             {
                 // Dismount only if running in serial mode
-                if (true == smlevel_0::use_serial_restart())
-                    W_COERCE( _dismount_dev(dname[i]));
+                if (true == smlevel_0::use_serial_restart()) {
+                    // CS: switched to volume dismount after removing device manager
+                    /* W_COERCE( _dismount_dev(dname[i])); */
+                    W_COERCE(io->dismount(vid[i]));
+                }
             }
         }
         delete [] vid;
@@ -1125,8 +1120,6 @@ ss_m::_destruct_once()
 
         // from now no more logging and checkpoints will be done
         chkpt->retire_chkpt_thread();
-
-        W_COERCE( dev->dismount_all() );
     } else {
         /* still have to close the files, but don't log since not clean !!! */
 
@@ -1135,8 +1128,6 @@ ss_m::_destruct_once()
 
         log_m* saved_log = log;
         log = 0;                // turn off logging
-
-        W_COERCE( dev->dismount_all() );
 
         log = saved_log;            // turn on logging
     }
@@ -1186,7 +1177,6 @@ ss_m::_destruct_once()
     clog = 0;
 
     delete io; io = 0; // io manager
-    delete dev; dev = 0; // device manager
     {
         w_rc_t e = bf->destroy();
         W_COERCE (e);
@@ -1764,12 +1754,6 @@ ss_m::format_dev(const char* device, smksize_t size_in_KB, bool force)
                                 prologue_rc_t::read_write,0);
         if (prologue.error_occurred()) return prologue.rc();
 
-        bool result = dev->is_mounted(device);
-        if(result) {
-            return RC(eALREADYMOUNTED);
-        }
-        DBG( << "already mounted=" << result );
-
         W_DO(vol_t::format_dev(device,
                 /* XXX possible loss of bits */
                 shpid_t(size_in_KB/(page_sz/1024)), force));
@@ -1781,48 +1765,14 @@ ss_m::format_dev(const char* device, smksize_t size_in_KB, bool force)
  *  ss_m::mount_dev()                                *
  *--------------------------------------------------------------*/
 rc_t
-ss_m::mount_dev(const char* device, u_int& vol_cnt, devid_t& devid, vid_t local_vid)
+ss_m::mount_dev(const char* device, vid_t local_vid)
 {
     SM_PROLOGUE_RC(ss_m::mount_dev, not_in_xct, read_only, 0);
 
     spinlock_write_critical_section cs(&_begin_xct_mutex);
 
     // do the real work of the mount
-    W_DO(_mount_dev(device, vol_cnt, local_vid));
-
-    // this is a hack to get the device number.  _mount_dev()
-    // should probably return it.
-    devid = devid_t(device);
-    w_assert3(devid != devid_t::null);
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::dismount_dev()                            *
- *                                                              *
- *  only allow this if there are no active XCTs                 *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::dismount_dev(const char* device)
-{
-    SM_PROLOGUE_RC(ss_m::dismount_dev, not_in_xct, read_only, 0);
-
-    spinlock_write_critical_section cs(&_begin_xct_mutex);
-
-    if (xct_t::num_active_xcts())  {
-        fprintf(stderr, "Active transactions: %d : cannot dismount %s\n",
-                xct_t::num_active_xcts(), device);
-        return RC(eCANTWHILEACTIVEXCTS);
-    }  else  {
-        W_DO( _dismount_dev(device) );
-    }
-
-    // take a synch checkpoint to record the dismount
-    chkpt->synch_take();
-
-
-    DBG(<<"dismount_dev ok");
-
+    W_DO(_mount_dev(device, local_vid));
     return RCOK;
 }
 
@@ -1850,20 +1800,10 @@ ss_m::dismount_all()
     // take a synch checkpoint to record the dismounts
     chkpt->synch_take();
 
-    // dismount is protected by _begin_xct_mutex, actually....
-    W_DO( io->dismount_all_dev() );
+    // CS: TODO this does nothing because it used to dismount all
+    // devices, and not all volumes. Since we removed the device
+    // manager, we have to rethink the utility of this method.
 
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::list_devices()                            *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::list_devices(const char**& dev_list, devid_t*& devid_list, u_int& dev_cnt)
-{
-    SM_PROLOGUE_RC(ss_m::list_devices, not_in_xct,  read_only,0);
-    W_DO(io->list_devices(dev_list, devid_list, dev_cnt));
     return RCOK;
 }
 
@@ -1913,15 +1853,12 @@ ss_m::generate_new_lvid(lvid_t& lvid)
  *--------------------------------------------------------------*/
 rc_t
 ss_m::create_vol(const char* dev_name, const lvid_t& lvid,
-                 smksize_t quota_KB, bool skip_raw_init, vid_t local_vid,
+                 smksize_t quota_KB, bool skip_raw_init,
                  const bool apply_fake_io_latency, const int fake_disk_latency)
 {
     SM_PROLOGUE_RC(ss_m::create_vol, not_in_xct, read_only, 0);
 
     spinlock_write_critical_section cs(&_begin_xct_mutex);
-
-    // make sure device is already mounted
-    if (!io->is_mounted(dev_name)) return RC(eDEVNOTMOUNTED);
 
     // make sure volume is not already mounted
     vid_t vid = io->get_vid(lvid);
@@ -1930,67 +1867,8 @@ ss_m::create_vol(const char* dev_name, const lvid_t& lvid,
     W_DO(_create_vol(dev_name, lvid, quota_KB, skip_raw_init,
                      apply_fake_io_latency, fake_disk_latency));
 
-    // remount the device so the volume becomes visible
-    u_int vol_cnt;
-    W_DO(_mount_dev(dev_name, vol_cnt, local_vid));
-    w_assert3(vol_cnt > 0);
     return RCOK;
 }
-
-/*--------------------------------------------------------------*
- *  ss_m::destroy_vol()                                *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::destroy_vol(const lvid_t& lvid)
-{
-    SM_PROLOGUE_RC(ss_m::destroy_vol, not_in_xct, read_only, 0);
-
-    spinlock_write_critical_section cs(&_begin_xct_mutex);
-
-    if (xct_t::num_active_xcts())  {
-        fprintf(stderr,
-            "Active transactions: %d : cannot destroy volume\n",
-            xct_t::num_active_xcts());
-        return RC(eCANTWHILEACTIVEXCTS);
-    }  else  {
-        // find the device name
-        vid_t vid = io->get_vid(lvid);
-
-        if (vid == vid_t::null)
-            return RC(eBADVOL);
-        char *dev_name = new char[smlevel_0::max_devname+1];
-        if (!dev_name)
-            W_FATAL(fcOUTOFMEMORY);
-
-        w_auto_delete_array_t<char> ad_dev_name(dev_name);
-        const char* dev_name_ptr = io->dev_name(vid);
-        w_assert1(dev_name_ptr != NULL);
-        strncpy(dev_name, dev_name_ptr, smlevel_0::max_devname);
-        w_assert3(io->is_mounted(dev_name));
-
-        // remember quota on the device
-        smksize_t quota_KB;
-        W_DO(dev->quota(dev_name, quota_KB));
-
-        // since only one volume on the device, we can destroy the
-        // volume by reformatting the device
-        // W_DO(_dismount_dev(dev_name));
-        // GROT
-
-        /* XXX possible loss of bits */
-        W_DO(vol_t::format_dev(dev_name, shpid_t(quota_KB/(page_sz/1024)), true));
-        // take a synch checkpoint to record the destroy (dismount)
-        chkpt->synch_take();
-
-        // tell the system about the device again
-        u_int vol_cnt;
-        W_DO(_mount_dev(dev_name, vol_cnt, vid_t::null));
-        w_assert3(vol_cnt == 0);
-    }
-    return RCOK;
-}
-
-
 
 /*--------------------------------------------------------------*
  *  ss_m::get_volume_quota()                            *
@@ -2439,16 +2317,11 @@ ss_m::_rollback_work(const sm_save_point_t& sp)
 }
 
 rc_t
-ss_m::_mount_dev(const char* device, u_int& vol_cnt, vid_t local_vid)
+ss_m::_mount_dev(const char* device, vid_t local_vid)
 {
     vid_t vid;
     DBG(<<"_mount_dev " << device);
 
-    // inform device_m about the device
-    W_DO(io->mount_dev(device, vol_cnt));
-    if (vol_cnt == 0) return RCOK;
-
-    DBG(<<"_mount_dev vol count " << vol_cnt );
     // make sure volumes on the dev are not already mounted
     lvid_t lvid;
     W_DO(io->get_lvid(device, lvid));
@@ -2471,27 +2344,6 @@ ss_m::_mount_dev(const char* device, u_int& vol_cnt, vid_t local_vid)
     W_DO(io->mount(device, vid));
     // take a synch checkpoint to record the mount
     chkpt->synch_take();
-
-    return RCOK;
-}
-
-rc_t
-ss_m::_dismount_dev(const char* device)
-{
-    vid_t        vid;
-    lvid_t       lvid;
-    rc_t         rc;
-
-    DBG(<<"dismount_dev");
-    W_DO(io->get_lvid(device, lvid));
-    DBG(<<"dismount_dev" << lvid);
-    if (lvid != lvid_t::null) {
-        vid = io->get_vid(lvid);
-        DBG(<<"dismount_dev" << vid);
-        if (vid == vid_t::null) return RC(eDEVNOTMOUNTED);
-    }
-
-    W_DO( io->dismount_dev(device) );
 
     return RCOK;
 }

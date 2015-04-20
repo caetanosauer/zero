@@ -412,7 +412,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 class fixable_page_h;
 class btree_page_h;
 class xct_t;
-class device_m;
 class vec_t;
 class log_m;
 class lock_m;
@@ -1323,26 +1322,7 @@ public:
      */
     static rc_t            mount_dev(
         const char*            device,
-        u_int&                 vol_cnt,
-        devid_t&               devid,
         vid_t                  local_vid = vid_t::null);
-
-    /**\brief Dismount a device.
-     * \ingroup SSMVOL
-     * \details
-     * @param[in] device   Operating-system file name of the "device".
-     *
-     * \note It is fine to mount a device more than once, as long as device
-     * is always the same (you cannot specify a hard link or soft link to
-     * an entity mounted under a different path). 
-     * Device mounts are \b not reference-counted, so a single dismount_dev
-     * renders the volumes on the device unusable.
-     *
-     * \note This method should \b not 
-     * be called in the context of a transaction.
-     */
-
-    static rc_t            dismount_dev(const char* device);
 
     /**\brief Dismount all mounted devices.
      * \ingroup SSMVOL
@@ -1351,34 +1331,6 @@ public:
      * be called in the context of a transaction.
      */
     static rc_t            dismount_all();
-
-    // list_devices returns an array of char* pointers to the names of
-    // all mounted devices.  Note that the use of a char*'s is 
-    // a temporary hack until a standard string class is available.
-    // the char* pointers are pointing directly into the device
-    // mount table.
-    // dev_cnt is the length of the list returned.
-    // dev_list and devid_list must be deleted with delete [] by the
-    // caller if they are not null (0).  They should be null
-    // if an error is returned or if there are no devices.
-    /**\brief Return a list of all mounted devices.
-     * \ingroup SSMVOL
-     * \details
-     * @param[out] dev_list   Returned list of pointers directly into the mount table.
-     * @param[out] devid_list   Returned list of associated device ids.
-     * @param[out] dev_cnt   Returned number of entries in the two above lists.
-     *
-     * The storage manager allocates the arrays returned with new[], and the
-     * caller must return these to the heap with delete[] if they are not null.
-     * They will be null if an error is returned or if no devices are mounted.
-     *
-     * The strings to which dev_list[*] point are \b not to be deleted by
-     * the caller.
-     */
-    static rc_t            list_devices(
-        const char**&            dev_list, 
-        devid_t*&                devid_list, 
-        u_int&                   dev_cnt);
 
     /**\brief Return a list of all volume on a device.
      * \ingroup SSMVOL
@@ -1481,8 +1433,6 @@ public:
      * @param[in] lvid  Long volume id to use when formatting the new volume.
      * @param[in] quota_KB  Quota in kilobytes.
      * @param[in] skip_raw_init  Do not initialize the volume if on a raw device.
-     * @param[in] local_vid Short volume id by which to refer to this volume.
-     *            If null, the storage manager will assign one.
      * @param[in] apply_fake_io_latency See ss_m::enable_fake_disk_latency()
      * @param[in] fake_disk_latency See ss_m::set_fake_disk_latency()
      *
@@ -1498,19 +1448,8 @@ public:
         const lvid_t&           lvid,
         smksize_t               quota_KB,
         bool                    skip_raw_init = false,
-        vid_t                   local_vid = vid_t::null,
         const bool              apply_fake_io_latency = false,
         const int               fake_disk_latency = 0);
-
-    /**\brief Destroy a volume.
-     * \ingroup SSMVOL
-     * \details
-     * @param[in] lvid  Long volume id by which the volume is known.
-     *
-     * \note This method should \b not 
-     * be called in the context of a transaction.
-     */
-    static rc_t            destroy_vol(const lvid_t& lvid);
 
     /**\brief Gets the quotas associated with the volume.
      * \ingroup SSMVOL
@@ -1598,32 +1537,6 @@ public:
         concurrency_t        cc = t_cc_none
     );
 
-  /**\brief Get the index ID of the root index of the volume.
-     * \ingroup SSMVOL
-     *
-     * @param[in] v Volume of interest.
-     * @param[out] iid Store ID of the root index.
-     * \details
-     *
-     * Each volume has a root index, which is a well-known
-     * index available to the server for bootstrapping a database.
-     *
-     */
-    static rc_t            vol_root_index(
-        const vid_t&        v, 
-        stid_t&             iid
-    )    
-    { 
-        //Supress unused variable variable warnings.
-        (void) v;
-        (void) iid;
-        //TODO: SHORE-KITS-API
-        assert(0);
-        return rc_t();
-    }
-
-
-
     /**
      * \brief Verifies consistency of all BTree indexes in the volume.
      * \ingroup SSMVOL
@@ -1633,9 +1546,8 @@ public:
     static rc_t            verify_volume(
         vid_t vid, int hash_bits, verify_volume_result &result);
 
-    /*****************************************************************
-     * storage operations: smfile.cpp
-     *****************************************************************/
+
+
     /**\addtogroup SSMSTORE 
      * Indexes and files are special cases of "stores".
      * A store is a linked list of extents, and an extent is a
@@ -2013,10 +1925,8 @@ private:
     static rc_t            _rollback_work(const sm_save_point_t&        sp);
     static rc_t            _mount_dev(
         const char*            device,
-        u_int&                 vol_cnt,
         vid_t                  local_vid);
 
-    static rc_t            _dismount_dev(const char *device);
     static rc_t            _create_vol(
         const char*            device_name,
         const lvid_t&          lvid,

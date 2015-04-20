@@ -230,23 +230,21 @@ testdriver_thread_t::do_init(ss_m &ssm)
         w_assert0(_functor->_test_volume._device_name);
     }
 
-    devid_t        devid;
     vout << "Mounting device: " << _functor->_test_volume._device_name  << endl;
     // mount the new device
-    u_int        vol_cnt;
 
     rc_t rc;
     if (0 != strlen(_functor->_test_volume._device_name))
     {
 // TODO(Restart)... performance, print out the device name
         DBGOUT1(<< "***** Mount device, device name: " << _functor->_test_volume._device_name);
-        rc_t rc = ssm.mount_dev(_functor->_test_volume._device_name, vol_cnt, devid);
+        rc_t rc = ssm.mount_dev(_functor->_test_volume._device_name);
     }
     else
     {
 // TODO(Restart)... performance, hard code the data file path and name if nothing is available, this is for an 'AFTER' case only
         DBGOUT1(<< "***** Mount device, device name: " << "/dev/shm/weyg/btree_test_env/volumes/dev_test");    
-        rc_t rc = ssm.mount_dev("/dev/shm/weyg/btree_test_env/volumes/dev_test", vol_cnt, devid);
+        rc_t rc = ssm.mount_dev("/dev/shm/weyg/btree_test_env/volumes/dev_test");
     }
     if (rc.is_error())
     {
@@ -254,10 +252,7 @@ testdriver_thread_t::do_init(ss_m &ssm)
         return rc;
     }
 
-    vout << "Mounted device: " << _functor->_test_volume._device_name
-            << " volume count " << vol_cnt
-            << " device " << devid
-            << endl;
+    vout << "Mounted device: " << _functor->_test_volume._device_name << endl;
 
     if (_functor->_need_init) {
 

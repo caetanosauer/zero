@@ -10,7 +10,6 @@
 #include "sm_int_2.h"
 #include "chkpt_serial.h"
 #include "sm_du_stats.h"
-#include "device.h"
 #include "lock.h"
 #include "xct.h"
 #include "logrec.h"
@@ -253,94 +252,6 @@ io_m::_dev_name(vid_t vid)
     return i >= 0 ? vol[i]->devname() : 0;
 }
 
-
-
-
-/*********************************************************************
- *
- *  io_m::_is_mounted(dev_name)
- *
- *********************************************************************/
-bool
-io_m::is_mounted(const char* dev_name)
-{
-    auto_leave_t enter;
-    return dev->is_mounted(dev_name);
-}
-
-
-
-/*********************************************************************
- *
- *  io_m::_mount_dev(dev_name, vol_cnt)
- *
- *********************************************************************/
-rc_t
-io_m::mount_dev(const char* dev_name, u_int& _vol_cnt)
-{
-    w_assert1(dev);
-    auto_leave_t enter;
-    FUNC(io_m::_mount_dev);
-
-    volhdr_t vhdr;
-    W_DO(vol_t::read_vhdr(dev_name, vhdr));
-
-    DBG(<<"mount_dev " << dev_name << " read header done ");
-
-        /* XXX possible bit-loss */
-    device_hdr_s dev_hdr(vhdr.format_version(), 
-                         vhdr.device_quota_KB(), vhdr.lvid());
-    rc_t result = dev->mount(dev_name, dev_hdr, _vol_cnt);
-    DBG(<<"mount_dev " << dev_name 
-            << " vol_cnt " << vol_cnt
-            << " returns " << result);
-    return result;
-}
-
-
-
-/*********************************************************************
- *
- *  io_m::_dismount_dev(dev_name)
- *
- *********************************************************************/
-rc_t
-io_m::dismount_dev(const char* dev_name)
-{
-    auto_leave_t enter;
-    return dev->dismount(dev_name);
-}
-
-
-/*********************************************************************
- *
- *  io_m::_dismount_all_dev()
- *
- *********************************************************************/
-rc_t
-io_m::dismount_all_dev()
-{
-    auto_leave_t enter;
-    return dev->dismount_all();
-}
-
-
-/*********************************************************************
- *
- *  io_m::_list_devices(dev_list, devid_list, dev_cnt)
- *
- *********************************************************************/
-rc_t
-io_m::list_devices(
-    const char**&         dev_list, 
-    devid_t*&                 devid_list, 
-    u_int&                 dev_cnt)
-{
-    auto_leave_t enter;
-    return dev->list_devices(dev_list, devid_list, dev_cnt);
-}
-
-
 /*********************************************************************
  *
  *  io_m::_get_vid(lvid)
@@ -372,7 +283,6 @@ io_m::get_device_quota(const char* device, smksize_t& quota_KB,
                         smksize_t& quota_used_KB)
 {
     auto_leave_t enter;
-    W_DO(dev->quota(device, quota_KB));
 
     lvid_t lvid;
     W_DO(_get_lvid(device, lvid));
@@ -380,8 +290,7 @@ io_m::get_device_quota(const char* device, smksize_t& quota_KB,
         // no device on volume
         quota_used_KB = 0;
     } else {
-        smksize_t _dummy;
-        W_DO(_get_volume_quota(_get_vid(lvid), quota_used_KB, _dummy));
+        W_DO(_get_volume_quota(_get_vid(lvid), quota_KB, quota_used_KB));
     }
     return RCOK;
 }
@@ -395,7 +304,6 @@ io_m::get_device_quota(const char* device, smksize_t& quota_KB,
 rc_t
 io_m::_get_lvid(const char* dev_name, lvid_t& lvid)
 {
-    if (!dev->is_mounted(dev_name)) return RC(eDEVNOTMOUNTED);
     uint32_t i;
     for (i = 0; i < max_vols; i++)  {
         if (vol[i] && (strcmp(vol[i]->devname(), dev_name) == 0) ) break;

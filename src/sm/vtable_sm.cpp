@@ -48,7 +48,6 @@ class prologue_rc_t;
 #include "sm.h"
 #include "sm_vtable_enum.h"
 #include "prologue.h"
-#include "device.h"
 #include "vol.h"
 #include "crash.h"
 #include "restart.h"

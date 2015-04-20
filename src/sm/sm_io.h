@@ -141,10 +141,6 @@ public:
     /*
      * Device related
      */
-    static bool                 is_mounted(const char* dev_name);
-    static rc_t                 mount_dev(const char* device, u_int& vol_cnt);
-    static rc_t                 dismount_dev(const char* device);
-    static rc_t                 dismount_all_dev();
     static rc_t                 get_lvid(const char* dev_name, lvid_t& lvid);
     static rc_t                 list_devices(
         const char**&                 dev_list, 
@@ -347,8 +343,6 @@ private:
 
 private:
 
-    static rc_t                 _mount_dev(const char* device, u_int& vol_cnt);
-    static rc_t                 _dismount_dev(const char* device);
     static rc_t                 _get_lvid(const char* dev_name, lvid_t& lvid);
     
     static const char*          _dev_name(vid_t vid);
