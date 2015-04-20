@@ -5,7 +5,7 @@
 # (such as defined in sm/btree_test_env.h)
 # add to the ALTERNATE_TEST_CONFIGS variable below.
 
-set(ALTERNATE_TEST_CONFIGS DEFAULT_SWIZZLING_OFF)
+# set(ALTERNATE_TEST_CONFIGS DEFAULT_SWIZZLING_OFF)
 
 # To pick up these xml files from Jenkins,
 # Set "**/test-reports/*.xml" as the report file filter.
@@ -25,7 +25,5 @@ FUNCTION (X_ADD_TESTCASE targetname the_libraries)
       target_link_libraries(${targetname}_${f} ${the_libraries})
       X_ADD_GTEST(${targetname}_${f})
       set_property(TARGET ${targetname}_${f} PROPERTY COMPILE_DEFINITIONS ${f})
-      # CS: do not compile alternate tests when invoking "make all" or, equivalently, "make"
-      set_property(TARGET ${targetname}_${f} PROPERTY EXCLUDE_FROM_ALL ON)
    endforeach(f)
 ENDFUNCTION()
