@@ -2369,8 +2369,10 @@ ss_m::_create_vol(const char* dev_name, const lvid_t& lvid,
     DBG(<<"vid " << tmp_vid  << " mounting " << dev_name);
     W_DO(io->mount(dev_name, tmp_vid, apply_fake_io_latency, fake_disk_latency));
     DBG(<<" mount done " << dev_name << " tmp_vid " << tmp_vid);
-    DBG(<<" dismounting volume");
-    W_DO(io->dismount(tmp_vid));
+
+    // CS: checkpoint must be taken to record the volume mount, otherwise
+    // recovery will fail (TODO this general problem should be fixed)
+    chkpt->synch_take();
 
     return RCOK;
 }
