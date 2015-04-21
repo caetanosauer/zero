@@ -639,9 +639,6 @@ public:
             return false;
         }
 
-    // These variables control the size of the log.
-    static fileoff_t max_logsz; // max log file size
-
     // This variable controls checkpoint frequency.
     // Checkpoints are taken every chkpt_displacement bytes
     // written to the log.

@@ -31,6 +31,7 @@
 #include "logbuf_core.h"
 #include "logbuf_seg.h"
 
+#include "sm_options.h"
 #include <pthread.h>
 #include <memory.h>
 #include <AtomicCounter.hpp>
@@ -52,32 +53,49 @@ const std::string logbuf_core::IMPL_NAME = "logbuf";
  *  log_core::set_partition_data_size()
  *
  *********************************************************************/
-logbuf_core::logbuf_core(
-                   const char* path,
-                   bool reformat,
-                 uint32_t count, // IN: max number of segments in the log buffer
-                 uint32_t flush_trigger, // IN: max number of unflushed segments in the write buffer
-                                         //     before a forced flush
-                 uint32_t block_size, // IN: block size in the log partition
-                 uint32_t seg_size,  // IN: segment size 
-                 uint32_t part_size, // IN: usable partition size
-                 int active_slot_count // IN: slot number in ConsolidationArray
-) 
-    : log_common(log_core::SEGMENT_SIZE, active_slot_count),
+logbuf_core::logbuf_core(const sm_options& options)
+//                   const char* path,
+//                   bool reformat,
+//                 uint32_t count, // IN: max number of segments in the log buffer
+//                 uint32_t flush_trigger, // IN: max number of unflushed segments in the write buffer
+//                                         //     before a forced flush
+//                 uint32_t block_size, // IN: block size in the log partition
+//                 uint32_t seg_size,  // IN: segment size 
+//                 uint32_t part_size, // IN: usable partition size
+//                 int active_slot_count // IN: slot number in ConsolidationArray
+//) 
+    : log_common(options),
     _to_archive_seg(NULL),
     _to_insert_seg(NULL),
-    _to_flush_seg(NULL),
-    _part_size(part_size)
+    _to_flush_seg(NULL)
 {
     FUNC(logbuf_core::logbuf_core);
 
+    std::string logdir = options.get_string_option("sm_logdir", "");
+    if (logdir.empty()) {
+        errlog->clog << fatal_prio
+            << "ERROR: sm_logdir must be set to enable logging." << flushl;
+        W_FATAL(eCRASH);
+    }
+    const char* path = logdir.c_str();
+    bool reformat = options.get_bool_option("sm_reformat_log", false);
+    uint32_t count = options.get_int_option("sm_logbuf_seg_count",
+            LOGBUF_SEG_COUNT);
+    uint32_t flush_trigger = options.get_int_option("sm_logbuf_flush_trigger",
+            LOGBUF_FLUSH_TRIGGER);
+    uint32_t block_size = options.get_int_option("sm_logbuf_block_size",
+            LOGBUF_BLOCK_SIZE);
+    uint32_t part_size = options.get_int_option("sm_logbuf_part_size",
+            0);
     DBGOUT3(<< "log buffer: constructor");
 
     _max_seg_count = count;
     _flush_trigger = flush_trigger;
     _block_size = block_size;
-    _segsize = seg_size;
+    _part_size = part_size;
 
+    // logbuf ignores segsize set by log_common
+    _segsize = options.get_int_option("sm_logbufsize", LOGBUF_SEG_SIZE);
     DBGOUT3(<< "_segsize " << _segsize);
 
     // 3 tail blocks
@@ -87,7 +105,8 @@ logbuf_core::logbuf_core(
 
     _seg_count = 0;
 
-    _seg_list = new logbuf_seg_list_t(W_LIST_ARG(logbuf_seg, _link), &_seg_list_lock);
+    _seg_list = new logbuf_seg_list_t(W_LIST_ARG(logbuf_seg, _link),
+            &_seg_list_lock);
     if (_seg_list == NULL) {
         ERROUT("out of memory for the log buffer");
         W_FATAL(fcOUTOFMEMORY);
@@ -544,7 +563,7 @@ logbuf_core::fetch(
         W_DO(flush(must_be_durable));
     }
     if (forward && ll >= curr_lsn()) {
-        w_assert0(ll == curr_lsn());
+        // w_assert0(ll == curr_lsn());
         // reading the curr_lsn during recovery yields a skip log record,
         // but since there is no next partition to open, scan must stop
         // here, without handling skip below

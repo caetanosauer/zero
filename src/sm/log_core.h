@@ -70,6 +70,7 @@ class      partition_t ; // forward
 
 #define CHKPT_META_BUF 512
 
+class sm_options;
 class ConsolidationArray;
 struct CArraySlot;
 class PoorMansOldestLsnTracker;
@@ -84,7 +85,7 @@ class plog_xct_t;
 class log_common : public log_m
 {
 public:
-    log_common(long bsize, int carray_active_slot_count);
+    log_common(const sm_options&);
     virtual ~log_common();
 
 
@@ -172,6 +173,9 @@ public:
 #else
     enum { SEGMENT_SIZE= 128 * log_storage::BLOCK_SIZE };    
 #endif
+
+    static const uint64_t DFT_LOGBUFSIZE;
+    static fileoff_t max_logsz;
     
 
 protected:
@@ -210,6 +214,8 @@ protected:
     lsn_t                _flush_lsn;
 
     void                _sanity_check() const;
+
+    void set_option_logsize(const sm_options&, size_t dft = 10000);
 
     // Set of pointers into _buf (circular log buffer)
     // and associated lsns. See detailed comments at log_core::insert
@@ -334,6 +340,7 @@ public:
                              bool reformat,
                              int carray_active_slot_count
                              );
+    log_core(const sm_options&);
     virtual           ~log_core();
 
     static const std::string IMPL_NAME;

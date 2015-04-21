@@ -22,6 +22,7 @@
 
 #include "log_core.h"
 
+class sm_options;
 class logrec_t;
 class partition_t;
 
@@ -42,16 +43,7 @@ public:
 
     // INTERFACE METHODS END
 public:
-    logbuf_core(
-            const char* path,
-            bool reformat,
-            uint32_t count = LOGBUF_SEG_COUNT, 
-            uint32_t flush_trigger = LOGBUF_FLUSH_TRIGGER, 
-            uint32_t block_size = LOGBUF_BLOCK_SIZE, 
-            uint32_t seg_size = LOGBUF_SEG_SIZE, 
-            uint32_t part_size = LOGBUF_PART_SIZE,
-            int avtive_slot_count = ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT);
-
+    logbuf_core(const sm_options&);
     ~logbuf_core();
 
     static const std::string IMPL_NAME;
@@ -189,7 +181,6 @@ public:
     int64_t _free;  // number of bytes usable (allocated and free) for insertion
         
 private:
-
     // _part_size and this method are only here for test purposes (LogBufferTest)
     fileoff_t _part_size;
     fileoff_t _partition_data_size() 

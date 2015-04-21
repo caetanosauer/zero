@@ -73,7 +73,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
     // By the time we get here, the max_logsize should already have been
     // adjusted by the sm options-handling code, so it should be
     // a legitimate value now.
-    W_COERCE(_set_size(smlevel_0::max_logsz));
+    W_COERCE(_set_size(log_common::max_logsz));
 
     DBGOUT3(<< "SEG SIZE " << _segsize << " PARTITION DATA SIZE " << _partition_data_size);
 
@@ -757,7 +757,7 @@ log_storage::log_storage(const char* path, bool reformat, lsn_t& curr_lsn,
             << endl;
 
         smlevel_0::errlog->clog << debug_prio 
-            << "User-option smlevel_0::max_logsz " << smlevel_0::max_logsz << endl
+            << "User-option smlevel_0::max_logsz " << log_common::max_logsz << endl
             << "Log _partition_data_size " << _partition_data_size 
             << endl
             << "Log _partition_data_size/segsize() " 

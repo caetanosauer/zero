@@ -61,6 +61,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define SM_SOURCE
 #define LOG_CORE_C
 
+#include "sm_options.h"
 #include "sm_int_1.h"
 #include "logtype_gen.h"
 #include "log.h"
@@ -76,6 +77,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <w_strstream.h>
 
 const std::string log_core::IMPL_NAME = "traditional";
+const uint64_t log_common::DFT_LOGBUFSIZE = 128 << 10;
+fileoff_t log_common::max_logsz = 0;
 
 typedef smlevel_0::fileoff_t fileoff_t;
 
@@ -88,10 +91,7 @@ public:
     virtual void run() { _log->flush_daemon(); }
 };
 
-log_common::log_common(
-                   long bsize, // segment size for the log buffer, set through "sm_logbufsize"
-                   int carray_active_slot_count
-                   )
+log_common::log_common(const sm_options& options)
     : 
       _log_corruption(false),          
       _readbuf(NULL),
@@ -100,17 +100,52 @@ log_common::log_common(
 #endif     
       _start(0), 
       _end(0),     
-      _segsize(log_storage::_ceil(bsize, SEGMENT_SIZE)), // actual segment size for the log buffer,
+      _segsize(options.get_int_option("sm_logbufsize", DFT_LOGBUFSIZE)),
       _waiting_for_flush(false),     
       _shutting_down(false),
-      _flush_daemon_running(false),
-      _carray(new ConsolidationArray(carray_active_slot_count))
+      _flush_daemon_running(false)
 {
     FUNC(log_common::log_common);
+    set_option_logsize(options);
+
+    // adjust actual size of log buffer (round to segment size)
+    _segsize = log_storage::_ceil(_segsize, SEGMENT_SIZE);
+
+    if(max_logsz < 8*int(_segsize)) {
+      errlog->clog << warning_prio <<
+        "WARNING: Log buffer is bigger than 1/8 partition (probably safe to make it smaller)."
+               << flushl;
+    }
+
+    // pretty big limit -- really, the limit is imposed by the OS's
+    // ability to read/write
+    if (uint64_t(_segsize) < (uint64_t) 4 * smlevel_0::page_sz) {
+        errlog->clog << fatal_prio
+        << "Log buf size (sm_logbufsize = " << (int)_segsize
+        << " ) is too small for pages of size "
+        << unsigned(smlevel_0::page_sz) << " bytes."
+        << flushl;
+        errlog->clog << fatal_prio
+        << "Need to hold at least 4 pages ( " << 4 * smlevel_0::page_sz
+        << ")"
+        << flushl;
+        W_FATAL(eCRASH);
+    }
+    if (uint64_t(_segsize) > uint64_t(max_int4)) {
+        errlog->clog << fatal_prio
+        << "Log buf size (sm_logbufsize = " << (int)_segsize
+        << " ) is too big: individual log files can't be large files yet."
+        << flushl;
+        W_FATAL(eCRASH);
+    }
 
     DO_PTHREAD(pthread_mutex_init(&_wait_flush_lock, NULL));
     DO_PTHREAD(pthread_cond_init(&_wait_cond, NULL));
     DO_PTHREAD(pthread_cond_init(&_flush_cond, NULL));
+
+    uint32_t carray_slots = options.get_int_option("sm_carray_slots",
+                        ConsolidationArray::DEFAULT_ACTIVE_SLOT_COUNT);
+    _carray = new ConsolidationArray(carray_slots);
 
     /* Create thread o flush the log */
     _flush_daemon = new flush_daemon_thread_t(this);
@@ -138,17 +173,17 @@ log_common::log_common(
 #endif
 #endif // LOG_DIRECT_IO
 
-    if (bsize < 64 * 1024) {
+    if (_segsize < 64 * 1024) {
         // not mt-safe, but this is not going to happen in 
         // concurrency scenario
         smlevel_0::errlog->clog << error_prio 
         << "Log buf size (sm_logbufsize) too small: "
-        << bsize << ", require at least " << 64 * 1024 
+        << _segsize << ", require at least " << 64 * 1024 
         << endl; 
         smlevel_0::errlog->clog << error_prio << endl;
         fprintf(stderr,
             "Log buf size (sm_logbufsize) too small: %ld, need %d\n",
-            bsize, 64*1024);
+            _segsize, 64*1024);
         W_FATAL(eINTERNAL);
     }
 
@@ -180,6 +215,18 @@ log_common::log_common(
             << "Old epoch  end " << _old_epoch.end
             << endl;
     }
+
+    int percent = options.get_int_option("sm_log_warn", 0);
+
+    // log_warn_exceed is %; now convert it to raw # bytes
+    // that we must have left at all times. When the space available
+    // in the log falls below this, it'll trigger the warning.
+    if (percent > 0) {
+        smlevel_0::log_warn_trigger  = (long) (
+                // max_openlog is a compile-time constant
+                log->limit() * max_openlog *
+                (100.0 - (double)smlevel_0::log_warn_exceed_percent) / 100.00);
+    }
 }
 
 log_common::~log_common() 
@@ -200,6 +247,73 @@ log_common::~log_common()
     DO_PTHREAD(pthread_mutex_destroy(&_wait_flush_lock));
     DO_PTHREAD(pthread_cond_destroy(&_wait_cond));
     DO_PTHREAD(pthread_cond_destroy(&_flush_cond));
+}
+
+void log_common::set_option_logsize(const sm_options& options, size_t dftLogsize)
+{
+    // the logging system should not be running.  if it is
+    // then don't set the option
+    if (!options.get_bool_option("sm_logging", true) || smlevel_0::log) return;
+
+    std::string logimpl = options.get_string_option("sm_log_impl", log_core::IMPL_NAME);
+    fileoff_t maxlogsize = fileoff_t(options.get_int_option("sm_logsize", dftLogsize));
+    // The option is in units of KB; convert it to bytes.
+    maxlogsize *= 1024;
+
+    // maxlogsize is the user-defined maximum open-log size.
+    // Compile-time constants determine the size of a segment,
+    // and the open log size is smlevel_0::max_openlog segments,
+    // so that means we determine the number of segments per
+    // partition thus:
+    // max partition size is user max / smlevel_0::max_openlog.
+    // max partition size must be an integral multiple of segments
+    // plus 1 block. The log manager computes this for us:
+    fileoff_t psize = maxlogsize / smlevel_0::max_openlog;
+
+    // convert partition size to partition data size: (remove overhead)
+    psize = log_storage::partition_size(psize);
+
+    /* Enforce the built-in shore limit that a log partition can only
+       be as long as the file address in a lsn_t allows for...
+       This is really the limit of a LSN, since LSNs map 1-1 with disk
+       addresses.
+       Also that it can't be larger than the os allows
+   */
+
+    if (psize > log_storage::max_partition_size()) {
+        // we might not be able to do this:
+        fileoff_t tmp = log_storage::max_partition_size();
+        tmp /= 1024;
+
+        std::cerr << "Partition data size " << psize
+                << " exceeds limit (" << log_storage::max_partition_size() << ") "
+                << " imposed by the size of an lsn."
+                << std::endl;
+        std::cerr << " Choose a smaller sm_logsize." << std::endl;
+        std::cerr << " Maximum is :" << tmp << std::endl;
+        W_FATAL(eCRASH);
+    }
+
+    if (psize < log_storage::min_partition_size()) {
+        fileoff_t tmp = fileoff_t(log_storage::min_partition_size());
+        tmp *= smlevel_0::max_openlog;
+        tmp /= 1024;
+        std::cerr
+            << "Partition data size (" << psize
+            << ") is too small for " << endl
+            << " a segment ("
+            << log_storage::min_partition_size()   << ")" << endl
+            << "Partition data size is computed from sm_logsize;"
+            << " minimum sm_logsize is " << tmp << endl;
+        W_FATAL(eCRASH);
+    }
+
+
+    // maximum size of all open log files together
+    max_logsz = fileoff_t(psize * smlevel_0::max_openlog);
+
+    // take check points every 3 log file segments.
+    smlevel_0::chkpt_displacement = log_core::SEGMENT_SIZE * 3;
 }
 
 /*********************************************************************
@@ -356,24 +470,13 @@ void log_core::shutdown()
  *
  *  log_core::log_core(bufsize, reformat)
  *
- *  Hidden constructor. 
- *  Create log flush daemon thread.
- *
  *  Open and scan logdir for master lsn and last log file. 
  *  Truncate last incomplete log record (if there is any)
  *  from the last log file.
  *
  *********************************************************************/
-NORET
-log_core::log_core(
-                   const char* path,
-                   long bsize, // segment size for the log buffer, set through "sm_logbufsize"
-                   bool reformat,
-                   int carray_active_slot_count
-                   )
-    : 
-      log_common(bsize, carray_active_slot_count),
-      _buf(NULL)
+log_core::log_core(const sm_options& options)
+      : log_common(options)
 {
     FUNC(log_core::log_core);
 
@@ -382,6 +485,15 @@ log_core::log_core(
 #else
     _buf = new char[_segsize];
 #endif
+
+    std::string logdir = options.get_string_option("sm_logdir", "");
+    if (logdir.empty()) {
+        errlog->clog << fatal_prio
+            << "ERROR: sm_logdir must be set to enable logging." << flushl;
+        W_FATAL(eCRASH);
+    }
+    const char* path = logdir.c_str();
+    bool reformat = options.get_bool_option("sm_reformat_log", false);
 
     _storage = new log_storage(path, reformat, _curr_lsn, _durable_lsn,
             _flush_lsn, _segsize);
