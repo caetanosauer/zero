@@ -80,7 +80,7 @@ struct RawLock;            // Lock information gathering
 #ifdef EXPLICIT_TEMPLATE
 template class w_auto_delete_array_t<lsn_t>;
 template class w_auto_delete_array_t<tid_t>;
-template class w_auto_delete_array_t<smlevel_0::xct_state_t>;
+template class w_auto_delete_array_t<ss_m::xct_state_t>;
 #endif
 
 
@@ -133,10 +133,10 @@ struct old_xct_tracker {
             register_me();
         }
 
-        virtual void xct_state_changed(smlevel_0::xct_state_t,
-              smlevel_0::xct_state_t new_state)
+        virtual void xct_state_changed(ss_m::xct_state_t,
+              ss_m::xct_state_t new_state)
         {
-            if(new_state == smlevel_0::xct_ended)
+            if(new_state == ss_m::xct_ended)
             _owner->report_finished(xd());
         }
     };
@@ -234,7 +234,7 @@ void
 chkpt_m::spawn_chkpt_thread()
 {
     w_assert1(_chkpt_thread == 0);
-    if (smlevel_0::log)
+    if (ss_m::log)
     {
         // Create thread (1) to take checkpoints
         _chkpt_thread = new chkpt_thread_t;
@@ -261,7 +261,7 @@ chkpt_m::spawn_chkpt_thread()
 void
 chkpt_m::retire_chkpt_thread()
 {
-    if (log)
+    if (ss_m::log)
     {
         w_assert1(_chkpt_thread);
 
@@ -283,7 +283,7 @@ chkpt_m::retire_chkpt_thread()
 void
 chkpt_m::wakeup_and_take()
 {
-    if(log && _chkpt_thread)
+    if(ss_m::log && _chkpt_thread)
     {
         INC_TSTAT(log_chkpt_wake);
         _chkpt_thread->awaken();
@@ -299,7 +299,7 @@ chkpt_m::wakeup_and_take()
 *********************************************************************/
 void chkpt_m::synch_take()
 {
-    if(log)
+    if(ss_m::log)
     {
         // No need to acquire any mutex on checkpoint before calling the checkpoint function
         // The checkpoint function acqures the 'write' mutex internally
@@ -307,7 +307,7 @@ void chkpt_m::synch_take()
         CmpXctLockTids   lock_cmp;
         XctLockHeap      dummy_heap(lock_cmp);
 
-        take(smlevel_0::t_chkpt_sync, dummy_heap);
+        take(t_chkpt_sync, dummy_heap);
         w_assert1(0 == dummy_heap.NumElements());
     }
     return;
@@ -323,12 +323,12 @@ void chkpt_m::synch_take()
 *********************************************************************/
 void chkpt_m::synch_take(XctLockHeap& lock_heap)
 {
-    if(log)
+    if(ss_m::log)
     {
         // No need to acquire any mutex on checkpoint before calling the checkpoint function
         // The checkpoint function acqures the 'write' mutex internally
         // Record lock information only from synch checkpoint and if caller asked for it
-        take(smlevel_0::t_chkpt_sync, lock_heap, true);
+        take(t_chkpt_sync, lock_heap, true);
     }
     return;
 }
@@ -399,13 +399,13 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode,
     // not lose any of the checkpoint request, although some of the requests might
     // need to wait for a while (blocking)
 
-    if (! log)
+    if (!ss_m::log)
     {
         // recovery facilities disabled ... do nothing
         return;
     }
 
-    if ((smlevel_0::t_chkpt_async == chkpt_mode) && (true == record_lock))
+    if ((t_chkpt_async == chkpt_mode) && (true == record_lock))
     {
         // Only synch checkpoint (internal) can ask for building lock information in the provided heap
         // this is a coding error so raise error to stop the execution now
@@ -447,7 +447,7 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode,
     // Start the initial validation check for make sure the incoming checkpoint request is valid
     bool valid_chkpt = true;
 
-    if (log && _chkpt_thread)
+    if (ss_m::log && _chkpt_thread)
     {
         // Log is on and chkpt thread is available, but the chkpt thread has received
         // a 'retire' message (signal to shutdown), return without doing anything
@@ -457,13 +457,13 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode,
             valid_chkpt = false;
         }
     }
-    else if ((ss_m::shutting_down) && (smlevel_0::t_chkpt_async == chkpt_mode))
+    else if ((ss_m::shutting_down) && (t_chkpt_async == chkpt_mode))
     {
         // No asynch checkpoint if we are shutting down
         DBGOUT1(<<"END chkpt_m::take - detected shutdown, skip asynch checkpoint");
         valid_chkpt = false;
     }
-    else if ((ss_m::shutting_down) && (smlevel_0::t_chkpt_sync == chkpt_mode))
+    else if ((ss_m::shutting_down) && (t_chkpt_sync == chkpt_mode))
     {
         // Middle of shutdown, allow synch checkpoint request
         DBGOUT1(<<"PROCESS chkpt_m::take - system shutdown, allow synch checkpoint");
@@ -471,19 +471,19 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode,
     else
     {
         // Not in shutdown
-        if (before_recovery())
+        if (ss_m::before_recovery())
         {
             DBGOUT1(<<"END chkpt_m::take - before system startup/recovery, skip checkpoint");
             valid_chkpt = false;
         }
-        else if (in_recovery() && (smlevel_0::t_chkpt_sync != chkpt_mode))
+        else if (ss_m::ss_m::in_recovery() && (t_chkpt_sync != chkpt_mode))
         {
             // Asynch checkpoint
-            if (false == smlevel_0::use_serial_restart())
+            if (false == ss_m::use_serial_restart())
             {
                 // System opened after Log Analysis phase, allow asynch checkpoint
                 // after Log Analysis phase
-                if (in_recovery_analysis())
+                if (ss_m::ss_m::in_recovery_analysis())
                     valid_chkpt = false;
             }
             else
@@ -493,10 +493,10 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode,
                 valid_chkpt = false;
             }
         }
-        else if (in_recovery() && (smlevel_0::t_chkpt_sync == chkpt_mode))
+        else if (ss_m::in_recovery() && (t_chkpt_sync == chkpt_mode))
         {
             // Synch checkpoint
-            if (false == smlevel_0::use_serial_restart())
+            if (false == ss_m::use_serial_restart())
             {
                 // System opened after Log Analysis phase, accept system checkpoint anytime
                 DBGOUT1(<<"PROCESS chkpt_m::take - system in recovery, allow synch checkpoint");
@@ -504,7 +504,7 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode,
             else
             {
                 // System is not opened during recovery
-                if (in_recovery_analysis() || in_recovery_undo())
+                if (ss_m::in_recovery_analysis() || ss_m::in_recovery_undo())
                 {
                     DBGOUT1(<<"PROCESS chkpt_m::take - system in recovery, allow synch checkpoint");
                 }
@@ -518,14 +518,14 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode,
         else
         {
             // We cannot be in recovery if we get here
-            if (true == in_recovery())
+            if (true == ss_m::in_recovery())
             {
                 DBGOUT1(<<"END chkpt_m::take - system should not be in Recovery, exist checkpoint");
                 valid_chkpt = false;
             }
             else
             {
-                if (smlevel_0::t_chkpt_sync == chkpt_mode)
+                if (t_chkpt_sync == chkpt_mode)
                 {
                     DBGOUT1(<<"PROCESS chkpt_m::take - allow synch/internal checkpoint");
                 }
@@ -560,8 +560,8 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode,
 #define LOG_INSERT(constructor_call, rlsn)            \
     do {                                              \
         new (logrec) constructor_call;                \
-        W_COERCE( log->insert(*logrec, rlsn) );       \
-        if(!log->consume_chkpt_reservation(logrec->length())) { \
+        W_COERCE( ss_m::log->insert(*logrec, rlsn) );       \
+        if(!ss_m::log->consume_chkpt_reservation(logrec->length())) { \
             chkpt_serial_m::write_release();                    \
             W_FATAL(eOUTOFLOGSPACE);                            \
         }                                                       \
@@ -607,21 +607,21 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode,
     // start_lsn have ended (at worst they will abort if the log fills
     // up before they can commit).
 
-    //  TODO: use smlevel_0::log_warn_callback to notify the VAS in
+    //  TODO: use ss_m::log_warn_callback to notify the VAS in
     // case old transactions are't currently active for some reason.
 
     // Also, remember the current checkpoint count so we can see
     // whether we get raced...
 
     // #warning "TODO use log_warn_callback in case old transactions aren't logging right now"
-    long curr_pnum = log->curr_lsn().file();
+    long curr_pnum = ss_m::log->curr_lsn().file();
     long too_old_pnum = std::max(0l, curr_pnum - max_openlog+1);
-    if(!log->verify_chkpt_reservation()) {
+    if(!ss_m::log->verify_chkpt_reservation()) {
     // Yikes! The log can't guarantee that we'll be able to
     // complete any checkpoint after this one, so we must reclaim
-    // space even if the log doesn't seem to be full.
+    // space even if the ss_m::log doesn't seem to be full.
 
-        too_old_pnum = log->global_min_lsn().file();
+        too_old_pnum = ss_m::log->global_min_lsn().file();
         if(too_old_pnum == curr_pnum) {
             // how/why did they reserve so much log space???
             W_FATAL(eOUTOFLOGSPACE);
@@ -657,7 +657,7 @@ void chkpt_m::take(chkpt_mode_t chkpt_mode,
 
 
     // clear out all too-old pages
-    W_COERCE(bf->force_until_lsn(oldest_valid_lsn.data()));
+    W_COERCE(ss_m::bf->force_until_lsn(oldest_valid_lsn.data()));
 
     // hopefully the page cleaning took long enough that the old
     // transactions all ended...
@@ -687,9 +687,9 @@ try
     // The curr_lsn is the lsn of the next-to-be-inserted log record LSN,
     // master LSN must be equal or later than the current lsn (if busy system).
     // The master LSN will be the starting point for Recovery Log Analysis log scan
-    const lsn_t curr_lsn = log->curr_lsn();
+    const lsn_t curr_lsn = ss_m::log->curr_lsn();
     // CS TODO: is lastMountLSN really necessary? Why?
-    // LOG_INSERT(chkpt_begin_log(io->GetLastMountLSN()), &master);
+    // LOG_INSERT(chkpt_begin_log(ss_m::io->GetLastMountLSN()), &master);
     LOG_INSERT(chkpt_begin_log(lsn_t::null), &master);
     w_assert1(curr_lsn.data() <= master.data());
 
@@ -749,7 +749,7 @@ try
     lsn_t min_rec_lsn = master;
     {
         // Count of blocks/pages in buffer pool
-        bf_idx     bfsz = bf->get_block_cnt();
+        bf_idx     bfsz = ss_m::bf->get_block_cnt();
 
         // One log record per block, max is set to make chkpt_bf_tab_t fit in logrec_t::data_sz
         // chunk = how many dirty page information can fit into one chkpt_bf_tab_log log record
@@ -782,11 +782,11 @@ try
             // min_rec_lsn will be recorded in 'end checkpoint' log, it is used to determine the
             // beginning of the REDO phase
 
-            bf->get_rec_lsn(i, count, pid.get(), stores.get(),
+            ss_m::bf->get_rec_lsn(i, count, pid.get(), stores.get(),
                             rec_lsn.get(), page_lsn.get(), min_rec_lsn,
-                            master, log->curr_lsn(),
+                            master, ss_m::log->curr_lsn(),
                             lsn_t::null);
-                            // io->GetLastMountLSN()); // CS TODO
+                            // ss_m::io->GetLastMountLSN()); // CS TODO
             if (count)
             {
                 total_page_count += count;
@@ -831,7 +831,7 @@ try
         // Each t_chkpt_xct_tab log record contains the following array
         // while each array element has information for one active transaction
         w_auto_delete_array_t<tid_t> tid(new tid_t[chunk]);               // transaction ID
-        w_auto_delete_array_t<xct_state_t> state(new xct_state_t[chunk]); // state
+        w_auto_delete_array_t<ss_m::xct_state_t> state(new ss_m::xct_state_t[chunk]); // state
         w_auto_delete_array_t<lsn_t> last_lsn(new lsn_t[chunk]);          // most recent log record
         w_auto_delete_array_t<lsn_t> undo_nxt(new lsn_t[chunk]);          // undo next
         w_auto_delete_array_t<lsn_t> first_lsn(new lsn_t[chunk]);         // first lsn of the txn
@@ -895,7 +895,7 @@ try
                     chkpt_serial_m::write_release();
 
                     // Abort the current checkpoint silently
-                    smlevel_0::errlog->clog << info_prio
+                    ss_m::errlog->clog << info_prio
                         << "Failed to latch a txn from checkpoint, abort current checkpoint." << flushl;
 
                     return;
@@ -1212,7 +1212,7 @@ try
             // Note that we cannot force a buffer pool flush after a page format operation, because
             // the transaction was not committed at that point.
 
-            W_COERCE( log->flush_all() );
+            W_COERCE( ss_m::log->flush_all() );
 
             // Make the new master lsn durable
             // This is the step to record the last completed checkpoint in the known location
@@ -1223,7 +1223,7 @@ try
             // Error in this step will bring down the server
             w_assert3(min_rec_lsn.hi() > 0);
             w_assert3(min_xct_lsn.hi() > 0);
-            log->set_master(master, min_rec_lsn, min_xct_lsn);
+            ss_m::log->set_master(master, min_rec_lsn, min_xct_lsn);
 
             // Do not scavenge log space because Single Page Recovery might need
             // old log records.  Once log archieve has been implemented, the log truncation
@@ -1231,7 +1231,7 @@ try
             // With the current implementation (no log archieve yet), log->scavenge()
             // is never called
             //
-            // W_COERCE( log->scavenge(min_rec_lsn, min_xct_lsn) );
+            // W_COERCE( ss_m::log->scavenge(min_rec_lsn, min_xct_lsn) );
 
             // Finished a completed checkpoint
             DBGOUT1(<< "END chkpt_m::take, begin LSN = " << master
@@ -1243,10 +1243,10 @@ try
     else
     {
         DBGOUT1(<<"chkpt_m::take - GetLastMountLSN > master, invalid situation for checkpoint, "
-                << "GetLastMountLSN = " << io->GetLastMountLSN() << ", master = " << master);
+                << "GetLastMountLSN = " << ss_m::io->GetLastMountLSN() << ", master = " << master);
         DBGOUT1(<<"END chkpt_m::take, abort checkpoint" << master);
 
-        smlevel_0::errlog->clog << error_prio
+        ss_m::errlog->clog << error_prio
             << "chkpt_m::take - GetLastMountLSN > master, checkpoint aborted." << flushl;
     }
 #endif
@@ -1265,7 +1265,7 @@ catch (...)
     // bring down the system due to a checkpoint failure
     DBGOUT1(<<"chkpt_m::take, encountered 'catch' block, abort current checkpoint");
 
-    smlevel_0::errlog->clog << error_prio
+    ss_m::errlog->clog << error_prio
         << "Exception caught during a checkpoint process, checkpoint aborted." << flushl;
 }
 
@@ -1354,7 +1354,7 @@ chkpt_thread_t::run()
             _kicked = false;
         }
 
-        w_assert1(smlevel_0::chkpt);
+        w_assert1(ss_m::chkpt);
 
         // If a retire request arrived, exit immediatelly without checkpoint
         if(_retire)
@@ -1362,7 +1362,7 @@ chkpt_thread_t::run()
 
         // No need to acquire checkpoint mutex before calling the checkpoint operation
         // Asynch checkpoint should never record lock information
-        smlevel_0::chkpt->take(smlevel_0::t_chkpt_async, dummy_heap);
+        ss_m::chkpt->take(chkpt_m::t_chkpt_async, dummy_heap);
         w_assert1(0 == dummy_heap.NumElements());
     }
 }

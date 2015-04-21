@@ -399,15 +399,6 @@ public:
         t_forward_processing = 0x8   // System is opened for transaction
     };
 
-    /*
-    * smlevel_0::chkpt_mode is always set to one of the mode
-     */
-    enum chkpt_mode_t {
-        t_chkpt_none,    // no on-going checkpoint
-        t_chkpt_sync,    // in the middle of synchronous checkpoint
-        t_chkpt_async    // in the middle of asynchronous checkpoint
-    };
-
     // smlevel_0::concurrent_restart_mode_t is used for concurrent restart when
     // the system is opened for user access after Log Analysis phase but the restart
     // continue running concurrently.  It is to expose the active restart phase.

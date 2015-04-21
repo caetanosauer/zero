@@ -84,10 +84,19 @@ class chkpt_thread_t;
  *  thread to checkpoint soon.
  *
  *********************************************************************/
-class chkpt_m : public smlevel_0 {
+class chkpt_m {
 public:
     NORET            chkpt_m();
     NORET            ~chkpt_m();
+
+    /*
+    * smlevel_0::chkpt_mode is always set to one of the mode
+     */
+    enum chkpt_mode_t {
+        t_chkpt_none,    // no on-going checkpoint
+        t_chkpt_sync,    // in the middle of synchronous checkpoint
+        t_chkpt_async    // in the middle of asynchronous checkpoint
+    };
 
 public:
     void             wakeup_and_take();
