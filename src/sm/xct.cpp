@@ -14,7 +14,7 @@
 #include "tls.h"
 
 #include "lock.h"
-#include <sm_int_3.h>
+#include <sm_int_2.h>
 #include "xct_dependent.h"
 #include "xct.h"
 #include "lock_x.h"

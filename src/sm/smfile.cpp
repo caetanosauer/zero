@@ -62,7 +62,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define SMFILE_C
 
 #include "w.h"
-#include "sm_int_3.h"
+#include "sm_int_2.h"
 #include "btcursor.h"
 #include "sm.h"
 #include "suppress_unused.h"
