@@ -66,7 +66,7 @@ class prologue_rc_t;
 #endif
 
 #include "w.h"
-#include "sm_int_4.h"
+#include "sm_int_3.h"
 #include "chkpt.h"
 #include "chkpt_serial.h"
 #include "sm.h"
@@ -172,7 +172,7 @@ restart_m* smlevel_1::recovery = 0;
 
 btree_m* smlevel_2::bt = 0;
 
-ss_m* smlevel_4::SSM = 0;
+ss_m* smlevel_top::SSM = 0;
 
 smlevel_1::xct_impl_t smlevel_1::xct_impl
 #ifndef USE_ATOMIC_COMMIT

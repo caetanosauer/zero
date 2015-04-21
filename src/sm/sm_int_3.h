@@ -46,9 +46,13 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "sm_int_2.h"
 #endif
 
+class ss_m;
+
 /**\cond skip */
 class smlevel_3 : public smlevel_2 {
 public:
+    static ss_m*    SSM;    // we will change to lower case later
+
 /**\endcond  skip */
     /**\brief Store property that controls logging of pages in the store.
      * \ingroup SSMSTORE
@@ -146,8 +150,16 @@ public:
 };
 /**\endcond  skip */
 
+typedef smlevel_3 smlevel_top;
+
 ostream&
 operator<<(ostream& o, smlevel_3::sm_store_property_t p);
+
+#if (SM_LEVEL >= 3)
+#    include <btcursor.h>
+#    include <xct_dependent.h>
+#    include <prologue.h>
+#endif
 
 /*<std-footer incl-file-exclusion='SM_INT_3_H'>  -- do not edit anything below this line -- */
 
