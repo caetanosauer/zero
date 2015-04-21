@@ -28,7 +28,7 @@ void test(mem_mgmt_t* mem)
             size_t size = slots.size();
             if (size > 0) {
                 size_t r = rand() % size;
-                for (int j = 0; j < r; j++) {
+                for (size_t j = 0; j < r; j++) {
                     iter++;
                 }
                 slots.erase(iter);
