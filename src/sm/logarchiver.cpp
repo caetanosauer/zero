@@ -1857,6 +1857,10 @@ void ArchiveMerger::MergeInput::next()
 char** ArchiveMerger::pickRunsToMerge(int& count, lsn_t& firstLSN,
         lsn_t& lastLSN, bool async)
 {
+    (void) count;
+    (void) firstLSN;
+    (void) lastLSN;
+    (void) async;
     // TODO reimplement for new ArchiveDirectory
 //    RunKeyCmp runCmp;
 //    Heap<RunKey, RunKeyCmp> runHeap(runCmp);
