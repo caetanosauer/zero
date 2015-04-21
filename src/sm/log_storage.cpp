@@ -7,7 +7,7 @@
 #define SM_SOURCE
 #define LOG_STORAGE_C
 
-#include "sm_int_1.h"
+#include "sm_int_0.h"
 #include "chkpt.h"
 #include <sys/stat.h>
 
@@ -815,7 +815,7 @@ log_storage::get_partition_for_flush(lsn_t start_lsn,
             // need predicates, lest we be in shutdown()
             if(smlevel_0::bf) smlevel_0::bf->wakeup_cleaners();
             DBGOUT3(<< "chkpt 1");
-            if(smlevel_1::chkpt != NULL) smlevel_1::chkpt->wakeup_and_take();
+            if(smlevel_0::chkpt != NULL) smlevel_0::chkpt->wakeup_and_take();
             u_int oldest = global_min_lsn().hi();
             if(oldest + PARTITION_COUNT == start_lsn.file()) {
                 fprintf(stderr, 
@@ -1240,7 +1240,7 @@ log_storage::_open_partition(partition_number_t  __num,
         // encounter this.    Don't do this if shutting down or starting
         // up because in those 2 cases, the chkpt_m might not exist yet/anymore
         DBGOUT3(<< "chkpt 2");
-        if(smlevel_1::chkpt != NULL) smlevel_1::chkpt->wakeup_and_take();
+        if(smlevel_0::chkpt != NULL) smlevel_0::chkpt->wakeup_and_take();
     }
     return p;
 }

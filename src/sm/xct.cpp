@@ -9,12 +9,12 @@
 
 #include <new>
 #define SM_LEVEL 0
-#include "sm_int_1.h"
+#include "sm_int_0.h"
 
 #include "tls.h"
 
 #include "lock.h"
-#include <sm_int_1.h>
+#include <sm_int_0.h>
 #include "xct_dependent.h"
 #include "xct.h"
 #include "lock_x.h"
@@ -915,10 +915,10 @@ xct_log_warn_check_t::check(xct_t *& _victim)
             smlevel_0::log_warn_trigger > 0)
     {
         _victim = NULL;
-        w_assert1(smlevel_1::log != NULL);
+        w_assert1(smlevel_0::log != NULL);
 
         // Heuristic, pretty crude:
-        smlevel_0::fileoff_t left = smlevel_1::log->space_left() ;
+        smlevel_0::fileoff_t left = smlevel_0::log->space_left() ;
         DBG(<<"left " << left << " trigger " << smlevel_0::log_warn_trigger
                 << " log durable_lsn " << log->durable_lsn()
                 << " log curr_lsn " << log->curr_lsn()
@@ -938,7 +938,7 @@ xct_log_warn_check_t::check(xct_t *& _victim)
                 // cascading errors.
                 if(v && v->log_warn_is_on()) {
                     xct_i i(true);
-                    lsn_t l = smlevel_1::log->global_min_lsn();
+                    lsn_t l = smlevel_0::log->global_min_lsn();
                     char  buf[max_devname];
                     log->make_log_name(l.file(), buf, max_devname);
                     w_rc_t rc = (*log_warn_callback)(
@@ -1209,7 +1209,7 @@ xct_t::_pre_commit(uint32_t flags)
 
     change_state(flags & xct_t::t_chain ? xct_chaining : xct_committing);
 
-    if (_last_lsn.valid() || !smlevel_1::log)  {
+    if (_last_lsn.valid() || !smlevel_0::log)  {
         /*
          *  If xct generated some log, write a synchronous
          *  Xct End Record.
@@ -1300,7 +1300,7 @@ xct_t::_commit(uint32_t flags, lsn_t* plastlsn /* default NULL*/)
 
     W_DO(_pre_commit(flags));
 
-    if (_last_lsn.valid() || !smlevel_1::log)  {
+    if (_last_lsn.valid() || !smlevel_0::log)  {
         if (!(flags & xct_t::t_lazy))  {
             _sync_logbuf();
         }

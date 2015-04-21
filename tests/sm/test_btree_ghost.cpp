@@ -6,8 +6,8 @@
 #include "btree_page_h.h"
 
 // lots of non-sense to do REDO from testcase.
-#include "sm_int_1.h"
-#include "sm_int_1.h"
+#include "sm_int_0.h"
+#include "sm_int_0.h"
 #include "pmap.h"
 #include "logrec.h"
 #include "logdef_gen.cpp"

@@ -37,7 +37,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define SM_SOURCE
 #define SMTHREAD_C
 #include <w.h>
-#include <sm_int_1.h>
+#include <sm_int_0.h>
 #include <sthread_vtable_enum.h>
 #include <sm_vtable_enum.h>
 #include "smthread.h"

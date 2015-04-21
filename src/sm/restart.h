@@ -39,7 +39,7 @@
 
 class dirty_pages_tab_t;
 
-#include "sm_int_1.h"
+#include "sm_int_0.h"
 #include "lock.h"               // Lock re-acquisition
 
 #include <map>
@@ -209,7 +209,7 @@ private:
 
 };
 
-class restart_m : public smlevel_1 {
+class restart_m : public smlevel_0 {
     friend class restart_thread_t;
 
 public:

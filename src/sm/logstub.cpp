@@ -37,7 +37,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #define SM_SOURCE
 #define LOGSTUB_C
-#include "sm_int_1.h"
+#include "sm_int_0.h"
 #include <new>
 #include "w_key.h"
 #include "logtype_gen.h"

@@ -68,7 +68,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  */
 
 #ifndef SM_INT_2_H
-#include <sm_int_1.h>
+#include <sm_int_0.h>
 #endif
 
 #ifndef SM_DU_STATS_H
@@ -483,7 +483,7 @@ public:
     typedef smlevel_0::LOG_WARN_CALLBACK_FUNC LOG_WARN_CALLBACK_FUNC;
     typedef smlevel_0::LOG_ARCHIVED_CALLBACK_FUNC LOG_ARCHIVED_CALLBACK_FUNC;
     typedef smlevel_0::concurrency_t concurrency_t;
-    typedef smlevel_1::xct_state_t xct_state_t;
+    typedef smlevel_0::xct_state_t xct_state_t;
 
     typedef sm_store_property_t store_property_t;
 

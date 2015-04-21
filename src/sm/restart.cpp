@@ -59,13 +59,13 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define SM_SOURCE
 #define RESTART_C
 
-#include "sm_int_1.h"
+#include "sm_int_0.h"
 #include "w_heap.h"
 #include "chkpt.h"
 #include "crash.h"
 #include "sm_int_0.h"
 #include "sm_du_stats.h"
-#include "sm_int_1.h"
+#include "sm_int_0.h"
 #include "btree_impl.h"         // Lock re-acquisition
 #include "bf_tree_inline.h"
 #include "restart.h"
@@ -339,17 +339,17 @@ restart_m::restart(
     }
 
     // Take a synch checkpoint after the Log Analysis phase and before the REDO phase
-    w_assert1(smlevel_1::chkpt);
+    w_assert1(smlevel_0::chkpt);
     if ((false == use_concurrent_lock_restart()) && (0 != in_doubt_count))
     {
         // Do not build the heap for lock information
-        smlevel_1::chkpt->synch_take();
+        smlevel_0::chkpt->synch_take();
     }
     else if (0 != in_doubt_count)
     {
         // Checkpoint always gather lock information, but it would build a heap
         // on return only if asked for it (debug only)
-        smlevel_1::chkpt->synch_take(lock_heap2);
+        smlevel_0::chkpt->synch_take(lock_heap2);
 
         // Compare lock information in two heaps, the actual comparision is debug build only
         _compare_lock_entries(lock_heap1, lock_heap2);
@@ -525,7 +525,7 @@ restart_m::restart(
                 << xct_t::youngest_tid() << flushl;
 
             // Take a synch checkpoint after UNDO phase but before existing the Recovery operation
-            smlevel_1::chkpt->synch_take();
+            smlevel_0::chkpt->synch_take();
         }
 
         // turn pointer swizzling on again after we are done with the Recovery
@@ -4247,7 +4247,7 @@ void restart_m::_redo_log_with_pid(
                 // CS: since this method is static, we refer to restart_m indirectly
                 // For corrupted page, set the last write to force a complete recovery
                 page.get_generic_page()->lsn = lsn_t::null;
-                W_COERCE(smlevel_1::recovery->recover_single_page(page, lsn, true));
+                W_COERCE(smlevel_0::recovery->recover_single_page(page, lsn, true));
             }
 
             /// page.lsn() is the last write to this page
@@ -5219,7 +5219,7 @@ DBGOUT1(<<"Start child thread REDO phase");
             // it assumes the page is private until recovered.  It is not the case during
             // recovery.  It is caller's responsibility to hold latch before accessing Single-Page-Recovery
             page.set_recovery_access();
-            W_COERCE(smlevel_1::recovery->recover_single_page(page,    // page to recover
+            W_COERCE(smlevel_0::recovery->recover_single_page(page,    // page to recover
                                                               emlsn,   // emlsn which is the end point of recovery
                                                               true,    // actual_emlsn
                                                               true));  // from_lsn because this is not a corrupted page
@@ -5287,7 +5287,7 @@ DBGOUT1(<<"Start child thread REDO phase");
     // Done with REDO phase
 
     // Take a synch checkpoint after REDO phase only if there were REDO work
-    smlevel_1::chkpt->synch_take();
+    smlevel_0::chkpt->synch_take();
 
     return;
 }
@@ -5488,7 +5488,7 @@ void restart_m::_undo_txn_pass()
 
     // Take a synch checkpoint after UNDO phase but before existing the Recovery operation
     // Checkpoint will be taken only if there were UNDO work
-    smlevel_1::chkpt->synch_take();
+    smlevel_0::chkpt->synch_take();
 
     return;
 }
@@ -5522,7 +5522,7 @@ void restart_thread_t::run()
 
         // REDO, call back to restart_m to carry out the concurrent REDO
         working = smlevel_0::t_concurrent_redo;
-        smlevel_1::recovery->redo_concurrent_pass();
+        smlevel_0::recovery->redo_concurrent_pass();
 
         gettimeofday(&tm_after, NULL);
 // TODO(Restart)... Performance
@@ -5533,7 +5533,7 @@ void restart_thread_t::run()
 
     // UNDO, call back to restart_m to carry out the concurrent UNDO
     working = smlevel_0::t_concurrent_undo;
-    smlevel_1::recovery->undo_concurrent_pass();
+    smlevel_0::recovery->undo_concurrent_pass();
 
     // Done
     DBGOUT1(<< "restart_thread_t: Finished REDO and UNDO tasks");

@@ -95,7 +95,7 @@ struct RawXct;
  * This is used internally for turning on & off the log during
  * top-level actions.
  */
-class xct_log_t : public smlevel_1 {
+class xct_log_t : public smlevel_0 {
 private:
     //per-thread-per-xct info
     bool         _xct_log_off;
@@ -194,7 +194,7 @@ class stid_list_elem_t  {
  * This class may be used in a limited way for the handling of
  * out-of-log-space conditions.  See \ref SSMLOG.
  */
-class xct_t : public smlevel_1 {
+class xct_t : public smlevel_0 {
 /**\cond skip */
     friend class xct_i;
     friend class smthread_t;
@@ -986,7 +986,7 @@ public:
     /// Initialize old state
     NORET xct_log_switch_t(switch_t s)  : old_state(OFF)
     {
-        if(smlevel_1::log) {
+        if(smlevel_0::log) {
             INC_TSTAT(log_switches);
             if (xct()) {
                 old_state = xct()->set_log_state(s);
@@ -996,7 +996,7 @@ public:
 
     NORET
     ~xct_log_switch_t()  {
-        if(smlevel_1::log) {
+        if(smlevel_0::log) {
             if (xct()) {
                 xct()->restore_log_state(old_state);
             }
@@ -1116,19 +1116,19 @@ xct_t::state() const
 // For use in sm functions that don't allow
 // active xct when entered.  These are functions that
 // apply to local volumes only.
-class xct_auto_abort_t : public smlevel_1 {
+class xct_auto_abort_t : public smlevel_0 {
 public:
     xct_auto_abort_t() : _xct(new xct_t()) {
         (void)  _xct->attach_update_thread();
     }
     ~xct_auto_abort_t() {
         switch(_xct->state()) {
-        case smlevel_1::xct_ended:
+        case smlevel_0::xct_ended:
             // do nothing
             break;
-        case smlevel_1::xct_active:
-        case smlevel_1::xct_freeing_space: // we got an error in commit
-        case smlevel_1::xct_committing: // we got an error in commit
+        case smlevel_0::xct_active:
+        case smlevel_0::xct_freeing_space: // we got an error in commit
+        case smlevel_0::xct_committing: // we got an error in commit
             W_COERCE(_xct->abort());
             break;
         default:

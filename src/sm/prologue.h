@@ -169,7 +169,7 @@ prologue_rc_t::prologue_rc_t(
     {
     case in_xct:
         if ( (!_the_xct) 
-            || (_the_xct->state() != smlevel_1::xct_active)) {
+            || (_the_xct->state() != smlevel_0::xct_active)) {
 
             _rc = rc_t(__FILE__, __LINE__, 
                     (_the_xct)?
@@ -185,7 +185,7 @@ prologue_rc_t::prologue_rc_t(
         w_error_codes        error = w_error_ok;
         if ( ! _the_xct  ) {
             error = eNOTRANS;
-        } else if( (_the_xct->state() != smlevel_1::xct_active)
+        } else if( (_the_xct->state() != smlevel_0::xct_active)
                 ) {
             error = eNOTRANS;
         }
@@ -201,7 +201,7 @@ prologue_rc_t::prologue_rc_t(
 
     case abortable_xct:
         // We must be sure there's only one thread attached.
-        if (! _the_xct || (_the_xct->state() != smlevel_1::xct_active)) {
+        if (! _the_xct || (_the_xct->state() != smlevel_0::xct_active)) {
             _rc = rc_t(__FILE__, __LINE__, eNOTRANS);
             check_log = false;
         }

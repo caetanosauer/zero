@@ -19,7 +19,6 @@
 #include <stdlib.h>
 
 #include "sm_int_0.h"
-#include "sm_int_1.h"
 #include "vol.h"
 #include "alloc_cache.h"
 #include "chkpt_serial.h"
@@ -372,7 +371,7 @@ w_rc_t bf_tree_m::install_volume(vol_t* volume) {
                         w_assert1(page.is_fixed());
                         if (emlsn != page.lsn())
                             page.set_lsns(lsn_t::null);  // set last write lsn to null to force a complete recovery
-                        W_COERCE(smlevel_1::recovery->recover_single_page(page, emlsn, true)); // we have the actual emlsn
+                        W_COERCE(smlevel_0::recovery->recover_single_page(page, emlsn, true)); // we have the actual emlsn
                         W_COERCE(page.fix_recovery_redo_managed());  // set the page to be managed again
 
                         smlevel_0::bf->in_doubt_to_dirty(idx);  // Set use and dirty, clear the cb._dependency_lsn flag
@@ -1213,8 +1212,8 @@ w_rc_t bf_tree_m::_validate_access(generic_page*& page)   // pointer to the unde
 
     // If the system is doing concurrent recovery and we are still in the middle
     // of recovery, need to validate whether a user transaction can access this page
-    if ((smlevel_1::recovery) &&                      // The restart_m object is valid
-        (smlevel_1::recovery->restart_in_progress())) // Restart is in progress, both serial and concurrent
+    if ((smlevel_0::recovery) &&                      // The restart_m object is valid
+        (smlevel_0::recovery->restart_in_progress())) // Restart is in progress, both serial and concurrent
                                                       // if pure on_demand, then this function returns
                                                       // false (not in restart) after Log Analysis phase
     {
@@ -2965,9 +2964,9 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
         p.fix_nonbufferpool_page(_buffer + idx);    // Page is marked as not buffer pool managed through this call
                                                     // This is important for minimal logging of page rebalance operation
         if (lsn_t::null != page_emlsn)
-            return (smlevel_1::recovery->recover_single_page(p, page_emlsn, true /*actual_emlsn*/));
+            return (smlevel_0::recovery->recover_single_page(p, page_emlsn, true /*actual_emlsn*/));
         else
-            return (smlevel_1::recovery->recover_single_page(p, smlevel_0::last_lsn, false /*actual_emlsn*/));
+            return (smlevel_0::recovery->recover_single_page(p, smlevel_0::last_lsn, false /*actual_emlsn*/));
     }
     else if (checksum != page.checksum)
     {
@@ -2995,7 +2994,7 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
                 btree_page_h p;
                 p.fix_nonbufferpool_page(_buffer + idx);  // Page is marked as not buffer pool managed through this call
                                                           // This is important for minimal logging of page rebalance operation
-                W_DO(smlevel_1::recovery->recover_single_page(p, page_emlsn, true /*actual_emlsn*/));
+                W_DO(smlevel_0::recovery->recover_single_page(p, page_emlsn, true /*actual_emlsn*/));
             }
             else
             {
@@ -3127,12 +3126,12 @@ w_rc_t bf_tree_m::_try_recover_page(generic_page* parent,     // In: parent page
     if (lsn_t::null != page_emlsn)
     {
         // From Restart, use the last write lsn on the page for recovery (not complete recovery)
-        return smlevel_1::recovery->recover_single_page(p, emlsn, true, true);
+        return smlevel_0::recovery->recover_single_page(p, emlsn, true, true);
     }
     else
     {
         // Not from Restart
-        return smlevel_1::recovery->recover_single_page(p, emlsn);
+        return smlevel_0::recovery->recover_single_page(p, emlsn);
     }
 
 }

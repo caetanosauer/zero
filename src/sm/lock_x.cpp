@@ -7,7 +7,7 @@
 
 #include "block_alloc.h"
 
-#include "sm_int_1.h"
+#include "sm_int_0.h"
 #include "kvl_t.h"
 #include "lock_s.h"
 #include "lock_x.h"

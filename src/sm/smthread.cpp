@@ -9,7 +9,7 @@
 #define SM_SOURCE
 #define SMTHREAD_C
 
-#include <sm_int_1.h>
+#include <sm_int_0.h>
 
 #include <w_strstream.h>
 

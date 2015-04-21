@@ -242,7 +242,7 @@ CLASSDEF
     ($page = $real) =~ s/(\w*).*/$1/;
         # print "page = $page\n";
     print STUB "    xct_t* xd = xct();\n";
-        print STUB "    bool should_log = smlevel_1::log && smlevel_0::logging_enabled";
+        print STUB "    bool should_log = smlevel_0::log && smlevel_0::logging_enabled";
     if($aflag==0) {
 #       if ($page eq "page") {
 #       print STUB "\n\t\t\t&& (page.get_store_flags() & page.st_tmp) == 0";

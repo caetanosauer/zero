@@ -62,6 +62,23 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #    include <vol.h>
 #    include <log.h>
 
+#    if defined(FILE_C) || defined(SMFILE_C)
+#    define BTREE_H
+#    endif
+#    include <btree.h>
+
+#    include <btcursor.h>
+#    include <xct_dependent.h>
+#    include <prologue.h>
+
+#    include <lock.h>
+#    include <logrec.h>
+#    include <xct.h>
+#    include <logarchiver.h>
+#endif
+
+#if defined(__GNUC__) && __GNUC_MINOR__ > 6
+ostream& operator<<(ostream& o, const smlevel_0::xct_state_t& xct_state);
 #endif
 
 

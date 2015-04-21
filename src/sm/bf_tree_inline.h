@@ -15,7 +15,7 @@
 #include "fixable_page_h.h"
 
 // Following includes are to have the ability to check restart mode
-#include "sm_int_1.h"
+#include "sm_int_0.h"
 #include "xct.h"
 #include "restart.h"
 #include "vol.h"
@@ -461,7 +461,7 @@ inline void bf_tree_m::set_dirty(const generic_page* p) {
      */
     cb._uncommitted_cnt++;
     // assert that transaction attached is of type plog_xct_t*
-    w_assert1(smlevel_1::xct_impl == smlevel_1::XCT_PLOG);
+    w_assert1(smlevel_0::xct_impl == smlevel_0::XCT_PLOG);
 #endif
 }
 inline bool bf_tree_m::is_dirty(const generic_page* p) const {

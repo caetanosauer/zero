@@ -61,7 +61,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
-#include "sm_int_1.h"
+#include "sm_int_0.h"
 #include "w_heap.h"
 
 // For checkpoint to gather lock information into heap if asked
@@ -84,7 +84,7 @@ class chkpt_thread_t;
  *  thread to checkpoint soon.
  *
  *********************************************************************/
-class chkpt_m : public smlevel_1 {
+class chkpt_m : public smlevel_0 {
 public:
     NORET            chkpt_m();
     NORET            ~chkpt_m();

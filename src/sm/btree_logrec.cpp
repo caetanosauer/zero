@@ -54,7 +54,7 @@ btree_insert_log::undo(fixable_page_h* page) {
 DBGOUT3( << "&&&& UNDO insertion, key: " << key);
 
     // ***LOGICAL*** don't grab locks during undo
-    rc_t rc = smlevel_1::bt->remove_as_undo(stid_t(header._vid, header._snum), key);
+    rc_t rc = smlevel_0::bt->remove_as_undo(stid_t(header._vid, header._snum), key);
     if(rc.is_error())
     {
         if (false == restart_m::use_redo_full_logging_restart())
@@ -148,7 +148,7 @@ btree_update_log::undo(fixable_page_h*)
     old_el.put(dp->_data + dp->_klen, dp->_old_elen);
 
     // ***LOGICAL*** don't grab locks during undo
-    rc_t rc = smlevel_1::bt->update_as_undo(stid_t(header._vid, header._snum), key, old_el);
+    rc_t rc = smlevel_0::bt->update_as_undo(stid_t(header._vid, header._snum), key, old_el);
     if(rc.is_error()) {
         W_FATAL(rc.err_num());
     }
@@ -201,7 +201,7 @@ void btree_overwrite_log::undo(fixable_page_h*)
     const char* old_el = dp->_data + dp->_klen;
 
     // ***LOGICAL*** don't grab locks during undo
-    rc_t rc = smlevel_1::bt->overwrite_as_undo(stid_t(header._vid, header._snum), key, old_el, offset, elen);
+    rc_t rc = smlevel_0::bt->overwrite_as_undo(stid_t(header._vid, header._snum), key, old_el, offset, elen);
     if(rc.is_error()) {
         W_FATAL(rc.err_num());
     }
@@ -326,7 +326,7 @@ btree_ghost_mark_log::undo(fixable_page_h*)
 // TODO(Restart)...
 DBGOUT3( << "&&&& UNDO deletion by remove ghost mark, key: " << key);
 
-        rc_t rc = smlevel_1::bt->undo_ghost_mark(stid_t(header._vid, header._snum), key);
+        rc_t rc = smlevel_0::bt->undo_ghost_mark(stid_t(header._vid, header._snum), key);
         if(rc.is_error()) {
             cerr << " key=" << key << endl << " rc =" << rc << endl;
             W_FATAL(rc.err_num());
@@ -733,7 +733,7 @@ void btree_foster_merge_log::redo(fixable_page_h* p) {
             lsn_t another_previous_lsn = recovering_dest ? dp->_page2_prv : page_prev_lsn();
             btree_page_h another;
             another.fix_nonbufferpool_page(frame.p);
-            W_COERCE(smlevel_1::recovery->recover_single_page(another, another_previous_lsn));
+            W_COERCE(smlevel_0::recovery->recover_single_page(another, another_previous_lsn));
             btree_impl::_ux_merge_foster_apply_parent(bp, another);
         }
         else
@@ -1153,7 +1153,7 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
                     ", another_previous_lsn=" << another_previous_lsn);
             btree_page_h another;
             another.fix_nonbufferpool_page(frame.p);
-            W_COERCE(smlevel_1::recovery->recover_single_page(another, another_previous_lsn));
+            W_COERCE(smlevel_0::recovery->recover_single_page(another, another_previous_lsn));
             W_COERCE(btree_impl::_ux_rebalance_foster_apply(
                      recovering_dest ? another : bp, recovering_dest ? bp : another,
                      dp->_move_count, fence, dp->_new_pid0, dp->_new_pid0_emlsn));

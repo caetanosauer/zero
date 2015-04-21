@@ -62,7 +62,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define SM_SOURCE
 #define CHKPT_C
 
-#include "sm_int_1.h"
+#include "sm_int_0.h"
 #include "chkpt_serial.h"
 #include "chkpt.h"
 #include "logdef_gen.cpp"
@@ -80,7 +80,7 @@ struct RawLock;            // Lock information gathering
 #ifdef EXPLICIT_TEMPLATE
 template class w_auto_delete_array_t<lsn_t>;
 template class w_auto_delete_array_t<tid_t>;
-template class w_auto_delete_array_t<smlevel_1::xct_state_t>;
+template class w_auto_delete_array_t<smlevel_0::xct_state_t>;
 #endif
 
 
@@ -133,10 +133,10 @@ struct old_xct_tracker {
             register_me();
         }
 
-        virtual void xct_state_changed(smlevel_1::xct_state_t,
-              smlevel_1::xct_state_t new_state)
+        virtual void xct_state_changed(smlevel_0::xct_state_t,
+              smlevel_0::xct_state_t new_state)
         {
-            if(new_state == smlevel_1::xct_ended)
+            if(new_state == smlevel_0::xct_ended)
             _owner->report_finished(xd());
         }
     };
@@ -1354,7 +1354,7 @@ chkpt_thread_t::run()
             _kicked = false;
         }
 
-        w_assert1(smlevel_1::chkpt);
+        w_assert1(smlevel_0::chkpt);
 
         // If a retire request arrived, exit immediatelly without checkpoint
         if(_retire)
@@ -1362,7 +1362,7 @@ chkpt_thread_t::run()
 
         // No need to acquire checkpoint mutex before calling the checkpoint operation
         // Asynch checkpoint should never record lock information
-        smlevel_1::chkpt->take(smlevel_0::t_chkpt_async, dummy_heap);
+        smlevel_0::chkpt->take(smlevel_0::t_chkpt_async, dummy_heap);
         w_assert1(0 == dummy_heap.NumElements());
     }
 }

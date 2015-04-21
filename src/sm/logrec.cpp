@@ -9,7 +9,7 @@
 #define SM_SOURCE
 #define LOGREC_C
 
-#include "sm_int_1.h"
+#include "sm_int_0.h"
 #include "logdef_gen.cpp"
 #include "vec_t.h"
 #include "alloc_cache.h"
@@ -129,7 +129,7 @@ logrec_t::fill(const lpid_t* p, snum_t store, uint16_t tag, smsize_t l)
     xct_t *x = xct();
     if(smlevel_0::in_recovery_undo() ||
         (x && ( x->rolling_back() ||
-			   x->state() == smlevel_1::xct_aborting))
+			   x->state() == smlevel_0::xct_aborting))
 	)
     {
         header._cat |= t_rollback;
@@ -518,7 +518,7 @@ chkpt_xct_tab_t::chkpt_xct_tab_t(
     const tid_t&                         _youngest,
     int                                 cnt,
     const tid_t*                         tid,
-    const smlevel_1::xct_state_t*         state,
+    const smlevel_0::xct_state_t*         state,
     const lsn_t*                         last_lsn,
     const lsn_t*                         undo_nxt,
     const lsn_t*                         first_lsn)
@@ -538,7 +538,7 @@ chkpt_xct_tab_log::chkpt_xct_tab_log(
     const tid_t&                         youngest,
     int                                 cnt,
     const tid_t*                         tid,
-    const smlevel_1::xct_state_t*         state,
+    const smlevel_0::xct_state_t*         state,
     const lsn_t*                         last_lsn,
     const lsn_t*                         undo_nxt,
     const lsn_t*                         first_lsn)

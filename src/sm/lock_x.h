@@ -111,7 +111,7 @@ private:
  * Note that this object is one-per-transaction, not one-per-lock.
  * The per-lock object is xct_lock_entry_t (xct side) and lock_queue_entry_t (queue side).
  */
-class xct_lock_info_t : private smlevel_1 {
+class xct_lock_info_t : private smlevel_0 {
 
 public:
     NORET            xct_lock_info_t();

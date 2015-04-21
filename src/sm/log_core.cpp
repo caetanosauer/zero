@@ -62,7 +62,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define LOG_CORE_C
 
 #include "sm_options.h"
-#include "sm_int_1.h"
+#include "sm_int_0.h"
 #include "logtype_gen.h"
 #include "log.h"
 #include "logrec.h"

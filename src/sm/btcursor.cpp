@@ -8,7 +8,7 @@
 #define BTREE_C
 
 #include "sm_int_0.h"
-#include "sm_int_1.h"
+#include "sm_int_0.h"
 #include "btree_page_h.h"
 #include "btcursor.h"
 #include "btree_impl.h"

@@ -66,7 +66,7 @@ class prologue_rc_t;
 #endif
 
 #include "w.h"
-#include "sm_int_1.h"
+#include "sm_int_0.h"
 #include "chkpt.h"
 #include "chkpt_serial.h"
 #include "sm.h"
@@ -166,19 +166,19 @@ ErrLog*            smlevel_0::errlog;
 
 char smlevel_0::zero_page[page_sz];
 
-chkpt_m* smlevel_1::chkpt = 0;
+chkpt_m* smlevel_0::chkpt = 0;
 
-restart_m* smlevel_1::recovery = 0;
+restart_m* smlevel_0::recovery = 0;
 
-btree_m* smlevel_1::bt = 0;
+btree_m* smlevel_0::bt = 0;
 
 ss_m* smlevel_top::SSM = 0;
 
-smlevel_1::xct_impl_t smlevel_1::xct_impl
+smlevel_0::xct_impl_t smlevel_0::xct_impl
 #ifndef USE_ATOMIC_COMMIT
-    = smlevel_1::XCT_TRADITIONAL;
+    = smlevel_0::XCT_TRADITIONAL;
 #else
-    = smlevel_1::XCT_PLOG;
+    = smlevel_0::XCT_PLOG;
 #endif
 
 /*
@@ -1553,10 +1553,10 @@ istream& operator>>(istream& i, lpid_t& pid)
 }
 
 #if defined(__GNUC__) && __GNUC_MINOR__ > 6
-ostream& operator<<(ostream& o, const smlevel_1::xct_state_t& xct_state)
+ostream& operator<<(ostream& o, const smlevel_0::xct_state_t& xct_state)
 {
 // NOTE: these had better be kept up-to-date wrt the enumeration
-// found in sm_int_1.h
+// found in sm_int_0.h
     const char* names[] = {"xct_stale",
                         "xct_active",
                         "xct_prepared",
@@ -2272,18 +2272,18 @@ ss_m::get_store_info(
 
 
 ostream&
-operator<<(ostream& o, smlevel_1::sm_store_property_t p)
+operator<<(ostream& o, smlevel_0::sm_store_property_t p)
 {
-    if (p == smlevel_1::t_regular)                o << "regular";
-    if (p == smlevel_1::t_temporary)                o << "temporary";
-    if (p == smlevel_1::t_load_file)                o << "load_file";
-    if (p == smlevel_1::t_insert_file)                o << "insert_file";
-    if (p == smlevel_1::t_bad_storeproperty)        o << "bad_storeproperty";
-    if (p & !(smlevel_1::t_regular
-                | smlevel_1::t_temporary
-                | smlevel_1::t_load_file
-                | smlevel_1::t_insert_file
-                | smlevel_1::t_bad_storeproperty))  {
+    if (p == smlevel_0::t_regular)                o << "regular";
+    if (p == smlevel_0::t_temporary)                o << "temporary";
+    if (p == smlevel_0::t_load_file)                o << "load_file";
+    if (p == smlevel_0::t_insert_file)                o << "insert_file";
+    if (p == smlevel_0::t_bad_storeproperty)        o << "bad_storeproperty";
+    if (p & !(smlevel_0::t_regular
+                | smlevel_0::t_temporary
+                | smlevel_0::t_load_file
+                | smlevel_0::t_insert_file
+                | smlevel_0::t_bad_storeproperty))  {
         o << "unknown_property";
         w_assert3(1);
     }

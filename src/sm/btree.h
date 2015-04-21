@@ -26,7 +26,7 @@ struct okvl_mode;
  * Data access API for B+Tree.
  * \ingroup SSMBTREE
  */
-class btree_m : public smlevel_1 {
+class btree_m : public smlevel_0 {
     friend class btree_page_h;
     friend class btree_impl;
     friend class bt_cursor_t;

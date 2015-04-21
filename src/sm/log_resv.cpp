@@ -147,7 +147,7 @@ rc_t log_resv::wait_for_space(fileoff_t &amt, timeout_in_ms timeout)
         }
         DBGOUT3(<< "chkpt 3");
 
-        if(smlevel_1::chkpt != NULL) smlevel_1::chkpt->wakeup_and_take();
+        if(smlevel_0::chkpt != NULL) smlevel_0::chkpt->wakeup_and_take();
         if(timeout == WAIT_FOREVER) {
             cerr<<
             "* - * - * tid "<<xct()->tid().get_hi()<<"."<<xct()->tid().get_lo()<<" waiting forever for "<<amt<<" bytes of log" <<endl;

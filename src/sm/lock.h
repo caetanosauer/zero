@@ -24,7 +24,7 @@ class sm_options;
  * \ingroup SSMLOCK
  * See \ref OKVL and \ref LIL.
  */
-class lock_m : public smlevel_1 {
+class lock_m : public smlevel_0 {
 public:
     // initialize/takedown functions for thread-local state
     static void on_thread_init();
