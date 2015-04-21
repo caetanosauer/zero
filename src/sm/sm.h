@@ -629,7 +629,8 @@ private:
 //                                           LOG_ARCHIVED_CALLBACK_FUNC y=NULL);
     void                _construct_once();
     void                _destruct_once();
-
+    void                _do_restart();
+    void                _finish_recovery();
     void                _set_recovery_mode();
 
     // Used for cosntructing xct object depending on chosen implementation

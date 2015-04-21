@@ -721,6 +721,16 @@ ss_m::_construct_once()
 
     me()->mark_pin_count();
 
+    _do_restart();
+
+    do_prefetch = _options.get_bool_option("sm_prefetch", false);
+    DBG(<<"constructor done");
+
+    // System is opened for user transactions once the function returns
+}
+
+void ss_m::_do_restart()
+{
     /*
      * Mount the volumes for recovery.  For now, we automatically
      * mount all volumes.  A better solution would be for restart_m
@@ -936,67 +946,10 @@ ss_m::_construct_once()
         me()->check_pin_count(0);
 
     }
-
-    do_prefetch = _options.get_bool_option("sm_prefetch", false);
-    DBG(<<"constructor done");
-
-    // System is opened for user transactions once the function returns
 }
 
-void ss_m::_set_recovery_mode()
+void ss_m::_finish_recovery()
 {
-    // For Instant Restart testing purpose
-    // which internal restart mode to use?  Default to serial restart (M1) if not specified
-
-    int32_t restart_mode = _options.get_int_option("sm_restart", 1 /*default value*/);
-    if (1 == restart_mode)
-    {
-        // Caller did not specify restart mode, use default (serial mode)
-        smlevel_0::restart_internal_mode = (smlevel_0::restart_internal_mode_t)m1_default_restart;
-    }
-    else
-    {
-        // Set caller specified restart mode
-        smlevel_0::restart_internal_mode = (smlevel_0::restart_internal_mode_t)restart_mode;
-    }
-}
-
-ss_m::~ss_m()
-{
-    // This looks like a candidate for pthread_once(), but then smsh
-    // would not be able to
-    // do multiple startups and shutdowns in one process, alas.
-    CRITICAL_SECTION(cs, ssm_once_mutex);
-
-    if (0 < _instance_cnt)
-        _destruct_once();
-}
-
-void
-ss_m::_destruct_once()
-{
-    FUNC(ss_m::~ss_m);
-
-    --_instance_cnt;
-
-    if (_instance_cnt)  {
-        if(errlog) {
-            errlog->clog << warning_prio << "ss_m::~ss_m() : \n"
-             << "\twarning --- destructor called more than once\n"
-             << "\tignored" << flushl;
-        } else {
-            cerr << "ss_m::~ss_m() : \n"
-             << "\twarning --- destructor called more than once\n"
-             << "\tignored" << endl;
-        }
-        return;
-    }
-
-    // Set shutting_down so that when we disable bg flushing, if the
-    // log flush daemon is running, it won't just try to re-activate it.
-    shutting_down = true;
-
-
     if ((shutdown_clean) && (true == smlevel_0::use_redo_demand_restart()))
     {
         // If we have a clean shutdown and the current system is using
@@ -1089,6 +1042,63 @@ ss_m::_destruct_once()
     //                                                    blocked operation, therefore no lock re-acquision and
     //                                                    nothing to rollback
     //        Mixed mode using locks - Same as 'pure on-demand shutdown using locks'
+}
+
+void ss_m::_set_recovery_mode()
+{
+    // For Instant Restart testing purpose
+    // which internal restart mode to use?  Default to serial restart (M1) if not specified
+
+    int32_t restart_mode = _options.get_int_option("sm_restart", 1 /*default value*/);
+    if (1 == restart_mode)
+    {
+        // Caller did not specify restart mode, use default (serial mode)
+        smlevel_0::restart_internal_mode = (smlevel_0::restart_internal_mode_t)m1_default_restart;
+    }
+    else
+    {
+        // Set caller specified restart mode
+        smlevel_0::restart_internal_mode = (smlevel_0::restart_internal_mode_t)restart_mode;
+    }
+}
+
+ss_m::~ss_m()
+{
+    // This looks like a candidate for pthread_once(), but then smsh
+    // would not be able to
+    // do multiple startups and shutdowns in one process, alas.
+    CRITICAL_SECTION(cs, ssm_once_mutex);
+
+    if (0 < _instance_cnt)
+        _destruct_once();
+}
+
+void
+ss_m::_destruct_once()
+{
+    FUNC(ss_m::~ss_m);
+
+    --_instance_cnt;
+
+    if (_instance_cnt)  {
+        if(errlog) {
+            errlog->clog << warning_prio << "ss_m::~ss_m() : \n"
+             << "\twarning --- destructor called more than once\n"
+             << "\tignored" << flushl;
+        } else {
+            cerr << "ss_m::~ss_m() : \n"
+             << "\twarning --- destructor called more than once\n"
+             << "\tignored" << endl;
+        }
+        return;
+    }
+
+    // Set shutting_down so that when we disable bg flushing, if the
+    // log flush daemon is running, it won't just try to re-activate it.
+    shutting_down = true;
+
+
+    _finish_recovery();
 
     // now it's safe to do the clean_up
     // The code for distributed txn (prepared xcts has been deleted, the input paramter
@@ -1836,7 +1846,45 @@ rc_t
 ss_m::generate_new_lvid(lvid_t& lvid)
 {
     SM_PROLOGUE_RC(ss_m::generate_new_lvid, can_be_in_xct, read_only, 0);
-    W_DO(lid->generate_new_volid(lvid));
+    // CS: copied from old lid_m
+    /*
+     * For now the long volume ID will consists of
+     * the machine network address and the current time-of-day.
+     *
+     * Since the time of day resolution is in seconds,
+     * we protect this function with a mutex to guarantee we
+     * don't generate duplicates.
+     */
+    static long  last_time = 0;
+    const int    max_name = 100;
+    char         name[max_name+1];
+
+    // Mutex only for generating new volume ids.
+    static queue_based_block_lock_t lidmgnrt_mutex;
+    CRITICAL_SECTION(cs, lidmgnrt_mutex);
+
+    if (gethostname(name, max_name)) return RC(eOS);
+
+    struct hostent* hostinfo = gethostbyname(name);
+
+    if (!hostinfo)
+        W_FATAL(eINTERNAL);
+
+    memcpy(&lvid.high, hostinfo->h_addr, sizeof(lvid.high));
+    DBG( << "lvid " << lvid );
+
+    /* XXXX generating ids fast enough can create a id time sequence
+       that grows way faster than real time!  This could be a problem!
+       Better time resolution than seconds does exist, might be worth
+       using it.  */
+    stime_t curr_time = stime_t::now();
+
+    if (curr_time.secs() > last_time)
+            last_time = curr_time.secs();
+    else
+            last_time++;
+
+    lvid.low = last_time;
     return RCOK;
 }
 
