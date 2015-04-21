@@ -61,7 +61,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
-#include "sm_int_0.h"
+#include "sm_base.h"
 #include "w_heap.h"
 
 // For checkpoint to gather lock information into heap if asked

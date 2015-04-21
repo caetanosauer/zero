@@ -11,7 +11,7 @@
 #define SM_SOURCE
 #define BTREE_C
 
-#include "sm_int_0.h"
+#include "sm_base.h"
 #include "btree_page_h.h"
 #include "btree_impl.h"
 
@@ -20,7 +20,7 @@
 #include "pmap.h"
 #include "vol.h"
 #include "xct.h"
-#include "sm_int_0.h"
+#include "sm_base.h"
 #include "bf_tree.h"
 
 // NOTE we don't know the level of root until we start, so just give "-1" as magic value for root level

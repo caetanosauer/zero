@@ -6,7 +6,7 @@
 #include "logarchiver.h"
 #include "sm_options.h"
 
-#include <sm_int_0.h>
+#include <sm_base.h>
 #include <sstream>
 #include <sys/stat.h>
 

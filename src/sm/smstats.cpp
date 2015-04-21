@@ -35,7 +35,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
-#include "sm_int_0.h"
+#include "sm_base.h"
 // smstats_info_t is the collected stats from various
 // sm parts.  Each part is separately-generate from .dat files.
 #include "smstats.h"

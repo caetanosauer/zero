@@ -60,7 +60,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #define SM_SOURCE
 
-#include <sm_int_0.h>
+#include <sm_base.h>
 
 #include <w_strstream.h>
 #include <stdio.h>

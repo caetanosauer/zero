@@ -5,8 +5,9 @@
 #include "fixable_page_h.h"
 
 #define SM_SOURCE
-#include "sm_int_0.h"
+#include "sm_base.h"
 
+#include "btree_logrec.h"
 #include "bf_tree_inline.h"
 #include "restart.h"
 #include "logrec.h"

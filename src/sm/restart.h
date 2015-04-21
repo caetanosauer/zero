@@ -39,7 +39,7 @@
 
 class dirty_pages_tab_t;
 
-#include "sm_int_0.h"
+#include "sm_base.h"
 #include "lock.h"               // Lock re-acquisition
 
 #include <map>

@@ -37,7 +37,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 #define SM_SOURCE
 #define PMAP_C
-#include "sm_int_0.h"
+#include "sm_base.h"
 
 ostream    &Pmap::print(ostream &s) const
 {

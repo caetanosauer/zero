@@ -9,7 +9,7 @@
 #define SM_SOURCE
 #define LOGREC_C
 
-#include "sm_int_0.h"
+#include "sm_base.h"
 #include "logdef_gen.cpp"
 #include "vec_t.h"
 #include "alloc_cache.h"

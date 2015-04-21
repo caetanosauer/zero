@@ -5,7 +5,7 @@
 
 #define SM_SOURCE
 
-#include "sm_int_0.h"
+#include "sm_base.h"
 
 #include "w_heap.h"
 #include "ringbuffer.h"

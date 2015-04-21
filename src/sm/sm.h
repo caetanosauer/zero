@@ -68,7 +68,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  */
 
 #ifndef SM_INT_2_H
-#include <sm_int_0.h>
+#include <sm_base.h>
 #endif
 
 #ifndef SM_DU_STATS_H

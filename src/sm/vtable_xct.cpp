@@ -39,7 +39,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define XCT_C
 
 #include <new>
-#include "sm_int_0.h"
+#include "sm_base.h"
 #include "tls.h"
 
 #include "lock_x.h"

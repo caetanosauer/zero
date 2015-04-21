@@ -4,7 +4,7 @@
 #include "w_defines.h"
 
 #define SM_SOURCE
-#include "sm_int_0.h"
+#include "sm_base.h"
 
 #include <boost/random.hpp>
 #include <vector>

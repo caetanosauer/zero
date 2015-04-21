@@ -1,7 +1,7 @@
 #define SM_SOURCE
 #define BTREE_C
 
-#include "sm_int_0.h"
+#include "sm_base.h"
 #include "btree_test_env.h"
 #include "gtest/gtest.h"
 #include "sm_vas.h"

@@ -39,6 +39,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 /*  -- do not edit anything above this line --   </std-header>*/
 
 #include <bitmap.h>
+#include "sm_base.h"
 
 struct Pmap 
 {

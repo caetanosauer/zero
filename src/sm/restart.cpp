@@ -59,13 +59,13 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define SM_SOURCE
 #define RESTART_C
 
-#include "sm_int_0.h"
+#include "sm_base.h"
 #include "w_heap.h"
 #include "chkpt.h"
 #include "crash.h"
-#include "sm_int_0.h"
+#include "sm_base.h"
 #include "sm_du_stats.h"
-#include "sm_int_0.h"
+#include "sm_base.h"
 #include "btree_impl.h"         // Lock re-acquisition
 #include "bf_tree_inline.h"
 #include "restart.h"

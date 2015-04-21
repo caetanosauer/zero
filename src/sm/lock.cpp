@@ -7,7 +7,7 @@
 #define SM_SOURCE
 #define LOCK_C
 
-#include "sm_int_0.h"
+#include "sm_base.h"
 #include "lock_x.h"
 #include "lock_core.h"
 #include "lock_lil.h"

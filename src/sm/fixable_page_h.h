@@ -226,7 +226,7 @@ public:
     bool         is_to_be_deleted();
     /// Flag this page to be deleted when bufferpool evicts it.
     /// @pre We hold our associated page's latch in SH or EX mode
-    rc_t         set_to_be_deleted(bool log_it);
+    w_rc_t         set_to_be_deleted(bool log_it);
     /// Unset the to be deleted flag.  This is only used by UNDO, so no logging and no
     /// failure possible.
     /// @pre We hold our associated page's latch in SH or EX mode

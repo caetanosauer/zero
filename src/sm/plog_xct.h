@@ -1,7 +1,7 @@
 #ifndef PLOG_XCT_H
 #define PLOG_XCT_H
 
-#include "sm_int_0.h"
+#include "sm_base.h"
 #include "logrec.h"
 #include "xct.h"
 #include "plog.h"

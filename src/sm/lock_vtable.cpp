@@ -7,7 +7,7 @@
 #define LOCK_CORE_C
 #define SM_SOURCE
 
-#include "sm_int_0.h"
+#include "sm_base.h"
 
 #include "vtable.h"
 #include "sm_vtable_enum.h"

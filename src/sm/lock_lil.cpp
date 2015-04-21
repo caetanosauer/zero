@@ -4,7 +4,7 @@
 
 #define SM_SOURCE
 
-#include "sm_int_0.h"
+#include "sm_base.h"
 #include "lock_lil.h"
 #include <sys/time.h>
 

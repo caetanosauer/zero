@@ -7,7 +7,7 @@
 // inline methods for bf_tree_m
 // these methods are small and very frequently called, thus inlined here.
 
-#include "sm_int_0.h"
+#include "sm_base.h"
 #include "bf_tree.h"
 #include "bf_tree_cb.h"
 #include "bf_tree_vol.h"
@@ -15,7 +15,7 @@
 #include "fixable_page_h.h"
 
 // Following includes are to have the ability to check restart mode
-#include "sm_int_0.h"
+#include "sm_base.h"
 #include "xct.h"
 #include "restart.h"
 #include "vol.h"

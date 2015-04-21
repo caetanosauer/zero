@@ -16,7 +16,7 @@
 #include "log_lsn_tracker.h"
 
 // Following includes are to have the ability to handle on_demand UNDO for Restart operation
-#include "sm_int_0.h"
+#include "sm_base.h"
 #include "lock.h"
 #include "xct.h"
 #include "restart.h"

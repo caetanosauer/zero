@@ -8,12 +8,12 @@
 #define XCT_C
 
 #include <new>
-#include "sm_int_0.h"
+#include "sm_base.h"
 
 #include "tls.h"
 
 #include "lock.h"
-#include <sm_int_0.h>
+#include <sm_base.h>
 #include "xct_dependent.h"
 #include "xct.h"
 #include "lock_x.h"

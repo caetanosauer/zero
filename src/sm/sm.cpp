@@ -66,7 +66,7 @@ class prologue_rc_t;
 #endif
 
 #include "w.h"
-#include "sm_int_0.h"
+#include "sm_base.h"
 #include "chkpt.h"
 #include "chkpt_serial.h"
 #include "sm.h"
@@ -1556,7 +1556,7 @@ istream& operator>>(istream& i, lpid_t& pid)
 ostream& operator<<(ostream& o, const smlevel_0::xct_state_t& xct_state)
 {
 // NOTE: these had better be kept up-to-date wrt the enumeration
-// found in sm_int_0.h
+// found in sm_base.h
     const char* names[] = {"xct_stale",
                         "xct_active",
                         "xct_prepared",

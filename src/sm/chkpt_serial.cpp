@@ -61,7 +61,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #define SM_SOURCE
 #define CHKPT_SERIAL_C
 
-#include <sm_int_0.h>
+#include <sm_base.h>
 #include <chkpt_serial.h>
 
 

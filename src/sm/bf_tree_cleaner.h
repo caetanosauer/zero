@@ -6,7 +6,7 @@
 #define BF_TREE_CLEANER_H
 
 #include "w_defines.h"
-#include "sm_int_0.h"
+#include "sm_base.h"
 #include "smthread.h"
 #include "vid_t.h"
 #include "bf_idx.h"

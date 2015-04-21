@@ -18,7 +18,7 @@
 #include "w_findprime.h"
 #include <stdlib.h>
 
-#include "sm_int_0.h"
+#include "sm_base.h"
 #include "vol.h"
 #include "alloc_cache.h"
 #include "chkpt_serial.h"

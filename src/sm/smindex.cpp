@@ -6,7 +6,7 @@
 
 #define SM_SOURCE
 #define SMINDEX_C
-#include "sm_int_0.h"
+#include "sm_base.h"
 #include "sm_du_stats.h"
 #include "sm.h"
 #include "xct.h"

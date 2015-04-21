@@ -5,7 +5,7 @@
 #include "w_defines.h"
 #define SM_SOURCE
 
-#include "sm_int_0.h"
+#include "sm_base.h"
 
 #include "bf_fixed.h"
 #include "alloc_page.h"

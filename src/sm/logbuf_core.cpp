@@ -15,14 +15,14 @@
 // in order to include log_core.h
 // start
 #define SM_SOURCE
-#include "sm_int_0.h"
+#include "sm_base.h"
 #include "logdef_gen.cpp"
 #include "log.h"
 // end
 
 // in order to include critical_section.h
 // start
-#include "sm_int_0.h"
+#include "sm_base.h"
 #include "critical_section.h"
 // end
 

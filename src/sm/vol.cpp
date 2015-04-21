@@ -12,7 +12,7 @@
 #include "w_stream.h"
 #include <sys/types.h>
 #include <boost/concept_check.hpp>
-#include "sm_int_0.h"
+#include "sm_base.h"
 #include "stnode_page.h"
 #include "vol.h"
 #include "sm_du_stats.h"

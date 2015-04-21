@@ -7,7 +7,7 @@
 #define SM_SOURCE
 #define BTREE_C
 
-#include "sm_int_0.h"
+#include "sm_base.h"
 
 #include "vec_t.h"
 #include "btree_page_h.h"

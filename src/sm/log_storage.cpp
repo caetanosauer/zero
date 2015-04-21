@@ -7,7 +7,7 @@
 #define SM_SOURCE
 #define LOG_STORAGE_C
 
-#include "sm_int_0.h"
+#include "sm_base.h"
 #include "chkpt.h"
 #include <sys/stat.h>
 
