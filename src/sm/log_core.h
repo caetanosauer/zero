@@ -344,7 +344,6 @@ public:
     virtual rc_t            flush(const lsn_t &lsn, bool block=true, bool signal=true, bool *ret_flushed=NULL);
     virtual rc_t            compensate(const lsn_t &orig_lsn, const lsn_t& undo_lsn);
     virtual rc_t            fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, const bool forward);
-    virtual rc_t            fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, hints_op op);
     virtual void            shutdown(); 
 
 

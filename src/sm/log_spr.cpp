@@ -312,10 +312,6 @@ rc_t restart_m::_collect_single_page_recovery_logs(
             break; // root page allocated. initial log
         }
     }
-#ifdef LOG_BUFFER
-//hints
-//delete tmp;
-#endif
     return RCOK;
 }
 

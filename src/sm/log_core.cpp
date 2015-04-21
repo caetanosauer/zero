@@ -327,13 +327,6 @@ log_core::fetch(lsn_t& ll, logrec_t*& rp, lsn_t* nxt, const bool forward)
     return RCOK;
 }
 
-rc_t log_core::fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt, hints_op /*parameter not used */)
-{
-    // This should only be used in logbuf_core, but just invoking the
-    // other (regular) fetch with forward=true should work just as well
-    return fetch(lsn, rec, nxt, true);
-}
-
 void log_core::shutdown() 
 { 
     // gnats 52:  RACE: We set _shutting_down and signal between the time

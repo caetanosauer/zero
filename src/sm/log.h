@@ -164,22 +164,6 @@ public:
     log_m() {};
     virtual ~log_m() {};
 
-    // hints for fetch, not used for now
-    enum hints_op {
-        LOG_ARCHIVING=0, 
-        SINGLE_PAGE_RECOVERY, 
-        TRANSACTION_ROLLBACK, 
-        LOG_ANALYSIS_FORWARD,
-        LOG_ANALYSIS_BACKWARD,
-        TRADITIONAL_REDO,
-        TRADITIONAL_UNDO,
-        PAGE_DRIVEN_REDO,
-        TRANSACTION_DRIVEN_UNDO,
-        ON_DEMAND_REDO,
-        ON_DEMAND_UNDO,
-        DEFAULT_HINTS,
-    };
-
     virtual lsn_t               min_chkpt_rec_lsn() const = 0;
 
     virtual rc_t                file_was_archived(const char *file) = 0;
@@ -256,7 +240,6 @@ public:
 
     // used by log_i and xct_impl
     virtual rc_t                fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt=NULL, const bool forward = true) = 0;
-    virtual rc_t                fetch(lsn_t &lsn, logrec_t* &rec, lsn_t* nxt=NULL, hints_op op=DEFAULT_HINTS) = 0;
             // used in implementation also:
     virtual void        release() = 0; // used by log_i
     virtual rc_t        flush(const lsn_t& lsn, bool block=true, bool signal=true, bool *ret_flushed=NULL) = 0;

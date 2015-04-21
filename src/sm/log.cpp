@@ -74,12 +74,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <boost/static_assert.hpp>
 #include <vector>
 
-// LOG_BUFFER switch
 #include "logbuf_common.h"
-
-#ifdef LOG_BUFFER
-enum hints_op;
-#endif
 
 
 typedef smlevel_0::fileoff_t fileoff_t;
