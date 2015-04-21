@@ -1,6 +1,5 @@
 #define SM_SOURCE
 
-#define SM_LEVEL 0
 #include "sm_int_0.h"
 #include "btree_test_env.h"
 #include "gtest/gtest.h"

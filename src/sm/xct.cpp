@@ -8,7 +8,6 @@
 #define XCT_C
 
 #include <new>
-#define SM_LEVEL 0
 #include "sm_int_0.h"
 
 #include "tls.h"

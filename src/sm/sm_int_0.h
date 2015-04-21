@@ -38,10 +38,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /*  -- do not edit anything above this line --   </std-header>*/
 
-#if defined(SM_SOURCE) && !defined(SM_LEVEL)
-#    define SM_LEVEL 0
-#endif
-
 #include <w_debug.h>
 #include <sysdefs.h>
 #include <basics.h>
@@ -56,7 +52,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <tid_t.h>
 #include "smstats.h"
 
-#if defined(SM_SOURCE) && (SM_LEVEL >= 0)
+#if defined(SM_SOURCE)
 #    include <fixable_page_h.h>
 #    include <pmap.h>
 #    include <vol.h>
