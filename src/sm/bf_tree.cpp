@@ -29,6 +29,7 @@
 #include <ostream>
 #include <limits>
 
+#include "sm_options.h"
 #include "latch.h"
 #include "btree_page_h.h"
 #include "log.h"
@@ -45,39 +46,85 @@ uint64_t bf_tree_m::_bf_swizzle_ex = 0;
 uint64_t bf_tree_m::_bf_swizzle_ex_fails = 0;
 #endif // PAUSE_SWIZZLING_ON
 
+bf_tree_m::bf_tree_m(const sm_options& options)
+{
+    int64_t bufpoolsize = options.get_int_option("sm_bufpoolsize", 8192);
+    uint32_t  nbufpages = (bufpoolsize * 1024 - 1) / smlevel_0::page_sz + 1;
+    if (nbufpages < 10)  {
+        smlevel_0::errlog->clog << fatal_prio << "ERROR: buffer size ("
+             << bufpoolsize
+             << "-KB) is too small" << flushl;
+        smlevel_0::errlog->clog << fatal_prio
+            << "       at least " << 32 * smlevel_0::page_sz / 1024
+             << "-KB is needed" << flushl;
+        W_FATAL(eCRASH);
+    }
 
-bf_tree_m::bf_tree_m (uint32_t block_cnt,
-    uint32_t cleaner_threads,
-    uint32_t cleaner_interval_millisec_min,
-    uint32_t cleaner_interval_millisec_max,
-    uint32_t cleaner_write_buffer_pages,
-    const char* replacement_policy,
-    bool initially_enable_cleaners,
-    bool enable_swizzling) {
+    // number of page writers
+    int32_t npgwriters = options.get_int_option("sm_num_page_writers", 1);
+    if(npgwriters < 0) {
+        smlevel_0::errlog->clog << fatal_prio
+            << "ERROR: num page writers must be positive : "
+             << npgwriters
+             << flushl;
+        W_FATAL(eCRASH);
+    }
+    if (npgwriters == 0) {
+        npgwriters = 1;
+    }
+
+    int64_t cleaner_interval_millisec_min =
+        options.get_int_option("sm_cleaner_interval_millisec_min", 1000);
+    if (cleaner_interval_millisec_min <= 0) {
+        cleaner_interval_millisec_min = 1000;
+    }
+
+    int64_t cleaner_interval_millisec_max =
+        options.get_int_option("sm_cleaner_interval_millisec_max", 256000);
+    if (cleaner_interval_millisec_max <= 0) {
+        cleaner_interval_millisec_max = 256000;
+    }
+    bool initially_enable_cleaners = 
+        options.get_bool_option("sm_backgroundflush", true);
+    bool bufferpool_swizzle = 
+        options.get_bool_option("sm_bufferpool_swizzle", false);
+    // clock or random
+    std::string replacement_policy = 
+        options.get_string_option("sm_bufferpool_replacement_policy", "clock");
+
+    uint32_t cleaner_write_buffer_pages =
+        (uint32_t) options.get_int_option("sm_cleaner_write_buffer_pages", 64);
+
     ::memset (this, 0, sizeof(bf_tree_m));
 
-    _block_cnt = block_cnt;
-    _enable_swizzling = enable_swizzling;
-    if (strcmp(replacement_policy, "clock") == 0) {
+    _block_cnt = nbufpages;
+    _enable_swizzling = bufferpool_swizzle;
+    if (strcmp(replacement_policy.c_str(), "clock") == 0) {
         _replacement_policy = POLICY_CLOCK;
-    } else if (strcmp(replacement_policy, "clock+priority") == 0) {
+    } else if (strcmp(replacement_policy.c_str(), "clock+priority") == 0) {
         _replacement_policy = POLICY_CLOCK_PRIORITY;
-    } else if (strcmp(replacement_policy, "random") == 0) {
+    } else if (strcmp(replacement_policy.c_str(), "random") == 0) {
         _replacement_policy = POLICY_RANDOM;
     }
 
 #ifdef SIMULATE_NO_SWIZZLING
     _enable_swizzling = false;
-    enable_swizzling = false;
-    DBGOUT0 (<< "THIS MESSAGE MUST NOT APPEAR unless you intended. Completely turned off swizzling in bufferpool.");
+    bufferpool_swizzle = false;
+    DBGOUT0 (<< "THIS MESSAGE MUST NOT APPEAR unless you intended."
+            << " Completely turned off swizzling in bufferpool.");
 #endif // SIMULATE_NO_SWIZZLING
 
-    DBGOUT1 (<< "constructing bufferpool with " << block_cnt << " blocks of " << SM_PAGESIZE << "-bytes pages... enable_swizzling=" << enable_swizzling);
+    DBGOUT1 (<< "constructing bufferpool with " << nbufpages << " blocks of "
+            << SM_PAGESIZE << "-bytes pages... enable_swizzling=" <<
+            _enable_swizzling);
 
     // use posix_memalign to allow unbuffered disk I/O
     void *buf = NULL;
-    if (::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * ((uint64_t) block_cnt)) != 0) {
-        ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << SM_PAGESIZE << "-bytes pages. ");
+    if (::posix_memalign(&buf, SM_PAGESIZE, SM_PAGESIZE * ((uint64_t)
+                    nbufpages)) != 0)
+    {
+        ERROUT (<< "failed to reserve " << nbufpages
+                << " blocks of " << SM_PAGESIZE << "-bytes pages. ");
         W_FATAL(eOUTOFMEMORY);
     }
     _buffer = reinterpret_cast<generic_page*>(buf);
@@ -92,14 +139,21 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
     BOOST_STATIC_ASSERT(sizeof(latch_t) == 64);
     // allocate one more pair of <control block, latch> as we want to align the table at an odd
     // multiple of cacheline (64B)
-    if (::posix_memalign(&buf, sizeof(bf_tree_cb_t) + sizeof(latch_t), (sizeof(bf_tree_cb_t) + sizeof(latch_t)) * (((uint64_t) block_cnt) + 1LLU)) != 0) {
-        ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << sizeof(bf_tree_cb_t) << "-bytes blocks. ");
+    size_t total_size = (sizeof(bf_tree_cb_t) + sizeof(latch_t))
+        * (((uint64_t) nbufpages) + 1LLU);
+    if (::posix_memalign(&buf, sizeof(bf_tree_cb_t) + sizeof(latch_t),
+                total_size) != 0)
+    {
+        ERROUT (<< "failed to reserve " << nbufpages
+                << " blocks of " << sizeof(bf_tree_cb_t) << "-bytes blocks.");
         W_FATAL(eOUTOFMEMORY);
     }
-    ::memset (buf, 0, (sizeof(bf_tree_cb_t) + sizeof(latch_t)) * (((uint64_t) block_cnt) + 1LLU));
-    _control_blocks = reinterpret_cast<bf_tree_cb_t*>(reinterpret_cast<char *>(buf) + sizeof(bf_tree_cb_t));
+    ::memset (buf, 0, (sizeof(bf_tree_cb_t) + sizeof(latch_t)) * (((uint64_t)
+                    nbufpages) + 1LLU));
+    _control_blocks = reinterpret_cast<bf_tree_cb_t*>(reinterpret_cast<char
+            *>(buf) + sizeof(bf_tree_cb_t));
     w_assert0(_control_blocks != NULL);
-    for (bf_idx i = 0; i < block_cnt; i++) {
+    for (bf_idx i = 0; i < nbufpages; i++) {
         BOOST_STATIC_ASSERT(sizeof(bf_tree_cb_t) < SCHAR_MAX);
         if (i & 0x1) { /* odd */
             get_cb(i)._latch_offset = -static_cast<int8_t>(sizeof(bf_tree_cb_t)); // place the latch before the control block
@@ -108,42 +162,47 @@ bf_tree_m::bf_tree_m (uint32_t block_cnt,
         }
     }
 #else
-    if (::posix_memalign(&buf, sizeof(bf_tree_cb_t), sizeof(bf_tree_cb_t) * ((uint64_t) block_cnt)) != 0) {
-        ERROUT (<< "failed to reserve " << block_cnt << " blocks of " << sizeof(bf_tree_cb_t) << "-bytes blocks. ");
+    if (::posix_memalign(&buf, sizeof(bf_tree_cb_t),
+                sizeof(bf_tree_cb_t) * ((uint64_t) nbufpages)) != 0)
+    {
+        ERROUT (<< "failed to reserve " << nbufpages
+                << " blocks of " << sizeof(bf_tree_cb_t) << "-bytes blocks. ");
         W_FATAL(eOUTOFMEMORY);
     }
     _control_blocks = reinterpret_cast<bf_tree_cb_t*>(buf);
     w_assert0(_control_blocks != NULL);
-    ::memset (_control_blocks, 0, sizeof(bf_tree_cb_t) * block_cnt);
+    ::memset (_control_blocks, 0, sizeof(bf_tree_cb_t) * nbufpages);
 #endif
 
 #ifdef BP_MAINTAIN_PARENT_PTR
     // swizzled-LRU is initially empty
-    _swizzled_lru = new bf_idx[block_cnt * 2];
+    _swizzled_lru = new bf_idx[nbufpages * 2];
     w_assert0(_swizzled_lru != NULL);
-    ::memset (_swizzled_lru, 0, sizeof(bf_idx) * block_cnt * 2);
+    ::memset (_swizzled_lru, 0, sizeof(bf_idx) * nbufpages * 2);
     _swizzled_lru_len = 0;
 #endif // BP_MAINTAIN_PARENT_PTR
 
     // initially, all blocks are free
-    _freelist = new bf_idx[block_cnt];
+    _freelist = new bf_idx[nbufpages];
     w_assert0(_freelist != NULL);
     _freelist[0] = 1; // [0] is a special entry. it's the list head
-    for (bf_idx i = 1; i < block_cnt - 1; ++i) {
+    for (bf_idx i = 1; i < nbufpages - 1; ++i) {
         _freelist[i] = i + 1;
     }
-    _freelist[block_cnt - 1] = 0;
-    _freelist_len = block_cnt - 1; // -1 because [0] isn't a valid block
+    _freelist[nbufpages - 1] = 0;
+    _freelist_len = nbufpages - 1; // -1 because [0] isn't a valid block
 
     //initialize hashtable
-    int buckets = w_findprime(1024 + (block_cnt / 4)); // maximum load factor is 25%. this is lower than original shore-mt because we have swizzling
+    int buckets = w_findprime(1024 + (nbufpages / 4)); // maximum load factor is 25%. this is lower than original shore-mt because we have swizzling
     _hashtable = new bf_hashtable(buckets);
     w_assert0(_hashtable != NULL);
 
     ::memset (_volumes, 0, sizeof(bf_tree_vol_t*) * MAX_VOL_COUNT);
 
     // initialize page cleaner
-    _cleaner = new bf_tree_cleaner (this, cleaner_threads, cleaner_interval_millisec_min, cleaner_interval_millisec_max, cleaner_write_buffer_pages, initially_enable_cleaners);
+    _cleaner = new bf_tree_cleaner (this, npgwriters,
+            cleaner_interval_millisec_min, cleaner_interval_millisec_max,
+            cleaner_write_buffer_pages, initially_enable_cleaners);
 
     _dirty_page_count_approximate = 0;
     _swizzled_page_count_approximate = 0;

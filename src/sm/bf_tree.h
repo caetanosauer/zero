@@ -14,6 +14,7 @@
 #include "bf_idx.h"
 #include <iosfwd>
 
+class sm_options;
 class vol_t;
 class lsn_t;
 struct bf_tree_cb_t; // include bf_tree_cb.h in implementation codes
@@ -182,14 +183,8 @@ public:
 #endif // PAUSE_SWIZZLING_ON
 
     /** constructs the buffer pool. */
-    bf_tree_m (bf_idx block_cnt, uint32_t cleaner_threads = 1,
-               uint32_t cleaner_interval_millisec_min       =   1000,
-               uint32_t cleaner_interval_millisec_max       = 256000,
-               uint32_t cleaner_write_buffer_pages          =     64,
-               const char* replacement_policy = "clock",
-               bool initially_enable_cleaners = true,
-               bool enable_swizzling = false
-              );
+    bf_tree_m (const sm_options&);
+
     /** destructs the buffer pool.  */
     ~bf_tree_m ();
 

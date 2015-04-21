@@ -480,43 +480,6 @@ ss_m::_construct_once()
     shutting_down = false;
     shutdown_clean = true;
 
-   /*
-    * buffer pool size
-    */
-
-    int64_t bufpoolsize = _options.get_int_option("sm_bufpoolsize", 8192);
-    uint32_t  nbufpages = (bufpoolsize * 1024 - 1) / page_sz + 1;
-    if (nbufpages < 10)  {
-        errlog->clog << fatal_prio << "ERROR: buffer size ("
-             << bufpoolsize
-             << "-KB) is too small" << flushl;
-        errlog->clog << fatal_prio << "       at least " << 32 * page_sz / 1024
-             << "-KB is needed" << flushl;
-        W_FATAL(eCRASH);
-    }
-
-    // number of page writers
-    int32_t npgwriters = _options.get_int_option("sm_num_page_writers", 1);
-    if(npgwriters < 0) {
-        errlog->clog << fatal_prio << "ERROR: num page writers must be positive : "
-             << npgwriters
-             << flushl;
-        W_FATAL(eCRASH);
-    }
-    if (npgwriters == 0) {
-        npgwriters = 1;
-    }
-
-    int64_t cleaner_interval_millisec_min = _options.get_int_option("sm_cleaner_interval_millisec_min", 1000);
-    if (cleaner_interval_millisec_min <= 0) {
-        cleaner_interval_millisec_min = 1000;
-    }
-
-    int64_t cleaner_interval_millisec_max = _options.get_int_option("sm_cleaner_interval_millisec_max", 256000);
-    if (cleaner_interval_millisec_max <= 0) {
-        cleaner_interval_millisec_max = 256000;
-    }
-
     // choose log manager implementation
     std::string logimpl = _options.get_string_option("sm_log_impl", log_core::IMPL_NAME);
     uint64_t def_logbufsize = (logimpl == logbuf_core::IMPL_NAME) ? LOGBUF_SEG_SIZE : 128 << 10;
@@ -548,19 +511,11 @@ ss_m::_construct_once()
     // internal code path to use
     _set_recovery_mode();
 
-    /*
-     * Now we can create the buffer manager
-     */
-    bool initially_enable_cleaners = _options.get_bool_option("sm_backgroundflush", true);
-    bool bufferpool_swizzle = _options.get_bool_option("sm_bufferpool_swizzle", false);
-    std::string bufferpool_replacement_policy = _options.get_string_option("sm_bufferpool_replacement_policy", "clock"); // clock or random
-
-    uint32_t cleaner_write_buffer_pages = (uint32_t) _options.get_int_option("sm_cleaner_write_buffer_pages", 64);
-    bf = new bf_tree_m(nbufpages, npgwriters, cleaner_interval_millisec_min, cleaner_interval_millisec_max, cleaner_write_buffer_pages, bufferpool_replacement_policy.c_str(), initially_enable_cleaners, bufferpool_swizzle);
+    bf = new bf_tree_m(_options);
     if (! bf) {
         W_FATAL(eOUTOFMEMORY);
     }
-    /* just hang onto this until we create thelog manager...*/
+
     lm = new lock_m(_options);
     if (! lm)  {
         W_FATAL(eOUTOFMEMORY);
