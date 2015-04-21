@@ -89,6 +89,8 @@ class prologue_rc_t;
 #include "log_core.h"
 #include "logbuf_core.h"
 
+#include <netdb.h> // CS: for generate_new_lvid
+
 
 #ifdef EXPLICIT_TEMPLATE
 template class w_auto_delete_t<SmStoreMetaStats*>;
@@ -717,11 +719,6 @@ ss_m::_construct_once()
      */
     SSM = this;
 
-    lid = new lid_m();
-    if (! lid) {
-        W_FATAL(eOUTOFMEMORY);
-    }
-
     me()->mark_pin_count();
 
     /*
@@ -1137,11 +1134,6 @@ ss_m::_destruct_once()
     w_assert1(xct_t::num_active_xcts() == 0);
 
     lm->assert_empty(); // no locks should be left
-
-    /*
-     *  Level 4
-     */
-    delete lid; lid=0;
 
     /*
      *  Level 3

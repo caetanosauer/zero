@@ -58,7 +58,6 @@ typedef smlevel_4 smlevel_top;
 
 #if (SM_LEVEL >= 4)
 #    include <btcursor.h>
-#    include <lid.h>
 #    include <xct_dependent.h>
 #    include <prologue.h>
 #endif

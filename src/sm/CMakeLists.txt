@@ -32,7 +32,6 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_core.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_hashtable.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/logbuf_seg.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/lid.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock_core.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lock_dump.cpp
