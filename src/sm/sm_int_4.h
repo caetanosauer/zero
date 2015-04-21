@@ -47,12 +47,10 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #endif
 
 class ss_m;
-class lid_m;
 
 class smlevel_4 : public smlevel_3 {
 public:
     static ss_m*    SSM;    // we will change to lower case later
-    static lid_m*    lid;
 };
 typedef smlevel_4 smlevel_top;
 

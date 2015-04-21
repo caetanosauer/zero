@@ -215,8 +215,6 @@ restart_m* smlevel_1::recovery = 0;
 
 btree_m* smlevel_2::bt = 0;
 
-lid_m* smlevel_4::lid = 0;
-
 ss_m* smlevel_4::SSM = 0;
 
 smlevel_1::xct_impl_t smlevel_1::xct_impl
@@ -235,9 +233,6 @@ smlevel_1::xct_impl_t smlevel_1::xct_impl
  */
 int ss_m::_instance_cnt = 0;
 //ss_m::param_t ss_m::curr_param;
-
-// TODO: why isn't this in the log_core constructor?
-
 
 /*
  * NB: reverse function, _make_store_property
