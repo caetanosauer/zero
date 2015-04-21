@@ -1189,7 +1189,7 @@ restart_m::analysis_pass_forward(
     // Update the last mount LSN, it was originally set from the begin checkpoint log record
     // but it might have been modified to redo_lsn (earlier)
     // CS TODO
-    // io_m::SetLastMountLSN(theLastMountLSNBeforeChkpt);
+    // log::SetLastMountLSN(theLastMountLSNBeforeChkpt);
 
     // We are done with Log Analysis, at this point each transactions in the transaction
     // table is either loser (active) or winner (ended);
@@ -1952,7 +1952,7 @@ restart_m::analysis_pass_backward(
     // Update the last mount LSN, it was originally set from the begin checkpoint log record
     // but it might have been modified to redo_lsn (earlier)
     // CS TODO
-    // io_m::SetLastMountLSN(theLastMountLSNBeforeChkpt);
+    // log->SetLastMountLSN(theLastMountLSNBeforeChkpt);
 
     // Done with backward log scan, check the compensation list
     _analysis_process_compensation_map(mapCLR);
@@ -3913,7 +3913,7 @@ restart_m::redo_log_pass(
 
                             r.redo(0);
                             // CS TODO
-                            // io_m::SetLastMountLSN(lsn);
+                            // log->SetLastMountLSN(lsn);
 
                             // No page involved, no need to update dirty_count
                             redone = true;
@@ -3947,7 +3947,7 @@ restart_m::redo_log_pass(
                                 w_assert1(!sxs.check_error_on_start().is_error());
                                 r.redo(0);
                                 // CS TODO
-                                // io_m::SetLastMountLSN(lsn);
+                                // log->SetLastMountLSN(lsn);
                                 redone = true;
                                 rc_t sxs_rc = sxs.end_sys_xct (RCOK);
                                 w_assert1(!sxs_rc.is_error());

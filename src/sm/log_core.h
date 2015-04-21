@@ -105,6 +105,13 @@ public:
         _flush_daemon->fork();
     }
 
+    virtual lsn_t getLastMountLSN() const { return _lastMountLSN; }
+    virtual void setLastMountLSN(lsn_t m)
+    {
+        w_assert2(m >= _lastMountLSN);
+        _lastMountLSN = m;
+    }
+
 
     // for flush_daemon_thread_t
     void            flush_daemon();
@@ -188,6 +195,7 @@ protected:
 
     lsn_t           _curr_lsn;
     lsn_t           _durable_lsn;
+    lsn_t           _lastMountLSN;
 
     bool            _log_corruption;
     void            start_log_corruption() { _log_corruption = true; }

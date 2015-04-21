@@ -689,7 +689,7 @@ try
     // The master LSN will be the starting point for Recovery Log Analysis log scan
     const lsn_t curr_lsn = ss_m::log->curr_lsn();
     // CS TODO: is lastMountLSN really necessary? Why?
-    // LOG_INSERT(chkpt_begin_log(ss_m::io->GetLastMountLSN()), &master);
+    // LOG_INSERT(chkpt_begin_log(ss_m::log->GetLastMountLSN()), &master);
     LOG_INSERT(chkpt_begin_log(lsn_t::null), &master);
     w_assert1(curr_lsn.data() <= master.data());
 
@@ -786,7 +786,7 @@ try
                             rec_lsn.get(), page_lsn.get(), min_rec_lsn,
                             master, ss_m::log->curr_lsn(),
                             lsn_t::null);
-                            // ss_m::io->GetLastMountLSN()); // CS TODO
+                            // ss_m::log->GetLastMountLSN()); // CS TODO
             if (count)
             {
                 total_page_count += count;
@@ -1139,7 +1139,7 @@ try
         min_xct_lsn = master;
 
     // Finish up the checkpoint
-    // 1. If io->GetLastMountLSN() > master, this is not supposed to happen
+    // 1. If log->getLastMountLSN() > master, this is not supposed to happen
     // 2. If we get here (passed the initial checking) and the systme is
     //     in a normal shutting down and this is an asynch/user checkpoint, the
     //     checkpoint must started before the normal system shutdown, therefore
@@ -1150,7 +1150,7 @@ try
     //     wait for the checkpoint to finish, don't finish the current checkpoint.
 
 #if 0 // CS TODO -- is this necessary?
-    if (io->GetLastMountLSN() <= master)
+    if (ss_m::log->GetLastMountLSN() <= master)
 #endif
     {
         if (ss_m::shutting_down && !ss_m::shutdown_clean) // Dirty shutdown (simulated crash)
@@ -1243,7 +1243,7 @@ try
     else
     {
         DBGOUT1(<<"chkpt_m::take - GetLastMountLSN > master, invalid situation for checkpoint, "
-                << "GetLastMountLSN = " << ss_m::io->GetLastMountLSN() << ", master = " << master);
+                << "GetLastMountLSN = " << ss_m::log->getLastMountLSN() << ", master = " << master);
         DBGOUT1(<<"END chkpt_m::take, abort checkpoint" << master);
 
         ss_m::errlog->clog << error_prio

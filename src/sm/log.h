@@ -225,6 +225,9 @@ public:
      */
     virtual lsn_t               curr_lsn()  const = 0;
 
+    virtual lsn_t               getLastMountLSN()  const = 0;
+    virtual void               setLastMountLSN(lsn_t)  = 0;
+
     //virtual bool                squeezed_by(const lsn_t &)  const  = 0;
 
 
