@@ -5,7 +5,7 @@
 #include "w_defines.h"
 
 #define SM_SOURCE
-#include "sm_int_2.h"
+#include "sm_int_1.h"
 #include "logdef_gen.cpp"
 
 #include "log.h"

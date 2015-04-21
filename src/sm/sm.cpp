@@ -66,7 +66,7 @@ class prologue_rc_t;
 #endif
 
 #include "w.h"
-#include "sm_int_2.h"
+#include "sm_int_1.h"
 #include "chkpt.h"
 #include "chkpt_serial.h"
 #include "sm.h"
@@ -170,7 +170,7 @@ chkpt_m* smlevel_1::chkpt = 0;
 
 restart_m* smlevel_1::recovery = 0;
 
-btree_m* smlevel_2::bt = 0;
+btree_m* smlevel_1::bt = 0;
 
 ss_m* smlevel_top::SSM = 0;
 
@@ -2272,18 +2272,18 @@ ss_m::get_store_info(
 
 
 ostream&
-operator<<(ostream& o, smlevel_2::sm_store_property_t p)
+operator<<(ostream& o, smlevel_1::sm_store_property_t p)
 {
-    if (p == smlevel_2::t_regular)                o << "regular";
-    if (p == smlevel_2::t_temporary)                o << "temporary";
-    if (p == smlevel_2::t_load_file)                o << "load_file";
-    if (p == smlevel_2::t_insert_file)                o << "insert_file";
-    if (p == smlevel_2::t_bad_storeproperty)        o << "bad_storeproperty";
-    if (p & !(smlevel_2::t_regular
-                | smlevel_2::t_temporary
-                | smlevel_2::t_load_file
-                | smlevel_2::t_insert_file
-                | smlevel_2::t_bad_storeproperty))  {
+    if (p == smlevel_1::t_regular)                o << "regular";
+    if (p == smlevel_1::t_temporary)                o << "temporary";
+    if (p == smlevel_1::t_load_file)                o << "load_file";
+    if (p == smlevel_1::t_insert_file)                o << "insert_file";
+    if (p == smlevel_1::t_bad_storeproperty)        o << "bad_storeproperty";
+    if (p & !(smlevel_1::t_regular
+                | smlevel_1::t_temporary
+                | smlevel_1::t_load_file
+                | smlevel_1::t_insert_file
+                | smlevel_1::t_bad_storeproperty))  {
         o << "unknown_property";
         w_assert3(1);
     }

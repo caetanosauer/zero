@@ -7,7 +7,7 @@
 
 // lots of non-sense to do REDO from testcase.
 #include "sm_int_1.h"
-#include "sm_int_2.h"
+#include "sm_int_1.h"
 #include "pmap.h"
 #include "logrec.h"
 #include "logdef_gen.cpp"

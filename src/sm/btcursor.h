@@ -63,7 +63,7 @@ class btree_page_h;
  * concurrency. See jira ticket:89 "Cursor case: overhead-concurrency trade-off" (originally trac ticket:91) for more details.
  * \ingroup SSMBTREE
  */
-class bt_cursor_t : private smlevel_2 {
+class bt_cursor_t : private smlevel_1 {
 public:
     /**
      * Constructs a full scan cursor.

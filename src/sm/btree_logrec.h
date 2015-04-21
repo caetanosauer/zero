@@ -14,7 +14,7 @@
 
 #define SM_SOURCE
 #define LOGREC_C
-#include "sm_int_2.h"
+#include "sm_int_1.h"
 #include "logdef_gen.cpp"
 #include "btree_page_h.h"
 #include "btree_impl.h"

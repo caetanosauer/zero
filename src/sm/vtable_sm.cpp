@@ -43,7 +43,7 @@ class prologue_rc_t;
 #endif
 
 #include "w.h"
-#include "sm_int_2.h"
+#include "sm_int_1.h"
 #include "chkpt.h"
 #include "sm.h"
 #include "sm_vtable_enum.h"

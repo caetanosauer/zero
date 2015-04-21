@@ -64,7 +64,7 @@
  * ACM Transactions on Database Systems (TODS), 2011
  * Modern B-tree techniques
  */
-class btree_impl : public smlevel_2  {
+class btree_impl : public smlevel_1  {
 public:
 
 #ifdef DOXYGEN_HIDE
