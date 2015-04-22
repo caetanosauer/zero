@@ -916,7 +916,8 @@ bool LogArchiver::BlockAssembly::add(logrec_t* lr)
 void LogArchiver::BlockAssembly::finish(int run)
 {
     if (!writerForked) {
-        writer->fork();
+        // CS: for some reason, this returns stOS for "already forked"
+        W_IGNORE(writer->fork());
         writerForked = true;
     }
 
