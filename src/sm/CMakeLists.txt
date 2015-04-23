@@ -53,6 +53,7 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/plog_xct.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/pmap.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/restart.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/restore.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/sm.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/sm_du_stats.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/sm_io.cpp
