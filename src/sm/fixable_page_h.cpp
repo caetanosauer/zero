@@ -355,6 +355,14 @@ bool fixable_page_h::upgrade_latch_conditional(latch_mode_t mode) {
     }
 }
 
+void fixable_page_h::setup_for_restore(generic_page* pp)
+{
+    w_assert1(!is_bufferpool_managed());
+    w_assert1(!_pp);
+
+    _pp = pp;
+}
+
 
 
 

@@ -1574,6 +1574,10 @@ rc_t LogArchiver::ArchiveIndex::getBlockCounts(int fd, size_t* indexBlocks,
 size_t LogArchiver::ArchiveIndex::findRun(lsn_t lsn)
 {
     // Assumption: mutex is held by caller
+    if (lsn == lsn_t::null) {
+        // full log replay (backup-less)
+        return 0;
+    }
     
     /* 
      * CS: requests are more likely to access the last runs, so

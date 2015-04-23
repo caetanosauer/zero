@@ -5,17 +5,21 @@
 
 #include "sm_int_1.h"
 
+#include <queue>
+
 class sm_options;
 class RestoreBitmap;
-class ArchiveDirectory;
+class RestoreScheduler;
+class generic_page;
 
 /** \brief Class that controls the process of restoring a failed volume
  *
  * \author Caetano Sauer
  */
 class RestoreMgr : public smthread_t {
+    friend class RestoreThread;
 public:
-    RestoreMgr(const sm_options&, ArchiveDirectory*, vol_t*);
+    RestoreMgr(const sm_options&, LogArchiver::ArchiveDirectory*, vol_t*);
     virtual ~RestoreMgr();
 
     /** \brief Returns true if given page is already restored.
@@ -31,8 +35,12 @@ public:
      * reading a specific page which is not yet restored. This method simply
      * generates a request with the restore scheduler -- no guarantees are
      * provided w.r.t. when page will be restored.
+     *
+     * The restored contents of the page will be copied into the given
+     * address (if not null). This enables reuse in a buffer pool "fix" call,
+     * foregoing the need for an extra read on the restored device.
      */
-    void requestRestore(const shpid_t& pid);
+    void requestRestore(const shpid_t& pid, generic_page* addr = NULL);
 
     /** \brief Blocks until given page is restored
      *
@@ -44,10 +52,20 @@ public:
      */
     bool waitUntilRestored(const shpid_t& pid, size_t timeout_in_ms);
 
+    size_t getNumPages() { return numPages; }
+    size_t getSegmentSize() { return segmentSize; }
+
 protected:
     RestoreBitmap* bitmap;
-    ArchiveDirectory* archive;
+    RestoreScheduler* scheduler;
+    LogArchiver::ArchiveDirectory* archive;
     vol_t* volume;
+
+    std::map<shpid_t, generic_page*> bufferedRequests;
+    mcs_rwlock requestMutex;
+
+    pthread_cond_t restoreCond;
+    pthread_mutex_t restoreCondMutex;
 
     /** \brief Number of pages restored so far
      * (must be a multiple of segmentSize)
@@ -73,6 +91,23 @@ protected:
     /** \brief Gives the first page ID of a given segment number.
      */
     shpid_t getPidForSegment(size_t segment);
+
+    /** \brief Method that executes the actual restore operations in a loop
+     *
+     * This method continuously gets page IDs to be restored from the scheduler
+     * and performs the restore operation on the corresponding segment. The 
+     * method only returns once all segments have been restored.
+     *
+     * In the future, we may consider partitioning the volume and restore it in
+     * parallel with multiple threads. To that end, this method should receive
+     * a page ID interval to be restored.
+     */
+    void restoreLoop();
+
+    /** \brief Concludes restore of a segment and flushes to replacement device
+     *
+     */
+    void finishSegment(size_t segment, char* workspace, size_t count);
 };
 
 /** \brief Bitmap data structure that controls the progress of restore
@@ -88,11 +123,48 @@ public:
     RestoreBitmap(size_t size);
     virtual ~RestoreBitmap();
 
+    size_t getSize() { return bits.size(); }
+
     bool get(size_t i);
     void set(size_t i);
 protected:
     std::vector<bool> bits;
     mcs_rwlock mutex;
+};
+
+/** \brief Scheduler for restore operations. Decides what page to restore next.
+ *
+ * The restore loop in RestoreMgr restores segments in the order dictated
+ * by this scheduler, using its next() method. The current implementation
+ * is a simple FIFO queue. When the queue is empty, the first non-restored
+ * segment in disk order is returned. This means that if no requests come in,
+ * the restore loop behaves like a single-pass restore.
+ */
+class RestoreScheduler {
+public:
+    RestoreScheduler(RestoreMgr* restore);
+    virtual ~RestoreScheduler();
+
+    void enqueue(const shpid_t& pid);
+    shpid_t next();
+
+protected:
+    RestoreMgr* restore;
+
+    mcs_rwlock mutex;
+    std::queue<shpid_t> queue;
+
+    size_t numPages;
+    shpid_t firstNotRestored;
+
+};
+
+class RestoreThread : public smthread_t {
+public:
+    RestoreThread(RestoreMgr*, RestoreScheduler*);
+    virtual ~RestoreThread();
+
+    virtual void run();
 };
 
 #endif

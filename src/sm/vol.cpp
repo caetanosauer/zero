@@ -556,6 +556,12 @@ vol_t::set_fake_disk_latency(const int adelay)
 rc_t
 vol_t::read_page(shpid_t pnum, generic_page& page, bool& past_end)
 {
+    /*
+     * CS (TODO) If volume is marked as failed, this is where we
+     * invoke restore manager. When restore finishes, it is assumed
+     * that it copied the restored contents into &page, which makes
+     * the extra read from the restored volume unnecessary.
+     */
     w_assert1(pnum > 0 && pnum < (shpid_t)(_num_pages));
     fileoff_t offset = fileoff_t(pnum) * sizeof(page);
 
