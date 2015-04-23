@@ -22,8 +22,10 @@ On an Ubuntu system, the dependencies can usually be installed with the followin
 
 ```
 sudo apt-get install git cmake build-essential
-sudo apt-get install liboost-dev libboost-thread-dev libboost-program-options-dev
+sudo apt-get install liboost-dev libboost-thread-dev libboost-program-options-dev libboost-random-dev
 ```
+
+Zero requires libboost version 1.48. Please make sure that this version or a higher one is installed.
 
 ## Compilation
 
