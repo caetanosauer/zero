@@ -162,7 +162,7 @@ stnode_cache_t::store_operation(store_operation_param param) {
 
     // log it and apply the change to the stnode_page
     spinlock_read_critical_section cs2(&_special_pages->get_checkpoint_lock()); // Protect against checkpoint.  See bf_fixed_m comment.
-    W_DO( log_store_operation(param) );
+    W_DO( log_store_operation(_vid, param) );
     _stnode_page.get(param.snum()) = stnode;
     _special_pages->get_dirty_flags()[_special_pages->get_page_cnt() - 1] = true;
     return RCOK;

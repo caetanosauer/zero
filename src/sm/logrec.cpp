@@ -833,7 +833,8 @@ void alloc_a_page_log::redo(fixable_page_h*)
     }
 }
 
-alloc_consecutive_pages_log::alloc_consecutive_pages_log (vid_t vid, shpid_t pid_begin, uint32_t page_count)
+alloc_consecutive_pages_log::alloc_consecutive_pages_log (vid_t vid,
+        shpid_t pid_begin, uint32_t page_count)
 {
     // page alloation is single-log system transaction. so, use data_ssx()
     uint32_t *buf = reinterpret_cast<uint32_t*>(data_ssx());
@@ -881,9 +882,11 @@ void dealloc_a_page_log::redo(fixable_page_h*)
     }
 }
 
-store_operation_log::store_operation_log(const store_operation_param& param)
+store_operation_log::store_operation_log(vid_t vid,
+        const store_operation_param& param)
 {
-    fill(0, 0, (new (_data) store_operation_param(param))->size());
+    lpid_t dummy(vid, 0, 0);
+    fill(&dummy, 0, (new (_data) store_operation_param(param))->size());
 }
 
 void store_operation_log::redo(fixable_page_h* /*page*/)
