@@ -38,9 +38,14 @@ public:
      *
      * The restored contents of the page will be copied into the given
      * address (if not null). This enables reuse in a buffer pool "fix" call,
-     * foregoing the need for an extra read on the restored device.
+     * foregoing the need for an extra read on the restored device. However,
+     * this copy only happens if the segment still happens to be unrestored
+     * when this method enters the critical section. If it gets restored
+     * immediately before that, then the request is ignored and the method
+     * returns false. This condition tells the caller it must read the page
+     * contents from the restored device.
      */
-    void requestRestore(const shpid_t& pid, generic_page* addr = NULL);
+    bool requestRestore(const shpid_t& pid, generic_page* addr = NULL);
 
     /** \brief Blocks until given page is restored
      *
@@ -50,10 +55,12 @@ public:
      * to read the page from the volume. This is basically equivalent to
      * polling on the isRestored() method.
      */
-    bool waitUntilRestored(const shpid_t& pid, size_t timeout_in_ms);
+    bool waitUntilRestored(const shpid_t& pid, size_t timeout_in_ms = 0);
 
     size_t getNumPages() { return numPages; }
     size_t getSegmentSize() { return segmentSize; }
+
+    virtual void run();
 
 protected:
     RestoreBitmap* bitmap;

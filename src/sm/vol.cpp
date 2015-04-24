@@ -23,6 +23,10 @@
 #include "bf_fixed.h"
 #include "alloc_cache.h"
 #include "bf_tree.h"
+#include "restore.h"
+#include "logarchiver.h"
+
+#include "sm.h"
 
 #ifdef EXPLICIT_TEMPLATE
 template class w_auto_delete_t<generic_page>;
@@ -61,7 +65,8 @@ vol_t::vol_t(const bool apply_fake_io_latency, const int fake_disk_latency)
              : _unix_fd(-1),
                _apply_fake_disk_latency(apply_fake_io_latency),
                _fake_disk_latency(fake_disk_latency),
-               _alloc_cache(NULL), _stnode_cache(NULL), _fixed_bf(NULL)
+               _alloc_cache(NULL), _stnode_cache(NULL), _fixed_bf(NULL),
+               _failed(false), _restore_mgr(NULL)
 {}
 
 vol_t::~vol_t() {
@@ -557,11 +562,31 @@ rc_t
 vol_t::read_page(shpid_t pnum, generic_page& page, bool& past_end)
 {
     /*
-     * CS (TODO) If volume is marked as failed, this is where we
-     * invoke restore manager. When restore finishes, it is assumed
-     * that it copied the restored contents into &page, which makes
-     * the extra read from the restored volume unnecessary.
+     * CS: If volume is marked as failed, we must invoke restore manager and
+     * wait until the requested page is restored. If we succeed in placing a
+     * copy request, the page contents will be copied into &page, eliminating
+     * the need for the actual read from the restored device.
+     *
+     * Note that we read from the same file descriptor after a failure. This is
+     * because we currently just simulate device failures. To support real
+     * media recovery, the code needs to detect I/O errors and remount the
+     * volume into a new file descriptor for the replacement device. The logic
+     * for restore, however, would remain the same.
      */
+    if (_failed) {
+        w_assert1(_restore_mgr);
+
+        if (!_restore_mgr->isRestored(pnum)) {
+            bool reqSucceeded = _restore_mgr->requestRestore(pnum, &page);
+            _restore_mgr->waitUntilRestored(pnum);
+            w_assert1(_restore_mgr->isRestored(pnum));
+
+            if (reqSucceeded) {
+                return RCOK;
+            }
+        }
+    }
+
     w_assert1(pnum > 0 && pnum < (shpid_t)(_num_pages));
     fileoff_t offset = fileoff_t(pnum) * sizeof(page);
 
@@ -630,6 +655,35 @@ vol_t::write_page(shpid_t pnum, generic_page& page)
 rc_t
 vol_t::write_many_pages(shpid_t pnum, const generic_page* const pages, int cnt)
 {
+    /** CS: If volume has failed, writes are suspended until the area being
+     * written to is fully restored. This is required to avoid newer versions
+     * of a page (which are written from the buffer pool with this method call)
+     * being overwritten by older restored versions. This situation could lead
+     * to lost updates.
+     *
+     * During restore, the cleaner should ignore the failed volume, meaning
+     * that its dirty pages should remain in the buffer pool. A better design
+     * would be to either perform "attepmted" writes, i.e., returning some kind
+     * of "not succeeded" message in this method; or integrate the cleaner with
+     * the restore manager. Since we don't expect high transaction trhoughput
+     * during restore (unless we have dozens of mounted, working volumes) and
+     * typical workloads maintain a low dirty page ratio, this is not a concern
+     * for now.
+     */
+    if (_failed) {
+        w_assert1(_restore_mgr);
+
+        // For each segment involved in this bulk write, request and wait for
+        // it to be restored. The order is irrelevant, since we have to wait
+        // for all segments anyway.
+        int i = 0;
+        while (i < cnt) {
+            _restore_mgr->requestRestore(pnum + i);
+            _restore_mgr->waitUntilRestored(pnum + i);
+            i += _restore_mgr->getSegmentSize();
+        }
+    }
+
     w_assert1(pnum > 0 && pnum < (shpid_t)(_num_pages));
     w_assert1(cnt > 0);
     fileoff_t offset = fileoff_t(pnum) * sizeof(generic_page);
@@ -1394,4 +1448,17 @@ bool vol_t::is_allocated_page(shpid_t pid) const
 {
     w_assert1(_alloc_cache);
     return _alloc_cache->is_allocated_page(pid);
+}
+
+void vol_t::mark_failed()
+{
+    // 1. Write log record
+    // 2. Activate backup manager (missing) 
+    // 3. Activate restore manager
+    _restore_mgr = new RestoreMgr(ss_m::get_options(),
+            ss_m::logArchiver->getDirectory(), this);
+    _restore_mgr->fork();
+
+    // 4. Set failed flag
+    _failed = true;
 }

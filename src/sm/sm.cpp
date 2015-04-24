@@ -232,7 +232,7 @@ smlevel_1::xct_impl_t smlevel_1::xct_impl
  *  Order is important!!
  */
 int ss_m::_instance_cnt = 0;
-//ss_m::param_t ss_m::curr_param;
+sm_options ss_m::_options;
 
 /*
  * NB: reverse function, _make_store_property
@@ -273,8 +273,9 @@ ss_m::ss_m(
     smlevel_0::LOG_ARCHIVED_CALLBACK_FUNC callbackget /* = NULL */,
     bool start /* = true for backward compatibility reason */
 )
-    :   _options(options)
 {
+    _options = options;
+
     sthread_t::initialize_sthreads_package();
 
     // Save input parameters for future 'startup' calls

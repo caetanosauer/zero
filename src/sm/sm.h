@@ -1882,12 +1882,14 @@ public:
     static rc_t            activate_archiver();
     static rc_t            activate_merger();
 
+    static const sm_options& get_options() { return _options; }
+
 private:
 
     static int _instance_cnt;
 
     /** Start-up parameters for the storage engine. */
-    sm_options _options;
+    static sm_options _options;
 
     void _set_option_logsize();
     

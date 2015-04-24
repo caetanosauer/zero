@@ -78,7 +78,8 @@ shpid_t RestoreScheduler::next()
 
 RestoreMgr::RestoreMgr(const sm_options& options,
         LogArchiver::ArchiveDirectory* archive, vol_t* volume)
-    : archive(archive), volume(volume), numRestoredPages(0)
+    : smthread_t(t_regular, "Restore Manager"),
+    archive(archive), volume(volume), numRestoredPages(0)
 {
     w_assert0(archive);
     w_assert0(volume);
@@ -105,24 +106,26 @@ RestoreMgr::RestoreMgr(const sm_options& options,
     numPages = volume->num_pages();
 
     scheduler = new RestoreScheduler(this);
+    bitmap = new RestoreBitmap(numPages);
 }
 
 RestoreMgr::~RestoreMgr()
 {
     delete bitmap;
+    delete scheduler;
 }
 
-size_t RestoreMgr::getSegmentForPid(const shpid_t& pid)
+inline size_t RestoreMgr::getSegmentForPid(const shpid_t& pid)
 {
     return (size_t) pid / segmentSize;
 }
 
-shpid_t RestoreMgr::getPidForSegment(size_t segment)
+inline shpid_t RestoreMgr::getPidForSegment(size_t segment)
 {
     return shpid_t(segment * segmentSize);
 }
 
-bool RestoreMgr::isRestored(const shpid_t& pid)
+inline bool RestoreMgr::isRestored(const shpid_t& pid)
 {
     size_t seg = getSegmentForPid(pid);
     return bitmap->get(seg);
@@ -133,20 +136,25 @@ bool RestoreMgr::waitUntilRestored(const shpid_t& pid, size_t timeout_in_ms)
     DO_PTHREAD(pthread_mutex_lock(&restoreCondMutex));
     struct timespec timeout;
     while (!isRestored(pid)) {
-        sthread_t::timeout_to_timespec(timeout_in_ms, timeout);
-        int code = pthread_cond_timedwait(&restoreCond, &restoreCondMutex,
-                &timeout);
-        if (code == ETIMEDOUT) {
-            return false;
+        if (timeout_in_ms > 0) {
+            sthread_t::timeout_to_timespec(timeout_in_ms, timeout);
+            int code = pthread_cond_timedwait(&restoreCond, &restoreCondMutex,
+                    &timeout);
+            if (code == ETIMEDOUT) {
+                return false;
+            }
+            DO_PTHREAD(code);
         }
-        DO_PTHREAD(code);
+        else {
+            DO_PTHREAD(pthread_cond_wait(&restoreCond, &restoreCondMutex));
+        }
     }
     DO_PTHREAD(pthread_mutex_unlock(&restoreCondMutex));
 
     return true;
 }
 
-void RestoreMgr::requestRestore(const shpid_t& pid, generic_page* addr)
+bool RestoreMgr::requestRestore(const shpid_t& pid, generic_page* addr)
 {
     scheduler->enqueue(pid);
 
@@ -168,8 +176,10 @@ void RestoreMgr::requestRestore(const shpid_t& pid, generic_page* addr)
             w_assert1(bufferedRequests.find(pid) == bufferedRequests.end());
 
             bufferedRequests[pid] = addr;
+            return true;
         }
     }
+    return false;
 }
 
 void RestoreMgr::restoreLoop()
@@ -178,7 +188,7 @@ void RestoreMgr::restoreLoop()
 
     char* workspace = new char[sizeof(generic_page) * segmentSize];
 
-    while (true) {
+    while (numRestoredPages <= numPages) {
         shpid_t requested = scheduler->next();
         if (isRestored(requested)) {
             continue;
@@ -258,10 +268,17 @@ void RestoreMgr::finishSegment(size_t segment, char* workspace, size_t count)
     
     requestMutex.release_write();
 
-    w_assert1(count <= segmentSize);
+    w_assert1((int) count <= segmentSize);
     // write pages back to replacement device
     // TODO: replacement device must be properly initialized
     W_COERCE(volume->write_many_pages(firstPage, 
             (generic_page*) workspace, count));
 
+    numRestoredPages += count;
+}
+
+void RestoreMgr::run()
+{
+    // for now, restore thread only runs restore loop
+    restoreLoop();
 }

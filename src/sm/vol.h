@@ -16,6 +16,7 @@ struct volume_hdr_stats_t;
 class alloc_cache_t;
 class stnode_cache_t;
 class bf_fixed_m;
+class RestoreMgr;
 
 
 class volhdr_t {
@@ -171,7 +172,6 @@ public:
         store_flag_t&          flags,
         bool                   ok_if_deleting);
 
-public:
     // The following functinos return space utilization statistics
     // on the volume or selected stores.  These functions use only
     // the store and page/extent meta information.
@@ -182,8 +182,6 @@ public:
     rc_t                     get_store_meta_stats(
         snum_t                      snum,
         SmStoreMetaStats&           storeStats);
-    
-public:
 
     rc_t             num_pages(snum_t fnum, uint32_t& cnt);
     bool             is_raw() { return _is_raw; };
@@ -250,6 +248,9 @@ public:
     bool            set_fake_disk_latency(const int adelay);    
     void            fake_disk_latency(long start);    
 
+    /** Mark device as failed and kick off Restore */
+    void            mark_failed();
+
 private:
     char             _devname[max_devname];
     int              _unix_fd;
@@ -273,6 +274,12 @@ private:
     stnode_cache_t*  _stnode_cache;
     /** buffer manager for special pages. */
     bf_fixed_m*      _fixed_bf;
+
+    /** Set to simulate a failed device for Restore **/
+    bool             _failed;
+
+    /** Restore Manager is activated when volume has failed */
+    RestoreMgr*      _restore_mgr;
     
     /** releases _alloc_cache and _stnode_cache. */
     void clear_caches();
