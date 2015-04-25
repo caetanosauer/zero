@@ -176,8 +176,11 @@ public:
      *           t_not_deleting_store = 0,  // must be 0: code assumes it
      *           t_deleting_store, 
      *           t_unknown_deleting         // for error handling
+     *
+     *  If invoked with redo == true, the method does not generate any log
+     *  records. This is used for redo operations in restart and restore.
      */
-    rc_t  store_operation(store_operation_param op);
+    rc_t  store_operation(store_operation_param op, bool redo = false);
 
 
 private:

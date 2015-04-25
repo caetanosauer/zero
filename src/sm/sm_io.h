@@ -312,7 +312,8 @@ public:
 
     static rc_t                 store_operation(
         vid_t                           vid,
-        const store_operation_param&    param);
+        const store_operation_param&    param,
+        bool redo = false);
     
     /** USED ONLY FROM TESTCASES!. */
     static alloc_cache_t*       get_vol_alloc_cache(vid_t vid);

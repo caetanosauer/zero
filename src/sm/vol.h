@@ -149,7 +149,8 @@ public:
     rc_t            redo_alloc_consecutive_pages(size_t page_count, shpid_t pid_begin);
     rc_t            redo_free_page(shpid_t pid);
 
-    rc_t            store_operation(const store_operation_param&    param);
+    rc_t            store_operation(const store_operation_param&    param,
+                                    bool redo = false);
     /** Sets root page ID of the specified index. */
     rc_t            set_store_root(snum_t snum, shpid_t root);
     /** Returns root page ID of the specified index. */

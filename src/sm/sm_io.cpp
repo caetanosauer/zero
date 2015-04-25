@@ -1098,7 +1098,8 @@ rc_t io_m::get_du_statistics(vid_t volid, volume_hdr_stats_t& _stats, bool audit
 }
 
 rc_t
-io_m::store_operation(vid_t volid, const store_operation_param& param)
+io_m::store_operation(vid_t volid, const store_operation_param& param,
+        bool redo)
 {
     FUNC(io_m::store_operation);
     auto_leave_t enter;
@@ -1107,7 +1108,7 @@ io_m::store_operation(vid_t volid, const store_operation_param& param)
 
     w_assert3(v->vid() == volid);
 
-    W_DO( v->store_operation(param) );
+    W_DO( v->store_operation(param, redo) );
 
     return RCOK;
 }

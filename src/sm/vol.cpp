@@ -277,11 +277,11 @@ rc_t vol_t::alloc_consecutive_pages(const stid_t &stid, size_t page_count, lpid_
     return RCOK;
 }
 
-rc_t vol_t::store_operation(const store_operation_param& param)
+rc_t vol_t::store_operation(const store_operation_param& param, bool redo)
 {
     w_assert1(param.snum() < stnode_page_h::max);
     w_assert1(_stnode_cache);
-    W_DO(_stnode_cache->store_operation(param));
+    W_DO(_stnode_cache->store_operation(param, redo));
     return RCOK;
 }
 

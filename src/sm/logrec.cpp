@@ -894,7 +894,7 @@ void store_operation_log::redo(fixable_page_h* /*page*/)
     store_operation_param& param = *(store_operation_param*)_data;
     DBG( << "store_operation_log::redo(page=" << pid() 
         << ", param=" << param << ")" );
-    W_COERCE( smlevel_0::io->store_operation(vid(), param) );
+    W_COERCE( smlevel_0::io->store_operation(vid(), param, true) );
 }
 
 void store_operation_log::undo(fixable_page_h* /*page*/)
