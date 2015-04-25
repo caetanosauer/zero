@@ -9,6 +9,7 @@
 
 #include "bf_tree_inline.h"
 #include "restart.h"
+#include "logrec.h"
 
 
 int fixable_page_h::force_Q_fixing = 0;  // <<<>>>
@@ -355,12 +356,23 @@ bool fixable_page_h::upgrade_latch_conditional(latch_mode_t mode) {
     }
 }
 
-void fixable_page_h::setup_for_restore(generic_page* pp)
+void fixable_page_h::setup_for_restore(generic_page* pp, logrec_t* lr)
 {
     w_assert1(!is_bufferpool_managed());
-    w_assert1(!_pp);
 
+    // make assertions happy, even though this is not a buffer pool page
+    _mode = LATCH_EX;
+
+    /*
+     * CS: I guess this is only necessary for backup-less restore, since
+     * otherwise the fields would be correctly initialized from the backup
+     */
     _pp = pp;
+    _pp->pid = lr->construct_pid();
+    // set to prev LSN so that logrec REDO is applied
+    _pp->lsn = lr->page_prev_lsn();
+    _pp->clsn = lr->page_prev_lsn();
+    _pp->tag = lr->tag();
 }
 
 

@@ -10,6 +10,8 @@
 #include "latch.h"
 #include "sm_base.h"
 
+class logrec_t;
+
 
 /**
  * \brief Handle class for pages that may be fixed (i.e., paged in by the main buffer
@@ -275,7 +277,7 @@ public:
      * pool. Ideally, this would not be necessary, but unfortunately, the 
      * log record interface requires a fixable_page_h to perform REDO.
      */
-     void setup_for_restore(generic_page* pp);
+     void setup_for_restore(generic_page* pp, logrec_t* lr);
 
     
 protected:
