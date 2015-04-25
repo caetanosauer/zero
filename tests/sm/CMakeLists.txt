@@ -65,6 +65,7 @@ X_ADD_TESTCASE(test_logarchiver logfactory)
 X_ADD_TESTCASE(test_logfactory logfactory)
 X_ADD_TESTCASE(test_mem_mgmt btree_test_env)
 X_ADD_TESTCASE(test_ringbuffer btree_test_env)
+X_ADD_TESTCASE(test_restore btree_test_env)
 
 # CS: this makes sm_plog be compiled even if EXCLUDE_FROM_ALL is set (TODO fix it)
 # X_ADD_TESTCASE(test_plog btree_test_env_plog)
