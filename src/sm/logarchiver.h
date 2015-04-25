@@ -482,7 +482,7 @@ public:
             logrec_t* lr;
             RunScanner* runScan;
 
-            MergeHeapEntry(lpid_t pid, RunScanner* runScan);
+            MergeHeapEntry(RunScanner* runScan);
             // required by w_heap
             MergeHeapEntry() {};
             virtual ~MergeHeapEntry() {};
@@ -662,6 +662,9 @@ public:
     virtual void run();
     void activate(lsn_t endLSN = lsn_t::null, bool wait = true);
     void start_shutdown();
+
+    ArchiveDirectory* getDirectory() { return directory; }
+    lsn_t getNextConsumedLSN() { return consumer->getNextLSN(); }
 
     static void initLogScanner(LogScanner* logScanner);
 

@@ -413,9 +413,6 @@ void LogArchiver::start_shutdown()
     shutdown = true;
     // make other threads see new shutdown value
     lintel::atomic_thread_fence(lintel::memory_order_release);
-
-    consumer->shutdown();
-    blkAssemb->shutdown();
 }
 
 LogArchiver::~LogArchiver()
@@ -1068,10 +1065,10 @@ std::ostream& operator<< (ostream& os,
     return os;
 }
 
-LogArchiver::ArchiveScanner::MergeHeapEntry::MergeHeapEntry(lpid_t startPID,
-        RunScanner* runScan)
+LogArchiver::ArchiveScanner::MergeHeapEntry::MergeHeapEntry(RunScanner* runScan)
     : active(true), runScan(runScan)
 {
+    lpid_t startPID = runScan->firstPID;
     // bring scanner up to starting point
     logrec_t* next = NULL;
     bool hasNext = false;
@@ -1089,15 +1086,14 @@ LogArchiver::ArchiveScanner::MergeHeapEntry::MergeHeapEntry(lpid_t startPID,
         active = false;
     }
     lr = next;
-
-    w_assert1(lr->valid_header(lr->lsn_ck()));
-    w_assert1(startPID.page <= lr->construct_pid().page);
-    w_assert1(startPID == lpid_t::null ||
-            startPID.vol() == lr->construct_pid().vol());
     
     lsn = lr->lsn_ck();
     pid = lr->construct_pid();
     
+    w_assert1(lr->valid_header());
+    w_assert1(startPID.page <= pid.page);
+    w_assert1(startPID == lpid_t::null ||
+            startPID.vol() == lr->construct_pid().vol());
 }
 
 void LogArchiver::ArchiveScanner::MergeHeapEntry::moveToNext()
@@ -1114,7 +1110,7 @@ void LogArchiver::ArchiveScanner::MergeHeapEntry::moveToNext()
 void LogArchiver::ArchiveScanner::RunMerger::addInput(RunScanner* r)
 {
     w_assert0(!started);
-    MergeHeapEntry entry(r->firstPID, r);
+    MergeHeapEntry entry(r);
     if (entry.active) {
         heap.AddElementDontHeapify(entry);
     }
@@ -1358,6 +1354,9 @@ void LogArchiver::run()
     DBGTHRD(<< "Archiver exiting -- last round of selection to empty heap");
     while (selection()) {}
 
+    consumer->shutdown();
+    blkAssemb->shutdown();
+
     w_assert0(heap->size() == 0);
 }
 
@@ -1581,7 +1580,7 @@ size_t LogArchiver::ArchiveIndex::findRun(lsn_t lsn)
      * we do a linear search instead of binary search.
      */
     int result = runs.size() - 2;
-    while (result > 0 && runs[result].firstLSN >= lsn) {
+    while (result >= 0 && runs[result].firstLSN >= lsn) {
         result--;
     }
 
@@ -1597,9 +1596,12 @@ smlevel_0::fileoff_t LogArchiver::ArchiveIndex::findEntry(RunInfo* run,
     // binary search for page ID within run
 
     if (from > to) {
-        // pid is either lower than first or greater than last
-        // This should not happen because probes must not consider
-        // this run if that's the case
+        if (from == 0) {
+            // Queried pid lower than first in run. Just return first entry.
+            return run->entries[0].offset;
+        }
+        // Queried pid is greater than last in run.  This should not happen
+        // because probes must not consider this run if that's the case
         W_FATAL_MSG(fcINTERNAL, << "Invalid probe on archiver index! "
                 << " PID = " << pid << " run = " << run->firstLSN);
     }
@@ -1672,7 +1674,7 @@ ProbeResult* LogArchiver::ArchiveIndex::probeFirst(lpid_t pid, lsn_t lsn)
     lsn_t runEndLSN;
     size_t index = findRun(lsn);
 
-    if (index == runs.size() - 1) {
+    if (index >= runs.size() - 1) {
         // last run is the current one, thus unavailable for probing
         return NULL;
     }
