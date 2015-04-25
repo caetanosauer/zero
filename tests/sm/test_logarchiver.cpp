@@ -216,7 +216,7 @@ rc_t fullPipelineTest(ss_m* ssm, test_volume_t* test_vol)
     // using the selection method, thus also gauaranteeing that the archive is persistent
     // up to nextLSN
     while (cons.getNextLSN() < ssm->log->durable_lsn()) {
-        usleep(100 * 1000); // 100ms
+        usleep(1000); // 1ms
     }
 
     la.start_shutdown();
@@ -356,7 +356,7 @@ rc_t runMergerFullTest(ss_m* ssm, test_volume_t* test_vol)
     la.activate(lsn_t::null, true /* wait */);
     // wait for logarchiver to consume up to durable LSN,
     while (cons.getNextLSN() < ssm->log->durable_lsn()) {
-        usleep(100 * 1000); // 100ms
+        usleep(1000); // 1ms
     }
 
     LogArchiver::ArchiveScanner::RunMerger* merger =
