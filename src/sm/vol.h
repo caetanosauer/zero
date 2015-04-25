@@ -104,6 +104,10 @@ public:
     /** Dismount the volume. */
     rc_t                dismount(bool flush = true, const bool clear_cb = true);
 
+    /** Re-mount the (replacement) device after a media failure,
+     * based on a backup */
+    rc_t                remount_from_backup();
+
     /**
     * Print out meta info about the volume.
     *  It is the caller's responsibility to worry about mt-safety of this;
@@ -250,6 +254,7 @@ public:
 
     /** Mark device as failed and kick off Restore */
     void            mark_failed();
+    bool is_failed() { return _failed; }
 
 private:
     char             _devname[max_devname];

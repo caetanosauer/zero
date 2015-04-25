@@ -184,6 +184,12 @@ bool RestoreMgr::requestRestore(const shpid_t& pid, generic_page* addr)
 
 void RestoreMgr::restoreLoop()
 {
+    // wait until volume is actually marked as failed
+    while(!volume->is_failed()) {
+        usleep(1000);
+        lintel::atomic_thread_fence(lintel::memory_order_consume);
+    }
+
     LogArchiver::ArchiveScanner logScan(archive);
 
     char* workspace = new char[sizeof(generic_page) * segmentSize];
@@ -216,15 +222,20 @@ void RestoreMgr::restoreLoop()
             logScan.open(start, end, lsn);
 
         generic_page* page = (generic_page*) workspace;
-
-        logrec_t* lr;
         fixable_page_h fixable;
         shpid_t current = firstPage;
+        shpid_t prevPage = 0;
+
+        DBG(<< "Restoring page " << current);
+
+        logrec_t* lr;
         while (merger->next(lr)) {
-            // TODO invoke redo on page, but it must be a fixable_page_h
+            DBG(<< "Would restore " << *lr);
+
             lpid_t lrpid = lr->construct_pid();
             w_assert1(lrpid.vol() == volume->vid());
             w_assert1(lrpid.page >= firstPage);
+            w_assert1(lrpid.page >= prevPage);
             w_assert1(lrpid.page < firstPage + segmentSize);
 
             while (lrpid.page > current) {
@@ -234,6 +245,7 @@ void RestoreMgr::restoreLoop()
             }
 
             lr->redo(&fixable);
+            prevPage = lrpid.page;
         }
 
         // in the last segment, we may write less than the segment size

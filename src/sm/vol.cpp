@@ -200,6 +200,32 @@ rc_t vol_t::mount(const char* devname, vid_t vid)
     return RCOK;
 }
 
+rc_t vol_t::remount_from_backup()
+{
+    /*
+     * CS (TODO) Currently, restore only supports backup-less log replay,
+     * meaning that the entire log is replayed since the volume was first
+     * formatted. In this case, we simply unmount, format, and mount the same
+     * volume again.
+     *
+     * For restore with backups, vol_t should maintain an instance of a backup
+     * manager, and remount based on the backup device.
+     */
+    // CS: TODO -- we probably need concurrency control here and for all
+    // mount/dismount/format operations
+
+    // 2nd bool argument is crucial: if false, pages of this volume remain in
+    // the buffer pool
+    W_DO(dismount(false, false));
+
+    // CS is reformat_vol really needed? Why not just format
+    W_DO(reformat_vol(_devname, _lvid, _vid, _num_pages, true));
+
+    W_DO(mount(_devname, _vid));
+
+    return RCOK;
+}
+
 /** @todo flush argument is never used. Backtrace through the callers and maybe
  * eliminate it entirely? */
 rc_t
@@ -561,6 +587,7 @@ vol_t::set_fake_disk_latency(const int adelay)
 rc_t
 vol_t::read_page(shpid_t pnum, generic_page& page, bool& past_end)
 {
+    DBG(<< "Page read: vol " << _vid << " page " << pnum);
     /*
      * CS: If volume is marked as failed, we must invoke restore manager and
      * wait until the requested page is restored. If we succeed in placing a
@@ -577,6 +604,7 @@ vol_t::read_page(shpid_t pnum, generic_page& page, bool& past_end)
         w_assert1(_restore_mgr);
 
         if (!_restore_mgr->isRestored(pnum)) {
+            DBG(<< "Page read triggering restore of " << pnum);
             bool reqSucceeded = _restore_mgr->requestRestore(pnum, &page);
             _restore_mgr->waitUntilRestored(pnum);
             w_assert1(_restore_mgr->isRestored(pnum));
@@ -1459,6 +1487,11 @@ void vol_t::mark_failed()
             ss_m::logArchiver->getDirectory(), this);
     _restore_mgr->fork();
 
-    // 4. Set failed flag
+    // 4. Remount device
+    // CS: TODO -- how about concurrent reads??
+    W_COERCE(remount_from_backup());
+
+    // 5. Set failed flag
     _failed = true;
+    lintel::atomic_thread_fence(lintel::memory_order_release);
 }
