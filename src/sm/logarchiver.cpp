@@ -826,9 +826,12 @@ bool LogArchiver::selection()
             break;
         }
 
-        if (blkAssemb->add(heap->top())) {
-            //DBGTHRD(<< "Selecting for output: " << k);
+        logrec_t* lr = heap->top();
+        if (blkAssemb->add(lr)) {
+            // DBGTHRD(<< "Selecting for output: " << *lr);
             heap->pop();
+            // w_assert3(run != heap->topRun() ||
+            //     heap->top()->construct_pid().page >= lr->construct_pid().page);
         }
         else {
             break;
@@ -1202,18 +1205,18 @@ bool LogArchiver::ArchiverHeap::push(logrec_t* lr)
 
     // insert key and pointer into w_heap
     HeapEntry k(currentRun, lr->construct_pid(), lr->lsn_ck(), dest);
-    if (filledFirst) {
-        w_heap.AddElement(k);
-    }
-    else {
-        w_heap.AddElementDontHeapify(k);
-    }
+
+    // CS: caution: AddElementDontHeapify does NOT work!!!
+    w_heap.AddElement(k);
 
     return true;
 }
 
 void LogArchiver::ArchiverHeap::pop()
 {
+    // DBGTHRD(<< "Selecting for output: "
+    //         << *((logrec_t*) w_heap.First().slot.address));
+
     workspace->free(w_heap.First().slot);
     w_heap.RemoveFirst();
 
