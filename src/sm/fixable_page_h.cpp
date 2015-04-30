@@ -356,23 +356,14 @@ bool fixable_page_h::upgrade_latch_conditional(latch_mode_t mode) {
     }
 }
 
-void fixable_page_h::setup_for_restore(generic_page* pp, logrec_t* lr)
+void fixable_page_h::setup_for_restore(generic_page* pp)
 {
     w_assert1(!is_bufferpool_managed());
 
     // make assertions happy, even though this is not a buffer pool page
     _mode = LATCH_EX;
 
-    /*
-     * CS: I guess this is only necessary for backup-less restore, since
-     * otherwise the fields would be correctly initialized from the backup
-     */
     _pp = pp;
-    _pp->pid = lr->construct_pid();
-    // set to prev LSN so that logrec REDO is applied
-    _pp->lsn = lr->page_prev_lsn();
-    _pp->clsn = lr->page_prev_lsn();
-    _pp->tag = lr->tag();
 }
 
 

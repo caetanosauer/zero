@@ -239,7 +239,7 @@ void RestoreMgr::restoreLoop()
             w_assert1(lrpid.page < firstPage + segmentSize);
 
             if (!fixable.is_fixed() || fixable.pid().page != lrpid.page) {
-                fixable.setup_for_restore(page, lr);
+                fixable.setup_for_restore(page);
             }
 
             while (lrpid.page > current) {
