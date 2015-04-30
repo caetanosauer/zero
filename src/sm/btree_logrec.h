@@ -36,7 +36,7 @@ DECLARE_TLS(block_alloc<generic_page>, scratch_space_pool);
  */
  
 struct SprScratchSpace {
-    SprScratchSpace(volid_t vol, snum_t store, shpid_t pid) {
+    SprScratchSpace(vid_t vol, snum_t store, shpid_t pid) {
         p = new (*scratch_space_pool) generic_page();
         ::memset(p, 0, sizeof(generic_page));
         p->tag = t_btree_p;

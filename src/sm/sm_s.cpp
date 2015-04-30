@@ -129,9 +129,9 @@ bool lpid_t::valid() const
 {
 #if W_DEBUG_LEVEL > 2
     // try to stomp out uses of this function
-    if(_stid.vol.vol && ! page) w_assert3(0);
+    if(_stid.vol&& ! page) w_assert3(0);
 #endif
-    return _stid.vol.vol != 0;
+    return _stid.vol!= 0;
 }
 
 

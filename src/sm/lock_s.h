@@ -113,7 +113,7 @@ inline vid_t lockid_t::vid() const
 
 inline void lockid_t::set_vid(const vid_t & v) 
 {
-    w[0] = v.vol;
+    w[0] = v;
 }
 
 inline snum_t lockid_t::store() const 

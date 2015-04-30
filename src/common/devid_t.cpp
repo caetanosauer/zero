@@ -108,5 +108,5 @@ ostream& operator<<(ostream& o, const devid_t& d)
     return o << d.dev << "." << d.id;
 }
 
-const devid_t devid_t::null;
+const devid_t de0;
 

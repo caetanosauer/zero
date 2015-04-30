@@ -97,13 +97,13 @@ private:
 
 
 class FixRootPageOperator : public BackgroundOperator {
-    volid_t      _vol;
+    vid_t      _vol;
     snum_t       _store;
     latch_mode_t _mode;
     btree_page_h _page;
     
 public:
-    FixRootPageOperator(volid_t vol, snum_t store, latch_mode_t mode) :
+    FixRootPageOperator(vid_t vol, snum_t store, latch_mode_t mode) :
         _vol(vol), _store(store), _mode(mode) {}
 
     virtual w_rc_t internal_act(int argument) {
@@ -132,7 +132,7 @@ w_rc_t test_root_page_fixing(ss_m* ssm, test_volume_t *test_volume) {
 
     // Can we fix it in Q mode?  Do inspectors behave properly?
     btree_page_h root_page;
-    W_DO(root_page.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_Q));
+    W_DO(root_page.fix_root(root_pid.vol(), root_pid.store(), LATCH_Q));
     EXPECT_EQ(root_page.is_fixed(),                  true);
     EXPECT_EQ(root_page.is_latched(),                false);
     EXPECT_EQ(root_page.latch_mode(),                LATCH_Q);
@@ -156,10 +156,10 @@ w_rc_t test_root_page_fixing_with_interference(ss_m* ssm, test_volume_t *test_vo
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
 
     {   // Q vs. already Q:
-        FixRootPageOperator op(root_pid.vol().vol, root_pid.store(), LATCH_Q);
+        FixRootPageOperator op(root_pid.vol(), root_pid.store(), LATCH_Q);
         W_DO(op.action(1));   // fix root page in background with Q mode
         btree_page_h root_page;
-        W_DO(root_page.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_Q));
+        W_DO(root_page.fix_root(root_pid.vol(), root_pid.store(), LATCH_Q));
         EXPECT_EQ(root_page.change_possible_after_fix(), false);
         root_page.unfix();
         W_DO(op.action(2));  // unfix root page in background
@@ -167,10 +167,10 @@ w_rc_t test_root_page_fixing_with_interference(ss_m* ssm, test_volume_t *test_vo
     }
 
     {   // Q vs. already SH:
-        FixRootPageOperator op(root_pid.vol().vol, root_pid.store(), LATCH_SH);
+        FixRootPageOperator op(root_pid.vol(), root_pid.store(), LATCH_SH);
         W_DO(op.action(1));
         btree_page_h root_page;
-        W_DO(root_page.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_Q));
+        W_DO(root_page.fix_root(root_pid.vol(), root_pid.store(), LATCH_Q));
         EXPECT_EQ(root_page.change_possible_after_fix(), false);
         root_page.unfix();
         W_DO(op.action(2));
@@ -178,10 +178,10 @@ w_rc_t test_root_page_fixing_with_interference(ss_m* ssm, test_volume_t *test_vo
     }
 
     {   // Q vs. already EX:
-        FixRootPageOperator op(root_pid.vol().vol, root_pid.store(), LATCH_EX);
+        FixRootPageOperator op(root_pid.vol(), root_pid.store(), LATCH_EX);
         W_DO(op.action(1));
         btree_page_h root_page;
-        w_rc_t r = root_page.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_Q);
+        w_rc_t r = root_page.fix_root(root_pid.vol(), root_pid.store(), LATCH_Q);
         EXPECT_EQ(r.err_num(),          eLATCHQFAIL);
         EXPECT_EQ(root_page.is_fixed(), false);
         W_DO(op.action(2));
@@ -210,9 +210,9 @@ w_rc_t test_root_page_change_possible(ss_m* ssm, test_volume_t *test_volume) {
      */
 
     {   // vs. Q:
-        FixRootPageOperator op(root_pid.vol().vol, root_pid.store(), LATCH_Q);
+        FixRootPageOperator op(root_pid.vol(), root_pid.store(), LATCH_Q);
         btree_page_h root_page;
-        W_DO(root_page.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_Q));
+        W_DO(root_page.fix_root(root_pid.vol(), root_pid.store(), LATCH_Q));
         EXPECT_EQ(root_page.change_possible_after_fix(), false);
         W_DO(op.action(1));  // fix   root page in background with Q mode
         EXPECT_EQ(root_page.change_possible_after_fix(), false);
@@ -223,9 +223,9 @@ w_rc_t test_root_page_change_possible(ss_m* ssm, test_volume_t *test_volume) {
     }
 
     {   // vs. SH:
-        FixRootPageOperator op(root_pid.vol().vol, root_pid.store(), LATCH_SH);
+        FixRootPageOperator op(root_pid.vol(), root_pid.store(), LATCH_SH);
         btree_page_h root_page;
-        W_DO(root_page.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_Q));
+        W_DO(root_page.fix_root(root_pid.vol(), root_pid.store(), LATCH_Q));
         EXPECT_EQ(root_page.change_possible_after_fix(), false);
         W_DO(op.action(1));
         EXPECT_EQ(root_page.change_possible_after_fix(), false);
@@ -236,9 +236,9 @@ w_rc_t test_root_page_change_possible(ss_m* ssm, test_volume_t *test_volume) {
     }
 
     {   // vs. EX:
-        FixRootPageOperator op(root_pid.vol().vol, root_pid.store(), LATCH_EX);
+        FixRootPageOperator op(root_pid.vol(), root_pid.store(), LATCH_EX);
         btree_page_h root_page;
-        W_DO(root_page.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_Q));
+        W_DO(root_page.fix_root(root_pid.vol(), root_pid.store(), LATCH_Q));
         EXPECT_EQ(root_page.change_possible_after_fix(), false);
         W_DO(op.action(1));
         EXPECT_EQ(root_page.change_possible_after_fix(), true);
@@ -297,13 +297,13 @@ w_rc_t test_non_root_page_fixing(ss_m* ssm, test_volume_t *test_volume) {
      * Get the shpid of a child of the root page:
      */
     btree_page_h root_page;
-    W_DO(root_page.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_SH));
+    W_DO(root_page.fix_root(root_pid.vol(), root_pid.store(), LATCH_SH));
     shpid_t child_pid = *root_page.child_slot_address(0);
 
 
     // Can we fix it in Q mode?  Do inspectors behave properly?
     btree_page_h child_page;
-    w_rc_t r = child_page.fix_nonroot(root_page, root_pid.vol().vol, child_pid, 
+    w_rc_t r = child_page.fix_nonroot(root_page, root_pid.vol(), child_pid, 
                                       LATCH_Q, false, false);
     if (!is_swizzled_pointer(child_pid)) {
         EXPECT_EQ(r.err_num(), eLATCHQFAIL);
@@ -319,42 +319,42 @@ w_rc_t test_non_root_page_fixing(ss_m* ssm, test_volume_t *test_volume) {
 
     // test Q->Q crabbing:
     root_page.unfix();
-    W_DO(root_page.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_Q));
-    W_DO(child_page.fix_nonroot(root_page, root_pid.vol().vol, child_pid, 
+    W_DO(root_page.fix_root(root_pid.vol(), root_pid.store(), LATCH_Q));
+    W_DO(child_page.fix_nonroot(root_page, root_pid.vol(), child_pid, 
                                 LATCH_Q, false, false));
-    FixRootPageOperator op(root_pid.vol().vol, root_pid.store(), LATCH_EX);
+    FixRootPageOperator op(root_pid.vol(), root_pid.store(), LATCH_EX);
     W_DO(op.action(1));
     W_DO(op.action(2));
     EXPECT_EQ(root_page.change_possible_after_fix(), true);
     W_DO(op.stop());
     EXPECT_EQ(child_page.change_possible_after_fix(), false);
     child_page.unfix();
-    r = child_page.fix_nonroot(root_page, root_pid.vol().vol, child_pid, 
+    r = child_page.fix_nonroot(root_page, root_pid.vol(), child_pid, 
                                LATCH_Q, false, false);
     EXPECT_EQ(r.err_num(), ePARENTLATCHQFAIL);
 
     // test Q->{SH,EX} crabbing:
-    r = child_page.fix_nonroot(root_page, root_pid.vol().vol, child_pid, 
+    r = child_page.fix_nonroot(root_page, root_pid.vol(), child_pid, 
                                LATCH_SH, false, false);
     EXPECT_EQ(r.err_num(), ePARENTLATCHQFAIL);
-    r = child_page.fix_nonroot(root_page, root_pid.vol().vol, child_pid, 
+    r = child_page.fix_nonroot(root_page, root_pid.vol(), child_pid, 
                                LATCH_EX, false, false);
     EXPECT_EQ(r.err_num(), ePARENTLATCHQFAIL);
 
     root_page.unfix();
-    W_DO(root_page.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_Q));
-    W_DO(child_page.fix_nonroot(root_page, root_pid.vol().vol, child_pid, 
+    W_DO(root_page.fix_root(root_pid.vol(), root_pid.store(), LATCH_Q));
+    W_DO(child_page.fix_nonroot(root_page, root_pid.vol(), child_pid, 
                                 LATCH_SH, false, false));
     child_page.unfix();
-    W_DO(child_page.fix_nonroot(root_page, root_pid.vol().vol, child_pid,
+    W_DO(child_page.fix_nonroot(root_page, root_pid.vol(), child_pid,
                                 LATCH_EX, false, false));
     child_page.unfix();
 
     // test eNEEDREALLATCH error cases:
-    r = child_page.fix_nonroot(root_page, root_pid.vol().vol, child_pid, 
+    r = child_page.fix_nonroot(root_page, root_pid.vol(), child_pid, 
                                LATCH_Q, false, true); // ask for virgin page
     EXPECT_EQ(r.err_num(), eNEEDREALLATCH);
-    r = child_page.fix_nonroot(root_page, root_pid.vol().vol, 
+    r = child_page.fix_nonroot(root_page, root_pid.vol(), 
                                // unswizzled pointer:
                                smlevel_0::bf->normalize_shpid(child_pid), 
                                LATCH_EX, false, false);

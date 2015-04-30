@@ -376,7 +376,7 @@ rc_t find_last_update(log_m* log, const lpid_t& pid, lsn_t& ret)
 rc_t my_fix(const lpid_t& pid, latch_mode_t mode, bf_tree_cb_t*& cb,
         generic_page*& page)
 {
-    uint64_t key = bf_key(pid.vol().vol, pid.page);
+    uint64_t key = bf_key(pid.vol(), pid.page);
     uint16_t* uncommitted_cnt;
     latch_t* latch;
 

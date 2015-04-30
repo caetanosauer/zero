@@ -64,7 +64,7 @@ public:
      * @param[in] vid volume ID
      * @return true if the given volume exists as a backup file
      */
-    bool    volume_exists(volid_t vid);
+    bool    volume_exists(vid_t vid);
 
     /**
      * \brief Tells whether the given page exists in this backup.
@@ -73,7 +73,7 @@ public:
      * @param[in] shpid page ID
      * @return true if the given page exists in this backup
      */
-    bool    page_exists(volid_t vid, shpid_t shpid);
+    bool    page_exists(vid_t vid, shpid_t shpid);
 
     /**
      * \brief Retrieve page with shpid from vid.
@@ -82,7 +82,7 @@ public:
      * @param[in] shpid page ID
      * @pre page_exists(vid, shpid) == true
      */
-    w_rc_t  retrieve_page(generic_page &page, volid_t vid, shpid_t shpid);
+    w_rc_t  retrieve_page(generic_page &page, vid_t vid, shpid_t shpid);
 
     /**
      * \brief Returns the expected file path of the backup file for the
@@ -90,7 +90,7 @@ public:
      * @param[in] vid volume ID
      * @return path of the backup file.
      */
-    std::string get_backup_path(volid_t vid) const;
+    std::string get_backup_path(vid_t vid) const;
 
     /** Returns path of the backup folder. */
     const std::string& get_backup_folder() const;
@@ -148,7 +148,7 @@ public:
      * @param[in] vid volume ID
      * @param[in] path File path of the backup file
      */
-    BackupFile(volid_t vid, const std::string &path);
+    BackupFile(vid_t vid, const std::string &path);
     /** Automatically closes the file if it is opened. */
     ~BackupFile();
 
@@ -168,13 +168,13 @@ public:
 
     /** Returns if the file exists and is correctly opened. */
     bool    is_opened() const;
-    volid_t get_vid() const;
+    vid_t get_vid() const;
 
 private:
     /** File path of the backup file, relative to the working directory. */
     std::string _path;
     /** Volume ID. */
-    volid_t _vid;
+    vid_t _vid;
     /** Return value of the POSIX open() semantics (e.g., -1 is "invalid"). */
     int     _fd;
 };
@@ -189,10 +189,10 @@ inline AlignedMemory::~AlignedMemory() { release(); }
 inline size_t AlignedMemory::get_size() const { return _size; }
 inline char* AlignedMemory::get_buffer() { return _buffer; }
 
-inline BackupFile::BackupFile(volid_t vid, const std::string &path)
+inline BackupFile::BackupFile(vid_t vid, const std::string &path)
     : _path(path), _vid(vid), _fd(-1) {}
 inline BackupFile::~BackupFile() { close(); }
-inline volid_t BackupFile::get_vid() const { return _vid; }
+inline vid_t BackupFile::get_vid() const { return _vid; }
 inline bool BackupFile::is_opened() const { return _fd != -1; }
 
 #endif // BACKUP_H

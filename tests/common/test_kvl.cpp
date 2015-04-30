@@ -25,7 +25,7 @@ void test_kvl (uint16_t v, uint32_t st, const char *keystr, const char *elemstr)
 
     {
         kvl_t  kvl(s, key, elem);
-        EXPECT_EQ (kvl.stid.vol.vol, v);
+        EXPECT_EQ (kvl.stid.vol, v);
         EXPECT_EQ (kvl.stid.store, st);
         EXPECT_EQ (kvl.h, key_hash);
         EXPECT_EQ (kvl.g, el_hash);
@@ -36,7 +36,7 @@ void test_kvl (uint16_t v, uint32_t st, const char *keystr, const char *elemstr)
         //key = nul
         vec_t nul;
         kvl_t kvl(s, nul, elem);
-        EXPECT_EQ (kvl.stid.vol.vol, v);
+        EXPECT_EQ (kvl.stid.vol, v);
         EXPECT_EQ (kvl.stid.store, st);
         EXPECT_EQ (kvl.h, (uint32_t) 0);
         EXPECT_EQ (kvl.g, el_hash);
@@ -46,7 +46,7 @@ void test_kvl (uint16_t v, uint32_t st, const char *keystr, const char *elemstr)
         // el = null
         vec_t nul;
         kvl_t kvl(s, key, nul);
-        EXPECT_EQ (kvl.stid.vol.vol, v);
+        EXPECT_EQ (kvl.stid.vol, v);
         EXPECT_EQ (kvl.stid.store, st);
         EXPECT_EQ (kvl.h, key_hash);
         EXPECT_EQ (kvl.g, (uint32_t) 0);
@@ -56,7 +56,7 @@ void test_kvl (uint16_t v, uint32_t st, const char *keystr, const char *elemstr)
         // both = null
         vec_t nul;
         kvl_t kvl(s, nul, nul);
-        EXPECT_EQ (kvl.stid.vol.vol, v);
+        EXPECT_EQ (kvl.stid.vol, v);
         EXPECT_EQ (kvl.stid.store, st);
         EXPECT_EQ (kvl.h, (uint32_t) 0);
         EXPECT_EQ (kvl.g, (uint32_t) 0);

@@ -147,8 +147,7 @@ public:
 
 
     const lpid_t& pid()   const { return _pp->pid; }
-    vid_t         vid()   const { return _pp->pid.vol(); }
-    volid_t       vol()   const { return _pp->pid.vol().vol; }
+    vid_t       vol()   const { return _pp->pid.vol(); }
     snum_t        store() const { return _pp->pid.store(); }
 
     page_tag_t    tag()   const { return (page_tag_t) _pp->tag; }

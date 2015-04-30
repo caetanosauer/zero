@@ -23,7 +23,7 @@ void fixable_page_h::unfix() {
     }
 }
 
-w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent, volid_t vol,
+w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent, vid_t vol,
                                    shpid_t shpid, latch_mode_t mode,
                                    bool conditional, bool virgin_page,
                                    const bool from_recovery) {
@@ -63,7 +63,7 @@ w_rc_t fixable_page_h::fix_nonroot(const fixable_page_h &parent, volid_t vol,
     return RCOK;
 }
 
-w_rc_t fixable_page_h::fix_direct(volid_t vol, shpid_t shpid,
+w_rc_t fixable_page_h::fix_direct(vid_t vol, shpid_t shpid,
                                   latch_mode_t mode, bool conditional,
                                   bool virgin_page) {
     w_assert1(shpid != 0);
@@ -164,7 +164,7 @@ w_rc_t fixable_page_h::fix_virgin_root (stid_t store, shpid_t shpid) {
     W_DO(smlevel_0::bf->fix_virgin_root(_pp, store, shpid));
     _bufferpool_managed = true;
     _mode               = LATCH_EX;
-    w_assert1(smlevel_0::bf->get_cb(_pp)->_pid_vol   == volid_t(store.vol));
+    w_assert1(smlevel_0::bf->get_cb(_pp)->_pid_vol   == vid_t(store.vol));
     w_assert1(smlevel_0::bf->get_cb(_pp)->_pid_shpid == shpid);
     return RCOK;
 }

@@ -13,19 +13,19 @@
 #include <memory.h>
 #include <boost/concept_check.hpp>
 
-std::string BackupManager::get_backup_path(volid_t vid) const {
+std::string BackupManager::get_backup_path(vid_t vid) const {
     std::stringstream file_name;
     file_name << _backup_folder << "/backup_" << vid;
     return file_name.str();
 }
 
-bool BackupManager::volume_exists(volid_t vid) {
+bool BackupManager::volume_exists(vid_t vid) {
     BackupFile file(vid, get_backup_path(vid));
     file.open();
     return file.is_opened();
 }
 
-bool BackupManager::page_exists(volid_t vid, shpid_t shpid) {
+bool BackupManager::page_exists(vid_t vid, shpid_t shpid) {
     BackupFile file(vid, get_backup_path(vid));
     file.open();
     if (!file.is_opened()) {
@@ -46,7 +46,7 @@ w_rc_t BackupManager::_retrieve_page(BackupFile &file, generic_page& page, shpid
     return RCOK;
 }
 
-w_rc_t BackupManager::retrieve_page(generic_page &page, volid_t vid, shpid_t shpid) {
+w_rc_t BackupManager::retrieve_page(generic_page &page, vid_t vid, shpid_t shpid) {
     BackupFile file(vid, get_backup_path(vid));
     file.open();
     if (!file.is_opened()) {
@@ -59,7 +59,7 @@ w_rc_t BackupManager::retrieve_page(generic_page &page, volid_t vid, shpid_t shp
         return RC (eBADCHECKSUM);
     }
 
-    if ((page.pid.page != shpid) || (page.pid.vol().vol != vid)) {
+    if ((page.pid.page != shpid) || (page.pid.vol() != vid)) {
         return RC (eBADCHECKSUM);
     }
 

@@ -10,8 +10,7 @@ set(common_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/stid_t.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/tid_t.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/vec_mkchunk.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/vec_t.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/vid_t.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/vec_t.cpp)
 
 add_library(common STATIC ${common_STAT_SRCS})
 #target_link_libraries (common)

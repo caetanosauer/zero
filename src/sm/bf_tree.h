@@ -33,11 +33,11 @@ inline bool is_swizzled_pointer (shpid_t shpid) {
     return (shpid & SWIZZLED_PID_BIT) != 0;
 }
 
-inline uint64_t bf_key(volid_t vid, shpid_t shpid) {
+inline uint64_t bf_key(vid_t vid, shpid_t shpid) {
     return ((uint64_t) vid << 32) + shpid;
 }
 inline uint64_t bf_key(const lpid_t &pid) {
-    return bf_key(pid.vol().vol, pid.page);
+    return bf_key(pid.vol(), pid.page);
 }
 
 
@@ -248,7 +248,7 @@ public:
      *
      * To use this method, you need to include bf_tree_inline.h.
      */
-    w_rc_t fix_nonroot (generic_page*& page, generic_page *parent, volid_t vol, shpid_t shpid,
+    w_rc_t fix_nonroot (generic_page*& page, generic_page *parent, vid_t vol, shpid_t shpid,
                           latch_mode_t mode, bool conditional, bool virgin_page,
                           const bool from_recovery = false);
 
@@ -287,7 +287,7 @@ public:
      * @param[in] conditional whether the fix is conditional (returns immediately even if failed).
      * @param[in] virgin_page whether the page is a new page thus doesn't have to be read from disk.
      */
-    w_rc_t fix_direct (generic_page*& page, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page);
+    w_rc_t fix_direct (generic_page*& page, vid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page);
 
     /**
      * Special function for the REDO phase in system Recovery process
@@ -454,7 +454,7 @@ public:
      * Called when a volume is unmounted.
      * Like install_volume(), this method is indirectly protected too.
      */
-    w_rc_t uninstall_volume (volid_t vid, const bool clear_cb = true);
+    w_rc_t uninstall_volume (vid_t vid, const bool clear_cb = true);
 
 #ifdef BP_MAINTAIN_PARENT_PTR
     /**
@@ -509,7 +509,7 @@ public:
     shpid_t normalize_shpid(shpid_t shpid) const;
 
     /** Immediately writes out all dirty pages in the given volume.*/
-    w_rc_t force_volume (volid_t vol);
+    w_rc_t force_volume (vid_t vol);
     /** Immediately writes out all dirty pages.*/
     w_rc_t force_all ();
     /** Immediately writes out all dirty pages up to the given LSN. */
@@ -521,7 +521,7 @@ public:
     /** Wakes up all cleaner threads, starting them if not started yet. */
     w_rc_t wakeup_cleaners ();
     /** Wakes up the cleaner thread assigned to the given volume. */
-    w_rc_t wakeup_cleaner_for_volume (volid_t vol);
+    w_rc_t wakeup_cleaner_for_volume (vid_t vol);
 
     /**
      * Dumps all contents of this bufferpool.
@@ -660,7 +660,7 @@ public:
      * but the actual page is not in buffer pool yet
      * Load the actual page into buffer pool
      */
-    w_rc_t load_for_redo(bf_idx idx, volid_t vid, shpid_t shpid, bool& past_end);
+    w_rc_t load_for_redo(bf_idx idx, vid_t vid, shpid_t shpid, bool& past_end);
 
 
 private:
@@ -669,7 +669,7 @@ private:
     w_rc_t _preload_root_page (bf_tree_vol_t* desc, vol_t* volume, snum_t store, shpid_t shpid, bf_idx idx);
 
     /** fixes a non-swizzled page. */
-    w_rc_t _fix_nonswizzled(generic_page* parent, generic_page*& page, volid_t vol, shpid_t shpid,
+    w_rc_t _fix_nonswizzled(generic_page* parent, generic_page*& page, vid_t vol, shpid_t shpid,
                                latch_mode_t mode, bool conditional, bool virgin_page,
                                const bool from_recovery = false);
 
@@ -690,7 +690,7 @@ private:
      * @param[in] past_end true if page not on disk
      * @param[in] page_emlsn if != 0, it is the page last update LSN identified during Log Analysis
      */
-    w_rc_t _check_read_page(generic_page* parent, bf_idx idx, volid_t vol,
+    w_rc_t _check_read_page(generic_page* parent, bf_idx idx, vid_t vol,
                                  shpid_t shpid, const bool past_end,
                                  const lsn_t page_emlsn);
 
@@ -705,7 +705,7 @@ private:
      * did not match). Otherwise, the page is just a little stale and Single-Page-Recovery is more efficient.
      * @param[in] page_emlsn If not NULL, it is the last LSN gathered during Log Analysis
      */
-    w_rc_t _try_recover_page(generic_page* parent, bf_idx idx, volid_t vol,
+    w_rc_t _try_recover_page(generic_page* parent, bf_idx idx, vid_t vol,
                              shpid_t shpid, bool corrupted, const lsn_t page_emlsn);
 
     /** used by fix_root and fix_virgin_root. */
@@ -825,7 +825,7 @@ private:
         uint16_t        rounds;
 
         /** Returns current volume. */
-        volid_t         get_vol() const { return (volid_t) clockhand_pathway[0]; }
+        vid_t         get_vol() const { return (vid_t) clockhand_pathway[0]; }
         /** Returns current store. */
         snum_t          get_store() const { return (snum_t) clockhand_pathway[1]; }
 

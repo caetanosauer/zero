@@ -40,7 +40,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "tid_t.h"
 #include "lid_t.h"
 
-const lvid_t    lvid_t::null;            
+const lvid_t    l0;            
 
 ostream& operator<<(ostream& o, const lvid_t& lvid)
 {
@@ -119,6 +119,6 @@ extern "C" bool lvid_t_is_null(const lvid_t &x);
 bool
 lvid_t_is_null(const lvid_t &x)
 {
-      return x == lvid_t::null;
+      return x == l0;
 }
 

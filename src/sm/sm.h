@@ -1071,7 +1071,7 @@ public:
      * \ingroup SSMBUFPOOL
      * @param[in] vol Volume whose pages are to be flushed.
      */
-    static rc_t            force_volume(volid_t vol);
+    static rc_t            force_volume(vid_t vol);
 
     /**\cond skip 
      * Do not document. Very un-thread-safe.
@@ -1309,7 +1309,7 @@ public:
      * @param[out] vol_cnt Number of volumes on the device.
      * @param[out] devid  A local device id assigned by the storage manager.
      * @param[in] local_vid A local handle to the (only) volume on the device,
-     * to be used when a volume is mounted.  The default, vid_t::null, 
+     * to be used when a volume is mounted.  The default, 0, 
      * indicates that the storage manager can chose a value for this. 
      *
      * \note It is fine to mount a device more than once, as long as device
@@ -1323,7 +1323,7 @@ public:
      */
     static rc_t            mount_dev(
         const char*            device,
-        vid_t                  local_vid = vid_t::null);
+        vid_t                  local_vid = 0);
 
     /**\brief Dismount all mounted devices.
      * \ingroup SSMVOL
@@ -2001,8 +2001,6 @@ public:
 };
 
 
-ostream& operator<<(ostream& o, const vid_t& v);
-istream& operator>>(istream& i, vid_t& v);
 ostream& operator<<(ostream& o, const stid_t& stid);
 istream& operator>>(istream& i, stid_t& stid);
 ostream& operator<<(ostream& o, const lpid_t& pid);

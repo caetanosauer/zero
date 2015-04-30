@@ -164,7 +164,7 @@ rc_t plog_xct_t::_abort()
                 DBGOUT3 (<<"physical UNDO.. which is not quite good");
                 // tentatively use fix_direct for this
                 // eventually all physical UNDOs should go away
-                W_DO(page.fix_direct(pid.vol().vol, pid.page, LATCH_EX));
+                W_DO(page.fix_direct(pid.vol(), pid.page, LATCH_EX));
                 w_assert1(page.pid() == pid);
             }
 
@@ -280,7 +280,7 @@ rc_t plog_xct_t::_update_page_cas(logrec_t* lr)
         // Of course it would be much better if we could use a proper
         // fix method from fixable_page_h (TODO)
         lpid_t pid = lr->construct_pid();
-        uint64_t key = bf_key(pid.vol().vol, pid.page);
+        uint64_t key = bf_key(pid.vol(), pid.page);
         uint16_t* uncommitted_cnt;
         generic_page* page;
         latch_t* latch;
@@ -297,7 +297,7 @@ rc_t plog_xct_t::_update_page_cas(logrec_t* lr)
                 // uncommitted updates) is avoided by the page cleaner, and 
                 // even if we do that later, it should be quite rare.
                 fixable_page_h fetched_page;
-                W_DO(fetched_page.fix_direct(pid.vol().vol, pid.page, LATCH_SH,
+                W_DO(fetched_page.fix_direct(pid.vol(), pid.page, LATCH_SH,
                             false, false));
                 fetched_page.unfix();
                 continue;

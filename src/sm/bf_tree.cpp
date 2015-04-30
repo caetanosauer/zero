@@ -258,7 +258,7 @@ w_rc_t bf_tree_m::init ()
 
 w_rc_t bf_tree_m::destroy ()
 {
-    for (volid_t vid = 1; vid < MAX_VOL_COUNT; ++vid) {
+    for (vid_t vid = 1; vid < MAX_VOL_COUNT; ++vid) {
         if (_volumes[vid] != NULL) {
             W_DO (uninstall_volume(vid));
         }
@@ -273,7 +273,7 @@ w_rc_t bf_tree_m::destroy ()
 ///////////////////////////////////   Volume Mount/Unmount BEGIN     ///////////////////////////////////
 w_rc_t bf_tree_m::install_volume(vol_t* volume) {
     w_assert1(volume != NULL);
-    volid_t vid = volume->vid().vol;
+    vid_t vid = volume->vid();
     w_assert1(vid != 0);
     w_assert1(vid < MAX_VOL_COUNT);
 
@@ -449,7 +449,7 @@ w_rc_t bf_tree_m::install_volume(vol_t* volume) {
 }
 
 w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t store, shpid_t shpid, bf_idx idx) {
-    volid_t vid = volume->vid().vol;
+    vid_t vid = volume->vid();
     DBGOUT2(<<"preloading root page " << shpid << " of store " << store << " in volume " << vid << ". to buffer frame " << idx);
     w_assert1(shpid >= volume->first_data_pageid());
     bool past_end;
@@ -519,9 +519,9 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
 }
 
 w_rc_t bf_tree_m::_install_volume_mainmemorydb(vol_t* volume) {
-    volid_t vid = volume->vid().vol;
+    vid_t vid = volume->vid();
     DBGOUT1(<<"installing volume " << vid << " to MAINMEMORY-DB buffer pool...");
-    for (volid_t v = 1; v < MAX_VOL_COUNT; ++v) {
+    for (vid_t v = 1; v < MAX_VOL_COUNT; ++v) {
         if (_volumes[v] != NULL) {
             ERROUT (<<"MAINMEMORY-DB mode allows only one volume to be loaded, but volume " << v << " is already loaded.");
             return RC(eINTERNAL);
@@ -570,7 +570,7 @@ w_rc_t bf_tree_m::_install_volume_mainmemorydb(vol_t* volume) {
     return RCOK;
 }
 
-w_rc_t bf_tree_m::uninstall_volume(volid_t vid,
+w_rc_t bf_tree_m::uninstall_volume(vid_t vid,
                                      const bool clear_cb) // In: true to clear buffer pool cb data
                                                           //     do not clear cb if
 {
@@ -630,7 +630,7 @@ w_rc_t bf_tree_m::uninstall_volume(volid_t vid,
 // NOTE most of the page fix/unfix functions are in bf_tree_inline.h.
 // These functions are here are because called less frequently.
 
-w_rc_t bf_tree_m::fix_direct (generic_page*& page, volid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
+w_rc_t bf_tree_m::fix_direct (generic_page*& page, vid_t vol, shpid_t shpid, latch_mode_t mode, bool conditional, bool virgin_page) {
     // fix_direct is for REDO operation, rollback and cursor re-fix, both root and non-root page, no parent
     // mark it as from Recovery so we do not check access availability
     return _fix_nonswizzled(NULL, page, vol, shpid, mode, conditional, virgin_page, true /*from_recovery*/);
@@ -687,7 +687,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled_mainmemorydb(generic_page* parent, generic_pa
 }
 
 w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
-                                   volid_t vol, shpid_t shpid,
+                                   vid_t vol, shpid_t shpid,
                                    latch_mode_t mode, bool conditional,
                                    bool virgin_page,
                                    const bool from_recovery)  // True if caller is from recovery UNDO operation
@@ -1321,13 +1321,13 @@ w_rc_t bf_tree_m::force_until_lsn(lsndata_t lsn) {
     // It does not flush in_doubt pages
     return _cleaner->force_until_lsn(lsn);
 }
-w_rc_t bf_tree_m::force_volume(volid_t vol) {
+w_rc_t bf_tree_m::force_volume(vid_t vol) {
     return _cleaner->force_volume(vol);
 }
 w_rc_t bf_tree_m::wakeup_cleaners() {
     return _cleaner->wakeup_cleaners();
 }
-w_rc_t bf_tree_m::wakeup_cleaner_for_volume(volid_t vol) {
+w_rc_t bf_tree_m::wakeup_cleaner_for_volume(vid_t vol) {
     return _cleaner->wakeup_cleaner_for_volume(vol);
 }
 
@@ -1983,7 +1983,7 @@ void bf_tree_m::swizzle_children(generic_page* parent, const general_recordid_t*
 inline void bf_tree_m::_swizzle_child_pointer(generic_page* parent, shpid_t* pointer_addr) {
     shpid_t child_shpid = *pointer_addr;
     //w_assert1((child_shpid & SWIZZLED_PID_BIT) == 0);
-    uint64_t key = bf_key (parent->pid.vol().vol, child_shpid);
+    uint64_t key = bf_key (parent->pid.vol(), child_shpid);
     bf_idx idx = _hashtable->lookup(key);
     // so far, we don't swizzle a child page if it's not in bufferpool yet.
     if (idx == 0) {
@@ -2041,7 +2041,7 @@ void bf_tree_m::_dump_evict_clockhand(const EvictionContext &context) const {
 
 void bf_tree_m::_lookup_buf_imprecise(btree_page_h &parent, uint32_t slot,
                                       bf_idx& idx, bool& swizzled) const {
-    volid_t vol = parent.vol();
+    vid_t vol = parent.vol();
     shpid_t shpid = *parent.child_slot_address(slot);
     if ((shpid & SWIZZLED_PID_BIT) == 0) {
         idx = _hashtable->lookup_imprecise(bf_key(vol, shpid));
@@ -2104,7 +2104,7 @@ w_rc_t bf_tree_m::_evict_blocks(EvictionContext& context) {
         _dump_evict_clockhand(context);
         uint32_t old = context.clockhand_pathway[0] % MAX_VOL_COUNT;
         for (uint16_t i = 0; i < MAX_VOL_COUNT; ++i) {
-            volid_t vol = (old + i) % MAX_VOL_COUNT;
+            vid_t vol = (old + i) % MAX_VOL_COUNT;
             if (_volumes[vol] == NULL) {
                 continue;
             }
@@ -2139,7 +2139,7 @@ w_rc_t bf_tree_m::_evict_traverse_volume(EvictionContext &context) {
     w_assert1(depth == 1);
     w_assert1(context.clockhand_current_depth >= depth);
     w_assert1(context.clockhand_pathway[depth - 1] != 0);
-    volid_t vol = context.get_vol();
+    vid_t vol = context.get_vol();
     uint32_t old = context.clockhand_pathway[depth];
     for (uint32_t i = 0; i < MAX_STORE_COUNT; ++i) {
         snum_t store = (old + i) % MAX_STORE_COUNT;
@@ -2289,9 +2289,9 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
                   uint32_t& in_doubt_count)
 {
     w_rc_t rc = RCOK;
-    w_assert1(page_of_interest.vol().vol != 0);
+    w_assert1(page_of_interest.vol() != 0);
     w_assert1(page_of_interest.page != 0);
-    volid_t vid = page_of_interest.vol().vol;
+    vid_t vid = page_of_interest.vol();
     shpid_t shpid = page_of_interest.page;
 
     ret = 0;
@@ -2393,7 +2393,7 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
     return rc;
 }
 
-w_rc_t bf_tree_m::load_for_redo(bf_idx idx, volid_t vid,
+w_rc_t bf_tree_m::load_for_redo(bf_idx idx, vid_t vid,
                   shpid_t shpid, bool& past_end)
 {
     // Special function for Recovery REDO phase
@@ -2452,10 +2452,10 @@ w_rc_t bf_tree_m::load_for_redo(bf_idx idx, volid_t vid,
         }
 
         // Then, page ID must match, otherwise raise error
-        if (( shpid != _buffer[idx].pid.page) || (vid != _buffer[idx].pid.vol().vol))
+        if (( shpid != _buffer[idx].pid.page) || (vid != _buffer[idx].pid.vol()))
         {
             W_FATAL_MSG(eINTERNAL, <<"inconsistent disk page: "
-                << vid << "." << shpid << " was " << _buffer[idx].pid.vol().vol
+                << vid << "." << shpid << " was " << _buffer[idx].pid.vol()
                 << "." << _buffer[idx].pid.page);
         }
     }
@@ -2604,7 +2604,7 @@ void bf_tree_m::debug_dump(std::ostream &o) const
     o << "  _swizzled_lru_len=" << _swizzled_lru_len << ", HEAD=" << SWIZZLED_LRU_HEAD << ", TAIL=" << SWIZZLED_LRU_TAIL << std::endl;
 #endif // BP_MAINTAIN_PARENT_PTR
 
-    for (volid_t vid = 1; vid < MAX_VOL_COUNT; ++vid) {
+    for (vid_t vid = 1; vid < MAX_VOL_COUNT; ++vid) {
         bf_tree_vol_t* vol = _volumes[vid];
         if (vol != NULL) {
             o << "  volume[" << vid << "] root pages(stnum=bf_idx):";
@@ -2710,7 +2710,7 @@ w_rc_t bf_tree_m::set_swizzling_enabled(bool enabled) {
     // remember what volumes are loaded.
     typedef vol_t* volptr;
     volptr installed_volumes[MAX_VOL_COUNT];
-    for (volid_t i = 1; i < MAX_VOL_COUNT; ++i) {
+    for (vid_t i = 1; i < MAX_VOL_COUNT; ++i) {
         if (_volumes[i] == NULL) {
             installed_volumes[i] = NULL;
         } else {
@@ -2747,7 +2747,7 @@ w_rc_t bf_tree_m::set_swizzling_enabled(bool enabled) {
     _enable_swizzling = enabled;
 
     // then, reload volumes
-    for (volid_t i = 1; i < MAX_VOL_COUNT; ++i) {
+    for (vid_t i = 1; i < MAX_VOL_COUNT; ++i) {
         if (installed_volumes[i] != NULL) {
             W_DO(install_volume(installed_volumes[i]));
         }
@@ -2956,7 +2956,7 @@ w_rc_t bf_tree_m::_sx_update_child_emlsn(btree_page_h &parent, general_recordid_
 }
 
 w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
-                                   volid_t vol, shpid_t shpid,
+                                   vid_t vol, shpid_t shpid,
                                    const bool past_end,    // In: true if page does not exist on disk
                                                            //     this can happen only if fix_direct for REDO
                                    const lsn_t page_emlsn) // In: if != 0, it is the last page update LSN identified
@@ -3082,9 +3082,9 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
 
     // Then, page ID must match.
     // There should be no case where checksum agrees but page ID doesn't agree.
-    if (page.pid.page != shpid || page.pid.vol().vol != vol) {
+    if (page.pid.page != shpid || page.pid.vol() != vol) {
         W_FATAL_MSG(eINTERNAL, <<"inconsistent disk page: "
-            << vol << "." << shpid << " was " << page.pid.vol().vol
+            << vol << "." << shpid << " was " << page.pid.vol()
             << "." << page.pid.page);
     }
     // Page is valid, but it might be stale...
@@ -3128,7 +3128,7 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
 
 w_rc_t bf_tree_m::_try_recover_page(generic_page* parent,     // In: parent page
                                         bf_idx idx,              // In: index of the target page to be recovered
-                                        volid_t vol,
+                                        vid_t vol,
                                         shpid_t shpid,
                                         bool corrupted,          // In: true if page was corrupted, need to zero out the page
                                         const lsn_t page_emlsn)  // In: If non-null, it is the page emlsn

@@ -167,7 +167,7 @@ btree_m::_get_du_statistics_recurse(
     while (nextpid.page != 0) {
         shpid_t original_pid = smlevel_0::bf->debug_get_original_pageid(nextpid.page);
         btree_page_h page;
-        W_DO( next_page.fix_direct(currentpid.vol().vol, original_pid, LATCH_SH));
+        W_DO( next_page.fix_direct(currentpid.vol(), original_pid, LATCH_SH));
         current = next_page;// at this point (after latching next) we don't need to keep the "previous" fixed.
     
         if (current.level() > 1)  {
@@ -242,7 +242,7 @@ btree_m::print(const lpid_t& current,
     {
         shpid_t original_pid = smlevel_0::bf->debug_get_original_pageid(current.page);
         btree_page_h page;
-        W_COERCE( page.fix_direct(current.vol().vol, original_pid, LATCH_SH));// coerce ok-- debugging
+        W_COERCE( page.fix_direct(current.vol(), original_pid, LATCH_SH));// coerce ok-- debugging
 
         for (int i = 0; i < 5 - page.level(); i++) {
             cout << '\t';
@@ -287,7 +287,7 @@ btree_m::print(const lpid_t& current,
 }
 rc_t btree_m::touch_all(const lpid_t& root, uint64_t &page_count) {
     btree_page_h page;
-    W_DO( page.fix_root(stid_t(root.vol().vol, root.store()), LATCH_SH));
+    W_DO( page.fix_root(stid_t(root.vol(), root.store()), LATCH_SH));
     page_count = 0;
     return touch(page, page_count);
 }

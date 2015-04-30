@@ -1412,7 +1412,7 @@ rc_t ss_m::force_buffers() {
     return bf->force_all();
 }
 
-rc_t ss_m::force_volume(volid_t vol) {
+rc_t ss_m::force_volume(vid_t vol) {
     return bf->force_volume(vol);
 }
 
@@ -1613,7 +1613,7 @@ ss_m::list_volumes(const char* device,
     // be multiple volumes on a device
     lvid_t lvid;
     W_DO(io->get_lvid(device, lvid));
-    if (lvid != lvid_t::null) {
+    if (lvid != l0) {
         lvid_list = new lvid_t[1];
         lvid_list[0] = lvid;
         if (lvid_list == NULL) return RC(eOUTOFMEMORY);
@@ -1693,7 +1693,7 @@ ss_m::create_vol(const char* dev_name, const lvid_t& lvid,
 
     // make sure volume is not already mounted
     vid_t vid = io->get_vid(lvid);
-    if (vid != vid_t::null) return RC(eVOLEXISTS);
+    if (vid != 0) return RC(eVOLEXISTS);
 
     W_DO(_create_vol(dev_name, lvid, quota_KB, skip_raw_init,
                      apply_fake_io_latency, fake_disk_latency));
@@ -2157,12 +2157,12 @@ ss_m::_mount_dev(const char* device, vid_t local_vid)
     lvid_t lvid;
     W_DO(io->get_lvid(device, lvid));
     vid = io->get_vid(lvid);
-    if (vid != vid_t::null) {
+    if (vid != 0) {
                 // already mounted
                 return RCOK;
     }
 
-    if (local_vid == vid_t::null) {
+    if (local_vid == 0) {
         W_DO(io->get_new_vid(vid));
     } else {
         if (io->is_mounted(local_vid)) {

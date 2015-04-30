@@ -2701,7 +2701,7 @@ xct_t::rollback(const lsn_t &save_pt)
 
                 DBGOUT3 (<<"physical UNDO.. which is not quite good");
                 // tentatively use fix_direct for this. eventually all physical UNDOs should go away
-                rc = page.fix_direct(pid.vol().vol, pid.page, LATCH_EX);
+                rc = page.fix_direct(pid.vol(), pid.page, LATCH_EX);
                 if(rc.is_error())
                 {
                     goto done;

@@ -271,8 +271,8 @@ testdriver_thread_t::do_init(ss_m &ssm)
         vout << "    with local handle(phys volid) " << _functor->_test_volume._vid << endl;
     } else {
 // TODO(Restart)... performance, for an AFTER case
-        w_assert0(_functor->_test_volume._vid != vid_t::null);
-        w_assert0(_functor->_test_volume._lvid != lvid_t::null);
+        w_assert0(_functor->_test_volume._vid != 0);
+        w_assert0(_functor->_test_volume._lvid != l0);
     }
 
     return RCOK;

@@ -55,7 +55,7 @@ bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, uint32_t cleaner_threads
     // responsible for a volume. E.g.: (TODO)
     // cleaner_id_for_vol = vol_id % _slave_threads_size;
     _volume_assignments[0] = 0;
-    for (volid_t vol = 1; vol < MAX_VOL_COUNT; ++vol) {
+    for (vid_t vol = 1; vol < MAX_VOL_COUNT; ++vol) {
         _volume_assignments[vol] = _volume_assignments[vol - 1] + 1;
         if (_volume_assignments[vol] >= _slave_threads_size) {
             _volume_assignments[vol] = 1;
@@ -104,7 +104,7 @@ w_rc_t bf_tree_cleaner::wakeup_cleaners()
     return RCOK;
 }
 
-w_rc_t bf_tree_cleaner::wakeup_cleaner_for_volume(volid_t vol)
+w_rc_t bf_tree_cleaner::wakeup_cleaner_for_volume(vid_t vol)
 {
     DBGOUT2(<<"bf_tree_cleaner: waking up the cleaner for volume:" << vol);
     bf_cleaner_slave_id_t id = _volume_assignments[vol];
@@ -186,7 +186,7 @@ w_rc_t bf_tree_cleaner::force_all()
             interval = FORCE_SLEEP_MS_MAX;
         }
         bool remains = false;
-        for (volid_t vol = 1; vol < MAX_VOL_COUNT; ++vol) {
+        for (vid_t vol = 1; vol < MAX_VOL_COUNT; ++vol) {
             if (_requested_volumes[vol]) {
                 remains = true;
                 break;
@@ -246,7 +246,7 @@ w_rc_t bf_tree_cleaner::force_until_lsn(lsndata_t lsn)
     return RCOK;
 }
 
-w_rc_t bf_tree_cleaner::force_volume(volid_t vol)
+w_rc_t bf_tree_cleaner::force_volume(vid_t vol)
 {
     if (_bufferpool->_volumes[vol] == NULL) {
         DBGOUT2(<< "volume " << vol << " is not mounted");
@@ -282,7 +282,7 @@ bf_tree_cleaner_slave_thread_t::bf_tree_cleaner_slave_thread_t(bf_tree_cleaner* 
 {
     ::pthread_mutex_init(&_interval_mutex, NULL);
     ::pthread_cond_init(&_interval_cond, NULL);
-    for (volid_t vol = 0; vol < MAX_VOL_COUNT; ++vol) {
+    for (vid_t vol = 0; vol < MAX_VOL_COUNT; ++vol) {
         _candidates_buffer.push_back (std::vector<bf_idx>());
     }
     w_assert1(_candidates_buffer.size() == MAX_VOL_COUNT);
@@ -427,7 +427,7 @@ bool bf_tree_cleaner_slave_thread_t::_exists_requested_work()
     }
 
     // the cleaner is requested to flush out all dirty pages for assigned volume. let's do it immediately
-    for (volid_t vol = 1; vol < MAX_VOL_COUNT; ++vol) {
+    for (vid_t vol = 1; vol < MAX_VOL_COUNT; ++vol) {
         if (_parent->_volume_assignments[vol] == _id && _parent->_requested_volumes[vol]) {
             return true;
         }
@@ -439,7 +439,7 @@ bool bf_tree_cleaner_slave_thread_t::_exists_requested_work()
 
 
 w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
-    volid_t vol, const std::vector<bf_idx> &candidates,
+    vid_t vol, const std::vector<bf_idx> &candidates,
     bool requested_volume, lsndata_t requested_lsn)
 {
     if (_dirty_shutdown_happening()) return RCOK;
@@ -545,7 +545,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                     // if the page contains a swizzled pointer, we need to convert the data back to the original pointer.
                     // we need to do this before releasing SH latch because the pointer might be unswizzled by other threads.
                     _parent->_bufferpool->_convert_to_disk_page(_write_buffer + write_buffer_cur);// convert swizzled data.
-                    w_assert1(_write_buffer[write_buffer_cur].pid.vol().vol > 0);
+                    w_assert1(_write_buffer[write_buffer_cur].pid.vol() > 0);
                     w_assert1(_write_buffer[write_buffer_cur].pid.page > 0);
                 }
                 cb.latch().latch_release();
@@ -589,7 +589,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 // drop the page from bufferpool too
                 _parent->_bufferpool->_delete_block(idx);
             } else {
-                if (_write_buffer[write_buffer_cur].pid.vol().vol != vol) {
+                if (_write_buffer[write_buffer_cur].pid.vol() != vol) {
                     DBGOUT1(<<"_clean_volume(cleaner=" << _id << "): oops, this page now has a different volume?? "
                         << _write_buffer[write_buffer_cur].pid << " isn't in volume " << vol);
                     continue;
@@ -659,7 +659,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
 }
 
 
-w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(volid_t vol, size_t from, size_t consecutive)
+w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(vid_t vol, size_t from, size_t consecutive)
 {
     if (_dirty_shutdown_happening()) return RCOK;
     if (consecutive == 0) {
@@ -669,7 +669,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(volid_t vol, size_t f
     // we'll compute the highest lsn of the pages, and do one log flush to that lsn.
     lsndata_t max_page_lsn = lsndata_null;
     for (size_t i = from; i < from + consecutive; ++i) {
-        w_assert1(_write_buffer[i].pid.vol().vol == vol);
+        w_assert1(_write_buffer[i].pid.vol() == vol);
         if (i > from) {
             w_assert1(_write_buffer[i].pid.page == _write_buffer[i - 1].pid.page + 1);
         }
@@ -724,7 +724,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
     ::memcpy (requested_volumes, _parent->_requested_volumes, sizeof(bool) * MAX_VOL_COUNT); // this does NOT have to be atomic.
     DBGOUT1(<<"_do_work(cleaner=" << _id << "): requested_lsn=" << lsn_t(requested_lsn));
 
-    for (volid_t vol = 1; vol < MAX_VOL_COUNT; ++vol) {
+    for (vid_t vol = 1; vol < MAX_VOL_COUNT; ++vol) {
         // I'm hoping this doesn't revoke the buffer, leaving the capacity for reuse.
         // but in some STL implementation this might make the capacity zero. even in that case it shouldn't be a big issue..
         _candidates_buffer[vol].clear();
@@ -759,7 +759,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
 
         // the following check is approximate (without latch).
         // we check for real later, so that's fine.
-        volid_t vol = cb._pid_vol;
+        vid_t vol = cb._pid_vol;
         if (vol >= MAX_VOL_COUNT || _parent->_volume_assignments[vol] != _id) {
             continue;
         }
@@ -790,7 +790,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
             }
         }
     }
-    for (volid_t vol = 1; vol < MAX_VOL_COUNT; ++vol) {
+    for (vid_t vol = 1; vol < MAX_VOL_COUNT; ++vol) {
         if (!_candidates_buffer[vol].empty()) {
             W_DO(_clean_volume(vol, _candidates_buffer[vol], requested_volumes[vol], requested_lsn));
         }
@@ -802,7 +802,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
         _completed_lsn = requested_lsn;
         DBGOUT1(<<"_do_work(cleaner=" << _id << "): flushed until lsn=" << lsn_t(requested_lsn));
     }
-    for (volid_t vol = 1; vol < MAX_VOL_COUNT; ++vol) {
+    for (vid_t vol = 1; vol < MAX_VOL_COUNT; ++vol) {
         if (_parent->_volume_assignments[vol] == _id && requested_volumes[vol]) {
             _parent->_requested_volumes[vol] = false;
             if (_parent->_bufferpool->_volumes[vol] != NULL) {

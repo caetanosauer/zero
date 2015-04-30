@@ -108,7 +108,7 @@ struct bf_tree_cb_t {
     bool _used;          // +1  -> 2
 
     /// volume ID of the page currently pinned on this block; protected by ??
-    volid_t _pid_vol;       // +2  -> 4
+    vid_t _pid_vol;       // +2  -> 4
 
     /**
      * short page ID of the page currently pinned on this block.  (we don't have stnum in

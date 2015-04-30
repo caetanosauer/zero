@@ -211,7 +211,7 @@ rc_t lock_m::intent_vol_lock(vid_t vid, okvl_mode::element_lock_mode m)
     lil_global_table *global_table = get_lil_global_table();
     lil_private_table* private_table = xd->lil_lock_info();
     lil_private_vol_table *vol_table;
-    W_DO(private_table->acquire_vol_table(global_table, vid.vol, mode, vol_table));
+    W_DO(private_table->acquire_vol_table(global_table, vid, mode, vol_table));
     
     return RCOK;
 }

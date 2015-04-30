@@ -64,7 +64,7 @@ public:
     /**
      * Wakes up the cleaner thread assigned to the given volume.
      */
-    w_rc_t wakeup_cleaner_for_volume (volid_t vol);
+    w_rc_t wakeup_cleaner_for_volume (vid_t vol);
 
     /**
      * Gracefully request all cleaners to stop.
@@ -84,7 +84,7 @@ public:
     */
 
     /** Immediately writes out all dirty pages in the given volume.*/
-    w_rc_t force_volume (volid_t vol);
+    w_rc_t force_volume (vid_t vol);
     
     /** Immediately writes out all dirty pages.*/
     w_rc_t force_all ();
@@ -182,8 +182,8 @@ private:
     void _take_interval ();
     w_rc_t _do_work ();
     bool _exists_requested_work();
-    w_rc_t _clean_volume(volid_t vol, const std::vector<bf_idx> &candidates, bool requested_volume, lsndata_t requested_lsn);
-    w_rc_t _flush_write_buffer(volid_t vol, size_t from, size_t consecutive);
+    w_rc_t _clean_volume(vid_t vol, const std::vector<bf_idx> &candidates, bool requested_volume, lsndata_t requested_lsn);
+    w_rc_t _flush_write_buffer(vid_t vol, size_t from, size_t consecutive);
 
     /** parent object. */
     bf_tree_cleaner*            _parent;

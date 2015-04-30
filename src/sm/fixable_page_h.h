@@ -89,7 +89,7 @@ public:
      * ePARENTLATCHQFAIL, or eNEEDREALLATCH.  The later occurs only when virgin_page is
      * true or shpid is not swizzled.
      */
-    w_rc_t fix_nonroot(const fixable_page_h &parent, volid_t vol,
+    w_rc_t fix_nonroot(const fixable_page_h &parent, vid_t vol,
                        shpid_t shpid, latch_mode_t mode, bool conditional=false, 
                        bool virgin_page=false, const bool from_recovery = false);
 
@@ -109,7 +109,7 @@ public:
      * @param[in] virgin_page  whether the page is a new page thus
      *                         doesn't have to be read from disk.
      */
-    w_rc_t fix_direct(volid_t vol, shpid_t shpid, latch_mode_t mode,
+    w_rc_t fix_direct(vid_t vol, shpid_t shpid, latch_mode_t mode,
                       bool conditional=false, bool virgin_page=false);
 
 

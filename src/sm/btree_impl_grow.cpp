@@ -40,7 +40,7 @@ rc_t btree_impl::_ux_create_tree_core(const stid_t &stid, const lpid_t &root_pid
     w_assert1(infimum.is_constructed());
     supremum.construct_posinfkey();
     w_assert1(supremum.is_constructed());
-    W_DO(page.fix_virgin_root(stid_t(root_pid.vol().vol, root_pid.store()), root_pid.page));
+    W_DO(page.fix_virgin_root(stid_t(root_pid.vol(), root_pid.store()), root_pid.page));
     W_DO(page.format_steal(page.lsn(), root_pid, root_pid.page,
                            1, // level=1. initial tree has only one level
                            0, lsn_t::null,// no pid0

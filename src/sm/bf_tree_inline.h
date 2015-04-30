@@ -100,7 +100,7 @@ inline w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
 }
 
 inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent, 
-                                     volid_t vol, shpid_t shpid,
+                                     vid_t vol, shpid_t shpid,
                                      latch_mode_t mode, bool conditional, 
                                      bool virgin_page,
                                      const bool from_recovery) {
@@ -304,7 +304,7 @@ inline w_rc_t bf_tree_m::fix_root (generic_page*& page, stid_t store,
     w_assert1(_is_valid_idx(idx));
 
     w_assert1(_is_active_idx(idx));
-    w_assert1(get_cb(idx)._pid_vol == volid_t(store.vol));
+    w_assert1(get_cb(idx)._pid_vol == vid_t(store.vol));
 
     w_assert1(true == get_cb(idx)._used);
 
@@ -602,7 +602,7 @@ inline void bf_tree_m::set_initial_rec_lsn(const lpid_t& pid,
     // Reset the _rec_lsn in page cb (when the page was dirtied initially) if
     // it is later than the new_lsn, we want the earliest lsn in _rec_lsn
 
-    uint64_t key = bf_key(pid.vol().vol, pid.page);
+    uint64_t key = bf_key(pid.vol(), pid.page);
     bf_idx idx = _hashtable->lookup(key);
     if (0 != idx)
     {

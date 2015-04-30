@@ -266,9 +266,9 @@ io_m::_get_vid(const lvid_t& lvid)
     }
 
     // egcs 1.1.1 croaks on this stmt:
-    // return (i >= max_vols) ? vid_t::null : vol[i]->vid();
+    // return (i >= max_vols) ? 0 : vol[i]->vid();
     if(i >= max_vols) {
-        return vid_t::null;
+        return 0;
     } else {
         return vol[i]->vid();
     }
@@ -286,7 +286,7 @@ io_m::get_device_quota(const char* device, smksize_t& quota_KB,
 
     lvid_t lvid;
     W_DO(_get_lvid(device, lvid));
-    if (lvid == lvid_t::null) {
+    if (lvid == l0) {
         // no device on volume
         quota_used_KB = 0;
     } else {
@@ -308,7 +308,7 @@ io_m::_get_lvid(const char* dev_name, lvid_t& lvid)
     for (i = 0; i < max_vols; i++)  {
         if (vol[i] && (strcmp(vol[i]->devname(), dev_name) == 0) ) break;
     }
-    lvid = (i >= max_vols) ? lvid_t::null : vol[i]->lvid();
+    lvid = (i >= max_vols) ? l0 : vol[i]->lvid();
     return RCOK;
 }
 
@@ -363,7 +363,7 @@ io_m::get_lvid(const vid_t vid)
 {
     auto_leave_t enter;
     int i = _find(vid);
-    return (i >= max_vols) ? lvid_t::null : vol[i]->lvid();
+    return (i >= max_vols) ? l0 : vol[i]->lvid();
 }
 
 
@@ -625,9 +625,9 @@ rc_t
 io_m::get_new_vid(vid_t& vid)
 {
     auto_leave_t enter;
-    for (vid = vid_t(1); vid != vid_t::null; vid.incr_local()) {
+    for (vid = 1; vid != 0; vid++) {
         int i = _find(vid);
-        if (i < 0) return RCOK;;
+        if (i < 0) return RCOK;
     }
     return RC(eNVOL);
 }

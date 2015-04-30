@@ -148,7 +148,7 @@ w_rc_t test_nochange(ss_m* ssm, test_volume_t *test_volume) {
 
     //Clean up backup file
     BackupManager *bk = ssm->bk;
-    volid_t vid = test_volume->_vid;
+    vid_t vid = test_volume->_vid;
     x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));
     
@@ -189,7 +189,7 @@ w_rc_t test_one_change(ss_m* ssm, test_volume_t *test_volume) {
 
     //Clean up backup file
     BackupManager *bk = ssm->bk;
-    volid_t vid = test_volume->_vid;
+    vid_t vid = test_volume->_vid;
     x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));
     
@@ -229,7 +229,7 @@ w_rc_t test_two_changes(ss_m* ssm, test_volume_t *test_volume) {
     
     //Clean up backup file
     BackupManager *bk = ssm->bk;
-    volid_t vid = test_volume->_vid;
+    vid_t vid = test_volume->_vid;
     x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));
     
@@ -319,7 +319,7 @@ w_rc_t test_multi_pages(ss_m* ssm, test_volume_t *test_volume) {
 
     //Clean up backup file
     BackupManager *bk = ssm->bk;
-    volid_t vid = test_volume->_vid;
+    vid_t vid = test_volume->_vid;
     x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));
     

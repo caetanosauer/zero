@@ -26,7 +26,7 @@ btree_test_env *test_env;
 
 w_rc_t initial_test(ss_m* ssm, test_volume_t *test_volume) {
     BackupManager *bk = ssm->bk;
-    volid_t vid = test_volume->_vid;
+    vid_t vid = test_volume->_vid;
     x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));
 
@@ -53,7 +53,7 @@ TEST (BackupTest, Initial) {
 const snum_t STNUM = 10;
 /** helper to allocate a few pages */
 w_rc_t allocate_few(ss_m* ssm, test_volume_t *test_volume, shpid_t alloc_count) {
-    volid_t vid = test_volume->_vid;
+    vid_t vid = test_volume->_vid;
     vol_t *vol = ssm->io->get_volume(test_volume->_vid);
     const shpid_t FIRST_PID = vol->first_data_pageid();
     W_DO(ssm->begin_xct());
@@ -79,7 +79,7 @@ w_rc_t allocate_few(ss_m* ssm, test_volume_t *test_volume, shpid_t alloc_count) 
 
 w_rc_t allocate_few_test(ss_m* ssm, test_volume_t *test_volume) {
     BackupManager *bk = ssm->bk;
-    volid_t vid = test_volume->_vid;
+    vid_t vid = test_volume->_vid;
     vol_t *vol = ssm->io->get_volume(test_volume->_vid);
     const shpid_t FIRST_PID = vol->first_data_pageid();
     x_delete_backup(ssm, test_volume);
@@ -99,7 +99,7 @@ w_rc_t allocate_few_test(ss_m* ssm, test_volume_t *test_volume) {
             EXPECT_TRUE(bk->page_exists(vid, pid));
             W_DO(bk->retrieve_page(buf, vid, pid));
             EXPECT_EQ(pid, buf.pid.page);
-            EXPECT_EQ(vid, buf.pid.vol().vol);
+            EXPECT_EQ(vid, buf.pid.vol());
             EXPECT_EQ(STNUM, buf.pid.store());
             EXPECT_EQ(t_btree_p, buf.tag);
         } else {
@@ -119,7 +119,7 @@ TEST (BackupTest, AllocateFew) {
 
 w_rc_t mixed_test(ss_m* ssm, test_volume_t *test_volume) {
     BackupManager *bk = ssm->bk;
-    volid_t vid = test_volume->_vid;
+    vid_t vid = test_volume->_vid;
     vol_t *vol = ssm->io->get_volume(test_volume->_vid);
     const shpid_t FIRST_PID = vol->first_data_pageid();
     x_delete_backup(ssm, test_volume);
@@ -149,7 +149,7 @@ w_rc_t mixed_test(ss_m* ssm, test_volume_t *test_volume) {
             EXPECT_TRUE(bk->page_exists(vid, pid));
             W_DO(bk->retrieve_page(buf, vid, pid));
             EXPECT_EQ(pid, buf.pid.page);
-            EXPECT_EQ(vid, buf.pid.vol().vol);
+            EXPECT_EQ(vid, buf.pid.vol());
             EXPECT_EQ(STNUM, buf.pid.store());
             EXPECT_EQ(t_btree_p, buf.tag);
         } else {
@@ -169,7 +169,7 @@ TEST (BackupTest, Mixed) {
 
 w_rc_t validity_test(ss_m* ssm, test_volume_t *test_volume) {
     BackupManager *bk = ssm->bk;
-    volid_t vid = test_volume->_vid;
+    vid_t vid = test_volume->_vid;
     x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));
 

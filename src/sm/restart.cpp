@@ -91,13 +91,13 @@ template class Heap<xct_t*, CmpXctUndoLsns>;
 
 typedef uint64_t dp_key_t;
 
-inline dp_key_t dp_key(volid_t vid, shpid_t shpid) {
+inline dp_key_t dp_key(vid_t vid, shpid_t shpid) {
     return ((dp_key_t) vid << 32) + shpid;
 }
 inline dp_key_t dp_key(const lpid_t &pid) {
-    return dp_key(pid.vol().vol, pid.page);
+    return dp_key(pid.vol(), pid.page);
 }
-inline volid_t  dp_vid (dp_key_t key) {
+inline vid_t  dp_vid (dp_key_t key) {
     return key >> 32;
 }
 inline shpid_t  dp_shpid (dp_key_t key) {
@@ -2066,7 +2066,7 @@ bool restart_m::_analysis_system_log(logrec_t& r,             // In: Log record 
             (true == r.is_page_deallocate()))
         {
             // Remove the in_doubt flag in buffer pool of the page if it exists in buffer pool
-            uint64_t key = bf_key(page_of_interest.vol().vol, page_of_interest.page);
+            uint64_t key = bf_key(page_of_interest.vol(), page_of_interest.page);
             idx = smlevel_0::bf->lookup_in_doubt(key);
             if (0 != idx)
             {
@@ -2582,7 +2582,7 @@ void restart_m::_analysis_other_log(logrec_t& r,               // In: log record
             (true == r.is_page_deallocate()))
         {
             // Remove the in_doubt flag in buffer pool of the page if it exists in buffer pool
-            uint64_t key = bf_key(page_of_interest.vol().vol, page_of_interest.page);
+            uint64_t key = bf_key(page_of_interest.vol(), page_of_interest.page);
             idx = smlevel_0::bf->lookup_in_doubt(key);
             if (0 != idx)
             {
@@ -4054,7 +4054,7 @@ void restart_m::_redo_log_with_pid(
     // we cannot have swizzling on
     w_assert1(!smlevel_0::bf->is_swizzling_enabled());
 
-    uint64_t key = bf_key(page_updated.vol().vol, page_updated.page);
+    uint64_t key = bf_key(page_updated.vol(), page_updated.page);
     bf_idx idx = smlevel_0::bf->lookup_in_doubt(key);
     if (0 != idx)
     {
@@ -4144,7 +4144,7 @@ void restart_m::_redo_log_with_pid(
 
                 // If past_end is true, the page does not exist on disk and the buffer pool page
                 // has been zerod out, we cannot apply REDO in this case
-                rc = smlevel_0::bf->load_for_redo(idx, page_updated.vol().vol,
+                rc = smlevel_0::bf->load_for_redo(idx, page_updated.vol(),
                                                   page_updated.page, past_end);
 
                 if (true == past_end)
@@ -4184,7 +4184,7 @@ void restart_m::_redo_log_with_pid(
                 }
 
                 // Just loaded from disk, set the vol and page in cb
-                cb._pid_vol = page_updated.vol().vol;
+                cb._pid_vol = page_updated.vol();
                 cb._store_num = page_updated.store();
                 cb._pid_shpid = page_updated.page;
             }
@@ -4194,7 +4194,7 @@ void restart_m::_redo_log_with_pid(
                 // We have the page cb and hashtable entry for this page already
                 // There is nothing to load from disk, set the vol and page in cb
 
-                cb._pid_vol = page_updated.vol().vol;
+                cb._pid_vol = page_updated.vol();
                 cb._store_num = page_updated.store();
                 cb._pid_shpid = page_updated.page;
             }
@@ -5058,7 +5058,7 @@ DBGOUT1(<<"Start child thread REDO phase");
             bool virgin_page = false;
             bool corrupted_page = false;
 
-            volid_t vol = cb._pid_vol;
+            vid_t vol = cb._pid_vol;
             shpid_t shpid = cb._pid_shpid;
             snum_t store = cb._store_num;
             stid_t stid = stid_t(vol, store);
