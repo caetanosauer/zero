@@ -1410,7 +1410,7 @@ w_rc_t x_btree_adopt_foster_all(ss_m* ssm, const stid_t &stid)
     W_DO(ssm->begin_xct());
     {
         btree_page_h root_p;
-        W_DO(root_p.fix_root(stid.vol.vol, stid.store, LATCH_EX));
+        W_DO(root_p.fix_root(stid, LATCH_EX));
         W_DO(btree_impl::_sx_adopt_foster_all(root_p, true));
     }
     W_DO(ssm->commit_xct());
@@ -1554,7 +1554,7 @@ w_rc_t x_btree_scan(ss_m* ssm, const stid_t &stid, x_btree_scan_result &result, 
         xct()->set_query_concurrency(smlevel_0::t_cc_keyrange);
     }
     // fully scan the BTree
-    bt_cursor_t cursor (stid.vol.vol, stid.store, true);
+    bt_cursor_t cursor (stid, true);
 
     result.rownum = 0;
     bool first_key = true;

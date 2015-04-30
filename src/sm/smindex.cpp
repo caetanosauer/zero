@@ -57,7 +57,7 @@ rc_t ss_m::create_assoc(stid_t stid, const w_keystr_t& key, const vec_t& el)
 {
     lpid_t root_pid;
     W_DO(open_store (stid, root_pid, true));
-    W_DO( bt->insert(stid.vol.vol, stid.store, key, el) );
+    W_DO( bt->insert(stid, key, el) );
     return RCOK;
 }
 
@@ -65,7 +65,7 @@ rc_t ss_m::update_assoc(stid_t stid, const w_keystr_t& key, const vec_t& el)
 {
     lpid_t root_pid;
     W_DO( open_store (stid, root_pid, true));
-    W_DO( bt->update(stid.vol.vol, stid.store, key, el) );
+    W_DO( bt->update(stid, key, el) );
     return RCOK;
 }
 
@@ -73,7 +73,7 @@ rc_t ss_m::put_assoc(stid_t stid, const w_keystr_t& key, const vec_t& el)
 {
     lpid_t root_pid;
     W_DO( open_store (stid, root_pid, true));
-    W_DO( bt->put(stid.vol.vol, stid.store, key, el) );
+    W_DO( bt->put(stid, key, el) );
     return RCOK;
 }
 
@@ -82,7 +82,7 @@ rc_t ss_m::overwrite_assoc(stid_t stid, const w_keystr_t &key,
 {
     lpid_t root_pid;
     W_DO( open_store (stid, root_pid, true));
-    W_DO( bt->overwrite(stid.vol.vol, stid.store, key, el, offset, elen) );
+    W_DO( bt->overwrite(stid, key, el, offset, elen) );
     return RCOK;
 }
 
@@ -90,7 +90,7 @@ rc_t ss_m::destroy_assoc(stid_t stid, const w_keystr_t& key)
 {
     lpid_t root_pid;
     W_DO(open_store (stid, root_pid, true));
-    W_DO( bt->remove(stid.vol.vol, stid.store, key) );
+    W_DO( bt->remove(stid, key) );
     return RCOK;
 }
 
@@ -100,7 +100,7 @@ rc_t ss_m::find_assoc(stid_t stid, const w_keystr_t& key,
     lpid_t root_pid;
     bool for_update = g_xct_does_ex_lock_for_select();
     W_DO(open_store (stid, root_pid, for_update));
-    W_DO( bt->lookup(stid.vol.vol, stid.store, key, el, elen, found) );    
+    W_DO( bt->lookup(stid, key, el, elen, found) );    
     return RCOK;
 }
 
@@ -108,7 +108,7 @@ rc_t ss_m::verify_index(stid_t stid, int hash_bits, bool &consistent)
 {
     lpid_t root_pid;
     W_DO( open_store (stid, root_pid));
-    W_DO( bt->verify_tree(stid.vol.vol, stid.store,  hash_bits, consistent) );
+    W_DO( bt->verify_tree(stid,  hash_bits, consistent) );
     return RCOK;
 }
 

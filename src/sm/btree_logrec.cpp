@@ -53,7 +53,7 @@ btree_insert_log::undo(fixable_page_h* page) {
 DBGOUT3( << "&&&& UNDO insertion, key: " << key);
 
     // ***LOGICAL*** don't grab locks during undo
-    rc_t rc = smlevel_2::bt->remove_as_undo(header._vid.vol, header._snum, key);
+    rc_t rc = smlevel_2::bt->remove_as_undo(stid_t(header._vid.vol, header._snum), key);
     if(rc.is_error())
     {
         if (false == restart_m::use_redo_full_logging_restart())
@@ -146,7 +146,7 @@ btree_update_log::undo(fixable_page_h*)
     old_el.put(dp->_data + dp->_klen, dp->_old_elen);
 
     // ***LOGICAL*** don't grab locks during undo
-    rc_t rc = smlevel_2::bt->update_as_undo(header._vid.vol, header._snum, key, old_el);
+    rc_t rc = smlevel_2::bt->update_as_undo(stid_t(header._vid.vol, header._snum), key, old_el);
     if(rc.is_error()) {
         W_FATAL(rc.err_num());
     }
@@ -199,7 +199,7 @@ void btree_overwrite_log::undo(fixable_page_h*)
     const char* old_el = dp->_data + dp->_klen;
 
     // ***LOGICAL*** don't grab locks during undo
-    rc_t rc = smlevel_2::bt->overwrite_as_undo(header._vid.vol, header._snum, key, old_el, offset, elen);
+    rc_t rc = smlevel_2::bt->overwrite_as_undo(stid_t(header._vid.vol, header._snum), key, old_el, offset, elen);
     if(rc.is_error()) {
         W_FATAL(rc.err_num());
     }
@@ -324,7 +324,7 @@ btree_ghost_mark_log::undo(fixable_page_h*)
 // TODO(Restart)...
 DBGOUT3( << "&&&& UNDO deletion by remove ghost mark, key: " << key);
 
-        rc_t rc = smlevel_2::bt->undo_ghost_mark(header._vid.vol, header._snum, key);
+        rc_t rc = smlevel_2::bt->undo_ghost_mark(stid_t(header._vid.vol, header._snum), key);
         if(rc.is_error()) {
             cerr << " key=" << key << endl << " rc =" << rc << endl;
             W_FATAL(rc.err_num());

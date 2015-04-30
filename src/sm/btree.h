@@ -56,7 +56,7 @@ public:
     * Insert <key, el> into the btree.
     */
     static rc_t                        insert(
-        volid_t vol, snum_t store,
+        stid_t store,
         const w_keystr_t&                 key,
         const cvec_t&                     elem);
 
@@ -64,7 +64,7 @@ public:
     * Update el of key with the new data.
     */
     static rc_t                        update(
-        volid_t vol, snum_t store,
+        stid_t store,
         const w_keystr_t&                 key,
         const cvec_t&                     elem);
 
@@ -73,7 +73,7 @@ public:
     * with the new data.
     */
     static rc_t                        put(
-        volid_t vol, snum_t store,
+        stid_t store,
         const w_keystr_t&                 key,
         const cvec_t&                     elem);
 
@@ -81,7 +81,7 @@ public:
     * Update specific part of el of key with the new data.
     */
     static rc_t                        overwrite(
-        volid_t vol, snum_t store,
+        stid_t store,
         const w_keystr_t&                 key,
         const char*                       el,
         smsize_t                          offset,
@@ -89,7 +89,7 @@ public:
 
     /** Remove key from the btree. */
     static rc_t                        remove(
-        volid_t vol, snum_t store,
+        stid_t store,
         const w_keystr_t&                    key);
 
     /** Print the btree (for debugging only). */
@@ -111,7 +111,7 @@ public:
     *  entry element into el. 
     */
     static rc_t                        lookup(
-        volid_t vol, snum_t store,
+        stid_t store,
         const w_keystr_t&              key_to_find, 
         void*                          el, 
         smsize_t&                      elen,
@@ -127,7 +127,7 @@ public:
      * @copydetails btree_impl::_ux_verify_tree(const lpid_t&,int,bool&)
     */
     static rc_t                        verify_tree(
-        volid_t vol, snum_t store, int hash_bits, bool &consistent);
+        stid_t store, int hash_bits, bool &consistent);
     
     /**
      * \brief Verifies consistency of all BTree indexes in the volume.
@@ -139,14 +139,14 @@ protected:
     /* 
      * for use by logrecs for undo
      */
-    static rc_t remove_as_undo(volid_t vol, snum_t store,const w_keystr_t &key);
-    static rc_t update_as_undo(volid_t vol, snum_t store,const w_keystr_t &key, const cvec_t &elem);
-    static rc_t overwrite_as_undo(volid_t vol, snum_t store,const w_keystr_t &key,
+    static rc_t remove_as_undo(stid_t store,const w_keystr_t &key);
+    static rc_t update_as_undo(stid_t store,const w_keystr_t &key, const cvec_t &elem);
+    static rc_t overwrite_as_undo(stid_t store,const w_keystr_t &key,
                                   const char *el, smsize_t offset, smsize_t elen);
-    static rc_t undo_ghost_mark(volid_t vol, snum_t store,const w_keystr_t &key);
+    static rc_t undo_ghost_mark(stid_t store,const w_keystr_t &key);
 private:
     /** Return true in ret if btree at root is empty. false otherwise. */
-    static rc_t                        is_empty(volid_t vol, snum_t store, bool& ret);
+    static rc_t                        is_empty(stid_t store, bool& ret);
 
     /** Used by get_du_statistics internally to collect all nodes' statistics. */
     static rc_t _get_du_statistics_recurse(

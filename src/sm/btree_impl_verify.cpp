@@ -28,7 +28,7 @@
 const int16_t NOCHECK_ROOT_LEVEL = -1;
 
 rc_t  btree_impl::_ux_verify_tree(
-        volid_t vol, snum_t store, int hash_bits, bool &consistent)
+        stid_t store, int hash_bits, bool &consistent)
 {
     verification_context context (hash_bits);
     
@@ -38,7 +38,7 @@ rc_t  btree_impl::_ux_verify_tree(
     infimum.construct_neginfkey();
     supremum.construct_posinfkey();
     btree_page_h rp;
-    W_DO( rp.fix_root(vol, store, LATCH_SH));
+    W_DO( rp.fix_root(store, LATCH_SH));
     context.add_expectation(rp.pid().page, NOCHECK_ROOT_LEVEL, false, infimum);
     context.add_expectation(rp.pid().page, NOCHECK_ROOT_LEVEL, true, supremum);
     W_DO (_ux_verify_tree_recurse(rp, context));
@@ -177,7 +177,7 @@ rc_t btree_impl::_ux_verify_feed_page(
 }
 
 
-void btree_impl::inquery_verify_init(volid_t vol, snum_t store)
+void btree_impl::inquery_verify_init(stid_t store)
 {
     xct_t *x = xct();
     if (x == NULL || !x->is_inquery_verify())
@@ -186,7 +186,7 @@ void btree_impl::inquery_verify_init(volid_t vol, snum_t store)
     context.next_level = -1; // don't check level of root page
     context.next_low_key.construct_neginfkey();
     context.next_high_key.construct_posinfkey();
-    context.next_pid = smlevel_0::bf->get_root_page_id(vol, store);
+    context.next_pid = smlevel_0::bf->get_root_page_id(store);
 }
 
 void btree_impl::inquery_verify_fact(btree_page_h &page)

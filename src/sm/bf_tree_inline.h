@@ -57,11 +57,11 @@ inline generic_page* bf_tree_m::get_page(const bf_tree_cb_t *cb) {
     w_assert1(_is_valid_idx(idx));
     return _buffer + idx;
 }
-inline shpid_t bf_tree_m::get_root_page_id(volid_t vol, snum_t store) {
-    if (_volumes[vol] == NULL) {
+inline shpid_t bf_tree_m::get_root_page_id(stid_t store) {
+    if (_volumes[store.vol] == NULL) {
         return 0;
     }
-    bf_idx idx = _volumes[vol]->_root_pages[store];
+    bf_idx idx = _volumes[store.vol]->_root_pages[store.store];
     if (!_is_valid_idx(idx)) {
         return 0;
     }
@@ -69,12 +69,12 @@ inline shpid_t bf_tree_m::get_root_page_id(volid_t vol, snum_t store) {
     return page->pid.page;
 }
 
-inline bf_idx bf_tree_m::get_root_page_idx(volid_t vol, snum_t store) {
-    if (_volumes[vol] == NULL)
+inline bf_idx bf_tree_m::get_root_page_idx(stid_t store) {
+    if (_volumes[store.vol] == NULL)
         return 0;
 
     // root-page index is always kept in the volume descriptor:
-    bf_idx idx = _volumes[vol]->_root_pages[store];
+    bf_idx idx = _volumes[store.vol]->_root_pages[store.store];
     if (!_is_valid_idx(idx)) 
         return 0;
     else
@@ -100,7 +100,7 @@ inline w_rc_t bf_tree_m::refix_direct (generic_page*& page, bf_idx
 }
 
 inline w_rc_t bf_tree_m::fix_nonroot(generic_page*& page, generic_page *parent, 
-                                     volid_t vol, shpid_t shpid, 
+                                     volid_t vol, shpid_t shpid,
                                      latch_mode_t mode, bool conditional, 
                                      bool virgin_page,
                                      const bool from_recovery) {
@@ -242,24 +242,24 @@ inline w_rc_t bf_tree_m::fix_unsafely_nonroot(generic_page*& page, shpid_t shpid
 }
 
 
-inline w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, volid_t vol, snum_t store, shpid_t shpid) {
-    w_assert1(vol != 0);
-    w_assert1(store != 0);
+inline w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, stid_t store, shpid_t shpid) {
+    w_assert1(store.vol != vid_t(0));
+    w_assert1(store.store != 0);
     w_assert1(shpid != 0);
     w_assert1((shpid & SWIZZLED_PID_BIT) == 0);
-    bf_tree_vol_t *volume = _volumes[vol];
+    bf_tree_vol_t *volume = _volumes[store.vol];
     w_assert1(volume != NULL);
-    w_assert1(volume->_root_pages[store] == 0);
+    w_assert1(volume->_root_pages[store.store] == 0);
 
     bf_idx idx;
     
 #ifdef SIMULATE_MAINMEMORYDB
     idx = shpid;
-    volume->_root_pages[store] = idx;
+    volume->_root_pages[store.store] = idx;
     bf_tree_cb_t &cb = get_cb(idx);
     cb.clear();
-    cb._pid_vol = vol;
-    cb._pid_shpid = shpid;
+    cb._pid_vol = store.vol;
+    cb._pid_shpid = store.shpid;
     cb.pin_cnt_set(1); // root page's pin count is always positive
     cb._used = true;
     cb._dirty = true;
@@ -271,10 +271,10 @@ inline w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, volid_t vol, snum
     // this page will be the root page of a new store.
     W_DO(_grab_free_block(idx));
     w_assert1(_is_valid_idx(idx));
-    volume->_root_pages[store] = idx;
+    volume->_root_pages[store.store] = idx;
 
     get_cb(idx).clear();
-    get_cb(idx)._pid_vol = vol;
+    get_cb(idx)._pid_vol = store.vol;
     get_cb(idx)._pid_shpid = shpid;
     get_cb(idx).pin_cnt_set(1); // root page's pin count is always positive
     get_cb(idx)._used = true;
@@ -284,7 +284,7 @@ inline w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, volid_t vol, snum
     get_cb(idx)._uncommitted_cnt = 0;
     ++_dirty_page_count_approximate;
     get_cb(idx)._swizzled = true;
-    bool inserted = _hashtable->insert_if_not_exists(bf_key(vol, shpid), idx); // for some type of caller (e.g., redo) we still need hashtable entry for root
+    bool inserted = _hashtable->insert_if_not_exists(bf_key(store.vol, shpid), idx); // for some type of caller (e.g., redo) we still need hashtable entry for root
     if (!inserted) {
         ERROUT (<<"failed to insert a virgin root page to hashtable. this must not have happened because there shouldn't be any race. wtf");
         return RC(eINTERNAL);
@@ -292,19 +292,19 @@ inline w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, volid_t vol, snum
     return _latch_root_page(page, idx, LATCH_EX, false);
 }
 
-inline w_rc_t bf_tree_m::fix_root (generic_page*& page, volid_t vol, snum_t store, 
+inline w_rc_t bf_tree_m::fix_root (generic_page*& page, stid_t store, 
                                    latch_mode_t mode, bool conditional, const bool from_undo) {
-    w_assert1(vol != 0);
-    w_assert1(store != 0);
-    bf_tree_vol_t *volume = _volumes[vol];
+    w_assert1(store.vol != vid_t(0));
+    w_assert1(store.store != 0);
+    bf_tree_vol_t *volume = _volumes[store.vol];
     w_assert1(volume != NULL);
 
     // root-page index is always kept in the volume descriptor:
-    bf_idx idx = volume->_root_pages[store];
+    bf_idx idx = volume->_root_pages[store.store];
     w_assert1(_is_valid_idx(idx));
 
     w_assert1(_is_active_idx(idx));
-    w_assert1(get_cb(idx)._pid_vol == vol);
+    w_assert1(get_cb(idx)._pid_vol == volid_t(store.vol));
 
     w_assert1(true == get_cb(idx)._used);
 
@@ -335,7 +335,7 @@ inline w_rc_t bf_tree_m::fix_root (generic_page*& page, volid_t vol, snum_t stor
     }
 
     W_DO(_latch_root_page(page, idx, mode, conditional));
-    w_assert1(_buffer[idx].pid.store() == store);
+    w_assert1(_buffer[idx].pid.store() == store.store);
 
     if ((false == get_cb(idx)._in_doubt) &&                                 // Page not in_doubt
         (false == from_undo) && (false == get_cb(idx)._recovery_access))    // From concurrent user transaction
@@ -357,7 +357,7 @@ inline w_rc_t bf_tree_m::fix_root (generic_page*& page, volid_t vol, snum_t stor
     w_assert1(idx == _hashtable->lookup(bf_key(vol, get_cb(volume->_root_pages[store])._pid_shpid)));
 #else // SIMULATE_NO_SWIZZLING
     if (!is_swizzling_enabled()) {
-        w_assert1(idx == _hashtable->lookup(bf_key(vol, get_cb(volume->_root_pages[store])._pid_shpid)));
+        w_assert1(idx == _hashtable->lookup(bf_key(store.vol, get_cb(volume->_root_pages[store.store])._pid_shpid)));
     }
 #endif // SIMULATE_NO_SWIZZLING
 #endif // SIMULATE_MAINMEMORYDB
@@ -390,14 +390,14 @@ inline w_rc_t bf_tree_m::_latch_root_page(generic_page*& page, bf_idx idx, latch
     return RCOK;
 }
 
-inline w_rc_t bf_tree_m::fix_with_Q_root(generic_page*& page, volid_t vol, snum_t store, q_ticket_t& ticket) {
-    w_assert1(vol != 0);
-    w_assert1(store != 0);
-    bf_tree_vol_t *volume = _volumes[vol];
+inline w_rc_t bf_tree_m::fix_with_Q_root(generic_page*& page, stid_t store, q_ticket_t& ticket) {
+    w_assert1(store.vol != vid_t(0));
+    w_assert1(store.store != 0);
+    bf_tree_vol_t *volume = _volumes[store.vol];
     w_assert1(volume != NULL);
 
     // root-page index is always kept in the volume descriptor:
-    bf_idx idx = volume->_root_pages[store];
+    bf_idx idx = volume->_root_pages[store.store];
     w_assert1(_is_valid_idx(idx));
 
     // later we will acquire the latch in Q mode <<<>>>

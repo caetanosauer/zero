@@ -5061,6 +5061,7 @@ DBGOUT1(<<"Start child thread REDO phase");
             volid_t vol = cb._pid_vol;
             shpid_t shpid = cb._pid_shpid;
             snum_t store = cb._store_num;
+            stid_t stid = stid_t(vol, store);
 
             // Get the last write lsn on the page, this would be used
             // as emlsn for Single-Page-Recovery if virgin or corrupted page
@@ -5256,7 +5257,7 @@ DBGOUT1(<<"Start child thread REDO phase");
                 // sleep after we recovered the root page (which is needed for tree traversal)
 
                 // Get root-page index if we don't already had it
-                root_idx = smlevel_0::bf->get_root_page_idx(vol, store);
+                root_idx = smlevel_0::bf->get_root_page_idx(stid);
             }
         }
         else

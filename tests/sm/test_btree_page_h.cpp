@@ -24,7 +24,7 @@ w_rc_t test_search_leaf(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(x_btree_insert_and_commit (ssm, stid, "c2", "data2"));
     
     btree_page_h root;
-    W_DO(root.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_SH));
+    W_DO(root.fix_root(stid, LATCH_SH));
     w_keystr_t key;
     bool found;
     slotid_t slot;
@@ -104,7 +104,7 @@ w_rc_t test_search_leaf_long(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(x_btree_insert_and_commit (ssm, stid, "c202", "data2"));
     
     btree_page_h root;
-    W_DO(root.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_SH));
+    W_DO(root.fix_root(stid, LATCH_SH));
     w_keystr_t key;
     bool found;
     slotid_t slot;
@@ -172,7 +172,7 @@ w_rc_t test_search_leaf_long2(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(x_btree_insert_and_commit (ssm, stid, "00c2", "data2"));
     
     btree_page_h root;
-    W_DO(root.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_SH));
+    W_DO(root.fix_root(stid, LATCH_SH));
     w_keystr_t key;
     bool found;
     slotid_t slot;

@@ -58,7 +58,7 @@ w_rc_t test_all(ss_m* ssm, test_volume_t *test_volume) {
     lpid_t root_pid;
     W_DO (prepare_test(ssm, test_volume, stid, root_pid));
     btree_page_h root_p;
-    W_DO(root_p.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_SH));
+    W_DO(root_p.fix_root(stid, LATCH_SH));
     EXPECT_TRUE (root_p.is_node());
     EXPECT_TRUE (root_p.nrecs() >= 11);
     EXPECT_TRUE (root_p.nrecs() < MAX_PAGES);
@@ -72,7 +72,7 @@ w_rc_t test_all(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->bf->evict_blocks(evicted_count, unswizzled_count, bf_tree_m::EVICT_COMPLETE));
 
     // Because of the evictions, the parent page should have been updated.
-    W_DO(root_p.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_SH));
+    W_DO(root_p.fix_root(stid, LATCH_SH));
     EXPECT_GT(root_p.lsn(), root_lsn_before);
 
     root_p.unfix();

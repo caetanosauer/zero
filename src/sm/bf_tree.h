@@ -224,10 +224,10 @@ public:
     generic_page* get_page(const bf_tree_cb_t *cb);
 
     /** returns the page ID of the root page (which is already loaded in this bufferpool) in given store. mainly for debugging or approximate purpose. */
-    shpid_t get_root_page_id(volid_t vol, snum_t store);
+    shpid_t get_root_page_id(stid_t store);
 
     /** returns the root-page index of the root page, which is always kept in the volume descriptor:*/
-    bf_idx get_root_page_idx(volid_t vol, snum_t store);
+    bf_idx get_root_page_idx(stid_t store);
 
 
     /**
@@ -325,21 +325,21 @@ public:
      * Implicitly, the latch will be EX and non-conditional.
      * To use this method, you need to include bf_tree_inline.h.
      */
-    w_rc_t fix_virgin_root (generic_page*& page, volid_t vol, snum_t store, shpid_t shpid);
+    w_rc_t fix_virgin_root (generic_page*& page, stid_t store, shpid_t shpid);
 
     /**
      * Fixes an existing (not virgin) root page for the given store.
      * This method doesn't receive page ID because it's already known by bufferpool.
      * To use this method, you need to include bf_tree_inline.h.
      */
-    w_rc_t fix_root (generic_page*& page, volid_t vol, snum_t store, latch_mode_t mode,
+    w_rc_t fix_root (generic_page*& page, stid_t store, latch_mode_t mode,
                      bool conditional, const bool from_undo = false);
 
     /**
      * Fixes an existing (not virgin) root page for the given store in Q mode.
      * To use this method, you need to include bf_tree_inline.h.
      */
-    w_rc_t fix_with_Q_root(generic_page*& page, volid_t vol, snum_t store, q_ticket_t& ticket);
+    w_rc_t fix_with_Q_root(generic_page*& page, stid_t store, q_ticket_t& ticket);
 
 
     /** returns the current latch mode of the page. */

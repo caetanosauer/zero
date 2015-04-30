@@ -68,7 +68,7 @@ w_rc_t prepare_test(ss_m* ssm, test_volume_t *test_volume, stid_t &stid, lpid_t 
 
     {
         btree_page_h root_p;
-        W_DO(root_p.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_SH));
+        W_DO(root_p.fix_root(stid, LATCH_SH));
         EXPECT_TRUE(root_p.nrecs() > 4);
         target_pid = root_p.child(1);
         btree_page_h target_p;
@@ -273,7 +273,7 @@ w_rc_t test_multi_pages(ss_m* ssm, test_volume_t *test_volume) {
     shpid_t destination_pid = 0; // the new page should be next to target_pid
     {
         btree_page_h root_p;
-        W_DO(root_p.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_SH));
+        W_DO(root_p.fix_root(stid, LATCH_SH));
         for (int i = 0 ; i < root_p.nrecs(); ++i) {
             if (root_p.child(i) == target_pid) {
                 destination_pid = root_p.child(i + 1);

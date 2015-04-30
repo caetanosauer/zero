@@ -157,13 +157,13 @@ public:
      * Fixes a new (virgin) root page for a new store with the specified page ID.
      * Implicitly, the latch will be EX and non-conditional.
      */
-    w_rc_t fix_virgin_root(volid_t vol, snum_t store, shpid_t shpid);
+    w_rc_t fix_virgin_root(stid_t store, shpid_t shpid);
 
     /**
      * Fixes an existing (not virgin) root page for the given store.  This method doesn't
      * receive page ID because it's already known by bufferpool.
      */
-    w_rc_t fix_root(volid_t vol, snum_t store, latch_mode_t mode, 
+    w_rc_t fix_root(stid_t store, latch_mode_t mode, 
                     bool conditional=false, const bool from_undo = false);
 
     /**

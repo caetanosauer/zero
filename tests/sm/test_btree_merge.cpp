@@ -23,12 +23,12 @@ btree_test_env *test_env;
 /** Used to hold a latch on a root page by another thread. */
 class page_holding_thread_t : public smthread_t {
 public:
-    page_holding_thread_t(volid_t vol, snum_t store) 
+    page_holding_thread_t(stid_t stid) 
         : smthread_t(t_regular, "page_holding_thread_t"),
           page_held_flag(false),
           release_request_flag(false),
           released_flag(false),
-          _vol(vol), _store(store), _retval(0) {}
+          _stid(stid), _retval(0) {}
     ~page_holding_thread_t()  {_page.unfix();}
     void run();
     int  return_value() const { return _retval; }
@@ -42,8 +42,7 @@ public:
     /** true when this released the latch. ONLY THIS THREAD UPDATES IT. */
     bool volatile released_flag;
 
-    volid_t _vol;
-    snum_t _store;
+    stid_t _stid;
     int _retval;
     btree_page_h _page;
 };
@@ -51,7 +50,7 @@ public:
 void page_holding_thread_t::run()
 {
     {
-        rc_t rc = _page.fix_root(_vol, _store, LATCH_SH);
+        rc_t rc = _page.fix_root(_stid, LATCH_SH);
         if (rc.is_error()) {
             cerr << "Could not latch page: " << rc << endl; 
             _retval = 1;
@@ -105,7 +104,7 @@ w_rc_t prepare_test(ss_m* ssm, test_volume_t *test_volume, stid_t &stid, lpid_t 
     if (second_insert) {
         // let's keep SH latch on root (parent) to prevent automatic adoption.
         // in these test cases, we want foster relationships to start from
-        page_holding_thread_t holder (root_pid.vol().vol, root_pid.store());
+        page_holding_thread_t holder (stid);
         W_DO(holder.fork());
         while (!holder.page_held_flag) {
             ::usleep (5000);
@@ -146,7 +145,7 @@ w_rc_t merge_simple(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->begin_xct());
     test_env->set_xct_query_lock();
     btree_page_h root_p;
-    W_DO(root_p.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_EX));
+    W_DO(root_p.fix_root(stid, LATCH_EX));
     EXPECT_TRUE (root_p.is_node());
 
     shpid_t pid0 = root_p.pid0();
@@ -223,7 +222,7 @@ w_rc_t merge_cycle_fail(ss_m* ssm, test_volume_t *test_volume) {
     test_env->set_xct_query_lock();
 
     btree_page_h root_p;
-    W_DO(root_p.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_EX));
+    W_DO(root_p.fix_root(stid, LATCH_EX));
     EXPECT_TRUE (root_p.is_node());
 
     shpid_t pid0 = root_p.pid0();
@@ -284,7 +283,7 @@ w_rc_t rebalance_simple(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->begin_xct());
     test_env->set_xct_query_lock();
     btree_page_h root_p;
-    W_DO(root_p.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_EX));
+    W_DO(root_p.fix_root(stid, LATCH_EX));
     EXPECT_TRUE (root_p.is_node());
     {
         lpid_t child_pid = root_pid;
@@ -374,7 +373,7 @@ w_rc_t deadopt_simple(ss_m* ssm, test_volume_t *test_volume) {
     test_env->set_xct_query_lock();
     {
         btree_page_h root_p;
-        W_DO(root_p.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_EX));
+        W_DO(root_p.fix_root(stid, LATCH_EX));
         EXPECT_TRUE (root_p.is_node());
         int original_nrecs = root_p.nrecs();
         cout << "originally " << original_nrecs  << " pages under root" << endl;

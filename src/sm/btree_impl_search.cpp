@@ -22,12 +22,12 @@
 #include "xct.h"
 
 rc_t
-btree_impl::_ux_lookup(volid_t vol, snum_t store, const w_keystr_t& key, bool& found,
+btree_impl::_ux_lookup(stid_t store, const w_keystr_t& key, bool& found,
                        void* el, smsize_t& elen) {
     FUNC(btree_impl::_ux_lookup);
     INC_TSTAT(bt_find_cnt);
     while (true) {
-        rc_t rc = _ux_lookup_core (vol, store, key, found, el, elen);
+        rc_t rc = _ux_lookup_core (store, key, found, el, elen);
         if (rc.is_error() && rc.err_num() == eLOCKRETRY) {
             continue;
         }
@@ -36,7 +36,7 @@ btree_impl::_ux_lookup(volid_t vol, snum_t store, const w_keystr_t& key, bool& f
 }
 
 rc_t
-btree_impl::_ux_lookup_core(volid_t vol, snum_t store, const w_keystr_t& key, 
+btree_impl::_ux_lookup_core(stid_t store, const w_keystr_t& key, 
                             bool& found, void* el, smsize_t& elen) {
     bool need_lock     = g_xct_does_need_lock();
     bool ex_for_select = g_xct_does_ex_lock_for_select();
@@ -44,7 +44,7 @@ btree_impl::_ux_lookup_core(volid_t vol, snum_t store, const w_keystr_t& key,
     btree_page_h leaf; // first-leaf
 
     // find the leaf (potentially) containing the key
-    W_DO(_ux_traverse(vol, store, key, t_fence_contain, LATCH_SH, leaf));
+    W_DO(_ux_traverse(store, key, t_fence_contain, LATCH_SH, leaf));
 
     w_assert1(leaf.is_fixed());
     w_assert1(leaf.is_leaf());
@@ -86,7 +86,7 @@ btree_impl::_ux_lookup_core(volid_t vol, snum_t store, const w_keystr_t& key,
 }
 
 rc_t
-btree_impl::_ux_traverse(volid_t vol, snum_t store, const w_keystr_t &key,
+btree_impl::_ux_traverse(stid_t store, const w_keystr_t &key,
                          traverse_mode_t traverse_mode, latch_mode_t leaf_latch_mode,
                          btree_page_h &leaf, bool allow_retry, const bool from_undo) {
     FUNC(btree_impl::_ux_traverse);
@@ -102,19 +102,19 @@ btree_impl::_ux_traverse(volid_t vol, snum_t store, const w_keystr_t &key,
 
     shpid_t leaf_pid_causing_failed_upgrade = 0;
     for (int times = 0; times < 20; ++times) { // arbitrary number
-        inquery_verify_init(vol, store); // initialize in-query verification
+        inquery_verify_init(store); // initialize in-query verification
         btree_page_h root_p;
         bool should_try_ex = (leaf_latch_mode == LATCH_EX &&
-                              leaf_pid_causing_failed_upgrade == smlevel_0::bf->get_root_page_id(vol, store));
+                              leaf_pid_causing_failed_upgrade == smlevel_0::bf->get_root_page_id(store));
         // Root page is pre-loaded into buffer pool
-        W_DO( root_p.fix_root(vol, store, should_try_ex ? LATCH_EX : LATCH_SH, false, from_undo));
+        W_DO( root_p.fix_root(store, should_try_ex ? LATCH_EX : LATCH_SH, false, from_undo));
         w_assert1(root_p.is_fixed());
         
         if (root_p.get_foster() != 0) {
             // root page has foster-child!  Let's grow the tree.
             if (root_p.latch_mode() != LATCH_EX) {
                 root_p.unfix(); // don't upgrade.  Re-fix.
-                W_DO( root_p.fix_root(vol, store, LATCH_EX, false, from_undo));
+                W_DO( root_p.fix_root(store, LATCH_EX, false, from_undo));
             }
             W_DO(_sx_grow_tree(root_p));
             --times; // We don't penalize this.  Do it again.

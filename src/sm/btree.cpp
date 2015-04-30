@@ -55,7 +55,7 @@ btree_m::create(
     W_DO(btree_impl::_ux_create_tree_core(stid, root));
 
     bool empty=false;
-    W_DO(is_empty(stid.vol.vol, stid.store,empty)); 
+    W_DO(is_empty(stid, empty)); 
     if(!empty) {
          DBGTHRD(<<"eNDXNOTEMPTY");
          return RC(eNDXNOTEMPTY);
@@ -66,61 +66,61 @@ btree_m::create(
 
 rc_t
 btree_m::is_empty(
-    volid_t vol, snum_t store,
+    stid_t store,
     bool&                 ret)        // O-  true if btree is empty
 {
-    bt_cursor_t cursor(vol, store, true);
+    bt_cursor_t cursor(store, true);
     W_DO( cursor.next());
     ret = cursor.eof();
     return RCOK;
 }
 
-rc_t btree_m::insert(volid_t vol, snum_t store, const w_keystr_t &key, const cvec_t &el) {
+rc_t btree_m::insert(stid_t store, const w_keystr_t &key, const cvec_t &el) {
     if (key.get_length_as_nonkeystr() + el.size() > btree_page_h::max_entry_size) {
         return RC(eRECWONTFIT);
     }
-    W_DO(btree_impl::_ux_insert(vol, store, key, el));
+    W_DO(btree_impl::_ux_insert(store, key, el));
     return RCOK;
 }
 
 rc_t btree_m::update(
-    volid_t vol, snum_t store,
+    stid_t store,
     const w_keystr_t&                 key,
     const cvec_t&                     elem)
 {
     if(key.get_length_as_nonkeystr() + elem.size() > btree_page_h::max_entry_size) {
         return RC(eRECWONTFIT);
     }
-    W_DO(btree_impl::_ux_update(vol, store, key, elem, false));  // Not from UNDO
+    W_DO(btree_impl::_ux_update(store, key, elem, false));  // Not from UNDO
     return RCOK;
 }
 
 rc_t btree_m::put(
-    volid_t vol, snum_t store,
+    stid_t store,
     const w_keystr_t&                 key,
     const cvec_t&                     elem)
 {
     if(key.get_length_as_nonkeystr() + elem.size() > btree_page_h::max_entry_size) {
         return RC(eRECWONTFIT);
     }
-    W_DO(btree_impl::_ux_put(vol, store, key, elem));
+    W_DO(btree_impl::_ux_put(store, key, elem));
     return RCOK;
 }
 
 rc_t btree_m::overwrite(
-    volid_t vol, snum_t store,
+    stid_t store,
     const w_keystr_t&                 key,
     const char*                       el,
     smsize_t                          offset,
     smsize_t                          elen)
 {
-    W_DO(btree_impl::_ux_overwrite(vol, store, key, el, offset, elen, false));  // Not from UNDO
+    W_DO(btree_impl::_ux_overwrite(store, key, el, offset, elen, false));  // Not from UNDO
     return RCOK;
 }
 
-rc_t btree_m::remove(volid_t vol, snum_t store, const w_keystr_t &key)
+rc_t btree_m::remove(stid_t store, const w_keystr_t &key)
 {
-    W_DO(btree_impl::_ux_remove(vol, store, key, false));  // Not from UNDO
+    W_DO(btree_impl::_ux_remove(store, key, false));  // Not from UNDO
     return RCOK;
 }
 
@@ -132,16 +132,16 @@ rc_t btree_m::defrag_page(btree_page_h &page)
 
 
 rc_t btree_m::lookup(
-    volid_t vol, snum_t store,
+    stid_t store,
     const w_keystr_t &key, void *el, smsize_t &elen, bool &found)
 {
-    W_DO( btree_impl::_ux_lookup(vol, store, key, found, el, elen ));
+    W_DO( btree_impl::_ux_lookup(store, key, found, el, elen ));
     return RCOK;
 }
 rc_t btree_m::verify_tree(
-        volid_t vol, snum_t store, int hash_bits, bool &consistent)
+        stid_t store, int hash_bits, bool &consistent)
 {
-    return btree_impl::_ux_verify_tree(vol, store, hash_bits, consistent);
+    return btree_impl::_ux_verify_tree(store, hash_bits, consistent);
 }
 rc_t btree_m::verify_volume(
         vid_t vid, int hash_bits, verify_volume_result &result)
@@ -287,7 +287,7 @@ btree_m::print(const lpid_t& current,
 }
 rc_t btree_m::touch_all(const lpid_t& root, uint64_t &page_count) {
     btree_page_h page;
-    W_DO( page.fix_root(root.vol().vol, root.store(), LATCH_SH));
+    W_DO( page.fix_root(stid_t(root.vol().vol, root.store()), LATCH_SH));
     page_count = 0;
     return touch(page, page_count);
 }
@@ -317,31 +317,31 @@ rc_t btree_m::touch(const btree_page_h& page, uint64_t &page_count) {
  * for use by logrecs for logical undo of inserts/deletes
  */
 rc_t                        
-btree_m::remove_as_undo(volid_t vol, snum_t store, const w_keystr_t &key)
+btree_m::remove_as_undo(stid_t store, const w_keystr_t &key)
 {
     // UNDO insert operation
     no_lock_section_t nolock;
-    return btree_impl::_ux_remove(vol, store,key, true);  // From UNDO
+    return btree_impl::_ux_remove(store,key, true);  // From UNDO
 }
 
-rc_t btree_m::update_as_undo(volid_t vol, snum_t store, const w_keystr_t &key, const cvec_t &elem)
+rc_t btree_m::update_as_undo(stid_t store, const w_keystr_t &key, const cvec_t &elem)
 {
     // UNDO update operation
     no_lock_section_t nolock;
-    return btree_impl::_ux_update(vol, store, key, elem, true);  // from UNDO
+    return btree_impl::_ux_update(store, key, elem, true);  // from UNDO
 }
 
-rc_t btree_m::overwrite_as_undo(volid_t vol, snum_t store, const w_keystr_t &key,
+rc_t btree_m::overwrite_as_undo(stid_t store, const w_keystr_t &key,
     const char *el, smsize_t offset, smsize_t elen)
 {
     // UNDO update operation
     no_lock_section_t nolock;
-    return btree_impl::_ux_overwrite(vol, store, key, el, offset, elen, true);  // from UNDO
+    return btree_impl::_ux_overwrite(store, key, el, offset, elen, true);  // from UNDO
 }
 rc_t
-btree_m::undo_ghost_mark(volid_t vol, snum_t store, const w_keystr_t &key)
+btree_m::undo_ghost_mark(stid_t store, const w_keystr_t &key)
 {
     // UNDO delete operation
     no_lock_section_t nolock;
-    return btree_impl::_ux_undo_ghost_mark(vol, store, key);
+    return btree_impl::_ux_undo_ghost_mark(store, key);
 }

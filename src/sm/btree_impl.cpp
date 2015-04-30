@@ -25,14 +25,14 @@
 
 rc_t
 btree_impl::_ux_insert(
-    volid_t vol, snum_t store,
+    stid_t store,
     const w_keystr_t&    key,
     const cvec_t&        el)
 {
     FUNC(btree_impl::_ux_insert);
     INC_TSTAT(bt_insert_cnt);
     while (true) {
-        rc_t rc = _ux_insert_core (vol, store, key, el);
+        rc_t rc = _ux_insert_core (store, key, el);
         if (rc.is_error() && rc.err_num() == eLOCKRETRY) {
             continue;
         }
@@ -42,14 +42,14 @@ btree_impl::_ux_insert(
 }
 rc_t
 btree_impl::_ux_insert_core(
-    volid_t vol, snum_t store,
+    stid_t store,
     const w_keystr_t&    key,
     const cvec_t&        el)
 {
 
     // find the leaf (potentially) containing the key
     btree_page_h       leaf;
-    W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf));
+    W_DO( _ux_traverse(store, key, t_fence_contain, LATCH_EX, leaf));
     w_assert1( leaf.is_fixed());
     w_assert1( leaf.is_leaf());
     w_assert1( leaf.latch_mode() == LATCH_EX);
@@ -146,12 +146,12 @@ DBGOUT3( << "&&&& Log for regular insertion, key: " << key);
 
 rc_t
 btree_impl::_ux_put(
-    volid_t vol, snum_t store,
+    stid_t store,
     const w_keystr_t&    key,
     const cvec_t&        el)
 {
     while (true) {
-        rc_t rc = _ux_put_core (vol, store, key, el);
+        rc_t rc = _ux_put_core (store, key, el);
         if (rc.is_error() && rc.err_num() == eLOCKRETRY) {
             continue;
         }
@@ -161,7 +161,7 @@ btree_impl::_ux_put(
 }
 rc_t
 btree_impl::_ux_put_core(
-    volid_t vol, snum_t store,
+    stid_t store,
     const w_keystr_t&    key,
     const cvec_t&        el)
 {
@@ -171,24 +171,24 @@ btree_impl::_ux_put_core(
     bool took_XN;
     bool is_ghost;
     btree_page_h leaf;
-    W_DO(_ux_get_page_and_status(vol, store, key, need_lock, slot, found, took_XN, is_ghost, leaf));
+    W_DO(_ux_get_page_and_status(store, key, need_lock, slot, found, took_XN, is_ghost, leaf));
     if (!found || is_ghost) {
-        return _ux_insert_core_tail(vol, store, key, el, need_lock, slot, found, took_XN, is_ghost, leaf);
+        return _ux_insert_core_tail(store, key, el, need_lock, slot, found, took_XN, is_ghost, leaf);
     } else {
-        return _ux_update_core_tail(vol, store, key, el, need_lock, slot, found, is_ghost, leaf);
+        return _ux_update_core_tail(store, key, el, need_lock, slot, found, is_ghost, leaf);
     }
 }
 
 
 rc_t
-btree_impl::_ux_get_page_and_status(volid_t vol, snum_t store,
+btree_impl::_ux_get_page_and_status(stid_t store,
                         const w_keystr_t& key,
                                     bool& need_lock, slotid_t& slot, bool& found, bool& took_XN,
                                     bool& is_ghost, btree_page_h& leaf) {
 
     // find the leaf (potentially) containing the key
     // passed in...btree_page_h       leaf;
-    W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf));
+    W_DO( _ux_traverse(store, key, t_fence_contain, LATCH_EX, leaf));
     w_assert1( leaf.is_fixed());
     w_assert1( leaf.is_leaf());
     w_assert1( leaf.latch_mode() == LATCH_EX);
@@ -213,7 +213,7 @@ btree_impl::_ux_get_page_and_status(volid_t vol, snum_t store,
     }
     return RCOK;
 }
-rc_t btree_impl::_ux_insert_core_tail(volid_t /* vol */, snum_t /* store */,
+rc_t btree_impl::_ux_insert_core_tail(stid_t /* store */,
                                       const w_keystr_t& key, const cvec_t& el,
                                       bool& need_lock, slotid_t& slot, bool& found,
                                       bool& alreay_took_XN, bool& is_ghost, btree_page_h& leaf) {
@@ -300,10 +300,10 @@ rc_t btree_impl::_ux_reserve_ghost_core(btree_page_h &leaf, const w_keystr_t &ke
 }
 
 rc_t
-btree_impl::_ux_update(volid_t vol, snum_t store, const w_keystr_t &key, const cvec_t &el, const bool undo)
+btree_impl::_ux_update(stid_t store, const w_keystr_t &key, const cvec_t &el, const bool undo)
 {
     while (true) {
-        rc_t rc = _ux_update_core (vol, store, key, el, undo);
+        rc_t rc = _ux_update_core (store, key, el, undo);
         if (rc.is_error() && rc.err_num() == eLOCKRETRY) {
             continue;
         }
@@ -313,13 +313,13 @@ btree_impl::_ux_update(volid_t vol, snum_t store, const w_keystr_t &key, const c
 }
 
 rc_t
-btree_impl::_ux_update_core(volid_t vol, snum_t store, const w_keystr_t &key, const cvec_t &el, const bool undo)
+btree_impl::_ux_update_core(stid_t store, const w_keystr_t &key, const cvec_t &el, const bool undo)
 {
     bool need_lock = g_xct_does_need_lock();
     btree_page_h         leaf;
 
     // find the leaf (potentially) containing the key
-    W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf, true /*allow retry*/, undo /*from undo*/));
+    W_DO( _ux_traverse(store, key, t_fence_contain, LATCH_EX, leaf, true /*allow retry*/, undo /*from undo*/));
 
     w_assert3(leaf.is_fixed());
     w_assert3(leaf.is_leaf());
@@ -358,8 +358,8 @@ btree_impl::_ux_update_core(volid_t vol, snum_t store, const w_keystr_t &key, co
         if (!leaf.check_space_for_insert_leaf(key, el)) {
             // this page needs split. As this is a rare case,
             // we just call remove and then insert to simplify the code
-            W_DO(_ux_remove(vol, store, key, undo));
-            W_DO(_ux_insert(vol, store, key, el));
+            W_DO(_ux_remove(store, key, undo));
+            W_DO(_ux_insert(store, key, el));
             return RCOK;
         }
     }
@@ -378,7 +378,7 @@ btree_impl::_ux_update_core(volid_t vol, snum_t store, const w_keystr_t &key, co
 }
 
 rc_t
-btree_impl::_ux_update_core_tail(volid_t vol, snum_t store,
+btree_impl::_ux_update_core_tail(stid_t store,
                                  const w_keystr_t &key, const cvec_t &el,
                                  bool& need_lock, slotid_t& slot, bool& found, bool& is_ghost,
                                  btree_page_h& leaf) {
@@ -403,8 +403,8 @@ btree_impl::_ux_update_core_tail(volid_t vol, snum_t store,
         if (!leaf.check_space_for_insert_leaf(key, el)) {
             // this page needs split. As this is a rare case,
             // we just call remove and then insert to simplify the code
-            W_DO(_ux_remove(vol, store, key, false));  // Not from UNDO
-            W_DO(_ux_insert(vol, store, key, el));
+            W_DO(_ux_remove(store, key, false));  // Not from UNDO
+            W_DO(_ux_insert(store, key, el));
             return RCOK;
         }
     }
@@ -422,13 +422,13 @@ btree_impl::_ux_update_core_tail(volid_t vol, snum_t store,
 }
 
 rc_t btree_impl::_ux_overwrite(
-        volid_t vol, snum_t store,
+        stid_t store,
         const w_keystr_t&                 key,
         const char *el, smsize_t offset, smsize_t elen,
         const bool undo)
 {
     while (true) {
-        rc_t rc = _ux_overwrite_core (vol, store, key, el, offset, elen, undo);
+        rc_t rc = _ux_overwrite_core (store, key, el, offset, elen, undo);
         if (rc.is_error() && rc.err_num() == eLOCKRETRY) {
             continue;
         }
@@ -438,7 +438,7 @@ rc_t btree_impl::_ux_overwrite(
 }
 
 rc_t btree_impl::_ux_overwrite_core(
-        volid_t vol, snum_t store,
+        stid_t store,
         const w_keystr_t& key,
         const char *el, smsize_t offset, smsize_t elen, const bool undo)
 {
@@ -446,7 +446,7 @@ rc_t btree_impl::_ux_overwrite_core(
     bool need_lock = g_xct_does_need_lock();
     btree_page_h leaf;
 
-    W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf, true /*allow retry*/, undo /*from undo*/));
+    W_DO( _ux_traverse(store, key, t_fence_contain, LATCH_EX, leaf, true /*allow retry*/, undo /*from undo*/));
 
     w_assert3(leaf.is_fixed());
     w_assert3(leaf.is_leaf());
@@ -487,12 +487,12 @@ rc_t btree_impl::_ux_overwrite_core(
 }
 
 rc_t
-btree_impl::_ux_remove(volid_t vol, snum_t store, const w_keystr_t &key, const bool undo)
+btree_impl::_ux_remove(stid_t store, const w_keystr_t &key, const bool undo)
 {
     FUNC(btree_impl::_ux_remove);
     INC_TSTAT(bt_remove_cnt);
     while (true) {
-        rc_t rc = _ux_remove_core (vol, store, key, undo);
+        rc_t rc = _ux_remove_core (store, key, undo);
         if (rc.is_error() && rc.err_num() == eLOCKRETRY) {
             continue;
         }
@@ -502,7 +502,7 @@ btree_impl::_ux_remove(volid_t vol, snum_t store, const w_keystr_t &key, const b
 }
 
 rc_t
-btree_impl::_ux_remove_core(volid_t vol, snum_t store, const w_keystr_t &key, const bool undo)
+btree_impl::_ux_remove_core(stid_t store, const w_keystr_t &key, const bool undo)
 {
     // If called from 'remove_as_undo' to undo an insert operation, input parameter 'undo' ==  true.
     // This could be either transaction rollback or restart undo.
@@ -522,7 +522,7 @@ btree_impl::_ux_remove_core(volid_t vol, snum_t store, const w_keystr_t &key, co
     btree_page_h         leaf;
 
     // find the leaf (potentially) containing the key
-    W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf, true /*allow retry*/, undo /*from undo*/));
+    W_DO( _ux_traverse(store, key, t_fence_contain, LATCH_EX, leaf, true /*allow retry*/, undo /*from undo*/));
 
     w_assert3(leaf.is_fixed());
     w_assert3(leaf.is_leaf());
@@ -582,7 +582,7 @@ DBGOUT3( << "&&&& Log for deletion, key: " << key);
 }
 
 rc_t
-btree_impl::_ux_undo_ghost_mark(volid_t vol, snum_t store, const w_keystr_t &key)
+btree_impl::_ux_undo_ghost_mark(stid_t store, const w_keystr_t &key)
 {
     // If the original delete operation was from a page split with full logging, the fence keys 
     // were changed during page split, so the record we found would come from the destination 
@@ -598,7 +598,7 @@ btree_impl::_ux_undo_ghost_mark(volid_t vol, snum_t store, const w_keystr_t &key
     FUNC(btree_impl::_ux_undo_ghost_mark);
     w_assert1(key.is_regular());
     btree_page_h         leaf;
-    W_DO( _ux_traverse(vol, store, key, t_fence_contain, LATCH_EX, leaf, true/*allow retry*/, true /*from undo*/));
+    W_DO( _ux_traverse(store, key, t_fence_contain, LATCH_EX, leaf, true/*allow retry*/, true /*from undo*/));
     w_assert3(leaf.is_fixed());
     w_assert3(leaf.is_leaf());
 

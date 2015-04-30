@@ -103,7 +103,7 @@ w_rc_t test_bf_fix_virgin_root(ss_m* /*ssm*/, test_volume_t *test_volume) {
     for (size_t i = 1; i < 4; ++i) {
         generic_page *page = NULL;
         lpid_t pid (test_volume->_vid, i, i + 10);
-        W_DO(pool.fix_virgin_root(page, test_volume->_vid, i, i + 10));
+        W_DO(pool.fix_virgin_root(page, stid_t(test_volume->_vid, i), i + 10));
         EXPECT_TRUE (page != NULL);
         if (page != NULL) {
             ::memset(page, 0, sizeof(generic_page));
@@ -119,7 +119,7 @@ w_rc_t test_bf_fix_virgin_root(ss_m* /*ssm*/, test_volume_t *test_volume) {
 
         // fix again
         page = NULL;
-        W_DO(pool.fix_root(page, test_volume->_vid, i, LATCH_SH, false));
+        W_DO(pool.fix_root(page, stid_t(test_volume->_vid, i), LATCH_SH, false));
         EXPECT_TRUE (page != NULL);
         if (page != NULL) {
             btree_page *bp = reinterpret_cast<btree_page*>(page);
@@ -142,9 +142,10 @@ w_rc_t test_bf_fix_virgin_child(ss_m* /*ssm*/, test_volume_t *test_volume) {
     bf_tree_m &pool(*smlevel_0::bf);
     lsn_t thelsn = smlevel_0::log->curr_lsn();
     lpid_t root_pid(test_volume->_vid, 1, 11);
+    stid_t stid(test_volume->_vid, 1);
 
     generic_page *root_page = NULL;
-    W_DO(pool.fix_virgin_root(root_page, test_volume->_vid, 1, 11));
+    W_DO(pool.fix_virgin_root(root_page, stid, 11));
     EXPECT_TRUE (root_page != NULL);
     ::memset(root_page, 0, sizeof(generic_page));
     btree_page *rbp = reinterpret_cast<btree_page*>(root_page);
@@ -239,7 +240,7 @@ w_rc_t test_bf_evict(ss_m* ssm, test_volume_t *test_volume) {
     W_DO (prepare_test(ssm, test_volume, stid, root_pid));
 
     btree_page_h root_p;
-    W_DO(root_p.fix_root(root_pid.vol().vol, root_pid.store(), LATCH_SH));
+    W_DO(root_p.fix_root(stid, LATCH_SH));
     EXPECT_TRUE (root_p.is_node());
     EXPECT_TRUE (root_p.nrecs() > 30);
 
@@ -312,7 +313,8 @@ w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_s
     lpid_t root_pid(test_volume->_vid, 1, 3);
 
     generic_page *root_page = NULL;
-    W_DO(pool.fix_virgin_root(root_page, test_volume->_vid, root_pid.store(), root_pid.page));
+    stid_t stid(test_volume->_vid, 1);
+    W_DO(pool.fix_virgin_root(root_page, stid, root_pid.page));
     EXPECT_TRUE (root_page != NULL);
     ::memset(root_page, 0, sizeof(generic_page));
     btree_page *rbp = reinterpret_cast<btree_page*>(root_page);

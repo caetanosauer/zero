@@ -878,7 +878,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     }
                     else
                     {
-                        shpid_t root_shpid = smlevel_0::bf->get_root_page_id(vol, cb._store_num);                    
+                        shpid_t root_shpid = smlevel_0::bf->get_root_page_id(stid_t(vol, cb._store_num)); 
                         DBGOUT3(<< "User load - Root page ID: " << root_shpid << ", caller ask for page: " << shpid);
                         if (root_shpid == shpid)
                         {
@@ -1018,7 +1018,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             }
             bf_tree_cb_t &cb = get_cb(idx);
 
-            shpid_t root_shpid = smlevel_0::bf->get_root_page_id(vol, cb._store_num);
+            shpid_t root_shpid = smlevel_0::bf->get_root_page_id(stid_t(vol, cb._store_num));
 
             if ((cb._in_doubt) && (root_shpid != shpid))
             {

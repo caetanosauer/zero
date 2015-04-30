@@ -78,7 +78,6 @@ public:
      * it was found and if it was a ghost.
      * \details
      *  Context: User transaction
-     * @param[in] vol Volume ID
      * @param[in] store Store ID
      * @param[in] key key of the tuple
      * @param[out] need_lock if locking is needed
@@ -89,7 +88,7 @@ public:
      * @param[out] leaf the leaf the key should be in (if it exists or if it did exist)
      */
     static rc_t _ux_get_page_and_status
-    (volid_t vol, snum_t store,
+    (stid_t store,
      const w_keystr_t& key,
      bool& need_lock, slotid_t& slot, bool& found, bool& took_XN, bool& is_ghost, btree_page_h& leaf);
 
@@ -98,23 +97,22 @@ public:
     *  inserts it to the page and, if needed, splits the page.
     * \details
     *  Context: User transaction.
-    * @param[in] vol Volume ID
     * @param[in] store Store ID
     * @param[in] key key of the inserted tuple
     * @param[in] elem data of the inserted tuple
     */
     static rc_t                        _ux_insert(
-        volid_t vol, snum_t store,
+        stid_t store,
         const w_keystr_t&                 key,
         const cvec_t&                     elem);
     /** _ux_insert()'s internal function without retry by itself.*/
     static rc_t                        _ux_insert_core(
-        volid_t vol, snum_t store,
+        stid_t store,
         const w_keystr_t&                 key,
         const cvec_t&                     elem);
     /** Last half of _ux_insert, after traversing, finding (or not) and ghost determination.*/
     static rc_t _ux_insert_core_tail
-    (volid_t vol, snum_t store,
+    (stid_t store,
      const w_keystr_t& key,const cvec_t& el,
      bool& need_lock, slotid_t& slot, bool& found, bool& alreay_took_XN,
      bool& is_ghost, btree_page_h& leaf);
@@ -124,25 +122,24 @@ public:
     * If needed, this method also splits the page.
     * \details
     *  Context: User transaction.
-    * @param[in] vol Volume ID
     * @param[in] store Store ID
     * @param[in] key key of the existing tuple
     * @param[in] elem new data of the tuple
     */
     static rc_t                        _ux_update(
-        volid_t vol, snum_t store,
+        stid_t store,
         const w_keystr_t&                 key,
         const cvec_t&                     elem,
         const bool                        undo);
     /** _ux_update()'s internal function without retry by itself.*/
     static rc_t                        _ux_update_core(
-        volid_t vol, snum_t store,
+        stid_t store,
         const w_keystr_t&                 key,
         const cvec_t&                     elem,
         const bool                        undo);
     /** Last half of _ux_update, after traversing, finding (or not) and ghost determination.*/
     static rc_t _ux_update_core_tail(
-     volid_t vol, snum_t store,
+     stid_t store,
      const w_keystr_t& key, const cvec_t& elem,
      bool& need_lock, slotid_t& slot, bool& found, bool& is_ghost,
      btree_page_h& leaf);
@@ -153,19 +150,18 @@ public:
     *
     * \details
     *  Context: User transaction.
-    * @param[in] vol Volume ID
     * @param[in] store Store ID
     * @param[in] key key of the existing tuple
     * @param[in] elem new data of the tuple
     */
     static rc_t                        _ux_put(
-        volid_t vol, snum_t store,
+        stid_t store,
         const w_keystr_t&                 key,
         const cvec_t&                     elem);
     /** _ux_put()'s internal function without retry by itself.  Uses _ux_insert_core_tail and
         _ux_update_core_tail for the heavy lifting*/
     static rc_t                        _ux_put_core(
-        volid_t vol, snum_t store,
+        stid_t store,
         const w_keystr_t&                 key,
         const cvec_t&                     elem);
 
@@ -174,7 +170,6 @@ public:
     *  \brief This function finds the given key, updates the specific part of element if found.
     * \details
     *  Context: User transaction.
-    * @param[in] vol Volume ID
     * @param[in] store Store ID
     * @param[in] key key of the existing tuple
     * @param[in] el new data of the tuple
@@ -182,13 +177,13 @@ public:
     * @param[in] elen number of bytes to overwrite
     */
     static rc_t                        _ux_overwrite(
-        volid_t vol, snum_t store,
+        stid_t store,
         const w_keystr_t&                 key,
         const char *el, smsize_t offset, smsize_t elen,
         const bool undo);
     /** _ux_overwrite()'s internal function without retry by itself.*/
     static rc_t                        _ux_overwrite_core(
-        volid_t vol, snum_t store,
+        stid_t store,
         const w_keystr_t&                 key,
         const char *el, smsize_t offset, smsize_t elen,
         const bool undo);
@@ -211,17 +206,16 @@ public:
     * \details
     *  If the key doesn't exist, returns eNOTFOUND.
     *  Context: User transaction.
-    * @param[in] vol Volume ID
     * @param[in] store Store ID
     * @param[in] key key of the removed tuple
     */
     static rc_t                        _ux_remove(
-        volid_t vol, snum_t store,
+        stid_t store,
         const w_keystr_t&   key,
         const bool          undo);
 
     /** _ux_remove()'s internal function without retry by itself.*/
-    static rc_t _ux_remove_core(volid_t vol, snum_t store, const w_keystr_t &key, const bool undo);
+    static rc_t _ux_remove_core(stid_t store, const w_keystr_t &key, const bool undo);
 
     /**
     *  \brief Reverses the ghost record of specified key to regular state.
@@ -231,13 +225,12 @@ public:
     *  This method removes the ghost mark from the record.
     *  If the key doesn't exist, returns eNOTFOUND (shouldn't happen).
     *  Context: User transaction (UNDO of delete).
-    * @param[in] vol Volume ID
     * @param[in] store Store ID
     * @param[in] key key of the removed tuple
     * @see btree_ghost_mark_log::undo()
     */
     static rc_t                        _ux_undo_ghost_mark(
-        volid_t vol, snum_t store,
+        stid_t store,
         const w_keystr_t&                key);
 
 #ifdef DOXYGEN_HIDE
@@ -291,7 +284,6 @@ public:
     *
     *  Context: Both user and system transaction.
     * @see traverse_mode_t
-    * @param[in] vol Volume ID
     * @param[in] store Store ID
     * @param[in] key  target key
     * @param[in] traverse_mode search mode
@@ -301,7 +293,7 @@ public:
     * @param[in] from_undo is true if caller is from an UNDO operation
     */
     static rc_t                 _ux_traverse(
-        volid_t vol, snum_t store,
+        stid_t store,
         const w_keystr_t&          key,
         traverse_mode_t            traverse_mode,
         latch_mode_t               leaf_latch_mode,
@@ -376,7 +368,6 @@ public:
     *  Find key in btree. If found, copy up to elen bytes of the
     *  entry element into el.
     *  Context: user transaction.
-    * @param[in] vol Volume ID
     * @param[in] store Store ID
     * @param[in] key key we want to find
     * @param[out] found true if key is found
@@ -384,7 +375,7 @@ public:
     * @param[out] elen size of el if !cursor
     */
     static rc_t                 _ux_lookup(
-        volid_t vol, snum_t store,
+        stid_t store,
         const w_keystr_t&          key,
         bool&                      found,
         void*                      el,
@@ -392,7 +383,7 @@ public:
         );
     /** _ux_lookup()'s internal function which doesn't rety for locks by itself. */
     static rc_t                 _ux_lookup_core(
-        volid_t vol, snum_t store,
+        stid_t store,
         const w_keystr_t&          key,
         bool&                      found,
         void*                      el,
@@ -787,13 +778,12 @@ public:
     * For more details of this algorithm, check out TODS'11 paper.
     * Context: in both user and system transaction.
     * \note This method holds a tree-wide read latch/lock. No concurrent update is allowed.
-    * @param[in] vol Volume ID
     * @param[in] store Store ID
     * @param[in] hash_bits the number of bits we use for hashing, at most 31.
     * @param[out] consistent whether the BTree is consistent
     */
     static rc_t                        _ux_verify_tree(
-        volid_t vol, snum_t store, int hash_bits, bool &consistent);
+        stid_t store, int hash_bits, bool &consistent);
 
 
     /**
@@ -829,7 +819,7 @@ public:
         vid_t vid, int hash_bits, verify_volume_result &result);
 
     /** initialize context for in-query verification.*/
-    static void inquery_verify_init(volid_t vol, snum_t store);
+    static void inquery_verify_init(stid_t store);
     /** checks one page against the given expectation. */
     static void inquery_verify_fact(btree_page_h &page);
     /** adds expectation for next page. */
@@ -849,7 +839,6 @@ public:
     * This method is completely opportunistic, meaning it doesn't require a global latch or lock.
     * If there is some page this method can't get EX latch immediately, it skips the page.
     * Context: in system transaction.
-    * @param[in] vol Volume ID
     * @param[in] store Store ID
     * @param[in] inpage_defrag_ghost_threshold 0 to 100 (percent). if page has this many ghosts, and:
     * @param[in] inpage_defrag_usage_threshold 0 to 100 (percent). and it has this many used space, it does defrag.
@@ -857,7 +846,7 @@ public:
     * @param[in] does_merge whether we do merge/rebalance (which might trigger de-adopt as well)
     */
     static rc_t                        _sx_defrag_tree(
-        volid_t vol, snum_t store,
+        stid_t store,
         uint16_t inpage_defrag_ghost_threshold = 10,
         uint16_t inpage_defrag_usage_threshold = 50,
         bool does_adopt = true,
@@ -867,7 +856,7 @@ public:
      * @see _sx_defrag_tree()
      */
     static rc_t                        _ux_defrag_tree_core(
-        volid_t vol, snum_t store,
+        stid_t store,
         uint16_t inpage_defrag_ghost_threshold,
         uint16_t inpage_defrag_usage_threshold,
         bool does_adopt,

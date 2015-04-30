@@ -20,26 +20,26 @@
 #include "sm.h"
 #include "stid_t.h"
 
-bt_cursor_t::bt_cursor_t(volid_t vol, snum_t store, bool forward)
+bt_cursor_t::bt_cursor_t(stid_t store, bool forward)
 {
     w_keystr_t infimum, supremum;
     infimum.construct_neginfkey();
     supremum.construct_posinfkey();
-    _init (vol, store, infimum, true, supremum,  true, forward);
+    _init (store, infimum, true, supremum,  true, forward);
 }
 
 bt_cursor_t::bt_cursor_t(
-    volid_t vol, snum_t store,
+    stid_t store,
     const w_keystr_t& lower, bool lower_inclusive,
     const w_keystr_t& upper, bool upper_inclusive,
     bool              forward)
 {
-    _init (vol, store, lower, lower_inclusive,
+    _init (store, lower, lower_inclusive,
         upper,  upper_inclusive, forward);
 }
 
 void bt_cursor_t::_init(
-    volid_t vol, snum_t store,
+    stid_t store,
     const w_keystr_t& lower, bool lower_inclusive,
     const w_keystr_t& upper, bool upper_inclusive,
     bool              forward)
@@ -47,7 +47,6 @@ void bt_cursor_t::_init(
     _lower = lower;
     _upper = upper;
     
-    _vol = vol;
     _store = store;
     _lower_inclusive = lower_inclusive;
     _upper_inclusive = upper_inclusive;
@@ -102,7 +101,7 @@ void bt_cursor_t::_set_current_page(btree_page_h &page) {
 rc_t bt_cursor_t::_locate_first() {
     // at the first access, we get an intent lock on store/volume
     if (_needs_lock) {
-        W_DO(smlevel_0::lm->intent_vol_store_lock(stid_t(_vol, _store), _ex_lock ? okvl_mode::IX : okvl_mode::IS));
+        W_DO(smlevel_0::lm->intent_vol_store_lock(_store, _ex_lock ? okvl_mode::IX : okvl_mode::IS));
     }
     
     if (_lower > _upper || (_lower == _upper && (!_lower_inclusive || !_upper_inclusive))) {
@@ -116,7 +115,7 @@ rc_t bt_cursor_t::_locate_first() {
         const w_keystr_t &key = _forward ? _lower : _upper;
         btree_page_h leaf;
         bool found = false;
-        W_DO( btree_impl::_ux_traverse(_vol, _store, key, btree_impl::t_fence_contain, LATCH_SH, leaf));
+        W_DO( btree_impl::_ux_traverse(_store, key, btree_impl::t_fence_contain, LATCH_SH, leaf));
         w_assert3 (leaf.fence_contains(key));
         _set_current_page(leaf);
 
@@ -212,7 +211,7 @@ rc_t bt_cursor_t::_check_page_update(btree_page_h &p)
             p.search(_key, found, _slot);
         } else {
             // we have to re-locate the page
-            W_DO( btree_impl::_ux_traverse(_vol, _store, _key, btree_impl::t_fence_contain, LATCH_SH, p));
+            W_DO( btree_impl::_ux_traverse(_store, _key, btree_impl::t_fence_contain, LATCH_SH, p));
             p.search(_key, found, _slot);
         }
         w_assert1(found || !_needs_lock
@@ -232,7 +231,7 @@ w_rc_t bt_cursor_t::_refix_current_key(btree_page_h &p) {
             return fix_rt; // unexpected error code
         }
 
-        W_DO(btree_impl::_ux_traverse(_vol, _store, _key, btree_impl::t_fence_contain,
+        W_DO(btree_impl::_ux_traverse(_store, _key, btree_impl::t_fence_contain,
                                       LATCH_SH, p));
         _slot = _forward ? 0 : p.nrecs() - 1;
         _set_current_page(p);
@@ -366,7 +365,7 @@ rc_t bt_cursor_t::_advance_one_slot(btree_page_h &p, bool &eof)
             
             // take lock for the fence key
             if (_needs_lock) {
-                lockid_t lid (stid_t(_vol, _store), (const unsigned char*) neighboring_fence.buffer_as_keystr(), neighboring_fence.get_length_as_keystr());
+                lockid_t lid (_store, (const unsigned char*) neighboring_fence.buffer_as_keystr(), neighboring_fence.get_length_as_keystr());
                 okvl_mode lock_mode;
                 if (only_low_fence_exact_match) {
                     lock_mode = _ex_lock ? ALL_X_GAP_N: ALL_S_GAP_N;
@@ -380,7 +379,7 @@ rc_t bt_cursor_t::_advance_one_slot(btree_page_h &p, bool &eof)
             // TODO this part should check if we find an exact match of fence keys.
             // because we unlatch above, it's possible to not find exact match.
             // in that case, we should change the traverse_mode to fence_contains and continue
-            W_DO(btree_impl::_ux_traverse(_vol, _store, neighboring_fence, traverse_mode, LATCH_SH, p));
+            W_DO(btree_impl::_ux_traverse(_store, neighboring_fence, traverse_mode, LATCH_SH, p));
             _slot = _forward ? 0 : p.nrecs() - 1;
             _set_current_page(p);
             continue;

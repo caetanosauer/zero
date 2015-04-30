@@ -55,7 +55,7 @@ w_rc_t btree_page(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->begin_xct());
     {
         btree_page_h leaf;
-        W_DO (btree_impl::_ux_traverse(root_pid.vol().vol, root_pid.store(), neginf, btree_impl::t_fence_low_match, LATCH_SH, leaf));
+        W_DO (btree_impl::_ux_traverse(stid, neginf, btree_impl::t_fence_low_match, LATCH_SH, leaf));
         EXPECT_TRUE (leaf.is_fixed());
         EXPECT_TRUE (leaf.is_leaf());
         
@@ -73,7 +73,7 @@ w_rc_t btree_page(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->begin_xct());
     {
         btree_page_h leaf;
-        W_DO (btree_impl::_ux_traverse(root_pid.vol().vol, root_pid.store(), neginf, btree_impl::t_fence_low_match, LATCH_SH, leaf));
+        W_DO (btree_impl::_ux_traverse(stid, neginf, btree_impl::t_fence_low_match, LATCH_SH, leaf));
         EXPECT_TRUE (leaf.is_fixed());
         EXPECT_TRUE (leaf.is_leaf());
         EXPECT_FALSE (leaf.is_dirty());

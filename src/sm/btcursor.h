@@ -72,7 +72,7 @@ public:
      * @param[in] forward true if this cursor goes forward from lower bound, false if
      * this cursor goes backwards from upper bound.
      */
-    bt_cursor_t(volid_t vol, snum_t store, bool forward);
+    bt_cursor_t(stid_t store, bool forward);
 
     /**
      * Creates a BTree cursor object for the given search conditions.
@@ -86,7 +86,7 @@ public:
      * this cursor goes backwards from upper bound.
      */
     bt_cursor_t(
-        volid_t vol, snum_t store,
+        stid_t store,
         const w_keystr_t& lower, bool lower_inclusive,
         const w_keystr_t& upper, bool upper_inclusive,
         bool              forward);
@@ -114,7 +114,7 @@ public:
 
 private:
     void        _init(
-        volid_t vol, snum_t store,
+        stid_t store,
         const w_keystr_t& lower,  bool lower_inclusive,
         const w_keystr_t& upper,  bool upper_inclusive,
         bool              forward);
@@ -154,8 +154,7 @@ private:
     */
     rc_t         _make_rec(const btree_page_h& page);
 
-    volid_t     _vol;
-    snum_t      _store;
+    stid_t      _store;
     w_keystr_t  _lower;
     w_keystr_t  _upper;
     bool        _lower_inclusive;
