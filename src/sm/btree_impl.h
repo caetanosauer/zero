@@ -511,6 +511,30 @@ public:
         const w_keystr_t &triggering_key);
 
     /**
+     * Alternative version which uses full logging and is independent of the
+     * buffer pool, i.e., it does not require fixing pages. This version should
+     * work for single page recovery, instant restart, as well as instant
+     * restore.
+     *
+     * It generates a system transaction with two operations:
+     * 1. On the new page (foster child), a page_img_format log record contains
+     * the raw binary image with the moved log records and all metadata, fence
+     * keys, and pointers correctly set. Only the "used" portion of the page is
+     * logged, meaning that the data portion of the log record is at most one
+     * page in size, but it should typically be around half of a page.
+     *
+     * 2. On the overflowing page (foster parent), a "bulk deletion" is logged.
+     * It indicates that a certain range of the page slots has been deleted.
+     * This corresponds to the records that have been moved to the new foster
+     * child. The same log record is used to set the foster pointer and keys,
+     * but this could also be implemented as a third log record.
+     *
+     * \author Caetano Sauer
+     */
+    static rc_t                 _sx_split_foster_new(btree_page_h &page,
+            lpid_t &new_page_id, const w_keystr_t &triggering_key);
+
+    /**
      * \brief Splits the given page if we need to do so for inserting the given key.
      * @param[in,out] page the page that might split. When this method splits the page and
      * also new_key should belong to the new page (foster-child), then this in/out param

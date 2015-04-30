@@ -47,6 +47,26 @@ btrec_t::set(const btree_page_h& page, slotid_t slot) {
     return *this;
 }
 
+bool btree_page_h::set_foster_child(shpid_t foster_child_pid,
+        const w_keystr_t& new_fence_high, const w_keystr_t& child_fence_chain)
+{
+    page()->btree_foster = foster_child_pid;
+
+    // we COPY them because this operation changes this page itself
+    w_keystr_t low;
+    copy_fence_low_key(low);
+    rc_t rc = replace_fence_rec_nolog_may_defrag(low, new_fence_high,
+                child_fence_chain, get_prefix_length());
+
+    // fence key may be too large to fit in page -- split again
+    if (rc.is_error() && rc.err_num() == eRECWONTFIT) {
+        return false;
+    }
+    W_COERCE(rc);
+    
+    return true;
+}
+
 void btree_page_h::accept_empty_child(lsn_t new_lsn, shpid_t new_page_id, const bool f_redo) {
     // If called from Recovery, i.e. btree_norec_alloc_log::redo, do not check for
     // is_single_log_sys_xct(), the transaction flags are not setup properly
@@ -207,6 +227,115 @@ rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the 
     smlevel_0::bf->set_initial_rec_lsn(pid, new_lsn, smlevel_0::log->curr_lsn());
 
     return RCOK;
+}
+
+rc_t btree_page_h::format_foster_child(btree_page_h& parent,
+        const lpid_t& new_page_id, const w_keystr_t& triggering_key,
+        w_keystr_t& split_key, int& move_count)
+{
+    slotid_t mid_slot;
+    parent.suggest_fence_for_split(split_key, mid_slot, triggering_key);
+    move_count = parent.nrecs() - mid_slot;
+
+    shpid_t new_pid0 = 0;
+    lsn_t   new_pid0_emlsn = lsn_t::null;
+    if (parent.is_node())
+    {
+        // Branching node: its pid0 is the key right after the split key
+        btrec_t lowest (parent, parent.nrecs() - move_count);
+        w_assert1(lowest.key().compare(split_key) == 0);
+        new_pid0 = lowest.child();
+        new_pid0_emlsn = lowest.child_emlsn();
+    }
+
+    // Initialize fields
+    page()->lsn = lsn_t::null;
+    page()->clsn = lsn_t::null;
+    page()->pid = new_page_id;
+    page()->tag = t_btree_p;
+    page()->page_flags = 0;
+    page()->btree_consecutive_skewed_insertions = 0;
+    page()->btree_root = parent.root().page;
+    page()->btree_pid0 = new_pid0;
+    page()->btree_pid0_emlsn = new_pid0_emlsn;
+    page()->btree_level = parent.level();
+    page()->btree_foster = parent.get_foster();
+    page()->btree_foster_emlsn = parent.get_foster_emlsn();
+    page()->init_items();
+
+    // Initialize fence keys: high = split key, low = same as in parent
+    page()->btree_fence_low_length = (int16_t) split_key.get_length_as_keystr();
+    w_keystr_t high_key;
+    parent.copy_fence_high_key(high_key);
+    page()->btree_fence_high_length
+        = (int16_t) high_key.get_length_as_keystr();
+    page()->btree_chain_fence_high_length
+        = (int16_t) high_key.get_length_as_keystr();
+
+    // set prefix length and fence keys in first slot
+    cvec_t fences;
+    size_t prefix_len = _pack_fence_rec(fences, split_key, high_key, high_key, -1);
+    w_assert1(prefix_len <= split_key.get_length_as_keystr());
+    w_assert1(prefix_len <= max_key_length);
+    page()->btree_prefix_length = (int16_t) prefix_len;
+    // delete old fence and insert new
+    bool inserted = page()->insert_item(nrecs() + 1, false, 0, 0, fences);
+    w_assert0(inserted);
+
+    // Move records from parent
+    for (int i = mid_slot; i < parent.nrecs(); ++i) {
+        // get full uncompressed key from src slot #i into key:
+        cvec_t key(parent.get_prefix_key(), parent.get_prefix_length());
+        size_t      trunc_key_length;
+        const char* trunc_key_data;
+        if (is_leaf()) {
+            trunc_key_data = parent._leaf_key_noprefix(i, trunc_key_length);
+        } else {
+            trunc_key_data = parent._node_key_noprefix(i, trunc_key_length);
+        }
+        key.put(trunc_key_data, trunc_key_length);
+
+        // split off part after new_prefix_length into new_trunc_key:
+        cvec_t dummy, new_trunc_key;
+        key.split(prefix_len, dummy, new_trunc_key);
+
+        cvec_t         v;
+        pack_scratch_t v_scratch;
+        shpid_t        child;
+
+        if (is_leaf())
+        {
+            smsize_t data_length;
+            bool is_ghost;
+            const char* data = parent.element(i, data_length, is_ghost);
+            _pack_leaf_record(v, v_scratch, new_trunc_key, data, data_length);
+            child = 0;
+        }
+        else
+        {
+            // Non-leaf node -- EMLSN is after the key data
+            const lsn_t* emlsn_ptr = reinterpret_cast<const lsn_t*>(
+                trunc_key_data + trunc_key_length);
+            _pack_node_record(v, new_trunc_key, *emlsn_ptr);
+            child = parent.child_opaqueptr(i);
+        }
+
+        // Now the actual insertion into the new page
+        bool inserted = page()->insert_item(nrecs()+1, parent.is_ghost(i),
+                             _extract_poor_man_key(new_trunc_key), child, v);
+        w_assert0(inserted);
+
+        w_assert3(is_consistent());
+        w_assert5(_is_consistent_keyorder());
+    }
+    
+    return RCOK;
+}
+
+void btree_page_h::delete_range(int from, int to)
+{
+    // 1st item is always fence keys
+    page()->delete_range(from+1, to+1);
 }
 
 void btree_page_h::_steal_records(btree_page_h* steal_src,
@@ -1148,6 +1277,11 @@ rc_t btree_page_h::replace_fence_rec_nolog_no_defrag(const w_keystr_t& low,
     int prefix_len = _pack_fence_rec(fences, low, high, chain, new_prefix_len);
     w_assert1(prefix_len == get_prefix_length());
 
+    DBG(<< "Attempting to replace fence keys: \n low: "
+            << low << "\n high: " << high << "\n chain: " << chain
+            << "\n prefix len: " << prefix_len << "\n usable space: "
+            << usable_space() << "\n fences size: " << fences.size());
+
     if (!page()->replace_item_data(0, 0, fences)) {
         return RC(eRECWONTFIT);
     }
@@ -1837,4 +1971,31 @@ void btree_page_h::_init(lsn_t lsn, lpid_t page_id, snum_t store,
     if (!page()->insert_item(nrecs() + 1, ghost /* ghost*/, 0, 0, fences)) {
         w_assert0(false);
     }
+}
+
+std::ostream& operator<<(std::ostream& os, btree_page_h& b)
+{
+    // print Btree page info
+    os << *b.page();
+
+    w_keystr_t k;
+    b.copy_fence_low_key(k);
+    os << "  FENCE LOW: " << k << '\n';;
+    b.copy_fence_high_key(k);
+    os << "  FENCE HIGH: " << k << '\n';;
+    b.copy_chain_fence_high_key(k);
+    os << "  FENCE CHAIN: " << k << '\n';;
+#if W_DEBUG_LEVEL > 5
+    for (int i = 0; i < b.nrecs(); i++) {
+        b.get_key(i, k);
+        os << "   ITEM " << i << " KEY " << k << '\n';
+    }
+#else
+    b.get_key(0, k);
+    os << "   FISRT KEY " << k << '\n';
+    b.get_key(b.nrecs() - 1, k);
+    os << "   LAST KEY " << k << '\n';
+#endif
+
+    return os;
 }

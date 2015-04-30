@@ -223,6 +223,54 @@ void btree_page_data::delete_item(int item) {
     w_assert3(_items_are_consistent());
 }
 
+void btree_page_data::delete_range(int from, int to)
+{
+    w_assert1(from >= 0);
+    w_assert1(to <= nitems);
+    w_assert3(_items_are_consistent());
+
+    // CS: same logic of delete_item -- decrease number of ghosts and
+    // try to push down first_used_body
+    for (int i = to - 1; i <= from; i--) {
+        body_offset_t offset = head[i].offset;
+        if (offset < 0) {
+            nghosts--;
+        }
+        // CS: we could probably do this only once instead of in a loop, but I
+        // couldn't understand what _item_bodies() is supposed to return
+        if (offset == first_used_body) {
+            first_used_body += _item_bodies(offset);
+        }
+    }
+
+    int left_after_deleted = nitems - to;
+    ::memmove(&head[from], &head[to], left_after_deleted * sizeof(item_head));
+
+    nitems -= to - from;
+    // compact();
+
+    DBG(<< "Usable space after range delete: " << usable_space());
+    w_assert3(_items_are_consistent());
+}
+
+std::ostream& operator<<(std::ostream& os, btree_page_data& b)
+{
+    os << "BTREE PAGE " << b.pid << '\n';
+    os << "  LSN: " << b.lsn << " CLSN: " << b.clsn << '\n';
+    os << "  TAG: " << b.tag << " FLAGS: " << b.page_flags << '\n';
+    os << "  ROOT: " << b.btree_root << " LEVEL: " << b.btree_level << '\n';
+    os << "  1st CHILD: " << b.btree_pid0 << " FOSTER CHILD: " << 
+        b.btree_foster << '\n';
+    os << "  LENGHTS: fence_low=" << b.btree_fence_low_length <<
+        " fence_high=" << b.btree_fence_high_length <<
+        " fence_chain=" << b.btree_chain_fence_high_length <<
+        " prefix= " << b.btree_prefix_length << '\n';
+    os << "  ITEMS: " << b.nitems-1 << " GHOSTS: " << b.nghosts << '\n';
+    os << "  FREE SPACE: " << b.usable_space() << '\n';
+    os << "  FIRST USED BODY: " << b.first_used_body << '\n';
+    return os;
+}
+
 
 // <<<>>>
 #include <boost/scoped_array.hpp>

@@ -937,7 +937,10 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
 
     // recovering_dest == true: recovery foster child, assume foster parent has not been recovered
     // recovering_dest == false: recover foster parent, assumed foster child has been recovered
-    w_assert0(recovering_dest || target_pid == page2_id);
+
+    // CS: this assertion doesn't make sense, since recovering_dest is true if
+    // and only if the two pids are equal!
+    // w_assert0(recovering_dest || target_pid == page2_id);
 
     if (true == restart_m::use_redo_full_logging_restart())
     {

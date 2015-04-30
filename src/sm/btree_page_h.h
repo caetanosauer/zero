@@ -261,7 +261,8 @@ public:
     /// Returns the length of low fence key.
     int16_t           get_fence_low_length() const;
     /// Constructs w_keystr_t object containing the low-fence key of this page.
-    void                copy_fence_low_key(w_keystr_t &buffer) const {buffer.construct_from_keystr(get_fence_low_key(), get_fence_low_length());}
+    void                copy_fence_low_key(w_keystr_t &buffer) const
+    { buffer.construct_from_keystr(get_fence_low_key(), get_fence_low_length()); }
     /// Returns if the low-fence key is infimum.
     bool              is_fence_low_infimum() const { return get_fence_low_key()[0] == SIGN_NEGINF;}
 
@@ -340,6 +341,31 @@ public:
      * @pre latch_mode() == EX
      */
     void accept_empty_child(lsn_t new_lsn, shpid_t new_page_id, const bool f_redo);
+
+    /** \brief Initialize the page as a foster child of the given parent
+     *
+     * Moves records from the given (foster) parent page based on the given
+     * split-triggering key. Initializes the fence keys accordingly.
+     *
+     * \author Caetano Sauer
+     */
+    rc_t format_foster_child(btree_page_h& parent, const lpid_t& new_page_id,
+            const w_keystr_t& triggering_key,
+            w_keystr_t& split_key, // OUT: actual split key
+            int& move_count);
+
+    /** \brief Sets the given page ID as foster child of this page
+     *
+     * Adjusts not only the foster child pointer, but also the high fence key
+     * -- which must change to the separator key that caused the split -- and
+     * the chain fence key, which must be copied from the foster child.
+     *
+     * \author Caetano Sauer
+     */
+    bool set_foster_child(shpid_t foster_child_pid, 
+        const w_keystr_t& new_fence_high, const w_keystr_t& child_fence_chain);
+
+    void delete_range(int from, int to);
 
     /**
      * \brief Initializes the associated page, stealing records from other pages as specified.
@@ -1002,6 +1028,9 @@ private:
         shpid_t foster_pid, lsn_t foster_emlsn, int16_t btree_level,
         const w_keystr_t &low, const w_keystr_t &high, 
         const w_keystr_t &chain_fence_high, const bool ghost);
+
+public:
+    friend std::ostream& operator<<(std::ostream& os, btree_page_h& b);
 };
 
 

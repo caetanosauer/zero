@@ -227,12 +227,9 @@ rc_t btree_impl::_ux_rebalance_foster_core(
     // therefore with Single Page Recovery REDO operation, we can use this self-contained log record
     // to perform page split operation, no need to use recursive single page recovery logic which 
     // has extremely slow performance due to a lot of wasted work   
-    rc_t ret;
     char data_buffer[sizeof(generic_page)*2];    // Allocate 2 pages worth of data buffer
     smsize_t len = sizeof(data_buffer);
-    ret = page.copy_records(move_count, data_buffer, len);   
-    if (ret.is_error())
-        return ret;
+    W_DO(page.copy_records(move_count, data_buffer, len));
     // Put record data into vector
     cvec_t record_data(data_buffer, len);
 
@@ -243,14 +240,12 @@ rc_t btree_impl::_ux_rebalance_foster_core(
 
     DBGOUT3( << "Generate foster_rebalance log record, fence:: " << mid_key << ", high: " << high_key
              << ", chain: " << chain_high_key << ", record data length: " << len);
-    ret = log_btree_foster_rebalance(foster_p /*page, destination*/, page /*page2, source*/,
+    W_DO(log_btree_foster_rebalance(foster_p /*page, destination*/, page /*page2, source*/,
                                      mid_key /* fence*/, new_pid0, new_pid0_emlsn,
                                      high_key /*high*/, chain_high_key /*chain_high*/,
                                      prefix_length, move_count, len /*user record data length*/,
-                                     record_data /*user reocrd data*/);
+                                     record_data /*user reocrd data*/));
 
-    if (ret.is_error())
-        return ret;
     if (true == restart_m::use_redo_full_logging_restart())
     {
         // TODO(Restart)... If we need to move records for rebalance,
@@ -264,7 +259,7 @@ rc_t btree_impl::_ux_rebalance_foster_core(
         // this behavior is due to the fact that we are using page driven REDO with Single-Page-Recovery,
         // while the WOD cannot be followed   
         caller_commit = false;        
-        W_DO (sxs.end_sys_xct (ret));
+        W_DO (sxs.end_sys_xct (RCOK));
     }
     else
     {

@@ -40,46 +40,45 @@ rc_t btree_impl::_ux_norec_alloc_core(btree_page_h &page, lpid_t &new_page_id) {
     btree_page_h new_page;
     w_rc_t rc;
     rc = new_page.fix_nonroot(page, page.vol(), new_page_id.page, LATCH_EX, false, true);
-    if (!rc.is_error()) {
-        // The new page has an empty key range; parent's high to high.
-        w_keystr_t fence, chain_high;
-        page.copy_fence_high_key(fence);
-        bool was_right_most = (page.get_chain_fence_high_length() == 0);
-        page.copy_chain_fence_high_key(chain_high);
-        if (was_right_most) {
-            // this means there was no chain or the page was the right-most of it.
-            // (so its high=high of chain)
-            // upon the first foster split, we start setting the chain-high.
-            page.copy_fence_high_key(chain_high);
-        }
-
-#if W_DEBUG_LEVEL >= 3
-        lsn_t old_lsn = page.lsn();
-#endif //W_DEBUG_LEVEL
-
-        rc = log_btree_norec_alloc(page, new_page, new_page_id.page, fence, chain_high);
-        DBGOUT3(<< "btree_impl::_ux_norec_alloc_core, fence=" << fence << ", old-LSN="
-            << old_lsn << ", new-LSN=" << page.lsn() << ", PID=" << new_page_id);
-        if (!rc.is_error()) {
-            // initialize as an empty child:
-            new_page.format_steal(page.lsn(), new_page_id, page.store(), page.root().page,
-                                  page.level(), 0, lsn_t::null,
-                                  page.get_foster(), page.get_foster_emlsn(),
-                                  fence, fence, chain_high, false);
-            page.accept_empty_child(page.lsn(), new_page_id.page, false /*not from redo*/);
-        }
-
-        // in this operation, the log contains everything we need to recover without any
-        // write-order-dependency. So, no registration for WOD.
-        w_assert3(new_page.is_consistent(true, true));
-        w_assert1(new_page.is_fixed());
-        w_assert1(new_page.latch_mode() == LATCH_EX);
-    }
 
     if (rc.is_error()) {
         // if failed for any reason, we release the allocated page.
         W_DO(io_m::dealloc_a_page (new_page_id));
+        return rc;
     }
+
+    // The new page has an empty key range; parent's high to high.
+    w_keystr_t fence, chain_high;
+    page.copy_fence_high_key(fence);
+    bool was_right_most = (page.get_chain_fence_high_length() == 0);
+    page.copy_chain_fence_high_key(chain_high);
+    if (was_right_most) {
+        // this means there was no chain or the page was the right-most of it.
+        // (so its high=high of chain)
+        // upon the first foster split, we start setting the chain-high.
+        page.copy_fence_high_key(chain_high);
+    }
+
+#if W_DEBUG_LEVEL >= 3
+    lsn_t old_lsn = page.lsn();
+#endif //W_DEBUG_LEVEL
+
+    W_DO(log_btree_norec_alloc(page, new_page, new_page_id.page, fence, chain_high));
+    DBGOUT3(<< "btree_impl::_ux_norec_alloc_core, fence=" << fence << ", old-LSN="
+        << old_lsn << ", new-LSN=" << page.lsn() << ", PID=" << new_page_id);
+
+    // initialize as an empty child:
+    new_page.format_steal(page.lsn(), new_page_id, page.root().page,
+                          page.level(), 0, lsn_t::null,
+                          page.get_foster(), page.get_foster_emlsn(),
+                          fence, fence, chain_high, false);
+    page.accept_empty_child(page.lsn(), new_page_id.page, false /*not from redo*/);
+
+    // in this operation, the log contains everything we need to recover without any
+    // write-order-dependency. So, no registration for WOD.
+    w_assert3(new_page.is_consistent(true, true));
+    w_assert1(new_page.is_fixed());
+    w_assert1(new_page.latch_mode() == LATCH_EX);
 
     w_assert3(page.is_consistent(true, true));
     w_assert1(page.is_fixed());
@@ -90,6 +89,11 @@ rc_t btree_impl::_sx_split_foster(btree_page_h &page,                // In: sour
                                    lpid_t &new_page_id,               // Out: page id of the destination page, foster child
                                    const w_keystr_t &triggering_key)  // Out: spliting key, used if NORECORD_SPLIT_ENABLE defined
 {
+
+    DBG(<< "BEFORE SPLIT OF " << page);
+    // CS: temporarily replaced with my new implementation
+    rc_t rc = _sx_split_foster_new(page, new_page_id, triggering_key);
+#if 0
     // Split consits of two SSXs; empty-split and rebalance.
 
     // On return of the following call, the foster child page (destination) was allocated
@@ -130,6 +134,81 @@ rc_t btree_impl::_sx_split_foster(btree_page_h &page,                // In: sour
     W_DO(_sx_rebalance_foster(page, foster_p, move_count, mid_key, new_pid0, new_pid0_emlsn));
 
     increase_forster_child(page.pid().page); // give hint to subsequent accesses
+    rc_t rc = RCOK;
+#endif // 0
+
+    DBG(<< "AFTER SPLIT OF " << page);
+
+    return rc;
+}
+
+rc_t btree_impl::_sx_split_foster_new(btree_page_h& page, lpid_t& new_page_id,
+        const w_keystr_t& triggering_key)
+{
+    sys_xct_section_t sxs(false /* not an SSX */);
+    W_DO(sxs.check_error_on_start());
+
+    w_assert1 (page.latch_mode() == LATCH_EX);
+
+    // DBG(<< "SPLITTING " << page);
+
+    /*
+     * Step 1: Allocate a new page for the foster child
+     */
+    W_DO(io_m::alloc_a_page (page.pid().stid(), new_page_id));
+
+    /*
+     * Step 2: Create new foster child and move records into it, logging its
+     * raw contents as a page_img_format operation
+     */
+    btree_page_h new_page;
+    rc_t rc = new_page.fix_nonroot(page, page.vol(), new_page_id.page,
+            LATCH_EX, false, true);
+    if (rc.is_error()) {
+        W_COERCE(io_m::dealloc_a_page(new_page_id));
+        return rc;
+    }
+
+    // assure foster-child page has an entry same as fence-low for locking correctness.
+    // See jira ticket:84 "Key Range Locking" (originally trac ticket:86).
+    W_DO(_ux_assure_fence_low_entry(new_page)); // this might be another SSX
+
+    int move_count = 0;
+    w_keystr_t split_key;
+    new_page.format_foster_child(page, new_page_id, triggering_key, split_key,
+            move_count);
+    w_assert0(move_count > 0);
+
+    // DBG(<< "NEW FOSTER CHILD " << new_page);
+
+    W_DO(log_page_img_format(new_page));
+
+    /*
+     * Step 3: Log bulk deletion of moved records and foster child update
+     */
+    // TODO
+
+    /*
+     * Step 3: Delete moved records and update foster child pointer and high
+     * fence on overflowing page
+     */
+    page.delete_range(page.nrecs() - move_count, page.nrecs());
+    DBG(<< "AFTER RANGE DELETE " << page);
+
+    w_keystr_t new_chain;
+    new_page.copy_chain_fence_high_key(new_chain);
+    bool foster_set = 
+        page.set_foster_child(new_page_id.page, split_key, new_chain);
+    w_assert0(foster_set);
+
+    // hint for subsequent accesses
+    increase_forster_child(page.pid().page);
+
+    // CS (TODO) is this necessary? It seems strange to do it here
+    // smlevel_0::bf->set_initial_rec_lsn(pid, new_lsn, smlevel_0::log->curr_lsn());
+
+    W_DO (sxs.end_sys_xct (RCOK));
+
     return RCOK;
 }
 
@@ -352,6 +431,8 @@ void btree_impl::_ux_adopt_foster_apply_parent (btree_page_h &parent,
     // okay, do it!
     W_COERCE (parent.insert_node(new_child_key, slot_to_insert,
                                  new_child_pid, new_child_emlsn));
+
+    DBG(<< "AFTER ADOPTION " << parent);
 }
 void btree_impl::_ux_adopt_foster_apply_child (btree_page_h &child)
 {

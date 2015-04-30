@@ -259,6 +259,14 @@ protected:
      */
     void          delete_item(int item);
 
+    /**
+     * delete the given range of items. This is used in a page split to delete
+     * the mived records from the overflowing page. "to" is an exclusive
+     * boundary, while "from" is inclusive, i.e., (from - to) items are
+     * deleted in total
+     */
+    void          delete_range(int from, int to);
+
 
     /**
      * return total space currently occupied by given item, including
@@ -497,6 +505,9 @@ private:
      * starting at offset offset
      */
     body_offset_t _item_bodies(body_offset_t offset) const;
+
+public:
+    friend std::ostream& operator<<(std::ostream&, btree_page_data&);
 };
 
 

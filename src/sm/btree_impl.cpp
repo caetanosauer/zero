@@ -86,10 +86,14 @@ btree_impl::_ux_insert_core(
     // then, we need to create (or expand) a ghost record for this key as a preparation to insert.
     // first, make sure this page is enough spacious (a bit conservative test).
     while (!leaf.check_space_for_insert_leaf(key, el)
-        || (leaf.is_insertion_extremely_skewed_right() && leaf.check_chance_for_norecord_split(key))) {
+        || (leaf.is_insertion_extremely_skewed_right() 
+            && leaf.check_chance_for_norecord_split(key)))
+    {
         // See if there's room for the insert.
         // here, we start system transaction to split page
         lpid_t new_page_id;
+    DBG(<< "Insert triggering split on page:");
+    DBG(<< leaf);
         W_DO( _sx_split_foster(leaf, new_page_id, key) );
 
         // after split, should the old page contain the new tuple?
