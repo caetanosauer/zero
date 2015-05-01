@@ -272,7 +272,7 @@ testdriver_thread_t::do_init(ss_m &ssm)
     } else {
 // TODO(Restart)... performance, for an AFTER case
         w_assert0(_functor->_test_volume._vid != 0);
-        w_assert0(_functor->_test_volume._lvid != l0);
+        w_assert0(_functor->_test_volume._lvid != lvid_t::null);
     }
 
     return RCOK;

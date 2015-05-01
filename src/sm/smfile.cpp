@@ -109,7 +109,7 @@ ss_m::vid_to_lvid(vid_t vid, lvid_t& lvid)
 {
     SM_PROLOGUE_RC(ss_m::lvid_to_vid, can_be_in_xct,read_only, 0);
     lvid = io->get_lvid(vid);
-    if (lvid == l0) return RC(eBADVOL);
+    if (lvid == lvid_t::null) return RC(eBADVOL);
     return RCOK;
 }
 

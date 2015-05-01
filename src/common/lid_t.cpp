@@ -40,7 +40,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "tid_t.h"
 #include "lid_t.h"
 
-const lvid_t    l0;            
+const lvid_t lvid_t::null(0,0);
 
 ostream& operator<<(ostream& o, const lvid_t& lvid)
 {
@@ -107,18 +107,3 @@ istream& operator>>(istream& is, lvid_t& lvid)
 
     return is;
 }
-
-
-/* 
- * for the benefit of the code that includes
- * the structure-only, non-c++ definitions (rpcgen output)
- * of  lvid_t 
- */
-extern "C" bool lvid_t_is_null(const lvid_t &x); 
-
-bool
-lvid_t_is_null(const lvid_t &x)
-{
-      return x == l0;
-}
-

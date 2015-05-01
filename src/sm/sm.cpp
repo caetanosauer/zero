@@ -1613,7 +1613,7 @@ ss_m::list_volumes(const char* device,
     // be multiple volumes on a device
     lvid_t lvid;
     W_DO(io->get_lvid(device, lvid));
-    if (lvid != l0) {
+    if (lvid != lvid_t::null) {
         lvid_list = new lvid_t[1];
         lvid_list[0] = lvid;
         if (lvid_list == NULL) return RC(eOUTOFMEMORY);

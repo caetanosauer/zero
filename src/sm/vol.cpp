@@ -745,7 +745,7 @@ vol_t::format_vol(
     volhdr_t vhdr;
     W_DO(read_vhdr(devname, vhdr));
     if (vhdr.lvid() == lvid) return RC(eVOLEXISTS);
-    if (vhdr.lvid() != l0) return RC(eDEVICEVOLFULL);
+    if (vhdr.lvid() != lvid_t::null) return RC(eDEVICEVOLFULL);
 
     /* XXX possible bit loss */
     uint quota_pages = (uint) (vhdr.device_quota_KB()/(page_sz/1024));
