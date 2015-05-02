@@ -622,6 +622,7 @@ public:
      * When this method returns with RCOK, the page is always latched so that
      * the caller can still access the page after this method
      * although it might be "re-latched".
+     * @param[in] store store id of the index
      * @param[in] leaf the page that contains the key to lock
      * @param[in] key the key to lock
      * @param[in] latch_mode if this has to un-latch/re-latch, this mode is used.
@@ -629,6 +630,7 @@ public:
      * @param[in] check_only whether the lock goes away right after grant
      */
     static rc_t _ux_lock_key(
+        const stid_t&      store,
         btree_page_h&      leaf,
         const w_keystr_t&   key,
         latch_mode_t        latch_mode,
@@ -638,6 +640,7 @@ public:
 
     /** raw string and length version. */
     static rc_t _ux_lock_key(
+        const stid_t&      store,
         btree_page_h&      leaf,
         const void         *keystr,
         size_t              keylen,
@@ -681,7 +684,8 @@ public:
      * Used when the exact key is not found and range locking is needed.
      * @see _ux_lock_key()
      */
-    static rc_t _ux_lock_range(btree_page_h&     leaf,
+    static rc_t _ux_lock_range(const stid_t&     store,
+                               btree_page_h&     leaf,
                                const w_keystr_t& key,
                                slotid_t          slot,
                                latch_mode_t      latch_mode,
@@ -690,7 +694,8 @@ public:
                                bool              check_only);
 
     /** raw string version. */
-    static rc_t _ux_lock_range(btree_page_h&    leaf,
+    static rc_t _ux_lock_range(const stid_t&    store,
+                               btree_page_h&    leaf,
                                const void*      keystr,
                                size_t           keylen,
                                slotid_t         slot,

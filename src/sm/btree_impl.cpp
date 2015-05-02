@@ -64,7 +64,8 @@ btree_impl::_ux_insert_core(
     if (found) {
         // found! then we just lock the key (XN)
         if (need_lock) {
-            W_DO (_ux_lock_key(leaf, key, LATCH_EX, create_part_okvl(okvl_mode::X, key), false));
+            W_DO (_ux_lock_key(store, leaf, key, LATCH_EX,
+                        create_part_okvl(okvl_mode::X, key), false));
             alreay_took_XN = true;
         }
 
@@ -113,7 +114,7 @@ btree_impl::_ux_insert_core(
         // by system transaction.
 
         if (need_lock) {
-            W_DO(_ux_lock_range(leaf, key, -1, // search again because it might be split
+            W_DO(_ux_lock_range(store, leaf, key, -1, // search again because it might be split
                 LATCH_EX, create_part_okvl(okvl_mode::X, key), ALL_N_GAP_X, true)); // this lock "goes away" once it's taken
         }
 
@@ -135,7 +136,7 @@ DBGOUT3( << "&&&& Log for regular insertion, key: " << key);
 
     // now we know the page has the desired ghost record. let's just replace it.
     if (need_lock && !alreay_took_XN) { // if "expand" case, do not need to get XN again
-        W_DO (_ux_lock_key(leaf, key, LATCH_EX, create_part_okvl(okvl_mode::X, key), false));
+        W_DO (_ux_lock_key(store, leaf, key, LATCH_EX, create_part_okvl(okvl_mode::X, key), false));
     }
     if (found) {
         W_DO(leaf.replace_ghost(key, el));
@@ -205,7 +206,7 @@ btree_impl::_ux_get_page_and_status(stid_t store,
     if (found) {
         // found! then we just lock the key (XN)
         if (need_lock) {
-            W_DO (_ux_lock_key(leaf, key, LATCH_EX, ALL_X_GAP_N, false));
+            W_DO (_ux_lock_key(store, leaf, key, LATCH_EX, ALL_X_GAP_N, false));
             took_XN = true;
         }
 
@@ -213,7 +214,7 @@ btree_impl::_ux_get_page_and_status(stid_t store,
     }
     return RCOK;
 }
-rc_t btree_impl::_ux_insert_core_tail(stid_t /* store */,
+rc_t btree_impl::_ux_insert_core_tail(stid_t store,
                                       const w_keystr_t& key, const cvec_t& el,
                                       bool& need_lock, slotid_t& slot, bool& found,
                                       bool& alreay_took_XN, bool& is_ghost, btree_page_h& leaf) {
@@ -261,7 +262,7 @@ rc_t btree_impl::_ux_insert_core_tail(stid_t /* store */,
         // by system transaction.
 
         if (need_lock) {
-            W_DO(_ux_lock_range(leaf, key, -1, // search again because it might be split
+            W_DO(_ux_lock_range(store, leaf, key, -1, // search again because it might be split
                 LATCH_EX, create_part_okvl(okvl_mode::X, key), ALL_N_GAP_X, true)); // this lock "goes away" once it's taken
         }
 
@@ -270,7 +271,7 @@ rc_t btree_impl::_ux_insert_core_tail(stid_t /* store */,
 
     // now we know the page has the desired ghost record. let's just replace it.
     if (need_lock && !alreay_took_XN) { // if "expand" case, do not need to get XN again
-        W_DO (_ux_lock_key(leaf, key, LATCH_EX, create_part_okvl(okvl_mode::X, key), false));
+        W_DO (_ux_lock_key(store, leaf, key, LATCH_EX, create_part_okvl(okvl_mode::X, key), false));
     }
     W_DO(leaf.replace_ghost(key, el));
 
@@ -331,7 +332,7 @@ btree_impl::_ux_update_core(stid_t store, const w_keystr_t &key, const cvec_t &e
     if(!found) {
         if (need_lock) {
             // re-latch mode is SH because this is "not-found" case.
-            W_DO(_ux_lock_range(leaf, key, slot,
+            W_DO(_ux_lock_range(store, leaf, key, slot,
                         LATCH_SH, create_part_okvl(okvl_mode::X, key), ALL_N_GAP_S, false));
         }
         return RC(eNOTFOUND);
@@ -341,7 +342,7 @@ btree_impl::_ux_update_core(stid_t store, const w_keystr_t &key, const cvec_t &e
     // lock the key.
     if (need_lock) {
         // only the key is locked (XN)
-        W_DO (_ux_lock_key(leaf, key, LATCH_EX, create_part_okvl(okvl_mode::X, key), false));
+        W_DO (_ux_lock_key(store, leaf, key, LATCH_EX, create_part_okvl(okvl_mode::X, key), false));
     }
 
     // get the old data and log
@@ -385,7 +386,7 @@ btree_impl::_ux_update_core_tail(stid_t store,
     if(!found) {
         if (need_lock) {
             // re-latch mode is SH because this is "not-found" case.
-            W_DO(_ux_lock_range(leaf, key, slot,
+            W_DO(_ux_lock_range(store, leaf, key, slot,
                                 LATCH_SH, create_part_okvl(okvl_mode::X, key), ALL_N_GAP_S, false));
         }
         return RC(eNOTFOUND);
@@ -457,14 +458,14 @@ rc_t btree_impl::_ux_overwrite_core(
 
     if(!found) {
         if (need_lock) {
-            W_DO(_ux_lock_range(leaf, key, slot,
+            W_DO(_ux_lock_range(store, leaf, key, slot,
                                 LATCH_SH, create_part_okvl(okvl_mode::X, key), ALL_N_GAP_S, false));
         }
         return RC(eNOTFOUND);
     }
 
     if (need_lock) {
-        W_DO (_ux_lock_key(leaf, key, LATCH_EX, create_part_okvl(okvl_mode::X, key), false));
+        W_DO (_ux_lock_key(store, leaf, key, LATCH_EX, create_part_okvl(okvl_mode::X, key), false));
     }
 
     // get the old data and log
@@ -534,7 +535,7 @@ btree_impl::_ux_remove_core(stid_t store, const w_keystr_t &key, const bool undo
     if(!found) {
         if (need_lock) {
             // re-latch mode is SH because this is "not-found" case.
-            W_DO(_ux_lock_range(leaf, key, slot,
+            W_DO(_ux_lock_range(store, leaf, key, slot,
                         LATCH_SH, create_part_okvl(okvl_mode::X, key), ALL_N_GAP_S, false));
         }
 // TODO(Restart)... 
@@ -547,7 +548,7 @@ DBGOUT3( << "&&&& _ux_remove_core - not found");
     // lock the key.
     if (need_lock) {
         // only the key is locked (XN)
-        W_DO (_ux_lock_key(leaf, key, LATCH_EX, create_part_okvl(okvl_mode::X, key), false));
+        W_DO (_ux_lock_key(store, leaf, key, LATCH_EX, create_part_okvl(okvl_mode::X, key), false));
     }
 
     // it might be already ghost..

@@ -24,6 +24,7 @@ struct RawLock;
 
 rc_t
 btree_impl::_ux_lock_key(
+    const stid_t&      stid,
     btree_page_h&      leaf,
     const w_keystr_t&   key,
     latch_mode_t        latch_mode,
@@ -34,7 +35,7 @@ btree_impl::_ux_lock_key(
     // Top level function used by I/U/D (EX) and search (SH) operations to acquire a lock
     // Lock conflict is possible
     
-    return _ux_lock_key(leaf, key.buffer_as_keystr(), key.get_length_as_keystr(),
+    return _ux_lock_key(stid, leaf, key.buffer_as_keystr(), key.get_length_as_keystr(),
                          latch_mode, lock_mode, check_only);
 }
 
@@ -88,12 +89,13 @@ rc_t btree_impl::_ux_lock_key(
 
 rc_t
 btree_impl::_ux_lock_key(
-    btree_page_h&            leaf,
-    const void         *keystr,
-    size_t              keylen,
-    latch_mode_t        latch_mode,
-    const okvl_mode&       lock_mode,
-    bool                check_only
+    const stid_t&      store,
+    btree_page_h&      leaf,
+    const void*        keystr,
+    size_t             keylen,
+    latch_mode_t       latch_mode,
+    const okvl_mode&   lock_mode,
+    bool               check_only
     )        
 {
     // Callers:
@@ -112,7 +114,7 @@ btree_impl::_ux_lock_key(
     //                                                 transactions asking for the same lock are blocked, no deadlock
     // 2. Traditional UNDO - original behavior, either deadlock error or timeout and retry
     
-    lockid_t lid (leaf.pid().stid(), (const unsigned char*) keystr, keylen);
+    lockid_t lid (store, (const unsigned char*) keystr, keylen);
     // first, try conditionally. we utilize the inserted lock entry even if it fails
     RawLock* entry = NULL;
 
@@ -181,18 +183,20 @@ btree_impl::_ux_lock_key(
 }
 
 rc_t
-btree_impl::_ux_lock_range(btree_page_h&     leaf,
+btree_impl::_ux_lock_range(const stid_t&     stid,
+                           btree_page_h&     leaf,
                            const w_keystr_t& key,
                            slotid_t          slot,
                            latch_mode_t      latch_mode,
                            const okvl_mode&  exact_hit_lock_mode,
                            const okvl_mode&  miss_lock_mode,
                            bool              check_only) {
-    return _ux_lock_range(leaf, key.buffer_as_keystr(), key.get_length_as_keystr(),
+    return _ux_lock_range(stid, leaf, key.buffer_as_keystr(), key.get_length_as_keystr(),
                           slot, latch_mode, exact_hit_lock_mode, miss_lock_mode, check_only);    
 }
 rc_t
-btree_impl::_ux_lock_range(btree_page_h&    leaf,
+btree_impl::_ux_lock_range(const stid_t&    stid,
+                           btree_page_h&    leaf,
                            const void*      keystr,
                            size_t           keylen,
                            slotid_t         slot,
@@ -226,7 +230,7 @@ btree_impl::_ux_lock_range(btree_page_h&    leaf,
             // We were searching for the low-fence key!  then, we take key lock on it and
             // subsequent structural modification (e.g., merge) will add the low-fence as
             // ghost record to be aware of the lock.
-            W_DO (_ux_lock_key(leaf,
+            W_DO (_ux_lock_key(stid, leaf,
                                leaf.get_fence_low_key(), leaf.get_fence_low_length(),
                                latch_mode, exact_hit_lock_mode, check_only));
     } else {
@@ -239,7 +243,7 @@ btree_impl::_ux_lock_range(btree_page_h&    leaf,
 #if W_DEBUG_LEVEL > 1
         w_assert1(prevkey.compare(key) < 0);
 #endif // W_DEBUG_LEVEL > 1
-        W_DO (_ux_lock_key(leaf, prevkey, latch_mode, miss_lock_mode, check_only));
+        W_DO (_ux_lock_key(stid, leaf, prevkey, latch_mode, miss_lock_mode, check_only));
     }
     return RCOK;
 }

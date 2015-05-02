@@ -54,7 +54,7 @@ btree_impl::_ux_lookup_core(stid_t store, const w_keystr_t& key,
     leaf.search(key, found, slot);
     if (!found) {
         if (need_lock) {
-            W_DO(_ux_lock_range(leaf, key, slot, LATCH_SH,
+            W_DO(_ux_lock_range(store, leaf, key, slot, LATCH_SH,
                 ex_for_select ? create_part_okvl(okvl_mode::X, key) : create_part_okvl(okvl_mode::S, key),
                 ex_for_select ? ALL_N_GAP_X : ALL_N_GAP_S,
                 false));
@@ -65,7 +65,7 @@ btree_impl::_ux_lookup_core(stid_t store, const w_keystr_t& key,
     // the key is found (though it might be a ghost)!  Let's get a lock.
     if (need_lock) {
         // only the key is locked (SN)
-        W_DO (_ux_lock_key(leaf, key, LATCH_SH,
+        W_DO (_ux_lock_key(store, leaf, key, LATCH_SH,
             ex_for_select ? create_part_okvl(okvl_mode::X, key) : create_part_okvl(okvl_mode::S, key), false));
     }
 
