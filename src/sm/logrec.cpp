@@ -119,7 +119,7 @@ logrec_t::type_str() const
  *
  *********************************************************************/
 void
-logrec_t::fill(const lpid_t* p, uint16_t tag, smsize_t l)
+logrec_t::fill(const lpid_t* p, snum_t store, uint16_t tag, smsize_t l)
 {
     w_assert9(w_base_t::is_aligned(_data));
 
@@ -138,6 +138,7 @@ logrec_t::fill(const lpid_t* p, uint16_t tag, smsize_t l)
     }
     header._page_tag = tag;
     if (p) set_pid(*p);
+    header._snum = store;
     char *dat = is_single_sys_xct() ? data_ssx() : data();
     if (l != align(l)) {
         // zero out extra space to keep purify happy
@@ -316,7 +317,7 @@ logrec_t::corrupt()
  *********************************************************************/
 xct_freeing_space_log::xct_freeing_space_log()
 {
-    fill(0, 0, 0);
+    fill(0, 0);
 }
 
 
@@ -341,7 +342,7 @@ xct_list_t::xct_list_t(
 
 xct_end_group_log::xct_end_group_log(const xct_t *list[], int listlen)
 {
-    fill(0, 0, (new (_data) xct_list_t(list, listlen))->size());
+    fill(0, (new (_data) xct_list_t(list, listlen))->size());
 }
 /*********************************************************************
  *
@@ -353,13 +354,13 @@ xct_end_group_log::xct_end_group_log(const xct_t *list[], int listlen)
  *********************************************************************/
 xct_end_log::xct_end_log()
 {
-    fill(0, 0, 0);
+    fill(0, 0);
 }
 
 // We use a different log record type here only for debugging purposes
 xct_abort_log::xct_abort_log()
 {
-    fill(0, 0, 0);
+    fill(0, 0);
 }
 
 
@@ -375,7 +376,7 @@ comment_log::comment_log(const char *msg)
     w_assert1(strlen(msg) < sizeof(_data));
     memcpy(_data, msg, strlen(msg)+1);
     DBG(<<"comment_log: L: " << (const char *)_data);
-    fill(0, 0, strlen(msg)+1);
+    fill(0, strlen(msg)+1);
 }
 
 void 
@@ -404,7 +405,7 @@ comment_log::undo(fixable_page_h *page)
  *********************************************************************/
 compensate_log::compensate_log(const lsn_t& rec_lsn)
 {
-    fill(0, 0, 0);
+    fill(0, 0);
     set_clr(rec_lsn);
 }
 
@@ -418,7 +419,7 @@ compensate_log::compensate_log(const lsn_t& rec_lsn)
  *********************************************************************/
 skip_log::skip_log()
 {
-    fill(0, 0, 0);
+    fill(0, 0);
 }
 
 /*********************************************************************
@@ -431,7 +432,7 @@ skip_log::skip_log()
 chkpt_begin_log::chkpt_begin_log(const lsn_t &lastMountLSN)
 {
     new (_data) lsn_t(lastMountLSN);
-    fill(0, 0, sizeof(lsn_t));
+    fill(0, sizeof(lsn_t));
 }
 
 
@@ -456,7 +457,7 @@ chkpt_end_log::chkpt_end_log(const lsn_t& lsn, const lsn_t& min_rec_lsn,
     l++; //grot
     *l = min_txn_lsn;
 
-    fill(0, 0, (3 * sizeof(lsn_t)) + (3 * sizeof(int)));
+    fill(0, (3 * sizeof(lsn_t)) + (3 * sizeof(int)));
 }
 
 
@@ -493,7 +494,7 @@ chkpt_bf_tab_log::chkpt_bf_tab_log(
     const lsn_t*         rec_lsn,// I-  rec_lsn[i] is recovery lsn (oldest) of pids[i]
     const lsn_t*         page_lsn)// I-  page_lsn[i] is page lsn (latest) of pids[i]    
 {
-    fill(0, 0, (new (_data) chkpt_bf_tab_t(cnt, pid, rec_lsn, page_lsn))->size());
+    fill(0, (new (_data) chkpt_bf_tab_t(cnt, pid, rec_lsn, page_lsn))->size());
 }
 
 
@@ -537,7 +538,7 @@ chkpt_xct_tab_log::chkpt_xct_tab_log(
     const lsn_t*                         undo_nxt,
     const lsn_t*                         first_lsn)
 {
-    fill(0, 0, (new (_data) chkpt_xct_tab_t(youngest, cnt, tid, state,
+    fill(0, (new (_data) chkpt_xct_tab_t(youngest, cnt, tid, state,
                                          last_lsn, undo_nxt, first_lsn))->size());
 }
 
@@ -570,7 +571,7 @@ chkpt_xct_lock_log::chkpt_xct_lock_log(
     const okvl_mode*                    lock_mode,
     const uint32_t*                     lock_hash)
 {
-    fill(0, 0, (new (_data) chkpt_xct_lock_t(tid, cnt, lock_mode,
+    fill(0, (new (_data) chkpt_xct_lock_t(tid, cnt, lock_mode,
                                          lock_hash))->size());
 }
 
@@ -604,7 +605,7 @@ chkpt_dev_tab_log::chkpt_dev_tab_log(
     const char                 **dev,
     const vid_t*         vid)
 {
-    fill(0, 0, (new (_data) chkpt_dev_tab_t(cnt, dev, vid))->size());
+    fill(0, (new (_data) chkpt_dev_tab_t(cnt, dev, vid))->size());
 }
 
 
@@ -623,7 +624,7 @@ mount_vol_log::mount_vol_log(
 
     devArray[0] = dev;
     DBG(<< "mount_vol_log dev_name=" << devArray[0] << " volid =" << vid);
-    fill(0, 0, (new (_data) chkpt_dev_tab_t(1, devArray, &vid))->size());
+    fill(0, (new (_data) chkpt_dev_tab_t(1, devArray, &vid))->size());
 }
 
 
@@ -656,7 +657,7 @@ dismount_vol_log::dismount_vol_log(
 
     devArray[0] = dev;
     DBG(<< "dismount_vol_log dev_name=" << devArray[0] << " volid =" << vid);
-    fill(0, 0, (new (_data) chkpt_dev_tab_t(1, devArray, &vid))->size());
+    fill(0, (new (_data) chkpt_dev_tab_t(1, devArray, &vid))->size());
 }
 
 
@@ -703,7 +704,7 @@ page_img_format_t::page_img_format_t (const btree_page_h& page) {
 }
 
 page_img_format_log::page_img_format_log(const btree_page_h &page) {
-    fill(&page.pid(), page.tag(),
+    fill(page,
          (new (_data) page_img_format_t(page))->size());
 }
 
@@ -788,8 +789,7 @@ public:
 
 page_set_to_be_deleted_log::page_set_to_be_deleted_log(const fixable_page_h& p)
 {
-    fill(&p.pid(), p.tag(), 
-        (new (_data) page_set_to_be_deleted_t()) ->size());
+    fill(p, (new (_data) page_set_to_be_deleted_t()) ->size());
 }
 
 
@@ -815,7 +815,7 @@ alloc_a_page_log::alloc_a_page_log (vid_t vid, shpid_t pid)
     char *buf = data_ssx();
     *reinterpret_cast<shpid_t*>(buf) = pid; // only data is the page ID
     lpid_t dummy (vid, 0, 0);
-    fill(&dummy, 0, sizeof(shpid_t));
+    fill(&dummy, 0, 0, sizeof(shpid_t));
     w_assert0(is_single_sys_xct());
 }
 
@@ -841,7 +841,7 @@ alloc_consecutive_pages_log::alloc_consecutive_pages_log (vid_t vid,
     buf[0] = pid_begin;
     buf[1] = page_count;
     lpid_t dummy (vid, 0, 0);
-    fill(&dummy, 0, sizeof(uint32_t) * 2);
+    fill(&dummy, 0, 0, sizeof(uint32_t) * 2);
     w_assert0(is_single_sys_xct());
 }
 
@@ -866,7 +866,7 @@ dealloc_a_page_log::dealloc_a_page_log (vid_t vid, shpid_t pid)
     char *buf = data_ssx();
     *reinterpret_cast<shpid_t*>(buf) = pid; // only data is the page ID
     lpid_t dummy (vid, 0, 0);
-    fill(&dummy, 0, sizeof(shpid_t));
+    fill(&dummy, 0, 0, sizeof(shpid_t));
     w_assert0(is_single_sys_xct());
 }
 
@@ -886,7 +886,7 @@ store_operation_log::store_operation_log(vid_t vid,
         const store_operation_param& param)
 {
     lpid_t dummy(vid, 0, 0);
-    fill(&dummy, 0, (new (_data) store_operation_param(param))->size());
+    fill(&dummy, 0, 0, (new (_data) store_operation_param(param))->size());
 }
 
 void store_operation_log::redo(fixable_page_h* /*page*/)

@@ -2974,7 +2974,9 @@ void restart_m::_analysis_acquire_lock_log(logrec_t& r,            // In: log re
                 // Lock re-acquisition
                 DBGOUT3(<<"_analysis_acquire_lock_log - acquire X key lock for INSERT, key: " << key);
                 okvl_mode mode = btree_impl::create_part_okvl(okvl_mode::X, key);
-                lockid_t lid (r.construct_pid().stid(), (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
+                lockid_t lid (r.stid(),
+                        (const unsigned char*) key.buffer_as_keystr(),
+                        key.get_length_as_keystr());
 
                 _re_acquire_lock(lock_heap, mode, lid.hash(), xd);
             }
@@ -3004,7 +3006,7 @@ void restart_m::_analysis_acquire_lock_log(logrec_t& r,            // In: log re
                     // Lock re-acquisition
                     DBGOUT3(<<"_analysis_acquire_lock_log - acquire X key lock for NON_GHOST_INSERT, key: " << key);
                     okvl_mode mode = btree_impl::create_part_okvl(okvl_mode::X, key);
-                    lockid_t lid (r.construct_pid().stid(), (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
+                    lockid_t lid (r.stid(), (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
 
                     _re_acquire_lock(lock_heap, mode, lid.hash(), xd);
                 }
@@ -3020,7 +3022,7 @@ void restart_m::_analysis_acquire_lock_log(logrec_t& r,            // In: log re
                 // Lock re-acquisition
                 DBGOUT3(<<"_analysis_acquire_lock_log - acquire X key lock for UPDATE, key: " << key);
                 okvl_mode mode = btree_impl::create_part_okvl(okvl_mode::X, key);
-                lockid_t lid (r.construct_pid().stid(), (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
+                lockid_t lid (r.stid(), (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
 
                 _re_acquire_lock(lock_heap, mode, lid.hash(), xd);
             }
@@ -3035,7 +3037,7 @@ void restart_m::_analysis_acquire_lock_log(logrec_t& r,            // In: log re
                 // Lock re-acquisition
                 DBGOUT3(<<"_analysis_acquire_lock_log - acquire X key lock for OVERWRITE, key: " << key);
                 okvl_mode mode = btree_impl::create_part_okvl(okvl_mode::X, key);
-                lockid_t lid (r.construct_pid().stid(), (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
+                lockid_t lid (r.stid(), (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
 
                 _re_acquire_lock(lock_heap, mode, lid.hash(), xd);
             }
@@ -3062,7 +3064,7 @@ void restart_m::_analysis_acquire_lock_log(logrec_t& r,            // In: log re
                         // Lock re-acquisition
                         DBGOUT3(<<"_analysis_acquire_lock_log - acquire X key lock for DELETE, key: " << key);
                         okvl_mode mode = btree_impl::create_part_okvl(okvl_mode::X, key);
-                        lockid_t lid (r.construct_pid().stid(), (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
+                        lockid_t lid (r.stid(), (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
 
                         _re_acquire_lock(lock_heap, mode, lid.hash(), xd);
                     }
@@ -3084,7 +3086,7 @@ void restart_m::_analysis_acquire_lock_log(logrec_t& r,            // In: log re
                 // Lock re-acquisition
                 DBGOUT3(<<"_analysis_acquire_lock_log - acquire X key lock for GHOST_RESERVE(INSERT), key: " << key);
                 okvl_mode mode = btree_impl::create_part_okvl(okvl_mode::X, key);
-                lockid_t lid (r.construct_pid().stid(), (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
+                lockid_t lid (r.stid(), (const unsigned char*) key.buffer_as_keystr(), key.get_length_as_keystr());
 
                 _re_acquire_lock(lock_heap, mode, lid.hash(), xd);
             }
@@ -4185,7 +4187,7 @@ void restart_m::_redo_log_with_pid(
 
                 // Just loaded from disk, set the vol and page in cb
                 cb._pid_vol = page_updated.vol();
-                cb._store_num = page_updated.store();
+                cb._store_num = r.snum();
                 cb._pid_shpid = page_updated.page;
             }
             else if ((true == smlevel_0::bf->is_in_doubt(idx)) && (true == virgin_page))
@@ -4195,7 +4197,7 @@ void restart_m::_redo_log_with_pid(
                 // There is nothing to load from disk, set the vol and page in cb
 
                 cb._pid_vol = page_updated.vol();
-                cb._store_num = page_updated.store();
+                cb._store_num = r.snum();
                 cb._pid_shpid = page_updated.page;
             }
             else

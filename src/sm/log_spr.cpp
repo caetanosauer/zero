@@ -17,7 +17,7 @@
 page_evict_log::page_evict_log (const btree_page_h& p,
                                 general_recordid_t child_slot, lsn_t child_lsn) {
     new (_data) page_evict_t(child_lsn, child_slot);
-    fill(&p.pid(), p.tag(), sizeof(page_evict_t));
+    fill(p, sizeof(page_evict_t));
 }
 
 void page_evict_log::redo(fixable_page_h* page) {

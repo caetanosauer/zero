@@ -29,7 +29,7 @@ btree_insert_log::btree_insert_log(
     const cvec_t&       el,
     const bool          is_sys_txn)
 {
-    fill(&page.pid(), page.tag(),
+    fill(page,
          (new (_data) btree_insert_t(page, key, el, is_sys_txn))->size());
 }
 
@@ -100,7 +100,8 @@ DBGOUT3( << "&&&& REDO insertion by replace ghost, key: " << key);
 
 btree_insert_nonghost_log::btree_insert_nonghost_log(
     const btree_page_h &page, const w_keystr_t &key, const cvec_t &el, const bool is_sys_txn) {
-    fill(&page.pid(), page.tag(), (new (_data) btree_insert_t(page, key, el, is_sys_txn))->size());
+    fill(page,
+        (new (_data) btree_insert_t(page, key, el, is_sys_txn))->size());
 }
 
 void btree_insert_nonghost_log::undo(fixable_page_h* page) {
@@ -129,7 +130,7 @@ btree_update_log::btree_update_log(
     const w_keystr_t&     key,
     const char* old_el, int old_elen, const cvec_t& new_el)
 {
-    fill(&page.pid(), page.tag(),
+    fill(page,
          (new (_data) btree_update_t(page, key, old_el, old_elen, new_el))->size());
 }
 
@@ -182,7 +183,7 @@ btree_update_log::redo(fixable_page_h* page)
 
 btree_overwrite_log::btree_overwrite_log (const btree_page_h& page, const w_keystr_t& key,
                                           const char* old_el, const char *new_el, size_t offset, size_t elen) {
-    fill(&page.pid(), page.tag(),
+    fill(page,
          (new (_data) btree_overwrite_t(page, key, old_el, new_el, offset, elen))->size());
 }
 
@@ -300,7 +301,7 @@ btree_ghost_mark_log::btree_ghost_mark_log(const btree_page_h& p,
                                            const vector<slotid_t>& slots,
                                            const bool is_sys_txn)
 {
-    fill(&p.pid(), p.tag(), (new (data()) btree_ghost_t(p, slots, is_sys_txn))->size());
+    fill(p, (new (data()) btree_ghost_t(p, slots, is_sys_txn))->size());
 }
 
 void
@@ -434,7 +435,7 @@ btree_ghost_reclaim_log::btree_ghost_reclaim_log(const btree_page_h& p,
                                                  const vector<slotid_t>& slots)
 {
     // ghost reclaim is single-log system transaction. so, use data_ssx()
-    fill(&p.pid(), p.tag(), (new (data_ssx()) btree_ghost_t(p, slots, false))->size());
+    fill(p, (new (data_ssx()) btree_ghost_t(p, slots, false))->size());
     w_assert0(is_single_sys_xct());
 }
 
@@ -461,7 +462,7 @@ btree_ghost_reserve_t::btree_ghost_reserve_t(const w_keystr_t& key, int elem_len
 btree_ghost_reserve_log::btree_ghost_reserve_log (
     const btree_page_h& p, const w_keystr_t& key, int element_length) {
     // ghost creation is single-log system transaction. so, use data_ssx()
-    fill(&p.pid(), p.tag(), (new (data_ssx()) btree_ghost_reserve_t(key, element_length))->size());
+    fill(p, (new (data_ssx()) btree_ghost_reserve_t(key, element_length))->size());
     w_assert0(is_single_sys_xct());
 }
 
@@ -502,7 +503,7 @@ btree_norec_alloc_t::btree_norec_alloc_t(const btree_page_h &p,
 
 btree_norec_alloc_log::btree_norec_alloc_log(const btree_page_h &p, const btree_page_h &,
     shpid_t new_page_id, const w_keystr_t& fence, const w_keystr_t& chain_fence_high) {
-    fill(&p.pid(), p.tag(), (new (data_ssx()) btree_norec_alloc_t(p,
+    fill(p, (new (data_ssx()) btree_norec_alloc_t(p,
         new_page_id, fence, chain_fence_high))->size());
 }
 
@@ -589,7 +590,7 @@ btree_foster_merge_log::btree_foster_merge_log (const btree_page_h& p, // destin
                                          // self contained data buffer, meaning each reocrd is in the format:
                                          // ghost flag + key length + key (with sign byte) + child + ghost flag + data length + data
 
-    fill(&p.pid(), p.tag(), (new (data_ssx()) btree_foster_merge_t(p2.pid().page,
+    fill(p, (new (data_ssx()) btree_foster_merge_t(p2.pid().page,
         high, chain_high, foster_pid0, foster_pid0_emlsn, prefix_len, move_count, record_data_len, record_data))->size());
 }
 
@@ -844,7 +845,7 @@ btree_foster_rebalance_log::btree_foster_rebalance_log (
     // p - destination
     // p2 - source
 
-    fill(&p.pid(), p.tag(), (new (data_ssx()) btree_foster_rebalance_t(p2.pid().page,
+    fill(p, (new (data_ssx()) btree_foster_rebalance_t(p2.pid().page,
         fence, new_pid0, new_pid0_emlsn, high, chain_high, prefix_len,
         move_count, record_data_len, record_data))->size());
 }
@@ -1307,7 +1308,7 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
  */
 btree_foster_rebalance_norec_log::btree_foster_rebalance_norec_log(
     const btree_page_h &p, const btree_page_h &, const w_keystr_t& fence) {
-    fill(&p.pid(), p.tag(), (new (data_ssx()) btree_foster_rebalance_norec_t(
+    fill(p, (new (data_ssx()) btree_foster_rebalance_norec_t(
         p, fence))->size());
 }
 
@@ -1352,7 +1353,7 @@ btree_foster_adopt_t::btree_foster_adopt_t(shpid_t page2_id, shpid_t new_child_p
 
 btree_foster_adopt_log::btree_foster_adopt_log (const btree_page_h& p, const btree_page_h& p2,
     shpid_t new_child_pid, lsn_t new_child_emlsn, const w_keystr_t& new_child_key) {
-    fill(&p.pid(), p.tag(), (new (data_ssx()) btree_foster_adopt_t(
+    fill(p, (new (data_ssx()) btree_foster_adopt_t(
         p2.pid().page, new_child_pid, new_child_emlsn, new_child_key))->size());
 }
 
@@ -1399,7 +1400,7 @@ btree_foster_deadopt_log::btree_foster_deadopt_log (
     shpid_t deadopted_pid, lsn_t deadopted_emlsn, int32_t foster_slot,
     const w_keystr_t &low, const w_keystr_t &high) {
     w_assert1(p.is_node());
-    fill(&p.pid(), p.tag(), (new (data_ssx()) btree_foster_deadopt_t(p2.pid().page,
+    fill(p, (new (data_ssx()) btree_foster_deadopt_t(p2.pid().page,
         deadopted_pid, deadopted_emlsn, foster_slot, low, high))->size());
 }
 

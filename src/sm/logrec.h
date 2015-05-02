@@ -144,6 +144,7 @@ public:
 #include "logtype_gen.h"
     void             fill(
                             const lpid_t*  pid,
+                            snum_t         store,
                             uint16_t        tag,
                             smsize_t       length);
     void             fill_xct_attr(
@@ -167,6 +168,18 @@ public:
     void             redo(fixable_page_h*);
     void             undo(fixable_page_h*);
 
+    void fill(uint16_t tag, smsize_t length)
+    {
+        fill(NULL, 0, tag, length);
+    }
+
+    void fill(const generic_page_h& p, smsize_t length)
+    {
+        w_assert3(p.store() != 0);
+        w_assert3(p.vol() != 0);
+        fill(&p.pid(), p.store(), p.tag(), length);
+    }
+
     enum {
         max_sz = 3 * sizeof(generic_page),
         hdr_non_ssx_sz = sizeof(baseLogHeader) + sizeof(xidChainLogHeader),
@@ -180,6 +193,8 @@ public:
 
        const tid_t&         tid() const;
        const vid_t&         vid() const;
+       stid_t               stid() const;
+       const snum_t&        snum() const;
        const shpid_t&       shpid() const;
        // put construct_pid() here just to make sure we can
        // easily locate all non-private/non-protected uses of pid()
@@ -511,6 +526,18 @@ logrec_t::vid() const
     return header._vid;
 }
 
+inline stid_t
+logrec_t::stid() const
+{
+    return stid_t(header._vid, header._snum);
+}
+
+inline const snum_t&
+logrec_t::snum() const
+{
+    return header._snum;
+}
+
 inline lpid_t
 logrec_t::pid() const
 {
@@ -537,7 +564,6 @@ logrec_t::set_pid(const lpid_t& p)
 {
     header._shpid = p.page;
     header._vid = p.vol();
-    header._snum = p.store();
 }
 
 inline bool 

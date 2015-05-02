@@ -201,9 +201,17 @@ sub def_rec {
     my $undo_stmt = ($undo) ? 'void undo(fixable_page_h*);' : '';
     print DEF<<CLASSDEF;
     class $class : public logrec_t {
-    void fill(const lpid_t* p, uint16_t tag, int l) {
+    void fill(const lpid_t* p, snum_t store, uint16_t tag, int l) {
       header._cat = $cat, header._type = t_$type;
-      logrec_t::fill(p, tag, l);
+      logrec_t::fill(p, store, tag, l);
+    }
+    void fill(const generic_page_h& p, int l) {
+      header._cat = $cat, header._type = t_$type;
+      logrec_t::fill(p, l);
+    }
+    void fill(uint16_t tag, int l) {
+      header._cat = $cat, header._type = t_$type;
+      logrec_t::fill(tag, l);
     }
       public:
     $class $arg;
