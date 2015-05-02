@@ -557,10 +557,10 @@ public:
      *  pages it found, respectively.
      *  'master' and 'current_lsn' are used only for 'in_doubt' pages which are not loaded
     */
-    void get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, lsn_t *rec_lsn,
-                       lsn_t *page_lsn, lsn_t &min_rec_lsn,
-                       const lsn_t master, const lsn_t current_lsn,
-                       lsn_t last_mount_lsn);
+    void get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, snum_t* store,
+                     lsn_t *rec_lsn, lsn_t *page_lsn, lsn_t &min_rec_lsn,
+                     const lsn_t master, const lsn_t current_lsn,
+                     lsn_t last_mount_lsn);
 
     /**
     *  Ensures the buffer pool's rec_lsn for this page is no larger than
@@ -650,7 +650,7 @@ public:
      * and the last write)
      * update the in_doubt page counter and return the index of the page
      */
-    w_rc_t register_and_mark(bf_idx& ret, lpid_t page_of_interest,
+    w_rc_t register_and_mark(bf_idx& ret, lpid_t page_of_interest, snum_t store,
            lsn_t first_lsn, lsn_t last_lsn, uint32_t& in_doubt_count);
 
 

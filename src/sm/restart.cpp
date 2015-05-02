@@ -2096,7 +2096,7 @@ bool restart_m::_analysis_system_log(logrec_t& r,             // In: Log record 
                 if (0 == page_of_interest.page)
                     W_FATAL_MSG(fcINTERNAL,
                         << "Page # = 0 from a system transaction log record");
-                rc = smlevel_0::bf->register_and_mark(idx, page_of_interest,
+                rc = smlevel_0::bf->register_and_mark(idx, page_of_interest, r.snum(),
                           lsn /*first_lsn*/, lsn /*last_lsn*/, in_doubt_count);
 
                 if (rc.is_error())
@@ -2143,7 +2143,7 @@ bool restart_m::_analysis_system_log(logrec_t& r,             // In: Log record 
                                 << "Page # = 0 from a multi-record system transaction log record");
                         }
                     }
-                    rc = smlevel_0::bf->register_and_mark(idx, page2_of_interest, lsn /*first_lsn*/,
+                    rc = smlevel_0::bf->register_and_mark(idx, page2_of_interest, r.snum(), lsn /*first_lsn*/,
                                                           lsn /*last_lsn*/, in_doubt_count);
                     if (rc.is_error())
                     {
@@ -2211,7 +2211,7 @@ void restart_m::_analysis_ckpt_bf_log(logrec_t& r,              // In: Log recor
         if (0 == dp->brec[i].pid.page)
             W_FATAL_MSG(fcINTERNAL,
                 << "Page # = 0 from a page in t_chkpt_bf_tab log record");
-        rc = smlevel_0::bf->register_and_mark(idx, dp->brec[i].pid,
+        rc = smlevel_0::bf->register_and_mark(idx, dp->brec[i].pid, dp->brec[i].store,
                     dp->brec[i].rec_lsn.data() /*first_lsn*/,
                     dp->brec[i].page_lsn.data() /*last_lsn*/, in_doubt_count);
         if (rc.is_error())
@@ -2607,7 +2607,8 @@ void restart_m::_analysis_other_log(logrec_t& r,               // In: log record
                 W_FATAL_MSG(fcINTERNAL,
                     << "Page # = 0 from a page in log record, log type = " << r.type());
             rc = smlevel_0::bf->register_and_mark(idx,
-                      page_of_interest, lsn /*first_lsn*/, lsn /*last_lsn*/, in_doubt_count);
+                      page_of_interest, r.snum(),
+                      lsn /*first_lsn*/, lsn /*last_lsn*/, in_doubt_count);
             if (rc.is_error())
             {
                 // Not able to get a free block in buffer pool without evict, cannot continue in M1
@@ -2665,7 +2666,8 @@ void restart_m::_analysis_other_log(logrec_t& r,               // In: log record
                 W_FATAL_MSG(fcINTERNAL,
                     << "Page # = 0 from a page in compensation log record");
             rc = smlevel_0::bf->register_and_mark(idx,
-                      page_of_interest, lsn /*first_lsn*/, lsn /*last_lsn*/, in_doubt_count);
+                      page_of_interest, r.snum(),
+                      lsn /*first_lsn*/, lsn /*last_lsn*/, in_doubt_count);
             if (rc.is_error())
             {
                 // Not able to get a free block in buffer pool without evict, cannot continue in M1

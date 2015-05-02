@@ -773,6 +773,7 @@ try
         // Each log record contains the following array, while each array element has information
         // for one dirty page
         w_auto_delete_array_t<lpid_t> pid(new lpid_t[chunk]);     // page lpid
+        w_auto_delete_array_t<snum_t> stores(new snum_t[chunk]);     // page lpid
         w_auto_delete_array_t<lsn_t> rec_lsn(new lsn_t[chunk]);   // initial dirty lsn
         w_auto_delete_array_t<lsn_t> page_lsn(new lsn_t[chunk]);  // last write lsn
         w_assert1(pid && rec_lsn && page_lsn);
@@ -796,14 +797,15 @@ try
             // min_rec_lsn will be recorded in 'end checkpoint' log, it is used to determine the
             // beginning of the REDO phase
 
-            bf->get_rec_lsn(i, count, pid.get(), rec_lsn.get(), page_lsn.get(), min_rec_lsn,
+            bf->get_rec_lsn(i, count, pid.get(), stores.get(),
+                            rec_lsn.get(), page_lsn.get(), min_rec_lsn,
                             master, log->curr_lsn(), io->GetLastMountLSN());
             if (count)
             {
                 total_page_count += count;
 
                 // write all the information into a 'chkpt_bf_tab_log' (chkpt_bf_tab_t) log record
-                LOG_INSERT(chkpt_bf_tab_log(count, pid, rec_lsn, page_lsn), 0);
+                LOG_INSERT(chkpt_bf_tab_log(count, pid, stores, rec_lsn, page_lsn), 0);
             }
         }
         //fprintf(stderr, "Checkpoint found %d dirty pages\n", total_page_count);

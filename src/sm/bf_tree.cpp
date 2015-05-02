@@ -2284,6 +2284,7 @@ w_rc_t bf_tree_m::_evict_traverse_page(EvictionContext &context) {
 
 w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
                   lpid_t page_of_interest,
+                  snum_t store,
                   lsn_t first_lsn,             // Initial LSN, the first LSN which makes the page dirty
                   lsn_t last_lsn,              // Last LSN, last write to the page
                   uint32_t& in_doubt_count)
@@ -2350,7 +2351,7 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
         // add the rec_lsn which indicates when the page was dirty initially
         bf_tree_cb_t &cb = get_cb(idx);
         cb._pid_vol = vid;
-        cb._store_num = page_of_interest.store();
+        cb._store_num = store;
         cb._pid_shpid = shpid;
         cb._dirty = false;
         cb._in_doubt = true;
@@ -2757,7 +2758,7 @@ w_rc_t bf_tree_m::set_swizzling_enabled(bool enabled) {
     return RCOK;
 }
 
-void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid,
+void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, snum_t* stores,
                              lsn_t *rec_lsn, lsn_t *page_lsn, lsn_t &min_rec_lsn,
                              const lsn_t master, const lsn_t current_lsn,
                              lsn_t last_mount_lsn)
@@ -2883,6 +2884,7 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid,
                 // Now we have a page we want to record               
                 pid[i] = _buffer[start].pid;
                 w_assert1(0 != pid[i].page);   // Page number cannot be 0
+                stores[i] = _buffer[start].store;
 
                 w_assert1(lsn_t::null != lsn);   // Must have a vliad first lsn
                 rec_lsn[i] = lsn;

@@ -382,7 +382,13 @@ inline smsize_t logrec_t::header_size() const
 
 struct chkpt_bf_tab_t {
     struct brec_t {
-    lpid_t    pid;      // +12  -> 12
+    lpid_t    pid;      // +8 -> 8
+    /*
+     *  CS: store is required to mark as in-doubt on buffer pool.
+     *  Perhaps we can remove the store number from buffer control blocks
+     *  (bf_tree_cb_t), provided that they are not required. (TODO)
+     */
+    snum_t    store;    // +4 -> 12
     fill4    fill;      // for purify, +4 -> 16
     lsn_t    rec_lsn;   // +8 -> 24, this is the minimum (earliest) LSN 
     lsn_t    page_lsn;  // +8 -> 32, this is the latest (page) LSN 
@@ -397,6 +403,7 @@ struct chkpt_bf_tab_t {
     NORET            chkpt_bf_tab_t(
     int                 cnt, 
     const lpid_t*             p, 
+    const snum_t*            s,
     const lsn_t*             l,
     const lsn_t*             pl);
     
