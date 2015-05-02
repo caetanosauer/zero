@@ -78,6 +78,7 @@ void btree_page_h::accept_empty_child(lsn_t new_lsn, shpid_t new_page_id, const 
 
 rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the operation that creates this new page
                                 const lpid_t&     pid,             // Destination page pid
+                                snum_t            store,           // Store number
                                 shpid_t           root,
                                 int               l,               // Level of the destination page
                                 shpid_t           pid0,            // Destination page pid0 value, non-leaf only
@@ -120,7 +121,7 @@ rc_t btree_page_h::format_steal(lsn_t            new_lsn,         // LSN of the 
     // The _init inserts into slot 0 which contains the low, high (confusing nameing,
     // this is actually the foster key) and chain_high_fence (actually the high fence) keys,
     // but do not log it, since the actual record movement will move all the records
-    _init(new_lsn, pid, root, pid0, pid0_emlsn, foster, foster_emlsn,
+    _init(new_lsn, pid, store, root, pid0, pid0_emlsn, foster, foster_emlsn,
           l, fence_low, fence_high, chain_fence_high, ghost);
 
     // steal records from old page
@@ -834,8 +835,8 @@ rc_t btree_page_h::norecord_split (shpid_t foster, lsn_t foster_emlsn,
         ::memcpy (&scratch, _pp, sizeof(scratch));
         btree_page_h scratch_p;
         scratch_p.fix_nonbufferpool_page(&scratch);
-        W_DO(format_steal(scratch_p.lsn(),
-                          scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(),
+        W_DO(format_steal(scratch_p.lsn(), scratch_p.pid(), scratch_p.store(),
+                          scratch_p.btree_root(), scratch_p.level(),
                           scratch_p.pid0(), scratch_p.get_pid0_emlsn(),
                           foster, foster_emlsn,
                           fence_low, fence_high, chain_fence_high,
@@ -1774,7 +1775,7 @@ bool btree_page_h::_check_space_for_insert(size_t data_length) {
 }
 
 
-void btree_page_h::_init(lsn_t lsn, lpid_t page_id,
+void btree_page_h::_init(lsn_t lsn, lpid_t page_id, snum_t store,
     shpid_t root_pid,
     shpid_t pid0, lsn_t pid0_emlsn,          // Non-leaf page only
     shpid_t foster_pid, lsn_t foster_emlsn,  // If foster child exists for this page
@@ -1810,6 +1811,7 @@ void btree_page_h::_init(lsn_t lsn, lpid_t page_id,
     // CS: clsn set to null here -- committing TA will update it properly
     page()->clsn = lsn_t::null;
     page()->pid          = page_id;
+    page()->store        = store;
     page()->tag          = t_btree_p;
     page()->page_flags   = 0;
     page()->init_items();

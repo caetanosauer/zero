@@ -11,7 +11,7 @@
 
 
 stnode_page_h::stnode_page_h(generic_page* s, const lpid_t& pid):
-    generic_page_h(s, pid, t_stnode_p)
+    generic_page_h(s, pid, t_stnode_p, 0 /* store */)
 {}   
 
 
@@ -21,7 +21,7 @@ stnode_cache_t::stnode_cache_t(vid_t vid, bf_fixed_m* special_pages):
     _special_pages(special_pages),
     _stnode_page(special_pages->get_pages() + special_pages->get_page_cnt()-1)
 {
-    w_assert1(_stnode_page.vid() == _vid);
+    w_assert1(_stnode_page.vol() == _vid);
 }
 
 

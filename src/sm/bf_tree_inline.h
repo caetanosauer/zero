@@ -259,7 +259,8 @@ inline w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, stid_t store, shp
     bf_tree_cb_t &cb = get_cb(idx);
     cb.clear();
     cb._pid_vol = store.vol;
-    cb._pid_shpid = store.shpid;
+    cb._store_num = store.store;
+    cb._pid_shpid = shpid;
     cb.pin_cnt_set(1); // root page's pin count is always positive
     cb._used = true;
     cb._dirty = true;
@@ -276,6 +277,7 @@ inline w_rc_t bf_tree_m::fix_virgin_root (generic_page*& page, stid_t store, shp
     get_cb(idx).clear();
     get_cb(idx)._pid_vol = store.vol;
     get_cb(idx)._pid_shpid = shpid;
+    get_cb(idx)._store_num = store.store;
     get_cb(idx).pin_cnt_set(1); // root page's pin count is always positive
     get_cb(idx)._used = true;
     get_cb(idx)._dirty = true;

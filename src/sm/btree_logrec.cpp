@@ -529,7 +529,8 @@ void btree_norec_alloc_log::redo(fixable_page_h* p) {
         W_COERCE(io_m::redo_alloc_a_page(p->pid().vol(), dp->_page2_pid));
         lpid_t pid(header._vid, header._snum, dp->_page2_pid);
         // initialize as an empty child:
-        bp.format_steal(new_lsn, pid, dp->_root_pid, dp->_btree_level, 0, lsn_t::null,
+        bp.format_steal(new_lsn, pid, header._snum,
+                        dp->_root_pid, dp->_btree_level, 0, lsn_t::null,
                         dp->_foster_pid, dp->_foster_emlsn, fence, fence, chain_high, false);
     }
 }
@@ -983,7 +984,7 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
             // If there are existing records in the destination page, the initialization would erase them
 
             // Calling format_steal to initialize the destination page, no stealing
-            W_COERCE(bp.format_steal(bp.lsn(), bp.pid(),
+            W_COERCE(bp.format_steal(bp.lsn(), bp.pid(), bp.store(),
                             bp.btree_root(), bp.level(),
                             (bp.is_leaf())? 0 : dp->_new_pid0,                 // leaf has no pid0
                             (bp.is_leaf())? lsn_t::null : dp->_new_pid0_emlsn, // leaf has no emlsn
@@ -1080,7 +1081,8 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
                 btree_page_h scratch_p;
                 scratch_p.fix_nonbufferpool_page(&scratch_page);
                 // initialize as an empty child:
-                scratch_p.format_steal(lsn_t::null, another.pid(), bp.btree_root(), bp.level(),
+                scratch_p.format_steal(lsn_t::null, another.pid(), another.store(),
+                                    bp.btree_root(), bp.level(),
                                     0, lsn_t::null, 0, lsn_t::null,
                                     high, chain_high, chain_high, false);
                 W_COERCE(btree_impl::_ux_rebalance_foster_apply(bp /*src*/, scratch_p /*dest*/, dp->_move_count,
@@ -1218,7 +1220,7 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
                 // Set the fence keys of the page which should be empty at this point
                 // Calling format_steal to initialize the destination page (set fence keys), no stealing
                 btree_page_h * dest_p = (btree_page_h*)p;
-                W_COERCE(dest_p->format_steal(bp.lsn(), bp.pid(),
+                W_COERCE(dest_p->format_steal(bp.lsn(), bp.pid(), bp.store(),
                                 bp.btree_root(), bp.level(),
                                 (bp.is_leaf())? 0 : dp->_new_pid0,                 // leaf has no pid0
                                 (bp.is_leaf())? lsn_t::null : dp->_new_pid0_emlsn, // leaf has no emlsn
@@ -1269,7 +1271,8 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
                 lpid_t temp_id(p->vol(), p->store(), another_pid);
                 // initialize as an empty child:
 
-                scratch_p.format_steal(lsn_t::null, temp_id, bp.btree_root(), bp.level(),
+                scratch_p.format_steal(lsn_t::null, temp_id, p->store(),
+                                       bp.btree_root(), bp.level(),
                                        0, lsn_t::null, 0, lsn_t::null,
                                        high, chain_high, chain_high, false);  // Do not log
                 // Move records from source to destination, update fence keys

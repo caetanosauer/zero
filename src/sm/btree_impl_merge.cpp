@@ -318,6 +318,7 @@ rc_t btree_impl::_ux_rebalance_foster_apply(
         bool steal_scratch_pid0 = foster_p.pid0() != 0;
         W_DO(foster_p.format_steal(scratch_p.lsn(),
             scratch_p.pid(),        // destination (foster child page) pid
+            scratch_p.store(),
             scratch_p.btree_root(),
             scratch_p.level(),      // destination (foster child page) is the new page
             new_pid0, new_pid0_emlsn,
@@ -338,6 +339,7 @@ rc_t btree_impl::_ux_rebalance_foster_apply(
     } else {  // Leaf page
         W_DO(foster_p.format_steal(scratch_p.lsn(),
             scratch_p.pid(),          // destination (foster child page) pid
+            scratch_p.store(),
             scratch_p.btree_root(),
             scratch_p.level(),        // destination (foster child page) is the new page
             0, lsn_t::null,           // Not needed for leaf page
@@ -362,7 +364,8 @@ rc_t btree_impl::_ux_rebalance_foster_apply(
     w_keystr_t low_key;
     scratch_p.copy_fence_low_key(low_key);                // No change
     W_DO(page.format_steal(scratch_p.lsn(),
-             scratch_p.pid(), scratch_p.btree_root(), scratch_p.level(),   // source (foster parent) is the new page
+             scratch_p.pid(), scratch_p.store(),
+             scratch_p.btree_root(), scratch_p.level(),   // source (foster parent) is the new page
              scratch_p.pid0(), scratch_p.get_pid0_emlsn(),
              scratch_p.get_foster(), scratch_p.get_foster_emlsn(),  // No change in foster relationship
              low_key,        // low fence is the existing one
@@ -645,7 +648,9 @@ void btree_impl::_ux_merge_foster_apply_parent(
     ::memcpy (&scratch, page._pp, sizeof(scratch));  // scratch is copied from the destination (foster parent page)
     btree_page_h scratch_p;
     scratch_p.fix_nonbufferpool_page(&scratch);
-    W_COERCE(page.format_steal(scratch_p.lsn(), scratch_p.pid(), scratch_p.btree_root(),    // destination (foster parent page) is the new page
+    W_COERCE(page.format_steal(scratch_p.lsn(), scratch_p.pid(),
+                               scratch_p.store(),
+                               scratch_p.btree_root(),    // destination (foster parent page) is the new page
                                scratch_p.level(),
                                scratch_p.pid0(), scratch_p.get_pid0_emlsn(),  // Non-leaf only
                                // foster-child's foster will be the next one after merge

@@ -364,6 +364,7 @@ public:
      */
     rc_t format_steal(lsn_t                new_lsn,
                       const lpid_t&        pid,
+                      snum_t               store,
                       shpid_t              root, 
                       int                  level,
                       shpid_t              pid0,
@@ -996,7 +997,7 @@ private:
     /**
      * Initialize the whole image of this page as an empty page.
      */
-    void            _init(lsn_t lsn, lpid_t page_id,
+    void            _init(lsn_t lsn, lpid_t page_id, snum_t store,
         shpid_t root_pid, shpid_t pid0, lsn_t pid0_emlsn,
         shpid_t foster_pid, lsn_t foster_emlsn, int16_t btree_level,
         const w_keystr_t &low, const w_keystr_t &high, 

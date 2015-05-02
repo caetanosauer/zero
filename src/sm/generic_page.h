@@ -49,7 +49,10 @@ public:
     mutable uint32_t checksum;     // +4 -> 4
     
     /// ID of this page
-    lpid_t           pid;          // +4+4+4 (= +12) -> 16
+    lpid_t           pid;          // +4+4 (= +8) -> 12
+
+    /// ID of the store to which this page belongs (0 if none)
+    snum_t           store;        // +4 -> 16
     
     /// LSN (Log Sequence Number) of the last write to this page
     lsn_t            lsn;          // +8 -> 24
@@ -146,9 +149,10 @@ public:
     generic_page* get_generic_page() const { return _pp; }
 
 
-    const lpid_t& pid()   const { return _pp->pid; }
+    const lpid_t& pid() const { return _pp->pid; }
     vid_t       vol()   const { return _pp->pid.vol(); }
-    snum_t        store() const { return _pp->pid.store(); }
+    snum_t      store() const { return _pp->store; }
+    stid_t      stid()  const { return stid_t(vol(), store()); }
 
     page_tag_t    tag()   const { return (page_tag_t) _pp->tag; }
 
@@ -157,9 +161,13 @@ public:
     void          set_lsns(const lsn_t& lsn) { _pp->lsn = lsn; }
 
 protected:
-    generic_page_h(generic_page* s, const lpid_t& pid, page_tag_t tag) : _pp(s) {
+    generic_page_h(generic_page* s, const lpid_t& pid, page_tag_t tag,
+            snum_t store)
+        : _pp(s)
+    {
         ::memset(_pp, 0, sizeof(*_pp));
         _pp->pid = pid;
+        _pp->store = store;
         _pp->tag = tag;
     }    
 

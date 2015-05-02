@@ -36,7 +36,7 @@ rc_t btree_impl::_ux_norec_alloc_core(btree_page_h &page, lpid_t &new_page_id) {
     w_assert1 (xct()->is_single_log_sys_xct());
     w_assert1 (page.latch_mode() == LATCH_EX);
 
-    W_DO(io_m::alloc_a_page (page.pid().stid(), new_page_id));
+    W_DO(io_m::alloc_a_page (page.stid(), new_page_id));
     btree_page_h new_page;
     w_rc_t rc;
     rc = new_page.fix_nonroot(page, page.vol(), new_page_id.page, LATCH_EX, false, true);
@@ -62,7 +62,7 @@ rc_t btree_impl::_ux_norec_alloc_core(btree_page_h &page, lpid_t &new_page_id) {
             << old_lsn << ", new-LSN=" << page.lsn() << ", PID=" << new_page_id);
         if (!rc.is_error()) {
             // initialize as an empty child:
-            new_page.format_steal(page.lsn(), new_page_id, page.root().page,
+            new_page.format_steal(page.lsn(), new_page_id, page.store(), page.root().page,
                                   page.level(), 0, lsn_t::null,
                                   page.get_foster(), page.get_foster_emlsn(),
                                   fence, fence, chain_high, false);

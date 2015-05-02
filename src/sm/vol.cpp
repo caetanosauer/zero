@@ -205,7 +205,7 @@ vol_t::dismount(bool /* flush */, const bool clear_cb)
     INC_TSTAT(vol_cache_clears);
 
     w_assert1(_unix_fd >= 0);
-    W_DO(bf->uninstall_volume(_vid.vol, clear_cb));
+    W_DO(bf->uninstall_volume(_vid, clear_cb));
 
     /*
      *  Close the device
@@ -831,7 +831,7 @@ vol_t::format_vol(
         {
             for (apid.page = 1; apid.page < alloc_pages + 1; ++apid.page)  {
                 alloc_page_h ap(&buf, apid);  // format page
-                w_assert1(ap.vid() == vid);
+                w_assert1(ap.vol() == vid);
                 // set bits for the header pages
                 if (apid.page == 1) {
                     for (shpid_t hdr_pid = 0; hdr_pid < hdr_pages; ++hdr_pid) {
@@ -856,7 +856,7 @@ vol_t::format_vol(
             DBG(<<" formatting stnode_page");
             DBGTHRD(<<"stnode_page page " << spid.page);
             stnode_page_h fp(&buf, spid);  // formatting...
-            w_assert1(fp.vid() == vid);
+            w_assert1(fp.vol() == vid);
             generic_page* page = fp.get_generic_page();
             page->checksum = page->calculate_checksum();
             rc = me()->write(fd, page, sizeof(*page));
@@ -1020,7 +1020,7 @@ vol_t::reformat_vol(
         {
             for (apid.page = 1; apid.page < alloc_pages + 1; ++apid.page)  {
                 alloc_page_h ap(&buf, apid);  // format page
-                w_assert1(ap.vid() == vid);
+                w_assert1(ap.vol() == vid);
                 // set bits for the header pages
                 if (apid.page == 1) {
                     for (shpid_t hdr_pid = 0; hdr_pid < hdr_pages; ++hdr_pid) {
@@ -1045,7 +1045,7 @@ vol_t::reformat_vol(
             DBG(<<" formatting stnode_page");
             DBGTHRD(<<"stnode_page page " << spid.page);
             stnode_page_h fp(&buf, spid);  // formatting...
-            w_assert1(fp.vid() == vid);
+            w_assert1(fp.vol() == vid);
             generic_page* page = fp.get_generic_page();
             page->checksum = page->calculate_checksum();
             rc = me()->write(fd, page, sizeof(*page));

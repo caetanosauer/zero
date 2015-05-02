@@ -33,6 +33,8 @@ rc_t btree_impl::_sx_create_tree(const stid_t &stid, lpid_t &root_pid)
 rc_t btree_impl::_ux_create_tree_core(const stid_t &stid, const lpid_t &root_pid)
 {
     w_assert1(root_pid.page != 0);
+    w_assert1(stid.vol != 0);
+    w_assert1(stid.store != 0);
     btree_page_h page;
     // Format/init the page
     w_keystr_t infimum, supremum, dummy_chain_high; // empty fence keys=infimum-supremum
@@ -41,7 +43,7 @@ rc_t btree_impl::_ux_create_tree_core(const stid_t &stid, const lpid_t &root_pid
     supremum.construct_posinfkey();
     w_assert1(supremum.is_constructed());
     W_DO(page.fix_virgin_root(stid_t(root_pid.vol(), root_pid.store()), root_pid.page));
-    W_DO(page.format_steal(page.lsn(), root_pid, root_pid.page,
+    W_DO(page.format_steal(page.lsn(), root_pid, stid.store, root_pid.page,
                            1, // level=1. initial tree has only one level
                            0, lsn_t::null,// no pid0
                            0, lsn_t::null,// no foster child
@@ -97,7 +99,7 @@ btree_impl::_ux_shrink_tree_core(btree_page_h& rp)
         cp.copy_fence_low_key(fence_low);
         cp.copy_fence_high_key(fence_high);
         cp.copy_chain_fence_high_key(dummy_chain_high);
-        W_DO(rp.format_steal(rp.lsn(), rp_pid, rp_pid.page, // root page id is not changed.
+        W_DO(rp.format_steal(rp.lsn(), rp_pid, rp.store(), rp_pid.page, // root page id is not changed.
                              cp.level(), // one level shorter
                              cp.pid().page, cp.lsn(), // left-most is cp's left-most
                              cp.get_foster(), cp.get_foster_emlsn(),// foster is cp's foster
@@ -112,7 +114,8 @@ btree_impl::_ux_shrink_tree_core(btree_page_h& rp)
         w_keystr_t infimum, supremum, dummy_chain_high;
         infimum.construct_neginfkey();
         supremum.construct_posinfkey();
-        W_DO(rp.format_steal(rp.lsn(), rp_pid, rp_pid.page, // root page id is not changed.
+        W_DO(rp.format_steal(rp.lsn(), rp_pid, rp.store(),
+                             rp_pid.page, // root page id is not changed.
                              1, // root is now leaf
                              0, lsn_t::null, // leaf has no pid0
                              0, lsn_t::null, // no foster
@@ -128,7 +131,8 @@ btree_impl::_sx_grow_tree(btree_page_h& rp)
 {
     FUNC(btree_impl::_sx_grow_tree);
     lpid_t new_pid;
-    W_DO(io_m::sx_alloc_a_page (rp.pid().stid(), new_pid)); // allocate a page as separate system transaction
+    // allocate a page as separate system transaction
+    W_DO(io_m::sx_alloc_a_page (rp.stid(), new_pid));
     sys_xct_section_t sxs;
     W_DO(sxs.check_error_on_start());
     rc_t ret = _ux_grow_tree_core(rp, new_pid);
@@ -160,7 +164,7 @@ btree_impl::_ux_grow_tree_core(btree_page_h& rp, const lpid_t &cp_pid)
 
     btree_page_h cp;
     W_DO(cp.fix_nonroot(rp, rp.vol(), cp_pid.page, LATCH_EX, false, true));
-    W_DO(cp.format_steal(cp.lsn(), cp_pid, rp.pid().page, rp.level(),
+    W_DO(cp.format_steal(cp.lsn(), cp_pid, rp.store(), rp.pid().page, rp.level(),
         rp.pid0(), rp.get_pid0_emlsn(), // copy pid0 of root too
         rp.get_foster(), rp.get_foster_emlsn(),
                          cp_fence_low, cp_fence_high, cp_chain_high, // use current root's fence keys
@@ -172,7 +176,8 @@ btree_impl::_ux_grow_tree_core(btree_page_h& rp, const lpid_t &cp_pid)
     w_keystr_t infimum, supremum, dummy_chain_high;
     infimum.construct_neginfkey();
     supremum.construct_posinfkey();
-    W_DO(rp.format_steal(rp.lsn(), rp.pid(), rp.pid().page, // root page id is not changed.
+    W_DO(rp.format_steal(rp.lsn(), rp.pid(), rp.store(),
+                         rp.pid().page, // root page id is not changed.
                          rp.level() + 1, // grow one level
                          cp.pid().page, cp.lsn(), // left-most is cp
                          0, lsn_t::null,// no foster

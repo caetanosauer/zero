@@ -28,7 +28,7 @@ void alloc_page::set_bits(uint32_t from, uint32_t to) {
 
 
 alloc_page_h::alloc_page_h(generic_page* s, const lpid_t& pid):
-    generic_page_h(s, pid, t_alloc_p)
+    generic_page_h(s, pid, t_alloc_p, 0 /* store */)
 {
     shpid_t pid_offset = alloc_pid_to_pid_offset(pid.page);
     page()->pid_offset        = pid_offset;
