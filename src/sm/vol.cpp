@@ -258,7 +258,7 @@ rc_t vol_t::check_disk()
 }
 
 
-rc_t vol_t::alloc_a_page(const stid_t &stid, lpid_t &pid)
+rc_t vol_t::alloc_a_page(lpid_t &pid)
 {
     FUNC(vol_t::alloc_a_page);
     w_assert1(_alloc_cache);
@@ -267,7 +267,7 @@ rc_t vol_t::alloc_a_page(const stid_t &stid, lpid_t &pid)
     pid = lpid_t (_vid, shpid);
     return RCOK;
 }
-rc_t vol_t::alloc_consecutive_pages(const stid_t &stid, size_t page_count, lpid_t &pid_begin)
+rc_t vol_t::alloc_consecutive_pages(size_t page_count, lpid_t &pid_begin)
 {
     FUNC(vol_t::alloc_consecutive_pages);
     w_assert1(_alloc_cache);

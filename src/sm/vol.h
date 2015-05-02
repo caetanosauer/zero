@@ -141,8 +141,8 @@ public:
         generic_page&       buf,
         bool&               past_end);
 
-    rc_t            alloc_a_page(const stid_t &stid, lpid_t &pid);
-    rc_t            alloc_consecutive_pages(const stid_t &stid, size_t page_count, lpid_t &pid_begin);
+    rc_t            alloc_a_page(lpid_t &pid);
+    rc_t            alloc_consecutive_pages(size_t page_count, lpid_t &pid_begin);
     rc_t            free_page(const lpid_t& pid);
     
     rc_t            redo_alloc_a_page(shpid_t pid);

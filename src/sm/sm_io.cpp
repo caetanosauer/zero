@@ -698,7 +698,7 @@ rc_t io_m::alloc_a_page(const stid_t &stid, lpid_t &pid)
     int i = _find(volid);
     if (i < 0) return RC(eBADVOL);
     vol_t *v = vol[i];
-    W_DO(v->alloc_a_page(stid, pid));
+    W_DO(v->alloc_a_page(pid));
     DBGOUT3(<< "allocated page:" << pid);
     return RCOK;
 }
@@ -719,7 +719,7 @@ rc_t io_m::alloc_consecutive_pages(const stid_t &stid, size_t page_count, lpid_t
     int i = _find(volid);
     if (i < 0) return RC(eBADVOL);
     vol_t *v = vol[i];
-    W_DO(v->alloc_consecutive_pages(stid, page_count, pid_begin));
+    W_DO(v->alloc_consecutive_pages(page_count, pid_begin));
 #if W_DEBUG_LEVEL > 2
     cout << "allocated consecutive pages: from " << pid_begin << " count:" << page_count << endl;
 #endif // W_DEBUG_LEVEL > 2
