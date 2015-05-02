@@ -100,7 +100,7 @@ w_rc_t allocate_few_test(ss_m* ssm, test_volume_t *test_volume) {
             W_DO(bk->retrieve_page(buf, vid, pid));
             EXPECT_EQ(pid, buf.pid.page);
             EXPECT_EQ(vid, buf.pid.vol());
-            EXPECT_EQ(STNUM, buf.pid.store());
+            EXPECT_EQ(STNUM, buf.store);
             EXPECT_EQ(t_btree_p, buf.tag);
         } else {
             // this page doesn't exist in backup
@@ -133,7 +133,7 @@ w_rc_t mixed_test(ss_m* ssm, test_volume_t *test_volume) {
     const shpid_t DEALLOCATE_END = DEALLOCATE_START + 4;
     W_DO(ssm->begin_xct());
     for (shpid_t pid = DEALLOCATE_START; pid < DEALLOCATE_END; ++pid) {
-        W_DO(io_m::sx_dealloc_a_page(lpid_t(vid, STNUM, pid)));
+        W_DO(io_m::sx_dealloc_a_page(lpid_t(vid, pid)));
     }
     W_DO(ssm->commit_xct());
 
@@ -150,7 +150,7 @@ w_rc_t mixed_test(ss_m* ssm, test_volume_t *test_volume) {
             W_DO(bk->retrieve_page(buf, vid, pid));
             EXPECT_EQ(pid, buf.pid.page);
             EXPECT_EQ(vid, buf.pid.vol());
-            EXPECT_EQ(STNUM, buf.pid.store());
+            EXPECT_EQ(STNUM, buf.store);
             EXPECT_EQ(t_btree_p, buf.tag);
         } else {
             // this page doesn't exist in backup

@@ -72,7 +72,7 @@ w_rc_t prepare_test(ss_m* ssm, test_volume_t *test_volume, stid_t &stid, lpid_t 
         EXPECT_TRUE(root_p.nrecs() > 4);
         target_pid = root_p.child(1);
         btree_page_h target_p;
-        W_DO(target_p.fix_nonroot(root_p, stid.vol.vol, target_pid, LATCH_SH));
+        W_DO(target_p.fix_nonroot(root_p, stid.vol, target_pid, LATCH_SH));
         EXPECT_GE(2, target_p.nrecs());
         target_p.get_key(0, target_key0);
         target_p.get_key(1, target_key1);

@@ -27,19 +27,16 @@ w_rc_t allocate_test(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_FALSE(ac->is_allocated_page(FIRST_PID));
     W_DO(io_m::sx_alloc_a_page(stid, pid));
     EXPECT_EQ (pid.page, FIRST_PID);
-    EXPECT_EQ (pid.store(), (uint) 10);
     EXPECT_TRUE(ac->is_allocated_page(FIRST_PID));
 
     EXPECT_FALSE(ac->is_allocated_page(FIRST_PID + 1));
     W_DO(io_m::sx_alloc_a_page(stid, pid2));
     EXPECT_EQ (pid2.page, FIRST_PID + 1);
-    EXPECT_EQ (pid2.store(), (uint) 10);
     EXPECT_TRUE(ac->is_allocated_page(FIRST_PID + 1));
 
     EXPECT_FALSE(ac->is_allocated_page(FIRST_PID + 2));
     W_DO(io_m::sx_alloc_a_page(stid, pid3));
     EXPECT_EQ (pid3.page, FIRST_PID + 2);
-    EXPECT_EQ (pid3.store(), (uint) 10);
     EXPECT_TRUE(ac->is_allocated_page(FIRST_PID + 2));
 
     EXPECT_FALSE(ac->is_allocated_page(FIRST_PID + 3));
@@ -193,7 +190,6 @@ w_rc_t allocate_consecutive(ss_m* ssm, test_volume_t *test_volume) {
     lpid_t pid_begin;
     W_DO(io_m::sx_alloc_consecutive_pages(stid, 30, pid_begin));
     EXPECT_EQ (pid_begin.page, FIRST_PID + 1);
-    EXPECT_EQ (pid_begin.store(), (uint) 10);
 
     for (shpid_t pid = FIRST_PID + 1; pid < FIRST_PID + 1 + 30; ++pid) {
         EXPECT_TRUE(ac->is_allocated_page(pid));

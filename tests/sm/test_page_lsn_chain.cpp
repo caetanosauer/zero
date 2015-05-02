@@ -48,9 +48,9 @@ w_rc_t dump_simple(ss_m* ssm, test_volume_t *test_volume) {
     stid_t stid;
     lpid_t root_pid;
     W_DO (prepare_test(ssm, test_volume, stid, root_pid));
-    ssm->dump_page_lsn_chain(std::cout, lpid_t(1, 1, 3));
-    ssm->dump_page_lsn_chain(std::cout, lpid_t(1, 1, 4));
-    ssm->dump_page_lsn_chain(std::cout, lpid_t(1, 1, 5));
+    ssm->dump_page_lsn_chain(std::cout, lpid_t(1, 3));
+    ssm->dump_page_lsn_chain(std::cout, lpid_t(1, 4));
+    ssm->dump_page_lsn_chain(std::cout, lpid_t(1, 5));
     ssm->dump_page_lsn_chain(std::cout);
     return RCOK;
 }
