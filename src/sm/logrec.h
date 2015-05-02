@@ -548,14 +548,14 @@ logrec_t::snum() const
 inline lpid_t
 logrec_t::pid() const
 {
-    return lpid_t(header._vid, header._snum, header._shpid);
+    return lpid_t(header._vid, header._shpid);
 }
 
 inline lpid_t
 logrec_t::construct_pid() const
 {
 // public version of pid(), renamed for grepping 
-    return lpid_t(header._vid, header._snum, header._shpid);
+    return lpid_t(header._vid, header._shpid);
 }
 
 inline lpid_t logrec_t::construct_pid2() const {
@@ -563,7 +563,7 @@ inline lpid_t logrec_t::construct_pid2() const {
     w_assert1(0 != (header._cat & t_multi));
 
     const multi_page_log_t* multi_log = reinterpret_cast<const multi_page_log_t*> (data_ssx());
-    return lpid_t(header._vid, header._snum, multi_log->_page2_pid);
+    return lpid_t(header._vid, multi_log->_page2_pid);
 }
 
 inline void

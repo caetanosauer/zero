@@ -45,7 +45,7 @@ btree_insert_log::undo(fixable_page_h* page) {
         return;
     }
 
-    lpid_t root_pid (header._vid, header._snum, dp->root_shpid);
+    lpid_t root_pid (header._vid, dp->root_shpid);
     w_keystr_t key;
     key.construct_from_keystr(dp->data, dp->klen);
 
@@ -139,7 +139,7 @@ btree_update_log::undo(fixable_page_h*)
 {
     btree_update_t* dp = (btree_update_t*) data();
 
-    lpid_t root_pid (header._vid, header._snum, dp->_root_shpid);
+    lpid_t root_pid (header._vid, dp->_root_shpid);
 
     w_keystr_t key;
     key.construct_from_keystr(dp->_data, dp->_klen);
@@ -191,7 +191,7 @@ void btree_overwrite_log::undo(fixable_page_h*)
 {
     btree_overwrite_t* dp = (btree_overwrite_t*) data();
 
-    lpid_t root_pid (header._vid, header._snum, dp->_root_shpid);
+    lpid_t root_pid (header._vid, dp->_root_shpid);
 
     uint16_t elen = dp->_elen;
     uint16_t offset = dp->_offset;
@@ -317,7 +317,7 @@ btree_ghost_mark_log::undo(fixable_page_h*)
         return;
     }
 
-    lpid_t root_pid (header._vid, header._snum, dp->root_shpid);
+    lpid_t root_pid (header._vid, dp->root_shpid);
 
     for (size_t i = 0; i < dp->cnt; ++i) {
         w_keystr_t key (dp->get_key(i));
@@ -528,7 +528,7 @@ void btree_norec_alloc_log::redo(fixable_page_h* p) {
         w_assert0(target_pid == dp->_page2_pid);
         // This log is also a page-allocation log, so redo the page allocation.
         W_COERCE(io_m::redo_alloc_a_page(p->pid().vol(), dp->_page2_pid));
-        lpid_t pid(header._vid, header._snum, dp->_page2_pid);
+        lpid_t pid(header._vid, dp->_page2_pid);
         // initialize as an empty child:
         bp.format_steal(new_lsn, pid, header._snum,
                         dp->_root_pid, dp->_btree_level, 0, lsn_t::null,
@@ -1269,7 +1269,7 @@ void btree_foster_rebalance_log::redo(fixable_page_h* p) {
                 scratch_page.tag = t_btree_p;
                 btree_page_h scratch_p;
                 scratch_p.fix_nonbufferpool_page(&scratch_page);
-                lpid_t temp_id(p->vol(), p->store(), another_pid);
+                lpid_t temp_id(p->vol(), another_pid);
                 // initialize as an empty child:
 
                 scratch_p.format_steal(lsn_t::null, temp_id, p->store(),

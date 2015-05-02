@@ -1722,18 +1722,22 @@ rc_t ss_m::verify_volume(
 
 ostream& operator<<(ostream& o, const lpid_t& pid)
 {
-    return o << "p(" << pid.vol() << '.' << pid.store() << '.' << pid.page << ')';
+    return o << "p(" << pid.vol() << '.' << pid.page << ')';
 }
 
 istream& operator>>(istream& i, lpid_t& pid)
 {
-    char c[6];
+    char c[5];
     memset(c, 0, sizeof(c));
-    i >> c[0] >> c[1] >> pid._stid.vol >> c[2]
-      >> pid._stid.store >> c[3] >> pid.page >> c[4];
-    c[5] = '\0';
+    i >> c[0]        // p
+        >> c[1]      // (
+        >> pid._vol  // vid
+        >> c[2]      // .
+        >> pid.page  // shpid
+        >> c[3];     // )
+    c[4] = '\0';
     if (i)  {
-        if (strcmp(c, "p(..)")) {
+        if (strcmp(c, "p(.)")) {
             i.clear(ios::badbit|i.rdstate());  // error
         }
     }

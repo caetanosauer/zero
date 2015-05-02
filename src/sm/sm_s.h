@@ -73,22 +73,19 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /**\brief Long page ID.
  * \details
- * Store ID (volume number + store number) + page number.
+ * Store ID volume number + page number.
  */
 class lpid_t {
 public:
-    stid_t        _stid;
+    vid_t          _vol;
     shpid_t        page;
     
     lpid_t();
     lpid_t(const stid_t& s, shpid_t p);
-    lpid_t(vid_t v, snum_t s, shpid_t p);
-    //    operator bool() const;
+    lpid_t(vid_t v, shpid_t p);
     bool valid() const;
 
-    vid_t         vol()   const {return _stid.vol;}
-    snum_t        store() const {return _stid.store;}
-    const stid_t& stid() const {return _stid;}
+    vid_t         vol()   const { return _vol;}
 
     // necessary and sufficient conditions for
     // is_null() are determined by default constructor, q.v.
@@ -194,23 +191,23 @@ inline istream& operator>>(istream& i, lsn_t& l)
 
 inline lpid_t::lpid_t() : page(0) {}
 
-inline lpid_t::lpid_t(const stid_t& s, shpid_t p) : _stid(s), page(p)
+inline lpid_t::lpid_t(const stid_t& s, shpid_t p) : _vol(s.vol), page(p)
 {}
 
-inline lpid_t::lpid_t(vid_t v, snum_t s, shpid_t p) :
-        _stid(v, s), page(p)
+inline lpid_t::lpid_t(vid_t v, shpid_t p) :
+        _vol(v), page(p)
 {}
 
 inline rid_t::rid_t() : slot(0)
 {}
 
 inline rid_t::rid_t(vid_t vid, const shrid_t& shrid) :
-        pid(vid, shrid.store, shrid.page), slot(shrid.slot)
+        pid(vid, shrid.page), slot(shrid.slot)
 {}
 
 inline bool lpid_t::operator==(const lpid_t& p) const
 {
-    return (page == p.page) && (stid() == p.stid());
+    return (page == p.page) && (_vol == p._vol);
 }
 
 inline bool lpid_t::operator!=(const lpid_t& p) const
@@ -218,14 +215,30 @@ inline bool lpid_t::operator!=(const lpid_t& p) const
     return !(*this == p);
 }
 
+inline bool lpid_t::operator<(const lpid_t& p) const
+{
+    if (_vol != p._vol) {
+        return _vol < p._vol;
+    }
+    return page < p.page;
+}
+
 inline bool lpid_t::operator<=(const lpid_t& p) const
 {
-    return _stid == p._stid && page <= p.page;
+    return (*this == p) || (*this < p);
+}
+
+inline bool lpid_t::operator>(const lpid_t& p) const
+{
+    if (_vol != p._vol) {
+        return _vol > p._vol;
+    }
+    return page > p.page;
 }
 
 inline bool lpid_t::operator>=(const lpid_t& p) const
 {
-    return _stid == p._stid && page >= p.page;
+    return (*this == p) || (*this > p);
 }
 
 inline bool rid_t::operator==(const rid_t& r) const

@@ -817,7 +817,7 @@ alloc_a_page_log::alloc_a_page_log (vid_t vid, shpid_t pid)
     // page alloation is single-log system transaction. so, use data_ssx()
     char *buf = data_ssx();
     *reinterpret_cast<shpid_t*>(buf) = pid; // only data is the page ID
-    lpid_t dummy (vid, 0, 0);
+    lpid_t dummy (vid, 0);
     fill(&dummy, 0, 0, sizeof(shpid_t));
     w_assert0(is_single_sys_xct());
 }
@@ -843,7 +843,7 @@ alloc_consecutive_pages_log::alloc_consecutive_pages_log (vid_t vid,
     uint32_t *buf = reinterpret_cast<uint32_t*>(data_ssx());
     buf[0] = pid_begin;
     buf[1] = page_count;
-    lpid_t dummy (vid, 0, 0);
+    lpid_t dummy (vid, 0);
     fill(&dummy, 0, 0, sizeof(uint32_t) * 2);
     w_assert0(is_single_sys_xct());
 }
@@ -868,7 +868,7 @@ dealloc_a_page_log::dealloc_a_page_log (vid_t vid, shpid_t pid)
     // page dealloation is single-log system transaction. so, use data_ssx()
     char *buf = data_ssx();
     *reinterpret_cast<shpid_t*>(buf) = pid; // only data is the page ID
-    lpid_t dummy (vid, 0, 0);
+    lpid_t dummy (vid, 0);
     fill(&dummy, 0, 0, sizeof(shpid_t));
     w_assert0(is_single_sys_xct());
 }
@@ -888,7 +888,7 @@ void dealloc_a_page_log::redo(fixable_page_h*)
 store_operation_log::store_operation_log(vid_t vid,
         const store_operation_param& param)
 {
-    lpid_t dummy(vid, 0, 0);
+    lpid_t dummy(vid, 0);
     fill(&dummy, 0, 0, (new (_data) store_operation_param(param))->size());
 }
 

@@ -337,7 +337,6 @@ inline w_rc_t bf_tree_m::fix_root (generic_page*& page, stid_t store,
     }
 
     W_DO(_latch_root_page(page, idx, mode, conditional));
-    w_assert1(_buffer[idx].pid.store() == store.store);
 
     if ((false == get_cb(idx)._in_doubt) &&                                 // Page not in_doubt
         (false == from_undo) && (false == get_cb(idx)._recovery_access))    // From concurrent user transaction

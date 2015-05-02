@@ -5129,7 +5129,7 @@ DBGOUT1(<<"Start child thread REDO phase");
             // lpid_t: Store ID (volume number + store number) + page number (4+4+4)
             // Re-construct the lpid using several fields in cb
             vid_t vid(vol);
-            lpid_t store_id(vid, store, shpid);
+            lpid_t store_id(vid, shpid);
             if (true == use_redo_full_logging_restart())
             {
                 // Use full logging, page is buffer pool managed

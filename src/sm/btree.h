@@ -96,7 +96,7 @@ public:
     static void                 print(const lpid_t& root,  bool print_elem = true);
 
     /** Touch all pages in the btree (for performance experiments). */
-    static rc_t                 touch_all(const lpid_t& root, uint64_t &page_count);
+    static rc_t                 touch_all(stid_t stid, uint64_t &page_count);
     static rc_t                 touch(const btree_page_h& page, uint64_t &page_count);
 
     /**

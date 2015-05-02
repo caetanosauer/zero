@@ -49,7 +49,7 @@ rc_t ss_m::touch_index(stid_t stid, uint64_t &page_count)
 {
     lpid_t root_pid;
     W_DO(open_store_nolock (stid, root_pid)); // this method is for debugging
-    bt->touch_all(root_pid, page_count);
+    bt->touch_all(stid, page_count);
     return RCOK;
 }
 

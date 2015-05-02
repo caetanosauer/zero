@@ -169,8 +169,8 @@ rc_t vol_t::mount(const char* devname, vid_t vid)
 #endif
     _lvid = vhdr.lvid();
     _num_pages =  vhdr.num_pages();
-    _apid = lpid_t(vid, 0, vhdr.apid()); // 0 if no volumes formatted yet
-    _spid = lpid_t(vid, 0, vhdr.spid()); // 0 if no volumes formatted yet
+    _apid = lpid_t(vid, vhdr.apid()); // 0 if no volumes formatted yet
+    _spid = lpid_t(vid, vhdr.spid()); // 0 if no volumes formatted yet
     _hdr_pages = vhdr.hdr_pages(); // 0 if no volumes formatted yet
 
     clear_caches();
@@ -264,7 +264,7 @@ rc_t vol_t::alloc_a_page(const stid_t &stid, lpid_t &pid)
     w_assert1(_alloc_cache);
     shpid_t shpid;
     W_DO(_alloc_cache->allocate_one_page(shpid));
-    pid = lpid_t (stid, shpid);
+    pid = lpid_t (_vid, shpid);
     return RCOK;
 }
 rc_t vol_t::alloc_consecutive_pages(const stid_t &stid, size_t page_count, lpid_t &pid_begin)
@@ -273,7 +273,7 @@ rc_t vol_t::alloc_consecutive_pages(const stid_t &stid, size_t page_count, lpid_
     w_assert1(_alloc_cache);
     shpid_t shpid;
     W_DO(_alloc_cache->allocate_consecutive_pages(shpid, page_count));
-    pid_begin = lpid_t (stid, shpid);
+    pid_begin = lpid_t (_vid, shpid);
     return RCOK;
 }
 
@@ -778,8 +778,8 @@ vol_t::format_vol(
     shpid_t alloc_pages = num_pages / alloc_page_h::bits_held + 1; // # alloc_page_h pages
     shpid_t hdr_pages = alloc_pages + 1 + 1; // +1 for stnode_page, +1 for volume header
 
-    lpid_t apid (vid, 0 , 1);
-    lpid_t spid (vid, 0 , 1 + alloc_pages);
+    lpid_t apid (vid, 1);
+    lpid_t spid (vid, 1 + alloc_pages);
 
     /*
      *  Set up the volume header
@@ -967,8 +967,8 @@ vol_t::reformat_vol(
     shpid_t alloc_pages = num_pages / alloc_page_h::bits_held + 1; // # alloc_page_h pages
     shpid_t hdr_pages = alloc_pages + 1 + 1; // +1 for stnode_page, +1 for volume header
 
-    lpid_t apid (vid, 0 , 1);
-    lpid_t spid (vid, 0 , 1 + alloc_pages);
+    lpid_t apid (vid, 1);
+    lpid_t spid (vid, 1 + alloc_pages);
 
     /*
      *  Set up the volume header

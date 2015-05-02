@@ -366,7 +366,7 @@ w_rc_t bf_tree_m::install_volume(vol_t* volume) {
                         // In order to use minimal logging for page rebalance operations, the root
                         // page must be unmanaged during Single Page Recover process
                         fixable_page_h page;
-                        lpid_t store_id(vid, store, shpid);
+                        lpid_t store_id(vid, shpid);
                         W_COERCE(page.fix_recovery_redo(idx, store_id, false /* managed*/));
                         page.get_generic_page()->pid = store_id;
                         page.get_generic_page()->tag = t_btree_p;
@@ -2810,7 +2810,7 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, snum_t*
                 // lpid_t: Store ID (volume number + store number) + page number (4+4+4)
                 // Re-construct the lpid using several fields in cb
                 vid_t vid(cb._pid_vol);
-                lpid_t store_id(vid, cb._store_num, cb._pid_shpid);
+                lpid_t store_id(vid, cb._pid_shpid);
                 w_assert1(0 != cb._pid_shpid);   // Page number cannot be 0
                 pid[i] = store_id;
                 // rec_lsn is when the page got dirty initially, since this is an in_doubt page for Log Analysis
@@ -2992,12 +2992,7 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
 
         // Force a complete recovery
         _buffer[idx].lsn = lsn_t::null;
-        snum_t store;
-        if (NULL != parent)
-            store = parent->pid.store();
-        else
-            store = 1;  // No information for store
-        _buffer[idx].pid = lpid_t(vol, store, shpid);
+        _buffer[idx].pid = lpid_t(vol, shpid);
         _buffer[idx].tag = t_btree_p;
 
         btree_page_h p;
@@ -3047,9 +3042,7 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
                 // try the Single Page Recovery in this case even the
                 // parent page is not available
 
-                // TODO(Restart)... this is assuming store number is not corrupted
-                // it might not be a safe assumption since checksum if different
-                lpid_t pid = lpid_t(vol, page.pid.store(), shpid);
+                lpid_t pid = lpid_t(vol, shpid);
 
                 // Wipe out the page so we recover from scratch
                 ::memset(&_buffer[idx], '\0', sizeof(generic_page));
@@ -3139,7 +3132,7 @@ w_rc_t bf_tree_m::_try_recover_page(generic_page* parent,     // In: parent page
     if (corrupted) {
         ::memset(&_buffer[idx], '\0', sizeof(generic_page));
         _buffer[idx].lsn = lsn_t::null;
-        _buffer[idx].pid = lpid_t(vol, parent->pid.store(), shpid);
+        _buffer[idx].pid = lpid_t(vol, shpid);
         _buffer[idx].tag = t_btree_p;
     }
     general_recordid_t recordid = find_page_id_slot(parent, shpid);

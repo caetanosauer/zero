@@ -285,9 +285,9 @@ btree_m::print(const lpid_t& current,
         }
     }
 }
-rc_t btree_m::touch_all(const lpid_t& root, uint64_t &page_count) {
+rc_t btree_m::touch_all(stid_t stid, uint64_t &page_count) {
     btree_page_h page;
-    W_DO( page.fix_root(stid_t(root.vol(), root.store()), LATCH_SH));
+    W_DO( page.fix_root(stid, LATCH_SH));
     page_count = 0;
     return touch(page, page_count);
 }

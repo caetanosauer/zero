@@ -385,7 +385,8 @@ rc_t btree_impl::_ux_verify_volume(
         btree_page_h page;
         page.fix_nonbufferpool_page(&buf);
         if (page.tag() == t_btree_p && !page.is_to_be_deleted()) {
-            verification_context *context = result.get_or_create_context(page.pid().store(), hash_bits);
+            // TODO FIX AFTER PID REFACTORING (use root PID instead of store id)
+            verification_context *context = result.get_or_create_context(1, hash_bits);
             W_DO (_ux_verify_feed_page (page, *context));
 
             if (page.pid().page == page.root().page) {
