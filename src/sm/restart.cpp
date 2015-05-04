@@ -1081,6 +1081,7 @@ restart_m::analysis_pass_forward(
         case logrec_t::t_page_set_to_be_deleted:
         case logrec_t::t_page_img_format:
         case logrec_t::t_btree_norec_alloc:
+        case logrec_t::t_btree_split:
         case logrec_t::t_btree_insert:
         case logrec_t::t_btree_insert_nonghost:
         case logrec_t::t_btree_update:
@@ -1777,6 +1778,7 @@ restart_m::analysis_pass_backward(
         case logrec_t::t_page_set_to_be_deleted:
         case logrec_t::t_page_img_format:
         case logrec_t::t_btree_norec_alloc:
+        case logrec_t::t_btree_split:
         case logrec_t::t_btree_insert:
         case logrec_t::t_btree_insert_nonghost:
         case logrec_t::t_btree_update:
@@ -4130,7 +4132,10 @@ void restart_m::_redo_log_with_pid(
 
             if (r.type() == logrec_t::t_page_img_format
                 // btree_norec_alloc is a multi-page log. "page2" (so, !=shpid()) is the new page.
-                || (r.type() == logrec_t::t_btree_norec_alloc && page_updated.page != r.shpid()))
+                || (r.type() == logrec_t::t_btree_norec_alloc && page_updated.page != r.shpid())
+                // for btree_split, new page is page1 (so, ==shpid())
+                || (r.type() == logrec_t::t_btree_split && page_updated.page == r.shpid())
+            )
             {
                 virgin_page = true;
             }

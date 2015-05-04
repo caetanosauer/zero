@@ -231,7 +231,7 @@ void btree_page_data::delete_range(int from, int to)
 
     // CS: same logic of delete_item -- decrease number of ghosts and
     // try to push down first_used_body
-    for (int i = to - 1; i <= from; i--) {
+    for (int i = to - 1; i >= from; i--) {
         body_offset_t offset = head[i].offset;
         if (offset < 0) {
             nghosts--;

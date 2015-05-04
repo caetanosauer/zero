@@ -53,6 +53,7 @@ btree_impl::_ux_insert_core(
     w_assert1( leaf.is_fixed());
     w_assert1( leaf.is_leaf());
     w_assert1( leaf.latch_mode() == LATCH_EX);
+    w_assert1( leaf.stid() == store);
 
     bool need_lock = g_xct_does_need_lock();
 

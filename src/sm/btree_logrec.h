@@ -250,5 +250,25 @@ struct btree_foster_deadopt_t : multi_page_log_t {
     int size() const { return sizeof(multi_page_log_t) + 12 + _low_len + _high_len ; }
 };
 
+/** 
+ * Delete of a range of keys from a page which was split (i.e., a new
+ * foster parent). Deletes the last move_count slots on the page, updating
+ * the foster child pointer and the high fence key to the given values.
+ */
+struct btree_bulk_delete_t : public multi_page_log_t {
+    uint16_t move_count;
+    shpid_t new_foster_child;
+    w_keystr_t new_high_fence;
+    w_keystr_t new_chain;
+
+    btree_bulk_delete_t(shpid_t foster_parent, shpid_t new_foster_child,
+            uint16_t move_count, const w_keystr_t& new_high_fence,
+            const w_keystr_t& new_chain)
+        :   multi_page_log_t(foster_parent),
+            move_count(move_count), new_foster_child(new_foster_child),
+            new_high_fence(new_high_fence), new_chain(new_chain)
+    {
+    }
+};
 
 #endif

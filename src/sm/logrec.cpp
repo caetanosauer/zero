@@ -676,22 +676,6 @@ void dismount_vol_log::redo(fixable_page_h* page)
     W_IGNORE(io_m::dismount(dp->devrec[0].vid));
 }
 
-/**
- * This is a special way of logging the creation of a new page.
- * New page creation is usually a page split, so the new page has many
- * records in it. To simplify and to avoid many log entries in that case,
- * we log ALL bytes from the beginning to the end of slot vector,
- * and from the record_head8 to the end of page.
- * We can assume totally defragmented page image because this is page creation.
- * We don't need UNDO (again, this is page creation!), REDO is just two memcpy().
- */
-struct page_img_format_t {
-    size_t      beginning_bytes;
-    size_t      ending_bytes;
-    char        data[logrec_t::max_data_sz - 2 * sizeof(size_t)];
-    int size()        { return 2 * sizeof(size_t) + beginning_bytes + ending_bytes; }
-    page_img_format_t (const btree_page_h& page);
-};
 page_img_format_t::page_img_format_t (const btree_page_h& page) {
     size_t unused_length;
     char* unused = page.page()->unused_part(unused_length);
@@ -706,6 +690,16 @@ page_img_format_t::page_img_format_t (const btree_page_h& page) {
     w_assert1(beginning_bytes + ending_bytes <= sizeof(btree_page));
 }
 
+void page_img_format_t::apply(fixable_page_h* page)
+{
+    w_assert1(beginning_bytes >= btree_page::hdr_sz);
+    w_assert1(beginning_bytes + ending_bytes <= sizeof(btree_page));
+    char *pp_bin = (char *) page->get_generic_page();
+    ::memcpy (pp_bin, data, beginning_bytes); // <<<>>>
+    ::memcpy (pp_bin + sizeof(btree_page) - ending_bytes,
+            data + beginning_bytes, ending_bytes);
+}
+
 page_img_format_log::page_img_format_log(const btree_page_h &page) {
     fill(page,
          (new (_data) page_img_format_t(page))->size());
@@ -718,11 +712,7 @@ void page_img_format_log::undo(fixable_page_h*) {
 void page_img_format_log::redo(fixable_page_h* page) {
     // REDO is simply applying the image
     page_img_format_t* dp = (page_img_format_t*) _data;
-    w_assert1(dp->beginning_bytes >= btree_page::hdr_sz);
-    w_assert1(dp->beginning_bytes + dp->ending_bytes <= sizeof(btree_page));
-    char *pp_bin = (char *) page->get_generic_page();
-    ::memcpy (pp_bin, dp->data, dp->beginning_bytes); // <<<>>>
-    ::memcpy (pp_bin + sizeof(btree_page) - dp->ending_bytes, dp->data + dp->beginning_bytes, dp->ending_bytes);
+    dp->apply(page);
     page->set_dirty();
 }
 

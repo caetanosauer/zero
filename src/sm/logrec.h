@@ -427,6 +427,25 @@ struct prepare_stores_to_free_t
     int size() const  { return sizeof(uint32_t) + num * sizeof(stid_t); };
 };
 
+/**
+ * This is a special way of logging the creation of a new page.
+ * New page creation is usually a page split, so the new page has many
+ * records in it. To simplify and to avoid many log entries in that case,
+ * we log ALL bytes from the beginning to the end of slot vector,
+ * and from the record_head8 to the end of page.
+ * We can assume totally defragmented page image because this is page creation.
+ * We don't need UNDO (again, this is page creation!), REDO is just two memcpy().
+ */
+struct page_img_format_t {
+    size_t      beginning_bytes;
+    size_t      ending_bytes;
+    char        data[logrec_t::max_data_sz - 2 * sizeof(size_t)];
+    int size()        { return 2 * sizeof(size_t) + beginning_bytes + ending_bytes; }
+    page_img_format_t (const btree_page_h& page);
+
+    void apply(fixable_page_h* p);
+};
+
 struct chkpt_xct_tab_t {
     struct xrec_t {
     tid_t                 tid;

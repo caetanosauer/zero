@@ -252,6 +252,7 @@ rc_t btree_page_h::format_foster_child(btree_page_h& parent,
     page()->lsn = lsn_t::null;
     page()->clsn = lsn_t::null;
     page()->pid = new_page_id;
+    page()->store = parent.store();
     page()->tag = t_btree_p;
     page()->page_flags = 0;
     page()->btree_consecutive_skewed_insertions = 0;

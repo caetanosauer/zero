@@ -535,6 +535,7 @@ class test_volume_t;
 class btree_page : public btree_page_data {
     friend class btree_page_h;
     friend class page_img_format_t; // for unused_part()
+    friend class btree_split_log;
 
 
     // _ux_deadopt_foster_apply_foster_parent

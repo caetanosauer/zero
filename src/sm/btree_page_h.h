@@ -175,6 +175,7 @@ class btree_page_h : public fixable_page_h {
     friend class btree_ghost_mark_log;
     friend class btree_ghost_reclaim_log;
     friend class page_img_format_t;
+    friend class btree_split_log;
 
     btree_page* page() const { return reinterpret_cast<btree_page*>(_pp); }
 

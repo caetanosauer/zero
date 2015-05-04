@@ -68,8 +68,8 @@ rc_t btree_impl::_ux_norec_alloc_core(btree_page_h &page, lpid_t &new_page_id) {
         << old_lsn << ", new-LSN=" << page.lsn() << ", PID=" << new_page_id);
 
     // initialize as an empty child:
-    new_page.format_steal(page.lsn(), new_page_id, page.root().page,
-                          page.level(), 0, lsn_t::null,
+    new_page.format_steal(page.lsn(), new_page_id, page.stid().store,
+                          page.root().page, page.level(), 0, lsn_t::null,
                           page.get_foster(), page.get_foster_emlsn(),
                           fence, fence, chain_high, false);
     page.accept_empty_child(page.lsn(), new_page_id.page, false /*not from redo*/);
@@ -145,7 +145,7 @@ rc_t btree_impl::_sx_split_foster(btree_page_h &page,                // In: sour
 rc_t btree_impl::_sx_split_foster_new(btree_page_h& page, lpid_t& new_page_id,
         const w_keystr_t& triggering_key)
 {
-    sys_xct_section_t sxs(false /* not an SSX */);
+    sys_xct_section_t sxs(true);
     W_DO(sxs.check_error_on_start());
 
     w_assert1 (page.latch_mode() == LATCH_EX);
@@ -155,7 +155,7 @@ rc_t btree_impl::_sx_split_foster_new(btree_page_h& page, lpid_t& new_page_id,
     /*
      * Step 1: Allocate a new page for the foster child
      */
-    W_DO(io_m::alloc_a_page (page.pid().stid(), new_page_id));
+    W_DO(io_m::alloc_a_page (page.stid(), new_page_id));
 
     /*
      * Step 2: Create new foster child and move records into it, logging its
@@ -181,12 +181,7 @@ rc_t btree_impl::_sx_split_foster_new(btree_page_h& page, lpid_t& new_page_id,
 
     // DBG(<< "NEW FOSTER CHILD " << new_page);
 
-    W_DO(log_page_img_format(new_page));
-
-    /*
-     * Step 3: Log bulk deletion of moved records and foster child update
-     */
-    // TODO
+    // W_DO(log_page_img_format(new_page));
 
     /*
      * Step 3: Delete moved records and update foster child pointer and high
@@ -200,6 +195,11 @@ rc_t btree_impl::_sx_split_foster_new(btree_page_h& page, lpid_t& new_page_id,
     bool foster_set = 
         page.set_foster_child(new_page_id.page, split_key, new_chain);
     w_assert0(foster_set);
+
+    /*
+     * Step 4: Log bulk deletion and foster update on parent
+     */
+    W_DO(log_btree_split(page, new_page, move_count, split_key, new_chain));
 
     // hint for subsequent accesses
     increase_forster_child(page.pid().page);

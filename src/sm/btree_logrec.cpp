@@ -1428,3 +1428,43 @@ void btree_foster_deadopt_log::redo(fixable_page_h* p) {
                                         dp->_deadopted_emlsn, low_key, high_key);
     }
 }
+
+btree_split_log::btree_split_log(
+        const btree_page_h& parent_p,
+        const btree_page_h& child_p,
+        uint16_t move_count,
+        const w_keystr_t& new_high_fence,
+        const w_keystr_t& new_chain
+)
+{
+    new (data_ssx()) btree_bulk_delete_t(parent_p.pid().page,
+                    child_p.pid().page, move_count,
+                    new_high_fence, new_chain);
+    page_img_format_t* format = new (data_ssx() + sizeof(btree_bulk_delete_t))
+        page_img_format_t(child_p);
+
+    // Logrec will have the child pid as main pid (i.e., destination page).
+    // Parent pid is stored in btree_bulk_delete_t, which is a
+    // multi_page_log_t (i.e., source page)
+    fill(child_p, sizeof(btree_bulk_delete_t) + format->size());
+}
+
+void btree_split_log::redo(fixable_page_h* p)
+{
+    btree_bulk_delete_t* bulk = (btree_bulk_delete_t*) data_ssx();
+    page_img_format_t* format = (page_img_format_t*)
+        (data_ssx() + sizeof(btree_bulk_delete_t));
+
+    if (p->pid().page == bulk->new_foster_child) {
+        // redoing the foster child
+        format->apply(p);
+    }
+    else {
+        // redoing the foster parent
+        borrowed_btree_page_h bp(p);
+        bp.delete_range(bp.nrecs() - bulk->move_count, bp.nrecs());
+        bp.set_foster_child(bulk->new_foster_child, bulk->new_high_fence,
+                bulk->new_chain);
+    }
+
+}

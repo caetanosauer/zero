@@ -213,6 +213,10 @@ btree_foster_deadopt         1110100 1.0 (const btree_page_h& page, const btree_
     shpid_t deadopted_pid, lsn_t deadopted_emlsn,
     int32_t foster_slot, const w_keystr_t& low, const w_keystr_t& high);
 
+btree_split            1110100 1.0 (const btree_page_h& parent_p,
+    const btree_page_h& child_p, uint16_t move_count,
+    const w_keystr_t& new_high_fence, const w_keystr_t& new_chain);
+
 #########################################################################
 # type             XSRUMAL  fudge    arg                                #
 #########################################################################
