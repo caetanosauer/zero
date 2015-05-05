@@ -692,6 +692,7 @@ private:
 
     void replacement();
     bool selection();
+    void pushIntoHeap(logrec_t*);
 
 };
 

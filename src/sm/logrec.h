@@ -201,10 +201,8 @@ public:
        lpid_t               construct_pid() const;
        /** This returns null page ID unless it's t_multi. */
        lpid_t               construct_pid2() const;
-         protected:
-    lpid_t               pid() const;
-private:
-    void                 set_pid(const lpid_t& p);
+       lpid_t               pid() const;
+
 public:
     bool                 null_pid() const; // needed in restart.cpp
     uint16_t              tag() const;
@@ -224,6 +222,7 @@ public:
     void                 set_xid_prev(const lsn_t &lsn);
     void                 set_clr(const lsn_t& c);
     void                 set_undoable_clr(const lsn_t& c);
+    void                 set_pid(const lpid_t& p);
     kind_t               type() const;
     const char*          type_str() const;
     const char*          cat_str() const;

@@ -233,6 +233,10 @@ void RestoreMgr::restoreLoop()
             w_assert1(lrpid.page < firstPage + segmentSize);
 
             if (!fixable.is_fixed() || fixable.pid().page != lrpid.page) {
+                // PID is manually set for virgin pages
+                if (page->pid != lrpid) {
+                    page->pid = lrpid;
+                }
                 fixable.setup_for_restore(page);
             }
 

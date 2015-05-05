@@ -1275,21 +1275,37 @@ void LogArchiver::replacement()
             }
             return;
         }
-    
+
+        pushIntoHeap(lr);
+
+        if (lr->is_multi_page()) {
+            // CS: Multi-page log records are replicated so that each page can
+            // be recovered independently from the log archive.  Note that this
+            // is not required for Restart or Single-page recovery because
+            // following the per-page log chain of both pages eventually lands
+            // on the same multi-page log record. For restore, it must be
+            // duplicated because log records are sorted and there is no chain.
+            lr->set_pid(lr->construct_pid2());
+            pushIntoHeap(lr);
+        }
+    }
+}
+
+void LogArchiver::pushIntoHeap(logrec_t* lr)
+{
+    if (!heap->push(lr)) {
+        // heap full -- invoke selection and try again
+        // method returns bool, but result is not used for now (TODO)
+        selection();
+        // Try push once again
         if (!heap->push(lr)) {
-            // heap full -- invoke selection and try again
-            // method returns bool, but result is not used for now (TODO)
-            selection();
-            // Try push once again
-            if (!heap->push(lr)) {
-                // this must be an error -- selection was invoked to free up
-                // one block worth of records and there is still no space.
-                // In theory, this could happen with a heavily fragmented
-                // workpsace, but in that case, we prefer to catch the error
-                // and so something about it
-                W_FATAL_MSG(fcINTERNAL,
+            // this must be an error -- selection was invoked to free up
+            // one block worth of records and there is still no space.
+            // In theory, this could happen with a heavily fragmented
+            // workpsace, but in that case, we prefer to catch the error
+            // and so something about it
+            W_FATAL_MSG(fcINTERNAL,
                     << "Heap still full after selection -- aborting");
-            }
         }
     }
 }
