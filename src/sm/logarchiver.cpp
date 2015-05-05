@@ -1587,8 +1587,14 @@ size_t LogArchiver::ArchiveIndex::findRun(lsn_t lsn)
      * we do a linear search instead of binary search.
      */
     int result = runs.size() - 2;
-    while (result >= 0 && runs[result].firstLSN >= lsn) {
+    while (result > 0 && runs[result].firstLSN >= lsn) {
         result--;
+    }
+
+    if(result == 0 && runs[result].firstLSN > lsn) {
+        // looking for an LSN which is not contained in the archive
+        // (can only happen if old runs were recycled)
+        result = -1;
     }
 
     // caller must check if returned index is valid
