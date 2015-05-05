@@ -520,10 +520,7 @@ void btree_norec_alloc_log::redo(fixable_page_h* p) {
     shpid_t target_pid = p->pid().page;
     DBGOUT3 (<< *this << ": new_lsn=" << new_lsn
         << ", target_pid=" << target_pid << ", bp.lsn=" << bp.lsn());
-    if (target_pid == header._shpid) {
-        // we are recovering "page", which is foster-parent.
-        bp.accept_empty_child(new_lsn, dp->_page2_pid, true /*from redo*/);
-    } else {
+    if (target_pid == dp->_page2_pid) {
         // we are recovering "page2", which is foster-child.
         w_assert0(target_pid == dp->_page2_pid);
         // This log is also a page-allocation log, so redo the page allocation.
@@ -533,6 +530,9 @@ void btree_norec_alloc_log::redo(fixable_page_h* p) {
         bp.format_steal(new_lsn, pid, header._snum,
                         dp->_root_pid, dp->_btree_level, 0, lsn_t::null,
                         dp->_foster_pid, dp->_foster_emlsn, fence, fence, chain_high, false);
+    } else {
+        // we are recovering "page", which is foster-parent.
+        bp.accept_empty_child(new_lsn, dp->_page2_pid, true /*from redo*/);
     }
 }
 
@@ -1326,11 +1326,7 @@ void btree_foster_rebalance_norec_log::redo(fixable_page_h* p) {
     bp.copy_chain_fence_high_key(chain_high);
 
     shpid_t target_pid = p->pid().page;
-    if (target_pid == header._shpid) {
-        // we are recovering "page", which is foster-parent.
-        W_COERCE(bp.norecord_split(bp.get_foster(), bp.get_foster_emlsn(),
-                                   fence, chain_high));
-    } else {
+    if (target_pid == dp->_page2_pid) {
         // we are recovering "page2", which is foster-child.
         w_assert0(target_pid == dp->_page2_pid);
         w_assert1(bp.nrecs() == 0); // this should happen only during page split.
@@ -1339,6 +1335,10 @@ void btree_foster_rebalance_norec_log::redo(fixable_page_h* p) {
         bp.copy_fence_high_key(high);
         w_keystr_len_t prefix_len = fence.common_leading_bytes(high);
         W_COERCE(bp.replace_fence_rec_nolog_may_defrag(fence, high, chain_high, prefix_len));
+    } else {
+        // we are recovering "page", which is foster-parent.
+        W_COERCE(bp.norecord_split(bp.get_foster(), bp.get_foster_emlsn(),
+                                   fence, chain_high));
     }
 }
 
@@ -1371,14 +1371,14 @@ void btree_foster_adopt_log::redo(fixable_page_h* p) {
     shpid_t target_pid = p->pid().page;
     DBGOUT3 (<< *this << " target_pid=" << target_pid << ", new_child_pid="
         << dp->_new_child_pid << ", new_child_key=" << new_child_key);
-    if (target_pid == header._shpid) {
-        // we are recovering "page", which is real-parent.
-        btree_impl::_ux_adopt_foster_apply_parent(bp, dp->_new_child_pid,
-                                                  dp->_new_child_emlsn, new_child_key);
-    } else {
+    if (target_pid == dp->_page2_pid) {
         // we are recovering "page2", which is real-child.
         w_assert0(target_pid == dp->_page2_pid);
         btree_impl::_ux_adopt_foster_apply_child(bp);
+    } else {
+        // we are recovering "page", which is real-parent.
+        btree_impl::_ux_adopt_foster_apply_parent(bp, dp->_new_child_pid,
+                                                  dp->_new_child_emlsn, new_child_key);
     }
 }
 
@@ -1413,12 +1413,7 @@ void btree_foster_deadopt_log::redo(fixable_page_h* p) {
     btree_foster_deadopt_t *dp = reinterpret_cast<btree_foster_deadopt_t*>(data_ssx());
 
     shpid_t target_pid = p->pid().page;
-    if (target_pid == header._shpid) {
-        // we are recovering "page", which is real-parent.
-        w_assert1(dp->_foster_slot >= 0 && dp->_foster_slot < bp.nrecs());
-        btree_impl::_ux_deadopt_foster_apply_real_parent(bp, dp->_deadopted_pid,
-                                                         dp->_foster_slot);
-    } else {
+    if (target_pid == dp->_page2_pid) {
         // we are recovering "page2", which is foster-parent.
         w_assert0(target_pid == dp->_page2_pid);
         w_keystr_t low_key, high_key;
@@ -1426,6 +1421,11 @@ void btree_foster_deadopt_log::redo(fixable_page_h* p) {
         high_key.construct_from_keystr(dp->_data + dp->_low_len, dp->_high_len);
         btree_impl::_ux_deadopt_foster_apply_foster_parent(bp, dp->_deadopted_pid,
                                         dp->_deadopted_emlsn, low_key, high_key);
+    } else {
+        // we are recovering "page", which is real-parent.
+        w_assert1(dp->_foster_slot >= 0 && dp->_foster_slot < bp.nrecs());
+        btree_impl::_ux_deadopt_foster_apply_real_parent(bp, dp->_deadopted_pid,
+                                                         dp->_foster_slot);
     }
 }
 
