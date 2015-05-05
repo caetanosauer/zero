@@ -831,7 +831,7 @@ bool LogArchiver::selection()
             // DBGTHRD(<< "Selecting for output: " << *lr);
             heap->pop();
             // w_assert3(run != heap->topRun() ||
-            //     heap->top()->construct_pid().page >= lr->construct_pid().page);
+            //     heap->top()->construct_pid()>= lr->construct_pid());
         }
         else {
             break;
@@ -1080,7 +1080,7 @@ LogArchiver::ArchiveScanner::MergeHeapEntry::MergeHeapEntry(RunScanner* runScan)
     do {
         hasNext = runScan->next(next);
         if (hasNext) {
-            matches = next->construct_pid().page >= startPID.page;
+            matches = next->construct_pid()>= startPID;
         }
     } while (!matches && hasNext);
     
@@ -1095,7 +1095,7 @@ LogArchiver::ArchiveScanner::MergeHeapEntry::MergeHeapEntry(RunScanner* runScan)
     pid = lr->construct_pid();
     
     w_assert1(lr->valid_header());
-    w_assert1(startPID.page <= pid.page);
+    w_assert1(startPID<= pid);
     w_assert1(startPID == lpid_t::null ||
             startPID.vol() == lr->construct_pid().vol());
 }
@@ -1237,9 +1237,8 @@ bool LogArchiver::ArchiverHeap::Cmp::gt(const HeapEntry& a,
     if (a.run != b.run) {
         return a.run < b.run;
     }
-    // TODO no support for multiple volumes
-    if (a.pid.page != b.pid.page) {
-        return a.pid.page < b.pid.page;
+    if (a.pid != b.pid) {
+        return a.pid< b.pid;
     }
     return a.lsn < b.lsn;
 }
@@ -1638,12 +1637,12 @@ smlevel_0::fileoff_t LogArchiver::ArchiveIndex::findEntry(RunInfo* run,
      * To fix this, we ought to look for usages of the lpid_t operators
      * in sm_s.h and see what the semantics is.
      */
-    if (run->entries[i].pid.page <= pid.page &&
-            (i == run->entries.size() - 1 || run->entries[i+1].pid.page >= pid.page))
+    if (run->entries[i].pid <= pid &&
+            (i == run->entries.size() - 1 || run->entries[i+1].pid >= pid))
     {
         // found it! must first check if previous does not contain same pid
-        while (i > 0 && run->entries[i].pid.page == pid.page)
-                //&& run->entries[i].pid.page == run->entries[i-1].pid.page)
+        while (i > 0 && run->entries[i].pid == pid)
+                //&& run->entries[i].pid == run->entries[i-1].pid)
         {
             i--;
         }
@@ -1651,7 +1650,7 @@ smlevel_0::fileoff_t LogArchiver::ArchiveIndex::findEntry(RunInfo* run,
     }
 
     // not found: recurse down
-    if (run->entries[i].pid.page > pid.page) {
+    if (run->entries[i].pid > pid) {
         return findEntry(run, pid, from, i-1);
     }
     else {

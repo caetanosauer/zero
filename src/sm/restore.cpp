@@ -203,14 +203,8 @@ void RestoreMgr::restoreLoop()
         size_t segment = getSegmentForPid(requested);
         shpid_t firstPage = getPidForSegment(segment);
 
-        /*
-         * CS (TODO) for now we are using lpid_t, which also contains the
-         * store ID, which is irrelevant for recovery. To cope with that,
-         * we simply use 0 as store ID. This is OK since the log archive
-         * completely ignores it.
-         */
-        lpid_t start = lpid_t(volume->vid(), 0, firstPage);
-        lpid_t end = lpid_t(volume->vid(), 0, firstPage + segmentSize);
+        lpid_t start = lpid_t(volume->vid(), firstPage);
+        lpid_t end = lpid_t(volume->vid(), firstPage + segmentSize);
 
         /*
          * CS: for the current milestone, we are ignoring backups and

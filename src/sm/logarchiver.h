@@ -503,8 +503,8 @@ public:
             {
                 if (!a.active) return false;
                 if (!b.active) return true;
-                if (a.pid.page != b.pid.page) {
-                    return a.pid.page < b.pid.page;
+                if (a.pid != b.pid) {
+                    return a.pid< b.pid;
                 }
                 return a.lsn < b.lsn;
             }
@@ -867,8 +867,8 @@ private:
         {
             if (!a.active) return false;
             if (!b.active) return true;
-            if (a.pid().page != b.pid().page) {
-                return a.pid().page < b.pid().page;
+            if (a.pid() != b.pid()) {
+                return a.pid() < b.pid();
             }
             return a.lsn() < b.lsn();
         }
