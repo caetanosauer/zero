@@ -59,6 +59,7 @@ public:
 
     size_t getNumPages() { return numPages; }
     size_t getSegmentSize() { return segmentSize; }
+    shpid_t getFirstDataPid() { return firstDataPid; }
 
     virtual void run();
 
@@ -82,6 +83,10 @@ protected:
     /** \brief Total number of pages in the failed volume
      */
     size_t numPages;
+
+    /** \brief First page ID to be restored (i.e., skipping metadata pages)
+     */
+    shpid_t firstDataPid;
 
     /** \brief Size of a segment in pages
      *

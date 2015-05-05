@@ -1057,8 +1057,13 @@ bool LogArchiver::ArchiveScanner::RunScanner::next(logrec_t*& lr)
 
     lr = (logrec_t*) (buffer + bpos);
     w_assert1(lr->valid_header(lr->lsn_ck()));
-    bpos += lr->length();
 
+    if (lr->pid() >= lastPID) {
+        // end of scan
+        return false;
+    }
+
+    bpos += lr->length();
     return true;
 }
 
@@ -1080,7 +1085,7 @@ LogArchiver::ArchiveScanner::MergeHeapEntry::MergeHeapEntry(RunScanner* runScan)
     do {
         hasNext = runScan->next(next);
         if (hasNext) {
-            matches = next->construct_pid()>= startPID;
+            matches = next->construct_pid() >= startPID;
         }
     } while (!matches && hasNext);
     
@@ -1095,9 +1100,8 @@ LogArchiver::ArchiveScanner::MergeHeapEntry::MergeHeapEntry(RunScanner* runScan)
     pid = lr->construct_pid();
     
     w_assert1(lr->valid_header());
-    w_assert1(startPID<= pid);
-    w_assert1(startPID == lpid_t::null ||
-            startPID.vol() == lr->construct_pid().vol());
+    w_assert1(!active || startPID <= pid);
+    w_assert1(!active || startPID.vol() == pid.vol());
 }
 
 void LogArchiver::ArchiveScanner::MergeHeapEntry::moveToNext()

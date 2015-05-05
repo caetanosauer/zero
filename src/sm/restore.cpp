@@ -30,10 +30,11 @@ void RestoreBitmap::set(size_t i)
 }
 
 RestoreScheduler::RestoreScheduler(RestoreMgr* restore)
-    : restore(restore),  firstNotRestored(0)
+    : restore(restore)
 {
     w_assert0(restore);
     numPages = restore->getNumPages();
+    firstNotRestored = restore->getFirstDataPid();
 }
 
 RestoreScheduler::~RestoreScheduler()
@@ -57,12 +58,12 @@ shpid_t RestoreScheduler::next()
     }
     else {
         // if queue is empty, find the first not-yet-restored PID
-        while (restore->isRestored(next)) {
+        while (next <= numPages && restore->isRestored(next)) {
             // if next pid is already restored, then the whole segment is
             next = next + restore->getSegmentSize();
         }
     }
-    
+
     /*
      * CS: there is no guarantee (from the scheduler) that next is indeed not
      * restored yet, because we do not control the bitmap from here.  The only
@@ -104,6 +105,7 @@ RestoreMgr::RestoreMgr(const sm_options& options,
      * replay.
      */
     numPages = volume->num_pages();
+    firstDataPid = volume->first_data_pageid();
 
     scheduler = new RestoreScheduler(this);
     bitmap = new RestoreBitmap(numPages);
@@ -117,12 +119,12 @@ RestoreMgr::~RestoreMgr()
 
 inline size_t RestoreMgr::getSegmentForPid(const shpid_t& pid)
 {
-    return (size_t) pid / segmentSize;
+    return (size_t) std::max(pid, firstDataPid) / segmentSize;
 }
 
 inline shpid_t RestoreMgr::getPidForSegment(size_t segment)
 {
-    return shpid_t(segment * segmentSize);
+    return shpid_t(segment * segmentSize) + firstDataPid;
 }
 
 inline bool RestoreMgr::isRestored(const shpid_t& pid)
@@ -156,6 +158,10 @@ bool RestoreMgr::waitUntilRestored(const shpid_t& pid, size_t timeout_in_ms)
 
 bool RestoreMgr::requestRestore(const shpid_t& pid, generic_page* addr)
 {
+    if (pid < firstDataPid || pid >= numPages) {
+        return false;
+    }
+
     scheduler->enqueue(pid);
 
     if (addr) {
@@ -194,11 +200,12 @@ void RestoreMgr::restoreLoop()
 
     char* workspace = new char[sizeof(generic_page) * segmentSize];
 
-    while (numRestoredPages <= numPages) {
+    while (numRestoredPages < numPages) {
         shpid_t requested = scheduler->next();
         if (isRestored(requested)) {
             continue;
         }
+        w_assert0(requested >= firstDataPid);
 
         size_t segment = getSegmentForPid(requested);
         shpid_t firstPage = getPidForSegment(segment);
@@ -219,8 +226,9 @@ void RestoreMgr::restoreLoop()
         fixable_page_h fixable;
         shpid_t current = firstPage;
         shpid_t prevPage = 0;
+        size_t redone = 0;
 
-        DBG(<< "Restoring page " << current);
+        DBG(<< "Restoring segment " << segment << " page " << current);
 
         logrec_t* lr;
         while (merger->next(lr)) {
@@ -248,11 +256,19 @@ void RestoreMgr::restoreLoop()
 
             lr->redo(&fixable);
             prevPage = lrpid.page;
+            redone++;
+        }
+
+        // current should point to the first not-restored page (excl. bound)
+        if (redone > 0) { // i.e., something was restored
+            current++;
         }
 
         // in the last segment, we may write less than the segment size
         finishSegment(segment, workspace, current - firstPage);
     }
+
+    DBG(<< "Restore thread finished!");
 }
 
 void RestoreMgr::finishSegment(size_t segment, char* workspace, size_t count)
@@ -275,20 +291,34 @@ void RestoreMgr::finishSegment(size_t segment, char* workspace, size_t count)
             bufferedRequests.erase(pos);
         }
     }
+
+    // Mark whole segment as restored, even if no page was actually replayed
+    // (i.e., segment contains only unused pages)
+    numRestoredPages += segmentSize;
+    if (numRestoredPages >= numPages) {
+        numRestoredPages = numPages;
+    }
+
     // to avoid race conditions with incoming requests,
     // mark segment as restored while holding the mutex
     bitmap->set(segment);
+
     // TODO generate log records
     
     requestMutex.release_write();
 
-    w_assert1((int) count <= segmentSize);
-    // write pages back to replacement device
-    // TODO: replacement device must be properly initialized
-    W_COERCE(volume->write_many_pages(firstPage, 
-            (generic_page*) workspace, count));
+    // send signal to waiting threads (acquire mutex to avoid lost signal)
+    DO_PTHREAD(pthread_mutex_lock(&restoreCondMutex));
+    DO_PTHREAD(pthread_cond_broadcast(&restoreCond));
+    DO_PTHREAD(pthread_mutex_unlock(&restoreCondMutex));
 
-    numRestoredPages += count;
+    if (count > 0) {
+        w_assert1((int) count <= segmentSize);
+        // write pages back to replacement device
+        // TODO: replacement device must be properly initialized
+        W_COERCE(volume->write_many_pages(firstPage, (generic_page*) workspace,
+                    count));
+    }
 }
 
 void RestoreMgr::run()
