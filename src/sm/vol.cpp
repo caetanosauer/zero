@@ -512,8 +512,20 @@ bool vol_t::is_alloc_store(snum_t f) const {
     FUNC(is_alloc_store);
     return _stnode_cache->is_allocated(f);
 }
-shpid_t vol_t::get_store_root(snum_t f) const {
+shpid_t vol_t::get_store_root(snum_t f) const
+{
     FUNC(get_root);
+
+    // During restore, we must wait for shpid 0 to be restored.
+    // Even though it is not an actual pid restored in log replay,
+    // the log records of store operations have pid 0, and they must
+    // be restored first so that the stnode cache is restored.
+    // See RestoreMgr::restoreMetadata()
+    if (_failed) {
+        w_assert1(_restore_mgr);
+        _restore_mgr->waitUntilRestored(shpid_t(0));
+    }
+
     return _stnode_cache->get_root_pid(f);
 }
 
@@ -610,6 +622,7 @@ vol_t::read_page(shpid_t pnum, generic_page& page, bool& past_end)
             w_assert1(_restore_mgr->isRestored(pnum));
 
             if (reqSucceeded) {
+                // page is loaded in buffer pool already
                 return RCOK;
             }
         }

@@ -80,7 +80,8 @@ shpid_t RestoreScheduler::next()
 RestoreMgr::RestoreMgr(const sm_options& options,
         LogArchiver::ArchiveDirectory* archive, vol_t* volume)
     : smthread_t(t_regular, "Restore Manager"),
-    archive(archive), volume(volume), numRestoredPages(0)
+    archive(archive), volume(volume), numRestoredPages(0),
+    metadataRestored(false)
 {
     w_assert0(archive);
     w_assert0(volume);
@@ -129,6 +130,11 @@ inline shpid_t RestoreMgr::getPidForSegment(size_t segment)
 
 inline bool RestoreMgr::isRestored(const shpid_t& pid)
 {
+    if (pid == 0) {
+        // pid 0 signifies metadata (stnode cache)
+        return metadataRestored;
+    }
+
     size_t seg = getSegmentForPid(pid);
     return bitmap->get(seg);
 }
@@ -188,6 +194,35 @@ bool RestoreMgr::requestRestore(const shpid_t& pid, generic_page* addr)
     return false;
 }
 
+void RestoreMgr::restoreMetadata()
+{
+    LogArchiver::ArchiveScanner logScan(archive);
+
+    // open scan on pages [0,1) to get all store operation log records
+    LogArchiver::ArchiveScanner::RunMerger* merger =
+        logScan.open(lpid_t(volume->vid(), 0), lpid_t(volume->vid(), 1),
+                lsn_t::null);
+
+    // TODO: is redo of store operations idempotent?
+    // should we use a specific LSN as starting point?
+
+    logrec_t* lr;
+    while (merger->next(lr)) {
+        lr->redo(NULL);
+    }
+
+    // TODO: my guess is that we don't have to write back the restored
+    // metadata pages because there are only two possibilites:
+    // 1) system eventually crashes -- metadata restored in restart from
+    // checkpoint and log analysis
+    //    (In theory, all metadata could be considered "server state" and be
+    //    maintained exclusively in the log with checkpoints)
+    // 2) device is eventually unmounted (e.g., during clean shutdown) --
+    // pages get written back
+
+    metadataRestored = true;
+}
+
 void RestoreMgr::restoreLoop()
 {
     // wait until volume is actually marked as failed
@@ -195,6 +230,8 @@ void RestoreMgr::restoreLoop()
         usleep(1000);
         lintel::atomic_thread_fence(lintel::memory_order_consume);
     }
+
+    restoreMetadata();
 
     LogArchiver::ArchiveScanner logScan(archive);
 

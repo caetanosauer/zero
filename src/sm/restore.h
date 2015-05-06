@@ -96,6 +96,10 @@ protected:
      */
     int segmentSize;
 
+    /** \brief Whether volume metadata is alread restored or not
+     */
+    bool metadataRestored;
+
     /** \brief Gives the segment number of a certain page ID.
      */
     size_t getSegmentForPid(const shpid_t& pid);
@@ -103,6 +107,18 @@ protected:
     /** \brief Gives the first page ID of a given segment number.
      */
     shpid_t getPidForSegment(size_t segment);
+
+    /** \brief Restores metadata by replaying store operation log records
+     *
+     * This method is invoked before the restore loop starts (i.e., before any
+     * data page is restored). It replays all store operations -- which are
+     * logged on page id 0 -- in order to correctly restore volume metadata,
+     * i.e., stnode_cache_t. Allocation pages (i.e., alloc_cache_t) doesn't
+     * have to be restored explicitly, because pages are re-allocated when
+     * replaying their first log records (e.g., page_img_format, btree_split,
+     * etc.)
+     */
+    void restoreMetadata();
 
     /** \brief Method that executes the actual restore operations in a loop
      *
