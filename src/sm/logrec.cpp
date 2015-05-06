@@ -878,8 +878,9 @@ void dealloc_a_page_log::redo(fixable_page_h*)
 store_operation_log::store_operation_log(vid_t vid,
         const store_operation_param& param)
 {
+    new (_data) store_operation_param(param);
     lpid_t dummy(vid, 0);
-    fill(&dummy, 0, 0, (new (_data) store_operation_param(param))->size());
+    fill(&dummy, param.snum(), 0, param.size());
 }
 
 void store_operation_log::redo(fixable_page_h* /*page*/)

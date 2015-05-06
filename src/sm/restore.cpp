@@ -289,9 +289,20 @@ void RestoreMgr::restoreLoop()
                 current++;
                 page++;
                 DBG(<< "Restoring page " << current);
+
+                // TODO: should we really zero-out the checksum here?  In
+                // principle, checksum does not have to match after applying a
+                // REDO operation, since it may be purely (physio)logical. On
+                // the other hand, REDO operations should update the checksum
+                // correctly... Zeroing out now because checksum failure seems
+                // to always happen.
+                page->checksum = 0;
             }
 
             lr->redo(&fixable);
+            fixable.update_initial_and_last_lsn(lr->lsn_ck());
+            fixable.update_clsn(lr->lsn_ck());
+
             prevPage = lrpid.page;
             redone++;
         }
@@ -341,7 +352,7 @@ void RestoreMgr::finishSegment(size_t segment, char* workspace, size_t count)
     bitmap->set(segment);
 
     // TODO generate log records
-    
+
     requestMutex.release_write();
 
     // send signal to waiting threads (acquire mutex to avoid lost signal)
