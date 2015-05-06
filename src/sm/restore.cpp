@@ -277,6 +277,12 @@ void RestoreMgr::restoreLoop()
             w_assert1(lrpid.page >= prevPage);
             w_assert1(lrpid.page < firstPage + segmentSize);
 
+            while (lrpid.page > current) {
+                current++;
+                page++;
+                DBG(<< "Restoring page " << current);
+            }
+
             if (!fixable.is_fixed() || fixable.pid().page != lrpid.page) {
                 // PID is manually set for virgin pages
                 if (page->pid != lrpid) {
@@ -285,23 +291,19 @@ void RestoreMgr::restoreLoop()
                 fixable.setup_for_restore(page);
             }
 
-            while (lrpid.page > current) {
-                current++;
-                page++;
-                DBG(<< "Restoring page " << current);
-
-                // TODO: should we really zero-out the checksum here?  In
-                // principle, checksum does not have to match after applying a
-                // REDO operation, since it may be purely (physio)logical. On
-                // the other hand, REDO operations should update the checksum
-                // correctly... Zeroing out now because checksum failure seems
-                // to always happen.
-                page->checksum = 0;
-            }
-
             lr->redo(&fixable);
             fixable.update_initial_and_last_lsn(lr->lsn_ck());
             fixable.update_clsn(lr->lsn_ck());
+
+            // TODO: should we really zero-out the checksum here?  In
+            // principle, checksum does not have to match after applying a REDO
+            // operation, since it may be purely (physio)logical. On the other
+            // hand, REDO operations should update the checksum correctly...
+            // Zeroing out now because checksum failure seems to always happen.
+            // page->checksum = 0;
+            page->checksum = page->calculate_checksum();
+            w_assert1(page->pid == lrpid);
+            w_assert1(page->checksum == page->calculate_checksum());
 
             prevPage = lrpid.page;
             redone++;
@@ -347,11 +349,20 @@ void RestoreMgr::finishSegment(size_t segment, char* workspace, size_t count)
         numRestoredPages = numPages;
     }
 
+    // TODO generate log records
+
+    if (count > 0) {
+        w_assert1((int) count <= segmentSize);
+        // write pages back to replacement device
+        // TODO: replacement device must be properly initialized
+        W_COERCE(volume->write_many_pages(firstPage, (generic_page*) workspace,
+                    count, true /* ignoreRestore */));
+        DBG(<< "Wrote out " << count << " pages of segment " << segment);
+    }
+
     // to avoid race conditions with incoming requests,
     // mark segment as restored while holding the mutex
     bitmap->set(segment);
-
-    // TODO generate log records
 
     requestMutex.release_write();
 
@@ -359,14 +370,6 @@ void RestoreMgr::finishSegment(size_t segment, char* workspace, size_t count)
     DO_PTHREAD(pthread_mutex_lock(&restoreCondMutex));
     DO_PTHREAD(pthread_cond_broadcast(&restoreCond));
     DO_PTHREAD(pthread_mutex_unlock(&restoreCondMutex));
-
-    if (count > 0) {
-        w_assert1((int) count <= segmentSize);
-        // write pages back to replacement device
-        // TODO: replacement device must be properly initialized
-        W_COERCE(volume->write_many_pages(firstPage, (generic_page*) workspace,
-                    count));
-    }
 }
 
 void RestoreMgr::run()

@@ -320,6 +320,7 @@ inline w_rc_t bf_tree_m::fix_root (generic_page*& page, stid_t store,
         W_DO(_grab_free_block(idx));
         W_DO(_preload_root_page(volume, volume->_volume, store.store,
                     root_shpid, idx));
+        w_assert1(_buffer[idx].pid == lpid_t(store.vol, root_shpid));
     }
 
     w_assert1(_is_valid_idx(idx));

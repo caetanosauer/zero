@@ -623,6 +623,7 @@ vol_t::read_page(shpid_t pnum, generic_page& page, bool& past_end)
 
             if (reqSucceeded) {
                 // page is loaded in buffer pool already
+                w_assert1(page.pid == lpid_t(_vid, pnum));
                 return RCOK;
             }
         }
@@ -665,6 +666,7 @@ vol_t::read_page(shpid_t pnum, generic_page& page, bool& past_end)
               << " err_num " << err.err_num()
               );
     }
+    w_assert1(page.pid == lpid_t(_vid, pnum));
     return RCOK;
 }
 
@@ -694,7 +696,8 @@ vol_t::write_page(shpid_t pnum, generic_page& page)
  *
  *********************************************************************/
 rc_t
-vol_t::write_many_pages(shpid_t pnum, const generic_page* const pages, int cnt)
+vol_t::write_many_pages(shpid_t pnum, const generic_page* const pages, int cnt,
+        bool ignoreRestore)
 {
     /** CS: If volume has failed, writes are suspended until the area being
      * written to is fully restored. This is required to avoid newer versions
@@ -711,7 +714,7 @@ vol_t::write_many_pages(shpid_t pnum, const generic_page* const pages, int cnt)
      * typical workloads maintain a low dirty page ratio, this is not a concern
      * for now.
      */
-    if (_failed) {
+    if (_failed && !ignoreRestore) {
         w_assert1(_restore_mgr);
 
         // For each segment involved in this bulk write, request and wait for

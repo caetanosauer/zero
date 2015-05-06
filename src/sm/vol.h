@@ -138,8 +138,9 @@ public:
 
     rc_t                write_many_pages(
         shpid_t             first_page,
-        const generic_page*       buf, 
-        int                 cnt);
+        const generic_page* buf,
+        int                 cnt,
+        bool                ignoreRestore = false);
 
     rc_t                read_page(
         shpid_t             page,
