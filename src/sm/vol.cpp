@@ -200,7 +200,7 @@ rc_t vol_t::mount(const char* devname, vid_t vid)
     return RCOK;
 }
 
-rc_t vol_t::remount_from_backup()
+rc_t vol_t::remount_from_backup(bool evict)
 {
     /*
      * CS (TODO) Currently, restore only supports backup-less log replay,
@@ -216,7 +216,7 @@ rc_t vol_t::remount_from_backup()
 
     // 2nd bool argument is crucial: if false, pages of this volume remain in
     // the buffer pool
-    W_DO(dismount(false, false));
+    W_DO(dismount(false, evict));
 
     // CS is reformat_vol really needed? Why not just format
     W_DO(reformat_vol(_devname, _lvid, _vid, _num_pages, true));
@@ -1491,7 +1491,7 @@ bool vol_t::is_allocated_page(shpid_t pid) const
     return _alloc_cache->is_allocated_page(pid);
 }
 
-void vol_t::mark_failed()
+void vol_t::mark_failed(bool evict)
 {
     // 1. Write log record
     // 2. Activate backup manager (missing) 
@@ -1502,7 +1502,7 @@ void vol_t::mark_failed()
 
     // 4. Remount device
     // CS: TODO -- how about concurrent reads??
-    W_COERCE(remount_from_backup());
+    W_COERCE(remount_from_backup(evict));
 
     // 5. Set failed flag
     _failed = true;

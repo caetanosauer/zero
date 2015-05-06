@@ -106,7 +106,7 @@ public:
 
     /** Re-mount the (replacement) device after a media failure,
      * based on a backup */
-    rc_t                remount_from_backup();
+    rc_t                remount_from_backup(bool evict);
 
     /**
     * Print out meta info about the volume.
@@ -253,7 +253,7 @@ public:
     void            fake_disk_latency(long start);    
 
     /** Mark device as failed and kick off Restore */
-    void            mark_failed();
+    void            mark_failed(bool evict = false);
     bool is_failed() { return _failed; }
 
 private:
