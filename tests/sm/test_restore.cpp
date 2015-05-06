@@ -42,6 +42,34 @@ rc_t populateBtree(ss_m* ssm, test_volume_t *test_volume, int count)
     return RCOK;
 }
 
+rc_t lookupKeys(size_t count)
+{
+    string str;
+    std::stringstream ss("key");
+
+    W_DO(test_env->begin_xct());
+    for (size_t i = 0; i < count; i++) {
+        ss.seekp(3);
+        ss << i;
+        W_DO(test_env->btree_lookup(stid, ss.str().c_str(), str));
+        EXPECT_TRUE(strncmp(str.c_str(), RECORD_STR, str.length()) == 0);
+    }
+    W_DO(test_env->commit_xct());
+
+    return RCOK;
+}
+
+void archiveLog(ss_m* ssm)
+{
+    // archive whole log
+    ssm->logArchiver->activate(ssm->log->curr_lsn(), true);
+    while (ssm->logArchiver->getNextConsumedLSN() < ssm->log->curr_lsn()) {
+        usleep(1000);
+    }
+    ssm->logArchiver->start_shutdown();
+    ssm->logArchiver->join();
+}
+
 rc_t populatePages(ss_m* ssm, test_volume_t* test_volume, int numPages)
 {
     size_t pageDataSize = btree_page_data::data_sz;
@@ -50,25 +78,35 @@ rc_t populatePages(ss_m* ssm, test_volume_t* test_volume, int numPages)
     return populateBtree(ssm, test_volume, numRecords);
 }
 
+vol_t* failVolume(test_volume_t* test_volume, bool clear_buffer)
+{
+    vol_t* volume = io_m::get_volume(test_volume->_vid);
+    volume->mark_failed(clear_buffer);
+    return volume;
+}
+
+rc_t singlePageTest(ss_m* ssm, test_volume_t* test_volume)
+{
+    W_DO(populateBtree(ssm, test_volume, 3));
+    archiveLog(ssm);
+    failVolume(test_volume, true);
+    
+    W_DO(lookupKeys(3));
+
+    return RCOK;
+}
 
 rc_t fullRestoreTest(ss_m* ssm, test_volume_t* test_volume)
 {
     W_DO(populatePages(ssm, test_volume, 3 * SEGMENT_SIZE));
 
-    // archive whole log
-    ssm->logArchiver->activate(ssm->log->curr_lsn(), true);
-    while (ssm->logArchiver->getNextConsumedLSN() < ssm->log->curr_lsn()) {
-        usleep(1000);
-    }
-    ssm->logArchiver->start_shutdown();
-    ssm->logArchiver->join();
+    archiveLog(ssm);
 
-    generic_page page;
-    
     vol_t* volume = io_m::get_volume(test_volume->_vid);
     volume->mark_failed();
 
     bool past_end = false;
+    generic_page page;
     W_DO(volume->read_page(1, page, past_end));
 
     return RCOK;
@@ -84,6 +122,7 @@ rc_t fullRestoreTest(ss_m* ssm, test_volume_t* test_volume)
         EXPECT_EQ(test_env->runBtreeTest(function, options), 0); \
     }
 
+DEFAULT_TEST(BackupLess, singlePageTest);
 DEFAULT_TEST (RestoreTest, fullRestoreTest);
 
 int main(int argc, char **argv) {
