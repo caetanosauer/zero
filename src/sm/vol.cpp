@@ -1307,7 +1307,7 @@ vol_t::read_vhdr(int fd, volhdr_t& vhdr)
 
     /*
      *  Read in first page of volume into tmp.
-     */   
+     */
     W_DO(me()->pread(fd, tmp, tmpsz, sector_size));
 
     /*
@@ -1494,7 +1494,7 @@ bool vol_t::is_allocated_page(shpid_t pid) const
 void vol_t::mark_failed(bool evict)
 {
     // 1. Write log record
-    // 2. Activate backup manager (missing) 
+    // 2. Activate backup manager (missing)
     // 3. Activate restore manager
     _restore_mgr = new RestoreMgr(ss_m::get_options(),
             ss_m::logArchiver->getDirectory(), this);
