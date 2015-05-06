@@ -18,6 +18,7 @@
 #include "sm_int_1.h"
 #include "xct.h"
 #include "restart.h"
+#include "vol.h"
 
 void swizzling_stat_swizzle();
 void swizzling_stat_print(const char* prefix);
@@ -303,8 +304,25 @@ inline w_rc_t bf_tree_m::fix_root (generic_page*& page, stid_t store,
 
     // root-page index is always kept in the volume descriptor:
     bf_idx idx = volume->_root_pages[store.store];
-    w_assert1(_is_valid_idx(idx));
+    if (!_is_valid_idx(idx)) {
+        /*
+         * CS: During restore, root page is not pre-loaded. As with any other
+         * page, a fix incurs a read if the page is not found. In this case,
+         * the read will trigger restore of the page. Once it's restored, its
+         * frame is registered in the volume manager.
+         *
+         * This code eliminates the need to call install_volume.
+         */
+        // currently, only restore should get into this if-block
+        w_assert0(volume->_volume->is_failed());
 
+        shpid_t root_shpid = volume->_volume->get_store_root(store.store);
+        W_DO(_grab_free_block(idx));
+        W_DO(_preload_root_page(volume, volume->_volume, store.store,
+                    root_shpid, idx));
+    }
+
+    w_assert1(_is_valid_idx(idx));
     w_assert1(_is_active_idx(idx));
     w_assert1(get_cb(idx)._pid_vol == vid_t(store.vol));
 
