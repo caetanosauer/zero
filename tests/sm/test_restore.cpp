@@ -78,6 +78,14 @@ rc_t populatePages(ss_m* ssm, test_volume_t* test_volume, int numPages)
     return populateBtree(ssm, test_volume, numRecords);
 }
 
+rc_t lookupPages(size_t numPages)
+{
+    size_t pageDataSize = btree_page_data::data_sz;
+    size_t numRecords = (pageDataSize * numPages)/ RECORD_SIZE;
+
+    return lookupKeys(numRecords);
+}
+
 vol_t* failVolume(test_volume_t* test_volume, bool clear_buffer)
 {
     vol_t* volume = io_m::get_volume(test_volume->_vid);
@@ -90,8 +98,19 @@ rc_t singlePageTest(ss_m* ssm, test_volume_t* test_volume)
     W_DO(populateBtree(ssm, test_volume, 3));
     archiveLog(ssm);
     failVolume(test_volume, true);
-    
+
     W_DO(lookupKeys(3));
+
+    return RCOK;
+}
+
+rc_t multiPageTest(ss_m* ssm, test_volume_t* test_volume)
+{
+    W_DO(populatePages(ssm, test_volume, 3));
+    archiveLog(ssm);
+    failVolume(test_volume, true);
+
+    W_DO(lookupPages(3));
 
     return RCOK;
 }
@@ -123,7 +142,8 @@ rc_t fullRestoreTest(ss_m* ssm, test_volume_t* test_volume)
     }
 
 DEFAULT_TEST(BackupLess, singlePageTest);
-DEFAULT_TEST (RestoreTest, fullRestoreTest);
+DEFAULT_TEST(BackupLess, multiPageTest);
+DEFAULT_TEST(RestoreTest, fullRestoreTest);
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
