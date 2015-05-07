@@ -29,12 +29,15 @@ void RestoreBitmap::set(size_t i)
     bits.at(i) = true;
 }
 
-RestoreScheduler::RestoreScheduler(RestoreMgr* restore)
+RestoreScheduler::RestoreScheduler(const sm_options& options,
+        RestoreMgr* restore)
     : restore(restore)
 {
     w_assert0(restore);
     numPages = restore->getNumPages();
     firstNotRestored = restore->getFirstDataPid();
+    trySinglePass =
+        options.get_bool_option("sm_restore_sched_singlepass", true);
 }
 
 RestoreScheduler::~RestoreScheduler()
@@ -56,12 +59,16 @@ shpid_t RestoreScheduler::next()
         next = queue.front();
         queue.pop();
     }
-    else {
+    else if (trySinglePass) {
         // if queue is empty, find the first not-yet-restored PID
         while (next <= numPages && restore->isRestored(next)) {
             // if next pid is already restored, then the whole segment is
             next = next + restore->getSegmentSize();
         }
+        firstNotRestored = next;
+    }
+    else {
+        next = shpid_t(0); // no next pid for now
     }
 
     /*
@@ -92,6 +99,9 @@ RestoreMgr::RestoreMgr(const sm_options& options,
                 << "Restore segment size must be a positive number");
     }
 
+    reuseRestoredBuffer =
+        options.get_bool_option("sm_restore_reuse_buffer", true);
+
     DO_PTHREAD(pthread_mutex_init(&restoreCondMutex, NULL));
     DO_PTHREAD(pthread_cond_init(&restoreCond, NULL));
 
@@ -108,7 +118,7 @@ RestoreMgr::RestoreMgr(const sm_options& options,
     numPages = volume->num_pages();
     firstDataPid = volume->first_data_pageid();
 
-    scheduler = new RestoreScheduler(this);
+    scheduler = new RestoreScheduler(options, this);
     bitmap = new RestoreBitmap(numPages);
 }
 
@@ -170,7 +180,7 @@ bool RestoreMgr::requestRestore(const shpid_t& pid, generic_page* addr)
 
     scheduler->enqueue(pid);
 
-    if (addr) {
+    if (addr && reuseRestoredBuffer) {
         spinlock_write_critical_section cs(&requestMutex);
 
         /*
@@ -227,7 +237,7 @@ void RestoreMgr::restoreLoop()
 {
     // wait until volume is actually marked as failed
     while(!volume->is_failed()) {
-        usleep(1000);
+        usleep(1000); // 1 ms
         lintel::atomic_thread_fence(lintel::memory_order_consume);
     }
 
@@ -240,6 +250,11 @@ void RestoreMgr::restoreLoop()
     while (numRestoredPages < numPages) {
         shpid_t requested = scheduler->next();
         if (isRestored(requested)) {
+            continue;
+        }
+        if (requested == shpid_t(0)) {
+            // no page available for now
+            usleep(2000); // 2 ms
             continue;
         }
         w_assert0(requested >= firstDataPid);
@@ -285,6 +300,7 @@ void RestoreMgr::restoreLoop()
 
             if (!fixable.is_fixed() || fixable.pid().page != lrpid.page) {
                 // PID is manually set for virgin pages
+                // this guarantees correct redo of multi-page logrecs
                 if (page->pid != lrpid) {
                     page->pid = lrpid;
                 }
@@ -295,7 +311,7 @@ void RestoreMgr::restoreLoop()
             fixable.update_initial_and_last_lsn(lr->lsn_ck());
             fixable.update_clsn(lr->lsn_ck());
 
-            // TODO: should we really zero-out the checksum here?  In
+            // TODO: should we really zero-out/recompute the checksum here?  In
             // principle, checksum does not have to match after applying a REDO
             // operation, since it may be purely (physio)logical. On the other
             // hand, REDO operations should update the checksum correctly...
@@ -319,26 +335,41 @@ void RestoreMgr::restoreLoop()
     }
 
     DBG(<< "Restore thread finished!");
+    delete workspace;
 }
 
 void RestoreMgr::finishSegment(size_t segment, char* workspace, size_t count)
 {
+    // TODO generate log records
+    shpid_t firstPage = getPidForSegment(segment);
+
+    if (count > 0) {
+        w_assert1((int) count <= segmentSize);
+        // write pages back to replacement device
+        W_COERCE(volume->write_many_pages(firstPage, (generic_page*) workspace,
+                    count, true /* ignoreRestore */));
+        DBG(<< "Wrote out " << count << " pages of segment " << segment);
+    }
+
     /*
-     * Now that the segment is restored, copy it into the buffer pool
-     * frame of each matching request.
+     * Now that the segment is restored, copy it into the buffer pool frame of
+     * each matching request. Acquire the mutex for that to avoid race
+     * condition in which segment gets restored after caller checks but before
+     * its request is placed.
      */
     requestMutex.acquire_write();
 
-    shpid_t firstPage = getPidForSegment(segment);
-    for (int i = 0; i < segmentSize; i++) {
-        map<shpid_t, generic_page*>::iterator pos =
-            bufferedRequests.find(firstPage + i);
+    if (reuseRestoredBuffer) {
+        for (int i = 0; i < segmentSize; i++) {
+            map<shpid_t, generic_page*>::iterator pos =
+                bufferedRequests.find(firstPage + i);
 
-        if (pos != bufferedRequests.end()) {
-            char* wpage = workspace + (sizeof(generic_page) * i);
+            if (pos != bufferedRequests.end()) {
+                char* wpage = workspace + (sizeof(generic_page) * i);
 
-            memcpy(pos->second, wpage, sizeof(generic_page));
-            bufferedRequests.erase(pos);
+                memcpy(pos->second, wpage, sizeof(generic_page));
+                bufferedRequests.erase(pos);
+            }
         }
     }
 
@@ -349,19 +380,6 @@ void RestoreMgr::finishSegment(size_t segment, char* workspace, size_t count)
         numRestoredPages = numPages;
     }
 
-    // TODO generate log records
-
-    if (count > 0) {
-        w_assert1((int) count <= segmentSize);
-        // write pages back to replacement device
-        // TODO: replacement device must be properly initialized
-        W_COERCE(volume->write_many_pages(firstPage, (generic_page*) workspace,
-                    count, true /* ignoreRestore */));
-        DBG(<< "Wrote out " << count << " pages of segment " << segment);
-    }
-
-    // to avoid race conditions with incoming requests,
-    // mark segment as restored while holding the mutex
     bitmap->set(segment);
 
     requestMutex.release_write();

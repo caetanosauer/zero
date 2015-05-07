@@ -131,19 +131,21 @@ rc_t fullRestoreTest(ss_m* ssm, test_volume_t* test_volume)
     return RCOK;
 }
 
-#define DEFAULT_TEST(test, function) \
+#define DEFAULT_TEST(test, function, option_reuse, option_singlepass) \
     TEST (test, function) { \
         test_env->empty_logdata_dir(); \
         options.set_bool_option("sm_archiving", true); \
         options.set_int_option("sm_archiver_block_size", BLOCK_SIZE); \
         options.set_string_option("sm_archdir", test_env->archive_dir); \
         options.set_int_option("sm_restore_segsize", SEGMENT_SIZE); \
+        options.set_bool_option("sm_restore_sched_singlepass", option_singlepass); \
+        options.set_bool_option("sm_restore_reuse_buffer", option_reuse); \
         EXPECT_EQ(test_env->runBtreeTest(function, options), 0); \
     }
 
-DEFAULT_TEST(BackupLess, singlePageTest);
-DEFAULT_TEST(BackupLess, multiPageTest);
-DEFAULT_TEST(RestoreTest, fullRestoreTest);
+DEFAULT_TEST(BackupLess, singlePageTest, false, false);
+DEFAULT_TEST(BackupLess, multiPageTest, false, false);
+DEFAULT_TEST(RestoreTest, fullRestoreTest, true, true);
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

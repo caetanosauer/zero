@@ -100,6 +100,11 @@ protected:
      */
     bool metadataRestored;
 
+    /** \brief Whether to copy restored pages into caller's buffers, avoiding
+     * extra reads
+     */
+    bool reuseRestoredBuffer;
+
     /** \brief Gives the segment number of a certain page ID.
      */
     size_t getSegmentForPid(const shpid_t& pid);
@@ -123,7 +128,7 @@ protected:
     /** \brief Method that executes the actual restore operations in a loop
      *
      * This method continuously gets page IDs to be restored from the scheduler
-     * and performs the restore operation on the corresponding segment. The 
+     * and performs the restore operation on the corresponding segment. The
      * method only returns once all segments have been restored.
      *
      * In the future, we may consider partitioning the volume and restore it in
@@ -170,7 +175,7 @@ protected:
  */
 class RestoreScheduler {
 public:
-    RestoreScheduler(RestoreMgr* restore);
+    RestoreScheduler(const sm_options& options, RestoreMgr* restore);
     virtual ~RestoreScheduler();
 
     void enqueue(const shpid_t& pid);
@@ -182,7 +187,14 @@ protected:
     mcs_rwlock mutex;
     std::queue<shpid_t> queue;
 
+    /// Perform single-pass restore while no requests are available
+    bool trySinglePass;
+
     size_t numPages;
+
+    /** Keep track of first pid not restored to continue single-pass restore.
+     * This is just a guess to prune the search for the next not restored.
+     */
     shpid_t firstNotRestored;
 
 };
