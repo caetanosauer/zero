@@ -9,7 +9,6 @@
 
 #include <list>
 #include "stnode_page.h"
-#include <time.h>
 #include <stdlib.h>
 
 struct volume_hdr_stats_t;
@@ -30,22 +29,20 @@ class volhdr_t {
     uint32_t            _num_pages;
     shpid_t             _hdr_pages;   // # pages in hdr includes entire store 0
     uint32_t            _page_sz;    // page size in bytes
-    struct timespec     _ctime;     //creation time of volume, set at formatting
-    int                 _ctime_salt;
-    
+
 public:
-    uint32_t   format_version() const { 
+    uint32_t   format_version() const {
                             return _format_version; }
-    void            set_format_version(uint v) { 
+    void            set_format_version(uint v) {
                         _format_version = v; }
 
-    sm_diskaddr_t   device_quota_KB() const { 
+    sm_diskaddr_t   device_quota_KB() const {
                             return _device_quota_KB; }
-    void            set_device_quota_KB(sm_diskaddr_t q) { 
+    void            set_device_quota_KB(sm_diskaddr_t q) {
                             _device_quota_KB = q; }
 
     const lvid_t&   lvid() const { return _lvid; }
-    void            set_lvid(const lvid_t &l) { 
+    void            set_lvid(const lvid_t &l) {
                              _lvid = l; }
 
     const shpid_t&   apid() const { return _apid; }
@@ -62,21 +59,7 @@ public:
 
     uint32_t         page_sz() const {  return _page_sz; }
     void             set_page_sz(uint32_t n) {  _page_sz = n; }
-    
-    void             get_ctime(struct timespec& ctime, int& salt) const { 
-                            ctime.tv_sec = _ctime.tv_sec; 
-                            ctime.tv_nsec = _ctime.tv_nsec; 
-                            salt = _ctime_salt; 
-                     }
-    void             set_ctime(struct timespec ctime){ 
-                        _ctime.tv_sec = ctime.tv_sec;
-                        _ctime.tv_nsec = ctime.tv_nsec;
-                     }
-    void             set_ctime_salt(int salt) { _ctime_salt = salt; }
-    int              get_ctime_salt() { return _ctime_salt; }
 
-    
-    
 };
 
 
@@ -86,17 +69,17 @@ public:
 #include <set>
 #include <map>
 
-class vol_t : public smlevel_1 
+class vol_t : public smlevel_1
 {
 public:
     /*WARNING: THIS CODE MUST MATCH THAT IN sm_io.h!!! */
     typedef srwlock_t  VolumeLock;
     typedef void *     lock_state;
-    
-    NORET               vol_t(const bool apply_fake_io_latency = false, 
+
+    NORET               vol_t(const bool apply_fake_io_latency = false,
                                       const int fake_disk_latency = 0);
     NORET               ~vol_t();
-    
+
     /** Mount the volume at "devname" and give it a an id "vid". */
     rc_t                mount(const char* devname, vid_t vid);
 
@@ -120,7 +103,7 @@ public:
     uint32_t            num_used_pages() const;
 
     int                 fill_factor(snum_t fnum);
- 
+
     bool                is_valid_page_num(const lpid_t& p) const;
     bool                is_valid_store(snum_t f) const;
 
@@ -128,12 +111,12 @@ public:
 
     /**  Return true if the store "store" is allocated. false otherwise. */
     bool                is_alloc_store(snum_t f) const;
-    
+
     rc_t                write_page(shpid_t page, generic_page& buf);
 
     rc_t                write_many_pages(
         shpid_t             first_page,
-        const generic_page*       buf, 
+        const generic_page*       buf,
         int                 cnt);
 
     rc_t                read_page(
@@ -144,7 +127,7 @@ public:
     rc_t            alloc_a_page(lpid_t &pid);
     rc_t            alloc_consecutive_pages(size_t page_count, lpid_t &pid_begin);
     rc_t            free_page(const lpid_t& pid);
-    
+
     rc_t            redo_alloc_a_page(shpid_t pid);
     rc_t            redo_alloc_consecutive_pages(size_t page_count, shpid_t pid_begin);
     rc_t            redo_free_page(shpid_t pid);
@@ -182,7 +165,7 @@ public:
     rc_t                     get_store_meta_stats(
         snum_t                      snum,
         SmStoreMetaStats&           storeStats);
-    
+
 public:
 
     rc_t             num_pages(snum_t fnum, uint32_t& cnt);
@@ -214,11 +197,9 @@ public:
     static rc_t            read_vhdr(int fd, volhdr_t& vhdr);
 
     static rc_t            write_vhdr(           // SMUF-SC3: moved to public
-        int                  fd, 
-        volhdr_t&            vhdr, 
+        int                  fd,
+        volhdr_t&            vhdr,
         bool                 raw_device);
-    
-    rc_t                   get_vol_ctime(struct timespec& ctime, int& salt);
 
     /**
     * Check if "devname" is a raw device. Return result in "raw".
@@ -230,7 +211,7 @@ public:
         const char*          devname,
         bool&                raw);
 
-    
+
 
     // methods for space usage statistics for this volume
     rc_t             get_du_statistics(
@@ -247,8 +228,8 @@ public:
     // fake disk latency
     void            enable_fake_disk_latency(void);
     void            disable_fake_disk_latency(void);
-    bool            set_fake_disk_latency(const int adelay);    
-    void            fake_disk_latency(long start);    
+    bool            set_fake_disk_latency(const int adelay);
+    void            fake_disk_latency(long start);
 
 private:
     char             _devname[max_devname];
@@ -263,23 +244,23 @@ private:
     int              _page_sz;  // page size in bytes
     bool             _is_raw;   // notes if volume is a raw device
 
-    mutable VolumeLock _mutex;   
+    mutable VolumeLock _mutex;
 
     // fake disk latency
     bool             _apply_fake_disk_latency;
-    int              _fake_disk_latency;     
-    
+    int              _fake_disk_latency;
+
     alloc_cache_t*   _alloc_cache;
     stnode_cache_t*  _stnode_cache;
     /** buffer manager for special pages. */
     bf_fixed_m*      _fixed_bf;
-    
+
     /** releases _alloc_cache and _stnode_cache. */
     void clear_caches();
  public:
     void                     shutdown();
     void                     shutdown(snum_t s);
-    
+
     alloc_cache_t*           get_alloc_cache() {return _alloc_cache;}
     stnode_cache_t*          get_stnode_cache() {return _stnode_cache;}
     bf_fixed_m*              get_fixed_bf() {return _fixed_bf;}
@@ -319,7 +300,7 @@ inline bool vol_t::is_valid_store(snum_t f) const
 }
 
 
-    
+
 /*<std-footer incl-file-exclusion='VOL_H'>  -- do not edit anything below this line -- */
 
 #endif          /*</std-footer>*/

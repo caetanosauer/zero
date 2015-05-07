@@ -83,24 +83,9 @@ void BackupFile::open() {
     w_assert1(_fd == -1); // not yet opened
     _fd = ::open(_path.c_str(), O_RDONLY|O_DIRECT|O_NOATIME);
     if (is_opened()) {
-        vid_t vid = vid_t(_vid);
-        vol_t* vol = smlevel_0::io->get_volume(vid); // The backup and volume share the same volid.
-
         volhdr_t backup_hdr;
-        rc_t rc = vol_t::read_vhdr(_path.c_str(), backup_hdr); 
-        if (!rc.is_error())  {
-           struct timespec backup_ctime; int backup_salt;
-           backup_hdr.get_ctime(backup_ctime, backup_salt);
-           struct timespec vol_ctime; int vol_salt;
-           vol->get_vol_ctime(vol_ctime, vol_salt);  
-           
-           if ((backup_ctime.tv_sec != vol_ctime.tv_sec) ||
-               (backup_ctime.tv_nsec != vol_ctime.tv_nsec) ||
-               (backup_salt != vol_salt) ) {
-               this->close();
-               DBGOUT1(<<"Backup open: ctime mismatch");
-           }          
-        } else {
+        rc_t rc = vol_t::read_vhdr(_path.c_str(), backup_hdr);
+        if (rc.is_error())  {
             this->close();
             DBGOUT1(<<"Backup open: failed to read volume header");
         }
@@ -111,7 +96,7 @@ void BackupFile::close() {
         int ret = ::close(_fd);
         w_assert1(ret == 0); // close called from destructor, no other error handling
         _fd = -1;
-        
+
     }
 }
 

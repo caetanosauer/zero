@@ -183,34 +183,7 @@ w_rc_t validity_test(ss_m* ssm, test_volume_t *test_volume) {
     for (shpid_t pid = FIRST_PID; pid < (uint32_t)default_quota_in_pages; ++pid) {
         EXPECT_FALSE(bk->page_exists(vid, pid));
     }
-    
-    struct timespec vol_ctime; int vol_salt;
-    struct timespec backup_ctime; int backup_salt;
-    vol->get_vol_ctime(vol_ctime, vol_salt);
-    volhdr_t backup_hdr;
-    std::string backup_path(bk->get_backup_path(test_volume->_vid));
-    rc_t rc = vol_t::read_vhdr(backup_path.c_str(), backup_hdr); 
-    backup_hdr.get_ctime(backup_ctime, backup_salt);    
-    EXPECT_EQ(backup_ctime.tv_sec, vol_ctime.tv_sec);
-    EXPECT_EQ(backup_ctime.tv_nsec, vol_ctime.tv_nsec);
-    EXPECT_EQ(backup_salt, vol_salt);         
-    
-        
-    //Reformat to generate new ctime
-    sleep(2);
-    vol->reformat_vol(test_volume->_device_name, test_volume->_lvid, test_volume->_vid, 
-                    8, true);
-    vol = ssm->io->get_volume(test_volume->_vid);
-    vol->get_vol_ctime(vol_ctime, vol_salt);
-    
-    bool ctime_same = false;
-    if ((backup_ctime.tv_sec == vol_ctime.tv_sec) &&
-        (backup_ctime.tv_nsec == vol_ctime.tv_nsec) &&
-        (backup_salt == vol_salt)) {
-        ctime_same = true;
-    }
-    EXPECT_FALSE(ctime_same);
-    
+
     x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));
     return RCOK;

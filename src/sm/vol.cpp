@@ -654,9 +654,6 @@ const char* vol_t::prolog[] = {
     "%% epid              : ",
     "%% spid              : ",
     "%% page_sz           : ",
-    "%% ctime_tv_sec      : ",
-    "%% ctime_tv_nsec     : ",
-    "%% ctime_salt        : "
 };
 
 rc_t
@@ -791,11 +788,6 @@ vol_t::format_vol(
     vhdr.set_apid(apid.page);
     vhdr.set_spid(spid.page);
     vhdr.set_page_sz(page_sz);
-    struct timespec ctime;
-    ::clock_gettime(CLOCK_MONOTONIC, &ctime);
-    ::srand(ctime.tv_nsec);
-    vhdr.set_ctime(ctime);
-    vhdr.set_ctime_salt(::rand());
 
     /*
      *  Write volume header
@@ -980,11 +972,6 @@ vol_t::reformat_vol(
     vhdr.set_apid(apid.page);
     vhdr.set_spid(spid.page);
     vhdr.set_page_sz(page_sz);
-    struct timespec ctime;
-    ::clock_gettime(CLOCK_MONOTONIC, &ctime);
-    ::srand(ctime.tv_nsec);
-    vhdr.set_ctime(ctime);
-    vhdr.set_ctime_salt(::rand());
 
     /*
      *  Write volume header
@@ -1154,12 +1141,6 @@ vol_t::write_vhdr(int fd, volhdr_t& vhdr, bool raw_device)
     s << prolog[i++] << vhdr.apid() << endl;
     s << prolog[i++] << vhdr.spid() << endl;
     s << prolog[i++] << vhdr.page_sz() << endl;
-    struct timespec ctime;
-    int ctime_salt;
-    vhdr.get_ctime(ctime, ctime_salt);
-    s << prolog[i++] << ctime.tv_sec << endl;
-    s << prolog[i++] << ctime.tv_nsec << endl;
-    s << prolog[i++] << ctime_salt << endl;
     if (!s)  {
         return RC(eOS);
     }
@@ -1206,7 +1187,7 @@ vol_t::read_vhdr(int fd, volhdr_t& vhdr)
 
     /*
      *  Read in first page of volume into tmp.
-     */   
+     */
     W_DO(me()->pread(fd, tmp, tmpsz, sector_size));
 
     /*
@@ -1238,13 +1219,6 @@ vol_t::read_vhdr(int fd, volhdr_t& vhdr)
     s.read(buf, strlen(prolog[i++])) >> temp; vhdr.set_apid(temp);
     s.read(buf, strlen(prolog[i++])) >> temp; vhdr.set_spid(temp);
     s.read(buf, strlen(prolog[i++])) >> temp; vhdr.set_page_sz(temp);
-    struct timespec ctime_temp;
-    time_t tv_sec; long tv_nsec;
-    s.read(buf, strlen(prolog[i++])) >> tv_sec; ctime_temp.tv_sec = tv_sec;
-    s.read(buf, strlen(prolog[i++])) >> tv_nsec; ctime_temp.tv_nsec = tv_nsec;
-    vhdr.set_ctime(ctime_temp);
-    int salt;
-    s.read(buf, strlen(prolog[i++])) >> salt; vhdr.set_ctime_salt(salt);
 
     if ( !s || vhdr.page_sz() != page_sz ||
         vhdr.format_version() != volume_format_version ) {
@@ -1261,8 +1235,6 @@ vol_t::read_vhdr(int fd, volhdr_t& vhdr)
         cout << "1st apid " << vhdr.apid() << endl;
         cout << "spid " << vhdr.spid() << endl;
 
-        cout << "ctime " << ctime_temp.tv_sec << "." << ctime_temp.tv_nsec << endl;
-        cout << "ctime salt " << vhdr.get_ctime_salt() << endl;
         cout << "Buffer: " << endl;
         cout << buf << endl;
 
@@ -1303,23 +1275,6 @@ vol_t::read_vhdr(const char* devname, volhdr_t& vhdr)
         W_DO_MSG(e, << "device name=" << devname);
     }
 
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  vol_t::get_vol_ctime(ctime)
- *--------------------------------------------------------------*/
-rc_t
-vol_t::get_vol_ctime(struct timespec& ctime, int& salt)
-{
-    volhdr_t vhdr;
-
-    rc_t rc = vol_t::read_vhdr(_unix_fd, vhdr);
-    if (rc.is_error())  {
-        W_DO_MSG(rc, << "bad device name=" << _devname);
-        return RC_AUGMENT(rc);
-    }
-    vhdr.get_ctime(ctime, salt);
     return RCOK;
 }
 
