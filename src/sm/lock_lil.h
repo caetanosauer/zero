@@ -57,9 +57,9 @@ enum lil_lock_modes_t {
  */
 class lil_global_table_base {
 public:
-    uint16_t  _IS_count;  // +2 -> 2 
+    uint16_t  _IS_count;  // +2 -> 2
     uint16_t  _IX_count;  // +2 -> 4
-    uint16_t  _S_count;   // +2 -> 6     
+    uint16_t  _S_count;   // +2 -> 6
     bool      _X_taken;   // +1 -> 7
     bool      _dummy1;    // +1 -> 8
     uint16_t  _waiting_S; // +2 -> 10
@@ -80,7 +80,7 @@ public:
      * @param[in] mode the lock mode to acquire
      */
     w_rc_t      request_lock(lil_lock_modes_t mode);
-    
+
     /**
      * Decreases the corresponding counters. This never sees an error or long blocking.
      * @param[in] read_lock_only if true, releases only read locks. default false.
@@ -147,7 +147,7 @@ public:
     ~lil_global_table(){}
     void clear() {
         ::memset (this, 0, sizeof(*this));
-    }    
+    }
 };
 
 /**
@@ -187,7 +187,7 @@ public:
     void clear() {
         ::memset (this, 0, sizeof(*this));
     }
-    
+
     /**
      * Get a lock on store.
      * @param[in] global_table accesses this global table to acuiqre lock
@@ -222,7 +222,7 @@ public:
         clear();
     }
     ~lil_private_table(){}
-    
+
     void clear() {
         ::memset (this, 0, sizeof(*this));
     }
@@ -238,7 +238,7 @@ public:
             lil_lock_modes_t mode, lil_private_vol_table* &table);
 
     /**
-     * Returns a volume lock table assuming 
+     * Returns a volume lock table assuming
      */
     w_rc_t get_vol_table_nolock(lil_global_table *global_table, uint16_t vid,
             lil_private_vol_table* &table);

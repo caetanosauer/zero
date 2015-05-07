@@ -113,7 +113,7 @@ rc_t vol_t::mount(const char* devname)
     strcpy(_devname, devname);
 
     w_rc_t rc;
-    int        open_flags = smthread_t::OPEN_RDWR;
+    int open_flags = smthread_t::OPEN_RDWR;
 
     rc = me()->open(devname, open_flags, 0666, _unix_fd);
     if (rc.is_error()) {
@@ -634,7 +634,7 @@ const char* volhdr_t::prolog[] = {
  *********************************************************************/
 rc_t
 vol_t::format_vol(
-    const char*         devname,
+    const char*  devname,
     shpid_t      num_pages,
     vid_t&       vid)
 {

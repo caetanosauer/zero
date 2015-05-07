@@ -4,20 +4,20 @@
 
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -166,10 +166,10 @@ ss_m::_get_store_property(
         property = t_load_file;
         return RCOK;
     }
-    
+
     if (flags & st_insert_file) {
         // Files can't be created as st_insert_file, but they
-        // can get changed to this. 
+        // can get changed to this.
         // They get converted on commit to st_regular.
         // The page fix causes the st_tmp flag to be OR-ed in
         // for the page's store flags.

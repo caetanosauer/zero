@@ -36,19 +36,19 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 /* DOXYGEN documentation : */
 
-/**\addtogroup SSMAPI 
+/**\addtogroup SSMAPI
  *
  * \section COMPILE Compiling and Linking Server Code
  * \addtogroup SSMAPI
  *
  * The compiler invocation requires certain flags to ensure the
  * use of pthreads and the LP64 data model; it also has to
- * include the storage manager's libraries.  
+ * include the storage manager's libraries.
  *
- * When the storage manager  is built, 
- * its "make" flags are written to a file called 
+ * When the storage manager  is built,
+ * its "make" flags are written to a file called
  * - "makeflags"
- * in the source root directory (or the installed include/ directory).  
+ * in the source root directory (or the installed include/ directory).
  * These flags usually include (subject to platform):
  * - -DARCH_LP64 -m64
  * - -D_POSIX_THREAD_SEMANTICS -D_REENTRANT -pthread (Linux)
@@ -59,7 +59,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  * \section EXAMPLES Examples
  * \addtogroup SSMAPI
  *
- * Any code that uses the SHORE Storage Manager requires 
+ * Any code that uses the SHORE Storage Manager requires
  * \code
  * #include <sm_vas.h>
  * \endcode
@@ -94,7 +94,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
   * shut down.
   */
  /**\example init_config_options.cpp
-  * This example demonstrates the use of run-time options. 
+  * This example demonstrates the use of run-time options.
   * This code is used for other examples.
   */
  /**\example create_rec.cpp

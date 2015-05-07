@@ -21,7 +21,7 @@ class alloc_cache_t;
 
 class store_operation_param  {
     friend ostream & operator<<(ostream&, const store_operation_param &);
-    
+
 public:
         typedef smlevel_0::store_operation_t        store_operation_t;
         typedef smlevel_0::store_flag_t             store_flag_t;
@@ -47,7 +47,7 @@ private:
             w_assert2(_op == smlevel_0::t_delete_store);
             _u.page=0;
         };
-        store_operation_param(snum_t snum, store_operation_t theOp, 
+        store_operation_param(snum_t snum, store_operation_t theOp,
                               store_flag_t theFlags) :
             _snum(snum), _op(theOp)
         {
@@ -55,8 +55,8 @@ private:
             _u.values._value1 = theFlags;
             _u.values._value2 = 0; // unused
         };
-        store_operation_param(snum_t snum, store_operation_t theOp, 
-                              store_deleting_t newValue, 
+        store_operation_param(snum_t snum, store_operation_t theOp,
+                              store_deleting_t newValue,
                               store_deleting_t oldValue = smlevel_0::t_unknown_deleting) :
             _snum(snum), _op(theOp)
         {
@@ -64,8 +64,8 @@ private:
             _u.values._value1 = newValue;
             _u.values._value2 = oldValue;
         };
-        store_operation_param(snum_t snum, store_operation_t theOp, 
-                              store_flag_t newFlags, 
+        store_operation_param(snum_t snum, store_operation_t theOp,
+                              store_flag_t newFlags,
                               store_flag_t oldFlags) :
             _snum(snum), _op(theOp)
         {
@@ -73,7 +73,7 @@ private:
             _u.values._value1 = newFlags;
             _u.values._value2 = oldFlags;
         };
-        store_operation_param(snum_t snum, store_operation_t theOp, 
+        store_operation_param(snum_t snum, store_operation_t theOp,
                               shpid_t root) :
             _snum(snum), _op(theOp)
         {
@@ -85,7 +85,7 @@ private:
         snum_t snum()  const { return _snum; };
         store_operation_t op()  const { return (store_operation_t)_op; };
         store_flag_t new_store_flags()  const {
-            w_assert2(_op == smlevel_0::t_create_store 
+            w_assert2(_op == smlevel_0::t_create_store
                       || _op == smlevel_0::t_set_store_flags);
             return (store_flag_t)_u.values._value1;
         };
@@ -132,24 +132,24 @@ class io_m : public smlevel_0 {
 public:
     NORET                       io_m();
     NORET                       ~io_m();
-    
+
     static void                 clear_stats();
     static int                  num_vols();
-    
-  
+
+
     /*
      * Device related
      */
     static rc_t                 list_devices(
-        const char**&                 dev_list, 
-        devid_t*&                     devid_list, 
+        const char**&                 dev_list,
+        devid_t*&                     devid_list,
         u_int&                        dev_cnt);
 
     static rc_t                 get_device_quota(
-        const char*                   device, 
-        smksize_t&                    quota_KB, 
+        const char*                   device,
+        smksize_t&                    quota_KB,
         smksize_t&                    quota_used_KB);
-    
+
 
     /*
      * Volume related
@@ -158,8 +158,8 @@ public:
     static vid_t get_vid(const char* path);
     static rc_t                 get_vols(
         int                           start,
-        int                           count, 
-        char                          **dname, 
+        int                           count,
+        char                          **dname,
         vid_t                         vid[],
         int&                          return_cnt);
     static rc_t                 check_disk(const vid_t &vid);
@@ -172,16 +172,16 @@ public:
 
     static rc_t                 read_page(const lpid_t& pid, generic_page& buf);
     static void                 write_many_pages(const generic_page* bufs, int cnt);
-    
+
     static rc_t                 mount(
-         const char*                  device, 
-         vid_t                        vid, 
-         const bool                   apply_fake_io_latency = false, 
+         const char*                  device,
+         vid_t                        vid,
+         const bool                   apply_fake_io_latency = false,
          const int                    fake_disk_latency = 0);
     static rc_t                 dismount(vid_t vid, bool flush = true);
     static rc_t                 dismount_all(bool flush = true, const bool clear_cb = true);
     static rc_t                 sync_all_disks();
-    
+
     /** flushes bf_fixed of all volumes currently mounted. */
     static rc_t                 flush_all_fixed_buffer ();
     /** flushes bf_fixed of the specified volume. */
@@ -192,16 +192,16 @@ public:
     static rc_t                 enable_fake_disk_latency(vid_t vid);
     static rc_t                 disable_fake_disk_latency(vid_t vid);
     static rc_t                 set_fake_disk_latency(
-        vid_t                          vid, 
+        vid_t                          vid,
         const int                      adelay);
 
 
     static rc_t                 get_volume_quota(
-        vid_t                          vid, 
-        smksize_t&                     quota_KB, 
+        vid_t                          vid,
+        smksize_t&                     quota_KB,
         smksize_t&                     quota_used_KB
         );
-    
+
     /**
     *  Allocates one page for store "stid" and return the page id
     *  allocated in pid.
@@ -237,7 +237,7 @@ public:
     static rc_t redo_dealloc_a_page(vid_t vid, shpid_t pid);
 
     static rc_t                 create_store(
-        vid_t                          vid, 
+        vid_t                          vid,
         store_flag_t                   flags,
         stid_t&                        stid);
     static rc_t                 get_store_flags(
@@ -264,7 +264,7 @@ public:
     static shpid_t              get_root(const stid_t& stid, bool nolock = false);
     static rc_t                 set_root(const stid_t& stid, shpid_t root_pid);
 
-    
+
     // The following functinos return space utilization statistics
     // on the volume or selected stores.  These functions use only
     // the store and page/extent meta information.
@@ -282,23 +282,23 @@ public:
         volume_hdr_stats_t&              stats,
         bool                             audit);
 
-    // This function sets a milli_sec delay to occur before 
+    // This function sets a milli_sec delay to occur before
     // each disk read/write operation.  This is useful in discovering
     // thread sync bugs
     static rc_t                 set_disk_delay(
-        uint32_t                milli_sec) { 
-                                        _msec_disk_delay = milli_sec; 
-                                        return RCOK; 
+        uint32_t                milli_sec) {
+                                        _msec_disk_delay = milli_sec;
+                                        return RCOK;
                                     }
-  
+
     //
     // Statistics information
     //
     static void                 io_stats(
-        u_long&                         reads, 
-        u_long&                         writes, 
+        u_long&                         reads,
+        u_long&                         writes,
         u_long&                         allocs,
-        u_long&                         deallocs, 
+        u_long&                         deallocs,
         bool                            reset);
 
 
@@ -306,7 +306,7 @@ public:
         vid_t                           vid,
         const store_operation_param&    param,
         bool redo = false);
-    
+
     /** USED ONLY FROM TESTCASES!. */
     static alloc_cache_t*       get_vol_alloc_cache(vid_t vid);
 
@@ -331,7 +331,7 @@ private:
     // and dismount, since a checkpoint records the mounted
     // volumes, it can't be fuzzy wrt mounts and dismounts.
     class auto_leave_and_trx_release_t; // forward decl - in sm_io.cpp
-    
+
     static int                  vol_cnt;
     static vol_t*               vol[max_vols];
     static uint32_t    _msec_disk_delay;
@@ -345,21 +345,21 @@ private:
     typedef void *     lock_state;
 
     static vol_t*               _find_and_grab(
-        vid_t                          vid, 
+        vid_t                          vid,
         lock_state*                    me,
         bool                           for_write
-    ); 
+    );
 
     static rc_t                 _get_volume_quota(
-        vid_t                             vid, 
-        smksize_t&                        quota_KB, 
+        vid_t                             vid,
+        smksize_t&                        quota_KB,
         smksize_t&                        quota_used_KB
         );
-    
+
     static rc_t                 _dismount(vid_t vid, bool flush, const bool clear_cb = true);
     static rc_t                 _dismount_all(bool flush, const bool clear_cb = true);
     static rc_t                 _create_store(
-        vid_t                           vid, 
+        vid_t                           vid,
         store_flag_t                    flags,
         stid_t&                         stid);
     static rc_t                 _get_store_flags(
@@ -380,8 +380,8 @@ io_m::num_vols()
     return vol_cnt;
 }
 
-inline const char* 
-io_m::dev_name(vid_t vid) 
+inline const char*
+io_m::dev_name(vid_t vid)
 {
     auto_leave_t enter;
     return _dev_name(vid);
@@ -401,10 +401,10 @@ io_m::SetLastMountLSN(lsn_t theLSN)
 }
 
 
-inline rc_t 
+inline rc_t
 io_m::get_volume_quota(
-        vid_t                             vid, 
-        smksize_t&                    quota_KB, 
+        vid_t                             vid,
+        smksize_t&                    quota_KB,
         smksize_t&                    quota_used_KB
         )
 {
@@ -413,7 +413,7 @@ io_m::get_volume_quota(
 }
 
 
-inline rc_t 
+inline rc_t
 io_m::dismount_all(bool flush, const bool clear_cb)
 {
     auto_leave_t enter;

@@ -459,15 +459,15 @@ public:
         t_restart_undo_mix = 0x2000,       // M4 and M5 implementation:
                                            //    UNDO is using both transaction driven and
                                            //    on-demand using user transaction driven
-                                           
+
         t_restart_aries_open = 0x4000,     // M5 implementation:
                                            // ARIES implementation, using lock conflict
                                            // open the system after REDO but before UNDO
-        t_restart_alt_rebalance = 0x8000,  // Alternative implementation for page driven REDO with 
+        t_restart_alt_rebalance = 0x8000,  // Alternative implementation for page driven REDO with
                                            // page rebalance operation using Singe Page Recovery (M2 - M5)
                                            // The alternative implementation uses self-contained
                                            // log record instead of recursive calls
-                                           
+
     };
     static restart_internal_mode_t restart_internal_mode;
 

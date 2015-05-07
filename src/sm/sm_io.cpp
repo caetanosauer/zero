@@ -46,9 +46,9 @@ lsn_t                    io_m::_lastMountLSN = lsn_t::null;
 
 // used for most io_m methods:
 void
-io_m::auto_leave_t::on_entering() 
+io_m::auto_leave_t::on_entering()
 {
-    // The number of update threads _might_ include me 
+    // The number of update threads _might_ include me
     // NOTE: this business dates back to the days when we were trying
     // to allow multi-threaded xcts to have multiple updating threads.
     // But in the end, recovery issues precluded multiple updating threads.
@@ -71,7 +71,7 @@ io_m::auto_leave_t::on_leaving() const
 class io_m::auto_leave_and_trx_release_t {
 private:
     xct_t *_x;
-    void on_entering() { 
+    void on_entering() {
         if(_x) _x->start_crit();
         else _x = NULL;
     }
@@ -82,7 +82,7 @@ public:
         if(_x) on_entering();
     }
     ~auto_leave_and_trx_release_t() {
-        if(_x) on_leaving(); 
+        if(_x) on_leaving();
         chkpt_serial_m::read_release();
     }
 };
@@ -109,11 +109,11 @@ io_m::~io_m()
  *
  *  io_m::find(vid)
  *
- *  Search and return the index for vid in vol[]. 
+ *  Search and return the index for vid in vol[].
  *  If not found, return -1.
  *
  *********************************************************************/
-int 
+int
 io_m::_find(vid_t vid)
 {
     if (!vid) return -1;
@@ -124,7 +124,7 @@ io_m::_find(vid_t vid)
     return (i >= max_vols) ? -1 : int(i);
 }
 
-inline vol_t * 
+inline vol_t *
 io_m::_find_and_grab(vid_t vid, lock_state* _me,
         bool for_write)
 {
@@ -196,7 +196,7 @@ io_m::_dismount_all(bool flush, const bool clear_cb)
     for (int i = 0; i < max_vols; i++)  {
         if (vol[i])        {
             if(errlog) {
-                errlog->clog 
+                errlog->clog
                     << warning_prio
                     << "warning: volume " << vol[i]->vid() << " still mounted\n"
                 << "         automatic dismount" << flushl;
@@ -204,7 +204,7 @@ io_m::_dismount_all(bool flush, const bool clear_cb)
             W_DO(_dismount(vol[i]->vid(), flush, clear_cb));
         }
     }
-    
+
     w_assert3(vol_cnt == 0);
 
     SET_TSTAT(vol_reads,0);
@@ -245,7 +245,7 @@ io_m::sync_all_disks()
  *  return NULL.
  *
  *********************************************************************/
-const char* 
+const char*
 io_m::_dev_name(vid_t vid)
 {
     int i = _find(vid);
@@ -268,7 +268,7 @@ io_m::get_device_quota(const char* device, smksize_t& quota_KB,
         quota_used_KB = 0;
     } else {
         W_DO(_get_volume_quota(vid, quota_KB, quota_used_KB));
-}
+    }
     return RCOK;
 }
 
@@ -283,16 +283,16 @@ io_m::get_device_quota(const char* device, smksize_t& quota_KB,
  *********************************************************************/
 rc_t
 io_m::get_vols(
-    int         start, 
+    int         start,
     int         count,
     char        **dname,
-    vid_t       vid[], 
+    vid_t       vid[],
     int&        ret_cnt)
 {
     auto_leave_t enter;
     ret_cnt = 0;
     w_assert1(start + count <= max_vols);
-   
+
     /*
      *  i iterates over vol[] and j iterates over dname[] and vid[]
      */
@@ -353,7 +353,7 @@ io_m::mount(const char* device, vid_t vid,
         //delete v;
         //return RC(eALREADYMOUNTED);
     }
-    
+
     ++vol_cnt;
 
     w_assert9(vol[i] == 0);
@@ -368,7 +368,7 @@ io_m::mount(const char* device, vid_t vid,
         lsn_t theLSN;
         W_DO( log->insert(*logrec, &theLSN) );
 
-        DBG( << "mount_vol_log(" << device << ", vid=" << vid 
+        DBG( << "mount_vol_log(" << device << ", vid=" << vid
                 << ") lsn=" << theLSN << " prevLSN=" << GetLastMountLSN());
         SetLastMountLSN(theLSN);
 
@@ -408,7 +408,7 @@ io_m::_dismount(vid_t vid, bool flush, const bool clear_cb)
 {
     FUNC(io_m::_dismount);
     DBG( << "_dismount(" << "vid=" << vid << ")");
-    int i = _find(vid); 
+    int i = _find(vid);
     if (i < 0) return RC(eBADVOL);
 
     W_COERCE(vol[i]->dismount(flush, clear_cb));
@@ -421,7 +421,7 @@ io_m::_dismount(vid_t vid, bool flush, const bool clear_cb)
         logrec->fill_xct_attr(tid_t::null, GetLastMountLSN());
         lsn_t theLSN;
         W_COERCE( log->insert(*logrec, &theLSN) );
-        DBG( << "dismount_vol_log(" << _dev_name(vid) 
+        DBG( << "dismount_vol_log(" << _dev_name(vid)
                 << endl
                 << ", vid=" << vid << ") lsn=" << theLSN << " prevLSN=" << GetLastMountLSN());;
         SetLastMountLSN(theLSN);
@@ -431,9 +431,9 @@ io_m::_dismount(vid_t vid, bool flush, const bool clear_cb)
 
     delete vol[i];
     vol[i] = 0;
-    
+
     --vol_cnt;
-  
+
     SSMTEST("io_m::_dismount.1");
 
     DBG( << "_dismount done.");
@@ -477,7 +477,7 @@ io_m::set_fake_disk_latency(vid_t vid, const int adelay)
     int i = _find(vid);
     if (i < 0)  return RC(eBADVOL);
 
-    if (!vol[i]->set_fake_disk_latency(adelay)) 
+    if (!vol[i]->set_fake_disk_latency(adelay))
       return RC(eBADVOL); // IP: should return more appropriate eror code
 
     return (RCOK);
@@ -554,8 +554,8 @@ vid_t io_m::get_vid(const char* path)
         if (vol[i] && strcmp(vol[i]->devname(), path) == 0) {
             vid = vol[i]->vid();
             break;
+        }
     }
-}
     return vid;
 }
 
@@ -564,7 +564,7 @@ vid_t io_m::get_vid(const char* path)
 /*********************************************************************
  *
  *  io_m::read_page(pid, buf)
- * 
+ *
  *  Read the page "pid" on disk into "buf".
  *
  *********************************************************************/
@@ -587,7 +587,7 @@ rc_t io_m::read_page(const lpid_t& pid, generic_page& buf) {
  *  Write "cnt" pages in "bufs" to disk.
  *
  *********************************************************************/
-void 
+void
 io_m::write_many_pages(const generic_page* bufs, int cnt)
 {
     // NEVER acquire monitor to write page
@@ -605,12 +605,12 @@ io_m::write_many_pages(const generic_page* bufs, int cnt)
             w_assert1(bufs[j].pid.vol() == vid);
         }
     }
-#endif 
+#endif
 
     W_COERCE( vol[i]->write_many_pages(bufs[0].pid.page, bufs, cnt) );
 }
 
-rc_t io_m::alloc_a_page(const stid_t &stid, lpid_t &pid) 
+rc_t io_m::alloc_a_page(const stid_t &stid, lpid_t &pid)
 {
     FUNC(io_m::alloc_a_page);
     vid_t volid = stid.vol;
@@ -746,7 +746,7 @@ io_m::_set_store_flags(const stid_t& stid, store_flag_t flags, bool sync_volume)
  *
  *********************************************************************/
 rc_t
-io_m::get_store_flags(const stid_t& stid, store_flag_t& flags, 
+io_m::get_store_flags(const stid_t& stid, store_flag_t& flags,
         bool ok_if_deleting /* = false */)
 {
     // Called from bf- can't use monitor mutex because
@@ -778,14 +778,14 @@ io_m::get_store_flags(const stid_t& stid, store_flag_t& flags,
  *********************************************************************/
 rc_t
 io_m::create_store(
-    vid_t                       volid, 
+    vid_t                       volid,
     store_flag_t                flags,
     stid_t&                     stid)
 {
-    rc_t r; 
-    { 
+    rc_t r;
+    {
         auto_leave_t enter;
-    
+
         r = _create_store(volid, flags, stid);
         // replaced io mutex with volume mutex
     }
@@ -802,7 +802,7 @@ io_m::create_store(
 
 rc_t
 io_m::_create_store(
-    vid_t                       volid, 
+    vid_t                       volid,
     store_flag_t                flags,
     stid_t&                     stid)
 {
@@ -836,14 +836,14 @@ io_m::is_valid_store(const stid_t& stid)
 
     // essentially GRAB_R but doesn't return RC
     lock_state rme_node ;
-    vol_t *v = _find_and_grab(volid, &rme_node, false); 
+    vol_t *v = _find_and_grab(volid, &rme_node, false);
     if (!v)  return false;
     auto_release_r_t<VolumeLock> release_on_return(v->vol_mutex());
 
     if ( ! v->is_valid_store(stid.store) )   {
         return false;
     }
-    
+
     return v->is_alloc_store(stid.store);
 }
 
@@ -869,7 +869,7 @@ rc_t io_m::set_root(const stid_t& stid, shpid_t root_pid)
     vid_t volid = stid.vol;
 
     lock_state rme_node ;
-    vol_t *v = _find_and_grab(volid, &rme_node, false); 
+    vol_t *v = _find_and_grab(volid, &rme_node, false);
     w_assert1(v);
     auto_release_r_t<VolumeLock> release_on_return(v->vol_mutex());
     return v->set_store_root(stid.store, root_pid);
@@ -962,7 +962,7 @@ ostream& operator<<(ostream& o, const store_operation_param& param)
 {
     o << "snum="    << param.snum()
       << ", op="    << param.op();
-    
+
     switch (param.op())  {
         case smlevel_0::t_delete_store:
             break;
