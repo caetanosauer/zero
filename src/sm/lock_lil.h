@@ -25,7 +25,7 @@
 #include "stnode_page.h" // only for stnode_page_h::max
 
 /** max number of volumes overall. */
-const uint16_t MAX_VOL_GLOBAL = 8;
+const uint16_t MAX_VOL_GLOBAL = 32;
 
 /** max number of volumes one transaction can access at a time. */
 const uint16_t MAX_VOL_PER_XCT = 4;

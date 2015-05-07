@@ -114,7 +114,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <w_stream.h>
 
 #include "basics.h"
-#include "lid_t.h"
 #include "vec_t.h"
 #include "tid_t.h"
 #include "stid_t.h"

@@ -642,13 +642,6 @@ public:
     // written to the log.
     static fileoff_t chkpt_displacement;
 
-    // The volume_format_version is used to test compatability
-    // of software with a volume.  Whenever a change is made
-    // to the SM software that makes it incompatible with
-    // previouly formatted volumes, this volume number should
-    // be incremented.  The value is set in sm.cpp.
-    static uint32_t volume_format_version;
-
     // This is a zeroed page for use wherever initialized memory
     // is needed.
     static char zero_page[page_sz];

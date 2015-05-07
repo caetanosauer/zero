@@ -252,28 +252,6 @@ io_m::_dev_name(vid_t vid)
     return i >= 0 ? vol[i]->devname() : 0;
 }
 
-/*********************************************************************
- *
- *  io_m::_get_vid(lvid)
- *
- *********************************************************************/
-vid_t 
-io_m::_get_vid(const lvid_t& lvid)
-{
-    uint32_t i;
-    for (i = 0; i < max_vols; i++)  {
-        if (vol[i] && vol[i]->lvid() == lvid) break;
-    }
-
-    // egcs 1.1.1 croaks on this stmt:
-    // return (i >= max_vols) ? 0 : vol[i]->vid();
-    if(i >= max_vols) {
-        return 0;
-    } else {
-        return vol[i]->vid();
-    }
-}
-
 
 /*********************************************************************
  *  io_m::_get_device_quota()
@@ -284,35 +262,15 @@ io_m::get_device_quota(const char* device, smksize_t& quota_KB,
 {
     auto_leave_t enter;
 
-    lvid_t lvid;
-    W_DO(_get_lvid(device, lvid));
-    if (lvid == lvid_t::null) {
+    vid_t vid = get_vid(device);
+    if (vid == vid_t(0)) {
         // no device on volume
         quota_used_KB = 0;
     } else {
-        W_DO(_get_volume_quota(_get_vid(lvid), quota_KB, quota_used_KB));
-    }
+        W_DO(_get_volume_quota(vid, quota_KB, quota_used_KB));
+}
     return RCOK;
 }
-
-
-/*********************************************************************
- *
- *  io_m::_get_lvid(dev_name, lvid)
- *
- *********************************************************************/
-rc_t
-io_m::_get_lvid(const char* dev_name, lvid_t& lvid)
-{
-    uint32_t i;
-    for (i = 0; i < max_vols; i++)  {
-        if (vol[i] && (strcmp(vol[i]->devname(), dev_name) == 0) ) break;
-    }
-    lvid = (i >= max_vols) ? lvid_t::null : vol[i]->lvid();
-    return RCOK;
-}
-
-
 
 /*********************************************************************
  *
@@ -351,34 +309,6 @@ io_m::get_vols(
     return RCOK;
 }
 
-
-
-/*********************************************************************
- *
- *  io_m::_get_lvid(vid)
- *
- *********************************************************************/
-lvid_t
-io_m::get_lvid(const vid_t vid)
-{
-    auto_leave_t enter;
-    int i = _find(vid);
-    return (i >= max_vols) ? lvid_t::null : vol[i]->lvid();
-}
-
-
-/*********************************************************************
- *
- *  io_m::get_lvid(dev_name, lvid)
- *
- *********************************************************************/
-rc_t
-io_m::get_lvid(const char* dev_name, lvid_t& lvid)
-{
-    auto_leave_t enter;
-    return _get_lvid(dev_name, lvid);
-}
-
 /*********************************************************************
  *
  *  io_m::mount(device, vid)
@@ -405,12 +335,13 @@ io_m::mount(const char* device, vid_t vid,
     // Get ready to roll back to here if we get an error between
     // here and ... where this scope is closed.
     AUTO_ROLLBACK_work
-    w_rc_t rc = v->mount(device, vid);
+    w_rc_t rc = v->mount(device);
     if (rc.is_error())  {
         delete v;
         return RC_AUGMENT(rc);
     }
 
+    // CS (TODO): vid parameter is not needed
     int j = _find(vid);
     if (j >= 0)  {
         // CS: just ignore this for now, so that recovery works with ACP
@@ -615,29 +546,17 @@ io_m::check_disk(const vid_t &volid)
     return RCOK;
 }
 
-
-/*********************************************************************
- *
- *  io_m::_get_new_vid(vid)
- *
- *********************************************************************/
-rc_t
-io_m::get_new_vid(vid_t& vid)
+vid_t io_m::get_vid(const char* path)
 {
     auto_leave_t enter;
-    for (vid = 1; vid != 0; vid++) {
-        int i = _find(vid);
-        if (i < 0) return RCOK;
+    vid_t vid = vid_t(0);
+    for (int i = 0; i < max_vols; i++)  {
+        if (vol[i] && strcmp(vol[i]->devname(), path) == 0) {
+            vid = vol[i]->vid();
+            break;
     }
-    return RC(eNVOL);
 }
-
-
-vid_t
-io_m::get_vid(const lvid_t& lvid)
-{
-    auto_leave_t enter;
-    return _get_vid(lvid);
+    return vid;
 }
 
 

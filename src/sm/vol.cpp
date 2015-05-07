@@ -24,10 +24,14 @@
 #include "alloc_cache.h"
 #include "bf_tree.h"
 
+
 #ifdef EXPLICIT_TEMPLATE
 template class w_auto_delete_t<generic_page>;
 template class w_auto_delete_array_t<stnode_t>;
 #endif
+
+// CS TODO read this from log at recovery
+vid_t vol_t::_next_vid = vid_t(1);
 
 /** sector_size : reserved space at beginning of volume. */
 static const int sector_size = 512;
@@ -98,7 +102,7 @@ std::cout << "!!!!!!!!!!!!!!!! NO-op sync -- 4" << std::endl;
     return RCOK;
 }
 
-rc_t vol_t::mount(const char* devname, vid_t vid)
+rc_t vol_t::mount(const char* devname)
 {
     if (_unix_fd >= 0) return RC(eALREADYMOUNTED);
 
@@ -108,34 +112,25 @@ rc_t vol_t::mount(const char* devname, vid_t vid)
     w_assert1(strlen(devname) < sizeof(_devname));
     strcpy(_devname, devname);
 
-    w_rc_t e;
+    w_rc_t rc;
     int        open_flags = smthread_t::OPEN_RDWR;
-    {
-        char *s = getenv("SM_VOL_RAW");
-        if (s && s[0] && atoi(s) > 0)
-            open_flags |= smthread_t::OPEN_RAW;
-        else if (s && s[0] && atoi(s) == 0)
-            open_flags &= ~smthread_t::OPEN_RAW;
-    }
 
-    e = me()->open(devname, open_flags, 0666, _unix_fd);
-    if (e.is_error()) {
+    rc = me()->open(devname, open_flags, 0666, _unix_fd);
+    if (rc.is_error()) {
         _unix_fd = -1;
-        return e;
+        return rc;
     }
 
     //  Read the volume header on the device
     volhdr_t vhdr;
     {
-        rc_t rc = read_vhdr(_devname, vhdr);
+        rc_t rc = vhdr.read(_unix_fd);
         if (rc.is_error())  {
-            W_DO_MSG(me()->close(_unix_fd), << "volume id=" << vid);
+            W_IGNORE(me()->close(_unix_fd));
             _unix_fd = -1;
             return RC_AUGMENT(rc);
         }
     }
-    //  Save info on the device
-    _vid = vid;
 
 #if W_DEBUG_LEVEL > 4
     w_ostrstream_buf sbuf(64);                /* XXX magic number */
@@ -143,20 +138,20 @@ rc_t vol_t::mount(const char* devname, vid_t vid)
     //_mutex.rename("m:", sbuf.c_str());
     /* XXX how about restoring the old mutex name when done? */
 #endif
-    _lvid = vhdr.lvid();
-    _num_pages =  vhdr.num_pages();
-    _apid = lpid_t(vid, vhdr.apid()); // 0 if no volumes formatted yet
-    _spid = lpid_t(vid, vhdr.spid()); // 0 if no volumes formatted yet
-    _hdr_pages = vhdr.hdr_pages(); // 0 if no volumes formatted yet
+    _vid = vhdr.vid;
+    _num_pages =  vhdr.num_pages;
+    _apid = lpid_t(_vid, vhdr.apid); // 0 if no volumes formatted yet
+    _spid = lpid_t(_vid, vhdr.spid); // 0 if no volumes formatted yet
+    _hdr_pages = vhdr.hdr_pages; // 0 if no volumes formatted yet
 
     clear_caches();
     _fixed_bf = new bf_fixed_m();
     w_assert1(_fixed_bf);
-    e = _fixed_bf->init(this, _unix_fd, _num_pages);
-    if (e.is_error()) {
+    rc = _fixed_bf->init(this, _unix_fd, _num_pages);
+    if (rc.is_error()) {
         W_IGNORE(me()->close(_unix_fd));
         _unix_fd = -1;
-        return e;
+        return rc;
     }
     _first_data_pageid = _fixed_bf->get_page_cnt() + 1; // +1 for volume header
 
@@ -202,14 +197,14 @@ rc_t vol_t::check_disk()
 {
     FUNC(vol_t::check_disk);
     volhdr_t vhdr;
-    W_DO( read_vhdr(_devname, vhdr));
+    W_DO(vhdr.read(_unix_fd));
     smlevel_0::errlog->clog << info_prio << "vol_t::check_disk()\n";
     smlevel_0::errlog->clog << info_prio
-        << "\tvolid      : " << vhdr.lvid() << flushl;
+        << "\tvolid      : " << vhdr.vid << flushl;
     smlevel_0::errlog->clog << info_prio
-        << "\tnum_pages   : " << vhdr.num_pages() << flushl;
+        << "\tnum_pages   : " << vhdr.num_pages << flushl;
     smlevel_0::errlog->clog << info_prio
-        << "\thdr_pages   : " << vhdr.hdr_pages() << flushl;
+        << "\thdr_pages   : " << vhdr.hdr_pages << flushl;
 
     smlevel_0::errlog->clog << info_prio
         << "\tstore  #   flags   status: [ extent-list ]" << "." << endl;
@@ -619,7 +614,7 @@ vol_t::write_many_pages(shpid_t pnum, const generic_page* const pages, int cnt)
     return RCOK;
 }
 
-const char* vol_t::prolog[] = {
+const char* volhdr_t::prolog[] = {
     "%% SHORE VOLUME VERSION ",
     "%% device quota(KB)  : ",
     "%% volume_id         : ",
@@ -640,11 +635,11 @@ const char* vol_t::prolog[] = {
 rc_t
 vol_t::format_vol(
     const char*         devname,
-    lvid_t              lvid,
-    vid_t               vid,
-    shpid_t             num_pages)
+    shpid_t      num_pages,
+    vid_t&       vid)
 {
     FUNC(vol_t::format_vol);
+    // CS TODO latch here
 
     /*
      *  No log needed.
@@ -652,8 +647,7 @@ vol_t::format_vol(
      */
     xct_log_switch_t log_off(OFF);
 
-    DBG( << "formating volume " << lvid << " <"
-         << devname << ">" );
+    DBG( << "formating volume " << devname << ">" );
     int flags = smthread_t::OPEN_CREATE | smthread_t::OPEN_RDWR
         | smthread_t::OPEN_EXCL | smthread_t::OPEN_TRUNC;
     int fd;
@@ -662,24 +656,26 @@ vol_t::format_vol(
     shpid_t alloc_pages = num_pages / alloc_page_h::bits_held + 1; // # alloc_page_h pages
     shpid_t hdr_pages = alloc_pages + 1 + 1; // +1 for stnode_page, +1 for volume header
 
-    lpid_t apid (vid, 1);
-    lpid_t spid (vid, 1 + alloc_pages);
+    shpid_t apid = shpid_t(1);
+    shpid_t spid = shpid_t(1 + alloc_pages);
+
+    vid = _next_vid++;
 
     /*
      *  Set up the volume header
      */
     volhdr_t vhdr;
-    vhdr.set_format_version(volume_format_version);
-    vhdr.set_lvid(lvid);
-    vhdr.set_num_pages(num_pages);
-    vhdr.set_hdr_pages(hdr_pages);
-    vhdr.set_apid(apid.page);
-    vhdr.set_spid(spid.page);
+    vhdr.version = volhdr_t::FORMAT_VERSION;
+    vhdr.vid = vid;
+    vhdr.num_pages = num_pages;
+    vhdr.hdr_pages = hdr_pages;
+    vhdr.apid = apid;
+    vhdr.spid = spid;
 
     /*
      *  Write volume header
      */
-    W_DO(write_vhdr(fd, vhdr));
+    W_DO(vhdr.write(fd));
 
     /*
      *  Skip first page ... seek to first info page.
@@ -700,11 +696,10 @@ vol_t::format_vol(
 
         //  Format alloc_page pages
         {
-            for (apid.page = 1; apid.page < alloc_pages + 1; ++apid.page)  {
-                alloc_page_h ap(&buf, apid);  // format page
-                w_assert1(ap.vol() == vid);
+            for (apid = 1; apid < alloc_pages + 1; ++apid)  {
+                alloc_page_h ap(&buf, lpid_t(vid, apid));  // format page
                 // set bits for the header pages
-                if (apid.page == 1) {
+                if (apid == 1) {
                     for (shpid_t hdr_pid = 0; hdr_pid < hdr_pages; ++hdr_pid) {
                         ap.set_bit(hdr_pid);
                     }
@@ -721,9 +716,8 @@ vol_t::format_vol(
         // Format stnode_page
         {
             DBG(<<" formatting stnode_page");
-            DBGTHRD(<<"stnode_page page " << spid.page);
-            stnode_page_h fp(&buf, spid);  // formatting...
-            w_assert1(fp.vol() == vid);
+            DBGTHRD(<<"stnode_page page " << spid);
+            stnode_page_h fp(&buf, lpid_t(vid, spid));  // formatting...
             generic_page* page = fp.get_generic_page();
             page->checksum = page->calculate_checksum();
             W_DO(me()->write(fd, page, sizeof(*page)));
@@ -745,7 +739,7 @@ vol_t::format_vol(
  *
  *********************************************************************/
 rc_t
-vol_t::write_vhdr(int fd, volhdr_t& vhdr)
+volhdr_t::write(int fd)
 {
     /*
      *  The  volume header is written after the first 512 bytes of
@@ -768,12 +762,12 @@ vol_t::write_vhdr(int fd, volhdr_t& vhdr)
      *  raw DB storage. Furthermore, it would be a better practice to use
      *  a raw partition (e.g., /dev/sdb1) instead of the whole device.
      */
-    w_assert1(page_sz >= 1024);
+    w_assert1(sizeof(generic_page) >= 1024);
 
     /*
      *  tmp holds the volume header to be written
      */
-    const int tmpsz = page_sz/2;
+    const int tmpsz = sizeof(generic_page) / 2;
     char* tmp = new char[tmpsz]; // auto-del
     if(!tmp) {
         return RC(eOUTOFMEMORY);
@@ -797,12 +791,12 @@ vol_t::write_vhdr(int fd, volhdr_t& vhdr)
 
     // write out the volume header
     i = 0;
-    s << prolog[i++] << vhdr.format_version() << endl;
-    s << prolog[i++] << vhdr.lvid() << endl;
-    s << prolog[i++] << vhdr.num_pages() << endl;
-    s << prolog[i++] << vhdr.hdr_pages() << endl;
-    s << prolog[i++] << vhdr.apid() << endl;
-    s << prolog[i++] << vhdr.spid() << endl;
+    s << prolog[i++] << version << endl;
+    s << prolog[i++] << vid << endl;
+    s << prolog[i++] << num_pages << endl;
+    s << prolog[i++] << hdr_pages << endl;
+    s << prolog[i++] << apid << endl;
+    s << prolog[i++] << spid << endl;
     if (!s)  {
         return RC(eOS);
     }
@@ -824,7 +818,6 @@ vol_t::write_vhdr(int fd, volhdr_t& vhdr)
 }
 
 
-
 /*********************************************************************
  *
  *  vol_t::read_vhdr(fd, vhdr)
@@ -833,12 +826,12 @@ vol_t::write_vhdr(int fd, volhdr_t& vhdr)
  *
  *********************************************************************/
 rc_t
-vol_t::read_vhdr(int fd, volhdr_t& vhdr)
+volhdr_t::read(int fd)
 {
     /*
      *  tmp place to hold header page (need only 2nd half)
      */
-    const int tmpsz = page_sz/2;
+    const int tmpsz = sizeof(generic_page) / 2;
     char* tmp = new char[tmpsz]; // auto-del
     if(!tmp) {
         return RC(eOUTOFMEMORY);
@@ -870,27 +863,25 @@ vol_t::read_vhdr(int fd, volhdr_t& vhdr)
     uint32_t temp;
     int i = 0;
     s.read(buf, strlen(prolog[i++])) >> temp;
-        vhdr.set_format_version(temp);
+    version = temp;
 
-    lvid_t t;
-    s.read(buf, strlen(prolog[i++])) >> t; vhdr.set_lvid(t);
+    s.read(buf, strlen(prolog[i++])) >> vid;
+    s.read(buf, strlen(prolog[i++])) >> num_pages;
+    s.read(buf, strlen(prolog[i++])) >> hdr_pages;
+    s.read(buf, strlen(prolog[i++])) >> apid;
+    s.read(buf, strlen(prolog[i++])) >> spid;
 
-    s.read(buf, strlen(prolog[i++])) >> temp; vhdr.set_num_pages(temp);
-    s.read(buf, strlen(prolog[i++])) >> temp; vhdr.set_hdr_pages(temp);
-    s.read(buf, strlen(prolog[i++])) >> temp; vhdr.set_apid(temp);
-    s.read(buf, strlen(prolog[i++])) >> temp; vhdr.set_spid(temp);
-
-    if ( !s || vhdr.format_version() != volume_format_version ) {
+    if ( !s || version != FORMAT_VERSION ) {
 
         cout << "Volume format bad:" << endl;
-        cout << "version " << vhdr.format_version() << endl;
-        cout << "   expected " << volume_format_version << endl;
+        cout << "version " << version << endl;
+        cout << "   expected " << FORMAT_VERSION << endl;
 
         cout << "Other: " << endl;
-        cout << "# pages " << vhdr.num_pages() << endl;
-        cout << "# hdr pages " << vhdr.hdr_pages() << endl;
-        cout << "1st apid " << vhdr.apid() << endl;
-        cout << "spid " << vhdr.spid() << endl;
+        cout << "# pages " << num_pages << endl;
+        cout << "# hdr pages " << hdr_pages << endl;
+        cout << "1st apid " << apid << endl;
+        cout << "spid " << spid << endl;
 
         cout << "Buffer: " << endl;
         cout << buf << endl;
@@ -900,36 +891,6 @@ vol_t::read_vhdr(int fd, volhdr_t& vhdr)
         }
     }
 
-    }
-
-    return RCOK;
-}
-
-
-
-/*********************************************************************
- *
- *  vol_t::read_vhdr(devname, vhdr)
- *
- *  Read the volume header for "devname" and return it in "vhdr".
- *
- *********************************************************************/
-rc_t
-vol_t::read_vhdr(const char* devname, volhdr_t& vhdr)
-{
-    w_rc_t e;
-    int fd;
-
-    e = me()->open(devname, smthread_t::OPEN_RDONLY, 0, fd);
-    if (e.is_error())
-        return e;
-
-    e = read_vhdr(fd, vhdr);
-
-    W_IGNORE(me()->close(fd));
-
-    if (e.is_error())  {
-        W_DO_MSG(e, << "device name=" << devname);
     }
 
     return RCOK;

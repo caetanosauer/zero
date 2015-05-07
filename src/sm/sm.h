@@ -1301,11 +1301,7 @@ public:
      * \note This method should \b not
      * be called in the context of a transaction.
      */
-    static rc_t            list_volumes(
-        const char*            device,
-        lvid_t*&               lvid_list,
-        u_int&                 lvid_cnt
-    );
+    // CS TODO
 
     // get_device_quota the "quota" (in KB) of the device
     // and the amount of the quota allocated to volumes on the device.
@@ -1366,41 +1362,20 @@ public:
      */
     static rc_t disable_fake_disk_latency(vid_t vid);
 
-
-    /**\brief Add a volume to a device.
-     * \ingroup SSMVOL
-     * \details
-     * @param[in] lvid  Long volume id to be used on ss_m::create_vol().
-     *
-     * This generates a unique volume identifier to be written persistently
-     * on the volume when it is formatted.
-     * This enables us to avoid the mistake of doubly-mounting a volume.
-     * The identifer is constructed from the machine network address and the
-     * time of day.
-     */
-    static rc_t generate_new_lvid(lvid_t& lvid);
-
     /**\brief Add a volume to a device.
      * \ingroup SSMVOL
      * \details
      * @param[in] device_name   Operating-system file name of the "device".
-     * @param[in] lvid  Long volume id to use when formatting the new volume.
      * @param[in] quota_KB  Quota in kilobytes.
-     * @param[in] skip_raw_init  Do not initialize the volume if on a raw device.
-     * @param[in] apply_fake_io_latency See ss_m::enable_fake_disk_latency()
-     * @param[in] fake_disk_latency See ss_m::set_fake_disk_latency()
+     * @param[out] vid The vid used for the created volume
      *
      * \note This method should \b not
      * be called in the context of a transaction.
-     *
-     * The pages on the volume \b must be zeroed; you can only use
-     * \a skip_raw_init = true if you have by some other means
-     * already initialized the volume.
      */
     static rc_t            create_vol(
         const char*             device_name,
-        lvid_t&           lvid,
-        smksize_t               quota_KB
+        smksize_t               quota_KB,
+        vid_t&           vid
     );
 
     /**\brief Gets the quotas associated with the volume.
@@ -1411,7 +1386,7 @@ public:
      * allocated extents.
      */
     static rc_t            get_volume_quota(
-        const lvid_t&             lvid,
+        const vid_t&              vid,
         smksize_t&                quota_KB,
         smksize_t&                quota_used_KB);
 
@@ -1738,28 +1713,6 @@ public:
     * @param[in] stid  ID of the index.
     */
     static rc_t           verify_index(stid_t  stid, int hash_bits, bool &consistent);
-
-    /**\brief Return the short volume ID of a volume.
-     * \ingroup SSMVOL
-     *
-     * @param[in] lvid Long (persistent) volume ID found on the volume's
-     * header.
-     * @param[out] vid Short volume ID of a mounted volume.
-     */
-    static rc_t            lvid_to_vid(
-        const lvid_t&          lvid,
-        vid_t&                 vid);
-
-    /**\brief Return the long volume ID of a volume.
-     * \ingroup SSMVOL
-     *
-     * @param[in] vid Short volume ID of a mounted volume.
-     * @param[out] lvid Long (persistent) volume ID found on the volume's
-     * header.
-     */
-    static rc_t            vid_to_lvid(
-        vid_t                  vid,
-        lvid_t&                lvid);
 
     /**
      * Starts reading a given store and returns its root page ID.

@@ -48,7 +48,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <sthread.h>
 #include <vec_t.h>
 #include <latch.h>
-#include <lid_t.h>
 #if defined(SM_SOURCE)
 /* Do not force this on VASs */
 #include <sm_s.h>

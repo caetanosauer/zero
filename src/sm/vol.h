@@ -17,39 +17,23 @@ class stnode_cache_t;
 class bf_fixed_m;
 
 
-class volhdr_t {
+struct volhdr_t {
     // For compatibility checking, we record a version number
     // number of the Shore SM version which formatted the volume.
-    // This number is called volume_format_version in sm_base.h.
-    uint32_t   _format_version;
-    lvid_t              _lvid;
-    shpid_t             _apid;        // first alloc_page pid
-    shpid_t             _spid;        // the only stnode_page pid
-    uint32_t            _num_pages;
-    shpid_t             _hdr_pages;   // # pages in hdr includes entire store 0
+    static const uint32_t FORMAT_VERSION = 19;
 
-public:
-    uint32_t   format_version() const {
-                            return _format_version; }
-    void            set_format_version(uint v) {
-                        _format_version = v; }
+    uint32_t   version;
+    vid_t      vid;
+    shpid_t    apid;        // first alloc_page pid
+    shpid_t    spid;        // the only stnode_page pid
+    uint32_t   num_pages;
+    shpid_t    hdr_pages;   // # pages in hdr includes entire store 0
 
-    const lvid_t&   lvid() const { return _lvid; }
-    void            set_lvid(const lvid_t &l) {
-                             _lvid = l; }
+    rc_t             write(int fd);
+    rc_t             read(int fd);
 
-    const shpid_t&   apid() const { return _apid; }
-    void             set_apid(const shpid_t& p) { _apid = p; }
-
-    const shpid_t&   spid() const { return _spid; }
-    void             set_spid(const shpid_t& p) { _spid = p; }
-
-    uint32_t         num_pages() const {  return _num_pages; }
-    void             set_num_pages(uint32_t n) {  _num_pages = n; }
-
-    shpid_t          hdr_pages() const {  return _hdr_pages; }
-    void             set_hdr_pages(shpid_t n) {  _hdr_pages = n; }
-
+private:
+    static const char*       prolog[]; // string array for volume hdr
 };
 
 
@@ -71,7 +55,7 @@ public:
     NORET               ~vol_t();
 
     /** Mount the volume at "devname" and give it a an id "vid". */
-    rc_t                mount(const char* devname, vid_t vid);
+    rc_t                mount(const char* devname);
 
     /** Dismount the volume. */
     rc_t                dismount(bool flush = true, const bool clear_cb = true);
@@ -86,7 +70,6 @@ public:
 
     const char*         devname() const;
     vid_t               vid() const ;
-    lvid_t              lvid() const ;
     /** returns the page ID of the first non-fixed pages (after stnode_page and alloc_page).*/
     shpid_t             first_data_pageid() const { return _first_data_pageid;}
     uint32_t            num_pages() const;
@@ -165,16 +148,8 @@ public:
 
     static rc_t            format_vol(
         const char*          devname,
-        lvid_t               lvid,
-        vid_t                vid,
-        shpid_t              num_pages);
-
-    static rc_t            read_vhdr(const char* devname, volhdr_t& vhdr);
-    static rc_t            read_vhdr(int fd, volhdr_t& vhdr);
-
-    static rc_t            write_vhdr(           // SMUF-SC3: moved to public
-        int                  fd,
-        volhdr_t&            vhdr);
+        shpid_t              num_pages,
+        vid_t&               vid);
 
     // methods for space usage statistics for this volume
     rc_t             get_du_statistics(
@@ -195,10 +170,11 @@ public:
     void            fake_disk_latency(long start);
 
 private:
+    static vid_t _next_vid;
+
     char             _devname[max_devname];
     int              _unix_fd;
     vid_t            _vid;
-    lvid_t           _lvid;
     shpid_t          _first_data_pageid;
     uint             _num_pages;
     uint             _hdr_pages;
@@ -226,8 +202,6 @@ private:
     stnode_cache_t*          get_stnode_cache() {return _stnode_cache;}
     bf_fixed_m*              get_fixed_bf() {return _fixed_bf;}
 
-    static const char*       prolog[]; // string array for volume hdr
-
 };
 
 inline const char* vol_t::devname() const
@@ -238,11 +212,6 @@ inline const char* vol_t::devname() const
 inline vid_t vol_t::vid() const
 {
     return _vid;
-}
-
-inline lvid_t vol_t::lvid() const
-{
-    return _lvid;
 }
 
 inline uint vol_t::num_pages() const

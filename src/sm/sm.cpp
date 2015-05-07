@@ -140,45 +140,6 @@ ss_m::LOG_ARCHIVED_CALLBACK_FUNC
 
 smlevel_0::fileoff_t        smlevel_0::chkpt_displacement = 0;
 
-// Whenever a change is made to data structures stored on a volume,
-// volume_format_version be incremented so that incompatibilities
-// will be detected.
-//
-// Different ALIGNON values are NOT reflected in the version number,
-// so it is still possible to create incompatible volumes by changing
-// ALIGNON.
-//
-//  1 = original
-//  2 = lid and lgrex indexes contain vid_t
-//  3 = lid index no longer contains vid_t
-//  4 = added store flags to pages
-//  5 = large records no longer contain vid_t
-//  6 = volume headers have lvid_t instead of vid_t
-//  7 = removed vid_t from sinfo_s (stored in directory index)
-//  8 = added special store for 1-page btrees
-//  9 = changed prefix for reserved root index entries to SSM_RESERVED
-//  10 = extent link changed shape.
-//  11 = extent link changed, allowing concurrency in growing a store
-//  12 = dir btree contents changed (removed store flag and property)
-//  13 = Large volumes : changed size of snum_t and extnum_t
-//  14 = Changed size of lsn_t, hence log record headers were rearranged
-//       and page headers changed.  Small disk address
-//  15 = Same as 14, but with large disk addresses.
-//  16 = Align body of page to an eight byte boundary.  This should have
-//       occured in 14, but there are some people using it, so need seperate
-//       numbers.
-//  17 = Same as 16 but with large disk addresses.
-//  18 = Release 6.0 of the storage manager.
-//       Only large disk addresses, 8-byte alignment, added _hdr_pages to
-//       volume header, logical IDs and 1page indexes are deprecated.
-//       Assumes 64-bit architecture.
-//       No support for older volume formats.
-
-#define        VOLUME_FORMAT        18
-
-uint32_t        smlevel_0::volume_format_version = VOLUME_FORMAT;
-
-
 /*
  * _being_xct_mutex: Used to prevent xct creation during volume dismount.
  * Its sole purpose is to be sure that we don't have transactions
@@ -1539,21 +1500,6 @@ ss_m::mount_vol(const char* path, vid_t& vid)
 
     DBG(<<"mount_vol " << path);
 
-    // make sure volumes on the dev are not already mounted
-    // TODO: get rid of lvid and make vid unique by storing it in vhdr
-    lvid_t lvid;
-    W_DO(io->get_lvid(path, lvid));
-    if (io->get_vid(lvid) != 0 ||
-            (vid != 0 && io->is_mounted(vid)))
-    {
-        // already mounted
-        return RCOK;
-    }
-
-    if (vid == 0) {
-        W_DO(io->get_new_vid(vid));
-    }
-
     W_DO(io->mount(path, vid));
 
     // take a synch checkpoint to record the mount
@@ -1594,28 +1540,6 @@ ss_m::dismount_all()
     return RCOK;
 }
 
-rc_t
-ss_m::list_volumes(const char* device,
-        lvid_t*& lvid_list,
-        u_int& lvid_cnt)
-{
-    SM_PROLOGUE_RC(ss_m::list_volumes, can_be_in_xct, read_only, 0);
-    lvid_cnt = 0;
-    lvid_list = NULL;
-
-    // for now there is only on lvid possible, but later there will
-    // be multiple volumes on a device
-    lvid_t lvid;
-    W_DO(io->get_lvid(device, lvid));
-    if (lvid != lvid_t::null) {
-        lvid_list = new lvid_t[1];
-        lvid_list[0] = lvid;
-        if (lvid_list == NULL) return RC(eOUTOFMEMORY);
-        lvid_cnt = 1;
-    }
-    return RCOK;
-}
-
 /*--------------------------------------------------------------*
  *  ss_m::get_device_quota()                            *
  *--------------------------------------------------------------*/
@@ -1627,58 +1551,11 @@ ss_m::get_device_quota(const char* device, smksize_t& quota_KB, smksize_t& quota
     return RCOK;
 }
 
-rc_t
-ss_m::generate_new_lvid(lvid_t& lvid)
-{
-    // CS: copied from old lid_m
-    // CS: replace this with UUID
-    /*
-     * For now the long volume ID will consists of
-     * the machine network address and the current time-of-day.
-     *
-     * Since the time of day resolution is in seconds,
-     * we protect this function with a mutex to guarantee we
-     * don't generate duplicates.
-     */
-    static long  last_time = 0;
-    const int    max_name = 100;
-    char         name[max_name+1];
-
-    // Mutex only for generating new volume ids.
-    static queue_based_block_lock_t lidmgnrt_mutex;
-    CRITICAL_SECTION(cs, lidmgnrt_mutex);
-
-    if (gethostname(name, max_name)) return RC(eOS);
-
-    struct hostent* hostinfo = gethostbyname(name);
-
-    if (!hostinfo)
-        W_FATAL(eINTERNAL);
-
-    memcpy(&lvid.high, hostinfo->h_addr, sizeof(lvid.high));
-    DBG( << "lvid " << lvid );
-
-    /* XXXX generating ids fast enough can create a id time sequence
-       that grows way faster than real time!  This could be a problem!
-       Better time resolution than seconds does exist, might be worth
-       using it.  */
-    stime_t curr_time = stime_t::now();
-
-    if (curr_time.secs() > last_time)
-            last_time = curr_time.secs();
-    else
-            last_time++;
-
-    lvid.low = last_time;
-    return RCOK;
-}
-
 /*--------------------------------------------------------------*
  *  ss_m::create_vol()                                *
  *--------------------------------------------------------------*/
 rc_t
-ss_m::create_vol(const char* dev_name, lvid_t& lvid,
-                 smksize_t quota_KB)
+ss_m::create_vol(const char* dev_name, smksize_t quota_KB, vid_t& vid)
 {
     SM_PROLOGUE_RC(ss_m::create_vol, not_in_xct, read_only, 0);
 
@@ -1688,19 +1565,9 @@ ss_m::create_vol(const char* dev_name, lvid_t& lvid,
 
     spinlock_write_critical_section cs(&_begin_xct_mutex);
 
-    W_DO(generate_new_lvid(lvid));
-
-    // make sure volume is not already mounted
-    vid_t vid = io->get_vid(lvid);
-    if (vid != 0) return RC(eVOLEXISTS);
-
-    vid_t tmp_vid;
-    W_DO(io->get_new_vid(tmp_vid));
-    DBG(<<"got new vid " << tmp_vid
-        << " formatting " << dev_name);
-
-    W_DO(vol_t::format_vol(dev_name, lvid, tmp_vid,
-       shpid_t(quota_KB/(page_sz/1024))));
+    W_DO(vol_t::format_vol(dev_name,
+       shpid_t(quota_KB/(page_sz/1024)),
+       vid));
 
     // CS: checkpoint must be taken to record the volume mount, otherwise
     // recovery will fail (TODO this general problem should be fixed)
@@ -1713,10 +1580,9 @@ ss_m::create_vol(const char* dev_name, lvid_t& lvid,
  *  ss_m::get_volume_quota()                            *
  *--------------------------------------------------------------*/
 rc_t
-ss_m::get_volume_quota(const lvid_t& lvid, smksize_t& quota_KB, smksize_t& quota_used_KB)
+ss_m::get_volume_quota(const vid_t& vid, smksize_t& quota_KB, smksize_t& quota_used_KB)
 {
     SM_PROLOGUE_RC(ss_m::get_volume_quota, can_be_in_xct, read_only, 0);
-    vid_t vid = io->get_vid(lvid);
     W_DO(io->get_volume_quota(vid, quota_KB, quota_used_KB));
     return RCOK;
 }

@@ -23,8 +23,6 @@ class ss_m;
  * Details of the test data volume.
  */
 struct test_volume_t {
-    /** persistent volume id to give the volume. */
-    lvid_t      _lvid;
     /** short (integer) volume id. */
     vid_t       _vid;
     /** path of the devise. */

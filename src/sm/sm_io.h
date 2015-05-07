@@ -15,7 +15,6 @@ class SmVolumeMetaStats;
 class SmFileMetaStats;
 class SmStoreMetaStats;
 class xct_t; // forward
-struct lvid_t;
 
 struct volume_hdr_stats_t;
 class alloc_cache_t;
@@ -141,7 +140,6 @@ public:
     /*
      * Device related
      */
-    static rc_t                 get_lvid(const char* dev_name, lvid_t& lvid);
     static rc_t                 list_devices(
         const char**&                 dev_list, 
         devid_t*&                     devid_list, 
@@ -157,6 +155,7 @@ public:
      * Volume related
      */
 
+    static vid_t get_vid(const char* path);
     static rc_t                 get_vols(
         int                           start,
         int                           count, 
@@ -165,11 +164,8 @@ public:
         int&                          return_cnt);
     static rc_t                 check_disk(const vid_t &vid);
     // return an unused vid_t
-    static rc_t                 get_new_vid(vid_t& vid);
     static bool                 is_mounted(vid_t vid);
     static vol_t*               get_volume(vid_t vid);
-    static vid_t                get_vid(const lvid_t& lvid);
-    static lvid_t               get_lvid(const vid_t vid);
     static const char*          dev_name(vid_t vid);
     static lsn_t                GetLastMountLSN();                // used for logging/recovery purposes
     static void                 SetLastMountLSN(lsn_t theLSN);
@@ -343,8 +339,6 @@ private:
 
 private:
 
-    static rc_t                 _get_lvid(const char* dev_name, lvid_t& lvid);
-    
     static const char*          _dev_name(vid_t vid);
     static int                  _find(vid_t vid);
 
@@ -362,8 +356,6 @@ private:
         smksize_t&                        quota_used_KB
         );
     
-    static vid_t                _get_vid(const lvid_t& lvid);
-    static lvid_t               _get_lvid(const vid_t vid);
     static rc_t                 _dismount(vid_t vid, bool flush, const bool clear_cb = true);
     static rc_t                 _dismount_all(bool flush, const bool clear_cb = true);
     static rc_t                 _create_store(

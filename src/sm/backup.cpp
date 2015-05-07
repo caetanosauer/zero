@@ -84,7 +84,7 @@ void BackupFile::open() {
     _fd = ::open(_path.c_str(), O_RDONLY|O_DIRECT|O_NOATIME);
     if (is_opened()) {
         volhdr_t backup_hdr;
-        rc_t rc = vol_t::read_vhdr(_path.c_str(), backup_hdr);
+        rc_t rc = backup_hdr.read(_fd);
         if (rc.is_error())  {
             this->close();
             DBGOUT1(<<"Backup open: failed to read volume header");
