@@ -282,30 +282,24 @@ io_m::get_device_quota(const char* device, smksize_t& quota_KB,
  *
  *********************************************************************/
 rc_t
-io_m::get_vols(
-    int         start,
-    int         count,
-    char        **dname,
-    vid_t       vid[],
-    int&        ret_cnt)
+io_m::get_vols(int start, int count,
+    std::vector<string>& names,
+    std::vector<vid_t>& vids)
 {
     auto_leave_t enter;
-    ret_cnt = 0;
-    w_assert1(start + count <= max_vols);
+
+    w_assert0(names.size() == vids.size());
 
     /*
      *  i iterates over vol[] and j iterates over dname[] and vid[]
      */
-    int i, j;
-    for (i = start, j = 0; i < max_vols; i++)  {
+    for (int i = 0, j = start; i < max_vols && j < count; i++)  {
         if (vol[i])  {
-            w_assert0(j < count); // caller's programming error if we fail here
-            vid[j] = vol[i]->vid();
-            strncpy(dname[j], vol[i]->devname(), max_devname);
+            vids.push_back(vol[i]->vid());
+            names.push_back(vol[i]->devname());
             j++;
         }
     }
-    ret_cnt = j;
     return RCOK;
 }
 
@@ -360,19 +354,20 @@ io_m::mount(const char* device, vid_t vid,
     vol[i] = v;
 
     if (log && smlevel_0::logging_enabled)  {
-        logrec_t* logrec = new logrec_t; //deleted at end of scope
-        w_assert1(logrec);
+        // TODO CS
+        // logrec_t* logrec = new logrec_t; //deleted at end of scope
+        // w_assert1(logrec);
 
-        new (logrec) mount_vol_log(device, vid);
-        logrec->fill_xct_attr(tid_t::null, GetLastMountLSN());
-        lsn_t theLSN;
-        W_DO( log->insert(*logrec, &theLSN) );
+        // new (logrec) mount_vol_log(device, vid);
+        // logrec->fill_xct_attr(tid_t::null, GetLastMountLSN());
+        // lsn_t theLSN;
+        // W_DO( log->insert(*logrec, &theLSN) );
 
-        DBG( << "mount_vol_log(" << device << ", vid=" << vid
-                << ") lsn=" << theLSN << " prevLSN=" << GetLastMountLSN());
-        SetLastMountLSN(theLSN);
+        // DBG( << "mount_vol_log(" << device << ", vid=" << vid
+        //         << ") lsn=" << theLSN << " prevLSN=" << GetLastMountLSN());
+        // SetLastMountLSN(theLSN);
 
-        delete logrec;
+        // delete logrec;
     }
 
     SSMTEST("io_m::_mount.1");

@@ -4,20 +4,20 @@
 
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -90,12 +90,12 @@ struct baseLogHeader
     /* 12 + 4= 16*/
 
 
-    
+
     // lsn_t            _undo_nxt; // (xct) used in CLR only
     /*
-     * originally: you might think it would be nice to use one lsn_t for 
+     * originally: you might think it would be nice to use one lsn_t for
      * both _xid_prev and for _undo_lsn, but for the moment we need both because
-     * at the last minute, fill_xct_attr() is called and that fills in 
+     * at the last minute, fill_xct_attr() is called and that fills in
      * _xid_prev, clobbering its value with the prior generated log record's lsn.
      * It so happens that set_clr() is called prior to fill_xct_attr().
      * It might do to set _xid_prev iff it's not already set, in fill_xct_attr().
@@ -115,7 +115,7 @@ struct baseLogHeader
 struct xidChainLogHeader
 {
 
-    
+
     tid_t               _xid;      // NOT IN SINGLE-LOG SYSTEM TRANSACTION!  (xct)tid of this xct
     /* 24+8 = 32 */
     lsn_t               _xid_prv;     // NOT IN SINGLE-LOG SYSTEM TRANSACTION! (xct)previous logrec of this xct
@@ -236,7 +236,7 @@ public:
     /** Const version */
     const multi_page_log_t*     data_ssx_multi() const;
     const lsn_t&         lsn_ck() const {  return *_lsn_ck(); }
-    const lsn_t          get_lsn_ck() const { 
+    const lsn_t          get_lsn_ck() const {
                                 lsn_t    tmp = *_lsn_ck();
                                 return tmp;
                             }
@@ -291,7 +291,7 @@ protected:
     // single-log system transactions will overwrite this with _data
     xidChainLogHeader xidInfo;
 
-    /* 
+    /*
      * NOTE re sizeof header:
      * NOTE For single-log system transaction, NEVER use this directly.
      * Always use data_ssx() to get the pointer because it starts
@@ -390,8 +390,8 @@ struct chkpt_bf_tab_t {
      */
     snum_t    store;    // +4 -> 12
     fill4    fill;      // for purify, +4 -> 16
-    lsn_t    rec_lsn;   // +8 -> 24, this is the minimum (earliest) LSN 
-    lsn_t    page_lsn;  // +8 -> 32, this is the latest (page) LSN 
+    lsn_t    rec_lsn;   // +8 -> 24, this is the minimum (earliest) LSN
+    lsn_t    page_lsn;  // +8 -> 32, this is the latest (page) LSN
     };
 
     // max is set to make chkpt_bf_tab_t fit in logrec_t::data_sz
@@ -401,16 +401,16 @@ struct chkpt_bf_tab_t {
     brec_t             brec[max];
 
     NORET            chkpt_bf_tab_t(
-    int                 cnt, 
-    const lpid_t*             p, 
+    int                 cnt,
+    const lpid_t*             p,
     const snum_t*            s,
     const lsn_t*             l,
     const lsn_t*             pl);
-    
+
     int                size() const;
 };
 
-struct prepare_stores_to_free_t  
+struct prepare_stores_to_free_t
 {
     enum { max = (logrec_t::max_data_sz - sizeof(uint32_t)) / sizeof(stid_t) };
     uint32_t            num;
@@ -423,7 +423,7 @@ struct prepare_stores_to_free_t
         for (uint32_t i = 0; i < num; i++)
         stids[i] = theStids[i];
     };
-    
+
     int size() const  { return sizeof(uint32_t) + num * sizeof(stid_t); };
 };
 
@@ -444,7 +444,7 @@ struct chkpt_xct_tab_t {
     uint32_t            count;
     fill4            filler;
     xrec_t             xrec[max];
-    
+
     NORET            chkpt_xct_tab_t(
     const tid_t&             youngest,
     int                 count,
@@ -471,7 +471,7 @@ struct chkpt_xct_lock_t {
     uint32_t         count;
     fill4            filler;
     lockrec_t        xrec[max];
-    
+
     NORET            chkpt_xct_lock_t(
     const tid_t&        tid,
     int                 count,
@@ -480,28 +480,25 @@ struct chkpt_xct_lock_t {
     int             size() const;
 };
 
-struct chkpt_dev_tab_t 
+struct chkpt_dev_tab_t
 {
-    struct devrec_t {
-        // pretty-much guaranteed to be an even number
-        char        dev_name[smlevel_0::max_devname+1];
-        fill1        byte; // for valgrind/purify
-        vid_t       vid;  // (won't be needed in future)
-        fill2        halfword; // for valgrind/purify
+    uint16_t count;
+    uint16_t next_vid;
+    uint32_t data_size;
+    char     data[logrec_t::max_data_sz];
+
+    enum {
+        max = (logrec_t::max_data_sz - 2 * sizeof(uint32_t))
+                / smlevel_0::max_devname
     };
 
-    // max is set to make chkpt_dev_tab_t fit in logrec_t::data_sz
-    enum { max = ((logrec_t::max_data_sz - 2*sizeof(uint32_t)) / sizeof(devrec_t))
-    };
-    uint32_t         count;
-    fill4           filler;
-    devrec_t        devrec[max];
-    
-    NORET           chkpt_dev_tab_t(
-                            int                 count,
-                            const char          **dev_name,
-                            const vid_t*        vid);
-    int             size() const;
+    chkpt_dev_tab_t(vid_t next_vid, const std::vector<string>&);
+
+    int size() const {
+        return data_size + 2 * sizeof(uint32_t);
+    }
+
+    void read_devnames(std::vector<string>& devnames);
 };
 
 struct xct_list_t {
@@ -516,7 +513,7 @@ struct xct_list_t {
     uint32_t            count;
     fill4              filler;
     xrec_t             xrec[max];
-    
+
     NORET             xct_list_t(const xct_t* list[], int count);
     int               size() const;
 };
@@ -554,7 +551,7 @@ logrec_t::pid() const
 inline lpid_t
 logrec_t::construct_pid() const
 {
-// public version of pid(), renamed for grepping 
+// public version of pid(), renamed for grepping
     return lpid_t(header._vid, header._shpid);
 }
 
@@ -573,13 +570,13 @@ logrec_t::set_pid(const lpid_t& p)
     header._vid = p.vol();
 }
 
-inline bool 
+inline bool
 logrec_t::null_pid() const
 {
-    // see lpid_t::is_null() for necessary and 
+    // see lpid_t::is_null() for necessary and
     // sufficient conditions
     bool result = (header._shpid == 0);
-    w_assert3(result == (pid().is_null())); 
+    w_assert3(result == (pid().is_null()));
     return result;
 }
 
@@ -599,7 +596,7 @@ inline const lsn_t&
 logrec_t::undo_nxt() const
 {
     // To shrink log records,
-    // we've taken out _undo_nxt and 
+    // we've taken out _undo_nxt and
     // overloaded _xid_prev.
     // return _undo_nxt;
     return xid_prev();
@@ -645,18 +642,18 @@ logrec_t::type() const
 }
 
 inline u_char
-logrec_t::cat() const 
+logrec_t::cat() const
 {
     return header._cat & ~t_rollback;
 }
 
-inline bool             
+inline bool
 logrec_t::is_rollback() const
 {
     return (header._cat & t_rollback) != 0;
 }
 
-inline void 
+inline void
 logrec_t::set_clr(const lsn_t& c)
 {
     w_assert0(!is_single_sys_xct()); // CLR shouldn't be output in this case
@@ -671,25 +668,25 @@ logrec_t::set_clr(const lsn_t& c)
              // NOTE: the t_undo bit is set by the log record constructor.
              // Once we turn it off, we do not re-insert that bit (except
              // as done with the special-case set_undoable_clr).
-            
+
      w_assert0(!is_undoable_clr());
     header._cat |= t_cpsn;
 
     // To shrink log records,
-    // we've taken out _undo_nxt and 
+    // we've taken out _undo_nxt and
     // overloaded _prev.
     // _undo_nxt = c;
     xidInfo._xid_prv = c; // and _xid_prv is data area if is_single_sys_xct
 }
 
-inline bool 
+inline bool
 logrec_t::is_undoable_clr() const
 {
     return (header._cat & (t_cpsn|t_undo)) == (t_cpsn|t_undo);
 }
 
 
-inline bool 
+inline bool
 logrec_t::is_redo() const
 {
     return (header._cat & t_redo) != 0;
@@ -733,7 +730,7 @@ logrec_t::is_undo() const
  * the code in analysis_pass carefully, esp where is_page_update() is
  * concerned.
  */
-inline void 
+inline void
 logrec_t::set_undoable_clr(const lsn_t& c)
 {
     bool undoable = is_undo();
@@ -741,26 +738,26 @@ logrec_t::set_undoable_clr(const lsn_t& c)
     if(undoable) header._cat |= t_undo;
 }
 
-inline bool 
+inline bool
 logrec_t::is_cpsn() const
 {
     return (header._cat & t_cpsn) != 0;
 }
 
-inline bool 
+inline bool
 logrec_t::is_page_update() const
 {
     // old: return is_redo() && ! is_cpsn();
     return is_redo() && !is_cpsn() && (!null_pid());
 }
 
-inline bool 
+inline bool
 logrec_t::is_logical() const
 {
     return (header._cat & t_logical) != 0;
 }
 
-inline bool 
+inline bool
 logrec_t::is_single_sys_xct() const
 {
     return (header._cat & t_single_sys_xct) != 0;
@@ -784,25 +781,19 @@ chkpt_bf_tab_t::size() const
 inline int
 chkpt_xct_tab_t::size() const
 {
-    return (char*) &xrec[count] - (char*) this; 
+    return (char*) &xrec[count] - (char*) this;
 }
 
 inline int
 chkpt_xct_lock_t::size() const
 {
-    return (char*) &xrec[count] - (char*) this; 
+    return (char*) &xrec[count] - (char*) this;
 }
 
 inline int
 xct_list_t::size() const
 {
-    return (char*) &xrec[count] - (char*) this; 
-}
-
-inline int
-chkpt_dev_tab_t::size() const
-{
-    return (char*) &devrec[count] - (char*) this; 
+    return (char*) &xrec[count] - (char*) this;
 }
 
 // define 0 or 1
@@ -810,7 +801,7 @@ chkpt_dev_tab_t::size() const
 // so that we can empirically estimate the fudge factors
 // for rollback for the various log record types.
 #define LOGREC_ACCOUNTING 0
-#if LOGREC_ACCOUNTING 
+#if LOGREC_ACCOUNTING
 class logrec_accounting_t {
 public:
     static void account(logrec_t &l, bool fwd);
@@ -827,9 +818,9 @@ public:
             logrec_accounting_t::account_end((y)); \
         }
 #else
-#define LOGREC_ACCOUNTING_PRINT 
-#define LOGREC_ACCOUNT(x,y) 
-#define LOGREC_ACCOUNT_END_XCT(y) 
+#define LOGREC_ACCOUNTING_PRINT
+#define LOGREC_ACCOUNT(x,y)
+#define LOGREC_ACCOUNT_END_XCT(y)
 #endif
 
 /*<std-footer incl-file-exclusion='LOGREC_H'>  -- do not edit anything below this line -- */

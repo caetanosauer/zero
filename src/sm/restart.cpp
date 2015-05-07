@@ -387,7 +387,7 @@ restart_m::restart(
             smlevel_0::last_lsn = last_lsn;      // page driven REDO, last LSN in Recovery log before system crash
             smlevel_0::in_doubt_count = in_doubt_count;
 
-            // Start REDO            
+            // Start REDO
             redo_concurrent_pass();
 
             // Set in_doubt count to 0 so we do not try to REDO again
@@ -2473,19 +2473,19 @@ void restart_m::_analysis_ckpt_dev_log(logrec_t& r,  // In: Log record to proces
     //                               This is simular to scenario 3 above.  We need to make sure the 'in_doubt'
     //                               flag is still on for the root page after pre-loading the root page.
 
-    const chkpt_dev_tab_t* dv = (chkpt_dev_tab_t*) r.data();
+    chkpt_dev_tab_t* dv = (chkpt_dev_tab_t*) r.data();
     DBGOUT3(<<"Log Analysis, number of devices in t_chkpt_dev_tab: " << dv->count);
     uint count = dv->count;
 
+    std::vector<string> devnames;
+    dv->read_devnames(devnames);
     for (uint i = 0; i < count; ++i)
     {
         smlevel_0::errlog->clog << info_prio
-            << "Device " << dv->devrec[i].dev_name
-             << " will be recovered as vid " << dv->devrec[i].vid
-             << flushl;
-        W_COERCE(io_m::mount(dv->devrec[i].dev_name,
-                           dv->devrec[i].vid));
-        w_assert9(io_m::is_mounted(dv->devrec[i].vid));
+            << "Device " << devnames[i]
+             << " will be recovered" << flushl;
+        vid_t vid = vid_t(0);
+        W_COERCE(io_m::mount(devnames[i].c_str(), vid));
 
         // Signal the caller device mount occurred
         mount = true;
@@ -3185,7 +3185,7 @@ void restart_m::_analysis_process_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,
         && (theLastMountLSNBeforeChkpt > redo_lsn))
     {
         // last mount occurred between redo_lsn and checkpoint
-        W_COERCE(log->fetch(theLastMountLSNBeforeChkpt, log_rec_buf, 
+        W_COERCE(log->fetch(theLastMountLSNBeforeChkpt, log_rec_buf,
                     (lsn_t*) NULL, true));
 
         // HAVE THE LOG_M MUTEX
@@ -3208,6 +3208,8 @@ void restart_m::_analysis_process_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,
         chkpt_dev_tab_t *dp = (chkpt_dev_tab_t*)copy.data();
         w_assert9(dp->count == 1);
 
+        // CS TODO
+
         // it is ok if the mount/dismount fails, since this
         // may be caused by the destruction
         // of the volume.  if that was the case then there
@@ -3224,8 +3226,8 @@ void restart_m::_analysis_process_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,
             // information and buffer pool cannot be flushed during Restart time
 
             // Mount a new volume
-            W_FATAL_MSG(fcINTERNAL, << "Extra mounting at the end of Log Analysis phase");
-            W_IGNORE(io_m::mount(dp->devrec[0].dev_name, dp->devrec[0].vid));
+            // W_FATAL_MSG(fcINTERNAL, << "Extra mounting at the end of Log Analysis phase");
+            // W_IGNORE(io_m::mount(dp->devrec[0].dev_name, dp->devrec[0].vid));
             mount = true;
         }
         else if (copy.type() == logrec_t::t_mount_vol)
@@ -3235,8 +3237,8 @@ void restart_m::_analysis_process_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,
             // we have marked all the in_doubt page information in
             // buffer pool.  If we flush the buffer pool then all the in_doubt
             // page information would be erased, not good
-            W_FATAL_MSG(fcINTERNAL, << "Extra dismounting at the end of Log Analysis phase");
-            W_IGNORE(io_m::dismount(dp->devrec[0].vid, false));  // Do not flush buffer pool
+            // W_FATAL_MSG(fcINTERNAL, << "Extra dismounting at the end of Log Analysis phase");
+            // W_IGNORE(io_m::dismount(dp->devrec[0].vid, false));  // Do not flush buffer pool
         }
 
         theLastMountLSNBeforeChkpt = copy.xid_prev();
@@ -4242,7 +4244,7 @@ void restart_m::_redo_log_with_pid(
 
                 // CS: since this method is static, we refer to restart_m indirectly
                 // For corrupted page, set the last write to force a complete recovery
-                page.get_generic_page()->lsn = lsn_t::null;                
+                page.get_generic_page()->lsn = lsn_t::null;
                 W_COERCE(smlevel_1::recovery->recover_single_page(page, lsn, true));
             }
 
@@ -4255,7 +4257,7 @@ void restart_m::_redo_log_with_pid(
                      << " will redo if 1: " << int(page_lsn < lsn));
 
             if (page_lsn < lsn)
-            {          
+            {
                 // The last write to this page was before the log record LSN
                 // Need to REDO
                 // REDO phase is for buffer pool in_doubt pages, the process is
@@ -4429,10 +4431,10 @@ void restart_m::_redo_log_with_pid(
         // 1. A deallocation log to remove the page (r.is_page_deallocate())
         // 2. The REDO LSN is before the checkpoint, it is possible the current log record
         //     is somewhere between REDO LSN and checkpoint, it is referring to a page
-        //     which was not dirty (not in_doubt) therefore this page does not require 
+        //     which was not dirty (not in_doubt) therefore this page does not require
         //     a REDO operation, this might be a rather common scenario
         //
-        // NOOP if we get here since the log record does not require REDO       
+        // NOOP if we get here since the log record does not require REDO
 
         // CS: An error used to be thrown here, but pages not marked in-doubt
         // during log analysis are actually up-to-date on disk and thus
@@ -4793,7 +4795,7 @@ void restart_m::redo_concurrent_pass()
         if ((ss_m::shutting_down) && (ss_m::shutdown_clean))
         {
             // During a clean shutdown, it is okay to call child thread REDO
-            _redo_page_pass();            
+            _redo_page_pass();
         }
         else
         {
@@ -4871,7 +4873,7 @@ void restart_m::undo_concurrent_pass()
         if ((ss_m::shutting_down) && (ss_m::shutdown_clean))
         {
             // During a clean shutdown, it is okay to call child thread UNDO
-            _redo_page_pass();            
+            _redo_page_pass();
         }
         else
         {
@@ -4997,7 +4999,7 @@ DBGOUT1(<<"Start child thread REDO phase");
             // Mixed (m4): potential conflict because both restart and user transaction
             //                    can load and recover a page
             // ARIES (m5): system is not open, restart should be able to acquire latch
-            //                    can load and recover a page           
+            //                    can load and recover a page
             if (true == use_redo_mix_restart())
             {
                 // Mixed mode and not able to latch this page

@@ -157,11 +157,9 @@ public:
 
     static vid_t get_vid(const char* path);
     static rc_t                 get_vols(
-        int                           start,
-        int                           count,
-        char                          **dname,
-        vid_t                         vid[],
-        int&                          return_cnt);
+            int start, int count,
+            std::vector<string>& names,
+            std::vector<vid_t>& vids);
     static rc_t                 check_disk(const vid_t &vid);
     // return an unused vid_t
     static bool                 is_mounted(vid_t vid);

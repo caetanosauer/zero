@@ -169,6 +169,11 @@ public:
     bool            set_fake_disk_latency(const int adelay);
     void            fake_disk_latency(long start);
 
+    static vid_t get_next_vid() {
+        // TODO must be in mutual exclusion with create_vol
+        return _next_vid;
+    }
+
 private:
     static vid_t _next_vid;
 

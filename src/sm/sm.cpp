@@ -511,6 +511,8 @@ void ss_m::_do_restart()
         smlevel_0::operating_mode = t_not_started;
         restart.restart(master, verify_lsn, redo_lsn, last_lsn, in_doubt_count);
 
+        // CS TODO: Why did we have to mount and dismount all devices here?
+#if 0
         // Perform the low level dismount, remount in higher level
         // and dismount again steps.
         // If running in serial mode, everything is fine.
@@ -526,31 +528,12 @@ void ss_m::_do_restart()
 
         // contain the scope of dname[]
         // record all the mounted volumes after recovery.
-        int num_volumes_mounted = 0;
-        int        i;
-        char    **dname;
-        dname = new char *[max_vols];
-        if (!dname)
-        {
-            W_FATAL(fcOUTOFMEMORY);
-        }
-        for (i = 0; i < max_vols; i++)
-        {
-            dname[i] = new char[smlevel_0::max_devname+1];
-            if (!dname[i])
-            {
-                W_FATAL(fcOUTOFMEMORY);
-            }
-        }
-        vid_t    *vid = new vid_t[max_vols];
-        if (!vid)
-        {
-            W_FATAL(fcOUTOFMEMORY);
-        }
 
-        W_COERCE( io->get_vols(0, max_vols, dname, vid, num_volumes_mounted) );
+        std::vector<string> dnames;
+        std::vector<vid_t> vids;
+        W_COERCE( io->get_vols(0, max_vols, dnames, vids) );
 
-        DBG(<<"Dismount all volumes " << num_volumes_mounted);
+        DBG(<<"Dismount all volumes " << dnames.size());
         // now dismount all of them at the io level, the level where they
         // were mounted during recovery.
         if (true == smlevel_0::use_serial_restart())
@@ -560,7 +543,7 @@ void ss_m::_do_restart()
         // now mount all the volumes properly at the sm level.
         // then dismount them and free temp files only if there
         // are no locks held.
-        for (i = 0; i < num_volumes_mounted; i++)
+        for (int i = 0; i < dnames.size(); i++)
         {
             rc_t rc;
             DBG(<<"Remount volume " << dname[i]);
@@ -587,6 +570,7 @@ void ss_m::_do_restart()
             delete [] dname[i];
         }
         delete [] dname;
+#endif
 
         // TODO(Restart)... it was for a space-recovery hack, not needed
         // smlevel_0::redo_tid = 0;

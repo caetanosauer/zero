@@ -74,6 +74,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "w_okvl_inl.h"    // Lock information gathering
 struct RawLock;            // Lock information gathering
 #include "restart.h"
+#include "vol.h"
 
 
 #ifdef EXPLICIT_TEMPLATE
@@ -702,43 +703,26 @@ try
     // Checkpoint the dev mount table
     {
         // Log the mount table in "max loggable size" chunks.
-        // XXX casts due to enums
+        // casts due to enums
         const int chunk = (int)max_vols > (int)chkpt_dev_tab_t::max
             ? (int)chkpt_dev_tab_t::max : (int)max_vols;
         total_dev_cnt = io->num_vols();
 
         int    i;
-        char   **devs;
-        devs = new char *[chunk];
-        if (!devs)
-            W_FATAL(fcOUTOFMEMORY);
-        for (i = 0; i < chunk; i++)
-        {
-            devs[i] = new char[max_devname+1];
-            if (!devs[i])
-                W_FATAL(fcOUTOFMEMORY);
-        }
-        vid_t  *vids;
-        vids = new vid_t[chunk];
-        if (!vids)
-            W_FATAL(fcOUTOFMEMORY);
+        std::vector<string> names;
+        std::vector<vid_t> vids;
 
         for (i = 0; i < total_dev_cnt; i += chunk)
         {
-            int ret;
-            W_COERCE(io->get_vols(i, MIN(total_dev_cnt - i, chunk),
-                     devs, vids, ret));
-            if (ret)
+            W_COERCE(io->get_vols(i, chunk, names, vids));
+            if (names.size() > 0)
             {
                 // Write a Checkpoint Device Table Log
-                // XXX The bogus 'const char **' cast is for visual c++
-                LOG_INSERT(chkpt_dev_tab_log(ret, (const char **) devs, vids), 0);
+                // CS TODO: this must be in mutual exclusion with create_vol,
+                // to avoid race condition when reading next_vid
+                LOG_INSERT(chkpt_dev_tab_log(vol_t::get_next_vid(), names), 0);
             }
         }
-        delete [] vids;
-        for (i = 0; i < chunk; i++)
-            delete [] devs[i];
-        delete [] devs;
     }
 
     /*
