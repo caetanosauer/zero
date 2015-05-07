@@ -4,20 +4,20 @@
 
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -100,9 +100,9 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *      - default: "."
  *      - required?: no
  *
- * -sm_bufpoolsize : 
+ * -sm_bufpoolsize :
  *      - type: number
- *      - description: This is the size of 
+ *      - description: This is the size of
  *      the buffer pool in Kb.  Must be large enough to hold at least 32 pages,
  *      so it depends on the configured page size.
  *      - default: none
@@ -133,7 +133,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *      Must be greater than or equal to the larger of
  *      (4 times the page size, 64 Kb)
  *      and less than or equal to
- *      128 times the page_size. This is the size of 
+ *      128 times the page_size. This is the size of
  *      the log buffer in byte.
  *      - default: 128KB
  *      - default with the new log buffer: 1MB
@@ -141,7 +141,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *
  * -sm_logsize
  *      - type: number
- *      - description: greater than or equal to 8256 
+ *      - description: greater than or equal to 8256
  *      This is the maximum size of the log in Kb.  It is a function of
  *      the log buffer size, and  the default is the minimum allowable for
  *      the default sm_logbufsize.
@@ -173,7 +173,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *      - default: error
  *      - required?: no
  *
- * -sm_locktablesize : 
+ * -sm_locktablesize :
  *      - type: number greater than or equal to 64
  *      - description: size of lock manager's hash table will be a prime
  *      number near and greater than the given number.
@@ -192,7 +192,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *      - description: Sets the page replacement policy of the buffer pool.
  *      - default: clock
  *      - required?: no
- * 
+ *
  * -sm_bufferpool_swizzle
  *      - type: Boolean
  *      - description: Enables pointer swizzling in buffer pool.
@@ -217,7 +217,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *      - description: Allows you to turn off logging for a run of
  *      the storage manager. This is only for experimentation, to
  *      measure logging overhead in a limited way.
- *      Aborts, rollbacks and restart/recovery 
+ *      Aborts, rollbacks and restart/recovery
  *      do not work without logging.   Independent concurrent
  *      transactions using btrees might not work without logging (this is
  *      not well-tested).
@@ -255,7 +255,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *      - description: directory in which to store log archive runs
  *      - default: none
  *      - required?: no (only if archiving is activated below)
- *      
+ *
  *  -sm_archiving;
  *      - type: Boolean
  *      - description: Activates log archiving, but just instatiates a
@@ -269,7 +269,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *      - description: Activates asynchronous merging of log archive runs
  *      - default: no
  *      - required?: no
- *      
+ *
  *  -sm_sort_archive;
  *      - type: Boolean
  *      - description: Whether to partially-sort the log archive, resulting in
@@ -278,53 +278,53 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *      log archiving operation in experiments.
  *      - default: yes
  *      - required?: no
- *      
+ *
  *  -sm_merge_factor;
  *      - type: int
- *      - description: Maximum merge factor (or fan-in) to be used by the log 
+ *      - description: Maximum merge factor (or fan-in) to be used by the log
  *      archive merger
  *      - default: 100
  *      - required?: no
- *      
+ *
  *  -sm_merge_blocksize;
- *      - type: int (>=8192) 
+ *      - type: int (>=8192)
  *      - description: Size in bytes of the IO unit used by the archive merger
  *      - default: 1048576 (1MB)
  *      - required?: no
- *      
+ *
  *  -sm_archiver_workspace_size;
  *      - type:  int
  *      - description: Size of sort workspace of log archiver
  *      - default: 104857600 (100 MB)
  *      - required?: no
- *      
+ *
   */
 
 
-/**\addtogroup SSMXCT 
+/**\addtogroup SSMXCT
  * All storage manager operations on data must be done within the scope of
  * a transaction (ss_m::begin_xct, ss_m::commit_xct, ss_m::abort_xct,
- * ss_m::chain_xct). 
+ * ss_m::chain_xct).
  *
  * A very few storage manager operations, such as formatting a volume, are
  * called outside the scope of a transaction and the storage manager begins
  * its own transaction to do the work.
  *
- * Operations that fail return an error indication and the storage 
- * manager assumes that the server will thereafter abort the 
+ * Operations that fail return an error indication and the storage
+ * manager assumes that the server will thereafter abort the
  * transaction in which the error occurred, when abort is indicated.
- * Abort is indicated when eUSERABORT or eDEADLOCK is returned and 
- * when the erver chooses to abort rather than to work around the problem 
+ * Abort is indicated when eUSERABORT or eDEADLOCK is returned and
+ * when the erver chooses to abort rather than to work around the problem
  * (whatever it might be, such as eRETRY).
  *
  * The storage manager does not enforce the aborting of any erroneous
- * transactions except, possibly, those that are in danger of 
+ * transactions except, possibly, those that are in danger of
  * running out of log space.
  * (This is done with the destructor of the prologue used on each call
  * to the storage manager, see next paragraph).
  *
  * It is always the server's responsibility to abort.
- * When the storage manager 
+ * When the storage manager
  * encounters a eLOGSPACEWARN condition (the log hasn't enough
  * space \e at \e this \e moment to abort the running transaction,
  * assuming a 1:1 ration of rollback-logging overhead to forward-processing
@@ -342,26 +342,26 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *   error code returned by the callback function is just returned up
  *   the call stack.
  *
- * \section LOCKS Locks 
+ * \section LOCKS Locks
  *
- * The storage manager automatically acquires the 
+ * The storage manager automatically acquires the
  * necessary locks when the data are read or written.
  * The locks thus acquired are normally released at the end of a transaction,
  * thus, by default, transactions are two-phase and well-formed (degree 3).
  *
  * \section DISTXCT Distributed Transactions
- * Storage manager transactions may be used as "threads" (to 
- * overload this term) of distributed transactions.  
+ * Storage manager transactions may be used as "threads" (to
+ * overload this term) of distributed transactions.
  * Coordination of 2-phase commit must be done externally,
- * but the storage manager supports preparing the (local) transaction "thread" 
- * for two-phase commit, and it will log the necessary 
+ * but the storage manager supports preparing the (local) transaction "thread"
+ * for two-phase commit, and it will log the necessary
  * data for recovering in-doubt transactions.
  *
  * \section ATTACH Threads and Transactions
  * Transactions are not tied to storage manager threads (smthread_t, not
- * to be confused with a local "thread" of a distributed transaction) in any 
+ * to be confused with a local "thread" of a distributed transaction) in any
  * way other than that a transaction must be \e attached to a
- * thread while any storage manager work is being done on behalf of 
+ * thread while any storage manager work is being done on behalf of
  * that transaction.   This is how the storage manager knows \e which
  * transaction is to acquire the locks and latches, etc.
  * But a thread can attach and detach from transactions at will, so
@@ -372,12 +372,12 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *
  * \warning
  * While there are limited circumstances in which multiple threads can be
- * attached to the same transaction \e concurrently and perform storage 
+ * attached to the same transaction \e concurrently and perform storage
  * manager operations on behalf of that transaction concurrently,
- * which is a hold-over from the original storage manager, this 
+ * which is a hold-over from the original storage manager, this
  * functionality will be deprecated soon.  The reason for this being
  * removed is that it is extremely difficult to handle errors internally
- * when multiple threads are attached to a transaction because 
+ * when multiple threads are attached to a transaction because
  * partial rollback is impossible in the absence of multiple log streams
  * for a transaction.
  *
@@ -386,8 +386,8 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
  *
  *
  * \section EXOTICA Exotica
- * The storage manager also provides 
- * - partial rollback (ss_m::save_work and ss_m::rollback_work), 
+ * The storage manager also provides
+ * - partial rollback (ss_m::save_work and ss_m::rollback_work),
  *   which undoes actions but does not release locks,
  * - transaction chaining (ss_m::chain_xct), which commits, but retains locks
  *   and gives them to a new transaction,
@@ -419,7 +419,7 @@ class btree_m;
 class pool_m;
 class dir_m;
 class chkpt_m;
-class lid_m; 
+class lid_m;
 class sm_stats_cache_t;
 class prologue_rc_t;
 class w_keystr_t;
@@ -428,7 +428,7 @@ class lil_global_table;
 struct okvl_mode;
 
 class key_ranges_map;
-/**\addtogroup SSMSP  
+/**\addtogroup SSMSP
  * A transaction may perform a partial rollback using savepoints.
  * The transaction populates a savepoint by calling ss_m::save_work,
  * then it may roll back to that point with ss_m::rollback_work.
@@ -472,7 +472,7 @@ class tape_t;
  * Most of the API for using the storage manager is through this
  * interface class.
  */
-class ss_m : public smlevel_top 
+class ss_m : public smlevel_top
 {
     friend class prologue_rc_t;
     friend class log_entry;
@@ -523,7 +523,7 @@ public:
      * @param[in] options Start-up parameters.
      * @param[in] warn   A callback function. This is called
      * when/if the log is in danger of becoming "too full".
-     * @param[in] get   A callback function. This is called 
+     * @param[in] get   A callback function. This is called
      * when the storage manager needs an archived log file to be restored.
      *
      * When an ss_m object is created, the storage manager initializes itself
@@ -531,13 +531,13 @@ public:
      * if the sthreads package has not already been initialized by virtue
      * of an sthread_t running, the sthreads package is initialized now.
      *
-     * The log is read and recovery is performed (\ref MHLPS), 
+     * The log is read and recovery is performed (\ref MHLPS),
      * and control returns to
      * the caller, after which time
      * storage manager threads (instances of smthread_t) may be constructed and
      * storage manager may be used.
      *
-     * The storage manager is used by invoking its static methods.  
+     * The storage manager is used by invoking its static methods.
      * You may use them as follows:
      * \code
      * ss_m *UNIQ = new ss_m();
@@ -555,18 +555,18 @@ public:
      * The callback argument given to the storage manager constructor
      * is called when the storage manager determines that it is in danger
      * of running out of log space.  Heuristics are used to guess when
-     * this is the case.  
+     * this is the case.
      *
      * If the function \a warn archives and removes log files, the function
      * \a get must be provided to restore those log files when the
      * storage manager needs them.
      *
-     * For details and examples, see  \ref smlevel_0::LOG_WARN_CALLBACK_FUNC, 
-     *  \ref smlevel_0::LOG_ARCHIVED_CALLBACK_FUNC, and 
+     * For details and examples, see  \ref smlevel_0::LOG_WARN_CALLBACK_FUNC,
+     *  \ref smlevel_0::LOG_ARCHIVED_CALLBACK_FUNC, and
      *  \ref SSMLOG.
      */
     ss_m(const sm_options &options,
-           LOG_WARN_CALLBACK_FUNC warn=NULL, 
+           LOG_WARN_CALLBACK_FUNC warn=NULL,
            LOG_ARCHIVED_CALLBACK_FUNC get=NULL,
            bool start = true);   // Default = True: start the store automaticlly
                                  // this is for backward compatibility reason
@@ -575,7 +575,7 @@ public:
      * \ingroup SSMINIT
      * \details
      * When the storage manager object is deleted, it shuts down.
-     * Thereafter it is not usable until another ss_m object is 
+     * Thereafter it is not usable until another ss_m object is
      * constructed.
      */
     ~ss_m();
@@ -591,23 +591,23 @@ public:
 
     // Manually stop a running store.  If the store was not running, no-op.
     // Only one instance of store can be running at any time.
-    // The shutdown process obeys the internal settings, 
+    // The shutdown process obeys the internal settings,
     // i.e. shutting_down, shutdown_clean flags
     // Return: if store shutdown successfully or was not running
     bool shutdown();
 
-    /**\brief Cause the storage manager's shutting down do be done cleanly 
+    /**\brief Cause the storage manager's shutting down do be done cleanly
      * or to simulate a crash.
      * \ingroup SSMINIT
      * \details
      * @param[in] clean   True means shut down gracefully, false means simulate a crash.
      *
      * When the storage manager's destructor is called
-     * the buffer pool is flushed to disk, unless this method is called 
+     * the buffer pool is flushed to disk, unless this method is called
      * with \a clean == \e false.
      *
      * \note If this method is used, it
-     * must be called after the storage manager is 
+     * must be called after the storage manager is
      * constructed if it is to take effect. Each time the storage
      * manager is constructed, the state associated with this is set
      * to \e true, i.e., "shut down properly".
@@ -645,22 +645,22 @@ public:
      *
      * All work performed on behalf of a transaction must occur while that
      * transaction is "attached" to the thread that performs the work.
-     * Creating a transaction attaches it to the thread that creates the transaction. 
+     * Creating a transaction attaches it to the thread that creates the transaction.
      * The thread may detach from the transaction and attach to another.
      * Multiple threads may attach to a single transaction and do work in certain circumstances.   See \ref SSMMULTIXCT
      *
-     * 
+     *
      */
-    /**\brief Begin a transaction 
+    /**\brief Begin a transaction
      *\ingroup SSMXCT
      * @param[in] timeout   Optional, controls blocking behavior.
      * \details
      *
-     * Start a new transaction and "attach" it to this thread. 
+     * Start a new transaction and "attach" it to this thread.
      * No running transaction may be attached to this thread.
-     * 
-     * Storage manager methods that must block (e.g., to acquire a lock) 
-     * will use the timeout given.  
+     *
+     * Storage manager methods that must block (e.g., to acquire a lock)
+     * will use the timeout given.
      * The default timeout is the one associated with this thread.
      *
      * \sa timeout_in_ms
@@ -668,7 +668,7 @@ public:
     static rc_t           begin_xct(
         timeout_in_ms            timeout = WAIT_SPECIFIED_BY_THREAD);
 
-    /**\brief Begin an instrumented transaction. 
+    /**\brief Begin an instrumented transaction.
      *\ingroup SSMXCT
      * @param[in] stats   Pointer to an allocated statistics-holding structure.
      * @param[in] timeout   Optional, controls blocking behavior.
@@ -681,11 +681,11 @@ public:
      * detaches from this transaction.  The activity recorded during
      * the time the thread is attached to the transcation will be stored in
      * the per-transaction statistics.
-     * \attention It is the client's 
+     * \attention It is the client's
      * responsibility to delete the statistics-holding structure.
-     * 
-     * Storage manager methods that must block (e.g., to acquire a lock) 
-     * will use the timeout given.  
+     *
+     * Storage manager methods that must block (e.g., to acquire a lock)
+     * will use the timeout given.
      * The default timeout is the one associated with this thread.
      *
      * \sa timeout_in_ms
@@ -701,9 +701,9 @@ public:
      * \details
      *
      * No running transaction may be attached to this thread.
-     * 
-     * Storage manager methods that must block (e.g., to acquire a lock) 
-     * will use the timeout given.  
+     *
+     * Storage manager methods that must block (e.g., to acquire a lock)
+     * will use the timeout given.
      * The default timeout is the one associated with this thread.
      *
      * \sa timeout_in_ms
@@ -761,7 +761,7 @@ public:
      * recovery of this transaction might not be possible.
      */
     static rc_t            commit_xct(
-                                    sm_stats_info_t*& stats, 
+                                    sm_stats_info_t*& stats,
                                     bool              lazy = false,
                                     lsn_t*            plastlsn=NULL);
 
@@ -781,8 +781,8 @@ public:
      *
      * Commit the attached transaction and detach it, destroy it.
      * Start a new transaction and attach it to this thread.
-     * \note \e The \e new 
-     * \e transaction \e inherits \e the \e locks \e of \e the \e old 
+     * \note \e The \e new
+     * \e transaction \e inherits \e the \e locks \e of \e the \e old
      * \e transaction.
      *
      * If \a lazy is true, the log is not synced.  This means that
@@ -790,7 +790,7 @@ public:
      */
     static rc_t            chain_xct(
         sm_stats_info_t*&         stats,    /* in w/new, out w/old */
-        bool                      lazy = false);  
+        bool                      lazy = false);
 
     /**\brief Commit a transaction and start a new one, inheriting locks.
      *\ingroup SSMXCT
@@ -799,14 +799,14 @@ public:
      *
      * Commit the attached transaction and detach it, destroy it.
      * Start a new transaction and attach it to this thread.
-     * \note \e The \e new 
-     * \e transaction \e inherits \e the \e locks \e of \e the \e old 
+     * \note \e The \e new
+     * \e transaction \e inherits \e the \e locks \e of \e the \e old
      * \e transaction.
      *
      * If \a lazy is true, the log is not synced.  This means that
      * recovery of the committed transaction might not be possible.
      */
-    static rc_t            chain_xct(bool lazy = false);  
+    static rc_t            chain_xct(bool lazy = false);
 
 
     /**\brief Commit a group of transactions.
@@ -819,10 +819,10 @@ public:
      * Any transaction that is attached to the thread will be
 	 * detached before anything is done.
 	 *
-	 * The purpose of this method is to allow multiple transactions 
+	 * The purpose of this method is to allow multiple transactions
 	 * to commit together with a single log record. No voting takes place.
 	 * The entire list of transaction identifiers must fit in a single
-	 * log record. If it does not, a descriptive error will be returned and no 
+	 * log record. If it does not, a descriptive error will be returned and no
 	 * transaction will be committed. In this case, the server has the
 	 * option to singly commit each transaction.
 	 *
@@ -833,18 +833,18 @@ public:
 	 * This is not intended to be used with transactions that are
 	 * participating in two-phase commit, but if
 	 * one of the transactions is participating in two-phase commit,
-	 * they all must be and they all must be prepared.  
+	 * they all must be and they all must be prepared.
 	 *
 	 * Chaining and lazy commit are not offered with this form of commit.
 	 * If a transaction in the list is instrumented, its statistics
 	 * resources will be deleted upon successful commit.
 	 *
-	 * \note 
-	 * By taking a list of transaction pointers, this avoids a the tid_to_xct lookup 
+	 * \note
+	 * By taking a list of transaction pointers, this avoids a the tid_to_xct lookup
 	 * for each transaction, but the server must regard the transaction pointers as
 	 * invalid after this method returns.
-	 * The transactions, once committed, do not exist anymore. 
-	 * If an error is returned, the server has to re-verify the transaction pointers 
+	 * The transactions, once committed, do not exist anymore.
+	 * If an error is returned, the server has to re-verify the transaction pointers
 	 * by using ss_m::tid_to_xct from a separate list of transaction ids to determine
 	 * which transactions are extant.
      */
@@ -872,8 +872,8 @@ public:
      *\ingroup SSMSP
      * @param[out] sp   An sm_save_point_t owned by the caller.
      *\details
-     * Store in sp the needed information to be able to roll back 
-     * to this point. 
+     * Store in sp the needed information to be able to roll back
+     * to this point.
      * For use with rollback_work.
      * \note Only one thread may be attached to a transaction when this
      * is called.
@@ -885,7 +885,7 @@ public:
      * @param[in] sp   An sm_save_point_t owned by the caller and
      * populated by save_work.
      *\details
-     * Undo everything that was 
+     * Undo everything that was
      * done from the time save_work was called on this savepoint.
      * \note Locks are not freed.
      *
@@ -914,7 +914,7 @@ public:
      *\ingroup SSMXCT
      * \details
      * Sever the connection between the running thread and the transaction.
-     * This allow the running thread to attach a different 
+     * This allow the running thread to attach a different
      * transaction and to perform work in its behalf.
      */
     static void           detach_xct() { xct_t *x = me()->xct();
@@ -940,7 +940,7 @@ public:
      *\ingroup SSMAPIDEBUG
      * @param[in] o   Stream to which to write the information.
      * \details
-     * This is for debugging only, and is not thread-safe. 
+     * This is for debugging only, and is not thread-safe.
      */
     static rc_t            dump_xcts(ostream &o);
 
@@ -977,20 +977,20 @@ public:
      * avoids wasting work).
      */
     static rc_t            xct_reserve_log_space(fileoff_t amt);
-    
+
 
     /**\brief Collect transaction information in a virtual table.
      * \ingroup SSMVTABLE
      * \details
      * @param[out] v  The virtual table to populate.
-     * @param[in] names_too  If true, make the 
+     * @param[in] names_too  If true, make the
      *            first row of the table a list of the attribute names.
      *
      * All attribute values will be strings.
      * The virtual table v can be printed with its output operator
      * operator\<\< for ostreams.
      *
-     * \attention Not atomic. Can yield stale data. 
+     * \attention Not atomic. Can yield stale data.
      */
     static rc_t            xct_collect(vtable_t&v, bool names_too=true);
 
@@ -998,14 +998,14 @@ public:
      * \ingroup SSMVTABLE
      * \details
      * @param[out] v  The virtual table to populate.
-     * @param[in] names_too  If true, make the 
+     * @param[in] names_too  If true, make the
      *            first row of the table a list of the attribute names.
      *
      * All attribute values will be strings.
      * The virtual table v can be printed with its output operator
      * operator<< for ostreams.
      *
-     * \attention Not atomic. Can yield stale data. 
+     * \attention Not atomic. Can yield stale data.
      * Cannot be used in a multi-threaded-transaction context.
      */
     static rc_t            lock_collect(vtable_t&v, bool names_too=true);
@@ -1014,14 +1014,14 @@ public:
      * \ingroup SSMVTABLE
      * \details
      * @param[out] v  The virtual table to populate.
-     * @param[in] names_too  If true, make the 
+     * @param[in] names_too  If true, make the
      *            first row of the table a list of the attribute names.
      *
      * All attribute values will be strings.
      * The virtual table v can be printed with its output operator
      * operator<< for ostreams.
      *
-     * \attention Not thread-safe. Can yield stale data. 
+     * \attention Not thread-safe. Can yield stale data.
      */
     static rc_t            thread_collect(vtable_t&v, bool names_too=true);
 
@@ -1073,7 +1073,7 @@ public:
      */
     static rc_t            force_volume(vid_t vol);
 
-    /**\cond skip 
+    /**\cond skip
      * Do not document. Very un-thread-safe.
      */
     static rc_t            dump_buffers(ostream &o);
@@ -1089,7 +1089,7 @@ public:
      * @param[in] reset  If true, the statistics for this transaction will be zeroed.
      */
     static rc_t            gather_xct_stats(
-        sm_stats_info_t&       stats, 
+        sm_stats_info_t&       stats,
         bool                   reset = false);
 
     /**\brief Get a copy of the global statistics.
@@ -1111,7 +1111,7 @@ public:
     /**\brief Set sleep time before I/O operations.
      * \ingroup SSMVOL
      * \details
-     * This method sets a milli_sec delay to occur before 
+     * This method sets a milli_sec delay to occur before
      * each disk read/write operation.  This is for debugging.
      * It is useful in discovering thread sync bugs.
      * This delay applies to all threads.
@@ -1129,7 +1129,7 @@ public:
      */
     static rc_t            start_log_corruption();
 
-    /* for smsh/debugging:   
+    /* for smsh/debugging:
      * log an arbitrary message */
     static rc_t            log_message(const char * const msg);
     /**\endcond skip */
@@ -1184,37 +1184,37 @@ public:
     /*
      * Device management functions
      */
-     /**\addtogroup SSMVOL 
+     /**\addtogroup SSMVOL
       * The storage manager was designed to permit multiple \e volumes
       * on a \e device, with \e volume analogous to a Unix \e parition and
       * a \e device analogous to a disk, and the original SHORE contained
-      * symmetric peer servers.  
+      * symmetric peer servers.
       * However good that intention, multiple volumes on a device were never
       * implemented, and times have changed, and the storage manager no
       * longer has any notion of remote and local volumes.
       * The notion a volume, separate from a device, remains, but may
       * some day disappear.
       *
-      * For the time being, a device contains at most one volume. 
+      * For the time being, a device contains at most one volume.
       *
-     * A device is either an operating system file or 
-     * an operating system device (e.g., raw disk partition) and  
+     * A device is either an operating system file or
+     * an operating system device (e.g., raw disk partition) and
      * is identified by a path name (absolute or relative).
      *
-     * A device has a quota.  
+     * A device has a quota.
      * A device is intended to have multiple volumes on it, but
      * in the current implementation the maximum number of volumes
      * is exactly 1.
      *
-     * A volume is where data are stored.  
+     * A volume is where data are stored.
      * Each volume is a header and a set of pages. All pages are
      * the same size (this is a compile-time constant, the default being
      * 8K and sizes up to 64K permissible).
      *
-     * A volume is identified uniquely and persistently by a 
+     * A volume is identified uniquely and persistently by a
      * long volume ID (lvid_t), which is stored in its header.
      * Volumes can be used whenever the device they are located
-     * on is mounted by the SM.  
+     * on is mounted by the SM.
      * Volumes have a quota.  The
      * sum of the quotas of all the volumes on a device cannot
      * exceed the device quota.
@@ -1236,10 +1236,10 @@ public:
      * Each volume contains a few stores that are "overhead":
      * 0 -- is reserved for an extent map and a store map
      * 1 -- directory (dir_m)
-     * 2 -- root index 
+     * 2 -- root index
      *
      * Beyond that, for each (user) file created, 2 stores are used, one for
-     * small objects, one for large objects, and for each index (btree) 
+     * small objects, one for large objects, and for each index (btree)
      * created 1 store is used.
      *
      * Each volume is laid out thus:
@@ -1251,7 +1251,7 @@ public:
      *   the stores. The number of such pages is determined when the
      *   volume is formatted.  The worst case is assumed, which is one
      *   might fill the volume with one-extent stores.
-     * - extent map: some number of pages of bitmaps, one bitmap for each 
+     * - extent map: some number of pages of bitmaps, one bitmap for each
      *   extent,  describe which pages in the extents are allocated or free.
      * - data pages: the rest of the volume.
      *
@@ -1262,16 +1262,16 @@ public:
      * \details
      * @param[in] device   Operating-system file path of the volume.
      * @param[inout] vid A local handle to the (only) volume on the device,
-     * to be used when a volume is mounted.  The default, 0, 
-     * indicates that the storage manager can chose a value for this. 
+     * to be used when a volume is mounted.  The default, 0,
+     * indicates that the storage manager can chose a value for this.
      *
      * \note It is fine to mount a device more than once, as long as device
      * is always the same (you cannot specify a hard link or soft link to
-     * an entity mounted under a different path). 
+     * an entity mounted under a different path).
      * Device mounts are \b not reference-counted, so a single dismount_dev
      * renders the volumes on the device unusable.
      *
-     * \note This method should \b not 
+     * \note This method should \b not
      * be called in the context of a transaction.
      */
     static rc_t            mount_vol(
@@ -1281,7 +1281,7 @@ public:
     /**\brief Dismount all mounted volumes.
      * \ingroup SSMVOL
      *
-     * \note This method should \b not 
+     * \note This method should \b not
      * be called in the context of a transaction.
      */
     static rc_t            dismount_all();
@@ -1293,12 +1293,12 @@ public:
      * @param[out] lvid_list   Returned list of pointers directly into the mount table.
      * @param[out] lvid_cnt   Returned length of list lvid_list.
      *
-     * The storage manager allocates the array lvid_list 
+     * The storage manager allocates the array lvid_list
      * with new[], and the
      * caller must return it to the heap with delete[] if it is not null.
-     * It will be null if an error is returned. 
+     * It will be null if an error is returned.
      *
-     * \note This method should \b not 
+     * \note This method should \b not
      * be called in the context of a transaction.
      */
     static rc_t            list_volumes(
@@ -1318,15 +1318,15 @@ public:
      *
      * The quota_used_KB is the portion of the quota allocated to volumes on the device.
      *
-     * \note This method \b may 
+     * \note This method \b may
      * be called in the context of a transaction.
      *
-     * \note This method \b may 
+     * \note This method \b may
      * be called in the context of a transaction.
      */
     static rc_t            get_device_quota(
-        const char*             device, 
-        smksize_t&              quota_KB, 
+        const char*             device,
+        smksize_t&              quota_KB,
         smksize_t&              quota_used_KB);
 
 
@@ -1334,7 +1334,7 @@ public:
      * Volume management functions
      */
 
-    /**\brief Change the fake disk latency before I/Os on this volume, 
+    /**\brief Change the fake disk latency before I/Os on this volume,
      * for debugging purposes
      * \ingroup SSMVOL
      * \details
@@ -1379,7 +1379,7 @@ public:
      * time of day.
      */
     static rc_t generate_new_lvid(lvid_t& lvid);
-     
+
     /**\brief Add a volume to a device.
      * \ingroup SSMVOL
      * \details
@@ -1390,7 +1390,7 @@ public:
      * @param[in] apply_fake_io_latency See ss_m::enable_fake_disk_latency()
      * @param[in] fake_disk_latency See ss_m::set_fake_disk_latency()
      *
-     * \note This method should \b not 
+     * \note This method should \b not
      * be called in the context of a transaction.
      *
      * The pages on the volume \b must be zeroed; you can only use
@@ -1413,8 +1413,8 @@ public:
      * allocated extents.
      */
     static rc_t            get_volume_quota(
-        const lvid_t&             lvid, 
-        smksize_t&                quota_KB, 
+        const lvid_t&             lvid,
+        smksize_t&                quota_KB,
         smksize_t&                quota_used_KB);
 
 
@@ -1424,8 +1424,8 @@ public:
      * @param[out] du The structure that will hold the collected statistics.
      * @param[in] audit If "true", the method acquires a share lock on the
      * volume and then will check assertions about the
-     * correctness of the data structures on the volume. 
-     * If the audit fails an internal fatal error is generated 
+     * correctness of the data structures on the volume.
+     * If the audit fails an internal fatal error is generated
      * to facilitate debugging. (It will generate a core file if your
      * shell permits such.)
      * If "false" an IS lock is acquired, which means that the
@@ -1439,7 +1439,7 @@ public:
     static rc_t            get_du_statistics(
         vid_t                 vid,
         sm_du_stats_t&        du,
-        bool                  audit = true); 
+        bool                  audit = true);
 
     /**\brief Analyze a store and report statistics regarding disk usage.
      * \ingroup SSMVOL
@@ -1447,17 +1447,17 @@ public:
      * @param[out] du The structure that will hold the collected statistics.
      * @param[in] audit If "true", the method acquires a share lock on the
      * store and then will check assertions about the
-     * correctness of the data structures on the store. 
+     * correctness of the data structures on the store.
      *
      * Using the audit feature is useful for debugging.
      * It is the only safe way to use this method.
      *
      */
     static rc_t            get_du_statistics(
-        const stid_t&        stid, 
+        const stid_t&        stid,
         sm_du_stats_t&       du,
         bool                 audit = true);
-    
+
     /**\brief Dump disk information about the indicated volume.
      * \ingroup SSMVOL
      * @param[in] vid The volume of interest.
@@ -1467,7 +1467,7 @@ public:
      * metadata about the given volume, including the number of extents
      * on the volume, the extent size, and the number of pages dedicated
      * to store maps and extent maps. Then, for each store on the volume,
-     * it dumps the status of the store and the extents allocated to 
+     * it dumps the status of the store and the extents allocated to
      * that store.
      *
      * This function must be run in a transaction, though the function
@@ -1479,7 +1479,7 @@ public:
      * \ingroup SSMVOL
      * @param[in] vid The volume of interest.
      * @param[out] volume_stats The statistics are written here.
-     * @param[in] cc Indicates whether the volume is to be locked 
+     * @param[in] cc Indicates whether the volume is to be locked
      * by this method. Acceptable values are t_cc_none and t_cc_volume.
      *
      * If no lock is acquired, the method can fail with eRETRY.
@@ -1502,7 +1502,7 @@ public:
 
 
 
-    /**\addtogroup SSMSTORE 
+    /**\addtogroup SSMSTORE
      * Indexes and files are special cases of "stores".
      * A store is a linked list of extents, and an extent is a
      * contiguous group of pages.  So the store is the structure
@@ -1511,9 +1511,9 @@ public:
      *
      * Indexes and files of records are built on stores.
      *
-     * Stores have logging properties and 
+     * Stores have logging properties and
      * other metadata associated with them.
-     * 
+     *
      * The property that determines the logging level of the store is
      * \ref sm_store_property_t.
      *
@@ -1541,7 +1541,7 @@ public:
      *                   smlevel_3::sm_store_property_t, q.v.)
      *
      * \details
-     * The possible uses of store properties are described with 
+     * The possible uses of store properties are described with
      * smlevel_3::sm_store_property_t.
      */
     static rc_t            set_store_property(
@@ -1552,11 +1552,11 @@ public:
     /**\brief Get the store property of a file or index.
      * \ingroup SSMSTORE
      * @param[in] stid   File ID or index ID of the store of interest.
-     * @param[in] property   Reference to enumeration store_property_t 
+     * @param[in] property   Reference to enumeration store_property_t
      *                  (alias for smlevel_3::sm_store_property_t, q.v.)
      *
      * \details
-     * The possible uses of store properties are described with 
+     * The possible uses of store properties are described with
      * smlevel_3::sm_store_property_t.
      */
     static rc_t            get_store_property(
@@ -1572,20 +1572,20 @@ public:
      * \details
      * Get internally stored information about a store.
      */
-    static rc_t            get_store_info( 
-        const stid_t&         stid, 
+    static rc_t            get_store_info(
+        const stid_t&         stid,
         sm_store_info_t&      info);
 
     //
     // Functions for B+tree Indexes
     //
-    /**\addtogroup SSMBTREE 
-     * The storage manager supports B+-Tree indexes provide associative access 
+    /**\addtogroup SSMBTREE
+     * The storage manager supports B+-Tree indexes provide associative access
      * to data by associating keys with values in 1:1 or many:1 relationships.
      *
      * The number of key-value pairs that an index can hold is limited by the
      * space available on the volume containing the index.
-     * \anchor max_entry_size 
+     * \anchor max_entry_size
      * The combined sizes of the key (i.e., the number of actual data
      * bytes it contains) and value must be less than or equal to \ref
      * max_entry_size, which is a function of the page size, and is
@@ -1603,7 +1603,7 @@ public:
      * @param[out] stid New store ID will be returned here.
      */
     static rc_t            create_index(
-                vid_t                 vid, 
+                vid_t                 vid,
                 stid_t&               stid
     );
 
@@ -1613,7 +1613,7 @@ public:
      *
      * @param[in] iid  ID of the index to be destroyed.
      */
-    static rc_t            destroy_index(const stid_t& iid); 
+    static rc_t            destroy_index(const stid_t& iid);
 
     /**\cond skip */
     static rc_t            print_index(stid_t stid);
@@ -1634,7 +1634,7 @@ public:
      * \brief Create an entry in a B+-Tree index.
      * \ingroup SSMBTREE
      *
-     * @param[in] stid  ID of the index. 
+     * @param[in] stid  ID of the index.
      * @param[in] key  Key for the association to be created.
      * @param[in] el  Element for the association to be created.
      *
@@ -1644,39 +1644,39 @@ public:
      * max_entry_size.
      */
     static rc_t            create_assoc(
-        stid_t                   stid, 
-        const w_keystr_t&             key, 
+        stid_t                   stid,
+        const w_keystr_t&             key,
         const vec_t&             el
     );
 
     static rc_t            create_assoc(
-        stid_t                   stid, 
-        const vec_t&             key, 
+        stid_t                   stid,
+        const vec_t&             key,
         const vec_t&             el
     );
- 
+
     /**
      * \brief Update record data of an entry in a B+-Tree index.
      * \ingroup SSMBTREE
-     * @param[in] stid  ID of the index. 
+     * @param[in] stid  ID of the index.
      * @param[in] key  Key for the association to be replaced.
      * @param[in] el  New element for the association.
      */
     static rc_t            update_assoc(
-        stid_t                   stid, 
-        const w_keystr_t&        key, 
+        stid_t                   stid,
+        const w_keystr_t&        key,
         const vec_t&             el
     );
     /**
      * \brief Put record data of an entry in a B+-Tree index.
      * \ingroup SSMBTREE
-     * @param[in] stid  ID of the index. 
+     * @param[in] stid  ID of the index.
      * @param[in] key  Key for the association to be created or replaced.
      * @param[in] el  New element for the association.
      */
     static rc_t            put_assoc(
-        stid_t                   stid, 
-        const w_keystr_t&        key, 
+        stid_t                   stid,
+        const w_keystr_t&        key,
         const vec_t&             el
     );
     /**
@@ -1689,27 +1689,27 @@ public:
     * @param[in] elen number of bytes to overwrite
     */
     static rc_t            overwrite_assoc(
-        stid_t                   stid, 
+        stid_t                   stid,
         const w_keystr_t&        key,
         const char *el, smsize_t offset, smsize_t elen);
 
     /** \brief Remove an entry from a B+-Tree index.
      * \ingroup SSMBTREE
-     * @param[in] stid  ID of the index. 
+     * @param[in] stid  ID of the index.
      * @param[in] key   Key of the entry to be removed.
      */
     static rc_t            destroy_assoc(
-        stid_t                   stid, 
+        stid_t                   stid,
         const w_keystr_t&             key
     );
 
-    /** \brief Find an entry associated with a key in a B+-Tree index. 
+    /** \brief Find an entry associated with a key in a B+-Tree index.
      * \ingroup SSMBTREE
      *
-     * @param[in] stid  ID of the index. 
+     * @param[in] stid  ID of the index.
      * @param[in] key   Key of the entries to be removed.
      * @param[out] el   Element associated with the given key will be copied into this buffer.
-     * @param[in] elen Length of buffer into which the 
+     * @param[in] elen Length of buffer into which the
      *                  result will be written. If too small, eRECWONTFIT will
      *                  be returned.
      *                 Length of result will be returned here.
@@ -1719,10 +1719,10 @@ public:
      * element found with the given key will be returned.
      */
     static rc_t            find_assoc(
-        stid_t                  stid, 
-        const w_keystr_t&            key, 
-        void*                   el, 
-        smsize_t&               elen, 
+        stid_t                  stid,
+        const w_keystr_t&            key,
+        void*                   el,
+        smsize_t&               elen,
         bool&                   found
     );
 
@@ -1737,7 +1737,7 @@ public:
     *  Verifies the integrity of B-Tree index using the fence-key bitmap technique.
      * \ingroup SSMBTREE
      * @copydetails btree_impl::_ux_verify_tree(const lpid_t&,int,bool&)
-    * @param[in] stid  ID of the index. 
+    * @param[in] stid  ID of the index.
     */
     static rc_t           verify_index(stid_t  stid, int hash_bits, bool &consistent);
 
@@ -1808,7 +1808,7 @@ public:
      * @param[in]  timeout  Milliseconds willing to block.  See timeout_in_ms.
      */
     static rc_t            lock(
-        const lockid_t&         n, 
+        const lockid_t&         n,
         const okvl_mode&           m,
         bool                    check_only = false,
         timeout_in_ms           timeout = WAIT_SPECIFIED_BY_XCT
@@ -1843,7 +1843,7 @@ private:
     sm_options _options;
 
     void _set_option_logsize();
-    
+
     static rc_t            _set_store_property(
         stid_t                stid,
         store_property_t      property);
@@ -1854,7 +1854,7 @@ private:
 
     static rc_t         _begin_xct(
         sm_stats_info_t*      stats,  // allocated by caller
-        tid_t&                tid, 
+        tid_t&                tid,
         timeout_in_ms         timeout,
         bool sys_xct = false,
         bool single_log_sys_xct = false);
@@ -1878,8 +1878,8 @@ private:
 
     static rc_t            _rollback_work(const sm_save_point_t&        sp);
 
-    static rc_t            _get_store_info( 
-        const stid_t  &       stid, 
+    static rc_t            _get_store_info(
+        const stid_t  &       stid,
         sm_store_info_t&      info);
 
     //
@@ -1893,12 +1893,12 @@ private:
 
     // this is for df statistics  DU DF
     static rc_t            _get_du_statistics(
-        vid_t                  vid, 
+        vid_t                  vid,
         sm_du_stats_t&         du,
         bool                   audit);
 
     static rc_t            _get_du_statistics(
-        const stid_t  &        stid, 
+        const stid_t  &        stid,
         sm_du_stats_t&         du,
         bool                   audit);
 
@@ -1915,13 +1915,13 @@ private:
         concurrency_t          cc);
 
     static rc_t            _create_file(
-        vid_t                 vid, 
+        vid_t                 vid,
         stid_t&               fid,
         store_property_t     property,
         shpid_t              cluster_hint = 0
-    ); 
+    );
 
-    static rc_t            _destroy_file(const stid_t& fid); 
+    static rc_t            _destroy_file(const stid_t& fid);
 };
 
 /**\brief Information about a store that can be queried by the client.
@@ -1936,10 +1936,10 @@ public:
     NORET ~sm_store_info_t() {  }
 
     /// store number
-    snum_t    store;        
+    snum_t    store;
 
     /// Root page if this is an index.
-    shpid_t    root;        
+    shpid_t    root;
 };
 
 

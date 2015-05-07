@@ -103,7 +103,7 @@ w_rc_t reuse_test(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(ac->is_allocated_page(FIRST_PID + 1));
     W_DO(io_m::sx_dealloc_a_page(pid2));
     EXPECT_FALSE(ac->is_allocated_page(FIRST_PID + 1));
-   
+
     lpid_t pid4, pid5;
     W_DO(io_m::sx_alloc_a_page(stid, pid4));
     EXPECT_EQ (pid4.page, FIRST_PID + 1); // reused!
@@ -154,7 +154,7 @@ w_rc_t reuse_serialize_test(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(ac->is_allocated_page(FIRST_PID));
     EXPECT_FALSE(ac->is_allocated_page(FIRST_PID + 1));
     EXPECT_TRUE(ac->is_allocated_page(FIRST_PID + 2));
-    
+
     W_DO(ssm->begin_xct());
     lpid_t pid4, pid5;
     W_DO(io_m::sx_alloc_a_page(stid, pid4));
@@ -186,7 +186,7 @@ w_rc_t allocate_consecutive(ss_m* ssm, test_volume_t *test_volume) {
 
     W_DO(io_m::sx_alloc_a_page(stid, pid));
     EXPECT_EQ (pid.page, FIRST_PID);
-    
+
     lpid_t pid_begin;
     W_DO(io_m::sx_alloc_consecutive_pages(stid, 30, pid_begin));
     EXPECT_EQ (pid_begin.page, FIRST_PID + 1);

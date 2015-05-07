@@ -744,12 +744,12 @@ void ss_m::_finish_recovery()
     if ((shutdown_clean) && (true == smlevel_0::use_redo_demand_restart()))
     {
         // If we have a clean shutdown and the current system is using
-        // pure on-demand recovery (no child restart thread), we might 
+        // pure on-demand recovery (no child restart thread), we might
         // still have a lot of recovery work to do at this point
         // Because we are doing a clean shutdown, we do not want to have
         // leftover restart work, spawn the restart child thread to finish up
         // the restart work first and then shutdown
-        
+
         w_assert1(!recovery);
         recovery = new restart_m();
         if (recovery)
@@ -1547,8 +1547,8 @@ ss_m::mount_vol(const char* path, vid_t& vid)
             (vid != 0 && io->is_mounted(vid)))
     {
         // already mounted
-    return RCOK;
-}
+        return RCOK;
+    }
 
     if (vid == 0) {
         W_DO(io->get_new_vid(vid));

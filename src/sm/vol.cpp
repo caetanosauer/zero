@@ -110,8 +110,8 @@ vol_t::check_raw_device(const char* devname, bool& raw)
     e = me()->open(devname, smthread_t::OPEN_RDONLY, 0, fd);
 
     if (!e.is_error()) {
-            e = me()->fisraw(fd, raw);
-            W_IGNORE(me()->close(fd));
+        e = me()->fisraw(fd, raw);
+        W_IGNORE(me()->close(fd));
     }
     else {
         // CS: just ignore -- file not found == not raw

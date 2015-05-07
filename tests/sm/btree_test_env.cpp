@@ -332,7 +332,7 @@ void btree_test_env::empty_dir(const char *folder_name)
         std::remove (buf.str().c_str());
     }
     ASSERT_EQ(closedir (d), 0);
-/**/    
+/**/
 }
 
 void btree_test_env::SetUp()
@@ -863,11 +863,11 @@ int btree_test_env::runRestartPerfTest (
         // Force a flush of system cache before shutdown, the goal is to
         // make sure after the simulated system crash, the recovery process
         // has to get data from disk, not file system cache
-/**/        
+/**/
         int i;
         i = system("free -m");  // before free cache
         i = system("/bin/sync");  // flush but not free the page cache
-        i = system("sudo sh -c 'echo 3 >/proc/sys/vm/drop_caches'");  // free page cache and inode cache        
+        i = system("sudo sh -c 'echo 3 >/proc/sys/vm/drop_caches'");  // free page cache and inode cache
         i = system("free -m");  // after free cache
         // Force read/write a big file
         i = system("dd if=/home/weyg/test.core of=/home/weyg/test2.core bs=100k count=10000 conv=fdatasync"); // Read and write 1G of data using cache
@@ -924,7 +924,7 @@ int btree_test_env::runRestartPerfTest (
                 offset += per_read_size + ::rand()%1000+99;
                 int read_bytes = ::pread(pfd, buffer, sizeof(buffer), offset);
                 w_assert0(-1 != read_bytes);
-/**/                
+/**/
 
 /* Relative seek with offset on multiple of 8192 *
                 offset = (::rand()%10+1) * per_read_size;
@@ -970,7 +970,7 @@ int btree_test_env::runRestartPerfTest (
 
             }
             // Done, close the file
-            ::close(pfd);        
+            ::close(pfd);
             std::cout << "Done with extra read" << std::endl;
 
             struct timeval tm_after;
@@ -984,7 +984,7 @@ int btree_test_env::runRestartPerfTest (
         // Setup timer first
         // CUP cycles
         unsigned int hi, lo;
-        __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));       
+        __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
         context->_start = ((unsigned long long)lo)|( ((unsigned long long)hi)<<32);
 
         // Elapsed time in millisecs seconds
@@ -1274,15 +1274,15 @@ int btree_test_env::runRestartPerfTestAfter (
     {
         // Start from an existing database from phase 2 with existing log and data files
         // Existing data file:
-        // /dev/shm/weyg/btree_test_env/volumes/dev_test        
-        
+        // /dev/shm/weyg/btree_test_env/volumes/dev_test
+
         // Caller should do a manual system shutdown before calling this test case
         // to ensure all caches are clean
 
         // Setup timer first
         // CUP cycles
         unsigned int hi, lo;
-        __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));       
+        __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
         context->_start = ((unsigned long long)lo)|( ((unsigned long long)hi)<<32);
 
         // Elapsed time in millisecs seconds
