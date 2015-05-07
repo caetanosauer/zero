@@ -228,8 +228,7 @@ testdriver_thread_t::do_init(ss_m &ssm)
         W_DO(ssm.create_vol(
                     _functor->_test_volume._device_name,
                     _functor->_test_volume._lvid,
-                    quota_in_kb,
-                    true // skip_raw_init
+                    quota_in_kb
                 ));
     }
 

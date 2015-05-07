@@ -1678,8 +1678,7 @@ ss_m::generate_new_lvid(lvid_t& lvid)
  *--------------------------------------------------------------*/
 rc_t
 ss_m::create_vol(const char* dev_name, lvid_t& lvid,
-                 smksize_t quota_KB, bool skip_raw_init,
-                 const bool apply_fake_io_latency, const int fake_disk_latency)
+                 smksize_t quota_KB)
 {
     SM_PROLOGUE_RC(ss_m::create_vol, not_in_xct, read_only, 0);
 
@@ -1701,8 +1700,7 @@ ss_m::create_vol(const char* dev_name, lvid_t& lvid,
         << " formatting " << dev_name);
 
     W_DO(vol_t::format_vol(dev_name, lvid, tmp_vid,
-        /* XXX possible loss of bits */
-       shpid_t(quota_KB/(page_sz/1024)), skip_raw_init));
+       shpid_t(quota_KB/(page_sz/1024))));
 
     // CS: checkpoint must be taken to record the volume mount, otherwise
     // recovery will fail (TODO this general problem should be fixed)

@@ -1400,10 +1400,8 @@ public:
     static rc_t            create_vol(
         const char*             device_name,
         lvid_t&           lvid,
-        smksize_t               quota_KB,
-        bool                    skip_raw_init = false,
-        const bool              apply_fake_io_latency = false,
-        const int               fake_disk_latency = 0);
+        smksize_t               quota_KB
+    );
 
     /**\brief Gets the quotas associated with the volume.
      * \ingroup SSMVOL

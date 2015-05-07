@@ -22,24 +22,17 @@ class volhdr_t {
     // number of the Shore SM version which formatted the volume.
     // This number is called volume_format_version in sm_base.h.
     uint32_t   _format_version;
-    sm_diskaddr_t       _device_quota_KB;
     lvid_t              _lvid;
     shpid_t             _apid;        // first alloc_page pid
     shpid_t             _spid;        // the only stnode_page pid
     uint32_t            _num_pages;
     shpid_t             _hdr_pages;   // # pages in hdr includes entire store 0
-    uint32_t            _page_sz;    // page size in bytes
 
 public:
     uint32_t   format_version() const {
                             return _format_version; }
     void            set_format_version(uint v) {
                         _format_version = v; }
-
-    sm_diskaddr_t   device_quota_KB() const {
-                            return _device_quota_KB; }
-    void            set_device_quota_KB(sm_diskaddr_t q) {
-                            _device_quota_KB = q; }
 
     const lvid_t&   lvid() const { return _lvid; }
     void            set_lvid(const lvid_t &l) {
@@ -56,9 +49,6 @@ public:
 
     shpid_t          hdr_pages() const {  return _hdr_pages; }
     void             set_hdr_pages(shpid_t n) {  _hdr_pages = n; }
-
-    uint32_t         page_sz() const {  return _page_sz; }
-    void             set_page_sz(uint32_t n) {  _page_sz = n; }
 
 };
 
@@ -169,7 +159,6 @@ public:
 public:
 
     rc_t             num_pages(snum_t fnum, uint32_t& cnt);
-    bool             is_raw() { return _is_raw; };
 
     /** Sync the volume. */
     rc_t            sync();
@@ -178,34 +167,14 @@ public:
         const char*          devname,
         lvid_t               lvid,
         vid_t                vid,
-        shpid_t              num_pages,
-        bool                 skip_raw_init);
-    static rc_t            reformat_vol(
-        const char*          devname,
-        lvid_t               lvid,
-        vid_t                vid,
-        shpid_t              num_pages,
-        bool                 skip_raw_init);
+        shpid_t              num_pages);
 
     static rc_t            read_vhdr(const char* devname, volhdr_t& vhdr);
     static rc_t            read_vhdr(int fd, volhdr_t& vhdr);
 
     static rc_t            write_vhdr(           // SMUF-SC3: moved to public
         int                  fd,
-        volhdr_t&            vhdr,
-        bool                 raw_device);
-
-    /**
-    * Check if "devname" is a raw device. Return result in "raw".
-    * XXX This has problems.  Once the file is opened it should
-    * never be closed.  Otherwise the file can be switched underneath
-    * the system and havoc can ensue.
-    */
-    static rc_t            check_raw_device(
-        const char*          devname,
-        bool&                raw);
-
-
+        volhdr_t&            vhdr);
 
     // methods for space usage statistics for this volume
     rc_t             get_du_statistics(
@@ -235,8 +204,6 @@ private:
     uint             _hdr_pages;
     lpid_t           _apid;
     lpid_t           _spid;
-    int              _page_sz;  // page size in bytes
-    bool             _is_raw;   // notes if volume is a raw device
 
     mutable VolumeLock _mutex;
 
