@@ -190,10 +190,10 @@ w_rc_t    sdisk_unix_t::open(const char *name, int flags, int mode)
     _fd = ::os_open(name, convert_flags(flags), mode);
     if (_fd == -1) {
         w_rc_t rc = RC(fcOS);
-        RC_APPEND_MSG(rc, << "Offending file: " << name << ", errno=" << errno
-            << " (This might not mean an error. One might try opening file before create)"
-                      << "fuller flags was " << convert_flags(flags) << " mode was " << mode << " raw flags " << flags
-        );
+        // RC_APPEND_MSG(rc, << "Offending file: " << name << ", errno=" << errno
+        //     << " (This might not mean an error. One might try opening file before create)"
+        //               << "fuller flags was " << convert_flags(flags) << " mode was " << mode << " raw flags " << flags
+        // );
         return rc;
     }
 

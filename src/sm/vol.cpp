@@ -113,8 +113,12 @@ vol_t::check_raw_device(const char* devname, bool& raw)
             e = me()->fisraw(fd, raw);
             W_IGNORE(me()->close(fd));
     }
+    else {
+        // CS: just ignore -- file not found == not raw
+        raw = false;
+    }
 
-    return e;
+    return RCOK;
 }
 
 rc_t vol_t::mount(const char* devname, vid_t vid)
@@ -656,60 +660,6 @@ const char* vol_t::prolog[] = {
     "%% page_sz           : ",
 };
 
-rc_t
-vol_t::format_dev(
-    const char* devname,
-    shpid_t num_pages,
-    bool force)
-{
-    FUNC(vol_t::format_dev);
-
-    // WHOLE FUNCTION is a critical section
-    xct_log_switch_t log_off(OFF);
-
-    DBG( << "formating device " << devname);
-    int flags = smthread_t::OPEN_CREATE | smthread_t::OPEN_RDWR
-            | (force ? smthread_t::OPEN_TRUNC : smthread_t::OPEN_EXCL);
-    int fd;
-    w_rc_t e;
-    e = me()->open(devname, flags, 0666, fd);
-    if (e.is_error()) {
-        DBG(<<" open " << devname <<  " failed " << e);
-        return e;
-    }
-
-    volhdr_t vhdr;
-    vhdr.set_format_version(volume_format_version);
-    vhdr.set_device_quota_KB(num_pages*(page_sz/1024));
-    vhdr.set_num_pages(num_pages); // # extents on volume
-    vhdr.set_hdr_pages(0); // hdr pages
-    vhdr.set_apid(0); // first extent-map page
-    vhdr.set_spid(0); // first store-map page
-    vhdr.set_page_sz(page_sz);
-
-    // determine if the volume is on a raw device
-    bool raw;
-    rc_t rc = me()->fisraw(fd, raw);
-    if (rc.is_error()) {
-        W_IGNORE(me()->close(fd));
-        DBG(<<" fisraw " << fd << " failed " << rc);
-        return RC_AUGMENT(rc);
-    }
-    rc = write_vhdr(fd, vhdr, raw);
-    if (rc.is_error())  {
-        W_IGNORE(me()->close(fd));
-        DBG(<<" write_vhdr  fd " << fd << " failed " << rc);
-        return RC_AUGMENT(rc);
-    }
-
-    W_COERCE_MSG(me()->close(fd), << "device name=" << devname);
-
-    DBG(<<" format " << devname << " done ");
-    return RCOK;
-}
-
-
-
 /*********************************************************************
  *
  *  vol_t::format_vol(devname, lvid, num_pages, skip_raw_init,
@@ -737,24 +687,10 @@ vol_t::format_vol(
     xct_log_switch_t log_off(OFF);
 
     /*
-     *  Read the volume header
-     */
-    volhdr_t vhdr;
-    W_DO(read_vhdr(devname, vhdr));
-    if (vhdr.lvid() == lvid) return RC(eVOLEXISTS);
-    if (vhdr.lvid() != lvid_t::null) return RC(eDEVICEVOLFULL);
-
-    /* XXX possible bit loss */
-    uint quota_pages = (uint) (vhdr.device_quota_KB()/(page_sz/1024));
-
-    if (num_pages > quota_pages) {
-        return RC(eVOLTOOLARGE);
-    }
-
-    /*
      *  Determine if the volume is on a raw device
      */
     bool raw;
+    // TODO eliminate raw device distinction
     rc_t rc = check_raw_device(devname, raw);
     if (rc.is_error())  {
         return RC_AUGMENT(rc);
@@ -763,14 +699,11 @@ vol_t::format_vol(
 
     DBG( << "formating volume " << lvid << " <"
          << devname << ">" );
-    int flags = smthread_t::OPEN_RDWR;
+    int flags = smthread_t::OPEN_CREATE | smthread_t::OPEN_RDWR
+        | smthread_t::OPEN_EXCL;
     if (!raw) flags |= smthread_t::OPEN_TRUNC;
     int fd;
-    rc = me()->open(devname, flags, 0666, fd);
-    if (rc.is_error()) {
-        DBG(<<" open " << devname << " failed " << rc );
-        return rc;
-    }
+    W_DO(me()->open(devname, flags, 0666, fd));
 
     shpid_t alloc_pages = num_pages / alloc_page_h::bits_held + 1; // # alloc_page_h pages
     shpid_t hdr_pages = alloc_pages + 1 + 1; // +1 for stnode_page, +1 for volume header
@@ -781,6 +714,7 @@ vol_t::format_vol(
     /*
      *  Set up the volume header
      */
+    volhdr_t vhdr;
     vhdr.set_format_version(volume_format_version);
     vhdr.set_lvid(lvid);
     vhdr.set_num_pages(num_pages);

@@ -144,7 +144,7 @@ w_rc_t reuse_serialize_test(ss_m* ssm, test_volume_t *test_volume) {
     // re-mount the device to check if the allocation information is saved
     W_DO(ssm->dismount_all());
 
-    W_DO(ssm->mount_dev(test_volume->_device_name, test_volume->_vid));    
+    W_DO(ssm->mount_vol(test_volume->_device_name, test_volume->_vid));
     stid = stid_t (test_volume->_vid, 10); // _vid might have been changed!
     ac = io_m::get_vol_alloc_cache(test_volume->_vid);
 

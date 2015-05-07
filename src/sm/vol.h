@@ -174,12 +174,6 @@ public:
     /** Sync the volume. */
     rc_t            sync();
 
-    // format a device (actually, just zero out the header for now)
-    static rc_t            format_dev(
-        const char*          devname,
-        shpid_t              num_pages,
-        bool                 force);
-
     static rc_t            format_vol(
         const char*          devname,
         lvid_t               lvid,

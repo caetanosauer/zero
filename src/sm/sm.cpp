@@ -603,7 +603,7 @@ void ss_m::_do_restart()
         {
             rc_t rc;
             DBG(<<"Remount volume " << dname[i]);
-            rc =  _mount_dev(dname[i], vid[i]) ;
+            rc =  mount_vol(dname[i], vid[i]) ;
             if (rc.is_error())
             {
                 ss_m::errlog->clog  << warning_prio
@@ -1530,42 +1530,36 @@ void ss_m::dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t &
  *  DEVICE and VOLUME MANAGEMENT                        *
  *--------------------------------------------------------------*/
 
-/*--------------------------------------------------------------*
- *  ss_m::format_dev()                                *
- *--------------------------------------------------------------*/
 rc_t
-ss_m::format_dev(const char* device, smksize_t size_in_KB, bool force)
+ss_m::mount_vol(const char* path, vid_t& vid)
 {
-     // SM_PROLOGUE_RC(ss_m::format_dev, not_in_xct, 0);
-    FUNC(ss_m::format_dev);
-
-    if(size_in_KB > sthread_t::max_os_file_size / 1024) {
-        return RC(eDEVTOOLARGE);
-    }
-    {
-        prologue_rc_t prologue(prologue_rc_t::not_in_xct,
-                                prologue_rc_t::read_write,0);
-        if (prologue.error_occurred()) return prologue.rc();
-
-        W_DO(vol_t::format_dev(device,
-                /* XXX possible loss of bits */
-                shpid_t(size_in_KB/(page_sz/1024)), force));
-    }
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::mount_dev()                                *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::mount_dev(const char* device, vid_t local_vid)
-{
-    SM_PROLOGUE_RC(ss_m::mount_dev, not_in_xct, read_only, 0);
+    SM_PROLOGUE_RC(ss_m::mount_vol, not_in_xct, read_only, 0);
 
     spinlock_write_critical_section cs(&_begin_xct_mutex);
 
-    // do the real work of the mount
-    W_DO(_mount_dev(device, local_vid));
+    DBG(<<"mount_vol " << path);
+
+    // make sure volumes on the dev are not already mounted
+    // TODO: get rid of lvid and make vid unique by storing it in vhdr
+    lvid_t lvid;
+    W_DO(io->get_lvid(path, lvid));
+    if (io->get_vid(lvid) != 0 ||
+            (vid != 0 && io->is_mounted(vid)))
+    {
+        // already mounted
+    return RCOK;
+}
+
+    if (vid == 0) {
+        W_DO(io->get_new_vid(vid));
+    }
+
+    W_DO(io->mount(path, vid));
+
+    // take a synch checkpoint to record the mount
+    // TODO: not needed -- use create/mount/unmount log records
+    chkpt->synch_take();
+
     return RCOK;
 }
 
@@ -1636,8 +1630,8 @@ ss_m::get_device_quota(const char* device, smksize_t& quota_KB, smksize_t& quota
 rc_t
 ss_m::generate_new_lvid(lvid_t& lvid)
 {
-    SM_PROLOGUE_RC(ss_m::generate_new_lvid, can_be_in_xct, read_only, 0);
     // CS: copied from old lid_m
+    // CS: replace this with UUID
     /*
      * For now the long volume ID will consists of
      * the machine network address and the current time-of-day.
@@ -1683,20 +1677,36 @@ ss_m::generate_new_lvid(lvid_t& lvid)
  *  ss_m::create_vol()                                *
  *--------------------------------------------------------------*/
 rc_t
-ss_m::create_vol(const char* dev_name, const lvid_t& lvid,
+ss_m::create_vol(const char* dev_name, lvid_t& lvid,
                  smksize_t quota_KB, bool skip_raw_init,
                  const bool apply_fake_io_latency, const int fake_disk_latency)
 {
     SM_PROLOGUE_RC(ss_m::create_vol, not_in_xct, read_only, 0);
 
+    if(quota_KB > sthread_t::max_os_file_size / 1024) {
+        return RC(eDEVTOOLARGE);
+    }
+
     spinlock_write_critical_section cs(&_begin_xct_mutex);
+
+    W_DO(generate_new_lvid(lvid));
 
     // make sure volume is not already mounted
     vid_t vid = io->get_vid(lvid);
     if (vid != 0) return RC(eVOLEXISTS);
 
-    W_DO(_create_vol(dev_name, lvid, quota_KB, skip_raw_init,
-                     apply_fake_io_latency, fake_disk_latency));
+    vid_t tmp_vid;
+    W_DO(io->get_new_vid(tmp_vid));
+    DBG(<<"got new vid " << tmp_vid
+        << " formatting " << dev_name);
+
+    W_DO(vol_t::format_vol(dev_name, lvid, tmp_vid,
+        /* XXX possible loss of bits */
+       shpid_t(quota_KB/(page_sz/1024)), skip_raw_init));
+
+    // CS: checkpoint must be taken to record the volume mount, otherwise
+    // recovery will fail (TODO this general problem should be fixed)
+    chkpt->synch_take();
 
     return RCOK;
 }
@@ -2148,67 +2158,6 @@ ss_m::_rollback_work(const sm_save_point_t& sp)
         return RC(eBADSAVEPOINT);
     }
     W_DO( x->rollback(sp) );
-    return RCOK;
-}
-
-rc_t
-ss_m::_mount_dev(const char* device, vid_t local_vid)
-{
-    vid_t vid;
-    DBG(<<"_mount_dev " << device);
-
-    // make sure volumes on the dev are not already mounted
-    lvid_t lvid;
-    W_DO(io->get_lvid(device, lvid));
-    vid = io->get_vid(lvid);
-    if (vid != 0) {
-                // already mounted
-                return RCOK;
-    }
-
-    if (local_vid == 0) {
-        W_DO(io->get_new_vid(vid));
-    } else {
-        if (io->is_mounted(local_vid)) {
-            // vid already in use
-            return RC(eBADVOL);
-        }
-        vid = local_vid;
-    }
-
-    W_DO(io->mount(device, vid));
-    // take a synch checkpoint to record the mount
-    chkpt->synch_take();
-
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::_create_vol()                                *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::_create_vol(const char* dev_name, const lvid_t& lvid,
-                  smksize_t quota_KB, bool skip_raw_init,
-                  const bool apply_fake_io_latency,
-                  const int fake_disk_latency)
-{
-    vid_t tmp_vid;
-    W_DO(io->get_new_vid(tmp_vid));
-    DBG(<<"got new vid " << tmp_vid
-        << " formatting " << dev_name);
-
-    W_DO(vol_t::format_vol(dev_name, lvid, tmp_vid,
-        /* XXX possible loss of bits */
-       shpid_t(quota_KB/(page_sz/1024)), skip_raw_init));
-
-    DBG(<<"vid " << tmp_vid  << " mounting " << dev_name);
-    W_DO(io->mount(dev_name, tmp_vid, apply_fake_io_latency, fake_disk_latency));
-    DBG(<<" mount done " << dev_name << " tmp_vid " << tmp_vid);
-
-    // CS: checkpoint must be taken to record the volume mount, otherwise
-    // recovery will fail (TODO this general problem should be fixed)
-    chkpt->synch_take();
-
     return RCOK;
 }
 

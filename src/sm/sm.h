@@ -542,9 +542,9 @@ public:
      * \code
      * ss_m *UNIQ = new ss_m();
      *
-     * W_DO(UNIQ->mount_dev(...))
+     * W_DO(UNIQ->mount_vol(...))
      *     // or
-     * W_DO(ss_m::mount_dev(...))
+     * W_DO(ss_m::mount_vol(...))
      * \endcode
      * ).
      *
@@ -1181,31 +1181,6 @@ public:
      */
     static void             dump_page_lsn_chain(std::ostream &o);
 
-
-    /*
-       Device and Volume Management
-       ----------------------------
-       A device is either an operating system file or operating system
-       device and is identified by a path name (absolute or relative).
-       A device has a quota.  In theory, a device may have 
-       multiple volumes on it but
-       in the current implementation the maximum number of volumes
-       is 1.
-
-       A volume is where data is stored.  A volume is identified
-       uniquely and persistently by a long volume ID (lvid_t).
-       Volumes can be used whenever the device they are located
-       on is mounted by the SM.  Volumes have a quota.  The
-       sum of the quotas of all the volumes on a device cannot
-       exceed the device quota.
-
-       The basic steps to begin using a new device/volume are:
-        format_dev: initialize the device
-        mount_dev: allow use of the device and all its volumes
-        generate_new_lvid: generate a unique ID for the volume
-        create_vol: create a volume on the device
-     */
-
     /*
      * Device management functions
      */
@@ -1282,33 +1257,11 @@ public:
      *
      */
 
-    /**\brief Format a device.
+    /**\brief Mount a volume.
      * \ingroup SSMVOL
      * \details
-     * @param[in] device   Operating-system file name of the "device".
-     * @param[in] quota_in_KB  Quota in kilobytes.
-     * @param[in] force If true, format the device even if it already exists.
-     *
-     * Since raw devices always "exist", \a force should be given as true 
-     * for raw devices.
-     *
-     * A device may not be formatted if it is already mounted.
-     *
-     * \note This method should \b not 
-     * be called in the context of a transaction.
-     */
-    static rc_t            format_dev(
-        const char*            device,
-        smksize_t              quota_in_KB,
-        bool                   force);
-    
-    /**\brief Mount a device.
-     * \ingroup SSMVOL
-     * \details
-     * @param[in] device   Operating-system file name of the "device".
-     * @param[out] vol_cnt Number of volumes on the device.
-     * @param[out] devid  A local device id assigned by the storage manager.
-     * @param[in] local_vid A local handle to the (only) volume on the device,
+     * @param[in] device   Operating-system file path of the volume.
+     * @param[inout] vid A local handle to the (only) volume on the device,
      * to be used when a volume is mounted.  The default, 0, 
      * indicates that the storage manager can chose a value for this. 
      *
@@ -1321,11 +1274,11 @@ public:
      * \note This method should \b not 
      * be called in the context of a transaction.
      */
-    static rc_t            mount_dev(
+    static rc_t            mount_vol(
         const char*            device,
-        vid_t                  local_vid = 0);
+        vid_t& vid);
 
-    /**\brief Dismount all mounted devices.
+    /**\brief Dismount all mounted volumes.
      * \ingroup SSMVOL
      *
      * \note This method should \b not 
@@ -1446,7 +1399,7 @@ public:
      */
     static rc_t            create_vol(
         const char*             device_name,
-        const lvid_t&           lvid,
+        lvid_t&           lvid,
         smksize_t               quota_KB,
         bool                    skip_raw_init = false,
         const bool              apply_fake_io_latency = false,
@@ -1924,17 +1877,6 @@ private:
     static rc_t            _save_work(sm_save_point_t& sp);
 
     static rc_t            _rollback_work(const sm_save_point_t&        sp);
-    static rc_t            _mount_dev(
-        const char*            device,
-        vid_t                  local_vid);
-
-    static rc_t            _create_vol(
-        const char*            device_name,
-        const lvid_t&          lvid,
-        smksize_t              quota_KB,
-        bool                   skip_raw_init,
-        const bool             apply_fake_io_latency,
-        const int              fake_disk_latency);
 
     static rc_t            _get_store_info( 
         const stid_t  &       stid, 

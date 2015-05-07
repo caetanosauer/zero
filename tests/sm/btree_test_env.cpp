@@ -225,55 +225,17 @@ testdriver_thread_t::do_init(ss_m &ssm)
 
         vout << "Formatting device: " << _functor->_test_volume._device_name
                 << " with a " << quota_in_kb << "KB quota ..." << endl;
-        W_DO(ssm.format_dev(_functor->_test_volume._device_name, quota_in_kb, true));
-    } else {
-        w_assert0(_functor->_test_volume._device_name);
+        W_DO(ssm.create_vol(
+                    _functor->_test_volume._device_name,
+                    _functor->_test_volume._lvid,
+                    quota_in_kb,
+                    true // skip_raw_init
+                ));
     }
 
-    vout << "Mounting device: " << _functor->_test_volume._device_name  << endl;
-    // mount the new device
-
-    rc_t rc;
-    if (0 != strlen(_functor->_test_volume._device_name))
-    {
-// TODO(Restart)... performance, print out the device name
-        DBGOUT1(<< "***** Mount device, device name: " << _functor->_test_volume._device_name);
-        rc_t rc = ssm.mount_dev(_functor->_test_volume._device_name);
-    }
-    else
-    {
-// TODO(Restart)... performance, hard code the data file path and name if nothing is available, this is for an 'AFTER' case only
-        DBGOUT1(<< "***** Mount device, device name: " << "/dev/shm/weyg/btree_test_env/volumes/dev_test");    
-        rc_t rc = ssm.mount_dev("/dev/shm/weyg/btree_test_env/volumes/dev_test");
-    }
-    if (rc.is_error())
-    {
-        DBGOUT0(<< "**** Failed to ssm.mount_dev, error: " << rc.get_message());
-        return rc;
-    }
-
-    vout << "Mounted device: " << _functor->_test_volume._device_name << endl;
-
-    if (_functor->_need_init) {
-
-        // generate a volume ID for the new volume we are about to
-        // create on the device
-        vout << "Generating new lvid: " << endl;
-        W_DO(ssm.generate_new_lvid(_functor->_test_volume._lvid));
-        vout << "Generated lvid " << _functor->_test_volume._lvid <<  endl;
-
-        // create the new volume
-        vout << "Creating a new volume on the device" << endl;
-        vout << "    with a " << quota_in_kb << "KB quota ..." << endl;
-
-        W_DO(ssm.create_vol(_functor->_test_volume._device_name, _functor->_test_volume._lvid,
-                        quota_in_kb, false, _functor->_test_volume._vid));
-        vout << "    with local handle(phys volid) " << _functor->_test_volume._vid << endl;
-    } else {
-// TODO(Restart)... performance, for an AFTER case
-        w_assert0(_functor->_test_volume._vid != 0);
-        w_assert0(_functor->_test_volume._lvid != lvid_t::null);
-    }
+    DBGOUT1(<< "Mounting device: " << _functor->_test_volume._device_name);
+    W_DO(ssm.mount_vol(_functor->_test_volume._device_name,
+                _functor->_test_volume._vid));
 
     return RCOK;
 }
