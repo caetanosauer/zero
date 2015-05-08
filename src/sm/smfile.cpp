@@ -66,6 +66,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "btcursor.h"
 #include "sm.h"
 #include "suppress_unused.h"
+#include "vol.h"
 
 #if W_DEBUG_LEVEL > 2
 #define  FILE_LOG_COMMENT_ON 1
@@ -129,14 +130,14 @@ ss_m::_set_store_property(
      */
     store_flag_t oldflags = st_unallocated;
 
-    W_DO( io->get_store_flags(stid, oldflags) );
+    W_DO(vol->get(stid.vol)->get_store_flags(stid.store, oldflags) );
 
     if (oldflags == newflags)  {
         return RCOK;
     }
 
 
-    W_DO( io->set_store_flags(stid, newflags) );
+    W_DO(vol->get(stid.vol)->set_store_flags(stid.store, newflags) );
 
     return RCOK;
 }
@@ -150,7 +151,7 @@ ss_m::_get_store_property(
     store_property_t&   property)
 {
     store_flag_t flags = st_unallocated;
-    W_DO( io->get_store_flags(stid, flags) );
+    W_DO(vol->get(stid.vol)->get_store_flags(stid.store, flags) );
 
     if (flags & st_regular) {
         w_assert2((flags & (st_tmp|st_load_file|st_insert_file)) == 0);

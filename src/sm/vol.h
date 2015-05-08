@@ -8,14 +8,67 @@
 #include "w_defines.h"
 
 #include <list>
-#include "stnode_page.h"
 #include <stdlib.h>
 
 struct volume_hdr_stats_t;
 class alloc_cache_t;
 class stnode_cache_t;
 class bf_fixed_m;
+class store_operation_param;
+class sm_options;
+class vol_t;
 
+#include "stnode_page.h"
+
+class vol_m {
+public:
+    vol_m(const sm_options& options);
+    virtual ~vol_m();
+
+    vol_t* get(vid_t vid);
+    vol_t* get(const char* path);
+
+    rc_t sx_mount(const char* device, bool logit = true);
+    rc_t sx_dismount(const char* device, bool logit = true);
+    rc_t sx_dismount_all();
+
+    rc_t sx_format(
+            const char* devname,
+            shpid_t num_pages,
+            vid_t& vid,
+            bool logit = false
+    );
+
+    rc_t list_volumes(
+            std::vector<string>& names,
+            std::vector<vid_t>& vids,
+            size_t start = 0,
+            size_t count = 0
+    );
+
+    rc_t force_fixed_buffers();
+
+    int num_vols() { return vol_cnt; }
+
+    bool is_mounted(vid_t vid) { return get(vid) != NULL; }
+
+    vid_t get_next_vid() {
+        // TODO must be in mutual exclusion with create_vol
+        return _next_vid;
+    }
+
+    void set_next_vid(vid_t vid) {
+        // TODO must be in mutual exclusion with create_vol
+        _next_vid = vid;
+    }
+
+    static const int MAX_VOLS = 32;
+
+private:
+    int    vol_cnt;
+    vol_t* volumes[MAX_VOLS];
+    vid_t _next_vid;
+};
 
 struct volhdr_t {
     // For compatibility checking, we record a version number
@@ -36,14 +89,7 @@ private:
     static const char*       prolog[]; // string array for volume hdr
 };
 
-
-
-
-#include <vector>
-#include <set>
-#include <map>
-
-class vol_t : public smlevel_1
+class vol_t
 {
 public:
     /*WARNING: THIS CODE MUST MATCH THAT IN sm_io.h!!! */
@@ -94,12 +140,11 @@ public:
 
     rc_t                read_page(
         shpid_t             page,
-        generic_page&       buf,
-        bool&               past_end);
+        generic_page&       buf);
 
-    rc_t            alloc_a_page(lpid_t &pid);
-    rc_t            alloc_consecutive_pages(size_t page_count, lpid_t &pid_begin);
-    rc_t            free_page(const lpid_t& pid);
+    rc_t            alloc_a_page(shpid_t& pid);
+    rc_t            alloc_consecutive_pages(size_t page_count, shpid_t &pid_begin);
+    rc_t            free_page(const shpid_t& pid);
 
     rc_t            redo_alloc_a_page(shpid_t pid);
     rc_t            redo_alloc_consecutive_pages(size_t page_count, shpid_t pid_begin);
@@ -112,52 +157,28 @@ public:
     /** Returns root page ID of the specified index. */
     shpid_t         get_store_root(snum_t f) const;
 
-    /** Find an unused store and return it in "snum". */
-    rc_t            find_free_store(snum_t& fnum);
-    rc_t            alloc_store(
-        snum_t                 fnum,
-        store_flag_t           flags);
+    rc_t            create_store(smlevel_0::store_flag_t, snum_t&);
 
     rc_t            set_store_flags(
         snum_t                 fnum,
-        store_flag_t           flags,
-        bool                   sync_volume);
+        smlevel_0::store_flag_t           flags);
     rc_t            get_store_flags(
         snum_t                 fnum,
-        store_flag_t&          flags,
-        bool                   ok_if_deleting);
-
-public:
-    // The following functinos return space utilization statistics
-    // on the volume or selected stores.  These functions use only
-    // the store and page/extent meta information.
-
-    rc_t                     get_volume_meta_stats(
-        SmVolumeMetaStats&          volume_stats);
-
-    rc_t                     get_store_meta_stats(
-        snum_t                      snum,
-        SmStoreMetaStats&           storeStats);
+        smlevel_0::store_flag_t&          flags,
+        bool                   ok_if_deleting = false);
 
 public:
 
     rc_t             num_pages(snum_t fnum, uint32_t& cnt);
+    rc_t             get_quota_kb(size_t& total, size_t& used);
 
     /** Sync the volume. */
     rc_t            sync();
-
-    static rc_t            format_vol(
-        const char*          devname,
-        shpid_t              num_pages,
-        vid_t&               vid);
 
     // methods for space usage statistics for this volume
     rc_t             get_du_statistics(
         struct              volume_hdr_stats_t&,
         bool                audit);
-
-    void            assert_mutex_mine(lock_state *) {}
-    void            assert_mutex_notmine(lock_state *) {}
 
     // Sometimes the sm_io layer acquires this mutex:
     void            acquire_mutex(lock_state* me, bool for_write); // used by sm_io.cpp
@@ -169,20 +190,8 @@ public:
     bool            set_fake_disk_latency(const int adelay);
     void            fake_disk_latency(long start);
 
-    static vid_t get_next_vid() {
-        // TODO must be in mutual exclusion with create_vol
-        return _next_vid;
-    }
-
-    static void set_next_vid(vid_t vid) {
-        // TODO must be in mutual exclusion with create_vol
-        _next_vid = vid;
-    }
-
 private:
-    static vid_t _next_vid;
-
-    char             _devname[max_devname];
+    char             _devname[smlevel_0::max_devname];
     int              _unix_fd;
     vid_t            _vid;
     shpid_t          _first_data_pageid;
@@ -191,7 +200,7 @@ private:
     lpid_t           _apid;
     lpid_t           _spid;
 
-    mutable VolumeLock _mutex;
+    mutable srwlock_t _mutex;
 
     // fake disk latency
     bool             _apply_fake_disk_latency;
@@ -238,8 +247,6 @@ inline bool vol_t::is_valid_store(snum_t f) const
 {
     return (f < stnode_page_h::max);
 }
-
-
 
 /*<std-footer incl-file-exclusion='VOL_H'>  -- do not edit anything below this line -- */
 

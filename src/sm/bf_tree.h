@@ -687,12 +687,10 @@ private:
      * @param[in] idx Bufferpool index of the page to check and recover.
      * @param[in] vol Volume ID
      * @param[in] shpid Page ID
-     * @param[in] past_end true if page not on disk
      * @param[in] page_emlsn if != 0, it is the page last update LSN identified during Log Analysis
      */
     w_rc_t _check_read_page(generic_page* parent, bf_idx idx, vid_t vol,
-                                 shpid_t shpid, const bool past_end,
-                                 const lsn_t page_emlsn);
+                                 shpid_t shpid, const lsn_t page_emlsn);
 
     /**
      * \brief Tries to recover the given page with some issue via Single-Page-Recovery.

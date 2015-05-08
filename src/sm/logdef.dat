@@ -123,9 +123,6 @@ xct_end_group      1000000 0.0 (const xct_t** l, int llen);
 # type             XSRUMAL  fudge    arg                                #
 #########################################################################
 # new page allocation logs. No notion of extent. no undo in any case.
-alloc_a_page       1110010  1.0  (vid_t vid, shpid_t pid);
-alloc_consecutive_pages 1110010  1.0  (vid_t vid, shpid_t pid_begin, uint32_t page_count);
-dealloc_a_page     1110010  1.0  (vid_t vid, shpid_t pid);
 store_operation    1011011 1.0 (vid_t vid, const store_operation_param& op);
 #########################################################################
 # type             XSRUMAL  fudge    arg                                #

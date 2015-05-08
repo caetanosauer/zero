@@ -130,7 +130,7 @@ rc_t alloc_cache_t::redo_allocate_one_page (shpid_t pid)
             return RCOK;
         }
     }
-    W_DO(apply_allocate_one_page(pid, false)); // REDO doesn't generate log
+    W_DO(apply_allocate_one_page(pid)); // REDO doesn't generate log
     return RCOK;
 }
 rc_t alloc_cache_t::redo_allocate_consecutive_pages (shpid_t pid_begin, size_t page_count)
@@ -147,7 +147,7 @@ rc_t alloc_cache_t::redo_allocate_consecutive_pages (shpid_t pid_begin, size_t p
         w_assert0(false);
     }
     
-    W_DO(apply_allocate_consecutive_pages(pid_begin, page_count, false));
+    W_DO(apply_allocate_consecutive_pages(pid_begin, page_count));
     return RCOK;
 }
 rc_t alloc_cache_t::redo_deallocate_one_page (shpid_t pid)
@@ -155,11 +155,11 @@ rc_t alloc_cache_t::redo_deallocate_one_page (shpid_t pid)
     w_assert1(pid < _contiguous_free_pages_begin);
     w_assert1(check_not_contain(_non_contiguous_free_pages, pid));
     _non_contiguous_free_pages.push_back(pid);    
-    W_DO(apply_deallocate_one_page(pid, false));
+    W_DO(apply_deallocate_one_page(pid));
     return RCOK;
 }
 
-rc_t alloc_cache_t::apply_allocate_one_page (shpid_t pid, bool logit)
+rc_t alloc_cache_t::apply_allocate_one_page (shpid_t pid)
 {
     spinlock_read_critical_section cs(&_fixed_pages->get_checkpoint_lock()); // protect against checkpoint. see bf_fixed_m comment.
     shpid_t alloc_pid = alloc_page_h::pid_to_alloc_pid(pid);
@@ -167,18 +167,11 @@ rc_t alloc_cache_t::apply_allocate_one_page (shpid_t pid, bool logit)
     w_assert1(buf_index < _fixed_pages->get_page_cnt() - 1); // -1 for stnode_page
     generic_page* pages = _fixed_pages->get_pages();
     alloc_page_h al (pages + buf_index);
-    if (logit) {
-        if (smlevel_0::log != NULL) {
-            W_DO(log_alloc_a_page (_vid, pid));
-        } else {
-            DBGOUT1(<< "WARNING! apply_allocate_one_page: logging is disabled. skipped logging");
-        }
-    }
-    al.set_bit(pid, !logit);
+    al.set_bit(pid);
     _fixed_pages->get_dirty_flags()[buf_index] = true;
     return RCOK;
 }
-rc_t alloc_cache_t::apply_allocate_consecutive_pages (shpid_t pid_begin, size_t page_count, bool logit)
+rc_t alloc_cache_t::apply_allocate_consecutive_pages (shpid_t pid_begin, size_t page_count)
 {
     spinlock_read_critical_section cs(&_fixed_pages->get_checkpoint_lock()); // protect against checkpoint. see bf_fixed_m comment.
     const shpid_t pid_to_end = pid_begin + page_count;
@@ -193,7 +186,6 @@ rc_t alloc_cache_t::apply_allocate_consecutive_pages (shpid_t pid_begin, size_t 
         w_assert1(buf_index < _fixed_pages->get_page_cnt() - 1); // -1 for stnode_page
         alloc_page_h al (pages + buf_index);
 
-        // log it
         size_t this_page_count;
         if (pid_to_end > al.get_pid_offset() + alloc_page_h::bits_held) {
             this_page_count = al.get_pid_offset() + alloc_page_h::bits_held - cur_pid;
@@ -201,14 +193,6 @@ rc_t alloc_cache_t::apply_allocate_consecutive_pages (shpid_t pid_begin, size_t 
             this_page_count = pid_to_end - cur_pid;
         }
         w_assert1(this_page_count > 0);
-
-        if (logit) {
-            if (smlevel_0::log != NULL) {
-                W_DO(log_alloc_consecutive_pages (_vid, cur_pid, this_page_count));
-            } else {
-                ERROUT(<< "WARNING! apply_allocate_consecutive_pages: logging is disabled. skipped logging");
-            }
-        }
         al.set_consecutive_bits(cur_pid, cur_pid + this_page_count);
         _fixed_pages->get_dirty_flags()[buf_index] = true;
 
@@ -221,7 +205,7 @@ rc_t alloc_cache_t::apply_allocate_consecutive_pages (shpid_t pid_begin, size_t 
     }
     return RCOK;
 }
-rc_t alloc_cache_t::apply_deallocate_one_page (shpid_t pid, bool logit)
+rc_t alloc_cache_t::apply_deallocate_one_page (shpid_t pid)
 {
     spinlock_read_critical_section cs(&_fixed_pages->get_checkpoint_lock()); // protect against checkpoint. see bf_fixed_m comment.
     shpid_t alloc_pid = alloc_page_h::pid_to_alloc_pid(pid);
@@ -229,16 +213,7 @@ rc_t alloc_cache_t::apply_deallocate_one_page (shpid_t pid, bool logit)
     w_assert1(buf_index < _fixed_pages->get_page_cnt() - 1); // -1 for stnode_page
     generic_page* pages = _fixed_pages->get_pages();
     alloc_page_h al (pages + buf_index);
-    // log it
-    if (logit) {
-        if (smlevel_0::log != NULL) {
-            W_DO(log_dealloc_a_page (_vid, pid));
-        } else {
-            ERROUT(<< "WARNING! apply_deallocate_one_page: logging is disabled. skipped logging");
-        }
-    }
-    // then update the bitmap
-    al.unset_bit(pid, !logit);
+    al.unset_bit(pid);
     _fixed_pages->get_dirty_flags()[buf_index] = true;
     return RCOK;
 }

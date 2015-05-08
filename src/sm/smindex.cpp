@@ -12,6 +12,7 @@
 #include "xct.h"
 #include "btree.h"
 #include "suppress_unused.h"
+#include "vol.h"
 
 /*==============================================================*
  *  Physical ID version of all the index operations                *
@@ -20,11 +21,12 @@
 rc_t ss_m::create_index(vid_t vid, stid_t &stid)
 {
     W_DO(lm->intent_vol_lock(vid, okvl_mode::IX)); // take IX on volume
-    W_DO(io->create_store(vid, st_regular, stid) );
+    W_DO(vol->get(vid)->create_store(st_regular, stid.store) );
+    stid.vol = vid;
     W_DO(lm->intent_store_lock(stid, okvl_mode::X)); // take X on this new index
 
     lpid_t root;
-    W_DO( bt->create(stid, root) );
+    W_DO( bt->create(stid_t(vid, stid.store), root) );
     return RCOK;
 }
 
@@ -128,7 +130,8 @@ rc_t ss_m::open_store (const stid_t &stid, lpid_t &root_pid, bool for_update)
 }
 rc_t ss_m::open_store_nolock (const stid_t &stid, lpid_t &root_pid)
 {
-    root_pid = lpid_t (stid, io->get_root(stid, true)); // use nolock version
+    shpid_t shpid = vol->get(stid.vol)->get_store_root(stid.store);
+    root_pid = lpid_t (stid.vol, shpid); // use nolock version
     if (root_pid.page == 0) {
         return RC(eBADSTID);
     }

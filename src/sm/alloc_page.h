@@ -107,10 +107,10 @@ public:
     bool is_bit_set(shpid_t pid) const;
 
     /// Turn OFF (deallocate) the bit for the given page ID.
-    void unset_bit(shpid_t pid, bool redo_mode = false);
+    void unset_bit(shpid_t pid);
 
     /// Turn ON (allocate) the bit for the given page ID.
-    void set_bit(shpid_t pid, bool redo_mode = false);
+    void set_bit(shpid_t pid);
 
     /// Turn ON (allocate) the bits for the pids in [pid_begin..pid_end)
     void set_consecutive_bits(shpid_t pid_begin, shpid_t pid_end);
@@ -141,22 +141,18 @@ inline bool alloc_page_h::is_bit_set(shpid_t pid) const {
     return page()->bit(pid - page()->pid_offset);
 }
 
-inline void alloc_page_h::unset_bit(shpid_t pid, bool redo_mode) {
+inline void alloc_page_h::unset_bit(shpid_t pid)
+{
     w_assert1(pid >= get_pid_offset());
     w_assert1(pid < get_pid_offset() + alloc_page::bits_held);
-
-    // except possibly during redo, we should never be trying to deallocate a page twice:
-    w_assert1(redo_mode || is_bit_set(pid));
 
     page()->unset_bit(pid - page()->pid_offset);
 }
 
-inline void alloc_page_h::set_bit(shpid_t pid, bool redo_mode) {
+inline void alloc_page_h::set_bit(shpid_t pid)
+{
     w_assert1(pid >= get_pid_offset());
     w_assert1(pid < get_pid_offset() + alloc_page::bits_held);
-
-    // except possibly during redo, we should never be trying to allocate a page twice:
-    w_assert1(redo_mode || !is_bit_set(pid));
 
     page()->set_bit(pid - page()->pid_offset);
     update_pid_highwatermark(pid);

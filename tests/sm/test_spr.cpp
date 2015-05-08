@@ -10,7 +10,6 @@
 #include "bf_fixed.h"
 #include "bf_tree_cb.h"
 #include "bf_tree.h"
-#include "sm_io.h"
 #include "sm_int_0.h"
 
 #include <vector>

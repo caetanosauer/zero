@@ -2,7 +2,7 @@
 #include "gtest/gtest.h"
 #include "sm_vas.h"
 #include "btree.h"
-#include "sm_io.h"
+#include "vol.h"
 #include "btree_page_h.h"
 
 btree_test_env *test_env;
@@ -54,11 +54,13 @@ w_rc_t create_check(ss_m* ssm, test_volume_t *test_volume) {
 
     W_DO(ssm->force_buffers());
     generic_page buf;
+
+    // CS: why reading 5 pages?? (magic number)
     for (shpid_t shpid = 1; shpid < 5; ++shpid) {
         lpid_t pid (stid, shpid);
 
         cout << "checking pid " << shpid << ":";
-        W_DO(io_m::read_page(pid, buf));
+        W_IGNORE(smlevel_0::vol->get(test_volume->_vid)->read_page(pid.page, buf));
         cout << "full-pid=" << buf.pid << ",";
         switch (buf.tag) {
             case t_bad_p: cout << "t_bad_p"; break;

@@ -2863,8 +2863,8 @@ xct_t::DumpStoresToFree()
 class VolidCnt {
     private:
         int unique_vols;
-        int vol_map[xct_t::max_vols];
-        snum_t vol_cnts[xct_t::max_vols];
+        int vol_map[vol_m::MAX_VOLS];
+        snum_t vol_cnts[vol_m::MAX_VOLS];
     public:
         VolidCnt() : unique_vols(0) {};
         int Lookup(int vol)
@@ -2873,7 +2873,7 @@ class VolidCnt {
                     if (vol_map[i] == vol)
                         return i;
 
-                w_assert9(unique_vols < xct_t::max_vols);
+                w_assert9(unique_vols < vol_m::MAX_VOLS);
                 vol_map[unique_vols] = vol;
                 vol_cnts[unique_vols] = 0;
                 return unique_vols++;
@@ -2940,13 +2940,15 @@ xct_t::ConvertAllLoadStoresToRegularStores()
     }
 
     while ((s = _core->_loadStores.pop()))  {
-        bool sync_volume = (cnt.Decrement(s->stid.vol) == 0);
+        // bool sync_volume = (cnt.Decrement(s->stid.vol) == 0);
         store_flag_t f;
-        W_DO( io->get_store_flags(s->stid, f, true /*ok if deleting*/));
+        W_DO(smlevel_0::vol->get(s->stid.vol)
+                ->get_store_flags(s->stid.store, f, true /*ok if deleting*/));
         // if any combo of  st_tmp, st_insert_file, st_load_file, convert
         // but only insert and load are put into this list.
         if(f != st_regular) {
-            W_DO( io->set_store_flags(s->stid, st_regular, sync_volume) );
+            W_DO(smlevel_0::vol->get(s->stid.vol)
+                    ->set_store_flags(s->stid.store, st_regular) );
         }
         delete s;
     }

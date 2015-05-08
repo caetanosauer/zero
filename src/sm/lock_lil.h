@@ -23,9 +23,10 @@
 #include "srwlock.h"
 #include "sthread.h"
 #include "stnode_page.h" // only for stnode_page_h::max
+#include "vol.h"
 
 /** max number of volumes overall. */
-const uint16_t MAX_VOL_GLOBAL = 32;
+const uint16_t MAX_VOL_GLOBAL = vol_m::MAX_VOLS;
 
 /** max number of volumes one transaction can access at a time. */
 const uint16_t MAX_VOL_PER_XCT = 4;

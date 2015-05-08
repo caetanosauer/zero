@@ -17,6 +17,7 @@
 #include "w_key.h"
 #include "xct.h"
 #include "vec_t.h"
+#include "vol.h"
 #include <crash.h>
 
 void btree_m::construct_once()
@@ -51,7 +52,9 @@ btree_m::create(
     FUNC(btree_m::create);
     DBGTHRD(<<"btree create: stid " << stid);
 
-    W_DO( io_m::sx_alloc_a_page(stid, root)); // allocate a root page as separate ssx
+    shpid_t shpid;
+    W_DO(smlevel_0::vol->get(stid.vol)->alloc_a_page(shpid));
+    root = lpid_t(stid.vol, shpid);
     W_DO(btree_impl::_ux_create_tree_core(stid, root));
 
     bool empty=false;

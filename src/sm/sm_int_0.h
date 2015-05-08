@@ -59,7 +59,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #if defined(SM_SOURCE) && (SM_LEVEL >= 0)
 #    include <fixable_page_h.h>
 #    include <pmap.h>
-#    include <sm_io.h>
+#    include <vol.h>
 #    include <log.h>
 
 #endif

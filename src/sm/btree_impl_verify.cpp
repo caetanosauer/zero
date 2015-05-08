@@ -18,7 +18,6 @@
 // these are for volume-wide verifications
 #include "sm.h"
 #include "pmap.h"
-#include "sm_io.h"
 #include "vol.h"
 #include "xct.h"
 #include "sm_int_0.h"
@@ -362,13 +361,7 @@ rc_t btree_impl::_ux_verify_volume(
     vid_t vid, int hash_bits, verify_volume_result &result)
 {
     W_DO(ss_m::force_buffers()); // this might block if there is a concurrent transaction
-    vol_t *vol = NULL;
-    for (uint32_t i = 0; i < io_m::max_vols; ++i)  {
-        if (io_m::vol[i] && io_m::vol[i]->vid() == vid) {
-            vol = io_m::vol[i];
-            break;
-        }
-    }
+    vol_t *vol = ss_m::vol->get(vid);
     w_assert1(vol);
     generic_page buf;
     shpid_t endpid = (shpid_t) (vol->num_pages());
@@ -378,10 +371,7 @@ rc_t btree_impl::_ux_verify_volume(
         if (!vol->is_allocated_page(pid)) {
             continue;
         }
-        bool past_end;
-        W_DO (vol->read_page(pid, buf, past_end));
-        // Page must exist on disk in this case
-        w_assert1(false == past_end);
+        W_DO (vol->read_page(pid, buf));
         btree_page_h page;
         page.fix_nonbufferpool_page(&buf);
         if (page.tag() == t_btree_p && !page.is_to_be_deleted()) {

@@ -77,7 +77,7 @@ class sm_stats_info_t;
 class xct_t;
 class xct_i;
 
-class io_m;
+class vol_m;
 class BackupManager;
 class bf_m;
 class bf_tree_m;
@@ -188,12 +188,10 @@ public:
 #else
         max_devname = 1024,
 #endif
-        max_vols = 20,                // max mounted volumes
         max_xct_thread = 20,        // max threads in a xct
         max_servers = 15,       // max servers to be connected with
         max_keycomp = 20,        // max key component (for btree)
         max_openlog = SM_LOG_PARTITIONS,        // max # log partitions
-        max_dir_cache = max_vols * 10,
 
         /* XXX I want to propogate sthread_t::iovec_max here, but
            it doesn't work because of sm_app.h not including
@@ -564,7 +562,7 @@ public:
     static void  add_from_global_stats(sm_stats_info_t &to);
 
     static BackupManager* bk;
-    static io_m* io;
+    static vol_m* vol;
     static bf_tree_m* bf;
     static lock_m* lm;
 
@@ -572,8 +570,6 @@ public:
     static log_core* clog;
     static LogArchiver* logArchiver;
     static ArchiveMerger* archiveMerger;
-    // TODO(Restart)... it was for a space-recovery hack, not needed
-    // static tid_t* redo_tid;
 
     static LOG_WARN_CALLBACK_FUNC log_warn_callback;
     static LOG_ARCHIVED_CALLBACK_FUNC log_archived_callback;

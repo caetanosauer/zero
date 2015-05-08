@@ -82,11 +82,10 @@ private:
     /** all operations in this object are protected by this lock. */
     mutable srwlock_t _queue_lock;
 
-    // these do logging (if logit=true) and applying to alloc_page_h.
     // they assume _contiguous_free_pages_begin/_non_contiguous_free_pages are already modified
-    rc_t apply_allocate_one_page (shpid_t pid, bool logit = true);
-    rc_t apply_allocate_consecutive_pages (shpid_t pid_begin, size_t page_count, bool logit = true);
-    rc_t apply_deallocate_one_page (shpid_t pid, bool logit = true);
+    rc_t apply_allocate_one_page (shpid_t pid);
+    rc_t apply_allocate_consecutive_pages (shpid_t pid_begin, size_t page_count);
+    rc_t apply_deallocate_one_page (shpid_t pid);
 };
 
 #endif // ALLOC_CACHE_H

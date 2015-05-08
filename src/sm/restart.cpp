@@ -1078,9 +1078,6 @@ restart_m::analysis_pass_forward(
             break;
 
         case logrec_t::t_compensate:
-        case logrec_t::t_alloc_a_page:
-        case logrec_t::t_alloc_consecutive_pages:
-        case logrec_t::t_dealloc_a_page:
         case logrec_t::t_store_operation:
         case logrec_t::t_page_set_to_be_deleted:
         case logrec_t::t_page_img_format:
@@ -1188,7 +1185,8 @@ restart_m::analysis_pass_forward(
 
     // Update the last mount LSN, it was originally set from the begin checkpoint log record
     // but it might have been modified to redo_lsn (earlier)
-    io_m::SetLastMountLSN(theLastMountLSNBeforeChkpt);
+    // CS TODO
+    // io_m::SetLastMountLSN(theLastMountLSNBeforeChkpt);
 
     // We are done with Log Analysis, at this point each transactions in the transaction
     // table is either loser (active) or winner (ended);
@@ -1780,9 +1778,6 @@ restart_m::analysis_pass_backward(
             break;
 
         case logrec_t::t_compensate:
-        case logrec_t::t_alloc_a_page:
-        case logrec_t::t_alloc_consecutive_pages:
-        case logrec_t::t_dealloc_a_page:
         case logrec_t::t_store_operation:
         case logrec_t::t_page_set_to_be_deleted:
         case logrec_t::t_page_img_format:
@@ -1948,7 +1943,8 @@ restart_m::analysis_pass_backward(
 
     // Update the last mount LSN, it was originally set from the begin checkpoint log record
     // but it might have been modified to redo_lsn (earlier)
-    io_m::SetLastMountLSN(theLastMountLSNBeforeChkpt);
+    // CS TODO
+    // io_m::SetLastMountLSN(theLastMountLSNBeforeChkpt);
 
     // Done with backward log scan, check the compensation list
     _analysis_process_compensation_map(mapCLR);
@@ -2060,6 +2056,7 @@ bool restart_m::_analysis_system_log(logrec_t& r,             // In: Log record 
         w_assert1(!r.is_undo()); // no UNDO for ssx
         w_assert0(r.is_redo());  // system txn is REDO only
 
+#if 0 // CS: removed support for page allocation log records
         // Register the page into buffer pool (don't load the actual page)
         // If the log record describe allocation of a page, then
         // Allocation of a page (t_alloc_a_page, t_alloc_consecutive_pages) - clear
@@ -2094,7 +2091,9 @@ bool restart_m::_analysis_system_log(logrec_t& r,             // In: Log record 
                 }
             }
         }
-        else if (false == r.is_skip())    // t_skip marks the end of partition, no-op
+        else
+#endif
+        if (false == r.is_skip())    // t_skip marks the end of partition, no-op
         {
             // System transaction does not have txn id, but it must have page number
             // this is true for both single and multi-page system transactions
@@ -2432,6 +2431,7 @@ void restart_m::_analysis_ckpt_xct_log(logrec_t& r,          // In: Current log 
  *  CS TODO : method not used anymore -- just call redo on chkpt_dev_tab
  *
  *********************************************************************/
+#if 0
 void restart_m::_analysis_ckpt_dev_log(logrec_t& r,  // In: Log record to process
                                            bool& mount)  // Out: whether the mount occurred
 {
@@ -2513,6 +2513,7 @@ void restart_m::_analysis_ckpt_dev_log(logrec_t& r,  // In: Log record to proces
 
     return;
 }
+#endif
 
 /*********************************************************************
  *
@@ -2590,7 +2591,7 @@ void restart_m::_analysis_other_log(logrec_t& r,               // In: log record
         //                   non-logged operation, we don't want to re-format the page
         // De-allocation of a page (t_dealloc_a_page, t_page_set_to_be_deleted) -
         //                   clear the in_doubt bit, so the page can be evicted if needed.
-
+#if 0 // CS: removed page allocation log records
         if ((true == r.is_page_allocate()) ||
             (true == r.is_page_deallocate()))
         {
@@ -2613,6 +2614,7 @@ void restart_m::_analysis_other_log(logrec_t& r,               // In: log record
             }
         }
         else
+#endif
         {
             // Register the page cb in buffer pool (if not exist) and mark the in_doubt flag
             idx = 0;
@@ -3913,7 +3915,8 @@ restart_m::redo_log_pass(
                             DBGOUT3(<<"redo - no page, no xct, this is a device log record ");
 
                             r.redo(0);
-                            io_m::SetLastMountLSN(lsn);
+                            // CS TODO
+                            // io_m::SetLastMountLSN(lsn);
 
                             // No page involved, no need to update dirty_count
                             redone = true;
@@ -3933,18 +3936,21 @@ restart_m::redo_log_pass(
                             // Note we cannot look up system transaction in transaction table because
                             // it does not have txn id.
 
+#if 0 // CS: removed page allocation log records
                             // If the system transaction is not for page allocation/deallocation,
                             // creates a new ssx and runs it.
                             // Page allocation - taken care of as part of page format
                             // Page deallocation - no need from a recovery
                             if ((false == r.is_page_allocate()) &&
                                 (false == r.is_page_deallocate()))
+#endif
                             {
                                 DBGOUT3(<<"redo - no page, ssx");
                                 sys_xct_section_t sxs (true); // single log!
                                 w_assert1(!sxs.check_error_on_start().is_error());
                                 r.redo(0);
-                                io_m::SetLastMountLSN(lsn);
+                                // CS TODO
+                                // io_m::SetLastMountLSN(lsn);
                                 redone = true;
                                 rc_t sxs_rc = sxs.end_sys_xct (RCOK);
                                 w_assert1(!sxs_rc.is_error());
@@ -4396,7 +4402,7 @@ void restart_m::_redo_log_with_pid(
             //     and we should have removed the idx from hashtable, therefore the code
             //     should not get here
             // All other cases are un-expected, raise error
-
+#if 0 // CS: removed page allocation log records
             if (true == r.is_page_allocate())
             {
                 // This is page allocation log record, nothing is in hashtable for this
@@ -4422,6 +4428,7 @@ void restart_m::_redo_log_with_pid(
                     << page_updated.page);
             }
             else
+#endif
             {
                 if (true == smlevel_0::bf->is_used(idx))
                 {

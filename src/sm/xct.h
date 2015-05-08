@@ -395,31 +395,6 @@ public:
                                    );
     int                         compensated_op_depth() const ;
 
-    // -------------------------------------------------------------
-    // start_crit and stop_crit are used by the io_m to
-    // ensure that at most one thread of the attached transaction
-    // enters the io_m at a time. That was the original idea; now it's
-    // making sure that at most one thread that's in an sm update operation
-    // enters the io_m at any time (allowing concurrent read-only activity).
-    //
-    // start_crit grabs (used to grab) the xct's 1thread_log mutex if it doesn't
-    // already hold it.
-    //
-    // NOTE: we might be safe to skip this now that we only allow
-    // one update thread to be in the sm at any one time, cutting the
-    // others off at the point of entering the sm, rather than
-    // making them wait for the 1thread mutex.  We made this change
-    // so that we could use savepoints for partial rollback to handle
-    // errors at levels above (as well as below) the sm_io level.
-    // See AUTO_ROLLBACK_work, auto_rollback_t , here
-
-    void                        start_crit() {
-                                    // should not be zero
-                                    w_assert0(update_threads() == 1);
-    }
-    void                        stop_crit() {}
-    // -------------------------------------------------------------
-
     void                        compensate(const lsn_t&,
                                           bool undoable
                                           ADD_LOG_COMMENT_SIG

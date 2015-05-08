@@ -153,15 +153,12 @@ typedef srwlock_t sm_vol_rwlock_t;
 static sm_vol_rwlock_t          _begin_xct_mutex;
 
 BackupManager* smlevel_0::bk = 0;
-io_m* smlevel_0::io = 0;
+vol_m* smlevel_0::vol = 0;
 bf_tree_m* smlevel_0::bf = 0;
 log_m* smlevel_0::log = 0;
 log_core* smlevel_0::clog = 0;
 LogArchiver* smlevel_0::logArchiver = 0;
 ArchiveMerger* smlevel_0::archiveMerger = 0;
-
-// TODO(Restart)... it was for a space-recovery hack, not needed
-//tid_t *smlevel_0::redo_tid = 0;
 
 lock_m* smlevel_0::lm = 0;
 
@@ -389,8 +386,8 @@ ss_m::_construct_once()
         W_FATAL(eOUTOFMEMORY);
     }
 
-    io = new io_m;
-    if (! io) {
+    vol = new vol_m(_options);
+    if (!vol) {
         W_FATAL(eOUTOFMEMORY);
     }
 
@@ -914,7 +911,7 @@ ss_m::_destruct_once()
 #endif
     clog = 0;
 
-    delete io; io = 0; // io manager
+    delete vol; vol = 0; // io manager
     {
         w_rc_t e = bf->destroy();
         W_COERCE (e);
@@ -1397,16 +1394,6 @@ ss_m::config_info(sm_config_info_t& info) {
 }
 
 /*--------------------------------------------------------------*
- *  ss_m::set_disk_delay()                            *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::set_disk_delay(u_int milli_sec)
-{
-    W_DO(io_m::set_disk_delay(milli_sec));
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
  *  ss_m::start_log_corruption()                        *
  *--------------------------------------------------------------*/
 rc_t
@@ -1484,10 +1471,11 @@ ss_m::mount_vol(const char* path, vid_t& vid)
 
     DBG(<<"mount_vol " << path);
 
-    W_DO(io->mount(path, vid));
+    W_DO(vol->sx_mount(path));
+    vid = vol->get(path)->vid();
 
     // take a synch checkpoint to record the mount
-    // TODO: not needed -- use create/mount/unmount log records
+    // CS TODO: not needed -- use create/mount/unmount log records
     chkpt->synch_take();
 
     return RCOK;
@@ -1528,10 +1516,10 @@ ss_m::dismount_all()
  *  ss_m::get_device_quota()                            *
  *--------------------------------------------------------------*/
 rc_t
-ss_m::get_device_quota(const char* device, smksize_t& quota_KB, smksize_t& quota_used_KB)
+ss_m::get_device_quota(const char* device, size_t& quota_KB, size_t& quota_used_KB)
 {
     SM_PROLOGUE_RC(ss_m::get_device_quota, can_be_in_xct, read_only, 0);
-    W_DO(io->get_device_quota(device, quota_KB, quota_used_KB));
+    W_DO(vol->get(device)->get_quota_kb(quota_KB, quota_used_KB));
     return RCOK;
 }
 
@@ -1549,7 +1537,7 @@ ss_m::create_vol(const char* dev_name, smksize_t quota_KB, vid_t& vid)
 
     spinlock_write_critical_section cs(&_begin_xct_mutex);
 
-    W_DO(vol_t::format_vol(dev_name,
+    W_DO(vol->sx_format(dev_name,
        shpid_t(quota_KB/(page_sz/1024)),
        vid));
 
@@ -1557,17 +1545,6 @@ ss_m::create_vol(const char* dev_name, smksize_t quota_KB, vid_t& vid)
     // recovery will fail (TODO this general problem should be fixed)
     chkpt->synch_take();
 
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::get_volume_quota()                            *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::get_volume_quota(const vid_t& vid, smksize_t& quota_KB, smksize_t& quota_used_KB)
-{
-    SM_PROLOGUE_RC(ss_m::get_volume_quota, can_be_in_xct, read_only, 0);
-    W_DO(io->get_volume_quota(vid, quota_KB, quota_used_KB));
     return RCOK;
 }
 
@@ -2085,7 +2062,7 @@ ss_m::_get_du_statistics(vid_t vid, sm_du_stats_t& du, bool audit)
         DBG(<<"look at store " << s);
 
         store_flag_t flags;
-        rc = io->get_store_flags(s, flags);
+        rc = vol->get(vid)->get_store_flags(s.store, flags);
         if (rc.is_error()) {
             if (rc.err_num() == eBADSTID) {
                 DBG(<<"skipping bad STID " << s );
@@ -2110,7 +2087,7 @@ ss_m::_get_du_statistics(vid_t vid, sm_du_stats_t& du, bool audit)
         DBG(<<"end for loop with s=" << s );
     }
 
-    W_DO( io->get_du_statistics(vid, new_stats.volume_hdr, audit));
+    W_DO(vol->get(vid)->get_du_statistics(new_stats.volume_hdr, audit));
 
     if (audit) {
         W_DO(new_stats.audit());
@@ -2129,7 +2106,9 @@ rc_t
 ss_m::enable_fake_disk_latency(vid_t vid)
 {
   SM_PROLOGUE_RC(ss_m::enable_fake_disk_latency, not_in_xct, read_only, 0);
-  W_DO( io->enable_fake_disk_latency(vid) );
+    vol_t* v = vol->get(vid);
+    if (!v) return RC(eBADVOL);
+    v->enable_fake_disk_latency();
   return RCOK;
 }
 
@@ -2137,7 +2116,9 @@ rc_t
 ss_m::disable_fake_disk_latency(vid_t vid)
 {
   SM_PROLOGUE_RC(ss_m::disable_fake_disk_latency, not_in_xct, read_only, 0);
-  W_DO( io->disable_fake_disk_latency(vid) );
+    vol_t* v = vol->get(vid);
+    if (!v) return RC(eBADVOL);
+    v->disable_fake_disk_latency();
   return RCOK;
 }
 
@@ -2145,35 +2126,9 @@ rc_t
 ss_m::set_fake_disk_latency(vid_t vid, const int adelay)
 {
   SM_PROLOGUE_RC(ss_m::set_fake_disk_latency, not_in_xct, read_only, 0);
-  W_DO( io->set_fake_disk_latency(vid,adelay) );
-  return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::get_volume_meta_stats()                                *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::get_volume_meta_stats(vid_t vid, SmVolumeMetaStats& volume_stats, concurrency_t cc)
-{
-    SM_PROLOGUE_RC(ss_m::get_volume_meta_stats, in_xct, read_only, 0);
-    W_DO( _get_volume_meta_stats(vid, volume_stats, cc) );
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::_get_volume_meta_stats()                                *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::_get_volume_meta_stats(vid_t vid, SmVolumeMetaStats& volume_stats, concurrency_t cc)
-{
-    if (cc == t_cc_vol)  {
-        W_DO(lm->intent_vol_lock(vid, okvl_mode::S));
-    }  else if (cc != t_cc_none)  {
-        return RC(eBADCCLEVEL);
-    }
-
-    W_DO( io->get_volume_meta_stats(vid, volume_stats) );
-
+    vol_t* v = vol->get(vid);
+    if (!v) return RC(eBADVOL);
+    v->set_fake_disk_latency(adelay);
     return RCOK;
 }
 
@@ -2457,7 +2412,7 @@ extern "C" {
 w_rc_t ss_m::dump_vol_store_info(const vid_t &vid)
 {
     SM_PROLOGUE_RC(ss_m::dump_vol_store_info, in_xct, read_only,  0);
-    return io_m::check_disk(vid);
+    return vol->get(vid)->check_disk();
 }
 
 

@@ -9,7 +9,6 @@
 #include "sm_int_1.h"
 #include "sm_int_2.h"
 #include "pmap.h"
-#include "sm_io.h"
 #include "logrec.h"
 #include "logdef_gen.cpp"
 

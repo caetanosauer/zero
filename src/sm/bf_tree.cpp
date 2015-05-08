@@ -20,7 +20,6 @@
 
 #include "sm_int_0.h"
 #include "sm_int_1.h"
-#include "sm_io.h"
 #include "vol.h"
 #include "alloc_cache.h"
 #include "chkpt_serial.h"
@@ -452,8 +451,7 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
     vid_t vid = volume->vid();
     DBGOUT2(<<"preloading root page " << shpid << " of store " << store << " in volume " << vid << ". to buffer frame " << idx);
     w_assert1(shpid >= volume->first_data_pageid());
-    bool past_end;
-    W_DO(volume->read_page(shpid, _buffer[idx], past_end));
+    W_DO(volume->read_page(shpid, _buffer[idx]));
 
     // _buffer[idx].checksum == 0 is possible when the root page has been never flushed out.
     // this method is called during volume mount (even before recover), crash tests like
@@ -532,13 +530,7 @@ w_rc_t bf_tree_m::_install_volume_mainmemorydb(vol_t* volume) {
     bf_idx endidx = volume->num_pages();
     for (bf_idx idx = volume->first_data_pageid(); idx < endidx; ++idx) {
         if (volume->is_allocated_page(idx)) {
-            bool past_end;
-            W_DO(volume->read_page(idx, _buffer[idx], past_end));
-            if (true == past_end)
-            {
-                // Page does not exist on disk, raise error since this should not happen
-                return RC(stSHORTIO);
-            }
+            W_DO(volume->read_page(idx, _buffer[idx]));
             if (_buffer[idx].calculate_checksum() != _buffer[idx].checksum) {
                 return RC(eBADCHECKSUM);
             }
@@ -810,8 +802,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
             {
                 DBGOUT3(<<"bf_tree_m: cache miss. reading page "<<vol<<"." << shpid << " to frame " << idx);
                 INC_TSTAT(bf_fix_nonroot_miss_count);
-                bool past_end;
-                w_rc_t read_rc = volume->_volume->read_page(shpid, _buffer[idx], past_end);
+                w_rc_t read_rc = volume->_volume->read_page(shpid, _buffer[idx]);
 
                 // Not checking 'past_end' (stSHORTIO), because if the page does not exist
                 // on disk (only if fix_direct from REDO operation), the page context will be zero out,
@@ -890,7 +881,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     }
 
 
-                    check_rc = _check_read_page(parent, idx, vol, shpid, past_end, page_emlsn);
+                    check_rc = _check_read_page(parent, idx, vol, shpid, page_emlsn);
                     if (check_rc.is_error())
                     {
                         // Free the block even if we did not acquire it in the first place (force load), this is
@@ -2417,30 +2408,8 @@ w_rc_t bf_tree_m::load_for_redo(bf_idx idx, vid_t vid,
     w_assert1(shpid >= volume->_volume->first_data_pageid());
 
     // Load the physical page from disk
-    rc = volume->_volume->read_page(shpid, _buffer[idx], past_end);
-    if (true == past_end)
-    {
-        // During system recovery REDO phase when trying to load a page from disk,
-        // the page does not exist on disk.
-        // This can happen only if page driven REDO phase and an in_doubt page
-        // was never flushed from buffer pool to disk before the system crash.
-        // We cannot apply REDO on this page using the last write lsn of the page,
-        // because the page in buffer pool has been zero out, notify caller through
-        // return flag, while the return code (rc) is a good return code
+    W_DO(volume->_volume->read_page(shpid, _buffer[idx]));
 
-        past_end = true;
-        DBGOUT3(<<"REDO phase: page does not exist on disk: "
-            << vid << "." << shpid);
-        return rc;
-    }
-    if (rc.is_error())
-    {
-        DBGOUT3(<<"bf_tree_m: error while reading page " << shpid
-                << " to frame " << idx << ". rc=" << rc);
-        return rc;
-    }
-    else
-    {
         // For the loaded page, compare its checksum
         // If inconsistent, return error
         uint32_t checksum = _buffer[idx].calculate_checksum();
@@ -2459,7 +2428,6 @@ w_rc_t bf_tree_m::load_for_redo(bf_idx idx, vid_t vid,
                 << vid << "." << shpid << " was " << _buffer[idx].pid.vol()
                 << "." << _buffer[idx].pid.page);
         }
-    }
 
     return rc;
 }
@@ -2959,8 +2927,6 @@ w_rc_t bf_tree_m::_sx_update_child_emlsn(btree_page_h &parent, general_recordid_
 
 w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
                                    vid_t vol, shpid_t shpid,
-                                   const bool past_end,    // In: true if page does not exist on disk
-                                                           //     this can happen only if fix_direct for REDO
                                    const lsn_t page_emlsn) // In: if != 0, it is the last page update LSN identified
                                                            //     during Log Analysis and stored in cb,
                                                            //     it is used to recover the page if parent page
@@ -2974,7 +2940,7 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
         DBGOUT0(<<"_check_read_page(): empty checksum?? PID=" << shpid);
     }
 
-    if ((true == past_end) && (parent == NULL))
+    if (parent == NULL)
     {
         ERROUT(<<"bf_tree_m: page does not exist on disk and it is from REDO operation, page: " << shpid);
         // Special scenario from Recovery and REDO with multi-page log record
@@ -3005,30 +2971,6 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
     }
     else if (checksum != page.checksum)
     {
-        if (NULL != parent)
-        {
-            // User transaction page loading detected inconsistent checksum
-            // on the target page during normal page loading, recovery required
-            if(true == past_end)
-            {
-                DBGOUT3(<<"bf_tree_m: user transaction, non-existing page " << shpid << ", recovery via Single Page Recovery");
-            }
-            else
-            {
-                DBGOUT3(<<"bf_tree_m: user transaction, bad page checksum in page " << shpid << ", recovery via Single Page Recovery");
-            }
-        }
-        else if ((NULL == parent) && (lsn_t::null != page_emlsn))
-        {
-            // Not a user transaction, it is a forced page load due to recovery
-            DBGOUT3(<<"bf_tree_m: force load with page emlsn in page " << shpid << ", recovery via Single Page Recovery");
-        }
-        else
-        {
-            // No parent and no page_emlsn, it should not happen,  j.i.c.
-            DBGOUT3(<<"bf_tree_m: force load but no page emlsn in page " << shpid << ", not able to recover via Single Page Recovery");
-        }
-
         // Checksum didn't agree! this page image is completely
         // corrupted and we have to recover the page from scratch.
 

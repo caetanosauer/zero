@@ -8,13 +8,11 @@
 #include <vector>
 
 #include "generic_page.h"
-#include "sm_io.h"
 #include "srwlock.h"
 #include "w_defines.h"
 
 class bf_fixed_m;
-
-
+class store_operation_param;
 
 /**
  * \brief Persistent structure representing metadata for a store.
@@ -64,8 +62,6 @@ class stnode_page : public generic_page_header {
     stnode_t stnode[max];
 };
 BOOST_STATIC_ASSERT(sizeof(stnode_page) == generic_page_header::page_sz);
-
-
 
 /**
  * \brief Handle for a stnode_page.
@@ -190,6 +186,106 @@ private:
     const vid_t   _vid;                /// The volume number of the volume we are caching 
     bf_fixed_m*   _special_pages;      /// The buffer manager holding the volume's special pages
     stnode_page_h _stnode_page;        /// The stnode_page of the volume we are caching
+};
+
+class store_operation_param  {
+    friend ostream & operator<<(ostream&, const store_operation_param &);
+
+public:
+        typedef smlevel_0::store_operation_t        store_operation_t;
+        typedef smlevel_0::store_flag_t             store_flag_t;
+        typedef smlevel_0::store_deleting_t         store_deleting_t;
+
+private:
+        snum_t                _snum;
+        uint16_t               _op;
+        fill2                 _filler; // for purify
+        union {
+            struct {
+                uint16_t      _value1;
+                uint16_t      _value2;
+            } values;
+            shpid_t page;
+        } _u;
+
+
+    public:
+        store_operation_param(snum_t snum, store_operation_t theOp) :
+            _snum(snum), _op(theOp)
+        {
+            w_assert2(_op == smlevel_0::t_delete_store);
+            _u.page=0;
+        };
+        store_operation_param(snum_t snum, store_operation_t theOp,
+                              store_flag_t theFlags) :
+            _snum(snum), _op(theOp)
+        {
+            w_assert2(_op == smlevel_0::t_create_store);
+            _u.values._value1 = theFlags;
+            _u.values._value2 = 0; // unused
+        };
+        store_operation_param(snum_t snum, store_operation_t theOp,
+                              store_deleting_t newValue,
+                              store_deleting_t oldValue = smlevel_0::t_unknown_deleting) :
+            _snum(snum), _op(theOp)
+        {
+            w_assert2(_op == smlevel_0::t_set_deleting);
+            _u.values._value1 = newValue;
+            _u.values._value2 = oldValue;
+        };
+        store_operation_param(snum_t snum, store_operation_t theOp,
+                              store_flag_t newFlags,
+                              store_flag_t oldFlags) :
+            _snum(snum), _op(theOp)
+        {
+            w_assert2(_op == smlevel_0::t_set_store_flags);
+            _u.values._value1 = newFlags;
+            _u.values._value2 = oldFlags;
+        };
+        store_operation_param(snum_t snum, store_operation_t theOp,
+                              shpid_t root) :
+            _snum(snum), _op(theOp)
+        {
+            w_assert2(_op == smlevel_0::t_set_root);
+            _u.page=root;
+        };
+
+
+        snum_t snum()  const { return _snum; };
+        store_operation_t op()  const { return (store_operation_t)_op; };
+        store_flag_t new_store_flags()  const {
+            w_assert2(_op == smlevel_0::t_create_store
+                      || _op == smlevel_0::t_set_store_flags);
+            return (store_flag_t)_u.values._value1;
+        };
+        store_flag_t old_store_flags()  const {
+            w_assert2(_op == smlevel_0::t_set_store_flags);
+            return (store_flag_t)_u.values._value2;
+        };
+        void set_old_store_flags(store_flag_t flag) {
+            w_assert2(_op == smlevel_0::t_set_store_flags);
+            _u.values._value2 = flag;
+        }
+        shpid_t root()  const {
+            w_assert2(_op == smlevel_0::t_set_root);
+            return _u.page;
+        };
+        store_deleting_t new_deleting_value()  const {
+            w_assert2(_op == smlevel_0::t_set_deleting);
+            return (store_deleting_t)_u.values._value1;
+        };
+        store_deleting_t old_deleting_value()  const {
+            w_assert2(_op == smlevel_0::t_set_deleting);
+            return (store_deleting_t)_u.values._value2;
+        };
+        void set_old_deleting_value(store_deleting_t old_value) {
+            w_assert2(_op == smlevel_0::t_set_deleting);
+            _u.values._value2 = old_value;
+        }
+        int size()  const { return sizeof (*this); };
+
+    private:
+        store_operation_param();
 };
 
 #endif // STNODE_PAGE_H

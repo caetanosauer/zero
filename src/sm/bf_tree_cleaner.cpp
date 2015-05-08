@@ -13,7 +13,6 @@
 #include "w_autodel.h"
 #include "generic_page.h"
 #include "fixable_page_h.h"  // just for get_cb in bf_tree_inline.h
-#include "sm_io.h"
 #include "log.h"
 #include "vol.h"
 #include <string.h>
@@ -174,7 +173,7 @@ const uint32_t FORCE_SLEEP_MS_MAX = 1000;
 
 w_rc_t bf_tree_cleaner::force_all()
 {
-    W_DO (io_m::flush_all_fixed_buffer());
+    W_DO (smlevel_0::vol->force_fixed_buffers());
     ::memset(_requested_volumes, 1, sizeof(bool) * MAX_VOL_COUNT);
     W_DO(wakeup_cleaners());
     uint32_t interval = FORCE_SLEEP_MS_MIN;
@@ -216,7 +215,7 @@ bool bf_tree_cleaner::_is_force_until_lsn_done(lsndata_t lsn) const
 
 w_rc_t bf_tree_cleaner::force_until_lsn(lsndata_t lsn)
 {
-    W_DO (io_m::flush_all_fixed_buffer());
+    W_DO (smlevel_0::vol->force_fixed_buffers());
     if (_is_force_until_lsn_done(lsn)) {
         return RCOK;
     }
@@ -584,7 +583,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 // this operation requires a xct for logging. we create a ssx for this reason.
                 sys_xct_section_t sxs(true); // ssx to call free_page
                 W_DO (sxs.check_error_on_start());
-                W_DO (_parent->_bufferpool->_volumes[vol]->_volume->free_page(page_buffer[idx].pid));
+                W_DO (_parent->_bufferpool->_volumes[vol]->_volume->free_page(page_buffer[idx].pid.page));
                 W_DO (sxs.end_sys_xct (RCOK));
                 // drop the page from bufferpool too
                 _parent->_bufferpool->_delete_block(idx);

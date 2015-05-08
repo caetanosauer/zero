@@ -386,11 +386,6 @@ void LogArchiver::initLogScanner(LogScanner* logScanner)
     logScanner->setIgnore(logrec_t::t_xct_end);
     logScanner->setIgnore(logrec_t::t_xct_freeing_space);
     //logScanner->setIgnore(logrec_t::t_tick);
-
-    // alloc_a_page contains a "dummy" page ID and it is 
-    // actually not required for current mrestore
-    // (TODO: implement restore of allocated pages and test this)
-    logScanner->setIgnore(logrec_t::t_alloc_a_page);
 }
 
 /*

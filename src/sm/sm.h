@@ -1322,8 +1322,8 @@ public:
      */
     static rc_t            get_device_quota(
         const char*             device,
-        smksize_t&              quota_KB,
-        smksize_t&              quota_used_KB);
+        size_t&              quota_KB,
+        size_t&              quota_used_KB);
 
 
     /*
@@ -1852,11 +1852,6 @@ private:
         const stid_t  &        stid,
         sm_du_stats_t&         du,
         bool                   audit);
-
-    static rc_t            _get_volume_meta_stats(
-        vid_t                  vid,
-        SmVolumeMetaStats&     volume_stats,
-        concurrency_t          cc);
 
     static rc_t            _get_file_meta_stats(
         vid_t                  vid,

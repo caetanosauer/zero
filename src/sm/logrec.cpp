@@ -633,9 +633,9 @@ void chkpt_dev_tab_log::redo(fixable_page_h*)
     w_assert0(tab->count == dnames.size());
 
     for (int i = 0; i < tab->count; i++) {
-        io_m::mount(dnames[i].c_str(), false /* log */);
+        smlevel_0::vol->sx_mount(dnames[i].c_str(), false /* log */);
     }
-    vol_t::set_next_vid(tab->next_vid);
+    smlevel_0::vol->set_next_vid(tab->next_vid);
 }
 
 create_vol_log::create_vol_log(vid_t vid)
@@ -654,8 +654,8 @@ void create_vol_log::redo(fixable_page_h*)
      * follow soon if the volume is used at all.
      */
     vid_t vid = *((vid_t*) data_ssx());
-    w_assert0(vol_t::get_next_vid() == vid);
-    vol_t::set_next_vid(vid);
+    w_assert0(smlevel_0::vol->get_next_vid() == vid);
+    smlevel_0::vol->set_next_vid(vid);
 }
 
 mount_vol_log::mount_vol_log(const char* dev_name)
@@ -670,7 +670,7 @@ mount_vol_log::mount_vol_log(const char* dev_name)
 void mount_vol_log::redo(fixable_page_h*)
 {
     const char* dev_name = (const char*) data_ssx();
-    W_COERCE(io_m::mount(dev_name, false));
+    W_COERCE(smlevel_0::vol->sx_mount(dev_name, false));
 }
 
 dismount_vol_log::dismount_vol_log(const char* dev_name)
@@ -685,7 +685,7 @@ dismount_vol_log::dismount_vol_log(const char* dev_name)
 void dismount_vol_log::redo(fixable_page_h*)
 {
     const char* dev_name = (const char*) data_ssx();
-    W_COERCE(io_m::dismount(dev_name, false));
+    W_COERCE(smlevel_0::vol->sx_dismount(dev_name, false));
 }
 
 /**
@@ -821,82 +821,6 @@ void page_set_to_be_deleted_log::undo(fixable_page_h* page)
     page->unset_to_be_deleted();
 }
 
-
-
-
-alloc_a_page_log::alloc_a_page_log (vid_t vid, shpid_t pid)
-{
-    // page alloation is single-log system transaction. so, use data_ssx()
-    char *buf = data_ssx();
-    *reinterpret_cast<shpid_t*>(buf) = pid; // only data is the page ID
-    lpid_t dummy (vid, 0);
-    fill(&dummy, 0, 0, sizeof(shpid_t));
-    w_assert0(is_single_sys_xct());
-}
-
-void alloc_a_page_log::redo(fixable_page_h*)
-{
-    w_assert1(g_xct());
-    w_assert1(g_xct()->is_single_log_sys_xct());
-    // page alloation is single-log system transaction. so, use data_ssx()
-    shpid_t pid = *((shpid_t*) data_ssx());
-
-    // actually this is logical REDO
-    rc_t rc = io_m::redo_alloc_a_page(header._vid, pid);
-    if (rc.is_error()) {
-        W_FATAL(rc.err_num());
-    }
-}
-
-alloc_consecutive_pages_log::alloc_consecutive_pages_log (vid_t vid,
-        shpid_t pid_begin, uint32_t page_count)
-{
-    // page alloation is single-log system transaction. so, use data_ssx()
-    uint32_t *buf = reinterpret_cast<uint32_t*>(data_ssx());
-    buf[0] = pid_begin;
-    buf[1] = page_count;
-    lpid_t dummy (vid, 0);
-    fill(&dummy, 0, 0, sizeof(uint32_t) * 2);
-    w_assert0(is_single_sys_xct());
-}
-
-void alloc_consecutive_pages_log::redo(fixable_page_h*)
-{
-    // page alloation is single-log system transaction. so, use data_ssx()
-    uint32_t *buf = reinterpret_cast<uint32_t*>(data_ssx());
-    shpid_t pid_begin = buf[0];
-    uint32_t page_count = buf[1];
-
-    // logical redo.
-    rc_t rc = io_m::redo_alloc_consecutive_pages(header._vid, page_count, pid_begin);
-    if (rc.is_error()) {
-        W_FATAL(rc.err_num());
-    }
-}
-
-
-dealloc_a_page_log::dealloc_a_page_log (vid_t vid, shpid_t pid)
-{
-    // page dealloation is single-log system transaction. so, use data_ssx()
-    char *buf = data_ssx();
-    *reinterpret_cast<shpid_t*>(buf) = pid; // only data is the page ID
-    lpid_t dummy (vid, 0);
-    fill(&dummy, 0, 0, sizeof(shpid_t));
-    w_assert0(is_single_sys_xct());
-}
-
-void dealloc_a_page_log::redo(fixable_page_h*)
-{
-    // page dealloation is single-log system transaction. so, use data_ssx()
-    shpid_t pid = *((shpid_t*) data_ssx());
-
-    // logical redo.
-    rc_t rc = io_m::redo_dealloc_a_page(header._vid, pid);
-    if (rc.is_error()) {
-        W_FATAL(rc.err_num());
-    }
-}
-
 store_operation_log::store_operation_log(vid_t vid,
         const store_operation_param& param)
 {
@@ -909,7 +833,7 @@ void store_operation_log::redo(fixable_page_h* /*page*/)
     store_operation_param& param = *(store_operation_param*)_data;
     DBG( << "store_operation_log::redo(page=" << pid()
         << ", param=" << param << ")" );
-    W_COERCE( smlevel_0::io->store_operation(vid(), param, true) );
+    W_COERCE( smlevel_0::vol->get(vid())->store_operation(param, true) );
 }
 
 void store_operation_log::undo(fixable_page_h* /*page*/)
@@ -939,7 +863,7 @@ void store_operation_log::undo(fixable_page_h* /*page*/)
                                 smlevel_0::t_set_deleting,
                                 param.old_deleting_value(),
                                 param.new_deleting_value());
-                        W_COERCE( smlevel_0::io->store_operation(vid(),
+                        W_COERCE( smlevel_0::vol->get(vid())->store_operation(
                                 new_param) );
                     }
                     break;
@@ -953,7 +877,7 @@ void store_operation_log::undo(fixable_page_h* /*page*/)
                 store_operation_param new_param(param.snum(),
                         smlevel_0::t_set_store_flags,
                         param.old_store_flags(), param.new_store_flags());
-                W_COERCE( smlevel_0::io->store_operation(vid(),
+                W_COERCE( smlevel_0::vol->get(vid())->store_operation(
                         new_param) );
             }
             break;

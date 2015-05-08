@@ -22,6 +22,7 @@
 #include "xct.h"
 #include "bf_tree.h"
 #include "sm_int_0.h"
+#include "vol.h"
 
 rc_t btree_impl::_sx_norec_alloc(btree_page_h &page, lpid_t &new_page_id) {
     sys_xct_section_t sxs(true);
@@ -36,7 +37,9 @@ rc_t btree_impl::_ux_norec_alloc_core(btree_page_h &page, lpid_t &new_page_id) {
     w_assert1 (xct()->is_single_log_sys_xct());
     w_assert1 (page.latch_mode() == LATCH_EX);
 
-    W_DO(io_m::alloc_a_page (page.stid(), new_page_id));
+    shpid_t shpid;
+    W_DO(smlevel_0::vol->get(page.vol())->alloc_a_page(shpid));
+    new_page_id = lpid_t(page.vol(), shpid);
     btree_page_h new_page;
     w_rc_t rc;
     rc = new_page.fix_nonroot(page, page.vol(), new_page_id.page, LATCH_EX, false, true);
@@ -78,7 +81,7 @@ rc_t btree_impl::_ux_norec_alloc_core(btree_page_h &page, lpid_t &new_page_id) {
 
     if (rc.is_error()) {
         // if failed for any reason, we release the allocated page.
-        W_DO(io_m::dealloc_a_page (new_page_id));
+        W_DO(smlevel_0::vol->get(page.vol())->free_page(new_page_id.page));
     }
 
     w_assert3(page.is_consistent(true, true));
