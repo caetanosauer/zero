@@ -620,63 +620,72 @@ chkpt_dev_tab_log::chkpt_dev_tab_log(vid_t next_vid,
     fill(0, (new (_data) chkpt_dev_tab_t(next_vid, devnames))->size());
 }
 
-
-/*********************************************************************
- *
- *  mount_vol_log
- *
- *  Data log to save device mounts.
- *
- *********************************************************************/
-mount_vol_log::mount_vol_log(
-    const char*,
-    const vid_t&)
+/**
+ * Instead of processing chkpt_dev_tab by parsing all devices and mounting
+ * them individually, simply make it a redoable log record and perform all
+ * mounts in the redo method.
+ */
+void chkpt_dev_tab_log::redo(fixable_page_h*)
 {
-    // CS TODO
+    chkpt_dev_tab_t* tab = (chkpt_dev_tab_t*) _data;
+    std::vector<string> dnames;
+    tab->read_devnames(dnames);
+    w_assert0(tab->count == dnames.size());
+
+    for (int i = 0; i < tab->count; i++) {
+        io_m::mount(dnames[i].c_str(), false /* log */);
+    }
+    vol_t::set_next_vid(tab->next_vid);
+}
+
+create_vol_log::create_vol_log(vid_t vid)
+{
+    memcpy(data_ssx(), &vid, sizeof(vid_t));
+    fill(0, sizeof(vid_t));
+}
+
+void create_vol_log::redo(fixable_page_h*)
+{
+    /*
+     * CS: reation itself does not have to be redone since volume header is
+     * forced prior to writing the log record. Therefore, we expect the volume
+     * path to be present (whatever it was). All we have to do is set the
+     * global _next_vid in the volume manager. A mount_vol log record should
+     * follow soon if the volume is used at all.
+     */
+    vid_t vid = *((vid_t*) data_ssx());
+    w_assert0(vol_t::get_next_vid() == vid);
+    vol_t::set_next_vid(vid);
+}
+
+mount_vol_log::mount_vol_log(const char* dev_name)
+{
+    size_t length = strlen(dev_name);
+    w_assert0(length < smlevel_0::max_devname);
+    memcpy(data_ssx(), dev_name, length);
+    fill(0, length);
 }
 
 
-void mount_vol_log::redo(fixable_page_h* page)
+void mount_vol_log::redo(fixable_page_h*)
 {
-    w_assert9(page == 0);
-    chkpt_dev_tab_t* dp = (chkpt_dev_tab_t*) _data;
+    const char* dev_name = (const char*) data_ssx();
+    W_COERCE(io_m::mount(dev_name, false));
+}
 
-    w_assert9(dp->count == 1);
-
-    // this may fail since this log record is only redone on crash/restart and the
-        // user may have destroyed the volume after using, but then there won't be
-        // and pages that need to be updated on this volume.
-    // W_IGNORE(io_m::mount(dp->devrec[0].dev_name, dp->devrec[0].vid));
-    // CS TODO
+dismount_vol_log::dismount_vol_log(const char* dev_name)
+{
+    size_t length = strlen(dev_name);
+    w_assert0(length < smlevel_0::max_devname);
+    memcpy(data_ssx(), dev_name, length);
+    fill(0, length);
 }
 
 
-/*********************************************************************
- *
- *  dismount_vol_log
- *
- *  Data log to save device dismounts.
- *
- *********************************************************************/
-dismount_vol_log::dismount_vol_log(
-    const char*,
-    const vid_t&)
+void dismount_vol_log::redo(fixable_page_h*)
 {
-    // CS TODO
-}
-
-
-void dismount_vol_log::redo(fixable_page_h* page)
-{
-    w_assert9(page == 0);
-    chkpt_dev_tab_t* dp = (chkpt_dev_tab_t*) _data;
-
-    w_assert9(dp->count == 1);
-    // this may fail since this log record is only redone on crash/restart and the
-        // user may have destroyed the volume after using, but then there won't be
-        // and pages that need to be updated on this volume.
-    // W_IGNORE(io_m::dismount(dp->devrec[0].vid));
-    // CS TODO
+    const char* dev_name = (const char*) data_ssx();
+    W_COERCE(io_m::dismount(dev_name, false));
 }
 
 /**

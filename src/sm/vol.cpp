@@ -132,12 +132,6 @@ rc_t vol_t::mount(const char* devname)
         }
     }
 
-#if W_DEBUG_LEVEL > 4
-    w_ostrstream_buf sbuf(64);                /* XXX magic number */
-    sbuf << "vol(vid=" << (int) _vid.vol << ")" << ends;
-    //_mutex.rename("m:", sbuf.c_str());
-    /* XXX how about restoring the old mutex name when done? */
-#endif
     _vid = vhdr.vid;
     _num_pages =  vhdr.num_pages;
     _apid = lpid_t(_vid, vhdr.apid); // 0 if no volumes formatted yet

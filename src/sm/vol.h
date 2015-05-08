@@ -174,6 +174,11 @@ public:
         return _next_vid;
     }
 
+    static void set_next_vid(vid_t vid) {
+        // TODO must be in mutual exclusion with create_vol
+        _next_vid = vid;
+    }
+
 private:
     static vid_t _next_vid;
 

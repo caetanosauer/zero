@@ -201,7 +201,7 @@ io_m::_dismount_all(bool flush, const bool clear_cb)
                     << "warning: volume " << vol[i]->vid() << " still mounted\n"
                 << "         automatic dismount" << flushl;
             }
-            W_DO(_dismount(vol[i]->vid(), flush, clear_cb));
+            W_DO(dismount(vol[i]->devname(), flush, clear_cb));
         }
     }
 
@@ -311,122 +311,68 @@ io_m::get_vols(int start, int count,
  *
  *********************************************************************/
 rc_t
-io_m::mount(const char* device, vid_t vid,
+io_m::mount(const char* device, const bool logit,
             const bool apply_fake_io_latency, const int fake_disk_latency)
 {
     FUNC(io_m::mount);
     // grab chkpt_mutex to prevent mounts during chkpt
     // need to serialize writing dev_tab and mounts
     auto_leave_and_trx_release_t acquire_and_enter;
-    DBG( << "_mount(name=" << device << ", vid=" << vid << ")");
+    DBG( << "_mount(" << device << ")");
     uint32_t i;
     for (i = 0; i < max_vols && vol[i]; i++) ;
     if (i >= max_vols) return RC(eNVOL);
 
-    vol_t* v = new vol_t(apply_fake_io_latency,fake_disk_latency);  // deleted on dismount
+    vol_t* v = new vol_t(apply_fake_io_latency,fake_disk_latency);
     if (! v) return RC(eOUTOFMEMORY);
 
-    // Get ready to roll back to here if we get an error between
-    // here and ... where this scope is closed.
-    AUTO_ROLLBACK_work
-    w_rc_t rc = v->mount(device);
-    if (rc.is_error())  {
-        delete v;
-        return RC_AUGMENT(rc);
-    }
-
-    // CS (TODO): vid parameter is not needed
-    int j = _find(vid);
-    if (j >= 0)  {
-        // CS: just ignore this for now, so that recovery works with ACP
-        // TODO -- not sure if this is permanent solution
-        // (see BitBucket ticket #3)
-        return RCOK;
-
-        //W_DO( v->dismount(false) );
-        //delete v;
-        //return RC(eALREADYMOUNTED);
-    }
-
-    ++vol_cnt;
+    /*
+     * CS TODO: instead of using logit, move this method to vol_t
+     * and rename it sx_mount. During redo, call mount directly instead
+     * of sx_mount
+     */
 
     w_assert9(vol[i] == 0);
     vol[i] = v;
+    ++vol_cnt;
 
-    if (log && smlevel_0::logging_enabled)  {
-        // TODO CS
-        // logrec_t* logrec = new logrec_t; //deleted at end of scope
-        // w_assert1(logrec);
-
-        // new (logrec) mount_vol_log(device, vid);
-        // logrec->fill_xct_attr(tid_t::null, GetLastMountLSN());
-        // lsn_t theLSN;
-        // W_DO( log->insert(*logrec, &theLSN) );
-
-        // DBG( << "mount_vol_log(" << device << ", vid=" << vid
-        //         << ") lsn=" << theLSN << " prevLSN=" << GetLastMountLSN());
-        // SetLastMountLSN(theLSN);
-
-        // delete logrec;
+    sys_xct_section_t ssx (true);
+    rc_t ret = vol[i]->mount(device);
+    if (logit)  {
+        log_mount_vol(_dev_name(vol[i]->vid()));
     }
+    W_DO (ssx.end_sys_xct(ret));
 
     SSMTEST("io_m::_mount.1");
-    DBG( << "_mount(name=" << device << ", vid=" << vid << ") done");
-
-    work.ok();
 
     return RCOK;
 }
 
-/*********************************************************************
- *
- *  io_m::dismount(vid, flush)
- *  io_m::_dismount(vid, flush)
- *
- *  Dismount the volume "vid". "Flush" indicates whether to write
- *  dirty pages of the volume in bf to disk.
- *
- *********************************************************************/
 rc_t
-io_m::dismount(vid_t vid, bool flush)
+io_m::dismount(const char* device, bool logit, bool flush, bool clear_cb)
 {
     // grab chkpt_mutex to prevent dismounts during chkpt
     // need to serialize writing dev_tab and dismounts
-
     auto_leave_and_trx_release_t acquire_and_enter;
-    return _dismount(vid, flush);
-}
 
-
-rc_t
-io_m::_dismount(vid_t vid, bool flush, const bool clear_cb)
-{
     FUNC(io_m::_dismount);
-    DBG( << "_dismount(" << "vid=" << vid << ")");
+    DBG( << "_dismount(" << device << ")");
+    vid_t vid = get_vid(device);
+    if (vid == vid_t(0)) return RC(eBADVOL);
     int i = _find(vid);
-    if (i < 0) return RC(eBADVOL);
+    w_assert0(i >= 0);
 
-    W_COERCE(vol[i]->dismount(flush, clear_cb));
-
-    if (log && smlevel_0::logging_enabled)  {
-        logrec_t* logrec = new logrec_t; //deleted at end of scope
-        w_assert1(logrec);
-
-        new (logrec) dismount_vol_log(_dev_name(vid), vid);
-        logrec->fill_xct_attr(tid_t::null, GetLastMountLSN());
-        lsn_t theLSN;
-        W_COERCE( log->insert(*logrec, &theLSN) );
-        DBG( << "dismount_vol_log(" << _dev_name(vid)
-                << endl
-                << ", vid=" << vid << ") lsn=" << theLSN << " prevLSN=" << GetLastMountLSN());;
-        SetLastMountLSN(theLSN);
-
-        delete logrec;
+    sys_xct_section_t ssx (true);
+    rc_t ret = vol[i]->dismount(flush, clear_cb);
+    if (logit) {
+        log_dismount_vol(_dev_name(vid));
     }
+    W_DO (ssx.end_sys_xct(ret));
+
+    // SetLastMountLSN(theLSN);
 
     delete vol[i];
     vol[i] = 0;
-
     --vol_cnt;
 
     SSMTEST("io_m::_dismount.1");

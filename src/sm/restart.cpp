@@ -892,13 +892,17 @@ restart_m::analysis_pass_forward(
             if (num_chkpt_end_handled == 0)
             {
                 // Still processing the master checkpoint record.
-                _analysis_ckpt_dev_log(r, mount);
+                // _analysis_ckpt_dev_log(r, mount);
+                r.redo(0);
             }
             break;
 
         case logrec_t::t_dismount_vol:
         case logrec_t::t_mount_vol:
+            r.redo(0);
+            break;
 
+            // CS TODO -- new method
             /* Perform all mounts and dismounts up to the minimum redo lsn,
             * so that the system has the right volumes mounted during
             * the redo phase.  the only time the this should  be redone is
@@ -910,19 +914,19 @@ restart_m::analysis_pass_forward(
             * after the log has been scanned.
             */
 
-            w_assert9(num_chkpt_end_handled > 0);
+            // w_assert9(num_chkpt_end_handled > 0);
             // mount & dismount shouldn't happen during a check point
             // redo_lsn is initialized to NULL, and only set to the minimum lsn
             // from master 'end checkpoint' when we encounter it during log scan
             // Only redo, no undo for mount & dismount
-            if (lsn < redo_lsn)
-            {
-                r.redo(0);
+            // if (lsn < redo_lsn)
+            // {
+            //     r.redo(0);
 
-                if (logrec_t::t_mount_vol == r.type())
-                    mount = true;
-            }
-            break;
+            //     if (logrec_t::t_mount_vol == r.type())
+            //         mount = true;
+            // }
+            // break;
 
         case logrec_t::t_chkpt_end:
             if (num_chkpt_end_handled == 0)
@@ -1176,8 +1180,9 @@ restart_m::analysis_pass_forward(
     // also the individual mount/dismount log records
     if ( 0 != in_doubt_count)
     {
+        // CS TODO
         // Do we have more to mount?
-        _analysis_process_extra_mount(theLastMountLSNBeforeChkpt, redo_lsn, mount);
+        // _analysis_process_extra_mount(theLastMountLSNBeforeChkpt, redo_lsn, mount);
     }
     // Now theLastMountLSNBeforeChkpt == redo_lsn
 
@@ -1631,7 +1636,8 @@ restart_m::analysis_pass_backward(
             {
                 // Process it only if we have seen a matching 'end checkpoint' log record
                 // meaning we are processing the last completed checkpoint
-                _analysis_ckpt_dev_log(r, mount);
+                // _analysis_ckpt_dev_log(r, mount);
+                r.redo(0);
             }
             else
             {
@@ -1641,6 +1647,8 @@ restart_m::analysis_pass_backward(
 
         case logrec_t::t_dismount_vol:
         case logrec_t::t_mount_vol:
+            r.redo(0);
+            break;
             // Perform all mounts and dismounts up to the minimum redo lsn,
             // so that the system has the right volumes mounted during
             // the redo phase.  The only time this should be redone is
@@ -1663,26 +1671,28 @@ restart_m::analysis_pass_backward(
             // at this point.  Record the lsn information in a heap and delay the 'redo' until
             // after we are done with the backward log scan.  This is a very corner
             // scenario.
-            {
-                logrec_t*  mount_log_rec_buf = new logrec_t; // auto-del at the end
-                if (! mount_log_rec_buf)
-                {
-                    W_FATAL(eOUTOFMEMORY);
-                }
-                memcpy(mount_log_rec_buf, &r, r.length());
+            //
+            // CS TODO -- just calling redo now
+            // {
+            //     logrec_t*  mount_log_rec_buf = new logrec_t; // auto-del at the end
+            //     if (! mount_log_rec_buf)
+            //     {
+            //         W_FATAL(eOUTOFMEMORY);
+            //     }
+            //     memcpy(mount_log_rec_buf, &r, r.length());
 
-                comp_mount_log_t* mount_heap_elem = new comp_mount_log_t;
-                if (! mount_heap_elem)
-                {
-                    W_FATAL(eOUTOFMEMORY);
-                }
-                mount_heap_elem->lsn = lsn;
-                mount_heap_elem->mount_log_rec_buf = mount_log_rec_buf;
+            //     comp_mount_log_t* mount_heap_elem = new comp_mount_log_t;
+            //     if (! mount_heap_elem)
+            //     {
+            //         W_FATAL(eOUTOFMEMORY);
+            //     }
+            //     mount_heap_elem->lsn = lsn;
+            //     mount_heap_elem->mount_log_rec_buf = mount_log_rec_buf;
 
-                // Insert the entry into heapMount
-                heapMount.AddElementDontHeapify(mount_heap_elem);
-            }
-            break;
+            //     // Insert the entry into heapMount
+            //     heapMount.AddElementDontHeapify(mount_heap_elem);
+            // }
+            // break;
 
         case logrec_t::t_chkpt_end:
             if (num_chkpt_end_handled == 0)
@@ -1926,13 +1936,14 @@ restart_m::analysis_pass_backward(
             ? "redoing mounts/dismounts before chkpt but after redo_lsn"  \
             : "no mounts/dismounts need to be redone"));
 
+    // CS TODO
     // At this point, we have mounted devices from t_chkpt_dev_tab log record and
     // also the individual mount/dismount log records
-    if (0 != in_doubt_count)
-    {
-        // Do we have more to mount?
-        _analysis_process_extra_mount(theLastMountLSNBeforeChkpt, redo_lsn, mount);
-    }
+    // if (0 != in_doubt_count)
+    // {
+    //     // Do we have more to mount?
+    //     _analysis_process_extra_mount(theLastMountLSNBeforeChkpt, redo_lsn, mount);
+    // }
     // Now theLastMountLSNBeforeChkpt == redo_lsn
 
     // Update the last mount LSN, it was originally set from the begin checkpoint log record
@@ -2417,6 +2428,8 @@ void restart_m::_analysis_ckpt_xct_log(logrec_t& r,          // In: Current log 
  *  analysis_pass_forward and analysis_pass_backward
  *
  *  System is not opened during Log Analysis phase
+ *
+ *  CS TODO : method not used anymore -- just call redo on chkpt_dev_tab
  *
  *********************************************************************/
 void restart_m::_analysis_ckpt_dev_log(logrec_t& r,  // In: Log record to process
@@ -3166,6 +3179,7 @@ void restart_m::_analysis_acquire_ckpt_lock_log(logrec_t& r,            // In: l
  *  System is not opened during Log Analysis phase
  *
  *********************************************************************/
+#if 0
 void restart_m::_analysis_process_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,  // In/Out: last LSN
                                           lsn_t& redo_lsn,                              // In: starting point of REDO log scan
                                           bool& mount)                                  // Out: whether mount occurred
@@ -3247,6 +3261,7 @@ void restart_m::_analysis_process_extra_mount(lsn_t& theLastMountLSNBeforeChkpt,
     // auto-release will free the log rec copy buffer, __copy__buf
     return;
 }
+#endif
 
 /*********************************************************************
  *

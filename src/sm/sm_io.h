@@ -173,11 +173,15 @@ public:
 
     static rc_t                 mount(
          const char*                  device,
-         vid_t                        vid,
+         const bool                   logit = true,
          const bool                   apply_fake_io_latency = false,
          const int                    fake_disk_latency = 0);
-    static rc_t                 dismount(vid_t vid, bool flush = true);
-    static rc_t                 dismount_all(bool flush = true, const bool clear_cb = true);
+    static rc_t                 dismount(
+         const char*                  device,
+         bool                         logit = true,
+         bool                         flush = true,
+         bool                         clear_cb = false);
+    static rc_t                 dismount_all(bool flush = true, bool clear_cb = true);
     static rc_t                 sync_all_disks();
 
     /** flushes bf_fixed of all volumes currently mounted. */
@@ -354,7 +358,6 @@ private:
         smksize_t&                        quota_used_KB
         );
 
-    static rc_t                 _dismount(vid_t vid, bool flush, const bool clear_cb = true);
     static rc_t                 _dismount_all(bool flush, const bool clear_cb = true);
     static rc_t                 _create_store(
         vid_t                           vid,
@@ -412,7 +415,7 @@ io_m::get_volume_quota(
 
 
 inline rc_t
-io_m::dismount_all(bool flush, const bool clear_cb)
+io_m::dismount_all(bool flush, bool clear_cb)
 {
     auto_leave_t enter;
     return _dismount_all(flush, clear_cb);
