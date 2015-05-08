@@ -83,12 +83,12 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     if (cleaner_interval_millisec_max <= 0) {
         cleaner_interval_millisec_max = 256000;
     }
-    bool initially_enable_cleaners = 
+    bool initially_enable_cleaners =
         options.get_bool_option("sm_backgroundflush", true);
-    bool bufferpool_swizzle = 
+    bool bufferpool_swizzle =
         options.get_bool_option("sm_bufferpool_swizzle", false);
     // clock or random
-    std::string replacement_policy = 
+    std::string replacement_policy =
         options.get_string_option("sm_bufferpool_replacement_policy", "clock");
 
     uint32_t cleaner_write_buffer_pages =
@@ -869,7 +869,7 @@ w_rc_t bf_tree_m::_fix_nonswizzled(generic_page* parent, generic_page*& page,
                     }
                     else
                     {
-                        shpid_t root_shpid = smlevel_0::bf->get_root_page_id(stid_t(vol, cb._store_num)); 
+                        shpid_t root_shpid = smlevel_0::bf->get_root_page_id(stid_t(vol, cb._store_num));
                         DBGOUT3(<< "User load - Root page ID: " << root_shpid << ", caller ask for page: " << shpid);
                         if (root_shpid == shpid)
                         {
@@ -2410,24 +2410,24 @@ w_rc_t bf_tree_m::load_for_redo(bf_idx idx, vid_t vid,
     // Load the physical page from disk
     W_DO(volume->_volume->read_page(shpid, _buffer[idx]));
 
-        // For the loaded page, compare its checksum
-        // If inconsistent, return error
-        uint32_t checksum = _buffer[idx].calculate_checksum();
-        if (checksum != _buffer[idx].checksum)
-        {
-            ERROUT(<<"bf_tree_m: bad page checksum in page " << shpid
-                    << " -- expected " << checksum
-                    << " got " << _buffer[idx].checksum);
-            return RC (eBADCHECKSUM);
-        }
+    // For the loaded page, compare its checksum
+    // If inconsistent, return error
+    uint32_t checksum = _buffer[idx].calculate_checksum();
+    if (checksum != _buffer[idx].checksum)
+    {
+        ERROUT(<<"bf_tree_m: bad page checksum in page " << shpid
+                << " -- expected " << checksum
+                << " got " << _buffer[idx].checksum);
+        return RC (eBADCHECKSUM);
+    }
 
-        // Then, page ID must match, otherwise raise error
-        if (( shpid != _buffer[idx].pid.page) || (vid != _buffer[idx].pid.vol()))
-        {
-            W_FATAL_MSG(eINTERNAL, <<"inconsistent disk page: "
+    // Then, page ID must match, otherwise raise error
+    if (( shpid != _buffer[idx].pid.page) || (vid != _buffer[idx].pid.vol()))
+    {
+        W_FATAL_MSG(eINTERNAL, <<"inconsistent disk page: "
                 << vid << "." << shpid << " was " << _buffer[idx].pid.vol()
                 << "." << _buffer[idx].pid.page);
-        }
+    }
 
     return rc;
 }
@@ -2808,14 +2808,14 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, snum_t*
                 {
                     // If we have a dirty page but _rec_lsn (initial dirty) is 0
                     // someone forgot to set it for the dirty page (most likely a
-                    // newly allocated page and it has not been formatted yet, therefore 
+                    // newly allocated page and it has not been formatted yet, therefore
                     // the page does not exist on disk and does not contain any change yet).
                     // In this case we won't be able to trace the history of the dirty
                     // page during a crash recovery.
 ////////////////////////////////////////
-// TODO(Restart)... 
+// TODO(Restart)...
 // Solution #1:
-// We could use the last_mount_lsn as the LSN for this page as a defensive 
+// We could use the last_mount_lsn as the LSN for this page as a defensive
 // approach, so the Recovery REDO would start the log scan from the mount lsn
 // but several issues with this approach
 //  1. Last mount LSN might be very old, which would cause REDO LSN
@@ -2842,14 +2842,14 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, snum_t*
                     w_assert1(0 != last_mount_lsn.data());
                     // Solution #1: use last mount lsn
                     lsn = last_mount_lsn;
-                    
+
                     // Solution #2: ignore this page
                     if (cb.latch().held_by_me())
                         cb.latch().latch_release();
                     continue;
                 }
 
-                // Now we have a page we want to record               
+                // Now we have a page we want to record
                 pid[i] = _buffer[start].pid;
                 w_assert1(0 != pid[i].page);   // Page number cannot be 0
                 stores[i] = _buffer[start].store;
@@ -2935,7 +2935,7 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
     w_assert1(shpid != 0);
     generic_page &page = _buffer[idx];
     uint32_t checksum = page.calculate_checksum();
-    
+
     if (checksum == 0) {
         DBGOUT0(<<"_check_read_page(): empty checksum?? PID=" << shpid);
     }
@@ -3104,7 +3104,7 @@ w_rc_t bf_tree_m::_try_recover_page(generic_page* parent,     // In: parent page
     else if (lsn_t::null != emlsn)
     {
         DBGOUT0(<<"bf_tree_m::_try_recover_page: Recovery a page with parent node, parent emlsn:"
-                << emlsn << ", no page_emlsn (from Log Analysis), use parent for recovery");        
+                << emlsn << ", no page_emlsn (from Log Analysis), use parent for recovery");
     }
     else
     {

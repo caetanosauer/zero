@@ -17,7 +17,7 @@ rc_t alloc_cache_t::load_by_scan (shpid_t max_pid) {
     _non_contiguous_free_pages.clear();
     _contiguous_free_pages_begin = max_pid;
     _contiguous_free_pages_end = max_pid;
-    
+
     // at this point, no other threads are accessing the volume. we don't need any synchronization.
     uint32_t alloc_pages_cnt = _fixed_pages->get_page_cnt() - 1; // -1 for stnode_page
     generic_page *pages = _fixed_pages->get_pages();
@@ -56,7 +56,7 @@ rc_t alloc_cache_t::allocate_one_page (shpid_t &pid) {
         _non_contiguous_free_pages.pop_back();
     } else if (_contiguous_free_pages_begin < _contiguous_free_pages_end) {
         pid_to_return = _contiguous_free_pages_begin;
-        ++_contiguous_free_pages_begin;    
+        ++_contiguous_free_pages_begin;
     } else {
         return RC(eOUTOFSPACE);
     }
@@ -68,7 +68,7 @@ rc_t alloc_cache_t::allocate_one_page (shpid_t &pid) {
 
 rc_t alloc_cache_t::allocate_consecutive_pages (shpid_t &pid_begin, size_t page_count) {
     pid_begin = 0;
-    
+
     spinlock_write_critical_section cs(&_queue_lock);
     shpid_t pid_to_begin = 0;
     if (_contiguous_free_pages_begin  + page_count < _contiguous_free_pages_end) {
@@ -97,7 +97,7 @@ rc_t alloc_cache_t::deallocate_one_page (shpid_t pid) {
     w_assert1(pid < _contiguous_free_pages_begin);
     w_assert1(check_not_contain(_non_contiguous_free_pages, pid));
     _non_contiguous_free_pages.push_back(pid);
-    
+
     W_DO(apply_deallocate_one_page(pid));
     return RCOK;
 }
@@ -122,10 +122,10 @@ rc_t alloc_cache_t::redo_allocate_one_page (shpid_t pid)
             }
         }
         if (!found) {
-            // Page might be allocated already due to Single Page Recovery 
-            // used during Restart operation, the REDO is not needed            
+            // Page might be allocated already due to Single Page Recovery
+            // used during Restart operation, the REDO is not needed
             // generate a debug output instead of error log
-            DBGOUT1(<<"REDO: page  " << pid << " is already allocated??");            
+            DBGOUT1(<<"REDO: page  " << pid << " is already allocated??");
             // cerr << "REDO: page " << pid << " is already allocated??" << endl;
             return RCOK;
         }
@@ -146,7 +146,7 @@ rc_t alloc_cache_t::redo_allocate_consecutive_pages (shpid_t pid_begin, size_t p
         // then the REDO order is wrong.
         w_assert0(false);
     }
-    
+
     W_DO(apply_allocate_consecutive_pages(pid_begin, page_count));
     return RCOK;
 }
@@ -154,7 +154,7 @@ rc_t alloc_cache_t::redo_deallocate_one_page (shpid_t pid)
 {
     w_assert1(pid < _contiguous_free_pages_begin);
     w_assert1(check_not_contain(_non_contiguous_free_pages, pid));
-    _non_contiguous_free_pages.push_back(pid);    
+    _non_contiguous_free_pages.push_back(pid);
     W_DO(apply_deallocate_one_page(pid));
     return RCOK;
 }
@@ -177,11 +177,11 @@ rc_t alloc_cache_t::apply_allocate_consecutive_pages (shpid_t pid_begin, size_t 
     const shpid_t pid_to_end = pid_begin + page_count;
     shpid_t alloc_pid = alloc_page_h::pid_to_alloc_pid(pid_begin);
     generic_page* pages = _fixed_pages->get_pages();
-    
+
     shpid_t cur_pid = pid_begin;
 
     // log and apply per each alloc_page
-    while (cur_pid < pid_to_end) {    
+    while (cur_pid < pid_to_end) {
         uint32_t buf_index = alloc_pid - 1; // -1 for volume header
         w_assert1(buf_index < _fixed_pages->get_page_cnt() - 1); // -1 for stnode_page
         alloc_page_h al (pages + buf_index);

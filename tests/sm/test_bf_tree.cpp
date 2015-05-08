@@ -112,7 +112,7 @@ w_rc_t test_bf_fix_virgin_root(ss_m* /*ssm*/, test_volume_t *test_volume) {
             bp->lsn        = thelsn;
             page->tag      = t_btree_p;
             bp->btree_level = 1;
-            bp->init_items();                
+            bp->init_items();
             pool.set_dirty(page);
             pool.unfix(page);
         }
@@ -350,7 +350,7 @@ w_rc_t _test_bf_swizzle(ss_m* /*ssm*/, test_volume_t *test_volume, bool enable_s
                 EXPECT_EQ (1, cb._pin_cnt); // because it's swizzled, pin_cnt is 1
                 EXPECT_TRUE (pool.is_swizzled(page));
 #ifdef BP_MAINTAIN_PARENT_PTR
-                EXPECT_EQ ((int) (2 + i), root_cb._pin_cnt); // parent's pin_cnt is added 
+                EXPECT_EQ ((int) (2 + i), root_cb._pin_cnt); // parent's pin_cnt is added
 #else // BP_MAINTAIN_PARENT_PTR
                 EXPECT_EQ ((int) 1, root_cb._pin_cnt);
 #endif // BP_MAINTAIN_PARENT_PTR
@@ -457,7 +457,7 @@ TEST (TreeBufferpoolTest, NoSwizzle) {
 
 #ifdef BP_MAINTAIN_PARENT_PTR
 w_rc_t test_bf_switch_parent(ss_m* /*ssm*/, test_volume_t *test_volume) {
-    
+
     bf_tree_m &pool(*smlevel_0::bf);
     lpid_t root_pid(test_volume->_vid, 1, 3);
 

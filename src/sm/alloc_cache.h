@@ -31,14 +31,14 @@ public:
 
     /** Initialize this object by scanning alloc_page pages of the volume. */
     rc_t load_by_scan (shpid_t max_pid);
-    
+
     /**
      * Allocates one new page from the free-page pool.
      * This method logs the allocation.
      * @param[out] pid allocated page ID.
      */
     rc_t allocate_one_page (shpid_t &pid);
-    
+
     /**
      * Allocates the spefified count of consecutive pages from the free-page pool.
      * This method logs the allocation.
@@ -46,7 +46,7 @@ public:
      * @param[in] page_count number of pages to allocate.
      */
     rc_t allocate_consecutive_pages (shpid_t &pid_begin, size_t page_count);
-    
+
     /**
      * Deallocates one page in the free-page pool.
      * This method logs the deallocation.
@@ -58,24 +58,24 @@ public:
     rc_t redo_allocate_one_page (shpid_t pid);
     rc_t redo_allocate_consecutive_pages (shpid_t pid_begin, size_t page_count);
     rc_t redo_deallocate_one_page (shpid_t pid);
-    
+
     /** Returns the count of all free pages. */
     size_t get_total_free_page_count () const;
     /** Returns the count of consecutive free pages. */
     size_t get_consecutive_free_page_count () const;
-    
+
     /** Returns if the page is already allocated. not quite fast. don't call this so often!. */
     bool is_allocated_page (shpid_t pid) const;
 
 private:
     vid_t _vid;
     bf_fixed_m* _fixed_pages;
-    
+
     /** the first page in this volume from which all pages are unallocated. */
     shpid_t _contiguous_free_pages_begin;
     /** usually just the number of pages in this volume. */
     shpid_t _contiguous_free_pages_end;
-    
+
     /** ID list of unallocated pages. */
     std::vector<shpid_t> _non_contiguous_free_pages;
 

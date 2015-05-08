@@ -38,14 +38,14 @@ void btree_m::destruct_once()
     }
 }
 
-smsize_t                        
+smsize_t
 btree_m::max_entry_size() {
     return btree_page_h::max_entry_size;
 }
 
 rc_t
 btree_m::create(
-    const stid_t&           stid,                
+    const stid_t&           stid,
     lpid_t&                 root
     )                // O-  root of new btree
 {
@@ -58,7 +58,7 @@ btree_m::create(
     W_DO(btree_impl::_ux_create_tree_core(stid, root));
 
     bool empty=false;
-    W_DO(is_empty(stid, empty)); 
+    W_DO(is_empty(stid, empty));
     if(!empty) {
          DBGTHRD(<<"eNDXNOTEMPTY");
          return RC(eNDXNOTEMPTY);
@@ -172,7 +172,7 @@ btree_m::_get_du_statistics_recurse(
         btree_page_h page;
         W_DO( next_page.fix_direct(currentpid.vol(), original_pid, LATCH_SH));
         current = next_page;// at this point (after latching next) we don't need to keep the "previous" fixed.
-    
+
         if (current.level() > 1)  {
             int_cnt++;
             W_DO(current.int_stats(int_stats));
@@ -237,9 +237,9 @@ btree_m::get_du_statistics(
     return RCOK;
 }
 
-void 
-btree_m::print(const lpid_t& current, 
-    bool print_elem 
+void
+btree_m::print(const lpid_t& current,
+    bool print_elem
 )
 {
     {
@@ -254,10 +254,10 @@ btree_m::print(const lpid_t& current,
         page.copy_fence_low_key (fence_low);
         page.copy_fence_high_key(fence_high);
         page.copy_chain_fence_high_key(chain_fence_high);
-        cout 
+        cout
              << " "
-             << "LEVEL " << page.level() 
-             << ", page " << page.pid().page 
+             << "LEVEL " << page.level()
+             << ", page " << page.pid().page
              << ", pid0 " << page.pid0()
              << ", foster " << page.get_foster()
              << ", nrec " << page.nrecs()
@@ -316,10 +316,10 @@ rc_t btree_m::touch(const btree_page_h& page, uint64_t &page_count) {
     return RCOK;
 }
 
-/* 
+/*
  * for use by logrecs for logical undo of inserts/deletes
  */
-rc_t                        
+rc_t
 btree_m::remove_as_undo(stid_t store, const w_keystr_t &key)
 {
     // UNDO insert operation

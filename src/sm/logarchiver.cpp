@@ -53,7 +53,7 @@ bool ArchiverControl::activate(bool wait, lsn_t lsn)
         }
     }
     // now we hold the mutex -- signal archiver thread and set endLSN
-    
+
     // make sure signal is sent only if thread is listening
     if (!wait || listening) {
         // activation may not decrease the endLSN
@@ -139,7 +139,7 @@ rc_t LogArchiver::ReaderThread::openPartition()
     int fd;
     char *const fname = new char[smlevel_0::max_devname];
     if (!fname) W_FATAL(fcOUTOFMEMORY);
-    w_auto_delete_array_t<char> ad_fname(fname);        
+    w_auto_delete_array_t<char> ad_fname(fname);
     smlevel_0::log->make_log_name(nextPartition, fname,
             smlevel_0::max_devname);
     int flags = smthread_t::OPEN_RDONLY;
@@ -178,7 +178,7 @@ void LogArchiver::ReaderThread::run()
         if (!activated) {
             break;
         }
-        
+
         DBGTHRD(<< "Reader thread activated until " << control.endLSN);
 
         /*
@@ -292,7 +292,7 @@ void LogArchiver::WriterThread::run()
              * because it runs indefinitely, just waiting for blocks to be
              * written. The only stop condition is when the write buffer itself
              * is marked finished, which is done in start_shutdown().
-             * Nevertheless, a null block is only returned once the finished 
+             * Nevertheless, a null block is only returned once the finished
              * flag is set AND there are no more blocks. Thus, we gaurantee
              * that all pending blocks are written out before shutdown.
              */
@@ -300,14 +300,14 @@ void LogArchiver::WriterThread::run()
             W_COERCE(directory->closeCurrentRun(lastLSN));
             return; // finished is set on buf
         }
-        
+
         DBGTHRD(<< "Picked block for write " << (void*) src);
 
         // CS: changed writer behavior to write raw blocks instead of a
         // contiguous stream of log records, as done in log partitions.
         // TODO: restore code should consider block format when reading
         // from the log archive!
-        
+
         //BlockHeader* h = (BlockHeader*) src;
         int run = BlockAssembly::getRunFromBlock(src);
         if (currentRun != run) {
@@ -356,7 +356,7 @@ LogArchiver::LogArchiver(const sm_options& options)
         options.get_int_option("sm_archiver_block_size", DFT_BLOCK_SIZE);
 
     if (archdir.empty()) {
-        W_FATAL_MSG(fcINTERNAL, 
+        W_FATAL_MSG(fcINTERNAL,
                 << "Option for archive directory must be specified");
     }
 
@@ -390,7 +390,7 @@ void LogArchiver::initLogScanner(LogScanner* logScanner)
 
 /*
  * Shutdown sets the finished flag on read and write buffers, which makes
- * the reader and writer threads finish processing the current block and 
+ * the reader and writer threads finish processing the current block and
  * then exit. The replacement-selection will exit as soon as it requests
  * a block and receives a null pointer. If the shutdown flag is set, the
  * method exits without error.
@@ -528,7 +528,7 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(std::string archdir,
         if (nextPartition > max) {
             W_FATAL_MSG(fcINTERNAL,
                 << "Could not find partition files in log manager");
-        }        
+        }
 
         startLSN = lsn_t(nextPartition, 0);
     }
@@ -687,9 +687,9 @@ LogArchiver::LogConsumer::LogConsumer(lsn_t startLSN, size_t blockSize)
     reader = new ReaderThread(readbuf, startLSN);
     //reader = new FactoryThread(readbuf, startLSN);
     logScanner = new LogScanner(reader->getBlockSize());
-    
+
     initLogScanner(logScanner);
-    reader->fork();    
+    reader->fork();
 }
 
 LogArchiver::LogConsumer::~LogConsumer()
@@ -738,7 +738,7 @@ bool LogArchiver::LogConsumer::nextBlock()
     }
     DBGTHRD(<< "Picked block for replacement " << (void*) currentBlock);
     pos = 0;
-    
+
     return true;
 }
 
@@ -783,7 +783,7 @@ bool LogArchiver::LogConsumer::next(logrec_t*& lr)
         }
         return next(lr);
     }
-    
+
     // nextLSN is updated by log scanner, so we must check again
     if (nextLSN >= endLSN) {
         return false;
@@ -839,7 +839,7 @@ LogArchiver::BlockAssembly::BlockAssembly(ArchiveDirectory* directory)
 {
     archIndex = directory->getIndex();
     blockSize = directory->getBlockSize();
-    writebuf = new AsyncRingBuffer(blockSize, IO_BLOCK_COUNT); 
+    writebuf = new AsyncRingBuffer(blockSize, IO_BLOCK_COUNT);
     writer = new WriterThread(writebuf, directory);
 }
 
@@ -968,7 +968,7 @@ LogArchiver::ArchiveScanner::open(lpid_t startPID, lpid_t endPID,
     RunMerger* merger = new RunMerger();
 
     // probe for runs
-    ArchiveIndex::ProbeResult* runProbe = 
+    ArchiveIndex::ProbeResult* runProbe =
         archIndex->probeFirst(startPID, startLSN);
 
     while (runProbe) {
@@ -1020,7 +1020,7 @@ bool LogArchiver::ArchiveScanner::RunScanner::nextBlock()
         W_COERCE(directory->closeScan(fd));
         return false;
     }
-    
+
     // offset is updated by readBlock
     W_COERCE(directory->readBlock(fd, buffer, offset));
 
@@ -1074,17 +1074,17 @@ LogArchiver::ArchiveScanner::MergeHeapEntry::MergeHeapEntry(RunScanner* runScan)
             matches = next->construct_pid().page >= startPID.page;
         }
     } while (!matches && hasNext);
-    
+
     // if all PIDs are lower than search criterion, run is not needed
     if (!hasNext)
     {
         active = false;
     }
     lr = next;
-    
+
     lsn = lr->lsn_ck();
     pid = lr->construct_pid();
-    
+
     w_assert1(lr->valid_header());
     w_assert1(startPID.page <= pid.page);
     w_assert1(startPID == lpid_t::null ||
@@ -1118,7 +1118,7 @@ bool LogArchiver::ArchiveScanner::RunMerger::next(logrec_t*& lr)
         started = true;
     }
     else {
-        /* 
+        /*
          * CS: Before returning the next log record, the scanner at the top of
          * the heap must be recomputed and the heap re-organized. This is
          * because the caller maintains a pointer into the scanner's buffer,
@@ -1142,7 +1142,7 @@ bool LogArchiver::ArchiveScanner::RunMerger::next(logrec_t*& lr)
         }
         return false;
     }
-    
+
     lr = heap.First().lr;
     return true;
 }
@@ -1236,7 +1236,7 @@ bool LogArchiver::ArchiverHeap::Cmp::gt(const HeapEntry& a,
 }
 
 /**
- * Replacement part of replacement-selection algorithm. Fetches log records 
+ * Replacement part of replacement-selection algorithm. Fetches log records
  * from the read buffer into the sort workspace and adds a correspondent
  * entry to the heap. When workspace is full, invoke selection until there
  * is space available for the current log record.
@@ -1267,7 +1267,7 @@ void LogArchiver::replacement()
             }
             return;
         }
-    
+
         if (!heap->push(lr)) {
             // heap full -- invoke selection and try again
             // method returns bool, but result is not used for now (TODO)
@@ -1312,7 +1312,7 @@ void LogArchiver::run()
             continue;
         }
         w_assert1(control.endLSN > directory->getLastLSN());
-        
+
         DBGTHRD(<< "Log archiver activated from " << directory->getLastLSN() << " to "
                 << control.endLSN);
 
@@ -1488,7 +1488,7 @@ LogArchiver::ArchiveIndex::~ArchiveIndex()
 void LogArchiver::ArchiveIndex::newBlock(lpid_t first)
 {
     CRITICAL_SECTION(cs, mutex);
-    
+
     w_assert1(runs.size() > 0);
 
     BlockEntry e;
@@ -1519,7 +1519,7 @@ rc_t LogArchiver::ArchiveIndex::finishRun(lsn_t first, lsn_t last, int fd,
 rc_t LogArchiver::ArchiveIndex::serializeRunInfo(RunInfo& run, int fd, fileoff_t offset)
 {
     // Assumption: mutex is held by caller
-    
+
     int entriesPerBlock =
         (blockSize - sizeof(BlockHeader)) / sizeof(BlockEntry);
     int remaining = run.entries.size();
@@ -1552,7 +1552,7 @@ rc_t LogArchiver::ArchiveIndex::getBlockCounts(int fd, size_t* indexBlocks,
     W_DO(me()->fstat(fd, fs));
     fileoff_t fsize = fs.st_size;
     w_assert1(fsize % blockSize == 0);
-    
+
     // read header of last block in file -- its number is the block count
     BlockHeader header;
     W_DO(me()->pread(fd, &header, sizeof(BlockHeader), fsize - blockSize));
@@ -1569,8 +1569,8 @@ rc_t LogArchiver::ArchiveIndex::getBlockCounts(int fd, size_t* indexBlocks,
 size_t LogArchiver::ArchiveIndex::findRun(lsn_t lsn)
 {
     // Assumption: mutex is held by caller
-    
-    /* 
+
+    /*
      * CS: requests are more likely to access the last runs, so
      * we do a linear search instead of binary search.
      */
@@ -1608,7 +1608,7 @@ smlevel_0::fileoff_t LogArchiver::ArchiveIndex::findEntry(RunInfo* run,
         from = 0;
         to = run->entries.size() - 1;
     }
-    
+
     size_t i;
     if (from == to) {
         i = from;
@@ -1803,7 +1803,7 @@ ArchiveMerger::MergeInput::MergeInput(char* fname, int blockSize)
 
 void ArchiveMerger::MergeInput::fetchFromNextBlock()
 {
-    int howmuch = 0; 
+    int howmuch = 0;
     W_COERCE(me()->pread_short(fd, buf, scanner->getBlockSize(), fpos,
                 howmuch));
     fpos += howmuch;
@@ -1903,7 +1903,7 @@ char** ArchiveMerger::pickRunsToMerge(int& count, lsn_t& firstLSN,
 //            char *const fname = new char[smlevel_0::max_devname];
 //            if (!fname) { W_FATAL(fcOUTOFMEMORY); }
 //            w_ostrstream s(fname, smlevel_0::max_devname);
-//            s << archdir << "/" << 
+//            s << archdir << "/" <<
 //                runHeap.First().filename << ends;
 //            DBGTHRD(<< "Picked run for merge: "
 //                    << runHeap.First().filename);
@@ -1932,7 +1932,7 @@ ArchiveMerger::MergeOutput* ArchiveMerger::offlineMerge(bool async)
             DBGTHRD(<< "Opening run for merge: " << files[i]);
             output->addInputEntry(new MergeInput(files[i], blockSize));
         }
-        
+
         delete[] files;
         return output;
     }

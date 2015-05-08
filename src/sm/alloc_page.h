@@ -30,12 +30,12 @@ class alloc_page : public generic_page_header {
 
 
     /// the smallest page ID that the bitmap in this page represents
-    shpid_t pid_offset;        
+    shpid_t pid_offset;
 
     /// smallest pid represented by this page that has never had its
     /// corresponding bit set or pid_offset+bits_held if no such pid
     /// exists.
-    shpid_t pid_highwatermark; 
+    shpid_t pid_highwatermark;
 
 
     /**
@@ -43,11 +43,11 @@ class alloc_page : public generic_page_header {
      *
      * \details
      * Holds the allocation status for pid's in [pid_offset..pid_offset+bits_held);
-     * for those pids, a pid p is allocated iff 
+     * for those pids, a pid p is allocated iff
      *   bitmap[bit_place(p-pid_offset)]&bit_mask(p-pid_offset) != 0
      */
 
-    static const int bitmapsize = 8192 - sizeof(generic_page_header) - sizeof(shpid_t)*2; 
+    static const int bitmapsize = 8192 - sizeof(generic_page_header) - sizeof(shpid_t)*2;
     uint8_t bitmap[bitmapsize];
 
     /// Number of pages one alloc_page can cover
@@ -70,7 +70,7 @@ BOOST_STATIC_ASSERT(sizeof(alloc_page) == generic_page_header::page_sz);
 /**
  * \brief Handler class for a free-page allocation/deallocation page.
  *
- * \details 
+ * \details
  * None of these methods log; logging should be done in alloc_cache
  * when necessary before calling these methods.
  */
@@ -93,7 +93,7 @@ public:
 
     /// number of pages one alloc_page can cover
     static const int bits_held = alloc_page::bits_held;
- 
+
     /// smallest pid represented by this page that has never had its
     /// corresponding bit set or pid_offset+bits_held if no such pid
     /// exists.
@@ -115,7 +115,7 @@ public:
     /// Turn ON (allocate) the bits for the pids in [pid_begin..pid_end)
     void set_consecutive_bits(shpid_t pid_begin, shpid_t pid_end);
 
-    
+
     /// determines the pid_offset for the given alloc page
     inline static shpid_t alloc_pid_to_pid_offset(shpid_t alloc_pid) {
         uint32_t alloc_page_h_seq = alloc_pid - 1; // -1 for volume header

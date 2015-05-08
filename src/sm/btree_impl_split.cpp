@@ -96,7 +96,7 @@ rc_t btree_impl::_sx_split_foster(btree_page_h &page,                // In: sour
     // Split consits of two SSXs; empty-split and rebalance.
 
     // On return of the following call, the foster child page (destination) was allocated
-    // as an empty page, the fence keys and foster high have been 
+    // as an empty page, the fence keys and foster high have been
     // set up in the new page and the foster relationship has been adjusted
     W_DO(_sx_norec_alloc(page, new_page_id));
 
@@ -110,14 +110,14 @@ rc_t btree_impl::_sx_split_foster(btree_page_h &page,                // In: sour
     lsn_t   new_pid0_emlsn;
     if (page.is_node())
     {
-        // Non-leaf page, find the new lowest key with emlsn (Single 
+        // Non-leaf page, find the new lowest key with emlsn (Single
         // Page Recovery of its child page)
         btrec_t lowest (page, page.nrecs() - move_count);
         w_assert1(lowest.key().compare(mid_key) == 0);
         new_pid0 = lowest.child();
         new_pid0_emlsn = lowest.child_emlsn();
     }
-    else 
+    else
     {
         // Leaf page, no emlsn (no child page)
         new_pid0 = 0;
@@ -125,7 +125,7 @@ rc_t btree_impl::_sx_split_foster(btree_page_h &page,                // In: sour
     }
 
     btree_page_h foster_p;  // Destination page, foster child
-    
+
     // Load the destination page into buffer pool (if not in buffer pool already) with proper latching
     W_DO(foster_p.fix_nonroot(page, page.vol(), page.get_foster_opaqueptr(), LATCH_EX));
 
@@ -169,7 +169,7 @@ rc_t btree_impl::_sx_adopt_foster_all (btree_page_h &root, bool recursive)
 rc_t btree_impl::_sx_adopt_foster_all_core (
     btree_page_h &parent, bool is_root, bool recursive)
 {
-    // TODO this should use the improved tree-walk-through 
+    // TODO this should use the improved tree-walk-through
     // See jira ticket:60 "Tree walk-through without more than 2 pages latched" (originally trac ticket:62)
     w_assert1 (xct()->is_sys_xct());
     w_assert1 (parent.is_fixed());
@@ -229,7 +229,7 @@ rc_t btree_impl::_ux_adopt_foster_core (btree_page_h &parent, btree_page_h &chil
     return RCOK;
 }
 
-rc_t btree_impl::_sx_opportunistic_adopt_foster (btree_page_h &parent, 
+rc_t btree_impl::_sx_opportunistic_adopt_foster (btree_page_h &parent,
                                                       btree_page_h &child, bool &pushedup,
                                                       const bool from_recovery)
 {
@@ -263,7 +263,7 @@ rc_t btree_impl::_sx_opportunistic_adopt_foster (btree_page_h &parent,
     return RCOK;
 }
 
-rc_t btree_impl::_sx_adopt_foster_sweep_approximate (btree_page_h &parent, 
+rc_t btree_impl::_sx_adopt_foster_sweep_approximate (btree_page_h &parent,
                                                              shpid_t surely_need_child_pid,
                                                              const bool from_recovery)
 {

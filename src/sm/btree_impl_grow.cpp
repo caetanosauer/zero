@@ -84,7 +84,7 @@ btree_impl::_ux_shrink_tree_core(btree_page_h& rp)
     w_assert3( rp.is_fixed());
     w_assert3( rp.latch_mode() == LATCH_EX);
     lpid_t rp_pid = rp.pid();
-    
+
     if( rp.nrecs() > 0 || rp.get_foster() != 0) {
         return RCOK; // just to make sure
     }
@@ -108,7 +108,7 @@ btree_impl::_ux_shrink_tree_core(btree_page_h& rp)
                              fence_low, fence_high, dummy_chain_high,
                              true, // log it to avoid write-order dependency. anyway it's very rare!
                              &cp, 0, cp.nrecs()));
-    
+
         w_assert3( cp.latch_mode() == LATCH_EX);
         W_DO( cp.set_to_be_deleted(true)); // delete the page
     } else {
@@ -149,7 +149,7 @@ btree_impl::_ux_grow_tree_core(btree_page_h& rp, const lpid_t &cp_pid)
     w_assert1 (xct()->is_sys_xct());
     FUNC(btree_impl::_sx_grow_tree);
     INC_TSTAT(bt_grows);
-    
+
     w_assert1(rp.latch_mode() == LATCH_EX);
     w_assert1(rp.is_fence_low_infimum()); // this should be left-most.
 
@@ -186,10 +186,10 @@ btree_impl::_ux_grow_tree_core(btree_page_h& rp, const lpid_t &cp_pid)
                          0, lsn_t::null,// no foster
                             infimum, supremum, dummy_chain_high // empty fence keys=infimum-supremum
              )); // nothing to steal
-    
+
     w_assert3(cp.is_consistent(true, true));
     cp.unfix();
-    
+
     // that's it. then, we adopt keys to the new root page later
     w_assert3(rp.is_consistent(true, true));
 

@@ -106,7 +106,7 @@ w_rc_t ghost_reserve(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE (root_p.is_ghost(1));
     EXPECT_FALSE (root_p.is_ghost(2));
     EXPECT_TRUE (root_p.is_consistent(true, true));
-    
+
     btrec_t rec (root_p, 1);
     EXPECT_EQ (0, rec.key().compare(key)) << "incorrect key " << rec.key();
     EXPECT_TRUE (rec.is_ghost_record());
@@ -142,9 +142,9 @@ w_rc_t ghost_reserve_xct(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->commit_xct());
     EXPECT_EQ (2, root_p.nrecs()); // we don't applied yet!
     EXPECT_FALSE (root_p.is_ghost(0));
-    EXPECT_FALSE (root_p.is_ghost(1)); 
+    EXPECT_FALSE (root_p.is_ghost(1));
     root_p.unfix();
-    
+
     W_DO(ssm->begin_xct());
     W_DO(ssm->begin_sys_xct(true));
     W_DO (root_p.fix_root (stid, LATCH_EX));
@@ -178,13 +178,13 @@ w_rc_t insert_remove_defrag(ss_m* ssm, test_volume_t *test_volume) {
     stid_t stid;
     lpid_t root_pid;
     W_DO(x_btree_create_index(ssm, test_volume, stid, root_pid));
-    
+
     W_DO(x_btree_insert_and_commit (ssm, stid, "key005", "data5", test_env->get_use_locks()));
     W_DO(x_btree_insert_and_commit (ssm, stid, "key004", "data4", test_env->get_use_locks()));
     W_DO(x_btree_insert_and_commit (ssm, stid, "key006", "data6", test_env->get_use_locks()));
     W_DO(x_btree_remove_and_commit (ssm, stid, "key004", test_env->get_use_locks()));
     W_DO(x_btree_remove_and_commit (ssm, stid, "key005", test_env->get_use_locks()));
-    
+
     btree_page_h root_p;
     W_DO (root_p.fix_root (stid, LATCH_SH));
     smsize_t before_defrag = root_p.usable_space();
@@ -213,7 +213,7 @@ w_rc_t insert_remove_defrag(ss_m* ssm, test_volume_t *test_volume) {
     cout << "usable_space() before defrag:" << before_defrag
         << ". after defrag:" << after_defrag << endl;
     EXPECT_GT (after_defrag, before_defrag);
-    
+
     return RCOK;
 }
 

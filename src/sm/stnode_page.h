@@ -117,7 +117,7 @@ public:
  * (latch) to protect them from MT accesses.  However, this object
  * doesn't use locks because we don't need them.  If the store is
  * being destroyed, ss_m will check intent locks before calling this
- * object, so we are safe.  
+ * object, so we are safe.
  *
  * This object and vol_t replace the "directory" thingies in original
  * Shore-MT with more efficiency and simplicity.
@@ -127,7 +127,7 @@ public:
     /// special_pages here holds the special pages for volume vid, the
     /// last of which should be the stnode_page for that volume
     stnode_cache_t(vid_t vid, bf_fixed_m* special_pages);
-    
+
     /**
      * Returns the root page ID of the given store.
      * If that store isn't allocated, returns 0.
@@ -136,7 +136,7 @@ public:
     shpid_t get_root_pid(snum_t store) const;
 
     bool is_allocated(snum_t store) const;
-    
+
     /// Make a copy of the entire stnode_t of the given store.
     void get_stnode(snum_t store, stnode_t &stnode) const;
 
@@ -162,7 +162,7 @@ public:
      *       t_delete_store, <---- when really deleted after space freed
      *       t_create_store, <---- store is allocated (snum_t is in use)
      *       t_set_deleting, <---- when transaction deletes store (t_deleting_store)
-     *       t_set_store_flags, 
+     *       t_set_store_flags,
      *
      *   typedef smlevel_0::store_flag_t             store_flag_t;
      *       in sm_base.h:
@@ -170,7 +170,7 @@ public:
      *
      *   typedef smlevel_0::store_deleting_t         store_deleting_t;
      *           t_not_deleting_store = 0,  // must be 0: code assumes it
-     *           t_deleting_store, 
+     *           t_deleting_store,
      *           t_unknown_deleting         // for error handling
      *
      *  If invoked with redo == true, the method does not generate any log
@@ -183,7 +183,7 @@ private:
     /// all operations in this object except get_root_pid are protected by this latch
     mutable queue_based_lock_t _spin_lock;
 
-    const vid_t   _vid;                /// The volume number of the volume we are caching 
+    const vid_t   _vid;                /// The volume number of the volume we are caching
     bf_fixed_m*   _special_pages;      /// The buffer manager holding the volume's special pages
     stnode_page_h _stnode_page;        /// The stnode_page of the volume we are caching
 };

@@ -96,13 +96,13 @@ rc_t ss_m::destroy_assoc(stid_t stid, const w_keystr_t& key)
     return RCOK;
 }
 
-rc_t ss_m::find_assoc(stid_t stid, const w_keystr_t& key, 
+rc_t ss_m::find_assoc(stid_t stid, const w_keystr_t& key,
                  void* el, smsize_t& elen, bool& found)
 {
     lpid_t root_pid;
     bool for_update = g_xct_does_ex_lock_for_select();
     W_DO(open_store (stid, root_pid, for_update));
-    W_DO( bt->lookup(stid, key, el, elen, found) );    
+    W_DO( bt->lookup(stid, key, el, elen, found) );
     return RCOK;
 }
 
@@ -143,7 +143,7 @@ rc_t ss_m::open_store_nolock (const stid_t &stid, lpid_t &root_pid)
  *--------------------------------------------------------------*/
 rc_t
 ss_m::_get_store_info(
-    const stid_t&         stid, 
+    const stid_t&         stid,
     sm_store_info_t&        info
 )
 {

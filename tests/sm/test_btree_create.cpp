@@ -75,7 +75,7 @@ w_rc_t create_check(ss_m* ssm, test_volume_t *test_volume) {
             p.fix_nonbufferpool_page(&buf);
             cout << "(level=" << p.level() << ")";
         }
-        
+
         cout << endl;
     }
 

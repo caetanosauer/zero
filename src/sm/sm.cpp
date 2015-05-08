@@ -2105,27 +2105,27 @@ ss_m::_get_du_statistics(vid_t vid, sm_du_stats_t& du, bool audit)
 rc_t
 ss_m::enable_fake_disk_latency(vid_t vid)
 {
-  SM_PROLOGUE_RC(ss_m::enable_fake_disk_latency, not_in_xct, read_only, 0);
+    SM_PROLOGUE_RC(ss_m::enable_fake_disk_latency, not_in_xct, read_only, 0);
     vol_t* v = vol->get(vid);
     if (!v) return RC(eBADVOL);
     v->enable_fake_disk_latency();
-  return RCOK;
+    return RCOK;
 }
 
 rc_t
 ss_m::disable_fake_disk_latency(vid_t vid)
 {
-  SM_PROLOGUE_RC(ss_m::disable_fake_disk_latency, not_in_xct, read_only, 0);
+    SM_PROLOGUE_RC(ss_m::disable_fake_disk_latency, not_in_xct, read_only, 0);
     vol_t* v = vol->get(vid);
     if (!v) return RC(eBADVOL);
     v->disable_fake_disk_latency();
-  return RCOK;
+    return RCOK;
 }
 
 rc_t
 ss_m::set_fake_disk_latency(vid_t vid, const int adelay)
 {
-  SM_PROLOGUE_RC(ss_m::set_fake_disk_latency, not_in_xct, read_only, 0);
+    SM_PROLOGUE_RC(ss_m::set_fake_disk_latency, not_in_xct, read_only, 0);
     vol_t* v = vol->get(vid);
     if (!v) return RC(eBADVOL);
     v->set_fake_disk_latency(adelay);

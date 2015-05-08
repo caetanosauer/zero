@@ -2074,8 +2074,8 @@ xct_t::get_logbuf(logrec_t*& ret, int t)
                 // also print info that shows why we didn't croak
                 // on the first check
                 << "; space left " << log->space_left()
-                << "; rsvd for checkpoint " << log->space_for_chkpt() 
-                //<< "; max checkpoint size " << log->max_chkpt_size() 
+                << "; rsvd for checkpoint " << log->space_for_chkpt()
+                //<< "; max checkpoint size " << log->max_chkpt_size()
                 << "\n";
 
                 tmp
@@ -2652,8 +2652,8 @@ xct_t::rollback(const lsn_t &save_pt)
 
     while (save_pt < nxt)
     {
-        rc =  log->fetch(nxt, buf, 0, true);        
-        if(rc.is_error() && rc.err_num()==eEOF) 
+        rc =  log->fetch(nxt, buf, 0, true);
+        if(rc.is_error() && rc.err_num()==eEOF)
         {
             LOGTRACE2( << "U: end of log looking to fetch nxt=" << nxt);
             DBGX(<< " fetch returns EOF" );
