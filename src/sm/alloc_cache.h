@@ -71,6 +71,42 @@ private:
     vid_t _vid;
     bf_fixed_m* _fixed_pages;
 
+    /**
+     * CACHE LAYOUT
+     *
+     * |x| = allocated page
+     * | | = free page
+     *
+     * +-----------------------+
+     * |x| |x| |x|x| | | | | | |
+     * +-----------------------+
+     *    *   *     ^         ^
+     *              cbegin    cend
+     *
+     *  cbegin--cend is the shpid_t range specified by
+     *  _contiguous_free_pages_begin and _contiguous_free_pages_end
+     *
+     *  The pages marked with * in the illustration above are pages that were
+     *  previously allocated and freed -- they end up in the list
+     *  _non_contiguous_free_pages
+     *
+     *  When a page is allocated, we first try to return a slot from the list
+     *  of non-contiguous slots. If it's empty, the slot at cbegin is returned
+     *  and it is incremented. When allocating contigous pages, we go directly
+     *  into the contiguous slots and increment cbegin accordingly.
+     *
+     *  Deallocation always adds the slot back to the list of non-contiguous,
+     *  even if there is an opportunity to decrement cbegin. Once cbegin equals
+     *  cend, it stays like that forever, and all allocations go to the list
+     *  directly. After this point, consecutive allocations are not possible.
+     *
+     *  This simplistic design favors short-living, experimental workloads
+     *  where the contiguous region at the end is not exhausted. It also does
+     *  not provide great concurrency, allowing only one allocation at a time.
+     *  This *should* be OK since page allocation is not expected to be the
+     *  bottleneck.
+     */
+
     /** the first page in this volume from which all pages are unallocated. */
     shpid_t _contiguous_free_pages_begin;
     /** usually just the number of pages in this volume. */

@@ -51,7 +51,9 @@ rc_t alloc_cache_t::allocate_one_page (shpid_t &pid) {
     pid = 0;
     spinlock_write_critical_section cs(&_queue_lock);
     shpid_t pid_to_return = 0;
+
     if (_non_contiguous_free_pages.size() > 0) {
+        // if there is a free page in the non-contiguous region, return it
         pid_to_return = _non_contiguous_free_pages.back();
         _non_contiguous_free_pages.pop_back();
     } else if (_contiguous_free_pages_begin < _contiguous_free_pages_end) {
@@ -106,13 +108,18 @@ rc_t alloc_cache_t::redo_allocate_one_page (shpid_t pid)
 {
     // REDO is always single-threaded. so no critical section
     if (_contiguous_free_pages_begin == pid) {
+        // pid exactly at the contiguous range begin -- simply increment it
         ++_contiguous_free_pages_begin;
     } else if (_contiguous_free_pages_begin > pid) {
+        // all slots between _contiguous_begin and pid are now part of the
+        // non-contiguous area
         for (int i = _contiguous_free_pages_begin; i < (int) pid; ++i) {
             _non_contiguous_free_pages.push_back(i);
         }
         _contiguous_free_pages_begin = pid + 1;
     } else {
+        // pid is on the non-contiguous area -- remove it from the list of free
+        // slots
         bool found = false;
         for (int i = _non_contiguous_free_pages.size() - 1; i >= 0; --i) {
             if (_non_contiguous_free_pages[i] == pid) {
@@ -122,6 +129,14 @@ rc_t alloc_cache_t::redo_allocate_one_page (shpid_t pid)
             }
         }
         if (!found) {
+            // CS (TODO) How come this isn't an error? Redoing a page allocation
+            // MUST find the slot free, because REDO of a specific PID (thus a specific
+            // slot) is always performed sequentially. Thus, even if a page
+            // is allocated and freed multiple times, this kind of inconsistency cannot
+            // happen.
+            W_FATAL_MSG(eINTERNAL,
+                    << "Allocation REDO found the slot already allocated");
+
             // Page might be allocated already due to Single Page Recovery
             // used during Restart operation, the REDO is not needed
             // generate a debug output instead of error log
@@ -144,7 +159,8 @@ rc_t alloc_cache_t::redo_allocate_consecutive_pages (shpid_t pid_begin, size_t p
         _contiguous_free_pages_begin = pid_begin + page_count;
     } else {
         // then the REDO order is wrong.
-        w_assert0(false);
+        W_FATAL_MSG(eINTERNAL, << "REDO of contiguous allocation "
+                    << " found the slots already allocated");
     }
 
     W_DO(apply_allocate_consecutive_pages(pid_begin, page_count));
@@ -153,6 +169,7 @@ rc_t alloc_cache_t::redo_allocate_consecutive_pages (shpid_t pid_begin, size_t p
 rc_t alloc_cache_t::redo_deallocate_one_page (shpid_t pid)
 {
     w_assert1(pid < _contiguous_free_pages_begin);
+    // CS: Ideally, this could be checked always, with a faster data structure
     w_assert1(check_not_contain(_non_contiguous_free_pages, pid));
     _non_contiguous_free_pages.push_back(pid);
     W_DO(apply_deallocate_one_page(pid));
@@ -173,6 +190,10 @@ rc_t alloc_cache_t::apply_allocate_one_page (shpid_t pid)
 }
 rc_t alloc_cache_t::apply_allocate_consecutive_pages (shpid_t pid_begin, size_t page_count)
 {
+    // CS (TODO)
+    // 1) Why do we have to be in mutual exclusion with checkpoints??
+    // 2) I thought this was done with chkpt_serial_m?? Do we have multiple
+    // latches to protect the same critical section?
     spinlock_read_critical_section cs(&_fixed_pages->get_checkpoint_lock()); // protect against checkpoint. see bf_fixed_m comment.
     const shpid_t pid_to_end = pid_begin + page_count;
     shpid_t alloc_pid = alloc_page_h::pid_to_alloc_pid(pid_begin);
