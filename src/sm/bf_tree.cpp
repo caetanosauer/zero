@@ -196,7 +196,7 @@ bf_tree_m::bf_tree_m(const sm_options& options)
     _hashtable = new bf_hashtable(buckets);
     w_assert0(_hashtable != NULL);
 
-    ::memset (_volumes, 0, sizeof(bf_tree_vol_t*) * MAX_VOL_COUNT);
+    ::memset (_volumes, 0, sizeof(bf_tree_vol_t*) * vol_m::MAX_VOLS);
 
     // initialize page cleaner
     _cleaner = new bf_tree_cleaner (this, npgwriters,
@@ -257,7 +257,7 @@ w_rc_t bf_tree_m::init ()
 
 w_rc_t bf_tree_m::destroy ()
 {
-    for (vid_t vid = 1; vid < MAX_VOL_COUNT; ++vid) {
+    for (vid_t vid = 1; vid < vol_m::MAX_VOLS; ++vid) {
         if (_volumes[vid] != NULL) {
             W_DO (uninstall_volume(vid));
         }
@@ -274,7 +274,7 @@ w_rc_t bf_tree_m::install_volume(vol_t* volume) {
     w_assert1(volume != NULL);
     vid_t vid = volume->vid();
     w_assert1(vid != 0);
-    w_assert1(vid < MAX_VOL_COUNT);
+    w_assert1(vid <= vol_m::MAX_VOLS);
 
     // CS: introduced this check for now
     // See comment on io_m::mount and BitBucket ticket #3
@@ -519,7 +519,7 @@ w_rc_t bf_tree_m::_preload_root_page(bf_tree_vol_t* desc, vol_t* volume, snum_t 
 w_rc_t bf_tree_m::_install_volume_mainmemorydb(vol_t* volume) {
     vid_t vid = volume->vid();
     DBGOUT1(<<"installing volume " << vid << " to MAINMEMORY-DB buffer pool...");
-    for (vid_t v = 1; v < MAX_VOL_COUNT; ++v) {
+    for (vid_t v = 1; v < vol_m::MAX_VOLS; ++v) {
         if (_volumes[v] != NULL) {
             ERROUT (<<"MAINMEMORY-DB mode allows only one volume to be loaded, but volume " << v << " is already loaded.");
             return RC(eINTERNAL);
@@ -2093,9 +2093,9 @@ w_rc_t bf_tree_m::_evict_blocks(EvictionContext& context) {
     w_assert1(context.traverse_depth == 0);
     while (context.rounds < EVICT_MAX_ROUNDS) {
         _dump_evict_clockhand(context);
-        uint32_t old = context.clockhand_pathway[0] % MAX_VOL_COUNT;
-        for (uint16_t i = 0; i < MAX_VOL_COUNT; ++i) {
-            vid_t vol = (old + i) % MAX_VOL_COUNT;
+        uint32_t old = context.clockhand_pathway[0] % vol_m::MAX_VOLS;
+        for (uint16_t i = 0; i < vol_m::MAX_VOLS; ++i) {
+            vid_t vol = (old + i) % vol_m::MAX_VOLS;
             if (_volumes[vol] == NULL) {
                 continue;
             }
@@ -2573,7 +2573,7 @@ void bf_tree_m::debug_dump(std::ostream &o) const
     o << "  _swizzled_lru_len=" << _swizzled_lru_len << ", HEAD=" << SWIZZLED_LRU_HEAD << ", TAIL=" << SWIZZLED_LRU_TAIL << std::endl;
 #endif // BP_MAINTAIN_PARENT_PTR
 
-    for (vid_t vid = 1; vid < MAX_VOL_COUNT; ++vid) {
+    for (vid_t vid = 1; vid < vol_m::MAX_VOLS; ++vid) {
         bf_tree_vol_t* vol = _volumes[vid];
         if (vol != NULL) {
             o << "  volume[" << vid << "] root pages(stnum=bf_idx):";
@@ -2678,8 +2678,8 @@ w_rc_t bf_tree_m::set_swizzling_enabled(bool enabled) {
 
     // remember what volumes are loaded.
     typedef vol_t* volptr;
-    volptr installed_volumes[MAX_VOL_COUNT];
-    for (vid_t i = 1; i < MAX_VOL_COUNT; ++i) {
+    volptr installed_volumes[vol_m::MAX_VOLS];
+    for (vid_t i = 1; i < vol_m::MAX_VOLS; ++i) {
         if (_volumes[i] == NULL) {
             installed_volumes[i] = NULL;
         } else {
@@ -2709,14 +2709,14 @@ w_rc_t bf_tree_m::set_swizzling_enabled(bool enabled) {
     int buckets = w_findprime(1024 + (_block_cnt / 4));
     _hashtable = new bf_hashtable(buckets);
     w_assert0(_hashtable != NULL);
-    ::memset (_volumes, 0, sizeof(bf_tree_vol_t*) * MAX_VOL_COUNT);
+    ::memset (_volumes, 0, sizeof(bf_tree_vol_t*) * vol_m::MAX_VOLS);
     _dirty_page_count_approximate = 0;
 
     // finally switch the property
     _enable_swizzling = enabled;
 
     // then, reload volumes
-    for (vid_t i = 1; i < MAX_VOL_COUNT; ++i) {
+    for (vid_t i = 1; i < vol_m::MAX_VOLS; ++i) {
         if (installed_volumes[i] != NULL) {
             W_DO(install_volume(installed_volumes[i]));
         }

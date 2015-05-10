@@ -12,10 +12,10 @@
 #include "sm_s.h"
 #include "generic_page.h"
 #include "bf_idx.h"
+#include "vol.h"
 #include <iosfwd>
 
 class sm_options;
-class vol_t;
 class lsn_t;
 struct bf_tree_cb_t; // include bf_tree_cb.h in implementation codes
 struct bf_tree_vol_t; // include bf_tree_vol.h in implementation codes
@@ -939,8 +939,14 @@ private:
      *
      * Because there is no race condition in loading a volume,
      * this array does not have to be protected by mutex or spinlocks.
+     *
+     * CS (TODO): indexing this array by the VID does not work, because vids
+     * can go beyond the maximum number of volumes if we format more volumes
+     * than we mount at once (MAX_VOLS refers to the maximum mounted -- not
+     * the maximum created). This is also a problem in lock_lil. Solution is
+     * to have a MAX_VOLS for mounted and a MAX_VID for created!!
      */
-    bf_tree_vol_t*       _volumes[MAX_VOL_COUNT];
+    bf_tree_vol_t*       _volumes[vol_m::MAX_VOLS + 1];
 
     /** Array of control blocks. array size is _block_cnt. index 0 is never used (means NULL). */
     bf_tree_cb_t*        _control_blocks;

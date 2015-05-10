@@ -39,32 +39,24 @@ bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, uint32_t cleaner_threads
     bool initially_wakeup_workers) :
     _bufferpool(bufferpool),
     _requested_lsn(lsndata_null),
-    _slave_threads(new slave_ptr[cleaner_threads + 1]), // +1 for id=0
-    _slave_threads_size (cleaner_threads + 1), // +1 for id=0
+    _slave_threads(new slave_ptr[cleaner_threads]),
+    _slave_threads_size (cleaner_threads),
     _cleaner_interval_millisec_min (cleaner_interval_millisec_min),
     _cleaner_interval_millisec_max (cleaner_interval_millisec_max),
     _cleaner_write_buffer_pages (cleaner_write_buffer_pages),
     _initially_wakeup_workers(initially_wakeup_workers)
 {
-    w_assert1(cleaner_threads >= 1);
+    w_assert0(cleaner_threads >= 1);
 
     // assign volumes to workers in a round robin fashion.
     // this assignment is totally static.
     // CS: It would be easier to just do a mod operation to get the cleaner
     // responsible for a volume. E.g.: (TODO)
     // cleaner_id_for_vol = vol_id % _slave_threads_size;
-    _volume_assignments[0] = 0;
-    for (vid_t vol = 1; vol < MAX_VOL_COUNT; ++vol) {
-        _volume_assignments[vol] = _volume_assignments[vol - 1] + 1;
-        if (_volume_assignments[vol] >= _slave_threads_size) {
-            _volume_assignments[vol] = 1;
-        }
-    }
 
-    ::memset (_requested_volumes, 0, sizeof(bool) * MAX_VOL_COUNT);
+    ::memset (_requested_volumes, 0, sizeof(bool) * vol_m::MAX_VOLS);
 
-    _slave_threads[0] = NULL;
-    for (bf_cleaner_slave_id_t id = 1; id < _slave_threads_size; ++id) {
+    for (unsigned id = 0; id < _slave_threads_size; ++id) {
         _slave_threads[id] = new bf_tree_cleaner_slave_thread_t (this, id);
     }
 
@@ -73,7 +65,7 @@ bf_tree_cleaner::bf_tree_cleaner(bf_tree_m* bufferpool, uint32_t cleaner_threads
 
 bf_tree_cleaner::~bf_tree_cleaner()
 {
-    for (bf_cleaner_slave_id_t id = 1; id < _slave_threads_size; ++id) {
+    for (unsigned id = 0; id < _slave_threads_size; ++id) {
         delete _slave_threads[id];
         _slave_threads[id] = NULL;
     }
@@ -84,7 +76,7 @@ bf_tree_cleaner::~bf_tree_cleaner()
 w_rc_t bf_tree_cleaner::start_cleaners()
 {
     DBGOUT1(<<"bf_tree_cleaner: starting " << (_slave_threads_size - 1) << " cleaner threads.. _initially_wakeup_workers=" << _initially_wakeup_workers);
-    for (bf_cleaner_slave_id_t id = 1; id < _slave_threads_size; ++id) {
+    for (unsigned id = 0; id < _slave_threads_size; ++id) {
         w_assert1(_slave_threads[id] != NULL);
         _slave_threads[id]->_start_requested = _initially_wakeup_workers;
         W_DO(_slave_threads[id]->fork());
@@ -97,24 +89,31 @@ w_rc_t bf_tree_cleaner::start_cleaners()
 w_rc_t bf_tree_cleaner::wakeup_cleaners()
 {
     DBGOUT2(<<"bf_tree_cleaner: waking up all cleaner threads");
-    for (bf_cleaner_slave_id_t id = 1; id < _slave_threads_size; ++id) {
+    for (unsigned id = 0; id < _slave_threads_size; ++id) {
         W_DO(_wakeup_a_cleaner (id));
     }
     return RCOK;
 }
 
+unsigned bf_tree_cleaner::get_cleaner_for_vol(vid_t vid)
+{
+    // CS: simplified assignment by using mod operation instead of list
+    // -1 because of reserved slot
+    w_assert1(vid > 0 && vid <= vol_m::MAX_VOLS);
+    return vid % _slave_threads_size;
+}
+
 w_rc_t bf_tree_cleaner::wakeup_cleaner_for_volume(vid_t vol)
 {
     DBGOUT2(<<"bf_tree_cleaner: waking up the cleaner for volume:" << vol);
-    bf_cleaner_slave_id_t id = _volume_assignments[vol];
+    unsigned id = get_cleaner_for_vol(vol);
     W_DO(_wakeup_a_cleaner (id));
     return RCOK;
 }
 
-w_rc_t bf_tree_cleaner::_wakeup_a_cleaner(bf_cleaner_slave_id_t id)
+w_rc_t bf_tree_cleaner::_wakeup_a_cleaner(unsigned id)
 {
     DBGOUT3(<<"bf_tree_cleaner: waking up cleaner " << id);
-    w_assert1(id > 0);
     w_assert1(id < _slave_threads_size);
     w_assert1(_slave_threads[id] != NULL);
     if (!_slave_threads[id]->_running) {
@@ -132,7 +131,7 @@ w_rc_t bf_tree_cleaner::_wakeup_a_cleaner(bf_cleaner_slave_id_t id)
 
 w_rc_t bf_tree_cleaner::request_stop_cleaners()
 {
-    for (bf_cleaner_slave_id_t id = 1; id < _slave_threads_size; ++id) {
+    for (unsigned id = 0; id < _slave_threads_size; ++id) {
         _slave_threads[id]->_stop_requested = true;
         if (_slave_threads[id]->_running) {
             W_DO(_wakeup_a_cleaner (id));
@@ -144,7 +143,7 @@ w_rc_t bf_tree_cleaner::request_stop_cleaners()
 
 w_rc_t bf_tree_cleaner::join_cleaners(uint32_t max_wait_millisec)
 {
-    for (bf_cleaner_slave_id_t id = 1; id < _slave_threads_size; ++id) {
+    for (unsigned id = 0; id < _slave_threads_size; ++id) {
         if (_slave_threads[id]->_running) {
             if (max_wait_millisec == 0) {
                 W_DO(_slave_threads[id]->join(sthread_base_t::WAIT_FOREVER));
@@ -158,7 +157,7 @@ w_rc_t bf_tree_cleaner::join_cleaners(uint32_t max_wait_millisec)
 /*
 w_rc_t bf_tree_cleaner::kill_cleaners()
 {
-    for (bf_cleaner_slave_id_t id = 1; id < _slave_threads_size; ++id) {
+    for (unsigned id = 0; id < _slave_threads_size; ++id) {
         if (_slave_threads[id]->_running) {
             _slave_threads[id]->
         }
@@ -174,7 +173,7 @@ const uint32_t FORCE_SLEEP_MS_MAX = 1000;
 w_rc_t bf_tree_cleaner::force_all()
 {
     W_DO (smlevel_0::vol->force_fixed_buffers());
-    ::memset(_requested_volumes, 1, sizeof(bool) * MAX_VOL_COUNT);
+    ::memset(_requested_volumes, 1, sizeof(bool) * vol_m::MAX_VOLS);
     W_DO(wakeup_cleaners());
     uint32_t interval = FORCE_SLEEP_MS_MIN;
     while (!_dirty_shutdown_happening() && !_error_happened) {
@@ -185,7 +184,7 @@ w_rc_t bf_tree_cleaner::force_all()
             interval = FORCE_SLEEP_MS_MAX;
         }
         bool remains = false;
-        for (vid_t vol = 1; vol < MAX_VOL_COUNT; ++vol) {
+        for (vid_t vol = 1; vol <= vol_m::MAX_VOLS; ++vol) {
             if (_requested_volumes[vol]) {
                 remains = true;
                 break;
@@ -205,7 +204,7 @@ w_rc_t bf_tree_cleaner::force_all()
 
 bool bf_tree_cleaner::_is_force_until_lsn_done(lsndata_t lsn) const
 {
-    for (bf_cleaner_slave_id_t id = 1; id < _slave_threads_size; ++id) {
+    for (unsigned id = 0; id < _slave_threads_size; ++id) {
         if (_slave_threads[id]->_completed_lsn < lsn) {
             return false;
         }
@@ -274,17 +273,17 @@ w_rc_t bf_tree_cleaner::force_volume(vid_t vol)
 
 const int INITIAL_SORT_BUFFER_SIZE = 64;
 
-bf_tree_cleaner_slave_thread_t::bf_tree_cleaner_slave_thread_t(bf_tree_cleaner* parent, bf_cleaner_slave_id_t id)
+bf_tree_cleaner_slave_thread_t::bf_tree_cleaner_slave_thread_t(bf_tree_cleaner* parent, unsigned id)
     : _parent(parent), _id(id), _start_requested(false), _running(false), _stop_requested(false), _wakeup_requested(false),
     _interval_millisec(parent->_cleaner_interval_millisec_min),  _completed_lsn(lsndata_null),
     _sort_buffer (new uint64_t[INITIAL_SORT_BUFFER_SIZE]), _sort_buffer_size(INITIAL_SORT_BUFFER_SIZE)
 {
     ::pthread_mutex_init(&_interval_mutex, NULL);
     ::pthread_cond_init(&_interval_cond, NULL);
-    for (vid_t vol = 0; vol < MAX_VOL_COUNT; ++vol) {
+    for (vid_t vol = 0; vol < vol_m::MAX_VOLS; ++vol) {
         _candidates_buffer.push_back (std::vector<bf_idx>());
     }
-    w_assert1(_candidates_buffer.size() == MAX_VOL_COUNT);
+    w_assert1(_candidates_buffer.size() == vol_m::MAX_VOLS);
 
     // use posix_memalign because the write buffer might be used for raw disk I/O
     void *buf = NULL;
@@ -426,8 +425,8 @@ bool bf_tree_cleaner_slave_thread_t::_exists_requested_work()
     }
 
     // the cleaner is requested to flush out all dirty pages for assigned volume. let's do it immediately
-    for (vid_t vol = 1; vol < MAX_VOL_COUNT; ++vol) {
-        if (_parent->_volume_assignments[vol] == _id && _parent->_requested_volumes[vol]) {
+    for (vid_t vol = 1; vol <= vol_m::MAX_VOLS; ++vol) {
+        if (_parent->get_cleaner_for_vol(vol) == _id && _parent->_requested_volumes[vol]) {
             return true;
         }
     }
@@ -719,11 +718,11 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
     if (requested_lsn <= _completed_lsn) {
         requested_lsn = lsndata_null;
     }
-    bool requested_volumes[MAX_VOL_COUNT];
-    ::memcpy (requested_volumes, _parent->_requested_volumes, sizeof(bool) * MAX_VOL_COUNT); // this does NOT have to be atomic.
+    bool requested_volumes[vol_m::MAX_VOLS];
+    ::memcpy (requested_volumes, _parent->_requested_volumes, sizeof(bool) * vol_m::MAX_VOLS); // this does NOT have to be atomic.
     DBGOUT1(<<"_do_work(cleaner=" << _id << "): requested_lsn=" << lsn_t(requested_lsn));
 
-    for (vid_t vol = 1; vol < MAX_VOL_COUNT; ++vol) {
+    for (vid_t vol = 1; vol < vol_m::MAX_VOLS; ++vol) {
         // I'm hoping this doesn't revoke the buffer, leaving the capacity for reuse.
         // but in some STL implementation this might make the capacity zero. even in that case it shouldn't be a big issue..
         _candidates_buffer[vol].clear();
@@ -759,7 +758,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
         // the following check is approximate (without latch).
         // we check for real later, so that's fine.
         vid_t vol = cb._pid_vol;
-        if (vol >= MAX_VOL_COUNT || _parent->_volume_assignments[vol] != _id) {
+        if (vol >= vol_m::MAX_VOLS || _parent->get_cleaner_for_vol(vol) != _id) {
             continue;
         }
         bool clean_it = false;
@@ -789,7 +788,7 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
             }
         }
     }
-    for (vid_t vol = 1; vol < MAX_VOL_COUNT; ++vol) {
+    for (vid_t vol = 1; vol < vol_m::MAX_VOLS; ++vol) {
         if (!_candidates_buffer[vol].empty()) {
             W_DO(_clean_volume(vol, _candidates_buffer[vol], requested_volumes[vol], requested_lsn));
         }
@@ -801,8 +800,8 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
         _completed_lsn = requested_lsn;
         DBGOUT1(<<"_do_work(cleaner=" << _id << "): flushed until lsn=" << lsn_t(requested_lsn));
     }
-    for (vid_t vol = 1; vol < MAX_VOL_COUNT; ++vol) {
-        if (_parent->_volume_assignments[vol] == _id && requested_volumes[vol]) {
+    for (vid_t vol = 1; vol < vol_m::MAX_VOLS; ++vol) {
+        if (_parent->get_cleaner_for_vol(vol) == _id && requested_volumes[vol]) {
             _parent->_requested_volumes[vol] = false;
             if (_parent->_bufferpool->_volumes[vol] != NULL) {
                 DBGOUT1(<<"_do_work(cleaner=" << _id << "): flushed volume " << vol);

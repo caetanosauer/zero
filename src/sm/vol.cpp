@@ -26,6 +26,7 @@
 #include "alloc_cache.h"
 #include "bf_tree.h"
 
+const int vol_m::MAX_VOLS;
 
 #ifdef EXPLICIT_TEMPLATE
 template class w_auto_delete_t<generic_page>;
