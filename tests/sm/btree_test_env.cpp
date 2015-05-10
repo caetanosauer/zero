@@ -219,22 +219,26 @@ rc_t
 testdriver_thread_t::do_init(ss_m &ssm)
 {
     const int quota_in_kb = SM_PAGESIZE / 1024 * _disk_quota_in_pages;
-    if (_functor->_need_init) {
-        _functor->_test_volume._device_name = device_name;
-        _functor->_test_volume._vid = 1;
 
-        vout << "Formatting device: " << _functor->_test_volume._device_name
+    bool init_vol = _options.get_bool_option("sm_testenv_init_vol", true);
+    if (init_vol) {
+        if (_functor->_need_init) {
+            _functor->_test_volume._device_name = device_name;
+            _functor->_test_volume._vid = 1;
+
+            vout << "Formatting device: " << _functor->_test_volume._device_name
                 << " with a " << quota_in_kb << "KB quota ..." << endl;
-        W_DO(ssm.create_vol(
-                    _functor->_test_volume._device_name,
-                    quota_in_kb,
-                    _functor->_test_volume._vid
-                ));
-    }
+            W_DO(ssm.create_vol(
+                        _functor->_test_volume._device_name,
+                        quota_in_kb,
+                        _functor->_test_volume._vid
+                        ));
+        }
 
-    DBGOUT1(<< "Mounting device: " << _functor->_test_volume._device_name);
-    W_DO(ssm.mount_vol(_functor->_test_volume._device_name,
-                _functor->_test_volume._vid));
+        DBGOUT1(<< "Mounting device: " << _functor->_test_volume._device_name);
+        W_DO(ssm.mount_vol(_functor->_test_volume._device_name,
+                    _functor->_test_volume._vid));
+    }
 
     return RCOK;
 }
