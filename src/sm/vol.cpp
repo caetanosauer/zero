@@ -80,7 +80,20 @@ rc_t vol_m::sx_format(
      *  No log needed.
      *  WHOLE FUNCTION is a critical section
      */
-    xct_log_switch_t log_off(smlevel_0::OFF);
+    // xct_log_switch_t log_off(smlevel_0::OFF);
+
+    vid = _next_vid++;
+
+    if (logit) {
+        sys_xct_section_t ssx(true);
+        log_format_vol(devname, num_pages, vid);
+        W_DO (ssx.end_sys_xct(RCOK));
+    }
+
+    // CS: I guess latch could be released here, since operation was already
+    // logged and next_vid incremented. If there is a crash, the order of the
+    // format log records will determine the order in which VIDs are assigned,
+    // so there is no need to log the VID.
 
     DBG( << "formating volume " << devname << ">" );
     int flags = smthread_t::OPEN_CREATE | smthread_t::OPEN_RDWR
@@ -94,12 +107,6 @@ rc_t vol_m::sx_format(
 
     shpid_t apid = shpid_t(1);
     shpid_t spid = shpid_t(1 + alloc_pages);
-
-    vid = _next_vid++;
-
-    // CS TODO: log
-    if (logit) {
-    }
 
     /*
      *  Set up the volume header
@@ -188,12 +195,15 @@ rc_t vol_m::sx_mount(const char* device, const bool logit)
     volumes[i] = v;
     ++vol_cnt;
 
-    sys_xct_section_t ssx (true);
-    rc_t ret = volumes[i]->mount(device);
     if (logit)  {
+        sys_xct_section_t ssx (true);
         log_mount_vol(volumes[i]->devname());
+        rc_t ret = volumes[i]->mount(device);
+        W_DO (ssx.end_sys_xct(ret));
     }
-    W_DO (ssx.end_sys_xct(ret));
+    else {
+        rc_t ret = volumes[i]->mount(device);
+    }
 
     SSMTEST("io_m::_mount.1");
         chkpt_serial_m::read_release();
@@ -211,12 +221,15 @@ rc_t vol_m::sx_dismount(const char* device, bool logit)
     DBG( << "_dismount(" << device << ")");
     vol_t* vol = get(device);
 
-    sys_xct_section_t ssx (true);
-    rc_t ret = vol->dismount();
     if (logit) {
+        sys_xct_section_t ssx (true);
+        rc_t ret = vol->dismount();
         log_dismount_vol(vol->devname());
+        W_DO (ssx.end_sys_xct(ret));
     }
-    W_DO (ssx.end_sys_xct(ret));
+    else {
+        rc_t ret = vol->dismount();
+    }
 
     // SetLastMountLSN(theLSN);
 
@@ -888,6 +901,12 @@ volhdr_t::write(int fd)
      *
      *  CS: this second location could be used for writing vhdr atomically,
      *  but it requires proper "recovery" during mount.
+     *
+     *  CS: Not really, because volume format can be replayed entirely when
+     *  a format_vol log record is found -- thus rewriting the whole volume
+     *  header. However, if a checkpoint is taken after writing the log record
+     *  but before forcing the volume header, the format will not be replayed
+     *  by log analysis. TODO -- how to fix this? acquire chkpt latch?
      */
     W_DO(me()->pwrite(fd, page, sizeof(generic_page), 0));
 

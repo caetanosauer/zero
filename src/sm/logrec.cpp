@@ -638,24 +638,28 @@ void chkpt_dev_tab_log::redo(fixable_page_h*)
     smlevel_0::vol->set_next_vid(tab->next_vid);
 }
 
-create_vol_log::create_vol_log(vid_t vid)
+format_vol_log::format_vol_log(const char* path, shpid_t num_pages, vid_t vid)
 {
     memcpy(data_ssx(), &vid, sizeof(vid_t));
-    fill(0, sizeof(vid_t));
+    memcpy(data_ssx() + sizeof(vid_t), &num_pages, sizeof(shpid_t));
+
+    size_t length = strlen(path);
+    w_assert0(length < smlevel_0::max_devname);
+    memcpy(data_ssx() + sizeof(vid_t) + sizeof(shpid_t), path, length);
+    fill(0, length + sizeof(vid_t) + sizeof(shpid_t));
 }
 
-void create_vol_log::redo(fixable_page_h*)
+void format_vol_log::redo(fixable_page_h*)
 {
-    /*
-     * CS: reation itself does not have to be redone since volume header is
-     * forced prior to writing the log record. Therefore, we expect the volume
-     * path to be present (whatever it was). All we have to do is set the
-     * global _next_vid in the volume manager. A mount_vol log record should
-     * follow soon if the volume is used at all.
-     */
-    vid_t vid = *((vid_t*) data_ssx());
-    w_assert0(smlevel_0::vol->get_next_vid() == vid);
-    smlevel_0::vol->set_next_vid(vid);
+    vid_t expected_vid = *((vid_t*) data_ssx());
+    shpid_t num_pages = *((shpid_t*) data_ssx() + sizeof(vid_t));
+    const char* dev_name = (const char*) data_ssx() + sizeof(vid_t)
+        + sizeof(shpid_t);
+
+    vid_t created_vid;
+    W_COERCE(smlevel_0::vol->sx_format(dev_name, num_pages, created_vid,
+                false));
+    w_assert0(expected_vid == created_vid);
 }
 
 mount_vol_log::mount_vol_log(const char* dev_name)

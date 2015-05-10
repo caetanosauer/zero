@@ -10,6 +10,7 @@
 #include "generic_page.h"
 #include "srwlock.h"
 #include "w_defines.h"
+#include "sm_base.h"
 
 class bf_fixed_m;
 class store_operation_param;

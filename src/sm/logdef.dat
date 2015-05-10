@@ -111,7 +111,7 @@ chkpt_dev_tab      0010000 0.0 (vid_t next_vid, const std::vector<string>& devna
 chkpt_end          0000000 0.0 (const lsn_t& master, const lsn_t& min_rec_lsn, const lsn_t& min_xct_lsn);
 mount_vol          1110000 0.0 (const char* dev_name);
 dismount_vol       1110000 0.0 (const char* dev_name);
-create_vol         1110000 0.0 (vid_t vid);
+format_vol         1110000 0.0 (const char* dev_name, shpid_t num_pages, vid_t vid);
 #########################################################################
 # type             XSRUMAL  fudge    arg                                #
 #########################################################################
