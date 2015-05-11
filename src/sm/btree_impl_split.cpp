@@ -81,7 +81,7 @@ rc_t btree_impl::_ux_norec_alloc_core(btree_page_h &page, lpid_t &new_page_id) {
 
     if (rc.is_error()) {
         // if failed for any reason, we release the allocated page.
-        W_DO(smlevel_0::vol->get(page.vol())->free_page(new_page_id.page));
+        W_DO(smlevel_0::vol->get(page.vol())->deallocate_page(new_page_id.page));
     }
 
     w_assert3(page.is_consistent(true, true));

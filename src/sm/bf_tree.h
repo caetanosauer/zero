@@ -940,11 +940,7 @@ private:
      * Because there is no race condition in loading a volume,
      * this array does not have to be protected by mutex or spinlocks.
      *
-     * CS (TODO): indexing this array by the VID does not work, because vids
-     * can go beyond the maximum number of volumes if we format more volumes
-     * than we mount at once (MAX_VOLS refers to the maximum mounted -- not
-     * the maximum created). This is also a problem in lock_lil. Solution is
-     * to have a MAX_VOLS for mounted and a MAX_VID for created!!
+     * +1 because vid N is accessed on array index N
      */
     bf_tree_vol_t*       _volumes[vol_m::MAX_VOLS + 1];
 

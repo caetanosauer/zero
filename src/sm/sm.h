@@ -1278,13 +1278,7 @@ public:
         const char*            device,
         vid_t& vid);
 
-    /**\brief Dismount all mounted volumes.
-     * \ingroup SSMVOL
-     *
-     * \note This method should \b not
-     * be called in the context of a transaction.
-     */
-    static rc_t            dismount_all();
+    static rc_t            dismount_vol(const char* device);
 
     /**\brief Return a list of all volume on a device.
      * \ingroup SSMVOL

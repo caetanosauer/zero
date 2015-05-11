@@ -293,40 +293,15 @@ rc_t vol_m::force_fixed_buffers()
     return RCOK;
 }
 
-/*
-Volume layout:
-   volume header
-   alloc_page pages -- Starts on page 1.
-   stnode_page -- only one page
-   data pages -- rest of volume
-
-   alloc_page pages are bitmaps indicating which of its pages are allocated.
-   alloc_page pages are read and modified without any locks in any time.
-   It's supposed to be extremely fast to allocate/deallocate pages
-   unlike the original Shore-MT code. See jira ticket:72 "fix extent management" (originally trac ticket:74) for more details.
-*/
-
-/*
- * STORES:
- * Each volume contains a few stores that are "overhead":
- * 0 -- is reserved for the page-allocation and the store map
- * 1 -- directory (see dir.cpp)
- * 2 -- root index (see sm.cpp)
- *
- * After that, for each file created, 2 stores are used, one for
- * small objects, one for large objects.
- *
- * Each index(btree) uses one store.
- */
-vol_t::vol_t(const bool apply_fake_io_latency, const int fake_disk_latency)
+vol_t::vol_t()
              : _unix_fd(-1),
-               _apply_fake_disk_latency(apply_fake_io_latency),
-               _fake_disk_latency(fake_disk_latency),
+               _apply_fake_disk_latency(false),
+               _fake_disk_latency(0),
                _alloc_cache(NULL), _stnode_cache(NULL), _fixed_bf(NULL)
 {}
 
 vol_t::~vol_t() {
-    shutdown();
+    clear_caches();
     w_assert1(_unix_fd == -1);
 }
 
@@ -345,17 +320,9 @@ void vol_t::clear_caches() {
     }
 }
 
-
-void vol_t::shutdown() {
-    clear_caches();
-}
-
 rc_t vol_t::sync()
 {
-std::cout << "!!!!!!!!!!!!!!!! NO-op sync -- 4" << std::endl;
-
-    smthread_t* t = me();
-    W_DO_MSG(t->fsync(_unix_fd), << "volume id=" << vid());
+    W_DO_MSG(me()->fsync(_unix_fd), << "volume id=" << vid());
     return RCOK;
 }
 
@@ -417,17 +384,14 @@ rc_t vol_t::mount(const char* devname)
     return RCOK;
 }
 
-/** @todo flush argument is never used. Backtrace through the callers and maybe
- * eliminate it entirely? */
-rc_t
-vol_t::dismount(bool /* flush */, const bool clear_cb)
+rc_t vol_t::dismount()
 {
     DBG(<<" vol_t::dismount flush=" << flush);
 
     INC_TSTAT(vol_cache_clears);
 
     w_assert1(_unix_fd >= 0);
-    W_DO(smlevel_0::bf->uninstall_volume(_vid, clear_cb));
+    W_DO(smlevel_0::bf->uninstall_volume(_vid, false));
 
     /*
      *  Close the device
@@ -444,17 +408,9 @@ vol_t::dismount(bool /* flush */, const bool clear_cb)
     return RCOK;
 }
 
-rc_t vol_t::get_quota_kb(size_t& total, size_t& used)
-{
-    size_t page_size_kb = sizeof(generic_page) / 1024;
-    used = num_used_pages() * page_size_kb;
-    total = num_pages() * page_size_kb;
-    return RCOK;
-}
-
 rc_t vol_t::check_disk()
 {
-    FUNC(vol_t::check_disk);
+    // CS TODO just make this an operator<<
     volhdr_t vhdr;
     W_DO(vhdr.read(_unix_fd));
     smlevel_0::errlog->clog << info_prio << "vol_t::check_disk()\n";
@@ -488,18 +444,39 @@ rc_t vol_t::check_disk()
 }
 
 
-rc_t vol_t::alloc_a_page(shpid_t& shpid)
+rc_t vol_t::alloc_a_page(shpid_t& shpid, bool redo)
 {
-    FUNC(vol_t::alloc_a_page);
     w_assert1(_alloc_cache);
-    W_DO(_alloc_cache->allocate_one_page(shpid));
+    if (!redo) {
+        W_DO(_alloc_cache->allocate_one_page(shpid));
+    }
+    else {
+        W_DO(_alloc_cache->redo_allocate_one_page(shpid));
+    }
     return RCOK;
 }
-rc_t vol_t::alloc_consecutive_pages(size_t page_count, shpid_t &pid_begin)
+
+rc_t vol_t::alloc_consecutive_pages(size_t page_count, shpid_t &pid_begin, bool redo)
 {
-    FUNC(vol_t::alloc_consecutive_pages);
     w_assert1(_alloc_cache);
-    W_DO(_alloc_cache->allocate_consecutive_pages(pid_begin, page_count));
+    if (!redo) {
+        W_DO(_alloc_cache->allocate_consecutive_pages(pid_begin, page_count));
+    }
+    else {
+        W_DO(_alloc_cache->redo_allocate_consecutive_pages(pid_begin, page_count));
+    }
+    return RCOK;
+}
+
+rc_t vol_t::deallocate_page(const shpid_t& pid, bool redo)
+{
+    w_assert1(_alloc_cache);
+    if (!redo) {
+        W_DO(_alloc_cache->deallocate_one_page(pid));
+    }
+    else {
+        W_DO(_alloc_cache->redo_deallocate_one_page(pid));
+    }
     return RCOK;
 }
 
@@ -511,43 +488,7 @@ rc_t vol_t::store_operation(const store_operation_param& param, bool redo)
     return RCOK;
 }
 
-rc_t vol_t::free_page(const shpid_t& pid)
-{
-    FUNC(free_page);
-    w_assert1(_alloc_cache);
-    W_DO(_alloc_cache->deallocate_one_page(pid));
-    return RCOK;
-}
-
-rc_t vol_t::redo_alloc_a_page(shpid_t pid)
-{
-    w_assert1(_alloc_cache);
-    W_DO(_alloc_cache->redo_allocate_one_page(pid));
-    return RCOK;
-}
-rc_t vol_t::redo_alloc_consecutive_pages(size_t page_count, shpid_t pid_begin)
-{
-    w_assert1(_alloc_cache);
-    W_DO(_alloc_cache->redo_allocate_consecutive_pages(pid_begin, page_count));
-    return RCOK;
-}
-rc_t vol_t::redo_free_page(shpid_t pid)
-{
-    w_assert1(_alloc_cache);
-    W_DO(_alloc_cache->redo_deallocate_one_page(pid));
-    return RCOK;
-}
-
-/*********************************************************************
- *
- *  vol_t::set_store_flags(snum, flags, sync_volume)
- *
- *  Set the store flag to "flags".  sync the volume if sync_volume is
- *  true and flags is regular.
- *
- *********************************************************************/
-rc_t
-vol_t::set_store_flags(snum_t snum, smlevel_0::store_flag_t flags)
+rc_t vol_t::set_store_flags(snum_t snum, smlevel_0::store_flag_t flags)
 {
     w_assert2(flags & smlevel_0::st_regular
            || flags & smlevel_0::st_tmp
@@ -564,18 +505,9 @@ vol_t::set_store_flags(snum_t snum, smlevel_0::store_flag_t flags)
     return RCOK;
 }
 
-
-/*********************************************************************
- *
- *  vol_t::get_store_flags(snum, flags, bool ok_if_deleting)
- *
- *  Return the store flags for "snum" in "flags".
- *
- *********************************************************************/
-rc_t
-vol_t::get_store_flags(snum_t snum, smlevel_0::store_flag_t& flags, bool ok_if_deleting)
+rc_t vol_t::get_store_flags(snum_t snum, smlevel_0::store_flag_t& flags,
+        bool ok_if_deleting)
 {
-    FUNC(get_store_flags);
     if (!is_valid_store(snum))    {
         DBG(<<"get_store_flags: BADSTID");
         return RC(eBADSTID);
@@ -611,19 +543,8 @@ vol_t::get_store_flags(snum_t snum, smlevel_0::store_flag_t& flags, bool ok_if_d
     return RCOK;
 }
 
-
-
-/*********************************************************************
- *
- *  vol_t::alloc_store(snum, flags)
- *
- *  Allocate a store at "snum" with attribute "flags".
- *
- *********************************************************************/
-rc_t
-vol_t::create_store(smlevel_0::store_flag_t flags, snum_t& snum)
+rc_t vol_t::create_store(smlevel_0::store_flag_t flags, snum_t& snum)
 {
-    FUNC(create_store);
     w_assert1(_stnode_cache);
     snum = _stnode_cache->get_min_unused_store_ID();
     if (snum >= stnode_page_h::max) {
@@ -656,27 +577,14 @@ rc_t vol_t::set_store_root(snum_t snum, shpid_t root)
 }
 
 bool vol_t::is_alloc_store(snum_t f) const {
-    FUNC(is_alloc_store);
     return _stnode_cache->is_allocated(f);
 }
 
 shpid_t vol_t::get_store_root(snum_t f) const {
-    FUNC(get_root);
     return _stnode_cache->get_root_pid(f);
 }
 
-/*********************************************************************
- *
- *  vol_t::fake_disk_latency(long)
- *
- *  Impose a fake IO penalty. Assume that each batch of pages
- *  requires exactly one seek. A real system might perform better
- *  due to sequential access, or might be worse because the pages
- *  in the batch are not actually contiguous. Close enough...
- *
- *********************************************************************/
-void
-vol_t::fake_disk_latency(long start)
+void vol_t::fake_disk_latency(long start)
 {
   if(!_apply_fake_disk_latency)
     return;
@@ -732,8 +640,7 @@ vol_t::set_fake_disk_latency(const int adelay)
  *  Read the page at "pnum" of the volume into the buffer "page".
  *
  *********************************************************************/
-rc_t
-vol_t::read_page(shpid_t pnum, generic_page& page)
+rc_t vol_t::read_page(shpid_t pnum, generic_page& page)
 {
     w_assert1(pnum > 0 && pnum < (shpid_t)(_num_pages));
     size_t offset = size_t(pnum) * sizeof(page);
@@ -780,8 +687,7 @@ vol_t::read_page(shpid_t pnum, generic_page& page)
  *  Write the buffer "page" to the page at "pnum" of the volume.
  *
  *********************************************************************/
-rc_t
-vol_t::write_page(shpid_t pnum, generic_page& page)
+rc_t vol_t::write_page(shpid_t pnum, generic_page& page)
 {
   return write_many_pages(pnum, &page, 1);
 }
@@ -795,8 +701,7 @@ vol_t::write_page(shpid_t pnum, generic_page& page)
  *  of the volume.
  *
  *********************************************************************/
-rc_t
-vol_t::write_many_pages(shpid_t pnum, const generic_page* const pages, int cnt)
+rc_t vol_t::write_many_pages(shpid_t pnum, const generic_page* const pages, int cnt)
 {
     w_assert1(pnum > 0 && pnum < (shpid_t)(_num_pages));
     w_assert1(cnt > 0);
@@ -841,8 +746,7 @@ const char* volhdr_t::prolog[] = {
  *  Write the volume header to the volume.
  *
  *********************************************************************/
-rc_t
-volhdr_t::write(int fd)
+rc_t volhdr_t::write(int fd)
 {
     /*
      *  The  volume header is written after the first 512 bytes of
@@ -896,25 +800,7 @@ volhdr_t::write(int fd)
         return RC(eOS);
     }
 
-    /*
-     *  Write a non-official copy of header at beginning of volume
-     *
-     *  CS: this second location could be used for writing vhdr atomically,
-     *  but it requires proper "recovery" during mount.
-     *
-     *  CS: Not really, because volume format can be replayed entirely when
-     *  a format_vol log record is found -- thus rewriting the whole volume
-     *  header. However, if a checkpoint is taken after writing the log record
-     *  but before forcing the volume header, the format will not be replayed
-     *  by log analysis. TODO -- how to fix this? acquire chkpt latch?
-     */
     W_DO(me()->pwrite(fd, page, sizeof(generic_page), 0));
-
-    /*
-     *  write volume header in middle of page
-     */
-    // W_DO(me()->pwrite(fd, tmp, tmpsz, sector_size));
-    // CS TODO: write on beginning and end of page
 
     return RCOK;
 }
@@ -927,8 +813,7 @@ volhdr_t::write(int fd)
  *  Read the volume header from the file "fd".
  *
  *********************************************************************/
-rc_t
-volhdr_t::read(int fd)
+rc_t volhdr_t::read(int fd)
 {
     char page[sizeof(generic_page)];
     /*
@@ -986,9 +871,6 @@ volhdr_t::read(int fd)
     return RCOK;
 }
 
-/*--------------------------------------------------------------*
- *  vol_t::get_du_statistics()           DU DF
- *--------------------------------------------------------------*/
 rc_t vol_t::get_du_statistics(struct volume_hdr_stats_t& st, bool)
 {
     volume_hdr_stats_t new_stats;
@@ -1014,33 +896,6 @@ rc_t vol_t::get_du_statistics(struct volume_hdr_stats_t& st, bool)
     return RCOK;
 }
 
-/**\brief
- * Use attempt at first so we can get a rough idea of
- * the contention on this mutex.
- */
-#if 0 // CS TODO
-void
-vol_t::acquire_mutex(bool for_write)
-{
-    if(for_write) {
-        INC_TSTAT(need_vol_lock_w);
-        if(_mutex.attempt_write() ) {
-            INC_TSTAT(nowait_vol_lock_w);
-            return;
-        }
-        _mutex.acquire_write();
-    } else {
-        INC_TSTAT(need_vol_lock_r);
-        if(_mutex.attempt_read() ) {
-            INC_TSTAT(nowait_vol_lock_r);
-            return;
-        }
-        _mutex.acquire_read();
-    }
-}
-#endif
-
-
 uint32_t vol_t::num_used_pages() const
 {
     w_assert1(_alloc_cache);
@@ -1053,6 +908,7 @@ bool vol_t::is_allocated_page(shpid_t pid) const
     return _alloc_cache->is_allocated_page(pid);
 }
 
+// CS TODO why is this here?
 ostream& operator<<(ostream& o, const store_operation_param& param)
 {
     o << "snum="    << param.snum()

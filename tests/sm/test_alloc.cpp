@@ -26,7 +26,7 @@ inline w_rc_t allocate_consecutive(ss_m* ssm, test_volume_t* tvol, size_t count,
 
 inline w_rc_t deallocate_one(ss_m* ssm, test_volume_t* tvol, lpid_t& pid)
 {
-    return ssm->vol->get(tvol->_vid)->free_page(pid.page);
+    return ssm->vol->get(tvol->_vid)->deallocate_page(pid.page);
 }
 
 inline alloc_cache_t* get_alloc_cache(ss_m* ssm, vid_t vid)
@@ -163,7 +163,7 @@ w_rc_t reuse_serialize_test(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->commit_xct());
 
     // re-mount the device to check if the allocation information is saved
-    W_DO(ssm->dismount_all());
+    W_DO(ssm->dismount_vol(test_volume->_device_name));
 
     W_DO(ssm->mount_vol(test_volume->_device_name, test_volume->_vid));
     stid = stid_t (test_volume->_vid, 10); // _vid might have been changed!

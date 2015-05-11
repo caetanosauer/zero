@@ -30,7 +30,6 @@ public:
 
     rc_t sx_mount(const char* device, bool logit = true);
     rc_t sx_dismount(const char* device, bool logit = true);
-    rc_t sx_dismount_all();
 
     rc_t sx_format(
             const char* devname,
@@ -89,50 +88,45 @@ private:
     static const char*       prolog[]; // string array for volume hdr
 };
 
+
+/*
+Volume layout:
+   volume header
+   alloc_page pages -- Starts on page 1.
+   stnode_page -- only one page
+   data pages -- rest of volume
+*/
 class vol_t
 {
-public:
-    /*WARNING: THIS CODE MUST MATCH THAT IN sm_io.h!!! */
-    typedef srwlock_t  VolumeLock;
-    typedef void *     lock_state;
+    friend class vol_m;
+protected: // access restricted to vol_m
+    vol_t();
+    virtual ~vol_t();
 
-    NORET               vol_t(const bool apply_fake_io_latency = false,
-                                      const int fake_disk_latency = 0);
-    NORET               ~vol_t();
-
-    /** Mount the volume at "devname" and give it a an id "vid". */
     rc_t                mount(const char* devname);
+    rc_t                dismount();
 
-    /** Dismount the volume. */
-    rc_t                dismount(bool flush = true, const bool clear_cb = true);
+public:
+    const char* devname() const { return _devname; }
+    vid_t       vid() const { return _vid; }
+    shpid_t     first_data_pageid() const { return _first_data_pageid; }
+    uint32_t    num_pages() const { return _num_pages; }
+    uint32_t    num_used_pages() const;
+
+    alloc_cache_t*           get_alloc_cache() {return _alloc_cache;}
+    stnode_cache_t*          get_stnode_cache() {return _stnode_cache;}
+    bf_fixed_m*              get_fixed_bf() {return _fixed_bf;}
+
 
     /**
-    * Print out meta info about the volume.
-    *  It is the caller's responsibility to worry about mt-safety of this;
-    *  it is for the use of smsh & debugging
-    *  and is not called from anywhere w/in the ss_m
-    */
-    rc_t                check_disk();
-
-    const char*         devname() const;
-    vid_t               vid() const ;
-    /** returns the page ID of the first non-fixed pages (after stnode_page and alloc_page).*/
-    shpid_t             first_data_pageid() const { return _first_data_pageid;}
-    uint32_t            num_pages() const;
-    uint32_t            num_used_pages() const;
-
-    int                 fill_factor(snum_t fnum);
-
-    bool                is_valid_page_num(const lpid_t& p) const;
-    bool                is_valid_store(snum_t f) const;
-
-    bool                is_allocated_page(shpid_t pid) const;
-
-    /**  Return true if the store "store" is allocated. false otherwise. */
-    bool                is_alloc_store(snum_t f) const;
-
+     *
+     * Thread safety: the underlying POSIX calls pwrite and pread are
+     * guaranteed to be atomic, so no additional latching is required for these
+     * methods. Mounting/dismounting during reads and writes causes the file
+     * descriptor to change, resulting in the expected errors in the return
+     * code.
+     */
     rc_t                write_page(shpid_t page, generic_page& buf);
-
     rc_t                write_many_pages(
         shpid_t             first_page,
         const generic_page*       buf,
@@ -142,13 +136,43 @@ public:
         shpid_t             page,
         generic_page&       buf);
 
-    rc_t            alloc_a_page(shpid_t& pid);
-    rc_t            alloc_consecutive_pages(size_t page_count, shpid_t &pid_begin);
-    rc_t            free_page(const shpid_t& pid);
+    rc_t            sync();
 
-    rc_t            redo_alloc_a_page(shpid_t pid);
-    rc_t            redo_alloc_consecutive_pages(size_t page_count, shpid_t pid_begin);
-    rc_t            redo_free_page(shpid_t pid);
+    // get space usage statistics for this volume
+    rc_t             get_du_statistics(
+        struct              volume_hdr_stats_t&,
+        bool                audit);
+
+    /**
+     *  Impose a fake IO penalty. Assume that each batch of pages requires
+     *  exactly one seek. A real system might perform better due to sequential
+     *  access, or might be worse because the pages in the batch are not
+     *  actually contiguous. Close enough...
+     */
+    void            enable_fake_disk_latency(void);
+    void            disable_fake_disk_latency(void);
+    bool            set_fake_disk_latency(const int adelay);
+    void            fake_disk_latency(long start);
+
+    /**
+    * Print out meta info about the volume.
+    *  It is the caller's responsibility to worry about mt-safety of this;
+    *  it is for the use of smsh & debugging
+    *  and is not called from anywhere w/in the ss_m
+    */
+    rc_t                check_disk();
+
+    rc_t            alloc_a_page(shpid_t& pid, bool redo = false);
+    rc_t            alloc_consecutive_pages(size_t page_count,
+                        shpid_t &pid_begin, bool redo = false);
+    rc_t            deallocate_page(const shpid_t& pid, bool redo = false);
+
+    bool                is_allocated_page(shpid_t pid) const;
+
+    bool                is_valid_store(snum_t f) const;
+
+    /**  Return true if the store "store" is allocated. false otherwise. */
+    bool                is_alloc_store(snum_t f) const;
 
     rc_t            store_operation(const store_operation_param&    param,
                                     bool redo = false);
@@ -167,30 +191,8 @@ public:
         smlevel_0::store_flag_t&          flags,
         bool                   ok_if_deleting = false);
 
-public:
-
-    rc_t             num_pages(snum_t fnum, uint32_t& cnt);
-    rc_t             get_quota_kb(size_t& total, size_t& used);
-
-    /** Sync the volume. */
-    rc_t            sync();
-
-    // methods for space usage statistics for this volume
-    rc_t             get_du_statistics(
-        struct              volume_hdr_stats_t&,
-        bool                audit);
-
-    // Sometimes the sm_io layer acquires this mutex:
-    void            acquire_mutex(lock_state* me, bool for_write); // used by sm_io.cpp
-    VolumeLock&     vol_mutex() const { return _mutex; } // used by sm_io.cpp
-
-    // fake disk latency
-    void            enable_fake_disk_latency(void);
-    void            disable_fake_disk_latency(void);
-    bool            set_fake_disk_latency(const int adelay);
-    void            fake_disk_latency(long start);
-
 private:
+    // variables read from volume header -- remain constant after mount
     char             _devname[smlevel_0::max_devname];
     int              _unix_fd;
     vid_t            _vid;
@@ -213,35 +215,7 @@ private:
 
     /** releases _alloc_cache and _stnode_cache. */
     void clear_caches();
- public:
-    void                     shutdown();
-    void                     shutdown(snum_t s);
-
-    alloc_cache_t*           get_alloc_cache() {return _alloc_cache;}
-    stnode_cache_t*          get_stnode_cache() {return _stnode_cache;}
-    bf_fixed_m*              get_fixed_bf() {return _fixed_bf;}
-
 };
-
-inline const char* vol_t::devname() const
-{
-    return _devname;
-}
-
-inline vid_t vol_t::vid() const
-{
-    return _vid;
-}
-
-inline uint vol_t::num_pages() const
-{
-    return (uint) _num_pages;
-}
-
-inline bool vol_t::is_valid_page_num(const lpid_t& p) const
-{
-    return (_num_pages > p.page);
-}
 
 inline bool vol_t::is_valid_store(snum_t f) const
 {

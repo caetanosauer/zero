@@ -529,7 +529,7 @@ void btree_norec_alloc_log::redo(fixable_page_h* p) {
         w_assert0(target_pid == dp->_page2_pid);
         // This log is also a page-allocation log, so redo the page allocation.
         W_COERCE(smlevel_0::vol->get(p->pid().vol())
-                ->redo_alloc_a_page(dp->_page2_pid));
+                ->alloc_a_page(dp->_page2_pid, true /* redo */));
         lpid_t pid(header._vid, dp->_page2_pid);
         // initialize as an empty child:
         bp.format_steal(new_lsn, pid, header._snum,

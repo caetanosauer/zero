@@ -132,7 +132,7 @@ w_rc_t mixed_test(ss_m* ssm, test_volume_t *test_volume) {
     const shpid_t DEALLOCATE_END = DEALLOCATE_START + 4;
     W_DO(ssm->begin_xct());
     for (shpid_t pid = DEALLOCATE_START; pid < DEALLOCATE_END; ++pid) {
-        W_DO(smlevel_0::vol->get(vid)->free_page(pid));
+        W_DO(smlevel_0::vol->get(vid)->deallocate_page(pid));
     }
     W_DO(ssm->commit_xct());
 

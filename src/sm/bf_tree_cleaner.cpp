@@ -582,7 +582,8 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
                 // this operation requires a xct for logging. we create a ssx for this reason.
                 sys_xct_section_t sxs(true); // ssx to call free_page
                 W_DO (sxs.check_error_on_start());
-                W_DO (_parent->_bufferpool->_volumes[vol]->_volume->free_page(page_buffer[idx].pid.page));
+                W_DO (_parent->_bufferpool->_volumes[vol]->_volume
+                        ->deallocate_page(page_buffer[idx].pid.page));
                 W_DO (sxs.end_sys_xct (RCOK));
                 // drop the page from bufferpool too
                 _parent->_bufferpool->_delete_block(idx);

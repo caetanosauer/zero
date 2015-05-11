@@ -148,9 +148,8 @@ smlevel_0::fileoff_t        smlevel_0::chkpt_displacement = 0;
  * start-up/shut-down operations for a server.
  */
 
-typedef srwlock_t sm_vol_rwlock_t;
 // Certain operations have to exclude xcts
-static sm_vol_rwlock_t          _begin_xct_mutex;
+static srwlock_t          _begin_xct_mutex;
 
 BackupManager* smlevel_0::bk = 0;
 vol_m* smlevel_0::vol = 0;
@@ -1474,40 +1473,19 @@ ss_m::mount_vol(const char* path, vid_t& vid)
     W_DO(vol->sx_mount(path));
     vid = vol->get(path)->vid();
 
-    // take a synch checkpoint to record the mount
-    // CS TODO: not needed -- use create/mount/unmount log records
-    chkpt->synch_take();
-
     return RCOK;
 }
 
-/*--------------------------------------------------------------*
- *  ss_m::dismount_all()                            *
- *                                                              *
- *  Only allow this if there are no active XCTs                 *
- *--------------------------------------------------------------*/
 rc_t
-ss_m::dismount_all()
+ss_m::dismount_vol(const char* path)
 {
-    SM_PROLOGUE_RC(ss_m::dismount_all, not_in_xct, read_only, 0);
+    SM_PROLOGUE_RC(ss_m::mount_vol, not_in_xct, read_only, 0);
 
     spinlock_write_critical_section cs(&_begin_xct_mutex);
 
-    // of course a transaction could start immediately after this...
-    // we don't protect against that.
-    if (xct_t::num_active_xcts())  {
-        fprintf(stderr,
-        "Active transactions: %d : cannot dismount_all\n",
-        xct_t::num_active_xcts());
-        return RC(eCANTWHILEACTIVEXCTS);
-    }
+    DBG(<<"dismount_vol " << path);
 
-    // take a synch checkpoint to record the dismounts
-    chkpt->synch_take();
-
-    // CS: TODO this does nothing because it used to dismount all
-    // devices, and not all volumes. Since we removed the device
-    // manager, we have to rethink the utility of this method.
+    W_DO(vol->sx_dismount(path));
 
     return RCOK;
 }
@@ -1519,7 +1497,11 @@ rc_t
 ss_m::get_device_quota(const char* device, size_t& quota_KB, size_t& quota_used_KB)
 {
     SM_PROLOGUE_RC(ss_m::get_device_quota, can_be_in_xct, read_only, 0);
-    W_DO(vol->get(device)->get_quota_kb(quota_KB, quota_used_KB));
+
+    vol_t* v = vol->get(device);
+    size_t page_size_kb = sizeof(generic_page) / 1024;
+    quota_used_KB = v->num_used_pages() * page_size_kb;
+    quota_KB = v->num_pages() * page_size_kb;
     return RCOK;
 }
 
