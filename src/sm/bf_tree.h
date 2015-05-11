@@ -660,7 +660,7 @@ public:
      * but the actual page is not in buffer pool yet
      * Load the actual page into buffer pool
      */
-    w_rc_t load_for_redo(bf_idx idx, vid_t vid, shpid_t shpid, bool& past_end);
+    w_rc_t load_for_redo(bf_idx idx, vid_t vid, shpid_t shpid);
 
 
 private:

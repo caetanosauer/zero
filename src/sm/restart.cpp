@@ -715,7 +715,8 @@ restart_m::analysis_pass_forward(
         // we use last_lsn in REDO Single-Page-Recovery if there is a corrupted page
         last_lsn = lsn;
 
-        if (r.is_single_sys_xct())
+        // CS: volume operations are SSX's without pid
+        if (r.is_single_sys_xct() && !r.null_pid())
         {
             // We have a system transaction log record
             if (true == _analysis_system_log(r, lsn, in_doubt_count))
@@ -738,7 +739,8 @@ restart_m::analysis_pass_forward(
 
         // If log is transaction related, insert the transaction
         // into transaction table if it is not already there.
-        if ((r.tid() != tid_t::null) && ! (xd = xct_t::look_up(r.tid()))
+        if (!r.is_single_sys_xct() &&
+                (r.tid() != tid_t::null) && ! (xd = xct_t::look_up(r.tid()))
                    && r.type()!=logrec_t::t_comment         // comments can be after xct has ended
                    && r.type()!=logrec_t::t_skip            // skip
                    && r.type()!=logrec_t::t_max_logrec)    // mark the end
@@ -1431,7 +1433,7 @@ restart_m::analysis_pass_backward(
                << "Analyzing log segment " << cur_segment << flushl;
         }
 
-        if (r.is_single_sys_xct())
+        if (r.is_single_sys_xct() && !r.null_pid())
         {
             // We have a system transaction log record
             if (true == _analysis_system_log(r, lsn, in_doubt_count))
@@ -1454,7 +1456,7 @@ restart_m::analysis_pass_backward(
 
         // If log is transaction related, insert the transaction
         // into transaction table if it is not already there.
-        if ((r.tid() != tid_t::null)                     // Has a transaction ID
+        if (!r.is_single_sys_xct() && (r.tid() != tid_t::null)                     // Has a transaction ID
                    && ! (xd = xct_t::look_up(r.tid()))   // does not exist in transaction table currently
                    && r.type()!=logrec_t::t_comment      // Not a 'comment' log record, comments can be after xct has ended
                    && r.type()!=logrec_t::t_skip         // Not a 'skip' log record
@@ -1496,7 +1498,7 @@ restart_m::analysis_pass_backward(
             xd->set_first_lsn(lsn);             // initialize first lsn to the same value as last_lsn
             w_assert1( xd->tid() == r.tid() );
         }
-        else if (r.tid() != tid_t::null)            // Has a transaction ID
+        else if (!r.is_single_sys_xct() && r.tid() != tid_t::null)            // Has a transaction ID
         {
             // Transaction exists in transaction table already
 
@@ -1636,17 +1638,19 @@ restart_m::analysis_pass_backward(
                 // meaning we are processing the last completed checkpoint
                 // _analysis_ckpt_dev_log(r, mount);
                 r.redo(0);
-            }
-            else
-            {
-                // No matching 'end checkpoint' log record, , ignore
+
+                // now redo the accumulated mounts and dismounts in reverse order
+                while (heapMount.NumElements() > 0) {
+                    heapMount.First()->mount_log_rec_buf->redo(0);
+                    heapMount.RemoveFirst();
+                    // CS TODO -- memory leak; copied logrec is not freed
+                    // nor is the heap entry, both allocated below
+                }
             }
             break;
 
         case logrec_t::t_dismount_vol:
         case logrec_t::t_mount_vol:
-            r.redo(0);
-            break;
             // Perform all mounts and dismounts up to the minimum redo lsn,
             // so that the system has the right volumes mounted during
             // the redo phase.  The only time this should be redone is
@@ -1670,27 +1674,29 @@ restart_m::analysis_pass_backward(
             // after we are done with the backward log scan.  This is a very corner
             // scenario.
             //
-            // CS TODO -- just calling redo now
-            // {
-            //     logrec_t*  mount_log_rec_buf = new logrec_t; // auto-del at the end
-            //     if (! mount_log_rec_buf)
-            //     {
-            //         W_FATAL(eOUTOFMEMORY);
-            //     }
-            //     memcpy(mount_log_rec_buf, &r, r.length());
+            {
+                // CS TODO -- this does not have to be a heap, since all we
+                // have to do is replay the mounts/dismount in inverse order,
+                // i.e., a stack or list would do just fine
+                logrec_t*  mount_log_rec_buf = new logrec_t; // auto-del at the end
+                if (! mount_log_rec_buf)
+                {
+                    W_FATAL(eOUTOFMEMORY);
+                }
+                memcpy(mount_log_rec_buf, &r, r.length());
 
-            //     comp_mount_log_t* mount_heap_elem = new comp_mount_log_t;
-            //     if (! mount_heap_elem)
-            //     {
-            //         W_FATAL(eOUTOFMEMORY);
-            //     }
-            //     mount_heap_elem->lsn = lsn;
-            //     mount_heap_elem->mount_log_rec_buf = mount_log_rec_buf;
+                comp_mount_log_t* mount_heap_elem = new comp_mount_log_t;
+                if (! mount_heap_elem)
+                {
+                    W_FATAL(eOUTOFMEMORY);
+                }
+                mount_heap_elem->lsn = lsn;
+                mount_heap_elem->mount_log_rec_buf = mount_log_rec_buf;
 
-            //     // Insert the entry into heapMount
-            //     heapMount.AddElementDontHeapify(mount_heap_elem);
-            // }
-            // break;
+                // Insert the entry into heapMount
+                heapMount.AddElement(mount_heap_elem);
+            }
+            break;
 
         case logrec_t::t_chkpt_end:
             if (num_chkpt_end_handled == 0)
@@ -2166,19 +2172,8 @@ bool restart_m::_analysis_system_log(logrec_t& r,             // In: Log record 
             }
             else
             {
-                // Log record with system transaction but no page number means
-                // the system transaction does not affect buffer pool
-                // Can this a valid scenario?  Raise fatal error for now so we can catch it.
-
-                W_FATAL_MSG(fcINTERNAL,
-                    << "System transaction without a page number, type = " << r.type());
-
-                DBGOUT3(<<"System transaction without a page number, type =  " << r.type());
+                return false;
             }
-        }
-        else
-        {
-            // If skip log, no-op.
         }
 
         // Because all system transactions are single log record, there is no
@@ -4068,9 +4063,6 @@ void restart_m::_redo_log_with_pid(
 
     w_rc_t rc = RCOK;
     redone = false;             // True if REDO happened
-    bool past_end = false;      // True if we thought the page exists on disk but
-                                // it does not exist (it was never flushed
-                                // before the crash
 
     // 'is_redo()' covers regular transaction but not compensation transaction
     w_assert1(r.is_redo());
@@ -4172,24 +4164,8 @@ void restart_m::_redo_log_with_pid(
                 // If past_end is true, the page does not exist on disk and the buffer pool page
                 // has been zerod out, we cannot apply REDO in this case
                 rc = smlevel_0::bf->load_for_redo(idx, page_updated.vol(),
-                                                  page_updated.page, past_end);
+                                                  page_updated.page);
 
-                if (true == past_end)
-                {
-                    // Fetch a page from disk but the page does not exist
-                    // This is not a valid situation because if the dirty page was never flushed
-                    // to disk before the system crash, the Log Analysis phase trace the page
-                    // history to find the original page format record, and the REDO phase
-                    // starts its log scan from the earliest LSN, so we should always see the
-                    // page format log record for a dirty page which was not on disk.
-                    // Raise error becasue we should not hit this error
-
-                    if (cb.latch().held_by_me())
-                        cb.latch().latch_release();
-                    W_FATAL_MSG(fcINTERNAL,
-                                << "REDO phase, expected page does not exist on disk.  Page: "
-                                << page_updated.page);
-                }
                 if (rc.is_error())
                 {
                     if (cb.latch().held_by_me())
@@ -4952,7 +4928,6 @@ DBGOUT1(<<"Start child thread REDO phase");
     (void) log_comment(s.c_str());
 
     w_rc_t rc = RCOK;
-    bool past_end = false;  // Detect virgin page
     bf_idx root_idx = 0;
 
     // Count of blocks/pages in buffer pool
@@ -5004,7 +4979,6 @@ DBGOUT1(<<"Start child thread REDO phase");
         // 3. By Single-Page-Recovery triggered by concurrent user transaction - on-demand REDO (M3)
 
         rc = RCOK;
-        past_end = false;
 
         bf_tree_cb_t &cb = smlevel_0::bf->get_cb(current_page);
         // Need to acquire traditional EX latch for each page, it is to
@@ -5110,16 +5084,9 @@ DBGOUT1(<<"Start child thread REDO phase");
 
             // If past_end is true, the page does not exist on disk and the buffer pool page
             // has been zerod out
-            rc = smlevel_0::bf->load_for_redo(idx, vol, shpid, past_end);
+            rc = smlevel_0::bf->load_for_redo(idx, vol, shpid);
 
-            if (true == past_end)
-            {
-                // Fetch a page from disk but the page does not exist, this is a virgin page
-                // meaning the page was never persisted on disk, but we still need to redo it
-                DBGOUT3 (<< "REDO phase, virgin page, page = " << shpid);
-                virgin_page = true;
-            }
-            else if (rc.is_error())
+            if (rc.is_error())
             {
                 if (eBADCHECKSUM == rc.err_num())
                 {
@@ -5166,6 +5133,9 @@ DBGOUT1(<<"Start child thread REDO phase");
                 // only mark the page as buffer pool managed after Single-Page-Recovery
                 W_COERCE(page.fix_recovery_redo(idx, store_id, false /* managed*/));
             }
+
+            // CS: this replaces the old past_end flag on load_for_redo
+            virgin_page = page.pid() == lpid_t::null;
 
             // We rely on pid/tag set correctly in individual redo() functions
             // set for all pages, both virgin and non-virgin

@@ -499,9 +499,6 @@ void ss_m::_do_restart()
         // out of scope
         restart_m restart;
 
-        // TODO(Restart)... it was for a space-recovery hack, not needed
-        // smlevel_0::redo_tid = restart.redo_tid();
-
         // Recovery process, a checkpoint will be taken at the end of recovery
         // Make surethe current operating state is before recovery
         smlevel_0::operating_mode = t_not_started;
@@ -567,9 +564,6 @@ void ss_m::_do_restart()
         }
         delete [] dname;
 #endif
-
-        // TODO(Restart)... it was for a space-recovery hack, not needed
-        // smlevel_0::redo_tid = 0;
     }
 
     // Pure on-demand mode must be the same for REDO and UNDO phases

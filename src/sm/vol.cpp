@@ -646,7 +646,7 @@ vol_t::set_fake_disk_latency(const int adelay)
  *********************************************************************/
 rc_t vol_t::read_page(shpid_t pnum, generic_page& page)
 {
-    w_assert1(pnum > 0 && pnum < (shpid_t)(_num_pages));
+    w_assert0(pnum > 0 && pnum < (shpid_t)(_num_pages));
     size_t offset = size_t(pnum) * sizeof(page);
 
     smthread_t* t = me();
@@ -668,12 +668,15 @@ rc_t vol_t::read_page(shpid_t pnum, generic_page& page)
 
     w_rc_t err = t->pread(_unix_fd, (char *) &page, sizeof(page), offset);
     if(err.err_num() == stSHORTIO) {
-        DBGOUT3 (<< "vol_t::read_page, read passed the end, zero out the page");
-
-        // read past end of OS file. return all zeros
+        /*
+         * If we read past the end of the file, this means it is a virgin page,
+         * so we simply fill the buffer with zeroes. Note that we can't read
+         * past the logical size of the device (_num_pages) due to the assert
+         * above
+         */
         memset(&page, 0, sizeof(page));
-        return err;
-    } else {
+    }
+    else {
         W_COERCE_MSG(err, << "volume id=" << vid()
               << " err_num " << err.err_num()
               );

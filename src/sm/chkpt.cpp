@@ -878,6 +878,8 @@ try
                 // would be throw, we abort the current checkpoint but not bringing down
                 // the system.
 
+                // TODO CS this sometimes causes a deadlock (e.g. in test_crash),
+                // after the system has already shut down
                 w_rc_t latch_rc = xd->latch().latch_acquire(LATCH_SH, WAIT_FOREVER);
                 if (latch_rc.is_error())
                 {
@@ -1145,6 +1147,7 @@ try
 
 #if 0 // CS TODO -- is this necessary?
     if (io->GetLastMountLSN() <= master)
+#endif
     {
         if (ss_m::shutting_down && !ss_m::shutdown_clean) // Dirty shutdown (simulated crash)
         {
@@ -1232,6 +1235,7 @@ try
 
         }
     }
+#if 0 // CS
     else
     {
         DBGOUT1(<<"chkpt_m::take - GetLastMountLSN > master, invalid situation for checkpoint, "

@@ -2386,7 +2386,7 @@ w_rc_t bf_tree_m::register_and_mark(bf_idx& ret,
 }
 
 w_rc_t bf_tree_m::load_for_redo(bf_idx idx, vid_t vid,
-                  shpid_t shpid, bool& past_end)
+                  shpid_t shpid)
 {
     // Special function for Recovery REDO phase
     // idx is in hash table already
@@ -2397,8 +2397,6 @@ w_rc_t bf_tree_m::load_for_redo(bf_idx idx, vid_t vid,
     w_rc_t rc = RCOK;
     w_assert1(vid != 0);
     w_assert1(shpid != 0);
-
-    past_end = false;
 
     DBGOUT3(<<"REDO phase: loading page " << vid << "." << shpid
             << " into buffer pool frame " << idx);
@@ -2412,13 +2410,15 @@ w_rc_t bf_tree_m::load_for_redo(bf_idx idx, vid_t vid,
 
     // For the loaded page, compare its checksum
     // If inconsistent, return error
-    uint32_t checksum = _buffer[idx].calculate_checksum();
-    if (checksum != _buffer[idx].checksum)
-    {
-        ERROUT(<<"bf_tree_m: bad page checksum in page " << shpid
-                << " -- expected " << checksum
-                << " got " << _buffer[idx].checksum);
-        return RC (eBADCHECKSUM);
+    if (_buffer[idx].checksum != 0) {
+        uint32_t checksum = _buffer[idx].calculate_checksum();
+        if (checksum != _buffer[idx].checksum)
+        {
+            ERROUT(<<"bf_tree_m: bad page checksum in page " << shpid
+                    << " -- expected " << checksum
+                    << " got " << _buffer[idx].checksum);
+            return RC (eBADCHECKSUM);
+        }
     }
 
     // Then, page ID must match, otherwise raise error

@@ -134,8 +134,12 @@ rc_t alloc_cache_t::redo_allocate_one_page (shpid_t pid)
             // slot) is always performed sequentially. Thus, even if a page
             // is allocated and freed multiple times, this kind of inconsistency cannot
             // happen.
-            W_FATAL_MSG(eINTERNAL,
-                    << "Allocation REDO found the slot already allocated");
+            //
+            // CS: Apparently it does happen and it's not an error. I guess it depends
+            // on when and how the alloc pages get flushed -- study this issue!
+            //
+            // W_FATAL_MSG(eINTERNAL,
+            //         << "Allocation REDO found the slot already allocated");
 
             // Page might be allocated already due to Single Page Recovery
             // used during Restart operation, the REDO is not needed
