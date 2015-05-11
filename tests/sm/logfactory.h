@@ -27,6 +27,7 @@ public:
     //void open(lsn_t endLSN); SHOULD THIS BE IMPLEMENTED?
     bool next(void* addr);
     lsn_t getNextLSN() { return nextLSN; }
+    void resetRun();
 
 private:
     /* fake_logrec_t used to have access to private members of logrec_t.
@@ -144,15 +145,17 @@ private:
     const unsigned INCR_RATIO;
 
     bool sorted;
+    unsigned current_page_id;
     unsigned max_page_id;
-    vector<lsn_t> prev_lsn;    /* Keep track of previous log record on same page */
-    uint4_t generatedCount;    /* Keep track of how many log records were generated */
+    vector<lsn_t> prev_lsn;  /* Keep track of previous log record on same page */
+    unsigned generatedCount; /* Keep track of how many log records were generated */
     lsn_t nextLSN;
 
     boost::random::mt19937 gen;    /* Random Number Generator */
     boost::random::uniform_real_distribution<double> dDist; //[min,max)
 
     unsigned nextZipf();
+    unsigned nextSorted();
 
     static const uint32_t  factory_version_major;
     static const uint32_t  factory_version_minor;

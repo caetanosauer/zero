@@ -3,6 +3,8 @@
 #include <sstream>
 #include <fstream>
 
+#define private public
+
 #include "logarchiver.h"
 #include "logfactory.h"
 
@@ -442,6 +444,62 @@ rc_t archIndexTestSingle(ss_m*, test_volume_t*)
     return RCOK;
 }
 
+rc_t archIndexTestSerialization(ss_m*, test_volume_t*)
+{
+    // ============================== DIR 1 ==============================
+    LogArchiver::ArchiveDirectory dir1(test_env->archive_dir, BLOCK_SIZE,
+            true /* createIndex */);
+    EXPECT_TRUE(dir1.getIndex());
+
+    unsigned total = 0;
+    generateFakeArchive(&dir1, BLOCK_SIZE*1000, 10, total);
+    // ===================================================================
+
+
+    // ============================== DIR 2 ==============================
+    LogArchiver::ArchiveDirectory dir2(test_env->archive_dir, BLOCK_SIZE,
+            true /* createIndex */);
+    EXPECT_TRUE(dir2.getIndex());
+    // ===================================================================
+
+    LogArchiver::ArchiveIndex* index1 = dir1.getIndex();
+    LogArchiver::ArchiveIndex* index2 = dir2.getIndex();
+    EXPECT_EQ(index1->runs.size(), index2->runs.size());
+
+    for(unsigned i=0; i<index1->runs.size(); i++) {
+        EXPECT_EQ(index1->runs[i].entries.size(), index2->runs[i].entries.size());
+        for(unsigned j=0; j<index1->runs[i].entries.size(); j++) {
+            EXPECT_EQ(index1->runs[i].entries[j].offset, index2->runs[i].entries[j].offset);
+            EXPECT_EQ(index1->runs[i].entries[j].pid, index2->runs[i].entries[j].pid);
+        }
+    }
+
+    return RCOK;
+}
+
+rc_t writerTest(ss_m*, test_volume_t*) {
+    LogFactory factory(true, // sorted
+            10, // max_page_id
+            100, // new page ID every 100 logrecs
+            10 // increment max_page_id ten by ten
+    );
+    logrec_t lr;
+
+    int run = 0;
+    while(run < 1) { // generates 10 runs
+        int record = 0;
+        while(record < 1000) {  //each run with 1000 log records
+
+            factory.next(&lr);
+            record++;
+        }
+        factory.resetRun();
+        run++;
+    }
+
+    return RCOK;
+}
+
 // NEXT TESTS: spread-out page ids, corner cases (think of any?), using multiple run scanners, using merger
 
 #define DEFAULT_TEST(test, function) \
@@ -458,6 +516,8 @@ DEFAULT_TEST (ArchiveScannerTest, runScannerWithIndex);
 DEFAULT_TEST (ArchiveScannerTest, runMergerSeqTest);
 DEFAULT_TEST (ArchiveScannerTest, runMergerFullTest);
 DEFAULT_TEST (ArchiveIndexTest, archIndexTestSingle);
+DEFAULT_TEST (ArchiveIndexTest, archIndexTestSerialization);
+DEFAULT_TEST (ArchiveIndexTest, writerTest);
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

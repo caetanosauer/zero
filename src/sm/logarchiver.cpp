@@ -545,6 +545,20 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(std::string archdir,
     // create index
     if (createIndex) {
         archIndex = new ArchiveIndex(blockSize, startLSN);
+
+        std::vector<std::string> runFiles;
+        listFiles(&runFiles);
+        std::vector<std::string>::const_iterator it;
+        for(it=runFiles.begin(); it!=runFiles.end(); ++it) {
+            std::string fname = archdir + "/" + *it;
+            int flags = smthread_t::OPEN_RDONLY;
+            int fd;
+
+            me()->open(fname.c_str(), flags, 0744, fd);
+            archIndex->loadRunInfo(fd);
+            me()->close(fd);
+        }
+
     }
     else {
         archIndex = NULL;
@@ -906,6 +920,9 @@ bool LogArchiver::BlockAssembly::add(logrec_t* lr)
     if (firstPID.is_null()) {
         firstPID = lr->construct_pid();
     }
+
+    PIDs.insert(lr->construct_pid());
+
     lastLSN = lr->lsn_ck();
     lastLength = lr->length();
 
@@ -926,7 +943,8 @@ void LogArchiver::BlockAssembly::finish(int run)
             " in run " << (int) run << " with end " << pos);
 
     if (archIndex) {
-        archIndex->newBlock(firstPID);
+        archIndex->newBlock(PIDs);
+        PIDs.clear();
     }
     firstPID = lpid_t::null;
 
@@ -1058,7 +1076,7 @@ bool LogArchiver::ArchiveScanner::RunScanner::next(logrec_t*& lr)
     lr = (logrec_t*) (buffer + bpos);
     w_assert1(lr->valid_header(lr->lsn_ck()));
 
-    if (lr->pid() >= lastPID) {
+    if (lastPID != lpid_t::null && lr->pid() >= lastPID) {
         // end of scan
         return false;
     }
@@ -1101,7 +1119,7 @@ LogArchiver::ArchiveScanner::MergeHeapEntry::MergeHeapEntry(RunScanner* runScan)
     
     w_assert1(lr->valid_header());
     w_assert1(!active || startPID <= pid);
-    w_assert1(!active || startPID.vol() == pid.vol());
+    w_assert1(!active || startPID == lpid_t::null || startPID.vol() == pid.vol());
 }
 
 void LogArchiver::ArchiveScanner::MergeHeapEntry::moveToNext()
@@ -1501,6 +1519,7 @@ LogArchiver::ArchiveIndex::ArchiveIndex(size_t blockSize, lsn_t startLSN)
 {
     DO_PTHREAD(pthread_mutex_init(&mutex, NULL));
     writeBuffer = new char[blockSize];
+    readBuffer = new char[blockSize];
 
     // last run in the array is always the one being currently generated
     RunInfo r;
@@ -1513,7 +1532,7 @@ LogArchiver::ArchiveIndex::~ArchiveIndex()
     DO_PTHREAD(pthread_mutex_destroy(&mutex));
 }
 
-void LogArchiver::ArchiveIndex::newBlock(lpid_t first)
+void LogArchiver::ArchiveIndex::newBlock(std::set<lpid_t>& blk_PIDs)
 {
     CRITICAL_SECTION(cs, mutex);
     
@@ -1521,8 +1540,10 @@ void LogArchiver::ArchiveIndex::newBlock(lpid_t first)
 
     BlockEntry e;
     e.offset = blockSize * runs.back().entries.size();
-    e.pid = first;
+    e.pid = *(blk_PIDs.begin());
     runs.back().entries.push_back(e);
+
+    current_run_PIDs.insert(blk_PIDs.begin(), blk_PIDs.end());
 }
 
 rc_t LogArchiver::ArchiveIndex::finishRun(lsn_t first, lsn_t last, int fd,
@@ -1533,7 +1554,23 @@ rc_t LogArchiver::ArchiveIndex::finishRun(lsn_t first, lsn_t last, int fd,
     w_assert0(runs.back().firstLSN == first);
     w_assert0(lastLSN == first);
 
+
+    /*for the case were it is the final empty run, otherwise seg fault occurs */
+    if(current_run_PIDs.size() > 0){
+        runs.back().firstPID = *(current_run_PIDs.begin());
+        runs.back().lastPID = *(current_run_PIDs.rbegin());
+
+        runs.back().filter.resize(runs.back().lastPID.page - runs.back().firstPID.page);
+        for(std::set<lpid_t>::iterator it = current_run_PIDs.begin();
+                                       it != current_run_PIDs.end();
+                                       ++it) {
+            runs.back().filter[(*it).page - runs.back().firstPID.page] = true;
+        }
+    }
+
     W_DO(serializeRunInfo(runs.back(), fd, offset));
+
+    current_run_PIDs.clear();
 
     RunInfo newRun;
     newRun.firstLSN = last;
@@ -1557,7 +1594,9 @@ rc_t LogArchiver::ArchiveIndex::serializeRunInfo(RunInfo& run, int fd, fileoff_t
         int j = 0;
         while (j < entriesPerBlock && remaining > 0)
         {
-            memcpy(writeBuffer + (j * sizeof(BlockEntry)), &run.entries[i+j],
+            unsigned pos1 = sizeof(BlockHeader) + (j * sizeof(BlockEntry));
+            unsigned pos2 = (i*entriesPerBlock) + j;
+            memcpy(writeBuffer + pos1, &run.entries[pos2],
                         sizeof(BlockEntry));
             j++;
             remaining--;
@@ -1567,9 +1606,66 @@ rc_t LogArchiver::ArchiveIndex::serializeRunInfo(RunInfo& run, int fd, fileoff_t
         h->blockNumber = i;
 
         W_COERCE(me()->pwrite(fd, writeBuffer, blockSize, offset));
+        offset += blockSize;
         i++;
     }
 
+    /*
+    DBGTHRD(<<"AAA");
+    unsigned pos = sizeof(BlockHeader);
+    memcpy(writeBuffer + pos, &run.firstPID, sizeof(lpid_t));
+    pos += sizeof(lpid_t);
+    memcpy(writeBuffer+pos, &run.lastPID, sizeof(lpid_t));
+    BlockHeader* h = (BlockHeader*) writeBuffer;
+    h->entries = -1;
+    h->blockNumber = -1;
+    W_COERCE(me()->pwrite(fd, writeBuffer, blockSize, offset));
+    DBGTHRD(<<"BBB");
+    */
+
+    //QUESTION: we do not serialize firstLSN?
+
+    return RCOK;
+}
+
+rc_t LogArchiver::ArchiveIndex::deserializeRunInfo(RunInfo& run, int fd)
+{
+    // Assumption: mutex is held by caller
+
+    size_t indexBlockCount = 0;
+    size_t dataBlockCount = 0;
+    getBlockCounts(fd, &indexBlockCount, &dataBlockCount);
+
+    fileoff_t offset = dataBlockCount * blockSize;
+
+    int i = 0;
+    while (indexBlockCount > 0) {
+        W_DO(me()->pread(fd, readBuffer, blockSize, offset));
+        BlockHeader* h = (BlockHeader*) readBuffer;
+
+        unsigned j = 0;
+        while(j < h->entries)
+        {
+            unsigned pos = sizeof(BlockHeader) + (j * sizeof(BlockEntry));
+            BlockEntry* e = (BlockEntry*)(readBuffer + pos);
+            run.entries.push_back(*e);
+
+            j++;
+            i++;
+        }
+        indexBlockCount--;
+        offset = offset + blockSize;
+    }
+    return RCOK;
+}
+
+rc_t LogArchiver::ArchiveIndex::loadRunInfo(int fd)
+{
+    RunInfo r;
+    deserializeRunInfo(r, fd);
+
+    //Insert at beggining, because listFiles() list the last run files first.
+    runs.insert(runs.begin(), r);
     return RCOK;
 }
 

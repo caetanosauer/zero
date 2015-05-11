@@ -13,8 +13,9 @@ LogFactory::LogFactory(bool sorted, unsigned max_page_id, unsigned th,
         unsigned increment)
     :
     INCR_TH(th), INCR_RATIO(increment), sorted(sorted),
-    max_page_id(max_page_id), prev_lsn(max_page_id, lsn_t::null),
-    generatedCount(0), nextLSN(1,0), gen(1729), dDist(0.0,1.0)
+    current_page_id(0), max_page_id(max_page_id),
+    prev_lsn(max_page_id, lsn_t::null), generatedCount(0), nextLSN(1,0),
+    gen(1729), dDist(0.0,1.0)
 {
     if (factory_version_major != log_storage::_version_major 
         || 
@@ -39,7 +40,12 @@ bool LogFactory::next(void* addr) {
     lr->header._type = stats.nextType();
     lr->header._len = stats.nextLength(lr->header._type);
     lr->header._cat = fake_logrec_t::t_status;
-    lr->header._shpid = nextZipf();
+    if(sorted) {
+        lr->header._shpid = nextSorted();
+    }
+    else {
+        lr->header._shpid = nextZipf();
+    }
     lr->header._vid = 1;    // volume id
     lr->header._page_tag = 1;
     lr->header._snum = 1;    // storage number
@@ -79,17 +85,46 @@ bool LogFactory::next(void* addr) {
  * Generate page_id in the range [0, max_page_id] (at least I hope so).
  */
 unsigned LogFactory::nextZipf() {
-    if(generatedCount % INCR_TH == 0) {
+    if(generatedCount != 0 && generatedCount % INCR_TH == 0) {
         max_page_id += INCR_RATIO;
         prev_lsn.resize(max_page_id, lsn_t::null);
     }
 
-    if (sorted) {
-        return max_page_id;
-    }
+    //if (sorted) {
+    //    return max_page_id;
+    //}
 
     double h = 0.2;
     int r = (int) ((max_page_id+1) * pow(dDist(gen), (log(h)/log(1-h))));
 
     return max_page_id - r; /* Try to favor higher page ids */
+}
+
+unsigned LogFactory::nextSorted() {
+    if(generatedCount != 0 && generatedCount % INCR_TH == 0) {
+        max_page_id += INCR_RATIO;
+        prev_lsn.resize(max_page_id, lsn_t::null);
+        DBGTHRD(<< "Increased max_page_id to " << max_page_id);
+    }
+
+    if(dDist(gen) <= 0.75) {
+        DBGTHRD(<< current_page_id);
+        return current_page_id; // returns the same page_id with 75% chance
+    }
+    else{
+        /* Increase the current_page_id to anything between the current_page_id
+         * and the max_page_id. Use Zipf distribution to force the new
+           current_page_id to not jump too much. In other words, the new
+           current_page_id has a 80% chance (1-h) to have a value in lower range
+           of 20% (h) of the range [current_page_id, max_page_id]. */
+        double h = 0.2;
+        current_page_id += (int) ((max_page_id-current_page_id+1) * pow(dDist(gen), (log(h)/log(1-h))));
+        DBGTHRD(<< current_page_id);
+        return current_page_id;
+    }
+}
+
+void LogFactory::resetRun() {
+    current_page_id = 0;
+    DBGTHRD(<< "resetRun()");
 }
