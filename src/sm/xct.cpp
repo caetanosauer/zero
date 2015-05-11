@@ -3149,12 +3149,7 @@ sys_xct_section_t::~sys_xct_section_t()
 {
     size_t xct_depth = me()->get_tcb_depth();
     if (xct_depth > _original_xct_depth) {
-        rc_t result = ss_m::abort_xct();
-        if (result.is_error()) {
-#if W_DEBUG_LEVEL>0
-            cerr << "system transaction automatic abort failed: " << result.err_num() << "\n";
-#endif // W_DEBUG_LEVEL>0
-        }
+        W_COERCE(ss_m::abort_xct());
     }
 }
 rc_t sys_xct_section_t::end_sys_xct (rc_t result)
