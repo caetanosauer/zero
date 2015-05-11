@@ -88,12 +88,11 @@ void createAndMountMultiple(bool format)
     for (int i = 0; i < vol_m::MAX_VOLS; i++) {
         stringstream ss;
         ss << volpath << i;
-        const char* path = ss.str().c_str();
 
         if (format) {
-            W_COERCE(volMgr->sx_format(path, numPages + i, vids[i], false));
+            W_COERCE(volMgr->sx_format(ss.str().c_str(), numPages + i, vids[i], false));
         }
-        W_COERCE(volMgr->sx_mount(path, false));
+        W_COERCE(volMgr->sx_mount(ss.str().c_str(), false));
         if (!format) {
             // Very weird bug! path changes after calling sx_mount above!
             // It changes inside bf_fixed_m::init, when allocating memory for the
@@ -126,9 +125,10 @@ void createAndMountMultiple(bool format)
 
         EXPECT_EQ(ss.str(), names[i]);
         EXPECT_EQ(vids[i], m_vids[i]);
+
+        W_COERCE(volMgr->sx_dismount(names[i].c_str()));
     }
 
-    W_COERCE(volMgr->sx_dismount_all());
     checkEmpty();
 
     for (int i = 0; i < vol_m::MAX_VOLS; i++) {

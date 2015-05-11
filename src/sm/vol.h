@@ -67,6 +67,8 @@ private:
     int    vol_cnt;
     vol_t* volumes[MAX_VOLS];
     vid_t _next_vid;
+
+    srwlock_t _mutex;
 };
 
 struct volhdr_t {

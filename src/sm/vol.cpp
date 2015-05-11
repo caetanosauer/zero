@@ -16,8 +16,6 @@
 #include "stnode_page.h"
 #include "vol.h"
 #include "sm_du_stats.h"
-#include "crash.h"
-#include "chkpt_serial.h"
 #include "sm_options.h"
 
 #include "sm_vtable_enum.h"
@@ -47,6 +45,8 @@ vol_m::~vol_m()
 
 vol_t* vol_m::get(const char* path)
 {
+    spinlock_read_critical_section cs(&_mutex);
+
     for (uint32_t i = 0; i < MAX_VOLS; i++)  {
         if (volumes[i] && strcmp(volumes[i]->devname(), path) == 0) {
             return volumes[i];
@@ -57,6 +57,8 @@ vol_t* vol_m::get(const char* path)
 
 vol_t* vol_m::get(vid_t vid)
 {
+    spinlock_read_critical_section cs(&_mutex);
+
     if (vid == vid_t(0)) return NULL;
     for (uint32_t i = 0; i < MAX_VOLS; i++)  {
         if (volumes[i] && volumes[i]->vid() == vid) {
@@ -72,8 +74,10 @@ rc_t vol_m::sx_format(
     vid_t& vid,
     bool logit)
 {
-    FUNC(vol_t::format_vol);
-    // CS TODO latch here
+    spinlock_write_critical_section cs(&_mutex);
+
+
+    sys_xct_section_t ssx(true);
 
     // CS TODO -- WHY LOG OFF???
     /*
@@ -82,18 +86,12 @@ rc_t vol_m::sx_format(
      */
     // xct_log_switch_t log_off(smlevel_0::OFF);
 
-    vid = _next_vid++;
-
-    if (logit) {
-        sys_xct_section_t ssx(true);
-        log_format_vol(devname, num_pages, vid);
-        W_DO (ssx.end_sys_xct(RCOK));
+    if (_next_vid > MAX_VOLS) {
+        W_RETURN_RC_MSG(eINTERNAL,
+            << "Maximum number of volumes already reached: " << MAX_VOLS);
     }
 
-    // CS: I guess latch could be released here, since operation was already
-    // logged and next_vid incremented. If there is a crash, the order of the
-    // format log records will determine the order in which VIDs are assigned,
-    // so there is no need to log the VID.
+    vid = _next_vid++;
 
     DBG( << "formating volume " << devname << ">" );
     int flags = smthread_t::OPEN_CREATE | smthread_t::OPEN_RDWR
@@ -172,19 +170,41 @@ rc_t vol_m::sx_format(
         DBG(<<" done formatting store node region");
     }
 
-    W_COERCE(me()->close(fd));
+    W_DO(me()->close(fd));
     DBG(<<"format_vol: done" );
+
+    /*
+     * In principle, logging volume formats should not be required, since we
+     * force the folume header before returning from this method.  The only
+     * reason why we log is because of the _next_vid variable, which is part of
+     * persistent server state and therefore must be logged and checkpointed.
+     */
+    if (logit) {
+        log_format_vol(devname, num_pages, vid);
+    }
+    W_DO (ssx.end_sys_xct(RCOK));
 
     return RCOK;
 }
 
 rc_t vol_m::sx_mount(const char* device, const bool logit)
 {
-    FUNC(io_m::mount);
-    // grab chkpt_mutex to prevent mounts during chkpt
-    // need to serialize writing dev_tab and mounts
-        chkpt_serial_m::read_acquire();
-    DBG( << "_mount(" << device << ")");
+    spinlock_write_critical_section cs(&_mutex);
+
+    /**
+     * Mounts cannot occur while a checkpoint is being taken, because if the
+     * checkpoint log record is generated before the volume is added to the
+     * list of mounted volumes but after a mount log record was generated, then
+     * the mount will not be replayed if there is a crash. However, instead of
+     * acquiring the checkpoint mutex, we rely on the fact that checkpoints
+     * call list_volumes, which acquire the volume spinlock as well. Therefore,
+     * checkpoints and mounts/dismounts end up being implicitly serialized by
+     * the volume spinklock.
+     */
+
+    sys_xct_section_t ssx (true);
+
+    DBG( << "sx_mount(" << device << ")");
     uint32_t i;
     for (i = 0; i < MAX_VOLS && volumes[i]; i++) ;
     if (i >= MAX_VOLS) return RC(eNVOL);
@@ -192,46 +212,32 @@ rc_t vol_m::sx_mount(const char* device, const bool logit)
     vol_t* v = new vol_t();
     if (! v) return RC(eOUTOFMEMORY);
 
+    W_DO(v->mount(device));
     volumes[i] = v;
     ++vol_cnt;
 
     if (logit)  {
-        sys_xct_section_t ssx (true);
         log_mount_vol(volumes[i]->devname());
-        rc_t ret = volumes[i]->mount(device);
-        W_DO (ssx.end_sys_xct(ret));
-    }
-    else {
-        rc_t ret = volumes[i]->mount(device);
     }
 
-    SSMTEST("io_m::_mount.1");
-        chkpt_serial_m::read_release();
+    W_DO (ssx.end_sys_xct(RCOK));
 
     return RCOK;
 }
 
 rc_t vol_m::sx_dismount(const char* device, bool logit)
 {
-    // grab chkpt_mutex to prevent dismounts during chkpt
-    // need to serialize writing dev_tab and dismounts
-    chkpt_serial_m::read_acquire();
-
-    FUNC(io_m::_dismount);
     DBG( << "_dismount(" << device << ")");
     vol_t* vol = get(device);
+    w_assert0(vol);
 
-    if (logit) {
-        sys_xct_section_t ssx (true);
-        rc_t ret = vol->dismount();
-        log_dismount_vol(vol->devname());
-        W_DO (ssx.end_sys_xct(ret));
-    }
-    else {
-        rc_t ret = vol->dismount();
-    }
+    // lock after get() to avoid deadlock
+    // checkpoints also serialized -- see comment on sx_mount
+    spinlock_write_critical_section cs(&_mutex);
 
-    // SetLastMountLSN(theLSN);
+    sys_xct_section_t ssx (true);
+
+    W_DO(vol->dismount());
 
     for (int i = 0; i < MAX_VOLS; i++) {
         if (volumes[i] == vol) {
@@ -241,8 +247,11 @@ rc_t vol_m::sx_dismount(const char* device, bool logit)
     }
     --vol_cnt;
 
-    SSMTEST("io_m::_dismount.1");
-    chkpt_serial_m::read_release();
+    if (logit) {
+        log_dismount_vol(vol->devname());
+    }
+
+    W_DO (ssx.end_sys_xct(RCOK));
 
     DBG( << "_dismount done.");
     return RCOK;
@@ -254,6 +263,8 @@ rc_t vol_m::list_volumes(
     size_t start,
     size_t count)
 {
+    spinlock_read_critical_section cs(&_mutex);
+
     w_assert0(names.size() == vids.size());
 
     if (count == 0) {
@@ -270,21 +281,10 @@ rc_t vol_m::list_volumes(
     return RCOK;
 }
 
-rc_t vol_m::sx_dismount_all()
-{
-    // CS: TODO -- for atomicity, there should be a single dismount_all log record
-    for (int i = 0; i < MAX_VOLS; i++)  {
-        if (volumes[i])        {
-            W_DO(sx_dismount(volumes[i]->devname()));
-        }
-    }
-
-    w_assert3(vol_cnt == 0);
-    return RCOK;
-}
-
 rc_t vol_m::force_fixed_buffers()
 {
+    spinlock_read_critical_section cs(&_mutex);
+
     for (uint32_t i = 0; i < MAX_VOLS; i++)  {
         if (volumes[i]) {
             W_DO(volumes[i]->get_fixed_bf()->flush());
@@ -328,6 +328,8 @@ rc_t vol_t::sync()
 
 rc_t vol_t::mount(const char* devname)
 {
+    spinlock_write_critical_section cs(&_mutex);
+
     if (_unix_fd >= 0) return RC(eALREADYMOUNTED);
 
     /*
@@ -386,6 +388,8 @@ rc_t vol_t::mount(const char* devname)
 
 rc_t vol_t::dismount()
 {
+    spinlock_write_critical_section cs(&_mutex);
+
     DBG(<<" vol_t::dismount flush=" << flush);
 
     INC_TSTAT(vol_cache_clears);

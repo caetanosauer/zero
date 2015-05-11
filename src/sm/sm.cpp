@@ -1523,10 +1523,6 @@ ss_m::create_vol(const char* dev_name, smksize_t quota_KB, vid_t& vid)
        shpid_t(quota_KB/(page_sz/1024)),
        vid));
 
-    // CS: checkpoint must be taken to record the volume mount, otherwise
-    // recovery will fail (TODO this general problem should be fixed)
-    chkpt->synch_take();
-
     return RCOK;
 }
 
