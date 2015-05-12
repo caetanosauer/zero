@@ -19,11 +19,13 @@
 #include "crash.h"
 #include "w_key.h"
 #include "xct.h"
+#include "vol.h"
 
 rc_t btree_impl::_sx_create_tree(const stid_t &stid, lpid_t &root_pid)
 {
     FUNC(btree_impl::_sx_create_tree);
-    W_DO( io_m::sx_alloc_a_page(stid, root_pid)); // allocate a root page as separate ssx
+    root_pid._vol = stid.vol;
+    W_DO(smlevel_0::vol->get(stid.vol)->alloc_a_page(root_pid.page));
     sys_xct_section_t sxs;
     W_DO(sxs.check_error_on_start());
     rc_t ret = _ux_create_tree_core(stid, root_pid);
@@ -51,7 +53,7 @@ rc_t btree_impl::_ux_create_tree_core(const stid_t &stid, const lpid_t &root_pid
                            ));
 
     // also register it in stnode_page
-    W_DO(io->set_root(stid, root_pid.page));
+    W_DO(smlevel_0::vol->get(stid.vol)->set_store_root(stid.store, root_pid.page));
 
     return RCOK;
 }
@@ -82,7 +84,7 @@ btree_impl::_ux_shrink_tree_core(btree_page_h& rp)
     w_assert3( rp.is_fixed());
     w_assert3( rp.latch_mode() == LATCH_EX);
     lpid_t rp_pid = rp.pid();
-    
+
     if( rp.nrecs() > 0 || rp.get_foster() != 0) {
         return RCOK; // just to make sure
     }
@@ -106,7 +108,7 @@ btree_impl::_ux_shrink_tree_core(btree_page_h& rp)
                              fence_low, fence_high, dummy_chain_high,
                              true, // log it to avoid write-order dependency. anyway it's very rare!
                              &cp, 0, cp.nrecs()));
-    
+
         w_assert3( cp.latch_mode() == LATCH_EX);
         W_DO( cp.set_to_be_deleted(true)); // delete the page
     } else {
@@ -132,7 +134,8 @@ btree_impl::_sx_grow_tree(btree_page_h& rp)
     FUNC(btree_impl::_sx_grow_tree);
     lpid_t new_pid;
     // allocate a page as separate system transaction
-    W_DO(io_m::sx_alloc_a_page (rp.stid(), new_pid));
+    new_pid._vol = rp.vol();
+    W_DO(smlevel_0::vol->get(rp.vol())->alloc_a_page(new_pid.page));
     sys_xct_section_t sxs;
     W_DO(sxs.check_error_on_start());
     rc_t ret = _ux_grow_tree_core(rp, new_pid);
@@ -146,7 +149,7 @@ btree_impl::_ux_grow_tree_core(btree_page_h& rp, const lpid_t &cp_pid)
     w_assert1 (xct()->is_sys_xct());
     FUNC(btree_impl::_sx_grow_tree);
     INC_TSTAT(bt_grows);
-    
+
     w_assert1(rp.latch_mode() == LATCH_EX);
     w_assert1(rp.is_fence_low_infimum()); // this should be left-most.
 
@@ -183,10 +186,10 @@ btree_impl::_ux_grow_tree_core(btree_page_h& rp, const lpid_t &cp_pid)
                          0, lsn_t::null,// no foster
                             infimum, supremum, dummy_chain_high // empty fence keys=infimum-supremum
              )); // nothing to steal
-    
+
     w_assert3(cp.is_consistent(true, true));
     cp.unfix();
-    
+
     // that's it. then, we adopt keys to the new root page later
     w_assert3(rp.is_consistent(true, true));
 

@@ -659,10 +659,10 @@ private:
                                 XctLockHeap& lock_heap);  // Out: heap to gather lock info
 
     // Helper function to process the extra mount operation, called from Log Analysis pass
-    static void                 _analysis_process_extra_mount(
-                                lsn_t& theLastMountLSNBeforeChkpt,  // In/Out: last LSN
-                                lsn_t& redo_lsn,                    // In: starting point of REDO log scan
-                                bool& mount);                       // Out: whether mount occurred
+    // static void                 _analysis_process_extra_mount(
+    //                             lsn_t& theLastMountLSNBeforeChkpt,  // In/Out: last LSN
+    //                             lsn_t& redo_lsn,                    // In: starting point of REDO log scan
+    //                             bool& mount);                       // Out: whether mount occurred
 
     // Helper function to process the compensation map , called from backward log analysis only
     static void                 _analysis_process_compensation_map(

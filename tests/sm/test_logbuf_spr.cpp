@@ -17,7 +17,6 @@
 #include "bf_fixed.h"
 #include "bf_tree_cb.h"
 #include "bf_tree.h"
-#include "sm_io.h"
 #include "sm_int_0.h"
 
 #include <vector>
@@ -31,7 +30,7 @@
 btree_test_env *test_env;
 
 const uint64_t SEG_SIZE = 1024*1024; // _segsize 1MB
-const uint64_t LOG_SIZE = 128*1024*8;  // so that _partition_data_size is about 128MB 
+const uint64_t LOG_SIZE = 128*1024*8;  // so that _partition_data_size is about 128MB
 
 
 const int APPEND_COUNT = 10000; // number of log comment log records (about 20KB) added
@@ -132,7 +131,7 @@ void corrupt_page(test_volume_t *test_volume, shpid_t target_pid) {
         fsync(vol_fd);
         close(vol_fd);
     }
-        
+
 }
 bool is_consecutive_chars(char* str, char c, int len) {
     for (int i = 0; i < len; ++i) {
@@ -169,7 +168,7 @@ w_rc_t test_nochange(ss_m* ssm, test_volume_t *test_volume) {
     vid_t vid = test_volume->_vid;
     x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));
-    
+
     return RCOK;
 }
 TEST (LogBufferTest_Spr, NoChange) {
@@ -197,8 +196,8 @@ w_rc_t test_one_change(ss_m* ssm, test_volume_t *test_volume) {
     char _buf[BUF_SIZE];
     memset(_buf, 'z', BUF_SIZE);
     _buf[BUF_SIZE-1] = '\0';
-    
-    
+
+
 
     for (int i = 0; i < APPEND_COUNT; ++i) {
         _rc = ssm->log_message(_buf);
@@ -231,7 +230,7 @@ w_rc_t test_one_change(ss_m* ssm, test_volume_t *test_volume) {
     vid_t vid = test_volume->_vid;
     x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));
-    
+
     return RCOK;
 }
 TEST (LogBufferTest_Spr, OneChange) {
@@ -261,8 +260,8 @@ w_rc_t test_two_changes(ss_m* ssm, test_volume_t *test_volume) {
     char _buf[BUF_SIZE];
     memset(_buf, 'z', BUF_SIZE);
     _buf[BUF_SIZE-1] = '\0';
-    
-    
+
+
 
     for (int i = 0; i < APPEND_COUNT; ++i) {
         _rc = ssm->log_message(_buf);
@@ -289,13 +288,13 @@ w_rc_t test_two_changes(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->find_assoc(stid, target_key1, buf, buf_len, found));
     EXPECT_FALSE(found);
     W_DO(ssm->commit_xct());
-    
+
     //Clean up backup file
     BackupManager *bk = ssm->bk;
     vid_t vid = test_volume->_vid;
     x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));
-    
+
     return RCOK;
 }
 TEST (LogBufferTest_Spr, TwoChanges) {
@@ -356,8 +355,8 @@ w_rc_t test_multi_pages(ss_m* ssm, test_volume_t *test_volume) {
     char _buf[BUF_SIZE];
     memset(_buf, 'z', BUF_SIZE);
     _buf[BUF_SIZE-1] = '\0';
-    
-    
+
+
 
     for (int i = 0; i < APPEND_COUNT; ++i) {
         _rc = ssm->log_message(_buf);
@@ -406,7 +405,7 @@ w_rc_t test_multi_pages(ss_m* ssm, test_volume_t *test_volume) {
     vid_t vid = test_volume->_vid;
     x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));
-    
+
     return RCOK;
 }
 

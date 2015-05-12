@@ -8,6 +8,7 @@
  */
 
 #include "btree_logrec.h"
+#include "vol.h"
 
 btree_insert_t::btree_insert_t(
     const btree_page_h&   _page,
@@ -524,7 +525,8 @@ void btree_norec_alloc_log::redo(fixable_page_h* p) {
         // we are recovering "page2", which is foster-child.
         w_assert0(target_pid == dp->_page2_pid);
         // This log is also a page-allocation log, so redo the page allocation.
-        W_COERCE(io_m::redo_alloc_a_page(p->pid().vol(), dp->_page2_pid));
+        W_COERCE(smlevel_0::vol->get(p->pid().vol())
+                ->alloc_a_page(dp->_page2_pid, true /* redo */));
         lpid_t pid(header._vid, dp->_page2_pid);
         // initialize as an empty child:
         bp.format_steal(new_lsn, pid, header._snum,

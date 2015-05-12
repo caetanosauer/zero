@@ -4,20 +4,20 @@
 
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -66,6 +66,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "btcursor.h"
 #include "sm.h"
 #include "suppress_unused.h"
+#include "vol.h"
 
 #if W_DEBUG_LEVEL > 2
 #define  FILE_LOG_COMMENT_ON 1
@@ -92,24 +93,6 @@ ss_m::get_store_property(stid_t stid, store_property_t& property)
 {
     SM_PROLOGUE_RC(ss_m::get_store_property, in_xct,read_only, 0);
     W_DO( _get_store_property( stid, property) );
-    return RCOK;
-}
-
-rc_t
-ss_m::lvid_to_vid(const lvid_t& lvid, vid_t& vid)
-{
-    SM_PROLOGUE_RC(ss_m::lvid_to_vid, can_be_in_xct,read_only, 0);
-    vid = io->get_vid(lvid);
-    if (vid == 0) return RC(eBADVOL);
-    return RCOK;
-}
-
-rc_t
-ss_m::vid_to_lvid(vid_t vid, lvid_t& lvid)
-{
-    SM_PROLOGUE_RC(ss_m::lvid_to_vid, can_be_in_xct,read_only, 0);
-    lvid = io->get_lvid(vid);
-    if (lvid == lvid_t::null) return RC(eBADVOL);
     return RCOK;
 }
 
@@ -147,14 +130,14 @@ ss_m::_set_store_property(
      */
     store_flag_t oldflags = st_unallocated;
 
-    W_DO( io->get_store_flags(stid, oldflags) );
+    W_DO(vol->get(stid.vol)->get_store_flags(stid.store, oldflags) );
 
     if (oldflags == newflags)  {
         return RCOK;
     }
 
 
-    W_DO( io->set_store_flags(stid, newflags) );
+    W_DO(vol->get(stid.vol)->set_store_flags(stid.store, newflags) );
 
     return RCOK;
 }
@@ -168,7 +151,7 @@ ss_m::_get_store_property(
     store_property_t&   property)
 {
     store_flag_t flags = st_unallocated;
-    W_DO( io->get_store_flags(stid, flags) );
+    W_DO(vol->get(stid.vol)->get_store_flags(stid.store, flags) );
 
     if (flags & st_regular) {
         w_assert2((flags & (st_tmp|st_load_file|st_insert_file)) == 0);
@@ -184,10 +167,10 @@ ss_m::_get_store_property(
         property = t_load_file;
         return RCOK;
     }
-    
+
     if (flags & st_insert_file) {
         // Files can't be created as st_insert_file, but they
-        // can get changed to this. 
+        // can get changed to this.
         // They get converted on commit to st_regular.
         // The page fix causes the st_tmp flag to be OR-ed in
         // for the page's store flags.

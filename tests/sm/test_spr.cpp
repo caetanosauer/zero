@@ -10,7 +10,6 @@
 #include "bf_fixed.h"
 #include "bf_tree_cb.h"
 #include "bf_tree.h"
-#include "sm_io.h"
 #include "sm_int_0.h"
 
 #include <vector>
@@ -114,7 +113,7 @@ void corrupt_page(test_volume_t *test_volume, shpid_t target_pid) {
         fsync(vol_fd);
         close(vol_fd);
     }
-        
+
 }
 bool is_consecutive_chars(char* str, char c, int len) {
     for (int i = 0; i < len; ++i) {
@@ -151,7 +150,7 @@ w_rc_t test_nochange(ss_m* ssm, test_volume_t *test_volume) {
     vid_t vid = test_volume->_vid;
     x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));
-    
+
     return RCOK;
 }
 TEST (SprTest, NoChange) {
@@ -192,7 +191,7 @@ w_rc_t test_one_change(ss_m* ssm, test_volume_t *test_volume) {
     vid_t vid = test_volume->_vid;
     x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));
-    
+
     return RCOK;
 }
 TEST (SprTest, OneChange) {
@@ -226,13 +225,13 @@ w_rc_t test_two_changes(ss_m* ssm, test_volume_t *test_volume) {
     W_DO(ssm->find_assoc(stid, target_key1, buf, buf_len, found));
     EXPECT_FALSE(found);
     W_DO(ssm->commit_xct());
-    
+
     //Clean up backup file
     BackupManager *bk = ssm->bk;
     vid_t vid = test_volume->_vid;
     x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));
-    
+
     return RCOK;
 }
 TEST (SprTest, TwoChanges) {
@@ -322,7 +321,7 @@ w_rc_t test_multi_pages(ss_m* ssm, test_volume_t *test_volume) {
     vid_t vid = test_volume->_vid;
     x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));
-    
+
     return RCOK;
 }
 // which pages to corrupt?

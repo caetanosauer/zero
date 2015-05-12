@@ -4,7 +4,6 @@ set(common_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/bitmap.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/devid_t.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/latch.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/lid_t.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/kvl_t.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/lsn.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/stid_t.cpp
@@ -25,7 +24,6 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/lsn.h
   ${CMAKE_CURRENT_SOURCE_DIR}/kvl_t.h
   ${CMAKE_CURRENT_SOURCE_DIR}/latch.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/lid_t.h
   ${CMAKE_CURRENT_SOURCE_DIR}/sm_vas.h
   ${CMAKE_CURRENT_SOURCE_DIR}/stid_t.h
   ${CMAKE_CURRENT_SOURCE_DIR}/tid_t.h

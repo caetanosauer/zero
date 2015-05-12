@@ -45,7 +45,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <w_minmax.h>
 #define SM_SOURCE
 #include <basics.h>
-#include "lid_t.h"
 #include "sm_s.h"
 #include "sm_int_1.h"
 #include "sm_du_stats.h"
@@ -61,17 +60,17 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 // This function is a convenient debugging breakpoint for
 // detecting audit failures.
 static w_rc_t
-stats_audit_failed(int 
+stats_audit_failed(int
 #if DEBUG_GNATS_77
         line
 #endif
         )
 {
 #if DEBUG_GNATS_77
-    cerr << "stats audit failed at line " << line 
+    cerr << "stats audit failed at line " << line
         << " of file " __FILE__ << endl;
     w_assert1(0);
-#endif 
+#endif
     return RC(eDUAUDITFAILED);
 }
 
@@ -119,7 +118,7 @@ btree_lf_stats_t::total_bytes() const
 ostream& operator<<(ostream& o, const btree_lf_stats_t& s)
 {
     /*
-    return 
+    return
     o
     << "hdr_bs "                << s.hdr_bs << endl
     << "key_bs "                << s.key_bs << endl
@@ -319,10 +318,10 @@ void btree_stats_t::print(ostream& o, const char *pfx) const
     char *pfx1 = new char[strlen(pfx) + 30];
     memcpy(pfx1, pfx, pfxlen);
         memcpy(pfx1+pfxlen, "lfpg.", 6);
-        s.leaf_pg.print(o,pfx1); 
+        s.leaf_pg.print(o,pfx1);
 
         memcpy(pfx1+pfxlen, "inpg.", 6);
-        s.int_pg.print(o,pfx1); 
+        s.int_pg.print(o,pfx1);
     delete[] pfx1;
 
     o
@@ -483,10 +482,10 @@ void volume_map_stats_t::print(ostream& o, const char *pfx) const
     memcpy(pfx1, pfx, pfxlen);
 
     memcpy(pfx1+pfxlen, "sdir.", 6);
-    s.store_directory.print(o,pfx1); 
+    s.store_directory.print(o,pfx1);
 
     memcpy(pfx1+pfxlen, "rind.", 6);
-    s.root_index.print(o,pfx1); 
+    s.root_index.print(o,pfx1);
 
     delete[] pfx1;
 }
@@ -529,7 +528,7 @@ sm_du_stats_t::audit() const
                                  // traversal (about to be freed)
 
          // sum of the above btree counts for root index and store directory
-         volume_map.unalloc_pg_cnt() 
+         volume_map.unalloc_pg_cnt()
          );
 
 
@@ -544,7 +543,7 @@ sm_du_stats_t::audit() const
 
 #if DEBUG_GNATS_77 || defined(W_TRACE)
     // separate out unlink_pg_cnts - they are included in the unalloc_pg_cnt
-    base_stat_t unlink_pg_cnt3 = 
+    base_stat_t unlink_pg_cnt3 =
              btree.unlink_pg_cnt + // unlinked in user btrees
              volume_map.unlink_pg_cnt() // unlinked in root dir and store dir
              ;
@@ -552,10 +551,10 @@ sm_du_stats_t::audit() const
 #endif
 
     base_stat_t alloc_and_unalloc_cnt = alloc_pg_cnt2 + unalloc_pg_cnt;
-    
+
     w_rc_t result;
-    if (alloc_and_unalloc_cnt != 
-        (volume_hdr.alloc_ext_cnt) 
+    if (alloc_and_unalloc_cnt !=
+        (volume_hdr.alloc_ext_cnt)
                 * smlevel_0::ext_sz ) {
         DBG(
             << " alloc2 total pages = " << alloc_pg_cnt2
@@ -565,8 +564,8 @@ sm_du_stats_t::audit() const
 #if DEBUG_GNATS_77
         const char *relation =  " > ";
         if (alloc_and_unalloc_cnt <
-            (volume_hdr.alloc_ext_cnt) 
-                * smlevel_0::ext_sz )  
+            (volume_hdr.alloc_ext_cnt)
+                * smlevel_0::ext_sz )
         {
             // some extents weren't marked for deletion but should have been
             // or
@@ -575,22 +574,22 @@ sm_du_stats_t::audit() const
             relation = " < ";
         }   // else, those referenced are more than the volume thinks there
         // are, so too many are marked for deletion and the storage structures
-        // haven't been adjusted to catch up.  
-        
-        cerr << "Pages referenced in store structures " 
-                << alloc_and_unalloc_cnt 
+        // haven't been adjusted to catch up.
+
+        cerr << "Pages referenced in store structures "
+                << alloc_and_unalloc_cnt
                 << relation
                 << " volume totals ("
                 << unlink_pg_cnt3
                 << " unlinked pages, included in referenced-in-structures)"
                 << endl;
-        cerr 
+        cerr
             << " alloc_and_unalloc_cnt "
-            << alloc_and_unalloc_cnt  
-            << " ("<<alloc_pg_cnt2<<"+" << unalloc_pg_cnt << ")" 
+            << alloc_and_unalloc_cnt
+            << " ("<<alloc_pg_cnt2<<"+" << unalloc_pg_cnt << ")"
             << " != volume allocated extents - marked for deletion "
             << ((volume_hdr.alloc_ext_cn)*
-                    smlevel_0::ext_sz ) 
+                    smlevel_0::ext_sz )
             << "((" << volume_hdr.alloc_ext_cnt
                     << ")* extsize)"
             << endl;
@@ -603,9 +602,9 @@ sm_du_stats_t::audit() const
         cerr
         << "alloc2 broken down: "
             << " btree.leaf_pg_cnt  "
-            << btree.leaf_pg_cnt 
+            << btree.leaf_pg_cnt
             << " btree.int_pg_cnt  "
-            << btree.int_pg_cnt 
+            << btree.int_pg_cnt
             << " volume_map.alloc_pg_cnt() "
             << volume_map.alloc_pg_cnt()
             << endl;
@@ -614,11 +613,11 @@ sm_du_stats_t::audit() const
         << "unalloc total broken down: "
 
          << " btree.unalloc_pg_cnt  " <<
-         btree.unalloc_pg_cnt 
+         btree.unalloc_pg_cnt
          << " btree.unlink_pg_cnt  " <<
-         btree.unlink_pg_cnt 
+         btree.unlink_pg_cnt
          << " volume_map.unalloc_pg_cnt()  " <<
-         volume_map.unalloc_pg_cnt() 
+         volume_map.unalloc_pg_cnt()
             << endl;
 
         cerr
@@ -632,17 +631,17 @@ sm_du_stats_t::audit() const
     }
 
 
-    base_stat_t alloc_pg_cnt = 
-        ( volume_hdr.alloc_ext_cnt + volume_hdr.hdr_ext_cnt ) 
-        * smlevel_0::ext_sz; 
+    base_stat_t alloc_pg_cnt =
+        ( volume_hdr.alloc_ext_cnt + volume_hdr.hdr_ext_cnt )
+        * smlevel_0::ext_sz;
     alloc_pg_cnt -= unalloc_pg_cnt;
 
-        
+
     if ( alloc_pg_cnt * smlevel_0::page_sz != total_bytes()) {
         DBG(
             << " alloc_pg_cnt= " << alloc_pg_cnt
             << " unalloc_pg_cnt= " << unalloc_pg_cnt
-            << " page_sz = " << int(smlevel_0::page_sz) 
+            << " page_sz = " << int(smlevel_0::page_sz)
             << " total bytes= " << total_bytes()
         );
         if(result.is_error()) {} // don't croak on error-not-checked
@@ -681,13 +680,13 @@ void sm_du_stats_t::print(ostream& o, const char *pfx) const
     memcpy(pfx1, pfx, pfxlen);
 
     memcpy(pfx1+pfxlen, "btre.", 6);
-    s.btree.print(o,pfx1); 
+    s.btree.print(o,pfx1);
 
     memcpy(pfx1+pfxlen, "volh.", 6);
-    s.volume_hdr.print(o,pfx1); 
+    s.volume_hdr.print(o,pfx1);
 
     memcpy(pfx1+pfxlen, "volm.", 6);
-    s.volume_map.print(o,pfx1); 
+    s.volume_map.print(o,pfx1);
 
     delete[] pfx1;
 

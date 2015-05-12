@@ -74,6 +74,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "w_okvl_inl.h"    // Lock information gathering
 struct RawLock;            // Lock information gathering
 #include "restart.h"
+#include "vol.h"
 
 
 #ifdef EXPLICIT_TEMPLATE
@@ -687,7 +688,9 @@ try
     // master LSN must be equal or later than the current lsn (if busy system).
     // The master LSN will be the starting point for Recovery Log Analysis log scan
     const lsn_t curr_lsn = log->curr_lsn();
-    LOG_INSERT(chkpt_begin_log(io->GetLastMountLSN()), &master);
+    // CS TODO: is lastMountLSN really necessary? Why?
+    // LOG_INSERT(chkpt_begin_log(io->GetLastMountLSN()), &master);
+    LOG_INSERT(chkpt_begin_log(lsn_t::null), &master);
     w_assert1(curr_lsn.data() <= master.data());
 
     // The order of logging is important:
@@ -702,43 +705,25 @@ try
     // Checkpoint the dev mount table
     {
         // Log the mount table in "max loggable size" chunks.
-        // XXX casts due to enums
-        const int chunk = (int)max_vols > (int)chkpt_dev_tab_t::max
-            ? (int)chkpt_dev_tab_t::max : (int)max_vols;
-        total_dev_cnt = io->num_vols();
+        // casts due to enums
+        const int chunk = vol_m::MAX_VOLS > (int)chkpt_dev_tab_t::max
+            ? (int)chkpt_dev_tab_t::max : vol_m::MAX_VOLS;
+        total_dev_cnt = smlevel_0::vol->num_vols();
 
         int    i;
-        char   **devs;
-        devs = new char *[chunk];
-        if (!devs)
-            W_FATAL(fcOUTOFMEMORY);
-        for (i = 0; i < chunk; i++)
-        {
-            devs[i] = new char[max_devname+1];
-            if (!devs[i])
-                W_FATAL(fcOUTOFMEMORY);
-        }
-        vid_t  *vids;
-        vids = new vid_t[chunk];
-        if (!vids)
-            W_FATAL(fcOUTOFMEMORY);
+        std::vector<string> names;
+        std::vector<vid_t> vids;
 
         for (i = 0; i < total_dev_cnt; i += chunk)
         {
-            int ret;
-            W_COERCE(io->get_vols(i, MIN(total_dev_cnt - i, chunk),
-                     devs, vids, ret));
-            if (ret)
+            W_COERCE(smlevel_0::vol->list_volumes(names, vids, i, chunk));
+            if (names.size() > 0)
             {
                 // Write a Checkpoint Device Table Log
-                // XXX The bogus 'const char **' cast is for visual c++
-                LOG_INSERT(chkpt_dev_tab_log(ret, (const char **) devs, vids), 0);
+                LOG_INSERT(chkpt_dev_tab_log(
+                            smlevel_0::vol->get_next_vid(), names), 0);
             }
         }
-        delete [] vids;
-        for (i = 0; i < chunk; i++)
-            delete [] devs[i];
-        delete [] devs;
     }
 
     /*
@@ -799,7 +784,9 @@ try
 
             bf->get_rec_lsn(i, count, pid.get(), stores.get(),
                             rec_lsn.get(), page_lsn.get(), min_rec_lsn,
-                            master, log->curr_lsn(), io->GetLastMountLSN());
+                            master, log->curr_lsn(),
+                            lsn_t::null);
+                            // io->GetLastMountLSN()); // CS TODO
             if (count)
             {
                 total_page_count += count;
@@ -866,6 +853,12 @@ try
         do
         {
             int per_chunk_txn_count = 0;
+            /*
+             * CS TODO -- there is a bug here, which seems to occur when
+             * system is being shut down. The xct iterator keeps returning
+             * the same object, because the linked list somehow has a circle,
+             * i.e., _next->next == _next
+             */
             while (per_chunk_txn_count < chunk && (xd = x.next()))
             {
                 // Loop over all transactions and record only
@@ -1156,7 +1149,9 @@ try
     //     gets here, the system would be in the process of shutting down and it won't
     //     wait for the checkpoint to finish, don't finish the current checkpoint.
 
+#if 0 // CS TODO -- is this necessary?
     if (io->GetLastMountLSN() <= master)
+#endif
     {
         if (ss_m::shutting_down && !ss_m::shutdown_clean) // Dirty shutdown (simulated crash)
         {
@@ -1244,6 +1239,7 @@ try
 
         }
     }
+#if 0 // CS
     else
     {
         DBGOUT1(<<"chkpt_m::take - GetLastMountLSN > master, invalid situation for checkpoint, "
@@ -1253,6 +1249,7 @@ try
         smlevel_0::errlog->clog << error_prio
             << "chkpt_m::take - GetLastMountLSN > master, checkpoint aborted." << flushl;
     }
+#endif
 
     // Release the 'write' mutex so the next checkpoint request can come in
     chkpt_serial_m::write_release();

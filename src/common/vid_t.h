@@ -18,7 +18,4 @@
  */
 typedef uint16_t vid_t;
 
-/** maximum number of volumes that can exist. 1 to 65536. */
-#define MAX_VOL_COUNT 256
-
 #endif

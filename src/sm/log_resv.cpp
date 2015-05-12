@@ -4,20 +4,20 @@
 
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -69,9 +69,9 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 log_resv::log_resv(log_storage* storage)
     :
       _storage(storage),
-      _reservations_active(false), 
+      _reservations_active(false),
       _space_available(0),
-      _space_rsvd_for_chkpt(0), 
+      _space_rsvd_for_chkpt(0),
       _waiting_for_space(false)
 {
     DO_PTHREAD(pthread_mutex_init(&_space_lock, 0));
@@ -80,11 +80,11 @@ log_resv::log_resv(log_storage* storage)
     _oldest_lsn_tracker = new PoorMansOldestLsnTracker(1 << 20);
     w_assert1(_oldest_lsn_tracker);
 
-    // initial free space estimate... refined once log recovery is complete 
+    // initial free space estimate... refined once log recovery is complete
     release_space(_storage->recoverable_space(PARTITION_COUNT));
 
     if (smlevel_0::bf) {
-        if(!verify_chkpt_reservation() 
+        if(!verify_chkpt_reservation()
                 || space_for_chkpt() > _storage->partition_data_size()) {
             cerr<<
                 "log partitions too small compared to buffer pool:"<<endl
@@ -107,7 +107,7 @@ log_resv::~log_resv()
 }
 
 
-rc_t log_resv::wait_for_space(fileoff_t &amt, timeout_in_ms timeout) 
+rc_t log_resv::wait_for_space(fileoff_t &amt, timeout_in_ms timeout)
 {
     DBG(<<"log_resv::wait_for_space " << amt);
     // if they're asking too much don't even bother
@@ -156,7 +156,7 @@ rc_t log_resv::wait_for_space(fileoff_t &amt, timeout_in_ms timeout)
             cerr<<
                 "* - * - * tid "<<xct()->tid().get_hi()<<"."<<xct()->tid().get_lo()<<" waiting with timeout for "<<amt<<" bytes of log"<<endl;
                 int err = pthread_cond_timedwait(&cond, &_space_lock, &when);
-                if(err == ETIMEDOUT) 
+                if(err == ETIMEDOUT)
                 break;
         }
     }
@@ -166,7 +166,7 @@ rc_t log_resv::wait_for_space(fileoff_t &amt, timeout_in_ms timeout)
     return amt? RC(stTIMEOUT) : RCOK;
 }
 
-void log_resv::release_space(fileoff_t amt) 
+void log_resv::release_space(fileoff_t amt)
 {
     DBG(<<"log_resv::release_space " << amt);
     w_assert1(amt >= 0);
@@ -197,7 +197,7 @@ void log_resv::release_space(fileoff_t amt)
                     finished_one = true;
                 }
             }
-            
+
             if(finished_one) {
                 delete wx;
                 _log_space_waiters.pop_front();
@@ -206,10 +206,10 @@ void log_resv::release_space(fileoff_t amt)
         if(_log_space_waiters.empty()) {
             _waiting_for_space = false;
         }
-        
+
         DO_PTHREAD(pthread_mutex_unlock(&_space_lock));
     }
-    
+
     lintel::unsafe::atomic_fetch_add<fileoff_t>(&_space_available, amt);
 }
 
@@ -218,16 +218,16 @@ void log_resv::release_space(fileoff_t amt)
  *
  *  log_resv::scavenge(min_rec_lsn, min_xct_lsn)
  *
- *  Scavenge (free, reclaim) unused log files. 
- *  We can scavenge all log files with index less 
- *  than the minimum of the three lsns: 
- *  the two arguments  
+ *  Scavenge (free, reclaim) unused log files.
+ *  We can scavenge all log files with index less
+ *  than the minimum of the three lsns:
+ *  the two arguments
  *  min_rec_lsn,  : minimum recovery lsn computed by checkpoint
  *  min_xct_lsn,  : first log record written by any uncommitted xct
- *  and 
+ *  and
  *  global_min_lsn: the smaller of :
  *     min chkpt rec lsn: min_rec_lsn computed by the last checkpoint
- *     master_lsn: lsn of the last completed checkpoint-begin 
+ *     master_lsn: lsn of the last completed checkpoint-begin
  * (so the min chkpt rec lsn is in here twice - that's ok)
  *
  *********************************************************************/
@@ -240,7 +240,7 @@ log_resv::scavenge(const lsn_t &min_rec_lsn, const lsn_t& min_xct_lsn)
 
 #if W_DEBUG_LEVEL > 2
     //_sanity_check();
-#endif 
+#endif
     lsn_t lsn = std::min(std::min(_storage->global_min_lsn(), min_rec_lsn), min_xct_lsn);
     int count = _storage->delete_old_partitions(lsn);
 
@@ -273,13 +273,13 @@ log_resv::scavenge(const lsn_t &min_rec_lsn, const lsn_t& min_xct_lsn)
 
 /* Compute size of the biggest checkpoint we ever risk having to take...
  */
-long log_resv::max_chkpt_size() const 
+long log_resv::max_chkpt_size() const
 {
     /* BUG: the number of transactions which might need to be
        checkpointed is potentially unbounded. However, it's rather
        unlikely we'll ever see more than 5k at any one time, especially
        each active transaction uses an active user thread
-       
+
        The number of granted locks per transaction is also potentially
        unbounded.  Use a guess average value per active transaction,
        it should be unusual to see maximum active transactions and every
@@ -291,21 +291,21 @@ long log_resv::max_chkpt_size() const
     long bf_tab_size = smlevel_0::bf->get_block_cnt()*sizeof(chkpt_bf_tab_t::brec_t);
     long xct_tab_size = GUESS_MAX_XCT_COUNT*sizeof(chkpt_xct_tab_t::xrec_t);
     long xct_lock_size = GUESS_EACH_XCT_LOCK_COUNT*GUESS_MAX_XCT_COUNT*sizeof(chkpt_xct_lock_t::lockrec_t);
-    long dev_tab_size = smlevel_0::max_vols * sizeof(chkpt_dev_tab_t::devrec_t);
+    long dev_tab_size = sizeof(chkpt_dev_tab_t);
     return FUDGE + bf_tab_size + xct_tab_size + xct_lock_size + dev_tab_size;
 }
 
-rc_t                
+rc_t
 log_resv::file_was_archived(const char * /*file*/)
 {
-    // TODO: should check that this is the oldest, 
+    // TODO: should check that this is the oldest,
     // and that we indeed asked for it to be archived.
     _space_available += _storage->recoverable_space(1);
     return RCOK;
 }
 
-void 
-log_resv::activate_reservations(const lsn_t& curr_lsn) 
+void
+log_resv::activate_reservations(const lsn_t& curr_lsn)
 {
     /* With recovery complete we now activate log reservations.
 
@@ -317,7 +317,7 @@ log_resv::activate_reservations(const lsn_t& curr_lsn)
      */
     w_assert1(smlevel_0::operating_mode == smlevel_0::t_forward_processing);
     // FRJ: not true if any logging occurred during recovery
-    // w_assert1(PARTITION_COUNT*_partition_data_size == 
+    // w_assert1(PARTITION_COUNT*_partition_data_size ==
     //       _space_available + _space_rsvd_for_chkpt);
     w_assert1(!_reservations_active);
 
@@ -333,20 +333,20 @@ log_resv::activate_reservations(const lsn_t& curr_lsn)
     // NOTE: _reservations_active does not get checked in the
     // methods that reserve or release space, so reservations *CAN*
     // happen during recovery.
-    
+
     // not mt-safe
-    smlevel_0::errlog->clog << info_prio 
-        << "Activating reservations: # full partitions " 
+    smlevel_0::errlog->clog << info_prio
+        << "Activating reservations: # full partitions "
             << full_partitions
             << ", space available " << space_left()
-        << endl 
+        << endl
             << ", oldest partition " << oldest_pnum
             << ", newest partition " << newest_pnum
             << ", # partitions " << PARTITION_COUNT
         << endl ;
 }
 
-fileoff_t log_resv::take_space(fileoff_t *ptr, int amt) 
+fileoff_t log_resv::take_space(fileoff_t *ptr, int amt)
 {
     BOOST_STATIC_ASSERT(sizeof(fileoff_t) == sizeof(int64_t));
     fileoff_t ov = lintel::unsafe::atomic_load(const_cast<int64_t*>(ptr));
@@ -365,7 +365,7 @@ fileoff_t log_resv::take_space(fileoff_t *ptr, int amt)
     }
 }
 
-fileoff_t log_resv::reserve_space(fileoff_t amt) 
+fileoff_t log_resv::reserve_space(fileoff_t amt)
 {
     return (amt > 0)? take_space(&_space_available, amt) : 0;
 }
@@ -375,14 +375,14 @@ fileoff_t log_resv::consume_chkpt_reservation(fileoff_t amt)
     if(smlevel_0::operating_mode != smlevel_0::t_forward_processing)
        return amt; // not yet active -- pretend it worked
 
-    return (amt > 0)? 
+    return (amt > 0)?
         take_space(&_space_rsvd_for_chkpt, amt) : 0;
 }
 
 // make sure we have enough log reservation (conservative)
 // NOTE: this has to be compared with the size of a partition,
 // which _set_size does (it knows the size of a partition)
-bool log_resv::verify_chkpt_reservation() 
+bool log_resv::verify_chkpt_reservation()
 {
     fileoff_t space_needed = max_chkpt_size();
     while(*&_space_rsvd_for_chkpt < 2*space_needed) {

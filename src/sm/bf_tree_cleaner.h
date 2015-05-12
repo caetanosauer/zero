@@ -11,11 +11,9 @@
 #include "vid_t.h"
 #include "bf_idx.h"
 #include "lsn.h"
+#include "vol.h"
 #include <AtomicCounter.hpp>
 #include <vector>
-
-/** ID of cleaner worker thread. zero means no corresponding worker thread. */
-typedef uint16_t bf_cleaner_slave_id_t;
 
 class bf_tree_m;
 class bf_tree_cleaner_slave_thread_t;
@@ -97,17 +95,12 @@ private:
     /**
      * Wakes up the specified cleaner thread, starting it if not started yet.
      */
-    w_rc_t _wakeup_a_cleaner(bf_cleaner_slave_id_t id);
+    w_rc_t _wakeup_a_cleaner(unsigned id);
 
     /** the buffer pool this cleaner deals with. */
     bf_tree_m*                  _bufferpool;
 
-    /**
-     * _volume_assignments[vol] is the ID of assigned cleaner thread
-     * for the vol. The assignments are simply balanced regarding
-     * the count of volumes per thread.
-     */
-    bf_cleaner_slave_id_t       _volume_assignments[MAX_VOL_COUNT];
+    unsigned get_cleaner_for_vol(vid_t);
 
     /**
      * _volume_requests[vol] indicates whether the volume is requested
@@ -115,7 +108,7 @@ private:
      * When the corresponding worker observes this flag and completes
      * flushing all dirty pages in the volume, the worker turns off the flag.
      */
-    bool                        _requested_volumes[MAX_VOL_COUNT];
+    bool                        _requested_volumes[vol_m::MAX_VOLS];
 
     /** whether any unexpected error happened in some cleaner. */
     bool                        _error_happened;
@@ -140,8 +133,8 @@ private:
     /**
      * Size of _slave_threads including the dummy slave-id=0 entry.
      */
-    const bf_cleaner_slave_id_t _slave_threads_size;
-    
+    const unsigned _slave_threads_size;
+
     const uint32_t _cleaner_interval_millisec_min;
     const uint32_t _cleaner_interval_millisec_max;
     const uint32_t _cleaner_write_buffer_pages;
@@ -169,7 +162,7 @@ private:
 class bf_tree_cleaner_slave_thread_t : public smthread_t {
     friend class bf_tree_cleaner;
 public:
-    bf_tree_cleaner_slave_thread_t (bf_tree_cleaner* parent, bf_cleaner_slave_id_t id);
+    bf_tree_cleaner_slave_thread_t (bf_tree_cleaner* parent, unsigned id);
     ~bf_tree_cleaner_slave_thread_t ();
     
     void run();
@@ -189,8 +182,8 @@ private:
     bf_tree_cleaner*            _parent;
 
     /** ID of this thread. */
-    const bf_cleaner_slave_id_t _id;
-    
+    const unsigned _id;
+
     /** @todo at some point the flags below should probably become std::atomic_flag's (or lintel
         should be updated to include that type). I also think memory_order_consume would
         be OK for the accesses, instead of the default memory_order_seq_cst, but thats an

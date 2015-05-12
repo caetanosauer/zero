@@ -219,60 +219,25 @@ rc_t
 testdriver_thread_t::do_init(ss_m &ssm)
 {
     const int quota_in_kb = SM_PAGESIZE / 1024 * _disk_quota_in_pages;
-    if (_functor->_need_init) {
-        _functor->_test_volume._device_name = device_name;
-        _functor->_test_volume._vid = 1;
 
-        vout << "Formatting device: " << _functor->_test_volume._device_name
+    bool init_vol = _options.get_bool_option("sm_testenv_init_vol", true);
+    if (init_vol) {
+        if (_functor->_need_init) {
+            _functor->_test_volume._device_name = device_name;
+            _functor->_test_volume._vid = 1;
+
+            vout << "Formatting device: " << _functor->_test_volume._device_name
                 << " with a " << quota_in_kb << "KB quota ..." << endl;
-        W_DO(ssm.format_dev(_functor->_test_volume._device_name, quota_in_kb, true));
-    } else {
-        w_assert0(_functor->_test_volume._device_name);
-    }
+            W_DO(ssm.create_vol(
+                        _functor->_test_volume._device_name,
+                        quota_in_kb,
+                        _functor->_test_volume._vid
+                        ));
+        }
 
-    vout << "Mounting device: " << _functor->_test_volume._device_name  << endl;
-    // mount the new device
-
-    rc_t rc;
-    if (0 != strlen(_functor->_test_volume._device_name))
-    {
-// TODO(Restart)... performance, print out the device name
-        DBGOUT1(<< "***** Mount device, device name: " << _functor->_test_volume._device_name);
-        rc_t rc = ssm.mount_dev(_functor->_test_volume._device_name);
-    }
-    else
-    {
-// TODO(Restart)... performance, hard code the data file path and name if nothing is available, this is for an 'AFTER' case only
-        DBGOUT1(<< "***** Mount device, device name: " << "/dev/shm/weyg/btree_test_env/volumes/dev_test");    
-        rc_t rc = ssm.mount_dev("/dev/shm/weyg/btree_test_env/volumes/dev_test");
-    }
-    if (rc.is_error())
-    {
-        DBGOUT0(<< "**** Failed to ssm.mount_dev, error: " << rc.get_message());
-        return rc;
-    }
-
-    vout << "Mounted device: " << _functor->_test_volume._device_name << endl;
-
-    if (_functor->_need_init) {
-
-        // generate a volume ID for the new volume we are about to
-        // create on the device
-        vout << "Generating new lvid: " << endl;
-        W_DO(ssm.generate_new_lvid(_functor->_test_volume._lvid));
-        vout << "Generated lvid " << _functor->_test_volume._lvid <<  endl;
-
-        // create the new volume
-        vout << "Creating a new volume on the device" << endl;
-        vout << "    with a " << quota_in_kb << "KB quota ..." << endl;
-
-        W_DO(ssm.create_vol(_functor->_test_volume._device_name, _functor->_test_volume._lvid,
-                        quota_in_kb, false, _functor->_test_volume._vid));
-        vout << "    with local handle(phys volid) " << _functor->_test_volume._vid << endl;
-    } else {
-// TODO(Restart)... performance, for an AFTER case
-        w_assert0(_functor->_test_volume._vid != 0);
-        w_assert0(_functor->_test_volume._lvid != lvid_t::null);
+        DBGOUT1(<< "Mounting device: " << _functor->_test_volume._device_name);
+        W_DO(ssm.mount_vol(_functor->_test_volume._device_name,
+                    _functor->_test_volume._vid));
     }
 
     return RCOK;
@@ -370,7 +335,7 @@ void btree_test_env::empty_dir(const char *folder_name)
         std::remove (buf.str().c_str());
     }
     ASSERT_EQ(closedir (d), 0);
-/**/    
+/**/
 }
 
 void btree_test_env::SetUp()
@@ -901,11 +866,11 @@ int btree_test_env::runRestartPerfTest (
         // Force a flush of system cache before shutdown, the goal is to
         // make sure after the simulated system crash, the recovery process
         // has to get data from disk, not file system cache
-/**/        
+/**/
         int i;
         i = system("free -m");  // before free cache
         i = system("/bin/sync");  // flush but not free the page cache
-        i = system("sudo sh -c 'echo 3 >/proc/sys/vm/drop_caches'");  // free page cache and inode cache        
+        i = system("sudo sh -c 'echo 3 >/proc/sys/vm/drop_caches'");  // free page cache and inode cache
         i = system("free -m");  // after free cache
         // Force read/write a big file
         i = system("dd if=/home/weyg/test.core of=/home/weyg/test2.core bs=100k count=10000 conv=fdatasync"); // Read and write 1G of data using cache
@@ -962,7 +927,7 @@ int btree_test_env::runRestartPerfTest (
                 offset += per_read_size + ::rand()%1000+99;
                 int read_bytes = ::pread(pfd, buffer, sizeof(buffer), offset);
                 w_assert0(-1 != read_bytes);
-/**/                
+/**/
 
 /* Relative seek with offset on multiple of 8192 *
                 offset = (::rand()%10+1) * per_read_size;
@@ -1008,7 +973,7 @@ int btree_test_env::runRestartPerfTest (
 
             }
             // Done, close the file
-            ::close(pfd);        
+            ::close(pfd);
             std::cout << "Done with extra read" << std::endl;
 
             struct timeval tm_after;
@@ -1022,7 +987,7 @@ int btree_test_env::runRestartPerfTest (
         // Setup timer first
         // CUP cycles
         unsigned int hi, lo;
-        __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));       
+        __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
         context->_start = ((unsigned long long)lo)|( ((unsigned long long)hi)<<32);
 
         // Elapsed time in millisecs seconds
@@ -1312,15 +1277,15 @@ int btree_test_env::runRestartPerfTestAfter (
     {
         // Start from an existing database from phase 2 with existing log and data files
         // Existing data file:
-        // /dev/shm/weyg/btree_test_env/volumes/dev_test        
-        
+        // /dev/shm/weyg/btree_test_env/volumes/dev_test
+
         // Caller should do a manual system shutdown before calling this test case
         // to ensure all caches are clean
 
         // Setup timer first
         // CUP cycles
         unsigned int hi, lo;
-        __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));       
+        __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
         context->_start = ((unsigned long long)lo)|( ((unsigned long long)hi)<<32);
 
         // Elapsed time in millisecs seconds

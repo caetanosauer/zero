@@ -3,7 +3,6 @@
 #include "sm_vas.h"
 #include "generic_page.h"
 #include "fixable_page_h.h"
-#include "sm_io.h"
 #include "backup.h"
 #include "vol.h"
 #include <iostream>
@@ -35,7 +34,7 @@ w_rc_t initial_test(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(bk->volume_exists(vid));
 
     // this is initial state, so all data pages are unused.
-    vol_t *vol = ssm->io->get_volume(test_volume->_vid);
+    vol_t *vol = ssm->vol->get(test_volume->_vid);
     const shpid_t FIRST_PID = vol->first_data_pageid();
     for (shpid_t pid = FIRST_PID; pid < (uint32_t)default_quota_in_pages; ++pid) {
         EXPECT_FALSE(bk->page_exists(vid, pid));
@@ -54,21 +53,21 @@ const snum_t STNUM = 10;
 /** helper to allocate a few pages */
 w_rc_t allocate_few(ss_m* ssm, test_volume_t *test_volume, shpid_t alloc_count) {
     vid_t vid = test_volume->_vid;
-    vol_t *vol = ssm->io->get_volume(test_volume->_vid);
+    vol_t *vol = ssm->vol->get(test_volume->_vid);
     const shpid_t FIRST_PID = vol->first_data_pageid();
     W_DO(ssm->begin_xct());
     stid_t stid (vid, STNUM);
     for (shpid_t i = 0; i < alloc_count; ++i) {
-        lpid_t pid;
-        W_DO(io_m::sx_alloc_a_page(stid, pid));
-        EXPECT_EQ (pid.page, FIRST_PID + i);
+        shpid_t shpid;
+        W_DO(smlevel_0::vol->get(vid)->alloc_a_page(shpid));
+        EXPECT_EQ (shpid, FIRST_PID + i);
 
         // set minimal headers in the page
         fixable_page_h page;
-        W_DO(page.fix_direct(vid, pid.page, LATCH_EX, false, true));
+        W_DO(page.fix_direct(vid, shpid, LATCH_EX, false, true));
         page.set_lsns(lsn_t(0, 1));
         page.set_dirty();
-        page.get_generic_page()->pid = pid;
+        page.get_generic_page()->pid = lpid_t(vid, shpid);
         page.get_generic_page()->tag = t_btree_p;
         page.unset_to_be_deleted();
         page.unfix();
@@ -80,7 +79,7 @@ w_rc_t allocate_few(ss_m* ssm, test_volume_t *test_volume, shpid_t alloc_count) 
 w_rc_t allocate_few_test(ss_m* ssm, test_volume_t *test_volume) {
     BackupManager *bk = ssm->bk;
     vid_t vid = test_volume->_vid;
-    vol_t *vol = ssm->io->get_volume(test_volume->_vid);
+    vol_t *vol = ssm->vol->get(test_volume->_vid);
     const shpid_t FIRST_PID = vol->first_data_pageid();
     x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));
@@ -120,7 +119,7 @@ TEST (BackupTest, AllocateFew) {
 w_rc_t mixed_test(ss_m* ssm, test_volume_t *test_volume) {
     BackupManager *bk = ssm->bk;
     vid_t vid = test_volume->_vid;
-    vol_t *vol = ssm->io->get_volume(test_volume->_vid);
+    vol_t *vol = ssm->vol->get(test_volume->_vid);
     const shpid_t FIRST_PID = vol->first_data_pageid();
     x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));
@@ -133,7 +132,7 @@ w_rc_t mixed_test(ss_m* ssm, test_volume_t *test_volume) {
     const shpid_t DEALLOCATE_END = DEALLOCATE_START + 4;
     W_DO(ssm->begin_xct());
     for (shpid_t pid = DEALLOCATE_START; pid < DEALLOCATE_END; ++pid) {
-        W_DO(io_m::sx_dealloc_a_page(lpid_t(vid, pid)));
+        W_DO(smlevel_0::vol->get(vid)->deallocate_page(pid));
     }
     W_DO(ssm->commit_xct());
 
@@ -178,39 +177,12 @@ w_rc_t validity_test(ss_m* ssm, test_volume_t *test_volume) {
     EXPECT_TRUE(bk->volume_exists(vid));
 
     // this is initial state, so all data pages are unused.
-    vol_t *vol = ssm->io->get_volume(test_volume->_vid);
+    vol_t *vol = ssm->vol->get(test_volume->_vid);
     const shpid_t FIRST_PID = vol->first_data_pageid();
     for (shpid_t pid = FIRST_PID; pid < (uint32_t)default_quota_in_pages; ++pid) {
         EXPECT_FALSE(bk->page_exists(vid, pid));
     }
-    
-    struct timespec vol_ctime; int vol_salt;
-    struct timespec backup_ctime; int backup_salt;
-    vol->get_vol_ctime(vol_ctime, vol_salt);
-    volhdr_t backup_hdr;
-    std::string backup_path(bk->get_backup_path(test_volume->_vid));
-    rc_t rc = vol_t::read_vhdr(backup_path.c_str(), backup_hdr); 
-    backup_hdr.get_ctime(backup_ctime, backup_salt);    
-    EXPECT_EQ(backup_ctime.tv_sec, vol_ctime.tv_sec);
-    EXPECT_EQ(backup_ctime.tv_nsec, vol_ctime.tv_nsec);
-    EXPECT_EQ(backup_salt, vol_salt);         
-    
-        
-    //Reformat to generate new ctime
-    sleep(2);
-    vol->reformat_vol(test_volume->_device_name, test_volume->_lvid, test_volume->_vid, 
-                    8, true);
-    vol = ssm->io->get_volume(test_volume->_vid);
-    vol->get_vol_ctime(vol_ctime, vol_salt);
-    
-    bool ctime_same = false;
-    if ((backup_ctime.tv_sec == vol_ctime.tv_sec) &&
-        (backup_ctime.tv_nsec == vol_ctime.tv_nsec) &&
-        (backup_salt == vol_salt)) {
-        ctime_same = true;
-    }
-    EXPECT_FALSE(ctime_same);
-    
+
     x_delete_backup(ssm, test_volume);
     EXPECT_FALSE(bk->volume_exists(vid));
     return RCOK;

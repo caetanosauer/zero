@@ -22,6 +22,7 @@
 #include "xct.h"
 #include "bf_tree.h"
 #include "sm_int_0.h"
+#include "vol.h"
 
 rc_t btree_impl::_sx_norec_alloc(btree_page_h &page, lpid_t &new_page_id) {
     sys_xct_section_t sxs(true);
@@ -36,14 +37,17 @@ rc_t btree_impl::_ux_norec_alloc_core(btree_page_h &page, lpid_t &new_page_id) {
     w_assert1 (xct()->is_single_log_sys_xct());
     w_assert1 (page.latch_mode() == LATCH_EX);
 
-    W_DO(io_m::alloc_a_page (page.stid(), new_page_id));
+    shpid_t shpid;
+    W_DO(smlevel_0::vol->get(page.vol())->alloc_a_page(shpid));
+    new_page_id = lpid_t(page.vol(), shpid);
     btree_page_h new_page;
     w_rc_t rc;
     rc = new_page.fix_nonroot(page, page.vol(), new_page_id.page, LATCH_EX, false, true);
 
     if (rc.is_error()) {
         // if failed for any reason, we release the allocated page.
-        W_DO(io_m::dealloc_a_page (new_page_id));
+        W_DO(smlevel_0::vol->get(page.vol())
+                ->deallocate_page(new_page_id.page));
         return rc;
     }
 
@@ -97,7 +101,7 @@ rc_t btree_impl::_sx_split_foster(btree_page_h &page,                // In: sour
     // Split consits of two SSXs; empty-split and rebalance.
 
     // On return of the following call, the foster child page (destination) was allocated
-    // as an empty page, the fence keys and foster high have been 
+    // as an empty page, the fence keys and foster high have been
     // set up in the new page and the foster relationship has been adjusted
     W_DO(_sx_norec_alloc(page, new_page_id));
 
@@ -111,14 +115,14 @@ rc_t btree_impl::_sx_split_foster(btree_page_h &page,                // In: sour
     lsn_t   new_pid0_emlsn;
     if (page.is_node())
     {
-        // Non-leaf page, find the new lowest key with emlsn (Single 
+        // Non-leaf page, find the new lowest key with emlsn (Single
         // Page Recovery of its child page)
         btrec_t lowest (page, page.nrecs() - move_count);
         w_assert1(lowest.key().compare(mid_key) == 0);
         new_pid0 = lowest.child();
         new_pid0_emlsn = lowest.child_emlsn();
     }
-    else 
+    else
     {
         // Leaf page, no emlsn (no child page)
         new_pid0 = 0;
@@ -126,7 +130,7 @@ rc_t btree_impl::_sx_split_foster(btree_page_h &page,                // In: sour
     }
 
     btree_page_h foster_p;  // Destination page, foster child
-    
+
     // Load the destination page into buffer pool (if not in buffer pool already) with proper latching
     W_DO(foster_p.fix_nonroot(page, page.vol(), page.get_foster_opaqueptr(), LATCH_EX));
 
@@ -155,7 +159,8 @@ rc_t btree_impl::_sx_split_foster_new(btree_page_h& page, lpid_t& new_page_id,
     /*
      * Step 1: Allocate a new page for the foster child
      */
-    W_DO(io_m::alloc_a_page (page.stid(), new_page_id));
+    new_page_id._vol = page.vol();
+    W_DO(smlevel_0::vol->get(page.vol())->alloc_a_page(new_page_id.page));
 
     /*
      * Step 2: Create new foster child and move records into it, logging its
@@ -165,7 +170,8 @@ rc_t btree_impl::_sx_split_foster_new(btree_page_h& page, lpid_t& new_page_id,
     rc_t rc = new_page.fix_nonroot(page, page.vol(), new_page_id.page,
             LATCH_EX, false, true);
     if (rc.is_error()) {
-        W_COERCE(io_m::dealloc_a_page(new_page_id));
+        W_DO(smlevel_0::vol->get(page.vol())
+                ->deallocate_page(new_page_id.page));
         return rc;
     }
 
@@ -192,7 +198,7 @@ rc_t btree_impl::_sx_split_foster_new(btree_page_h& page, lpid_t& new_page_id,
 
     w_keystr_t new_chain;
     new_page.copy_chain_fence_high_key(new_chain);
-    bool foster_set = 
+    bool foster_set =
         page.set_foster_child(new_page_id.page, split_key, new_chain);
     w_assert0(foster_set);
 
@@ -245,7 +251,7 @@ rc_t btree_impl::_sx_adopt_foster_all (btree_page_h &root, bool recursive)
 rc_t btree_impl::_sx_adopt_foster_all_core (
     btree_page_h &parent, bool is_root, bool recursive)
 {
-    // TODO this should use the improved tree-walk-through 
+    // TODO this should use the improved tree-walk-through
     // See jira ticket:60 "Tree walk-through without more than 2 pages latched" (originally trac ticket:62)
     w_assert1 (xct()->is_sys_xct());
     w_assert1 (parent.is_fixed());
@@ -305,7 +311,7 @@ rc_t btree_impl::_ux_adopt_foster_core (btree_page_h &parent, btree_page_h &chil
     return RCOK;
 }
 
-rc_t btree_impl::_sx_opportunistic_adopt_foster (btree_page_h &parent, 
+rc_t btree_impl::_sx_opportunistic_adopt_foster (btree_page_h &parent,
                                                       btree_page_h &child, bool &pushedup,
                                                       const bool from_recovery)
 {
@@ -339,7 +345,7 @@ rc_t btree_impl::_sx_opportunistic_adopt_foster (btree_page_h &parent,
     return RCOK;
 }
 
-rc_t btree_impl::_sx_adopt_foster_sweep_approximate (btree_page_h &parent, 
+rc_t btree_impl::_sx_adopt_foster_sweep_approximate (btree_page_h &parent,
                                                              shpid_t surely_need_child_pid,
                                                              const bool from_recovery)
 {

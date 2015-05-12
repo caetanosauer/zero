@@ -48,7 +48,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <sthread.h>
 #include <vec_t.h>
 #include <latch.h>
-#include <lid_t.h>
 #if defined(SM_SOURCE)
 /* Do not force this on VASs */
 #include <sm_s.h>
@@ -57,10 +56,10 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <tid_t.h>
 #include "smstats.h"
 
-#if defined(SM_SOURCE) && (SM_LEVEL >= 0) 
+#if defined(SM_SOURCE) && (SM_LEVEL >= 0)
 #    include <fixable_page_h.h>
 #    include <pmap.h>
-#    include <sm_io.h>
+#    include <vol.h>
 #    include <log.h>
 
 #endif

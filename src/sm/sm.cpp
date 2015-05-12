@@ -140,45 +140,6 @@ ss_m::LOG_ARCHIVED_CALLBACK_FUNC
 
 smlevel_0::fileoff_t        smlevel_0::chkpt_displacement = 0;
 
-// Whenever a change is made to data structures stored on a volume,
-// volume_format_version be incremented so that incompatibilities
-// will be detected.
-//
-// Different ALIGNON values are NOT reflected in the version number,
-// so it is still possible to create incompatible volumes by changing
-// ALIGNON.
-//
-//  1 = original
-//  2 = lid and lgrex indexes contain vid_t
-//  3 = lid index no longer contains vid_t
-//  4 = added store flags to pages
-//  5 = large records no longer contain vid_t
-//  6 = volume headers have lvid_t instead of vid_t
-//  7 = removed vid_t from sinfo_s (stored in directory index)
-//  8 = added special store for 1-page btrees
-//  9 = changed prefix for reserved root index entries to SSM_RESERVED
-//  10 = extent link changed shape.
-//  11 = extent link changed, allowing concurrency in growing a store
-//  12 = dir btree contents changed (removed store flag and property)
-//  13 = Large volumes : changed size of snum_t and extnum_t
-//  14 = Changed size of lsn_t, hence log record headers were rearranged
-//       and page headers changed.  Small disk address
-//  15 = Same as 14, but with large disk addresses.
-//  16 = Align body of page to an eight byte boundary.  This should have
-//       occured in 14, but there are some people using it, so need seperate
-//       numbers.
-//  17 = Same as 16 but with large disk addresses.
-//  18 = Release 6.0 of the storage manager.
-//       Only large disk addresses, 8-byte alignment, added _hdr_pages to
-//       volume header, logical IDs and 1page indexes are deprecated.
-//       Assumes 64-bit architecture.
-//       No support for older volume formats.
-
-#define        VOLUME_FORMAT        18
-
-uint32_t        smlevel_0::volume_format_version = VOLUME_FORMAT;
-
-
 /*
  * _being_xct_mutex: Used to prevent xct creation during volume dismount.
  * Its sole purpose is to be sure that we don't have transactions
@@ -187,20 +148,16 @@ uint32_t        smlevel_0::volume_format_version = VOLUME_FORMAT;
  * start-up/shut-down operations for a server.
  */
 
-typedef srwlock_t sm_vol_rwlock_t;
 // Certain operations have to exclude xcts
-static sm_vol_rwlock_t          _begin_xct_mutex;
+static srwlock_t          _begin_xct_mutex;
 
 BackupManager* smlevel_0::bk = 0;
-io_m* smlevel_0::io = 0;
+vol_m* smlevel_0::vol = 0;
 bf_tree_m* smlevel_0::bf = 0;
 log_m* smlevel_0::log = 0;
 log_core* smlevel_0::clog = 0;
 LogArchiver* smlevel_0::logArchiver = 0;
 ArchiveMerger* smlevel_0::archiveMerger = 0;
-
-// TODO(Restart)... it was for a space-recovery hack, not needed
-//tid_t *smlevel_0::redo_tid = 0;
 
 lock_m* smlevel_0::lm = 0;
 
@@ -429,8 +386,8 @@ ss_m::_construct_once()
         W_FATAL(eOUTOFMEMORY);
     }
 
-    io = new io_m;
-    if (! io) {
+    vol = new vol_m(_options);
+    if (!vol) {
         W_FATAL(eOUTOFMEMORY);
     }
 
@@ -543,14 +500,13 @@ void ss_m::_do_restart()
         // out of scope
         restart_m restart;
 
-        // TODO(Restart)... it was for a space-recovery hack, not needed
-        // smlevel_0::redo_tid = restart.redo_tid();
-
         // Recovery process, a checkpoint will be taken at the end of recovery
         // Make surethe current operating state is before recovery
         smlevel_0::operating_mode = t_not_started;
         restart.restart(master, verify_lsn, redo_lsn, last_lsn, in_doubt_count);
 
+        // CS TODO: Why did we have to mount and dismount all devices here?
+#if 0
         // Perform the low level dismount, remount in higher level
         // and dismount again steps.
         // If running in serial mode, everything is fine.
@@ -566,31 +522,12 @@ void ss_m::_do_restart()
 
         // contain the scope of dname[]
         // record all the mounted volumes after recovery.
-        int num_volumes_mounted = 0;
-        int        i;
-        char    **dname;
-        dname = new char *[max_vols];
-        if (!dname)
-        {
-            W_FATAL(fcOUTOFMEMORY);
-        }
-        for (i = 0; i < max_vols; i++)
-        {
-            dname[i] = new char[smlevel_0::max_devname+1];
-            if (!dname[i])
-            {
-                W_FATAL(fcOUTOFMEMORY);
-            }
-        }
-        vid_t    *vid = new vid_t[max_vols];
-        if (!vid)
-        {
-            W_FATAL(fcOUTOFMEMORY);
-        }
 
-        W_COERCE( io->get_vols(0, max_vols, dname, vid, num_volumes_mounted) );
+        std::vector<string> dnames;
+        std::vector<vid_t> vids;
+        W_COERCE( io->get_vols(0, max_vols, dnames, vids) );
 
-        DBG(<<"Dismount all volumes " << num_volumes_mounted);
+        DBG(<<"Dismount all volumes " << dnames.size());
         // now dismount all of them at the io level, the level where they
         // were mounted during recovery.
         if (true == smlevel_0::use_serial_restart())
@@ -600,11 +537,11 @@ void ss_m::_do_restart()
         // now mount all the volumes properly at the sm level.
         // then dismount them and free temp files only if there
         // are no locks held.
-        for (i = 0; i < num_volumes_mounted; i++)
+        for (int i = 0; i < dnames.size(); i++)
         {
             rc_t rc;
             DBG(<<"Remount volume " << dname[i]);
-            rc =  _mount_dev(dname[i], vid[i]) ;
+            rc =  mount_vol(dname[i], vid[i]) ;
             if (rc.is_error())
             {
                 ss_m::errlog->clog  << warning_prio
@@ -627,9 +564,7 @@ void ss_m::_do_restart()
             delete [] dname[i];
         }
         delete [] dname;
-
-        // TODO(Restart)... it was for a space-recovery hack, not needed
-        // smlevel_0::redo_tid = 0;
+#endif
     }
 
     // Pure on-demand mode must be the same for REDO and UNDO phases
@@ -745,12 +680,12 @@ void ss_m::_finish_recovery()
     if ((shutdown_clean) && (true == smlevel_0::use_redo_demand_restart()))
     {
         // If we have a clean shutdown and the current system is using
-        // pure on-demand recovery (no child restart thread), we might 
+        // pure on-demand recovery (no child restart thread), we might
         // still have a lot of recovery work to do at this point
         // Because we are doing a clean shutdown, we do not want to have
         // leftover restart work, spawn the restart child thread to finish up
         // the restart work first and then shutdown
-        
+
         w_assert1(!recovery);
         recovery = new restart_m();
         if (recovery)
@@ -970,13 +905,13 @@ ss_m::_destruct_once()
 #endif
     clog = 0;
 
-    delete io; io = 0; // io manager
-    {
-        w_rc_t e = bf->destroy();
-        W_COERCE (e);
-    }
+    W_COERCE(bf->destroy());
     delete bf; bf = 0; // destroy buffer manager last because io/dev are flushing them!
     delete bk; bk = 0;
+
+    vol->shutdown(!shutdown_clean);
+    delete vol; vol = 0; // io manager
+
     /*
      *  Level 0
      */
@@ -1453,16 +1388,6 @@ ss_m::config_info(sm_config_info_t& info) {
 }
 
 /*--------------------------------------------------------------*
- *  ss_m::set_disk_delay()                            *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::set_disk_delay(u_int milli_sec)
-{
-    W_DO(io_m::set_disk_delay(milli_sec));
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
  *  ss_m::start_log_corruption()                        *
  *--------------------------------------------------------------*/
 rc_t
@@ -1531,95 +1456,32 @@ void ss_m::dump_page_lsn_chain(std::ostream &o, const lpid_t &pid, const lsn_t &
  *  DEVICE and VOLUME MANAGEMENT                        *
  *--------------------------------------------------------------*/
 
-/*--------------------------------------------------------------*
- *  ss_m::format_dev()                                *
- *--------------------------------------------------------------*/
 rc_t
-ss_m::format_dev(const char* device, smksize_t size_in_KB, bool force)
+ss_m::mount_vol(const char* path, vid_t& vid)
 {
-     // SM_PROLOGUE_RC(ss_m::format_dev, not_in_xct, 0);
-    FUNC(ss_m::format_dev);
-
-    if(size_in_KB > sthread_t::max_os_file_size / 1024) {
-        return RC(eDEVTOOLARGE);
-    }
-    {
-        prologue_rc_t prologue(prologue_rc_t::not_in_xct,
-                                prologue_rc_t::read_write,0);
-        if (prologue.error_occurred()) return prologue.rc();
-
-        W_DO(vol_t::format_dev(device,
-                /* XXX possible loss of bits */
-                shpid_t(size_in_KB/(page_sz/1024)), force));
-    }
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::mount_dev()                                *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::mount_dev(const char* device, vid_t local_vid)
-{
-    SM_PROLOGUE_RC(ss_m::mount_dev, not_in_xct, read_only, 0);
+    SM_PROLOGUE_RC(ss_m::mount_vol, not_in_xct, read_only, 0);
 
     spinlock_write_critical_section cs(&_begin_xct_mutex);
 
-    // do the real work of the mount
-    W_DO(_mount_dev(device, local_vid));
+    DBG(<<"mount_vol " << path);
+
+    W_DO(vol->sx_mount(path));
+    vid = vol->get(path)->vid();
+
     return RCOK;
 }
 
-/*--------------------------------------------------------------*
- *  ss_m::dismount_all()                            *
- *                                                              *
- *  Only allow this if there are no active XCTs                 *
- *--------------------------------------------------------------*/
 rc_t
-ss_m::dismount_all()
+ss_m::dismount_vol(const char* path)
 {
-    SM_PROLOGUE_RC(ss_m::dismount_all, not_in_xct, read_only, 0);
+    SM_PROLOGUE_RC(ss_m::mount_vol, not_in_xct, read_only, 0);
 
     spinlock_write_critical_section cs(&_begin_xct_mutex);
 
-    // of course a transaction could start immediately after this...
-    // we don't protect against that.
-    if (xct_t::num_active_xcts())  {
-        fprintf(stderr,
-        "Active transactions: %d : cannot dismount_all\n",
-        xct_t::num_active_xcts());
-        return RC(eCANTWHILEACTIVEXCTS);
-    }
+    DBG(<<"dismount_vol " << path);
 
-    // take a synch checkpoint to record the dismounts
-    chkpt->synch_take();
+    W_DO(vol->sx_dismount(path));
 
-    // CS: TODO this does nothing because it used to dismount all
-    // devices, and not all volumes. Since we removed the device
-    // manager, we have to rethink the utility of this method.
-
-    return RCOK;
-}
-
-rc_t
-ss_m::list_volumes(const char* device,
-        lvid_t*& lvid_list,
-        u_int& lvid_cnt)
-{
-    SM_PROLOGUE_RC(ss_m::list_volumes, can_be_in_xct, read_only, 0);
-    lvid_cnt = 0;
-    lvid_list = NULL;
-
-    // for now there is only on lvid possible, but later there will
-    // be multiple volumes on a device
-    lvid_t lvid;
-    W_DO(io->get_lvid(device, lvid));
-    if (lvid != lvid_t::null) {
-        lvid_list = new lvid_t[1];
-        lvid_list[0] = lvid;
-        if (lvid_list == NULL) return RC(eOUTOFMEMORY);
-        lvid_cnt = 1;
-    }
     return RCOK;
 }
 
@@ -1627,56 +1489,14 @@ ss_m::list_volumes(const char* device,
  *  ss_m::get_device_quota()                            *
  *--------------------------------------------------------------*/
 rc_t
-ss_m::get_device_quota(const char* device, smksize_t& quota_KB, smksize_t& quota_used_KB)
+ss_m::get_device_quota(const char* device, size_t& quota_KB, size_t& quota_used_KB)
 {
     SM_PROLOGUE_RC(ss_m::get_device_quota, can_be_in_xct, read_only, 0);
-    W_DO(io->get_device_quota(device, quota_KB, quota_used_KB));
-    return RCOK;
-}
 
-rc_t
-ss_m::generate_new_lvid(lvid_t& lvid)
-{
-    SM_PROLOGUE_RC(ss_m::generate_new_lvid, can_be_in_xct, read_only, 0);
-    // CS: copied from old lid_m
-    /*
-     * For now the long volume ID will consists of
-     * the machine network address and the current time-of-day.
-     *
-     * Since the time of day resolution is in seconds,
-     * we protect this function with a mutex to guarantee we
-     * don't generate duplicates.
-     */
-    static long  last_time = 0;
-    const int    max_name = 100;
-    char         name[max_name+1];
-
-    // Mutex only for generating new volume ids.
-    static queue_based_block_lock_t lidmgnrt_mutex;
-    CRITICAL_SECTION(cs, lidmgnrt_mutex);
-
-    if (gethostname(name, max_name)) return RC(eOS);
-
-    struct hostent* hostinfo = gethostbyname(name);
-
-    if (!hostinfo)
-        W_FATAL(eINTERNAL);
-
-    memcpy(&lvid.high, hostinfo->h_addr, sizeof(lvid.high));
-    DBG( << "lvid " << lvid );
-
-    /* XXXX generating ids fast enough can create a id time sequence
-       that grows way faster than real time!  This could be a problem!
-       Better time resolution than seconds does exist, might be worth
-       using it.  */
-    stime_t curr_time = stime_t::now();
-
-    if (curr_time.secs() > last_time)
-            last_time = curr_time.secs();
-    else
-            last_time++;
-
-    lvid.low = last_time;
+    vol_t* v = vol->get(device);
+    size_t page_size_kb = sizeof(generic_page) / 1024;
+    quota_used_KB = v->num_used_pages() * page_size_kb;
+    quota_KB = v->num_pages() * page_size_kb;
     return RCOK;
 }
 
@@ -1684,33 +1504,20 @@ ss_m::generate_new_lvid(lvid_t& lvid)
  *  ss_m::create_vol()                                *
  *--------------------------------------------------------------*/
 rc_t
-ss_m::create_vol(const char* dev_name, const lvid_t& lvid,
-                 smksize_t quota_KB, bool skip_raw_init,
-                 const bool apply_fake_io_latency, const int fake_disk_latency)
+ss_m::create_vol(const char* dev_name, smksize_t quota_KB, vid_t& vid)
 {
     SM_PROLOGUE_RC(ss_m::create_vol, not_in_xct, read_only, 0);
 
+    if(quota_KB > sthread_t::max_os_file_size / 1024) {
+        return RC(eDEVTOOLARGE);
+    }
+
     spinlock_write_critical_section cs(&_begin_xct_mutex);
 
-    // make sure volume is not already mounted
-    vid_t vid = io->get_vid(lvid);
-    if (vid != 0) return RC(eVOLEXISTS);
+    W_DO(vol->sx_format(dev_name,
+       shpid_t(quota_KB/(page_sz/1024)),
+       vid));
 
-    W_DO(_create_vol(dev_name, lvid, quota_KB, skip_raw_init,
-                     apply_fake_io_latency, fake_disk_latency));
-
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::get_volume_quota()                            *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::get_volume_quota(const lvid_t& lvid, smksize_t& quota_KB, smksize_t& quota_used_KB)
-{
-    SM_PROLOGUE_RC(ss_m::get_volume_quota, can_be_in_xct, read_only, 0);
-    vid_t vid = io->get_vid(lvid);
-    W_DO(io->get_volume_quota(vid, quota_KB, quota_used_KB));
     return RCOK;
 }
 
@@ -2152,67 +1959,6 @@ ss_m::_rollback_work(const sm_save_point_t& sp)
     return RCOK;
 }
 
-rc_t
-ss_m::_mount_dev(const char* device, vid_t local_vid)
-{
-    vid_t vid;
-    DBG(<<"_mount_dev " << device);
-
-    // make sure volumes on the dev are not already mounted
-    lvid_t lvid;
-    W_DO(io->get_lvid(device, lvid));
-    vid = io->get_vid(lvid);
-    if (vid != 0) {
-                // already mounted
-                return RCOK;
-    }
-
-    if (local_vid == 0) {
-        W_DO(io->get_new_vid(vid));
-    } else {
-        if (io->is_mounted(local_vid)) {
-            // vid already in use
-            return RC(eBADVOL);
-        }
-        vid = local_vid;
-    }
-
-    W_DO(io->mount(device, vid));
-    // take a synch checkpoint to record the mount
-    chkpt->synch_take();
-
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::_create_vol()                                *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::_create_vol(const char* dev_name, const lvid_t& lvid,
-                  smksize_t quota_KB, bool skip_raw_init,
-                  const bool apply_fake_io_latency,
-                  const int fake_disk_latency)
-{
-    vid_t tmp_vid;
-    W_DO(io->get_new_vid(tmp_vid));
-    DBG(<<"got new vid " << tmp_vid
-        << " formatting " << dev_name);
-
-    W_DO(vol_t::format_vol(dev_name, lvid, tmp_vid,
-        /* XXX possible loss of bits */
-       shpid_t(quota_KB/(page_sz/1024)), skip_raw_init));
-
-    DBG(<<"vid " << tmp_vid  << " mounting " << dev_name);
-    W_DO(io->mount(dev_name, tmp_vid, apply_fake_io_latency, fake_disk_latency));
-    DBG(<<" mount done " << dev_name << " tmp_vid " << tmp_vid);
-
-    // CS: checkpoint must be taken to record the volume mount, otherwise
-    // recovery will fail (TODO this general problem should be fixed)
-    chkpt->synch_take();
-
-    return RCOK;
-}
-
 /*--------------------------------------------------------------*
  *  ss_m::get_du_statistics()        DU DF
  *--------------------------------------------------------------*/
@@ -2289,7 +2035,7 @@ ss_m::_get_du_statistics(vid_t vid, sm_du_stats_t& du, bool audit)
         DBG(<<"look at store " << s);
 
         store_flag_t flags;
-        rc = io->get_store_flags(s, flags);
+        rc = vol->get(vid)->get_store_flags(s.store, flags);
         if (rc.is_error()) {
             if (rc.err_num() == eBADSTID) {
                 DBG(<<"skipping bad STID " << s );
@@ -2314,7 +2060,7 @@ ss_m::_get_du_statistics(vid_t vid, sm_du_stats_t& du, bool audit)
         DBG(<<"end for loop with s=" << s );
     }
 
-    W_DO( io->get_du_statistics(vid, new_stats.volume_hdr, audit));
+    W_DO(vol->get(vid)->get_du_statistics(new_stats.volume_hdr, audit));
 
     if (audit) {
         W_DO(new_stats.audit());
@@ -2332,52 +2078,30 @@ ss_m::_get_du_statistics(vid_t vid, sm_du_stats_t& du, bool audit)
 rc_t
 ss_m::enable_fake_disk_latency(vid_t vid)
 {
-  SM_PROLOGUE_RC(ss_m::enable_fake_disk_latency, not_in_xct, read_only, 0);
-  W_DO( io->enable_fake_disk_latency(vid) );
-  return RCOK;
+    SM_PROLOGUE_RC(ss_m::enable_fake_disk_latency, not_in_xct, read_only, 0);
+    vol_t* v = vol->get(vid);
+    if (!v) return RC(eBADVOL);
+    v->enable_fake_disk_latency();
+    return RCOK;
 }
 
 rc_t
 ss_m::disable_fake_disk_latency(vid_t vid)
 {
-  SM_PROLOGUE_RC(ss_m::disable_fake_disk_latency, not_in_xct, read_only, 0);
-  W_DO( io->disable_fake_disk_latency(vid) );
-  return RCOK;
+    SM_PROLOGUE_RC(ss_m::disable_fake_disk_latency, not_in_xct, read_only, 0);
+    vol_t* v = vol->get(vid);
+    if (!v) return RC(eBADVOL);
+    v->disable_fake_disk_latency();
+    return RCOK;
 }
 
 rc_t
 ss_m::set_fake_disk_latency(vid_t vid, const int adelay)
 {
-  SM_PROLOGUE_RC(ss_m::set_fake_disk_latency, not_in_xct, read_only, 0);
-  W_DO( io->set_fake_disk_latency(vid,adelay) );
-  return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::get_volume_meta_stats()                                *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::get_volume_meta_stats(vid_t vid, SmVolumeMetaStats& volume_stats, concurrency_t cc)
-{
-    SM_PROLOGUE_RC(ss_m::get_volume_meta_stats, in_xct, read_only, 0);
-    W_DO( _get_volume_meta_stats(vid, volume_stats, cc) );
-    return RCOK;
-}
-
-/*--------------------------------------------------------------*
- *  ss_m::_get_volume_meta_stats()                                *
- *--------------------------------------------------------------*/
-rc_t
-ss_m::_get_volume_meta_stats(vid_t vid, SmVolumeMetaStats& volume_stats, concurrency_t cc)
-{
-    if (cc == t_cc_vol)  {
-        W_DO(lm->intent_vol_lock(vid, okvl_mode::S));
-    }  else if (cc != t_cc_none)  {
-        return RC(eBADCCLEVEL);
-    }
-
-    W_DO( io->get_volume_meta_stats(vid, volume_stats) );
-
+    SM_PROLOGUE_RC(ss_m::set_fake_disk_latency, not_in_xct, read_only, 0);
+    vol_t* v = vol->get(vid);
+    if (!v) return RC(eBADVOL);
+    v->set_fake_disk_latency(adelay);
     return RCOK;
 }
 
@@ -2661,7 +2385,7 @@ extern "C" {
 w_rc_t ss_m::dump_vol_store_info(const vid_t &vid)
 {
     SM_PROLOGUE_RC(ss_m::dump_vol_store_info, in_xct, read_only,  0);
-    return io_m::check_disk(vid);
+    return vol->get(vid)->check_disk();
 }
 
 
