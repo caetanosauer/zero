@@ -84,6 +84,12 @@ shpid_t RestoreScheduler::next()
     return next;
 }
 
+void RestoreScheduler::setSinglePass(bool singlePass)
+{
+    spinlock_write_critical_section cs(&mutex);
+    trySinglePass = singlePass;
+}
+
 RestoreMgr::RestoreMgr(const sm_options& options,
         LogArchiver::ArchiveDirectory* archive, vol_t* volume)
     : smthread_t(t_regular, "Restore Manager"),
@@ -170,6 +176,11 @@ bool RestoreMgr::waitUntilRestored(const shpid_t& pid, size_t timeout_in_ms)
     DO_PTHREAD(pthread_mutex_unlock(&restoreCondMutex));
 
     return true;
+}
+
+void RestoreMgr::setSinglePass(bool singlePass)
+{
+    scheduler->setSinglePass(singlePass);
 }
 
 bool RestoreMgr::requestRestore(const shpid_t& pid, generic_page* addr)

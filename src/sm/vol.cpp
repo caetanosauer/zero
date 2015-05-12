@@ -439,18 +439,15 @@ rc_t vol_t::dismount(bool bf_uninstall, bool abrupt)
     INC_TSTAT(vol_cache_clears);
 
     w_assert1(_unix_fd >= 0);
-    if (bf_uninstall) {
-        if (smlevel_0::bf) { // might have shut down already
-            W_DO(smlevel_0::bf->uninstall_volume(_vid, !abrupt /* clear_cb */));
-        }
+    if (bf_uninstall && smlevel_0::bf) { // might have shut down already
+        W_DO(smlevel_0::bf->uninstall_volume(_vid, !abrupt /* clear_cb */));
     }
 
     if (!abrupt) {
         if (_failed) {
             // wait for ongoing restore to complete
-            // CS TODO -- merge with restore code and:
-            // 1) set single-pass restore
-            // 2) wait for complete restore
+            _restore_mgr->setSinglePass();
+            _restore_mgr->join();
         }
         // CS TODO -- also make sure no restart is ongoing
     }

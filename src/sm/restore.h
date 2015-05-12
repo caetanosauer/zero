@@ -57,6 +57,15 @@ public:
      */
     bool waitUntilRestored(const shpid_t& pid, size_t timeout_in_ms = 0);
 
+    /** \brief Set single-pass policy on scheduler
+     *
+     * If restore has so far worked only on-demand, this method activates (or
+     * deactivates) the single-pass policy on the scheduler, which causes pages
+     * to be restored eagerly and in disk order -- concurrently with on-demand
+     * restore of accessed pages.
+     */
+    void setSinglePass(bool singlePass = true);
+
     size_t getNumPages() { return numPages; }
     size_t getSegmentSize() { return segmentSize; }
     shpid_t getFirstDataPid() { return firstDataPid; }
@@ -180,6 +189,7 @@ public:
 
     void enqueue(const shpid_t& pid);
     shpid_t next();
+    void setSinglePass(bool singlePass = true);
 
 protected:
     RestoreMgr* restore;
