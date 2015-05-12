@@ -10,7 +10,7 @@
 #ifdef MM_TEST
 #define MM_VERIFY(v) v
 #else
-#define MM_VERIFY(v) 
+#define MM_VERIFY(v)
 #endif
 
 typedef mem_mgmt_t::slot_t slot_t;
@@ -71,7 +71,7 @@ void fixed_lists_mem_t::remove_from_list(list_header_t* p)
         p->next->prev = p->prev;
     }
     p->set_occupied();
-    
+
     // check if p is the list head and update it if necessary
     if (p == _lists[index]) {
         _lists[index] = p->next;
@@ -166,7 +166,7 @@ rc_t fixed_lists_mem_t::allocate(size_t length, slot_t& slot)
     DBG(<< "Looking for block of " << fit
             << " for " << length << " bytes");
 
-    char* addr;
+    char* addr = NULL;
     while (fit <= _last_non_empty) {
         if (!is_list_empty(fit)) {
             DBG(<< "FOUND in list of " << fit);
@@ -175,10 +175,6 @@ rc_t fixed_lists_mem_t::allocate(size_t length, slot_t& slot)
         }
         fit += _incr;
 //        DBG(<< "NOT FOUND! Trying list of " << fit);
-    }
-    
-    if (!addr) {
-        return RC(eINTERNAL);
     }
 
     if (fit > _last_non_empty) {
@@ -274,7 +270,7 @@ rc_t fixed_lists_mem_t::defrag()
         _lists[i] = NULL;
     }
     size_t maxblock_count = _bufsize/_max;
-    for (size_t i = 0; i < maxblock_count; i++) { 
+    for (size_t i = 0; i < maxblock_count; i++) {
         char* add = _buf + (_max * i);
         add_to_list(_max, add);
     }
@@ -300,7 +296,7 @@ void fixed_lists_mem_t::verify_neighbor
     assert(p != neighbor);
     verify_block(p);
     verify_block(neighbor);
-    size_t delta = left ? 
+    size_t delta = left ?
         ((char*) p - (char*) neighbor) :
         ((char*) neighbor - (char*) p);
     assert(delta % _incr == 0);
