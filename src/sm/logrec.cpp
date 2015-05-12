@@ -692,6 +692,60 @@ void dismount_vol_log::redo(fixable_page_h*)
     W_COERCE(smlevel_0::vol->sx_dismount(dev_name, false));
 }
 
+restore_begin_log::restore_begin_log(vid_t vid)
+{
+    memcpy(_data, &vid, sizeof(vid_t));
+    fill(0, sizeof(vid_t));
+}
+
+void restore_begin_log::redo(fixable_page_h*)
+{
+    vid_t vid = *((vid_t*) _data);
+    vol_t* volume = smlevel_0::vol->get(vid);
+    // volume must be mounted
+    w_assert0(volume);
+
+    // Marking the device failed will kick-off the restore thread, initialize
+    // its state, and restore the metadata (even if already done - idempotence)
+    volume->mark_failed(false /* evict */, true /* redo */);
+}
+
+restore_end_log::restore_end_log(vid_t vid)
+{
+    memcpy(_data, &vid, sizeof(vid_t));
+    fill(0, sizeof(vid_t));
+}
+
+void restore_end_log::redo(fixable_page_h*)
+{
+    vid_t vid = *((vid_t*) _data);
+    vol_t* volume = smlevel_0::vol->get(vid);
+    // volume must be mounted and failed
+    w_assert0(volume && volume->is_failed());
+
+    bool finished = volume->check_restore_finished(true /* redo */);
+    w_assert0(finished);
+}
+
+restore_segment_log::restore_segment_log(vid_t vid, uint32_t segment)
+{
+    memcpy(_data, &vid, sizeof(vid_t));
+    memcpy(_data + sizeof(vid_t), &segment, sizeof(uint32_t));
+    fill(0, sizeof(vid_t) + sizeof(uint32_t));
+}
+
+void restore_segment_log::redo(fixable_page_h*)
+{
+    vid_t vid = *((vid_t*) _data);
+    vol_t* volume = smlevel_0::vol->get(vid);
+    // volume must be mounted and failed
+    w_assert0(volume && volume->is_failed());
+
+    uint32_t segment = *((uint32_t*) _data + sizeof(vid_t));
+
+    volume->redo_segment_restore(segment);
+}
+
 page_img_format_t::page_img_format_t (const btree_page_h& page) {
     size_t unused_length;
     char* unused = page.page()->unused_part(unused_length);

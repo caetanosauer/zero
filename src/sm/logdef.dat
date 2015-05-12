@@ -124,6 +124,10 @@ xct_end_group      1000000 0.0 (const xct_t** l, int llen);
 #########################################################################
 # new page allocation logs. No notion of extent. no undo in any case.
 store_operation    1011011 1.0 (vid_t vid, const store_operation_param& op);
+# Instant Restore log records
+restore_begin      1110000 0.0 (vid_t vid);
+restore_segment    1110000 0.0 (vid_t vid, uint32_t segment);
+restore_end        1110000 0.0 (vid_t vid);
 #########################################################################
 # type             XSRUMAL  fudge    arg                                #
 #########################################################################

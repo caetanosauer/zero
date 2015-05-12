@@ -17,7 +17,6 @@ class generic_page;
  * \author Caetano Sauer
  */
 class RestoreMgr : public smthread_t {
-    friend class RestoreThread;
 public:
     RestoreMgr(const sm_options&, LogArchiver::ArchiveDirectory*, vol_t*);
     virtual ~RestoreMgr();
@@ -66,6 +65,13 @@ public:
      */
     void setSinglePass(bool singlePass = true);
 
+    /** \brief True if all segments have been restored
+     *
+     * CS TODO -- concurrency control?
+     */
+    bool finished()
+    { return metadataRestored && numRestoredPages == numPages; }
+
     size_t getNumPages() { return numPages; }
     size_t getSegmentSize() { return segmentSize; }
     shpid_t getFirstDataPid() { return firstDataPid; }
@@ -97,6 +103,10 @@ protected:
      */
     shpid_t firstDataPid;
 
+    /** \brief Workspace area (buffer) where pages are loaded and restored
+     */
+    char* workspace;
+
     /** \brief Size of a segment in pages
      *
      * The segment is the unit of restore, i.e., one segment is restored at a
@@ -116,11 +126,11 @@ protected:
 
     /** \brief Gives the segment number of a certain page ID.
      */
-    size_t getSegmentForPid(const shpid_t& pid);
+    unsigned getSegmentForPid(const shpid_t& pid);
 
     /** \brief Gives the first page ID of a given segment number.
      */
-    shpid_t getPidForSegment(size_t segment);
+    shpid_t getPidForSegment(unsigned segment);
 
     /** \brief Restores metadata by replaying store operation log records
      *
@@ -147,9 +157,16 @@ protected:
     void restoreLoop();
 
     /** \brief Concludes restore of a segment and flushes to replacement device
-     *
      */
-    void finishSegment(size_t segment, char* workspace, size_t count);
+    void finishSegment(unsigned segment, size_t count);
+
+    /** \brief Mark a segment as restored in the bitmap
+     * Used by finishSegment() and restore_segment_log::redo
+     */
+    void markSegmentRestored(unsigned segment, bool redo = false);
+
+    // Allow protected access from vol_t (for recovery)
+    friend class vol_t;
 };
 
 /** \brief Bitmap data structure that controls the progress of restore
@@ -167,8 +184,8 @@ public:
 
     size_t getSize() { return bits.size(); }
 
-    bool get(size_t i);
-    void set(size_t i);
+    bool get(unsigned i);
+    void set(unsigned i);
 protected:
     std::vector<bool> bits;
     mcs_rwlock mutex;
@@ -207,14 +224,6 @@ protected:
      */
     shpid_t firstNotRestored;
 
-};
-
-class RestoreThread : public smthread_t {
-public:
-    RestoreThread(RestoreMgr*, RestoreScheduler*);
-    virtual ~RestoreThread();
-
-    virtual void run();
 };
 
 #endif

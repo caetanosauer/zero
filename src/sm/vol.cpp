@@ -403,8 +403,10 @@ rc_t vol_t::mount(const char* devname)
     return RCOK;
 }
 
-rc_t vol_t::remount_from_backup(bool evict)
+rc_t vol_t::remount_from_backup(bool /*evict*/)
 {
+    // protected by latch acquired on mark_failed()
+
     /*
      * CS (TODO) Currently, restore only supports backup-less log replay,
      * meaning that the entire log is replayed since the volume was first
@@ -414,20 +416,68 @@ rc_t vol_t::remount_from_backup(bool evict)
      * For restore with backups, vol_t should maintain an instance of a backup
      * manager, and remount based on the backup device.
      */
-    // CS: TODO -- we probably need concurrency control here and for all
-    // mount/dismount/format operations
+    // CS TODO -- implement backup support!
+    clear_caches();
 
-    // 2nd bool argument is crucial: if false, pages of this volume remain in
-    // the buffer pool
-    W_DO(dismount(false, evict));
+    // CS TODO -- need better solution
+    // calling dismount and mount causes deadlock due to latch
+    _fixed_bf = new bf_fixed_m();
+    w_assert1(_fixed_bf);
+    W_DO(_fixed_bf->init(this, _unix_fd, _num_pages));
+    _first_data_pageid = _fixed_bf->get_page_cnt() + 1; // +1 for volume header
 
-    // CS is reformat_vol really needed? Why not just format
-    // CS TODO -- need solution for new volume manager
-    // W_DO(reformat_vol(_devname, _lvid, _vid, _num_pages, true));
+    _alloc_cache = new alloc_cache_t(_vid, _fixed_bf);
+    w_assert1(_alloc_cache);
+    // W_DO(_alloc_cache->load_by_scan(_num_pages));
 
-    W_DO(mount(_devname));
+    _stnode_cache = new stnode_cache_t(_vid, _fixed_bf);
+    w_assert1(_stnode_cache);
 
     return RCOK;
+}
+
+bool vol_t::check_restore_finished(bool redo)
+{
+    if (!is_failed()) {
+        return true;
+    }
+
+    // with a read latch, check if finished -- most likely no
+    {
+        spinlock_read_critical_section cs(&_mutex);
+        if (!_restore_mgr->finished()) {
+            return false;
+        }
+    }
+    // restore finished -- update status with write latch
+    {
+        spinlock_write_critical_section cs(&_mutex);
+        // check again for race
+        if (!is_failed()) {
+            return true;
+        }
+
+        // close restore manager
+        w_assert0(_restore_mgr->finished());
+        _restore_mgr->join();
+        delete _restore_mgr;
+        _restore_mgr = NULL;
+
+        // log restore end and set failed flag to false
+        if (!redo) {
+            sys_xct_section_t ssx(true);
+            log_restore_end(_vid);
+            ssx.end_sys_xct(RCOK);
+        }
+        set_failed(false);
+        return true;
+    }
+}
+
+void vol_t::redo_segment_restore(unsigned segment)
+{
+    w_assert0(_restore_mgr && is_failed());
+    _restore_mgr->markSegmentRestored(segment, true /* redo */);
 }
 
 rc_t vol_t::dismount(bool bf_uninstall, bool abrupt)
@@ -444,22 +494,18 @@ rc_t vol_t::dismount(bool bf_uninstall, bool abrupt)
     }
 
     if (!abrupt) {
-        if (_failed) {
+        if (is_failed()) {
             // wait for ongoing restore to complete
             _restore_mgr->setSinglePass();
             _restore_mgr->join();
         }
         // CS TODO -- also make sure no restart is ongoing
     }
-    else if (_failed) {
+    else if (is_failed()) {
         DBG(<< "WARNING: Volume shutting down abruptly during restore!");
     }
 
-    w_rc_t e;
-    e = me()->close(_unix_fd);
-    if (e.is_error())
-            return e;
-
+    W_DO(me()->close(_unix_fd));
     _unix_fd = -1;
 
     clear_caches();
@@ -653,7 +699,7 @@ shpid_t vol_t::get_store_root(snum_t f) const
     // the log records of store operations have pid 0, and they must
     // be restored first so that the stnode cache is restored.
     // See RestoreMgr::restoreMetadata()
-    if (_failed) {
+    if (is_failed()) {
         w_assert1(_restore_mgr);
         _restore_mgr->waitUntilRestored(shpid_t(0));
     }
@@ -732,7 +778,7 @@ rc_t vol_t::read_page(shpid_t pnum, generic_page& page)
      * volume into a new file descriptor for the replacement device. The logic
      * for restore, however, would remain the same.
      */
-    if (_failed) {
+    if (is_failed()) {
         w_assert1(_restore_mgr);
 
         if (!_restore_mgr->isRestored(pnum)) {
@@ -747,6 +793,7 @@ rc_t vol_t::read_page(shpid_t pnum, generic_page& page)
                 return RCOK;
             }
         }
+        check_restore_finished();
     }
 
     w_assert1(pnum > 0 && pnum < (shpid_t)(_num_pages));
@@ -829,7 +876,7 @@ rc_t vol_t::write_many_pages(shpid_t pnum, const generic_page* const pages, int 
      * typical workloads maintain a low dirty page ratio, this is not a concern
      * for now.
      */
-    if (_failed && !ignoreRestore) {
+    if (is_failed() && !ignoreRestore) {
         w_assert1(_restore_mgr);
 
         // For each segment involved in this bulk write, request and wait for
@@ -841,6 +888,7 @@ rc_t vol_t::write_many_pages(shpid_t pnum, const generic_page* const pages, int 
             _restore_mgr->waitUntilRestored(pnum + i);
             i += _restore_mgr->getSegmentSize();
         }
+        check_restore_finished();
     }
 
     w_assert1(pnum > 0 && pnum < (shpid_t)(_num_pages));
@@ -1048,8 +1096,14 @@ bool vol_t::is_allocated_page(shpid_t pid) const
     return _alloc_cache->is_allocated_page(pid);
 }
 
-void vol_t::mark_failed(bool evict)
+void vol_t::mark_failed(bool evict, bool redo)
 {
+    spinlock_write_critical_section cs(&_mutex);
+
+    if (is_failed()) {
+        return;
+    }
+
     // 1. Write log record
     // 2. Activate backup manager (missing)
     // 3. Activate restore manager
@@ -1061,9 +1115,14 @@ void vol_t::mark_failed(bool evict)
     // CS: TODO -- how about concurrent reads??
     W_COERCE(remount_from_backup(evict));
 
-    // 5. Set failed flag
-    _failed = true;
-    lintel::atomic_thread_fence(lintel::memory_order_release);
+    // 5. Set failed flag and log action
+    set_failed(true);
+
+    if (!redo) {
+        sys_xct_section_t ssx(true);
+        log_restore_end(_vid);
+        ssx.end_sys_xct(RCOK);
+    }
 }
 
 // CS TODO why is this here?

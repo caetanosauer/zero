@@ -17,13 +17,13 @@ RestoreBitmap::~RestoreBitmap()
 {
 }
 
-bool RestoreBitmap::get(size_t i)
+bool RestoreBitmap::get(unsigned i)
 {
     spinlock_read_critical_section cs(&mutex);
     return bits.at(i);
 }
 
-void RestoreBitmap::set(size_t i)
+void RestoreBitmap::set(unsigned i)
 {
     spinlock_write_critical_section cs(&mutex);
     bits.at(i) = true;
@@ -126,20 +126,23 @@ RestoreMgr::RestoreMgr(const sm_options& options,
 
     scheduler = new RestoreScheduler(options, this);
     bitmap = new RestoreBitmap(numPages);
+
+    workspace = new char[sizeof(generic_page) * segmentSize];
 }
 
 RestoreMgr::~RestoreMgr()
 {
     delete bitmap;
     delete scheduler;
+    delete workspace;
 }
 
-inline size_t RestoreMgr::getSegmentForPid(const shpid_t& pid)
+inline unsigned RestoreMgr::getSegmentForPid(const shpid_t& pid)
 {
-    return (size_t) std::max(pid, firstDataPid) / segmentSize;
+    return (unsigned) std::max(pid, firstDataPid) / segmentSize;
 }
 
-inline shpid_t RestoreMgr::getPidForSegment(size_t segment)
+inline shpid_t RestoreMgr::getPidForSegment(unsigned segment)
 {
     return shpid_t(segment * segmentSize) + firstDataPid;
 }
@@ -151,7 +154,7 @@ inline bool RestoreMgr::isRestored(const shpid_t& pid)
         return metadataRestored;
     }
 
-    size_t seg = getSegmentForPid(pid);
+    unsigned seg = getSegmentForPid(pid);
     return bitmap->get(seg);
 }
 
@@ -217,6 +220,10 @@ bool RestoreMgr::requestRestore(const shpid_t& pid, generic_page* addr)
 
 void RestoreMgr::restoreMetadata()
 {
+    if (metadataRestored) {
+        return;
+    }
+
     LogArchiver::ArchiveScanner logScan(archive);
 
     // open scan on pages [0,1) to get all store operation log records
@@ -261,8 +268,6 @@ void RestoreMgr::restoreLoop()
 
     LogArchiver::ArchiveScanner logScan(archive);
 
-    char* workspace = new char[sizeof(generic_page) * segmentSize];
-
     while (numRestoredPages < numPages) {
         shpid_t requested = scheduler->next();
         if (isRestored(requested)) {
@@ -275,7 +280,7 @@ void RestoreMgr::restoreLoop()
         }
         w_assert0(requested >= firstDataPid);
 
-        size_t segment = getSegmentForPid(requested);
+        unsigned segment = getSegmentForPid(requested);
         shpid_t firstPage = getPidForSegment(segment);
 
         lpid_t start = lpid_t(volume->vid(), firstPage);
@@ -347,16 +352,14 @@ void RestoreMgr::restoreLoop()
         }
 
         // in the last segment, we may write less than the segment size
-        finishSegment(segment, workspace, current - firstPage);
+        finishSegment(segment, current - firstPage);
     }
 
     DBG(<< "Restore thread finished!");
-    delete workspace;
 }
 
-void RestoreMgr::finishSegment(size_t segment, char* workspace, size_t count)
+void RestoreMgr::finishSegment(unsigned segment, size_t count)
 {
-    // TODO generate log records
     shpid_t firstPage = getPidForSegment(segment);
 
     if (count > 0) {
@@ -367,15 +370,27 @@ void RestoreMgr::finishSegment(size_t segment, char* workspace, size_t count)
         DBG(<< "Wrote out " << count << " pages of segment " << segment);
     }
 
+    markSegmentRestored(segment);
+
+    // send signal to waiting threads (acquire mutex to avoid lost signal)
+    DO_PTHREAD(pthread_mutex_lock(&restoreCondMutex));
+    DO_PTHREAD(pthread_cond_broadcast(&restoreCond));
+    DO_PTHREAD(pthread_mutex_unlock(&restoreCondMutex));
+}
+
+void RestoreMgr::markSegmentRestored(unsigned segment, bool redo)
+{
+    spinlock_write_critical_section cs(&requestMutex);
+
     /*
      * Now that the segment is restored, copy it into the buffer pool frame of
      * each matching request. Acquire the mutex for that to avoid race
      * condition in which segment gets restored after caller checks but before
      * its request is placed.
      */
-    requestMutex.acquire_write();
+    if (reuseRestoredBuffer && !redo) {
+        shpid_t firstPage = getPidForSegment(segment);
 
-    if (reuseRestoredBuffer) {
         for (int i = 0; i < segmentSize; i++) {
             map<shpid_t, generic_page*>::iterator pos =
                 bufferedRequests.find(firstPage + i);
@@ -396,14 +411,13 @@ void RestoreMgr::finishSegment(size_t segment, char* workspace, size_t count)
         numRestoredPages = numPages;
     }
 
+    if (!redo) {
+        sys_xct_section_t ssx(true);
+        log_restore_segment(volume->vid(), segment);
+        ssx.end_sys_xct(RCOK);
+    }
+
     bitmap->set(segment);
-
-    requestMutex.release_write();
-
-    // send signal to waiting threads (acquire mutex to avoid lost signal)
-    DO_PTHREAD(pthread_mutex_lock(&restoreCondMutex));
-    DO_PTHREAD(pthread_cond_broadcast(&restoreCond));
-    DO_PTHREAD(pthread_mutex_unlock(&restoreCondMutex));
 }
 
 void RestoreMgr::run()

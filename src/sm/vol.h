@@ -203,8 +203,17 @@ public:
         bool                   ok_if_deleting = false);
 
     /** Mark device as failed and kick off Restore */
-    void            mark_failed(bool evict = false);
-    bool is_failed() { return _failed; }
+    void            mark_failed(bool evict = false, bool redo = false);
+
+    bool is_failed() const
+    {
+        lintel::atomic_thread_fence(lintel::memory_order_acquire);
+        return _failed;
+    }
+
+    bool check_restore_finished(bool redo = false);
+
+    void redo_segment_restore(unsigned segment);
 
 private:
     // variables read from volume header -- remain constant after mount
@@ -218,6 +227,14 @@ private:
     lpid_t           _spid;
 
     mutable srwlock_t _mutex;
+
+    // setting failed status only allowed internally (private method)
+    void set_failed(bool failed)
+    {
+        _failed = failed;
+        lintel::atomic_thread_fence(lintel::memory_order_release);
+    }
+
 
     // fake disk latency
     bool             _apply_fake_disk_latency;
