@@ -3,7 +3,7 @@
 #ifndef RESTORE_H
 #define RESTORE_H
 
-#include "sm_int_1.h"
+#include "sm_base.h"
 
 #include <queue>
 

@@ -111,6 +111,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "btree_page_h.h"
 #include "stnode_page.h"
 #include "w_base.h"
+#include "logrec.h"
 
 EOF
 

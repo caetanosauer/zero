@@ -68,7 +68,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include <sysdefs.h>
 #include <vec_t.h>
 #include <latch.h>
-#include <lid_t.h>
 #if defined(SM_SOURCE)
 /* Do not force this on VASs */
 #include <sm_s.h>
@@ -697,17 +696,17 @@ public:
     // given here only for convenience in debugging/grepping
     // Well, their ORDER is significant, so that you can only
     // change state to a larger state with change_state().
-    enum xct_state_t {  xct_stale = 0x0,  
+    enum xct_state_t {  xct_stale = 0x0,
                         xct_active = 0x1,  // active or rolling back in
                                            // doing rollback_work
                                            // It is also used in Recovery for loser transaction
                                            // because it is using the standard rollback logic
                                            // for loser txn, check the _loser_xct flag
                                            // in xct_t
-                        xct_chaining = 0x3, 
-                        xct_committing = 0x4, 
+                        xct_chaining = 0x3,
+                        xct_committing = 0x4,
                         xct_aborting = 0x5,  // normal transaction abort
-                        xct_freeing_space = 0x6, 
+                        xct_freeing_space = 0x6,
                         xct_ended = 0x7
     };
 
@@ -745,13 +744,13 @@ public:
      *             as a t_tempory store and is converted to a t_regular
      *             store upon commit.
      * - t_insert_file: Updates to existing pages are fully logged (as if the
-     *             store were t_regular), but pages allocated while the 
+     *             store were t_regular), but pages allocated while the
      *             store has t_insert_file are not logged. This is useful for
-     *             bulk-loading, e.g., a store is bulk-loaded in one 
+     *             bulk-loading, e.g., a store is bulk-loaded in one
      *             transaction (t_load_file), which commits (now the file is
      *             t_regular); subsequent appends to the file would incur
      *             full logging, so the subsequent transaction can change the
-     *             store's property to t_insert_file, append the data, 
+     *             store's property to t_insert_file, append the data,
      *             and change the store's property back to t_regular.
      *
      * \verbatim
@@ -772,14 +771,14 @@ public:
      *    t_regular YES      | tmp NO load_file NO insert_file YES regular YES
      * ------------------------------------------------------------
      * Effects of changing a file to regular:
-     *    This causes the buffer pool to 
-     *    force to disk all dirty pages for the store, and 
-     *    to discard (evict from the buffer pool) all the store's 
-     *    pages, clean or dirty.  When these pages are next read 
-     *    into the buffer pool, they will be tagged as regular. 
+     *    This causes the buffer pool to
+     *    force to disk all dirty pages for the store, and
+     *    to discard (evict from the buffer pool) all the store's
+     *    pages, clean or dirty.  When these pages are next read
+     *    into the buffer pool, they will be tagged as regular.
      * ------------------------------------------------------------
      * Effects of commit:
-     *    t_tmp              remains t_tmp  
+     *    t_tmp              remains t_tmp
      *    t_load_file        store is t_regular**
      *    t_insert_file      store is t_regular**
      *    t_regular          ACID
@@ -787,7 +786,7 @@ public:
      *          this store on a list to traverse and convert to regular
      *          upon commit.
      *          Upon changing a store's property to t_insert_file,
-     *          the storage manager pushes the store on this same list. 
+     *          the storage manager pushes the store on this same list.
      * ------------------------------------------------------------
      * Effects of abort on user data:
      *    t_tmp              undefined: client must remove store
@@ -812,12 +811,12 @@ public:
 
     /// allowed only in create, these files start out
     /// as temp and are converted to regular on commit
-    t_load_file    = 0x4,    
+    t_load_file    = 0x4,
 
     /// current pages logged, new pages not logged
     /// EX lock is acquired on file.
     /// only valid with a normal file, not indices.
-    t_insert_file = 0x08,    
+    t_insert_file = 0x08,
 
     t_bad_storeproperty = 0x80// no bits in common with good properties
     };
@@ -851,8 +850,8 @@ ostream& operator<<(ostream& o, const smlevel_0::xct_state_t& xct_state);
 #if defined(SM_SOURCE)
 #    include <fixable_page_h.h>
 #    include <pmap.h>
-#    include <sm_io.h>
 #    include <log.h>
+#    include <vol.h>
 
 #    if defined(FILE_C) || defined(SMFILE_C)
 #    define BTREE_H
