@@ -140,8 +140,8 @@ inline shpid_t RestoreMgr::getPidForSegment(size_t segment)
 
 inline bool RestoreMgr::isRestored(const shpid_t& pid)
 {
-    if (pid == 0) {
-        // pid 0 signifies metadata (stnode cache)
+    if (pid < firstDataPid) {
+        // first pages are metadata
         return metadataRestored;
     }
 
@@ -231,6 +231,11 @@ void RestoreMgr::restoreMetadata()
     // pages get written back
 
     metadataRestored = true;
+
+    // send signal to waiting threads (acquire mutex to avoid lost signal)
+    DO_PTHREAD(pthread_mutex_lock(&restoreCondMutex));
+    DO_PTHREAD(pthread_cond_broadcast(&restoreCond));
+    DO_PTHREAD(pthread_mutex_unlock(&restoreCondMutex));
 }
 
 void RestoreMgr::restoreLoop()
