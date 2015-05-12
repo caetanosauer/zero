@@ -25,6 +25,8 @@ public:
     vol_m(const sm_options& options);
     virtual ~vol_m();
 
+    void shutdown(bool abrupt);
+
     vol_t* get(vid_t vid);
     vol_t* get(const char* path);
 
@@ -105,8 +107,9 @@ protected: // access restricted to vol_m
     vol_t();
     virtual ~vol_t();
 
-    rc_t                mount(const char* devname);
-    rc_t                dismount();
+    void shutdown(bool abrupt);
+    rc_t mount(const char* devname);
+    rc_t dismount(bool bf_uninstall = true, bool abrupt = false);
 
 public:
     const char* devname() const { return _devname; }
@@ -214,6 +217,8 @@ private:
     stnode_cache_t*  _stnode_cache;
     /** buffer manager for special pages. */
     bf_fixed_m*      _fixed_bf;
+
+    bool _failed;
 
     /** releases _alloc_cache and _stnode_cache. */
     void clear_caches();

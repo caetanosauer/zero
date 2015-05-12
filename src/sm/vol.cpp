@@ -43,6 +43,18 @@ vol_m::~vol_m()
 {
 }
 
+void vol_m::shutdown(bool abrupt)
+{
+    spinlock_write_critical_section cs(&_mutex);
+
+    for (int i = 0; i < MAX_VOLS; i++) {
+        if (volumes[i]) {
+            volumes[i]->shutdown(abrupt);
+            delete volumes[i];
+        }
+    }
+}
+
 vol_t* vol_m::get(const char* path)
 {
     spinlock_read_critical_section cs(&_mutex);
@@ -297,7 +309,8 @@ vol_t::vol_t()
              : _unix_fd(-1),
                _apply_fake_disk_latency(false),
                _fake_disk_latency(0),
-               _alloc_cache(NULL), _stnode_cache(NULL), _fixed_bf(NULL)
+               _alloc_cache(NULL), _stnode_cache(NULL), _fixed_bf(NULL),
+               _failed(false)
 {}
 
 vol_t::~vol_t() {
@@ -386,7 +399,7 @@ rc_t vol_t::mount(const char* devname)
     return RCOK;
 }
 
-rc_t vol_t::dismount()
+rc_t vol_t::dismount(bool bf_uninstall, bool abrupt)
 {
     spinlock_write_critical_section cs(&_mutex);
 
@@ -395,11 +408,25 @@ rc_t vol_t::dismount()
     INC_TSTAT(vol_cache_clears);
 
     w_assert1(_unix_fd >= 0);
-    W_DO(smlevel_0::bf->uninstall_volume(_vid, false));
+    if (bf_uninstall) {
+        if (smlevel_0::bf) { // might have shut down already
+            W_DO(smlevel_0::bf->uninstall_volume(_vid, !abrupt /* clear_cb */));
+        }
+    }
 
-    /*
-     *  Close the device
-     */
+    if (!abrupt) {
+        if (_failed) {
+            // wait for ongoing restore to complete
+            // CS TODO -- merge with restore code and:
+            // 1) set single-pass restore
+            // 2) wait for complete restore
+        }
+        // CS TODO -- also make sure no restart is ongoing
+    }
+    else if (_failed) {
+        DBG(<< "WARNING: Volume shutting down abruptly during restore!");
+    }
+
     w_rc_t e;
     e = me()->close(_unix_fd);
     if (e.is_error())
@@ -410,6 +437,12 @@ rc_t vol_t::dismount()
     clear_caches();
 
     return RCOK;
+}
+
+void vol_t::shutdown(bool abrupt)
+{
+    // bf_uninstall causes a force on the volume through the bf_cleaner
+    W_COERCE(dismount(!abrupt /* uninstall */, abrupt));
 }
 
 rc_t vol_t::check_disk()

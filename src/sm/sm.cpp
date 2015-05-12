@@ -904,13 +904,13 @@ ss_m::_destruct_once()
 #endif
     clog = 0;
 
-    delete vol; vol = 0; // io manager
-    {
-        w_rc_t e = bf->destroy();
-        W_COERCE (e);
-    }
+    W_COERCE(bf->destroy());
     delete bf; bf = 0; // destroy buffer manager last because io/dev are flushing them!
     delete bk; bk = 0;
+
+    vol->shutdown(!shutdown_clean);
+    delete vol; vol = 0; // io manager
+
     /*
      *  Level 0
      */

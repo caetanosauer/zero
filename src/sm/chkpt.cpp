@@ -853,6 +853,12 @@ try
         do
         {
             int per_chunk_txn_count = 0;
+            /*
+             * CS TODO -- there is a bug here, which seems to occur when
+             * system is being shut down. The xct iterator keeps returning
+             * the same object, because the linked list somehow has a circle,
+             * i.e., _next->next == _next
+             */
             while (per_chunk_txn_count < chunk && (xd = x.next()))
             {
                 // Loop over all transactions and record only
@@ -878,8 +884,6 @@ try
                 // would be throw, we abort the current checkpoint but not bringing down
                 // the system.
 
-                // TODO CS this sometimes causes a deadlock (e.g. in test_crash),
-                // after the system has already shut down
                 w_rc_t latch_rc = xd->latch().latch_acquire(LATCH_SH, WAIT_FOREVER);
                 if (latch_rc.is_error())
                 {
