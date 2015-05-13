@@ -14,7 +14,7 @@
 /**
  * \brief Page headers shared by all Zero pages
  *
- * \details 
+ * \details
  *     All page data types (e.g., generic_page, alloc_page,
  * btree_page, stnode_page) inherit (indirectly) from this class.
  * This is a POD.
@@ -47,13 +47,13 @@ public:
      * permanent storage.
      */
     mutable uint32_t checksum;     // +4 -> 4
-    
+
     /// ID of this page
     lpid_t           pid;          // +4+4 (= +8) -> 12
 
     /// ID of the store to which this page belongs (0 if none)
     snum_t           store;        // +4 -> 16
-    
+
     /// LSN (Log Sequence Number) of the last write to this page
     lsn_t            lsn;          // +8 -> 24
 
@@ -74,8 +74,11 @@ protected:
 
 
 public:
-    /// Calculate the correct value of checksum for this page. 
+    /// Calculate the correct value of checksum for this page.
     uint32_t    calculate_checksum () const;
+
+public:
+    friend std::ostream& operator<<(std::ostream&, generic_page_header&);
 };
 // verify compiler tightly packed all of generic_page_header's fields:
 BOOST_STATIC_ASSERT(sizeof(generic_page_header) == 40);
@@ -87,9 +90,9 @@ BOOST_STATIC_ASSERT(sizeof(generic_page_header) == 40);
  */
 enum page_tag_t {
     t_bad_p    = 0,        ///< not used
-    t_alloc_p  = 1,        ///< free-page allocation page 
+    t_alloc_p  = 1,        ///< free-page allocation page
     t_stnode_p = 2,        ///< store node page
-    t_btree_p  = 5,        ///< btree page 
+    t_btree_p  = 5,        ///< btree page
 };
 
 
@@ -111,7 +114,7 @@ enum page_flag_t {
  * "downcast" and access page-type--specific fields, pass a pointer to
  * one of these to one of the page handle classes' (e.g., btree_page_h)
  * constructors.
- * 
+ *
  * \details
  * All zero pages have the same size and initial headers
  * (generic_page_header's).  Each specific page type has an associated
@@ -121,7 +124,7 @@ enum page_flag_t {
  * Casting between page types is done by the handle classes after
  * verifying the cast is safe according to the page tag.  No other
  * code should perform such casts.
- * 
+ *
  * The corresponding handle class for this page type is generic_page_h.
  */
 class generic_page : public generic_page_header {
@@ -134,7 +137,7 @@ BOOST_STATIC_ASSERT(sizeof(generic_page) == generic_page_header::page_sz);
 
 /**
  * \brief Page handle class for any page type.
- * 
+ *
  * \details
  * This is the root superclass of all the Zero page handle classes.
  * It provides operations on the fields common to all pages.
@@ -169,7 +172,7 @@ protected:
         _pp->pid = pid;
         _pp->store = store;
         _pp->tag = tag;
-    }    
+    }
 
     /// The actual page we are handling; may be NULL for fixable pages
     generic_page* _pp;

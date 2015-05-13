@@ -31,3 +31,14 @@ uint32_t generic_page_header::calculate_checksum () const {
     }
     return ((uint32_t) (value >> 32)) ^ ((uint32_t) (value & 0xFFFFFFFF));
 }
+
+std::ostream& operator<<(std::ostream& os, generic_page_header& p)
+{
+    os << "PAGE " << p.pid
+        << " LSN: " << p.lsn
+        << " CLSN: " << p.clsn
+        << " TAG: " << p.tag
+        << " FLAGS: " << p.page_flags
+        << " STORE: " << p.store;
+    return os;
+}

@@ -80,6 +80,7 @@ w_rc_t bf_fixed_m::flush() {
         for (; next < _page_cnt && _dirty_flags[next]; ++next) {
             _pages[next].checksum = _pages[next].calculate_checksum();
         }
+        DBG(<< "bf_fixed_m::flush " << _pages[next]);
 
         shpid_t begin_pid = cur + 1; // +1 for volume header
 
