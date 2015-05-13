@@ -508,13 +508,36 @@ struct chkpt_dev_tab_t
                 / smlevel_0::max_devname
     };
 
-    chkpt_dev_tab_t(vid_t next_vid, const std::vector<string>&);
+    chkpt_dev_tab_t(vid_t next_vid,
+        const std::vector<string>& devices);
 
     int size() const {
         return data_size + 2 * sizeof(uint32_t);
     }
 
     void read_devnames(std::vector<string>& devnames);
+};
+
+struct chkpt_backup_tab_t
+{
+    uint16_t count;
+    uint32_t data_size;
+    char     data[logrec_t::max_data_sz];
+
+    enum {
+        max = (logrec_t::max_data_sz - sizeof(uint32_t) - sizeof(uint16_t))
+                / (smlevel_0::max_devname + sizeof(vid_t))
+    };
+
+    chkpt_backup_tab_t(
+        const std::vector<vid_t>& vids,
+        const std::vector<string>& paths);
+
+    int size() const {
+        return data_size + sizeof(uint32_t) + sizeof(uint16_t);
+    }
+
+    void read(std::vector<vid_t>& vids, std::vector<string>& paths);
 };
 
 struct xct_list_t {

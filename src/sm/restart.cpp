@@ -891,6 +891,7 @@ restart_m::analysis_pass_forward(
             break;
 
         case logrec_t::t_chkpt_dev_tab:
+        case logrec_t::t_chkpt_backup_tab:
             if (num_chkpt_end_handled == 0)
             {
                 // Still processing the master checkpoint record.
@@ -899,8 +900,10 @@ restart_m::analysis_pass_forward(
             }
             break;
 
+        case logrec_t::t_format_vol:
         case logrec_t::t_dismount_vol:
         case logrec_t::t_mount_vol:
+        case logrec_t::t_add_backup:
             r.redo(0);
             break;
 
@@ -1632,6 +1635,18 @@ restart_m::analysis_pass_backward(
             }
             break;
 
+        case logrec_t::t_chkpt_backup_tab:
+            if (num_chkpt_end_handled == 1)
+            {
+                // backups can simply be redone in reverse order because, for
+                // now at least, there is no delete_backup operation. If there
+                // would be one, we would have to replay them in reverse to
+                // take care of a sequence of add and delete, just like in
+                // chkpt_dev_tab and mount/dismounts.
+                r.redo(0);
+            }
+            break;
+
         case logrec_t::t_chkpt_dev_tab:
             if (num_chkpt_end_handled == 1)
             {
@@ -1652,6 +1667,7 @@ restart_m::analysis_pass_backward(
 
         case logrec_t::t_dismount_vol:
         case logrec_t::t_mount_vol:
+        case logrec_t::t_format_vol:
             // Perform all mounts and dismounts up to the minimum redo lsn,
             // so that the system has the right volumes mounted during
             // the redo phase.  The only time this should be redone is
@@ -1697,6 +1713,11 @@ restart_m::analysis_pass_backward(
                 // Insert the entry into heapMount
                 heapMount.AddElement(mount_heap_elem);
             }
+            break;
+
+        case logrec_t::t_add_backup:
+            // see comments in redo of chkpt_backup_tab
+            r.redo(0);
             break;
 
         case logrec_t::t_chkpt_end:

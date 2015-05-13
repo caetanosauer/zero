@@ -676,6 +676,7 @@ try
     uint16_t total_page_count = 0;
     uint16_t total_txn_count = 0;
     int      total_dev_cnt = 0;
+    int      backup_cnt = 0;
 
     // Write a Checkpoint Begin Log and record its lsn in master
     lsn_t master = lsn_t::null;
@@ -724,6 +725,30 @@ try
                             smlevel_0::vol->get_next_vid(), names), 0);
             }
         }
+    }
+
+    // Checkpoint backups
+    {
+        // Log the mount table in "max loggable size" chunks.
+        // casts due to enums
+        const int chunk = vol_m::MAX_VOLS > (int)chkpt_backup_tab_t::max
+            ? (int)chkpt_backup_tab_t::max : vol_m::MAX_VOLS;
+        int vol_cnt = smlevel_0::vol->num_vols();
+
+        int    i;
+        std::vector<vid_t> vids;
+        std::vector<string> paths;
+
+        for (i = 0; i < vol_cnt; i += chunk)
+        {
+            W_COERCE(smlevel_0::vol->list_backups(paths, vids, i, chunk));
+            if (paths.size() > 0)
+            {
+                // Write a Checkpoint Device Table Log
+                LOG_INSERT(chkpt_backup_tab_log(vids, paths), 0);
+            }
+        }
+        backup_cnt = paths.size();
     }
 
     /*
@@ -1156,8 +1181,10 @@ try
         if (ss_m::shutting_down && !ss_m::shutdown_clean) // Dirty shutdown (simulated crash)
         {
             DBGOUT1(<<"chkpt_m::take ABORTED due to dirty shutdown, dirty page count = "
-                    << total_page_count << ", total txn count = "
-                    << total_txn_count << ", total vol count = " << total_dev_cnt);
+                    << total_page_count
+                    << ", total txn count = " << total_txn_count
+                    << ", total backup count = " << backup_cnt
+                    << ", total vol count = " << total_dev_cnt);
         }
         else
         {
@@ -1181,9 +1208,10 @@ try
 
 // TODO(Restart)... performance
             DBGOUT1(<<"chkpt_m::take completed - total dirty page count = "
-                    << total_page_count << ", total txn count = "
-                    << total_txn_count << ", total vol count = "
-                    << total_dev_cnt);
+                    << total_page_count
+                    << ", total txn count = " << total_txn_count
+                    << ", total backup count = " << backup_cnt
+                    << ", total vol count = " << total_dev_cnt);
 
             // Sync the log
             // In checkpoint operation, flush the recovery log to harden the log records

@@ -590,7 +590,8 @@ chkpt_xct_lock_log::chkpt_xct_lock_log(
  *  Contains, for each device mounted, its devname and vid.
  *
  *********************************************************************/
-chkpt_dev_tab_t::chkpt_dev_tab_t(vid_t next_vid, const std::vector<string>& devnames)
+chkpt_dev_tab_t::chkpt_dev_tab_t(vid_t next_vid,
+        const std::vector<string>& devnames)
     : count(devnames.size()), next_vid(next_vid)
 {
     std::stringstream ss;
@@ -636,6 +637,60 @@ void chkpt_dev_tab_log::redo(fixable_page_h*)
         smlevel_0::vol->sx_mount(dnames[i].c_str(), false /* log */);
     }
     smlevel_0::vol->set_next_vid(tab->next_vid);
+}
+
+chkpt_backup_tab_t::chkpt_backup_tab_t(
+        const std::vector<vid_t>& vids,
+        const std::vector<string>& paths)
+    : count(vids.size())
+{
+    w_assert0(vids.size() == paths.size());
+    std::stringstream ss;
+    for (uint i = 0; i < count; i++) {
+        ss << vids[i];
+        ss << paths[i];
+    }
+    data_size = ss.tellp();
+    w_assert0(data_size <= logrec_t::max_data_sz);
+    ss.read(data, data_size);
+}
+
+void chkpt_backup_tab_t::read(
+        std::vector<vid_t>& vids,
+        std::vector<string>& paths)
+{
+    vid_t vid;
+    std::string s;
+    std::stringstream ss;
+    ss.write(data, data_size);
+
+    for (uint i = 0; i < count; i++) {
+        ss >> vid;
+        vids.push_back(vid);
+        ss >> s;
+        paths.push_back(s);
+    }
+}
+
+chkpt_backup_tab_log::chkpt_backup_tab_log(
+        const std::vector<vid_t>& vids,
+        const std::vector<string>& paths)
+{
+    fill(0, (new (_data) chkpt_backup_tab_t(vids, paths))->size());
+}
+
+void chkpt_backup_tab_log::redo(fixable_page_h*)
+{
+    chkpt_backup_tab_t* tab = (chkpt_backup_tab_t*) _data;
+    std::vector<vid_t> vids;
+    std::vector<string> paths;
+    tab->read(vids, paths);
+    w_assert0(tab->count == vids.size());
+    w_assert0(tab->count == paths.size());
+
+    for (int i = 0; i < tab->count; i++) {
+        smlevel_0::vol->sx_add_backup(vids[i], paths[i], false /* log */);
+    }
 }
 
 format_vol_log::format_vol_log(const char* path, shpid_t num_pages, vid_t vid)
