@@ -322,21 +322,6 @@ vol_t::~vol_t() {
     w_assert1(_unix_fd == -1);
 }
 
-void vol_t::clear_caches() {
-    if (_alloc_cache) {
-        delete _alloc_cache;
-        _alloc_cache = NULL;
-    }
-    if (_stnode_cache) {
-        delete _stnode_cache;
-        _stnode_cache = NULL;
-    }
-    if (_fixed_bf) {
-        delete _fixed_bf;
-        _fixed_bf = NULL;
-    }
-}
-
 rc_t vol_t::sync()
 {
     W_DO_MSG(me()->fsync(_unix_fd), << "volume id=" << vid());
@@ -382,30 +367,63 @@ rc_t vol_t::mount(const char* devname)
     _hdr_pages = vhdr.hdr_pages; // 0 if no volumes formatted yet
 
     clear_caches();
-    _fixed_bf = new bf_fixed_m();
+    build_caches();
+    W_DO(init_metadata());
+
+    return RCOK;
+}
+
+void vol_t::clear_caches()
+{
+    // caller must hold mutex
+    if (_alloc_cache) {
+        delete _alloc_cache;
+        _alloc_cache = NULL;
+    }
+    if (_stnode_cache) {
+        delete _stnode_cache;
+        _stnode_cache = NULL;
+    }
+    if (_fixed_bf) {
+        delete _fixed_bf;
+        _fixed_bf = NULL;
+    }
+}
+
+void vol_t::build_caches()
+{
+    // caller must hold mutex
+    _fixed_bf = new bf_fixed_m(this, _unix_fd, _num_pages);
     w_assert1(_fixed_bf);
-    rc = _fixed_bf->init(this, _unix_fd, _num_pages);
+
+    _alloc_cache = new alloc_cache_t(_vid, _fixed_bf);
+    w_assert1(_alloc_cache);
+
+    _stnode_cache = new stnode_cache_t(_vid, _fixed_bf);
+    w_assert1(_stnode_cache);
+}
+
+rc_t vol_t::init_metadata()
+{
+    // caller must hold mutex
+    rc_t rc = _fixed_bf->init();
     if (rc.is_error()) {
         W_IGNORE(me()->close(_unix_fd));
         _unix_fd = -1;
         return rc;
     }
+
     _first_data_pageid = _fixed_bf->get_page_cnt() + 1; // +1 for volume header
-
-    _alloc_cache = new alloc_cache_t(_vid, _fixed_bf);
-    w_assert1(_alloc_cache);
     W_DO(_alloc_cache->load_by_scan(_num_pages));
+    _stnode_cache->init();
+    W_DO(smlevel_0::bf->install_volume(this));
 
-    _stnode_cache = new stnode_cache_t(_vid, _fixed_bf);
-    w_assert1(_stnode_cache);
-
-    W_DO( smlevel_0::bf->install_volume(this));
     return RCOK;
 }
 
 rc_t vol_t::remount_from_backup(bool /*evict*/)
 {
-    // protected by latch acquired on mark_failed()
+    // caller must hold the mutex
 
     /*
      * CS (TODO) Currently, restore only supports backup-less log replay,
@@ -416,24 +434,33 @@ rc_t vol_t::remount_from_backup(bool /*evict*/)
      * For restore with backups, vol_t should maintain an instance of a backup
      * manager, and remount based on the backup device.
      */
-    // CS TODO -- implement backup support!
     clear_caches();
-
-    // CS TODO -- need better solution
-    // calling dismount and mount causes deadlock due to latch
-    _fixed_bf = new bf_fixed_m();
-    w_assert1(_fixed_bf);
-    W_DO(_fixed_bf->init(this, _unix_fd, _num_pages));
-    _first_data_pageid = _fixed_bf->get_page_cnt() + 1; // +1 for volume header
-
-    _alloc_cache = new alloc_cache_t(_vid, _fixed_bf);
-    w_assert1(_alloc_cache);
-    // W_DO(_alloc_cache->load_by_scan(_num_pages));
-
-    _stnode_cache = new stnode_cache_t(_vid, _fixed_bf);
-    w_assert1(_stnode_cache);
+    build_caches();
 
     return RCOK;
+}
+
+void vol_t::mark_failed(bool evict, bool redo)
+{
+    spinlock_write_critical_section cs(&_mutex);
+
+    if (is_failed()) {
+        return;
+    }
+
+    _restore_mgr = new RestoreMgr(ss_m::get_options(),
+            ss_m::logArchiver->getDirectory(), this);
+    _restore_mgr->fork();
+
+    W_COERCE(remount_from_backup(evict));
+
+    set_failed(true);
+
+    if (!redo) {
+        sys_xct_section_t ssx(true);
+        log_restore_end(_vid);
+        ssx.end_sys_xct(RCOK);
+    }
 }
 
 bool vol_t::check_restore_finished(bool redo)
@@ -471,6 +498,22 @@ bool vol_t::check_restore_finished(bool redo)
         }
         set_failed(false);
         return true;
+    }
+}
+
+inline void vol_t::check_metadata_restored() const
+{
+    /* During restore, we must wait for shpid 0 to be restored.  Even though it
+     * is not an actual pid restored in log replay, the log records of store
+     * operations have pid 0, and they must be restored first so that the
+     * stnode cache is restored.  See RestoreMgr::restoreMetadata()
+     *
+     * All operations that access metadata, i.e., allocations, store
+     * operations, and root page ids, must wait for metadata to be restored
+     */
+    if (is_failed()) {
+        w_assert1(_restore_mgr);
+        _restore_mgr->waitUntilRestored(shpid_t(0));
     }
 }
 
@@ -521,6 +564,8 @@ void vol_t::shutdown(bool abrupt)
 
 rc_t vol_t::check_disk()
 {
+    check_metadata_restored();
+
     // CS TODO just make this an operator<<
     volhdr_t vhdr;
     W_DO(vhdr.read(_unix_fd));
@@ -557,6 +602,8 @@ rc_t vol_t::check_disk()
 
 rc_t vol_t::alloc_a_page(shpid_t& shpid, bool redo)
 {
+    if (!redo) check_metadata_restored();
+
     w_assert1(_alloc_cache);
     if (!redo) {
         W_DO(_alloc_cache->allocate_one_page(shpid));
@@ -569,6 +616,8 @@ rc_t vol_t::alloc_a_page(shpid_t& shpid, bool redo)
 
 rc_t vol_t::alloc_consecutive_pages(size_t page_count, shpid_t &pid_begin, bool redo)
 {
+    if (!redo) check_metadata_restored();
+
     w_assert1(_alloc_cache);
     if (!redo) {
         W_DO(_alloc_cache->allocate_consecutive_pages(pid_begin, page_count));
@@ -581,6 +630,8 @@ rc_t vol_t::alloc_consecutive_pages(size_t page_count, shpid_t &pid_begin, bool 
 
 rc_t vol_t::deallocate_page(const shpid_t& pid, bool redo)
 {
+    if (!redo) check_metadata_restored();
+
     w_assert1(_alloc_cache);
     if (!redo) {
         W_DO(_alloc_cache->deallocate_one_page(pid));
@@ -593,6 +644,8 @@ rc_t vol_t::deallocate_page(const shpid_t& pid, bool redo)
 
 rc_t vol_t::store_operation(const store_operation_param& param, bool redo)
 {
+    if (!redo) check_metadata_restored();
+
     w_assert1(param.snum() < stnode_page_h::max);
     w_assert1(_stnode_cache);
     W_DO(_stnode_cache->store_operation(param, redo));
@@ -601,6 +654,8 @@ rc_t vol_t::store_operation(const store_operation_param& param, bool redo)
 
 rc_t vol_t::set_store_flags(snum_t snum, smlevel_0::store_flag_t flags)
 {
+    check_metadata_restored();
+
     w_assert2(flags & smlevel_0::st_regular
            || flags & smlevel_0::st_tmp
            || flags & smlevel_0::st_insert_file);
@@ -619,6 +674,8 @@ rc_t vol_t::set_store_flags(snum_t snum, smlevel_0::store_flag_t flags)
 rc_t vol_t::get_store_flags(snum_t snum, smlevel_0::store_flag_t& flags,
         bool ok_if_deleting)
 {
+    check_metadata_restored();
+
     if (!is_valid_store(snum))    {
         DBG(<<"get_store_flags: BADSTID");
         return RC(eBADSTID);
@@ -656,6 +713,8 @@ rc_t vol_t::get_store_flags(snum_t snum, smlevel_0::store_flag_t& flags,
 
 rc_t vol_t::create_store(smlevel_0::store_flag_t flags, snum_t& snum)
 {
+    check_metadata_restored();
+
     w_assert1(_stnode_cache);
     snum = _stnode_cache->get_min_unused_store_ID();
     if (snum >= stnode_page_h::max) {
@@ -676,6 +735,8 @@ rc_t vol_t::create_store(smlevel_0::store_flag_t flags, snum_t& snum)
 
 rc_t vol_t::set_store_root(snum_t snum, shpid_t root)
 {
+    check_metadata_restored();
+
     if (!is_valid_store(snum))    {
         DBG(<<"set_store_root: BADSTID");
         return RC(eBADSTID);
@@ -687,74 +748,65 @@ rc_t vol_t::set_store_root(snum_t snum, shpid_t root)
     return RCOK;
 }
 
-bool vol_t::is_alloc_store(snum_t f) const {
+bool vol_t::is_alloc_store(snum_t f) const
+{
+    check_metadata_restored();
+
     return _stnode_cache->is_allocated(f);
 }
 shpid_t vol_t::get_store_root(snum_t f) const
 {
-    FUNC(get_root);
+    check_metadata_restored();
 
-    // During restore, we must wait for shpid 0 to be restored.
-    // Even though it is not an actual pid restored in log replay,
-    // the log records of store operations have pid 0, and they must
-    // be restored first so that the stnode cache is restored.
-    // See RestoreMgr::restoreMetadata()
-    if (is_failed()) {
-        w_assert1(_restore_mgr);
-        _restore_mgr->waitUntilRestored(shpid_t(0));
-    }
+    FUNC(get_root);
 
     return _stnode_cache->get_root_pid(f);
 }
 
 void vol_t::fake_disk_latency(long start)
 {
-  if(!_apply_fake_disk_latency)
-    return;
-  long delta = gethrtime() - start;
-  delta = _fake_disk_latency - delta;
-  if(delta <= 0)
-    return;
-  int max= 99999999;
-  if(delta > max) delta = max;
+    if(!_apply_fake_disk_latency)
+        return;
+    long delta = gethrtime() - start;
+    delta = _fake_disk_latency - delta;
+    if(delta <= 0)
+        return;
+    int max= 99999999;
+    if(delta > max) delta = max;
 
-  struct timespec req, rem;
-  req.tv_sec = 0;
-  w_assert0(delta > 0);
-  w_assert0(delta <= max);
-  req.tv_nsec = delta;
-  while(nanosleep(&req, &rem) != 0)
-  {
-      if (errno != EINTR)  return;
-      req = rem;
-  }
+    struct timespec req, rem;
+    req.tv_sec = 0;
+    w_assert0(delta > 0);
+    w_assert0(delta <= max);
+    req.tv_nsec = delta;
+    while(nanosleep(&req, &rem) != 0)
+    {
+        if (errno != EINTR)  return;
+        req = rem;
+    }
 }
 
-// IP: assuming no concurrent requests. No thread-safe.
-void
-vol_t::enable_fake_disk_latency(void)
+void vol_t::enable_fake_disk_latency(void)
 {
-  _apply_fake_disk_latency = true;
+    spinlock_write_critical_section cs(&_mutex);
+    _apply_fake_disk_latency = true;
 }
 
-void
-vol_t::disable_fake_disk_latency(void)
+void vol_t::disable_fake_disk_latency(void)
 {
-  _apply_fake_disk_latency = false;
+    spinlock_write_critical_section cs(&_mutex);
+    _apply_fake_disk_latency = false;
 }
 
-bool
-vol_t::set_fake_disk_latency(const int adelay)
+bool vol_t::set_fake_disk_latency(const int adelay)
 {
-  if (adelay<0) {
-    return (false);
-  }
-  _fake_disk_latency = adelay;
-  return (true);
+    spinlock_write_critical_section cs(&_mutex);
+    if (adelay<0) {
+        return (false);
+    }
+    _fake_disk_latency = adelay;
+    return (true);
 }
-
-
-
 
 /*********************************************************************
  *
@@ -846,7 +898,7 @@ rc_t vol_t::read_page(shpid_t pnum, generic_page& page)
  *********************************************************************/
 rc_t vol_t::write_page(shpid_t pnum, generic_page& page)
 {
-  return write_many_pages(pnum, &page, 1);
+    return write_many_pages(pnum, &page, 1);
 }
 
 
@@ -966,7 +1018,7 @@ rc_t volhdr_t::write(int fd)
      */
     w_ostrstream s(page, sizeof(generic_page));
     if (!s)  {
-            /* XXX really eCLIBRARY */
+        /* XXX really eCLIBRARY */
         return RC(eOS);
     }
     s.seekp(0, ios::beg);
@@ -1015,7 +1067,7 @@ rc_t volhdr_t::read(int fd)
     w_istrstream s(page);
     s.seekg(0, ios::beg);
     if (!s)  {
-            /* XXX c library */
+        /* XXX c library */
         return RC(eOS);
     }
 
@@ -1071,13 +1123,13 @@ rc_t vol_t::get_du_statistics(struct volume_hdr_stats_t& st, bool)
     new_stats.extent_size = 0;
 
     /*
-    if (audit) {
-        if (!(new_stats.alloc_ext_cnt + new_stats.hdr_ext_cnt +
-                    new_stats.unalloc_ext_cnt == _num_exts)) {
-            // return RC(fcINTERNAL);
-            W_FATAL(eINTERNAL);
-        };
-        W_DO(new_stats.audit());
+       if (audit) {
+       if (!(new_stats.alloc_ext_cnt + new_stats.hdr_ext_cnt +
+       new_stats.unalloc_ext_cnt == _num_exts)) {
+    // return RC(fcINTERNAL);
+    W_FATAL(eINTERNAL);
+    };
+    W_DO(new_stats.audit());
     }
     */
     st.add(new_stats);
@@ -1096,40 +1148,11 @@ bool vol_t::is_allocated_page(shpid_t pid) const
     return _alloc_cache->is_allocated_page(pid);
 }
 
-void vol_t::mark_failed(bool evict, bool redo)
-{
-    spinlock_write_critical_section cs(&_mutex);
-
-    if (is_failed()) {
-        return;
-    }
-
-    // 1. Write log record
-    // 2. Activate backup manager (missing)
-    // 3. Activate restore manager
-    _restore_mgr = new RestoreMgr(ss_m::get_options(),
-            ss_m::logArchiver->getDirectory(), this);
-    _restore_mgr->fork();
-
-    // 4. Remount device
-    // CS: TODO -- how about concurrent reads??
-    W_COERCE(remount_from_backup(evict));
-
-    // 5. Set failed flag and log action
-    set_failed(true);
-
-    if (!redo) {
-        sys_xct_section_t ssx(true);
-        log_restore_end(_vid);
-        ssx.end_sys_xct(RCOK);
-    }
-}
-
 // CS TODO why is this here?
 ostream& operator<<(ostream& o, const store_operation_param& param)
 {
     o << "snum="    << param.snum()
-      << ", op="    << param.op();
+        << ", op="    << param.op();
 
     switch (param.op())  {
         case smlevel_0::t_delete_store:
@@ -1139,11 +1162,11 @@ ostream& operator<<(ostream& o, const store_operation_param& param)
             break;
         case smlevel_0::t_set_deleting:
             o << ", newValue="        << param.new_deleting_value()
-              << ", oldValue="        << param.old_deleting_value();
+                << ", oldValue="        << param.old_deleting_value();
             break;
         case smlevel_0::t_set_store_flags:
             o << ", newFlags="        << param.new_store_flags()
-              << ", oldFlags="        << param.old_store_flags();
+                << ", oldFlags="        << param.old_store_flags();
             break;
         case smlevel_0::t_set_root:
             o << ", ext="        << param.root();

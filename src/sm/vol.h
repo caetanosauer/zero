@@ -251,8 +251,16 @@ private:
     /** Restore Manager is activated when volume has failed */
     RestoreMgr*      _restore_mgr;
 
-    /** releases _alloc_cache and _stnode_cache. */
+    /** Methods to create and destroy _alloc_cache, _stnode_cache, and
+     * _fixed_bf */
     void clear_caches();
+    void build_caches();
+
+    /** Initialize caches by reading from (restored/healthy) device */
+    rc_t init_metadata();
+
+    /** If media failure happened, wait for metadata to be restored */
+    void check_metadata_restored() const;
 };
 
 inline bool vol_t::is_valid_store(snum_t f) const

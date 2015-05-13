@@ -16,30 +16,33 @@ class vol_t;
 /**
  * \brief Buffer manager for a small number of special pages in each volume.
  * \ingroup SSMBUFPOOL
- * 
+ *
  * \details
  * This buffer manager deals with only allocation pages (alloc_page) and
  * store node pages (stnode_page). All pages are always pinned as there are
  * only a fixed and small number of such pages. Therefore, this buffer manager
  * is much simpler and more efficient than the main buffer manager.
- * 
+ *
  * How simpler it is?  MUCH.
  * No pinning, no synchronization (alloc_cache does it on behalf),
  * no hash table, no background cleaner, no eviction, no write-order-dependency.
- * 
+ *
  * Also, this buffer manager is the only one that can handle non-hierarchical
  * pages unlike the main one which only deals with btree pages.
  */
 class bf_fixed_m {
 public:
-    bf_fixed_m();
-    ~bf_fixed_m();
-    
+    bf_fixed_m(vol_t* parent, int unix_fd, shpid_t max_pid);
+    virtual ~bf_fixed_m();
+
     /**
-     * This constructor is called when a volume is mounted and
-     * reads/pins all special pages in it.
+     * This is called after volume is available in order to read the actual
+     * pages from disk, whereas the constructor simply allocates the buffer
+     * memory. This is important for restore, since the bf_fixed is first
+     * constructed and only initialized later, after the metadata pages have
+     * been restored.
      */
-    w_rc_t init(vol_t* parent, int unix_fd, uint32_t max_pid);
+    w_rc_t init();
 
     /**
      * Flush (write out) all pages. Used while shutdown and checkpoint.
@@ -49,10 +52,10 @@ public:
     /** returns the pointer to page data maintained in this bufferpool. */
     generic_page* get_pages ();
     bool* get_dirty_flags ();
-    
+
     /** returns number of pages maintained in this bufferpool. */
     uint32_t get_page_cnt() const;
-    
+
     srwlock_t& get_checkpoint_lock();
 
 private:
@@ -60,7 +63,7 @@ private:
     vol_t*      _parent;
     /** file pointer. */
     int         _unix_fd;
-    
+
     /**
      * Spinlock to pretect against checkpoint (flushing the content of the buffer).
      * The Read/Write semantics is a bit special:

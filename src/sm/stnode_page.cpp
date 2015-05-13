@@ -12,16 +12,22 @@
 
 stnode_page_h::stnode_page_h(generic_page* s, const lpid_t& pid):
     generic_page_h(s, pid, t_stnode_p, 0 /* store */)
-{}   
+{}
 
 
 
 stnode_cache_t::stnode_cache_t(vid_t vid, bf_fixed_m* special_pages):
-    _vid(vid), 
+    _vid(vid),
     _special_pages(special_pages),
-    _stnode_page(special_pages->get_pages() + special_pages->get_page_cnt()-1)
+    _stnode_page(special_pages->get_pages() + special_pages->get_page_cnt()
+            - 1)
+{
+}
+
+void stnode_cache_t::init()
 {
     w_assert1(_stnode_page.vol() == _vid);
+    w_assert1(_stnode_page.tag() == t_stnode_p);
 }
 
 
@@ -90,9 +96,9 @@ stnode_cache_t::store_operation(store_operation_param param, bool redo)
     stnode_t stnode = _stnode_page.get(param.snum()); // copy out current value.
 
     switch (param.op())  {
-        case smlevel_0::t_delete_store: 
+        case smlevel_0::t_delete_store:
             {
-                w_assert0(false); // this case currently unused; see JIRA: ZERO-168 
+                w_assert0(false); // this case currently unused; see JIRA: ZERO-168
                 stnode.root        = 0;
                 stnode.flags       = smlevel_0::st_unallocated;
                 stnode.deleting    = smlevel_0::t_not_deleting_store;
@@ -100,7 +106,7 @@ stnode_cache_t::store_operation(store_operation_param param, bool redo)
             break;
         case smlevel_0::t_create_store:
             {
-                w_assert1(stnode.root == 0);
+                w_assert1(redo || stnode.root == 0);
                 w_assert1(param.new_store_flags() != smlevel_0::st_unallocated);
 
                 stnode.root        = 0;
@@ -111,7 +117,7 @@ stnode_cache_t::store_operation(store_operation_param param, bool redo)
             break;
         case smlevel_0::t_set_deleting:
             {
-                w_assert0(false); // this case currently unused; see JIRA: ZERO-168 
+                w_assert0(false); // this case currently unused; see JIRA: ZERO-168
                 // Bogus assertion:
                 // If we crash/restart between the time the xct gets
                 // into xct_freeing_space and the time xct_end is
@@ -164,7 +170,7 @@ stnode_cache_t::store_operation(store_operation_param param, bool redo)
     // log it and apply the change to the stnode_page
      // Protect against checkpoint.  See bf_fixed_m comment.
     spinlock_read_critical_section cs2(&_special_pages->get_checkpoint_lock());
-    
+
     if (!redo) {
         W_DO( log_store_operation(_vid, param) );
     }

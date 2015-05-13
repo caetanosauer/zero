@@ -77,7 +77,6 @@ public:
 
     /// construct handle from an existing stnode_page page
     stnode_page_h(generic_page* s) : generic_page_h(s) {
-        w_assert1(s->tag == t_stnode_p);
     }
     ~stnode_page_h() {}
 
@@ -148,6 +147,11 @@ public:
 
     /// Returns the snum_t of all allocated stores in the volume.
     std::vector<snum_t> get_all_used_store_ID() const;
+
+    /** Init method is only invoked after volume data is safe on disk, i.e.,
+     * after format or restore in case of a media failure,
+     */
+    void init();
 
 
     /**
