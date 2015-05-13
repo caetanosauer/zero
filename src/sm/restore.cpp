@@ -261,7 +261,6 @@ void RestoreMgr::restoreLoop()
     // wait until volume is actually marked as failed
     while(!volume->is_failed()) {
         usleep(1000); // 1 ms
-        lintel::atomic_thread_fence(lintel::memory_order_consume);
     }
 
     restoreMetadata();
@@ -288,8 +287,17 @@ void RestoreMgr::restoreLoop()
 
         /*
          * CS: for the current milestone, we are ignoring backups and
-         * performing restore based on the complete log archive (since creation of the
-         * database).
+         * performing restore based on the complete log archive (since creation
+         * of the database).
+         *
+         * At this point, the workspace should be filled with the prefetched
+         * segment.
+         *
+         * When backups are incorporated, this lsn must be the lower of all
+         * pages in the segment. If there are outliers, i.e., pages rarely
+         * updated, we may issue separate archive queries for them, to avoid
+         * reading many more logrecs than necessary because of one really old
+         * page.
          */
         lsn_t lsn = lsn_t::null;
         LogArchiver::ArchiveScanner::RunMerger* merger =

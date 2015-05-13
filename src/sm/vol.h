@@ -41,8 +41,18 @@ public:
             bool logit = false
     );
 
+    /** Add a backup file to be used for restore */
+    rc_t sx_add_backup(vid_t vid, string path, bool redo = false);
+
     rc_t list_volumes(
             std::vector<string>& names,
+            std::vector<vid_t>& vids,
+            size_t start = 0,
+            size_t count = 0
+    );
+
+    rc_t list_backups(
+            std::vector<string>& backups,
             std::vector<vid_t>& vids,
             size_t start = 0,
             size_t count = 0
@@ -205,6 +215,8 @@ public:
     /** Mark device as failed and kick off Restore */
     void            mark_failed(bool evict = false, bool redo = false);
 
+    void add_backup(string path);
+
     bool is_failed() const
     {
         lintel::atomic_thread_fence(lintel::memory_order_acquire);
@@ -228,13 +240,6 @@ private:
 
     mutable srwlock_t _mutex;
 
-    // setting failed status only allowed internally (private method)
-    void set_failed(bool failed)
-    {
-        _failed = failed;
-        lintel::atomic_thread_fence(lintel::memory_order_release);
-    }
-
 
     // fake disk latency
     bool             _apply_fake_disk_latency;
@@ -251,6 +256,12 @@ private:
     /** Restore Manager is activated when volume has failed */
     RestoreMgr*      _restore_mgr;
 
+    /** Paths to backup files, added with add_backup() */
+    std::vector<string> _backups;
+
+    /** Currently opened backup (during restore only) */
+    int _backup_fd;
+
     /** Methods to create and destroy _alloc_cache, _stnode_cache, and
      * _fixed_bf */
     void clear_caches();
@@ -258,6 +269,13 @@ private:
 
     /** Initialize caches by reading from (restored/healthy) device */
     rc_t init_metadata();
+
+    // setting failed status only allowed internally (private method)
+    void set_failed(bool failed)
+    {
+        _failed = failed;
+        lintel::atomic_thread_fence(lintel::memory_order_release);
+    }
 
     /** If media failure happened, wait for metadata to be restored */
     void check_metadata_restored() const;

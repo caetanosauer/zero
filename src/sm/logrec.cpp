@@ -692,6 +692,22 @@ void dismount_vol_log::redo(fixable_page_h*)
     W_COERCE(smlevel_0::vol->sx_dismount(dev_name, false));
 }
 
+add_backup_log::add_backup_log(vid_t vid, const char* dev_name)
+{
+    memcpy(data_ssx(), &vid, sizeof(vid_t));
+    size_t length = strlen(dev_name);
+    w_assert0(length < smlevel_0::max_devname);
+    memcpy(data_ssx() + sizeof(vid_t), dev_name, length);
+    fill(0, sizeof(vid_t) + length);
+}
+
+void add_backup_log::redo(fixable_page_h*)
+{
+    vid_t vid = *((vid_t*) data_ssx());
+    const char* dev_name = (const char*) data_ssx() + sizeof(vid_t);
+    W_COERCE(smlevel_0::vol->sx_add_backup(vid, dev_name, false));
+}
+
 restore_begin_log::restore_begin_log(vid_t vid)
 {
     memcpy(_data, &vid, sizeof(vid_t));

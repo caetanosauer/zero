@@ -273,6 +273,57 @@ rc_t vol_m::sx_dismount(const char* device, bool logit)
     return RCOK;
 }
 
+rc_t vol_m::sx_add_backup(vid_t vid, string path, bool logit)
+{
+    vol_t* vol = get(vid);
+    if (logit) {
+        // Make sure backup volume header matches this volume
+        volhdr_t vhdr;
+        {
+            int fd = -1;
+            int open_flags = smthread_t::OPEN_RDWR | smthread_t::OPEN_SYNC;
+            rc_t rc = me()->open(path.c_str(), open_flags, 0666, fd);
+            if (rc.is_error())  {
+                W_IGNORE(me()->close(fd));
+                return RC_AUGMENT(rc);
+            }
+            rc = vhdr.read(fd);
+            if (rc.is_error())  {
+                W_IGNORE(me()->close(fd));
+                return RC_AUGMENT(rc);
+            }
+
+            W_DO(me()->close(fd));
+        }
+
+        w_assert0(vol->vid() == vhdr.vid);
+        w_assert0(vol->num_pages() ==  vhdr.num_pages);
+        w_assert0(vol->_apid == lpid_t(vol->vid(), vhdr.apid));
+        w_assert0(vol->_spid == lpid_t(vol->vid(), vhdr.spid));
+        w_assert0(vol->_hdr_pages == vhdr.hdr_pages);
+    }
+
+    // will change vol_t state -- start critical section
+    // Multiple adds of the same backup file are weird, but not an error.
+    // The mutex is just ot protect against mounts and checkpoints
+    spinlock_write_critical_section cs(&_mutex);
+
+    // mount/dismount may occur before we acquire mutex
+    if (vol != get(vid)) {
+        W_RETURN_RC_MSG(eRETRY, << "Volume changed while adding backup file");
+    }
+
+    if (logit) {
+        sys_xct_section_t ssx(true);
+        W_DO(log_add_backup(vid, path.c_str()));
+        W_DO(ssx.end_sys_xct(RCOK));
+    }
+
+    vol->add_backup(path);
+
+    return RCOK;
+}
+
 rc_t vol_m::list_volumes(
     std::vector<string>& names,
     std::vector<vid_t>& vids,
@@ -297,6 +348,32 @@ rc_t vol_m::list_volumes(
     return RCOK;
 }
 
+rc_t vol_m::list_backups(
+    std::vector<string>& backups,
+    std::vector<vid_t>& vids,
+    size_t start,
+    size_t count)
+{
+    spinlock_read_critical_section cs(&_mutex);
+
+    w_assert0(backups.size() == vids.size());
+
+    if (count == 0) {
+        count = MAX_VOLS;
+    }
+
+    for (size_t i = 0, j = start; i < MAX_VOLS && j < count; i++)  {
+        if (volumes[i])  {
+            for (size_t k = 0; k < volumes[i]->_backups.size(); k++) {
+                vids.push_back(volumes[i]->vid());
+                backups.push_back(volumes[i]->_backups[k]);
+                j++;
+            }
+        }
+    }
+    return RCOK;
+}
+
 rc_t vol_m::force_fixed_buffers()
 {
     spinlock_read_critical_section cs(&_mutex);
@@ -314,7 +391,7 @@ vol_t::vol_t()
                _apply_fake_disk_latency(false),
                _fake_disk_latency(0),
                _alloc_cache(NULL), _stnode_cache(NULL), _fixed_bf(NULL),
-               _failed(false), _restore_mgr(NULL)
+               _failed(false), _restore_mgr(NULL), _backup_fd(-1)
 {}
 
 vol_t::~vol_t() {
@@ -554,6 +631,12 @@ rc_t vol_t::dismount(bool bf_uninstall, bool abrupt)
     clear_caches();
 
     return RCOK;
+}
+
+void vol_t::add_backup(string path)
+{
+    spinlock_write_critical_section cs(&_mutex);
+    _backups.push_back(path);
 }
 
 void vol_t::shutdown(bool abrupt)
