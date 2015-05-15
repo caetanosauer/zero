@@ -91,10 +91,10 @@ void RestoreScheduler::setSinglePass(bool singlePass)
 }
 
 RestoreMgr::RestoreMgr(const sm_options& options,
-        LogArchiver::ArchiveDirectory* archive, vol_t* volume)
+        LogArchiver::ArchiveDirectory* archive, vol_t* volume, bool useBackup)
     : smthread_t(t_regular, "Restore Manager"),
     archive(archive), volume(volume), numRestoredPages(0),
-    metadataRestored(false)
+    metadataRestored(false), useBackup(useBackup)
 {
     w_assert0(archive);
     w_assert0(volume);
@@ -285,21 +285,30 @@ void RestoreMgr::restoreLoop()
         lpid_t start = lpid_t(volume->vid(), firstPage);
         lpid_t end = lpid_t(volume->vid(), firstPage + segmentSize);
 
-        /*
-         * CS: for the current milestone, we are ignoring backups and
-         * performing restore based on the complete log archive (since creation
-         * of the database).
-         *
-         * At this point, the workspace should be filled with the prefetched
-         * segment.
-         *
-         * When backups are incorporated, this lsn must be the lower of all
-         * pages in the segment. If there are outliers, i.e., pages rarely
-         * updated, we may issue separate archive queries for them, to avoid
-         * reading many more logrecs than necessary because of one really old
-         * page.
-         */
         lsn_t lsn = lsn_t::null;
+        // CS TODO -- prefetcher
+        if (useBackup) {
+            W_COERCE(volume->read_backup(firstPage, segmentSize,
+                        (generic_page*) workspace));
+            // Log archiver is queried with lowest the LSN in the segment, to
+            // guarantee that all required log records will be retrieved in one
+            // query. If one page is particularly old (an outlier), then the
+            // query will fetch too many log records which won't be replayed.
+            // We need to think of optimizations for this scenario, e.g.,
+            // performing multiple queries for subsets of pages of the same
+            // segment.
+            generic_page* page = (generic_page*) workspace;
+            for (int i = 0; i < segmentSize; i++, page++) {
+                // If checksum does not match, we consider it a virgin page
+                if (page->checksum != page->calculate_checksum()) {
+                    continue;
+                }
+                if (lsn == lsn_t::null || page->lsn < lsn) {
+                    lsn = page->lsn;
+                }
+            }
+        }
+
         LogArchiver::ArchiveScanner::RunMerger* merger =
             logScan.open(start, end, lsn);
 

@@ -778,7 +778,7 @@ void restore_begin_log::redo(fixable_page_h*)
 
     // Marking the device failed will kick-off the restore thread, initialize
     // its state, and restore the metadata (even if already done - idempotence)
-    volume->mark_failed(false /* evict */, true /* redo */);
+    W_COERCE(volume->mark_failed(false /* evict */, true /* redo */));
 }
 
 restore_end_log::restore_end_log(vid_t vid)

@@ -152,6 +152,8 @@ public:
         shpid_t             page,
         generic_page&       buf);
 
+    rc_t read_backup(shpid_t first, size_t count, generic_page* buf);
+
     rc_t            sync();
 
     // get space usage statistics for this volume
@@ -169,10 +171,6 @@ public:
     void            disable_fake_disk_latency(void);
     bool            set_fake_disk_latency(const int adelay);
     void            fake_disk_latency(long start);
-
-    /** Re-mount the (replacement) device after a media failure,
-     * based on a backup */
-    rc_t                remount_from_backup(bool evict);
 
     /**
     * Print out meta info about the volume.
@@ -213,7 +211,7 @@ public:
         bool                   ok_if_deleting = false);
 
     /** Mark device as failed and kick off Restore */
-    void            mark_failed(bool evict = false, bool redo = false);
+    rc_t            mark_failed(bool evict = false, bool redo = false);
 
     void add_backup(string path);
 
@@ -222,6 +220,8 @@ public:
         lintel::atomic_thread_fence(lintel::memory_order_acquire);
         return _failed;
     }
+
+    unsigned num_backups() const;
 
     bool check_restore_finished(bool redo = false);
 

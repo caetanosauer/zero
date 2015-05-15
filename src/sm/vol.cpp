@@ -498,46 +498,49 @@ rc_t vol_t::init_metadata()
     return RCOK;
 }
 
-rc_t vol_t::remount_from_backup(bool /*evict*/)
-{
-    // caller must hold the mutex
-
-    /*
-     * CS (TODO) Currently, restore only supports backup-less log replay,
-     * meaning that the entire log is replayed since the volume was first
-     * formatted. In this case, we simply unmount, format, and mount the same
-     * volume again.
-     *
-     * For restore with backups, vol_t should maintain an instance of a backup
-     * manager, and remount based on the backup device.
-     */
-    clear_caches();
-    build_caches();
-
-    return RCOK;
-}
-
-void vol_t::mark_failed(bool evict, bool redo)
+rc_t vol_t::mark_failed(bool evict, bool redo)
 {
     spinlock_write_critical_section cs(&_mutex);
 
     if (is_failed()) {
-        return;
+        return RCOK;
     }
 
+    bool useBackup = _backups.size() > 0;
+
     _restore_mgr = new RestoreMgr(ss_m::get_options(),
-            ss_m::logArchiver->getDirectory(), this);
+            ss_m::logArchiver->getDirectory(), this, useBackup);
     _restore_mgr->fork();
 
-    W_COERCE(remount_from_backup(evict));
+    // empty metadata caches
+    clear_caches();
+    build_caches();
+
+    // open bacup file
+    if (useBackup) {
+        string backupFile = _backups.back();
+        int open_flags = smthread_t::OPEN_RDWR | smthread_t::OPEN_SYNC;
+        W_DO(me()->open(backupFile.c_str(), open_flags, 0666, _backup_fd));
+        w_assert0(_backup_fd > 0);
+    }
 
     set_failed(true);
+
+    // evict device pages from buffer pool
+    if (evict) {
+        w_assert0(smlevel_0::bf);
+        W_DO(smlevel_0::bf->uninstall_volume(_vid, true));
+        // no need to call install because root pages are loaded on demand in
+        // bf_tree_m::fix_root
+    }
 
     if (!redo) {
         sys_xct_section_t ssx(true);
         log_restore_end(_vid);
         ssx.end_sys_xct(RCOK);
     }
+
+    return RCOK;
 }
 
 bool vol_t::check_restore_finished(bool redo)
@@ -631,6 +634,12 @@ rc_t vol_t::dismount(bool bf_uninstall, bool abrupt)
     clear_caches();
 
     return RCOK;
+}
+
+unsigned vol_t::num_backups() const
+{
+    spinlock_read_critical_section cs(&_mutex);
+    return _backups.size();
 }
 
 void vol_t::add_backup(string path)
@@ -969,8 +978,30 @@ rc_t vol_t::read_page(shpid_t pnum, generic_page& page)
     return RCOK;
 }
 
+rc_t vol_t::read_backup(shpid_t first, size_t count, generic_page* buf)
+{
+    if (_backup_fd < 0) {
+        W_FATAL_MSG(eINTERNAL,
+                << "Cannot read from backup because none is active");
+    }
 
+    memset(buf, 0, sizeof(generic_page) * count);
 
+    w_assert1(first > 0);
+    size_t offset = size_t(first) * sizeof(generic_page);
+    W_DO(me()->pread(_backup_fd, (char *) buf,
+            count * sizeof(generic_page), offset));
+
+    // Here, unlike in read_page, virgin pages don't have to be zeroed, because
+    // backups guarantee that the checksum matches for all valid (non-virgin)
+    // pages. Thus a virgin page is actually *defined* as one for which the
+    // checksum does not match. If the page is actually corrupted, then the
+    // REDO logic will detect it, because the first log records replayed on
+    // virgin pages must incur a format and allocation. If it tries to replay
+    // any other kind of log record, then the page is corrupted.
+
+    return RCOK;
+}
 
 /*********************************************************************
  *

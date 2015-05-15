@@ -18,7 +18,7 @@ class generic_page;
  */
 class RestoreMgr : public smthread_t {
 public:
-    RestoreMgr(const sm_options&, LogArchiver::ArchiveDirectory*, vol_t*);
+    RestoreMgr(const sm_options&, LogArchiver::ArchiveDirectory*, vol_t*, bool);
     virtual ~RestoreMgr();
 
     /** \brief Returns true if given page is already restored.
@@ -123,6 +123,10 @@ protected:
      * extra reads
      */
     bool reuseRestoredBuffer;
+
+    /** \brief Whether to use a backup or restore from complete log history
+     */
+    bool useBackup;
 
     /** \brief Gives the segment number of a certain page ID.
      */

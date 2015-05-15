@@ -89,7 +89,7 @@ rc_t lookupPages(size_t numPages)
 vol_t* failVolume(test_volume_t* test_volume, bool clear_buffer)
 {
     vol_t* volume = smlevel_0::vol->get(test_volume->_vid);
-    volume->mark_failed(clear_buffer);
+    W_COERCE(volume->mark_failed(clear_buffer));
     return volume;
 }
 
@@ -122,7 +122,7 @@ rc_t fullRestoreTest(ss_m* ssm, test_volume_t* test_volume)
     archiveLog(ssm);
 
     vol_t* volume = smlevel_0::vol->get(test_volume->_vid);
-    volume->mark_failed();
+    W_DO(volume->mark_failed());
 
     generic_page page;
     W_DO(volume->read_page(1, page));
