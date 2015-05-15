@@ -299,8 +299,17 @@ inline w_rc_t bf_tree_m::fix_root (generic_page*& page, stid_t store,
                                    latch_mode_t mode, bool conditional, const bool from_undo) {
     w_assert1(store.vol != vid_t(0));
     w_assert1(store.store != 0);
+
     bf_tree_vol_t *volume = _volumes[store.vol];
-    w_assert1(volume != NULL);
+    if (!volume) {
+        /*
+         * CS: Install volume on demand. See below.
+         */
+        vol_t* vol = smlevel_0::vol->get(store.vol);
+        volume = new bf_tree_vol_t(vol);
+        _volumes[store.vol] = volume;
+    }
+    w_assert1(volume);
 
     // root-page index is always kept in the volume descriptor:
     bf_idx idx = volume->_root_pages[store.store];
@@ -321,6 +330,7 @@ inline w_rc_t bf_tree_m::fix_root (generic_page*& page, stid_t store,
         W_DO(_preload_root_page(volume, volume->_volume, store.store,
                     root_shpid, idx));
         w_assert1(_buffer[idx].pid == lpid_t(store.vol, root_shpid));
+        volume->add_root_page(store.store, idx);
     }
 
     w_assert1(_is_valid_idx(idx));

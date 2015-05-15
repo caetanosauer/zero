@@ -562,8 +562,7 @@ w_rc_t bf_tree_m::_install_volume_mainmemorydb(vol_t* volume) {
 }
 
 w_rc_t bf_tree_m::uninstall_volume(vid_t vid,
-                                     const bool clear_cb) // In: true to clear buffer pool cb data
-                                                          //     do not clear cb if
+                                     const bool clear_cb)
 {
     // assuming this thread is the only thread working on this volume,
 
@@ -574,7 +573,13 @@ w_rc_t bf_tree_m::uninstall_volume(vid_t vid,
         DBGOUT0(<<"this volume is already uninstalled: " << vid);
         return RCOK;
     }
-    W_DO(_cleaner->force_volume(vid));
+
+    if (!desc->_volume->is_failed()) {
+        // do not force if ongoing restore -- writing here would cause a
+        // deadlock, since restore is waiting for the uninstall and we
+        // would be waiting for restore here.
+        W_DO(_cleaner->force_volume(vid));
+    }
 
     // If caller is a concurrent recovery and call 'dismount_all' after
     // Log Analysys phase, do not clear the buffer pool because the remaining

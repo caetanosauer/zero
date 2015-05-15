@@ -46,6 +46,15 @@ struct bf_tree_vol_t {
      * Pointer to the volume object. Used to read and write from this volume.
      */
     vol_t* _volume;
+
+    /**
+     * CS: Method used for on-demand loading of root pages, eliminating the
+     * need to call install_volume.
+     */
+    void add_root_page(snum_t store, bf_idx idx)
+    {
+        _root_pages[store] = idx;
+    }
 };
 
 #endif // BF_TREE_VOL_T
