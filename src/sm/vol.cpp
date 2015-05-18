@@ -526,6 +526,36 @@ rc_t vol_t::mark_failed(bool evict, bool redo)
     return RCOK;
 }
 
+void vol_t::chkpt_restore_progress(chkpt_restore_tab_t* tab)
+{
+    w_assert0(tab);
+    spinlock_read_critical_section cs(&_mutex);
+
+    if (!is_failed()) {
+        return;
+    }
+    w_assert0(_restore_mgr);
+
+    RestoreBitmap* bitmap = _restore_mgr->getBitmap();
+    size_t bitmapSize = bitmap->getSize();
+    size_t firstNotRestored = 0;
+    size_t lastRestored = 0;
+    bitmap->getBoundaries(firstNotRestored, lastRestored);
+    tab->firstNotRestored = firstNotRestored;
+    tab->bitmapSize = bitmapSize - firstNotRestored;
+
+    if (tab->bitmapSize > chkpt_restore_tab_t::maxSegments) {
+        W_FATAL_MSG(eINTERNAL,
+                << "RestoreBitmap of " << bitmapSize
+                << " does not fit in checkpoint");
+    }
+
+    if (firstNotRestored < lastRestored) {
+        // "to" is exclusive boundary
+        bitmap->serialize(tab->bitmap, firstNotRestored, lastRestored + 1);
+    }
+}
+
 bool vol_t::check_restore_finished(bool redo)
 {
     if (!is_failed()) {

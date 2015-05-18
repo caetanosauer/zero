@@ -110,6 +110,7 @@ chkpt_xct_lock      0000000 0.0 (const tid_t& tid, int cnt, const okvl_mode* loc
 chkpt_dev_tab      0010000 0.0 (vid_t next_vid, const std::vector<string>& devnames);
 chkpt_backup_tab   0010000 0.0 (const std::vector<vid_t>& vids,
                                 const std::vector<string>& paths);
+chkpt_restore_tab  0010000 0.0 (vid_t vid);
 chkpt_end          0000000 0.0 (const lsn_t& master, const lsn_t& min_rec_lsn, const lsn_t& min_xct_lsn);
 mount_vol          1110000 0.0 (const char* dev_name);
 dismount_vol       1110000 0.0 (const char* dev_name);

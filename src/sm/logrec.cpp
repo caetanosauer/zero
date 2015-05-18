@@ -15,6 +15,7 @@
 #include "alloc_cache.h"
 #include "allocator.h"
 #include "vol.h"
+#include "restore.h"
 #include <sstream>
 
 
@@ -690,6 +691,44 @@ void chkpt_backup_tab_log::redo(fixable_page_h*)
 
     for (int i = 0; i < tab->count; i++) {
         smlevel_0::vol->sx_add_backup(vids[i], paths[i], false /* log */);
+    }
+}
+
+chkpt_restore_tab_log::chkpt_restore_tab_log(vid_t vid)
+{
+    vol_t* vol = smlevel_0::vol->get(vid);
+    chkpt_restore_tab_t* tab =
+        new (_data) chkpt_restore_tab_t(vid);
+
+    vol->chkpt_restore_progress(tab);
+    fill(0, tab->length());
+}
+
+void chkpt_restore_tab_log::redo(fixable_page_h*)
+{
+    chkpt_restore_tab_t* tab = (chkpt_restore_tab_t*) _data;
+
+    vol_t* vol = smlevel_0::vol->get(tab->vid);
+
+    w_assert0(vol);
+    if (!vol->is_failed()) {
+        // Marking the device failed will kick-off the restore thread, initialize
+        // its state, and restore the metadata (even if already done - idempotence)
+        W_COERCE(vol->mark_failed(false /* evict */, true /* redo */));
+    }
+
+    for (size_t i = 0; i < tab->firstNotRestored; i++) {
+        vol->redo_segment_restore(i);
+    }
+
+    RestoreBitmap bitmap(vol->num_pages());
+    bitmap.deserialize(tab->bitmap, tab->firstNotRestored,
+            tab->firstNotRestored + tab->bitmapSize);
+    // Bitmap of RestoreMgr might have been initialized already
+    for (size_t i = tab->firstNotRestored; i < bitmap.getSize(); i++) {
+        if (bitmap.get(i)) {
+            vol->redo_segment_restore(i);
+        }
     }
 }
 

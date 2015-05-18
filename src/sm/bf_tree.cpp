@@ -2843,7 +2843,7 @@ void bf_tree_m::get_rec_lsn(bf_idx &start, uint32_t &count, lpid_t *pid, snum_t*
 // a valid LSN for the page, so this is an extreme corner case
 ////////////////////////////////////////
 
-                    w_assert1(0 != last_mount_lsn.data());
+                    // w_assert1(0 != last_mount_lsn.data());
                     // Solution #1: use last mount lsn
                     lsn = last_mount_lsn;
 

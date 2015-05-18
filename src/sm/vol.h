@@ -18,6 +18,7 @@ class RestoreMgr;
 class store_operation_param;
 class sm_options;
 class vol_t;
+class chkpt_restore_tab_t;
 
 #include "stnode_page.h"
 
@@ -231,6 +232,9 @@ public:
     bool check_restore_finished(bool redo = false);
 
     void redo_segment_restore(unsigned segment);
+
+    /** Used for checkpointing bitmap of restored segments */
+    void chkpt_restore_progress(chkpt_restore_tab_t* tab);
 
 private:
     // variables read from volume header -- remain constant after mount

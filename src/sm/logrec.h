@@ -63,6 +63,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 
 class rangeset_t;
 struct multi_page_log_t;
+class RestoreBitmap;
 
 #include "logfunc_gen.h"
 #include "xct.h"
@@ -538,6 +539,33 @@ struct chkpt_backup_tab_t
     }
 
     void read(std::vector<vid_t>& vids, std::vector<string>& paths);
+};
+
+struct chkpt_restore_tab_t
+{
+    enum {
+        maxBitmapSize = logrec_t::max_data_sz - 2*sizeof(shpid_t)
+            - sizeof(uint32_t),
+        // one segment for each bit in the bitmap
+        maxSegments = maxBitmapSize * 8
+    };
+
+    vid_t vid;
+    shpid_t firstNotRestored;
+    uint32_t bitmapSize;
+    char bitmap[maxBitmapSize];
+
+    chkpt_restore_tab_t(vid_t vid)
+        : vid(vid), firstNotRestored(0), bitmapSize(0)
+    {}
+
+    size_t length()
+    {
+        return sizeof(vid_t)
+            + sizeof(shpid_t)
+            + sizeof(uint32_t)
+            + bitmapSize;
+    }
 };
 
 struct xct_list_t {

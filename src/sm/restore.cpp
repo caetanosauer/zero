@@ -29,6 +29,74 @@ void RestoreBitmap::set(unsigned i)
     bits.at(i) = true;
 }
 
+void RestoreBitmap::serialize(char* buf, size_t from, size_t to)
+{
+    spinlock_read_critical_section cs(&mutex);
+    w_assert0(from < to);
+    w_assert0(to <= bits.size());
+
+    /*
+     * vector<bool> does not provide access to the internal bitmap structure,
+     * so we stick with this non-efficient loop mechanism. If this becomes a
+     * performance concern, the options are:
+     * 1) Implement our own bitmap
+     * 2) Reuse a bitmap with serialization support (e.g., Boost)
+     * 3) In C++11, there is a data() method that returns the underlying array.
+     *    Maybe that would work here.
+     */
+    size_t byte = 0, j = 0;
+    for (size_t i = from; i < to; i++) {
+        // set bit j on current byte
+        // C++ guarantees that "true" expands to the integer 1
+        buf[byte] |= (bits[i] << j++);
+
+        // wrap around next byte
+        if (j == 8) {
+            j = 0;
+            byte++;
+        }
+    }
+}
+
+void RestoreBitmap::deserialize(char* buf, size_t from, size_t to)
+{
+    spinlock_write_critical_section cs(&mutex);
+    w_assert0(from < to);
+    w_assert0(to <= bits.size());
+
+    size_t byte = 0, j = 0;
+    for (size_t i = from; i < to; i++) {
+        // set if bit on position j is a one
+        bits[i] = buf[byte] & (1 << j++);
+
+        // wrap around next byte
+        if (j == 8) {
+            j = 0;
+            byte++;
+        }
+    }
+}
+
+void RestoreBitmap::getBoundaries(size_t& lowestFalse, size_t& highestTrue)
+{
+    spinlock_read_critical_section cs(&mutex);
+
+    lowestFalse = 0;
+    highestTrue = 0;
+    bool allTrueSoFar = true;
+    for (size_t i = 0; i < bits.size(); i++) {
+        if (bits[i]) highestTrue = i;
+        if (allTrueSoFar && bits[i]) {
+            lowestFalse = i + 1;
+        }
+        else {
+            allTrueSoFar = false;
+        }
+    }
+    w_assert0(lowestFalse <= bits.size());
+    w_assert0(highestTrue < bits.size());
+}
+
 RestoreScheduler::RestoreScheduler(const sm_options& options,
         RestoreMgr* restore)
     : restore(restore)

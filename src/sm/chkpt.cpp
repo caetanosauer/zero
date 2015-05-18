@@ -751,6 +751,16 @@ try
         backup_cnt = paths.size();
     }
 
+    // State of restore bitmap (if restore is in progress)
+    {
+        for (int i = 0; i < vol_m::MAX_VOLS; i++) {
+            vol_t* vol = smlevel_0::vol->get(i);
+            if (vol && vol->is_failed()) {
+                LOG_INSERT(chkpt_restore_tab_log(vol->vid()), 0);
+            }
+        }
+    }
+
     /*
      *  Checkpoint the buffer pool dirty page table, and record
      *  minimum of the recovery lsn of all dirty pages.

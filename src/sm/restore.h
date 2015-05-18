@@ -87,6 +87,7 @@ public:
     size_t getNumPages() { return numPages; }
     size_t getSegmentSize() { return segmentSize; }
     shpid_t getFirstDataPid() { return firstDataPid; }
+    RestoreBitmap* getBitmap() { return bitmap; }
 
     virtual void run();
 
@@ -207,6 +208,18 @@ public:
 
     bool get(unsigned i);
     void set(unsigned i);
+
+    void serialize(char* buf, size_t from, size_t to);
+    void deserialize(char* buf, size_t from, size_t to);
+
+    /** Get lowest false value and highest true value in order to compress
+     * serialized format. Such compression is effective in a single-pass or
+     * schedule. It is basically a run-length encoding, but supporting only a
+     * run of ones in the beginning and a run of zeroes in the end of the
+     * bitmap
+     */
+    void getBoundaries(size_t& lowestFalse, size_t& highestTrue);
+
 protected:
     std::vector<bool> bits;
     srwlock_t mutex;
