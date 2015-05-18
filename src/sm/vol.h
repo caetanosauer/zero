@@ -84,17 +84,23 @@ private:
     srwlock_t _mutex;
 };
 
-struct volhdr_t {
+class volhdr_t {
+public:
     // For compatibility checking, we record a version number
     // number of the Shore SM version which formatted the volume.
     static const uint32_t FORMAT_VERSION = 19;
 
+    volhdr_t(vid_t vid, size_t num_pages)
+        : version(FORMAT_VERSION), vid(vid), num_pages(num_pages)
+    {}
+
+    volhdr_t() {};
+
+    virtual ~volhdr_t() {}
+
     uint32_t   version;
     vid_t      vid;
-    shpid_t    apid;        // first alloc_page pid
-    shpid_t    spid;        // the only stnode_page pid
     uint32_t   num_pages;
-    shpid_t    hdr_pages;   // # pages in hdr includes entire store 0
 
     rc_t             write(int fd);
     rc_t             read(int fd);
@@ -155,11 +161,6 @@ public:
     rc_t read_backup(shpid_t first, size_t count, void* buf);
 
     rc_t            sync();
-
-    // get space usage statistics for this volume
-    rc_t             get_du_statistics(
-        struct              volume_hdr_stats_t&,
-        bool                audit);
 
     /**
      *  Impose a fake IO penalty. Assume that each batch of pages requires
@@ -234,9 +235,6 @@ private:
     vid_t            _vid;
     shpid_t          _first_data_pageid;
     uint             _num_pages;
-    uint             _hdr_pages;
-    lpid_t           _apid;
-    lpid_t           _spid;
 
     mutable srwlock_t _mutex;
 
@@ -269,6 +267,9 @@ private:
 
     /** Initialize caches by reading from (restored/healthy) device */
     rc_t init_metadata();
+
+    /** Initialize metadata region of physical device **/
+    static rc_t write_metadata(int fd, vid_t vid, size_t num_pages);
 
     // setting failed status only allowed internally (private method)
     void set_failed(bool failed)

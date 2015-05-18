@@ -17,7 +17,7 @@ bf_fixed_m::bf_fixed_m(vol_t* parent, int unix_fd, shpid_t max_pid)
 {
     // volume has 1 volume header (pid=0), then a few allocation pages first,
     // then 1 stnode_page and then data pages.
-    shpid_t alloc_pages = (max_pid / alloc_page_h::bits_held) + 1;
+    shpid_t alloc_pages = alloc_page::num_alloc_pages(max_pid);
     _page_cnt = alloc_pages + 1; // +1 for stnode_page
     // use posix_memalign to allow unbuffered disk I/O
     void *buf = NULL;

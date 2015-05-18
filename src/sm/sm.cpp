@@ -2060,8 +2060,6 @@ ss_m::_get_du_statistics(vid_t vid, sm_du_stats_t& du, bool audit)
         DBG(<<"end for loop with s=" << s );
     }
 
-    W_DO(vol->get(vid)->get_du_statistics(new_stats.volume_hdr, audit));
-
     if (audit) {
         W_DO(new_stats.audit());
     }

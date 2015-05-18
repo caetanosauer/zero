@@ -115,73 +115,7 @@ rc_t vol_m::sx_format(
         | smthread_t::OPEN_SYNC;
     int fd;
     W_DO(me()->open(devname, flags, 0666, fd));
-
-    shpid_t alloc_pages = num_pages / alloc_page_h::bits_held + 1; // # alloc_page_h pages
-    shpid_t hdr_pages = alloc_pages + 1 + 1; // +1 for stnode_page, +1 for volume header
-
-    shpid_t apid = shpid_t(1);
-    shpid_t spid = shpid_t(1 + alloc_pages);
-
-    /*
-     *  Set up the volume header
-     */
-    volhdr_t vhdr;
-    vhdr.version = volhdr_t::FORMAT_VERSION;
-    vhdr.vid = vid;
-    vhdr.num_pages = num_pages;
-    vhdr.hdr_pages = hdr_pages;
-    vhdr.apid = apid;
-    vhdr.spid = spid;
-
-    /*
-     *  Write volume header
-     */
-    W_DO(vhdr.write(fd));
-
-    /*
-     *  Skip first page ... seek to first info page.
-     *
-     * FRJ: this seek is safe because no other thread can access the
-     * file descriptor we just opened.
-     */
-    W_DO(me()->lseek(fd, sizeof(generic_page), sthread_t::SEEK_AT_SET));
-
-    {
-        generic_page buf;
-        // initialize page with zeroes (for valgrind)
-        // ::memset(&buf, 0, sizeof(generic_page));
-
-        //  Format alloc_page pages
-        {
-            for (apid = 1; apid < alloc_pages + 1; ++apid)  {
-                alloc_page_h ap(&buf, lpid_t(vid, apid));  // format page
-                // set bits for the header pages
-                if (apid == 1) {
-                    for (shpid_t hdr_pid = 0; hdr_pid < hdr_pages; ++hdr_pid) {
-                        ap.set_bit(hdr_pid);
-                    }
-                }
-                generic_page* page = ap.get_generic_page();
-                w_assert9(&buf == page);
-                page->checksum = page->calculate_checksum();
-
-                W_DO(me()->write(fd, page, sizeof(*page)));
-            }
-        }
-        DBG(<<" done formatting extent region");
-
-        // Format stnode_page
-        {
-            DBG(<<" formatting stnode_page");
-            DBGTHRD(<<"stnode_page page " << spid);
-            stnode_page_h fp(&buf, lpid_t(vid, spid));  // formatting...
-            generic_page* page = fp.get_generic_page();
-            page->checksum = page->calculate_checksum();
-            W_DO(me()->write(fd, page, sizeof(*page)));
-        }
-        DBG(<<" done formatting store node region");
-    }
-
+    W_DO(vol_t::write_metadata(fd, vid, num_pages));
     W_DO(me()->close(fd));
     DBG(<<"format_vol: done" );
 
@@ -294,9 +228,6 @@ rc_t vol_m::sx_add_backup(vid_t vid, string path, bool logit)
 
         w_assert0(vol->vid() == vhdr.vid);
         w_assert0(vol->num_pages() ==  vhdr.num_pages);
-        w_assert0(vol->_apid == lpid_t(vol->vid(), vhdr.apid));
-        w_assert0(vol->_spid == lpid_t(vol->vid(), vhdr.spid));
-        w_assert0(vol->_hdr_pages == vhdr.hdr_pages);
     }
 
     // will change vol_t state -- start critical section
@@ -439,9 +370,6 @@ rc_t vol_t::mount(const char* devname)
 
     _vid = vhdr.vid;
     _num_pages =  vhdr.num_pages;
-    _apid = lpid_t(_vid, vhdr.apid); // 0 if no volumes formatted yet
-    _spid = lpid_t(_vid, vhdr.spid); // 0 if no volumes formatted yet
-    _hdr_pages = vhdr.hdr_pages; // 0 if no volumes formatted yet
 
     clear_caches();
     build_caches();
@@ -494,6 +422,53 @@ rc_t vol_t::init_metadata()
     W_DO(_alloc_cache->load_by_scan(_num_pages));
     _stnode_cache->init();
     W_DO(smlevel_0::bf->install_volume(this));
+
+    return RCOK;
+}
+
+rc_t vol_t::write_metadata(int fd, vid_t vid, size_t num_pages)
+{
+    /*
+     *  Set up and write the volume header
+     */
+    volhdr_t vhdr(vid, num_pages);
+    W_DO(vhdr.write(fd));
+
+    /*
+     *  Skip first page ... seek to first info page.
+     */
+    W_DO(me()->lseek(fd, sizeof(generic_page), sthread_t::SEEK_AT_SET));
+
+    {
+        shpid_t alloc_pages = alloc_page::num_alloc_pages(num_pages);
+        shpid_t spid = alloc_pages + 1;
+
+        generic_page buf;
+        // initialize page with zeroes (for valgrind)
+        // ::memset(&buf, 0, sizeof(generic_page));
+
+        //  Format alloc_page pages
+        for (shpid_t apid = 1; apid <= alloc_pages; ++apid)  {
+            alloc_page_h ap(&buf, lpid_t(vid, apid));  // format page
+            // set bits for the header pages
+            if (apid == 1) {
+                for (shpid_t p = 0; p <= spid; p++)
+                {
+                    ap.set_bit(p);
+                }
+            }
+            buf.checksum = buf.calculate_checksum();
+            W_DO(me()->write(fd, &buf, sizeof(generic_page)));
+        }
+        DBG(<<" done formatting extent region");
+
+        // Format stnode_page
+        DBGTHRD(<<"Formatting stnode_page page " << spid);
+        stnode_page_h fp(&buf, lpid_t(vid, spid));
+        buf.checksum = buf.calculate_checksum();
+        W_DO(me()->write(fd, &buf, sizeof(generic_page)));
+        DBG(<<" done formatting store node region");
+    }
 
     return RCOK;
 }
@@ -669,8 +644,6 @@ rc_t vol_t::check_disk()
         << "\tvolid      : " << vhdr.vid << flushl;
     smlevel_0::errlog->clog << info_prio
         << "\tnum_pages   : " << vhdr.num_pages << flushl;
-    smlevel_0::errlog->clog << info_prio
-        << "\thdr_pages   : " << vhdr.hdr_pages << flushl;
 
     smlevel_0::errlog->clog << info_prio
         << "\tstore  #   flags   status: [ extent-list ]" << "." << endl;
@@ -1097,10 +1070,7 @@ rc_t vol_t::write_many_pages(shpid_t pnum, const generic_page* const pages, int 
 const char* volhdr_t::prolog[] = {
     "%% SHORE VOLUME VERSION ",
     "%% volume_id         : ",
-    "%% num_pages         : ",
-    "%% hdr_pages         : ",
-    "%% apid              : ",
-    "%% spid              : ",
+    "%% num_pages         : "
 };
 
 
@@ -1158,9 +1128,6 @@ rc_t volhdr_t::write(int fd)
     s << prolog[i++] << version << endl;
     s << prolog[i++] << vid << endl;
     s << prolog[i++] << num_pages << endl;
-    s << prolog[i++] << hdr_pages << endl;
-    s << prolog[i++] << apid << endl;
-    s << prolog[i++] << spid << endl;
     if (!s)  {
         return RC(eOS);
     }
@@ -1205,59 +1172,20 @@ rc_t volhdr_t::read(int fd)
     version = temp;
     s.read(buf, strlen(prolog[i++])) >> vid;
     s.read(buf, strlen(prolog[i++])) >> num_pages;
-    s.read(buf, strlen(prolog[i++])) >> hdr_pages;
-    s.read(buf, strlen(prolog[i++])) >> apid;
-    s.read(buf, strlen(prolog[i++])) >> spid;
 
     w_assert1(vid > 0);
-    w_assert1(hdr_pages > 0);
-    w_assert1(num_pages > hdr_pages);
+    w_assert1(num_pages > 0);
 
     if ( !s || version != FORMAT_VERSION ) {
-
-        cout << "Volume format bad:" << endl;
-        cout << "version " << version << endl;
-        cout << "   expected " << FORMAT_VERSION << endl;
-
-        cout << "Other: " << endl;
-        cout << "# pages " << num_pages << endl;
-        cout << "# hdr pages " << hdr_pages << endl;
-        cout << "1st apid " << apid << endl;
-        cout << "spid " << spid << endl;
-
-        cout << "Buffer: " << endl;
-        cout << buf << endl;
-
-        if (smlevel_0::log) {
-            return RC(eBADFORMAT);
-        }
+        W_RETURN_RC_MSG(eBADFORMAT,
+            << "Volume format incompatible! \n"
+            << "   version " << version << '\n'
+            << "   expected " << FORMAT_VERSION << '\n'
+            << "Buffer: " << '\n'
+            << buf << '\n'
+        );
     }
 
-    return RCOK;
-}
-
-rc_t vol_t::get_du_statistics(struct volume_hdr_stats_t& st, bool)
-{
-    volume_hdr_stats_t new_stats;
-    uint32_t unalloc_ext_cnt = 0;
-    uint32_t alloc_ext_cnt = 0;
-    new_stats.unalloc_ext_cnt = (unsigned) unalloc_ext_cnt;
-    new_stats.alloc_ext_cnt = (unsigned) alloc_ext_cnt;
-    new_stats.alloc_ext_cnt -= _hdr_pages;
-    new_stats.hdr_ext_cnt = _hdr_pages;
-    new_stats.extent_size = 0;
-
-    /*
-       if (audit) {
-       if (!(new_stats.alloc_ext_cnt + new_stats.hdr_ext_cnt +
-       new_stats.unalloc_ext_cnt == _num_exts)) {
-    // return RC(fcINTERNAL);
-    W_FATAL(eINTERNAL);
-    };
-    W_DO(new_stats.audit());
-    }
-    */
-    st.add(new_stats);
     return RCOK;
 }
 

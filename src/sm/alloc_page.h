@@ -62,6 +62,15 @@ class alloc_page : public generic_page_header {
     void   set_bit(uint32_t index) { bitmap[byte_place(index)] |=  bit_mask(index); }
     /// set all bits in [from, to)
     void  set_bits(uint32_t from, uint32_t to);
+
+public:
+    // Returns number of alloc pages required to manage max_pid pages
+    static size_t num_alloc_pages(shpid_t max_pid)
+    {
+        // add one if division is not exact
+        return (max_pid / bits_held) +
+            ((max_pid % bits_held == 0) ? 0 : 1);
+    }
 };
 BOOST_STATIC_ASSERT(sizeof(alloc_page) == generic_page_header::page_sz);
 
