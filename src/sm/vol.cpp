@@ -318,7 +318,8 @@ vol_t::vol_t()
                _apply_fake_disk_latency(false),
                _fake_disk_latency(0),
                _alloc_cache(NULL), _stnode_cache(NULL), _fixed_bf(NULL),
-               _failed(false), _restore_mgr(NULL), _backup_fd(-1)
+               _failed(false), _restore_mgr(NULL), _backup_fd(-1),
+               _backup_write_fd(-1)
 {}
 
 vol_t::~vol_t() {
@@ -473,6 +474,16 @@ rc_t vol_t::write_metadata(int fd, vid_t vid, size_t num_pages)
     return RCOK;
 }
 
+rc_t vol_t::open_backup()
+{
+    string backupFile = _backups.back();
+    int open_flags = smthread_t::OPEN_RDONLY | smthread_t::OPEN_SYNC;
+    W_DO(me()->open(backupFile.c_str(), open_flags, 0666, _backup_fd));
+    w_assert0(_backup_fd > 0);
+
+    return RCOK;
+}
+
 rc_t vol_t::mark_failed(bool evict, bool redo)
 {
     spinlock_write_critical_section cs(&_mutex);
@@ -491,12 +502,9 @@ rc_t vol_t::mark_failed(bool evict, bool redo)
     clear_caches();
     build_caches();
 
-    // open bacup file
-    if (useBackup) {
-        string backupFile = _backups.back();
-        int open_flags = smthread_t::OPEN_RDWR | smthread_t::OPEN_SYNC;
-        W_DO(me()->open(backupFile.c_str(), open_flags, 0666, _backup_fd));
-        w_assert0(_backup_fd > 0);
+    // open backup file -- may already be open due to new backup being taken
+    if (useBackup && _backup_fd < 0) {
+        W_DO(open_backup());
     }
 
     set_failed(true);
@@ -983,6 +991,77 @@ rc_t vol_t::read_backup(shpid_t first, size_t count, void* buf)
     // REDO logic will detect it, because the first log records replayed on
     // virgin pages must incur a format and allocation. If it tries to replay
     // any other kind of log record, then the page is corrupted.
+
+    return RCOK;
+}
+
+rc_t vol_t::take_backup(string path)
+{
+    // Open old backup file, if available
+    bool useBackup = false;
+    {
+        spinlock_write_critical_section cs(&_mutex);
+
+        if (_backup_write_fd >= 0) {
+            return RC(eBACKUPBUSY);
+        }
+
+        _backup_write_path = path;
+        int flags = smthread_t::OPEN_EXCL | smthread_t::OPEN_SYNC |
+            smthread_t::OPEN_WRONLY | smthread_t::OPEN_TRUNC |
+            smthread_t::OPEN_CREATE;
+        W_DO(me()->open(path.c_str(), flags, 0666, _backup_write_fd));
+
+        useBackup = num_backups() > 0;
+
+        if (useBackup && _backup_fd < 0) {
+            // no ongoing restore -- we must open old backup ourselves
+            W_DO(open_backup());
+        }
+    }
+
+    // No need to hold latch here -- mutual exclusion is guaranteed because
+    // only one thread may set _backup_write_fd (i.e., open file) above.
+
+    // Instantiate special restore manager for taking backup
+    RestoreMgr restore(ss_m::get_options(), ss_m::logArchiver->getDirectory(),
+            this, useBackup, true /* takeBackup */);
+    restore.setSinglePass(true);
+    restore.fork();
+    restore.join();
+    // TODO -- do we have to catch errors from restore thread?
+
+    // Write volume header and metadata to new backup
+    W_DO(write_metadata(_backup_write_fd, _vid, num_pages()));
+
+    // At this point, new backup is fully written
+    add_backup(path);
+    {
+        // critical section to guarantee visibility of the fd update
+        spinlock_write_critical_section cs(&_mutex);
+        W_DO(me()->close(_backup_write_fd));
+        _backup_write_fd = -1;
+    }
+
+    return RCOK;
+}
+
+rc_t vol_t::write_backup(shpid_t first, size_t count, void* buf)
+{
+    w_assert0(_backup_write_fd > 0);
+    w_assert1(first + count <= (shpid_t)(_num_pages));
+    w_assert1(count > 0);
+    size_t offset = size_t(first) * sizeof(generic_page);
+
+#if W_DEBUG_LEVEL > 2
+    generic_page* pages = (generic_page*) buf;
+    for (size_t j = 1; j < count; j++) {
+        w_assert3(pages[j].pid.page - 1 == pages[j-1].pid.page);
+        w_assert3(pages[j].pid.vol() == _vid);
+    }
+#endif
+
+    W_DO(me()->pwrite(_unix_fd, buf, sizeof(generic_page) * count, offset));
 
     return RCOK;
 }

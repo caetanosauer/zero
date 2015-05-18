@@ -159,6 +159,7 @@ public:
         generic_page&       buf);
 
     rc_t read_backup(shpid_t first, size_t count, void* buf);
+    rc_t write_backup(shpid_t first, size_t count, void* buf);
 
     rc_t            sync();
 
@@ -216,6 +217,9 @@ public:
 
     void add_backup(string path);
 
+    /** Take a backup on the given file path. */
+    rc_t take_backup(string path);
+
     bool is_failed() const
     {
         lintel::atomic_thread_fence(lintel::memory_order_acquire);
@@ -260,10 +264,17 @@ private:
     /** Currently opened backup (during restore only) */
     int _backup_fd;
 
+    /** Backup being currently taken */
+    int _backup_write_fd;
+    string _backup_write_path;
+
     /** Methods to create and destroy _alloc_cache, _stnode_cache, and
      * _fixed_bf */
     void clear_caches();
     void build_caches();
+
+    /** Open backup file descriptor for retore or taking new backup */
+    rc_t open_backup();
 
     /** Initialize caches by reading from (restored/healthy) device */
     rc_t init_metadata();

@@ -19,7 +19,18 @@ class BackupReader;
  */
 class RestoreMgr : public smthread_t {
 public:
-    RestoreMgr(const sm_options&, LogArchiver::ArchiveDirectory*, vol_t*, bool);
+    /** \brief Constructor method
+     *
+     * @param[in] useBackup If set, restore volume from a backup file, which
+     * must have been registered with the volume instance with sx_add_backup.
+     * Otherwise, perform backup-less restore, i.e., replaying log only.
+     *
+     * @param[in] takeBackup If set, restore manager runs in a special mode
+     * in which restored segments are written to a backup file, also specified
+     * in vol_t with the take_backup() method.
+     */
+    RestoreMgr(const sm_options&, LogArchiver::ArchiveDirectory*, vol_t*,
+            bool useBackup, bool takeBackup = false);
     virtual ~RestoreMgr();
 
     /** \brief Returns true if given page is already restored.
@@ -128,6 +139,10 @@ protected:
     /** \brief Whether to use a backup or restore from complete log history
      */
     bool useBackup;
+
+    /** \brief Whether to write restored volume into a new backup file,
+     * instead of into failed volume */
+    bool takeBackup;
 
     /** \brief Gives the segment number of a certain page ID.
      */

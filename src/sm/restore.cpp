@@ -91,10 +91,11 @@ void RestoreScheduler::setSinglePass(bool singlePass)
 }
 
 RestoreMgr::RestoreMgr(const sm_options& options,
-        LogArchiver::ArchiveDirectory* archive, vol_t* volume, bool useBackup)
+        LogArchiver::ArchiveDirectory* archive, vol_t* volume, bool useBackup,
+        bool takeBackup)
     : smthread_t(t_regular, "Restore Manager"),
     archive(archive), volume(volume), numRestoredPages(0),
-    metadataRestored(false), useBackup(useBackup)
+    metadataRestored(false), useBackup(useBackup), takeBackup(takeBackup)
 {
     w_assert0(archive);
     w_assert0(volume);
@@ -373,12 +374,9 @@ void RestoreMgr::restoreLoop()
             fixable.update_initial_and_last_lsn(lr->lsn_ck());
             fixable.update_clsn(lr->lsn_ck());
 
-            // TODO: should we really zero-out/recompute the checksum here?  In
-            // principle, checksum does not have to match after applying a REDO
-            // operation, since it may be purely (physio)logical. On the other
-            // hand, REDO operations should update the checksum correctly...
-            // Zeroing out now because checksum failure seems to always happen.
-            // page->checksum = 0;
+            // Restored pages are always written out with proper checksum.
+            // If restore thread is actually generating a new backup, this
+            // is a requirement.
             page->checksum = page->calculate_checksum();
             w_assert1(page->pid == lrpid);
             w_assert1(page->checksum == page->calculate_checksum());
@@ -407,9 +405,14 @@ void RestoreMgr::finishSegment(char* workspace, unsigned segment, size_t count)
 
     if (count > 0) {
         w_assert1((int) count <= segmentSize);
-        // write pages back to replacement device
-        W_COERCE(volume->write_many_pages(firstPage, (generic_page*) workspace,
-                    count, true /* ignoreRestore */));
+        // write pages back to replacement device (or backup)
+        if (takeBackup) {
+            W_COERCE(volume->write_backup(firstPage, count, workspace));
+        }
+        else {
+            W_COERCE(volume->write_many_pages(firstPage, (generic_page*) workspace,
+                        count, true /* ignoreRestore */));
+        }
         DBG(<< "Wrote out " << count << " pages of segment " << segment);
     }
 
