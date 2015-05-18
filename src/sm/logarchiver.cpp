@@ -523,7 +523,7 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(std::string archdir,
             nextPartition++;
         }
 
-        delete fname;
+        delete[] fname;
 
         if (nextPartition > max) {
             W_FATAL_MSG(fcINTERNAL,

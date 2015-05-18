@@ -30,11 +30,6 @@
 
 const int vol_m::MAX_VOLS;
 
-#ifdef EXPLICIT_TEMPLATE
-template class w_auto_delete_t<generic_page>;
-template class w_auto_delete_array_t<stnode_t>;
-#endif
-
 vol_m::vol_m(const sm_options&)
     : vol_cnt(0), _next_vid(1)
 {
@@ -153,12 +148,8 @@ rc_t vol_m::sx_format(
 
     {
         generic_page buf;
-#ifdef ZERO_INIT
-        // zero out data portion of page to keep purify/valgrind happy.
-        // Unfortunately, this isn't enough, as the format below
-        // seems to assign an uninit value.
-        memset(&buf, '\0', sizeof(buf));
-#endif
+        // initialize page with zeroes (for valgrind)
+        // ::memset(&buf, 0, sizeof(generic_page));
 
         //  Format alloc_page pages
         {
@@ -402,6 +393,10 @@ vol_t::vol_t()
 vol_t::~vol_t() {
     clear_caches();
     w_assert1(_unix_fd == -1);
+    w_assert1(_backup_fd == -1);
+    if (_restore_mgr) {
+        delete _restore_mgr;
+    }
 }
 
 rc_t vol_t::sync()

@@ -121,18 +121,16 @@ fixed_lists_mem_t::fixed_lists_mem_t(size_t bufsize, size_t incr, size_t max)
 {
     _buf = new char[bufsize];
     _lists = new list_header_t*[max/incr];
+    ::memset(_lists, 0, max/incr * sizeof(list_header_t*));
 
-    for (size_t i = 0; i <= max/incr; i++) {
-        _lists[i] = NULL;
-    }
+    _first_non_empty = max;
+    _last_non_empty = max;
 
     size_t maxblock_count = bufsize / max;
     for (size_t i = 0; i < maxblock_count; i++) {
         char* add = _buf + (max * i);
         add_to_list(max, add);
     }
-    _first_non_empty = max;
-    _last_non_empty = max;
 
     MM_VERIFY(verify_blocks());
 }
