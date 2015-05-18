@@ -5,7 +5,7 @@
 /**
  * \file w_error_xmacro.h
  * \brief Error code/message definition in X-Macro style.
- * 
+ *
  * \details
  * To add new errors, append a new line at the end.
  * You can also insert at an arbitrary place, but note that the value of existing
@@ -33,6 +33,7 @@ X(stSHORTSEEK,                "Short Seek")
 X(eINTERNAL,                  "Internal error")
 X(eOS,                        "Operating system error ")
 X(eNOTIMPLEMENTED,            "Feature is not implemented")
+X(eBADOPTION,                 "Invalid value for SM option")
 X(eUSERABORT,                 "User initiated abort")
 X(eCRASH,                     "Server told to crash or shutdown immediately")
 X(eOUTOFSPACE,                "Out of disk space")

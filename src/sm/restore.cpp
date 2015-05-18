@@ -6,7 +6,7 @@
 #include "logarchiver.h"
 #include "vol.h"
 #include "sm_options.h"
-#include <cstring> // memcpy
+#include "backup_reader.h"
 
 RestoreBitmap::RestoreBitmap(size_t size)
     : bits(size, false) // initialize all bits to false
@@ -127,14 +127,39 @@ RestoreMgr::RestoreMgr(const sm_options& options,
     scheduler = new RestoreScheduler(options, this);
     bitmap = new RestoreBitmap(numPages);
 
-    workspace = new char[sizeof(generic_page) * segmentSize];
+    // Construct backup reader/buffer based on system options
+    if (useBackup) {
+        string backupImpl = options.get_string_option("sm_backup_kind",
+                BackupOnDemandReader::IMPL_NAME);
+        if (backupImpl == BackupOnDemandReader::IMPL_NAME) {
+            backup = new BackupOnDemandReader(volume, segmentSize);
+        }
+        else if (backupImpl == BackupPrefetcher::IMPL_NAME) {
+            int numSegments = options.get_int_option(
+                    "sm_backup_prefetcher_segments", 3);
+            w_assert0(numSegments > 0);
+            backup = new BackupPrefetcher(volume, numSegments, segmentSize);
+        }
+        else {
+            W_FATAL_MSG(eBADOPTION,
+                    << "Invalid value for sm_backup_kind: " << backupImpl);
+        }
+    }
+    else {
+        /*
+         * Even if we're not using a backup (i.e., backup-less restore), a
+         * BackupReader object is still used for the restore workspace, which
+         * is basically the buffer on which pages are restored.
+         */
+        backup = new DummyBackupReader(segmentSize);
+    }
 }
 
 RestoreMgr::~RestoreMgr()
 {
     delete bitmap;
     delete scheduler;
-    delete workspace;
+    delete backup;
 }
 
 inline unsigned RestoreMgr::getSegmentForPid(const shpid_t& pid)
@@ -286,10 +311,9 @@ void RestoreMgr::restoreLoop()
         lpid_t end = lpid_t(volume->vid(), firstPage + segmentSize);
 
         lsn_t lsn = lsn_t::null;
-        // CS TODO -- prefetcher
+        char* workspace = backup->fix(segment);
+
         if (useBackup) {
-            W_COERCE(volume->read_backup(firstPage, segmentSize,
-                        (generic_page*) workspace));
             // Log archiver is queried with lowest the LSN in the segment, to
             // guarantee that all required log records will be retrieved in one
             // query. If one page is particularly old (an outlier), then the
@@ -369,13 +393,15 @@ void RestoreMgr::restoreLoop()
         }
 
         // in the last segment, we may write less than the segment size
-        finishSegment(segment, current - firstPage);
+        finishSegment(workspace, segment, current - firstPage);
+
+        backup->unfix(segment);
     }
 
     DBG(<< "Restore thread finished!");
 }
 
-void RestoreMgr::finishSegment(unsigned segment, size_t count)
+void RestoreMgr::finishSegment(char* workspace, unsigned segment, size_t count)
 {
     shpid_t firstPage = getPidForSegment(segment);
 
@@ -387,7 +413,7 @@ void RestoreMgr::finishSegment(unsigned segment, size_t count)
         DBG(<< "Wrote out " << count << " pages of segment " << segment);
     }
 
-    markSegmentRestored(segment);
+    markSegmentRestored(workspace, segment);
 
     // send signal to waiting threads (acquire mutex to avoid lost signal)
     DO_PTHREAD(pthread_mutex_lock(&restoreCondMutex));
@@ -395,7 +421,7 @@ void RestoreMgr::finishSegment(unsigned segment, size_t count)
     DO_PTHREAD(pthread_mutex_unlock(&restoreCondMutex));
 }
 
-void RestoreMgr::markSegmentRestored(unsigned segment, bool redo)
+void RestoreMgr::markSegmentRestored(char* workspace, unsigned segment, bool redo)
 {
     spinlock_write_critical_section cs(&requestMutex);
 
@@ -405,7 +431,7 @@ void RestoreMgr::markSegmentRestored(unsigned segment, bool redo)
      * condition in which segment gets restored after caller checks but before
      * its request is placed.
      */
-    if (reuseRestoredBuffer && !redo) {
+    if (reuseRestoredBuffer && workspace && !redo) {
         shpid_t firstPage = getPidForSegment(segment);
 
         for (int i = 0; i < segmentSize; i++) {

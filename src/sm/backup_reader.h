@@ -2,6 +2,7 @@
 #define BACKUP_READER_H
 
 #include "sm_base.h"
+#include "generic_page.h"
 
 #include <deque>
 
@@ -38,13 +39,11 @@ public:
 
     BackupReader(size_t bufferSize)
     {
-        std::cerr << "ALLOCATING BUFFER" << std::endl;
         buffer = new char[bufferSize];
     }
 
     virtual ~BackupReader()
     {
-        std::cerr << "FREEING BUFFER" << std::endl;
         delete[] buffer;
     }
 
@@ -59,7 +58,7 @@ protected:
 class DummyBackupReader : public BackupReader {
 public:
     DummyBackupReader(size_t segmentSize)
-        : BackupReader(segmentSize)
+        : BackupReader(segmentSize * sizeof(generic_page))
     {
     }
 

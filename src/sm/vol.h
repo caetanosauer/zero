@@ -152,7 +152,7 @@ public:
         shpid_t             page,
         generic_page&       buf);
 
-    rc_t read_backup(shpid_t first, size_t count, generic_page* buf);
+    rc_t read_backup(shpid_t first, size_t count, void* buf);
 
     rc_t            sync();
 

@@ -11,6 +11,7 @@ class sm_options;
 class RestoreBitmap;
 class RestoreScheduler;
 class generic_page;
+class BackupReader;
 
 /** \brief Class that controls the process of restoring a failed volume
  *
@@ -85,7 +86,7 @@ protected:
     vol_t* volume;
 
     std::map<shpid_t, generic_page*> bufferedRequests;
-    mcs_rwlock requestMutex;
+    srwlock_t requestMutex;
 
     pthread_cond_t restoreCond;
     pthread_mutex_t restoreCondMutex;
@@ -103,9 +104,9 @@ protected:
      */
     shpid_t firstDataPid;
 
-    /** \brief Workspace area (buffer) where pages are loaded and restored
+    /** \brief Reader object that abstracts access to backup segments
      */
-    char* workspace;
+    BackupReader* backup;
 
     /** \brief Size of a segment in pages
      *
@@ -162,12 +163,13 @@ protected:
 
     /** \brief Concludes restore of a segment and flushes to replacement device
      */
-    void finishSegment(unsigned segment, size_t count);
+    void finishSegment(char* workspace, unsigned segment, size_t count);
 
     /** \brief Mark a segment as restored in the bitmap
      * Used by finishSegment() and restore_segment_log::redo
      */
-    void markSegmentRestored(unsigned segment, bool redo = false);
+    void markSegmentRestored(char* workspace, unsigned segment,
+            bool redo = false);
 
     // Allow protected access from vol_t (for recovery)
     friend class vol_t;
@@ -192,7 +194,7 @@ public:
     void set(unsigned i);
 protected:
     std::vector<bool> bits;
-    mcs_rwlock mutex;
+    srwlock_t mutex;
 };
 
 /** \brief Scheduler for restore operations. Decides what page to restore next.
@@ -215,7 +217,7 @@ public:
 protected:
     RestoreMgr* restore;
 
-    mcs_rwlock mutex;
+    srwlock_t mutex;
     std::queue<shpid_t> queue;
 
     /// Perform single-pass restore while no requests are available

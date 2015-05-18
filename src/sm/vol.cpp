@@ -36,7 +36,7 @@ template class w_auto_delete_array_t<stnode_t>;
 #endif
 
 vol_m::vol_m(const sm_options&)
-    : vol_cnt(0), _next_vid(1) // CS TODO -- initialize on recovery
+    : vol_cnt(0), _next_vid(1)
 {
     for (uint32_t i = 0; i < MAX_VOLS; i++)  {
         volumes[i] = NULL;
@@ -47,6 +47,10 @@ vol_m::~vol_m()
 {
 }
 
+/*
+ * CS TODO -- index volume array by vid, since max vid is also MAX_VOLS
+ */
+
 void vol_m::shutdown(bool abrupt)
 {
     spinlock_write_critical_section cs(&_mutex);
@@ -55,6 +59,7 @@ void vol_m::shutdown(bool abrupt)
         if (volumes[i]) {
             volumes[i]->shutdown(abrupt);
             delete volumes[i];
+            volumes[i] = NULL;
         }
     }
 }
@@ -570,6 +575,9 @@ bool vol_t::check_restore_finished(bool redo)
         delete _restore_mgr;
         _restore_mgr = NULL;
 
+        // close backup file
+        W_COERCE(me()->close(_backup_fd));
+
         // log restore end and set failed flag to false
         if (!redo) {
             sys_xct_section_t ssx(true);
@@ -600,7 +608,7 @@ inline void vol_t::check_metadata_restored() const
 void vol_t::redo_segment_restore(unsigned segment)
 {
     w_assert0(_restore_mgr && is_failed());
-    _restore_mgr->markSegmentRestored(segment, true /* redo */);
+    _restore_mgr->markSegmentRestored(NULL, segment, true /* redo */);
 }
 
 rc_t vol_t::dismount(bool bf_uninstall, bool abrupt)
@@ -978,19 +986,27 @@ rc_t vol_t::read_page(shpid_t pnum, generic_page& page)
     return RCOK;
 }
 
-rc_t vol_t::read_backup(shpid_t first, size_t count, generic_page* buf)
+rc_t vol_t::read_backup(shpid_t first, size_t count, void* buf)
 {
     if (_backup_fd < 0) {
         W_FATAL_MSG(eINTERNAL,
-                << "Cannot read from backup because none is active");
+                << "Cannot read from backup because it is not active");
+    }
+    if (first >= num_pages()) {
+        // reading past logical end of volume
+        return RC(stSHORTIO);
+    }
+
+    size_t offset = size_t(first) * sizeof(generic_page);
+    if (first + count > num_pages()) {
+        count = num_pages() - first;
     }
 
     memset(buf, 0, sizeof(generic_page) * count);
 
     w_assert1(first > 0);
-    size_t offset = size_t(first) * sizeof(generic_page);
-    W_DO(me()->pread(_backup_fd, (char *) buf,
-            count * sizeof(generic_page), offset));
+    W_DO(me()->pread(_backup_fd, (char *) buf, count * sizeof(generic_page),
+                offset));
 
     // Here, unlike in read_page, virgin pages don't have to be zeroed, because
     // backups guarantee that the checksum matches for all valid (non-virgin)
