@@ -79,6 +79,7 @@ public:
 
 private:
     int    vol_cnt;
+    // index N on the array is saved for volume N+1
     vol_t* volumes[MAX_VOLS];
     vid_t _next_vid;
 

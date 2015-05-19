@@ -76,12 +76,9 @@ vol_t* vol_m::get(vid_t vid)
     spinlock_read_critical_section cs(&_mutex);
 
     if (vid == vid_t(0)) return NULL;
-    for (uint32_t i = 0; i < MAX_VOLS; i++)  {
-        if (volumes[i] && volumes[i]->vid() == vid) {
-            return volumes[i];
-        }
-    }
-    return NULL;
+
+    // vid N is mounted at index N-1
+    return volumes[size_t(vid) - 1];
 }
 
 rc_t vol_m::sx_format(
@@ -151,19 +148,21 @@ rc_t vol_m::sx_mount(const char* device, const bool logit)
     sys_xct_section_t ssx (true);
 
     DBG( << "sx_mount(" << device << ")");
-    uint32_t i;
-    for (i = 0; i < MAX_VOLS && volumes[i]; i++) ;
-    if (i >= MAX_VOLS) return RC(eNVOL);
 
     vol_t* v = new vol_t();
-    if (! v) return RC(eOUTOFMEMORY);
-
     W_DO(v->mount(device));
-    volumes[i] = v;
+    size_t index = v->vid() - 1;
+
+    if (volumes[index]) {
+        delete v;
+        return RC(eALREADYMOUNTED);
+    }
+
+    volumes[index] = v;
     ++vol_cnt;
 
     if (logit)  {
-        log_mount_vol(volumes[i]->devname());
+        log_mount_vol(v->devname());
     }
 
     W_DO (ssx.end_sys_xct(RCOK));
