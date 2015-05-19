@@ -353,7 +353,7 @@ void RestoreMgr::restoreMetadata()
 void RestoreMgr::restoreLoop()
 {
     // wait until volume is actually marked as failed
-    while(!volume->is_failed()) {
+    while(!takeBackup && !volume->is_failed()) {
         usleep(1000); // 1 ms
     }
 
@@ -415,7 +415,7 @@ void RestoreMgr::restoreLoop()
 
         logrec_t* lr;
         while (merger->next(lr)) {
-            DBG(<< "Would restore " << *lr);
+            DBGOUT4(<< "Would restore " << *lr);
 
             lpid_t lrpid = lr->construct_pid();
             w_assert1(lrpid.vol() == volume->vid());
@@ -464,7 +464,8 @@ void RestoreMgr::restoreLoop()
         backup->unfix(segment);
     }
 
-    DBG(<< "Restore thread finished!");
+    DBG(<< "Restore thread finished! " << numRestoredPages
+            << " pages restored");
 }
 
 void RestoreMgr::finishSegment(char* workspace, unsigned segment, size_t count)
@@ -484,7 +485,8 @@ void RestoreMgr::finishSegment(char* workspace, unsigned segment, size_t count)
         DBG(<< "Wrote out " << count << " pages of segment " << segment);
     }
 
-    markSegmentRestored(workspace, segment);
+    // taking a backup should not generate log records, so pass the redo flag
+    markSegmentRestored(workspace, segment, takeBackup /* redo */);
 
     // send signal to waiting threads (acquire mutex to avoid lost signal)
     DO_PTHREAD(pthread_mutex_lock(&restoreCondMutex));

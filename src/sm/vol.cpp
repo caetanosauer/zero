@@ -440,13 +440,14 @@ rc_t vol_t::write_metadata(int fd, vid_t vid, size_t num_pages)
      */
     W_DO(me()->lseek(fd, sizeof(generic_page), sthread_t::SEEK_AT_SET));
 
+    generic_page buf;
+    // initialize page with zeroes (for valgrind)
+    // ::memset(&buf, 0, sizeof(generic_page));
+
     {
+        // volume not formatted yet -- write metadata for empty volume
         shpid_t alloc_pages = alloc_page::num_alloc_pages(num_pages);
         shpid_t spid = alloc_pages + 1;
-
-        generic_page buf;
-        // initialize page with zeroes (for valgrind)
-        // ::memset(&buf, 0, sizeof(generic_page));
 
         //  Format alloc_page pages
         for (shpid_t apid = 1; apid <= alloc_pages; ++apid)  {
@@ -1042,7 +1043,7 @@ rc_t vol_t::take_backup(string path)
             smthread_t::OPEN_CREATE;
         W_DO(me()->open(path.c_str(), flags, 0666, _backup_write_fd));
 
-        useBackup = num_backups() > 0;
+        useBackup = _backups.size() > 0;
 
         if (useBackup && _backup_fd < 0) {
             // no ongoing restore -- we must open old backup ourselves
@@ -1062,7 +1063,10 @@ rc_t vol_t::take_backup(string path)
     // TODO -- do we have to catch errors from restore thread?
 
     // Write volume header and metadata to new backup
-    W_DO(write_metadata(_backup_write_fd, _vid, num_pages()));
+    // (must be done after restore so that alloc pages are correct)
+    volhdr_t vhdr(_vid, _num_pages);
+    W_DO(vhdr.write(_backup_write_fd));
+    W_DO(_fixed_bf->flush(true /* toBackup */));
 
     // At this point, new backup is fully written
     add_backup(path);
@@ -1091,7 +1095,10 @@ rc_t vol_t::write_backup(shpid_t first, size_t count, void* buf)
     }
 #endif
 
-    W_DO(me()->pwrite(_unix_fd, buf, sizeof(generic_page) * count, offset));
+    W_DO(me()->pwrite(_backup_write_fd, buf, sizeof(generic_page) * count,
+                offset));
+
+    DBG(<< "Wrote out " << count << " pages into backup offset " << offset);
 
     return RCOK;
 }

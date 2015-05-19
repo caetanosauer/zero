@@ -4,6 +4,7 @@
 #define RESTORE_H
 
 #include "sm_base.h"
+#include "logarchiver.h"
 
 #include <queue>
 

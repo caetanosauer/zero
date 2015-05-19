@@ -64,8 +64,15 @@ w_rc_t bf_fixed_m::init()
 }
 
 
-w_rc_t bf_fixed_m::flush() {
+w_rc_t bf_fixed_m::flush(bool toBackup) {
     spinlock_write_critical_section cs(&_checkpoint_lock); // protect against modifications.
+
+    if (toBackup) {
+        // if writing to backup, just dump buffer into file and exit
+        W_DO(_parent->write_backup(shpid_t(1), _page_cnt, _pages));
+        return RCOK;
+    }
+
     // write at once as much as possible
     uint32_t cur = 0;
     while (true) {

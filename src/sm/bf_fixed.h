@@ -47,7 +47,7 @@ public:
     /**
      * Flush (write out) all pages. Used while shutdown and checkpoint.
      */
-    w_rc_t flush ();
+    w_rc_t flush (bool toBackup = false);
 
     /** returns the pointer to page data maintained in this bufferpool. */
     generic_page* get_pages ();
