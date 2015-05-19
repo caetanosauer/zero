@@ -61,7 +61,7 @@ void btree_page_data::remove_items(
         for (int i = item_index; i < nitems; ++i)
         {
             key_length = (uint16_t*)item_data(i);
-            item_len = *key_length++;       
+            item_len = *key_length++;
 
             cmp = ::memcmp(high_key_p, item_data(i)+data_offset, (high_key_length<=item_len)? high_key_length : item_len);
             if ((0 > cmp) || ((0 == cmp) && (high_key_length <= item_len)))
@@ -166,7 +166,7 @@ bool btree_page_data::resize_item(int item, size_t new_length, size_t keep_old) 
     size_t body_length = new_length + _item_body_overhead();
     if (body_length <= _item_align(old_length)) {
         _item_body_length(offset) = body_length;
-        w_assert3(_items_are_consistent()); 
+        w_assert3(_items_are_consistent());
         return true;
     }
 
@@ -185,10 +185,10 @@ bool btree_page_data::resize_item(int item, size_t new_length, size_t keep_old) 
     if (keep_old > 0) {
         char* new_p = item_data(item);
         w_assert1(old_p+keep_old <= (char*)&body[offset]+old_length);
-        ::memcpy(new_p, old_p, keep_old); 
+        ::memcpy(new_p, old_p, keep_old);
     }
 
-    w_assert3(_items_are_consistent()); 
+    w_assert3(_items_are_consistent());
     return true;
 }
 
@@ -284,7 +284,7 @@ std::ostream& operator<<(std::ostream& os, btree_page_data& b)
     os << "  LSN: " << b.lsn << " CLSN: " << b.clsn << '\n';
     os << "  TAG: " << b.tag << " FLAGS: " << b.page_flags << '\n';
     os << "  ROOT: " << b.btree_root << " LEVEL: " << b.btree_level << '\n';
-    os << "  1st CHILD: " << b.btree_pid0 << " FOSTER CHILD: " << 
+    os << "  1st CHILD: " << b.btree_pid0 << " FOSTER CHILD: " <<
         b.btree_foster << '\n';
     os << "  LENGHTS: fence_low=" << b.btree_fence_low_length <<
         " fence_high=" << b.btree_fence_high_length <<
@@ -304,11 +304,11 @@ bool btree_page_data::_items_are_consistent() const {
     // This is not a part of check; should be always true:
     w_assert1(first_used_body*sizeof(item_body) >= nitems*sizeof(item_head));
 
-    
+
     // check overlapping records.
     // rather than using std::map, use array and std::sort for efficiency.
     // high 16 bits=offset, low 16 bits=length
-    //static_assert(sizeof(item_length_t) <= 2, 
+    //static_assert(sizeof(item_length_t) <= 2,
     //              "item_length_t doesn't fit in 16 bits; adjust this code");
     BOOST_STATIC_ASSERT(sizeof(item_length_t) <= 2);
     //std::unique_ptr<uint32_t[]> sorted_items(new uint32_t[nitems]);
@@ -330,7 +330,7 @@ bool btree_page_data::_items_are_consistent() const {
         error = true;
     }
 
-    // all offsets and lengths here are in terms of item bodies 
+    // all offsets and lengths here are in terms of item bodies
     // (e.g., 1 length unit = sizeof(item_body) bytes):
     size_t prev_end = 0;
     for (int item = 0; item<nitems; ++item) {
@@ -350,7 +350,7 @@ bool btree_page_data::_items_are_consistent() const {
             error = true;
         }
         if (offset + len > max_bodies) {
-            DBGOUT1(<<"The item starting at offset " << offset 
+            DBGOUT1(<<"The item starting at offset " << offset
                     << " (length " << len << ") goes beyond the end of data area (" << max_bodies << ")!");
             error = true;
         }
@@ -406,7 +406,7 @@ void btree_page_data::compact() {
     nitems = j;
     first_used_body = scratch_head;
     ::memcpy(&body[first_used_body], &scratch_body[scratch_head], (max_bodies-scratch_head)*sizeof(item_body));
-    
+
     w_assert1(nghosts == 0);
     w_assert3(_items_are_consistent());
 }
