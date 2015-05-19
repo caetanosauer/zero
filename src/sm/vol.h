@@ -121,7 +121,8 @@ Volume layout:
 class vol_t
 {
     friend class vol_m;
-protected: // access restricted to vol_m
+
+public:
     vol_t();
     virtual ~vol_t();
 
@@ -129,7 +130,6 @@ protected: // access restricted to vol_m
     rc_t mount(const char* devname);
     rc_t dismount(bool bf_uninstall = true, bool abrupt = false);
 
-public:
     const char* devname() const { return _devname; }
     vid_t       vid() const { return _vid; }
     shpid_t     first_data_pageid() const { return _first_data_pageid; }

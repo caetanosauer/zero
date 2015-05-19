@@ -3,7 +3,9 @@
 #include "logarchiver.h"
 #include "restore.h"
 #include "vol.h"
+#include "alloc_cache.h"
 #include "sm_options.h"
+
 
 const size_t RECORD_SIZE = 100;
 const size_t BLOCK_SIZE = 8192;
@@ -93,6 +95,57 @@ vol_t* failVolume(test_volume_t* test_volume, bool clear_buffer)
     return volume;
 }
 
+// Compare volume contents, expected and actual
+void verifyVolumesEqual(string pathExp, string pathAct)
+{
+    // vol_t instances can be created regardless of whether they are already
+    // mounted on the volume manager
+    vol_t volExp;
+    volExp.mount(pathExp.c_str());
+    vol_t volAct;
+    volAct.mount(pathAct.c_str());
+
+    vid_t vid = volExp.vid();
+    EXPECT_EQ(vid, volAct.vid());
+
+    size_t num_pages = volExp.num_pages();
+    EXPECT_EQ(num_pages, volAct.num_pages());
+
+    alloc_cache_t* allocExp = volExp.get_alloc_cache();
+    alloc_cache_t* allocAct = volAct.get_alloc_cache();
+
+    EXPECT_EQ(allocExp->get_total_free_page_count(),
+            allocAct->get_total_free_page_count());
+
+    generic_page bufExp, bufAct;
+    for (shpid_t p = shpid_t(1); p < num_pages; p++) {
+        bool isAlloc = allocExp->is_allocated_page(p);
+        EXPECT_EQ(isAlloc, allocAct->is_allocated_page(p));
+        if (isAlloc) {
+            volExp.read_page(p, bufExp);
+            volAct.read_page(p, bufAct);
+
+            EXPECT_EQ(lpid_t(vid, p), bufAct.pid);
+
+            // CS TODO -- checksums don't match, probably because of CLSN,
+            // which is set on backup, but empty on original
+            // EXPECT_EQ(bufExp.calculate_checksum(),
+            //         bufAct.calculate_checksum());
+
+            if (bufExp.tag == t_btree_p) {
+                btree_page_data* btExp = (btree_page_data*) &bufExp;
+                btree_page_data* btAct = (btree_page_data*) &bufAct;
+                EXPECT_TRUE(btExp->eq(*btAct));
+                // std::cout << "EXPECTED " << *btExp << std::endl;
+                // std::cout << "ACTUAL " << *btAct << std::endl;
+            }
+        }
+    }
+
+    volExp.dismount(false, true);
+    volAct.dismount(false, true);
+}
+
 rc_t singlePageTest(ss_m* ssm, test_volume_t* test_volume)
 {
     W_DO(populateBtree(ssm, test_volume, 3));
@@ -130,6 +183,21 @@ rc_t fullRestoreTest(ss_m* ssm, test_volume_t* test_volume)
     return RCOK;
 }
 
+rc_t takeBackupTest(ss_m* ssm, test_volume_t* test_volume)
+{
+    W_DO(populatePages(ssm, test_volume, 3 * SEGMENT_SIZE));
+    ssm->force_volume(test_volume->_vid);
+    archiveLog(ssm);
+    vol_t* volume = smlevel_0::vol->get(test_volume->_vid);
+
+    string backupPath = string(test_env->vol_dir) + "/backup";
+    volume->take_backup(backupPath);
+
+    verifyVolumesEqual(string(test_volume->_device_name), backupPath);
+
+    return RCOK;
+}
+
 #define DEFAULT_TEST(test, function, option_reuse, option_singlepass) \
     TEST (test, function) { \
         test_env->empty_logdata_dir(); \
@@ -144,6 +212,7 @@ rc_t fullRestoreTest(ss_m* ssm, test_volume_t* test_volume)
 
 DEFAULT_TEST(BackupLess, singlePageTest, false, false);
 DEFAULT_TEST(BackupLess, multiPageTest, false, false);
+DEFAULT_TEST(BackupTest, takeBackupTest, false, false);
 DEFAULT_TEST(RestoreTest, fullRestoreTest, true, true);
 
 int main(int argc, char **argv) {

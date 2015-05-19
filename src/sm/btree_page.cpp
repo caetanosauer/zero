@@ -253,6 +253,31 @@ void btree_page_data::delete_range(int from, int to)
     w_assert3(_items_are_consistent());
 }
 
+bool btree_page_data::eq(const btree_page_data& b) const
+{
+    bool eqHeader =
+        pid == b.pid &&
+        lsn == b.lsn &&
+#ifdef USE_ATOMIC_COMMIT
+        clsn == b.clsn &&
+#endif
+        tag == b.tag &&
+        page_flags == b.page_flags &&
+        btree_root == b.btree_root &&
+        btree_level == b.btree_level &&
+        btree_pid0 == b.btree_pid0 &&
+        btree_foster == b.btree_foster &&
+        btree_fence_low_length == b.btree_fence_low_length &&
+        btree_fence_high_length == b.btree_fence_high_length &&
+        btree_chain_fence_high_length == b.btree_chain_fence_high_length &&
+        btree_prefix_length == b.btree_prefix_length &&
+        nitems == b.nitems;
+
+    if (!eqHeader) return false;
+
+    return true;
+}
+
 std::ostream& operator<<(std::ostream& os, btree_page_data& b)
 {
     os << "BTREE PAGE " << b.pid << '\n';

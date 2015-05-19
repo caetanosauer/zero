@@ -508,6 +508,8 @@ private:
 
 public:
     friend std::ostream& operator<<(std::ostream&, btree_page_data&);
+
+    bool eq(const btree_page_data&) const;
 };
 
 
