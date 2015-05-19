@@ -184,8 +184,6 @@ rc_t btree_impl::_sx_split_foster_new(btree_page_h& page, lpid_t& new_page_id,
             move_count);
     w_assert0(move_count > 0);
 
-    // DBG(<< "NEW FOSTER CHILD " << new_page);
-
     // W_DO(log_page_img_format(new_page));
 
     /*
@@ -205,6 +203,8 @@ rc_t btree_impl::_sx_split_foster_new(btree_page_h& page, lpid_t& new_page_id,
      * Step 4: Log bulk deletion and foster update on parent
      */
     W_DO(log_btree_split(page, new_page, move_count, split_key, new_chain));
+
+    w_assert1(new_page.lsn() != lsn_t::null);
 
     // hint for subsequent accesses
     increase_forster_child(page.pid().page);

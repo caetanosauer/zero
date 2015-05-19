@@ -2240,6 +2240,7 @@ xct_t::give_logbuf(logrec_t* l, const fixable_page_h *page, const fixable_page_h
         w_assert1(l == _log_buf_for_piggybacked_ssx);
         lsn_t lsn;
         W_DO( log->insert(*l, &lsn) );
+        w_assert1(lsn != lsn_t::null);
         // Mark dirty flags for both pages
         _update_page_lsns(page, lsn);
         _update_page_lsns(page2, lsn);

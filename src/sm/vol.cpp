@@ -1164,6 +1164,7 @@ rc_t vol_t::write_many_pages(shpid_t pnum, const generic_page* const pages, int 
     for (int j = 1; j < cnt; j++) {
         w_assert1(pages[j].pid.page - 1 == pages[j-1].pid.page);
         w_assert1(pages[j].pid.vol() == _vid);
+        w_assert1(pages[j].tag != t_btree_p || pages[j].lsn != lsn_t::null);
     }
 #endif
 
