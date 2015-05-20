@@ -64,6 +64,8 @@ bool btree_page_h::set_foster_child(shpid_t foster_child_pid,
     }
     W_COERCE(rc);
     
+    w_assert3(is_consistent(true, true));
+
     return true;
 }
 
@@ -280,7 +282,8 @@ rc_t btree_page_h::format_foster_child(btree_page_h& parent,
     w_assert1(prefix_len <= max_key_length);
     page()->btree_prefix_length = (int16_t) prefix_len;
     // delete old fence and insert new
-    bool inserted = page()->insert_item(nrecs() + 1, false, 0, 0, fences);
+    w_assert1(nrecs() == -1);
+    bool inserted = page()->insert_item(0, false, 0, 0, fences);
     w_assert0(inserted);
 
     // Move records from parent
@@ -326,7 +329,7 @@ rc_t btree_page_h::format_foster_child(btree_page_h& parent,
                              _extract_poor_man_key(new_trunc_key), child, v);
         w_assert0(inserted);
 
-        w_assert3(is_consistent());
+        w_assert3(is_consistent(true, true));
         w_assert5(_is_consistent_keyorder());
     }
     
@@ -337,6 +340,7 @@ void btree_page_h::delete_range(int from, int to)
 {
     // 1st item is always fence keys
     page()->delete_range(from+1, to+1);
+    w_assert3(is_consistent(true, true));
 }
 
 void btree_page_h::_steal_records(btree_page_h* steal_src,
@@ -1418,6 +1422,7 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, size_t
     w_assert3(_poor(slot) == poormkey);
     w_assert3(page()->item_length(slot+1) == data_length);
 }
+
 void btree_page_h::insert_nonghost(const w_keystr_t &key, const cvec_t &elem) {
     w_assert1 (is_leaf());
 
@@ -1919,7 +1924,8 @@ void btree_page_h::_init(lsn_t lsn, lpid_t page_id, snum_t store,
     const w_keystr_t &high,                  // High key, confusing naming, it is actually the foster key
     const w_keystr_t &chain_fence_high,      // Chain high fence key (if foster chain),
                                              // it is the high fence key for all foster child nodes
-    const bool ghost ) {                     // Should the fence key record be a ghost?
+    const bool ghost )                       // Should the fence key record be a ghost?
+{
 
     // Initialize the current page with fence keys and other information
 
@@ -1969,7 +1975,8 @@ void btree_page_h::_init(lsn_t lsn, lpid_t page_id, snum_t store,
     page()->btree_prefix_length = (int16_t) prefix_len;
 
     // fence-key record doesn't need poormkey; set to 0:
-    if (!page()->insert_item(nrecs() + 1, ghost /* ghost*/, 0, 0, fences)) {
+    w_assert1(nrecs() == -1); // one rec always reserved for fence
+    if (!page()->insert_item(0, ghost /* ghost*/, 0, 0, fences)) {
         w_assert0(false);
     }
 }

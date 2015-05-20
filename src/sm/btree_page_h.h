@@ -1347,6 +1347,7 @@ inline btree_page_h::poor_man_key btree_page_h::_extract_poor_man_key(const void
     } else if (trunc_key_len == 1) {
         return (*reinterpret_cast<const unsigned char*>(trunc_key)) << 8;
     } else {
+        // convert big-endian array (usable with memcmp) into 16-bit integer (little-endian)
         return deserialize16_ho(trunc_key);
     }
 }

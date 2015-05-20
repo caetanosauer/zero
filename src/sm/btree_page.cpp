@@ -226,31 +226,41 @@ void btree_page_data::delete_item(int item) {
 void btree_page_data::delete_range(int from, int to)
 {
     w_assert1(from >= 0);
+    w_assert1(from < to);
     w_assert1(to <= nitems);
     w_assert3(_items_are_consistent());
+    DBG(<< "Usable space before range delete: " << usable_space());
 
-    // CS: same logic of delete_item -- decrease number of ghosts and
-    // try to push down first_used_body
-    for (int i = to - 1; i >= from; i--) {
+    for (int i = from; i < to; i++) {
         body_offset_t offset = head[i].offset;
         if (offset < 0) {
             nghosts--;
+            offset = -offset;
         }
-        // CS: we could probably do this only once instead of in a loop, but I
-        // couldn't understand what _item_bodies() is supposed to return
+
+        // delete item body
+        body_offset_t body_count = _item_bodies(offset);
         if (offset == first_used_body) {
-            first_used_body += _item_bodies(offset);
+            first_used_body += body_count;
+        }
+        else {
+            // must shift bytes to delete from the middle
+            ::memmove(&body[first_used_body + body_count],
+                &body[first_used_body],
+                body_count * sizeof(item_body));
         }
     }
 
+    // delete item heads
     int left_after_deleted = nitems - to;
-    ::memmove(&head[from], &head[to], left_after_deleted * sizeof(item_head));
-
+    if (left_after_deleted > 0) {
+        ::memmove(&head[from], &head[to],
+                left_after_deleted * sizeof(item_head));
+    }
     nitems -= to - from;
-    // compact();
 
-    DBG(<< "Usable space after range delete: " << usable_space());
     w_assert3(_items_are_consistent());
+    DBG(<< "Usable space after range delete: " << usable_space());
 }
 
 bool btree_page_data::eq(const btree_page_data& b) const

@@ -183,12 +183,12 @@ rc_t btree_impl::_sx_split_foster_new(btree_page_h& page, lpid_t& new_page_id,
     new_page.format_foster_child(page, new_page_id, triggering_key, split_key,
             move_count);
     w_assert0(move_count > 0);
-
-    // W_DO(log_page_img_format(new_page));
+    DBG(<< "NEW FOSTER CHILD " << new_page);
 
     /*
      * Step 3: Delete moved records and update foster child pointer and high
-     * fence on overflowing page
+     * fence on overflowing page. Foster parent is not recompressed after
+     * moving records (CS TODO)
      */
     page.delete_range(page.nrecs() - move_count, page.nrecs());
     DBG(<< "AFTER RANGE DELETE " << page);
