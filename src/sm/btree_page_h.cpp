@@ -1993,7 +1993,7 @@ std::ostream& operator<<(std::ostream& os, btree_page_h& b)
     os << "  FENCE HIGH: " << k << '\n';;
     b.copy_chain_fence_high_key(k);
     os << "  FENCE CHAIN: " << k << '\n';;
-#if W_DEBUG_LEVEL > 5
+#if W_DEBUG_LEVEL >= 5
     for (int i = 0; i < b.nrecs(); i++) {
         b.get_key(i, k);
         os << "   ITEM " << i << " KEY " << k << '\n';

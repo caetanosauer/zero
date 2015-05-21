@@ -229,35 +229,46 @@ void btree_page_data::delete_range(int from, int to)
     w_assert1(from < to);
     w_assert1(to <= nitems);
     w_assert3(_items_are_consistent());
+    DBG(<< "Deleting items from " << from << " to " << to);
     DBG(<< "Usable space before range delete: " << usable_space());
 
-    for (int i = from; i < to; i++) {
+    // delete item bodies
+    size_t to_delete = to - from;
+    while (to_delete > 0) {
+        int i = from + to_delete - 1;
         body_offset_t offset = head[i].offset;
         if (offset < 0) {
             nghosts--;
             offset = -offset;
         }
 
-        // delete item body
+        // delete item head
+        ::memmove(&head[i], &head[i+1], (nitems - (i+1)) * sizeof(item_head));
+        nitems--;
+
         body_offset_t body_count = _item_bodies(offset);
-        if (offset == first_used_body) {
-            first_used_body += body_count;
-        }
-        else {
+        if (offset != first_used_body) {
+            w_assert1(offset > first_used_body);
+            body_offset_t move_amount = offset - first_used_body;
             // must shift bytes to delete from the middle
             ::memmove(&body[first_used_body + body_count],
-                &body[first_used_body],
-                body_count * sizeof(item_body));
-        }
-    }
+                &body[first_used_body], move_amount * sizeof(item_body));
 
-    // delete item heads
-    int left_after_deleted = nitems - to;
-    if (left_after_deleted > 0) {
-        ::memmove(&head[from], &head[to],
-                left_after_deleted * sizeof(item_head));
+            // and adjust the offset of any item with a lower offset
+            int j = 0;
+            while (j < nitems) {
+                if (head[j].offset < offset) {
+                    head[j].offset += body_count;
+                    DBG(<< "Offset of item" << j << " shifted to "
+                            << head[j].offset);
+                }
+                j++;
+            }
+        }
+        first_used_body += body_count;
+
+        to_delete--;
     }
-    nitems -= to - from;
 
     w_assert3(_items_are_consistent());
     DBG(<< "Usable space after range delete: " << usable_space());
