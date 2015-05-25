@@ -760,6 +760,13 @@ public:
      */
     rc_t                         defrag(const bool full_logging_redo = false);
 
+    /**
+     * \breif Compress page by trying to expand the prefix and truncate keys
+     * even further
+     */
+    rc_t compress(const w_keystr_t& low, const w_keystr_t& high,
+            const w_keystr_t& chain, bool redo = false);
+
     /// stats for leaf nodes.
     rc_t             leaf_stats(btree_lf_stats_t& btree_lf);
     /// stats for interior nodes.

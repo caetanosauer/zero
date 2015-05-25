@@ -228,6 +228,8 @@ btree_split            1110100 1.0 (const btree_page_h& page,
     const btree_page_h& page2, uint16_t move_count,
     const w_keystr_t& new_high_fence, const w_keystr_t& new_chain);
 
+btree_compress_page    1110000 1.0 (const btree_page_h& page,
+    const w_keystr_t& low, const w_keystr_t& high, const w_keystr_t& chain);
 #########################################################################
 # type             XSRUMAL  fudge    arg                                #
 #########################################################################

@@ -274,6 +274,52 @@ void btree_page_data::delete_range(int from, int to)
     DBG(<< "Usable space after range delete: " << usable_space());
 }
 
+void btree_page_data::truncate_all(size_t amount, size_t pos)
+{
+    // fence keys must already be truncated, so we skip item 0
+    for (int i = 1; i < nitems; i++) {
+        body_offset_t offset = head[i].offset;
+        if (offset < 0) continue;
+        item_length_t new_len = item_length(i) - amount;
+
+        // move item data to the left by amount
+        char* data_begin = item_data(i) + pos;
+        ::memmove(data_begin, data_begin + amount, new_len - pos);
+
+        // set new item length
+        body_offset_t old_body_count = _item_bodies(offset);
+        if (is_leaf()) {
+            body[offset].leaf.item_len = new_len;
+        }
+        else {
+            body[offset].interior.item_len = new_len;
+        }
+        body_offset_t new_body_count = _item_bodies(offset);
+
+        // see if we can save any space by freeing item bodies
+        w_assert1(new_body_count <= old_body_count);
+        if (new_body_count < old_body_count) {
+            body_offset_t diff = old_body_count - new_body_count;
+            // shift all bodies behind us to the right
+            body_offset_t move_count = offset + new_body_count - first_used_body;
+            ::memmove(&body[first_used_body + diff], &body[first_used_body],
+                    move_count * sizeof(item_body));
+
+            // update offset of all affected items
+            for (int j = 1; j < nitems; j++) {
+                if (head[j].offset <= offset) {
+                    head[j].offset += diff;
+                }
+            }
+
+            first_used_body += diff;
+        }
+
+    }
+
+    w_assert3(_items_are_consistent());
+}
+
 bool btree_page_data::eq(const btree_page_data& b) const
 {
     bool eqHeader =

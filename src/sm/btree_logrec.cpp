@@ -1474,3 +1474,53 @@ void btree_split_log::redo(fixable_page_h* p)
     }
 
 }
+
+btree_compress_page_log::btree_compress_page_log(
+        const btree_page_h& page,
+        const w_keystr_t& low,
+        const w_keystr_t& high,
+        const w_keystr_t& chain)
+{
+    uint16_t low_len = low.get_length_as_keystr();
+    uint16_t high_len = high.get_length_as_keystr();
+    uint16_t chain_len = chain.get_length_as_keystr();
+
+    char* ptr = data_ssx();
+    memcpy(ptr, &low_len, sizeof(uint16_t));
+    ptr += sizeof(uint16_t);
+    memcpy(ptr, &high_len, sizeof(uint16_t));
+    ptr += sizeof(uint16_t);
+    memcpy(ptr, &chain_len, sizeof(uint16_t));
+    ptr += sizeof(uint16_t);
+
+    low.serialize_as_keystr(ptr);
+    ptr += low_len;
+    high.serialize_as_keystr(ptr);
+    ptr += high_len;
+    chain.serialize_as_keystr(ptr);
+    ptr += chain_len;
+
+    fill(page, ptr - data_ssx());
+}
+
+void btree_compress_page_log::redo(fixable_page_h* p)
+{
+    char* ptr = data_ssx();
+
+    uint16_t low_len = *((uint16_t*) ptr);
+    ptr += sizeof(uint16_t);
+    uint16_t high_len = *((uint16_t*) ptr);
+    ptr += sizeof(uint16_t);
+    uint16_t chain_len = *((uint16_t*) ptr);
+    ptr += sizeof(uint16_t);
+
+    w_keystr_t low, high, chain;
+    low.construct_from_keystr(ptr, low_len);
+    ptr += low_len;
+    high.construct_from_keystr(ptr, high_len);
+    ptr += high_len;
+    chain.construct_from_keystr(ptr, chain_len);
+
+    borrowed_btree_page_h bp(p);
+    bp.compress(low, high, chain, true /* redo */);
+}

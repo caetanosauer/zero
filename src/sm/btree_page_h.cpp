@@ -58,9 +58,15 @@ bool btree_page_h::set_foster_child(shpid_t foster_child_pid,
     rc_t rc = replace_fence_rec_nolog_may_defrag(low, new_fence_high,
                 child_fence_chain, get_prefix_length());
 
-    // fence key may be too large to fit in page -- split again
+    // fence key may be too large to fit in page -- try compression
     if (rc.is_error() && rc.err_num() == eRECWONTFIT) {
+        rc = compress(low, new_fence_high, child_fence_chain);
+        if (rc.is_error() && rc.err_num() == eCANTCOMPRESS) {
+            // no luck -- can't compress any further
         return false;
+    }
+    W_COERCE(rc);
+        // if compress suceeded, the fence keys are already set
     }
     W_COERCE(rc);
 
@@ -1860,7 +1866,7 @@ bool btree_page_h::_is_consistent_poormankey() const {
     // the first record is fence key, so no poor man's key (always 0)
     poor_man_key fence_poormankey = page()->item_poor(0);
     if (fence_poormankey != 0) {
-//        w_assert3(false);
+       w_assert3(false);
         return false;
     }
     // for other records, check with the real key string in the record
@@ -1870,7 +1876,7 @@ bool btree_page_h::_is_consistent_poormankey() const {
         const char* curkey = is_leaf() ? _leaf_key_noprefix(slot, curkey_len) : _node_key_noprefix(slot, curkey_len);
         poor_man_key correct_poormankey = _extract_poor_man_key(curkey, curkey_len);
         if (poorman_key != correct_poormankey) {
-//            w_assert3(false);
+           w_assert3(false);
             return false;
         }
     }
@@ -1905,6 +1911,59 @@ rc_t btree_page_h::defrag( const bool full_logging_redo) {
 
     page()->compact();
     set_dirty();
+
+    return RCOK;
+}
+
+rc_t btree_page_h::compress(const w_keystr_t& low, const w_keystr_t& high,
+        const w_keystr_t& chain, bool redo)
+{
+    size_t old_prefix_len = get_prefix_length();
+
+    cvec_t fences;
+    size_t prefix_len = _pack_fence_rec(fences, low, high, chain, -1);
+
+    if (prefix_len <= old_prefix_len) {
+        return RC(eCANTCOMPRESS);
+    }
+
+    sys_xct_section_t ssx(true);
+
+    DBG(<< "BEFORE COMPRESSION " << *this);
+
+    size_t diff = prefix_len - old_prefix_len;
+    // remove diff bytes from position pos of each key on the page
+    // First bytes of data are the key length -- we don't want to
+    // truncate that
+    page()->truncate_all(diff, sizeof(key_length_t));
+
+    page()->btree_prefix_length = (int16_t) prefix_len;
+
+    // Update all key lengths and poorman's keys
+    for (int i = 1; i <= nrecs(); i++) {
+        char* data = page()->item_data(i);
+        key_length_t key_len =
+            *((key_length_t*) page()->item_data(i)) - diff;
+        ::memcpy(data, &key_len, sizeof(key_length_t));
+
+
+        poor_man_key poormkey = _extract_poor_man_key(
+                page()->item_data(i) + sizeof(key_length_t), key_len);
+        page()->item_poor(i) = poormkey;
+    }
+
+    // replace fence keys
+    W_DO(replace_fence_rec_nolog_no_defrag(low, high, chain,
+                get_prefix_length()));
+
+    DBG(<< "AFTER COMPRESSION " << *this);
+
+    w_assert3(is_consistent(true, true));
+
+    if (!redo) {
+        log_btree_compress_page(*this, low, high, chain);
+    }
+    ssx.end_sys_xct(RCOK);
 
     return RCOK;
 }
