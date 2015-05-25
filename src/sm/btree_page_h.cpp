@@ -63,9 +63,9 @@ bool btree_page_h::set_foster_child(shpid_t foster_child_pid,
         rc = compress(low, new_fence_high, child_fence_chain);
         if (rc.is_error() && rc.err_num() == eCANTCOMPRESS) {
             // no luck -- can't compress any further
-        return false;
-    }
-    W_COERCE(rc);
+            return false;
+        }
+        W_COERCE(rc);
         // if compress suceeded, the fence keys are already set
     }
     W_COERCE(rc);

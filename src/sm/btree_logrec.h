@@ -34,7 +34,7 @@ DECLARE_TLS(block_alloc<generic_page>, scratch_space_pool);
  * Automatically deletes generic_page obtained from scratch_space_pool.
  * \ingroup Single-Page-Recovery
  */
- 
+
 struct SprScratchSpace {
     SprScratchSpace(vid_t vol, snum_t store, shpid_t pid) {
         p = new (*scratch_space_pool) generic_page();
@@ -156,12 +156,12 @@ struct btree_norec_alloc_t : public multi_page_log_t {
 struct btree_foster_merge_t : multi_page_log_t {
     shpid_t         _foster_pid0;        // +4 => 4, foster page ID (destination page)
     lsn_t           _foster_pid0_emlsn;  // +8 => 12, foster emlsn (destination page)
-    uint16_t        _high_len;           // +2 => 14, high key length    
+    uint16_t        _high_len;           // +2 => 14, high key length
     uint16_t        _chain_high_len;     // +2 => 16, chain_high key length
-    int32_t         _move_count;         // +4 => 20, number of records to move    
+    int32_t         _move_count;         // +4 => 20, number of records to move
     uint16_t        _record_data_len;    // +2 => 22, length of record data
     uint16_t        _prefix_len;         // +2 => 24, source page prefix length
-    
+
     // _data contains high and chain_high, and then followed by moved user records
     // in the case of merging, it means all the records from source (foster child) page
     // The max_data_sz of log record is 3 pages so we should have suffice space in
@@ -180,14 +180,14 @@ struct btree_foster_merge_t : multi_page_log_t {
  */
 struct btree_foster_rebalance_t : multi_page_log_t {
     int32_t         _move_count;         // +4 => 4, number of records to move
-    shpid_t         _new_pid0;           // +4 => 8, non-leaf node only  
+    shpid_t         _new_pid0;           // +4 => 8, non-leaf node only
     lsn_t           _new_pid0_emlsn;     // +8 => 16, non-leaf node only
     uint16_t        _fence_len;          // +2 => 18, fence key length
-    uint16_t        _high_len;           // +2 => 20, high key length    
-    uint16_t        _chain_high_len;     // +2 => 22, chain_high key length        
+    uint16_t        _high_len;           // +2 => 20, high key length
+    uint16_t        _chain_high_len;     // +2 => 22, chain_high key length
     uint16_t        _record_data_len;    // +2 => 24, length of record data
     uint16_t        _prefix_len;         // +2 => 26, source page prefix length
-    
+
     // _data contains fence, high and chain_high, and then followed by moved user records
     // in the case of spliting, it means some of the records from source (foster parent)
     // page.  The max_data_size of log record is 3 pages so we should have sufficient
@@ -250,7 +250,7 @@ struct btree_foster_deadopt_t : multi_page_log_t {
     int size() const { return sizeof(multi_page_log_t) + 12 + _low_len + _high_len ; }
 };
 
-/** 
+/**
  * Delete of a range of keys from a page which was split (i.e., a new
  * foster parent). Deletes the last move_count slots on the page, updating
  * the foster child pointer and the high fence key to the given values.
