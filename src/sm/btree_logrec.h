@@ -258,16 +258,38 @@ struct btree_foster_deadopt_t : multi_page_log_t {
 struct btree_bulk_delete_t : public multi_page_log_t {
     uint16_t move_count;
     shpid_t new_foster_child;
-    w_keystr_t new_high_fence;
-    w_keystr_t new_chain;
+    uint16_t new_high_fence_len;
+    uint16_t new_chain_len;
+
+    enum {
+        fields_sz = sizeof(uint16_t) * 3 + sizeof(shpid_t)
+    };
+    char _data[logrec_t::max_data_sz - fields_sz];
 
     btree_bulk_delete_t(shpid_t foster_parent, shpid_t new_foster_child,
             uint16_t move_count, const w_keystr_t& new_high_fence,
             const w_keystr_t& new_chain)
         :   multi_page_log_t(foster_parent),
-            move_count(move_count), new_foster_child(new_foster_child),
-            new_high_fence(new_high_fence), new_chain(new_chain)
+            move_count(move_count), new_foster_child(new_foster_child)
     {
+        new_high_fence_len = new_high_fence.get_length_as_keystr();
+        new_chain_len = new_chain.get_length_as_keystr();
+
+        new_high_fence.serialize_as_keystr(_data);
+        new_chain.serialize_as_keystr(_data + new_high_fence_len);
+    }
+
+    size_t size()
+    {
+        return sizeof(multi_page_log_t) + fields_sz + new_high_fence_len +
+            new_chain_len;
+    }
+
+    void get_keys(w_keystr_t& new_high_fence, w_keystr_t& new_chain)
+    {
+        new_high_fence.construct_from_keystr(_data, new_high_fence_len);
+        new_chain.construct_from_keystr(_data + new_high_fence_len,
+                new_chain_len);
     }
 };
 

@@ -1439,23 +1439,24 @@ btree_split_log::btree_split_log(
         const w_keystr_t& new_chain
 )
 {
-    new (data_ssx()) btree_bulk_delete_t(parent_p.pid().page,
+    btree_bulk_delete_t* bulk =
+        new (data_ssx()) btree_bulk_delete_t(parent_p.pid().page,
                     child_p.pid().page, move_count,
                     new_high_fence, new_chain);
-    page_img_format_t* format = new (data_ssx() + sizeof(btree_bulk_delete_t))
+    page_img_format_t* format = new (data_ssx() + bulk->size())
         page_img_format_t(child_p);
 
     // Logrec will have the child pid as main pid (i.e., destination page).
     // Parent pid is stored in btree_bulk_delete_t, which is a
     // multi_page_log_t (i.e., source page)
-    fill(child_p, sizeof(btree_bulk_delete_t) + format->size());
+    fill(child_p, bulk->size() + format->size());
 }
 
 void btree_split_log::redo(fixable_page_h* p)
 {
     btree_bulk_delete_t* bulk = (btree_bulk_delete_t*) data_ssx();
     page_img_format_t* format = (page_img_format_t*)
-        (data_ssx() + sizeof(btree_bulk_delete_t));
+        (data_ssx() + bulk->size());
 
     if (p->pid().page == bulk->new_foster_child) {
         // redoing the foster child
@@ -1465,8 +1466,11 @@ void btree_split_log::redo(fixable_page_h* p)
         // redoing the foster parent
         borrowed_btree_page_h bp(p);
         bp.delete_range(bp.nrecs() - bulk->move_count, bp.nrecs());
-        bp.set_foster_child(bulk->new_foster_child, bulk->new_high_fence,
-                bulk->new_chain);
+
+        w_keystr_t new_high_fence, new_chain;
+        bulk->get_keys(new_high_fence, new_chain);
+
+        bp.set_foster_child(bulk->new_foster_child, new_high_fence, new_chain);
     }
 
 }
