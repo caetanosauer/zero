@@ -176,7 +176,9 @@ rc_t btree_impl::_sx_split_foster_new(btree_page_h& page, lpid_t& new_page_id,
 
     // assure foster-child page has an entry same as fence-low for locking correctness.
     // See jira ticket:84 "Key Range Locking" (originally trac ticket:86).
-    W_DO(_ux_assure_fence_low_entry(new_page)); // this might be another SSX
+    // CS TODO - why is this required
+    // There may be a bug, since error happens if we uncomment this
+    // W_DO(_ux_assure_fence_low_entry(new_page)); // this might be another SSX
 
     int move_count = 0;
     w_keystr_t split_key;

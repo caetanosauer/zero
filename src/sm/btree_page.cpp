@@ -257,10 +257,17 @@ void btree_page_data::delete_range(int from, int to)
             // and adjust the offset of any item with a lower offset
             int j = 0;
             while (j < nitems) {
-                if (head[j].offset < offset) {
-                    head[j].offset += body_count;
-                    DBG(<< "Offset of item" << j << " shifted to "
-                            << head[j].offset);
+                body_offset_t j_off = head[j].offset;
+                if (abs(j_off) < offset) {
+                    if (j_off > 0) {
+                        head[j].offset += body_count;
+                    }
+                    else {
+                        // CS TODO: delete ghosts instead of shifting
+                        head[j].offset -= body_count;
+                    }
+                    // DBG(<< "Offset of item" << j << " shifted to "
+                    //         << head[j].offset);
                 }
                 j++;
             }
