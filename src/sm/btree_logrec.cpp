@@ -1472,7 +1472,6 @@ void btree_split_log::redo(fixable_page_h* p)
 
         bp.set_foster_child(bulk->new_foster_child, new_high_fence, new_chain);
     }
-
 }
 
 btree_compress_page_log::btree_compress_page_log(

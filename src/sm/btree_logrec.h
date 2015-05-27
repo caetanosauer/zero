@@ -247,6 +247,7 @@ struct btree_foster_deadopt_t : multi_page_log_t {
 
     btree_foster_deadopt_t(shpid_t page2_id, shpid_t deadopted_pid, lsn_t deadopted_emlsn,
     int32_t foster_slot, const w_keystr_t &low, const w_keystr_t &high);
+    // CS TODO -- why 12 and not 20???
     int size() const { return sizeof(multi_page_log_t) + 12 + _low_len + _high_len ; }
 };
 
@@ -257,12 +258,16 @@ struct btree_foster_deadopt_t : multi_page_log_t {
  */
 struct btree_bulk_delete_t : public multi_page_log_t {
     uint16_t move_count;
-    shpid_t new_foster_child;
     uint16_t new_high_fence_len;
     uint16_t new_chain_len;
+    fill2 _fill;
+
+    shpid_t new_foster_child;
 
     enum {
-        fields_sz = sizeof(uint16_t) * 3 + sizeof(shpid_t)
+        fields_sz = sizeof(multi_page_log_t)
+            + sizeof(uint16_t) * 4 // 3 uints + fill
+            + sizeof(shpid_t)
     };
     char _data[logrec_t::max_data_sz - fields_sz];
 
@@ -281,8 +286,7 @@ struct btree_bulk_delete_t : public multi_page_log_t {
 
     size_t size()
     {
-        return sizeof(multi_page_log_t) + fields_sz + new_high_fence_len +
-            new_chain_len;
+        return fields_sz + new_high_fence_len + new_chain_len;
     }
 
     void get_keys(w_keystr_t& new_high_fence, w_keystr_t& new_chain)
