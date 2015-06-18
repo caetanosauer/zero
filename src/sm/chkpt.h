@@ -69,6 +69,15 @@ struct comp_lock_info_t;
 class CmpXctLockTids;
 typedef class Heap<comp_lock_info_t*, CmpXctLockTids> XctLockHeap;
 
+struct chkpt_t{
+  chkpt_dev_tab_t dev_table;
+  chkpt_backup_tab_t backup_table;
+  chkpt_restore_tab_t restore_table[];  //one per volume
+  chkpt_bf_tab_t dp_table;
+  chkpt_xct_lock_t lock_table[];  //one per transaction
+  chkpt_xct_tab_t xct_table;
+};
+
 
 class chkpt_thread_t;
 
@@ -110,6 +119,7 @@ public:
 private:
     chkpt_thread_t*  _chkpt_thread;
     long             _chkpt_count;
+    chkpt_t*         _chkpt_current;
 
 public:
     // These functions are for the use of chkpt -- to serialize

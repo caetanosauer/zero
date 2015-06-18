@@ -398,6 +398,7 @@ struct chkpt_bf_tab_t {
     fill4              filler;
     brec_t             brec[max];
 
+    NORET            chkpt_bf_tab_t();
     NORET            chkpt_bf_tab_t(
     int                 cnt,
     const lpid_t*             p,
@@ -462,6 +463,7 @@ struct chkpt_xct_tab_t {
     fill4            filler;
     xrec_t             xrec[max];
 
+    NORET            chkpt_xct_tab_t();
     NORET            chkpt_xct_tab_t(
     const tid_t&             youngest,
     int                 count,
@@ -509,6 +511,8 @@ struct chkpt_dev_tab_t
                 / smlevel_0::max_devname
     };
 
+    chkpt_dev_tab_t();
+
     chkpt_dev_tab_t(vid_t next_vid,
         const std::vector<string>& devices);
 
@@ -529,6 +533,8 @@ struct chkpt_backup_tab_t
         max = (logrec_t::max_data_sz - sizeof(uint32_t) - sizeof(uint16_t))
                 / (smlevel_0::max_devname + sizeof(vid_t))
     };
+
+    chkpt_backup_tab_t();
 
     chkpt_backup_tab_t(
         const std::vector<vid_t>& vids,
