@@ -16,7 +16,7 @@ BackupOnDemandReader::BackupOnDemandReader(vol_t* volume, size_t segmentSize)
 
 char* BackupOnDemandReader::fix(unsigned segment)
 {
-    w_assert1(fixedSegment > 0);
+    w_assert1(fixedSegment < 0);
 
     W_COERCE(volume->read_backup(shpid_t(segment * segmentSize), segmentSize,
                 buffer));
@@ -29,6 +29,7 @@ char* BackupOnDemandReader::fix(unsigned segment)
 void BackupOnDemandReader::unfix(unsigned segment)
 {
     w_assert1(fixedSegment == (int) segment);
+    W_IFDEBUG1(fixedSegment = -1);
 }
 
 BackupPrefetcher::BackupPrefetcher(vol_t* volume, size_t numSegments,

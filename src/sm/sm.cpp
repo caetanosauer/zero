@@ -866,6 +866,12 @@ ss_m::_destruct_once()
         log = saved_log;            // turn on logging
     }
 
+    // this should come before xct and log shutdown so that any
+    // ongoing restore has a chance to finish cleanly. Should also come after
+    // shutdown of buffer, since forcing the buffer requires the volume.
+    vol->shutdown(!shutdown_clean);
+    delete vol; vol = 0; // io manager
+
     nprepared = xct_t::cleanup(true /* now dispose of prepared xcts */);
     w_assert1(nprepared == 0);
     w_assert1(xct_t::num_active_xcts() == 0);
@@ -908,9 +914,6 @@ ss_m::_destruct_once()
     W_COERCE(bf->destroy());
     delete bf; bf = 0; // destroy buffer manager last because io/dev are flushing them!
     delete bk; bk = 0;
-
-    vol->shutdown(!shutdown_clean);
-    delete vol; vol = 0; // io manager
 
     /*
      *  Level 0
