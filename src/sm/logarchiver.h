@@ -134,7 +134,7 @@ struct ArchiverControl {
  * growth of the log, partitions would be lost from archiving.
  *
  * \sa LogArchiver::LogConsumer
- * \sa LogArchiver::ArchiverHeap 
+ * \sa LogArchiver::ArchiverHeap
  * \sa LogArchiver::BlockAssembly
  * \sa LogArchiver::ArchiveDirectory
  *
@@ -492,9 +492,11 @@ public:
             RunScanner* runScan;
 
             MergeHeapEntry(RunScanner* runScan);
+
             // required by w_heap
-            MergeHeapEntry() {};
-            virtual ~MergeHeapEntry() {};
+            MergeHeapEntry() : runScan(NULL) {}
+
+            virtual ~MergeHeapEntry() {}
 
             void moveToNext();
 
@@ -526,7 +528,7 @@ public:
                 : heap(cmp), started(false)
             {}
 
-            virtual ~RunMerger() {};
+            virtual ~RunMerger() {}
 
             void addInput(RunScanner* r);
             bool next(logrec_t*& lr);
@@ -688,7 +690,7 @@ public:
     const static char* CURR_RUN_FILE;
     const static char* CURR_MERGE_FILE;
     const static size_t MAX_LOGREC_SIZE;
-   
+
 private:
     ArchiveDirectory* directory;
     LogConsumer* consumer;
@@ -733,7 +735,7 @@ public:
     bool nextLogrec(char* src, size_t& pos, logrec_t*& lr,
             lsn_t* nextLSN = NULL);
 
-    LogScanner(size_t blockSize) 
+    LogScanner(size_t blockSize)
         : truncCopied(0), truncMissing(0), toSkip(0), blockSize(blockSize)
     {
         // maximum logrec size = 3 pages
@@ -755,7 +757,7 @@ public:
     void ignoreAll() {
         ignore.set();
     }
-    
+
     void unsetIgnore(logrec_t::kind_t type) {
         ignore.reset(type);
     }
