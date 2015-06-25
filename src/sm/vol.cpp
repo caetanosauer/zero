@@ -638,8 +638,10 @@ rc_t vol_t::dismount(bool bf_uninstall, bool abrupt)
             // wait for ongoing restore to complete
             _restore_mgr->setSinglePass();
             _restore_mgr->join();
-            W_COERCE(me()->close(_backup_fd));
-            _backup_fd = -1;
+            if (_backup_fd > 0) {
+                W_COERCE(me()->close(_backup_fd));
+                _backup_fd = -1;
+            }
             set_failed(false);
         }
         // CS TODO -- also make sure no restart is ongoing
