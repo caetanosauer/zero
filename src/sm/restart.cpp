@@ -3928,16 +3928,20 @@ restart_m::redo_log_pass(
                             // Regular transaction without a valid txn id
                             // It must be a mount or dismount log record
 
-                            w_assert9(r.type() == logrec_t::t_dismount_vol ||
-                                        r.type() == logrec_t::t_mount_vol);
-                            DBGOUT3(<<"redo - no page, no xct, this is a device log record ");
+                            w_assert3(r.type() == logrec_t::t_dismount_vol     ||
+                                      r.type() == logrec_t::t_mount_vol        ||
+                                      r.type() == logrec_t::t_chkpt_dev_tab    ||
+                                      r.type() == logrec_t::t_chkpt_backup_tab ||
+                                      r.type() == logrec_t::t_format_vol       ||
+                                      r.type() == logrec_t::t_add_backup);
+                            DBGOUT3(<<"redo - no page, no xct, this is a device log record (redo already done by analysis)");
 
-                            r.redo(0);
+                            //r.redo(0);
                             // CS TODO
                             // log->SetLastMountLSN(lsn);
 
                             // No page involved, no need to update dirty_count
-                            redone = true;
+                            //redone = true;
                         }
                         else
                         {
