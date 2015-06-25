@@ -1021,7 +1021,7 @@ LogArchiver::ArchiveScanner::RunScanner::RunScanner(lsn_t b, lsn_t e,
 
 LogArchiver::ArchiveScanner::RunScanner::~RunScanner()
 {
-    delete buffer;
+    delete[] buffer;
 }
 
 bool LogArchiver::ArchiveScanner::RunScanner::nextBlock()
@@ -1185,7 +1185,7 @@ LogArchiver::ArchiverHeap::ArchiverHeap(size_t workspaceSize)
 
 LogArchiver::ArchiverHeap::~ArchiverHeap()
 {
-    delete workspace;
+    delete[] workspace;
 }
 
 bool LogArchiver::ArchiverHeap::push(logrec_t* lr)
@@ -1887,7 +1887,7 @@ void ArchiveMerger::run()
                 // Append skip log record
                 //W_COERCE(me()->pwrite(fd, FAKE_SKIP_LOGREC, 3, fpos));
             }
-            delete lrbuf;
+            delete[] lrbuf;
 
             // rename and close merged run
             stringstream newFile;
@@ -1899,7 +1899,7 @@ void ArchiveMerger::run()
             W_COERCE(me()->close(fd));
 
             // delete consumed input runs
-    mergeOut->dumpHeap(cout);
+            mergeOut->dumpHeap(cout);
             W_COERCE(mergeOut->cleanup());
 
 
