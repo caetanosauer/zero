@@ -226,18 +226,18 @@ testdriver_thread_t::do_init(ss_m &ssm)
             _functor->_test_volume._device_name = device_name;
             _functor->_test_volume._vid = 1;
 
-            vout << "Formatting device: " << _functor->_test_volume._device_name
-                << " with a " << quota_in_kb << "KB quota ..." << endl;
+            DBGOUT1( << "Formatting device: " << _functor->_test_volume._device_name
+                << " with a " << quota_in_kb << "KB quota ..." << endl);
             W_DO(ssm.create_vol(
                         _functor->_test_volume._device_name,
                         quota_in_kb,
                         _functor->_test_volume._vid
                         ));
-        }
-
-        DBGOUT1(<< "Mounting device: " << _functor->_test_volume._device_name);
-        W_DO(ssm.mount_vol(_functor->_test_volume._device_name,
+        
+            DBGOUT1(<< "Mounting device: " << _functor->_test_volume._device_name);
+            W_DO(ssm.mount_vol(_functor->_test_volume._device_name,
                     _functor->_test_volume._vid));
+        }
     }
 
     return RCOK;
