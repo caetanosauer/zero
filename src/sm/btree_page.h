@@ -267,6 +267,16 @@ protected:
      */
     void          delete_range(int from, int to);
 
+    /**
+     * remove 'amount' leading bytes from each item data, starting at offset
+     * 'pos"
+     *
+     * Example:
+     * current data = AABBCC
+     * after truncate_all(2, 2) = AACC
+     */
+    void truncate_all(size_t amount, size_t pos);
+
 
     /**
      * return total space currently occupied by given item, including

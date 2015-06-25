@@ -58,12 +58,20 @@ bool btree_page_h::set_foster_child(shpid_t foster_child_pid,
     rc_t rc = replace_fence_rec_nolog_may_defrag(low, new_fence_high,
                 child_fence_chain, get_prefix_length());
 
-    // fence key may be too large to fit in page -- split again
+    // fence key may be too large to fit in page -- try compression
     if (rc.is_error() && rc.err_num() == eRECWONTFIT) {
-        return false;
+        rc = compress(low, new_fence_high, child_fence_chain);
+        if (rc.is_error() && rc.err_num() == eCANTCOMPRESS) {
+            // no luck -- can't compress any further
+            return false;
+        }
+        W_COERCE(rc);
+        // if compress suceeded, the fence keys are already set
     }
     W_COERCE(rc);
-    
+
+    w_assert3(is_consistent(true, true));
+
     return true;
 }
 
@@ -280,7 +288,8 @@ rc_t btree_page_h::format_foster_child(btree_page_h& parent,
     w_assert1(prefix_len <= max_key_length);
     page()->btree_prefix_length = (int16_t) prefix_len;
     // delete old fence and insert new
-    bool inserted = page()->insert_item(nrecs() + 1, false, 0, 0, fences);
+    w_assert1(nrecs() == -1);
+    bool inserted = page()->insert_item(0, false, 0, 0, fences);
     w_assert0(inserted);
 
     // Move records from parent
@@ -326,10 +335,10 @@ rc_t btree_page_h::format_foster_child(btree_page_h& parent,
                              _extract_poor_man_key(new_trunc_key), child, v);
         w_assert0(inserted);
 
-        w_assert3(is_consistent());
+        w_assert3(is_consistent(true, true));
         w_assert5(_is_consistent_keyorder());
     }
-    
+
     return RCOK;
 }
 
@@ -337,6 +346,7 @@ void btree_page_h::delete_range(int from, int to)
 {
     // 1st item is always fence keys
     page()->delete_range(from+1, to+1);
+    w_assert3(is_consistent(true, true));
 }
 
 void btree_page_h::_steal_records(btree_page_h* steal_src,
@@ -506,23 +516,23 @@ int16_t btree_page_h::calculate_prefix_length(int16_t existing_prefix_len,  // E
     if ((0 >= low_len) || (0 >= high_len))
     {
         // One of the fence key is infinite, the prefix is 0
-        DBGOUT1( << "Source/original prefix len: " << existing_prefix_len << ", one of the new keys is infinite, therefore new new prefix len: " << new_prefix_len);           
+        DBGOUT1( << "Source/original prefix len: " << existing_prefix_len << ", one of the new keys is infinite, therefore new new prefix len: " << new_prefix_len);
         return new_prefix_len;
     }
 
     const unsigned char * low = low_key.serialize_as_nonkeystr().data();
-    const unsigned char * high = high_key.serialize_as_nonkeystr().data(); 
+    const unsigned char * high = high_key.serialize_as_nonkeystr().data();
     new_prefix_len = w_keystr_t::common_leading_bytes(low, low_len, high, high_len);
     if (0 < new_prefix_len)
         --new_prefix_len;
 
     if (new_prefix_len != existing_prefix_len)
     {
-        DBGOUT1( << "Source/original prefix len: " << existing_prefix_len << ", new prefix len: " << new_prefix_len);   
+        DBGOUT1( << "Source/original prefix len: " << existing_prefix_len << ", new prefix len: " << new_prefix_len);
     }
     else
     {
-        DBGOUT1( << "Source/original nad new prefix len are the same, len: " << new_prefix_len);   
+        DBGOUT1( << "Source/original nad new prefix len are the same, len: " << new_prefix_len);
     }
 
     return new_prefix_len;
@@ -564,7 +574,7 @@ rc_t btree_page_h::copy_records(const int  rec_count,     // In: number of recor
         // Copy some of the records, this is page split
         // Note rec_count is an inclusive count
         // Slot 0 is for fence keys, while the actual records
-        // start from slot 1       
+        // start from slot 1
         current_slot = nrecs()- rec_count;
     }
 
@@ -582,12 +592,12 @@ rc_t btree_page_h::copy_records(const int  rec_count,     // In: number of recor
         cvec_t key(get_prefix_key(), get_prefix_length());
         size_t      trunc_key_length;
         const char* trunc_key_data;
-        if (is_leaf()) 
+        if (is_leaf())
         {
             // Leaf node, get the nonfix portion of the key
             trunc_key_data = _leaf_key_noprefix(current_slot, trunc_key_length);
-        } 
-        else 
+        }
+        else
         {
             // Non-leaf node, get the nonfix portion of the key
             trunc_key_data = _node_key_noprefix(current_slot, trunc_key_length);
@@ -620,13 +630,13 @@ rc_t btree_page_h::copy_records(const int  rec_count,     // In: number of recor
         // We have both key and data for the current record
         // Put them into user provided data buffer. must be in a format which
         // is self-contained so we can extract each record from the list
-        
+
         // Convert the entire key (including prefix and PMNK) into key string format first, no sign byte
         w_keystr_t keystr;
         if (false == keystr.copy_from_vec(key))
         {
             // OOM
-            W_FATAL_MSG(fcOUTOFMEMORY, << "Failed to copy_records for page rebalance log record generarion purpose due to OOM");            
+            W_FATAL_MSG(fcOUTOFMEMORY, << "Failed to copy_records for page rebalance log record generarion purpose due to OOM");
         }
 
         needed_len = keystr.get_length_as_keystr()                 // key length
@@ -634,7 +644,7 @@ rc_t btree_page_h::copy_records(const int  rec_count,     // In: number of recor
                      + sizeof(record_info_int16_convert)           // store key length and ghost record indicator, 2 bytes
                      + sizeof(record_info_int16_convert)           // store data length, ghost record indicator is duplicate info, 2 bytes
                      + sizeof(record_info_shpid_convert);          // store 'child' shich is for non-leaf node only, 4 bytes
-                     
+
         if ((current_len + needed_len) > len)
         {
             // For each data record stored in the log record, we are using an extra 8 bytes
@@ -642,9 +652,9 @@ rc_t btree_page_h::copy_records(const int  rec_count,     // In: number of recor
             // all these data at this point, but each log record can occupies as much as 3 pages
             // so most likely we are okay.  This check is to make sure caller gave us enough
             // space in the data buffer
-            
+
             keystr.clear();
-            W_FATAL_MSG(fcOUTOFMEMORY, << "copy_records: not enough room in the data buffer");       
+            W_FATAL_MSG(fcOUTOFMEMORY, << "copy_records: not enough room in the data buffer");
         }
 
         // Format of each record in data buffer:
@@ -663,18 +673,18 @@ rc_t btree_page_h::copy_records(const int  rec_count,     // In: number of recor
         }
 
         // Key length
-        w_assert1(0 != keystr.get_length_as_keystr());        
+        w_assert1(0 != keystr.get_length_as_keystr());
         key_info.len = (int16_t)keystr.get_length_as_keystr();
         memcpy(data_buffer+current_len, key_info.c, sizeof(record_info_int16_convert));
         current_len += sizeof(record_info_int16_convert);
 
-        // Key with sign byte of the key 
+        // Key with sign byte of the key
         memcpy(data_buffer+current_len, keystr.buffer_as_keystr(), keystr.get_length_as_keystr());
         current_len += keystr.get_length_as_keystr();
         // Print the key of the current record
-// TODO(Restart)...        
+// TODO(Restart)...
         DBGOUT3( << "&&&& Page rebalance - btree_page_h::copy_records, current key: " << keystr);
-        keystr.clear();        
+        keystr.clear();
 
         // Child -for non-leaf node only
         record_info_shpid_convert child_info;
@@ -686,12 +696,12 @@ rc_t btree_page_h::copy_records(const int  rec_count,     // In: number of recor
         data_info.len = (int16_t)data_length;
         memcpy(data_buffer+current_len, data_info.c, sizeof(record_info_int16_convert));
         current_len += sizeof(record_info_int16_convert);
-        
+
         // Data
         // print the key of the current record
         DBGOUT3( << "Page rebalance - btree_page_h::copy_records, current data slot: " << current_slot);
         if (is_leaf())
-        {      
+        {
             smsize_t dummy;
             const char* data = element(current_slot, dummy, is_ghost);
             w_assert1(NULL != data);
@@ -712,10 +722,10 @@ rc_t btree_page_h::copy_records(const int  rec_count,     // In: number of recor
 
     // Before returning to caller, report the final data length in data buffer
     w_assert1(current_len <= len);
-    len = current_len;    
+    len = current_len;
 
     DBGOUT3( << "Page rebalance - btree_page_h::copy_records, moved count: " << rec_count
-             << ", copied " << copied_count 
+             << ", copied " << copied_count
              << " records, total data length (including overhead): " << len);
 
     return RCOK;
@@ -735,7 +745,7 @@ rc_t btree_page_h::insert_records_dest_redo(
     // Per record format in the record data:
     // ghost flag + key length + key (with sign byte) + child + ghost flag(duplicate) + data length + data
 
-    int16_t offset = 0;    
+    int16_t offset = 0;
     bool ghost_flag = false;
     record_info_int16_convert key_info;
     record_info_int16_convert record_info;
@@ -747,7 +757,7 @@ rc_t btree_page_h::insert_records_dest_redo(
     DBGOUT3( << "Page rebalance - btree_page_h::insert_records_dest_redo, prefix length: " << prefix_length);
 
     // Set the prefix length of the page
-    page()->btree_prefix_length = prefix_length;    
+    page()->btree_prefix_length = prefix_length;
 
     int count;
     for (count = 0; count < move_count; ++count)
@@ -784,7 +794,7 @@ rc_t btree_page_h::insert_records_dest_redo(
 
         w_assert1(offset <= record_data_len);
 
-        // All the information for one record were extracted, prepare key and data for insertion purpose        
+        // All the information for one record were extracted, prepare key and data for insertion purpose
         cvec_t         v;           // contain truncate key + data
         pack_scratch_t v_scratch;   // this needs to stay in scope until v goes out of scope...
         cvec_t         trunc_key;   // key without prefix
@@ -806,11 +816,11 @@ rc_t btree_page_h::insert_records_dest_redo(
         {
             // Non-leaf node, pack both key and emlsn
             const lsn_t* emlsn_ptr = reinterpret_cast<const lsn_t*>(data);
-            _pack_node_record(v, trunc_key, *emlsn_ptr);        
+            _pack_node_record(v, trunc_key, *emlsn_ptr);
         }
 
         // Finially, insert the record, note the prefix is NOT included
-        
+
         // print key field of one record, it includes sign byte
         if (true == ghost_flag)
         {
@@ -820,10 +830,10 @@ rc_t btree_page_h::insert_records_dest_redo(
         else
         {
             DBGOUT3( << "&&&& Page rebalance - btree_page_h::insert_records_dest_redo, current key(including prefix): "
-                     << key_field << ", trunc_key: " << trunc_key << ", and it is NOT a ghost");       
+                     << key_field << ", trunc_key: " << trunc_key << ", and it is NOT a ghost");
         }
 
-        // Finially, insert into the page        
+        // Finially, insert into the page
         if (!page()->insert_item(nrecs()+1,                             // Position, always append
                                  ghost_flag,                            // Ghost flag
                                  _extract_poor_man_key(trunc_key),      // get PMNK from record key
@@ -835,7 +845,7 @@ rc_t btree_page_h::insert_records_dest_redo(
         }
     }
 
-    DBGOUT3( << "Page rebalance - btree_page_h::insert_records_dest_redo, move_count: " 
+    DBGOUT3( << "Page rebalance - btree_page_h::insert_records_dest_redo, move_count: "
              << move_count << ", inserted " << count << " records");
 
     return RCOK;
@@ -1418,6 +1428,7 @@ void btree_page_h::reserve_ghost(const char *key_raw, size_t key_raw_len, size_t
     w_assert3(_poor(slot) == poormkey);
     w_assert3(page()->item_length(slot+1) == data_length);
 }
+
 void btree_page_h::insert_nonghost(const w_keystr_t &key, const cvec_t &elem) {
     w_assert1 (is_leaf());
 
@@ -1855,7 +1866,7 @@ bool btree_page_h::_is_consistent_poormankey() const {
     // the first record is fence key, so no poor man's key (always 0)
     poor_man_key fence_poormankey = page()->item_poor(0);
     if (fence_poormankey != 0) {
-//        w_assert3(false);
+       w_assert3(false);
         return false;
     }
     // for other records, check with the real key string in the record
@@ -1865,7 +1876,7 @@ bool btree_page_h::_is_consistent_poormankey() const {
         const char* curkey = is_leaf() ? _leaf_key_noprefix(slot, curkey_len) : _node_key_noprefix(slot, curkey_len);
         poor_man_key correct_poormankey = _extract_poor_man_key(curkey, curkey_len);
         if (poorman_key != correct_poormankey) {
-//            w_assert3(false);
+           w_assert3(false);
             return false;
         }
     }
@@ -1904,6 +1915,59 @@ rc_t btree_page_h::defrag( const bool full_logging_redo) {
     return RCOK;
 }
 
+rc_t btree_page_h::compress(const w_keystr_t& low, const w_keystr_t& high,
+        const w_keystr_t& chain, bool redo)
+{
+    size_t old_prefix_len = get_prefix_length();
+
+    cvec_t fences;
+    size_t prefix_len = _pack_fence_rec(fences, low, high, chain, -1);
+
+    if (prefix_len <= old_prefix_len) {
+        return RC(eCANTCOMPRESS);
+    }
+
+    sys_xct_section_t ssx(true);
+
+    DBG(<< "BEFORE COMPRESSION " << *this);
+
+    size_t diff = prefix_len - old_prefix_len;
+    // remove diff bytes from position pos of each key on the page
+    // First bytes of data are the key length -- we don't want to
+    // truncate that
+    page()->truncate_all(diff, sizeof(key_length_t));
+
+    page()->btree_prefix_length = (int16_t) prefix_len;
+
+    // Update all key lengths and poorman's keys
+    for (int i = 1; i <= nrecs(); i++) {
+        char* data = page()->item_data(i);
+        key_length_t key_len =
+            *((key_length_t*) page()->item_data(i)) - diff;
+        ::memcpy(data, &key_len, sizeof(key_length_t));
+
+
+        poor_man_key poormkey = _extract_poor_man_key(
+                page()->item_data(i) + sizeof(key_length_t), key_len);
+        page()->item_poor(i) = poormkey;
+    }
+
+    // replace fence keys
+    W_DO(replace_fence_rec_nolog_no_defrag(low, high, chain,
+                get_prefix_length()));
+
+    DBG(<< "AFTER COMPRESSION " << *this);
+
+    w_assert3(is_consistent(true, true));
+
+    if (!redo) {
+        log_btree_compress_page(*this, low, high, chain);
+    }
+    ssx.end_sys_xct(RCOK);
+
+    return RCOK;
+}
+
 bool btree_page_h::_check_space_for_insert(size_t data_length) {
     size_t contiguous_free_space = usable_space();
     return contiguous_free_space >= page()->predict_item_space(data_length);
@@ -1919,7 +1983,8 @@ void btree_page_h::_init(lsn_t lsn, lpid_t page_id, snum_t store,
     const w_keystr_t &high,                  // High key, confusing naming, it is actually the foster key
     const w_keystr_t &chain_fence_high,      // Chain high fence key (if foster chain),
                                              // it is the high fence key for all foster child nodes
-    const bool ghost ) {                     // Should the fence key record be a ghost?
+    const bool ghost )                       // Should the fence key record be a ghost?
+{
 
     // Initialize the current page with fence keys and other information
 
@@ -1969,7 +2034,8 @@ void btree_page_h::_init(lsn_t lsn, lpid_t page_id, snum_t store,
     page()->btree_prefix_length = (int16_t) prefix_len;
 
     // fence-key record doesn't need poormkey; set to 0:
-    if (!page()->insert_item(nrecs() + 1, ghost /* ghost*/, 0, 0, fences)) {
+    w_assert1(nrecs() == -1); // one rec always reserved for fence
+    if (!page()->insert_item(0, ghost /* ghost*/, 0, 0, fences)) {
         w_assert0(false);
     }
 }
@@ -1986,7 +2052,7 @@ std::ostream& operator<<(std::ostream& os, btree_page_h& b)
     os << "  FENCE HIGH: " << k << '\n';;
     b.copy_chain_fence_high_key(k);
     os << "  FENCE CHAIN: " << k << '\n';;
-#if W_DEBUG_LEVEL > 5
+#if W_DEBUG_LEVEL >= 5
     for (int i = 0; i < b.nrecs(); i++) {
         b.get_key(i, k);
         os << "   ITEM " << i << " KEY " << k << '\n';

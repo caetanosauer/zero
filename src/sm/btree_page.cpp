@@ -226,30 +226,104 @@ void btree_page_data::delete_item(int item) {
 void btree_page_data::delete_range(int from, int to)
 {
     w_assert1(from >= 0);
+    w_assert1(from < to);
     w_assert1(to <= nitems);
     w_assert3(_items_are_consistent());
+    DBG(<< "Deleting items from " << from << " to " << to);
+    DBG(<< "Usable space before range delete: " << usable_space());
 
-    // CS: same logic of delete_item -- decrease number of ghosts and
-    // try to push down first_used_body
-    for (int i = to - 1; i >= from; i--) {
+    // delete item bodies
+    size_t to_delete = to - from;
+    while (to_delete > 0) {
+        int i = from + to_delete - 1;
         body_offset_t offset = head[i].offset;
         if (offset < 0) {
             nghosts--;
+            offset = -offset;
         }
-        // CS: we could probably do this only once instead of in a loop, but I
-        // couldn't understand what _item_bodies() is supposed to return
-        if (offset == first_used_body) {
-            first_used_body += _item_bodies(offset);
+
+        // delete item head
+        ::memmove(&head[i], &head[i+1], (nitems - (i+1)) * sizeof(item_head));
+        nitems--;
+
+        body_offset_t body_count = _item_bodies(offset);
+        if (offset != first_used_body) {
+            w_assert1(offset > first_used_body);
+            body_offset_t move_amount = offset - first_used_body;
+            // must shift bytes to delete from the middle
+            ::memmove(&body[first_used_body + body_count],
+                &body[first_used_body], move_amount * sizeof(item_body));
+
+            // and adjust the offset of any item with a lower offset
+            int j = 0;
+            while (j < nitems) {
+                body_offset_t j_off = head[j].offset;
+                if (abs(j_off) < offset) {
+                    if (j_off > 0) {
+                        head[j].offset += body_count;
+                    }
+                    else {
+                        // CS TODO: delete ghosts instead of shifting
+                        head[j].offset -= body_count;
+                    }
+                    // DBG(<< "Offset of item" << j << " shifted to "
+                    //         << head[j].offset);
+                }
+                j++;
+            }
         }
+        first_used_body += body_count;
+
+        to_delete--;
     }
 
-    int left_after_deleted = nitems - to;
-    ::memmove(&head[from], &head[to], left_after_deleted * sizeof(item_head));
-
-    nitems -= to - from;
-    // compact();
-
+    w_assert3(_items_are_consistent());
     DBG(<< "Usable space after range delete: " << usable_space());
+}
+
+void btree_page_data::truncate_all(size_t amount, size_t pos)
+{
+    // fence keys must already be truncated, so we skip item 0
+    for (int i = 1; i < nitems; i++) {
+        body_offset_t offset = head[i].offset;
+        if (offset < 0) continue;
+        item_length_t new_len = item_length(i) - amount;
+
+        // move item data to the left by amount
+        char* data_begin = item_data(i) + pos;
+        ::memmove(data_begin, data_begin + amount, new_len - pos);
+
+        // set new item length
+        body_offset_t old_body_count = _item_bodies(offset);
+        if (is_leaf()) {
+            body[offset].leaf.item_len = new_len;
+        }
+        else {
+            body[offset].interior.item_len = new_len;
+        }
+        body_offset_t new_body_count = _item_bodies(offset);
+
+        // see if we can save any space by freeing item bodies
+        w_assert1(new_body_count <= old_body_count);
+        if (new_body_count < old_body_count) {
+            body_offset_t diff = old_body_count - new_body_count;
+            // shift all bodies behind us to the right
+            body_offset_t move_count = offset + new_body_count - first_used_body;
+            ::memmove(&body[first_used_body + diff], &body[first_used_body],
+                    move_count * sizeof(item_body));
+
+            // update offset of all affected items
+            for (int j = 1; j < nitems; j++) {
+                if (head[j].offset <= offset) {
+                    head[j].offset += diff;
+                }
+            }
+
+            first_used_body += diff;
+        }
+
+    }
+
     w_assert3(_items_are_consistent());
 }
 

@@ -194,7 +194,7 @@ RestoreMgr::RestoreMgr(const sm_options& options,
     firstDataPid = volume->first_data_pageid();
 
     scheduler = new RestoreScheduler(options, this);
-    bitmap = new RestoreBitmap(numPages);
+    bitmap = new RestoreBitmap(numPages / segmentSize + 1);
 
     // Construct backup reader/buffer based on system options
     if (useBackup) {
@@ -330,8 +330,11 @@ void RestoreMgr::restoreMetadata()
 
     logrec_t* lr;
     while (merger->next(lr)) {
-        lr->redo(NULL);
+        // CS: commented for now (see notes on alloc cache state after restore)
+        // lr->redo(NULL);
     }
+
+    // TODO BUG -- replay on pid 0 does NOT restore page allocations!
 
     // TODO: my guess is that we don't have to write back the restored
     // metadata pages because there are only two possibilites:
@@ -360,6 +363,7 @@ void RestoreMgr::restoreLoop()
     restoreMetadata();
 
     LogArchiver::ArchiveScanner logScan(archive);
+    fixable_page_h fixable;
 
     while (numRestoredPages < numPages) {
         shpid_t requested = scheduler->next();
@@ -406,7 +410,6 @@ void RestoreMgr::restoreLoop()
             logScan.open(start, end, lsn);
 
         generic_page* page = (generic_page*) workspace;
-        fixable_page_h fixable;
         shpid_t current = firstPage;
         shpid_t prevPage = 0;
         size_t redone = 0;
@@ -462,6 +465,8 @@ void RestoreMgr::restoreLoop()
         finishSegment(workspace, segment, current - firstPage);
 
         backup->unfix(segment);
+
+        delete merger;
     }
 
     DBG(<< "Restore thread finished! " << numRestoredPages

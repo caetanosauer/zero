@@ -176,19 +176,21 @@ rc_t btree_impl::_sx_split_foster_new(btree_page_h& page, lpid_t& new_page_id,
 
     // assure foster-child page has an entry same as fence-low for locking correctness.
     // See jira ticket:84 "Key Range Locking" (originally trac ticket:86).
-    W_DO(_ux_assure_fence_low_entry(new_page)); // this might be another SSX
+    // CS TODO - why is this required
+    // There may be a bug, since error happens if we uncomment this
+    // W_DO(_ux_assure_fence_low_entry(new_page)); // this might be another SSX
 
     int move_count = 0;
     w_keystr_t split_key;
     new_page.format_foster_child(page, new_page_id, triggering_key, split_key,
             move_count);
     w_assert0(move_count > 0);
-
-    // W_DO(log_page_img_format(new_page));
+    DBG(<< "NEW FOSTER CHILD " << new_page);
 
     /*
      * Step 3: Delete moved records and update foster child pointer and high
-     * fence on overflowing page
+     * fence on overflowing page. Foster parent is not recompressed after
+     * moving records (CS TODO)
      */
     page.delete_range(page.nrecs() - move_count, page.nrecs());
     DBG(<< "AFTER RANGE DELETE " << page);
