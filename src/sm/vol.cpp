@@ -723,22 +723,28 @@ rc_t vol_t::alloc_a_page(shpid_t& shpid, bool redo)
     else {
         W_DO(_alloc_cache->redo_allocate_one_page(shpid));
     }
-    return RCOK;
-}
 
-rc_t vol_t::alloc_consecutive_pages(size_t page_count, shpid_t &pid_begin, bool redo)
-{
-    if (!redo) check_metadata_restored();
-
-    w_assert1(_alloc_cache);
     if (!redo) {
-        W_DO(_alloc_cache->allocate_consecutive_pages(pid_begin, page_count));
+        sys_xct_section_t ssx(true);
+        ssx.end_sys_xct(log_alloc_a_page(vid(), shpid));
     }
-    else {
-        W_DO(_alloc_cache->redo_allocate_consecutive_pages(pid_begin, page_count));
-    }
+
     return RCOK;
 }
+
+// rc_t vol_t::alloc_consecutive_pages(size_t page_count, shpid_t &pid_begin, bool redo)
+// {
+//     if (!redo) check_metadata_restored();
+
+//     w_assert1(_alloc_cache);
+//     if (!redo) {
+//         W_DO(_alloc_cache->allocate_consecutive_pages(pid_begin, page_count));
+//     }
+//     else {
+//         W_DO(_alloc_cache->redo_allocate_consecutive_pages(pid_begin, page_count));
+//     }
+//     return RCOK;
+// }
 
 rc_t vol_t::deallocate_page(const shpid_t& pid, bool redo)
 {
@@ -751,6 +757,12 @@ rc_t vol_t::deallocate_page(const shpid_t& pid, bool redo)
     else {
         W_DO(_alloc_cache->redo_deallocate_one_page(pid));
     }
+
+    if (!redo) {
+        sys_xct_section_t ssx(true);
+        ssx.end_sys_xct(log_dealloc_a_page(vid(), pid));
+    }
+
     return RCOK;
 }
 

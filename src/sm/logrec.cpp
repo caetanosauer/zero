@@ -764,7 +764,6 @@ mount_vol_log::mount_vol_log(const char* dev_name)
     fill(0, length);
 }
 
-
 void mount_vol_log::redo(fixable_page_h*)
 {
     const char* dev_name = (const char*) data_ssx();
@@ -778,7 +777,6 @@ dismount_vol_log::dismount_vol_log(const char* dev_name)
     memcpy(data_ssx(), dev_name, length);
     fill(0, length);
 }
-
 
 void dismount_vol_log::redo(fixable_page_h*)
 {
@@ -856,7 +854,42 @@ void restore_segment_log::redo(fixable_page_h*)
     volume->redo_segment_restore(segment);
 }
 
-page_img_format_t::page_img_format_t (const btree_page_h& page) {
+alloc_a_page_log::alloc_a_page_log(vid_t vid, shpid_t pid)
+{
+    memcpy(data_ssx(), &vid, sizeof(vid_t));
+    memcpy(data_ssx() + sizeof(vid_t), &pid, sizeof(shpid_t));
+    fill(0, sizeof(vid_t) + sizeof(shpid_t));
+}
+
+void alloc_a_page_log::redo(fixable_page_h*)
+{
+    vid_t vid = *((vid_t*) data_ssx());
+    shpid_t shpid = *((shpid_t*) data_ssx() + sizeof(vid_t));
+
+    vol_t* volume = smlevel_0::vol->get(vid);
+    w_assert0(volume);
+    volume->alloc_a_page(shpid, true);
+}
+
+dealloc_a_page_log::dealloc_a_page_log(vid_t vid, shpid_t pid)
+{
+    memcpy(data_ssx(), &vid, sizeof(vid_t));
+    memcpy(data_ssx() + sizeof(vid_t), &pid, sizeof(shpid_t));
+    fill(0, sizeof(vid_t) + sizeof(shpid_t));
+}
+
+void dealloc_a_page_log::redo(fixable_page_h*)
+{
+    vid_t vid = *((vid_t*) data_ssx());
+    shpid_t shpid = *((shpid_t*) data_ssx() + sizeof(vid_t));
+
+    vol_t* volume = smlevel_0::vol->get(vid);
+    w_assert0(volume);
+    volume->alloc_a_page(shpid, true);
+}
+
+page_img_format_t::page_img_format_t (const btree_page_h& page)
+{
     size_t unused_length;
     char* unused = page.page()->unused_part(unused_length);
 

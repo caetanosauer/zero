@@ -11,7 +11,8 @@
 #include "smthread.h"
 #include "bf_fixed.h"
 
-rc_t alloc_cache_t::load_by_scan (shpid_t max_pid) {
+rc_t alloc_cache_t::load_by_scan (shpid_t max_pid)
+{
     w_assert1(_fixed_pages != NULL);
     spinlock_write_critical_section cs(&_queue_lock);
     _non_contiguous_free_pages.clear();
@@ -47,7 +48,8 @@ rc_t alloc_cache_t::load_by_scan (shpid_t max_pid) {
     return RCOK;
 }
 
-rc_t alloc_cache_t::allocate_one_page (shpid_t &pid) {
+rc_t alloc_cache_t::allocate_one_page (shpid_t &pid)
+{
     pid = 0;
     spinlock_write_critical_section cs(&_queue_lock);
     shpid_t pid_to_return = 0;
@@ -68,23 +70,25 @@ rc_t alloc_cache_t::allocate_one_page (shpid_t &pid) {
     return RCOK;
 }
 
-rc_t alloc_cache_t::allocate_consecutive_pages (shpid_t &pid_begin, size_t page_count) {
-    pid_begin = 0;
+// CS: commented because it is not used for now
+// rc_t alloc_cache_t::allocate_consecutive_pages (shpid_t &pid_begin, size_t page_count)
+// {
+//     pid_begin = 0;
+//     spinlock_write_critical_section cs(&_queue_lock);
+//     shpid_t pid_to_begin = 0;
+//     if (_contiguous_free_pages_begin  + page_count < _contiguous_free_pages_end) {
+//         pid_to_begin = _contiguous_free_pages_begin;
+//         _contiguous_free_pages_begin += page_count;
+//     } else {
+//         return RC(eOUTOFSPACE);
+//     }
+//     W_DO(apply_allocate_consecutive_pages(pid_to_begin, page_count));
+//     pid_begin = pid_to_begin;
+//     return RCOK;
+// }
 
-    spinlock_write_critical_section cs(&_queue_lock);
-    shpid_t pid_to_begin = 0;
-    if (_contiguous_free_pages_begin  + page_count < _contiguous_free_pages_end) {
-        pid_to_begin = _contiguous_free_pages_begin;
-        _contiguous_free_pages_begin += page_count;
-    } else {
-        return RC(eOUTOFSPACE);
-    }
-    W_DO(apply_allocate_consecutive_pages(pid_to_begin, page_count));
-    pid_begin = pid_to_begin;
-    return RCOK;
-}
-
-inline bool check_not_contain (const std::vector<shpid_t> &list, shpid_t pid) {
+inline bool check_not_contain (const std::vector<shpid_t> &list, shpid_t pid)
+{
     const size_t cnt = list.size();
     for (size_t i = 0; i < cnt; ++i) {
         if (list[i] == pid) return false;
@@ -92,8 +96,8 @@ inline bool check_not_contain (const std::vector<shpid_t> &list, shpid_t pid) {
     return true;
 }
 
-
-rc_t alloc_cache_t::deallocate_one_page (shpid_t pid) {
+rc_t alloc_cache_t::deallocate_one_page (shpid_t pid)
+{
     spinlock_write_critical_section cs(&_queue_lock);
 
     w_assert1(pid < _contiguous_free_pages_begin);
@@ -152,24 +156,26 @@ rc_t alloc_cache_t::redo_allocate_one_page (shpid_t pid)
     W_DO(apply_allocate_one_page(pid)); // REDO doesn't generate log
     return RCOK;
 }
-rc_t alloc_cache_t::redo_allocate_consecutive_pages (shpid_t pid_begin, size_t page_count)
-{
-    if (_contiguous_free_pages_begin == pid_begin) {
-        _contiguous_free_pages_begin += page_count;
-    } else if (_contiguous_free_pages_begin > pid_begin) {
-        for (int i = _contiguous_free_pages_begin; i < (int) pid_begin; ++i) {
-            _non_contiguous_free_pages.push_back(i);
-        }
-        _contiguous_free_pages_begin = pid_begin + page_count;
-    } else {
-        // then the REDO order is wrong.
-        W_FATAL_MSG(eINTERNAL, << "REDO of contiguous allocation "
-                    << " found the slots already allocated");
-    }
 
-    W_DO(apply_allocate_consecutive_pages(pid_begin, page_count));
-    return RCOK;
-}
+// rc_t alloc_cache_t::redo_allocate_consecutive_pages (shpid_t pid_begin, size_t page_count)
+// {
+//     if (_contiguous_free_pages_begin == pid_begin) {
+//         _contiguous_free_pages_begin += page_count;
+//     } else if (_contiguous_free_pages_begin > pid_begin) {
+//         for (int i = _contiguous_free_pages_begin; i < (int) pid_begin; ++i) {
+//             _non_contiguous_free_pages.push_back(i);
+//         }
+//         _contiguous_free_pages_begin = pid_begin + page_count;
+//     } else {
+//         // then the REDO order is wrong.
+//         W_FATAL_MSG(eINTERNAL, << "REDO of contiguous allocation "
+//                     << " found the slots already allocated");
+//     }
+
+//     W_DO(apply_allocate_consecutive_pages(pid_begin, page_count));
+//     return RCOK;
+// }
+
 rc_t alloc_cache_t::redo_deallocate_one_page (shpid_t pid)
 {
     w_assert1(pid < _contiguous_free_pages_begin);
@@ -182,7 +188,8 @@ rc_t alloc_cache_t::redo_deallocate_one_page (shpid_t pid)
 
 rc_t alloc_cache_t::apply_allocate_one_page (shpid_t pid)
 {
-    spinlock_read_critical_section cs(&_fixed_pages->get_checkpoint_lock()); // protect against checkpoint. see bf_fixed_m comment.
+    // protect against checkpoint. see bf_fixed_m comment.
+    spinlock_read_critical_section cs(&_fixed_pages->get_checkpoint_lock());
     shpid_t alloc_pid = alloc_page_h::pid_to_alloc_pid(pid);
     uint32_t buf_index = alloc_pid - 1; // -1 for volume header
     w_assert1(buf_index < _fixed_pages->get_page_cnt() - 1); // -1 for stnode_page
@@ -192,44 +199,46 @@ rc_t alloc_cache_t::apply_allocate_one_page (shpid_t pid)
     _fixed_pages->get_dirty_flags()[buf_index] = true;
     return RCOK;
 }
-rc_t alloc_cache_t::apply_allocate_consecutive_pages (shpid_t pid_begin, size_t page_count)
-{
-    // CS (TODO)
-    // 1) Why do we have to be in mutual exclusion with checkpoints??
-    // 2) I thought this was done with chkpt_serial_m?? Do we have multiple
-    // latches to protect the same critical section?
-    spinlock_read_critical_section cs(&_fixed_pages->get_checkpoint_lock()); // protect against checkpoint. see bf_fixed_m comment.
-    const shpid_t pid_to_end = pid_begin + page_count;
-    shpid_t alloc_pid = alloc_page_h::pid_to_alloc_pid(pid_begin);
-    generic_page* pages = _fixed_pages->get_pages();
 
-    shpid_t cur_pid = pid_begin;
+// rc_t alloc_cache_t::apply_allocate_consecutive_pages (shpid_t pid_begin, size_t page_count)
+// {
+//     // CS (TODO)
+//     // 1) Why do we have to be in mutual exclusion with checkpoints??
+//     // 2) I thought this was done with chkpt_serial_m?? Do we have multiple
+//     // latches to protect the same critical section?
+//     spinlock_read_critical_section cs(&_fixed_pages->get_checkpoint_lock()); // protect against checkpoint. see bf_fixed_m comment.
+//     const shpid_t pid_to_end = pid_begin + page_count;
+//     shpid_t alloc_pid = alloc_page_h::pid_to_alloc_pid(pid_begin);
+//     generic_page* pages = _fixed_pages->get_pages();
 
-    // log and apply per each alloc_page
-    while (cur_pid < pid_to_end) {
-        uint32_t buf_index = alloc_pid - 1; // -1 for volume header
-        w_assert1(buf_index < _fixed_pages->get_page_cnt() - 1); // -1 for stnode_page
-        alloc_page_h al (pages + buf_index);
+//     shpid_t cur_pid = pid_begin;
 
-        size_t this_page_count;
-        if (pid_to_end > al.get_pid_offset() + alloc_page_h::bits_held) {
-            this_page_count = al.get_pid_offset() + alloc_page_h::bits_held - cur_pid;
-        } else {
-            this_page_count = pid_to_end - cur_pid;
-        }
-        w_assert1(this_page_count > 0);
-        al.set_consecutive_bits(cur_pid, cur_pid + this_page_count);
-        _fixed_pages->get_dirty_flags()[buf_index] = true;
+//     // log and apply per each alloc_page
+//     while (cur_pid < pid_to_end) {
+//         uint32_t buf_index = alloc_pid - 1; // -1 for volume header
+//         w_assert1(buf_index < _fixed_pages->get_page_cnt() - 1); // -1 for stnode_page
+//         alloc_page_h al (pages + buf_index);
 
-        cur_pid += this_page_count;
-        // if more pages to be allocated, move on to next alloc_page
-        if (cur_pid < pid_to_end) {
-            // move on to next alloc_page
-            ++alloc_pid;
-        }
-    }
-    return RCOK;
-}
+//         size_t this_page_count;
+//         if (pid_to_end > al.get_pid_offset() + alloc_page_h::bits_held) {
+//             this_page_count = al.get_pid_offset() + alloc_page_h::bits_held - cur_pid;
+//         } else {
+//             this_page_count = pid_to_end - cur_pid;
+//         }
+//         w_assert1(this_page_count > 0);
+//         al.set_consecutive_bits(cur_pid, cur_pid + this_page_count);
+//         _fixed_pages->get_dirty_flags()[buf_index] = true;
+
+//         cur_pid += this_page_count;
+//         // if more pages to be allocated, move on to next alloc_page
+//         if (cur_pid < pid_to_end) {
+//             // move on to next alloc_page
+//             ++alloc_pid;
+//         }
+//     }
+//     return RCOK;
+// }
+
 rc_t alloc_cache_t::apply_deallocate_one_page (shpid_t pid)
 {
     spinlock_read_critical_section cs(&_fixed_pages->get_checkpoint_lock()); // protect against checkpoint. see bf_fixed_m comment.
@@ -243,11 +252,14 @@ rc_t alloc_cache_t::apply_deallocate_one_page (shpid_t pid)
     return RCOK;
 }
 
-size_t alloc_cache_t::get_total_free_page_count () const {
+size_t alloc_cache_t::get_total_free_page_count () const
+{
     spinlock_read_critical_section cs(&_queue_lock);
     return _non_contiguous_free_pages.size() + (_contiguous_free_pages_end - _contiguous_free_pages_begin);
 }
-size_t alloc_cache_t::get_consecutive_free_page_count () const {
+
+size_t alloc_cache_t::get_consecutive_free_page_count () const
+{
     spinlock_read_critical_section cs(&_queue_lock);
     return (_contiguous_free_pages_end - _contiguous_free_pages_begin);
 }

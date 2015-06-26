@@ -185,9 +185,9 @@ public:
     rc_t                check_disk();
 
     rc_t            alloc_a_page(shpid_t& pid, bool redo = false);
-    rc_t            alloc_consecutive_pages(size_t page_count,
-                        shpid_t &pid_begin, bool redo = false);
     rc_t            deallocate_page(const shpid_t& pid, bool redo = false);
+    // rc_t            alloc_consecutive_pages(size_t page_count,
+    //                     shpid_t &pid_begin, bool redo = false);
 
     bool                is_allocated_page(shpid_t pid) const;
 

@@ -44,8 +44,10 @@ public:
      * This method logs the allocation.
      * @param[out] pid_begin the beginning of allocated page IDs.
      * @param[in] page_count number of pages to allocate.
+     *
+     * CS: commented for now since never used
      */
-    rc_t allocate_consecutive_pages (shpid_t &pid_begin, size_t page_count);
+    // rc_t allocate_consecutive_pages (shpid_t &pid_begin, size_t page_count);
 
     /**
      * Deallocates one page in the free-page pool.
@@ -56,7 +58,7 @@ public:
 
     // for REDOs.
     rc_t redo_allocate_one_page (shpid_t pid);
-    rc_t redo_allocate_consecutive_pages (shpid_t pid_begin, size_t page_count);
+    // rc_t redo_allocate_consecutive_pages (shpid_t pid_begin, size_t page_count);
     rc_t redo_deallocate_one_page (shpid_t pid);
 
     /** Returns the count of all free pages. */
@@ -120,7 +122,7 @@ private:
 
     // they assume _contiguous_free_pages_begin/_non_contiguous_free_pages are already modified
     rc_t apply_allocate_one_page (shpid_t pid);
-    rc_t apply_allocate_consecutive_pages (shpid_t pid_begin, size_t page_count);
+    // rc_t apply_allocate_consecutive_pages (shpid_t pid_begin, size_t page_count);
     rc_t apply_deallocate_one_page (shpid_t pid);
 };
 

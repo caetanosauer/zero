@@ -18,11 +18,11 @@ inline w_rc_t allocate_one(ss_m* ssm, test_volume_t* tvol, lpid_t& pid)
     return ssm->vol->get(tvol->_vid)->alloc_a_page(pid.page);
 }
 
-inline w_rc_t allocate_consecutive(ss_m* ssm, test_volume_t* tvol, size_t count,
-        lpid_t& pid)
-{
-    return ssm->vol->get(tvol->_vid)->alloc_consecutive_pages(count, pid.page);
-}
+// inline w_rc_t allocate_consecutive(ss_m* ssm, test_volume_t* tvol, size_t count,
+//         lpid_t& pid)
+// {
+//     return ssm->vol->get(tvol->_vid)->alloc_consecutive_pages(count, pid.page);
+// }
 
 inline w_rc_t deallocate_one(ss_m* ssm, test_volume_t* tvol, lpid_t& pid)
 {
@@ -194,38 +194,38 @@ TEST (AllocTest, ReuseSerialize) {
     EXPECT_EQ(test_env->runBtreeTest(reuse_serialize_test), 0);
 }
 
-w_rc_t allocate_consecutive(ss_m* ssm, test_volume_t *test_volume) {
-    W_DO(ssm->begin_xct());
-    stid_t stid (test_volume->_vid, 10);
-    lpid_t pid;
+// w_rc_t allocate_consecutive(ss_m* ssm, test_volume_t *test_volume) {
+//     W_DO(ssm->begin_xct());
+//     stid_t stid (test_volume->_vid, 10);
+//     lpid_t pid;
 
-    alloc_cache_t *ac = get_alloc_cache(ssm, test_volume->_vid);
+//     alloc_cache_t *ac = get_alloc_cache(ssm, test_volume->_vid);
 
-    for (shpid_t pid = 0; pid < FIRST_PID; ++pid) {
-        EXPECT_TRUE(ac->is_allocated_page(pid));
-    }
+//     for (shpid_t pid = 0; pid < FIRST_PID; ++pid) {
+//         EXPECT_TRUE(ac->is_allocated_page(pid));
+//     }
 
-    W_DO(allocate_one(ssm, test_volume, pid));
-    EXPECT_EQ (pid.page, FIRST_PID);
+//     W_DO(allocate_one(ssm, test_volume, pid));
+//     EXPECT_EQ (pid.page, FIRST_PID);
 
-    lpid_t pid_begin;
-    W_DO(allocate_consecutive(ssm, test_volume, 30, pid_begin));
-    EXPECT_EQ (pid_begin.page, FIRST_PID + 1);
+//     lpid_t pid_begin;
+//     W_DO(allocate_consecutive(ssm, test_volume, 30, pid_begin));
+//     EXPECT_EQ (pid_begin.page, FIRST_PID + 1);
 
-    for (shpid_t pid = FIRST_PID + 1; pid < FIRST_PID + 1 + 30; ++pid) {
-        EXPECT_TRUE(ac->is_allocated_page(pid));
-    }
-    EXPECT_FALSE(ac->is_allocated_page(FIRST_PID + 1 + 30));
+//     for (shpid_t pid = FIRST_PID + 1; pid < FIRST_PID + 1 + 30; ++pid) {
+//         EXPECT_TRUE(ac->is_allocated_page(pid));
+//     }
+//     EXPECT_FALSE(ac->is_allocated_page(FIRST_PID + 1 + 30));
 
-    W_DO(ssm->commit_xct());
+//     W_DO(ssm->commit_xct());
 
-    return RCOK;
-}
+//     return RCOK;
+// }
 
-TEST (AllocTest, AllocateConsecutive) {
-    test_env->empty_logdata_dir();
-    EXPECT_EQ(test_env->runBtreeTest(allocate_consecutive), 0);
-}
+// TEST (AllocTest, AllocateConsecutive) {
+//     test_env->empty_logdata_dir();
+//     EXPECT_EQ(test_env->runBtreeTest(allocate_consecutive), 0);
+// }
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

@@ -312,6 +312,38 @@ bool RestoreMgr::requestRestore(const shpid_t& pid, generic_page* addr)
     return false;
 }
 
+/**
+ * Metadata pages consist of
+ * - PID 1: List of stores, managed by stnode_cache_t
+ * - PIDs 2 until firstDataPid-1: Page allocation bitmap, managed by
+ *   alloc_cache_t
+ *
+ * Current implementation does log allocations and store operations, but they
+ * do not refer to the updated metadata page ID, and thus cannot be recovered
+ * in a traditional way using a pageLSN.
+ *
+ * In order to restore a device's metadata, which is a pre-requisite for
+ * correct recovery (and thus must be done before opening the system for
+ * transactions), we require that all metadata-related log records since the
+ * device creation are replayed.  This introduces two assumptions: 1) metadata
+ * operations must be idempotent; and 2) recycling of old log archive
+ * partitions (currently not implemented) must not throw away metadata log
+ * records
+ *
+ * The two classes of metadata operation are page allocations and store
+ * operations, both of which satisfy assumption 1.  Assumption 2 is not a
+ * concern yet, because we do not support recycling the log archive.
+ *
+ * Currently, log records of metadata operations are always found on the
+ * special page ID 0, but they could refer to any page ID outside the data
+ * region (pid < firstDataPid). Thus, proper metadata restore consists of
+ * simply replaying all such log records. Since the whole history must be kept,
+ * a backup is also not required and never used.
+ *
+ * In the future, if we implement log archive recycling, this could be
+ * optimized by regenerating new metadata log records based on the current
+ * system state (i.e., one alloc_a_page log record for each allocated page)
+ */
 void RestoreMgr::restoreMetadata()
 {
     if (metadataRestored) {
@@ -320,30 +352,19 @@ void RestoreMgr::restoreMetadata()
 
     LogArchiver::ArchiveScanner logScan(archive);
 
-    // open scan on pages [0,1) to get all store operation log records
+    // open scan on pages [0, firstDataPid) to get all metadata operations
     LogArchiver::ArchiveScanner::RunMerger* merger =
-        logScan.open(lpid_t(volume->vid(), 0), lpid_t(volume->vid(), 1),
+        logScan.open(lpid_t(volume->vid(), 0),
+                lpid_t(volume->vid(), firstDataPid),
                 lsn_t::null);
-
-    // TODO: is redo of store operations idempotent?
-    // should we use a specific LSN as starting point?
 
     logrec_t* lr;
     while (merger->next(lr)) {
-        // CS: commented for now (see notes on alloc cache state after restore)
-        // lr->redo(NULL);
+        lr->redo(NULL);
     }
 
-    // TODO BUG -- replay on pid 0 does NOT restore page allocations!
-
-    // TODO: my guess is that we don't have to write back the restored
-    // metadata pages because there are only two possibilites:
-    // 1) system eventually crashes -- metadata restored in restart from
-    // checkpoint and log analysis
-    //    (In theory, all metadata could be considered "server state" and be
-    //    maintained exclusively in the log with checkpoints)
-    // 2) device is eventually unmounted (e.g., during clean shutdown) --
-    // pages get written back
+    // no need to write back pages: done either asynchronously by
+    // bf_fixed_m/page cleaner or unmount/shutdown.
 
     metadataRestored = true;
 
