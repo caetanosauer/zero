@@ -168,6 +168,8 @@ RestoreMgr::RestoreMgr(const sm_options& options,
     w_assert0(archive);
     w_assert0(volume);
 
+    instantRestore = options.get_bool_option("sm_restore_instant", true);
+
     segmentSize = options.get_int_option("sm_restore_segsize", 1024);
     if (segmentSize <= 0) {
         W_FATAL_MSG(fcINTERNAL,
@@ -243,6 +245,10 @@ inline shpid_t RestoreMgr::getPidForSegment(unsigned segment)
 
 inline bool RestoreMgr::isRestored(const shpid_t& pid)
 {
+    if (!instantRestore) {
+        return false;
+    }
+
     if (pid < firstDataPid) {
         // first pages are metadata
         return metadataRestored;

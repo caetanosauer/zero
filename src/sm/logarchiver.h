@@ -193,10 +193,12 @@ public:
         bool shutdown;
         ArchiverControl control;
         off_t prevPos;
+        bool eager;
     public:
         virtual void run();
 
-        ReaderThread(AsyncRingBuffer* readbuf, lsn_t startLSN);
+        ReaderThread(AsyncRingBuffer* readbuf, lsn_t startLSN,
+                bool eager = DFT_EAGER);
         virtual ~ReaderThread() {}
 
         void start_shutdown();
@@ -637,13 +639,16 @@ public:
      */
     class LogConsumer {
     public:
-        LogConsumer(lsn_t startLSN, size_t blockSize);
+        LogConsumer(lsn_t startLSN, size_t blockSize, bool eager = DFT_EAGER);
         virtual ~LogConsumer();
         void shutdown();
 
         void open(lsn_t endLSN);
         bool next(logrec_t*& lr);
         lsn_t getNextLSN() { return nextLSN; }
+
+        bool isEager() { return eager; }
+
     private:
         AsyncRingBuffer* readbuf;
         ReaderThread* reader;
@@ -655,6 +660,7 @@ public:
         char* currentBlock;
         size_t blockSize;
         size_t pos;
+        bool eager;
 
         bool nextBlock();
     };
@@ -685,6 +691,8 @@ public:
      */
     const static int DFT_BLOCK_SIZE = 1024 * 1024; // 1MB = 128 pages
     const static int DFT_WSPACE_SIZE= 10240 * 10240; // 100MB
+    const static bool DFT_EAGER = false;
+
     const static int IO_BLOCK_COUNT = 8; // total buffer = 8MB
     const static char* RUN_PREFIX;
     const static char* CURR_RUN_FILE;
@@ -700,6 +708,7 @@ private:
     bool shutdown;
     ArchiverControl control;
     bool selfManaged;
+    bool eager;
 
     void replacement();
     bool selection();

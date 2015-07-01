@@ -146,6 +146,11 @@ protected:
      * instead of into failed volume */
     bool takeBackup;
 
+    /** \brief Whether to permit access to already restored pages
+     * (false only for experiments that simulate traditional restore)
+     */
+    bool instantRestore;
+
     /** \brief Gives the segment number of a certain page ID.
      */
     unsigned getSegmentForPid(const shpid_t& pid);

@@ -96,9 +96,11 @@ bool ArchiverControl::waitForActivation()
     return true;
 }
 
-LogArchiver::ReaderThread::ReaderThread(AsyncRingBuffer* readbuf, lsn_t startLSN) :
+LogArchiver::ReaderThread::ReaderThread(AsyncRingBuffer* readbuf,
+        lsn_t startLSN, bool eager)
+    :
       BaseThread(readbuf, "LogArchiver_ReaderThread"),
-      shutdown(false), control(&shutdown), prevPos(0)
+      shutdown(false), control(&shutdown), prevPos(0), eager(eager)
 {
     // position initialized to startLSN
     pos = startLSN.lo();
@@ -174,9 +176,12 @@ void LogArchiver::ReaderThread::run()
 {
     while(true) {
         CRITICAL_SECTION(cs, control.mutex);
-        bool activated = control.waitForActivation();
-        if (!activated) {
-            break;
+
+        if (!eager) {
+            bool activated = control.waitForActivation();
+            if (!activated) {
+                break;
+            }
         }
 
         DBGTHRD(<< "Reader thread activated until " << control.endLSN);
@@ -273,7 +278,9 @@ void LogArchiver::ReaderThread::run()
             buf->producerRelease();
         }
 
-        control.activated = false;
+        if (!eager) {
+            control.activated = false;
+        }
     }
 }
 
@@ -341,7 +348,8 @@ LogArchiver::LogArchiver(
     :
     smthread_t(t_regular, "LogArchiver"),
     directory(d), consumer(c), heap(h), blkAssemb(b),
-    shutdown(false), control(&shutdown), selfManaged(false)
+    shutdown(false), control(&shutdown), selfManaged(false),
+    eager(c->isEager())
 {
 }
 
@@ -355,13 +363,15 @@ LogArchiver::LogArchiver(const sm_options& options)
     size_t blockSize =
         options.get_int_option("sm_archiver_block_size", DFT_BLOCK_SIZE);
 
+    eager = options.get_bool_option("sm_archiver_eager", DFT_EAGER);
+
     if (archdir.empty()) {
         W_FATAL_MSG(fcINTERNAL,
                 << "Option for archive directory must be specified");
     }
 
     directory = new ArchiveDirectory(archdir, blockSize);
-    consumer = new LogConsumer(directory->getStartLSN(), blockSize);
+    consumer = new LogConsumer(directory->getStartLSN(), blockSize, eager);
     heap = new ArchiverHeap(workspaceSize);
     blkAssemb = new BlockAssembly(directory);
 }
@@ -691,14 +701,15 @@ rc_t LogArchiver::ArchiveDirectory::closeScan(int& fd)
     return RCOK;
 }
 
-LogArchiver::LogConsumer::LogConsumer(lsn_t startLSN, size_t blockSize)
+LogArchiver::LogConsumer::LogConsumer(lsn_t startLSN, size_t blockSize,
+        bool eager)
     : nextLSN(startLSN), endLSN(lsn_t::null), currentBlock(NULL),
-    blockSize(blockSize), pos(0)
+    blockSize(blockSize), pos(0), eager(eager)
 {
     DBGTHRD(<< "Starting log archiver at LSN " << nextLSN);
 
     readbuf = new AsyncRingBuffer(blockSize, IO_BLOCK_COUNT);
-    reader = new ReaderThread(readbuf, startLSN);
+    reader = new ReaderThread(readbuf, startLSN, eager);
     //reader = new FactoryThread(readbuf, startLSN);
     logScanner = new LogScanner(reader->getBlockSize());
 
@@ -722,6 +733,8 @@ void LogArchiver::LogConsumer::shutdown()
 
 void LogArchiver::LogConsumer::open(lsn_t endLSN)
 {
+    if (eager) return;
+
     this->endLSN = endLSN;
     do {
         reader->activate(nextLSN, endLSN);
@@ -1296,7 +1309,7 @@ void LogArchiver::replacement()
 
         if (lr->is_multi_page()) {
             // CS: Multi-page log records are replicated so that each page can
-            // be recovered independently from the log archive.  Note that this
+            // be recovered from the log archive independently.  Note that this
             // is not required for Restart or Single-page recovery because
             // following the per-page log chain of both pages eventually lands
             // on the same multi-page log record. For restore, it must be
@@ -1328,6 +1341,8 @@ void LogArchiver::pushIntoHeap(logrec_t* lr)
 
 void LogArchiver::activate(lsn_t endLSN, bool wait)
 {
+    if (eager) return;
+
     w_assert0(smlevel_0::log);
     if (endLSN == lsn_t::null) {
         endLSN = smlevel_0::log->durable_lsn();
@@ -1341,8 +1356,18 @@ void LogArchiver::run()
 {
     while(true) {
         CRITICAL_SECTION(cs, control.mutex);
-        bool activated = control.waitForActivation();
-        if (!activated || shutdown) {
+
+        if (eager) {
+            control.endLSN = smlevel_0::log->durable_lsn();
+        }
+        else {
+            bool activated = control.waitForActivation();
+            if (!activated) {
+                break;
+            }
+        }
+
+        if (shutdown) {
             break;
         }
 
@@ -1381,7 +1406,10 @@ void LogArchiver::run()
         // TODO assert that last run filename contains this endlsn
         control.endLSN = lsn_t::null;
         // TODO use a "done" method that also asserts I hold the mutex
-        control.activated = false;
+
+        if (!eager) {
+            control.activated = false;
+        }
     }
 
     // Perform selection until all remaining entries are flushed out of
