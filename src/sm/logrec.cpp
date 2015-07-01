@@ -9,6 +9,8 @@
 #define SM_SOURCE
 #define LOGREC_C
 
+#include "eventlog.h"
+
 #include "sm_base.h"
 #include "logdef_gen.cpp"
 #include "vec_t.h"
@@ -18,11 +20,14 @@
 #include "restore.h"
 #include <sstream>
 
-
 #include <iomanip>
 typedef        ios::fmtflags        ios_fmtflags;
 
 #include <new>
+
+// declared in eventlog.h
+boost::gregorian::date sysevent_timer::epoch
+    = boost::gregorian::date(2015,1,1);
 
 DEFINE_SM_ALLOC(logrec_t);
 
@@ -372,6 +377,11 @@ xct_abort_log::xct_abort_log()
     fill(0, 0);
 }
 
+sysevent_log::sysevent_log(unsigned code, char* argument)
+{
+    (void) code;
+    (void) argument;
+}
 
 /*********************************************************************
  *
@@ -809,7 +819,13 @@ void add_backup_log::redo(fixable_page_h*)
 restore_begin_log::restore_begin_log(vid_t vid)
 {
     memcpy(_data, &vid, sizeof(vid_t));
+#ifdef TIMED_LOG_RECORDS
+    unsigned long tstamp = sysevent_timer::timestamp();
+    memcpy(_data + sizeof(vid_t), &tstamp, sizeof(unsigned long));
+    fill(0, sizeof(vid_t) + sizeof(unsigned long));
+#else
     fill(0, sizeof(vid_t));
+#endif
 }
 
 void restore_begin_log::redo(fixable_page_h*)
@@ -827,7 +843,13 @@ void restore_begin_log::redo(fixable_page_h*)
 restore_end_log::restore_end_log(vid_t vid)
 {
     memcpy(_data, &vid, sizeof(vid_t));
+#ifdef TIMED_LOG_RECORDS
+    unsigned long tstamp = sysevent_timer::timestamp();
+    memcpy(_data + sizeof(vid_t), &tstamp, sizeof(unsigned long));
+    fill(0, sizeof(vid_t) + sizeof(unsigned long));
+#else
     fill(0, sizeof(vid_t));
+#endif
 }
 
 void restore_end_log::redo(fixable_page_h*)
@@ -845,7 +867,14 @@ restore_segment_log::restore_segment_log(vid_t vid, uint32_t segment)
 {
     memcpy(_data, &vid, sizeof(vid_t));
     memcpy(_data + sizeof(vid_t), &segment, sizeof(uint32_t));
+#ifdef TIMED_LOG_RECORDS
+    unsigned long tstamp = sysevent_timer::timestamp();
+    memcpy(_data + sizeof(vid_t) + sizeof(uint32_t),
+            &tstamp, sizeof(unsigned long));
+    fill(0, sizeof(vid_t) + sizeof(uint32_t) + sizeof(unsigned long));
+#else
     fill(0, sizeof(vid_t) + sizeof(uint32_t));
+#endif
 }
 
 void restore_segment_log::redo(fixable_page_h*)

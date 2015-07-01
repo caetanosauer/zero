@@ -52,3 +52,10 @@
    the files will be kept.
  */
 #define KEEP_LOG_PARTITIONS
+
+/* CS: IF this is set, then system event log records, as well as certain
+   selected log records (e.g., restore events), will contain an additional
+   field with a timestamp. This is useful in experiments to correlate events
+   in the log with time
+*/
+#define TIMED_LOG_RECORDS
