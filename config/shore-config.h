@@ -17,27 +17,6 @@
 
 /** common definitions for all platforms. */
 
-/* Name of package */
-#define PACKAGE "fbtree"
-
-/* Define to the address where bug reports for this package should be sent. */
-#define PACKAGE_BUGREPORT "hkimura@cs.brown.edu."
-
-/* Define to the full name of this package. */
-#define PACKAGE_NAME "Foster B-tree"
-
-/* Define to the full name and version of this package. */
-#define PACKAGE_STRING "Foster B-tree 1.0"
-
-/* Define to the one symbol short name of this package. */
-#define PACKAGE_TARNAME "fbtree"
-
-/* Define to the home page for this package. */
-#define PACKAGE_URL ""
-
-/* Define to the version of this package. */
-#define PACKAGE_VERSION "1.0"
-
 /* include tracing code? */
 #define TRACECODE 1
 
