@@ -396,6 +396,9 @@ void LogArchiver::initLogScanner(LogScanner* logScanner)
     logScanner->setIgnore(logrec_t::t_xct_end);
     logScanner->setIgnore(logrec_t::t_xct_freeing_space);
     //logScanner->setIgnore(logrec_t::t_tick);
+    // restore_begin is used to start a new run (see ArchiverHeap::push)
+    logScanner->setIgnore(logrec_t::t_restore_segment);
+    logScanner->setIgnore(logrec_t::t_restore_end);
 }
 
 /*
@@ -1226,6 +1229,17 @@ bool LogArchiver::ArchiverHeap::push(logrec_t* lr)
         currentRun++;
         DBGTHRD(<< "Replacement starting new run " << (int) currentRun
                 << " on LSN " << lr->lsn_ck());
+    }
+
+    // INSTANT RESTORE:
+    // If a device has failed, we need to make all LSNs prior to this one
+    // available as runs as soon as possible. Thus, a new run is started.
+    if (lr->type() == logrec_t::t_restore_begin) {
+        currentRun++;
+        DBGTHRD(<< "Replacement starting new run " << currentRun
+                << " after volume failure on LSN " << lr->lsn_ck());
+        // restore_begin is useful to start new run, but it is not archived
+        return true;
     }
 
     //DBGTHRD(<< "Processing logrec " << lr->lsn_ck() << ", type " <<
