@@ -193,12 +193,10 @@ public:
         bool shutdown;
         ArchiverControl control;
         off_t prevPos;
-        bool eager;
     public:
         virtual void run();
 
-        ReaderThread(AsyncRingBuffer* readbuf, lsn_t startLSN,
-                bool eager = DFT_EAGER);
+        ReaderThread(AsyncRingBuffer* readbuf, lsn_t startLSN);
         virtual ~ReaderThread() {}
 
         void start_shutdown();
@@ -639,15 +637,13 @@ public:
      */
     class LogConsumer {
     public:
-        LogConsumer(lsn_t startLSN, size_t blockSize, bool eager = DFT_EAGER);
+        LogConsumer(lsn_t startLSN, size_t blockSize);
         virtual ~LogConsumer();
         void shutdown();
 
         void open(lsn_t endLSN);
         bool next(logrec_t*& lr);
         lsn_t getNextLSN() { return nextLSN; }
-
-        bool isEager() { return eager; }
 
     private:
         AsyncRingBuffer* readbuf;
@@ -660,7 +656,6 @@ public:
         char* currentBlock;
         size_t blockSize;
         size_t pos;
-        bool eager;
 
         bool nextBlock();
     };
@@ -709,6 +704,7 @@ private:
     ArchiverControl control;
     bool selfManaged;
     bool eager;
+    lsn_t lastEndLSN;
 
     void replacement();
     bool selection();

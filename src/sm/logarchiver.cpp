@@ -97,10 +97,10 @@ bool ArchiverControl::waitForActivation()
 }
 
 LogArchiver::ReaderThread::ReaderThread(AsyncRingBuffer* readbuf,
-        lsn_t startLSN, bool eager)
+        lsn_t startLSN)
     :
       BaseThread(readbuf, "LogArchiver_ReaderThread"),
-      shutdown(false), control(&shutdown), prevPos(0), eager(eager)
+      shutdown(false), control(&shutdown), prevPos(0)
 {
     // position initialized to startLSN
     pos = startLSN.lo();
@@ -123,10 +123,10 @@ void LogArchiver::ReaderThread::activate(lsn_t startLSN, lsn_t endLSN)
         w_assert0(nextPartition - 1 == (uint) startLSN.hi());
     }
     // ignore if invoking activate on the same LSN repeatedly
-    if (control.endLSN > startLSN) {
-        pos = startLSN.lo();
-        prevPos = pos;
-    }
+    pos = startLSN.lo();
+    prevPos = pos;
+    DBGTHRD(<< "Activating reader thread from " << startLSN << " to "
+            << endLSN);
     control.activate(true, endLSN);
 }
 
@@ -177,11 +177,14 @@ void LogArchiver::ReaderThread::run()
     while(true) {
         CRITICAL_SECTION(cs, control.mutex);
 
-        if (!eager) {
-            bool activated = control.waitForActivation();
-            if (!activated) {
-                break;
-            }
+        bool activated = control.waitForActivation();
+        if (!activated) {
+            break;
+        }
+
+        lintel::atomic_thread_fence(lintel::memory_order_release);
+        if (shutdown) {
+            break;
         }
 
         DBGTHRD(<< "Reader thread activated until " << control.endLSN);
@@ -198,7 +201,9 @@ void LogArchiver::ReaderThread::run()
          */
 
         while(true) {
-            if (control.endLSN.hi() == nextPartition - 1
+            unsigned currPartition =
+                currentFd == -1 ? nextPartition : nextPartition - 1;
+            if (control.endLSN.hi() == currPartition
                     && pos >= control.endLSN.lo())
             {
                 /*
@@ -227,13 +232,16 @@ void LogArchiver::ReaderThread::run()
                 W_COERCE(openPartition());
             }
 
-
+            // Read only the portion which was ignored on the last round
+            size_t blockPos = pos % blockSize;
             int bytesRead = 0;
             W_COERCE(me()->pread_short(
-                        currentFd, dest, blockSize, pos, bytesRead));
+                        currentFd, dest + blockPos, blockSize - blockPos,
+                        pos, bytesRead));
 
             if (bytesRead == 0) {
                 // Reached EOF -- open new file and try again
+                DBGTHRD(<< "Reader reached EOF (bytesRead = 0)");
                 W_COERCE(openPartition());
                 pos = 0;
                 W_COERCE(me()->pread_short(
@@ -246,7 +254,9 @@ void LogArchiver::ReaderThread::run()
             }
 
             DBGTHRD(<< "Read block " << (void*) dest << " from fpos " << pos <<
-                    " with size " << bytesRead);
+                    " with size " << bytesRead << " into blockPos "
+                    << blockPos);
+            w_assert0(bytesRead > 0);
 
             pos += bytesRead;
             if (control.endLSN.hi() == nextPartition - 1
@@ -262,7 +272,6 @@ void LogArchiver::ReaderThread::run()
                  */
                 // amount read from file in this current activation
                 size_t readSoFar = control.endLSN.lo() - prevPos;
-                w_assert1(readSoFar > 0);
                 size_t skipPos = readSoFar % blockSize;
                 logrec_t* lr = (logrec_t*) (dest + skipPos);
                 if (lr->type() != logrec_t::t_skip) {
@@ -278,9 +287,7 @@ void LogArchiver::ReaderThread::run()
             buf->producerRelease();
         }
 
-        if (!eager) {
-            control.activated = false;
-        }
+        control.activated = false;
     }
 }
 
@@ -304,7 +311,9 @@ void LogArchiver::WriterThread::run()
              * that all pending blocks are written out before shutdown.
              */
             DBGTHRD(<< "Finished flag set on writer thread");
-            W_COERCE(directory->closeCurrentRun(lastLSN));
+            if (lastLSN != lsn_t::null) {
+                W_COERCE(directory->closeCurrentRun(lastLSN));
+            }
             return; // finished is set on buf
         }
 
@@ -349,8 +358,9 @@ LogArchiver::LogArchiver(
     smthread_t(t_regular, "LogArchiver"),
     directory(d), consumer(c), heap(h), blkAssemb(b),
     shutdown(false), control(&shutdown), selfManaged(false),
-    eager(c->isEager())
+    eager(false)
 {
+    lastEndLSN = directory->getStartLSN();
 }
 
 LogArchiver::LogArchiver(const sm_options& options)
@@ -371,7 +381,9 @@ LogArchiver::LogArchiver(const sm_options& options)
     }
 
     directory = new ArchiveDirectory(archdir, blockSize);
-    consumer = new LogConsumer(directory->getStartLSN(), blockSize, eager);
+    lastEndLSN = directory->getStartLSN();
+
+    consumer = new LogConsumer(directory->getStartLSN(), blockSize);
     heap = new ArchiverHeap(workspaceSize);
     blkAssemb = new BlockAssembly(directory);
 }
@@ -421,6 +433,9 @@ void LogArchiver::start_shutdown()
     shutdown = true;
     // make other threads see new shutdown value
     lintel::atomic_thread_fence(lintel::memory_order_release);
+    consumer->shutdown();
+    blkAssemb->shutdown();
+    join();
 }
 
 LogArchiver::~LogArchiver()
@@ -704,15 +719,14 @@ rc_t LogArchiver::ArchiveDirectory::closeScan(int& fd)
     return RCOK;
 }
 
-LogArchiver::LogConsumer::LogConsumer(lsn_t startLSN, size_t blockSize,
-        bool eager)
+LogArchiver::LogConsumer::LogConsumer(lsn_t startLSN, size_t blockSize)
     : nextLSN(startLSN), endLSN(lsn_t::null), currentBlock(NULL),
-    blockSize(blockSize), pos(0), eager(eager)
+    blockSize(blockSize), pos(blockSize)
 {
     DBGTHRD(<< "Starting log archiver at LSN " << nextLSN);
 
     readbuf = new AsyncRingBuffer(blockSize, IO_BLOCK_COUNT);
-    reader = new ReaderThread(readbuf, startLSN, eager);
+    reader = new ReaderThread(readbuf, startLSN);
     //reader = new FactoryThread(readbuf, startLSN);
     logScanner = new LogScanner(reader->getBlockSize());
 
@@ -722,26 +736,27 @@ LogArchiver::LogConsumer::LogConsumer(lsn_t startLSN, size_t blockSize,
 
 LogArchiver::LogConsumer::~LogConsumer()
 {
-    shutdown();
+    if (!readbuf->isFinished()) {
+        shutdown();
+    }
     delete reader;
     delete readbuf;
 }
 
 void LogArchiver::LogConsumer::shutdown()
 {
-    readbuf->set_finished();
-    reader->start_shutdown();
-    reader->join();
+    if (!readbuf->isFinished()) {
+        readbuf->set_finished();
+        reader->start_shutdown();
+        reader->join();
+    }
 }
 
 void LogArchiver::LogConsumer::open(lsn_t endLSN)
 {
-    if (eager) return;
-
     this->endLSN = endLSN;
-    do {
-        reader->activate(nextLSN, endLSN);
-    } while (!reader->isActive());
+
+    reader->activate(nextLSN, endLSN);
 
     nextBlock();
 }
@@ -757,17 +772,22 @@ bool LogArchiver::LogConsumer::nextBlock()
     // get a block from the reader thread
     currentBlock = readbuf->consumerRequest();
     if (!currentBlock) {
-        //if (!shutdown) { // TODO handle shutdown
+        if (!readbuf->isFinished()) {
             // This happens if log scanner finds a skip logrec, but
             // then the next partition does not exist. This would be a bug,
             // because endLSN should always be an existing LSN, or one
             // immediately after an existing LSN but in the same partition.
             W_FATAL_MSG(fcINTERNAL, << "Consume request failed!");
-        //}
+        }
         return false;
     }
     DBGTHRD(<< "Picked block for replacement " << (void*) currentBlock);
-    pos = 0;
+    if (pos >= blockSize) {
+        // If we are reading the same block but from a continued reader cycle,
+        // pos should be maintained. For this reason, pos should be set to
+        // blockSize on constructor.
+        pos = 0;
+    }
 
     return true;
 }
@@ -801,6 +821,8 @@ bool LogArchiver::LogConsumer::next(logrec_t*& lr)
                 nextLSN = lsn_t(lr->lsn_ck().hi() + 1, 0);
                 DBGTHRD(<< "Replacement got skip logrec on " << lr->lsn_ck()
                        << " setting nextLSN " << nextLSN);
+                // reset pos when reading nextBlock()
+                pos = blockSize;
             }
         }
         if (nextLSN >= endLSN) {
@@ -809,6 +831,7 @@ bool LogArchiver::LogConsumer::next(logrec_t*& lr)
         }
         if (!nextBlock()) {
             // reader thread finished and consume request failed
+            DBGTHRD(<< "LogConsumer next-block request failed");
             return false;
         }
         return next(lr);
@@ -816,6 +839,8 @@ bool LogArchiver::LogConsumer::next(logrec_t*& lr)
 
     // nextLSN is updated by log scanner, so we must check again
     if (nextLSN >= endLSN) {
+        DBGTHRD(<< "nextLSN updated by log scanner past endLSN to "
+                << nextLSN);
         return false;
     }
 
@@ -874,11 +899,14 @@ LogArchiver::BlockAssembly::BlockAssembly(ArchiveDirectory* directory)
     blockSize = directory->getBlockSize();
     writebuf = new AsyncRingBuffer(blockSize, IO_BLOCK_COUNT);
     writer = new WriterThread(writebuf, directory);
+    writer->fork();
 }
 
 LogArchiver::BlockAssembly::~BlockAssembly()
 {
-    shutdown();
+    if (!writebuf->isFinished()) {
+        shutdown();
+    }
     delete writer;
     delete writebuf;
 }
@@ -907,7 +935,7 @@ bool LogArchiver::BlockAssembly::start()
     dest = writebuf->producerRequest();
     if (!dest) {
         DBGTHRD(<< "Block request failed!");
-        if (writerForked) {
+        if (!writebuf->isFinished()) {
             W_FATAL_MSG(fcINTERNAL,
                     << "ERROR: write ring buffer refused produce request");
         }
@@ -943,12 +971,6 @@ bool LogArchiver::BlockAssembly::add(logrec_t* lr)
 
 void LogArchiver::BlockAssembly::finish(int run)
 {
-    if (!writerForked) {
-        // CS: for some reason, this returns stOS for "already forked"
-        W_IGNORE(writer->fork());
-        writerForked = true;
-    }
-
     DBGTHRD("Selection produced block for writing " << (void*) dest <<
             " in run " << (int) run << " with end " << pos);
 
@@ -979,14 +1001,13 @@ void LogArchiver::BlockAssembly::finish(int run)
 
 void LogArchiver::BlockAssembly::shutdown()
 {
-    if (dest) {
-        W_FATAL_MSG(fcINTERNAL,
-                << "BlockAssembly shutting down with an active block!");
+    while (dest) {
+        DBGTHRD(<< "BlockAssembly still has an active block -- waiting");
+        ::usleep(1000); // 1ms
     }
 
     writebuf->set_finished();
     writer->join();
-    writerForked = false;
 }
 
 LogArchiver::ArchiveScanner::ArchiveScanner(ArchiveDirectory* directory)
@@ -1201,7 +1222,7 @@ LogArchiver::ArchiverHeap::ArchiverHeap(size_t workspaceSize)
 
 LogArchiver::ArchiverHeap::~ArchiverHeap()
 {
-    delete[] workspace;
+    delete workspace;
 }
 
 bool LogArchiver::ArchiverHeap::push(logrec_t* lr)
@@ -1315,6 +1336,9 @@ void LogArchiver::replacement()
             if (control.endLSN < consumer->getNextLSN()) {
                 // nextLSN may be greater than endLSN due to skip
                 control.endLSN = consumer->getNextLSN();
+                // TODO: in which correct situation can this assert fail???
+                // w_assert0(control.endLSN.hi() == 0);
+                DBGTHRD(<< "Replacement changed endLSN to " << control.endLSN);
             }
             return;
         }
@@ -1361,6 +1385,7 @@ void LogArchiver::activate(lsn_t endLSN, bool wait)
     if (endLSN == lsn_t::null) {
         endLSN = smlevel_0::log->durable_lsn();
     }
+
     while (!control.activate(wait, endLSN)) {
         if (!wait) break;
     }
@@ -1372,7 +1397,18 @@ void LogArchiver::run()
         CRITICAL_SECTION(cs, control.mutex);
 
         if (eager) {
-            control.endLSN = smlevel_0::log->durable_lsn();
+            lsn_t newEnd = smlevel_0::log->durable_lsn();
+            while (control.endLSN == newEnd) {
+                // we're going faster than log, sleep a bit (1ms)
+                ::usleep(1000);
+                newEnd = smlevel_0::log->durable_lsn();
+
+                lintel::atomic_thread_fence(lintel::memory_order_consume);
+                if (shutdown) {
+                    break;
+                }
+            }
+            control.endLSN = newEnd;
         }
         else {
             bool activated = control.waitForActivation();
@@ -1381,18 +1417,20 @@ void LogArchiver::run()
             }
         }
 
+        lintel::atomic_thread_fence(lintel::memory_order_consume);
         if (shutdown) {
             break;
         }
 
         if (control.endLSN == lsn_t::null
-                || control.endLSN <= directory->getLastLSN())
+                || control.endLSN <= lastEndLSN)
         {
+            DBGTHRD(<< "Archiver already passed this range. Continuing...");
             continue;
         }
-        w_assert1(control.endLSN > directory->getLastLSN());
+        w_assert1(control.endLSN > lastEndLSN);
 
-        DBGTHRD(<< "Log archiver activated from " << directory->getLastLSN() << " to "
+        DBGTHRD(<< "Log archiver activated from " << lastEndLSN << " to "
                 << control.endLSN);
 
         consumer->open(control.endLSN);
@@ -1416,12 +1454,10 @@ void LogArchiver::run()
 
         DBGTHRD(<< "Log archiver consumed all log records until LSN "
                 << control.endLSN);
-
-        // TODO assert that last run filename contains this endlsn
-        control.endLSN = lsn_t::null;
-        // TODO use a "done" method that also asserts I hold the mutex
+        lastEndLSN = control.endLSN;
 
         if (!eager) {
+            control.endLSN = lsn_t::null;
             control.activated = false;
         }
     }
@@ -1430,9 +1466,6 @@ void LogArchiver::run()
     // the heap into runs. Last run boundary is also enqueued.
     DBGTHRD(<< "Archiver exiting -- last round of selection to empty heap");
     while (selection()) {}
-
-    consumer->shutdown();
-    blkAssemb->shutdown();
 
     w_assert0(heap->size() == 0);
 }
@@ -1491,7 +1524,6 @@ tryagain:
         // just be garbage. This also means that valid_header() will fail,
         // so we have to do this before the consistency checks below.
         DBGTHRD(<< "LogScanner reached skip log record on " << lr->lsn_ck());
-        pos = blockSize;
         return false;
     }
 
@@ -1514,8 +1546,8 @@ tryagain:
         if ((void*) lr == (void*) truncBuf) {
             goto tryagain;
         }
-        //DBGTHRD(<< "Found " << lr->type_str() << ", skipping "
-        //       << lr->length());
+        // DBGTHRD(<< "Found " << lr->type_str() << " on " << lr->lsn_ck()
+        //         << " pos " << pos << ", skipping " << lr->length());
         toSkip += lr->length();
     }
 
@@ -1540,8 +1572,8 @@ tryagain:
         pos += lr->length();
     }
 
-    //DBGTHRD(<< "logrec type " << lr->type()
-    //        << " on pos " << pos << " lsn " << lr->lsn_ck());
+    // DBGTHRD(<< "Log scanner returning  " << lr->type_str()
+    //         << " on pos " << pos << " lsn " << lr->lsn_ck());
 
 
     return true;

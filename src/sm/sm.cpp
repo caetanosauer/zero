@@ -898,6 +898,12 @@ ss_m::_destruct_once()
     // delete the lock manager
     delete lm; lm = 0;
 
+    if (logArchiver) {
+        logArchiver->start_shutdown();
+        delete logArchiver;
+        logArchiver = 0;
+    }
+
     if(log) {
         log->shutdown(); // log joins any subsidiary threads
         // We do not delete the log now; shutdown takes care of that. delete log;

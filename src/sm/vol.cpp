@@ -584,8 +584,10 @@ bool vol_t::check_restore_finished(bool redo)
         _restore_mgr = NULL;
 
         // close backup file
-        W_COERCE(me()->close(_backup_fd));
-        _backup_fd = -1;
+        if (_backup_fd > 0) {
+            W_COERCE(me()->close(_backup_fd));
+            _backup_fd = -1;
+        }
 
         // log restore end and set failed flag to false
         if (!redo) {
