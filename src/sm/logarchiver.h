@@ -192,7 +192,6 @@ public:
 
         bool shutdownFlag;
         ArchiverControl control;
-        off_t prevPos;
     public:
         virtual void run();
 
@@ -425,7 +424,6 @@ public:
         AsyncRingBuffer* writebuf;
         WriterThread* writer;
         ArchiveIndex* archIndex;
-        bool writerForked;
         size_t blockSize;
         size_t pos;
         lpid_t firstPID;

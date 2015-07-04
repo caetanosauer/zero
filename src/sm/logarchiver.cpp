@@ -101,7 +101,7 @@ LogArchiver::ReaderThread::ReaderThread(AsyncRingBuffer* readbuf,
         lsn_t startLSN)
     :
       BaseThread(readbuf, "LogArchiver_ReaderThread"),
-      shutdownFlag(false), control(&shutdownFlag), prevPos(0)
+      shutdownFlag(false), control(&shutdownFlag)
 {
     // position initialized to startLSN
     pos = startLSN.lo();
@@ -125,7 +125,6 @@ void LogArchiver::ReaderThread::activate(lsn_t startLSN, lsn_t endLSN)
     }
     // ignore if invoking activate on the same LSN repeatedly
     pos = startLSN.lo();
-    prevPos = pos;
     DBGTHRD(<< "Activating reader thread from " << startLSN << " to "
             << endLSN);
     control.activate(true, endLSN);
@@ -272,8 +271,7 @@ void LogArchiver::ReaderThread::run()
                  * activations) [Bug of Sep 26, 2014]
                  */
                 // amount read from file in this current activation
-                size_t readSoFar = control.endLSN.lo() - prevPos;
-                size_t skipPos = readSoFar % blockSize;
+                size_t skipPos = control.endLSN.lo() % blockSize;
                 logrec_t* lr = (logrec_t*) (dest + skipPos);
                 if (lr->type() != logrec_t::t_skip) {
                     DBGTHRD(<< "Reader setting skip logrec manually on block "
@@ -320,12 +318,6 @@ void LogArchiver::WriterThread::run()
 
         DBGTHRD(<< "Picked block for write " << (void*) src);
 
-        // CS: changed writer behavior to write raw blocks instead of a
-        // contiguous stream of log records, as done in log partitions.
-        // TODO: restore code should consider block format when reading
-        // from the log archive!
-
-        //BlockHeader* h = (BlockHeader*) src;
         int run = BlockAssembly::getRunFromBlock(src);
         if (currentRun != run) {
             w_assert1(run == currentRun + 1);
@@ -565,7 +557,7 @@ LogArchiver::ArchiveDirectory::ArchiveDirectory(std::string archdir,
     // lastLSN is the end LSN of the last generated initial run
     lastLSN = startLSN;
 
-    // create index
+    // create/load index
     if (createIndex) {
         archIndex = new ArchiveIndex(blockSize, startLSN);
 
@@ -723,14 +715,16 @@ rc_t LogArchiver::ArchiveDirectory::closeScan(int& fd)
 
 LogArchiver::LogConsumer::LogConsumer(lsn_t startLSN, size_t blockSize)
     : nextLSN(startLSN), endLSN(lsn_t::null), currentBlock(NULL),
-    blockSize(blockSize), pos(blockSize)
+    blockSize(blockSize)
 {
     DBGTHRD(<< "Starting log archiver at LSN " << nextLSN);
 
+    // pos must be set to the correct offset within a block
+    pos = startLSN.lo() % blockSize;
+
     readbuf = new AsyncRingBuffer(blockSize, IO_BLOCK_COUNT);
     reader = new ReaderThread(readbuf, startLSN);
-    //reader = new FactoryThread(readbuf, startLSN);
-    logScanner = new LogScanner(reader->getBlockSize());
+    logScanner = new LogScanner(blockSize);
 
     initLogScanner(logScanner);
     reader->fork();
@@ -872,6 +866,7 @@ bool LogArchiver::selection()
     }
 
     int run = heap->topRun();
+    DBGTHRD(<< "Producing block for selection on run " << run);
     while (true) {
         if (heap->size() == 0 || run != heap->topRun()) {
             break;
@@ -1373,6 +1368,7 @@ void LogArchiver::pushIntoHeap(logrec_t* lr)
     if (!heap->push(lr)) {
         // heap full -- invoke selection and try again
         // method returns bool, but result is not used for now (TODO)
+        DBGTHRD(<< "Heap full! Invoking selection");
         selection();
         // Try push once again
         if (!heap->push(lr)) {
