@@ -44,7 +44,7 @@ rc_t populateBtree(ss_m* ssm, test_volume_t *test_volume, int count)
     return RCOK;
 }
 
-rc_t generateFakeArchive(LogArchiver::ArchiveDirectory* dir, 
+rc_t generateFakeArchive(LogArchiver::ArchiveDirectory* dir,
         unsigned bytesPerRun, unsigned runCount, unsigned& total)
 {
     total = 0;
@@ -212,7 +212,7 @@ rc_t fullPipelineTest(ss_m* ssm, test_volume_t* test_vol)
     LogArchiver la(&dir, &cons, &heap, &assemb);
     la.fork();
     la.activate(lsn_t::null, true /* wait */);
-    
+
     // nextLSN of consumer tells us that all logrecs up (and excluding) that
     // LSN were added to the heap. When shutdown is invoked, heap is then emptied
     // using the selection method, thus also gauaranteeing that the archive is persistent
@@ -221,7 +221,7 @@ rc_t fullPipelineTest(ss_m* ssm, test_volume_t* test_vol)
         usleep(1000); // 1ms
     }
 
-    la.start_shutdown();
+    la.shutdown();
     la.join();
 
     // TODO use archive scanner to verify:
@@ -309,7 +309,7 @@ rc_t runScannerWithIndex(ss_m*, test_volume_t*)
         prevLSN = lr->lsn_ck();
         count++;
     }
-    
+
     return RCOK;
 }
 
@@ -375,7 +375,7 @@ rc_t runMergerFullTest(ss_m* ssm, test_volume_t* test_vol)
         prevLSN = lr->lsn_ck();
     }
 
-    la.start_shutdown();
+    la.shutdown();
     la.join();
 
     return RCOK;
@@ -440,7 +440,7 @@ rc_t archIndexTestSingle(ss_m*, test_volume_t*)
         index->probeNext(result);
         EXPECT_TRUE(!result);
     }
-    
+
     return RCOK;
 }
 

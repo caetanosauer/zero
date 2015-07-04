@@ -899,7 +899,7 @@ ss_m::_destruct_once()
     delete lm; lm = 0;
 
     if (logArchiver) {
-        logArchiver->start_shutdown();
+        logArchiver->shutdown();
         delete logArchiver;
         logArchiver = 0;
     }

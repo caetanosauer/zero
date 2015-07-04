@@ -29,8 +29,8 @@ const size_t LogArchiver::MAX_LOGREC_SIZE = 3 * log_storage::BLOCK_SIZE;
 // even though it is not a real skip logrec due to bug above.
 const char FAKE_SKIP_LOGREC [3] = { 0x03, 0x00, (char) logrec_t::t_skip };
 
-ArchiverControl::ArchiverControl(bool* shutdown)
-    : endLSN(lsn_t::null), activated(false), listening(false), shutdown(shutdown)
+ArchiverControl::ArchiverControl(bool* shutdownFlag)
+    : endLSN(lsn_t::null), activated(false), listening(false), shutdownFlag(shutdownFlag)
 {
     DO_PTHREAD(pthread_mutex_init(&mutex, NULL));
     DO_PTHREAD(pthread_cond_init(&activateCond, NULL));
@@ -85,7 +85,7 @@ bool ArchiverControl::waitForActivation()
         int code = pthread_cond_timedwait(&activateCond, &mutex, &timeout);
         if (code == ETIMEDOUT) {
             //DBGTHRD(<< "Wait timed out -- try again");
-            if (*shutdown) {
+            if (*shutdownFlag) {
                 DBGTHRD(<< "Activation failed due to shutdown. Exiting");
                 return false;
             }
@@ -100,16 +100,16 @@ LogArchiver::ReaderThread::ReaderThread(AsyncRingBuffer* readbuf,
         lsn_t startLSN)
     :
       BaseThread(readbuf, "LogArchiver_ReaderThread"),
-      shutdown(false), control(&shutdown), prevPos(0)
+      shutdownFlag(false), control(&shutdownFlag), prevPos(0)
 {
     // position initialized to startLSN
     pos = startLSN.lo();
     nextPartition = startLSN.hi();
 }
 
-void LogArchiver::ReaderThread::start_shutdown()
+void LogArchiver::ReaderThread::shutdown()
 {
-    shutdown = true;
+    shutdownFlag = true;
     // make other threads see new shutdown value
     lintel::atomic_thread_fence(lintel::memory_order_release);
 }
@@ -183,7 +183,7 @@ void LogArchiver::ReaderThread::run()
         }
 
         lintel::atomic_thread_fence(lintel::memory_order_release);
-        if (shutdown) {
+        if (shutdownFlag) {
             break;
         }
 
@@ -305,7 +305,7 @@ void LogArchiver::WriterThread::run()
              * thread, on the other hand, does not need an activation signal,
              * because it runs indefinitely, just waiting for blocks to be
              * written. The only stop condition is when the write buffer itself
-             * is marked finished, which is done in start_shutdown().
+             * is marked finished, which is done in shutdown().
              * Nevertheless, a null block is only returned once the finished
              * flag is set AND there are no more blocks. Thus, we gaurantee
              * that all pending blocks are written out before shutdown.
@@ -357,7 +357,7 @@ LogArchiver::LogArchiver(
     :
     smthread_t(t_regular, "LogArchiver"),
     directory(d), consumer(c), heap(h), blkAssemb(b),
-    shutdown(false), control(&shutdown), selfManaged(false),
+    shutdownFlag(false), control(&shutdownFlag), selfManaged(false),
     eager(false)
 {
     lastEndLSN = directory->getStartLSN();
@@ -365,7 +365,7 @@ LogArchiver::LogArchiver(
 
 LogArchiver::LogArchiver(const sm_options& options)
     : smthread_t(t_regular, "LogArchiver"),
-    shutdown(false), control(&shutdown), selfManaged(true)
+    shutdownFlag(false), control(&shutdownFlag), selfManaged(true)
 {
     std::string archdir = options.get_string_option("sm_archdir", "");
     size_t workspaceSize =
@@ -425,12 +425,12 @@ void LogArchiver::initLogScanner(LogScanner* logScanner)
  * required, because other threads don't have to immediately see that
  * the flag was set. As long as it is eventually set, it is OK.
  */
-void LogArchiver::start_shutdown()
+void LogArchiver::shutdown()
 {
     DBGTHRD(<< "LOG ARCHIVER SHUTDOWN STARTING");
     // this flag indicates that reader and writer threads delivering null
     // blocks is not an error, but a termination condition
-    shutdown = true;
+    shutdownFlag = true;
     // make other threads see new shutdown value
     lintel::atomic_thread_fence(lintel::memory_order_release);
     consumer->shutdown();
@@ -440,8 +440,8 @@ void LogArchiver::start_shutdown()
 
 LogArchiver::~LogArchiver()
 {
-    if (!shutdown) {
-        start_shutdown();
+    if (!shutdownFlag) {
+        shutdown();
     }
     if (selfManaged) {
         delete blkAssemb;
@@ -747,7 +747,7 @@ void LogArchiver::LogConsumer::shutdown()
 {
     if (!readbuf->isFinished()) {
         readbuf->set_finished();
-        reader->start_shutdown();
+        reader->shutdown();
         reader->join();
     }
 }
@@ -1404,7 +1404,7 @@ void LogArchiver::run()
                 newEnd = smlevel_0::log->durable_lsn();
 
                 lintel::atomic_thread_fence(lintel::memory_order_consume);
-                if (shutdown) {
+                if (shutdownFlag) {
                     break;
                 }
             }
@@ -1418,7 +1418,7 @@ void LogArchiver::run()
         }
 
         lintel::atomic_thread_fence(lintel::memory_order_consume);
-        if (shutdown) {
+        if (shutdownFlag) {
             break;
         }
 
@@ -1905,7 +1905,7 @@ void LogArchiver::ArchiveIndex::probeNext(ProbeResult*& prev, lsn_t endLSN)
 
 ArchiveMerger::ArchiveMerger(const sm_options& options)
     : smthread_t(t_regular, "ArchiveMerger"),
-      shutdown(false), control(&shutdown)
+      shutdownFlag(false), control(&shutdownFlag)
 {
     archdir = options.get_string_option("sm_archdir", "");
     mergeFactor = options.get_int_option("sm_merge_factor", DFT_MERGE_FACTOR);
@@ -2188,10 +2188,10 @@ rc_t ArchiveMerger::MergeOutput::cleanup()
     return RCOK;
 }
 
-void ArchiveMerger::start_shutdown()
+void ArchiveMerger::shutdown()
 {
     DBGTHRD(<< "ARCHIVE MERGER SHUTDOWN STARTING");
-    shutdown = true;
+    shutdownFlag = true;
     // If merger thread is not running, it is woken up and terminated
     // imediately afterwards due to shutdown flag being set
     DO_PTHREAD(pthread_cond_signal(&control.activateCond));

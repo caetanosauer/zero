@@ -68,7 +68,7 @@ void archiveLog(ss_m* ssm)
     while (ssm->logArchiver->getNextConsumedLSN() < ssm->log->curr_lsn()) {
         usleep(1000);
     }
-    ssm->logArchiver->start_shutdown();
+    ssm->logArchiver->shutdown();
     ssm->logArchiver->join();
 }
 

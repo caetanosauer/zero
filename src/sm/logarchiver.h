@@ -69,7 +69,7 @@ struct ArchiverControl {
     lsn_t endLSN;
     bool activated;
     bool listening;
-    bool* shutdown;
+    bool* shutdownFlag;
 
     ArchiverControl(bool* shutdown);
     ~ArchiverControl();
@@ -88,10 +88,10 @@ struct ArchiverControl {
  * Log archiving works in <b>activation cycles</b>, in which it first waits for
  * an activation and then consumes the recovery log up to a given LSN value
  * (\see activate(bool, lsn_t)).  This cycle is executed in an infinite loop
- * until the method start_shutdown() is invoked.  Once shutdown is invoked, the
+ * until the method shutdown() is invoked.  Once shutdown is invoked, the
  * current cycle is <b>not</b> interrupted. Instead, it finishes consuming the
  * log until the LSN given in the last successful activation and only then it
- * exits. The destructor also invokes start_shutdown() if not done yet.
+ * exits. The destructor also invokes shutdown() if not done yet.
  *
  * The class LogArchiver itself serves merely as an orchestrator of its
  * components, which are:
@@ -190,7 +190,7 @@ public:
         uint nextPartition;
         rc_t openPartition();
 
-        bool shutdown;
+        bool shutdownFlag;
         ArchiverControl control;
         off_t prevPos;
     public:
@@ -199,7 +199,7 @@ public:
         ReaderThread(AsyncRingBuffer* readbuf, lsn_t startLSN);
         virtual ~ReaderThread() {}
 
-        void start_shutdown();
+        void shutdown();
         void activate(lsn_t startLSN, lsn_t endLSN);
 
         bool isActive() { return control.activated; }
@@ -673,7 +673,7 @@ public:
 
     virtual void run();
     void activate(lsn_t endLSN = lsn_t::null, bool wait = true);
-    void start_shutdown();
+    void shutdown();
 
     ArchiveDirectory* getDirectory() { return directory; }
     lsn_t getNextConsumedLSN() { return consumer->getNextLSN(); }
@@ -700,7 +700,7 @@ private:
     ArchiverHeap* heap;
     BlockAssembly* blkAssemb;
 
-    bool shutdown;
+    bool shutdownFlag;
     ArchiverControl control;
     bool selfManaged;
     bool eager;
@@ -799,14 +799,14 @@ public:
     virtual void run();
     MergeOutput* offlineMerge(bool async = false);
     bool activate(bool wait = true);
-    void start_shutdown();
+    void shutdown();
 
 private:
     std::string archdir;
     int mergeFactor;
     size_t blockSize;
 
-    bool shutdown;
+    bool shutdownFlag;
     ArchiverControl control;
 
     char** pickRunsToMerge(int& count, lsn_t& firstLSN, lsn_t& lastLSN,
