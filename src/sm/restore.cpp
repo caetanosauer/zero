@@ -378,6 +378,8 @@ void RestoreMgr::restoreMetadata()
     DO_PTHREAD(pthread_mutex_lock(&restoreCondMutex));
     DO_PTHREAD(pthread_cond_broadcast(&restoreCond));
     DO_PTHREAD(pthread_mutex_unlock(&restoreCondMutex));
+
+    delete merger;
 }
 
 void RestoreMgr::restoreLoop()

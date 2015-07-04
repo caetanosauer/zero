@@ -1176,13 +1176,20 @@ void LogArchiver::ArchiveScanner::RunMerger::addInput(RunScanner* r)
     if (entry.active) {
         heap.AddElementDontHeapify(entry);
     }
+    else {
+        delete entry.runScan;
+    }
 }
 
 bool LogArchiver::ArchiveScanner::RunMerger::next(logrec_t*& lr)
 {
+    if (heap.NumElements() == 0) {
+        return false;
+    }
+
     if (!started) {
-        heap.Heapify();
         started = true;
+        heap.Heapify();
     }
     else {
         /*
@@ -1604,6 +1611,8 @@ LogArchiver::ArchiveIndex::ArchiveIndex(size_t blockSize, lsn_t startLSN)
 LogArchiver::ArchiveIndex::~ArchiveIndex()
 {
     DO_PTHREAD(pthread_mutex_destroy(&mutex));
+    delete[] writeBuffer;
+    delete[] readBuffer;
 }
 
 void LogArchiver::ArchiveIndex::newBlock(lpid_t lastPID)
