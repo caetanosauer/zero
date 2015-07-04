@@ -366,6 +366,9 @@ void RestoreMgr::restoreMetadata()
 
     logrec_t* lr;
     while (merger->next(lr)) {
+        lpid_t lrpid = lr->construct_pid();
+        w_assert1(lrpid.vol() == volume->vid());
+        w_assert1(lrpid.page < firstDataPid);
         lr->redo(NULL);
     }
 
@@ -488,6 +491,8 @@ void RestoreMgr::restoreLoop()
         // current should point to the first not-restored page (excl. bound)
         if (redone > 0) { // i.e., something was restored
             current++;
+            DBGTHRD(<< "Restore applied " << redone << " logrecs in segment "
+                    << segment);
         }
 
         // in the last segment, we may write less than the segment size
@@ -507,7 +512,7 @@ void RestoreMgr::finishSegment(char* workspace, unsigned segment, size_t count)
     shpid_t firstPage = getPidForSegment(segment);
 
     if (count > 0) {
-        w_assert1((int) count <= segmentSize);
+        w_assert0((int) count <= segmentSize);
         // write pages back to replacement device (or backup)
         if (takeBackup) {
             W_COERCE(volume->write_backup(firstPage, count, workspace));
