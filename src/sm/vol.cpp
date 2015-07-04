@@ -154,7 +154,6 @@ rc_t vol_m::sx_mount(const char* device, const bool logit)
     size_t index = v->vid() - 1;
 
     if (volumes[index]) {
-        delete v;
         return RC(eALREADYMOUNTED);
     }
 
