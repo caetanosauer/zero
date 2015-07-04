@@ -228,13 +228,17 @@ public:
         };
 
 
-        void newBlock(std::set<lpid_t>& _PIDs);
+        void newBlock(lpid_t firstPID);
         rc_t finishRun(lsn_t first, lsn_t last, int fd, fileoff_t);
         ProbeResult* probeFirst(lpid_t pid, lsn_t lsn);
         void probeNext(ProbeResult*& prev, lsn_t endLSN = lsn_t::null);
 
         rc_t getBlockCounts(int fd, size_t* indexBlocks, size_t* dataBlocks);
-        rc_t loadRunInfo(int fd);
+        rc_t loadRunInfo(const char* fname);
+        void sortRunVector();
+        void appendNewEntry();
+
+        void setLastFinished(int f) { lastFinished = f; }
 
     private:
         struct BlockEntry {
@@ -247,21 +251,27 @@ public:
         };
         struct RunInfo {
             lsn_t firstLSN;
-            lpid_t firstPID;
-            lpid_t lastPID;
-            std::vector<bool> filter;
-;            // one entry reserved for last pid with offset = block size
+
+            // CS: disabled filters. If we ever enable it again, it must be
+            // properly serialized and deserialized!
+            // std::vector<bool> filter;
+
+            // one entry reserved for last pid with offset = block size
             std::vector<BlockEntry> entries;
+
+            bool operator<(const RunInfo& other) const
+            {
+                return firstLSN < other.firstLSN;
+            }
         };
 
         size_t blockSize;
         std::vector<RunInfo> runs;
-        lpid_t lastPID;
         lsn_t lastLSN;
         pthread_mutex_t mutex;
         char* writeBuffer;
         char* readBuffer;
-        std::set<lpid_t> current_run_PIDs;
+        int lastFinished;
 
         size_t findRun(lsn_t lsn);
         void probeInRun(ProbeResult*);
@@ -269,7 +279,7 @@ public:
         fileoff_t findEntry(RunInfo* run, lpid_t pid,
                 int from = -1, int to = -1);
         rc_t serializeRunInfo(RunInfo&, int fd, fileoff_t);
-        rc_t deserializeRunInfo(RunInfo&, int fd);
+        rc_t deserializeRunInfo(RunInfo&, const char* fname);
 
     };
 
@@ -419,9 +429,9 @@ public:
         size_t blockSize;
         size_t pos;
         lpid_t firstPID;
-        std::set<lpid_t> PIDs;
         lsn_t lastLSN;
         int lastLength;
+        int lastRun;
     public:
         struct BlockHeader {
             uint8_t run;
