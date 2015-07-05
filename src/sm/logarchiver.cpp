@@ -351,14 +351,15 @@ LogArchiver::LogArchiver(
     smthread_t(t_regular, "LogArchiver"),
     directory(d), consumer(c), heap(h), blkAssemb(b),
     shutdownFlag(false), control(&shutdownFlag), selfManaged(false),
-    eager(false)
+    eager(false), flushReqLSN(lsn_t::null)
 {
     lastEndLSN = directory->getStartLSN();
 }
 
 LogArchiver::LogArchiver(const sm_options& options)
     : smthread_t(t_regular, "LogArchiver"),
-    shutdownFlag(false), control(&shutdownFlag), selfManaged(true)
+    shutdownFlag(false), control(&shutdownFlag), selfManaged(true),
+    flushReqLSN(lsn_t::null)
 {
     std::string archdir = options.get_string_option("sm_archdir", "");
     size_t workspaceSize =
@@ -404,6 +405,7 @@ void LogArchiver::initLogScanner(LogScanner* logScanner)
     // restore_begin is used to start a new run (see ArchiverHeap::push)
     logScanner->setIgnore(logrec_t::t_restore_segment);
     logScanner->setIgnore(logrec_t::t_restore_end);
+    logScanner->setIgnore(logrec_t::t_chkpt_restore_tab);
 }
 
 /*
@@ -645,6 +647,7 @@ rc_t LogArchiver::ArchiveDirectory::closeCurrentRun(lsn_t runEndLSN)
         w_assert0(runEndLSN == lsn_t::null);
         W_DO(me()->close(appendFd));
         appendFd = -1;
+        return RCOK;
     }
     w_assert1(runEndLSN != lsn_t::null);
 
@@ -1002,6 +1005,22 @@ void LogArchiver::BlockAssembly::finish(int run)
 
     writebuf->producerRelease();
     dest = NULL;
+}
+
+void LogArchiver::BlockAssembly::requestFlush()
+{
+    /*
+     * Assumption: archiver heap must be empty when calling this! Otherwise
+     * a logical run will be "split" into two physical runs.
+     * Mark write buffer finished so that writer thread finishes the current
+     * run. Then fork it again because we are not shutting down
+     */
+    shutdown();
+    writebuf->set_finished(false);
+    ArchiveDirectory* dir = writer->getDirectory();
+    delete writer;
+    writer = new WriterThread(writebuf, dir);
+    W_COERCE(writer->fork());
 }
 
 void LogArchiver::BlockAssembly::shutdown()
@@ -1420,6 +1439,11 @@ void LogArchiver::run()
                 if (shutdownFlag) {
                     break;
                 }
+
+                // Flushing requested (e.g., by restore manager)
+                if (flushReqLSN != lsn_t::null) {
+                    break;
+                }
             }
             control.endLSN = newEnd;
         }
@@ -1433,6 +1457,49 @@ void LogArchiver::run()
         lintel::atomic_thread_fence(lintel::memory_order_consume);
         if (shutdownFlag) {
             break;
+        }
+
+        if (flushReqLSN != lsn_t::null) {
+            DBGTHRD(<< "Archive flush requested until LSN " << flushReqLSN);
+            w_assert0(flushReqLSN <= smlevel_0::log->durable_lsn());
+            if (getNextConsumedLSN() < flushReqLSN) {
+                // if logrec hasn't been read into heap yet, then selection
+                // will never reach it. Do another round until heap has
+                // consumed it.
+                if (control.endLSN < flushReqLSN) {
+                    control.endLSN = flushReqLSN;
+                }
+                DBGTHRD(<< "LSN requested for flush hasn't been consumed yet. "
+                        << "Trying again after another round");
+                continue;
+            }
+
+            while (directory->getLastLSN() <= flushReqLSN) {
+                if (!selection()) {
+                    /* Heap empty -- this can happen if transaction activity
+                     * stopped after the requested LSN, so that there are no
+                     * more incoming log records to trigger the flushing of the
+                     * current run. In this case, the directory's lastLSN will
+                     * never reach the requested LSN. Thus, we force a flush
+                     * of the write buffer and closing of the current run.
+                     */
+                    w_assert0(heap->size() == 0);
+                    // No heap insertions will happen concurrently since I'm the
+                    // only thread who can do that.
+
+                    blkAssemb->requestFlush();
+
+                    /* Now we know that the requested LSN has been processed
+                     * by the heap and all archiver temporary memory has been
+                     * flushed. Thus, we know it has been fully processed and
+                     * all relevant log records are available in the archive.
+                     */
+                    break;
+                }
+                ::usleep(1000); // 1ms
+            }
+            flushReqLSN = lsn_t::null;
+            continue;
         }
 
         if (control.endLSN == lsn_t::null
@@ -1481,6 +1548,38 @@ void LogArchiver::run()
     while (selection()) {}
 
     w_assert0(heap->size() == 0);
+}
+
+bool LogArchiver::requestFlushAsync(lsn_t reqLSN)
+{
+    lintel::atomic_thread_fence(lintel::memory_order_acquire);
+    if (flushReqLSN != lsn_t::null) {
+        return false;
+    }
+    flushReqLSN = reqLSN;
+    lintel::atomic_thread_fence(lintel::memory_order_release);
+
+    // Other thread may race with us and win -- recheck
+    lintel::atomic_thread_fence(lintel::memory_order_acquire);
+    if (flushReqLSN != reqLSN) {
+        return false;
+    }
+    return true;
+}
+
+void LogArchiver::requestFlushSync(lsn_t reqLSN)
+{
+    while (!requestFlushAsync(reqLSN))
+    {}
+    // when log archiver is done processing the flush request, it will set
+    // flushReqLSN back to null
+    while(true) {
+        lintel::atomic_thread_fence(lintel::memory_order_acquire);
+        if (flushReqLSN == lsn_t::null) {
+            break;
+        }
+        ::usleep(1000); // 1ms
+    }
 }
 
 /**

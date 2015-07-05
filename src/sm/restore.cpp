@@ -160,10 +160,11 @@ void RestoreScheduler::setSinglePass(bool singlePass)
 
 RestoreMgr::RestoreMgr(const sm_options& options,
         LogArchiver::ArchiveDirectory* archive, vol_t* volume, bool useBackup,
-        bool takeBackup)
+        lsn_t failureLSN, bool takeBackup)
     : smthread_t(t_regular, "Restore Manager"),
     archive(archive), volume(volume), numRestoredPages(0),
-    metadataRestored(false), useBackup(useBackup), takeBackup(takeBackup)
+    metadataRestored(false), useBackup(useBackup), takeBackup(takeBackup),
+    failureLSN(failureLSN)
 {
     w_assert0(archive);
     w_assert0(volume);
@@ -577,6 +578,22 @@ void RestoreMgr::markSegmentRestored(char* workspace, unsigned segment, bool red
 
 void RestoreMgr::run()
 {
-    // for now, restore thread only runs restore loop
+    LogArchiver* la = smlevel_0::logArchiver;
+    w_assert0(la);
+    w_assert0(la->getDirectory());
+
+    if (failureLSN != lsn_t::null) {
+        // Wait for archiver to persist (or at least make available for
+        // probing) all runs until this LSN.
+        DBGTHRD(<< "Restore waiting for log archiver to reach LSN "
+                << failureLSN);
+
+        // wait for log record to be consumed
+        while (la->getNextConsumedLSN() < failureLSN) {
+            ::usleep(1000); // 1ms
+        }
+        la->requestFlushSync(failureLSN);
+    }
+
     restoreLoop();
 }

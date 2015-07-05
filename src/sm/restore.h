@@ -31,7 +31,8 @@ public:
      * in vol_t with the take_backup() method.
      */
     RestoreMgr(const sm_options&, LogArchiver::ArchiveDirectory*, vol_t*,
-            bool useBackup, bool takeBackup = false);
+            bool useBackup, lsn_t failureLSN = lsn_t::null,
+            bool takeBackup = false);
     virtual ~RestoreMgr();
 
     /** \brief Returns true if given page is already restored.
@@ -150,6 +151,12 @@ protected:
      * (false only for experiments that simulate traditional restore)
      */
     bool instantRestore;
+
+    /** \brief LSN of restore_begin log record, indicating at which LSN the
+     * volume failure was detected. At startup, we must wait until this LSN
+     * is made available in the archiver to avoid lost updates.
+     */
+    lsn_t failureLSN;
 
     /** \brief Gives the segment number of a certain page ID.
      */

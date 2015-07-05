@@ -273,6 +273,10 @@ private:
     int _backup_write_fd;
     string _backup_write_path;
 
+    /** Buffer to create restore_begin lorec manually
+     *  (128 bytes are enough since it contains only vid) */
+    char _logrec_buf[128];
+
     /** Methods to create and destroy _alloc_cache, _stnode_cache, and
      * _fixed_bf */
     void clear_caches();

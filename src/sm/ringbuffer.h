@@ -47,7 +47,7 @@ public:
     bool isEmpty() { return begin == end && bparity == eparity; }
     size_t getBlockSize() { return blockSize; }
     size_t getBlockCount() { return blockCount; }
-    void set_finished() { finished = true; }
+    void set_finished(bool f = true) { finished = f; }
     bool* get_finished() { return &finished; } // not thread-safe
     bool isFinished(); // thread-safe
 

@@ -364,6 +364,8 @@ public:
 
         static const logrec_t* SKIP_LOGREC;
 
+        ArchiveDirectory* getDirectory() { return directory; }
+
         WriterThread(AsyncRingBuffer* writebuf, ArchiveDirectory* directory)
             :
               BaseThread(writebuf, "LogArchiver_WriterThread"),
@@ -412,6 +414,7 @@ public:
         bool add(logrec_t* lr);
         void finish(int run);
         void shutdown();
+        void requestFlush();
 
         lsn_t getLastLSN() { return lastLSN; }
 
@@ -682,6 +685,8 @@ public:
     virtual void run();
     void activate(lsn_t endLSN = lsn_t::null, bool wait = true);
     void shutdown();
+    bool requestFlushAsync(lsn_t);
+    void requestFlushSync(lsn_t);
 
     ArchiveDirectory* getDirectory() { return directory; }
     lsn_t getNextConsumedLSN() { return consumer->getNextLSN(); }
@@ -713,6 +718,7 @@ private:
     bool selfManaged;
     bool eager;
     lsn_t lastEndLSN;
+    lsn_t flushReqLSN;
 
     void replacement();
     bool selection();

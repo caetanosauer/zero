@@ -28,6 +28,9 @@
 
 #include "sm.h"
 
+// Needed to get LSN of restore_begin log record
+#include "logdef_gen.cpp"
+
 const int vol_m::MAX_VOLS;
 
 vol_m::vol_m(const sm_options&)
@@ -497,10 +500,6 @@ rc_t vol_t::mark_failed(bool evict, bool redo)
 
     bool useBackup = _backups.size() > 0;
 
-    _restore_mgr = new RestoreMgr(ss_m::get_options(),
-            ss_m::logArchiver->getDirectory(), this, useBackup);
-    _restore_mgr->fork();
-
     // open backup file -- may already be open due to new backup being taken
     if (useBackup && _backup_fd < 0) {
         W_DO(open_backup());
@@ -516,11 +515,16 @@ rc_t vol_t::mark_failed(bool evict, bool redo)
         // bf_tree_m::fix_root
     }
 
+    lsn_t failureLSN = lsn_t::null;
     if (!redo) {
-        sys_xct_section_t ssx(true);
-        log_restore_begin(_vid);
-        ssx.end_sys_xct(RCOK);
+        // Create and insert logrec manually to get its LSN
+        new (_logrec_buf) restore_begin_log(_vid);
+        W_DO(ss_m::log->insert(*((logrec_t*) _logrec_buf), &failureLSN));
     }
+
+    _restore_mgr = new RestoreMgr(ss_m::get_options(),
+            ss_m::logArchiver->getDirectory(), this, useBackup, failureLSN);
+    _restore_mgr->fork();
 
     return RCOK;
 }
@@ -1085,7 +1089,7 @@ rc_t vol_t::take_backup(string path)
 
     // Instantiate special restore manager for taking backup
     RestoreMgr restore(ss_m::get_options(), ss_m::logArchiver->getDirectory(),
-            this, useBackup, true /* takeBackup */);
+            this, useBackup, lsn_t::null, true /* takeBackup */);
     restore.setSinglePass(true);
     restore.fork();
     restore.join();
