@@ -98,6 +98,7 @@ class log_core;
 class lock_m;
 class LogArchiver;
 class ArchiveMerger;
+class ticker_thread_t;
 
 class tid_t;
 class option_t;
@@ -577,6 +578,8 @@ public:
     static log_core* clog;
     static LogArchiver* logArchiver;
     static ArchiveMerger* archiveMerger;
+
+    static ticker_thread_t* _ticker;
 
     static LOG_WARN_CALLBACK_FUNC log_warn_callback;
     static LOG_ARCHIVED_CALLBACK_FUNC log_archived_callback;

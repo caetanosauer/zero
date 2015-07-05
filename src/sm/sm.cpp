@@ -182,6 +182,54 @@ smlevel_0::xct_impl_t smlevel_0::xct_impl
     = smlevel_0::XCT_PLOG;
 #endif
 
+class ticker_thread_t : public smthread_t
+{
+public:
+    ticker_thread_t(bool msec = false)
+        : smthread_t(t_regular, "ticker"), msec(msec)
+    {
+        interval_usec = 1000; // 1ms
+        if (!msec) {
+            interval_usec *= 1000;
+        }
+        stop = false;
+    }
+
+    virtual ~ticker_thread_t() {}
+
+    void shutdown()
+    {
+        stop = true;
+        lintel::atomic_thread_fence(lintel::memory_order_release);
+    }
+
+    void run()
+    {
+        while (true) {
+            lintel::atomic_thread_fence(lintel::memory_order_acquire);
+            if (stop) {
+                return;
+            }
+            ::usleep(interval_usec);
+            if (msec) {
+                sysevent::log(logrec_t::t_tick_msec);
+            }
+            else {
+                sysevent::log(logrec_t::t_tick_sec);
+            }
+        }
+    }
+
+private:
+    int interval_usec;
+    bool msec;
+    bool stop;
+    // 80 bytes is enough to hold ticker logrec
+    char lrbuf[80];
+};
+
+ticker_thread_t* smlevel_0::_ticker = 0;
+
 /*
  *  Class ss_m code
  */
@@ -470,6 +518,13 @@ ss_m::_construct_once()
     SSM = this;
 
     me()->mark_pin_count();
+
+    _ticker = NULL;
+    if (_options.get_bool_option("sm_ticker_enable", false)) {
+        bool msec = _options.get_bool_option("sm_ticker_msec", false);
+        _ticker = new ticker_thread_t(msec);
+        _ticker->fork();
+    }
 
     _do_restart();
 
@@ -827,6 +882,12 @@ ss_m::_destruct_once()
 
 
     _finish_recovery();
+
+    if (_ticker) {
+        _ticker->shutdown();
+        _ticker->join();
+        delete _ticker;
+    }
 
     // now it's safe to do the clean_up
     // The code for distributed txn (prepared xcts has been deleted, the input paramter
