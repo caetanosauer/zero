@@ -26,6 +26,7 @@ set(sm_STAT_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/chkpt_serial.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/common_templates.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/crash.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/eventlog.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/fixable_page_h.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/generic_page.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/logarchiver.cpp

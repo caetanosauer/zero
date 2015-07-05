@@ -88,6 +88,7 @@ class prologue_rc_t;
 #include "logbuf_common.h"
 #include "log_core.h"
 #include "logbuf_core.h"
+#include "eventlog.h"
 
 #include <netdb.h> // CS: for generate_new_lvid
 

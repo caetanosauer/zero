@@ -4,6 +4,11 @@
 #include "boost/date_time/gregorian/gregorian.hpp"
 #include "boost/date_time/posix_time/posix_time.hpp"
 
+#define SM_SOURCE
+
+#include "sm_base.h"
+#include "logrec.h"
+
 class sysevent_timer {
 public:
 
@@ -33,9 +38,11 @@ public:
     };
 };
 
-enum sysevent_log_t {
-    SYSEV_SEC_TICK,
-    SYSEV_MSEC_TICK
+class sysevent {
+public:
+    static void log(logrec_t::kind_t kind);
+    static void log_page_read(shpid_t shpid);
+    static void log_page_write(shpid_t shpid, uint32_t cnt);
 };
 
 #endif

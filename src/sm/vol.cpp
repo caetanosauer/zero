@@ -25,6 +25,7 @@
 #include "bf_tree.h"
 #include "restore.h"
 #include "logarchiver.h"
+#include "eventlog.h"
 
 #include "sm.h"
 
@@ -1014,6 +1015,8 @@ rc_t vol_t::read_page(shpid_t pnum, generic_page& page)
     }
     W_DO(err);
 
+    sysevent::log_page_read(pnum);
+
     return RCOK;
 }
 
@@ -1214,6 +1217,8 @@ rc_t vol_t::write_many_pages(shpid_t pnum, const generic_page* const pages, int 
     fake_disk_latency(start);
     ADD_TSTAT(vol_blks_written, cnt);
     INC_TSTAT(vol_writes);
+
+    sysevent::log_page_write(pnum, cnt);
 
     return RCOK;
 }

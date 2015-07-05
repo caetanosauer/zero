@@ -99,7 +99,6 @@
 #########################################################################
 # type             XSRUMAL  fudge    arg                                #
 #########################################################################
-sysevent           1000000 0.0 (unsigned code, char* argument);
 comment            1011001 1.0 (const char* msg);
 compensate         1000001 0.0 (const lsn_t& rec_lsn);
 skip               0000000 0.0 ();
@@ -233,6 +232,14 @@ btree_split            1110100 1.0 (const btree_page_h& page,
 
 btree_compress_page    1110000 1.0 (const btree_page_h& page,
     const w_keystr_t& low, const w_keystr_t& high, const w_keystr_t& chain);
+
+### SYSTEM EVENTS (constructor does not matter)
+tick_sec             0000000 0.0 ();
+tick_msec            0000000 0.0 ();
+benchmark_start      0000000 0.0 ();
+page_write           0000000 0.0 ();
+page_read            0000000 0.0 ();
+
 #########################################################################
 # type             XSRUMAL  fudge    arg                                #
 #########################################################################

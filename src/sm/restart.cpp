@@ -1870,21 +1870,16 @@ restart_m::analysis_pass_backward(
             break;
 
         default:
-            // We should only see the following log types and they are no-op, and we did not
-            // create transaction for them either
-            // t_comment
-            // t_skip
-            // t_max_logrec
-
-            if (r.type()!=logrec_t::t_comment &&   // Comments
-                !r.is_skip() &&                    // Marker for the end of partition
-                r.type()!=logrec_t::t_max_logrec)  // End of log type
-            {
-                // Retrieve a log buffer which we don't know how to handle
-                // Raise erroe
-                W_FATAL_MSG(fcINTERNAL, << "Unexpected log record type from default: "
-                        << r.type_str());
-            }
+            // CS: do nothing if we can't recognize logrec
+            // if (r.type()!=logrec_t::t_comment &&   // Comments
+            //     !r.is_skip() &&                    // Marker for the end of partition
+            //     r.type()!=logrec_t::t_max_logrec)  // End of log type
+            // {
+            //     // Retrieve a log buffer which we don't know how to handle
+            //     // Raise erroe
+            //     W_FATAL_MSG(fcINTERNAL, << "Unexpected log record type from default: "
+            //             << r.type_str());
+            // }
             break;
         }// switch
     }

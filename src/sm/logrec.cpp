@@ -377,12 +377,6 @@ xct_abort_log::xct_abort_log()
     fill(0, 0);
 }
 
-sysevent_log::sysevent_log(unsigned code, char* argument)
-{
-    (void) code;
-    (void) argument;
-}
-
 /*********************************************************************
  *
  *  comment_log
