@@ -3970,7 +3970,12 @@ restart_m::redo_log_pass(
                             // Page allocation - taken care of as part of page format
                             // Page deallocation - no need from a recovery
                             if (r.type() != logrec_t::t_alloc_a_page
-                                    &&r.type() != logrec_t::t_alloc_a_page)
+                                    && r.type() != logrec_t::t_alloc_a_page
+                                    // CS TODO -- restore not supported yet
+                                    && r.type() != logrec_t::t_restore_begin
+                                    && r.type() != logrec_t::t_restore_segment
+                                    && r.type() != logrec_t::t_restore_end
+                               )
                             {
                                 DBGOUT3(<<"redo - no page, ssx");
                                 sys_xct_section_t sxs (true); // single log!

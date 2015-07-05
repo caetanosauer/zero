@@ -207,6 +207,8 @@ rc_t vol_m::sx_dismount(const char* device, bool logit)
 rc_t vol_m::sx_add_backup(vid_t vid, string path, bool logit)
 {
     vol_t* vol = get(vid);
+    w_assert0(vol);
+
     if (logit) {
         // Make sure backup volume header matches this volume
         volhdr_t vhdr;
@@ -237,7 +239,7 @@ rc_t vol_m::sx_add_backup(vid_t vid, string path, bool logit)
     spinlock_write_critical_section cs(&_mutex);
 
     // mount/dismount may occur before we acquire mutex
-    if (vol != get(vid)) {
+    if (vol != volumes[size_t(vid) - 1]) {
         W_RETURN_RC_MSG(eRETRY, << "Volume changed while adding backup file");
     }
 
@@ -1041,11 +1043,8 @@ rc_t vol_t::read_backup(shpid_t first, size_t count, void* buf)
     // Short I/O is still possible because backup is only taken until last used
     // page, i.e., the file may be smaller than the total quota.
     if (read_count < (int) count) {
-        shpid_t last_used = num_pages() -
-            get_alloc_cache()->get_total_free_page_count();
-        // Actual short I/O only happens if we are not reading past the last
-        // used page
-        w_assert0(first + count > last_used);
+        // Actual short I/O only happens if we are not reading past last page
+        w_assert0(first + count <= num_pages());
     }
 
     // Here, unlike in read_page, virgin pages don't have to be zeroed, because
