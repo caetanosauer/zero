@@ -178,7 +178,7 @@ RestoreMgr::RestoreMgr(const sm_options& options,
     }
 
     reuseRestoredBuffer =
-        options.get_bool_option("sm_restore_reuse_buffer", true);
+        options.get_bool_option("sm_restore_reuse_buffer", false);
 
     DO_PTHREAD(pthread_mutex_init(&restoreCondMutex, NULL));
     DO_PTHREAD(pthread_cond_init(&restoreCond, NULL));
@@ -312,6 +312,7 @@ bool RestoreMgr::requestRestore(const shpid_t& pid, generic_page* addr)
             // (buffer pool logic is responsible for ensuring this)
             w_assert1(bufferedRequests.find(pid) == bufferedRequests.end());
 
+            DBGTHRD(<< "Adding request " << pid);
             bufferedRequests[pid] = addr;
             return true;
         }
@@ -554,7 +555,11 @@ void RestoreMgr::markSegmentRestored(char* workspace, unsigned segment, bool red
             if (pos != bufferedRequests.end()) {
                 char* wpage = workspace + (sizeof(generic_page) * i);
 
+                w_assert1(((generic_page*) wpage)->pid.page == firstPage + i);
                 memcpy(pos->second, wpage, sizeof(generic_page));
+                w_assert1(pos->second->pid.page == firstPage + i);
+
+                DBGTHRD(<< "Deleting request " << pos->first);
                 bufferedRequests.erase(pos);
             }
         }
@@ -596,4 +601,6 @@ void RestoreMgr::run()
     }
 
     restoreLoop();
+
+    w_assert1(bufferedRequests.size() == 0);
 }
