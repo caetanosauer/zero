@@ -1391,20 +1391,16 @@ void LogArchiver::replacement()
 
 void LogArchiver::pushIntoHeap(logrec_t* lr)
 {
-    if (!heap->push(lr)) {
+    while (!heap->push(lr)) {
         // heap full -- invoke selection and try again
-        // method returns bool, but result is not used for now (TODO)
         DBGTHRD(<< "Heap full! Invoking selection");
-        selection();
-        // Try push once again
-        if (!heap->push(lr)) {
-            // this must be an error -- selection was invoked to free up
-            // one block worth of records and there is still no space.
-            // In theory, this could happen with a heavily fragmented
-            // workpsace, but in that case, we prefer to catch the error
-            // and so something about it
+        bool success = selection();
+
+        w_assert0(success || heap->size() == 0);
+
+        if (heap->size() == 0) {
             W_FATAL_MSG(fcINTERNAL,
-                    << "Heap still full after selection -- aborting");
+                    << "Heap empty but push not possible!");
         }
     }
 }
