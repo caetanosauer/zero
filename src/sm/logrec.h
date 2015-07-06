@@ -224,6 +224,7 @@ public:
     void                 set_pid(const lpid_t& p);
     kind_t               type() const;
     const char*          type_str() const;
+    static const char*   get_type_str(kind_t);
     const char*          cat_str() const;
     const char*          data() const;
     char*                data();

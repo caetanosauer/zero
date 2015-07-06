@@ -95,10 +95,16 @@ logrec_t::cat_str() const
  *  Return a string describing the type of the log record.
  *
  *********************************************************************/
-const char*
+inline const char*
 logrec_t::type_str() const
 {
-    switch (header._type)  {
+    return get_type_str(type());
+}
+
+const char*
+logrec_t::get_type_str(kind_t type)
+{
+    switch (type)  {
 #        include "logstr_gen.cpp"
     default:
       return 0;
