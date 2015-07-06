@@ -806,7 +806,7 @@ void page_img_format_t::apply(fixable_page_h* page)
     w_assert1(beginning_bytes >= btree_page::hdr_sz);
     w_assert1(beginning_bytes + ending_bytes <= sizeof(btree_page));
     char *pp_bin = (char *) page->get_generic_page();
-    ::memcpy (pp_bin, data, beginning_bytes); // <<<>>>
+    ::memcpy (pp_bin, data, beginning_bytes);
     ::memcpy (pp_bin + sizeof(btree_page) - ending_bytes,
             data + beginning_bytes, ending_bytes);
 }
