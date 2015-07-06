@@ -883,12 +883,6 @@ ss_m::_destruct_once()
 
     _finish_recovery();
 
-    if (_ticker) {
-        _ticker->shutdown();
-        _ticker->join();
-        delete _ticker;
-    }
-
     // now it's safe to do the clean_up
     // The code for distributed txn (prepared xcts has been deleted, the input paramter
     // in cleanup() is not used
@@ -964,6 +958,12 @@ ss_m::_destruct_once()
         logArchiver->shutdown();
         delete logArchiver;
         logArchiver = 0;
+    }
+
+    if (_ticker) {
+        _ticker->shutdown();
+        _ticker->join();
+        delete _ticker;
     }
 
     if(log) {
