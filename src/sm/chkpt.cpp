@@ -75,6 +75,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 struct RawLock;            // Lock information gathering
 #include "restart.h"
 #include "vol.h"
+#include <algorithm>
 
 
 #ifdef EXPLICIT_TEMPLATE
@@ -307,7 +308,8 @@ void chkpt_m::synch_take()
         CmpXctLockTids   lock_cmp;
         XctLockHeap      dummy_heap(lock_cmp);
 
-        take(t_chkpt_sync, dummy_heap);
+        //take(t_chkpt_sync, dummy_heap);
+        dcpld_take(t_chkpt_sync, dummy_heap);
         w_assert1(0 == dummy_heap.NumElements());
     }
     return;
@@ -331,6 +333,638 @@ void chkpt_m::synch_take(XctLockHeap& lock_heap)
         take(t_chkpt_sync, lock_heap, true);
     }
     return;
+}
+
+void chkpt_m::scan_log(lsn_t& begin_lsn, lsn_t& end_lsn, chkpt_t& new_chkpt)
+{
+    const lsn_t MAX_LSN = log->curr_lsn() + 1;
+    w_assert1(begin_lsn < MAX_LSN);
+
+    DBGOUT1(<<"scan_log("<<begin_lsn<<", "<<end_lsn<<")");
+
+    log_i         scan(*log, begin_lsn);
+    logrec_t*     log_rec_buf;
+    lsn_t         lsn;
+
+    // Assert first record is Checkpoint Begin Log
+    // and get last mount/dismount lsn from it
+    {
+        if (! scan.xct_next(lsn, log_rec_buf))
+        {
+            W_COERCE(scan.get_last_rc());
+        }
+        logrec_t&        r = *log_rec_buf;
+
+        // The first record must be a 'begin checkpoint', otherwise we don't want to continue, error out
+        if (r.type() != logrec_t::t_chkpt_begin)
+        {
+            DBGOUT1( << setiosflags(ios::right) << lsn
+                     << resetiosflags(ios::right) << " R: " << r);
+            W_FATAL_MSG(fcINTERNAL, << "First log record in Log Analysis is not a begin checkpoint log: " << r.type());
+        }
+    }
+
+    w_auto_delete_t<logrec_t> logrec(new logrec_t);
+
+    int num_chkpt_end_handled = 0;
+
+    while (scan.xct_next(lsn, log_rec_buf) && lsn < end_lsn)
+    {
+        logrec_t& r = *log_rec_buf;
+
+        // Scan next record
+        DBGOUT3( << setiosflags(ios::right) << lsn
+                  << resetiosflags(ios::right) << " A: " << r );
+
+        // If LSN is not intact, stop now
+        if (lsn != r.lsn_ck())
+            W_FATAL_MSG(fcINTERNAL, << "Bad LSN from recovery log scan: " << lsn);
+
+        // CS: volume operations are SSX's without pid
+        if (r.is_single_sys_xct() && !r.null_pid())
+        {
+
+            w_assert1(!r.is_undo()); // no UNDO for ssx
+            w_assert0(r.is_redo());  // system txn is REDO only
+            if(!r.is_skip()) {
+                if(!r.null_pid()) {
+                    //Insert in the buffer table
+                    {
+                        lpid_t pid = r.construct_pid();
+                        if (0 == pid.page) {
+                            W_FATAL_MSG(fcINTERNAL, << "Page # = 0 from a system transaction log record");
+                        }
+                        size_t page = distance(new_chkpt.pid.begin(), find(new_chkpt.pid.begin(),
+                                                                           new_chkpt.pid.end(),
+                                                                           pid));
+                        if(page != new_chkpt.pid.size()) { //page exist in table
+                            if(lsn.data() < new_chkpt.rec_lsn[page].data()) {
+                                new_chkpt.rec_lsn[page] = lsn;
+                            }
+                            if(lsn.data() > new_chkpt.page_lsn[page].data()) {
+                                new_chkpt.page_lsn[page] = lsn;
+                            }
+                        }
+                        else {
+                            new_chkpt.pid.push_back(pid);
+                            new_chkpt.store.push_back(r.snum());
+                            new_chkpt.rec_lsn.push_back(lsn.data());
+                            new_chkpt.page_lsn.push_back(lsn.data());
+                        }
+                    }
+
+                    if (r.is_multi_page()) {
+                        //Insert in the buffer table
+                        {
+                            lpid_t pid2 = r.construct_pid2();
+                            if (0 == pid2.page) {
+                                W_FATAL_MSG(fcINTERNAL, << "Page # = 0 from a system transaction log record");
+                            }
+                            size_t page = distance(new_chkpt.pid.begin(), find(new_chkpt.pid.begin(),
+                                                                               new_chkpt.pid.end(),
+                                                                               pid2));
+                            if(page != new_chkpt.pid.size()) { //page exist in table
+                                if(lsn.data() < new_chkpt.rec_lsn[page].data()) {
+                                    new_chkpt.rec_lsn[page] = lsn;
+                                }
+                                if(lsn.data() > new_chkpt.page_lsn[page].data()) {
+                                    new_chkpt.page_lsn[page] = lsn;
+                                }
+                            }
+                            else {
+                                new_chkpt.pid.push_back(pid2);
+                                new_chkpt.store.push_back(r.snum());
+                                new_chkpt.rec_lsn.push_back(lsn.data());
+                                new_chkpt.page_lsn.push_back(lsn.data());
+                            }
+                        }
+                    }
+                }
+            }
+            continue;
+        }
+
+        w_assert1(!r.is_multi_page());
+
+        size_t xd = new_chkpt.tid.size();
+
+        if(!r.is_single_sys_xct()) {
+            if(r.tid() != tid_t::null) {
+                xd = std::distance(new_chkpt.tid.begin(), find(new_chkpt.tid.begin(), new_chkpt.tid.end(), r.tid()));
+                if(xd == new_chkpt.tid.size()) {
+                    if(r.type() != logrec_t::t_comment &&
+                       r.type() != logrec_t::t_skip &&
+                       r.type() != logrec_t::t_max_logrec) {
+                        // Transaction not present in table
+                        new_chkpt.tid.push_back(r.tid());
+                        new_chkpt.state.push_back(xct_t::xct_active);
+                        new_chkpt.last_lsn.push_back(lsn);
+                        new_chkpt.undo_nxt.push_back(r.xid_prev());
+                        new_chkpt.first_lsn.push_back(MAX_LSN); // initialize first lsn to a large value
+                        
+                        xd = new_chkpt.tid.size() - 1;
+
+                        if (r.tid() > new_chkpt.youngest) {
+                            new_chkpt.youngest = r.tid();
+                        }
+                    }
+                }
+                else {
+                    // Transaction present in table
+                    new_chkpt.last_lsn[xd] = lsn;
+                }
+            }
+        }
+
+#define LOG_INSERT(constructor_call, rlsn)            \
+    do {                                              \
+        new (logrec) constructor_call;                \
+        W_COERCE( ss_m::log->insert(*logrec, rlsn) );       \
+        if(!ss_m::log->consume_chkpt_reservation(logrec->length())) { \
+            chkpt_serial_m::write_release();                    \
+            W_FATAL(eOUTOFLOGSPACE);                            \
+        }                                                       \
+    } while(0)
+
+
+        switch (r.type())
+        {
+            case logrec_t::t_chkpt_begin:
+                break;
+
+            case logrec_t::t_chkpt_dev_tab:
+                if (num_chkpt_end_handled == 0)
+                {
+                    chkpt_dev_tab_t* tab = (chkpt_dev_tab_t*) r.data();
+                    std::vector<string> dnames;
+                    tab->read_devnames(dnames);
+                    w_assert0(tab->count == dnames.size());
+                    for (int i = 0; i < tab->count; i++) {
+                        new_chkpt.dev_paths.push_back(dnames[i]);
+                        DBGOUT1(<<dnames[i]);
+                    }
+                    new_chkpt.next_vid += tab->next_vid;
+                }
+                break;
+
+            case logrec_t::t_chkpt_backup_tab:
+                if (num_chkpt_end_handled == 0)
+                {
+                    chkpt_backup_tab_t* tab = (chkpt_backup_tab_t*) r.data();
+                    std::vector<vid_t> vids;
+                    std::vector<string> paths;
+                    tab->read(vids, paths);
+                    w_assert0(tab->count == vids.size());
+                    w_assert0(tab->count == paths.size());
+
+                    for (int i = 0; i < tab->count; i++) {
+                        new_chkpt.backup_vids.push_back(vids[i]);
+                        new_chkpt.backup_paths.push_back(paths[i]);
+                    }
+                }
+                break;
+
+            case logrec_t::t_chkpt_restore_tab:
+                if (num_chkpt_end_handled == 0)
+                {
+                    //chkpt_restore_tab_t* tab = (chkpt_restore_tab_t*) r.data();
+                    //new_chkpt.restore_table.push_back(*tab);
+
+                }
+                break;
+
+            case logrec_t::t_chkpt_bf_tab:
+                if (num_chkpt_end_handled == 0)
+                {
+                    chkpt_bf_tab_t* tab = (chkpt_bf_tab_t*) r.data();
+                    for (uint i = 0; i < tab->count; i++)  {
+
+                        size_t page_idx = distance(new_chkpt.pid.begin(), find(new_chkpt.pid.begin(), new_chkpt.pid.end(), tab->brec[i].pid)); 
+                        if(page_idx == new_chkpt.pid.size())
+                        {
+                            //Page did not exist in the new table yet
+                            new_chkpt.pid.push_back(tab->brec[i].pid);
+                            new_chkpt.store.push_back(tab->brec[i].store);
+                            new_chkpt.rec_lsn.push_back(tab->brec[i].rec_lsn);
+                            new_chkpt.page_lsn.push_back(tab->brec[i].page_lsn);
+                        }
+                        else
+                        {
+                            new_chkpt.rec_lsn[page_idx] = tab->brec[i].rec_lsn;
+                            // We have passed by a log record of this page.
+                            // It is already in the new table.
+
+                        }
+                    }
+                }
+                break;
+
+            case logrec_t::t_chkpt_xct_lock:
+                if (num_chkpt_end_handled == 0)
+                {
+                    //chkpt_xct_lock_t* tab = (chkpt_xct_lock_t*) r.data();
+                    //new_chkpt.lock_table.push_back(*tab);
+                }
+                break;
+
+            case logrec_t::t_chkpt_xct_tab:
+                if (num_chkpt_end_handled == 0)
+                {
+                    chkpt_xct_tab_t* tab = (chkpt_xct_tab_t*) r.data();
+                    for (uint i = 0; i < tab->count; i++)  {
+                        if(find(new_chkpt.tid.begin(), new_chkpt.tid.end(), tab->xrec[i].tid) == new_chkpt.tid.end())
+                        {
+                            //Transaction did not exist in the new table yet
+                            w_assert1((xct_t::xct_active == tab->xrec[i].state) ||
+                                      (xct_t::xct_chaining == tab->xrec[i].state) ||
+                                      (xct_t::xct_t::xct_committing == tab->xrec[i].state) ||
+                                      (xct_t::xct_t::xct_aborting == tab->xrec[i].state));
+
+                            new_chkpt.tid.push_back(tab->xrec[i].tid);
+                            new_chkpt.state.push_back(tab->xrec[i].state);
+                            new_chkpt.last_lsn.push_back(tab->xrec[i].last_lsn);
+                            new_chkpt.undo_nxt.push_back(tab->xrec[i].undo_nxt);
+                            new_chkpt.first_lsn.push_back(tab->xrec[i].first_lsn);
+
+                            if (tab->xrec[i].tid > new_chkpt.youngest) {
+                                new_chkpt.youngest = tab->xrec[i].tid;
+                            }
+                        }
+                        else
+                        {
+                            // We have passed by a log record of this transaction.
+                            // It is already in the new table.
+                            //w_assert1((xct_t::xct_active == xd->state()) ||
+                            //          (xct_t::xct_ended == xd->state()));
+
+                            // LL: since all log records after CHKPT_BEGIN are more
+                            // up-to-date than the CHKPT log records, we do not 
+                            // have to update any information here.
+
+                        }
+                    }
+                }
+                break;
+
+            case logrec_t::t_chkpt_end:
+                if (num_chkpt_end_handled == 0)
+                {
+
+                }
+                num_chkpt_end_handled++;
+                break;
+
+            case logrec_t::t_format_vol:
+                new_chkpt.next_vid++;
+                break;
+
+            case logrec_t::t_mount_vol:
+                {
+                    string dev = (const char*)(r.data_ssx());
+                    new_chkpt.dev_paths.push_back(dev);
+                }
+                break;
+            
+            case logrec_t::t_dismount_vol:
+                //remove from dev_table
+                {
+                    const char* dev_name = (const char*) (r.data_ssx());
+                    vector<string>::iterator it = find(new_chkpt.dev_paths.begin(), new_chkpt.dev_paths.end(), dev_name);
+                    new_chkpt.dev_paths.erase(it);
+                }
+                break;
+
+            case logrec_t::t_add_backup:
+                {
+                    vid_t vid = *((vid_t*) (r.data_ssx()));
+                    const char* dev_name = (const char*)(r.data_ssx() + sizeof(vid_t));
+                        
+                    new_chkpt.backup_vids.push_back(vid);
+                    new_chkpt.backup_paths.push_back(dev_name);
+                }
+                break;
+
+            case logrec_t::t_xct_freeing_space:
+                break;
+
+            case logrec_t::t_xct_end:
+                break;
+
+            case logrec_t::t_xct_end_group:
+                break;
+
+            case logrec_t::t_xct_abort:
+                break;
+
+            case logrec_t::t_compensate:
+            case logrec_t::t_store_operation:
+            case logrec_t::t_page_set_to_be_deleted:
+            case logrec_t::t_page_img_format:
+            case logrec_t::t_btree_norec_alloc:
+            case logrec_t::t_btree_split:
+            case logrec_t::t_btree_insert:
+            case logrec_t::t_btree_insert_nonghost:
+            case logrec_t::t_btree_update:
+            case logrec_t::t_btree_overwrite:
+            case logrec_t::t_btree_ghost_mark:
+            case logrec_t::t_btree_ghost_reclaim:
+            case logrec_t::t_btree_ghost_reserve:
+            case logrec_t::t_btree_foster_adopt:
+            case logrec_t::t_btree_foster_merge:
+            case logrec_t::t_btree_foster_rebalance:
+            case logrec_t::t_btree_foster_rebalance_norec:
+            case logrec_t::t_btree_foster_deadopt:
+                if (r.is_page_update()) {
+                    if (r.is_undo()) {
+
+                        new_chkpt.undo_nxt[xd] = lsn;
+                    }
+
+                    lpid_t pid = r.construct_pid();
+                    size_t page = distance(new_chkpt.pid.begin(), find(new_chkpt.pid.begin(),
+                                                                       new_chkpt.pid.end(),
+                                                                       pid));
+                    if(page != new_chkpt.pid.size()) { //page exist in table
+                        if(lsn.data() < new_chkpt.rec_lsn[page].data()) {
+                            new_chkpt.rec_lsn[page] = lsn;
+                        }
+                        if(lsn.data() > new_chkpt.page_lsn[page].data()) {
+                            new_chkpt.page_lsn[page] = lsn;
+                        }
+                    }
+                    else {
+                        new_chkpt.pid.push_back(pid);
+                        new_chkpt.store.push_back(r.snum());
+                        new_chkpt.rec_lsn.push_back(lsn.data());
+                        new_chkpt.page_lsn.push_back(lsn.data());
+                    }
+
+                }
+                else if (r.is_cpsn()) {
+                    if (r.is_undo()) {
+                        new_chkpt.undo_nxt[xd] = lsn;
+                    }
+                    else {
+                        new_chkpt.undo_nxt[xd] = lsn_t::null;
+                    }
+                    //
+                    if (r.is_redo()) {
+                        lpid_t pid = r.construct_pid();
+                        size_t page = distance(new_chkpt.pid.begin(), find(new_chkpt.pid.begin(),
+                                                                           new_chkpt.pid.end(),
+                                                                           pid));
+                        if(page != new_chkpt.pid.size()) { //page exist in table
+                            if(lsn.data() < new_chkpt.rec_lsn[page].data()) {
+                                new_chkpt.rec_lsn[page] = lsn;
+                            }
+                            if(lsn.data() > new_chkpt.page_lsn[page].data()) {
+                                new_chkpt.page_lsn[page] = lsn;
+                            }
+                        }
+                        else {
+                            new_chkpt.pid.push_back(pid);
+                            new_chkpt.store.push_back(r.snum());
+                            new_chkpt.rec_lsn.push_back(lsn.data());
+                            new_chkpt.page_lsn.push_back(lsn.data());
+                            DBGOUT1(<<"A");
+                        }
+
+                    }
+                }
+                else if (r.type()!=logrec_t::t_store_operation) {
+                    W_FATAL_MSG(fcINTERNAL, << "Unexpected log record type: " << r.type());
+                }
+                else if ((r.tid() != tid_t::null) && (xd != new_chkpt.tid.size())) {
+                    if(lsn < new_chkpt.first_lsn[xd]) {
+                        new_chkpt.first_lsn[xd] = lsn;
+                    }
+                }
+                break;
+
+            default:
+                break;
+        }
+    }
+
+
+}
+
+void chkpt_m::dcpld_take(chkpt_mode_t chkpt_mode,
+                         XctLockHeap& lock_heap,  // In: special heap to hold lock information
+                         const bool record_lock)  // In: True if need to record lock information into the heap
+{
+    if (t_chkpt_async == chkpt_mode) {
+        DBGOUT3(<< "Checkpoint request: asynch");
+    }
+    else {
+        DBGOUT3(<< "Checkpoint request: synch");
+    }
+
+    w_assert1(0 == lock_heap.NumElements());
+
+    INC_TSTAT(log_chkpt_cnt);
+
+    //Verify if checkpoint can be taken:
+    {
+        if (ss_m::log && _chkpt_thread)
+        {
+            // Log is on and chkpt thread is available, but the chkpt thread has received
+            // a 'retire' message (signal to shutdown), return without doing anything
+            if (true == _chkpt_thread->is_retired())
+            {
+                DBGOUT1(<<"END chkpt_m::take - detected retire, skip checkpoint");
+                return;
+            }
+        }
+        else if ((ss_m::shutting_down) && (t_chkpt_async == chkpt_mode))
+        {
+            // No asynch checkpoint if we are shutting down
+            DBGOUT1(<<"END chkpt_m::take - detected shutdown, skip asynch checkpoint");
+            return;
+        }
+        else if ((ss_m::shutting_down) && (t_chkpt_sync == chkpt_mode))
+        {
+            // Middle of shutdown, allow synch checkpoint request
+            DBGOUT1(<<"PROCESS chkpt_m::take - system shutdown, allow synch checkpoint");
+        }
+        else
+        {
+            // Not in shutdown
+            if (ss_m::before_recovery())
+            {
+                DBGOUT1(<<"END chkpt_m::take - before system startup/recovery, skip checkpoint");
+                return;
+            }
+            else if (ss_m::ss_m::in_recovery() && (t_chkpt_sync != chkpt_mode))
+            {
+                // Asynch checkpoint
+                if (false == ss_m::use_serial_restart())
+                {
+                    // System opened after Log Analysis phase, allow asynch checkpoint
+                    // after Log Analysis phase
+                    if (ss_m::ss_m::in_recovery_analysis())
+                        return;
+                }
+                else
+                {
+                    // System is not opened during recovery
+                    DBGOUT1(<<"END chkpt_m::take - system in recovery, skip asynch checkpoint");
+                    return;
+                }
+            }
+            else if (ss_m::in_recovery() && (t_chkpt_sync == chkpt_mode))
+            {
+                // Synch checkpoint
+                if (false == ss_m::use_serial_restart())
+                {
+                    // System opened after Log Analysis phase, accept system checkpoint anytime
+                    DBGOUT1(<<"PROCESS chkpt_m::take - system in recovery, allow synch checkpoint");
+                }
+                else
+                {
+                    // System is not opened during recovery
+                    if (ss_m::in_recovery_analysis() || ss_m::in_recovery_undo())
+                    {
+                        DBGOUT1(<<"PROCESS chkpt_m::take - system in recovery, allow synch checkpoint");
+                    }
+                    else
+                    {
+                        DBGOUT1(<<"END chkpt_m::take - system in REDO phase, disallow checkpoint");
+                        return;
+                    }
+                }
+            }
+            else
+            {
+                // We cannot be in recovery if we get here
+                if (true == ss_m::in_recovery())
+                {
+                    DBGOUT1(<<"END chkpt_m::take - system should not be in Recovery, exist checkpoint");
+                    return;
+                }
+                else
+                {
+                    if (t_chkpt_sync == chkpt_mode)
+                    {
+                        DBGOUT1(<<"PROCESS chkpt_m::take - allow synch/internal checkpoint");
+                    }
+                    else
+                    {
+                        DBGOUT1(<<"PROCESS chkpt_m::take - allow asynch/user checkpoint");
+                    }
+                }
+            }
+        }
+    } //End Verify if checkpoint can be taken.
+
+    w_auto_delete_t<logrec_t> logrec(new logrec_t);
+
+
+#define LOG_INSERT(constructor_call, rlsn)            \
+    do {                                              \
+        new (logrec) constructor_call;                \
+        W_COERCE( ss_m::log->insert(*logrec, rlsn) );       \
+        if(!ss_m::log->consume_chkpt_reservation(logrec->length())) { \
+            chkpt_serial_m::write_release();                    \
+            W_FATAL(eOUTOFLOGSPACE);                            \
+        }                                                       \
+    } while(0)
+
+    const lsn_t curr_lsn = ss_m::log->curr_lsn();
+    lsn_t begin_lsn = lsn_t::null;
+
+
+    chkpt_t new_chkpt;
+    LOG_INSERT(chkpt_begin_log(lsn_t::null), &begin_lsn);
+
+    new_chkpt.begin_lsn = begin_lsn;
+    new_chkpt.min_xct_lsn = begin_lsn;
+    new_chkpt.min_rec_lsn = begin_lsn;
+    new_chkpt.total_page_dirty = 0;
+
+    w_assert1(curr_lsn.data() <= begin_lsn.data());
+
+    lsn_t last_chkpt = ss_m::log->master_lsn();
+    if(last_chkpt != 0) {
+
+        scan_log(last_chkpt, begin_lsn, new_chkpt);
+
+        DBGOUT1(<<"==================== CHECKPOINT ====================");
+        DBGOUT1(<<"new_chkpt.next_vid = " << new_chkpt.next_vid);
+        for(uint i=0; i<new_chkpt.dev_paths.size(); i++) {
+            DBGOUT1(<<"new_chkpt.dev_paths[" << i << "] = " << new_chkpt.dev_paths[i]);
+        }
+        LOG_INSERT(chkpt_dev_tab_log(new_chkpt.next_vid, new_chkpt.dev_paths), 0);
+
+
+        LOG_INSERT(chkpt_backup_tab_log(new_chkpt.backup_vids, new_chkpt.backup_paths), 0);
+        //LOG_INSERT(chkpt_restore_tab_log(vol->vid()), 0);
+
+        for(uint i=0; i<new_chkpt.pid.size(); i++) {
+            DBGOUT1(<<"pid["<<i<<"]="<<new_chkpt.pid[i]<< " , " <<
+                      "store["<<i<<"]="<<new_chkpt.store[i]<< " , " <<
+                      "rec_lsn["<<i<<"]="<<new_chkpt.rec_lsn[i]<< " , " <<
+                      "page_lsn["<<i<<"]="<<new_chkpt.page_lsn[i]);
+        }
+        LOG_INSERT(chkpt_bf_tab_log(new_chkpt.pid.size(), (const lpid_t*)(&new_chkpt.pid),
+                                                          (const snum_t*)(&new_chkpt.store),
+                                                          (const lsn_t*)(&new_chkpt.rec_lsn),
+                                                          (const lsn_t*)(&new_chkpt.page_lsn)), 0);
+        //LOG_INSERT(chkpt_xct_lock_log(xd->tid(), per_chunk_lock_count, lock_mode, lock_hash), 0);
+        LOG_INSERT(chkpt_xct_tab_log(new_chkpt.youngest, new_chkpt.tid.size(), (const tid_t*)(&new_chkpt.tid),
+                                                                               (const smlevel_0::xct_state_t*)(&new_chkpt.state),
+                                                                               (const lsn_t*)(&new_chkpt.last_lsn),
+                                                                               (const lsn_t*)(&new_chkpt.undo_nxt),
+                                                                               (const lsn_t*)(&new_chkpt.first_lsn)), 0);
+        DBGOUT1(<<"====================================================");
+    }
+
+
+    if (ss_m::shutting_down && !ss_m::shutdown_clean) // Dirty shutdown (simulated crash)
+    {
+        /*
+        DBGOUT1(<<"chkpt_m::take ABORTED due to dirty shutdown, dirty page count = "
+                << total_page_count
+                << ", total txn count = " << total_txn_count
+                << ", total backup count = " << backup_cnt
+                << ", total vol count = " << total_dev_cnt);
+        */
+    }
+    else
+    {
+        if (new_chkpt.min_rec_lsn > new_chkpt.begin_lsn)
+            new_chkpt.min_rec_lsn = new_chkpt.begin_lsn;
+        if (new_chkpt.min_xct_lsn > new_chkpt.begin_lsn)
+            new_chkpt.min_xct_lsn = new_chkpt.begin_lsn;
+
+            w_assert3(new_chkpt.min_rec_lsn.hi() > 0);
+            w_assert3(new_chkpt.min_xct_lsn.hi() > 0);
+
+        if (0 == new_chkpt.total_page_dirty)
+        {
+            // No dirty page, the begin checkpoint lsn and redo_lsn (min_rec_lsn)
+            // must be the same
+            w_assert1(new_chkpt.begin_lsn == new_chkpt.min_rec_lsn);
+            LOG_INSERT(chkpt_end_log (new_chkpt.begin_lsn,
+                                      new_chkpt.begin_lsn,
+                                      new_chkpt.min_xct_lsn), 0);
+        }
+        else
+        {
+            // Has dirty page
+            LOG_INSERT(chkpt_end_log (new_chkpt.begin_lsn,
+                                      new_chkpt.min_rec_lsn,
+                                      new_chkpt.min_xct_lsn), 0);
+        }
+
+        W_COERCE(ss_m::log->flush_all() );
+        DBGOUT1(<<"Setting master_lsn to " << new_chkpt.begin_lsn);
+        ss_m::log->set_master(new_chkpt.begin_lsn,
+                              new_chkpt.min_rec_lsn,
+                              new_chkpt.min_xct_lsn);
+    }
+
+    DBGOUT1(<<"Exiting dcpld_take()");
 }
 
 
@@ -1361,7 +1995,8 @@ chkpt_thread_t::run()
 
         // No need to acquire checkpoint mutex before calling the checkpoint operation
         // Asynch checkpoint should never record lock information
-        ss_m::chkpt->take(chkpt_m::t_chkpt_async, dummy_heap);
+        ss_m::chkpt->dcpld_take(chkpt_m::t_chkpt_async, dummy_heap);
+        //ss_m::chkpt->take(chkpt_m::t_chkpt_async, dummy_heap);
         w_assert1(0 == dummy_heap.NumElements());
     }
 }
