@@ -4,20 +4,20 @@
 
 /* -*- mode:C++; c-basic-offset:4 -*-
      Shore-MT -- Multi-threaded port of the SHORE storage manager
-   
+
                        Copyright (c) 2007-2009
       Data Intensive Applications and Systems Labaratory (DIAS)
                Ecole Polytechnique Federale de Lausanne
-   
+
                          All Rights Reserved.
-   
+
    Permission to use, copy, modify and distribute this software and
    its documentation is hereby granted, provided that both the
    copyright notice and this permission notice appear in all copies of
    the software, derivative works or modified versions, and any
    portions thereof, and that both notices appear in supporting
    documentation.
-   
+
    This code is distributed in the hope that it will be useful, but
    WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS
@@ -91,7 +91,7 @@ struct chkpt_t{
   vector<snum_t> store;     // page lpid
   vector<lsn_t> rec_lsn;   // initial dirty lsn
   vector<lsn_t> page_lsn;  // last write lsn
- 
+
   //Lock Table (one vector per transaction)
   vector<vector<okvl_mode> > lock_mode;  // lock mode
   vector<vector<uint32_t> > lock_hash;   // lock hash
@@ -113,10 +113,10 @@ class chkpt_thread_t;
  *  class chkpt_m
  *
  *  Checkpoint Manager. User calls spawn_chkpt_thread() to fork
- *  a background thread to take checkpoint every now and then. 
+ *  a background thread to take checkpoint every now and then.
  *  User calls take() to take a checkpoint immediately.
  *
- *  User calls wakeup_and_take() to wake up the checkpoint 
+ *  User calls wakeup_and_take() to wake up the checkpoint
  *  thread to checkpoint soon.
  *
  *********************************************************************/
@@ -164,7 +164,7 @@ private:
 
 public:
     // These functions are for the use of chkpt -- to serialize
-    // logging of chkpt and prepares 
+    // logging of chkpt and prepares
 };
 
 /*<std-footer incl-file-exclusion='CHKPT_H'>  -- do not edit anything below this line -- */
