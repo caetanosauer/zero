@@ -21,14 +21,6 @@ const char* LogArchiver::RUN_PREFIX = "archive_";
 const char* LogArchiver::CURR_RUN_FILE = "current_run";
 const char* LogArchiver::CURR_MERGE_FILE = "current_merge";
 const size_t LogArchiver::MAX_LOGREC_SIZE = 3 * log_storage::BLOCK_SIZE;
-// TODO this does not work because of bug with invalid xtc objects in smthread
-//const logrec_t* WriterThread::SKIP_LOGREC = new skip_log();
-//
-// Fake skip logrec: first 2 bytes are length of 3 in little endian.
-// Third byte indicates the logrec type.
-// These three bytes when read by LogScanner will signalize end of partition,
-// even though it is not a real skip logrec due to bug above.
-const char FAKE_SKIP_LOGREC [3] = { 0x03, 0x00, (char) logrec_t::t_skip };
 
 ArchiverControl::ArchiverControl(bool* shutdownFlag)
     : endLSN(lsn_t::null), activated(false), listening(false), shutdownFlag(shutdownFlag)
@@ -263,30 +255,6 @@ void LogArchiver::ReaderThread::run()
             w_assert0(bytesRead > 0);
 
             pos += bytesRead;
-            if (control.endLSN.hi() == nextPartition - 1
-                    && pos >= control.endLSN.lo())
-            {
-                /*
-                 * CS: If we've just read the block containing the endLSN,
-                 * manually insert a fake skip logrec at the endLSN position,
-                 * to guarantee that replacement will not read beyond it, even
-                 * if archiver gets activated multiple times while the reader
-                 * thread is still running (i.e., reader "misses" some
-                 * activations) [Bug of Sep 26, 2014]
-                 */
-                // amount read from file in this current activation
-                size_t skipPos = control.endLSN.lo() % blockSize;
-                logrec_t* lr = (logrec_t*) (dest + skipPos);
-                if (lr->type() != logrec_t::t_skip) {
-                    DBGTHRD(<< "Reader setting skip logrec manually on block "
-                            << " offset " << skipPos << " LSN "
-                            << control.endLSN);
-                    // TODO -- get rid of fake logrec
-                    memcpy(lr, FAKE_SKIP_LOGREC, 3);
-                }
-                w_assert0(lr->type() == logrec_t::t_skip);
-            }
-
             buf->producerRelease();
         }
 
@@ -797,40 +765,37 @@ bool LogArchiver::LogConsumer::nextBlock()
 
 bool LogArchiver::LogConsumer::next(logrec_t*& lr)
 {
-    if (nextLSN >= endLSN) {
+    w_assert1(nextLSN <= endLSN);
+
+    bool scanned = logScanner->nextLogrec(currentBlock, pos, lr, &nextLSN,
+            &endLSN);
+
+    if (!scanned && nextLSN == endLSN) {
         DBGTHRD(<< "Replacement reached end LSN on " << nextLSN);
         /*
-         * On the next activation, replacement must start on this LSN,
-         * which will likely be in the middle of the block currently
-         * being processed. However, we don't have to worry about that
-         * because reader thread will start reading from this LSN on the
+         * nextLogrec returns false if it is about to read the LSN given in the
+         * last argument (endLSN). This means we should stop and not read any
+         * further blocks.  On the next archiver activation, replacement must
+         * start on this LSN, which will likely be in the middle of the block
+         * currently being processed. However, we don't have to worry about
+         * that because reader thread will start reading from this LSN on the
          * next activation.
          */
         return false;
     }
 
-    if (!logScanner->nextLogrec(currentBlock, pos, lr, &nextLSN))
-    {
+    w_assert1(nextLSN <= endLSN);
+    w_assert1(!scanned || lr->lsn_ck() + lr->length() == nextLSN);
+
+    if (!scanned || lr->type() == logrec_t::t_skip) {
+        /*
+         * nextLogrec returning false with nextLSN != endLSN means that we are
+         * suppose to read another block and call the method again.
+         */
         if (lr->type() == logrec_t::t_skip) {
-            /*
-             * Skip log record does not necessarily mean we should read
-             * a new partition. The durable_lsn read from the log manager
-             * is always a skip log record (at least for a brief moment),
-             * since the flush daemon ends every flush with it. In this
-             * case, however, the skip would have the same LSN as endLSN.
-             */
-            if (nextLSN < endLSN) {
-                //lastSkipLSN = lr->lsn_ck();
-                nextLSN = lsn_t(lr->lsn_ck().hi() + 1, 0);
-                DBGTHRD(<< "Replacement got skip logrec on " << lr->lsn_ck()
-                       << " setting nextLSN " << nextLSN);
-                // reset pos when reading nextBlock()
-                pos = blockSize;
-            }
-        }
-        if (nextLSN >= endLSN) {
-            DBGTHRD(<< "Replacement reached end LSN on " << nextLSN);
-            return false;
+            // Try again if reached skip -- next block should be from next file
+            nextLSN = lsn_t(nextLSN.hi() + 1, 0);
+            DBGTHRD(<< "Reached skip logrec, set nextLSN = " << nextLSN);
         }
         if (!nextBlock()) {
             // reader thread finished and consume request failed
@@ -838,13 +803,6 @@ bool LogArchiver::LogConsumer::next(logrec_t*& lr)
             return false;
         }
         return next(lr);
-    }
-
-    // nextLSN is updated by log scanner, so we must check again
-    if (nextLSN >= endLSN) {
-        DBGTHRD(<< "nextLSN updated by log scanner past endLSN to "
-                << nextLSN);
-        return false;
     }
 
     return true;
@@ -1592,9 +1550,14 @@ void LogArchiver::requestFlushSync(lsn_t reqLSN)
  *
  * Method loops until any in-block skipping is completed.
  */
-bool LogScanner::nextLogrec(char* src, size_t& pos, logrec_t*& lr, lsn_t* nextLSN)
+bool LogScanner::nextLogrec(char* src, size_t& pos, logrec_t*& lr, lsn_t* nextLSN,
+        lsn_t* stopLSN)
 {
 tryagain:
+    if (nextLSN && stopLSN && *stopLSN == *nextLSN) {
+        return false;
+    }
+
     // whole log record is not guaranteed to fit in a block
     size_t remaining = blockSize - pos;
     if (remaining == 0) {
@@ -1629,17 +1592,6 @@ tryagain:
         return false;
     }
 
-    // handle skip log record, i.e., end of partition
-    if (lr->type() == logrec_t::t_skip) {
-        // assumption: space between skip logrec and next partition
-        // is less than the block size (it should be < 8KB)
-        // TODO because we use a fake skip logrec in archive runs, the LSN will
-        // just be garbage. This also means that valid_header() will fail,
-        // so we have to do this before the consistency checks below.
-        DBGTHRD(<< "LogScanner reached skip log record on " << lr->lsn_ck());
-        return false;
-    }
-
     // assertions to check consistency of logrec
 #if W_DEBUG_LEVEL >=1
     // TODO add assert macros with DBG message
@@ -1648,9 +1600,12 @@ tryagain:
                 << " expected " << *nextLSN);
     }
 #endif
+
     w_assert1(lr->valid_header(nextLSN == NULL ? lsn_t::null : *nextLSN));
-    // nextLSN should be incremented only if not a skip logrec
-    if (nextLSN != NULL) *nextLSN += lr->length();
+
+    if (nextLSN) {
+        *nextLSN += lr->length();
+    }
 
     // handle ignorred logrecs
     if (ignore[lr->type()]) {
@@ -1666,7 +1621,7 @@ tryagain:
 
     // see if we have something to skip
     if (toSkip > 0) {
-        if (toSkip < remaining) {
+        if (toSkip <= remaining) {
             // stay in the same block after skipping
             pos += toSkip;
             //DBGTHRD(<< "In-block skip for replacement, new pos = " << pos);

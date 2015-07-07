@@ -752,7 +752,7 @@ private:
 class LogScanner {
 public:
     bool nextLogrec(char* src, size_t& pos, logrec_t*& lr,
-            lsn_t* nextLSN = NULL);
+            lsn_t* nextLSN = NULL, lsn_t* stopLSN = NULL);
 
     LogScanner(size_t blockSize)
         : truncCopied(0), truncMissing(0), toSkip(0), blockSize(blockSize)
