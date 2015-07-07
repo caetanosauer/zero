@@ -70,12 +70,36 @@ class CmpXctLockTids;
 typedef class Heap<comp_lock_info_t*, CmpXctLockTids> XctLockHeap;
 
 struct chkpt_t{
-  chkpt_dev_tab_t dev_table;
-  chkpt_backup_tab_t backup_table;
-  chkpt_restore_tab_t restore_table[];  //one per volume
-  chkpt_bf_tab_t dp_table;
-  chkpt_xct_lock_t lock_table[];  //one per transaction
-  chkpt_xct_tab_t xct_table;
+  lsn_t begin_lsn;
+  lsn_t min_rec_lsn;
+  lsn_t min_xct_lsn;
+  uint16_t total_page_dirty;
+
+  //Volume Table
+  vid_t next_vid;
+  vector<string> dev_paths;
+
+  //Backup Table
+  vector<vid_t> backup_vids;
+  vector<string> backup_paths;
+
+  //Dirty Page Table
+  vector<lpid_t> pid;     // page lpid
+  vector<snum_t> store;     // page lpid
+  vector<lsn_t> rec_lsn;   // initial dirty lsn
+  vector<lsn_t> page_lsn;  // last write lsn
+ 
+  //Lock Table (one vector per transaction)
+  vector<vector<okvl_mode> > lock_mode;  // lock mode
+  vector<vector<uint32_t> > lock_hash;   // lock hash
+
+  //Transaction Table
+  tid_t youngest;
+  vector<tid_t> tid;               // transaction ID
+  vector<smlevel_0::xct_state_t> state; // state
+  vector<lsn_t> last_lsn;          // most recent log record
+  vector<lsn_t> undo_nxt;          // undo next
+  vector<lsn_t> first_lsn;         // first lsn of the txn
 };
 
 
@@ -93,7 +117,7 @@ class chkpt_thread_t;
  *  thread to checkpoint soon.
  *
  *********************************************************************/
-class chkpt_m {
+class chkpt_m : public smlevel_0 {
 public:
     NORET            chkpt_m();
     NORET            ~chkpt_m();
@@ -114,12 +138,15 @@ public:
     void             synch_take();
     void             synch_take(XctLockHeap& lock_heap);  // Record lock information in heap
     void             take(chkpt_mode_t chkpt_mode, XctLockHeap& lock_heap, const bool record_lock = false);
+    void             dcpld_take(chkpt_mode_t chkpt_mode, XctLockHeap& lock_heap, const bool record_lock = false);
+    void             scan_log(lsn_t& begin, lsn_t& end, chkpt_t& new_chkpt);
 
 
 private:
     chkpt_thread_t*  _chkpt_thread;
     long             _chkpt_count;
-    chkpt_t*         _chkpt_current;
+    lsn_t            _chkpt_last;
+
 
 public:
     // These functions are for the use of chkpt -- to serialize
