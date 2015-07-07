@@ -75,6 +75,7 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 struct RawLock;            // Lock information gathering
 #include "restart.h"
 #include "vol.h"
+#include <algorithm>
 
 #ifdef EXPLICIT_TEMPLATE
 template class w_auto_delete_array_t<lsn_t>;
@@ -461,7 +462,7 @@ void chkpt_m::scan_log(lsn_t& begin_lsn, lsn_t& end_lsn, chkpt_t& new_chkpt)
                         new_chkpt.last_lsn.push_back(lsn);
                         new_chkpt.undo_nxt.push_back(r.xid_prev());
                         new_chkpt.first_lsn.push_back(MAX_LSN); // initialize first lsn to a large value
-                        
+
                         xd = new_chkpt.tid.size() - 1;
 
                         if (r.tid() > new_chkpt.youngest) {
@@ -539,7 +540,7 @@ void chkpt_m::scan_log(lsn_t& begin_lsn, lsn_t& end_lsn, chkpt_t& new_chkpt)
                     chkpt_bf_tab_t* tab = (chkpt_bf_tab_t*) r.data();
                     for (uint i = 0; i < tab->count; i++)  {
 
-                        size_t page_idx = distance(new_chkpt.pid.begin(), find(new_chkpt.pid.begin(), new_chkpt.pid.end(), tab->brec[i].pid)); 
+                        size_t page_idx = distance(new_chkpt.pid.begin(), find(new_chkpt.pid.begin(), new_chkpt.pid.end(), tab->brec[i].pid));
                         if(page_idx == new_chkpt.pid.size())
                         {
                             //Page did not exist in the new table yet
@@ -598,7 +599,7 @@ void chkpt_m::scan_log(lsn_t& begin_lsn, lsn_t& end_lsn, chkpt_t& new_chkpt)
                             //          (xct_t::xct_ended == xd->state()));
 
                             // LL: since all log records after CHKPT_BEGIN are more
-                            // up-to-date than the CHKPT log records, we do not 
+                            // up-to-date than the CHKPT log records, we do not
                             // have to update any information here.
 
                         }
@@ -624,7 +625,7 @@ void chkpt_m::scan_log(lsn_t& begin_lsn, lsn_t& end_lsn, chkpt_t& new_chkpt)
                     new_chkpt.dev_paths.push_back(dev);
                 }
                 break;
-            
+
             case logrec_t::t_dismount_vol:
                 //remove from dev_table
                 {
@@ -638,7 +639,7 @@ void chkpt_m::scan_log(lsn_t& begin_lsn, lsn_t& end_lsn, chkpt_t& new_chkpt)
                 {
                     vid_t vid = *((vid_t*) (r.data_ssx()));
                     const char* dev_name = (const char*)(r.data_ssx() + sizeof(vid_t));
-                        
+
                     new_chkpt.backup_vids.push_back(vid);
                     new_chkpt.backup_paths.push_back(dev_name);
                 }
