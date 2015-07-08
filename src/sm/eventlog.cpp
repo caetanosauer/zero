@@ -17,7 +17,6 @@ void sysevent::log(logrec_t::kind_t kind)
     delete lr;
 }
 
-<<<<<<< HEAD
 void sysevent::log_page_read(PageID shpid)
 {
     logrec_t* lr = new logrec_t();
