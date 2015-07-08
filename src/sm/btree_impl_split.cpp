@@ -204,7 +204,7 @@ rc_t btree_impl::_sx_split_foster_new(btree_page_h& page, lpid_t& new_page_id,
     /*
      * Step 4: Log bulk deletion and foster update on parent
      */
-    W_DO(log_btree_split(page, new_page, move_count, split_key, new_chain));
+    W_DO(log_btree_split(new_page, page, move_count, split_key, new_chain));
 
     w_assert1(new_page.lsn() != lsn_t::null);
 

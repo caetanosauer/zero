@@ -212,6 +212,7 @@ public:
      * \ingroup Single-Page-Recovery
      */
     const lsn_t&         page_prev_lsn() const;
+    const lsn_t&         page2_prev_lsn() const;
     /**
      * Sets the LSN of previous log that modified this page.
      * \ingroup Single-Page-Recovery
@@ -681,6 +682,12 @@ logrec_t::page_prev_lsn() const
 {
     // What do we need to assert in order to make sure there IS a page_prv?
     return header._page_prv;
+}
+
+inline const lsn_t&
+logrec_t::page2_prev_lsn() const
+{
+    return data_ssx_multi()->_page2_prv;
 }
 inline void
 logrec_t::set_page_prev_lsn(const lsn_t &lsn)

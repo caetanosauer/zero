@@ -1384,6 +1384,7 @@ void LogArchiver::replacement()
             // on the same multi-page log record. For restore, it must be
             // duplicated because log records are sorted and there is no chain.
             lr->set_pid(lr->construct_pid2());
+            lr->set_page_prev_lsn(lr->page2_prev_lsn());
             pushIntoHeap(lr);
         }
     }

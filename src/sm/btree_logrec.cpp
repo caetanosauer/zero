@@ -1432,8 +1432,8 @@ void btree_foster_deadopt_log::redo(fixable_page_h* p) {
 }
 
 btree_split_log::btree_split_log(
-        const btree_page_h& parent_p,
         const btree_page_h& child_p,
+        const btree_page_h& parent_p,
         uint16_t move_count,
         const w_keystr_t& new_high_fence,
         const w_keystr_t& new_chain
