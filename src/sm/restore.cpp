@@ -475,6 +475,9 @@ void RestoreMgr::restoreLoop()
                 fixable.setup_for_restore(page);
             }
 
+            w_assert1(lr->page_prev_lsn() == lsn_t::null ||
+                lr->page_prev_lsn() == page->lsn);
+
             lr->redo(&fixable);
             fixable.update_initial_and_last_lsn(lr->lsn_ck());
             fixable.update_clsn(lr->lsn_ck());
