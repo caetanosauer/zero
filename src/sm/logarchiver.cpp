@@ -55,15 +55,19 @@ bool ArchiverControl::activate(bool wait, lsn_t lsn)
     }
     // now we hold the mutex -- signal archiver thread and set endLSN
 
-    // make sure signal is sent only if thread is listening
-    if (!wait || listening) {
-        // activation may not decrease the endLSN
-        w_assert0(lsn >= endLSN);
-        endLSN = lsn;
-        activated = true;
-        DBGTHRD(<< "Sending activate signal to controlled thread");
-        DO_PTHREAD(pthread_cond_signal(&activateCond));
-    }
+    /* Make sure signal is sent only if thread is listening.
+     * TODO: BUG? The mutex alone cannot guarantee that the signal is not lost,
+     * since the activate call may happen before the thread ever starts
+     * listening. If we ever get problems with archiver getting stuck, this
+     * would be one of the first things to try. We could, e.g., replace
+     * the listening flag with something like "gotSignal" and loop this
+     * method until it's true.
+     */
+    // activation may not decrease the endLSN
+    w_assert0(lsn >= endLSN);
+    endLSN = lsn;
+    activated = true;
+    DO_PTHREAD(pthread_cond_signal(&activateCond));
     DO_PTHREAD(pthread_mutex_unlock(&mutex));
 
     /*
