@@ -593,7 +593,10 @@ rc_t vol_t::read_page(PageID pnum, generic_page& page)
         w_assert1(page.pid == pnum);
     }
 
-    sysevent::log_page_read(pnum);
+    lpid_t lpnum;
+    lpnum._vol = _vid;
+    lpnum.page = pnum;
+    sysevent::log_page_read(lpnum);
 
     return RCOK;
 }
@@ -819,7 +822,10 @@ rc_t vol_t::write_many_pages(PageID pnum, const generic_page* const pages, int c
     ADD_TSTAT(vol_blks_written, cnt);
     INC_TSTAT(vol_writes);
 
-    sysevent::log_page_write(pnum, cnt);
+    lpid_t lpnum;
+    lpnum._vol = _vid;
+    lpnum.page = pnum;
+    sysevent::log_page_write(lpnum, cnt);
 
     return RCOK;
 }
