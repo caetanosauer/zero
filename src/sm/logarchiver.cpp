@@ -1461,6 +1461,15 @@ void LogArchiver::run()
             continue;
         }
 
+        if (eager && control.endLSN.hi() == lastEndLSN.lo() &&
+                control.endLSN.lo() - lastEndLSN.lo()
+                < (int) directory->getBlockSize())
+        {
+            // To better exploit device bandwidth, we only start archiving if
+            // at least one block worth of log is available for consuption.
+            continue;
+        }
+
         if (control.endLSN == lsn_t::null
                 || control.endLSN <= lastEndLSN)
         {
