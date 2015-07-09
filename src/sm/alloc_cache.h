@@ -69,6 +69,11 @@ public:
     /** Returns if the page is already allocated. not quite fast. don't call this so often!. */
     bool is_allocated_page (shpid_t pid) const;
 
+    shpid_t last_used_pageid()
+    {
+        return _contiguous_free_pages_begin;
+    }
+
 private:
     vid_t _vid;
     bf_fixed_m* _fixed_pages;

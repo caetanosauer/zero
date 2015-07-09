@@ -237,6 +237,9 @@ public:
     /** Used for checkpointing bitmap of restored segments */
     void chkpt_restore_progress(chkpt_restore_tab_t* tab);
 
+    /** Return largest PID allocated for this volume yet **/
+    shpid_t last_used_pageid() const;
+
 private:
     // variables read from volume header -- remain constant after mount
     char             _devname[smlevel_0::max_devname];

@@ -188,13 +188,12 @@ RestoreMgr::RestoreMgr(const sm_options& options,
      * volume. If the device is lost in/with a system failure -- meaning that
      * it cannot be properly mounted --, it should contain the metadata of the
      * backup volume. By "metadata", we mean at least the number of pages in
-     * the volume, which is required to control restore progress. Note that
-     * the number of "used" pages is of no value for restore, because pages
-     * may get allocated and deallocated (possibly multiple times) during log
-     * replay.
+     * the volume, which is required to control restore progress. The maximum
+     * allocated page id, delivered by alloc_cache, is also needed
      */
     numPages = volume->num_pages();
     firstDataPid = volume->first_data_pageid();
+    lastUsedPid = volume->last_used_pageid();
 
     scheduler = new RestoreScheduler(options, this);
     bitmap = new RestoreBitmap(numPages / segmentSize + 1);
@@ -413,6 +412,12 @@ void RestoreMgr::restoreLoop()
 
         unsigned segment = getSegmentForPid(requested);
         shpid_t firstPage = getPidForSegment(segment);
+
+        if (firstPage > lastUsedPid) {
+            DBG(<< "Restored finished on last used page ID " << lastUsedPid);
+            numRestoredPages = numPages;
+            break;
+        }
 
         lpid_t start = lpid_t(volume->vid(), firstPage);
         lpid_t end = lpid_t(volume->vid(), firstPage + segmentSize);

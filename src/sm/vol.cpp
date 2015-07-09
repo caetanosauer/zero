@@ -1357,6 +1357,11 @@ bool vol_t::is_allocated_page(shpid_t pid) const
     return _alloc_cache->is_allocated_page(pid);
 }
 
+shpid_t vol_t::last_used_pageid() const
+{
+    return _alloc_cache->last_used_pageid();
+}
+
 // CS TODO why is this here?
 ostream& operator<<(ostream& o, const store_operation_param& param)
 {

@@ -89,6 +89,7 @@ public:
     size_t getNumPages() { return numPages; }
     size_t getSegmentSize() { return segmentSize; }
     shpid_t getFirstDataPid() { return firstDataPid; }
+    shpid_t getLastUsedPid() { return lastUsedPid; }
     RestoreBitmap* getBitmap() { return bitmap; }
 
     virtual void run();
@@ -117,6 +118,10 @@ protected:
     /** \brief First page ID to be restored (i.e., skipping metadata pages)
      */
     shpid_t firstDataPid;
+
+    /** \brief Last page ID to be restored (after that only unused pages)
+     */
+    shpid_t lastUsedPid;
 
     /** \brief Reader object that abstracts access to backup segments
      */
