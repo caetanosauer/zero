@@ -126,6 +126,7 @@ shpid_t RestoreScheduler::next()
     if (queue.size() > 0) {
         next = queue.front();
         queue.pop();
+        INC_TSTAT(restore_sched_queued);
     }
     else if (trySinglePass) {
         // if queue is empty, find the first not-yet-restored PID
@@ -134,6 +135,7 @@ shpid_t RestoreScheduler::next()
             next = next + restore->getSegmentSize();
         }
         firstNotRestored = next;
+        INC_TSTAT(restore_sched_seq);
     }
     else {
         next = shpid_t(0); // no next pid for now
