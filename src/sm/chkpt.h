@@ -150,6 +150,17 @@ private:
     long             _chkpt_count;
     lsn_t            _chkpt_last;
 
+    template<typename T>
+    size_t indexOf(vector<T> vector, T value) {
+      typename std::vector<T>::iterator it = find(vector.begin(), vector.end(), value);
+      if(it != vector.end()) {
+        return std::distance(vector.begin(), it);
+      }
+      else {
+        return -1;
+      }
+    }
+
 
 public:
     // These functions are for the use of chkpt -- to serialize
