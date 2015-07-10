@@ -111,6 +111,7 @@ rc_t bufferTable(ss_m* ssm, test_volume_t* test_vol)
 
     W_DO(x_btree_create_index(ssm, test_vol, _stid_list[0], _root_pid));
 
+    /*
     for(int i=0; i<10; i++) {
         ostringstream key;
         ostringstream data;
@@ -118,11 +119,15 @@ rc_t bufferTable(ss_m* ssm, test_volume_t* test_vol)
         data << "data" << i;
         W_DO(test_env->btree_insert_and_commit(_stid_list[0], key.str().c_str(), data.str().c_str()));
     }
-    W_DO(ss_m::force_buffers());
+    */
+    //W_DO(ss_m::force_buffers());
     //W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa4", "data4"));
     //W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa1", "data1"));
-    //W_DO(test_env->btree_populate_records(_stid_list[0], false, t_test_txn_commit));  // flags: Checkpoint, commit
+    W_DO(test_env->btree_populate_records(_stid_list[0], false, t_test_txn_commit));  // flags: Checkpoint, commit
+    
+    W_DO(test_env->btree_populate_records(_stid_list[0], false, t_test_txn_commit, false, '1'));  // flags: Checkpoint, commit
 
+    //W_DO(ss_m::force_buffers());
     W_DO(ss_m::checkpoint_sync());
 
     //W_DO(test_env->btree_insert_and_commit(_stid_list[0], "aa4", "data4"));
