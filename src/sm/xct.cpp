@@ -316,6 +316,7 @@ xct_t::xct_t(sm_stats_info_t* stats, timeout_in_ms timeout, bool sys_xct,
     _had_error(false)
 #endif
 {
+    w_assert3(state() == xct_active);
     if (given_tid != tid_t::null) {
         // tid is given if transaction is being built during restart
         _nxt_tid.atomic_assign_max(given_tid);
@@ -351,12 +352,16 @@ xct_t::xct_t(sm_stats_info_t* stats, timeout_in_ms timeout, bool sys_xct,
 
     put_in_order();
 
+    w_assert3(state() == xct_active);
+
     if (given_tid == tid_t::null) {
         me()->attach_xct(this);
     }
     else {
         w_assert1(me()->xct() == 0);
     }
+
+    w_assert3(state() == xct_active);
 }
 
 
