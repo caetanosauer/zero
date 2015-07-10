@@ -592,7 +592,7 @@ w_rc_t bf_tree_m::_evict_traverse_page(EvictionContext &context) {
                 uint32_t slot = (old + i) % child_count;
                 bf_idx child_idx;
                 context.traverse_depth = depth + 1;
-                if (i != 0) {
+                if (i != 0 || context.clockhand_current_depth == depth) {
                     bool swizzled;
                     _lookup_buf_imprecise(p, slot, child_idx, swizzled);
                     if (child_idx == 0) {
