@@ -2442,7 +2442,7 @@ w_rc_t bf_tree_m::_check_read_page(generic_page* parent, bf_idx idx,
         ERROUT(<< "Stale Child LSN found! Invoking Single-Page-Recovery.. parent=" << parent->pid
             << ", child pid=" << shpid << ", EMLSN=" << p_emlsn << " LSN=" << page.lsn);
 #if W_DEBUG_LEVEL>0
-        debug_dump(std::cerr);
+        // debug_dump(std::cerr);
 #endif // W_DEBUG_LEVEL>0
 
         DBGOUT3(<<"bf_tree_m::_check_read_page: After recovery, target page emlsn < parent emlsn"

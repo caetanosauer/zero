@@ -217,13 +217,11 @@ w_rc_t bf_tree_m::_get_replacement_block() {
         W_DO(wakeup_cleaners());
         g_me()->sleep(100);
         DBGOUT1(<<"woke up. now there should be some page to evict. urgency=" << urgency);
-#if W_DEBUG_LEVEL>=1
-        debug_dump(std::cout);
-#endif // W_DEBUG_LEVEL>=1
+        // debug_dump(std::cout);
     }
 
     ERROUT(<<"whoa, couldn't find an evictable page for long time. gave up!");
-    debug_dump(std::cerr);
+    // debug_dump(std::cerr);
     W_DO(evict_blocks(evicted_count, unswizzled_count, EVICT_COMPLETE));
     if (evicted_count > 0 || _freelist_len > 0) {
         return RCOK;
@@ -507,8 +505,11 @@ w_rc_t bf_tree_m::_evict_traverse_volume(EvictionContext &context) {
             // this means now we are moving on to another store.
             context.clockhand_current_depth = depth + 1; // reset descendants
             context.clockhand_pathway[depth] = store;
-            context.bufidx_pathway[depth] = root_idx;
         }
+
+        // bufidx_pathway is empty at first, so it must always be set
+        context.bufidx_pathway[depth] = root_idx;
+
         W_DO(_evict_traverse_store(context));
         if (context.is_enough()) {
             return RCOK;
