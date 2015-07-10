@@ -2178,6 +2178,11 @@ w_rc_t bf_tree_m::_evict_traverse_store(EvictionContext &context) {
         return RCOK;
     }
 
+    if (root_p.is_leaf()) {
+        // happens for very small trees
+        return RCOK;
+    }
+
     // root is never evicted/unswizzled, so it's simpler.
     uint32_t old = context.clockhand_pathway[depth];
     for (uint32_t i = 0; i < child_count; ++i) {
