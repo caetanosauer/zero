@@ -75,8 +75,6 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 struct RawLock;            // Lock information gathering
 #include "restart.h"
 #include "vol.h"
-#include <algorithm>
-
 
 #ifdef EXPLICIT_TEMPLATE
 template class w_auto_delete_array_t<lsn_t>;

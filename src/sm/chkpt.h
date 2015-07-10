@@ -64,6 +64,9 @@ Rome Research Laboratory Contract No. F30602-97-2-0247.
 #include "sm_base.h"
 #include "w_heap.h"
 
+#include <vector>
+#include <algorithm>
+
 // For checkpoint to gather lock information into heap if asked
 struct comp_lock_info_t;
 class CmpXctLockTids;
