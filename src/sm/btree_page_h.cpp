@@ -1570,12 +1570,14 @@ void btree_page_h::suggest_fence_for_split(w_keystr_t &mid,
 
     // first, pick the center point according to the skewness of past insertions to this page.
     slotid_t center_point = (nrecs() / 2); // usually just in the middle
-    if (is_insertion_skewed_right()) {
-        // last 5 inserts were on right-most, so let split on right-skewed point (90%)
-        center_point = (nrecs() * 9 / 10);
-    } else if (is_insertion_skewed_left()) {
-        // last 5 inserts were on left-most, so let split on left-skewed point (10%)
-        center_point = (nrecs() * 1 / 10);
+    if (nrecs() > 10) {
+        if (is_insertion_skewed_right()) {
+            // last 5 inserts were on right-most, so let split on right-skewed point (90%)
+            center_point = (nrecs() * 9 / 10);
+        } else if (is_insertion_skewed_left()) {
+            // last 5 inserts were on left-most, so let split on left-skewed point (10%)
+            center_point = (nrecs() * 1 / 10);
+        }
     }
 
     // second, consider boundaries around the center point to pick the shortest separator key
