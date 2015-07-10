@@ -45,7 +45,7 @@ w_rc_t flush_and_evict(ss_m* ssm) {
     W_DO(ssm->force_buffers()); // clean them up
     // also, evict all to update EMLSN
     uint32_t evicted_count, unswizzled_count;
-    W_DO(ssm->bf->evict_blocks(evicted_count, unswizzled_count, bf_tree_m::EVICT_COMPLETE));
+    W_DO(ssm->bf->evict_blocks(evicted_count, unswizzled_count, EVICT_COMPLETE));
     // then flush it, this time just for root node
     W_DO(ssm->force_buffers());
     return RCOK;

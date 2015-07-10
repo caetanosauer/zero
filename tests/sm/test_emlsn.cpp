@@ -68,7 +68,7 @@ w_rc_t test_all(ss_m* ssm, test_volume_t *test_volume) {
 
     // Now, to invoke eviction and EMLSN updates, evict all as much as possible.
     uint32_t evicted_count, unswizzled_count;
-    W_DO(ssm->bf->evict_blocks(evicted_count, unswizzled_count, bf_tree_m::EVICT_COMPLETE));
+    W_DO(ssm->bf->evict_blocks(evicted_count, unswizzled_count, EVICT_COMPLETE));
 
     // Because of the evictions, the parent page should have been updated.
     W_DO(root_p.fix_root(stid, LATCH_SH));

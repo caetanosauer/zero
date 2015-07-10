@@ -26,6 +26,19 @@ class test_bf_fixed;
 class bf_tree_cleaner;
 class bf_tree_cleaner_slave_thread_t;
 class btree_page_h;
+struct EvictionContext;
+
+/** Specifies how urgent we are to evict pages. \NOTE Order does matter.  */
+enum evict_urgency_t {
+    /** Not urgent at all. We don't even try multiple rounds of traversal. */
+    EVICT_NORMAL = 0,
+    /** Continue until we evict the given number of pages or a few rounds of traversal. */
+    EVICT_EAGER,
+    /** We evict the given number of pages, even trying unswizzling some pages. */
+    EVICT_URGENT,
+    /** No mercy. Unswizzle/evict completely. Mainly for testcases/experiments. */
+    EVICT_COMPLETE,
+};
 
 /** a swizzled pointer (page ID) has this bit ON. */
 const uint32_t SWIZZLED_PID_BIT = 0x80000000;
@@ -592,18 +605,6 @@ public:
     bool has_swizzled_child(bf_idx node_idx);
 
 
-    /** Specifies how urgent we are to evict pages. \NOTE Order does matter.  */
-    enum evict_urgency_t {
-        /** Not urgent at all. We don't even try multiple rounds of traversal. */
-        EVICT_NORMAL = 0,
-        /** Continue until we evict the given number of pages or a few rounds of traversal. */
-        EVICT_EAGER,
-        /** We evict the given number of pages, even trying unswizzling some pages. */
-        EVICT_URGENT,
-        /** No mercy. Unswizzle/evict completely. Mainly for testcases/experiments. */
-        EVICT_COMPLETE,
-    };
-
     /**
      * \brief Invoke block eviction, possibly unswizzling too, based on hierarchical clockhand.
      * @param[out] evicted_count Returns the number of blocks evicted
@@ -631,8 +632,6 @@ public:
      * 5. Lastly, this method isn't supposed to be super-fast, but should be okay to call it
      * for every millisec or so. If you have to call this method too often, increase the batch
      * size.
-     * TODO This and related methods should be defined in its own file, say bf_tree_evict.cpp.
-     * bf_tree.cpp is a bit too bloated (JIRA ZERO-180).
      */
     w_rc_t evict_blocks(
         uint32_t &evicted_count,
@@ -784,60 +783,6 @@ private:
      */
     bool   _is_active_idx (bf_idx idx) const;
 
-    /** Context object that is passed around during eviction. */
-    struct EvictionContext {
-        /** The number of blocks evicted. */
-        uint32_t        evicted_count;
-        /** The number of blocks unswizzled. */
-        uint32_t        unswizzled_count;
-        /** Specifies how thorough the eviction should be */
-        evict_urgency_t urgency;
-        /** Number of blocks to evict. Might evict less or more blocks for some reason. */
-        uint32_t        preferred_count;
-
-        /**
-        * Hierarchical clockhand. Initialized by copying _clockhand_pathway in _bf_tree
-        * which are shared by all eviction threads. Copied back to the _clockhand_pathway
-        * when the eviction is done.
-        * @see bf_tree#_clockhand_pathway
-        */
-        uint32_t        clockhand_pathway[MAX_CLOCKHAND_DEPTH];
-        /**
-         * Same as above, but in terms of buffer index in this bufferpool.
-         * The buffer index is not protected by latches, so we must check validity when
-         * we really evict/unswizzle.
-         * The first entry is dummy as it's vol. (store -> root page's bufidx)
-         */
-        bf_idx          bufidx_pathway[MAX_CLOCKHAND_DEPTH];
-        /** Same as above, whether the block was swizzled. */
-        bool            swizzled_pathway[MAX_CLOCKHAND_DEPTH];
-        /** Same as above. @see bf_tree#_clockhand_current_depth */
-        uint16_t        clockhand_current_depth;
-        /** The depth of the current thread-local traversal (as of entering the method). */
-        uint16_t        traverse_depth;
-
-        /**
-         * How many times we visited all frames during the eviction.
-         * It's rarely more than 0 except a very thorough eviction mode.
-         */
-        uint16_t        rounds;
-
-        /** Returns current volume. */
-        vid_t         get_vol() const { return (vid_t) clockhand_pathway[0]; }
-        /** Returns current store. */
-        snum_t          get_store() const { return (snum_t) clockhand_pathway[1]; }
-
-        /** Did we evict enough frames? */
-        bool            is_enough() const { return evicted_count >= preferred_count; }
-
-        /** Are we now even unswizzling frames? */
-        bool            is_unswizzling() const {
-            return urgency >= EVICT_COMPLETE || (urgency >= EVICT_URGENT && rounds > 0);
-        }
-
-        EvictionContext() : evicted_count(0), unswizzled_count(0), traverse_depth(0),
-            rounds(0) {}
-    };
     /** Core implementation of evict_blocks(). */
     w_rc_t _evict_blocks(EvictionContext &context);
     /** Debug out the current evict context. Do nothing in release mode. */

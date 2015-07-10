@@ -3,6 +3,61 @@
 #include "bf_tree.h"
 #include "btree_page_h.h"
 
+/** Context object that is passed around during eviction. */
+struct EvictionContext {
+    /** The number of blocks evicted. */
+    uint32_t        evicted_count;
+    /** The number of blocks unswizzled. */
+    uint32_t        unswizzled_count;
+    /** Specifies how thorough the eviction should be */
+    evict_urgency_t urgency;
+    /** Number of blocks to evict. Might evict less or more blocks for some reason. */
+    uint32_t        preferred_count;
+
+    /**
+     * Hierarchical clockhand. Initialized by copying _clockhand_pathway in _bf_tree
+     * which are shared by all eviction threads. Copied back to the _clockhand_pathway
+     * when the eviction is done.
+     * @see bf_tree#_clockhand_pathway
+     */
+    uint32_t        clockhand_pathway[MAX_CLOCKHAND_DEPTH];
+    /**
+     * Same as above, but in terms of buffer index in this bufferpool.
+     * The buffer index is not protected by latches, so we must check validity when
+     * we really evict/unswizzle.
+     * The first entry is dummy as it's vol. (store -> root page's bufidx)
+     */
+    bf_idx          bufidx_pathway[MAX_CLOCKHAND_DEPTH];
+    /** Same as above, whether the block was swizzled. */
+    bool            swizzled_pathway[MAX_CLOCKHAND_DEPTH];
+    /** Same as above. @see bf_tree#_clockhand_current_depth */
+    uint16_t        clockhand_current_depth;
+    /** The depth of the current thread-local traversal (as of entering the method). */
+    uint16_t        traverse_depth;
+
+    /**
+     * How many times we visited all frames during the eviction.
+     * It's rarely more than 0 except a very thorough eviction mode.
+     */
+    uint16_t        rounds;
+
+    /** Returns current volume. */
+    vid_t         get_vol() const { return (vid_t) clockhand_pathway[0]; }
+    /** Returns current store. */
+    snum_t          get_store() const { return (snum_t) clockhand_pathway[1]; }
+
+    /** Did we evict enough frames? */
+    bool            is_enough() const { return evicted_count >= preferred_count; }
+
+    /** Are we now even unswizzling frames? */
+    bool            is_unswizzling() const {
+        return urgency >= EVICT_COMPLETE || (urgency >= EVICT_URGENT && rounds > 0);
+    }
+
+    EvictionContext() : evicted_count(0), unswizzled_count(0), traverse_depth(0),
+    rounds(0) {}
+};
+
 #ifdef BP_MAINTAIN_PARENT_PTR
 void bf_tree_m::_add_to_swizzled_lru(bf_idx idx) {
     w_assert1 (is_swizzling_enabled());
@@ -356,7 +411,7 @@ void bf_tree_m::_dump_evict_clockhand(const EvictionContext &context) const {
 }
 
 w_rc_t bf_tree_m::evict_blocks(uint32_t& evicted_count, uint32_t& unswizzled_count,
-                               bf_tree_m::evict_urgency_t urgency, uint32_t preferred_count)
+                               evict_urgency_t urgency, uint32_t preferred_count)
 {
     EvictionContext context;
     context.urgency = urgency;
@@ -397,7 +452,10 @@ w_rc_t bf_tree_m::_evict_blocks(EvictionContext& context) {
             }
             context.traverse_depth = 1;
             if (i != 0 || context.clockhand_current_depth == 0) {
-                // this means now we are moving on to another volume.
+                // This means now we are moving on to another volume.
+                // When i == 0, we are just continuing the traversal from the
+                // last time, i.e., reuising whatever was already on the clock
+                // hand path.
                 context.clockhand_current_depth = context.traverse_depth; // reset descendants
                 context.clockhand_pathway[context.traverse_depth - 1] = vol;
             }
@@ -434,6 +492,11 @@ w_rc_t bf_tree_m::_evict_traverse_volume(EvictionContext &context) {
             // just give up in unlucky case (probably the volume has been just uninstalled)
             return RCOK;
         }
+        /*
+         * TODO CS -- this is a racing condition. We can test 1000 times and
+         * _volumes[vol] may still be NULL just before we access it below.
+         * Proper concurrency control is needed to access the array.
+         */
         bf_idx root_idx = _volumes[vol]->_root_pages[store];
         if (root_idx == 0) {
             continue;
@@ -511,6 +574,7 @@ w_rc_t bf_tree_m::_evict_traverse_page(EvictionContext &context) {
     w_assert1(depth >= 3);
     w_assert1(depth < MAX_CLOCKHAND_DEPTH);
     w_assert1(context.clockhand_current_depth >= depth);
+
     bf_idx idx = context.bufidx_pathway[depth - 1];
     bf_tree_cb_t &cb = get_cb(idx);
     if (!cb._used) {
