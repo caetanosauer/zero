@@ -455,7 +455,8 @@ void RestoreMgr::restoreLoop()
         shpid_t prevPage = 0;
         size_t redone = 0;
 
-        DBG(<< "Restoring segment " << segment << " page " << current);
+        DBG(<< "Restoring segment " << segment << "(pages " << current << " - "
+                << firstPage + segmentSize << ")");
 
         logrec_t* lr;
         while (merger->next(lr)) {
@@ -470,7 +471,7 @@ void RestoreMgr::restoreLoop()
             while (lrpid.page > current) {
                 current++;
                 page++;
-                DBG(<< "Restoring page " << current);
+                DBGOUT4(<< "Restoring page " << current);
             }
 
             if (!fixable.is_fixed() || fixable.pid().page != lrpid.page) {
