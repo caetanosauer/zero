@@ -366,6 +366,8 @@ void chkpt_m::scan_log(lsn_t& begin_lsn, lsn_t& end_lsn, chkpt_t& new_chkpt)
 
     int num_chkpt_end_handled = 0;
 
+    vector<lpid_t> evict_pid;
+    vector<lsn_t> last_evict;
     while (scan.xct_next(lsn, log_rec_buf) && lsn < end_lsn)
     {
         logrec_t& r = *log_rec_buf;
@@ -654,6 +656,26 @@ void chkpt_m::scan_log(lsn_t& begin_lsn, lsn_t& end_lsn, chkpt_t& new_chkpt)
             case logrec_t::t_xct_abort:
                 break;
 
+            case logrec_t::t_page_write:
+                {
+                    lpid_t* pid_begin = (lpid_t*)(r.data());
+                    uint32_t* count = (uint32_t*)(r.data() + sizeof(lpid_t));
+                    for(uint i=0; i<*count; i++) {
+                        lpid_t pid = *pid_begin;
+                        pid.page += i;
+
+                        size_t page;
+                        if(page = indexOf(evict_pid, pid) != -1) { //page already exists
+                            last_evict[page] = lsn;
+                        }
+                        else {
+                            evict_pid.push_back(pid);
+                            last_evict.push_back(lsn);
+                        }
+                    }
+                }
+                break;
+
             case logrec_t::t_compensate:
             case logrec_t::t_store_operation:
             case logrec_t::t_page_set_to_be_deleted:
@@ -741,6 +763,21 @@ void chkpt_m::scan_log(lsn_t& begin_lsn, lsn_t& end_lsn, chkpt_t& new_chkpt)
 
             default:
                 break;
+        }
+    }
+
+    // Remove pages that were evicted from the bf_table.
+    for(uint i=0; i<new_chkpt.pid.size(); i++) {
+        lpid_t pid = new_chkpt.pid[i];
+        size_t page;
+        if(page = indexOf(evict_pid, pid) != -1) { // page was evicted at some time
+            if(last_evict[page] > new_chkpt.page_lsn[i]) { // page was evicted after last update
+                // this means the page is not in the buffer pool
+                new_chkpt.pid.erase(new_chkpt.pid.begin() + i);
+                new_chkpt.store.erase(new_chkpt.store.begin() + i);
+                new_chkpt.rec_lsn.erase(new_chkpt.rec_lsn.begin() + i);
+                new_chkpt.page_lsn.erase(new_chkpt.page_lsn.begin() + i);
+            }
         }
     }
 
