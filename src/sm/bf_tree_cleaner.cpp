@@ -572,8 +572,8 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_clean_volume(
             // we can do this out of latch scope because it's never used in race condition.
             // this is mainly for testcases and such.
             page_buffer[idx].checksum = _write_buffer[write_buffer_cur].checksum;
-            DBGOUT3(<< "Checksum for " << _write_buffer[write_buffer_cur].pid
-                    << " is " << _write_buffer[write_buffer_cur].checksum);
+            // DBGOUT3(<< "Checksum for " << _write_buffer[write_buffer_cur].pid
+            //         << " is " << _write_buffer[write_buffer_cur].checksum);
 
 
             if (tobedeleted) {
@@ -664,7 +664,9 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(vid_t vol, size_t fro
     if (consecutive == 0) {
         return RCOK;
     }
-    DBGOUT2(<<"_flush_write_buffer(cleaner=" << _id << "): writing " << consecutive << " consecutive pages..");
+    DBGOUT2(<<"_flush_write_buffer(cleaner=" << _id
+            << "): writing " << consecutive << " consecutive pages "
+            << " from pid " << _write_buffer[from].pid);
     // we'll compute the highest lsn of the pages, and do one log flush to that lsn.
     lsndata_t max_page_lsn = lsndata_null;
     for (size_t i = from; i < from + consecutive; ++i) {
@@ -687,10 +689,10 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_flush_write_buffer(vid_t vol, size_t fro
         W_COERCE( smlevel_0::log->flush(lsn_t(max_page_lsn)) );
     }
 
-#ifndef BF_WRITE_ELISION
+// #ifndef BF_WRITE_ELISION
     // then, write them out in one batch
     W_COERCE(_parent->_bufferpool->_volumes[vol]->_volume->write_many_pages(_write_buffer[from].pid.page, _write_buffer + from, consecutive));
-#endif // BF_WRITE_ELISION
+// #endif // BF_WRITE_ELISION
 
     // after writing them out, update rec_lsn in bufferpool
     for (size_t i = from; i < from + consecutive; ++i) {
@@ -774,9 +776,9 @@ w_rc_t bf_tree_cleaner_slave_thread_t::_do_work()
         }
         if (clean_it) {
             _candidates_buffer[vol].push_back (idx);
-            DBGOUT3(<< "Picked page for cleaning: idx = " << idx
-                    << " vol = " << cb._pid_vol
-                    << " shpid = " << cb._pid_shpid);
+            // DBGOUT3(<< "Picked page for cleaning: idx = " << idx
+            //         << " vol = " << cb._pid_vol
+            //         << " shpid = " << cb._pid_shpid);
 
             // also add dependent pages. note that this might cause a duplicate. we deal with duplicates in _clean_volume()
             bf_idx didx = cb._dependency_idx;
