@@ -25,10 +25,6 @@ typedef        ios::fmtflags        ios_fmtflags;
 
 #include <new>
 
-// declared in eventlog.h
-boost::gregorian::date sysevent_timer::epoch
-    = boost::gregorian::date(2015,1,1);
-
 DEFINE_SM_ALLOC(logrec_t);
 
 /*********************************************************************
